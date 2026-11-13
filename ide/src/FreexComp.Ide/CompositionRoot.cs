@@ -4,6 +4,7 @@ using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Platform;
 
 namespace FreexComp.Ide;
@@ -45,6 +46,6 @@ public static class CompositionRoot
     public static MainWindow CreateMainWindow(IdeServices services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        return new MainWindow();
+        return new MainWindow { DataContext = new MainWindowViewModel(services) };
     }
 }

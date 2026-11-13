@@ -1,15 +1,41 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:res="clr-namespace:FreexComp.Ide.Core.Resources;assembly=FreexComp.Ide.Core"
+        xmlns:vm="clr-namespace:FreexComp.Ide.Core.ViewModels;assembly=FreexComp.Ide.Core"
         xmlns:ide="clr-namespace:FreexComp.Ide"
         x:Class="FreexComp.Ide.MainWindow"
-        Title="{x:Static res:Strings.App_ProductName}"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding Title}"
         Icon="avares://FreexComp.Ide/Assets/app.ico"
         AutomationProperties.AutomationId="{x:Static ide:AutomationIds.MainWindow}"
-        Width="1440" Height="900">
-  <!-- Region skeleton only (main-window.md); content, sizes and view-models arrive with I-017 and later tasks. -->
-  <DockPanel>
-    <DockPanel DockPanel.Dock="Bottom" AutomationProperties.AutomationId="{x:Static ide:AutomationIds.StatusBar}" />
-    <TabControl AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DocumentArea}" />
-  </DockPanel>
+        Background="{DynamicResource FxcBgWindowBrush}"
+        UseLayoutRounding="True"
+        Width="1440" Height="900" MinWidth="800" MinHeight="500">
+  <!-- main-window.md §1 regions 2-8. Phase 1: every dock is empty and therefore collapsed (UI-WIN-004, UI-WIN-011);
+       the Dock-library layout replaces the dock placeholders in I-022. -->
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <!-- (2) Menu bar: items generated in I-019. -->
+    <Menu Grid.Row="0" Height="{DynamicResource FxcMetricMenuBarHeight}"
+          AutomationProperties.AutomationId="{x:Static ide:AutomationIds.MenuBar}" />
+    <!-- (3) Toolbar row: toolbars in I-021. -->
+    <Border Grid.Row="1" Height="{DynamicResource FxcMetricToolbarHeight}" />
+    <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto">
+      <!-- (4) Left dock -->
+      <Border Grid.Column="0" Width="260" MinWidth="160" IsVisible="False"
+              AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DockLeft}" />
+      <Grid Grid.Column="1" RowDefinitions="*,Auto">
+        <!-- (5) Document area, through the ViewLocator -->
+        <ContentControl Grid.Row="0" Content="{Binding DocumentArea}" />
+        <!-- (7) Bottom dock: under the document area only (UI-WIN-001) -->
+        <Border Grid.Row="1" Height="200" MinHeight="80" IsVisible="False"
+                AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DockBottom}" />
+      </Grid>
+      <!-- (6) Right dock -->
+      <Border Grid.Column="2" Width="300" MinWidth="160" IsVisible="False"
+              AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DockRight}" />
+    </Grid>
+    <!-- (8) Status bar: fields in I-027. -->
+    <DockPanel Grid.Row="3" Height="{DynamicResource FxcMetricStatusBarHeight}"
+               Background="{DynamicResource FxcStatusbarIdleBgBrush}"
+               AutomationProperties.AutomationId="{x:Static ide:AutomationIds.StatusBar}" />
+  </Grid>
 </Window>

@@ -1801,4 +1801,8 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Cmd_todo_refresh" xml:space="preserve">
     <value>Refresh To-Do List</value>
   </data>
+  <data name="View_MissingView" xml:space="preserve">
+    <value>Missing view for {0}</value>
+    <comment>IDE-ARCH-014: ViewLocator placeholder; 0 = view-model type name</comment>
+  </data>
 </root>
