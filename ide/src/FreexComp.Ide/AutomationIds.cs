@@ -17,6 +17,10 @@ public static partial class AutomationIds
     public const string DockLeft = "Dock.Left";
     public const string DockRight = "Dock.Right";
     public const string DockBottom = "Dock.Bottom";
+
+    /// <summary>Upper and lower tool group of the right dock (each has its own tab strip, tool-windows.md §1.2).</summary>
+    public const string DockRightUpper = "Dock.Right.Upper";
+    public const string DockRightLower = "Dock.Right.Lower";
     public const string StatusBar = "StatusBar";
 
     /// <summary>The AutomationId of <paramref name="element"/>, or null.</summary>

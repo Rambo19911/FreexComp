@@ -11,29 +11,15 @@
         Background="{DynamicResource FxcBgWindowBrush}"
         UseLayoutRounding="True"
         Width="1440" Height="900" MinWidth="800" MinHeight="500">
-  <!-- main-window.md §1 regions 2-8. Phase 1: every dock is empty and therefore collapsed (UI-WIN-004, UI-WIN-011);
-       the Dock-library layout replaces the dock placeholders in I-022. -->
+  <!-- main-window.md §1 regions 2-8. Phase 1: every dock is empty and therefore collapsed (UI-WIN-004, UI-WIN-011). -->
   <Grid RowDefinitions="Auto,Auto,*,Auto">
     <!-- (2) Menu bar: items generated from the menu model (UI-MENU-002), see MainWindow.axaml.cs. -->
     <Menu x:Name="MenuBar" Grid.Row="0" Height="{DynamicResource FxcMetricMenuBarHeight}"
           AutomationProperties.AutomationId="{x:Static ide:AutomationIds.MenuBar}" />
     <!-- (3) Toolbar row: generated from the toolbar models (UI-TB-002), see MainWindow.axaml.cs. -->
     <views:ToolBarRow x:Name="ToolBars" Grid.Row="1" />
-    <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto">
-      <!-- (4) Left dock -->
-      <Border Grid.Column="0" Width="260" MinWidth="160" IsVisible="False"
-              AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DockLeft}" />
-      <Grid Grid.Column="1" RowDefinitions="*,Auto">
-        <!-- (5) Document area, through the ViewLocator -->
-        <ContentControl Grid.Row="0" Content="{Binding DocumentArea}" />
-        <!-- (7) Bottom dock: under the document area only (UI-WIN-001) -->
-        <Border Grid.Row="1" Height="200" MinHeight="80" IsVisible="False"
-                AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DockBottom}" />
-      </Grid>
-      <!-- (6) Right dock -->
-      <Border Grid.Column="2" Width="300" MinWidth="160" IsVisible="False"
-              AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DockRight}" />
-    </Grid>
+    <!-- (4)-(7) Docks around the document area, through the ViewLocator (LayoutView). -->
+    <ContentControl Grid.Row="2" Content="{Binding Layout}" />
     <!-- (8) Status bar: fields in I-027. -->
     <DockPanel Grid.Row="3" Height="{DynamicResource FxcMetricStatusBarHeight}"
                Background="{DynamicResource FxcStatusbarIdleBgBrush}"

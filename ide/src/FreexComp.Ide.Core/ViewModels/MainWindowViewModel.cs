@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Menus;
+using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Resources;
 
 namespace FreexComp.Ide.Core.ViewModels;
@@ -19,6 +20,7 @@ public sealed class MainWindowViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(services);
         _services = services;
         DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap);
+        Layout = new LayoutViewModel(LayoutState.CreateDefault(), static _ => false, DocumentArea); // tool-window registry: I-023
         MainMenu = MainMenuModel.Build(services.Commands);
         ToolBars = ToolBarRowModel.Build(services.Commands, services.Settings, ServiceGraph.ImplementedPhase);
         ToolBarContextMenu = ToolBarRowModel.BuildContextMenu(services.Commands);
@@ -37,6 +39,9 @@ public sealed class MainWindowViewModel : ObservableObject
     public string Title => Strings.App_ProductName;
 
     public DocumentAreaViewModel DocumentArea { get; }
+
+    /// <summary>Regions 4–7: the docks around the document area (main-window.md §2).</summary>
+    public LayoutViewModel Layout { get; }
 
     /// <summary>IDE-ARCH-043: a key pressed anywhere in the main window; true when it was consumed.</summary>
     public bool HandleKey(KeyGesture gesture) => _services.Commands.HandleKey(gesture);
