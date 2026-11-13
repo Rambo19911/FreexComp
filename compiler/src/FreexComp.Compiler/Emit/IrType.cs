@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace FreexComp.Compiler.Emit;
 
 /// <summary>
@@ -14,6 +16,7 @@ internal abstract record IrType
     public static readonly FloatingIrType Float = new(FloatingKind.Float);
     public static readonly FloatingIrType Double = new(FloatingKind.Double);
     public static readonly PointerIrType Ptr = new();
+    public static readonly VoidIrType Void = new();
 
     public static IntegerIrType Int(int bits) => bits switch
     {
@@ -39,3 +42,28 @@ internal sealed record PointerIrType : IrType;
 
 /// <summary><c>[N x T]</c>.</summary>
 internal sealed record ArrayIrType(long Length, IrType Element) : IrType;
+
+/// <summary><c>void</c> (routine results only).</summary>
+internal sealed record VoidIrType : IrType;
+
+/// <summary>A literal struct type <c>{ T1, T2 }</c>, or <c>&lt;{ … }&gt;</c> when <see cref="IsPacked"/>.</summary>
+internal sealed record StructIrType(ImmutableArray<IrType> Fields, bool IsPacked = false) : IrType
+{
+    public bool Equals(StructIrType? other) =>
+        other is not null && IsPacked == other.IsPacked && Fields.SequenceEqual(other.Fields);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(IsPacked);
+        foreach (var field in Fields)
+        {
+            hash.Add(field);
+        }
+
+        return hash.ToHashCode();
+    }
+}
+
+/// <summary>A reference to a named struct type <c>%"Name"</c> declared with <see cref="IIrWriter.DeclareStruct"/>.</summary>
+internal sealed record NamedStructIrType(LinkName Name) : IrType;
