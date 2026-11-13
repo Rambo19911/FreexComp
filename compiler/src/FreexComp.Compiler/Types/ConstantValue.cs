@@ -5,7 +5,7 @@ using System.Text;
 namespace FreexComp.Compiler.Types;
 
 /// <summary>
-/// A compile-time value (api.md §5): <see cref="BigInteger"/> for ordinals, <see cref="double"/>, <see cref="string"/>,
+/// A compile-time value (api.md §5): <see cref="BigInteger"/> for ordinals (characters: the code), <see cref="double"/>, <see cref="string"/>,
 /// <see cref="bool"/>, null for <c>nil</c>. CLR integer values passed in are stored as <see cref="BigInteger"/>.
 /// </summary>
 public sealed class ConstantValue
@@ -36,6 +36,7 @@ public sealed class ConstantValue
     {
         null => "nil",
         bool b => b ? "True" : "False",
+        BigInteger i when Type is CharTypeSymbol => StringText(((char)(int)i).ToString()),
         BigInteger i => i.ToString(CultureInfo.InvariantCulture),
         double d => RealText(d),
         string s => StringText(s),
