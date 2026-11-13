@@ -135,11 +135,12 @@ public abstract class TextBufferContractTests
         Assert.Equal(8, atEnd.Offset);
         Assert.Equal(9, last.Offset);
 
-        // Replacement: an anchor at the replaced range's end goes to its start, then follows its insertion rule.
+        // Replacement (removal > 0; AvaloniaEdit's rule): an anchor at the range's start stays there and one at its
+        // end goes after the inserted text, whatever their insertion rule.
         b.ApplyEdits([new TextEdit(7, 1, "XYZ")]);  // 01234abXYZ9
-        Assert.Equal(7, atStart.Offset);  // at 8 = end of [7,8): to 7, stays before the inserted text
-        Assert.Equal(10, atEnd.Offset);   // same, but moves after the inserted text
-        Assert.Equal(10, moves.Offset);   // at 7 = start of the range: survives, then moves after the insertion
+        Assert.Equal(10, atStart.Offset); // at 8 = end of [7,8)
+        Assert.Equal(10, atEnd.Offset);   // at 8 = end of [7,8)
+        Assert.Equal(7, moves.Offset);    // at 7 = start of [7,8)
         Assert.Equal(5, stays.Offset);
         Assert.Equal(11, last.Offset);
         Assert.Equal(2, before.Offset);

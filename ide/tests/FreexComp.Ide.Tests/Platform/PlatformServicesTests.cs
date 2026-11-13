@@ -6,6 +6,7 @@ using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Platform;
+using FreexComp.Ide.Text;
 
 namespace FreexComp.Ide.Tests.Platform;
 
@@ -155,6 +156,7 @@ public sealed class PlatformServicesTests
             Assert.IsType<FileLog>(services.Log);
             Assert.IsType<PhysicalFileSystem>(services.FileSystem);
             Assert.IsType<AvaloniaThemeHost>(services.ThemeHost);
+            Assert.IsType<AvaloniaEditTextBufferFactory>(services.TextBuffers); // IDE-ARCH-031
             Assert.Equal(SettingsCatalog.EditorTabWidth.Default, services.Settings.Get(SettingsCatalog.EditorTabWidth));
         }
         finally

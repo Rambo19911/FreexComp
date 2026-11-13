@@ -6,6 +6,7 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Platform;
+using FreexComp.Ide.Text;
 
 namespace FreexComp.Ide;
 
@@ -36,7 +37,8 @@ public static class CompositionRoot
             new WindowsShellService(),
             new FileSystemWatcherFactory(),
             new LoggingDialogService(log),
-            new AvaloniaThemeHost(Application.Current ?? throw new InvalidOperationException("No Avalonia application.")));
+            new AvaloniaThemeHost(Application.Current ?? throw new InvalidOperationException("No Avalonia application.")),
+            new AvaloniaEditTextBufferFactory());
     }
 
     /// <summary>Step 6 of start-up.</summary>

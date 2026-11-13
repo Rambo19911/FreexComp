@@ -14,5 +14,7 @@
   <ItemGroup>
     <!-- Spec-table reader shared with Core.Tests; it uses xunit, so it is linked rather than put in TestSupport. -->
     <Compile Include="..\FreexComp.Ide.Core.Tests\Infrastructure\SpecTables.cs" Link="Infrastructure\SpecTables.cs" />
+    <!-- The buffer contract runs against both implementations (IDE-ARCH-030). -->
+    <Compile Include="..\FreexComp.Ide.Core.Tests\Text\TextBufferContractTests.cs" Link="Text\TextBufferContractTests.cs" />
   </ItemGroup>
 </Project>

@@ -3,6 +3,7 @@ using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ToolWindows;
 
 namespace FreexComp.Ide.TestSupport;
@@ -23,6 +24,9 @@ public sealed class TestCompositionOptions
     public IDialogService Dialogs { get; set; } = new FakeDialogService();
     public ILog Log { get; set; } = new RecordingLog();
     public IThemeHost ThemeHost { get; set; } = new FakeThemeHost();
+
+    /// <summary>Core buffers by default; the headless harness uses the AvaloniaEdit factory like production.</summary>
+    public ITextBufferFactory TextBuffers { get; set; } = new StringTextBufferFactory();
 
     /// <summary><c>--user-dir</c> of the composition.</summary>
     public string UserDir { get; set; } =
@@ -57,7 +61,8 @@ public static class TestComposition
             o.Shell ?? new FakeShellService(o.FileSystem),
             o.FileWatchers,
             o.Dialogs,
-            o.ThemeHost);
+            o.ThemeHost,
+            o.TextBuffers);
 
         var services = ServiceGraph.Build(options, platform);
         foreach (var definition in o.ToolWindows)

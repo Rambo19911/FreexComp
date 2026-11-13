@@ -2,6 +2,7 @@ using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Text;
 
 namespace FreexComp.Ide.Core.Composition;
 
@@ -31,6 +32,9 @@ public interface IPlatformServices
     IDialogService Dialogs { get; }
 
     IThemeHost ThemeHost { get; }
+
+    /// <summary>Creates document buffers (IDE-ARCH-031).</summary>
+    ITextBufferFactory TextBuffers { get; }
 }
 
 /// <summary>Plain holder of the platform inputs.</summary>
@@ -44,4 +48,5 @@ public sealed record PlatformServices(
     IShellService Shell,
     IFileWatcherFactory FileWatchers,
     IDialogService Dialogs,
-    IThemeHost ThemeHost) : IPlatformServices;
+    IThemeHost ThemeHost,
+    ITextBufferFactory TextBuffers) : IPlatformServices;

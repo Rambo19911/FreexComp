@@ -11,6 +11,7 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Input;
 using FreexComp.Ide.Platform;
 using FreexComp.Ide.TestSupport;
+using FreexComp.Ide.Text;
 using CoreGesture = FreexComp.Ide.Core.Commands.KeyGesture;
 
 namespace FreexComp.Ide.Tests.Infrastructure;
@@ -85,6 +86,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.FileWatchers = _watchers;
             o.UserDir = UserDir;
             o.ThemeHost = new AvaloniaThemeHost(Application.Current!);
+            o.TextBuffers = new AvaloniaEditTextBufferFactory();
             o.Arguments.AddRange(options.CommandLineArgs);
             o.ToolWindows.AddRange(options.ToolWindows);
         });

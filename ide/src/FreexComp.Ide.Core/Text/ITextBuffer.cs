@@ -17,8 +17,10 @@ public sealed class TextChangedEventArgs(int offset, int removedLength, string i
 }
 
 /// <summary>
-/// A position that follows edits. It is deleted when a removal strictly contains it (an anchor at the start or the
-/// end of a removed range survives at its start); <see cref="Offset"/> of a deleted anchor throws
+/// A position that follows edits (AvaloniaEdit's rules). A pure insertion exactly at the anchor moves it only when
+/// it was created with <c>movesWithInsertionBefore</c>. For a removal or replacement of [start, end): an anchor at
+/// start stays, one strictly inside is deleted, one at end or later shifts (an anchor at end lands after the inserted
+/// text), whatever its insertion rule. <see cref="Offset"/> of a deleted anchor throws
 /// <see cref="InvalidOperationException"/>. Undo does not revive a deleted anchor.
 /// </summary>
 public interface ITextAnchor

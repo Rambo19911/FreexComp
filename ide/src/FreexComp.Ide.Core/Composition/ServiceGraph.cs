@@ -57,6 +57,7 @@ public static class ServiceGraph
             FileWatchers = platform.FileWatchers,
             Dialogs = platform.Dialogs,
             ThemeHost = platform.ThemeHost,
+            TextBuffers = platform.TextBuffers,
             Settings = settings,
             Theme = theme,
             Keymap = keymap,

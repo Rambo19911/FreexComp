@@ -3,6 +3,7 @@ using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ToolWindows;
 
 namespace FreexComp.Ide.Core.Composition;
@@ -26,6 +27,7 @@ public sealed record IdeServices
     public required IFileWatcherFactory FileWatchers { get; init; }
     public required IDialogService Dialogs { get; init; }
     public required IThemeHost ThemeHost { get; init; }
+    public required ITextBufferFactory TextBuffers { get; init; }
 
     // Services (architecture.md §4), in construction order.
     public required ISettingsService Settings { get; init; }

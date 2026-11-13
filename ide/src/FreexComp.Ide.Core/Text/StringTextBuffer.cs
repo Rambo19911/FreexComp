@@ -229,18 +229,21 @@ public sealed class StringTextBuffer : ITextBuffer
         public void OnChange(int offset, int removed, int inserted)
         {
             if (_offset < offset) return;
-            if (_offset > offset + removed)
+            if (removed == 0)
             {
-                _offset += inserted - removed;
+                // Pure insertion: an anchor exactly at it follows its insertion rule.
+                if (_offset > offset || movesWithInsertion) _offset += inserted;
                 return;
             }
-            if (_offset > offset && _offset < offset + removed)
+            // Removal or replacement (AvaloniaEdit's rule): at the start stays, strictly inside is deleted, at or
+            // after the end shifts (so an anchor at the end lands after the inserted text).
+            if (_offset == offset) return;
+            if (_offset < offset + removed)
             {
                 IsDeleted = true;
                 return;
             }
-            // At the start or the end of the removed range: to its start, then the insertion rule.
-            _offset = offset + (movesWithInsertion ? inserted : 0);
+            _offset += inserted - removed;
         }
     }
 }
