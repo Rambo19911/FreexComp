@@ -175,7 +175,7 @@ public sealed class CommandServiceTests
     public void KeymapChangesApplyToKeysAndGestureText()
     {
         var keymap = CreateKeymap();
-        var service = new CommandService(keymap, _dispatcher, _clock, _log, _dialogs, _status);
+        var service = new CommandService(keymap, _dispatcher, _clock, _log, _dialogs, _status, new FocusTracker());
         var save = new TestHandler();
         service.RegisterHandler("file.save", save);
         var command = service.Get("file.save");
@@ -188,8 +188,58 @@ public sealed class CommandServiceTests
         Assert.Equal(1, save.Calls);
     }
 
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-CMD-010")]
+    [Trait("Req", "UI-CMD-011")]
+    [Trait("Req", "IDE-ARCH-042")]
+    public async Task FocusRoutingFallsBackToActiveDocument()
+    {
+        var services = TestComposition.Build();
+        var focus = services.FocusTracker;
+        var document = new RecordingTarget("edit.undo", "edit.redo", "edit.copy");
+        var messages = new RecordingTarget("edit.copy"); // a tool window that copies but has no undo
+
+        Assert.False(services.Commands.CanExecute("edit.copy")); // (5) nothing focused
+
+        focus.Update(new FocusState(CommandScope.Editor, null, document, IsTextInput: false));
+        await services.Commands.ExecuteAsync("edit.undo");
+        Assert.Equal(["edit.undo"], document.Executed); // (2) the focused editor
+
+        focus.Update(new FocusState(CommandScope.ToolList, "Messages", messages, IsTextInput: false));
+        await services.Commands.ExecuteAsync("edit.copy");
+        await services.Commands.ExecuteAsync("edit.undo");
+        Assert.Equal(["edit.copy"], messages.Executed); // (4) the tool window's own target
+        Assert.Equal(["edit.undo", "edit.undo"], document.Executed); // UI-CMD-011: undo goes to the active document
+        Assert.Same(document, focus.ActiveDocumentTarget);
+
+        focus.Update(new FocusState(CommandScope.ToolList, "Output", null, IsTextInput: false));
+        Assert.False(services.Commands.CanExecute("edit.copy")); // no target, no fallback for copy
+        Assert.True(services.Commands.CanExecute("edit.redo"));
+
+        focus.Update(new FocusState(CommandScope.Global, null, null, IsTextInput: true));
+        Assert.False(services.Commands.CanExecute("edit.undo")); // (1) the text input's native behavior
+        Assert.False(services.Commands.HandleKey(KeyGesture.Parse("Ctrl+Z")));
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-043")]
+    [Trait("Req", "UI-KEY-004")]
+    public void LocalKeysOfTheFocusedControlAreNotRouted()
+    {
+        var services = TestComposition.Build();
+        var save = new TestHandler();
+        services.Commands.RegisterHandler("file.save", save);
+
+        services.FocusTracker.SetLocalKeys([KeyGesture.Parse("Ctrl+S")]);
+        Assert.False(services.Commands.HandleKey(KeyGesture.Parse("Ctrl+S")));
+
+        services.FocusTracker.SetLocalKeys([]);
+        Assert.True(services.Commands.HandleKey(KeyGesture.Parse("Ctrl+S")));
+        Assert.Equal(1, save.Calls);
+    }
+
     private CommandService Create() =>
-        new(CreateKeymap(), _dispatcher, _clock, _log, _dialogs, _status);
+        new(CreateKeymap(), _dispatcher, _clock, _log, _dialogs, _status, new FocusTracker());
 
     private KeymapService CreateKeymap() =>
         new(Core.Settings.UserPaths.Create(@"C:\u", _ => null, _ => throw new InvalidOperationException()), new InMemoryFileSystem(), _clock, _log);
@@ -219,6 +269,19 @@ public sealed class CommandServiceTests
             }
 
             return Pending?.Task ?? Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingTarget(params string[] handled) : ICommandTarget
+    {
+        public List<string> Executed { get; } = [];
+
+        public bool CanExecute(string commandId, string? argument) => handled.Contains(commandId);
+
+        public Task<bool> ExecuteAsync(string commandId, string? argument)
+        {
+            Executed.Add(commandId);
+            return Task.FromResult(true);
         }
     }
 }

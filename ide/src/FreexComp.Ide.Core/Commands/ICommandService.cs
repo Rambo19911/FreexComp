@@ -62,6 +62,12 @@ public interface ICommandService
 
     Task ExecuteAsync(string commandId, string? argument = null);
 
+    /// <summary>
+    /// Key routing for the focused element of <see cref="IFocusTracker"/> (IDE-ARCH-042/043): local keys and, in a
+    /// text input, <c>Focus</c> commands are left to the control; otherwise as the overload below.
+    /// </summary>
+    bool HandleKey(KeyGesture gesture);
+
     /// <summary>UI-KEY-004 step 3 and UI-KEY-007; true when the key was consumed.</summary>
     bool HandleKey(KeyGesture gesture, CommandScope focusScope, string? toolWindowName);
 

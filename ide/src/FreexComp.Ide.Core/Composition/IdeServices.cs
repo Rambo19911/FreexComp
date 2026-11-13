@@ -32,4 +32,5 @@ public sealed record IdeServices
     public required IKeymapService Keymap { get; init; }
     public required IStatusService Status { get; init; }
     public required ICommandService Commands { get; init; }
+    public required IFocusTracker FocusTracker { get; init; }
 }

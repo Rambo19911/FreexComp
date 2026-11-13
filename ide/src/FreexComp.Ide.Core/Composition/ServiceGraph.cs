@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 
@@ -27,8 +28,15 @@ public static class ServiceGraph
         keymap.Load();
 
         var status = new StatusService(platform.Clock);
-        var commands = new CommandService(keymap, platform.Dispatcher, platform.Clock, platform.Log, platform.Dialogs, status);
+        var focus = new FocusTracker();
+        var commands = new CommandService(keymap, platform.Dispatcher, platform.Clock, platform.Log, platform.Dialogs, status, focus);
+        foreach (var definition in commands.Definitions.Where(d => d.Scope == CommandScope.Focus))
+        {
+            commands.RegisterHandler(definition.Id, new FocusCommandHandler(definition.Id, focus)); // commands.md §3
+        }
+
         theme.RegisterCommands(commands);
+        ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         return new IdeServices
@@ -49,6 +57,7 @@ public static class ServiceGraph
             Keymap = keymap,
             Status = status,
             Commands = commands,
+            FocusTracker = focus,
         };
     }
 }

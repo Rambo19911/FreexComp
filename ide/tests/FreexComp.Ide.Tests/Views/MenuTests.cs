@@ -1,9 +1,10 @@
 using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Tests.Infrastructure;
-using FreexComp.Ide.Input;
 using FreexComp.Ide.Tests.Infrastructure;
 using CoreGesture = FreexComp.Ide.Core.Commands.KeyGesture;
 
@@ -65,15 +66,39 @@ public sealed partial class MenuTests
     public async Task ShortcutTextFollowsKeymap()
     {
         await using var h = await HeadlessHarness.StartAsync();
+        var file = Item(h, AutomationIds.TopMenu("File"));
+        file.Open();
+        Dispatcher.UIThread.RunJobs();
         var save = Item(h, AutomationIds.Menu("file.save"));
 
-        Assert.Equal(Gesture("Ctrl+S"), save.InputGesture);
+        Assert.Equal("Ctrl+S", ShownGesture(save));
         Assert.Null(save.HotKey); // display only: key routing owns the gestures (IDE-ARCH-043)
-        Assert.Null(Item(h, AutomationIds.Menu("file.saveAs")).InputGesture);
+        Assert.Null(save.InputGesture);
+        Assert.Equal("", ShownGesture(Item(h, AutomationIds.Menu("file.saveAs"))));
 
         h.Services.Keymap.SetGestures("file.save", [CoreGesture.Parse("Ctrl+Shift+F2"), CoreGesture.Parse("F2")]);
+        Assert.Equal("Ctrl+Shift+F2", ShownGesture(save)); // first of several
+        file.Close();
 
-        Assert.Equal(Gesture("Ctrl+Shift+F2"), save.InputGesture); // first of several
+        var view = Item(h, AutomationIds.TopMenu("View"));
+        view.Open();
+        Dispatcher.UIThread.RunJobs();
+        var zoom = Item(h, AutomationIds.SubMenu("View", "Zoom"));
+        zoom.Open();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Ctrl+=", ShownGesture(Item(h, AutomationIds.Menu("view.zoomIn")))); // UI-KEY-001 spelling, not the toolkit's
+        Assert.Equal("Ctrl+-", ShownGesture(Item(h, AutomationIds.Menu("view.zoomOut"))));
+        zoom.Close();
+        view.Close();
+    }
+
+    /// <summary>The shortcut text the menu item's template shows.</summary>
+    private static string ShownGesture(MenuItem item)
+    {
+        var text = item.GetVisualDescendants().OfType<TextBlock>().SingleOrDefault(t => t.Name == "PART_InputGestureText");
+        Assert.NotNull(text);
+        Assert.True(string.IsNullOrEmpty(text.Text) || text.IsEffectivelyVisible, $"{AutomationIds.Get(item)}: shortcut text hidden");
+        return text.Text ?? "";
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -92,12 +117,6 @@ public sealed partial class MenuTests
 
         Assert.True(dark.IsChecked);
         Assert.False(light.IsChecked);
-    }
-
-    private static Avalonia.Input.KeyGesture Gesture(string text)
-    {
-        var (key, modifiers) = KeyMapping.ToAvalonia(CoreGesture.Parse(text));
-        return new Avalonia.Input.KeyGesture(key, modifiers);
     }
 
     private static CommandDefinition? Definition(MenuItem item) =>

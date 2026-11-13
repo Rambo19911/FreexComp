@@ -2468,4 +2468,8 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_help_about" xml:space="preserve">
     <value>&amp;About FreexComp</value>
   </data>
+  <data name="ToolBar_Overflow" xml:space="preserve">
+    <value>»</value>
+    <comment>UI-TB-006: overflow button glyph</comment>
+  </data>
 </root>

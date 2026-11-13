@@ -11,6 +11,7 @@ namespace FreexComp.Ide.Input;
 public static class KeyMapping
 {
     private static readonly Dictionary<string, Key> ToKey = BuildTable();
+    private static readonly HashSet<string> Punctuation = new([",", ".", "/", ";", "'", "[", "]", "\\", "-", "=", "`"], StringComparer.Ordinal);
     private static readonly Dictionary<Key, string> ToName = ToKey.ToDictionary(p => p.Value, p => p.Key);
 
     public static (Key Key, KeyModifiers Modifiers) ToAvalonia(CoreGesture gesture) =>
@@ -41,6 +42,20 @@ public static class KeyMapping
         }
 
         return new CoreGesture(core, name);
+    }
+
+    /// <summary>
+    /// The gesture of a key event (UI-KEY-002): punctuation is matched by the character the key types
+    /// (<paramref name="keySymbol"/>) when that is one of the UI-KEY-001 punctuation names, else by the key.
+    /// </summary>
+    public static CoreGesture? FromKeyEvent(Key key, KeyModifiers modifiers, string? keySymbol)
+    {
+        if (keySymbol is { Length: 1 } && Punctuation.Contains(keySymbol) && FromAvalonia(ToKey[keySymbol], modifiers) is { } bySymbol)
+        {
+            return bySymbol;
+        }
+
+        return FromAvalonia(key, modifiers);
     }
 
     private static KeyModifiers ToAvalonia(CoreModifiers modifiers) =>

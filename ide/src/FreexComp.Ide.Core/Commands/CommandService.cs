@@ -26,6 +26,7 @@ public sealed class CommandService : ICommandService
     private readonly ILog _log;
     private readonly IDialogService _dialogs;
     private readonly IStatusService _status;
+    private readonly IFocusTracker _focus;
     private readonly Dictionary<string, CommandDefinition> _definitions;
     private readonly Dictionary<string, ICommandHandler> _handlers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IdeCommand> _commands = new(StringComparer.Ordinal);
@@ -33,8 +34,9 @@ public sealed class CommandService : ICommandService
     private bool _invalidatePending;
     private (string Text, DateTimeOffset At)? _lastError;
 
-    public CommandService(IKeymapService keymap, IUiDispatcher dispatcher, IClock clock, ILog log, IDialogService dialogs, IStatusService status)
+    public CommandService(IKeymapService keymap, IUiDispatcher dispatcher, IClock clock, ILog log, IDialogService dialogs, IStatusService status, IFocusTracker focus)
     {
+        _focus = focus;
         _keymap = keymap;
         _dispatcher = dispatcher;
         _clock = clock;
@@ -44,6 +46,7 @@ public sealed class CommandService : ICommandService
         Definitions = CommandCatalog.All;
         _definitions = Definitions.ToDictionary(d => d.Id, StringComparer.Ordinal);
         _keymap.Changed += (_, _) => RefreshGestureTexts(); // UI-KEY-023
+        _focus.Changed += (_, _) => InvalidateCanExecute(); // Focus commands follow the focused element
     }
 
     public event EventHandler<CommandExecutedEventArgs>? Executed;
@@ -151,8 +154,26 @@ public sealed class CommandService : ICommandService
         Executed?.Invoke(this, new CommandExecutedEventArgs(commandId, argument, _clock.Now - started, failure));
     }
 
+    public bool HandleKey(KeyGesture gesture)
+    {
+        var state = _focus.Current;
+        if (state.IsTextInput
+            && _keymap.FindCommand(gesture, CommandScope.Global, null) is { } id
+            && _definitions[id].Scope == CommandScope.Focus)
+        {
+            return false; // IDE-ARCH-042: edit.* stay with the text input
+        }
+
+        return HandleKey(gesture, state.Scope, state.ToolWindowName);
+    }
+
     public bool HandleKey(KeyGesture gesture, CommandScope focusScope, string? toolWindowName)
     {
+        if (_focus.LocalKeys.Contains(gesture))
+        {
+            return false; // IDE-ARCH-043: a popup of the focused control handles this key
+        }
+
         var commandId = _keymap.FindCommand(gesture, focusScope, toolWindowName);
         if (commandId is null || !_handlers.TryGetValue(commandId, out var handler))
         {

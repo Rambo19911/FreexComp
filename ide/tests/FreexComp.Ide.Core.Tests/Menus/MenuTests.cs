@@ -108,3 +108,18 @@ public sealed class MenuTests
         public Task ExecuteAsync(string? argument) => Task.CompletedTask;
     }
 }
+
+[Trait("Phase", "1")]
+public sealed class ToolBarRowModelTests
+{
+    [Theory]
+    [Trait("Req", "UI-TB-006")]
+    [InlineData(1000, 3)] // 100 + 9 + 200 + 9 + 300 = 618: all fit, no overflow button
+    [InlineData(618, 3)]
+    [InlineData(617, 2)]  // overflow button (20) + 100 + 9 + 200 = 329
+    [InlineData(329, 2)]
+    [InlineData(328, 1)]
+    [InlineData(119, 0)]  // not even the first toolbar beside the button
+    public void FittingCountKeepsWholeToolbarsFromTheLeft(double available, int expected) =>
+        Assert.Equal(expected, ToolBarRowModel.FittingCount([100, 200, 300], 9, available, 20));
+}

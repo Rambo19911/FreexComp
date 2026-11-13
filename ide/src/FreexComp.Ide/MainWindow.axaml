@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:FreexComp.Ide.Core.ViewModels;assembly=FreexComp.Ide.Core"
         xmlns:ide="clr-namespace:FreexComp.Ide"
+        xmlns:views="clr-namespace:FreexComp.Ide.Views"
         x:Class="FreexComp.Ide.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
@@ -16,8 +17,8 @@
     <!-- (2) Menu bar: items generated from the menu model (UI-MENU-002), see MainWindow.axaml.cs. -->
     <Menu x:Name="MenuBar" Grid.Row="0" Height="{DynamicResource FxcMetricMenuBarHeight}"
           AutomationProperties.AutomationId="{x:Static ide:AutomationIds.MenuBar}" />
-    <!-- (3) Toolbar row: toolbars in I-021. -->
-    <Border Grid.Row="1" Height="{DynamicResource FxcMetricToolbarHeight}" />
+    <!-- (3) Toolbar row: generated from the toolbar models (UI-TB-002), see MainWindow.axaml.cs. -->
+    <views:ToolBarRow x:Name="ToolBars" Grid.Row="1" />
     <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto">
       <!-- (4) Left dock -->
       <Border Grid.Column="0" Width="260" MinWidth="160" IsVisible="False"
