@@ -1,0 +1,1804 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Msg_App_InternalError" xml:space="preserve">
+    <value>An internal error occurred. Your files have not been changed. You can continue working; if the problem repeats, save your work and restart.</value>
+  </data>
+  <data name="Msg_App_SettingsCorrupt" xml:space="preserve">
+    <value>The settings file could not be read and default settings are used. The damaged file was kept as {0}.</value>
+  </data>
+  <data name="Msg_App_LayoutCorrupt" xml:space="preserve">
+    <value>The saved window layout could not be restored; the default layout is used</value>
+  </data>
+  <data name="Msg_File_SaveChangesOne" xml:space="preserve">
+    <value>Save changes to {0}?</value>
+  </data>
+  <data name="Msg_File_SaveChangesMany" xml:space="preserve">
+    <value>Save changes to the following {0} files?</value>
+  </data>
+  <data name="Msg_File_SaveFailed" xml:space="preserve">
+    <value>The file cannot be saved.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_File_OpenFailed" xml:space="preserve">
+    <value>The file cannot be opened.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_File_NotFound" xml:space="preserve">
+    <value>The file does not exist.
+{0}</value>
+  </data>
+  <data name="Msg_File_RecentNotFound" xml:space="preserve">
+    <value>The file no longer exists. Remove it from the recent list?
+{0}</value>
+  </data>
+  <data name="Msg_File_TooLarge" xml:space="preserve">
+    <value>This file is {0} MB. Large files open without syntax highlighting and folding. Open it?</value>
+  </data>
+  <data name="Msg_File_Binary" xml:space="preserve">
+    <value>The file appears to be binary and cannot be edited as text.
+{0}</value>
+  </data>
+  <data name="Msg_File_OverwriteExisting" xml:space="preserve">
+    <value>{0} already exists. Replace it?</value>
+  </data>
+  <data name="Msg_File_ReadOnly" xml:space="preserve">
+    <value>This file is read-only.</value>
+  </data>
+  <data name="Msg_File_MakeWritableFailed" xml:space="preserve">
+    <value>The read-only attribute cannot be removed.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_File_ExternalChange" xml:space="preserve">
+    <value>This file was changed outside FreexComp.</value>
+  </data>
+  <data name="Msg_File_ExternalChangeDirty" xml:space="preserve">
+    <value>This file was changed outside FreexComp and has unsaved changes here.</value>
+  </data>
+  <data name="Msg_File_ExternalDelete" xml:space="preserve">
+    <value>This file was deleted or moved outside FreexComp.</value>
+  </data>
+  <data name="Msg_File_ReloadedSilently" xml:space="preserve">
+    <value>{0} was reloaded because it changed on disk</value>
+  </data>
+  <data name="Msg_File_EncodingFallback" xml:space="preserve">
+    <value>This file is not valid UTF-8. It was opened as {0}. Saving keeps that encoding.</value>
+  </data>
+  <data name="Msg_File_EncodingLossy" xml:space="preserve">
+    <value>Some characters cannot be stored in {0}. Save as UTF-8 instead?</value>
+  </data>
+  <data name="Msg_File_MixedLineEndings" xml:space="preserve">
+    <value>This file mixes line endings ({0} CRLF, {1} LF).</value>
+  </data>
+  <data name="Msg_File_RevertConfirm" xml:space="preserve">
+    <value>Discard all unsaved changes to {0} and reload it from disk?</value>
+  </data>
+  <data name="Msg_File_Recovered" xml:space="preserve">
+    <value>Unsaved changes from {0} were recovered after FreexComp closed unexpectedly.</value>
+  </data>
+  <data name="Msg_File_Saved" xml:space="preserve">
+    <value>Saved {0}</value>
+  </data>
+  <data name="Msg_File_SavedAll" xml:space="preserve">
+    <value>Saved {0} files</value>
+  </data>
+  <data name="Msg_File_NothingToSave" xml:space="preserve">
+    <value>No unsaved changes</value>
+  </data>
+  <data name="Msg_Project_NameEmpty" xml:space="preserve">
+    <value>Enter a project name.</value>
+  </data>
+  <data name="Msg_Project_NameInvalid" xml:space="preserve">
+    <value>A project name starts with a letter or underscore and contains only letters, digits and underscores.</value>
+  </data>
+  <data name="Msg_Project_NameReserved" xml:space="preserve">
+    <value>{0} is a reserved word and cannot be used as a project name.</value>
+  </data>
+  <data name="Msg_Project_NameTooLong" xml:space="preserve">
+    <value>The name is too long (maximum {0} characters).</value>
+  </data>
+  <data name="Msg_Project_LocationEmpty" xml:space="preserve">
+    <value>Choose a folder for the project.</value>
+  </data>
+  <data name="Msg_Project_LocationInvalid" xml:space="preserve">
+    <value>The folder path is not valid.</value>
+  </data>
+  <data name="Msg_Project_LocationNotEmpty" xml:space="preserve">
+    <value>The folder {0} already exists and is not empty.</value>
+  </data>
+  <data name="Msg_Project_PathTooLong" xml:space="preserve">
+    <value>The resulting path is longer than {0} characters.</value>
+  </data>
+  <data name="Msg_Project_CreateFailed" xml:space="preserve">
+    <value>The project cannot be created.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_Project_OpenFailed" xml:space="preserve">
+    <value>The project cannot be opened.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_Project_NewerFormat" xml:space="preserve">
+    <value>This project was saved by a newer version of FreexComp (format {0}; this version supports up to {1}). It was not changed.</value>
+  </data>
+  <data name="Msg_Project_MissingFilesOne" xml:space="preserve">
+    <value>1 file listed in the project is missing on disk.</value>
+  </data>
+  <data name="Msg_Project_MissingFilesMany" xml:space="preserve">
+    <value>{0} files listed in the project are missing on disk.</value>
+  </data>
+  <data name="Msg_Project_RemoveFileConfirm" xml:space="preserve">
+    <value>Remove {0} from the project? The file stays on disk.</value>
+  </data>
+  <data name="Msg_Project_RemoveFilesConfirm" xml:space="preserve">
+    <value>Remove {0} files from the project? The files stay on disk.</value>
+  </data>
+  <data name="Msg_Project_DeleteFileConfirm" xml:space="preserve">
+    <value>Delete {0} from disk? It is moved to the Recycle Bin.</value>
+  </data>
+  <data name="Msg_Project_DeleteFailed" xml:space="preserve">
+    <value>The file cannot be deleted.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_Project_RemoveMainSource" xml:space="preserve">
+    <value>{0} is the main source file of the project and cannot be removed.</value>
+  </data>
+  <data name="Msg_Project_FileAlreadyInProject" xml:space="preserve">
+    <value>{0} is already part of the project</value>
+  </data>
+  <data name="Msg_Project_DuplicateUnitName" xml:space="preserve">
+    <value>The project already contains a unit named {0}. Unit names must be unique within a project.</value>
+  </data>
+  <data name="Msg_Project_RenameInvalid" xml:space="preserve">
+    <value>A unit file name is a valid identifier followed by .pas.</value>
+  </data>
+  <data name="Msg_Project_RenameExists" xml:space="preserve">
+    <value>A file named {0} already exists in this folder.</value>
+  </data>
+  <data name="Msg_Project_RenameFailed" xml:space="preserve">
+    <value>The file cannot be renamed.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_Project_RenameUnitNote" xml:space="preserve">
+    <value>Renamed {0} to {1}; the unit heading was updated</value>
+  </data>
+  <data name="Msg_Project_SavedProject" xml:space="preserve">
+    <value>Saved project {0}</value>
+  </data>
+  <data name="Msg_Project_NoProject" xml:space="preserve">
+    <value>No project is open</value>
+  </data>
+  <data name="Msg_Project_ChangedOnDisk" xml:space="preserve">
+    <value>The project file was changed outside FreexComp. Reload the project?</value>
+  </data>
+  <data name="Msg_Project_EventsIgnored" xml:space="preserve">
+    <value>Pre-build and post-build events are not supported yet and were ignored.</value>
+  </data>
+  <data name="Msg_Find_NoMatches" xml:space="preserve">
+    <value>No matches</value>
+  </data>
+  <data name="Msg_Find_MatchCount" xml:space="preserve">
+    <value>{0} of {1}</value>
+  </data>
+  <data name="Msg_Find_MatchCountCapped" xml:space="preserve">
+    <value>{0} of {1}+</value>
+  </data>
+  <data name="Msg_Find_WrappedForward" xml:space="preserve">
+    <value>Search continued from the top</value>
+  </data>
+  <data name="Msg_Find_WrappedBackward" xml:space="preserve">
+    <value>Search continued from the bottom</value>
+  </data>
+  <data name="Msg_Find_RegexInvalid" xml:space="preserve">
+    <value>The regular expression is not valid: {0}</value>
+  </data>
+  <data name="Msg_Find_ReplacedOne" xml:space="preserve">
+    <value>Replaced 1 occurrence</value>
+  </data>
+  <data name="Msg_Find_ReplacedMany" xml:space="preserve">
+    <value>Replaced {0} occurrences</value>
+  </data>
+  <data name="Msg_Find_ReplaceNone" xml:space="preserve">
+    <value>Nothing to replace</value>
+  </data>
+  <data name="Msg_GoToLine_OutOfRange" xml:space="preserve">
+    <value>Enter a line number from 1 to {0}.</value>
+  </data>
+  <data name="Msg_Editor_ReadOnlyEdit" xml:space="preserve">
+    <value>The file is read-only</value>
+  </data>
+  <data name="Msg_Editor_BracketNotFound" xml:space="preserve">
+    <value>No matching bracket</value>
+  </data>
+  <data name="Msg_Editor_NoDeclaration" xml:space="preserve">
+    <value>No declaration found for {0}</value>
+  </data>
+  <data name="Msg_Editor_NotAnIdentifier" xml:space="preserve">
+    <value>The caret is not on an identifier</value>
+  </data>
+  <data name="Msg_Editor_TemplateNotFound" xml:space="preserve">
+    <value>No code template named {0}</value>
+  </data>
+  <data name="Msg_Editor_BookmarkSet" xml:space="preserve">
+    <value>Bookmark {0} set at line {1}</value>
+  </data>
+  <data name="Msg_Editor_BookmarkMissing" xml:space="preserve">
+    <value>Bookmark {0} is not set</value>
+  </data>
+  <data name="Msg_Editor_NoCompletions" xml:space="preserve">
+    <value>No completions</value>
+  </data>
+  <data name="Msg_FindInFiles_Searching" xml:space="preserve">
+    <value>Searching… {0} files, {1} matches</value>
+  </data>
+  <data name="Msg_FindInFiles_DoneOne" xml:space="preserve">
+    <value>1 match in 1 file</value>
+  </data>
+  <data name="Msg_FindInFiles_DoneMany" xml:space="preserve">
+    <value>{0} matches in {1} files</value>
+  </data>
+  <data name="Msg_FindInFiles_None" xml:space="preserve">
+    <value>No matches for {0}</value>
+  </data>
+  <data name="Msg_FindInFiles_Canceled" xml:space="preserve">
+    <value>Search canceled; {0} matches so far</value>
+  </data>
+  <data name="Msg_FindInFiles_Capped" xml:space="preserve">
+    <value>The search stopped after {0} matches. Narrow the search to see the rest.</value>
+  </data>
+  <data name="Msg_FindInFiles_FolderMissing" xml:space="preserve">
+    <value>The folder does not exist.</value>
+  </data>
+  <data name="Msg_FindInFiles_TextEmpty" xml:space="preserve">
+    <value>Enter the text to find.</value>
+  </data>
+  <data name="Msg_Nav_NoBack" xml:space="preserve">
+    <value>No earlier location</value>
+  </data>
+  <data name="Msg_Nav_NoForward" xml:space="preserve">
+    <value>No later location</value>
+  </data>
+  <data name="Msg_Nav_FileNotInProject" xml:space="preserve">
+    <value>No file matches {0}</value>
+  </data>
+  <data name="Msg_State_Idle" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="Msg_State_Building" xml:space="preserve">
+    <value>Building {0} ({1})…</value>
+  </data>
+  <data name="Msg_State_Cleaning" xml:space="preserve">
+    <value>Cleaning {0}…</value>
+  </data>
+  <data name="Msg_State_Checking" xml:space="preserve">
+    <value>Checking syntax…</value>
+  </data>
+  <data name="Msg_State_Canceling" xml:space="preserve">
+    <value>Canceling build…</value>
+  </data>
+  <data name="Msg_State_Running" xml:space="preserve">
+    <value>Running {0}</value>
+  </data>
+  <data name="Msg_State_Debugging" xml:space="preserve">
+    <value>Debugging {0}</value>
+  </data>
+  <data name="Msg_State_Paused" xml:space="preserve">
+    <value>Paused at {0}:{1}</value>
+  </data>
+  <data name="Msg_State_PausedNoSource" xml:space="preserve">
+    <value>Paused (no source for this location)</value>
+  </data>
+  <data name="Msg_Build_Succeeded" xml:space="preserve">
+    <value>Build succeeded in {0} s</value>
+  </data>
+  <data name="Msg_Build_SucceededWithWarningsOne" xml:space="preserve">
+    <value>Build succeeded with 1 warning in {0} s</value>
+  </data>
+  <data name="Msg_Build_SucceededWithWarningsMany" xml:space="preserve">
+    <value>Build succeeded with {1} warnings in {0} s</value>
+  </data>
+  <data name="Msg_Build_FailedOne" xml:space="preserve">
+    <value>Build failed: 1 error</value>
+  </data>
+  <data name="Msg_Build_FailedMany" xml:space="preserve">
+    <value>Build failed: {0} errors</value>
+  </data>
+  <data name="Msg_Build_Canceled" xml:space="preserve">
+    <value>Build canceled</value>
+  </data>
+  <data name="Msg_Build_UpToDate" xml:space="preserve">
+    <value>Build skipped: {0} is up to date</value>
+  </data>
+  <data name="Msg_Build_Cleaned" xml:space="preserve">
+    <value>Cleaned {0}</value>
+  </data>
+  <data name="Msg_Build_SyntaxOk" xml:space="preserve">
+    <value>No syntax errors</value>
+  </data>
+  <data name="Msg_Build_NoProject" xml:space="preserve">
+    <value>Open a project to build</value>
+  </data>
+  <data name="Msg_Build_ToolchainMissing" xml:space="preserve">
+    <value>The compiler toolchain was not found.
+{0}
+Set the toolchain folder in Tools &gt; Options &gt; Toolchain Paths.</value>
+  </data>
+  <data name="Msg_Build_InternalError" xml:space="preserve">
+    <value>The build stopped because of an internal compiler error. See the Output window for details.</value>
+  </data>
+  <data name="Msg_Build_OutputLocked" xml:space="preserve">
+    <value>{0} cannot be written because it is in use. Stop the running program and build again.</value>
+  </data>
+  <data name="Msg_Build_SaveFailedAbort" xml:space="preserve">
+    <value>Build not started: some files could not be saved</value>
+  </data>
+  <data name="Msg_Build_StartedHeader" xml:space="preserve">
+    <value>Build started: project {0}, configuration {1}, platform {2}</value>
+  </data>
+  <data name="Msg_Build_CommandLine" xml:space="preserve">
+    <value>&gt; {0}</value>
+  </data>
+  <data name="Msg_Run_BuildFailedRunPrevious" xml:space="preserve">
+    <value>The build failed. Run the last successful build?</value>
+  </data>
+  <data name="Msg_Run_NoExecutable" xml:space="preserve">
+    <value>There is nothing to run. The project has not been built.
+{0}</value>
+  </data>
+  <data name="Msg_Run_NotRunnable" xml:space="preserve">
+    <value>This project type cannot be run</value>
+  </data>
+  <data name="Msg_Run_StartFailed" xml:space="preserve">
+    <value>The program cannot be started.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_Run_WorkingDirMissing" xml:space="preserve">
+    <value>The working folder set in Run Parameters does not exist.
+{0}</value>
+  </data>
+  <data name="Msg_Run_Started" xml:space="preserve">
+    <value>Program started: {0} {1} (process {2})</value>
+  </data>
+  <data name="Msg_Run_Exited" xml:space="preserve">
+    <value>Program exited with code {0} after {1} s</value>
+  </data>
+  <data name="Msg_Run_Terminated" xml:space="preserve">
+    <value>Program stopped</value>
+  </data>
+  <data name="Msg_Run_PressAnyKey" xml:space="preserve">
+    <value>Program exited with code {0}. Press any key to close this window . . .</value>
+  </data>
+  <data name="Msg_Run_AlreadyRunning" xml:space="preserve">
+    <value>{0} is still running. Stop it and start again?</value>
+  </data>
+  <data name="Msg_Run_StopOnExit" xml:space="preserve">
+    <value>{0} is still running. Stop it and exit FreexComp?</value>
+  </data>
+  <data name="Msg_Run_StopOnClose" xml:space="preserve">
+    <value>{0} is still running. Stop it and close the project?</value>
+  </data>
+  <data name="Msg_Run_KillFailed" xml:space="preserve">
+    <value>The program could not be stopped.
+{0}</value>
+  </data>
+  <data name="Msg_Messages_Empty" xml:space="preserve">
+    <value>No messages</value>
+  </data>
+  <data name="Msg_Messages_Empty_Secondary" xml:space="preserve">
+    <value>Build results appear here.</value>
+  </data>
+  <data name="Msg_Messages_FilteredEmpty" xml:space="preserve">
+    <value>No messages match the filter</value>
+  </data>
+  <data name="Msg_Messages_SourceMissing" xml:space="preserve">
+    <value>The source file of this message no longer exists</value>
+  </data>
+  <data name="Msg_Messages_LineStale" xml:space="preserve">
+    <value>The file changed since the build; the position may be inexact</value>
+  </data>
+  <data name="Msg_Messages_Summary" xml:space="preserve">
+    <value>{0} errors, {1} warnings, {2} hints</value>
+  </data>
+  <data name="Msg_Output_Empty" xml:space="preserve">
+    <value>No output</value>
+  </data>
+  <data name="Msg_Output_Truncated" xml:space="preserve">
+    <value>[Earlier output was discarded: the limit of {0} lines was reached]</value>
+  </data>
+  <data name="Msg_Debug_NotAvailable" xml:space="preserve">
+    <value>Debugging is not available yet; the program runs without the debugger</value>
+  </data>
+  <data name="Msg_Debug_StartFailed" xml:space="preserve">
+    <value>The debugger cannot be started.
+{0}</value>
+  </data>
+  <data name="Msg_Debug_NoDebugInfo" xml:space="preserve">
+    <value>The active configuration ({0}) builds without debug information, so breakpoints will not stop. Run anyway?</value>
+  </data>
+  <data name="Msg_Debug_BreakpointUnverified" xml:space="preserve">
+    <value>The breakpoint is not on a line that produces code.</value>
+  </data>
+  <data name="Msg_Debug_BreakpointMoved" xml:space="preserve">
+    <value>Breakpoint moved to line {0}, the next line with code</value>
+  </data>
+  <data name="Msg_Debug_ConditionInvalid" xml:space="preserve">
+    <value>The condition cannot be evaluated: {0}</value>
+  </data>
+  <data name="Msg_Debug_Exception" xml:space="preserve">
+    <value>The program raised exception {0}:
+{1}</value>
+  </data>
+  <data name="Msg_Debug_EvalFailed" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Msg_Debug_ModifyFailed" xml:space="preserve">
+    <value>The value cannot be changed: {0}</value>
+  </data>
+  <data name="Msg_Debug_NotPaused" xml:space="preserve">
+    <value>Available while the program is paused</value>
+  </data>
+  <data name="Msg_Debug_NoSession" xml:space="preserve">
+    <value>No debug session</value>
+  </data>
+  <data name="Msg_Debug_NoSession_Secondary" xml:space="preserve">
+    <value>Press F5 to start debugging.</value>
+  </data>
+  <data name="Msg_Debug_BreakpointsEmpty" xml:space="preserve">
+    <value>No breakpoints</value>
+  </data>
+  <data name="Msg_Debug_BreakpointsEmpty_Secondary" xml:space="preserve">
+    <value>Press F9 on a line of code to add one.</value>
+  </data>
+  <data name="Msg_Debug_WatchesEmpty" xml:space="preserve">
+    <value>No watches</value>
+  </data>
+  <data name="Msg_Debug_WatchesEmpty_Secondary" xml:space="preserve">
+    <value>Press Insert to add an expression.</value>
+  </data>
+  <data name="Msg_Debug_EventLogEmpty" xml:space="preserve">
+    <value>No events</value>
+  </data>
+  <data name="Msg_Debug_DeleteAllBreakpoints" xml:space="preserve">
+    <value>Delete all {0} breakpoints?</value>
+  </data>
+  <data name="Msg_Debug_ProcessExited" xml:space="preserve">
+    <value>Process {0} exited with code {1}</value>
+  </data>
+  <data name="Msg_Debug_ModuleLoaded" xml:space="preserve">
+    <value>Module loaded: {0}</value>
+  </data>
+  <data name="Msg_Debug_ThreadStarted" xml:space="preserve">
+    <value>Thread {0} started</value>
+  </data>
+  <data name="Msg_Debug_ThreadExited" xml:space="preserve">
+    <value>Thread {0} exited</value>
+  </data>
+  <data name="Msg_Debug_SourceChanged" xml:space="preserve">
+    <value>This file changed since the program was built. Breakpoints and the execution line may not match.</value>
+  </data>
+  <data name="Msg_Designer_FormParseErrorsOne" xml:space="preserve">
+    <value>The form has 1 problem. The affected item is kept unchanged and is read-only.</value>
+  </data>
+  <data name="Msg_Designer_FormParseErrorsMany" xml:space="preserve">
+    <value>The form has {0} problems. Affected items are kept unchanged and are read-only.</value>
+  </data>
+  <data name="Msg_Designer_FormSyntaxError" xml:space="preserve">
+    <value>The form file cannot be read: {0} (line {1}, column {2}). Fix it in the text view.</value>
+  </data>
+  <data name="Msg_Designer_FormFileMissing" xml:space="preserve">
+    <value>The form file is missing.
+{0}
+The unit was opened as code only.</value>
+  </data>
+  <data name="Msg_Designer_UnitHasErrors" xml:space="preserve">
+    <value>The unit has syntax errors, so the designer cannot update its code. Fix the errors in the Code view; the form is read-only until then.</value>
+  </data>
+  <data name="Msg_Designer_FormClassNotFound" xml:space="preserve">
+    <value>The unit does not declare class {0}, which the form file refers to. The form is read-only.</value>
+  </data>
+  <data name="Msg_Designer_NameInvalid" xml:space="preserve">
+    <value>A component name starts with a letter or underscore and contains only letters, digits and underscores.</value>
+  </data>
+  <data name="Msg_Designer_NameReserved" xml:space="preserve">
+    <value>{0} is a reserved word and cannot be used as a name.</value>
+  </data>
+  <data name="Msg_Designer_NameDuplicate" xml:space="preserve">
+    <value>The form already has a component named {0}.</value>
+  </data>
+  <data name="Msg_Designer_NameConflictsWithMember" xml:space="preserve">
+    <value>Class {0} already declares a member named {1}.</value>
+  </data>
+  <data name="Msg_Designer_ValueInvalidInteger" xml:space="preserve">
+    <value>Enter a whole number from {0} to {1}.</value>
+  </data>
+  <data name="Msg_Designer_ValueInvalidFloat" xml:space="preserve">
+    <value>Enter a number.</value>
+  </data>
+  <data name="Msg_Designer_ValueInvalidEnum" xml:space="preserve">
+    <value>{0} is not one of the allowed values.</value>
+  </data>
+  <data name="Msg_Designer_ValueInvalidColor" xml:space="preserve">
+    <value>Enter a color name or a hexadecimal value such as $00FF8000.</value>
+  </data>
+  <data name="Msg_Designer_ValueInvalidExpression" xml:space="preserve">
+    <value>The expression cannot be calculated.</value>
+  </data>
+  <data name="Msg_Designer_ReferenceNotFound" xml:space="preserve">
+    <value>The form has no component named {0} of a compatible type.</value>
+  </data>
+  <data name="Msg_Designer_CannotDropHere" xml:space="preserve">
+    <value>{0} cannot contain other controls</value>
+  </data>
+  <data name="Msg_Designer_Locked" xml:space="preserve">
+    <value>Controls are locked. Turn off Lock Controls to move or resize</value>
+  </data>
+  <data name="Msg_Designer_ReadOnlyItem" xml:space="preserve">
+    <value>{0} is read-only because its class or one of its properties is unknown</value>
+  </data>
+  <data name="Msg_Designer_HandlerNameInvalid" xml:space="preserve">
+    <value>A handler name is a valid identifier.</value>
+  </data>
+  <data name="Msg_Designer_HandlerSignatureMismatch" xml:space="preserve">
+    <value>Method {0} exists but its parameters do not match the event {1}.
+Expected: {2}</value>
+  </data>
+  <data name="Msg_Designer_HandlerRenameConflict" xml:space="preserve">
+    <value>Class {0} already has a method named {1} with different parameters.</value>
+  </data>
+  <data name="Msg_Designer_PasteNothing" xml:space="preserve">
+    <value>The clipboard does not contain components</value>
+  </data>
+  <data name="Msg_Designer_PasteUnknownClass" xml:space="preserve">
+    <value>{0} component(s) of unknown classes were not pasted</value>
+  </data>
+  <data name="Msg_Designer_MetadataMissing" xml:space="preserve">
+    <value>The component descriptions were not found, so forms cannot be designed.
+{0}
+Set the framework folder in Tools &gt; Options &gt; Toolchain Paths.</value>
+  </data>
+  <data name="Msg_Designer_MetadataReloaded" xml:space="preserve">
+    <value>Component metadata reloaded: {0} components</value>
+  </data>
+  <data name="Msg_Designer_MetadataError" xml:space="preserve">
+    <value>{0}({1},{2}): component metadata error: {3}</value>
+  </data>
+  <data name="Msg_Designer_Selection" xml:space="preserve">
+    <value>{0}: {1} — {2}, {3} — {4} × {5}</value>
+  </data>
+  <data name="Msg_Designer_SelectionMany" xml:space="preserve">
+    <value>{0} components selected</value>
+  </data>
+  <data name="Msg_Designer_TabOrderMode" xml:space="preserve">
+    <value>Click the controls in the order they should receive focus. Press Escape to finish.</value>
+  </data>
+  <data name="Msg_Designer_CodeSyncConflict" xml:space="preserve">
+    <value>The unit could not be updated to match the form.
+{0}
+The form change was undone.</value>
+  </data>
+  <data name="Msg_Designer_FieldTypeMismatch" xml:space="preserve">
+    <value>Field {0} is declared as {1} in the unit but the form defines it as {2}.</value>
+  </data>
+  <data name="Msg_Inspector_NoSelection" xml:space="preserve">
+    <value>Nothing selected</value>
+  </data>
+  <data name="Msg_Inspector_NoSelection_Secondary" xml:space="preserve">
+    <value>Select a component on a form to see its properties.</value>
+  </data>
+  <data name="Msg_Inspector_NoEvents" xml:space="preserve">
+    <value>This component has no events</value>
+  </data>
+  <data name="Msg_Inspector_FilterEmpty" xml:space="preserve">
+    <value>No property matches {0}</value>
+  </data>
+  <data name="Msg_Palette_NoForm" xml:space="preserve">
+    <value>Open a form to use the Tool Palette</value>
+  </data>
+  <data name="Msg_Palette_FilterEmpty" xml:space="preserve">
+    <value>No component matches {0}</value>
+  </data>
+  <data name="Msg_Structure_Empty" xml:space="preserve">
+    <value>Nothing to show for this document</value>
+  </data>
+  <data name="Msg_Options_FontSizeRange" xml:space="preserve">
+    <value>Enter a size from 6 to 72.</value>
+  </data>
+  <data name="Msg_Options_TabWidthRange" xml:space="preserve">
+    <value>Enter a width from 1 to 16.</value>
+  </data>
+  <data name="Msg_Options_RightMarginRange" xml:space="preserve">
+    <value>Enter a column from 0 to 400 (0 hides the margin line).</value>
+  </data>
+  <data name="Msg_Options_PathNotFound" xml:space="preserve">
+    <value>The folder does not exist.</value>
+  </data>
+  <data name="Msg_Options_ToolNotFound" xml:space="preserve">
+    <value>{0} was not found in this folder.</value>
+  </data>
+  <data name="Msg_Options_KeyConflict" xml:space="preserve">
+    <value>{0} is already assigned to {1}. Assigning it here removes it there.</value>
+  </data>
+  <data name="Msg_Options_KeyReserved" xml:space="preserve">
+    <value>{0} is reserved by the system and cannot be assigned.</value>
+  </data>
+  <data name="Msg_Options_ResetKeysConfirm" xml:space="preserve">
+    <value>Reset all key mappings to their defaults?</value>
+  </data>
+  <data name="Msg_Options_ResetColorsConfirm" xml:space="preserve">
+    <value>Reset all editor colors of the {0} theme to their defaults?</value>
+  </data>
+  <data name="Msg_ProjectOptions_OutputDirInvalid" xml:space="preserve">
+    <value>The output folder path is not valid.</value>
+  </data>
+  <data name="Msg_ProjectOptions_DefineInvalid" xml:space="preserve">
+    <value>{0} is not a valid symbol name.</value>
+  </data>
+  <data name="Msg_ProjectOptions_ConfigNameInvalid" xml:space="preserve">
+    <value>A configuration name contains only letters, digits, hyphens and underscores.</value>
+  </data>
+  <data name="Msg_ProjectOptions_ConfigNameExists" xml:space="preserve">
+    <value>A configuration named {0} already exists.</value>
+  </data>
+  <data name="Msg_ProjectOptions_ConfigDeleteLast" xml:space="preserve">
+    <value>A project needs at least one configuration.</value>
+  </data>
+  <data name="Msg_ProjectOptions_ConfigDeleteConfirm" xml:space="preserve">
+    <value>Delete configuration {0}?</value>
+  </data>
+  <data name="Msg_ProjectOptions_SearchPathMissing" xml:space="preserve">
+    <value>The folder does not exist yet.</value>
+  </data>
+  <data name="Msg_Status_CommandUnavailable" xml:space="preserve">
+    <value>{0} is not available now</value>
+  </data>
+  <data name="Msg_Welcome_NoRecent" xml:space="preserve">
+    <value>No recent projects</value>
+  </data>
+  <data name="Msg_Welcome_NoRecent_Secondary" xml:space="preserve">
+    <value>Projects you open appear here.</value>
+  </data>
+  <data name="Msg_Welcome_FilterEmpty" xml:space="preserve">
+    <value>No recent project matches {0}</value>
+  </data>
+  <data name="Msg_SearchResults_Empty" xml:space="preserve">
+    <value>No search results</value>
+  </data>
+  <data name="Msg_SearchResults_Empty_Secondary" xml:space="preserve">
+    <value>Use Search &gt; Find in Files to search the project.</value>
+  </data>
+  <data name="Msg_ToDo_Empty" xml:space="preserve">
+    <value>No to-do items</value>
+  </data>
+  <data name="Msg_ToDo_Empty_Secondary" xml:space="preserve">
+    <value>Comments that start with TODO, FIXME or NOTE appear here.</value>
+  </data>
+  <data name="Msg_DataExplorer_Heading" xml:space="preserve">
+    <value>Data Explorer</value>
+  </data>
+  <data name="Msg_DataExplorer_Placeholder" xml:space="preserve">
+    <value>Browsing database connections arrives in a later version. Use the data components on the Tool Palette to work with SQLite files.</value>
+  </data>
+  <data name="Msg_Debug_Loading" xml:space="preserve">
+    <value>Loading…</value>
+  </data>
+  <data name="Msg_Debug_Unavailable" xml:space="preserve">
+    <value>&lt;unavailable&gt;</value>
+  </data>
+  <data name="Msg_Debug_WatchNotAvailable" xml:space="preserve">
+    <value>&lt;not available&gt;</value>
+  </data>
+  <data name="Msg_Debug_MoreFrames" xml:space="preserve">
+    <value>… {0} more frames (double-click to load)</value>
+  </data>
+  <data name="Msg_Debug_WatchPlaceholder" xml:space="preserve">
+    <value>Add an expression</value>
+  </data>
+  <data name="Msg_Output_ChannelLabel" xml:space="preserve">
+    <value>Show output from:</value>
+  </data>
+  <data name="Msg_Editor_NoDocuments" xml:space="preserve">
+    <value>No open documents</value>
+  </data>
+  <data name="Msg_Editor_NoDocuments_Secondary" xml:space="preserve">
+    <value>New File ({0}) · Open File ({1}) · Go to File ({2})</value>
+  </data>
+  <data name="Msg_Editor_Tip_Breakpoint" xml:space="preserve">
+    <value>Breakpoint at line {0}</value>
+  </data>
+  <data name="Msg_Editor_Tip_BreakpointCondition" xml:space="preserve">
+    <value>, condition: {0}</value>
+  </data>
+  <data name="Msg_Editor_Tip_BreakpointPassCount" xml:space="preserve">
+    <value>, pass count: {0}</value>
+  </data>
+  <data name="Msg_Editor_Tip_BreakpointDisabled" xml:space="preserve">
+    <value>, disabled</value>
+  </data>
+  <data name="Msg_Editor_Tip_Bookmark" xml:space="preserve">
+    <value>Bookmark</value>
+  </data>
+  <data name="Msg_Editor_Tip_BookmarkNumbered" xml:space="preserve">
+    <value>Bookmark {0}</value>
+  </data>
+  <data name="Msg_Editor_Tip_ExecutionPoint" xml:space="preserve">
+    <value>Execution point</value>
+  </data>
+  <data name="Msg_Editor_Tip_ReadOnly" xml:space="preserve">
+    <value>Read-only</value>
+  </data>
+  <data name="Msg_Editor_OverloadCounter" xml:space="preserve">
+    <value>{0} of {1}</value>
+  </data>
+  <data name="Msg_Editor_HoverOrigin" xml:space="preserve">
+    <value>{0} · line {1}</value>
+  </data>
+  <data name="Msg_NewFile_NameInvalid" xml:space="preserve">
+    <value>A file name cannot be empty or contain any of these characters: \ / : * ? " &lt; &gt; |</value>
+  </data>
+  <data name="Msg_ProjectOptions_EventsNotSupported" xml:space="preserve">
+    <value>Build events are not supported yet. Existing entries are kept unchanged.</value>
+  </data>
+  <data name="Msg_Options_LaterVersion" xml:space="preserve">
+    <value>These options take effect in a later version.</value>
+  </data>
+  <data name="Msg_Options_FilterEmpty" xml:space="preserve">
+    <value>No option matches {0}</value>
+  </data>
+  <data name="Msg_Options_DelayRange" xml:space="preserve">
+    <value>Enter a delay from {0} to {1} milliseconds.</value>
+  </data>
+  <data name="Msg_Options_OutputLinesRange" xml:space="preserve">
+    <value>Enter a limit from 1000 to 1000000 lines.</value>
+  </data>
+  <data name="Msg_Options_RecoveryRange" xml:space="preserve">
+    <value>Enter 0 to turn recovery copies off, or an interval from 5 to 600 seconds.</value>
+  </data>
+  <data name="Msg_Options_LargeFileRange" xml:space="preserve">
+    <value>Enter a size from 1 to 200 MB.</value>
+  </data>
+  <data name="Msg_Options_GridRange" xml:space="preserve">
+    <value>Enter a grid size from 2 to 64.</value>
+  </data>
+  <data name="Msg_Options_GuidelineRange" xml:space="preserve">
+    <value>Enter a distance from 1 to 16.</value>
+  </data>
+  <data name="Msg_Options_ColorInvalid" xml:space="preserve">
+    <value>Enter a color as # followed by six hexadecimal digits, such as #0F7B6C.</value>
+  </data>
+  <data name="Msg_Options_KeyNeedsModifier" xml:space="preserve">
+    <value>{0} would prevent typing. Combine it with Ctrl or Alt, or use a function key.</value>
+  </data>
+  <data name="Msg_Options_IdentifierListInvalid" xml:space="preserve">
+    <value>{0} is not a valid class name. Separate names with semicolons.</value>
+  </data>
+  <data name="Msg_Options_TemplateAbbrevInvalid" xml:space="preserve">
+    <value>An abbreviation starts with a letter or underscore and contains only letters, digits and underscores.</value>
+  </data>
+  <data name="Msg_Options_TemplateAbbrevExists" xml:space="preserve">
+    <value>A template with the abbreviation {0} already exists.</value>
+  </data>
+  <data name="Msg_Options_TemplateBodyEmpty" xml:space="preserve">
+    <value>Enter the template text.</value>
+  </data>
+  <data name="Msg_Options_ToolchainFound" xml:space="preserve">
+    <value>{0} found</value>
+  </data>
+  <data name="Msg_Options_ToolchainAutoNotFound" xml:space="preserve">
+    <value>The folder was not found automatically. Choose it here.</value>
+  </data>
+  <data name="Msg_Palette_NoCommand" xml:space="preserve">
+    <value>No command matches {0}</value>
+  </data>
+  <data name="Msg_About_License" xml:space="preserve">
+    <value>Licensed under the Apache License, Version 2.0.
+Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
+  </data>
+  <data name="Msg_About_ToolchainNotFound" xml:space="preserve">
+    <value>not found (set it in Tools &gt; Options &gt; Toolchain Paths)</value>
+  </data>
+  <data name="Msg_Encoding_CurrentlyReadAs" xml:space="preserve">
+    <value>{0} is currently read as: {1}</value>
+  </data>
+  <data name="Msg_Encoding_DiscardWarning" xml:space="preserve">
+    <value>Unsaved changes to this file will be discarded.</value>
+  </data>
+  <data name="Msg_Breakpoint_FileMissing" xml:space="preserve">
+    <value>The file does not exist.</value>
+  </data>
+  <data name="Msg_Breakpoint_PassCountRange" xml:space="preserve">
+    <value>Enter a pass count from 0 to 1000000.</value>
+  </data>
+  <data name="Msg_Breakpoint_PassCountNone" xml:space="preserve">
+    <value>Stops on the first hit.</value>
+  </data>
+  <data name="Msg_Breakpoint_PassCountSome" xml:space="preserve">
+    <value>Skips the first {0} hits, then stops.</value>
+  </data>
+  <data name="Msg_RunParameters_WorkingDirHint" xml:space="preserve">
+    <value>Empty = folder of the executable</value>
+  </data>
+  <data name="Msg_MenuDesigner_DeleteWithSubItems" xml:space="preserve">
+    <value>Delete "{0}" and its {1} sub-items?</value>
+  </data>
+  <data name="Msg_Designer_AlignedCannotMove" xml:space="preserve">
+    <value>{0} is docked by its Align property and cannot be moved</value>
+  </data>
+  <data name="Msg_Designer_InheritedNotSupported" xml:space="preserve">
+    <value>This form uses inherited or inline components, which are shown read-only in this version.</value>
+  </data>
+  <data name="Msg_Designer_PlacementArmed" xml:space="preserve">
+    <value>Click on the form to place {0}. Press Escape to cancel</value>
+  </data>
+  <data name="Msg_Designer_RenameCodeNote" xml:space="preserve">
+    <value>The field was renamed; other uses of {0} in the code were not changed</value>
+  </data>
+  <data name="Msg_Designer_UndoCodeSkipped" xml:space="preserve">
+    <value>The code changed since this action, so only the form change was undone</value>
+  </data>
+  <data name="Msg_Designer_HandlersRemovedOne" xml:space="preserve">
+    <value>Removed 1 empty event handler that is no longer used</value>
+  </data>
+  <data name="Msg_Designer_HandlersRemovedMany" xml:space="preserve">
+    <value>Removed {0} empty event handlers that are no longer used</value>
+  </data>
+  <data name="Reason_GroupsNotSupported" xml:space="preserve">
+    <value>Project groups are not supported yet.</value>
+  </data>
+  <data name="Reason_OpenInAnotherTab" xml:space="preserve">
+    <value>The target file is open in another tab.</value>
+  </data>
+  <data name="Reason_RegexTimeout" xml:space="preserve">
+    <value>The search took too long and was stopped.</value>
+  </data>
+  <data name="Reason_NoConfigurations" xml:space="preserve">
+    <value>The project defines no build configuration.</value>
+  </data>
+  <data name="Status_OpeningProject" xml:space="preserve">
+    <value>Opening {0}…</value>
+  </data>
+  <data name="Status_AddFormViaUnit" xml:space="preserve">
+    <value>Add the unit; its form is added with it</value>
+  </data>
+  <data name="Rename_UsesNote" xml:space="preserve">
+    <value>Other units that use this unit are not updated.</value>
+  </data>
+  <data name="Picker_SaveCopyAs" xml:space="preserve">
+    <value>Save Copy As</value>
+  </data>
+  <data name="Status_CannotBlockComment" xml:space="preserve">
+    <value>The selection cannot be commented as a block because it contains both comment end markers</value>
+  </data>
+  <data name="Status_ClipboardBusy" xml:space="preserve">
+    <value>The clipboard is in use by another program</value>
+  </data>
+  <data name="Status_ComputingCompletions" xml:space="preserve">
+    <value>Computing completions…</value>
+  </data>
+  <data name="Run_ExternalConsoleNote" xml:space="preserve">
+    <value>The program runs in its own console window; its output is not captured.</value>
+  </data>
+  <data name="Title_State_Building" xml:space="preserve">
+    <value>Building</value>
+  </data>
+  <data name="Title_State_Running" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="Title_State_Debugging" xml:space="preserve">
+    <value>Debugging</value>
+  </data>
+  <data name="Title_State_Paused" xml:space="preserve">
+    <value>Paused</value>
+  </data>
+  <data name="Welcome_FilterPlaceholder" xml:space="preserve">
+    <value>Filter…</value>
+  </data>
+  <data name="Welcome_Missing" xml:space="preserve">
+    <value>(missing)</value>
+  </data>
+  <data name="Encoding_utf_8" xml:space="preserve">
+    <value>UTF-8</value>
+  </data>
+  <data name="Encoding_utf_8_bom" xml:space="preserve">
+    <value>UTF-8 with BOM</value>
+  </data>
+  <data name="Encoding_utf_16le" xml:space="preserve">
+    <value>UTF-16 LE</value>
+  </data>
+  <data name="Encoding_utf_16be" xml:space="preserve">
+    <value>UTF-16 BE</value>
+  </data>
+  <data name="Encoding_windows_1252" xml:space="preserve">
+    <value>Western (Windows-1252)</value>
+  </data>
+  <data name="App_ProductName" xml:space="preserve">
+    <value>FreexComp</value>
+  </data>
+  <data name="Cmd_file_newProject" xml:space="preserve">
+    <value>New Project…</value>
+  </data>
+  <data name="Cmd_file_newFile" xml:space="preserve">
+    <value>New File…</value>
+  </data>
+  <data name="Cmd_file_newUnit" xml:space="preserve">
+    <value>New Unit</value>
+  </data>
+  <data name="Cmd_file_newForm" xml:space="preserve">
+    <value>New Form</value>
+  </data>
+  <data name="Cmd_file_open" xml:space="preserve">
+    <value>Open File…</value>
+  </data>
+  <data name="Cmd_file_openProject" xml:space="preserve">
+    <value>Open Project…</value>
+  </data>
+  <data name="Cmd_file_openRecentProject" xml:space="preserve">
+    <value>Open Recent Project</value>
+  </data>
+  <data name="Cmd_file_openRecentFile" xml:space="preserve">
+    <value>Open Recent File</value>
+  </data>
+  <data name="Cmd_file_clearRecent" xml:space="preserve">
+    <value>Clear Recent Lists</value>
+  </data>
+  <data name="Cmd_file_save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Cmd_file_saveAs" xml:space="preserve">
+    <value>Save As…</value>
+  </data>
+  <data name="Cmd_file_saveAll" xml:space="preserve">
+    <value>Save All</value>
+  </data>
+  <data name="Cmd_file_saveProjectAs" xml:space="preserve">
+    <value>Save Project As…</value>
+  </data>
+  <data name="Cmd_file_revert" xml:space="preserve">
+    <value>Revert to Saved</value>
+  </data>
+  <data name="Cmd_file_close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Cmd_file_closeAll" xml:space="preserve">
+    <value>Close All</value>
+  </data>
+  <data name="Cmd_file_closeOthers" xml:space="preserve">
+    <value>Close Others</value>
+  </data>
+  <data name="Cmd_file_closeProject" xml:space="preserve">
+    <value>Close Project</value>
+  </data>
+  <data name="Cmd_file_copyPath" xml:space="preserve">
+    <value>Copy Full Path</value>
+  </data>
+  <data name="Cmd_file_showInExplorer" xml:space="preserve">
+    <value>Show in File Explorer</value>
+  </data>
+  <data name="Cmd_file_print" xml:space="preserve">
+    <value>Print…</value>
+  </data>
+  <data name="Cmd_file_exit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="Cmd_edit_undo" xml:space="preserve">
+    <value>Undo</value>
+  </data>
+  <data name="Cmd_edit_redo" xml:space="preserve">
+    <value>Redo</value>
+  </data>
+  <data name="Cmd_edit_cut" xml:space="preserve">
+    <value>Cut</value>
+  </data>
+  <data name="Cmd_edit_copy" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="Cmd_edit_paste" xml:space="preserve">
+    <value>Paste</value>
+  </data>
+  <data name="Cmd_edit_delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Cmd_edit_selectAll" xml:space="preserve">
+    <value>Select All</value>
+  </data>
+  <data name="Cmd_edit_duplicateLine" xml:space="preserve">
+    <value>Duplicate Line or Selection</value>
+  </data>
+  <data name="Cmd_edit_deleteLine" xml:space="preserve">
+    <value>Delete Line</value>
+  </data>
+  <data name="Cmd_edit_moveLineUp" xml:space="preserve">
+    <value>Move Line Up</value>
+  </data>
+  <data name="Cmd_edit_moveLineDown" xml:space="preserve">
+    <value>Move Line Down</value>
+  </data>
+  <data name="Cmd_edit_indent" xml:space="preserve">
+    <value>Indent Selection</value>
+  </data>
+  <data name="Cmd_edit_outdent" xml:space="preserve">
+    <value>Outdent Selection</value>
+  </data>
+  <data name="Cmd_edit_toggleLineComment" xml:space="preserve">
+    <value>Toggle Line Comment</value>
+  </data>
+  <data name="Cmd_edit_toggleBlockComment" xml:space="preserve">
+    <value>Toggle Block Comment</value>
+  </data>
+  <data name="Cmd_edit_upperCase" xml:space="preserve">
+    <value>Make Upper Case</value>
+  </data>
+  <data name="Cmd_edit_lowerCase" xml:space="preserve">
+    <value>Make Lower Case</value>
+  </data>
+  <data name="Cmd_edit_toggleOverwrite" xml:space="preserve">
+    <value>Toggle Insert/Overwrite</value>
+  </data>
+  <data name="Cmd_edit_trimTrailingWhitespace" xml:space="preserve">
+    <value>Trim Trailing Whitespace</value>
+  </data>
+  <data name="Cmd_edit_convertLineEndings" xml:space="preserve">
+    <value>Convert Line Endings</value>
+  </data>
+  <data name="Cmd_edit_setEncoding" xml:space="preserve">
+    <value>Save with Encoding</value>
+  </data>
+  <data name="Cmd_edit_completeCode" xml:space="preserve">
+    <value>Complete Code</value>
+  </data>
+  <data name="Cmd_edit_parameterInfo" xml:space="preserve">
+    <value>Parameter Info</value>
+  </data>
+  <data name="Cmd_edit_insertTemplate" xml:space="preserve">
+    <value>Insert Code Template…</value>
+  </data>
+  <data name="Cmd_edit_surroundWith" xml:space="preserve">
+    <value>Surround With…</value>
+  </data>
+  <data name="Cmd_edit_completeClass" xml:space="preserve">
+    <value>Complete Class at Cursor</value>
+  </data>
+  <data name="Cmd_edit_syncEdit" xml:space="preserve">
+    <value>Edit Identifier Occurrences Together</value>
+  </data>
+  <data name="Cmd_edit_formatDocument" xml:space="preserve">
+    <value>Format Document</value>
+  </data>
+  <data name="Cmd_edit_fold" xml:space="preserve">
+    <value>Fold Region at Cursor</value>
+  </data>
+  <data name="Cmd_edit_unfold" xml:space="preserve">
+    <value>Unfold Region at Cursor</value>
+  </data>
+  <data name="Cmd_edit_foldAll" xml:space="preserve">
+    <value>Fold All</value>
+  </data>
+  <data name="Cmd_edit_unfoldAll" xml:space="preserve">
+    <value>Unfold All</value>
+  </data>
+  <data name="Cmd_refactor_rename" xml:space="preserve">
+    <value>Rename Symbol…</value>
+  </data>
+  <data name="Cmd_refactor_extractMethod" xml:space="preserve">
+    <value>Extract Method…</value>
+  </data>
+  <data name="Cmd_refactor_declareVariable" xml:space="preserve">
+    <value>Declare Variable</value>
+  </data>
+  <data name="Cmd_refactor_declareField" xml:space="preserve">
+    <value>Declare Field</value>
+  </data>
+  <data name="Cmd_refactor_createFromUsage" xml:space="preserve">
+    <value>Create from Usage</value>
+  </data>
+  <data name="Cmd_refactor_addUses" xml:space="preserve">
+    <value>Add Unit to Uses Clause…</value>
+  </data>
+  <data name="Cmd_search_find" xml:space="preserve">
+    <value>Find…</value>
+  </data>
+  <data name="Cmd_search_replace" xml:space="preserve">
+    <value>Replace…</value>
+  </data>
+  <data name="Cmd_search_findNext" xml:space="preserve">
+    <value>Find Next</value>
+  </data>
+  <data name="Cmd_search_findPrevious" xml:space="preserve">
+    <value>Find Previous</value>
+  </data>
+  <data name="Cmd_search_findSelectionNext" xml:space="preserve">
+    <value>Find Next Occurrence of Selection</value>
+  </data>
+  <data name="Cmd_search_findInFiles" xml:space="preserve">
+    <value>Find in Files…</value>
+  </data>
+  <data name="Cmd_search_replaceInFiles" xml:space="preserve">
+    <value>Replace in Files…</value>
+  </data>
+  <data name="Cmd_search_goToLine" xml:space="preserve">
+    <value>Go to Line…</value>
+  </data>
+  <data name="Cmd_search_goToMatchingBracket" xml:space="preserve">
+    <value>Go to Matching Bracket</value>
+  </data>
+  <data name="Cmd_search_goToFile" xml:space="preserve">
+    <value>Go to File…</value>
+  </data>
+  <data name="Cmd_search_goToSymbol" xml:space="preserve">
+    <value>Go to Symbol…</value>
+  </data>
+  <data name="Cmd_search_goToMember" xml:space="preserve">
+    <value>Go to Member in File…</value>
+  </data>
+  <data name="Cmd_search_goToDeclaration" xml:space="preserve">
+    <value>Go to Declaration</value>
+  </data>
+  <data name="Cmd_search_toggleDeclarationImplementation" xml:space="preserve">
+    <value>Switch Declaration / Implementation</value>
+  </data>
+  <data name="Cmd_search_findReferences" xml:space="preserve">
+    <value>Find References</value>
+  </data>
+  <data name="Cmd_search_navigateBack" xml:space="preserve">
+    <value>Navigate Back</value>
+  </data>
+  <data name="Cmd_search_navigateForward" xml:space="preserve">
+    <value>Navigate Forward</value>
+  </data>
+  <data name="Cmd_search_nextMessage" xml:space="preserve">
+    <value>Next Message</value>
+  </data>
+  <data name="Cmd_search_previousMessage" xml:space="preserve">
+    <value>Previous Message</value>
+  </data>
+  <data name="Cmd_search_commandPalette" xml:space="preserve">
+    <value>Command Palette…</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle" xml:space="preserve">
+    <value>Toggle Bookmark</value>
+  </data>
+  <data name="Cmd_search_bookmark_next" xml:space="preserve">
+    <value>Next Bookmark</value>
+  </data>
+  <data name="Cmd_search_bookmark_previous" xml:space="preserve">
+    <value>Previous Bookmark</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle1" xml:space="preserve">
+    <value>Toggle Bookmark 1</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle2" xml:space="preserve">
+    <value>Toggle Bookmark 2</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle3" xml:space="preserve">
+    <value>Toggle Bookmark 3</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle4" xml:space="preserve">
+    <value>Toggle Bookmark 4</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle5" xml:space="preserve">
+    <value>Toggle Bookmark 5</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle6" xml:space="preserve">
+    <value>Toggle Bookmark 6</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle7" xml:space="preserve">
+    <value>Toggle Bookmark 7</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle8" xml:space="preserve">
+    <value>Toggle Bookmark 8</value>
+  </data>
+  <data name="Cmd_search_bookmark_toggle9" xml:space="preserve">
+    <value>Toggle Bookmark 9</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo1" xml:space="preserve">
+    <value>Go to Bookmark 1</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo2" xml:space="preserve">
+    <value>Go to Bookmark 2</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo3" xml:space="preserve">
+    <value>Go to Bookmark 3</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo4" xml:space="preserve">
+    <value>Go to Bookmark 4</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo5" xml:space="preserve">
+    <value>Go to Bookmark 5</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo6" xml:space="preserve">
+    <value>Go to Bookmark 6</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo7" xml:space="preserve">
+    <value>Go to Bookmark 7</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo8" xml:space="preserve">
+    <value>Go to Bookmark 8</value>
+  </data>
+  <data name="Cmd_search_bookmark_goTo9" xml:space="preserve">
+    <value>Go to Bookmark 9</value>
+  </data>
+  <data name="Cmd_search_bookmark_clearAll" xml:space="preserve">
+    <value>Clear All Bookmarks</value>
+  </data>
+  <data name="Cmd_view_projectManager" xml:space="preserve">
+    <value>Project Manager</value>
+  </data>
+  <data name="Cmd_view_structure" xml:space="preserve">
+    <value>Structure</value>
+  </data>
+  <data name="Cmd_view_objectInspector" xml:space="preserve">
+    <value>Object Inspector</value>
+  </data>
+  <data name="Cmd_view_toolPalette" xml:space="preserve">
+    <value>Tool Palette</value>
+  </data>
+  <data name="Cmd_view_messages" xml:space="preserve">
+    <value>Messages</value>
+  </data>
+  <data name="Cmd_view_output" xml:space="preserve">
+    <value>Output</value>
+  </data>
+  <data name="Cmd_view_searchResults" xml:space="preserve">
+    <value>Search Results</value>
+  </data>
+  <data name="Cmd_view_todo" xml:space="preserve">
+    <value>To-Do</value>
+  </data>
+  <data name="Cmd_view_breakpoints" xml:space="preserve">
+    <value>Breakpoints</value>
+  </data>
+  <data name="Cmd_view_callStack" xml:space="preserve">
+    <value>Call Stack</value>
+  </data>
+  <data name="Cmd_view_locals" xml:space="preserve">
+    <value>Locals</value>
+  </data>
+  <data name="Cmd_view_watches" xml:space="preserve">
+    <value>Watches</value>
+  </data>
+  <data name="Cmd_view_threads" xml:space="preserve">
+    <value>Threads</value>
+  </data>
+  <data name="Cmd_view_eventLog" xml:space="preserve">
+    <value>Event Log</value>
+  </data>
+  <data name="Cmd_view_dataExplorer" xml:space="preserve">
+    <value>Data Explorer</value>
+  </data>
+  <data name="Cmd_view_welcomePage" xml:space="preserve">
+    <value>Welcome Page</value>
+  </data>
+  <data name="Cmd_view_toggleFormCode" xml:space="preserve">
+    <value>Switch Form / Code</value>
+  </data>
+  <data name="Cmd_view_formAsText" xml:space="preserve">
+    <value>View Form as Text</value>
+  </data>
+  <data name="Cmd_view_toolbar_standard" xml:space="preserve">
+    <value>Toolbar: Standard</value>
+  </data>
+  <data name="Cmd_view_toolbar_build" xml:space="preserve">
+    <value>Toolbar: Build and Run</value>
+  </data>
+  <data name="Cmd_view_toolbar_debug" xml:space="preserve">
+    <value>Toolbar: Debug</value>
+  </data>
+  <data name="Cmd_view_toolbar_designer" xml:space="preserve">
+    <value>Toolbar: Designer</value>
+  </data>
+  <data name="Cmd_view_statusBar" xml:space="preserve">
+    <value>Status Bar</value>
+  </data>
+  <data name="Cmd_view_wordWrap" xml:space="preserve">
+    <value>Word Wrap</value>
+  </data>
+  <data name="Cmd_view_showWhitespace" xml:space="preserve">
+    <value>Show Whitespace</value>
+  </data>
+  <data name="Cmd_view_zoomIn" xml:space="preserve">
+    <value>Zoom In</value>
+  </data>
+  <data name="Cmd_view_zoomOut" xml:space="preserve">
+    <value>Zoom Out</value>
+  </data>
+  <data name="Cmd_view_zoomReset" xml:space="preserve">
+    <value>Reset Zoom</value>
+  </data>
+  <data name="Cmd_view_theme_light" xml:space="preserve">
+    <value>Theme: Light</value>
+  </data>
+  <data name="Cmd_view_theme_dark" xml:space="preserve">
+    <value>Theme: Dark</value>
+  </data>
+  <data name="Cmd_view_theme_system" xml:space="preserve">
+    <value>Theme: Follow System</value>
+  </data>
+  <data name="Cmd_view_fullScreen" xml:space="preserve">
+    <value>Full Screen</value>
+  </data>
+  <data name="Cmd_project_addNewUnit" xml:space="preserve">
+    <value>Add New Unit</value>
+  </data>
+  <data name="Cmd_project_addNewForm" xml:space="preserve">
+    <value>Add New Form</value>
+  </data>
+  <data name="Cmd_project_addExistingFile" xml:space="preserve">
+    <value>Add Existing File…</value>
+  </data>
+  <data name="Cmd_project_removeFile" xml:space="preserve">
+    <value>Remove from Project</value>
+  </data>
+  <data name="Cmd_project_renameFile" xml:space="preserve">
+    <value>Rename File…</value>
+  </data>
+  <data name="Cmd_project_deleteFile" xml:space="preserve">
+    <value>Delete File from Disk…</value>
+  </data>
+  <data name="Cmd_project_newFolder" xml:space="preserve">
+    <value>New Folder…</value>
+  </data>
+  <data name="Cmd_project_viewSource" xml:space="preserve">
+    <value>View Project Source</value>
+  </data>
+  <data name="Cmd_project_build" xml:space="preserve">
+    <value>Build</value>
+  </data>
+  <data name="Cmd_project_rebuild" xml:space="preserve">
+    <value>Rebuild</value>
+  </data>
+  <data name="Cmd_project_clean" xml:space="preserve">
+    <value>Clean</value>
+  </data>
+  <data name="Cmd_project_checkSyntax" xml:space="preserve">
+    <value>Check Syntax</value>
+  </data>
+  <data name="Cmd_project_cancelBuild" xml:space="preserve">
+    <value>Cancel Build</value>
+  </data>
+  <data name="Cmd_project_buildAll" xml:space="preserve">
+    <value>Build All Projects</value>
+  </data>
+  <data name="Cmd_project_setConfiguration" xml:space="preserve">
+    <value>Set Active Configuration</value>
+  </data>
+  <data name="Cmd_project_setActive" xml:space="preserve">
+    <value>Set as Active Project</value>
+  </data>
+  <data name="Cmd_project_options" xml:space="preserve">
+    <value>Project Options…</value>
+  </data>
+  <data name="Cmd_project_openOutputFolder" xml:space="preserve">
+    <value>Open Output Folder</value>
+  </data>
+  <data name="Cmd_run_start" xml:space="preserve">
+    <value>Run (with debugging) / Continue</value>
+  </data>
+  <data name="Cmd_run_startWithoutDebugging" xml:space="preserve">
+    <value>Run Without Debugging</value>
+  </data>
+  <data name="Cmd_run_stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="Cmd_run_restart" xml:space="preserve">
+    <value>Restart</value>
+  </data>
+  <data name="Cmd_run_pause" xml:space="preserve">
+    <value>Pause</value>
+  </data>
+  <data name="Cmd_run_stepOver" xml:space="preserve">
+    <value>Step Over</value>
+  </data>
+  <data name="Cmd_run_stepInto" xml:space="preserve">
+    <value>Step Into</value>
+  </data>
+  <data name="Cmd_run_stepOut" xml:space="preserve">
+    <value>Step Out</value>
+  </data>
+  <data name="Cmd_run_runToCursor" xml:space="preserve">
+    <value>Run to Cursor</value>
+  </data>
+  <data name="Cmd_run_setNextStatement" xml:space="preserve">
+    <value>Set Next Statement</value>
+  </data>
+  <data name="Cmd_run_showExecutionPoint" xml:space="preserve">
+    <value>Show Execution Point</value>
+  </data>
+  <data name="Cmd_run_toggleBreakpoint" xml:space="preserve">
+    <value>Toggle Breakpoint</value>
+  </data>
+  <data name="Cmd_run_toggleBreakpointEnabled" xml:space="preserve">
+    <value>Enable/Disable Breakpoint</value>
+  </data>
+  <data name="Cmd_run_addBreakpoint" xml:space="preserve">
+    <value>Add Breakpoint…</value>
+  </data>
+  <data name="Cmd_run_breakpointProperties" xml:space="preserve">
+    <value>Breakpoint Properties…</value>
+  </data>
+  <data name="Cmd_run_deleteAllBreakpoints" xml:space="preserve">
+    <value>Delete All Breakpoints</value>
+  </data>
+  <data name="Cmd_run_evaluate" xml:space="preserve">
+    <value>Evaluate/Modify…</value>
+  </data>
+  <data name="Cmd_run_addWatch" xml:space="preserve">
+    <value>Add Watch at Cursor</value>
+  </data>
+  <data name="Cmd_run_parameters" xml:space="preserve">
+    <value>Run Parameters…</value>
+  </data>
+  <data name="Cmd_run_attach" xml:space="preserve">
+    <value>Attach to Process…</value>
+  </data>
+  <data name="Cmd_run_detach" xml:space="preserve">
+    <value>Detach</value>
+  </data>
+  <data name="Cmd_designer_alignLeft" xml:space="preserve">
+    <value>Align Left Edges</value>
+  </data>
+  <data name="Cmd_designer_alignRight" xml:space="preserve">
+    <value>Align Right Edges</value>
+  </data>
+  <data name="Cmd_designer_alignTop" xml:space="preserve">
+    <value>Align Top Edges</value>
+  </data>
+  <data name="Cmd_designer_alignBottom" xml:space="preserve">
+    <value>Align Bottom Edges</value>
+  </data>
+  <data name="Cmd_designer_alignHCenter" xml:space="preserve">
+    <value>Align Horizontal Centers</value>
+  </data>
+  <data name="Cmd_designer_alignVCenter" xml:space="preserve">
+    <value>Align Vertical Centers</value>
+  </data>
+  <data name="Cmd_designer_centerHInParent" xml:space="preserve">
+    <value>Center Horizontally in Parent</value>
+  </data>
+  <data name="Cmd_designer_centerVInParent" xml:space="preserve">
+    <value>Center Vertically in Parent</value>
+  </data>
+  <data name="Cmd_designer_spaceHEqually" xml:space="preserve">
+    <value>Space Equally Horizontally</value>
+  </data>
+  <data name="Cmd_designer_spaceVEqually" xml:space="preserve">
+    <value>Space Equally Vertically</value>
+  </data>
+  <data name="Cmd_designer_sameWidth" xml:space="preserve">
+    <value>Make Same Width</value>
+  </data>
+  <data name="Cmd_designer_sameHeight" xml:space="preserve">
+    <value>Make Same Height</value>
+  </data>
+  <data name="Cmd_designer_sameSize" xml:space="preserve">
+    <value>Make Same Size</value>
+  </data>
+  <data name="Cmd_designer_sizeToGrid" xml:space="preserve">
+    <value>Size to Grid</value>
+  </data>
+  <data name="Cmd_designer_alignToGrid" xml:space="preserve">
+    <value>Align to Grid</value>
+  </data>
+  <data name="Cmd_designer_bringToFront" xml:space="preserve">
+    <value>Bring to Front</value>
+  </data>
+  <data name="Cmd_designer_sendToBack" xml:space="preserve">
+    <value>Send to Back</value>
+  </data>
+  <data name="Cmd_designer_selectParent" xml:space="preserve">
+    <value>Select Parent</value>
+  </data>
+  <data name="Cmd_designer_selectNext" xml:space="preserve">
+    <value>Select Next Control</value>
+  </data>
+  <data name="Cmd_designer_selectPrevious" xml:space="preserve">
+    <value>Select Previous Control</value>
+  </data>
+  <data name="Cmd_designer_tabOrder" xml:space="preserve">
+    <value>Edit Tab Order</value>
+  </data>
+  <data name="Cmd_designer_lockControls" xml:space="preserve">
+    <value>Lock Controls</value>
+  </data>
+  <data name="Cmd_designer_toggleGrid" xml:space="preserve">
+    <value>Show Grid</value>
+  </data>
+  <data name="Cmd_designer_toggleSnapToGrid" xml:space="preserve">
+    <value>Snap to Grid</value>
+  </data>
+  <data name="Cmd_designer_toggleGuidelines" xml:space="preserve">
+    <value>Use Guidelines</value>
+  </data>
+  <data name="Cmd_designer_createDefaultHandler" xml:space="preserve">
+    <value>Create Default Event Handler</value>
+  </data>
+  <data name="Cmd_designer_addToPalette" xml:space="preserve">
+    <value>Add Selection as Template…</value>
+  </data>
+  <data name="Cmd_designer_newChild" xml:space="preserve">
+    <value>New Child Component</value>
+  </data>
+  <data name="Cmd_designer_deletePage" xml:space="preserve">
+    <value>Delete Page</value>
+  </data>
+  <data name="Cmd_designer_nextPage" xml:space="preserve">
+    <value>Next Page</value>
+  </data>
+  <data name="Cmd_designer_previousPage" xml:space="preserve">
+    <value>Previous Page</value>
+  </data>
+  <data name="Cmd_designer_editCollection" xml:space="preserve">
+    <value>Edit Collection…</value>
+  </data>
+  <data name="Cmd_designer_editComponent" xml:space="preserve">
+    <value>Edit Component…</value>
+  </data>
+  <data name="Cmd_component_reloadMetadata" xml:space="preserve">
+    <value>Reload Component Metadata</value>
+  </data>
+  <data name="Cmd_component_configurePalette" xml:space="preserve">
+    <value>Configure Tool Palette…</value>
+  </data>
+  <data name="Cmd_component_installPackages" xml:space="preserve">
+    <value>Install Packages…</value>
+  </data>
+  <data name="Cmd_component_newComponent" xml:space="preserve">
+    <value>New Component…</value>
+  </data>
+  <data name="Cmd_tools_options" xml:space="preserve">
+    <value>Options…</value>
+  </data>
+  <data name="Cmd_tools_keyMappings" xml:space="preserve">
+    <value>Key Mappings…</value>
+  </data>
+  <data name="Cmd_tools_externalTools" xml:space="preserve">
+    <value>Configure External Tools…</value>
+  </data>
+  <data name="Cmd_tools_openLogFolder" xml:space="preserve">
+    <value>Open Log Folder</value>
+  </data>
+  <data name="Cmd_tools_openSettingsFolder" xml:space="preserve">
+    <value>Open Settings Folder</value>
+  </data>
+  <data name="Cmd_window_nextDocument" xml:space="preserve">
+    <value>Next Document</value>
+  </data>
+  <data name="Cmd_window_previousDocument" xml:space="preserve">
+    <value>Previous Document</value>
+  </data>
+  <data name="Cmd_window_activateDocument" xml:space="preserve">
+    <value>Activate Document</value>
+  </data>
+  <data name="Cmd_window_documents" xml:space="preserve">
+    <value>Documents…</value>
+  </data>
+  <data name="Cmd_window_focusEditor" xml:space="preserve">
+    <value>Focus Editor</value>
+  </data>
+  <data name="Cmd_window_nextPane" xml:space="preserve">
+    <value>Next Pane</value>
+  </data>
+  <data name="Cmd_window_previousPane" xml:space="preserve">
+    <value>Previous Pane</value>
+  </data>
+  <data name="Cmd_window_closeToolWindow" xml:space="preserve">
+    <value>Hide Active Tool Window</value>
+  </data>
+  <data name="Cmd_window_splitRight" xml:space="preserve">
+    <value>Split Editor Right</value>
+  </data>
+  <data name="Cmd_window_splitDown" xml:space="preserve">
+    <value>Split Editor Down</value>
+  </data>
+  <data name="Cmd_window_unsplit" xml:space="preserve">
+    <value>Remove Split</value>
+  </data>
+  <data name="Cmd_window_layout_edit" xml:space="preserve">
+    <value>Layout: Edit</value>
+  </data>
+  <data name="Cmd_window_layout_design" xml:space="preserve">
+    <value>Layout: Design</value>
+  </data>
+  <data name="Cmd_window_layout_debug" xml:space="preserve">
+    <value>Layout: Debug</value>
+  </data>
+  <data name="Cmd_window_layout_apply" xml:space="preserve">
+    <value>Apply Layout</value>
+  </data>
+  <data name="Cmd_window_layout_saveAs" xml:space="preserve">
+    <value>Save Layout As…</value>
+  </data>
+  <data name="Cmd_window_resetLayout" xml:space="preserve">
+    <value>Reset Layout</value>
+  </data>
+  <data name="Cmd_help_contents" xml:space="preserve">
+    <value>Help Contents</value>
+  </data>
+  <data name="Cmd_help_keyboardShortcuts" xml:space="preserve">
+    <value>Keyboard Shortcuts</value>
+  </data>
+  <data name="Cmd_help_licenses" xml:space="preserve">
+    <value>Third-Party Licenses</value>
+  </data>
+  <data name="Cmd_help_about" xml:space="preserve">
+    <value>About FreexComp</value>
+  </data>
+  <data name="Cmd_messages_clear" xml:space="preserve">
+    <value>Clear Messages</value>
+  </data>
+  <data name="Cmd_messages_copy" xml:space="preserve">
+    <value>Copy Message</value>
+  </data>
+  <data name="Cmd_messages_copyAll" xml:space="preserve">
+    <value>Copy All Messages</value>
+  </data>
+  <data name="Cmd_messages_goToSource" xml:space="preserve">
+    <value>Go to Source</value>
+  </data>
+  <data name="Cmd_messages_toggleErrors" xml:space="preserve">
+    <value>Show Errors</value>
+  </data>
+  <data name="Cmd_messages_toggleWarnings" xml:space="preserve">
+    <value>Show Warnings</value>
+  </data>
+  <data name="Cmd_messages_toggleHints" xml:space="preserve">
+    <value>Show Hints</value>
+  </data>
+  <data name="Cmd_output_clear" xml:space="preserve">
+    <value>Clear Output</value>
+  </data>
+  <data name="Cmd_output_copyAll" xml:space="preserve">
+    <value>Copy All Output</value>
+  </data>
+  <data name="Cmd_output_toggleWordWrap" xml:space="preserve">
+    <value>Word Wrap</value>
+  </data>
+  <data name="Cmd_output_toggleScrollLock" xml:space="preserve">
+    <value>Scroll Lock</value>
+  </data>
+  <data name="Cmd_output_selectChannel" xml:space="preserve">
+    <value>Show Output From</value>
+  </data>
+  <data name="Cmd_searchResults_clear" xml:space="preserve">
+    <value>Clear Search Results</value>
+  </data>
+  <data name="Cmd_searchResults_repeat" xml:space="preserve">
+    <value>Repeat Search</value>
+  </data>
+  <data name="Cmd_searchResults_cancel" xml:space="preserve">
+    <value>Cancel Search</value>
+  </data>
+  <data name="Cmd_projectManager_collapseAll" xml:space="preserve">
+    <value>Collapse All</value>
+  </data>
+  <data name="Cmd_projectManager_syncWithEditor" xml:space="preserve">
+    <value>Select Active Document</value>
+  </data>
+  <data name="Cmd_projectManager_open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="Cmd_projectManager_openForm" xml:space="preserve">
+    <value>Open Form Designer</value>
+  </data>
+  <data name="Cmd_structure_sortAlphabetically" xml:space="preserve">
+    <value>Sort Alphabetically</value>
+  </data>
+  <data name="Cmd_breakpoints_delete" xml:space="preserve">
+    <value>Delete Breakpoint</value>
+  </data>
+  <data name="Cmd_breakpoints_enableAll" xml:space="preserve">
+    <value>Enable All Breakpoints</value>
+  </data>
+  <data name="Cmd_breakpoints_disableAll" xml:space="preserve">
+    <value>Disable All Breakpoints</value>
+  </data>
+  <data name="Cmd_breakpoints_goToSource" xml:space="preserve">
+    <value>Go to Source</value>
+  </data>
+  <data name="Cmd_callStack_goToFrame" xml:space="preserve">
+    <value>Go to Frame</value>
+  </data>
+  <data name="Cmd_callStack_copy" xml:space="preserve">
+    <value>Copy Call Stack</value>
+  </data>
+  <data name="Cmd_watches_add" xml:space="preserve">
+    <value>Add Watch…</value>
+  </data>
+  <data name="Cmd_watches_edit" xml:space="preserve">
+    <value>Edit Watch…</value>
+  </data>
+  <data name="Cmd_watches_delete" xml:space="preserve">
+    <value>Delete Watch</value>
+  </data>
+  <data name="Cmd_watches_deleteAll" xml:space="preserve">
+    <value>Delete All Watches</value>
+  </data>
+  <data name="Cmd_locals_copyValue" xml:space="preserve">
+    <value>Copy Value</value>
+  </data>
+  <data name="Cmd_locals_modifyValue" xml:space="preserve">
+    <value>Modify Value…</value>
+  </data>
+  <data name="Cmd_threads_switchTo" xml:space="preserve">
+    <value>Switch to Thread</value>
+  </data>
+  <data name="Cmd_eventLog_clear" xml:space="preserve">
+    <value>Clear Event Log</value>
+  </data>
+  <data name="Cmd_objectInspector_resetToDefault" xml:space="preserve">
+    <value>Reset Property to Default</value>
+  </data>
+  <data name="Cmd_objectInspector_toggleCategorized" xml:space="preserve">
+    <value>Arrange by Category / Name</value>
+  </data>
+  <data name="Cmd_objectInspector_showProperties" xml:space="preserve">
+    <value>Show Properties Page</value>
+  </data>
+  <data name="Cmd_objectInspector_showEvents" xml:space="preserve">
+    <value>Show Events Page</value>
+  </data>
+  <data name="Cmd_objectInspector_togglePage" xml:space="preserve">
+    <value>Switch Properties / Events Page</value>
+  </data>
+  <data name="Cmd_toolPalette_focusSearch" xml:space="preserve">
+    <value>Search Tool Palette</value>
+  </data>
+  <data name="Cmd_toolPalette_placeSelected" xml:space="preserve">
+    <value>Place Selected Component</value>
+  </data>
+  <data name="Cmd_toolPalette_toggleView" xml:space="preserve">
+    <value>Switch List / Icon View</value>
+  </data>
+  <data name="Cmd_toolPalette_expandAll" xml:space="preserve">
+    <value>Expand All Pages</value>
+  </data>
+  <data name="Cmd_toolPalette_collapseAll" xml:space="preserve">
+    <value>Collapse All Pages</value>
+  </data>
+  <data name="Cmd_objectInspector_expandAll" xml:space="preserve">
+    <value>Expand All</value>
+  </data>
+  <data name="Cmd_objectInspector_collapseAll" xml:space="preserve">
+    <value>Collapse All</value>
+  </data>
+  <data name="Cmd_objectInspector_copyPropertyName" xml:space="preserve">
+    <value>Copy Property Name</value>
+  </data>
+  <data name="Cmd_objectInspector_toggleDescription" xml:space="preserve">
+    <value>Show Description Pane</value>
+  </data>
+  <data name="Cmd_structure_goToSource" xml:space="preserve">
+    <value>Go to Source</value>
+  </data>
+  <data name="Cmd_searchResults_goToSource" xml:space="preserve">
+    <value>Go to Source</value>
+  </data>
+  <data name="Cmd_searchResults_expandAll" xml:space="preserve">
+    <value>Expand All</value>
+  </data>
+  <data name="Cmd_searchResults_collapseAll" xml:space="preserve">
+    <value>Collapse All</value>
+  </data>
+  <data name="Cmd_todo_goToSource" xml:space="preserve">
+    <value>Go to Source</value>
+  </data>
+  <data name="Cmd_todo_refresh" xml:space="preserve">
+    <value>Refresh To-Do List</value>
+  </data>
+</root>
