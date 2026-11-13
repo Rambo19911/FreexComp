@@ -10,7 +10,6 @@ FreexComp uses the following third-party components. Each is used unmodified und
 | SQLite | 3.54.1 | Public domain | https://www.sqlite.org/copyright.html |
 | Avalonia, Avalonia.Desktop, Avalonia.Themes.Fluent | 12.1.6 | MIT | https://github.com/AvaloniaUI/Avalonia |
 | AvaloniaEdit | 12.0.0 | MIT | https://github.com/AvaloniaUI/AvaloniaEdit |
-| Dock | 12.1.5 | MIT | https://github.com/wieslawsoltes/Dock |
 | CommunityToolkit.Mvvm | 8.4.2 | MIT | https://github.com/CommunityToolkit/dotnet |
 | .NET runtime | 10.0 | MIT | https://github.com/dotnet/runtime |
 
