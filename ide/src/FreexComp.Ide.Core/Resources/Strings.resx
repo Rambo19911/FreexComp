@@ -2545,4 +2545,24 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Plain Text</value>
     <comment>main-window.md §5 R8: ILanguageDefinition.DisplayName</comment>
   </data>
+  <data name="Button_ConvertToCrlf" xml:space="preserve">
+    <value>Convert to CRLF</value>
+    <comment>Msg.File.MixedLineEndings info-bar action</comment>
+  </data>
+  <data name="Button_ConvertToLf" xml:space="preserve">
+    <value>Convert to LF</value>
+    <comment>Msg.File.MixedLineEndings info-bar action</comment>
+  </data>
+  <data name="Button_LeaveAsIs" xml:space="preserve">
+    <value>Leave As Is</value>
+    <comment>Msg.File.MixedLineEndings info-bar action</comment>
+  </data>
+  <data name="Button_ConvertToUtf8" xml:space="preserve">
+    <value>Convert to UTF-8</value>
+    <comment>Msg.File.EncodingFallback info-bar action</comment>
+  </data>
+  <data name="InfoBar_Dismiss" xml:space="preserve">
+    <value>Dismiss</value>
+    <comment>UI-ED-090/095: automation name and tooltip of an info bar's close (×) button</comment>
+  </data>
 </root>

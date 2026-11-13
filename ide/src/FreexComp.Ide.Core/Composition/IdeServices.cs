@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
@@ -40,4 +41,5 @@ public sealed record IdeServices
     public required ILayoutService Layout { get; init; }
     public required IToolWindowService ToolWindows { get; init; }
     public required ILanguageRegistry Languages { get; init; }
+    public required IDocumentService Documents { get; init; }
 }

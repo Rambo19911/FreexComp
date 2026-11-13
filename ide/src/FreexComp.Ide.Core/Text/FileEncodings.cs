@@ -36,6 +36,17 @@ public static class FileEncodings
         _ => throw new ArgumentOutOfRangeException(nameof(encoding)),
     };
 
+    /// <summary>The display name (resources <c>Encoding_&lt;id&gt;</c>, dialogs.md §24.1).</summary>
+    public static string DisplayName(FileEncoding encoding) => encoding switch
+    {
+        FileEncoding.Utf8 => Resources.Strings.Encoding_utf_8,
+        FileEncoding.Utf8Bom => Resources.Strings.Encoding_utf_8_bom,
+        FileEncoding.Utf16Le => Resources.Strings.Encoding_utf_16le,
+        FileEncoding.Utf16Be => Resources.Strings.Encoding_utf_16be,
+        FileEncoding.Windows1252 => Resources.Strings.Encoding_windows_1252,
+        _ => throw new ArgumentOutOfRangeException(nameof(encoding)),
+    };
+
     public static FileEncoding? FromId(string id) =>
         Enum.GetValues<FileEncoding>().Cast<FileEncoding?>().FirstOrDefault(e => ToId(e!.Value) == id);
 

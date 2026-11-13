@@ -1,13 +1,14 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Resources;
 
 namespace FreexComp.Ide.Core.ViewModels;
 
 /// <summary>
-/// Region 5 of the main window (main-window.md §1, §3). Holds only the empty state so far; the document list
-/// arrives with <c>IDocumentService</c> (I-035).
+/// Region 5 of the main window (main-window.md §1, §3): the open documents and the empty state. The tab strip view
+/// arrives with I-042.
 /// </summary>
 public sealed class DocumentAreaViewModel : ObservableObject
 {
@@ -18,10 +19,13 @@ public sealed class DocumentAreaViewModel : ObservableObject
     private readonly ICommandService _commands;
     private readonly IKeymapService _keymap;
 
-    public DocumentAreaViewModel(ICommandService commands, IKeymapService keymap)
+    public DocumentAreaViewModel(ICommandService commands, IKeymapService keymap, IDocumentService documents)
     {
         _commands = commands;
         _keymap = keymap;
+        Documents = documents;
+        ((System.Collections.Specialized.INotifyCollectionChanged)documents.Documents).CollectionChanged +=
+            (_, _) => OnPropertyChanged(nameof(IsEmpty));
         foreach (var id in HintCommands)
         {
             _commands.Get(id).CanExecuteChanged += (_, _) => OnPropertyChanged(nameof(EmptyHints));
@@ -30,8 +34,10 @@ public sealed class DocumentAreaViewModel : ObservableObject
         _keymap.Changed += (_, _) => OnPropertyChanged(nameof(EmptyHints));
     }
 
+    public IDocumentService Documents { get; }
+
     /// <summary>True when no document is open (UI-WIN-002).</summary>
-    public bool IsEmpty => true;
+    public bool IsEmpty => Documents.Documents.Count == 0;
 
     public string EmptyHeading => Strings.Msg_Editor_NoDocuments;
 

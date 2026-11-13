@@ -18,7 +18,10 @@ public interface IFocusTracker
 {
     FocusState Current { get; }
 
-    /// <summary>The target of the document view (Editor or Designer scope) that had focus last; the "active document" of UI-CMD-011.</summary>
+    /// <summary>
+    /// The target of the active document (the "active document" of UI-CMD-011): set by the document service on
+    /// activation, and by a document view (Editor or Designer scope) that receives focus.
+    /// </summary>
     ICommandTarget? ActiveDocumentTarget { get; }
 
     /// <summary>Keys the focused control handles itself while a popup is open; key routing leaves them alone.</summary>
@@ -29,6 +32,9 @@ public interface IFocusTracker
     void Update(FocusState state);
 
     void SetLocalKeys(IReadOnlyCollection<KeyGesture> keys);
+
+    /// <summary>The document service activated a document; null when none is open.</summary>
+    void SetActiveDocumentTarget(ICommandTarget? target);
 }
 
 /// <inheritdoc />
@@ -60,4 +66,6 @@ public sealed class FocusTracker : IFocusTracker
     }
 
     public void SetLocalKeys(IReadOnlyCollection<KeyGesture> keys) => _localKeys = [.. keys];
+
+    public void SetActiveDocumentTarget(ICommandTarget? target) => ActiveDocumentTarget = target;
 }

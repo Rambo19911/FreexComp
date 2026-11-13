@@ -21,6 +21,23 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-WIN-002")]
+    public void DocumentAreaEmptyStateFollowsOpenDocuments()
+    {
+        var services = TestComposition.Build();
+        var area = new MainWindowViewModel(services).DocumentArea;
+        var changed = new List<string?>();
+        area.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        var unit = services.Documents.NewUntitledUnit();
+        Assert.False(area.IsEmpty);
+        Assert.Contains(nameof(area.IsEmpty), changed);
+
+        services.Documents.Close(unit);
+        Assert.True(area.IsEmpty);
+    }
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "UI-ED-080")]
     public void EmptyStateHintsListOnlyFunctionalCommandsWithTheirGestures()
     {

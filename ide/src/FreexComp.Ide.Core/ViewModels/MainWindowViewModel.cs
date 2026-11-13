@@ -19,7 +19,7 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(services);
         _services = services;
-        DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap);
+        DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap, services.Documents);
         Layout = services.Layout.Layout;
         Layout.DocumentArea = DocumentArea;
         StatusBar = new StatusBarViewModel(services.Status, services.Commands, services.Settings);

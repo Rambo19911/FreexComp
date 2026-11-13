@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Services;
@@ -43,6 +44,9 @@ public static class ServiceGraph
         theme.RegisterCommands(commands);
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
+        var languages = new LanguageRegistry();
+        var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus);
+        documents.RegisterCommands(commands);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         return new IdeServices
@@ -67,7 +71,8 @@ public static class ServiceGraph
             FocusTracker = focus,
             Layout = layout,
             ToolWindows = toolWindows,
-            Languages = new LanguageRegistry(),
+            Languages = languages,
+            Documents = documents,
         };
     }
 }
