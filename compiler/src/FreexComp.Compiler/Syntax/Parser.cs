@@ -957,10 +957,13 @@ internal sealed class Parser
         return left;
     }
 
-    /// <summary><c>term = factor { mulOp factor }</c></summary>
+    /// <summary>
+    /// <c>term = factor { mulOp factor }</c>; an already parsed <paramref name="first"/> (a parenthesised typed-constant
+    /// expression) may still take designator suffixes.
+    /// </summary>
     private ExpressionSyntax ParseTerm(ExpressionSyntax? first)
     {
-        var left = first ?? ParseFactor();
+        var left = first is null ? ParseFactor() : ParseDesignatorSuffixes(first);
         while (SyntaxFacts.GetBinaryPrecedence(CurrentKind) == 4)
         {
             var op = Take();
@@ -971,28 +974,133 @@ internal sealed class Parser
     }
 
     /// <summary>
-    /// <c>factor</c>: <c>not</c>/sign factor, literal, <c>nil</c>, <c>( expression )</c>, identifier. Designators,
-    /// calls, set constructors, <c>@</c>, <c>inherited</c> follow with C-016; anything else is E1103.
+    /// <c>factor</c>: <c>@</c>/<c>not</c>/sign factor, literal, <c>nil</c>, set constructor, <c>( expression )</c>,
+    /// <c>inherited [ ident ]</c>, <c>string ( expression )</c> or designator, the last four with designator suffixes.
+    /// Anonymous methods and generic arguments follow with C-019; anything else is E1103.
     /// </summary>
     private ExpressionSyntax ParseFactor()
     {
         switch (CurrentKind)
         {
+            case SyntaxKind.AtToken:
+                var at = Take();
+                return new AddressOfExpressionSyntax(at, ParseFactor());
             case SyntaxKind.NotKeyword or SyntaxKind.PlusToken or SyntaxKind.MinusToken:
                 var op = Take();
                 return new UnaryExpressionSyntax(op, ParseFactor());
             case SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken or SyntaxKind.StringLiteralToken or SyntaxKind.NilKeyword:
                 return new LiteralExpressionSyntax(Take());
+            case SyntaxKind.OpenBracketToken:
+                return ParseSetConstructor();
             case SyntaxKind.OpenParenToken:
                 var open = Take();
                 var expression = ParseExpression();
-                return new ParenthesizedExpressionSyntax(open, expression, Expect(SyntaxKind.CloseParenToken));
+                return ParseDesignatorSuffixes(new ParenthesizedExpressionSyntax(open, expression, Expect(SyntaxKind.CloseParenToken)));
+            case SyntaxKind.InheritedKeyword:
+                var inherited = Take();
+                var name = CurrentKind == SyntaxKind.IdentifierToken ? ParseIdentifierName() : null;
+                return ParseDesignatorSuffixes(new InheritedExpressionSyntax(inherited, name));
+            case SyntaxKind.StringKeyword when Peek(1).Kind == SyntaxKind.OpenParenToken:
+                var stringKeyword = Take();
+                var castOpen = Take();
+                var operand = ParseExpression();
+                return ParseDesignatorSuffixes(
+                    new StringCastExpressionSyntax(stringKeyword, castOpen, operand, Expect(SyntaxKind.CloseParenToken)));
             case SyntaxKind.IdentifierToken:
-                return new IdentifierNameSyntax(Take());
+                return ParseDesignatorSuffixes(new IdentifierNameSyntax(Take()));
             default:
                 ReportAt(Current, CurrentKind == SyntaxKind.EndOfFileToken ? "E1108" : "E1103", ExpectedArgs());
                 return new IdentifierNameSyntax(Missing(SyntaxKind.IdentifierToken));
         }
+    }
+
+    /// <summary>
+    /// <c>{ designatorSuffix }</c>: <c>. ident</c>, <c>[ expression { , expression } ]</c>, <c>^</c>, <c>( [ argList ] )</c>,
+    /// applied left to right.
+    /// </summary>
+    private ExpressionSyntax ParseDesignatorSuffixes(ExpressionSyntax expression)
+    {
+        while (true)
+        {
+            switch (CurrentKind)
+            {
+                case SyntaxKind.DotToken:
+                    var dot = Take();
+                    expression = new MemberAccessExpressionSyntax(expression, dot, ParseIdentifierName());
+                    break;
+                case SyntaxKind.OpenBracketToken:
+                    var open = Take();
+                    var indexes = ParseSeparated(() => ParseExpression(), SyntaxKind.CommaToken);
+                    expression = new ElementAccessExpressionSyntax(expression, open, indexes, Expect(SyntaxKind.CloseBracketToken));
+                    break;
+                case SyntaxKind.CaretToken:
+                    expression = new DereferenceExpressionSyntax(expression, Take());
+                    break;
+                case SyntaxKind.OpenParenToken:
+                    expression = new InvocationExpressionSyntax(expression, ParseArgumentList());
+                    break;
+                default:
+                    return expression;
+            }
+        }
+    }
+
+    /// <summary><c>( [ argument { , argument } ] )</c></summary>
+    private ArgumentListSyntax ParseArgumentList()
+    {
+        var open = Take();
+        if (CurrentKind == SyntaxKind.CloseParenToken)
+        {
+            return new ArgumentListSyntax(open, default, Take());
+        }
+
+        var arguments = ParseSeparated(ParseArgument, SyntaxKind.CommaToken);
+        return new ArgumentListSyntax(open, arguments, Expect(SyntaxKind.CloseParenToken));
+    }
+
+    /// <summary><c>expression [ : expression [ : expression ] ]</c></summary>
+    private ArgumentSyntax ParseArgument()
+    {
+        var expression = ParseExpression();
+        if (CurrentKind != SyntaxKind.ColonToken)
+        {
+            return new ArgumentSyntax(expression, null, null, null, null);
+        }
+
+        var widthColon = Take();
+        var width = ParseExpression();
+        if (CurrentKind != SyntaxKind.ColonToken)
+        {
+            return new ArgumentSyntax(expression, widthColon, width, null, null);
+        }
+
+        var decimalsColon = Take();
+        return new ArgumentSyntax(expression, widthColon, width, decimalsColon, ParseExpression());
+    }
+
+    /// <summary><c>[ [ setElement { , setElement } ] ]</c>, <c>setElement = expression [ .. expression ]</c></summary>
+    private SetConstructorSyntax ParseSetConstructor()
+    {
+        var open = Take();
+        if (CurrentKind == SyntaxKind.CloseBracketToken)
+        {
+            return new SetConstructorSyntax(open, default, Take());
+        }
+
+        var elements = ParseSeparated(ParseSetElement, SyntaxKind.CommaToken);
+        return new SetConstructorSyntax(open, elements, Expect(SyntaxKind.CloseBracketToken));
+    }
+
+    private SetElementSyntax ParseSetElement()
+    {
+        var expression = ParseExpression();
+        if (CurrentKind != SyntaxKind.DotDotToken)
+        {
+            return new SetElementSyntax(expression, null, null);
+        }
+
+        var dotDot = Take();
+        return new SetElementSyntax(expression, dotDot, ParseExpression());
     }
 
     /// <summary>Arguments for "… expected but '%s' found" codes; none for E1108 at the end of the file.</summary>

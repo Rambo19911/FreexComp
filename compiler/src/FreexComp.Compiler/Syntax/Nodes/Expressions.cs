@@ -1,6 +1,6 @@
 namespace FreexComp.Compiler.Syntax;
 
-// grammar.md §7. C-013 needs constant expressions; designators, calls, set constructors etc. follow with C-016.
+// grammar.md §7: operators and parentheses; designators and the other factors are in Designators.cs.
 
 /// <summary>An integer, real, string/char literal or <c>nil</c>.</summary>
 public sealed class LiteralExpressionSyntax : ExpressionSyntax

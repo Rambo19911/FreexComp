@@ -110,6 +110,28 @@ public abstract class SyntaxVisitor<TResult>
     public virtual TResult VisitRoutineHeading(RoutineHeadingSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitDirective(DirectiveSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitMemberAccessExpression(MemberAccessExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitElementAccessExpression(ElementAccessExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitDereferenceExpression(DereferenceExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitInvocationExpression(InvocationExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitArgumentList(ArgumentListSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitArgument(ArgumentSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitAddressOfExpression(AddressOfExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitSetConstructor(SetConstructorSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitSetElement(SetElementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitInheritedExpression(InheritedExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitStringCastExpression(StringCastExpressionSyntax node) => DefaultVisit(node);
 }
 
 /// <summary>Depth-first walk over every node, token and trivia piece in source order.</summary>
