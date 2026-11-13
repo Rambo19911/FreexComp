@@ -143,7 +143,7 @@ internal sealed class BodyBinder
     {
         var name = CalledName(statement.Expression);
         var symbol = name is null ? null : _scope.Lookup(name.Identifier.Value as string ?? name.Identifier.Text);
-        if (symbol is IntrinsicSymbol intrinsic)
+        if (symbol is IntrinsicSymbol { IsFunction: false } intrinsic)
         {
             return BindControlIntrinsic(statement, intrinsic);
         }
@@ -353,26 +353,41 @@ internal sealed class BodyBinder
     {
         var arguments = statement.Expression is InvocationExpressionSyntax invocation ? invocation.ArgumentList.Arguments : default;
         var count = arguments.Count;
-        var maxArguments = intrinsic.Intrinsic switch
+        var (minArguments, maxArguments) = intrinsic.Intrinsic switch
         {
-            IntrinsicKind.Halt => 1,
-            IntrinsicKind.Exit when _routine?.ReturnType != null => 1,                // LANG-413
-            _ => 0,
+            IntrinsicKind.Halt or IntrinsicKind.RunError => (0, 1),
+            IntrinsicKind.Exit when _routine?.ReturnType != null => (0, 1),          // LANG-413
+            IntrinsicKind.Inc or IntrinsicKind.Dec => (1, 2),
+            _ => (0, 0),
         };
+        if (count < minArguments)
+        {
+            _diagnostics.Report(statement.Expression, "E2110", intrinsic.Name);
+            return new BoundErrorStatement(statement);
+        }
+
         if (count > maxArguments)
         {
             _diagnostics.Report(arguments[maxArguments], "E2111", intrinsic.Name);
             return new BoundErrorStatement(statement);
         }
 
-        if (count == 1 && arguments[0].WidthColonToken is { } colon)
+        foreach (var argument in arguments)
         {
-            _diagnostics.Report(colon, "E2915");
-            return new BoundErrorStatement(statement);
+            if (argument.WidthColonToken is { } colon)
+            {
+                _diagnostics.Report(colon, "E2915");
+                return new BoundErrorStatement(statement);
+            }
         }
 
         switch (intrinsic.Intrinsic)
         {
+            case IntrinsicKind.Inc or IntrinsicKind.Dec:
+                return BindIncDec(statement, intrinsic, arguments);
+            case IntrinsicKind.RunError:
+                return new BoundIntrinsicCallStatement(statement, intrinsic, count == 0 ? []
+                    : [_expressions.ConvertForAssignment(_expressions.BindExpression(arguments[0].Expression), _types.Integer, arguments[0].Expression)]);
             case IntrinsicKind.Break or IntrinsicKind.Continue when _loopDepth == 0:
                 _diagnostics.Report(statement.Expression, "E2066", intrinsic.Name);
                 return new BoundErrorStatement(statement);
@@ -391,5 +406,42 @@ internal sealed class BodyBinder
                     : null;
                 return new BoundHaltStatement(statement, code);
         }
+    }
+
+    /// <summary>
+    /// LANG-901: <c>Inc</c>/<c>Dec(var x[; n])</c>: <c>x</c> an assignable ordinal variable (typed pointers arrive with
+    /// M2.2), <c>n</c> any integer expression.
+    /// </summary>
+    private BoundStatement BindIncDec(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var syntax = arguments[0].Expression;
+        var target = _expressions.BindExpression(syntax);
+        var step = arguments.Count == 2 ? _expressions.BindExpression(arguments[1].Expression) : null;
+        if (target.HasErrors || step?.HasErrors == true || !_expressions.CheckVariableReference(target, syntax))
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        if (!target.Type.IsOrdinal)
+        {
+            if (target.Type is PointerTypeSymbol)
+            {
+                _diagnostics.Report(syntax, "E2900", "pointer arithmetic");
+            }
+            else
+            {
+                _diagnostics.Report(syntax, "E2013");
+            }
+
+            return new BoundErrorStatement(statement);
+        }
+
+        if (step != null && step.Type is not IntegerTypeSymbol)
+        {
+            _diagnostics.Report(arguments[1].Expression, "E2010", step.Type.Name, _types.Integer.Name);
+            return new BoundErrorStatement(statement);
+        }
+
+        return new BoundIntrinsicCallStatement(statement, intrinsic, step is null ? [target] : [target, step]);
     }
 }

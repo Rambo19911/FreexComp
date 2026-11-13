@@ -21,6 +21,7 @@ internal enum BoundKind
     BinaryExpression,
     ParameterExpression,
     CallExpression,
+    IntrinsicCallExpression,
 
     // statements
     Block,
@@ -37,6 +38,7 @@ internal enum BoundKind
     ExitStatement,
     HaltStatement,
     CallStatement,
+    IntrinsicCallStatement,
 }
 
 /// <summary>A node of the bound tree: immutable, typed, symbols resolved.</summary>
@@ -547,6 +549,48 @@ internal sealed class BoundCallStatement : BoundStatement
     public override BoundKind Kind => BoundKind.CallStatement;
 
     public RoutineSymbol Routine { get; }
+
+    public ImmutableArray<BoundExpression> Arguments { get; }
+}
+
+/// <summary>
+/// A function-like intrinsic (intrinsics.md §1: <c>Succ</c> … <c>Swap</c>). Folded to <see cref="BoundExpression.ConstantValue"/>
+/// when its argument is constant, and always for <c>Low</c>/<c>High</c>/<c>SizeOf</c> of a type or of an ordinal value
+/// (<see cref="Arguments"/> is then empty for a type argument; a variable argument of <c>SizeOf</c> is never evaluated,
+/// LANG-903). <c>Abs</c>/<c>Sqr</c> of an integer take their operand converted to its computation type (LANG-222).
+/// </summary>
+internal sealed class BoundIntrinsicCallExpression : BoundExpression
+{
+    public BoundIntrinsicCallExpression(SyntaxNode syntax, IntrinsicSymbol intrinsic, ImmutableArray<BoundExpression> arguments, TypeSymbol type, ConstantValue? constantValue)
+        : base(syntax, type, constantValue)
+    {
+        Intrinsic = intrinsic;
+        Arguments = arguments;
+    }
+
+    public override BoundKind Kind => BoundKind.IntrinsicCallExpression;
+
+    public IntrinsicSymbol Intrinsic { get; }
+
+    public ImmutableArray<BoundExpression> Arguments { get; }
+}
+
+/// <summary>
+/// A procedure-like intrinsic: <c>Inc</c>/<c>Dec</c> (variable reference, optional integer step, unconverted) and
+/// <c>RunError</c> (optional code converted to <c>Integer</c>; absent = 0).
+/// </summary>
+internal sealed class BoundIntrinsicCallStatement : BoundStatement
+{
+    public BoundIntrinsicCallStatement(SyntaxNode syntax, IntrinsicSymbol intrinsic, ImmutableArray<BoundExpression> arguments)
+        : base(syntax)
+    {
+        Intrinsic = intrinsic;
+        Arguments = arguments;
+    }
+
+    public override BoundKind Kind => BoundKind.IntrinsicCallStatement;
+
+    public IntrinsicSymbol Intrinsic { get; }
 
     public ImmutableArray<BoundExpression> Arguments { get; }
 }

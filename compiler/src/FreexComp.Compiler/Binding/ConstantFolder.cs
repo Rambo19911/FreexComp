@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
@@ -99,6 +100,9 @@ internal sealed class ConstantFolder
             case TypeSymbol type:
                 _diagnostics.Report(name, "E2009", type.Name);
                 return null;
+            case IntrinsicSymbol { IsFunction: true } intrinsic:
+                _diagnostics.Report(name, "E2110", intrinsic.Name);
+                return null;
             default:
                 _diagnostics.Report(name, "E2050");
                 return null;
@@ -124,7 +128,7 @@ internal sealed class ConstantFolder
         return symbol;
     }
 
-    /// <summary>A typecast <c>T(v)</c> between ordinal types (LANG-340); calls of intrinsics fold from C-029 on.</summary>
+    /// <summary>A typecast <c>T(v)</c> between ordinal types, or a foldable intrinsic (LANG-340).</summary>
     private ConstantValue? FoldInvocation(InvocationExpressionSyntax invocation)
     {
         if (invocation.Expression is not IdentifierNameSyntax name)
@@ -139,6 +143,11 @@ internal sealed class ConstantFolder
         }
 
         var arguments = invocation.ArgumentList.Arguments;
+        if (symbol is IntrinsicSymbol { IsFunction: true } intrinsic)
+        {
+            return FoldIntrinsicCall(invocation, intrinsic);
+        }
+
         if (symbol is not TypeSymbol target || arguments.Count != 1 || arguments[0].WidthColonToken != null)
         {
             return NotConstant(invocation);
@@ -368,7 +377,280 @@ internal sealed class ConstantFolder
         return Folded.Failed;
     }
 
+    // ------------------------------------------------------------------ intrinsics (intrinsics.md §1, LANG-340)
+
+    /// <summary>
+    /// The argument count of a function-like intrinsic call: exactly one, without width specifier (E2110 at the call,
+    /// E2111 at the first extra argument, E2915 at the colon).
+    /// </summary>
+    internal bool CheckSingleArgument(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count == 0)
+        {
+            _diagnostics.Report(invocation, "E2110", intrinsic.Name);
+            return false;
+        }
+
+        if (arguments.Count > 1)
+        {
+            _diagnostics.Report(arguments[1], "E2111", intrinsic.Name);
+            return false;
+        }
+
+        if (arguments[0].WidthColonToken is { } colon)
+        {
+            _diagnostics.Report(colon, "E2915");
+            return false;
+        }
+
+        return true;
+    }
+
+    private ConstantValue? FoldIntrinsicCall(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    {
+        if (!CheckSingleArgument(invocation, intrinsic))
+        {
+            return null;
+        }
+
+        var argument = invocation.ArgumentList.Arguments[0].Expression;
+        if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf)
+        {
+            // a type name, a variable (only its type matters, LANG-903) or a constant
+            ConstantValue? value = null;
+            TypeSymbol type;
+            var isTypeName = false;
+            if (argument is PredefinedTypeExpressionSyntax)
+            {
+                (type, isTypeName) = (_types.String, true);
+            }
+            else if (argument is IdentifierNameSyntax name && LookupName(name) is (TypeSymbol or VariableSymbol or ParameterSymbol) and var symbol)
+            {
+                (type, isTypeName) = symbol switch
+                {
+                    TypeSymbol t => (t, true),
+                    VariableSymbol v => (v.Type, false),
+                    _ => (((ParameterSymbol)symbol).Type, false),
+                };
+            }
+            else
+            {
+                value = Fold(argument);
+                if (value is null)
+                {
+                    return null;
+                }
+
+                type = value.Type;
+            }
+
+            var result = FoldTypeIntrinsic(invocation, intrinsic, type, value, isTypeName, out var needsRuntime);
+            return needsRuntime ? NotConstant(invocation) : result;
+        }
+
+        var operand = Fold(argument);
+        if (operand is null || IntrinsicResultType(intrinsic, operand.Type, argument) is not { } resultType)
+        {
+            return null;
+        }
+
+        return FoldIntrinsic(invocation, intrinsic, operand, resultType);
+    }
+
+    /// <summary>
+    /// The result type of a value intrinsic (<c>Succ</c> … <c>Swap</c>, not <c>Low</c>/<c>High</c>/<c>SizeOf</c>) applied to
+    /// an operand of type <paramref name="operand"/>; null after E2013 / E2010 at <paramref name="at"/> (the argument).
+    /// </summary>
+    internal TypeSymbol? IntrinsicResultType(IntrinsicSymbol intrinsic, TypeSymbol operand, SyntaxNode at)
+    {
+        if (operand.TypeKind == TypeKind.Error)
+        {
+            return null;
+        }
+
+        switch (intrinsic.Intrinsic)
+        {
+            case IntrinsicKind.Succ or IntrinsicKind.Pred or IntrinsicKind.Ord:
+                if (!operand.IsOrdinal)
+                {
+                    _diagnostics.Report(at, "E2013");
+                    return null;
+                }
+
+                return intrinsic.Intrinsic == IntrinsicKind.Ord ? OrdType(operand) : operand;
+
+            case IntrinsicKind.Abs or IntrinsicKind.Sqr when operand is RealTypeSymbol { RealKind: not RealKind.Currency }:
+                return operand;
+        }
+
+        if (operand is not IntegerTypeSymbol integer)
+        {
+            _diagnostics.Report(at, "E2010", operand.Name, _types.Integer.Name);
+            return null;
+        }
+
+        return intrinsic.Intrinsic switch
+        {
+            IntrinsicKind.Chr => _types.Char,
+            IntrinsicKind.Odd => _types.Boolean,
+            IntrinsicKind.Lo or IntrinsicKind.Hi => _types.Byte,
+            IntrinsicKind.Swap => _types.Word,
+            _ => ComputationTypeSymbol(integer),                     // Abs, Sqr (LANG-222)
+        };
+    }
+
+    /// <summary>
+    /// Folds a value intrinsic on a constant operand already checked by <see cref="IntrinsicResultType"/>. E2012 when
+    /// <c>Succ</c>/<c>Pred</c> leave the operand type (at <paramref name="call"/>) or the operand of <c>Chr</c> exceeds
+    /// <c>Char</c> (at the argument); E2051 for overflow (at <paramref name="call"/>).
+    /// </summary>
+    internal ConstantValue? FoldIntrinsic(InvocationExpressionSyntax call, IntrinsicSymbol intrinsic, ConstantValue operand, TypeSymbol resultType)
+    {
+        var value = operand.Value;
+        switch (intrinsic.Intrinsic)
+        {
+            case IntrinsicKind.Succ or IntrinsicKind.Pred:
+            {
+                var ordinal = OrdinalOf(operand)!.Value + (intrinsic.Intrinsic == IntrinsicKind.Succ ? 1 : -1);
+                var (min, max) = OrdinalBounds(operand.Type);
+                if (ordinal < min || ordinal > max)
+                {
+                    _diagnostics.Report(call, "E2012", ordinal.ToString(CultureInfo.InvariantCulture), operand.Type.Name);
+                    return null;
+                }
+
+                return operand.Type is BooleanTypeSymbol ? new ConstantValue(!ordinal.IsZero, operand.Type) : new ConstantValue(ordinal, operand.Type);
+            }
+
+            case IntrinsicKind.Ord:
+                return new ConstantValue(OrdinalOf(operand)!.Value, resultType);
+
+            case IntrinsicKind.Abs or IntrinsicKind.Sqr when value is double d:
+                return Real(intrinsic.Intrinsic == IntrinsicKind.Abs ? Math.Abs(d) : d * d, call);
+
+            case IntrinsicKind.Abs:
+                return Integer(BigInteger.Abs((BigInteger)value!), call);
+
+            case IntrinsicKind.Sqr:
+                return Integer((BigInteger)value! * (BigInteger)value, call);
+        }
+
+        var n = (BigInteger)value!;
+        var bits = Wrap(n, 64, isSigned: false);
+        switch (intrinsic.Intrinsic)
+        {
+            case IntrinsicKind.Chr:
+                if (n < 0 || n > 0xFFFF)
+                {
+                    _diagnostics.Report(call.ArgumentList.Arguments[0].Expression, "E2012", n.ToString(CultureInfo.InvariantCulture), _types.Char.Name);
+                    return null;
+                }
+
+                return new ConstantValue(n, _types.Char);
+            case IntrinsicKind.Odd:
+                return new ConstantValue(!n.IsEven, _types.Boolean);
+            case IntrinsicKind.Lo:
+                return new ConstantValue(bits & 0xFF, _types.Byte);
+            case IntrinsicKind.Hi:
+                return new ConstantValue((bits >> 8) & 0xFF, _types.Byte);
+            default:                                                    // Swap: exchange the low two bytes
+                return new ConstantValue(((bits & 0xFF) << 8) | ((bits >> 8) & 0xFF), _types.Word);
+        }
+    }
+
+    /// <summary>
+    /// <c>Low</c>/<c>High</c>/<c>SizeOf</c> of <paramref name="type"/> (a type name when <paramref name="isTypeName"/>,
+    /// else the type of a value; <paramref name="value"/> when that is constant). Null after E2911 at
+    /// <paramref name="call"/>, or with <paramref name="needsRuntime"/> for <c>High</c> of a non-constant string (its length).
+    /// </summary>
+    internal ConstantValue? FoldTypeIntrinsic(InvocationExpressionSyntax call, IntrinsicSymbol intrinsic, TypeSymbol type, ConstantValue? value,
+        bool isTypeName, out bool needsRuntime)
+    {
+        needsRuntime = false;
+        if (type.TypeKind == TypeKind.Error)
+        {
+            return null;
+        }
+
+        var high = intrinsic.Intrinsic == IntrinsicKind.High;
+        switch (intrinsic.Intrinsic, type)
+        {
+            case (IntrinsicKind.SizeOf, _) when type.Size >= 0:
+                return new ConstantValue(new BigInteger(type.Size), _types.Integer);
+            case (IntrinsicKind.SizeOf, _):
+                break;
+            case (_, BooleanTypeSymbol):
+                return new ConstantValue(high, type);
+            case (_, IntegerTypeSymbol or CharTypeSymbol):
+            {
+                var (min, max) = OrdinalBounds(type);
+                return new ConstantValue(high ? max : min, type);
+            }
+
+            // ShortString type: 0 / capacity; a string value: 1 / Length
+            case (_, StringTypeSymbol { Variant: StringVariant.Short } s) when isTypeName:
+                return new ConstantValue(new BigInteger(high ? s.MaxLength : 0), _types.Integer);
+            case (_, StringTypeSymbol) when !isTypeName && !high:
+                return new ConstantValue(BigInteger.One, _types.Integer);
+            case (_, StringTypeSymbol) when !isTypeName && value?.Value is string text:
+                return new ConstantValue(new BigInteger(text.Length), _types.Integer);
+            case (_, StringTypeSymbol) when !isTypeName:
+                needsRuntime = true;
+                return null;
+        }
+
+        _diagnostics.Report(call, "E2911", intrinsic.Name);
+        return null;
+    }
+
+    /// <summary>Ord: 64-bit integers keep their type, Cardinal widens to Int64, everything else is Integer.</summary>
+    private TypeSymbol OrdType(TypeSymbol operand) => operand switch
+    {
+        IntegerTypeSymbol { Bits: 64 } => operand,
+        IntegerTypeSymbol { Bits: 32, IsSigned: false } => _types.Int64,
+        _ => _types.Integer,
+    };
+
+    /// <summary>LANG-222: Integer, Cardinal, Int64 or UInt64.</summary>
+    internal TypeSymbol ComputationTypeSymbol(IntegerTypeSymbol type) => ComputationType(type) switch
+    {
+        (32, true) => _types.Integer,
+        (32, false) => _types.Cardinal,
+        (_, true) => _types.Int64,
+        _ => _types.UInt64,
+    };
+
+    private static (BigInteger Min, BigInteger Max) OrdinalBounds(TypeSymbol type) => type switch
+    {
+        IntegerTypeSymbol integer => (integer.Min, integer.Max),
+        CharTypeSymbol c => (BigInteger.Zero, new BigInteger(c.MaxValue)),
+        _ => (BigInteger.Zero, BigInteger.One),
+    };
+
     // ------------------------------------------------------------------ values
+
+    private ConstantValue? Integer(BigInteger value, SyntaxNode at)
+    {
+        if (IntegerTypeFor(value) is { } type)
+        {
+            return new ConstantValue(value, type);
+        }
+
+        _diagnostics.Report(at, "E2051");
+        return null;
+    }
+
+    private ConstantValue? Real(double value, SyntaxNode at)
+    {
+        if (double.IsFinite(value))
+        {
+            return new ConstantValue(value, _types.Double);
+        }
+
+        _diagnostics.Report(at, "E2051");
+        return null;
+    }
 
     /// <summary>LANG-341: the first of Integer, Int64, UInt64 holding the value; E2051 outside both 64-bit ranges.</summary>
     private ConstantValue? Integer(BigInteger value, SyntaxToken op)

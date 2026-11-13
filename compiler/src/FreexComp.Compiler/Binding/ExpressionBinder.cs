@@ -166,8 +166,11 @@ internal sealed class ExpressionBinder
             case TypeSymbol type:
                 _diagnostics.Report(name, "E2009", type.Name);
                 return Error(name);
+            case IntrinsicSymbol { IsFunction: true } function:
+                _diagnostics.Report(name, "E2110", function.Name);
+                return Error(name);
             case IntrinsicSymbol:
-                _diagnostics.Report(name, "E2034");                     // the control intrinsics have no value (LANG-363/364)
+                _diagnostics.Report(name, "E2034");                     // procedure-like intrinsics have no value
                 return Error(name);
             case var symbol:
                 return Unsupported(name, symbol.Kind.ToString().ToLowerInvariant() + " reference");
@@ -225,6 +228,11 @@ internal sealed class ExpressionBinder
         }
 
         var arguments = invocation.ArgumentList.Arguments;
+        if (symbol is IntrinsicSymbol { IsFunction: true } function)
+        {
+            return BindIntrinsicFunction(invocation, function);
+        }
+
         if (symbol is IntrinsicSymbol)
         {
             _diagnostics.Report(invocation, "E2034");
@@ -254,6 +262,75 @@ internal sealed class ExpressionBinder
 
         var operand = BindExpression(arguments[0].Expression);
         return operand.HasErrors || target.TypeKind == TypeKind.Error ? Error(invocation, operand) : BindTypecast(invocation, target, operand);
+    }
+
+    /// <summary>
+    /// A function-like intrinsic (intrinsics.md §1); folded when its argument is constant (LANG-340), and always for
+    /// <c>Low</c>/<c>High</c>/<c>SizeOf</c> except <c>High</c> of a string variable (its length: M2.2).
+    /// </summary>
+    private BoundExpression BindIntrinsicFunction(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    {
+        if (!_folder.CheckSingleArgument(invocation, intrinsic))
+        {
+            return Error(invocation);
+        }
+
+        var syntax = invocation.ArgumentList.Arguments[0].Expression;
+        if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf)
+        {
+            var (type, argument) = BindTypeOrValue(syntax);
+            if (type.TypeKind == TypeKind.Error)
+            {
+                return Error(invocation);
+            }
+
+            var value = _folder.FoldTypeIntrinsic(invocation, intrinsic, type, argument?.ConstantValue, argument is null, out var needsRuntime);
+            if (needsRuntime)
+            {
+                return Unsupported(invocation, "High of a string variable");              // Length, M2.2
+            }
+
+            return value is null
+                ? Error(invocation)
+                : new BoundIntrinsicCallExpression(invocation, intrinsic, argument is null ? [] : [argument], value.Type, value);
+        }
+
+        var operand = BindExpression(syntax);
+        if (operand.HasErrors || _folder.IntrinsicResultType(intrinsic, operand.Type, syntax) is not { } resultType)
+        {
+            return Error(invocation, operand);
+        }
+
+        if (operand.ConstantValue is { } constant)
+        {
+            return _folder.FoldIntrinsic(invocation, intrinsic, constant, resultType) is { } folded
+                ? new BoundIntrinsicCallExpression(invocation, intrinsic, [operand], folded.Type, folded)
+                : Error(invocation, operand);
+        }
+
+        if (intrinsic.Intrinsic is IntrinsicKind.Abs or IntrinsicKind.Sqr && resultType is IntegerTypeSymbol)
+        {
+            operand = Convert(operand, resultType);
+        }
+
+        return new BoundIntrinsicCallExpression(invocation, intrinsic, [operand], resultType, constantValue: null);
+    }
+
+    /// <summary>The argument of <c>Low</c>/<c>High</c>/<c>SizeOf</c>: a type name (bound argument null) or an expression.</summary>
+    private (TypeSymbol Type, BoundExpression? Argument) BindTypeOrValue(ExpressionSyntax syntax)
+    {
+        if (syntax is PredefinedTypeExpressionSyntax)
+        {
+            return (_types.String, null);
+        }
+
+        if (syntax is IdentifierNameSyntax { Identifier: { IsMissing: false } token } && _scope.Lookup(token.Value as string ?? token.Text) is TypeSymbol type)
+        {
+            return (type, null);
+        }
+
+        var argument = BindExpression(syntax);
+        return (argument.Type, argument);
     }
 
     /// <summary>LANG-290: ordinal → ordinal and integer → real; real → anything is E2040; the rest arrives with C-057.</summary>
@@ -404,6 +481,26 @@ internal sealed class ExpressionBinder
             return true;
         }
 
+        if (!CheckVariableReference(argument, syntax))
+        {
+            return false;
+        }
+
+        if (!ReferenceEquals(argument.Type, parameter.Type))
+        {
+            _diagnostics.Report(syntax, "E2010", argument.Type.Name, parameter.Type.Name);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// LANG-421: <paramref name="argument"/> is an assignable variable reference (a <c>var</c>/<c>out</c> argument, the
+    /// operand of <c>Inc</c>/<c>Dec</c>); E2053 / E2112 / E2113 at <paramref name="syntax"/> otherwise.
+    /// </summary>
+    public bool CheckVariableReference(BoundExpression argument, ExpressionSyntax syntax)
+    {
         switch (argument)
         {
             case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
@@ -420,12 +517,6 @@ internal sealed class ExpressionBinder
             default:
                 _diagnostics.Report(syntax, "E2113");
                 return false;
-        }
-
-        if (!ReferenceEquals(argument.Type, parameter.Type))
-        {
-            _diagnostics.Report(syntax, "E2010", argument.Type.Name, parameter.Type.Name);
-            return false;
         }
 
         return true;
@@ -709,13 +800,7 @@ internal sealed class ExpressionBinder
     // ------------------------------------------------------------------ typing rules
 
     /// <summary>LANG-222: Integer, Cardinal, Int64 or UInt64.</summary>
-    private TypeSymbol ComputationType(IntegerTypeSymbol type) => ConstantFolder.ComputationType(type) switch
-    {
-        (32, true) => _types.Integer,
-        (32, false) => _types.Cardinal,
-        (_, true) => _types.Int64,
-        _ => _types.UInt64,
-    };
+    private TypeSymbol ComputationType(IntegerTypeSymbol type) => _folder.ComputationTypeSymbol(type);
 
     /// <summary>LANG-222: an integer constant takes the other operand's computation type when its value fits there.</summary>
     private (TypeSymbol Left, TypeSymbol Right) AdaptedComputationTypes(BoundExpression left, BoundExpression right)

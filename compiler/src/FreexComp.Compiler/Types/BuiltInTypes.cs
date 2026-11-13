@@ -65,6 +65,22 @@ public sealed class BuiltInTypes
         Intrinsic("Continue", IntrinsicKind.Continue, "Continue");
         Intrinsic("Exit", IntrinsicKind.Exit, "Exit[(Value)]");
         Intrinsic("Halt", IntrinsicKind.Halt, "Halt[(ExitCode: Integer)]");
+        Intrinsic("Inc", IntrinsicKind.Inc, "Inc(var X[; N: Integer])");
+        Intrinsic("Dec", IntrinsicKind.Dec, "Dec(var X[; N: Integer])");
+        Intrinsic("RunError", IntrinsicKind.RunError, "RunError[(ErrorCode: Integer)]");
+        Intrinsic("Succ", IntrinsicKind.Succ, "Succ(X: Ordinal): Ordinal");
+        Intrinsic("Pred", IntrinsicKind.Pred, "Pred(X: Ordinal): Ordinal");
+        Intrinsic("Ord", IntrinsicKind.Ord, "Ord(X: Ordinal): Integer");
+        Intrinsic("Chr", IntrinsicKind.Chr, "Chr(X: Integer): Char");
+        Intrinsic("Odd", IntrinsicKind.Odd, "Odd(X: Integer): Boolean");
+        Intrinsic("Abs", IntrinsicKind.Abs, "Abs(X: Number): Number");
+        Intrinsic("Sqr", IntrinsicKind.Sqr, "Sqr(X: Number): Number");
+        Intrinsic("Low", IntrinsicKind.Low, "Low(X: Type or Ordinal)");
+        Intrinsic("High", IntrinsicKind.High, "High(X: Type or Ordinal)");
+        Intrinsic("SizeOf", IntrinsicKind.SizeOf, "SizeOf(X: Type or Variable): Integer");
+        Intrinsic("Lo", IntrinsicKind.Lo, "Lo(X: Integer): Byte");
+        Intrinsic("Hi", IntrinsicKind.Hi, "Hi(X: Integer): Byte");
+        Intrinsic("Swap", IntrinsicKind.Swap, "Swap(X: Integer): Word");
     }
 
     /// <summary>
