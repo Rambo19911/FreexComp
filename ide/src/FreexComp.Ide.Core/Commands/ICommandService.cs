@@ -53,6 +53,9 @@ public interface ICommandService
     /// <summary>Throws when a catalog id has no handler (stubs count).</summary>
     void VerifyAllHandled();
 
+    /// <summary>True when <paramref name="commandId"/> has a handler (real or stub).</summary>
+    bool IsHandled(string commandId);
+
     IdeCommand Get(string commandId);
 
     bool CanExecute(string commandId, string? argument = null);

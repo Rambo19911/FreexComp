@@ -71,6 +71,8 @@ public sealed class CommandService : ICommandService
         }
     }
 
+    public bool IsHandled(string commandId) => _handlers.ContainsKey(commandId);
+
     public void VerifyAllHandled()
     {
         var missing = Definitions.Where(d => !_handlers.ContainsKey(d.Id)).Select(d => d.Id).ToList();
@@ -85,7 +87,11 @@ public sealed class CommandService : ICommandService
         if (!_commands.TryGetValue(commandId, out var command))
         {
             var definition = _definitions[commandId];
-            command = new IdeCommand(this, definition, TitleOf(definition), GestureText(commandId));
+            var handler = _handlers.GetValueOrDefault(commandId);
+            command = new IdeCommand(this, definition, handler?.TitleOverride ?? TitleOf(definition), GestureText(commandId))
+            {
+                IsChecked = handler?.IsChecked(null) ?? false,
+            };
             _commands[commandId] = command;
         }
 

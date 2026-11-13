@@ -1,8 +1,15 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:res="clr-namespace:FreexComp.Ide.Core.Resources;assembly=FreexComp.Ide.Core"
+        xmlns:ide="clr-namespace:FreexComp.Ide"
         x:Class="FreexComp.Ide.MainWindow"
         Title="{x:Static res:Strings.App_ProductName}"
         Icon="avares://FreexComp.Ide/Assets/app.ico"
+        AutomationProperties.AutomationId="{x:Static ide:AutomationIds.MainWindow}"
         Width="1440" Height="900">
+  <!-- Region skeleton only (main-window.md); content, sizes and view-models arrive with I-017 and later tasks. -->
+  <DockPanel>
+    <DockPanel DockPanel.Dock="Bottom" AutomationProperties.AutomationId="{x:Static ide:AutomationIds.StatusBar}" />
+    <TabControl AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DocumentArea}" />
+  </DockPanel>
 </Window>

@@ -81,6 +81,8 @@ internal static class SpecTables
         return cells;
     }
 
+    public static string RepoRootPath() => RepoRoot();
+
     private static string RepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)

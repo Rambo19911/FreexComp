@@ -154,6 +154,7 @@ public sealed class PlatformServicesTests
             Assert.IsType<FileSystemWatcherFactory>(services.FileWatchers);
             Assert.IsType<FileLog>(services.Log);
             Assert.IsType<PhysicalFileSystem>(services.FileSystem);
+            Assert.IsType<AvaloniaThemeHost>(services.ThemeHost);
             Assert.Equal(SettingsCatalog.EditorTabWidth.Default, services.Settings.Get(SettingsCatalog.EditorTabWidth));
         }
         finally

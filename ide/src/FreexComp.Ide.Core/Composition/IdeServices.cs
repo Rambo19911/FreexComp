@@ -24,9 +24,11 @@ public sealed record IdeServices
     public required IShellService Shell { get; init; }
     public required IFileWatcherFactory FileWatchers { get; init; }
     public required IDialogService Dialogs { get; init; }
+    public required IThemeHost ThemeHost { get; init; }
 
     // Services (architecture.md §4), in construction order.
     public required ISettingsService Settings { get; init; }
+    public required IThemeService Theme { get; init; }
     public required IKeymapService Keymap { get; init; }
     public required IStatusService Status { get; init; }
     public required ICommandService Commands { get; init; }

@@ -1,31 +1,30 @@
 using Avalonia.Headless.XUnit;
+using FreexComp.Ide.Tests.Infrastructure;
 
 namespace FreexComp.Ide.Tests;
 
 public sealed class MainWindowTests
 {
-    [AvaloniaFact]
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Phase", "1")]
     [Trait("Kind", "Ui")]
-    public void MainWindowShowsWithAppIcon()
+    public async Task MainWindowShowsWithAppIcon()
     {
-        var window = new MainWindow();
-        window.Show();
+        await using var h = await HeadlessHarness.StartAsync();
 
-        Assert.True(window.IsVisible);
-        Assert.NotNull(window.Icon); // BR-001
-        window.Close();
+        Assert.True(h.Window.IsVisible);
+        Assert.NotNull(h.Window.Icon); // BR-001
     }
 
-    [AvaloniaFact]
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Phase", "1")]
     [Trait("Kind", "Ui")]
     [Trait("Req", "UI-WIN-030")]
-    public void TitleIsProductNameFromResources()
+    public async Task TitleIsProductNameFromResources()
     {
-        var window = new MainWindow();
+        await using var h = await HeadlessHarness.StartAsync();
 
-        Assert.Equal(Core.Resources.Strings.App_ProductName, window.Title);
-        Assert.Equal("FreexComp", window.Title); // "No project, no document"
+        Assert.Equal(Core.Resources.Strings.App_ProductName, h.Window.Title);
+        Assert.Equal("FreexComp", h.Window.Title); // "No project, no document"
     }
 }

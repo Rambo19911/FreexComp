@@ -1,5 +1,6 @@
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Composition;
+using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.TestSupport;
 
@@ -28,10 +29,12 @@ public sealed class CompositionTests
         Assert.IsType<KeymapService>(services.Keymap);
         Assert.IsType<CommandService>(services.Commands);
         Assert.NotNull(services.Status);
+        Assert.IsType<FakeThemeHost>(services.ThemeHost);
+        Assert.IsType<ThemeService>(services.Theme);
 
         // Later-phase commands are stubbed by the composition itself. Phase 1 commands whose tasks are not done yet
         // get explicit "not yet implemented" stubs here only, so that this test keeps checking the rest of the graph.
-        foreach (var definition in services.Commands.Definitions.Where(d => d.Phase <= ServiceGraph.ImplementedPhase))
+        foreach (var definition in services.Commands.Definitions.Where(d => d.Phase <= ServiceGraph.ImplementedPhase && !services.Commands.IsHandled(d.Id)))
         {
             services.Commands.RegisterHandler(definition.Id, NotYetImplemented.Instance);
         }

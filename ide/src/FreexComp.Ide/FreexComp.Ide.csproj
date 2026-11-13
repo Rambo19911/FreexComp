@@ -12,6 +12,8 @@
   <ItemGroup>
     <!-- BR-001: the brand icon, tracked in assets/brand, used for the executable and every window. -->
     <AvaloniaResource Include="..\..\..\assets\brand\app.ico" Link="Assets\app.ico" />
+    <!-- UI-TOK-040: original icon geometry, read by Icons/IconCatalog. -->
+    <AvaloniaResource Include="Assets\Icons\*.svg" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />

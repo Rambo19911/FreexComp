@@ -21,6 +21,7 @@ public sealed class TestCompositionOptions
     public IFileWatcherFactory FileWatchers { get; set; } = new ManualFileWatcherFactory();
     public IDialogService Dialogs { get; set; } = new FakeDialogService();
     public ILog Log { get; set; } = new RecordingLog();
+    public IThemeHost ThemeHost { get; set; } = new FakeThemeHost();
 
     /// <summary><c>--user-dir</c> of the composition.</summary>
     public string UserDir { get; set; } =
@@ -51,7 +52,8 @@ public static class TestComposition
             o.Clipboard,
             o.Shell ?? new FakeShellService(o.FileSystem),
             o.FileWatchers,
-            o.Dialogs);
+            o.Dialogs,
+            o.ThemeHost);
 
         return ServiceGraph.Build(options, platform);
     }

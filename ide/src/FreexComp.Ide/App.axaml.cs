@@ -18,9 +18,10 @@ public sealed class App : Application
         {
             // IDE-ARCH-015 steps 1–8 (theme, view-model and UI state arrive with their tasks).
             var options = StartupOptions.Parse(desktop.Args ?? []);
-            var window = new MainWindow();
+            MainWindow? window = null;
             var platform = CompositionRoot.CreatePlatform(options, () => window);
             Services = CompositionRoot.Build(options, platform);
+            window = CompositionRoot.CreateMainWindow(Services);
             desktop.Exit += (_, _) => (platform.Log as IDisposable)?.Dispose();
             desktop.MainWindow = window;
         }

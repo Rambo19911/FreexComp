@@ -22,11 +22,13 @@ public static class ServiceGraph
         // IDE-ARCH-015 step 4: synchronous load of the user files before anything reads them.
         var settings = new SettingsService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log, SettingsCatalog.All);
         settings.Load();
+        var theme = new ThemeService(settings, platform.ThemeHost); // step 5: theme applied
         var keymap = new KeymapService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log);
         keymap.Load();
 
         var status = new StatusService(platform.Clock);
         var commands = new CommandService(keymap, platform.Dispatcher, platform.Clock, platform.Log, platform.Dialogs, status);
+        theme.RegisterCommands(commands);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         return new IdeServices
@@ -41,7 +43,9 @@ public static class ServiceGraph
             Shell = platform.Shell,
             FileWatchers = platform.FileWatchers,
             Dialogs = platform.Dialogs,
+            ThemeHost = platform.ThemeHost,
             Settings = settings,
+            Theme = theme,
             Keymap = keymap,
             Status = status,
             Commands = commands,

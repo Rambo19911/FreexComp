@@ -29,6 +29,8 @@ public interface IPlatformServices
     IFileWatcherFactory FileWatchers { get; }
 
     IDialogService Dialogs { get; }
+
+    IThemeHost ThemeHost { get; }
 }
 
 /// <summary>Plain holder of the platform inputs.</summary>
@@ -41,4 +43,5 @@ public sealed record PlatformServices(
     IClipboardService Clipboard,
     IShellService Shell,
     IFileWatcherFactory FileWatchers,
-    IDialogService Dialogs) : IPlatformServices;
+    IDialogService Dialogs,
+    IThemeHost ThemeHost) : IPlatformServices;

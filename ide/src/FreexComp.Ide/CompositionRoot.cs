@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Logging;
@@ -33,9 +34,17 @@ public static class CompositionRoot
             new AvaloniaClipboard(mainWindow),
             new WindowsShellService(),
             new FileSystemWatcherFactory(),
-            new LoggingDialogService(log));
+            new LoggingDialogService(log),
+            new AvaloniaThemeHost(Application.Current ?? throw new InvalidOperationException("No Avalonia application.")));
     }
 
     /// <summary>Step 6 of start-up.</summary>
     public static IdeServices Build(StartupOptions options, IPlatformServices platform) => ServiceGraph.Build(options, platform);
+
+    /// <summary>Step 7 of start-up; the only place that creates the main window (the test harness calls it too).</summary>
+    public static MainWindow CreateMainWindow(IdeServices services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        return new MainWindow();
+    }
 }
