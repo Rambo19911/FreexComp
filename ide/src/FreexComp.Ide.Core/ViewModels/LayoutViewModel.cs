@@ -99,9 +99,17 @@ public sealed class LayoutViewModel : ObservableObject
     /// <summary>Keyboard focus is to move into <see cref="Pane"/> (its active tab's primary control, or the active document).</summary>
     public event EventHandler<Pane>? PaneFocusRequested;
 
+    /// <summary>The status bar is shown (UI-WIN-044), so it is a stop of the <c>F6</c> cycle; set by the main window.</summary>
+    public bool IsStatusBarShown { get; set; } = true;
+
     /// <summary>UI-A11Y-003: the visible panes in cycle order; hidden docks are skipped, the document area is always there.</summary>
     public IReadOnlyList<Pane> VisiblePanes =>
-        [.. Enum.GetValues<Pane>().Where(p => p == Pane.Documents || !Group(GroupOf(p)).IsCollapsed)];
+        [.. Enum.GetValues<Pane>().Where(p => p switch
+        {
+            Pane.Documents => true,
+            Pane.StatusBar => IsStatusBarShown,
+            _ => !Group(GroupOf(p)).IsCollapsed,
+        })];
 
     /// <summary>The pane after (<paramref name="step"/> = 1) or before (−1) <paramref name="current"/>, wrapping; outside any pane the cycle starts at the document area.</summary>
     public Pane NextPane(Pane? current, int step)
@@ -126,7 +134,7 @@ public sealed class LayoutViewModel : ObservableObject
         Pane.Bottom => ToolGroupId.Bottom,
         Pane.RightUpper => ToolGroupId.RightUpper,
         Pane.RightLower => ToolGroupId.RightLower,
-        _ => throw new ArgumentOutOfRangeException(nameof(pane), pane, "The document area is not a tool group."),
+        _ => throw new ArgumentOutOfRangeException(nameof(pane), pane, "The document area and the status bar are not tool groups."),
     };
 
     private static int IndexOf(IReadOnlyList<Pane> panes, Pane pane)

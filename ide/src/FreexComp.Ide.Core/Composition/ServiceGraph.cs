@@ -41,6 +41,7 @@ public static class ServiceGraph
         var toolWindows = new ToolWindowService(commands, focus, platform.Clock, layout, ImplementedPhase); // tool windows register here (IDE-ARCH-100)
         theme.RegisterCommands(commands);
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
+        ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         return new IdeServices

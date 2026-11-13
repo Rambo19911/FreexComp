@@ -20,9 +20,7 @@
     <views:ToolBarRow x:Name="ToolBars" Grid.Row="1" />
     <!-- (4)-(7) Docks around the document area, through the ViewLocator (LayoutView). -->
     <ContentControl Grid.Row="2" Content="{Binding Layout}" />
-    <!-- (8) Status bar: fields in I-027. -->
-    <DockPanel Grid.Row="3" Height="{DynamicResource FxcMetricStatusBarHeight}"
-               Background="{DynamicResource FxcStatusbarIdleBgBrush}"
-               AutomationProperties.AutomationId="{x:Static ide:AutomationIds.StatusBar}" />
+    <!-- (8) Status bar (main-window.md §5). -->
+    <views:StatusBarView x:Name="StatusBar" Grid.Row="3" DataContext="{Binding StatusBar}" />
   </Grid>
 </Window>

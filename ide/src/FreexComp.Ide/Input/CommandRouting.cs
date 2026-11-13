@@ -30,8 +30,8 @@ public static class CommandRouting
     /// <summary>
     /// The focus state of <paramref name="focused"/> (IDE-ARCH-042): a <see cref="TextBox"/> is a text input in the
     /// <c>Global</c> scope whose target is the TextBox itself (I-153); otherwise the innermost marked ancestor gives
-    /// scope, tool window and target. Null when focus is in transient chrome — the menu bar, a menu, the toolbar row or
-    /// any popup — whose commands act on what had focus before (I-153); the caller keeps the previous state.
+    /// scope, tool window and target. Null when focus is in transient chrome — the menu bar, a menu, the toolbar row, a
+    /// status-bar field or any popup — whose commands act on what had focus before (I-153); the caller keeps the previous state.
     /// </summary>
     public static FocusState? StateOf(Visual? focused)
     {
@@ -61,7 +61,7 @@ public static class CommandRouting
         Visual? last = null;
         for (var v = focused; v is not null; v = v.GetVisualParent())
         {
-            if (v is MenuBase or MenuItem or Views.ToolBarRow)
+            if (v is MenuBase or MenuItem or Views.ToolBarRow or Views.StatusFieldButton)
             {
                 return true;
             }

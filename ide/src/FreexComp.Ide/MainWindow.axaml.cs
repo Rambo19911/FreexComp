@@ -46,6 +46,7 @@ public sealed partial class MainWindow : Window
         };
         Closed += (_, _) => _closed = true;
         ToolBars.EscapeRequested += (_, _) => ViewModel?.Layout.FocusPane(Core.Models.Pane.Documents); // UI-TB-008
+        StatusBar.EscapeRequested += (_, _) => ViewModel?.Layout.FocusPane(Core.Models.Pane.Documents);
         MenuBar.Closed += (_, _) => Dispatcher.UIThread.Post(() =>
         {
             if (IsInMenuBar(FocusManager?.GetFocusedElement() as Avalonia.Visual))

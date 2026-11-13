@@ -22,6 +22,15 @@ public sealed class MainWindowViewModel : ObservableObject
         DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap);
         Layout = services.Layout.Layout;
         Layout.DocumentArea = DocumentArea;
+        StatusBar = new StatusBarViewModel(services.Status, services.Commands, services.Settings);
+        Layout.IsStatusBarShown = StatusBar.IsVisible;
+        StatusBar.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(StatusBarViewModel.IsVisible))
+            {
+                Layout.IsStatusBarShown = StatusBar.IsVisible;
+            }
+        };
         MainMenu = MainMenuModel.Build(services.Commands);
         ToolBars = ToolBarRowModel.Build(services.Commands, services.Settings, ServiceGraph.ImplementedPhase);
         ToolBarContextMenu = ToolBarRowModel.BuildContextMenu(services.Commands);
@@ -40,6 +49,9 @@ public sealed class MainWindowViewModel : ObservableObject
     public string Title => Strings.App_ProductName;
 
     public DocumentAreaViewModel DocumentArea { get; }
+
+    /// <summary>Region 8 (main-window.md §5).</summary>
+    public StatusBarViewModel StatusBar { get; }
 
     /// <summary>Regions 4–7: the docks around the document area (main-window.md §2).</summary>
     public LayoutViewModel Layout { get; }

@@ -928,6 +928,51 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Encoding_windows_1252" xml:space="preserve">
     <value>Western (Windows-1252)</value>
   </data>
+  <data name="StatusBar_CaretPosition" xml:space="preserve">
+    <value>Ln {0}, Col {1}</value>
+  </data>
+  <data name="StatusBar_Selection" xml:space="preserve">
+    <value>Sel {0}</value>
+  </data>
+  <data name="StatusBar_SelectionLines" xml:space="preserve">
+    <value>Sel {0} ({1} lines)</value>
+  </data>
+  <data name="StatusBar_Insert" xml:space="preserve">
+    <value>INS</value>
+  </data>
+  <data name="StatusBar_Overwrite" xml:space="preserve">
+    <value>OVR</value>
+  </data>
+  <data name="StatusBar_IndentSpaces" xml:space="preserve">
+    <value>Spaces: {0}</value>
+  </data>
+  <data name="StatusBar_IndentTabs" xml:space="preserve">
+    <value>Tabs: {0}</value>
+  </data>
+  <data name="StatusBar_LineEnding_CrLf" xml:space="preserve">
+    <value>CRLF</value>
+  </data>
+  <data name="StatusBar_LineEnding_Lf" xml:space="preserve">
+    <value>LF</value>
+  </data>
+  <data name="StatusBar_LineEnding_Mixed" xml:space="preserve">
+    <value>Mixed</value>
+  </data>
+  <data name="StatusBar_Encoding_utf_8" xml:space="preserve">
+    <value>UTF-8</value>
+  </data>
+  <data name="StatusBar_Encoding_utf_8_bom" xml:space="preserve">
+    <value>UTF-8 BOM</value>
+  </data>
+  <data name="StatusBar_Encoding_utf_16le" xml:space="preserve">
+    <value>UTF-16 LE</value>
+  </data>
+  <data name="StatusBar_Encoding_utf_16be" xml:space="preserve">
+    <value>UTF-16 BE</value>
+  </data>
+  <data name="StatusBar_Encoding_windows_1252" xml:space="preserve">
+    <value>Windows-1252</value>
+  </data>
   <data name="App_ProductName" xml:space="preserve">
     <value>FreexComp</value>
   </data>

@@ -126,6 +126,11 @@ public sealed class LayoutView : Grid
             {
                 return pane;
             }
+
+            if (v is StatusBarView)
+            {
+                return Pane.StatusBar;
+            }
         }
 
         return null;
@@ -151,6 +156,10 @@ public sealed class LayoutView : Grid
                 break;
             case Pane.RightUpper:
                 _rightUpper.FocusActive();
+                break;
+            case Pane.StatusBar:
+                // UI-WIN-042: the status bar lives outside the docks, in the same window.
+                TopLevel.GetTopLevel(this)?.GetVisualDescendants().OfType<StatusBarView>().FirstOrDefault()?.FocusFirstField();
                 break;
             default:
                 _rightLower.FocusActive();

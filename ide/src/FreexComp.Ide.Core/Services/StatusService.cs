@@ -2,29 +2,63 @@ using FreexComp.Ide.Core.Platform;
 
 namespace FreexComp.Ide.Core.Services;
 
-/// <summary>
-/// Minimal <see cref="IStatusService"/> for the composition (I-012): holds the transient message until its duration
-/// elapses. Status-bar fields and progress arrive with I-027. UI thread only.
-/// </summary>
+/// <inheritdoc />
+/// <remarks>Expiry runs on <see cref="IClock"/> so tests advance it (IDE-ARCH-085). Progress and the IDE state arrive in P3.</remarks>
 public sealed class StatusService(IClock clock) : IStatusService
 {
     private IDisposable? _expiry;
+    private object? _current; // identifies the shown message, so a stale sticky or expiry does not clear a newer one
 
     public event EventHandler? Changed;
 
-    /// <summary>The transient message shown in the message field, or null.</summary>
     public string? Message { get; private set; }
+
+    public EditorStatus? Editor { get; private set; }
 
     public void ShowMessage(string text, TimeSpan duration)
     {
+        var token = Show(text);
+        _expiry = clock.Schedule(duration, () => Clear(token));
+    }
+
+    public IDisposable ShowStickyMessage(string text) => new Sticky(this, Show(text));
+
+    public void SetEditor(EditorStatus? editor)
+    {
+        if (Editor != editor)
+        {
+            Editor = editor;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private object Show(string text)
+    {
         _expiry?.Dispose();
+        _expiry = null;
+        var token = new object();
+        _current = token;
         Message = text;
         Changed?.Invoke(this, EventArgs.Empty);
-        _expiry = clock.Schedule(duration, () =>
+        return token;
+    }
+
+    private void Clear(object token)
+    {
+        if (_current != token)
         {
-            _expiry = null;
-            Message = null;
-            Changed?.Invoke(this, EventArgs.Empty);
-        });
+            return;
+        }
+
+        _expiry?.Dispose();
+        _expiry = null;
+        _current = null;
+        Message = null;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private sealed class Sticky(StatusService owner, object token) : IDisposable
+    {
+        public void Dispose() => owner.Clear(token);
     }
 }

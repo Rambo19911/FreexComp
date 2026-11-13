@@ -89,6 +89,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.ToolWindows.AddRange(options.ToolWindows);
         });
 
+        Status = new StatusBarDriver(this);
         Window = CompositionRoot.CreateMainWindow(Services);
         Window.Width = options.WindowSize.Width;
         Window.Height = options.WindowSize.Height;
@@ -118,6 +119,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
     public ManualClock Clock { get; }
 
     public MessageScript Messages { get; }
+
+    /// <summary>The status-bar fields (testing.md §2.1).</summary>
+    public StatusBarDriver Status { get; }
 
     /// <summary>Every file-system call the services made.</summary>
     public RecordingFileSystem FileSystem { get; }

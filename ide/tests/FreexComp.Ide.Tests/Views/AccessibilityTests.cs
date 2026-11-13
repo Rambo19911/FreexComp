@@ -29,8 +29,12 @@ public sealed class AccessibilityTests
         Assert.Equal("Tool.Messages.List", h.FocusedAutomationId);
         h.Press("F6");
         Assert.Equal("Tool.Sample.List", h.FocusedAutomationId);
+        h.Press("F6"); // UI-WIN-042: the status bar is one stop after the right dock
+        Assert.Equal("StatusBar.State", h.FocusedAutomationId);
         h.Press("F6"); // wrap
         Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        h.Press("Shift+F6");
+        Assert.Equal("StatusBar.State", h.FocusedAutomationId);
         h.Press("Shift+F6");
         Assert.Equal("Tool.Sample.List", h.FocusedAutomationId);
         h.Press("Shift+F6");

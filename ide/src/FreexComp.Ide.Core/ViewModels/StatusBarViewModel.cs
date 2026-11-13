@@ -1,0 +1,137 @@
+using System.Globalization;
+using CommunityToolkit.Mvvm.ComponentModel;
+using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Services;
+using FreexComp.Ide.Core.Settings;
+
+namespace FreexComp.Ide.Core.ViewModels;
+
+/// <summary>
+/// Region 8, the status bar (main-window.md §5): state (L1), message (L3) and the active text editor's fields R2–R8.
+/// Fields of later phases (L2 progress, R1 diagnostics, R9 configuration, the designer field) arrive with their tasks;
+/// the R6/R7 menus with I-082. Texts come from <see cref="Strings"/>; the view only lays them out.
+/// </summary>
+public sealed class StatusBarViewModel : ObservableObject
+{
+    private readonly IStatusService _status;
+    private readonly ISettingsService _settings;
+
+    public StatusBarViewModel(IStatusService status, ICommandService commands, ISettingsService settings)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(settings);
+        _status = status;
+        _settings = settings;
+        StateCommand = commands.Get("view.messages");
+        CaretCommand = commands.Get("search.goToLine");
+        InsertModeCommand = commands.Get("edit.toggleOverwrite");
+        IndentCommand = commands.Get("tools.options");
+        status.Changed += (_, _) => OnPropertyChanged(string.Empty);
+        settings.Changed += (_, e) =>
+        {
+            if (e.Key == SettingsCatalog.AppearanceShowStatusBar.Name)
+            {
+                OnPropertyChanged(nameof(IsVisible));
+            }
+        };
+    }
+
+    /// <summary>UI-WIN-044 (<c>appearance.showStatusBar</c>).</summary>
+    public bool IsVisible => _settings.Get(SettingsCatalog.AppearanceShowStatusBar);
+
+    /// <summary>L1: the IDE state; Idle until the build/run state machine exists (P3).</summary>
+    public string StateText => Strings.Msg_State_Idle;
+
+    /// <summary>L3: the transient or sticky message, empty when there is none.</summary>
+    public string Message => _status.Message ?? "";
+
+    /// <summary>UI-WIN-040: R2–R8 are shown while a text editor view is the active document view.</summary>
+    public bool HasEditor => _status.Editor is not null;
+
+    public string CaretText => Editor is { } e ? Format(Strings.StatusBar_CaretPosition, e.Line, e.Column) : "";
+
+    /// <summary>R3 is hidden while the selection is empty.</summary>
+    public bool HasSelection => Editor is { SelectedChars: > 0 };
+
+    public string SelectionText => Editor switch
+    {
+        { SelectedChars: > 0, SelectedLines: > 1 } e => Format(Strings.StatusBar_SelectionLines, e.SelectedChars, e.SelectedLines),
+        { SelectedChars: > 0 } e => Format(Strings.StatusBar_Selection, e.SelectedChars),
+        _ => "",
+    };
+
+    public string InsertModeText => Editor is { Overwrite: true } ? Strings.StatusBar_Overwrite : Strings.StatusBar_Insert;
+
+    public string IndentText => Editor is { } e
+        ? Format(e.InsertSpaces ? Strings.StatusBar_IndentSpaces : Strings.StatusBar_IndentTabs, e.IndentSize)
+        : "";
+
+    public string LineEndingText => Editor?.LineEnding switch
+    {
+        LineEndingKind.Lf => Strings.StatusBar_LineEnding_Lf,
+        LineEndingKind.Mixed => Strings.StatusBar_LineEnding_Mixed,
+        LineEndingKind.CrLf => Strings.StatusBar_LineEnding_CrLf,
+        _ => "",
+    };
+
+    /// <summary>R7: the encoding's short name (<c>StatusBar_Encoding_&lt;id&gt;</c>); an unknown id is shown as it is.</summary>
+    public string EncodingText => Editor is { } e
+        ? Strings.ResourceManager.GetString("StatusBar_Encoding_" + e.EncodingId.Replace('-', '_'), CultureInfo.CurrentCulture) ?? e.EncodingId
+        : "";
+
+    public string LanguageText => Editor?.Language ?? "";
+
+    /// <summary>L1 click: <c>view.messages</c>.</summary>
+    public IdeCommand StateCommand { get; }
+
+    /// <summary>R2 click: <c>search.goToLine</c>.</summary>
+    public IdeCommand CaretCommand { get; }
+
+    /// <summary>R4 click: <c>edit.toggleOverwrite</c>.</summary>
+    public IdeCommand InsertModeCommand { get; }
+
+    /// <summary>R5 click: Options (the page Editor › General is selected once the Options dialog exists).</summary>
+    public IdeCommand IndentCommand { get; }
+
+    private EditorStatus? Editor => _status.Editor;
+
+    /// <summary>A field was clicked or activated with the keyboard: its command runs when it can.</summary>
+    public static void Activate(IdeCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        if (command.CanExecute(null))
+        {
+            command.Execute(null);
+        }
+    }
+
+    /// <summary>Registers <c>view.statusBar</c> (UI-WIN-044), a toggle of <c>appearance.showStatusBar</c>.</summary>
+    public static void RegisterCommands(ICommandService commands, ISettingsService settings)
+    {
+        commands.RegisterHandler("view.statusBar", new ToggleHandler(settings));
+        settings.Changed += (_, e) =>
+        {
+            if (e.Key == SettingsCatalog.AppearanceShowStatusBar.Name)
+            {
+                commands.InvalidateCanExecute(); // moves the check mark
+            }
+        };
+    }
+
+    private static string Format(string format, params object[] args) => string.Format(CultureInfo.CurrentCulture, format, args);
+
+    private sealed class ToggleHandler(ISettingsService settings) : ICommandHandler
+    {
+        public bool CanExecute(string? argument) => true;
+
+        public Task ExecuteAsync(string? argument)
+        {
+            settings.Set(SettingsCatalog.AppearanceShowStatusBar, !settings.Get(SettingsCatalog.AppearanceShowStatusBar));
+            return Task.CompletedTask;
+        }
+
+        public bool IsChecked(string? argument) => settings.Get(SettingsCatalog.AppearanceShowStatusBar);
+    }
+}
