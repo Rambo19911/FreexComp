@@ -63,6 +63,15 @@ if (-not (Test-Path (Join-Path $pyDir 'python3.dll')) -and -not $CheckOnly) {
 }
 foreach ($f in $cfg.python.requiredFiles) { Say (Test-Path (Join-Path $pyDir $f)) "Python runtime file $f" }
 
+# --- SQLite (official DLL, used by the data-access area) --------------------------------------------------
+$sqlDir = Join-Path $root $cfg.sqlite.installDir
+if (-not (Test-Path (Join-Path $sqlDir 'sqlite3.dll')) -and -not $CheckOnly) {
+    $zip = Get-Package $cfg.sqlite.package $cfg.sqlite.url $cfg.sqlite.sha256
+    New-Item -ItemType Directory -Force $sqlDir | Out-Null
+    Expand-Archive -Path $zip -DestinationPath $sqlDir -Force
+}
+foreach ($f in $cfg.sqlite.requiredFiles) { Say (Test-Path (Join-Path $sqlDir $f)) "SQLite file $f" }
+
 # --- lldb must start using ONLY the bundled Python -------------------------------------------------------
 if ((Test-Path (Join-Path $llvmBin 'lldb.exe')) -and (Test-Path (Join-Path $pyDir 'python3.dll'))) {
     $old = $env:PATH
