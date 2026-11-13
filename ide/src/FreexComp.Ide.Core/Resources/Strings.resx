@@ -2529,4 +2529,20 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Clear filter</value>
     <comment>UI-TW-008: automation name and tooltip of the filter box's clear (×) button</comment>
   </data>
+  <data name="Language_Pascal" xml:space="preserve">
+    <value>Object Pascal</value>
+    <comment>main-window.md §5 R8: ILanguageDefinition.DisplayName</comment>
+  </data>
+  <data name="Language_Form" xml:space="preserve">
+    <value>Form</value>
+    <comment>main-window.md §5 R8: ILanguageDefinition.DisplayName</comment>
+  </data>
+  <data name="Language_Json" xml:space="preserve">
+    <value>JSON</value>
+    <comment>main-window.md §5 R8: ILanguageDefinition.DisplayName</comment>
+  </data>
+  <data name="Language_PlainText" xml:space="preserve">
+    <value>Plain Text</value>
+    <comment>main-window.md §5 R8: ILanguageDefinition.DisplayName</comment>
+  </data>
 </root>

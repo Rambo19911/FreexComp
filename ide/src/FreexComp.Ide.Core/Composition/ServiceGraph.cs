@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
@@ -66,6 +67,7 @@ public static class ServiceGraph
             FocusTracker = focus,
             Layout = layout,
             ToolWindows = toolWindows,
+            Languages = new LanguageRegistry(),
         };
     }
 }

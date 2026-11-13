@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Services;
@@ -38,4 +39,5 @@ public sealed record IdeServices
     public required IFocusTracker FocusTracker { get; init; }
     public required ILayoutService Layout { get; init; }
     public required IToolWindowService ToolWindows { get; init; }
+    public required ILanguageRegistry Languages { get; init; }
 }
