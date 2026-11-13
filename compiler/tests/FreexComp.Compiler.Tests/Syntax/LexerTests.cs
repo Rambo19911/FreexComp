@@ -10,7 +10,7 @@ public sealed partial class LexerTests
 {
     internal const string Path = @"C:\p\test.pas";
 
-    /// <summary>The 65 reserved words of LANG-115, verbatim.</summary>
+    /// <summary>The 62 reserved words of LANG-115, verbatim.</summary>
     internal const string ReservedWordsText = """
         and array as begin case class const constructor destructor div do downto else end except
         exports file finalization finally for function goto if implementation in inherited

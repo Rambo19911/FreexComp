@@ -25,9 +25,13 @@ internal sealed class PascalLexer
 
     public ImmutableArray<Diagnostic> Diagnostics => [.. _diagnostics];
 
+    /// <summary>
+    /// Next token. Trivia attachment (LANG-106): trailing trivia runs up to and including the first line break
+    /// after the token (or up to the next token); everything else is leading trivia of the next token.
+    /// </summary>
     public SyntaxToken Lex()
     {
-        var leading = ScanTrivia();
+        var leading = ScanTrivia(trailing: false);
         var start = _pos;
         if (_pos >= _text.Length)
         {
@@ -35,7 +39,8 @@ internal sealed class PascalLexer
         }
 
         var (kind, value) = ScanToken();
-        return new SyntaxToken(kind, _text[start.._pos], value, start, leading, []);
+        var text = _text[start.._pos];
+        return new SyntaxToken(kind, text, value, start, leading, ScanTrivia(trailing: true));
     }
 
     // ------------------------------------------------------------------ tokens
@@ -435,14 +440,34 @@ internal sealed class PascalLexer
 
     // ------------------------------------------------------------------ trivia
 
-    private ImmutableArray<SyntaxTrivia> ScanTrivia()
+    private ImmutableArray<SyntaxTrivia> ScanTrivia(bool trailing)
     {
         _trivia.Clear();
         while (_pos < _text.Length)
         {
             var start = _pos;
             var c = _text[_pos];
-            if (IsWhitespace(c))
+            var next = _pos + 1 < _text.Length ? _text[_pos + 1] : '\0';
+            if (c == '{')
+            {
+                ScanBlockComment(closer: "}", openerLength: 1);
+            }
+            else if (c == '(' && next == '*')
+            {
+                ScanBlockComment(closer: "*)", openerLength: 2);
+            }
+            else if (c == '/' && next == '/')
+            {
+                while (_pos < _text.Length && _text[_pos] is not ('\r' or '\n'))
+                {
+                    _pos++;
+                }
+
+                // LANG-142: "///" (but not "////") is a documentation comment.
+                var isDoc = _pos - start >= 3 && _text[start + 2] == '/' && (_pos - start == 3 || _text[start + 3] != '/');
+                _trivia.Add(new SyntaxTrivia(isDoc ? SyntaxKind.DocCommentTrivia : SyntaxKind.LineCommentTrivia, _text[start.._pos], start));
+            }
+            else if (IsWhitespace(c))
             {
                 while (_pos < _text.Length && IsWhitespace(_text[_pos]))
                 {
@@ -453,8 +478,12 @@ internal sealed class PascalLexer
             }
             else if (c is '\r' or '\n')
             {
-                _pos += c == '\r' && _pos + 1 < _text.Length && _text[_pos + 1] == '\n' ? 2 : 1;
+                _pos += c == '\r' && next == '\n' ? 2 : 1;
                 _trivia.Add(new SyntaxTrivia(SyntaxKind.EndOfLineTrivia, _text[start.._pos], start));
+                if (trailing)
+                {
+                    break;
+                }
             }
             else if (!StartsToken(_pos))
             {
@@ -467,6 +496,46 @@ internal sealed class PascalLexer
         }
 
         return _trivia.Count == 0 ? [] : _trivia.ToImmutable();
+    }
+
+    /// <summary>
+    /// <c>{ … }</c> or <c>(* … *)</c> (LANG-140, no nesting). A <c>$</c> right after the opener makes a directive
+    /// (LANG-141); <c>{**</c> a documentation comment (LANG-142). Unterminated: E1030 at the opener, runs to the end.
+    /// </summary>
+    private void ScanBlockComment(string closer, int openerLength)
+    {
+        var start = _pos;
+        var contentStart = start + openerLength;
+        var end = _text.IndexOf(closer, contentStart, StringComparison.Ordinal);
+        var contentEnd = end < 0 ? _text.Length : end;
+        _pos = end < 0 ? _text.Length : end + closer.Length;
+        if (end < 0)
+        {
+            Report("E1030", start, openerLength);
+        }
+
+        var text = _text[start.._pos];
+        if (contentStart < _text.Length && _text[contentStart] == '$')
+        {
+            var body = _text.AsSpan(contentStart + 1, contentEnd - contentStart - 1);
+            var nameLength = 0;
+            while (nameLength < body.Length && (char.IsAsciiLetterOrDigit(body[nameLength]) || body[nameLength] == '_'))
+            {
+                nameLength++;
+            }
+
+            var info = new DirectiveTriviaInfo(
+                body[..nameLength].ToString().ToUpperInvariant(),
+                body[nameLength..].Trim().ToString(),
+                new TextSpan(start, text.Length),
+                IsActive: true);
+            _trivia.Add(new SyntaxTrivia(SyntaxKind.DirectiveTrivia, text, start, info));
+            return;
+        }
+
+        var isDoc = closer == "}" && contentStart + 1 < _text.Length && _text[contentStart] == '*' && _text[contentStart + 1] == '*'
+                    && contentStart + 1 < contentEnd;
+        _trivia.Add(new SyntaxTrivia(isDoc ? SyntaxKind.DocCommentTrivia : SyntaxKind.BlockCommentTrivia, text, start));
     }
 
     /// <summary>LANG-104: E1002, the character (or surrogate pair) becomes skipped-text trivia.</summary>

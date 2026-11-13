@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Collections.Immutable;
 
 namespace FreexComp.Compiler.Syntax;
 
@@ -58,8 +59,101 @@ public static partial class SyntaxFacts
         ("writeonly", SyntaxKind.WriteOnlyKeyword),
     ];
 
+    private static readonly (string Text, SyntaxKind Kind)[] SymbolTable =
+    [
+        ("+", SyntaxKind.PlusToken), ("-", SyntaxKind.MinusToken), ("*", SyntaxKind.AsteriskToken), ("/", SyntaxKind.SlashToken),
+        ("=", SyntaxKind.EqualsToken), ("<>", SyntaxKind.LessThanGreaterThanToken), ("<", SyntaxKind.LessThanToken),
+        (">", SyntaxKind.GreaterThanToken), ("<=", SyntaxKind.LessThanEqualsToken), (">=", SyntaxKind.GreaterThanEqualsToken),
+        (":=", SyntaxKind.ColonEqualsToken), (".", SyntaxKind.DotToken), ("..", SyntaxKind.DotDotToken), (",", SyntaxKind.CommaToken),
+        (";", SyntaxKind.SemicolonToken), (":", SyntaxKind.ColonToken), ("(", SyntaxKind.OpenParenToken),
+        (")", SyntaxKind.CloseParenToken), ("[", SyntaxKind.OpenBracketToken), ("]", SyntaxKind.CloseBracketToken),
+        ("^", SyntaxKind.CaretToken), ("@", SyntaxKind.AtToken), ("#", SyntaxKind.HashToken), ("$", SyntaxKind.DollarToken),
+        ("&", SyntaxKind.AmpersandToken),
+    ];
+
     private static readonly FrozenDictionary<string, SyntaxKind> ReservedByText =
         ReservedWordTable.ToFrozenDictionary(e => e.Text, e => e.Kind, IdentifierComparer.Instance);
+
+    private static readonly FrozenDictionary<string, SyntaxKind> ContextualByText =
+        ContextualKeywordTable.ToFrozenDictionary(e => e.Text, e => e.Kind, IdentifierComparer.Instance);
+
+    private static readonly FrozenDictionary<SyntaxKind, string> TextByKind =
+        SymbolTable.Concat(ReservedWordTable).Concat(ContextualKeywordTable).ToFrozenDictionary(e => e.Kind, e => e.Text);
+
+    private static readonly FrozenSet<SyntaxKind> ReservedKinds = ReservedWordTable.Select(e => e.Kind).ToFrozenSet();
+
+    private static readonly FrozenSet<SyntaxKind> ContextualKinds = ContextualKeywordTable.Select(e => e.Kind).ToFrozenSet();
+
+    /// <summary>LANG-115, lower-case, sorted ordinally.</summary>
+    public static ImmutableArray<string> ReservedWords { get; } = [.. ReservedWordTable.Select(e => e.Text).Order(StringComparer.Ordinal)];
+
+    /// <summary>LANG-116, lower-case, sorted ordinally.</summary>
+    public static ImmutableArray<string> ContextualKeywords { get; } = [.. ContextualKeywordTable.Select(e => e.Text).Order(StringComparer.Ordinal)];
+
+    /// <summary>Reserved word (LANG-115), compared case-insensitively for ASCII letters only (LANG-110).</summary>
+    public static bool IsReservedWord(string text) => GetReservedWordKind(text) != SyntaxKind.None;
+
+    /// <summary>Contextual keyword (LANG-116), same comparison as <see cref="IsReservedWord(string)"/>.</summary>
+    public static bool IsContextualKeyword(string text) => ContextualByText.ContainsKey(text);
+
+    /// <summary>A LANG-110 identifier that is not a reserved word (so usable without '&amp;').</summary>
+    public static bool IsValidIdentifier(string text)
+    {
+        if (text.Length == 0 || IsReservedWord(text))
+        {
+            return false;
+        }
+
+        var tokens = Lexer.Tokenize(SourceText.From(@"C:\identifier.pas", text));
+        return tokens.Length == 2 && tokens[0].Kind == SyntaxKind.IdentifierToken && tokens[0].Text == text
+               && text[0] != '&' && tokens[0].LeadingTrivia.IsEmpty && tokens[0].TrailingTrivia.IsEmpty;
+    }
+
+    /// <summary>The reserved-word kind, else the contextual-keyword kind, else <see cref="SyntaxKind.None"/>.</summary>
+    public static SyntaxKind GetKeywordKind(string text) =>
+        GetReservedWordKind(text) is var kind && kind != SyntaxKind.None ? kind
+        : ContextualByText.TryGetValue(text, out var contextual) ? contextual : SyntaxKind.None;
+
+    /// <summary>The fixed text of a symbol or keyword kind (keywords lower-case, digraphs as <c>[</c> / <c>]</c>); "" otherwise.</summary>
+    public static string GetText(SyntaxKind kind) => TextByKind.TryGetValue(kind, out var text) ? text : "";
+
+    /// <summary>Binary operator precedence (LANG-170): 4 multiplicative, 3 additive, 2 relational, 0 not binary.</summary>
+    public static int GetBinaryPrecedence(SyntaxKind operatorKind) => operatorKind switch
+    {
+        SyntaxKind.AsteriskToken or SyntaxKind.SlashToken or SyntaxKind.DivKeyword or SyntaxKind.ModKeyword
+            or SyntaxKind.AndKeyword or SyntaxKind.ShlKeyword or SyntaxKind.ShrKeyword or SyntaxKind.AsKeyword => 4,
+        SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.OrKeyword or SyntaxKind.XorKeyword => 3,
+        SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken or SyntaxKind.LessThanToken or SyntaxKind.GreaterThanToken
+            or SyntaxKind.LessThanEqualsToken or SyntaxKind.GreaterThanEqualsToken or SyntaxKind.InKeyword or SyntaxKind.IsKeyword => 2,
+        _ => 0,
+    };
+
+    /// <summary>Reserved-word token kinds (LANG-115).</summary>
+    public static bool IsKeyword(SyntaxKind kind) => ReservedKinds.Contains(kind);
+
+    /// <summary>Contextual-keyword kinds (LANG-116), as used in <see cref="SyntaxToken.ContextualKind"/>.</summary>
+    public static bool IsContextualKeyword(SyntaxKind kind) => ContextualKinds.Contains(kind);
+
+    /// <summary><c>. , ; : ( ) [ ]</c>.</summary>
+    public static bool IsPunctuation(SyntaxKind kind) => kind is SyntaxKind.DotToken or SyntaxKind.CommaToken
+        or SyntaxKind.SemicolonToken or SyntaxKind.ColonToken or SyntaxKind.OpenParenToken or SyntaxKind.CloseParenToken
+        or SyntaxKind.OpenBracketToken or SyntaxKind.CloseBracketToken;
+
+    /// <summary><c>+ - * / = &lt;&gt; &lt; &gt; &lt;= &gt;= := @ ^ ..</c>.</summary>
+    public static bool IsOperator(SyntaxKind kind) => kind is SyntaxKind.PlusToken or SyntaxKind.MinusToken
+        or SyntaxKind.AsteriskToken or SyntaxKind.SlashToken or SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken
+        or SyntaxKind.LessThanToken or SyntaxKind.GreaterThanToken or SyntaxKind.LessThanEqualsToken
+        or SyntaxKind.GreaterThanEqualsToken or SyntaxKind.ColonEqualsToken or SyntaxKind.AtToken or SyntaxKind.CaretToken
+        or SyntaxKind.DotDotToken;
+
+    public static bool IsLiteral(SyntaxKind kind) =>
+        kind is SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken or SyntaxKind.StringLiteralToken;
+
+    public static bool IsTrivia(SyntaxKind kind) => kind is >= SyntaxKind.WhitespaceTrivia and <= SyntaxKind.SkippedTokensTrivia;
+
+    /// <summary>Line, block and documentation comments (not directives).</summary>
+    public static bool IsComment(SyntaxKind kind) =>
+        kind is SyntaxKind.LineCommentTrivia or SyntaxKind.BlockCommentTrivia or SyntaxKind.DocCommentTrivia;
 
     /// <summary>The reserved-word kind for <paramref name="text"/> (ASCII case-insensitive), else <see cref="SyntaxKind.None"/>.</summary>
     internal static SyntaxKind GetReservedWordKind(ReadOnlySpan<char> text)
