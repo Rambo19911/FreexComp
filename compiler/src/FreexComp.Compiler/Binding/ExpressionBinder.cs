@@ -58,6 +58,27 @@ internal sealed class ExpressionBinder
     }
 
     /// <summary>
+    /// A condition of <c>if</c>/<c>while</c>/<c>repeat</c> (LANG-354/360): Boolean family, converted to <c>Boolean</c>
+    /// (LANG-215); E2061 otherwise.
+    /// </summary>
+    public BoundExpression BindCondition(ExpressionSyntax syntax)
+    {
+        var condition = BindExpression(syntax);
+        if (condition.HasErrors)
+        {
+            return condition;
+        }
+
+        if (condition.Type is not BooleanTypeSymbol)
+        {
+            _diagnostics.Report(syntax, "E2061", condition.Type.Name);
+            return Error(syntax, condition);
+        }
+
+        return Convert(condition, _types.Boolean);
+    }
+
+    /// <summary>
     /// <paramref name="value"/> converted for assignment to <paramref name="destination"/> (LANG-280/351); E2010 / E2012
     /// at <paramref name="at"/> and an error expression when it is not assignment-compatible.
     /// </summary>
@@ -118,6 +139,9 @@ internal sealed class ExpressionBinder
             case TypeSymbol type:
                 _diagnostics.Report(name, "E2009", type.Name);
                 return Error(name);
+            case IntrinsicSymbol:
+                _diagnostics.Report(name, "E2034");                     // the control intrinsics have no value (LANG-363/364)
+                return Error(name);
             case var symbol:
                 return Unsupported(name, symbol.Kind.ToString().ToLowerInvariant() + " reference");
         }
@@ -157,6 +181,12 @@ internal sealed class ExpressionBinder
         }
 
         var arguments = invocation.ArgumentList.Arguments;
+        if (symbol is IntrinsicSymbol)
+        {
+            _diagnostics.Report(invocation, "E2034");
+            return Error(invocation);
+        }
+
         if (symbol is not TypeSymbol target)
         {
             return Unsupported(invocation, "routine call");

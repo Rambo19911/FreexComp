@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Numerics;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Types;
@@ -11,12 +12,23 @@ namespace FreexComp.Compiler.Binding;
 /// </summary>
 internal sealed class BodyBinder
 {
+    private readonly BuiltInTypes _types;
+    private readonly Scope _scope;
     private readonly DiagnosticBag _diagnostics;
     private readonly ExpressionBinder _expressions;
+    private readonly Symbol? _routine;
 
-    public BodyBinder(BuiltInTypes types, Scope scope, DiagnosticBag diagnostics)
+    /// <summary>Control variables of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>
+    private readonly HashSet<VariableSymbol> _forVariables = new(ReferenceEqualityComparer.Instance);
+    private int _loopDepth;
+
+    /// <param name="routine">The routine whose body this is; null for a unit-level body.</param>
+    public BodyBinder(BuiltInTypes types, Scope scope, DiagnosticBag diagnostics, Symbol? routine = null)
     {
+        _types = types;
+        _scope = scope;
         _diagnostics = diagnostics;
+        _routine = routine;
         _expressions = new ExpressionBinder(types, scope, diagnostics);
     }
 
@@ -38,12 +50,24 @@ internal sealed class BodyBinder
     {
         switch (statement)
         {
+            case EmptyStatementSyntax:
+                return new BoundBlock(statement, []);
             case CompoundStatementSyntax compound:
                 return BindBlock(compound, compound.Statements);
             case AssignmentStatementSyntax assignment:
                 return BindAssignment(assignment);
             case ExpressionStatementSyntax expression:
                 return BindExpressionStatement(expression);
+            case IfStatementSyntax ifStatement:
+                return BindIf(ifStatement);
+            case WhileStatementSyntax whileStatement:
+                return BindWhile(whileStatement);
+            case RepeatStatementSyntax repeat:
+                return BindRepeat(repeat);
+            case ForStatementSyntax forStatement:
+                return BindFor(forStatement);
+            case CaseStatementSyntax caseStatement:
+                return BindCase(caseStatement);
             default:
                 if (!statement.ContainsDiagnostics)
                 {
@@ -66,6 +90,9 @@ internal sealed class BodyBinder
 
         switch (target)
         {
+            case BoundVariableExpression variable when _forVariables.Contains(variable.Variable):
+                _diagnostics.Report(assignment.Target, "E2053");                        // LANG-361 rule 6
+                return new BoundAssignmentStatement(assignment, target, value);
             case BoundVariableExpression:
                 break;
             case BoundConversionExpression { IsExplicit: true }:
@@ -79,9 +106,14 @@ internal sealed class BodyBinder
         return new BoundAssignmentStatement(assignment, target, _expressions.ConvertForAssignment(value, target.Type, assignment.Value));
     }
 
-    /// <summary>LANG-352: a designator statement must be a call (calls are bound from C-027 on).</summary>
-    private BoundExpressionStatement BindExpressionStatement(ExpressionStatementSyntax statement)
+    /// <summary>LANG-352: a designator statement must be a call (calls are bound from C-027 on); control intrinsics.</summary>
+    private BoundStatement BindExpressionStatement(ExpressionStatementSyntax statement)
     {
+        if (ControlIntrinsic(statement.Expression) is { } intrinsic)
+        {
+            return BindControlIntrinsic(statement, intrinsic);
+        }
+
         var expression = _expressions.BindExpression(statement.Expression);
         if (!expression.HasErrors)
         {
@@ -89,5 +121,224 @@ internal sealed class BodyBinder
         }
 
         return new BoundExpressionStatement(statement, expression);
+    }
+
+    // ------------------------------------------------------------------ if, while, repeat (LANG-354, 360)
+
+    private BoundIfStatement BindIf(IfStatementSyntax syntax)
+    {
+        var condition = _expressions.BindCondition(syntax.Condition);
+        var then = BindStatement(syntax.Statement);
+        var otherwise = syntax.ElseStatement is { } elseStatement ? BindStatement(elseStatement) : null;
+        return new BoundIfStatement(syntax, condition, then, otherwise);
+    }
+
+    private BoundWhileStatement BindWhile(WhileStatementSyntax syntax)
+    {
+        var condition = _expressions.BindCondition(syntax.Condition);
+        _loopDepth++;
+        var body = BindStatement(syntax.Statement);
+        _loopDepth--;
+        return new BoundWhileStatement(syntax, condition, body);
+    }
+
+    private BoundRepeatStatement BindRepeat(RepeatStatementSyntax syntax)
+    {
+        _loopDepth++;
+        var body = BindBlock(syntax, syntax.Statements);
+        _loopDepth--;
+        var condition = _expressions.BindCondition(syntax.Condition);
+        return new BoundRepeatStatement(syntax, body, condition);
+    }
+
+    // ------------------------------------------------------------------ for (LANG-361)
+
+    private BoundStatement BindFor(ForStatementSyntax syntax)
+    {
+        if (syntax.VarKeyword is { } varKeyword)
+        {
+            _diagnostics.Report(varKeyword, "E2900", "inline variable");               // LANG-386, M2.6
+            return new BoundErrorStatement(syntax);
+        }
+
+        var variable = _expressions.BindExpression(syntax.Variable);
+        var start = _expressions.BindExpression(syntax.Start);
+        var finish = _expressions.BindExpression(syntax.Finish);
+        VariableSymbol? control = null;
+        if (!variable.HasErrors)
+        {
+            if (variable is BoundVariableExpression { Variable: var v } && IsControlVariable(v))
+            {
+                control = v;
+                if (_forVariables.Contains(v))
+                {
+                    _diagnostics.Report(syntax.Variable, "E2053");                      // an inner loop would assign it
+                }
+
+                start = _expressions.ConvertForAssignment(start, v.Type, syntax.Start);
+                finish = _expressions.ConvertForAssignment(finish, v.Type, syntax.Finish);
+            }
+            else
+            {
+                _diagnostics.Report(syntax.Variable, "E2065");
+                variable = new BoundErrorExpression(syntax.Variable, _types.Error, [variable]);
+            }
+        }
+
+        var added = control != null && _forVariables.Add(control);
+        _loopDepth++;
+        var body = BindStatement(syntax.Statement);
+        _loopDepth--;
+        if (added)
+        {
+            _forVariables.Remove(control!);
+        }
+
+        return new BoundForStatement(syntax, variable, start, finish, syntax.DirectionKeyword.Kind == SyntaxKind.DownToKeyword, body);
+    }
+
+    /// <summary>Rule 1: ordinal; a local of this routine, or a global variable in a unit-level body.</summary>
+    private bool IsControlVariable(VariableSymbol variable) =>
+        variable.Type.IsOrdinal && (_routine is null ? variable.IsGlobal : !variable.IsGlobal && ReferenceEquals(variable.ContainingSymbol, _routine));
+
+    // ------------------------------------------------------------------ case (LANG-355…357)
+
+    private BoundCaseStatement BindCase(CaseStatementSyntax syntax)
+    {
+        var selector = _expressions.BindExpression(syntax.Selector);
+        var checkLabels = !selector.HasErrors;
+        if (checkLabels && !selector.Type.IsOrdinal)
+        {
+            _diagnostics.Report(syntax.Selector, "E2062");
+            selector = new BoundErrorExpression(syntax.Selector, _types.Error, [selector]);
+            checkLabels = false;
+        }
+
+        var seen = new List<(BigInteger Low, BigInteger High)>();
+        var arms = ImmutableArray.CreateBuilder<BoundCaseArm>();
+        foreach (var arm in syntax.Arms)
+        {
+            var labels = ImmutableArray.CreateBuilder<BoundCaseLabel>();
+            foreach (var label in arm.Labels)
+            {
+                labels.Add(BindCaseLabel(label, checkLabels ? selector.Type : null, seen));
+            }
+
+            arms.Add(new BoundCaseArm(arm, labels.ToImmutable(), BindStatement(arm.Statement)));
+        }
+
+        var otherwise = syntax.ElseKeyword is null ? null : BindBlock(syntax, syntax.ElseStatements);
+        return new BoundCaseStatement(syntax, selector, arms.ToImmutable(), otherwise);
+    }
+
+    /// <summary>
+    /// Constants converted to the selector type (<paramref name="selectorType"/> null: selector has errors, labels are
+    /// only bound); E2063 for an empty range, E2064 for a label overlapping an earlier one.
+    /// </summary>
+    private BoundCaseLabel BindCaseLabel(CaseLabelSyntax label, TypeSymbol? selectorType, List<(BigInteger Low, BigInteger High)> seen)
+    {
+        var low = CaseLabelValue(label.Value, selectorType);
+        var high = label.UpperBound is { } upper ? CaseLabelValue(upper, selectorType) : null;
+        if (low.ConstantValue is not { } lowValue || (high != null && high.ConstantValue is null))
+        {
+            return new BoundCaseLabel(label, low, high);
+        }
+
+        var lo = Ordinal(lowValue);
+        var hi = high?.ConstantValue is { } highValue ? Ordinal(highValue) : lo;
+        if (lo > hi)
+        {
+            _diagnostics.Report(label, "E2063");
+        }
+        else if (seen.Any(s => lo <= s.High && s.Low <= hi))
+        {
+            var text = high is null ? lowValue.ToDisplayString() : $"{lowValue.ToDisplayString()}..{high.ConstantValue!.ToDisplayString()}";
+            _diagnostics.Report(label, "E2064", text);
+        }
+        else
+        {
+            seen.Add((lo, hi));
+        }
+
+        return new BoundCaseLabel(label, low, high);
+    }
+
+    private BoundExpression CaseLabelValue(ExpressionSyntax syntax, TypeSymbol? selectorType)
+    {
+        var value = _expressions.BindExpression(syntax);
+        if (value.HasErrors || selectorType is null)
+        {
+            return value;
+        }
+
+        if (value.ConstantValue is null)
+        {
+            _diagnostics.Report(syntax, "E2050");
+            return new BoundErrorExpression(syntax, _types.Error, [value]);
+        }
+
+        return _expressions.ConvertForAssignment(value, selectorType, syntax);
+    }
+
+    private static BigInteger Ordinal(ConstantValue value) => value.Value switch
+    {
+        BigInteger i => i,
+        bool b => b ? BigInteger.One : BigInteger.Zero,
+        _ => throw new InvalidOperationException($"Not an ordinal constant: {value.ToDisplayString()}"),
+    };
+
+    // ------------------------------------------------------------------ Break, Continue, Exit, Halt (LANG-363, 364)
+
+    /// <summary>The control intrinsic a statement <c>Name</c> or <c>Name(…)</c> calls (null when the name means something else).</summary>
+    private IntrinsicSymbol? ControlIntrinsic(ExpressionSyntax expression)
+    {
+        var name = expression switch
+        {
+            IdentifierNameSyntax n => n,
+            InvocationExpressionSyntax { Expression: IdentifierNameSyntax n } => n,
+            _ => null,
+        };
+        if (name is null || name.Identifier.IsMissing)
+        {
+            return null;
+        }
+
+        return _scope.Lookup(name.Identifier.Value as string ?? name.Identifier.Text) as IntrinsicSymbol;
+    }
+
+    private BoundStatement BindControlIntrinsic(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic)
+    {
+        var arguments = statement.Expression is InvocationExpressionSyntax invocation ? invocation.ArgumentList.Arguments : default;
+        var count = arguments.Count;
+        var maxArguments = intrinsic.Intrinsic == IntrinsicKind.Halt ? 1 : 0;       // Exit(value) arrives with functions (C-027)
+        if (count > maxArguments)
+        {
+            _diagnostics.Report(arguments[maxArguments], "E2111", intrinsic.Name);
+            return new BoundErrorStatement(statement);
+        }
+
+        if (count == 1 && arguments[0].WidthColonToken is { } colon)
+        {
+            _diagnostics.Report(colon, "E2915");
+            return new BoundErrorStatement(statement);
+        }
+
+        switch (intrinsic.Intrinsic)
+        {
+            case IntrinsicKind.Break or IntrinsicKind.Continue when _loopDepth == 0:
+                _diagnostics.Report(statement.Expression, "E2066", intrinsic.Name);
+                return new BoundErrorStatement(statement);
+            case IntrinsicKind.Break:
+                return new BoundBreakStatement(statement);
+            case IntrinsicKind.Continue:
+                return new BoundContinueStatement(statement);
+            case IntrinsicKind.Exit:
+                return new BoundExitStatement(statement, value: null);
+            default:
+                var code = count == 1
+                    ? _expressions.ConvertForAssignment(_expressions.BindExpression(arguments[0].Expression), _types.Integer, arguments[0].Expression)
+                    : null;
+                return new BoundHaltStatement(statement, code);
+        }
     }
 }

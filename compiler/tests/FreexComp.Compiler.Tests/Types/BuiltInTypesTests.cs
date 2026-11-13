@@ -71,6 +71,7 @@ public sealed class BuiltInTypesTests
             "Single", "Double", "Real", "Extended", "Currency", "string", "UnicodeString", "AnsiString", "UTF8String",
             "RawByteString", "ShortString", "Pointer", "PChar", "PWideChar", "PAnsiChar", "Text", "TextFile",
             "True", "False", "MaxInt", "MaxLongInt", "Pi",
+            "Break", "Continue", "Exit", "Halt",                                            // intrinsics (LANG-900)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

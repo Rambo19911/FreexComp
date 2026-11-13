@@ -3,7 +3,7 @@ using FreexComp.Compiler.Symbols;
 namespace FreexComp.Compiler.Types;
 
 /// <summary>
-/// The predeclared types and constants of LANG-200/201, built into the compiler, and the outermost
+/// The predeclared types and constants of LANG-200/201 and the intrinsics (LANG-900), built into the compiler, and the outermost
 /// <see cref="ScopeKind.BuiltIn"/> scope that declares them (below unit <c>System</c>; units may shadow them).
 /// </summary>
 public sealed class BuiltInTypes
@@ -60,9 +60,17 @@ public sealed class BuiltInTypes
         Constant("MaxInt", Integer, 2147483647);
         Constant("MaxLongInt", Integer, 2147483647);
         Constant("Pi", Double, 3.14159265358979323846);
+
+        Intrinsic("Break", IntrinsicKind.Break, "Break");
+        Intrinsic("Continue", IntrinsicKind.Continue, "Continue");
+        Intrinsic("Exit", IntrinsicKind.Exit, "Exit[(Value)]");
+        Intrinsic("Halt", IntrinsicKind.Halt, "Halt[(ExitCode: Integer)]");
     }
 
-    /// <summary>The outermost scope: every LANG-200 type name (aliases included) and the LANG-201 constants.</summary>
+    /// <summary>
+    /// The outermost scope: every LANG-200 type name (aliases included), the LANG-201 constants and the intrinsics
+    /// bound so far (LANG-900).
+    /// </summary>
     internal Scope Scope { get; }
 
     public TypeSymbol Integer { get; }
@@ -112,4 +120,7 @@ public sealed class BuiltInTypes
 
     private void Constant(string name, TypeSymbol type, object value) =>
         Scope.TryDeclare(new ConstantSymbol(name, type, new ConstantValue(value, type), isTyped: false, containingSymbol: null, locations: []), out _);
+
+    private void Intrinsic(string name, IntrinsicKind kind, string signature) =>
+        Scope.TryDeclare(new IntrinsicSymbol(name, kind, signature), out _);
 }
