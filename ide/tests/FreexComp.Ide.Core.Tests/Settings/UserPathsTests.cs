@@ -30,6 +30,9 @@ public sealed class UserPathsTests
         Assert.Equal(@"C:\fxc-arg\roaming", argOnly.RoamingDirectory);
         Assert.Equal(@"C:\fxc-arg\local", argOnly.LocalDirectory);
 
+        // The Documents folder (file-picker fallback, UI-DLG-051) is redirected too.
+        Assert.Equal(@"C:\fxc-arg\documents", argOnly.DocumentsDirectory);
+
         // The real user folders are never asked for when overridden.
         Assert.Empty(folders.Requested);
     }
@@ -47,6 +50,10 @@ public sealed class UserPathsTests
         Assert.Equal(
             [Environment.SpecialFolder.ApplicationData, Environment.SpecialFolder.LocalApplicationData],
             folders.Requested.Order());
+
+        // The Documents folder is asked for only when it is needed.
+        Assert.Equal(@"C:\Users\u\Documents", paths.DocumentsDirectory);
+        Assert.Equal(Environment.SpecialFolder.MyDocuments, folders.Requested[^1]);
     }
 
     [Fact(Timeout = 30000)]
@@ -79,6 +86,7 @@ public sealed class UserPathsTests
             {
                 Environment.SpecialFolder.ApplicationData => @"C:\Users\u\AppData\Roaming",
                 Environment.SpecialFolder.LocalApplicationData => @"C:\Users\u\AppData\Local",
+                Environment.SpecialFolder.MyDocuments => @"C:\Users\u\Documents",
                 _ => throw new InvalidOperationException(folder.ToString()),
             };
         }

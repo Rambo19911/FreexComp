@@ -11,6 +11,13 @@ public sealed class PhysicalFileSystem : IFileSystem
 
     public void WriteAllBytes(string path, byte[] data) => File.WriteAllBytes(path, data);
 
+    public void WriteAllBytesDurable(string path, byte[] data)
+    {
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        stream.Write(data);
+        stream.Flush(flushToDisk: true);
+    }
+
     public void CreateDirectory(string path) => Directory.CreateDirectory(path);
 
     public void DeleteFile(string path) => File.Delete(path);
@@ -25,6 +32,7 @@ public sealed class PhysicalFileSystem : IFileSystem
     {
         using var stream = new FileStream(path, FileMode.Truncate, FileAccess.Write, FileShare.None);
         stream.Write(data);
+        stream.Flush(flushToDisk: true);
     }
 
     public IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern) =>

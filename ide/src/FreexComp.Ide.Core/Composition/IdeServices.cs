@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Logging;
@@ -28,6 +29,7 @@ public sealed record IdeServices
     public required IShellService Shell { get; init; }
     public required IFileWatcherFactory FileWatchers { get; init; }
     public required IDialogService Dialogs { get; init; }
+    public required IFileDialogService FileDialogs { get; init; }
     public required IThemeHost ThemeHost { get; init; }
     public required ITextBufferFactory TextBuffers { get; init; }
 
@@ -41,5 +43,6 @@ public sealed record IdeServices
     public required ILayoutService Layout { get; init; }
     public required IToolWindowService ToolWindows { get; init; }
     public required ILanguageRegistry Languages { get; init; }
+    public required FilePrompts FilePrompts { get; init; }
     public required IDocumentService Documents { get; init; }
 }

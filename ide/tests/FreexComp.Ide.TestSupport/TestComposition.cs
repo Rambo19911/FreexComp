@@ -22,6 +22,7 @@ public sealed class TestCompositionOptions
     public IShellService? Shell { get; set; }
     public IFileWatcherFactory FileWatchers { get; set; } = new ManualFileWatcherFactory();
     public IDialogService Dialogs { get; set; } = new FakeDialogService();
+    public IFileDialogService FileDialogs { get; set; } = new FakeFileDialogService();
     public ILog Log { get; set; } = new RecordingLog();
     public IThemeHost ThemeHost { get; set; } = new FakeThemeHost();
 
@@ -61,6 +62,7 @@ public static class TestComposition
             o.Shell ?? new FakeShellService(o.FileSystem),
             o.FileWatchers,
             o.Dialogs,
+            o.FileDialogs,
             o.ThemeHost,
             o.TextBuffers);
 

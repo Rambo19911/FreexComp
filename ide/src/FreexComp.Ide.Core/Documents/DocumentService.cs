@@ -28,6 +28,7 @@ public sealed class DocumentService : IDocumentService
     private readonly IStatusService _status;
     private readonly IFocusTracker _focus;
     private readonly IDialogService _dialogs;
+    private readonly FilePrompts _prompts;
     private readonly ObservableCollection<DocumentViewModel> _documents = [];
     private readonly List<DocumentViewModel> _mru = [];
     private readonly Dictionary<string, Task<OperationResult<DocumentViewModel>>> _loading = new(StringComparer.OrdinalIgnoreCase);
@@ -35,8 +36,9 @@ public sealed class DocumentService : IDocumentService
     private TextDocumentViewModel? _statusSource;
 
     public DocumentService(IFileSystem fileSystem, ITextBufferFactory buffers, ILanguageRegistry languages, ISettingsService settings,
-        IStatusService status, IFocusTracker focus, IDialogService dialogs)
+        IStatusService status, IFocusTracker focus, IDialogService dialogs, FilePrompts prompts)
     {
+        _prompts = prompts;
         _fileSystem = fileSystem;
         _dialogs = dialogs;
         _buffers = buffers;
@@ -91,6 +93,7 @@ public sealed class DocumentService : IDocumentService
         commands.RegisterHandler("file.newUnit", new Handler(_ => true, _ => NewUntitledUnit()));
         commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeAll", new AsyncHandler(_ => _documents.Count > 0, _ => CloseAllAsync()));
+        commands.RegisterHandler("file.open", new AsyncHandler(_ => true, _ => OpenPickedFilesAsync()));
         commands.RegisterHandler("file.save", new AsyncHandler(
             _ => ActiveDocument is TextDocumentViewModel { IsModified: true }, _ => SaveAsync(ActiveDocument!)));
         commands.RegisterHandler("file.saveAll", new AsyncHandler(_ => _documents.Any(d => d.IsModified), _ => SaveAllAsync()));
@@ -317,8 +320,24 @@ public sealed class DocumentService : IDocumentService
         }
     }
 
-    /// <summary>The OS Save As picker (IDE-P1-034); it arrives with <c>IFileDialogService</c> (I-040), until then "canceled".</summary>
-    private static Task<string?> PickSavePathAsync(TextDocumentViewModel document) => Task.FromResult<string?>(null);
+    /// <summary>The Save As picker (IDE-P1-034, dialogs.md §5 <c>saveAs</c>); null when canceled.</summary>
+    private Task<string?> PickSavePathAsync(TextDocumentViewModel document) => _prompts.SaveAsAsync(document);
+
+    /// <summary>
+    /// <c>file.open</c> (IDE-P1-030): every picked file opens in order (one already open is activated, UI-DLG-054), so
+    /// the last becomes active; a file that cannot be opened is reported and the others still open.
+    /// </summary>
+    private async Task OpenPickedFilesAsync()
+    {
+        // UI-DLG-053 (a picked .pproj opens as the project) joins with the project service (I-065); until then it
+        // opens as a JSON document.
+        foreach (var path in await _prompts.OpenFileAsync(ActiveDocument?.FilePath))
+        {
+            var result = await OpenAsync(path);
+            if (!result.Success)
+                await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args));
+        }
+    }
 
     public async Task<OperationResult> SaveAsAsync(TextDocumentViewModel document, string path)
     {

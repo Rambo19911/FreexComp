@@ -144,6 +144,23 @@ public sealed class LayoutService : ILayoutService
         ScheduleSave();
     }
 
+    public string? GetLastFolder(string promptId) =>
+        _root["dialogs"] is JsonObject dialogs && dialogs["lastFolder"] is JsonObject folders
+            && folders[promptId] is JsonValue value && value.TryGetValue(out string? folder)
+            ? folder
+            : null;
+
+    public void SetLastFolder(string promptId, string folder)
+    {
+        if (GetLastFolder(promptId) == folder)
+        {
+            return;
+        }
+
+        Child(Child(_root, "dialogs"), "lastFolder")[promptId] = folder;
+        ScheduleSave();
+    }
+
     public void AttachToolWindows(Func<string, ToolWindowViewModel?> resolve)
     {
         _resolve = resolve;

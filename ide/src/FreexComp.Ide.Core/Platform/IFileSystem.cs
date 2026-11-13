@@ -19,6 +19,14 @@ public interface IFileSystem
     /// <exception cref="UnauthorizedAccessException">The file is read-only.</exception>
     void WriteAllBytes(string path, byte[] data);
 
+    /// <summary>
+    /// <see cref="WriteAllBytes"/> that returns only after the data is flushed to the disk (temp file of an atomic
+    /// save, IDE-P1-081).
+    /// </summary>
+    /// <exception cref="DirectoryNotFoundException">The parent directory does not exist.</exception>
+    /// <exception cref="UnauthorizedAccessException">The file is read-only.</exception>
+    void WriteAllBytesDurable(string path, byte[] data);
+
     /// <summary>Creates the directory and every missing parent; no-op when it exists.</summary>
     void CreateDirectory(string path);
 
@@ -37,7 +45,10 @@ public interface IFileSystem
     /// <exception cref="UnauthorizedAccessException">The destination is read-only or its directory is not writable.</exception>
     void ReplaceFile(string sourcePath, string destinationPath);
 
-    /// <summary>Overwrites the existing file in place (truncate, then write), keeping its attributes and creation time.</summary>
+    /// <summary>
+    /// Overwrites the existing file in place (truncate, then write), keeping its attributes and creation time; returns
+    /// after the data is flushed to the disk.
+    /// </summary>
     /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     /// <exception cref="UnauthorizedAccessException">The file is read-only.</exception>
     void OverwriteFile(string path, byte[] data);

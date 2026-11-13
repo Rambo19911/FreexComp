@@ -31,6 +31,9 @@ public interface IPlatformServices
 
     IDialogService Dialogs { get; }
 
+    /// <summary>The OS file and folder pickers (UI-DLG-050).</summary>
+    IFileDialogService FileDialogs { get; }
+
     IThemeHost ThemeHost { get; }
 
     /// <summary>Creates document buffers (IDE-ARCH-031).</summary>
@@ -48,5 +51,6 @@ public sealed record PlatformServices(
     IShellService Shell,
     IFileWatcherFactory FileWatchers,
     IDialogService Dialogs,
+    IFileDialogService FileDialogs,
     IThemeHost ThemeHost,
     ITextBufferFactory TextBuffers) : IPlatformServices;

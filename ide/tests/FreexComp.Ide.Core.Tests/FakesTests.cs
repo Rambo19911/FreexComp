@@ -42,6 +42,17 @@ public sealed class FakesTests
         Assert.False(fs.DirectoryExists(a));
         Assert.NotEqual(default, fs.GetLastWriteTimeUtc(a));
 
+        // The durable write (flushed to disk before it returns) has the same semantics.
+        var durable = Path.Combine(sub, "durable.txt");
+        Assert.Throws<DirectoryNotFoundException>(() => fs.WriteAllBytesDurable(Path.Combine(root, "nope", "x.txt"), [1]));
+        fs.WriteAllBytesDurable(durable, [5, 6, 7]);
+        fs.WriteAllBytesDurable(durable, [5, 6]);
+        Assert.Equal([5, 6], fs.ReadAllBytes(durable));
+        target.SetReadOnly(durable, true);
+        Assert.Throws<UnauthorizedAccessException>(() => fs.WriteAllBytesDurable(durable, [0]));
+        target.SetReadOnly(durable, false);
+        fs.DeleteFile(durable);
+
         Assert.Throws<FileNotFoundException>(() => fs.ReadAllBytes(Path.Combine(sub, "missing.txt")));
         Assert.Throws<FileNotFoundException>(() => fs.GetLength(Path.Combine(sub, "missing.txt")));
         Assert.Throws<FileNotFoundException>(() => fs.GetLastWriteTimeUtc(Path.Combine(sub, "missing.txt")));

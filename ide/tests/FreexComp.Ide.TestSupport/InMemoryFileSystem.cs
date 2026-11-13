@@ -59,6 +59,9 @@ public sealed class InMemoryFileSystem : IFileSystem
         }
     }
 
+    /// <summary>Memory has no disk cache: the same as <see cref="WriteAllBytes"/>.</summary>
+    public void WriteAllBytesDurable(string path, byte[] data) => WriteAllBytes(path, data);
+
     public void CreateDirectory(string path)
     {
         lock (_gate)

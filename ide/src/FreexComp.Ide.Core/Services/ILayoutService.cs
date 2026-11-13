@@ -23,6 +23,12 @@ public interface ILayoutService
     /// <summary>Stores a column width (at least 32 DIP, UI-TW-011); saved with the rest of the UI state.</summary>
     void SetColumnWidth(string toolWindow, string columnId, double width);
 
+    /// <summary>UI-DLG-051: the folder of the last successful pick of a picker prompt (<c>dialogs.lastFolder.&lt;promptId&gt;</c>).</summary>
+    string? GetLastFolder(string promptId);
+
+    /// <summary>Stores the last folder of a picker prompt; saved with the rest of the UI state.</summary>
+    void SetLastFolder(string promptId, string folder);
+
     /// <summary>Gives the layout the tool-window registry: names → view-models (null = not registered).</summary>
     void AttachToolWindows(Func<string, ToolWindowViewModel?> resolve);
 

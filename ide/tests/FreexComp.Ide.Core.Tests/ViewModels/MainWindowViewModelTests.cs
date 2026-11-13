@@ -46,10 +46,9 @@ public sealed class MainWindowViewModelTests
         var changed = new List<string?>();
         area.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        Assert.Equal("", area.EmptyHints); // no handler yet for file.newFile, file.open, search.goToFile
+        Assert.Equal("Open File (Ctrl+O)", area.EmptyHints); // no handler yet for file.newFile, search.goToFile
 
         services.Commands.RegisterHandler("file.newFile", new Enabled());
-        services.Commands.RegisterHandler("file.open", new Enabled());
         services.Commands.InvalidateCanExecute();
 
         Assert.Equal("New File (Ctrl+N) · Open File (Ctrl+O)", area.EmptyHints);

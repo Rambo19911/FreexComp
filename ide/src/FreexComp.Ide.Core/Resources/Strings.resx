@@ -2749,4 +2749,60 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Details</value>
     <comment>UI-DLG-025: header of the Details expander</comment>
   </data>
+  <data name="FilePrompt_Title_openFile" xml:space="preserve">
+    <value>Open File</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Title_openProject" xml:space="preserve">
+    <value>Open Project</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Title_saveAs" xml:space="preserve">
+    <value>Save As</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Title_addExisting" xml:space="preserve">
+    <value>Add to Project</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Title_folder" xml:space="preserve">
+    <value>Select Folder</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_Source" xml:space="preserve">
+    <value>Source files</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_Project" xml:space="preserve">
+    <value>Project files</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_Text" xml:space="preserve">
+    <value>Text files</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_All" xml:space="preserve">
+    <value>All files</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_Projects" xml:space="preserve">
+    <value>FreexComp projects</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_PascalUnit" xml:space="preserve">
+    <value>Pascal unit</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_PascalUnits" xml:space="preserve">
+    <value>Pascal units</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_Include" xml:space="preserve">
+    <value>Include file</value>
+    <comment>dialogs.md §5</comment>
+  </data>
+  <data name="FilePrompt_Filter_Form" xml:space="preserve">
+    <value>Form file</value>
+    <comment>dialogs.md §5</comment>
+  </data>
 </root>

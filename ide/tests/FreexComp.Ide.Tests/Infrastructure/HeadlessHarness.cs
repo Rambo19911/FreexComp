@@ -77,6 +77,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
         Messages = new MessageScript(new WindowDialogService(() => _window, clipboard));
         _log = new RecordingLog();
         _watchers = new ManualFileWatcherFactory();
+        FileDialogs = new FakeFileDialogService();
 
         Dispatcher.UIThread.UnhandledException += OnUnhandledException;
         Services = TestComposition.Build(o =>
@@ -85,6 +86,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.Clock = Clock;
             o.Dispatcher = new AvaloniaUiDispatcher();
             o.Dialogs = Messages;
+            o.FileDialogs = FileDialogs;
             o.Clipboard = clipboard;
             o.Log = _log;
             o.FileWatchers = _watchers;
@@ -125,6 +127,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
     public ManualClock Clock { get; }
 
     public MessageScript Messages { get; }
+
+    /// <summary>The scripted OS pickers (IDE-TEST-015); an unscripted picker request fails the test.</summary>
+    public FakeFileDialogService FileDialogs { get; }
 
     /// <summary>The status-bar fields (testing.md §2.1).</summary>
     public StatusBarDriver Status { get; }

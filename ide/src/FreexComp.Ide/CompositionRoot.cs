@@ -38,6 +38,7 @@ public static class CompositionRoot
             new WindowsShellService(),
             new FileSystemWatcherFactory(),
             new WindowDialogService(() => mainWindow() as Window, clipboard),
+            new AvaloniaFileDialogService(mainWindow),
             new AvaloniaThemeHost(Application.Current ?? throw new InvalidOperationException("No Avalonia application.")),
             new AvaloniaEditTextBufferFactory());
     }

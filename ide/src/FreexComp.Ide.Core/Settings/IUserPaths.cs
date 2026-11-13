@@ -14,4 +14,10 @@ public interface IUserPaths
 
     /// <summary><c>L\logs</c> (IDE-SET-090).</summary>
     string LogDirectory { get; }
+
+    /// <summary>
+    /// The user's Documents folder, last fallback of the picker initial folder (UI-DLG-051) and parent of the default
+    /// projects folder; <c>&lt;user-dir&gt;\documents</c> when the user directory is overridden. Asked for on first use.
+    /// </summary>
+    string DocumentsDirectory { get; }
 }

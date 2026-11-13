@@ -26,6 +26,8 @@ public sealed class SaveTests
 
     private FakeDialogService Dialogs => (FakeDialogService)_services.Dialogs;
 
+    private FakeFileDialogService Pickers => (FakeFileDialogService)_services.FileDialogs;
+
     private string File(string path, string text) => File(path, Encoding.UTF8.GetBytes(text));
 
     private string File(string path, byte[] bytes)
@@ -93,8 +95,9 @@ public sealed class SaveTests
         Assert.True(await documents.SaveAsync(doc));
         Assert.Equal("a\r\nb\r\n", Encoding.UTF8.GetString(inner.ReadAllBytes(path)));
         Assert.Empty(TempFiles());
-        var write = Assert.Single(fs.Calls, c => c.StartsWith("WriteAllBytes ", StringComparison.Ordinal));
-        var tempPath = write["WriteAllBytes ".Length..];
+        var write = Assert.Single(fs.Calls, c => c.StartsWith("WriteAllBytesDurable ", StringComparison.Ordinal));
+        var tempPath = write["WriteAllBytesDurable ".Length..];
+        Assert.DoesNotContain(fs.Calls, c => c.StartsWith("WriteAllBytes ", StringComparison.Ordinal)); // flushed to disk before the replace
         Assert.Equal(dir, Path.GetDirectoryName(tempPath));
         Assert.Matches(@"^A\.pas\.~tmp[0-9a-f]{6}$", Path.GetFileName(tempPath));
         Assert.Contains($"ReplaceFile {tempPath} -> {path}", fs.Calls);
@@ -111,7 +114,7 @@ public sealed class SaveTests
 
         // Folder not writable but the file is (access denied): overwrite in place.
         fs.FailWhen = null;
-        fs.FailWith = c => c.StartsWith("WriteAllBytes ", StringComparison.Ordinal) && c.Contains(".~tmp", StringComparison.Ordinal)
+        fs.FailWith = c => c.StartsWith("WriteAllBytesDurable ", StringComparison.Ordinal) && c.Contains(".~tmp", StringComparison.Ordinal)
             ? new UnauthorizedAccessException("Access denied.")
             : null;
         Assert.True(await documents.SaveAsync(doc));
@@ -305,9 +308,11 @@ public sealed class SaveTests
         Assert.Empty(saved);
         Assert.Null(_services.Status.Message);
 
-        // Save As… opens the picker (I-040); a canceled picker keeps the document modified.
+        // Save As… opens the Save As picker; a canceled picker keeps the document modified.
         Dialogs.Enqueue("Msg.File.SaveFailed", "SaveAs");
+        Pickers.NextCancel();
         Assert.False(await Documents.SaveAsync(doc));
+        Assert.Equal("saveAs", Pickers.Requests[^1].PromptId);
         Assert.True(doc.IsModified);
         Assert.Equal(path, doc.FilePath);
 
@@ -327,6 +332,16 @@ public sealed class SaveTests
         Assert.False(_services.Commands.CanExecute("file.save"));
         Append(doc, "c");
         Assert.True(_services.Commands.CanExecute("file.save"));
+
+        // Save As… with a chosen path writes there and switches the document to it; the old file is untouched.
+        _fs.SetReadOnly(path, true);
+        Dialogs.Enqueue("Msg.File.SaveFailed", "SaveAs");
+        Pickers.NextSave(@"C:\p\A2.pas");
+        Assert.True(await Documents.SaveAsync(doc));
+        Assert.Equal(@"C:\p\A2.pas", doc.FilePath);
+        Assert.Equal("a\r\nb\r\nc\r\n", Disk(@"C:\p\A2.pas"));
+        Assert.Equal("a\r\nb\r\n", Disk(path));
+        Assert.False(doc.IsModified);
     }
 
     [Fact(Timeout = 30000)]
@@ -348,7 +363,9 @@ public sealed class SaveTests
         Documents.DocumentSaved += (_, e) => saved.Add(e.Document);
 
         // Tab order; the untitled document's canceled picker skips it; unmodified B is not written.
+        Pickers.NextCancel();
         await commands.ExecuteAsync("file.saveAll");
+        Assert.Equal(("saveAs", "Unit1.pas"), (Pickers.Requests.Single().PromptId, Pickers.Requests.Single().SuggestedName));
         Assert.Equal([a, c], saved);
         Assert.Equal("a\r\n1\r\n", Disk(@"C:\p\A.pas"));
         Assert.Equal("c\r\n3\r\n", Disk(@"C:\p\C.pas"));

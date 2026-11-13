@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Menus;
@@ -45,7 +46,9 @@ public static class ServiceGraph
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
         var languages = new LanguageRegistry();
-        var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs);
+        var prompts = new FilePrompts(platform.FileDialogs, platform.FileSystem, layout, settings, platform.UserPaths,
+            projectDirectory: () => null); // the project service supplies it (I-065)
+        var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.RegisterCommands(commands);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
@@ -61,6 +64,7 @@ public static class ServiceGraph
             Shell = platform.Shell,
             FileWatchers = platform.FileWatchers,
             Dialogs = platform.Dialogs,
+            FileDialogs = platform.FileDialogs,
             ThemeHost = platform.ThemeHost,
             TextBuffers = platform.TextBuffers,
             Settings = settings,
@@ -72,6 +76,7 @@ public static class ServiceGraph
             Layout = layout,
             ToolWindows = toolWindows,
             Languages = languages,
+            FilePrompts = prompts,
             Documents = documents,
         };
     }

@@ -6,16 +6,20 @@ public sealed class UserPaths : IUserPaths
     public const string UserDirVariable = "FREEXCOMP_USER_DIR";
     private const string ProductFolder = "FreexComp";
 
-    private UserPaths(string roaming, string local)
+    private readonly Lazy<string> _documents;
+
+    private UserPaths(string roaming, string local, Func<string> documents)
     {
         RoamingDirectory = roaming;
         LocalDirectory = local;
         LogDirectory = Path.Combine(local, "logs");
+        _documents = new Lazy<string>(documents);
     }
 
     public string RoamingDirectory { get; }
     public string LocalDirectory { get; }
     public string LogDirectory { get; }
+    public string DocumentsDirectory => _documents.Value;
 
     /// <summary>Production entry point: reads the process environment and the OS user folders.</summary>
     public static UserPaths FromProcess(string? userDirArgument) =>
@@ -37,11 +41,12 @@ public sealed class UserPaths : IUserPaths
         if (!string.IsNullOrEmpty(overrideDir))
         {
             var root = Path.GetFullPath(overrideDir);
-            return new UserPaths(Path.Combine(root, "roaming"), Path.Combine(root, "local"));
+            return new UserPaths(Path.Combine(root, "roaming"), Path.Combine(root, "local"), () => Path.Combine(root, "documents"));
         }
 
         return new UserPaths(
             Path.Combine(getFolder(Environment.SpecialFolder.ApplicationData), ProductFolder),
-            Path.Combine(getFolder(Environment.SpecialFolder.LocalApplicationData), ProductFolder));
+            Path.Combine(getFolder(Environment.SpecialFolder.LocalApplicationData), ProductFolder),
+            () => getFolder(Environment.SpecialFolder.MyDocuments));
     }
 }

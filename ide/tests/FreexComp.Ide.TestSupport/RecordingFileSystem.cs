@@ -36,6 +36,9 @@ public sealed class RecordingFileSystem(IFileSystem inner) : IFileSystem
 
     public void WriteAllBytes(string path, byte[] data) => Run($"WriteAllBytes {path}", () => inner.WriteAllBytes(path, data));
 
+    public void WriteAllBytesDurable(string path, byte[] data) =>
+        Run($"WriteAllBytesDurable {path}", () => inner.WriteAllBytesDurable(path, data));
+
     public void CreateDirectory(string path) => Run($"CreateDirectory {path}", () => inner.CreateDirectory(path));
 
     public void DeleteFile(string path) => Run($"DeleteFile {path}", () => inner.DeleteFile(path));

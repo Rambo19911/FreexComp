@@ -417,6 +417,7 @@ public sealed class DocumentServiceTests
 
         // An untitled document's Save needs the Save As picker; a canceled picker keeps it open.
         var unit = Documents.NewUntitledUnit();
+        ((FakeFileDialogService)_services.FileDialogs).NextCancel();
         Assert.False(await Documents.CloseAsync(unit));
         Assert.Equal([unit], Documents.Documents);
         Assert.Equal(["Unit1.pas"], dialogs.Requests[^1].Args);
@@ -508,6 +509,7 @@ public sealed class DocumentServiceTests
 
         // An untitled document whose Save As is canceled cancels the whole operation.
         _fs.SetReadOnly(@"C:\p\B.pas", false);
+        ((FakeFileDialogService)_services.FileDialogs).NextCancel();
         var unit = Documents.NewUntitledUnit();
         dialogs.Script(UnsavedChangesViewModel.DialogName, vm =>
         {
