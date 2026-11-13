@@ -33,16 +33,6 @@ public static class TextBufferRules
     }
 
     /// <summary>CRLF if CRLF count ≥ lone-LF count; <paramref name="whenNone"/> without either. A lone CR is not counted.</summary>
-    public static LineEndingKind DominantLineEnding(string text, LineEndingKind whenNone)
-    {
-        int crlf = 0, lf = 0;
-        for (int i = 0; i < text.Length; i++)
-        {
-            if (text[i] != '\n') continue;
-            if (i > 0 && text[i - 1] == '\r') crlf++;
-            else lf++;
-        }
-        if (crlf == 0 && lf == 0) return whenNone;
-        return crlf >= lf ? LineEndingKind.CrLf : LineEndingKind.Lf;
-    }
+    public static LineEndingKind DominantLineEnding(string text, LineEndingKind whenNone) =>
+        LineEndingDetector.Dominant(LineEndingDetector.Count(text), whenNone);
 }
