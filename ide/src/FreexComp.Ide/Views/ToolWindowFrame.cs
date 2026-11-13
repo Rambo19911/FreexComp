@@ -53,6 +53,8 @@ public sealed class ToolWindowFrame : DockPanel
         Children.Add(_content);
         model.PropertyChanged += OnModelChanged;
         model.FocusRequested += (_, _) => Dispatcher.UIThread.Post(FocusPrimary, DispatcherPriority.Loaded);
+        _content.Focusable = true; // focus target when the content has no focusable control
+        AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
         UpdateState();
     }
 
@@ -65,8 +67,18 @@ public sealed class ToolWindowFrame : DockPanel
     {
         var candidates = _content.GetVisualDescendants().OfType<InputElement>()
             .Where(c => c.Focusable && c.IsEffectivelyEnabled && c.IsEffectivelyVisible).ToList();
-        var target = candidates.FirstOrDefault(c => c is Control control && GetIsPrimary(control)) ?? candidates.FirstOrDefault();
-        target?.Focus(NavigationMethod.Tab);
+        var target = candidates.FirstOrDefault(c => c is Control control && GetIsPrimary(control)) ?? candidates.FirstOrDefault() ?? _content;
+        target.Focus(NavigationMethod.Tab);
+    }
+
+    /// <summary>UI-A11Y-004: an Escape that nothing inside the tool window used moves focus to the active document.</summary>
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None)
+        {
+            _model.ReturnFocusToDocument();
+            e.Handled = true;
+        }
     }
 
     private void Add(Control child, Avalonia.Controls.Dock dock)
@@ -98,7 +110,7 @@ public sealed class ToolWindowFrame : DockPanel
         _title.Bind(MarginProperty, _title.GetResourceObservable("FxcSpace4Horizontal"));
         _focusLine.Bind(Shape.FillProperty, _focusLine.GetResourceObservable("FxcAccentDefaultBrush"));
 
-        var hide = FlatButton(AutomationIds.Tool(_model.Name) + ".Hide", "close", 20);
+        var hide = FlatButton(AutomationIds.Tool(_model.Name) + ".Hide", "minus", 20);
         hide.Bind(ToolTip.TipProperty, new Binding(nameof(ToolWindowViewModel.HideTooltip)) { Source = _model, Mode = BindingMode.OneWay });
         AutomationProperties.SetName(hide, Strings.ToolWindow_Hide);
         hide.Click += (_, _) => _model.Hide();

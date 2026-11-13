@@ -76,6 +76,31 @@ public sealed class ToolWindowTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-A11Y-004")]
+    [Trait("Req", "UI-TW-008")]
+    public async Task EscapeReturnsFocusToEditor()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom)));
+
+        h.Press("Alt+5");
+        Assert.Equal("Tool.Messages.List", h.FocusedAutomationId);
+        h.Press("Escape"); // the list has no local use for Escape
+        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible); // Escape does not hide
+
+        // From the filter box Escape is local first: clear, then back to the list, then to the document.
+        Assert.True(h.Find<TextBox>("Tool.Messages.Filter").Focus());
+        h.Type("x");
+        h.Press("Escape");
+        Assert.Equal("Tool.Messages.Filter", h.FocusedAutomationId);
+        h.Press("Escape");
+        Assert.Equal("Tool.Messages.List", h.FocusedAutomationId);
+        h.Press("Escape");
+        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        Assert.Equal("minus", Assert.IsType<Icons.IdeIcon>(h.Find<Button>("Tool.Messages.Hide").Content).IconName);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TW-006")]
     [Trait("Req", "UI-WIN-011")]
     public async Task LaterPhaseWindowsAreNotRegistered()

@@ -3,6 +3,8 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.VisualTree;
+using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Views;
@@ -70,6 +72,8 @@ public sealed class LayoutView : Grid
     {
         base.OnDataContextChanged(e);
         _model?.PropertyChanged -= OnModelChanged;
+        _model?.PaneCycleRequested -= OnPaneCycleRequested;
+        _model?.PaneFocusRequested -= OnPaneFocusRequested;
         foreach (var group in _model?.Groups ?? [])
         {
             group.PropertyChanged -= OnModelChanged;
@@ -82,6 +86,8 @@ public sealed class LayoutView : Grid
         }
 
         model.PropertyChanged += OnModelChanged;
+        model.PaneCycleRequested += OnPaneCycleRequested;
+        model.PaneFocusRequested += OnPaneFocusRequested;
         foreach (var group in model.Groups)
         {
             group.PropertyChanged += OnModelChanged;
@@ -103,6 +109,62 @@ public sealed class LayoutView : Grid
         }
 
         ApplySizes();
+    }
+
+    private void OnPaneCycleRequested(object? sender, int step)
+    {
+        if (_model is { } model)
+        {
+            FocusPane(model.NextPane(FocusedPane(), step));
+        }
+    }
+
+    private void OnPaneFocusRequested(object? sender, Pane pane) => FocusPane(pane);
+
+    /// <summary>The pane holding keyboard focus, or null when focus is outside the docks and the document area.</summary>
+    private Pane? FocusedPane()
+    {
+        for (var v = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual; v is not null; v = v.GetVisualParent())
+        {
+            if (v == _documents)
+            {
+                return Pane.Documents;
+            }
+
+            if (v is ToolGroupView group && PaneOf(group) is { } pane)
+            {
+                return pane;
+            }
+        }
+
+        return null;
+    }
+
+    private Pane? PaneOf(ToolGroupView group) =>
+        group == _left ? Pane.Left : group == _bottom ? Pane.Bottom : group == _rightUpper ? Pane.RightUpper : group == _rightLower ? Pane.RightLower : null;
+
+    private void FocusPane(Pane pane)
+    {
+        switch (pane)
+        {
+            case Pane.Documents:
+                // The active document view; while none is open, the document area itself.
+                _documents.GetVisualDescendants().OfType<InputElement>()
+                    .FirstOrDefault(c => c.Focusable && c.IsEffectivelyEnabled && c.IsEffectivelyVisible)?.Focus(NavigationMethod.Tab);
+                break;
+            case Pane.Left:
+                _left.FocusActive();
+                break;
+            case Pane.Bottom:
+                _bottom.FocusActive();
+                break;
+            case Pane.RightUpper:
+                _rightUpper.FocusActive();
+                break;
+            default:
+                _rightLower.FocusActive();
+                break;
+        }
     }
 
     private void ApplySizes()

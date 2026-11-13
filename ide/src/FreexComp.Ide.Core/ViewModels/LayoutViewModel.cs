@@ -90,6 +90,55 @@ public sealed class LayoutViewModel : ObservableObject
 
     public ToolGroupViewModel Group(ToolGroupId id) => Groups[(int)id];
 
+    /// <summary>The <c>F6</c> cycle requested a step (+1 next, −1 previous); the view knows where focus is.</summary>
+    public event EventHandler<int>? PaneCycleRequested;
+
+    /// <summary>Keyboard focus is to move into <see cref="Pane"/> (its active tab's primary control, or the active document).</summary>
+    public event EventHandler<Pane>? PaneFocusRequested;
+
+    /// <summary>UI-A11Y-003: the visible panes in cycle order; hidden docks are skipped, the document area is always there.</summary>
+    public IReadOnlyList<Pane> VisiblePanes =>
+        [.. Enum.GetValues<Pane>().Where(p => p == Pane.Documents || !Group(GroupOf(p)).IsCollapsed)];
+
+    /// <summary>The pane after (<paramref name="step"/> = 1) or before (−1) <paramref name="current"/>, wrapping; outside any pane the cycle starts at the document area.</summary>
+    public Pane NextPane(Pane? current, int step)
+    {
+        var panes = VisiblePanes;
+        var index = current is { } c ? IndexOf(panes, c) : -1;
+        if (index < 0)
+        {
+            return step > 0 ? Pane.Documents : panes[^1];
+        }
+
+        return panes[(((index + step) % panes.Count) + panes.Count) % panes.Count];
+    }
+
+    public void CyclePanes(int step) => PaneCycleRequested?.Invoke(this, step);
+
+    public void FocusPane(Pane pane) => PaneFocusRequested?.Invoke(this, pane);
+
+    public static ToolGroupId GroupOf(Pane pane) => pane switch
+    {
+        Pane.Left => ToolGroupId.Left,
+        Pane.Bottom => ToolGroupId.Bottom,
+        Pane.RightUpper => ToolGroupId.RightUpper,
+        Pane.RightLower => ToolGroupId.RightLower,
+        _ => throw new ArgumentOutOfRangeException(nameof(pane), pane, "The document area is not a tool group."),
+    };
+
+    private static int IndexOf(IReadOnlyList<Pane> panes, Pane pane)
+    {
+        for (var i = 0; i < panes.Count; i++)
+        {
+            if (panes[i] == pane)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
     /// <summary>
     /// Moves <paramref name="tool"/> between the visible and hidden members of its group in the active profile (UI-TW-005).
     /// Showing makes it the active tab. False when the profile does not place the tool window (home docks: I-023).

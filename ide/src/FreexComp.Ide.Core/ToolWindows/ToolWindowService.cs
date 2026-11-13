@@ -80,6 +80,9 @@ public sealed class ToolWindowService : IToolWindowService
         }
 
         commands.RegisterHandler("window.closeToolWindow", new CloseActiveHandler(this));
+        commands.RegisterHandler("window.nextPane", new ActionHandler(() => Layout.CyclePanes(1))); // UI-A11Y-003
+        commands.RegisterHandler("window.previousPane", new ActionHandler(() => Layout.CyclePanes(-1)));
+        commands.RegisterHandler("window.focusEditor", new ActionHandler(() => Layout.FocusPane(Pane.Documents))); // UI-A11Y-004
         focus.Changed += (_, _) => OnFocusChanged();
     }
 
@@ -178,9 +181,29 @@ public sealed class ToolWindowService : IToolWindowService
     {
         public bool CanExecute(string? argument) => owner.IsRegistered(name);
 
+        /// <summary>UI-A11Y-005: the shortcut of the tool window that has focus returns focus to the active document.</summary>
         public Task ExecuteAsync(string? argument)
         {
-            owner.Show(name, focus: true);
+            if (owner._focus.Current.ToolWindowName == name)
+            {
+                owner.Layout.FocusPane(Pane.Documents);
+            }
+            else
+            {
+                owner.Show(name, focus: true);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ActionHandler(Action action) : ICommandHandler
+    {
+        public bool CanExecute(string? argument) => true;
+
+        public Task ExecuteAsync(string? argument)
+        {
+            action();
             return Task.CompletedTask;
         }
     }

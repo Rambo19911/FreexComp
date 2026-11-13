@@ -72,9 +72,18 @@ public sealed partial class IconTests
             }
         }
 
+        // Lead notes that add an icon to the §4 catalogue until it gets its table row.
+        foreach (Match note in NoteAddition().Matches(File.ReadAllText(SpecTables.DocPath("spec/ui/toolbars.md"))))
+        {
+            icons.TryAdd(note.Groups["name"].Value, note.Groups["token"].Value);
+        }
+
         return icons;
     }
 
     [GeneratedRegex(@";\s*([a-z]+\.[a-zA-Z]+)\s*$")]
     private static partial Regex TokenSuffix();
+
+    [GeneratedRegex(@"^\*\*Lead note[^*]*\*\*.*?icon `(?<name>[a-z0-9-]+)` \([^)]*token `(?<token>[a-z]+\.[a-zA-Z]+)`\) is added to the §4 catalogue", RegexOptions.Multiline)]
+    private static partial Regex NoteAddition();
 }

@@ -174,10 +174,15 @@ public sealed class HeadlessHarness : IAsyncDisposable
     /// <summary>One gesture of UI-KEY-001 per call: <c>"Ctrl+Shift+S"</c>, <c>"F8"</c>, <c>"Enter"</c>.</summary>
     public void Press(string gesture)
     {
-        var (key, modifiers) = KeyMapping.ToAvalonia(CoreGesture.Parse(gesture));
+        var parsed = CoreGesture.Parse(gesture);
+        var (key, modifiers) = KeyMapping.ToAvalonia(parsed);
         var raw = ToRaw(modifiers);
-        Window.KeyPress(key, raw, PhysicalKey.None, null);
-        Window.KeyRelease(key, raw, PhysicalKey.None, null);
+        // Letters and digits carry the character they type, as from a keyboard (access keys match on it).
+        var symbol = parsed.Key is [var c] && char.IsLetterOrDigit(c)
+            ? (modifiers.HasFlag(KeyModifiers.Shift) ? c.ToString().ToUpperInvariant() : c.ToString().ToLowerInvariant())
+            : null;
+        Window.KeyPress(key, raw, PhysicalKey.None, symbol);
+        Window.KeyRelease(key, raw, PhysicalKey.None, symbol);
         Dispatcher.UIThread.RunJobs();
     }
 

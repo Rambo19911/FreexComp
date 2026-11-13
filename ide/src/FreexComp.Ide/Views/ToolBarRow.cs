@@ -5,8 +5,12 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Icons;
@@ -41,6 +45,75 @@ public sealed class ToolBarRow : DockPanel
         Children.Add(_overflow);
         Children.Add(_row);
         SizeChanged += (_, _) => Relayout();
+        AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(LostFocusEvent, (_, _) => Dispatcher.UIThread.Post(LeaveIfFocusOutside), RoutingStrategies.Bubble, handledEventsToo: true);
+    }
+
+    /// <summary>Escape in the toolbar row (UI-TB-008): focus goes back to the document.</summary>
+    public event EventHandler? EscapeRequested;
+
+    /// <summary>
+    /// UI-TB-008 keyboard entry (from the menu bar with Ctrl+Tab): the buttons become focusable while focus is in the
+    /// row, the first enabled one gets focus. A mouse click never focuses them (I-153).
+    /// </summary>
+    public bool FocusFirstButton()
+    {
+        var buttons = KeyboardButtons();
+        if (buttons.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var button in AllButtons())
+        {
+            button.Focusable = true;
+        }
+
+        return buttons[0].Focus(NavigationMethod.Tab);
+    }
+
+    /// <summary>Enabled buttons of the toolbars in the row, left to right (disabled ones cannot take focus).</summary>
+    private List<Button> KeyboardButtons() =>
+        [.. InRow.SelectMany(t => ((Panel)t).Children.OfType<Button>()).Where(b => b.IsEffectivelyEnabled && b.IsEffectivelyVisible)];
+
+    private IEnumerable<Button> AllButtons() => _toolbars.SelectMany(t => t.View.Children.OfType<Button>());
+
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyModifiers != KeyModifiers.None || TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is not Button current)
+        {
+            return;
+        }
+
+        var buttons = KeyboardButtons();
+        var index = buttons.IndexOf(current);
+        switch (e.Key)
+        {
+            case Key.Left when index > 0:
+                buttons[index - 1].Focus(NavigationMethod.Directional);
+                e.Handled = true;
+                break;
+            case Key.Right when index >= 0 && index < buttons.Count - 1:
+                buttons[index + 1].Focus(NavigationMethod.Directional);
+                e.Handled = true;
+                break;
+            case Key.Escape:
+                EscapeRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void LeaveIfFocusOutside()
+    {
+        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
+        if (focused is null || !this.IsVisualAncestorOf(focused))
+        {
+            foreach (var button in AllButtons())
+            {
+                button.Focusable = false;
+            }
+        }
     }
 
     /// <summary>Toolbars currently in the row, left to right.</summary>

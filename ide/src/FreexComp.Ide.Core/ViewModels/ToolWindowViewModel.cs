@@ -70,6 +70,9 @@ public abstract class ToolWindowViewModel : ObservableObject
     /// <summary>The Hide button of the caption (UI-TW-002).</summary>
     public void Hide() => _service?.Hide(Name);
 
+    /// <summary>UI-A11Y-004: Escape without a local use in the tool window moves focus to the active document.</summary>
+    public void ReturnFocusToDocument() => _service?.Layout.FocusPane(Models.Pane.Documents);
+
     /// <summary>UI-TW-002: "Hide (Shift+Escape)", the shortcut of <c>window.closeToolWindow</c>.</summary>
     public string HideTooltip => _hideCommand is { GestureText.Length: > 0 } command
         ? $"{Strings.ToolWindow_Hide} ({command.GestureText})"

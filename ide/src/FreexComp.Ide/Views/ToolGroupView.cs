@@ -58,6 +58,15 @@ public sealed class ToolGroupView : DockPanel
         _content.Child = model.ActiveWindow is { } active ? FrameOf(active) : null;
     }
 
+    /// <summary>F6 / Alt+0 into this group: the active tab's primary control (UI-A11Y-003).</summary>
+    public void FocusActive()
+    {
+        if (_model?.ActiveWindow is { } active)
+        {
+            FrameOf(active).FocusPrimary();
+        }
+    }
+
     private ToolWindowFrame FrameOf(ToolWindowViewModel window)
     {
         if (!_frames.TryGetValue(window, out var frame))
