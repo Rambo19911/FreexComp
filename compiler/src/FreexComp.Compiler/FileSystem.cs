@@ -27,6 +27,9 @@ public interface IFileSystem
     void WriteAllBytes(string path, byte[] data);
 
     void Delete(string path);
+
+    /// <summary>Creates the directory and its parents if missing (toolchain outputs, CMP-627).</summary>
+    void CreateDirectory(string path);
 }
 
 public sealed class PhysicalFileSystem : IFileSystem
@@ -74,6 +77,8 @@ public sealed class PhysicalFileSystem : IFileSystem
             File.Delete(path);
         }
     }
+
+    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
 }
 
 /// <summary>For tests: mutable, thread-safe. Paths are normalised (CMP-205) and compared case-insensitively.</summary>
@@ -161,6 +166,9 @@ public sealed class InMemoryFileSystem : IFileSystem
             _files.Remove(PathUtil.Normalize(path));
         }
     }
+
+    /// <summary>Directories are implicit (they exist when a file below them exists): nothing to do.</summary>
+    public void CreateDirectory(string path) => PathUtil.Normalize(path);
 
     private (byte[] Data, DateTime Time) Get(string path)
     {
