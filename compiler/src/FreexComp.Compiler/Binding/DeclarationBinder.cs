@@ -241,7 +241,7 @@ internal sealed class DeclarationBinder
     }
 
     /// <summary>"ArrayType" gives "array type".</summary>
-    private static string FeatureName(SyntaxKind kind) =>
+    internal static string FeatureName(SyntaxKind kind) =>
         string.Concat(kind.ToString().Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLowerInvariant(c) : char.ToLowerInvariant(c).ToString()));
 
     /// <summary>LANG-346: string true constants only (a character constant becomes a one-character string).</summary>

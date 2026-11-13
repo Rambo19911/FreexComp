@@ -59,7 +59,7 @@ internal sealed class ConstantFolder
 
     // ------------------------------------------------------------------ factors
 
-    private ConstantValue? FoldLiteral(LiteralExpressionSyntax literal)
+    internal ConstantValue? FoldLiteral(LiteralExpressionSyntax literal)
     {
         var token = literal.Token;
         switch (token.Kind)
@@ -145,14 +145,15 @@ internal sealed class ConstantFolder
         }
 
         var operand = Fold(arguments[0].Expression);
-        if (operand is null)
-        {
-            return null;
-        }
+        return operand is null ? null : FoldTypecast(invocation, target, operand);
+    }
 
+    /// <summary>An ordinal typecast of a constant (LANG-290 row 1); E2040 at <paramref name="node"/> otherwise.</summary>
+    internal ConstantValue? FoldTypecast(SyntaxNode node, TypeSymbol target, ConstantValue operand)
+    {
         if (OrdinalOf(operand) is not { } ordinal || !target.IsOrdinal)
         {
-            _diagnostics.Report(invocation, "E2040", operand.Type.Name, target.Name);
+            _diagnostics.Report(node, "E2040", operand.Type.Name, target.Name);
             return null;
         }
 
@@ -179,12 +180,12 @@ internal sealed class ConstantFolder
     private ConstantValue? FoldUnary(UnaryExpressionSyntax unary)
     {
         var operand = Fold(unary.Operand);
-        if (operand is null)
-        {
-            return null;
-        }
+        return operand is null ? null : FoldUnary(unary.OperatorToken, operand);
+    }
 
-        var op = unary.OperatorToken;
+    /// <summary>A unary operator on a constant; diagnostics (E2011, E2051) at <paramref name="op"/>.</summary>
+    internal ConstantValue? FoldUnary(SyntaxToken op, ConstantValue operand)
+    {
         switch (op.Kind, operand.Value)
         {
             case (SyntaxKind.MinusToken, BigInteger i) when IsInteger(operand):
@@ -211,12 +212,12 @@ internal sealed class ConstantFolder
     {
         var left = Fold(binary.Left);
         var right = Fold(binary.Right);
-        if (left is null || right is null)
-        {
-            return null;
-        }
+        return left is null || right is null ? null : FoldBinary(binary.OperatorToken, left, right);
+    }
 
-        var op = binary.OperatorToken;
+    /// <summary>A binary operator on constants; diagnostics (E2011, E2051, E2052) at <paramref name="op"/>.</summary>
+    internal ConstantValue? FoldBinary(SyntaxToken op, ConstantValue left, ConstantValue right)
+    {
         var result = op.Kind switch
         {
             SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.AsteriskToken => Arithmetic(op, left, right),
@@ -407,11 +408,11 @@ internal sealed class ConstantFolder
     }
 
     /// <summary>LANG-222 computation type: (bits, signed) of Integer, Cardinal, Int64 or UInt64.</summary>
-    private static (int Bits, bool Signed) ComputationType(IntegerTypeSymbol type) =>
+    internal static (int Bits, bool Signed) ComputationType(IntegerTypeSymbol type) =>
         type.Bits < 32 || (type.Bits == 32 && type.IsSigned) ? (32, true) : (type.Bits, type.IsSigned);
 
     /// <summary>Two's complement truncation to <paramref name="bits"/>.</summary>
-    private static BigInteger Wrap(BigInteger value, int bits, bool isSigned)
+    internal static BigInteger Wrap(BigInteger value, int bits, bool isSigned)
     {
         var modulus = BigInteger.One << bits;
         var unsigned = ((value % modulus) + modulus) % modulus;
