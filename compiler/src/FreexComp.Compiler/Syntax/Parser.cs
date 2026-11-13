@@ -306,10 +306,16 @@ internal sealed class Parser
 
     /// <summary>
     /// A routine or method directive (grammar.md §4, §5): <c>inline</c> or a directive word not followed by <c>:</c>,
-    /// <c>,</c> or <c>=</c> (then it is a name); <c>public</c> only as <c>public name</c>.
+    /// <c>,</c> or <c>=</c> (then it is a name); <c>public</c> only as <c>public name</c> and never in a type body
+    /// (<paramref name="inMember"/>), where it is a visibility keyword.
     /// </summary>
-    private bool IsDirectiveStart()
+    private bool IsDirectiveStart(bool inMember = false)
     {
+        if (inMember && IsContextual(Current, SyntaxKind.PublicKeyword))
+        {
+            return false;
+        }
+
         if (CurrentKind == SyntaxKind.InlineKeyword)
         {
             return true;
@@ -326,7 +332,7 @@ internal sealed class Parser
     }
 
     /// <summary>One directive with its arguments and its <c>;</c> (optional when another directive follows, LANG-160).</summary>
-    private DirectiveSyntax ParseDirective()
+    private DirectiveSyntax ParseDirective(bool inMember = false)
     {
         var keyword = CurrentKind == SyntaxKind.InlineKeyword ? Take().WithContextualKind(SyntaxKind.InlineKeyword) : TakeContextual();
         ExpressionSyntax? value = null;
@@ -364,7 +370,7 @@ internal sealed class Parser
                 break;
         }
 
-        SyntaxToken? semicolon = CurrentKind != SyntaxKind.SemicolonToken && IsDirectiveStart() ? null : Expect(SyntaxKind.SemicolonToken);
+        SyntaxToken? semicolon = CurrentKind != SyntaxKind.SemicolonToken && IsDirectiveStart(inMember) ? null : Expect(SyntaxKind.SemicolonToken);
         return new DirectiveSyntax(keyword, value, nameKeyword, nameValue, delayed, semicolon);
     }
 
@@ -400,7 +406,7 @@ internal sealed class Parser
         {
             declarations.Add(ParseConstDeclaration());
         }
-        while (CurrentKind == SyntaxKind.IdentifierToken);
+        while (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility());
 
         return new ConstSectionSyntax(keyword, new SyntaxList<ConstDeclarationSyntax>(declarations.ToImmutable()));
     }
@@ -492,7 +498,7 @@ internal sealed class Parser
         {
             declarations.Add(ParseTypeDeclaration());
         }
-        while (CurrentKind == SyntaxKind.IdentifierToken);
+        while (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility());
 
         return new TypeSectionSyntax(keyword, new SyntaxList<TypeDeclarationSyntax>(declarations.ToImmutable()));
     }
@@ -517,7 +523,7 @@ internal sealed class Parser
         {
             declarations.Add(ParseVarDeclaration());
         }
-        while (CurrentKind == SyntaxKind.IdentifierToken);
+        while (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility());
 
         return new VarSectionSyntax(keyword, new SyntaxList<VarDeclarationSyntax>(declarations.ToImmutable()));
     }
@@ -543,13 +549,14 @@ internal sealed class Parser
     // ------------------------------------------------------------------ grammar.md §3: types
 
     /// <summary>
-    /// <c>type</c> (grammar.md §3). Class, interface and helper types follow with C-018; anything that cannot start a
-    /// type is E1106 and a missing named type.
+    /// <c>type</c> (grammar.md §3, §4); anything that cannot start a type is E1106 and a missing named type.
     /// </summary>
     private TypeSyntax ParseType()
     {
         switch (CurrentKind)
         {
+            case SyntaxKind.ClassKeyword or SyntaxKind.RecordKeyword when IsHelperStart():
+                return ParseHelperType();
             case SyntaxKind.IdentifierToken when IsContextual(Current, SyntaxKind.ReferenceKeyword) && Peek(1).Kind == SyntaxKind.ToKeyword:
                 return ParseProceduralType();
             case SyntaxKind.IdentifierToken when !NameContinuesAsExpression():
@@ -579,6 +586,10 @@ internal sealed class Parser
                 var classKeyword = Take();
                 var of = Take();
                 return new ClassRefTypeSyntax(classKeyword, of, ParseNamedType());
+            case SyntaxKind.ClassKeyword:
+                return ParseClassType();
+            case SyntaxKind.InterfaceKeyword:
+                return ParseInterfaceType();
             case SyntaxKind.IdentifierToken or SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken
                 or SyntaxKind.StringLiteralToken or SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.NotKeyword
                 or SyntaxKind.NilKeyword:
@@ -706,37 +717,307 @@ internal sealed class Parser
         return new ArrayTypeSyntax(packed, array, open, indexes, close, of, ParseType(), null);
     }
 
-    /// <summary>
-    /// <c>record { fieldDecl } [ variantPart ] end</c>. Other record members (methods, properties, visibility; C-018)
-    /// are skipped up to the next <c>;</c>.
-    /// </summary>
+    /// <summary><c>record { recordMember } [ variantPart ] end</c>; members as in classes (LANG-730).</summary>
     private RecordTypeSyntax ParseRecordType(SyntaxToken? packed)
     {
         var record = Take();
-        var members = ImmutableArray.CreateBuilder<SyntaxNode>();
-        while (CurrentKind is not (SyntaxKind.EndKeyword or SyntaxKind.CaseKeyword or SyntaxKind.EndOfFileToken))
+        var members = ParseMemberList(isRecord: true);
+        var variantPart = CurrentKind == SyntaxKind.CaseKeyword ? ParseVariantPart() : null;
+        return new RecordTypeSyntax(packed, record, members, variantPart, Expect(SyntaxKind.EndKeyword));
+    }
+
+    // ------------------------------------------------------------------ grammar.md §4: classes, interfaces, helpers
+
+    /// <summary>
+    /// <c>class [ abstract | sealed ] [ heritage ] [ { classMember } end ]</c>. A <c>;</c> after the heading means no
+    /// body: a forward declaration (LANG-155) or, with heritage, an empty class.
+    /// </summary>
+    private ClassTypeSyntax ParseClassType()
+    {
+        var classKeyword = Take();
+        SyntaxToken? modifier = null;
+        if ((IsContextual(Current, SyntaxKind.AbstractKeyword) || IsContextual(Current, SyntaxKind.SealedKeyword))
+            && Peek(1).Kind is not (SyntaxKind.ColonToken or SyntaxKind.CommaToken))
         {
-            if (CurrentKind == SyntaxKind.IdentifierToken)
-            {
-                members.Add(ParseFieldDeclaration());
-                continue;
-            }
+            modifier = TakeContextual();
+        }
 
-            do
-            {
-                SkipToken();
-            }
-            while (CurrentKind is not (SyntaxKind.SemicolonToken or SyntaxKind.EndKeyword or SyntaxKind.CaseKeyword or SyntaxKind.EndOfFileToken));
+        var heritage = CurrentKind == SyntaxKind.OpenParenToken ? ParseHeritage() : null;
+        if (CurrentKind == SyntaxKind.SemicolonToken)
+        {
+            return new ClassTypeSyntax(classKeyword, modifier, heritage, default, null);
+        }
 
-            if (CurrentKind == SyntaxKind.SemicolonToken)
+        var members = ParseMemberList(isRecord: false);
+        return new ClassTypeSyntax(classKeyword, modifier, heritage, members, Expect(SyntaxKind.EndKeyword));
+    }
+
+    /// <summary><c>( typeId { , typeId } )</c></summary>
+    private HeritageSyntax ParseHeritage()
+    {
+        var open = Take();
+        var types = ParseSeparated<TypeSyntax>(ParseNamedType, SyntaxKind.CommaToken);
+        return new HeritageSyntax(open, types, Expect(SyntaxKind.CloseParenToken));
+    }
+
+    /// <summary>
+    /// <c>interface [ ( typeId ) ] [ "[" constExpr "]" ] { methodDecl | propertyDecl } end</c>; a <c>;</c> after the heading
+    /// means no body (forward declaration).
+    /// </summary>
+    private InterfaceTypeSyntax ParseInterfaceType()
+    {
+        var interfaceKeyword = Take();
+        var heritage = CurrentKind == SyntaxKind.OpenParenToken ? ParseHeritage() : null;
+        if (CurrentKind == SyntaxKind.SemicolonToken)
+        {
+            return new InterfaceTypeSyntax(interfaceKeyword, heritage, null, default, null);
+        }
+
+        GuidSyntax? guid = null;
+        if (CurrentKind == SyntaxKind.OpenBracketToken)
+        {
+            var open = Take();
+            var value = ParseExpression();
+            guid = new GuidSyntax(open, value, Expect(SyntaxKind.CloseBracketToken));
+        }
+
+        var members = ParseMemberList(isRecord: false);
+        return new InterfaceTypeSyntax(interfaceKeyword, heritage, guid, members, Expect(SyntaxKind.EndKeyword));
+    }
+
+    /// <summary><c>class helper</c> / <c>record helper</c> followed by <c>for</c> or a heritage list.</summary>
+    private bool IsHelperStart() =>
+        IsContextual(Peek(1), SyntaxKind.HelperKeyword) && Peek(2).Kind is SyntaxKind.ForKeyword or SyntaxKind.OpenParenToken;
+
+    /// <summary><c>( class | record ) helper [ ( typeId ) ] for typeId { classMember } end</c></summary>
+    private HelperTypeSyntax ParseHelperType()
+    {
+        var keyword = Take();
+        var helper = TakeContextual();
+        var heritage = CurrentKind == SyntaxKind.OpenParenToken ? ParseHeritage() : null;
+        var forKeyword = Expect(SyntaxKind.ForKeyword);
+        var extended = ParseNamedType();
+        var members = ParseMemberList(isRecord: false);
+        return new HelperTypeSyntax(keyword, helper, heritage, forKeyword, extended, members, Expect(SyntaxKind.EndKeyword));
+    }
+
+    /// <summary>
+    /// The members of a class, record, interface or helper body: default-section members, then one
+    /// <see cref="VisibilitySectionSyntax"/> per visibility keyword. Stops at <c>end</c>, at <c>case</c> in a record and
+    /// at tokens that cannot be inside a type (<c>begin</c>, <c>implementation</c>, … — an unterminated body).
+    /// </summary>
+    private SyntaxList<SyntaxNode> ParseMemberList(bool isRecord)
+    {
+        var members = ImmutableArray.CreateBuilder<SyntaxNode>();
+        ParseMembers(members, isRecord);
+        while (StartsVisibility())
+        {
+            var strict = IsContextual(Current, SyntaxKind.StrictKeyword) ? TakeContextual() : (SyntaxToken?)null;
+            var keyword = TakeContextual();
+            var sectionMembers = ImmutableArray.CreateBuilder<SyntaxNode>();
+            ParseMembers(sectionMembers, isRecord);
+            members.Add(new VisibilitySectionSyntax(strict, keyword, new SyntaxList<SyntaxNode>(sectionMembers.ToImmutable())));
+        }
+
+        return new SyntaxList<SyntaxNode>(members.ToImmutable());
+    }
+
+    /// <summary>Members up to the next visibility keyword or the end of the body; other tokens are skipped (E1100).</summary>
+    private void ParseMembers(ImmutableArray<SyntaxNode>.Builder members, bool isRecord)
+    {
+        while (!EndsMembers(isRecord) && !StartsVisibility())
+        {
+            if (ParseMember() is { } member)
+            {
+                members.Add(member);
+            }
+            else
             {
                 SkipToken();
             }
         }
+    }
 
-        var variantPart = CurrentKind == SyntaxKind.CaseKeyword ? ParseVariantPart() : null;
-        return new RecordTypeSyntax(packed, record, new SyntaxList<SyntaxNode>(members.ToImmutable()), variantPart,
-            Expect(SyntaxKind.EndKeyword));
+    private bool EndsMembers(bool isRecord) => CurrentKind is SyntaxKind.EndKeyword or SyntaxKind.EndOfFileToken or SyntaxKind.BeginKeyword
+        or SyntaxKind.ImplementationKeyword or SyntaxKind.InitializationKeyword or SyntaxKind.FinalizationKeyword
+        || (isRecord && CurrentKind == SyntaxKind.CaseKeyword);
+
+    /// <summary>
+    /// <c>[ strict ] ( private | protected ) | public | published</c>. A visibility word followed by <c>:</c>, <c>,</c>
+    /// or <c>=</c> is a name (a field, constant or type).
+    /// </summary>
+    private bool StartsVisibility()
+    {
+        if (CurrentKind != SyntaxKind.IdentifierToken || Current.Text.StartsWith('&'))
+        {
+            return false;
+        }
+
+        var kind = SyntaxFacts.GetKeywordKind(Current.Text);
+        if (kind == SyntaxKind.StrictKeyword)
+        {
+            return IsContextual(Peek(1), SyntaxKind.PrivateKeyword) || IsContextual(Peek(1), SyntaxKind.ProtectedKeyword);
+        }
+
+        return kind is SyntaxKind.PrivateKeyword or SyntaxKind.ProtectedKeyword or SyntaxKind.PublicKeyword or SyntaxKind.PublishedKeyword
+               && Peek(1).Kind is not (SyntaxKind.ColonToken or SyntaxKind.CommaToken or SyntaxKind.EqualsToken);
+    }
+
+    /// <summary>One class/record member, or null when the current token cannot start one.</summary>
+    private SyntaxNode? ParseMember()
+    {
+        switch (CurrentKind)
+        {
+            case SyntaxKind.ConstKeyword:
+                return ParseConstSection();
+            case SyntaxKind.TypeKeyword:
+                return ParseTypeSection();
+            case SyntaxKind.VarKeyword:
+                return ParseClassVarSection(null);
+            case SyntaxKind.ClassKeyword when Peek(1).Kind == SyntaxKind.VarKeyword:
+                return ParseClassVarSection(Take());
+            case SyntaxKind.PropertyKeyword:
+            case SyntaxKind.ClassKeyword when Peek(1).Kind == SyntaxKind.PropertyKeyword:
+                return ParsePropertyDeclaration();
+            case var _ when StartsRoutine():
+                return IsMethodResolution() ? ParseMethodResolution() : ParseMethodDeclaration();
+            case SyntaxKind.IdentifierToken:
+                return ParseFieldDeclaration();
+            default:
+                return null;
+        }
+    }
+
+    /// <summary><c>[ class ] var { fieldDecl }</c></summary>
+    private ClassVarSectionSyntax ParseClassVarSection(SyntaxToken? classKeyword)
+    {
+        var varKeyword = Take();
+        var fields = ImmutableArray.CreateBuilder<FieldDeclarationSyntax>();
+        while (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility())
+        {
+            fields.Add(ParseFieldDeclaration());
+        }
+
+        return new ClassVarSectionSyntax(classKeyword, varKeyword, new SyntaxList<FieldDeclarationSyntax>(fields.ToImmutable()));
+    }
+
+    /// <summary><c>[ class ] methodHeading ; { methodDirective ; }</c></summary>
+    private MethodDeclarationSyntax ParseMethodDeclaration()
+    {
+        var heading = ParseRoutineHeading();
+        SyntaxToken? semicolon = IsDirectiveStart(inMember: true) ? null : Expect(SyntaxKind.SemicolonToken);
+        var directives = ImmutableArray.CreateBuilder<DirectiveSyntax>();
+        while (IsDirectiveStart(inMember: true))
+        {
+            directives.Add(ParseDirective(inMember: true));
+        }
+
+        return new MethodDeclarationSyntax(heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()));
+    }
+
+    /// <summary><c>( procedure | function ) ident . ident { . ident } =</c> ahead.</summary>
+    private bool IsMethodResolution()
+    {
+        if (CurrentKind is not (SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword) || Peek(1).Kind != SyntaxKind.IdentifierToken)
+        {
+            return false;
+        }
+
+        var offset = 1;
+        while (Peek(offset + 1).Kind == SyntaxKind.DotToken && Peek(offset + 2).Kind == SyntaxKind.IdentifierToken)
+        {
+            offset += 2;
+        }
+
+        return offset > 1 && Peek(offset + 1).Kind == SyntaxKind.EqualsToken;
+    }
+
+    /// <summary><c>( procedure | function ) qualIdent = ident ;</c></summary>
+    private MethodResolutionSyntax ParseMethodResolution()
+    {
+        var keyword = Take();
+        var name = ParseQualifiedName();
+        var equals = Take();
+        var target = ParseIdentifierName();
+        return new MethodResolutionSyntax(keyword, name, equals, target, Expect(SyntaxKind.SemicolonToken));
+    }
+
+    /// <summary>
+    /// <c>[ class ] property ident [ "[" formalParamList "]" ] [ : type ] { specifier } ; [ default ; ]</c>. A token that is
+    /// not a specifier before the <c>;</c> is E1118; the rest up to the <c>;</c> is skipped.
+    /// </summary>
+    private PropertyDeclarationSyntax ParsePropertyDeclaration()
+    {
+        var classKeyword = CurrentKind == SyntaxKind.ClassKeyword ? Take() : (SyntaxToken?)null;
+        var propertyKeyword = Take();
+        var identifier = ExpectIdentifier();
+        SyntaxToken? open = null;
+        SyntaxToken? close = null;
+        SeparatedSyntaxList<ParameterSyntax> parameters = default;
+        if (CurrentKind == SyntaxKind.OpenBracketToken)
+        {
+            open = Take();
+            parameters = ParseSeparated(ParseParameter, SyntaxKind.SemicolonToken);
+            close = Expect(SyntaxKind.CloseBracketToken);
+        }
+
+        SyntaxToken? colon = null;
+        TypeSyntax? type = null;
+        if (CurrentKind == SyntaxKind.ColonToken)
+        {
+            colon = Take();
+            type = ParseType();
+        }
+
+        var specifiers = ImmutableArray.CreateBuilder<PropertySpecifierSyntax>();
+        while (IsPropertySpecifier())
+        {
+            specifiers.Add(ParsePropertySpecifier());
+        }
+
+        if (CurrentKind != SyntaxKind.SemicolonToken && !EndsMembers(isRecord: false) && !StartsVisibility())
+        {
+            ReportAt(Current, "E1118", Current.Text);
+            do
+            {
+                SkipToken(report: false);
+            }
+            while (CurrentKind != SyntaxKind.SemicolonToken && !EndsMembers(isRecord: false) && !StartsVisibility());
+        }
+
+        var semicolon = Expect(SyntaxKind.SemicolonToken);
+        SyntaxToken? defaultKeyword = null;
+        SyntaxToken? defaultSemicolon = null;
+        if (IsContextual(Current, SyntaxKind.DefaultKeyword) && Peek(1).Kind == SyntaxKind.SemicolonToken)
+        {
+            defaultKeyword = TakeContextual();
+            defaultSemicolon = Take();
+        }
+
+        return new PropertyDeclarationSyntax(classKeyword, propertyKeyword, identifier, open, parameters, close, colon, type,
+            new SyntaxList<PropertySpecifierSyntax>(specifiers.ToImmutable()), semicolon, defaultKeyword, defaultSemicolon);
+    }
+
+    private bool IsPropertySpecifier() =>
+        CurrentKind == SyntaxKind.IdentifierToken && !Current.Text.StartsWith('&')
+        && SyntaxFacts.GetKeywordKind(Current.Text) is SyntaxKind.IndexKeyword or SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword
+            or SyntaxKind.StoredKeyword or SyntaxKind.DefaultKeyword or SyntaxKind.NoDefaultKeyword or SyntaxKind.ImplementsKeyword;
+
+    /// <summary>
+    /// <c>index constExpr</c> | <c>read path</c> | <c>write path</c> | <c>stored ( path | constExpr )</c> |
+    /// <c>default constExpr</c> | <c>nodefault</c> | <c>implements typeId { , typeId }</c>.
+    /// </summary>
+    private PropertySpecifierSyntax ParsePropertySpecifier()
+    {
+        var keyword = TakeContextual();
+        var values = keyword.ContextualKind switch
+        {
+            SyntaxKind.NoDefaultKeyword => default,
+            SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword => new SeparatedSyntaxList<ExpressionSyntax>([ParseQualifiedName()]),
+            SyntaxKind.ImplementsKeyword => ParseSeparated<ExpressionSyntax>(ParseQualifiedName, SyntaxKind.CommaToken),
+            _ => new SeparatedSyntaxList<ExpressionSyntax>([ParseExpression()]),
+        };
+        return new PropertySpecifierSyntax(keyword, values);
     }
 
     /// <summary><c>identList : type [ hints ] [ ; ]</c> — <c>;</c> optional before <c>end</c>, <c>)</c>, <c>case</c>.</summary>

@@ -222,7 +222,7 @@ public sealed class RecordTypeSyntax : TypeSyntax
 
     public SyntaxToken RecordKeyword { get; }
 
-    /// <summary>Field declarations (methods, properties, visibility sections follow with C-018).</summary>
+    /// <summary>As <see cref="ClassTypeSyntax.Members"/>: default-section members, then visibility sections.</summary>
     public SyntaxList<SyntaxNode> Members { get; }
 
     public VariantPartSyntax? VariantPart { get; }

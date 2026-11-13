@@ -5,8 +5,8 @@ namespace FreexComp.Compiler.Tests.Syntax;
 
 /// <summary>
 /// api.md CMP-222: <c>Lexer.Tokenize</c> and the parser's tree yield the same token kinds and spans. Holds for
-/// error-free sources (the parser turns skipped tokens into trivia and inserts missing tokens); classes and generics
-/// are not parsed yet (C-018, C-019), so the inputs avoid them.
+/// error-free sources (the parser turns skipped tokens into trivia and inserts missing tokens); generics are not parsed
+/// yet (C-019), so the inputs avoid them.
 /// </summary>
 public sealed partial class LexerTests
 {
@@ -79,6 +79,33 @@ public sealed partial class LexerTests
         unit Sys.Utils deprecated;
         interface
         uses A;
+        type
+          IShape = interface(IInterface) ['{8E2B1C3A-0000-4000-8000-000000000001}']
+            function Area: Double;
+          end;
+          TShape = class abstract(TInterfacedObject, IShape)
+          strict private
+            FName: string;
+            class var Count: Integer;
+          protected
+            procedure SetName(const Value: string); virtual;
+          public
+            constructor Create; overload;
+            function Area: Double; virtual; abstract;
+            function IShape.Area = Area;
+            property Name: string read FName write SetName stored True default 0;
+            property Items[I: Integer]: TShape read GetItem; default;
+          end;
+          TVec = record
+          private
+            FX: Single;
+          public
+            class operator Add(const A, B: TVec): TVec;
+            const Zero = 0;
+          end;
+          TIntHelper = record helper for Integer
+            function IsEven: Boolean; inline;
+          end;
         procedure P(var X; out Y: Integer); stdcall;
         function F: Integer; external 'k.dll' name 'f';
         implementation
