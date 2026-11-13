@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Numerics;
 using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Symbols;
+using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Types;
 
 namespace FreexComp.Compiler.Lowering;
@@ -11,7 +12,7 @@ namespace FreexComp.Compiler.Lowering;
 /// (the lowerer reports nothing; it throws on error nodes). This skeleton translates the M2.1 statement and expression
 /// set; the structured statements and intrinsics are delegated to <see cref="ForRewriter"/>, <see cref="CaseRewriter"/>
 /// and <see cref="IntrinsicRewriter"/>. Variables of enclosing routines become <see cref="LOuterRef"/>; their owner gets a
-/// <see cref="LoweredFrame"/> (CMP-345). Not yet: <c>Write</c>/<c>Writeln</c> (C-040, throws <see cref="NotSupportedException"/>).
+/// <see cref="LoweredFrame"/> (CMP-345); range and overflow checks come from <see cref="CheckRewriter"/>. Not yet: <c>Write</c>/<c>Writeln</c> (C-040, throws <see cref="NotSupportedException"/>).
 /// </summary>
 internal static class Lowerer
 {
@@ -124,12 +125,15 @@ internal sealed class LoweringContext
 
     public LCompare Compare(LCompareOperator op, LExpression left, LExpression right) => new(op, left, right, Types.Boolean);
 
-    /// <summary><c>x ± 1</c> (or <paramref name="step"/>) in the computation type, converted back to <paramref name="type"/>.</summary>
-    public LExpression Step(LExpression value, TypeSymbol type, LBinaryOperator op, LExpression? step = null)
+    /// <summary>
+    /// <c>x ± 1</c> (or <paramref name="step"/>) in the computation type, converted back to <paramref name="type"/>; with
+    /// <paramref name="checks"/> the operation and the conversion back are checked per <see cref="CheckRewriter"/>.
+    /// </summary>
+    public LExpression Step(LExpression value, TypeSymbol type, LBinaryOperator op, LExpression? step = null, DirectiveState? checks = null)
     {
         var computation = ComputationType(type);
         var amount = step is null ? Constant(BigInteger.One, computation) : Convert(step, computation);
-        return Convert(new LBinary(op, Convert(value, computation), amount), type);
+        return CheckRewriter.Convert(this, CheckRewriter.Binary(op, Convert(value, computation), amount, checks), type, checks);
     }
 
     public LStatement CallNoReturn(RuntimeHelper helper, LExpression argument) =>
@@ -215,11 +219,15 @@ internal sealed class LoweringContext
                     ? new LParamRef(parameter.Parameter)
                     : new LOuterRef(parameter.Parameter, parameter.Parameter.Type);
             case BoundConversionExpression conversion:
-                return Convert(Lower(conversion.Operand), conversion.Type);
+                return conversion.IsExplicit
+                    ? Convert(Lower(conversion.Operand), conversion.Type)
+                    : CheckRewriter.Convert(this, Lower(conversion.Operand), conversion.Type, CheckRewriter.StateOf(conversion));
             case BoundUnaryExpression { OperatorKind: BoundUnaryOperatorKind.Identity } unary:
                 return Lower(unary.Operand);
+            case BoundUnaryExpression { OperatorKind: BoundUnaryOperatorKind.Negate } unary:
+                return CheckRewriter.Negate(Lower(unary.Operand), CheckRewriter.StateOf(unary));
             case BoundUnaryExpression unary:
-                return new LUnary(unary.OperatorKind == BoundUnaryOperatorKind.Negate ? LUnaryOperator.Negate : LUnaryOperator.Not, Lower(unary.Operand));
+                return new LUnary(LUnaryOperator.Not, Lower(unary.Operand));
             case BoundBinaryExpression binary:
                 return Binary(binary);
             case BoundCallExpression call:
@@ -250,7 +258,7 @@ internal sealed class LoweringContext
             return Compare(op, left, right);
         }
 
-        return new LBinary(binary.OperatorKind switch
+        return CheckRewriter.Binary(binary.OperatorKind switch
         {
             BoundBinaryOperatorKind.Add => LBinaryOperator.Add,
             BoundBinaryOperatorKind.Subtract => LBinaryOperator.Subtract,
@@ -266,7 +274,7 @@ internal sealed class LoweringContext
             BoundBinaryOperatorKind.Shl => LBinaryOperator.Shl,
             BoundBinaryOperatorKind.Shr => LBinaryOperator.Shr,
             _ => throw new InvalidOperationException($"Unknown operator {binary.OperatorKind}."),
-        }, left, right);
+        }, left, right, CheckRewriter.StateOf(binary));
     }
 
     /// <summary>Value and <c>const</c> arguments as values; <c>var</c>/<c>out</c> arguments as the variable's address.</summary>

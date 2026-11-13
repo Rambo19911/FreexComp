@@ -4,7 +4,8 @@ namespace FreexComp.Compiler.Tests.Lowering;
 
 /// <summary>
 /// S-expression form of a lowered tree for assertions. Expressions: constants <c>value:Type</c>; locals, parameters and
-/// temporaries by name, globals <c>@Name</c>; <c>(conv Type x)</c>, <c>(Op:Type operands…)</c>, <c>(Less a b)</c>,
+/// temporaries by name, globals <c>@Name</c>; <c>(conv Type x)</c>, <c>(Op:Type operands…)</c> (<c>Op!</c> = overflow-checked),
+/// <c>(range lo..hi x)</c>, <c>(Less a b)</c>,
 /// <c>(select c a b)</c>, <c>(addr x)</c>, <c>(call Name:Type args…)</c>, <c>(let $vN value body)</c>. Statements:
 /// <c>(block …)</c>, <c>(:= t v)</c>, <c>(if c then [else])</c>, <c>(loop L body [step])</c>, <c>(break L)</c>,
 /// <c>(continue L)</c>, <c>(switch sel (case [values] [ranges] body)… [(default body)])</c>, <c>(call Name args…)</c>,
@@ -20,8 +21,9 @@ internal static class LoweredDump
         LParamRef p => p.Parameter.Name,
         LOuterRef o => "^" + o.Variable.Name,
         LAddrOf a => $"(addr {Of(a.Variable)})",
-        LUnary u => $"({u.Operator}:{u.Type.Name} {Of(u.Operand)})",
-        LBinary b => $"({b.Operator}:{b.Type.Name} {Of(b.Left)} {Of(b.Right)})",
+        LUnary u => $"({u.Operator}{(u.IsChecked ? "!" : "")}:{u.Type.Name} {Of(u.Operand)})",
+        LBinary b => $"({b.Operator}{(b.IsChecked ? "!" : "")}:{b.Type.Name} {Of(b.Left)} {Of(b.Right)})",
+        LRangeCheck r => $"(range {r.Low}..{r.High} {Of(r.Value)})",
         LCompare c => $"({c.Operator} {Of(c.Left)} {Of(c.Right)})",
         LConvert c => $"(conv {c.Type.Name} {Of(c.Operand)})",
         LSelect s => $"(select {Of(s.Condition)} {Of(s.WhenTrue)} {Of(s.WhenFalse)})",

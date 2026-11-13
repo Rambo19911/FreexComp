@@ -226,23 +226,31 @@ internal enum LUnaryOperator
     Abs,
 }
 
-internal sealed class LUnary(LUnaryOperator op, LExpression operand) : LExpression(operand.Type)
+/// <summary>A unary operation; <see cref="IsChecked"/> = integer negation under <c>{$Q+}</c> (CMP-312, set by <see cref="CheckRewriter"/>).</summary>
+internal sealed class LUnary(LUnaryOperator op, LExpression operand, bool isChecked = false) : LExpression(operand.Type)
 {
     public LUnaryOperator Operator { get; } = op;
 
     public LExpression Operand { get; } = operand;
+
+    public bool IsChecked { get; } = isChecked;
 }
 
 internal enum LBinaryOperator { Add, Subtract, Multiply, Divide, IntegerDivide, Modulo, And, Or, Xor, ConditionalAnd, ConditionalOr, Shl, Shr }
 
-/// <summary>A primitive operation in the type of its operands (both have <see cref="LExpression.Type"/>; a shift count too).</summary>
-internal sealed class LBinary(LBinaryOperator op, LExpression left, LExpression right) : LExpression(left.Type)
+/// <summary>
+/// A primitive operation in the type of its operands (both have <see cref="LExpression.Type"/>; a shift count too).
+/// <see cref="IsChecked"/>: integer <c>+ - *</c> under <c>{$Q+}</c>, overflow → <c>_OverflowError</c> (CMP-312, set by <see cref="CheckRewriter"/>).
+/// </summary>
+internal sealed class LBinary(LBinaryOperator op, LExpression left, LExpression right, bool isChecked = false) : LExpression(left.Type)
 {
     public LBinaryOperator Operator { get; } = op;
 
     public LExpression Left { get; } = left;
 
     public LExpression Right { get; } = right;
+
+    public bool IsChecked { get; } = isChecked;
 }
 
 internal enum LCompareOperator { Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual }
@@ -264,6 +272,19 @@ internal sealed class LCompare(LCompareOperator op, LExpression left, LExpressio
 internal sealed class LConvert(LExpression operand, TypeSymbol type) : LExpression(type)
 {
     public LExpression Operand { get; } = operand;
+}
+
+/// <summary>
+/// CMP-314: <see cref="Value"/> (an integer or char) unchanged when <c>Low ≤ Value ≤ High</c>, else <c>_RangeError</c>. The bounds
+/// lie within the value's own type (<see cref="CheckRewriter"/> intersects them with it).
+/// </summary>
+internal sealed class LRangeCheck(LExpression value, BigInteger low, BigInteger high) : LExpression(value.Type)
+{
+    public LExpression Value { get; } = value;
+
+    public BigInteger Low { get; } = low;
+
+    public BigInteger High { get; } = high;
 }
 
 internal sealed class LSelect(LExpression condition, LExpression whenTrue, LExpression whenFalse) : LExpression(whenTrue.Type)

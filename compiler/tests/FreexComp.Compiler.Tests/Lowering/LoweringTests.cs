@@ -69,6 +69,37 @@ public sealed class LoweringTests
         Assert.Equal("b:Byte $tmp1:Byte $tmp2:Byte", Locals(p));
     }
 
+    // ------------------------------------------------------------------ checks (CMP-312, 314; C-039)
+
+    [Fact]
+    [Trait("Req", "CMP-314")]
+    public void Checks_ForVariableUnderBothSwitches_BoundsCheckedStepNot()
+    {
+        var unit = Lower("program T; {$R+}{$Q+} procedure P(n: Integer); var b: Byte; begin for b := 1 to n do end; begin end.");
+
+        Assert.Equal(
+            "(block (:= $tmp1 1:Byte) (:= $tmp2 (conv Byte (range 0..255 n))) (if (LessOrEqual $tmp1 $tmp2) (block (:= b $tmp1) (loop for.1 (block) " +
+            "(block (if (Equal b $tmp2) (break for.1)) (:= b (conv Byte (Add:Integer (conv Integer b) 1:Integer))))))))",
+            LoweredDump.Of(Assert.Single(Routine(unit, "P").Body.Statements)));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-314")]
+    public void Checks_RangeBoundsAreIntersectedWithTheSourceType() =>
+        Assert.Equal(
+            "(:= Result (conv Integer (range 0..2147483647 c))) (:= Result (conv Integer c)) (:= Result (conv Integer b))",
+            Body("{$R+} function F(c: Cardinal; b: Byte): Integer; begin Result := c; Result := Integer(c); Result := b end;"));
+
+    [Fact]
+    [Trait("Req", "CMP-312")]
+    public void Checks_IncUnderQPlus_IsAnOverflowCheckedAdd_ChecksOff_Plain()
+    {
+        Assert.Equal("(:= i (Add!:Integer i 1:Integer)) (:= i (Negate!:Integer i))",
+            Body("{$Q+} procedure F(var i: Integer); begin Inc(i); i := -i end;"));
+        Assert.Equal("(:= i (Add:Integer i 1:Integer)) (:= i (Negate:Integer i))",
+            Body("procedure F(var i: Integer); begin Inc(i); i := -i end;"));
+    }
+
     [Fact]
     [Trait("Req", "LANG-363")]
     public void For_BreakAndContinue_TargetTheLoop_ContinueRunsTheStep() =>

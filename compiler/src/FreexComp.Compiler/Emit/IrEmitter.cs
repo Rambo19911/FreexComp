@@ -9,7 +9,8 @@ namespace FreexComp.Compiler.Emit;
 /// <summary>
 /// Lowered trees of one unit → IR through <see cref="IIrWriter"/> (architecture.md §3, CMP-125). This part covers the module
 /// skeleton, scalar globals (CMP-341), routines with parameters and locals (CMP-310), integer, Boolean and real
-/// expressions (CMP-312, 315…317), conversions (CMP-305, 313), the always-on division tests of CMP-312, control flow
+/// expressions (CMP-312, 315…317), conversions (CMP-305, 313), the always-on division tests of CMP-312, the overflow and
+/// range checks the <see cref="CheckRewriter"/> marked (CMP-312 <c>{$Q+}</c>, CMP-314), control flow
 /// (CMP-318…322), calls (ABI-080…082) and nested routines with frame records and static links (CMP-345). Not yet:
 /// program and unit bodies with <c>$init</c>/<c>$final</c>/<c>$main</c> (C-044; they are ignored).
 /// </summary>
@@ -668,6 +669,8 @@ internal sealed class FunctionEmitter
                 return Compare(compare);
             case LConvert convert:
                 return Convert(Value(convert.Operand), convert.Operand.Type, convert.Type);
+            case LRangeCheck check:
+                return RangeCheck(check);
             case LSelect select:
             {
                 var condition = Value(select.Condition);
@@ -695,6 +698,8 @@ internal sealed class FunctionEmitter
         {
             case LUnaryOperator.Negate when operand.Type is FloatingIrType:
                 return _w.FNeg(NewTemp(), operand);
+            case LUnaryOperator.Negate when unary.IsChecked:
+                return Overflow("sub", IsSigned(unary.Type), new IrIntConstant((IntegerIrType)operand.Type, 0), operand);
             case LUnaryOperator.Negate:
                 return _w.Binary(NewTemp(), IrBinaryOperator.Sub, new IrIntConstant((IntegerIrType)operand.Type, 0), operand);
             case LUnaryOperator.Not:
@@ -723,6 +728,18 @@ internal sealed class FunctionEmitter
 
         var left = Value(binary.Left);
         var right = Value(binary.Right);
+        if (binary.IsChecked)
+        {
+            var kind = binary.Operator switch
+            {
+                LBinaryOperator.Add => "add",
+                LBinaryOperator.Subtract => "sub",
+                LBinaryOperator.Multiply => "mul",
+                _ => throw new InvalidOperationException($"{binary.Operator} has no overflow check."),
+            };
+            return Overflow(kind, IsSigned(binary.Type), left, right);
+        }
+
         var isReal = left.Type is FloatingIrType;
         IrBinaryOperator op;
         switch (binary.Operator)
@@ -821,9 +838,7 @@ internal sealed class FunctionEmitter
         var id = NewConstruct();
         IrBlock zero = Block("div.zero", id), ok = Block("div.ok", id);
         _w.CondBr(_w.ICmp(NewTemp(), IrIntPredicate.Eq, right, new IrIntConstant(type, 0)), zero, ok);
-        Start(zero);
-        _w.Call(null, IrType.Void, _module.NoReturnHelper("_DivZeroError"), [], IrEmitter.NoReturnGroup);
-        _w.Unreachable();
+        ErrorBlock(zero, "_DivZeroError");
         Start(ok);
         if (!isSigned)
         {
@@ -840,6 +855,51 @@ internal sealed class FunctionEmitter
         _w.Br(end);
         Start(end);
         return _w.Phi(NewTemp(), type, [(negated, negative), (quotient, divide)]);
+    }
+
+    /// <summary>
+    /// CMP-312 <c>{$Q+}</c>: <c>llvm.[s|u]&lt;kind&gt;.with.overflow.iN</c>, flag (field 1) → block <c>ovf.error.N</c> calling
+    /// <c>_OverflowError</c>, else <c>ovf.ok.N</c> continuing with the result (field 0).
+    /// </summary>
+    private IrValue Overflow(string kind, bool signed, IrValue left, IrValue right)
+    {
+        var type = (IntegerIrType)left.Type;
+        var pairType = new StructIrType([type, IrType.I1]);
+        var intrinsic = _module.Intrinsic($"llvm.{(signed ? "s" : "u")}{kind}.with.overflow.i{type.Bits}", pairType, [type, type]);
+        var pair = _w.Call(NewTemp(), pairType, intrinsic, [left, right])!;
+        var overflowed = _w.ExtractValue(NewTemp(), pair, 1);
+        var id = NewConstruct();
+        IrBlock error = Block("ovf.error", id), ok = Block("ovf.ok", id);
+        _w.CondBr(overflowed, error, ok);
+        ErrorBlock(error, "_OverflowError");
+        Start(ok);
+        return _w.ExtractValue(NewTemp(), pair, 0);
+    }
+
+    /// <summary>
+    /// CMP-314 <c>{$R+}</c>: <c>icmp ule (sub v, lo), hi − lo</c> (no <c>sub</c> when <c>lo = 0</c>) → <c>range.ok.N</c>, else block
+    /// <c>range.error.N</c> calling <c>_RangeError</c>. The value itself is the result.
+    /// </summary>
+    private IrValue RangeCheck(LRangeCheck check)
+    {
+        var value = Value(check.Value);
+        var type = (IntegerIrType)value.Type;
+        var offset = check.Low.IsZero ? value : _w.Binary(NewTemp(), IrBinaryOperator.Sub, value, new IrIntConstant(type, check.Low));
+        var inRange = _w.ICmp(NewTemp(), IrIntPredicate.Ule, offset, new IrIntConstant(type, check.High - check.Low));
+        var id = NewConstruct();
+        IrBlock error = Block("range.error", id), ok = Block("range.ok", id);
+        _w.CondBr(inRange, ok, error);
+        ErrorBlock(error, "_RangeError");
+        Start(ok);
+        return value;
+    }
+
+    /// <summary><paramref name="block"/>: <c>call void @"System.&lt;helper&gt;"() #1</c> + <c>unreachable</c>.</summary>
+    private void ErrorBlock(IrBlock block, string helper)
+    {
+        Start(block);
+        _w.Call(null, IrType.Void, _module.NoReturnHelper(helper), [], IrEmitter.NoReturnGroup);
+        _w.Unreachable();
     }
 
     /// <summary>CMP-315: signed/unsigned predicates by type (chars and Booleans unsigned), reals ordered except <c>une</c>; signed vs <c>UInt64</c> mathematically.</summary>

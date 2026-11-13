@@ -339,8 +339,88 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// CMP-314 range checks (implicit narrowing ordinal conversions, <c>Chr</c>, <c>Succ</c>, <c>Inc</c>; not explicit casts or
+    /// widenings) and CMP-312 overflow checks (<c>+ - *</c>, unary <c>-</c>, <c>Abs</c>, <c>Inc</c>; never the <c>for</c> step).
+    /// </summary>
+    internal const string ChecksSource = """
+        unit M;
+        interface
+        function Narrow(i: Integer): Byte;
+        function Signed(c: Cardinal): Integer;
+        function Both(a: Integer; b: ShortInt): ShortInt;
+        function Sum(a, b: Integer): Integer;
+        function USum(a, b: Cardinal): Cardinal;
+        function Neg(x: Int64): Int64;
+        function Total(n: Byte): Integer;
+        function Wrap(a: Integer): Integer;
+        implementation
+        {$R+}
+        function Narrow(i: Integer): Byte;
+        begin
+          Result := i;
+        end;
+        function Signed(c: Cardinal): Integer;
+        begin
+          Result := c;
+        end;
+        function Unchecked(i: Integer; w: Word): Integer;
+        var b: Byte;
+        begin
+          b := Byte(i);
+          Result := w + b;
+        end;
+        function Letter(i: Integer): Char;
+        begin
+          Result := Chr(i);
+        end;
+        procedure Bump(var b: Byte);
+        begin
+          Inc(b);
+          b := Succ(b);
+        end;
+        {$Q+}
+        function Both(a: Integer; b: ShortInt): ShortInt;
+        begin
+          Result := a * b;
+        end;
+        {$R-}
+        function Sum(a, b: Integer): Integer;
+        begin
+          Result := a + b - 1;
+        end;
+        function USum(a, b: Cardinal): Cardinal;
+        begin
+          Result := a * b + 1;
+        end;
+        function Neg(x: Int64): Int64;
+        begin
+          Result := -x + Abs(x);
+        end;
+        procedure Next(var i: Integer);
+        begin
+          Inc(i);
+        end;
+        {$R+}
+        function Total(n: Byte): Integer;
+        var
+          c: Byte;
+        begin
+          Result := 0;
+          for c := 1 to n do
+            Result := Result + c;
+        end;
+        {$Q-}{$R-}
+        function Wrap(a: Integer): Integer;
+        begin
+          Result := a + 1;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Checks"] = ChecksSource,
         ["Add"] = AddSource,
         ["ShortCircuit"] = ShortCircuitSource,
         ["Division"] = DivisionSource,
@@ -352,6 +432,30 @@ public sealed class IrSnapshotTests
         ["Calls"] = CallsSource,
         ["NestedFrame"] = NestedFrameSource,
     };
+
+    [Fact]
+    [Trait("Req", "CMP-314")]
+    [Trait("Req", "CMP-312")]
+    public void Checks() => Snapshot.Verify("Checks", Emit(ChecksSource));
+
+    /// <summary>CMP-312 <c>{$Q+}</c> pattern and CMP-314 <c>{$R+}</c> pattern; nothing is checked outside the switches.</summary>
+    [Fact]
+    [Trait("Req", "CMP-312")]
+    [Trait("Req", "CMP-314")]
+    public void Checks_FollowTheSwitches()
+    {
+        var text = Emit(ChecksSource);
+
+        Assert.Contains("call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 ", text);
+        Assert.Contains("call { i32, i1 } @llvm.umul.with.overflow.i32(i32 ", text);
+        Assert.Contains("call { i64, i1 } @llvm.ssub.with.overflow.i64(i64 0, i64 ", text);
+        Assert.Contains("call void @\"System._OverflowError\"() #1\n  unreachable\n", text);
+        Assert.Contains("call void @\"System._RangeError\"() #1\n  unreachable\n", text);
+        var wrap = text[text.IndexOf("@\"M.Wrap\"", StringComparison.Ordinal)..];
+        Assert.DoesNotContain("with.overflow", wrap);
+        Assert.DoesNotContain("_RangeError", wrap[..wrap.IndexOf("\n}\n", StringComparison.Ordinal)]);
+        Assert.DoesNotContain("Error", Emit(AddSource));
+    }
 
     [Fact]
     [Trait("Req", "CMP-345")]
