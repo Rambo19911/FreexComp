@@ -111,6 +111,21 @@ public sealed class ClassifierTests
         Assert.Equal([("'ok'", ClassificationKind.StringLiteral), ("#10", ClassificationKind.CharLiteral), ("'bad", ClassificationKind.Invalid)], Pieces("'ok'#10'bad"));
     }
 
+    /// <summary>C-171: a part ending in an escaped <c>''</c> at the end of the line is unterminated (E1020), not a char literal.</summary>
+    [Theory]
+    [Trait("Req", "CMP-710")]
+    [InlineData("S = '''\nx", "'''")]
+    [InlineData("S = 'ab''\nx", "'ab''")]
+    [InlineData("S = '''''\nx", "'''''")]
+    [InlineData("S = 'a'#13'''", "'''")]
+    public void Lexical_UnterminatedAfterEscapedQuote_IsInvalid(string text, string piece)
+    {
+        var e1020 = Assert.Single(Lexer.GetDiagnostics(SourceText.From(Path, text)), d => d.Code == "E1020");
+        Assert.Equal(text.LastIndexOf(piece, StringComparison.Ordinal), e1020.Location.Span.Start);
+
+        Assert.Equal(ClassificationKind.Invalid, KindOf(text, piece));
+    }
+
     [Fact]
     [Trait("Req", "CMP-710")]
     public void Lexical_IllegalCharacter_IsInvalid()

@@ -208,7 +208,7 @@ public static class Classifier
     {
         var text = token.Text;
         var start = token.Span.Start;
-        var singleChar = token.Value is string { Length: 1 } && text[0] == '\'' && QuotedPartEnd(text, 0) == text.Length;
+        var singleChar = token.Value is string { Length: 1 } && text[0] == '\'' && QuotedPartEnd(text, 0, out _) == text.Length;
         var i = 0;
         while (i < text.Length)
         {
@@ -216,8 +216,7 @@ public static class Classifier
             var partStart = i;
             if (text[i] == '\'')
             {
-                i = QuotedPartEnd(text, i);
-                var terminated = i - partStart >= 2 && text[i - 1] == '\'';
+                i = QuotedPartEnd(text, i, out var terminated);
                 kind = !terminated ? ClassificationKind.Invalid
                     : singleChar ? ClassificationKind.CharLiteral
                     : ClassificationKind.StringLiteral;
@@ -247,9 +246,15 @@ public static class Classifier
         }
     }
 
-    /// <summary>End (exclusive) of the quoted part starting at <paramref name="quote"/>; '' is an escaped quote.</summary>
-    private static int QuotedPartEnd(string text, int quote)
+    /// <summary>
+    /// End (exclusive) of the quoted part starting at <paramref name="quote"/>; '' is an escaped quote. Scans exactly
+    /// as the lexer does (<c>PascalLexer.ScanString</c>): <paramref name="terminated"/> is true only when a closing
+    /// quote was found, i.e. when the lexer reported no E1020 for this part; a part ending in an escaped <c>''</c> at
+    /// the end of the token is unterminated (C-171).
+    /// </summary>
+    private static int QuotedPartEnd(string text, int quote, out bool terminated)
     {
+        terminated = false;
         var i = quote + 1;
         while (i < text.Length)
         {
@@ -261,6 +266,7 @@ public static class Classifier
                     continue;
                 }
 
+                terminated = true;
                 return i + 1;
             }
 
