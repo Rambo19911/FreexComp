@@ -15,3 +15,6 @@ third_party/
 .freexcomp/
 TestResults/
 *.pcu
+
+# review sheet of the icon generator
+assets/brand/_preview.png

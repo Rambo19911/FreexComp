@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.E2E.Tests</RootNamespace>
+  </PropertyGroup>
+</Project>

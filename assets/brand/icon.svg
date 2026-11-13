@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Application icon">
+  <rect width="1024" height="1024" rx="205" fill="#0F7B6C"/>
+  <g fill="none" stroke-width="104" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="250,300 450,512 250,724" stroke="#FFFFFF"/>
+    <line x1="520" y1="300" x2="790" y2="300" stroke="#FFFFFF"/>
+    <line x1="560" y1="512" x2="730" y2="512" stroke="#8FE3D6"/>
+  </g>
+</svg>

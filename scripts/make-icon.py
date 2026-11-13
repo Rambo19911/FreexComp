@@ -1,10 +1,10 @@
-# Generates the product icon set from one geometric definition (docs/spec/ui/brand/README.md, UI-TOK-043).
+# Generates the product icon set (assets/brand/) from one geometric definition.
 # Usage: python scripts/make-icon.py      Requires: Pillow (build-time only, not shipped).
-# Output: docs/spec/ui/brand/  icon.svg, icon-dark.svg, icon-<size>.png, app.ico, _preview.png
+# Output: assets/brand/  icon.svg, icon-dark.svg, icon-<size>.png, app.ico (+ _preview.png, git-ignored)
 import os
 from PIL import Image, ImageDraw
 
-OUT = os.path.join(os.path.dirname(__file__), '..', 'docs', 'spec', 'ui', 'brand')
+OUT = os.path.join(os.path.dirname(__file__), '..', 'assets', 'brand')
 LIGHT = dict(bg='#0F7B6C', fg='#FFFFFF', hi='#8FE3D6')     # for light surfaces / Windows shell
 DARK  = dict(bg='#3FC1AE', fg='#06201C', hi='#0B4A41')     # for dark surfaces inside the IDE
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256, 512, 1024]
