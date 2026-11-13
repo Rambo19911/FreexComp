@@ -24,6 +24,7 @@ public sealed class DocumentService : IDocumentService
     private readonly ISettingsService _settings;
     private readonly IStatusService _status;
     private readonly IFocusTracker _focus;
+    private readonly IDialogService _dialogs;
     private readonly ObservableCollection<DocumentViewModel> _documents = [];
     private readonly List<DocumentViewModel> _mru = [];
     private readonly Dictionary<string, Task<OperationResult<DocumentViewModel>>> _loading = new(StringComparer.OrdinalIgnoreCase);
@@ -31,9 +32,10 @@ public sealed class DocumentService : IDocumentService
     private TextDocumentViewModel? _statusSource;
 
     public DocumentService(IFileSystem fileSystem, ITextBufferFactory buffers, ILanguageRegistry languages, ISettingsService settings,
-        IStatusService status, IFocusTracker focus)
+        IStatusService status, IFocusTracker focus, IDialogService dialogs)
     {
         _fileSystem = fileSystem;
+        _dialogs = dialogs;
         _buffers = buffers;
         _languages = languages;
         _settings = settings;
@@ -84,6 +86,7 @@ public sealed class DocumentService : IDocumentService
             arg => Activate(FindById(arg)!)));
         // Without a project (IDE-P1-033); with one, the project service routes it to project.addNewUnit.
         commands.RegisterHandler("file.newUnit", new Handler(_ => true, _ => NewUntitledUnit()));
+        commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
     }
 
     public async Task<OperationResult<DocumentViewModel>> OpenAsync(string path)
@@ -180,6 +183,55 @@ public sealed class DocumentService : IDocumentService
         _commands?.InvalidateCanExecute();
         return true;
     }
+
+    public async Task<bool> CloseAsync(DocumentViewModel document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (!_documents.Contains(document))
+            return false;
+
+        if (document.IsModified)
+        {
+            switch (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveChangesOne", [document.Title])))
+            {
+                case "Save":
+                    if (!await SaveAsync(document))
+                        return false;
+                    break;
+                case "DontSave":
+                    break; // the recovery copy is deleted by the recovery service on DocumentClosed (I-063)
+                default:
+                    return false;
+            }
+        }
+
+        return Close(document);
+    }
+
+    public async Task<bool> SaveAsync(DocumentViewModel document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (document is not TextDocumentViewModel text)
+            return false;
+
+        while (true)
+        {
+            var path = text.FilePath ?? await PickSavePathAsync(text);
+            if (path is null)
+                return false; // Save As picker canceled
+
+            var result = await SaveAsAsync(text, path);
+            if (result.Success)
+                return true;
+
+            // Save As… and the lossy-encoding answer join with the save pipeline (I-039) and the picker (I-040).
+            if (await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args)) != "Retry")
+                return false;
+        }
+    }
+
+    /// <summary>The OS Save As picker (IDE-P1-034); it arrives with <c>IFileDialogService</c> (I-040), until then "canceled".</summary>
+    private static Task<string?> PickSavePathAsync(TextDocumentViewModel document) => Task.FromResult<string?>(null);
 
     public async Task<OperationResult> SaveAsAsync(TextDocumentViewModel document, string path)
     {
@@ -344,5 +396,12 @@ public sealed class DocumentService : IDocumentService
             execute(argument);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class AsyncHandler(Func<string?, bool> canExecute, Func<string?, Task> execute) : ICommandHandler
+    {
+        public bool CanExecute(string? argument) => canExecute(argument);
+
+        public Task ExecuteAsync(string? argument) => execute(argument);
     }
 }

@@ -65,6 +65,19 @@ public interface IDocumentService
     bool Close(DocumentViewModel document);
 
     /// <summary>
+    /// <c>file.close</c> (IDE-P1-035): a modified document asks <c>Msg.File.SaveChangesOne</c> first — <c>Save</c> saves
+    /// (<see cref="SaveAsync"/>) and closes only when that succeeded, <c>Don't Save</c> closes, <c>Cancel</c> keeps it.
+    /// True when the document was closed.
+    /// </summary>
+    Task<bool> CloseAsync(DocumentViewModel document);
+
+    /// <summary>
+    /// <c>file.save</c> of one document: writes it to its file; a failure shows <c>Msg.File.SaveFailed</c>
+    /// (<c>Retry</c> repeats). An untitled document needs the Save As picker (IDE-P1-034). True when it was written.
+    /// </summary>
+    Task<bool> SaveAsync(DocumentViewModel document);
+
+    /// <summary>
     /// Writes <paramref name="document"/> to <paramref name="path"/> with its encoding and makes it the document's
     /// file (IDE-P1-034). A path open in another document is refused with <c>Msg.File.SaveFailed</c>.
     /// </summary>

@@ -309,6 +309,117 @@ public sealed class DocumentServiceTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-022")]
+    [Trait("Req", "IDE-P1-094")]
+    public async Task DirtyFlagFollowsSavePoint()
+    {
+        var doc = await OpenAsync(File(@"C:\p\A.pas", "unit A;"));
+        var changes = 0;
+        doc.PropertyChanged += (_, e) => changes += e.PropertyName == nameof(DocumentViewModel.IsModified) ? 1 : 0;
+        Assert.False(doc.IsModified);
+
+        doc.Buffer.ApplyEdits([new TextEdit(7, 0, "\r\n")]);
+        Assert.True(doc.IsModified);
+        Assert.Equal(1, changes);
+        doc.Buffer.Undo();                                  // back at the save point (the load)
+        Assert.False(doc.IsModified);
+        doc.Buffer.Redo();
+        Assert.True(doc.IsModified);
+
+        // Saving moves the save point; it does not clear the undo stack (IDE-P1-094).
+        Assert.True(await Documents.SaveAsync(doc));
+        Assert.False(doc.IsModified);
+        Assert.Equal("unit A;\r\n", Encoding.UTF8.GetString(_fs.ReadAllBytes(doc.FilePath!)));
+        Assert.True(doc.Buffer.CanUndo);
+        doc.Buffer.Undo();                                  // below the save point
+        Assert.True(doc.IsModified);
+        doc.Buffer.Redo();
+        Assert.False(doc.IsModified);
+
+        // Undo below the save point followed by a new edit: the save point is lost until the next save.
+        doc.Buffer.Undo();
+        doc.Buffer.ApplyEdits([new TextEdit(0, 0, "x")]);
+        doc.Buffer.Undo();
+        Assert.Equal("unit A;", doc.Buffer.Text);
+        Assert.True(doc.IsModified);
+        Assert.True(await Documents.SaveAsync(doc));
+        Assert.False(doc.IsModified);
+
+        // The encoding of the next save is part of the state; changing it back restores "unmodified".
+        doc.SetEncoding(FileEncoding.Utf16Le);
+        Assert.True(doc.IsModified);
+        doc.SetEncoding(FileEncoding.Utf8);
+        Assert.False(doc.IsModified);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-035")]
+    [Trait("Req", "UI-DLG-060")]
+    public async Task CloseModifiedPromptsSaveDontSaveCancel()
+    {
+        var dialogs = (FakeDialogService)_services.Dialogs;
+        var commands = _services.Commands;
+        Assert.False(commands.CanExecute("file.close"));    // nothing open
+
+        // Cancel: the document stays open and modified.
+        var a = await OpenAsync(File(@"C:\p\A.pas", "a"));
+        a.Buffer.ApplyEdits([new TextEdit(1, 0, "1")]);
+        dialogs.Answer("Msg.File.SaveChangesOne", "Cancel");
+        await commands.ExecuteAsync("file.close");
+        var request = Assert.Single(dialogs.Requests);
+        Assert.Equal("Msg.File.SaveChangesOne", request.MessageId);
+        Assert.Equal(["A.pas"], request.Args);
+        Assert.Equal([a], Documents.Documents);
+        Assert.True(a.IsModified);
+
+        // Save: written to disk, then closed.
+        dialogs.Answer("Msg.File.SaveChangesOne", "Save");
+        await commands.ExecuteAsync("file.close");
+        Assert.Empty(Documents.Documents);
+        Assert.Equal("a1", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\A.pas")));
+
+        // Don't Save: closed, the file is untouched.
+        var b = await OpenAsync(File(@"C:\p\B.pas", "b"));
+        b.Buffer.ApplyEdits([new TextEdit(1, 0, "2")]);
+        dialogs.Answer("Msg.File.SaveChangesOne", "DontSave");
+        Assert.True(await Documents.CloseAsync(b));
+        Assert.Empty(Documents.Documents);
+        Assert.Equal("b", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\B.pas")));
+
+        // An unmodified document closes without a prompt.
+        var count = dialogs.Requests.Count;
+        await OpenAsync(File(@"C:\p\C.pas", "c"));
+        await commands.ExecuteAsync("file.close");
+        Assert.Empty(Documents.Documents);
+        Assert.Equal(count, dialogs.Requests.Count);
+
+        // Save that fails: the failure is reported and the document stays open and modified.
+        var d = await OpenAsync(File(@"C:\p\D.pas", "d"));
+        d.Buffer.ApplyEdits([new TextEdit(1, 0, "3")]);
+        _fs.SetReadOnly(@"C:\p\D.pas", true);
+        dialogs.Answer("Msg.File.SaveChangesOne", "Save");
+        dialogs.Answer("Msg.File.SaveFailed", "Cancel");
+        Assert.False(await Documents.CloseAsync(d));
+        Assert.Equal([d], Documents.Documents);
+        Assert.True(d.IsModified);
+        var failed = dialogs.Requests[^1];
+        Assert.Equal("Msg.File.SaveFailed", failed.MessageId);
+        Assert.Equal(@"C:\p\D.pas", failed.Args[0]);
+        Assert.Equal("d", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\D.pas")));
+
+        // Once the file is writable again the same close saves and closes.
+        _fs.SetReadOnly(@"C:\p\D.pas", false);
+        Assert.True(await Documents.CloseAsync(d));
+        Assert.Equal("d3", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\D.pas")));
+
+        // An untitled document's Save needs the Save As picker; a canceled picker keeps it open.
+        var unit = Documents.NewUntitledUnit();
+        Assert.False(await Documents.CloseAsync(unit));
+        Assert.Equal([unit], Documents.Documents);
+        Assert.Equal(["Unit1.pas"], dialogs.Requests[^1].Args);
+    }
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-040")]
     public async Task ActiveTextDocumentFeedsStatusBar()
     {

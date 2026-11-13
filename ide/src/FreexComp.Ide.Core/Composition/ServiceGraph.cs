@@ -45,7 +45,7 @@ public static class ServiceGraph
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
         var languages = new LanguageRegistry();
-        var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus);
+        var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs);
         documents.RegisterCommands(commands);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
