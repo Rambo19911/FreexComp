@@ -50,7 +50,10 @@ public abstract class Symbol
     }
 
     /// <summary>Declaration (and forward declaration) sites; empty for built-ins.</summary>
-    public ImmutableArray<Location> Locations { get; }
+    public ImmutableArray<Location> Locations { get; private set; }
+
+    /// <summary>Adds a later declaration site (the definition of a forward or interface routine).</summary>
+    internal void AddLocation(Location location) => Locations = Locations.Add(location);
 
     public Visibility Visibility { get; }
 

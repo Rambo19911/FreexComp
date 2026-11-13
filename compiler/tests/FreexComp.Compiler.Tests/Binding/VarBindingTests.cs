@@ -106,7 +106,7 @@ public sealed class VarBindingTests
     private static (Scope Scope, string[] Diagnostics) BindFirstRoutineBlock(string text)
     {
         var (result, tree) = Bind(text);
-        Assert.Empty(result.Diagnostics);
+        Assert.Empty(result.Declarations.Diagnostics);                  // unit level clean; routine bodies report their own
         var routine = ((ProgramSyntax)tree.Root).Block.Declarations.OfType<RoutineDeclarationSyntax>().First();
         var scope = new Scope(ScopeKind.Routine, result.Scope);
         var diagnostics = new DiagnosticBag();

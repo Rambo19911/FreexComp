@@ -19,6 +19,8 @@ internal enum BoundKind
     ConversionExpression,
     UnaryExpression,
     BinaryExpression,
+    ParameterExpression,
+    CallExpression,
 
     // statements
     Block,
@@ -34,6 +36,7 @@ internal enum BoundKind
     ContinueStatement,
     ExitStatement,
     HaltStatement,
+    CallStatement,
 }
 
 /// <summary>A node of the bound tree: immutable, typed, symbols resolved.</summary>
@@ -495,4 +498,55 @@ internal sealed class BoundHaltStatement : BoundStatement
 
     /// <summary>Converted to <c>Integer</c>; null means exit code 0.</summary>
     public BoundExpression? ExitCode { get; }
+}
+
+/// <summary>A reference to a parameter of the current (or, from C-028, an enclosing) routine.</summary>
+internal sealed class BoundParameterExpression : BoundExpression
+{
+    public BoundParameterExpression(SyntaxNode syntax, ParameterSymbol parameter)
+        : base(syntax, parameter.Type, constantValue: null)
+    {
+        Parameter = parameter;
+    }
+
+    public override BoundKind Kind => BoundKind.ParameterExpression;
+
+    public ParameterSymbol Parameter { get; }
+}
+
+/// <summary>
+/// A function call in an expression (LANG-420). <see cref="Arguments"/> are positional: value and <c>const</c>
+/// arguments converted to the parameter type, <c>var</c>/<c>out</c> arguments the variable reference itself.
+/// </summary>
+internal sealed class BoundCallExpression : BoundExpression
+{
+    public BoundCallExpression(SyntaxNode syntax, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+        : base(syntax, routine.ReturnType!, constantValue: null)
+    {
+        Routine = routine;
+        Arguments = arguments;
+    }
+
+    public override BoundKind Kind => BoundKind.CallExpression;
+
+    public RoutineSymbol Routine { get; }
+
+    public ImmutableArray<BoundExpression> Arguments { get; }
+}
+
+/// <summary>A procedure call, or a function call whose result is discarded (LANG-307, 352); arguments as in <see cref="BoundCallExpression"/>.</summary>
+internal sealed class BoundCallStatement : BoundStatement
+{
+    public BoundCallStatement(SyntaxNode syntax, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+        : base(syntax)
+    {
+        Routine = routine;
+        Arguments = arguments;
+    }
+
+    public override BoundKind Kind => BoundKind.CallStatement;
+
+    public RoutineSymbol Routine { get; }
+
+    public ImmutableArray<BoundExpression> Arguments { get; }
 }

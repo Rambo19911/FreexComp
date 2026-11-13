@@ -16,21 +16,21 @@ internal sealed class BodyBinder
     private readonly Scope _scope;
     private readonly DiagnosticBag _diagnostics;
     private readonly ExpressionBinder _expressions;
-    private readonly Symbol? _routine;
-
-    /// <summary>Control variables of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>
-    private readonly HashSet<VariableSymbol> _forVariables = new(ReferenceEqualityComparer.Instance);
+    private readonly RoutineSymbol? _routine;
     private int _loopDepth;
 
     /// <param name="routine">The routine whose body this is; null for a unit-level body.</param>
-    public BodyBinder(BuiltInTypes types, Scope scope, DiagnosticBag diagnostics, Symbol? routine = null)
+    public BodyBinder(BuiltInTypes types, Scope scope, DiagnosticBag diagnostics, RoutineSymbol? routine = null)
     {
         _types = types;
         _scope = scope;
         _diagnostics = diagnostics;
         _routine = routine;
-        _expressions = new ExpressionBinder(types, scope, diagnostics);
+        _expressions = new ExpressionBinder(types, scope, diagnostics, routine);
     }
+
+    /// <summary>Control variables of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>
+    private HashSet<Symbol> ForVariables => _expressions.ForVariables;
 
     public BoundBlock BindBlock(SyntaxNode syntax, SeparatedSyntaxList<StatementSyntax> statements)
     {
@@ -81,7 +81,7 @@ internal sealed class BodyBinder
     /// <summary>LANG-350/351: the target must be a variable reference; the value is converted to its type.</summary>
     private BoundAssignmentStatement BindAssignment(AssignmentStatementSyntax assignment)
     {
-        var target = _expressions.BindExpression(assignment.Target);
+        var target = FunctionResult(assignment.Target) ?? _expressions.BindExpression(assignment.Target);
         var value = _expressions.BindExpression(assignment.Value);
         if (target.HasErrors)
         {
@@ -90,10 +90,12 @@ internal sealed class BodyBinder
 
         switch (target)
         {
-            case BoundVariableExpression variable when _forVariables.Contains(variable.Variable):
+            case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
+            case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):
                 _diagnostics.Report(assignment.Target, "E2053");                        // LANG-361 rule 6
                 return new BoundAssignmentStatement(assignment, target, value);
             case BoundVariableExpression:
+            case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:
                 break;
             case BoundConversionExpression { IsExplicit: true }:
                 _diagnostics.Report(assignment.Target, "E2900", "variable typecast");     // LANG-290, C-057
@@ -106,12 +108,31 @@ internal sealed class BodyBinder
         return new BoundAssignmentStatement(assignment, target, _expressions.ConvertForAssignment(value, target.Type, assignment.Value));
     }
 
-    /// <summary>LANG-352: a designator statement must be a call (calls are bound from C-027 on); control intrinsics.</summary>
+    /// <summary>LANG-308: the current function's name on the left of <c>:=</c> is its <c>Result</c>.</summary>
+    private BoundVariableExpression? FunctionResult(ExpressionSyntax target)
+    {
+        if (target is not IdentifierNameSyntax { Identifier: { IsMissing: false } token } name || _routine?.ResultVariable is not { } result)
+        {
+            return null;
+        }
+
+        return _scope.LookupCandidates(token.Value as string ?? token.Text).Contains(_routine) ? new BoundVariableExpression(name, result) : null;
+    }
+
+    /// <summary>LANG-352: a designator statement must be a call; control intrinsics.</summary>
     private BoundStatement BindExpressionStatement(ExpressionStatementSyntax statement)
     {
-        if (ControlIntrinsic(statement.Expression) is { } intrinsic)
+        var name = CalledName(statement.Expression);
+        var symbol = name is null ? null : _scope.Lookup(name.Identifier.Value as string ?? name.Identifier.Text);
+        if (symbol is IntrinsicSymbol intrinsic)
         {
             return BindControlIntrinsic(statement, intrinsic);
+        }
+
+        if (symbol is RoutineSymbol)
+        {
+            var (routine, arguments) = _expressions.BindCall(statement.Expression, name!, (statement.Expression as InvocationExpressionSyntax)?.ArgumentList);
+            return routine is null ? new BoundErrorStatement(statement) : new BoundCallStatement(statement, routine, arguments);
         }
 
         var expression = _expressions.BindExpression(statement.Expression);
@@ -164,19 +185,19 @@ internal sealed class BodyBinder
         var variable = _expressions.BindExpression(syntax.Variable);
         var start = _expressions.BindExpression(syntax.Start);
         var finish = _expressions.BindExpression(syntax.Finish);
-        VariableSymbol? control = null;
+        Symbol? control = null;
         if (!variable.HasErrors)
         {
-            if (variable is BoundVariableExpression { Variable: var v } && IsControlVariable(v))
+            if (ControlVariable(variable) is { } v)
             {
                 control = v;
-                if (_forVariables.Contains(v))
+                if (ForVariables.Contains(v))
                 {
                     _diagnostics.Report(syntax.Variable, "E2053");                      // an inner loop would assign it
                 }
 
-                start = _expressions.ConvertForAssignment(start, v.Type, syntax.Start);
-                finish = _expressions.ConvertForAssignment(finish, v.Type, syntax.Finish);
+                start = _expressions.ConvertForAssignment(start, variable.Type, syntax.Start);
+                finish = _expressions.ConvertForAssignment(finish, variable.Type, syntax.Finish);
             }
             else
             {
@@ -185,21 +206,29 @@ internal sealed class BodyBinder
             }
         }
 
-        var added = control != null && _forVariables.Add(control);
+        var added = control != null && ForVariables.Add(control);
         _loopDepth++;
         var body = BindStatement(syntax.Statement);
         _loopDepth--;
         if (added)
         {
-            _forVariables.Remove(control!);
+            ForVariables.Remove(control!);
         }
 
         return new BoundForStatement(syntax, variable, start, finish, syntax.DirectionKeyword.Kind == SyntaxKind.DownToKeyword, body);
     }
 
-    /// <summary>Rule 1: ordinal; a local of this routine, or a global variable in a unit-level body.</summary>
-    private bool IsControlVariable(VariableSymbol variable) =>
-        variable.Type.IsOrdinal && (_routine is null ? variable.IsGlobal : !variable.IsGlobal && ReferenceEquals(variable.ContainingSymbol, _routine));
+    /// <summary>
+    /// Rule 1: ordinal; a local (or value parameter) of this routine, or a global variable in a unit-level body; null
+    /// when <paramref name="variable"/> is not one.
+    /// </summary>
+    private Symbol? ControlVariable(BoundExpression variable) => variable switch
+    {
+        _ when !variable.Type.IsOrdinal => null,
+        BoundVariableExpression { Variable: var v } when (_routine is null ? v.IsGlobal : !v.IsGlobal && ReferenceEquals(v.ContainingSymbol, _routine)) => v,
+        BoundParameterExpression { Parameter: { Mode: ParameterMode.Value } p } when ReferenceEquals(p.ContainingSymbol, _routine) => p,
+        _ => null,
+    };
 
     // ------------------------------------------------------------------ case (LANG-355…357)
 
@@ -289,8 +318,8 @@ internal sealed class BodyBinder
 
     // ------------------------------------------------------------------ Break, Continue, Exit, Halt (LANG-363, 364)
 
-    /// <summary>The control intrinsic a statement <c>Name</c> or <c>Name(…)</c> calls (null when the name means something else).</summary>
-    private IntrinsicSymbol? ControlIntrinsic(ExpressionSyntax expression)
+    /// <summary>The name a statement <c>Name</c> or <c>Name(…)</c> calls; null for other expressions.</summary>
+    private static IdentifierNameSyntax? CalledName(ExpressionSyntax expression)
     {
         var name = expression switch
         {
@@ -298,19 +327,19 @@ internal sealed class BodyBinder
             InvocationExpressionSyntax { Expression: IdentifierNameSyntax n } => n,
             _ => null,
         };
-        if (name is null || name.Identifier.IsMissing)
-        {
-            return null;
-        }
-
-        return _scope.Lookup(name.Identifier.Value as string ?? name.Identifier.Text) as IntrinsicSymbol;
+        return name is null || name.Identifier.IsMissing ? null : name;
     }
 
     private BoundStatement BindControlIntrinsic(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic)
     {
         var arguments = statement.Expression is InvocationExpressionSyntax invocation ? invocation.ArgumentList.Arguments : default;
         var count = arguments.Count;
-        var maxArguments = intrinsic.Intrinsic == IntrinsicKind.Halt ? 1 : 0;       // Exit(value) arrives with functions (C-027)
+        var maxArguments = intrinsic.Intrinsic switch
+        {
+            IntrinsicKind.Halt => 1,
+            IntrinsicKind.Exit when _routine?.ReturnType != null => 1,                // LANG-413
+            _ => 0,
+        };
         if (count > maxArguments)
         {
             _diagnostics.Report(arguments[maxArguments], "E2111", intrinsic.Name);
@@ -332,6 +361,9 @@ internal sealed class BodyBinder
                 return new BoundBreakStatement(statement);
             case IntrinsicKind.Continue:
                 return new BoundContinueStatement(statement);
+            case IntrinsicKind.Exit when count == 1:
+                return new BoundExitStatement(statement,
+                    _expressions.ConvertForAssignment(_expressions.BindExpression(arguments[0].Expression), _routine!.ReturnType!, arguments[0].Expression));
             case IntrinsicKind.Exit:
                 return new BoundExitStatement(statement, value: null);
             default:

@@ -8,7 +8,8 @@ namespace FreexComp.Compiler.Tests.Binding;
 /// <c>(cast Type operand)</c>, an operator as <c>(Kind:Type operands…)</c>. Statements: <c>(block …)</c>,
 /// <c>(:= target value)</c>, <c>(if c then [else])</c>, <c>(while c body)</c>, <c>(repeat block c)</c>,
 /// <c>(for v to|downto start finish body)</c>, <c>(case selector (arm [labels] body)… [(else block)])</c>,
-/// <c>(break)</c>, <c>(continue)</c>, <c>(exit [value])</c>, <c>(halt [code])</c>.
+/// <c>(break)</c>, <c>(continue)</c>, <c>(exit [value])</c>, <c>(halt [code])</c>; calls <c>(call F:Type args…)</c> in
+/// expressions, <c>(call P args…)</c> as statements; parameters print like variables.
 /// </summary>
 internal static class BoundDump
 {
@@ -16,6 +17,8 @@ internal static class BoundDump
     {
         BoundExpression { ConstantValue: { } value } e => $"{value.ToDisplayString()}:{e.Type.Name}",
         BoundVariableExpression v => $"{v.Variable.Name}:{v.Type.Name}",
+        BoundParameterExpression p => $"{p.Parameter.Name}:{p.Type.Name}",
+        BoundCallExpression c => List($"call {c.Routine.Name}:{c.Type.Name}", c.Arguments),
         BoundConversionExpression { IsExplicit: false } c => $"(conv {c.Type.Name} {Of(c.Operand)})",
         BoundConversionExpression c => $"(cast {c.Type.Name} {Of(c.Operand)})",
         BoundUnaryExpression u => $"({u.OperatorKind}:{u.Type.Name} {Of(u.Operand)})",
@@ -23,7 +26,8 @@ internal static class BoundDump
         BoundErrorExpression => "<error>",
         BoundBlock block => List("block", block.Statements),
         BoundAssignmentStatement a => $"(:= {Of(a.Target)} {Of(a.Value)})",
-        BoundExpressionStatement e => $"(call {Of(e.Expression)})",
+        BoundExpressionStatement e => $"(expr {Of(e.Expression)})",
+        BoundCallStatement c => List($"call {c.Routine.Name}", c.Arguments),
         BoundIfStatement i => i.Else is null ? $"(if {Of(i.Condition)} {Of(i.Then)})" : $"(if {Of(i.Condition)} {Of(i.Then)} {Of(i.Else)})",
         BoundWhileStatement w => $"(while {Of(w.Condition)} {Of(w.Body)})",
         BoundRepeatStatement r => $"(repeat {Of(r.Body)} {Of(r.Condition)})",

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using FreexComp.Compiler.Syntax;
 
 namespace FreexComp.Compiler.Symbols;
@@ -7,12 +8,14 @@ internal enum ScopeKind { BuiltIn, Unit, Uses, TypeMember, Routine, Block, With 
 
 /// <summary>
 /// One level of the chained name lookup. Names compare per LANG-110 (ASCII letters case-insensitive). A name binds
-/// one symbol per scope; an alias declares an existing symbol under another name.
+/// one symbol per scope, except an overload set: several routines of one name (LANG-440), added with
+/// <see cref="AddOverload"/>. An alias declares an existing symbol under another name.
 /// </summary>
 internal sealed class Scope
 {
     private readonly Dictionary<string, Symbol> _symbols = new(IdentifierComparer.Instance);
     private readonly List<(string Name, Symbol Symbol)> _ordered = [];
+    private readonly Dictionary<string, List<RoutineSymbol>> _overloads = new(IdentifierComparer.Instance);
 
     public Scope(ScopeKind kind, Scope? parent, Symbol? owner = null)
     {
@@ -48,6 +51,51 @@ internal sealed class Scope
         _ordered.Add((name, symbol));
         existing = null;
         return true;
+    }
+
+    /// <summary>Adds <paramref name="routine"/> to the overload set of its name; the scope must already declare a routine of that name.</summary>
+    public void AddOverload(RoutineSymbol routine)
+    {
+        if (!_overloads.TryGetValue(routine.Name, out var set))
+        {
+            set = [(RoutineSymbol)_symbols[routine.Name]];
+            _overloads.Add(routine.Name, set);
+        }
+
+        set.Add(routine);
+        _ordered.Add((routine.Name, routine));
+    }
+
+    /// <summary>The routines of that name declared in this scope, in declaration order (empty when the name is something else).</summary>
+    public ImmutableArray<RoutineSymbol> LookupRoutinesLocal(string name) =>
+        _overloads.TryGetValue(name, out var set) ? [.. set]
+        : _symbols.TryGetValue(name, out var symbol) && symbol is RoutineSymbol routine ? [routine]
+        : [];
+
+    /// <summary>
+    /// LANG-441: the routines named <paramref name="name"/> in the innermost scope declaring it; while all of them carry
+    /// <c>overload</c>, the next outer scope's routines of that name are added (a scope where the name is not a routine
+    /// stops the search).
+    /// </summary>
+    public ImmutableArray<RoutineSymbol> LookupCandidates(string name)
+    {
+        var candidates = ImmutableArray.CreateBuilder<RoutineSymbol>();
+        for (var scope = this; scope != null; scope = scope.Parent)
+        {
+            if (!scope._symbols.ContainsKey(name))
+            {
+                continue;
+            }
+
+            var routines = scope.LookupRoutinesLocal(name);
+            candidates.AddRange(routines);
+            if (routines.IsEmpty || routines.Any(r => !r.IsOverload))
+            {
+                break;
+            }
+        }
+
+        return candidates.ToImmutable();
     }
 
     /// <summary>The symbol declared in this scope only.</summary>

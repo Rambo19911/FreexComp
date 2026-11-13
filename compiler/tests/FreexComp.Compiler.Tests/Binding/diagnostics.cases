@@ -79,3 +79,29 @@ var i: Integer; begin case i of 1, 1: ; end end.
 var d: Double; begin for d := 1 to 2 do ; end.
 === E2066 1,7
 begin Continue end.
+=== E2100 2,11
+program T;
+procedure Missing(a: Integer); forward;
+begin
+end.
+=== E2101 3,11
+program T;
+procedure P(a: Integer); forward;
+procedure P(a: Integer; b: Integer);
+begin
+end;
+begin
+end.
+=== E2110 2,7
+procedure P(a, b: Integer); begin end;
+begin P(1) end.
+=== E2111 2,15
+procedure P(a, b: Integer); begin end;
+begin P(1, 2, 3) end.
+=== E2112 2,9
+procedure P(var a: Integer); begin end;
+begin P(5) end.
+=== E2113 3,9
+procedure P(var a: Integer); begin end;
+var i: Integer;
+begin P(i * 2) end.

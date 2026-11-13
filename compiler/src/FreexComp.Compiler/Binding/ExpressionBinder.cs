@@ -19,14 +19,20 @@ internal sealed class ExpressionBinder
     private readonly DiagnosticBag _diagnostics;
     private readonly ConstantFolder _folder;
     private readonly Conversions _conversions = new();
+    private readonly RoutineSymbol? _routine;
 
-    public ExpressionBinder(BuiltInTypes types, Scope scope, DiagnosticBag diagnostics)
+    /// <param name="routine">The routine whose body is bound; null at unit level.</param>
+    public ExpressionBinder(BuiltInTypes types, Scope scope, DiagnosticBag diagnostics, RoutineSymbol? routine = null)
     {
         _types = types;
         _scope = scope;
         _diagnostics = diagnostics;
+        _routine = routine;
         _folder = new ConstantFolder(types, scope, diagnostics);
     }
+
+    /// <summary>Control variables (variables or value parameters) of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>
+    public HashSet<Symbol> ForVariables { get; } = new(ReferenceEqualityComparer.Instance);
 
     public BoundExpression BindExpression(ExpressionSyntax syntax)
     {
@@ -132,6 +138,10 @@ internal sealed class ExpressionBinder
                 return Error(name);
             case VariableSymbol variable:
                 return new BoundVariableExpression(name, variable);
+            case ParameterSymbol parameter:
+                return new BoundParameterExpression(name, parameter);
+            case RoutineSymbol:
+                return CallExpression(name, name, argumentList: null);             // LANG-312: parameterless call
             case ConstantSymbol { IsTyped: false, Value: { } value } constant:
                 return new BoundConstantExpression(name, constant, value);
             case ConstantSymbol:
@@ -158,7 +168,11 @@ internal sealed class ExpressionBinder
 
         var text = token.Value as string ?? token.Text;
         var symbol = _scope.Lookup(text);
-        if (symbol is null)
+        if (symbol is null && _routine is { ReturnType: null } && IdentifierComparer.Instance.Equals(text, "Result"))
+        {
+            _diagnostics.Report(name, "E2132");
+        }
+        else if (symbol is null)
         {
             _diagnostics.ReportUndeclared(name, text);
         }
@@ -166,7 +180,7 @@ internal sealed class ExpressionBinder
         return symbol;
     }
 
-    /// <summary>A typecast <c>T(x)</c>; routine calls are bound from C-027 on, intrinsics from C-029.</summary>
+    /// <summary>A typecast <c>T(x)</c> or a function call; intrinsics are bound from C-029 on.</summary>
     private BoundExpression BindInvocation(InvocationExpressionSyntax invocation)
     {
         if (invocation.Expression is not IdentifierNameSyntax name)
@@ -185,6 +199,11 @@ internal sealed class ExpressionBinder
         {
             _diagnostics.Report(invocation, "E2034");
             return Error(invocation);
+        }
+
+        if (symbol is RoutineSymbol)
+        {
+            return CallExpression(invocation, name, invocation.ArgumentList);
         }
 
         if (symbol is not TypeSymbol target)
@@ -232,6 +251,181 @@ internal sealed class ExpressionBinder
         }
 
         return new BoundConversionExpression(node, operand, target, ConversionKind.Explicit, isExplicit: true, constant);
+    }
+
+    // ------------------------------------------------------------------ calls (LANG-420, 421, 441)
+
+    /// <summary>A call in an expression: functions only (E2034 for a procedure).</summary>
+    private BoundExpression CallExpression(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList)
+    {
+        var (routine, arguments) = BindCall(call, name, argumentList);
+        if (routine is null)
+        {
+            return Error(call, [.. arguments]);
+        }
+
+        if (routine.ReturnType is null)
+        {
+            _diagnostics.Report(call, "E2034");
+            return Error(call, [.. arguments]);
+        }
+
+        return new BoundCallExpression(call, routine, arguments);
+    }
+
+    /// <summary>
+    /// Binds the arguments of a call of the routine(s) <paramref name="name"/> denotes and picks the routine: the only
+    /// candidate, or the only applicable one of an overload set (LANG-441; ranking by conversion cost, LANG-442, arrives
+    /// with M2.5). Routine is null after an error (reported once); the bound arguments are returned either way.
+    /// </summary>
+    public (RoutineSymbol? Routine, ImmutableArray<BoundExpression> Arguments) BindCall(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList)
+    {
+        var token = name.Identifier;
+        var candidates = _scope.LookupCandidates(token.Value as string ?? token.Text);
+        var syntaxes = argumentList?.Arguments ?? default;
+        var builder = ImmutableArray.CreateBuilder<BoundExpression>(syntaxes.Count);
+        var hasErrors = false;
+        foreach (var argument in syntaxes)
+        {
+            if (argument.WidthColonToken is { } colon)
+            {
+                _diagnostics.Report(colon, "E2915");
+                hasErrors = true;
+            }
+
+            var bound = BindExpression(argument.Expression);
+            hasErrors |= bound.HasErrors;
+            builder.Add(bound);
+        }
+
+        var arguments = builder.ToImmutable();
+        if (hasErrors || candidates.IsEmpty)
+        {
+            return (null, arguments);
+        }
+
+        var routine = candidates[0];
+        if (candidates.Length > 1)
+        {
+            var applicable = candidates.Where(c => IsApplicable(c, arguments)).ToList();
+            if (applicable.Count != 1)
+            {
+                if (applicable.Count == 0)
+                {
+                    _diagnostics.Report(call, "E2123", routine.Name);
+                }
+                else
+                {
+                    _diagnostics.Report(call, "E2900", "overload resolution between compatible candidates");   // LANG-442, M2.5
+                }
+
+                return (null, arguments);
+            }
+
+            routine = applicable[0];
+        }
+
+        return CheckArguments(call, routine, syntaxes, arguments);
+    }
+
+    /// <summary>LANG-420/421: count, then each argument against its parameter.</summary>
+    private (RoutineSymbol? Routine, ImmutableArray<BoundExpression> Arguments) CheckArguments(SyntaxNode call, RoutineSymbol routine,
+        SeparatedSyntaxList<ArgumentSyntax> syntaxes, ImmutableArray<BoundExpression> arguments)
+    {
+        var parameters = routine.Parameters;
+        if (arguments.Length < parameters.Length)
+        {
+            _diagnostics.Report(call, "E2110", routine.Name);
+            return (null, arguments);
+        }
+
+        if (arguments.Length > parameters.Length)
+        {
+            _diagnostics.Report(syntaxes[parameters.Length], "E2111", routine.Name);
+            return (null, arguments);
+        }
+
+        var converted = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Length);
+        var ok = true;
+        for (var i = 0; i < arguments.Length; i++)
+        {
+            var (parameter, argument, syntax) = (parameters[i], arguments[i], syntaxes[i].Expression);
+            if (parameter.IsByReference)
+            {
+                ok &= CheckReferenceArgument(argument, parameter, syntax);
+                converted.Add(argument);
+            }
+            else
+            {
+                var value = ConvertForAssignment(argument, parameter.Type, syntax);
+                ok &= !value.HasErrors;
+                converted.Add(value);
+            }
+        }
+
+        return (ok ? routine : null, converted.ToImmutable());
+    }
+
+    /// <summary>LANG-421 / LANG-281: an assignable variable reference of the identical type.</summary>
+    private bool CheckReferenceArgument(BoundExpression argument, ParameterSymbol parameter, ExpressionSyntax syntax)
+    {
+        if (parameter.Type.TypeKind == TypeKind.Error)
+        {
+            return true;
+        }
+
+        switch (argument)
+        {
+            case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
+            case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):
+                _diagnostics.Report(syntax, "E2053");                   // LANG-361 rule 6
+                return false;
+            case BoundVariableExpression:
+            case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:
+                break;
+            case BoundParameterExpression:
+            case { ConstantValue: not null }:
+                _diagnostics.Report(syntax, "E2112");
+                return false;
+            default:
+                _diagnostics.Report(syntax, "E2113");
+                return false;
+        }
+
+        if (!ReferenceEquals(argument.Type, parameter.Type))
+        {
+            _diagnostics.Report(syntax, "E2010", argument.Type.Name, parameter.Type.Name);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Count fits and every argument is compatible with its parameter (LANG-280/281), without diagnostics.</summary>
+    private bool IsApplicable(RoutineSymbol candidate, ImmutableArray<BoundExpression> arguments)
+    {
+        if (candidate.Parameters.Length != arguments.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < arguments.Length; i++)
+        {
+            var (parameter, argument) = (candidate.Parameters[i], arguments[i]);
+            var compatible = parameter.IsByReference
+                ? argument is BoundVariableExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }
+                  && ReferenceEquals(argument.Type, parameter.Type)
+                : ReferenceEquals(argument.Type, parameter.Type)
+                  || (argument.ConstantValue is { } constant
+                      ? _conversions.ConvertConstant(constant, parameter.Type, argument.Syntax, new DiagnosticBag()) != null
+                      : _conversions.Classify(argument.Type, parameter.Type).Exists);
+            if (!compatible)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // ------------------------------------------------------------------ unary operators (LANG-227)

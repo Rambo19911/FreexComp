@@ -27,6 +27,7 @@ internal sealed class DeclarationBinder
     private readonly Scope? _sharedScope;
     private readonly ConstantFolder _folder;
     private readonly Conversions _conversions = new();
+    private readonly List<RoutineSymbol> _awaitingDefinition = [];
 
     /// <param name="sharedScope">
     /// A scope whose names also count as declared in <paramref name="scope"/> for E2004: a unit's interface scope when
@@ -41,6 +42,9 @@ internal sealed class DeclarationBinder
         _sharedScope = sharedScope;
         _folder = new ConstantFolder(types, scope, diagnostics);
     }
+
+    /// <summary>A unit's interface section: its routines are defined in the implementation (E2100 is checked there).</summary>
+    public bool IsInterfaceSection { get; init; }
 
     /// <summary>Unit and program level declarations are global; routine-level ones are locals.</summary>
     private bool IsGlobalLevel => _scope.Kind == ScopeKind.Unit;
@@ -62,10 +66,15 @@ internal sealed class DeclarationBinder
                 var symbol = new UnitSymbol(NameOf(unit.Name), isProgram: false, [DiagnosticBag.LocationOf(unit.Name)]);
                 var interfaceScope = new Scope(ScopeKind.Unit, types.Scope, symbol);
                 var implementationScope = new Scope(ScopeKind.Unit, interfaceScope, symbol);
-                symbol.InterfaceMembers = new DeclarationBinder(types, interfaceScope, symbol, diagnostics)
+                symbol.InterfaceMembers = new DeclarationBinder(types, interfaceScope, symbol, diagnostics) { IsInterfaceSection = true }
                     .BindDeclarations(unit.InterfaceSection.Declarations);
                 symbol.ImplementationMembers = new DeclarationBinder(types, implementationScope, symbol, diagnostics, interfaceScope)
                     .BindDeclarations(unit.ImplementationSection.Declarations);
+                foreach (var routine in symbol.InterfaceMembers.OfType<RoutineSymbol>().Where(r => r.AwaitsDefinition))
+                {
+                    diagnostics.Report(routine.Declaration.Heading.Name, "E2100", routine.Name);     // LANG-400
+                }
+
                 return new DeclarationBindingResult(symbol, interfaceScope, implementationScope, diagnostics.ToImmutable());
             }
 
@@ -102,9 +111,13 @@ internal sealed class DeclarationBinder
                 case VarSectionSyntax varSection:
                     BindVarSection(varSection, declared);
                     break;
+                case RoutineDeclarationSyntax routine:
+                    BindRoutine(routine, declared);
+                    break;
             }
         }
 
+        ReportUnsatisfied();
         return declared.ToImmutable();
     }
 
@@ -188,6 +201,326 @@ internal sealed class DeclarationBinder
         // converted to the variable's type (LANG-280), so the value carries that type
         var value = _folder.Fold(expression);
         return value is null || type.TypeKind == TypeKind.Error ? value : _conversions.ConvertConstant(value, type, expression, _diagnostics);
+    }
+
+    // ------------------------------------------------------------------ routines (LANG-400…403, 440, 460…473)
+
+    /// <summary>
+    /// A routine declaration: either the definition of an earlier <c>forward</c>/interface declaration of this scope
+    /// (LANG-401; completes that symbol) or a new routine, possibly joining an overload set (LANG-440).
+    /// </summary>
+    private void BindRoutine(RoutineDeclarationSyntax declaration, ImmutableArray<Symbol>.Builder declared)
+    {
+        var heading = declaration.Heading;
+        if (!IsSupportedHeading(heading, out var identifier))
+        {
+            return;
+        }
+
+        var name = NameOf(identifier);
+        var directives = BindDirectives(declaration.Directives);
+        var existing = (_sharedScope?.LookupRoutinesLocal(name) ?? []).AddRange(_scope.LookupRoutinesLocal(name));
+        if (declaration.Block != null && FindDeclarationToDefine(heading, identifier, existing) is { } target)
+        {
+            target.Definition = declaration;
+            target.DefinitionScope = _scope;
+            target.AddLocation(DiagnosticBag.LocationOf(identifier));
+            return;
+        }
+
+        var routine = new RoutineSymbol(name, _container, [DiagnosticBag.LocationOf(identifier)], declaration)
+        {
+            IsOverload = directives.IsOverload,
+            IsExternal = directives.IsExternal,
+            IsInline = directives.IsInline,
+            IsNoReturn = directives.IsNoReturn,
+            IsDeprecated = directives.IsDeprecated,
+            LibraryName = directives.LibraryName,
+            ExplicitLinkName = directives.LinkName ?? (directives.IsExternal ? name : null),
+        };
+        BindSignature(routine, heading, identifier, report: true);
+        if (declaration.Block != null)
+        {
+            routine.Definition = declaration;
+            routine.DefinitionScope = _scope;
+        }
+
+        if (DeclareRoutine(identifier, routine, existing))
+        {
+            declared.Add(routine);
+            if (routine.AwaitsDefinition && !IsInterfaceSection)
+            {
+                _awaitingDefinition.Add(routine);
+            }
+        }
+    }
+
+    /// <summary>Plain procedures and functions; methods, operators, class routines and generic routines come later.</summary>
+    private bool IsSupportedHeading(RoutineHeadingSyntax heading, out SyntaxToken identifier)
+    {
+        identifier = default;
+        if (heading.Name is not IdentifierNameSyntax { Identifier: var token } || token.IsMissing)
+        {
+            if (heading.Name is not IdentifierNameSyntax)
+            {
+                _diagnostics.Report(heading.Name, "E2900", "method implementation");          // M2.4
+            }
+
+            return false;
+        }
+
+        identifier = token;
+        var unsupported = heading.ClassKeyword != null ? "class routine"
+            : heading.Keyword.Kind is not (SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword) ? heading.Keyword.Text.ToLowerInvariant()
+            : heading.TypeParameterList != null ? "generic routine"
+            : null;
+        if (unsupported != null)
+        {
+            _diagnostics.Report(heading, "E2900", unsupported);
+            return false;
+        }
+
+        return true;
+    }
+
+    private sealed record RoutineDirectives(bool IsForward, bool IsOverload, bool IsExternal, bool IsInline, bool IsNoReturn,
+        bool IsDeprecated, string? LibraryName, string? LinkName);
+
+    /// <summary>LANG-460…473: calling conventions, <c>assembler</c> and hints are accepted; method directives are E1114.</summary>
+    private RoutineDirectives BindDirectives(SyntaxList<DirectiveSyntax> directives)
+    {
+        bool forward = false, overload = false, external = false, inline = false, noReturn = false, deprecated = false;
+        string? library = null, linkName = null;
+        foreach (var directive in directives)
+        {
+            switch (directive.Keyword.ContextualKind)
+            {
+                case SyntaxKind.ForwardKeyword:
+                    forward = true;
+                    break;
+                case SyntaxKind.OverloadKeyword:
+                    overload = true;
+                    break;
+                case SyntaxKind.InlineKeyword:
+                    inline = true;
+                    break;
+                case SyntaxKind.NoReturnKeyword:
+                    noReturn = true;
+                    break;
+                case SyntaxKind.DeprecatedKeyword:
+                    deprecated = true;
+                    break;
+                case SyntaxKind.ExternalKeyword:
+                    external = true;
+                    if (directive.DelayedKeyword is { } delayed)
+                    {
+                        _diagnostics.Report(delayed, "E2900", "delayed");
+                    }
+
+                    library = directive.Value is { } lib ? FoldString(lib) : null;
+                    linkName = directive.NameValue is { } import ? FoldString(import) : null;
+                    break;
+                case SyntaxKind.PublicKeyword:
+                    linkName = directive.NameValue is { } exported ? FoldString(exported) : null;
+                    break;
+                case SyntaxKind.VirtualKeyword or SyntaxKind.DynamicKeyword or SyntaxKind.OverrideKeyword or SyntaxKind.AbstractKeyword
+                    or SyntaxKind.FinalKeyword or SyntaxKind.ReintroduceKeyword or SyntaxKind.StaticKeyword or SyntaxKind.MessageKeyword:
+                    _diagnostics.Report(directive.Keyword, "E1114", directive.Keyword.Text);
+                    break;
+            }
+        }
+
+        return new RoutineDirectives(forward, overload, external, inline, noReturn, deprecated, library, linkName);
+    }
+
+    /// <summary>A constant string expression (library and link names); E2010 for another constant.</summary>
+    private string? FoldString(ExpressionSyntax expression)
+    {
+        switch (_folder.Fold(expression))
+        {
+            case { Value: string text }:
+                return text;
+            case { Value: System.Numerics.BigInteger code, Type: CharTypeSymbol }:
+                return ((char)(int)code).ToString();
+            case { } other:
+                _diagnostics.Report(expression, "E2010", other.Type.Name, _types.String.Name);
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>Parameters (LANG-420 table) and result type of a new routine; also creates <c>Result</c> (LANG-410).</summary>
+    private void BindSignature(RoutineSymbol routine, RoutineHeadingSyntax heading, SyntaxToken identifier, bool report)
+    {
+        if (heading.Keyword.Kind == SyntaxKind.FunctionKeyword)
+        {
+            if (heading.ResultType is { } resultType)
+            {
+                routine.ReturnType = BindType(resultType);
+            }
+            else
+            {
+                _diagnostics.Report(identifier, "E2102");
+                routine.ReturnType = _types.Error;
+            }
+
+            routine.ResultVariable = new VariableSymbol("Result", routine.ReturnType, isGlobal: false, routine, []);
+        }
+
+        var names = new Scope(ScopeKind.Routine, parent: null, routine);
+        if (routine.ResultVariable is { } result)
+        {
+            names.TryDeclare(result, out _);
+        }
+
+        var parameters = ImmutableArray.CreateBuilder<ParameterSymbol>();
+        foreach (var parameter in heading.ParameterList?.Parameters ?? default)
+        {
+            var mode = parameter.Modifier?.ContextualKind switch
+            {
+                SyntaxKind.ConstKeyword => ParameterMode.Const,
+                SyntaxKind.VarKeyword => ParameterMode.Var,
+                SyntaxKind.OutKeyword => ParameterMode.Out,
+                _ => ParameterMode.Value,
+            };
+            var type = parameter.Type is { } typeSyntax ? BindType(typeSyntax) : _types.Error;
+            if (parameter.Type is null && mode != ParameterMode.Value && report)
+            {
+                _diagnostics.Report(parameter, "E2900", "untyped parameter");                  // M2.2
+            }
+
+            if (parameter.DefaultValue is { } defaultValue && report)
+            {
+                _diagnostics.Report(defaultValue, "E2900", "default parameter value");         // LANG-422, M2.5
+            }
+
+            foreach (var name in parameter.Identifiers)
+            {
+                var token = name.Identifier;
+                if (token.IsMissing)
+                {
+                    continue;
+                }
+
+                if (parameter.Type is null && mode == ParameterMode.Value && report)
+                {
+                    _diagnostics.Report(token, "E2118", NameOf(token));
+                }
+
+                var symbol = new ParameterSymbol(NameOf(token), type, mode, parameters.Count, routine, [DiagnosticBag.LocationOf(token)]);
+                if (!names.TryDeclare(symbol, out var previous) && report)
+                {
+                    _diagnostics.ReportRedeclared(token, NameOf(token), previous!);
+                }
+
+                parameters.Add(symbol);
+            }
+        }
+
+        routine.Parameters = parameters.ToImmutable();
+    }
+
+    /// <summary>
+    /// LANG-401: the undefined declaration a definition completes. With its parameter list omitted it completes the
+    /// only undefined routine of the name; otherwise the one with the same parameter modes and types (names and result
+    /// type must match too, E2101). A mismatch against a single non-overloaded declaration is E2101 and still completes
+    /// it (no E2100 cascade); otherwise the definition declares a new routine.
+    /// </summary>
+    private RoutineSymbol? FindDeclarationToDefine(RoutineHeadingSyntax heading, SyntaxToken identifier, ImmutableArray<RoutineSymbol> existing)
+    {
+        var undefined = existing.Where(r => r.AwaitsDefinition).ToList();
+        if (undefined.Count == 0)
+        {
+            return null;
+        }
+
+        if (heading.ParameterList is null && undefined.Count == 1)
+        {
+            var only = undefined[0];
+            var omitted = heading.ResultType is null || ReferenceEquals(BindType(heading.ResultType), only.ReturnType);
+            if (!omitted || (heading.Keyword.Kind == SyntaxKind.FunctionKeyword) != (only.ReturnType != null))
+            {
+                _diagnostics.Report(identifier, "E2101", NameOf(identifier));
+            }
+
+            return only;
+        }
+
+        var probe = new RoutineSymbol(NameOf(identifier), _container, [], undefined[0].Declaration);
+        BindSignature(probe, heading, identifier, report: false);
+        var match = undefined.FirstOrDefault(r => SameParameterTypes(r, probe));
+        if (match is null)
+        {
+            if (undefined.Count == 1 && !undefined[0].IsOverload)
+            {
+                _diagnostics.Report(identifier, "E2101", NameOf(identifier));
+                return undefined[0];
+            }
+
+            return null;
+        }
+
+        var sameNames = match.Parameters.Select(p => p.Name).SequenceEqual(probe.Parameters.Select(p => p.Name), IdentifierComparer.Instance);
+        if (!sameNames || !ReferenceEquals(match.ReturnType, probe.ReturnType))
+        {
+            _diagnostics.Report(identifier, "E2101", NameOf(identifier));
+        }
+
+        return match;
+    }
+
+    private static bool SameParameterTypes(RoutineSymbol a, RoutineSymbol b) =>
+        a.Parameters.Length == b.Parameters.Length
+        && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && ReferenceEquals(p.First.Type, p.Second.Type));
+
+    /// <summary>LANG-440: a name shared only by routines that all carry <c>overload</c> and differ in their parameters.</summary>
+    private bool DeclareRoutine(SyntaxToken identifier, RoutineSymbol routine, ImmutableArray<RoutineSymbol> existing)
+    {
+        var name = NameOf(identifier);
+        if (existing.IsEmpty)
+        {
+            var previous = _sharedScope?.LookupLocal(name);
+            if (previous is null && _scope.TryDeclare(routine, out previous))
+            {
+                return true;
+            }
+
+            _diagnostics.ReportRedeclared(identifier, name, previous!);
+            return false;
+        }
+
+        if (!routine.IsOverload || existing.Any(r => !r.IsOverload))
+        {
+            _diagnostics.Report(identifier, "E2120", name);
+            return false;
+        }
+
+        if (existing.Any(r => SameParameterTypes(r, routine)))
+        {
+            _diagnostics.Report(identifier, "E2121", name);
+            return false;
+        }
+
+        if (_scope.LookupLocal(name) is null)
+        {
+            _scope.TryDeclare(routine, out _);                                  // overloads an interface routine
+        }
+        else
+        {
+            _scope.AddOverload(routine);
+        }
+
+        return true;
+    }
+
+    /// <summary>LANG-400/460: E2100 for each forward routine of this declaration part left without a definition.</summary>
+    private void ReportUnsatisfied()
+    {
+        foreach (var routine in _awaitingDefinition.Where(r => r.AwaitsDefinition))
+        {
+            _diagnostics.Report(routine.Declaration.Heading.Name, "E2100", routine.Name);
+        }
     }
 
     /// <summary>The type a type syntax denotes; the error type (after a diagnostic) when it cannot be bound.</summary>
