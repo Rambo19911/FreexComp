@@ -1,12 +1,22 @@
 {
   "llvm": {
     "version": "23.1.5",
-    "archive": "clang+llvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
-    "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/clang+llvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
-    "sha256": "62fdada7f6fa2b73856486dfbbdba3d2c1882991621615bcb55c60207611c6d4",
+    "package": "LLVM-23.1.5-win64.msi",
+    "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/LLVM-23.1.5-win64.msi",
+    "sha256": "288ab326377157a9e02e6fb9724914cc2b55963882d493a405f31dc66e837c12",
     "installDir": "third_party/llvm",
-    "requiredTools": ["clang.exe", "lld-link.exe", "llvm-dlltool.exe"],
-    "optionalTools": ["lldb-dap.exe", "lldb.exe", "llvm-objdump.exe", "llvm-pdbutil.exe"]
+    "note": "Extracted with an administrative install (msiexec /a): nothing is installed system-wide.",
+    "requiredTools": ["clang.exe", "lld-link.exe", "llvm-dlltool.exe", "llvm-rc.exe", "llvm-mt.exe", "lldb.exe", "lldb-dap.exe", "liblldb.dll"],
+    "optionalTools": ["llvm-objdump.exe", "llvm-pdbutil.exe", "clangd.exe", "clang-format.exe"]
+  },
+  "python": {
+    "version": "3.13.15",
+    "package": "python-3.13.15-embed-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.13.15/python-3.13.15-embed-amd64.zip",
+    "sha256": "d1f04d990aee1253d8569e8e5104e30fa9f5fa830899f14843448872d936a2cf",
+    "installDir": "third_party/python-embed",
+    "note": "Runtime needed by liblldb.dll (imports python3.dll). Its directory must be on PATH of the lldb / lldb-dap process.",
+    "requiredFiles": ["python3.dll", "python313.dll"]
   },
   "sqlite": {
     "note": "Phase 7. Official x64 DLL zip from https://www.sqlite.org/download.html ; fill url + sha256 when Phase 7 starts.",
