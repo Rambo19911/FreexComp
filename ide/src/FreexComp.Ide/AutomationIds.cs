@@ -64,6 +64,12 @@ public static partial class AutomationIds
     public static string StatusBarField(string name) => "StatusBar." + name;
 
     /// <summary>
+    /// The splitter that resizes a dock (UI-WIN-005): <c>Dock.Left.Splitter</c>, <c>Dock.Right.Splitter</c>,
+    /// <c>Dock.Bottom.Splitter</c>; <c>Dock.Right.Upper.Splitter</c> divides the right dock's two groups.
+    /// </summary>
+    public static string Splitter(string dockId) => dockId + ".Splitter";
+
+    /// <summary>
     /// UI-A11Y-031: a PascalCase first segment, then dot-separated segments; the tail may hold any file-name or
     /// identifier character (paths, <c>@n</c>, <c>$new</c>) but no control character, and no segment is empty.
     /// </summary>

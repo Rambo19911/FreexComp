@@ -11,6 +11,31 @@ public static class DockSizing
     public const double DocumentMinHeight = 160;
     public const double SideDockMinWidth = 160;
     public const double BottomDockMinHeight = 80;
+    public const double RightGroupMinHeight = 80;
+
+    /// <summary>
+    /// UI-WIN-005: a dragged side-dock width, 160 … <paramref name="available"/> − 320 − <paramref name="otherSide"/> −
+    /// <paramref name="splitters"/> (the minimum wins when there is no room).
+    /// </summary>
+    public static double ClampSide(double value, double available, double otherSide, double splitters) =>
+        Math.Clamp(value, SideDockMinWidth, Math.Max(SideDockMinWidth, available - DocumentMinWidth - otherSide - splitters));
+
+    /// <summary>UI-WIN-005: a dragged bottom-dock height, 80 … <paramref name="available"/> − 160 − <paramref name="splitter"/>.</summary>
+    public static double ClampBottom(double value, double available, double splitter) =>
+        Math.Clamp(value, BottomDockMinHeight, Math.Max(BottomDockMinHeight, available - DocumentMinHeight - splitter));
+
+    /// <summary>§7: the upper group's share of the right dock, so that both groups keep 80 DIP; 0.5 when that cannot be.</summary>
+    public static double ClampSplit(double split, double height, double splitter)
+    {
+        var usable = height - splitter;
+        if (usable < 2 * RightGroupMinHeight)
+        {
+            return 0.5;
+        }
+
+        var min = RightGroupMinHeight / usable;
+        return Math.Clamp(split, min, 1 - min);
+    }
 
     /// <summary>Widths of the left and right dock (0 when not shown); <paramref name="splitter"/> per shown side dock.</summary>
     public static (double Left, double Right) Widths(double available, double left, double right, bool leftShown, bool rightShown, double splitter)

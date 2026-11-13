@@ -108,6 +108,119 @@ public sealed class LayoutTests
         }
     }
 
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-WIN-005")]
+    public async Task SplitterLimitsAreClamped()
+    {
+        await using var h = await HeadlessHarness.StartAsync(AllDocks);
+        var layout = h.Services.Layout.Layout;
+        ShowRightDock(h);
+        var view = h.Find<Control>(AutomationIds.DockLeft).GetVisualAncestors().OfType<LayoutView>().Single();
+        var width = view.Bounds.Width;
+        var height = view.Bounds.Height;
+        var left = h.Find<Control>(AutomationIds.DockLeft);
+        var right = h.Find<Control>(AutomationIds.DockRight);
+        var bottom = h.Find<Control>(AutomationIds.DockBottom);
+        var documents = h.Find<Control>(AutomationIds.DocumentArea);
+
+        // Left dock: at most window − 320 − right dock (− both splitters), at least 160.
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockLeft), 2000, 0);
+        Assert.Equal(width - 320 - 300 - (2 * Splitter), left.Bounds.Width);
+        Assert.Equal(320, documents.Bounds.Width);
+        Assert.Equal(width - 320 - 300 - (2 * Splitter), layout.LeftSize);
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockLeft), -2000, 0);
+        Assert.Equal(160, left.Bounds.Width);
+        Assert.Equal(160, layout.LeftSize);
+
+        // Right dock likewise, against the left dock.
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockRight), -2000, 0);
+        Assert.Equal(width - 320 - 160 - (2 * Splitter), right.Bounds.Width);
+        Assert.Equal(width - 320 - 160 - (2 * Splitter), layout.RightSize);
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockRight), 2000, 0);
+        Assert.Equal(160, layout.RightSize);
+
+        // Bottom dock: 80 … available height − 160.
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, -2000);
+        Assert.Equal(height - 160 - Splitter, bottom.Bounds.Height);
+        Assert.Equal(160, documents.Bounds.Height);
+        Assert.Equal(height - 160 - Splitter, layout.BottomSize);
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, 2000);
+        Assert.Equal(80, bottom.Bounds.Height);
+        Assert.Equal(80, layout.BottomSize);
+
+        // Right-dock groups: at least 80 high each.
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockRightUpper), 0, 2000);
+        Assert.Equal(80, h.Find<Control>(AutomationIds.DockRightLower).Bounds.Height);
+        Assert.Equal((height - Splitter - 80) / (height - Splitter), layout.RightSplit, 6);
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockRightUpper), 0, -2000);
+        Assert.Equal(80, h.Find<Control>(AutomationIds.DockRightUpper).Bounds.Height);
+
+        // Double-click on a splitter resets that dock to its default size.
+        h.DoubleClick(AutomationIds.Splitter(AutomationIds.DockLeft));
+        h.DoubleClick(AutomationIds.Splitter(AutomationIds.DockRight));
+        h.DoubleClick(AutomationIds.Splitter(AutomationIds.DockBottom));
+        h.DoubleClick(AutomationIds.Splitter(AutomationIds.DockRightUpper));
+        Assert.Equal((260, 300, 200, 0.5), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
+        Assert.Equal(260, left.Bounds.Width);
+        Assert.Equal(200, bottom.Bounds.Height);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-WIN-015")]
+    public async Task ResetLayoutRestoresDefaults()
+    {
+        await using var h = await HeadlessHarness.StartAsync(AllDocks);
+        var layout = h.Services.Layout.Layout;
+        var tools = h.Services.ToolWindows;
+        ShowRightDock(h);
+        layout.LeftSize = 400;
+        layout.BottomSize = 120;
+        layout.RightSplit = 0.3;
+        Assert.True(tools.Hide("ProjectManager"));
+        Assert.True(tools.Show("Output", focus: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>(AutomationIds.DockLeft).IsVisible);
+
+        Assert.True(h.Services.Commands.CanExecute("window.resetLayout"));
+        await h.ExecuteAsync("window.resetLayout"); // no confirmation: the harness fails on an unanswered message box
+
+        var builtIn = LayoutProfiles.Create(LayoutProfiles.Edit);
+        var profile = layout.State.Profiles[LayoutProfiles.Edit];
+        foreach (var group in Enum.GetValues<ToolGroupId>())
+        {
+            Assert.Equal(Describe(builtIn.Group(group)), Describe(profile.Group(group)));
+        }
+
+        Assert.Equal((260, 300, 200, 0.5), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
+        Assert.Equal(260, h.Find<Control>(AutomationIds.DockLeft).Bounds.Width);
+        Assert.Equal("ProjectManager", layout.Left.ActiveTool);
+        Assert.Equal(["Messages", "Output"], layout.Bottom.Tools);
+        Assert.Equal("Messages", layout.Bottom.ActiveTool);
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible); // UI-WIN-010: empty in Edit
+
+        // The reset is a change like any other: saved 2 s later.
+        h.Clock.Advance(TimeSpan.FromSeconds(2));
+        var saved = File.ReadAllText(Path.Combine(h.UserDir, "roaming", "uistate.json"));
+        Assert.Contains("\"size\": 260", saved, StringComparison.Ordinal);
+    }
+
+    private static void AllDocks(HarnessOptions o)
+    {
+        o.ToolWindows.Add(SampleToolViewModel.Definition("ProjectManager", ToolGroupId.Left, titleKey: "Cmd_view_projectManager"));
+        o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom));
+        o.ToolWindows.Add(SampleToolViewModel.Definition("Output", ToolGroupId.Bottom, titleKey: "Cmd_view_output"));
+        o.ToolWindows.Add(SampleToolViewModel.Definition("ObjectInspector", ToolGroupId.RightUpper, titleKey: "Cmd_view_objectInspector"));
+        o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, titleKey: "Cmd_view_toolPalette"));
+    }
+
+    /// <summary>The Edit profile has no right-dock tool windows; showing them places them in their home groups.</summary>
+    private static void ShowRightDock(HeadlessHarness h)
+    {
+        Assert.True(h.Services.ToolWindows.Show("ObjectInspector", focus: false));
+        Assert.True(h.Services.ToolWindows.Show("ToolPalette", focus: false));
+        Dispatcher.UIThread.RunJobs();
+    }
+
     /// <summary>The layout of a composition where exactly <paramref name="registered"/> tool windows exist (in their Edit-profile docks).</summary>
     private static (Window Window, LayoutView View, LayoutViewModel Layout) Show(IReadOnlySet<string> registered)
     {

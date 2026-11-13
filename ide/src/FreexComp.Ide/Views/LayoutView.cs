@@ -37,10 +37,10 @@ public sealed class LayoutView : Grid
     public LayoutView()
     {
         ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto");
-        _leftSplitter = Splitter(GridResizeDirection.Columns);
-        _rightSplitter = Splitter(GridResizeDirection.Columns);
-        _bottomSplitter = Splitter(GridResizeDirection.Rows);
-        _rightSplit = Splitter(GridResizeDirection.Rows);
+        _leftSplitter = Splitter(GridResizeDirection.Columns, AutomationIds.DockLeft, DockSplitter.Left);
+        _rightSplitter = Splitter(GridResizeDirection.Columns, AutomationIds.DockRight, DockSplitter.Right);
+        _bottomSplitter = Splitter(GridResizeDirection.Rows, AutomationIds.DockBottom, DockSplitter.Bottom);
+        _rightSplit = Splitter(GridResizeDirection.Rows, AutomationIds.DockRightUpper, DockSplitter.RightSplit);
 
         Place(this, _left, column: LeftColumn);
         Place(this, _leftSplitter, column: 1);
@@ -55,15 +55,6 @@ public sealed class LayoutView : Grid
         Place(_right, _rightLower, row: 2);
         AutomationProperties.SetAutomationId(_right, AutomationIds.DockRight);
 
-        _leftSplitter.DragCompleted += (_, _) => Store(m => m.LeftSize = ColumnDefinitions[LeftColumn].ActualWidth);
-        _rightSplitter.DragCompleted += (_, _) => Store(m => m.RightSize = ColumnDefinitions[RightColumn].ActualWidth);
-        _bottomSplitter.DragCompleted += (_, _) => Store(m => m.BottomSize = _center.RowDefinitions[BottomRow].ActualHeight);
-        _rightSplit.DragCompleted += (_, _) => Store(m =>
-        {
-            var upper = _right.RowDefinitions[0].ActualHeight;
-            var lower = _right.RowDefinitions[2].ActualHeight;
-            m.RightSplit = upper + lower > 0 ? upper / (upper + lower) : m.RightSplit;
-        });
         SizeChanged += (_, _) => ApplySizes();
     }
 
@@ -186,6 +177,12 @@ public sealed class LayoutView : Grid
         ColumnDefinitions[LeftColumn].Width = new GridLength(left);
         ColumnDefinitions[RightColumn].Width = new GridLength(right);
         _center.RowDefinitions[BottomRow].Height = new GridLength(bottom);
+
+        // UI-WIN-005: a splitter drag stays within the limits (the grid enforces them while dragging).
+        var splitters = (leftShown ? splitter : 0) + (rightShown ? splitter : 0);
+        SetLimits(ColumnDefinitions[LeftColumn], leftShown, DockSizing.SideDockMinWidth, DockSizing.ClampSide(double.PositiveInfinity, width, right, splitters));
+        SetLimits(ColumnDefinitions[RightColumn], rightShown, DockSizing.SideDockMinWidth, DockSizing.ClampSide(double.PositiveInfinity, width, left, splitters));
+        SetLimits(_center.RowDefinitions[BottomRow], bottomShown, DockSizing.BottomDockMinHeight, DockSizing.ClampBottom(double.PositiveInfinity, height, splitter));
         _left.IsVisible = _leftSplitter.IsVisible = leftShown;
         _right.IsVisible = _rightSplitter.IsVisible = rightShown;
         _bottom.IsVisible = _bottomSplitter.IsVisible = bottomShown;
@@ -198,13 +195,53 @@ public sealed class LayoutView : Grid
         _rightSplit.IsVisible = upperShown && lowerShown;
         _right.RowDefinitions[0].Height = upperShown ? new GridLength(lowerShown ? model.RightSplit : 1, GridUnitType.Star) : new GridLength(0);
         _right.RowDefinitions[2].Height = lowerShown ? new GridLength(upperShown ? 1 - model.RightSplit : 1, GridUnitType.Star) : new GridLength(0);
+        _right.RowDefinitions[0].MinHeight = _right.RowDefinitions[2].MinHeight = upperShown && lowerShown ? DockSizing.RightGroupMinHeight : 0;
     }
 
-    private void Store(Action<LayoutViewModel> store)
+    private static void SetLimits(ColumnDefinition column, bool shown, double min, double max)
     {
-        if (_model is { } model)
+        column.MinWidth = shown ? min : 0;
+        column.MaxWidth = shown ? max : double.PositiveInfinity;
+    }
+
+    private static void SetLimits(RowDefinition row, bool shown, double min, double max)
+    {
+        row.MinHeight = shown ? min : 0;
+        row.MaxHeight = shown ? max : double.PositiveInfinity;
+    }
+
+    /// <summary>A drag ended: the dock keeps the new size, within the limits of UI-WIN-005.</summary>
+    private void Store(DockSplitter which)
+    {
+        if (_model is not { } model)
         {
-            store(model);
+            return;
+        }
+
+        var splitter = Metric("FxcMetricSplitterHitArea");
+        var splitters = (model.Left.IsCollapsed ? 0 : splitter) + (model.IsRightCollapsed ? 0 : splitter);
+        var left = ColumnDefinitions[LeftColumn].ActualWidth;
+        var right = ColumnDefinitions[RightColumn].ActualWidth;
+        switch (which)
+        {
+            case DockSplitter.Left:
+                model.LeftSize = DockSizing.ClampSide(left, Bounds.Width, right, splitters);
+                break;
+            case DockSplitter.Right:
+                model.RightSize = DockSizing.ClampSide(right, Bounds.Width, left, splitters);
+                break;
+            case DockSplitter.Bottom:
+                model.BottomSize = DockSizing.ClampBottom(_center.RowDefinitions[BottomRow].ActualHeight, _center.Bounds.Height, splitter);
+                break;
+            default:
+                var upper = _right.RowDefinitions[0].ActualHeight;
+                var lower = _right.RowDefinitions[2].ActualHeight;
+                if (upper + lower > 0)
+                {
+                    model.RightSplit = DockSizing.ClampSplit(upper / (upper + lower), upper + lower + splitter, splitter);
+                }
+
+                break;
         }
     }
 
@@ -215,9 +252,25 @@ public sealed class LayoutView : Grid
         return view;
     }
 
-    private GridSplitter Splitter(GridResizeDirection direction)
+    private GridSplitter Splitter(GridResizeDirection direction, string dockId, DockSplitter which)
     {
         var splitter = new GridSplitter { ResizeDirection = direction, MinWidth = 0, MinHeight = 0, Cursor = new Cursor(direction == GridResizeDirection.Columns ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth) };
+        AutomationProperties.SetAutomationId(splitter, AutomationIds.Splitter(dockId));
+        splitter.DragCompleted += (_, e) =>
+        {
+            if (e.Vector != default)
+            {
+                Store(which); // a click without movement (e.g. the halves of a double-click) changes nothing
+            }
+        };
+        splitter.AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (e.ClickCount == 2)
+            {
+                _model?.ResetSize(which); // UI-WIN-005: double-click resets the dock to its default size
+                e.Handled = true;         // and starts no drag (the reset moves the splitter under the pointer)
+            }
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
         var thickness = Metric("FxcMetricSplitterHitArea");
         if (direction == GridResizeDirection.Columns)
         {

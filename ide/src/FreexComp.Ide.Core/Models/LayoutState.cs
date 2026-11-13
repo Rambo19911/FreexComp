@@ -9,6 +9,17 @@ public enum ToolGroupId
     Bottom,
 }
 
+/// <summary>The four draggable splitters of the main window (UI-WIN-005).</summary>
+public enum DockSplitter
+{
+    Left,
+    Right,
+    Bottom,
+
+    /// <summary>Between the upper and the lower group of the right dock.</summary>
+    RightSplit,
+}
+
 /// <summary>One tool group of a profile (IDE-ARCH-061): visible tabs in order, hidden members in order, active tab.</summary>
 public sealed class ToolGroupLayout
 {

@@ -198,6 +198,33 @@ public sealed class LayoutViewModel : ObservableObject
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>UI-WIN-005: double-click on a splitter puts its dock back at the default size.</summary>
+    public void ResetSize(DockSplitter splitter)
+    {
+        switch (splitter)
+        {
+            case DockSplitter.Left:
+                LeftSize = LayoutProfiles.DefaultLeftSize;
+                break;
+            case DockSplitter.Right:
+                RightSize = LayoutProfiles.DefaultRightSize;
+                break;
+            case DockSplitter.Bottom:
+                BottomSize = LayoutProfiles.DefaultBottomSize;
+                break;
+            default:
+                RightSplit = LayoutProfiles.DefaultRightSplit;
+                break;
+        }
+    }
+
+    /// <summary>UI-WIN-015 (<c>window.resetLayout</c>): the active profile returns to its built-in arrangement and sizes.</summary>
+    public void ResetProfile()
+    {
+        State.Profiles[State.ActiveProfile] = LayoutProfiles.Create(State.ActiveProfile);
+        Reload(notify: true);
+    }
+
     /// <summary>
     /// The contents of <see cref="State"/> were replaced (loaded or reset): every group and size is re-read. Raises
     /// <see cref="StateChanged"/> only when <paramref name="notify"/> is set (a load is not a change).

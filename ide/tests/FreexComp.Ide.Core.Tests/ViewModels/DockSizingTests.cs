@@ -27,4 +27,24 @@ public sealed class DockSizingTests
         Assert.Equal(80, DockSizing.BottomHeight(150, 200, true, 5));
         Assert.Equal(0, DockSizing.BottomHeight(500, 200, false, 5));
     }
+
+    [Fact]
+    [Trait("Req", "UI-WIN-005")]
+    public void DraggedSizesStayWithinTheLimits()
+    {
+        // Side docks: 160 … available − 320 − the other side dock − the splitters.
+        Assert.Equal(810, DockSizing.ClampSide(2000, 1440, 300, 10));
+        Assert.Equal(160, DockSizing.ClampSide(20, 1440, 300, 10));
+        Assert.Equal(400, DockSizing.ClampSide(400, 1440, 300, 10));
+        Assert.Equal(160, DockSizing.ClampSide(400, 600, 300, 10)); // no room at all: the minimum wins
+
+        // Bottom dock: 80 … available − 160 − the splitter.
+        Assert.Equal(635, DockSizing.ClampBottom(2000, 800, 5));
+        Assert.Equal(80, DockSizing.ClampBottom(10, 800, 5));
+
+        // Right-dock split: each group at least 80 high.
+        Assert.Equal(80 / 495.0, DockSizing.ClampSplit(0, 500, 5), 9);
+        Assert.Equal(1 - (80 / 495.0), DockSizing.ClampSplit(1, 500, 5), 9);
+        Assert.Equal(0.3, DockSizing.ClampSplit(0.3, 500, 5), 9);
+    }
 }

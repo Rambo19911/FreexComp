@@ -5,7 +5,8 @@ namespace FreexComp.Ide.Core.Services;
 
 /// <summary>
 /// Layout profiles, pane cycling and the global UI state file <c>R\uistate.json</c> (architecture.md §4 and §8.1,
-/// main-window.md §2 and §6). Owns <c>window.nextPane</c>, <c>window.previousPane</c> and <c>window.focusEditor</c>.
+/// main-window.md §2 and §6). Owns <c>window.nextPane</c>, <c>window.previousPane</c>, <c>window.focusEditor</c> and
+/// <c>window.resetLayout</c>.
 /// UI thread only.
 /// </summary>
 public interface ILayoutService

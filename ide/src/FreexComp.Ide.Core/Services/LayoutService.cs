@@ -55,6 +55,7 @@ public sealed class LayoutService : ILayoutService
         commands.RegisterHandler("window.nextPane", new ActionHandler(() => Layout.CyclePanes(1))); // UI-A11Y-003
         commands.RegisterHandler("window.previousPane", new ActionHandler(() => Layout.CyclePanes(-1)));
         commands.RegisterHandler("window.focusEditor", new ActionHandler(() => Layout.FocusPane(Pane.Documents))); // UI-A11Y-004
+        commands.RegisterHandler("window.resetLayout", new ActionHandler(Layout.ResetProfile)); // UI-WIN-015, no confirmation
     }
 
     public LayoutViewModel Layout { get; }
