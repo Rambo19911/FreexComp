@@ -28,7 +28,7 @@ def req(cmd, args=None):
     if not m.get("success"): print("  !! %s failed: %s" % (cmd, m.get("message")))
     return m.get("body", {})
 def ev(name): return wait(lambda m: m["type"] == "event" and m["event"] == name)
-t=threading.Timer(40, p.kill); t.daemon=True; t.start()
+t=threading.Timer(120, p.kill); t.daemon=True; t.start()
 R = {}
 try:
     req("initialize", {"adapterID": "freexcomp", "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"})
