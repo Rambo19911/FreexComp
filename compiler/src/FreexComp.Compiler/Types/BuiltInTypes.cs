@@ -68,6 +68,8 @@ public sealed class BuiltInTypes
         Intrinsic("Inc", IntrinsicKind.Inc, "Inc(var X[; N: Integer])");
         Intrinsic("Dec", IntrinsicKind.Dec, "Dec(var X[; N: Integer])");
         Intrinsic("RunError", IntrinsicKind.RunError, "RunError[(ErrorCode: Integer)]");
+        Intrinsic("Write", IntrinsicKind.Write, "Write([var F: Text;] Args)");
+        Intrinsic("Writeln", IntrinsicKind.Writeln, "Writeln([var F: Text;] Args)");
         Intrinsic("Succ", IntrinsicKind.Succ, "Succ(X: Ordinal): Ordinal");
         Intrinsic("Pred", IntrinsicKind.Pred, "Pred(X: Ordinal): Ordinal");
         Intrinsic("Ord", IntrinsicKind.Ord, "Ord(X: Ordinal): Integer");

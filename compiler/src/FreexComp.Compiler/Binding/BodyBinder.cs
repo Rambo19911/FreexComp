@@ -352,6 +352,11 @@ internal sealed class BodyBinder
     private BoundStatement BindControlIntrinsic(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic)
     {
         var arguments = statement.Expression is InvocationExpressionSyntax invocation ? invocation.ArgumentList.Arguments : default;
+        if (intrinsic.Intrinsic is IntrinsicKind.Write or IntrinsicKind.Writeln)
+        {
+            return BindWrite(statement, intrinsic, arguments);
+        }
+
         var count = arguments.Count;
         var (minArguments, maxArguments) = intrinsic.Intrinsic switch
         {
@@ -407,6 +412,78 @@ internal sealed class BodyBinder
                 return new BoundHaltStatement(statement, code);
         }
     }
+
+    // ------------------------------------------------------------------ Write, Writeln (LANG-910…922)
+
+    /// <summary>
+    /// LANG-910/911: an optional leading <c>Text</c> variable, then <c>e[:w[:d]]</c> arguments. M2.1 writes integers,
+    /// Booleans, chars and string constants; reals, string variables and <c>PChar</c> arrive with M2.2 (E2900); other
+    /// types are E2913. One diagnostic per argument; the statement is an error statement after any.
+    /// </summary>
+    private BoundStatement BindWrite(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        BoundExpression? file = null;
+        var bound = ImmutableArray.CreateBuilder<BoundWriteArgument>(arguments.Count);
+        var ok = true;
+        for (var k = 0; k < arguments.Count; k++)
+        {
+            var argument = arguments[k];
+            var value = _expressions.BindExpression(argument.Expression);
+            if (value.HasErrors)
+            {
+                ok = false;
+                continue;
+            }
+
+            if (k == 0 && value.Type is TextTypeSymbol && argument.WidthColonToken is null)
+            {
+                ok &= _expressions.CheckVariableReference(value, argument.Expression);
+                file = value;
+                continue;
+            }
+
+            if (WriteTypeError(value) is { } error)
+            {
+                if (error.Length == 0)
+                {
+                    _diagnostics.Report(argument.Expression, "E2913", value.Type.Name);
+                }
+                else
+                {
+                    _diagnostics.Report(argument.Expression, "E2900", error);
+                }
+
+                ok = false;
+                continue;
+            }
+
+            if (argument.DecimalsColonToken is { } decimalsColon)
+            {
+                _diagnostics.Report(decimalsColon, "E2912");                        // reals only (M2.2)
+                ok = false;
+                continue;
+            }
+
+            var width = argument.Width is { } w
+                ? _expressions.ConvertForAssignment(_expressions.BindExpression(w), _types.Integer, w)
+                : null;
+            ok &= width?.HasErrors != true;
+            bound.Add(new BoundWriteArgument(argument, value, width, decimals: null));
+        }
+
+        return ok ? new BoundWriteStatement(statement, intrinsic, file, bound.ToImmutable()) : new BoundErrorStatement(statement);
+    }
+
+    /// <summary>Null when <paramref name="value"/> can be written in M2.1; "" for E2913; else the E2900 feature name.</summary>
+    private static string? WriteTypeError(BoundExpression value) => value.Type switch
+    {
+        IntegerTypeSymbol or BooleanTypeSymbol or CharTypeSymbol => null,
+        StringTypeSymbol when value.ConstantValue != null => null,
+        StringTypeSymbol => "Write of a string variable",
+        RealTypeSymbol => "Write of a real value",
+        PointerTypeSymbol { AllowsPointerMath: true } => "Write of a PChar",
+        _ => "",
+    };
 
     /// <summary>
     /// LANG-901: <c>Inc</c>/<c>Dec(var x[; n])</c>: <c>x</c> an assignable ordinal variable (typed pointers arrive with

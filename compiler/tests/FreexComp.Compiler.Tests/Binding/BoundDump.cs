@@ -31,6 +31,7 @@ internal static class BoundDump
         BoundExpressionStatement e => $"(expr {Of(e.Expression)})",
         BoundCallStatement c => List($"call {c.Routine.Name}", c.Arguments),
         BoundIntrinsicCallStatement c => List(c.Intrinsic.Name, c.Arguments),
+        BoundWriteStatement w => Write(w),
         BoundIfStatement i => i.Else is null ? $"(if {Of(i.Condition)} {Of(i.Then)})" : $"(if {Of(i.Condition)} {Of(i.Then)} {Of(i.Else)})",
         BoundWhileStatement w => $"(while {Of(w.Condition)} {Of(w.Body)})",
         BoundRepeatStatement r => $"(repeat {Of(r.Body)} {Of(r.Condition)})",
@@ -42,6 +43,22 @@ internal static class BoundDump
         BoundHaltStatement h => h.ExitCode is null ? "(halt)" : $"(halt {Of(h.ExitCode)})",
         _ => $"<{node.Kind}>",
     };
+
+    private static string Write(BoundWriteStatement w)
+    {
+        var parts = new List<string> { w.Intrinsic.Name };
+        if (w.File is { } file)
+        {
+            parts.Add($"(file {Of(file)})");
+        }
+
+        foreach (var a in w.Arguments)
+        {
+            parts.Add(a.Width is null ? Of(a.Value) : a.Decimals is null ? $"(: {Of(a.Value)} {Of(a.Width)})" : $"(: {Of(a.Value)} {Of(a.Width)} {Of(a.Decimals)})");
+        }
+
+        return "(" + string.Join(" ", parts) + ")";
+    }
 
     private static string List(string head, IEnumerable<BoundNode> items) =>
         "(" + string.Join(" ", items.Select(Of).Prepend(head)) + ")";

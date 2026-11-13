@@ -111,3 +111,8 @@ var p: Pointer;
   procedure Inner; begin end;
 begin p := @Inner end;
 begin end.
+=== E2912 1,32
+var i: Integer; begin Write(i:2:1) end.
+=== E2913 2,18
+var p: Pointer;
+begin Writeln(1, p) end.

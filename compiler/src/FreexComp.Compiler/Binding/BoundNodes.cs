@@ -39,6 +39,7 @@ internal enum BoundKind
     HaltStatement,
     CallStatement,
     IntrinsicCallStatement,
+    WriteStatement,
 }
 
 /// <summary>A node of the bound tree: immutable, typed, symbols resolved.</summary>
@@ -593,4 +594,49 @@ internal sealed class BoundIntrinsicCallStatement : BoundStatement
     public IntrinsicSymbol Intrinsic { get; }
 
     public ImmutableArray<BoundExpression> Arguments { get; }
+}
+
+/// <summary>
+/// <c>Write</c>/<c>Writeln</c> (LANG-910…922): <see cref="File"/> is the <c>Text</c> variable of the first argument, null
+/// for <c>Output</c>; arguments in source order.
+/// </summary>
+internal sealed class BoundWriteStatement : BoundStatement
+{
+    public BoundWriteStatement(SyntaxNode syntax, IntrinsicSymbol intrinsic, BoundExpression? file, ImmutableArray<BoundWriteArgument> arguments)
+        : base(syntax)
+    {
+        Intrinsic = intrinsic;
+        File = file;
+        Arguments = arguments;
+    }
+
+    public override BoundKind Kind => BoundKind.WriteStatement;
+
+    public IntrinsicSymbol Intrinsic { get; }
+
+    public bool IsWriteln => Intrinsic.Intrinsic == IntrinsicKind.Writeln;
+
+    public BoundExpression? File { get; }
+
+    public ImmutableArray<BoundWriteArgument> Arguments { get; }
+}
+
+/// <summary>One <c>e[:w[:d]]</c> of a <c>Write</c>: the value unconverted, width and decimals converted to <c>Integer</c>.</summary>
+internal sealed class BoundWriteArgument
+{
+    public BoundWriteArgument(ArgumentSyntax syntax, BoundExpression value, BoundExpression? width, BoundExpression? decimals)
+    {
+        Syntax = syntax;
+        Value = value;
+        Width = width;
+        Decimals = decimals;
+    }
+
+    public ArgumentSyntax Syntax { get; }
+
+    public BoundExpression Value { get; }
+
+    public BoundExpression? Width { get; }
+
+    public BoundExpression? Decimals { get; }
 }

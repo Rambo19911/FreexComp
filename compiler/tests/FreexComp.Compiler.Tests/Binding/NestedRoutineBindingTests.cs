@@ -160,6 +160,17 @@ public sealed class NestedRoutineBindingTests
         Assert.Empty(Body(result, "Inner").CapturedVariables);
     }
 
+    [Fact]
+    [Trait("Req", "LANG-903")]
+    public void CapturedVariables_IgnoreNeverEvaluatedOperands()
+    {
+        var result = BindOk("program T; procedure Outer; var x: Integer; y: Byte; procedure Inner; var n: Integer; " +
+            "begin n := SizeOf(x) + High(y) + Low(x * 2); n := SizeOf(y) + y end; begin x := 0; Inner end; begin end.");
+
+        Assert.Equal(["y"], Captured(result, "Outer"));
+        Assert.Equal(["y"], Body(result, "Inner").CapturedVariables.Select(s => s.Name));
+    }
+
     // ------------------------------------------------------------------ read-only captures (LANG-452, 361)
 
     [Fact]

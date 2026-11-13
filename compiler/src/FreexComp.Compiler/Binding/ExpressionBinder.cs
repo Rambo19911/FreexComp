@@ -278,7 +278,10 @@ internal sealed class ExpressionBinder
         var syntax = invocation.ArgumentList.Arguments[0].Expression;
         if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf)
         {
+            // the operand is never evaluated (LANG-903), so it captures nothing (lead decision C-029)
+            var captured = CapturedVariables.Count;
             var (type, argument) = BindTypeOrValue(syntax);
+            CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);
             if (type.TypeKind == TypeKind.Error)
             {
                 return Error(invocation);
