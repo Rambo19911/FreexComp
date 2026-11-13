@@ -1,0 +1,24 @@
+<!-- UI-TOK-007: Fluent accent resources set to accent.default (SystemAccentColor), accent.hover (Light1-3) and accent.pressed (Dark1-3). -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <Color x:Key="SystemAccentColor">#0F7B6C</Color>
+      <Color x:Key="SystemAccentColorLight1">#0C6B5E</Color>
+      <Color x:Key="SystemAccentColorLight2">#0C6B5E</Color>
+      <Color x:Key="SystemAccentColorLight3">#0C6B5E</Color>
+      <Color x:Key="SystemAccentColorDark1">#095A4F</Color>
+      <Color x:Key="SystemAccentColorDark2">#095A4F</Color>
+      <Color x:Key="SystemAccentColorDark3">#095A4F</Color>
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <Color x:Key="SystemAccentColor">#3FC1AE</Color>
+      <Color x:Key="SystemAccentColorLight1">#5AD0BE</Color>
+      <Color x:Key="SystemAccentColorLight2">#5AD0BE</Color>
+      <Color x:Key="SystemAccentColorLight3">#5AD0BE</Color>
+      <Color x:Key="SystemAccentColorDark1">#2FA897</Color>
+      <Color x:Key="SystemAccentColorDark2">#2FA897</Color>
+      <Color x:Key="SystemAccentColorDark3">#2FA897</Color>
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

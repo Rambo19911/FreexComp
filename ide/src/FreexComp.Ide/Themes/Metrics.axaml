@@ -1,0 +1,112 @@
+<!-- Theme-independent tokens of docs/spec/ui/design-tokens.md §4-§8 (UI-TOK-001): typography, spacing, shape, icons, control metrics. All values in DIP. -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- §4 Typography -->
+  <FontFamily x:Key="FxcFontUi">Segoe UI Variable Text, Segoe UI, Inter, sans-serif</FontFamily>
+  <FontFamily x:Key="FxcFontMono">Cascadia Mono, Consolas, Courier New, monospace</FontFamily>
+  <x:Double x:Key="FxcTypeCaptionSize">11</x:Double>
+  <x:Double x:Key="FxcTypeCaptionLineHeight">16</x:Double>
+  <x:Double x:Key="FxcTypeBodySize">12</x:Double>
+  <x:Double x:Key="FxcTypeBodyLineHeight">18</x:Double>
+  <x:Double x:Key="FxcTypeSubtitleSize">14</x:Double>
+  <x:Double x:Key="FxcTypeSubtitleLineHeight">20</x:Double>
+  <x:Double x:Key="FxcTypeTitleSize">20</x:Double>
+  <x:Double x:Key="FxcTypeTitleLineHeight">28</x:Double>
+  <x:Double x:Key="FxcTypeCodeSize">13</x:Double>
+  <x:Double x:Key="FxcTypeCodeLineHeight">18</x:Double>
+  <x:Double x:Key="FxcTypeCodeSmallSize">12</x:Double>
+  <x:Double x:Key="FxcTypeCodeSmallLineHeight">16</x:Double>
+
+  <!-- §5 Spacing scale: FxcSpace<N> (double), FxcSpace<N>All / Horizontal / Vertical (Thickness) -->
+  <x:Double x:Key="FxcSpace0">0</x:Double>
+  <x:Double x:Key="FxcSpace1">2</x:Double>
+  <x:Double x:Key="FxcSpace2">4</x:Double>
+  <x:Double x:Key="FxcSpace3">6</x:Double>
+  <x:Double x:Key="FxcSpace4">8</x:Double>
+  <x:Double x:Key="FxcSpace5">12</x:Double>
+  <x:Double x:Key="FxcSpace6">16</x:Double>
+  <x:Double x:Key="FxcSpace7">24</x:Double>
+  <x:Double x:Key="FxcSpace8">32</x:Double>
+  <Thickness x:Key="FxcSpace0All">0</Thickness>
+  <Thickness x:Key="FxcSpace1All">2</Thickness>
+  <Thickness x:Key="FxcSpace2All">4</Thickness>
+  <Thickness x:Key="FxcSpace3All">6</Thickness>
+  <Thickness x:Key="FxcSpace4All">8</Thickness>
+  <Thickness x:Key="FxcSpace5All">12</Thickness>
+  <Thickness x:Key="FxcSpace6All">16</Thickness>
+  <Thickness x:Key="FxcSpace7All">24</Thickness>
+  <Thickness x:Key="FxcSpace8All">32</Thickness>
+  <Thickness x:Key="FxcSpace0Horizontal">0,0</Thickness>
+  <Thickness x:Key="FxcSpace1Horizontal">2,0</Thickness>
+  <Thickness x:Key="FxcSpace2Horizontal">4,0</Thickness>
+  <Thickness x:Key="FxcSpace3Horizontal">6,0</Thickness>
+  <Thickness x:Key="FxcSpace4Horizontal">8,0</Thickness>
+  <Thickness x:Key="FxcSpace5Horizontal">12,0</Thickness>
+  <Thickness x:Key="FxcSpace6Horizontal">16,0</Thickness>
+  <Thickness x:Key="FxcSpace7Horizontal">24,0</Thickness>
+  <Thickness x:Key="FxcSpace8Horizontal">32,0</Thickness>
+  <Thickness x:Key="FxcSpace0Vertical">0,0</Thickness>
+  <Thickness x:Key="FxcSpace1Vertical">0,2</Thickness>
+  <Thickness x:Key="FxcSpace2Vertical">0,4</Thickness>
+  <Thickness x:Key="FxcSpace3Vertical">0,6</Thickness>
+  <Thickness x:Key="FxcSpace4Vertical">0,8</Thickness>
+  <Thickness x:Key="FxcSpace5Vertical">0,12</Thickness>
+  <Thickness x:Key="FxcSpace6Vertical">0,16</Thickness>
+  <Thickness x:Key="FxcSpace7Vertical">0,24</Thickness>
+  <Thickness x:Key="FxcSpace8Vertical">0,32</Thickness>
+
+  <!-- §6 Shape and elevation -->
+  <CornerRadius x:Key="FxcRadiusControl">2</CornerRadius>
+  <CornerRadius x:Key="FxcRadiusPopup">4</CornerRadius>
+  <x:Double x:Key="FxcBorderWidth">1</x:Double>
+  <x:Double x:Key="FxcFocusWidth">2</x:Double>
+  <x:Double x:Key="FxcElevationPopupBlur">8</x:Double>
+  <x:Double x:Key="FxcElevationPopupOffsetY">2</x:Double>
+
+  <!-- §7 Icon sizes -->
+  <x:Double x:Key="FxcIconSmall">12</x:Double>
+  <x:Double x:Key="FxcIconDefault">16</x:Double>
+  <x:Double x:Key="FxcIconPalette">24</x:Double>
+  <x:Double x:Key="FxcIconLarge">32</x:Double>
+
+  <!-- §8 Control metrics: FxcMetric<Name> -->
+  <x:Double x:Key="FxcMetricMenuBarHeight">28</x:Double>
+  <x:Double x:Key="FxcMetricMenuItemHeight">24</x:Double>
+  <x:Double x:Key="FxcMetricMenuItemPadding">8</x:Double>
+  <x:Double x:Key="FxcMetricMenuIconColumn">24</x:Double>
+  <x:Double x:Key="FxcMetricMenuShortcutGap">24</x:Double>
+  <x:Double x:Key="FxcMetricMenuSeparatorHeight">9</x:Double>
+  <x:Double x:Key="FxcMetricToolbarHeight">32</x:Double>
+  <x:Double x:Key="FxcMetricToolbarButtonSize">28</x:Double>
+  <x:Double x:Key="FxcMetricToolbarIconSize">16</x:Double>
+  <x:Double x:Key="FxcMetricToolbarGroupGap">9</x:Double>
+  <x:Double x:Key="FxcMetricToolbarComboHeight">24</x:Double>
+  <x:Double x:Key="FxcMetricToolbarComboMinWidth">120</x:Double>
+  <x:Double x:Key="FxcMetricDocumentTabHeight">30</x:Double>
+  <x:Double x:Key="FxcMetricDocumentTabMinWidth">80</x:Double>
+  <x:Double x:Key="FxcMetricDocumentTabMaxWidth">240</x:Double>
+  <x:Double x:Key="FxcMetricDocumentTabPadding">10</x:Double>
+  <x:Double x:Key="FxcMetricDocumentTabCloseSize">16</x:Double>
+  <x:Double x:Key="FxcMetricToolCaptionHeight">26</x:Double>
+  <x:Double x:Key="FxcMetricToolTabHeight">26</x:Double>
+  <x:Double x:Key="FxcMetricStatusBarHeight">24</x:Double>
+  <x:Double x:Key="FxcMetricButtonHeight">26</x:Double>
+  <x:Double x:Key="FxcMetricButtonMinWidth">80</x:Double>
+  <x:Double x:Key="FxcMetricButtonPadding">12</x:Double>
+  <x:Double x:Key="FxcMetricInputHeight">26</x:Double>
+  <x:Double x:Key="FxcMetricCheckBoxSize">14</x:Double>
+  <x:Double x:Key="FxcMetricCheckBoxRowHeight">22</x:Double>
+  <x:Double x:Key="FxcMetricRowHeight">22</x:Double>
+  <x:Double x:Key="FxcMetricPropertyRowHeight">22</x:Double>
+  <x:Double x:Key="FxcMetricTableHeaderHeight">24</x:Double>
+  <x:Double x:Key="FxcMetricScrollbarThickness">12</x:Double>
+  <x:Double x:Key="FxcMetricScrollbarThumbMinLength">24</x:Double>
+  <x:Double x:Key="FxcMetricSplitterHitArea">5</x:Double>
+  <x:Double x:Key="FxcMetricSplitterLine">1</x:Double>
+  <x:Double x:Key="FxcMetricTooltipMaxWidth">480</x:Double>
+  <Thickness x:Key="FxcMetricTooltipPadding">6,4</Thickness>
+  <x:Double x:Key="FxcMetricDialogMinWidth">360</x:Double>
+  <x:Double x:Key="FxcMetricDialogButtonRowHeight">58</x:Double>
+  <x:Double x:Key="FxcMetricInfoBarHeight">30</x:Double>
+</ResourceDictionary>

@@ -11,4 +11,8 @@
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless.XUnit" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Spec-table reader shared with Core.Tests; it uses xunit, so it is linked rather than put in TestSupport. -->
+    <Compile Include="..\FreexComp.Ide.Core.Tests\Infrastructure\SpecTables.cs" Link="Infrastructure\SpecTables.cs" />
+  </ItemGroup>
 </Project>

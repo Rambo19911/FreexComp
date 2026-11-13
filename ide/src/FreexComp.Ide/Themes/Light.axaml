@@ -1,0 +1,234 @@
+<!-- Light theme: every color token of docs/spec/ui/design-tokens.md §2-§3 (UI-TOK-001/002). Keys: Fxc + PascalCase; <Key> = Color, <Key>Brush = SolidColorBrush. -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- 2.1 Surfaces and borders -->
+  <Color x:Key="FxcBgWindow">#F3F4F2</Color>
+  <SolidColorBrush x:Key="FxcBgWindowBrush" Color="#F3F4F2" />
+  <Color x:Key="FxcBgPanel">#FAFAF8</Color>
+  <SolidColorBrush x:Key="FxcBgPanelBrush" Color="#FAFAF8" />
+  <Color x:Key="FxcBgEditor">#FFFFFF</Color>
+  <SolidColorBrush x:Key="FxcBgEditorBrush" Color="#FFFFFF" />
+  <Color x:Key="FxcBgGutter">#F6F7F5</Color>
+  <SolidColorBrush x:Key="FxcBgGutterBrush" Color="#F6F7F5" />
+  <Color x:Key="FxcBgRaised">#FFFFFF</Color>
+  <SolidColorBrush x:Key="FxcBgRaisedBrush" Color="#FFFFFF" />
+  <Color x:Key="FxcBgSunken">#E9EBE7</Color>
+  <SolidColorBrush x:Key="FxcBgSunkenBrush" Color="#E9EBE7" />
+  <Color x:Key="FxcBgHeader">#ECEEEB</Color>
+  <SolidColorBrush x:Key="FxcBgHeaderBrush" Color="#ECEEEB" />
+  <Color x:Key="FxcBgHover">#E4E8E3</Color>
+  <SolidColorBrush x:Key="FxcBgHoverBrush" Color="#E4E8E3" />
+  <Color x:Key="FxcBgPressed">#D5DBD4</Color>
+  <SolidColorBrush x:Key="FxcBgPressedBrush" Color="#D5DBD4" />
+  <Color x:Key="FxcBgSelected">#CFE9E3</Color>
+  <SolidColorBrush x:Key="FxcBgSelectedBrush" Color="#CFE9E3" />
+  <Color x:Key="FxcBgSelectedInactive">#E1E4DF</Color>
+  <SolidColorBrush x:Key="FxcBgSelectedInactiveBrush" Color="#E1E4DF" />
+  <Color x:Key="FxcBgOverlay">#661C211E</Color>
+  <SolidColorBrush x:Key="FxcBgOverlayBrush" Color="#661C211E" />
+  <Color x:Key="FxcBorderDefault">#C9CEC7</Color>
+  <SolidColorBrush x:Key="FxcBorderDefaultBrush" Color="#C9CEC7" />
+  <Color x:Key="FxcBorderSubtle">#DFE2DD</Color>
+  <SolidColorBrush x:Key="FxcBorderSubtleBrush" Color="#DFE2DD" />
+  <Color x:Key="FxcBorderStrong">#9AA29A</Color>
+  <SolidColorBrush x:Key="FxcBorderStrongBrush" Color="#9AA29A" />
+  <Color x:Key="FxcBorderFocus">#0F7B6C</Color>
+  <SolidColorBrush x:Key="FxcBorderFocusBrush" Color="#0F7B6C" />
+  <Color x:Key="FxcShadowPopup">#33000000</Color>
+  <SolidColorBrush x:Key="FxcShadowPopupBrush" Color="#33000000" />
+
+  <!-- 2.2 Text and icons -->
+  <Color x:Key="FxcTextPrimary">#1C211E</Color>
+  <SolidColorBrush x:Key="FxcTextPrimaryBrush" Color="#1C211E" />
+  <Color x:Key="FxcTextSecondary">#515A54</Color>
+  <SolidColorBrush x:Key="FxcTextSecondaryBrush" Color="#515A54" />
+  <Color x:Key="FxcTextTertiary">#737D76</Color>
+  <SolidColorBrush x:Key="FxcTextTertiaryBrush" Color="#737D76" />
+  <Color x:Key="FxcTextDisabled">#9AA29A</Color>
+  <SolidColorBrush x:Key="FxcTextDisabledBrush" Color="#9AA29A" />
+  <Color x:Key="FxcTextOnAccent">#FFFFFF</Color>
+  <SolidColorBrush x:Key="FxcTextOnAccentBrush" Color="#FFFFFF" />
+  <Color x:Key="FxcTextLink">#0C6B5E</Color>
+  <SolidColorBrush x:Key="FxcTextLinkBrush" Color="#0C6B5E" />
+
+  <!-- 2.3 Accent -->
+  <Color x:Key="FxcAccentDefault">#0F7B6C</Color>
+  <SolidColorBrush x:Key="FxcAccentDefaultBrush" Color="#0F7B6C" />
+  <Color x:Key="FxcAccentHover">#0C6B5E</Color>
+  <SolidColorBrush x:Key="FxcAccentHoverBrush" Color="#0C6B5E" />
+  <Color x:Key="FxcAccentPressed">#095A4F</Color>
+  <SolidColorBrush x:Key="FxcAccentPressedBrush" Color="#095A4F" />
+  <Color x:Key="FxcAccentSubtle">#E3F2EF</Color>
+  <SolidColorBrush x:Key="FxcAccentSubtleBrush" Color="#E3F2EF" />
+
+  <!-- 2.4 Meaning colors -->
+  <Color x:Key="FxcStatusError">#B3261E</Color>
+  <SolidColorBrush x:Key="FxcStatusErrorBrush" Color="#B3261E" />
+  <Color x:Key="FxcStatusErrorBg">#FBE9E7</Color>
+  <SolidColorBrush x:Key="FxcStatusErrorBgBrush" Color="#FBE9E7" />
+  <Color x:Key="FxcStatusWarning">#8A5A00</Color>
+  <SolidColorBrush x:Key="FxcStatusWarningBrush" Color="#8A5A00" />
+  <Color x:Key="FxcStatusWarningBg">#FFF4D6</Color>
+  <SolidColorBrush x:Key="FxcStatusWarningBgBrush" Color="#FFF4D6" />
+  <Color x:Key="FxcStatusInfo">#1E5FA8</Color>
+  <SolidColorBrush x:Key="FxcStatusInfoBrush" Color="#1E5FA8" />
+  <Color x:Key="FxcStatusInfoBg">#E6F0FA</Color>
+  <SolidColorBrush x:Key="FxcStatusInfoBgBrush" Color="#E6F0FA" />
+  <Color x:Key="FxcStatusSuccess">#2E7D32</Color>
+  <SolidColorBrush x:Key="FxcStatusSuccessBrush" Color="#2E7D32" />
+  <Color x:Key="FxcStatusSuccessBg">#E7F4E8</Color>
+  <SolidColorBrush x:Key="FxcStatusSuccessBgBrush" Color="#E7F4E8" />
+  <Color x:Key="FxcStatusHint">#6B4FA0</Color>
+  <SolidColorBrush x:Key="FxcStatusHintBrush" Color="#6B4FA0" />
+  <Color x:Key="FxcStatusHintBg">#EFEAF7</Color>
+  <SolidColorBrush x:Key="FxcStatusHintBgBrush" Color="#EFEAF7" />
+
+  <!-- 2.5 State-specific chrome -->
+  <Color x:Key="FxcStatusbarIdleBg">#F3F4F2</Color>
+  <SolidColorBrush x:Key="FxcStatusbarIdleBgBrush" Color="#F3F4F2" />
+  <Color x:Key="FxcStatusbarBuildingBg">#E6F0FA</Color>
+  <SolidColorBrush x:Key="FxcStatusbarBuildingBgBrush" Color="#E6F0FA" />
+  <Color x:Key="FxcStatusbarRunningBg">#E7F4E8</Color>
+  <SolidColorBrush x:Key="FxcStatusbarRunningBgBrush" Color="#E7F4E8" />
+  <Color x:Key="FxcStatusbarDebuggingBg">#FFF4D6</Color>
+  <SolidColorBrush x:Key="FxcStatusbarDebuggingBgBrush" Color="#FFF4D6" />
+  <Color x:Key="FxcStatusbarFg">#1C211E</Color>
+  <SolidColorBrush x:Key="FxcStatusbarFgBrush" Color="#1C211E" />
+  <Color x:Key="FxcTabActiveIndicator">#0F7B6C</Color>
+  <SolidColorBrush x:Key="FxcTabActiveIndicatorBrush" Color="#0F7B6C" />
+  <Color x:Key="FxcTabModifiedDot">#8A5A00</Color>
+  <SolidColorBrush x:Key="FxcTabModifiedDotBrush" Color="#8A5A00" />
+  <Color x:Key="FxcScrollbarThumb">#B4BAB3</Color>
+  <SolidColorBrush x:Key="FxcScrollbarThumbBrush" Color="#B4BAB3" />
+  <Color x:Key="FxcScrollbarThumbHover">#9AA29A</Color>
+  <SolidColorBrush x:Key="FxcScrollbarThumbHoverBrush" Color="#9AA29A" />
+  <Color x:Key="FxcSplitterHover">#0F7B6C</Color>
+  <SolidColorBrush x:Key="FxcSplitterHoverBrush" Color="#0F7B6C" />
+
+  <!-- 3.1 Syntax token classes -->
+  <Color x:Key="FxcSyntaxText">#1C211E</Color>
+  <SolidColorBrush x:Key="FxcSyntaxTextBrush" Color="#1C211E" />
+  <Color x:Key="FxcSyntaxKeyword">#0B5C8A</Color>
+  <SolidColorBrush x:Key="FxcSyntaxKeywordBrush" Color="#0B5C8A" />
+  <Color x:Key="FxcSyntaxString">#A0431A</Color>
+  <SolidColorBrush x:Key="FxcSyntaxStringBrush" Color="#A0431A" />
+  <Color x:Key="FxcSyntaxChar">#A82A64</Color>
+  <SolidColorBrush x:Key="FxcSyntaxCharBrush" Color="#A82A64" />
+  <Color x:Key="FxcSyntaxNumber">#6F45A8</Color>
+  <SolidColorBrush x:Key="FxcSyntaxNumberBrush" Color="#6F45A8" />
+  <Color x:Key="FxcSyntaxComment">#5E6E63</Color>
+  <SolidColorBrush x:Key="FxcSyntaxCommentBrush" Color="#5E6E63" />
+  <Color x:Key="FxcSyntaxDirective">#8A5A00</Color>
+  <SolidColorBrush x:Key="FxcSyntaxDirectiveBrush" Color="#8A5A00" />
+  <Color x:Key="FxcSyntaxSymbol">#3B4440</Color>
+  <SolidColorBrush x:Key="FxcSyntaxSymbolBrush" Color="#3B4440" />
+  <Color x:Key="FxcSyntaxType">#0C6B5E</Color>
+  <SolidColorBrush x:Key="FxcSyntaxTypeBrush" Color="#0C6B5E" />
+  <Color x:Key="FxcSyntaxConstant">#6F45A8</Color>
+  <SolidColorBrush x:Key="FxcSyntaxConstantBrush" Color="#6F45A8" />
+  <Color x:Key="FxcSyntaxRoutine">#1C211E</Color>
+  <SolidColorBrush x:Key="FxcSyntaxRoutineBrush" Color="#1C211E" />
+  <Color x:Key="FxcSyntaxLabel">#8A5A00</Color>
+  <SolidColorBrush x:Key="FxcSyntaxLabelBrush" Color="#8A5A00" />
+  <Color x:Key="FxcSyntaxAsm">#515A54</Color>
+  <SolidColorBrush x:Key="FxcSyntaxAsmBrush" Color="#515A54" />
+  <Color x:Key="FxcSyntaxAttribute">#6B4FA0</Color>
+  <SolidColorBrush x:Key="FxcSyntaxAttributeBrush" Color="#6B4FA0" />
+  <Color x:Key="FxcSyntaxInvalid">#B3261E</Color>
+  <SolidColorBrush x:Key="FxcSyntaxInvalidBrush" Color="#B3261E" />
+  <Color x:Key="FxcSyntaxInactive">#6F7972</Color>
+  <SolidColorBrush x:Key="FxcSyntaxInactiveBrush" Color="#6F7972" />
+
+  <!-- 3.2 Editor decorations -->
+  <Color x:Key="FxcEditorCurrentLineBg">#F2F6F4</Color>
+  <SolidColorBrush x:Key="FxcEditorCurrentLineBgBrush" Color="#F2F6F4" />
+  <Color x:Key="FxcEditorCurrentLineBorder">#DFE2DD</Color>
+  <SolidColorBrush x:Key="FxcEditorCurrentLineBorderBrush" Color="#DFE2DD" />
+  <Color x:Key="FxcEditorSelectionBg">#BFE3DC</Color>
+  <SolidColorBrush x:Key="FxcEditorSelectionBgBrush" Color="#BFE3DC" />
+  <Color x:Key="FxcEditorSelectionInactiveBg">#E1E4DF</Color>
+  <SolidColorBrush x:Key="FxcEditorSelectionInactiveBgBrush" Color="#E1E4DF" />
+  <Color x:Key="FxcEditorCaret">#1C211E</Color>
+  <SolidColorBrush x:Key="FxcEditorCaretBrush" Color="#1C211E" />
+  <Color x:Key="FxcEditorLineNumber">#737D76</Color>
+  <SolidColorBrush x:Key="FxcEditorLineNumberBrush" Color="#737D76" />
+  <Color x:Key="FxcEditorLineNumberCurrent">#1C211E</Color>
+  <SolidColorBrush x:Key="FxcEditorLineNumberCurrentBrush" Color="#1C211E" />
+  <Color x:Key="FxcEditorBracketMatchBg">#E3F2EF</Color>
+  <SolidColorBrush x:Key="FxcEditorBracketMatchBgBrush" Color="#E3F2EF" />
+  <Color x:Key="FxcEditorBracketMatchBorder">#0F7B6C</Color>
+  <SolidColorBrush x:Key="FxcEditorBracketMatchBorderBrush" Color="#0F7B6C" />
+  <Color x:Key="FxcEditorWordHighlightBg">#EDEFEA</Color>
+  <SolidColorBrush x:Key="FxcEditorWordHighlightBgBrush" Color="#EDEFEA" />
+  <Color x:Key="FxcEditorFindMatchBg">#FFE9A8</Color>
+  <SolidColorBrush x:Key="FxcEditorFindMatchBgBrush" Color="#FFE9A8" />
+  <Color x:Key="FxcEditorFindMatchCurrentBg">#FFCB57</Color>
+  <SolidColorBrush x:Key="FxcEditorFindMatchCurrentBgBrush" Color="#FFCB57" />
+  <Color x:Key="FxcEditorIndentGuide">#E4E8E3</Color>
+  <SolidColorBrush x:Key="FxcEditorIndentGuideBrush" Color="#E4E8E3" />
+  <Color x:Key="FxcEditorIndentGuideActive">#B4BAB3</Color>
+  <SolidColorBrush x:Key="FxcEditorIndentGuideActiveBrush" Color="#B4BAB3" />
+  <Color x:Key="FxcEditorWhitespace">#C9CEC7</Color>
+  <SolidColorBrush x:Key="FxcEditorWhitespaceBrush" Color="#C9CEC7" />
+  <Color x:Key="FxcEditorFoldMarker">#737D76</Color>
+  <SolidColorBrush x:Key="FxcEditorFoldMarkerBrush" Color="#737D76" />
+  <Color x:Key="FxcEditorFoldedTextBg">#ECEEEB</Color>
+  <SolidColorBrush x:Key="FxcEditorFoldedTextBgBrush" Color="#ECEEEB" />
+  <Color x:Key="FxcEditorChangeBarModified">#C28A00</Color>
+  <SolidColorBrush x:Key="FxcEditorChangeBarModifiedBrush" Color="#C28A00" />
+  <Color x:Key="FxcEditorChangeBarSaved">#2E7D32</Color>
+  <SolidColorBrush x:Key="FxcEditorChangeBarSavedBrush" Color="#2E7D32" />
+  <Color x:Key="FxcEditorBreakpoint">#C23A31</Color>
+  <SolidColorBrush x:Key="FxcEditorBreakpointBrush" Color="#C23A31" />
+  <Color x:Key="FxcEditorBreakpointDisabled">#9AA29A</Color>
+  <SolidColorBrush x:Key="FxcEditorBreakpointDisabledBrush" Color="#9AA29A" />
+  <Color x:Key="FxcEditorBreakpointLineBg">#FBE9E7</Color>
+  <SolidColorBrush x:Key="FxcEditorBreakpointLineBgBrush" Color="#FBE9E7" />
+  <Color x:Key="FxcEditorExecution">#C28A00</Color>
+  <SolidColorBrush x:Key="FxcEditorExecutionBrush" Color="#C28A00" />
+  <Color x:Key="FxcEditorExecutionLineBg">#FFF1C2</Color>
+  <SolidColorBrush x:Key="FxcEditorExecutionLineBgBrush" Color="#FFF1C2" />
+  <Color x:Key="FxcEditorCallFrameLineBg">#E7F4E8</Color>
+  <SolidColorBrush x:Key="FxcEditorCallFrameLineBgBrush" Color="#E7F4E8" />
+  <Color x:Key="FxcEditorBookmark">#1E5FA8</Color>
+  <SolidColorBrush x:Key="FxcEditorBookmarkBrush" Color="#1E5FA8" />
+  <Color x:Key="FxcEditorSquiggleError">#B3261E</Color>
+  <SolidColorBrush x:Key="FxcEditorSquiggleErrorBrush" Color="#B3261E" />
+  <Color x:Key="FxcEditorSquiggleWarning">#8A5A00</Color>
+  <SolidColorBrush x:Key="FxcEditorSquiggleWarningBrush" Color="#8A5A00" />
+  <Color x:Key="FxcEditorSquiggleHint">#6B4FA0</Color>
+  <SolidColorBrush x:Key="FxcEditorSquiggleHintBrush" Color="#6B4FA0" />
+  <Color x:Key="FxcEditorRuler">#ECEEEB</Color>
+  <SolidColorBrush x:Key="FxcEditorRulerBrush" Color="#ECEEEB" />
+
+  <!-- 3.3 Designer colors -->
+  <Color x:Key="FxcDesignerBackdrop">#E9EBE7</Color>
+  <SolidColorBrush x:Key="FxcDesignerBackdropBrush" Color="#E9EBE7" />
+  <Color x:Key="FxcDesignerGridDot">#9AA29A</Color>
+  <SolidColorBrush x:Key="FxcDesignerGridDotBrush" Color="#9AA29A" />
+  <Color x:Key="FxcDesignerHandleFill">#FFFFFF</Color>
+  <SolidColorBrush x:Key="FxcDesignerHandleFillBrush" Color="#FFFFFF" />
+  <Color x:Key="FxcDesignerHandleBorder">#0F7B6C</Color>
+  <SolidColorBrush x:Key="FxcDesignerHandleBorderBrush" Color="#0F7B6C" />
+  <Color x:Key="FxcDesignerHandleSecondary">#737D76</Color>
+  <SolidColorBrush x:Key="FxcDesignerHandleSecondaryBrush" Color="#737D76" />
+  <Color x:Key="FxcDesignerHandleLocked">#B3261E</Color>
+  <SolidColorBrush x:Key="FxcDesignerHandleLockedBrush" Color="#B3261E" />
+  <Color x:Key="FxcDesignerGuidelineEdge">#D0306F</Color>
+  <SolidColorBrush x:Key="FxcDesignerGuidelineEdgeBrush" Color="#D0306F" />
+  <Color x:Key="FxcDesignerGuidelineBaseline">#1E5FA8</Color>
+  <SolidColorBrush x:Key="FxcDesignerGuidelineBaselineBrush" Color="#1E5FA8" />
+  <Color x:Key="FxcDesignerGuidelineMargin">#C28A00</Color>
+  <SolidColorBrush x:Key="FxcDesignerGuidelineMarginBrush" Color="#C28A00" />
+  <Color x:Key="FxcDesignerRubberbandBorder">#0F7B6C</Color>
+  <SolidColorBrush x:Key="FxcDesignerRubberbandBorderBrush" Color="#0F7B6C" />
+  <Color x:Key="FxcDesignerRubberbandFill">#220F7B6C</Color>
+  <SolidColorBrush x:Key="FxcDesignerRubberbandFillBrush" Color="#220F7B6C" />
+  <Color x:Key="FxcDesignerTaborderBadgeBg">#1E5FA8</Color>
+  <SolidColorBrush x:Key="FxcDesignerTaborderBadgeBgBrush" Color="#1E5FA8" />
+  <Color x:Key="FxcDesignerTaborderBadgeFg">#FFFFFF</Color>
+  <SolidColorBrush x:Key="FxcDesignerTaborderBadgeFgBrush" Color="#FFFFFF" />
+  <Color x:Key="FxcDesignerDroptarget">#0F7B6C</Color>
+  <SolidColorBrush x:Key="FxcDesignerDroptargetBrush" Color="#0F7B6C" />
+</ResourceDictionary>

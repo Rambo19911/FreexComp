@@ -133,7 +133,7 @@ public static class SettingsCatalog
         ("syntax.asm", "#515A54", "#A9B2AC", "regular"),
         ("syntax.attribute", "#6B4FA0", "#B9A3E3", "regular"),
         ("syntax.invalid", "#B3261E", "#F2867E", "regular"),
-        ("syntax.inactive", "#737D76", "#838E87", "regular"),
+        ("syntax.inactive", "#6F7972", "#838E87", "regular"),
         ("editor.currentLine.bg", "#F2F6F4", "#1E2321", null),
         ("editor.currentLine.border", "#DFE2DD", "#2D3330", null),
         ("editor.selection.bg", "#BFE3DC", "#245A52", null),
