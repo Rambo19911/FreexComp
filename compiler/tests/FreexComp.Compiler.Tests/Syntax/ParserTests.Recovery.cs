@@ -172,13 +172,16 @@ public sealed partial class ParserTests
     [InlineData("const C = ", "(", 20000, "1);")]
     [InlineData("var L: ", "TList<", 5000, "Integer; begin end.")]
     [InlineData("", "procedure P; ", 5000, "begin end.")]
-    public void Recovery_DeepNesting_GivesUpTheRestOfTheFileInsteadOfCrashing(string prefix, string repeated, int count, string suffix)
+    public void Recovery_DeepNesting_ReportsE1120(string prefix, string repeated, int count, string suffix)
     {
         var text = prefix + string.Concat(Enumerable.Repeat(repeated, count)) + suffix;
 
         var tree = AssertCompleteTree(text);
 
-        Assert.Contains(tree.Diagnostics, d => d.Code == "E1100");
+        // The rest of the file is given up with exactly one E1120 (C-170); no E1100 for the abandoned tokens.
+        var nesting = Assert.Single(tree.Diagnostics, d => d.Code == "E1120");
+        Assert.Equal("Nesting too deep", nesting.Message);
+        Assert.DoesNotContain(tree.Diagnostics, d => d.Code == "E1100");
     }
 
     private static SyntaxTree AssertCompleteTree(string text)

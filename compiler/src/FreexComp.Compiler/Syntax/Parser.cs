@@ -2395,7 +2395,7 @@ internal sealed class Parser
     /// </summary>
     private bool TooDeep() => _depth >= MaxDepth || !RuntimeHelpers.TryEnsureSufficientExecutionStack();
 
-    /// <summary>E1100 at the current token, then every remaining token becomes skipped trivia of the end-of-file token.</summary>
+    /// <summary>E1120 at the current token, then every remaining token becomes skipped trivia of the end-of-file token.</summary>
     private void AbandonRest()
     {
         if (CurrentKind == SyntaxKind.EndOfFileToken)
@@ -2403,7 +2403,7 @@ internal sealed class Parser
             return;
         }
 
-        ReportAt(Current, "E1100", Current.Text);
+        ReportAt(Current, "E1120");
         while (CurrentKind != SyntaxKind.EndOfFileToken)
         {
             SkipToken(report: false);

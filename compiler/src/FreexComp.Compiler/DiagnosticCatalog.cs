@@ -50,6 +50,7 @@ public static class DiagnosticCatalog
         new("E1117", null, DiagnosticSeverity.Error, "Label expected"),
         new("E1118", null, DiagnosticSeverity.Error, "Property specifier expected but '%s' found"),
         new("E1119", null, DiagnosticSeverity.Error, "Invalid attribute syntax"),
+        new("E1120", null, DiagnosticSeverity.Error, "Nesting too deep"),
         new("E1199", null, DiagnosticSeverity.Error, "Too many syntax errors"),
         new("E1200", null, DiagnosticSeverity.Error, "Unterminated conditional directive"),
         new("E1201", null, DiagnosticSeverity.Error, "Unexpected '%s' directive without matching {$IF…}"),
