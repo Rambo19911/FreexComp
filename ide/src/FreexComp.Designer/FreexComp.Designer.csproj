@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- IDE-ARCH-001: no Avalonia, AvaloniaEdit or Dock reference in this project. -->
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Designer</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FreexComp.Designer.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\compiler\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
+  </ItemGroup>
+</Project>

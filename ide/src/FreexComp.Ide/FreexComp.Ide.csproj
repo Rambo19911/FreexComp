@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>FreexComp.Ide</RootNamespace>
+    <ApplicationIcon>..\..\..\assets\brand\app.ico</ApplicationIcon>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FreexComp.Ide.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- BR-001: the brand icon, tracked in assets/brand, used for the executable and every window. -->
+    <AvaloniaResource Include="..\..\..\assets\brand\app.ico" Link="Assets\app.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />
+    <ProjectReference Include="..\FreexComp.Designer\FreexComp.Designer.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" />
+    <PackageReference Include="Dock.Avalonia" />
+    <PackageReference Include="Dock.Model.Mvvm" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+</Project>

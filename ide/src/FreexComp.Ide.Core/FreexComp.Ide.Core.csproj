@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- IDE-ARCH-001: no Avalonia, AvaloniaEdit or Dock reference in this project. -->
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Ide.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FreexComp.Ide.Core.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\compiler\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
+    <ProjectReference Include="..\..\..\compiler\src\FreexComp.LanguageService\FreexComp.LanguageService.csproj" />
+    <ProjectReference Include="..\..\..\compiler\src\FreexComp.Build\FreexComp.Build.csproj" />
+    <ProjectReference Include="..\FreexComp.Designer\FreexComp.Designer.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+</Project>

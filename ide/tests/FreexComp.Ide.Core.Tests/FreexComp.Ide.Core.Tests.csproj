@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Ide.Core.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />
+    <ProjectReference Include="..\..\src\FreexComp.Designer\FreexComp.Designer.csproj" />
+  </ItemGroup>
+</Project>
