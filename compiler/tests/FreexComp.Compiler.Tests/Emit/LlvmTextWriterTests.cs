@@ -571,6 +571,27 @@ public sealed class LlvmTextWriterTests
             """), text);
     }
 
+    /// <summary>C-040: external global declarations and constant GEP expressions (CMP-320 string references).</summary>
+    [Fact]
+    [Trait("Req", "CMP-320")]
+    public void Globals_ExternalDeclarationAndConstantGep()
+    {
+        var block = new StructIrType([IrType.I32, new ArrayIrType(2, IrType.I16)]);
+        var text = Write(w =>
+        {
+            w.DeclareGlobal(Pascal("System.Output"), new ArrayIrType(624, IrType.I8), 8);
+            w.DefineGlobal(new(Pascal("U.P"), IrLinkage.Internal, false,
+                new IrGepConstant(block, new IrGlobal(new LinkName(".str.0", false)), [IrIntConstant.I32(0), IrIntConstant.I32(1)]), 8));
+        });
+
+        Assert.Equal(Header + Lines("""
+
+            @"System.Output" = external global [624 x i8], align 8
+            @"U.P" = internal global ptr getelementptr inbounds ({ i32, [2 x i16] }, ptr @.str.0, i32 0, i32 1), align 8
+
+            """), text);
+    }
+
     [Fact]
     public void Global_ReturnsItsAddress() =>
         Assert.Equal(new IrGlobal(Pascal("U.X")), Write2(w => w.DefineGlobal(new(Pascal("U.X"), IrLinkage.External, false, IrIntConstant.I32(0), 4))));

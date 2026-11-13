@@ -69,6 +69,17 @@ public sealed class LoweringTests
         Assert.Equal("b:Byte $tmp1:Byte $tmp2:Byte", Locals(p));
     }
 
+    // ------------------------------------------------------------------ Write/Writeln (CMP-410; C-040)
+
+    [Fact]
+    [Trait("Req", "CMP-410")]
+    public void Writeln_ToOutput_HelperPerArgumentThenLnEndAndIOCheck() =>
+        Assert.Equal(
+            "(block (call _WriteUStr (addr @System.Output) 'ab' 0:Integer) (call _WriteInt (addr @System.Output) (conv Int64 @i) @i) " +
+            "(call _WriteLn (addr @System.Output)) (call _WriteEnd (addr @System.Output)) (call _IOCheck)) " +
+            "(block (call _WriteLn (addr @System.Output)) (call _WriteEnd (addr @System.Output)))",
+            MainBody("i: Integer", "Writeln('ab', i:i); {$I-} Writeln()"));
+
     // ------------------------------------------------------------------ checks (CMP-312, 314; C-039)
 
     [Fact]

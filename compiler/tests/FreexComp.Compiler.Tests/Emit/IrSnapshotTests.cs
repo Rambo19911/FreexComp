@@ -418,8 +418,50 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// CMP-410 <c>Write</c>/<c>Writeln</c> to <c>Output</c> and to <c>Text</c> variables (global, <c>var</c> parameter), integer,
+    /// Boolean, Char and string-constant arguments with and without widths, <c>Writeln()</c>, <c>{$I-}</c>/<c>{$I+}</c>; CMP-320
+    /// literals (shared, first-use order, <c>''</c> = <c>ptr null</c>, non-ASCII as UTF-16 code units).
+    /// </summary>
+    internal const string WritelnSource = """
+        unit M;
+        interface
+        procedure Show(x: Integer; c: Cardinal; b: Boolean; ch: Char);
+        procedure ToFile(var T: Text; n: Int64; u: UInt64);
+        implementation
+        var
+          Log: Text;
+          Flag: LongBool;
+        {$I-}
+        procedure Show(x: Integer; c: Cardinal; b: Boolean; ch: Char);
+        begin
+          Writeln('x=', x:5);
+          Write(c, b:6, ch, ch:3);
+          Writeln();
+          Writeln;
+          Write('');
+          Writeln('Hello', 'x=', 'Hello':x);
+        end;
+        {$I+}
+        procedure ToFile(var T: Text; n: Int64; u: UInt64);
+        var
+          w: Byte;
+          a: AnsiChar;
+          s: ShortInt;
+        begin
+          w := 4;
+          a := 'q';
+          s := -1;
+          Writeln(T, n, ' ', Flag, a:w, s, u);
+          Write(Log, 'Grüße 😀', True);
+          Write(T);
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Writeln"] = WritelnSource,
         ["Checks"] = ChecksSource,
         ["Add"] = AddSource,
         ["ShortCircuit"] = ShortCircuitSource,
@@ -432,6 +474,39 @@ public sealed class IrSnapshotTests
         ["Calls"] = CallsSource,
         ["NestedFrame"] = NestedFrameSource,
     };
+
+    [Fact]
+    [Trait("Req", "CMP-410")]
+    [Trait("Req", "CMP-320")]
+    public void Writeln() => Snapshot.Verify("Writeln", Emit(WritelnSource));
+
+    /// <summary>The CMP-410 example (<c>{$I-}</c>) and the CMP-320 <c>'Hello'</c> block verbatim; <c>{$I+}</c> adds <c>_IOCheck</c>.</summary>
+    [Fact]
+    [Trait("Req", "CMP-410")]
+    [Trait("Req", "CMP-320")]
+    public void Writeln_MatchesTheSpecExamples()
+    {
+        var text = Emit(WritelnSource);
+        const string xEquals = "ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [3 x i16] }, ptr @.str.0, i32 0, i32 5)";
+
+        Assert.Contains(
+            "  call void @\"System._WriteUStr\"(ptr @\"System.Output\", " + xEquals + ", i32 0)\n" +
+            "  %t1 = load i32, ptr %x.addr, align 4\n" +
+            "  %t2 = sext i32 %t1 to i64\n" +
+            "  call void @\"System._WriteInt\"(ptr @\"System.Output\", i64 %t2, i32 5)\n" +
+            "  call void @\"System._WriteLn\"(ptr @\"System.Output\")\n" +
+            "  call void @\"System._WriteEnd\"(ptr @\"System.Output\")\n", text);
+        Assert.Contains(
+            "@.str.1 = private unnamed_addr constant { i32, i32, i16, i16, i32, [6 x i16] } { i32 -1, i32 5, i16 1200, i16 2, i32 0, " +
+            "[6 x i16] [i16 72, i16 101, i16 108, i16 108, i16 111, i16 0] }, align 16\n", text);
+        Assert.Contains("@\"System.Output\" = external global [624 x i8], align 8\n", text);
+        Assert.Contains("call void @\"System._WriteUStr\"(ptr @\"System.Output\", ptr null, i32 0)", text);
+        Assert.Contains("\n@.str.2 = private unnamed_addr constant", text);  // 'x=', 'Hello', 'Grüße 😀': each emitted once
+        Assert.DoesNotContain("@.str.3", text);
+        var show = text[text.IndexOf("@\"M.Show\"", StringComparison.Ordinal)..text.IndexOf("@\"M.ToFile\"", StringComparison.Ordinal)];
+        Assert.DoesNotContain("_IOCheck", show);
+        Assert.Contains("  call void @\"System._WriteEnd\"(ptr %T)\n  call void @\"System._IOCheck\"()\n", text);
+    }
 
     [Fact]
     [Trait("Req", "CMP-314")]

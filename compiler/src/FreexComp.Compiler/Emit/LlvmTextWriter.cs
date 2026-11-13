@@ -57,6 +57,13 @@ internal sealed class LlvmTextWriter : IIrWriter
         return new IrGlobal(global.Name);
     }
 
+    public IrGlobal DeclareGlobal(LinkName name, IrType type, int alignment)
+    {
+        RequireModuleLevel();
+        _globals.Add($"@{Name(name)} = external global {Type(type)}, align {Int(alignment)}");
+        return new IrGlobal(name);
+    }
+
     public IrGlobal DeclareFunction(IrFunctionDeclaration declaration)
     {
         RequireModuleLevel();
@@ -390,6 +397,7 @@ internal sealed class LlvmTextWriter : IIrWriter
         IrZeroConstant => "zeroinitializer",
         IrArrayConstant a => "[" + string.Join(", ", a.Elements.Select(Typed)) + "]",
         IrStructConstant s => Braces(s.StructType.IsPacked, s.Fields.Select(Typed)),
+        IrGepConstant g => $"getelementptr inbounds ({Type(g.SourceType)}, {Typed(g.Base)}{string.Concat(g.Indices.Select(i => ", " + Typed(i)))})",
         _ => throw new ArgumentOutOfRangeException(nameof(value), value, null),
     };
 

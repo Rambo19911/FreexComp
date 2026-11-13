@@ -11,7 +11,8 @@ namespace FreexComp.Compiler.Emit;
 /// skeleton, scalar globals (CMP-341), routines with parameters and locals (CMP-310), integer, Boolean and real
 /// expressions (CMP-312, 315…317), conversions (CMP-305, 313), the always-on division tests of CMP-312, the overflow and
 /// range checks the <see cref="CheckRewriter"/> marked (CMP-312 <c>{$Q+}</c>, CMP-314), control flow
-/// (CMP-318…322), calls (ABI-080…082) and nested routines with frame records and static links (CMP-345). Not yet:
+/// (CMP-318…322), calls (ABI-080…082), nested routines with frame records and static links (CMP-345), UnicodeString
+/// literals (CMP-320) and external System variables (<c>System.Output</c>, CMP-410). Not yet:
 /// program and unit bodies with <c>$init</c>/<c>$final</c>/<c>$main</c> (C-044; they are ignored).
 /// </summary>
 internal static class IrEmitter
@@ -29,12 +30,11 @@ internal static class IrEmitter
         var interfaceMembers = unit.Unit.InterfaceMembers.ToHashSet();
         var module = new ModuleState(writer);
 
-        foreach (var variable in unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers).OfType<VariableSymbol>())
+        // globals are defined after the functions (CMP-301: string literals, found while emitting, come first)
+        var variables = unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers).OfType<VariableSymbol>().ToImmutableArray();
+        foreach (var variable in variables)
         {
-            var layout = TypeLayout.Of(variable.Type);
-            var initializer = variable.Initializer is { } value ? StorageConstant(value, variable.Type) : new IrZeroConstant(layout.StorageType);
-            module.Globals[variable] = writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
-                interfaceMembers.Contains(variable) ? IrLinkage.External : IrLinkage.Internal, IsConstant: false, initializer, layout.Alignment));
+            module.Globals[variable] = new IrGlobal(Mangler.GlobalVariable(variable));
         }
 
         // CMP-345 frame record types, in definition order (CMP-301: named struct types first)
@@ -55,6 +55,25 @@ internal static class IrEmitter
             var linkage = !routine.IsNested && interfaceMembers.Contains(routine) ? IrLinkage.External : IrLinkage.Internal;
             new FunctionEmitter(module, body, linkage).Emit();
             module.DeclarePending();
+        }
+
+        foreach (var (name, literal) in module.StringLiterals)
+        {
+            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, literal, Alignment: 16, UnnamedAddr: true));
+        }
+
+        foreach (var variable in variables)
+        {
+            var layout = TypeLayout.Of(variable.Type);
+            var initializer = variable.Initializer is { } value ? StorageConstant(value, variable.Type) : new IrZeroConstant(layout.StorageType);
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
+                interfaceMembers.Contains(variable) ? IrLinkage.External : IrLinkage.Internal, IsConstant: false, initializer, layout.Alignment));
+        }
+
+        foreach (var external in module.ExternalVariables)
+        {
+            var layout = TypeLayout.Of(external.Type);
+            writer.DeclareGlobal(external.LinkName, layout.StorageType, layout.Alignment);
         }
 
         writer.DefineAttributeGroup(RoutineGroup, [IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
@@ -137,6 +156,54 @@ internal sealed class ModuleState(IIrWriter writer)
             : new IrGlobal(Mangler.Routine(routine));
 
     public bool UsesNoReturn { get; private set; }
+
+    private readonly Dictionary<string, IrConstant> _literalReferences = new(StringComparer.Ordinal);
+    private readonly SortedDictionary<string, RuntimeVariable> _externals = new(StringComparer.Ordinal);
+
+    /// <summary>The literal blocks <c>@.str.N</c> in first-use order (CMP-301, 320).</summary>
+    public List<(LinkName Name, IrStructConstant Block)> StringLiterals { get; } = [];
+
+    /// <summary>System variables used but not defined in this unit, sorted by link name.</summary>
+    public IEnumerable<RuntimeVariable> ExternalVariables => _externals.Values;
+
+    /// <summary>
+    /// CMP-320: the reference to the UnicodeString literal <paramref name="text"/> — a GEP to the payload of its
+    /// <c>{ i32 -1, i32 Length, i16 1200, i16 2, i32 0, [Length+1 x i16] }</c> block, one block per distinct text — or
+    /// <c>ptr null</c> for <c>''</c>.
+    /// </summary>
+    public IrConstant StringLiteral(string text)
+    {
+        if (text.Length == 0)
+        {
+            return new IrNullConstant();
+        }
+
+        if (!_literalReferences.TryGetValue(text, out var reference))
+        {
+            var payloadType = new ArrayIrType(text.Length + 1, IrType.I16);
+            var type = new StructIrType([IrType.I32, IrType.I32, IrType.I16, IrType.I16, IrType.I32, payloadType]);
+            var payload = new IrArrayConstant(payloadType, [.. text.Select(c => (IrConstant)new IrIntConstant(IrType.I16, c)), new IrIntConstant(IrType.I16, 0)]);
+            var name = Mangler.StringLiteral(StringLiterals.Count);
+            StringLiterals.Add((name, new IrStructConstant(type,
+                [IrIntConstant.I32(-1), IrIntConstant.I32(text.Length), new IrIntConstant(IrType.I16, 1200), new IrIntConstant(IrType.I16, 2), IrIntConstant.I32(0), payload])));
+            reference = new IrGepConstant(type, new IrGlobal(name), [IrIntConstant.I32(0), IrIntConstant.I32(5)]);
+            _literalReferences.Add(text, reference);
+        }
+
+        return reference;
+    }
+
+    /// <summary>The address of a System variable: this unit's own global when it defines it (unit System), else an external one.</summary>
+    public IrGlobal RuntimeVariable(RuntimeVariable variable)
+    {
+        if (Globals.Values.FirstOrDefault(g => g.Name.Text == variable.LinkName.Text) is { } own)
+        {
+            return own;
+        }
+
+        _externals.TryAdd(variable.LinkName.Text, variable);
+        return new IrGlobal(variable.LinkName);
+    }
 
     /// <summary>Declarations requested inside functions; the writer takes them at module level (<see cref="DeclarePending"/>).</summary>
     private readonly List<IrFunctionDeclaration> _pending = [];
@@ -560,6 +627,7 @@ internal sealed class FunctionEmitter
     {
         LLocalRef local => _locals[local.Local],
         LGlobalRef global => _module.Globals[global.Variable],
+        LRuntimeVariableRef runtime => _module.RuntimeVariable(runtime.Variable),
         LParamRef parameter => _parameterAddresses[parameter.Parameter],
         LOuterRef outer => OuterAddress(outer),
         _ => throw new InvalidOperationException($"{variable.GetType().Name} is not a variable reference."),
@@ -652,8 +720,10 @@ internal sealed class FunctionEmitter
         {
             case LConst constant:
                 return IrEmitter.ValueConstant(constant.Value, constant.Type);
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef:
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef:
                 return Load(Address(expression), expression.Type);
+            case LStringLiteral { Type: StringTypeSymbol { Variant: StringVariant.Unicode } } literal:
+                return _module.StringLiteral(literal.Value);
             case LAddrOf addressOf:
                 return Address(addressOf.Variable);
             case LTemp temp:

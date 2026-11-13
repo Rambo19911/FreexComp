@@ -10,9 +10,10 @@ namespace FreexComp.Compiler.Lowering;
 /// <summary>
 /// Bound trees of one unit → lowered trees (architecture.md §3.2, CMP-116). The input must be free of binder errors
 /// (the lowerer reports nothing; it throws on error nodes). This skeleton translates the M2.1 statement and expression
-/// set; the structured statements and intrinsics are delegated to <see cref="ForRewriter"/>, <see cref="CaseRewriter"/>
-/// and <see cref="IntrinsicRewriter"/>. Variables of enclosing routines become <see cref="LOuterRef"/>; their owner gets a
-/// <see cref="LoweredFrame"/> (CMP-345); range and overflow checks come from <see cref="CheckRewriter"/>. Not yet: <c>Write</c>/<c>Writeln</c> (C-040, throws <see cref="NotSupportedException"/>).
+/// set; the structured statements and intrinsics are delegated to <see cref="ForRewriter"/>, <see cref="CaseRewriter"/>,
+/// <see cref="IntrinsicRewriter"/> and <see cref="WriteRewriter"/>. Variables of enclosing routines become <see cref="LOuterRef"/>;
+/// their owner gets a <see cref="LoweredFrame"/> (CMP-345); range and overflow checks come from <see cref="CheckRewriter"/>.
+/// String constants become <see cref="LStringLiteral"/> (CMP-320).
 /// </summary>
 internal static class Lowerer
 {
@@ -185,8 +186,8 @@ internal sealed class LoweringContext
                 return new LCallStatement(new LRoutineCallee(call.Routine), Arguments(call.Routine, call.Arguments));
             case BoundIntrinsicCallStatement intrinsic:
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
-            case BoundWriteStatement:
-                throw new NotSupportedException("Write/Writeln lowering arrives with C-040.");
+            case BoundWriteStatement write:
+                return WriteRewriter.Rewrite(this, write);
             default:
                 throw new InvalidOperationException($"Cannot lower {statement.Kind}.");
         }
@@ -203,7 +204,7 @@ internal sealed class LoweringContext
 
         if (expression.ConstantValue is { } constant)
         {
-            return new LConst(constant, expression.Type);
+            return constant.Value is string text ? new LStringLiteral(text, expression.Type) : new LConst(constant, expression.Type);
         }
 
         switch (expression)

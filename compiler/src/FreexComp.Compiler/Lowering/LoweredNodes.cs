@@ -67,6 +67,12 @@ internal sealed record RuntimeHelper(string Name, ImmutableArray<TypeSymbol> Par
     public LinkName LinkName => Mangler.RuntimeHelper(Name);
 }
 
+/// <summary>A variable of unit System referenced by lowered code (<c>Output</c>, CMP-410); declared <c>external</c> outside System.</summary>
+internal sealed record RuntimeVariable(string Name, TypeSymbol Type)
+{
+    public LinkName LinkName => Mangler.SystemVariable(Name);
+}
+
 /// <summary>What an <see cref="LCall"/> / <see cref="LCallStatement"/> calls.</summary>
 internal abstract record LCallee
 {
@@ -189,6 +195,18 @@ internal sealed class LLocalRef(LLocal local) : LExpression(local.Type)
 internal sealed class LGlobalRef(VariableSymbol variable) : LExpression(variable.Type)
 {
     public VariableSymbol Variable { get; } = variable;
+}
+
+/// <summary>A variable of unit System (<see cref="RuntimeVariable"/>), a variable reference like <see cref="LGlobalRef"/>.</summary>
+internal sealed class LRuntimeVariableRef(RuntimeVariable variable) : LExpression(variable.Type)
+{
+    public RuntimeVariable Variable { get; } = variable;
+}
+
+/// <summary>A string constant (CMP-320): a reference to the module's literal block, or <c>nil</c> for <c>''</c>.</summary>
+internal sealed class LStringLiteral(string value, TypeSymbol type) : LExpression(type)
+{
+    public string Value { get; } = value;
 }
 
 /// <summary>A parameter of the current routine; for <c>var</c>/<c>out</c> parameters the variable it refers to.</summary>

@@ -43,5 +43,10 @@ internal sealed record IrArrayConstant(ArrayIrType ArrayType, ImmutableArray<IrC
 /// <summary><c>{ T1 a, T2 b }</c>.</summary>
 internal sealed record IrStructConstant(StructIrType StructType, ImmutableArray<IrConstant> Fields) : IrConstant(StructType);
 
+/// <summary>
+/// The constant expression <c>getelementptr inbounds (SourceType, ptr @Base, indices…)</c> (CMP-320 string references).
+/// </summary>
+internal sealed record IrGepConstant(IrType SourceType, IrGlobal Base, ImmutableArray<IrIntConstant> Indices) : IrConstant(IrType.Ptr);
+
 /// <summary>A basic block label (CMP-303: <c>&lt;kind&gt;.&lt;N&gt;</c>, numbered by the emitter).</summary>
 internal sealed record IrBlock(string Name);

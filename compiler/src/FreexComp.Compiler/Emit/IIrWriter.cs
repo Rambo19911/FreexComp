@@ -52,6 +52,9 @@ internal interface IIrWriter
 
     IrGlobal DefineGlobal(IrGlobalDefinition global);
 
+    /// <summary><c>@Name = external global Type, align N</c>: a variable defined in another module (in the globals section, call order).</summary>
+    IrGlobal DeclareGlobal(LinkName name, IrType type, int alignment);
+
     IrGlobal DeclareFunction(IrFunctionDeclaration declaration);
 
     /// <summary><c>attributes #id = { … }</c>.</summary>
