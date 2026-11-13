@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.LanguageService</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FreexComp.Compiler\FreexComp.Compiler.csproj" />
+  </ItemGroup>
+</Project>

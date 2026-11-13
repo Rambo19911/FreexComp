@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Compiler.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
+  </ItemGroup>
+</Project>
