@@ -8,6 +8,7 @@ namespace FreexComp.Compiler.Binding;
 internal sealed class DiagnosticBag
 {
     private readonly List<Diagnostic> _diagnostics = [];
+    private readonly HashSet<string> _undeclared = new(IdentifierComparer.Instance);
 
     public int Count => _diagnostics.Count;
 
@@ -16,6 +17,24 @@ internal sealed class DiagnosticBag
 
     public void Report(SyntaxNode node, string code, params object[] args) =>
         _diagnostics.Add(Diagnostic.Create(code, LocationOf(node), args));
+
+    /// <summary>E2003, at most once per distinct name (CMP-507; the unit level counts as one routine).</summary>
+    public void ReportUndeclared(SyntaxNode node, string name)
+    {
+        if (_undeclared.Add(name))
+        {
+            Report(node, "E2003", name);
+        }
+    }
+
+    /// <summary>E2004 with the previous declaration as related location (CMP-508).</summary>
+    public void ReportRedeclared(SyntaxToken identifier, string name, Symbols.Symbol previous)
+    {
+        var diagnostic = Diagnostic.Create("E2004", LocationOf(identifier), name);
+        _diagnostics.Add(previous.Locations.IsEmpty
+            ? diagnostic
+            : diagnostic with { Related = [new RelatedLocation(previous.Locations[0], "previous declaration")] });
+    }
 
     public ImmutableArray<Diagnostic> ToImmutable() => [.. _diagnostics];
 

@@ -1,0 +1,35 @@
+# Binder diagnostic cases (testing.md §3, BinderDiagnosticTests).
+# A case starts with "=== CODE line,col" (1-based position of the expected diagnostic); the snippet is every
+# following line up to the next "===" line or the end of the file. The snippet must parse without syntax errors and
+# give exactly this one diagnostic. Lines starting with "#" before the first case are comments.
+
+=== E2002 1,21
+const C = 1; var X: C; begin end.
+=== E2002 1,20
+var A: Integer; B: A; begin end.
+=== E2002 1,8
+var X: True; begin end.
+=== E2002 1,27
+var Integer: Byte; var Y: Integer; begin end.
+=== E2003 1,8
+var X: Missing; begin end.
+=== E2003 1,11
+const C = Missing + 1; begin end.
+=== E2003 1,26
+unit U; interface var X: TFoo; implementation end.
+=== E2003 1,8
+var A: Foo; B: Foo; begin end.
+=== E2004 1,17
+var A: Integer; A: Byte; begin end.
+=== E2004 1,8
+var A, a: Integer; begin end.
+=== E2004 1,18
+const A = 1; var A: Integer; begin end.
+=== E2004 1,54
+unit U; interface var X: Integer; implementation var X: Byte; end.
+=== E2004 3,3
+var
+  A: Integer;
+  A: Integer;
+begin
+end.

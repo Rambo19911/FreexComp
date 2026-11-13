@@ -118,7 +118,7 @@ internal sealed class ConstantFolder
         var symbol = _scope.Lookup(text);
         if (symbol is null)
         {
-            _diagnostics.Report(name, "E2003", text);
+            _diagnostics.ReportUndeclared(name, text);
         }
 
         return symbol;
