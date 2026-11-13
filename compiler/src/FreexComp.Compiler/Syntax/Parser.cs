@@ -410,31 +410,380 @@ internal sealed class Parser
     // ------------------------------------------------------------------ grammar.md §3: types
 
     /// <summary>
-    /// <c>type</c>. Type identifiers and <c>string [ "[" constExpr "]" ]</c> so far (C-014 adds the rest); anything else
-    /// is E1106 and a missing named type.
+    /// <c>type</c> (grammar.md §3). Class, interface and helper types follow with C-018; anything that cannot start a
+    /// type is E1106 and a missing named type.
     /// </summary>
     private TypeSyntax ParseType()
     {
         switch (CurrentKind)
         {
-            case SyntaxKind.IdentifierToken:
+            case SyntaxKind.IdentifierToken when IsContextual(Current, SyntaxKind.ReferenceKeyword) && Peek(1).Kind == SyntaxKind.ToKeyword:
+                return ParseProceduralType();
+            case SyntaxKind.IdentifierToken when !NameContinuesAsExpression():
                 return new NamedTypeSyntax(ParseQualifiedName());
             case SyntaxKind.StringKeyword:
-                var keyword = Take();
-                if (CurrentKind != SyntaxKind.OpenBracketToken)
-                {
-                    return new StringTypeSyntax(keyword, null, null, null);
-                }
-
-                var open = Take();
-                var length = ParseExpression();
-                return new StringTypeSyntax(keyword, open, length, Expect(SyntaxKind.CloseBracketToken));
+                return ParseStringType();
+            case SyntaxKind.OpenParenToken:
+                return ParseEnumType();
+            case SyntaxKind.CaretToken:
+                var caret = Take();
+                return new PointerTypeSyntax(caret, ParseNamedType());
+            case SyntaxKind.PackedKeyword when Peek(1).Kind is SyntaxKind.ArrayKeyword or SyntaxKind.RecordKeyword
+                or SyntaxKind.SetKeyword or SyntaxKind.FileKeyword:
+                return ParseStructuredType(Take());
+            case SyntaxKind.PackedKeyword:
+                // E1106 at the token after 'packed'; 'packed' becomes skipped text, then whatever type follows
+                var after = Peek(1);
+                ReportAt(after, after.Kind == SyntaxKind.EndOfFileToken ? "E1108" : "E1106",
+                    after.Kind == SyntaxKind.EndOfFileToken ? [] : [after.Text]);
+                SkipToken(report: false);
+                return ParseType();
+            case SyntaxKind.ArrayKeyword or SyntaxKind.RecordKeyword or SyntaxKind.SetKeyword or SyntaxKind.FileKeyword:
+                return ParseStructuredType(null);
+            case SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword:
+                return ParseProceduralType();
+            case SyntaxKind.ClassKeyword when Peek(1).Kind == SyntaxKind.OfKeyword:
+                var classKeyword = Take();
+                var of = Take();
+                return new ClassRefTypeSyntax(classKeyword, of, ParseNamedType());
+            case SyntaxKind.IdentifierToken or SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken
+                or SyntaxKind.StringLiteralToken or SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.NotKeyword
+                or SyntaxKind.NilKeyword:
+                // bounds are simple expressions: a following '=' belongs to a typed constant
+                var low = ParseSimpleExpression(null);
+                var dotDot = Expect(SyntaxKind.DotDotToken);
+                return new SubrangeTypeSyntax(low, dotDot, ParseSimpleExpression(null));
             default:
                 ReportAt(Current, CurrentKind == SyntaxKind.EndOfFileToken ? "E1108" : "E1106", ExpectedArgs());
-                return new NamedTypeSyntax(new IdentifierNameSyntax(Missing(SyntaxKind.IdentifierToken)));
+                return MissingNamedType();
         }
     }
 
+    private NamedTypeSyntax MissingNamedType() => new(new IdentifierNameSyntax(Missing(SyntaxKind.IdentifierToken)));
+
+    /// <summary><c>typeId</c> where only a type name is allowed (after <c>^</c>, <c>class of</c>, a variant tag).</summary>
+    private NamedTypeSyntax ParseNamedType()
+    {
+        if (CurrentKind == SyntaxKind.IdentifierToken)
+        {
+            return new NamedTypeSyntax(ParseQualifiedName());
+        }
+
+        ReportAt(Current, CurrentKind == SyntaxKind.EndOfFileToken ? "E1108" : "E1106", ExpectedArgs());
+        return MissingNamedType();
+    }
+
+    /// <summary>
+    /// After <c>ident { . ident }</c> at the start of a type: does an expression continue (so the type is a subrange such
+    /// as <c>Low..High</c> or <c>A + 1..B</c>)? <c>=</c> does not count: it follows the type of a typed constant.
+    /// </summary>
+    private bool NameContinuesAsExpression()
+    {
+        var offset = 0;
+        while (Peek(offset + 1).Kind == SyntaxKind.DotToken && Peek(offset + 2).Kind == SyntaxKind.IdentifierToken)
+        {
+            offset += 2;
+        }
+
+        var next = Peek(offset + 1).Kind;
+        return next is SyntaxKind.DotDotToken or SyntaxKind.OpenParenToken
+               || (SyntaxFacts.GetBinaryPrecedence(next) > 0 && next != SyntaxKind.EqualsToken);
+    }
+
+    private StringTypeSyntax ParseStringType()
+    {
+        var keyword = Take();
+        if (CurrentKind != SyntaxKind.OpenBracketToken)
+        {
+            return new StringTypeSyntax(keyword, null, null, null);
+        }
+
+        var open = Take();
+        var length = ParseExpression();
+        return new StringTypeSyntax(keyword, open, length, Expect(SyntaxKind.CloseBracketToken));
+    }
+
+    /// <summary><c>( ident [ = constExpr ] { , … } )</c></summary>
+    private EnumTypeSyntax ParseEnumType()
+    {
+        var open = Take();
+        var members = ParseSeparated(ParseEnumMember, SyntaxKind.CommaToken);
+        return new EnumTypeSyntax(open, members, Expect(SyntaxKind.CloseParenToken));
+    }
+
+    private EnumMemberSyntax ParseEnumMember()
+    {
+        var identifier = ExpectIdentifier();
+        if (CurrentKind != SyntaxKind.EqualsToken)
+        {
+            return new EnumMemberSyntax(identifier, null, null);
+        }
+
+        var equals = Take();
+        return new EnumMemberSyntax(identifier, equals, ParseExpression());
+    }
+
+    /// <summary><c>[ packed ] ( arrayType | recordType | setType | fileType )</c>; after a bad <c>packed</c>, any type.</summary>
+    private TypeSyntax ParseStructuredType(SyntaxToken? packed)
+    {
+        switch (CurrentKind)
+        {
+            case SyntaxKind.ArrayKeyword:
+                return ParseArrayType(packed);
+            case SyntaxKind.RecordKeyword:
+                return ParseRecordType(packed);
+            case SyntaxKind.SetKeyword:
+                var set = Take();
+                var setOf = Expect(SyntaxKind.OfKeyword);
+                return new SetTypeSyntax(packed, set, setOf, ParseType());
+            case SyntaxKind.FileKeyword:
+                var file = Take();
+                if (CurrentKind != SyntaxKind.OfKeyword)
+                {
+                    return new FileTypeSyntax(packed, file, null, null);
+                }
+
+                var fileOf = Take();
+                return new FileTypeSyntax(packed, file, fileOf, ParseType());
+            default:
+                return ParseType();
+        }
+    }
+
+    /// <summary><c>array [ "[" indexType { , indexType } "]" ] of ( type | const )</c></summary>
+    private ArrayTypeSyntax ParseArrayType(SyntaxToken? packed)
+    {
+        var array = Take();
+        SyntaxToken? open = null;
+        SyntaxToken? close = null;
+        SeparatedSyntaxList<TypeSyntax> indexes = default;
+        if (CurrentKind == SyntaxKind.OpenBracketToken)
+        {
+            open = Take();
+            indexes = ParseSeparated(ParseType, SyntaxKind.CommaToken);
+            close = Expect(SyntaxKind.CloseBracketToken);
+        }
+
+        var of = Expect(SyntaxKind.OfKeyword);
+        if (CurrentKind == SyntaxKind.ConstKeyword)
+        {
+            return new ArrayTypeSyntax(packed, array, open, indexes, close, of, null, Take());
+        }
+
+        return new ArrayTypeSyntax(packed, array, open, indexes, close, of, ParseType(), null);
+    }
+
+    /// <summary>
+    /// <c>record { fieldDecl } [ variantPart ] end</c>. Other record members (methods, properties, visibility; C-018)
+    /// are skipped up to the next <c>;</c>.
+    /// </summary>
+    private RecordTypeSyntax ParseRecordType(SyntaxToken? packed)
+    {
+        var record = Take();
+        var members = ImmutableArray.CreateBuilder<SyntaxNode>();
+        while (CurrentKind is not (SyntaxKind.EndKeyword or SyntaxKind.CaseKeyword or SyntaxKind.EndOfFileToken))
+        {
+            if (CurrentKind == SyntaxKind.IdentifierToken)
+            {
+                members.Add(ParseFieldDeclaration());
+                continue;
+            }
+
+            do
+            {
+                SkipToken();
+            }
+            while (CurrentKind is not (SyntaxKind.SemicolonToken or SyntaxKind.EndKeyword or SyntaxKind.CaseKeyword or SyntaxKind.EndOfFileToken));
+
+            if (CurrentKind == SyntaxKind.SemicolonToken)
+            {
+                SkipToken();
+            }
+        }
+
+        var variantPart = CurrentKind == SyntaxKind.CaseKeyword ? ParseVariantPart() : null;
+        return new RecordTypeSyntax(packed, record, new SyntaxList<SyntaxNode>(members.ToImmutable()), variantPart,
+            Expect(SyntaxKind.EndKeyword));
+    }
+
+    /// <summary><c>identList : type [ hints ] [ ; ]</c> — <c>;</c> optional before <c>end</c>, <c>)</c>, <c>case</c>.</summary>
+    private FieldDeclarationSyntax ParseFieldDeclaration()
+    {
+        var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
+        var colon = Expect(SyntaxKind.ColonToken);
+        var type = ParseType();
+        var hints = ParseHintDirectives();
+        SyntaxToken? semicolon = CurrentKind is SyntaxKind.EndKeyword or SyntaxKind.CloseParenToken or SyntaxKind.CaseKeyword
+            ? null
+            : Expect(SyntaxKind.SemicolonToken);
+        return new FieldDeclarationSyntax(identifiers, colon, type, hints, semicolon);
+    }
+
+    /// <summary><c>case [ ident : ] typeId of variant { ; variant } [ ; ]</c></summary>
+    private VariantPartSyntax ParseVariantPart()
+    {
+        var caseKeyword = Take();
+        SyntaxToken? tag = null;
+        SyntaxToken? colon = null;
+        if (CurrentKind == SyntaxKind.IdentifierToken && Peek(1).Kind == SyntaxKind.ColonToken)
+        {
+            tag = Take();
+            colon = Take();
+        }
+
+        var tagType = ParseNamedType();
+        var of = Expect(SyntaxKind.OfKeyword);
+        var variants = ImmutableArray.CreateBuilder<SyntaxNodeOrToken>();
+        while (true)
+        {
+            variants.Add(ParseVariant());
+            if (CurrentKind != SyntaxKind.SemicolonToken)
+            {
+                break;
+            }
+
+            variants.Add(Take());
+            if (CurrentKind is SyntaxKind.EndKeyword or SyntaxKind.CloseParenToken or SyntaxKind.EndOfFileToken)
+            {
+                break;
+            }
+        }
+
+        return new VariantPartSyntax(caseKeyword, tag, colon, tagType, of, new SeparatedSyntaxList<VariantSyntax>(variants.ToImmutable()));
+    }
+
+    /// <summary><c>constExpr { , constExpr } : ( { fieldDecl } [ variantPart ] )</c></summary>
+    private VariantSyntax ParseVariant()
+    {
+        var labels = ParseSeparated(() => ParseExpression(), SyntaxKind.CommaToken);
+        var colon = Expect(SyntaxKind.ColonToken);
+        var open = Expect(SyntaxKind.OpenParenToken);
+        var fields = ImmutableArray.CreateBuilder<FieldDeclarationSyntax>();
+        while (CurrentKind == SyntaxKind.IdentifierToken)
+        {
+            fields.Add(ParseFieldDeclaration());
+        }
+
+        var nested = CurrentKind == SyntaxKind.CaseKeyword ? ParseVariantPart() : null;
+        return new VariantSyntax(labels, colon, open, new SyntaxList<FieldDeclarationSyntax>(fields.ToImmutable()), nested,
+            Expect(SyntaxKind.CloseParenToken));
+    }
+
+    /// <summary>
+    /// <c>( procedure [ formalParams ] | function [ formalParams ] : resultType ) [ of object ] { [ ; ] callConv }</c> or
+    /// <c>reference to ( procedure [ formalParams ] | function [ formalParams ] : resultType )</c>.
+    /// </summary>
+    private ProceduralTypeSyntax ParseProceduralType()
+    {
+        SyntaxToken? reference = null;
+        SyntaxToken? to = null;
+        if (CurrentKind == SyntaxKind.IdentifierToken)
+        {
+            reference = Take().WithContextualKind(SyntaxKind.ReferenceKeyword);
+            to = Take();
+        }
+
+        var keyword = CurrentKind is SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword
+            ? Take()
+            : Expect(SyntaxKind.ProcedureKeyword);
+        var parameters = CurrentKind == SyntaxKind.OpenParenToken ? ParseParameterList() : null;
+        SyntaxToken? colon = null;
+        TypeSyntax? result = null;
+        if (keyword.Kind == SyntaxKind.FunctionKeyword)
+        {
+            colon = Expect(SyntaxKind.ColonToken);
+            result = ParseType();
+        }
+
+        SyntaxToken? of = null;
+        SyntaxToken? obj = null;
+        var conventions = ImmutableArray.CreateBuilder<CallingConventionSyntax>();
+        if (reference is null)
+        {
+            if (CurrentKind == SyntaxKind.OfKeyword && Peek(1).Kind == SyntaxKind.ObjectKeyword)
+            {
+                of = Take();
+                obj = Take();
+            }
+
+            while (true)
+            {
+                if (IsCallingConvention(Current))
+                {
+                    conventions.Add(new CallingConventionSyntax(null, TakeContextual()));
+                }
+                else if (CurrentKind == SyntaxKind.SemicolonToken && IsCallingConvention(Peek(1)))
+                {
+                    var semicolon = Take();
+                    conventions.Add(new CallingConventionSyntax(semicolon, TakeContextual()));
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+
+        return new ProceduralTypeSyntax(reference, to, keyword, parameters, colon, result, of, obj,
+            new SyntaxList<CallingConventionSyntax>(conventions.ToImmutable()));
+    }
+
+    private static bool IsCallingConvention(SyntaxToken token) =>
+        token.Kind == SyntaxKind.IdentifierToken && !token.Text.StartsWith('&')
+        && SyntaxFacts.GetKeywordKind(token.Text) is SyntaxKind.RegisterKeyword or SyntaxKind.PascalKeyword
+            or SyntaxKind.CdeclKeyword or SyntaxKind.StdCallKeyword or SyntaxKind.SafeCallKeyword or SyntaxKind.WinApiKeyword;
+
+    /// <summary>Takes an identifier used as a contextual keyword and records that kind on it.</summary>
+    private SyntaxToken TakeContextual()
+    {
+        var kind = SyntaxFacts.GetKeywordKind(Current.Text);
+        return Take().WithContextualKind(kind);
+    }
+
+    // ------------------------------------------------------------------ grammar.md §5: formal parameters
+
+    /// <summary><c>( [ formalParam { ; formalParam } ] )</c></summary>
+    private ParameterListSyntax ParseParameterList()
+    {
+        var open = Take();
+        if (CurrentKind == SyntaxKind.CloseParenToken)
+        {
+            return new ParameterListSyntax(open, default, Take());
+        }
+
+        var parameters = ParseSeparated(ParseParameter, SyntaxKind.SemicolonToken);
+        return new ParameterListSyntax(open, parameters, Expect(SyntaxKind.CloseParenToken));
+    }
+
+    /// <summary><c>[ const | var | out ] identList [ : paramType [ = constExpr ] ]</c></summary>
+    private ParameterSyntax ParseParameter()
+    {
+        SyntaxToken? modifier = null;
+        if (CurrentKind is SyntaxKind.ConstKeyword or SyntaxKind.VarKeyword)
+        {
+            modifier = Take();
+        }
+        else if (IsContextual(Current, SyntaxKind.OutKeyword) && Peek(1).Kind == SyntaxKind.IdentifierToken)
+        {
+            modifier = TakeContextual();
+        }
+
+        var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
+        if (CurrentKind != SyntaxKind.ColonToken)
+        {
+            return new ParameterSyntax(modifier, identifiers, null, null, null, null);
+        }
+
+        var colon = Take();
+        var type = ParseType();
+        if (CurrentKind != SyntaxKind.EqualsToken)
+        {
+            return new ParameterSyntax(modifier, identifiers, colon, type, null, null);
+        }
+
+        var equals = Take();
+        return new ParameterSyntax(modifier, identifiers, colon, type, equals, ParseExpression());
+    }
     // ------------------------------------------------------------------ grammar.md §7: expressions
 
     /// <summary>

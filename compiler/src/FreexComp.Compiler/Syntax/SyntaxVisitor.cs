@@ -72,6 +72,38 @@ public abstract class SyntaxVisitor<TResult>
     public virtual TResult VisitUnaryExpression(UnaryExpressionSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitParenthesizedExpression(ParenthesizedExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitEnumType(EnumTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitEnumMember(EnumMemberSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitSubrangeType(SubrangeTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitPointerType(PointerTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitArrayType(ArrayTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitSetType(SetTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitFileType(FileTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitRecordType(RecordTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitFieldDeclaration(FieldDeclarationSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitVariantPart(VariantPartSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitVariant(VariantSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitProceduralType(ProceduralTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitCallingConvention(CallingConventionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitClassRefType(ClassRefTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitParameterList(ParameterListSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitParameter(ParameterSyntax node) => DefaultVisit(node);
 }
 
 /// <summary>Depth-first walk over every node, token and trivia piece in source order.</summary>
