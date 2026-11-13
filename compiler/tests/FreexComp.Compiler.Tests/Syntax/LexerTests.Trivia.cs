@@ -201,7 +201,6 @@ public sealed partial class LexerTests
     [InlineData("{$r-}", "R", "-")]
     [InlineData("(*$IFDEF  DEBUG *)", "IFDEF", "DEBUG")]
     [InlineData("{$ifdef Debug}", "IFDEF", "Debug")]
-    [InlineData("{$I file.inc}", "I", "file.inc")]
     [InlineData("{$MESSAGE HINT 'x y'}", "MESSAGE", "HINT 'x y'")]
     [InlineData("{$}", "", "")]
     [InlineData("{$ R+}", "", "R+")]

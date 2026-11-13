@@ -6,52 +6,97 @@ using FreexComp.Compiler.Text;
 namespace FreexComp.Compiler.Syntax;
 
 /// <summary>
-/// Pull lexer (CMP-110): <see cref="Lex"/> returns one token at a time and never throws. After the end of the
-/// text it returns <see cref="SyntaxKind.EndOfFileToken"/>, which carries the remaining trivia.
+/// Pull lexer (CMP-110) for one file: <see cref="Lex"/> returns one token at a time and never throws. After the end of
+/// the text it returns <see cref="SyntaxKind.EndOfFileToken"/>, which carries the remaining trivia. Directives go to
+/// a <see cref="DirectiveProcessor"/> (conditionals, switches). With <c>expandIncludes</c>, an active include
+/// directive pauses the lexer: <see cref="Lex"/> returns a <see cref="SyntaxKind.None"/> token and
+/// <see cref="TakePendingInclude"/> names the directive; the next <see cref="Lex"/> resumes the same leading trivia.
 /// </summary>
 internal sealed class PascalLexer
 {
     private readonly SourceText _source;
     private readonly string _text;
-    private readonly List<Diagnostic> _diagnostics = [];
     private readonly ImmutableArray<SyntaxTrivia>.Builder _trivia = ImmutableArray.CreateBuilder<SyntaxTrivia>();
-    private readonly Preprocessor _preprocessor;
+    private readonly PreprocessorContext _context;
+    private readonly DirectiveProcessor _directives;
+    private readonly bool _expandIncludes;
+    private DirectiveTriviaInfo? _pendingInclude;
+    private bool _resumeLeading;
     private int _pos;
     private bool _finished;
 
     public PascalLexer(SourceText source, ParseOptions? options = null)
+        : this(source, new PreprocessorContext(options), expandIncludes: false)
+    {
+    }
+
+    public PascalLexer(SourceText source, PreprocessorContext context, bool expandIncludes)
     {
         _source = source;
         _text = source.Text;
-        _preprocessor = new Preprocessor(options, (code, span, args, severity) => Report(code, span.Start, span.Length, severity, args));
+        _context = context;
+        _expandIncludes = expandIncludes;
+        _directives = new DirectiveProcessor(context, (code, span, args, severity) => Report(code, span.Start, span.Length, severity, args));
     }
 
-    public ImmutableArray<Diagnostic> Diagnostics => [.. _diagnostics];
+    public SourceText Source => _source;
+
+    /// <summary>Diagnostics of every file sharing this lexer's context, in the order they were reported.</summary>
+    public ImmutableArray<Diagnostic> Diagnostics => [.. _context.Diagnostics];
+
+    /// <summary>The include directive that paused the lexer (see the class summary); null when there is none.</summary>
+    public DirectiveTriviaInfo? TakePendingInclude()
+    {
+        var include = _pendingInclude;
+        _pendingInclude = null;
+        return include;
+    }
 
     /// <summary>
     /// Next token. Trivia attachment (LANG-106): trailing trivia runs up to and including the first line break
-    /// after the token (or up to the next token); everything else is leading trivia of the next token.
+    /// after the token (or up to the next token); everything else is leading trivia of the next token. An include
+    /// directive always starts leading trivia (it is never trailing), so included tokens can precede the next token.
     /// </summary>
     public SyntaxToken Lex()
     {
-        var leading = ScanTrivia(trailing: false);
+        if (!_resumeLeading)
+        {
+            _trivia.Clear();
+        }
+
+        _resumeLeading = false;
+        if (ScanTrivia(trailing: false))
+        {
+            _resumeLeading = true;
+            return default;
+        }
+
+        var leading = ToArray();
         var start = _pos;
         if (_pos >= _text.Length)
         {
             if (!_finished)
             {
                 _finished = true;
-                _preprocessor.Finish();
+                _directives.Finish();
             }
 
-            return new SyntaxToken(SyntaxKind.EndOfFileToken, "", null, start, leading, [], _preprocessor.State);
+            return new SyntaxToken(SyntaxKind.EndOfFileToken, "", null, start, leading, [], _directives.State, _source);
         }
 
-        var state = _preprocessor.State;
+        var state = _directives.State;
         var (kind, value) = ScanToken();
         var text = _text[start.._pos];
-        return new SyntaxToken(kind, text, value, start, leading, ScanTrivia(trailing: true), state);
+        _trivia.Clear();
+        ScanTrivia(trailing: true);
+        return new SyntaxToken(kind, text, value, start, leading, ToArray(), state, _source);
     }
+
+    /// <summary>Reports a diagnostic at <paramref name="span"/> of this lexer's file, with warning control applied.</summary>
+    public void ReportAt(string code, TextSpan span, params object[] args) =>
+        Report(code, span.Start, span.Length, DiagnosticCatalog.Get(code).DefaultSeverity, args);
+
+    private ImmutableArray<SyntaxTrivia> ToArray() => _trivia.Count == 0 ? [] : _trivia.ToImmutable();
 
     // ------------------------------------------------------------------ tokens
 
@@ -450,13 +495,16 @@ internal sealed class PascalLexer
 
     // ------------------------------------------------------------------ trivia
 
-    private ImmutableArray<SyntaxTrivia> ScanTrivia(bool trailing)
+    /// <summary>
+    /// Appends trivia pieces to <c>_trivia</c>. Returns true when it stopped right after an active include directive
+    /// that must be expanded (leading trivia only); in trailing mode it stops before any include directive.
+    /// </summary>
+    private bool ScanTrivia(bool trailing)
     {
-        _trivia.Clear();
         while (_pos < _text.Length)
         {
             var start = _pos;
-            if (!_preprocessor.IsActive)
+            if (!_directives.IsActive)
             {
                 // LANG-864: an inactive branch runs up to the directive that may end it (or to the end of file).
                 var end = FindEndOfDisabledText(_pos);
@@ -470,13 +518,17 @@ internal sealed class PascalLexer
 
             var c = _text[_pos];
             var next = _pos + 1 < _text.Length ? _text[_pos + 1] : '\0';
-            if (c == '{')
+            if (c == '{' || (c == '(' && next == '*'))
             {
-                ScanBlockComment(closer: "}", openerLength: 1);
-            }
-            else if (c == '(' && next == '*')
-            {
-                ScanBlockComment(closer: "*)", openerLength: 2);
+                if (trailing && IsIncludeDirectiveAt(_pos))
+                {
+                    break;
+                }
+
+                if (ScanBlockComment(closer: c == '{' ? "}" : "*)", openerLength: c == '{' ? 1 : 2))
+                {
+                    return true;
+                }
             }
             else if (c == '/' && next == '/')
             {
@@ -517,14 +569,31 @@ internal sealed class PascalLexer
             }
         }
 
-        return _trivia.Count == 0 ? [] : _trivia.ToImmutable();
+        return false;
+    }
+
+    /// <summary>True when a <c>{$I file}</c> / <c>{$INCLUDE file}</c> directive starts at <paramref name="pos"/>.</summary>
+    private bool IsIncludeDirectiveAt(int pos)
+    {
+        var openerLength = _text[pos] == '{' ? 1 : 2;
+        var contentStart = pos + openerLength;
+        if (contentStart >= _text.Length || _text[contentStart] != '$')
+        {
+            return false;
+        }
+
+        var end = _text.IndexOf(openerLength == 1 ? "}" : "*)", contentStart, StringComparison.Ordinal);
+        var body = _text.AsSpan(contentStart + 1, (end < 0 ? _text.Length : end) - contentStart - 1);
+        var nameLength = DirectiveNameLength(body);
+        return DirectiveProcessor.IsInclude(body[..nameLength].ToString().ToUpperInvariant(), body[nameLength..].Trim().ToString());
     }
 
     /// <summary>
     /// <c>{ … }</c> or <c>(* … *)</c> (LANG-140, no nesting). A <c>$</c> right after the opener makes a directive
     /// (LANG-141); <c>{**</c> a documentation comment (LANG-142). Unterminated: E1030 at the opener, runs to the end.
+    /// Returns true for an include directive that the caller must expand (LANG-875).
     /// </summary>
-    private void ScanBlockComment(string closer, int openerLength)
+    private bool ScanBlockComment(string closer, int openerLength)
     {
         var start = _pos;
         var contentStart = start + openerLength;
@@ -546,14 +615,22 @@ internal sealed class PascalLexer
                 body[nameLength..].Trim().ToString(),
                 new TextSpan(start, text.Length),
                 IsActive: true);
-            _trivia.Add(new SyntaxTrivia(SyntaxKind.DirectiveTrivia, text, start, info));
-            _preprocessor.Process(info);
-            return;
+            var isInclude = DirectiveProcessor.IsInclude(info.Name, info.Argument);
+            _trivia.Add(new SyntaxTrivia(isInclude ? SyntaxKind.IncludeDirectiveTrivia : SyntaxKind.DirectiveTrivia, text, start, info));
+            _directives.Process(info);
+            if (isInclude && _expandIncludes && DirectiveProcessor.IncludeFileName(info).Length > 0)
+            {
+                _pendingInclude = info;
+                return true;
+            }
+
+            return false;
         }
 
         var isDoc = closer == "}" && contentStart + 1 < _text.Length && _text[contentStart] == '*' && _text[contentStart + 1] == '*'
                     && contentStart + 1 < contentEnd;
         _trivia.Add(new SyntaxTrivia(isDoc ? SyntaxKind.DocCommentTrivia : SyntaxKind.BlockCommentTrivia, text, start));
+        return false;
     }
 
     private static int DirectiveNameLength(ReadOnlySpan<char> body)
@@ -607,15 +684,15 @@ internal sealed class PascalLexer
                 {
                     var body = _text.AsSpan(contentStart + 1, (end < 0 ? _text.Length : end) - contentStart - 1);
                     var name = body[..DirectiveNameLength(body)].ToString().ToUpperInvariant();
-                    if (Preprocessor.OpensConditional(name))
+                    if (DirectiveProcessor.OpensConditional(name))
                     {
                         depth++;
                     }
-                    else if (depth == 0 && Preprocessor.EndsDisabledText(name))
+                    else if (depth == 0 && DirectiveProcessor.EndsDisabledText(name))
                     {
                         return pos;
                     }
-                    else if (Preprocessor.ClosesConditional(name))
+                    else if (DirectiveProcessor.ClosesConditional(name))
                     {
                         depth--;
                     }
@@ -666,6 +743,6 @@ internal sealed class PascalLexer
         var lines = _source.Lines;
         var location = new Location(_source.Path, span,
             new LinePositionSpan(lines.GetLinePosition(span.Start), lines.GetLinePosition(span.End)));
-        _diagnostics.Add(Diagnostic.Create(code, location, args) with { Severity = severity });
+        _context.Diagnostics.Add(Diagnostic.Create(code, location, args) with { Severity = severity });
     }
 }

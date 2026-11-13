@@ -14,7 +14,7 @@ public readonly struct SyntaxToken : IEquatable<SyntaxToken>
 
     internal SyntaxToken(SyntaxKind kind, string text, object? value, int position,
                          ImmutableArray<SyntaxTrivia> leading, ImmutableArray<SyntaxTrivia> trailing,
-                         DirectiveState? state = null)
+                         DirectiveState? state = null, SourceText? file = null)
     {
         Kind = kind;
         ContextualKind = kind;
@@ -24,7 +24,11 @@ public readonly struct SyntaxToken : IEquatable<SyntaxToken>
         _leading = leading;
         _trailing = trailing;
         _state = state;
+        File = file;
     }
+
+    /// <summary>The file this token was read from (the main file or an include file, LANG-876); spans are relative to it.</summary>
+    internal SourceText? File { get; }
 
     /// <summary>Switch state at this token (CMP-111); public access is <c>SemanticModel.GetDirectiveState</c>.</summary>
     internal DirectiveState DirectiveState => _state ?? DirectiveState.Default;

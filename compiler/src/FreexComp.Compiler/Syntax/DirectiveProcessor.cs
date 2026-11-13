@@ -5,16 +5,42 @@ using FreexComp.Compiler.Text;
 namespace FreexComp.Compiler.Syntax;
 
 /// <summary>
-/// Directive processing for one file (CMP-111, directives.md): the define set, the conditional stack and the switch
-/// state (<see cref="DirectiveState"/>). <see cref="PascalLexer"/> hands it every directive met in active text, asks
-/// <see cref="IsActive"/> whether the following text is disabled (LANG-864) and stamps <see cref="State"/> on tokens.
-/// Its own warnings and hints follow <c>{$WARNINGS}</c>, <c>{$HINTS}</c> and <c>{$WARN}</c> (CMP-505).
+/// State shared by every file of one preprocessing run (the main file and its includes): the define set and the switch
+/// state carry across include boundaries (LANG-852, 860); diagnostics of all files are collected in order.
 /// </summary>
-internal sealed class Preprocessor
+internal sealed class PreprocessorContext
 {
-    /// <summary>LANG-870: always defined (ASSERTIONS follows the C switch, see <see cref="IsDefined"/>).</summary>
+    /// <summary>LANG-870: always defined (ASSERTIONS follows the C switch, see <see cref="DirectiveProcessor"/>).</summary>
     private static readonly string[] Predefined = ["OPC", "OPC_1", "MSWINDOWS", "WINDOWS", "WIN64", "CPUX64", "CPU64BITS", "UNICODE"];
 
+    public PreprocessorContext(ParseOptions? options)
+    {
+        Options = options;
+        Defines.UnionWith(Predefined);
+        if (options is not null)
+        {
+            Defines.UnionWith(options.Defines);
+        }
+    }
+
+    public ParseOptions? Options { get; }
+
+    public HashSet<string> Defines { get; } = new(IdentifierComparer.Instance);
+
+    public DirectiveState State { get; set; } = DirectiveState.Default;
+
+    public List<Diagnostic> Diagnostics { get; } = [];
+}
+
+/// <summary>
+/// Directive processing for one file (CMP-111, directives.md): the conditional stack and regions of this file, plus
+/// the shared defines and switch state (<see cref="PreprocessorContext"/>). <see cref="PascalLexer"/> hands it every
+/// directive met in active text, asks <see cref="IsActive"/> whether the following text is disabled (LANG-864) and
+/// stamps <see cref="State"/> on tokens. Its own warnings and hints follow <c>{$WARNINGS}</c>, <c>{$HINTS}</c> and
+/// <c>{$WARN}</c> (CMP-505).
+/// </summary>
+internal sealed class DirectiveProcessor
+{
     /// <summary>directives.md §5: accepted and ignored silently, whatever the argument.</summary>
     private static readonly FrozenSet<string> IgnoredDirectives = new[]
     {
@@ -22,32 +48,42 @@ internal sealed class Preprocessor
         "IMAGEBASE", "DESCRIPTION", "LIBPREFIX", "LIBSUFFIX", "LIBVERSION", "WEAKPACKAGEUNIT", "DENYPACKAGEUNIT",
         "DESIGNONLY", "RUNONLY", "IMPLICITBUILD", "HPPEMIT", "EXTERNALSYM", "NODEFINE", "NOINCLUDE", "OBJTYPENAME",
         "STACKFRAMES", "SAFEDIVIDE", "VARSTRINGCHECKS", "OPENSTRINGS", "EXTENSION", "INLINE", "EXCESSPRECISION",
-        "HIGHCHARUNICODE", "TEXTBLOCK", "LINK", "INCLUDE",
+        "HIGHCHARUNICODE", "TEXTBLOCK", "LINK",
     }.ToFrozenSet();
 
     /// <summary>directives.md §5: single-letter switches accepted and ignored silently (legacy / debug-info letters).</summary>
     private const string IgnoredLetters = "ODLYWUGPVNEFKS";
 
-    private readonly HashSet<string> _defines = new(IdentifierComparer.Instance);
+    private readonly PreprocessorContext _context;
     private readonly Stack<Frame> _frames = new();
     private readonly Stack<TextSpan> _regions = new();
     private readonly Action<string, TextSpan, object[], DiagnosticSeverity> _report;
 
-    public Preprocessor(ParseOptions? options, Action<string, TextSpan, object[], DiagnosticSeverity> report)
+    public DirectiveProcessor(PreprocessorContext context, Action<string, TextSpan, object[], DiagnosticSeverity> report)
     {
+        _context = context;
         _report = report;
-        _defines.UnionWith(Predefined);
-        if (options is not null)
-        {
-            _defines.UnionWith(options.Defines);
-        }
     }
 
-    /// <summary>True when the text at the current position is in an active branch.</summary>
+    /// <summary>True when the text at the current position is in an active branch of this file.</summary>
     public bool IsActive => _frames.Count == 0 || _frames.Peek().BranchActive;
 
-    /// <summary>The switch state at the current position.</summary>
-    public DirectiveState State { get; private set; } = DirectiveState.Default;
+    /// <summary>The switch state at the current position (shared with includes).</summary>
+    public DirectiveState State
+    {
+        get => _context.State;
+        private set => _context.State = value;
+    }
+
+    /// <summary>
+    /// <c>{$I file}</c> / <c>{$INCLUDE file}</c> (LANG-875); <c>{$I+}</c>, <c>{$I-}</c> and <c>{$I-,R+}</c> are the
+    /// I/O-check switch.
+    /// </summary>
+    public static bool IsInclude(string name, string argument) =>
+        name == "INCLUDE" || (name == "I" && argument.Length > 0 && argument[0] is not ('+' or '-'));
+
+    /// <summary>The file name of an include directive: the argument, unquoted.</summary>
+    public static string IncludeFileName(DirectiveTriviaInfo directive) => Unquote(directive.Argument);
 
     /// <summary>Directive names that open a conditional (used to track nesting inside disabled text).</summary>
     public static bool OpensConditional(string name) => name is "IFDEF" or "IFNDEF" or "IFOPT" or "IF";
@@ -77,14 +113,14 @@ internal sealed class Preprocessor
             case "DEFINE":
                 if (SymbolName(directive) is { } defined)
                 {
-                    _defines.Add(defined);
+                    _context.Defines.Add(defined);
                 }
 
                 return;
             case "UNDEF":
                 if (SymbolName(directive) is { } undefined)
                 {
-                    _defines.Remove(undefined);
+                    _context.Defines.Remove(undefined);
                 }
 
                 return;
@@ -121,6 +157,14 @@ internal sealed class Preprocessor
 
                 return;
             case "RESOURCE": Report("H1010", directive.Span); return;
+            case "INCLUDE" or "I" when IsInclude(name, argument):
+                // Expansion is done by the Preprocessor stream (LANG-875); only the argument is checked here.
+                if (IncludeFileName(directive).Length == 0)
+                {
+                    Report("E1206", directive.Span, argument);
+                }
+
+                return;
             case "PUSHOPT" or "POPOPT": Report("W1001", directive.Span, name); return;   // Phase 8+
         }
 
@@ -139,8 +183,8 @@ internal sealed class Preprocessor
             case "R" when argument.Length > 0:
                 Report("H1010", directive.Span);    // {$R file}: resource file
                 return;
-            case "L" or "I" when argument.Length > 0:
-                return;                             // {$L file} link (CMP-625), {$I file} include (C-010)
+            case "L" when argument.Length > 0:
+                return;                             // {$L file}: link (CMP-625)
         }
 
         Report("W1001", directive.Span, name);
@@ -215,7 +259,7 @@ internal sealed class Preprocessor
     }
 
     private bool IsDefined(string symbol) =>
-        _defines.Contains(symbol) || (IdentifierComparer.Instance.Equals(symbol, "ASSERTIONS") && State.Assertions);
+        _context.Defines.Contains(symbol) || (IdentifierComparer.Instance.Equals(symbol, "ASSERTIONS") && State.Assertions);
 
     private bool Evaluate(DirectiveTriviaInfo directive) => directive.Name switch
     {
@@ -383,8 +427,8 @@ internal sealed class Preprocessor
     {
         switch (directive.Argument.ToUpperInvariant())
         {
-            case "CONSOLE": _defines.Add("CONSOLE"); break;
-            case "GUI": _defines.Remove("CONSOLE"); break;
+            case "CONSOLE": _context.Defines.Add("CONSOLE"); break;
+            case "GUI": _context.Defines.Remove("CONSOLE"); break;
             default: Report("E1206", directive.Span, directive.Argument); break;
         }
     }
@@ -451,7 +495,7 @@ internal sealed class Preprocessor
     }
 
     /// <summary><c>'It''s'</c> → <c>It's</c>; text that is not a single quoted string is returned unchanged.</summary>
-    private static string Unquote(string text)
+    internal static string Unquote(string text)
     {
         if (text.Length < 2 || text[0] != '\'' || text[^1] != '\'')
         {
