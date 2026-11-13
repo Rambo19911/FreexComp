@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Platform;
@@ -87,6 +88,9 @@ public sealed class DocumentService : IDocumentService
         // Without a project (IDE-P1-033); with one, the project service routes it to project.addNewUnit.
         commands.RegisterHandler("file.newUnit", new Handler(_ => true, _ => NewUntitledUnit()));
         commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
+        commands.RegisterHandler("file.closeAll", new AsyncHandler(_ => _documents.Count > 0, _ => CloseAllAsync()));
+        commands.RegisterHandler("file.closeOthers", new AsyncHandler(
+            _ => ActiveDocument is not null && _documents.Count > 1, _ => CloseAllAsync(except: ActiveDocument)));
     }
 
     public async Task<OperationResult<DocumentViewModel>> OpenAsync(string path)
@@ -190,22 +194,57 @@ public sealed class DocumentService : IDocumentService
         if (!_documents.Contains(document))
             return false;
 
-        if (document.IsModified)
+        return await PromptSaveChangesAsync([document]) && Close(document);
+    }
+
+    public async Task<bool> CloseAllAsync(DocumentViewModel? except = null)
+    {
+        var closing = _documents.Where(d => d != except).ToList();
+        if (!await PromptSaveChangesAsync(closing))
+            return false;
+
+        foreach (var document in closing)
         {
-            switch (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveChangesOne", [document.Title])))
-            {
-                case "Save":
-                    if (!await SaveAsync(document))
-                        return false;
-                    break;
-                case "DontSave":
-                    break; // the recovery copy is deleted by the recovery service on DocumentClosed (I-063)
-                default:
-                    return false;
-            }
+            Close(document);
         }
 
-        return Close(document);
+        return true;
+    }
+
+    public async Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents)
+    {
+        ArgumentNullException.ThrowIfNull(documents);
+        var modified = _documents.Where(d => d.IsModified && documents.Contains(d)).ToList(); // tab order
+        IReadOnlyList<DocumentViewModel>? toSave;
+        switch (modified.Count)
+        {
+            case 0:
+                return true;
+            case 1:
+                toSave = await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveChangesOne", [modified[0].Title])) switch
+                {
+                    "Save" => modified,
+                    "DontSave" => [],
+                    _ => null,
+                };
+                break;
+            default:
+                toSave = await _dialogs.ShowAsync(new UnsavedChangesViewModel(modified));
+                break;
+        }
+
+        if (toSave is null)
+            return false;
+
+        // UI-DLG-062: a failed save or a canceled Save As picker cancels the whole operation. Discarded documents'
+        // recovery copies are deleted by the recovery service on DocumentClosed (I-063).
+        foreach (var document in toSave)
+        {
+            if (!await SaveAsync(document))
+                return false;
+        }
+
+        return true;
     }
 
     public async Task<bool> SaveAsync(DocumentViewModel document)

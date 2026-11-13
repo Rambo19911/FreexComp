@@ -1,5 +1,6 @@
 using System.Text;
 using FreexComp.Ide.Core.Composition;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
@@ -417,6 +418,128 @@ public sealed class DocumentServiceTests
         Assert.False(await Documents.CloseAsync(unit));
         Assert.Equal([unit], Documents.Documents);
         Assert.Equal(["Unit1.pas"], dialogs.Requests[^1].Args);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-036")]
+    [Trait("Req", "UI-DLG-061")]
+    [Trait("Req", "UI-DLG-062")]
+    [Trait("Req", "UI-DLG-063")]
+    public async Task CloseAllAsksOnceWithList()
+    {
+        var dialogs = (FakeDialogService)_services.Dialogs;
+        var commands = _services.Commands;
+        Assert.False(commands.CanExecute("file.closeAll"));
+        Assert.False(commands.CanExecute("file.closeOthers"));
+
+        var a = await OpenAsync(File(@"C:\p\A.pas", "a"));
+        var b = await OpenAsync(File(@"C:\p\B.pas", "b"));
+        var c = await OpenAsync(File(@"C:\p\C.pas", "c"));
+        a.Buffer.ApplyEdits([new TextEdit(1, 0, "1")]);
+        c.Buffer.ApplyEdits([new TextEdit(1, 0, "3")]);
+
+        // Cancel: one dialog listing the modified documents in tab order; nothing is closed or saved.
+        UnsavedChangesViewModel? shown = null;
+        dialogs.Script(UnsavedChangesViewModel.DialogName, vm =>
+        {
+            shown = (UnsavedChangesViewModel)vm;
+            return vm.PressCancelAsync();
+        });
+        await commands.ExecuteAsync("file.closeAll");
+        Assert.Single(dialogs.Dialogs);
+        Assert.Empty(dialogs.Requests);
+        Assert.Equal(string.Format(Strings.Msg_File_SaveChangesMany, 2), shown!.Heading);
+        Assert.Equal(Strings.Msg_File_SaveChangesMany_Title, shown.Title);
+        Assert.Equal([a, c], shown.Files.Select(f => f.Document));
+        Assert.Equal([("A.pas", @"C:\p"), ("C.pas", @"C:\p")], shown.Files.Select(f => (f.FileName, f.Folder!)));
+        Assert.All(shown.Files, f => Assert.True(f.IsChecked));
+        Assert.Equal([a, b, c], Documents.Documents);
+
+        // Save Selected with C unchecked: A is saved, C is discarded, everything is closed.
+        dialogs.Script(UnsavedChangesViewModel.DialogName, vm =>
+        {
+            var u = (UnsavedChangesViewModel)vm;
+            u.Files[1].IsChecked = false;
+            return u.DefaultButton!.PressAsync();
+        });
+        await commands.ExecuteAsync("file.closeAll");
+        Assert.Empty(Documents.Documents);
+        Assert.Equal("a1", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\A.pas")));
+        Assert.Equal("c", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\C.pas")));
+        Assert.Equal(2, dialogs.Dialogs.Count);
+
+        // Close Others with one modified other document asks the single-file question.
+        a = await OpenAsync(@"C:\p\A.pas");
+        b = await OpenAsync(@"C:\p\B.pas");
+        c = await OpenAsync(@"C:\p\C.pas");
+        a.Buffer.ApplyEdits([new TextEdit(2, 0, "!")]);
+        Documents.Activate(b);
+        dialogs.Answer("Msg.File.SaveChangesOne", "DontSave");
+        await commands.ExecuteAsync("file.closeOthers");
+        Assert.Equal([b], Documents.Documents);
+        Assert.Equal(["A.pas"], Assert.Single(dialogs.Requests).Args);
+        Assert.Equal("a1", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\A.pas")));
+        Assert.False(commands.CanExecute("file.closeOthers")); // nothing else open
+
+        // Don't Save discards every listed document.
+        a = await OpenAsync(@"C:\p\A.pas");
+        a.Buffer.ApplyEdits([new TextEdit(2, 0, "!")]);
+        b.Buffer.ApplyEdits([new TextEdit(1, 0, "2")]);
+        dialogs.Script(UnsavedChangesViewModel.DialogName, vm => vm.Buttons.Single(x => x.Id == "DontSave").PressAsync());
+        await commands.ExecuteAsync("file.closeAll");
+        Assert.Empty(Documents.Documents);
+        Assert.Equal("b", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\B.pas")));
+
+        // A failed save stops the operation: nothing is closed; what was saved stays open and unmodified.
+        a = await OpenAsync(@"C:\p\A.pas");
+        b = await OpenAsync(@"C:\p\B.pas");
+        a.Buffer.ApplyEdits([new TextEdit(2, 0, "!")]);
+        b.Buffer.ApplyEdits([new TextEdit(1, 0, "2")]);
+        _fs.SetReadOnly(@"C:\p\B.pas", true);
+        dialogs.Answer("Msg.File.SaveFailed", "Cancel");
+        dialogs.Script(UnsavedChangesViewModel.DialogName, vm => vm.PressDefaultAsync());
+        await commands.ExecuteAsync("file.closeAll");
+        Assert.Equal([a, b], Documents.Documents);
+        Assert.False(a.IsModified);
+        Assert.True(b.IsModified);
+        Assert.Equal("Msg.File.SaveFailed", dialogs.Requests[^1].MessageId);
+
+        // An untitled document whose Save As is canceled cancels the whole operation.
+        _fs.SetReadOnly(@"C:\p\B.pas", false);
+        var unit = Documents.NewUntitledUnit();
+        dialogs.Script(UnsavedChangesViewModel.DialogName, vm =>
+        {
+            var u = (UnsavedChangesViewModel)vm;
+            Assert.Equal([("B.pas", (string?)@"C:\p"), ("Unit1.pas", null)], u.Files.Select(f => (f.FileName, f.Folder)));
+            return u.PressDefaultAsync();
+        });
+        await commands.ExecuteAsync("file.closeAll");
+        Assert.Equal([a, b, unit], Documents.Documents);
+        Assert.False(b.IsModified);                         // saved before the untitled one
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-061")]
+    public async Task UnsavedChangesSelectionRules()
+    {
+        var a = await OpenAsync(File(@"C:\p\A.pas", "a"));
+        var b = Documents.NewUntitledUnit();
+        var vm = new UnsavedChangesViewModel([a, b]);
+        Assert.Equal(["Ok", "DontSave", "Cancel"], vm.Buttons.Select(x => x.Id));
+        Assert.Equal(("_Save Selected", "Do_n't Save"), (vm.Buttons[0].AccessLabel, vm.Buttons[1].AccessLabel));
+        Assert.Same(vm.Buttons[0], vm.DefaultButton);
+        Assert.Same(vm.Buttons[2], vm.CancelButton);
+        Assert.True(vm.CanResize);
+        Assert.Equal((520.0, (double?)320.0), (vm.Width, vm.Height));
+
+        vm.Files[0].IsChecked = false;
+        vm.Files[1].IsChecked = false;
+        Assert.False(vm.DefaultButton!.IsEnabled);          // nothing checked
+        vm.CheckAll();
+        Assert.True(vm.DefaultButton.IsEnabled);
+        vm.Files[0].IsChecked = false;
+        await vm.PressDefaultAsync();
+        Assert.Equal([b], vm.Result);
     }
 
     [Fact(Timeout = 30000)]

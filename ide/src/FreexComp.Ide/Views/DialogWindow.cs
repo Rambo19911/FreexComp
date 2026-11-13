@@ -50,6 +50,7 @@ public class DialogWindow : Window
 
         model.CloseRequested += (_, _) => Close();
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
+        AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
         Opened += (_, _) =>
         {
             FocusInitial();
@@ -132,6 +133,20 @@ public class DialogWindow : Window
         {
             e.Handled = true;
             _ = Model.PressCancelAsync();
+        }
+    }
+
+    /// <summary>
+    /// UI-DLG-004: a check box or radio button would take Enter as a click (toggling itself); in a dialog Enter is the
+    /// default button there too.
+    /// </summary>
+    private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None
+            && FocusManager?.GetFocusedElement() is Avalonia.Controls.Primitives.ToggleButton)
+        {
+            e.Handled = true;
+            _ = Model.PressDefaultAsync();
         }
     }
 

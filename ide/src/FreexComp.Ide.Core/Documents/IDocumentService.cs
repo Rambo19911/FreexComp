@@ -72,6 +72,20 @@ public interface IDocumentService
     Task<bool> CloseAsync(DocumentViewModel document);
 
     /// <summary>
+    /// <c>file.closeAll</c> / <c>file.closeOthers</c> (IDE-P1-036): every document except <paramref name="except"/>,
+    /// after one <see cref="PromptSaveChangesAsync"/>. True when they were closed.
+    /// </summary>
+    Task<bool> CloseAllAsync(DocumentViewModel? except = null);
+
+    /// <summary>
+    /// The once-per-operation question for the modified ones among <paramref name="documents"/> (IDE-P1-036,
+    /// UI-DLG-060…063): none → true; one → <c>Msg.File.SaveChangesOne</c>; several → the Unsaved Changes dialog. True
+    /// when the operation may go on (chosen documents saved, the rest discarded); false on Cancel, a failed save or a
+    /// canceled Save As picker — documents saved until then stay saved.
+    /// </summary>
+    Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents);
+
+    /// <summary>
     /// <c>file.save</c> of one document: writes it to its file; a failure shows <c>Msg.File.SaveFailed</c>
     /// (<c>Retry</c> repeats). An untitled document needs the Save As picker (IDE-P1-034). True when it was written.
     /// </summary>

@@ -26,7 +26,7 @@ public sealed class MessageBoxWindow(MessageBoxViewModel model) : DialogWindow(m
     private static Control Body(MessageBoxViewModel model)
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        var icon = CreateIcon(model);
+        var icon = CreateIcon(model.Kind, model.KindName, Id("Icon"));
         icon.Margin = new Thickness(0, 0, 16, 0); // space.6
         grid.Children.Add(icon);
 
@@ -110,9 +110,9 @@ public sealed class MessageBoxWindow(MessageBoxViewModel model) : DialogWindow(m
     }
 
     /// <summary>UI-DLG-022: original outline glyphs, 2 px, 32 × 32 (<c>icon.large</c>).</summary>
-    private static Control CreateIcon(MessageBoxViewModel model)
+    internal static Control CreateIcon(MessageKind kind, string kindName, string automationId)
     {
-        var (outline, mark, dot, brush) = model.Kind switch
+        var (outline, mark, dot, brush) = kind switch
         {
             MessageKind.Question => ("M3,16 A13,13 0 1,0 29,16 A13,13 0 1,0 3,16 Z", "M12,12.5 A4,4 0 1,1 18.2,15.8 C16.6,16.9 16,17.9 16,19.5", (16.0, 23.5), "FxcStatusInfoBrush"),
             MessageKind.Info => ("M3,16 A13,13 0 1,0 29,16 A13,13 0 1,0 3,16 Z", "M16,14 V23", (16.0, 9.5), "FxcStatusInfoBrush"),
@@ -139,8 +139,8 @@ public sealed class MessageBoxWindow(MessageBoxViewModel model) : DialogWindow(m
             canvas.Children.Add(point);
         }
 
-        AutomationProperties.SetAutomationId(canvas, Id("Icon"));
-        AutomationProperties.SetName(canvas, model.KindName);
+        AutomationProperties.SetAutomationId(canvas, automationId);
+        AutomationProperties.SetName(canvas, kindName);
         return canvas;
     }
 }
