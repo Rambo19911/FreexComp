@@ -132,7 +132,7 @@ public sealed partial class LexerTests
     [InlineData("{**}", SyntaxKind.DocCommentTrivia)]
     [InlineData("{$R+}", SyntaxKind.DirectiveTrivia)]           // LANG-141
     [InlineData("(*$R+*)", SyntaxKind.DirectiveTrivia)]
-    [InlineData("{$IFDEF DEBUG}", SyntaxKind.DirectiveTrivia)]
+    [InlineData("{$DEFINE DEBUG}", SyntaxKind.DirectiveTrivia)]
     [InlineData("{ $R+}", SyntaxKind.BlockCommentTrivia)]
     [InlineData("(* $R+*)", SyntaxKind.BlockCommentTrivia)]
     public void Trivia_Comment_IsOnePieceOfItsKind(string comment, SyntaxKind kind)

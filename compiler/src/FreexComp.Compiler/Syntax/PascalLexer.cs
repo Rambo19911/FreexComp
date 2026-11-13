@@ -15,12 +15,15 @@ internal sealed class PascalLexer
     private readonly string _text;
     private readonly List<Diagnostic> _diagnostics = [];
     private readonly ImmutableArray<SyntaxTrivia>.Builder _trivia = ImmutableArray.CreateBuilder<SyntaxTrivia>();
+    private readonly Preprocessor _preprocessor;
     private int _pos;
+    private bool _finished;
 
-    public PascalLexer(SourceText source)
+    public PascalLexer(SourceText source, ParseOptions? options = null)
     {
         _source = source;
         _text = source.Text;
+        _preprocessor = new Preprocessor(options, (code, span, args) => Report(code, span.Start, span.Length, args));
     }
 
     public ImmutableArray<Diagnostic> Diagnostics => [.. _diagnostics];
@@ -35,6 +38,12 @@ internal sealed class PascalLexer
         var start = _pos;
         if (_pos >= _text.Length)
         {
+            if (!_finished)
+            {
+                _finished = true;
+                _preprocessor.Finish();
+            }
+
             return new SyntaxToken(SyntaxKind.EndOfFileToken, "", null, start, leading, []);
         }
 
@@ -446,6 +455,18 @@ internal sealed class PascalLexer
         while (_pos < _text.Length)
         {
             var start = _pos;
+            if (!_preprocessor.IsActive)
+            {
+                // LANG-864: an inactive branch runs up to the directive that may end it (or to the end of file).
+                var end = FindEndOfDisabledText(_pos);
+                if (end > _pos)
+                {
+                    _pos = end;
+                    _trivia.Add(new SyntaxTrivia(SyntaxKind.DisabledTextTrivia, _text[start.._pos], start));
+                    continue;
+                }
+            }
+
             var c = _text[_pos];
             var next = _pos + 1 < _text.Length ? _text[_pos + 1] : '\0';
             if (c == '{')
@@ -518,24 +539,96 @@ internal sealed class PascalLexer
         if (contentStart < _text.Length && _text[contentStart] == '$')
         {
             var body = _text.AsSpan(contentStart + 1, contentEnd - contentStart - 1);
-            var nameLength = 0;
-            while (nameLength < body.Length && (char.IsAsciiLetterOrDigit(body[nameLength]) || body[nameLength] == '_'))
-            {
-                nameLength++;
-            }
-
+            var nameLength = DirectiveNameLength(body);
             var info = new DirectiveTriviaInfo(
                 body[..nameLength].ToString().ToUpperInvariant(),
                 body[nameLength..].Trim().ToString(),
                 new TextSpan(start, text.Length),
                 IsActive: true);
             _trivia.Add(new SyntaxTrivia(SyntaxKind.DirectiveTrivia, text, start, info));
+            _preprocessor.Process(info);
             return;
         }
 
         var isDoc = closer == "}" && contentStart + 1 < _text.Length && _text[contentStart] == '*' && _text[contentStart + 1] == '*'
                     && contentStart + 1 < contentEnd;
         _trivia.Add(new SyntaxTrivia(isDoc ? SyntaxKind.DocCommentTrivia : SyntaxKind.BlockCommentTrivia, text, start));
+    }
+
+    private static int DirectiveNameLength(ReadOnlySpan<char> body)
+    {
+        var length = 0;
+        while (length < body.Length && (char.IsAsciiLetterOrDigit(body[length]) || body[length] == '_'))
+        {
+            length++;
+        }
+
+        return length;
+    }
+
+    /// <summary>
+    /// LANG-864: the end of an inactive branch: the start of the first <c>{$ELSE}</c>, <c>{$ELSEIF}</c>,
+    /// <c>{$ENDIF}</c> or <c>{$IFEND}</c> at nesting depth 0, else the end of the text. The text is not tokenised;
+    /// only comments (<c>{ }</c>, <c>(* *)</c>, <c>//</c>) and quoted strings are tracked so that directives inside
+    /// them are not seen. Unterminated comments and strings are not errors here.
+    /// </summary>
+    private int FindEndOfDisabledText(int pos)
+    {
+        var depth = 0;
+        while (pos < _text.Length)
+        {
+            var c = _text[pos];
+            var next = pos + 1 < _text.Length ? _text[pos + 1] : '\0';
+            if (c == '\'')
+            {
+                pos++;
+                while (pos < _text.Length && _text[pos] is not ('\'' or '\r' or '\n'))
+                {
+                    pos++;
+                }
+
+                pos = Math.Min(pos + 1, _text.Length);
+            }
+            else if (c == '/' && next == '/')
+            {
+                while (pos < _text.Length && _text[pos] is not ('\r' or '\n'))
+                {
+                    pos++;
+                }
+            }
+            else if (c == '{' || (c == '(' && next == '*'))
+            {
+                var openerLength = c == '{' ? 1 : 2;
+                var closer = c == '{' ? "}" : "*)";
+                var contentStart = pos + openerLength;
+                var end = _text.IndexOf(closer, contentStart, StringComparison.Ordinal);
+                if (contentStart < _text.Length && _text[contentStart] == '$')
+                {
+                    var body = _text.AsSpan(contentStart + 1, (end < 0 ? _text.Length : end) - contentStart - 1);
+                    var name = body[..DirectiveNameLength(body)].ToString().ToUpperInvariant();
+                    if (Preprocessor.OpensConditional(name))
+                    {
+                        depth++;
+                    }
+                    else if (depth == 0 && Preprocessor.EndsDisabledText(name))
+                    {
+                        return pos;
+                    }
+                    else if (Preprocessor.ClosesConditional(name))
+                    {
+                        depth--;
+                    }
+                }
+
+                pos = end < 0 ? _text.Length : end + closer.Length;
+            }
+            else
+            {
+                pos++;
+            }
+        }
+
+        return pos;
     }
 
     /// <summary>LANG-104: E1002, the character (or surrogate pair) becomes skipped-text trivia.</summary>
@@ -561,7 +654,7 @@ internal sealed class PascalLexer
         Report("E1002", start, width, shown, codePoint.ToString("X4", CultureInfo.InvariantCulture));
     }
 
-    private static bool IsWhitespace(char c) => c is ' ' or '\t' or '\f' or ' ' or '﻿';
+    private static bool IsWhitespace(char c) => c is ' ' or '\t' or '\f' or '\u00A0' or '\uFEFF';
 
     private void Report(string code, int start, int length, params object[] args)
     {

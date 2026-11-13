@@ -18,11 +18,9 @@ public static class Lexer
     public static ImmutableArray<Diagnostic> GetDiagnostics(SourceText text, ParseOptions? options = null) =>
         Run(text, options).Diagnostics;
 
-    // ParseOptions (conditional defines) take effect with the preprocessor (task C-008).
     private static (ImmutableArray<SyntaxToken> Tokens, ImmutableArray<Diagnostic> Diagnostics) Run(SourceText text, ParseOptions? options)
     {
-        _ = options;
-        var lexer = new PascalLexer(text);
+        var lexer = new PascalLexer(text, options);
         var tokens = ImmutableArray.CreateBuilder<SyntaxToken>();
         SyntaxToken token;
         do
