@@ -109,6 +109,19 @@ public sealed partial class ParserTests
     }
 
     [Fact]
+    public void Expressions_BareStringKeyword_IsAPredefinedTypeExpression()
+    {
+        Assert.Equal(
+            $"(InvocationExpression {Id("SizeOf")} (ArgumentList ( (Argument (PredefinedTypeExpression string)) )))",
+            DumpExpression("SizeOf(string)"));
+        Assert.Equal($"(StringCastExpression string ( {Id("p")} ))", DumpExpression("string(p)"));
+
+        var text = "const X = string; begin end.";
+        var value = ((ConstSectionSyntax)((ProgramSyntax)Parse(text).Root).Block.Declarations[0]).Declarations[0].Value;
+        Assert.Equal(SyntaxKind.StringKeyword, Assert.IsType<PredefinedTypeExpressionSyntax>(value).Keyword.Kind);
+    }
+
+    [Fact]
     public void Expressions_ParenthesisedExpressionTakesSuffixes()
     {
         Assert.Equal(

@@ -207,6 +207,20 @@ public sealed class InheritedExpressionSyntax : ExpressionSyntax
     public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitInheritedExpression(this);
 }
 
+/// <summary>A bare <c>string</c> keyword in an expression, e.g. <c>SizeOf(string)</c> (the binder restricts where it is allowed).</summary>
+public sealed class PredefinedTypeExpressionSyntax : ExpressionSyntax
+{
+    internal PredefinedTypeExpressionSyntax(SyntaxToken keyword)
+        : base(SyntaxKind.PredefinedTypeExpression)
+    {
+        Keyword = Add(keyword);
+    }
+
+    public SyntaxToken Keyword { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitPredefinedTypeExpression(this);
+}
+
 /// <summary><c>string ( expression )</c>: a typecast to <c>string</c>; suffixes wrap it.</summary>
 public sealed class StringCastExpressionSyntax : ExpressionSyntax
 {

@@ -620,7 +620,7 @@ internal sealed class Parser
 
         var next = Peek(offset + 1).Kind;
         return next is SyntaxKind.DotDotToken or SyntaxKind.OpenParenToken
-               || (SyntaxFacts.GetBinaryPrecedence(next) > 0 && next != SyntaxKind.EqualsToken);
+               || (SyntaxFacts.GetBinaryPrecedence(next) > 0 && next is not (SyntaxKind.EqualsToken or SyntaxKind.InKeyword));
     }
 
     private StringTypeSyntax ParseStringType()
@@ -975,7 +975,8 @@ internal sealed class Parser
 
     /// <summary>
     /// <c>factor</c>: <c>@</c>/<c>not</c>/sign factor, literal, <c>nil</c>, set constructor, <c>( expression )</c>,
-    /// <c>inherited [ ident ]</c>, <c>string ( expression )</c> or designator, the last four with designator suffixes.
+    /// <c>inherited [ ident ]</c>, <c>string ( expression )</c>, a bare <c>string</c> or designator; all but the bare
+    /// <c>string</c> and the literals with designator suffixes.
     /// Anonymous methods and generic arguments follow with C-019; anything else is E1103.
     /// </summary>
     private ExpressionSyntax ParseFactor()
@@ -1006,6 +1007,8 @@ internal sealed class Parser
                 var operand = ParseExpression();
                 return ParseDesignatorSuffixes(
                     new StringCastExpressionSyntax(stringKeyword, castOpen, operand, Expect(SyntaxKind.CloseParenToken)));
+            case SyntaxKind.StringKeyword:
+                return new PredefinedTypeExpressionSyntax(Take());
             case SyntaxKind.IdentifierToken:
                 return ParseDesignatorSuffixes(new IdentifierNameSyntax(Take()));
             default:
@@ -1147,6 +1150,13 @@ internal sealed class Parser
         return new CompoundStatementSyntax(begin, statements, end);
     }
 
+    // Statement context (LANG-165). _elseMayFollow: an 'else' right after the statement belongs to an enclosing
+    // if/case/try, so the statement ends there (then-branches, case arms, exception handlers and statements nested in
+    // them). _semicolonElseIsOuter: '; else' after an if belongs to an enclosing case or handler block (no E1105).
+    // Both are reset inside statement lists.
+    private bool _elseMayFollow;
+    private bool _semicolonElseIsOuter;
+
     /// <summary><c>[ statement ] { ; [ statement ] }</c>; an absent statement next to a <c>;</c> is an empty statement.</summary>
     private SeparatedSyntaxList<StatementSyntax> ParseStatementList()
     {
@@ -1156,6 +1166,8 @@ internal sealed class Parser
             return default;
         }
 
+        var (elseMayFollow, semicolonElseIsOuter) = (_elseMayFollow, _semicolonElseIsOuter);
+        (_elseMayFollow, _semicolonElseIsOuter) = (false, false);
         while (true)
         {
             items.Add(ParseStatement());
@@ -1169,34 +1181,366 @@ internal sealed class Parser
             }
             else
             {
-                // only a statement start can be here (ParseStatement skips everything else): ';' is missing
+                // ParseStatement consumed what it could: ';' is missing before the next token
                 items.Add(Expect(SyntaxKind.SemicolonToken));
             }
         }
 
+        (_elseMayFollow, _semicolonElseIsOuter) = (elseMayFollow, semicolonElseIsOuter);
         return new SeparatedSyntaxList<StatementSyntax>(items.ToImmutable());
     }
 
     private static bool EndsStatementList(SyntaxKind kind) => kind is SyntaxKind.EndKeyword or SyntaxKind.UntilKeyword
         or SyntaxKind.FinallyKeyword or SyntaxKind.ExceptKeyword or SyntaxKind.FinalizationKeyword or SyntaxKind.EndOfFileToken;
 
+    /// <summary>A statement nested in another one, with the given statement context.</summary>
+    private StatementSyntax ParseNestedStatement(bool elseMayFollow, bool semicolonElseIsOuter)
+    {
+        var saved = (_elseMayFollow, _semicolonElseIsOuter);
+        (_elseMayFollow, _semicolonElseIsOuter) = (elseMayFollow, semicolonElseIsOuter);
+        var statement = ParseStatement();
+        (_elseMayFollow, _semicolonElseIsOuter) = saved;
+        return statement;
+    }
+
     /// <summary>
-    /// A statement. Only compound and empty statements exist yet (C-017 adds the rest): other tokens are skipped up to a
-    /// statement-level synchronisation point (LANG-183) or a <c>begin</c>.
+    /// <c>statement = [ labelId : ] [ unlabelled ]</c>. An absent statement (before <c>;</c>, a list end or an
+    /// <c>else</c> that may follow) is an empty statement; a token that cannot start a statement is skipped with E1100
+    /// up to a statement-level synchronisation point (LANG-183) or a <c>begin</c>.
     /// </summary>
     private StatementSyntax ParseStatement()
     {
-        if (CurrentKind is not (SyntaxKind.BeginKeyword or SyntaxKind.SemicolonToken) && !EndsStatementList(CurrentKind))
+        switch (CurrentKind)
+        {
+            case SyntaxKind.SemicolonToken:
+            case SyntaxKind.ElseKeyword when _elseMayFollow:
+            case var _ when EndsStatementList(CurrentKind):
+                return new EmptyStatementSyntax();
+            case SyntaxKind.IdentifierToken or SyntaxKind.IntegerLiteralToken when Peek(1).Kind == SyntaxKind.ColonToken:
+                var label = ParseLabel();
+                var colon = Take();
+                return new LabeledStatementSyntax(label, colon, ParseStatement());
+            case SyntaxKind.IdentifierToken or SyntaxKind.OpenParenToken or SyntaxKind.InheritedKeyword:
+                return ParseSimpleStatement();
+            case SyntaxKind.BeginKeyword:
+                return ParseCompoundStatement();
+            case SyntaxKind.IfKeyword:
+                return ParseIfStatement();
+            case SyntaxKind.CaseKeyword:
+                return ParseCaseStatement();
+            case SyntaxKind.RepeatKeyword:
+                return ParseRepeatStatement();
+            case SyntaxKind.WhileKeyword:
+                return ParseWhileStatement();
+            case SyntaxKind.ForKeyword:
+                return ParseForStatement();
+            case SyntaxKind.WithKeyword:
+                return ParseWithStatement();
+            case SyntaxKind.TryKeyword:
+                return ParseTryStatement();
+            case SyntaxKind.GotoKeyword:
+                var gotoKeyword = Take();
+                return new GotoStatementSyntax(gotoKeyword, ParseLabel());
+            case SyntaxKind.RaiseKeyword:
+                return ParseRaiseStatement();
+            case SyntaxKind.VarKeyword:
+                return ParseInlineVarStatement();
+            case SyntaxKind.ConstKeyword:
+                return ParseInlineConstStatement();
+            default:
+                do
+                {
+                    SkipToken();
+                }
+                while (CurrentKind is not (SyntaxKind.BeginKeyword or SyntaxKind.SemicolonToken or SyntaxKind.ElseKeyword)
+                       && !EndsStatementList(CurrentKind));
+
+                return CurrentKind == SyntaxKind.BeginKeyword ? ParseCompoundStatement() : new EmptyStatementSyntax();
+        }
+    }
+
+    /// <summary>
+    /// <c>designator := expression</c>, <c>designator</c> (a call) or <c>inherited [ ident [ ( [ argList ] ) ] ]</c>.
+    /// </summary>
+    private StatementSyntax ParseSimpleStatement()
+    {
+        var target = ParseFactor();
+        if (CurrentKind == SyntaxKind.ColonEqualsToken)
+        {
+            var colonEquals = Take();
+            return new AssignmentStatementSyntax(target, colonEquals, ParseExpression());
+        }
+
+        var isInherited = target is InheritedExpressionSyntax
+            || target is InvocationExpressionSyntax { Expression: InheritedExpressionSyntax { Name: not null } };
+        return isInherited ? new InheritedStatementSyntax(target) : new ExpressionStatementSyntax(target);
+    }
+
+    /// <summary>
+    /// <c>if expression then statement [ else statement ]</c>. A <c>;</c> before <c>else</c> is E1105 (LANG-165) unless
+    /// the <c>else</c> belongs to an enclosing case or handler block; the <c>;</c> is then skipped and the <c>else</c>
+    /// taken.
+    /// </summary>
+    private IfStatementSyntax ParseIfStatement()
+    {
+        var ifKeyword = Take();
+        var condition = ParseExpression();
+        var then = Expect(SyntaxKind.ThenKeyword);
+        var statement = ParseNestedStatement(elseMayFollow: true, _semicolonElseIsOuter);
+        if (CurrentKind == SyntaxKind.SemicolonToken && Peek(1).Kind == SyntaxKind.ElseKeyword && !_semicolonElseIsOuter)
+        {
+            ReportAt(Current, "E1105");
+            SkipToken(report: false);
+        }
+
+        if (CurrentKind != SyntaxKind.ElseKeyword)
+        {
+            return new IfStatementSyntax(ifKeyword, condition, then, statement, null, null);
+        }
+
+        var elseKeyword = Take();
+        return new IfStatementSyntax(ifKeyword, condition, then, statement, elseKeyword,
+            ParseNestedStatement(_elseMayFollow, _semicolonElseIsOuter));
+    }
+
+    /// <summary><c>case expression of caseArm { ; caseArm } [ ; ] [ else stmtList ] end</c></summary>
+    private CaseStatementSyntax ParseCaseStatement()
+    {
+        var caseKeyword = Take();
+        var selector = ParseExpression();
+        var of = Expect(SyntaxKind.OfKeyword);
+        var arms = ImmutableArray.CreateBuilder<SyntaxNodeOrToken>();
+        do
+        {
+            arms.Add(ParseCaseArm());
+            if (CurrentKind != SyntaxKind.SemicolonToken)
+            {
+                break;
+            }
+
+            arms.Add(Take());
+        }
+        while (CurrentKind != SyntaxKind.ElseKeyword && !EndsStatementList(CurrentKind));
+
+        SyntaxToken? elseKeyword = null;
+        SeparatedSyntaxList<StatementSyntax> elseStatements = default;
+        if (CurrentKind == SyntaxKind.ElseKeyword)
+        {
+            elseKeyword = Take();
+            elseStatements = ParseStatementList();
+        }
+
+        return new CaseStatementSyntax(caseKeyword, selector, of, new SeparatedSyntaxList<CaseArmSyntax>(arms.ToImmutable()),
+            elseKeyword, elseStatements, Expect(SyntaxKind.EndKeyword));
+    }
+
+    /// <summary><c>caseLabel { , caseLabel } : statement</c>, <c>caseLabel = constExpr [ .. constExpr ]</c></summary>
+    private CaseArmSyntax ParseCaseArm()
+    {
+        var labels = ParseSeparated(ParseCaseLabel, SyntaxKind.CommaToken);
+        var colon = Expect(SyntaxKind.ColonToken);
+        return new CaseArmSyntax(labels, colon, ParseNestedStatement(elseMayFollow: true, semicolonElseIsOuter: true));
+    }
+
+    private CaseLabelSyntax ParseCaseLabel()
+    {
+        var value = ParseExpression();
+        if (CurrentKind != SyntaxKind.DotDotToken)
+        {
+            return new CaseLabelSyntax(value, null, null);
+        }
+
+        var dotDot = Take();
+        return new CaseLabelSyntax(value, dotDot, ParseExpression());
+    }
+
+    /// <summary><c>repeat stmtList until expression</c></summary>
+    private RepeatStatementSyntax ParseRepeatStatement()
+    {
+        var repeat = Take();
+        var statements = ParseStatementList();
+        var until = Expect(SyntaxKind.UntilKeyword);
+        return new RepeatStatementSyntax(repeat, statements, until, ParseExpression());
+    }
+
+    /// <summary><c>while expression do statement</c></summary>
+    private WhileStatementSyntax ParseWhileStatement()
+    {
+        var whileKeyword = Take();
+        var condition = ParseExpression();
+        var doKeyword = Expect(SyntaxKind.DoKeyword);
+        return new WhileStatementSyntax(whileKeyword, condition, doKeyword, ParseNestedStatement(_elseMayFollow, _semicolonElseIsOuter));
+    }
+
+    /// <summary>
+    /// <c>for forVar := expression ( to | downto ) expression do statement</c> or <c>for forVar in expression do statement</c>;
+    /// <c>forVar = ident | var ident [ : type ]</c>.
+    /// </summary>
+    private StatementSyntax ParseForStatement()
+    {
+        var forKeyword = Take();
+        var varKeyword = CurrentKind == SyntaxKind.VarKeyword ? Take() : (SyntaxToken?)null;
+        var variable = ParseIdentifierName();
+        SyntaxToken? colon = null;
+        TypeSyntax? type = null;
+        if (varKeyword is not null && CurrentKind == SyntaxKind.ColonToken)
+        {
+            colon = Take();
+            type = ParseType();
+        }
+
+        if (CurrentKind == SyntaxKind.InKeyword)
+        {
+            var inKeyword = Take();
+            var collection = ParseExpression();
+            var inDo = Expect(SyntaxKind.DoKeyword);
+            return new ForInStatementSyntax(forKeyword, varKeyword, variable, colon, type, inKeyword, collection, inDo,
+                ParseNestedStatement(_elseMayFollow, _semicolonElseIsOuter));
+        }
+
+        var colonEquals = Expect(SyntaxKind.ColonEqualsToken);
+        var start = ParseExpression();
+        var direction = CurrentKind == SyntaxKind.DownToKeyword ? Take() : Expect(SyntaxKind.ToKeyword);
+        var finish = ParseExpression();
+        var doKeyword = Expect(SyntaxKind.DoKeyword);
+        return new ForStatementSyntax(forKeyword, varKeyword, variable, colon, type, colonEquals, start, direction, finish, doKeyword,
+            ParseNestedStatement(_elseMayFollow, _semicolonElseIsOuter));
+    }
+
+    /// <summary><c>with designator { , designator } do statement</c></summary>
+    private WithStatementSyntax ParseWithStatement()
+    {
+        var withKeyword = Take();
+        var expressions = ParseSeparated(() => ParseExpression(), SyntaxKind.CommaToken);
+        var doKeyword = Expect(SyntaxKind.DoKeyword);
+        return new WithStatementSyntax(withKeyword, expressions, doKeyword, ParseNestedStatement(_elseMayFollow, _semicolonElseIsOuter));
+    }
+
+    /// <summary>
+    /// <c>try stmtList ( finally stmtList | except exceptBlock ) end</c>; without either keyword a missing
+    /// <c>finally</c> is inserted. The handler form is used iff the block starts with <c>on ident</c> (LANG-166).
+    /// </summary>
+    private StatementSyntax ParseTryStatement()
+    {
+        var tryKeyword = Take();
+        var statements = ParseStatementList();
+        if (CurrentKind != SyntaxKind.ExceptKeyword)
+        {
+            var finallyKeyword = Expect(SyntaxKind.FinallyKeyword);
+            var finallyStatements = ParseStatementList();
+            return new TryFinallyStatementSyntax(tryKeyword, statements, finallyKeyword, finallyStatements, Expect(SyntaxKind.EndKeyword));
+        }
+
+        var exceptKeyword = Take();
+        var handlers = ImmutableArray.CreateBuilder<SyntaxNodeOrToken>();
+        SyntaxToken? elseKeyword = null;
+        SeparatedSyntaxList<StatementSyntax> exceptStatements = default;
+        if (StartsHandler())
         {
             do
             {
-                SkipToken();
+                handlers.Add(ParseExceptionHandler());
+                if (CurrentKind != SyntaxKind.SemicolonToken)
+                {
+                    break;
+                }
+
+                handlers.Add(Take());
             }
-            while (CurrentKind is not (SyntaxKind.BeginKeyword or SyntaxKind.SemicolonToken or SyntaxKind.ElseKeyword)
-                   && !EndsStatementList(CurrentKind));
+            while (StartsHandler());
+
+            if (CurrentKind == SyntaxKind.ElseKeyword)
+            {
+                elseKeyword = Take();
+                exceptStatements = ParseStatementList();
+            }
+        }
+        else
+        {
+            exceptStatements = ParseStatementList();
         }
 
-        return CurrentKind == SyntaxKind.BeginKeyword ? ParseCompoundStatement() : new EmptyStatementSyntax();
+        return new TryExceptStatementSyntax(tryKeyword, statements, exceptKeyword,
+            new SeparatedSyntaxList<ExceptionHandlerSyntax>(handlers.ToImmutable()), elseKeyword, exceptStatements,
+            Expect(SyntaxKind.EndKeyword));
+    }
+
+    private bool StartsHandler() => IsContextual(Current, SyntaxKind.OnKeyword) && Peek(1).Kind == SyntaxKind.IdentifierToken;
+
+    /// <summary><c>on [ ident : ] typeId do statement</c></summary>
+    private ExceptionHandlerSyntax ParseExceptionHandler()
+    {
+        var on = TakeContextual();
+        SyntaxToken? identifier = null;
+        SyntaxToken? colon = null;
+        if (Peek(1).Kind == SyntaxKind.ColonToken)
+        {
+            identifier = Take();
+            colon = Take();
+        }
+
+        var type = ParseNamedType();
+        var doKeyword = Expect(SyntaxKind.DoKeyword);
+        return new ExceptionHandlerSyntax(on, identifier, colon, type, doKeyword,
+            ParseNestedStatement(elseMayFollow: true, semicolonElseIsOuter: true));
+    }
+
+    /// <summary><c>raise [ expression [ at expression ] ]</c>; <c>at</c> is recognised only here (LANG-167).</summary>
+    private RaiseStatementSyntax ParseRaiseStatement()
+    {
+        var raise = Take();
+        if (CurrentKind is SyntaxKind.SemicolonToken or SyntaxKind.ElseKeyword || EndsStatementList(CurrentKind))
+        {
+            return new RaiseStatementSyntax(raise, null, null, null);
+        }
+
+        var exception = ParseExpression();
+        if (!IsContextual(Current, SyntaxKind.AtKeyword))
+        {
+            return new RaiseStatementSyntax(raise, exception, null, null);
+        }
+
+        var at = TakeContextual();
+        return new RaiseStatementSyntax(raise, exception, at, ParseExpression());
+    }
+
+    /// <summary><c>var identList [ : type ] [ := expression ]</c>; neither <c>:</c> nor <c>:=</c> inserts a missing <c>:</c>.</summary>
+    private InlineVarStatementSyntax ParseInlineVarStatement()
+    {
+        var varKeyword = Take();
+        var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
+        SyntaxToken? colon = null;
+        TypeSyntax? type = null;
+        if (CurrentKind != SyntaxKind.ColonEqualsToken)
+        {
+            colon = Expect(SyntaxKind.ColonToken);
+            type = ParseType();
+        }
+
+        if (CurrentKind != SyntaxKind.ColonEqualsToken)
+        {
+            return new InlineVarStatementSyntax(varKeyword, identifiers, colon, type, null, null);
+        }
+
+        var colonEquals = Take();
+        return new InlineVarStatementSyntax(varKeyword, identifiers, colon, type, colonEquals, ParseExpression());
+    }
+
+    /// <summary><c>const ident [ : type ] = constExpr</c></summary>
+    private InlineConstStatementSyntax ParseInlineConstStatement()
+    {
+        var constKeyword = Take();
+        var identifier = ExpectIdentifier();
+        SyntaxToken? colon = null;
+        TypeSyntax? type = null;
+        if (CurrentKind == SyntaxKind.ColonToken)
+        {
+            colon = Take();
+            type = ParseType();
+        }
+
+        var equals = Expect(SyntaxKind.EqualsToken);
+        return new InlineConstStatementSyntax(constKeyword, identifier, colon, type, equals, ParseExpression());
     }
 
     // ------------------------------------------------------------------ names

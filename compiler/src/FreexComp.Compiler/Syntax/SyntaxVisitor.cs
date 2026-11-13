@@ -132,6 +132,48 @@ public abstract class SyntaxVisitor<TResult>
     public virtual TResult VisitInheritedExpression(InheritedExpressionSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitStringCastExpression(StringCastExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitPredefinedTypeExpression(PredefinedTypeExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitAssignmentStatement(AssignmentStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitExpressionStatement(ExpressionStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitInheritedStatement(InheritedStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitGotoStatement(GotoStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitLabeledStatement(LabeledStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitRaiseStatement(RaiseStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitIfStatement(IfStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitCaseStatement(CaseStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitCaseArm(CaseArmSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitCaseLabel(CaseLabelSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitRepeatStatement(RepeatStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitWhileStatement(WhileStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitForStatement(ForStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitForInStatement(ForInStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitWithStatement(WithStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitTryFinallyStatement(TryFinallyStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitTryExceptStatement(TryExceptStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitExceptionHandler(ExceptionHandlerSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitInlineVarStatement(InlineVarStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitInlineConstStatement(InlineConstStatementSyntax node) => DefaultVisit(node);
 }
 
 /// <summary>Depth-first walk over every node, token and trivia piece in source order.</summary>
