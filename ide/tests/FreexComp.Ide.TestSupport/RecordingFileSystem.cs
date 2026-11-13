@@ -25,6 +25,9 @@ public sealed class RecordingFileSystem(IFileSystem inner) : IFileSystem
     /// <summary>When set and returning true for a recorded call text, that call throws <see cref="IOException"/>.</summary>
     public Func<string, bool>? FailWhen { get; set; }
 
+    /// <summary>When set and returning an exception for a recorded call text, that call throws it.</summary>
+    public Func<string, Exception?>? FailWith { get; set; }
+
     public bool FileExists(string path) => Run($"FileExists {path}", () => inner.FileExists(path));
 
     public bool DirectoryExists(string path) => Run($"DirectoryExists {path}", () => inner.DirectoryExists(path));
@@ -39,6 +42,11 @@ public sealed class RecordingFileSystem(IFileSystem inner) : IFileSystem
 
     public void MoveFile(string sourcePath, string destinationPath, bool overwrite) =>
         Run($"MoveFile {sourcePath} -> {destinationPath}", () => inner.MoveFile(sourcePath, destinationPath, overwrite));
+
+    public void ReplaceFile(string sourcePath, string destinationPath) =>
+        Run($"ReplaceFile {sourcePath} -> {destinationPath}", () => inner.ReplaceFile(sourcePath, destinationPath));
+
+    public void OverwriteFile(string path, byte[] data) => Run($"OverwriteFile {path}", () => inner.OverwriteFile(path, data));
 
     public IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern) =>
         Run($"EnumerateFiles {directory}", () => inner.EnumerateFiles(directory, searchPattern));
@@ -68,6 +76,11 @@ public sealed class RecordingFileSystem(IFileSystem inner) : IFileSystem
         if (FailWhen?.Invoke(call) == true)
         {
             throw new IOException("Injected failure: " + call);
+        }
+
+        if (FailWith?.Invoke(call) is { } exception)
+        {
+            throw exception;
         }
 
         return action();

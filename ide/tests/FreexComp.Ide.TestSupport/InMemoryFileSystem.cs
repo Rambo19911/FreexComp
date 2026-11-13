@@ -115,6 +115,39 @@ public sealed class InMemoryFileSystem : IFileSystem
         }
     }
 
+    public void ReplaceFile(string sourcePath, string destinationPath)
+    {
+        lock (_gate)
+        {
+            var source = Normalize(sourcePath);
+            var destination = Normalize(destinationPath);
+            var entry = GetFile(source);
+            var target = GetFile(destination);
+            if (target.ReadOnly)
+            {
+                throw new UnauthorizedAccessException($"Access to the path '{destination}' is denied.");
+            }
+
+            _files.Remove(source);
+            _files[destination] = target with { Data = entry.Data, LastWriteUtc = entry.LastWriteUtc };
+        }
+    }
+
+    public void OverwriteFile(string path, byte[] data)
+    {
+        lock (_gate)
+        {
+            var p = Normalize(path);
+            var entry = GetFile(p);
+            if (entry.ReadOnly)
+            {
+                throw new UnauthorizedAccessException($"Access to the path '{p}' is denied.");
+            }
+
+            _files[p] = entry with { Data = [.. data], LastWriteUtc = _utcNow() };
+        }
+    }
+
     public IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern)
     {
         lock (_gate)

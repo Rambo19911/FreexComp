@@ -75,7 +75,7 @@ public sealed class UnsavedChangesDialogTests
         await closing;
         Assert.Empty(h.Services.Documents.Documents);
         Assert.Equal("a", File.ReadAllText(Path.Combine(h.TempDir, "A.pas")));
-        Assert.Equal("b2", File.ReadAllText(Path.Combine(h.TempDir, "B.pas")));
+        Assert.Equal("b2\r\n", File.ReadAllText(Path.Combine(h.TempDir, "B.pas"))); // files.ensureFinalNewline
         Assert.Equal("c", File.ReadAllText(Path.Combine(h.TempDir, "C.pas")));
 
         // Escape cancels the whole operation: nothing is saved or closed.
@@ -96,5 +96,30 @@ public sealed class UnsavedChangesDialogTests
         await closing;
         Assert.Empty(h.Services.Documents.Documents);
         Assert.Equal("c", File.ReadAllText(Path.Combine(h.TempDir, "C.pas")));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-061")]
+    [Trait("Req", "UI-A11Y-035")]
+    public async Task SameNameFilesHaveDistinctRows()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles[Path.Combine("lib", "Unit1.pas")] = "a";
+            o.InitialFiles[Path.Combine("src", "Unit1.pas")] = "b";
+            o.InitialFiles["Other.pas"] = "c";
+        });
+        await OpenModifiedAsync(h, Path.Combine("lib", "Unit1.pas"), "1");
+        await OpenModifiedAsync(h, Path.Combine("src", "Unit1.pas"), "2");
+        await OpenModifiedAsync(h, "Other.pas", "3");
+
+        var closing = h.Services.Commands.ExecuteAsync("file.closeAll");
+        var dlg = await h.WaitForDialogAsync("UnsavedChanges");
+        Assert.Equal(["Dialog.UnsavedChanges.File.Unit1.pas lib", "Dialog.UnsavedChanges.File.Unit1.pas src", "Dialog.UnsavedChanges.File.Other.pas"],
+            dlg.FindAll("Dialog.UnsavedChanges.File.").Select(AutomationIds.Get));
+        Assert.Equal("Unit1.pas", AutomationProperties.GetName(dlg.Find<CheckBox>("File.Unit1.pas src")));
+        dlg.Press("Escape");
+        await closing;
+        Assert.Equal(3, h.Services.Documents.Documents.Count);
     }
 }

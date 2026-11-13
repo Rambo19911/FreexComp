@@ -86,14 +86,26 @@ public interface IDocumentService
     Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents);
 
     /// <summary>
-    /// <c>file.save</c> of one document: writes it to its file; a failure shows <c>Msg.File.SaveFailed</c>
-    /// (<c>Retry</c> repeats). An untitled document needs the Save As picker (IDE-P1-034). True when it was written.
+    /// <c>file.save</c> of one document (phase1-shell.md §8): the save pipeline of <see cref="SaveAsAsync"/> plus its
+    /// questions — <c>Msg.File.EncodingLossy</c> (<c>Save as UTF-8</c> switches the encoding and saves) and
+    /// <c>Msg.File.SaveFailed</c> (<c>Retry</c> repeats, <c>Save As…</c> picks another path, <c>Cancel</c> gives up).
+    /// An untitled document needs the Save As picker (IDE-P1-034). True when it was written.
     /// </summary>
     Task<bool> SaveAsync(DocumentViewModel document);
 
     /// <summary>
-    /// Writes <paramref name="document"/> to <paramref name="path"/> with its encoding and makes it the document's
-    /// file (IDE-P1-034). A path open in another document is refused with <c>Msg.File.SaveFailed</c>.
+    /// <c>file.saveAll</c> (IDE-P1-085): every modified document in tab order through <see cref="SaveAsync"/>'s
+    /// questions; a canceled Save As picker skips that document, a failure answered with Cancel stops (false). Status
+    /// <c>Msg.File.SavedAll</c> with the number of files written, or <c>Msg.File.NothingToSave</c>.
+    /// </summary>
+    Task<bool> SaveAllAsync();
+
+    /// <summary>
+    /// The save pipeline without questions (IDE-P1-080, 081, 084): trim / final line break per settings (one undo
+    /// step), encode, atomic write to <paramref name="path"/>, which becomes the document's file (IDE-P1-034); then
+    /// <see cref="DocumentSaved"/> and status <c>Msg.File.Saved</c>. Failures: <c>Msg.File.EncodingLossy</c>
+    /// [encoding display name] (nothing written); <c>Msg.File.SaveFailed</c> [path, reason], also for a path open in
+    /// another document.
     /// </summary>
     Task<OperationResult> SaveAsAsync(TextDocumentViewModel document, string path);
 }

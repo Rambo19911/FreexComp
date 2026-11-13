@@ -15,6 +15,7 @@ public sealed class UnsavedChangesFile : ObservableObject
         Document = document;
         FileName = document.Title;
         Folder = document.FilePath is { } path ? Path.GetDirectoryName(path) : null;
+        Key = document.TitleSuffix is { } suffix ? FileName + " " + suffix : FileName;
     }
 
     public DocumentViewModel Document { get; }
@@ -22,6 +23,12 @@ public sealed class UnsavedChangesFile : ObservableObject
     public string FileName { get; }
 
     public string? Folder { get; }
+
+    /// <summary>
+    /// The row's id part (<c>Dialog.UnsavedChanges.File.&lt;Key&gt;</c>): the file name, plus <c>" " + TitleSuffix</c>
+    /// when another open document has the same name, so the rows stay distinct.
+    /// </summary>
+    public string Key { get; }
 
     public bool IsChecked
     {

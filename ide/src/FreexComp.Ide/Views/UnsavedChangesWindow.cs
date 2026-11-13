@@ -11,7 +11,8 @@ namespace FreexComp.Ide.Views;
 
 /// <summary>
 /// The multi-file Unsaved Changes dialog (dialogs.md §6): question icon, heading <c>Dialog.UnsavedChanges.Text</c>,
-/// one check box row per file (<c>Dialog.UnsavedChanges.File.&lt;fileName&gt;</c>: name, start-trimmed folder);
+/// one check box row per file (<c>Dialog.UnsavedChanges.File.&lt;fileName&gt;[ &lt;titleSuffix&gt;]</c>: name, start-trimmed
+/// folder);
 /// Space toggles the focused row, Ctrl+A checks all. 520 × 320, resizable.
 /// </summary>
 public sealed class UnsavedChangesWindow(UnsavedChangesViewModel model) : DialogWindow(model, Body(model))
@@ -95,7 +96,7 @@ public sealed class UnsavedChangesWindow(UnsavedChangesViewModel model) : Dialog
         row.Bind(PaddingProperty, row.GetResourceObservable("FxcSpace2Horizontal"));
         row.IsCheckedChanged += (_, _) => file.IsChecked = row.IsChecked == true;
         file.PropertyChanged += (_, _) => row.IsChecked = file.IsChecked;
-        AutomationProperties.SetAutomationId(row, Id("File." + file.FileName));
+        AutomationProperties.SetAutomationId(row, Id("File." + file.Key));
         AutomationProperties.SetName(row, file.FileName);
         return row;
     }

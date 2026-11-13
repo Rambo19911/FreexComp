@@ -20,6 +20,8 @@ public sealed class DocumentServiceTests
     public DocumentServiceTests()
     {
         _services = TestComposition.Build(o => o.FileSystem = _fs);
+        // These tests check file contents byte for byte; the final-line-break rule is SaveTests' (IDE-P1-080).
+        _services.Settings.Set(SettingsCatalog.FilesEnsureFinalNewline, false);
     }
 
     private IDocumentService Documents => _services.Documents;

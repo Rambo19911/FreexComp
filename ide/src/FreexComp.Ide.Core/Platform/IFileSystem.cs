@@ -29,6 +29,19 @@ public interface IFileSystem
     /// <exception cref="IOException">The destination exists and <paramref name="overwrite"/> is false.</exception>
     void MoveFile(string sourcePath, string destinationPath, bool overwrite);
 
+    /// <summary>
+    /// Replaces the content of the existing <paramref name="destinationPath"/> by the file <paramref name="sourcePath"/>
+    /// (which is gone afterwards), keeping the destination's attributes and creation time; no backup.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The source or the destination does not exist.</exception>
+    /// <exception cref="UnauthorizedAccessException">The destination is read-only or its directory is not writable.</exception>
+    void ReplaceFile(string sourcePath, string destinationPath);
+
+    /// <summary>Overwrites the existing file in place (truncate, then write), keeping its attributes and creation time.</summary>
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
+    /// <exception cref="UnauthorizedAccessException">The file is read-only.</exception>
+    void OverwriteFile(string path, byte[] data);
+
     /// <summary>Full paths of the files directly in <paramref name="directory"/> matching a <c>*</c>/<c>?</c> pattern.</summary>
     /// <exception cref="DirectoryNotFoundException">The directory does not exist.</exception>
     IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern);

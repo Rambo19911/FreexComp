@@ -61,10 +61,26 @@ public sealed class FakesTests
         Assert.Equal([9], fs.ReadAllBytes(c));
         Assert.Throws<FileNotFoundException>(() => fs.MoveFile(b, a, overwrite: true));
 
+        // Replace: the destination must exist and takes the source's content; the source is gone.
+        fs.WriteAllBytes(b, [7, 7]);
+        Assert.Throws<FileNotFoundException>(() => fs.ReplaceFile(b, a));
+        fs.ReplaceFile(b, c);
+        Assert.False(fs.FileExists(b));
+        Assert.Equal([7, 7], fs.ReadAllBytes(c));
+
+        // Overwrite in place: the file must exist; it is truncated first.
+        Assert.Throws<FileNotFoundException>(() => fs.OverwriteFile(a, [1]));
+        fs.OverwriteFile(c, [9]);
+        Assert.Equal([9], fs.ReadAllBytes(c));
+
         Assert.False(fs.IsReadOnly(c));
         target.SetReadOnly(c, true);
         Assert.True(fs.IsReadOnly(c));
         Assert.Throws<UnauthorizedAccessException>(() => fs.WriteAllBytes(c, [0]));
+        Assert.Throws<UnauthorizedAccessException>(() => fs.OverwriteFile(c, [0]));
+        fs.WriteAllBytes(b, [5]);
+        Assert.Throws<UnauthorizedAccessException>(() => fs.ReplaceFile(b, c));
+        fs.DeleteFile(b);
         Assert.Equal([9], fs.ReadAllBytes(c));
         target.SetReadOnly(c, false);
 

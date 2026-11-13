@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Languages;
@@ -18,6 +19,7 @@ public sealed class DocumentService : IDocumentService
 {
     private const string MruArgument = "mru";
     private const string VisualArgument = "visual";
+    private static readonly TimeSpan StatusMessageDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
 
     private readonly IFileSystem _fileSystem;
     private readonly ITextBufferFactory _buffers;
@@ -89,6 +91,9 @@ public sealed class DocumentService : IDocumentService
         commands.RegisterHandler("file.newUnit", new Handler(_ => true, _ => NewUntitledUnit()));
         commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeAll", new AsyncHandler(_ => _documents.Count > 0, _ => CloseAllAsync()));
+        commands.RegisterHandler("file.save", new AsyncHandler(
+            _ => ActiveDocument is TextDocumentViewModel { IsModified: true }, _ => SaveAsync(ActiveDocument!)));
+        commands.RegisterHandler("file.saveAll", new AsyncHandler(_ => _documents.Any(d => d.IsModified), _ => SaveAllAsync()));
         commands.RegisterHandler("file.closeOthers", new AsyncHandler(
             _ => ActiveDocument is not null && _documents.Count > 1, _ => CloseAllAsync(except: ActiveDocument)));
     }
@@ -247,25 +252,68 @@ public sealed class DocumentService : IDocumentService
         return true;
     }
 
-    public async Task<bool> SaveAsync(DocumentViewModel document)
+    public async Task<bool> SaveAsync(DocumentViewModel document) => await SaveCoreAsync(document) == SaveOutcome.Saved;
+
+    public async Task<bool> SaveAllAsync()
+    {
+        var written = 0;
+        foreach (var document in _documents.Where(d => d.IsModified).ToList()) // tab order (IDE-P1-085)
+        {
+            switch (await SaveCoreAsync(document))
+            {
+                case SaveOutcome.Saved:
+                    written++;
+                    break;
+                case SaveOutcome.Canceled:
+                    return false;
+                case SaveOutcome.PickerCanceled:
+                    break; // an untitled document whose picker was canceled is skipped
+            }
+        }
+
+        // The project file joins with the project service (I-065).
+        _status.ShowMessage(written == 0
+            ? Strings.Msg_File_NothingToSave
+            : string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_SavedAll, written), StatusMessageDuration);
+        return true;
+    }
+
+    /// <summary>
+    /// The interactive save of one document (IDE-P1-082, IDE-P1-083): the lossy-encoding question, the failure dialog
+    /// with Retry / Save As… / Cancel.
+    /// </summary>
+    private async Task<SaveOutcome> SaveCoreAsync(DocumentViewModel document)
     {
         ArgumentNullException.ThrowIfNull(document);
         if (document is not TextDocumentViewModel text)
-            return false;
+            return SaveOutcome.Canceled;
+
+        var path = text.FilePath ?? await PickSavePathAsync(text);
+        if (path is null)
+            return SaveOutcome.PickerCanceled;
 
         while (true)
         {
-            var path = text.FilePath ?? await PickSavePathAsync(text);
-            if (path is null)
-                return false; // Save As picker canceled
-
             var result = await SaveAsAsync(text, path);
             if (result.Success)
-                return true;
+                return SaveOutcome.Saved;
 
-            // Save As… and the lossy-encoding answer join with the save pipeline (I-039) and the picker (I-040).
-            if (await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args)) != "Retry")
-                return false;
+            var answer = await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args));
+            switch (result.MessageId, answer)
+            {
+                case ("Msg.File.EncodingLossy", "SaveAsUTF8"):
+                    text.SetEncoding(FileEncoding.Utf8);
+                    break;
+                case ("Msg.File.SaveFailed", "Retry"):
+                    break;
+                case ("Msg.File.SaveFailed", "SaveAs"):
+                    if (await PickSavePathAsync(text) is not { } chosen)
+                        return SaveOutcome.Canceled;
+                    path = chosen;
+                    break;
+                default:
+                    return SaveOutcome.Canceled;
+            }
         }
     }
 
@@ -280,26 +328,74 @@ public sealed class DocumentService : IDocumentService
         if (FindByPath(fullPath) is { } other && other != document)
             return OperationResult.Fail("Msg.File.SaveFailed", other.FilePath!, Strings.Reason_OpenInAnotherTab);
 
+        ApplySaveEdits(document); // steps 1-2 (IDE-P1-080)
         var text = document.Buffer.Text;
         if (!FileEncodings.CanEncode(text, document.Encoding))
-            return OperationResult.Fail("Msg.File.EncodingLossy"); // the Save-as-UTF-8 question is the save pipeline's (IDE-P1-083)
+            return OperationResult.Fail("Msg.File.EncodingLossy", FileEncodings.DisplayName(document.Encoding));
 
         var bytes = FileEncodings.Encode(text, document.Encoding);
         try
         {
-            await Task.Run(() => _fileSystem.WriteAllBytes(fullPath, bytes));
+            await Task.Run(() => AtomicFileWriter.Write(_fileSystem, fullPath, bytes)); // IDE-ARCH-081: off the UI thread
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return OperationResult.Fail("Msg.File.SaveFailed", fullPath, ex.Message);
         }
 
+        // Recording the file timestamp/size (I-062) and deleting the recovery copy (I-063) join with their services.
         document.MarkSaved(fullPath, _languages.ForPath(fullPath));
         UpdateTitleSuffixes();
         if (document == _statusSource)
             PushStatus();
         DocumentSaved?.Invoke(this, new DocumentEventArgs(document));
+        _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_Saved, document.Title), StatusMessageDuration);
+        _commands?.InvalidateCanExecute();
         return OperationResult.Ok;
+    }
+
+    /// <summary>
+    /// IDE-P1-080 steps 1-2 as one undo step: trailing spaces/tabs before each line break and at the end (not on the
+    /// caret line while the caret is in that whitespace), then a final line break in the document's ending. Skipped
+    /// for Form and JSON documents and for read-only buffers.
+    /// </summary>
+    private void ApplySaveEdits(TextDocumentViewModel document)
+    {
+        var buffer = document.Buffer;
+        if (buffer.IsReadOnly || document.Language.Id is "form" or "json")
+            return;
+
+        var edits = new List<TextEdit>();
+        var lastLine = buffer.GetLine(buffer.LineCount);
+        var lastContent = lastLine.Length; // what remains of the last line: text there means no final line break
+        if (_settings.Get(SettingsCatalog.FilesTrimTrailingWhitespaceOnSave))
+        {
+            var caret = document.ViewState.Caret;
+            for (var line = 1; line <= buffer.LineCount; line++)
+            {
+                var (offset, length, _) = buffer.GetLine(line);
+                var content = length;
+                while (content > 0 && buffer.GetText(offset + content - 1, 1) is " " or "\t")
+                    content--;
+                if (content == length || (line == caret.Line && caret.Column - 1 > content))
+                    continue;
+                edits.Add(new TextEdit(offset + content, length - content, ""));
+                if (line == buffer.LineCount)
+                    lastContent = content;
+            }
+        }
+
+        if (_settings.Get(SettingsCatalog.FilesEnsureFinalNewline) && lastContent > 0)
+        {
+            var newLine = document.LineEnding.NewLine;
+            if (edits.Count > 0 && edits[^1].Offset + edits[^1].Length == buffer.Length)
+                edits[^1] = edits[^1] with { NewText = newLine };
+            else
+                edits.Add(new TextEdit(buffer.Length, 0, newLine));
+        }
+
+        if (edits.Count > 0)
+            buffer.ApplyEdits(edits);
     }
 
     private async Task<OperationResult<DocumentViewModel>> LoadAsync(string fullPath)
@@ -335,6 +431,16 @@ public sealed class DocumentService : IDocumentService
     {
         var index = ActiveDocument is null ? _documents.Count : _documents.IndexOf(ActiveDocument) + 1;
         _documents.Insert(index, document);
+        var modified = document.IsModified;
+        document.PropertyChanged += (_, e) =>
+        {
+            // file.save / file.saveAll follow the modified state (menus.md).
+            if (e.PropertyName == nameof(DocumentViewModel.IsModified) && document.IsModified != modified)
+            {
+                modified = document.IsModified;
+                _commands?.InvalidateCanExecute();
+            }
+        };
         UpdateTitleSuffixes();
         DocumentOpened?.Invoke(this, new DocumentEventArgs(document));
         Activate(document);
@@ -417,6 +523,13 @@ public sealed class DocumentService : IDocumentService
 
     private DocumentViewModel? FindById(string? argument) =>
         DocumentId.TryParse(argument) is { } id ? _documents.FirstOrDefault(d => d.Id == id) : null;
+
+    private enum SaveOutcome
+    {
+        Saved,
+        Canceled,
+        PickerCanceled,
+    }
 
     private static bool IsOrderArgument(string? argument) => argument is null or MruArgument or VisualArgument;
 

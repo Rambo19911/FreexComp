@@ -18,6 +18,15 @@ public sealed class PhysicalFileSystem : IFileSystem
     public void MoveFile(string sourcePath, string destinationPath, bool overwrite) =>
         File.Move(sourcePath, destinationPath, overwrite);
 
+    public void ReplaceFile(string sourcePath, string destinationPath) =>
+        File.Replace(sourcePath, destinationPath, destinationBackupFileName: null);
+
+    public void OverwriteFile(string path, byte[] data)
+    {
+        using var stream = new FileStream(path, FileMode.Truncate, FileAccess.Write, FileShare.None);
+        stream.Write(data);
+    }
+
     public IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern) =>
         [.. Directory.EnumerateFiles(directory, searchPattern)];
 

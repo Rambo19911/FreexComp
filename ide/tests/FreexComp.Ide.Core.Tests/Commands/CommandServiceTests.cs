@@ -227,15 +227,15 @@ public sealed class CommandServiceTests
     public void LocalKeysOfTheFocusedControlAreNotRouted()
     {
         var services = TestComposition.Build();
-        var save = new TestHandler();
-        services.Commands.RegisterHandler("file.save", save);
+        var newFile = new TestHandler();
+        services.Commands.RegisterHandler("file.newFile", newFile);
 
-        services.FocusTracker.SetLocalKeys([KeyGesture.Parse("Ctrl+S")]);
-        Assert.False(services.Commands.HandleKey(KeyGesture.Parse("Ctrl+S")));
+        services.FocusTracker.SetLocalKeys([KeyGesture.Parse("Ctrl+N")]);
+        Assert.False(services.Commands.HandleKey(KeyGesture.Parse("Ctrl+N")));
 
         services.FocusTracker.SetLocalKeys([]);
-        Assert.True(services.Commands.HandleKey(KeyGesture.Parse("Ctrl+S")));
-        Assert.Equal(1, save.Calls);
+        Assert.True(services.Commands.HandleKey(KeyGesture.Parse("Ctrl+N")));
+        Assert.Equal(1, newFile.Calls);
     }
 
     private CommandService Create() =>
