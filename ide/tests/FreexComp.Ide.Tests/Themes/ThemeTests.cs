@@ -31,6 +31,28 @@ public sealed class ThemeTests
         Assert.Equal(ThemeVariant.Default, Application.Current!.RequestedThemeVariant);
     }
 
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-003")]
+    [Trait("Req", "UI-TOK-003")]
+    public async Task SwitchThemeUpdatesOpenEditors()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light";
+            o.InitialFiles["A.pas"] = "begin end.\r\n";
+        });
+        var editor = await Editor.SyntaxColorizerTests.OpenAsync(h, "A.pas");
+        Assert.Equal(Color.Parse("#FFFFFF"), Assert.IsAssignableFrom<ISolidColorBrush>(editor.Background).Color);
+        Assert.Equal(Color.Parse("#0B5C8A"), Editor.SyntaxColorizerTests.ColorAt(editor, 0));
+
+        await h.ExecuteAsync("view.theme.dark");
+
+        // The open editor repaints without reopening the document.
+        Assert.Equal(Color.Parse("#171A19"), Assert.IsAssignableFrom<ISolidColorBrush>(editor.Background).Color);
+        Assert.Equal(Color.Parse("#6CB6F0"), Editor.SyntaxColorizerTests.ColorAt(editor, 0));
+        Assert.Same(editor, h.Find<AvaloniaEdit.TextEditor>("Editor.A.pas"));
+    }
+
     private static Color EditorBackground(HeadlessHarness h)
     {
         Assert.True(h.Window.TryFindResource("FxcBgEditorBrush", h.Window.ActualThemeVariant, out var value));

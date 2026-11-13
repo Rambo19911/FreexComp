@@ -17,6 +17,12 @@ public interface ITokenClassifier
 {
     /// <summary>Spans touching <paramref name="lines"/>, sorted by offset, non-overlapping. Unclassified text has no span.</summary>
     IReadOnlyList<TokenClassSpan> Classify(ITextBuffer buffer, LineRange lines);
+
+    /// <summary>
+    /// Spans computed in the background arrived (IDE-P1-053): the view redraws. Raised on the synchronization context
+    /// of the <see cref="Classify"/> call that started the work (the UI thread), or on the thread pool without one.
+    /// </summary>
+    event EventHandler? ClassificationChanged;
 }
 
 /// <summary>A file type the editor knows (architecture.md §11 extension point "Language").</summary>
@@ -57,22 +63,44 @@ internal static class ColorTokens
 
 /// <summary>
 /// Classifier over a whole-text lexer: the spans are computed once per buffer <see cref="ITextBuffer.Version"/>
-/// and filtered by line range (the same caching rule as the Pascal classifier, IDE-P1-056).
+/// and filtered by line range (the same caching rule as the Pascal classifier, IDE-P1-056). A buffer larger than
+/// <see cref="BackgroundThreshold"/> is lexed on the thread pool (IDE-ARCH-081): until the result for the current
+/// version arrives, the previous spans follow the edits and edited text has no span (<c>syntax.text</c>, IDE-P1-053);
+/// a result for an outdated snapshot is dropped and the current text is lexed again (IDE-ARCH-083).
 /// </summary>
 public abstract class WholeTextClassifier : ITokenClassifier
 {
+    /// <summary>Buffers longer than this (UTF-16 units, "200 KB") are lexed in the background.</summary>
+    public const int BackgroundThreshold = 200 * 1024;
+
     private ITextBuffer? _buffer;
-    private long _version;
+    private long _version = -1;
     private List<TokenClassSpan> _spans = [];
+    private long _runningVersion = -1;
+
+    public event EventHandler? ClassificationChanged;
 
     public IReadOnlyList<TokenClassSpan> Classify(ITextBuffer buffer, LineRange lines)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        if (!ReferenceEquals(buffer, _buffer) || buffer.Version != _version)
+        if (!ReferenceEquals(buffer, _buffer))
         {
-            _spans = Lex(buffer.Text);
+            _buffer?.Changed -= OnBufferChanged;
             _buffer = buffer;
-            _version = buffer.Version;
+            _version = _runningVersion = -1;
+            _spans = [];
+            buffer.Changed += OnBufferChanged;
+        }
+
+        if (buffer.Version != _version)
+        {
+            if (buffer.Length > BackgroundThreshold)
+                StartBackground(buffer);
+            else
+            {
+                _spans = Lex(buffer.Text);
+                _version = buffer.Version;
+            }
         }
 
         int first = Math.Clamp(lines.FirstLine, 1, buffer.LineCount);
@@ -81,17 +109,64 @@ public abstract class WholeTextClassifier : ITokenClassifier
         var (lastOffset, lastLength, lastDelimiter) = buffer.GetLine(last);
         int end = lastOffset + lastLength + lastDelimiter;
         // Spans are sorted and non-overlapping, so their ends are sorted too: binary search the first one ending after start.
-        int low = 0, high = _spans.Count;
+        var spans = _spans; // replaced, never mutated, so a snapshot is safe
+        int low = 0, high = spans.Count;
         while (low < high)
         {
             int mid = (low + high) / 2;
-            if (_spans[mid].Offset + _spans[mid].Length > start) high = mid;
+            if (spans[mid].Offset + spans[mid].Length > start) high = mid;
             else low = mid + 1;
         }
         var result = new List<TokenClassSpan>();
-        for (int i = low; i < _spans.Count && _spans[i].Offset < end; i++)
-            result.Add(_spans[i]);
+        for (int i = low; i < spans.Count && spans[i].Offset < end; i++)
+            result.Add(spans[i]);
         return result;
+    }
+
+    private void StartBackground(ITextBuffer buffer)
+    {
+        if (_runningVersion >= 0)
+            return; // one run at a time; a newer version is lexed when it ends
+        var version = _runningVersion = buffer.Version;
+        var text = buffer.Text;
+        var context = SynchronizationContext.Current;
+        _ = Task.Run(() => Lex(text)).ContinueWith(
+            t => Arrived(buffer, version, t.Result),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnRanToCompletion,
+            context is null ? TaskScheduler.Default : TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    private void Arrived(ITextBuffer buffer, long version, List<TokenClassSpan> spans)
+    {
+        _runningVersion = -1;
+        if (!ReferenceEquals(buffer, _buffer))
+            return;
+        if (buffer.Version != version)
+        {
+            StartBackground(buffer); // outdated snapshot (IDE-ARCH-083)
+            return;
+        }
+
+        _spans = spans;
+        _version = version;
+        ClassificationChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Keeps the current spans aligned with the text until it is lexed again; touched spans are dropped.</summary>
+    private void OnBufferChanged(object? sender, TextChangedEventArgs e)
+    {
+        int end = e.Offset + e.RemovedLength, delta = e.InsertedText.Length - e.RemovedLength;
+        var shifted = new List<TokenClassSpan>(_spans.Count);
+        foreach (var span in _spans)
+        {
+            if (span.Offset + span.Length <= e.Offset)
+                shifted.Add(span);
+            else if (span.Offset >= end)
+                shifted.Add(span with { Offset = span.Offset + delta });
+        }
+
+        _spans = shifted;
     }
 
     /// <summary>All spans of <paramref name="text"/>, sorted by offset. Must never throw.</summary>

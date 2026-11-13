@@ -41,6 +41,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
     private TextDocumentViewModel? _document;
     private bool _applying;
     private bool _scrollPending;
+    private SyntaxColorizer? _colorizer;
 
     public CodeEditorView()
     {
@@ -58,6 +59,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
         _editor.TextArea.SelectionChanged += (_, _) => MirrorSelection();
         _editor.TextArea.TextView.ScrollOffsetChanged += (_, _) => MirrorScroll();
         Child = _editor;
+        // UI-ED-003: the brushes bound above follow the theme by themselves; syntax colours need a redraw.
+        ActualThemeVariantChanged += (_, _) =>
+        {
+            _colorizer?.ThemeChanged();
+            _editor.TextArea.TextView.Redraw();
+        };
     }
 
     /// <summary>The hosted editor (tests and later editor tasks).</summary>
@@ -160,6 +167,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
             old.ViewState.PropertyChanged -= OnViewStatePropertyChanged;
         }
 
+        SetColorizer(null);
+
         _document = null; // nothing is mirrored while the editor switches documents
         // Unbound: an empty document, not null (the editor template binds to Document.Text), and no reference to the old one.
         _editor.Document = document is null ? new AvaloniaEdit.Document.TextDocument()
@@ -170,6 +179,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
         _editor.IsReadOnly = document.IsReadOnly;
         AutomationProperties.SetAutomationId(_editor, AutomationIds.Editor(document.Title));
         ApplySelection(document);
+        SetColorizer(document);
         _document = document;
         document.PropertyChanged += OnDocumentPropertyChanged;
         document.ViewState.PropertyChanged += OnViewStatePropertyChanged;
@@ -196,7 +206,29 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
             _editor.IsReadOnly = document.IsReadOnly;
         else if (e.PropertyName == nameof(TextDocumentViewModel.Title))
             AutomationProperties.SetAutomationId(_editor, AutomationIds.Editor(document.Title));
+        else if (e.PropertyName == nameof(TextDocumentViewModel.Language))
+            SetColorizer(document); // Save As with another extension
     }
+
+    /// <summary>One <see cref="SyntaxColorizer"/> over the document's language (IDE-P1-057); null removes it.</summary>
+    private void SetColorizer(TextDocumentViewModel? document)
+    {
+        var transformers = _editor.TextArea.TextView.LineTransformers;
+        if (_colorizer is { } old)
+        {
+            old.Classifier.ClassificationChanged -= OnClassificationChanged;
+            transformers.Remove(old);
+            _colorizer = null;
+        }
+
+        if (document is null)
+            return;
+        _colorizer = new SyntaxColorizer(document.Buffer, document.Language.CreateClassifier(), this);
+        _colorizer.Classifier.ClassificationChanged += OnClassificationChanged;
+        transformers.Add(_colorizer);
+    }
+
+    private void OnClassificationChanged(object? sender, EventArgs e) => _editor.TextArea.TextView.Redraw();
 
     /// <summary>Core changed the caret or selection (revert, save trimming): the editor follows.</summary>
     private void OnViewStatePropertyChanged(object? sender, PropertyChangedEventArgs e)

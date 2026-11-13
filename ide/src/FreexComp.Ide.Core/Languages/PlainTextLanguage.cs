@@ -17,5 +17,7 @@ public sealed class PlainTextLanguage : ILanguageDefinition
     private sealed class NoColors : ITokenClassifier
     {
         public IReadOnlyList<TokenClassSpan> Classify(ITextBuffer buffer, LineRange lines) => [];
+
+        public event EventHandler? ClassificationChanged { add { } remove { } }
     }
 }
