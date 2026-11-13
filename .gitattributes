@@ -5,3 +5,5 @@
 *.sln text eol=crlf
 *.csproj text eol=crlf
 *.props text eol=crlf
+# test data must keep its exact bytes (line endings, encodings)
+ide/tests/TestData/** -text
