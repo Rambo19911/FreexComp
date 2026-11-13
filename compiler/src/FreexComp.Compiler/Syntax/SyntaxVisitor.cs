@@ -14,6 +14,34 @@ public abstract class SyntaxVisitor<TResult>
     public virtual TResult VisitIdentifierName(IdentifierNameSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitQualifiedName(QualifiedNameSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitProgram(ProgramSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitProgramParameterList(ProgramParameterListSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitUnit(UnitSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitIncludeFile(IncludeFileSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitUsesClause(UsesClauseSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitUsedUnit(UsedUnitSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitInterfaceSection(InterfaceSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitImplementationSection(ImplementationSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitInitializationSection(InitializationSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitFinalizationSection(FinalizationSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitHintDirective(HintDirectiveSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitBlock(BlockSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitCompoundStatement(CompoundStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitEmptyStatement(EmptyStatementSyntax node) => DefaultVisit(node);
 }
 
 /// <summary>Depth-first walk over every node, token and trivia piece in source order.</summary>

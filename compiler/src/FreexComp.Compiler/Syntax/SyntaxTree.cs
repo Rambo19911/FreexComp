@@ -16,6 +16,46 @@ public sealed class SyntaxTree
         root.AttachTree(this);
     }
 
+    /// <summary>
+    /// Parses a program or unit; never throws for malformed text (LANG-180). With a file system, <c>{$I file}</c> includes
+    /// are read (defines and switches carry across them, their diagnostics are part of <see cref="Diagnostics"/>) and
+    /// each occurrence becomes an <see cref="IncludedTrees"/> entry with an <see cref="IncludeFileSyntax"/> root. The
+    /// main tree holds the main file's tokens only, so <c>Root.ToFullString() == Text.Text</c> (CMP-220).
+    /// </summary>
+    public static SyntaxTree Parse(SourceText text, ParseOptions? options = null, IFileSystem? fs = null)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var preprocessor = new Preprocessor(text, options, fs);
+        var tokens = ImmutableArray.CreateBuilder<SyntaxToken>();
+        SyntaxToken token;
+        do
+        {
+            token = preprocessor.Lex();
+            if (ReferenceEquals(token.File, text) || token.File is null)
+            {
+                tokens.Add(token);
+            }
+        }
+        while (token.Kind != SyntaxKind.EndOfFileToken);     // include files' end-of-file tokens are not in the stream
+
+        var parser = new Parser(text, tokens.ToImmutable());
+        var root = parser.ParseCompilationUnit();
+        var lexical = preprocessor.Diagnostics;
+        var diagnostics = lexical.Concat(parser.Diagnostics)
+            .OrderBy(d => PathUtil.AreEqual(d.Location.Path, text.Path) ? 0 : 1)
+            .ThenBy(d => d.Location.Span.Start)
+            .ToImmutableArray();
+
+        var included = preprocessor.Includes
+            .Select(i => new SyntaxTree(
+                i.Text,
+                new IncludeFileSyntax(i.Tokens),
+                [.. lexical.Where(d => PathUtil.AreEqual(d.Location.Path, i.Text.Path))],
+                []))
+            .ToImmutableArray();
+        return new SyntaxTree(text, root, diagnostics, included);
+    }
+
     public SourceText Text { get; }
 
     public CompilationUnitSyntax Root { get; }

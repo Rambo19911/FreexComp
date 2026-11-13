@@ -8,7 +8,8 @@ namespace FreexComp.Compiler.Syntax;
 /// Base of every syntax node (api.md §4). Nodes are immutable once constructed. Tokens keep the absolute positions
 /// the lexer gave them, so spans need no offset arithmetic; a node's constructor attaches its children in source
 /// order (<c>Add</c>), which sets every child's parent link (CMP-221: parent and spans O(1) / amortised O(1)).
-/// Every node owns at least one token (a missing one, if nothing else).
+/// Every node owns at least one token (a missing one, if nothing else), except <c>EmptyStatementSyntax</c>, which
+/// is zero-width after the previous token.
 /// </summary>
 public abstract class SyntaxNode
 {
@@ -52,6 +53,14 @@ public abstract class SyntaxNode
     {
         get
         {
+            if (_spans is null && FirstToken().Kind == SyntaxKind.None)
+            {
+                // a node without tokens (EmptyStatementSyntax): zero width after the previous token's trivia
+                var previous = Parent is null ? default : TokenBefore(Parent, _index);
+                var empty = new TextSpan(previous.Kind == SyntaxKind.None ? 0 : previous.FullSpan.End, 0);
+                _spans = new SpanCache(empty, empty);
+            }
+
             if (_spans is null)
             {
                 var first = FirstToken();
@@ -93,8 +102,8 @@ public abstract class SyntaxNode
         }
     }
 
-    /// <summary>True if every token of the node is missing.</summary>
-    public bool IsMissing => DescendantTokens().All(t => t.IsMissing);
+    /// <summary>True if the node has tokens and every one of them is missing.</summary>
+    public bool IsMissing => FirstToken().Kind != SyntaxKind.None && DescendantTokens().All(t => t.IsMissing);
 
     public IEnumerable<SyntaxNodeOrToken> ChildNodesAndTokens() => _children;
 
@@ -251,6 +260,7 @@ public abstract class SyntaxNode
         Debug.Assert(node.Parent is null && node._tree is null, "A node can belong to one parent only.");
         node.Parent = this;
         node._index = _children.Count;
+        node._spans = null;
         _children.Add(node);
         Invalidate();
         return node;

@@ -42,6 +42,19 @@ public readonly struct SyntaxToken : IEquatable<SyntaxToken>
     internal static SyntaxToken Missing(SyntaxKind kind, int position, DirectiveState? state = null, SourceText? file = null) =>
         new(new SyntaxToken(kind, "", null, position, [], [], state, file), null, 0, missing: true);
 
+    private SyntaxToken(SyntaxToken token, SyntaxKind contextualKind, ImmutableArray<SyntaxTrivia> leading)
+    {
+        this = token;
+        ContextualKind = contextualKind;
+        _leading = leading;
+    }
+
+    /// <summary>The parser's decision that this identifier is used as a contextual keyword (CMP-222).</summary>
+    internal SyntaxToken WithContextualKind(SyntaxKind kind) => new(this, kind, _leading);
+
+    /// <summary>The same token with other leading trivia (the parser prepends skipped tokens, LANG-182).</summary>
+    internal SyntaxToken WithLeadingTrivia(ImmutableArray<SyntaxTrivia> leading) => new(this, ContextualKind, leading);
+
     /// <summary>This token attached to <paramref name="parent"/> at child slot <paramref name="index"/>.</summary>
     internal SyntaxToken WithParent(SyntaxNode parent, int index) => new(this, parent, index, _missing);
 

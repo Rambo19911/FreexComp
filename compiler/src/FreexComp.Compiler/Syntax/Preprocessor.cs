@@ -19,13 +19,18 @@ internal sealed class Preprocessor
     private readonly PreprocessorContext _context;
     private readonly IFileSystem? _fileSystem;
     private readonly List<PascalLexer> _lexers = [];
+    private readonly List<IncludedFile?> _entries = [];     // parallel to _lexers; null for the main file
 
     public Preprocessor(SourceText main, ParseOptions? options, IFileSystem? fileSystem)
     {
         _context = new PreprocessorContext(options);
         _fileSystem = fileSystem;
         _lexers.Add(new PascalLexer(main, _context, expandIncludes: fileSystem is not null));
+        _entries.Add(null);
     }
+
+    /// <summary>Every include occurrence in the order opened, with all its own tokens incl. its end-of-file token.</summary>
+    public List<IncludedFile> Includes { get; } = [];
 
     /// <summary>Lexical and directive diagnostics of the main file and every include, in the order reported.</summary>
     public ImmutableArray<Diagnostic> Diagnostics => [.. _context.Diagnostics];
@@ -42,9 +47,11 @@ internal sealed class Preprocessor
                 continue;
             }
 
+            _entries[^1]?.Tokens.Add(token);
             if (token.Kind == SyntaxKind.EndOfFileToken && _lexers.Count > 1)
             {
                 _lexers.RemoveAt(_lexers.Count - 1);
+                _entries.RemoveAt(_entries.Count - 1);
                 continue;
             }
 
@@ -78,7 +85,11 @@ internal sealed class Preprocessor
             return;
         }
 
-        _lexers.Add(new PascalLexer(SourceText.From(path, text), _context, expandIncludes: true));
+        var source = SourceText.From(path, text);
+        var entry = new IncludedFile(source, []);
+        Includes.Add(entry);
+        _lexers.Add(new PascalLexer(source, _context, expandIncludes: true));
+        _entries.Add(entry);
     }
 
     /// <summary>
@@ -119,3 +130,6 @@ internal sealed class Preprocessor
         return p.StartsWith(@"\\", StringComparison.Ordinal) || (p.Length >= 3 && char.IsAsciiLetter(p[0]) && p[1] == ':' && p[2] == '\\');
     }
 }
+
+/// <summary>One opened include file and the tokens read from it (spans relative to <see cref="Text"/>).</summary>
+internal sealed record IncludedFile(SourceText Text, List<SyntaxToken> Tokens);
