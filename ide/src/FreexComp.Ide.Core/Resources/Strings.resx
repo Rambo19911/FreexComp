@@ -1805,4 +1805,667 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Missing view for {0}</value>
     <comment>IDE-ARCH-014: ViewLocator placeholder; 0 = view-model type name</comment>
   </data>
+  <data name="Menu_File" xml:space="preserve">
+    <value>&amp;File</value>
+  </data>
+  <data name="Menu_Edit" xml:space="preserve">
+    <value>&amp;Edit</value>
+  </data>
+  <data name="Menu_Search" xml:space="preserve">
+    <value>&amp;Search</value>
+  </data>
+  <data name="Menu_View" xml:space="preserve">
+    <value>&amp;View</value>
+  </data>
+  <data name="Menu_Project" xml:space="preserve">
+    <value>&amp;Project</value>
+  </data>
+  <data name="Menu_Run" xml:space="preserve">
+    <value>&amp;Run</value>
+  </data>
+  <data name="Menu_Component" xml:space="preserve">
+    <value>&amp;Component</value>
+  </data>
+  <data name="Menu_Tools" xml:space="preserve">
+    <value>&amp;Tools</value>
+  </data>
+  <data name="Menu_Window" xml:space="preserve">
+    <value>&amp;Window</value>
+  </data>
+  <data name="Menu_Help" xml:space="preserve">
+    <value>&amp;Help</value>
+  </data>
+  <data name="Menu_File_New" xml:space="preserve">
+    <value>&amp;New</value>
+  </data>
+  <data name="Menu_file_newProject" xml:space="preserve">
+    <value>&amp;Project…</value>
+  </data>
+  <data name="Menu_file_newFile" xml:space="preserve">
+    <value>&amp;File…</value>
+  </data>
+  <data name="Menu_file_newUnit" xml:space="preserve">
+    <value>&amp;Unit</value>
+  </data>
+  <data name="Menu_file_newForm" xml:space="preserve">
+    <value>F&amp;orm</value>
+  </data>
+  <data name="Menu_file_open" xml:space="preserve">
+    <value>&amp;Open File…</value>
+  </data>
+  <data name="Menu_file_openProject" xml:space="preserve">
+    <value>Open Pro&amp;ject…</value>
+  </data>
+  <data name="Menu_File_OpenRecent" xml:space="preserve">
+    <value>Open &amp;Recent</value>
+  </data>
+  <data name="Menu_file_clearRecent" xml:space="preserve">
+    <value>&amp;Clear Recent Lists</value>
+  </data>
+  <data name="Menu_file_save" xml:space="preserve">
+    <value>&amp;Save</value>
+  </data>
+  <data name="Menu_file_saveAs" xml:space="preserve">
+    <value>Save &amp;As…</value>
+  </data>
+  <data name="Menu_file_saveAll" xml:space="preserve">
+    <value>Save A&amp;ll</value>
+  </data>
+  <data name="Menu_file_saveProjectAs" xml:space="preserve">
+    <value>Save &amp;Project As…</value>
+  </data>
+  <data name="Menu_file_revert" xml:space="preserve">
+    <value>Re&amp;vert to Saved</value>
+  </data>
+  <data name="Menu_file_close" xml:space="preserve">
+    <value>&amp;Close</value>
+  </data>
+  <data name="Menu_file_closeAll" xml:space="preserve">
+    <value>Clos&amp;e All</value>
+  </data>
+  <data name="Menu_file_closeProject" xml:space="preserve">
+    <value>Close Projec&amp;t</value>
+  </data>
+  <data name="Menu_file_print" xml:space="preserve">
+    <value>Pr&amp;int…</value>
+  </data>
+  <data name="Menu_file_exit" xml:space="preserve">
+    <value>E&amp;xit</value>
+  </data>
+  <data name="Menu_edit_undo" xml:space="preserve">
+    <value>&amp;Undo</value>
+  </data>
+  <data name="Menu_edit_redo" xml:space="preserve">
+    <value>&amp;Redo</value>
+  </data>
+  <data name="Menu_edit_cut" xml:space="preserve">
+    <value>Cu&amp;t</value>
+  </data>
+  <data name="Menu_edit_copy" xml:space="preserve">
+    <value>&amp;Copy</value>
+  </data>
+  <data name="Menu_edit_paste" xml:space="preserve">
+    <value>&amp;Paste</value>
+  </data>
+  <data name="Menu_edit_delete" xml:space="preserve">
+    <value>&amp;Delete</value>
+  </data>
+  <data name="Menu_edit_selectAll" xml:space="preserve">
+    <value>Select &amp;All</value>
+  </data>
+  <data name="Menu_Edit_Line" xml:space="preserve">
+    <value>&amp;Line</value>
+  </data>
+  <data name="Menu_edit_duplicateLine" xml:space="preserve">
+    <value>&amp;Duplicate</value>
+  </data>
+  <data name="Menu_edit_deleteLine" xml:space="preserve">
+    <value>D&amp;elete</value>
+  </data>
+  <data name="Menu_edit_moveLineUp" xml:space="preserve">
+    <value>Move &amp;Up</value>
+  </data>
+  <data name="Menu_edit_moveLineDown" xml:space="preserve">
+    <value>Move Do&amp;wn</value>
+  </data>
+  <data name="Menu_edit_indent" xml:space="preserve">
+    <value>&amp;Indent</value>
+  </data>
+  <data name="Menu_edit_outdent" xml:space="preserve">
+    <value>&amp;Outdent</value>
+  </data>
+  <data name="Menu_edit_trimTrailingWhitespace" xml:space="preserve">
+    <value>&amp;Trim Trailing Whitespace</value>
+  </data>
+  <data name="Menu_Edit_Comment" xml:space="preserve">
+    <value>Co&amp;mment</value>
+  </data>
+  <data name="Menu_edit_toggleLineComment" xml:space="preserve">
+    <value>Toggle &amp;Line Comment</value>
+  </data>
+  <data name="Menu_edit_toggleBlockComment" xml:space="preserve">
+    <value>Toggle &amp;Block Comment</value>
+  </data>
+  <data name="Menu_Edit_Convert" xml:space="preserve">
+    <value>Con&amp;vert</value>
+  </data>
+  <data name="Menu_edit_upperCase" xml:space="preserve">
+    <value>&amp;Upper Case</value>
+  </data>
+  <data name="Menu_edit_lowerCase" xml:space="preserve">
+    <value>&amp;Lower Case</value>
+  </data>
+  <data name="Menu_edit_convertLineEndings_crlf" xml:space="preserve">
+    <value>Line Endings to &amp;CRLF</value>
+  </data>
+  <data name="Menu_edit_convertLineEndings_lf" xml:space="preserve">
+    <value>Line Endings to L&amp;F</value>
+  </data>
+  <data name="Menu_Edit_Folding" xml:space="preserve">
+    <value>&amp;Folding</value>
+  </data>
+  <data name="Menu_edit_fold" xml:space="preserve">
+    <value>&amp;Fold</value>
+  </data>
+  <data name="Menu_edit_unfold" xml:space="preserve">
+    <value>&amp;Unfold</value>
+  </data>
+  <data name="Menu_edit_foldAll" xml:space="preserve">
+    <value>Fold &amp;All</value>
+  </data>
+  <data name="Menu_edit_unfoldAll" xml:space="preserve">
+    <value>U&amp;nfold All</value>
+  </data>
+  <data name="Menu_Edit_CodeInsight" xml:space="preserve">
+    <value>Code &amp;Insight</value>
+  </data>
+  <data name="Menu_edit_completeCode" xml:space="preserve">
+    <value>&amp;Complete Code</value>
+  </data>
+  <data name="Menu_edit_parameterInfo" xml:space="preserve">
+    <value>&amp;Parameter Info</value>
+  </data>
+  <data name="Menu_edit_insertTemplate" xml:space="preserve">
+    <value>Insert Code &amp;Template…</value>
+  </data>
+  <data name="Menu_edit_surroundWith" xml:space="preserve">
+    <value>&amp;Surround With…</value>
+  </data>
+  <data name="Menu_edit_completeClass" xml:space="preserve">
+    <value>Complete C&amp;lass at Cursor</value>
+  </data>
+  <data name="Menu_edit_syncEdit" xml:space="preserve">
+    <value>&amp;Edit Identifier Occurrences Together</value>
+  </data>
+  <data name="Menu_Edit_Refactor" xml:space="preserve">
+    <value>R&amp;efactor</value>
+  </data>
+  <data name="Menu_refactor_rename" xml:space="preserve">
+    <value>&amp;Rename Symbol…</value>
+  </data>
+  <data name="Menu_refactor_extractMethod" xml:space="preserve">
+    <value>Extract &amp;Method…</value>
+  </data>
+  <data name="Menu_refactor_declareVariable" xml:space="preserve">
+    <value>Declare &amp;Variable</value>
+  </data>
+  <data name="Menu_refactor_declareField" xml:space="preserve">
+    <value>Declare &amp;Field</value>
+  </data>
+  <data name="Menu_refactor_createFromUsage" xml:space="preserve">
+    <value>&amp;Create from Usage</value>
+  </data>
+  <data name="Menu_refactor_addUses" xml:space="preserve">
+    <value>&amp;Add Unit to Uses Clause…</value>
+  </data>
+  <data name="Menu_edit_formatDocument" xml:space="preserve">
+    <value>F&amp;ormat Document</value>
+  </data>
+  <data name="Menu_Edit_Align" xml:space="preserve">
+    <value>Ali&amp;gn</value>
+  </data>
+  <data name="Menu_designer_alignLeft" xml:space="preserve">
+    <value>&amp;Left Edges</value>
+  </data>
+  <data name="Menu_designer_alignRight" xml:space="preserve">
+    <value>&amp;Right Edges</value>
+  </data>
+  <data name="Menu_designer_alignTop" xml:space="preserve">
+    <value>&amp;Top Edges</value>
+  </data>
+  <data name="Menu_designer_alignBottom" xml:space="preserve">
+    <value>&amp;Bottom Edges</value>
+  </data>
+  <data name="Menu_designer_alignHCenter" xml:space="preserve">
+    <value>&amp;Horizontal Centers</value>
+  </data>
+  <data name="Menu_designer_alignVCenter" xml:space="preserve">
+    <value>&amp;Vertical Centers</value>
+  </data>
+  <data name="Menu_designer_centerHInParent" xml:space="preserve">
+    <value>Center Horizontally in &amp;Parent</value>
+  </data>
+  <data name="Menu_designer_centerVInParent" xml:space="preserve">
+    <value>Center Vertically in Pare&amp;nt</value>
+  </data>
+  <data name="Menu_designer_spaceHEqually" xml:space="preserve">
+    <value>Space Equally Hori&amp;zontally</value>
+  </data>
+  <data name="Menu_designer_spaceVEqually" xml:space="preserve">
+    <value>Space Equally Verticall&amp;y</value>
+  </data>
+  <data name="Menu_designer_alignToGrid" xml:space="preserve">
+    <value>Align to &amp;Grid</value>
+  </data>
+  <data name="Menu_Edit_Size" xml:space="preserve">
+    <value>Si&amp;ze</value>
+  </data>
+  <data name="Menu_designer_sameWidth" xml:space="preserve">
+    <value>Same &amp;Width</value>
+  </data>
+  <data name="Menu_designer_sameHeight" xml:space="preserve">
+    <value>Same &amp;Height</value>
+  </data>
+  <data name="Menu_designer_sameSize" xml:space="preserve">
+    <value>Same &amp;Size</value>
+  </data>
+  <data name="Menu_designer_sizeToGrid" xml:space="preserve">
+    <value>Size to &amp;Grid</value>
+  </data>
+  <data name="Menu_Edit_Arrange" xml:space="preserve">
+    <value>Arra&amp;nge</value>
+  </data>
+  <data name="Menu_designer_bringToFront" xml:space="preserve">
+    <value>Bring to &amp;Front</value>
+  </data>
+  <data name="Menu_designer_sendToBack" xml:space="preserve">
+    <value>Send to &amp;Back</value>
+  </data>
+  <data name="Menu_designer_tabOrder" xml:space="preserve">
+    <value>Edit &amp;Tab Order</value>
+  </data>
+  <data name="Menu_designer_lockControls" xml:space="preserve">
+    <value>&amp;Lock Controls</value>
+  </data>
+  <data name="Menu_designer_toggleGrid" xml:space="preserve">
+    <value>Show &amp;Grid</value>
+  </data>
+  <data name="Menu_designer_toggleSnapToGrid" xml:space="preserve">
+    <value>&amp;Snap to Grid</value>
+  </data>
+  <data name="Menu_designer_toggleGuidelines" xml:space="preserve">
+    <value>&amp;Use Guidelines</value>
+  </data>
+  <data name="Menu_search_find" xml:space="preserve">
+    <value>&amp;Find…</value>
+  </data>
+  <data name="Menu_search_replace" xml:space="preserve">
+    <value>&amp;Replace…</value>
+  </data>
+  <data name="Menu_search_findNext" xml:space="preserve">
+    <value>Find &amp;Next</value>
+  </data>
+  <data name="Menu_search_findPrevious" xml:space="preserve">
+    <value>Find &amp;Previous</value>
+  </data>
+  <data name="Menu_search_findSelectionNext" xml:space="preserve">
+    <value>Find Next Occurrence of &amp;Selection</value>
+  </data>
+  <data name="Menu_search_findInFiles" xml:space="preserve">
+    <value>Find &amp;in Files…</value>
+  </data>
+  <data name="Menu_search_replaceInFiles" xml:space="preserve">
+    <value>Replace in Fi&amp;les…</value>
+  </data>
+  <data name="Menu_search_goToLine" xml:space="preserve">
+    <value>&amp;Go to Line…</value>
+  </data>
+  <data name="Menu_search_goToFile" xml:space="preserve">
+    <value>Go to Fil&amp;e…</value>
+  </data>
+  <data name="Menu_search_goToSymbol" xml:space="preserve">
+    <value>Go to S&amp;ymbol…</value>
+  </data>
+  <data name="Menu_search_goToMember" xml:space="preserve">
+    <value>Go to &amp;Member in File…</value>
+  </data>
+  <data name="Menu_search_goToDeclaration" xml:space="preserve">
+    <value>Go to &amp;Declaration</value>
+  </data>
+  <data name="Menu_search_toggleDeclarationImplementation" xml:space="preserve">
+    <value>S&amp;witch Declaration / Implementation</value>
+  </data>
+  <data name="Menu_search_findReferences" xml:space="preserve">
+    <value>Find Referen&amp;ces</value>
+  </data>
+  <data name="Menu_search_goToMatchingBracket" xml:space="preserve">
+    <value>Go to Matching &amp;Bracket</value>
+  </data>
+  <data name="Menu_search_navigateBack" xml:space="preserve">
+    <value>Navigate Bac&amp;k</value>
+  </data>
+  <data name="Menu_search_navigateForward" xml:space="preserve">
+    <value>Navigate F&amp;orward</value>
+  </data>
+  <data name="Menu_search_nextMessage" xml:space="preserve">
+    <value>Ne&amp;xt Message</value>
+  </data>
+  <data name="Menu_search_previousMessage" xml:space="preserve">
+    <value>Pre&amp;vious Message</value>
+  </data>
+  <data name="Menu_Search_Bookmarks" xml:space="preserve">
+    <value>Bookm&amp;arks</value>
+  </data>
+  <data name="Menu_search_bookmark_toggle" xml:space="preserve">
+    <value>&amp;Toggle Bookmark</value>
+  </data>
+  <data name="Menu_search_bookmark_next" xml:space="preserve">
+    <value>&amp;Next Bookmark</value>
+  </data>
+  <data name="Menu_search_bookmark_previous" xml:space="preserve">
+    <value>&amp;Previous Bookmark</value>
+  </data>
+  <data name="Menu_search_bookmark_clearAll" xml:space="preserve">
+    <value>&amp;Clear All Bookmarks</value>
+  </data>
+  <data name="Menu_search_commandPalette" xml:space="preserve">
+    <value>Command Pale&amp;tte…</value>
+  </data>
+  <data name="Menu_view_projectManager" xml:space="preserve">
+    <value>&amp;Project Manager</value>
+  </data>
+  <data name="Menu_view_structure" xml:space="preserve">
+    <value>&amp;Structure</value>
+  </data>
+  <data name="Menu_view_objectInspector" xml:space="preserve">
+    <value>&amp;Object Inspector</value>
+  </data>
+  <data name="Menu_view_toolPalette" xml:space="preserve">
+    <value>&amp;Tool Palette</value>
+  </data>
+  <data name="Menu_view_messages" xml:space="preserve">
+    <value>&amp;Messages</value>
+  </data>
+  <data name="Menu_view_output" xml:space="preserve">
+    <value>O&amp;utput</value>
+  </data>
+  <data name="Menu_view_searchResults" xml:space="preserve">
+    <value>Searc&amp;h Results</value>
+  </data>
+  <data name="Menu_view_todo" xml:space="preserve">
+    <value>To-&amp;Do</value>
+  </data>
+  <data name="Menu_view_dataExplorer" xml:space="preserve">
+    <value>Data &amp;Explorer</value>
+  </data>
+  <data name="Menu_View_DebugWindows" xml:space="preserve">
+    <value>De&amp;bug Windows</value>
+  </data>
+  <data name="Menu_view_breakpoints" xml:space="preserve">
+    <value>&amp;Breakpoints</value>
+  </data>
+  <data name="Menu_view_callStack" xml:space="preserve">
+    <value>&amp;Call Stack</value>
+  </data>
+  <data name="Menu_view_locals" xml:space="preserve">
+    <value>&amp;Locals</value>
+  </data>
+  <data name="Menu_view_watches" xml:space="preserve">
+    <value>&amp;Watches</value>
+  </data>
+  <data name="Menu_view_threads" xml:space="preserve">
+    <value>&amp;Threads</value>
+  </data>
+  <data name="Menu_view_eventLog" xml:space="preserve">
+    <value>&amp;Event Log</value>
+  </data>
+  <data name="Menu_view_welcomePage" xml:space="preserve">
+    <value>&amp;Welcome Page</value>
+  </data>
+  <data name="Menu_view_toggleFormCode" xml:space="preserve">
+    <value>Switch &amp;Form / Code</value>
+  </data>
+  <data name="Menu_view_formAsText" xml:space="preserve">
+    <value>View Form as Te&amp;xt</value>
+  </data>
+  <data name="Menu_View_Toolbars" xml:space="preserve">
+    <value>Too&amp;lbars</value>
+  </data>
+  <data name="Menu_view_toolbar_standard" xml:space="preserve">
+    <value>&amp;Standard</value>
+  </data>
+  <data name="Menu_view_toolbar_build" xml:space="preserve">
+    <value>&amp;Build and Run</value>
+  </data>
+  <data name="Menu_view_toolbar_debug" xml:space="preserve">
+    <value>&amp;Debug</value>
+  </data>
+  <data name="Menu_view_toolbar_designer" xml:space="preserve">
+    <value>D&amp;esigner</value>
+  </data>
+  <data name="Menu_view_statusBar" xml:space="preserve">
+    <value>Status Ba&amp;r</value>
+  </data>
+  <data name="Menu_View_Theme" xml:space="preserve">
+    <value>&amp;Color Theme</value>
+  </data>
+  <data name="Menu_view_theme_light" xml:space="preserve">
+    <value>&amp;Light</value>
+  </data>
+  <data name="Menu_view_theme_dark" xml:space="preserve">
+    <value>&amp;Dark</value>
+  </data>
+  <data name="Menu_view_theme_system" xml:space="preserve">
+    <value>Follow &amp;System</value>
+  </data>
+  <data name="Menu_view_wordWrap" xml:space="preserve">
+    <value>Word Wr&amp;ap</value>
+  </data>
+  <data name="Menu_view_showWhitespace" xml:space="preserve">
+    <value>Show Wh&amp;itespace</value>
+  </data>
+  <data name="Menu_View_Zoom" xml:space="preserve">
+    <value>&amp;Zoom</value>
+  </data>
+  <data name="Menu_view_zoomIn" xml:space="preserve">
+    <value>Zoom &amp;In</value>
+  </data>
+  <data name="Menu_view_zoomOut" xml:space="preserve">
+    <value>Zoom &amp;Out</value>
+  </data>
+  <data name="Menu_view_zoomReset" xml:space="preserve">
+    <value>&amp;Reset Zoom</value>
+  </data>
+  <data name="Menu_view_fullScreen" xml:space="preserve">
+    <value>Full Scree&amp;n</value>
+  </data>
+  <data name="Menu_project_addNewUnit" xml:space="preserve">
+    <value>Add &amp;New Unit</value>
+  </data>
+  <data name="Menu_project_addNewForm" xml:space="preserve">
+    <value>Add New &amp;Form</value>
+  </data>
+  <data name="Menu_project_addExistingFile" xml:space="preserve">
+    <value>&amp;Add Existing File…</value>
+  </data>
+  <data name="Menu_project_removeFile" xml:space="preserve">
+    <value>&amp;Remove from Project</value>
+  </data>
+  <data name="Menu_project_viewSource" xml:space="preserve">
+    <value>&amp;View Project Source</value>
+  </data>
+  <data name="Menu_project_build" xml:space="preserve">
+    <value>&amp;Build</value>
+  </data>
+  <data name="Menu_project_rebuild" xml:space="preserve">
+    <value>R&amp;ebuild</value>
+  </data>
+  <data name="Menu_project_clean" xml:space="preserve">
+    <value>&amp;Clean</value>
+  </data>
+  <data name="Menu_project_checkSyntax" xml:space="preserve">
+    <value>Check &amp;Syntax</value>
+  </data>
+  <data name="Menu_project_cancelBuild" xml:space="preserve">
+    <value>Cancel Buil&amp;d</value>
+  </data>
+  <data name="Menu_project_buildAll" xml:space="preserve">
+    <value>Build A&amp;ll Projects</value>
+  </data>
+  <data name="Menu_Project_Configuration" xml:space="preserve">
+    <value>Active Confi&amp;guration</value>
+  </data>
+  <data name="Menu_project_openOutputFolder" xml:space="preserve">
+    <value>Open O&amp;utput Folder</value>
+  </data>
+  <data name="Menu_project_options" xml:space="preserve">
+    <value>Project &amp;Options…</value>
+  </data>
+  <data name="Menu_run_start" xml:space="preserve">
+    <value>&amp;Run</value>
+  </data>
+  <data name="Menu_run_startWithoutDebugging" xml:space="preserve">
+    <value>Run &amp;Without Debugging</value>
+  </data>
+  <data name="Menu_run_stop" xml:space="preserve">
+    <value>&amp;Stop</value>
+  </data>
+  <data name="Menu_run_restart" xml:space="preserve">
+    <value>R&amp;estart</value>
+  </data>
+  <data name="Menu_run_pause" xml:space="preserve">
+    <value>&amp;Pause</value>
+  </data>
+  <data name="Menu_run_stepOver" xml:space="preserve">
+    <value>Step &amp;Over</value>
+  </data>
+  <data name="Menu_run_stepInto" xml:space="preserve">
+    <value>Step &amp;Into</value>
+  </data>
+  <data name="Menu_run_stepOut" xml:space="preserve">
+    <value>Step O&amp;ut</value>
+  </data>
+  <data name="Menu_run_runToCursor" xml:space="preserve">
+    <value>Run &amp;to Cursor</value>
+  </data>
+  <data name="Menu_run_setNextStatement" xml:space="preserve">
+    <value>Set &amp;Next Statement</value>
+  </data>
+  <data name="Menu_run_showExecutionPoint" xml:space="preserve">
+    <value>Show E&amp;xecution Point</value>
+  </data>
+  <data name="Menu_run_toggleBreakpoint" xml:space="preserve">
+    <value>Toggle &amp;Breakpoint</value>
+  </data>
+  <data name="Menu_run_toggleBreakpointEnabled" xml:space="preserve">
+    <value>Enable/&amp;Disable Breakpoint</value>
+  </data>
+  <data name="Menu_run_addBreakpoint" xml:space="preserve">
+    <value>&amp;Add Breakpoint…</value>
+  </data>
+  <data name="Menu_run_deleteAllBreakpoints" xml:space="preserve">
+    <value>De&amp;lete All Breakpoints</value>
+  </data>
+  <data name="Menu_run_evaluate" xml:space="preserve">
+    <value>E&amp;valuate/Modify…</value>
+  </data>
+  <data name="Menu_run_addWatch" xml:space="preserve">
+    <value>Add Watc&amp;h at Cursor</value>
+  </data>
+  <data name="Menu_run_parameters" xml:space="preserve">
+    <value>Run Para&amp;meters…</value>
+  </data>
+  <data name="Menu_run_attach" xml:space="preserve">
+    <value>Attach Debu&amp;gger to Process…</value>
+  </data>
+  <data name="Menu_run_detach" xml:space="preserve">
+    <value>Detach &amp;from Process</value>
+  </data>
+  <data name="Menu_component_reloadMetadata" xml:space="preserve">
+    <value>&amp;Reload Component Metadata</value>
+  </data>
+  <data name="Menu_component_configurePalette" xml:space="preserve">
+    <value>&amp;Configure Tool Palette…</value>
+  </data>
+  <data name="Menu_component_installPackages" xml:space="preserve">
+    <value>&amp;Install Packages…</value>
+  </data>
+  <data name="Menu_component_newComponent" xml:space="preserve">
+    <value>&amp;New Component…</value>
+  </data>
+  <data name="Menu_tools_options" xml:space="preserve">
+    <value>&amp;Options…</value>
+  </data>
+  <data name="Menu_tools_keyMappings" xml:space="preserve">
+    <value>&amp;Key Mappings…</value>
+  </data>
+  <data name="Menu_tools_externalTools" xml:space="preserve">
+    <value>Configure &amp;External Tools…</value>
+  </data>
+  <data name="Menu_tools_openLogFolder" xml:space="preserve">
+    <value>Open &amp;Log Folder</value>
+  </data>
+  <data name="Menu_tools_openSettingsFolder" xml:space="preserve">
+    <value>Open &amp;Settings Folder</value>
+  </data>
+  <data name="Menu_window_nextDocument" xml:space="preserve">
+    <value>&amp;Next Document</value>
+  </data>
+  <data name="Menu_window_previousDocument" xml:space="preserve">
+    <value>&amp;Previous Document</value>
+  </data>
+  <data name="Menu_window_documents" xml:space="preserve">
+    <value>&amp;Documents…</value>
+  </data>
+  <data name="Menu_window_focusEditor" xml:space="preserve">
+    <value>Focus &amp;Editor</value>
+  </data>
+  <data name="Menu_window_nextPane" xml:space="preserve">
+    <value>Ne&amp;xt Pane</value>
+  </data>
+  <data name="Menu_window_previousPane" xml:space="preserve">
+    <value>Pre&amp;vious Pane</value>
+  </data>
+  <data name="Menu_window_closeToolWindow" xml:space="preserve">
+    <value>&amp;Hide Active Tool Window</value>
+  </data>
+  <data name="Menu_window_splitRight" xml:space="preserve">
+    <value>Split Editor &amp;Right</value>
+  </data>
+  <data name="Menu_window_splitDown" xml:space="preserve">
+    <value>Split Editor Do&amp;wn</value>
+  </data>
+  <data name="Menu_window_unsplit" xml:space="preserve">
+    <value>Remove Spli&amp;t</value>
+  </data>
+  <data name="Menu_Window_Layout" xml:space="preserve">
+    <value>&amp;Layout</value>
+  </data>
+  <data name="Menu_window_layout_edit" xml:space="preserve">
+    <value>&amp;Edit</value>
+  </data>
+  <data name="Menu_window_layout_design" xml:space="preserve">
+    <value>&amp;Design</value>
+  </data>
+  <data name="Menu_window_layout_debug" xml:space="preserve">
+    <value>De&amp;bug</value>
+  </data>
+  <data name="Menu_window_layout_saveAs" xml:space="preserve">
+    <value>&amp;Save Layout As…</value>
+  </data>
+  <data name="Menu_window_resetLayout" xml:space="preserve">
+    <value>&amp;Reset Layout</value>
+  </data>
+  <data name="Menu_help_contents" xml:space="preserve">
+    <value>Help &amp;Contents</value>
+  </data>
+  <data name="Menu_help_keyboardShortcuts" xml:space="preserve">
+    <value>&amp;Keyboard Shortcuts</value>
+  </data>
+  <data name="Menu_help_licenses" xml:space="preserve">
+    <value>Third-Party &amp;Licenses</value>
+  </data>
+  <data name="Menu_help_about" xml:space="preserve">
+    <value>&amp;About FreexComp</value>
+  </data>
 </root>

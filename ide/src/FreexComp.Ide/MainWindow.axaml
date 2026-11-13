@@ -13,8 +13,8 @@
   <!-- main-window.md §1 regions 2-8. Phase 1: every dock is empty and therefore collapsed (UI-WIN-004, UI-WIN-011);
        the Dock-library layout replaces the dock placeholders in I-022. -->
   <Grid RowDefinitions="Auto,Auto,*,Auto">
-    <!-- (2) Menu bar: items generated in I-019. -->
-    <Menu Grid.Row="0" Height="{DynamicResource FxcMetricMenuBarHeight}"
+    <!-- (2) Menu bar: items generated from the menu model (UI-MENU-002), see MainWindow.axaml.cs. -->
+    <Menu x:Name="MenuBar" Grid.Row="0" Height="{DynamicResource FxcMetricMenuBarHeight}"
           AutomationProperties.AutomationId="{x:Static ide:AutomationIds.MenuBar}" />
     <!-- (3) Toolbar row: toolbars in I-021. -->
     <Border Grid.Row="1" Height="{DynamicResource FxcMetricToolbarHeight}" />

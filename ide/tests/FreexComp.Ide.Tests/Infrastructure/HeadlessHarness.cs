@@ -103,6 +103,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
     public MainWindow Window { get; }
 
+    /// <summary>The main window and every window it owns (dialogs).</summary>
+    public IReadOnlyList<Window> AllWindows => [Window, .. Window.OwnedWindows];
+
     public IdeServices Services { get; }
 
     public ManualClock Clock { get; }

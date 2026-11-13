@@ -7,7 +7,8 @@
              AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DocumentArea}"
              MinWidth="320" MinHeight="160">
   <!-- UI-WIN-002 / UI-ED-080: empty state; the tab strip arrives with the document service (I-035). -->
-  <Border Background="{DynamicResource FxcBgSunkenBrush}" IsVisible="{Binding IsEmpty}">
+  <Border Background="{DynamicResource FxcBgSunkenBrush}" IsVisible="{Binding IsEmpty}"
+          AutomationProperties.AutomationId="{x:Static ide:AutomationIds.DocumentAreaEmpty}">
     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4">
       <TextBlock Classes="subtitle" HorizontalAlignment="Center" TextWrapping="Wrap"
                  Foreground="{DynamicResource FxcTextSecondaryBrush}" Text="{Binding EmptyHeading}" />
