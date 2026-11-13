@@ -75,21 +75,7 @@ public class RoutineSymbol : Symbol
     public bool IsNested => ContainingSymbol is RoutineSymbol;
 
     /// <summary>CMP-360.</summary>
-    public string LinkName
-    {
-        get
-        {
-            if (ExplicitLinkName != null)
-            {
-                return ExplicitLinkName;
-            }
-
-            var name = (ContainingSymbol is RoutineSymbol outer ? outer.LinkName : ContainingSymbol?.QualifiedName) is { } prefix ? prefix + "." + Name : Name;
-            return IsOverload
-                ? name + "$" + string.Join(",", Parameters.Select(p => SignaturePrefix(p.Mode) + p.Type.Name))
-                : name;
-        }
-    }
+    public string LinkName => Emit.Mangler.RoutineText(this);
 
     /// <summary>The library of an <c>external 'lib'</c> routine (LANG-463); null otherwise.</summary>
     public string? LibraryName { get; internal set; }
@@ -123,14 +109,6 @@ public class RoutineSymbol : Symbol
         var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(p => $"{ParameterSymbol.Prefix(p.Mode)}{p.Name}: {p.Type.Name}")) + ")";
         return ReturnType is null ? $"procedure {QualifiedName}{parameters}" : $"function {QualifiedName}{parameters}: {ReturnType.Name}";
     }
-
-    private static string SignaturePrefix(ParameterMode mode) => mode switch
-    {
-        ParameterMode.Const => "c:",
-        ParameterMode.Var => "v:",
-        ParameterMode.Out => "o:",
-        _ => "",
-    };
 }
 
 /// <summary>A type parameter of a generic type or routine (M2.6); declared now so the API shape of §5 holds.</summary>
