@@ -133,10 +133,10 @@ public static class DefaultKeymap
         // 3.5 Navigation and editing keys
         new(KeyGesture.Parse("Ctrl+Space"), Editor, null, "edit.completeCode"),
         new(KeyGesture.Parse("Ctrl+Shift+Space"), Editor, null, "edit.parameterInfo"),
-        new(KeyGesture.Parse("Ctrl+Tab"), Global, null, "window.nextDocument"),
-        new(KeyGesture.Parse("Ctrl+PageDown"), Global, null, "window.nextDocument"),
-        new(KeyGesture.Parse("Ctrl+Shift+Tab"), Global, null, "window.previousDocument"),
-        new(KeyGesture.Parse("Ctrl+PageUp"), Global, null, "window.previousDocument"),
+        new(KeyGesture.Parse("Ctrl+Tab"), Global, null, "window.nextDocument", "mru"), // IDE-P1-038
+        new(KeyGesture.Parse("Ctrl+PageDown"), Global, null, "window.nextDocument", "visual"), // IDE-P1-038
+        new(KeyGesture.Parse("Ctrl+Shift+Tab"), Global, null, "window.previousDocument", "mru"), // IDE-P1-038
+        new(KeyGesture.Parse("Ctrl+PageUp"), Global, null, "window.previousDocument", "visual"), // IDE-P1-038
         new(KeyGesture.Parse("Ctrl+Tab"), ToolList, "ObjectInspector", "objectInspector.togglePage"),
         new(KeyGesture.Parse("Tab"), Editor, null, "edit.indent"),
         new(KeyGesture.Parse("Shift+Tab"), Editor, null, "edit.outdent"),

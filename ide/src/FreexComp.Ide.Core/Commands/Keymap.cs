@@ -4,7 +4,8 @@ namespace FreexComp.Ide.Core.Commands;
 /// One gesture → command binding. <paramref name="ToolWindow"/> narrows a <see cref="CommandScope.ToolList"/> binding
 /// to one tool window (<c>Tool.&lt;Name&gt;</c> name, e.g. <c>Watches</c>); null = every tool window of the scope.
 /// </summary>
-public sealed record KeyBinding(KeyGesture Gesture, CommandScope Scope, string? ToolWindow, string CommandId);
+/// <summary>One key binding; <see cref="Argument"/> is passed to the command (Ctrl+Tab → <c>window.nextDocument</c> <c>mru</c>).</summary>
+public sealed record KeyBinding(KeyGesture Gesture, CommandScope Scope, string? ToolWindow, string CommandId, string? Argument = null);
 
 /// <summary>Effective key bindings and their lookup (shortcuts.md UI-KEY-004, UI-KEY-005).</summary>
 public sealed class Keymap
@@ -48,7 +49,11 @@ public sealed class Keymap
     /// UI-KEY-004 step 3, innermost first: the focused tool window's own binding → the focus scope →
     /// <see cref="CommandScope.Focus"/> → <see cref="CommandScope.Global"/>. Null when nothing is bound.
     /// </summary>
-    public string? FindCommand(KeyGesture gesture, CommandScope focusScope, string? toolWindow)
+    public string? FindCommand(KeyGesture gesture, CommandScope focusScope, string? toolWindow) =>
+        FindBinding(gesture, focusScope, toolWindow)?.CommandId;
+
+    /// <summary><see cref="FindCommand"/> returning the whole binding (with its argument).</summary>
+    public KeyBinding? FindBinding(KeyGesture gesture, CommandScope focusScope, string? toolWindow)
     {
         if (focusScope != CommandScope.Global)
         {
@@ -72,7 +77,7 @@ public sealed class Keymap
         return index < 0 ? int.MaxValue : index;
     }
 
-    private string? Find(KeyGesture gesture, CommandScope scope, string? toolWindow) =>
+    private KeyBinding? Find(KeyGesture gesture, CommandScope scope, string? toolWindow) =>
         Bindings.FirstOrDefault(b => b.Gesture == gesture && b.Scope == scope
-                                     && string.Equals(b.ToolWindow, toolWindow, StringComparison.Ordinal))?.CommandId;
+                                     && string.Equals(b.ToolWindow, toolWindow, StringComparison.Ordinal));
 }

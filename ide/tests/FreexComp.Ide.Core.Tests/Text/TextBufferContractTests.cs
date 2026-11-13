@@ -202,6 +202,24 @@ public abstract class TextBufferContractTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-022")]
+    public void SavePointIsCurrentInsideChangedDuringUndoRedo()
+    {
+        // The modified marker reads IsAtSavePoint from Changed; it must already reflect the undo/redo.
+        var b = CreateBuffer("abc");
+        b.MarkSavePoint();
+        b.ApplyEdits([new TextEdit(0, 0, "x"), new TextEdit(3, 0, "y")]);
+        var seen = new List<bool>();
+        b.Changed += (_, _) => seen.Add(b.IsAtSavePoint);
+
+        b.Undo();
+        Assert.Equal([true, true], seen);
+        seen.Clear();
+        b.Redo();
+        Assert.Equal([false, false], seen);
+    }
+
+    [Fact(Timeout = 30000)]
     public void PositionOffsetConversions()
     {
         // Line breaks are CRLF, LF and a lone CR (AvaloniaEdit's line model); columns count UTF-16 units.

@@ -136,6 +136,9 @@ public sealed class KeymapService : IKeymapService
     public string? FindCommand(KeyGesture gesture, CommandScope focusScope, string? toolWindow) =>
         Current.FindCommand(gesture, focusScope, toolWindow);
 
+    public KeyBinding? FindBinding(KeyGesture gesture, CommandScope focusScope, string? toolWindow) =>
+        Current.FindBinding(gesture, focusScope, toolWindow);
+
     public void SetGestures(string commandId, IReadOnlyList<KeyGesture> gestures)
     {
         if (!_commandIds.Contains(commandId))

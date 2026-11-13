@@ -2561,6 +2561,30 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Convert to UTF-8</value>
     <comment>Msg.File.EncodingFallback info-bar action</comment>
   </data>
+  <data name="Menu_file_closeOthers" xml:space="preserve">
+    <value>Close &amp;Others</value>
+    <comment>editor.md UI-ED-079 tab context menu (title: commands.md)</comment>
+  </data>
+  <data name="Menu_file_copyPath" xml:space="preserve">
+    <value>Copy &amp;Full Path</value>
+    <comment>editor.md UI-ED-079 tab context menu (title: commands.md)</comment>
+  </data>
+  <data name="Menu_file_showInExplorer" xml:space="preserve">
+    <value>Show in File E&amp;xplorer</value>
+    <comment>editor.md UI-ED-079 tab context menu (title: commands.md)</comment>
+  </data>
+  <data name="DocumentTab_Modified" xml:space="preserve">
+    <value>Modified</value>
+    <comment>editor.md UI-ED-072: automation name of the modified dot</comment>
+  </data>
+  <data name="DocumentTab_Close" xml:space="preserve">
+    <value>Close</value>
+    <comment>editor.md UI-ED-073: automation name and tooltip of the tab close button</comment>
+  </data>
+  <data name="DocumentArea_TabOverflow" xml:space="preserve">
+    <value>All Open Documents</value>
+    <comment>editor.md UI-ED-078: automation name and tooltip of the overflow button</comment>
+  </data>
   <data name="Button_MakeWritable" xml:space="preserve">
     <value>Make Writable</value>
     <comment>Msg.File.ReadOnly info-bar action</comment>

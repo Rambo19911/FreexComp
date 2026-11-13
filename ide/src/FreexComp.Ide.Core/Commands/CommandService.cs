@@ -174,15 +174,16 @@ public sealed class CommandService : ICommandService
             return false; // IDE-ARCH-043: a popup of the focused control handles this key
         }
 
-        var commandId = _keymap.FindCommand(gesture, focusScope, toolWindowName);
-        if (commandId is null || !_handlers.TryGetValue(commandId, out var handler))
+        var binding = _keymap.FindBinding(gesture, focusScope, toolWindowName);
+        if (binding is null || !_handlers.TryGetValue(binding.CommandId, out var handler))
         {
             return false;
         }
 
-        if (CanExecute(commandId))
+        var commandId = binding.CommandId;
+        if (CanExecute(commandId, binding.Argument))
         {
-            _ = ExecuteAsync(commandId);
+            _ = ExecuteAsync(commandId, binding.Argument);
             return true;
         }
 
@@ -191,7 +192,7 @@ public sealed class CommandService : ICommandService
             return false; // UI-KEY-007 exceptions
         }
 
-        if (handler.IsBlockedByIdeState(null))
+        if (handler.IsBlockedByIdeState(binding.Argument))
         {
             var title = handler.TitleOverride ?? TitleOf(_definitions[commandId]);
             _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Status_CommandUnavailable, title), UnavailableStatusDuration);

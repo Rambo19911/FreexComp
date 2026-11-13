@@ -25,6 +25,7 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
     private readonly LineEndingKind _defaultLineEnding;
     private SavePointSide _side;
     private bool _replaying;
+    private readonly List<Core.Text.TextChangedEventArgs> _replayed = [];
     private int _groupDepth;
 
     public AvaloniaEditTextBuffer(string text, LineEndingKind defaultLineEnding)
@@ -122,20 +123,24 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
     {
         ThrowIfReadOnly();
         if (!Document.UndoStack.CanUndo) throw new InvalidOperationException("Nothing to undo.");
-        Replay(Document.UndoStack.Undo);
-        if (_side != SavePointSide.Lost)
-            _side = Document.UndoStack.IsOriginalFile ? SavePointSide.At
-                : _side is SavePointSide.At or SavePointSide.Below ? SavePointSide.Below : SavePointSide.Above;
+        Replay(Document.UndoStack.Undo, () =>
+        {
+            if (_side != SavePointSide.Lost)
+                _side = Document.UndoStack.IsOriginalFile ? SavePointSide.At
+                    : _side is SavePointSide.At or SavePointSide.Below ? SavePointSide.Below : SavePointSide.Above;
+        });
     }
 
     public void Redo()
     {
         ThrowIfReadOnly();
         if (!Document.UndoStack.CanRedo) throw new InvalidOperationException("Nothing to redo.");
-        Replay(Document.UndoStack.Redo);
-        if (_side != SavePointSide.Lost)
-            _side = Document.UndoStack.IsOriginalFile ? SavePointSide.At
-                : _side is SavePointSide.At or SavePointSide.Above ? SavePointSide.Above : SavePointSide.Below;
+        Replay(Document.UndoStack.Redo, () =>
+        {
+            if (_side != SavePointSide.Lost)
+                _side = Document.UndoStack.IsOriginalFile ? SavePointSide.At
+                    : _side is SavePointSide.At or SavePointSide.Above ? SavePointSide.Above : SavePointSide.Below;
+        });
     }
 
     public void MarkSavePoint()
@@ -157,7 +162,12 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
         Document.UndoStack.EndUndoGroup();
     }
 
-    private void Replay(Action undoOrRedo)
+    /// <summary>
+    /// Runs an undo/redo, then <paramref name="updateSavePoint"/>, and only then raises the replayed
+    /// <see cref="Changed"/> events (in order), so listeners see the new <see cref="IsAtSavePoint"/> — AvaloniaEdit
+    /// updates <see cref="UndoStack.IsOriginalFile"/> only after the document changed.
+    /// </summary>
+    private void Replay(Action undoOrRedo, Action updateSavePoint)
     {
         _replaying = true;
         try
@@ -167,6 +177,14 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
         finally
         {
             _replaying = false;
+            updateSavePoint();
+        }
+
+        var replayed = _replayed.ToList();
+        _replayed.Clear();
+        foreach (var change in replayed)
+        {
+            Changed?.Invoke(this, change);
         }
     }
 
@@ -176,7 +194,11 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
         if (!_replaying)
             _side = _side is SavePointSide.Below or SavePointSide.Lost ? SavePointSide.Lost : SavePointSide.Above;
         Version++;
-        Changed?.Invoke(this, new Core.Text.TextChangedEventArgs(e.Offset, e.RemovalLength, e.InsertedText.Text));
+        var change = new Core.Text.TextChangedEventArgs(e.Offset, e.RemovalLength, e.InsertedText.Text);
+        if (_replaying)
+            _replayed.Add(change);
+        else
+            Changed?.Invoke(this, change);
     }
 
     private void ThrowIfReadOnly()

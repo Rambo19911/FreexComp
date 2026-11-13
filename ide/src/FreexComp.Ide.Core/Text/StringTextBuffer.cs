@@ -124,8 +124,8 @@ public sealed class StringTextBuffer : ITextBuffer
         if (_undo.Count == 0) throw new InvalidOperationException("Nothing to undo.");
         var step = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
+        _redo.Add(step); // before the replay: Changed handlers see the new save-point state
         Replay(step.AsEnumerable().Reverse().Select(c => new Change(c.Offset, c.Inserted, c.Removed)));
-        _redo.Add(step);
     }
 
     public void Redo()
@@ -135,8 +135,8 @@ public sealed class StringTextBuffer : ITextBuffer
         if (_redo.Count == 0) throw new InvalidOperationException("Nothing to redo.");
         var step = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
+        _undo.Add(step); // before the replay: Changed handlers see the new save-point state
         Replay(step);
-        _undo.Add(step);
     }
 
     public void MarkSavePoint() => _savePoint = _undo.Count;

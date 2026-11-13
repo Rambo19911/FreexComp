@@ -12,6 +12,9 @@ public interface IKeymapService
 
     string? FindCommand(KeyGesture gesture, CommandScope focusScope, string? toolWindow);
 
+    /// <summary>The binding <see cref="FindCommand"/> picks, with its argument; null when nothing is bound.</summary>
+    KeyBinding? FindBinding(KeyGesture gesture, CommandScope focusScope, string? toolWindow);
+
     /// <summary>
     /// Makes <paramref name="gestures"/> the command's gestures. A gesture bound to another command at the same scope
     /// level moves here (UI-KEY-021). Only differences from the defaults are stored.

@@ -14,6 +14,10 @@ public static partial class AutomationIds
     public const string MenuBar = "MainWindow.MenuBar";
     public const string DocumentArea = "DocumentArea";
     public const string DocumentAreaEmpty = "DocumentArea.Empty";
+    public const string DocumentAreaTabOverflow = "DocumentArea.TabOverflow";
+
+    /// <summary>An entry of the tab overflow menu: <c>DocumentArea.TabOverflow.&lt;tabName&gt;</c>.</summary>
+    public static string DocumentAreaTabOverflowItem(string tabName) => DocumentAreaTabOverflow + "." + tabName;
     public const string DockLeft = "Dock.Left";
     public const string DockRight = "Dock.Right";
     public const string DockBottom = "Dock.Bottom";

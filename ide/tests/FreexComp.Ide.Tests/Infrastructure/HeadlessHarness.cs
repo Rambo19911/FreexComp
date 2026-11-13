@@ -217,6 +217,15 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
     public void RightClick(string automationId) => ClickAt(automationId, MouseButton.Right, 1);
 
+    public void MiddleClick(string automationId) => ClickAt(automationId, MouseButton.Middle, 1);
+
+    /// <summary>Moves the pointer to the element's centre (hover).</summary>
+    public void Hover(string automationId)
+    {
+        Window.MouseMove(CenterOf(automationId));
+        Dispatcher.UIThread.RunJobs();
+    }
+
     /// <summary>Left-button drag from the element's centre by (<paramref name="dx"/>, <paramref name="dy"/>) DIP.</summary>
     public void Drag(string automationId, double dx, double dy)
     {
