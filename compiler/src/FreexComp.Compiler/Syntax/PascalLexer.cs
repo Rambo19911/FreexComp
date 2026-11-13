@@ -36,7 +36,7 @@ internal sealed class PascalLexer
         _text = source.Text;
         _context = context;
         _expandIncludes = expandIncludes;
-        _directives = new DirectiveProcessor(context, (code, span, args, severity) => Report(code, span.Start, span.Length, severity, args));
+        _directives = new DirectiveProcessor(context, source, (code, span, args, severity) => Report(code, span.Start, span.Length, severity, args));
     }
 
     public SourceText Source => _source;
@@ -87,6 +87,12 @@ internal sealed class PascalLexer
         var state = _directives.State;
         var (kind, value) = ScanToken();
         var text = _text[start.._pos];
+        if (_context.Options?.ConditionEvaluator != null)
+        {
+            // the scope of later {$IF}s (LANG-862), before the trailing trivia that may hold one
+            _context.Emitted.Add(new SyntaxToken(kind, text, value, start, leading, [], state, _source));
+        }
+
         _trivia.Clear();
         ScanTrivia(trailing: true);
         return new SyntaxToken(kind, text, value, start, leading, ToArray(), state, _source);

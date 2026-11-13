@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Collections.Immutable;
 using System.Text;
 using FreexComp.Compiler.Text;
 
@@ -30,6 +31,9 @@ internal sealed class PreprocessorContext
     public DirectiveState State { get; set; } = DirectiveState.Default;
 
     public List<Diagnostic> Diagnostics { get; } = [];
+
+    /// <summary>Active tokens produced so far by every lexer of this context (only kept for a condition evaluator).</summary>
+    public List<SyntaxToken> Emitted { get; } = [];
 }
 
 /// <summary>
@@ -59,9 +63,12 @@ internal sealed class DirectiveProcessor
     private readonly Stack<TextSpan> _regions = new();
     private readonly Action<string, TextSpan, object[], DiagnosticSeverity> _report;
 
-    public DirectiveProcessor(PreprocessorContext context, Action<string, TextSpan, object[], DiagnosticSeverity> report)
+    private readonly SourceText _source;
+
+    public DirectiveProcessor(PreprocessorContext context, SourceText source, Action<string, TextSpan, object[], DiagnosticSeverity> report)
     {
         _context = context;
+        _source = source;
         _report = report;
     }
 
@@ -231,8 +238,8 @@ internal sealed class DirectiveProcessor
                     return true;
                 }
 
-                // Without the binder an {$ELSEIF} condition counts as True (LANG-862); see Evaluate.
-                elseIfFrame.BranchActive = elseIfFrame.ParentActive && !elseIfFrame.Taken;
+                // evaluated only when no earlier branch was taken (LANG-862); see Evaluate
+                elseIfFrame.BranchActive = elseIfFrame.ParentActive && !elseIfFrame.Taken && Evaluate(directive);
                 elseIfFrame.Taken |= elseIfFrame.BranchActive;
                 return true;
             case "ELSE":
@@ -267,10 +274,59 @@ internal sealed class DirectiveProcessor
         "IFNDEF" => SymbolName(directive) is { } b && !IsDefined(b),
         "IFOPT" => EvaluateIfOpt(directive),
 
-        // LANG-862: during pure syntax operations a {$IF} condition is treated as True; evaluation through the
-        // binder callback is task C-032.
-        _ => true,
+        _ => EvaluateIf(directive),                                             // IF, ELSEIF
     };
+
+    /// <summary>
+    /// LANG-862: the condition through the binder callback (<see cref="ParseOptions.ConditionEvaluator"/>); without
+    /// one (pure syntax operations) it counts as True. A syntax error in the condition makes it False.
+    /// </summary>
+    private bool EvaluateIf(DirectiveTriviaInfo directive)
+    {
+        if (_context.Options?.ConditionEvaluator is not { } evaluator)
+        {
+            return true;
+        }
+
+        if (directive.Argument.Length == 0)
+        {
+            Report("E1206", directive.Span, directive.Argument);
+            return false;
+        }
+
+        // the argument re-lexed in a copy of the file where everything before it is blanked (line breaks kept), so
+        // its tokens and diagnostics carry the file's own positions
+        var text = _source.Text;
+        var start = text.IndexOf(directive.Argument, directive.Span.Start + 2 + directive.Name.Length, StringComparison.Ordinal);
+        var blanked = new char[start + directive.Argument.Length];
+        for (var i = 0; i < start; i++)
+        {
+            blanked[i] = text[i] is '\r' or '\n' ? text[i] : ' ';
+        }
+
+        directive.Argument.CopyTo(0, blanked, start, directive.Argument.Length);
+        var argumentText = SourceText.From(_source.Path, new string(blanked));
+        var lexer = new PascalLexer(argumentText);
+        var tokens = ImmutableArray.CreateBuilder<SyntaxToken>();
+        SyntaxToken token;
+        do
+        {
+            token = lexer.Lex();
+            tokens.Add(token);
+        }
+        while (token.Kind != SyntaxKind.EndOfFileToken);
+
+        var parser = new Parser(argumentText, tokens.ToImmutable());
+        var condition = parser.ParseDirectiveCondition();
+        var syntaxErrors = lexer.Diagnostics.Concat(parser.Diagnostics).ToList();
+        if (syntaxErrors.Count > 0)
+        {
+            _context.Diagnostics.AddRange(syntaxErrors);
+            return false;
+        }
+
+        return evaluator.Evaluate(new ConditionRequest(condition, [.. _context.Emitted], IsDefined, _context.Diagnostics.Add));
+    }
 
     /// <summary>LANG-881: <c>R Q B C I M H J T X A</c>; H, J, T and X cannot change (unsupported settings).</summary>
     private bool EvaluateIfOpt(DirectiveTriviaInfo directive)

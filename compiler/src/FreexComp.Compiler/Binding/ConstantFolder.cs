@@ -24,6 +24,12 @@ internal sealed class ConstantFolder
         _diagnostics = diagnostics;
     }
 
+    /// <summary>
+    /// Set for a <c>{$IF}</c> condition (LANG-862): <c>Defined(NAME)</c> asks it, <c>Declared(Ident)</c> is evaluated, and an
+    /// undeclared name is E1203.
+    /// </summary>
+    internal Func<string, bool>? IsDefined { get; init; }
+
     public ConstantValue? Fold(ExpressionSyntax expression)
     {
         if (expression.IsMissing)
@@ -120,7 +126,11 @@ internal sealed class ConstantFolder
 
         var text = token.Value as string ?? token.Text;
         var symbol = _scope.Lookup(text);
-        if (symbol is null)
+        if (symbol is null && IsDefined != null)
+        {
+            _diagnostics.Report(name, "E1203", text);
+        }
+        else if (symbol is null)
         {
             _diagnostics.ReportUndeclared(name, text);
         }
@@ -134,6 +144,12 @@ internal sealed class ConstantFolder
         if (invocation.Expression is not IdentifierNameSyntax name)
         {
             return NotConstant(invocation);
+        }
+
+        if (IsDefined != null && (name.Identifier.Value as string ?? name.Identifier.Text) is var function
+            && (IdentifierComparer.Instance.Equals(function, "Defined") || IdentifierComparer.Instance.Equals(function, "Declared")))
+        {
+            return FoldDirectiveFunction(invocation, IdentifierComparer.Instance.Equals(function, "Defined"));
         }
 
         var symbol = LookupName(name);
@@ -155,6 +171,31 @@ internal sealed class ConstantFolder
 
         var operand = Fold(arguments[0].Expression);
         return operand is null ? null : FoldTypecast(invocation, target, operand);
+    }
+
+    /// <summary>LANG-862: <c>Defined(NAME)</c> (a conditional symbol) or <c>Declared(Ident)</c> (visible here; <c>Unit.Ident</c> allowed).</summary>
+    private ConstantValue? FoldDirectiveFunction(InvocationExpressionSyntax invocation, bool defined)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        var argument = arguments.Count == 1 && arguments[0].WidthColonToken is null ? arguments[0].Expression : null;
+        bool? value = (defined, argument) switch
+        {
+            (true, IdentifierNameSyntax symbol) => IsDefined!(NameOf(symbol)),
+            (false, IdentifierNameSyntax identifier) => _scope.Lookup(NameOf(identifier)) != null,
+            (false, MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax unit, Name: IdentifierNameSyntax member }) =>
+                _scope.Lookup(NameOf(unit)) is UnitSymbol u
+                && u.InterfaceMembers.Concat(u.ImplementationMembers).Any(m => IdentifierComparer.Instance.Equals(m.Name, NameOf(member))),
+            _ => null,
+        };
+        if (value is null)
+        {
+            _diagnostics.Report(invocation.ArgumentList, "E1206", invocation.ArgumentList.ToString());
+            return null;
+        }
+
+        return new ConstantValue(value.Value, _types.Boolean);
+
+        static string NameOf(IdentifierNameSyntax name) => name.Identifier.Value as string ?? name.Identifier.Text;
     }
 
     /// <summary>An ordinal typecast of a constant (LANG-290 row 1); E2040 at <paramref name="node"/> otherwise.</summary>

@@ -6,6 +6,9 @@ public sealed record ParseOptions(ImmutableArray<string> Defines)
 {
     /// <summary>Absolute directories searched for <c>{$I file}</c> after the including file's directory (LANG-875).</summary>
     public ImmutableArray<string> SearchPaths { get; init; } = [];
+
+    /// <summary>LANG-862: evaluates <c>{$IF}</c> conditions; null = they count as True (pure syntax operations).</summary>
+    internal IConditionEvaluator? ConditionEvaluator { get; init; }
 }
 
 /// <summary>

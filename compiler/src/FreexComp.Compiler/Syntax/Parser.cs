@@ -1331,6 +1331,21 @@ internal sealed class Parser
     /// <c>expression = simpleExpr [ relOp simpleExpr ]</c>; a second relational operator is E1110 (LANG-170) and is
     /// parsed left-associatively. <paramref name="first"/>: an already parsed leading factor.
     /// </summary>
+    /// <summary>
+    /// A <c>{$IF}</c> condition (LANG-862): one expression filling the whole token list; a token after it is E1100
+    /// (then the expression is not used, see <see cref="Diagnostics"/>).
+    /// </summary>
+    public ExpressionSyntax ParseDirectiveCondition()
+    {
+        var expression = ParseExpression();
+        if (CurrentKind != SyntaxKind.EndOfFileToken)
+        {
+            ReportAt(Current, "E1100", Current.Text);
+        }
+
+        return expression;
+    }
+
     private ExpressionSyntax ParseExpression(ExpressionSyntax? first = null)
     {
         var left = ParseSimpleExpression(first);
