@@ -3,7 +3,7 @@
     "version": "23.1.5",
     "archive": "clang+llvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
     "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/clang+llvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
-    "sha256": "",
+    "sha256": "62fdada7f6fa2b73856486dfbbdba3d2c1882991621615bcb55c60207611c6d4",
     "installDir": "third_party/llvm",
     "requiredTools": ["clang.exe", "lld-link.exe", "llvm-dlltool.exe"],
     "optionalTools": ["lldb-dap.exe", "lldb.exe", "llvm-objdump.exe", "llvm-pdbutil.exe"]
