@@ -1,4 +1,5 @@
 const
-  S = '''SELECT *
+  S = '''
+    SELECT *
     FROM T
     ''';

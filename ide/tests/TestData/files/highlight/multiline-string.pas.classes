@@ -1,7 +1,9 @@
 1:1-5 syntax.keyword
 2:3-3 syntax.text
 2:5-5 syntax.symbol
-2:7-17 syntax.invalid
-3:5-8 syntax.text
-3:10-10 syntax.text
-4:5-8 syntax.invalid
+2:7-9 syntax.invalid
+3:5-10 syntax.text
+3:12-12 syntax.symbol
+4:5-8 syntax.text
+4:10-10 syntax.text
+5:5-8 syntax.invalid
