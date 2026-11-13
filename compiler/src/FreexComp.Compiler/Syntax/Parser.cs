@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using FreexComp.Compiler.Text;
 
@@ -196,8 +197,8 @@ internal sealed class Parser
     }
 
     /// <summary>
-    /// <c>{ declSection }</c> / <c>{ interfaceDecl }</c>. Routines and attribute lists are not parsed yet (C-015,
-    /// C-019): their tokens are skipped up to the next section keyword or the end of the declaration part.
+    /// <c>{ declSection }</c> / <c>{ interfaceDecl }</c>. Attribute lists are not parsed yet (C-019): other tokens are
+    /// skipped up to the next section or routine keyword or the end of the declaration part.
     /// </summary>
     private SyntaxList<SyntaxNode> ParseDeclarations(SectionKind section)
     {
@@ -218,12 +219,15 @@ internal sealed class Parser
                 case SyntaxKind.VarKeyword or SyntaxKind.ThreadVarKeyword:
                     declarations.Add(ParseVarSection());
                     break;
+                case var _ when StartsRoutine():
+                    declarations.Add(ParseRoutineDeclaration(hasBody: section != SectionKind.Interface));
+                    break;
                 default:
                     do
                     {
                         SkipToken();
                     }
-                    while (!EndsDeclarations(CurrentKind, section) && !StartsSection(CurrentKind));
+                    while (!EndsDeclarations(CurrentKind, section) && !StartsSection(CurrentKind) && !StartsRoutine());
 
                     break;
             }
@@ -234,6 +238,135 @@ internal sealed class Parser
 
     private static bool StartsSection(SyntaxKind kind) => kind is SyntaxKind.LabelKeyword or SyntaxKind.ConstKeyword
         or SyntaxKind.ResourceStringKeyword or SyntaxKind.TypeKeyword or SyntaxKind.VarKeyword or SyntaxKind.ThreadVarKeyword;
+
+    private static bool IsRoutineKeyword(SyntaxKind kind) => kind is SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword
+        or SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword;
+
+    /// <summary><c>procedure</c> …, or <c>class</c> followed by a routine keyword or the contextual <c>operator</c>.</summary>
+    private bool StartsRoutine() =>
+        IsRoutineKeyword(CurrentKind)
+        || (CurrentKind == SyntaxKind.ClassKeyword && (IsRoutineKeyword(Peek(1).Kind) || IsContextual(Peek(1), SyntaxKind.OperatorKeyword)));
+
+    // ------------------------------------------------------------------ grammar.md §5: routines
+
+    /// <summary>
+    /// <c>routineHeading ; { routineDirective ; } [ block ; ]</c>. The body is parsed when <paramref name="hasBody"/>
+    /// (not in an interface section) and no <c>forward</c> / <c>external</c> directive is present.
+    /// </summary>
+    private RoutineDeclarationSyntax ParseRoutineDeclaration(bool hasBody)
+    {
+        var heading = ParseRoutineHeading();
+        SyntaxToken? semicolon = IsDirectiveStart() ? null : Expect(SyntaxKind.SemicolonToken);
+        var directives = ImmutableArray.CreateBuilder<DirectiveSyntax>();
+        while (IsDirectiveStart())
+        {
+            directives.Add(ParseDirective());
+        }
+
+        if (!hasBody || directives.Any(d => d.Keyword.ContextualKind is SyntaxKind.ForwardKeyword or SyntaxKind.ExternalKeyword))
+        {
+            return new RoutineDeclarationSyntax(heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()), null, null);
+        }
+
+        var block = ParseBlock();
+        return new RoutineDeclarationSyntax(heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()), block,
+            Expect(SyntaxKind.SemicolonToken));
+    }
+
+    /// <summary>
+    /// <c>[ class ] ( procedure | function | constructor | destructor | operator ) routineName [ formalParams ] [ : resultType ]</c>.
+    /// Generic parameter lists (C-019) are not parsed yet.
+    /// </summary>
+    private RoutineHeadingSyntax ParseRoutineHeading()
+    {
+        var classKeyword = CurrentKind == SyntaxKind.ClassKeyword ? Take() : (SyntaxToken?)null;
+        var keyword = IsRoutineKeyword(CurrentKind) ? Take() : TakeContextual();
+        var name = ParseQualifiedName();
+        var parameters = CurrentKind == SyntaxKind.OpenParenToken ? ParseParameterList() : null;
+        SyntaxToken? colon = null;
+        TypeSyntax? result = null;
+        if (CurrentKind == SyntaxKind.ColonToken && keyword.Kind != SyntaxKind.ProcedureKeyword)
+        {
+            colon = Take();
+            result = ParseType();
+        }
+
+        return new RoutineHeadingSyntax(classKeyword, keyword, name, parameters, colon, result);
+    }
+
+    private static readonly FrozenSet<SyntaxKind> DirectiveKinds = new[]
+    {
+        SyntaxKind.ForwardKeyword, SyntaxKind.OverloadKeyword, SyntaxKind.NoReturnKeyword, SyntaxKind.AssemblerKeyword,
+        SyntaxKind.VarArgsKeyword, SyntaxKind.RegisterKeyword, SyntaxKind.PascalKeyword, SyntaxKind.CdeclKeyword,
+        SyntaxKind.StdCallKeyword, SyntaxKind.SafeCallKeyword, SyntaxKind.WinApiKeyword, SyntaxKind.DeprecatedKeyword,
+        SyntaxKind.PlatformKeyword, SyntaxKind.ExperimentalKeyword, SyntaxKind.ExternalKeyword, SyntaxKind.PublicKeyword,
+        SyntaxKind.VirtualKeyword, SyntaxKind.DynamicKeyword, SyntaxKind.OverrideKeyword, SyntaxKind.AbstractKeyword,
+        SyntaxKind.FinalKeyword, SyntaxKind.ReintroduceKeyword, SyntaxKind.StaticKeyword, SyntaxKind.MessageKeyword,
+    }.ToFrozenSet();
+
+    /// <summary>
+    /// A routine or method directive (grammar.md §4, §5): <c>inline</c> or a directive word not followed by <c>:</c>,
+    /// <c>,</c> or <c>=</c> (then it is a name); <c>public</c> only as <c>public name</c>.
+    /// </summary>
+    private bool IsDirectiveStart()
+    {
+        if (CurrentKind == SyntaxKind.InlineKeyword)
+        {
+            return true;
+        }
+
+        if (CurrentKind != SyntaxKind.IdentifierToken || Current.Text.StartsWith('&')
+            || !DirectiveKinds.Contains(SyntaxFacts.GetKeywordKind(Current.Text))
+            || Peek(1).Kind is SyntaxKind.ColonToken or SyntaxKind.CommaToken or SyntaxKind.EqualsToken)
+        {
+            return false;
+        }
+
+        return !IsContextual(Current, SyntaxKind.PublicKeyword) || IsContextual(Peek(1), SyntaxKind.NameKeyword);
+    }
+
+    /// <summary>One directive with its arguments and its <c>;</c> (optional when another directive follows, LANG-160).</summary>
+    private DirectiveSyntax ParseDirective()
+    {
+        var keyword = CurrentKind == SyntaxKind.InlineKeyword ? Take().WithContextualKind(SyntaxKind.InlineKeyword) : TakeContextual();
+        ExpressionSyntax? value = null;
+        SyntaxToken? nameKeyword = null;
+        ExpressionSyntax? nameValue = null;
+        SyntaxToken? delayed = null;
+        switch (keyword.ContextualKind)
+        {
+            case SyntaxKind.ExternalKeyword:
+                if (CurrentKind is not (SyntaxKind.SemicolonToken or SyntaxKind.EndOfFileToken) && !IsDirectiveStart())
+                {
+                    value = ParseExpression();
+                    if (IsContextual(Current, SyntaxKind.NameKeyword))
+                    {
+                        nameKeyword = TakeContextual();
+                        nameValue = ParseExpression();
+                    }
+
+                    if (IsContextual(Current, SyntaxKind.DelayedKeyword))
+                    {
+                        delayed = TakeContextual();
+                    }
+                }
+
+                break;
+            case SyntaxKind.PublicKeyword:
+                nameKeyword = TakeContextual();
+                nameValue = ParseExpression();
+                break;
+            case SyntaxKind.MessageKeyword:
+                value = ParseExpression();
+                break;
+            case SyntaxKind.DeprecatedKeyword when CurrentKind == SyntaxKind.StringLiteralToken:
+                value = new LiteralExpressionSyntax(Take());
+                break;
+        }
+
+        SyntaxToken? semicolon = CurrentKind != SyntaxKind.SemicolonToken && IsDirectiveStart() ? null : Expect(SyntaxKind.SemicolonToken);
+        return new DirectiveSyntax(keyword, value, nameKeyword, nameValue, delayed, semicolon);
+    }
 
     /// <summary><c>label labelId { , labelId } ;</c></summary>
     private LabelSectionSyntax ParseLabelSection()

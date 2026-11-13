@@ -104,6 +104,12 @@ public abstract class SyntaxVisitor<TResult>
     public virtual TResult VisitParameterList(ParameterListSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitParameter(ParameterSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitRoutineDeclaration(RoutineDeclarationSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitRoutineHeading(RoutineHeadingSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitDirective(DirectiveSyntax node) => DefaultVisit(node);
 }
 
 /// <summary>Depth-first walk over every node, token and trivia piece in source order.</summary>

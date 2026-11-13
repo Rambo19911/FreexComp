@@ -225,4 +225,7 @@ public enum SyntaxKind
     ClassRefType,
     ParameterList,
     Parameter,
+    RoutineDeclaration,
+    RoutineHeading,
+    Directive,
 }

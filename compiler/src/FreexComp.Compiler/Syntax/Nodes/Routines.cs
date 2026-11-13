@@ -54,3 +54,107 @@ public sealed class ParameterSyntax : SyntaxNode
 
     public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitParameter(this);
 }
+
+/// <summary>
+/// <c>routineHeading ; { routineDirective ; } [ block ; ]</c>. The body is absent after <c>forward</c> or <c>external</c>
+/// and in an interface section.
+/// </summary>
+public sealed class RoutineDeclarationSyntax : SyntaxNode
+{
+    internal RoutineDeclarationSyntax(RoutineHeadingSyntax heading, SyntaxToken? semicolonToken, SyntaxList<DirectiveSyntax> directives,
+                                      BlockSyntax? block, SyntaxToken? bodySemicolonToken)
+        : base(SyntaxKind.RoutineDeclaration)
+    {
+        Heading = Add(heading);
+        SemicolonToken = Add(semicolonToken);
+        Directives = Add(directives);
+        Block = AddOptional(block);
+        BodySemicolonToken = Add(bodySemicolonToken);
+    }
+
+    public RoutineHeadingSyntax Heading { get; }
+
+    /// <summary>The <c>;</c> after the heading; null when a directive follows directly (LANG-160).</summary>
+    public SyntaxToken? SemicolonToken { get; }
+
+    public SyntaxList<DirectiveSyntax> Directives { get; }
+
+    public BlockSyntax? Block { get; }
+
+    /// <summary>The <c>;</c> after the body.</summary>
+    public SyntaxToken? BodySemicolonToken { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitRoutineDeclaration(this);
+}
+
+/// <summary>
+/// <c>[ class ] ( procedure | function | constructor | destructor | operator ) routineName [ formalParams ] [ : resultType ]</c>;
+/// <c>routineName = ident | typeNamePath . ident</c> (a <see cref="QualifiedNameSyntax"/> for method implementations).
+/// </summary>
+public sealed class RoutineHeadingSyntax : SyntaxNode
+{
+    internal RoutineHeadingSyntax(SyntaxToken? classKeyword, SyntaxToken keyword, NameSyntax name, ParameterListSyntax? parameterList,
+                                  SyntaxToken? colonToken, TypeSyntax? resultType)
+        : base(SyntaxKind.RoutineHeading)
+    {
+        ClassKeyword = Add(classKeyword);
+        Keyword = Add(keyword);
+        Name = Add(name);
+        ParameterList = AddOptional(parameterList);
+        ColonToken = Add(colonToken);
+        ResultType = AddOptional(resultType);
+    }
+
+    public SyntaxToken? ClassKeyword { get; }
+
+    /// <summary><c>procedure</c>, <c>function</c>, <c>constructor</c>, <c>destructor</c>, or the contextual <c>operator</c>.</summary>
+    public SyntaxToken Keyword { get; }
+
+    public NameSyntax Name { get; }
+
+    public ParameterListSyntax? ParameterList { get; }
+
+    public SyntaxToken? ColonToken { get; }
+
+    /// <summary>Absent for procedures and for functions completing a forward / interface declaration.</summary>
+    public TypeSyntax? ResultType { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitRoutineHeading(this);
+}
+
+/// <summary>
+/// A routine or method directive with its <c>;</c>: <c>overload</c>, <c>inline</c>, a calling convention, a hint,
+/// <c>external [ lib [ name n ] [ delayed ] ]</c>, <c>public name n</c>, <c>message id</c>, <c>virtual</c>, ….
+/// </summary>
+public sealed class DirectiveSyntax : SyntaxNode
+{
+    internal DirectiveSyntax(SyntaxToken keyword, ExpressionSyntax? value, SyntaxToken? nameKeyword, ExpressionSyntax? nameValue,
+                             SyntaxToken? delayedKeyword, SyntaxToken? semicolonToken)
+        : base(SyntaxKind.Directive)
+    {
+        Keyword = Add(keyword);
+        Value = AddOptional(value);
+        NameKeyword = Add(nameKeyword);
+        NameValue = AddOptional(nameValue);
+        DelayedKeyword = Add(delayedKeyword);
+        SemicolonToken = Add(semicolonToken);
+    }
+
+    /// <summary>The <c>inline</c> keyword or an identifier whose <see cref="SyntaxToken.ContextualKind"/> is the directive.</summary>
+    public SyntaxToken Keyword { get; }
+
+    /// <summary>The library of <c>external</c>, the id of <c>message</c>, the text of <c>deprecated</c>.</summary>
+    public ExpressionSyntax? Value { get; }
+
+    /// <summary>Contextual <c>name</c> of <c>external … name</c> / <c>public name</c>.</summary>
+    public SyntaxToken? NameKeyword { get; }
+
+    public ExpressionSyntax? NameValue { get; }
+
+    public SyntaxToken? DelayedKeyword { get; }
+
+    /// <summary>Null when another directive follows directly (LANG-160).</summary>
+    public SyntaxToken? SemicolonToken { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitDirective(this);
+}
