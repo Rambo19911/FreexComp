@@ -20,7 +20,7 @@ public sealed class CommandService : ICommandService
     /// <summary>IDE-ARCH-046: may run again while a previous execution is pending.</summary>
     private static readonly HashSet<string> ReentrantCommands = new(["project.cancelBuild", "run.stop"], StringComparer.Ordinal);
 
-    private readonly Keymap _keymap;
+    private readonly IKeymapService _keymap;
     private readonly IUiDispatcher _dispatcher;
     private readonly IClock _clock;
     private readonly ILog _log;
@@ -33,7 +33,7 @@ public sealed class CommandService : ICommandService
     private bool _invalidatePending;
     private (string Text, DateTimeOffset At)? _lastError;
 
-    public CommandService(Keymap keymap, IUiDispatcher dispatcher, IClock clock, ILog log, IDialogService dialogs, IStatusService status)
+    public CommandService(IKeymapService keymap, IUiDispatcher dispatcher, IClock clock, ILog log, IDialogService dialogs, IStatusService status)
     {
         _keymap = keymap;
         _dispatcher = dispatcher;
@@ -43,6 +43,7 @@ public sealed class CommandService : ICommandService
         _status = status;
         Definitions = CommandCatalog.All;
         _definitions = Definitions.ToDictionary(d => d.Id, StringComparer.Ordinal);
+        _keymap.Changed += (_, _) => RefreshGestureTexts(); // UI-KEY-023
     }
 
     public event EventHandler<CommandExecutedEventArgs>? Executed;
@@ -193,6 +194,14 @@ public sealed class CommandService : ICommandService
                 }
             },
             UiPriority.Background);
+    }
+
+    private void RefreshGestureTexts()
+    {
+        foreach (var command in _commands.Values)
+        {
+            command.GestureText = GestureText(command.Id);
+        }
     }
 
     private static string TitleOf(CommandDefinition definition) =>

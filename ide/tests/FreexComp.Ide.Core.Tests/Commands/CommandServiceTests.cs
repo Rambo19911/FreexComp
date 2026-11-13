@@ -169,8 +169,30 @@ public sealed class CommandServiceTests
         Assert.Equal("Ctrl+S", command.GestureText);
     }
 
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-SET-066")]
+    [Trait("Req", "UI-KEY-023")]
+    public void KeymapChangesApplyToKeysAndGestureText()
+    {
+        var keymap = CreateKeymap();
+        var service = new CommandService(keymap, _dispatcher, _clock, _log, _dialogs, _status);
+        var save = new TestHandler();
+        service.RegisterHandler("file.save", save);
+        var command = service.Get("file.save");
+
+        keymap.SetGestures("file.save", [KeyGesture.Parse("Ctrl+Shift+F12")]);
+
+        Assert.Equal("Ctrl+Shift+F12", command.GestureText);
+        Assert.False(service.HandleKey(KeyGesture.Parse("Ctrl+S"), CommandScope.Global, null));
+        Assert.True(service.HandleKey(KeyGesture.Parse("Ctrl+Shift+F12"), CommandScope.Global, null));
+        Assert.Equal(1, save.Calls);
+    }
+
     private CommandService Create() =>
-        new(DefaultKeymap.Create(), _dispatcher, _clock, _log, _dialogs, _status);
+        new(CreateKeymap(), _dispatcher, _clock, _log, _dialogs, _status);
+
+    private KeymapService CreateKeymap() =>
+        new(Core.Settings.UserPaths.Create(@"C:\u", _ => null, _ => throw new InvalidOperationException()), new InMemoryFileSystem(), _clock, _log);
 
     private sealed class TestHandler : ICommandHandler
     {
