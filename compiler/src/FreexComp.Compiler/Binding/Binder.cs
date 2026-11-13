@@ -106,9 +106,10 @@ internal static class Binder
     {
         var definition = routine.Definition ?? throw new InvalidOperationException($"Routine '{routine.Name}' has no body.");
         var diagnostics = new DiagnosticBag();
-        // a nested routine sees the enclosing routine's declarations up to its own definition (LANG-402)
+        // a routine sees the enclosing scope's declarations up to its own definition (LANG-402, C-172); for a unit's
+        // implementation routine that limits the implementation scope only (the interface stays visible as its parent)
         var outer = routine.DefinitionScope!;
-        var scope = new Scope(ScopeKind.Routine, outer, routine, outer.Kind == ScopeKind.Routine ? routine.DefinitionScopeVisibleCount : null);
+        var scope = new Scope(ScopeKind.Routine, outer, routine, routine.DefinitionScopeVisibleCount);
         if (routine.ResultVariable is { } result)
         {
             scope.TryDeclare(result, out _);

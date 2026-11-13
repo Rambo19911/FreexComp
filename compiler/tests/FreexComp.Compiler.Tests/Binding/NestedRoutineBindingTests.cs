@@ -57,6 +57,24 @@ public sealed class NestedRoutineBindingTests
 
     [Fact]
     [Trait("Req", "LANG-402")]
+    public void UnitLevelDeclareBeforeUse()
+    {
+        // program: a global, a constant and a routine declared after P are not visible in P's body; earlier ones are
+        Assert.Equal(["E2003(1,55): Undeclared identifier 'g'", "E2003(1,63): Undeclared identifier 'Q'"],
+            BindDiagnostics("program T; var a: Integer; procedure P; begin a := 1; g := 2; Q end; var g: Integer; " +
+                "procedure Q; begin g := a; P end; begin g := 3; P; Q end."));
+
+        // a definition completing a forward declaration sees everything before the definition
+        Assert.Empty(BindDiagnostics("program T; procedure P; forward; var g: Integer; procedure P; begin g := 1 end; begin P end."));
+
+        // unit: the interface stays fully visible; the implementation only up to the routine's definition
+        Assert.Equal(["E2003(1,118): Undeclared identifier 'late'"],
+            BindDiagnostics("unit U; interface procedure P; var pub: Integer; implementation var early: Integer; " +
+                "procedure P; begin pub := early; late := 1 end; var late: Integer; begin late := 0 end."));
+    }
+
+    [Fact]
+    [Trait("Req", "LANG-402")]
     public void NestedRoutines_CallEachOtherInDeclarationOrderAndViaForward()
     {
         var result = BindOk("program T; procedure Outer; procedure B; forward; procedure A; begin B end; procedure B; begin A end; " +
