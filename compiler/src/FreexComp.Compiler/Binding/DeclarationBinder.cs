@@ -224,6 +224,7 @@ internal sealed class DeclarationBinder
         {
             target.Definition = declaration;
             target.DefinitionScope = _scope;
+            target.DefinitionScopeVisibleCount = _scope.Count;
             target.AddLocation(DiagnosticBag.LocationOf(identifier));
             return;
         }
@@ -247,6 +248,7 @@ internal sealed class DeclarationBinder
 
         if (DeclareRoutine(identifier, routine, existing))
         {
+            routine.DefinitionScopeVisibleCount = _scope.Count;
             declared.Add(routine);
             if (routine.AwaitsDefinition && !IsInterfaceSection)
             {

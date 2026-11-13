@@ -34,6 +34,19 @@ internal sealed class ExpressionBinder
     /// <summary>Control variables (variables or value parameters) of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>
     public HashSet<Symbol> ForVariables { get; } = new(ReferenceEqualityComparer.Instance);
 
+    /// <summary>Variables, parameters and <c>Result</c> of enclosing routines referenced here, in first-reference order (CMP-345).</summary>
+    public List<Symbol> CapturedVariables { get; } = [];
+
+    /// <summary>Records <paramref name="symbol"/> as captured when it belongs to an enclosing routine (LANG-450).</summary>
+    public void NoteReference(Symbol symbol)
+    {
+        if (_routine != null && symbol is (VariableSymbol { IsGlobal: false } or ParameterSymbol)
+            && symbol.ContainingSymbol is RoutineSymbol owner && !ReferenceEquals(owner, _routine) && !CapturedVariables.Contains(symbol))
+        {
+            CapturedVariables.Add(symbol);
+        }
+    }
+
     public BoundExpression BindExpression(ExpressionSyntax syntax)
     {
         if (syntax.IsMissing)
@@ -55,6 +68,8 @@ internal sealed class ExpressionBinder
                 return BindBinary(binary);
             case InvocationExpressionSyntax invocation:
                 return BindInvocation(invocation);
+            case AddressOfExpressionSyntax addressOf:
+                return BindAddressOf(addressOf);
             case PredefinedTypeExpressionSyntax predefined:
                 _diagnostics.Report(predefined, "E2009", predefined.Keyword.Text);
                 return Error(syntax);
@@ -137,8 +152,10 @@ internal sealed class ExpressionBinder
             case null:
                 return Error(name);
             case VariableSymbol variable:
+                NoteReference(variable);
                 return new BoundVariableExpression(name, variable);
             case ParameterSymbol parameter:
+                NoteReference(parameter);
                 return new BoundParameterExpression(name, parameter);
             case RoutineSymbol:
                 return CallExpression(name, name, argumentList: null);             // LANG-312: parameterless call
@@ -155,6 +172,19 @@ internal sealed class ExpressionBinder
             case var symbol:
                 return Unsupported(name, symbol.Kind.ToString().ToLowerInvariant() + " reference");
         }
+    }
+
+    /// <summary>LANG-451: E2130 for a nested routine; the rest of <c>@</c> arrives with pointers (M2.2).</summary>
+    private BoundExpression BindAddressOf(AddressOfExpressionSyntax addressOf)
+    {
+        if (addressOf.Operand is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
+            && _scope.LookupCandidates(token.Value as string ?? token.Text) is [{ IsNested: true } nested, ..])
+        {
+            _diagnostics.Report(name, "E2130", nested.Name);
+            return Error(addressOf);
+        }
+
+        return Unsupported(addressOf, DeclarationBinder.FeatureName(addressOf.Kind));
     }
 
     /// <summary>The symbol a name binds to (LANG-310); E2003 and null when undeclared, null for a parser-inserted name.</summary>

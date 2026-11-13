@@ -23,17 +23,30 @@ internal sealed record BindingResult(
     public Scope? InterfaceScope => Declarations.InterfaceScope;
 
     public Scope Scope => Declarations.Scope;
+
+    /// <summary>
+    /// CMP-345: the variables, parameters and <c>Result</c> of <paramref name="routine"/> referenced by any routine nested in
+    /// it (at any depth), in the order of <paramref name="routine"/>'s scope (<c>Result</c>, parameters, locals).
+    /// </summary>
+    public ImmutableArray<Symbol> GetCapturedVariables(RoutineSymbol routine)
+    {
+        var captured = Routines.SelectMany(r => r.CapturedVariables).Where(s => ReferenceEquals(s.ContainingSymbol, routine)).ToHashSet();
+        return captured.Count == 0 ? [] : [.. Routines.First(r => ReferenceEquals(r.Routine, routine)).Scope.Symbols.Where(captured.Contains)];
+    }
 }
 
 /// <summary>
 /// One bound routine body (CMP-114). <paramref name="Scope"/> is the routine's own scope (<c>Result</c>, parameters,
 /// locals); <paramref name="NestedRoutines"/> are the routines declared in its declaration part.
+/// <paramref name="CapturedVariables"/> are the variables, parameters and <c>Result</c>s of enclosing routines this body
+/// references (first-reference order; references from deeper nested bodies are listed there).
 /// </summary>
 internal sealed record BoundRoutineBody(
     RoutineSymbol Routine,
     Scope Scope,
     BoundBlock Body,
     ImmutableArray<RoutineSymbol> NestedRoutines,
+    ImmutableArray<Symbol> CapturedVariables,
     ImmutableArray<Diagnostic> Diagnostics);
 
 /// <summary>Binds a compilation unit: declarations (CMP-113), then the routine and unit-level bodies (CMP-114).</summary>
@@ -93,7 +106,9 @@ internal static class Binder
     {
         var definition = routine.Definition ?? throw new InvalidOperationException($"Routine '{routine.Name}' has no body.");
         var diagnostics = new DiagnosticBag();
-        var scope = new Scope(ScopeKind.Routine, routine.DefinitionScope, routine);
+        // a nested routine sees the enclosing routine's declarations up to its own definition (LANG-402)
+        var outer = routine.DefinitionScope!;
+        var scope = new Scope(ScopeKind.Routine, outer, routine, outer.Kind == ScopeKind.Routine ? routine.DefinitionScopeVisibleCount : null);
         if (routine.ResultVariable is { } result)
         {
             scope.TryDeclare(result, out _);
@@ -106,7 +121,29 @@ internal static class Binder
 
         var block = definition.Block!;
         var locals = new DeclarationBinder(types, scope, routine, diagnostics).BindDeclarations(block.Declarations);
-        var body = new BodyBinder(types, scope, diagnostics, routine).BindBlock(block.Body, block.Body.Statements);
-        return new BoundRoutineBody(routine, scope, body, [.. locals.OfType<RoutineSymbol>()], diagnostics.ToImmutable());
+        var binder = new BodyBinder(types, scope, diagnostics, routine);
+        binder.AddReadOnlyVariables(EnclosingForVariables(outer));
+        var body = binder.BindBlock(block.Body, block.Body.Statements);
+        return new BoundRoutineBody(routine, scope, body, [.. locals.OfType<RoutineSymbol>()], [.. binder.CapturedVariables], diagnostics.ToImmutable());
+    }
+
+    /// <summary>
+    /// LANG-452: the <c>for</c> control variables (locals and value parameters) of the routines enclosing a nested routine
+    /// whose scope chain starts at <paramref name="scope"/>.
+    /// </summary>
+    private static IEnumerable<Symbol> EnclosingForVariables(Scope scope)
+    {
+        for (var s = scope; s is { Kind: ScopeKind.Routine, Owner: RoutineSymbol { Definition.Block: { } block } owner }; s = s.Parent)
+        {
+            foreach (var loop in block.Body.DescendantNodes().OfType<ForStatementSyntax>())
+            {
+                if (loop.Variable is IdentifierNameSyntax { Identifier: { IsMissing: false } token }
+                    && s.LookupLocal(token.Value as string ?? token.Text) is (VariableSymbol or ParameterSymbol) and var symbol
+                    && ReferenceEquals(symbol.ContainingSymbol, owner))
+                {
+                    yield return symbol;
+                }
+            }
+        }
     }
 }

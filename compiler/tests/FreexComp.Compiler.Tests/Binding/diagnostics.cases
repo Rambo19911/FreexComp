@@ -105,3 +105,9 @@ begin P(5) end.
 procedure P(var a: Integer); begin end;
 var i: Integer;
 begin P(i * 2) end.
+=== E2130 4,13
+procedure Outer;
+var p: Pointer;
+  procedure Inner; begin end;
+begin p := @Inner end;
+begin end.

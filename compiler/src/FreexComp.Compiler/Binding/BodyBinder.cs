@@ -108,16 +108,35 @@ internal sealed class BodyBinder
         return new BoundAssignmentStatement(assignment, target, _expressions.ConvertForAssignment(value, target.Type, assignment.Value));
     }
 
-    /// <summary>LANG-308: the current function's name on the left of <c>:=</c> is its <c>Result</c>.</summary>
+    /// <summary>
+    /// LANG-308: the name of the current function, or of an enclosing one (LANG-450), on the left of <c>:=</c> is that
+    /// function's <c>Result</c>.
+    /// </summary>
     private BoundVariableExpression? FunctionResult(ExpressionSyntax target)
     {
-        if (target is not IdentifierNameSyntax { Identifier: { IsMissing: false } token } name || _routine?.ResultVariable is not { } result)
+        if (target is not IdentifierNameSyntax { Identifier: { IsMissing: false } token } name || _routine is null)
         {
             return null;
         }
 
-        return _scope.LookupCandidates(token.Value as string ?? token.Text).Contains(_routine) ? new BoundVariableExpression(name, result) : null;
+        var candidates = _scope.LookupCandidates(token.Value as string ?? token.Text);
+        for (var routine = _routine; routine != null; routine = routine.ContainingSymbol as RoutineSymbol)
+        {
+            if (routine.ResultVariable is { } result && candidates.Contains(routine))
+            {
+                _expressions.NoteReference(result);
+                return new BoundVariableExpression(name, result);
+            }
+        }
+
+        return null;
     }
+
+    /// <summary>Outer symbols referenced by this body (CMP-345).</summary>
+    public IReadOnlyList<Symbol> CapturedVariables => _expressions.CapturedVariables;
+
+    /// <summary>LANG-452: control variables of enclosing routines' <c>for</c> loops are read-only here.</summary>
+    public void AddReadOnlyVariables(IEnumerable<Symbol> variables) => ForVariables.UnionWith(variables);
 
     /// <summary>LANG-352: a designator statement must be a call; control intrinsics.</summary>
     private BoundStatement BindExpressionStatement(ExpressionStatementSyntax statement)

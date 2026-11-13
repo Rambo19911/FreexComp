@@ -108,6 +108,9 @@ public class RoutineSymbol : Symbol
     /// <summary>The scope the definition appears in: parent of the routine's own scope.</summary>
     internal Scope? DefinitionScope { get; set; }
 
+    /// <summary>Declarations of <see cref="DefinitionScope"/> made up to and including the definition (LANG-402).</summary>
+    internal int DefinitionScopeVisibleCount { get; set; }
+
     /// <summary>The implicit <c>Result</c> variable of a function (LANG-410); null for procedures.</summary>
     internal VariableSymbol? ResultVariable { get; set; }
 

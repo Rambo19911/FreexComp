@@ -13,15 +13,20 @@ internal enum ScopeKind { BuiltIn, Unit, Uses, TypeMember, Routine, Block, With 
 /// </summary>
 internal sealed class Scope
 {
-    private readonly Dictionary<string, Symbol> _symbols = new(IdentifierComparer.Instance);
+    private readonly Dictionary<string, (Symbol Symbol, int Index)> _symbols = new(IdentifierComparer.Instance);
     private readonly List<(string Name, Symbol Symbol)> _ordered = [];
-    private readonly Dictionary<string, List<RoutineSymbol>> _overloads = new(IdentifierComparer.Instance);
+    private readonly Dictionary<string, List<(RoutineSymbol Routine, int Index)>> _overloads = new(IdentifierComparer.Instance);
 
-    public Scope(ScopeKind kind, Scope? parent, Symbol? owner = null)
+    /// <param name="parentVisibleCount">
+    /// When set, only the first that many declarations of <paramref name="parent"/> are visible from this scope: a nested
+    /// routine sees the enclosing routine's declarations up to its own definition (LANG-402).
+    /// </param>
+    public Scope(ScopeKind kind, Scope? parent, Symbol? owner = null, int? parentVisibleCount = null)
     {
         Kind = kind;
         Parent = parent;
         Owner = owner;
+        ParentVisibleCount = parentVisibleCount ?? int.MaxValue;
     }
 
     public ScopeKind Kind { get; }
@@ -30,6 +35,11 @@ internal sealed class Scope
 
     /// <summary>Unit, type or routine the scope belongs to; null for the built-in scope and plain blocks.</summary>
     public Symbol? Owner { get; }
+
+    /// <summary>Number of declarations made so far (overloads included).</summary>
+    public int Count => _ordered.Count;
+
+    private int ParentVisibleCount { get; }
 
     /// <summary>Declared names in declaration order (declared spelling).</summary>
     public IEnumerable<string> Names => _ordered.Select(e => e.Name);
@@ -42,12 +52,13 @@ internal sealed class Scope
     /// <summary>Declares <paramref name="symbol"/> as <paramref name="name"/>; false (and the earlier symbol) if this scope already has the name.</summary>
     public bool TryDeclare(string name, Symbol symbol, out Symbol? existing)
     {
-        if (_symbols.TryGetValue(name, out existing))
+        if (_symbols.TryGetValue(name, out var entry))
         {
+            existing = entry.Symbol;
             return false;
         }
 
-        _symbols.Add(name, symbol);
+        _symbols.Add(name, (symbol, _ordered.Count));
         _ordered.Add((name, symbol));
         existing = null;
         return true;
@@ -58,18 +69,21 @@ internal sealed class Scope
     {
         if (!_overloads.TryGetValue(routine.Name, out var set))
         {
-            set = [(RoutineSymbol)_symbols[routine.Name]];
+            var first = _symbols[routine.Name];
+            set = [((RoutineSymbol)first.Symbol, first.Index)];
             _overloads.Add(routine.Name, set);
         }
 
-        set.Add(routine);
+        set.Add((routine, _ordered.Count));
         _ordered.Add((routine.Name, routine));
     }
 
     /// <summary>The routines of that name declared in this scope, in declaration order (empty when the name is something else).</summary>
-    public ImmutableArray<RoutineSymbol> LookupRoutinesLocal(string name) =>
-        _overloads.TryGetValue(name, out var set) ? [.. set]
-        : _symbols.TryGetValue(name, out var symbol) && symbol is RoutineSymbol routine ? [routine]
+    public ImmutableArray<RoutineSymbol> LookupRoutinesLocal(string name) => LookupRoutinesLocal(name, int.MaxValue);
+
+    private ImmutableArray<RoutineSymbol> LookupRoutinesLocal(string name, int visible) =>
+        _overloads.TryGetValue(name, out var set) ? [.. set.Where(e => e.Index < visible).Select(e => e.Routine)]
+        : TryGetVisible(name, visible, out var symbol) && symbol is RoutineSymbol routine ? [routine]
         : [];
 
     /// <summary>
@@ -80,14 +94,15 @@ internal sealed class Scope
     public ImmutableArray<RoutineSymbol> LookupCandidates(string name)
     {
         var candidates = ImmutableArray.CreateBuilder<RoutineSymbol>();
-        for (var scope = this; scope != null; scope = scope.Parent)
+        var visible = int.MaxValue;
+        for (var scope = this; scope != null; visible = scope.ParentVisibleCount, scope = scope.Parent)
         {
-            if (!scope._symbols.ContainsKey(name))
+            if (!scope.TryGetVisible(name, visible, out _))
             {
                 continue;
             }
 
-            var routines = scope.LookupRoutinesLocal(name);
+            var routines = scope.LookupRoutinesLocal(name, visible);
             candidates.AddRange(routines);
             if (routines.IsEmpty || routines.Any(r => !r.IsOverload))
             {
@@ -99,19 +114,32 @@ internal sealed class Scope
     }
 
     /// <summary>The symbol declared in this scope only.</summary>
-    public Symbol? LookupLocal(string name) => _symbols.GetValueOrDefault(name);
+    public Symbol? LookupLocal(string name) => _symbols.TryGetValue(name, out var entry) ? entry.Symbol : null;
 
-    /// <summary>The innermost symbol of that name along the parent chain.</summary>
+    /// <summary>The innermost visible symbol of that name along the parent chain.</summary>
     public Symbol? Lookup(string name)
     {
-        for (var scope = this; scope != null; scope = scope.Parent)
+        var visible = int.MaxValue;
+        for (var scope = this; scope != null; visible = scope.ParentVisibleCount, scope = scope.Parent)
         {
-            if (scope._symbols.TryGetValue(name, out var symbol))
+            if (scope.TryGetVisible(name, visible, out var symbol))
             {
                 return symbol;
             }
         }
 
         return null;
+    }
+
+    private bool TryGetVisible(string name, int visible, out Symbol? symbol)
+    {
+        if (_symbols.TryGetValue(name, out var entry) && entry.Index < visible)
+        {
+            symbol = entry.Symbol;
+            return true;
+        }
+
+        symbol = null;
+        return false;
     }
 }
