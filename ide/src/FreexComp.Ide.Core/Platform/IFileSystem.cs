@@ -69,4 +69,15 @@ public interface IFileSystem
 
     /// <summary>True when the file exists and carries the read-only attribute.</summary>
     bool IsReadOnly(string path);
+
+    /// <summary>Sets or clears the read-only attribute of an existing file.</summary>
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
+    /// <exception cref="UnauthorizedAccessException">The attributes may not be changed.</exception>
+    void SetReadOnly(string path, bool readOnly);
+
+    /// <summary>
+    /// The open-for-write probe of IDE-P1-040: false when the file does not exist or opening it for writing is denied
+    /// (read-only attribute or access rights). Nothing is written; a file locked by another process counts as writable.
+    /// </summary>
+    bool CanOpenForWrite(string path);
 }

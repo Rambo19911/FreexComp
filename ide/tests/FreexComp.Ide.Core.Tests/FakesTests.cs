@@ -95,6 +95,18 @@ public sealed class FakesTests
         Assert.Equal([9], fs.ReadAllBytes(c));
         target.SetReadOnly(c, false);
 
+        // The attribute through the interface, and the open-for-write probe (IDE-P1-040).
+        Assert.True(fs.CanOpenForWrite(c));
+        fs.SetReadOnly(c, true);
+        Assert.True(fs.IsReadOnly(c));
+        Assert.False(fs.CanOpenForWrite(c));
+        fs.SetReadOnly(c, false);
+        Assert.False(fs.IsReadOnly(c));
+        Assert.True(fs.CanOpenForWrite(c));
+        Assert.Equal([9], fs.ReadAllBytes(c));             // the probe writes nothing
+        Assert.False(fs.CanOpenForWrite(Path.Combine(sub, "missing.txt")));
+        Assert.Throws<FileNotFoundException>(() => fs.SetReadOnly(Path.Combine(sub, "missing.txt"), true));
+
         fs.DeleteFile(c);
         Assert.False(fs.FileExists(c));
         fs.DeleteFile(c); // missing: no-op

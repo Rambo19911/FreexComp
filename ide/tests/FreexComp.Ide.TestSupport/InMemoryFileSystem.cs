@@ -194,7 +194,14 @@ public sealed class InMemoryFileSystem : IFileSystem
         }
     }
 
-    /// <summary>Test helper: sets or clears the read-only attribute of an existing file.</summary>
+    public bool CanOpenForWrite(string path)
+    {
+        lock (_gate)
+        {
+            return _files.TryGetValue(Normalize(path), out var entry) && !entry.ReadOnly;
+        }
+    }
+
     public void SetReadOnly(string path, bool readOnly)
     {
         lock (_gate)

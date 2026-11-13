@@ -94,6 +94,20 @@ public interface IDocumentService
     Task<bool> SaveAsync(DocumentViewModel document);
 
     /// <summary>
+    /// <c>file.saveAs</c> (IDE-P1-034): the Save As picker, then <see cref="SaveAsync"/>'s pipeline and questions on the
+    /// chosen path, which becomes the document's file (the old file is untouched; a project is not changed). True when
+    /// it was written; false when the picker was canceled or the save failed.
+    /// </summary>
+    Task<bool> PickAndSaveAsAsync(DocumentViewModel document);
+
+    /// <summary>
+    /// <c>file.revert</c> (IDE-P1-039): asks <c>Msg.File.RevertConfirm</c> [file name]; on <c>Revert</c> reloads the file
+    /// with the document's current encoding, clears the undo history and keeps the caret (clamped). A read failure
+    /// shows <c>Msg.File.NotFound</c> / <c>Msg.File.OpenFailed</c>. True when reloaded.
+    /// </summary>
+    Task<bool> RevertAsync(DocumentViewModel document);
+
+    /// <summary>
     /// <c>file.saveAll</c> (IDE-P1-085): every modified document in tab order through <see cref="SaveAsync"/>'s
     /// questions; a canceled Save As picker skips that document, a failure answered with Cancel stops (false). Status
     /// <c>Msg.File.SavedAll</c> with the number of files written, or <c>Msg.File.NothingToSave</c>.

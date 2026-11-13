@@ -16,6 +16,7 @@ public class TextDocumentViewModel : DocumentViewModel
 {
     public const string EncodingInfoBarKind = "Encoding";
     public const string MixedLineEndingsInfoBarKind = "MixedLineEndings";
+    public const string ReadOnlyInfoBarKind = "ReadOnly";
 
     private string? _filePath;
     private readonly string? _untitledName;
@@ -88,6 +89,63 @@ public class TextDocumentViewModel : DocumentViewModel
         _encoding = encoding;
         RemoveInfoBar(EncodingInfoBarKind);
         OnPropertyChanged(nameof(Encoding));
+        OnPropertyChanged(nameof(IsModified));
+    }
+
+    /// <summary>Raised when an edit was refused because the document is read-only (IDE-P1-040).</summary>
+    public event EventHandler? ReadOnlyEditRefused;
+
+    /// <summary>
+    /// A user edit (typing, paste): applied as one undo step, or refused with <see cref="ReadOnlyEditRefused"/> while
+    /// the document is read-only (IDE-P1-040). The editor view routes its input through here.
+    /// </summary>
+    public bool TryEdit(IReadOnlyList<TextEdit> edits)
+    {
+        ArgumentNullException.ThrowIfNull(edits);
+        if (Buffer.IsReadOnly)
+        {
+            ReadOnlyEditRefused?.Invoke(this, EventArgs.Empty);
+            return false;
+        }
+
+        Buffer.ApplyEdits(edits);
+        return true;
+    }
+
+    /// <summary>Sets <see cref="IsReadOnly"/>; becoming writable removes the <c>ReadOnly</c> info bar.</summary>
+    internal void SetReadOnly(bool readOnly)
+    {
+        if (!readOnly)
+            RemoveInfoBar(ReadOnlyInfoBarKind);
+        if (Buffer.IsReadOnly == readOnly)
+            return;
+        Buffer.IsReadOnly = readOnly;
+        OnPropertyChanged(nameof(IsReadOnly));
+    }
+
+    /// <summary>
+    /// Revert (IDE-P1-039): <paramref name="text"/> (read with the current encoding) replaces the buffer, the undo
+    /// history is cleared and the result is the save point; the caret keeps its line/column, clamped.
+    /// </summary>
+    internal void Reload(string text)
+    {
+        var caret = ViewState.Caret;
+        ViewState.SelectionAnchor = null; // before the text changes: the old selection may lie past the new end
+        var readOnly = Buffer.IsReadOnly;
+        Buffer.IsReadOnly = false;
+        try
+        {
+            Buffer.ReplaceAll(text, resetUndo: true);
+        }
+        finally
+        {
+            Buffer.IsReadOnly = readOnly;
+        }
+
+        _savedEncoding = _encoding;
+        _savedLineEnding = LineEnding.Kind;
+        ViewState.Caret = Buffer.GetPosition(Buffer.GetOffset(Math.Clamp(caret.Line, 1, Buffer.LineCount), caret.Column));
+        ShowLoadInfoBars(encodingFallback: false);
         OnPropertyChanged(nameof(IsModified));
     }
 

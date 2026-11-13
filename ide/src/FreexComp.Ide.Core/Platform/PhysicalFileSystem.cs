@@ -52,6 +52,30 @@ public sealed class PhysicalFileSystem : IFileSystem
     public bool IsReadOnly(string path) =>
         File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly);
 
+    public void SetReadOnly(string path, bool readOnly)
+    {
+        RequireFile(path);
+        var attributes = File.GetAttributes(path);
+        File.SetAttributes(path, readOnly ? attributes | FileAttributes.ReadOnly : attributes & ~FileAttributes.ReadOnly);
+    }
+
+    public bool CanOpenForWrite(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+            return true;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return true; // e.g. a sharing violation: the file is locked, not read-only
+        }
+    }
+
     private static void RequireFile(string path)
     {
         if (!File.Exists(path))

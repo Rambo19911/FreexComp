@@ -63,6 +63,10 @@ public sealed class RecordingFileSystem(IFileSystem inner) : IFileSystem
 
     public bool IsReadOnly(string path) => Run($"IsReadOnly {path}", () => inner.IsReadOnly(path));
 
+    public void SetReadOnly(string path, bool readOnly) => Run($"SetReadOnly {path}", () => inner.SetReadOnly(path, readOnly));
+
+    public bool CanOpenForWrite(string path) => Run($"CanOpenForWrite {path}", () => inner.CanOpenForWrite(path));
+
     private void Run(string call, Action action) => Run(call, () =>
     {
         action();

@@ -96,7 +96,13 @@ public sealed class DocumentService : IDocumentService
         commands.RegisterHandler("file.open", new AsyncHandler(_ => true, _ => OpenPickedFilesAsync()));
         commands.RegisterHandler("file.save", new AsyncHandler(
             _ => ActiveDocument is TextDocumentViewModel { IsModified: true }, _ => SaveAsync(ActiveDocument!)));
+        commands.RegisterHandler("file.saveAs", new AsyncHandler(
+            _ => ActiveDocument is TextDocumentViewModel, _ => PickAndSaveAsAsync(ActiveDocument!)));
         commands.RegisterHandler("file.saveAll", new AsyncHandler(_ => _documents.Any(d => d.IsModified), _ => SaveAllAsync()));
+        // menus.md: modified and the file exists on disk.
+        commands.RegisterHandler("file.revert", new AsyncHandler(
+            _ => ActiveDocument is TextDocumentViewModel { IsModified: true, FilePath: { } path } && _fileSystem.FileExists(path),
+            _ => RevertAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeOthers", new AsyncHandler(
             _ => ActiveDocument is not null && _documents.Count > 1, _ => CloseAllAsync(except: ActiveDocument)));
     }
@@ -257,6 +263,40 @@ public sealed class DocumentService : IDocumentService
 
     public async Task<bool> SaveAsync(DocumentViewModel document) => await SaveCoreAsync(document) == SaveOutcome.Saved;
 
+    public async Task<bool> PickAndSaveAsAsync(DocumentViewModel document) =>
+        await SaveCoreAsync(document, pickPath: true) == SaveOutcome.Saved;
+
+    public async Task<bool> RevertAsync(DocumentViewModel document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (document is not TextDocumentViewModel { FilePath: { } path } text)
+            return false;
+        if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.RevertConfirm", [text.Title])) != "Revert")
+            return false;
+
+        byte[] bytes;
+        try
+        {
+            bytes = await Task.Run(() => _fileSystem.ReadAllBytes(path)); // IDE-ARCH-081
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.NotFound", [path]));
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.OpenFailed", [path, ex.Message]));
+            return false;
+        }
+
+        // Deleting the recovery copy (IDE-P1-122, I-063) and resetting line-change marks (IDE-ED-045) join with
+        // their services.
+        text.Reload(FileEncodings.Decode(bytes, text.Encoding));
+        _commands?.InvalidateCanExecute();
+        return true;
+    }
+
     public async Task<bool> SaveAllAsync()
     {
         var written = 0;
@@ -285,13 +325,13 @@ public sealed class DocumentService : IDocumentService
     /// The interactive save of one document (IDE-P1-082, IDE-P1-083): the lossy-encoding question, the failure dialog
     /// with Retry / Save As… / Cancel.
     /// </summary>
-    private async Task<SaveOutcome> SaveCoreAsync(DocumentViewModel document)
+    private async Task<SaveOutcome> SaveCoreAsync(DocumentViewModel document, bool pickPath = false)
     {
         ArgumentNullException.ThrowIfNull(document);
         if (document is not TextDocumentViewModel text)
             return SaveOutcome.Canceled;
 
-        var path = text.FilePath ?? await PickSavePathAsync(text);
+        var path = pickPath ? await PickSavePathAsync(text) : text.FilePath ?? await PickSavePathAsync(text);
         if (path is null)
             return SaveOutcome.PickerCanceled;
 
@@ -364,6 +404,7 @@ public sealed class DocumentService : IDocumentService
 
         // Recording the file timestamp/size (I-062) and deleting the recovery copy (I-063) join with their services.
         document.MarkSaved(fullPath, _languages.ForPath(fullPath));
+        document.SetReadOnly(false); // a read-only document saved under a new name now has a file we just wrote
         UpdateTitleSuffixes();
         if (document == _statusSource)
             PushStatus();
@@ -420,10 +461,12 @@ public sealed class DocumentService : IDocumentService
     private async Task<OperationResult<DocumentViewModel>> LoadAsync(string fullPath)
     {
         EncodingDetection detection;
+        bool writable;
         try
         {
-            // IDE-ARCH-081: file I/O off the UI thread.
-            detection = await Task.Run(() => EncodingDetector.Detect(_fileSystem.ReadAllBytes(fullPath)));
+            // IDE-ARCH-081: file I/O off the UI thread. IDE-P1-040: the open-for-write probe.
+            (detection, writable) = await Task.Run(() =>
+                (EncodingDetector.Detect(_fileSystem.ReadAllBytes(fullPath)), _fileSystem.CanOpenForWrite(fullPath)));
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -441,8 +484,34 @@ public sealed class DocumentService : IDocumentService
         var document = new TextDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, null,
             _languages.ForPath(fullPath), detection.Encoding, lineEnding);
         document.ShowLoadInfoBars(detection.IsFallback);
+        if (!writable)
+        {
+            document.SetReadOnly(true);
+            document.ShowInfoBar(new InfoBarViewModel(TextDocumentViewModel.ReadOnlyInfoBarKind, InfoBarSeverity.Info, Strings.Msg_File_ReadOnly,
+                [new InfoBarAction("MakeWritable", Strings.Button_MakeWritable, () => MakeWritableAsync(document))],
+                bar => document.RemoveInfoBar(bar.Kind)));
+        }
+
         Add(document);
         return OperationResult<DocumentViewModel>.Of(document);
+    }
+
+    /// <summary>The <c>Make Writable</c> action (IDE-P1-040): clears the attribute, then the buffer becomes writable.</summary>
+    private async Task MakeWritableAsync(TextDocumentViewModel document)
+    {
+        var path = document.FilePath!;
+        try
+        {
+            _fileSystem.SetReadOnly(path, false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.MakeWritableFailed", [path, ex.Message]));
+            return;
+        }
+
+        document.SetReadOnly(false);
+        _commands?.InvalidateCanExecute();
     }
 
     /// <summary>A new tab opens right of the active one (UI-ED-077) and becomes active.</summary>
@@ -460,6 +529,8 @@ public sealed class DocumentService : IDocumentService
                 _commands?.InvalidateCanExecute();
             }
         };
+        if (document is TextDocumentViewModel text)
+            text.ReadOnlyEditRefused += (_, _) => _status.ShowMessage(Strings.Msg_Editor_ReadOnlyEdit, StatusMessageDuration);
         UpdateTitleSuffixes();
         DocumentOpened?.Invoke(this, new DocumentEventArgs(document));
         Activate(document);

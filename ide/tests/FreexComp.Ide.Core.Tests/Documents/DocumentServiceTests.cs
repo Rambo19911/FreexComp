@@ -547,6 +547,178 @@ public sealed class DocumentServiceTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-034")]
+    [Trait("Req", "IDE-PM-080")]
+    [Trait("Req", "UI-DLG-050")]
+    public async Task SaveAsSwitchesDocumentPath()
+    {
+        var commands = _services.Commands;
+        var pickers = (FakeFileDialogService)_services.FileDialogs;
+        var dialogs = (FakeDialogService)_services.Dialogs;
+        Assert.False(commands.CanExecute("file.saveAs"));   // no document
+
+        var doc = await OpenAsync(File(@"C:\p\A.pas", "unit A;"));
+        _fs.CreateDirectory(@"C:\q");
+        Assert.True(commands.CanExecute("file.saveAs"));    // also when unmodified
+
+        // A canceled picker changes nothing.
+        pickers.NextCancel();
+        await commands.ExecuteAsync("file.saveAs");
+        var request = Assert.Single(pickers.Requests);
+        Assert.Equal(("saveAs", "A.pas", @"C:\p"), (request.PromptId, request.SuggestedName, request.InitialFolder));
+        Assert.Equal(@"C:\p\A.pas", doc.FilePath);
+
+        // Save As writes the new file and switches the document to it; the old file is untouched.
+        doc.Buffer.ApplyEdits([new TextEdit(7, 0, " { b }")]);
+        var saved = new List<DocumentViewModel>();
+        Documents.DocumentSaved += (_, e) => saved.Add(e.Document);
+        pickers.NextSave(@"C:\q\B.pas");
+        await commands.ExecuteAsync("file.saveAs");
+        Assert.Equal(@"C:\q\B.pas", doc.FilePath);
+        Assert.Equal("B.pas", doc.Title);
+        Assert.False(doc.IsModified);
+        Assert.Equal([doc], saved);
+        Assert.Equal("unit A; { b }", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\q\B.pas")));
+        Assert.Equal("unit A;", Encoding.UTF8.GetString(_fs.ReadAllBytes(@"C:\p\A.pas")));
+
+        // The old path is free again: opening it gives a new document.
+        var old = await OpenAsync(@"C:\p\A.pas");
+        Assert.NotSame(doc, old);
+
+        // A path open in another document is refused (SaveFailed with the reason); Cancel keeps the path.
+        Documents.Activate(doc);
+        pickers.NextSave(@"c:\P\a.pas");
+        dialogs.Answer("Msg.File.SaveFailed", "Cancel");
+        await commands.ExecuteAsync("file.saveAs");
+        Assert.Equal([@"C:\p\A.pas", Strings.Reason_OpenInAnotherTab], dialogs.Requests[^1].Args);
+        Assert.Equal(@"C:\q\B.pas", doc.FilePath);
+
+        // Another extension switches the language; an untitled document's Save As names it.
+        pickers.NextSave(@"C:\q\B.json");
+        await commands.ExecuteAsync("file.saveAs");
+        Assert.Equal("json", doc.Language.Id);
+        var unit = Documents.NewUntitledUnit();
+        pickers.NextSave(@"C:\q\Unit9.pas");
+        await commands.ExecuteAsync("file.saveAs");
+        Assert.Equal((@"C:\q\Unit9.pas", "Unit9.pas", false), (unit.FilePath, unit.Title, unit.IsModified));
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-039")]
+    [Trait("Req", "IDE-P1-090")]
+    public async Task RevertReloadsAndClearsUndo()
+    {
+        var commands = _services.Commands;
+        var dialogs = (FakeDialogService)_services.Dialogs;
+        Assert.False(commands.CanExecute("file.revert"));   // no document
+
+        var doc = await OpenAsync(File(@"C:\p\A.pas", "line1\r\nline2\r\nline3"));
+        Assert.False(commands.CanExecute("file.revert"));   // unmodified
+        doc.Buffer.ApplyEdits([new TextEdit(19, 0, " changed")]);
+        doc.ViewState.Caret = new TextPosition(3, 14);
+        doc.ViewState.SelectionAnchor = new TextPosition(3, 1);
+        Assert.True(commands.CanExecute("file.revert"));
+
+        // Cancel keeps the edits.
+        dialogs.Answer("Msg.File.RevertConfirm", "Cancel");
+        await commands.ExecuteAsync("file.revert");
+        Assert.Equal(["A.pas"], Assert.Single(dialogs.Requests).Args);
+        Assert.True(doc.IsModified);
+        Assert.Equal("line1\r\nline2\r\nline3 changed", doc.Buffer.Text);
+
+        // Revert reloads what is on disk now, clears the undo history and keeps the caret (clamped).
+        File(@"C:\p\A.pas", "one\r\ntwo");
+        dialogs.Answer("Msg.File.RevertConfirm", "Revert");
+        await commands.ExecuteAsync("file.revert");
+        Assert.Equal("one\r\ntwo", doc.Buffer.Text);
+        Assert.False(doc.IsModified);
+        Assert.False(doc.Buffer.CanUndo);
+        Assert.False(doc.Buffer.CanRedo);
+        Assert.Equal(new TextPosition(2, 4), doc.ViewState.Caret);
+        Assert.Null(doc.ViewState.SelectionAnchor);
+        Assert.False(commands.CanExecute("file.revert"));
+
+        // The document's current encoding is used for the reload.
+        File(@"C:\p\A.pas", [0x41, 0xC3, 0xA9]);            // "Aé" in UTF-8
+        doc.SetEncoding(FileEncoding.Windows1252);
+        await commands.ExecuteAsync("file.revert");
+        Assert.Equal("A\u00C3\u00A9", doc.Buffer.Text);
+        Assert.Equal(FileEncoding.Windows1252, doc.Encoding);
+        Assert.False(doc.IsModified);
+
+        // Not possible when the file is gone or the document is untitled.
+        doc.Buffer.ApplyEdits([new TextEdit(0, 0, "x")]);
+        _fs.DeleteFile(@"C:\p\A.pas");
+        Assert.False(commands.CanExecute("file.revert"));
+        Documents.NewUntitledUnit();
+        Assert.False(commands.CanExecute("file.revert"));
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-040")]
+    [Trait("Req", "UI-ED-093")]
+    public async Task ReadOnlyFileShowsInfoBarAndBlocksEdits()
+    {
+        var path = File(@"C:\p\A.pas", "unit A;");
+        _fs.SetReadOnly(path, true);
+        var doc = await OpenAsync(path);
+        Assert.True(doc.IsReadOnly);
+        Assert.True(doc.Buffer.IsReadOnly);
+        var bar = Assert.Single(doc.InfoBars);
+        Assert.Equal(("ReadOnly", InfoBarSeverity.Info, Strings.Msg_File_ReadOnly, true), (bar.Kind, bar.Severity, bar.Text, bar.CanDismiss));
+        Assert.Equal(["MakeWritable"], bar.Actions.Select(a => a.Name));
+        Assert.Equal(Strings.Button_MakeWritable, bar.Actions[0].Label);
+
+        // Typing is refused with a status message; the text is unchanged.
+        Assert.False(doc.TryEdit([new TextEdit(0, 0, "x")]));
+        Assert.Equal("unit A;", doc.Buffer.Text);
+        Assert.Equal(Strings.Msg_Editor_ReadOnlyEdit, _services.Status.Message);
+        Assert.False(doc.IsModified);
+
+        // Dismissing the bar keeps the document read-only.
+        bar.Dismiss();
+        Assert.Empty(doc.InfoBars);
+        Assert.True(doc.IsReadOnly);
+
+        // Make Writable clears the attribute and the buffer becomes writable.
+        Assert.True(Documents.Close(doc));
+        doc = await OpenAsync(path);
+        await doc.InfoBars.Single().Actions.Single().ExecuteAsync();
+        Assert.False(_fs.IsReadOnly(path));
+        Assert.False(doc.IsReadOnly);
+        Assert.Empty(doc.InfoBars);
+        Assert.True(doc.TryEdit([new TextEdit(7, 0, "x")]));
+        Assert.Equal("unit A;x", doc.Buffer.Text);
+
+        // A writable file opens without the bar.
+        var writable = await OpenAsync(File(@"C:\p\B.pas", "b"));
+        Assert.False(writable.IsReadOnly);
+        Assert.Empty(writable.InfoBars);
+
+        // Save As of a read-only document to a writable file makes it writable.
+        var c = File(@"C:\p\C.pas", "c");
+        _fs.SetReadOnly(c, true);
+        var readOnly = await OpenAsync(c);
+        ((FakeFileDialogService)_services.FileDialogs).NextSave(@"C:\p\D.pas");
+        await _services.Commands.ExecuteAsync("file.saveAs");
+        Assert.Equal(@"C:\p\D.pas", readOnly.FilePath);
+        Assert.False(readOnly.IsReadOnly);
+        Assert.Empty(readOnly.InfoBars);
+
+        // Failing to clear the attribute reports Msg.File.MakeWritableFailed and leaves the document read-only.
+        var failing = new RecordingFileSystem(_fs) { FailWith = call => call.StartsWith("SetReadOnly", StringComparison.Ordinal) ? new UnauthorizedAccessException("denied") : null };
+        var services = TestComposition.Build(o => o.FileSystem = failing);
+        var dialogs = (FakeDialogService)services.Dialogs;
+        dialogs.Answer("Msg.File.MakeWritableFailed", "OK");
+        var locked = Assert.IsType<TextDocumentViewModel>((await services.Documents.OpenAsync(c)).Value);
+        await locked.InfoBars.Single().Actions.Single().ExecuteAsync();
+        Assert.Equal([c, "denied"], Assert.Single(dialogs.Requests).Args);
+        Assert.True(locked.IsReadOnly);
+        Assert.Single(locked.InfoBars);
+        Assert.True(_fs.IsReadOnly(c));
+    }
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-040")]
     public async Task ActiveTextDocumentFeedsStatusBar()
     {

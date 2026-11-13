@@ -25,10 +25,10 @@ public sealed class KeyRoutingTests
     {
         await using var h = await HeadlessHarness.StartAsync();
         var duplicate = new Recorder();
-        var revert = new Recorder();
+        var global = new Recorder();
         h.Services.Commands.RegisterHandler("edit.duplicateLine", duplicate); // Editor scope, Ctrl+D
-        h.Services.Commands.RegisterHandler("file.revert", revert); // Global, not yet handled (I-041)
-        h.Services.Keymap.SetGestures("file.revert", [CoreGesture.Parse("Ctrl+D")]);
+        h.Services.Commands.RegisterHandler("file.showInExplorer", global); // Global, not yet handled
+        h.Services.Keymap.SetGestures("file.showInExplorer", [CoreGesture.Parse("Ctrl+D")]);
         var editor = AddFocusable(h, "StatusBar.TestEditor");
         CommandRouting.SetScope(editor, CommandScope.Editor);
         var plain = AddFocusable(h, "StatusBar.TestPlain");
@@ -41,7 +41,7 @@ public sealed class KeyRoutingTests
         h.Press("Ctrl+D");
 
         Assert.Equal(1, duplicate.Calls);
-        Assert.Equal(1, revert.Calls);
+        Assert.Equal(1, global.Calls);
     }
 
     [AvaloniaFact(Timeout = 30000)]
