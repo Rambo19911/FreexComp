@@ -9,9 +9,9 @@ namespace FreexComp.Compiler.Emit;
 /// <summary>
 /// Lowered trees of one unit → IR through <see cref="IIrWriter"/> (architecture.md §3, CMP-125). This part covers the module
 /// skeleton, scalar globals (CMP-341), routines with parameters and locals (CMP-310), integer, Boolean and real
-/// expressions (CMP-312, 315…317), conversions (CMP-305, 313) and the always-on division tests of CMP-312. Not yet (they
-/// throw <see cref="NotSupportedException"/>): control-flow statements (C-037), calls and nested routines (C-038), program
-/// and unit bodies with <c>$init</c>/<c>$final</c>/<c>$main</c> (C-044).
+/// expressions (CMP-312, 315…317), conversions (CMP-305, 313), the always-on division tests of CMP-312, control flow
+/// (CMP-318…322) and runtime-helper call statements. Not yet (they throw <see cref="NotSupportedException"/>): routine
+/// calls and nested routines (C-038), program and unit bodies with <c>$init</c>/<c>$final</c>/<c>$main</c> (C-044).
 /// </summary>
 internal static class IrEmitter
 {
@@ -101,6 +101,15 @@ internal sealed class ModuleState(IIrWriter writer)
         return Declare(new IrFunctionDeclaration(Mangler.RuntimeHelper(name), IrType.Void, [], IrEmitter.NoReturnGroup));
     }
 
+    /// <summary>A runtime helper called by lowered code (<c>_Halt</c>, <c>_RunError</c>); noreturn ones carry <c>#1</c>.</summary>
+    public IrGlobal Helper(RuntimeHelper helper)
+    {
+        UsesNoReturn |= helper.IsNoReturn;
+        var returnType = helper.ReturnType is { } type ? TypeLayout.Of(type).StorageType : IrType.Void;
+        return Declare(new IrFunctionDeclaration(helper.LinkName, returnType,
+            [.. helper.ParameterTypes.Select(p => TypeLayout.Of(p).StorageType)], helper.IsNoReturn ? IrEmitter.NoReturnGroup : null));
+    }
+
     public IrGlobal Intrinsic(string name, IrType returnType, ImmutableArray<IrType> parameterTypes) =>
         Declare(new IrFunctionDeclaration(new LinkName(name, AlwaysQuote: false), returnType, parameterTypes));
 
@@ -139,7 +148,9 @@ internal sealed class FunctionEmitter
     private readonly Dictionary<LTempValue, IrValue> _temps = [];
     private int _tempCount;
     private int _blockCount;
+    private readonly Dictionary<LLoopLabel, (IrBlock Break, IrBlock Continue)> _loops = [];
     private IrBlock _current = Entry;
+    private bool _terminated;
 
     public FunctionEmitter(ModuleState module, LoweredBody body, IrLinkage linkage)
     {
@@ -187,9 +198,9 @@ internal sealed class FunctionEmitter
         }
 
         Statement(_body.Body);
-        _w.Br(Exit);
+        FallThrough(Exit);
 
-        _w.AppendBlock(Exit);
+        Start(Exit);
         if (_routine.ResultVariable is { } result)
         {
             var local = _body.Locals.Single(l => ReferenceEquals(l.Variable, result));
@@ -240,10 +251,16 @@ internal sealed class FunctionEmitter
     {
         _w.AppendBlock(block);
         _current = block;
+        _terminated = false;
     }
 
     // ------------------------------------------------------------------ statements
 
+    /// <summary>
+    /// Emits <paramref name="statement"/> into the current block. After a jump (<see cref="LBreak"/>, <see cref="LContinue"/>,
+    /// <see cref="LReturn"/>, <see cref="LUnreachable"/>) the block is terminated and the rest of the enclosing
+    /// <see cref="LBlock"/> is dead code: it is not emitted (the lowered tree has no labels, so nothing can jump into it).
+    /// </summary>
     private void Statement(LStatement statement)
     {
         switch (statement)
@@ -251,6 +268,11 @@ internal sealed class FunctionEmitter
             case LBlock block:
                 foreach (var inner in block.Statements)
                 {
+                    if (_terminated)
+                    {
+                        break;
+                    }
+
                     Statement(inner);
                 }
 
@@ -258,11 +280,177 @@ internal sealed class FunctionEmitter
             case LAssign assign:
                 Store(Value(assign.Value), Address(assign.Target), assign.Target.Type);
                 break;
+            case LIf ifStatement:
+                If(ifStatement);
+                break;
+            case LLoop loop:
+                Loop(loop);
+                break;
+            case LSwitch switchStatement:
+                Switch(switchStatement);
+                break;
+            case LBreak or LContinue:
+                Jump(JumpTarget(statement)!);
+                break;
+            case LReturn:
+                Jump(Exit);
+                break;
+            case LUnreachable:
+                _w.Unreachable();
+                _terminated = true;
+                break;
+            case LCallStatement { Callee: LHelperCallee helper } call:
+            {
+                var callee = _module.Helper(helper.Helper);
+                var arguments = call.Arguments.Select((a, i) => ToStorage(Value(a), helper.Helper.ParameterTypes[i])).ToImmutableArray();
+                var returnType = helper.Helper.ReturnType is { } type ? TypeLayout.Of(type).StorageType : IrType.Void;
+                _w.Call(null, returnType, callee, arguments, helper.Helper.IsNoReturn ? IrEmitter.NoReturnGroup : null);
+                break;
+            }
+
             case LCallStatement:
-                throw new NotSupportedException("Calls are emitted with C-038.");
+                throw new NotSupportedException("Routine calls are emitted with C-038.");
             default:
-                throw new NotSupportedException($"{statement.GetType().Name} is emitted with C-037.");
+                throw new InvalidOperationException($"Cannot emit {statement.GetType().Name}.");
         }
+    }
+
+    // ------------------------------------------------------------------ control flow (CMP-318…322)
+
+    private void Jump(IrBlock target)
+    {
+        _w.Br(target);
+        _terminated = true;
+    }
+
+    /// <summary>Branches to <paramref name="block"/> unless the current block already ended with a jump.</summary>
+    private void FallThrough(IrBlock block)
+    {
+        if (!_terminated)
+        {
+            _w.Br(block);
+        }
+    }
+
+    /// <summary>The block a bare <see cref="LBreak"/>/<see cref="LContinue"/>/<see cref="LReturn"/> jumps to; null for other statements.</summary>
+    private IrBlock? JumpTarget(LStatement statement) => statement switch
+    {
+        LBreak jump => _loops[jump.Label].Break,
+        LContinue jump => _loops[jump.Label].Continue,
+        LReturn => Exit,
+        LBlock { Statements: [var single] } => JumpTarget(single),
+        _ => null,
+    };
+
+    /// <summary>
+    /// CMP-318: <c>if.then.N</c> / <c>if.else.N</c> / <c>if.end.N</c>. An arm that is only a jump (<c>if c then Break</c>) branches
+    /// to its target directly instead of getting a block.
+    /// </summary>
+    private void If(LIf statement)
+    {
+        var condition = Value(statement.Condition);
+        var id = NewConstruct();
+        var end = Block("if.end", id);
+        var thenTarget = JumpTarget(statement.Then);
+        var elseTarget = statement.Else is null ? end : JumpTarget(statement.Else);
+        var then = thenTarget ?? Block("if.then", id);
+        var @else = elseTarget ?? Block("if.else", id);
+        _w.CondBr(condition, then, @else);
+        if (thenTarget is null)
+        {
+            Arm(then, statement.Then, end);
+        }
+
+        if (elseTarget is null)
+        {
+            Arm(@else, statement.Else!, end);
+        }
+
+        Start(end);
+    }
+
+    private void Arm(IrBlock block, LStatement body, IrBlock end)
+    {
+        Start(block);
+        Statement(body);
+        FallThrough(end);
+    }
+
+    /// <summary>
+    /// CMP-319 with the label kind <c>K</c> (architecture.md, C-035 decision): <c>K.body.N</c>, then the step block
+    /// (<c>for.inc.N</c>, <c>repeat.cond.N</c>, else <c>K.step.N</c>) back to the body, and <c>K.end.N</c> after the loop.
+    /// A loop whose body is <c>if c then S else Break</c> without step (the <c>while</c> lowering) is emitted as
+    /// <c>K.cond.N</c> → <c>K.body.N</c> → back to the condition. <c>Continue</c> jumps to the step, condition or body top.
+    /// </summary>
+    private void Loop(LLoop loop)
+    {
+        var kind = loop.Label.Kind;
+        var id = NewConstruct();
+        IrBlock body = Block(kind + ".body", id), end = Block(kind + ".end", id);
+        if (loop is { Step: null, Body: LIf { Else: { } exit } test } && exit is LBreak { } leave && leave.Label == loop.Label)
+        {
+            var cond = Block(kind + ".cond", id);
+            _loops[loop.Label] = (end, cond);
+            Jump(cond);
+            Start(cond);
+            _w.CondBr(Value(test.Condition), body, end);
+            _terminated = true;
+            Arm(body, test.Then, cond);
+            Start(end);
+            return;
+        }
+
+        var step = loop.Step is null ? null : Block(kind switch { "for" => "for.inc", "repeat" => "repeat.cond", _ => kind + ".step" }, id);
+        _loops[loop.Label] = (end, step ?? body);
+        Jump(body);
+        Arm(body, loop.Body, step ?? body);
+        if (step is not null)
+        {
+            Arm(step, loop.Step!, body);
+        }
+
+        Start(end);
+    }
+
+    /// <summary>
+    /// CMP-322: ranges first (<c>icmp ule (sub sel, lo), hi − lo</c>, section order, blocks <c>case.range.N.J</c>), then
+    /// <c>switch</c> to <c>case.arm.N.K</c> (K = section, 1-based), default <c>case.else.N</c> or <c>case.end.N</c>.
+    /// </summary>
+    private void Switch(LSwitch statement)
+    {
+        var selector = Value(statement.Selector);
+        var type = (IntegerIrType)selector.Type;
+        var id = NewConstruct();
+        var end = Block("case.end", id);
+        var @default = statement.Default is null ? end : Block("case.else", id);
+        var arms = statement.Sections.Select((_, k) => Block("case.arm." + id, k + 1)).ToImmutableArray();
+
+        var rangeCount = 0;
+        for (var k = 0; k < statement.Sections.Length; k++)
+        {
+            foreach (var (low, high) in statement.Sections[k].Ranges)
+            {
+                var offset = _w.Binary(NewTemp(), IrBinaryOperator.Sub, selector, new IrIntConstant(type, low));
+                var inRange = _w.ICmp(NewTemp(), IrIntPredicate.Ule, offset, new IrIntConstant(type, high - low));
+                var next = Block("case.range." + id, ++rangeCount);
+                _w.CondBr(inRange, arms[k], next);
+                Start(next);
+            }
+        }
+
+        _w.Switch(selector, @default, [.. statement.Sections.SelectMany((section, k) => section.Values.Select(v => (new IrIntConstant(type, v), arms[k])))]);
+        _terminated = true;
+        for (var k = 0; k < statement.Sections.Length; k++)
+        {
+            Arm(arms[k], statement.Sections[k].Body, end);
+        }
+
+        if (statement.Default is { } body)
+        {
+            Arm(@default, body, end);
+        }
+
+        Start(end);
     }
 
     // ------------------------------------------------------------------ storage
@@ -284,17 +472,21 @@ internal sealed class FunctionEmitter
     }
 
     /// <summary>Stores an SSA value: <c>zext</c> for <c>Boolean</c>, <c>sext</c> (all ones) for C-style Booleans (CMP-305).</summary>
-    private void Store(IrValue value, IrValue address, TypeSymbol type)
+    private void Store(IrValue value, IrValue address, TypeSymbol type) =>
+        _w.Store(ToStorage(value, type), address, TypeLayout.Of(type).Alignment);
+
+    /// <summary>An SSA value in memory/argument form: <c>zext</c> for <c>Boolean</c>, <c>sext</c> (all ones) for C-style Booleans.</summary>
+    private IrValue ToStorage(IrValue value, TypeSymbol type)
     {
-        var layout = TypeLayout.Of(type);
-        if (type is BooleanTypeSymbol boolean)
+        if (type is not BooleanTypeSymbol boolean)
         {
-            value = value is IrIntConstant constant
-                ? new IrIntConstant((IntegerIrType)layout.StorageType, constant.Value.IsZero ? 0 : boolean.IsCStyle ? -1 : 1)
-                : _w.Cast(NewTemp(), boolean.IsCStyle ? IrCastOperator.SExt : IrCastOperator.ZExt, value, layout.StorageType);
+            return value;
         }
 
-        _w.Store(value, address, layout.Alignment);
+        var storage = (IntegerIrType)TypeLayout.Of(type).StorageType;
+        return value is IrIntConstant constant
+            ? new IrIntConstant(storage, constant.Value.IsZero ? 0 : boolean.IsCStyle ? -1 : 1)
+            : _w.Cast(NewTemp(), boolean.IsCStyle ? IrCastOperator.SExt : IrCastOperator.ZExt, value, storage);
     }
 
     // ------------------------------------------------------------------ expressions
