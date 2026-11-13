@@ -51,7 +51,7 @@ internal sealed class PascalLexer
             return kind == SyntaxKind.None ? (SyntaxKind.IdentifierToken, _text[start.._pos]) : (kind, null);
         }
 
-        if (char.IsAsciiDigit(c))
+        if (char.IsAsciiDigit(c) || IsRadixLiteralStart(_pos))
         {
             return ScanNumber();
         }
@@ -111,16 +111,189 @@ internal sealed class PascalLexer
         return false;
     }
 
+    /// <summary><c>$</c> + hex digit, <c>%</c> + binary digit, <c>&amp;</c> + octal digit (lexical.md §6).</summary>
+    private bool IsRadixLiteralStart(int index)
+    {
+        if (index + 1 >= _text.Length)
+        {
+            return false;
+        }
+
+        var next = _text[index + 1];
+        return _text[index] switch
+        {
+            '$' => char.IsAsciiHexDigit(next),
+            '%' => next is '0' or '1',
+            '&' => next is >= '0' and <= '7',
+            _ => false,
+        };
+    }
+
+    private static bool IsDigit(char c, int radix) => radix switch
+    {
+        16 => char.IsAsciiHexDigit(c),
+        10 => char.IsAsciiDigit(c),
+        8 => c is >= '0' and <= '7',
+        _ => c is '0' or '1',
+    };
+
+    /// <summary>
+    /// Integer and real literals (LANG-125…128). The token text includes letters/digits glued to the literal
+    /// (E1013, one error); at most one diagnostic per literal: E1013, else E1010, else E1011 / E1012.
+    /// Values: long when it fits, else ulong; reals are double.
+    /// </summary>
     private (SyntaxKind, object?) ScanNumber()
     {
         var start = _pos;
-        while (_pos < _text.Length && char.IsAsciiDigit(_text[_pos]))
+        var radix = _text[_pos] switch { '$' => 16, '%' => 2, '&' => 8, _ => 10 };
+        if (radix != 10)
         {
             _pos++;
         }
 
-        return (SyntaxKind.IntegerLiteralToken,
-            ulong.TryParse(_text.AsSpan(start, _pos - start), NumberStyles.None, CultureInfo.InvariantCulture, out var v) ? (object)(long)v : 0L);
+        var digitsStart = _pos;
+        var badSeparator = -1;
+        ScanDigits(radix, allowSeparators: radix != 8, ref badSeparator);
+        var integerEnd = _pos;
+        var isReal = false;
+        var badExponent = false;
+        var valueEnd = _pos;
+        if (radix == 10)
+        {
+            // LANG-128: "1." followed by anything other than a digit is the integer 1 then '.'.
+            if (_pos + 1 < _text.Length && _text[_pos] == '.' && char.IsAsciiDigit(_text[_pos + 1]))
+            {
+                _pos++;
+                ScanDigits(10, allowSeparators: true, ref badSeparator);
+                isReal = true;
+            }
+
+            valueEnd = _pos;
+            if (_pos < _text.Length && _text[_pos] is 'e' or 'E')
+            {
+                var p = _pos + 1;
+                if (p < _text.Length && _text[p] is '+' or '-')
+                {
+                    p++;
+                }
+
+                if (p < _text.Length && char.IsAsciiDigit(_text[p]))
+                {
+                    _pos = p;
+                    while (_pos < _text.Length && char.IsAsciiDigit(_text[_pos]))
+                    {
+                        _pos++;
+                    }
+
+                    isReal = true;
+                    valueEnd = _pos;
+                }
+                else
+                {
+                    badExponent = true;
+                    _pos++; // the 'e' belongs to the invalid literal; a following sign does not
+                }
+            }
+        }
+
+        // LANG-128: letters (and digits invalid for the radix) glued to the literal are skipped as part of it.
+        var junkStart = _pos;
+        while (_pos < _text.Length)
+        {
+            if (char.IsAsciiDigit(_text[_pos]))
+            {
+                _pos++;
+            }
+            else if (IsIdentifierStartAt(_pos, out var width))
+            {
+                _pos += width;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        var length = _pos - start;
+        object value;
+        var overflow = false;
+        if (isReal)
+        {
+            var d = double.Parse(_text.AsSpan(start, valueEnd - start).ToString().Replace("_", "", StringComparison.Ordinal),
+                                 NumberStyles.Float, CultureInfo.InvariantCulture);
+            overflow = double.IsInfinity(d);
+            value = d;
+        }
+        else
+        {
+            var v = ParseInteger(_text.AsSpan(digitsStart, integerEnd - digitsStart), radix, out overflow);
+            value = v <= long.MaxValue ? (long)v : v;
+        }
+
+        if (badExponent || _pos > junkStart)
+        {
+            Report("E1013", start, length, _text.Substring(start, length));
+        }
+        else if (badSeparator >= 0)
+        {
+            Report("E1010", badSeparator, 1);
+        }
+        else if (overflow)
+        {
+            Report(isReal ? "E1012" : "E1011", start, length);
+        }
+
+        return (isReal ? SyntaxKind.RealLiteralToken : SyntaxKind.IntegerLiteralToken, value);
+    }
+
+    /// <summary>Digits of <paramref name="radix"/> and '_' separators; records the first separator not followed by a digit.</summary>
+    private void ScanDigits(int radix, bool allowSeparators, ref int badSeparator)
+    {
+        while (_pos < _text.Length)
+        {
+            var c = _text[_pos];
+            if (IsDigit(c, radix))
+            {
+                _pos++;
+            }
+            else if (c == '_' && allowSeparators)
+            {
+                if (badSeparator < 0 && !(_pos + 1 < _text.Length && IsDigit(_text[_pos + 1], radix)))
+                {
+                    badSeparator = _pos;
+                }
+
+                _pos++;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
+    private static ulong ParseInteger(ReadOnlySpan<char> digits, int radix, out bool overflow)
+    {
+        ulong value = 0;
+        overflow = false;
+        foreach (var c in digits)
+        {
+            if (c == '_')
+            {
+                continue;
+            }
+
+            var d = (ulong)(c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10);
+            if (value > (ulong.MaxValue - d) / (ulong)radix)
+            {
+                overflow = true;
+                return 0;
+            }
+
+            value = value * (ulong)radix + d;
+        }
+
+        return value;
     }
 
     /// <summary>Consumes the identifier starting at <c>_pos</c> (whose first character is known to be valid).</summary>
@@ -172,7 +345,7 @@ internal sealed class PascalLexer
     }
 
     private bool StartsToken(int index) =>
-        IsIdentifierStartAt(index, out _) || char.IsAsciiDigit(_text[index]) || _text[index] is
+        IsIdentifierStartAt(index, out _) || char.IsAsciiDigit(_text[index]) || IsRadixLiteralStart(index) || _text[index] is
             '+' or '-' or '*' or '/' or '=' or '<' or '>' or ':' or '.' or ',' or ';' or '(' or ')' or '[' or ']'
             or '^' or '@' or '#' or '$' or '&';
 
