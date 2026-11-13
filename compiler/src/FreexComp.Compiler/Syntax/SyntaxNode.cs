@@ -53,18 +53,25 @@ public abstract class SyntaxNode
     {
         get
         {
-            if (_spans is null && FirstToken().Kind == SyntaxKind.None)
+            var file = TryGetTree()?.Text;
+            if (_spans is null && FirstOwnToken(file).Kind == SyntaxKind.None)
             {
-                // a node without tokens (EmptyStatementSyntax): zero width after the previous token's trivia
+                // a node without tokens of the tree's file (EmptyStatementSyntax, or a fragment that came entirely
+                // from an include file): zero width after the previous token's trivia
                 var previous = Parent is null ? default : TokenBefore(Parent, _index);
+                while (previous.Kind != SyntaxKind.None && !IsOwn(previous, file))
+                {
+                    previous = previous.GetPreviousToken();
+                }
+
                 var empty = new TextSpan(previous.Kind == SyntaxKind.None ? 0 : previous.FullSpan.End, 0);
                 _spans = new SpanCache(empty, empty);
             }
 
             if (_spans is null)
             {
-                var first = FirstToken();
-                var last = LastToken();
+                var first = FirstOwnToken(file);
+                var last = LastOwnToken(file);
                 _spans = new SpanCache(
                     TextSpan.FromBounds(first.Span.Start, Math.Max(first.Span.Start, last.Span.End)),
                     TextSpan.FromBounds(first.FullSpan.Start, Math.Max(first.FullSpan.Start, last.FullSpan.End)));
@@ -75,6 +82,49 @@ public abstract class SyntaxNode
     }
 
     private sealed record SpanCache(TextSpan Span, TextSpan FullSpan);
+
+    /// <summary>
+    /// Tokens from <c>{$I}</c> files are ordinary children but keep their own file and file-relative positions
+    /// (api.md addendum, include option (a)); text and span queries of a tree use only the tree's own file's tokens.
+    /// </summary>
+    internal static bool IsOwn(SyntaxToken token, SourceText? file) =>
+        file is null || token.File is null || ReferenceEquals(token.File, file);
+
+    private SyntaxToken FirstOwnToken(SourceText? file)
+    {
+        foreach (var child in _children)
+        {
+            var token = child.AsNode() is { } node ? node.FirstOwnToken(file) : child.AsToken();
+            if (token.Kind != SyntaxKind.None && IsOwn(token, file))
+            {
+                return token;
+            }
+        }
+
+        return default;
+    }
+
+    private SyntaxToken LastOwnToken(SourceText? file)
+    {
+        for (var i = _children.Count - 1; i >= 0; i--)
+        {
+            var child = _children[i];
+            var token = child.AsNode() is { } node ? node.LastOwnToken(file) : child.AsToken();
+            if (token.Kind != SyntaxKind.None && IsOwn(token, file))
+            {
+                return token;
+            }
+        }
+
+        return default;
+    }
+
+    /// <summary>The descendant tokens of the tree's own file (all tokens when the node is not in a tree).</summary>
+    internal IEnumerable<SyntaxToken> OwnTokens()
+    {
+        var file = TryGetTree()?.Text;
+        return DescendantTokens().Where(t => IsOwn(t, file));
+    }
 
     /// <summary>True if a diagnostic of the tree lies within <see cref="FullSpan"/>.</summary>
     public bool ContainsDiagnostics
@@ -213,11 +263,11 @@ public abstract class SyntaxNode
         return default;
     }
 
-    /// <summary>The exact source text of the node including all trivia (CMP-220).</summary>
+    /// <summary>The exact source text of the node including all trivia (CMP-220); tokens of include files are not part of it.</summary>
     public string ToFullString()
     {
         var builder = new StringBuilder();
-        foreach (var token in DescendantTokens())
+        foreach (var token in OwnTokens())
         {
             token.WriteTo(builder);
         }
@@ -229,7 +279,7 @@ public abstract class SyntaxNode
     public override string ToString()
     {
         var builder = new StringBuilder();
-        var tokens = DescendantTokens().ToList();
+        var tokens = OwnTokens().ToList();
         for (var i = 0; i < tokens.Count; i++)
         {
             tokens[i].WriteTo(builder, leading: i > 0, trailing: i < tokens.Count - 1);
@@ -366,13 +416,14 @@ public abstract class SyntaxNode
 
     internal SyntaxToken FindToken(int position)
     {
+        var file = TryGetTree()?.Text;
         var node = this;
         while (true)
         {
             SyntaxNode? next = null;
             foreach (var child in node._children)
             {
-                if (!child.FullSpan.Contains(position))
+                if (!child.FullSpan.Contains(position) || (child.IsToken && !IsOwn(child.AsToken(), file)))
                 {
                     continue;
                 }
@@ -388,7 +439,7 @@ public abstract class SyntaxNode
 
             if (next is null)
             {
-                return node.LastToken();
+                return node.LastOwnToken(file);
             }
 
             node = next;

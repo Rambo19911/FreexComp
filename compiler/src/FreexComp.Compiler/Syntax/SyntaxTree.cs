@@ -18,9 +18,10 @@ public sealed class SyntaxTree
 
     /// <summary>
     /// Parses a program or unit; never throws for malformed text (LANG-180). With a file system, <c>{$I file}</c> includes
-    /// are read (defines and switches carry across them, their diagnostics are part of <see cref="Diagnostics"/>) and
-    /// each occurrence becomes an <see cref="IncludedTrees"/> entry with an <see cref="IncludeFileSyntax"/> root. The
-    /// main tree holds the main file's tokens only, so <c>Root.ToFullString() == Text.Text</c> (CMP-220).
+    /// are read (defines and switches carry across them, their diagnostics are part of <see cref="Diagnostics"/>). The
+    /// included tokens are ordinary children of the main tree at the directive's place, keeping their own file and
+    /// positions; text, span and FindToken queries skip them, so <c>Root.ToFullString() == Text.Text</c> (CMP-220).
+    /// Each include occurrence also becomes an <see cref="IncludedTrees"/> entry with a flat <see cref="IncludeFileSyntax"/>.
     /// </summary>
     public static SyntaxTree Parse(SourceText text, ParseOptions? options = null, IFileSystem? fs = null)
     {
@@ -31,10 +32,7 @@ public sealed class SyntaxTree
         do
         {
             token = preprocessor.Lex();
-            if (ReferenceEquals(token.File, text) || token.File is null)
-            {
-                tokens.Add(token);
-            }
+            tokens.Add(token);
         }
         while (token.Kind != SyntaxKind.EndOfFileToken);     // include files' end-of-file tokens are not in the stream
 
@@ -76,7 +74,7 @@ public sealed class SyntaxTree
 
     public IEnumerable<SyntaxTrivia> DescendantTrivia()
     {
-        foreach (var token in Root.DescendantTokens())
+        foreach (var token in Root.OwnTokens())
         {
             foreach (var trivia in token.LeadingTrivia)
             {

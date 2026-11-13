@@ -42,6 +42,36 @@ public abstract class SyntaxVisitor<TResult>
     public virtual TResult VisitCompoundStatement(CompoundStatementSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitEmptyStatement(EmptyStatementSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitLabelSection(LabelSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitConstSection(ConstSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitConstDeclaration(ConstDeclarationSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitTypedConstantAggregate(TypedConstantAggregateSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitRecordConstantField(RecordConstantFieldSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitTypeSection(TypeSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitTypeDeclaration(TypeDeclarationSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitVarSection(VarSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitVarDeclaration(VarDeclarationSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitNamedType(NamedTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitStringType(StringTypeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitLiteralExpression(LiteralExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitBinaryExpression(BinaryExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitUnaryExpression(UnaryExpressionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitParenthesizedExpression(ParenthesizedExpressionSyntax node) => DefaultVisit(node);
 }
 
 /// <summary>Depth-first walk over every node, token and trivia piece in source order.</summary>

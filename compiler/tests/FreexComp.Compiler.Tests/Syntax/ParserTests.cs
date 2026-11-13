@@ -282,7 +282,7 @@ public sealed partial class ParserTests
 
     [Fact]
     [Trait("Req", "CMP-220")]
-    public void CompilationUnit_IncludeFiles_AreParsedAsSeparateFlatTrees()
+    public void CompilationUnit_IncludeFiles_AlsoGetSeparateFlatTrees()
     {
         var fs = new InMemoryFileSystem().Add(@"C:\p\part.inc", "{ inc }\r\nconst X = 1;\r\n");
         var text = "program P;\r\n{$I part.inc}\r\nbegin end.\r\n";
@@ -291,7 +291,10 @@ public sealed partial class ParserTests
 
         Assert.Equal(text, tree.Root.ToFullString());
         Assert.Empty(tree.Diagnostics);
-        Assert.Equal($"(Program program (IdentifierName P) ; {EmptyBlock} . <eof>)", SyntaxDump.Of(tree.Root));
+        Assert.Equal(
+            "(Program program (IdentifierName P) ; (Block (ConstSection const (ConstDeclaration X = (LiteralExpression 1) ;)) "
+            + "(CompoundStatement begin end)) . <eof>)",
+            SyntaxDump.Of(tree.Root));
         var included = Assert.Single(tree.IncludedTrees);
         Assert.Equal(@"C:\p\part.inc", included.Text.Path);
         Assert.IsType<IncludeFileSyntax>(included.Root);
