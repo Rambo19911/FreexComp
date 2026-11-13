@@ -27,7 +27,7 @@ public sealed class ToolWindowTests
         h.Press("Alt+5"); // view.messages
 
         Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
-        Assert.Equal("Messages", tools.Layout.Bottom.ActiveTool);
+        Assert.Equal("Messages", h.Services.Layout.Layout.Bottom.ActiveTool);
         Assert.Equal("Tool.Messages.List", h.FocusedAutomationId);
         Assert.Equal("Messages", h.Services.FocusTracker.Current.ToolWindowName);
         Assert.True(tools.Get("Messages")!.IsActive); // caption shows the focused state
@@ -55,11 +55,11 @@ public sealed class ToolWindowTests
         Dispatcher.UIThread.RunJobs();
         Assert.True(plain.Focus());
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal("Messages", tools.Layout.Bottom.ActiveTool);
+        Assert.Equal("Messages", h.Services.Layout.Layout.Bottom.ActiveTool);
 
         Assert.True(tools.Show("Output", focus: false));
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal("Output", tools.Layout.Bottom.ActiveTool);
+        Assert.Equal("Output", h.Services.Layout.Layout.Bottom.ActiveTool);
         Assert.Equal("StatusBar.TestPlain", h.FocusedAutomationId);
 
         tools.Hide("Messages");
@@ -70,7 +70,7 @@ public sealed class ToolWindowTests
         Assert.True(tools.Show("Messages", focus: false));
         Dispatcher.UIThread.RunJobs();
         Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
-        Assert.Equal("Messages", tools.Layout.Bottom.ActiveTool);
+        Assert.Equal("Messages", h.Services.Layout.Layout.Bottom.ActiveTool);
         Assert.Equal("StatusBar.TestPlain", h.FocusedAutomationId);
         Assert.False(tools.Get("Messages")!.IsActive);
     }
@@ -98,6 +98,42 @@ public sealed class ToolWindowTests
         h.Press("Escape");
         Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
         Assert.Equal("minus", Assert.IsType<Icons.IdeIcon>(h.Find<Button>("Tool.Messages.Hide").Content).IconName);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-012")]
+    [Trait("Req", "UI-TW-011")]
+    public async Task ColumnWidthsPersist()
+    {
+        byte[] saved;
+        await using (var h = await HeadlessHarness.StartAsync(o => o.ToolWindows.Add(SampleGridToolViewModel.Definition("Messages"))))
+        {
+            var code = h.Find<Control>("Tool.Messages.Column.Code");
+            Assert.Equal(72, code.Bounds.Width);
+
+            h.Drag("Tool.Messages.Column.Code.Divider", 40, 0); // the user drags the header divider
+            Assert.Equal(112, code.Bounds.Width);
+            Assert.Equal(112, h.Services.ToolWindows.Get("Messages")!.ColumnWidth("Code"));
+            Assert.Null(h.Services.ToolWindows.Get("Messages")!.ColumnWidth("File")); // never resized
+
+            h.Window.Close();
+            Dispatcher.UIThread.RunJobs();
+            saved = File.ReadAllBytes(Path.Combine(h.UserDir, "roaming", "uistate.json"));
+        }
+
+        // architecture.md §8.1: toolWindows.<Name>.columns maps column ids to widths.
+        Assert.Contains("\"toolWindows\": {\n    \"Messages\": {\n      \"columns\": {\n        \"Code\": 112\n      }\n    }\n  }",
+            System.Text.Encoding.UTF8.GetString(saved), StringComparison.Ordinal);
+
+        await using (var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.ToolWindows.Add(SampleGridToolViewModel.Definition("Messages"));
+            o.UserFiles["roaming/uistate.json"] = saved;
+        }))
+        {
+            Assert.Equal(112, h.Find<Control>("Tool.Messages.Column.Code").Bounds.Width);
+            Assert.Equal(160, h.Find<Control>("Tool.Messages.Column.File").Bounds.Width);
+        }
     }
 
     [AvaloniaFact(Timeout = 30000)]

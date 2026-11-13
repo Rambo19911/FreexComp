@@ -20,6 +20,8 @@ public sealed partial class MainWindow : Window
 
     private TextBoxCommandTarget? _textTarget;
     private WeakReference<InputElement>? _lastContent;
+    private Core.Models.WindowPlacement? _normalBounds;
+    private bool _closed;
 
     public MainWindow()
     {
@@ -31,8 +33,18 @@ public sealed partial class MainWindow : Window
                 MenuBarBuilder.Populate(MenuBar, vm.MainMenu); // UI-MENU-002: generated, not written in XAML
                 ToolBars.Populate(vm.ToolBars); // UI-TB-002
                 ToolBars.ContextMenu = MenuBarBuilder.CreateContextMenu(vm.ToolBarContextMenu); // UI-TB-004
+                RestorePlacement(vm);
             }
         };
+        PositionChanged += (_, _) => TrackNormalBounds();
+        Closing += (_, _) =>
+        {
+            if (!_closed) // Close() on a closed window raises Closing again
+            {
+                ViewModel?.SaveUiState(CurrentPlacement());
+            }
+        };
+        Closed += (_, _) => _closed = true;
         ToolBars.EscapeRequested += (_, _) => ViewModel?.Layout.FocusPane(Core.Models.Pane.Documents); // UI-TB-008
         MenuBar.Closed += (_, _) => Dispatcher.UIThread.Post(() =>
         {
@@ -47,6 +59,75 @@ public sealed partial class MainWindow : Window
     }
 
     private MainWindowViewModel? ViewModel => DataContext as MainWindowViewModel;
+
+    protected override void OnPropertyChanged(Avalonia.AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == ClientSizeProperty || change.Property == WindowStateProperty)
+        {
+            TrackNormalBounds();
+        }
+    }
+
+    /// <summary>UI-WIN-052/053: opens at the saved normal bounds when they are on a monitor, else centerd on the primary one.</summary>
+    private void RestorePlacement(MainWindowViewModel vm)
+    {
+        if (Screens is not { All.Count: > 0 } screens)
+        {
+            return; // no monitor information (headless without screens): the window keeps its XAML size
+        }
+
+        var all = screens.All;
+        var areas = all.Select(ToDip).ToList();
+        var primary = screens.Primary ?? all[0];
+        var placement = vm.RestorePlacement(areas, ToDip(primary));
+        var scaling = all.FirstOrDefault(s => Contains(ToDip(s), placement.X, placement.Y))?.Scaling ?? primary.Scaling;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Position = new Avalonia.PixelPoint((int)Math.Round(placement.X * scaling), (int)Math.Round(placement.Y * scaling));
+        Width = placement.Width;
+        Height = placement.Height;
+        _normalBounds = placement with { Maximized = false };
+        if (placement.Maximized)
+        {
+            WindowState = WindowState.Maximized; // on the monitor holding the normal bounds
+        }
+    }
+
+    /// <summary>The normal bounds are remembered while the window is normal, so a maximized window saves them too.</summary>
+    private void TrackNormalBounds()
+    {
+        if (WindowState == WindowState.Normal && IsVisible)
+        {
+            _normalBounds = NormalBoundsNow();
+        }
+    }
+
+    /// <summary>IDE-ARCH-060: normal bounds plus maximized; a minimized window is saved as normal (UI-WIN-052).</summary>
+    private Core.Models.WindowPlacement? CurrentPlacement()
+    {
+        var normal = WindowState == WindowState.Normal ? NormalBoundsNow() : _normalBounds;
+        return normal is null ? null : normal with { Maximized = WindowState is WindowState.Maximized or WindowState.FullScreen };
+    }
+
+    private Core.Models.WindowPlacement NormalBoundsNow()
+    {
+        var scaling = Screens?.ScreenFromWindow(this)?.Scaling ?? 1;
+        return new Core.Models.WindowPlacement(
+            (int)Math.Round(Position.X / scaling),
+            (int)Math.Round(Position.Y / scaling),
+            (int)Math.Round(ClientSize.Width),
+            (int)Math.Round(ClientSize.Height),
+            Maximized: false);
+    }
+
+    private static Core.Models.WorkArea ToDip(Avalonia.Platform.Screen screen) => new(
+        screen.WorkingArea.X / screen.Scaling,
+        screen.WorkingArea.Y / screen.Scaling,
+        screen.WorkingArea.Width / screen.Scaling,
+        screen.WorkingArea.Height / screen.Scaling);
+
+    private static bool Contains(Core.Models.WorkArea area, double x, double y) =>
+        x >= area.X && x < area.X + area.Width && y >= area.Y && y < area.Y + area.Height;
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {

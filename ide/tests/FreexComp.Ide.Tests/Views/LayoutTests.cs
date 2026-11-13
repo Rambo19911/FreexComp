@@ -113,7 +113,7 @@ public sealed class LayoutTests
     {
         var services = TestComposition.Build(o => o.ToolWindows.AddRange(
             registered.Select(name => SampleToolViewModel.Definition(name, name == "ProjectManager" ? ToolGroupId.Left : ToolGroupId.Bottom))));
-        var layout = services.ToolWindows.Layout;
+        var layout = services.Layout.Layout;
         layout.DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap);
         var view = new LayoutView { DataContext = layout };
         var window = new Window { Width = 1440, Height = 900, Content = view };

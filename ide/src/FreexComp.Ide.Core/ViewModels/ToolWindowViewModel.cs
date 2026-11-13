@@ -4,6 +4,7 @@ using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.ToolWindows;
 
 namespace FreexComp.Ide.Core.ViewModels;
@@ -20,6 +21,7 @@ public abstract class ToolWindowViewModel : ObservableObject
     public static readonly TimeSpan FilterDelay = TimeSpan.FromMilliseconds(150);
 
     private IToolWindowService? _service;
+    private ILayoutService? _layout;
     private IClock? _clock;
     private IDisposable? _pendingFilter;
     private IdeCommand? _hideCommand;
@@ -71,7 +73,13 @@ public abstract class ToolWindowViewModel : ObservableObject
     public void Hide() => _service?.Hide(Name);
 
     /// <summary>UI-A11Y-004: Escape without a local use in the tool window moves focus to the active document.</summary>
-    public void ReturnFocusToDocument() => _service?.Layout.FocusPane(Models.Pane.Documents);
+    public void ReturnFocusToDocument() => _layout?.Layout.FocusPane(Models.Pane.Documents);
+
+    /// <summary>UI-TW-012: the persisted width of a grid column of this tool window; null = the column's default.</summary>
+    public double? ColumnWidth(string columnId) => _layout?.GetColumnWidth(Name, columnId);
+
+    /// <summary>The user resized a grid column (UI-TW-011); the width is persisted in the global UI state.</summary>
+    public void SetColumnWidth(string columnId, double width) => _layout?.SetColumnWidth(Name, columnId, width);
 
     /// <summary>UI-TW-002: "Hide (Shift+Escape)", the shortcut of <c>window.closeToolWindow</c>.</summary>
     public string HideTooltip => _hideCommand is { GestureText.Length: > 0 } command
@@ -83,8 +91,9 @@ public abstract class ToolWindowViewModel : ObservableObject
     {
     }
 
-    internal void Attach(ToolWindowDefinition definition, IToolWindowService service, ICommandService commands, IClock clock)
+    internal void Attach(ToolWindowDefinition definition, IToolWindowService service, ILayoutService layout, ICommandService commands, IClock clock)
     {
+        _layout = layout;
         Name = definition.Name;
         Scope = definition.Scope;
         Title = Strings.ResourceManager.GetString(definition.TitleKey, CultureInfo.CurrentCulture) ?? definition.Name;

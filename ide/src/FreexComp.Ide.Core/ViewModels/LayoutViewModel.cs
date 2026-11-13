@@ -7,7 +7,7 @@ namespace FreexComp.Ide.Core.ViewModels;
 /// Regions 4–7 of the main window (main-window.md §1–§2): the document area and the four fixed tool groups, arranged
 /// by the active profile of <see cref="State"/>. A profile silently skips tool windows that are not registered
 /// (UI-WIN-011); a group without visible tool windows is collapsed (UI-WIN-004) and keeps its size for when it returns.
-/// Owned by the tool-window service, which resolves names to view-models (null = not registered).
+/// Owned by the layout service; the tool-window service resolves names to view-models (null = not registered).
 /// </summary>
 public sealed class LayoutViewModel : ObservableObject
 {
@@ -90,6 +90,9 @@ public sealed class LayoutViewModel : ObservableObject
 
     public ToolGroupViewModel Group(ToolGroupId id) => Groups[(int)id];
 
+    /// <summary>The arrangement or a size changed (what <c>uistate.json</c> stores, UI-WIN-051).</summary>
+    public event EventHandler? StateChanged;
+
     /// <summary>The <c>F6</c> cycle requested a step (+1 next, −1 previous); the view knows where focus is.</summary>
     public event EventHandler<int>? PaneCycleRequested;
 
@@ -151,10 +154,11 @@ public sealed class LayoutViewModel : ObservableObject
             var (from, to) = visible ? (group.Hidden, group.Tools) : (group.Tools, group.Hidden);
             if (to.Contains(tool, StringComparer.Ordinal))
             {
-                if (visible)
+                if (visible && group.Active != tool)
                 {
                     group.Active = tool;
                     Refresh();
+                    StateChanged?.Invoke(this, EventArgs.Empty);
                 }
 
                 return true;
@@ -173,6 +177,7 @@ public sealed class LayoutViewModel : ObservableObject
                 }
 
                 Refresh();
+                StateChanged?.Invoke(this, EventArgs.Empty);
                 return true;
             }
         }
@@ -190,6 +195,25 @@ public sealed class LayoutViewModel : ObservableObject
         group.Tools.Add(tool);
         group.Active = tool;
         Refresh();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// The contents of <see cref="State"/> were replaced (loaded or reset): every group and size is re-read. Raises
+    /// <see cref="StateChanged"/> only when <paramref name="notify"/> is set (a load is not a change).
+    /// </summary>
+    public void Reload(bool notify)
+    {
+        Refresh();
+        OnPropertyChanged(nameof(ActiveProfile));
+        OnPropertyChanged(nameof(LeftSize));
+        OnPropertyChanged(nameof(RightSize));
+        OnPropertyChanged(nameof(BottomSize));
+        OnPropertyChanged(nameof(RightSplit));
+        if (notify)
+        {
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>Recomputes every group from the profile, e.g. after a tool window was registered.</summary>
@@ -211,8 +235,13 @@ public sealed class LayoutViewModel : ObservableObject
             return false;
         }
 
-        Profile.Group(id).Active = tool;
-        Refresh();
+        if (Profile.Group(id).Active != tool)
+        {
+            Profile.Group(id).Active = tool;
+            Refresh();
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
+
         return true;
     }
 
@@ -236,6 +265,7 @@ public sealed class LayoutViewModel : ObservableObject
         {
             set(value);
             OnPropertyChanged(property);
+            StateChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

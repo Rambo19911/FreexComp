@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Menus;
+using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Resources;
 
 namespace FreexComp.Ide.Core.ViewModels;
@@ -19,7 +20,7 @@ public sealed class MainWindowViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(services);
         _services = services;
         DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap);
-        Layout = services.ToolWindows.Layout;
+        Layout = services.Layout.Layout;
         Layout.DocumentArea = DocumentArea;
         MainMenu = MainMenuModel.Build(services.Commands);
         ToolBars = ToolBarRowModel.Build(services.Commands, services.Settings, ServiceGraph.ImplementedPhase);
@@ -51,4 +52,19 @@ public sealed class MainWindowViewModel : ObservableObject
 
     /// <summary>The focused element's own command state changed (e.g. a TextBox selection): re-query CanExecute.</summary>
     public void InvalidateCommands() => _services.Commands.InvalidateCanExecute();
+
+    /// <summary>UI-WIN-052/053: where the window opens, given the work areas of the current monitors (DIP).</summary>
+    public WindowPlacement RestorePlacement(IReadOnlyList<WorkArea> workAreas, WorkArea primary) =>
+        WindowPlacementRules.Restore(_services.Layout.WindowPlacement, workAreas, primary);
+
+    /// <summary>UI-WIN-051 (a), UI-WIN-072 step 3: the window closes; its placement and the UI state are saved.</summary>
+    public void SaveUiState(WindowPlacement? placement)
+    {
+        if (placement is not null)
+        {
+            _services.Layout.WindowPlacement = placement;
+        }
+
+        _services.Layout.Save();
+    }
 }

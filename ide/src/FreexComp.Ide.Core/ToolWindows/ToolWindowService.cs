@@ -1,16 +1,17 @@
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Platform;
+using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Core.ToolWindows;
 
-/// <summary>Tool-window registry, visibility and focus (architecture.md §4, tool-windows.md §1). UI thread only.</summary>
+/// <summary>
+/// Tool-window registry, visibility and focus (architecture.md §4, tool-windows.md §1); the arrangement itself belongs to
+/// <see cref="ILayoutService"/>. UI thread only.
+/// </summary>
 public interface IToolWindowService
 {
-    /// <summary>The docks around the document area, arranged by the active profile.</summary>
-    LayoutViewModel Layout { get; }
-
     IReadOnlyList<ToolWindowDefinition> Registered { get; }
 
     /// <summary>
@@ -61,32 +62,31 @@ public sealed class ToolWindowService : IToolWindowService
     private readonly ICommandService _commands;
     private readonly IFocusTracker _focus;
     private readonly IClock _clock;
+    private readonly ILayoutService _layoutService;
     private readonly int _implementedPhase;
     private readonly Dictionary<string, ToolWindowDefinition> _definitions = new(StringComparer.Ordinal);
     private readonly List<ToolWindowDefinition> _registered = [];
     private readonly Dictionary<string, ToolWindowViewModel> _viewModels = new(StringComparer.Ordinal);
     private string? _lastFocused;
 
-    public ToolWindowService(ICommandService commands, IFocusTracker focus, IClock clock, int implementedPhase)
+    public ToolWindowService(ICommandService commands, IFocusTracker focus, IClock clock, ILayoutService layout, int implementedPhase)
     {
         _commands = commands;
         _focus = focus;
         _clock = clock;
+        _layoutService = layout;
         _implementedPhase = implementedPhase;
-        Layout = new LayoutViewModel(LayoutState.CreateDefault(), Get);
+        layout.AttachToolWindows(Get);
         foreach (var (name, commandId) in ShowCommands)
         {
             commands.RegisterHandler(commandId, new ShowHandler(this, name));
         }
 
         commands.RegisterHandler("window.closeToolWindow", new CloseActiveHandler(this));
-        commands.RegisterHandler("window.nextPane", new ActionHandler(() => Layout.CyclePanes(1))); // UI-A11Y-003
-        commands.RegisterHandler("window.previousPane", new ActionHandler(() => Layout.CyclePanes(-1)));
-        commands.RegisterHandler("window.focusEditor", new ActionHandler(() => Layout.FocusPane(Pane.Documents))); // UI-A11Y-004
         focus.Changed += (_, _) => OnFocusChanged();
     }
 
-    public LayoutViewModel Layout { get; }
+    private LayoutViewModel Layout => _layoutService.Layout;
 
     public IReadOnlyList<ToolWindowDefinition> Registered => _registered;
 
@@ -121,7 +121,7 @@ public sealed class ToolWindowService : IToolWindowService
         if (!_viewModels.TryGetValue(name, out var viewModel))
         {
             viewModel = definition.Create();
-            viewModel.Attach(definition, this, _commands, _clock);
+            viewModel.Attach(definition, this, _layoutService, _commands, _clock);
             _viewModels[name] = viewModel;
         }
 
@@ -193,17 +193,6 @@ public sealed class ToolWindowService : IToolWindowService
                 owner.Show(name, focus: true);
             }
 
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class ActionHandler(Action action) : ICommandHandler
-    {
-        public bool CanExecute(string? argument) => true;
-
-        public Task ExecuteAsync(string? argument)
-        {
-            action();
             return Task.CompletedTask;
         }
     }

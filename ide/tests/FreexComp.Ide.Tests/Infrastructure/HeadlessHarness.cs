@@ -24,6 +24,9 @@ public sealed class HarnessOptions
     /// <summary>Relative path (under <see cref="HeadlessHarness.TempDir"/>) → UTF-8 content, written before start.</summary>
     public Dictionary<string, string> InitialFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Relative path under <see cref="HeadlessHarness.UserDir"/> (<c>roaming/uistate.json</c>) → bytes, written before start.</summary>
+    public Dictionary<string, byte[]> UserFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Setting key → value, written to <c>settings.json</c> before start. Preset: <c>run.consoleMode = output</c>.</summary>
     public Dictionary<string, object> Settings { get; } = new(StringComparer.Ordinal) { ["run.consoleMode"] = "output" };
 
@@ -199,6 +202,17 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
     public void RightClick(string automationId) => ClickAt(automationId, MouseButton.Right, 1);
 
+    /// <summary>Left-button drag from the element's centre by (<paramref name="dx"/>, <paramref name="dy"/>) DIP.</summary>
+    public void Drag(string automationId, double dx, double dy)
+    {
+        var start = CenterOf(automationId);
+        Window.MouseDown(start, MouseButton.Left);
+        Window.MouseMove(start + new Point(dx / 2, dy / 2));
+        Window.MouseMove(start + new Point(dx, dy));
+        Window.MouseUp(start + new Point(dx, dy), MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+    }
+
     /// <summary>
     /// Loops { run dispatcher jobs; advance the clock 10 ms; yield } until <paramref name="condition"/> holds, for at
     /// most 5 s of wall time (IDE-TEST-013).
@@ -290,9 +304,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
     private void ClickAt(string automationId, MouseButton button, int count)
     {
-        var control = Find<Control>(automationId);
-        var point = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), Window)
-            ?? throw new InvalidOperationException($"'{automationId}' is not in the main window.");
+        var point = CenterOf(automationId);
         for (var i = 0; i < count; i++)
         {
             Window.MouseDown(point, button);
@@ -300,6 +312,13 @@ public sealed class HeadlessHarness : IAsyncDisposable
         }
 
         Dispatcher.UIThread.RunJobs();
+    }
+
+    private Point CenterOf(string automationId)
+    {
+        var control = Find<Control>(automationId);
+        return control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), Window)
+            ?? throw new InvalidOperationException($"'{automationId}' is not in the main window.");
     }
 
     private void OnUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
@@ -329,6 +348,12 @@ public sealed class HeadlessHarness : IAsyncDisposable
         }
 
         File.WriteAllText(Path.Combine(roaming, "settings.json"), JsonSerializer.Serialize(values));
+        foreach (var (relative, content) in options.UserFiles)
+        {
+            var path = Path.Combine(UserDir, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, content);
+        }
     }
 
     private void DeleteRoot()

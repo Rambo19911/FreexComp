@@ -36,7 +36,9 @@ public static class ServiceGraph
             commands.RegisterHandler(definition.Id, new FocusCommandHandler(definition.Id, focus)); // commands.md §3
         }
 
-        var toolWindows = new ToolWindowService(commands, focus, platform.Clock, ImplementedPhase); // tool windows register here (IDE-ARCH-100)
+        var layout = new LayoutService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log, status, commands);
+        layout.Load(); // step 7: UI state (small file, synchronous)
+        var toolWindows = new ToolWindowService(commands, focus, platform.Clock, layout, ImplementedPhase); // tool windows register here (IDE-ARCH-100)
         theme.RegisterCommands(commands);
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
@@ -60,6 +62,7 @@ public static class ServiceGraph
             Status = status,
             Commands = commands,
             FocusTracker = focus,
+            Layout = layout,
             ToolWindows = toolWindows,
         };
     }
