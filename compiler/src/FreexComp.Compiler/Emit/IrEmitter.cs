@@ -10,8 +10,8 @@ namespace FreexComp.Compiler.Emit;
 /// Lowered trees of one unit → IR through <see cref="IIrWriter"/> (architecture.md §3, CMP-125). This part covers the module
 /// skeleton, scalar globals (CMP-341), routines with parameters and locals (CMP-310), integer, Boolean and real
 /// expressions (CMP-312, 315…317), conversions (CMP-305, 313), the always-on division tests of CMP-312, control flow
-/// (CMP-318…322) and runtime-helper call statements. Not yet (they throw <see cref="NotSupportedException"/>): routine
-/// calls and nested routines (C-038), program and unit bodies with <c>$init</c>/<c>$final</c>/<c>$main</c> (C-044).
+/// (CMP-318…322), calls (ABI-080…082) and nested routines with frame records and static links (CMP-345). Not yet:
+/// program and unit bodies with <c>$init</c>/<c>$final</c>/<c>$main</c> (C-044; they are ignored).
 /// </summary>
 internal static class IrEmitter
 {
@@ -36,15 +36,23 @@ internal static class IrEmitter
                 interfaceMembers.Contains(variable) ? IrLinkage.External : IrLinkage.Internal, IsConstant: false, initializer, layout.Alignment));
         }
 
+        // CMP-345 frame record types, in definition order (CMP-301: named struct types first)
         foreach (var body in unit.Routines)
         {
-            var routine = body.Routine!;
-            if (routine.IsNested)
+            if (body.Frame is { } frame)
             {
-                throw new NotSupportedException($"Nested routine '{routine.Name}' needs a static link (C-038).");
+                var type = writer.DeclareStruct(Mangler.FrameType(body.Routine!),
+                    new StructIrType([IrType.Ptr, .. frame.Variables.Select(v => FieldLayout(v).StorageType)]));
+                module.Frames[body.Routine!] = new FrameRecord(type, frame.Variables);
             }
+        }
 
-            new FunctionEmitter(module, body, interfaceMembers.Contains(routine) ? IrLinkage.External : IrLinkage.Internal).Emit();
+        // CMP-301: definition order, each nested routine directly after its parent
+        foreach (var body in InEmissionOrder(unit.Routines))
+        {
+            var routine = body.Routine!;
+            var linkage = !routine.IsNested && interfaceMembers.Contains(routine) ? IrLinkage.External : IrLinkage.Internal;
+            new FunctionEmitter(module, body, linkage).Emit();
             module.DeclarePending();
         }
 
@@ -56,6 +64,30 @@ internal static class IrEmitter
 
         writer.EndModule();
     }
+
+    private static IEnumerable<LoweredBody> InEmissionOrder(ImmutableArray<LoweredBody> routines)
+    {
+        IEnumerable<LoweredBody> WithNested(LoweredBody body) =>
+            routines.Where(r => ReferenceEquals(r.Routine!.ContainingSymbol, body.Routine)).SelectMany(WithNested).Prepend(body);
+
+        return routines.Where(r => !r.Routine!.IsNested).SelectMany(WithNested);
+    }
+
+    /// <summary>The IR parameter types of <paramref name="routine"/> (ABI-080, 082): static link, then per parameter value or <c>ptr</c>.</summary>
+    internal static ImmutableArray<IrType> ParameterTypes(RoutineSymbol routine) =>
+        [.. (routine.IsNested ? [IrType.Ptr] : Array.Empty<IrType>()),
+         .. routine.Parameters.Select(p => p.IsByReference ? IrType.Ptr : TypeLayout.Of(p.Type).StorageType)];
+
+    internal static IrType ReturnType(RoutineSymbol routine) => routine.ReturnType is { } type ? TypeLayout.Of(type).StorageType : IrType.Void;
+
+    /// <summary>Layout of a frame field: the variable's storage, or a <c>ptr</c> for a by-reference parameter (CMP-345).</summary>
+    internal static TypeLayout FieldLayout(Symbol variable) => variable switch
+    {
+        ParameterSymbol { IsByReference: true } => new TypeLayout(8, 8, IrType.Ptr),
+        ParameterSymbol parameter => TypeLayout.Of(parameter.Type),
+        VariableSymbol local => TypeLayout.Of(local.Type),
+        _ => throw new InvalidOperationException($"'{variable.Name}' cannot live in a frame record."),
+    };
 
     /// <summary>The SSA form of a value of <paramref name="type"/>: <c>i1</c> for the Boolean family (CMP-305), else the storage type.</summary>
     internal static IrType ValueType(TypeSymbol type) => type is BooleanTypeSymbol ? IrType.I1 : TypeLayout.Of(type).StorageType;
@@ -82,12 +114,26 @@ internal static class IrEmitter
     }
 }
 
+/// <summary>A routine's frame record type and its captured variables (field <c>i + 1</c> holds <c>Variables[i]</c>, CMP-345).</summary>
+internal sealed record FrameRecord(NamedStructIrType Type, ImmutableArray<Symbol> Variables)
+{
+    public int FieldOf(Symbol variable) => Variables.IndexOf(variable) is var i and >= 0 ? i + 1 : -1;
+}
+
 /// <summary>Module-wide state shared by the function emitters.</summary>
 internal sealed class ModuleState(IIrWriter writer)
 {
     public IIrWriter Writer { get; } = writer;
 
     public Dictionary<VariableSymbol, IrGlobal> Globals { get; } = [];
+
+    public Dictionary<RoutineSymbol, FrameRecord> Frames { get; } = [];
+
+    /// <summary>The function to call: routines with a body in this unit directly, others through a declaration.</summary>
+    public IrGlobal Routine(RoutineSymbol routine) =>
+        routine.Definition is null
+            ? Declare(new IrFunctionDeclaration(Mangler.Routine(routine), IrEmitter.ReturnType(routine), IrEmitter.ParameterTypes(routine)))
+            : new IrGlobal(Mangler.Routine(routine));
 
     public bool UsesNoReturn { get; private set; }
 
@@ -151,6 +197,9 @@ internal sealed class FunctionEmitter
     private readonly Dictionary<LLoopLabel, (IrBlock Break, IrBlock Continue)> _loops = [];
     private IrBlock _current = Entry;
     private bool _terminated;
+    private IrValue? _link;
+    private FrameRecord? _frame;
+    private IrValue? _frameAddress;
 
     public FunctionEmitter(ModuleState module, LoweredBody body, IrLinkage linkage)
     {
@@ -161,15 +210,33 @@ internal sealed class FunctionEmitter
         _linkage = linkage;
     }
 
+    /// <summary>
+    /// Entry block: the frame record <c>%$frame</c> (CMP-345) first, then the allocas of parameters and locals that are not
+    /// captured; then field 0 := static link (or null), <c>%name.addr</c> = field address of every captured variable (so the
+    /// body addresses them like allocas), and the parameter spills in parameter order — into the frame for captured ones
+    /// (by-reference parameters store their pointer there and keep using the incoming <c>ptr</c>).
+    /// </summary>
     public void Emit()
     {
+        var link = _routine.IsNested ? new IrParameter(IrType.Ptr, Unique("$link")) : null;
         var parameters = _routine.Parameters
             .Select(p => new IrParameter(p.IsByReference ? IrType.Ptr : TypeLayout.Of(p.Type).StorageType, Unique(p.Name)))
             .ToImmutableArray();
-        var returnType = _routine.ReturnType is { } type ? TypeLayout.Of(type).StorageType : IrType.Void;
-        var values = _w.BeginFunction(new IrFunctionDefinition(Mangler.Routine(_routine), _linkage, returnType, parameters, IrEmitter.RoutineGroup));
+        var values = _w.BeginFunction(new IrFunctionDefinition(Mangler.Routine(_routine), _linkage, IrEmitter.ReturnType(_routine),
+            link is null ? parameters : parameters.Insert(0, link), IrEmitter.RoutineGroup));
+        if (link is not null)
+        {
+            _link = values[0];
+            values = values.RemoveAt(0);
+        }
 
         _w.AppendBlock(Entry);
+        _module.Frames.TryGetValue(_routine, out _frame);
+        if (_frame is not null)
+        {
+            _frameAddress = _w.Alloca(Unique("$frame"), _frame.Type, 8);
+        }
+
         var spills = new List<(IrValue Value, IrValue Address, int Alignment)>();
         for (var i = 0; i < _routine.Parameters.Length; i++)
         {
@@ -180,16 +247,48 @@ internal sealed class FunctionEmitter
                 continue;
             }
 
-            var layout = TypeLayout.Of(parameter.Type);
-            var address = _w.Alloca(Unique(values[i].Name + ".addr"), layout.StorageType, layout.Alignment);
-            _parameterAddresses[parameter] = address;
-            spills.Add((values[i], address, layout.Alignment));
+            if (!IsCaptured(parameter))
+            {
+                var layout = TypeLayout.Of(parameter.Type);
+                _parameterAddresses[parameter] = _w.Alloca(Unique(values[i].Name + ".addr"), layout.StorageType, layout.Alignment);
+            }
         }
 
-        foreach (var local in _body.Locals)
+        foreach (var local in _body.Locals.Where(l => !IsCaptured(l.Variable)))
         {
             var layout = TypeLayout.Of(local.Type);
             _locals[local] = _w.Alloca(Unique(local.Name + ".addr"), layout.StorageType, layout.Alignment);
+        }
+
+        if (_frame is not null)
+        {
+            _w.Store(_link ?? new IrNullConstant(), _frameAddress!, 8);
+            foreach (var variable in _frame.Variables)
+            {
+                var address = _w.GetElementPtr(Unique(variable.Name + ".addr"), _frame.Type, _frameAddress!,
+                    [IrIntConstant.I32(0), IrIntConstant.I32(_frame.FieldOf(variable))]);
+                switch (variable)
+                {
+                    case ParameterSymbol { IsByReference: true } parameter:
+                        spills.Add((_parameterAddresses[parameter], address, 8));
+                        break;
+                    case ParameterSymbol parameter:
+                        _parameterAddresses[parameter] = address;
+                        break;
+                    default:
+                        _locals[_body.Locals.Single(l => ReferenceEquals(l.Variable, variable))] = address;
+                        break;
+                }
+            }
+        }
+
+        for (var i = 0; i < _routine.Parameters.Length; i++)
+        {
+            var parameter = _routine.Parameters[i];
+            if (!parameter.IsByReference)
+            {
+                spills.Add((values[i], _parameterAddresses[parameter], TypeLayout.Of(parameter.Type).Alignment));
+            }
         }
 
         foreach (var (value, address, alignment) in spills)
@@ -308,8 +407,9 @@ internal sealed class FunctionEmitter
                 break;
             }
 
-            case LCallStatement:
-                throw new NotSupportedException("Routine calls are emitted with C-038.");
+            case LCallStatement { Callee: LRoutineCallee callee } call:
+                Call(named: false, callee.Routine, call.Arguments);
+                break;
             default:
                 throw new InvalidOperationException($"Cannot emit {statement.GetType().Name}.");
         }
@@ -460,8 +560,62 @@ internal sealed class FunctionEmitter
         LLocalRef local => _locals[local.Local],
         LGlobalRef global => _module.Globals[global.Variable],
         LParamRef parameter => _parameterAddresses[parameter.Parameter],
+        LOuterRef outer => OuterAddress(outer),
         _ => throw new InvalidOperationException($"{variable.GetType().Name} is not a variable reference."),
     };
+
+    private bool IsCaptured(Symbol? variable) => variable is not null && _frame?.FieldOf(variable) > 0;
+
+    /// <summary>
+    /// CMP-345: field of the owner's frame record, reached from <c>%$link</c> (the parent's frame) by loading field 0 once
+    /// per further level; a captured <c>var</c>/<c>out</c> parameter's field holds the pointer to the variable.
+    /// </summary>
+    private IrValue OuterAddress(LOuterRef outer)
+    {
+        var frame = _module.Frames[outer.Owner];
+        var address = FrameOf(outer.Owner);
+        var field = _w.GetElementPtr(NewTemp(), frame.Type, address, [IrIntConstant.I32(0), IrIntConstant.I32(frame.FieldOf(outer.Variable))]);
+        return outer.Variable is ParameterSymbol { IsByReference: true } ? _w.Load(NewTemp(), IrType.Ptr, field, 8) : field;
+    }
+
+    /// <summary>The frame record of <paramref name="routine"/>, this routine or an enclosing one (null value when it has none).</summary>
+    private IrValue FrameOf(RoutineSymbol routine)
+    {
+        if (ReferenceEquals(routine, _routine))
+        {
+            return _frameAddress ?? new IrNullConstant();
+        }
+
+        var frame = _link ?? throw new InvalidOperationException($"'{_routine.Name}' is not nested in '{routine.Name}'.");
+        for (var level = (RoutineSymbol)_routine.ContainingSymbol!; !ReferenceEquals(level, routine); level = (RoutineSymbol)level.ContainingSymbol!)
+        {
+            frame = _w.Load(NewTemp(), IrType.Ptr, frame, 8);
+        }
+
+        return frame;
+    }
+
+    /// <summary>
+    /// A direct call (ABI-082): the static link of a nested callee (its parent's frame) first, then value arguments in storage
+    /// form and <c>var</c>/<c>out</c> arguments as addresses (<see cref="LAddrOf"/>). <paramref name="named"/> false discards the result.
+    /// </summary>
+    private IrLocal? Call(bool named, RoutineSymbol routine, ImmutableArray<LExpression> arguments)
+    {
+        var values = ImmutableArray.CreateBuilder<IrValue>();
+        if (routine.IsNested)
+        {
+            values.Add(FrameOf((RoutineSymbol)routine.ContainingSymbol!));
+        }
+
+        for (var i = 0; i < arguments.Length; i++)
+        {
+            var parameter = routine.Parameters[i];
+            var value = Value(arguments[i]);
+            values.Add(parameter.IsByReference ? value : ToStorage(value, parameter.Type));
+        }
+
+        return _w.Call(named ? NewTemp() : null, IrEmitter.ReturnType(routine), _module.Routine(routine), values.ToImmutable());
+    }
 
     /// <summary>Loads a value in SSA form: Booleans are compared <c>ne 0</c> after the load (CMP-305).</summary>
     private IrValue Load(IrValue address, TypeSymbol type)
@@ -497,7 +651,7 @@ internal sealed class FunctionEmitter
         {
             case LConst constant:
                 return IrEmitter.ValueConstant(constant.Value, constant.Type);
-            case LLocalRef or LGlobalRef or LParamRef:
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef:
                 return Load(Address(expression), expression.Type);
             case LAddrOf addressOf:
                 return Address(addressOf.Variable);
@@ -521,8 +675,14 @@ internal sealed class FunctionEmitter
                 return _w.Select(NewTemp(), condition, whenTrue, Value(select.WhenFalse));
             }
 
-            case LCall:
-                throw new NotSupportedException("Calls are emitted with C-038.");
+            case LCall { Callee: LRoutineCallee callee } call:
+            {
+                var result = Call(named: true, callee.Routine, call.Arguments)!;
+                return call.Type is BooleanTypeSymbol
+                    ? _w.ICmp(NewTemp(), IrIntPredicate.Ne, result, new IrIntConstant((IntegerIrType)result.Type, 0))
+                    : result;
+            }
+
             default:
                 throw new InvalidOperationException($"Cannot emit {expression.GetType().Name}.");
         }

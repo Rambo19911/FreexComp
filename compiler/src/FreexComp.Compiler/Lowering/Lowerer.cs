@@ -10,8 +10,8 @@ namespace FreexComp.Compiler.Lowering;
 /// Bound trees of one unit → lowered trees (architecture.md §3.2, CMP-116). The input must be free of binder errors
 /// (the lowerer reports nothing; it throws on error nodes). This skeleton translates the M2.1 statement and expression
 /// set; the structured statements and intrinsics are delegated to <see cref="ForRewriter"/>, <see cref="CaseRewriter"/>
-/// and <see cref="IntrinsicRewriter"/>. Not yet: <c>Write</c>/<c>Writeln</c> (C-040) and references to variables of
-/// enclosing routines (frame records, C-038) — both throw <see cref="NotSupportedException"/>.
+/// and <see cref="IntrinsicRewriter"/>. Variables of enclosing routines become <see cref="LOuterRef"/>; their owner gets a
+/// <see cref="LoweredFrame"/> (CMP-345). Not yet: <c>Write</c>/<c>Writeln</c> (C-040, throws <see cref="NotSupportedException"/>).
 /// </summary>
 internal static class Lowerer
 {
@@ -21,7 +21,12 @@ internal static class Lowerer
     public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body)
     {
         var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>());
-        return context.Finish(body.Body);
+        var lowered = context.Finish(body.Body);
+        // CMP-345: a frame when nested routines capture something of this routine, and for a nested routine with nested
+        // routines of its own (field 0 continues the static link chain they walk)
+        var captured = result.GetCapturedVariables(body.Routine);
+        var needsFrame = !captured.IsEmpty || body.Routine.IsNested && !body.NestedRoutines.IsEmpty;
+        return needsFrame ? lowered with { Frame = new LoweredFrame(captured) } : lowered;
     }
 
     /// <summary>The program block or a unit initialization/finalization section (globals only, no locals).</summary>
@@ -204,11 +209,11 @@ internal sealed class LoweringContext
             case BoundVariableExpression variable:
                 return _variables.TryGetValue(variable.Variable, out var local)
                     ? new LLocalRef(local)
-                    : throw new NotSupportedException($"'{variable.Variable.Name}' of an enclosing routine needs a frame record (C-038).");
+                    : new LOuterRef(variable.Variable, variable.Variable.Type);
             case BoundParameterExpression parameter:
                 return ReferenceEquals(parameter.Parameter.ContainingSymbol, Routine)
                     ? new LParamRef(parameter.Parameter)
-                    : throw new NotSupportedException($"'{parameter.Parameter.Name}' of an enclosing routine needs a frame record (C-038).");
+                    : new LOuterRef(parameter.Parameter, parameter.Parameter.Type);
             case BoundConversionExpression conversion:
                 return Convert(Lower(conversion.Operand), conversion.Type);
             case BoundUnaryExpression { OperatorKind: BoundUnaryOperatorKind.Identity } unary:

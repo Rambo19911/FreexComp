@@ -13,7 +13,15 @@ namespace FreexComp.Compiler.Lowering;
 /// <summary>One lowered routine or unit-level body.</summary>
 /// <param name="Routine">Null for the program block and unit initialization/finalization sections.</param>
 /// <param name="Locals">Storage the body needs: <c>Result</c>, declared locals (scope order), then compiler temporaries.</param>
-internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal> Locals, LBlock Body);
+/// <param name="Frame">The routine's frame record (CMP-345), or null when it needs none.</param>
+internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal> Locals, LBlock Body, LoweredFrame? Frame = null);
+
+/// <summary>
+/// A frame record (CMP-345): field 0 is the routine's static link (null for a top-level routine), then
+/// <see cref="Variables"/> — the routine's variables, parameters and <c>Result</c> referenced by nested routines
+/// (<see cref="Binding.BindingResult.GetCapturedVariables"/>, scope order). They live only in the frame.
+/// </summary>
+internal sealed record LoweredFrame(ImmutableArray<Symbol> Variables);
 
 /// <summary>The lowered bodies of one unit: <see cref="Routines"/> in binding order, then <see cref="Bodies"/>.</summary>
 internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> Routines, ImmutableArray<LoweredBody> Bodies);
@@ -184,6 +192,18 @@ internal sealed class LGlobalRef(VariableSymbol variable) : LExpression(variable
 }
 
 /// <summary>A parameter of the current routine; for <c>var</c>/<c>out</c> parameters the variable it refers to.</summary>
+/// <summary>
+/// A variable, parameter or <c>Result</c> of an enclosing routine (CMP-345), reached through the static link; for
+/// <c>var</c>/<c>out</c> parameters the variable it refers to.
+/// </summary>
+internal sealed class LOuterRef(Symbol variable, TypeSymbol type) : LExpression(type)
+{
+    public Symbol Variable { get; } = variable;
+
+    /// <summary>The routine owning <see cref="Variable"/>.</summary>
+    public RoutineSymbol Owner => (RoutineSymbol)Variable.ContainingSymbol!;
+}
+
 internal sealed class LParamRef(ParameterSymbol parameter) : LExpression(parameter.Type)
 {
     public ParameterSymbol Parameter { get; } = parameter;

@@ -258,6 +258,87 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    internal const string CallsSource = """
+        unit M;
+        interface
+        function Fact(n: Integer): Int64;
+        procedure Swap2(var a, b: Integer);
+        procedure Init(out x: Integer; flag: Boolean);
+        function IsPos(x: Integer): Boolean;
+        procedure Use;
+        implementation
+        function Fact(n: Integer): Int64;
+        begin
+          if n <= 1 then Result := 1 else Result := n * Fact(n - 1);
+        end;
+        procedure Swap2(var a, b: Integer);
+        var t: Integer;
+        begin
+          t := a; a := b; b := t;
+        end;
+        procedure Init(out x: Integer; flag: Boolean);
+        begin
+          if flag then x := 1 else x := 0;
+        end;
+        function IsPos(x: Integer): Boolean;
+        begin
+          Result := x > 0;
+        end;
+        var g: Integer;
+        procedure Use;
+        var a, b: Integer;
+        begin
+          Init(a, IsPos(g));
+          b := 2;
+          Swap2(a, b);
+          Swap2(g, a);
+          Fact(3);
+          if IsPos(a) then g := Fact(b);
+        end;
+        end.
+        """;
+
+    /// <summary>routines.md §9 <c>Outer</c>/<c>Add</c> (CMP-345 example) plus two levels, a captured <c>var</c> parameter and an outer <c>Result</c>.</summary>
+    internal const string NestedFrameSource = """
+        unit M;
+        interface
+        function Outer: Integer;
+        procedure Twice(var v: Integer; k: Integer);
+        implementation
+        function Outer: Integer;
+        var total: Integer;
+          procedure Add(x: Integer);
+          begin
+            total := total + x;
+          end;
+        begin
+          total := 0; Add(2); Add(40); Result := total;
+        end;
+        procedure Twice(var v: Integer; k: Integer);
+        var
+          calls: Integer;
+          function Get: Integer;
+            procedure Bump;
+            begin
+              calls := calls + 1;
+              v := v + k;
+              Get := calls;
+            end;
+          begin
+            Bump;
+            Bump;
+          end;
+          procedure Again;
+          begin
+            calls := Get;
+          end;
+        begin
+          calls := 0;
+          Again;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["Add"] = AddSource,
@@ -268,7 +349,30 @@ public sealed class IrSnapshotTests
         ["Case"] = CaseSource,
         ["Loops"] = LoopsSource,
         ["IfExit"] = IfExitSource,
+        ["Calls"] = CallsSource,
+        ["NestedFrame"] = NestedFrameSource,
     };
+
+    [Fact]
+    [Trait("Req", "CMP-345")]
+    public void NestedFrame() => Snapshot.Verify("NestedFrame", Emit(NestedFrameSource));
+
+    [Fact]
+    [Trait("Req", "CMP-310")]
+    public void Calls() => Snapshot.Verify("Calls", Emit(CallsSource));
+
+    /// <summary>CMP-345: frame type, static link as first parameter, captured variable reached through the link.</summary>
+    [Fact]
+    [Trait("Req", "CMP-345")]
+    public void NestedRoutine_ReachesCapturedVariableThroughItsLink()
+    {
+        var text = Emit(NestedFrameSource);
+
+        Assert.Contains("%\"M.Outer.$frame\" = type { ptr, i32 }\n", text);
+        Assert.Contains("define internal void @\"M.Outer.Add\"(ptr %$link, i32 %x) #0 {", text);
+        Assert.Contains("getelementptr inbounds %\"M.Outer.$frame\", ptr %$link, i32 0, i32 1\n", text);
+        Assert.Contains("call void @\"M.Outer.Add\"(ptr %$frame, i32 2)", text);
+    }
 
     [Fact]
     [Trait("Req", "CMP-321")]

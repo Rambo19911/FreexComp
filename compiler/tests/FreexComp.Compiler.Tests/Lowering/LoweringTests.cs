@@ -279,13 +279,33 @@ public sealed class LoweringTests
         Assert.Equal("U", unit.Unit.Name);
     }
 
-    /// <summary>Frame records arrive with C-038; until then a captured variable is rejected loudly.</summary>
+    /// <summary>
+    /// CMP-345: a variable of an enclosing routine lowers to <see cref="LOuterRef"/>; the owner lists its captured variables in
+    /// its <see cref="LoweredFrame"/> (scope order).
+    /// </summary>
     [Fact]
     [Trait("Req", "CMP-345")]
-    public void CapturedVariables_AreNotSupportedYet()
+    public void CapturedVariables_LowerToOuterReferences_AndTheOwnerGetsAFrame()
     {
-        var (result, _) = Bind("program T; procedure Outer; var n: Integer; procedure Inner; begin n := 1 end; begin Inner end; begin end.");
+        var unit = Lower("program T; procedure Outer(p: Integer); var n, m: Integer; procedure Inner; begin n := p end; begin Inner end; begin end.");
+        var outer = Routine(unit, "Outer");
+        var inner = Routine(unit, "Inner");
 
-        Assert.Throws<NotSupportedException>(() => Lowerer.Lower(result));
+        Assert.Equal("(:= ^n ^p)", LoweredDump.Of(Assert.Single(inner.Body.Statements)));
+        Assert.Equal(["p", "n"], outer.Frame!.Variables.Select(v => v.Name));
+        Assert.Null(inner.Frame);
+        Assert.Equal("(call Inner)", LoweredDump.Of(Assert.Single(outer.Body.Statements)));
+    }
+
+    /// <summary>A nested routine that itself has nested routines gets a frame (field 0 only) so the static link chain can be walked.</summary>
+    [Fact]
+    [Trait("Req", "CMP-345")]
+    public void IntermediateNestedRoutine_GetsALinkOnlyFrame_TopLevelWithoutCapturesGetsNone()
+    {
+        var unit = Lower("program T; procedure A; procedure B; procedure C; begin end; begin C end; begin B end; begin end.");
+
+        Assert.Null(Routine(unit, "A").Frame);
+        Assert.Empty(Routine(unit, "B").Frame!.Variables);
+        Assert.Null(Routine(unit, "C").Frame);
     }
 }

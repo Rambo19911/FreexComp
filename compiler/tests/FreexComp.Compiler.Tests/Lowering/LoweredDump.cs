@@ -18,6 +18,7 @@ internal static class LoweredDump
         LLocalRef l => l.Local.Name,
         LGlobalRef g => "@" + g.Variable.Name,
         LParamRef p => p.Parameter.Name,
+        LOuterRef o => "^" + o.Variable.Name,
         LAddrOf a => $"(addr {Of(a.Variable)})",
         LUnary u => $"({u.Operator}:{u.Type.Name} {Of(u.Operand)})",
         LBinary b => $"({b.Operator}:{b.Type.Name} {Of(b.Left)} {Of(b.Right)})",
