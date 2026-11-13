@@ -1,0 +1,48 @@
+namespace FreexComp.Ide.Core.Platform;
+
+/// <summary>
+/// Disk access of the IDE (IDE-ARCH-012, IDE-ARCH-023). Paths are absolute; comparison is case-insensitive.
+/// Failures surface as the <see cref="System.IO"/> exceptions named below; services turn them into results
+/// (IDE-ARCH-092). Encoding decisions are made by the caller: this interface moves bytes only.
+/// </summary>
+public interface IFileSystem
+{
+    bool FileExists(string path);
+
+    bool DirectoryExists(string path);
+
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
+    byte[] ReadAllBytes(string path);
+
+    /// <summary>Creates or truncates the file.</summary>
+    /// <exception cref="DirectoryNotFoundException">The parent directory does not exist.</exception>
+    /// <exception cref="UnauthorizedAccessException">The file is read-only.</exception>
+    void WriteAllBytes(string path, byte[] data);
+
+    /// <summary>Creates the directory and every missing parent; no-op when it exists.</summary>
+    void CreateDirectory(string path);
+
+    /// <summary>No-op when the file does not exist.</summary>
+    void DeleteFile(string path);
+
+    /// <exception cref="FileNotFoundException">The source does not exist.</exception>
+    /// <exception cref="IOException">The destination exists and <paramref name="overwrite"/> is false.</exception>
+    void MoveFile(string sourcePath, string destinationPath, bool overwrite);
+
+    /// <summary>Full paths of the files directly in <paramref name="directory"/> matching a <c>*</c>/<c>?</c> pattern.</summary>
+    /// <exception cref="DirectoryNotFoundException">The directory does not exist.</exception>
+    IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern);
+
+    /// <summary>Full paths of the directories directly in <paramref name="directory"/>.</summary>
+    /// <exception cref="DirectoryNotFoundException">The directory does not exist.</exception>
+    IReadOnlyList<string> EnumerateDirectories(string directory);
+
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
+    DateTime GetLastWriteTimeUtc(string path);
+
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
+    long GetLength(string path);
+
+    /// <summary>True when the file exists and carries the read-only attribute.</summary>
+    bool IsReadOnly(string path);
+}
