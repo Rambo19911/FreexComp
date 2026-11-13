@@ -26,6 +26,7 @@ internal sealed class DeclarationBinder
     private readonly DiagnosticBag _diagnostics;
     private readonly Scope? _sharedScope;
     private readonly ConstantFolder _folder;
+    private readonly Conversions _conversions = new();
 
     /// <param name="sharedScope">
     /// A scope whose names also count as declared in <paramref name="scope"/> for E2004: a unit's interface scope when
@@ -48,9 +49,12 @@ internal sealed class DeclarationBinder
     /// The unit-level scopes of a program (one scope) or unit (interface scope, then implementation scope inside it;
     /// LANG-310), chained to the built-in scope. Uses clauses and System are bound by later tasks.
     /// </summary>
-    public static DeclarationBindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types)
+    public static DeclarationBindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types) =>
+        BindCompilationUnit(tree, types, new DiagnosticBag());
+
+    /// <param name="diagnostics">Shared with the bodies of the unit level (one E2003 set, CMP-507).</param>
+    public static DeclarationBindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types, DiagnosticBag diagnostics)
     {
-        var diagnostics = new DiagnosticBag();
         switch (tree.Root)
         {
             case UnitSyntax unit:
@@ -147,7 +151,7 @@ internal sealed class DeclarationBinder
         foreach (var declaration in section.Declarations)
         {
             var type = BindType(declaration.Type);
-            var initializer = declaration.Initializer is { } node ? BindInitializer(declaration, node) : null;
+            var initializer = declaration.Initializer is { } node ? BindInitializer(declaration, node, type) : null;
             foreach (var name in declaration.Identifiers)
             {
                 var identifier = name.Identifier;
@@ -161,7 +165,7 @@ internal sealed class DeclarationBinder
     }
 
     /// <summary>grammar.md varDecl: an initialiser only for one global variable; a constant expression (LANG-522).</summary>
-    private ConstantValue? BindInitializer(VarDeclarationSyntax declaration, SyntaxNode initializer)
+    private ConstantValue? BindInitializer(VarDeclarationSyntax declaration, SyntaxNode initializer, TypeSymbol type)
     {
         if (!IsGlobalLevel)
         {
@@ -181,8 +185,9 @@ internal sealed class DeclarationBinder
             return null;
         }
 
-        // assignment compatibility with the variable's type is checked from C-025 on
-        return _folder.Fold(expression);
+        // converted to the variable's type (LANG-280), so the value carries that type
+        var value = _folder.Fold(expression);
+        return value is null || type.TypeKind == TypeKind.Error ? value : _conversions.ConvertConstant(value, type, expression, _diagnostics);
     }
 
     /// <summary>The type a type syntax denotes; the error type (after a diagnostic) when it cannot be bound.</summary>

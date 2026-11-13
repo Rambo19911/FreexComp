@@ -252,6 +252,7 @@ public sealed class ExpressionTypingTests
     [InlineData("Integer(flag)", "(cast Integer flag:Boolean)")]
     [InlineData("Char(w)", "(cast Char w:Word)")]
     [InlineData("Double(i)", "(cast Double i:Integer)")]
+    [InlineData("Double(5)", "(cast Double 5:Integer)")]            // integer -> real casts are not constant (LANG-340)
     [InlineData("Byte(300)", "44:Byte")]
     [InlineData("Int64(i) shl 33", "(Shl:Int64 (cast Int64 i:Integer) 33:Int64)")]
     public void OrdinalTypecasts(string expression, string expected) => Assert.Equal(expected, Typed(expression));

@@ -10,7 +10,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 [Trait("Req", "LANG-310")]
 public sealed class VarBindingTests
 {
-    private static VariableSymbol Variable(DeclarationBindingResult result, string name) =>
+    private static VariableSymbol Variable(BindingResult result, string name) =>
         Assert.IsType<VariableSymbol>(result.Scope.Lookup(name));
 
     [Fact]

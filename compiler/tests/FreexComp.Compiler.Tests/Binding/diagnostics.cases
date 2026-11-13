@@ -33,3 +33,33 @@ var
   A: Integer;
 begin
 end.
+=== E2010 1,28
+var b: Boolean; begin b := 1 end.
+=== E2010 1,37
+var c: Char; i: Integer; begin i := c end.
+=== E2010 1,28
+var i: Integer; begin i := 1.5 end.
+=== E2010 1,38
+var a: AnsiChar; c: Char; begin a := c end.
+=== E2010 1,19
+var a: AnsiChar = #300; begin end.
+=== E2012 1,25
+var b: Byte; begin b := 256 end.
+=== E2012 1,15
+var b: Byte = -1; begin end.
+=== E2012 1,25
+var w: Word; begin w := 70000 end.
+=== E2053 1,20
+const K = 1; begin K := 2 end.
+=== E2053 1,7
+begin True := False end.
+=== E2060 1,23
+var i: Integer; begin i end.
+=== E2009 1,28
+var i: Integer; begin i := Integer end.
+=== E2011 1,30
+var b: Boolean; begin b := b + 1 end.
+=== W1010 1,41
+var u: UInt64; i: Integer; begin u := u + i end.
+=== W1021 1,19
+var a: AnsiChar = #200; begin end.

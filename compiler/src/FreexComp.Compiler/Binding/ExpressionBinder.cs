@@ -18,6 +18,7 @@ internal sealed class ExpressionBinder
     private readonly Scope _scope;
     private readonly DiagnosticBag _diagnostics;
     private readonly ConstantFolder _folder;
+    private readonly Conversions _conversions = new();
 
     public ExpressionBinder(BuiltInTypes types, Scope scope, DiagnosticBag diagnostics)
     {
@@ -54,6 +55,40 @@ internal sealed class ExpressionBinder
             default:
                 return Unsupported(syntax, DeclarationBinder.FeatureName(syntax.Kind));
         }
+    }
+
+    /// <summary>
+    /// <paramref name="value"/> converted for assignment to <paramref name="destination"/> (LANG-280/351); E2010 / E2012
+    /// at <paramref name="at"/> and an error expression when it is not assignment-compatible.
+    /// </summary>
+    public BoundExpression ConvertForAssignment(BoundExpression value, TypeSymbol destination, SyntaxNode at)
+    {
+        if (value.HasErrors || destination.TypeKind == TypeKind.Error || ReferenceEquals(value.Type, destination))
+        {
+            return value;
+        }
+
+        if (value.ConstantValue is { } constant)
+        {
+            if (_conversions.ConvertConstant(constant, destination, at, _diagnostics) is not { } converted)
+            {
+                return Error(at, value);
+            }
+
+            // a character constant converts to AnsiChar although Char does not (LANG-262)
+            var kind = _conversions.Classify(value.Type, destination).Kind;
+            return new BoundConversionExpression(value.Syntax, value, destination,
+                kind == ConversionKind.None ? ConversionKind.ImplicitNumeric : kind, isExplicit: false, converted);
+        }
+
+        var conversion = _conversions.Classify(value.Type, destination);
+        if (!conversion.Exists)
+        {
+            _conversions.ReportIncompatible(value.Type, destination, at, _diagnostics);
+            return Error(at, value);
+        }
+
+        return new BoundConversionExpression(value.Syntax, value, destination, conversion.Kind, isExplicit: false, constantValue: null);
     }
 
     // ------------------------------------------------------------------ factors
@@ -159,7 +194,7 @@ internal sealed class ExpressionBinder
         }
         else if (source is IntegerTypeSymbol && target is RealTypeSymbol)
         {
-            constant = operand.ConstantValue is { } value ? ConvertConstant(value, target) : null;
+            constant = null;                                            // not a constant expression (LANG-340, lead decision C-024)
         }
         else
         {

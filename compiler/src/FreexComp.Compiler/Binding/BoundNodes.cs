@@ -19,6 +19,12 @@ internal enum BoundKind
     ConversionExpression,
     UnaryExpression,
     BinaryExpression,
+
+    // statements
+    Block,
+    AssignmentStatement,
+    ExpressionStatement,
+    ErrorStatement,
 }
 
 /// <summary>A node of the bound tree: immutable, typed, symbols resolved.</summary>
@@ -216,4 +222,72 @@ internal sealed class BoundBinaryExpression : BoundExpression
     public BoundExpression Right { get; }
 
     public TypeSymbol OperandType { get; }
+}
+
+/// <summary>A statement of a routine body, program block or initialization/finalization section.</summary>
+internal abstract class BoundStatement : BoundNode
+{
+    private protected BoundStatement(SyntaxNode syntax)
+        : base(syntax)
+    {
+    }
+}
+
+/// <summary>A statement list (<c>begin … end</c>, a body); empty statements are left out (LANG-353).</summary>
+internal sealed class BoundBlock : BoundStatement
+{
+    public BoundBlock(SyntaxNode syntax, ImmutableArray<BoundStatement> statements)
+        : base(syntax)
+    {
+        Statements = statements;
+    }
+
+    public override BoundKind Kind => BoundKind.Block;
+
+    public ImmutableArray<BoundStatement> Statements { get; }
+}
+
+/// <summary>
+/// <c>target := value</c> (LANG-350): <see cref="Value"/> is converted to the target's type (LANG-351), unless one
+/// side has errors.
+/// </summary>
+internal sealed class BoundAssignmentStatement : BoundStatement
+{
+    public BoundAssignmentStatement(SyntaxNode syntax, BoundExpression target, BoundExpression value)
+        : base(syntax)
+    {
+        Target = target;
+        Value = value;
+    }
+
+    public override BoundKind Kind => BoundKind.AssignmentStatement;
+
+    public BoundExpression Target { get; }
+
+    public BoundExpression Value { get; }
+}
+
+/// <summary>A call used as a statement (LANG-352; the result, if any, is discarded, LANG-307).</summary>
+internal sealed class BoundExpressionStatement : BoundStatement
+{
+    public BoundExpressionStatement(SyntaxNode syntax, BoundExpression expression)
+        : base(syntax)
+    {
+        Expression = expression;
+    }
+
+    public override BoundKind Kind => BoundKind.ExpressionStatement;
+
+    public BoundExpression Expression { get; }
+}
+
+/// <summary>A statement that could not be bound (already reported).</summary>
+internal sealed class BoundErrorStatement : BoundStatement
+{
+    public BoundErrorStatement(SyntaxNode syntax)
+        : base(syntax)
+    {
+    }
+
+    public override BoundKind Kind => BoundKind.ErrorStatement;
 }
