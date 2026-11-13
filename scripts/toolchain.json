@@ -1,0 +1,18 @@
+{
+  "llvm": {
+    "version": "23.1.5",
+    "archive": "clang+llvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
+    "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.5/clang+llvm-23.1.5-x86_64-pc-windows-msvc.tar.xz",
+    "sha256": "",
+    "installDir": "third_party/llvm",
+    "requiredTools": ["clang.exe", "lld-link.exe", "llvm-dlltool.exe"],
+    "optionalTools": ["lldb-dap.exe", "lldb.exe", "llvm-objdump.exe", "llvm-pdbutil.exe"]
+  },
+  "sqlite": {
+    "note": "Phase 7. Official x64 DLL zip from https://www.sqlite.org/download.html ; fill url + sha256 when Phase 7 starts.",
+    "url": "",
+    "sha256": "",
+    "installDir": "third_party/sqlite"
+  },
+  "dotnetSdk": "10.0"
+}

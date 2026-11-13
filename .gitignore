@@ -1,0 +1,17 @@
+# --- Development plans and assistant instructions: never part of the product repository ---
+/CLAUDE.md
+/CLAUDE.local.md
+/STATUS.md
+/.claude/
+/docs/
+*.plan.md
+
+# --- Build outputs and local state ---
+bin/
+obj/
+third_party/
+.vs/
+*.user
+.freexcomp/
+TestResults/
+*.pcu
