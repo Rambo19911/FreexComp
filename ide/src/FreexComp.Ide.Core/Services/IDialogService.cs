@@ -1,3 +1,5 @@
+using FreexComp.Ide.Core.Dialogs;
+
 namespace FreexComp.Ide.Core.Services;
 
 /// <summary>
@@ -7,9 +9,12 @@ namespace FreexComp.Ide.Core.Services;
 /// </summary>
 public sealed record MessageRequest(string MessageId, IReadOnlyList<string> Args, string? Details = null);
 
-/// <summary>Modal dialogs (IDE-ARCH-054). Only the generic message box so far; typed dialogs come with their tasks.</summary>
+/// <summary>Modal dialogs (IDE-ARCH-054, UI-DLG-008). UI thread only.</summary>
 public interface IDialogService
 {
-    /// <summary>Shows the message box and returns the chosen button id (UI-DLG-027).</summary>
+    /// <summary>Shows the message box and returns the chosen button id (UI-DLG-024, UI-DLG-027).</summary>
     Task<string> ShowMessageAsync(MessageRequest request);
+
+    /// <summary>Shows the window of <paramref name="viewModel"/> modally over the main window; returns its result when it closes.</summary>
+    Task<TResult?> ShowAsync<TResult>(DialogViewModel<TResult> viewModel);
 }

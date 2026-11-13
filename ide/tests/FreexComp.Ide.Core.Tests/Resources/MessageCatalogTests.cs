@@ -10,7 +10,7 @@ namespace FreexComp.Ide.Core.Tests.Resources;
 public sealed partial class MessageCatalogTests
 {
     /// <summary>(spec file, heading) of every message table: states-and-messages.md §2–§8 and the additions of its §10.</summary>
-    private static readonly (string File, string Heading)[] MessageTables =
+    internal static readonly (string File, string Heading)[] MessageTables =
     [
         ("spec/ui/states-and-messages.md", "2. "),
         ("spec/ui/states-and-messages.md", "3. "),
@@ -51,7 +51,7 @@ public sealed partial class MessageCatalogTests
         // Keys of the spec-defined families must all come from the spec.
         var families = expected.Keys.Select(k => k[..(k.IndexOf('_') + 1)]).ToHashSet(StringComparer.Ordinal);
         problems.AddRange(actual.Keys
-            .Where(k => families.Any(f => k.StartsWith(f, StringComparison.Ordinal)) && !expected.ContainsKey(k))
+            .Where(k => families.Any(f => k.StartsWith(f, StringComparison.Ordinal)) && !expected.ContainsKey(k) && !IsTitleOfDialogMessage(k))
             .Select(k => $"{k}: in Strings.resx but not in the spec"));
 
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
@@ -145,6 +145,11 @@ public sealed partial class MessageCatalogTests
         var set = Strings.ResourceManager.GetResourceSet(CultureInfo.InvariantCulture, createIfNotExists: true, tryParents: true)!;
         return set.Cast<DictionaryEntry>().ToDictionary(e => (string)e.Key, e => (string)e.Value!, StringComparer.Ordinal);
     }
+
+    /// <summary>UI-DLG-023 / states-and-messages.md §10: <c>&lt;MsgKey&gt;_Title</c> of a message of kind Dialog.</summary>
+    private static bool IsTitleOfDialogMessage(string key) =>
+        key.EndsWith("_Title", StringComparison.Ordinal)
+        && FreexComp.Ide.Core.Dialogs.MessageDefinitions.All.Any(d => d.ResourceKey + "_Title" == key);
 
     /// <summary>UI-MSG-001: <c>.</c> → <c>_</c>.</summary>
     private static string Key(string id) => id.Trim().Replace('.', '_');

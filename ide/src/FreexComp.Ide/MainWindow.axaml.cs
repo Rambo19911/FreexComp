@@ -195,6 +195,11 @@ public sealed partial class MainWindow : Window
     private void OnFocusMaybeLost()
     {
         ReportFocus();
+        if (OwnedWindows.Any(w => w.IsVisible))
+        {
+            return; // focus went to a dialog over this window (UI-DLG-001); it comes back when the dialog closes
+        }
+
         if (IsVisible && (FocusManager?.GetFocusedElement() is not Avalonia.Visual focused || TopLevel.GetTopLevel(focused) != this))
         {
             RestoreFocus();

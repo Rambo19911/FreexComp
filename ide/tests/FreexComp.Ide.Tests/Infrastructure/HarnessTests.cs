@@ -167,9 +167,11 @@ public sealed class HarnessTests
             Assert.Equal("Continue", await h.Services.Dialogs.ShowMessageAsync(new MessageRequest("Msg.App.InternalError", [])));
         }
 
+        // Without a script the real message box opens; left undriven, it fails dispose (IDE-TEST-016).
         var unanswered = await HeadlessHarness.StartAsync();
-        await Assert.ThrowsAnyAsync<InvalidOperationException>(
-            () => unanswered.Services.Dialogs.ShowMessageAsync(new MessageRequest("Msg.File.NotFound", ["a.pas"])));
+        var pending = unanswered.Services.Dialogs.ShowMessageAsync(new MessageRequest("Msg.File.NotFound", ["a.pas"]));
+        await unanswered.WaitForDialogAsync("Message");
+        Assert.False(pending.IsCompleted);
         var error = await Assert.ThrowsAsync<HarnessAssertionException>(() => unanswered.DisposeAsync().AsTask());
         Assert.Contains("Msg.File.NotFound", error.Message, StringComparison.Ordinal);
     }

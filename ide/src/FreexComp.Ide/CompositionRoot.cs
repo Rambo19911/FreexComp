@@ -27,16 +27,17 @@ public static class CompositionRoot
 
         var paths = UserPaths.FromProcess(options.UserDir);
         var log = new FileLog(paths.LogDirectory, () => DateTime.Now, FileLog.MinimumLevelFrom(Environment.GetEnvironmentVariable(FileLog.LevelVariable)));
+        var clipboard = new AvaloniaClipboard(mainWindow);
         return new PlatformServices(
             paths,
             log,
             new PhysicalFileSystem(),
             new DispatcherClock(),
             new AvaloniaUiDispatcher(),
-            new AvaloniaClipboard(mainWindow),
+            clipboard,
             new WindowsShellService(),
             new FileSystemWatcherFactory(),
-            new LoggingDialogService(log),
+            new WindowDialogService(() => mainWindow() as Window, clipboard),
             new AvaloniaThemeHost(Application.Current ?? throw new InvalidOperationException("No Avalonia application.")),
             new AvaloniaEditTextBufferFactory());
     }

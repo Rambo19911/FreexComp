@@ -12,6 +12,7 @@ using FreexComp.Ide.Input;
 using FreexComp.Ide.Platform;
 using FreexComp.Ide.TestSupport;
 using FreexComp.Ide.Text;
+using FreexComp.Ide.Views;
 using CoreGesture = FreexComp.Ide.Core.Commands.KeyGesture;
 
 namespace FreexComp.Ide.Tests.Infrastructure;
@@ -56,6 +57,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
     private readonly RecordingLog _log;
     private readonly ManualFileWatcherFactory _watchers;
     private readonly List<string> _unhandled = [];
+    private MainWindow? _window;
     private bool _errorExpected;
     private bool _disposed;
 
@@ -71,7 +73,8 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
         FileSystem = new RecordingFileSystem(new PhysicalFileSystem());
         Clock = new ManualClock(DateTimeOffset.Now);
-        Messages = new MessageScript();
+        var clipboard = new FakeClipboard();
+        Messages = new MessageScript(new WindowDialogService(() => _window, clipboard));
         _log = new RecordingLog();
         _watchers = new ManualFileWatcherFactory();
 
@@ -82,6 +85,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.Clock = Clock;
             o.Dispatcher = new AvaloniaUiDispatcher();
             o.Dialogs = Messages;
+            o.Clipboard = clipboard;
             o.Log = _log;
             o.FileWatchers = _watchers;
             o.UserDir = UserDir;
@@ -92,7 +96,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
         });
 
         Status = new StatusBarDriver(this);
-        Window = CompositionRoot.CreateMainWindow(Services);
+        Window = _window = CompositionRoot.CreateMainWindow(Services);
         Window.Width = options.WindowSize.Width;
         Window.Height = options.WindowSize.Height;
         Window.Show();
@@ -244,6 +248,15 @@ public sealed class HeadlessHarness : IAsyncDisposable
         }
     }
 
+    /// <summary>Waits until the dialog <c>Dialog.&lt;dialogName&gt;</c> is open over the main window (IDE-TEST-016).</summary>
+    public async Task<DialogDriver> WaitForDialogAsync(string dialogName)
+    {
+        var id = AutomationIds.Dialog(dialogName);
+        DialogWindow? Open() => Window.OwnedWindows.OfType<DialogWindow>().LastOrDefault(w => w.IsVisible && !w.Model.IsClosed && AutomationIds.Get(w) == id);
+        await WaitForAsync(() => Open() is not null, $"dialog {dialogName} open");
+        return new DialogDriver(Open()!, dialogName);
+    }
+
     /// <summary>The test expects an Error log line; dispose then does not fail on it.</summary>
     public void ExpectLoggedError() => _errorExpected = true;
 
@@ -286,6 +299,11 @@ public sealed class HeadlessHarness : IAsyncDisposable
         finally
         {
             Dispatcher.UIThread.UnhandledException -= OnUnhandledException;
+            foreach (var dialog in Window.OwnedWindows.ToList())
+            {
+                dialog.Close(); // a dialog window closes through its Cancel (UI-DLG-004)
+            }
+
             Window.Close();
             Dispatcher.UIThread.RunJobs();
             DeleteRoot();

@@ -2565,4 +2565,188 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Dismiss</value>
     <comment>UI-ED-090/095: automation name and tooltip of an info bar's close (×) button</comment>
   </data>
+  <data name="Button_Continue" xml:space="preserve">
+    <value>Continue</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_CopyDetails" xml:space="preserve">
+    <value>Copy Details</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Save" xml:space="preserve">
+    <value>Save</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_DontSave" xml:space="preserve">
+    <value>Don't Save</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_SaveSelected" xml:space="preserve">
+    <value>Save Selected</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Retry" xml:space="preserve">
+    <value>Retry</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_SaveAs" xml:space="preserve">
+    <value>Save As…</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_OK" xml:space="preserve">
+    <value>OK</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Remove" xml:space="preserve">
+    <value>Remove</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Keep" xml:space="preserve">
+    <value>Keep</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Open" xml:space="preserve">
+    <value>Open</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Replace" xml:space="preserve">
+    <value>Replace</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_SaveAsUTF8" xml:space="preserve">
+    <value>Save as UTF-8</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Revert" xml:space="preserve">
+    <value>Revert</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_OpenAsText" xml:space="preserve">
+    <value>Open as Text</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Delete" xml:space="preserve">
+    <value>Delete</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Reload" xml:space="preserve">
+    <value>Reload</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_OpenOptions" xml:space="preserve">
+    <value>Open Options</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_StopAndBuild" xml:space="preserve">
+    <value>Stop and Build</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_RunLastBuild" xml:space="preserve">
+    <value>Run Last Build</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_RunParameters" xml:space="preserve">
+    <value>Run Parameters…</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Restart" xml:space="preserve">
+    <value>Restart</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_StopAndExit" xml:space="preserve">
+    <value>Stop and Exit</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_StopAndClose" xml:space="preserve">
+    <value>Stop and Close</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_RunWithoutDebugging" xml:space="preserve">
+    <value>Run Without Debugging</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_RunAnyway" xml:space="preserve">
+    <value>Run Anyway</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_ProjectOptions" xml:space="preserve">
+    <value>Project Options…</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Break" xml:space="preserve">
+    <value>Break</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Button_Reset" xml:space="preserve">
+    <value>Reset</value>
+    <comment>UI-DLG-024: message-box button</comment>
+  </data>
+  <data name="Msg_File_SaveChangesOne_Title" xml:space="preserve">
+    <value>Save Changes</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_File_SaveChangesMany_Title" xml:space="preserve">
+    <value>Save Changes</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_Project_RemoveFileConfirm_Title" xml:space="preserve">
+    <value>Remove from Project</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_Project_RemoveFilesConfirm_Title" xml:space="preserve">
+    <value>Remove from Project</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_Project_DeleteFileConfirm_Title" xml:space="preserve">
+    <value>Delete File</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_File_RevertConfirm_Title" xml:space="preserve">
+    <value>Revert File</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_Run_BuildFailedRunPrevious_Title" xml:space="preserve">
+    <value>Run</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_Run_StopOnExit_Title" xml:space="preserve">
+    <value>Stop Program</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_Run_StopOnClose_Title" xml:space="preserve">
+    <value>Stop Program</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_Options_ResetKeysConfirm_Title" xml:space="preserve">
+    <value>Reset</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="Msg_Options_ResetColorsConfirm_Title" xml:space="preserve">
+    <value>Reset</value>
+    <comment>UI-DLG-023: message-box title</comment>
+  </data>
+  <data name="MessageBox_Kind_Question" xml:space="preserve">
+    <value>Question</value>
+    <comment>UI-DLG-022 / dialogs.md §24.2: automation name of Dialog.Message.Icon</comment>
+  </data>
+  <data name="MessageBox_Kind_Info" xml:space="preserve">
+    <value>Information</value>
+    <comment>UI-DLG-022 / dialogs.md §24.2: automation name of Dialog.Message.Icon</comment>
+  </data>
+  <data name="MessageBox_Kind_Warning" xml:space="preserve">
+    <value>Warning</value>
+    <comment>UI-DLG-022 / dialogs.md §24.2: automation name of Dialog.Message.Icon</comment>
+  </data>
+  <data name="MessageBox_Kind_Error" xml:space="preserve">
+    <value>Error</value>
+    <comment>UI-DLG-022 / dialogs.md §24.2: automation name of Dialog.Message.Icon</comment>
+  </data>
+  <data name="MessageBox_Details" xml:space="preserve">
+    <value>Details</value>
+    <comment>UI-DLG-025: header of the Details expander</comment>
+  </data>
 </root>
