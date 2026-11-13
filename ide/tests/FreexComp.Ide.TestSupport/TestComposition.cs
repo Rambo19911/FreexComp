@@ -3,6 +3,7 @@ using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.ToolWindows;
 
 namespace FreexComp.Ide.TestSupport;
 
@@ -29,6 +30,9 @@ public sealed class TestCompositionOptions
 
     /// <summary>Command-line arguments other than <c>--user-dir</c>.</summary>
     public List<string> Arguments { get; } = [];
+
+    /// <summary>Tool windows registered after the production ones, in order (IDE-ARCH-100).</summary>
+    public List<ToolWindowDefinition> ToolWindows { get; } = [];
 }
 
 /// <summary>Builds the production service graph from fakes (IDE-ARCH-013, IDE-TEST-020).</summary>
@@ -55,6 +59,12 @@ public static class TestComposition
             o.Dialogs,
             o.ThemeHost);
 
-        return ServiceGraph.Build(options, platform);
+        var services = ServiceGraph.Build(options, platform);
+        foreach (var definition in o.ToolWindows)
+        {
+            services.ToolWindows.Register(definition);
+        }
+
+        return services;
     }
 }

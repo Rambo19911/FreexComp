@@ -3,7 +3,6 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Dock.Model.Controls;
 using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Views;
@@ -12,8 +11,7 @@ namespace FreexComp.Ide.Views;
 /// Regions 4–7 of the main window (main-window.md §1): left dock, document area over the bottom dock, right dock with
 /// an upper and a lower group, splitters between them (UI-WIN-001). Collapsed docks take no space and hide their
 /// splitter (UI-WIN-004); dock sizes follow the profile and are squeezed per UI-WIN-060 when space is short.
-/// The fixed structure is the Dock model of <see cref="IdeDockFactory"/> (<see cref="DockModel"/>); it is drawn here
-/// because the pinned Dock version ships no control templates of its own.
+/// The docks are fixed in Phases 1–7 (UI-WIN-003), so the structure is drawn here directly; no docking library.
 /// </summary>
 public sealed class LayoutView : Grid
 {
@@ -67,8 +65,6 @@ public sealed class LayoutView : Grid
         SizeChanged += (_, _) => ApplySizes();
     }
 
-    /// <summary>The Dock model of the layout (UI-WIN-006), kept in step with the tool groups.</summary>
-    public IRootDock DockModel { get; private set; } = new IdeDockFactory().CreateRootDock();
 
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -91,7 +87,6 @@ public sealed class LayoutView : Grid
             group.PropertyChanged += OnModelChanged;
         }
 
-        DockModel = new IdeDockFactory().Build(model);
         _left.DataContext = model.Left;
         _bottom.DataContext = model.Bottom;
         _rightUpper.DataContext = model.RightUpper;
@@ -100,7 +95,15 @@ public sealed class LayoutView : Grid
         ApplySizes();
     }
 
-    private void OnModelChanged(object? sender, PropertyChangedEventArgs e) => ApplySizes();
+    private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(LayoutViewModel.DocumentArea))
+        {
+            _documents.Content = _model?.DocumentArea;
+        }
+
+        ApplySizes();
+    }
 
     private void ApplySizes()
     {

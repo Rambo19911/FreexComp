@@ -2,6 +2,7 @@ using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.ToolWindows;
 
 namespace FreexComp.Ide.Core.Composition;
 
@@ -35,6 +36,7 @@ public static class ServiceGraph
             commands.RegisterHandler(definition.Id, new FocusCommandHandler(definition.Id, focus)); // commands.md §3
         }
 
+        var toolWindows = new ToolWindowService(commands, focus, platform.Clock, ImplementedPhase); // tool windows register here (IDE-ARCH-100)
         theme.RegisterCommands(commands);
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
@@ -58,6 +60,7 @@ public static class ServiceGraph
             Status = status,
             Commands = commands,
             FocusTracker = focus,
+            ToolWindows = toolWindows,
         };
     }
 }

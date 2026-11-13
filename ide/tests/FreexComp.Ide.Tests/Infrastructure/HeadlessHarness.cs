@@ -29,6 +29,9 @@ public sealed class HarnessOptions
 
     public Size WindowSize { get; set; } = new(1440, 900); // IDE-TEST-018
 
+    /// <summary>Extra tool windows, registered before the main window is created (IDE-ARCH-100).</summary>
+    public List<Core.ToolWindows.ToolWindowDefinition> ToolWindows { get; } = [];
+
     public double Scale { get; set; } = 1.0;
 }
 
@@ -80,6 +83,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.UserDir = UserDir;
             o.ThemeHost = new AvaloniaThemeHost(Application.Current!);
             o.Arguments.AddRange(options.CommandLineArgs);
+            o.ToolWindows.AddRange(options.ToolWindows);
         });
 
         Window = CompositionRoot.CreateMainWindow(Services);

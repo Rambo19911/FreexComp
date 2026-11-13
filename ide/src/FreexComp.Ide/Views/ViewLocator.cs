@@ -24,11 +24,22 @@ public sealed class ViewLocator : IDataTemplate
             return null;
         }
 
-        var viewType = typeof(ViewLocator).Assembly.GetType($"{typeof(ViewLocator).Namespace}.{name[..^Suffix.Length]}View");
+        var viewName = name[..^Suffix.Length] + "View";
+        var viewType = typeof(ViewLocator).Assembly.GetType($"{typeof(ViewLocator).Namespace}.{viewName}")
+            ?? SiblingView(viewModelType, viewName);
         return viewType is not null && typeof(Control).IsAssignableFrom(viewType) && viewType.GetConstructor(Type.EmptyTypes) is not null
             ? viewType
             : null;
     }
+
+    /// <summary>
+    /// A view-model outside the IDE's own assemblies (a later feature or a test, IDE-ARCH-100) brings its view in its own
+    /// assembly: namespace <c>X.ViewModels</c> → <c>X.Views</c>.
+    /// </summary>
+    private static Type? SiblingView(Type viewModelType, string viewName) =>
+        viewModelType.Namespace is { } ns && ns.EndsWith(".ViewModels", StringComparison.Ordinal)
+            ? viewModelType.Assembly.GetType($"{ns[..^".ViewModels".Length]}.Views.{viewName}")
+            : null;
 
     public bool Match(object? data) => data is ObservableObject && data.GetType().Name.EndsWith(Suffix, StringComparison.Ordinal);
 

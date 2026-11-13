@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -10,13 +10,13 @@ namespace FreexComp.Ide.Views;
 
 /// <summary>
 /// One fixed tool group (UI-TW-001/003): the active tool window above, the dock's tab strip at the bottom, shown even
-/// for a single tool window. Tool-window content, caption and titles arrive with the tool-window service (I-023);
-/// until then a tab shows the tool window's name.
+/// for a single tool window. Each tool window keeps one <see cref="ToolWindowFrame"/> while the group lives.
 /// </summary>
 public sealed class ToolGroupView : DockPanel
 {
     private readonly StackPanel _tabs = new() { Orientation = Orientation.Horizontal };
     private readonly Border _content = new();
+    private readonly Dictionary<ToolWindowViewModel, ToolWindowFrame> _frames = [];
     private ToolGroupViewModel? _model;
 
     public ToolGroupView()
@@ -46,19 +46,34 @@ public sealed class ToolGroupView : DockPanel
         _tabs.Children.Clear();
         if (_model is not { } model)
         {
+            _content.Child = null;
             return;
         }
 
-        foreach (var tool in model.Tools)
+        foreach (var window in model.Windows)
         {
-            _tabs.Children.Add(CreateTab(model, tool, tool == model.ActiveTool));
+            _tabs.Children.Add(CreateTab(model, window, window == model.ActiveWindow));
         }
+
+        _content.Child = model.ActiveWindow is { } active ? FrameOf(active) : null;
+    }
+
+    private ToolWindowFrame FrameOf(ToolWindowViewModel window)
+    {
+        if (!_frames.TryGetValue(window, out var frame))
+        {
+            frame = new ToolWindowFrame(window);
+            _frames[window] = frame;
+        }
+
+        return frame;
     }
 
     /// <summary>Text-only tab; the active one has <c>bg.panel</c>, <c>text.primary</c> and a 2 px accent line at its bottom.</summary>
-    private static Button CreateTab(ToolGroupViewModel model, string tool, bool active)
+    private static Button CreateTab(ToolGroupViewModel model, ToolWindowViewModel window, bool active)
     {
-        var text = new TextBlock { Text = tool, Classes = { "caption" }, VerticalAlignment = VerticalAlignment.Center };
+        var tool = window.Name;
+        var text = new TextBlock { Text = window.Title, Classes = { "caption" }, VerticalAlignment = VerticalAlignment.Center };
         text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(active ? "FxcTextPrimaryBrush" : "FxcTextSecondaryBrush"));
         var tab = new Button
         {
@@ -72,7 +87,7 @@ public sealed class ToolGroupView : DockPanel
         tab.Bind(Button.BackgroundProperty, tab.GetResourceObservable(active ? "FxcBgPanelBrush" : "FxcBgSunkenBrush"));
         tab.Bind(Button.BorderBrushProperty, tab.GetResourceObservable("FxcAccentDefaultBrush"));
         AutomationProperties.SetAutomationId(tab, AutomationIds.ToolTab(tool));
-        AutomationProperties.SetName(tab, tool);
+        AutomationProperties.SetName(tab, window.Title);
         tab.Click += (_, _) => model.Activate(tool);
         return tab;
     }

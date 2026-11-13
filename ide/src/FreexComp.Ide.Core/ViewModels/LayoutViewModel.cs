@@ -7,19 +7,19 @@ namespace FreexComp.Ide.Core.ViewModels;
 /// Regions 4–7 of the main window (main-window.md §1–§2): the document area and the four fixed tool groups, arranged
 /// by the active profile of <see cref="State"/>. A profile silently skips tool windows that are not registered
 /// (UI-WIN-011); a group without visible tool windows is collapsed (UI-WIN-004) and keeps its size for when it returns.
+/// Owned by the tool-window service, which resolves names to view-models (null = not registered).
 /// </summary>
 public sealed class LayoutViewModel : ObservableObject
 {
-    private readonly Func<string, bool> _isRegistered;
+    private readonly Func<string, ToolWindowViewModel?> _resolve;
+    private object? _documentArea;
 
-    public LayoutViewModel(LayoutState state, Func<string, bool> isRegistered, object documentArea)
+    public LayoutViewModel(LayoutState state, Func<string, ToolWindowViewModel?> resolve)
     {
         ArgumentNullException.ThrowIfNull(state);
-        ArgumentNullException.ThrowIfNull(isRegistered);
-        ArgumentNullException.ThrowIfNull(documentArea);
+        ArgumentNullException.ThrowIfNull(resolve);
         State = state;
-        _isRegistered = isRegistered;
-        DocumentArea = documentArea;
+        _resolve = resolve;
         Left = new ToolGroupViewModel(this, ToolGroupId.Left);
         RightUpper = new ToolGroupViewModel(this, ToolGroupId.RightUpper);
         RightLower = new ToolGroupViewModel(this, ToolGroupId.RightLower);
@@ -40,8 +40,12 @@ public sealed class LayoutViewModel : ObservableObject
 
     public LayoutState State { get; }
 
-    /// <summary>Region 5 (UI-WIN-002): always present.</summary>
-    public object DocumentArea { get; }
+    /// <summary>Region 5 (UI-WIN-002): always present; set by the main window's view-model.</summary>
+    public object? DocumentArea
+    {
+        get => _documentArea;
+        set => SetProperty(ref _documentArea, value);
+    }
 
     public string ActiveProfile => State.ActiveProfile;
 
@@ -127,15 +131,27 @@ public sealed class LayoutViewModel : ObservableObject
         return false;
     }
 
+    /// <summary>
+    /// UI-WIN-013: adds <paramref name="tool"/>, which the active profile does not place, at the end of
+    /// <paramref name="home"/> in that profile, visible and active.
+    /// </summary>
+    public void Place(string tool, ToolGroupId home)
+    {
+        var group = Profile.Group(home);
+        group.Tools.Add(tool);
+        group.Active = tool;
+        Refresh();
+    }
+
     /// <summary>Recomputes every group from the profile, e.g. after a tool window was registered.</summary>
     public void Refresh()
     {
         foreach (var group in Groups)
         {
             var layout = Profile.Group(group.Id);
-            var tools = layout.Tools.Where(_isRegistered).ToList();
-            var active = layout.Active is { } a && tools.Contains(a, StringComparer.Ordinal) ? a : tools.FirstOrDefault();
-            group.Update(tools, active);
+            var windows = layout.Tools.Select(_resolve).OfType<ToolWindowViewModel>().ToList();
+            var active = windows.FirstOrDefault(w => w.Name == layout.Active) ?? windows.FirstOrDefault();
+            group.Update(windows, active);
         }
     }
 

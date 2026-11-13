@@ -3,12 +3,11 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Dock.Model.Controls;
-using Dock.Model.Core;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
+using FreexComp.Ide.Tests.Fixtures.ViewModels;
 using FreexComp.Ide.Tests.Infrastructure;
 using FreexComp.Ide.Views;
 
@@ -22,7 +21,6 @@ public sealed class LayoutTests
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Category", "Spec")]
-    [Trait("Req", "UI-WIN-006")]
     [Trait("Req", "UI-WIN-010")]
     [Trait("Req", "UI-WIN-011")]
     public async Task EditProfileDefaultArrangement()
@@ -40,7 +38,7 @@ public sealed class LayoutTests
         // Phase 1: only the P1 tool windows are registered; the profile skips the others (UI-WIN-011).
         var phase1 = rows.Where(r => r["First phase"] == "P1").Select(r => ToolName(r["Tool window"])).ToHashSet();
         Assert.Equal(["ProjectManager"], phase1);
-        var (window, view, layout) = Show(phase1);
+        var (window, _, layout) = Show(phase1);
         try
         {
             Assert.Equal(LayoutProfiles.Edit, layout.ActiveProfile);
@@ -55,28 +53,6 @@ public sealed class LayoutTests
             Assert.Equal(1440 - 260 - Splitter, documents.Bounds.Width);
             Assert.Equal(900, documents.Bounds.Height);
 
-            // UI-WIN-006: the Dock model built by IdeDockFactory — fixed docks, nothing floats, drags or pins.
-            var root = Assert.IsAssignableFrom<IProportionalDock>(Assert.Single(view.DockModel.VisibleDockables!));
-            Assert.Equal(Orientation.Horizontal, root.Orientation);
-            Assert.Equal(
-                ["Dock.Left", "Splitter", "Center", "Splitter", "Dock.Right"],
-                root.VisibleDockables!.Select(d => d is IProportionalDockSplitter ? "Splitter" : d.Id));
-            var center = Assert.IsAssignableFrom<IProportionalDock>(root.VisibleDockables![2]);
-            Assert.Equal(Orientation.Vertical, center.Orientation);
-            Assert.IsAssignableFrom<IDocumentDock>(center.VisibleDockables![0]);
-            Assert.Equal("Dock.Bottom", Assert.IsAssignableFrom<IToolDock>(center.VisibleDockables![2]).Id);
-            var right = Assert.IsAssignableFrom<IProportionalDock>(root.VisibleDockables![4]);
-            Assert.Equal(["Dock.Right.Upper", "Splitter", "Dock.Right.Lower"], right.VisibleDockables!.Select(d => d is IProportionalDockSplitter ? "Splitter" : d.Id));
-            var leftDock = Assert.IsAssignableFrom<IToolDock>(root.VisibleDockables![0]);
-            var tool = Assert.Single(leftDock.VisibleDockables!);
-            Assert.Equal("ProjectManager", tool.Id);
-            Assert.Same(tool, leftDock.ActiveDockable);
-            foreach (var dockable in All(view.DockModel))
-            {
-                Assert.False(dockable.CanFloat || dockable.CanDrag || dockable.CanDrop || dockable.CanPin, dockable.Id);
-            }
-
-            Assert.True(tool.CanClose); // close = hide
         }
         finally
         {
@@ -98,19 +74,17 @@ public sealed class LayoutTests
             Assert.Equal(1440, h.Find<Control>(AutomationIds.DocumentArea).Bounds.Width);
         }
 
-        var (window, view, layout) = Show(new HashSet<string>(["ProjectManager", "Messages"], StringComparer.Ordinal));
+        var (window, _, layout) = Show(new HashSet<string>(["ProjectManager", "Messages"], StringComparer.Ordinal));
         try
         {
             var documents = Find(window, AutomationIds.DocumentArea);
             Assert.Equal(200, Find(window, "Dock.Bottom").Bounds.Height);
             Assert.Equal(900 - 200 - Splitter, documents.Bounds.Height);
-            Assert.Equal(["Messages"], view.DockModel.VisibleDockables!.OfType<IDock>().SelectMany(Docks).Single(d => d.Id == "Dock.Bottom").VisibleDockables!.Select(d => d.Id));
 
             Assert.True(layout.SetVisible("Messages", false)); // last visible tool of the bottom dock
             Dispatcher.UIThread.RunJobs();
             Assert.False(Find(window, "Dock.Bottom").IsVisible);
             Assert.Equal(900, documents.Bounds.Height); // the document area takes the space, splitter included
-            Assert.Empty(view.DockModel.VisibleDockables!.OfType<IDock>().SelectMany(Docks).Single(d => d.Id == "Dock.Bottom").VisibleDockables!);
 
             layout.LeftSize = 300;
             Assert.True(layout.SetVisible("ProjectManager", false));
@@ -134,10 +108,13 @@ public sealed class LayoutTests
         }
     }
 
+    /// <summary>The layout of a composition where exactly <paramref name="registered"/> tool windows exist (in their Edit-profile docks).</summary>
     private static (Window Window, LayoutView View, LayoutViewModel Layout) Show(IReadOnlySet<string> registered)
     {
-        var services = TestComposition.Build();
-        var layout = new LayoutViewModel(LayoutState.CreateDefault(), registered.Contains, new DocumentAreaViewModel(services.Commands, services.Keymap));
+        var services = TestComposition.Build(o => o.ToolWindows.AddRange(
+            registered.Select(name => SampleToolViewModel.Definition(name, name == "ProjectManager" ? ToolGroupId.Left : ToolGroupId.Bottom))));
+        var layout = services.ToolWindows.Layout;
+        layout.DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap);
         var view = new LayoutView { DataContext = layout };
         var window = new Window { Width = 1440, Height = 900, Content = view };
         window.Show();
@@ -150,12 +127,6 @@ public sealed class LayoutTests
 
     private static List<string> Ids(Window window, string prefix) =>
         [.. window.GetVisualDescendants().OfType<Control>().Select(c => AutomationIds.Get(c)).OfType<string>().Where(id => id.StartsWith(prefix, StringComparison.Ordinal))];
-
-    private static IEnumerable<IDock> Docks(IDock dock) =>
-        new[] { dock }.Concat(dock.VisibleDockables?.OfType<IDock>().SelectMany(Docks) ?? []);
-
-    private static IEnumerable<IDockable> All(IDockable dockable) =>
-        new[] { dockable }.Concat(dockable is IDock { VisibleDockables: { } children } ? children.SelectMany(All) : []);
 
     private static string ToolName(string display) => display.Replace(" ", "", StringComparison.Ordinal).Replace("-", "", StringComparison.Ordinal);
 

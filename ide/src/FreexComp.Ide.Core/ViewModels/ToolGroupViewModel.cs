@@ -4,14 +4,14 @@ using FreexComp.Ide.Core.Models;
 namespace FreexComp.Ide.Core.ViewModels;
 
 /// <summary>
-/// One fixed tool group (a dock, or a half of the right dock): its visible tabs in profile order and the active tab.
-/// Empty = collapsed (UI-WIN-004). Maintained by <see cref="LayoutViewModel"/>.
+/// One fixed tool group (a dock, or a half of the right dock): its visible tool windows in profile order and the active
+/// tab. Empty = collapsed (UI-WIN-004). Maintained by <see cref="LayoutViewModel"/>.
 /// </summary>
 public sealed class ToolGroupViewModel : ObservableObject
 {
     private readonly LayoutViewModel _owner;
-    private IReadOnlyList<string> _tools = [];
-    private string? _activeTool;
+    private IReadOnlyList<ToolWindowViewModel> _windows = [];
+    private ToolWindowViewModel? _activeWindow;
 
     internal ToolGroupViewModel(LayoutViewModel owner, ToolGroupId id)
     {
@@ -21,37 +21,49 @@ public sealed class ToolGroupViewModel : ObservableObject
 
     public ToolGroupId Id { get; }
 
-    /// <summary>Visible, registered tool windows, left to right.</summary>
-    public IReadOnlyList<string> Tools
+    /// <summary>Visible, registered tool windows, left to right (the tabs).</summary>
+    public IReadOnlyList<ToolWindowViewModel> Windows
     {
-        get => _tools;
+        get => _windows;
         private set
         {
-            if (SetProperty(ref _tools, value))
+            if (SetProperty(ref _windows, value))
             {
+                OnPropertyChanged(nameof(Tools));
                 OnPropertyChanged(nameof(IsCollapsed));
             }
         }
     }
 
-    public string? ActiveTool
+    /// <summary>Names of <see cref="Windows"/>.</summary>
+    public IReadOnlyList<string> Tools => [.. _windows.Select(w => w.Name)];
+
+    public ToolWindowViewModel? ActiveWindow
     {
-        get => _activeTool;
-        private set => SetProperty(ref _activeTool, value);
+        get => _activeWindow;
+        private set
+        {
+            if (SetProperty(ref _activeWindow, value))
+            {
+                OnPropertyChanged(nameof(ActiveTool));
+            }
+        }
     }
 
-    public bool IsCollapsed => Tools.Count == 0;
+    public string? ActiveTool => _activeWindow?.Name;
+
+    public bool IsCollapsed => _windows.Count == 0;
 
     /// <summary>Selects the tab of <paramref name="tool"/> (a tab click); false when it is not shown in this group.</summary>
     public bool Activate(string tool) => _owner.Activate(Id, tool);
 
-    internal void Update(IReadOnlyList<string> tools, string? active)
+    internal void Update(IReadOnlyList<ToolWindowViewModel> windows, ToolWindowViewModel? active)
     {
-        if (!tools.SequenceEqual(_tools, StringComparer.Ordinal))
+        if (!windows.SequenceEqual(_windows))
         {
-            Tools = tools;
+            Windows = windows;
         }
 
-        ActiveTool = active;
+        ActiveWindow = active;
     }
 }

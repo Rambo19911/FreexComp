@@ -2,7 +2,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Menus;
-using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Resources;
 
 namespace FreexComp.Ide.Core.ViewModels;
@@ -20,7 +19,8 @@ public sealed class MainWindowViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(services);
         _services = services;
         DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap);
-        Layout = new LayoutViewModel(LayoutState.CreateDefault(), static _ => false, DocumentArea); // tool-window registry: I-023
+        Layout = services.ToolWindows.Layout;
+        Layout.DocumentArea = DocumentArea;
         MainMenu = MainMenuModel.Build(services.Commands);
         ToolBars = ToolBarRowModel.Build(services.Commands, services.Settings, ServiceGraph.ImplementedPhase);
         ToolBarContextMenu = ToolBarRowModel.BuildContextMenu(services.Commands);

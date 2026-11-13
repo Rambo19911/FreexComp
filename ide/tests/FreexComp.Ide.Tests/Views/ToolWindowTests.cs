@@ -1,0 +1,103 @@
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
+using FreexComp.Ide.Core.Models;
+using FreexComp.Ide.Tests.Fixtures.ViewModels;
+using FreexComp.Ide.Tests.Infrastructure;
+
+namespace FreexComp.Ide.Tests.Views;
+
+[Trait("Phase", "1")]
+[Trait("Kind", "Ui")]
+public sealed class ToolWindowTests
+{
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-007")]
+    [Trait("Req", "UI-TW-002")]
+    public async Task ShowCommandFocusesPrimaryControl()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom)));
+        var tools = h.Services.ToolWindows;
+        Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible); // Messages is in the Edit profile
+        Assert.True(tools.Hide("Messages"));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+
+        h.Press("Alt+5"); // view.messages
+
+        Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+        Assert.Equal("Messages", tools.Layout.Bottom.ActiveTool);
+        Assert.Equal("Tool.Messages.List", h.FocusedAutomationId);
+        Assert.Equal("Messages", h.Services.FocusTracker.Current.ToolWindowName);
+        Assert.True(tools.Get("Messages")!.IsActive); // caption shows the focused state
+        Assert.Equal("MESSAGES", h.Find<TextBlock>("Tool.Messages.Caption").Text);
+        Assert.Equal("Messages", AutomationProperties.GetName(h.Find<Button>("ToolTab.Messages")));
+
+        h.Press("Shift+Escape"); // window.closeToolWindow hides the active tool window
+        Assert.False(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-007")]
+    [Trait("Req", "UI-WIN-016")]
+    public async Task ProgrammaticActivationKeepsFocus()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom));
+            o.ToolWindows.Add(SampleToolViewModel.Definition("Output", ToolGroupId.Bottom, titleKey: "Cmd_view_output"));
+        });
+        var tools = h.Services.ToolWindows;
+        var plain = new Border { Focusable = true, Width = 20, Height = 10 };
+        AutomationProperties.SetAutomationId(plain, "StatusBar.TestPlain");
+        h.Find<Panel>(AutomationIds.StatusBar).Children.Add(plain);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(plain.Focus());
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Messages", tools.Layout.Bottom.ActiveTool);
+
+        Assert.True(tools.Show("Output", focus: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Output", tools.Layout.Bottom.ActiveTool);
+        Assert.Equal("StatusBar.TestPlain", h.FocusedAutomationId);
+
+        tools.Hide("Messages");
+        tools.Hide("Output");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+
+        Assert.True(tools.Show("Messages", focus: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+        Assert.Equal("Messages", tools.Layout.Bottom.ActiveTool);
+        Assert.Equal("StatusBar.TestPlain", h.FocusedAutomationId);
+        Assert.False(tools.Get("Messages")!.IsActive);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-006")]
+    [Trait("Req", "UI-WIN-011")]
+    public async Task LaterPhaseWindowsAreNotRegistered()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.ToolWindows.Add(SampleToolViewModel.Definition("ProjectManager", ToolGroupId.Left, phase: 1, titleKey: "Cmd_view_projectManager"));
+            o.ToolWindows.Add(SampleToolViewModel.Definition("Structure", ToolGroupId.Left, phase: 3, titleKey: "Cmd_view_structure"));
+        });
+        var tools = h.Services.ToolWindows;
+
+        Assert.True(tools.IsRegistered("ProjectManager"));
+        Assert.False(tools.IsRegistered("Structure"));
+        Assert.Null(tools.Get("Structure"));
+        Assert.Equal(["ToolTab.ProjectManager"], h.FindAll("ToolTab.").Select(c => AutomationIds.Get(c)));
+        Assert.False(tools.Show("Structure", focus: true));
+        Assert.True(h.Services.Commands.CanExecute("view.projectManager"));
+        Assert.False(h.Services.Commands.CanExecute("view.structure"));
+
+        var view = h.Find<Menu>(AutomationIds.MenuBar).Items.Cast<MenuItem>().Single(m => AutomationIds.Get(m) == AutomationIds.TopMenu("View"));
+        var structure = view.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == AutomationIds.Menu("view.structure"));
+        Assert.True(structure.IsVisible);
+        Assert.False(structure.IsEnabled && structure.Command!.CanExecute(null)); // visible and disabled (UI-MENU-004)
+    }
+}

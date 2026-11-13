@@ -3,6 +3,7 @@ using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.ToolWindows;
 
 namespace FreexComp.Ide.Core.Composition;
 
@@ -33,4 +34,5 @@ public sealed record IdeServices
     public required IStatusService Status { get; init; }
     public required ICommandService Commands { get; init; }
     public required IFocusTracker FocusTracker { get; init; }
+    public required IToolWindowService ToolWindows { get; init; }
 }

@@ -2472,4 +2472,16 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>»</value>
     <comment>UI-TB-006: overflow button glyph</comment>
   </data>
+  <data name="ToolWindow_Hide" xml:space="preserve">
+    <value>Hide</value>
+    <comment>UI-TW-002: tooltip of the caption's Hide button, followed by " (shortcut)"</comment>
+  </data>
+  <data name="ToolWindow_FilterPlaceholder" xml:space="preserve">
+    <value>Filter</value>
+    <comment>UI-TW-008: placeholder of a tool window's filter box</comment>
+  </data>
+  <data name="ToolWindow_ClearFilter" xml:space="preserve">
+    <value>Clear filter</value>
+    <comment>UI-TW-008: automation name and tooltip of the filter box's clear (×) button</comment>
+  </data>
 </root>
