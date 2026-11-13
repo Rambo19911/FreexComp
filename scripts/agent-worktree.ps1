@@ -60,7 +60,9 @@ switch ($Action) {
     'land' {
         if (-not (Test-Path $wt)) { Fail "$wt does not exist" }
         if (-not (Clean $wt)) { Fail "$wt has uncommitted changes; commit them on $branch first" }
-        if (-not (Clean $repo)) { Fail "main checkout has uncommitted changes" }
+        # Uncommitted files in the main checkout are allowed: git refuses the fast-forward itself if any of them
+        # would be overwritten by the landed commits.
+        if (-not (Clean $repo)) { Write-Host "[warn] main checkout has uncommitted changes; landing only if git can fast-forward around them" }
         $cur = (Invoke-Git @('rev-parse', '--abbrev-ref', 'HEAD')) | Out-String
         if ($cur.Trim() -ne 'main') { Fail "main checkout is on '$($cur.Trim())', not main" }
         Invoke-Git @('rebase', 'main') $wt | Out-Null
