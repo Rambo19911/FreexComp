@@ -196,6 +196,22 @@ public abstract class SyntaxVisitor<TResult>
     public virtual TResult VisitPropertySpecifier(PropertySpecifierSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitClassVarSection(ClassVarSectionSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitGenericName(GenericNameSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitTypeArgumentList(TypeArgumentListSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitTypeParameterList(TypeParameterListSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitTypeParameter(TypeParameterSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitKeywordConstraint(KeywordConstraintSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitAttributeList(AttributeListSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitAttribute(AttributeSyntax node) => DefaultVisit(node);
+
+    public virtual TResult VisitAnonymousMethodExpression(AnonymousMethodExpressionSyntax node) => DefaultVisit(node);
 }
 
 /// <summary>Depth-first walk over every node, token and trivia piece in source order.</summary>

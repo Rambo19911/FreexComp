@@ -6,7 +6,7 @@ namespace FreexComp.Compiler.Syntax;
 /// <summary><c>Expression . Name</c>: field, method, property or (binder decides) unit-qualified access (LANG-311, 313).</summary>
 public sealed class MemberAccessExpressionSyntax : ExpressionSyntax
 {
-    internal MemberAccessExpressionSyntax(ExpressionSyntax expression, SyntaxToken dotToken, IdentifierNameSyntax name)
+    internal MemberAccessExpressionSyntax(ExpressionSyntax expression, SyntaxToken dotToken, SimpleNameSyntax name)
         : base(SyntaxKind.MemberAccessExpression)
     {
         Expression = Add(expression);
@@ -18,7 +18,7 @@ public sealed class MemberAccessExpressionSyntax : ExpressionSyntax
 
     public SyntaxToken DotToken { get; }
 
-    public IdentifierNameSyntax Name { get; }
+    public SimpleNameSyntax Name { get; }
 
     public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitMemberAccessExpression(this);
 }

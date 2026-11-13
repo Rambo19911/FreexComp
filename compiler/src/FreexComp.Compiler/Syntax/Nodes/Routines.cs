@@ -26,10 +26,12 @@ public sealed class ParameterListSyntax : SyntaxNode
 /// <summary><c>[ const | var | out ] identList [ : paramType [ = constExpr ] ]</c> (no type = untyped).</summary>
 public sealed class ParameterSyntax : SyntaxNode
 {
-    internal ParameterSyntax(SyntaxToken? modifier, SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken? colonToken,
+    internal ParameterSyntax(SyntaxList<AttributeListSyntax> attributes,
+                             SyntaxToken? modifier, SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken? colonToken,
                              TypeSyntax? type, SyntaxToken? equalsToken, ExpressionSyntax? defaultValue)
         : base(SyntaxKind.Parameter)
     {
+        Attributes = Add(attributes);
         Modifier = Add(modifier);
         Identifiers = Add(identifiers);
         ColonToken = Add(colonToken);
@@ -37,6 +39,9 @@ public sealed class ParameterSyntax : SyntaxNode
         EqualsToken = Add(equalsToken);
         DefaultValue = AddOptional(defaultValue);
     }
+
+    /// <summary>Attribute lists before the declaration (LANG-172).</summary>
+    public SyntaxList<AttributeListSyntax> Attributes { get; }
 
     /// <summary><c>const</c>, <c>var</c>, or an identifier with contextual kind <see cref="SyntaxKind.OutKeyword"/>.</summary>
     public SyntaxToken? Modifier { get; }
@@ -61,16 +66,21 @@ public sealed class ParameterSyntax : SyntaxNode
 /// </summary>
 public sealed class RoutineDeclarationSyntax : SyntaxNode
 {
-    internal RoutineDeclarationSyntax(RoutineHeadingSyntax heading, SyntaxToken? semicolonToken, SyntaxList<DirectiveSyntax> directives,
+    internal RoutineDeclarationSyntax(SyntaxList<AttributeListSyntax> attributes,
+                                      RoutineHeadingSyntax heading, SyntaxToken? semicolonToken, SyntaxList<DirectiveSyntax> directives,
                                       BlockSyntax? block, SyntaxToken? bodySemicolonToken)
         : base(SyntaxKind.RoutineDeclaration)
     {
+        Attributes = Add(attributes);
         Heading = Add(heading);
         SemicolonToken = Add(semicolonToken);
         Directives = Add(directives);
         Block = AddOptional(block);
         BodySemicolonToken = Add(bodySemicolonToken);
     }
+
+    /// <summary>Attribute lists before the declaration (LANG-172).</summary>
+    public SyntaxList<AttributeListSyntax> Attributes { get; }
 
     public RoutineHeadingSyntax Heading { get; }
 
@@ -93,13 +103,15 @@ public sealed class RoutineDeclarationSyntax : SyntaxNode
 /// </summary>
 public sealed class RoutineHeadingSyntax : SyntaxNode
 {
-    internal RoutineHeadingSyntax(SyntaxToken? classKeyword, SyntaxToken keyword, NameSyntax name, ParameterListSyntax? parameterList,
+    internal RoutineHeadingSyntax(SyntaxToken? classKeyword, SyntaxToken keyword, NameSyntax name, TypeParameterListSyntax? typeParameterList,
+                                  ParameterListSyntax? parameterList,
                                   SyntaxToken? colonToken, TypeSyntax? resultType)
         : base(SyntaxKind.RoutineHeading)
     {
         ClassKeyword = Add(classKeyword);
         Keyword = Add(keyword);
         Name = Add(name);
+        TypeParameterList = AddOptional(typeParameterList);
         ParameterList = AddOptional(parameterList);
         ColonToken = Add(colonToken);
         ResultType = AddOptional(resultType);
@@ -111,6 +123,9 @@ public sealed class RoutineHeadingSyntax : SyntaxNode
     public SyntaxToken Keyword { get; }
 
     public NameSyntax Name { get; }
+
+    /// <summary>Type parameters of a generic method (LANG-701), on the last name segment.</summary>
+    public TypeParameterListSyntax? TypeParameterList { get; }
 
     public ParameterListSyntax? ParameterList { get; }
 

@@ -16,7 +16,7 @@ internal sealed class Parser
     private const int MaxErrors = 100;
 
     private readonly SourceText _text;
-    private readonly ImmutableArray<SyntaxToken> _tokens;
+    private ImmutableArray<SyntaxToken> _tokens;   // not readonly: '>=' may be split (LANG-706)
     private readonly List<Diagnostic> _diagnostics = [];
     private readonly Dictionary<SourceText, List<SyntaxTrivia>> _skipped = new(ReferenceEqualityComparer.Instance);
     private int _position;
@@ -197,8 +197,9 @@ internal sealed class Parser
     }
 
     /// <summary>
-    /// <c>{ declSection }</c> / <c>{ interfaceDecl }</c>. Attribute lists are not parsed yet (C-019): other tokens are
-    /// skipped up to the next section or routine keyword or the end of the declaration part.
+    /// <c>{ declSection }</c> / <c>{ interfaceDecl }</c>. Attribute lists before a routine belong to it; before anything
+    /// else they stay stand-alone <see cref="AttributeListSyntax"/> entries (they apply to the next declaration, LANG-172).
+    /// Other tokens are skipped up to the next section or routine keyword or the end of the declaration part.
     /// </summary>
     private SyntaxList<SyntaxNode> ParseDeclarations(SectionKind section)
     {
@@ -222,12 +223,25 @@ internal sealed class Parser
                 case var _ when StartsRoutine():
                     declarations.Add(ParseRoutineDeclaration(hasBody: section != SectionKind.Interface));
                     break;
+                case SyntaxKind.OpenBracketToken:
+                    var attributes = ParseAttributeLists();
+                    if (StartsRoutine())
+                    {
+                        declarations.Add(ParseRoutineDeclaration(hasBody: section != SectionKind.Interface, attributes));
+                    }
+                    else
+                    {
+                        declarations.AddRange(attributes);
+                    }
+
+                    break;
                 default:
                     do
                     {
                         SkipToken();
                     }
-                    while (!EndsDeclarations(CurrentKind, section) && !StartsSection(CurrentKind) && !StartsRoutine());
+                    while (!EndsDeclarations(CurrentKind, section) && !StartsSection(CurrentKind) && !StartsRoutine()
+                           && CurrentKind != SyntaxKind.OpenBracketToken);
 
                     break;
             }
@@ -253,7 +267,7 @@ internal sealed class Parser
     /// <c>routineHeading ; { routineDirective ; } [ block ; ]</c>. The body is parsed when <paramref name="hasBody"/>
     /// (not in an interface section) and no <c>forward</c> / <c>external</c> directive is present.
     /// </summary>
-    private RoutineDeclarationSyntax ParseRoutineDeclaration(bool hasBody)
+    private RoutineDeclarationSyntax ParseRoutineDeclaration(bool hasBody, SyntaxList<AttributeListSyntax> attributes = default)
     {
         var heading = ParseRoutineHeading();
         SyntaxToken? semicolon = IsDirectiveStart() ? null : Expect(SyntaxKind.SemicolonToken);
@@ -265,23 +279,24 @@ internal sealed class Parser
 
         if (!hasBody || directives.Any(d => d.Keyword.ContextualKind is SyntaxKind.ForwardKeyword or SyntaxKind.ExternalKeyword))
         {
-            return new RoutineDeclarationSyntax(heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()), null, null);
+            return new RoutineDeclarationSyntax(attributes, heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()), null, null);
         }
 
         var block = ParseBlock();
-        return new RoutineDeclarationSyntax(heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()), block,
+        return new RoutineDeclarationSyntax(attributes, heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()), block,
             Expect(SyntaxKind.SemicolonToken));
     }
 
     /// <summary>
-    /// <c>[ class ] ( procedure | function | constructor | destructor | operator ) routineName [ formalParams ] [ : resultType ]</c>.
-    /// Generic parameter lists (C-019) are not parsed yet.
+    /// <c>[ class ] ( procedure | function | constructor | destructor | operator ) routineName [ genericParams ] [ formalParams ]
+    /// [ : resultType ]</c>.
     /// </summary>
     private RoutineHeadingSyntax ParseRoutineHeading()
     {
         var classKeyword = CurrentKind == SyntaxKind.ClassKeyword ? Take() : (SyntaxToken?)null;
         var keyword = IsRoutineKeyword(CurrentKind) ? Take() : TakeContextual();
-        var name = ParseQualifiedName();
+        var name = ParseRoutineName();
+        var typeParameters = CurrentKind == SyntaxKind.LessThanToken ? ParseTypeParameterList() : null;
         var parameters = CurrentKind == SyntaxKind.OpenParenToken ? ParseParameterList() : null;
         SyntaxToken? colon = null;
         TypeSyntax? result = null;
@@ -291,7 +306,7 @@ internal sealed class Parser
             result = ParseType();
         }
 
-        return new RoutineHeadingSyntax(classKeyword, keyword, name, parameters, colon, result);
+        return new RoutineHeadingSyntax(classKeyword, keyword, name, typeParameters, parameters, colon, result);
     }
 
     private static readonly FrozenSet<SyntaxKind> DirectiveKinds = new[]
@@ -406,7 +421,7 @@ internal sealed class Parser
         {
             declarations.Add(ParseConstDeclaration());
         }
-        while (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility());
+        while (StartsDeclarationName());
 
         return new ConstSectionSyntax(keyword, new SyntaxList<ConstDeclarationSyntax>(declarations.ToImmutable()));
     }
@@ -414,6 +429,7 @@ internal sealed class Parser
     /// <summary><c>ident = constExpr [ hints ] ;</c> or <c>ident : type = typedConst [ hints ] ;</c></summary>
     private ConstDeclarationSyntax ParseConstDeclaration()
     {
+        var attributes = ParseAttributeLists();
         var identifier = ExpectIdentifier();
         SyntaxToken? colon = null;
         TypeSyntax? type = null;
@@ -433,7 +449,7 @@ internal sealed class Parser
         }
 
         var hints = ParseHintDirectives();
-        return new ConstDeclarationSyntax(identifier, colon, type, equals, value, hints, Expect(SyntaxKind.SemicolonToken));
+        return new ConstDeclarationSyntax(attributes, identifier, colon, type, equals, value, hints, Expect(SyntaxKind.SemicolonToken));
     }
 
     /// <summary>
@@ -498,20 +514,22 @@ internal sealed class Parser
         {
             declarations.Add(ParseTypeDeclaration());
         }
-        while (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility());
+        while (StartsDeclarationName());
 
         return new TypeSectionSyntax(keyword, new SyntaxList<TypeDeclarationSyntax>(declarations.ToImmutable()));
     }
 
-    /// <summary><c>ident = [ type ] type [ hints ] ;</c></summary>
+    /// <summary><c>[ attributeList ] ident [ genericParams ] = [ type ] type [ hints ] ;</c></summary>
     private TypeDeclarationSyntax ParseTypeDeclaration()
     {
+        var attributes = ParseAttributeLists();
         var identifier = ExpectIdentifier();
+        var typeParameters = CurrentKind == SyntaxKind.LessThanToken ? ParseTypeParameterList() : null;
         var equals = Expect(SyntaxKind.EqualsToken);
         var typeKeyword = CurrentKind == SyntaxKind.TypeKeyword ? Take() : (SyntaxToken?)null;
         var type = ParseType();
         var hints = ParseHintDirectives();
-        return new TypeDeclarationSyntax(identifier, equals, typeKeyword, type, hints, Expect(SyntaxKind.SemicolonToken));
+        return new TypeDeclarationSyntax(attributes, identifier, typeParameters, equals, typeKeyword, type, hints, Expect(SyntaxKind.SemicolonToken));
     }
 
     /// <summary><c>( var | threadvar ) varDecl { varDecl }</c></summary>
@@ -523,7 +541,7 @@ internal sealed class Parser
         {
             declarations.Add(ParseVarDeclaration());
         }
-        while (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility());
+        while (StartsDeclarationName());
 
         return new VarSectionSyntax(keyword, new SyntaxList<VarDeclarationSyntax>(declarations.ToImmutable()));
     }
@@ -531,6 +549,7 @@ internal sealed class Parser
     /// <summary><c>identList : type [ = typedConst ] [ hints ] ;</c></summary>
     private VarDeclarationSyntax ParseVarDeclaration()
     {
+        var attributes = ParseAttributeLists();
         var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
         var colon = Expect(SyntaxKind.ColonToken);
         var type = ParseType();
@@ -543,7 +562,7 @@ internal sealed class Parser
         }
 
         var hints = ParseHintDirectives();
-        return new VarDeclarationSyntax(identifiers, colon, type, equals, initializer, hints, Expect(SyntaxKind.SemicolonToken));
+        return new VarDeclarationSyntax(attributes, identifiers, colon, type, equals, initializer, hints, Expect(SyntaxKind.SemicolonToken));
     }
 
     // ------------------------------------------------------------------ grammar.md §3: types
@@ -560,7 +579,7 @@ internal sealed class Parser
             case SyntaxKind.IdentifierToken when IsContextual(Current, SyntaxKind.ReferenceKeyword) && Peek(1).Kind == SyntaxKind.ToKeyword:
                 return ParseProceduralType();
             case SyntaxKind.IdentifierToken when !NameContinuesAsExpression():
-                return new NamedTypeSyntax(ParseQualifiedName());
+                return new NamedTypeSyntax(ParseTypeName());
             case SyntaxKind.StringKeyword:
                 return ParseStringType();
             case SyntaxKind.OpenParenToken:
@@ -610,7 +629,7 @@ internal sealed class Parser
     {
         if (CurrentKind == SyntaxKind.IdentifierToken)
         {
-            return new NamedTypeSyntax(ParseQualifiedName());
+            return new NamedTypeSyntax(ParseTypeName());
         }
 
         ReportAt(Current, CurrentKind == SyntaxKind.EndOfFileToken ? "E1108" : "E1106", ExpectedArgs());
@@ -630,6 +649,12 @@ internal sealed class Parser
         }
 
         var next = Peek(offset + 1).Kind;
+        if (next == SyntaxKind.LessThanToken
+            || (_typeArgumentDepth > 0 && next is SyntaxKind.GreaterThanToken or SyntaxKind.GreaterThanEqualsToken))
+        {
+            return false;   // generic arguments (LANG-705: in a type position '<' always starts them) or their end
+        }
+
         return next is SyntaxKind.DotDotToken or SyntaxKind.OpenParenToken
                || (SyntaxFacts.GetBinaryPrecedence(next) > 0 && next is not (SyntaxKind.EqualsToken or SyntaxKind.InKeyword));
     }
@@ -827,7 +852,19 @@ internal sealed class Parser
     {
         while (!EndsMembers(isRecord) && !StartsVisibility())
         {
-            if (ParseMember() is { } member)
+            if (CurrentKind == SyntaxKind.OpenBracketToken)
+            {
+                var attributes = ParseAttributeLists();
+                if (TakesAttributes())
+                {
+                    members.Add(ParseMember(attributes)!);
+                }
+                else
+                {
+                    members.AddRange(attributes);
+                }
+            }
+            else if (ParseMember() is { } member)
             {
                 members.Add(member);
             }
@@ -863,8 +900,15 @@ internal sealed class Parser
                && Peek(1).Kind is not (SyntaxKind.ColonToken or SyntaxKind.CommaToken or SyntaxKind.EqualsToken);
     }
 
+    /// <summary>A member that can carry attribute lists: field, method (not a resolution clause) or property.</summary>
+    private bool TakesAttributes() =>
+        CurrentKind == SyntaxKind.PropertyKeyword
+        || (CurrentKind == SyntaxKind.ClassKeyword && Peek(1).Kind == SyntaxKind.PropertyKeyword)
+        || (StartsRoutine() && !IsMethodResolution())
+        || (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility());
+
     /// <summary>One class/record member, or null when the current token cannot start one.</summary>
-    private SyntaxNode? ParseMember()
+    private SyntaxNode? ParseMember(SyntaxList<AttributeListSyntax> attributes = default)
     {
         switch (CurrentKind)
         {
@@ -878,11 +922,11 @@ internal sealed class Parser
                 return ParseClassVarSection(Take());
             case SyntaxKind.PropertyKeyword:
             case SyntaxKind.ClassKeyword when Peek(1).Kind == SyntaxKind.PropertyKeyword:
-                return ParsePropertyDeclaration();
+                return ParsePropertyDeclaration(attributes);
             case var _ when StartsRoutine():
-                return IsMethodResolution() ? ParseMethodResolution() : ParseMethodDeclaration();
+                return IsMethodResolution() ? ParseMethodResolution() : ParseMethodDeclaration(attributes);
             case SyntaxKind.IdentifierToken:
-                return ParseFieldDeclaration();
+                return ParseFieldDeclaration(attributes);
             default:
                 return null;
         }
@@ -893,7 +937,7 @@ internal sealed class Parser
     {
         var varKeyword = Take();
         var fields = ImmutableArray.CreateBuilder<FieldDeclarationSyntax>();
-        while (CurrentKind == SyntaxKind.IdentifierToken && !StartsVisibility())
+        while (StartsDeclarationName())
         {
             fields.Add(ParseFieldDeclaration());
         }
@@ -902,7 +946,7 @@ internal sealed class Parser
     }
 
     /// <summary><c>[ class ] methodHeading ; { methodDirective ; }</c></summary>
-    private MethodDeclarationSyntax ParseMethodDeclaration()
+    private MethodDeclarationSyntax ParseMethodDeclaration(SyntaxList<AttributeListSyntax> attributes)
     {
         var heading = ParseRoutineHeading();
         SyntaxToken? semicolon = IsDirectiveStart(inMember: true) ? null : Expect(SyntaxKind.SemicolonToken);
@@ -912,7 +956,7 @@ internal sealed class Parser
             directives.Add(ParseDirective(inMember: true));
         }
 
-        return new MethodDeclarationSyntax(heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()));
+        return new MethodDeclarationSyntax(attributes, heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()));
     }
 
     /// <summary><c>( procedure | function ) ident . ident { . ident } =</c> ahead.</summary>
@@ -946,7 +990,7 @@ internal sealed class Parser
     /// <c>[ class ] property ident [ "[" formalParamList "]" ] [ : type ] { specifier } ; [ default ; ]</c>. A token that is
     /// not a specifier before the <c>;</c> is E1118; the rest up to the <c>;</c> is skipped.
     /// </summary>
-    private PropertyDeclarationSyntax ParsePropertyDeclaration()
+    private PropertyDeclarationSyntax ParsePropertyDeclaration(SyntaxList<AttributeListSyntax> attributes)
     {
         var classKeyword = CurrentKind == SyntaxKind.ClassKeyword ? Take() : (SyntaxToken?)null;
         var propertyKeyword = Take();
@@ -994,7 +1038,7 @@ internal sealed class Parser
             defaultSemicolon = Take();
         }
 
-        return new PropertyDeclarationSyntax(classKeyword, propertyKeyword, identifier, open, parameters, close, colon, type,
+        return new PropertyDeclarationSyntax(attributes, classKeyword, propertyKeyword, identifier, open, parameters, close, colon, type,
             new SyntaxList<PropertySpecifierSyntax>(specifiers.ToImmutable()), semicolon, defaultKeyword, defaultSemicolon);
     }
 
@@ -1014,15 +1058,16 @@ internal sealed class Parser
         {
             SyntaxKind.NoDefaultKeyword => default,
             SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword => new SeparatedSyntaxList<ExpressionSyntax>([ParseQualifiedName()]),
-            SyntaxKind.ImplementsKeyword => ParseSeparated<ExpressionSyntax>(ParseQualifiedName, SyntaxKind.CommaToken),
+            SyntaxKind.ImplementsKeyword => ParseSeparated<ExpressionSyntax>(ParseTypeName, SyntaxKind.CommaToken),
             _ => new SeparatedSyntaxList<ExpressionSyntax>([ParseExpression()]),
         };
         return new PropertySpecifierSyntax(keyword, values);
     }
 
     /// <summary><c>identList : type [ hints ] [ ; ]</c> — <c>;</c> optional before <c>end</c>, <c>)</c>, <c>case</c>.</summary>
-    private FieldDeclarationSyntax ParseFieldDeclaration()
+    private FieldDeclarationSyntax ParseFieldDeclaration(SyntaxList<AttributeListSyntax>? attributeLists = null)
     {
+        var attributes = attributeLists ?? ParseAttributeLists();
         var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
         var colon = Expect(SyntaxKind.ColonToken);
         var type = ParseType();
@@ -1030,7 +1075,7 @@ internal sealed class Parser
         SyntaxToken? semicolon = CurrentKind is SyntaxKind.EndKeyword or SyntaxKind.CloseParenToken or SyntaxKind.CaseKeyword
             ? null
             : Expect(SyntaxKind.SemicolonToken);
-        return new FieldDeclarationSyntax(identifiers, colon, type, hints, semicolon);
+        return new FieldDeclarationSyntax(attributes, identifiers, colon, type, hints, semicolon);
     }
 
     /// <summary><c>case [ ident : ] typeId of variant { ; variant } [ ; ]</c></summary>
@@ -1172,6 +1217,7 @@ internal sealed class Parser
     /// <summary><c>[ const | var | out ] identList [ : paramType [ = constExpr ] ]</c></summary>
     private ParameterSyntax ParseParameter()
     {
+        var attributes = ParseAttributeLists();
         SyntaxToken? modifier = null;
         if (CurrentKind is SyntaxKind.ConstKeyword or SyntaxKind.VarKeyword)
         {
@@ -1185,18 +1231,18 @@ internal sealed class Parser
         var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
         if (CurrentKind != SyntaxKind.ColonToken)
         {
-            return new ParameterSyntax(modifier, identifiers, null, null, null, null);
+            return new ParameterSyntax(attributes, modifier, identifiers, null, null, null, null);
         }
 
         var colon = Take();
         var type = ParseType();
         if (CurrentKind != SyntaxKind.EqualsToken)
         {
-            return new ParameterSyntax(modifier, identifiers, colon, type, null, null);
+            return new ParameterSyntax(attributes, modifier, identifiers, colon, type, null, null);
         }
 
         var equals = Take();
-        return new ParameterSyntax(modifier, identifiers, colon, type, equals, ParseExpression());
+        return new ParameterSyntax(attributes, modifier, identifiers, colon, type, equals, ParseExpression());
     }
     // ------------------------------------------------------------------ grammar.md §7: expressions
 
@@ -1258,7 +1304,7 @@ internal sealed class Parser
     /// <c>factor</c>: <c>@</c>/<c>not</c>/sign factor, literal, <c>nil</c>, set constructor, <c>( expression )</c>,
     /// <c>inherited [ ident ]</c>, <c>string ( expression )</c>, a bare <c>string</c> or designator; all but the bare
     /// <c>string</c> and the literals with designator suffixes.
-    /// Anonymous methods and generic arguments follow with C-019; anything else is E1103.
+    /// An anonymous method, too (LANG-720); anything else is E1103.
     /// </summary>
     private ExpressionSyntax ParseFactor()
     {
@@ -1291,7 +1337,9 @@ internal sealed class Parser
             case SyntaxKind.StringKeyword:
                 return new PredefinedTypeExpressionSyntax(Take());
             case SyntaxKind.IdentifierToken:
-                return ParseDesignatorSuffixes(new IdentifierNameSyntax(Take()));
+                return ParseDesignatorSuffixes(ParseSimpleNameInExpression());
+            case SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword:
+                return ParseAnonymousMethod();
             default:
                 ReportAt(Current, CurrentKind == SyntaxKind.EndOfFileToken ? "E1108" : "E1103", ExpectedArgs());
                 return new IdentifierNameSyntax(Missing(SyntaxKind.IdentifierToken));
@@ -1310,7 +1358,7 @@ internal sealed class Parser
             {
                 case SyntaxKind.DotToken:
                     var dot = Take();
-                    expression = new MemberAccessExpressionSyntax(expression, dot, ParseIdentifierName());
+                    expression = new MemberAccessExpressionSyntax(expression, dot, ParseSimpleNameInExpression());
                     break;
                 case SyntaxKind.OpenBracketToken:
                     var open = Take();
@@ -1839,6 +1887,352 @@ internal sealed class Parser
         }
 
         return name;
+    }
+
+    // ------------------------------------------------------------------ grammar.md §7: generics (LANG-705, 706)
+
+    private int _typeArgumentDepth;   // > 0 while parsing type arguments: '>' / '>=' end a type there
+
+    /// <summary><c>typeId = ident [ genericArgs ] { . ident [ genericArgs ] }</c>; in a type position <c>&lt;</c> always starts generic arguments.</summary>
+    private NameSyntax ParseTypeName()
+    {
+        NameSyntax name = ParseTypeNameSegment();
+        while (CurrentKind == SyntaxKind.DotToken && Peek(1).Kind == SyntaxKind.IdentifierToken)
+        {
+            var dot = Take();
+            name = new QualifiedNameSyntax(name, dot, ParseTypeNameSegment());
+        }
+
+        return name;
+    }
+
+    private SimpleNameSyntax ParseTypeNameSegment()
+    {
+        var identifier = ExpectIdentifier();
+        return CurrentKind == SyntaxKind.LessThanToken
+            ? new GenericNameSyntax(identifier, ParseTypeArgumentList())
+            : new IdentifierNameSyntax(identifier);
+    }
+
+    /// <summary>
+    /// <c>routineName = ident | typeNamePath . ident</c> with <c>typeNamePath = ident [ &lt; identList &gt; ] { . ident [ … ] }</c>:
+    /// a <c>&lt;…&gt;</c> followed by <c>.</c> belongs to the path (a <see cref="GenericNameSyntax"/>); one after the last
+    /// segment is the heading's type parameter list.
+    /// </summary>
+    private NameSyntax ParseRoutineName()
+    {
+        NameSyntax name = ParseRoutineNameSegment();
+        while (CurrentKind == SyntaxKind.DotToken && Peek(1).Kind == SyntaxKind.IdentifierToken)
+        {
+            var dot = Take();
+            name = new QualifiedNameSyntax(name, dot, ParseRoutineNameSegment());
+        }
+
+        return name;
+    }
+
+    private SimpleNameSyntax ParseRoutineNameSegment()
+    {
+        var identifier = ExpectIdentifier();
+        if (CurrentKind == SyntaxKind.LessThanToken && ClosingAngleOffset(0) is var close and >= 0
+            && Peek(close).Kind == SyntaxKind.GreaterThanToken && Peek(close + 1).Kind == SyntaxKind.DotToken)
+        {
+            return new GenericNameSyntax(identifier, ParseTypeArgumentList());
+        }
+
+        return new IdentifierNameSyntax(identifier);
+    }
+
+    /// <summary>Offset of the <c>&gt;</c> / <c>&gt;=</c> closing the <c>&lt;</c> at <paramref name="offset"/>, or -1.</summary>
+    private int ClosingAngleOffset(int offset)
+    {
+        var depth = 0;
+        for (var i = offset; ; i++)
+        {
+            switch (Peek(i).Kind)
+            {
+                case SyntaxKind.LessThanToken:
+                    depth++;
+                    break;
+                case SyntaxKind.GreaterThanToken or SyntaxKind.GreaterThanEqualsToken:
+                    if (--depth == 0)
+                    {
+                        return i;
+                    }
+
+                    break;
+                case SyntaxKind.IdentifierToken or SyntaxKind.CommaToken or SyntaxKind.DotToken or SyntaxKind.ColonToken
+                    or SyntaxKind.SemicolonToken or SyntaxKind.StringKeyword or SyntaxKind.CaretToken or SyntaxKind.ClassKeyword
+                    or SyntaxKind.RecordKeyword or SyntaxKind.ConstructorKeyword:
+                    break;
+                default:
+                    return -1;
+            }
+        }
+    }
+
+    /// <summary><c>&lt; type { , type } &gt;</c></summary>
+    private TypeArgumentListSyntax ParseTypeArgumentList()
+    {
+        var lessThan = Take();
+        _typeArgumentDepth++;
+        var arguments = ParseSeparated(ParseType, SyntaxKind.CommaToken);
+        _typeArgumentDepth--;
+        return new TypeArgumentListSyntax(lessThan, arguments, ExpectGreaterThan());
+    }
+
+    /// <summary><c>&lt; genericParam { ; genericParam } &gt;</c>, <c>genericParam = identList [ : constraint { , constraint } ]</c></summary>
+    private TypeParameterListSyntax ParseTypeParameterList()
+    {
+        var lessThan = Take();
+        var parameters = ParseSeparated(ParseTypeParameter, SyntaxKind.SemicolonToken);
+        return new TypeParameterListSyntax(lessThan, parameters, ExpectGreaterThan());
+    }
+
+    private TypeParameterSyntax ParseTypeParameter()
+    {
+        var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
+        if (CurrentKind != SyntaxKind.ColonToken)
+        {
+            return new TypeParameterSyntax(identifiers, null, default);
+        }
+
+        var colon = Take();
+        return new TypeParameterSyntax(identifiers, colon, ParseSeparated(ParseConstraint, SyntaxKind.CommaToken));
+    }
+
+    /// <summary><c>constraint = typeId | class | record | constructor</c></summary>
+    private SyntaxNode ParseConstraint() => CurrentKind is SyntaxKind.ClassKeyword or SyntaxKind.RecordKeyword or SyntaxKind.ConstructorKeyword
+        ? new KeywordConstraintSyntax(Take())
+        : ParseNamedType();
+
+    /// <summary>The <c>&gt;</c> closing a generic list; a <c>&gt;=</c> is split into <c>&gt;</c> and <c>=</c> first (LANG-706).</summary>
+    private SyntaxToken ExpectGreaterThan()
+    {
+        if (CurrentKind == SyntaxKind.GreaterThanEqualsToken)
+        {
+            var token = Current;
+            var greaterThan = new SyntaxToken(SyntaxKind.GreaterThanToken, ">", null, token.Span.Start, token.LeadingTrivia, [],
+                token.DirectiveState, token.File);
+            var equals = new SyntaxToken(SyntaxKind.EqualsToken, "=", null, token.Span.Start + 1, [], token.TrailingTrivia,
+                token.DirectiveState, token.File);
+            _tokens = _tokens.SetItem(_position, greaterThan).Insert(_position + 1, equals);
+        }
+
+        return Expect(SyntaxKind.GreaterThanToken);
+    }
+
+    /// <summary>An identifier in an expression, with generic arguments when LANG-705 says the <c>&lt;</c> starts them.</summary>
+    private SimpleNameSyntax ParseSimpleNameInExpression()
+    {
+        var identifier = ExpectIdentifier();
+        return CurrentKind == SyntaxKind.LessThanToken && !identifier.IsMissing && StartsTypeArgumentsInExpression()
+            ? new GenericNameSyntax(identifier, ParseTypeArgumentList())
+            : new IdentifierNameSyntax(identifier);
+    }
+
+    /// <summary>
+    /// LANG-705: the <c>&lt;</c> here starts generic arguments iff <c>type { , type } &gt;</c> can be read (types: qualified
+    /// identifiers with nested generic arguments, <c>string</c>, <c>^ident</c>) and the token after the <c>&gt;</c> cannot
+    /// start a factor or is one of the listed followers. A closing <c>&gt;=</c> counts as <c>&gt;</c> followed by <c>=</c>.
+    /// </summary>
+    private bool StartsTypeArgumentsInExpression()
+    {
+        var end = ScanTypeArguments(0, out var closedBySplit);
+        if (end < 0)
+        {
+            return false;
+        }
+
+        if (closedBySplit)
+        {
+            return true;   // the follower is the '=' of the split '>='
+        }
+
+        var next = Peek(end).Kind;
+        return next is SyntaxKind.OpenParenToken or SyntaxKind.CloseParenToken or SyntaxKind.CloseBracketToken or SyntaxKind.DotToken
+                   or SyntaxKind.SemicolonToken or SyntaxKind.CommaToken or SyntaxKind.ColonEqualsToken or SyntaxKind.CaretToken
+                   or SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken or SyntaxKind.EndKeyword or SyntaxKind.ThenKeyword
+                   or SyntaxKind.DoKeyword or SyntaxKind.OfKeyword or SyntaxKind.ElseKeyword or SyntaxKind.ToKeyword
+                   or SyntaxKind.DownToKeyword or SyntaxKind.EndOfFileToken
+               || !CanStartFactor(next);
+    }
+
+    private static bool CanStartFactor(SyntaxKind kind) => kind is SyntaxKind.IdentifierToken or SyntaxKind.IntegerLiteralToken
+        or SyntaxKind.RealLiteralToken or SyntaxKind.StringLiteralToken or SyntaxKind.NilKeyword or SyntaxKind.OpenParenToken
+        or SyntaxKind.OpenBracketToken or SyntaxKind.AtToken or SyntaxKind.NotKeyword or SyntaxKind.PlusToken or SyntaxKind.MinusToken
+        or SyntaxKind.InheritedKeyword or SyntaxKind.StringKeyword or SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword;
+
+    /// <summary>
+    /// Scans <c>&lt; type { , type } &gt;</c> starting at the <c>&lt;</c> at <paramref name="offset"/>; returns the offset after
+    /// the closing <c>&gt;</c> (or of a closing <c>&gt;=</c>, with <paramref name="closedBySplit"/>), or -1.
+    /// </summary>
+    private int ScanTypeArguments(int offset, out bool closedBySplit)
+    {
+        closedBySplit = false;
+        var i = offset + 1;
+        while (true)
+        {
+            i = ScanTypeArgument(i);
+            if (i < 0)
+            {
+                return -1;
+            }
+
+            switch (Peek(i).Kind)
+            {
+                case SyntaxKind.CommaToken:
+                    i++;
+                    break;
+                case SyntaxKind.GreaterThanToken:
+                    return i + 1;
+                case SyntaxKind.GreaterThanEqualsToken:
+                    closedBySplit = true;
+                    return i;
+                default:
+                    return -1;
+            }
+        }
+    }
+
+    /// <summary>One restricted type of LANG-705 at <paramref name="i"/>; the offset after it, or -1.</summary>
+    private int ScanTypeArgument(int i)
+    {
+        switch (Peek(i).Kind)
+        {
+            case SyntaxKind.StringKeyword:
+                return i + 1;
+            case SyntaxKind.CaretToken:
+                return Peek(i + 1).Kind == SyntaxKind.IdentifierToken ? i + 2 : -1;
+            case SyntaxKind.IdentifierToken:
+                i++;
+                while (true)
+                {
+                    if (Peek(i).Kind == SyntaxKind.LessThanToken)
+                    {
+                        i = ScanTypeArguments(i, out var split);
+                        if (i < 0 || split)
+                        {
+                            return -1;
+                        }
+                    }
+
+                    if (Peek(i).Kind != SyntaxKind.DotToken || Peek(i + 1).Kind != SyntaxKind.IdentifierToken)
+                    {
+                        return i;
+                    }
+
+                    i += 2;
+                }
+
+            default:
+                return -1;
+        }
+    }
+
+    // ------------------------------------------------------------------ attributes (LANG-172, 760) and anonymous methods
+
+    /// <summary><c>{ "[" attribute { , attribute } "]" }</c>; empty when the current token is not <c>[</c>.</summary>
+    private SyntaxList<AttributeListSyntax> ParseAttributeLists()
+    {
+        if (CurrentKind != SyntaxKind.OpenBracketToken)
+        {
+            return default;
+        }
+
+        var lists = ImmutableArray.CreateBuilder<AttributeListSyntax>();
+        while (CurrentKind == SyntaxKind.OpenBracketToken)
+        {
+            var open = Take();
+            var attributes = ParseSeparated(() => ParseAttribute(open), SyntaxKind.CommaToken);
+            lists.Add(new AttributeListSyntax(open, attributes, Expect(SyntaxKind.CloseBracketToken)));
+        }
+
+        return new SyntaxList<AttributeListSyntax>(lists.ToImmutable());
+    }
+
+    /// <summary>
+    /// <c>qualIdent [ ( [ constExpr { , constExpr } ] ) ]</c>; without a name it is E1119 at the list's <c>[</c> and the
+    /// tokens up to <c>,</c> / <c>]</c> are skipped.
+    /// </summary>
+    private AttributeSyntax ParseAttribute(SyntaxToken openBracket)
+    {
+        if (CurrentKind != SyntaxKind.IdentifierToken)
+        {
+            ReportAt(openBracket, "E1119");
+            while (CurrentKind is not (SyntaxKind.CommaToken or SyntaxKind.CloseBracketToken or SyntaxKind.SemicolonToken
+                   or SyntaxKind.EndOfFileToken))
+            {
+                SkipToken(report: false);
+            }
+
+            return new AttributeSyntax(new IdentifierNameSyntax(Missing(SyntaxKind.IdentifierToken)), null);
+        }
+
+        var name = ParseQualifiedName();
+        return new AttributeSyntax(name, CurrentKind == SyntaxKind.OpenParenToken ? ParseArgumentList() : null);
+    }
+
+    /// <summary>
+    /// In a const/type/var/field list: the next declaration starts here — an identifier that is not a visibility keyword,
+    /// or attribute lists followed by an identifier.
+    /// </summary>
+    private bool StartsDeclarationName()
+    {
+        if (CurrentKind == SyntaxKind.IdentifierToken)
+        {
+            return !StartsVisibility();
+        }
+
+        if (CurrentKind != SyntaxKind.OpenBracketToken)
+        {
+            return false;
+        }
+
+        var offset = 0;
+        while (Peek(offset).Kind == SyntaxKind.OpenBracketToken)
+        {
+            var depth = 0;
+            do
+            {
+                switch (Peek(offset).Kind)
+                {
+                    case SyntaxKind.OpenBracketToken:
+                        depth++;
+                        break;
+                    case SyntaxKind.CloseBracketToken:
+                        depth--;
+                        break;
+                    case SyntaxKind.EndOfFileToken or SyntaxKind.SemicolonToken:
+                        return false;
+                }
+
+                offset++;
+            }
+            while (depth > 0);
+        }
+
+        return Peek(offset).Kind == SyntaxKind.IdentifierToken;
+    }
+
+    /// <summary><c>procedure [ formalParams ] block</c> | <c>function [ formalParams ] : resultType block</c> (LANG-720)</summary>
+    private AnonymousMethodExpressionSyntax ParseAnonymousMethod()
+    {
+        var keyword = Take();
+        var parameters = CurrentKind == SyntaxKind.OpenParenToken ? ParseParameterList() : null;
+        SyntaxToken? colon = null;
+        TypeSyntax? result = null;
+        if (keyword.Kind == SyntaxKind.FunctionKeyword)
+        {
+            colon = Expect(SyntaxKind.ColonToken);
+            result = ParseType();
+        }
+
+        var depth = _typeArgumentDepth;
+        _typeArgumentDepth = 0;
+        var block = ParseBlock();
+        _typeArgumentDepth = depth;
+        return new AnonymousMethodExpressionSyntax(keyword, parameters, colon, result, block);
     }
 
     private SeparatedSyntaxList<T> ParseSeparated<T>(Func<T> parseItem, SyntaxKind separator)

@@ -46,10 +46,12 @@ public sealed class ConstSectionSyntax : SyntaxNode
 /// </summary>
 public sealed class ConstDeclarationSyntax : SyntaxNode
 {
-    internal ConstDeclarationSyntax(SyntaxToken identifier, SyntaxToken? colonToken, TypeSyntax? type, SyntaxToken equalsToken,
+    internal ConstDeclarationSyntax(SyntaxList<AttributeListSyntax> attributes,
+                                    SyntaxToken identifier, SyntaxToken? colonToken, TypeSyntax? type, SyntaxToken equalsToken,
                                     SyntaxNode value, SyntaxList<HintDirectiveSyntax> hintDirectives, SyntaxToken semicolonToken)
         : base(SyntaxKind.ConstDeclaration)
     {
+        Attributes = Add(attributes);
         Identifier = Add(identifier);
         ColonToken = Add(colonToken);
         Type = AddOptional(type);
@@ -58,6 +60,9 @@ public sealed class ConstDeclarationSyntax : SyntaxNode
         HintDirectives = Add(hintDirectives);
         SemicolonToken = Add(semicolonToken);
     }
+
+    /// <summary>Attribute lists before the declaration (LANG-172).</summary>
+    public SyntaxList<AttributeListSyntax> Attributes { get; }
 
     public SyntaxToken Identifier { get; }
 
@@ -144,11 +149,14 @@ public sealed class TypeSectionSyntax : SyntaxNode
 /// <summary><c>ident = [ type ] type [ hints ] ;</c> (the inner <c>type</c> makes a distinct type).</summary>
 public sealed class TypeDeclarationSyntax : SyntaxNode
 {
-    internal TypeDeclarationSyntax(SyntaxToken identifier, SyntaxToken equalsToken, SyntaxToken? typeKeyword, TypeSyntax type,
+    internal TypeDeclarationSyntax(SyntaxList<AttributeListSyntax> attributes,
+                                   SyntaxToken identifier, TypeParameterListSyntax? typeParameterList, SyntaxToken equalsToken, SyntaxToken? typeKeyword, TypeSyntax type,
                                    SyntaxList<HintDirectiveSyntax> hintDirectives, SyntaxToken semicolonToken)
         : base(SyntaxKind.TypeDeclaration)
     {
+        Attributes = Add(attributes);
         Identifier = Add(identifier);
+        TypeParameterList = AddOptional(typeParameterList);
         EqualsToken = Add(equalsToken);
         TypeKeyword = Add(typeKeyword);
         Type = Add(type);
@@ -156,7 +164,12 @@ public sealed class TypeDeclarationSyntax : SyntaxNode
         SemicolonToken = Add(semicolonToken);
     }
 
+    /// <summary>Attribute lists before the declaration (LANG-172).</summary>
+    public SyntaxList<AttributeListSyntax> Attributes { get; }
+
     public SyntaxToken Identifier { get; }
+
+    public TypeParameterListSyntax? TypeParameterList { get; }
 
     public SyntaxToken EqualsToken { get; }
 
@@ -192,11 +205,13 @@ public sealed class VarSectionSyntax : SyntaxNode
 /// <summary><c>identList : type [ = typedConst ] [ hints ] ;</c></summary>
 public sealed class VarDeclarationSyntax : SyntaxNode
 {
-    internal VarDeclarationSyntax(SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken colonToken, TypeSyntax type,
+    internal VarDeclarationSyntax(SyntaxList<AttributeListSyntax> attributes,
+                                  SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken colonToken, TypeSyntax type,
                                   SyntaxToken? equalsToken, SyntaxNode? initializer, SyntaxList<HintDirectiveSyntax> hintDirectives,
                                   SyntaxToken semicolonToken)
         : base(SyntaxKind.VarDeclaration)
     {
+        Attributes = Add(attributes);
         Identifiers = Add(identifiers);
         ColonToken = Add(colonToken);
         Type = Add(type);
@@ -205,6 +220,9 @@ public sealed class VarDeclarationSyntax : SyntaxNode
         HintDirectives = Add(hintDirectives);
         SemicolonToken = Add(semicolonToken);
     }
+
+    /// <summary>Attribute lists before the declaration (LANG-172).</summary>
+    public SyntaxList<AttributeListSyntax> Attributes { get; }
 
     public SeparatedSyntaxList<IdentifierNameSyntax> Identifiers { get; }
 

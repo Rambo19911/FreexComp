@@ -5,8 +5,8 @@ namespace FreexComp.Compiler.Tests.Syntax;
 
 /// <summary>
 /// api.md CMP-222: <c>Lexer.Tokenize</c> and the parser's tree yield the same token kinds and spans. Holds for
-/// error-free sources (the parser turns skipped tokens into trivia and inserts missing tokens); generics are not parsed
-/// yet (C-019), so the inputs avoid them.
+/// error-free sources (the parser turns skipped tokens into trivia and inserts missing tokens) that do not close a
+/// generic list with a '>=' token (LANG-706 splits it into '>' and '=').
 /// </summary>
 public sealed partial class LexerTests
 {
@@ -106,12 +106,17 @@ public sealed partial class LexerTests
           TIntHelper = record helper for Integer
             function IsEven: Boolean; inline;
           end;
+          [Serializable] TList<T: class, constructor> = class(TEnumerable<T>)
+            [Weak] FOwner: TObject;
+            function Map<R>(const F: TFunc<T, R>): TList<R>;
+          end;
         procedure P(var X; out Y: Integer); stdcall;
         function F: Integer; external 'k.dll' name 'f';
         implementation
         procedure P(var X; out Y: Integer);
         begin
           Y := Integer(X) + &begin;
+          Run(procedure(const S: string) begin Y := TList<Integer>.Count + Ord(Y < 2) end);
         end;
         initialization
           P(Q, R);

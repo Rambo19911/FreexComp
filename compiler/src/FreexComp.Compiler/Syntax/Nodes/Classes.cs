@@ -172,13 +172,18 @@ public sealed class VisibilitySectionSyntax : SyntaxNode
 /// <summary><c>[ class ] methodHeading ; { methodDirective ; }</c>: a method declaration in a class, record, interface or helper.</summary>
 public sealed class MethodDeclarationSyntax : MemberDeclarationSyntax
 {
-    internal MethodDeclarationSyntax(RoutineHeadingSyntax heading, SyntaxToken? semicolonToken, SyntaxList<DirectiveSyntax> directives)
+    internal MethodDeclarationSyntax(SyntaxList<AttributeListSyntax> attributes,
+                                     RoutineHeadingSyntax heading, SyntaxToken? semicolonToken, SyntaxList<DirectiveSyntax> directives)
         : base(SyntaxKind.MethodDeclaration)
     {
+        Attributes = Add(attributes);
         Heading = Add(heading);
         SemicolonToken = Add(semicolonToken);
         Directives = Add(directives);
     }
+
+    /// <summary>Attribute lists before the declaration (LANG-172).</summary>
+    public SyntaxList<AttributeListSyntax> Attributes { get; }
 
     public RoutineHeadingSyntax Heading { get; }
 
@@ -225,13 +230,15 @@ public sealed class MethodResolutionSyntax : MemberDeclarationSyntax
 /// </summary>
 public sealed class PropertyDeclarationSyntax : MemberDeclarationSyntax
 {
-    internal PropertyDeclarationSyntax(SyntaxToken? classKeyword, SyntaxToken propertyKeyword, SyntaxToken identifier,
+    internal PropertyDeclarationSyntax(SyntaxList<AttributeListSyntax> attributes,
+                                       SyntaxToken? classKeyword, SyntaxToken propertyKeyword, SyntaxToken identifier,
                                        SyntaxToken? openBracketToken, SeparatedSyntaxList<ParameterSyntax> parameters,
                                        SyntaxToken? closeBracketToken, SyntaxToken? colonToken, TypeSyntax? type,
                                        SyntaxList<PropertySpecifierSyntax> specifiers, SyntaxToken semicolonToken,
                                        SyntaxToken? defaultKeyword, SyntaxToken? defaultSemicolonToken)
         : base(SyntaxKind.PropertyDeclaration)
     {
+        Attributes = Add(attributes);
         ClassKeyword = Add(classKeyword);
         PropertyKeyword = Add(propertyKeyword);
         Identifier = Add(identifier);
@@ -245,6 +252,9 @@ public sealed class PropertyDeclarationSyntax : MemberDeclarationSyntax
         DefaultKeyword = Add(defaultKeyword);
         DefaultSemicolonToken = Add(defaultSemicolonToken);
     }
+
+    /// <summary>Attribute lists before the declaration (LANG-172).</summary>
+    public SyntaxList<AttributeListSyntax> Attributes { get; }
 
     public SyntaxToken? ClassKeyword { get; }
 

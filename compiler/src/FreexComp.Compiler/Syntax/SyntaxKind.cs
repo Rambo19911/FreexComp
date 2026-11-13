@@ -271,4 +271,12 @@ public enum SyntaxKind
     PropertyDeclaration,
     PropertySpecifier,
     ClassVarSection,
+    GenericName,
+    TypeArgumentList,
+    TypeParameterList,
+    TypeParameter,
+    KeywordConstraint,
+    AttributeList,
+    Attribute,
+    AnonymousMethodExpression,
 }

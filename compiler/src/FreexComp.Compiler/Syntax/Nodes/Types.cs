@@ -235,16 +235,21 @@ public sealed class RecordTypeSyntax : TypeSyntax
 /// <summary><c>identList : type [ hints ] ;</c> — the <c>;</c> may be omitted before <c>end</c>, <c>)</c> or <c>case</c>.</summary>
 public sealed class FieldDeclarationSyntax : MemberDeclarationSyntax
 {
-    internal FieldDeclarationSyntax(SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken colonToken, TypeSyntax type,
+    internal FieldDeclarationSyntax(SyntaxList<AttributeListSyntax> attributes,
+                                    SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken colonToken, TypeSyntax type,
                                     SyntaxList<HintDirectiveSyntax> hintDirectives, SyntaxToken? semicolonToken)
         : base(SyntaxKind.FieldDeclaration)
     {
+        Attributes = Add(attributes);
         Identifiers = Add(identifiers);
         ColonToken = Add(colonToken);
         Type = Add(type);
         HintDirectives = Add(hintDirectives);
         SemicolonToken = Add(semicolonToken);
     }
+
+    /// <summary>Attribute lists before the declaration (LANG-172).</summary>
+    public SyntaxList<AttributeListSyntax> Attributes { get; }
 
     public SeparatedSyntaxList<IdentifierNameSyntax> Identifiers { get; }
 
