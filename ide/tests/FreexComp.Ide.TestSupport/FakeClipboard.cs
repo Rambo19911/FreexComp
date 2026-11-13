@@ -1,6 +1,6 @@
 using FreexComp.Ide.Core.Platform;
 
-namespace FreexComp.Ide.Core.Tests.Fakes;
+namespace FreexComp.Ide.TestSupport;
 
 /// <summary><see cref="IClipboardService"/> holding its text in memory.</summary>
 public sealed class FakeClipboard : IClipboardService

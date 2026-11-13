@@ -1,6 +1,6 @@
 using FreexComp.Ide.Core.Platform;
 
-namespace FreexComp.Ide.Core.Tests.Fakes;
+namespace FreexComp.Ide.TestSupport;
 
 /// <summary>
 /// <see cref="IShellService"/> that records calls as <c>"&lt;Method&gt; &lt;path&gt;"</c>. A successful

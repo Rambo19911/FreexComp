@@ -1,6 +1,6 @@
 using FreexComp.Ide.Core.Platform;
 
-namespace FreexComp.Ide.Core.Tests.Fakes;
+namespace FreexComp.Ide.TestSupport;
 
 /// <summary>
 /// <see cref="IFileSystem"/> in memory with the disk's semantics (checked by

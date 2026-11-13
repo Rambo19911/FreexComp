@@ -1,6 +1,6 @@
 using FreexComp.Ide.Core.Platform;
 
-namespace FreexComp.Ide.Core.Tests.Fakes;
+namespace FreexComp.Ide.TestSupport;
 
 /// <summary>
 /// <see cref="IClock"/> whose time moves only through <see cref="Advance"/>; due callbacks run synchronously

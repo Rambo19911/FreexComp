@@ -5,5 +5,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />
     <ProjectReference Include="..\..\src\FreexComp.Designer\FreexComp.Designer.csproj" />
+    <ProjectReference Include="..\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
   </ItemGroup>
 </Project>

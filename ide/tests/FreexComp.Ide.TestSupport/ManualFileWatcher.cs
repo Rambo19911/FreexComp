@@ -1,6 +1,6 @@
 using FreexComp.Ide.Core.Platform;
 
-namespace FreexComp.Ide.Core.Tests.Fakes;
+namespace FreexComp.Ide.TestSupport;
 
 /// <summary>
 /// <see cref="IFileWatcherFactory"/> whose watchers report only what the test raises; events are delivered

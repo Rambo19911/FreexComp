@@ -1,5 +1,5 @@
 using FreexComp.Ide.Core.Platform;
-using FreexComp.Ide.Core.Tests.Fakes;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests;
 

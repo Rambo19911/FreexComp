@@ -1,6 +1,6 @@
 using FreexComp.Ide.Core.Platform;
 
-namespace FreexComp.Ide.Core.Tests.Fakes;
+namespace FreexComp.Ide.TestSupport;
 
 /// <summary><see cref="IUiDispatcher"/> that runs posted work inline; the test thread is the UI thread.</summary>
 public sealed class ImmediateDispatcher : IUiDispatcher

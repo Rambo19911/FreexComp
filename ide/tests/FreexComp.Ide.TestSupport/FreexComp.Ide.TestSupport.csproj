@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Fakes and helpers shared by the ide test projects (I-151). Plain library: no test packages. -->
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Ide.TestSupport</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />
+  </ItemGroup>
+</Project>
