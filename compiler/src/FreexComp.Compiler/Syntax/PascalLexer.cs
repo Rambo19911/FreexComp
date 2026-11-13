@@ -56,6 +56,11 @@ internal sealed class PascalLexer
             return ScanNumber();
         }
 
+        if (IsStringPartStart(_pos))
+        {
+            return ScanString();
+        }
+
         _pos++;
         switch (c)
         {
@@ -127,6 +132,85 @@ internal sealed class PascalLexer
             '&' => next is >= '0' and <= '7',
             _ => false,
         };
+    }
+
+    /// <summary><c>'</c>, <c>#</c> + digit, or <c>#$</c> + hex digit (lexical.md §7).</summary>
+    private bool IsStringPartStart(int index) =>
+        _text[index] == '\''
+        || (_text[index] == '#' && index + 1 < _text.Length
+            && (char.IsAsciiDigit(_text[index + 1])
+                || (_text[index + 1] == '$' && index + 2 < _text.Length && char.IsAsciiHexDigit(_text[index + 2]))));
+
+    /// <summary>
+    /// A string literal: adjacent quoted and <c>#n</c> / <c>#$n</c> parts with no whitespace between (LANG-130…132).
+    /// An unterminated quoted part (E1020 at its quote) ends at the line break and ends the literal; a code above
+    /// $FFFF (E1021 at its part) contributes U+FFFD.
+    /// </summary>
+    private (SyntaxKind, object?) ScanString()
+    {
+        var value = new StringBuilder();
+        while (_pos < _text.Length && IsStringPartStart(_pos))
+        {
+            var partStart = _pos;
+            if (_text[_pos] == '\'')
+            {
+                _pos++;
+                var terminated = false;
+                while (_pos < _text.Length && _text[_pos] is not ('\r' or '\n'))
+                {
+                    if (_text[_pos] == '\'')
+                    {
+                        if (_pos + 1 < _text.Length && _text[_pos + 1] == '\'')
+                        {
+                            value.Append('\'');
+                            _pos += 2;
+                            continue;
+                        }
+
+                        _pos++;
+                        terminated = true;
+                        break;
+                    }
+
+                    value.Append(_text[_pos++]);
+                }
+
+                if (!terminated)
+                {
+                    Report("E1020", partStart, 1);
+                    break;
+                }
+            }
+            else
+            {
+                _pos++; // '#'
+                var radix = 10;
+                if (_text[_pos] == '$')
+                {
+                    radix = 16;
+                    _pos++;
+                }
+
+                var digitsStart = _pos;
+                while (_pos < _text.Length && IsDigit(_text[_pos], radix))
+                {
+                    _pos++;
+                }
+
+                var code = ParseInteger(_text.AsSpan(digitsStart, _pos - digitsStart), radix, out var overflow);
+                if (overflow || code > 0xFFFF)
+                {
+                    Report("E1021", partStart, _pos - partStart);
+                    value.Append('�');
+                }
+                else
+                {
+                    value.Append((char)code);
+                }
+            }
+        }
+
+        return (SyntaxKind.StringLiteralToken, value.ToString());
     }
 
     private static bool IsDigit(char c, int radix) => radix switch
@@ -347,7 +431,7 @@ internal sealed class PascalLexer
     private bool StartsToken(int index) =>
         IsIdentifierStartAt(index, out _) || char.IsAsciiDigit(_text[index]) || IsRadixLiteralStart(index) || _text[index] is
             '+' or '-' or '*' or '/' or '=' or '<' or '>' or ':' or '.' or ',' or ';' or '(' or ')' or '[' or ']'
-            or '^' or '@' or '#' or '$' or '&';
+            or '^' or '@' or '#' or '$' or '&' or '\'';
 
     // ------------------------------------------------------------------ trivia
 
