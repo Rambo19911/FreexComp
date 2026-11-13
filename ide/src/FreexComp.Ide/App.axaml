@@ -22,5 +22,10 @@
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="avares://FreexComp.Ide/Themes/TextStyles.axaml" />
+    <!-- I-153: opening a menu or clicking a toolbar button takes focus; the TextBox keeps its selection so that
+         Edit > Cut/Copy invoked by mouse still acts on it. -->
+    <Style Selector="TextBox">
+      <Setter Property="ClearSelectionOnLostFocus" Value="False" />
+    </Style>
   </Application.Styles>
 </Application>

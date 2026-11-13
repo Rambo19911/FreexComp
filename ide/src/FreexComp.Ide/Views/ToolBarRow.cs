@@ -160,6 +160,7 @@ public sealed class ToolBarRow : DockPanel
         button.Padding = new Thickness(0);
         button.Background = Brushes.Transparent;
         button.BorderThickness = new Thickness(0);
+        button.Focusable = false; // a click leaves focus where it was, so edit.* act on it (I-153); keyboard entry (UI-TB-008) is I-024
         button.HorizontalContentAlignment = HorizontalAlignment.Center;
         button.VerticalContentAlignment = VerticalAlignment.Center;
         button.Content = new IdeIcon { IconName = model.IconName, Width = iconSize, Height = iconSize };

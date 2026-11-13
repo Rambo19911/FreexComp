@@ -41,7 +41,8 @@ public sealed class IdeCommand : ObservableObject, ICommand
         internal set => SetProperty(ref _gestureText, value);
     }
 
-    public string? IconName => Definition.IconName;
+    /// <summary>The toolbar icon of the command, null when it has no toolbar button (single source: <see cref="Menus.ToolBarDefinitions.IconOf"/>).</summary>
+    public string? IconName => Menus.ToolBarDefinitions.IconOf(Id);
 
     public bool IsChecked
     {

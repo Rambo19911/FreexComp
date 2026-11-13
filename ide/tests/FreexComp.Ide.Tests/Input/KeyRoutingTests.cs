@@ -1,5 +1,7 @@
+﻿using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -79,6 +81,41 @@ public sealed class KeyRoutingTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-042")]
+    [Trait("Req", "UI-CMD-010")]
+    public async Task MenuEditCommandsActOnFocusedTextBox()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var box = new TextBox { Text = "abc", Width = 100 };
+        AutomationProperties.SetAutomationId(box, "StatusBar.TestBox");
+        h.Find<Panel>(AutomationIds.StatusBar).Children.Add(box);
+        Dispatcher.UIThread.RunJobs();
+        Focus(box);
+
+        ClickMenu(h, "edit.selectAll");
+        Assert.Equal("abc", box.SelectedText);
+
+        ClickMenu(h, "edit.cut");
+        await h.WaitForAsync(() => box.Text == "", "cut by the menu");
+
+        ClickMenu(h, "edit.paste");
+        await h.WaitForAsync(() => box.Text == "abc", "paste by the menu");
+
+        h.Click(AutomationIds.ToolBarButton("edit.undo"));
+        Assert.Equal("", box.Text);
+        h.Click(AutomationIds.ToolBarButton("edit.redo"));
+        Assert.Equal("abc", box.Text);
+
+        box.SelectAll();
+        Dispatcher.UIThread.RunJobs();
+        ClickMenu(h, "edit.copy");
+        box.Text = "";
+        ClickMenu(h, "edit.paste");
+        await h.WaitForAsync(() => box.Text == "abc", "paste of the copied text");
+        Assert.Equal("StatusBar.TestBox", h.FocusedAutomationId); // the clicks left focus in the TextBox
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-KEY-007")]
     public async Task DisabledCommandGestureIsConsumed()
     {
@@ -112,6 +149,22 @@ public sealed class KeyRoutingTests
         h.Find<Panel>(AutomationIds.StatusBar).Children.Add(control);
         Dispatcher.UIThread.RunJobs();
         return control;
+    }
+
+    /// <summary>Opens the Edit menu and clicks the item of <paramref name="commandId"/> with the mouse.</summary>
+    private static void ClickMenu(HeadlessHarness h, string commandId)
+    {
+        h.Click(AutomationIds.TopMenu("Edit"));
+        var top = h.Find<MenuItem>(AutomationIds.TopMenu("Edit"));
+        Assert.True(top.IsSubMenuOpen);
+        var item = top.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == AutomationIds.Menu(commandId));
+        Assert.True(item.IsEffectivelyEnabled, $"{commandId} should be enabled (focus state: {h.Services.FocusTracker.Current})");
+        var popup = TopLevel.GetTopLevel(item) ?? throw new InvalidOperationException("Edit menu popup not shown.");
+        var point = item.TranslatePoint(new Avalonia.Point(item.Bounds.Width / 2, item.Bounds.Height / 2), popup)!.Value;
+        popup.MouseDown(point, MouseButton.Left);
+        popup.MouseUp(point, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(top.IsSubMenuOpen);
     }
 
     private static void Focus(Control control)

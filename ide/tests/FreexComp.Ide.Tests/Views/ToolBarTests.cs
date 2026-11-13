@@ -133,6 +133,23 @@ public sealed class ToolBarTests
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-MENU-008")]
+    public async Task CommandIconNameComesFromToolbarTable()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var commands = h.Services.Commands;
+
+        foreach (var definition in commands.Definitions)
+        {
+            Assert.Equal(ToolBarDefinitions.IconOf(definition.Id), commands.Get(definition.Id).IconName);
+        }
+
+        Assert.Equal("save", commands.Get("file.save").IconName);
+        Assert.Equal("run-debug", commands.Get("run.start").IconName);
+        Assert.Null(commands.Get("file.saveAs").IconName);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-MENU-008")]
     [Trait("Req", "UI-TOK-041")]
     public async Task MenuShowsIconsOfToolbarCommandsOnly()
     {

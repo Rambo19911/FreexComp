@@ -14,6 +14,8 @@ namespace FreexComp.Ide;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    private TextBoxCommandTarget? _textTarget;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -47,5 +49,24 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void ReportFocus() => ViewModel?.UpdateFocus(CommandRouting.StateOf(FocusManager?.GetFocusedElement() as Avalonia.Visual));
+    private void ReportFocus()
+    {
+        if (ViewModel is not { } vm || CommandRouting.StateOf(FocusManager?.GetFocusedElement() as Avalonia.Visual) is not { } state)
+        {
+            return; // focus in a menu, the toolbar row or a popup: commands keep acting on the previous element (I-153)
+        }
+
+        var textTarget = state.Target as TextBoxCommandTarget;
+        if (textTarget != _textTarget)
+        {
+            _textTarget?.StateChanged -= OnTextTargetChanged;
+            _textTarget = textTarget;
+            _textTarget?.StateChanged += OnTextTargetChanged;
+        }
+
+        vm.UpdateFocus(state);
+    }
+
+    /// <summary>Selection, clipboard or undo state of the focused TextBox changed: re-query edit.* (I-153).</summary>
+    private void OnTextTargetChanged(object? sender, EventArgs e) => ViewModel?.InvalidateCommands();
 }

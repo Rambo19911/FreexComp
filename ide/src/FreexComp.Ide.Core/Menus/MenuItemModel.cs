@@ -65,7 +65,7 @@ public sealed class MenuItemModel : ObservableObject
     public string? CommandId => Command?.Id;
 
     /// <summary>UI-MENU-008: the toolbar glyph of the command, or null when it has no toolbar button.</summary>
-    public string? IconName => CommandId is { } id ? ToolBarDefinitions.IconOf(id) : null;
+    public string? IconName => Command?.IconName;
 
     public string? Argument { get; }
 

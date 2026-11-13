@@ -23,8 +23,7 @@ public sealed record CommandDefinition(
     IReadOnlyList<string> DefaultGestures,
     bool IsToggle = false,
     bool TakesArgument = false,
-    bool RequiresDebugSession = false,
-    string? IconName = null)
+    bool RequiresDebugSession = false)
 {
     /// <summary>The <c>category</c> part of the id (UI-CMD-001).</summary>
     public string Category => Id[..Id.IndexOf('.', StringComparison.Ordinal)];

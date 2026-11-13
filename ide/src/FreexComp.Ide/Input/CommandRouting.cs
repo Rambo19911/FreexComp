@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Commands;
 
@@ -28,13 +29,20 @@ public static class CommandRouting
 
     /// <summary>
     /// The focus state of <paramref name="focused"/> (IDE-ARCH-042): a <see cref="TextBox"/> is a text input in the
-    /// <c>Global</c> scope; otherwise the innermost marked ancestor gives scope, tool window and target.
+    /// <c>Global</c> scope whose target is the TextBox itself (I-153); otherwise the innermost marked ancestor gives
+    /// scope, tool window and target. Null when focus is in transient chrome — the menu bar, a menu, the toolbar row or
+    /// any popup — whose commands act on what had focus before (I-153); the caller keeps the previous state.
     /// </summary>
-    public static FocusState StateOf(Visual? focused)
+    public static FocusState? StateOf(Visual? focused)
     {
-        if (focused is TextBox)
+        if (IsTransientChrome(focused))
         {
-            return new FocusState(CommandScope.Global, null, null, IsTextInput: true);
+            return null;
+        }
+
+        if (focused is TextBox box)
+        {
+            return new FocusState(CommandScope.Global, null, TextBoxCommandTarget.For(box), IsTextInput: true);
         }
 
         for (var v = focused; v is not null; v = v.GetVisualParent())
@@ -46,5 +54,21 @@ public static class CommandRouting
         }
 
         return FocusState.None;
+    }
+
+    private static bool IsTransientChrome(Visual? focused)
+    {
+        Visual? last = null;
+        for (var v = focused; v is not null; v = v.GetVisualParent())
+        {
+            if (v is MenuBase or MenuItem or Views.ToolBarRow)
+            {
+                return true;
+            }
+
+            last = v;
+        }
+
+        return last is PopupRoot;
     }
 }

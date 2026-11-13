@@ -43,4 +43,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     /// <summary>IDE-ARCH-042: keyboard focus moved.</summary>
     public void UpdateFocus(FocusState state) => _services.FocusTracker.Update(state);
+
+    /// <summary>The focused element's own command state changed (e.g. a TextBox selection): re-query CanExecute.</summary>
+    public void InvalidateCommands() => _services.Commands.InvalidateCanExecute();
 }
