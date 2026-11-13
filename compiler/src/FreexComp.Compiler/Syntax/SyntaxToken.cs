@@ -11,6 +11,9 @@ public readonly struct SyntaxToken : IEquatable<SyntaxToken>
     private readonly ImmutableArray<SyntaxTrivia> _trailing;
     private readonly int _position;
     private readonly DirectiveState? _state;
+    private readonly SyntaxNode? _parent;
+    private readonly int _index;          // slot in the parent's child list
+    private readonly bool _missing;
 
     internal SyntaxToken(SyntaxKind kind, string text, object? value, int position,
                          ImmutableArray<SyntaxTrivia> leading, ImmutableArray<SyntaxTrivia> trailing,
@@ -26,6 +29,23 @@ public readonly struct SyntaxToken : IEquatable<SyntaxToken>
         _state = state;
         File = file;
     }
+
+    private SyntaxToken(SyntaxToken token, SyntaxNode? parent, int index, bool missing)
+    {
+        this = token;
+        _parent = parent;
+        _index = index;
+        _missing = missing;
+    }
+
+    /// <summary>A zero-width token inserted by the parser for a required but absent token (LANG-181).</summary>
+    internal static SyntaxToken Missing(SyntaxKind kind, int position, DirectiveState? state = null, SourceText? file = null) =>
+        new(new SyntaxToken(kind, "", null, position, [], [], state, file), null, 0, missing: true);
+
+    /// <summary>This token attached to <paramref name="parent"/> at child slot <paramref name="index"/>.</summary>
+    internal SyntaxToken WithParent(SyntaxNode parent, int index) => new(this, parent, index, _missing);
+
+    internal int IndexInParent => _index;
 
     /// <summary>The file this token was read from (the main file or an include file, LANG-876); spans are relative to it.</summary>
     internal SourceText? File { get; }
@@ -57,14 +77,53 @@ public readonly struct SyntaxToken : IEquatable<SyntaxToken>
         }
     }
 
-    public bool IsMissing => false;
+    /// <summary>True for a zero-width token the parser inserted for a required but absent token (LANG-181).</summary>
+    public bool IsMissing => _missing;
+
+    /// <summary>The node owning this token; null for tokens from <see cref="Lexer.Tokenize"/>.</summary>
+    public SyntaxNode? Parent => _parent;
 
     public ImmutableArray<SyntaxTrivia> LeadingTrivia => _leading.IsDefault ? [] : _leading;
 
     public ImmutableArray<SyntaxTrivia> TrailingTrivia => _trailing.IsDefault ? [] : _trailing;
 
+    /// <summary>The next token of the tree in source order (missing tokens included); <c>default</c> at the end or without a parent.</summary>
+    public SyntaxToken GetNextToken() => _parent is null ? default : SyntaxNode.TokenAfter(_parent, _index);
+
+    /// <summary>The previous token of the tree in source order; <c>default</c> at the start or without a parent.</summary>
+    public SyntaxToken GetPreviousToken() => _parent is null ? default : SyntaxNode.TokenBefore(_parent, _index);
+
+    /// <summary>Leading trivia, text and trailing trivia.</summary>
+    public string ToFullString()
+    {
+        var builder = new System.Text.StringBuilder();
+        WriteTo(builder);
+        return builder.ToString();
+    }
+
+    internal void WriteTo(System.Text.StringBuilder builder, bool leading = true, bool trailing = true)
+    {
+        if (leading)
+        {
+            foreach (var trivia in LeadingTrivia)
+            {
+                builder.Append(trivia.Text);
+            }
+        }
+
+        builder.Append(Text);
+        if (trailing)
+        {
+            foreach (var trivia in TrailingTrivia)
+            {
+                builder.Append(trivia.Text);
+            }
+        }
+    }
+
     public bool Equals(SyntaxToken other) =>
-        Kind == other.Kind && _position == other._position && Text == other.Text && FullSpan == other.FullSpan;
+        Kind == other.Kind && _position == other._position && Text == other.Text && FullSpan == other.FullSpan
+        && ReferenceEquals(_parent, other._parent) && _index == other._index && _missing == other._missing;
 
     public override bool Equals(object? obj) => obj is SyntaxToken other && Equals(other);
 

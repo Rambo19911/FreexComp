@@ -173,4 +173,8 @@ public enum SyntaxKind
     IncludeDirectiveTrivia,
     DisabledTextTrivia,
     SkippedTokensTrivia,
+
+    // --- nodes (api.md §4.1); one kind per node class, named after the class without "Syntax"
+    IdentifierName,
+    QualifiedName,
 }
