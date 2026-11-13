@@ -1,0 +1,8 @@
+object MainForm: TMainForm
+  Caption = 'Hello'
+  Left = 8
+  Anchors = [akLeft, akTop]
+  object Button1: TButton
+    OnClick = Button1Click
+  end
+end

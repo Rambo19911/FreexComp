@@ -18,9 +18,9 @@ public sealed class LanguageRegistry : ILanguageRegistry
 {
     private readonly Dictionary<string, ILanguageDefinition> _byExtension = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Phase 1 built-ins; <c>PascalLanguage</c> joins with I-031.</summary>
+    /// <summary>Phase 1 built-ins.</summary>
     public LanguageRegistry()
-        : this([new FormLanguage(), new JsonLanguage()])
+        : this([new PascalLanguage(), new FormLanguage(), new JsonLanguage()])
     {
     }
 

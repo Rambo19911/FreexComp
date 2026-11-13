@@ -80,7 +80,18 @@ public abstract class WholeTextClassifier : ITokenClassifier
         int start = buffer.GetLine(first).Offset;
         var (lastOffset, lastLength, lastDelimiter) = buffer.GetLine(last);
         int end = lastOffset + lastLength + lastDelimiter;
-        return _spans.Where(s => s.Offset < end && s.Offset + s.Length > start).ToList();
+        // Spans are sorted and non-overlapping, so their ends are sorted too: binary search the first one ending after start.
+        int low = 0, high = _spans.Count;
+        while (low < high)
+        {
+            int mid = (low + high) / 2;
+            if (_spans[mid].Offset + _spans[mid].Length > start) high = mid;
+            else low = mid + 1;
+        }
+        var result = new List<TokenClassSpan>();
+        for (int i = low; i < _spans.Count && _spans[i].Offset < end; i++)
+            result.Add(_spans[i]);
+        return result;
     }
 
     /// <summary>All spans of <paramref name="text"/>, sorted by offset. Must never throw.</summary>

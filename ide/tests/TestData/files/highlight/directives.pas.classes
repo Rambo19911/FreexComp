@@ -1,0 +1,10 @@
+1:1-15 syntax.directive
+2:1-14 syntax.directive
+3:1-1 syntax.text
+3:3-4 syntax.symbol
+3:6-6 syntax.number
+3:7-7 syntax.symbol
+4:1-7 syntax.directive
+5:1-7 syntax.inactive
+6:1-8 syntax.directive
+7:1-12 syntax.directive

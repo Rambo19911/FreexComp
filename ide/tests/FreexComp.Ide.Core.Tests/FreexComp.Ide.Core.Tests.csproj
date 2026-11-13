@@ -7,4 +7,8 @@
     <ProjectReference Include="..\..\src\FreexComp.Designer\FreexComp.Designer.csproj" />
     <ProjectReference Include="..\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- testing.md §4: shared test data, copied to the output as TestData/. -->
+    <None Include="..\TestData\**\*" LinkBase="TestData" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

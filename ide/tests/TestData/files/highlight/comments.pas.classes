@@ -1,0 +1,11 @@
+1:1-15 syntax.comment
+2:1-17 syntax.comment
+3:1-19 syntax.comment
+4:1-15 syntax.comment
+5:1-7 syntax.comment
+6:1-8 syntax.comment
+7:1-1 syntax.text
+7:3-4 syntax.symbol
+7:6-6 syntax.number
+7:7-7 syntax.symbol
+7:9-19 syntax.comment

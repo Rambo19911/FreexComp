@@ -30,7 +30,9 @@ public sealed class LanguageRegistryTests
         Assert.Equal("Plain Text", registry.PlainText.DisplayName);
 
         // Comment and bracket data (IDE-ED-034: Form, JSON and Plain Text have no line comment).
-        Assert.All(registry.Languages, l => Assert.Null(l.LineComment));
+        Assert.All(registry.Languages.Where(l => l.Id != "pascal"), l => Assert.Null(l.LineComment));
+        Assert.Equal("//", registry.GetById("pascal")!.LineComment);
+        Assert.Equal("pascal", registry.ForPath(@"C:\p\Unit1.PAS").Id);   // I-031
         Assert.Equal([('{', '}'), ('[', ']')], registry.GetById("json")!.Brackets);
     }
 }
