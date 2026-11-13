@@ -40,6 +40,9 @@ internal static class Mangler
     /// <summary>Name of the frame record struct type of <paramref name="routine"/> (CMP-345).</summary>
     public static LinkName FrameType(RoutineSymbol routine) => new(RoutineText(routine) + ".$frame", AlwaysQuote: true);
 
+    /// <summary>A runtime helper of unit System (rtl-abi.md §9): <c>System._Name</c>.</summary>
+    public static LinkName RuntimeHelper(string name) => new("System." + name, AlwaysQuote: true);
+
     public static LinkName StringLiteral(int index) => new(".str." + index, AlwaysQuote: false);
 
     /// <summary>
