@@ -12,7 +12,7 @@ namespace FreexComp.Ide.Core.ViewModels;
 /// (<see cref="LineEnding"/>) and the encoding of the next save. Created and saved only by the document service
 /// (IDE-ARCH-023).
 /// </summary>
-public class TextDocumentViewModel : DocumentViewModel
+public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 {
     public const string EncodingInfoBarKind = "Encoding";
     public const string MixedLineEndingsInfoBarKind = "MixedLineEndings";
@@ -79,7 +79,35 @@ public class TextDocumentViewModel : DocumentViewModel
 
     public override bool IsReadOnly => Buffer.IsReadOnly;
 
-    public override ICommandTarget? CommandTarget => LineEnding;
+    /// <summary>
+    /// The document itself: <c>edit.undo</c> / <c>edit.redo</c> through <see cref="ITextBuffer.Undo"/> /
+    /// <see cref="ITextBuffer.Redo"/> (never the editor's own undo stack, IDE-ARCH-030), everything else to
+    /// <see cref="LineEnding"/>. The editor view adds the commands that need its selection.
+    /// </summary>
+    public override ICommandTarget? CommandTarget => this;
+
+    bool ICommandTarget.CanExecute(string commandId, string? argument) => commandId switch
+    {
+        UndoCommandId => !Buffer.IsReadOnly && Buffer.CanUndo,
+        RedoCommandId => !Buffer.IsReadOnly && Buffer.CanRedo,
+        _ => LineEnding.CanExecute(commandId, argument),
+    };
+
+    Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
+    {
+        if (commandId is not (UndoCommandId or RedoCommandId))
+            return LineEnding.ExecuteAsync(commandId, argument);
+        if (!((ICommandTarget)this).CanExecute(commandId, argument))
+            return Task.FromResult(false);
+        if (commandId == UndoCommandId)
+            Buffer.Undo();
+        else
+            Buffer.Redo();
+        return Task.FromResult(true);
+    }
+
+    private const string UndoCommandId = "edit.undo";
+    private const string RedoCommandId = "edit.redo";
 
     /// <summary>Changes only the encoding used for the next save; the document becomes modified (IDE-P1-074).</summary>
     public void SetEncoding(FileEncoding encoding)
@@ -111,6 +139,13 @@ public class TextDocumentViewModel : DocumentViewModel
         Buffer.ApplyEdits(edits);
         return true;
     }
+
+    /// <summary>
+    /// Typed or pasted text replacing <paramref name="replacedLength"/> units at <paramref name="offset"/>: its line
+    /// breaks become the document's (<see cref="LineEndingModel.Normalize"/>, IDE-P1-076), then <see cref="TryEdit"/>.
+    /// </summary>
+    public bool TryInsertText(int offset, int replacedLength, string text) =>
+        TryEdit([new TextEdit(offset, replacedLength, LineEnding.Normalize(text))]);
 
     /// <summary>Sets <see cref="IsReadOnly"/>; becoming writable removes the <c>ReadOnly</c> info bar.</summary>
     internal void SetReadOnly(bool readOnly)

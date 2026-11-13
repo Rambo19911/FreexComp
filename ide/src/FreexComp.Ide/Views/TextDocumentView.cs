@@ -1,11 +1,12 @@
 using Avalonia.Controls;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Editor;
 
 namespace FreexComp.Ide.Views;
 
 /// <summary>
-/// A text document in the document area: its info bars (newest on top, editor.md §9) above the editor. The editor
-/// host (<c>CodeEditorView</c>) is added by I-043; the document area shows this view from I-042.
+/// A text document in the document area: its info bars (newest on top, editor.md §9) above the code editor
+/// (<see cref="CodeEditorView"/>, which takes the document as its <c>DataContext</c>).
 /// </summary>
 public sealed class TextDocumentView : DockPanel
 {
@@ -15,6 +16,7 @@ public sealed class TextDocumentView : DockPanel
     {
         SetDock(_infoBars, Avalonia.Controls.Dock.Top);
         Children.Add(_infoBars);
+        Children.Add(new CodeEditorView());
     }
 
     protected override void OnDataContextChanged(EventArgs e)

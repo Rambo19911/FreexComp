@@ -530,7 +530,19 @@ public sealed class DocumentService : IDocumentService
             }
         };
         if (document is TextDocumentViewModel text)
+        {
             text.ReadOnlyEditRefused += (_, _) => _status.ShowMessage(Strings.Msg_Editor_ReadOnlyEdit, StatusMessageDuration);
+            var undoState = (text.Buffer.CanUndo, text.Buffer.CanRedo);
+            text.Buffer.Changed += (_, _) =>
+            {
+                // edit.undo / edit.redo follow the buffer (menus.md, toolbars.md).
+                if ((text.Buffer.CanUndo, text.Buffer.CanRedo) != undoState)
+                {
+                    undoState = (text.Buffer.CanUndo, text.Buffer.CanRedo);
+                    _commands?.InvalidateCanExecute();
+                }
+            };
+        }
         UpdateTitleSuffixes();
         DocumentOpened?.Invoke(this, new DocumentEventArgs(document));
         Activate(document);
@@ -565,7 +577,11 @@ public sealed class DocumentService : IDocumentService
         PushStatus();
     }
 
-    private void OnStatusSourceChanged(object? sender, PropertyChangedEventArgs e) => PushStatus();
+    private void OnStatusSourceChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not (nameof(EditorViewState.HorizontalOffset) or nameof(EditorViewState.VerticalOffset)))
+            PushStatus(); // scrolling changes no status field
+    }
 
     private void PushStatus() =>
         _status.SetEditor(_statusSource?.GetStatus(_settings.Get(SettingsCatalog.EditorInsertSpaces), _settings.Get(SettingsCatalog.EditorTabWidth)));

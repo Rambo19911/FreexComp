@@ -8,8 +8,8 @@ namespace FreexComp.Ide.Input;
 
 /// <summary>
 /// Marks the root of a command scope in the view tree (commands.md §1): editor views set <c>Editor</c>, tool windows
-/// <c>ToolList</c>/<c>ProjectManager</c> plus their name, the design surface <c>Designer</c>. The element's
-/// <c>DataContext</c>, when it is an <see cref="ICommandTarget"/>, receives <c>Focus</c> commands.
+/// <c>ToolList</c>/<c>ProjectManager</c> plus their name, the design surface <c>Designer</c>. The element itself, or
+/// else its <c>DataContext</c>, when it is an <see cref="ICommandTarget"/>, receives <c>Focus</c> commands.
 /// </summary>
 public static class CommandRouting
 {
@@ -49,7 +49,8 @@ public static class CommandRouting
         {
             if (v is Control control && GetScope(control) is { } scope)
             {
-                return new FocusState(scope, GetToolWindow(control), control.DataContext as ICommandTarget, IsTextInput: false);
+                // A view that is itself a target (the code editor, which owns the selection) wins over its view-model.
+                return new FocusState(scope, GetToolWindow(control), control as ICommandTarget ?? control.DataContext as ICommandTarget, IsTextInput: false);
             }
         }
 

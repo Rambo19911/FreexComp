@@ -63,6 +63,9 @@ public static partial class AutomationIds
 
     public static string InfoBar(string kind) => "InfoBar." + kind;
 
+    /// <summary>The <c>TextEditor</c> of a document (accessibility.md): <c>Editor.&lt;fileName&gt;</c>.</summary>
+    public static string Editor(string fileName) => "Editor." + fileName;
+
     public static string InfoBarAction(string kind, string name) => $"InfoBar.{kind}.Action.{name}";
 
     public static string StatusBarField(string name) => "StatusBar." + name;
