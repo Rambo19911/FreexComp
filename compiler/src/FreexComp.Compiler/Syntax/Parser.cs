@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using FreexComp.Compiler.Text;
 
 namespace FreexComp.Compiler.Syntax;
@@ -192,6 +193,25 @@ internal sealed class Parser
 
     private BlockSyntax ParseBlock()
     {
+        if (TooDeep())
+        {
+            AbandonRest();
+            return new BlockSyntax(default, new CompoundStatementSyntax(Missing(SyntaxKind.BeginKeyword), default, Missing(SyntaxKind.EndKeyword)));
+        }
+
+        _depth++;
+        try
+        {
+            return ParseBlockCore();
+        }
+        finally
+        {
+            _depth--;
+        }
+    }
+
+    private BlockSyntax ParseBlockCore()
+    {
         var declarations = ParseDeclarations(SectionKind.Block);
         return new BlockSyntax(declarations, ParseCompoundStatement());
     }
@@ -274,7 +294,14 @@ internal sealed class Parser
         var directives = ImmutableArray.CreateBuilder<DirectiveSyntax>();
         while (IsDirectiveStart())
         {
-            directives.Add(ParseDirective());
+            var directive = ParseDirective();
+            if (!hasBody && directive.Keyword.ContextualKind == SyntaxKind.ForwardKeyword)
+            {
+                ReportAt(directive.Keyword, "E1114", directive.Keyword.Text);
+            }
+
+            CheckDuplicateDirective(directives, directive);
+            directives.Add(directive);
         }
 
         if (!hasBody || directives.Any(d => d.Keyword.ContextualKind is SyntaxKind.ForwardKeyword or SyntaxKind.ExternalKeyword))
@@ -344,6 +371,15 @@ internal sealed class Parser
         }
 
         return !IsContextual(Current, SyntaxKind.PublicKeyword) || IsContextual(Peek(1), SyntaxKind.NameKeyword);
+    }
+
+    /// <summary>E1115 when the same directive was already given for this declaration.</summary>
+    private void CheckDuplicateDirective(ImmutableArray<DirectiveSyntax>.Builder directives, DirectiveSyntax directive)
+    {
+        if (directives.Any(d => d.Keyword.ContextualKind == directive.Keyword.ContextualKind))
+        {
+            ReportAt(directive.Keyword, "E1115", directive.Keyword.Text);
+        }
     }
 
     /// <summary>One directive with its arguments and its <c>;</c> (optional when another directive follows, LANG-160).</summary>
@@ -430,7 +466,7 @@ internal sealed class Parser
     private ConstDeclarationSyntax ParseConstDeclaration()
     {
         var attributes = ParseAttributeLists();
-        var identifier = ExpectIdentifier();
+        var identifier = ExpectIdentifier(declaresName: true);
         SyntaxToken? colon = null;
         TypeSyntax? type = null;
         SyntaxNode value;
@@ -458,6 +494,25 @@ internal sealed class Parser
     /// an expression and may continue with operators (<c>(1 + 2) * 3</c>).
     /// </summary>
     private SyntaxNode ParseTypedConstant()
+    {
+        if (TooDeep())
+        {
+            AbandonRest();
+            return new IdentifierNameSyntax(Missing(SyntaxKind.IdentifierToken));
+        }
+
+        _depth++;
+        try
+        {
+            return ParseTypedConstantCore();
+        }
+        finally
+        {
+            _depth--;
+        }
+    }
+
+    private SyntaxNode ParseTypedConstantCore()
     {
         if (CurrentKind != SyntaxKind.OpenParenToken)
         {
@@ -523,7 +578,7 @@ internal sealed class Parser
     private TypeDeclarationSyntax ParseTypeDeclaration()
     {
         var attributes = ParseAttributeLists();
-        var identifier = ExpectIdentifier();
+        var identifier = ExpectIdentifier(declaresName: true);
         var typeParameters = CurrentKind == SyntaxKind.LessThanToken ? ParseTypeParameterList() : null;
         var equals = Expect(SyntaxKind.EqualsToken);
         var typeKeyword = CurrentKind == SyntaxKind.TypeKeyword ? Take() : (SyntaxToken?)null;
@@ -550,7 +605,7 @@ internal sealed class Parser
     private VarDeclarationSyntax ParseVarDeclaration()
     {
         var attributes = ParseAttributeLists();
-        var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
+        var identifiers = ParseSeparated(ParseDeclaredName, SyntaxKind.CommaToken);
         var colon = Expect(SyntaxKind.ColonToken);
         var type = ParseType();
         SyntaxToken? equals = null;
@@ -571,6 +626,25 @@ internal sealed class Parser
     /// <c>type</c> (grammar.md §3, §4); anything that cannot start a type is E1106 and a missing named type.
     /// </summary>
     private TypeSyntax ParseType()
+    {
+        if (TooDeep())
+        {
+            AbandonRest();
+            return MissingNamedType();
+        }
+
+        _depth++;
+        try
+        {
+            return ParseTypeCore();
+        }
+        finally
+        {
+            _depth--;
+        }
+    }
+
+    private TypeSyntax ParseTypeCore()
     {
         switch (CurrentKind)
         {
@@ -953,7 +1027,14 @@ internal sealed class Parser
         var directives = ImmutableArray.CreateBuilder<DirectiveSyntax>();
         while (IsDirectiveStart(inMember: true))
         {
-            directives.Add(ParseDirective(inMember: true));
+            var directive = ParseDirective(inMember: true);
+            if (directive.Keyword.ContextualKind == SyntaxKind.ForwardKeyword)
+            {
+                ReportAt(directive.Keyword, "E1114", directive.Keyword.Text);
+            }
+
+            CheckDuplicateDirective(directives, directive);
+            directives.Add(directive);
         }
 
         return new MethodDeclarationSyntax(attributes, heading, semicolon, new SyntaxList<DirectiveSyntax>(directives.ToImmutable()));
@@ -994,7 +1075,7 @@ internal sealed class Parser
     {
         var classKeyword = CurrentKind == SyntaxKind.ClassKeyword ? Take() : (SyntaxToken?)null;
         var propertyKeyword = Take();
-        var identifier = ExpectIdentifier();
+        var identifier = ExpectIdentifier(declaresName: true);
         SyntaxToken? open = null;
         SyntaxToken? close = null;
         SeparatedSyntaxList<ParameterSyntax> parameters = default;
@@ -1068,7 +1149,7 @@ internal sealed class Parser
     private FieldDeclarationSyntax ParseFieldDeclaration(SyntaxList<AttributeListSyntax>? attributeLists = null)
     {
         var attributes = attributeLists ?? ParseAttributeLists();
-        var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
+        var identifiers = ParseSeparated(ParseDeclaredName, SyntaxKind.CommaToken);
         var colon = Expect(SyntaxKind.ColonToken);
         var type = ParseType();
         var hints = ParseHintDirectives();
@@ -1228,7 +1309,7 @@ internal sealed class Parser
             modifier = TakeContextual();
         }
 
-        var identifiers = ParseSeparated(ParseIdentifierName, SyntaxKind.CommaToken);
+        var identifiers = ParseSeparated(ParseDeclaredName, SyntaxKind.CommaToken);
         if (CurrentKind != SyntaxKind.ColonToken)
         {
             return new ParameterSyntax(attributes, modifier, identifiers, null, null, null, null);
@@ -1307,6 +1388,25 @@ internal sealed class Parser
     /// An anonymous method, too (LANG-720); anything else is E1103.
     /// </summary>
     private ExpressionSyntax ParseFactor()
+    {
+        if (TooDeep())
+        {
+            AbandonRest();
+            return new IdentifierNameSyntax(Missing(SyntaxKind.IdentifierToken));
+        }
+
+        _depth++;
+        try
+        {
+            return ParseFactorCore();
+        }
+        finally
+        {
+            _depth--;
+        }
+    }
+
+    private ExpressionSyntax ParseFactorCore()
     {
         switch (CurrentKind)
         {
@@ -1519,8 +1619,15 @@ internal sealed class Parser
         return new SeparatedSyntaxList<StatementSyntax>(items.ToImmutable());
     }
 
+    /// <summary>
+    /// List ends and the declaration-level synchronisation points that cannot start a statement (LANG-183): a statement
+    /// list that meets <c>procedure</c>, <c>type</c>, <c>implementation</c>, … is missing its <c>end</c>.
+    /// </summary>
     private static bool EndsStatementList(SyntaxKind kind) => kind is SyntaxKind.EndKeyword or SyntaxKind.UntilKeyword
-        or SyntaxKind.FinallyKeyword or SyntaxKind.ExceptKeyword or SyntaxKind.FinalizationKeyword or SyntaxKind.EndOfFileToken;
+        or SyntaxKind.FinallyKeyword or SyntaxKind.ExceptKeyword or SyntaxKind.FinalizationKeyword or SyntaxKind.EndOfFileToken
+        or SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword or SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword
+        or SyntaxKind.TypeKeyword or SyntaxKind.LabelKeyword or SyntaxKind.ResourceStringKeyword or SyntaxKind.ThreadVarKeyword
+        or SyntaxKind.ImplementationKeyword or SyntaxKind.InitializationKeyword;
 
     /// <summary>A statement nested in another one, with the given statement context.</summary>
     private StatementSyntax ParseNestedStatement(bool elseMayFollow, bool semicolonElseIsOuter)
@@ -1538,6 +1645,25 @@ internal sealed class Parser
     /// up to a statement-level synchronisation point (LANG-183) or a <c>begin</c>.
     /// </summary>
     private StatementSyntax ParseStatement()
+    {
+        if (TooDeep())
+        {
+            AbandonRest();
+            return new EmptyStatementSyntax();
+        }
+
+        _depth++;
+        try
+        {
+            return ParseStatementCore();
+        }
+        finally
+        {
+            _depth--;
+        }
+    }
+
+    private StatementSyntax ParseStatementCore()
     {
         switch (CurrentKind)
         {
@@ -1642,12 +1768,18 @@ internal sealed class Parser
         do
         {
             arms.Add(ParseCaseArm());
-            if (CurrentKind != SyntaxKind.SemicolonToken)
+            if (CurrentKind == SyntaxKind.SemicolonToken)
+            {
+                arms.Add(Take());
+            }
+            else if (CanStartFactor(CurrentKind))
+            {
+                arms.Add(Expect(SyntaxKind.SemicolonToken));   // another arm follows: the ';' is missing
+            }
+            else
             {
                 break;
             }
-
-            arms.Add(Take());
         }
         while (CurrentKind != SyntaxKind.ElseKeyword && !EndsStatementList(CurrentKind));
 
@@ -1876,6 +2008,9 @@ internal sealed class Parser
 
     private IdentifierNameSyntax ParseIdentifierName() => new(ExpectIdentifier());
 
+    /// <summary>The name being declared by a var, field or parameter list (E1109 recovery for reserved words).</summary>
+    private IdentifierNameSyntax ParseDeclaredName() => new(ExpectIdentifier(declaresName: true));
+
     /// <summary><c>qualIdent = ident { . ident }</c> (LANG-152).</summary>
     private NameSyntax ParseQualifiedName()
     {
@@ -1933,7 +2068,7 @@ internal sealed class Parser
 
     private SimpleNameSyntax ParseRoutineNameSegment()
     {
-        var identifier = ExpectIdentifier();
+        var identifier = ExpectIdentifier(declaresName: true);
         if (CurrentKind == SyntaxKind.LessThanToken && ClosingAngleOffset(0) is var close and >= 0
             && Peek(close).Kind == SyntaxKind.GreaterThanToken && Peek(close + 1).Kind == SyntaxKind.DotToken)
         {
@@ -2251,6 +2386,30 @@ internal sealed class Parser
 
     // ------------------------------------------------------------------ token handling and recovery
 
+    private const int MaxDepth = 1000;
+    private int _depth;   // nesting of the guarded recursive productions (blocks, types, typed constants, factors, statements)
+
+    /// <summary>
+    /// Nesting so deep that the parser could exhaust the stack: LANG-180 forbids crashing, so the rest of the file is
+    /// given up (<see cref="AbandonRest"/>).
+    /// </summary>
+    private bool TooDeep() => _depth >= MaxDepth || !RuntimeHelpers.TryEnsureSufficientExecutionStack();
+
+    /// <summary>E1100 at the current token, then every remaining token becomes skipped trivia of the end-of-file token.</summary>
+    private void AbandonRest()
+    {
+        if (CurrentKind == SyntaxKind.EndOfFileToken)
+        {
+            return;
+        }
+
+        ReportAt(Current, "E1100", Current.Text);
+        while (CurrentKind != SyntaxKind.EndOfFileToken)
+        {
+            SkipToken(report: false);
+        }
+    }
+
     private static bool IsContextual(SyntaxToken token, SyntaxKind kind) =>
         token.Kind == SyntaxKind.IdentifierToken && !token.Text.StartsWith('&')
         && SyntaxFacts.GetKeywordKind(token.Text) == kind;
@@ -2304,10 +2463,23 @@ internal sealed class Parser
         return Missing(kind);
     }
 
-    private SyntaxToken ExpectIdentifier()
+    /// <summary>
+    /// The current identifier, else a missing one with E1102 (E1108 at EOF). Where a name is being declared
+    /// (<paramref name="declaresName"/>), a reserved word followed by <c>: , = ( ; := &lt;</c> is taken as the name with
+    /// E1109 so that the declaration still parses.
+    /// </summary>
+    private SyntaxToken ExpectIdentifier(bool declaresName = false)
     {
         if (CurrentKind == SyntaxKind.IdentifierToken)
         {
+            return Take();
+        }
+
+        if (declaresName && SyntaxFacts.IsKeyword(CurrentKind)
+            && Peek(1).Kind is SyntaxKind.ColonToken or SyntaxKind.CommaToken or SyntaxKind.EqualsToken or SyntaxKind.OpenParenToken
+                or SyntaxKind.SemicolonToken or SyntaxKind.ColonEqualsToken or SyntaxKind.LessThanToken)
+        {
+            ReportAt(Current, "E1109", Current.Text);
             return Take();
         }
 
