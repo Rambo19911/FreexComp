@@ -12,9 +12,10 @@ namespace FreexComp.Compiler.Tests.Diagnostics;
 public sealed partial class DiagnosticCatalogMatchesSpec
 {
     [Fact]
+    [Trait("Category", "Spec")]
     public void DiagnosticCatalogMatchesSpec_EveryCodeNameSeverityAndTemplate()
     {
-        var expected = ParseSpec(Path.Combine(RepoPaths.Root, "docs", "spec", "compiler", "diagnostics.md"));
+        var expected = ParseSpec(Path.Combine(RepoPaths.RequireDocs(), "spec", "compiler", "diagnostics.md"));
         var actual = DiagnosticCatalog.All;
 
         Assert.True(expected.Count > 200, $"only {expected.Count} codes parsed from the spec");
