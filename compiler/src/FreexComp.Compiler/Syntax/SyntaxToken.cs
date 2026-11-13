@@ -10,9 +10,11 @@ public readonly struct SyntaxToken : IEquatable<SyntaxToken>
     private readonly ImmutableArray<SyntaxTrivia> _leading;
     private readonly ImmutableArray<SyntaxTrivia> _trailing;
     private readonly int _position;
+    private readonly DirectiveState? _state;
 
     internal SyntaxToken(SyntaxKind kind, string text, object? value, int position,
-                         ImmutableArray<SyntaxTrivia> leading, ImmutableArray<SyntaxTrivia> trailing)
+                         ImmutableArray<SyntaxTrivia> leading, ImmutableArray<SyntaxTrivia> trailing,
+                         DirectiveState? state = null)
     {
         Kind = kind;
         ContextualKind = kind;
@@ -21,7 +23,11 @@ public readonly struct SyntaxToken : IEquatable<SyntaxToken>
         _position = position;
         _leading = leading;
         _trailing = trailing;
+        _state = state;
     }
+
+    /// <summary>Switch state at this token (CMP-111); public access is <c>SemanticModel.GetDirectiveState</c>.</summary>
+    internal DirectiveState DirectiveState => _state ?? DirectiveState.Default;
 
     /// <summary><see cref="SyntaxKind.IdentifierToken"/>, a literal, symbol or keyword kind, or EndOfFileToken.</summary>
     public SyntaxKind Kind { get; }

@@ -23,7 +23,7 @@ internal sealed class PascalLexer
     {
         _source = source;
         _text = source.Text;
-        _preprocessor = new Preprocessor(options, (code, span, args) => Report(code, span.Start, span.Length, args));
+        _preprocessor = new Preprocessor(options, (code, span, args, severity) => Report(code, span.Start, span.Length, severity, args));
     }
 
     public ImmutableArray<Diagnostic> Diagnostics => [.. _diagnostics];
@@ -44,12 +44,13 @@ internal sealed class PascalLexer
                 _preprocessor.Finish();
             }
 
-            return new SyntaxToken(SyntaxKind.EndOfFileToken, "", null, start, leading, []);
+            return new SyntaxToken(SyntaxKind.EndOfFileToken, "", null, start, leading, [], _preprocessor.State);
         }
 
+        var state = _preprocessor.State;
         var (kind, value) = ScanToken();
         var text = _text[start.._pos];
-        return new SyntaxToken(kind, text, value, start, leading, ScanTrivia(trailing: true));
+        return new SyntaxToken(kind, text, value, start, leading, ScanTrivia(trailing: true), state);
     }
 
     // ------------------------------------------------------------------ tokens
@@ -656,12 +657,15 @@ internal sealed class PascalLexer
 
     private static bool IsWhitespace(char c) => c is ' ' or '\t' or '\f' or '\u00A0' or '\uFEFF';
 
-    private void Report(string code, int start, int length, params object[] args)
+    private void Report(string code, int start, int length, params object[] args) =>
+        Report(code, start, length, DiagnosticCatalog.Get(code).DefaultSeverity, args);
+
+    private void Report(string code, int start, int length, DiagnosticSeverity severity, object[] args)
     {
         var span = new TextSpan(start, length);
         var lines = _source.Lines;
         var location = new Location(_source.Path, span,
             new LinePositionSpan(lines.GetLinePosition(span.Start), lines.GetLinePosition(span.End)));
-        _diagnostics.Add(Diagnostic.Create(code, location, args));
+        _diagnostics.Add(Diagnostic.Create(code, location, args) with { Severity = severity });
     }
 }
