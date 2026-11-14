@@ -1,0 +1,61 @@
+# records and constants
+ok SizeOf TPoint
+ok SizeOf TRect
+ok SizeOf TSize
+ok SizeOf TSmallPoint
+ok SizeOf TPointF
+ok SizeOf TRectF
+ok LessThanValue
+ok EqualsValue
+ok GreaterThanValue
+ok TValueRelationship
+ok TValueSign
+ok dynamic array types
+ok TPointF, TRectF
+# constructors
+ok Point
+ok Rect
+ok Bounds
+ok Bounds negative size
+ok Size
+ok SmallPoint
+ok PPoint, PRect, PSize
+# measures and tests
+ok RectWidth negative
+ok RectHeight
+ok IsRectEmpty right <= left
+ok IsRectEmpty zero height
+ok IsRectEmpty 1x1
+ok EqualRect
+ok EqualRect differs
+ok PtInRect top-left inside
+ok PtInRect last inside
+ok PtInRect right edge outside
+ok PtInRect bottom edge outside
+ok PtInRect left of
+ok PointsEqual
+ok PointsEqual differs
+ok CenterPoint
+ok CenterPoint inverted
+# modifiers
+ok OffsetRect result
+ok OffsetRect
+ok InflateRect result
+ok InflateRect
+ok InflateRect negative
+# intersection and union
+ok IntersectRect overlap
+ok IntersectRect value
+ok IntersectRect touching
+ok IntersectRect empty is zero
+ok IntersectRect output aliases input
+ok IntersectRect aliased value
+ok UnionRect
+ok UnionRect value
+ok UnionRect first empty
+ok UnionRect ignores the empty input
+ok UnionRect second empty
+ok UnionRect ignores the empty second input
+ok UnionRect both empty
+ok UnionRect both empty is zero
+# passed 55 failed 0

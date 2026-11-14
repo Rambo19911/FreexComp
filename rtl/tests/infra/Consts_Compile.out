@@ -1,0 +1,7 @@
+'%s' is not a valid integer value
+List index out of bounds (%d)
+Item not found
+System Error.  Code: %d.
+%s
+Access violation at address %s: %s of address %s
+A component named %s already exists

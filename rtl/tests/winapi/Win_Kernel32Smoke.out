@@ -1,0 +1,121 @@
+# base types
+ok BOOL
+ok DWORD
+ok UINT
+ok LONG
+ok WORD
+ok ULONG_PTR
+ok SIZE_T
+ok WPARAM
+ok LPARAM
+ok LRESULT
+ok HANDLE
+ok HWND
+ok HMODULE
+ok LONGLONG
+ok COLORREF
+ok NTSTATUS
+# macros
+ok MakeLong
+ok LoWord
+ok HiWord
+ok HiWord bits 16..31
+ok MakeWParam
+ok MakeLParam
+ok MakeLResult
+ok RGB
+ok GetRValue
+ok GetGValue
+ok GetBValue
+ok MakeIntResource
+ok Succeeded
+ok Failed
+ok GET_X_LPARAM
+ok GET_Y_LPARAM
+ok GET_WHEEL_DELTA_WPARAM
+# process
+ok GetCurrentProcessId
+ok GetCurrentProcess pseudo handle
+ok GetModuleHandleW(nil)
+ok GetModuleHandle alias
+ok GetModuleFileNameW
+ok GetCommandLineW
+ok SetEnvironmentVariableW
+ok GetEnvironmentVariableW length
+ok GetEnvironmentVariableW value
+ok variable removed
+ok ERROR_ENVVAR_NOT_FOUND
+ok GetSystemInfo architecture
+ok GetSystemInfo page size
+ok GetSystemInfo processors
+ok GetSystemInfo granularity
+ok MulDiv rounds
+ok MulDiv by zero
+ok RtlGetVersion
+ok RtlGetVersion major
+ok RtlGetVersion build >= 1809
+ok RtlGetVersion platform
+# memory and errors
+ok GetProcessHeap
+ok HeapAlloc zeroed
+ok HeapSize
+ok HeapReAlloc keeps content
+ok HeapFree
+ok VirtualAlloc committed zero pages
+ok VirtualFree
+ok SetLastError/GetLastError
+ok FormatMessageW
+ok FormatMessageW allocated
+ok LocalFree
+# std handles
+ok GetStdHandle
+ok GetFileType pipe
+ok GetConsoleMode on a pipe
+ok WriteConsoleW on a pipe
+ok ReadConsoleW on a pipe
+# time
+ok GetSystemTime
+ok GetLocalTime
+ok GetSystemTimeAsFileTime
+ok SystemTimeToFileTime
+ok FileTimeToSystemTime
+ok round trip year
+ok round trip day of week
+ok round trip milliseconds
+ok FileTimeToLocalFileTime
+ok LocalFileTimeToFileTime
+ok local round trip
+ok GetTimeZoneInformation
+ok GetTickCount64
+ok QueryPerformanceFrequency
+ok QueryPerformanceCounter
+# text and locale
+ok MultiByteToWideChar
+ok WideCharToMultiByte
+ok GetLocaleInfoEx invariant decimal
+ok CompareStringEx ignore case
+ok CompareStringEx less
+# threads and synchronisation
+ok InitializeCriticalSectionAndSpinCount
+ok CreateThread
+ok ResumeThread previous count
+ok WaitForMultipleObjects
+ok critical section counter
+ok GetExitCodeThread
+ok WaitForSingleObject
+ok ExitThread code
+ok TryEnterCriticalSection
+ok GetCurrentThreadId
+ok GetCurrentThread pseudo handle
+ok TlsAlloc
+ok TlsSetValue/TlsGetValue
+ok TlsFree
+ok event not signalled
+ok SetEvent
+ok event signalled
+ok ResetEvent
+ok event reset
+ok CreateMutexW/ReleaseMutex
+ok ReleaseMutex not owned
+ok CreateSemaphoreW/ReleaseSemaphore
+# passed 112 failed 0

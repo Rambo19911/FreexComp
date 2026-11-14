@@ -5,5 +5,7 @@
   <ItemGroup>
     <!-- opc.exe is copied next to the test assembly; the runner starts it as a process (RTL-901) -->
     <ProjectReference Include="..\..\compiler\src\opc\opc.csproj" />
+    <!-- DefFilesMatchDeclarations parses the binding units (R-036) -->
+    <ProjectReference Include="..\..\compiler\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
   </ItemGroup>
 </Project>

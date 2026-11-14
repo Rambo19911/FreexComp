@@ -1,0 +1,17 @@
+# passing
+ok check true
+ok string equal
+ok empty strings
+ok int64 extreme
+ok boolean equal
+ok one ulp apart
+ok identical double
+ok signed zeros
+# failing
+FAIL check false
+FAIL string quoting: expected 'it''s' got 'a'#13#10'b'
+FAIL control only: expected '' got #9
+FAIL integer: expected 42 got -7
+FAIL boolean: expected True got False
+FAIL float ulps: expected 1.00000000000000E+0000 ($3FF0000000000000) got 1.00000000000000E+0000 ($3FF0000000000001)
+# passed 8 failed 6

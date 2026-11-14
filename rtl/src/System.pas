@@ -14,6 +14,18 @@ type
   PNativeInt = ^NativeInt;
   PNativeUInt = ^NativeUInt;
   PPointer = ^Pointer;
+  PInt64 = ^Int64;
+  PUInt64 = ^UInt64;
+  PSingle = ^Single;
+  PDouble = ^Double;
+  PBoolean = ^Boolean;
+  PPChar = ^PChar;
+  PPAnsiChar = ^PAnsiChar;
+  PString = ^string;
+  PShortString = ^ShortString;
+  PAnsiString = ^AnsiString;
+  PUnicodeString = ^UnicodeString;
+  HResult = Integer;                   { ABI section 9.6; HRESULT is the same identifier }
   TProcedure = procedure;
 
   { RTL-062: the pluggable memory manager; FreeMem returns 0 on success }
@@ -23,6 +35,14 @@ type
     ReallocMem: function(P: Pointer; Size: NativeInt): Pointer;
     AllocMem: function(Size: NativeInt): Pointer;
   end;
+
+const
+  { system.md RTL-154: COM result codes used by the interface support }
+  S_OK = 0;
+  S_FALSE = 1;
+  E_NOINTERFACE = HResult($80004002);
+  E_UNEXPECTED = HResult($8000FFFF);
+  E_NOTIMPL = HResult($80004001);
 
 var
   Input: Text;
@@ -2498,7 +2518,6 @@ type
     Len: Integer;                      { limbs in use, W[Len-1] <> 0; 0 for the value 0 }
     W: array[0..BigLimbs - 1] of Cardinal;
   end;
-  PUInt64 = ^UInt64;
 
 procedure BigSet(var A: TBig; V: UInt64);
 begin
@@ -3093,9 +3112,6 @@ end;
 
 { ---------------------------------------------------------------- real conversions (system.md section 5.2) }
 { Worked on the bit pattern X = (-1)^s * F * 2^(BiasedExp - 1075), so no floating-point rounding is involved. }
-
-type
-  PDouble = ^Double;
 
 const
   FracMask = $000FFFFFFFFFFFFF;

@@ -1,0 +1,49 @@
+# directories
+ok CreateDirectoryW
+ok CreateDirectory alias, exists
+ok ERROR_ALREADY_EXISTS
+ok SetCurrentDirectoryW
+ok GetCurrentDirectoryW
+ok GetTempPathW
+ok GetFullPathNameW
+ok GetFullPathNameW file part
+# handles
+ok CreateFileW
+ok GetFileType disk
+ok WriteFile
+ok FlushFileBuffers
+ok GetFileSizeEx
+ok SetFilePointerEx
+ok ReadFile
+ok SetEndOfFile
+ok size after SetEndOfFile
+ok CloseHandle
+ok CreateFile alias, CREATE_NEW on existing file
+ok ERROR_FILE_EXISTS
+# attributes
+ok SetFileAttributesW
+ok GetFileAttributesW
+ok DeleteFileW on a read-only file
+ok ERROR_ACCESS_DENIED
+ok SetFileAttributes alias
+ok GetFileAttributesExW
+ok GetFileAttributesExW data
+ok directory attribute
+ok INVALID_FILE_ATTRIBUTES
+ok ERROR_FILE_NOT_FOUND
+# copy, move, find, delete
+ok CopyFileW
+ok CopyFileW fail if exists
+ok MoveFileW
+ok CopyFileW again
+ok MoveFileExW onto an existing file
+ok MoveFileExW replace
+ok FindFirstFileW
+ok ERROR_NO_MORE_FILES
+ok FindClose
+ok found a.txt and c.txt
+ok DeleteFileW
+ok leave the folder
+ok RemoveDirectoryW
+ok RemoveDirectory alias, gone
+# passed 44 failed 0
