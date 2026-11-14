@@ -31,22 +31,92 @@ internal static class StringRewriter
             case IntrinsicKind.SetLength when arguments[0].Type is StringTypeSymbol { Variant: StringVariant.Ansi } ansi:
                 return new LCallStatement(new LHelperCallee(Helper("_AStrSetLen", null, types.Pointer, types.Integer, types.Word)),
                     [AddressOf(context, context.Lower(arguments[0])), context.Lower(arguments[1]), context.Constant(ansi.CodePage, types.Word)]);
+            case IntrinsicKind.SetLength when arguments[0].Type is StringTypeSymbol { Variant: StringVariant.Short } shortString:
+                return ShortSetLength(context, shortString, context.Lower(arguments[0]), context.Lower(arguments[1]));
             case IntrinsicKind.SetLength:
                 return new LCallStatement(new LHelperCallee(Helper("_UStrSetLen", null, types.Pointer, types.Integer)),
                     [AddressOf(context, context.Lower(arguments[0])), context.Lower(arguments[1])]);
+            case IntrinsicKind.Delete or IntrinsicKind.Insert or IntrinsicKind.Str
+                when arguments[call.Intrinsic.Intrinsic == IntrinsicKind.Delete ? 0 : 1].Type is StringTypeSymbol { Variant: not StringVariant.Unicode }:
+                return ThroughUnicode(context, call);
             case IntrinsicKind.Delete:
-                return new LCallStatement(new LHelperCallee(Helper("_UStrDelete", null, types.Pointer, types.Integer, types.Integer)),
-                    [AddressOf(context, context.Lower(arguments[0])), context.Lower(arguments[1]), context.Lower(arguments[2])]);
+                return Delete(context, context.Lower(arguments[0]), call);
             case IntrinsicKind.Insert:
-                return new LCallStatement(new LHelperCallee(Helper("_UStrInsert", null, types.Pointer, types.Pointer, types.Integer)),
-                    [context.Lower(arguments[0]), AddressOf(context, context.Lower(arguments[1])), context.Lower(arguments[2])]);
+            {
+                var source = context.Lower(arguments[0]);
+                return Insert(context, source, context.Lower(arguments[1]), call);
+            }
+
             case IntrinsicKind.Str:
-                return Str(context, call);
+                return Str(context, call, context.Lower(call.Arguments[1]));
             case IntrinsicKind.Val:
                 return Val(context, call);
             default:
                 throw new InvalidOperationException($"{call.Intrinsic.Name} is no string procedure.");
         }
+    }
+
+    private static LStatement Delete(LoweringContext context, LExpression target, BoundIntrinsicCallStatement call) =>
+        new LCallStatement(new LHelperCallee(Helper("_UStrDelete", null, context.Types.Pointer, context.Types.Integer, context.Types.Integer)),
+            [AddressOf(context, target), context.Lower(call.Arguments[1]), context.Lower(call.Arguments[2])]);
+
+    private static LStatement Insert(LoweringContext context, LExpression source, LExpression target, BoundIntrinsicCallStatement call) =>
+        new LCallStatement(new LHelperCallee(Helper("_UStrInsert", null, context.Types.Pointer, context.Types.Pointer, context.Types.Integer)),
+            [source, AddressOf(context, target), context.Lower(call.Arguments[2])]);
+
+    /// <summary>
+    /// C-067: <c>Delete</c> / <c>Insert</c> / <c>Str</c> on a short string or an AnsiString-family variable edit a UnicodeString copy
+    /// (UTF-16 indexes, like <c>Pos</c>/<c>Copy</c> on these kinds): <c>$p := @s</c> (the variable evaluated once),
+    /// <c>$u := string($p^)</c> (not for <c>Str</c>, which overwrites), the UnicodeString operation on <c>$u</c>, then
+    /// <c>$p^ := $u</c> converted back (<c>_SStrFromUStr</c>, truncating at a UTF-8 boundary; <c>_AStrFromUStr</c> with the
+    /// type's code page).
+    /// </summary>
+    private static LStatement ThroughUnicode(LoweringContext context, BoundIntrinsicCallStatement call)
+    {
+        var types = context.Types;
+        var p = types.Pointer;
+        var kind = call.Intrinsic.Intrinsic;
+        var source = kind == IntrinsicKind.Insert ? context.Lower(call.Arguments[0]) : null;
+        var targetType = (StringTypeSymbol)call.Arguments[kind == IntrinsicKind.Delete ? 0 : 1].Type;
+        var address = new LLocalRef(context.NewTemp(p));
+        var variable = new LDeref(address, targetType);
+        var unicode = new LLocalRef(context.NewTemp(types.String));
+        var statements = new List<LStatement> { new LAssign(address, AddressOf(context, context.Lower(call.Arguments[kind == IntrinsicKind.Delete ? 0 : 1]))) };
+        if (kind != IntrinsicKind.Str)
+        {
+            statements.Add(targetType.Variant == StringVariant.Short
+                ? new LCallStatement(new LHelperCallee(Helper("_UStrFromSStr", null, p, p)), [AddressOf(context, unicode), address])
+                : new LCallStatement(new LHelperCallee(Helper("_UStrFromAStr", null, p, p)), [AddressOf(context, unicode), variable]));
+        }
+
+        statements.Add(kind switch
+        {
+            IntrinsicKind.Delete => Delete(context, unicode, call),
+            IntrinsicKind.Insert => Insert(context, source!, unicode, call),
+            _ => Str(context, call, unicode),
+        });
+        statements.Add(targetType.Variant == StringVariant.Short
+            ? new LCallStatement(new LHelperCallee(Helper("_SStrFromUStr", null, p, types.Integer, p)),
+                [address, context.Constant(targetType.MaxLength, types.Integer), unicode])
+            : new LCallStatement(new LHelperCallee(Helper("_AStrFromUStr", null, p, p, types.Word)),
+                [address, unicode, context.Constant(targetType.CodePage, types.Word)]));
+        return new LBlock([.. statements]);
+    }
+
+    /// <summary>
+    /// C-067: <c>SetLength(ss, n)</c> of a short string stores <c>n</c> clamped to <c>0..capacity</c> in the length byte; the
+    /// characters are left as they are.
+    /// </summary>
+    private static LStatement ShortSetLength(LoweringContext context, StringTypeSymbol type, LExpression target, LExpression length)
+    {
+        var types = context.Types;
+        var value = context.NewValue(types.Integer);
+        LExpression N() => new LTempRef(value);
+        var capacity = context.Constant(type.MaxLength, types.Integer);
+        var clamped = new LSelect(context.Compare(LCompareOperator.Less, N(), context.Constant(BigInteger.Zero, types.Integer)),
+            context.Constant(BigInteger.Zero, types.Integer),
+            new LSelect(context.Compare(LCompareOperator.Greater, N(), capacity), capacity, N()));
+        return new LAssign(new LView(target, types.Byte), context.Convert(new LTemp(value, context.Convert(length, types.Integer), clamped), types.Byte));
     }
 
     /// <summary><c>Pos</c> (<c>Offset</c> defaults to 1) and <c>UpCase</c> (<c>'a'..'z'</c> → minus 32, everything else unchanged).</summary>
@@ -116,11 +186,11 @@ internal static class StringRewriter
     /// <c>_StrFloat(@s, Double, w, d)</c> for reals with the <c>Write</c> defaults (CMP-410: width 23 and decimals −1 without
     /// width, decimals −1 without <c>:d</c>); an omitted integer width is 0.
     /// </summary>
-    private static LStatement Str(LoweringContext context, BoundIntrinsicCallStatement call)
+    private static LStatement Str(LoweringContext context, BoundIntrinsicCallStatement call, LExpression destination)
     {
         var types = context.Types;
         var arguments = call.Arguments;
-        var target = AddressOf(context, context.Lower(arguments[1]));
+        var target = AddressOf(context, destination);
         var value = context.Lower(arguments[0]);
         var width = arguments.Length > 2 ? context.Lower(arguments[2]) : null;
         if (arguments[0].Type is BooleanTypeSymbol or StringTypeSymbol)

@@ -188,6 +188,7 @@ internal sealed class DeclarationBinder
             }
 
             TypeSymbol type;
+            _declaringType = (NameOf(identifier), declaration.Type);
             if (declaration.TypeParameterList is { } typeParameters)
             {
                 type = Unsupported(typeParameters, "generic type");           // M2.6
@@ -201,6 +202,7 @@ internal sealed class DeclarationBinder
                 type = BindType(declaration.Type, identifier, declared);
             }
 
+            _declaringType = null;
             var name = NameOf(identifier);
             var previous = _sharedScope?.LookupLocal(name);
             if (previous is null && _scope.TryDeclare(name, type, out previous))
@@ -275,6 +277,9 @@ internal sealed class DeclarationBinder
     }
 
     private HashSet<string>? _sectionTypeNames;
+
+    /// <summary>The type declaration being bound (its name and type syntax), for E2007/E2022 on self-references.</summary>
+    private (string Name, TypeSyntax Type)? _declaringType;
     private List<(PointerTypeSymbol Pointer, IdentifierNameSyntax Name)>? _forwardPointers;
 
     /// <summary>
@@ -962,6 +967,15 @@ internal sealed class DeclarationBinder
             if (heading.ResultType is { } resultType)
             {
                 routine.ReturnType = BindType(resultType);
+                if (routine.ReturnType is TextTypeSymbol)
+                {
+                    if (report)
+                    {
+                        _diagnostics.Report(resultType, "E2023", routine.ReturnType.Name);     // LANG-412 (C-067)
+                    }
+
+                    routine.ReturnType = _types.Error;
+                }
             }
             else
             {
@@ -1211,6 +1225,12 @@ internal sealed class DeclarationBinder
         var text = NameOf(identifier);
         switch (_scope.Lookup(text))
         {
+            case null when _declaringType is { } declaring && IdentifierComparer.Instance.Equals(declaring.Name, text):
+                // C-067: a type naming itself (not through ^T, LANG-208): an alias of itself is circular, a use inside its own
+                // structure (record field, array element, set base…) needs the incomplete type
+                var alias = declaring.Type is NamedTypeSyntax { Name: var aliased } && ReferenceEquals(aliased, name);
+                _diagnostics.Report(name, alias ? "E2022" : "E2007", text);
+                return _types.Error;
             case null:
                 _diagnostics.ReportUndeclared(name, text);
                 return _types.Error;

@@ -103,9 +103,42 @@ internal static class ManagedRewriter
                 return StringRewriter.CopyInto(context, AddressOf(context, target), copy);     // C-062: Dest may be the source
             case BoundConversionExpression { Type: StringTypeSymbol } conversion when !ReferenceEquals(conversion.Operand.Type, conversion.Type):
                 return StringConversions.Convert(context, target, conversion);
+            case BoundArrayConstructor constructor:
+                return Construct(context, target, constructor);
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// codegen.md §dynamic arrays (LANG-259, C-067): <c>[e1, …, en]</c> → <c>_DynArraySetLen</c> of a fresh temporary to <c>n</c>,
+    /// the element stores (managed elements by their assignment helper), then <c>_DynArrayAsg(@target, tmp, TI)</c> — so the
+    /// elements may read the target.
+    /// </summary>
+    private static LStatement Construct(LoweringContext context, LExpression target, BoundArrayConstructor constructor)
+    {
+        var types = context.Types;
+        var array = (DynamicArrayTypeSymbol)constructor.Type;
+        var built = new LLocalRef(context.NewTemp(array));
+        var index = new IntegerTypeSymbol("0..0", (IntegerTypeSymbol)types.Integer, BigInteger.Zero, BigInteger.Zero, containingSymbol: null, []);
+        var dims = new LLocalRef(context.NewTemp(new ArrayTypeSymbol("array[0..0] of NativeInt", index, types.NativeInt, containingSymbol: null, [])));
+        var statements = new List<LStatement>
+        {
+            new LAssign(new LIndex(dims, context.Constant(BigInteger.Zero, types.Int64), types.NativeInt), context.Constant(constructor.Elements.Length, types.NativeInt)),
+            Call(Helper("_DynArraySetLen", types.Pointer, types.Pointer, types.NativeInt, types.Pointer),
+                AddressOf(context, built), TypeInfo(context, array), context.Constant(1, types.NativeInt), AddressOf(context, dims)),
+        };
+        for (var k = 0; k < constructor.Elements.Length; k++)
+        {
+            var element = new LArrayElement(built, context.Constant(k, types.Int64), isChecked: false, array.ElementType);
+            var value = constructor.Elements[k];
+            statements.Add(array.ElementType.IsManaged ? Assign(context, element, value)
+                : Strings.IsShort(array.ElementType) ? AssignShort(context, element, value)
+                : new LAssign(element, context.Lower(value)));
+        }
+
+        statements.Add(Assign(context, target, built));
+        return new LBlock([.. statements]);
     }
 
     /// <summary>

@@ -93,4 +93,17 @@ public sealed class ByteStringBindingTests
             Body("i := SizeOf(n); i := SizeOf(h); i := High(ShortString); i := Length(AnsiString('äb'))"));
         Assert.Equal(["E2012(1,15): Constant value 0 is out of range for type '1..255'"], BindDiagnostics("var X: string[0]; begin end."));
     }
+
+    /// <summary>
+    /// C-067: <c>Delete</c>, the <c>Insert</c> target and the <c>Str</c> target accept short strings and the AnsiString family
+    /// (edited through a UnicodeString, UTF-16 indexes); <c>SetLength</c> accepts a short string (sets its length byte). No E2900.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-246")]
+    public void StringEdits_OfByteStrings() =>
+        Assert.Equal(
+            "(block (Delete n:string[10] 1:Integer 2:Integer) (Delete a:AnsiString i:Integer 1:Integer) (Insert 'x':string h:ShortString 1:Integer) " +
+            "(Insert s:string u:UTF8String i:Integer) (Str i:Integer n:string[10]) (Str i:Integer a:AnsiString 4:Integer) (SetLength n:string[10] 3:Integer) " +
+            "(SetLength h:ShortString i:Integer))",
+            Body("Delete(n, 1, 2); Delete(a, i, 1); Insert('x', h, 1); Insert(s, u, i); Str(i, n); Str(i:4, a); SetLength(n, 3); SetLength(h, i)"));
 }

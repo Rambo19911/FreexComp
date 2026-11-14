@@ -112,7 +112,7 @@ public sealed class PointerTypeSyntax : TypeSyntax
 
     public SyntaxToken CaretToken { get; }
 
-    /// <summary>A <see cref="NamedTypeSyntax"/> (a missing one after an error).</summary>
+    /// <summary>A <see cref="NamedTypeSyntax"/> or, for <c>^string</c>, a <see cref="StringTypeSyntax"/> (a missing named type after an error).</summary>
     public TypeSyntax PointedType { get; }
 
     public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitPointerType(this);

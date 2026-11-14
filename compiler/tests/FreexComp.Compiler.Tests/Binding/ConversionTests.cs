@@ -330,6 +330,43 @@ public sealed class ConversionTests
         Assert.Equal(expected, BoundDump.Of(Assert.Single(Assert.Single(result.Bodies).Statements)));
     }
 
+    /// <summary>
+    /// LANG-290 rows 3 and 4 (C-178): a dynamic array or a long string cast to a pointer type or a pointer-sized ordinal
+    /// reinterprets the reference (no reference counting); it is a value cast, not a variable typecast (no E2041).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-290")]
+    [InlineData("Pointer(da)", "(cast Pointer da:TDyn)")]
+    [InlineData("NativeInt(da)", "(cast NativeInt da:TDyn)")]
+    [InlineData("NativeUInt(da)", "(cast NativeUInt da:TDyn)")]
+    [InlineData("Int64(da)", "(cast Int64 da:TDyn)")]
+    [InlineData("UInt64(da)", "(cast UInt64 da:TDyn)")]
+    [InlineData("PInteger(da)", "(cast PInteger da:TDyn)")]
+    [InlineData("PChar(da)", "(cast PChar da:TDyn)")]
+    [InlineData("Pointer(str)", "(cast Pointer str:string)")]
+    [InlineData("NativeInt(str)", "(cast NativeInt str:string)")]
+    [InlineData("NativeUInt(str)", "(cast NativeUInt str:string)")]
+    [InlineData("Pointer(ans)", "(cast Pointer ans:AnsiString)")]
+    [InlineData("NativeInt(ans)", "(cast NativeInt ans:AnsiString)")]
+    [InlineData("Integer(da)", "E2041: Variable typecast not allowed for managed types or types of different size")]
+    [InlineData("Integer(str)", "E2041: Variable typecast not allowed for managed types or types of different size")]
+    public void ManagedValueCastToPointer(string cast, string expected)
+    {
+        var target = cast[..cast.IndexOf('(', StringComparison.Ordinal)];
+        var (result, _) = Bind($$"""
+            type PInteger = ^Integer; TDyn = array of Integer;
+            var da: TDyn; str: string; ans: AnsiString; x: {{target}};
+            begin x := {{cast}} end.
+            """);
+        if (!result.Diagnostics.IsEmpty)
+        {
+            Assert.Equal(expected, string.Join("; ", result.Diagnostics.Select(d => $"{d.Code}: {d.Message}")));
+            return;
+        }
+
+        Assert.Equal(expected, BoundDump.Of(Assert.IsType<BoundAssignmentStatement>(Assert.Single(Assert.Single(result.Bodies).Statements)).Value));
+    }
+
     // ------------------------------------------------------------------ global initialisers (LANG-522)
 
     [Fact]

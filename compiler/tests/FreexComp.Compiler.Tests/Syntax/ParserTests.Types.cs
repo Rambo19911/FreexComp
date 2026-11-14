@@ -30,6 +30,16 @@ public sealed partial class ParserTests
         Assert.Equal(expected, DumpType(type));
     }
 
+    /// <summary>C-179: <c>^</c> accepts the reserved type name <c>string</c> as well as identifiers such as <c>AnsiString</c>.</summary>
+    [Theory]
+    [InlineData("^string", "(PointerType ^ (StringType string))")]
+    [InlineData("^AnsiString", "(PointerType ^ (NamedType (IdentifierName AnsiString)))")]
+    [InlineData("^ShortString", "(PointerType ^ (NamedType (IdentifierName ShortString)))")]
+    public void PointerToString(string type, string expected)
+    {
+        Assert.Equal(expected, DumpType(type));
+    }
+
     [Theory]
     [InlineData("(Red, Green = 5, Blue)",
         "(EnumType ( (EnumMember Red) , (EnumMember Green = (LiteralExpression 5)) , (EnumMember Blue) ))")]

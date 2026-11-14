@@ -29,6 +29,7 @@ internal enum BoundKind
     DereferenceExpression,
     PointerArithmeticExpression,
     VariableTypecastExpression,
+    ArrayConstructor,
 
     // statements
     Block,
@@ -268,6 +269,24 @@ internal sealed class BoundSetConstructor : BoundExpression
     public ImmutableArray<BoundSetElement> Elements { get; }
 
     public SetTypeSymbol SetType => (SetTypeSymbol)Type;
+}
+
+/// <summary>
+/// LANG-259 (C-067): <c>[e1, e2, …]</c> assigned to a dynamic array (variable, value/<c>const</c> parameter, <c>Result</c>):
+/// a new array of <see cref="BoundExpression.Type"/> holding the elements, each converted to the element type. <c>[]</c> is
+/// the constant <c>nil</c>.
+/// </summary>
+internal sealed class BoundArrayConstructor : BoundExpression
+{
+    public BoundArrayConstructor(SyntaxNode syntax, ImmutableArray<BoundExpression> elements, DynamicArrayTypeSymbol type)
+        : base(syntax, type, elements.IsEmpty ? new ConstantValue(null, type) : null)
+    {
+        Elements = elements;
+    }
+
+    public override BoundKind Kind => BoundKind.ArrayConstructor;
+
+    public ImmutableArray<BoundExpression> Elements { get; }
 }
 
 /// <summary>

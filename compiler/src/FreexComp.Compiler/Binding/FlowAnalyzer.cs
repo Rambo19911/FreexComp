@@ -710,6 +710,14 @@ internal sealed class FlowAnalyzer
 
                 return state;
 
+            case BoundArrayConstructor arrayConstructor:
+                foreach (var element in arrayConstructor.Elements)
+                {
+                    state = Eval(element, state);
+                }
+
+                return state;
+
             case BoundErrorExpression error:
                 foreach (var child in error.Children.IsDefault ? [] : error.Children)
                 {

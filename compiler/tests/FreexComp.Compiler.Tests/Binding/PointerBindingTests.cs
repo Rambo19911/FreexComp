@@ -23,6 +23,24 @@ public sealed class PointerBindingTests
         Assert.Equal((8L, 8), (pointer.Size, pointer.Alignment));
     }
 
+    /// <summary>C-179: <c>^string</c> (reserved word) and <c>^AnsiString</c> are typed pointers to the string types.</summary>
+    [Fact]
+    [Trait("Req", "LANG-265")]
+    public void PointerToString()
+    {
+        var (result, _) = Bind("""
+            type PStr = ^string; PAStr = ^AnsiString;
+            var s: string; a: AnsiString; p: PStr; q: PAStr; v: ^string;
+            begin p := @s; p^ := 'x'; s := p^ + 'y'; v := p; q := @a; q^ := 'z' end.
+            """);
+        Assert.Empty(Format(result.Diagnostics));
+
+        var pointer = Assert.IsType<PointerTypeSymbol>(result.Declarations.Scope.Lookup("PStr"));
+        Assert.Same(result.Types.String, pointer.PointedType);
+        var ansi = Assert.IsType<PointerTypeSymbol>(result.Declarations.Scope.Lookup("PAStr"));
+        Assert.Same(result.Types.AnsiString, ansi.PointedType);
+    }
+
     [Theory]
     [Trait("Req", "LANG-206")]
     [Trait("Req", "LANG-265")]

@@ -498,8 +498,8 @@ internal sealed class BodyBinder
     // ------------------------------------------------------------------ string procedures (intrinsics.md §1, §4; C-062)
 
     /// <summary>
-    /// <c>SetLength(var s; n)</c>, <c>Delete(var s; index, count)</c>, <c>Insert(const sub; var s; index)</c> on a UnicodeString
-    /// variable <c>s</c> (other string kinds and dynamic arrays: E2900; other types E2010); <c>sub</c> a string or character; the
+    /// <c>SetLength(var s; n)</c>, <c>Delete(var s; index, count)</c>, <c>Insert(const sub; var s; index)</c> on a string
+    /// variable <c>s</c> (every string kind, C-067; <c>SetLength</c> also of a dynamic array; other types E2010); <c>sub</c> a string or character; the
     /// integers converted to <c>Integer</c>. Arguments in parameter order.
     /// </summary>
     private BoundStatement BindStringEdit(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
@@ -543,7 +543,7 @@ internal sealed class BodyBinder
         return value.HasErrors ? null : value;
     }
 
-    /// <summary>The <c>var s: string</c> argument: an assignable UnicodeString variable; null after E2112/E2113/E2010/E2900.</summary>
+    /// <summary>The <c>var s: string</c> argument: an assignable string variable (or a dynamic array for <c>SetLength</c>); null after E2112/E2113/E2010.</summary>
     private BoundExpression? StringVariable(ExpressionSyntax syntax, IntrinsicSymbol intrinsic)
     {
         var target = _expressions.BindVariable(syntax);
@@ -554,13 +554,11 @@ internal sealed class BodyBinder
 
         switch (target.Type)
         {
-            case StringTypeSymbol { Variant: StringVariant.Unicode }:
-            case StringTypeSymbol { Variant: StringVariant.Ansi } when intrinsic.Intrinsic == IntrinsicKind.SetLength:     // _AStrSetLen (C-063)
+            // UnicodeString: its helpers; SetLength: _AStrSetLen (C-063), the short-string length byte (C-067); Delete/Insert/Str of
+            // the byte-string kinds edit a UnicodeString copy (C-067)
+            case StringTypeSymbol:
             case DynamicArrayTypeSymbol when intrinsic.Intrinsic == IntrinsicKind.SetLength:                               // _DynArraySetLen (C-064)
                 return target;
-            case StringTypeSymbol:
-                _diagnostics.Report(syntax, "E2900", intrinsic.Name + " of a " + target.Type.Name);   // C-063
-                return null;
             default:
                 _diagnostics.Report(syntax, "E2010", target.Type.Name, _types.String.Name);
                 return null;

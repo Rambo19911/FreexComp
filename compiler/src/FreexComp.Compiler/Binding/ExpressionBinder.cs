@@ -55,9 +55,31 @@ internal sealed class ExpressionBinder
     /// (LANG-251); anything else binds as without context.
     /// </summary>
     public BoundExpression BindExpression(ExpressionSyntax syntax, TypeSymbol? expected) =>
-        Unparenthesized(syntax) is SetConstructorSyntax constructor && expected is SetTypeSymbol { ElementType: not null } set
-            ? BindSetConstructor(constructor, set)
+        Unparenthesized(syntax) is SetConstructorSyntax constructor
+            ? expected switch
+            {
+                SetTypeSymbol { ElementType: not null } set => BindSetConstructor(constructor, set),
+                DynamicArrayTypeSymbol array when constructor.Elements.All(e => e.UpperBound is null) => BindArrayConstructor(constructor, array),
+                _ => BindExpression(syntax),
+            }
             : BindExpression(syntax);
+
+    /// <summary>
+    /// LANG-259 / LANG-280 rule 12 (C-067): <c>[e1, …]</c> in a dynamic-array context; every element is bound in the context of
+    /// the element type (so nested constructors work) and converted to it. A range element keeps the set meaning (E2010 later).
+    /// </summary>
+    private BoundExpression BindArrayConstructor(SetConstructorSyntax syntax, DynamicArrayTypeSymbol array)
+    {
+        var elements = ImmutableArray.CreateBuilder<BoundExpression>(syntax.Elements.Count);
+        foreach (var element in syntax.Elements)
+        {
+            var value = BindExpression(element.Expression, array.ElementType);
+            elements.Add(value.HasErrors ? value : ConvertForAssignment(value, array.ElementType, element.Expression));
+        }
+
+        var built = elements.MoveToImmutable();
+        return built.Any(e => e.HasErrors) ? Error(syntax, [.. built]) : new BoundArrayConstructor(syntax, built, array);
+    }
 
     private static ExpressionSyntax Unparenthesized(ExpressionSyntax syntax)
     {
@@ -247,6 +269,13 @@ internal sealed class ExpressionBinder
             }
 
             return new BoundAddressOfExpression(syntax, operand: null, routine, _types.Pointer);
+        }
+
+        if (Unparenthesized(operandSyntax) is IdentifierNameSyntax { Identifier: { IsMissing: false } intrinsicToken } intrinsicName
+            && _scope.Lookup(intrinsicToken.Value as string ?? intrinsicToken.Text) is IntrinsicSymbol intrinsic)
+        {
+            _diagnostics.Report(intrinsicName, "E2910", intrinsic.Name);     // intrinsics.md §0 (C-067): intrinsics have no address
+            return Error(syntax);
         }
 
         var operand = BindExpression(operandSyntax);
@@ -731,6 +760,13 @@ internal sealed class ExpressionBinder
 
         if (intrinsic.Intrinsic == IntrinsicKind.Assigned)
         {
+            if (operand.Type is DynamicArrayTypeSymbol)
+            {
+                // intrinsics.md §1 (C-067): a dynamic array is assigned when its block reference is not nil (LANG-257)
+                var reference = new BoundConversionExpression(syntax, operand, _types.Pointer, ConversionKind.Explicit, isExplicit: true, constantValue: null);
+                return new BoundIntrinsicCallExpression(invocation, intrinsic, [reference], _types.Boolean, constantValue: null);
+            }
+
             if (operand.Type is not PointerTypeSymbol)
             {
                 _diagnostics.Report(syntax, "E2010", operand.Type.Name, _types.Pointer.Name);
@@ -799,6 +835,12 @@ internal sealed class ExpressionBinder
             return Error(invocation, target);
         }
 
+        if (AccessAlignment(target) < target.Type.Alignment)
+        {
+            _diagnostics.Report(syntax, "E2041");                       // C-067 lead decision: no lock-free access (CMP-612)
+            return Error(invocation, target);
+        }
+
         var operands = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
         operands.Add(target);
         var counted = intrinsic.Intrinsic is IntrinsicKind.AtomicIncrement or IntrinsicKind.AtomicDecrement;
@@ -828,6 +870,20 @@ internal sealed class ExpressionBinder
 
         return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), target.Type, constantValue: null);
     }
+
+    /// <summary>
+    /// The alignment an access to the variable <paramref name="variable"/> may assume — the binder's mirror of the emitter's
+    /// CMP-309 rule: inside records <c>min(field alignment, packing)</c>, inside static arrays and variable typecasts the
+    /// enclosing storage's alignment; anything else (variables, dereferences, dynamic-array elements) its type's alignment.
+    /// </summary>
+    private static int AccessAlignment(BoundExpression variable) => variable switch
+    {
+        BoundFieldAccessExpression { Record.Type: RecordTypeSymbol record } field =>
+            Math.Min(Math.Min(field.Type.Alignment, record.Packing), AccessAlignment(field.Record)),
+        BoundIndexExpression { Array.Type: ArrayTypeSymbol } index => Math.Min(index.Type.Alignment, AccessAlignment(index.Array)),
+        BoundVariableTypecastExpression typecast => Math.Min(typecast.Type.Alignment, AccessAlignment(typecast.Operand)),
+        _ => variable.Type.Alignment,
+    };
 
     /// <summary>
     /// intrinsics.md §1 (C-062) on UnicodeStrings: <c>Copy(s, index[, count]): string</c>, <c>Pos(sub, s[, offset]): Integer</c>,
@@ -991,7 +1047,7 @@ internal sealed class ExpressionBinder
 
     /// <summary>
     /// LANG-290. Value casts: ordinal → ordinal (folded for constants), ordinal → pointer, pointer → 8-byte integer, pointer →
-    /// pointer, integer → real and real → real (converting; C-057 decision: real → real converts like the implicit
+    /// pointer, dynamic array → pointer or 8-byte integer (C-178), integer → real and real → real (converting; C-057 decision: real → real converts like the implicit
     /// conversion). A cast from a real to anything else is E2040. Otherwise a cast of a variable reference is a variable
     /// typecast (<see cref="BoundVariableTypecastExpression"/>) when both types have the same size and neither is managed (E2041
     /// otherwise); any other cast is E2040. In a <paramref name="variableContext"/> a variable operand always gives a variable
@@ -1022,6 +1078,7 @@ internal sealed class ExpressionBinder
             (_, PointerTypeSymbol) when source.IsOrdinal => true,
             (PointerTypeSymbol, IntegerTypeSymbol { Bits: 64 }) => true,
             (PointerTypeSymbol, PointerTypeSymbol) => true,
+            (DynamicArrayTypeSymbol, IntegerTypeSymbol { Bits: 64 } or PointerTypeSymbol) => true,     // C-178: the block reference, no reference counting
             (IntegerTypeSymbol or RealTypeSymbol, RealTypeSymbol) => true,
             _ => false,
         };
@@ -1160,7 +1217,11 @@ internal sealed class ExpressionBinder
 
             // a var/out parameter of the only candidate is a variable context (variable typecasts, LANG-290)
             var byReference = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].IsByReference;
-            var bound = byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression);
+            // a dynamic-array value parameter of the only candidate gives an array constructor its type (LANG-259)
+            var dynamicArray = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol
+                ? candidates[0].Parameters[i].Type
+                : null;
+            var bound = byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression, dynamicArray);
             hasErrors |= bound.HasErrors;
             builder.Add(bound);
         }

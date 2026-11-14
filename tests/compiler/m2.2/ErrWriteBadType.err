@@ -1,0 +1,7 @@
+ErrWriteBadType.pas(16,11): error E2913: Type 'TColor' is not allowed in Write/Writeln
+ErrWriteBadType.pas(17,11): error E2913: Type 'TPoint' is not allowed in Write/Writeln
+ErrWriteBadType.pas(18,18): error E2913: Type 'TDigits' is not allowed in Write/Writeln
+ErrWriteBadType.pas(19,11): error E2913: Type 'TInts' is not allowed in Write/Writeln
+ErrWriteBadType.pas(20,11): error E2913: Type 'Pointer' is not allowed in Write/Writeln
+ErrWriteBadType.pas(21,11): error E2913: Type 'array of Integer' is not allowed in Write/Writeln
+ErrWriteBadType.pas(22,11): error E2913: Type 'TColor' is not allowed in Write/Writeln

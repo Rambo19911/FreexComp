@@ -12,10 +12,7 @@
 # A code with a case must not be listed; M2.1 is never a valid status.
 
 E2001  M2.4  declaration mismatch of a forward class / method
-E2007  M2.2  incomplete type (pointer forward, records)
 E2008  reserved  LANG-516 makes this unused
-E2022  M2.2  circular type definition
-E2023  M2.2  result type restrictions (LANG-412)
 E2067  M2.4  leaving a finally part (LANG-363)
 E2068  M2.5  with statement (LANG-375)
 E2069  M2.5  for-in (LANG-362)
@@ -94,7 +91,6 @@ E2751  M2.6  helpers
 E2800  M2.4  exceptions
 E2801  M2.4  exceptions
 E2802  M2.4  exceptions
-E2910  M2.2  procedural types
 W1003  M2.3  {$APPTYPE} in a unit
 W1011  M2.2  comparison always true/false (no language rule names it yet)
 W1012  M2.2  subranges

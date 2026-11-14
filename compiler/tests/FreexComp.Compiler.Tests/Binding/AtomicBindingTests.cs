@@ -57,6 +57,38 @@ public sealed class AtomicBindingTests
     [InlineData("i := AtomicIncrement", "E2110")]
     public void Atomics_Errors(string statement, string expected) => Assert.Equal([expected], Errors(statement));
 
+    /// <summary>
+    /// C-067 (lead decision, CMP-612): an atomic target that is less aligned than its type (a field of a packed record, an Int64
+    /// field under <c>{$A4}</c>, an element or variable typecast inside such storage) is E2041; naturally aligned targets pass.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "ABI-172")]
+    [InlineData("AtomicIncrement(pr.I)", "E2041")]
+    [InlineData("AtomicExchange(pr.P, nil)", "E2041")]
+    [InlineData("AtomicCmpExchange(a4.Q, 1, 2)", "E2041")]
+    [InlineData("AtomicIncrement(pa.Items[1])", "E2041")]
+    [InlineData("AtomicIncrement(Integer(pr.C))", "E2041")]
+    [InlineData("AtomicIncrement(nr.I)", "")]
+    [InlineData("AtomicIncrement(a4.I)", "")]
+    [InlineData("AtomicIncrement(pr.Ptr^)", "")]
+    [InlineData("AtomicIncrement(na.Items[1])", "")]
+    public void Atomics_UnderAlignedTargetIsAnError(string statement, string expected)
+    {
+        var codes = Codes("""
+            program T;
+            type
+              PInt = ^Integer;
+              TPacked = packed record B: Byte; I: Integer; P: Pointer; C: Cardinal; Ptr: PInt end;
+              TNormal = record B: Byte; I: Integer end;
+              {$A4} TA4 = record B: Byte; Q: Int64; I: Integer end; {$A8}
+              TPackedArr = packed record B: Byte; Items: array[0..1] of Integer end;
+              TNormalArr = record B: Byte; Items: array[0..1] of Integer end;
+            var pr: TPacked; nr: TNormal; a4: TA4; pa: TPackedArr; na: TNormalArr;
+            begin
+            """ + " " + statement + " end.");
+        Assert.Equal(expected.Length == 0 ? [] : [expected], codes);
+    }
+
     [Fact]
     [Trait("Req", "LANG-340")]
     public void Atomics_AreNotConstant() =>

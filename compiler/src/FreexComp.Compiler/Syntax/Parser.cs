@@ -670,7 +670,8 @@ internal sealed class Parser
                 return ParseEnumType();
             case SyntaxKind.CaretToken:
                 var caret = Take();
-                return new PointerTypeSyntax(caret, ParseNamedType());
+                // C-179: '^string' — the reserved type name is a type identifier here (LANG-265)
+                return new PointerTypeSyntax(caret, CurrentKind == SyntaxKind.StringKeyword ? ParseStringType() : ParseNamedType());
             case SyntaxKind.PackedKeyword when Peek(1).Kind is SyntaxKind.ArrayKeyword or SyntaxKind.RecordKeyword
                 or SyntaxKind.SetKeyword or SyntaxKind.FileKeyword:
                 return ParseStructuredType(Take());

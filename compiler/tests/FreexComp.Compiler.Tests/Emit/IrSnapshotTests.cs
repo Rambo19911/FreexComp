@@ -1257,6 +1257,42 @@ public sealed class IrSnapshotTests
         """;
 
     /// <summary>
+    /// C-067 / C-178 / C-179: array constructors (<c>_DynArraySetLen</c> of a temporary, element stores, <c>_DynArrayAsg</c>;
+    /// managed elements by <c>_UStrAsg</c>; <c>[]</c> clears), <c>Assigned</c> of a dynamic array, <c>Pointer(a)</c> /
+    /// <c>NativeInt(a)</c> of a dynamic array (no reference counting) and a <c>^string</c> pointer.
+    /// </summary>
+    internal const string ArrayConstructorsSource = """
+        unit M;
+        interface
+        type
+          TInts = array of Integer;
+          TNames = array of string;
+          PStr = ^string;
+        function Build(n: Integer; p: PStr): TInts;
+        implementation
+        function Count(const a: TInts): Integer;
+        begin
+          Result := Length(a);
+        end;
+        function Build(n: Integer; p: PStr): TInts;
+        var
+          names: TNames;
+          q: Pointer;
+          k: NativeInt;
+        begin
+          Result := [n, n + 1];
+          names := [p^, 'x'];
+          n := Count([7]);
+          if Assigned(Result) then
+            q := Pointer(Result);
+          k := NativeInt(Result);
+          p^ := names[0];
+          Result := [];
+        end;
+        end.
+        """;
+
+    /// <summary>
     /// C-066: CMP-411 as emitted — <c>_ReadInt</c>/<c>_ReadUInt</c>/<c>_ReadFloat</c>/<c>_ReadWChar</c>/<c>_ReadUStr</c> on
     /// <c>System.Input</c> or a <c>Text</c> variable, the error-106 range check of a narrow integer, <c>fptrunc</c> for Single,
     /// <c>_ReadLn</c>/<c>_ReadEnd</c>/<c>_IOCheck</c>, and <c>_Eof</c>/<c>_Eoln</c> returning Boolean.
@@ -1287,6 +1323,7 @@ public sealed class IrSnapshotTests
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["Atomic"] = AtomicSource,
+        ["ArrayConstructors"] = ArrayConstructorsSource,
         ["ReadText"] = ReadTextSource,
         ["ManagedRecords"] = ManagedRecordsSource,
         ["ByteStrings"] = ByteStringsSource,
@@ -1654,6 +1691,12 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-411")]
     [Trait("Req", "LANG-946")]
     public void ReadText() => Snapshot.Verify("ReadText", Emit(ReadTextSource));
+
+    [Fact]
+    [Trait("Req", "LANG-259")]
+    [Trait("Req", "LANG-290")]
+    [Trait("Req", "CMP-330")]
+    public void ArrayConstructors() => Snapshot.Verify("ArrayConstructors", Emit(ArrayConstructorsSource));
 
     /// <summary>C-066: the rtl-abi.md §9.9 input helpers as declared and called (CMP-411).</summary>
     [Fact]

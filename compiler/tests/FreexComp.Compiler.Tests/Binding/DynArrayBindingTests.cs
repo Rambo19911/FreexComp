@@ -57,4 +57,43 @@ public sealed class DynArrayBindingTests
     [InlineData("SetLength(g, 1, 2, 3)", "E2111(1,184): Too many actual parameters for 'SetLength'")]
     [InlineData("i := Length(TInts)", "E2911(1,170): 'Length' cannot be applied to this type")]
     public void Errors(string statement, string expected) => Assert.Equal([expected], Diagnostics(statement));
+
+    /// <summary>
+    /// C-067, LANG-259 / LANG-280 rule 12: <c>[e1, …]</c> in a dynamic-array context (assignment, value parameter of the only
+    /// candidate, <c>Exit</c>/<c>Result</c>) builds an array of the target type; elements convert to the element type and nest;
+    /// <c>[]</c> is <c>nil</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-259")]
+    public void ArrayConstructor_TakesTheDynamicArrayType() =>
+        Assert.Equal(
+            "(block (:= a:TInts (array TInts 1:Integer 2:Integer i:Integer)) (:= g:TGrid (array TGrid (array TInts 1:Integer) nil:TInts)) " +
+            "(:= s:array of string (array array of string 'x':string 'y':string)) (:= a:TInts nil:TInts))",
+            Body("a := [1, 2, i]; g := [[1], []]; s := ['x', 'y']; a := []"));
+
+    [Fact]
+    [Trait("Req", "LANG-259")]
+    public void ArrayConstructor_AsValueParameterAndResult()
+    {
+        var (result, _) = Bind("program T; " + Types + """
+            function F(const x: TInts; y: TInts): TInts; begin Result := [Length(x)]; Exit([2, 3]) end;
+            var a: TInts; i: Integer; begin a := F([1], [Byte(i)]) end.
+            """);
+        Assert.Empty(Format(result.Diagnostics));
+        Assert.Equal("(block (:= a:TInts (call F:TInts (array TInts 1:Integer) (array TInts (conv Integer (cast Byte i:Integer))))))", BoundDump.Of(result.Bodies[^1]));
+    }
+
+    [Theory]
+    [Trait("Req", "LANG-259")]
+    [InlineData("a := [1, 'x']", "E2010(1,174): Incompatible types: 'Char' and 'Integer'")]
+    [InlineData("a := [1..3]", "E2010(1,170): Incompatible types: 'set of 0..3' and 'TInts'")]
+    [InlineData("s := [1]", "E2010(1,171): Incompatible types: 'Integer' and 'string'")]
+    public void ArrayConstructor_Errors(string statement, string expected) => Assert.Equal([expected], Diagnostics(statement));
+
+    /// <summary>intrinsics.md §1 (C-067): <c>Assigned(a)</c> of a dynamic array tests the reference against <c>nil</c>.</summary>
+    [Fact]
+    [Trait("Req", "LANG-257")]
+    public void Assigned_OfADynamicArray() =>
+        Assert.Equal("(block (:= f:Boolean (Assigned:Boolean (cast Pointer a:TInts))) (:= f:Boolean (Assigned:Boolean (cast Pointer ([] g:TGrid 0:Integer):TInts))))",
+            Body("f := Assigned(a); f := Assigned(g[0])"));
 }

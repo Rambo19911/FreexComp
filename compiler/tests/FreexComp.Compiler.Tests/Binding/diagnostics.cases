@@ -254,3 +254,19 @@ type P = ^TMissing; begin end.
 var i: Integer; begin i := i^ end.
 === E2033 1,30
 var p: ^Integer; begin p := @1 end.
+=== E2007 1,36
+type T = record Next: Integer; Me: T; end; begin end.
+=== E2007 1,25
+type A = array[0..1] of A; begin end.
+=== E2022 1,10
+type T = T; begin end.
+=== E2022 1,15
+type T = type T; begin end.
+=== E2023 1,13
+function F: Text; begin end; begin end.
+=== E2910 1,29
+var P: Pointer; begin P := @Writeln end.
+=== E2910 1,33
+var P: Pointer; begin P := Addr(Inc) end.
+=== E2041 1,82
+type R = packed record B: Byte; I: Integer; end; var X: R; begin AtomicIncrement(X.I) end.

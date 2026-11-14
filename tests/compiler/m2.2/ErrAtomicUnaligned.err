@@ -1,0 +1,2 @@
+ErrAtomicUnaligned.pas(13,24): error E2041: Variable typecast not allowed for managed types or types of different size
+ErrAtomicUnaligned.pas(14,18): error E2041: Variable typecast not allowed for managed types or types of different size
