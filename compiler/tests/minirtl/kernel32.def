@@ -1,0 +1,10 @@
+LIBRARY kernel32.dll
+EXPORTS
+ExitProcess
+GetCurrentProcessId
+GetProcessHeap
+GetStdHandle
+HeapAlloc
+HeapFree
+WideCharToMultiByte
+WriteFile

@@ -30,7 +30,11 @@ internal sealed record IrFunctionDefinition(
     LinkName Name, IrLinkage Linkage, IrType ReturnType, ImmutableArray<IrParameter> Parameters, int? AttributeGroup = null);
 
 /// <summary><c>declare RetType @Name(types) [#group]</c>.</summary>
-internal sealed record IrFunctionDeclaration(LinkName Name, IrType ReturnType, ImmutableArray<IrType> ParameterTypes, int? AttributeGroup = null);
+internal sealed record IrFunctionDeclaration(LinkName Name, IrType ReturnType, ImmutableArray<IrType> ParameterTypes, int? AttributeGroup = null)
+{
+    /// <summary><c>declare dllimport</c>: a routine imported from a DLL (CMP-430).</summary>
+    public bool DllImport { get; init; }
+}
 
 /// <summary><c>@Name = [linkage] [unnamed_addr] global|constant Type Init, align N</c>.</summary>
 internal sealed record IrGlobalDefinition(
@@ -59,6 +63,9 @@ internal interface IIrWriter
 
     /// <summary><c>attributes #id = { … }</c>.</summary>
     void DefineAttributeGroup(int id, ImmutableArray<IrAttribute> attributes);
+
+    /// <summary><c>module asm "line"</c>, in call order, written right after the module header (CMP-611).</summary>
+    void AppendModuleAsm(string line);
 
     /// <summary>Starts a definition; returns the parameter values in order. The first block must follow.</summary>
     ImmutableArray<IrLocal> BeginFunction(IrFunctionDefinition function);

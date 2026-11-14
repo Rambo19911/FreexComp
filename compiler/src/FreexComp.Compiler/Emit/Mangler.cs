@@ -31,7 +31,8 @@ internal static class Mangler
     }
 
     /// <summary>Global variable or typed constant: <c>U.Name</c>.</summary>
-    public static LinkName GlobalVariable(VariableSymbol variable) => new(variable.QualifiedName, AlwaysQuote: true);
+    public static LinkName GlobalVariable(VariableSymbol variable) =>
+        variable.ExplicitLinkName is { } explicitName ? new LinkName(explicitName, AlwaysQuote: false) : new(variable.QualifiedName, AlwaysQuote: true);
 
     public static LinkName UnitInit(UnitSymbol unit) => new(unit.Name + ".$init", AlwaysQuote: true);
 

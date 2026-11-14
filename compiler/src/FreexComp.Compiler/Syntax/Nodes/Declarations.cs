@@ -208,7 +208,7 @@ public sealed class VarDeclarationSyntax : SyntaxNode
     internal VarDeclarationSyntax(SyntaxList<AttributeListSyntax> attributes,
                                   SeparatedSyntaxList<IdentifierNameSyntax> identifiers, SyntaxToken colonToken, TypeSyntax type,
                                   SyntaxToken? equalsToken, SyntaxNode? initializer, SyntaxList<HintDirectiveSyntax> hintDirectives,
-                                  SyntaxToken semicolonToken)
+                                  SyntaxToken semicolonToken, DirectiveSyntax? publicDirective = null)
         : base(SyntaxKind.VarDeclaration)
     {
         Attributes = Add(attributes);
@@ -219,6 +219,7 @@ public sealed class VarDeclarationSyntax : SyntaxNode
         Initializer = AddOptional(initializer);
         HintDirectives = Add(hintDirectives);
         SemicolonToken = Add(semicolonToken);
+        PublicDirective = AddOptional(publicDirective);
     }
 
     /// <summary>Attribute lists before the declaration (LANG-172).</summary>
@@ -238,6 +239,9 @@ public sealed class VarDeclarationSyntax : SyntaxNode
     public SyntaxList<HintDirectiveSyntax> HintDirectives { get; }
 
     public SyntaxToken SemicolonToken { get; }
+
+    /// <summary><c>public name 'sym';</c> after the declaration (LANG-470); the global-only rule is the binder's.</summary>
+    public DirectiveSyntax? PublicDirective { get; }
 
     public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitVarDeclaration(this);
 }

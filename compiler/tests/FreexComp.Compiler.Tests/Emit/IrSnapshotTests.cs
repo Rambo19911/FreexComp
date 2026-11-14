@@ -459,8 +459,44 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>LANG-462, 463, 470; CMP-430, 431, 433: imports, <c>external;</c>, <c>public name</c>, ignored calling conventions.</summary>
+    internal const string ExternalDeclSource = """
+        unit M;
+        interface
+        const kernel32 = 'kernel32.dll';
+        function GetCurrentProcessId: Cardinal; stdcall; external kernel32 name 'GetCurrentProcessId';
+        procedure Sleep(ms: Cardinal); external 'KERNEL32';
+        procedure ExitProcess(code: Cardinal); winapi; external kernel32;
+        function Helper(x: Integer): Integer; cdecl; external;
+        function Renamed(x: Integer): Integer; external name 'other_helper';
+        function Exported(x: Integer): Integer; stdcall;
+        function Run: Integer; register;
+        var Counter: Integer = 7; public name '_counter';
+        implementation
+        var Hidden: Integer = $9875; public name '_fltused';
+        var Plain: Integer;
+        function Impl(x: Integer): Integer; pascal; public name 'impl_sym';
+        begin
+          Result := x + Hidden + Plain;
+        end;
+        function Exported(x: Integer): Integer;
+        begin
+          Result := Helper(x) + Renamed(x) + Impl(x);
+        end;
+        function Run: Integer; safecall;
+        begin
+          Sleep(10);
+          Result := Exported(Counter);
+          if GetCurrentProcessId > 0 then
+            Result := Result + 1;
+          ExitProcess(0);
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["ExternalDecl"] = ExternalDeclSource,
         ["Writeln"] = WritelnSource,
         ["Checks"] = ChecksSource,
         ["Add"] = AddSource,
@@ -474,6 +510,32 @@ public sealed class IrSnapshotTests
         ["Calls"] = CallsSource,
         ["NestedFrame"] = NestedFrameSource,
     };
+
+    [Fact]
+    [Trait("Req", "LANG-462")]
+    [Trait("Req", "LANG-463")]
+    [Trait("Req", "LANG-470")]
+    [Trait("Req", "CMP-430")]
+    [Trait("Req", "CMP-431")]
+    [Trait("Req", "CMP-433")]
+    public void ExternalDecl()
+    {
+        var text = Emit(ExternalDeclSource);
+
+        Assert.Contains("declare dllimport i32 @GetCurrentProcessId()\n", text);
+        Assert.Contains("declare dllimport void @Sleep(i32)\n", text);
+        Assert.Contains("declare dllimport void @ExitProcess(i32)\n", text);
+        Assert.Contains("declare i32 @Helper(i32)\n", text);
+        Assert.Contains("declare i32 @other_helper(i32)\n", text);
+        Assert.Contains("define i32 @impl_sym(i32 %x) #0 {", text);
+        Assert.Contains("define i32 @\"M.Exported\"(i32 %x) #0 {", text);
+        Assert.Contains("define i32 @\"M.Run\"() #0 {", text);
+        Assert.Contains("  call void @Sleep(i32 10)\n", text);
+        Assert.Contains("@_counter = global i32 7, align 4\n", text);
+        Assert.Contains("@_fltused = global i32 39029, align 4\n", text);
+        Assert.Contains("@\"M.Plain\" = internal global i32 zeroinitializer, align 4\n", text);
+        Snapshot.Verify("ExternalDecl", text);
+    }
 
     [Fact]
     [Trait("Req", "CMP-410")]

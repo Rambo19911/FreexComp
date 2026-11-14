@@ -393,7 +393,14 @@ internal sealed class Parser
         switch (keyword.ContextualKind)
         {
             case SyntaxKind.ExternalKeyword:
-                if (CurrentKind is not (SyntaxKind.SemicolonToken or SyntaxKind.EndOfFileToken) && !IsDirectiveStart())
+                // `external name 'sym'` (LANG-463: no library, `name` allowed); `external name;` names a library constant
+                if (IsContextual(Current, SyntaxKind.NameKeyword) && Peek(1).Kind is not (SyntaxKind.SemicolonToken or SyntaxKind.EndOfFileToken)
+                    && !IsContextual(Peek(1), SyntaxKind.NameKeyword) && !IsContextual(Peek(1), SyntaxKind.DelayedKeyword))
+                {
+                    nameKeyword = TakeContextual();
+                    nameValue = ParseExpression();
+                }
+                else if (CurrentKind is not (SyntaxKind.SemicolonToken or SyntaxKind.EndOfFileToken) && !IsDirectiveStart())
                 {
                     value = ParseExpression();
                     if (IsContextual(Current, SyntaxKind.NameKeyword))
@@ -601,7 +608,7 @@ internal sealed class Parser
         return new VarSectionSyntax(keyword, new SyntaxList<VarDeclarationSyntax>(declarations.ToImmutable()));
     }
 
-    /// <summary><c>identList : type [ = typedConst ] [ hints ] ;</c></summary>
+    /// <summary><c>identList : type [ = typedConst ] [ hints ] ; [ public name constExpr ; ]</c> (LANG-470).</summary>
     private VarDeclarationSyntax ParseVarDeclaration()
     {
         var attributes = ParseAttributeLists();
@@ -617,7 +624,9 @@ internal sealed class Parser
         }
 
         var hints = ParseHintDirectives();
-        return new VarDeclarationSyntax(attributes, identifiers, colon, type, equals, initializer, hints, Expect(SyntaxKind.SemicolonToken));
+        var semicolon = Expect(SyntaxKind.SemicolonToken);
+        var publicDirective = IsContextual(Current, SyntaxKind.PublicKeyword) && IsDirectiveStart() ? ParseDirective() : null;
+        return new VarDeclarationSyntax(attributes, identifiers, colon, type, equals, initializer, hints, semicolon, publicDirective);
     }
 
     // ------------------------------------------------------------------ grammar.md §3: types

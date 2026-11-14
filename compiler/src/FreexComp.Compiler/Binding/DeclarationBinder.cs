@@ -165,16 +165,35 @@ internal sealed class DeclarationBinder
         {
             var type = BindType(declaration.Type);
             var initializer = declaration.Initializer is { } node ? BindInitializer(declaration, node, type) : null;
+            var linkName = declaration.PublicDirective is { } publicDirective ? BindVariablePublicName(declaration, publicDirective) : null;
             foreach (var name in declaration.Identifiers)
             {
                 var identifier = name.Identifier;
                 if (!identifier.IsMissing)
                 {
                     Declare(identifier, new VariableSymbol(NameOf(identifier), type, IsGlobalLevel, _container,
-                        [DiagnosticBag.LocationOf(identifier)], initializer), declared);
+                        [DiagnosticBag.LocationOf(identifier)], initializer) { ExplicitLinkName = linkName }, declared);
                 }
             }
         }
+    }
+
+    /// <summary>LANG-470 <c>var x: T; public name 'sym';</c>: one global variable only (else E2900 / E1101).</summary>
+    private string? BindVariablePublicName(VarDeclarationSyntax declaration, DirectiveSyntax directive)
+    {
+        if (!IsGlobalLevel)
+        {
+            _diagnostics.Report(directive.Keyword, "E2900", "public name on a local variable");
+            return null;
+        }
+
+        if (declaration.Identifiers.Count > 1)
+        {
+            _diagnostics.Report(directive.Keyword, "E1101", ";", directive.Keyword.Text);
+            return null;
+        }
+
+        return directive.NameValue is { } value ? FoldString(value) : null;
     }
 
     /// <summary>grammar.md varDecl: an initialiser only for one global variable; a constant expression (LANG-522).</summary>

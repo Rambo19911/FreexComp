@@ -31,6 +31,9 @@ public sealed class VariableSymbol : Symbol
     /// <summary>Folded value of a global initialiser <c>var X: T = c;</c> (LANG-522); null when there is none.</summary>
     internal ConstantValue? Initializer { get; }
 
+    /// <summary>The <c>public name</c> of a global variable (LANG-470); null otherwise.</summary>
+    internal string? ExplicitLinkName { get; set; }
+
     /// <summary><c>var Name: Type</c> (CMP-731).</summary>
     public override string ToDisplayString() => $"var {Name}: {Type.Name}";
 }

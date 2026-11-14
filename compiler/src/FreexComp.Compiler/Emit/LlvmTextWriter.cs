@@ -14,6 +14,7 @@ internal sealed class LlvmTextWriter : IIrWriter
 {
     private const string TargetTriple = "x86_64-pc-windows-msvc";
 
+    private readonly List<string> _moduleAsm = [];
     private readonly List<string> _structs = [];
     private readonly List<string> _globals = [];
     private readonly SortedDictionary<string, string> _declarations = new(StringComparer.Ordinal);
@@ -67,7 +68,7 @@ internal sealed class LlvmTextWriter : IIrWriter
     public IrGlobal DeclareFunction(IrFunctionDeclaration declaration)
     {
         RequireModuleLevel();
-        var line = $"declare {Type(declaration.ReturnType)} @{Name(declaration.Name)}({string.Join(", ", declaration.ParameterTypes.Select(Type))})"
+        var line = $"declare {(declaration.DllImport ? "dllimport " : "")}{Type(declaration.ReturnType)} @{Name(declaration.Name)}({string.Join(", ", declaration.ParameterTypes.Select(Type))})"
             + Group(declaration.AttributeGroup);
         if (_declarations.TryGetValue(declaration.Name.Text, out var existing) && existing != line)
         {
@@ -86,6 +87,12 @@ internal sealed class LlvmTextWriter : IIrWriter
         {
             throw new InvalidOperationException($"Attribute group #{id} defined twice.");
         }
+    }
+
+    public void AppendModuleAsm(string line)
+    {
+        RequireModuleLevel();
+        _moduleAsm.Add($"module asm \"{Escape(line)}\"");
     }
 
     public ImmutableArray<IrLocal> BeginFunction(IrFunctionDefinition function)
@@ -257,6 +264,7 @@ internal sealed class LlvmTextWriter : IIrWriter
     {
         RequireModuleLevel();
         var text = new StringBuilder(_header);
+        AppendSection(text, _moduleAsm);
         AppendSection(text, _structs);
         AppendSection(text, _globals);
         AppendSection(text, _declarations.Values);

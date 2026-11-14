@@ -23,12 +23,41 @@ internal static class IrEmitter
     /// <summary><c>attributes #1</c>: noreturn helpers, on declarations and call sites (CMP-302, 312).</summary>
     public const int NoReturnGroup = 1;
 
+    /// <summary><c>attributes #2</c>: routines whose link name is a C memory routine (CMP-302, 610).</summary>
+    public const int NoBuiltinsGroup = 2;
+
+    /// <summary>CMP-610: link names that get <see cref="NoBuiltinsGroup"/> so the optimiser cannot turn their loops into calls to themselves.</summary>
+    private static readonly HashSet<string> MemoryRoutineNames = new(StringComparer.Ordinal) { "memcpy", "memmove", "memset", "memcmp" };
+
+    /// <summary>CMP-611: the x64 stack probe, appended verbatim to unit <c>System</c> (ADR 001; never imported, never in <c>System.pas</c>).</summary>
+    private static readonly ImmutableArray<string> StackProbe =
+    [
+        "\t.text", "\t.globl\t__chkstk", "\t.p2align\t4", "__chkstk:", "\tpushq\t%rcx", "\tpushq\t%rax", "\tcmpq\t$4096, %rax",
+        "\tleaq\t24(%rsp), %rcx", "\tjb\t1f", "2:", "\tsubq\t$4096, %rcx", "\ttestq\t%rcx, (%rcx)", "\tsubq\t$4096, %rax",
+        "\tcmpq\t$4096, %rax", "\tja\t2b", "1:", "\tsubq\t%rax, %rcx", "\ttestq\t%rcx, (%rcx)", "\tpopq\t%rax", "\tpopq\t%rcx", "\tretq",
+    ];
+
+    internal static int AttributeGroupOf(RoutineSymbol routine) =>
+        MemoryRoutineNames.Contains(Mangler.Routine(routine).Text) ? NoBuiltinsGroup : RoutineGroup;
+
     public static void EmitUnit(LoweredUnit unit, IIrWriter writer)
     {
         var path = unit.Unit.Locations.IsEmpty ? unit.Unit.Name + ".pas" : unit.Unit.Locations[0].Path;
         writer.BeginModule(unit.Unit.Name, Path.GetFileName(path));
+        if (string.Equals(unit.Unit.Name, "System", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var line in StackProbe)
+            {
+                writer.AppendModuleAsm(line);
+            }
+        }
+
         var interfaceMembers = unit.Unit.InterfaceMembers.ToHashSet();
         var module = new ModuleState(writer);
+        foreach (var body in unit.Routines)
+        {
+            module.DefinedRoutines.Add(Mangler.Routine(body.Routine!).Text);
+        }
 
         // globals are defined after the functions (CMP-301: string literals, found while emitting, come first)
         var variables = unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers).OfType<VariableSymbol>().ToImmutableArray();
@@ -52,7 +81,9 @@ internal static class IrEmitter
         foreach (var body in InEmissionOrder(unit.Routines))
         {
             var routine = body.Routine!;
-            var linkage = !routine.IsNested && interfaceMembers.Contains(routine) ? IrLinkage.External : IrLinkage.Internal;
+            var linkage = routine.ExplicitLinkName is not null || (!routine.IsNested && interfaceMembers.Contains(routine))
+                ? IrLinkage.External
+                : IrLinkage.Internal;
             new FunctionEmitter(module, body, linkage).Emit();
             module.DeclarePending();
         }
@@ -67,7 +98,8 @@ internal static class IrEmitter
             var layout = TypeLayout.Of(variable.Type);
             var initializer = variable.Initializer is { } value ? StorageConstant(value, variable.Type) : new IrZeroConstant(layout.StorageType);
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
-                interfaceMembers.Contains(variable) ? IrLinkage.External : IrLinkage.Internal, IsConstant: false, initializer, layout.Alignment));
+                interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null ? IrLinkage.External : IrLinkage.Internal,
+                IsConstant: false, initializer, layout.Alignment));
         }
 
         foreach (var external in module.ExternalVariables)
@@ -80,6 +112,11 @@ internal static class IrEmitter
         if (module.UsesNoReturn)
         {
             writer.DefineAttributeGroup(NoReturnGroup, [IrAttribute.Enum("noreturn"), IrAttribute.Enum("uwtable")]);
+        }
+
+        if (unit.Routines.Any(r => AttributeGroupOf(r.Routine!) == NoBuiltinsGroup))
+        {
+            writer.DefineAttributeGroup(NoBuiltinsGroup, [IrAttribute.Enum("uwtable"), IrAttribute.String("no-builtins", null)]);
         }
 
         writer.EndModule();
@@ -149,10 +186,16 @@ internal sealed class ModuleState(IIrWriter writer)
 
     public Dictionary<RoutineSymbol, FrameRecord> Frames { get; } = [];
 
+    /// <summary>Link names of the routines defined in this module: helper calls in unit System use them directly.</summary>
+    public HashSet<string> DefinedRoutines { get; } = new(StringComparer.Ordinal);
+
     /// <summary>The function to call: routines with a body in this unit directly, others through a declaration.</summary>
     public IrGlobal Routine(RoutineSymbol routine) =>
         routine.Definition is null
-            ? Declare(new IrFunctionDeclaration(Mangler.Routine(routine), IrEmitter.ReturnType(routine), IrEmitter.ParameterTypes(routine)))
+            ? Declare(new IrFunctionDeclaration(Mangler.Routine(routine), IrEmitter.ReturnType(routine), IrEmitter.ParameterTypes(routine))
+            {
+                DllImport = routine.LibraryName is not null,
+            })
             : new IrGlobal(Mangler.Routine(routine));
 
     public bool UsesNoReturn { get; private set; }
@@ -240,6 +283,11 @@ internal sealed class ModuleState(IIrWriter writer)
 
     private IrGlobal Declare(IrFunctionDeclaration declaration)
     {
+        if (DefinedRoutines.Contains(declaration.Name.Text))
+        {
+            return new IrGlobal(declaration.Name);
+        }
+
         _pending.Add(declaration);
         return new IrGlobal(declaration.Name);
     }
@@ -291,7 +339,7 @@ internal sealed class FunctionEmitter
             .Select(p => new IrParameter(p.IsByReference ? IrType.Ptr : TypeLayout.Of(p.Type).StorageType, Unique(p.Name)))
             .ToImmutableArray();
         var values = _w.BeginFunction(new IrFunctionDefinition(Mangler.Routine(_routine), _linkage, IrEmitter.ReturnType(_routine),
-            link is null ? parameters : parameters.Insert(0, link), IrEmitter.RoutineGroup));
+            link is null ? parameters : parameters.Insert(0, link), IrEmitter.AttributeGroupOf(_routine)));
         if (link is not null)
         {
             _link = values[0];
