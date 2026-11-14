@@ -84,7 +84,7 @@ public abstract class ToolWindowViewModel : ObservableObject
 
     /// <summary>UI-TW-002: "Hide (Shift+Escape)", the shortcut of <c>window.closeToolWindow</c>.</summary>
     public string HideTooltip => _hideCommand is { GestureText.Length: > 0 } command
-        ? $"{Strings.ToolWindow_Hide} ({command.GestureText})"
+        ? string.Format(CultureInfo.CurrentCulture, Strings.Format_TitleWithShortcut, Strings.ToolWindow_Hide, command.GestureText)
         : Strings.ToolWindow_Hide;
 
     /// <summary>The filter text took effect (UI-TW-009); case-insensitive substring matching is the window's own.</summary>

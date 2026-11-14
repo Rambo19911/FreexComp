@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
@@ -68,6 +69,13 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         var area = _editor.TextArea;
         var textView = area.TextView;
         _editor.ShowLineNumbers = false; // our own margins replace AvaloniaEdit's (editor.md §2)
+        _editor.VerticalScrollBarVisibility = ScrollBarVisibility.Visible; // UI-ED-061: always; horizontal only when needed
+        _editor.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+        _editor.TemplateApplied += (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var scroller in _editor.GetVisualDescendants().OfType<ScrollViewer>().Take(1))
+                scroller.Classes.Add("editorScroll"); // App.axaml: UI-ED-061 scrollbar styles
+        }, DispatcherPriority.Loaded);
         Bind(_editor, TextEditor.BackgroundProperty, "FxcBgEditorBrush");
         Bind(_editor, TextEditor.ForegroundProperty, "FxcSyntaxTextBrush");
         BindCaret(overwrite: false);
@@ -113,6 +121,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         area.TextEntering += OnTextEntering;
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
         AddHandler(PointerWheelChangedEvent, OnPointerWheel, RoutingStrategies.Tunnel);
+        area.AddHandler(ContextRequestedEvent, OnTextContextRequested, RoutingStrategies.Tunnel);
         area.Caret.PositionChanged += (_, _) =>
         {
             MirrorSelection();
@@ -332,6 +341,92 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         menu.Open(margin);
     }
 
+    /// <summary>A right-click in the text (UI-MENU-043/044); the gutter margins open their own menu.</summary>
+    private void OnTextContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        var textView = _editor.TextArea.TextView;
+        if (e.Source is Visual source && source.FindAncestorOfType<AbstractMargin>(includeSelf: true) is not null)
+            return;
+        if (!e.TryGetPosition(textView, out var point))
+        {
+            // The keyboard (Menu key, Shift+F10): at the caret, unless OnEditorKeyDown opened it already.
+            e.Handled = _editor.TextArea.ContextMenu?.IsOpen == true || OpenTextMenu(null);
+            return;
+        }
+        e.Handled = OpenTextMenu(point);
+    }
+
+    /// <summary>
+    /// The text-area context menu (menus.md §12). From the pointer at <paramref name="point"/> (text-view coordinates): a
+    /// click outside the selection first moves the caret there, clearing the selection (UI-MENU-044); from the keyboard
+    /// (<paramref name="point"/> null) it opens at the caret.
+    /// </summary>
+    private bool OpenTextMenu(Point? point)
+    {
+        if (_document?.TextAreaMenu is not { } build)
+            return false;
+        var area = _editor.TextArea;
+        var textView = area.TextView;
+        if (point is { } p && textView.GetPositionFloor(p + textView.ScrollOffset) is { } position)
+        {
+            var offset = _editor.Document.GetOffset(position.Location);
+            var selection = area.Selection;
+            var inside = !selection.IsEmpty && selection.Segments.Any(s => offset >= s.StartOffset && offset <= s.EndOffset);
+            if (!inside)
+            {
+                area.ClearSelection();
+                area.Caret.Offset = offset;
+            }
+        }
+
+        var menu = Views.MenuBarBuilder.CreateContextMenu(build());
+        var caret = area.Caret.CalculateCaretRectangle();
+        menu.PlacementTarget = textView;
+        if (point is { } at)
+        {
+            menu.Placement = PlacementMode.Pointer;
+        }
+        else
+        {
+            menu.Placement = PlacementMode.Bottom;
+            menu.PlacementRect = new Rect(caret.X - textView.ScrollOffset.X, caret.Y - textView.ScrollOffset.Y, 1, caret.Height);
+        }
+
+        area.ContextMenu = menu;
+        menu.Open(area);
+        return true;
+    }
+
+    private IDisposable? _pendingBoxClick;
+
+    /// <summary>The platform double-click time (Windows default).</summary>
+    private static readonly TimeSpan DoubleClickTime = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// IDE-ED-058: a click on the <c>…</c> box toggles (unfolds) the region once the double-click time has passed without a
+    /// second click — a double-click unfolds and selects instead (<see cref="UnfoldAndSelect"/>).
+    /// </summary>
+    private void OnFoldBoxClicked(FoldingSection section)
+    {
+        _pendingBoxClick?.Dispose();
+        _pendingBoxClick = null;
+        if (_document is not { } document || section.Tag is not FoldRegion region)
+            return;
+        var delay = DoubleClickTime;
+        if (document.Clock is not { } clock)
+        {
+            document.Folding.SetFolded(region, false);
+            return;
+        }
+
+        _pendingBoxClick = clock.Schedule(delay, () =>
+        {
+            _pendingBoxClick = null;
+            if (document.Folding.Regions.Contains(region))
+                document.Folding.SetFolded(region, false);
+        });
+    }
+
     /// <summary>"Focus the editor" (<c>window.focusEditor</c>, pane cycling): the text, not the first focusable element.</summary>
     public bool FocusText() => _document is not null && _editor.TextArea.Focus();
 
@@ -402,7 +497,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         if (generators.OfType<FoldingElementGenerator>().FirstOrDefault() is { } inner)
         {
             generators.Remove(inner);
-            _foldBoxes = new FoldBoxGenerator(inner, Brush) { BoxDoubleClicked = UnfoldAndSelect };
+            _foldBoxes = new FoldBoxGenerator(inner, Brush) { BoxDoubleClicked = UnfoldAndSelect, BoxClicked = OnFoldBoxClicked };
             generators.Add(_foldBoxes);
         }
 
@@ -458,6 +553,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     /// <summary>Double-click on the <c>…</c> box: unfolds it and selects the text it hid (UI-ED-035, IDE-ED-058).</summary>
     internal void UnfoldAndSelect(FoldingSection section)
     {
+        _pendingBoxClick?.Dispose(); // the double-click replaces the pending single click
+        _pendingBoxClick = null;
         if (_document is not { } document || section.Tag is not FoldRegion region)
             return;
         document.Folding.SetFolded(region, false);
@@ -492,6 +589,10 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             return;
         _tooltipFolding = section;
         _tooltipMarkers = markers;
+        // UI-ED-132: at the pointer, but a full line (plus a gap) below it, so it never covers the hovered word; a tooltip
+        // popup never takes focus.
+        ToolTip.SetPlacement(textView, PlacementMode.Pointer);
+        ToolTip.SetVerticalOffset(textView, textView.DefaultLineHeight + 4);
         ToolTip.SetTip(textView, section?.Tag is FoldRegion region ? BuildFoldTooltip(region)
             : markers.Count > 0 ? BuildErrorTooltip(markers)
             : null);
@@ -559,8 +660,11 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private TextBlock BuildFoldTooltip(FoldRegion region)
     {
         var block = new TextBlock { MaxWidth = 640, TextWrapping = TextWrapping.NoWrap };
-        Bind(block, TextBlock.FontFamilyProperty, "FxcFontMono");
-        Bind(block, TextBlock.FontSizeProperty, "FxcTypeCodeSmallSize");
+        // Resolved now from the editor (the tooltip is rebuilt for every hover): a detached tooltip would not find them.
+        if (this.TryFindResource("FxcFontMono", out var mono) && mono is FontFamily family)
+            block.FontFamily = family;
+        if (this.TryFindResource("FxcTypeCodeSmallSize", out var size) && size is double points)
+            block.FontSize = points;
         if (_document is not { } document)
             return block;
         var buffer = document.Buffer;
@@ -656,12 +760,27 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     {
         _editor.FontSize = _document?.EffectiveFontSize ?? (_document?.Options ?? EditorOptions.Default).FontSize;
         _editor.WordWrap = _document?.ViewState.WordWrap ?? false;
+        _editor.HorizontalScrollBarVisibility = _editor.WordWrap ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto; // UI-ED-061
         InvalidateBackground();
     }
 
     /// <summary>UI-ED-061: Ctrl+wheel zooms the document when <c>editor.mouseWheelZoom</c> is on.</summary>
     private void OnPointerWheel(object? sender, PointerWheelEventArgs e)
     {
+        if (e.Delta.Y != 0 && e.KeyModifiers is Avalonia.Input.KeyModifiers.None or Avalonia.Input.KeyModifiers.Shift
+            && (e.Source as Visual)?.FindAncestorOfType<FindPanelView>(includeSelf: true) is null
+            && _editor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } scroller)
+        {
+            // UI-ED-061: 3 lines per notch; Shift+wheel scrolls horizontally (3 lines' height per notch as well).
+            var step = 3 * _editor.TextArea.TextView.DefaultLineHeight * e.Delta.Y;
+            var max = new Vector(Math.Max(0, scroller.Extent.Width - scroller.Viewport.Width), Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height));
+            scroller.Offset = e.KeyModifiers == Avalonia.Input.KeyModifiers.Shift
+                ? new Vector(Math.Clamp(scroller.Offset.X - step, 0, max.X), scroller.Offset.Y)
+                : new Vector(scroller.Offset.X, Math.Clamp(scroller.Offset.Y - step, 0, max.Y));
+            e.Handled = true;
+            return;
+        }
+
         if (_document is not { Options.MouseWheelZoom: true } document || e.Delta.Y == 0
             || !e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control))
             return;
@@ -932,6 +1051,13 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     {
         if (_document is not { } document || e.Source is not Visual source || !_editor.TextArea.IsVisualAncestorOf(source) && source != _editor.TextArea)
             return; // keys of the find panel are its own
+        if (e.Key == Key.Apps && e.KeyModifiers == Avalonia.Input.KeyModifiers.None
+            || e.Key == Key.F10 && e.KeyModifiers == Avalonia.Input.KeyModifiers.Shift)
+        {
+            e.Handled = OpenTextMenu(null); // UI-MENU-043: at the caret
+            return;
+        }
+
         var key = e.Key switch
         {
             Key.Tab => "Tab",

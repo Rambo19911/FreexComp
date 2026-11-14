@@ -1,4 +1,8 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.VisualTree;
 using Avalonia.Threading;
 using AvaloniaEdit.Folding;
 using FreexComp.Ide.Core.Editing;
@@ -76,6 +80,83 @@ public sealed class FoldingVisualTests
         Assert.Equal("  Writeln(1);", lines[0]);
         Assert.Equal("  Writeln(20);", lines[19]);
         Assert.Equal("…", lines[20]);
+    }
+
+    /// <summary>
+    /// IDE-ED-058: a click on the <c>…</c> box toggles (unfolds) the region — after the double-click time, so that a
+    /// double-click instead unfolds and selects the hidden text; hovering the box shows the folded lines in
+    /// <c>type.codeSmall</c>; copying a selection across a folded region copies the hidden text too.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-058")]
+    [Trait("Req", "UI-ED-132")]
+    public async Task FoldBoxClickHoverAndCopy()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = Unit);
+        var (doc, editor, probe) = await OpenAsync(h, "A.pas");
+        FoldRegion Region(int startLine) => doc.Folding.Regions.First(r => r.StartLine == startLine);
+        var textView = editor.TextArea.TextView;
+
+        Avalonia.Point Box()
+        {
+            Dispatcher.UIThread.RunJobs();
+            var start = doc.Buffer.GetPosition(Region(6).StartOffset);
+            var p = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(start.Line, start.Column), AvaloniaEdit.Rendering.VisualYPosition.LineMiddle)
+                    - textView.ScrollOffset + new Avalonia.Point(6, 0);
+            return textView.TranslatePoint(p, h.Window)!.Value;
+        }
+
+        // Hover: the tooltip lists the hidden lines in type.codeSmall.
+        doc.Folding.SetFolded(Region(6), true);
+        h.Window.MouseMove(Box());
+        Dispatcher.UIThread.RunJobs();
+        var tip = Assert.IsType<Avalonia.Controls.TextBlock>(Avalonia.Controls.ToolTip.GetTip(textView));
+        Assert.Equal(Application.Current!.FindResource("FxcTypeCodeSmallSize"), tip.FontSize); // type.codeSmall
+
+        // UI-ED-132: the tooltip opens a line below the pointer (never over the hovered word) and does not take focus.
+        Assert.Equal(PlacementMode.Pointer, ToolTip.GetPlacement(textView));
+        Assert.True(ToolTip.GetVerticalOffset(textView) > textView.DefaultLineHeight, "below the hovered line");
+        editor.TextArea.Focus();
+        ToolTip.SetIsOpen(textView, true);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(editor.TextArea.IsFocused);
+        ToolTip.SetIsOpen(textView, false);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Application.Current!.FindResource("FxcFontMono"), tip.FontFamily);
+        Assert.Contains("Writeln;", tip.Inlines!.OfType<Avalonia.Controls.Documents.Run>().Select(r => r.Text).Aggregate("", (a, b) => a + b), StringComparison.Ordinal);
+
+        // One click: the region unfolds once the double-click time has passed.
+        var box = Box();
+        h.Window.MouseDown(box, Avalonia.Input.MouseButton.Left);
+        h.Window.MouseUp(box, Avalonia.Input.MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["6-12"], Folded(probe));
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(Folded(probe));
+
+        // A double-click (the box's BoxDoubleClicked, as NavigationUnfolds drives it) unfolds and selects the hidden
+        // text and cancels the pending single click.
+        doc.Folding.SetFolded(Region(6), true);
+        box = Box();
+        h.Window.MouseDown(box, Avalonia.Input.MouseButton.Left);
+        h.Window.MouseUp(box, Avalonia.Input.MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        var view = (CodeEditorView)probe;
+        view.UnfoldAndSelect(Assert.Single(_foldings(view), s => s.Tag is FoldRegion { StartLine: 6 }));
+        doc.Folding.SetFolded(Region(6), true); // folded again before the double-click time ends
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["6-12"], Folded(probe)); // the canceled single click did not unfold it
+        // Copy across a folded region: the hidden text is on the clipboard.
+        doc.Folding.SetFolded(Region(6), true);
+        editor.TextArea.Focus();
+        editor.Select(doc.Buffer.GetOffset(5, 1), doc.Buffer.GetOffset(13, 1) - doc.Buffer.GetOffset(5, 1));
+        Dispatcher.UIThread.RunJobs();
+        await h.ExecuteAsync("edit.copy");
+        Assert.Equal(doc.Buffer.GetText(doc.Buffer.GetOffset(5, 1), doc.Buffer.GetOffset(13, 1) - doc.Buffer.GetOffset(5, 1)),
+            ((TestSupport.FakeClipboard)h.Services.Clipboard).Text);
+        Assert.Contains("Writeln;", ((TestSupport.FakeClipboard)h.Services.Clipboard).Text, StringComparison.Ordinal);
     }
 
     private static IEnumerable<FoldingSection> _foldings(CodeEditorView view) =>

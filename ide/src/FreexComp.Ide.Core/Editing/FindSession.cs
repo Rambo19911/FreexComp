@@ -29,6 +29,7 @@ public sealed class FindSession
     private ITextAnchor? _rangeStart;
     private ITextAnchor? _rangeEnd;
     private IDisposable? _timer;
+    private CancellationTokenSource? _search;
     private bool _reselect;
     private bool _inSelection;
     private long _generation;
@@ -128,6 +129,9 @@ public sealed class FindSession
     /// <summary>Replace and Replace All are disabled in read-only documents (IDE-P1-109).</summary>
     public bool CanReplace => !_document.Buffer.IsReadOnly;
 
+    /// <summary>The token of the running background search (IDE-ARCH-084), or <see cref="CancellationToken.None"/>.</summary>
+    internal CancellationToken SearchCancellation => _search?.Token ?? CancellationToken.None;
+
     /// <summary>
     /// Opens (or re-focuses) the panel (IDE-P1-100): a non-empty single-line selection becomes the search text
     /// (regex-escaped with Regex on); a multi-line selection becomes the In-selection range and turns it on; the caret
@@ -162,6 +166,7 @@ public sealed class FindSession
         IsOpen = false;
         _timer?.Dispose();
         _timer = null;
+        CancelSearch();
         _generation++;
         _origin = _rangeStart = _rangeEnd = null;
         _inSelection = false;
@@ -275,6 +280,7 @@ public sealed class FindSession
     internal void Detach()
     {
         _timer?.Dispose();
+        CancelSearch();
         _generation++;
         _service.QueryChanged -= OnQueryChanged;
         _document.Buffer.Changed -= OnBufferChanged;
@@ -344,9 +350,18 @@ public sealed class FindSession
         _timer = _service.Clock.Schedule(Delay, Search);
     }
 
+    /// <summary>IDE-ARCH-084: a newer search, closing the panel and closing the document cancel the running one.</summary>
+    private void CancelSearch()
+    {
+        _search?.Cancel();
+        _search?.Dispose();
+        _search = null;
+    }
+
     private void Search()
     {
         _timer = null;
+        CancelSearch();
         var generation = ++_generation;
         var reselect = _reselect;
         _reselect = false;
@@ -362,7 +377,8 @@ public sealed class FindSession
         }
 
         var context = SynchronizationContext.Current;
-        Task.Run(() => TextFinder.FindAll(text, query, start, end)).ContinueWith(
+        var cancellation = (_search = new CancellationTokenSource()).Token;
+        Task.Run(() => TextFinder.FindAll(text, query, start, end, cancellation), cancellation).ContinueWith(
             t => Apply(t.Result),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnRanToCompletion,

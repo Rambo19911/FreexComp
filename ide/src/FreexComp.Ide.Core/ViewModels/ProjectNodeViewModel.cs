@@ -96,7 +96,11 @@ public sealed class ProjectNodeViewModel : ObservableObject
     public bool IsMissing
     {
         get => _isMissing;
-        set => SetProperty(ref _isMissing, value);
+        set
+        {
+            if (SetProperty(ref _isMissing, value))
+                OnPropertyChanged(nameof(AutomationName));
+        }
     }
 
     /// <summary>The open document of this file has unsaved changes; on the root: the project file (UI-TW-105).</summary>
@@ -137,8 +141,9 @@ public sealed class ProjectNodeViewModel : ObservableObject
         private set => SetProperty(ref _matchLength, value);
     }
 
-    /// <summary>UI-TW-105: the automation name carries ", modified".</summary>
-    public string AutomationName => IsModified ? Name + Resources.Strings.ProjectManager_ModifiedSuffix : Name;
+    /// <summary>UI-TW-105 / UI-A11Y-021: the automation name carries ", missing" (status icon) and ", modified".</summary>
+    public string AutomationName =>
+        Name + (IsMissing ? Resources.Strings.ProjectManager_MissingSuffix : "") + (IsModified ? Resources.Strings.ProjectManager_ModifiedSuffix : "");
 
     internal void SetMatch(int start, int length)
     {

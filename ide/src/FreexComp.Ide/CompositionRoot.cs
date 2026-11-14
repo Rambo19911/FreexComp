@@ -55,6 +55,8 @@ public static class CompositionRoot
     public static MainWindow CreateMainWindow(IdeServices services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        Input.ListBehaviors.Register(); // UI-A11Y-007 type-ahead, UI-TW-016 trimmed-cell tooltips
+        Input.FieldBehaviors.Register(); // UI-A11Y-022 LabeledBy / HelpText
         var window = new MainWindow { DataContext = new MainWindowViewModel(services) };
         var application = services.Application;
         application.Shutdown = window.Close; // UI-WIN-072 (4): a programmatic close, not intercepted by the exit sequence

@@ -32,7 +32,7 @@ public enum ProjectSelectMode
 /// selection and the context menus. Handles <c>projectManager.open</c>, <c>.collapseAll</c> and <c>.syncWithEditor</c>.
 /// UI thread only.
 /// </summary>
-public sealed class ProjectManagerViewModel : ToolWindowViewModel
+public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarget
 {
     public const string ToolName = "ProjectManager";
     public const string MissingFilesKind = "MissingFiles";
@@ -212,6 +212,30 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel
             return;
         _selection.Clear();
         _selection.AddRange(result);
+        OnSelectionChanged();
+    }
+
+    /// <summary>The focus target of the tree: <c>edit.selectAll</c> (Ctrl+A) selects every visible file row (UI-TW-015).</summary>
+    bool ICommandTarget.CanExecute(string commandId, string? argument) => commandId == SelectAllCommandId && HasProject;
+
+    Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
+    {
+        if (commandId != SelectAllCommandId || !HasProject)
+            return Task.FromResult(false);
+        SelectAllVisible();
+        return Task.FromResult(true);
+    }
+
+    private const string SelectAllCommandId = "edit.selectAll";
+
+    /// <summary>UI-TW-015 Ctrl+A: every visible row that may join a multi-selection, i.e. the file rows (UI-TW-109).</summary>
+    public void SelectAllVisible()
+    {
+        var files = VisibleRows().Where(n => n.IsFile).ToList();
+        if (files.Count == 0 || files.SequenceEqual(_selection))
+            return;
+        _selection.Clear();
+        _selection.AddRange(files);
         OnSelectionChanged();
     }
 

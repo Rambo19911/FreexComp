@@ -51,7 +51,7 @@ public sealed class FindPanelView : Border
         VerticalAlignment = VerticalAlignment.Top;
         MinWidth = 420; // UI-ED-100
         BorderThickness = new Thickness(1, 0, 1, 1);
-        Padding = new Thickness(4);
+        Padding = new Thickness(4, 4, 4, 3); // with the 1 px bottom border: 34 / 66 high (UI-ED-100)
         Bind(this, BackgroundProperty, "FxcBgRaisedBrush");
         Bind(this, BorderBrushProperty, "FxcBorderDefaultBrush");
         Bind(this, CornerRadiusProperty, "FxcRadiusPopup");
@@ -74,8 +74,13 @@ public sealed class FindPanelView : Border
             ColumnDefinitions = new ColumnDefinitions("Auto,200,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"),
             RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),
             ColumnSpacing = 2,
-            RowSpacing = 4,
         };
+        // UI-ED-100: 34 high with the find row (4 + 26 + 4), 66 with the replace row (+ 6 + 26); gaps as margins so that
+        // the hidden rows take no space.
+        _replaceText.Margin = new Thickness(0, 6, 0, 0);
+        _replaceButtons.Margin = new Thickness(0, 6, 0, 0);
+        _replace.Height = _replaceAll.Height = 26;
+        _error.Margin = new Thickness(0, 4, 0, 0);
         Place(grid, _searchText, 0, 1);
         Place(grid, _replaceText, 2, 1);
         Place(grid, _matchCase, 0, 3);
@@ -172,7 +177,7 @@ public sealed class FindPanelView : Border
 
     private static TextBox Field(string name)
     {
-        var box = new TextBox { Width = 200, AcceptsReturn = false, VerticalAlignment = VerticalAlignment.Center };
+        var box = new TextBox { Width = 200, Height = 26, MinHeight = 26, AcceptsReturn = false, VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
         AutomationProperties.SetName(box, name);
         return box;
     }

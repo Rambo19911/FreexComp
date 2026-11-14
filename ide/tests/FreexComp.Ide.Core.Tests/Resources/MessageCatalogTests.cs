@@ -79,6 +79,44 @@ public sealed partial class MessageCatalogTests
         Assert.Equal("FreexComp", Strings.App_ProductName);
     }
 
+    /// <summary>
+    /// UI-MSG-002: every placeholder of a resource text is positional (<c>{0}</c>, <c>{1}</c> …, optionally with a format
+    /// such as <c>{0:N0}</c>), numbered from 0 without gaps; no named placeholders and no stray braces, so
+    /// <see cref="string.Format(IFormatProvider, string, object[])"/> accepts every text.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Category", "Spec")]
+    [Trait("Req", "UI-MSG-002")]
+    public void PlaceholdersArePositional()
+    {
+        var problems = new List<string>();
+        foreach (var (key, value) in ResxEntries())
+        {
+            var used = PositionalPattern().Matches(value).Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).Distinct().Order().ToList();
+            var rest = PositionalPattern().Replace(value.Replace("{{", "", StringComparison.Ordinal).Replace("}}", "", StringComparison.Ordinal), "");
+            if (rest.Contains('{', StringComparison.Ordinal) || rest.Contains('}', StringComparison.Ordinal))
+                problems.Add($"{key}: non-positional placeholder or stray brace in \"{value}\"");
+            else if (used.Count > 0 && used[^1] != used.Count - 1)
+                problems.Add($"{key}: placeholders {string.Join(", ", used)} are not numbered 0…{used.Count - 1}");
+            else
+            {
+                try
+                {
+                    _ = string.Format(CultureInfo.InvariantCulture, value, Enumerable.Range(0, used.Count).Select(i => (object)i).ToArray());
+                }
+                catch (FormatException ex)
+                {
+                    problems.Add($"{key}: {ex.Message}");
+                }
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    [GeneratedRegex(@"\{(\d+)(?:,-?\d+)?(?::[^{}]*)?\}")]
+    private static partial Regex PositionalPattern();
+
     private static Dictionary<string, string> ExpectedResources()
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);

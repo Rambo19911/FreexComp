@@ -302,6 +302,7 @@ public sealed class ProjectManagerViewTests
     [Trait("Req", "UI-TW-109")]
     [Trait("Req", "UI-MENU-042")]
     [Trait("Req", "UI-TW-013")]
+    [Trait("Req", "IDE-PM-101")]
     public async Task ContextMenusAndSelection()
     {
         await using var h = await HeadlessHarness.StartAsync(o => HelloProject(o));
@@ -371,6 +372,60 @@ public sealed class ProjectManagerViewTests
         await h.ExecuteAsync("file.closeProject");
         Assert.Empty(pm.Roots);
         Assert.True(h.Find<Control>("Tool.ProjectManager.Empty").IsVisible);
+    }
+
+    /// <summary>
+    /// UI-A11Y-021: a row carrying a status icon includes the status word in its automation name — the missing-file
+    /// overlay (UI-TW-104) adds ", missing"; it goes away when the file is back.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-A11Y-021")]
+    public async Task StatusIconRowsNameTheirStatus()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => HelloProject(o));
+        var pm = await OpenHelloAsync(h);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Missing.pas" + Strings.ProjectManager_MissingSuffix, AutomationProperties.GetName(h.Find<TreeViewItem>(Row + "Missing.pas")));
+        Assert.Equal("Unit1.pas", AutomationProperties.GetName(h.Find<TreeViewItem>(Row + "Unit1.pas")));
+
+        File.WriteAllText(Path.Combine(h.TempDir, "Hello", "Missing.pas"), "unit Missing;\ninterface\nimplementation\nend.\n");
+        await pm.CheckMissingFilesAsync();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Missing.pas", AutomationProperties.GetName(h.Find<TreeViewItem>(Row + "Missing.pas")));
+    }
+
+    /// <summary>
+    /// IDE-PM-100: a project mutation rebuilds the tree from the model (new row objects) and keeps the expansion state by
+    /// node key and the selection where its key still exists.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-100")]
+    public async Task RebuildKeepsExpansionAndSelectionByKey()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => HelloProject(o));
+        var pm = await OpenHelloAsync(h);
+        pm.Find("lib/")!.IsExpanded = false;
+        pm.Find("MainForm.pas")!.IsExpanded = true;
+        var oldUnit1 = pm.Find("Unit1.pas")!;
+        pm.Select(oldUnit1);
+
+        Assert.True(await h.Services.Projects.RemoveFromProjectAsync(["notes.md"]));
+        await h.WaitForAsync(() => pm.Find("notes.md") is null, "tree rebuilt");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.NotSame(oldUnit1, pm.Find("Unit1.pas")); // rebuilt, not patched
+        Assert.False(pm.Find("lib/")!.IsExpanded);
+        Assert.True(pm.Find("MainForm.pas")!.IsExpanded);
+        Assert.True(pm.Find("aaa/")!.IsExpanded);
+        Assert.Equal(["Unit1.pas"], pm.Selection.Select(n => n.Key));
+        Assert.True(h.Find<TreeViewItem>(Row + "Unit1.pas").IsSelected);
+
+        // The selected row's key disappears: nothing is selected.
+        Assert.True(await h.Services.Projects.RemoveFromProjectAsync(["Unit1.pas"]));
+        await h.WaitForAsync(() => pm.Find("Unit1.pas") is null, "tree rebuilt again");
+        Assert.Empty(pm.Selection);
+        Assert.False(pm.Find("lib/")!.IsExpanded);
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -474,6 +529,7 @@ public sealed class ProjectManagerViewTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TW-113")]
     [Trait("Req", "IDE-PM-033")]
+    [Trait("Req", "UI-MSG-002")]
     public async Task DropAddsFiles()
     {
         await using var h = await HeadlessHarness.StartAsync(o =>

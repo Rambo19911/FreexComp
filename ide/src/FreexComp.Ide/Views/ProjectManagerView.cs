@@ -24,6 +24,8 @@ public sealed class ProjectManagerView : UserControl
 {
     internal const string RowPrefix = "Tool.ProjectManager.Row.";
 
+    private static readonly FuncTemplate<Panel?> VirtualizingRows = new(() => new VirtualizingStackPanel());
+
     private readonly TreeView _tree;
     private readonly Border _barHost = new();
     private readonly Control _empty;
@@ -39,6 +41,7 @@ public sealed class ProjectManagerView : UserControl
             SelectionMode = SelectionMode.Multiple,
             ItemTemplate = new FuncTreeDataTemplate<ProjectNodeViewModel>((node, _) => new ProjectNodeView { DataContext = node }, node => node.Children),
             ContextMenu = new ContextMenu(),
+            ItemsPanel = VirtualizingRows, // UI-TW-017: a project can have far more than 200 rows
         };
         AutomationProperties.SetAutomationId(_tree, "Tool.ProjectManager.Tree");
         ToolWindowFrame.SetIsPrimary(_tree, true);
@@ -52,6 +55,7 @@ public sealed class ProjectManagerView : UserControl
                 new Setter(AutomationProperties.NameProperty, new Binding(nameof(ProjectNodeViewModel.AutomationName))),
                 new Setter(AutomationProperties.AutomationIdProperty, new Binding(nameof(ProjectNodeViewModel.Key)) { StringFormat = RowPrefix + "{0}" }),
                 new Setter(MinHeightProperty, 22d),
+                new Setter(ItemsControl.ItemsPanelProperty, VirtualizingRows),
             },
         });
         _tree.SelectionChanged += OnTreeSelectionChanged;
@@ -100,6 +104,7 @@ public sealed class ProjectManagerView : UserControl
         _model = DataContext as ProjectManagerViewModel;
         _model?.Roots.CollectionChanged += OnRootsChanged; // before the tree's own handler: focus is still inside
         _tree.ItemsSource = _model?.Roots;
+        AutomationProperties.SetName(_tree, _model?.Title); // UI-A11Y-020
         if (_model is not null)
         {
             _model.PropertyChanged += OnModelChanged;

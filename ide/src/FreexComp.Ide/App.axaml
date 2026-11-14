@@ -34,5 +34,27 @@
       <Setter Property="BorderBrush" Value="{DynamicResource FxcStatusErrorBrush}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
+    <!-- UI-ED-061: the editor's scrollbars are always shown (no auto-hide), 12 thick, without arrow buttons. -->
+    <Style Selector="ScrollViewer.editorScroll ScrollBar">
+      <Setter Property="AllowAutoHide" Value="False" />
+    </Style>
+    <Style Selector="ScrollViewer.editorScroll ScrollBar:vertical">
+      <Setter Property="Width" Value="12" />
+      <Setter Property="MinWidth" Value="12" />
+    </Style>
+    <Style Selector="ScrollViewer.editorScroll ScrollBar:horizontal">
+      <Setter Property="Height" Value="12" />
+      <Setter Property="MinHeight" Value="12" />
+    </Style>
+    <Style Selector="ScrollViewer.editorScroll ScrollBar /template/ RepeatButton#PART_LineUpButton, ScrollViewer.editorScroll ScrollBar /template/ RepeatButton#PART_LineDownButton">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <!-- UI-TW-010: the selected row is bg.selected while its list has focus, bg.selected.inactive otherwise. -->
+    <Style Selector="TreeView:not(:focus-within) TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+      <Setter Property="Background" Value="{DynamicResource FxcBgSelectedInactiveBrush}" />
+    </Style>
+    <Style Selector="ListBox:not(:focus-within) ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource FxcBgSelectedInactiveBrush}" />
+    </Style>
   </Application.Styles>
 </Application>

@@ -35,15 +35,24 @@ public static class TextFinder
     public static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
     /// <summary>The matches inside [<paramref name="start"/>, <paramref name="end"/>), at most <paramref name="cap"/>.</summary>
-    public static FindResult FindAll(string text, FindQuery query, int start, int end, int cap = MatchCap)
+    public static FindResult FindAll(string text, FindQuery query, int start, int end, int cap = MatchCap) =>
+        FindAll(text, query, start, end, CancellationToken.None, cap);
+
+    /// <summary>
+    /// As <see cref="FindAll(string, FindQuery, int, int, int)"/>; a cancelled <paramref name="cancellation"/> stops the
+    /// search with <see cref="OperationCanceledException"/> (IDE-ARCH-084).
+    /// </summary>
+    public static FindResult FindAll(string text, FindQuery query, int start, int end, CancellationToken cancellation, int cap = MatchCap)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(query);
         var matches = new List<TextMatch>();
         try
         {
+            cancellation.ThrowIfCancellationRequested();
             foreach (var (match, _) in Enumerate(text, query, start, end))
             {
+                cancellation.ThrowIfCancellationRequested();
                 if (matches.Count == cap)
                     return new FindResult(matches, true, null);
                 matches.Add(match);

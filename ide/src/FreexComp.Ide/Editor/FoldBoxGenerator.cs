@@ -34,6 +34,9 @@ public sealed class FoldBoxGenerator : VisualLineElementGenerator, ITextViewConn
     /// <summary>A double-click on the box of the folding.</summary>
     public Action<FoldingSection>? BoxDoubleClicked { get; set; }
 
+    /// <summary>A single click on the box of the folding (IDE-ED-058: toggles it).</summary>
+    public Action<FoldingSection>? BoxClicked { get; set; }
+
     void ITextViewConnect.AddToTextView(TextView textView) => ((ITextViewConnect)_inner).AddToTextView(textView);
 
     void ITextViewConnect.RemoveFromTextView(TextView textView) => ((ITextViewConnect)_inner).RemoveFromTextView(textView);
@@ -89,6 +92,8 @@ public sealed class FoldBoxGenerator : VisualLineElementGenerator, ITextViewConn
                 return;
             }
 
+            if (e.ClickCount == 1 && owner.BoxClicked is { } click && e.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
+                click(section);
             base.OnPointerPressed(e);
         }
     }

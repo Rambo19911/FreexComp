@@ -54,7 +54,9 @@ public sealed class ToolWindowFrame : DockPanel
         model.PropertyChanged += OnModelChanged;
         model.FocusRequested += (_, _) => Dispatcher.UIThread.Post(FocusPrimary, DispatcherPriority.Loaded);
         _content.Focusable = true; // focus target when the content has no focusable control
+        KeyboardNavigation.SetIsTabStop(_content, false); // UI-A11Y-006: not a stop of its own
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
+        KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle); // UI-A11Y-006: Tab stays inside; F6 leaves
         UpdateState();
     }
 
@@ -127,7 +129,22 @@ public sealed class ToolWindowFrame : DockPanel
 
     private Control CreateToolBar()
     {
-        var row = new DockPanel();
+        var row = new DockPanel { LastChildFill = false }; // UI-A11Y-006: buttons first in tab order, the filter at the right
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var item in _model.ToolBar)
+        {
+            var button = FlatButton($"{AutomationIds.Tool(_model.Name)}.ToolBar.{item.Command.Id}", item.IconName, 24);
+            button.Command = item.Command;
+            button.Focusable = true; // UI-A11Y-006: the tool bar is one tab stop, arrows move between its buttons
+            button.Bind(AutomationProperties.NameProperty, new Binding(nameof(item.Title)) { Source = item, Mode = BindingMode.OneWay });
+            button.Bind(ToolTip.TipProperty, new Binding(nameof(item.Tooltip)) { Source = item, Mode = BindingMode.OneWay });
+            buttons.Children.Add(button);
+        }
+
+        KeyboardNavigation.SetTabNavigation(buttons, KeyboardNavigationMode.Once);
+        buttons.AddHandler(KeyDownEvent, OnToolBarKeyDown, RoutingStrategies.Bubble);
+        row.Children.Add(buttons);
         if (_model.HasFilter)
         {
             var filter = CreateFilter();
@@ -135,21 +152,25 @@ public sealed class ToolWindowFrame : DockPanel
             row.Children.Add(filter);
         }
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        foreach (var item in _model.ToolBar)
-        {
-            var button = FlatButton($"{AutomationIds.Tool(_model.Name)}.ToolBar.{item.Command.Id}", item.IconName, 24);
-            button.Command = item.Command;
-            button.Bind(AutomationProperties.NameProperty, new Binding(nameof(item.Title)) { Source = item, Mode = BindingMode.OneWay });
-            button.Bind(ToolTip.TipProperty, new Binding(nameof(item.Tooltip)) { Source = item, Mode = BindingMode.OneWay });
-            buttons.Children.Add(button);
-        }
-
-        row.Children.Add(buttons);
         var bar = new Border { Child = row, Height = 28, BorderThickness = new Thickness(0, 0, 0, 1) };
         bar.Bind(Border.BackgroundProperty, bar.GetResourceObservable("FxcBgPanelBrush"));
         bar.Bind(Border.BorderBrushProperty, bar.GetResourceObservable("FxcBorderSubtleBrush"));
         return bar;
+    }
+
+    /// <summary>UI-A11Y-006: Left / Right move focus between the enabled tool-bar buttons.</summary>
+    private static void OnToolBarKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not StackPanel bar || e.KeyModifiers != KeyModifiers.None || e.Key is not (Key.Left or Key.Right))
+            return;
+        var buttons = bar.Children.OfType<Button>().Where(b => b.IsEffectivelyEnabled && b.IsVisible).ToList();
+        var index = buttons.FindIndex(b => b.IsFocused);
+        if (index < 0)
+            return;
+        var next = index + (e.Key == Key.Right ? 1 : -1);
+        if (next >= 0 && next < buttons.Count)
+            buttons[next].Focus(NavigationMethod.Directional);
+        e.Handled = true;
     }
 
     /// <summary>Right-aligned, 26 high, 120…240 wide, placeholder "Filter", clear button when non-empty (UI-TW-008).</summary>
@@ -167,6 +188,7 @@ public sealed class ToolWindowFrame : DockPanel
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         AutomationProperties.SetAutomationId(_filter, AutomationIds.Tool(_model.Name) + ".Filter");
+        AutomationProperties.SetName(_filter, Strings.ToolWindow_FilterPlaceholder); // UI-A11Y-020
         _filter.Bind(TextBox.TextProperty, new Binding(nameof(ToolWindowViewModel.FilterText)) { Source = _model, Mode = BindingMode.TwoWay });
         _filter.AddHandler(KeyDownEvent, OnFilterKeyDown, RoutingStrategies.Tunnel);
 

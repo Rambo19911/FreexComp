@@ -71,4 +71,37 @@ public sealed class PerformanceTests
         var budget = PerformanceBudget.Of(150, typeof(PascalClassifier).Assembly, typeof(FreexComp.Compiler.Syntax.Lexer).Assembly);
         Assert.True(budget.IsMetBy(median), budget.Describe("median CPU time", median));
     }
+
+    /// <summary>
+    /// IDE-ARCH-082 / UI-CMD-013: an edit command on the UI thread completes within 50 ms even in a 1 MB unit — typing a
+    /// character, the undo and redo commands, and reading the classification of the changed line. Work proportional
+    /// to the document (whole-text lexing, folding, brackets) runs off the calling thread, so the median CPU time of
+    /// the calling thread stays within the budget.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-082")]
+    [Trait("Req", "UI-CMD-013")]
+    public void EditCommandsOnLargeUnitStayWithinUiThreadBudget()
+    {
+        var language = new PascalLanguage();
+        var doc = new FreexComp.Ide.Core.ViewModels.TextDocumentViewModel(new FreexComp.Ide.Core.Text.StringTextBuffer(LargeUnit()), @"C:\work\Large.pas", null,
+            language, FreexComp.Ide.Core.Text.FileEncoding.Utf8, FreexComp.Ide.Core.Services.LineEndingKind.CrLf);
+        var classifier = language.CreateClassifier();
+        var target = doc.CommandTarget!;
+        var line = doc.Buffer.LineCount / 2;
+        doc.ViewState.Caret = new FreexComp.Ide.Core.Text.TextPosition(line, 1);
+        var before = doc.Buffer.Length;
+
+        var median = PerformanceBudget.MedianThreadCpu(() =>
+        {
+            Assert.True(doc.TypeText("x"));
+            Assert.True(target.ExecuteAsync("edit.undo", null).GetAwaiter().GetResult());
+            Assert.True(target.ExecuteAsync("edit.redo", null).GetAwaiter().GetResult());
+            _ = classifier.Classify(doc.Buffer, new LineRange(line, line));
+        });
+
+        Assert.True(doc.Buffer.Length > before, "the typed characters are in the buffer");
+        var budget = PerformanceBudget.Of(50, typeof(PascalClassifier).Assembly, typeof(FreexComp.Compiler.Syntax.Lexer).Assembly);
+        Assert.True(budget.IsMetBy(median), budget.Describe("median UI-thread CPU time of type + undo + redo + classify", median));
+    }
 }

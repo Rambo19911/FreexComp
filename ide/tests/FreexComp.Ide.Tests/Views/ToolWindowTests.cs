@@ -103,6 +103,7 @@ public sealed class ToolWindowTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TW-012")]
     [Trait("Req", "UI-TW-011")]
+    [Trait("Req", "IDE-ARCH-057")]
     public async Task ColumnWidthsPersist()
     {
         byte[] saved;

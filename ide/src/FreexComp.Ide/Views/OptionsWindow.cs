@@ -134,6 +134,7 @@ public sealed class OptionsWindow : DialogWindow
         {
             ItemsSource = model.Rows,
             SelectionMode = SelectionMode.Single,
+            [AutomationProperties.NameProperty] = model.Title, // UI-A11Y-020: the page list is named after the dialog
             ItemTemplate = new FuncDataTemplate<OptionsTreeRow>((row, _) =>
             {
                 var text = new TextBlock

@@ -37,6 +37,51 @@ public sealed class FindServiceTests
 
     private static TextMatch[] M(params (int Offset, int Length)[] matches) => [.. matches.Select(m => new TextMatch(m.Offset, m.Length))];
 
+    /// <summary>
+    /// IDE-ARCH-084: a background search (buffer above 200 KB) runs with a cancellation token; a newer search text
+    /// cancels it, so do closing the panel and closing the document. <see cref="TextFinder.FindAll(string, FindQuery, int, int, CancellationToken, int)"/>
+    /// stops on a cancelled token.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-084")]
+    public async Task NewerSearchAndClosingCancelTheBackgroundSearch()
+    {
+        var text = new StringBuilder();
+        while (text.Length <= WholeTextClassifier.BackgroundThreshold)
+            text.Append("alpha beta gamma\r\n");
+        var (services, doc, clock) = await OpenAsync(text.ToString());
+        var find = services.Find;
+        var session = find.For(doc);
+        session.Open(replace: false);
+
+        find.SearchText = "alpha";
+        clock.Advance(FindSession.Delay);
+        var first = session.SearchCancellation;
+        Assert.True(first.CanBeCanceled, "the background search has a token");
+        Assert.False(first.IsCancellationRequested);
+
+        find.SearchText = "beta"; // a newer instance of the same operation
+        clock.Advance(FindSession.Delay);
+        var second = session.SearchCancellation;
+        Assert.True(first.IsCancellationRequested);
+        Assert.False(second.IsCancellationRequested);
+
+        session.Close();
+        Assert.True(second.IsCancellationRequested);
+
+        session.Open(replace: false);
+        clock.Advance(FindSession.Delay);
+        var third = session.SearchCancellation;
+        Assert.False(third.IsCancellationRequested);
+        Assert.True(await services.Documents.CloseAsync(doc));
+        Assert.True(third.IsCancellationRequested);
+
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        Assert.Throws<OperationCanceledException>(() =>
+            TextFinder.FindAll(text.ToString(), new FindQuery("alpha", false, false, false), 0, text.Length, cancelled.Token));
+    }
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-101")]
     [Trait("Req", "IDE-P1-106")]

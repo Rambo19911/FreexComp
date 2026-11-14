@@ -45,6 +45,9 @@ public sealed class MainWindowViewModel : ObservableObject
         FollowTitleSource(services.Documents.ActiveDocument);
     }
 
+    /// <summary>The services' clock, for view behaviours that time user input (list type-ahead, UI-A11Y-007).</summary>
+    public Platform.IClock Clock => _services.Clock;
+
     private DocumentViewModel? _titleSource;
 
     private void FollowTitleSource(DocumentViewModel? document)

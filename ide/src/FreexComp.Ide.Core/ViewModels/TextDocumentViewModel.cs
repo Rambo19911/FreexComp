@@ -85,6 +85,9 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>UI-ED-022: the gutter context menu for a 1-based line (set by the document service); null = none.</summary>
     public Func<int, IReadOnlyList<Menus.MenuItemModel>>? GutterMenu { get; internal set; }
 
+    /// <summary>The text-area context menu (menus.md §12), built when it opens; null without a command service.</summary>
+    public Func<IReadOnlyList<Menus.MenuItemModel>>? TextAreaMenu { get; internal set; }
+
     /// <summary>Change-bar states per line (UI-ED-040): the document's <see cref="LineChangeTracker"/> (tests may replace it).</summary>
     public ILineChangeSource LineChanges
     {

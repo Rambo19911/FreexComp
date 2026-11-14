@@ -9,6 +9,7 @@ public sealed class DialogHistoryTests
 {
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-062")]
+    [Trait("Req", "UI-DLG-009")]
     public void HistoryIsMostRecentFirstWithoutDuplicatesAndAtMostTwenty()
     {
         var layout = TestComposition.Build().Layout;

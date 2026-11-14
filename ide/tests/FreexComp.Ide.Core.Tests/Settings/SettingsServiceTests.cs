@@ -40,6 +40,56 @@ public sealed class SettingsServiceTests
     }
 
     /// <summary>
+    /// IDE-SET-029: the initial load reads <c>settings.json</c> on the calling (UI) thread (IDE-SET-020); every later file
+    /// access — the save after a change and a flush — runs on the thread pool, never on the thread that changed the value.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-SET-029")]
+    [Trait("Req", "IDE-SET-020")]
+    public async Task FileAccessAfterTheInitialLoadRunsOnTheThreadPool()
+    {
+        _disk.CreateDirectory(@"C:\u\roaming");
+        _disk.WriteAllBytes(SettingsFile, Encoding.UTF8.GetBytes("{ \"formatVersion\": 1, \"t.size\": 12 }"));
+        var calls = new System.Collections.Concurrent.ConcurrentQueue<(string Call, int Thread, bool Pool)>();
+        var spy = new RecordingFileSystem(_disk)
+        {
+            FailWith = c =>
+            {
+                calls.Enqueue((c, Environment.CurrentManagedThreadId, Thread.CurrentThread.IsThreadPoolThread));
+                return null;
+            },
+        };
+        var settings = Create(spy);
+
+        // A dedicated (non-pool) thread plays the UI thread: load, change, the save delay running out, flush.
+        int ui = 0, loaded = 0, loadCalls = 0, afterSet = 0;
+        Task flushed = Task.CompletedTask;
+        var uiThread = new Thread(() =>
+        {
+            ui = Environment.CurrentManagedThreadId;
+            settings.Load();
+            loaded = settings.Get(Size);
+            loadCalls = calls.Count;
+            settings.Set(Size, 20);
+            afterSet = calls.Count;
+            _clock.Advance(TimeSpan.FromMilliseconds(500)); // the save timer fires on this thread
+            flushed = settings.FlushAsync();
+        });
+        uiThread.Start();
+        uiThread.Join();
+        await AdvanceUntilAsync(flushed);
+
+        Assert.Equal((12, 20), (loaded, settings.Get(Size)));
+        Assert.True(loadCalls > 0, "the initial load read the file");
+        Assert.All(calls.Take(loadCalls), c => Assert.Equal(ui, c.Thread)); // IDE-SET-020: synchronous initial load
+        Assert.Equal(loadCalls, afterSet); // Set writes nothing itself
+        var saveCalls = calls.Skip(loadCalls).ToList();
+        Assert.Contains(saveCalls, c => c.Call.StartsWith("MoveFile", StringComparison.Ordinal));
+        Assert.All(saveCalls, c => Assert.True(c.Pool && c.Thread != ui, $"{c.Call} ran on the UI thread"));
+        Assert.Contains("\"t.size\": 20", Encoding.UTF8.GetString(_disk.ReadAllBytes(SettingsFile)), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A save that meets a sharing violation while replacing <c>settings.json</c> is retried with backoff on
     /// <see cref="Core.Platform.IClock"/> (50, 100, 200, 400 ms) and succeeds without an error in the log; when the file
     /// stays locked through every retry, the existing failure path logs one error (IDE-SET-027).

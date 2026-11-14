@@ -60,6 +60,35 @@ public sealed class LayoutPersistenceTests
         }
     }
 
+    /// <summary>
+    /// IDE-ARCH-060: <c>window.state</c> is <c>normal</c> or <c>maximized</c>, and the saved bounds are the normal bounds
+    /// in DIPs — a maximized window saves the size it had before maximizing, and a minimized one is saved as normal.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-060")]
+    public async Task MaximizedWindowSavesItsNormalBounds()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.WindowSize = new Avalonia.Size(1000, 700));
+        Assert.Equal(new Avalonia.Size(1000, 700), h.Window.ClientSize);
+
+        h.Window.WindowState = Avalonia.Controls.WindowState.Maximized;
+        Dispatcher.UIThread.RunJobs();
+        h.Window.Close();
+        Dispatcher.UIThread.RunJobs();
+        var window = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(h.UserDir, UiState)))!["window"]!;
+        Assert.Equal("maximized", (string)window["state"]!);
+        Assert.Equal((1000, 700), ((int)window["width"]!, (int)window["height"]!));
+
+        await using var minimized = await HeadlessHarness.StartAsync(o => o.WindowSize = new Avalonia.Size(900, 600));
+        minimized.Window.WindowState = Avalonia.Controls.WindowState.Minimized;
+        Dispatcher.UIThread.RunJobs();
+        minimized.Window.Close();
+        Dispatcher.UIThread.RunJobs();
+        window = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(minimized.UserDir, UiState)))!["window"]!;
+        Assert.Equal("normal", (string)window["state"]!);
+        Assert.Equal((900, 600), ((int)window["width"]!, (int)window["height"]!));
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-054")]
     public async Task CorruptFileFallsBackToDefault()

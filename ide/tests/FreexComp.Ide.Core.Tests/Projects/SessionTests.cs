@@ -78,6 +78,7 @@ public sealed class SessionTests
     [Trait("Req", "IDE-ARCH-071")]
     [Trait("Req", "IDE-ARCH-076")]
     [Trait("Req", "UI-TW-012")]
+    [Trait("Req", "IDE-ARCH-057")]
     public async Task RoundTripDocumentsCaretsFolds()
     {
         WriteHello();

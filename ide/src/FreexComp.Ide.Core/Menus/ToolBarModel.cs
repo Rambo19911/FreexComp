@@ -24,7 +24,7 @@ public sealed class ToolBarButtonModel : ObservableObject
     /// <summary>Automation name (UI-TB-003).</summary>
     public string Title => Command.Title;
 
-    public string Tooltip => Command.GestureText.Length == 0 ? Command.Title : $"{Command.Title} ({Command.GestureText})";
+    public string Tooltip => Command.GestureText.Length == 0 ? Command.Title : string.Format(System.Globalization.CultureInfo.CurrentCulture, Resources.Strings.Format_TitleWithShortcut, Command.Title, Command.GestureText);
 
     private void OnCommandChanged(object? sender, PropertyChangedEventArgs e)
     {

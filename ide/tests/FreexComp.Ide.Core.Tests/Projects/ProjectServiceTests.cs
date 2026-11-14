@@ -224,6 +224,7 @@ public sealed class ProjectServiceTests
     [Trait("Req", "IDE-PM-014")]
     [Trait("Req", "IDE-PM-080")]
     [Trait("Req", "UI-DLG-063")]
+    [Trait("Req", "UI-DLG-055")]
     public async Task CloseKeepsNonMemberDocuments()
     {
         WriteHello();
@@ -765,6 +766,48 @@ public sealed class ProjectServiceTests
         Assert.Equal("notes\n", Text(Dir + @"\readme.txt"));
         Assert.Contains("\"path\": \"readme.txt\"", Saved(), StringComparison.Ordinal);
         Assert.False(Projects.Project!.IsModified);
+    }
+
+    /// <summary>
+    /// UI-DLG-072: the Rename File dialog offers <c>UpdateReferences</c> only for Pascal units, checked by default; with it
+    /// cleared the unit keeps its heading while the file, its form companion, the <c>{$FORM}</c> directive and the
+    /// <c>.pproj</c> still follow the new name.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-072")]
+    public async Task UpdateReferencesIsOfferedForUnitsOnly()
+    {
+        WriteRenameProject();
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+
+        RenameFileViewModel? dialog = null;
+        Dialogs.Script(RenameFileViewModel.DialogName, async vm =>
+        {
+            dialog = (RenameFileViewModel)vm;
+            await dialog.PressCancelAsync();
+        });
+        await OpenDocumentAsync(Dir + @"\notes.md");
+        await _services.Commands.ExecuteAsync("project.renameFile");
+        Assert.False(dialog!.IsUnit); // a text file: no check box
+
+        Dialogs.Script(RenameFileViewModel.DialogName, async vm =>
+        {
+            dialog = (RenameFileViewModel)vm;
+            Assert.True(dialog.IsUnit);
+            Assert.True(dialog.UpdateReferences); // checked by default
+            dialog.UpdateReferences = false;
+            dialog.NewName = "Login.pas";
+            await dialog.PressDefaultAsync();
+        });
+        await OpenDocumentAsync(Dir + @"\forms\Main.pas");
+        await _services.Commands.ExecuteAsync("project.renameFile");
+
+        var text = Text(Dir + @"\forms\Login.pas");
+        Assert.Contains("unit Main;", text, StringComparison.Ordinal); // the heading stays
+        Assert.Contains("{$FORM Login.form}", text, StringComparison.Ordinal);
+        Assert.True(_fs.FileExists(Dir + @"\forms\Login.form"));
+        Assert.Contains(new ProjectFileItem("forms/Login.pas", "forms/Login.form", "unit"), Projects.Project!.Files);
+        Assert.Contains("forms/Login.pas", Saved(), StringComparison.Ordinal);
     }
 
     [Fact(Timeout = 30000)]

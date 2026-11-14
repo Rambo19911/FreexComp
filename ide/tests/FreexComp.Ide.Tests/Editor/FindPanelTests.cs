@@ -1,5 +1,7 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -324,5 +326,104 @@ public sealed class FindPanelTests
         h.Press("Escape");
         Assert.False(Shown(h, generated));
         Assert.Equal("Document.KeyboardShortcuts", h.FocusedAutomationId);
+    }
+
+    /// <summary>
+    /// UI-ED-100: the panel floats over the text at the top-right corner, flush with the top, 8 px left of the vertical
+    /// scrollbar; bg.raised with a 1 px border.default on left, bottom and right; at least 420 wide; 34 high (find) or
+    /// 66 (find + replace).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-100")]
+    public async Task PanelGeometry()
+    {
+        var (h, editor) = await OpenAsync(Code);
+        await using var _ = h;
+        await h.ExecuteAsync("search.find");
+        var panel = h.Find<FindPanelView>(Panel);
+        var textView = editor.TextArea.TextView;
+        Dispatcher.UIThread.RunJobs();
+
+        Avalonia.Rect InWindow(Avalonia.Visual v) => new(v.TranslatePoint(default, h.Window)!.Value, v.Bounds.Size);
+        var rect = InWindow(panel);
+        var view = InWindow(textView);
+        var scrollBar = editor.GetVisualDescendants().OfType<ScrollBar>().First(b => b.Orientation == Avalonia.Layout.Orientation.Vertical);
+        Assert.Equal(view.Top, rect.Top, 1); // flush with the top of the text area
+        Assert.Equal(scrollBar.IsVisible ? InWindow(scrollBar).Left - 8 : view.Right - 8, rect.Right, 1);
+        Assert.True(rect.Width >= 420, $"{rect.Width} wide");
+        Assert.Equal(34, rect.Height, 1);
+        Assert.Equal(new Avalonia.Thickness(1, 0, 1, 1), panel.BorderThickness);
+        Avalonia.Media.Color Token(string key) => Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(
+            Avalonia.Application.Current!.TryGetResource(key, h.Window.ActualThemeVariant, out var value) ? value : null).Color;
+        Assert.Equal(Token("FxcBgRaisedBrush"), Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(panel.Background).Color);
+        Assert.Equal(Token("FxcBorderDefaultBrush"), Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(panel.BorderBrush).Color);
+        Assert.Equal(view.Top, InWindow(textView).Top); // the text is not pushed down
+
+        await h.ExecuteAsync("search.replace");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(66, InWindow(panel).Height, 1);
+    }
+
+    /// <summary>UI-ED-101: a match the panel would cover (top 80 px, x-range under the panel) is scrolled to one third of the viewport.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-101")]
+    public async Task MatchUnderThePanelIsScrolledToOneThird()
+    {
+        var lines = Enumerable.Range(1, 200).Select(i => i == 100 ? new string(' ', 55) + "needle" : "x").ToList();
+        var (h, editor) = await OpenAsync(string.Join("\r\n", lines) + "\r\n");
+        await using var _ = h;
+        var textView = editor.TextArea.TextView;
+        var scroller = editor.GetVisualDescendants().OfType<ScrollViewer>().First();
+        await h.ExecuteAsync("search.find");
+        h.Type("needle");
+        Search(h);
+        editor.TextArea.Caret.Offset = 0;
+        editor.TextArea.ClearSelection();
+
+        // The match's line sits at the very top of the viewport, its x-range under the panel.
+        var lineTop = textView.GetVisualTopByDocumentLine(100);
+        scroller.Offset = new Avalonia.Vector(0, lineTop);
+        Dispatcher.UIThread.RunJobs();
+        await h.ExecuteAsync("search.findNext");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(100, editor.TextArea.Caret.Line);
+        var panelRect = h.Find<FindPanelView>(Panel).TranslatePoint(default, textView);
+        var matchX = textView.GetVisualPosition(editor.TextArea.Caret.Position, AvaloniaEdit.Rendering.VisualYPosition.LineTop).X - textView.HorizontalOffset;
+        Assert.True(Math.Abs(lineTop - scroller.Viewport.Height / 3 - scroller.Offset.Y) < 1, $"offset {scroller.Offset.Y}, lineTop {lineTop}, viewport {scroller.Viewport.Height}, panel {panelRect} w {h.Find<FindPanelView>(Panel).Bounds.Width}, match x {matchX}, visible {h.Find<FindPanelView>(Panel).IsVisible}");
+    }
+
+    /// <summary>
+    /// UI-ED-061: the vertical scrollbar is always shown, the horizontal one only when needed and never with word wrap;
+    /// 12 thick, no arrow buttons; the wheel scrolls 3 lines per notch, Shift+wheel horizontally.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-061")]
+    public async Task ScrollBarsAndWheel()
+    {
+        var lines = Enumerable.Range(1, 300).Select(i => new string('w', 300) + i); // wider than the view on every line
+        var (h, editor) = await OpenAsync(string.Join("\r\n", lines) + "\r\n");
+        await using var _ = h;
+        var scroller = editor.GetVisualDescendants().OfType<ScrollViewer>().First();
+        Assert.Equal(ScrollBarVisibility.Visible, editor.VerticalScrollBarVisibility);
+        Assert.Equal(ScrollBarVisibility.Auto, editor.HorizontalScrollBarVisibility);
+        var vertical = editor.GetVisualDescendants().OfType<ScrollBar>().First(b => b.Orientation == Avalonia.Layout.Orientation.Vertical);
+        Assert.Equal(12, vertical.Bounds.Width, 0.5);
+        Assert.False(vertical.AllowAutoHide);
+        Assert.DoesNotContain(vertical.GetVisualDescendants().OfType<RepeatButton>(), b => b.IsEffectivelyVisible && b.Name is "PART_LineUpButton" or "PART_LineDownButton");
+
+        var point = editor.TextArea.TextView.TranslatePoint(new Point(100, 100), h.Window)!.Value;
+        var lineHeight = editor.TextArea.TextView.DefaultLineHeight;
+        h.Window.MouseWheel(point, new Vector(0, -1));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(3 * lineHeight, scroller.Offset.Y, 0.5);
+        h.Window.MouseWheel(point, new Vector(0, -1), Avalonia.Input.RawInputModifiers.Shift);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(3 * lineHeight, scroller.Offset.Y, 0.5); // Shift: the vertical offset stays …
+        Assert.True(scroller.Offset.X > 0, "… and the text scrolls horizontally");
+
+        await h.ExecuteAsync("view.wordWrap");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(ScrollBarVisibility.Disabled, editor.HorizontalScrollBarVisibility);
     }
 }

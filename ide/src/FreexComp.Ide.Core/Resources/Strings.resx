@@ -2599,6 +2599,18 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Filter</value>
     <comment>UI-TW-008: placeholder of a tool window's filter box</comment>
   </data>
+  <data name="Format_TitleWithShortcut" xml:space="preserve">
+    <value>{0} ({1})</value>
+    <comment>UI-TB-003 / UI-TW-002: a tooltip of a command title (0) and its shortcut (1)</comment>
+  </data>
+  <data name="ToolWindow_TabOverflow" xml:space="preserve">
+    <value>All Tool Windows</value>
+    <comment>UI-TW-003: automation name and tooltip of the dock tab strip's overflow chevron (Dock.&lt;Side&gt;.TabOverflow)</comment>
+  </data>
+  <data name="ProjectManager_MissingSuffix" xml:space="preserve">
+    <value>, missing</value>
+    <comment>UI-A11Y-021: automation name suffix of a row whose file is missing on disk (status icon)</comment>
+  </data>
   <data name="ToolWindow_ClearFilter" xml:space="preserve">
     <value>Clear filter</value>
     <comment>UI-TW-008: automation name and tooltip of the filter box's clear (×) button</comment>

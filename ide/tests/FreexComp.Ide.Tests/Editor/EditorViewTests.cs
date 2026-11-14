@@ -63,6 +63,7 @@ public sealed class EditorViewTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-111")]
     [Trait("Req", "IDE-ARCH-112")]
+    [Trait("Req", "IDE-ARCH-057")]
     public async Task ViewStateSurvivesTabSwitch()
     {
         var lines = string.Concat(Enumerable.Range(1, 300).Select(i => $"line {i}\r\n"));

@@ -289,6 +289,7 @@ public sealed class SaveTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-082")]
     [Trait("Req", "IDE-P1-080")]
+    [Trait("Req", "UI-MSG-002")]
     public async Task FailedSaveKeepsDocumentModified()
     {
         var path = File(@"C:\p\A.pas", "a\r\n");
