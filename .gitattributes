@@ -7,3 +7,4 @@
 *.props text eol=crlf
 # test data must keep its exact bytes (line endings, encodings)
 ide/tests/TestData/** -text
+rtl/tests/** -text
