@@ -6,9 +6,10 @@ namespace FreexComp.E2E.Tests;
 /// Runs tests/spikes/run.ps1, which proves on the pinned toolchain that the back-end mechanisms the compiler,
 /// debugger and data areas rely on work: IR to exe without a C runtime, SEH exceptions, stack probes,
 /// manifest embedding, a scripted lldb-dap debug session (CodeView and DWARF) and a SQLite DLL call.
-/// Fails (never skips) when the toolchain is missing (TESTING.md rule 5).
+/// Fails (never skips) when the toolchain is missing (TESTING.md rule 5). Phase 2: Phase 1 must not require the
+/// LLVM toolchain (IDE-P1-001).
 /// </summary>
-[Trait("Phase", "1")]
+[Trait("Phase", "2")]
 [Trait("Kind", "E2E")]
 [Trait("Category", "Toolchain")]
 public sealed class ToolchainSpikeTests
