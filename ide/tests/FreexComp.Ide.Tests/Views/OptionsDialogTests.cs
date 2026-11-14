@@ -379,8 +379,12 @@ public sealed class OptionsDialogTests
         Assert.False(settings.Get(SettingsCatalog.EditorShowLineNumbers));
         Assert.Equal(16, settings.Get(SettingsCatalog.EditorFontSize));
         Assert.True(probe.GutterWidth < gutter);
-        await h.WaitForAsync(() => File.Exists(settingsFile) && File.ReadAllText(settingsFile).Contains("\"editor.fontSize\": 16", StringComparison.Ordinal),
-            "settings flushed");
+        // Apply started the save (seen in the recorded calls, not by reading the file: a read that overlaps the save's
+        // replace of settings.json makes that replace fail, I-169); once it has finished the file holds the new value.
+        await h.WaitForAsync(() => h.FileSystem.Calls.Any(c => c.StartsWith("MoveFile ", StringComparison.Ordinal) &&
+            c.EndsWith(" -> " + settingsFile, StringComparison.OrdinalIgnoreCase)), "settings flushed");
+        await settings.FlushAsync();
+        Assert.Contains("\"editor.fontSize\": 16", File.ReadAllText(settingsFile), StringComparison.Ordinal);
         Assert.False(apply.IsEnabled); // disabled again after applying
         Assert.True(dlg.Window.IsVisible);
 

@@ -131,8 +131,13 @@ public sealed class KeyMappingsPageTests
         Assert.Empty(Gestures(keymap, "refactor.rename"));
         Assert.Equal(["F2"], Gestures(keymap, "project.renameFile"));
         Assert.Empty(Gestures(keymap, "file.closeAll"));
-        await h.WaitForAsync(() => File.Exists(keymapFile) && File.ReadAllText(keymapFile).Contains("\"file.saveAll\"", StringComparison.Ordinal),
-            "keymap flushed");
+        // I-169: never read keymap.json while the background save may be replacing it (a read overlapping the replace
+        // fails with a sharing violation, or makes the replace fail). Apply started the save (recorded MoveFile); once
+        // that save has finished, the file holds the new binding.
+        await h.WaitForAsync(() => h.FileSystem.Calls.Any(c => c.StartsWith("MoveFile ", StringComparison.Ordinal) &&
+            c.EndsWith(" -> " + keymapFile, StringComparison.OrdinalIgnoreCase)), "keymap flushed");
+        await keymap.FlushAsync();
+        Assert.Contains("\"file.saveAll\"", File.ReadAllText(keymapFile), StringComparison.Ordinal);
         Assert.False(dlg.Find<Button>("Apply").IsEnabled);
 
         // Reset Command restores the defaults and takes them back from other commands.

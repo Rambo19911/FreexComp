@@ -222,7 +222,9 @@ public sealed class WelcomePageTests
         h.Press("Down");
         Assert.Equal(Row + hello, h.FocusedAutomationId);
         h.Press("Enter");
-        await h.WaitForAsync(() => h.Services.Projects.Project?.Name == "Hello", "Hello opened");
+        // The project is set before its main source has been read (in the background): wait for the document too.
+        await h.WaitForAsync(() => h.Services.Projects.Project?.Name == "Hello" && h.Services.Documents.ActiveDocument is TextDocumentViewModel,
+            "Hello and its main source opened");
         Assert.Equal(Path.Combine(h.TempDir, "Hello", "Hello.pas"), h.Services.Documents.ActiveDocument?.FilePath);
         Assert.Single(h.Services.Documents.Documents.OfType<WelcomeDocumentViewModel>());
 
@@ -230,7 +232,8 @@ public sealed class WelcomePageTests
         await h.ExecuteAsync("view.welcomePage");
         await h.WaitForAsync(() => RowPaths(h).FirstOrDefault() == hello, "Hello leads the list");
         h.Click(Row + other);
-        await h.WaitForAsync(() => h.Services.Projects.Project?.Name == "Other", "Other opened");
+        await h.WaitForAsync(() => h.Services.Projects.Project?.Name == "Other" &&
+            h.Services.Documents.ActiveDocument?.FilePath == Path.Combine(h.TempDir, "Other", "Other.pas"), "Other and its main source opened");
     }
 
     [AvaloniaFact(Timeout = 30000)]

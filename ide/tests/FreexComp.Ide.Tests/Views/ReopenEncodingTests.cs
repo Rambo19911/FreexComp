@@ -50,6 +50,8 @@ public sealed class ReopenEncodingTests
         Assert.Equal("Discard Changes and Reopen", Avalonia.Automation.AutomationProperties.GetName(dlg.Find<Button>("Ok")));
         dlg.Click("Ok");
         await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+        // The file is re-read off the UI thread after the dialog closed (IDE-ARCH-081): wait for the reload itself.
+        await h.WaitForAsync(() => document.Encoding == FileEncoding.Utf8, "reopened as UTF-8");
         Assert.Equal("Caf\uFFFD\r\n", document.Buffer.Text);
         Assert.Equal(FileEncoding.Utf8, document.Encoding);
         Assert.False(document.IsModified);
