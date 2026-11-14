@@ -106,6 +106,36 @@ public sealed class EditorViewTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-A11Y-004")]
+    public async Task ActivatingATabFocusesTheEditor()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["A.pas"] = "unit A;\r\n";
+            o.InitialFiles["B.pas"] = "unit B;\r\n";
+        });
+        await OpenAsync(h, "A.pas");
+        await OpenAsync(h, "B.pas");
+        object? Focused() => h.Window.FocusManager?.GetFocusedElement();
+        FocusEditor(h, "B.pas");
+
+        // A click on another tab: its editor takes the focus, so typing goes there.
+        h.Click("DocumentTab.A.pas");
+        Assert.Same(h.Find<TextEditor>("Editor.A.pas").TextArea, Focused());
+
+        // Ctrl+Tab from the editor: the next document's editor.
+        h.Press("Ctrl+Tab");
+        Assert.Same(h.Find<TextEditor>("Editor.B.pas").TextArea, Focused());
+
+        // window.focusEditor puts the focus into the text, not on the document area.
+        h.Find<TextEditor>("Editor.B.pas").TextArea.Focus();
+        h.Find<Control>("DocumentArea").Focus();
+        Dispatcher.UIThread.RunJobs();
+        h.Press("Alt+0");
+        Assert.Same(h.Find<TextEditor>("Editor.B.pas").TextArea, Focused());
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-030")]
     public async Task UndoAndRedoGoThroughTheBuffer()
     {

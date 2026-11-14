@@ -144,9 +144,10 @@ public sealed class LayoutView : Grid
         switch (pane)
         {
             case Pane.Documents:
-                // The active document view; while none is open, the document area itself.
-                _documents.GetVisualDescendants().OfType<InputElement>()
-                    .FirstOrDefault(c => c.Focusable && c.IsEffectivelyEnabled && c.IsEffectivelyVisible)?.Focus(NavigationMethod.Tab);
+                // The active document's text; another document view; while none is open, the document area itself.
+                if (_documents.GetVisualDescendants().OfType<Editor.CodeEditorView>().FirstOrDefault()?.FocusText() != true)
+                    _documents.GetVisualDescendants().OfType<InputElement>()
+                        .FirstOrDefault(c => c.Focusable && c.IsEffectivelyEnabled && c.IsEffectivelyVisible)?.Focus(NavigationMethod.Tab);
                 break;
             case Pane.Left:
                 _left.FocusActive();

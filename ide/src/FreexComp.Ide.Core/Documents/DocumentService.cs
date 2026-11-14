@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Dialogs;
+using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Platform;
@@ -25,6 +26,7 @@ public sealed class DocumentService : IDocumentService
     private readonly ITextBufferFactory _buffers;
     private readonly ILanguageRegistry _languages;
     private readonly ISettingsService _settings;
+    private readonly EditorOptions _editorOptions;
     private readonly IStatusService _status;
     private readonly IFocusTracker _focus;
     private readonly IDialogService _dialogs;
@@ -44,6 +46,7 @@ public sealed class DocumentService : IDocumentService
         _buffers = buffers;
         _languages = languages;
         _settings = settings;
+        _editorOptions = new EditorOptions(settings);
         _status = status;
         _focus = focus;
         Documents = new ReadOnlyObservableCollection<DocumentViewModel>(_documents);
@@ -517,6 +520,8 @@ public sealed class DocumentService : IDocumentService
     /// <summary>A new tab opens right of the active one (UI-ED-077) and becomes active.</summary>
     private void Add(DocumentViewModel document)
     {
+        if (document is TextDocumentViewModel textDocument)
+            textDocument.Options = _editorOptions;
         var index = ActiveDocument is null ? _documents.Count : _documents.IndexOf(ActiveDocument) + 1;
         _documents.Insert(index, document);
         var modified = document.IsModified;

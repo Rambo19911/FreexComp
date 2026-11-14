@@ -7,8 +7,14 @@ using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
+using Avalonia.Interactivity;
+using Avalonia.Media;
 using AvaloniaEdit.Editing;
+using AvaloniaEdit.Folding;
+using AvaloniaEdit.Rendering;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Editing;
+using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Input;
@@ -30,15 +36,25 @@ namespace FreexComp.Ide.Editor;
 /// The <c>Editor</c> command scope; the view is the command target for the commands that need the selection
 /// (clipboard, select all) and passes the rest to the document.
 /// </summary>
-public sealed class CodeEditorView : Decorator, ICommandTarget
+public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 {
     private const string CutCommandId = "edit.cut";
     private const string CopyCommandId = "edit.copy";
     private const string PasteCommandId = "edit.paste";
     private const string SelectAllCommandId = "edit.selectAll";
 
+    /// <summary>UI-ED-032: the pointer counts as near the gutter up to this far into the text area.</summary>
+    private const double FoldMarkerHoverZone = 24;
+
     private readonly TextEditor _editor = new();
+    private readonly GlyphMargin _glyphMargin;
+    private readonly LineNumberMargin _lineNumbers;
+    private readonly FoldMargin _foldMargin;
+    private readonly ChangeBarMargin _changeBar;
+    private readonly CurrentLineRenderer _currentLine;
+    private readonly LineStateBackgroundRenderer _lineStates;
     private TextDocumentViewModel? _document;
+    private FoldingManager? _foldings;
     private bool _applying;
     private bool _scrollPending;
     private SyntaxColorizer? _colorizer;
@@ -46,24 +62,66 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
     public CodeEditorView()
     {
         CommandRouting.SetScope(this, CommandScope.Editor);
-        _editor.ShowLineNumbers = false; // the gutter is I-045's
+        var area = _editor.TextArea;
+        var textView = area.TextView;
+        _editor.ShowLineNumbers = false; // our own margins replace AvaloniaEdit's (editor.md §2)
         Bind(_editor, TextEditor.BackgroundProperty, "FxcBgEditorBrush");
         Bind(_editor, TextEditor.ForegroundProperty, "FxcSyntaxTextBrush");
         Bind(_editor, TextEditor.FontFamilyProperty, "FxcFontMono");
         Bind(_editor, TextEditor.FontSizeProperty, "FxcTypeCodeSize");
-        Bind(_editor.TextArea, TextArea.CaretBrushProperty, "FxcEditorCaretBrush");
-        Bind(_editor.TextArea, TextArea.SelectionBrushProperty, "FxcEditorSelectionBgBrush");
-        RemoveBuiltInBindings(_editor.TextArea);
-        _editor.TextArea.TextEntering += OnTextEntering;
-        _editor.TextArea.Caret.PositionChanged += (_, _) => MirrorSelection();
-        _editor.TextArea.SelectionChanged += (_, _) => MirrorSelection();
-        _editor.TextArea.TextView.ScrollOffsetChanged += (_, _) => MirrorScroll();
+        Bind(area, TextArea.CaretBrushProperty, "FxcEditorCaretBrush");
+        Bind(area, TextArea.SelectionBrushProperty, "FxcEditorSelectionBgBrush");
+        Bind(textView, TextView.NonPrintableCharacterBrushProperty, "FxcEditorWhitespaceBrush"); // UI-ED-058
+        textView.Bind(TextView.ColumnRulerPenProperty, // UI-ED-057
+            textView.GetResourceObservable("FxcEditorRulerBrush", brush => brush is IBrush b ? new Pen(b, 1) : null));
+        RemoveBuiltInBindings(area);
+
+        // editor.md §2: glyph margin, line numbers, fold margin, change bar, then the text padding.
+        _glyphMargin = new GlyphMargin(area);
+        _lineNumbers = new LineNumberMargin(area);
+        _foldMargin = new FoldMargin(area);
+        _changeBar = new ChangeBarMargin(area);
+        foreach (var margin in new Control[] { _glyphMargin, _lineNumbers, _foldMargin, _changeBar, new TextPaddingMargin() })
+            area.LeftMargins.Add(margin);
+
+        // editor.md §6: our current-line highlight (the built-in one is off), line-state backgrounds over it.
+        var options = _editor.Options;
+        options.HighlightCurrentLine = false;
+        options.ShowEndOfLine = false;
+        options.ShowSpacesGlyph = "·";
+        options.ShowTabsGlyph = "→";
+        options.EnableHyperlinks = false;
+        options.EnableEmailHyperlinks = false;
+        _currentLine = new CurrentLineRenderer(area, this);
+        _lineStates = new LineStateBackgroundRenderer(this);
+        textView.BackgroundRenderers.Add(_currentLine);
+        textView.BackgroundRenderers.Add(_lineStates);
+        ApplyOptions(EditorOptions.Default);
+
+        area.TextEntering += OnTextEntering;
+        area.Caret.PositionChanged += (_, _) =>
+        {
+            MirrorSelection();
+            InvalidateBackground();
+        };
+        area.SelectionChanged += (_, _) =>
+        {
+            MirrorSelection();
+            InvalidateBackground();
+        };
+        area.GotFocus += (_, _) => InvalidateBackground();
+        area.LostFocus += (_, _) => InvalidateBackground();
+        area.AddHandler(PointerMovedEvent, (_, e) => _foldMargin.IsPointerNear = e.GetPosition(textView).X < FoldMarkerHoverZone,
+            RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        area.PointerExited += (_, _) => _foldMargin.IsPointerNear = false;
+        textView.ScrollOffsetChanged += (_, _) => MirrorScroll();
         Child = _editor;
-        // UI-ED-003: the brushes bound above follow the theme by themselves; syntax colours need a redraw.
+        // UI-ED-003: the brushes bound above follow the theme by themselves; syntax colours need a redraw (the
+        // margins and renderers look their brushes up on every draw).
         ActualThemeVariantChanged += (_, _) =>
         {
             _colorizer?.ThemeChanged();
-            _editor.TextArea.TextView.Redraw();
+            textView.Redraw();
         };
     }
 
@@ -165,9 +223,17 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
         {
             old.PropertyChanged -= OnDocumentPropertyChanged;
             old.ViewState.PropertyChanged -= OnViewStatePropertyChanged;
+            old.Options.PropertyChanged -= OnOptionsChanged;
+            old.Decorations.Changed -= OnDecorationsChanged;
         }
 
         SetColorizer(null);
+        SetDecorations(null);
+        if (_foldings is not null)
+        {
+            FoldingManager.Uninstall(_foldings);
+            _foldings = null;
+        }
 
         _document = null; // nothing is mirrored while the editor switches documents
         // Unbound: an empty document, not null (the editor template binds to Document.Text), and no reference to the old one.
@@ -177,12 +243,17 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
             return;
 
         _editor.IsReadOnly = document.IsReadOnly;
-        AutomationProperties.SetAutomationId(_editor, AutomationIds.Editor(document.Title));
+        SetAutomationIds(document);
         ApplySelection(document);
         SetColorizer(document);
+        SetDecorations(document);
+        InstallFoldings();
+        ApplyOptions(document.Options);
         _document = document;
         document.PropertyChanged += OnDocumentPropertyChanged;
         document.ViewState.PropertyChanged += OnViewStatePropertyChanged;
+        document.Options.PropertyChanged += OnOptionsChanged;
+        document.Decorations.Changed += OnDecorationsChanged;
 
         // The scroll offsets can be applied once the editor has measured its text.
         _scrollPending = true;
@@ -195,7 +266,31 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
                 scroller.Offset = new Vector(document.ViewState.HorizontalOffset, document.ViewState.VerticalOffset);
             _scrollPending = false;
             MirrorScroll();
+            TakeFocusFromDocumentArea();
         }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Activating a tab focuses its editor: when the keyboard focus is nowhere, on the window, or on the document area
+    /// around this view (a tab click, or the previous document's editor that just left the tree), it moves into the
+    /// text. Focus in a tool window or a dialog stays where it is.
+    /// </summary>
+    private void TakeFocusFromDocumentArea()
+    {
+        if (TopLevel.GetTopLevel(this) is not { } top)
+            return;
+        var focused = top.FocusManager?.GetFocusedElement() as Visual;
+        if (focused is null || !focused.IsAttachedToVisualTree() || focused == top || this.GetVisualAncestors().Contains(focused))
+            _editor.TextArea.Focus();
+    }
+
+    /// <summary>"Focus the editor" (<c>window.focusEditor</c>, pane cycling): the text, not the first focusable element.</summary>
+    public bool FocusText() => _document is not null && _editor.TextArea.Focus();
+
+    private void SetAutomationIds(TextDocumentViewModel document)
+    {
+        AutomationProperties.SetAutomationId(_editor, AutomationIds.Editor(document.Title));
+        AutomationProperties.SetAutomationId(_glyphMargin, AutomationIds.Editor(document.Title) + ".Gutter");
     }
 
     private void OnDocumentPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -205,10 +300,93 @@ public sealed class CodeEditorView : Decorator, ICommandTarget
         if (e.PropertyName == nameof(TextDocumentViewModel.IsReadOnly))
             _editor.IsReadOnly = document.IsReadOnly;
         else if (e.PropertyName == nameof(TextDocumentViewModel.Title))
-            AutomationProperties.SetAutomationId(_editor, AutomationIds.Editor(document.Title));
+            SetAutomationIds(document);
         else if (e.PropertyName == nameof(TextDocumentViewModel.Language))
             SetColorizer(document); // Save As with another extension
+        else if (e.PropertyName == nameof(TextDocumentViewModel.LineChanges))
+            _changeBar.Source = document.LineChanges;
     }
+
+    /// <summary>Gutter glyphs, change bar and line backgrounds of the document; null detaches them.</summary>
+    private void SetDecorations(TextDocumentViewModel? document)
+    {
+        _glyphMargin.Decorations = document?.Decorations;
+        _currentLine.Decorations = document?.Decorations;
+        _lineStates.Decorations = document?.Decorations;
+        _changeBar.Source = document?.LineChanges ?? NoLineChanges.Instance;
+        InvalidateBackground();
+    }
+
+    /// <summary>
+    /// UI-ED-030: a <see cref="FoldingManager"/> on the text area (its foldings are filled by the folding task); its own
+    /// folding margin is replaced by <see cref="FoldMargin"/>.
+    /// </summary>
+    private void InstallFoldings()
+    {
+        var area = _editor.TextArea;
+        _foldings = FoldingManager.Install(area);
+        foreach (var builtIn in area.LeftMargins.OfType<FoldingMargin>().ToList())
+            area.LeftMargins.Remove(builtIn);
+        _foldMargin.Manager = _foldings;
+    }
+
+    private void OnOptionsChanged(object? sender, PropertyChangedEventArgs e) => ApplyOptions((EditorOptions)sender!);
+
+    /// <summary>Margin visibility (editor.md §2), current line (UI-ED-050), ruler (UI-ED-057) and whitespace (UI-ED-058).</summary>
+    private void ApplyOptions(EditorOptions options)
+    {
+        _lineNumbers.IsVisible = options.ShowLineNumbers;
+        _foldMargin.IsVisible = options.ShowFoldMargin;
+        _changeBar.IsVisible = options.ShowChangeBar;
+        _currentLine.IsEnabled = options.HighlightCurrentLine;
+        var editorOptions = _editor.Options;
+        editorOptions.ShowColumnRulers = options.RightMargin > 0;
+        if (options.RightMargin > 0)
+            editorOptions.ColumnRulerPositions = [options.RightMargin];
+        editorOptions.ShowSpaces = options.ShowWhitespace;
+        editorOptions.ShowTabs = options.ShowWhitespace;
+        InvalidateBackground();
+    }
+
+    private void OnDecorationsChanged(object? sender, EventArgs e) => InvalidateBackground();
+
+    private void InvalidateBackground() => _editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+
+    // IEditorTestProbe (editor.md §13.3)
+
+    string? IEditorTestProbe.GlyphAt(int line) => _document?.Decorations.GlyphAt(line)?.ProbeName;
+
+    string? IEditorTestProbe.LineBackgroundAt(int line) =>
+        _document?.Decorations.LineBackgroundAt(line) ?? (_currentLine.HighlightedLine == line ? "editor.currentLine.bg" : null);
+
+    IReadOnlyList<(int Offset, int Length, string Kind)> IEditorTestProbe.Markers => []; // the marker service comes with diagnostics
+
+    string IEditorTestProbe.ChangeBarAt(int line) => _changeBar.Source.StateOf(line).ToString();
+
+    IReadOnlyList<(int StartLine, int EndLine, bool IsFolded)> IEditorTestProbe.Foldings =>
+        _foldings is null ? [] : [.. _foldings.AllFoldings.Select(f =>
+            (_editor.Document.GetLineByOffset(f.StartOffset).LineNumber, _editor.Document.GetLineByOffset(f.EndOffset).LineNumber, f.IsFolded))];
+
+    string IEditorTestProbe.TokenClassAt(int offset)
+    {
+        if (_document is not { } document || _colorizer is null)
+            return "syntax.text";
+        var line = document.Buffer.GetPosition(offset).Line;
+        foreach (var span in _colorizer.Classifier.Classify(document.Buffer, new LineRange(line, line)))
+        {
+            if (span.Offset <= offset && offset < span.Offset + span.Length)
+                return span.TokenClass;
+        }
+
+        return "syntax.text";
+    }
+
+    IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.BracketHighlights => []; // bracket matching: I-052
+
+    IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.OccurrenceHighlights => []; // word highlight: I-053
+
+    double IEditorTestProbe.GutterWidth =>
+        _editor.TextArea.LeftMargins.OfType<GutterMargin>().Where(m => m.IsVisible).Sum(m => m.MarginWidth);
 
     /// <summary>One <see cref="SyntaxColorizer"/> over the document's language (IDE-P1-057); null removes it.</summary>
     private void SetColorizer(TextDocumentViewModel? document)

@@ -1,5 +1,6 @@
 using System.Globalization;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
@@ -24,6 +25,7 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     private FileEncoding _encoding;
     private FileEncoding _savedEncoding;
     private LineEndingKind _savedLineEnding;
+    private ILineChangeSource _lineChanges = NoLineChanges.Instance;
 
     /// <param name="filePath">Absolute normalized path; null for an untitled document named <paramref name="untitledName"/>.</param>
     public TextDocumentViewModel(ITextBuffer buffer, string? filePath, string? untitledName, ILanguageDefinition language,
@@ -62,6 +64,19 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     public LineEndingModel LineEnding { get; }
 
     public EditorViewState ViewState { get; } = new();
+
+    /// <summary>The editor settings its view draws with; the document service gives every document its shared instance.</summary>
+    public EditorOptions Options { get; internal set; } = EditorOptions.Default;
+
+    /// <summary>Glyph-margin glyphs and line backgrounds (editor.md §3): bookmarks, diagnostics, breakpoints add providers.</summary>
+    public EditorDecorations Decorations { get; } = new();
+
+    /// <summary>Change-bar states per line (UI-ED-040); no marks until the line-change tracker (I-046) is set here.</summary>
+    public ILineChangeSource LineChanges
+    {
+        get => _lineChanges;
+        set => SetProperty(ref _lineChanges, value ?? throw new ArgumentNullException(nameof(value)));
+    }
 
     /// <summary>The name of an untitled document (<c>Unit1.pas</c>); null once it has a path.</summary>
     public string? UntitledName => _filePath is null ? _untitledName : null;
