@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
+using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Types;
 
 namespace FreexComp.Compiler.Units;
@@ -40,6 +41,18 @@ internal sealed class LoadedUnit(string path)
 
     public BindingResult? Result { get; set; }
 
+    /// <summary>The unit's <c>.pcu</c> <c>linkInputs</c> (C-077); set by the compilation after binding.</summary>
+    public UnitLinkInputs LinkInputs { get; set; } = UnitLinkInputs.Empty;
+
+    /// <summary>The <c>.pcu</c> a precompiled unit (no source in this compilation, C-074) was imported from; null for source units.</summary>
+    public System.Text.Json.Nodes.JsonObject? Pcu { get; set; }
+
+    /// <summary>A precompiled unit's object file (<c>&lt;Name&gt;.obj</c> next to its <c>.pcu</c>).</summary>
+    public string ObjectPath => global::System.IO.Path.ChangeExtension(Path, ".obj");
+
+    /// <summary>Imported from a <c>.pcu</c>: nothing to compile, the object is linked as it is.</summary>
+    public bool IsPrecompiled => Pcu is not null;
+
     public UnitSymbol? Symbol => Interface?.Unit;
 
     public bool IsProgram => Tree?.Root is ProgramSyntax;
@@ -76,12 +89,17 @@ internal sealed class UnitBinder : IUsesScopes
     /// <summary>The uses entry each unit on <see cref="_interfaceStack"/> is binding right now (the opening entry of an E2205 cycle).</summary>
     private readonly Dictionary<LoadedUnit, UsedUnitSyntax> _entryInProgress = [];
 
+    private readonly Func<string, System.Text.Json.Nodes.JsonObject?> _readPcu;
+
     /// <param name="parse">Reads and parses a file with the given <c>{$IF}</c> chain provider; null (with E0002/E0003) when unreadable.</param>
-    public UnitBinder(BuiltInTypes types, UnitResolver resolver, Func<string, IUsesScopes?, List<Diagnostic>, SyntaxTree?> parse)
+    /// <param name="readPcu">Reads a precompiled unit's <c>.pcu</c>; null when it is unreadable or unusable (C-074).</param>
+    public UnitBinder(BuiltInTypes types, UnitResolver resolver, Func<string, IUsesScopes?, List<Diagnostic>, SyntaxTree?> parse,
+        Func<string, System.Text.Json.Nodes.JsonObject?>? readPcu = null)
     {
         Types = types;
         _resolver = resolver;
         _parse = parse;
+        _readPcu = readPcu ?? (_ => null);
     }
 
     public BuiltInTypes Types { get; }
@@ -195,6 +213,11 @@ internal sealed class UnitBinder : IUsesScopes
 
         unit.Phase = UnitPhase.Parsing;
         var isSystem = ReferenceEquals(unit, SystemUnit);
+        if (unit.Path.EndsWith(".pcu", StringComparison.OrdinalIgnoreCase))
+        {
+            return Import(unit, isSystem);
+        }
+
         unit.Tree = _parse(unit.Path, isSystem ? null : this, unit.Diagnostics);
         if (unit.Tree is null)
         {
@@ -220,6 +243,55 @@ internal sealed class UnitBinder : IUsesScopes
         _interfaceStack.RemoveAt(_interfaceStack.Count - 1);
         unit.Phase = UnitPhase.InterfaceBound;
         return true;
+    }
+
+    /// <summary>
+    /// C-074: a precompiled unit's interface from its <c>.pcu</c>. Its recorded dependencies are loaded first (they make up its uses
+    /// lists for the init order, LANG-520, and the units its <c>ref</c> types name). An unreadable or unusable file, or one that does
+    /// not fit the units it names, makes the unit unavailable: E2202 at the file.
+    /// </summary>
+    private bool Import(LoadedUnit unit, bool isSystem)
+    {
+        var pcu = _readPcu(unit.Path);
+        if (pcu is not null)
+        {
+            unit.Phase = UnitPhase.BindingInterface;
+            _interfaceStack.Add(unit);
+            try
+            {
+                foreach (var (name, section) in PcuReader.Dependencies(pcu))
+                {
+                    if (IdentifierComparer.Instance.Equals(name, SystemName) || _resolver.Find(name) is not { } path || Load(path) is not { } used
+                        || !EnsureInterface(used))
+                    {
+                        continue;
+                    }
+
+                    (section == "implementation" ? unit.ImplementationUses : unit.InterfaceUses).Add(used);
+                }
+
+                var imported = PcuReader.Import(pcu, Types, isSystem ? Types.Scope : Root,
+                    name => _units.FirstOrDefault(u => u.Interface is not null && IdentifierComparer.Instance.Equals(u.Name, name))?.Interface!.InterfaceScope);
+                unit.Interface = new DeclarationBindingResult(imported.Unit, imported.InterfaceScope, imported.InterfaceScope, []);
+                unit.InterfaceUsesScope = imported.InterfaceScope;
+                unit.Pcu = pcu;
+                unit.Phase = UnitPhase.Complete;
+                return true;
+            }
+            catch (Exception e) when (e is PcuFormatException or InvalidOperationException or FormatException or NullReferenceException)
+            {
+                unit.InterfaceUses.Clear();                             // keys of the wrong JSON kind or missing ones: an unusable file
+                unit.ImplementationUses.Clear();
+            }
+            finally
+            {
+                _interfaceStack.Remove(unit);
+            }
+        }
+
+        unit.Diagnostics.Add(Diagnostic.Create("E2202", Location.ForFile(unit.Path), unit.Name));
+        unit.Phase = UnitPhase.Failed;
+        return false;
     }
 
     /// <summary>The implementation part, routine and unit-level bodies, then flow analysis (CMP-115).</summary>

@@ -125,6 +125,13 @@ internal sealed class UnitResolver
             {
                 return OnDisk(path);
             }
+
+            // C-074: a precompiled unit (its .pcu with the .obj next to it) where the directory has no source of it
+            var pcu = PathUtil.Normalize(Path.Combine(directory, name + ".pcu"));
+            if (_fileSystem.FileExists(pcu) && _fileSystem.FileExists(Path.ChangeExtension(pcu, ".obj")))
+            {
+                return OnDisk(pcu);
+            }
         }
 
         return null;

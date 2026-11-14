@@ -91,41 +91,19 @@ public sealed class Compilation
         EmitResult Done(bool success, string? output, ImmutableArray<string> compiled) =>
             new(success && !diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), output, diagnostics.ToImmutable(), compiled, [], clock.Elapsed);
 
-        // front end: System first (it has no implicit System), then the main file and every unit it reaches (LANG-310, 511, C-069)
-        var aliases = UnitAliasTable.Load(FileSystem, RtlDirectory(), out var aliasError);
-        if (aliasError is not null)
-        {
-            diagnostics.Add(aliasError);                                // LANG-534: compilation stops
-            return Done(false, null, []);
-        }
-
-        var resolver = Resolver(mainPath, aliases);
-        var systemPath = resolver.Resolve(SystemUnitName);
-        if (systemPath is null)
-        {
-            diagnostics.Add(Diagnostic.Create("E2202", location, SystemUnitName));
-            return Done(false, null, []);
-        }
-
-        var unitBinder = new UnitBinder(new BuiltInTypes(), resolver, Parse);
-        unitBinder.BindAll(systemPath, mainPath);
-        var initOrder = unitBinder.InitializationOrder();
-        // CMP-156: diagnostics in unit init order (the main file last), then by position
-        foreach (var loaded in initOrder.Append(unitBinder.Main!).Concat(unitBinder.Units.Except(initOrder).Where(u => u != unitBinder.Main)))
-        {
-            diagnostics.AddRange(loaded.Diagnostics);
-        }
-
-        if (unitBinder.Main!.Result is not { } main || unitBinder.SystemUnit!.Result is not { } system
-            || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error) || options.Stage == EmitStage.Check)
+        if (Bind(diagnostics) is not { } front || options.Stage == EmitStage.Check)
         {
             return Done(true, null, []);
         }
 
+        var (unitBinder, initOrder, systemPath) = front;
+        var main = unitBinder.Main!.Result!;
         ct.ThrowIfCancellationRequested();
         var objectDirectory = ObjectDirectory(mainPath);
         // link order (CMP-625): the main file, System, then every other unit in init order (LANG-520); each emitted once
-        var units = ImmutableArray.Create(main).AddRange(initOrder.Where(u => u != unitBinder.Main).Select(u => u.Result!));
+        var linkUnits = initOrder.Where(u => u != unitBinder.Main).Prepend(unitBinder.Main!).ToImmutableArray();
+        var sourceUnits = linkUnits.Where(u => !u.IsPrecompiled).ToImmutableArray();          // precompiled units link as they are (C-074)
+        var units = sourceUnits.Select(u => u.Result!).ToImmutableArray();
         var unitTable = UnitTable(main, initOrder);
         var llPaths = ImmutableArray.CreateBuilder<string>();
         foreach (var unit in units)
@@ -182,30 +160,36 @@ public sealed class Compilation
             diagnostics.Add(failure);
         }
 
+        // CMP-141: each unit's .pcu last, after its .obj succeeded (C-073)
+        var pcus = PcuWriterFor(front);
+        for (var i = 0; i < sourceUnits.Length; i++)
+        {
+            if (results[i].Failure is null && !Write(Path.Combine(objectDirectory, sourceUnits[i].Name + ".pcu"), pcus.Write(sourceUnits[i]), location, diagnostics))
+            {
+                return Done(false, null, compiled);
+            }
+        }
+
         if (options.Stage == EmitStage.Obj || !main.Unit.IsProgram || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {
             return Done(true, null, compiled);
         }
 
         // import libraries (CMP-620…622) and the link (CMP-625…627)
-        var unitSymbols = units.Select(u => u.Unit).ToImmutableArray();
-        var imports = LinkInputs.Imports(unitSymbols);
+        // every DLL named by any linked unit, {$L} inputs of every unit (C-077)
+        var imports = LinkInputs.Imports(linkUnits.Select(u => u.Symbol!));
         var dllTool = new DllToolInvoker(runner, toolchain.DllTool, FileSystem);
         var libraries = ImmutableArray.CreateBuilder<string>();
         var definitions = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var dll in LinkInputs.Dlls(unitSymbols))
+        var (planned, notFound) = ImportLibraryPlan.Create(
+            FileSystem,
+            [.. linkUnits.Select(u => new LinkUnit(Path.GetDirectoryName(u.Path)!, u.LinkInputs))],
+            Path.GetDirectoryName(systemPath)!,
+            RtlDirectory(),
+            location);
+        diagnostics.AddRange(notFound);
+        foreach (var (dll, definition) in planned)
         {
-            var declaring = units.Where(u => LinkInputs.Imports([u.Unit]).Any(i => i.DllName == dll))
-                .Select(u => Path.GetDirectoryName(u.Unit.Locations.IsEmpty ? mainPath : u.Unit.Locations[0].Path)!)
-                .Append(Path.GetDirectoryName(systemPath)!)                    // kernel32/ntdll are always linked (CMP-620)
-                .Distinct(PathUtil.Comparer);
-            var (definition, notFound) = DllToolInvoker.FindDefinition(FileSystem, dll, [], declaring, RtlDirectory(), location);
-            if (definition is null)
-            {
-                diagnostics.Add(notFound!);
-                continue;
-            }
-
             var library = await dllTool.BuildAsync(dll, definition, objectDirectory, ct).ConfigureAwait(false);
             if (library.Failure is { } failure)
             {
@@ -229,18 +213,119 @@ public sealed class Compilation
             ? PathUtil.Normalize(Path.Combine(Path.GetDirectoryName(mainPath)!, Path.GetFileNameWithoutExtension(mainPath) + ".exe"))
             : PathUtil.Normalize(options.OutputPath);
         var linked = await new LinkInvoker(runner, toolchain.LldLink, FileSystem).LinkAsync(
-            new LinkRequest(output, objectDirectory, objects)
+            new LinkRequest(output, objectDirectory, [.. linkUnits.Select(u => u.IsPrecompiled ? u.ObjectPath : objects[sourceUnits.IndexOf(u)])])
             {
                 AppType = Options.AppType,
                 DebugInfo = Options.DebugInfo,
                 DebugFormat = Options.DebugFormat,
                 ManifestPath = Options.Manifest is "" or "default" or "none" ? null : PathUtil.Normalize(Options.Manifest),   // default manifest: C-167
+                ExtraObjects = [.. linkUnits.SelectMany(u => u.LinkInputs.Objects).Distinct(PathUtil.Comparer)],
                 ImportLibraries = libraries.ToImmutable(),
                 ImportDefinitions = definitions.ToImmutableDictionary(StringComparer.Ordinal),
             },
             ct).ConfigureAwait(false);
         diagnostics.AddRange(linked.Diagnostics);
         return Done(linked.Success, linked.Success ? output : null, compiled);
+    }
+
+    /// <summary>The bound units of one front-end run.</summary>
+    private sealed record FrontEnd(UnitBinder Binder, ImmutableArray<LoadedUnit> InitOrder, string SystemPath);
+
+    /// <summary>
+    /// The front end: System first (it has no implicit System), then the main file and every unit it reaches (LANG-310, 511,
+    /// C-069), and each unit's link inputs (C-077). Null when it stopped early or any error-severity diagnostic was reported;
+    /// <paramref name="diagnostics"/> receives them in CMP-156 order.
+    /// </summary>
+    private FrontEnd? Bind(ImmutableArray<Diagnostic>.Builder diagnostics)
+    {
+        var mainPath = PathUtil.Normalize(Options.MainFile);
+        var aliases = UnitAliasTable.Load(FileSystem, RtlDirectory(), out var aliasError);
+        if (aliasError is not null)
+        {
+            diagnostics.Add(aliasError);                                // LANG-534: compilation stops
+            return null;
+        }
+
+        var resolver = Resolver(mainPath, aliases);
+        var systemPath = resolver.Resolve(SystemUnitName);
+        if (systemPath is null)
+        {
+            diagnostics.Add(Diagnostic.Create("E2202", Location.ForFile(mainPath), SystemUnitName));
+            return null;
+        }
+
+        var unitBinder = new UnitBinder(new BuiltInTypes(), resolver, Parse, ReadPcu);
+        unitBinder.BindAll(systemPath, mainPath);
+        var initOrder = unitBinder.InitializationOrder();
+        foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null))
+        {
+            loaded.LinkInputs = UnitLinkInputs.Collect(loaded.Result!.Unit, loaded.Tree!, FileSystem, loaded.Diagnostics);
+        }
+
+        foreach (var loaded in unitBinder.Units.Where(u => u.IsPrecompiled))
+        {
+            loaded.LinkInputs = PcuReader.LinkInputs(loaded.Pcu!);                // as recorded (C-074)
+        }
+
+        // CMP-156: diagnostics in unit init order (the main file last), then by position
+        foreach (var loaded in initOrder.Append(unitBinder.Main!).Concat(unitBinder.Units.Except(initOrder).Where(u => u != unitBinder.Main)))
+        {
+            diagnostics.AddRange(loaded.Diagnostics);
+        }
+
+        return unitBinder.Main!.Result is null || unitBinder.SystemUnit!.Result is null && !unitBinder.SystemUnit.IsPrecompiled
+               || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)
+            ? null
+            : new FrontEnd(unitBinder, initOrder, systemPath);
+    }
+
+    /// <summary>The <c>.pcu</c> writer of one front-end run (C-073): fingerprints, source bytes (open files win), sections.</summary>
+    private PcuWriter PcuWriterFor(FrontEnd front)
+    {
+        var main = front.Binder.Main!.Result!;
+        return new PcuWriter(new PcuContext(
+            PcuWriter.CompilerFingerprint,
+            OptionsFingerprint(),
+            path => _openFiles.TryGetValue(path, out var open)
+                ? (new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(open.Text), null)
+                : (FileSystem.ReadAllBytes(path), FileSystem.GetLastWriteTimeUtc(path)),
+            front.InitOrder,
+            Options.AppType,
+            unit => ReferenceEquals(unit, front.Binder.Main)
+                ? (false, !Lowerer.ManagedGlobals(main.Unit).IsEmpty)
+                : UnitTableEntryOf(unit) is var entry ? (entry.HasInit, entry.HasFinal) : default,
+            Types: front.Binder.Types));
+    }
+
+    /// <summary>
+    /// The <c>.pcu</c> text of every unit of the compilation in link order, without writing anything (C-073 tests; the IDE's
+    /// in-process view of CMP-154); empty when the front end reported errors.
+    /// </summary>
+    internal ImmutableArray<(string Unit, string Text)> PcuTexts()
+    {
+        if (Bind(ImmutableArray.CreateBuilder<Diagnostic>()) is not { } front)
+        {
+            return [];
+        }
+
+        var writer = PcuWriterFor(front);
+        return [.. front.InitOrder.Where(u => u != front.Binder.Main).Prepend(front.Binder.Main!).Select(u => (u.Name, writer.Write(u)))];
+    }
+
+    /// <summary>
+    /// C-074: a precompiled unit's <c>.pcu</c>, or null when it is unreadable, of another format version (CMP-160) or written by
+    /// another compiler or ABI (CMP-150 rule 2). The options fingerprint is not compared: such a unit cannot be recompiled here.
+    /// </summary>
+    private System.Text.Json.Nodes.JsonObject? ReadPcu(string path)
+    {
+        try
+        {
+            return PcuReader.Parse(FileSystem.ReadAllText(path)) is { } pcu && PcuReader.HasFingerprints(pcu, PcuWriter.CompilerFingerprint) ? pcu : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Parses one file; null (with E0002/E0003) when it cannot be read.</summary>
@@ -300,8 +385,14 @@ public sealed class Compilation
     /// its <c>$final</c>, C-071) — System included — gets its <c>$init</c>/<c>$final</c>, which the RTL's <c>_InitUnits</c> /
     /// shutdown call through procedural types (ABI-100, C-161); other units have two nulls.
     /// </summary>
-    private static UnitTableEntry UnitTableEntryOf(BindingResult unit)
+    private static UnitTableEntry UnitTableEntryOf(LoadedUnit loaded)
     {
+        if (loaded.Pcu is { } pcu)
+        {
+            return new(loaded.Symbol!, HasInit: pcu["hasInit"]!.GetValue<bool>(), HasFinal: pcu["hasFinal"]!.GetValue<bool>());     // C-074
+        }
+
+        var unit = loaded.Result!;
         var used = !unit.Bodies.IsEmpty || !Lowerer.ManagedGlobals(unit.Unit).IsEmpty;
         return new(unit.Unit, HasInit: used, HasFinal: used);
     }
@@ -317,7 +408,7 @@ public sealed class Compilation
             return [];
         }
 
-        var table = initOrder.Select(u => UnitTableEntryOf(u.Result!));
+        var table = initOrder.Select(UnitTableEntryOf);
         return Lowerer.ManagedGlobals(main.Unit).IsEmpty ? [.. table] : [.. table, new UnitTableEntry(main.Unit, HasInit: false, HasFinal: true)];
     }
 

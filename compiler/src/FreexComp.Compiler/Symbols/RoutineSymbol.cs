@@ -57,6 +57,13 @@ public class RoutineSymbol : Symbol
         Declaration = declaration;
     }
 
+    /// <summary>A routine of a unit imported from its <c>.pcu</c> (C-074): no syntax, no body in this compilation.</summary>
+    internal RoutineSymbol(string name, UnitSymbol unit, ImmutableArray<Location> locations)
+        : base(SymbolKind.Routine, name, unit, locations)
+    {
+        Declaration = null!;
+    }
+
     /// <summary>The signature of a procedural type (LANG-480): declared in no scope, without declaration or body.</summary>
     internal RoutineSymbol(string name, ProceduralTypeSymbol type)
         : base(SymbolKind.Routine, name, type, type.Locations)
