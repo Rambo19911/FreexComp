@@ -71,14 +71,18 @@ public sealed class ProjectManagerView : UserControl
         {
             _model.PropertyChanged -= OnModelChanged;
             _model.SelectionChanged -= OnModelSelectionChanged;
+            _model.RenameEnded -= OnRenameEnded;
         }
 
+        _model?.Roots.CollectionChanged -= OnRootsChanged;
         _model = DataContext as ProjectManagerViewModel;
+        _model?.Roots.CollectionChanged += OnRootsChanged; // before the tree's own handler: focus is still inside
         _tree.ItemsSource = _model?.Roots;
         if (_model is not null)
         {
             _model.PropertyChanged += OnModelChanged;
             _model.SelectionChanged += OnModelSelectionChanged;
+            _model.RenameEnded += OnRenameEnded;
             BuildEmptyLinks();
         }
 
@@ -150,6 +154,30 @@ public sealed class ProjectManagerView : UserControl
             }, Avalonia.Threading.DispatcherPriority.Loaded);
         }
     }
+
+    /// <summary>
+    /// IDE-PM-100: a rebuild after a file operation replaces every row; when focus was in the tree it stays there (on the
+    /// selected row, else the tree) instead of falling back to the document.
+    /// </summary>
+    private void OnRootsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        // IsActive covers a confirmation box that holds focus meanwhile (focus is tracked in the main window only).
+        if (e.Action != System.Collections.Specialized.NotifyCollectionChangedAction.Reset || !(_tree.IsKeyboardFocusWithin || _model?.IsActive == true))
+            return;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            var row = _model is { Selection.Count: > 0 } m ? _tree.TreeContainerFromItem(m.Selection[^1]) : _tree.ContainerFromIndex(0);
+            row?.Focus(NavigationMethod.Tab);
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>UI-TW-112: after the in-place rename, focus returns to the (renamed) selected row.</summary>
+    private void OnRenameEnded(object? sender, EventArgs e) =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (_model is { Selection.Count: > 0 } m && _tree.TreeContainerFromItem(m.Selection[^1]) is Control container)
+                container.Focus(NavigationMethod.Tab);
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
 
     /// <summary>
     /// UI-TW-014: a right-click on an unselected row selects it first; on the empty area the selection is cleared.

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Models;
@@ -450,5 +451,294 @@ public sealed class ProjectServiceTests
         await _services.Commands.ExecuteAsync("project.addExistingFile");
         Assert.Equal("../../other/Fresh.pas", Projects.Project!.Files[^1].Path);
         Assert.Equal(4, Projects.Project!.Files.Count);
+    }
+
+    private FakeShellService Shell => (FakeShellService)_services.Shell;
+
+    /// <summary>Focus in the Project Manager tree: file commands act on its selection (IDE-PM-060).</summary>
+    private void FocusProjectManager() =>
+        _services.FocusTracker.Update(new FocusState(CommandScope.ProjectManager, ProjectManagerViewModel.ToolName, null, false));
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-060")]
+    [Trait("Req", "IDE-PM-061")]
+    public async Task RemoveAndDeleteRules()
+    {
+        File(ProjectPath, """
+            { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
+              "files": [ { "path": "Hello.pas" }, { "path": "Unit1.pas" }, { "path": "Unit2.pas" }, { "path": "notes.md" },
+                         { "path": "Main.pas", "form": "Main.form" }, { "path": "Locked.pas" } ] }
+            """);
+        File(Dir + @"\Hello.pas", "program Hello;\nbegin\nend.\n");
+        foreach (var unit in new[] { "Unit1", "Unit2", "Main", "Locked" })
+            File(Dir + $@"\{unit}.pas", $"unit {unit};\ninterface\nimplementation\nend.\n");
+        File(Dir + @"\notes.md", "notes\n");
+        File(Dir + @"\Main.form", "object Main: TForm\nend\n");
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        IEnumerable<string> Paths() => Projects.Project!.Files.Select(f => f.Path);
+
+        // The active document is the main source: nothing to remove or delete (menus.md §6).
+        Assert.False(_services.Commands.CanExecute("project.removeFile"));
+        Assert.False(_services.Commands.CanExecute("project.deleteFile"));
+
+        // A selection with the main source is refused as a whole.
+        Dialogs.Answer("Msg.Project.RemoveMainSource", "OK");
+        Assert.False(await Projects.RemoveFilesAsync(["Hello.pas", "Unit1.pas"]));
+        Assert.False(await Projects.DeleteFilesAsync(["Hello.pas"]));
+        Assert.All(Dialogs.Requests, r => Assert.Equal(["Hello.pas"], r.Args));
+        Assert.Equal(2, Dialogs.Requests.Count);
+        Assert.Equal(["Hello.pas", "Unit1.pas", "Unit2.pas", "notes.md", "Main.pas", "Locked.pas"], Paths());
+
+        // From the main menu with focus elsewhere the active document is the target; Cancel keeps it.
+        var unit1 = await OpenDocumentAsync(Dir + @"\Unit1.pas");
+        Assert.True(_services.Commands.CanExecute("project.removeFile"));
+        Dialogs.Enqueue("Msg.Project.RemoveFileConfirm", "Cancel", "Remove");
+        await _services.Commands.ExecuteAsync("project.removeFile");
+        Assert.Contains("Unit1.pas", Paths());
+        await _services.Commands.ExecuteAsync("project.removeFile");
+        Assert.Equal(["Unit1.pas"], Dialogs.Requests[^1].Args);
+        Assert.DoesNotContain("Unit1.pas", Paths());
+        Assert.True(_fs.FileExists(Dir + @"\Unit1.pas")); // stays on disk
+        Assert.Contains(unit1, _services.Documents.Documents); // stays open, now a non-member
+        Assert.False(Projects.IsMember(unit1.FilePath));
+
+        // With focus in the Project Manager its selection is the target; several files ask once with the count.
+        FocusProjectManager();
+        ProjectManager.Select(ProjectManager.Find("Unit2.pas")!);
+        ProjectManager.Select(ProjectManager.Find("notes.md")!, ProjectSelectMode.Toggle);
+        Dialogs.Answer("Msg.Project.RemoveFilesConfirm", "Remove");
+        await _services.Commands.ExecuteAsync("project.removeFile");
+        Assert.Equal(["2"], Dialogs.Requests[^1].Args);
+        Assert.Equal(["Hello.pas", "Main.pas", "Locked.pas"], Paths());
+
+        // Delete: a unit with a form lists both files; Cancel deletes nothing.
+        var main = await OpenDocumentAsync(Dir + @"\Main.pas");
+        Type(main, "x");
+        FocusProjectManager();
+        ProjectManager.Select(ProjectManager.Find("Main.pas")!);
+        Dialogs.Enqueue("Msg.Project.DeleteFileConfirm", "Cancel", "Delete");
+        await _services.Commands.ExecuteAsync("project.deleteFile");
+        Assert.Equal(["Main.pas, Main.form"], Dialogs.Requests[^1].Args);
+        Assert.Empty(Shell.Calls);
+        Assert.Contains("Main.pas", Paths());
+
+        // Delete moves both to the Recycle Bin, closes the modified document without a prompt, removes the entry.
+        await _services.Commands.ExecuteAsync("project.deleteFile");
+        Assert.Equal([$@"MoveToRecycleBin {Dir}\Main.pas", $@"MoveToRecycleBin {Dir}\Main.form"], Shell.Calls);
+        Assert.False(_fs.FileExists(Dir + @"\Main.pas"));
+        Assert.False(_fs.FileExists(Dir + @"\Main.form"));
+        Assert.DoesNotContain(main, _services.Documents.Documents);
+        Assert.DoesNotContain(Dialogs.Requests, r => r.MessageId == "Msg.File.SaveChangesOne");
+        Assert.Equal(["Hello.pas", "Locked.pas"], Paths());
+
+        // A file that cannot be recycled: Msg.Project.DeleteFailed, the entry and the file are kept.
+        Shell.RecycleFailsFor = p => p.EndsWith("Locked.pas", StringComparison.Ordinal);
+        Dialogs.Answer("Msg.Project.DeleteFileConfirm", "Delete");
+        Dialogs.Answer("Msg.Project.DeleteFailed", "OK");
+        Assert.False(await Projects.DeleteFilesAsync(["Locked.pas"]));
+        Assert.Equal([Dir + @"\Locked.pas", FakeShellService.RecycleFailure], Dialogs.Requests[^1].Args);
+        Assert.Equal(["Hello.pas", "Locked.pas"], Paths());
+        Assert.True(_fs.FileExists(Dir + @"\Locked.pas"));
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-004")]
+    [Trait("Req", "IDE-PM-033")]
+    public async Task FileOperationsSaveProjectImmediately()
+    {
+        WriteHello();
+        var extra = File(@"C:\p\Hello\Extra.pas", "unit Extra;\ninterface\nimplementation\nend.\n");
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        Dialogs.Answer("Msg.Project.RemoveFileConfirm", "Remove");
+        Dialogs.Answer("Msg.Project.DeleteFileConfirm", "Delete");
+
+        // Every successful file-list operation is on disk at once; the project is never left modified.
+        Assert.True(await Projects.AddNewUnitAsync());
+        Assert.Contains("\"path\": \"Unit3.pas\"", Saved(), StringComparison.Ordinal);
+        Assert.Equal(1, await Projects.AddExistingFilesAsync([extra]));
+        Assert.Contains("\"path\": \"Extra.pas\"", Saved(), StringComparison.Ordinal);
+        Assert.True(await Projects.RemoveFilesAsync(["Unit1.pas"]));
+        Assert.DoesNotContain("Unit1.pas", Saved(), StringComparison.Ordinal);
+        Assert.True(await Projects.DeleteFilesAsync(["sub/Unit2.pas"]));
+        Assert.DoesNotContain("Unit2.pas", Saved(), StringComparison.Ordinal);
+        Assert.True(await Projects.RenameFileAsync("Unit3.pas", "Renamed.pas"));
+        Assert.Contains("\"path\": \"Renamed.pas\"", Saved(), StringComparison.Ordinal);
+        Assert.False(Projects.Project!.IsModified);
+
+        // A project file that cannot be written: the failure is shown and the project stays as it was, in memory and on disk.
+        var before = Saved();
+        _fs.SetReadOnly(ProjectPath, true);
+        Dialogs.Answer("Msg.File.SaveFailed", "OK");
+        Assert.False(await Projects.RemoveFilesAsync(["Extra.pas"]));
+        Assert.Equal(ProjectPath, Assert.Single(Dialogs.Requests, r => r.MessageId == "Msg.File.SaveFailed").Args[0]);
+        Assert.Contains("Extra.pas", Projects.Project!.Files.Select(f => f.Path));
+        Assert.Equal(before, Saved());
+
+        // A failed project save after deleting: the file is in the Recycle Bin, the entry stays (shown as missing).
+        Assert.False(await Projects.DeleteFilesAsync(["Extra.pas"]));
+        Assert.False(_fs.FileExists(extra));
+        Assert.Contains("Extra.pas", Projects.Project!.Files.Select(f => f.Path));
+        Assert.Equal(before, Saved());
+    }
+
+    private const string MainUnit = "{ Main unit }\nunit Main;\n\ninterface\n\n{$FORM Main.form}\n\nimplementation\n// unit Main; stays\nend.\n";
+
+    /// <summary>Hello.pproj: main source Hello.pas, forms/Main.pas with forms/Main.form, Unit1.pas, notes.md.</summary>
+    private void WriteRenameProject()
+    {
+        File(ProjectPath, """
+            { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
+              "files": [ { "path": "Hello.pas" }, { "path": "forms/Main.pas", "form": "forms/Main.form" }, { "path": "Unit1.pas" },
+                         { "path": "notes.md" } ] }
+            """);
+        File(Dir + @"\Hello.pas", "program Hello;\n\nuses Main;\n\nbegin\nend.\n");
+        File(Dir + @"\forms\Main.pas", MainUnit);
+        File(Dir + @"\forms\Main.form", "object Main: TForm\nend\n");
+        File(Dir + @"\Unit1.pas", "unit Unit1;\ninterface\nimplementation\nend.\n");
+        File(Dir + @"\notes.md", "notes\n");
+    }
+
+    private string Text(string path) => Encoding.UTF8.GetString(_fs.ReadAllBytes(path));
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-070")]
+    [Trait("Req", "IDE-PM-071")]
+    [Trait("Req", "IDE-PM-072")]
+    [Trait("Req", "IDE-PM-073")]
+    [Trait("Req", "UI-DLG-070")]
+    [Trait("Req", "UI-DLG-071")]
+    [Trait("Req", "UI-DLG-073")]
+    public async Task RenameUpdatesHeadingFormAndProject()
+    {
+        WriteRenameProject();
+        File(Dir + @"\forms\Taken.pas", "unit Taken;\n");
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+
+        // Validation shared by the dialog and the in-place editor (IDE-PM-070, UI-DLG-071).
+        OperationResult Check(string path, string name) => Projects.ValidateRename(path, name);
+        Assert.True(Check("forms/Main.pas", "Main.pas").Success); // unchanged: a no-op
+        Assert.True(Check("forms/Main.pas", "MAIN.pas").Success); // only the case changes
+        Assert.Equal("Msg.Project.RenameInvalid", Check("forms/Main.pas", "Main.txt").MessageId);
+        Assert.Equal("Msg.Project.RenameInvalid", Check("forms/Main.pas", "1Main.pas").MessageId);
+        Assert.Equal("Msg.Project.RenameInvalid", Check("forms/Main.pas", "begin.pas").MessageId);
+        Assert.Equal(("Msg.Project.RenameExists", "taken.pas"), (Check("forms/Main.pas", "taken.pas").MessageId, Check("forms/Main.pas", "taken.pas").Args[0]));
+        Assert.Equal(("Msg.Project.DuplicateUnitName", "unit1"), (Check("forms/Main.pas", "unit1.pas").MessageId, Check("forms/Main.pas", "unit1.pas").Args[0]));
+        Assert.Equal("Msg.NewFile.NameInvalid", Check("notes.md", "a:b.md").MessageId);
+        Assert.Equal("Msg.NewFile.NameInvalid", Check("notes.md", "").MessageId);
+        Assert.True(Check("notes.md", "readme.txt").Success);
+
+        // An open, modified unit with a form: saved first, both files renamed, heading and {$FORM} updated by the lexer.
+        var main = await OpenDocumentAsync(Dir + @"\forms\Main.pas");
+        main.Buffer.ApplyEdits([new TextEdit(main.Buffer.Text.Length, 0, "// edited\n")]);
+        var hello = Text(Dir + @"\Hello.pas");
+        Assert.True(await Projects.RenameFileAsync("forms/Main.pas", "Login.pas"));
+
+        Assert.False(_fs.FileExists(Dir + @"\forms\Main.pas"));
+        Assert.False(_fs.FileExists(Dir + @"\forms\Main.form"));
+        Assert.Equal("{ Main unit }\nunit Login;\n\ninterface\n\n{$FORM Login.form}\n\nimplementation\n// unit Main; stays\nend.\n// edited\n",
+            Text(Dir + @"\forms\Login.pas"));
+        Assert.Equal("object Main: TForm\nend\n", Text(Dir + @"\forms\Login.form"));
+        Assert.Contains(new ProjectFileItem("forms/Login.pas", "forms/Login.form", "unit"), Projects.Project!.Files);
+        Assert.DoesNotContain("forms/Main", Saved(), StringComparison.Ordinal);
+        Assert.Equal(Dir + @"\forms\Login.pas", main.FilePath);
+        Assert.Equal("Login.pas", main.Title);
+        Assert.False(main.IsModified);
+        Assert.Equal(hello, Text(Dir + @"\Hello.pas")); // uses clauses elsewhere are not updated (IDE-PM-072)
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_RenameUnitNote, "Main.pas", "Login.pas"), _services.Status.Message);
+        Assert.Equal(["forms/Login.pas"], ProjectManager.Selection.Select(n => n.Key)); // IDE-PM-033
+
+        // A closed unit, only the case changes; the heading follows the new name.
+        Assert.True(await Projects.RenameFileAsync("Unit1.pas", "UNIT1.pas"));
+        Assert.Equal("unit UNIT1;\ninterface\nimplementation\nend.\n", Text(Dir + @"\UNIT1.pas"));
+        Assert.Contains(_fs.EnumerateFiles(Dir, "*.pas"), f => Path.GetFileName(f) == "UNIT1.pas");
+        Assert.Contains("\"path\": \"UNIT1.pas\"", Saved(), StringComparison.Ordinal);
+
+        // From the main menu with focus elsewhere: the RenameFile dialog for the active document. The main source is
+        // renamed with its program heading; the .pproj and the project name stay (IDE-PM-073).
+        RenameFileViewModel? dialog = null;
+        Dialogs.Script(RenameFileViewModel.DialogName, async vm =>
+        {
+            dialog = (RenameFileViewModel)vm;
+            Assert.Equal("Hello.pas", dialog.NewName);
+            Assert.True(dialog.IsUnit);
+            Assert.False(dialog.Rename.IsEnabled); // unchanged name
+            dialog.NewName = "Login.pas";
+            Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_DuplicateUnitName, "Login"), dialog.Error);
+            Assert.False(dialog.Rename.IsEnabled);
+            dialog.NewName = "Start.pas";
+            Assert.Null(dialog.Error);
+            await dialog.PressDefaultAsync();
+        });
+        _services.Documents.Activate(_services.Documents.Documents.Single(d => d.FilePath == Dir + @"\Hello.pas"));
+        Assert.True(_services.Commands.CanExecute("project.renameFile"));
+        await _services.Commands.ExecuteAsync("project.renameFile");
+        Assert.True(dialog!.IsClosed);
+        Assert.Equal("program Start;\n\nuses Main;\n\nbegin\nend.\n", Text(Dir + @"\Start.pas"));
+        Assert.Equal("Start.pas", Projects.Project!.MainSource);
+        Assert.Equal(("Hello", ProjectPath), (Projects.Project.Name, Projects.Project.FilePath));
+        Assert.Equal(Dir + @"\Start.pas", _services.Documents.ActiveDocument!.FilePath);
+
+        // Other files: any valid file name, the text is untouched; an unchanged name does nothing.
+        Assert.True(await Projects.RenameFileAsync("notes.md", "notes.md"));
+        Assert.True(await Projects.RenameFileAsync("notes.md", "readme.txt"));
+        Assert.Equal("notes\n", Text(Dir + @"\readme.txt"));
+        Assert.Contains("\"path\": \"readme.txt\"", Saved(), StringComparison.Ordinal);
+        Assert.False(Projects.Project!.IsModified);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-071")]
+    public async Task RenameRollsBackOnFailure()
+    {
+        var fs = new RecordingFileSystem(_fs);
+        var services = TestComposition.Build(o =>
+        {
+            o.FileSystem = fs;
+            o.Log = _log;
+        });
+        var dialogs = (FakeDialogService)services.Dialogs;
+        var projects = services.Projects;
+        WriteRenameProject();
+        Assert.True(await projects.OpenAsync(ProjectPath));
+        var project = Saved();
+        var files = _fs.EnumerateFiles(Dir + @"\forms", "*").Order().ToList();
+        dialogs.Answer("Msg.Project.RenameFailed", "OK");
+
+        async Task FailsAsync(Func<string, bool> failWhen)
+        {
+            fs.FailWhen = failWhen;
+            var before = dialogs.Requests.Count;
+            Assert.False(await projects.RenameFileAsync("forms/Main.pas", "Login.pas"));
+            fs.FailWhen = null;
+            var request = Assert.Single(dialogs.Requests.Skip(before));
+            Assert.Equal("Msg.Project.RenameFailed", request.MessageId);
+            Assert.Equal(Dir + @"\forms\Main.pas", request.Args[0]);
+            Assert.StartsWith("Injected failure", request.Args[1], StringComparison.Ordinal);
+            Assert.Equal(files, _fs.EnumerateFiles(Dir + @"\forms", "*").Order().ToList());
+            Assert.Equal(MainUnit, Text(Dir + @"\forms\Main.pas"));
+            Assert.Equal(project, Saved());
+            Assert.Contains(new ProjectFileItem("forms/Main.pas", "forms/Main.form", "unit"), projects.Project!.Files);
+        }
+
+        // Each step that fails undoes the ones before it: the form rename, the project save, the text update.
+        await FailsAsync(call => call.StartsWith("MoveFile", StringComparison.Ordinal) && call.Contains(@"Main.form -> ", StringComparison.Ordinal));
+        await FailsAsync(call => call.StartsWith("WriteAllBytesDurable " + ProjectPath, StringComparison.Ordinal));
+        await FailsAsync(call => call.StartsWith("WriteAllBytesDurable " + Dir + @"\forms\Login.pas", StringComparison.Ordinal));
+
+        // An open document: its text, path and save point are restored too.
+        var main = (TextDocumentViewModel)(await services.Documents.OpenAsync(Dir + @"\forms\Main.pas")).Value!;
+        await FailsAsync(call => call.StartsWith("WriteAllBytesDurable " + Dir + @"\forms\Login.pas", StringComparison.Ordinal));
+        Assert.Equal((MainUnit, Dir + @"\forms\Main.pas", false), (main.Buffer.Text, main.FilePath, main.IsModified));
+
+        // A modified document whose save fails (step 1) aborts before anything is renamed.
+        main.Buffer.ApplyEdits([new TextEdit(0, 0, "// x\n")]);
+        dialogs.Answer("Msg.File.SaveFailed", "Cancel");
+        fs.FailWhen = call => call.StartsWith("WriteAllBytesDurable " + Dir + @"\forms\Main.pas", StringComparison.Ordinal);
+        Assert.False(await projects.RenameFileAsync("forms/Main.pas", "Login.pas"));
+        fs.FailWhen = null;
+        Assert.Equal("Msg.File.SaveFailed", dialogs.Requests[^1].MessageId);
+        Assert.Equal(files, _fs.EnumerateFiles(Dir + @"\forms", "*").Order().ToList());
+        Assert.Equal(project, Saved());
+        Assert.True(main.IsModified);
     }
 }

@@ -55,13 +55,17 @@ public static class ServiceGraph
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.RegisterCommands(commands);
         projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
-            ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock);
+            ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock, platform.Shell);
         projects.RegisterCommands(commands);
         documents.ProjectOpener = path => projects.OpenAsync(path);
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
             platform.Log, ImplementedPhase);
         projectManager.RegisterCommands();
         projects.SelectedFolder = () => projectManager.SelectedFolderPath;
+        projects.SelectedFiles = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
+            ? projectManager.SelectedFilePaths
+            : null;
+        projects.RenameInPlace = projectManager.BeginRename;
         documents.ProjectNewUnit = async () =>
         {
             if (projects.Project is null)

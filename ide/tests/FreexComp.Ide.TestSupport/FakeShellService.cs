@@ -13,18 +13,28 @@ public sealed class FakeShellService(IFileSystem? fileSystem = null) : IShellSer
     /// <summary>Result returned by every method.</summary>
     public bool Succeeds { get; set; } = true;
 
+    /// <summary>Paths for which <see cref="MoveToRecycleBin"/> fails even when <see cref="Succeeds"/> is true.</summary>
+    public Func<string, bool>? RecycleFailsFor { get; set; }
+
     public bool OpenFolder(string directory) => Record(nameof(OpenFolder), directory);
 
     public bool RevealFile(string filePath) => Record(nameof(RevealFile), filePath);
 
-    public bool MoveToRecycleBin(string path)
+    /// <summary>The reason a failed <see cref="MoveToRecycleBin(string, out string)"/> gives.</summary>
+    public const string RecycleFailure = "Injected recycle failure";
+
+    public bool MoveToRecycleBin(string path) => MoveToRecycleBin(path, out _);
+
+    public bool MoveToRecycleBin(string path, out string reason)
     {
-        if (Record(nameof(MoveToRecycleBin), path))
+        var succeeded = Record(nameof(MoveToRecycleBin), path) && RecycleFailsFor?.Invoke(path) != true;
+        if (succeeded)
         {
             fileSystem?.DeleteFile(path);
         }
 
-        return Succeeds;
+        reason = succeeded ? "" : RecycleFailure;
+        return succeeded;
     }
 
     private bool Record(string method, string path)

@@ -27,6 +27,7 @@ public sealed class ProjectNodeViewModel : ObservableObject
     private bool _isVisibleInTree = true;
     private int _matchStart = -1;
     private int _matchLength;
+    private Dialogs.RenameFileViewModel? _rename;
 
     public ProjectNodeViewModel(ProjectNodeKind kind, string key, string name, string fullPath, ProjectNodeViewModel? parent)
     {
@@ -82,6 +83,13 @@ public sealed class ProjectNodeViewModel : ObservableObject
             if (SetProperty(ref _isExpanded, value))
                 OnPropertyChanged(nameof(IconName));
         }
+    }
+
+    /// <summary>The in-place rename editor while the label is being edited (UI-TW-112); null otherwise.</summary>
+    public Dialogs.RenameFileViewModel? Rename
+    {
+        get => _rename;
+        set => SetProperty(ref _rename, value);
     }
 
     /// <summary>Listed in the project, absent on disk (UI-TW-107).</summary>

@@ -24,7 +24,9 @@ public sealed class WindowsShellService : IShellService
         return File.Exists(filePath) && StartExplorer($"/select,\"{Path.GetFullPath(filePath)}\"");
     }
 
-    public bool MoveToRecycleBin(string path)
+    public bool MoveToRecycleBin(string path) => MoveToRecycleBin(path, out _);
+
+    public bool MoveToRecycleBin(string path, out string reason)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         if (!Path.IsPathFullyQualified(path))
@@ -32,8 +34,10 @@ public sealed class WindowsShellService : IShellService
             throw new ArgumentException("The path must be absolute.", nameof(path));
         }
 
+        reason = "";
         if (!File.Exists(path) && !Directory.Exists(path))
         {
+            reason = new Win32Exception(ErrorFileNotFound).Message;
             return false;
         }
 
@@ -46,7 +50,14 @@ public sealed class WindowsShellService : IShellService
                 From = from,
                 Flags = FofAllowUndo | FofNoConfirmation | FofNoErrorUi | FofSilent | FofWantNukeWarning,
             };
-            return SHFileOperationW(ref operation) == 0 && !operation.AnyOperationsAborted;
+            var code = SHFileOperationW(ref operation);
+            if (code == 0 && !operation.AnyOperationsAborted)
+            {
+                return true;
+            }
+
+            reason = new Win32Exception(code != 0 ? code : ErrorCancelled).Message;
+            return false;
         }
         finally
         {
@@ -67,6 +78,8 @@ public sealed class WindowsShellService : IShellService
         }
     }
 
+    private const int ErrorFileNotFound = 2;
+    private const int ErrorCancelled = 1223;
     private const uint FoDelete = 0x0003;
     private const ushort FofSilent = 0x0004;
     private const ushort FofNoConfirmation = 0x0010;

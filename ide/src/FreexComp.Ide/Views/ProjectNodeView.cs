@@ -3,9 +3,13 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Icons;
 
@@ -14,6 +18,8 @@ namespace FreexComp.Ide.Views;
 /// <summary>
 /// One row (UI-TW-100…107): icon with the main-source / missing overlays, the name (bold for the root and the active
 /// document, filter match highlighted, disabled colour when missing), and the badge or the modified dot on the right.
+/// While <see cref="ProjectNodeViewModel.Rename"/> is set the name is an input (<c>.Editor</c>, UI-TW-112) with its
+/// validation message in a popup under it (<c>.Error</c>).
 /// </summary>
 public sealed class ProjectNodeView : DockPanel
 {
@@ -22,6 +28,9 @@ public sealed class ProjectNodeView : DockPanel
     private readonly TextBlock _name = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Ellipse _dot = new() { Width = 6, Height = 6, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
     private ProjectNodeViewModel? _bound;
+    private TextBox? _editor;
+    private Popup? _errorPopup;
+    private Panel? _editorHost;
 
     public ProjectNodeView()
     {
@@ -38,6 +47,8 @@ public sealed class ProjectNodeView : DockPanel
         _bound = DataContext as ProjectNodeViewModel;
         (_icon.Parent as Panel)?.Children.Clear();
         Children.Clear();
+        _errorPopup?.IsOpen = false;
+        (_editor, _errorPopup, _editorHost) = (null, null, null);
         if (_bound is not { } node)
             return;
 
@@ -71,7 +82,87 @@ public sealed class ProjectNodeView : DockPanel
         Update();
     }
 
-    private void OnNodeChanged(object? sender, PropertyChangedEventArgs e) => Update();
+    private void OnNodeChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ProjectNodeViewModel.Rename))
+            UpdateEditor();
+        else
+            Update();
+    }
+
+    /// <summary>UI-TW-112: the input replaces the label, focused with the base name selected.</summary>
+    private void UpdateEditor()
+    {
+        if (_editor is not null)
+        {
+            _errorPopup!.IsOpen = false;
+            Children.Remove(_editorHost!);
+            _editor = null;
+            _errorPopup = null;
+            _editorHost = null;
+            Children.Add(_name);
+        }
+
+        if (Node.Rename is not { } rename)
+            return;
+        var id = ProjectManagerView.RowPrefix + Node.Key;
+        var editor = new TextBox { Text = rename.NewName, MinHeight = 20, Padding = new Thickness(2, 0), VerticalContentAlignment = VerticalAlignment.Center };
+        AutomationProperties.SetAutomationId(editor, id + ".Editor");
+        AutomationProperties.SetName(editor, rename.Title);
+        var message = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxWidth = 320 };
+        message.Classes.Add("caption");
+        message.Bind(TextBlock.ForegroundProperty, message.GetResourceObservable("FxcTextPrimaryBrush"));
+        AutomationProperties.SetAutomationId(message, id + ".Error");
+        var frame = new Border { BorderThickness = new Thickness(1), Padding = new Thickness(6, 3), Child = message };
+        frame.Bind(Border.BorderBrushProperty, frame.GetResourceObservable("FxcStatusErrorBrush"));
+        frame.Bind(Border.BackgroundProperty, frame.GetResourceObservable("FxcBgRaisedBrush"));
+        var popup = new Popup { PlacementTarget = editor, Placement = PlacementMode.BottomEdgeAlignedLeft, ShouldUseOverlayLayer = true, Child = frame };
+
+        void ShowError()
+        {
+            message.Text = rename.Error;
+            popup.IsOpen = rename.Error is not null && _editor == editor;
+            editor.Classes.Set("invalid", rename.Error is not null);
+        }
+
+        editor.TextChanged += (_, _) => rename.NewName = editor.Text ?? "";
+        rename.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(RenameFileViewModel.Error))
+                ShowError();
+        };
+        editor.AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.KeyModifiers != KeyModifiers.None)
+                return;
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                _ = rename.CommitAsync();
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                rename.Cancel();
+            }
+        }, RoutingStrategies.Tunnel);
+        editor.LostFocus += (_, _) => _ = rename.CommitAsync(); // focus loss commits (UI-TW-112)
+
+        Children.Remove(_name);
+        _editorHost = new Panel { Children = { editor, popup } };
+        Children.Add(_editorHost);
+        _editor = editor;
+        _errorPopup = popup;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (_editor != editor)
+                return;
+            editor.Focus(NavigationMethod.Tab);
+            editor.SelectionStart = 0;
+            editor.SelectionEnd = rename.BaseNameLength;
+            ShowError();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
+    }
 
     private void Update()
     {

@@ -93,6 +93,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel
         _implementedPhase = implementedPhase;
         projects.ProjectChanged += (_, _) => Rebuild();
         projects.FilesAdded += (_, paths) => SelectAdded(paths);
+        projects.FileRenamed += (_, path) => SelectAdded([path]);
         ((INotifyCollectionChanged)documents.Documents).CollectionChanged += (_, _) => UpdateDocumentMarkers();
         documents.ActiveDocumentChanged += (_, _) =>
         {
@@ -216,6 +217,31 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel
 
     /// <summary>The folder of the selected row when exactly one folder inside the project is selected (IDE-PM-040).</summary>
     public string? SelectedFolderPath => _selection is [{ Kind: ProjectNodeKind.Folder } folder] && folder.Key != ExternalKey ? folder.FullPath : null;
+
+    /// <summary>The in-place rename of a file row ended (committed or canceled); the view puts focus back on the tree.</summary>
+    public event EventHandler? RenameEnded;
+
+    /// <summary>
+    /// UI-TW-112: the file row <paramref name="projectPath"/> gets an in-place editor (<see cref="ProjectNodeViewModel.Rename"/>)
+    /// with the validation and rename of the service. False when there is no such row.
+    /// </summary>
+    public bool BeginRename(string projectPath)
+    {
+        if (Find(projectPath) is not { Kind: ProjectNodeKind.File } node)
+            return false;
+        var rename = new RenameFileViewModel(node.Name, name => _projects.ValidateRename(projectPath, name),
+            (name, update) => _projects.RenameFileAsync(projectPath, name, update));
+        rename.CloseRequested += (_, _) =>
+        {
+            node.Rename = null;
+            RenameEnded?.Invoke(this, EventArgs.Empty);
+        };
+        node.Rename = rename;
+        return true;
+    }
+
+    /// <summary>The project paths (row keys) of the selected file and form rows (IDE-PM-060).</summary>
+    public IReadOnlyList<string> SelectedFilePaths => [.. _selection.Where(n => n.IsFile).Select(n => n.Key)];
 
     /// <summary>IDE-PM-033: the rows of added files are selected, their ancestors expanded.</summary>
     private void SelectAdded(IReadOnlyList<string> paths)

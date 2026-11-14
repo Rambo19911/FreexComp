@@ -11,4 +11,10 @@ public interface IShellService
 
     /// <summary>Moves a file to the Recycle Bin (IDE-PM-061).</summary>
     bool MoveToRecycleBin(string path);
+
+    /// <summary>
+    /// <see cref="MoveToRecycleBin(string)"/> that also gives the OS reason of a failure (<c>Msg.Project.DeleteFailed</c>);
+    /// <paramref name="reason"/> is empty on success.
+    /// </summary>
+    bool MoveToRecycleBin(string path, out string reason);
 }

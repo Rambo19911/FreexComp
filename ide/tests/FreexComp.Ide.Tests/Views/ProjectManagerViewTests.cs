@@ -291,4 +291,102 @@ public sealed class ProjectManagerViewTests
         Assert.Empty(pm.Roots);
         Assert.True(h.Find<Control>("Tool.ProjectManager.Empty").IsVisible);
     }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-108")]
+    [Trait("Req", "UI-TW-112")]
+    [Trait("Req", "IDE-PM-060")]
+    [Trait("Req", "IDE-PM-061")]
+    [Trait("Req", "IDE-PM-070")]
+    public async Task KeyboardOpenRenameDelete()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => HelloProject(o));
+        var pm = await OpenHelloAsync(h);
+        var dir = Path.Combine(h.TempDir, "Hello");
+        const string Editor = Row + "Unit1.pas.Editor";
+
+        // Enter opens the selected file and focuses it.
+        h.Press("Alt+1");
+        pm.Select(pm.Find("Unit1.pas")!);
+        Dispatcher.UIThread.RunJobs();
+        h.Press("Enter");
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.Unit1.pas", "editor focused");
+
+        // F2 in the tree: the label becomes an input with the base name selected; Escape cancels.
+        h.Press("Alt+1");
+        Dispatcher.UIThread.RunJobs();
+        h.Press("F2");
+        await h.WaitForAsync(() => h.FocusedAutomationId == Editor, "rename input focused");
+        var input = h.Find<TextBox>(Editor);
+        Assert.Equal("Unit1.pas", input.Text);
+        Assert.Equal((0, 5), (input.SelectionStart, input.SelectionEnd));
+        h.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.TryFind<TextBox>(Editor));
+        Assert.True(File.Exists(Path.Combine(dir, "Unit1.pas")));
+        Assert.Equal("Tool.ProjectManager.Row.Unit1.pas", h.FocusedAutomationId); // back in the tree
+
+        // An invalid name shows the message under the input, which stays open; Enter with a valid name commits.
+        h.Press("F2");
+        await h.WaitForAsync(() => h.FocusedAutomationId == Editor, "rename input focused again");
+        h.Type("1bad");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Core.Resources.Strings.Msg_Project_RenameInvalid, h.Find<TextBlock>(Row + "Unit1.pas.Error").Text);
+        h.Press("Enter");
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotNull(h.TryFind<TextBox>(Editor));
+        h.Find<TextBox>(Editor).SelectAll();
+        h.Type("Tools.pas");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.TryFind<TextBlock>(Row + "Unit1.pas.Error"));
+        h.Press("Enter");
+        await h.WaitForAsync(() => pm.Find("Tools.pas") is not null, "row renamed");
+        Assert.False(File.Exists(Path.Combine(dir, "Unit1.pas")));
+        Assert.StartsWith("unit Tools;", File.ReadAllText(Path.Combine(dir, "Tools.pas")), StringComparison.Ordinal);
+        Assert.Equal(Path.Combine(dir, "Tools.pas"), h.Services.Documents.ActiveDocument!.FilePath);
+        Assert.Equal(["Tools.pas"], pm.Selection.Select(n => n.Key));
+        await h.WaitForAsync(() => h.FocusedAutomationId == Row + "Tools.pas", "focus on the renamed row");
+
+        // Delete removes the selection from the project after the confirmation; the file stays.
+        h.Messages.Answer("Msg.Project.RemoveFileConfirm", "Remove");
+        h.Press("Delete");
+        await h.WaitForAsync(() => pm.Find("Tools.pas") is null, "removed");
+        Assert.True(File.Exists(Path.Combine(dir, "Tools.pas")));
+        Assert.DoesNotContain("Tools.pas", File.ReadAllText(Path.Combine(dir, "Hello.pproj")), StringComparison.Ordinal);
+        await h.WaitForAsync(() => h.FocusedAutomationId?.StartsWith(Row, StringComparison.Ordinal) == true, "focus stays in the tree");
+
+        // Shift+Delete moves the file to the Recycle Bin and removes it.
+        pm.Select(pm.Find("notes.md")!);
+        Dispatcher.UIThread.RunJobs();
+        h.Messages.Answer("Msg.Project.DeleteFileConfirm", "Delete");
+        h.Press("Shift+Delete");
+        await h.WaitForAsync(() => pm.Find("notes.md") is null, "deleted");
+        Assert.False(File.Exists(Path.Combine(dir, "notes.md")));
+        Assert.DoesNotContain("notes.md", File.ReadAllText(Path.Combine(dir, "Hello.pproj")), StringComparison.Ordinal);
+
+        // The main source cannot be removed: the command is disabled for it.
+        pm.Select(pm.Find("Hello.pas")!);
+        Assert.False(h.Services.Commands.CanExecute("project.removeFile"));
+
+        // With focus outside the tree, F2 is not bound and the command opens the RenameFile dialog (UI-DLG-070).
+        h.Services.Documents.Activate(h.Services.Documents.Documents.Single(d => d.FilePath == Path.Combine(dir, "Hello.pas")));
+        h.Press("Escape"); // back to the document (UI-A11Y-004)
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.Hello.pas", "editor focused");
+        var running = h.Services.Commands.ExecuteAsync("project.renameFile");
+        var dlg = await h.WaitForDialogAsync("RenameFile");
+        Assert.Equal("Rename File", dlg.Window.Title);
+        await h.WaitForAsync(() => dlg.FocusedAutomationId == "Dialog.RenameFile.NewName", "name focused");
+        Assert.Equal("Hello", dlg.Find<TextBox>("NewName").SelectedText);
+        Assert.False(dlg.Find<Button>("Ok").IsEnabled);
+        Assert.True(dlg.Find<CheckBox>("UpdateReferences").IsChecked);
+        dlg.Type("NewName", "x");
+        Assert.Equal(Core.Resources.Strings.Msg_Project_RenameInvalid, dlg.ErrorText("NewName"));
+        dlg.Find<TextBox>("NewName").Text = "Start.pas";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(dlg.ErrorText("NewName"));
+        dlg.Press("Enter");
+        await running;
+        Assert.StartsWith("program Start;", File.ReadAllText(Path.Combine(dir, "Start.pas")), StringComparison.Ordinal);
+        Assert.Contains("\"mainSource\": \"Start.pas\"", File.ReadAllText(Path.Combine(dir, "Hello.pproj")), StringComparison.Ordinal);
+    }
 }

@@ -16,6 +16,7 @@ using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using IClock = FreexComp.Ide.Core.Platform.IClock;
 using IdeFileSystem = FreexComp.Ide.Core.Platform.IFileSystem;
+using IShellService = FreexComp.Ide.Core.Platform.IShellService;
 
 namespace FreexComp.Ide.Core.Projects;
 
@@ -34,14 +35,16 @@ public sealed class ProjectService : IProjectService
     private readonly ISettingsService _settings;
     private readonly ILayoutService _layout;
     private readonly IClock _clock;
+    private readonly IShellService _shell;
     private readonly HashSet<string> _members = new(StringComparer.OrdinalIgnoreCase);
     private ICommandService? _commands;
     private Project? _project;
 
     public ProjectService(IdeFileSystem fileSystem, IDocumentService documents, IDialogService dialogs, IStatusService status,
         ILog log, FilePrompts prompts, ISettingsService settings, IReadOnlyList<ProjectTemplate> templates, ILayoutService layout,
-        IClock clock)
+        IClock clock, IShellService shell)
     {
+        _shell = shell;
         _layout = layout;
         _clock = clock;
         _fileSystem = fileSystem;
@@ -70,6 +73,9 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("project.viewSource", new Handler(_ => Project is not null, _ => ViewSourceAsync()));
         commands.RegisterHandler("project.addNewUnit", new Handler(_ => Project is not null, _ => AddNewUnitAsync()));
         commands.RegisterHandler("project.addExistingFile", new Handler(_ => Project is not null, _ => PickAndAddExistingAsync()));
+        commands.RegisterHandler("project.removeFile", new Handler(_ => CanOperateOnFiles(), _ => RemoveFilesAsync(FileTargets())));
+        commands.RegisterHandler("project.deleteFile", new Handler(_ => CanOperateOnFiles(), _ => DeleteFilesAsync(FileTargets())));
+        commands.RegisterHandler("project.renameFile", new Handler(_ => RenameTarget() is not null, _ => RenameCommandAsync()));
     }
 
     /// <summary><c>project.addExistingFile</c> (IDE-PM-050): the multi-select picker, then <see cref="AddExistingFilesAsync"/>.</summary>
@@ -350,6 +356,353 @@ public sealed class ProjectService : IProjectService
         }
 
         return changed && await SaveChangedProjectAsync(_project with { Files = files.ToImmutable() });
+    }
+
+    /// <summary>
+    /// The Project Manager selection (project paths of file and form rows) while focus is in the tree; null otherwise
+    /// (IDE-PM-060; set by the service graph).
+    /// </summary>
+    public Func<IReadOnlyList<string>?>? SelectedFiles { get; set; }
+
+    /// <summary>The targets of <c>project.removeFile</c> / <c>.deleteFile</c>: the tree selection, else the active document if it is listed.</summary>
+    private IReadOnlyList<string> FileTargets()
+    {
+        if (_project is null)
+            return [];
+        if (SelectedFiles?.Invoke() is { } selected)
+            return selected;
+        return _documents.ActiveDocument?.FilePath is { } path && EntryPathOf(path) is { } entry ? [entry] : [];
+    }
+
+    /// <summary>Enabled when a target other than the main source exists (menus.md §6).</summary>
+    private bool CanOperateOnFiles() => FileTargets().Any(p => !IsMainSource(Resolve(p)));
+
+    /// <summary>The stored path of the <c>files</c> entry or form for <paramref name="fullPath"/>; null when not listed.</summary>
+    private string? EntryPathOf(string fullPath)
+    {
+        foreach (var file in Project!.Files)
+        {
+            if (string.Equals(Resolve(file.Path), Path.GetFullPath(fullPath), StringComparison.OrdinalIgnoreCase))
+                return file.Path;
+            if (file.Form is { } form && string.Equals(Resolve(form), Path.GetFullPath(fullPath), StringComparison.OrdinalIgnoreCase))
+                return form;
+        }
+
+        return null;
+    }
+
+    /// <summary>IDE-PM-060: a target list with the main source is refused as a whole.</summary>
+    private async Task<bool> RefuseMainSourceAsync(IReadOnlyList<string> projectPaths)
+    {
+        if (projectPaths.FirstOrDefault(p => IsMainSource(Resolve(p))) is not { } main)
+            return false;
+        await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.RemoveMainSource", [Path.GetFileName(Resolve(main))]));
+        return true;
+    }
+
+    public async Task<bool> RemoveFilesAsync(IReadOnlyList<string> projectPaths)
+    {
+        ArgumentNullException.ThrowIfNull(projectPaths);
+        if (_project is null || projectPaths.Count == 0 || await RefuseMainSourceAsync(projectPaths))
+            return false;
+        var request = projectPaths.Count == 1
+            ? new MessageRequest("Msg.Project.RemoveFileConfirm", [Path.GetFileName(Resolve(projectPaths[0]))])
+            : new MessageRequest("Msg.Project.RemoveFilesConfirm", [projectPaths.Count.ToString(CultureInfo.CurrentCulture)]);
+        return await _dialogs.ShowMessageAsync(request) == "Remove" && await RemoveFromProjectAsync(projectPaths);
+    }
+
+    public async Task<bool> DeleteFilesAsync(IReadOnlyList<string> projectPaths)
+    {
+        ArgumentNullException.ThrowIfNull(projectPaths);
+        if (_project is null || projectPaths.Count == 0 || await RefuseMainSourceAsync(projectPaths))
+            return false;
+
+        // Each target with its companion form (a unit row), unit first.
+        var targets = projectPaths.Select(p =>
+        {
+            var entry = FilesForMutation(_project).FirstOrDefault(f => !string.IsNullOrEmpty(f.Path)
+                && string.Equals(Resolve(f.Path), Resolve(p), StringComparison.OrdinalIgnoreCase));
+            List<string> files = [Resolve(p)];
+            if (entry?.Form is { } form)
+                files.Add(Resolve(form));
+            return (ProjectPath: p, Files: files);
+        }).ToList();
+        var names = string.Join(", ", targets.SelectMany(t => t.Files).Select(Path.GetFileName));
+        if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.DeleteFileConfirm", [names])) != "Delete")
+            return false;
+
+        var deleted = new List<string>();
+        foreach (var (projectPath, files) in targets)
+        {
+            foreach (var file in files)
+            {
+                if (_fileSystem.FileExists(file) && !_shell.MoveToRecycleBin(file, out var reason))
+                {
+                    await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.DeleteFailed", [file, reason]));
+                    break;
+                }
+
+                // The confirmation covers unsaved changes: the document closes without a prompt.
+                foreach (var document in _documents.Documents.Where(d => string.Equals(d.FilePath, file, StringComparison.OrdinalIgnoreCase)).ToList())
+                    _documents.Close(document);
+                if (file == files[0])
+                    deleted.Add(projectPath); // a unit that is gone loses its entry even if its form could not be recycled
+            }
+        }
+
+        return deleted.Count > 0 && await RemoveFromProjectAsync(deleted) && deleted.Count == targets.Count;
+    }
+
+    /// <summary>
+    /// Starts the in-place rename of a Project Manager row (UI-TW-112); false when the row cannot be edited, so the
+    /// dialog is used (set by the service graph).
+    /// </summary>
+    public Func<string, bool>? RenameInPlace { get; set; }
+
+    public event EventHandler<string>? FileRenamed;
+
+    /// <summary>The one <c>files</c> entry (not a form) <c>project.renameFile</c> acts on; null when there is none.</summary>
+    private string? RenameTarget() =>
+        FileTargets() is [var target] && FindEntry(target) is not null ? target : null;
+
+    /// <summary>The <c>files</c> entry whose path resolves like <paramref name="projectPath"/>.</summary>
+    private ProjectFile? FindEntry(string projectPath) =>
+        FilesForMutation(_project!).FirstOrDefault(f => !string.IsNullOrEmpty(f.Path)
+            && string.Equals(Resolve(f.Path), Resolve(projectPath), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary><c>project.renameFile</c>: in place inside the tree, else the <c>RenameFile</c> dialog (UI-DLG-070).</summary>
+    private async Task RenameCommandAsync()
+    {
+        if (RenameTarget() is not { } target)
+            return;
+        if (SelectedFiles?.Invoke() is not null && RenameInPlace?.Invoke(target) == true)
+            return;
+        var dialog = new RenameFileViewModel(Path.GetFileName(Resolve(target)), name => ValidateRename(target, name),
+            (name, update) => RenameFileAsync(target, name, update));
+        await _dialogs.ShowAsync(dialog);
+    }
+
+    public OperationResult ValidateRename(string projectPath, string newName)
+    {
+        ArgumentNullException.ThrowIfNull(projectPath);
+        ArgumentNullException.ThrowIfNull(newName);
+        if (_project is null)
+            return OperationResult.Fail("Msg.Project.RenameInvalid");
+        var oldPath = Resolve(projectPath);
+        var oldName = Path.GetFileName(oldPath);
+        if (newName == oldName)
+            return OperationResult.Ok;
+        var isUnit = IsUnitFile(oldName);
+        var newBase = Path.GetFileNameWithoutExtension(newName);
+        if (isUnit)
+        {
+            if (!Path.GetExtension(newName).Equals(".pas", StringComparison.OrdinalIgnoreCase) || !IsIdentifier(newBase)
+                || SyntaxFacts.IsReservedWord(newBase))
+                return OperationResult.Fail("Msg.Project.RenameInvalid");
+        }
+        else if (newName.Length == 0 || newName.IndexOfAny(InvalidFileNameChars) >= 0)
+        {
+            return OperationResult.Fail("Msg.NewFile.NameInvalid");
+        }
+
+        // A change of letter case of the same file is allowed (UI-DLG-071).
+        var folder = Path.GetDirectoryName(oldPath)!;
+        var caseOnly = string.Equals(newName, oldName, StringComparison.OrdinalIgnoreCase);
+        if (!caseOnly && _fileSystem.FileExists(Path.Combine(folder, newName)))
+            return OperationResult.Fail("Msg.Project.RenameExists", newName);
+        if (!caseOnly && FormToRename(projectPath) is { } form
+            && _fileSystem.FileExists(Path.Combine(Path.GetDirectoryName(form)!, newBase + ".form")))
+            return OperationResult.Fail("Msg.Project.RenameExists", newBase + ".form");
+        if (isUnit && !caseOnly && UnitNames(_project).Contains(newBase))
+            return OperationResult.Fail("Msg.Project.DuplicateUnitName", newBase);
+        return OperationResult.Ok;
+    }
+
+    /// <summary>dialogs.md §24 <c>Msg.NewFile.NameInvalid</c>: <c>\ / : * ? " &lt; &gt; |</c>.</summary>
+    private static readonly char[] InvalidFileNameChars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
+
+    private static bool IsUnitFile(string fileName) => Path.GetExtension(fileName).Equals(".pas", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The companion form renamed with the unit: the entry's form when it has the unit's base name (IDE-PM-071 step 3).</summary>
+    private string? FormToRename(string projectPath)
+    {
+        if (FindEntry(projectPath)?.Form is not { } form)
+            return null;
+        var formPath = Resolve(form);
+        return string.Equals(Path.GetFileNameWithoutExtension(formPath), Path.GetFileNameWithoutExtension(Resolve(projectPath)),
+            StringComparison.OrdinalIgnoreCase) ? formPath : null;
+    }
+
+    public async Task<bool> RenameFileAsync(string projectPath, string newName, bool updateHeading = true)
+    {
+        ArgumentNullException.ThrowIfNull(projectPath);
+        ArgumentNullException.ThrowIfNull(newName);
+        if (_project is null || FindEntry(projectPath) is not { } entry || !ValidateRename(projectPath, newName).Success)
+            return false;
+        var oldPath = Resolve(projectPath);
+        var oldName = Path.GetFileName(oldPath);
+        if (newName == oldName)
+            return true;
+        var newPath = Path.Combine(Path.GetDirectoryName(oldPath)!, newName);
+        var newBase = Path.GetFileNameWithoutExtension(newName);
+        var document = _documents.Documents.OfType<TextDocumentViewModel>()
+            .FirstOrDefault(d => string.Equals(d.FilePath, oldPath, StringComparison.OrdinalIgnoreCase));
+
+        // (1) A modified open document is saved first; a failure (reported by the save) aborts.
+        if (document is { IsModified: true } && !await _documents.SaveAsync(document))
+            return false;
+
+        var oldForm = FormToRename(projectPath);
+        var newForm = oldForm is null ? null : Path.Combine(Path.GetDirectoryName(oldForm)!, newBase + ".form");
+        var original = _project;
+        var renamed = original with
+        {
+            Files = [.. FilesForMutation(original).Select(f => f == entry
+                ? f with { Path = Rename(f.Path, newName), Form = newForm is null ? f.Form : Rename(f.Form!, Path.GetFileName(newForm)) }
+                : f)],
+            MainSource = IsMainSource(oldPath) ? Rename(original.MainSource, newName) : original.MainSource,
+        };
+        var undo = new Stack<Action>();
+        var headingUpdated = false;
+        try
+        {
+            // (2)-(3) the files on disk.
+            MoveFile(oldPath, newPath);
+            undo.Push(() => MoveFile(newPath, oldPath));
+            if (oldForm is not null && _fileSystem.FileExists(oldForm))
+            {
+                MoveFile(oldForm, newForm!);
+                undo.Push(() => MoveFile(newForm!, oldForm));
+            }
+
+            // (4)+(7) the project file, saved before the texts so that a failure there can still be undone.
+            var projectBytes = _fileSystem.ReadAllBytes(original.FilePath);
+            SaveOrThrow(renamed);
+            undo.Push(() => AtomicFileWriter.Write(_fileSystem, original.FilePath, projectBytes)); // the exact bytes back
+
+            // (5)-(6) heading and {$FORM} in the buffer or the file; the open document follows the new path.
+            if (IsUnitFile(oldName))
+                headingUpdated = await UpdateUnitTextAsync(document, newPath, Path.GetFileNameWithoutExtension(oldName), newBase,
+                    oldForm is null ? null : (Path.GetFileName(oldForm), Path.GetFileName(newForm!)), updateHeading);
+            else if (document is not null)
+                await SaveDocumentAsAsync(document, newPath, document.Buffer.Text);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            while (undo.TryPop(out var step))
+            {
+                try
+                {
+                    step();
+                }
+                catch (Exception u) when (u is IOException or UnauthorizedAccessException)
+                {
+                    _log.Warning(LogCategory, $"{oldPath}: rename not fully undone", u);
+                }
+            }
+
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.RenameFailed", [oldPath, e.Message]));
+            return false;
+        }
+
+        SetProject(renamed);
+        FileRenamed?.Invoke(this, Rename(projectPath, newName));
+        if (headingUpdated)
+            _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_RenameUnitNote, oldName, newName), StatusDuration);
+        return true;
+    }
+
+    /// <summary>A stored project path with its last segment replaced (keeps relative/absolute form and '/').</summary>
+    private static string Rename(string storedPath, string newFileName)
+    {
+        var cut = storedPath.LastIndexOfAny(['/', '\\']);
+        return storedPath[..(cut + 1)] + newFileName;
+    }
+
+    /// <summary>A move on disk; a change of letter case only goes through a temporary name.</summary>
+    private void MoveFile(string from, string to)
+    {
+        if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase))
+        {
+            var temp = from + ".~rename";
+            _fileSystem.MoveFile(from, temp, overwrite: false);
+            _fileSystem.MoveFile(temp, to, overwrite: false);
+            return;
+        }
+
+        _fileSystem.MoveFile(from, to, overwrite: false);
+    }
+
+    private void SaveOrThrow(Project project)
+    {
+        var saved = ProjectFileAccess.Save(project, _fileSystem);
+        if (!saved.Success)
+            throw new IOException(saved.Args[^1]);
+    }
+
+    /// <summary>
+    /// IDE-PM-071 step 5: the heading identifier (first tokens <c>unit</c>/<c>program</c>/<c>library</c>/<c>package</c>
+    /// + identifier) and the file name in <c>{$FORM}</c> directive trivia, found with the compiler lexer, replaced in the
+    /// open buffer (then saved under the new path) or in the renamed file. True when the heading was replaced.
+    /// </summary>
+    private async Task<bool> UpdateUnitTextAsync(TextDocumentViewModel? document, string path, string oldBase, string newBase,
+        (string Old, string New)? form, bool updateHeading)
+    {
+        EncodingDetection? file = null;
+        var text = document?.Buffer.Text ?? (file = EncodingDetector.Detect(_fileSystem.ReadAllBytes(path))).Text;
+        var edits = new List<TextEdit>();
+        var headingUpdated = false;
+        var tokens = Lexer.Tokenize(SourceText.From(path, text));
+        if (updateHeading && tokens.Length > 1
+            && tokens[0].Kind is SyntaxKind.UnitKeyword or SyntaxKind.ProgramKeyword or SyntaxKind.LibraryKeyword or SyntaxKind.PackageKeyword
+            && tokens[1].Kind == SyntaxKind.IdentifierToken && string.Equals(tokens[1].Text, oldBase, StringComparison.OrdinalIgnoreCase))
+        {
+            edits.Add(new TextEdit(tokens[1].Span.Start, tokens[1].Span.Length, newBase));
+            headingUpdated = true;
+        }
+
+        if (form is { } names)
+        {
+            foreach (var trivia in tokens.SelectMany(t => t.LeadingTrivia.Concat(t.TrailingTrivia)))
+            {
+                if (trivia.Kind == SyntaxKind.DirectiveTrivia && trivia.Directive is { Name: "FORM" } directive
+                    && string.Equals(directive.Argument.Trim().Trim('\''), names.Old, StringComparison.OrdinalIgnoreCase))
+                {
+                    var at = trivia.Text.IndexOf(names.Old, 2 + directive.Name.Length, StringComparison.OrdinalIgnoreCase);
+                    if (at >= 0)
+                        edits.Add(new TextEdit(trivia.Span.Start + at, names.Old.Length, names.New));
+                }
+            }
+        }
+
+        if (document is not null)
+        {
+            await SaveDocumentAsAsync(document, path, text, edits);
+        }
+        else if (edits.Count > 0)
+        {
+            foreach (var edit in edits.OrderByDescending(e => e.Offset))
+                text = string.Concat(text.AsSpan(0, edit.Offset), edit.NewText, text.AsSpan(edit.Offset + edit.Length));
+            AtomicFileWriter.Write(_fileSystem, path, FileEncodings.Encode(text, file!.Encoding));
+        }
+
+        return headingUpdated;
+    }
+
+    /// <summary>
+    /// Applies <paramref name="edits"/> to the open document and saves it under <paramref name="path"/> (it becomes the
+    /// document's file); on failure the buffer gets its text back and an <see cref="IOException"/> is thrown.
+    /// </summary>
+    private async Task SaveDocumentAsAsync(TextDocumentViewModel document, string path, string originalText, IReadOnlyList<TextEdit>? edits = null)
+    {
+        if (edits is { Count: > 0 })
+            document.Buffer.ApplyEdits(edits);
+        var saved = await _documents.SaveAsAsync(document, path);
+        if (saved.Success)
+            return;
+        while (document.Buffer.Text != originalText && document.Buffer.CanUndo)
+            document.Buffer.Undo();
+        throw new IOException(saved.Args[^1]);
     }
 
     /// <summary>IDE-PM-004: a file-list mutation is saved immediately; on failure the in-memory project stays as it was.</summary>
