@@ -32,7 +32,17 @@ public sealed class App : Application
             var options = StartupOptions.Parse(desktop.Args ?? []);
             MainWindow? window = null;
             var platform = CompositionRoot.CreatePlatform(options, () => window);
-            Services = CompositionRoot.Build(options, platform);
+            try
+            {
+                Services = CompositionRoot.Build(options, platform);
+            }
+            catch
+            {
+                // A failed start-up check (I-091: a command without a handler) is logged by the graph; flush it, then fail.
+                (platform.Log as IDisposable)?.Dispose();
+                throw;
+            }
+
             window = CompositionRoot.CreateMainWindow(Services);
             var services = Services;
             CompositionRoot.AttachProcessErrorHandlers(services); // IDE-ARCH-091

@@ -32,13 +32,7 @@ public sealed class CompositionTests
         Assert.IsType<FakeThemeHost>(services.ThemeHost);
         Assert.IsType<ThemeService>(services.Theme);
 
-        // Later-phase commands are stubbed by the composition itself. Phase 1 commands whose tasks are not done yet
-        // get explicit "not yet implemented" stubs here only, so that this test keeps checking the rest of the graph.
-        foreach (var definition in services.Commands.Definitions.Where(d => d.Phase <= ServiceGraph.ImplementedPhase && !services.Commands.IsHandled(d.Id)))
-        {
-            services.Commands.RegisterHandler(definition.Id, NotYetImplemented.Instance);
-        }
-
+        // Later-phase commands are stubbed by the composition itself; since I-091 Build fails when any handler is missing.
         services.Commands.VerifyAllHandled();
     }
 
@@ -54,6 +48,40 @@ public sealed class CompositionTests
         Assert.False(services.Commands.CanExecute("project.build"));
         services.FileSystem.CreateDirectory(@"C:\shown");
         Assert.True(services.Commands.CanExecute("file.showInExplorer", @"C:\shown"));
+    }
+
+    /// <summary>I-091: the composition (production and tests alike) checks at start-up that every catalog command has a handler.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-040")]
+    public void StartupVerifiesEveryCommandHasAHandler()
+    {
+        var log = new RecordingLog();
+
+        var services = TestComposition.Build(o => o.Log = log);
+
+        Assert.Contains($"INFO commands: All {services.Commands.Definitions.Count} catalog commands have a handler.", log.Lines);
+        Assert.DoesNotContain(log.Lines, l => l.StartsWith("ERROR ", StringComparison.Ordinal));
+    }
+
+    /// <summary>I-091: a missing handler is logged as an error and fails the start-up (and so every test that composes).</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-040")]
+    public void StartupFailsWhenACommandHasNoHandler()
+    {
+        var log = new RecordingLog();
+        var clock = new ManualClock();
+        var keymap = new KeymapService(UserPaths.Create(@"C:\u", _ => null, _ => throw new InvalidOperationException()), new InMemoryFileSystem(), clock, log);
+        var commands = new CommandService(keymap, new ImmediateDispatcher(), clock, log, new FakeDialogService(), new RecordingStatusService(), new FocusTracker());
+        commands.RegisterLaterPhaseStubs(ServiceGraph.ImplementedPhase);
+        foreach (var definition in commands.Definitions.Where(d => !commands.IsHandled(d.Id) && d.Id != "file.save"))
+        {
+            commands.RegisterHandler(definition.Id, NotYetImplemented.Instance);
+        }
+
+        var error = Assert.Throws<InvalidOperationException>(() => ServiceGraph.VerifyCommands(commands, log));
+
+        Assert.Equal("Commands without a handler: file.save", error.Message);
+        Assert.Equal(["ERROR commands: Start-up check failed: Commands without a handler: file.save"], log.Lines);
     }
 
     [Fact(Timeout = 30000)]

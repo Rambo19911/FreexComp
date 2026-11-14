@@ -2,6 +2,7 @@ using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Languages;
+using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Projects;
 using FreexComp.Ide.Core.Services;
@@ -144,7 +145,7 @@ public static class ServiceGraph
             toolWindowService.Register(definition);
         }
 
-        return new IdeServices
+        var services = new IdeServices
         {
             Options = options,
             UserPaths = platform.UserPaths,
@@ -179,5 +180,29 @@ public static class ServiceGraph
             Navigation = navigation,
             Application = application,
         };
+        VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
+        return services;
+    }
+
+    /// <summary>
+    /// IDE-ARCH-040 / I-091: every catalog command has a handler (later-phase stubs count). A missing one is a programming
+    /// error: it is logged and the start-up fails with the exception (in tests, every test that composes the graph fails).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A catalog command has no handler.</exception>
+    public static void VerifyCommands(ICommandService commands, ILog log)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(log);
+        try
+        {
+            commands.VerifyAllHandled();
+        }
+        catch (InvalidOperationException e)
+        {
+            log.Error("commands", "Start-up check failed: " + e.Message, e);
+            throw;
+        }
+
+        log.Info("commands", $"All {commands.Definitions.Count} catalog commands have a handler.");
     }
 }
