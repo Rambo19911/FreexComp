@@ -72,6 +72,9 @@ public sealed class DocumentService : IDocumentService
     /// </summary>
     public Func<Task<bool>>? ProjectNewUnit { get; set; }
 
+    /// <summary>Creates the Welcome page (welcome-page.md; set by the service graph).</summary>
+    public Func<WelcomeDocumentViewModel>? WelcomeFactory { get; set; }
+
     public event EventHandler<DocumentEventArgs>? DocumentOpened;
 
     public event EventHandler<DocumentClosingEventArgs>? DocumentClosing;
@@ -108,6 +111,7 @@ public sealed class DocumentService : IDocumentService
             if (ProjectNewUnit is null || !await ProjectNewUnit())
                 NewUntitledUnit();
         }));
+        commands.RegisterHandler("view.welcomePage", new Handler(_ => WelcomeFactory is not null, _ => ShowWelcomePage()));
         commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeAll", new AsyncHandler(_ => _documents.Count > 0, _ => CloseAllAsync()));
         commands.RegisterHandler("file.open", new AsyncHandler(_ => true, _ => OpenPickedFilesAsync()));
@@ -170,6 +174,19 @@ public sealed class DocumentService : IDocumentService
         return document;
     }
 
+    public WelcomeDocumentViewModel ShowWelcomePage()
+    {
+        if (_documents.OfType<WelcomeDocumentViewModel>().FirstOrDefault() is { } open)
+        {
+            Activate(open);
+            return open;
+        }
+
+        var page = (WelcomeFactory ?? throw new InvalidOperationException("No Welcome page factory."))();
+        Add(page);
+        return page;
+    }
+
     public void Activate(DocumentViewModel document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -212,6 +229,7 @@ public sealed class DocumentService : IDocumentService
 
         _documents.Remove(document);
         _mru.Remove(document);
+        (document as WelcomeDocumentViewModel)?.Detach();
         UpdateTitleSuffixes();
         DocumentClosed?.Invoke(this, new DocumentEventArgs(document));
         if (ActiveDocument == document)

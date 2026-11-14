@@ -51,6 +51,12 @@ public interface IDocumentService
     /// <summary>A new untitled unit <c>Unit&lt;N&gt;.pas</c>, opened and activated (IDE-P1-033).</summary>
     TextDocumentViewModel NewUntitledUnit();
 
+    /// <summary>
+    /// <c>view.welcomePage</c> (IDE-WEL-020): activates the open Welcome page, else opens it as a new tab. Never part of
+    /// a session.
+    /// </summary>
+    WelcomeDocumentViewModel ShowWelcomePage();
+
     void Activate(DocumentViewModel document);
 
     /// <summary>

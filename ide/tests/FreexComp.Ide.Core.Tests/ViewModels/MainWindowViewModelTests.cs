@@ -46,22 +46,13 @@ public sealed class MainWindowViewModelTests
         var changed = new List<string?>();
         area.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        Assert.Equal("Open File (Ctrl+O)", area.EmptyHints); // no handler yet for file.newFile, search.goToFile
+        Assert.Equal("New File (Ctrl+N) · Open File (Ctrl+O)", area.EmptyHints); // search.goToFile is not functional (P3)
 
-        services.Commands.RegisterHandler("file.newFile", new Enabled());
-        services.Commands.InvalidateCanExecute();
-
-        Assert.Equal("New File (Ctrl+N) · Open File (Ctrl+O)", area.EmptyHints);
+        services.Keymap.SetGestures("file.newFile", []); // a part whose command has no gesture is omitted
+        Assert.Equal("Open File (Ctrl+O)", area.EmptyHints);
         Assert.Contains(nameof(area.EmptyHints), changed);
 
         services.Keymap.SetGestures("file.open", [KeyGesture.Parse("Ctrl+Shift+O")]);
-        Assert.Equal("New File (Ctrl+N) · Open File (Ctrl+Shift+O)", area.EmptyHints);
-    }
-
-    private sealed class Enabled : ICommandHandler
-    {
-        public bool CanExecute(string? argument) => true;
-
-        public Task ExecuteAsync(string? argument) => Task.CompletedTask;
+        Assert.Equal("Open File (Ctrl+Shift+O)", area.EmptyHints);
     }
 }

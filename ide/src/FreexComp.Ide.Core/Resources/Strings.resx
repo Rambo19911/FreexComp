@@ -912,6 +912,63 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Welcome_Missing" xml:space="preserve">
     <value>(missing)</value>
   </data>
+  <data name="NewFile_Title" xml:space="preserve">
+    <value>New File</value>
+  </data>
+  <data name="NewFile_Types" xml:space="preserve">
+    <value>_Type</value>
+  </data>
+  <data name="NewFile_Name" xml:space="preserve">
+    <value>_Name:</value>
+  </data>
+  <data name="NewFile_Folder" xml:space="preserve">
+    <value>_Folder:</value>
+  </data>
+  <data name="NewFile_AddToProject" xml:space="preserve">
+    <value>_Add to project {0}</value>
+  </data>
+  <data name="NewFile_Type_Unit" xml:space="preserve">
+    <value>Unit</value>
+  </data>
+  <data name="NewFile_Type_Unit_Description" xml:space="preserve">
+    <value>A Pascal unit (.pas)</value>
+  </data>
+  <data name="NewFile_Type_TextFile" xml:space="preserve">
+    <value>Text File</value>
+  </data>
+  <data name="NewFile_Type_TextFile_Description" xml:space="preserve">
+    <value>An empty text file</value>
+  </data>
+  <data name="WelcomePage_Title" xml:space="preserve">
+    <value>Welcome</value>
+  </data>
+  <data name="WelcomePage_Version" xml:space="preserve">
+    <value>Version {0}</value>
+  </data>
+  <data name="WelcomePage_Start" xml:space="preserve">
+    <value>START</value>
+  </data>
+  <data name="WelcomePage_RecentProjects" xml:space="preserve">
+    <value>RECENT PROJECTS</value>
+  </data>
+  <data name="WelcomePage_ShowOnStartup" xml:space="preserve">
+    <value>Show this page at start-up</value>
+  </data>
+  <data name="WelcomePage_Pin" xml:space="preserve">
+    <value>Pin to top</value>
+  </data>
+  <data name="WelcomePage_Unpin" xml:space="preserve">
+    <value>Unpin</value>
+  </data>
+  <data name="WelcomePage_Remove" xml:space="preserve">
+    <value>Remove from list</value>
+  </data>
+  <data name="WelcomePage_Today" xml:space="preserve">
+    <value>today {0}</value>
+  </data>
+  <data name="WelcomePage_Yesterday" xml:space="preserve">
+    <value>yesterday</value>
+  </data>
   <data name="Encoding_utf_8" xml:space="preserve">
     <value>UTF-8</value>
   </data>

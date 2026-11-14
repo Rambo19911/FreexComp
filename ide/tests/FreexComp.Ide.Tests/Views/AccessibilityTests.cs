@@ -99,12 +99,7 @@ public sealed class AccessibilityTests
         await h.ExecuteAsync("view.toolbar.standard"); // the Standard toolbar back for the next part
 
         // Toolbar row (UI-TB-008): Alt, then Ctrl+Tab → first button; Right → next; Enter runs; Escape → the document.
-        // Disabled buttons cannot take focus (accepted deviation), so file.newFile gets a handler here
-        // (file.openProject has its own since I-065).
-        var newFile = new Recorder();
-        h.Services.Commands.RegisterHandler("file.newFile", newFile);
-        h.Services.Commands.InvalidateCanExecute();
-        Dispatcher.UIThread.RunJobs();
+        // Disabled buttons cannot take focus (accepted deviation); file.newFile (I-076) and file.openProject (I-065) are enabled.
         PressAltAlone(h);
         Assert.Equal(AutomationIds.TopMenu("File"), h.FocusedAutomationId);
         h.Press("Ctrl+Tab");
@@ -113,10 +108,11 @@ public sealed class AccessibilityTests
         Assert.Equal(AutomationIds.ToolBarButton("file.openProject"), h.FocusedAutomationId);
         h.Press("Left");
         Assert.Equal(AutomationIds.ToolBarButton("file.newFile"), h.FocusedAutomationId);
-        h.Press("Enter");
-        Assert.Equal(1, newFile.Calls);
-        h.Press("Escape");
-        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        h.Press("Enter"); // runs file.newFile: the New File dialog
+        var dialog = await h.WaitForDialogAsync("NewFile");
+        dialog.Press("Escape");
+        await h.WaitForAsync(() => h.Window.OwnedWindows.Count == 0, "New File closed");
+        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId); // the toolbar row is left for the document
         Assert.False(h.Find<Button>(AutomationIds.ToolBarButton("file.newFile")).Focusable); // a click again leaves focus alone
     }
 
@@ -155,19 +151,6 @@ public sealed class AccessibilityTests
         h.Services.ToolWindows.Show("Sample", focus: false);
         Dispatcher.UIThread.RunJobs();
         return h;
-    }
-
-    private sealed class Recorder : Core.Commands.ICommandHandler
-    {
-        public int Calls { get; private set; }
-
-        public bool CanExecute(string? argument) => true;
-
-        public Task ExecuteAsync(string? argument)
-        {
-            Calls++;
-            return Task.CompletedTask;
-        }
     }
 
     private static void PressAltAlone(HeadlessHarness h)

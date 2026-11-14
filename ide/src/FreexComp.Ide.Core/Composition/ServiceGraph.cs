@@ -84,6 +84,7 @@ public static class ServiceGraph
             if (!opened.Success)
                 await platform.Dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
         });
+        documents.WelcomeFactory = () => new ViewModels.WelcomeDocumentViewModel(recent, commands, settings, platform.FileSystem, platform.Clock);
         documents.ProjectNewUnit = async () =>
         {
             if (projects.Project is null)

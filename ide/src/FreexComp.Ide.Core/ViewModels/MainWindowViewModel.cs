@@ -83,7 +83,7 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             var fullPath = _services.Settings.Get(SettingsCatalog.AppearanceShowFullPathInTitle);
             var subject = _services.Projects.Project is { } project ? (fullPath ? project.FilePath : project.Name)
-                : _titleSource is null ? null
+                : _titleSource is null or WelcomeDocumentViewModel ? null // the Welcome page is no file (main-window.md §4)
                 : fullPath ? _titleSource.FilePath ?? _titleSource.Title
                 : _titleSource.Title;
             return WindowTitle.Format(subject, IdeState.Idle);

@@ -78,6 +78,7 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("file.closeProject", new Handler(_ => Project is not null, _ => CloseAsync()));
         commands.RegisterHandler("project.viewSource", new Handler(_ => Project is not null, _ => ViewSourceAsync()));
         commands.RegisterHandler("project.addNewUnit", new Handler(_ => Project is not null, _ => AddNewUnitAsync()));
+        commands.RegisterHandler("file.newFile", new Handler(_ => true, _ => NewFileAsync()));
         commands.RegisterHandler("project.addExistingFile", new Handler(_ => Project is not null, _ => PickAndAddExistingAsync()));
         commands.RegisterHandler("project.removeFile", new Handler(_ => CanOperateOnFiles(), _ => RemoveFilesAsync(FileTargets())));
         commands.RegisterHandler("project.deleteFile", new Handler(_ => CanOperateOnFiles(), _ => DeleteFilesAsync(FileTargets())));
@@ -185,7 +186,7 @@ public sealed class ProjectService : IProjectService
         var path = Path.Combine(folder, name + ".pas");
         try
         {
-            AtomicFileWriter.Write(_fileSystem, path, SourceBytes($"unit {name};\n\ninterface\n\nimplementation\n\nend.\n"));
+            AtomicFileWriter.Write(_fileSystem, path, SourceBytes(UnitSkeleton(name)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -204,6 +205,80 @@ public sealed class ProjectService : IProjectService
         var opened = await _documents.OpenAsync(path);
         if (opened.Value is TextDocumentViewModel document)
             document.ViewState.Caret = new TextPosition(6, 1); // IDE-PM-041: the empty line after implementation
+        else if (!opened.Success)
+            await _dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
+        return true;
+    }
+
+    /// <summary>project-manager.md §4.2: the unit skeleton (LF; <see cref="SourceBytes"/> applies the line-ending setting).</summary>
+    private static string UnitSkeleton(string name) => $"unit {name};\n\ninterface\n\nimplementation\n\nend.\n";
+
+    /// <summary>
+    /// <c>file.newFile</c> (UI-DLG-040): the New File dialog. Initial folder: the selected Project Manager folder inside
+    /// the project, else the project directory; without a project the active document's folder, else
+    /// <c>environment.defaultProjectsDir</c>.
+    /// </summary>
+    private async Task NewFileAsync()
+    {
+        string folder;
+        if (_project is { } project)
+        {
+            folder = SelectedFolder?.Invoke() is { } selected && IsInside(selected, project.Directory)
+                ? Path.GetFullPath(selected)
+                : project.Directory;
+        }
+        else
+        {
+            folder = _documents.ActiveDocument?.FilePath is { } active ? Path.GetDirectoryName(active)! : _prompts.DefaultProjectsDirectory;
+        }
+
+        var dialog = new NewFileViewModel(folder, _project?.Name, _fileSystem,
+            name => _project is { } p && UnitNames(p).Contains(name),
+            CreateNewFileAsync,
+            current => _prompts.PickFolderAsync("Folder", current));
+        if (await _dialogs.ShowAsync(dialog) && _commands?.CanExecute("window.focusEditor") == true)
+            await _commands.ExecuteAsync("window.focusEditor"); // UI-DLG-040: the new file's editor gets focus
+    }
+
+    /// <summary>
+    /// UI-DLG-040 <c>Create</c>: writes the file (default encoding and line endings), adds it to the project when asked,
+    /// opens it and focuses the editor. A write failure asks <c>Msg.File.SaveFailed</c> (Retry repeats); false keeps
+    /// the dialog open.
+    /// </summary>
+    private async Task<bool> CreateNewFileAsync(NewFileViewModel request)
+    {
+        var path = Path.GetFullPath(request.FilePath);
+        var isUnit = request.SelectedType.Kind == NewFileKind.Unit;
+        var bytes = SourceBytes(isUnit ? UnitSkeleton(request.FileBaseName) : "");
+        while (true)
+        {
+            try
+            {
+                AtomicFileWriter.Write(_fileSystem, path, bytes);
+                break;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveFailed", [path, e.Message])) != "Retry")
+                    return false;
+            }
+        }
+
+        if (request.ShowAddToProject && request.AddToProject && _project is { } project)
+        {
+            var projectPath = ToProjectPath(path);
+            if (!await SaveChangedProjectAsync(project with { Files = FilesForMutation(project).Add(new ProjectFile(projectPath, null, null)) }))
+            {
+                DeleteQuietly(path);
+                return false;
+            }
+
+            FilesAdded?.Invoke(this, [projectPath]);
+        }
+
+        var opened = await _documents.OpenAsync(path);
+        if (opened.Value is TextDocumentViewModel document && isUnit)
+            document.ViewState.Caret = new TextPosition(6, 1); // the empty line after implementation (IDE-PM-041)
         else if (!opened.Success)
             await _dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
         return true;

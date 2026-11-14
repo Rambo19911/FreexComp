@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -51,9 +51,9 @@ public sealed class KeyRoutingTests
     {
         await using var h = await HeadlessHarness.StartAsync();
         var copy = new Recorder();
-        var newFile = new Recorder();
+        var options = new Recorder(); // tools.options: a Global command with a gesture and no handler yet
         var target = new Target();
-        h.Services.Commands.RegisterHandler("file.newFile", newFile);
+        h.Services.Commands.RegisterHandler("tools.options", options);
         var host = AddFocusable(h, "StatusBar.TestTool");
         CommandRouting.SetScope(host, CommandScope.ToolList);
         CommandRouting.SetToolWindow(host, "Messages");
@@ -71,8 +71,8 @@ public sealed class KeyRoutingTests
         Assert.Empty(target.Executed); // not routed: left to the TextBox
         Assert.Equal("abc", box.SelectedText); // the TextBox handled Ctrl+A itself
 
-        h.Press("Ctrl+N"); // global commands still work from a text input
-        Assert.Equal(1, newFile.Calls);
+        h.Press("Ctrl+,"); // global commands still work from a text input
+        Assert.Equal(1, options.Calls);
 
         Focus(host);
         h.Press("Ctrl+C");

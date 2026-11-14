@@ -29,8 +29,16 @@ public sealed class HarnessOptions
     /// <summary>Relative path under <see cref="HeadlessHarness.UserDir"/> (<c>roaming/uistate.json</c>) → bytes, written before start.</summary>
     public Dictionary<string, byte[]> UserFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Setting key → value, written to <c>settings.json</c> before start. Preset: <c>run.consoleMode = output</c>.</summary>
-    public Dictionary<string, object> Settings { get; } = new(StringComparer.Ordinal) { ["run.consoleMode"] = "output" };
+    /// <summary>
+    /// Setting key → value, written to <c>settings.json</c> before start. Presets: <c>run.consoleMode = output</c>;
+    /// <c>environment.showWelcomeOnStartup = false</c> so the document area starts empty (remove it to start like a
+    /// first run).
+    /// </summary>
+    public Dictionary<string, object> Settings { get; } = new(StringComparer.Ordinal)
+    {
+        ["run.consoleMode"] = "output",
+        ["environment.showWelcomeOnStartup"] = false,
+    };
 
     public Size WindowSize { get; set; } = new(1440, 900); // IDE-TEST-018
 

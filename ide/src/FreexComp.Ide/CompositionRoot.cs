@@ -50,6 +50,10 @@ public static class CompositionRoot
     public static MainWindow CreateMainWindow(IdeServices services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        // UI-WIN-071 / IDE-P1-015: the Welcome page is the start-up content when enabled (command-line paths and
+        // reopening the last project take precedence once I-085 adds them).
+        if (services.Settings.Get(SettingsCatalog.EnvironmentShowWelcomeOnStartup))
+            services.Documents.ShowWelcomePage();
         return new MainWindow { DataContext = new MainWindowViewModel(services) };
     }
 }
