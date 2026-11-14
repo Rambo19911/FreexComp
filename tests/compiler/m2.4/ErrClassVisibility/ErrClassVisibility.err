@@ -1,0 +1,5 @@
+ErrClassVisibility.pas(14,3): error E2610: Cannot access strict private member 'FHidden' of 'TBase'
+ErrClassVisibility.pas(15,9): error E2610: Cannot access protected member 'FShared' of 'TBase'
+ErrClassVisibility.pas(16,3): error E2610: Cannot access private member 'FSecret' of 'TBase'
+ErrClassVisibility.pas(23,5): error E2610: Cannot access private member 'FSecret' of 'TBase'
+ErrClassVisibility.pas(24,5): error E2610: Cannot access protected member 'FShared' of 'TBase'

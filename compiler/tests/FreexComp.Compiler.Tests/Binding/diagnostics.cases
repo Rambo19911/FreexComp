@@ -300,3 +300,9 @@ type TA = class procedure P; virtual; override; end; procedure TA.P; begin end; 
 type TA = class procedure P; virtual; abstract; end; TB = class(TA) procedure P; override; end; procedure TB.P; begin inherited P end; begin end.
 === W1060 1,69
 type TA = class procedure P; virtual; end; TB = class(TA) procedure P; end; procedure TA.P; begin end; procedure TB.P; begin end; begin end.
+=== E2600 1,91
+type TA = class abstract constructor Create; end; constructor TA.Create; begin end; begin TA.Create end.
+=== W1061 1,114
+type TA = class constructor Create; procedure P; virtual; abstract; end; constructor TA.Create; begin end; begin TA.Create end.
+=== E2610 1,68
+type TA = class strict private F: Integer; end; var A: TA; begin A.F := 1 end.

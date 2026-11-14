@@ -2,7 +2,8 @@ using System.Diagnostics;
 
 namespace FreexComp.Compiler.GoldenTests;
 
-[Trait("Phase", "1")]
+// C-191: starts the opc process, so it belongs to Phase 2 (IDE-P1-001: Phase 1 does not require opc).
+[Trait("Phase", "2")]
 public sealed class OpcProcessTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);

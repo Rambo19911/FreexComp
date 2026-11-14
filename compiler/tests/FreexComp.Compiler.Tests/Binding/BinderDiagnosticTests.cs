@@ -208,6 +208,9 @@ public sealed class BinderDiagnosticTests
     [InlineData("E2625")]
     [InlineData("E2626")]
     [InlineData("W1060")]
+    [InlineData("E2600")]
+    [InlineData("W1061")]
+    [InlineData("E2610")]
     public void CodeHasACase(string code) => Assert.Contains(ReadCases(), c => c.Code == code);
 
     [Fact]

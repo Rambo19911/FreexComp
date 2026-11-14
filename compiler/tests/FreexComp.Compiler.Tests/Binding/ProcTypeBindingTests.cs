@@ -5,6 +5,7 @@ using static FreexComp.Compiler.Tests.Binding.BinderTestHelper;
 namespace FreexComp.Compiler.Tests.Binding;
 
 /// <summary>Plain procedural types, M2.2 subset (C-161; LANG-480, 482…484, LANG-462).</summary>
+[Trait("Phase", "2")]
 public sealed class ProcTypeBindingTests
 {
     private const string Header = "type TF = function(X: Integer): Integer; TP = procedure; ";

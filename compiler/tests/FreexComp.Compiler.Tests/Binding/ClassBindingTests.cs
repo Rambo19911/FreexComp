@@ -125,6 +125,56 @@ public sealed class ClassBindingTests
         Assert.Equal([expected], BindDiagnostics(source));
     }
 
+    private const string VisibilityClasses =
+        "type TA = class strict private F: Integer; procedure SP; strict protected G: Integer; private H: Integer; " +
+        "protected K: Integer; public procedure Run; end; TB = class(TA) procedure Run2(Other: TA); end; " +
+        "procedure TA.SP; begin end; procedure TA.Run; begin F := 1; SP; G := 2; Self.F := 3 end; ";
+
+    /// <summary>
+    /// C-084 / LANG-610, 612 within one unit: <c>private</c>/<c>protected</c> are unit-wide; <c>strict private</c> only in the
+    /// class's own methods; <c>strict protected</c> in the class and in descendants through a reference of the descendant
+    /// type (implicit <c>Self</c> included), not through an ancestor-typed reference.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-610")]
+    [Trait("Req", "LANG-612")]
+    [InlineData("", "A.F := 1;", "E2610: Cannot access strict private member 'F' of 'TA'")]
+    [InlineData("", "A.SP;", "E2610: Cannot access strict private member 'SP' of 'TA'")]
+    [InlineData("", "A.G := 1;", "E2610: Cannot access strict protected member 'G' of 'TA'")]
+    [InlineData("", "A.H := 1; A.K := 1; A.Run;", null)]
+    [InlineData("F := 1;", "", "E2610: Cannot access strict private member 'F' of 'TA'")]
+    [InlineData("SP;", "", "E2610: Cannot access strict private member 'SP' of 'TA'")]
+    [InlineData("G := 1; Self.G := 2; Other.H := 3; Other.K := 4; H := 5; K := 6;", "", null)]
+    [InlineData("Other.G := 1;", "", "E2610: Cannot access strict protected member 'G' of 'TA'")]
+    public void Visibility_SameUnit(string inDescendant, string inMain, string? expected)
+    {
+        var diagnostics = BindDiagnostics(VisibilityClasses + $"procedure TB.Run2(Other: TA); begin {inDescendant} end; var A: TA; begin {inMain} end.")
+            .Select(d => System.Text.RegularExpressions.Regex.Replace(d, @"\(\d+,\d+\)", ""));
+        Assert.Equal(expected is null ? [] : [expected], diagnostics);
+    }
+
+    private const string AbstractClasses =
+        "type TA = class constructor Create; procedure P; virtual; abstract; end; TB = class(TA) end; " +
+        "TC = class(TB) procedure P; override; end; TD = class abstract(TC) end; " +
+        "constructor TA.Create; begin end; procedure TC.P; begin end; var A: TA; ";
+
+    /// <summary>
+    /// C-083 / LANG-602, 622: a constructor called on the name of a <c>class abstract</c> is E2600; on a class with an abstract
+    /// slot (own or inherited, not overridden) W1061 naming the first such slot; on an instance, via <c>inherited</c> or for a
+    /// concrete class nothing.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-602")]
+    [Trait("Req", "LANG-622")]
+    [InlineData("begin A := TA.Create end.", "W1061(1,249): Constructing instance of 'TA' containing abstract method 'TA.P'")]
+    [InlineData("begin A := TB.Create end.", "W1061(1,249): Constructing instance of 'TB' containing abstract method 'TA.P'")]
+    [InlineData("begin A := TD.Create end.", "E2600(1,249): Cannot create an instance of abstract class 'TD'")]
+    [InlineData("begin A := TC.Create; A.Create end.", null)]
+    public void AbstractInstantiation(string body, string? expected)
+    {
+        Assert.Equal(expected is null ? [] : [expected], BindDiagnostics(AbstractClasses + body));
+    }
+
     /// <summary>
     /// C-081 / CMP-367: every method call carries its receiver — a class name gives the VMT and Alloc = 1, an instance the
     /// reference (virtual methods dispatched, a destructor Dealloc = 1), a bare name inside a method Self; bare

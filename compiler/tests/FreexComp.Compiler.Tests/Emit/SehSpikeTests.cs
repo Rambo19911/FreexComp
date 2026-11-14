@@ -52,6 +52,20 @@ public sealed class SehSpikeTests
     public async Task UnhandledRunsFinallyThenTheStartHandler(string optimisation) =>
         Assert.Equal(("FU1", 217), await Run("Unhandled", optimisation));
 
+    [Theory]
+    [MemberData(nameof(Optimisations))]
+    [Trait("Req", "CMP-391")]
+    [Trait("Req", "ABI-121")]
+    public async Task EndCatchRaises(string optimisation) =>
+        Assert.Equal(("H~DS2~O3~Z", 0), await Run("EndCatchRaises", optimisation));
+
+    [Theory]
+    [MemberData(nameof(Optimisations))]
+    [Trait("Req", "CMP-392")]
+    [Trait("Req", "ABI-121")]
+    public async Task RaiseSpCheck(string optimisation) =>
+        Assert.Equal(("I2~O1~Z", 0), await Run("RaiseSpCheck", optimisation));
+
     private static async Task<(string StdOut, int ExitCode)> Run(string scenario, string optimisation)
     {
         Assert.True(File.Exists(Clang.Path), $"Pinned toolchain missing: {Clang.Path} (run scripts/bootstrap.ps1).");

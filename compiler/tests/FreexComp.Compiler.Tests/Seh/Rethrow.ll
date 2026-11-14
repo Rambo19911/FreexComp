@@ -57,7 +57,9 @@ unreachable.1:
   unreachable
 ex.cleanup.1:
   %cl1 = cleanuppad within none []
-  call void @"System._EndCatch"() [ "funclet"(token %cl1) ]
+  invoke void @"System._EndCatch"() [ "funclet"(token %cl1) ]
+          to label %ex.cleanret.1 unwind label %cleanup.pad
+ex.cleanret.1:
   cleanupret from %cl1 unwind label %cleanup.pad
 cleanup:
   call void @"System._UStrClr"(ptr %s.addr)

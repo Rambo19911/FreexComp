@@ -1366,8 +1366,55 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-083: VMTs (CMP-366, ABI §7.2) of a root class with a virtual, an abstract and a static method, an interface descendant
+    /// overriding both and introducing a <c>dynamic</c> slot, and an implementation-only class overriding it <c>final</c>;
+    /// virtual calls through a base reference (CMP-367), a static call, <c>inherited</c> (static), and creation on a class name.
+    /// </summary>
+    internal const string VmtSource = """
+        unit M;
+        interface
+        type
+          TA = class
+            N: Integer;
+            constructor Create;
+            procedure P; virtual;
+            function Q(X: Integer): Integer; virtual; abstract;
+            procedure S;
+          end;
+          TB = class(TA)
+            procedure P; override;
+            function Q(X: Integer): Integer; override;
+            procedure R; dynamic;
+          end;
+        function Run(A: TA): Integer;
+        implementation
+        type
+          TC = class(TB)
+            procedure R; override; final;
+          end;
+        constructor TA.Create; begin N := 1 end;
+        procedure TA.P; begin end;
+        procedure TA.S; begin P end;
+        procedure TB.P; begin inherited P end;
+        function TB.Q(X: Integer): Integer; begin Result := X + N end;
+        procedure TB.R; begin end;
+        procedure TC.R; begin end;
+        function Run(A: TA): Integer;
+        var B: TB;
+        begin
+          A.P;
+          A.S;
+          B := TC.Create;
+          B.R;
+          Result := A.Q(2) + B.Q(3);
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Vmt"] = VmtSource,
         ["ProcValue"] = ProcValueSource,
         ["Atomic"] = AtomicSource,
         ["ArrayConstructors"] = ArrayConstructorsSource,
@@ -1428,6 +1475,65 @@ public sealed class IrSnapshotTests
         Assert.Contains("@_fltused = global i32 39029, align 4\n", text);
         Assert.Contains("@\"M.Plain\" = internal global i32 zeroinitializer, align 4\n", text);
         Snapshot.Verify("ExternalDecl", text);
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-366")]
+    [Trait("Req", "CMP-367")]
+    [Trait("Req", "LANG-622")]
+    public void Vmt() => Snapshot.Verify("Vmt", Emit(VmtSource));
+
+    /// <summary>
+    /// CMP-366 / ABI-073/074: slot order and contents — the abstract slot holds <c>System._AbstractError</c> in TA only, the
+    /// overrides replace their slots, the <c>dynamic</c> method appends one; the interface classes' VMTs are external, TC's internal.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-366")]
+    [Trait("Req", "LANG-622")]
+    public void Vmt_SlotsFollowOverridesAndAbstractMethods()
+    {
+        var text = Emit(VmtSource);
+
+        Assert.Contains("[2 x ptr] [ptr @\"M.TA.P\", ptr @\"System._AbstractError\"] }, align 8\n", text);
+        Assert.Contains("[3 x ptr] [ptr @\"M.TB.P\", ptr @\"M.TB.Q\", ptr @\"M.TB.R\"] }, align 8\n", text);
+        Assert.Contains("[3 x ptr] [ptr @\"M.TB.P\", ptr @\"M.TB.Q\", ptr @\"M.TC.R\"] }, align 8\n", text);
+        Assert.Contains("@\"M.TA.$vmt\" = constant", text);
+        Assert.Contains("@\"M.TC.$vmt\" = internal constant { ptr, i64, ptr, ptr, ptr, ptr, ptr, ptr, [3 x ptr] } { ptr @\"M.TB.$vmt\", i64 16,", text);
+        Assert.Contains("declare void @\"System._AbstractError\"() #1\n", text);
+    }
+
+    /// <summary>
+    /// C-190 / CMP-362, 365: an anonymous structural type spelt the same in a class field, a record field and a global is
+    /// one type text and gets one RTTI block per module, whichever declaration reaches it first.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "CMP-362")]
+    [InlineData("array of string")]
+    [InlineData("array[0..1] of string")]
+    [InlineData("array of array of string")]
+    [InlineData("record S: string; end")]
+    public void AnonymousTypeInfo_IsDefinedOncePerModule(string type)
+    {
+        var text = Emit($$"""
+            unit M;
+            interface
+            implementation
+            type
+              TLeaf = class Tags: {{type}}; end;
+              TRec = record Tags: {{type}}; end;
+            var
+              A: {{type}};
+              B: TRec;
+              C: TLeaf;
+            procedure Use;
+            var L: {{type}};
+            begin
+            end;
+            end.
+            """);
+
+        var definitions = text.Split('\n').Where(l => l.StartsWith($"@\"M.$rtti.{type}\" = ", StringComparison.Ordinal)).ToList();
+        Assert.Single(definitions);
     }
 
     [Fact]

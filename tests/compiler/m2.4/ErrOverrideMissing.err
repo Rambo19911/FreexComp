@@ -1,0 +1,3 @@
+ErrOverrideMissing.pas(12,15): error E2620: Method 'Paint' not found in base class
+ErrOverrideMissing.pas(13,14): error E2621: Declaration of 'Size' differs from the virtual method it overrides
+ErrOverrideMissing.pas(14,15): error E2620: Method 'Fixed' not found in base class

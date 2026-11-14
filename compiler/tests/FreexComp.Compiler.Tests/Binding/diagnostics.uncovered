@@ -39,9 +39,7 @@ E2205  elsewhere UnitGraphTests  needs unit files (location and path: LANG-513, 
 E2206  elsewhere UnitBindingTests  needs a second program file
 E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  M2.3  unit alias table
-E2600  M2.4  classes
 E2604  M2.4  classes
-E2610  M2.4  visibility
 E2611  M2.5  published fields (RTTI)
 E2627  M2.5  message methods (LANG-622)
 E2630  M2.5  published properties
@@ -84,7 +82,6 @@ W1030  Phase8  LANG-462 accepts 'safecall' silently (C-160 ExternalDecl snapshot
 W1050  M2.3  hint directives used outside their unit (LANG-472)
 W1051  M2.3  hint directives used outside their unit (LANG-472)
 W1052  M2.3  hint directives used outside their unit (LANG-472)
-W1061  M2.4  classes
 W1062  M2.4  classes
 W1070  M2.6  attributes
 W1080  M2.4  exceptions

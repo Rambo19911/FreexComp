@@ -1,0 +1,8 @@
+rect 6.00 shape
+circle 3.14 round shape
+circle gone
+total 33.566
+shape: rect 5.00 shape
+round shape: circle 12.57 round shape
+circle gone
+shape: square 16.00 shape

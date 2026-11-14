@@ -1,0 +1,2 @@
+ErrAbstractCreate.pas(21,8): warning W1061: Constructing instance of 'TPartial' containing abstract method 'TPartial.Draw'
+ErrAbstractCreate.pas(22,8): error E2600: Cannot create an instance of abstract class 'TShape'

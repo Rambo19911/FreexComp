@@ -577,6 +577,8 @@ internal sealed class ModuleState(IIrWriter writer)
 
     private readonly Dictionary<TypeSymbol, IrGlobal> _typeInfoReferences = [];
 
+    private readonly Dictionary<string, IrGlobal> _typeInfoByName = new(StringComparer.Ordinal);
+
     /// <summary>RTTI blocks (rtl-abi.md §10) in first-use order; nested element blocks come before the blocks referencing them.</summary>
     public List<(LinkName Name, IrStructConstant Block)> TypeInfos { get; } = [];
 
@@ -592,6 +594,14 @@ internal sealed class ModuleState(IIrWriter writer)
     {
         if (_typeInfoReferences.TryGetValue(type, out var global))
         {
+            return global;
+        }
+
+        // C-190: anonymous types are named by their type text (CMP-362), so two symbols spelt alike share one block
+        var name = TypeInfoName(type);
+        if (_typeInfoByName.TryGetValue(name.Text, out global))
+        {
+            _typeInfoReferences.Add(type, global);
             return global;
         }
 
@@ -617,9 +627,9 @@ internal sealed class ModuleState(IIrWriter writer)
             _ => throw new NotSupportedException($"No type info for '{type.Name}' yet."),
         };
         var block = new IrStructConstant(new StructIrType([.. fields.Select(f => f.Type)]), [.. fields]);
-        var name = TypeInfoName(type);
         global = new IrGlobal(name);
         _typeInfoReferences.Add(type, global);
+        _typeInfoByName.Add(name.Text, global);
         TypeInfos.Add((name, block));
         return global;
     }

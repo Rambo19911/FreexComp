@@ -38,12 +38,75 @@ internal sealed partial class ExpressionBinder
         return new BoundParameterExpression(syntax, self);
     }
 
+    /// <summary>The unit whose code is being bound (the owner of the nearest unit scope).</summary>
+    private UnitSymbol? CurrentUnit
+    {
+        get
+        {
+            for (var scope = _scope; scope != null; scope = scope.Parent)
+            {
+                if (scope is { Kind: ScopeKind.Unit, Owner: UnitSymbol unit })
+                {
+                    return unit;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// LANG-610/612: whether <paramref name="member"/> of <paramref name="owner"/> may be used here through a receiver whose static
+    /// type is <paramref name="receiver"/> (the current class for implicit <c>Self</c>); E2610 otherwise. <c>private</c> and
+    /// <c>protected</c> are unit-wide; <c>strict private</c> needs a method of the class itself; (strict) protected also opens
+    /// to methods of a descendant D when the receiver is D or a descendant of D.
+    /// </summary>
+    private bool CheckAccess(SyntaxNode at, Symbol member, ClassTypeSymbol owner, TypeSymbol? receiver)
+    {
+        var visibility = member.Visibility;
+        if (visibility is Visibility.Public or Visibility.Published)
+        {
+            return true;
+        }
+
+        var current = CurrentMethod?.ContainingType;
+        var sameUnit = owner.ContainingSymbol is UnitSymbol unit && ReferenceEquals(unit, CurrentUnit);
+        var own = ReferenceEquals(current, owner);
+        var descendant = current is not null && !own && current.SelfAndAncestors().Contains(owner)
+            && receiver is ClassTypeSymbol r && r.SelfAndAncestors().Contains(current);
+        var allowed = visibility switch
+        {
+            Visibility.Private => sameUnit,
+            Visibility.StrictPrivate => own,
+            Visibility.Protected => sameUnit || own || descendant,
+            _ => own || descendant,                                                     // strict protected
+        };
+        if (!allowed)
+        {
+            var text = visibility switch
+            {
+                Visibility.Private => "private",
+                Visibility.StrictPrivate => "strict private",
+                Visibility.Protected => "protected",
+                _ => "strict protected",
+            };
+            _diagnostics.Report(at, "E2610", text, member.Name, owner.Name);
+        }
+
+        return allowed;
+    }
+
     /// <summary>A field named inside a method (LANG-621): <c>Self.F</c>.</summary>
     private BoundExpression ImplicitField(IdentifierNameSyntax name, FieldSymbol field)
     {
         if (CurrentMethod is not { SelfParameter: not null, IsClassMethod: false } method)
         {
             _diagnostics.Report(name, "E2608", field.Name);
+            return Error(name);
+        }
+
+        if (field.ContainingSymbol is ClassTypeSymbol owner && !CheckAccess(name, field, owner, method.ContainingType))
+        {
             return Error(name);
         }
 
@@ -85,6 +148,17 @@ internal sealed partial class ExpressionBinder
             return new MethodCall(null, arguments, null);
         }
 
+        var receiverType = kind switch
+        {
+            ReceiverKind.Instance => instance!.Type,
+            ReceiverKind.ClassName => className,
+            _ => CurrentMethod?.ContainingType,
+        };
+        if (!CheckAccess(call, method, method.ContainingType, receiverType))
+        {
+            return new MethodCall(null, arguments, null);
+        }
+
         var receiver = Receiver(call, method, kind, instance, className);
         return new MethodCall(receiver is null ? null : method, arguments, receiver);
     }
@@ -99,7 +173,15 @@ internal sealed partial class ExpressionBinder
 
         switch (kind)
         {
+            case ReceiverKind.ClassName when method.MethodKind == MethodKind.Constructor && className!.IsAbstract:
+                _diagnostics.Report(call, "E2600", className.Name);                    // LANG-602
+                return null;
             case ReceiverKind.ClassName when method.MethodKind == MethodKind.Constructor:
+                if (className!.VirtualSlots.FirstOrDefault(s => s.IsAbstract) is { } slot)
+                {
+                    _diagnostics.Report(call, "W1061", className.Name, slot.ContainingType.Name, slot.Name);   // LANG-622
+                }
+
                 // LANG-630/633: on a class name — allocates (Alloc = 1), bound statically to that class's constructor
                 return new BoundReceiver(new BoundClassReferenceExpression(call, className!, _types.Pointer), IsVirtual: false, Flag: 1);
             case ReceiverKind.ClassName:
@@ -210,6 +292,11 @@ internal sealed partial class ExpressionBinder
 
             if (type.GetMembers(name).FirstOrDefault() is FieldSymbol field)
             {
+                if (field.ContainingSymbol is ClassTypeSymbol owner && !CheckAccess(syntax.Name, field, owner, type))
+                {
+                    return Error(syntax, receiver);
+                }
+
                 return new BoundFieldAccessExpression(syntax, receiver, field);
             }
 

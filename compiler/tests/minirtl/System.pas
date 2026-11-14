@@ -47,7 +47,11 @@ procedure _RangeError; noreturn;
 procedure _OverflowError; noreturn;
 procedure _DivZeroError; noreturn;
 procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;
+procedure _AbstractError; noreturn;
 procedure _IOCheck;
+
+var
+  AbstractErrorProc: procedure;              { ABI-103: called by _AbstractError when assigned }
 
 { text files (ABI-132, C-182): errors go to InOutRes, never raised here; the compiler calls _IOCheck after them under $I+ }
 function IOResult: Integer;
@@ -343,6 +347,14 @@ end;
 procedure _DivZeroError;
 begin
   _RunError(200);
+end;
+
+{ ABI-103: an abstract method was called (its VMT slot holds this routine, CMP-366); the hook, then error 211 }
+procedure _AbstractError;
+begin
+  if Assigned(AbstractErrorProc) then
+    AbstractErrorProc;
+  _RunError(211);
 end;
 
 { ABI-103 without AssertErrorProc (SysUtils is M2.4): '<Msg> (<FileName>, line <Line>)' on ErrOutput, then error 227 }
