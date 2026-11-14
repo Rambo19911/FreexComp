@@ -148,6 +148,11 @@ internal static class IrEmitter
         {
             // CMP-350: every unit defines both, possibly empty; $init registers the threadvar descriptor first (ABI-180)
             var initialization = unit.Initialization ?? EmptyBody();
+            if (unit.FormRegistration is { } forms)
+            {
+                initialization = initialization with { Body = new LBlock([forms, initialization.Body]) };          // CMP-350: after _TlsRegister
+            }
+
             if (unit.TlsRegistration is { } register)
             {
                 initialization = initialization with { Body = new LBlock([register, initialization.Body]) };
@@ -162,6 +167,11 @@ internal static class IrEmitter
         // CMP-366: the VMTs are built before the literals are written (class names are UnicodeString literals)
         var vmts = classes.Select(c => (Class: c, Constant: Vmt(module, c))).ToImmutableArray();
         module.DeclarePending();
+
+        // CMP-415 (C-114): the {$FORM} blobs and their table (the names are UnicodeString literals)
+        var formEntry = new StructIrType([IrType.Ptr, IrType.Ptr, IrType.I64]);
+        var formTable = unit.Forms.IsEmpty ? null : new IrArrayConstant(new ArrayIrType(unit.Forms.Length, formEntry), [.. unit.Forms.Select((f, i) =>
+            (IrConstant)new IrStructConstant(formEntry, [module.StringLiteral(f.Name), new IrGlobal(Mangler.FormBlob(unit.Unit, i)), IrIntConstant.I64(f.Data.Length)]))]);
 
         // the globals' initialisers too: typed constants may hold string literals (C-203; PChar constants since C-063)
         var initializers = variables.Select(v => v.Initializer is { } value && v.Type.Size > 0
@@ -187,6 +197,25 @@ internal static class IrEmitter
         foreach (var (name, block) in module.TypeInfos)
         {
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.LinkOnceOdr, IsConstant: true, block, Alignment: 8));     // CMP-405, CMP-365
+        }
+
+        for (var i = 0; i < unit.Forms.Length; i++)
+        {
+            var data = unit.Forms[i].Data;
+            var bytes = new ArrayIrType(data.Length, IrType.I8);
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.FormBlob(unit.Unit, i), IrLinkage.Private, IsConstant: true,
+                new IrArrayConstant(bytes, [.. data.Select(b => (IrConstant)new IrIntConstant(IrType.I8, b))]), Alignment: 1));
+        }
+
+        if (formTable is not null)
+        {
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.FormTable(unit.Unit), IrLinkage.Internal, IsConstant: true, formTable, Alignment: 8));
+        }
+
+        foreach (var (type, name, block) in module.ClassInfos)
+        {
+            // codegen.md C-112 decision: defined only by the class's unit, with the VMT's linkage
+            writer.DefineGlobal(new IrGlobalDefinition(name, interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal, IsConstant: true, block, Alignment: 8));
         }
 
         foreach (var intf in module.Guids)
@@ -248,6 +277,11 @@ internal static class IrEmitter
             writer.DeclareGlobal(name, IrType.Ptr, 8);                          // another unit's VMT: only its address is used
         }
 
+        foreach (var name in module.ExternalClassInfos)
+        {
+            writer.DeclareGlobal(name, IrType.Ptr, 8);                          // another unit's class RTTI block (C-112)
+        }
+
         foreach (var name in module.ExternalTlsDescriptors)
         {
             writer.DeclareGlobal(name, TlsDescriptorType, 8);                   // another unit's threadvar descriptor (CMP-414)
@@ -291,7 +325,8 @@ internal static class IrEmitter
     {
         var main = unit.Bodies.IsEmpty ? EmptyBody() : unit.Bodies[0];
         var initUnits = new LCallStatement(new LHelperCallee(new RuntimeHelper("_InitUnits", [], ReturnType: null, IsNoReturn: false)), []);
-        LStatement[] statements = unit.TlsRegistration is { } register ? [initUnits, register, main.Body] : [initUnits, main.Body];   // ABI-180
+        LStatement[] statements = [initUnits, .. unit.TlsRegistration is { } register ? [register] : Array.Empty<LStatement>(),   // ABI-180
+            .. unit.FormRegistration is { } forms ? [forms] : Array.Empty<LStatement>(), main.Body];                           // ABI-150 (C-114)
         new FunctionEmitter(module, main with { Body = new LBlock([.. statements]) }, IrLinkage.Internal, MainName).Emit();
         module.DeclarePending();
     }
@@ -343,7 +378,7 @@ internal static class IrEmitter
 
     /// <summary>
     /// CMP-366 / rtl-abi.md §7.2: <c>{ Parent, InstanceSize, ClassName, TypeInfo, IntfTable, MsgTable, InitTable, Reserved, [N x ptr]
-    /// slots }</c>; abstract slots point to <c>System._AbstractError</c>. TypeInfo is null until class RTTI is emitted (M2.5).
+    /// slots }</c>; abstract slots point to <c>System._AbstractError</c>; TypeInfo is the class RTTI block (C-112).
     /// </summary>
     private static IrConstant Vmt(ModuleState module, ClassTypeSymbol type)
     {
@@ -403,7 +438,7 @@ internal static class IrEmitter
             type.Parent is { } parent ? module.Vmt(parent) : new IrNullConstant(),
             IrIntConstant.I64(type.InstanceSize),
             module.StringLiteral(type.Name),
-            new IrNullConstant(),
+            module.TypeInfo(type),                                          // CMP-405 (C-112): the class RTTI block
             intfTable,
             msgTable,
             initTable,
@@ -632,6 +667,12 @@ internal sealed record FrameRecord(NamedStructIrType Type, ImmutableArray<Symbol
 }
 
 /// <summary>Module-wide state shared by the function emitters.</summary>
+/// <summary>C-213: a construct the emitter does not handle yet, with the source location of the statement being emitted.</summary>
+internal sealed class EmitNotSupportedException(string message, Text.Location location) : NotSupportedException(message)
+{
+    public Text.Location Location { get; } = location;
+}
+
 internal sealed class ModuleState(IIrWriter writer)
 {
     public IIrWriter Writer { get; } = writer;
@@ -809,16 +850,21 @@ internal sealed class ModuleState(IIrWriter writer)
     private static readonly IrConstant Pad7 = new IrZeroConstant(new ArrayIrType(7, IrType.I8));
 
     /// <summary>
-    /// CMP-405/407 (C-064): the address of the RTTI block of <paramref name="type"/>, built once per module (<c>linkonce_odr</c>,
-    /// CMP-365) as an anonymous struct per rtl-abi.md §10: <c>tkUString</c>/<c>tkAString</c> (code page), <c>tkDynArray</c>
-    /// (ElSize, ElType, ManagedElType), <c>tkRecord</c> (Size, managed fields), <c>tkArray</c> (Size, total ElCount, ElType). An element
-    /// type gets a block only for these kinds (ElType null otherwise; tkInteger &amp; co. arrive with TypeInfo, M2.5).
+    /// CMP-405/407: the address of the RTTI block of <paramref name="type"/> (rtl-abi.md §10), built once per module as an anonymous
+    /// struct with explicit padding (<c>linkonce_odr</c>, CMP-365), for every type kind (C-112). The reference is registered before
+    /// the block is built, so a type reaching itself (a pointer to a class whose fields list the pointer) is fine; nested blocks
+    /// still come before the blocks referencing them. Classes: <see cref="ClassInfo"/>.
     /// </summary>
     public IrGlobal TypeInfo(TypeSymbol type)
     {
         if (_typeInfoReferences.TryGetValue(type, out var global))
         {
             return global;
+        }
+
+        if (type is ClassTypeSymbol @class)
+        {
+            return ClassInfo(@class);
         }
 
         // C-190: anonymous types are named by their type text (CMP-362), so two symbols spelt alike share one block
@@ -829,39 +875,73 @@ internal sealed class ModuleState(IIrWriter writer)
             return global;
         }
 
-        IrConstant Name() => IsDeclared(type) || type is StringTypeSymbol ? StringLiteral(type.Name) : new IrNullConstant();
-        IrConstant Element(TypeSymbol element) => HasTypeInfo(element) ? TypeInfo(element) : new IrNullConstant();
-        var fields = type switch
+        global = new IrGlobal(name);
+        _typeInfoReferences.Add(type, global);
+        _typeInfoByName.Add(name.Text, global);
+        var fields = TypeInfoFields(type, name);
+        TypeInfos.Add((name, new IrStructConstant(new StructIrType([.. fields.Select(f => f.Type)]), [.. fields])));
+        return global;
+    }
+
+    /// <summary>The fields of the block of a non-class type: Kind, 7 zero bytes, Name, then the kind's data (rtl-abi.md §10 table).</summary>
+    private IrConstant[] TypeInfoFields(TypeSymbol type, LinkName name)
+    {
+        IrConstant Kind(int kind) => new IrIntConstant(IrType.I8, kind);
+        IrConstant Name() => IsDeclared(type) || type.IsPredefined || type is StringTypeSymbol { Variant: not StringVariant.Short } ? StringLiteral(type.Name) : new IrNullConstant();
+        IrConstant Byte(long value) => new IrIntConstant(IrType.I8, value);
+        IrConstant Pad(int bytes) => new IrZeroConstant(new ArrayIrType(bytes, IrType.I8));
+        IrConstant[] Ordinal(int kind, int ordType, BigInteger min, BigInteger max) =>
+            [Kind(kind), Pad7, Name(), Byte(ordType), Pad7, new IrIntConstant(IrType.I64, min), new IrIntConstant(IrType.I64, max)];
+        IrConstant[] Routine(int kind, RoutineSymbol signature) =>
+            [Kind(kind), Pad7, Name(), Byte(signature.ReturnType is null ? 0 : 1), Byte(signature.Parameters.Length), Pad(6)];
+
+        return type switch
         {
-            StringTypeSymbol { Variant: not StringVariant.Short } s => new IrConstant[]
-            {
-                new IrIntConstant(IrType.I8, s.Variant == StringVariant.Unicode ? 9 : 10), Pad7, Name(),
-                new IrIntConstant(IrType.I16, (short)s.CodePage), new IrZeroConstant(new ArrayIrType(6, IrType.I8)),
-            },
+            StringTypeSymbol { Variant: StringVariant.Short } s => [Kind(11), Pad7, Name(), Byte(s.MaxLength), Pad7],
+            StringTypeSymbol s => [Kind(s.Variant == StringVariant.Unicode ? 9 : 10), Pad7, Name(), new IrIntConstant(IrType.I16, (short)s.CodePage), Pad(6)],
+            IntegerTypeSymbol i => Ordinal(i.Bits == 64 ? 16 : 1, OrdType(i.Bits, i.IsSigned), i.Min, i.Max),
+            CharTypeSymbol c => Ordinal(c.IsWide ? 8 : 2, c.IsWide ? 3 : 1, c.MinValue, c.MaxValue),
+            BooleanTypeSymbol b => Enumeration(type, name, OrdType(8 * (int)b.Size, isSigned: false), 0, 1, type, ["False", "True"]),
+            EnumTypeSymbol e => Enumeration(type, name, OrdType(8 * (int)e.Size, e.Low < 0), e.Low, e.High, e.BaseType ?? e,
+                [.. Enumerable.Range(0, (int)(e.High - e.Low + 1)).Select(k => e.EnumMembers.FirstOrDefault(m => m.Ordinal == e.Low + k)?.Name ?? "")]),
+            RealTypeSymbol r => [Kind(4), Pad7, Name(), Byte(r.RealKind switch { RealKind.Single => 0, RealKind.Double => 1, _ => 2 }), Pad7],
+            SetTypeSymbol set => [Kind(5), Pad7, Name(), IrIntConstant.I32(set.Size), Pad(4), set.ElementType is { } element ? TypeInfo(element) : new IrNullConstant()],
             DynamicArrayTypeSymbol array =>
             [
-                new IrIntConstant(IrType.I8, 14), Pad7, Name(), IrIntConstant.I64(TypeLayout.Of(array.ElementType).Size), Element(array.ElementType),
-                array.ElementType.IsManaged ? Element(array.ElementType) : new IrNullConstant(),
+                Kind(14), Pad7, Name(), IrIntConstant.I64(TypeLayout.Of(array.ElementType).Size), TypeInfo(array.ElementType),
+                array.ElementType.IsManaged ? TypeInfo(array.ElementType) : new IrNullConstant(),
             ],
             RecordTypeSymbol record => RecordFields(record, Name()),
             InterfaceTypeSymbol intf =>
             [
                 // ABI §10 tkInterface (C-099): Parent, Guid, own method count
-                new IrIntConstant(IrType.I8, 15), Pad7, Name(), intf.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
+                Kind(15), Pad7, Name(), intf.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
                 IrEmitter.GuidConstant(intf), IrIntConstant.I64(intf.Methods.Length),
             ],
-            ArrayTypeSymbol array =>
-            [
-                new IrIntConstant(IrType.I8, 13), Pad7, Name(), IrIntConstant.I64(array.Size), IrIntConstant.I64(ElementCount(array)), Element(Innermost(array)),
-            ],
-            _ => throw new NotSupportedException($"No type info for '{type.Name}' yet."),
+            ArrayTypeSymbol array => [Kind(13), Pad7, Name(), IrIntConstant.I64(array.Size), IrIntConstant.I64(ElementCount(array)), TypeInfo(Innermost(array))],
+            PointerTypeSymbol pointer => [Kind(17), Pad7, Name(), pointer.PointedType is { } pointed && HasTypeInfo(pointed) ? TypeInfo(pointed) : new IrNullConstant()],
+            ClassRefTypeSymbol reference => [Kind(18), Pad7, Name(), TypeInfo(reference.Class)],
+            MethodPointerTypeSymbol method => Routine(7, method.Signature),
+            ProceduralTypeSymbol procedure => Routine(19, procedure.Signature),
+            _ => [Kind(0), Pad7, Name()],                                                       // tkUnknown (Text)
         };
-        var block = new IrStructConstant(new StructIrType([.. fields.Select(f => f.Type)]), [.. fields]);
-        global = new IrGlobal(name);
-        _typeInfoReferences.Add(type, global);
-        _typeInfoByName.Add(name.Text, global);
-        TypeInfos.Add((name, block));
-        return global;
+    }
+
+    /// <summary>ABI §10 <c>OrdType</c>: 0 S8, 1 U8, 2 S16, 3 U16, 4 S32, 5 U32, 6 S64, 7 U64.</summary>
+    private static int OrdType(int bits, bool isSigned) => (bits switch { 8 => 0, 16 => 2, 32 => 4, _ => 6 }) + (isSigned ? 0 : 1);
+
+    /// <summary>
+    /// <c>tkEnumeration</c>: OrdType, Min, Max, BaseType (the block itself for a base enumeration) and <c>@"…$names"</c>, the
+    /// <c>Max − Min + 1</c> element names of the range (<c>Boolean</c>: <c>False</c>, <c>True</c>).
+    /// </summary>
+    private IrConstant[] Enumeration(TypeSymbol type, LinkName name, int ordType, BigInteger min, BigInteger max, TypeSymbol baseType, string[] names)
+    {
+        var text = name.Text.EndsWith(".$rtti", StringComparison.Ordinal) ? name.Text[..^".$rtti".Length] : name.Text;
+        var namesName = new LinkName(text + ".$names", AlwaysQuote: true);
+        AggregateConstants.Add((namesName, new IrArrayConstant(new ArrayIrType(names.Length, IrType.Ptr), [.. names.Select(StringLiteral)]), 8));
+        IrConstant typeName = IsDeclared(type) || type.IsPredefined ? StringLiteral(type.Name) : new IrNullConstant();
+        return [new IrIntConstant(IrType.I8, 3), Pad7, typeName, new IrIntConstant(IrType.I8, ordType), Pad7, new IrIntConstant(IrType.I64, min),
+            new IrIntConstant(IrType.I64, max), TypeInfo(baseType), new IrGlobal(namesName)];
     }
 
     /// <summary><c>tkRecord</c>: Size, ManagedCount and <c>@"…$rtti.fields"</c> (or null) of <c>{ ptr TypeInfo, i64 Offset }</c> entries.</summary>
@@ -881,8 +961,133 @@ internal sealed class ModuleState(IIrWriter writer)
         return [new IrIntConstant(IrType.I8, 12), Pad7, name, IrIntConstant.I64(record.Size), IrIntConstant.I64(managed.Length), table];
     }
 
-    private static bool HasTypeInfo(TypeSymbol type) =>
-        type is StringTypeSymbol { Variant: not StringVariant.Short } or DynamicArrayTypeSymbol or RecordTypeSymbol or ArrayTypeSymbol or InterfaceTypeSymbol;
+    /// <summary>The block of an untyped pointer's target is never built: <c>Text</c> and untyped targets have none worth pointing at.</summary>
+    private static bool HasTypeInfo(TypeSymbol type) => type is not (TextTypeSymbol or UntypedTypeSymbol or ErrorTypeSymbol);
+
+    /// <summary>The classes whose class RTTI block this module defines (CMP-405; the VMT's linkage, codegen.md C-112 decision), in first-use order.</summary>
+    public List<(ClassTypeSymbol Class, LinkName Name, IrStructConstant Block)> ClassInfos { get; } = [];
+
+    private readonly SortedSet<LinkName> _externalClassInfos = new(Comparer<LinkName>.Create((a, b) => string.CompareOrdinal(a.Text, b.Text)));
+
+    /// <summary>Class RTTI blocks of other units' classes referenced here (declared external), sorted by link name.</summary>
+    public IEnumerable<LinkName> ExternalClassInfos => _externalClassInfos;
+
+    /// <summary>
+    /// rtl-abi.md §10.1 (CMP-405/406/408, ABI-143): <c>tkClass</c> with VMT, ParentInfo, UnitName and the property, method and field
+    /// tables of the members in the class's <see cref="ClassTypeSymbol.RttiScope"/> (<c>private constant</c> arrays, null when empty),
+    /// AttrCount 0 / Attrs null (M2.6). Defined only by the class's own unit; any other unit references it externally.
+    /// </summary>
+    private IrGlobal ClassInfo(ClassTypeSymbol type)
+    {
+        var name = new LinkName(type.QualifiedName + ".$rtti", AlwaysQuote: true);
+        var global = new IrGlobal(name);
+        _typeInfoReferences.Add(type, global);
+        if (!OwnClasses.Contains(type))
+        {
+            _externalClassInfos.Add(name);
+            return global;
+        }
+
+        var broad = type.RttiScope == RttiScope.Broad;
+        bool InScope(Symbol member) => member.Visibility == Visibility.Published || broad && member.Visibility == Visibility.Public;
+        var properties = type.Properties.Where(p => !p.IsArrayProperty && !p.IsClassProperty && InScope(p)).ToImmutableArray();
+        var methods = type.Methods.Where(InScope).ToImmutableArray();
+        var fields = type.Fields.Where(f => broad || f.Visibility == Visibility.Published).ToImmutableArray();
+
+        var props = Table(name, ".props", PropInfoType, properties.Select(PropInfo));
+        var methodTable = Table(name, ".methods", MethodInfoType, methods.Select(m => (IrConstant)new IrStructConstant(MethodInfoType,
+            [StringLiteral(m.Name), m.IsAbstract ? NoReturnHelper("_AbstractError") : Routine(m), VisibilityByte(m), new IrIntConstant(IrType.I8, MethodInfoKind(m)),
+             new IrZeroConstant(new ArrayIrType(6, IrType.I8))])));
+        var fieldTable = Table(name, ".fields", FieldInfoType, fields.Select(f => (IrConstant)new IrStructConstant(FieldInfoType,
+            [StringLiteral(f.Name), IrIntConstant.I64(f.Offset), TypeInfo(f.Type), VisibilityByte(f), Pad7])));
+        IrConstant[] block =
+        [
+            new IrIntConstant(IrType.I8, 6), Pad7, StringLiteral(type.Name), Vmt(type), type.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
+            StringLiteral(UnitOf(type)), IrIntConstant.I64(properties.Length), props, IrIntConstant.I64(methods.Length), methodTable,
+            IrIntConstant.I64(fields.Length), fieldTable, IrIntConstant.I64(0), new IrNullConstant(),
+        ];
+        ClassInfos.Add((type, name, new IrStructConstant(new StructIrType([.. block.Select(f => f.Type)]), [.. block])));
+        return global;
+    }
+
+    private static readonly StructIrType FieldInfoType = new([IrType.Ptr, IrType.I64, IrType.Ptr, IrType.I8, new ArrayIrType(7, IrType.I8)]);
+
+    private static readonly StructIrType MethodInfoType = new([IrType.Ptr, IrType.Ptr, IrType.I8, IrType.I8, new ArrayIrType(6, IrType.I8)]);
+
+    private static readonly StructIrType PropInfoType = new([IrType.Ptr, IrType.Ptr, IrType.I8, IrType.I8, IrType.I8, IrType.I8, new ArrayIrType(4, IrType.I8),
+        IrType.I64, IrType.I64, IrType.I64, IrType.I32, IrType.I32, IrType.I64]);
+
+    /// <summary>A table <c>@"U.T.$rtti.&lt;suffix&gt;"</c> of <paramref name="entries"/>, or <c>ptr null</c> when there are none (CMP-408).</summary>
+    private IrConstant Table(LinkName info, string suffix, StructIrType entry, IEnumerable<IrConstant> entries)
+    {
+        var items = entries.ToImmutableArray();
+        if (items.IsEmpty)
+        {
+            return new IrNullConstant();
+        }
+
+        var tableName = new LinkName(info.Text + suffix, AlwaysQuote: true);
+        AggregateConstants.Add((tableName, new IrArrayConstant(new ArrayIrType(items.Length, entry), items), 8));
+        return new IrGlobal(tableName);
+    }
+
+    /// <summary>
+    /// ABI §10.1 <c>TPropInfo</c> (CMP-406): accessor kinds 1 field (Getter/Setter = the field path's offset), 2 static method (its code
+    /// address, <c>ptrtoint</c>), 3 virtual method (VMT offset 64 + 8·slot); <c>Stored</c> constant 1, no <c>Default</c> (codegen.md C-112
+    /// decision), <c>Index</c> or <c>$80000000</c>.
+    /// </summary>
+    private IrConstant PropInfo(PropertySymbol property)
+    {
+        (int Kind, IrConstant Value) Accessor(ImmutableArray<Symbol> path, MethodSymbol? method) =>
+            !path.IsEmpty ? (1, IrIntConstant.I64(path.OfType<FieldSymbol>().Sum(f => f.Offset)))
+            : method is null ? (0, IrIntConstant.I64(0))
+            : method.IsDispatched ? (3, IrIntConstant.I64(64 + 8 * method.VmtSlot))
+            : (2, new IrPtrToIntConstant(Routine(method)));
+        var (getKind, getter) = Accessor(property.ReadPath, property.ReadMethod);
+        var (setKind, setter) = Accessor(property.WritePath, property.WriteMethod);
+        return new IrStructConstant(PropInfoType,
+        [
+            StringLiteral(property.Name), TypeInfo(property.Type), new IrIntConstant(IrType.I8, getKind), new IrIntConstant(IrType.I8, setKind),
+            new IrIntConstant(IrType.I8, 0), VisibilityByte(property), new IrZeroConstant(new ArrayIrType(4, IrType.I8)), getter, setter, IrIntConstant.I64(1),
+            IrIntConstant.I32(property.Index ?? int.MinValue), IrIntConstant.I32(0), IrIntConstant.I64(long.MinValue),
+        ]);
+    }
+
+    /// <summary>ABI §10.1 <c>Visibility</c>: 0 private (incl. strict), 1 protected (incl. strict), 2 public, 3 published.</summary>
+    private static IrConstant VisibilityByte(Symbol member) => new IrIntConstant(IrType.I8, member.Visibility switch
+    {
+        Symbols.Visibility.StrictPrivate or Symbols.Visibility.Private => 0,
+        Symbols.Visibility.StrictProtected or Symbols.Visibility.Protected => 1,
+        Symbols.Visibility.Public => 2,
+        _ => 3,
+    });
+
+    /// <summary>ABI §10.1 <c>TMethodInfo.Kind</c>: 0/1 procedure/function, 2 constructor, 3 destructor, 4/5 class, 6/7 static class.</summary>
+    private static int MethodInfoKind(MethodSymbol method)
+    {
+        var function = method.ReturnType is null ? 0 : 1;
+        return method.MethodKind switch
+        {
+            MethodKind.Constructor => 2,
+            MethodKind.Destructor => 3,
+            MethodKind.ClassMethod => 4 + function,
+            MethodKind.ClassStatic => 6 + function,
+            _ => function,
+        };
+    }
+
+    private static string UnitOf(Symbol symbol)
+    {
+        for (var s = symbol.ContainingSymbol; s is not null; s = s.ContainingSymbol)
+        {
+            if (s is UnitSymbol unit)
+            {
+                return unit.Name;
+            }
+        }
+
+        return "";
+    }
 
     private static TypeSymbol Innermost(ArrayTypeSymbol array) => array.ElementType is ArrayTypeSymbol inner ? Innermost(inner) : array.ElementType;
 
@@ -894,11 +1099,12 @@ internal sealed class ModuleState(IIrWriter writer)
 
     /// <summary>
     /// rtl-abi.md §10 / CMP-362: <c>U.T.$rtti</c> for a declared type (a routine's type: its routine's link name first), the
-    /// built-in strings as <c>System.string.$rtti</c>, anonymous types <c>U.$rtti.&lt;type text&gt;</c> of this module's unit.
+    /// predeclared types (and the built-in strings) as <c>System.&lt;Name&gt;.$rtti</c>, anonymous types <c>U.$rtti.&lt;type text&gt;</c>
+    /// of this module's unit.
     /// </summary>
     private LinkName TypeInfoName(TypeSymbol type)
     {
-        if (type is StringTypeSymbol)
+        if (type is StringTypeSymbol { Variant: not StringVariant.Short } || type.IsPredefined)
         {
             return new LinkName("System." + type.Name + ".$rtti", AlwaysQuote: true);
         }
@@ -1331,6 +1537,18 @@ internal sealed class FunctionEmitter
     /// <see cref="LBlock"/> is dead code: it is not emitted (the lowered tree has no labels, so nothing can jump into it).
     /// </summary>
     private void Statement(LStatement statement)
+    {
+        try
+        {
+            StatementCore(statement);
+        }
+        catch (NotSupportedException e) when (e is not EmitNotSupportedException && statement.Location is { } location)
+        {
+            throw new EmitNotSupportedException(e.Message, location);                     // C-213: the innermost statement's location
+        }
+    }
+
+    private void StatementCore(LStatement statement)
     {
         switch (statement)
         {
@@ -2133,6 +2351,8 @@ internal sealed class FunctionEmitter
                 return _module.Vmt(reference.Class);                                // CMP-367: ptr @"U.TFoo.$vmt"
             case LGuidRef guid:
                 return _module.Guid(guid.Interface);                                // CMP-373: ptr @"U.IBar.$guid"
+            case LFormTable table:
+                return new IrGlobal(Mangler.FormTable(table.Unit));                    // CMP-415 (C-114)
             case LTlsDescriptor descriptor:
                 return _module.TlsDescriptor(descriptor.Unit);                      // ABI-180
             case LThreadVarAddress threadVar:

@@ -123,6 +123,7 @@ public sealed class BuiltInTypes
         Intrinsic("Eof", IntrinsicKind.Eof, "Eof[(var F: Text)]: Boolean");
         Intrinsic("Eoln", IntrinsicKind.Eoln, "Eoln[(var F: Text)]: Boolean");
         Intrinsic("Slice", IntrinsicKind.Slice, "Slice(const A: array; Count: Integer): array");
+        Intrinsic("TypeInfo", IntrinsicKind.TypeInfo, "TypeInfo(T: Type): Pointer");
     }
 
     /// <summary>
@@ -196,6 +197,7 @@ public sealed class BuiltInTypes
     private T Declare<T>(T type) where T : TypeSymbol
     {
         Scope.TryDeclare(type, out _);
+        type.IsPredefined = true;
         return type;
     }
 

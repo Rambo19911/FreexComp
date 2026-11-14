@@ -1,4 +1,8 @@
 using System.Text;
+using FreexComp.Compiler.Emit;
+using FreexComp.Compiler.Lowering;
+using FreexComp.Compiler.Syntax;
+using FreexComp.Compiler.Tests.Binding;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Toolchain;
 
@@ -50,6 +54,37 @@ public sealed class EmitTests
         Assert.Equal([name, "System"], result.CompiledUnits);
         Assert.True(fs.FileExists(@"C:\p\obj\System.ll"));
         return fs.ReadAllText(Path.Combine(@"C:\p\obj", name + ".ll"));
+    }
+
+    /// <summary>
+    /// C-213: a construct the emitter does not handle yet (here a Double → Pointer conversion planted into the lowered tree, as no
+    /// bound tree produces one) fails with <see cref="EmitNotSupportedException"/> at the source location the Lowerer stamped on the
+    /// innermost statement being emitted; <c>Compilation.Emit</c> reports it as E2900 there instead of at (0,0).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-500")]
+    public void EmitterErrorHasTheNodeLocation()
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(@"C:\p\M.pas", "unit M;\ninterface\nvar X: Double; Q: Pointer;\nimplementation\nprocedure P;\nbegin\n  X := 1.5;\n  Q := nil;\nend;\nend.\n"));
+        var lowered = Lowerer.Lower(BinderTestHelper.BindWithStubSystem(tree));
+        var body = lowered.Routines.Single(r => r.Routine!.Name == "P");
+        var assignments = Assignments(body.Body).ToList();
+        var (x, q) = (assignments[0], assignments[1]);
+        Assert.Equal(6, x.Location!.Value.LineSpan.Start.Line);
+        var planted = new LAssign(q.Target, new LConvert(x.Target, q.Target.Type)) { SourceSyntax = x.SourceSyntax };
+        var broken = lowered with { Routines = [body with { Body = new LBlock([new LBlock([planted]) { SourceSyntax = q.SourceSyntax }]) }] };
+
+        var error = Assert.Throws<EmitNotSupportedException>(() => IrEmitter.EmitUnit(broken, new LlvmTextWriter()));
+
+        Assert.Equal((@"C:\p\M.pas", 6, 2), (error.Location.Path, error.Location.LineSpan.Start.Line, error.Location.LineSpan.Start.Column));
+        Assert.Contains("is not emitted yet", error.Message, StringComparison.Ordinal);
+
+        static IEnumerable<LAssign> Assignments(LStatement statement) => statement switch
+        {
+            LAssign assign => [assign],
+            LBlock block => block.Statements.SelectMany(Assignments),
+            _ => [],
+        };
     }
 
     [Fact]
@@ -314,7 +349,7 @@ public sealed class EmitTests
         var result = Compilation.Create(options, [], PhysicalFileSystem.Instance).Emit(new EmitOptions(), TestContext.Current.CancellationToken);
 
         var exists = File.Exists(Path.Combine(dir, "EmptyProgram.exe"));
-        Directory.Delete(dir, recursive: true);
+        TestDirectories.Delete(dir);
         Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
         Assert.Equal(Path.Combine(main[..main.LastIndexOf('\\')], "EmptyProgram.exe"), result.OutputPath);
         Assert.True(exists);
@@ -382,7 +417,7 @@ public sealed class EmitTests
         {
             try
             {
-                Directory.Delete(_dir, recursive: true);
+                TestDirectories.Delete(_dir);
             }
             catch (IOException)
             {
@@ -490,7 +525,7 @@ public sealed class EmitTests
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         var exitCode = await new ProcessRunner().RunAsync(exe, [], dir, stdout.Add, stderr.Add, timeout.Token);
-        Directory.Delete(dir, recursive: true);
+        TestDirectories.Delete(dir);
         return (exitCode, stdout, stderr);
     }
 }

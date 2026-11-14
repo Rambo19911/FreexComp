@@ -51,6 +51,9 @@ internal sealed record IrGepConstant(IrType SourceType, IrGlobal Base, Immutable
 /// <summary>A constant address from an integer: <c>inttoptr (i64 N to ptr)</c> (C-185, LANG-340 pointer constants).</summary>
 internal sealed record IrIntToPtrConstant(System.Numerics.BigInteger Address) : IrConstant(IrType.Ptr);
 
+/// <summary>A code address as an integer: <c>ptrtoint (ptr @f to i64)</c> (CMP-406 property accessors, C-112).</summary>
+internal sealed record IrPtrToIntConstant(IrConstant Pointer) : IrConstant(IrType.I64);
+
 /// <summary>A pointer call argument with the <c>align N</c> parameter attribute: <c>ptr align N %p</c> (CMP-326 memcpy operands).</summary>
 internal sealed record IrAlignedPointer(IrValue Pointer, int Alignment) : IrValue(IrType.Ptr);
 

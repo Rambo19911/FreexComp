@@ -28,8 +28,6 @@ E2206  elsewhere UnitBindingTests  needs a second program file
 E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  M2.3  unit alias table
 E2604  reserved  lead decision 2026-11-14 (C-096): no case needs it; unrelated classes are E2641, invalid inherited is E2626
-E2611  M2.5  published fields (RTTI)
-E2630  M2.5  published properties
 E2700  M2.6  generics
 E2701  M2.6  generics
 E2702  M2.6  generics

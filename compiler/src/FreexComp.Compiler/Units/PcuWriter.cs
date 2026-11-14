@@ -122,7 +122,7 @@ internal sealed class PcuWriter(PcuContext context)
     private List<(string Path, JsonObject Node)> Sources(LoadedUnit unit)
     {
         var paths = new List<string> { unit.Path };
-        foreach (var include in unit.Tree!.IncludedTrees.Select(t => t.Text.Path))
+        foreach (var include in unit.Tree!.IncludedTrees.Select(t => t.Text.Path).Concat(unit.Forms.Select(f => f.Path)))     // C-114: form files too
         {
             if (!paths.Contains(include, PathUtil.Comparer))
             {
@@ -602,7 +602,7 @@ internal sealed class PcuWriter(PcuContext context)
                         ["offset"] = i.Offset,
                     })]);
                     entry["instanceSize"] = @class.InstanceSize;
-                    entry["flags"] = Strings([.. @class.IsAbstract ? ["abstract"] : Array.Empty<string>(), .. @class.IsSealed ? ["sealed"] : Array.Empty<string>()]);
+                    entry["flags"] = Strings([.. @class.IsAbstract ? ["abstract"] : Array.Empty<string>(), .. @class.IsSealed ? ["sealed"] : Array.Empty<string>(), .. @class.IsTypeInfo ? ["typeinfo"] : Array.Empty<string>()]);
                     entry["fields"] = new JsonArray([.. @class.Fields.Select(f => (JsonNode?)new JsonObject
                     {
                         ["name"] = f.Name,

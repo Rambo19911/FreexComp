@@ -80,6 +80,21 @@ internal sealed partial class DeclarationBinder
             }
         }
 
+        if (property.Visibility == Visibility.Published && !property.IsArrayProperty && !IsPublishable(property.Type))
+        {
+            // LANG-640 (C-112): ordinal, real, string, small set, class, interface and method-pointer types only
+            if (syntax.Type is { } typeSyntax)
+            {
+                _diagnostics.Report(typeSyntax, "E2630", property.Type.Name);
+            }
+            else
+            {
+                _diagnostics.Report(syntax.Identifier, "E2630", property.Type.Name);
+            }
+
+            return false;
+        }
+
         if (syntax.DefaultKeyword is { } defaultKeyword)
         {
             if (!property.IsArrayProperty)
@@ -128,6 +143,10 @@ internal sealed partial class DeclarationBinder
 
         return ok;
     }
+
+    /// <summary>LANG-640: the types a published property may have.</summary>
+    private static bool IsPublishable(TypeSymbol type) =>
+        type.IsOrdinal || type is RealTypeSymbol or StringTypeSymbol or SetTypeSymbol { IsSmall: true } or ClassTypeSymbol or InterfaceTypeSymbol or MethodPointerTypeSymbol;
 
     /// <summary>LANG-643: <c>index N</c> with an integer constant.</summary>
     private bool BindPropertyIndex(PropertySymbol property, ExpressionSyntax value)

@@ -47,6 +47,9 @@ internal sealed class LoadedUnit(string path)
     /// <summary>The unit's <c>.pcu</c> <c>linkInputs</c> (C-077); set by the compilation after binding.</summary>
     public UnitLinkInputs LinkInputs { get; set; } = UnitLinkInputs.Empty;
 
+    /// <summary>The unit's <c>{$FORM}</c> blobs (C-114).</summary>
+    public ImmutableArray<Forms.EmbeddedForm> Forms { get; set; } = [];
+
     /// <summary>The <c>.pcu</c> a precompiled unit (no source in this compilation, C-074) was imported from; null for source units.</summary>
     public System.Text.Json.Nodes.JsonObject? Pcu { get; set; }
 

@@ -378,7 +378,7 @@ public sealed partial class ToolchainTests
         var exitCode = await new ProcessRunner().RunAsync(exe, [], dir, output.Add, output.Add, ct);
         Assert.Equal(7, exitCode);
         Assert.Equal(["linked"], output);
-        Directory.Delete(Path.GetDirectoryName(dir)!, recursive: true);
+        TestDirectories.Delete(Path.GetDirectoryName(dir)!);
     }
 
     [Fact]
@@ -413,7 +413,7 @@ public sealed partial class ToolchainTests
         Assert.Equal(@"add it to C:\defs\k.def", Assert.Single(e4005.Related).Message);
         Assert.Equal("Duplicate symbol 'Dup'", Assert.Single(duplicate.Diagnostics).Message);
         Assert.False(File.Exists(exe));
-        Directory.Delete(dir, recursive: true);
+        TestDirectories.Delete(dir);
     }
 }
 

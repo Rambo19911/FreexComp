@@ -279,6 +279,17 @@ public sealed partial class PreprocessorTests
         Assert.Equal(rtti, StateOf(text, "x").Rtti);
     }
 
+    /// <summary>C-169 / LANG-882: the scope holds until the next <c>{$RTTI}</c>; an unknown argument is W1002 and keeps the scope in force.</summary>
+    [Fact]
+    [Trait("Req", "LANG-882")]
+    public void RttiDirective()
+    {
+        const string Text = "a {$RTTI PUBLISHED} b {$RTTI ALL} c {$RTTI BROAD} d {$RTTI DEFAULT} e";
+
+        Assert.Equal([null, "published", "published", "broad", null], new[] { "a", "b", "c", "d", "e" }.Select(t => StateOf(Text, t).Rtti));
+        Assert.Equal("W1002", Assert.Single(Diagnose(Text)).Code);
+    }
+
     // ------------------------------------------------------------------ warning control (CMP-505)
 
     [Fact]

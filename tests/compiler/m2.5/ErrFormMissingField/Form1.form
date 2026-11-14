@@ -1,0 +1,8 @@
+object Form1: TForm1
+  OnShow = Missing
+  object Button1: TButton
+    OnClick = Click
+  end
+  object Label1: TLabel
+  end
+end

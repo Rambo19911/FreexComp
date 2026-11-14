@@ -1031,12 +1031,17 @@ internal sealed class BoundCallStatement : BoundStatement
 /// </summary>
 internal sealed class BoundIntrinsicCallExpression : BoundExpression
 {
-    public BoundIntrinsicCallExpression(SyntaxNode syntax, IntrinsicSymbol intrinsic, ImmutableArray<BoundExpression> arguments, TypeSymbol type, ConstantValue? constantValue)
+    public BoundIntrinsicCallExpression(SyntaxNode syntax, IntrinsicSymbol intrinsic, ImmutableArray<BoundExpression> arguments, TypeSymbol type, ConstantValue? constantValue,
+        TypeSymbol? typeOperand = null)
         : base(syntax, type, constantValue)
     {
         Intrinsic = intrinsic;
         Arguments = arguments;
+        TypeOperand = typeOperand;
     }
+
+    /// <summary>The type operand of <c>TypeInfo(T)</c> (C-112); null for the other intrinsics.</summary>
+    public TypeSymbol? TypeOperand { get; }
 
     public override BoundKind Kind => BoundKind.IntrinsicCallExpression;
 

@@ -1,0 +1,10 @@
+Click on TChild sender nil TRUE
+child Twice 41
+base Twice 40
+Extra
+name Extra Extra
+base has Extra FALSE
+public found FALSE missing found FALSE
+method Twice kind 1
+method Extra kind 0
+method Info kind 5

@@ -106,7 +106,7 @@ public sealed class SehSpikeTests
         Assert.Empty(stderr);
         try
         {
-            Directory.Delete(dir, recursive: true);
+            TestDirectories.Delete(dir);
         }
         catch (IOException)
         {

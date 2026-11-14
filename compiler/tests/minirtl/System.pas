@@ -120,6 +120,10 @@ type
   PShortString = ^ShortString;
   PDouble = ^Double;
   PInt64 = ^Int64;
+  PByte = ^Byte;
+  PInteger = ^Integer;
+  PNativeInt = ^NativeInt;
+  PPointer = ^Pointer;
   TVarRec = record
     case VType: Byte of
       vtInteger: (VInteger: Integer);
@@ -195,6 +199,10 @@ function _LiveAllocCount: NativeInt;
   zero-extended when units registered more since; never freed here (the mini RTL has no EndThread) }
 function _TlsBase: Pointer;
 procedure _TlsRegister(Desc: Pointer);
+
+{ FORM directive blobs (ABI-150/151, C-114): a fixed list of registered (Table, Count) pairs; the first registration of a name wins }
+procedure _RegisterResources(Table: Pointer; Count: NativeInt);
+function FindResourceData(const Name: string; out Data: Pointer; out Size: NativeInt): Boolean;
 
 procedure _WriteUStr(var T: Text; S: Pointer; Width: Integer);
 procedure _WriteWChar(var T: Text; C: WideChar; Width: Integer);
@@ -296,10 +304,6 @@ implementation
 {$POINTERMATH ON}
 
 type
-  PByte = ^Byte;
-  PInteger = ^Integer;
-  PNativeInt = ^NativeInt;
-  PPointer = ^Pointer;
   PUInt64 = ^UInt64;
   PWord = ^Word;
   TUnitProc = procedure;                     { ABI-100: a unit's $init / $final }
@@ -629,6 +633,65 @@ begin
     if Result = nil then
       _RunError(203);
   end;
+end;
+
+var
+  ResourceTables: array[0..63] of Pointer;
+  ResourceCounts: array[0..63] of NativeInt;
+  ResourceTableCount: Integer;
+
+procedure _RegisterResources(Table: Pointer; Count: NativeInt);
+begin
+  if ResourceTableCount <= High(ResourceTables) then
+  begin
+    ResourceTables[ResourceTableCount] := Table;
+    ResourceCounts[ResourceTableCount] := Count;
+    ResourceTableCount := ResourceTableCount + 1;
+  end;
+end;
+
+function ResourceNameIs(P: PChar; const S: string): Boolean;
+var
+  I: Integer;
+  A, B: Char;
+begin
+  for I := 1 to Length(S) do
+  begin
+    A := P[I - 1];
+    B := S[I];
+    if (A >= 'a') and (A <= 'z') then
+      A := Chr(Ord(A) - 32);
+    if (B >= 'a') and (B <= 'z') then
+      B := Chr(Ord(B) - 32);
+    if A <> B then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+  Result := P[Length(S)] = #0;
+end;
+{ entries of (Name: static UnicodeString payload; Data: Pointer; Size: Int64), 24 bytes; ASCII case-insensitive names }
+function FindResourceData(const Name: string; out Data: Pointer; out Size: NativeInt): Boolean;
+var
+  T, K: Integer;
+  Entry: PPointer;
+begin
+  for T := 0 to ResourceTableCount - 1 do
+    for K := 0 to ResourceCounts[T] - 1 do
+    begin
+      Entry := PPointer(PByte(ResourceTables[T]) + K * 24);
+      if ResourceNameIs(PChar(Entry^), Name) then
+      begin
+        Data := Entry[1];
+        Size := PNativeInt(Entry)[2];
+        Result := True;
+        Exit;
+      end;
+    end;
+  Data := nil;
+  Size := 0;
+  Result := False;
 end;
 
 { ABI-180: the record of the registering unit starts at the current total (unit initialisation runs on one thread) }

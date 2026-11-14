@@ -141,6 +141,56 @@ public sealed class PcuImportTests
     }
 
     /// <summary>
+    /// C-112 / ABI-142: the <c>typeinfo</c> class flag survives the <c>.pcu</c> round trip, so a program's descendant of an imported
+    /// <c>{$M+}</c> class publishes its members before the first visibility keyword (class RTTI field entry with Visibility 3); the IR
+    /// equals the one against the unit's source.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "ABI-142")]
+    [Trait("Req", "LANG-611")]
+    public void TypeInfoFlagFromPcu()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              {$M+}
+              TBase = class
+              end;
+              {$M-}
+            implementation
+            end.
+            """;
+        const string Program = """
+            program P;
+            uses U;
+            type
+              TChild = class(TBase)
+                FItem: TBase;
+              end;
+            begin
+            end.
+            """;
+        var sources = PcuTests.Files(u: Unit, program: Program);
+        var reference = Emit(sources, PcuTests.Options(), EmitStage.Ll);
+        Assert.True(reference.Success, string.Join("\n", reference.Diagnostics.Select(d => d.ToText())));
+        var pcus = PcuTests.Pcus(PcuTests.Files(u: Unit, program: Program));
+        Assert.Contains("\"typeinfo\"", pcus["U"], StringComparison.Ordinal);
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", Program)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+        fs.Add(Path.Combine(Lib, "U.pcu"), pcus["U"]).Add(Path.Combine(Lib, "U.obj"), "");
+
+        var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        var ir = fs.ReadAllText(@"C:\p\obj\P.ll");
+        Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), ir);
+        Assert.Matches(@"@""P\.TChild\.\$rtti\.fields"" = .*i64 8, ptr @""U\.TBase\.\$rtti"", i8 3, ", ir);
+        Assert.Contains("@\"U.TBase.$rtti\" = external global ptr", ir, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// C-113: a descendant of a <c>.pcu</c>-only class with a <c>message</c> handler — bare <c>inherited</c> in the program's handler
     /// for the same id calls the imported handler statically (the <c>msgId</c> survives the round trip), and for an id without an
     /// imported handler calls virtual <c>DefaultHandler</c>; the IR equals the one against the unit's source.
@@ -387,7 +437,7 @@ public sealed class PcuImportTests
         {
             try
             {
-                Directory.Delete(dir, recursive: true);
+                TestDirectories.Delete(dir);
             }
             catch (IOException)
             {

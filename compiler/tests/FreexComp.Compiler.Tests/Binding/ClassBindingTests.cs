@@ -32,6 +32,35 @@ public sealed class ClassBindingTests
         Assert.Equal(2, b.Locations.Length);
     }
 
+    /// <summary>
+    /// C-212 (LANG-622 clarified): a second <c>message</c> handler for the same id in one class is E2004 at its id, with the first
+    /// handler as related location; a descendant may handle the same id.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-622")]
+    public void DuplicateMessageId()
+    {
+        var (result, _) = Bind("""
+            type
+              TMsg = record Id: Cardinal; end;
+              TA = class
+                procedure One(var M: TMsg); message 7;
+                procedure Two(var M: TMsg); message 3 + 4;
+              end;
+              TB = class(TA)
+                procedure Mine(var M: TMsg); message 7;
+              end;
+            procedure TA.One(var M: TMsg); begin end;
+            procedure TA.Two(var M: TMsg); begin end;
+            procedure TB.Mine(var M: TMsg); begin end;
+            begin end.
+            """);
+
+        var diagnostic = Assert.Single(result.Diagnostics);
+        Assert.Equal("E2004(5,41): Identifier redeclared: '7'", Format([diagnostic])[0]);
+        Assert.Equal((3, 14), (diagnostic.Related[0].Location.LineSpan.Start.Line, diagnostic.Related[0].Location.LineSpan.Start.Column));
+    }
+
     [Fact]
     [Trait("Req", "LANG-601")]
     public void Classes_UncompletedForwardDeclaration_IsE2015()

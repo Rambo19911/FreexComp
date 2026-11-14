@@ -22,7 +22,7 @@ public sealed class DeterminismTests : IDisposable
     {
         if (Directory.Exists(_temp))
         {
-            Directory.Delete(_temp, recursive: true);
+            TestDirectories.Delete(_temp);
         }
     }
 

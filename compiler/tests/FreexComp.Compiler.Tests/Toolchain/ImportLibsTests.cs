@@ -180,7 +180,7 @@ public sealed partial class ToolchainTests
         {
             try
             {
-                Directory.Delete(dir, recursive: true);
+                TestDirectories.Delete(dir);
             }
             catch (IOException)
             {

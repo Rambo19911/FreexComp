@@ -887,7 +887,7 @@ internal static class Clang
             if (process.ExitCode == 0)
             {
                 Assert.True(File.Exists(System.IO.Path.Combine(dir, "m.obj")));
-                Directory.Delete(dir, recursive: true);
+                TestDirectories.Delete(dir);
             }
             else
             {

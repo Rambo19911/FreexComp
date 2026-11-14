@@ -21,6 +21,11 @@ internal static class IntrinsicRewriter
             return Atomic(context, call);
         }
 
+        if (call.Intrinsic.Intrinsic == IntrinsicKind.TypeInfo)
+        {
+            return new LTypeInfo(call.TypeOperand!, call.Type);                              // CMP-407 (C-112)
+        }
+
         if (call.Intrinsic.Intrinsic is IntrinsicKind.Pos or IntrinsicKind.UpCase)
         {
             return StringRewriter.Function(context, call);

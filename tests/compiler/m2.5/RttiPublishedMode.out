@@ -1,0 +1,12 @@
+TDefault: fields 1, methods 1
+  field FLink offset 16 visibility 3 type TObject
+  method Shown visibility 3 kind 0
+TNarrow: fields 1, methods 1
+  field FLink offset 16 visibility 3 type TObject
+  method Shown visibility 3 kind 0
+TWide: fields 2, methods 2
+  field FSecret offset 8 visibility 0 type Integer
+  field FLink offset 16 visibility 3 type TObject
+  method Open visibility 2 kind 0
+  method Shown visibility 3 kind 0
+MethodAddress Open FALSE Shown TRUE wide Open FALSE

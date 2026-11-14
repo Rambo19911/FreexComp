@@ -1,0 +1,13 @@
+typeinfo TRUE vmt TRUE
+class TChild kind 6 unit RttiPublished parent TBase
+  Color: TColor get 1 set 1 stored 0/1 index none default none TRUE = Green
+class TBase kind 6 unit RttiPublished parent TObject
+  Name: string get 1 set 1 stored 0/1 index none default none TRUE = obj
+  Count: Integer get 1 set 2 stored 0/1 index none default none TRUE = 5
+  Twice: Integer get 2 set 0 stored 0/1 index none default none TRUE = 10
+  Virt: Integer get 3 set 0 stored 0/1 index none default none TRUE = 2
+  Slot3: Integer get 2 set 0 stored 0/1 index 3 default none TRUE = 305
+class TObject kind 6 unit System parent -
+SetCount 7
+hidden published FALSE
+7 written 2

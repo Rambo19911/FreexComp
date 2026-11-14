@@ -36,6 +36,9 @@ public abstract class TypeSymbol : Symbol
 
     public virtual bool IsManaged => false;
 
+    /// <summary>One of the predeclared types of <see cref="BuiltInTypes"/> (LANG-200): its RTTI block is <c>System.&lt;Name&gt;.$rtti</c> (C-112).</summary>
+    internal bool IsPredefined { get; set; }
+
     public virtual bool IsOrdinal => false;
 
     /// <summary>Class parent, subrange host, enum of an enum subrange, alias target of a distinct type.</summary>

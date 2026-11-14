@@ -744,7 +744,7 @@ public sealed class PcuTests
         }
         finally
         {
-            Directory.Delete(options.ObjectDirectory, recursive: true);
+            TestDirectories.Delete(options.ObjectDirectory);
         }
     }
 

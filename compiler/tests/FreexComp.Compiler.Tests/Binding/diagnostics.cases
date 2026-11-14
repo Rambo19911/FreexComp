@@ -340,6 +340,10 @@ type TB = class destructor Destroy; virtual; end; TA = class(TB) destructor Dest
 procedure P; begin inherited end; begin end.
 === E2134 1,41
 procedure P; var X: Pointer; begin X := Self end; begin end.
+=== E2630 1,72
+type R = record X: Integer end; TA = class F: R; published property P: R read F; end; begin end.
+=== E2611 1,27
+type TA = class published F: Integer; end; begin end.
 === E2631 1,38
 type TA = class F: Integer; property P: Integer; end; begin end.
 === E2632 1,97

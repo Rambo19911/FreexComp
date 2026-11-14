@@ -53,6 +53,12 @@ internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> 
     /// <summary><c>_TlsRegister(@"U.$tls")</c> when the unit declares threadvars (first in <c>$init</c>; a program's after <c>_InitUnits</c>).</summary>
     public LStatement? TlsRegistration { get; init; }
 
+    /// <summary>The unit's <c>{$FORM}</c> blobs (ABI-150, CMP-415, C-114), in directive order.</summary>
+    public ImmutableArray<Forms.EmbeddedForm> Forms { get; init; } = [];
+
+    /// <summary><c>_RegisterResources(@"U.$forms", Count)</c> when the unit embeds forms (after <see cref="TlsRegistration"/>, CMP-350).</summary>
+    public LStatement? FormRegistration { get; init; }
+
     public LoweredBody? Finalization { get; init; }
 }
 
@@ -126,7 +132,29 @@ internal abstract class LNode;
 
 // ---------------------------------------------------------------------- statements
 
-internal abstract class LStatement : LNode;
+/// <summary>A lowered statement; <see cref="SourceSyntax"/> is the bound statement's syntax it came from (C-213: emitter errors are reported there).</summary>
+internal abstract class LStatement : LNode
+{
+    public Syntax.SyntaxNode? SourceSyntax { get; set; }
+
+    /// <summary>The location of <see cref="SourceSyntax"/>; null without one or for a synthesized node outside a tree.</summary>
+    public Text.Location? Location => SourceSyntax is { } source && EmitNotSupportedLocation.Of(source) is { } location ? location : null;
+}
+
+internal static class EmitNotSupportedLocation
+{
+    public static Text.Location? Of(Syntax.SyntaxNode node)
+    {
+        try
+        {
+            return Binding.DiagnosticBag.LocationOf(node);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+}
 
 internal sealed class LBlock(ImmutableArray<LStatement> statements) : LStatement
 {
@@ -567,6 +595,12 @@ internal sealed class LThreadVarAddress(VariableSymbol variable, TypeSymbol poin
 }
 
 /// <summary>The threadvar descriptor <c>@"U.$tls"</c> of <see cref="Unit"/> (ABI-180); type <c>Pointer</c>.</summary>
+/// <summary>The address of the unit's <c>{$FORM}</c> table <c>@"U.$forms"</c> (CMP-415, C-114).</summary>
+internal sealed class LFormTable(UnitSymbol unit, TypeSymbol pointerType) : LExpression(pointerType)
+{
+    public UnitSymbol Unit { get; } = unit;
+}
+
 internal sealed class LTlsDescriptor(UnitSymbol unit, TypeSymbol pointerType) : LExpression(pointerType)
 {
     public UnitSymbol Unit { get; } = unit;
@@ -597,7 +631,7 @@ internal sealed class LMemSet(LExpression target, LExpression count, LExpression
     public LExpression Value { get; } = value;
 }
 
-/// <summary><c>Move</c> (CMP-412): <c>llvm.memmove</c> of <see cref="Count"/> bytes from the variable reference <see cref="Source"/> to <see cref="Destination"/>.</summary>
+/// <summary><c>Move</c> (CMP-412): <c>llvm.memmove</c> of <see cref="Count"/> bytes from the variable reference <see cref="SourceSyntax"/> to <see cref="Destination"/>.</summary>
 internal sealed class LMemMove(LExpression source, LExpression destination, LExpression count) : LStatement
 {
     public LExpression Source { get; } = source;

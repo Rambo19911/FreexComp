@@ -54,7 +54,28 @@ internal static class UnitQualifiers
             }
         }
 
-        return null;
+        // C-214 (LANG-538): the unit's (or program's) own name qualifies its own declarations, interface and implementation
+        var own = new List<Scope>();
+        for (var s = scope; s != null; s = s.Parent)
+        {
+            if (s is { Kind: ScopeKind.Unit, Owner: UnitSymbol unit } && IdentifierComparer.Instance.Equals(unit.Name, name))
+            {
+                own.Add(s);
+            }
+        }
+
+        return own.Count == 0 ? null : Scope.OwnUnit(own, BuiltIns(scope));
+    }
+
+    private static Scope? BuiltIns(Scope scope)
+    {
+        var s = scope;
+        while (s.Parent is not null)
+        {
+            s = s.Parent;
+        }
+
+        return s.Kind == ScopeKind.BuiltIn ? s : null;
     }
 
     private static bool Flatten(SyntaxNode node, List<SyntaxToken> parts)

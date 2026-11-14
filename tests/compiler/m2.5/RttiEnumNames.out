@@ -1,0 +1,11 @@
+TColor: kind 3 name TColor ord 1 0..2 base TColor names Red Green Blue
+TWarm: kind 3 name TWarm ord 1 1..2 base TColor names Green Blue
+Boolean: kind 3 name Boolean ord 1 0..1 base Boolean names False True
+Integer: kind 1 name Integer ord 4 -2147483648..2147483647
+Byte: kind 1 name Byte ord 1 0..255
+Char: kind 8 name Char ord 3 0..65535
+Int64: kind 16 name Int64 ord 6 -9223372036854775808..9223372036854775807
+self TRUE same TRUE
+TColors: kind 5 name TColors size 1 comp TColor
+Double: kind 4 name Double float 1
+string: kind 9 name string

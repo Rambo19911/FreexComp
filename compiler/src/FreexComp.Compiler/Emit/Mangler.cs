@@ -43,6 +43,11 @@ internal static class Mangler
     /// <summary>The threadvar descriptor of a unit or program (ABI-180): <c>U.$tls</c>.</summary>
     public static LinkName TlsDescriptor(UnitSymbol unit) => new(unit.Name + ".$tls", AlwaysQuote: true);
 
+    /// <summary>CMP-415: the unit's <c>{$FORM}</c> table and its blob number <paramref name="index"/> (0-based, directive order).</summary>
+    public static LinkName FormTable(UnitSymbol unit) => new(unit.Name + ".$forms", AlwaysQuote: true);
+
+    public static LinkName FormBlob(UnitSymbol unit, int index) => new(unit.Name + ".$form." + index, AlwaysQuote: true);
+
     /// <summary>Name of the frame record struct type of <paramref name="routine"/> (CMP-345).</summary>
     public static LinkName FrameType(RoutineSymbol routine) => new(RoutineText(routine) + ".$frame", AlwaysQuote: true);
 

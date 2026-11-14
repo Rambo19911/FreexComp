@@ -18,7 +18,7 @@ namespace FreexComp.Compiler.Lowering;
 /// </summary>
 internal static class Lowerer
 {
-    public static LoweredUnit Lower(BindingResult result)
+    public static LoweredUnit Lower(BindingResult result, ImmutableArray<Forms.EmbeddedForm> forms = default)
     {
         // CMP-325 rule 7 / LANG-523: a unit's managed globals are released at the end of its $final (after the finalization
         // statements); a program's by a synthesised program $final, the last unit table entry, so they are released after the
@@ -45,6 +45,10 @@ internal static class Lowerer
             TlsRegistration = ThreadVars(result.Unit).IsEmpty ? null
                 : new LCallStatement(new LHelperCallee(new RuntimeHelper("_TlsRegister", [result.Types.Pointer], ReturnType: null, IsNoReturn: false)),
                     [new LTlsDescriptor(result.Unit, result.Types.Pointer)]),                                        // ABI-180
+            Forms = forms.IsDefault ? [] : forms,
+            FormRegistration = forms.IsDefaultOrEmpty ? null
+                : new LCallStatement(new LHelperCallee(new RuntimeHelper("_RegisterResources", [result.Types.Pointer, result.Types.NativeInt], ReturnType: null, IsNoReturn: false)),
+                    [new LFormTable(result.Unit, result.Types.Pointer), new LConst(new ConstantValue(new System.Numerics.BigInteger(forms.Length), result.Types.NativeInt), result.Types.NativeInt)]),   // ABI-150 (C-114)
         };
     }
 
@@ -421,6 +425,23 @@ internal sealed class LoweringContext
     // ------------------------------------------------------------------ statements
 
     public LStatement Lower(BoundStatement statement)
+    {
+        // C-213: a lowered statement (and a lowering failure) carries its source statement's location for E2900
+        LStatement lowered;
+        try
+        {
+            lowered = LowerStatement(statement);
+        }
+        catch (NotSupportedException e) when (e is not Emit.EmitNotSupportedException && EmitNotSupportedLocation.Of(statement.Syntax) is { } location)
+        {
+            throw new Emit.EmitNotSupportedException(e.Message, location);
+        }
+
+        lowered.SourceSyntax ??= statement.Syntax;
+        return lowered;
+    }
+
+    private LStatement LowerStatement(BoundStatement statement)
     {
         switch (statement)
         {

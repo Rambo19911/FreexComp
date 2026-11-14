@@ -81,6 +81,7 @@ public sealed class BuiltInTypesTests
             "SetLength", "Delete", "Insert", "Str", "Val", "Copy", "Pos", "Concat", "UpCase",                // M2.2 (C-062)
             "Read", "Readln", "Eof", "Eoln",                                                                // M2.2 (C-066)
             "Slice",                                                                                        // M2.5 (C-106)
+            "TypeInfo",                                                                                     // M2.5 (C-112)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

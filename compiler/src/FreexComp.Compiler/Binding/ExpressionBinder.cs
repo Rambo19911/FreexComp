@@ -1100,6 +1100,11 @@ internal sealed partial class ExpressionBinder
         }
 
         var syntax = invocation.ArgumentList.Arguments[0].Expression;
+        if (intrinsic.Intrinsic == IntrinsicKind.TypeInfo)
+        {
+            return BindTypeInfo(invocation, intrinsic, syntax);
+        }
+
         if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)
         {
             // the operand is never evaluated (LANG-903), so it captures nothing (lead decision C-029)
@@ -1532,6 +1537,29 @@ internal sealed partial class ExpressionBinder
 
         _diagnostics.Report(syntax, "E2010", value.Type.Name, _types.Char.Name);
         return Error(syntax, value);
+    }
+
+    /// <summary>
+    /// CMP-407 (C-112): <c>TypeInfo(T): Pointer</c> — the address of the RTTI block of the type <c>T</c> (ABI-140 d); an operand that
+    /// is not a type name is E2002. Never constant.
+    /// </summary>
+    private BoundExpression BindTypeInfo(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic, ExpressionSyntax syntax)
+    {
+        var captured = CapturedVariables.Count;
+        var (type, argument) = BindTypeOrValue(syntax);
+        CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);
+        if (type.TypeKind == TypeKind.Error || argument is { HasErrors: true })
+        {
+            return Error(invocation);
+        }
+
+        if (argument is not null || type is UntypedTypeSymbol or OpenArrayTypeSymbol or TextTypeSymbol)
+        {
+            _diagnostics.Report(syntax, "E2002", syntax.ToString().Trim());
+            return Error(invocation);
+        }
+
+        return new BoundIntrinsicCallExpression(invocation, intrinsic, [], _types.Pointer, constantValue: null, typeOperand: type);
     }
 
     /// <summary>The argument of <c>Low</c>/<c>High</c>/<c>SizeOf</c>: a type name (bound argument null) or an expression.</summary>

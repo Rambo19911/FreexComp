@@ -379,6 +379,7 @@ internal static class PcuReader
             var flags = Array(entry, "flags").Select(f => f!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
             type.IsAbstract = flags.Contains("abstract");
             type.IsSealed = flags.Contains("sealed");
+        type.IsTypeInfo = flags.Contains("typeinfo");                                    // ABI-142 (C-112)
             type.InstanceSize = entry["instanceSize"]!.GetValue<long>();
             var fields = new List<FieldSymbol>();
             var classVariables = new List<VariableSymbol>();

@@ -240,6 +240,8 @@ public sealed class BinderDiagnosticTests
     [InlineData("W1062")]
     [InlineData("E2133")]
     [InlineData("E2134")]
+    [InlineData("E2611")]
+    [InlineData("E2630")]
     [InlineData("E2631")]
     [InlineData("E2632")]
     [InlineData("E2633")]

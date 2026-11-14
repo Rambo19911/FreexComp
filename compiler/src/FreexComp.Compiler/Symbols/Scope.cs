@@ -42,6 +42,23 @@ internal sealed class Scope
     /// <summary>A unit's own interface scope seen from its implementation, chained to the implementation-uses scopes.</summary>
     public static Scope Reparented(Scope scope, Scope parent) => new(scope, scope.Kind, parent, []);
 
+    /// <summary>
+    /// C-214 (LANG-538): the scope a name qualified by the unit's own name is looked up in — views of the unit's own scopes
+    /// (<paramref name="unitScopes"/>, innermost first: implementation, then interface) above <paramref name="builtIns"/> when the unit is
+    /// <c>System</c> (the built-ins belong to it), never the used units.
+    /// </summary>
+    public static Scope OwnUnit(IReadOnlyList<Scope> unitScopes, Scope? builtIns)
+    {
+        var system = unitScopes[0].Owner is UnitSymbol { Name: var name } && string.Equals(name, "System", StringComparison.OrdinalIgnoreCase);
+        var chain = system ? builtIns : null;
+        for (var i = unitScopes.Count - 1; i >= 0; i--)
+        {
+            chain = new Scope(unitScopes[i], ScopeKind.Unit, chain, []);
+        }
+
+        return chain!;
+    }
+
     /// <summary>Names that qualify this used unit's interface symbols (<see cref="ScopeKind.Uses"/> only).</summary>
     public ImmutableArray<string> Qualifiers { get; } = [];
 
@@ -56,6 +73,11 @@ internal sealed class Scope
     {
         get
         {
+            if (Kind != ScopeKind.Uses)
+            {
+                return this;                                            // C-214: an own-unit chain (OwnUnit) is already the lookup scope
+            }
+
             if (_qualified is null)
             {
                 var builtIns = Parent is { Kind: ScopeKind.BuiltIn } parent ? parent : null;

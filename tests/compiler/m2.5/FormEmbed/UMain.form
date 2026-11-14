@@ -1,0 +1,8 @@
+object MainForm: TMainForm
+  Caption = 'Hi'
+  OnCreate = FormCreate
+  object Button1: TButton
+    Left = 8
+    OnClick = Button1Click
+  end
+end

@@ -109,6 +109,14 @@ internal sealed partial class DeclarationBinder
                         break;
                     }
 
+                    if (symbol.MessageId is { } id && methods.FirstOrDefault(m => m.MessageId == id) is { } handler)
+                    {
+                        // C-212 (LANG-622): one handler per message id and class
+                        var value = method.Directives.First(d => d.Keyword.ContextualKind == SyntaxKind.MessageKeyword).Value!;
+                        _diagnostics.Report(value, "E2004", [new RelatedLocation(handler.Locations[0], "previous declaration")], id.ToString(CultureInfo.InvariantCulture));
+                        symbol.MessageId = null;
+                    }
+
                     names.TryAdd(symbol.Name, symbol);
                     methods.Add(symbol);
                     break;
@@ -277,6 +285,11 @@ internal sealed partial class DeclarationBinder
             {
                 _diagnostics.ReportRedeclared(identifier, name, names[name]);
                 continue;
+            }
+
+            if (visibility == Visibility.Published && fieldType is not ClassTypeSymbol)
+            {
+                _diagnostics.Report(identifier, "E2611", name);                                           // LANG-616 (C-112)
             }
 
             fields.Add(symbol);

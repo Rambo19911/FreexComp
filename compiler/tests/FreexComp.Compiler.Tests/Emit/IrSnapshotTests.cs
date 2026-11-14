@@ -1665,8 +1665,99 @@ public sealed class IrSnapshotTests
         Assert.Contains("call i32 @\"M.Value\"(ptr null)", text);
     }
 
+    internal const string RttiEnumSource = """
+        unit M;
+        interface
+        type
+          TColor = (Red, Green);
+          TWarm = Green..Green;
+          TSet = set of TColor;
+        function Info: Pointer;
+        implementation
+        function Info: Pointer;
+        begin
+          Result := TypeInfo(TColor);
+          Result := TypeInfo(TWarm);
+          Result := TypeInfo(TSet);
+          Result := TypeInfo(Integer);
+        end;
+        end.
+        """;
+
+    /// <summary>C-112 / CMP-405, ABI §10: enumeration (names table, BaseType), subrange, set and Integer blocks; TypeInfo(T) is their address.</summary>
+    [Fact]
+    [Trait("Req", "CMP-405")]
+    [Trait("Req", "CMP-407")]
+    public void RttiEnum() => Snapshot.Verify("RttiEnum", Emit(RttiEnumSource));
+
+    internal const string RttiClassSource = """
+        unit M;
+        interface
+        type
+          {$M+}
+          TA = class
+          private
+            FX: Integer;
+            function GetY: Integer;
+            procedure SetY(V: Integer); virtual;
+          published
+            procedure Run;
+            property X: Integer read FX write FX;
+            property Y: Integer read GetY write SetY;
+          end;
+          {$M-}
+          TB = class(TA)
+          end;
+        implementation
+        function TA.GetY: Integer; begin Result := FX end;
+        procedure TA.SetY(V: Integer); begin FX := V end;
+        procedure TA.Run; begin end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-112 / CMP-406, CMP-408, ABI §10.1: the class RTTI blocks (VMT, ParentInfo, unit name, the three tables), referenced from
+    /// the VMT's TypeInfo slot; a field getter is the offset, a static getter the code address, a virtual setter the VMT offset.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-406")]
+    [Trait("Req", "CMP-408")]
+    public void RttiClass() => Snapshot.Verify("RttiClass", Emit(RttiClassSource));
+
+    private const string RttiScopeClass = """
+          TS = class
+          private
+            FHidden: Integer;
+          public
+            procedure Visible;
+            property Pub: Integer read FHidden;
+          published
+            FShown: TS;
+            procedure Shown;
+            property Pubd: Integer read FHidden;
+          end;
+        implementation
+        procedure TS.Visible; begin end;
+        procedure TS.Shown; begin end;
+        end.
+        """;
+
+    /// <summary>C-169 / ABI-143 broad (default) scope: every field (with visibility 0), public and published methods and properties.</summary>
+    [Fact]
+    [Trait("Req", "ABI-143")]
+    [Trait("Req", "CMP-408")]
+    public void RttiClassBroad() => Snapshot.Verify("RttiClassBroad", Emit("unit M;\ninterface\ntype\n" + RttiScopeClass));
+
+    /// <summary>C-169 / ABI-143 published scope (<c>{$RTTI PUBLISHED}</c> before the class): only the published members; the same entries.</summary>
+    [Fact]
+    [Trait("Req", "ABI-143")]
+    [Trait("Req", "LANG-882")]
+    public void RttiClassPublished() => Snapshot.Verify("RttiClassPublished", Emit("unit M;\ninterface\ntype\n{$RTTI PUBLISHED}\n" + RttiScopeClass));
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["RttiEnum"] = RttiEnumSource,
+        ["RttiClass"] = RttiClassSource,
         ["Thunk"] = ThunkSource,
         ["ThreadVar"] = ThreadVarSource,
         ["TryExcept"] = TryExceptSource,

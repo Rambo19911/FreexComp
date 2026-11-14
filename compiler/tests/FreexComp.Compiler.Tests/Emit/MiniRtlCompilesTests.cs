@@ -413,7 +413,7 @@ public sealed class MiniRtlCompilesTests
         var stdout = new List<string>();
         var stderr = new List<string>();
         var exitCode = await new ProcessRunner().RunAsync(exe, [], dir, stdout.Add, stderr.Add, ct);
-        Directory.Delete(dir, recursive: true);
+        TestDirectories.Delete(dir);
         return (exitCode, stdout, stderr);
     }
 }

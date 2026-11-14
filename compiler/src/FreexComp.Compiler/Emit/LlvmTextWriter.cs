@@ -511,6 +511,7 @@ internal sealed class LlvmTextWriter : IIrWriter
         IrStructConstant s => Braces(s.StructType.IsPacked, s.Fields.Select(Typed)),
         IrGepConstant g => $"getelementptr inbounds ({Type(g.SourceType)}, {Typed(g.Base)}{string.Concat(g.Indices.Select(i => ", " + Typed(i)))})",
         IrIntToPtrConstant c => $"inttoptr (i64 {(long)(ulong)c.Address} to ptr)",
+        IrPtrToIntConstant c => $"ptrtoint ({Typed(c.Pointer)} to i64)",
         _ => throw new ArgumentOutOfRangeException(nameof(value), value, null),
     };
 

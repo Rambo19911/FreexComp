@@ -1,0 +1,4 @@
+Form1.form(2,12): error E3101: Form 'Form1': method 'Missing' is not declared in class 'TForm1'
+Form1.form(3,10): error E3102: Form 'Form1': declaration of 'Button1' is not compatible with the form (TButton expected)
+Form1.form(6,10): error E3101: Form 'Form1': field 'Label1: TLabel' is not declared in class 'TForm1'
+Other.form(1,8): error E3103: Form 'X': class 'TNotHere' is not declared in this unit

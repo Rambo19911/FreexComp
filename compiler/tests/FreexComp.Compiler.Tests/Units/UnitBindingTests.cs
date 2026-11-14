@@ -151,6 +151,35 @@ public sealed class UnitBindingTests
             begin Writeln(A.Hidden) end.
             """, ("A.pas", UnitA)));
 
+    /// <summary>
+    /// C-214 (LANG-538 lead decision): inside a unit (and a program) its own name qualifies its own identifiers — interface and
+    /// implementation ones, types too; a member it does not declare stays E2003.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-538")]
+    public void OwnUnitNameQualifier() =>
+        Assert.Equal(["U.pas(11,13): E2003 Undeclared identifier 'Missing'"], Check("""
+            program P;
+            uses U;
+            type TLocal = Integer;
+            var X: P.TLocal;
+            begin Writeln(U.Twice(P.X)) end.
+            """, ("U.pas", """
+            unit U;
+            interface
+            type TNum = Integer;
+            function Twice(N: U.TNum): U.TNum;
+            implementation
+            const Factor = 2;
+            function Twice(N: U.TNum): U.TNum;
+            begin
+              Result := N * U.Factor;
+              Writeln(U.Twice(0) = 0);
+              Writeln(U.Missing);
+            end;
+            end.
+            """)));
+
     /// <summary>LANG-311: a declaration of the unit itself named like a used unit hides the unit name.</summary>
     [Fact]
     [Trait("Req", "LANG-311")]

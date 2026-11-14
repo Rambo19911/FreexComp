@@ -119,7 +119,7 @@ public sealed class Compilation
         // results and failures are then taken in link order, as a sequential run would
         var texts = new (string? Text, Diagnostic? Failure)[stale.Length];
         Parallel.For(0, stale.Length, new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism, CancellationToken = ct },
-            i => texts[i] = EmitIr(stale[i].Result!, unitTable, location));
+            i => texts[i] = EmitIr(stale[i].Result!, stale[i].Forms, unitTable, location));
         var llPaths = ImmutableArray.CreateBuilder<string>();
         for (var i = 0; i < stale.Length; i++)
         {
@@ -364,6 +364,7 @@ public sealed class Compilation
         foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null))
         {
             loaded.LinkInputs = UnitLinkInputs.Collect(loaded.Result!.Unit, loaded.Tree!, FileSystem, loaded.Diagnostics);
+            loaded.Forms = Forms.FormEmbedding.Collect(loaded.Result!, loaded.Tree!, FileSystem, loaded.Diagnostics);    // C-114
         }
 
         foreach (var loaded in unitBinder.Units.Where(u => u.IsPrecompiled))
@@ -524,7 +525,7 @@ public sealed class Compilation
 
         var unit = loaded.Result!;
         var used = !unit.Bodies.IsEmpty || !Lowerer.ManagedGlobals(unit.Unit).IsEmpty;
-        return new(unit.Unit, HasInit: used || !Lowerer.ThreadVars(unit.Unit).IsEmpty, HasFinal: used);     // $init registers threadvars (ABI-180)
+        return new(unit.Unit, HasInit: used || !Lowerer.ThreadVars(unit.Unit).IsEmpty || !loaded.Forms.IsEmpty, HasFinal: used);     // $init registers threadvars (ABI-180) and forms (ABI-150)
     }
 
     /// <summary>
@@ -543,14 +544,18 @@ public sealed class Compilation
     }
 
     /// <summary>Lowers and emits one unit; the program gets the unit table. Thread-safe (CMP-156).</summary>
-    private static (string? Text, Diagnostic? Failure) EmitIr(BindingResult unit, ImmutableArray<UnitTableEntry> unitTable, Location location)
+    private static (string? Text, Diagnostic? Failure) EmitIr(BindingResult unit, ImmutableArray<Forms.EmbeddedForm> forms, ImmutableArray<UnitTableEntry> unitTable, Location location)
     {
         try
         {
             var writer = new LlvmTextWriter();
             ImmutableArray<UnitTableEntry> table = unit.Unit.IsProgram ? unitTable : [];
-            IrEmitter.EmitUnit(Lowerer.Lower(unit), writer, table);
+            IrEmitter.EmitUnit(Lowerer.Lower(unit, forms), writer, table);
             return (writer.GetText(), null);
+        }
+        catch (EmitNotSupportedException e)
+        {
+            return (null, Diagnostic.Create("E2900", e.Location, e.Message));                // C-213
         }
         catch (NotSupportedException e)
         {
