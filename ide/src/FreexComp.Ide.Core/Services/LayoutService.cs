@@ -180,6 +180,20 @@ public sealed class LayoutService : ILayoutService
         ScheduleSave();
     }
 
+    public bool? GetUiFlag(string section, string key) =>
+        _root[section] is JsonObject values && values[key] is JsonValue value && value.TryGetValue(out bool flag) ? flag : null;
+
+    public void SetUiFlag(string section, string key, bool value)
+    {
+        if (GetUiFlag(section, key) == value)
+        {
+            return;
+        }
+
+        Child(_root, section)[key] = value;
+        ScheduleSave();
+    }
+
     public void AttachToolWindows(Func<string, ToolWindowViewModel?> resolve)
     {
         _resolve = resolve;

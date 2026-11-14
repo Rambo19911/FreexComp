@@ -63,6 +63,8 @@ public static class ServiceGraph
         documents.Clipboard = platform.Clipboard;
         documents.RegisterCommands(commands);
         KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
+        var find = new FindService(layout, status, platform.Clock, documents);
+        find.RegisterCommands(commands);
         projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
             ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock, platform.Shell);
         projects.RegisterCommands(commands);
@@ -143,6 +145,7 @@ public static class ServiceGraph
             Projects = projects,
             Session = session,
             RecentItems = recent,
+            Find = find,
         };
     }
 }

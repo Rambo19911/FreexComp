@@ -35,6 +35,12 @@ public interface ILayoutService
     /// <summary>Stores <c>dialogs.&lt;Name&gt;.&lt;key&gt;</c>; saved with the rest of the UI state.</summary>
     void SetDialogValue(string dialogName, string key, string value);
 
+    /// <summary>A Boolean of the UI state, <c>&lt;section&gt;.&lt;key&gt;</c> (e.g. <c>find.matchCase</c>, UI-DLG-102); null when unset.</summary>
+    bool? GetUiFlag(string section, string key);
+
+    /// <summary>Stores <c>&lt;section&gt;.&lt;key&gt;</c>; saved with the rest of the UI state.</summary>
+    void SetUiFlag(string section, string key, bool value);
+
     /// <summary>Gives the layout the tool-window registry: names → view-models (null = not registered).</summary>
     void AttachToolWindows(Func<string, ToolWindowViewModel?> resolve);
 

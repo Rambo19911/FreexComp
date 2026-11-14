@@ -93,6 +93,8 @@ public partial class TextDocumentViewModel
         if (commandId == ToggleOverwriteCommandId)
             return ToggleOverwrite();
         var selection = Selection;
+        if (commandId == "edit.outdent")
+            return Outdent(selection, IndentOptions);
         var tabWidth = Options.TabWidth;
         string? refused = null;
         var result = commandId switch
@@ -108,7 +110,6 @@ public partial class TextDocumentViewModel
             "edit.trimTrailingWhitespace" => EditorOperations.TrimTrailingWhitespace(Buffer, selection),
             // shortcuts.md: Tab = edit.indent; without a selection spanning lines it inserts indentation (IDE-ED-001).
             "edit.indent" => EditorOperations.Tab(Buffer, selection, IndentOptions),
-            "edit.outdent" => EditorOperations.Outdent(Buffer, selection, IndentOptions),
             _ => throw new ArgumentOutOfRangeException(nameof(commandId)),
         };
         if (refused is not null)
@@ -126,6 +127,24 @@ public partial class TextDocumentViewModel
         Selection = result.Selection;
         return true;
     }
+
+    /// <summary>
+    /// Shift+Tab / <c>edit.outdent</c> (IDE-ED-003). When there is nothing to outdent, or the document is read-only,
+    /// and an info bar is shown, focus moves to the top-most info bar instead (UI-ED-094).
+    /// </summary>
+    private bool Outdent(TextSelection selection, IndentOptions options)
+    {
+        var result = EditorOperations.Outdent(Buffer, selection, options);
+        if ((Buffer.IsReadOnly || result is null || result.Edits.Count == 0) && RequestInfoBarFocus())
+            return true;
+        return Command(() => Apply(result));
+    }
+
+    /// <summary>
+    /// A command edit from outside (find/replace): <paramref name="action"/> runs as one undo step of its own that
+    /// restores the selection on undo (IDE-P1-092); refused edits inside report as <see cref="TryEdit"/> does.
+    /// </summary>
+    internal bool ApplyCommandEdit(Func<bool> action) => Command(action);
 
     /// <summary>The indentation settings (editor-features.md §2) of <see cref="Options"/>.</summary>
     public IndentOptions IndentOptions => new(Math.Max(1, Options.TabWidth), Options.InsertSpaces, Options.AutoIndent, Options.SmartHome);
@@ -146,7 +165,7 @@ public partial class TextDocumentViewModel
                 Command(() => Apply(EditorOperations.Tab(Buffer, selection, options)));
                 return true;
             case "Shift+Tab":
-                Command(() => Apply(EditorOperations.Outdent(Buffer, selection, options)));
+                Outdent(selection, options);
                 return true;
             case "Backspace" or "Shift+Backspace":
                 if (Block is { } block)

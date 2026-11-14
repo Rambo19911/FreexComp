@@ -194,8 +194,7 @@ public sealed partial class MenuTests
     private static readonly Dictionary<string, string> Pending = new()
     {
         ["file.exit"] = "I-086",
-        ["search.find"] = "I-058", ["search.replace"] = "I-058", ["search.findNext"] = "I-058", ["search.findPrevious"] = "I-058",
-        ["search.findSelectionNext"] = "I-058", ["search.goToLine"] = "I-059",
+        ["search.find"] = "I-058", ["search.replace"] = "I-058", ["search.goToLine"] = "I-059",
         ["search.navigateBack"] = "I-060", ["search.navigateForward"] = "I-060",
     };
 
@@ -211,9 +210,13 @@ public sealed partial class MenuTests
 
     /// <summary>
     /// I-052, I-055: enabled in every text document, read-only too ("text"); zoom in/out while the font size is within
-    /// 6…72 (Reset Zoom needs a zoom, see <see cref="Conditional"/>).
+    /// 6…72 (Reset Zoom needs a zoom, see <see cref="Conditional"/>). I-057: Find Next Occurrence of Selection ("text").
     /// </summary>
-    private static readonly string[] TextCommands = ["search.goToMatchingBracket", "view.wordWrap", "view.zoomIn", "view.zoomOut"];
+    private static readonly string[] TextCommands =
+        ["search.goToMatchingBracket", "view.wordWrap", "view.zoomIn", "view.zoomOut", "search.findSelectionNext"];
+
+    /// <summary>I-057: Find Next / Previous need a text document and a search text (menus.md).</summary>
+    private static readonly string[] SearchTextCommands = ["search.findNext", "search.findPrevious"];
 
     /// <summary>I-048: these also depend on the caret (first / last touched line, a selection or a word under the caret).</summary>
     private static readonly string[] CaretCommands = ["edit.moveLineUp", "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"];
@@ -226,7 +229,7 @@ public sealed partial class MenuTests
         "edit.convertLineEndings:crlf", "edit.convertLineEndings:lf", "edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll",
         "project.addNewUnit", "project.addExistingFile", "project.removeFile", "project.viewSource",
         "window.nextDocument", "window.previousDocument", "window.documents", "window.closeToolWindow", "view.zoomReset",
-        .. PascalTextCommands, .. CaretCommands, .. TextCommands,
+        .. PascalTextCommands, .. CaretCommands, .. TextCommands, .. SearchTextCommands,
     ];
 
     private static readonly string[] FoldCommands = ["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll"];
@@ -300,6 +303,11 @@ public sealed partial class MenuTests
         await h.ExecuteAsync("view.zoomIn");
         AssertEnabled(h, "zoomed", [.. cleanA, .. CaretCommands, "view.zoomReset"]);
         await h.ExecuteAsync("view.zoomReset");
+
+        // I-057: with a search text Find Next / Previous are enabled.
+        h.Services.Find.SearchText = "begin";
+        AssertEnabled(h, "search text", [.. cleanA, .. CaretCommands, .. SearchTextCommands]);
+        h.Services.Find.SearchText = "";
 
         a.Select(0, 4);
         AssertEnabled(h, "selection", [.. cleanA, "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"],

@@ -34,28 +34,75 @@ public abstract class DocumentViewModel : ObservableObject
 
     public virtual bool CanClose => true;
 
-    /// <summary>Info bars, newest first (UI-ED-092).</summary>
+    /// <summary>At most this many info bars are visible; further ones queue (UI-ED-092).</summary>
+    public const int MaxVisibleInfoBars = 3;
+
+    /// <summary>All info bars, newest first, queued ones included (UI-ED-092).</summary>
     public ObservableCollection<InfoBarViewModel> InfoBars { get; } = [];
+
+    /// <summary>
+    /// The shown info bars, newest on top: the <see cref="MaxVisibleInfoBars"/> oldest of <see cref="InfoBars"/>;
+    /// newer ones wait until a shown bar closes (UI-ED-092).
+    /// </summary>
+    public ObservableCollection<InfoBarViewModel> VisibleInfoBars { get; } = [];
+
+    /// <summary>Raised when keyboard focus should move to the first button of the top-most info bar (UI-ED-094).</summary>
+    public event EventHandler? InfoBarFocusRequested;
 
     /// <summary>Target of Focus-scoped commands while this document's view has focus (commands.md §3).</summary>
     public abstract ICommandTarget? CommandTarget { get; }
 
-    /// <summary>Shows <paramref name="bar"/> on top, replacing a bar of the same kind (UI-ED-092).</summary>
+    /// <summary>
+    /// Shows <paramref name="bar"/> on top (or queues it when <see cref="MaxVisibleInfoBars"/> are shown); a bar of the
+    /// same kind is replaced in its place (UI-ED-092).
+    /// </summary>
     public void ShowInfoBar(InfoBarViewModel bar)
     {
         ArgumentNullException.ThrowIfNull(bar);
-        RemoveInfoBar(bar.Kind);
-        InfoBars.Insert(0, bar);
+        var index = IndexOfInfoBar(bar.Kind);
+        if (index >= 0)
+            InfoBars[index] = bar;
+        else
+            InfoBars.Insert(0, bar);
+        SyncVisibleInfoBars();
     }
 
     public void RemoveInfoBar(string kind)
     {
-        for (var i = InfoBars.Count - 1; i >= 0; i--)
+        var index = IndexOfInfoBar(kind);
+        if (index < 0)
+            return;
+        InfoBars.RemoveAt(index);
+        SyncVisibleInfoBars();
+    }
+
+    /// <summary>Asks the view to focus the top-most info bar; false when none is shown (UI-ED-094).</summary>
+    public bool RequestInfoBarFocus()
+    {
+        if (VisibleInfoBars.Count == 0)
+            return false;
+        InfoBarFocusRequested?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    private int IndexOfInfoBar(string kind)
+    {
+        for (var i = 0; i < InfoBars.Count; i++)
         {
             if (InfoBars[i].Kind == kind)
-            {
-                InfoBars.RemoveAt(i);
-            }
+                return i;
         }
+
+        return -1;
+    }
+
+    private void SyncVisibleInfoBars()
+    {
+        var wanted = InfoBars.Skip(Math.Max(0, InfoBars.Count - MaxVisibleInfoBars)).ToList();
+        if (wanted.SequenceEqual(VisibleInfoBars))
+            return;
+        VisibleInfoBars.Clear();
+        foreach (var bar in wanted)
+            VisibleInfoBars.Add(bar);
     }
 }

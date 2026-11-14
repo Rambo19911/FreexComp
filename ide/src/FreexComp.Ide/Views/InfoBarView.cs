@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Icons;
 
 namespace FreexComp.Ide.Views;
 
@@ -59,6 +60,21 @@ public sealed class InfoBarView : Border
 
         DockPanel.SetDock(buttons, Avalonia.Controls.Dock.Right);
         row.Children.Add(buttons);
+        var icon = new IdeIcon
+        {
+            IconName = model.Severity switch
+            {
+                InfoBarSeverity.Warning => "warning",
+                InfoBarSeverity.Error => "error",
+                _ => "info",
+            },
+            Width = 16,
+            Height = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0), // space.4 (designer.md UI-DSG-090)
+        };
+        DockPanel.SetDock(icon, Avalonia.Controls.Dock.Left);
+        row.Children.Add(icon);
         var text = new TextBlock { Text = model.Text, Classes = { "body" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(text, id + ".Text");
         text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable("FxcTextPrimaryBrush"));
