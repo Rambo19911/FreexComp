@@ -1,0 +1,9 @@
+finally raises second
+destroy first
+caught second
+destroy second
+finally raises fourth
+destroy third
+same routine caught fourth
+destroy fourth
+leaked: 0

@@ -14,6 +14,7 @@ declare void @"System._DynArrayAsg"(ptr, ptr, ptr)
 declare void @"System._DynArrayClr"(ptr, ptr)
 declare void @"System._DynArraySetLen"(ptr, ptr, i64, ptr)
 declare void @"System._UStrAsg"(ptr, ptr)
+declare i32 @__C_specific_handler(...)
 
 define internal i32 @"M.Count"(ptr %a) #0 {
 entry:
@@ -37,7 +38,7 @@ exit:
   ret i32 %t7
 }
 
-define void @"M.Build"(ptr %Result, i32 %n, ptr %p) #0 {
+define void @"M.Build"(ptr %Result, i32 %n, ptr %p) #0 personality ptr @__C_specific_handler {
 entry:
   %n.addr = alloca i32, align 4
   %p.addr = alloca ptr, align 8
@@ -60,7 +61,9 @@ entry:
   store ptr null, ptr %$tmp6.addr, align 8
   %t1 = getelementptr inbounds [1 x i64], ptr %$tmp2.addr, i64 0, i64 0
   store i64 2, ptr %t1, align 8
-  call void @"System._DynArraySetLen"(ptr %$tmp1.addr, ptr @"M.TInts.$rtti", i64 1, ptr %$tmp2.addr)
+  invoke void @"System._DynArraySetLen"(ptr %$tmp1.addr, ptr @"M.TInts.$rtti", i64 1, ptr %$tmp2.addr)
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   %t2 = load i32, ptr %n.addr, align 4
   %t3 = load ptr, ptr %$tmp1.addr, align 8
   %t4 = getelementptr inbounds i32, ptr %t3, i64 0
@@ -71,30 +74,46 @@ entry:
   %t8 = getelementptr inbounds i32, ptr %t7, i64 1
   store i32 %t6, ptr %t8, align 4
   %t9 = load ptr, ptr %$tmp1.addr, align 8
-  call void @"System._DynArrayAsg"(ptr %Result, ptr %t9, ptr @"M.TInts.$rtti")
+  invoke void @"System._DynArrayAsg"(ptr %Result, ptr %t9, ptr @"M.TInts.$rtti")
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t10 = getelementptr inbounds [1 x i64], ptr %$tmp4.addr, i64 0, i64 0
   store i64 2, ptr %t10, align 8
-  call void @"System._DynArraySetLen"(ptr %$tmp3.addr, ptr @"M.TNames.$rtti", i64 1, ptr %$tmp4.addr)
+  invoke void @"System._DynArraySetLen"(ptr %$tmp3.addr, ptr @"M.TNames.$rtti", i64 1, ptr %$tmp4.addr)
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t11 = load ptr, ptr %$tmp3.addr, align 8
   %t12 = getelementptr inbounds ptr, ptr %t11, i64 0
   %t13 = load ptr, ptr %p.addr, align 8
   %t14 = load ptr, ptr %t13, align 8
-  call void @"System._UStrAsg"(ptr %t12, ptr %t14)
+  invoke void @"System._UStrAsg"(ptr %t12, ptr %t14)
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   %t15 = load ptr, ptr %$tmp3.addr, align 8
   %t16 = getelementptr inbounds ptr, ptr %t15, i64 1
-  call void @"System._UStrAsg"(ptr %t16, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.3, i32 0, i32 5))
+  invoke void @"System._UStrAsg"(ptr %t16, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.3, i32 0, i32 5))
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   %t17 = load ptr, ptr %$tmp3.addr, align 8
-  call void @"System._DynArrayAsg"(ptr %names.addr, ptr %t17, ptr @"M.TNames.$rtti")
+  invoke void @"System._DynArrayAsg"(ptr %names.addr, ptr %t17, ptr @"M.TNames.$rtti")
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t18 = getelementptr inbounds [1 x i64], ptr %$tmp7.addr, i64 0, i64 0
   store i64 1, ptr %t18, align 8
-  call void @"System._DynArraySetLen"(ptr %$tmp6.addr, ptr @"M.TInts.$rtti", i64 1, ptr %$tmp7.addr)
+  invoke void @"System._DynArraySetLen"(ptr %$tmp6.addr, ptr @"M.TInts.$rtti", i64 1, ptr %$tmp7.addr)
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   %t19 = load ptr, ptr %$tmp6.addr, align 8
   %t20 = getelementptr inbounds i32, ptr %t19, i64 0
   store i32 7, ptr %t20, align 4
   %t21 = load ptr, ptr %$tmp6.addr, align 8
-  call void @"System._DynArrayAsg"(ptr %$tmp5.addr, ptr %t21, ptr @"M.TInts.$rtti")
+  invoke void @"System._DynArrayAsg"(ptr %$tmp5.addr, ptr %t21, ptr @"M.TInts.$rtti")
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   %t22 = load ptr, ptr %$tmp5.addr, align 8
-  %t23 = call i32 @"M.Count"(ptr %t22)
+  %t23 = invoke i32 @"M.Count"(ptr %t22)
+          to label %cont.9 unwind label %cleanup.pad
+cont.9:
   store i32 %t23, ptr %n.addr, align 4
   %t24 = load ptr, ptr %Result, align 8
   %t25 = icmp ne ptr %t24, null
@@ -111,8 +130,12 @@ if.end.1:
   %t30 = load ptr, ptr %names.addr, align 8
   %t31 = getelementptr inbounds ptr, ptr %t30, i64 0
   %t32 = load ptr, ptr %t31, align 8
-  call void @"System._UStrAsg"(ptr %t29, ptr %t32)
-  call void @"System._DynArrayClr"(ptr %Result, ptr @"M.TInts.$rtti")
+  invoke void @"System._UStrAsg"(ptr %t29, ptr %t32)
+          to label %cont.10 unwind label %cleanup.pad
+cont.10:
+  invoke void @"System._DynArrayClr"(ptr %Result, ptr @"M.TInts.$rtti")
+          to label %cont.11 unwind label %cleanup.pad
+cont.11:
   br label %cleanup
 cleanup:
   call void @"System._DynArrayClr"(ptr %names.addr, ptr @"M.TNames.$rtti")
@@ -123,6 +146,14 @@ cleanup:
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._DynArrayClr"(ptr %names.addr, ptr @"M.TNames.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._DynArrayClr"(ptr %$tmp1.addr, ptr @"M.TInts.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._DynArrayClr"(ptr %$tmp3.addr, ptr @"M.TNames.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._DynArrayClr"(ptr %$tmp5.addr, ptr @"M.TInts.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._DynArrayClr"(ptr %$tmp6.addr, ptr @"M.TInts.$rtti") [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
 define void @"M.$init"() #0 {

@@ -459,9 +459,10 @@ public sealed class UnitBindingTests
         Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
 
         var unit = fs.ReadAllText(@"C:\p\obj\A.ll");
-        var final = unit[unit.IndexOf("define void @\"A.$final\"() #0 {", StringComparison.Ordinal)..];
+        // CMP-393/394: the globals are finalised in the function-level cleanup scope, so Writeln's calls are invokes
+        var final = unit[unit.IndexOf("define void @\"A.$final\"() #0 personality ptr @__C_specific_handler {", StringComparison.Ordinal)..];
         Assert.Matches("""
-            (?s)call void @"System._WriteEnd"\(ptr @"System.Output"\).*
+            (?s)invoke void @"System._WriteEnd"\(ptr @"System.Output"\).*
             cleanup:
               call void @"System._UStrClr"\(ptr @"A.U"\)
               call void @"System._DynArrayClr"\(ptr @"A.D", ptr @[^)]+\)

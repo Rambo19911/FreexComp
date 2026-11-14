@@ -51,6 +51,9 @@ internal enum BoundKind
     CallStatement,
     IntrinsicCallStatement,
     WriteStatement,
+    RaiseStatement,
+    TryExceptStatement,
+    TryFinallyStatement,
 }
 
 /// <summary>A node of the bound tree: immutable, typed, symbols resolved.</summary>
@@ -747,6 +750,90 @@ internal sealed class BoundExitStatement : BoundStatement
 
     /// <summary>The function result assigned first (converted to the result type); null for a plain <c>Exit</c>.</summary>
     public BoundExpression? Value { get; }
+}
+
+/// <summary>
+/// <c>raise Exception [at Address]</c> (LANG-805, 806): <see cref="Exception"/> is of a class type (or <c>nil</c>),
+/// <see cref="Address"/> converted to <c>Pointer</c>; <c>raise;</c> (LANG-807) has neither.
+/// </summary>
+internal sealed class BoundRaiseStatement : BoundStatement
+{
+    public BoundRaiseStatement(SyntaxNode syntax, BoundExpression? exception, BoundExpression? address)
+        : base(syntax)
+    {
+        Exception = exception;
+        Address = address;
+    }
+
+    public override BoundKind Kind => BoundKind.RaiseStatement;
+
+    public BoundExpression? Exception { get; }
+
+    public BoundExpression? Address { get; }
+
+    /// <summary><c>raise;</c>: re-raises the exception of the innermost handler.</summary>
+    public bool IsReraise => Exception is null;
+}
+
+/// <summary><c>on [Variable:] Type do Body</c> (LANG-821); <see cref="Variable"/> is a read-only local scoped to <see cref="Body"/>.</summary>
+internal sealed class BoundExceptionHandler
+{
+    public BoundExceptionHandler(SyntaxNode syntax, VariableSymbol? variable, ClassTypeSymbol type, BoundStatement body)
+    {
+        Syntax = syntax;
+        Variable = variable;
+        Type = type;
+        Body = body;
+    }
+
+    public SyntaxNode Syntax { get; }
+
+    public VariableSymbol? Variable { get; }
+
+    public ClassTypeSymbol Type { get; }
+
+    public BoundStatement Body { get; }
+}
+
+/// <summary>
+/// <c>try Body except handlers else Else end</c> (LANG-820, 821). The plain form has no <see cref="Handlers"/> and its
+/// except block as <see cref="Else"/> (it runs for any exception). No handler matching and no <see cref="Else"/>: the
+/// exception propagates.
+/// </summary>
+internal sealed class BoundTryExceptStatement : BoundStatement
+{
+    public BoundTryExceptStatement(SyntaxNode syntax, BoundBlock body, ImmutableArray<BoundExceptionHandler> handlers, BoundBlock? @else)
+        : base(syntax)
+    {
+        Body = body;
+        Handlers = handlers;
+        Else = @else;
+    }
+
+    public override BoundKind Kind => BoundKind.TryExceptStatement;
+
+    public BoundBlock Body { get; }
+
+    public ImmutableArray<BoundExceptionHandler> Handlers { get; }
+
+    public BoundBlock? Else { get; }
+}
+
+/// <summary><c>try Body finally Finally end</c> (LANG-810).</summary>
+internal sealed class BoundTryFinallyStatement : BoundStatement
+{
+    public BoundTryFinallyStatement(SyntaxNode syntax, BoundBlock body, BoundBlock @finally)
+        : base(syntax)
+    {
+        Body = body;
+        Finally = @finally;
+    }
+
+    public override BoundKind Kind => BoundKind.TryFinallyStatement;
+
+    public BoundBlock Body { get; }
+
+    public BoundBlock Finally { get; }
 }
 
 /// <summary><c>Halt</c> / <c>Halt(ExitCode)</c>: ends the program after the finalization sections (LANG-364).</summary>

@@ -189,6 +189,14 @@ internal static class Binder
         var binder = new BodyBinder(types, scope, diagnostics, routine);
         binder.AddReadOnlyVariables(EnclosingForVariables(outer));
         var body = binder.BindBlock(block.Body, block.Body.Statements);
+        if (routine is MethodSymbol { MethodKind: MethodKind.Destructor, ContainingType.Parent: not null } destructor
+            && IdentifierComparer.Instance.Equals(destructor.Name, "Destroy")
+            && !block.Body.DescendantTokens().Any(t => t.Kind == SyntaxKind.InheritedKeyword))
+        {
+            // LANG-634: a Destroy of a class with an ancestor should call 'inherited' (a root class has nothing to call)
+            diagnostics.Report(definition.Heading.Name, "W1062", destructor.ContainingType.Name + "." + destructor.Name);
+        }
+
         return new BoundRoutineBody(routine, scope, body, [.. locals.OfType<RoutineSymbol>()], [.. binder.CapturedVariables], diagnostics.ToImmutable())
         {
             AddressTaken = [.. binder.AddressTakenVariables],

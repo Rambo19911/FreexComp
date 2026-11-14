@@ -24,7 +24,11 @@ internal sealed class LlvmTextWriter : IIrWriter
     private string? _header;
     private string? _text;
 
+    private const string PersonalityName = "__C_specific_handler";
+
     private StringBuilder? _function;
+    private int _headerEnd;
+    private bool _usesEh;
     private bool _inBlock;
     private bool _blockTerminated;
 
@@ -103,9 +107,12 @@ internal sealed class LlvmTextWriter : IIrWriter
         var parameters = function.Parameters.Select(p => new IrLocal(p.Type, p.Name)).ToImmutableArray();
         _function = new StringBuilder()
             .Append("define ").Append(Linkage(function.Linkage)).Append(Type(function.ReturnType)).Append(" @").Append(Name(function.Name))
-            .Append('(').AppendJoin(", ", parameters.Select(Typed)).Append(')').Append(Group(function.AttributeGroup)).Append(" {\n");
+            .Append('(').AppendJoin(", ", parameters.Select(Typed)).Append(')').Append(Group(function.AttributeGroup));
+        _headerEnd = _function.Length;
+        _function.Append(" {\n");
         _inBlock = false;
         _blockTerminated = false;
+        _usesEh = false;
         return parameters;
     }
 
@@ -215,23 +222,67 @@ internal sealed class LlvmTextWriter : IIrWriter
             $"cmpxchg {Typed(address)}, {Typed(comparand)}, {Typed(newValue)} seq_cst seq_cst, align {Int(alignment)}");
     }
 
-    public IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null)
+    public IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, IrValue? funclet = null)
     {
         RequirePointer(callee);
-        var text = $"call {Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}";
+        var text = $"call {Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}{Bundle(funclet)}";
+        return CallLike(name, returnType, text, terminates: false);
+    }
+
+    public IrLocal? Invoke(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, IrBlock normal, IrBlock unwind,
+        int? attributeGroup = null, IrValue? funclet = null)
+    {
+        RequirePointer(callee);
+        _usesEh = true;
+        var text = $"invoke {Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}{Bundle(funclet)}\n"
+            + $"          to label %{LocalName(normal.Name)} unwind label %{LocalName(unwind.Name)}";
+        return CallLike(name, returnType, text, terminates: true);
+    }
+
+    private IrLocal? CallLike(string? name, IrType returnType, string text, bool terminates)
+    {
+        IrLocal? result = null;
         if (name is null)
         {
             Instruction(text);
-            return null;
         }
-
-        if (returnType is VoidIrType)
+        else if (returnType is VoidIrType)
         {
             throw new InvalidOperationException("A void call has no result to name.");
         }
+        else
+        {
+            result = Define(new IrLocal(returnType, name), text);
+        }
 
-        return Define(new IrLocal(returnType, name), text);
+        _blockTerminated |= terminates;
+        return result;
     }
+
+    private string Bundle(IrValue? funclet) => funclet is null ? "" : $" [ \"funclet\"({Typed(funclet)}) ]";
+
+    public IrLocal CatchSwitch(string name, IrBlock handler, IrBlock? unwind)
+    {
+        _usesEh = true;
+        var result = Define(new IrLocal(IrType.Token, name), $"catchswitch within none [label %{LocalName(handler.Name)}] {Unwind(unwind)}");
+        _blockTerminated = true;
+        return result;
+    }
+
+    public IrLocal CatchPad(string name, IrValue catchSwitch, ImmutableArray<IrValue> arguments) =>
+        Define(new IrLocal(IrType.Token, name), $"catchpad within {Value(catchSwitch)} [{string.Join(", ", arguments.Select(Typed))}]");
+
+    public void CatchRet(IrValue pad, IrBlock target) => Terminator($"catchret from {Value(pad)} to label %{LocalName(target.Name)}");
+
+    public IrLocal CleanupPad(string name)
+    {
+        _usesEh = true;
+        return Define(new IrLocal(IrType.Token, name), "cleanuppad within none []");
+    }
+
+    public void CleanupRet(IrValue pad, IrBlock? unwind) => Terminator($"cleanupret from {Value(pad)} {Unwind(unwind)}");
+
+    private static string Unwind(IrBlock? unwind) => unwind is null ? "unwind to caller" : $"unwind label %{LocalName(unwind.Name)}";
 
     public void Br(IrBlock target) => Terminator($"br label %{LocalName(target.Name)}");
 
@@ -271,6 +322,13 @@ internal sealed class LlvmTextWriter : IIrWriter
         if (!_inBlock || !_blockTerminated)
         {
             throw new InvalidOperationException("A function must end with a terminated block.");
+        }
+
+        if (_usesEh)
+        {
+            // CMP-390: the personality of every function with an invoke or a pad, declared once per module
+            function.Insert(_headerEnd, " personality ptr @" + PersonalityName);
+            _declarations[PersonalityName] = "declare i32 @" + PersonalityName + "(...)";
         }
 
         _functions.Add(function.Append("}\n").ToString());
@@ -397,6 +455,7 @@ internal sealed class LlvmTextWriter : IIrWriter
         FloatingIrType => "double",
         PointerIrType => "ptr",
         VoidIrType => "void",
+        TokenIrType => "token",
         ArrayIrType a => $"[{Int(a.Length)} x {Type(a.Element)}]",
         StructIrType s => Braces(s.IsPacked, s.Fields.Select(Type)),
         NamedStructIrType n => NamedStruct(n),

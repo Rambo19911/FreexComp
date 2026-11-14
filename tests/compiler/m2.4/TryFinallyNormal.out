@@ -1,0 +1,7 @@
+finally: body 11
+finally of twice! with 42
+42
+inner body
+inner finally
+outer finally
+leaked: 0

@@ -39,6 +39,12 @@ internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> 
     /// <summary>The static storage of typed constants declared in routines (LANG-344), in routine binding order.</summary>
     public ImmutableArray<VariableSymbol> Statics { get; init; } = [];
 
+    /// <summary>
+    /// The handler variables (LANG-821) of the unit-level bodies, kept in internal module globals (link name given) so that the
+    /// outlined <c>$fin</c> routines of those bodies, which have no frame record, reach them like any global (C-091).
+    /// </summary>
+    public ImmutableArray<(VariableSymbol Variable, LinkName Name)> BodyGlobals { get; init; } = [];
+
     public LoweredBody? Initialization { get; init; }
 
     public LoweredBody? Finalization { get; init; }
@@ -204,6 +210,33 @@ internal sealed class LSetBit(LExpression address, LExpression element, bool inc
     public LExpression Element { get; } = element;
 
     public bool Include { get; } = include;
+}
+
+/// <summary>
+/// CMP-391 <c>try Body except Handler end</c> as a catch-all: an exception leaving <see cref="Body"/> is caught (filter
+/// <c>System._SehFilter</c>), its object (<c>_BeginCatch</c>) stored in <see cref="Exception"/>, then <see cref="Handler"/> runs —
+/// ordinary code whose class tests, <c>else</c> part and re-raise (<c>_ReRaise</c>) are explicit. The handler region is an EH
+/// scope whose cleanup calls <c>_EndCatch</c>; normal completion and leaving it by a jump call <c>_EndCatch</c> too.
+/// </summary>
+internal sealed class LTryExcept(LStatement body, LLocal exception, LStatement handler) : LStatement
+{
+    public LStatement Body { get; } = body;
+
+    public LLocal Exception { get; } = exception;
+
+    public LStatement Handler { get; } = handler;
+}
+
+/// <summary>
+/// CMP-392 <c>try Body finally F end</c>: <see cref="Finally"/> is the outlined <c>$fin</c> routine of F (a routine nested in the
+/// current one, no parameters, reaching the variables through the frame record), called after normal completion, before a
+/// jump that leaves <see cref="Body"/>, and from a cleanup funclet on the exception path.
+/// </summary>
+internal sealed class LTryFinally(LStatement body, RoutineSymbol @finally) : LStatement
+{
+    public LStatement Body { get; } = body;
+
+    public RoutineSymbol Finally { get; } = @finally;
 }
 
 /// <summary>Leaves the body (branch to its exit block, CMP-310).</summary>

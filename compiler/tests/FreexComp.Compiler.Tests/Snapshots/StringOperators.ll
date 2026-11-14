@@ -10,8 +10,9 @@ declare i32 @"System._UStrCmp"(ptr, ptr)
 declare i8 @"System._UStrEq"(ptr, ptr)
 declare void @"System._UStrFromWChar"(ptr, i16)
 declare void @"System._UStrUnique"(ptr)
+declare i32 @__C_specific_handler(...)
 
-define void @"M.Join"(ptr %Result, ptr %a, ptr %b, ptr %c, i16 %ch) #0 {
+define void @"M.Join"(ptr %Result, ptr %a, ptr %b, ptr %c, i16 %ch) #0 personality ptr @__C_specific_handler {
 entry:
   %a.addr = alloca ptr, align 8
   %b.addr = alloca ptr, align 8
@@ -30,7 +31,9 @@ entry:
   store ptr null, ptr %$tmp4.addr, align 8
   %t1 = load ptr, ptr %a.addr, align 8
   %t2 = load ptr, ptr %b.addr, align 8
-  call void @"System._UStrCat"(ptr %Result, ptr %t1, ptr %t2)
+  invoke void @"System._UStrCat"(ptr %Result, ptr %t1, ptr %t2)
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   %t3 = load ptr, ptr %a.addr, align 8
   %t4 = getelementptr inbounds [3 x ptr], ptr %$tmp1.addr, i64 0, i64 0
   store ptr %t3, ptr %t4, align 8
@@ -40,19 +43,31 @@ entry:
   %t7 = load ptr, ptr %c.addr, align 8
   %t8 = getelementptr inbounds [3 x ptr], ptr %$tmp1.addr, i64 0, i64 2
   store ptr %t7, ptr %t8, align 8
-  call void @"System._UStrCatN"(ptr %Result, ptr %$tmp1.addr, i32 3)
+  invoke void @"System._UStrCatN"(ptr %Result, ptr %$tmp1.addr, i32 3)
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t9 = load ptr, ptr %Result, align 8
   %t10 = load i16, ptr %ch.addr, align 2
-  call void @"System._UStrFromWChar"(ptr %$tmp2.addr, i16 %t10)
+  invoke void @"System._UStrFromWChar"(ptr %$tmp2.addr, i16 %t10)
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t11 = load ptr, ptr %$tmp2.addr, align 8
-  call void @"System._UStrCat"(ptr %Result, ptr %t9, ptr %t11)
+  invoke void @"System._UStrCat"(ptr %Result, ptr %t9, ptr %t11)
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   %t12 = load i16, ptr %ch.addr, align 2
-  call void @"System._UStrFromWChar"(ptr %$tmp3.addr, i16 %t12)
+  invoke void @"System._UStrFromWChar"(ptr %$tmp3.addr, i16 %t12)
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   %t13 = load ptr, ptr %$tmp3.addr, align 8
   %t14 = load i16, ptr %ch.addr, align 2
-  call void @"System._UStrFromWChar"(ptr %$tmp4.addr, i16 %t14)
+  invoke void @"System._UStrFromWChar"(ptr %$tmp4.addr, i16 %t14)
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t15 = load ptr, ptr %$tmp4.addr, align 8
-  call void @"System._UStrCat"(ptr %Result, ptr %t13, ptr %t15)
+  invoke void @"System._UStrCat"(ptr %Result, ptr %t13, ptr %t15)
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   br label %cleanup
 cleanup:
   call void @"System._UStrClr"(ptr %$tmp2.addr)
@@ -61,9 +76,15 @@ cleanup:
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._UStrClr"(ptr %$tmp2.addr) [ "funclet"(token %cl) ]
+  call void @"System._UStrClr"(ptr %$tmp3.addr) [ "funclet"(token %cl) ]
+  call void @"System._UStrClr"(ptr %$tmp4.addr) [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
-define i32 @"M.Order"(ptr %a, ptr %b) #0 {
+define i32 @"M.Order"(ptr %a, ptr %b) #0 personality ptr @__C_specific_handler {
 entry:
   %a.addr = alloca ptr, align 8
   %b.addr = alloca ptr, align 8
@@ -127,7 +148,9 @@ if.then.5:
 if.end.5:
   %t28 = load ptr, ptr %a.addr, align 8
   %t29 = load ptr, ptr %b.addr, align 8
-  call void @"System._UStrCat"(ptr %$tmp1.addr, ptr %t28, ptr %t29)
+  invoke void @"System._UStrCat"(ptr %$tmp1.addr, ptr %t28, ptr %t29)
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   %t30 = load ptr, ptr %$tmp1.addr, align 8
   %t31 = icmp ne ptr %t30, null
   br i1 %t31, label %if.then.6, label %if.end.6
@@ -144,6 +167,10 @@ cleanup:
 exit:
   %t34 = load i32, ptr %Result.addr, align 4
   ret i32 %t34
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._UStrClr"(ptr %$tmp1.addr) [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
 define void @"M.Poke"(ptr %s, i32 %i, i16 %ch) #0 {

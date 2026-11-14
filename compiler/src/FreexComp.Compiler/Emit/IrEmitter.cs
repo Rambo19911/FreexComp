@@ -41,8 +41,20 @@ internal static class IrEmitter
         "\tcmpq\t$4096, %rax", "\tja\t2b", "1:", "\tsubq\t%rax, %rcx", "\ttestq\t%rcx, (%rcx)", "\tpopq\t%rax", "\tpopq\t%rcx", "\tretq",
     ];
 
+    /// <summary>
+    /// <c>attributes #3 = { noinline optnone … }</c>: the outlined <c>$fin</c> routines of CMP-392 stay opaque calls. When the
+    /// optimiser sees a finally part that always raises, it infers <c>noreturn</c>, deletes the funclet's <c>cleanupret</c> and with
+    /// it the unwind edge to an enclosing <c>catchswitch</c> of the same function, so the <c>__C_specific_handler</c> scope table
+    /// loses the except entry and the new exception is not caught at <c>-O2</c> (C-091 finding; <c>optnone</c> stops the inference,
+    /// <c>noinline</c> keeps the body out of the funclet).
+    /// </summary>
+    public const int FinallyGroup = 3;
+
     internal static int AttributeGroupOf(RoutineSymbol routine) =>
-        MemoryRoutineNames.Contains(Mangler.Routine(routine).Text) ? NoBuiltinsGroup : RoutineGroup;
+        IsOutlinedFinally(routine) ? FinallyGroup : MemoryRoutineNames.Contains(Mangler.Routine(routine).Text) ? NoBuiltinsGroup : RoutineGroup;
+
+    /// <summary>A <c>$fin</c> routine of the Lowerer (CMP-392): the only routines whose name holds a <c>$</c>.</summary>
+    internal static bool IsOutlinedFinally(RoutineSymbol routine) => routine.Name.Contains('$', StringComparison.Ordinal);
 
     /// <param name="unitTable">
     /// Program only: the <c>$units</c> entries in initialisation order (CMP-355); default = empty table.
@@ -75,6 +87,11 @@ internal static class IrEmitter
         foreach (var variable in variables)
         {
             module.Globals[variable] = new IrGlobal(Mangler.GlobalVariable(variable));
+        }
+
+        foreach (var (variable, name) in unit.BodyGlobals)
+        {
+            module.Globals[variable] = new IrGlobal(name);                      // unit-level handler variables (C-091)
         }
 
         // CMP-345 frame record types, in definition order (CMP-301: named struct types first)
@@ -170,6 +187,11 @@ internal static class IrEmitter
                 IsConstant: variable.IsReadOnly, initializer, layout.Alignment));
         }
 
+        foreach (var (_, name) in unit.BodyGlobals)
+        {
+            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Internal, IsConstant: false, new IrNullConstant(), Alignment: 8));
+        }
+
         module.DeclarePending();                                        // routines whose address a typed constant holds
         foreach (var (name, type) in module.ExternalVariables)
         {
@@ -191,6 +213,12 @@ internal static class IrEmitter
         if (unit.Routines.Any(r => AttributeGroupOf(r.Routine!) == NoBuiltinsGroup))
         {
             writer.DefineAttributeGroup(NoBuiltinsGroup, [IrAttribute.Enum("uwtable"), IrAttribute.String("no-builtins", null)]);
+        }
+
+        if (unit.Routines.Any(r => IsOutlinedFinally(r.Routine!)))
+        {
+            writer.DefineAttributeGroup(FinallyGroup,
+                [IrAttribute.Enum("noinline"), IrAttribute.Enum("optnone"), IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
         }
 
         writer.EndModule();
@@ -770,6 +798,7 @@ internal sealed class FunctionEmitter
     private static readonly IrBlock Entry = new("entry");
     private static readonly IrBlock Exit = new("exit");
     private static readonly IrBlock CleanupBlock = new("cleanup");
+    private static readonly IrBlock CleanupPadBlock = new("cleanup.pad");
 
     private readonly ModuleState _module;
     private readonly IIrWriter _w;
@@ -780,7 +809,7 @@ internal sealed class FunctionEmitter
     private readonly int _implicitCount;
     private readonly LinkName _name;
     private readonly IrLinkage _linkage;
-    private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase) { Entry.Name, Exit.Name, CleanupBlock.Name };
+    private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase) { Entry.Name, Exit.Name, CleanupBlock.Name, CleanupPadBlock.Name };
 
     /// <summary>Where <c>Exit</c> and the end of the body go: block <c>cleanup</c> when the body has a cleanup scope, else <c>exit</c>.</summary>
     private readonly IrBlock _returnTarget;
@@ -789,7 +818,78 @@ internal sealed class FunctionEmitter
     private readonly Dictionary<LTempValue, IrValue> _temps = [];
     private int _tempCount;
     private int _blockCount;
+    private int _invokeCount;
     private readonly Dictionary<LLoopLabel, (IrBlock Break, IrBlock Continue)> _loops = [];
+
+    /// <summary>The number of EH scopes open where each loop starts: a jump out of the loop leaves the scopes above.</summary>
+    private readonly Dictionary<LLoopLabel, int> _loopScopes = [];
+
+    /// <summary>
+    /// The open EH scopes, innermost last (CMP-391…394): try parts, handler regions, the function-level cleanup scope. Inside
+    /// any of them a call that may raise is an <c>invoke</c> unwinding to the innermost one's pad.
+    /// </summary>
+    private readonly List<EhScope> _scopes = [];
+
+    /// <summary>The pad token of the cleanup funclet being emitted (calls carry <c>[ "funclet"(token) ]</c>), else null.</summary>
+    private IrValue? _funclet;
+
+    /// <summary>The scopes <c>Exit</c> does not leave (the function-level cleanup scope, CMP-393).</summary>
+    private int _returnScopes;
+
+    /// <summary>An EH scope: unwinding goes to <see cref="Pad"/>; a jump leaving it first runs <see cref="Leave"/> (if any).</summary>
+    private sealed record EhScope(IrBlock Pad, Action? Leave);
+
+    /// <summary>CMP-394: helpers that never raise, always called with <c>call</c>.</summary>
+    private static readonly HashSet<string> NeverRaising = new(StringComparer.Ordinal)
+    {
+        "_UStrAddRef", "_AStrAddRef", "_DynArrayAddRef", "_BeginCatch", "_CurrentExcept", "_IsClass", "_ClassInherits", "_ObjSupports",
+        "_UStrEq", "_UStrCmp", "_AStrCmp", "_SStrCmp", "_SetEq", "_SetLe", "_SetUnion", "_SetInter", "_SetDiff", "_SetSymDiff", "_FreeMem",
+        "_TlsBase", "_TlsRegister", "_Frac", "_Int",
+    };
+
+    private IrBlock? UnwindTarget => _scopes.Count == 0 ? null : _scopes[^1].Pad;
+
+    /// <summary>The pads some invoke unwinds to.</summary>
+    private readonly HashSet<IrBlock> _unwindTargets = [];
+
+    /// <summary>
+    /// CMP-394: a call, or inside an EH scope (when <paramref name="mayRaise"/>) an <c>invoke</c> continuing in a new block
+    /// <c>cont.N</c>; inside a cleanup funclet both carry its token.
+    /// </summary>
+    private IrLocal? EmitCall(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, bool mayRaise = true)
+    {
+        if (!mayRaise || UnwindTarget is not { } pad)
+        {
+            return _w.Call(name, returnType, callee, arguments, attributeGroup, _funclet);
+        }
+
+        _unwindTargets.Add(pad);
+        var next = Block("cont", ++_invokeCount);                         // own counter: construct numbers stay as without EH
+        var result = _w.Invoke(name, returnType, callee, arguments, next, pad, attributeGroup, _funclet);
+        Start(next);
+        return result;
+    }
+
+    private IrLocal? CallHelper(string? name, IrType returnType, string helper, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null) =>
+        EmitCall(name, returnType, callee, arguments, attributeGroup, mayRaise: !NeverRaising.Contains(helper));
+
+    /// <summary>Jumps to <paramref name="target"/> after leaving the EH scopes above <paramref name="depth"/>, innermost first (CMP-391/392).</summary>
+    private void JumpLeaving(IrBlock target, int depth)
+    {
+        var open = _scopes.ToList();
+        for (var i = open.Count - 1; i >= depth; i--)
+        {
+            _scopes.RemoveRange(i, _scopes.Count - i);
+            open[i].Leave?.Invoke();                    // runs in the scope enclosing the one being left
+        }
+
+        _scopes.Clear();
+        _scopes.AddRange(open);
+        Jump(target);
+    }
+
+    private bool LeavesScopes(int depth) => _scopes.Skip(depth).Any(s => s.Leave is not null);
+
     private IrBlock _current = Entry;
     private bool _terminated;
     private IrValue? _link;
@@ -921,12 +1021,18 @@ internal sealed class FunctionEmitter
             _w.Store(value, address, alignment);
         }
 
+        if (_body.Cleanup is not null)
+        {
+            _scopes.Add(new EhScope(CleanupPadBlock, Leave: null));         // CMP-393: the outermost EH scope
+        }
+
+        _returnScopes = _scopes.Count;
         Statement(_body.Body);
         FallThrough(_returnTarget);
+        _scopes.Clear();
         if (_body.Cleanup is { } cleanup)
         {
-            // CMP-325 rule 2: the function-level cleanup scope on the normal exit path. EH milestone (CMP-393): the same
-            // finalisation sequence is emitted again in a cleanuppad funclet, and calls in the body become invokes (CMP-394).
+            // CMP-325 rule 2: the function-level cleanup scope on the normal exit path (outside every EH scope)
             Start(CleanupBlock);
             Statement(cleanup);
             FallThrough(Exit);
@@ -947,6 +1053,18 @@ internal sealed class FunctionEmitter
         else
         {
             _w.Ret(null);
+        }
+
+        if (_body.Cleanup is { } unwindCleanup && _unwindTargets.Contains(CleanupPadBlock))
+        {
+            // CMP-393: the same finalisation on the unwind path, in a cleanup funclet that unwinds to the caller (only when some
+            // invoke unwinds to it: a body without raising calls keeps a plain function)
+            Start(CleanupPadBlock);
+            var token = _w.CleanupPad(Unique("cl"));
+            _funclet = token;
+            Statement(unwindCleanup);
+            _funclet = null;
+            _w.CleanupRet(token, unwind: null);
         }
 
         _w.EndFunction();
@@ -1110,11 +1228,20 @@ internal sealed class FunctionEmitter
             case LSwitch switchStatement:
                 Switch(switchStatement);
                 break;
-            case LBreak or LContinue:
-                Jump(JumpTarget(statement)!);
+            case LBreak jump:
+                JumpLeaving(_loops[jump.Label].Break, _loopScopes[jump.Label]);
+                break;
+            case LContinue jump:
+                JumpLeaving(_loops[jump.Label].Continue, _loopScopes[jump.Label]);
                 break;
             case LReturn:
-                Jump(_returnTarget);
+                JumpLeaving(_returnTarget, _returnScopes);
+                break;
+            case LTryExcept tryExcept:
+                TryExcept(tryExcept);
+                break;
+            case LTryFinally tryFinally:
+                TryFinally(tryFinally);
                 break;
             case LUnreachable:
                 _w.Unreachable();
@@ -1125,7 +1252,7 @@ internal sealed class FunctionEmitter
                 var callee = _module.Helper(helper.Helper);
                 var arguments = call.Arguments.Select((a, i) => ToStorage(Value(a), helper.Helper.ParameterTypes[i])).ToImmutableArray();
                 var returnType = helper.Helper.ReturnType is { } type ? TypeLayout.Of(type).StorageType : IrType.Void;
-                _w.Call(null, returnType, callee, arguments, helper.Helper.IsNoReturn ? IrEmitter.NoReturnGroup : null);
+                CallHelper(null, returnType, helper.Helper.Name, callee, arguments, helper.Helper.IsNoReturn ? IrEmitter.NoReturnGroup : null);
                 break;
             }
 
@@ -1155,14 +1282,111 @@ internal sealed class FunctionEmitter
     }
 
     /// <summary>The block a bare <see cref="LBreak"/>/<see cref="LContinue"/>/<see cref="LReturn"/> jumps to; null for other statements.</summary>
+    /// <remarks>Null too for a jump that leaves an EH scope with work to do on the way (<c>_EndCatch</c>, a <c>$fin</c> call).</remarks>
     private IrBlock? JumpTarget(LStatement statement) => statement switch
     {
-        LBreak jump => _loops[jump.Label].Break,
-        LContinue jump => _loops[jump.Label].Continue,
-        LReturn => _returnTarget,
+        LBreak jump when !LeavesScopes(_loopScopes[jump.Label]) => _loops[jump.Label].Break,
+        LContinue jump when !LeavesScopes(_loopScopes[jump.Label]) => _loops[jump.Label].Continue,
+        LReturn when !LeavesScopes(_returnScopes) => _returnTarget,
         LBlock { Statements: [var single] } => JumpTarget(single),
         _ => null,
     };
+
+    // ------------------------------------------------------------------ exceptions (CMP-391…393)
+
+    /// <summary>
+    /// CMP-391: the try part unwinds to <c>ex.dispatch.N</c> (<c>catchswitch</c> → <c>ex.pad.N</c>: <c>catchpad</c> with the filter,
+    /// <c>catchret</c> to <c>ex.body.N</c>); the handler runs as parent code after <c>_BeginCatch</c>, inside the scope whose pad
+    /// <c>ex.cleanup.N</c> calls <c>_EndCatch</c> in a cleanup funclet (an invoke when an outer scope exists, C-188); normal
+    /// completion calls <c>_EndCatch</c> and continues at <c>try.end.N</c>.
+    /// </summary>
+    private void TryExcept(LTryExcept statement)
+    {
+        var id = NewConstruct();
+        IrBlock dispatch = Block("ex.dispatch", id), pad = Block("ex.pad", id), handler = Block("ex.body", id),
+            cleanup = Block("ex.cleanup", id), end = Block("try.end", id);
+        var outer = UnwindTarget;
+        if (outer is not null)
+        {
+            _unwindTargets.Add(outer);                                  // the catchswitch / cleanupret unwind there
+        }
+
+        _scopes.Add(new EhScope(dispatch, Leave: null));
+        Statement(statement.Body);
+        _scopes.RemoveAt(_scopes.Count - 1);
+        FallThrough(end);
+
+        Start(dispatch);
+        var catchSwitch = _w.CatchSwitch(Unique("cs." + id), pad, outer);
+        Start(pad);
+        var filter = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_SehFilter"), IrType.I32, [IrType.Ptr, IrType.Ptr]));
+        _w.CatchRet(_w.CatchPad(Unique("cp." + id), catchSwitch, [filter]), handler);
+
+        Start(handler);
+        var beginCatch = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_BeginCatch"), IrType.Ptr, []));
+        _w.Store(_w.Call(NewTemp(), IrType.Ptr, beginCatch, [])!, _locals[statement.Exception], 8);
+        _scopes.Add(new EhScope(cleanup, EndCatch));
+        Statement(statement.Handler);
+        _scopes.RemoveAt(_scopes.Count - 1);
+        if (!_terminated)
+        {
+            EndCatch();
+            Jump(end);
+        }
+
+        Start(cleanup);
+        Funclet(id, EndCatch, outer);
+        Start(end);
+    }
+
+    /// <summary>
+    /// CMP-392: the try part unwinds to <c>fin.pad.N</c>, a cleanup funclet calling the outlined <c>$fin</c> routine; normal
+    /// completion and jumps out of the try part call it as well.
+    /// </summary>
+    private void TryFinally(LTryFinally statement)
+    {
+        var id = NewConstruct();
+        IrBlock pad = Block("fin.pad", id), end = Block("try.end", id);
+        var outer = UnwindTarget;
+        if (outer is not null)
+        {
+            _unwindTargets.Add(outer);                                  // the catchswitch / cleanupret unwind there
+        }
+
+        void CallFinally() => Call(named: false, new LRoutineCallee(statement.Finally), []);
+        _scopes.Add(new EhScope(pad, CallFinally));
+        Statement(statement.Body);
+        _scopes.RemoveAt(_scopes.Count - 1);
+        if (!_terminated)
+        {
+            CallFinally();
+            Jump(end);
+        }
+
+        Start(pad);
+        Funclet(id, CallFinally, outer);
+        Start(end);
+    }
+
+    /// <summary>
+    /// The current block becomes a cleanup funclet <c>%cl.N = cleanuppad within none []</c> running <paramref name="body"/> (its calls
+    /// carry the token; with an enclosing scope they are invokes unwinding there), then <c>cleanupret … unwind</c> to the enclosing
+    /// scope's pad or to the caller.
+    /// </summary>
+    private void Funclet(int id, Action body, IrBlock? outer)
+    {
+        var token = _w.CleanupPad(Unique("cl." + id));
+        var enclosing = _funclet;
+        _funclet = token;
+        body();
+        _funclet = enclosing;
+        _w.CleanupRet(token, outer);
+        _terminated = true;
+    }
+
+    /// <summary>ABI-122 <c>_EndCatch</c>: may raise (the object's destructor), so an invoke inside an enclosing scope (C-188).</summary>
+    private void EndCatch() =>
+        EmitCall(null, IrType.Void, _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_EndCatch"), IrType.Void, [])), []);
 
     /// <summary>
     /// CMP-318: <c>if.then.N</c> / <c>if.else.N</c> / <c>if.end.N</c>. An arm that is only a jump (<c>if c then Break</c>) branches
@@ -1209,6 +1433,7 @@ internal sealed class FunctionEmitter
         var kind = loop.Label.Kind;
         var id = NewConstruct();
         IrBlock body = Block(kind + ".body", id), end = Block(kind + ".end", id);
+        _loopScopes[loop.Label] = _scopes.Count;
         if (loop is { Step: null, Body: LIf { Else: { } exit } test } && exit is LBreak { } leave && leave.Label == loop.Label)
         {
             var cond = Block(kind + ".cond", id);
@@ -1345,7 +1570,7 @@ internal sealed class FunctionEmitter
         var stringAddress = Address(element.String);
         var helper = Strings.IsAnsi(element.String.Type) ? "_AStrUnique" : "_UStrUnique";
         var unique = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper(helper), IrType.Void, [IrType.Ptr]));
-        _w.Call(null, IrType.Void, unique, [stringAddress]);
+        CallHelper(null, IrType.Void, helper, unique, [stringAddress]);
         return StringElement(element, _w.Load(NewTemp(), IrType.Ptr, stringAddress, 8));
     }
 
@@ -1613,7 +1838,7 @@ internal sealed class FunctionEmitter
             values.Add(IrEmitter.IsPassedByAddress(parameter) ? value : ToStorage(value, parameter.Type));
         }
 
-        return _w.Call(named ? NewTemp() : null, IrEmitter.ReturnType(routine), function ?? _module.Routine(routine), values.ToImmutable());
+        return EmitCall(named ? NewTemp() : null, IrEmitter.ReturnType(routine), function ?? _module.Routine(routine), values.ToImmutable());
     }
 
     /// <summary>Loads a value in SSA form: Booleans are compared <c>ne 0</c> after the load (CMP-305).</summary>
@@ -1684,7 +1909,7 @@ internal sealed class FunctionEmitter
             {
                 var arguments = call.Arguments.Select((a, i) => ToStorage(Value(a), helper.Helper.ParameterTypes[i])).ToImmutableArray();
                 var storage = TypeLayout.Of(call.Type).StorageType;
-                var result = _w.Call(NewTemp(), storage, _module.Helper(helper.Helper), arguments)!;
+                var result = CallHelper(NewTemp(), storage, helper.Helper.Name, _module.Helper(helper.Helper), arguments)!;
                 return call.Type is BooleanTypeSymbol ? _w.ICmp(NewTemp(), IrIntPredicate.Ne, result, new IrIntConstant((IntegerIrType)storage, 0)) : result;
             }
             case LStringLiteral { Type: StringTypeSymbol { Variant: StringVariant.Unicode } } literal:
@@ -1977,7 +2202,7 @@ internal sealed class FunctionEmitter
     private void ErrorBlock(IrBlock block, string helper)
     {
         Start(block);
-        _w.Call(null, IrType.Void, _module.NoReturnHelper(helper), [], IrEmitter.NoReturnGroup);
+        CallHelper(null, IrType.Void, helper, _module.NoReturnHelper(helper), [], IrEmitter.NoReturnGroup);
         _w.Unreachable();
     }
 

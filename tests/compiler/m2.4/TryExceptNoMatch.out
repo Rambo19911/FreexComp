@@ -1,0 +1,5 @@
+inner raises EA
+middle finally
+outer caught EA
+destroy EA
+leaked: 0

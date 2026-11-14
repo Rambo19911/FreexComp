@@ -1,0 +1,12 @@
+handled 1, live 1
+destroy 1
+after handler, live 0
+exit from handler
+destroy 2
+after exit, live 0
+continue from handler
+destroy 3
+break from handler
+destroy 4
+after loop, live 0
+leaked: 0

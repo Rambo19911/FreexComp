@@ -1,0 +1,3 @@
+ErrRaiseOutsideHandler.pas(7,3): error E2801: Re-raising an exception is only allowed inside an exception handler
+ErrRaiseOutsideHandler.pas(8,9): error E2800: Class instance required after 'raise'
+ErrRaiseOutsideHandler.pas(11,8): error E2802: Class type required in exception handler

@@ -1,0 +1,37 @@
+  body 1
+  inner finally 1
+  outer finally 1
+  inner finally 2
+  outer finally 2
+  body 3
+  inner finally 3
+  outer finally 3
+  inner finally 4
+  outer finally 4
+  inner finally 5
+  outer finally 5
+Find(5) = 5
+  body 1
+  inner finally 1
+  outer finally 1
+  inner finally 2
+  outer finally 2
+  body 3
+  inner finally 3
+  outer finally 3
+  inner finally 4
+  outer finally 4
+  body 5
+  inner finally 5
+  outer finally 5
+  inner finally 6
+  outer finally 6
+  inner finally 7
+  outer finally 7
+  after loop
+Find(20) = -1
+  while finally 1
+  while finally 2
+  while finally 3
+  repeat finally 2
+  repeat finally 1

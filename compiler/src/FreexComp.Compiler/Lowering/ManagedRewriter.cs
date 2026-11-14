@@ -355,6 +355,8 @@ internal static class ManagedRewriter
         LSetBit s => References(s.Address, local) || References(s.Element, local),
         LMemSet m => References(m.Target, local) || References(m.Count, local) || References(m.Value, local),
         LMemMove m => References(m.Source, local) || References(m.Destination, local) || References(m.Count, local),
+        LTryExcept t => ReferenceEquals(t.Exception, local) || References(t.Body, local) || References(t.Handler, local),
+        LTryFinally t => References(t.Body, local),
         _ => throw new InvalidOperationException($"Unknown lowered node {node.GetType().Name}."),
     };
 

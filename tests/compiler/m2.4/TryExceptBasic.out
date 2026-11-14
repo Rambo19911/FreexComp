@@ -1,0 +1,10 @@
+no error
+finally 0
+finally 1
+caught boom
+destroy boom
+rethrow
+outer
+destroy inner
+done
+leaked: 0

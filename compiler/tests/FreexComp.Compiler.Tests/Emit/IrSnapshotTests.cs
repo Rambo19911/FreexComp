@@ -1412,8 +1412,84 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-090: <c>raise</c> (CMP-395, with <c>at</c>), a handler-form <c>try…except</c> (class tests in order, variable, re-raise)
+    /// nested in a plain one (CMP-391: the inner dispatch unwinds to the outer one, the inner cleanup's <c>_EndCatch</c> is an invoke).
+    /// </summary>
+    internal const string TryExceptSource = """
+        unit M;
+        interface
+        type
+          EA = class
+            constructor Create;
+          end;
+          EB = class(EA)
+          end;
+        procedure Fail(N: Integer);
+        function Run(N: Integer): Integer;
+        implementation
+        constructor EA.Create; begin end;
+        procedure Fail(N: Integer);
+        begin
+          if N > 0 then raise EA.Create;
+          if N < 0 then raise EB.Create at nil;
+        end;
+        function Run(N: Integer): Integer;
+        var X: EA;
+        begin
+          Result := 0;
+          try
+            try
+              Fail(N);
+            except
+              on E: EB do X := E;
+              on EA do raise;
+            end;
+          except
+            Result := 1;
+          end;
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-091/C-092: two <c>try…finally</c> statements of one routine, outlined to <c>$fin1</c>/<c>$fin2</c> reaching <c>Result</c> and
+    /// <c>I</c> through the frame (CMP-392); <c>Continue</c>, <c>Break</c> and <c>Exit</c> call <c>$fin1</c> first; <c>$fin2</c> holds a
+    /// function-level <c>try…except</c> of its own.
+    /// </summary>
+    internal const string TryFinallySource = """
+        unit M;
+        interface
+        procedure Step(N: Integer);
+        function Run(N: Integer): Integer;
+        implementation
+        procedure Step(N: Integer); begin end;
+        function Run(N: Integer): Integer;
+        var I: Integer;
+        begin
+          Result := 0;
+          for I := 1 to N do
+            try
+              Step(I);
+              if I = 2 then Continue;
+              if I = 3 then Break;
+              if I = 4 then Exit;
+            finally
+              Result := Result + I;
+            end;
+          try
+            Step(0);
+          finally
+            try Step(Result) except end;
+          end;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["TryExcept"] = TryExceptSource,
+        ["TryFinally"] = TryFinallySource,
         ["Vmt"] = VmtSource,
         ["ProcValue"] = ProcValueSource,
         ["Atomic"] = AtomicSource,
@@ -1475,6 +1551,115 @@ public sealed class IrSnapshotTests
         Assert.Contains("@_fltused = global i32 39029, align 4\n", text);
         Assert.Contains("@\"M.Plain\" = internal global i32 zeroinitializer, align 4\n", text);
         Snapshot.Verify("ExternalDecl", text);
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-390")]
+    [Trait("Req", "CMP-391")]
+    [Trait("Req", "CMP-394")]
+    [Trait("Req", "CMP-395")]
+    public void TryExcept() => Snapshot.Verify("TryExcept", Emit(TryExceptSource));
+
+    /// <summary>CMP-390/391/394/395 in <see cref="TryExceptSource"/>: the shapes the spec and the C-079/C-188 spike prescribe.</summary>
+    [Fact]
+    [Trait("Req", "CMP-391")]
+    [Trait("Req", "CMP-394")]
+    public void TryExcept_UsesTheCmp391Shape()
+    {
+        var text = Emit(TryExceptSource);
+
+        Assert.Contains("define void @\"M.Fail\"(i32 %N) #0 {", text);                      // no EH scope: plain calls
+        Assert.Contains("  call void @\"System._Raise\"(ptr %t", text);
+        Assert.Contains(", ptr null) #1\n  unreachable\n", text);
+        Assert.Contains("define i32 @\"M.Run\"(i32 %N) #0 personality ptr @__C_specific_handler {", text);
+        Assert.Contains("declare i32 @__C_specific_handler(...)\n", text);
+        Assert.Contains("  invoke void @\"M.Fail\"(i32 %t", text);
+        Assert.Contains("  %cs.2 = catchswitch within none [label %ex.pad.2] unwind label %ex.dispatch.1\n", text);
+        Assert.Contains("  %cs.1 = catchswitch within none [label %ex.pad.1] unwind to caller\n", text);
+        Assert.Contains("  %cp.2 = catchpad within %cs.2 [ptr @\"System._SehFilter\"]\n  catchret from %cp.2 to label %ex.body.2\n", text);
+        Assert.Contains("call ptr @\"System._BeginCatch\"()", text);
+        Assert.Contains("call i8 @\"System._IsClass\"(ptr %t", text);                     // never raises: a call (CMP-394)
+        Assert.Contains("  invoke void @\"System._ReRaise\"() #1\n", text);
+        // C-188: the inner cleanup has an enclosing scope, so its _EndCatch is an invoke in the funclet; the outer one a call
+        Assert.Contains("  %cl.2 = cleanuppad within none []\n  invoke void @\"System._EndCatch\"() [ \"funclet\"(token %cl.2) ]\n"
+            + "          to label %cont.", text);
+        Assert.Contains("  cleanupret from %cl.2 unwind label %ex.dispatch.1\n", text);
+        Assert.Contains("  call void @\"System._EndCatch\"() [ \"funclet\"(token %cl.1) ]\n  cleanupret from %cl.1 unwind to caller\n", text);
+    }
+
+    /// <summary>
+    /// C-093: a routine's managed cleanup scope (CMP-325 rule 2) is its outermost EH scope (CMP-393): raising calls are invokes
+    /// unwinding to <c>cleanup.pad</c> (CMP-394), a try statement's dispatch and cleanup unwind there, and the funclet finalises
+    /// the locals; a routine whose body has no raising call keeps a plain function.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-393")]
+    [Trait("Req", "CMP-394")]
+    [Trait("Req", "LANG-840")]
+    public void ManagedCleanup_IsTheOutermostEhScope()
+    {
+        var text = Emit("""
+            unit M;
+            interface
+            procedure P;
+            function Q: Integer;
+            implementation
+            procedure P;
+            var S: string;
+            begin
+              S := 'x';
+              try
+                Q;
+              except
+              end;
+            end;
+            function Q: Integer;
+            var S: string;
+            begin
+              Result := Length(S);
+            end;
+            end.
+            """);
+
+        var p = text[text.IndexOf("define void @\"M.P\"", StringComparison.Ordinal)..];
+        p = p[..p.IndexOf("\n}\n", StringComparison.Ordinal)];
+        Assert.StartsWith("define void @\"M.P\"() #0 personality ptr @__C_specific_handler {", p);
+        Assert.Contains("  invoke void @\"System._UStrAsg\"(ptr %S.addr, ptr getelementptr", p);
+        Assert.Contains("          to label %cont.1 unwind label %cleanup.pad\n", p);
+        Assert.Contains("  %cs.1 = catchswitch within none [label %ex.pad.1] unwind label %cleanup.pad\n", p);
+        Assert.Contains("  invoke void @\"System._EndCatch\"() [ \"funclet\"(token %cl.1) ]\n          to label %cont.", p);
+        Assert.Contains("  cleanupret from %cl.1 unwind label %cleanup.pad\n", p);
+        Assert.Contains("cleanup:\n  call void @\"System._UStrClr\"(ptr %S.addr)\n  br label %exit\n", p);
+        Assert.EndsWith("cleanup.pad:\n  %cl = cleanuppad within none []\n  call void @\"System._UStrClr\"(ptr %S.addr) [ \"funclet\"(token %cl) ]\n"
+            + "  cleanupret from %cl unwind to caller", p);
+        var q = text[text.IndexOf("define i32 @\"M.Q\"", StringComparison.Ordinal)..];
+        q = q[..q.IndexOf("\n}\n", StringComparison.Ordinal)];
+        Assert.StartsWith("define i32 @\"M.Q\"() #0 {", q);
+        Assert.DoesNotContain("cleanuppad", q);
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-392")]
+    [Trait("Req", "LANG-810")]
+    public void TryFinally() => Snapshot.Verify("TryFinally", Emit(TryFinallySource));
+
+    /// <summary>CMP-392 in <see cref="TryFinallySource"/>: outlined <c>$fin</c> routines on the frame, called on every way out.</summary>
+    [Fact]
+    [Trait("Req", "CMP-392")]
+    [Trait("Req", "LANG-810")]
+    public void TryFinally_OutlinesTheFinallyPartAndCallsItOnEveryWayOut()
+    {
+        var text = Emit(TryFinallySource);
+
+        Assert.Contains("%\"M.Run.$frame\" = type { ptr, i32, i32 }\n", text);                  // link, Result, I
+        Assert.Contains("define internal void @\"M.Run.$fin1\"(ptr %$link) #3 {", text);
+        Assert.Contains("define internal void @\"M.Run.$fin2\"(ptr %$link) #3 personality ptr @__C_specific_handler {", text);
+        Assert.Contains("attributes #3 = { noinline optnone uwtable \"frame-pointer\"=\"all\" }\n", text);
+        Assert.Contains("  %cl.3 = cleanuppad within none []\n  call void @\"M.Run.$fin1\"(ptr %$frame) [ \"funclet\"(token %cl.3) ]\n"
+            + "  cleanupret from %cl.3 unwind to caller\n", text);
+        // normal completion, Continue, Break and Exit: four direct calls of $fin1, then the jump
+        Assert.Equal(5, text.Split("call void @\"M.Run.$fin1\"(ptr %$frame)").Length - 1);
+        Assert.Contains("  invoke void @\"M.Step\"(i32 0)\n          to label %cont.", text);
     }
 
     [Fact]
@@ -1889,18 +2074,18 @@ public sealed class IrSnapshotTests
                      "declare void @\"System._ReadUStr\"(ptr, ptr)\n", "declare void @\"System._ReadLn\"(ptr)\n",
                      "declare void @\"System._ReadEnd\"(ptr)\n", "declare i8 @\"System._Eof\"(ptr)\n", "declare i8 @\"System._Eoln\"(ptr)\n",
                      "@\"System.Input\" = external global [624 x i8], align 8\n",
-                     " = call i64 @\"System._ReadInt\"(ptr @\"System.Input\")\n",
-                     " = call i8 @\"System._Eof\"(ptr @\"System.Input\")\n",
-                     "  call void @\"System._RunError\"(i32 106) #1\n",
+                     " = invoke i64 @\"System._ReadInt\"(ptr @\"System.Input\")\n",           // the routine has a string local (CMP-394)
+                     " = invoke i8 @\"System._Eof\"(ptr @\"System.Input\")\n",
+                     "  invoke void @\"System._RunError\"(i32 106) #1\n",
                      " = fptrunc double ",
-                     "  call void @\"System._ReadUStr\"(ptr @\"System.Input\", ptr %s.addr)\n",
+                     "  invoke void @\"System._ReadUStr\"(ptr @\"System.Input\", ptr %s.addr)\n",
                  ])
         {
             Assert.Contains(line, text);
         }
 
-        Assert.Equal(1, text.Split("call void @\"System._IOCheck\"()").Length - 1);              // {$I-} for Read(t, s)
-        Assert.Equal(2, text.Split("call void @\"System._RunError\"(i32 106)").Length - 1);       // Integer and Word; UInt64 needs no check
+        Assert.Equal(1, text.Split("invoke void @\"System._IOCheck\"()").Length - 1);            // {$I-} for Read(t, s)
+        Assert.Equal(2, text.Split("invoke void @\"System._RunError\"(i32 106)").Length - 1);     // Integer and Word; UInt64 needs no check
     }
 
     /// <summary>C-065: the rtl-abi.md §9.5 helpers at the CMP-325 rule 1–3 and 6 points.</summary>
@@ -1915,15 +2100,16 @@ public sealed class IrSnapshotTests
 
         foreach (var line in (string[])[
                      "define void @\"M.Make\"(ptr %Result, ptr %n) #0 {\n",                    // ABI-081: a managed result is hidden
-                     "define void @\"M.Take\"(ptr %p, i64 %s, ptr %o) #0 {\n",                 // ABI-080: 24 bytes by address, 8 as i64
-                     "  call void @\"System._AddRef\"(ptr %s.addr, ptr @\"M.TSmall.$rtti\")\n",       // the callee's own reference
-                     "  call void @\"System._Finalize\"(ptr %o, ptr @\"M.TPerson.$rtti\")\n",         // the out parameter
-                     "  call void @\"System._CopyRecord\"(ptr %o, ptr %p, ptr @\"M.TPerson.$rtti\")\n",
-                     "  call void @\"M.Make\"(ptr %a.addr, ptr ",                                      // rule 4: into a
-                     "  call void @\"System._CopyRecord\"(ptr %copy.addr, ptr %names.addr, ptr @\"M.TNames.$rtti\")\n",
-                     "  call void @\"System._CopyRecord\"(ptr %$tmp1.addr, ptr %a.addr, ptr @\"M.TPerson.$rtti\")\n",   // the argument copy
+                     "define void @\"M.Take\"(ptr %p, i64 %s, ptr %o) #0 personality ptr @__C_specific_handler {\n",   // ABI-080: 24 bytes by address, 8 as i64
+                     "  invoke void @\"System._AddRef\"(ptr %s.addr, ptr @\"M.TSmall.$rtti\")\n",     // the callee's own reference (CMP-394)
+                     "  invoke void @\"System._Finalize\"(ptr %o, ptr @\"M.TPerson.$rtti\")\n",       // the out parameter
+                     "  invoke void @\"System._CopyRecord\"(ptr %o, ptr %p, ptr @\"M.TPerson.$rtti\")\n",
+                     "  invoke void @\"M.Make\"(ptr %a.addr, ptr ",                                    // rule 4: into a
+                     "  invoke void @\"System._CopyRecord\"(ptr %copy.addr, ptr %names.addr, ptr @\"M.TNames.$rtti\")\n",
+                     "  invoke void @\"System._CopyRecord\"(ptr %$tmp1.addr, ptr %a.addr, ptr @\"M.TPerson.$rtti\")\n", // the argument copy
                      "  call void @llvm.memset.p0.i64(ptr align 8 %a.addr, i8 0, i64 24, i1 false)\n",               // rule 1
                      "  call void @\"System._Finalize\"(ptr %$tmp1.addr, ptr @\"M.TPerson.$rtti\")\n",              // the caller finalises its copy
+                     "  call void @\"System._Finalize\"(ptr %$tmp1.addr, ptr @\"M.TPerson.$rtti\") [ \"funclet\"(token %cl) ]\n",  // also on unwind (CMP-393)
                      "declare void @\"System._CopyRecord\"(ptr, ptr, ptr)\n",
                      "@\"M.TPerson.$rtti.fields\" = private unnamed_addr constant [2 x { ptr, i64 }] [{ ptr, i64 } { ptr @\"System.string.$rtti\", i64 0 }, { ptr, i64 } { ptr @\"M.$rtti.array of AnsiString\", i64 16 }], align 8\n",
                  ])
@@ -1936,7 +2122,7 @@ public sealed class IrSnapshotTests
         Assert.DoesNotContain("(ptr %p, ptr @\"M.TPerson.$rtti\")", take);                                // no reference counting of the caller's copy
         var use = text[text.IndexOf("define void @\"M.Use\"", StringComparison.Ordinal)..];
         use = use[..use.IndexOf("\n}\n", StringComparison.Ordinal)];
-        Assert.Matches(@"call void @""System\._Finalize""\(ptr %t\d+, ptr @""M\.TPerson\.\$rtti""\)\n  %t\d+ = load ptr, ptr %\$tmp2\.addr, align 8\n  call void @""System\._FreeMem""\(ptr %t\d+\)\n", use);   // Dispose
+        Assert.Matches(@"invoke void @""System\._Finalize""\(ptr %t\d+, ptr @""M\.TPerson\.\$rtti""\)\n          to label %cont\.\d+ unwind label %cleanup\.pad\ncont\.\d+:\n  %t\d+ = load ptr, ptr %\$tmp2\.addr, align 8\n  call void @""System\._FreeMem""\(ptr %t\d+\)\n", use);   // Dispose; _FreeMem never raises (CMP-394)
     }
 
     /// <summary>C-061: the CMP-324 operator rows as emitted (helpers, the parts array, nil tests, unique before a character store).</summary>
@@ -1949,10 +2135,10 @@ public sealed class IrSnapshotTests
         var text = Emit(StringOperatorsSource);
 
         foreach (var line in (string[])[
-                     "  call void @\"System._UStrCat\"(ptr %Result, ptr %",
+                     "  invoke void @\"System._UStrCat\"(ptr %Result, ptr %",                // CMP-394: Concat has a temporary
                      " = alloca [3 x ptr], align 8\n",
                      ", i32 3)\n",
-                     "  call void @\"System._UStrCatN\"(ptr %Result, ptr %$tmp",
+                     "  invoke void @\"System._UStrCatN\"(ptr %Result, ptr %$tmp",
                      " = call i8 @\"System._UStrEq\"(ptr %",
                      " = call i32 @\"System._UStrCmp\"(ptr %",
                      " = icmp slt i32 %",
@@ -1987,15 +2173,15 @@ public sealed class IrSnapshotTests
         var text = Emit(StringsSource);
 
         foreach (var line in (string[])[
-                     "define void @\"M.Echo\"(ptr %Result, ptr %s) #0 {\n",
+                     "define void @\"M.Echo\"(ptr %Result, ptr %s) #0 personality ptr @__C_specific_handler {\n",   // CMP-390/393
                      "  call void @\"System._UStrAddRef\"(ptr %t1)\n",                     // rule 3, value parameter
                      "  store ptr null, ptr %t.addr, align 8\n",                            // rule 1
-                     "  call void @\"System._UStrClr\"(ptr %o)\n",                          // the out parameter, ABI-030
-                     "  call void @\"System._UStrAsg\"(ptr %v, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [4 x i16] }, ptr @.str.0, i32 0, i32 5))\n",
-                     "  call void @\"M.Echo\"(ptr %$tmp1.addr, ptr %",                      // o := Echo(t): o is no local
-                     "  call void @\"M.Echo\"(ptr %t.addr, ptr %",                          // t := Echo(v): into t (rule 4)
-                     "  call void @\"System._UStrFromWChar\"(ptr %t.addr, i16 %",
-                     "  call void @\"System._UStrAsg\"(ptr @\"M.G\", ptr %",
+                     "  invoke void @\"System._UStrClr\"(ptr %o)\n",                        // the out parameter, ABI-030 (CMP-394)
+                     "  invoke void @\"System._UStrAsg\"(ptr %v, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [4 x i16] }, ptr @.str.0, i32 0, i32 5))\n",
+                     "  invoke void @\"M.Echo\"(ptr %$tmp1.addr, ptr %",                    // o := Echo(t): o is no local
+                     "  invoke void @\"M.Echo\"(ptr %t.addr, ptr %",                        // t := Echo(v): into t (rule 4)
+                     "  invoke void @\"System._UStrFromWChar\"(ptr %t.addr, i16 %",
+                     "  invoke void @\"System._UStrAsg\"(ptr @\"M.G\", ptr %",
                      " = getelementptr inbounds i8, ptr %", ", i64 -12\n",                  // ABI-023
                      " = getelementptr inbounds i16, ptr %",                                // ABI-024
                      " = icmp ult i64 %",                                                   // CMP-331
@@ -2009,7 +2195,9 @@ public sealed class IrSnapshotTests
 
         var use = text[text.IndexOf("define void @\"M.Use\"", StringComparison.Ordinal)..];
         use = use[..use.IndexOf("\n}\n", StringComparison.Ordinal)];
-        Assert.Equal(2, use.Split("label %cleanup").Length - 1);                                   // Exit (a direct branch arm) and the end of the body
+        // Exit (a direct branch arm) and the end of the body; the invokes unwind to cleanup.pad (CMP-393)
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(use, @"label %cleanup(?!\.pad)").Count);
+        Assert.Contains("cleanup.pad:\n  %cl = cleanuppad within none []\n  call void @\"System._UStrClr\"(ptr %t.addr) [ \"funclet\"(token %cl) ]\n", use);
         Assert.DoesNotContain("select", use);                                                       // no speculative load from nil
     }
 

@@ -13,7 +13,6 @@
 
 E2001  M2.4  declaration mismatch of a forward class / method
 E2008  reserved  LANG-516 makes this unused
-E2067  M2.4  leaving a finally part (LANG-363)
 E2068  M2.5  with statement (LANG-375)
 E2069  M2.5  for-in (LANG-362)
 E2070  M2.5  goto/labels (LANG-380)
@@ -27,8 +26,6 @@ E2116  M2.5  open arrays (LANG-430)
 E2117  M2.5  default parameters (LANG-422)
 E2122  M2.5  overload resolution (LANG-442)
 E2131  M2.5  overloaded routine as procedural value
-E2133  M2.4  inherited (classes)
-E2134  M2.4  Self (classes)
 E2160  M2.5  variant records (LANG-261)
 E2200  elsewhere UnitBindingTests  needs a unit file (uses entry with in)
 E2201  elsewhere UnitBindingTests  needs a unit file whose heading differs from its file name
@@ -43,13 +40,6 @@ E2604  M2.4  classes
 E2611  M2.5  published fields (RTTI)
 E2627  M2.5  message methods (LANG-622)
 E2630  M2.5  published properties
-E2631  M2.4  properties
-E2632  M2.4  properties
-E2633  M2.4  properties
-E2634  M2.4  properties
-E2635  M2.4  properties
-E2636  M2.4  properties
-E2637  M2.4  properties
 E2640  M2.5  interfaces
 E2641  M2.5  interfaces
 E2650  M2.5  interfaces
@@ -72,9 +62,6 @@ E2732  M2.6  operators
 E2733  M2.6  operators
 E2750  M2.6  helpers
 E2751  M2.6  helpers
-E2800  M2.4  exceptions
-E2801  M2.4  exceptions
-E2802  M2.4  exceptions
 W1003  M2.3  {$APPTYPE} in a unit
 W1011  M2.2  comparison always true/false (no language rule names it yet)
 W1012  M2.2  subranges
@@ -82,9 +69,7 @@ W1030  Phase8  LANG-462 accepts 'safecall' silently (C-160 ExternalDecl snapshot
 W1050  M2.3  hint directives used outside their unit (LANG-472)
 W1051  M2.3  hint directives used outside their unit (LANG-472)
 W1052  M2.3  hint directives used outside their unit (LANG-472)
-W1062  M2.4  classes
 W1070  M2.6  attributes
-W1080  M2.4  exceptions
 W1081  M2.4  unreachable code waits for exceptions (C-031)
 W4002  elsewhere ToolchainTests  toolchain version check
 W4003  Phase4  application manifest (C-167)

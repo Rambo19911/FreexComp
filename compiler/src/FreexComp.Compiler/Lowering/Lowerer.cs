@@ -24,16 +24,20 @@ internal static class Lowerer
         // statements); a program's by a synthesised program $final, the last unit table entry, so they are released after the
         // ExitProc chain (ABI-104 steps 1–2, C-183)
         var managed = ManagedGlobals(result.Unit);
+        var outlined = new List<LoweredBody>();                                // CMP-392 $fin routines
+        var bodyGlobals = new List<(VariableSymbol, LinkName)>();
+        var routines = result.Routines.Select(r => LowerRoutine(result, r, outlined)).ToImmutableArray();
         var bodies = result.Bodies.Select(b => (b.Syntax, Lowered: LowerBody(result, b,
-            b.Syntax is FinalizationSectionSyntax ? managed : []))).ToImmutableArray();
+            b.Syntax is FinalizationSectionSyntax ? managed : [], BodyName(b.Syntax), outlined, bodyGlobals))).ToImmutableArray();
         var finalization = bodies.FirstOrDefault(b => b.Syntax is FinalizationSectionSyntax).Lowered;
         if (finalization is null && !managed.IsEmpty)
         {
-            finalization = LowerBody(result, block: null, managed);
+            finalization = LowerBody(result, block: null, managed, "$final", outlined, bodyGlobals);
         }
 
-        return new(result.Unit, [.. result.Routines.Select(r => LowerRoutine(result, r))], [.. bodies.Select(b => b.Lowered)])
+        return new(result.Unit, [.. routines, .. outlined], [.. bodies.Select(b => b.Lowered)])
         {
+            BodyGlobals = [.. bodyGlobals],
             Initialization = bodies.FirstOrDefault(b => b.Syntax is InitializationSectionSyntax).Lowered,
             Finalization = finalization,
             Statics = [.. result.Routines.SelectMany(r => r.Scope.Symbols.OfType<ConstantSymbol>()).Select(c => c.Storage).OfType<VariableSymbol>()],
@@ -46,11 +50,13 @@ internal static class Lowerer
             .Concat(DeclarationBinder.ClassesOf(unit).SelectMany(c => c.ClassVariables))                   // then class vars (LANG-615)
             .Where(v => v is { IsGlobal: true, IsReadOnly: false, Type.IsManaged: true })];
 
-    public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body)
+    /// <param name="outlined">Receives the <c>$fin</c> routines outlined from the body (CMP-392).</param>
+    public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body, List<LoweredBody> outlined)
     {
         var captured = result.GetCapturedVariables(body.Routine);
         var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>())
         {
+            Unit = result.Unit,
             Output = OutputOf(result),
             Input = SystemVariable(result, "Input"),
             CheckedSystem = CheckedSystemOf(result),
@@ -58,22 +64,44 @@ internal static class Lowerer
             AddressTaken = body.AddressTaken,
         };
         var lowered = context.Finish(body.Body);
+        outlined.AddRange(context.Outlined);
+        // CMP-392: the variables the $fin routines use live in the frame too (after those of nested routines)
+        ImmutableArray<Symbol> frame = [.. captured, .. context.FinCaptured.Where(v => !captured.Contains(v))];
         // CMP-345: a frame when nested routines capture something of this routine, and for a nested routine with nested
         // routines of its own (field 0 continues the static link chain they walk)
-        var needsFrame = !captured.IsEmpty || body.Routine.IsNested && !body.NestedRoutines.IsEmpty;
-        return needsFrame ? lowered with { Frame = new LoweredFrame(captured) } : lowered;
+        var needsFrame = !frame.IsEmpty || body.Routine.IsNested && (!body.NestedRoutines.IsEmpty || context.HasOutlined);
+        return needsFrame ? lowered with { Frame = new LoweredFrame(frame) } : lowered;
     }
 
     /// <summary>
     /// The program block or a unit initialization/finalization section (globals only, no locals); <paramref name="finalised"/>
     /// globals are released, in reverse order, in its cleanup scope (so also after <c>Exit</c>). A null block is an empty one.
+    /// <paramref name="name"/> (<c>$main</c>, <c>$init</c>, <c>$final</c>) prefixes the names of its <c>$fin</c> routines.
     /// </summary>
-    public static LoweredBody LowerBody(BindingResult result, BoundBlock? block, ImmutableArray<VariableSymbol> finalised = default) =>
-        new LoweringContext(result.Types, routine: null, locals: []) {
+    /// <param name="bodyGlobals">Receives the storage of the body's handler variables (<see cref="LoweredUnit.BodyGlobals"/>).</param>
+    public static LoweredBody LowerBody(BindingResult result, BoundBlock? block, ImmutableArray<VariableSymbol> finalised, string name, List<LoweredBody> outlined,
+        List<(VariableSymbol, LinkName)> bodyGlobals)
+    {
+        var context = new LoweringContext(result.Types, routine: null, locals: [])
+        {
+            Unit = result.Unit,
+            BodyName = name,
+            BodyGlobals = bodyGlobals,
             Output = OutputOf(result),
             Input = SystemVariable(result, "Input"),
             CheckedSystem = CheckedSystemOf(result),
-        }.Finish(block, finalised);
+        };
+        var lowered = context.Finish(block, finalised);
+        outlined.AddRange(context.Outlined);
+        return lowered;
+    }
+
+    private static string BodyName(SyntaxNode syntax) => syntax switch
+    {
+        InitializationSectionSyntax => "$init",
+        FinalizationSectionSyntax => "$final",
+        _ => "$main",
+    };
 
     /// <summary>Types held in memory as <c>[N x T]</c> or structs (big sets, static arrays, records): never SSA values (see the aggregate nodes).</summary>
     public static bool IsAggregate(TypeSymbol type) =>
@@ -118,6 +146,57 @@ internal sealed class LoweringContext
     public BuiltInTypes Types { get; }
 
     public RoutineSymbol? Routine { get; }
+
+    /// <summary>The unit being lowered: the container of the <c>$fin</c> routines of a unit-level body (CMP-392).</summary>
+    public UnitSymbol? Unit { get; init; }
+
+    /// <summary>A unit-level body's function name (<c>$main</c>, <c>$init</c>, <c>$final</c>): the prefix of its <c>$fin</c> names.</summary>
+    public string BodyName { get; init; } = "$main";
+
+    /// <summary>
+    /// Unit-level bodies and their <c>$fin</c> routines: the handler variables living in module globals (shared with the outlined
+    /// routines, <see cref="LoweredUnit.BodyGlobals"/>); null inside routines, whose handler variables are locals.
+    /// </summary>
+    public List<(VariableSymbol Variable, LinkName Name)>? BodyGlobals { get; init; }
+
+    /// <summary>The <c>$fin</c> routines outlined from this body and, after each, those outlined from it (CMP-392).</summary>
+    public List<LoweredBody> Outlined { get; } = [];
+
+    /// <summary>Whether this body called an outlined <c>$fin</c> routine (it is then their parent, CMP-345).</summary>
+    public bool HasOutlined => _finCount > 0;
+
+    /// <summary>Variables of enclosing routines referenced here or in the outlined routines (<see cref="LOuterRef"/>), first-use order.</summary>
+    public IReadOnlyList<Symbol> OuterReferences => _outer;
+
+    private readonly List<Symbol> _outer = [];
+    private readonly List<Symbol> _finCaptured = [];
+    private int _finCount;
+
+    /// <summary>This routine's variables, parameters and <c>Result</c> that its outlined <c>$fin</c> routines use (first-use order).</summary>
+    public IReadOnlyList<Symbol> FinCaptured => _finCaptured.Distinct().ToList();
+
+    private LOuterRef Outer(Symbol variable, TypeSymbol type)
+    {
+        NoteOuter(variable);
+        return new LOuterRef(variable, type);
+    }
+
+    private void NoteOuter(Symbol variable)
+    {
+        if (!_outer.Contains(variable))
+        {
+            _outer.Add(variable);
+        }
+    }
+
+    /// <summary>A local declared inside the body (LANG-821: the variable of an <c>on E: T do</c> handler).</summary>
+    private LLocal DeclareLocal(VariableSymbol variable)
+    {
+        var local = new LLocal(variable.Name, variable.Type, variable);
+        _variables.Add(variable, local);
+        _locals.Add(local);
+        return local;
+    }
 
     /// <summary><c>System.Output</c> as bound (LANG-910); null when the unit was bound without <c>System</c> (white-box tests).</summary>
     public VariableSymbol? Output { get; init; }
@@ -257,8 +336,8 @@ internal sealed class LoweringContext
         return CheckRewriter.Convert(this, CheckRewriter.Binary(op, Convert(value, computation), amount, checks), type, checks);
     }
 
-    public LStatement CallNoReturn(RuntimeHelper helper, LExpression argument) =>
-        new LBlock([new LCallStatement(new LHelperCallee(helper), [argument]), new LUnreachable()]);
+    public LStatement CallNoReturn(RuntimeHelper helper, params LExpression[] arguments) =>
+        new LBlock([new LCallStatement(new LHelperCallee(helper), [.. arguments]), new LUnreachable()]);
 
     // ------------------------------------------------------------------ statements
 
@@ -318,9 +397,96 @@ internal sealed class LoweringContext
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
             case BoundWriteStatement write:
                 return WriteRewriter.Rewrite(this, write);
+            case BoundRaiseStatement { IsReraise: true }:
+                return CallNoReturn(new RuntimeHelper("_ReRaise", [], ReturnType: null, IsNoReturn: true));          // LANG-807
+            case BoundRaiseStatement raise:
+                // CMP-395: _Raise(Obj, Addr), Addr = nil for 'raise E' (ABI-123)
+                return CallNoReturn(new RuntimeHelper("_Raise", [Types.Pointer, Types.Pointer], ReturnType: null, IsNoReturn: true),
+                    Lower(raise.Exception!), raise.Address is null ? new LConst(new ConstantValue(null, Types.Nil), Types.Nil) : Lower(raise.Address));
+            case BoundTryExceptStatement tryExcept:
+                return TryExcept(tryExcept);
+            case BoundTryFinallyStatement tryFinally:
+                return TryFinally(tryFinally);
             default:
                 throw new InvalidOperationException($"Cannot lower {statement.Kind}.");
         }
+    }
+
+    /// <summary>
+    /// CMP-391: a catch-all whose handler tests the handlers' classes in source order (<c>_IsClass</c>); the first match stores
+    /// the object in its variable and runs; no match runs the <c>else</c> part, or re-raises (LANG-821).
+    /// </summary>
+    private LTryExcept TryExcept(BoundTryExceptStatement statement)
+    {
+        var body = Lower(statement.Body);
+        var exception = NewTemp(Types.Pointer);
+        LStatement handler = statement.Else is { } otherwise
+            ? Lower(otherwise)
+            : CallNoReturn(new RuntimeHelper("_ReRaise", [], ReturnType: null, IsNoReturn: true));
+        foreach (var on in statement.Handlers.Reverse())
+        {
+            var isClass = new LCall(new LHelperCallee(new RuntimeHelper("_IsClass", [Types.Pointer, Types.Pointer], Types.Boolean, IsNoReturn: false)),
+                [new LLocalRef(exception), new LClassRef(on.Type, Types.Pointer)]);
+            var store = on.Variable is { } variable
+                ? [new LAssign(HandlerVariable(variable), new LLocalRef(exception))]                // both are a ptr
+                : Array.Empty<LStatement>();
+            handler = new LIf(isClass, new LBlock([.. store, Lower(on.Body)]), handler);
+        }
+
+        return new LTryExcept(body, exception, handler);
+    }
+
+    /// <summary>
+    /// The storage of a handler variable: a local of the routine (in its frame when a <c>$fin</c> uses it); in a unit-level body
+    /// an internal global <c>&lt;U&gt;.&lt;body&gt;.&lt;Name&gt;.&lt;n&gt;</c>, since those bodies have no frame record.
+    /// </summary>
+    private LExpression HandlerVariable(VariableSymbol variable)
+    {
+        if (Routine is not null || BodyGlobals is null)
+        {
+            return new LLocalRef(DeclareLocal(variable));
+        }
+
+        BodyGlobals.Add((variable, new LinkName($"{Unit!.Name}.{BodyName}.{variable.Name}.{BodyGlobals.Count + 1}", AlwaysQuote: true)));
+        return new LGlobalRef(variable);
+    }
+
+    /// <summary>
+    /// CMP-392: the finally part becomes the routine <c>&lt;routine&gt;.$fin&lt;n&gt;</c> nested in this one (for a unit-level body
+    /// <c>&lt;U&gt;.&lt;body&gt;.$fin&lt;n&gt;</c> of the unit), lowered with its own context: the variables it uses are outer references,
+    /// so they live in this routine's frame record (<see cref="OuterReferences"/>).
+    /// </summary>
+    private LTryFinally TryFinally(BoundTryFinallyStatement statement)
+    {
+        var number = ++_finCount;
+        var fin = Routine is null
+            ? new RoutineSymbol(BodyName + ".$fin" + number, Unit!, [], declaration: null!)
+            : new RoutineSymbol("$fin" + number, Routine, [], declaration: null!);
+        var body = Lower(statement.Body);
+        var context = new LoweringContext(Types, fin, locals: [])
+        {
+            Unit = Unit,
+            BodyGlobals = BodyGlobals,
+            Output = Output,
+            Input = Input,
+            CheckedSystem = CheckedSystem,
+        };
+        var lowered = context.Finish(statement.Finally);
+        Outlined.Add(fin.IsNested && context.HasOutlined ? lowered with { Frame = new LoweredFrame([]) } : lowered);
+        Outlined.AddRange(context.Outlined);
+        foreach (var variable in context.OuterReferences)
+        {
+            if (!ReferenceEquals(variable.ContainingSymbol, Routine))
+            {
+                NoteOuter(variable);                                    // a variable of a routine further out
+            }
+            else
+            {
+                _finCaptured.Add(variable);
+            }
+        }
+
+        return new LTryFinally(body, fin);
     }
 
     // ------------------------------------------------------------------ expressions
@@ -341,14 +507,16 @@ internal sealed class LoweringContext
         {
             case BoundVariableExpression { Variable: { IsGlobal: true } global }:
                 return new LGlobalRef(global);
+            case BoundVariableExpression variable when BodyGlobals?.Exists(g => ReferenceEquals(g.Variable, variable.Variable)) == true:
+                return new LGlobalRef(variable.Variable);                       // a unit-level handler variable (C-091)
             case BoundVariableExpression variable:
                 return _variables.TryGetValue(variable.Variable, out var local)
                     ? new LLocalRef(local)
-                    : new LOuterRef(variable.Variable, variable.Variable.Type);
+                    : Outer(variable.Variable, variable.Variable.Type);
             case BoundParameterExpression parameter:
                 return ReferenceEquals(parameter.Parameter.ContainingSymbol, Routine)
                     ? new LParamRef(parameter.Parameter)
-                    : new LOuterRef(parameter.Parameter, parameter.Parameter.Type);
+                    : Outer(parameter.Parameter, parameter.Parameter.Type);
             case BoundConversionExpression { Type: StringTypeSymbol } conversion when !ReferenceEquals(conversion.Type, conversion.Operand.Type):
                 return ManagedRewriter.Value(this, conversion);                         // LANG-245 (CMP-324, C-063)
             case BoundConversionExpression { IsExplicit: true, Type: PointerTypeSymbol { PointedType: not null } pointer, Operand.Type: StringTypeSymbol } conversion:

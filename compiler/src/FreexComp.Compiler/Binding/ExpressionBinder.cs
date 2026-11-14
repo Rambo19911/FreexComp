@@ -15,9 +15,9 @@ namespace FreexComp.Compiler.Binding;
 internal sealed partial class ExpressionBinder
 {
     private readonly BuiltInTypes _types;
-    private readonly Scope _scope;
+    private Scope _scope;
     private readonly DiagnosticBag _diagnostics;
-    private readonly ConstantFolder _folder;
+    private ConstantFolder _folder;
     private readonly Conversions _conversions = new();
     private readonly RoutineSymbol? _routine;
 
@@ -29,6 +29,22 @@ internal sealed partial class ExpressionBinder
         _diagnostics = diagnostics;
         _routine = routine;
         _folder = new ConstantFolder(types, scope, diagnostics);
+    }
+
+    /// <summary>Binds with <paramref name="scope"/> (a block scope inside the current one, LANG-821's handler variable) as the scope.</summary>
+    public T InScope<T>(Scope scope, Func<T> bind)
+    {
+        var (outerScope, outerFolder) = (_scope, _folder);
+        _scope = scope;
+        _folder = new ConstantFolder(_types, scope, _diagnostics);
+        try
+        {
+            return bind();
+        }
+        finally
+        {
+            (_scope, _folder) = (outerScope, outerFolder);
+        }
     }
 
     /// <summary>Control variables (variables or value parameters) of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>

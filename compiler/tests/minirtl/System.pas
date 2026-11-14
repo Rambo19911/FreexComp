@@ -67,6 +67,26 @@ procedure _IOCheck;
 
 var
   AbstractErrorProc: procedure;              { ABI-103: called by _AbstractError when assigned }
+  ErrorProc: procedure(Code: Integer; Addr: Pointer);                       { ABI-101, set by SysUtils }
+  ExceptProc: procedure(Obj: TObject; Addr: Pointer);                       { ABI-124, set by SysUtils }
+  ExceptObjProc: function(ErrorCode: Integer; ExceptionRecord: Pointer): Pointer;   { ABI-121 step 2, set by SysUtils }
+
+{ exceptions (ABI section 9.7, C-089): Windows SEH; one global in-flight and one handled stack (single-threaded mini RTL,
+  per thread in the RTL, ABI-120) }
+const
+  _PascalExceptionCode = $E0504153;
+
+procedure _Raise(Obj: Pointer; Addr: Pointer); noreturn;
+procedure _ReRaise; noreturn;
+function _SehFilter(Info: Pointer; Frame: Pointer): Integer;
+function _BeginCatch: Pointer;
+procedure _EndCatch;
+function _CurrentExcept: Pointer;
+procedure _UnhandledException; noreturn;
+function ExceptObject: TObject;
+function ExceptAddr: Pointer;
+function AcquireExceptionObject: Pointer;
+procedure ReleaseExceptionObject;
 
 { text files (ABI-132, C-182): errors go to InOutRes, never raised here; the compiler calls _IOCheck after them under $I+ }
 function IOResult: Integer;
@@ -342,9 +362,12 @@ begin
   _Halt0;
 end;
 
-{ ABI-101 without ErrorProc (SysUtils is M2.4); the error address is not known yet and printed as zero }
+{ ABI-101: ErrorProc (SysUtils) raises the matching exception; without it the message and _Halt. The error address is not
+  known yet (no _ReturnAddress, C-173): nil, printed as zero }
 procedure _RunError(Code: Integer);
 begin
+  if Assigned(ErrorProc) then
+    ErrorProc(Code, nil);
   Writeln(ErrOutput, 'Runtime error ', Code, ' at $0000000000000000');
   _Halt(Code);
 end;
@@ -3061,6 +3084,202 @@ begin
   if (Obj <> nil) and not _ClassInherits(PPointer(Obj)^, VMT) then
     _InvalidCast;
   Result := Obj;
+end;
+
+{ ---- exceptions (ABI section 9.7, ABI-120...124, C-089). EXCEPTION_POINTERS = (ExceptionRecord, ContextRecord); in the
+  EXCEPTION_RECORD the code is at 0, the address at 16, ExceptionInformation[0..1] at 32/40; CONTEXT.Rsp is at 152.
+  The stacks are global arrays (the mini RTL starts no threads); deeper nesting than MaxExceptDepth is error 202. }
+
+const
+  MaxExceptDepth = 16;
+  EXCEPTION_NONCONTINUABLE = 1;
+  HandledReraised = 1;
+  HandledAcquired = 2;
+
+type
+  PCardinal = ^Cardinal;
+  PNativeUInt = ^NativeUInt;
+
+var
+  InFlightObj: array[0..MaxExceptDepth - 1] of Pointer;
+  InFlightAddr: array[0..MaxExceptDepth - 1] of Pointer;
+  InFlightSP: array[0..MaxExceptDepth - 1] of NativeUInt;
+  InFlightCount: Integer;
+  HandledObj: array[0..MaxExceptDepth - 1] of Pointer;
+  HandledAddr: array[0..MaxExceptDepth - 1] of Pointer;
+  HandledFlags: array[0..MaxExceptDepth - 1] of Byte;
+  HandledCount: Integer;
+
+procedure RaiseException(Code, Flags, Count: Cardinal; Args: Pointer); external kernel32;
+
+procedure RaiseWith(Obj, Addr: Pointer);
+var
+  Args: array[0..1] of Pointer;
+begin
+  Args[0] := Obj;
+  Args[1] := Addr;
+  RaiseException(_PascalExceptionCode, EXCEPTION_NONCONTINUABLE, 2, @Args);
+end;
+
+{ ABI-123: nil is error 204; Addr is recorded as given (no _ReturnAddress substitute yet, C-173) }
+procedure _Raise(Obj: Pointer; Addr: Pointer);
+begin
+  if Obj = nil then
+    _RunError(204);
+  RaiseWith(Obj, Addr);
+  _RunError(217);                            { not reached: the exception is noncontinuable }
+end;
+
+{ ABI-122: the innermost handler's object again, marked so that its _EndCatch keeps it }
+procedure _ReRaise;
+begin
+  if HandledCount = 0 then
+    _RunError(217);
+  HandledFlags[HandledCount - 1] := HandledFlags[HandledCount - 1] or HandledReraised;
+  RaiseWith(HandledObj[HandledCount - 1], HandledAddr[HandledCount - 1]);
+  _RunError(217);
+end;
+
+{ ABI-121 step 2: the runtime error number of an OS exception code, 0 for codes that are not caught }
+function OsErrorNumber(Code: Cardinal): Integer;
+begin
+  case Code of
+    $C0000005: Result := 216;
+    $C0000094: Result := 200;
+    $C0000095: Result := 215;
+    $C000008C: Result := 201;
+    $C000008E: Result := 208;
+    $C0000090: Result := 207;
+    $C0000091: Result := 205;
+    $C0000093: Result := 206;
+    $C00000FD: Result := 202;
+    $C000001D, $C0000096: Result := 218;
+  else
+    Result := 0;
+  end;
+end;
+
+{ ABI-121: the one filter of every try..except (catch-all; the handler tests the class) }
+function _SehFilter(Info: Pointer; Frame: Pointer): Integer;
+var
+  Rec, Ctx: PByte;
+  Code: Cardinal;
+  Error: Integer;
+  Obj, Addr, Stale: Pointer;
+begin
+  Result := 0;
+  Rec := PPointer(Info)^;
+  Code := PCardinal(Rec)^;
+  if Code = _PascalExceptionCode then
+  begin
+    Obj := PPointer(Rec + 32)^;
+    Addr := PPointer(Rec + 40)^;
+  end
+  else
+  begin
+    Error := OsErrorNumber(Code);
+    if Error = 0 then
+      Exit;                                  { step 3: EXCEPTION_CONTINUE_SEARCH }
+    Obj := nil;
+    if Assigned(ExceptObjProc) then
+      Obj := ExceptObjProc(Error, Rec);
+    if Obj = nil then
+    begin
+      if Error = 202 then
+        ExitProcess(202);                    { no stack left for the message (ABI-121 step 2) }
+      Writeln(ErrOutput, 'Runtime error ', Error, ' at $0000000000000000');
+      _Halt(Error);
+    end;
+    Addr := PPointer(Rec + 16)^;
+  end;
+
+  { step 4: entries whose unwind was abandoned (a newer exception escaped a finally) lie below this frame }
+  while (InFlightCount > 0) and (InFlightSP[InFlightCount - 1] < NativeUInt(Frame)) do
+  begin
+    InFlightCount := InFlightCount - 1;
+    Stale := InFlightObj[InFlightCount];
+    TObject(Stale).Free;
+  end;
+
+  if InFlightCount = MaxExceptDepth then
+    ExitProcess(202);
+  Ctx := PPointer(PByte(Info) + 8)^;
+  InFlightObj[InFlightCount] := Obj;
+  InFlightAddr[InFlightCount] := Addr;
+  InFlightSP[InFlightCount] := PNativeUInt(Ctx + 152)^;
+  InFlightCount := InFlightCount + 1;
+  Result := 1;                               { step 5: EXCEPTION_EXECUTE_HANDLER }
+end;
+
+{ ABI-122 }
+function _BeginCatch: Pointer;
+begin
+  if HandledCount = MaxExceptDepth then
+    ExitProcess(202);
+  InFlightCount := InFlightCount - 1;
+  HandledObj[HandledCount] := InFlightObj[InFlightCount];
+  HandledAddr[HandledCount] := InFlightAddr[InFlightCount];
+  HandledFlags[HandledCount] := 0;
+  HandledCount := HandledCount + 1;
+  Result := HandledObj[HandledCount - 1];
+end;
+
+{ ABI-122: the entry is popped before the object is destroyed (its destructor may raise) }
+procedure _EndCatch;
+var
+  Obj: Pointer;
+begin
+  HandledCount := HandledCount - 1;
+  Obj := HandledObj[HandledCount];
+  if HandledFlags[HandledCount] = 0 then
+    TObject(Obj).Free;
+end;
+
+function _CurrentExcept: Pointer;
+begin
+  if HandledCount = 0 then
+    Result := nil
+  else
+    Result := HandledObj[HandledCount - 1];
+end;
+
+function ExceptObject: TObject;
+begin
+  Result := TObject(_CurrentExcept);
+end;
+
+function ExceptAddr: Pointer;
+begin
+  if HandledCount = 0 then
+    Result := nil
+  else
+    Result := HandledAddr[HandledCount - 1];
+end;
+
+function AcquireExceptionObject: Pointer;
+begin
+  Result := _CurrentExcept;
+  if HandledCount > 0 then
+    HandledFlags[HandledCount - 1] := HandledFlags[HandledCount - 1] or HandledAcquired;
+end;
+
+procedure ReleaseExceptionObject;
+begin
+  if HandledCount > 0 then
+    HandledFlags[HandledCount - 1] := HandledFlags[HandledCount - 1] and (255 - HandledAcquired);
+end;
+
+{ ABI-124: ExceptProc (SysUtils) writes its own message; otherwise the class name; then exit code 217 }
+procedure _UnhandledException;
+var
+  Obj: TObject;
+begin
+  Obj := ExceptObject;
+  if Assigned(ExceptProc) then
+    ExceptProc(Obj, ExceptAddr)
+  else
+    Writeln(ErrOutput, 'Unhandled exception ', Obj.ClassName, ' at $0000000000000000');
+  _Halt(217);
 end;
 
 end.

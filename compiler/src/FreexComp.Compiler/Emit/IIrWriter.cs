@@ -110,7 +110,30 @@ internal interface IIrWriter
     /// Direct or indirect call. <paramref name="name"/> must be null for <c>void</c>; may be null for a discarded result
     /// (then null is returned). <paramref name="attributeGroup"/> is the call-site group (<c>#1</c> for noreturn helpers).
     /// </summary>
-    IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null);
+    /// <remarks><paramref name="funclet"/>: the pad token of the funclet the call is in (<c>[ "funclet"(token %cl) ]</c>, CMP-392/393).</remarks>
+    IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, IrValue? funclet = null);
+
+    /// <summary>
+    /// <c>invoke … to label %normal unwind label %unwind</c> (CMP-394): a terminator. A function with an invoke or a pad gets
+    /// <c>personality ptr @__C_specific_handler</c>, which the writer declares (CMP-390).
+    /// </summary>
+    IrLocal? Invoke(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, IrBlock normal, IrBlock unwind,
+        int? attributeGroup = null, IrValue? funclet = null);
+
+    /// <summary><c>%name = catchswitch within none [label %handler] unwind to caller|label %unwind</c> (CMP-391).</summary>
+    IrLocal CatchSwitch(string name, IrBlock handler, IrBlock? unwind);
+
+    /// <summary><c>%name = catchpad within %catchSwitch [args]</c>.</summary>
+    IrLocal CatchPad(string name, IrValue catchSwitch, ImmutableArray<IrValue> arguments);
+
+    /// <summary><c>catchret from %pad to label %target</c>.</summary>
+    void CatchRet(IrValue pad, IrBlock target);
+
+    /// <summary><c>%name = cleanuppad within none []</c> (CMP-391…393).</summary>
+    IrLocal CleanupPad(string name);
+
+    /// <summary><c>cleanupret from %pad unwind to caller|label %unwind</c>.</summary>
+    void CleanupRet(IrValue pad, IrBlock? unwind);
 
     void Br(IrBlock target);
 

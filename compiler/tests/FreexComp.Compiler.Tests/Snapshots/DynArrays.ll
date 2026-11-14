@@ -30,8 +30,9 @@ declare void @"System._DynArrayClr"(ptr, ptr)
 declare void @"System._DynArrayCopy"(ptr, ptr, ptr, i64, i64)
 declare void @"System._DynArraySetLen"(ptr, ptr, i64, ptr)
 declare void @"System._RangeError"() #1
+declare i32 @__C_specific_handler(...)
 
-define void @"M.Build"(ptr %Result, i32 %n, ptr %names) #0 {
+define void @"M.Build"(ptr %Result, i32 %n, ptr %names) #0 personality ptr @__C_specific_handler {
 entry:
   %n.addr = alloca i32, align 4
   %names.addr = alloca ptr, align 8
@@ -49,18 +50,24 @@ entry:
   %t2 = sext i32 %t1 to i64
   %t3 = getelementptr inbounds [1 x i64], ptr %$tmp1.addr, i64 0, i64 0
   store i64 %t2, ptr %t3, align 8
-  call void @"System._DynArraySetLen"(ptr %Result, ptr @"M.TInts.$rtti", i64 1, ptr %$tmp1.addr)
+  invoke void @"System._DynArraySetLen"(ptr %Result, ptr @"M.TInts.$rtti", i64 1, ptr %$tmp1.addr)
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   %t4 = load i32, ptr %n.addr, align 4
   %t5 = sext i32 %t4 to i64
   %t6 = getelementptr inbounds [2 x i64], ptr %$tmp2.addr, i64 0, i64 0
   store i64 %t5, ptr %t6, align 8
   %t7 = getelementptr inbounds [2 x i64], ptr %$tmp2.addr, i64 0, i64 1
   store i64 2, ptr %t7, align 8
-  call void @"System._DynArraySetLen"(ptr %g.addr, ptr @"M.TGrid.$rtti", i64 2, ptr %$tmp2.addr)
+  invoke void @"System._DynArraySetLen"(ptr %g.addr, ptr @"M.TGrid.$rtti", i64 2, ptr %$tmp2.addr)
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t8 = load ptr, ptr %g.addr, align 8
   %t9 = getelementptr inbounds ptr, ptr %t8, i64 0
   %t10 = load ptr, ptr %Result, align 8
-  call void @"System._DynArrayAsg"(ptr %t9, ptr %t10, ptr @"M.TInts.$rtti")
+  invoke void @"System._DynArrayAsg"(ptr %t9, ptr %t10, ptr @"M.TInts.$rtti")
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t11 = load ptr, ptr %names.addr, align 8
   %t12 = icmp eq ptr %t11, null
   br i1 %t12, label %len.end.1, label %len.load.1
@@ -69,11 +76,13 @@ len.load.1:
   %t14 = load i64, ptr %t13, align 8
   br label %len.end.1
 len.end.1:
-  %t15 = phi i64 [ 0, %entry ], [ %t14, %len.load.1 ]
+  %t15 = phi i64 [ 0, %cont.3 ], [ %t14, %len.load.1 ]
   %t16 = icmp ult i64 0, %t15
   br i1 %t16, label %range.ok.2, label %range.error.2
 range.error.2:
-  call void @"System._RangeError"() #1
+  invoke void @"System._RangeError"() #1
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   unreachable
 range.ok.2:
   %t17 = getelementptr inbounds ptr, ptr %t11, i64 0
@@ -101,19 +110,27 @@ len.end.4:
   %t31 = icmp ult i64 %t26, %t30
   br i1 %t31, label %range.ok.5, label %range.error.5
 range.error.5:
-  call void @"System._RangeError"() #1
+  invoke void @"System._RangeError"() #1
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   unreachable
 range.ok.5:
   %t32 = getelementptr inbounds i32, ptr %t23, i64 %t26
   store i32 %t22, ptr %t32, align 4
-  call void @"System._DynArrayClr"(ptr %rest.addr, ptr @"M.$rtti.array of string")
+  invoke void @"System._DynArrayClr"(ptr %rest.addr, ptr @"M.$rtti.array of string")
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t33 = load ptr, ptr %names.addr, align 8
-  call void @"System._DynArrayCopy"(ptr %$tmp3.addr, ptr %t33, ptr @"M.TNames.$rtti", i64 1, i64 9223372036854775807)
+  invoke void @"System._DynArrayCopy"(ptr %$tmp3.addr, ptr %t33, ptr @"M.TNames.$rtti", i64 1, i64 9223372036854775807)
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   %t34 = load ptr, ptr %$tmp3.addr, align 8
   %t35 = icmp ne ptr %t34, null
   br i1 %t35, label %if.then.6, label %if.end.6
 if.then.6:
-  call void @"System._DynArrayClr"(ptr %g.addr, ptr @"M.TGrid.$rtti")
+  invoke void @"System._DynArrayClr"(ptr %g.addr, ptr @"M.TGrid.$rtti")
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   br label %if.end.6
 if.end.6:
   br label %cleanup
@@ -124,6 +141,12 @@ cleanup:
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._DynArrayClr"(ptr %g.addr, ptr @"M.TGrid.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._DynArrayClr"(ptr %rest.addr, ptr @"M.$rtti.array of string") [ "funclet"(token %cl) ]
+  call void @"System._DynArrayClr"(ptr %$tmp3.addr, ptr @"M.TNames.$rtti") [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
 define void @"M.Kinds"(ptr %p, ptr %t, ptr %a) #0 {

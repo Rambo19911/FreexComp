@@ -13,12 +13,18 @@ namespace FreexComp.Compiler.Binding;
 internal sealed class BodyBinder
 {
     private readonly BuiltInTypes _types;
-    private readonly Scope _scope;
+    private Scope _scope;
     private readonly DiagnosticBag _diagnostics;
     private readonly ExpressionBinder _expressions;
     private readonly Conversions _conversions = new();
     private readonly RoutineSymbol? _routine;
     private int _loopDepth;
+
+    /// <summary>Exception handlers lexically enclosing the statement being bound (LANG-807: <c>raise;</c>).</summary>
+    private int _handlerDepth;
+
+    /// <summary>The loop depth at the innermost enclosing <c>finally</c> part, or -1 outside any (LANG-812, E2067).</summary>
+    private int _finallyLoopDepth = -1;
 
     /// <param name="routine">The routine whose body this is; null for a unit-level body.</param>
     public BodyBinder(BuiltInTypes types, Scope scope, DiagnosticBag diagnostics, RoutineSymbol? routine = null)
@@ -71,6 +77,12 @@ internal sealed class BodyBinder
                 return BindCase(caseStatement);
             case InheritedStatementSyntax inherited:
                 return _expressions.BindMethodCallStatement(inherited, inherited.Expression)!;      // LANG-624
+            case RaiseStatementSyntax raise:
+                return BindRaise(raise);
+            case TryExceptStatementSyntax tryExcept:
+                return BindTryExcept(tryExcept);
+            case TryFinallyStatementSyntax tryFinally:
+                return BindTryFinally(tryFinally);
             default:
                 if (!statement.ContainsDiagnostics)
                 {
@@ -355,6 +367,134 @@ internal sealed class BodyBinder
         return _expressions.ConvertForAssignment(value, selectorType, syntax);
     }
 
+    // ------------------------------------------------------------------ exceptions (LANG-805…826)
+
+    /// <summary>LANG-805…807: <c>raise E [at A]</c> needs a class instance (E2800); <c>raise;</c> only inside a handler (E2801).</summary>
+    private BoundStatement BindRaise(RaiseStatementSyntax syntax)
+    {
+        if (syntax.Exception is null)
+        {
+            if (_handlerDepth == 0)
+            {
+                _diagnostics.Report(syntax, "E2801");
+                return new BoundErrorStatement(syntax);
+            }
+
+            return new BoundRaiseStatement(syntax, exception: null, address: null);
+        }
+
+        var exception = _expressions.BindExpression(syntax.Exception);
+        if (!exception.HasErrors && exception.Type is not ClassTypeSymbol && !ReferenceEquals(exception.Type, _types.Nil))
+        {
+            _diagnostics.Report(syntax.Exception, "E2800");
+            exception = new BoundErrorExpression(syntax.Exception, _types.Error, [exception]);
+        }
+
+        var address = syntax.Address is { } at
+            ? _expressions.ConvertForAssignment(_expressions.BindExpression(at), _types.Pointer, at)
+            : null;
+        return exception.HasErrors || address?.HasErrors == true ? new BoundErrorStatement(syntax) : new BoundRaiseStatement(syntax, exception, address);
+    }
+
+    /// <summary>
+    /// LANG-820…822: the handlers are bound in order, each in a block scope holding its read-only variable; a handler type
+    /// must be a class (E2802); one that an earlier handler's class (or an ancestor) already catches gives W1080.
+    /// </summary>
+    private BoundStatement BindTryExcept(TryExceptStatementSyntax syntax)
+    {
+        var body = BindBlock(syntax, syntax.Statements);
+        var handlers = ImmutableArray.CreateBuilder<BoundExceptionHandler>();
+        var hasErrors = false;
+        _handlerDepth++;
+        foreach (var handler in syntax.Handlers)
+        {
+            var type = HandlerType(handler.Type);
+            if (type is null)
+            {
+                hasErrors = true;
+                continue;
+            }
+
+            if (handlers.Any(h => type.SelfAndAncestors().Contains(h.Type)))
+            {
+                _diagnostics.Report(handler.Type, "W1080", type.Name);
+            }
+
+            VariableSymbol? variable = null;
+            var scope = _scope;
+            if (handler.Identifier is { IsMissing: false } identifier)
+            {
+                variable = new VariableSymbol(identifier.Value as string ?? identifier.Text, type, isGlobal: false, _routine,
+                    [DiagnosticBag.LocationOf(identifier)]) { IsReadOnly = true };
+                scope = new Scope(ScopeKind.Block, _scope, _routine);
+                scope.TryDeclare(variable, out _);
+            }
+
+            var statement = InScope(scope, () => BindStatement(handler.Statement));
+            handlers.Add(new BoundExceptionHandler(handler, variable, type, statement));
+        }
+
+        var otherwise = syntax.ElseKeyword is not null || syntax.Handlers.Count == 0 ? BindBlock(syntax, syntax.ExceptStatements) : null;
+        _handlerDepth--;
+        return hasErrors ? new BoundErrorStatement(syntax) : new BoundTryExceptStatement(syntax, body, handlers.ToImmutable(), otherwise);
+    }
+
+    /// <summary>LANG-810, 812: <c>Exit</c>, and <c>Break</c>/<c>Continue</c> of loops outside, may not leave the finally part (E2067).</summary>
+    private BoundTryFinallyStatement BindTryFinally(TryFinallyStatementSyntax syntax)
+    {
+        var body = BindBlock(syntax, syntax.Statements);
+        var outer = _finallyLoopDepth;
+        _finallyLoopDepth = _loopDepth;
+        var final = BindBlock(syntax, syntax.FinallyStatements);
+        _finallyLoopDepth = outer;
+        return new BoundTryFinallyStatement(syntax, body, final);
+    }
+
+    /// <summary>The class named after <c>on [E:]</c>; null after E2003 or E2802.</summary>
+    private ClassTypeSymbol? HandlerType(NamedTypeSyntax syntax)
+    {
+        var name = syntax.Name switch
+        {
+            IdentifierNameSyntax identifier => identifier,
+            QualifiedNameSyntax { Right: IdentifierNameSyntax right } qualified when UnitQualifiers.Qualifier(_scope, qualified.Left) is not null => right,
+            _ => null,
+        };
+        if (name is { Identifier.IsMissing: true })
+        {
+            return null;
+        }
+
+        if (name is not null)
+        {
+            var text = name.Identifier.Value as string ?? name.Identifier.Text;
+            switch (_scope.For(name).Lookup(text))
+            {
+                case null:
+                    _diagnostics.ReportUndeclared(name, text);
+                    return null;
+                case ClassTypeSymbol type:
+                    return type;
+            }
+        }
+
+        _diagnostics.Report(syntax, "E2802");
+        return null;
+    }
+
+    private T InScope<T>(Scope scope, Func<T> bind)
+    {
+        var outer = _scope;
+        _scope = scope;
+        try
+        {
+            return _expressions.InScope(scope, bind);
+        }
+        finally
+        {
+            _scope = outer;
+        }
+    }
+
     private static BigInteger Ordinal(ConstantValue value) => value.Value switch
     {
         BigInteger i => i,
@@ -441,6 +581,10 @@ internal sealed class BodyBinder
                     : [_expressions.ConvertForAssignment(_expressions.BindExpression(arguments[0].Expression), _types.Integer, arguments[0].Expression)]);
             case IntrinsicKind.Break or IntrinsicKind.Continue when _loopDepth == 0:
                 _diagnostics.Report(statement.Expression, "E2066", intrinsic.Name);
+                return new BoundErrorStatement(statement);
+            case IntrinsicKind.Break or IntrinsicKind.Continue when _loopDepth == _finallyLoopDepth:
+            case IntrinsicKind.Exit when _finallyLoopDepth >= 0:
+                _diagnostics.Report(statement.Expression, "E2067", intrinsic.Name);         // LANG-812
                 return new BoundErrorStatement(statement);
             case IntrinsicKind.Break:
                 return new BoundBreakStatement(statement);

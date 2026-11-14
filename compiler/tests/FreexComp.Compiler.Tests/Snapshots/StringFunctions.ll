@@ -18,8 +18,9 @@ declare void @"System._UStrSetLen"(ptr, i32)
 declare void @"System._UStrUnique"(ptr)
 declare double @"System._ValFloat"(ptr, ptr)
 declare i64 @"System._ValInt"(ptr, ptr)
+declare i32 @__C_specific_handler(...)
 
-define void @"M.Edit"(ptr %Result, ptr %s, ptr %t, i16 %c, i32 %i) #0 {
+define void @"M.Edit"(ptr %Result, ptr %s, ptr %t, i16 %c, i32 %i) #0 personality ptr @__C_specific_handler {
 entry:
   %t.addr = alloca ptr, align 8
   %c.addr = alloca i16, align 2
@@ -35,19 +36,31 @@ entry:
   store ptr null, ptr %$tmp2.addr, align 8
   store ptr null, ptr %$tmp3.addr, align 8
   %t1 = load i32, ptr %i.addr, align 4
-  call void @"System._UStrSetLen"(ptr %s, i32 %t1)
+  invoke void @"System._UStrSetLen"(ptr %s, i32 %t1)
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   %t2 = load i32, ptr %i.addr, align 4
-  call void @"System._UStrDelete"(ptr %s, i32 2, i32 %t2)
+  invoke void @"System._UStrDelete"(ptr %s, i32 2, i32 %t2)
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
   %t3 = load ptr, ptr %t.addr, align 8
   %t4 = load i32, ptr %i.addr, align 4
-  call void @"System._UStrInsert"(ptr %t3, ptr %s, i32 %t4)
+  invoke void @"System._UStrInsert"(ptr %t3, ptr %s, i32 %t4)
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t5 = load i16, ptr %c.addr, align 2
-  call void @"System._UStrFromWChar"(ptr %$tmp1.addr, i16 %t5)
+  invoke void @"System._UStrFromWChar"(ptr %$tmp1.addr, i16 %t5)
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   %t6 = load ptr, ptr %$tmp1.addr, align 8
-  call void @"System._UStrInsert"(ptr %t6, ptr %s, i32 1)
+  invoke void @"System._UStrInsert"(ptr %t6, ptr %s, i32 1)
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   %t7 = load ptr, ptr %s, align 8
   %t8 = load i32, ptr %i.addr, align 4
-  call void @"System._UStrCopy"(ptr %$tmp2.addr, ptr %t7, i32 %t8, i32 2)
+  invoke void @"System._UStrCopy"(ptr %$tmp2.addr, ptr %t7, i32 %t8, i32 2)
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t9 = load ptr, ptr %$tmp2.addr, align 8
   %t10 = getelementptr inbounds [3 x ptr], ptr %$tmp4.addr, i64 0, i64 0
   store ptr %t9, ptr %t10, align 8
@@ -55,13 +68,19 @@ entry:
   %t12 = getelementptr inbounds [3 x ptr], ptr %$tmp4.addr, i64 0, i64 1
   store ptr %t11, ptr %t12, align 8
   %t13 = load i16, ptr %c.addr, align 2
-  call void @"System._UStrFromWChar"(ptr %$tmp3.addr, i16 %t13)
+  invoke void @"System._UStrFromWChar"(ptr %$tmp3.addr, i16 %t13)
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   %t14 = load ptr, ptr %$tmp3.addr, align 8
   %t15 = getelementptr inbounds [3 x ptr], ptr %$tmp4.addr, i64 0, i64 2
   store ptr %t14, ptr %t15, align 8
-  call void @"System._UStrCatN"(ptr %Result, ptr %$tmp4.addr, i32 3)
+  invoke void @"System._UStrCatN"(ptr %Result, ptr %$tmp4.addr, i32 3)
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   %t16 = load ptr, ptr %s, align 8
-  call void @"System._UStrCopy"(ptr %s, ptr %t16, i32 2, i32 2147483647)
+  invoke void @"System._UStrCopy"(ptr %s, ptr %t16, i32 2, i32 2147483647)
+          to label %cont.9 unwind label %cleanup.pad
+cont.9:
   %t17 = load ptr, ptr %Result, align 8
   %t18 = getelementptr inbounds i16, ptr %t17, i64 0
   %t19 = load i16, ptr %t18, align 2
@@ -72,21 +91,29 @@ entry:
   %t24 = sub i32 %t23, 32
   %t25 = trunc i32 %t24 to i16
   %t26 = select i1 %t22, i16 %t25, i16 %t19
-  call void @"System._UStrUnique"(ptr %Result)
+  invoke void @"System._UStrUnique"(ptr %Result)
+          to label %cont.10 unwind label %cleanup.pad
+cont.10:
   %t27 = load ptr, ptr %Result, align 8
   %t28 = getelementptr inbounds i16, ptr %t27, i64 0
   store i16 %t26, ptr %t28, align 2
   %t29 = load ptr, ptr %t.addr, align 8
   %t30 = load ptr, ptr %s, align 8
-  %t31 = call i32 @"System._UStrPos"(ptr %t29, ptr %t30, i32 1)
+  %t31 = invoke i32 @"System._UStrPos"(ptr %t29, ptr %t30, i32 1)
+          to label %cont.11 unwind label %cleanup.pad
+cont.11:
   %t32 = load ptr, ptr %s, align 8
   %t33 = load i32, ptr %i.addr, align 4
-  %t34 = call i32 @"System._UStrPos"(ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.0, i32 0, i32 5), ptr %t32, i32 %t33)
+  %t34 = invoke i32 @"System._UStrPos"(ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.0, i32 0, i32 5), ptr %t32, i32 %t33)
+          to label %cont.12 unwind label %cleanup.pad
+cont.12:
   %t35 = icmp sgt i32 %t31, %t34
   br i1 %t35, label %if.then.1, label %if.end.1
 if.then.1:
   %t36 = load ptr, ptr %t.addr, align 8
-  call void @"System._UStrAsg"(ptr %Result, ptr %t36)
+  invoke void @"System._UStrAsg"(ptr %Result, ptr %t36)
+          to label %cont.13 unwind label %cleanup.pad
+cont.13:
   br label %if.end.1
 if.end.1:
   br label %cleanup
@@ -97,6 +124,12 @@ cleanup:
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._UStrClr"(ptr %$tmp1.addr) [ "funclet"(token %cl) ]
+  call void @"System._UStrClr"(ptr %$tmp2.addr) [ "funclet"(token %cl) ]
+  call void @"System._UStrClr"(ptr %$tmp3.addr) [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
 define i8 @"M.Numbers"(ptr %s, i32 %i, double %d, ptr %code) #0 {

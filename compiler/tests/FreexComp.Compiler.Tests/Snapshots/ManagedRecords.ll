@@ -25,6 +25,7 @@ declare void @"System._CopyRecord"(ptr, ptr, ptr)
 declare void @"System._Finalize"(ptr, ptr)
 declare void @"System._FreeMem"(ptr)
 declare void @"System._UStrAsg"(ptr, ptr)
+declare i32 @__C_specific_handler(...)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 
 define void @"M.Make"(ptr %Result, ptr %n) #0 {
@@ -39,26 +40,38 @@ exit:
   ret void
 }
 
-define void @"M.Take"(ptr %p, i64 %s, ptr %o) #0 {
+define void @"M.Take"(ptr %p, i64 %s, ptr %o) #0 personality ptr @__C_specific_handler {
 entry:
   %s.addr = alloca %"M.TSmall", align 8
   store i64 %s, ptr %s.addr, align 8
-  call void @"System._AddRef"(ptr %s.addr, ptr @"M.TSmall.$rtti")
-  call void @"System._Finalize"(ptr %o, ptr @"M.TPerson.$rtti")
-  call void @"System._CopyRecord"(ptr %o, ptr %p, ptr @"M.TPerson.$rtti")
+  invoke void @"System._AddRef"(ptr %s.addr, ptr @"M.TSmall.$rtti")
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
+  invoke void @"System._Finalize"(ptr %o, ptr @"M.TPerson.$rtti")
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
+  invoke void @"System._CopyRecord"(ptr %o, ptr %p, ptr @"M.TPerson.$rtti")
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t1 = getelementptr inbounds %"M.TSmall", ptr %s.addr, i32 0, i32 0
   %t2 = getelementptr inbounds %"M.TPerson", ptr %p, i32 0, i32 0
   %t3 = load ptr, ptr %t2, align 8
-  call void @"System._UStrAsg"(ptr %t1, ptr %t3)
+  invoke void @"System._UStrAsg"(ptr %t1, ptr %t3)
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   br label %cleanup
 cleanup:
   call void @"System._Finalize"(ptr %s.addr, ptr @"M.TSmall.$rtti")
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._Finalize"(ptr %s.addr, ptr @"M.TSmall.$rtti") [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
-define void @"M.Use"(ptr %q) #0 {
+define void @"M.Use"(ptr %q) #0 personality ptr @__C_specific_handler {
 entry:
   %q.addr = alloca ptr, align 8
   %a.addr = alloca %"M.TPerson", align 8
@@ -73,20 +86,32 @@ entry:
   call void @llvm.memset.p0.i64(ptr align 8 %copy.addr, i8 0, i64 16, i1 false)
   call void @llvm.memset.p0.i64(ptr align 8 %small.addr, i8 0, i64 8, i1 false)
   call void @llvm.memset.p0.i64(ptr align 8 %$tmp1.addr, i8 0, i64 24, i1 false)
-  call void @"M.Make"(ptr %a.addr, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.4, i32 0, i32 5))
+  invoke void @"M.Make"(ptr %a.addr, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [2 x i16] }, ptr @.str.4, i32 0, i32 5))
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   %t1 = getelementptr inbounds [2 x ptr], ptr %names.addr, i64 0, i64 0
   %t2 = getelementptr inbounds %"M.TPerson", ptr %a.addr, i32 0, i32 0
   %t3 = load ptr, ptr %t2, align 8
-  call void @"System._UStrAsg"(ptr %t1, ptr %t3)
-  call void @"System._CopyRecord"(ptr %copy.addr, ptr %names.addr, ptr @"M.TNames.$rtti")
-  call void @"System._CopyRecord"(ptr %$tmp1.addr, ptr %a.addr, ptr @"M.TPerson.$rtti")
+  invoke void @"System._UStrAsg"(ptr %t1, ptr %t3)
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
+  invoke void @"System._CopyRecord"(ptr %copy.addr, ptr %names.addr, ptr @"M.TNames.$rtti")
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
+  invoke void @"System._CopyRecord"(ptr %$tmp1.addr, ptr %a.addr, ptr @"M.TPerson.$rtti")
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   %t4 = load i64, ptr %small.addr, align 8
   %t5 = load ptr, ptr %q.addr, align 8
-  call void @"M.Take"(ptr %$tmp1.addr, i64 %t4, ptr %t5)
+  invoke void @"M.Take"(ptr %$tmp1.addr, i64 %t4, ptr %t5)
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   %t6 = load ptr, ptr %q.addr, align 8
   store ptr %t6, ptr %$tmp2.addr, align 8
   %t7 = load ptr, ptr %$tmp2.addr, align 8
-  call void @"System._Finalize"(ptr %t7, ptr @"M.TPerson.$rtti")
+  invoke void @"System._Finalize"(ptr %t7, ptr @"M.TPerson.$rtti")
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t8 = load ptr, ptr %$tmp2.addr, align 8
   call void @"System._FreeMem"(ptr %t8)
   br label %cleanup
@@ -99,6 +124,14 @@ cleanup:
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._Finalize"(ptr %a.addr, ptr @"M.TPerson.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._Finalize"(ptr %names.addr, ptr @"M.TNames.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._Finalize"(ptr %copy.addr, ptr @"M.TNames.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._Finalize"(ptr %small.addr, ptr @"M.TSmall.$rtti") [ "funclet"(token %cl) ]
+  call void @"System._Finalize"(ptr %$tmp1.addr, ptr @"M.TPerson.$rtti") [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
 define void @"M.$init"() #0 {

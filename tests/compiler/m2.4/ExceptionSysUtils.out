@@ -1,0 +1,5 @@
+Exception: msg
+EDivByZero: Division by zero
+ERangeError: Range check error, is EIntError: TRUE
+EConvertError: bad number
+leaked: 0

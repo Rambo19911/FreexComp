@@ -17,6 +17,7 @@ internal abstract record IrType
     public static readonly FloatingIrType Double = new(FloatingKind.Double);
     public static readonly PointerIrType Ptr = new();
     public static readonly VoidIrType Void = new();
+    public static readonly TokenIrType Token = new();
 
     public static IntegerIrType Int(int bits) => bits switch
     {
@@ -45,6 +46,9 @@ internal sealed record ArrayIrType(long Length, IrType Element) : IrType;
 
 /// <summary><c>void</c> (routine results only).</summary>
 internal sealed record VoidIrType : IrType;
+
+/// <summary><c>token</c>: the value of a <c>catchswitch</c>, <c>catchpad</c> or <c>cleanuppad</c> (CMP-391…393).</summary>
+internal sealed record TokenIrType : IrType;
 
 /// <summary>A literal struct type <c>{ T1, T2 }</c>, or <c>&lt;{ … }&gt;</c> when <see cref="IsPacked"/>.</summary>
 internal sealed record StructIrType(ImmutableArray<IrType> Fields, bool IsPacked = false) : IrType

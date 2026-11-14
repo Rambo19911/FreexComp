@@ -198,6 +198,158 @@ public sealed class MiniRtlCompilesTests
 
         """;
 
+    /// <summary>
+    /// C-089: the CMP-391 pattern written by hand around the mini RTL's ABI §9.7 helpers. Scenario 1 raises a TObject and
+    /// catches it; scenario 2 re-raises it from an inner handler (ABI-122: kept) to an outer one; scenario 3 raises nil
+    /// (ABI-123: error 204, which without ErrorProc ends the program). Each line: object caught = the raised one (1/0), the
+    /// live block count inside the handler, the live block count and <c>_CurrentExcept</c> (as 0/1) after <c>_EndCatch</c>.
+    /// </summary>
+    private const string SehDriverIr = """
+        target triple = "x86_64-pc-windows-msvc"
+        @"System.Output" = external global [624 x i8], align 8
+        @"System.TObject.$vmt" = external global ptr, align 8
+        declare i32 @__C_specific_handler(...)
+        declare void @"System._Startup"(ptr, i64)
+        declare void @"System._WriteInt"(ptr, i64, i32)
+        declare void @"System._WriteWChar"(ptr, i16, i32)
+        declare void @"System._WriteLn"(ptr)
+        declare void @"System._WriteEnd"(ptr)
+        declare void @"System._Halt"(i32) #1
+        declare i64 @"System._LiveAllocCount"()
+        declare ptr @"System.TObject.Create"(ptr, i8)
+        declare void @"System._Raise"(ptr, ptr) #1
+        declare void @"System._ReRaise"() #1
+        declare i32 @"System._SehFilter"(ptr, ptr)
+        declare ptr @"System._BeginCatch"()
+        declare void @"System._EndCatch"()
+        declare ptr @"System._CurrentExcept"()
+
+        define void @int(i64 %v) {
+          call void @"System._WriteInt"(ptr @"System.Output", i64 %v, i32 0)
+          call void @"System._WriteWChar"(ptr @"System.Output", i16 32, i32 0)
+          ret void
+        }
+
+        define void @line(ptr %raised, ptr %caught) {
+          %same = icmp eq ptr %raised, %caught
+          %s = zext i1 %same to i64
+          call void @int(i64 %s)
+          %n = call i64 @"System._LiveAllocCount"()
+          call void @int(i64 %n)
+          ret void
+        }
+
+        define void @after() {
+          %n = call i64 @"System._LiveAllocCount"()
+          call void @int(i64 %n)
+          %c = call ptr @"System._CurrentExcept"()
+          %has = icmp ne ptr %c, null
+          %h = zext i1 %has to i64
+          call void @"System._WriteInt"(ptr @"System.Output", i64 %h, i32 0)
+          call void @"System._WriteLn"(ptr @"System.Output")
+          ret void
+        }
+
+        define void @catchOne() personality ptr @__C_specific_handler {
+        entry:
+          %o = call ptr @"System.TObject.Create"(ptr @"System.TObject.$vmt", i8 1)
+          invoke void @"System._Raise"(ptr %o, ptr null) #1
+                  to label %u unwind label %d
+        u:
+          unreachable
+        d:
+          %cs = catchswitch within none [label %p] unwind to caller
+        p:
+          %cp = catchpad within %cs [ptr @"System._SehFilter"]
+          catchret from %cp to label %b
+        b:
+          %e = call ptr @"System._BeginCatch"()
+          call void @line(ptr %o, ptr %e)
+          call void @"System._EndCatch"()
+          call void @after()
+          ret void
+        }
+
+        define void @rethrow() personality ptr @__C_specific_handler {
+        entry:
+          %o = call ptr @"System.TObject.Create"(ptr @"System.TObject.$vmt", i8 1)
+          invoke void @"System._Raise"(ptr %o, ptr null) #1
+                  to label %u unwind label %d1
+        u:
+          unreachable
+        d1:
+          %cs1 = catchswitch within none [label %p1] unwind label %d2
+        p1:
+          %cp1 = catchpad within %cs1 [ptr @"System._SehFilter"]
+          catchret from %cp1 to label %b1
+        b1:
+          %e1 = call ptr @"System._BeginCatch"()
+          invoke void @"System._ReRaise"() #1
+                  to label %u unwind label %c1
+        c1:
+          %cl1 = cleanuppad within none []
+          invoke void @"System._EndCatch"() [ "funclet"(token %cl1) ]
+                  to label %r1 unwind label %d2
+        r1:
+          cleanupret from %cl1 unwind label %d2
+        d2:
+          %cs2 = catchswitch within none [label %p2] unwind to caller
+        p2:
+          %cp2 = catchpad within %cs2 [ptr @"System._SehFilter"]
+          catchret from %cp2 to label %b2
+        b2:
+          %e2 = call ptr @"System._BeginCatch"()
+          call void @line(ptr %o, ptr %e2)
+          call void @"System._EndCatch"()
+          call void @after()
+          ret void
+        }
+
+        define void @raiseNil() personality ptr @__C_specific_handler {
+        entry:
+          invoke void @"System._Raise"(ptr null, ptr null) #1
+                  to label %u unwind label %d
+        u:
+          unreachable
+        d:
+          %cs = catchswitch within none [label %p] unwind to caller
+        p:
+          %cp = catchpad within %cs [ptr @"System._SehFilter"]
+          catchret from %cp to label %b
+        b:
+          %e = call ptr @"System._BeginCatch"()
+          call void @"System._EndCatch"()
+          ret void
+        }
+
+        define void @_start() {
+          call void @"System._Startup"(ptr null, i64 0)
+          call void @catchOne()
+          call void @rethrow()
+          call void @"System._WriteEnd"(ptr @"System.Output")
+          call void @raiseNil()
+          call void @"System._Halt"(i32 0) #1
+          unreachable
+        }
+        attributes #1 = { noreturn }
+
+        """;
+
+    [Theory]
+    [MemberData(nameof(Optimisations))]
+    [Trait("Category", "Toolchain")]
+    [Trait("Req", "ABI-121")]
+    [Trait("Req", "ABI-122")]
+    [Trait("Req", "ABI-123")]
+    public async Task MiniRtl_SehHelpers_CatchRethrowAndRaiseNil(string optimisation)
+    {
+        var (exitCode, stdout, stderr) = await BuildAndRun(SehDriverIr, optimisation);
+
+        Assert.Equal(["1 1 0 0", "1 1 0 0"], stdout);
+        Assert.Equal(["Runtime error 204 at $0000000000000000"], stderr);
+        Assert.Equal(204, exitCode);
+    }
+
     [Theory]
     [MemberData(nameof(Optimisations))]
     [Trait("Category", "Toolchain")]

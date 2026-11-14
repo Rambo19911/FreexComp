@@ -1,0 +1,10 @@
+no exception
+ELeaf handler: leaf
+  destroy leaf
+EMid handler: mid is ELeaf=FALSE
+  destroy mid
+EBase handler
+  destroy base
+else part: EOther
+outside a handler ExceptObject = nil: TRUE
+leaked: 0

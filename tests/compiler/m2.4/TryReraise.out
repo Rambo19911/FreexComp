@@ -1,0 +1,8 @@
+inner sees 1
+outer sees 2 same=TRUE
+destroy 2
+level 1
+level 2
+level 3 0
+destroy 0
+leaked: 0

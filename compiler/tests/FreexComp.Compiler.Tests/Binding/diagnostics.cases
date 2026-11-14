@@ -306,3 +306,33 @@ type TA = class abstract constructor Create; end; constructor TA.Create; begin e
 type TA = class constructor Create; procedure P; virtual; abstract; end; constructor TA.Create; begin end; begin TA.Create end.
 === E2610 1,68
 type TA = class strict private F: Integer; end; var A: TA; begin A.F := 1 end.
+=== E2067 1,19
+begin try finally Exit end end.
+=== E2800 1,13
+begin raise 1 end.
+=== E2801 1,7
+begin raise end.
+=== E2802 1,21
+begin try except on Integer do ; end end.
+=== W1080 1,69
+type E = class end; F = class(E) end; begin try except on E do ; on F do ; end end.
+=== W1062 1,146
+type TB = class destructor Destroy; virtual; end; TA = class(TB) destructor Destroy; override; end; destructor TB.Destroy; begin end; destructor TA.Destroy; begin end; begin end.
+=== E2133 1,20
+procedure P; begin inherited end; begin end.
+=== E2134 1,41
+procedure P; var X: Pointer; begin X := Self end; begin end.
+=== E2631 1,38
+type TA = class F: Integer; property P: Integer; end; begin end.
+=== E2632 1,97
+type TA = class F: Integer; property P: Integer write F; end; var A: TA; I: Integer; begin I := A.P end.
+=== E2633 1,79
+type TA = class F: Integer; property P: Integer read F; end; var A: TA; begin A.P := 1 end.
+=== E2634 1,66
+type TA = class F: Integer; property P[I: Integer]: Integer read F; end; begin end.
+=== E2635 1,139
+type TA = class function G(I: Integer): Integer; property P[I: Integer]: Integer read G; default; property Q[I: Integer]: Integer read G; default; end; function TA.G(I: Integer): Integer; begin Result := I end; begin end.
+=== E2636 1,53
+type TA = class F: string; property P: Integer read F; end; begin end.
+=== E2637 1,46
+type TA = class end; TB = class(TA) property P; end; begin end.

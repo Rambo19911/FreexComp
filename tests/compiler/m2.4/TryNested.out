@@ -1,0 +1,13 @@
+nested handled nested while handling first
+destroy nested
+still handling first, ExceptObject = first
+destroy first
+destroy old
+caught new
+destroy new
+finally handled in finally
+destroy in finally
+finally done
+caught outer
+destroy outer
+leaked: 0

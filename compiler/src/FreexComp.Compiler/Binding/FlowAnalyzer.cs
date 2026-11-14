@@ -399,9 +399,46 @@ internal sealed class FlowAnalyzer
 
                 return state;
 
+            case BoundRaiseStatement raise:
+                Eval(raise.Address, Eval(raise.Exception, state));
+                return null;                                                    // LANG-808
+
+            case BoundTryExceptStatement tryExcept:
+            {
+                // a handler may start after any statement of the body: its entry is the union of the body's entry and end
+                // (assignments only shrink Unassigned); stores inside the body may be read by a handler, so H2002 skips them
+                var before = Clone(state);                                     // the visit updates the state in place
+                var bodyEnd = Protected(tryExcept.Body, state);
+                var entry = Join(before, bodyEnd);
+                var ends = tryExcept.Handlers.Select(h => Visit(h.Body, Clone(entry))).ToList();
+                return Join(bodyEnd, tryExcept.Else is null ? ends : ends.Append(Visit(tryExcept.Else, Clone(entry))));
+            }
+
+            case BoundTryFinallyStatement tryFinally:
+            {
+                // the finally part on the exception path (diagnostics only), then on the normal path (LANG-810)
+                var before = Clone(state);
+                var bodyEnd = Protected(tryFinally.Body, state);
+                Visit(tryFinally.Finally, Join(before, bodyEnd));
+                return Visit(tryFinally.Finally, bodyEnd);
+            }
+
             default:
                 throw new InvalidOperationException($"Flow analysis does not handle {statement.Kind}.");
         }
+    }
+
+    /// <summary>The try part of a try statement; variables assigned in it are no longer H2002 candidates.</summary>
+    private State? Protected(BoundBlock body, State? state)
+    {
+        var first = _stores.Count;
+        var end = Visit(body, state);
+        foreach (var (variable, _) in _stores.Skip(first).ToList())
+        {
+            _deadStoreTracked.Remove(variable);
+        }
+
+        return end;
     }
 
     private State? IntrinsicStatement(BoundIntrinsicCallStatement statement, State? state)

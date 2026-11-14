@@ -15,24 +15,31 @@ declare void @"System._UStrFromWChar"(ptr, i16)
 declare void @"System._WriteEnd"(ptr)
 declare void @"System._WriteLn"(ptr)
 declare void @"System._WriteUStr"(ptr, ptr, i32)
+declare i32 @__C_specific_handler(...)
 
-define void @"M.Echo"(ptr %Result, ptr %s) #0 {
+define void @"M.Echo"(ptr %Result, ptr %s) #0 personality ptr @__C_specific_handler {
 entry:
   %s.addr = alloca ptr, align 8
   store ptr %s, ptr %s.addr, align 8
   %t1 = load ptr, ptr %s.addr, align 8
   call void @"System._UStrAddRef"(ptr %t1)
   %t2 = load ptr, ptr %s.addr, align 8
-  call void @"System._UStrAsg"(ptr %Result, ptr %t2)
+  invoke void @"System._UStrAsg"(ptr %Result, ptr %t2)
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   br label %cleanup
 cleanup:
   call void @"System._UStrClr"(ptr %s.addr)
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._UStrClr"(ptr %s.addr) [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
-define void @"M.Use"(ptr %c, ptr %v, ptr %o) #0 {
+define void @"M.Use"(ptr %c, ptr %v, ptr %o) #0 personality ptr @__C_specific_handler {
 entry:
   %c.addr = alloca ptr, align 8
   %t.addr = alloca ptr, align 8
@@ -43,29 +50,53 @@ entry:
   store ptr null, ptr %t.addr, align 8
   store ptr null, ptr %$tmp1.addr, align 8
   store ptr null, ptr %$tmp2.addr, align 8
-  call void @"System._UStrClr"(ptr %o)
+  invoke void @"System._UStrClr"(ptr %o)
+          to label %cont.1 unwind label %cleanup.pad
+cont.1:
   %t1 = load ptr, ptr %c.addr, align 8
-  call void @"System._UStrAsg"(ptr %t.addr, ptr %t1)
-  call void @"System._UStrAsg"(ptr %v, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [4 x i16] }, ptr @.str.0, i32 0, i32 5))
+  invoke void @"System._UStrAsg"(ptr %t.addr, ptr %t1)
+          to label %cont.2 unwind label %cleanup.pad
+cont.2:
+  invoke void @"System._UStrAsg"(ptr %v, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [4 x i16] }, ptr @.str.0, i32 0, i32 5))
+          to label %cont.3 unwind label %cleanup.pad
+cont.3:
   %t2 = load ptr, ptr %t.addr, align 8
-  call void @"M.Echo"(ptr %$tmp1.addr, ptr %t2)
+  invoke void @"M.Echo"(ptr %$tmp1.addr, ptr %t2)
+          to label %cont.4 unwind label %cleanup.pad
+cont.4:
   %t3 = load ptr, ptr %$tmp1.addr, align 8
-  call void @"System._UStrAsg"(ptr %o, ptr %t3)
+  invoke void @"System._UStrAsg"(ptr %o, ptr %t3)
+          to label %cont.5 unwind label %cleanup.pad
+cont.5:
   %t4 = load ptr, ptr %v, align 8
-  call void @"M.Echo"(ptr %t.addr, ptr %t4)
+  invoke void @"M.Echo"(ptr %t.addr, ptr %t4)
+          to label %cont.6 unwind label %cleanup.pad
+cont.6:
   %t5 = load ptr, ptr %t.addr, align 8
   %t6 = getelementptr inbounds i16, ptr %t5, i64 0
   %t7 = load i16, ptr %t6, align 2
   store i16 %t7, ptr %ch.addr, align 2
   %t8 = load i16, ptr %ch.addr, align 2
-  call void @"System._UStrFromWChar"(ptr %t.addr, i16 %t8)
+  invoke void @"System._UStrFromWChar"(ptr %t.addr, i16 %t8)
+          to label %cont.7 unwind label %cleanup.pad
+cont.7:
   %t9 = load ptr, ptr %t.addr, align 8
-  call void @"System._UStrAsg"(ptr @"M.G", ptr %t9)
+  invoke void @"System._UStrAsg"(ptr @"M.G", ptr %t9)
+          to label %cont.8 unwind label %cleanup.pad
+cont.8:
   %t10 = load ptr, ptr %t.addr, align 8
-  call void @"System._WriteUStr"(ptr @"System.Output", ptr %t10, i32 0)
-  call void @"System._WriteLn"(ptr @"System.Output")
-  call void @"System._WriteEnd"(ptr @"System.Output")
-  call void @"System._IOCheck"()
+  invoke void @"System._WriteUStr"(ptr @"System.Output", ptr %t10, i32 0)
+          to label %cont.9 unwind label %cleanup.pad
+cont.9:
+  invoke void @"System._WriteLn"(ptr @"System.Output")
+          to label %cont.10 unwind label %cleanup.pad
+cont.10:
+  invoke void @"System._WriteEnd"(ptr @"System.Output")
+          to label %cont.11 unwind label %cleanup.pad
+cont.11:
+  invoke void @"System._IOCheck"()
+          to label %cont.12 unwind label %cleanup.pad
+cont.12:
   %t11 = load ptr, ptr %t.addr, align 8
   %t12 = icmp eq ptr %t11, null
   br i1 %t12, label %len.end.1, label %len.load.1
@@ -74,12 +105,14 @@ len.load.1:
   %t14 = load i32, ptr %t13, align 4
   br label %len.end.1
 len.end.1:
-  %t15 = phi i32 [ 0, %entry ], [ %t14, %len.load.1 ]
+  %t15 = phi i32 [ 0, %cont.12 ], [ %t14, %len.load.1 ]
   %t16 = icmp sgt i32 %t15, 2
   br i1 %t16, label %cleanup, label %if.end.2
 if.end.2:
   %t17 = load ptr, ptr @"M.G", align 8
-  call void @"M.Echo"(ptr %$tmp2.addr, ptr %t17)
+  invoke void @"M.Echo"(ptr %$tmp2.addr, ptr %t17)
+          to label %cont.13 unwind label %cleanup.pad
+cont.13:
   br label %cleanup
 cleanup:
   call void @"System._UStrClr"(ptr %t.addr)
@@ -88,6 +121,12 @@ cleanup:
   br label %exit
 exit:
   ret void
+cleanup.pad:
+  %cl = cleanuppad within none []
+  call void @"System._UStrClr"(ptr %t.addr) [ "funclet"(token %cl) ]
+  call void @"System._UStrClr"(ptr %$tmp1.addr) [ "funclet"(token %cl) ]
+  call void @"System._UStrClr"(ptr %$tmp2.addr) [ "funclet"(token %cl) ]
+  cleanupret from %cl unwind to caller
 }
 
 define i32 @"M.Len"(ptr %s, i32 %i) #0 {

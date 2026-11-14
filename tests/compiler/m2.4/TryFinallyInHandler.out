@@ -1,0 +1,6 @@
+routine finally sees routine 1
+destroy routine
+handler
+program finally sees program
+destroy program
+leaked: 0
