@@ -1,0 +1,24 @@
+hello jello 1 1 TRUE
+Literal literal 1
+literal made unique 1 shared
+shared made unique 1 1 TRUE shared
+unique stays TRUE 1
+empty stays nil TRUE
+shrunk literal abc 3 1 TRUE
+grown abcXY 5 TRUE other abc 1
+same length unique 1 1 TRUE abcXY
+large 100000 abcXY TRUE
+back ab TRUE
+zero is nil TRUE
+negative is nil TRUE
+from nil 1 1 TRUE
+empty + empty nil TRUE
+three empties nil TRUE
+x + empty abc 3
+empty + x abc 3
+self twice abcdabcd 8 TRUE
+dest as right operand <abcdabcd
+dest twice in a chain <abcdabcd|<abcdabcd 19 TRUE
+shared dest <abcdabcd|<abcdabcd <abcdabcd|<abcdabcd! 1
+appended 2000 bad 0 1 TRUE
+all released 0

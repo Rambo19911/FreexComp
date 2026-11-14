@@ -1,0 +1,62 @@
+# Copy
+1,5 [Hello] 5
+8,100 [World] 5
+8 [World] 5
+0,3 [Hel] 3
+-5,3 [Hel] 3
+12,1 [d] 1
+13,2 [] 0
+5,0 [] 0
+5,-1 [] 0
+empty [] 0
+whole copy is new TRUE 1 -1 Hello, World
+into its source [llo,] 4
+# Pos
+2 5 4 0 0 0 0 6 1 3 0 1 0
+# Delete
+6,2 [HelloWorld] 10
+source intact [Hello, World] 12
+6,100 [Hello] 5
+0,3 [Hello, World] 12
+13,1 [Hello, World] 12
+12,1 [Hello, Worl] 11
+1,0 [Hello, Worl] 11
+1,-2 [Hello, Worl] 11
+all deleted nil TRUE
+from literal [eral] 1
+# Insert
+2 [abce] 4
+4 [abcde] 5
+past end [abcde!] 6
+0 [>abcde!] 7
+-5 [<>abcde!] 8
+empty source [<>abcde!] 8
+char [#<>abcde!] 9
+into itself [##<>abcde!<>abcde!] 18
+into empty [xy] 2
+shared [xy] [x-y] 1 1
+# UpCase
+AMZA1{` 233 945
+# StringOfChar
+3 [xxx] 3
+1 [☺] 1
+0 [] 0
+-1 [] 0
+---------------------------------------- 1 0
+reassigned [=====] 5
+# SetString
+[pqr] 3 1 0
+0 is nil TRUE
+-4 is nil TRUE
+nil buffer 4 1 0
+replaces [rs] 4 1
+# accessors
+-1 1 1200 2 0 1200 2
+# helpers
+FromPWChar [pqrs] 4
+FromPWChar nil TRUE
+FromPWChar empty TRUE
+FromPWCharLen [qr] 2
+New 1 0 TRUE TRUE
+Clr TRUE
+all released 0

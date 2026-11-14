@@ -1,0 +1,23 @@
+empty 0 1200 2 nil TRUE
+literal -1 -1 same block TRUE
+literal blocks allocate nothing 0
+heap literal! 1 1200 2
+one block 1
+shared 2 same block TRUE
+three owners 3
+local owner 4
+after local 3
+value parameter 4
+after value 3
+const parameter 3
+after result 3
+self assignment 3 literal!
+after 1000 assignments 3
+released one 2 nil TRUE
+released two 1
+var parameter 1
+var replaced replaced -1
+freed 0
+from char 1 1 9786
+moved 1
+all released 0

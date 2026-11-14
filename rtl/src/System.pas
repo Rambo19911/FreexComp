@@ -51,6 +51,40 @@ function _AllocZero(Size: NativeInt): Pointer;
 function _LiveAllocCount: NativeInt;
 function AllocMem(Size: NativeInt): Pointer;
 
+{ UnicodeString helpers (rtl-abi.md section 3, 9.3; system.md section 8). A string value is nil ('') or points at the
+  first element of a block with the TStrRec header in front; RefCount -1 marks a static literal block. Every helper
+  taking var Dest accepts Dest aliasing an operand (ABI-033). }
+procedure _UStrClr(var S: Pointer);
+procedure _UStrAddRef(S: Pointer);
+procedure _UStrAsg(var Dest: Pointer; Src: Pointer);
+function _UStrNew(Len: Integer): Pointer;
+procedure _UStrFromPWCharLen(var Dest: Pointer; P: PWideChar; Len: Integer);
+procedure _UStrFromPWChar(var Dest: Pointer; P: PWideChar);
+procedure _UStrFromWChar(var Dest: Pointer; C: WideChar);
+procedure _UStrCat(var Dest: Pointer; A, B: Pointer);
+procedure _UStrCatN(var Dest: Pointer; Parts: PPointer; Count: Integer);
+function _UStrCmp(A, B: Pointer): Integer;
+function _UStrEq(A, B: Pointer): Boolean;
+procedure _UStrUnique(var S: Pointer);
+procedure _UStrSetLen(var S: Pointer; NewLen: Integer);
+procedure _UStrCopy(var Dest: Pointer; S: Pointer; Index, Count: Integer);
+procedure _UStrDelete(var S: Pointer; Index, Count: Integer);
+procedure _UStrInsert(Src: Pointer; var Dest: Pointer; Index: Integer);
+function _UStrPos(SubStr, S: Pointer; Offset: Integer): Integer;
+
+{ AnsiString / ShortString comparison (rtl-abi.md section 9.4): bytewise, a common prefix puts the shorter first }
+function _AStrCmp(A, B: Pointer): Integer;
+function _SStrCmp(A, B: Pointer): Integer;
+
+{ public string routines (system.md section 5.3); Copy, Pos, Delete, Insert, SetLength, Concat and UpCase are compiler
+  intrinsics lowered to the helpers above }
+procedure UniqueString(var S: string);
+function StringOfChar(Ch: Char; Count: Integer): string;
+procedure SetString(var S: string; Buffer: PChar; Len: Integer);
+function StringRefCount(const S: string): Integer;
+function StringCodePage(const S: string): Word;
+function StringElementSize(const S: string): Word;
+
 { big sets: 32-byte operands, bit k = bit k mod 8 of byte k div 8 (rtl-abi.md ABI-050, section 9.8) }
 procedure _SetUnion(Dest, A, B: Pointer);
 procedure _SetInter(Dest, A, B: Pointer);
@@ -101,6 +135,9 @@ procedure _FloatDigitsPrecision(V: Double; Precision: Integer; var R: TFloatDigi
 
 { text output (rtl-abi.md section 9.9) }
 procedure _WriteUStr(var T: Text; S: Pointer; Width: Integer);
+procedure _WriteAStr(var T: Text; S: Pointer; Width: Integer);
+procedure _WriteSStr(var T: Text; S: Pointer; Width: Integer);
+procedure _WritePWChar(var T: Text; P: PWideChar; Width: Integer);
 procedure _WriteWChar(var T: Text; C: WideChar; Width: Integer);
 procedure _WriteAChar(var T: Text; C: AnsiChar; Width: Integer);
 procedure _WriteInt(var T: Text; V: Int64; Width: Integer);
@@ -196,8 +233,7 @@ begin
   Result := HeapAlloc(ProcessHeap, Flags, Size);
   if Result = nil then
     _RunError(203);
-  // TODO(C-168): AtomicIncrement once the atomic intrinsics exist (RTL-064 asks for interlocked counters)
-  BlocksAllocated := BlocksAllocated + 1;
+  AtomicIncrement(BlocksAllocated);    { RTL-064: interlocked counters }
 end;
 
 function _GetMem(Size: NativeInt): Pointer;
@@ -221,8 +257,7 @@ begin
     Exit;
   if not HeapFree(ProcessHeap, 0, P) then
     _RunError(204);
-  // TODO(C-168): AtomicIncrement
-  BlocksFreed := BlocksFreed + 1;
+  AtomicIncrement(BlocksFreed);
 end;
 
 function _ReallocMem(P: Pointer; Size: NativeInt): Pointer;
@@ -245,6 +280,471 @@ end;
 function _LiveAllocCount: NativeInt;
 begin
   Result := BlocksAllocated - BlocksFreed;
+end;
+
+{ ---------------------------------------------------------------- UnicodeString (rtl-abi.md section 3, 9.3) }
+{ Blocks are 16 + (Length + 1) * 2 bytes from _GetMem (ABI-020); length 0 is always nil (ABI-021); counts change with
+  atomic increments and decrements (ABI-022, RTL-071); RefCount -1 is a literal: never counted, never freed, copied
+  before any write (ABI-025). Every routine reads all of its operands before it releases the old Dest value. }
+
+const
+  UStrCodePage = 1200;
+  UStrElemSize = 2;
+  MaxStrLen = $7FFFFFFE;               { ABI-026: 2^31 - 2 elements }
+
+function StrRec(S: Pointer): PStrRec;
+begin
+  Result := PStrRec(PByte(S) - SizeOf(TStrRec));
+end;
+
+function StrLength(S: Pointer): Integer;
+begin
+  Result := 0;
+  if S <> nil then
+    Result := StrRec(S)^.Length;
+end;
+
+{ a new block of Len (> 0) elements, RefCount 1, terminator set, elements undefined }
+function NewUStr(Len: NativeInt): Pointer;
+var
+  R: PStrRec;
+begin
+  if Len > MaxStrLen then
+    _RunError(203);
+  R := _GetMem(SizeOf(TStrRec) + (Len + 1) * UStrElemSize);
+  R^.RefCount := 1;
+  R^.Length := Len;
+  R^.CodePage := UStrCodePage;
+  R^.ElemSize := UStrElemSize;
+  R^.Reserved := 0;
+  Result := PByte(R) + SizeOf(TStrRec);
+  PWord(Result)[Len] := 0;
+end;
+
+procedure Release(S: Pointer);
+var
+  R: PStrRec;
+begin
+  if S = nil then
+    Exit;
+  R := StrRec(S);
+  if R^.RefCount < 0 then
+    Exit;                              { literal }
+  if AtomicDecrement(R^.RefCount) = 0 then
+    _FreeMem(R);
+end;
+
+{ Dest := S, taking over S's reference; the old Dest is released last }
+procedure Replace(var Dest: Pointer; S: Pointer);
+var
+  Old: Pointer;
+begin
+  Old := Dest;
+  Dest := S;
+  Release(Old);
+end;
+
+procedure _UStrClr(var S: Pointer);
+begin
+  Replace(S, nil);
+end;
+
+procedure _UStrAddRef(S: Pointer);
+var
+  R: PStrRec;
+begin
+  if S = nil then
+    Exit;
+  R := StrRec(S);
+  if R^.RefCount >= 0 then
+    AtomicIncrement(R^.RefCount);
+end;
+
+procedure _UStrAsg(var Dest: Pointer; Src: Pointer);
+begin
+  _UStrAddRef(Src);
+  Replace(Dest, Src);
+end;
+
+function _UStrNew(Len: Integer): Pointer;
+begin
+  Result := nil;
+  if Len > 0 then
+    Result := NewUStr(Len);
+end;
+
+procedure _UStrFromPWCharLen(var Dest: Pointer; P: PWideChar; Len: Integer);
+var
+  N: Pointer;
+begin
+  N := nil;
+  if Len > 0 then
+  begin
+    N := NewUStr(Len);
+    if P <> nil then
+      Move(P^, N^, NativeInt(Len) * UStrElemSize);
+  end;
+  Replace(Dest, N);
+end;
+
+procedure _UStrFromPWChar(var Dest: Pointer; P: PWideChar);
+var
+  Len: NativeUInt;
+begin
+  Len := 0;
+  if P <> nil then
+    Len := wcslen(P);
+  if Len > MaxStrLen then
+    _RunError(203);
+  _UStrFromPWCharLen(Dest, P, Integer(Len));
+end;
+
+procedure _UStrFromWChar(var Dest: Pointer; C: WideChar);
+var
+  N: Pointer;
+begin
+  N := NewUStr(1);
+  PWideChar(N)^ := C;
+  Replace(Dest, N);
+end;
+
+{ RTL-074: with Dest = A and A unique, the block grows in place (ReallocMem); B = A is read from the moved block }
+procedure _UStrCat(var Dest: Pointer; A, B: Pointer);
+var
+  LA, LB: Integer;
+  N: Pointer;
+  R: PStrRec;
+begin
+  LA := StrLength(A);
+  LB := StrLength(B);
+  if LB = 0 then
+    _UStrAsg(Dest, A)
+  else if LA = 0 then
+    _UStrAsg(Dest, B)
+  else
+  begin
+    if NativeInt(LA) + LB > MaxStrLen then
+      _RunError(203);
+    if (Dest = A) and (StrRec(A)^.RefCount = 1) then
+    begin
+      R := _ReallocMem(StrRec(A), SizeOf(TStrRec) + (NativeInt(LA) + LB + 1) * UStrElemSize);
+      N := PByte(R) + SizeOf(TStrRec);
+      if B = A then
+        B := N;
+      R^.Length := LA + LB;
+      Move(B^, PWord(N)[LA], NativeInt(LB) * UStrElemSize);
+      PWord(N)[LA + LB] := 0;
+      Dest := N;
+    end
+    else
+    begin
+      N := NewUStr(NativeInt(LA) + LB);
+      Move(A^, N^, NativeInt(LA) * UStrElemSize);
+      Move(B^, PWord(N)[LA], NativeInt(LB) * UStrElemSize);
+      Replace(Dest, N);
+    end;
+  end;
+end;
+
+procedure _UStrCatN(var Dest: Pointer; Parts: PPointer; Count: Integer);
+var
+  Total: NativeInt;
+  I, Len, At: Integer;
+  N: Pointer;
+begin
+  Total := 0;
+  for I := 0 to Count - 1 do
+    Total := Total + StrLength(Parts[I]);
+  N := nil;
+  if Total > 0 then
+  begin
+    N := NewUStr(Total);
+    At := 0;
+    for I := 0 to Count - 1 do
+    begin
+      Len := StrLength(Parts[I]);
+      if Len > 0 then
+        Move(Parts[I]^, PWord(N)[At], NativeInt(Len) * UStrElemSize);
+      At := At + Len;
+    end;
+  end;
+  Replace(Dest, N);
+end;
+
+{ RTL-076: ordinal by UTF-16 code unit; a common prefix puts the shorter string first }
+function _UStrCmp(A, B: Pointer): Integer;
+var
+  LA, LB, I, N: Integer;
+  X, Y: PWord;
+begin
+  Result := 0;
+  if A = B then
+    Exit;
+  LA := StrLength(A);
+  LB := StrLength(B);
+  N := LA;
+  if LB < N then
+    N := LB;
+  X := A;
+  Y := B;
+  for I := 0 to N - 1 do
+    if X[I] <> Y[I] then
+    begin
+      Result := Integer(X[I]) - Integer(Y[I]);
+      Exit;
+    end;
+  if LA < LB then
+    Result := -1
+  else if LA > LB then
+    Result := 1;
+end;
+
+function _UStrEq(A, B: Pointer): Boolean;
+var
+  I, Len: Integer;
+  X, Y: PWord;
+begin
+  Result := True;
+  if A = B then
+    Exit;
+  Result := False;
+  Len := StrLength(A);
+  if Len <> StrLength(B) then
+    Exit;
+  X := A;
+  Y := B;
+  for I := 0 to Len - 1 do
+    if X[I] <> Y[I] then
+      Exit;
+  Result := True;
+end;
+
+{ a private copy of S with NewLen (> 0) elements: the first min(old, NewLen) are copied }
+function CopyResized(S: Pointer; NewLen: Integer): Pointer;
+var
+  Keep: Integer;
+begin
+  Result := NewUStr(NewLen);
+  Keep := StrLength(S);
+  if Keep > NewLen then
+    Keep := NewLen;
+  if Keep > 0 then
+    Move(S^, Result^, NativeInt(Keep) * UStrElemSize);
+end;
+
+{ RTL-072: a shared or literal block is copied before a write }
+procedure _UStrUnique(var S: Pointer);
+begin
+  if (S <> nil) and (StrRec(S)^.RefCount <> 1) then
+    Replace(S, CopyResized(S, StrLength(S)));
+end;
+
+{ RTL-073: a unique block is reallocated with exactly NewLen + 1 elements; a shared one is copied }
+procedure _UStrSetLen(var S: Pointer; NewLen: Integer);
+var
+  R: PStrRec;
+begin
+  if NewLen <= 0 then
+    _UStrClr(S)
+  else if (S <> nil) and (StrRec(S)^.RefCount = 1) then
+  begin
+    if NewLen > MaxStrLen then
+      _RunError(203);
+    R := _ReallocMem(StrRec(S), SizeOf(TStrRec) + (NativeInt(NewLen) + 1) * UStrElemSize);
+    R^.Length := NewLen;
+    S := PByte(R) + SizeOf(TStrRec);
+    PWord(S)[NewLen] := 0;
+  end
+  else
+    Replace(S, CopyResized(S, NewLen));
+end;
+
+{ system.md section 5.3 Copy: Index < 1 counts from 1 with Count unchanged; past the end or Count <= 0 is ''; Count is
+  clipped to the end. Always a new block (or nil). }
+procedure _UStrCopy(var Dest: Pointer; S: Pointer; Index, Count: Integer);
+var
+  Len: Integer;
+  N: Pointer;
+begin
+  Len := StrLength(S);
+  if Index < 1 then
+    Index := 1;
+  N := nil;
+  if (Index <= Len) and (Count > 0) then
+  begin
+    if Count > Len - Index + 1 then
+      Count := Len - Index + 1;
+    N := NewUStr(Count);
+    Move(PWord(S)[Index - 1], N^, NativeInt(Count) * UStrElemSize);
+  end;
+  Replace(Dest, N);
+end;
+
+{ no-op for Index < 1, Index > Length or Count <= 0; Count clipped; the result is a new unique block }
+procedure _UStrDelete(var S: Pointer; Index, Count: Integer);
+var
+  Len, Rest: Integer;
+  N: Pointer;
+begin
+  Len := StrLength(S);
+  if (Index < 1) or (Index > Len) or (Count <= 0) then
+    Exit;
+  if Count > Len - Index + 1 then
+    Count := Len - Index + 1;
+  N := nil;
+  if Count < Len then
+  begin
+    N := NewUStr(Len - Count);
+    Move(S^, N^, NativeInt(Index - 1) * UStrElemSize);
+    Rest := Len - (Index - 1) - Count;
+    Move(PWord(S)[Index - 1 + Count], PWord(N)[Index - 1], NativeInt(Rest) * UStrElemSize);
+  end;
+  Replace(S, N);
+end;
+
+{ Index < 1 inserts at the front, Index > Length appends; an empty Src changes nothing; Src may be Dest's value }
+procedure _UStrInsert(Src: Pointer; var Dest: Pointer; Index: Integer);
+var
+  LS, LD: Integer;
+  N: Pointer;
+begin
+  LS := StrLength(Src);
+  if LS = 0 then
+    Exit;
+  LD := StrLength(Dest);
+  if NativeInt(LS) + LD > MaxStrLen then
+    _RunError(203);
+  if Index < 1 then
+    Index := 1
+  else if Index > LD then
+    Index := LD + 1;
+  N := NewUStr(NativeInt(LS) + LD);
+  if Index > 1 then
+    Move(Dest^, N^, NativeInt(Index - 1) * UStrElemSize);
+  Move(Src^, PWord(N)[Index - 1], NativeInt(LS) * UStrElemSize);
+  if Index <= LD then
+    Move(PWord(Dest)[Index - 1], PWord(N)[Index - 1 + LS], NativeInt(LD - Index + 1) * UStrElemSize);
+  Replace(Dest, N);
+end;
+
+{ first position >= Offset (Offset < 1 counts from 1) of SubStr in S, ordinal; 0 when absent or SubStr = '' }
+function _UStrPos(SubStr, S: Pointer; Offset: Integer): Integer;
+var
+  LSub, Len, I, J: Integer;
+  X, Y: PWord;
+begin
+  Result := 0;
+  LSub := StrLength(SubStr);
+  Len := StrLength(S);
+  if Offset < 1 then
+    Offset := 1;
+  if (LSub = 0) or (LSub > Len) then
+    Exit;
+  X := S;
+  Y := SubStr;
+  for I := Offset - 1 to Len - LSub do
+  begin
+    J := 0;
+    while (J < LSub) and (X[I + J] = Y[J]) do
+      J := J + 1;
+    if J = LSub then
+    begin
+      Result := I + 1;
+      Exit;
+    end;
+  end;
+end;
+
+{ bytes of two counted byte sequences, unsigned; equal prefixes order by length }
+function CompareBytes(X, Y: PByte; LX, LY: Integer): Integer;
+var
+  I, N: Integer;
+begin
+  N := LX;
+  if LY < N then
+    N := LY;
+  for I := 0 to N - 1 do
+    if X[I] <> Y[I] then
+    begin
+      Result := Integer(X[I]) - Integer(Y[I]);
+      Exit;
+    end;
+  Result := 0;
+  if LX < LY then
+    Result := -1
+  else if LX > LY then
+    Result := 1;
+end;
+
+function _AStrCmp(A, B: Pointer): Integer;
+begin
+  Result := 0;
+  if A <> B then
+    Result := CompareBytes(A, B, StrLength(A), StrLength(B));
+end;
+
+{ a ShortString is a length byte followed by that many bytes }
+function _SStrCmp(A, B: Pointer): Integer;
+var
+  X, Y: PByte;
+begin
+  X := A;
+  Y := B;
+  Result := CompareBytes(X + 1, Y + 1, X[0], Y[0]);
+end;
+
+{ ---------------------------------------------------------------- public string routines (system.md section 5.3) }
+{ The value of a string variable is read and written as a Pointer through its address. }
+
+procedure UniqueString(var S: string);
+begin
+  _UStrUnique(PPointer(@S)^);
+end;
+
+function StringOfChar(Ch: Char; Count: Integer): string;
+var
+  P: PWideChar;
+  I: Integer;
+begin
+  _UStrSetLen(PPointer(@Result)^, Count);
+  P := PPointer(@Result)^;
+  for I := 0 to Count - 1 do
+    P[I] := Ch;
+end;
+
+procedure SetString(var S: string; Buffer: PChar; Len: Integer);
+begin
+  _UStrFromPWCharLen(PPointer(@S)^, Buffer, Len);
+end;
+
+function StringRefCount(const S: string): Integer;
+var
+  P: Pointer;
+begin
+  P := PPointer(@S)^;
+  Result := 0;
+  if P <> nil then
+    Result := StrRec(P)^.RefCount;
+end;
+
+function StringCodePage(const S: string): Word;
+var
+  P: Pointer;
+begin
+  P := PPointer(@S)^;
+  Result := UStrCodePage;
+  if P <> nil then
+    Result := StrRec(P)^.CodePage;
+end;
+
+function StringElementSize(const S: string): Word;
+var
+  P: Pointer;
+begin
+  P := PPointer(@S)^;
+  Result := UStrElemSize;
+  if P <> nil then
+    Result := StrRec(P)^.ElemSize;
 end;
 
 { ---------------------------------------------------------------- text files: buffer and encoder (RTL-090 ... 093) }
@@ -1060,6 +1560,122 @@ begin
   P := PWord(S);
   for I := 0 to Len - 1 do
     PutUnit(R^, P[I]);
+end;
+
+{ a nil PWideChar writes nothing but the padding }
+procedure _WritePWChar(var T: Text; P: PWideChar; Width: Integer);
+var
+  R: PTextRec;
+  Len, I: NativeInt;
+begin
+  R := TextRec(T);
+  Len := 0;
+  if P <> nil then
+    Len := wcslen(P);
+  if Len < Width then
+    PutSpaces(R^, Width - Integer(Len));
+  for I := 0 to Len - 1 do
+    PutUnit(R^, Ord(P[I]));
+end;
+
+{ the code point of the UTF-8 sequence at P[I], advancing I; a byte that does not start a complete, shortest,
+  non-surrogate sequence is one U+FFFD (system.md RTL-078) }
+function NextUtf8(P: PByte; Len: Integer; var I: Integer): Cardinal;
+var
+  B, Lo, Hi: Cardinal;
+  Need, K: Integer;
+begin
+  B := P[I];
+  I := I + 1;
+  Result := B;
+  if B < $80 then
+    Exit;
+  Result := $FFFD;
+  Lo := $80;
+  Hi := $BF;
+  if (B >= $C2) and (B <= $DF) then
+  begin
+    Need := 1;
+    B := B and $1F;
+  end
+  else if (B >= $E0) and (B <= $EF) then
+  begin
+    Need := 2;
+    if B = $E0 then
+      Lo := $A0                        { no overlong forms }
+    else if B = $ED then
+      Hi := $9F;                       { no surrogates }
+    B := B and $0F;
+  end
+  else if (B >= $F0) and (B <= $F4) then
+  begin
+    Need := 3;
+    if B = $F0 then
+      Lo := $90
+    else if B = $F4 then
+      Hi := $8F;                       { nothing above U+10FFFF }
+    B := B and $07;
+  end
+  else
+    Exit;
+  if I + Need > Len then
+    Exit;
+  for K := 0 to Need - 1 do
+  begin
+    if (P[I + K] < Lo) or (P[I + K] > Hi) then
+      Exit;
+    B := (B shl 6) or (P[I + K] and $3F);
+    Lo := $80;
+    Hi := $BF;
+  end;
+  I := I + Need;
+  Result := B;
+end;
+
+{ Len bytes of UTF-8 as text; the field width counts the UTF-16 code units of the decoded text }
+procedure WriteUtf8(var T: Text; P: PByte; Len, Width: Integer);
+var
+  R: PTextRec;
+  I, Units: Integer;
+  C: Cardinal;
+begin
+  R := TextRec(T);
+  Units := 0;
+  I := 0;
+  while I < Len do
+  begin
+    if NextUtf8(P, Len, I) >= $10000 then
+      Units := Units + 2
+    else
+      Units := Units + 1;
+  end;
+  PutSpaces(R^, Width - Units);
+  I := 0;
+  while I < Len do
+  begin
+    C := NextUtf8(P, Len, I);
+    if C >= $10000 then
+    begin
+      PutUnit(R^, $D800 + ((C - $10000) shr 10));
+      PutUnit(R^, $DC00 + ((C - $10000) and $3FF));
+    end
+    else
+      PutUnit(R^, C);
+  end;
+end;
+
+{ every AnsiString code page is UTF-8 here: 65001, and $FFFF / 0 are read as UTF-8 (ABI-027, RTL-078) }
+procedure _WriteAStr(var T: Text; S: Pointer; Width: Integer);
+begin
+  WriteUtf8(T, S, StrLength(S), Width);
+end;
+
+procedure _WriteSStr(var T: Text; S: Pointer; Width: Integer);
+var
+  P: PByte;
+begin
+  P := S;
+  WriteUtf8(T, P + 1, P[0], Width);
 end;
 
 procedure _WriteWChar(var T: Text; C: WideChar; Width: Integer);
