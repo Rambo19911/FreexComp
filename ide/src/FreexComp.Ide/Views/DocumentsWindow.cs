@@ -24,6 +24,7 @@ public sealed class DocumentsWindow(DocumentsViewModel model) : DialogWindow(mod
     {
         var list = new ListBox { SelectionMode = SelectionMode.Multiple, IsTextSearchEnabled = true };
         AutomationProperties.SetAutomationId(list, Id("List"));
+        DialogWindow.SetKeepsEnter(list, true); // Enter activates the row (dialogs.md Documents)
         AutomationProperties.SetName(list, Strings.Documents_Title);
         var syncing = false;
 

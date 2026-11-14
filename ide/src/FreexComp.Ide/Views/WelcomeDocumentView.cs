@@ -70,6 +70,8 @@ public sealed class WelcomeDocumentView : UserControl
         };
         _list.AddHandler(KeyDownEvent, OnListKeyDown, RoutingStrategies.Tunnel); // before the list's own keys
         _list.AddHandler(TappedEvent, OnListTapped);
+        _list.ContextMenu = new ContextMenu();
+        _list.AddHandler(ContextRequestedEvent, OnListContextRequested, RoutingStrategies.Tunnel); // fill before it opens
 
         _empty = CreateEmptyState();
         _start = CreateStartColumn();
@@ -196,6 +198,25 @@ public sealed class WelcomeDocumentView : UserControl
             || source.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not RecentProjectRow row)
             return;
         _ = _model.OpenAsync(row);
+    }
+
+    /// <summary>IDE-WEL-008: the row under the pointer (or the focused row, keyboard) gets its context menu; elsewhere none.</summary>
+    private void OnListContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (_model is null || (e.Source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not RecentProjectRow row)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        _list.SelectedItem = row;
+        var menu = MenuBarBuilder.CreateContextMenu(_model.RowContextMenu(row, TogglePin, Remove));
+        _list.ContextMenu!.Items.Clear();
+        foreach (var item in menu.Items.Cast<Control>().ToList())
+        {
+            menu.Items.Remove(item);
+            _list.ContextMenu.Items.Add(item);
+        }
     }
 
     /// <summary>The row objects may be re-created by a re-sort: focus the entry once the list has its containers.</summary>

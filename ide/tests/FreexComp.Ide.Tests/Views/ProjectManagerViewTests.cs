@@ -51,6 +51,85 @@ public sealed class ProjectManagerViewTests
     private static string IconOf(HeadlessHarness h, string key) =>
         h.Find<IdeIcon>(Row + key + ".Icon").IconName!;
 
+    /// <summary>
+    /// tool-windows.md §2: with the Project Manager focused, <c>file.save</c>, <c>file.copyPath</c> and
+    /// <c>file.showInExplorer</c> act on the selected node(s); elsewhere on the active document.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-014")]
+    [Trait("Req", "UI-ED-079")]
+    public async Task CommandsActOnSelectedNode()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => HelloProject(o));
+        var pm = await OpenHelloAsync(h);
+        var dir = Path.Combine(h.TempDir, "Hello");
+        var shell = (FreexComp.Ide.TestSupport.FakeShellService)h.Services.Shell;
+        var clipboard = (FreexComp.Ide.TestSupport.FakeClipboard)h.Services.Clipboard;
+        var commands = h.Services.Commands;
+        var unit1 = Path.Combine(dir, "Unit1.pas");
+        var strUtils = Path.Combine(dir, "lib", "StrUtils2.pas");
+
+        // Outside the Project Manager: the active document.
+        var unit = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(unit1)).Value);
+        await h.ExecuteAsync("file.copyPath");
+        Assert.Equal(unit1, clipboard.Text);
+        await h.ExecuteAsync("file.showInExplorer");
+        Assert.Equal(["RevealFile " + unit1], shell.Calls);
+
+        // In the Project Manager: the selected file, even when another document is active.
+        unit.Buffer.ApplyEdits([new Core.Text.TextEdit(0, 0, "{ x }")]);
+        var other = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(strUtils)).Value);
+        Assert.Same(other, h.Services.Documents.ActiveDocument);
+        h.Press("Alt+1");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(ProjectManagerViewModel.ToolName, h.Services.FocusTracker.Current.ToolWindowName);
+        pm.Select(pm.Find("Unit1.pas")!);
+        Assert.True(commands.CanExecute("file.save"));
+        await h.ExecuteAsync("file.save");
+        Assert.False(unit.IsModified);
+        Assert.StartsWith("{ x }", File.ReadAllText(unit1), StringComparison.Ordinal);
+        Assert.False(commands.CanExecute("file.save")); // nothing selected is modified
+        await h.ExecuteAsync("file.copyPath");
+        Assert.Equal(unit1, clipboard.Text);
+
+        // A folder, the project root, a missing file.
+        pm.Select(pm.Find("lib/")!);
+        Assert.False(commands.CanExecute("file.save"));
+        await h.ExecuteAsync("file.copyPath");
+        Assert.Equal(Path.Combine(dir, "lib"), clipboard.Text);
+        await h.ExecuteAsync("file.showInExplorer");
+        Assert.Equal("RevealFile " + Path.Combine(dir, "lib"), shell.Calls[^1]);
+        pm.Select(pm.Find("$project")!);
+        await h.ExecuteAsync("file.copyPath");
+        Assert.Equal(Path.Combine(dir, "Hello.pproj"), clipboard.Text);
+        pm.Select(pm.Find("Missing.pas")!);
+        Assert.True(commands.CanExecute("file.copyPath"));
+        Assert.False(commands.CanExecute("file.showInExplorer")); // nothing on disk to show
+
+        // Several files: Save saves the modified ones among them; path commands need one node.
+        other.Buffer.ApplyEdits([new Core.Text.TextEdit(0, 0, "{ y }")]);
+        unit.Buffer.ApplyEdits([new Core.Text.TextEdit(0, 0, "{ z }")]);
+        pm.Select(pm.Find("Unit1.pas")!);
+        pm.Select(pm.Find("notes.md")!, ProjectSelectMode.Toggle);
+        Assert.False(commands.CanExecute("file.copyPath"));
+        Assert.False(commands.CanExecute("file.showInExplorer"));
+        await h.ExecuteAsync("file.save");
+        Assert.False(unit.IsModified);
+        Assert.True(other.IsModified); // not selected
+        pm.ClearSelection();
+        Assert.False(commands.CanExecute("file.save"));
+        Assert.False(commands.CanExecute("file.copyPath"));
+
+        // Back in the editor: the active document again.
+        h.Press("Alt+0");
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotEqual(ProjectManagerViewModel.ToolName, h.Services.FocusTracker.Current.ToolWindowName);
+        await h.ExecuteAsync("file.save");
+        Assert.False(other.IsModified);
+        await h.ExecuteAsync("file.copyPath");
+        Assert.Equal(strUtils, clipboard.Text);
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TW-100")]
     [Trait("Req", "UI-TW-101")]

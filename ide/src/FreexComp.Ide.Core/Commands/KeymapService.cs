@@ -370,17 +370,21 @@ public sealed class KeymapService : IKeymapService
 
         _dirty = false;
         var bytes = Serialize();
-        LastSaveTask = LastSaveTask.ContinueWith(_ => Save(bytes), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        LastSaveTask = LastSaveTask.ContinueWith(_ => SaveAsync(bytes), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
     }
 
-    private void Save(byte[] bytes)
+    private async Task SaveAsync(byte[] bytes)
     {
         var temp = _path + ".tmp";
         try
         {
-            _fs.CreateDirectory(_directory);
-            _fs.WriteAllBytes(temp, bytes);
-            _fs.MoveFile(temp, _path, overwrite: true);
+            // I-171: a reader holding keymap.json during the replace is waited for (SharingRetry).
+            await SharingRetry.RunAsync(_clock, () =>
+            {
+                _fs.CreateDirectory(_directory);
+                _fs.WriteAllBytes(temp, bytes);
+                _fs.MoveFile(temp, _path, overwrite: true);
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

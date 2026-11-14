@@ -202,8 +202,16 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _ when IsEditingCommand(commandId) => CanExecuteEditing(commandId),
         _ when IsClipboardCommand(commandId) => CanExecuteClipboard(commandId),
         _ when ViewCommandIds.Contains(commandId) => CanExecuteView(commandId),
-        _ => LineEnding.CanExecute(commandId, argument),
+        _ => LineEnding.CanExecute(commandId, argument) && !IsCurrentLineEnding(commandId, argument),
     };
+
+    /// <summary>IDE-ED-040: the check mark of Word Wrap is this document's state.</summary>
+    bool ICommandTarget.IsChecked(string commandId) => commandId == WordWrapCommandId && ViewState.WordWrap;
+
+    /// <summary>menus.md: "Line Endings to CRLF/LF" is disabled while the document already has that kind.</summary>
+    private bool IsCurrentLineEnding(string commandId, string? argument) =>
+        commandId == LineEndingModel.ConvertCommandId
+        && (argument, LineEnding.Kind) is ("crlf", LineEndingKind.CrLf) or ("lf", LineEndingKind.Lf);
 
     Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
     {

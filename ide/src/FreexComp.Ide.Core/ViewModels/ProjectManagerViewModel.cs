@@ -243,6 +243,12 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel
     /// <summary>The project paths (row keys) of the selected file and form rows (IDE-PM-060).</summary>
     public IReadOnlyList<string> SelectedFilePaths => [.. _selection.Where(n => n.IsFile).Select(n => n.Key)];
 
+    /// <summary>
+    /// tool-windows.md §2: the full paths of the selected rows (root = project file, folder = directory, file or form =
+    /// the file) for <c>file.save</c>, <c>file.copyPath</c>, <c>file.showInExplorer</c>; the External group has no path.
+    /// </summary>
+    public IReadOnlyList<string> SelectedNodePaths => [.. _selection.Where(n => n.Key != ExternalKey).Select(n => n.FullPath)];
+
     /// <summary>IDE-PM-033: the rows of added files are selected, their ancestors expanded.</summary>
     private void SelectAdded(IReadOnlyList<string> paths)
     {

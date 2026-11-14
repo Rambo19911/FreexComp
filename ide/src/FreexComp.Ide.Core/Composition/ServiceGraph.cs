@@ -72,6 +72,7 @@ public static class ServiceGraph
         documents.Layout = layout;
         documents.Clock = platform.Clock;
         documents.Clipboard = platform.Clipboard;
+        documents.Shell = platform.Shell;
         documents.RegisterCommands(commands);
         KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
         var fileChanges = new FileChangeService(documents, platform.FileSystem, platform.FileWatchers, platform.Clock, platform.Dispatcher,
@@ -97,6 +98,9 @@ public static class ServiceGraph
             ? projectManager.SelectedFilePaths
             : null;
         projects.RenameInPlace = projectManager.BeginRename;
+        documents.SelectedNodePaths = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
+            ? projectManager.SelectedNodePaths
+            : null;
         var session = new SessionService(platform.FileSystem, documents, projects, projectManager, layout, platform.UserPaths,
             platform.Clock, platform.Log, safe);
         projects.Session = session;
@@ -124,6 +128,7 @@ public static class ServiceGraph
         var application = new ApplicationService(documents, projects, session, recovery, settings, keymap, platform.Dialogs, platform.Clock,
             platform.Log);
         application.RegisterCommands(commands);
+        EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.

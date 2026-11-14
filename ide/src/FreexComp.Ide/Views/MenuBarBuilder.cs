@@ -45,6 +45,13 @@ public static class MenuBarBuilder
         }
 
         var item = new MenuItem { Header = ToAccessText(model.Label) };
+        if (model.Run is { } run)
+        {
+            AutomationProperties.SetAutomationId(item, (context ? "Context." : "Menu.") + model.ActionId);
+            item.Click += (_, _) => run();
+            return item;
+        }
+
         if (model.Command is { } command)
         {
             AutomationProperties.SetAutomationId(item, context ? AutomationIds.Context(command.Id, model.Argument) : AutomationIds.Menu(command.Id, model.Argument));

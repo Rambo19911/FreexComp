@@ -69,6 +69,51 @@ public sealed class DialogTests
         await result;
     }
 
+    /// <summary>
+    /// A <see cref="Core.Services.MessageRequest"/> may limit the message's buttons (in definition order); UI-DLG-040:
+    /// the New File dialog's write failure offers only Retry and Cancel.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-040")]
+    public async Task MessageButtonsLimited()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles[@"Hello\Hello.pproj"] = """{ "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas" }""";
+            o.InitialFiles[@"Hello\Hello.pas"] = "program Hello;\nbegin\nend.\n";
+        });
+        static string[] Buttons(DialogDriver dlg) =>
+            [.. dlg.FindAll("Dialog.Message.Button.").OrderBy(c => Avalonia.VisualExtensions.TranslatePoint(c, default, dlg.Window)!.Value.X).Select(c => AutomationIds.Get(c)!)];
+
+        // The request names the buttons: the others of the definition are not shown; the first one is the default.
+        var answer = h.Services.Dialogs.ShowMessageAsync(new Core.Services.MessageRequest("Msg.File.SaveFailed", [@"C:\p\A.pas", "denied"],
+            Buttons: ["Cancel", "Retry"]));
+        var message = await h.WaitForDialogAsync("Message");
+        Assert.Equal(["Dialog.Message.Button.Retry", "Dialog.Message.Button.Cancel"], Buttons(message));
+        message.Press("Enter");
+        Assert.Equal("Retry", await answer);
+        Assert.Throws<ArgumentException>(() => new Core.Dialogs.MessageBoxViewModel(
+            new Core.Services.MessageRequest("Msg.File.SaveFailed", ["a", "b"], Buttons: ["Overwrite"]), h.Services.Clipboard));
+
+        // UI-DLG-040: New File's write failure shows Msg.File.SaveFailed with Retry and Cancel only; the dialog stays open.
+        var dir = Path.Combine(h.TempDir, "Hello");
+        Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(dir, "Hello.pproj")));
+        var running = h.Services.Commands.ExecuteAsync("file.newFile");
+        var dlg = await h.WaitForDialogAsync("NewFile");
+        dlg.Find<TextBox>("Name").Text = "Fails";
+        Dispatcher.UIThread.RunJobs();
+        h.FileSystem.FailWhen = call => call.StartsWith("WriteAllBytesDurable", StringComparison.Ordinal) && call.Contains("Fails.pas", StringComparison.Ordinal);
+        dlg.Click("Ok");
+        message = await h.WaitForDialogAsync("Message");
+        Assert.Equal(["Dialog.Message.Button.Retry", "Dialog.Message.Button.Cancel"], Buttons(message));
+        message.Press("Escape");
+        await h.WaitForAsync(() => h.Messages.Unanswered.Count == 0, "message closed");
+        Assert.True(dlg.Window.IsVisible);
+        h.FileSystem.FailWhen = null;
+        dlg.Press("Escape");
+        await running;
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-A11Y-008")]
     [Trait("Req", "UI-DLG-004")]

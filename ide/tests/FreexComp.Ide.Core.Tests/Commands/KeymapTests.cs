@@ -10,10 +10,6 @@ public sealed partial class KeymapTests
 {
     private static readonly string[] Sections = ["3.1 ", "3.2 ", "3.3 ", "3.4 ", "3.5 "];
 
-    /// <summary>I-054 (tasks.md): the classic clipboard keys, Focus scope like Ctrl+X / Ctrl+C / Ctrl+V.</summary>
-    private static readonly (string Gesture, string CommandId)[] NotYetInSpec =
-        [("Shift+Delete", "edit.cut"), ("Ctrl+Insert", "edit.copy"), ("Shift+Insert", "edit.paste")];
-
     private static readonly CommandScope[] FocusScopes =
         [CommandScope.Editor, CommandScope.Designer, CommandScope.ProjectManager, CommandScope.ToolList];
 
@@ -86,13 +82,6 @@ public sealed partial class KeymapTests
                     expected.Add(Describe(KeyGesture.Parse(gesture), scope, tool, id));
                 }
             }
-        }
-
-        // Rows a task added before shortcuts.md lists them (the lead merges them into §3, then they leave this list).
-        foreach (var extra in NotYetInSpec.Select(r => Describe(KeyGesture.Parse(r.Gesture), CommandScope.Focus, null, r.CommandId)))
-        {
-            if (!expected.Contains(extra))
-                expected.Add(extra);
         }
 
         var actual = DefaultKeymap.Bindings.Select(b => Describe(b.Gesture, b.Scope, b.ToolWindow, b.CommandId)).ToList();

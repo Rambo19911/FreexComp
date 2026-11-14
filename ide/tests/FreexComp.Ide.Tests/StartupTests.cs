@@ -5,6 +5,7 @@ using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Tests.Infrastructure;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Tests;
 
@@ -41,6 +42,32 @@ public sealed class StartupTests
 
     private static string[] OpenFiles(HeadlessHarness h) =>
         [.. h.Services.Documents.Documents.Select(d => d.FilePath).OfType<string>().Select(p => Path.GetRelativePath(h.TempDir, p).Replace('\\', '/'))];
+
+    /// <summary>
+    /// UI-WIN-070: with no project the main window is shown within 5 s (×3 for a Debug build, ×3 with <c>CI_SLOW=1</c>: <see cref="PerformanceBudget"/>). Measured from the
+    /// start of composition (services, main window) until the start-up sequence has finished and the window is
+    /// visible — the median wall-clock time of three starts, each in a fresh harness. First-use costs of the process
+    /// (JIT, XAML/theme load) are paid by <see cref="TestAppBuilder"/>'s warm-up, as in every headless test (I-172).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Category", "Performance")]
+    [Trait("Req", "UI-WIN-070")]
+    public async Task ShellComposesWithinBudget()
+    {
+        var samples = new List<TimeSpan>();
+        for (int run = 0; run < 3; run++)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            await using var h = await HeadlessHarness.StartAsync();
+            samples.Add(watch.Elapsed);
+            Assert.True(h.Window.IsVisible, "main window shown");
+            Assert.Null(h.Services.Projects.Project);
+        }
+
+        var median = PerformanceBudget.Median(samples);
+        var budget = PerformanceBudget.Of(5000, typeof(FreexComp.Ide.App).Assembly, typeof(FreexComp.Ide.Core.Documents.DocumentService).Assembly);
+        Assert.True(budget.IsMetBy(median), budget.Describe("median start-up", median));
+    }
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-010")]

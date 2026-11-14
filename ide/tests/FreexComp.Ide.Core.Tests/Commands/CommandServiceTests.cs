@@ -227,18 +227,18 @@ public sealed class CommandServiceTests
     public void LocalKeysOfTheFocusedControlAreNotRouted()
     {
         var services = TestComposition.Build();
-        // file.showInExplorer: a Global command without a handler yet, given Alt+Left (search.navigateBack's gesture, I-060).
-        var options = new TestHandler();
-        services.Commands.RegisterHandler("file.showInExplorer", options);
+        // tools.openLogFolder: an always-enabled Global command with a visible effect (the fake shell records OpenFolder),
+        // given Alt+Left (search.navigateBack's gesture, I-060). Every P1 command has a handler since I-161.
+        var shell = (FakeShellService)services.Shell;
         services.Keymap.SetGestures("search.navigateBack", []);
-        services.Keymap.SetGestures("file.showInExplorer", [KeyGesture.Parse("Alt+Left")]);
+        services.Keymap.SetGestures("tools.openLogFolder", [KeyGesture.Parse("Alt+Left")]);
 
         services.FocusTracker.SetLocalKeys([KeyGesture.Parse("Alt+Left")]);
         Assert.False(services.Commands.HandleKey(KeyGesture.Parse("Alt+Left")));
 
         services.FocusTracker.SetLocalKeys([]);
         Assert.True(services.Commands.HandleKey(KeyGesture.Parse("Alt+Left")));
-        Assert.Equal(1, options.Calls);
+        Assert.Equal(["OpenFolder " + services.UserPaths.LogDirectory], shell.Calls);
     }
 
     private CommandService Create() =>

@@ -116,7 +116,11 @@ public sealed class MessageBoxViewModel : DialogViewModel<string>
 
     private List<DialogButtonViewModel> CreateButtons()
     {
-        var ids = Definition.Buttons.Where(id => id != CopyDetailsId || HasDetails).ToList();
+        if (Request.Buttons?.FirstOrDefault(id => !Definition.Buttons.Contains(id)) is { } unknown)
+            throw new ArgumentException($"{Request.MessageId} has no button '{unknown}'.", nameof(Request));
+        // A request may limit the buttons (UI-DLG-040 Retry/Cancel); they keep the definition's order.
+        var ids = Definition.Buttons.Where(id => (id != CopyDetailsId || HasDetails)
+            && (Request.Buttons is null || id == CopyDetailsId || Request.Buttons.Contains(id))).ToList();
         var commit = ids.Where(id => id != CopyDetailsId).ToList();
         var defaultId = commit[0];
         var cancelId = commit.Contains(CancelId) ? CancelId : commit[^1];

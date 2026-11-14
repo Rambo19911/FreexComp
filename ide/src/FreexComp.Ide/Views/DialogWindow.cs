@@ -19,7 +19,15 @@ namespace FreexComp.Ide.Views;
 /// </summary>
 public class DialogWindow : Window
 {
+    /// <summary>A list whose Enter has its own action (it is not the default button, UI-DLG-004).</summary>
+    public static readonly AttachedProperty<bool> KeepsEnterProperty =
+        AvaloniaProperty.RegisterAttached<DialogWindow, ListBox, bool>("KeepsEnter");
+
     private readonly Control _body;
+
+    public static bool GetKeepsEnter(ListBox list) => list.GetValue(KeepsEnterProperty);
+
+    public static void SetKeepsEnter(ListBox list, bool value) => list.SetValue(KeepsEnterProperty, value);
 
     public DialogWindow(DialogViewModel model, Control body)
     {
@@ -77,6 +85,26 @@ public class DialogWindow : Window
     }
 
     public DialogViewModel Model { get; }
+
+    /// <summary>
+    /// UI-DLG-005: a resizable dialog never opens larger than the working area of <paramref name="owner"/>'s screen minus
+    /// 40 DIP (a smaller working area wins over the stated minimum). Called before the window is shown.
+    /// </summary>
+    public void FitToWorkingArea(Window owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        if (!Model.CanResize || (owner.Screens.ScreenFromWindow(owner) ?? owner.Screens.Primary) is not { } screen)
+            return;
+
+        var area = screen.WorkingArea.ToRect(screen.Scaling);
+        var maxWidth = Math.Max(0, area.Width - 40);
+        var maxHeight = Math.Max(0, area.Height - 40);
+        MinWidth = Math.Min(MinWidth, maxWidth);
+        MinHeight = Math.Min(MinHeight, maxHeight);
+        Width = Math.Min(Width, maxWidth);
+        if (!double.IsNaN(Height))
+            Height = Math.Min(Height, maxHeight);
+    }
 
     /// <summary>AutomationId of a strip button: <c>Dialog.&lt;Name&gt;.&lt;Id&gt;</c>.</summary>
     protected virtual string ButtonAutomationId(DialogButtonViewModel button) => AutomationIds.DialogField(Model.Name, button.Id);
@@ -150,13 +178,18 @@ public class DialogWindow : Window
     }
 
     /// <summary>
-    /// UI-DLG-004: a check box or radio button would take Enter as a click (toggling itself), a closed combo box would
-    /// swallow it; in a dialog Enter is the default button there too.
+    /// UI-DLG-004: a check box or radio button would take Enter as a click (toggling itself), a closed combo box or a
+    /// list (its item has focus) would swallow it; in a dialog Enter is the default button there too — except in a
+    /// list marked <see cref="KeepsEnterProperty"/>, whose own Enter action runs (Documents: activate the row).
     /// </summary>
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None
-            && FocusManager?.GetFocusedElement() is Avalonia.Controls.Primitives.ToggleButton or ComboBox { IsDropDownOpen: false })
+        if (e.Key != Key.Enter || e.KeyModifiers != KeyModifiers.None)
+            return;
+        var focused = FocusManager?.GetFocusedElement();
+        var list = focused as ListBox ?? (focused as ListBoxItem)?.FindAncestorOfType<ListBox>();
+        if (focused is Avalonia.Controls.Primitives.ToggleButton or ComboBox { IsDropDownOpen: false }
+            || (list is not null && !GetKeepsEnter(list)))
         {
             e.Handled = true;
             _ = Model.PressDefaultAsync();

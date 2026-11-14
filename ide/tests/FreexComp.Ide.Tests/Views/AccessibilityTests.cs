@@ -108,6 +108,12 @@ public sealed class AccessibilityTests
         Assert.Equal(AutomationIds.ToolBarButton("file.openProject"), h.FocusedAutomationId);
         h.Press("Left");
         Assert.Equal(AutomationIds.ToolBarButton("file.newFile"), h.FocusedAutomationId);
+        h.Press("Escape"); // straight from the row: the document area, and the buttons are mouse-only again
+        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        Assert.False(h.Find<Button>(AutomationIds.ToolBarButton("file.newFile")).Focusable);
+        PressAltAlone(h);
+        h.Press("Ctrl+Tab");
+        Assert.Equal(AutomationIds.ToolBarButton("file.newFile"), h.FocusedAutomationId);
         h.Press("Enter"); // runs file.newFile: the New File dialog
         var dialog = await h.WaitForDialogAsync("NewFile");
         dialog.Press("Escape");

@@ -47,10 +47,13 @@ public sealed class CompositionTests
     {
         var services = TestComposition.Build();
 
-        var error = Assert.Throws<InvalidOperationException>(services.Commands.VerifyAllHandled);
-        Assert.Contains("file.showInExplorer", error.Message, StringComparison.Ordinal);   // P1: needs its real handler
-        Assert.DoesNotContain("project.build", error.Message, StringComparison.Ordinal); // P3: stubbed
+        // Since I-161 every P1 command has its real handler, so nothing is missing; P3 commands are stubs (disabled)
+        // while a P1 command is not (file.showInExplorer runs for an existing folder).
+        services.Commands.VerifyAllHandled();
+        Assert.True(services.Commands.IsHandled("project.build"));
         Assert.False(services.Commands.CanExecute("project.build"));
+        services.FileSystem.CreateDirectory(@"C:\shown");
+        Assert.True(services.Commands.CanExecute("file.showInExplorer", @"C:\shown"));
     }
 
     [Fact(Timeout = 30000)]

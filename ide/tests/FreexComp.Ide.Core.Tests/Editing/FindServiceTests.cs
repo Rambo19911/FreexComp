@@ -180,6 +180,7 @@ public sealed class FindServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-104")]
+    [Trait("Req", "UI-DLG-103")]
     public async Task WrapAroundMessages()
     {
         var (services, doc, clock) = await OpenAsync("one two one\r\n");

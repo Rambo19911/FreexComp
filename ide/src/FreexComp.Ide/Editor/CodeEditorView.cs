@@ -154,6 +154,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     public Task<bool> ExecuteAsync(string commandId, string? argument) =>
         _document is ICommandTarget document ? document.ExecuteAsync(commandId, argument) : Task.FromResult(false);
 
+    public bool IsChecked(string commandId) => _document is ICommandTarget document && document.IsChecked(commandId);
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);

@@ -300,36 +300,15 @@ public sealed class SettingsService : ISettingsService
             _changedInSession.ToDictionary(n => n, n => Current(_keysByName[n]), StringComparer.Ordinal),
             _loadedMembers);
         LastSaveTask = LastSaveTask.ContinueWith(
-            _ => Save(snapshot), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            _ => SaveAsync(snapshot), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
     }
 
-    private void Save(Snapshot snapshot)
+    private async Task SaveAsync(Snapshot snapshot)
     {
         var tempPath = _path + ".tmp";
         try
         {
-            // IDE-SET-028: start from what is on disk now, so other instances' changes survive.
-            var members = snapshot.LoadedMembers;
-            if (_fs.FileExists(_path))
-            {
-                var (onDisk, formatVersion) = Parse(_fs.ReadAllBytes(_path));
-                if (formatVersion > SupportedFormatVersion)
-                {
-                    _log.Warning(Category, $"settings.json has newer formatVersion {formatVersion}; changes will not be saved");
-                    return;
-                }
-
-                members = onDisk ?? members;
-            }
-
-            var bytes = Serialize(snapshot, members);
-            _fs.CreateDirectory(_directory);
-            _fs.WriteAllBytes(tempPath, bytes);
-            _fs.MoveFile(tempPath, _path, overwrite: true);
-            lock (_versionGate)
-            {
-                _savedVersion = Math.Max(_savedVersion, snapshot.Version);
-            }
+            await SharingRetry.RunAsync(_clock, () => Save(snapshot, tempPath)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -342,6 +321,32 @@ public sealed class SettingsService : ISettingsService
             catch (Exception)
             {
             }
+        }
+    }
+
+    private void Save(Snapshot snapshot, string tempPath)
+    {
+        // IDE-SET-028: start from what is on disk now, so other instances' changes survive.
+        var members = snapshot.LoadedMembers;
+        if (_fs.FileExists(_path))
+        {
+            var (onDisk, formatVersion) = Parse(_fs.ReadAllBytes(_path));
+            if (formatVersion > SupportedFormatVersion)
+            {
+                _log.Warning(Category, $"settings.json has newer formatVersion {formatVersion}; changes will not be saved");
+                return;
+            }
+
+            members = onDisk ?? members;
+        }
+
+        var bytes = Serialize(snapshot, members);
+        _fs.CreateDirectory(_directory);
+        _fs.WriteAllBytes(tempPath, bytes);
+        _fs.MoveFile(tempPath, _path, overwrite: true);
+        lock (_versionGate)
+        {
+            _savedVersion = Math.Max(_savedVersion, snapshot.Version);
         }
     }
 

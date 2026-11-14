@@ -91,6 +91,16 @@ public sealed class DocumentService : IDocumentService
     /// <summary>Creates the Welcome page (welcome-page.md; set by the service graph).</summary>
     public Func<WelcomeDocumentViewModel>? WelcomeFactory { get; set; }
 
+    /// <summary>The OS shell of <c>file.showInExplorer</c> (set by the service graph).</summary>
+    public IShellService? Shell { get; set; }
+
+    /// <summary>
+    /// tool-windows.md §2: the full paths of the selected Project Manager nodes while the Project Manager has focus
+    /// (<c>file.save</c>, <c>file.copyPath</c>, <c>file.showInExplorer</c> then act on them); null elsewhere, so the
+    /// commands act on the active document (set by the service graph).
+    /// </summary>
+    public Func<IReadOnlyList<string>?>? SelectedNodePaths { get; set; }
+
     public event EventHandler<DocumentEventArgs>? DocumentOpened;
 
     public event EventHandler<DocumentClosingEventArgs>? DocumentClosing;
@@ -131,8 +141,19 @@ public sealed class DocumentService : IDocumentService
         commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeAll", new AsyncHandler(_ => _documents.Count > 0, _ => CloseAllAsync()));
         commands.RegisterHandler("file.open", new AsyncHandler(_ => true, _ => OpenPickedFilesAsync()));
-        commands.RegisterHandler("file.save", new AsyncHandler(
-            _ => ActiveDocument is TextDocumentViewModel { IsModified: true }, _ => SaveAsync(ActiveDocument!)));
+        commands.RegisterHandler("file.save", new AsyncHandler(_ => SaveTargets().Count > 0, async _ =>
+        {
+            foreach (var document in SaveTargets())
+            {
+                if (!await SaveAsync(document))
+                    break;
+            }
+        }));
+        commands.RegisterHandler("file.copyPath", new AsyncHandler(_ => PathTarget() is not null, _ => CopyPathAsync(PathTarget()!)));
+        // IDE-WEL-008: the Welcome row menu passes the path as the argument.
+        commands.RegisterHandler("file.showInExplorer", new Handler(
+            arg => (arg ?? PathTarget()) is { } path && (_fileSystem.FileExists(path) || _fileSystem.DirectoryExists(path)),
+            arg => RevealInExplorer(arg ?? PathTarget()!)));
         commands.RegisterHandler("file.saveAs", new AsyncHandler(
             _ => ActiveDocument is TextDocumentViewModel, _ => PickAndSaveAsAsync(ActiveDocument!)));
         commands.RegisterHandler("file.saveAll", new AsyncHandler(_ => _documents.Any(d => d.IsModified), _ => SaveAllAsync()));
@@ -148,18 +169,8 @@ public sealed class DocumentService : IDocumentService
         commands.RegisterHandler("edit.setEncoding", new Handler(
             arg => ActiveDocument is TextDocumentViewModel && arg is not null && FileEncodings.FromId(arg) is not null,
             arg => ((TextDocumentViewModel)ActiveDocument!).SetEncoding(FileEncodings.FromId(arg!)!.Value)));
-        // IDE-ED-054: the fold commands act on the active document (its TextDocumentViewModel.Folding); so does
-        // edit.convertLineEndings (status-bar R6, Edit menu) and the editor operations (editor-features.md §2, §4),
-        // until the generic Editor-scope route (I-158).
-        foreach (var id in (string[])["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll", LineEndingModel.ConvertCommandId,
-                     .. TextDocumentViewModel.EditingCommandIds, .. TextDocumentViewModel.ViewCommandIds])
-        {
-            commands.RegisterHandler(id, new AsyncHandler(
-                arg => ActiveDocument?.CommandTarget is { } target && target.CanExecute(id, arg) && !IsCurrentLineEnding(id, arg),
-                arg => ActiveDocument!.CommandTarget!.ExecuteAsync(id, arg),
-                // IDE-ED-040: the check mark of Word Wrap is the active document's.
-                id == TextDocumentViewModel.WordWrapCommandId ? () => ActiveDocument is TextDocumentViewModel { ViewState.WordWrap: true } : null));
-        }
+        // The fold commands, edit.convertLineEndings and the editor operations reach the active document through the
+        // generic Editor-scope route (EditorCommandRoute, registered by ServiceGraph).
 
         // UI-ED-058: Show Whitespace is the setting, for every editor.
         commands.RegisterHandler("view.showWhitespace", new Handler(_ => true,
@@ -834,10 +845,37 @@ public sealed class DocumentService : IDocumentService
         PickerCanceled,
     }
 
-    /// <summary>menus.md: "Line Endings to CRLF/LF" is disabled while the document already has that kind.</summary>
-    private bool IsCurrentLineEnding(string commandId, string? argument) =>
-        commandId == LineEndingModel.ConvertCommandId && ActiveDocument is TextDocumentViewModel text
-        && (argument, text.LineEnding.Kind) is ("crlf", LineEndingKind.CrLf) or ("lf", LineEndingKind.Lf);
+    /// <summary>
+    /// <c>file.save</c>: the modified open documents of the selected Project Manager files while it has focus, else
+    /// the active document when it is a modified text document.
+    /// </summary>
+    private List<DocumentViewModel> SaveTargets()
+    {
+        if (SelectedNodePaths?.Invoke() is { } selected)
+            return [.. selected.Select(FindByPath).OfType<TextDocumentViewModel>().Where(d => d.IsModified)];
+        return ActiveDocument is TextDocumentViewModel { IsModified: true } active ? [active] : [];
+    }
+
+    /// <summary><c>file.copyPath</c> / <c>file.showInExplorer</c>: the one selected node while the Project Manager has focus, else the active document's file.</summary>
+    private string? PathTarget() =>
+        SelectedNodePaths?.Invoke() is { } selected ? (selected is [var one] ? one : null) : ActiveDocument?.FilePath;
+
+    private async Task CopyPathAsync(string path)
+    {
+        if (Clipboard is not { } clipboard)
+            return;
+        try
+        {
+            await clipboard.SetTextAsync(path);
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException or IOException or UnauthorizedAccessException
+                                       or TimeoutException or InvalidOperationException)
+        {
+            _status.ShowMessage(Strings.Status_ClipboardBusy, StatusMessageDuration);
+        }
+    }
+
+    private void RevealInExplorer(string path) => Shell?.RevealFile(path); // a refusal of the shell has no message (P1)
 
     private static bool IsOrderArgument(string? argument) => argument is null or MruArgument or VisualArgument;
 

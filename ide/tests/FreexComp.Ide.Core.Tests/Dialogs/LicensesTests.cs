@@ -106,6 +106,57 @@ public sealed class LicensesTests
         Assert.True(missing.Count == 0, "Shipped packages without a notice: " + string.Join(", ", missing));
     }
 
+    /// <summary>
+    /// I-166: a shipped package's own notice file (<c>ThirdPartyNotices.txt</c>, <c>THIRD-PARTY-NOTICES.txt</c> in the
+    /// package root of the local NuGet folder named by <c>obj/project.assets.json</c>) is part of the text of the notice
+    /// covering the package; and a text shared by several components is stored once in the resource (<c>textOf</c>).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UI-DLG-161")]
+    public void PackageNoticeFilesAreIncluded()
+    {
+        var notices = ThirdPartyNotices.LoadEmbedded();
+        var assetsPath = Path.Combine(SpecTables.RepoRootPath(), "ide", "src", "FreexComp.Ide", "obj", "project.assets.json");
+        Assert.True(File.Exists(assetsPath), "Restore the IDE project first: " + assetsPath);
+        using var assets = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(assetsPath));
+        var folders = assets.RootElement.GetProperty("packageFolders").EnumerateObject().Select(f => f.Name).ToList();
+
+        static string Normalize(string text) => text.ReplaceLineEndings("\n").Trim();
+
+        var checkedFiles = new List<string>();
+        foreach (var library in assets.RootElement.GetProperty("libraries").EnumerateObject())
+        {
+            var separator = library.Name.IndexOf('/', StringComparison.Ordinal);
+            var (id, version) = (library.Name[..separator], library.Name[(separator + 1)..]);
+            var notice = notices.FirstOrDefault(n => n.Version == version && n.Packages.Contains(id, StringComparer.OrdinalIgnoreCase));
+            if (library.Value.GetProperty("type").GetString() != "package" || notice is null)
+                continue; // not shipped (EveryShippedTransitivePackageHasNotice covers the rest)
+            var relative = library.Value.GetProperty("path").GetString()!;
+            foreach (var file in library.Value.GetProperty("files").EnumerateArray().Select(f => f.GetString()!)
+                         .Where(f => !f.Contains('/', StringComparison.Ordinal)
+                                     && (f.Equals("ThirdPartyNotices.txt", StringComparison.OrdinalIgnoreCase)
+                                         || f.Equals("THIRD-PARTY-NOTICES.txt", StringComparison.OrdinalIgnoreCase))))
+            {
+                var path = folders.Select(f => Path.Combine(f, relative, file)).FirstOrDefault(File.Exists);
+                Assert.True(path is not null, $"{id} {version}: {file} not found in the local package folders");
+                Assert.True(Normalize(notice.Text).Contains(Normalize(File.ReadAllText(path)), StringComparison.Ordinal),
+                    $"The notice '{notice.Name}' does not include {id}/{file}");
+                checkedFiles.Add($"{id}/{file}");
+            }
+        }
+
+        Assert.Contains("CommunityToolkit.Mvvm/ThirdPartyNotices.txt", checkedFiles);
+        Assert.Contains("SkiaSharp.NativeAssets.Win32/THIRD-PARTY-NOTICES.txt", checkedFiles);
+
+        // Stored once: no two entries of the resource carry the same text; textOf shares it.
+        using var stream = typeof(ThirdPartyNotices).Assembly.GetManifestResourceStream(ThirdPartyNotices.ResourceName)!;
+        using var raw = System.Text.Json.JsonDocument.Parse(stream);
+        var stored = raw.RootElement.EnumerateArray()
+            .Where(e => e.TryGetProperty("text", out _)).Select(e => e.GetProperty("text").GetString()!).ToList();
+        Assert.Equal(stored.Count, stored.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(notices.Single(n => n.Name == "SkiaSharp").Text, notices.Single(n => n.Name == "HarfBuzzSharp").Text);
+    }
+
     [Fact]
     [Trait("Req", "UI-DLG-160")]
     public void ComponentsSortedByNameFirstSelected()

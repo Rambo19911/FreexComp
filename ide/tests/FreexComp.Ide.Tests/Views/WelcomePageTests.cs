@@ -282,6 +282,75 @@ public sealed class WelcomePageTests
         Assert.Null(h.Services.Projects.Project); // neither the pin toggle nor remove opened anything
     }
 
+    /// <summary>
+    /// IDE-WEL-008: the row context menu — Open (<c>file.openRecentProject</c>), Open Containing Folder
+    /// (<c>file.showInExplorer</c> with the path), Pin/Unpin and Remove from List (actions, not commands).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-WEL-008")]
+    public async Task RowContextMenu()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            ShowAtStartup(o);
+            Project(o, "Hello");
+        });
+        var hello = Path.Combine(h.TempDir, "Hello", "Hello.pproj");
+        var gone = Path.Combine(h.TempDir, "Gone", "Gone.pproj");
+        h.Services.RecentItems.Add(RecentKind.Project, gone);
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+        h.Services.RecentItems.Add(RecentKind.Project, hello);
+        var page = await CheckedPageAsync(h);
+        var shell = (FreexComp.Ide.TestSupport.FakeShellService)h.Services.Shell;
+
+        List<MenuItem> MenuOf(string path)
+        {
+            h.RightClick(Row + path);
+            Dispatcher.UIThread.RunJobs();
+            var menu = Assert.IsType<ContextMenu>(h.Find<ListBox>("Welcome.Recent.List").ContextMenu);
+            var items = menu.Items.OfType<MenuItem>().ToList();
+            menu.Close();
+            return items;
+        }
+
+        static void Choose(MenuItem item)
+        {
+            Assert.True(item.IsEffectivelyEnabled, AutomationIds.Get(item) + " is disabled");
+            item.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        var items = MenuOf(hello);
+        Assert.Equal(["Context.file.openRecentProject:" + hello, "Context.file.showInExplorer:" + hello, "Context.welcome.pin", "Context.welcome.remove"],
+            items.Select(AutomationIds.Get));
+        Assert.Equal(["_Open", "Open Containing _Folder", "_Pin to Top", "_Remove from List"], items.Select(i => (string)i.Header!));
+
+        // Open Containing Folder shows the project file in the file manager.
+        Choose(items[1]);
+        Assert.Equal(["RevealFile " + hello], shell.Calls);
+
+        // Pin / Unpin toggles the pin; the label follows.
+        Choose(items[2]);
+        Assert.True(page.Projects.Single(p => p.Path == hello).IsPinned);
+        items = MenuOf(hello);
+        Assert.Equal("Context.welcome.unpin", AutomationIds.Get(items[2]));
+        Assert.Equal("Un_pin", items[2].Header);
+        Choose(items[2]);
+        Assert.False(page.Projects.Single(p => p.Path == hello).IsPinned);
+
+        // A missing project has no folder to show; Remove from List removes it without asking.
+        items = MenuOf(gone);
+        Assert.False(items[1].IsEffectivelyEnabled);
+        Choose(items[3]);
+        Assert.Equal([hello], RowPaths(h));
+        Assert.Empty(h.Messages.Requests);
+
+        // Open opens the project.
+        Choose(MenuOf(hello)[0]);
+        await h.WaitForAsync(() => h.Services.Projects.Project is not null, "project opened");
+        Assert.Equal(hello, h.Services.Projects.Project!.FilePath);
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-WEL-004")]
     [Trait("Req", "IDE-WEL-005")]

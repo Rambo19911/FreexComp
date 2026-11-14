@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
@@ -124,6 +125,25 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
         var index = Projects.IndexOf(row);
         _recent.Remove(RecentKind.Project, row.Path);
         return Projects.Count == 0 ? null : Projects[Math.Clamp(index, 0, Projects.Count - 1)];
+    }
+
+    /// <summary>
+    /// IDE-WEL-008: the row's context menu — Open (<c>file.openRecentProject</c>), Open Containing Folder
+    /// (<c>file.showInExplorer</c> with the path), Pin/Unpin and Remove from List. The view passes its own pin and
+    /// remove so focus stays on the nearest row (IDE-WEL-006).
+    /// </summary>
+    public IReadOnlyList<MenuItemModel> RowContextMenu(RecentProjectRow row, Action<RecentProjectRow> togglePin, Action<RecentProjectRow> remove)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return
+        [
+            MenuItemModel.ForCommand(Strings.WelcomePage_Menu_Open, _commands.Get("file.openRecentProject"), row.Path, MenuToggleKind.None),
+            MenuItemModel.ForCommand(Strings.WelcomePage_Menu_OpenFolder, _commands.Get("file.showInExplorer"), row.Path, MenuToggleKind.None),
+            row.IsPinned
+                ? MenuItemModel.ForAction("welcome.unpin", Strings.WelcomePage_Menu_Unpin, () => togglePin(row))
+                : MenuItemModel.ForAction("welcome.pin", Strings.WelcomePage_Menu_Pin, () => togglePin(row)),
+            MenuItemModel.ForAction("welcome.remove", Strings.WelcomePage_Menu_Remove, () => remove(row)),
+        ];
     }
 
     /// <summary>IDE-WEL-004: the main window was activated; projects may have appeared or gone.</summary>

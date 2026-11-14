@@ -11,7 +11,8 @@ public sealed record ThirdPartyNotice(string Name, string Version, string Licens
 /// <summary>
 /// The embedded resource <c>ThirdPartyNotices.json</c> (<c>[{ "name", "version", "license", "text", "packages" }]</c>),
 /// kept in step with the tracked <c>THIRD-PARTY-NOTICES.md</c> and <c>Directory.Packages.props</c> by
-/// <c>LicensesTests.EveryDependencyHasNotice</c>.
+/// <c>LicensesTests.EveryDependencyHasNotice</c>. An entry whose text is the same as another's stores
+/// <c>"textOf": "&lt;name&gt;"</c> instead of <c>"text"</c>, so a large shared notice is embedded once (I-166).
 /// </summary>
 public static class ThirdPartyNotices
 {
@@ -24,8 +25,11 @@ public static class ThirdPartyNotices
         using var stream = typeof(ThirdPartyNotices).Assembly.GetManifestResourceStream(ResourceName)
             ?? throw new InvalidOperationException($"Embedded resource {ResourceName} is missing.");
         var entries = JsonSerializer.Deserialize<List<Entry>>(stream, Json) ?? [];
-        return [.. entries.Select(e => new ThirdPartyNotice(e.Name, e.Version, e.License, e.Text.ReplaceLineEndings(), e.Packages ?? []))];
+        string TextOf(Entry e) => e.Text
+            ?? entries.FirstOrDefault(other => other.Name == e.TextOf && other.Text is not null)?.Text
+            ?? throw new InvalidOperationException($"Notice '{e.Name}' has no text (textOf '{e.TextOf}').");
+        return [.. entries.Select(e => new ThirdPartyNotice(e.Name, e.Version, e.License, TextOf(e).ReplaceLineEndings(), e.Packages ?? []))];
     }
 
-    private sealed record Entry(string Name, string Version, string License, string Text, List<string>? Packages);
+    private sealed record Entry(string Name, string Version, string License, string? Text, string? TextOf, List<string>? Packages);
 }

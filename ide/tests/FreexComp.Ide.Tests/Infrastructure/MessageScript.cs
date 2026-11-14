@@ -25,6 +25,10 @@ public sealed class MessageScript(IDialogService windows) : IDialogService
         Requests.Add(request);
         if (_answers.TryGetValue(request.MessageId, out var button))
         {
+            // A scripted answer must be a button the box would show (definition, limited by the request).
+            var shown = request.Buttons ?? MessageDefinitions.Get(request.MessageId).Buttons;
+            if (!shown.Contains(button))
+                throw new InvalidOperationException($"{request.MessageId} does not show '{button}' (buttons: {string.Join(", ", shown)}).");
             return button;
         }
 

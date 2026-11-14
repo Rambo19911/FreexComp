@@ -24,14 +24,15 @@ public sealed class KeyRoutingTests
     public async Task InnermostScopeWins()
     {
         await using var h = await HeadlessHarness.StartAsync();
-        var global = new Recorder();
         // Every P1 Editor-scope command has a handler since I-059: an always-enabled one whose effect is visible
         // (view.showWhitespace toggles editor.showWhitespace) is moved onto Ctrl+D (edit.duplicateLine's gesture).
         h.Services.Keymap.SetGestures("edit.duplicateLine", []);
         h.Services.Keymap.SetGestures("view.showWhitespace", [CoreGesture.Parse("Ctrl+D")]);
         var whitespace = h.Services.Settings.Get(Core.Settings.SettingsCatalog.EditorShowWhitespace);
-        h.Services.Commands.RegisterHandler("file.showInExplorer", global); // Global, not yet handled
-        h.Services.Keymap.SetGestures("file.showInExplorer", [CoreGesture.Parse("Ctrl+D")]);
+        // Every P1 command has a handler since I-161: an always-enabled Global one whose effect is visible
+        // (tools.openLogFolder records OpenFolder in the fake shell) is moved onto Ctrl+D too.
+        var shell = (FreexComp.Ide.TestSupport.FakeShellService)h.Services.Shell;
+        h.Services.Keymap.SetGestures("tools.openLogFolder", [CoreGesture.Parse("Ctrl+D")]);
         var editor = AddFocusable(h, "StatusBar.TestEditor");
         CommandRouting.SetScope(editor, CommandScope.Editor);
         var plain = AddFocusable(h, "StatusBar.TestPlain");
@@ -44,7 +45,7 @@ public sealed class KeyRoutingTests
         h.Press("Ctrl+D");
 
         Assert.Equal(!whitespace, h.Services.Settings.Get(Core.Settings.SettingsCatalog.EditorShowWhitespace)); // toggled once
-        Assert.Equal(1, global.Calls);
+        Assert.Equal(["OpenFolder " + h.Services.UserPaths.LogDirectory], shell.Calls); // ran once, from the plain element
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -54,12 +55,12 @@ public sealed class KeyRoutingTests
     {
         await using var h = await HeadlessHarness.StartAsync();
         var copy = new Recorder();
-        // file.showInExplorer: a Global command without a handler yet, given Alt+Left (search.navigateBack's gesture, I-060).
-        var options = new Recorder();
+        // tools.openLogFolder: an always-enabled Global command with a visible effect (the fake shell records OpenFolder),
+        // given Alt+Left (search.navigateBack's gesture, I-060). Every P1 command has a handler since I-161.
+        var shell = (FreexComp.Ide.TestSupport.FakeShellService)h.Services.Shell;
         var target = new Target();
-        h.Services.Commands.RegisterHandler("file.showInExplorer", options);
         h.Services.Keymap.SetGestures("search.navigateBack", []);
-        h.Services.Keymap.SetGestures("file.showInExplorer", [CoreGesture.Parse("Alt+Left")]);
+        h.Services.Keymap.SetGestures("tools.openLogFolder", [CoreGesture.Parse("Alt+Left")]);
         var host = AddFocusable(h, "StatusBar.TestTool");
         CommandRouting.SetScope(host, CommandScope.ToolList);
         CommandRouting.SetToolWindow(host, "Messages");
@@ -78,7 +79,7 @@ public sealed class KeyRoutingTests
         Assert.Equal("abc", box.SelectedText); // the TextBox handled Ctrl+A itself
 
         h.Press("Alt+Left"); // global commands still work from a text input
-        Assert.Equal(1, options.Calls);
+        Assert.Equal(["OpenFolder " + h.Services.UserPaths.LogDirectory], shell.Calls);
 
         Focus(host);
         h.Press("Ctrl+C");

@@ -18,6 +18,33 @@ public sealed class NewFileDialogTests
         Dispatcher.UIThread.RunJobs();
     }
 
+    /// <summary>UI-DLG-004: Enter on the focused Types list presses the default button (Create), like in a field.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-004")]
+    public async Task EnterOnTypesListCreates()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles[@"Hello\Hello.pproj"] = """{ "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas" }""";
+            o.InitialFiles[@"Hello\Hello.pas"] = "program Hello;\nbegin\nend.\n";
+        });
+        var dir = Path.Combine(h.TempDir, "Hello");
+        Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(dir, "Hello.pproj")));
+
+        var running = h.Services.Commands.ExecuteAsync("file.newFile");
+        var dlg = await h.WaitForDialogAsync("NewFile");
+        dlg.Click("Types.TextFile");
+        Assert.Equal("Dialog.NewFile.Types.TextFile", dlg.FocusedAutomationId);
+        Assert.Equal("Untitled1.txt", dlg.Find<TextBox>("Name").Text);
+        dlg.Press("Enter");
+        await running;
+
+        Assert.False(dlg.Window.IsVisible);
+        var created = Path.Combine(dir, "Untitled1.txt");
+        Assert.True(File.Exists(created));
+        Assert.Equal(created, h.Services.Documents.ActiveDocument?.FilePath);
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-040")]
     [Trait("Req", "UI-DLG-041")]

@@ -35,6 +35,7 @@ public sealed class WindowDialogService(Func<Window?> owner, IClipboardService c
         }
 
         var window = CreateWindow(viewModel);
+        window.FitToWorkingArea(main);
         var previous = main.FocusManager?.GetFocusedElement() as InputElement;
         await window.ShowDialog(main);
         if (previous is Visual visual && visual.IsAttachedToVisualTree() && previous.IsEffectivelyVisible)

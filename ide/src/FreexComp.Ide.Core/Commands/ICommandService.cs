@@ -26,6 +26,9 @@ public interface ICommandTarget
 
     /// <summary>False = not handled.</summary>
     Task<bool> ExecuteAsync(string commandId, string? argument);
+
+    /// <summary>The check mark of a toggle command routed to this target (e.g. <c>view.wordWrap</c>, IDE-ED-040).</summary>
+    bool IsChecked(string commandId) => false;
 }
 
 public sealed class CommandExecutedEventArgs(string commandId, string? argument, TimeSpan duration, Exception? exception) : EventArgs

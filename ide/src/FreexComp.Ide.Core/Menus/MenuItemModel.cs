@@ -100,13 +100,26 @@ public sealed class MenuItemModel : ObservableObject
 
     public bool IsSubmenu => Key is not null;
 
-    public bool IsEnabled => _alwaysEnabled
+    /// <summary>
+    /// Id of an action item (a context-menu entry that runs <see cref="Run"/> instead of a command, e.g. the Welcome
+    /// row's Pin/Unpin); its element id is <c>Context.&lt;ActionId&gt;</c>. Null for command items.
+    /// </summary>
+    public string? ActionId { get; private init; }
+
+    /// <summary>The action of an action item (always enabled); null for command items.</summary>
+    public Action? Run { get; private init; }
+
+    public bool IsEnabled => Run is not null || _alwaysEnabled
         || (Command is not null ? Command.CanExecute(Argument) : Children.Any(c => !c.IsSeparator && c.IsEnabled));
 
     internal static MenuItemModel Separator() => new(null, "", null, null, MenuToggleKind.None, [], true, false);
 
     internal static MenuItemModel ForCommand(string label, IdeCommand command, string? argument, MenuToggleKind toggleKind, string? toolTip = null) =>
         new(null, label, command, argument, toggleKind, [], false, false, toolTip);
+
+    /// <summary>An item that runs <paramref name="run"/> (no command; IDE-WEL-008 Pin/Unpin, Remove from List).</summary>
+    internal static MenuItemModel ForAction(string actionId, string label, Action run) =>
+        new(null, label, null, null, MenuToggleKind.None, [], false, false) { ActionId = actionId, Run = run };
 
     internal static MenuItemModel ForSubmenu(string key, string label, IReadOnlyList<MenuItemModel> children, bool alwaysEnabled) =>
         new(key, label, null, null, MenuToggleKind.None, children, false, alwaysEnabled);

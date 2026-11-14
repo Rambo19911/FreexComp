@@ -272,7 +272,8 @@ public sealed class ProjectService : IProjectService
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveFailed", [path, e.Message])) != "Retry")
+                // UI-DLG-040: Retry and Cancel only (there is nothing to "Save As" yet).
+                if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveFailed", [path, e.Message], Buttons: ["Retry", "Cancel"])) != "Retry")
                     return false;
             }
         }

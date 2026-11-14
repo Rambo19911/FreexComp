@@ -11,6 +11,8 @@ public sealed class WindowTitleTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-030")]
     [Trait("Req", "IDE-P3-005")]
+    [Trait("Req", "UI-WIN-032")]
+    [Trait("Req", "UI-WIN-033")]
     public async Task FormatPerState()
     {
         // main-window.md §4: [<project>][ (<state>)] – FreexComp, en dash between parts.

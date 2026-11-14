@@ -7,6 +7,8 @@ public sealed class KeyGestureTests
 {
     [Theory(Timeout = 30000)]
     [Trait("Req", "UI-KEY-001")]
+    [Trait("Req", "IDE-SET-062")]
+    [Trait("Req", "UI-CMD-007")]
     [InlineData("Ctrl+S", "Ctrl+S")]
     [InlineData("ctrl+shift+s", "Ctrl+Shift+S")]
     [InlineData("Shift+Ctrl+F5", "Ctrl+Shift+F5")]
