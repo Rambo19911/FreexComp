@@ -51,15 +51,18 @@ public sealed class MenuTests
     }
 
     [Fact(Timeout = 30000)]
-    public void SubmenuStateFollowsChildHandlers()
+    public async Task SubmenuStateFollowsChildHandlers()
     {
-        var services = TestComposition.Build();
+        var fs = new InMemoryFileSystem();
+        var services = TestComposition.Build(o => o.FileSystem = fs);
         var lineMenu = MainMenuModel.Build(services.Commands).Single(m => m.Key == "Edit").Children.Single(m => m.Key == "Edit.Line");
         var changes = 0;
         lineMenu.PropertyChanged += (_, e) => changes += e.PropertyName == nameof(MenuItemModel.IsEnabled) ? 1 : 0;
-        Assert.False(lineMenu.IsEnabled);
+        Assert.False(lineMenu.IsEnabled); // the line commands need a text document (I-048)
 
-        services.Commands.RegisterHandler("edit.duplicateLine", new Enabled());
+        fs.CreateDirectory(@"C:\p");
+        fs.WriteAllBytes(@"C:\p\a.txt", "x\r\n"u8.ToArray());
+        Assert.True((await services.Documents.OpenAsync(@"C:\p\a.txt")).Success);
         services.Commands.InvalidateCanExecute();
 
         Assert.True(lineMenu.IsEnabled);
@@ -100,13 +103,6 @@ public sealed class MenuTests
             SubmenuNode s => Commands(s.Children),
             _ => [],
         });
-
-    private sealed class Enabled : ICommandHandler
-    {
-        public bool CanExecute(string? argument) => true;
-
-        public Task ExecuteAsync(string? argument) => Task.CompletedTask;
-    }
 }
 
 [Trait("Phase", "1")]

@@ -1,0 +1,114 @@
+# name: IDE-ED-034 toggle line comment on mixed lines comments all
+# language: pascal
+--- before
+‹··A := 1;
+··// B := 2;›
+--- action
+command edit.toggleLineComment
+--- after
+‹··// A := 1;
+··// // B := 2;›
+====
+# name: IDE-ED-034 toggle line comment on commented lines uncomments them
+--- before
+‹··// A := 1;
+··//B := 2;›
+--- action
+command edit.toggleLineComment
+--- after
+‹··A := 1;
+··B := 2;›
+====
+# name: IDE-ED-034 caret line is commented at its indentation
+--- before
+··A|;
+--- action
+command edit.toggleLineComment
+--- after
+··// A|;
+====
+# name: IDE-ED-034 smallest indentation, blank lines unchanged
+--- before
+‹····A;
+
+··B;›
+--- action
+command edit.toggleLineComment
+--- after
+‹··// ··A;
+
+··// B;›
+====
+# name: IDE-ED-034 plain text has no line comment
+# language: plaintext
+--- before
+a|b
+--- action
+command edit.toggleLineComment
+--- after
+a|b
+====
+# name: IDE-ED-035 block comment wraps the selection
+--- before
+X := ‹1 + 2›;
+--- action
+command edit.toggleBlockComment
+--- after
+X := ‹{1 + 2}›;
+====
+# name: IDE-ED-035 block comment removes the delimiters of a selected comment
+--- before
+X := ‹ {1 + 2} ›;
+--- action
+command edit.toggleBlockComment
+--- after
+X := ‹ 1 + 2 ›;
+====
+# name: IDE-ED-035 selection containing a closing brace uses parenthesis-star
+--- before
+‹a } b›
+--- action
+command edit.toggleBlockComment
+--- after
+‹(*a } b*)›
+====
+# name: IDE-ED-035 selection with both closers is refused
+# status: Status_CannotBlockComment
+--- before
+‹a } b *) c›
+--- action
+command edit.toggleBlockComment
+--- after
+‹a } b *) c›
+====
+# name: IDE-ED-035 caret inside a brace comment removes it
+--- before
+X; {no|te} Y;
+--- action
+command edit.toggleBlockComment
+--- after
+X; no|te Y;
+====
+# name: IDE-ED-035 caret inside a parenthesis-star comment removes it
+--- before
+(*ab|c*)
+--- action
+command edit.toggleBlockComment
+--- after
+ab|c
+====
+# name: IDE-ED-035 caret outside a comment inserts an empty comment
+--- before
+X;|
+--- action
+command edit.toggleBlockComment
+--- after
+X;{|}
+====
+# name: IDE-ED-035 a directive is not a comment
+--- before
+X;{$R+|}
+--- action
+command edit.toggleBlockComment
+--- after
+X;{$R+{|}}

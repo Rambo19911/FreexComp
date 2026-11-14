@@ -1,0 +1,237 @@
+# name: IDE-ED-031 duplicate caret line keeps the column in the copy
+# language: plaintext
+--- before
+A|bc
+def
+--- action
+command edit.duplicateLine
+--- after
+Abc
+A|bc
+def
+====
+# name: IDE-ED-031 duplicate last line without line break
+# language: plaintext
+--- before
+x
+ab|c
+--- action
+command edit.duplicateLine
+--- after
+x
+abc
+ab|c
+====
+# name: IDE-ED-031 duplicate selection within one line selects the copy
+# language: plaintext
+--- before
+a‹bc›d
+--- action
+command edit.duplicateLine
+--- after
+abc‹bc›d
+====
+# name: IDE-ED-031 duplicate multi-line selection selects the copied lines
+# language: plaintext
+--- before
+‹one
+tw›o
+three
+--- action
+command edit.duplicateLine
+--- after
+one
+two
+‹one
+two›
+three
+====
+# name: IDE-ED-030 selection ending at column 1 excludes that line
+# language: plaintext
+--- before
+‹one
+›two
+--- action
+command edit.duplicateLine
+--- after
+one
+‹one›
+two
+====
+# name: IDE-ED-031 duplicate in an LF document uses LF
+# language: plaintext
+# eol: lf
+--- before
+x
+a|b
+--- action
+command edit.duplicateLine
+--- after
+x
+ab
+a|b
+====
+# name: IDE-ED-032 delete caret line keeps the visual column
+# language: plaintext
+--- before
+abc
+de|f
+ghij
+--- action
+command edit.deleteLine
+--- after
+abc
+gh|ij
+====
+# name: IDE-ED-032 delete last line removes the preceding line break
+# language: plaintext
+--- before
+abc
+de|f
+--- action
+command edit.deleteLine
+--- after
+ab|c
+====
+# name: IDE-ED-032 delete touched lines of a selection
+# language: plaintext
+--- before
+a
+‹bb
+c›c
+d
+--- action
+command edit.deleteLine
+--- after
+a
+d|
+====
+# name: IDE-ED-032 delete measures the column visually across tabs
+# language: plaintext
+# settings: editor.tabWidth=4
+--- before
+→x|y
+abcdefgh
+--- action
+command edit.deleteLine
+--- after
+abcde|fgh
+====
+# name: IDE-ED-032 delete the only line
+# language: plaintext
+--- before
+ab|c
+--- action
+command edit.deleteLine
+--- after
+|
+====
+# name: IDE-ED-033 move line up
+# language: plaintext
+--- before
+one
+tw|o
+three
+--- action
+command edit.moveLineUp
+--- after
+tw|o
+one
+three
+====
+# name: IDE-ED-033 move selected lines down keeps the selection
+# language: plaintext
+--- before
+‹one
+tw›o
+three
+--- action
+command edit.moveLineDown
+--- after
+three
+‹one
+tw›o
+====
+# name: IDE-ED-033 move up at the first line does nothing
+# language: plaintext
+--- before
+o|ne
+two
+--- action
+command edit.moveLineUp
+--- after
+o|ne
+two
+====
+# name: IDE-ED-033 move down over a last line without line break
+# language: plaintext
+--- before
+a|b
+cd
+--- action
+command edit.moveLineDown
+--- after
+cd
+a|b
+====
+# name: IDE-ED-033 move down at the last line does nothing
+# language: plaintext
+--- before
+ab
+c|d
+--- action
+command edit.moveLineDown
+--- after
+ab
+c|d
+====
+# name: IDE-ED-033 move down across a folded region moves over the whole region
+--- before
+X|;
+procedure P;
+begin
+end;
+Y;
+--- action
+command edit.foldAll
+command edit.moveLineDown
+--- after
+procedure P;
+begin
+end;
+X|;
+Y;
+====
+# name: IDE-ED-033 move up across a folded region moves over the whole region
+--- before
+X;
+procedure P;
+begin
+end;
+Y|;
+--- action
+command edit.foldAll
+command edit.moveLineUp
+--- after
+X;
+Y|;
+procedure P;
+begin
+end;
+====
+# name: IDE-ED-033 a folded region on the caret line moves as a whole
+--- before
+X;
+procedure P;|
+begin
+end;
+Y;
+--- action
+command edit.foldAll
+command edit.moveLineUp
+--- after
+procedure P;|
+begin
+end;
+X;
+Y;

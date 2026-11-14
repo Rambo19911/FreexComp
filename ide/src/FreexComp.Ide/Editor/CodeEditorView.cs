@@ -103,6 +103,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         ApplyOptions(EditorOptions.Default);
 
         area.TextEntering += OnTextEntering;
+        AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
         area.Caret.PositionChanged += (_, _) =>
         {
             MirrorSelection();
@@ -650,12 +651,41 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             document.ViewState.TopLine = top.LineNumber;
     }
 
-    /// <summary>AvaloniaEdit never inserts user text itself; Enter arrives here as a line break (IDE-P1-076).</summary>
+    /// <summary>
+    /// AvaloniaEdit never inserts user text itself: typed text goes to <see cref="TextDocumentViewModel.TypeText"/>
+    /// (closer re-indent, IDE-ED-008); a line break that still arrives as text is Enter (IDE-ED-006, IDE-P1-076).
+    /// </summary>
     private void OnTextEntering(object? sender, TextInputEventArgs e)
     {
         e.Handled = true;
-        if (_document is { } document && !string.IsNullOrEmpty(e.Text))
-            InsertAtSelection(document, e.Text);
+        if (_document is not { } document || string.IsNullOrEmpty(e.Text))
+            return;
+        if (e.Text is "\r\n" or "\n" or "\r")
+            document.HandleKey("Enter");
+        else
+            document.TypeText(e.Text);
+    }
+
+    /// <summary>
+    /// Keys the keymap left to the editor (the main window's tunnel handler runs first): Tab, Shift+Tab, Backspace, Enter
+    /// and Home follow the indentation rules of the document (editor-features.md §2) instead of AvaloniaEdit's, and are
+    /// refused on a read-only document with <c>Msg.Editor.ReadOnlyEdit</c>.
+    /// </summary>
+    private void OnEditorKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_document is not { } document)
+            return;
+        var key = e.Key switch
+        {
+            Key.Tab => "Tab",
+            Key.Back => "Backspace",
+            Key.Enter => "Enter",
+            Key.Home => "Home",
+            _ => null,
+        };
+        if (key is null || (e.KeyModifiers != Avalonia.Input.KeyModifiers.None && e.KeyModifiers != Avalonia.Input.KeyModifiers.Shift))
+            return;
+        e.Handled = document.HandleKey(e.KeyModifiers == Avalonia.Input.KeyModifiers.Shift ? "Shift+" + key : key);
     }
 
     /// <summary>Replaces the selection (or inserts at the caret) through the document; the caret ends after the text.</summary>

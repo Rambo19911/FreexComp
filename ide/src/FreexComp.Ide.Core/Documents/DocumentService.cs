@@ -136,8 +136,10 @@ public sealed class DocumentService : IDocumentService
             arg => ActiveDocument is TextDocumentViewModel && arg is not null && FileEncodings.FromId(arg) is not null,
             arg => ((TextDocumentViewModel)ActiveDocument!).SetEncoding(FileEncodings.FromId(arg!)!.Value)));
         // IDE-ED-054: the fold commands act on the active document (its TextDocumentViewModel.Folding); so does
-        // edit.convertLineEndings (status-bar R6, Edit menu), until the generic Editor-scope route (I-158).
-        foreach (var id in (string[])["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll", LineEndingModel.ConvertCommandId])
+        // edit.convertLineEndings (status-bar R6, Edit menu) and the editor operations (editor-features.md §2, §4),
+        // until the generic Editor-scope route (I-158).
+        foreach (var id in (string[])["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll", LineEndingModel.ConvertCommandId,
+                     .. TextDocumentViewModel.EditingCommandIds])
         {
             commands.RegisterHandler(id, new AsyncHandler(
                 arg => ActiveDocument?.CommandTarget is { } target && target.CanExecute(id, arg) && !IsCurrentLineEnding(id, arg),
@@ -646,6 +648,7 @@ public sealed class DocumentService : IDocumentService
         if (document is TextDocumentViewModel text)
         {
             text.ReadOnlyEditRefused += (_, _) => _status.ShowMessage(Strings.Msg_Editor_ReadOnlyEdit, StatusMessageDuration);
+            text.StatusMessage += (_, message) => _status.ShowMessage(message, StatusMessageDuration);
             var undoState = (text.Buffer.CanUndo, text.Buffer.CanRedo);
             text.Buffer.Changed += (_, _) =>
             {

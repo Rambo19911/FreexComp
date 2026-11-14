@@ -720,6 +720,7 @@ public sealed class DocumentServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-040")]
+    [Trait("Req", "IDE-ED-012")]
     public async Task ActiveTextDocumentFeedsStatusBar()
     {
         var status = _services.Status;

@@ -20,6 +20,8 @@ public sealed class PascalLanguage : ILanguageDefinition
     public IReadOnlyList<(char Open, char Close)> Brackets { get; } = [('(', ')'), ('[', ']')];
     public ITokenClassifier CreateClassifier() => new PascalClassifier();
     public Editing.IFoldingProvider CreateFoldingProvider() => new PascalFoldingProvider();
+
+    public IIndentRules IndentRules { get; } = new PascalIndentRules();
 }
 
 /// <summary>

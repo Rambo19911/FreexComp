@@ -193,16 +193,25 @@ public sealed partial class MenuTests
     private static readonly Dictionary<string, string> Pending = new()
     {
         ["file.exit"] = "I-086",
-        ["edit.duplicateLine"] = "I-048", ["edit.deleteLine"] = "I-048",
-        ["edit.moveLineUp"] = "I-048", ["edit.moveLineDown"] = "I-048", ["edit.indent"] = "I-049", ["edit.outdent"] = "I-049",
-        ["edit.trimTrailingWhitespace"] = "I-048", ["edit.toggleLineComment"] = "I-048", ["edit.toggleBlockComment"] = "I-048",
-        ["edit.upperCase"] = "I-048", ["edit.lowerCase"] = "I-048",
         ["search.find"] = "I-058", ["search.replace"] = "I-058", ["search.findNext"] = "I-058", ["search.findPrevious"] = "I-058",
         ["search.findSelectionNext"] = "I-058", ["search.goToLine"] = "I-059", ["search.goToMatchingBracket"] = "I-052",
         ["search.navigateBack"] = "I-060", ["search.navigateForward"] = "I-060",
         ["view.wordWrap"] = "I-055", ["view.showWhitespace"] = "I-055", ["view.zoomIn"] = "I-055", ["view.zoomOut"] = "I-055",
         ["view.zoomReset"] = "I-055",
     };
+
+    /// <summary>
+    /// I-048 / I-049: enabled in every writable Object Pascal document ("text and writable"; the comment toggles need the
+    /// language's comments; edit.indent without a multi-line selection inserts indentation like Tab).
+    /// </summary>
+    private static readonly string[] PascalTextCommands =
+    [
+        "edit.duplicateLine", "edit.deleteLine", "edit.trimTrailingWhitespace", "edit.toggleLineComment", "edit.toggleBlockComment",
+        "edit.indent", "edit.outdent",
+    ];
+
+    /// <summary>I-048: these also depend on the caret (first / last touched line, a selection or a word under the caret).</summary>
+    private static readonly string[] CaretCommands = ["edit.moveLineUp", "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"];
 
     /// <summary>P1 menu commands with a document / project / focus condition: the scenarios below list when they are enabled.</summary>
     private static readonly string[] Conditional =
@@ -212,9 +221,12 @@ public sealed partial class MenuTests
         "edit.convertLineEndings:crlf", "edit.convertLineEndings:lf", "edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll",
         "project.addNewUnit", "project.addExistingFile", "project.removeFile", "project.viewSource",
         "window.nextDocument", "window.previousDocument", "window.documents", "window.closeToolWindow",
+        .. PascalTextCommands, .. CaretCommands,
     ];
 
     private static readonly string[] FoldCommands = ["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll"];
+
+    private static readonly string[] FoldAndCaretCommands = [.. FoldCommands, .. CaretCommands];
 
     /// <summary>Every P1 item of the main menu as <c>id</c> or <c>id:argument</c> (dynamic lists excluded).</summary>
     private static IEnumerable<string> P1MenuCommands(IEnumerable<Core.Menus.MenuNode> nodes) =>
@@ -274,20 +286,21 @@ public sealed partial class MenuTests
         var a = FocusEditor(h, "A.pas");
         a.TextArea.Caret.Line = 8;
         string[] cleanA = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "edit.paste", "edit.delete", "edit.selectAll",
-            "edit.convertLineEndings:lf", "edit.fold", "edit.foldAll", "window.documents"];
-        AssertEnabled(h, "clean", cleanA);
+            "edit.convertLineEndings:lf", "edit.fold", "edit.foldAll", "window.documents", .. PascalTextCommands];
+        AssertEnabled(h, "clean", [.. cleanA, .. CaretCommands]); // the caret is on "begin" of line 8
 
         // A selection enables Cut and Copy.
         a.Select(0, 4);
-        AssertEnabled(h, "selection", [.. cleanA, "edit.cut", "edit.copy"], FoldCommands); // the caret left the routine
+        AssertEnabled(h, "selection", [.. cleanA, "edit.cut", "edit.copy", "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"],
+            FoldCommands); // the caret left the routine; line 1 cannot move up
 
         // Modified: Save, Save All, Revert, Undo.
         h.Type("x");
         string[] modifiedA = [.. cleanA, "file.save", "file.saveAll", "file.revert", "edit.undo"];
-        AssertEnabled(h, "modified", modifiedA, FoldCommands);
+        AssertEnabled(h, "modified", modifiedA, FoldAndCaretCommands);
         await h.ExecuteAsync("edit.undo");
         a.TextArea.ClearSelection(); // undo selects the restored text
-        AssertEnabled(h, "undone", [.. cleanA, "edit.redo"], FoldCommands);
+        AssertEnabled(h, "undone", [.. cleanA, "edit.redo"], FoldAndCaretCommands);
 
         // Delete removes the selection, else the character after the caret.
         a.Select(0, 4);
@@ -325,7 +338,8 @@ public sealed partial class MenuTests
         [
             "file.clearRecent", "file.save", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.paste",
             "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "window.nextDocument", "window.previousDocument", "window.documents",
-        ], FoldCommands);
+            .. PascalTextCommands,
+        ], FoldAndCaretCommands);
 
         // A generated document is no file: no Save / Save As / Revert / text commands; Select All and Copy work.
         await h.ExecuteAsync("help.keyboardShortcuts");
@@ -354,13 +368,13 @@ public sealed partial class MenuTests
         FocusEditor(h, "P.pas");
         string[] project = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "file.closeProject", "edit.paste",
             "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "project.addNewUnit", "project.addExistingFile", "project.viewSource",
-            "window.documents"];
+            "window.documents", .. PascalTextCommands];
 
         // The main source cannot be removed from the project; another member can.
-        AssertEnabled(h, "main source", project, FoldCommands);
+        AssertEnabled(h, "main source", project, FoldAndCaretCommands);
         Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "P", "U.pas"))).Success);
         FocusEditor(h, "U.pas");
-        AssertEnabled(h, "member", [.. project, "project.removeFile", "window.nextDocument", "window.previousDocument"], FoldCommands);
+        AssertEnabled(h, "member", [.. project, "project.removeFile", "window.nextDocument", "window.previousDocument"], FoldAndCaretCommands);
 
         // Hide Active Tool Window needs a tool window that had the focus.
         Assert.False(h.Services.Commands.CanExecute("window.closeToolWindow"));

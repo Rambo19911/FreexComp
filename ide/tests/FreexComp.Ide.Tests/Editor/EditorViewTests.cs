@@ -198,6 +198,61 @@ public sealed class EditorViewTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-010")]
+    [Trait("Req", "IDE-ED-006")]
+    [Trait("Req", "IDE-ED-004")]
+    public async Task EditorKeysUseTheIndentationRules()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = "  begin\r\n");
+        var doc = await OpenAsync(h, "A.pas");
+        var editor = FocusEditor(h, "A.pas");
+        editor.TextArea.Caret.Offset = doc.Buffer.GetOffset(1, 8);
+        Dispatcher.UIThread.RunJobs();
+
+        h.Press("Enter"); // IDE-ED-006/007 instead of AvaloniaEdit's own Enter
+        Assert.Equal("  begin\r\n    \r\n", doc.Buffer.Text);
+        h.Press("Backspace"); // IDE-ED-004: back to the previous tab stop
+        Assert.Equal("  begin\r\n  \r\n", doc.Buffer.Text);
+        h.Press("Tab");
+        Assert.Equal("  begin\r\n    \r\n", doc.Buffer.Text);
+        h.Type("en");
+        h.Type("d"); // IDE-ED-008
+        Assert.Equal("  begin\r\n  end\r\n", doc.Buffer.Text);
+        h.Press("Home");
+        Assert.Equal(new TextPosition(2, 3), doc.ViewState.Caret);
+
+        // IDE-ED-010: pasted lines are inserted verbatim, without re-indentation.
+        await TopLevel.GetTopLevel(h.Window)!.Clipboard!.SetTextAsync("a\r\nb");
+        h.Press("Ctrl+V");
+        await h.WaitForAsync(() => doc.Buffer.Text.Contains('b', StringComparison.Ordinal), "paste applied");
+        Assert.Equal("  begin\r\n  a\r\nbend\r\n", doc.Buffer.Text);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-031")]
+    [Trait("Req", "IDE-ED-033")]
+    public async Task LineCommandsActOnTheEditorSelection()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = "one\r\ntwo\r\n");
+        var doc = await OpenAsync(h, "A.pas");
+        var editor = FocusEditor(h, "A.pas");
+        editor.TextArea.Caret.Offset = doc.Buffer.GetOffset(2, 2);
+        Dispatcher.UIThread.RunJobs();
+
+        h.Press("Ctrl+D"); // edit.duplicateLine: the caret moves into the copy
+        Assert.Equal("one\r\ntwo\r\ntwo\r\n", doc.Buffer.Text);
+        Assert.Equal(doc.Buffer.GetOffset(3, 2), editor.TextArea.Caret.Offset);
+        editor.Select(doc.Buffer.GetOffset(2, 1), 7); // "two\r\ntw"
+        Dispatcher.UIThread.RunJobs();
+
+        h.Press("Alt+Up"); // edit.moveLineUp: the selection moves with the lines
+        Assert.Equal("two\r\ntwo\r\none\r\n", doc.Buffer.Text);
+        Assert.Equal((0, 7), (editor.SelectionStart, editor.SelectionLength));
+        await h.ExecuteAsync("edit.undo");
+        Assert.Equal("one\r\ntwo\r\ntwo\r\n", doc.Buffer.Text); // one undo step
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-040")]
     public async Task TypingIntoReadOnlyDocumentIsRefused()
     {

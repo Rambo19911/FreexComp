@@ -1,0 +1,671 @@
+# name: IDE-ED-001 Tab inserts spaces to the next tab stop
+--- before
+ab|c
+--- action
+key Tab
+--- after
+ab··|c
+====
+# name: IDE-ED-001 Tab from an odd column
+--- before
+a|bc
+--- action
+key Tab
+--- after
+a·|bc
+====
+# name: IDE-ED-001 Tab inserts a tab character without insertSpaces
+# settings: editor.insertSpaces=false
+--- before
+a|b
+--- action
+key Tab
+--- after
+a→|b
+====
+# name: IDE-ED-001 Tab replaces a selection within one line
+--- before
+x‹abc›y
+--- action
+key Tab
+--- after
+x·|y
+====
+# name: IDE-ED-001 Tab on a read-only document is refused
+# readonly: true
+# status: Msg_Editor_ReadOnlyEdit
+--- before
+a|b
+--- action
+key Tab
+--- after
+a|b
+====
+# name: IDE-ED-002 Tab with a selection spanning lines indents the touched lines
+--- before
+‹a
+
+b
+›c
+--- action
+key Tab
+--- after
+‹··a
+
+··b
+›c
+====
+# name: IDE-ED-002 edit.indent with tabs
+# settings: editor.insertSpaces=false
+--- before
+‹a
+b›
+--- action
+command edit.indent
+--- after
+‹→a
+→b›
+====
+# name: IDE-ED-002 Tab with a multi-line selection on a read-only document is refused
+# readonly: true
+# status: Msg_Editor_ReadOnlyEdit
+--- before
+‹a
+b›
+--- action
+key Tab
+--- after
+‹a
+b›
+====
+# name: IDE-ED-003 Shift+Tab removes one level from every touched line
+--- before
+‹····a
+→b
+c
+·d›
+--- action
+key Shift+Tab
+--- after
+‹··a
+b
+c
+d›
+====
+# name: IDE-ED-003 Shift+Tab without selection outdents the caret line
+--- before
+···a|b
+--- action
+key Shift+Tab
+--- after
+·a|b
+====
+# name: IDE-ED-003 Shift+Tab on a read-only document is refused
+# readonly: true
+# status: Msg_Editor_ReadOnlyEdit
+--- before
+··a|b
+--- action
+key Shift+Tab
+--- after
+··a|b
+====
+# name: IDE-ED-004 Backspace in leading spaces goes back to the previous tab stop
+--- before
+····|Foo
+--- action
+key Backspace
+--- after
+··|Foo
+====
+# name: IDE-ED-004 Backspace from an odd column in leading spaces
+--- before
+···|Foo
+--- action
+key Backspace
+--- after
+··|Foo
+====
+# name: IDE-ED-004 Backspace elsewhere deletes one character
+--- before
+ab|c
+--- action
+key Backspace
+--- after
+a|c
+====
+# name: IDE-ED-004 Backspace after a tab deletes one character
+--- before
+→|a
+--- action
+key Backspace
+--- after
+|a
+====
+# name: IDE-ED-004 Backspace in leading spaces without insertSpaces deletes one character
+# settings: editor.insertSpaces=false
+--- before
+····|a
+--- action
+key Backspace
+--- after
+···|a
+====
+# name: IDE-ED-004 Backspace at column 1 joins the lines
+--- before
+a
+|b
+--- action
+key Backspace
+--- after
+a|b
+====
+# name: IDE-ED-004 Backspace deletes a surrogate pair as one character
+# language: plaintext
+--- before
+x😀|
+--- action
+key Backspace
+--- after
+x|
+====
+# name: IDE-ED-004 Backspace deletes the selection
+--- before
+a‹bc›d
+--- action
+key Backspace
+--- after
+a|d
+====
+# name: IDE-ED-004 Backspace at the start of the document does nothing
+--- before
+|a
+--- action
+key Backspace
+--- after
+|a
+====
+# name: IDE-ED-004 Backspace on a read-only document is refused
+# readonly: true
+# status: Msg_Editor_ReadOnlyEdit
+--- before
+ab|c
+--- action
+key Backspace
+--- after
+ab|c
+====
+# name: IDE-ED-005 Enter without autoIndent
+# settings: editor.autoIndent=false
+--- before
+··begin|
+--- action
+key Enter
+--- after
+··begin
+|
+====
+# name: IDE-ED-006 Enter copies the indentation
+# language: plaintext
+--- before
+→·x|
+--- action
+key Enter
+--- after
+→·x
+→·|
+====
+# name: IDE-ED-006 Enter inside the indentation copies only its left part
+--- before
+··|··a
+--- action
+key Enter
+--- after
+
+··|··a
+====
+# name: IDE-ED-006 Enter removes trailing whitespace of the old line
+--- before
+··a··|
+--- action
+key Enter
+--- after
+··a
+··|
+====
+# name: IDE-ED-006 Enter replaces the selection
+--- before
+··a‹bc›d
+--- action
+key Enter
+--- after
+··a
+··|d
+====
+# name: IDE-ED-006 Enter in an LF document inserts LF
+# eol: lf
+--- before
+x
+··a|
+--- action
+key Enter
+--- after
+x
+··a
+··|
+====
+# name: IDE-ED-006 Enter on a read-only document is refused
+# readonly: true
+# status: Msg_Editor_ReadOnlyEdit
+--- before
+a|
+--- action
+key Enter
+--- after
+a|
+====
+# name: IDE-ED-007 then increases the indentation
+--- before
+··if X then|
+--- action
+key Enter
+--- after
+··if X then
+····|
+====
+# name: IDE-ED-007 begin increases indent
+--- before
+··begin|
+--- action
+key Enter
+--- after
+··begin
+····|
+====
+# name: IDE-ED-007 keyword inside a comment is ignored
+--- before
+··X := 1; // begin|
+--- action
+key Enter
+--- after
+··X := 1; // begin
+··|
+====
+# name: IDE-ED-007 trailing comment after begin is ignored
+--- before
+begin { start }|
+--- action
+key Enter
+--- after
+begin { start }
+··|
+====
+# name: IDE-ED-007 keyword inside a string is ignored
+--- before
+X := 'begin'|
+--- action
+key Enter
+--- after
+X := 'begin'
+|
+====
+# name: IDE-ED-007 case of increases the indentation
+--- before
+case X of|
+--- action
+key Enter
+--- after
+case X of
+··|
+====
+# name: IDE-ED-007 case arm colon increases the indentation
+--- before
+··1:|
+--- action
+key Enter
+--- after
+··1:
+····|
+====
+# name: IDE-ED-007 assignment colon does not increase the indentation
+--- before
+··X := Y;|
+--- action
+key Enter
+--- after
+··X := Y;
+··|
+====
+# name: IDE-ED-007 class type heading increases the indentation
+--- before
+··TFoo = class|
+--- action
+key Enter
+--- after
+··TFoo = class
+····|
+====
+# name: IDE-ED-007 class type heading with ancestor increases the indentation
+--- before
+··TFoo = class(TObject)|
+--- action
+key Enter
+--- after
+··TFoo = class(TObject)
+····|
+====
+# name: IDE-ED-007 forward class declaration does not increase the indentation
+--- before
+··TFoo = class;|
+--- action
+key Enter
+--- after
+··TFoo = class;
+··|
+====
+# name: IDE-ED-007 interface type heading increases the indentation
+--- before
+··IFoo = interface|
+--- action
+key Enter
+--- after
+··IFoo = interface
+····|
+====
+# name: IDE-ED-007 interface section keyword does not increase the indentation
+--- before
+interface|
+--- action
+key Enter
+--- after
+interface
+|
+====
+# name: IDE-ED-007 visibility section increases the indentation
+--- before
+··private|
+--- action
+key Enter
+--- after
+··private
+····|
+====
+# name: IDE-ED-007 var increases the indentation
+--- before
+var|
+--- action
+key Enter
+--- after
+var
+··|
+====
+# name: IDE-ED-007 type and uses increase the indentation
+--- before
+type|
+--- action
+key Enter
+type uses
+key Enter
+--- after
+type
+··uses
+····|
+====
+# name: IDE-ED-007 try increases the indentation
+--- before
+try|
+--- action
+key Enter
+--- after
+try
+··|
+====
+# name: IDE-ED-007 repeat increases the indentation
+--- before
+repeat|
+--- action
+key Enter
+--- after
+repeat
+··|
+====
+# name: IDE-ED-007 else increases the indentation
+--- before
+··else|
+--- action
+key Enter
+--- after
+··else
+····|
+====
+# name: IDE-ED-007 do increases the indentation
+--- before
+while A do|
+--- action
+key Enter
+--- after
+while A do
+··|
+====
+# name: IDE-ED-007 asm increases the indentation
+--- before
+asm|
+--- action
+key Enter
+--- after
+asm
+··|
+====
+# name: IDE-ED-007 record increases the indentation
+--- before
+··R = record|
+--- action
+key Enter
+--- after
+··R = record
+····|
+====
+# name: IDE-ED-007 tab indentation adds a tab
+# settings: editor.insertSpaces=false
+--- before
+→begin|
+--- action
+key Enter
+--- after
+→begin
+→→|
+====
+# name: IDE-ED-007 plain text has no keyword rules
+# language: plaintext
+--- before
+begin|
+--- action
+key Enter
+--- after
+begin
+|
+====
+# name: IDE-ED-008 typing end re-indents to the opener
+--- before
+··begin
+····Foo;
+····en|
+--- action
+type d
+--- after
+··begin
+····Foo;
+··end|
+====
+# name: IDE-ED-008 typing until re-indents to repeat
+--- before
+repeat
+··X;
+··unti|
+--- action
+type l
+--- after
+repeat
+··X;
+until|
+====
+# name: IDE-ED-008 typing except re-indents to try
+--- before
+try
+··X;
+··excep|
+--- action
+type t
+--- after
+try
+··X;
+except|
+====
+# name: IDE-ED-008 typing finally re-indents to try
+--- before
+··try
+····X;
+····finall|
+--- action
+type y
+--- after
+··try
+····X;
+··finally|
+====
+# name: IDE-ED-008 typing else re-indents to its if
+--- before
+··if A then
+····B
+····els|
+--- action
+type e
+--- after
+··if A then
+····B
+··else|
+====
+# name: IDE-ED-008 typing else re-indents to its case
+--- before
+case X of
+··1: A;
+··els|
+--- action
+type e
+--- after
+case X of
+··1: A;
+else|
+====
+# name: IDE-ED-008 one unit deeper than the opener also re-indents
+--- before
+begin
+······X;
+··en|
+--- action
+type d
+--- after
+begin
+······X;
+end|
+====
+# name: IDE-ED-008 other indentation is left alone
+--- before
+begin
+··X;
+········en|
+--- action
+type d
+--- after
+begin
+··X;
+········end|
+====
+# name: IDE-ED-008 no opener leaves the line unchanged
+--- before
+··en|
+--- action
+type d
+--- after
+··end|
+====
+# name: IDE-ED-008 a closer that is not the first token is left alone
+--- before
+begin
+··X; en|
+--- action
+type d
+--- after
+begin
+··X; end|
+====
+# name: IDE-ED-008 a closer inside a comment is left alone
+--- before
+begin
+··// en|
+--- action
+type d
+--- after
+begin
+··// end|
+====
+# name: IDE-ED-008 typing the whole closer re-indents once complete
+--- before
+··begin
+····X;
+····|
+--- action
+type end
+--- after
+··begin
+····X;
+··end|
+====
+# name: IDE-ED-009 section keywords are not re-indented when typed
+--- before
+··implementatio|
+--- action
+type n
+--- after
+··implementation|
+====
+# name: IDE-ED-011 Home goes to the first non-blank character
+--- before
+····a|bc
+--- action
+key Home
+--- after
+····|abc
+====
+# name: IDE-ED-011 Home at the first non-blank character goes to column 1
+--- before
+····|abc
+--- action
+key Home
+--- after
+|····abc
+====
+# name: IDE-ED-011 Home on a blank line goes to column 1
+--- before
+··|
+--- action
+key Home
+--- after
+|··
+====
+# name: IDE-ED-011 Home without smartHome goes to column 1
+# settings: editor.smartHome=false
+--- before
+··a|b
+--- action
+key Home
+--- after
+|··ab
+====
+# name: IDE-ED-011 Shift+Home extends the selection
+--- before
+··ab|
+--- action
+key Shift+Home
+--- after
+··|‹ab›

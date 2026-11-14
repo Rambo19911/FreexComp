@@ -1,0 +1,68 @@
+# name: IDE-ED-036 upper case of the selection
+--- before
+‹begin end›;
+--- action
+command edit.upperCase
+--- after
+‹BEGIN END›;
+====
+# name: IDE-ED-036 lower case of the word under the caret
+--- before
+X := FO|O;
+--- action
+command edit.lowerCase
+--- after
+X := fo|o;
+====
+# name: IDE-ED-036 word ending at the caret
+--- before
+X := foo|;
+--- action
+command edit.upperCase
+--- after
+X := FOO|;
+====
+# name: IDE-ED-036 a reversed selection is preserved
+--- before
+|‹AbC›
+--- action
+command edit.lowerCase
+--- after
+|‹abc›
+====
+# name: IDE-ED-036 invariant culture
+# language: plaintext
+--- before
+‹title›
+--- action
+command edit.upperCase
+--- after
+‹TITLE›
+====
+# name: IDE-ED-037 trim trailing whitespace of the whole document
+# language: plaintext
+--- before
+a··
+b→|
+c·
+--- action
+command edit.trimTrailingWhitespace
+--- after
+a
+b|
+c
+====
+# name: IDE-ED-037 trim only the touched lines of a selection
+# language: plaintext
+--- before
+a··
+‹b··
+c›··
+d··
+--- action
+command edit.trimTrailingWhitespace
+--- after
+a··
+‹b
+c›
+d··

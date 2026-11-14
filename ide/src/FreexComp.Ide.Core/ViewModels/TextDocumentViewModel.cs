@@ -13,7 +13,7 @@ namespace FreexComp.Ide.Core.ViewModels;
 /// (<see cref="LineEnding"/>) and the encoding of the next save. Created and saved only by the document service
 /// (IDE-ARCH-023).
 /// </summary>
-public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
+public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 {
     public const string EncodingInfoBarKind = "Encoding";
     public const string MixedLineEndingsInfoBarKind = "MixedLineEndings";
@@ -116,11 +116,14 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         UnfoldCommandId => Folding.CanUnfold,
         FoldAllCommandId => Folding.CanFoldAll,
         UnfoldAllCommandId => Folding.CanUnfoldAll,
+        _ when IsEditingCommand(commandId) => CanExecuteEditing(commandId),
         _ => LineEnding.CanExecute(commandId, argument),
     };
 
     Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
     {
+        if (IsEditingCommand(commandId))
+            return Task.FromResult(CanExecuteEditing(commandId) && ExecuteEditing(commandId));
         switch (commandId)
         {
             case FoldCommandId:
@@ -234,7 +237,8 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         int chars = 0, lines = 0;
         if (ViewState.SelectionAnchor is { } anchor && anchor != caret)
         {
-            chars = Math.Abs(Buffer.GetOffset(caret.Line, caret.Column) - Buffer.GetOffset(anchor.Line, anchor.Column));
+            // Clamped: during an edit the view state may still describe the text before it.
+            chars = Math.Abs(OffsetOf(caret) - OffsetOf(anchor));
             lines = Math.Abs(caret.Line - anchor.Line) + 1;
         }
 

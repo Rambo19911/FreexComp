@@ -50,6 +50,22 @@ public interface ILanguageDefinition
 
     /// <summary>Fold regions of this file type (IDE-ED-051…053); null when it has none.</summary>
     Editing.IFoldingProvider? CreateFoldingProvider();
+
+    /// <summary>Language-specific indentation (IDE-ED-007/008); null = only the language-neutral rules.</summary>
+    IIndentRules? IndentRules => null;
+}
+
+/// <summary>The language-specific indentation rules of editor-features.md §2.</summary>
+public interface IIndentRules
+{
+    /// <summary>IDE-ED-007: Enter after <paramref name="textLeftOfCaret"/> (the old line's text left of the caret) indents one unit more.</summary>
+    bool IncreasesIndent(string textLeftOfCaret);
+
+    /// <summary>
+    /// IDE-ED-008: when a closer word ends at <paramref name="closerEnd"/> and is the first token of its line, the
+    /// 1-based line of its matching opener; otherwise (not a closer, or no opener) null.
+    /// </summary>
+    int? MatchingOpenerLine(ITextBuffer buffer, int closerEnd);
 }
 
 /// <summary>Colour-token names, taken from the compiler area's single mapping (<see cref="Classifier.GetColorToken"/>).</summary>

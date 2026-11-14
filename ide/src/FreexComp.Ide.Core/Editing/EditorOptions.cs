@@ -18,6 +18,10 @@ public sealed class EditorOptions : INotifyPropertyChanged
         [SettingsCatalog.EditorHighlightCurrentLine.Name] = nameof(HighlightCurrentLine),
         [SettingsCatalog.EditorRightMargin.Name] = nameof(RightMargin),
         [SettingsCatalog.EditorShowWhitespace.Name] = nameof(ShowWhitespace),
+        [SettingsCatalog.EditorTabWidth.Name] = nameof(TabWidth),
+        [SettingsCatalog.EditorInsertSpaces.Name] = nameof(InsertSpaces),
+        [SettingsCatalog.EditorAutoIndent.Name] = nameof(AutoIndent),
+        [SettingsCatalog.EditorSmartHome.Name] = nameof(SmartHome),
     };
 
     private readonly ISettingsService? _settings;
@@ -55,6 +59,15 @@ public sealed class EditorOptions : INotifyPropertyChanged
     public int RightMargin => Get(SettingsCatalog.EditorRightMargin);
 
     public bool ShowWhitespace => Get(SettingsCatalog.EditorShowWhitespace);
+
+    /// <summary>editor-features.md §2: <c>editor.tabWidth</c>.</summary>
+    public int TabWidth => Get(SettingsCatalog.EditorTabWidth);
+
+    public bool InsertSpaces => Get(SettingsCatalog.EditorInsertSpaces);
+
+    public bool AutoIndent => Get(SettingsCatalog.EditorAutoIndent);
+
+    public bool SmartHome => Get(SettingsCatalog.EditorSmartHome);
 
     /// <summary>
     /// The style of a syntax token in a theme: <c>colors.&lt;theme&gt;.&lt;token&gt;.style</c> (<c>regular</c>,
