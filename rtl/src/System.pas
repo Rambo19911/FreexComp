@@ -28,15 +28,16 @@ type
   HResult = Integer;                   { ABI section 9.6; HRESULT is the same identifier }
   TProcedure = procedure;
 
-  // TODO(M2.4, C-086): TClass = class of TObject, with ClassType, ClassParent and InheritsFrom (class reference types
-  // are E2900 today). TODO(M2.5): Dispatch / DefaultHandler take an untyped var parameter (typed Pointer until the
-  // compiler has untyped parameters: the same IR, ptr), _Dispatch, GetInterface, GetInterfaceEntry. TODO(M2.5, RTTI):
-  // ClassInfo, ClassNameIs, MethodAddress, MethodName, FieldAddress, UnitName.
+  // TODO(M2.5): Dispatch / DefaultHandler take an untyped var parameter (typed Pointer until the compiler has untyped
+  // parameters: the same IR, ptr), _Dispatch, GetInterface, GetInterfaceEntry. TODO(M2.5, RTTI): ClassInfo,
+  // ClassNameIs, MethodAddress, MethodName, FieldAddress, UnitName.
+
+  TObject = class;
+  TClass = class of TObject;           { the VMT address (ABI-071) }
 
   { the root class (system.md section 13, rtl-abi.md 7.1/7.2): the ten virtual methods in ABI-073 slot order - do not
     reorder them. Constructors are ptr (ptr, i8 Alloc), destructors void (ptr, i8 Dealloc) (ABI-075/076); the compiler
-    emits the protocol and calls NewInstance, AfterConstruction, BeforeDestruction and FreeInstance itself.
-    ClassName and InstanceSize are declared but cannot be called before class method calls (C-086). }
+    emits the protocol and calls NewInstance, AfterConstruction, BeforeDestruction and FreeInstance itself. }
   TObject = class
   public
     destructor Destroy; virtual;
@@ -53,8 +54,11 @@ type
     procedure Free;
     class function InitInstance(Instance: Pointer): TObject;
     procedure CleanupInstance;
+    function ClassType: TClass;
     class function ClassName: string;
+    class function ClassParent: TClass;
     class function InstanceSize: Integer;
+    class function InheritsFrom(AClass: TClass): Boolean;
   end;
 
   { RTL-062: the pluggable memory manager; FreeMem returns 0 on success }
@@ -102,6 +106,11 @@ procedure _OverflowError; noreturn;
 procedure _DivZeroError; noreturn;
 procedure _InvalidCast; noreturn;
 procedure _AbstractError; noreturn;                                  { IR void(): the code of abstract VMT slots }
+
+{ class tests (rtl-abi.md section 9.6): `is`, `as`, and `is` on a class reference }
+function _IsClass(Obj: Pointer; VMT: Pointer): Boolean;
+function _AsClass(Obj: Pointer; VMT: Pointer): Pointer;
+function _ClassInherits(VMT, AncestorVMT: Pointer): Boolean;
 procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;   { Msg/FileName: UnicodeString refs, Msg may be nil }
 procedure _IOCheck;
 
@@ -4597,25 +4606,19 @@ procedure TObject.BeforeDestruction;
 begin
 end;
 
-{ InitInstance for class VMT: zero fill, the VMT pointer at offset 0 (a plain routine because class methods cannot
-  call each other before C-086) }
-function InitObject(VMT, Instance: Pointer): Pointer;
-begin
-  memset(Instance, 0, NativeUInt(PNativeInt(PByte(VMT) + VmtInstanceSize)^));
-  PPointer(Instance)^ := VMT;
-  // TODO(M2.5): store the hidden interface pointers of the class and every ancestor (IntfTable walk, ABI-072)
-  Result := Instance;
-end;
-
-{ ABI-072, RTL-151 step 1: a block of InstanceSize bytes from _GetMem, set up as InitInstance does }
+{ ABI-072, RTL-151 step 1: a block of InstanceSize bytes from _GetMem, set up by InitInstance }
 class function TObject.NewInstance: TObject;
 begin
-  Result := TObject(InitObject(Self, _GetMem(PNativeInt(PByte(Self) + VmtInstanceSize)^)));
+  Result := InitInstance(_GetMem(InstanceSize));
 end;
 
+{ the one set-up path of an instance block: zero fill, the VMT pointer at offset 0 }
 class function TObject.InitInstance(Instance: Pointer): TObject;
 begin
-  Result := TObject(InitObject(Self, Instance));
+  memset(Instance, 0, NativeUInt(InstanceSize));
+  PPointer(Instance)^ := Pointer(Self);
+  // TODO(M2.5): store the hidden interface pointers of the class and every ancestor (IntfTable walk, ABI-072)
+  Result := TObject(Instance);
 end;
 
 { ABI-072, RTL-152 }
@@ -4645,10 +4648,9 @@ begin
   end;
 end;
 
-{ = ClassName (read from the VMT directly: class method calls wait for C-086) }
 function TObject.ToString: string;
 begin
-  _UStrAsg(PPointer(@Result)^, PPointer(PByte(PPointer(Self)^) + VmtClassName)^);
+  Result := ClassName;
 end;
 
 function TObject.Equals(Obj: TObject): Boolean;
@@ -4672,14 +4674,55 @@ procedure TObject.DefaultHandler(var Message: Pointer);
 begin
 end;
 
+{ the run-time class: the VMT pointer at offset 0 }
+function TObject.ClassType: TClass;
+begin
+  Result := TClass(PPointer(Self)^);
+end;
+
 class function TObject.ClassName: string;
 begin
-  _UStrAsg(PPointer(@Result)^, PPointer(PByte(Self) + VmtClassName)^);
+  _UStrAsg(PPointer(@Result)^, PPointer(PByte(Pointer(Self)) + VmtClassName)^);
+end;
+
+{ nil for TObject }
+class function TObject.ClassParent: TClass;
+begin
+  Result := TClass(PPointer(PByte(Pointer(Self)) + VmtParent)^);
 end;
 
 class function TObject.InstanceSize: Integer;
 begin
-  Result := Integer(PNativeInt(PByte(Self) + VmtInstanceSize)^);
+  Result := Integer(PNativeInt(PByte(Pointer(Self)) + VmtInstanceSize)^);
+end;
+
+{ Self or an ancestor is AClass; False for a nil AClass }
+class function TObject.InheritsFrom(AClass: TClass): Boolean;
+begin
+  Result := _ClassInherits(Pointer(Self), Pointer(AClass));
+end;
+
+{ ---------------------------------------------------------------- class tests (rtl-abi.md section 9.6) }
+{ the Parent chain from VMT up; a nil VMT (a nil class reference) inherits from nothing (LANG-650) }
+function _ClassInherits(VMT, AncestorVMT: Pointer): Boolean;
+begin
+  while (VMT <> nil) and (VMT <> AncestorVMT) do
+    VMT := PPointer(PByte(VMT) + VmtParent)^;
+  Result := VMT <> nil;
+end;
+
+{ obj is T: nil is nothing (LANG-650) }
+function _IsClass(Obj: Pointer; VMT: Pointer): Boolean;
+begin
+  Result := (Obj <> nil) and _ClassInherits(PPointer(Obj)^, VMT);
+end;
+
+{ obj as T: nil passes, a mismatch is runtime error 219 (LANG-651) }
+function _AsClass(Obj: Pointer; VMT: Pointer): Pointer;
+begin
+  if (Obj <> nil) and not _ClassInherits(PPointer(Obj)^, VMT) then
+    _InvalidCast;
+  Result := Obj;
 end;
 
 { ---------------------------------------------------------------- memory primitives (RTL-065) }

@@ -32,4 +32,45 @@ ok Integer field
 ok string field
 ok Pointer field
 ok leaked
-# passed 29 failed 0
+# class references
+ok ClassName on a class name
+ok ClassName of a descendant
+ok TObject.InstanceSize
+ok TPlain.InstanceSize
+ok ClassType = run-time class
+ok ClassType <> parent
+ok ClassName on an instance
+ok InstanceSize on an instance
+ok ClassName through a class reference
+ok ClassParent of TLeaf
+ok ClassParent of TBase
+ok ClassParent of TObject is nil
+ok InheritsFrom itself
+ok InheritsFrom parent
+ok InheritsFrom TObject
+ok not InheritsFrom a descendant
+ok not InheritsFrom an unrelated class
+ok InheritsFrom nil is False
+ok is ancestor
+ok is own class
+ok class reference is ancestor (_ClassInherits)
+ok nil class reference is nothing (LANG-650)
+ok class of TBase
+ok as ancestor
+ok nil is nothing
+ok nil as T = nil
+# InitInstance
+ok returns the block
+ok VMT pointer stored
+ok the rest zero-filled
+ok usable as an instance
+# class test helpers
+ok _IsClass ancestor
+ok _IsClass unrelated
+ok _IsClass nil
+ok _AsClass match
+ok _AsClass nil
+ok _ClassInherits same
+ok _ClassInherits descendant
+ok _ClassInherits nil class
+# passed 67 failed 0

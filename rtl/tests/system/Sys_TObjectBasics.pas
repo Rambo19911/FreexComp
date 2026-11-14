@@ -1,9 +1,10 @@
-// covers: ABI-070, ABI-072, ABI-073, ABI-075, ABI-076, ABI-077, RTL-150, RTL-151, RTL-152
+// covers: ABI-070, ABI-071, ABI-072, ABI-073, ABI-075, ABI-076, ABI-077, RTL-150, RTL-151, RTL-152, LANG-650, LANG-651, LANG-652, LANG-653
 program Sys_TObjectBasics;
 { TObject of rtl/src/System.pas: create/free of TObject itself, the virtual destructor chain through a TObject
   reference (BeforeDestruction outermost, then each Destroy, then FreeInstance), managed fields of every level
   released by FreeInstance (no block left, RTL-064 counters), Free on nil, NewInstance zero-filling a block that the
-  memory manager hands out dirty, the VMT pointer stored at offset 0, InstanceSize and the default virtuals. }
+  memory manager hands out dirty, the VMT pointer stored at offset 0, InstanceSize and the default virtuals; TClass,
+  ClassType, ClassName, ClassParent, InheritsFrom and the class tests _IsClass, _AsClass, _ClassInherits (ABI 9.6). }
 {$POINTERMATH ON}
 uses TestKit;
 
@@ -70,7 +71,7 @@ begin
   inherited Destroy;
 end;
 
-{ InstanceSize from the VMT (class method calls such as TPlain.InstanceSize wait for compiler C-086) }
+{ InstanceSize read from the VMT field itself (ABI 7.2), to check the class method against }
 function VmtSize(O: TObject): NativeInt;
 begin
   Result := PNativeInt(PByte(PPointer(O)^) + 8)^;
@@ -213,11 +214,103 @@ begin
   CheckEqI(0, _LiveAllocCount - Before, 'leaked');
 end;
 
+{ TClass and the class methods of TObject (LANG-652/653), and the class tests of ABI section 9.6 }
+type
+  TBaseClass = class of TBase;
+
+procedure TestClassReferences;
+var
+  O: TObject;
+  C, Nil_: TClass;
+  BC: TBaseClass;
+begin
+  Section('class references');
+  CheckEqS('TObject', TObject.ClassName, 'ClassName on a class name');
+  CheckEqS('TLeaf', TLeaf.ClassName, 'ClassName of a descendant');
+  CheckEqI(8, TObject.InstanceSize, 'TObject.InstanceSize');
+  CheckEqI(40, TPlain.InstanceSize, 'TPlain.InstanceSize');
+  O := TLeaf.Create;
+  Check(O.ClassType = TLeaf, 'ClassType = run-time class');
+  Check(O.ClassType <> TBase, 'ClassType <> parent');
+  CheckEqS('TLeaf', O.ClassName, 'ClassName on an instance');
+  CheckEqI(VmtSize(O), O.InstanceSize, 'InstanceSize on an instance');
+  C := O.ClassType;
+  CheckEqS('TLeaf', C.ClassName, 'ClassName through a class reference');
+  Check(C.ClassParent = TBase, 'ClassParent of TLeaf');
+  Check(C.ClassParent.ClassParent = TObject, 'ClassParent of TBase');
+  Check(TObject.ClassParent = nil, 'ClassParent of TObject is nil');
+  CheckEqB(True, C.InheritsFrom(TLeaf), 'InheritsFrom itself');
+  CheckEqB(True, C.InheritsFrom(TBase), 'InheritsFrom parent');
+  CheckEqB(True, C.InheritsFrom(TObject), 'InheritsFrom TObject');
+  CheckEqB(False, TBase.InheritsFrom(TLeaf), 'not InheritsFrom a descendant');
+  CheckEqB(False, TPlain.InheritsFrom(TBase), 'not InheritsFrom an unrelated class');
+  Nil_ := nil;
+  CheckEqB(False, C.InheritsFrom(Nil_), 'InheritsFrom nil is False');
+  CheckEqB(True, O is TBase, 'is ancestor');
+  CheckEqB(True, O is TLeaf, 'is own class');
+  CheckEqB(True, C is TBase, 'class reference is ancestor (_ClassInherits)');
+  CheckEqB(False, Nil_ is TObject, 'nil class reference is nothing (LANG-650)');
+  BC := TBaseClass(C);
+  CheckEqS('TLeaf', BC.ClassName, 'class of TBase');
+  CheckEqS('TLeaf', (O as TBase).ClassName, 'as ancestor');
+  O.Free;
+  O := nil;
+  CheckEqB(False, O is TObject, 'nil is nothing');
+  Check((O as TBase) = nil, 'nil as T = nil');
+  Log := '';
+end;
+
+{ InitInstance, the set-up NewInstance shares (RTL-151 step 1), on a caller's dirty block }
+procedure TestInitInstance;
+var
+  P: PByte;
+  O: TObject;
+  I: Integer;
+  Zero: Boolean;
+begin
+  Section('InitInstance');
+  GetMem(P, 40);
+  for I := 0 to 39 do
+    P[I] := $A5;
+  O := TPlain.InitInstance(P);
+  Check(Pointer(O) = Pointer(P), 'returns the block');
+  Check(PPointer(P)^ = Pointer(TPlain), 'VMT pointer stored');
+  Zero := True;
+  for I := 8 to 39 do
+    if P[I] <> 0 then
+      Zero := False;
+  CheckEqB(True, Zero, 'the rest zero-filled');
+  CheckEqS('TPlain', O.ClassName, 'usable as an instance');
+  FreeMem(P);
+end;
+
+{ the helpers called directly: nil arguments }
+procedure TestHelpers;
+var
+  O: TObject;
+begin
+  Section('class test helpers');
+  O := TLeaf.Create;
+  CheckEqB(True, _IsClass(Pointer(O), Pointer(TBase)), '_IsClass ancestor');
+  CheckEqB(False, _IsClass(Pointer(O), Pointer(TPlain)), '_IsClass unrelated');
+  CheckEqB(False, _IsClass(nil, Pointer(TObject)), '_IsClass nil');
+  Check(_AsClass(Pointer(O), Pointer(TObject)) = Pointer(O), '_AsClass match');
+  Check(_AsClass(nil, Pointer(TPlain)) = nil, '_AsClass nil');
+  CheckEqB(True, _ClassInherits(Pointer(TLeaf), Pointer(TLeaf)), '_ClassInherits same');
+  CheckEqB(False, _ClassInherits(Pointer(TObject), Pointer(TLeaf)), '_ClassInherits descendant');
+  CheckEqB(False, _ClassInherits(nil, Pointer(TObject)), '_ClassInherits nil class');
+  O.Free;
+  Log := '';
+end;
+
 begin
   TestCreateFree;
   TestDestructorChain;
   TestManagedFields;
   TestFreeNil;
   TestZeroFill;
+  TestClassReferences;
+  TestInitInstance;
+  TestHelpers;
   Done;
 end.
