@@ -25,6 +25,17 @@ function Get-Package($name, $url, $sha256) {
     return $file
 }
 
+# --- No telemetry from the development tools (ADR 008) ----------------------------------------------------
+# The .NET CLI sends usage data unless this is set; it is set for the current user (not machine-wide).
+foreach ($name in 'DOTNET_CLI_TELEMETRY_OPTOUT', 'DOTNET_NOLOGO') {
+    if ([Environment]::GetEnvironmentVariable($name, 'User') -ne '1') {
+        if (-not $CheckOnly) { [Environment]::SetEnvironmentVariable($name, '1', 'User') }
+    }
+    $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'; $env:DOTNET_NOLOGO = '1'
+    Say ($CheckOnly -eq $false -or [Environment]::GetEnvironmentVariable($name, 'User') -eq '1') "$name=1 (user)"
+}
+# Avalonia's build-statistics target is replaced by an empty one in Directory.Build.targets.
+
 # --- .NET SDK, git ---------------------------------------------------------------------------------------
 $sdks = @(& dotnet --list-sdks)
 Say (($sdks | Where-Object { $_ -like "$($cfg.dotnetSdk)*" }).Count -gt 0) ".NET SDK $($cfg.dotnetSdk).x"

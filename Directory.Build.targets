@@ -1,0 +1,8 @@
+<Project>
+  <!--
+    No network during builds (ADR 008): the Avalonia packages pull in Avalonia.BuildServices, whose
+    "AvaloniaStats" target runs a build-statistics task before CoreCompile. Redefining the target here
+    (imported after the package targets) replaces it with an empty one, so the task never runs.
+  -->
+  <Target Name="AvaloniaStats" />
+</Project>
