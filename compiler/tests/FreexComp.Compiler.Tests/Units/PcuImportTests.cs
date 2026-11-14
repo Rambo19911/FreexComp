@@ -140,6 +140,64 @@ public sealed class PcuImportTests
         Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), fs.ReadAllText(@"C:\p\obj\P.ll"));
     }
 
+    /// <summary>
+    /// C-205: a program using the interfaces of a <c>.pcu</c>-only unit — calls through the IMT, an interface property and default
+    /// array property, overloads, class → interface conversion of an imported class, <c>is</c>/<c>as</c> with an imported GUID, a
+    /// descendant class listing an imported interface — binds and gives the same IR as against the unit's source.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-510")]
+    [Trait("Req", "CMP-160")]
+    [Trait("Req", "LANG-664")]
+    public void InterfaceFromPcu()
+    {
+        const string Program = """
+            program P;
+            uses U;
+            type
+              TBigBox = class(TBox, IShape)
+                function GetSide(I: Integer): Integer; override;
+                procedure Notify(Sender: TObject);
+              end;
+            function TBigBox.GetSide(I: Integer): Integer; begin Result := 100 + I end;
+            procedure TBigBox.Notify(Sender: TObject); begin Writeln('grown') end;
+            var
+              B: IBox;
+              S: IShape;
+              O: TBox;
+            begin
+              B := MakeBox(3);
+              B.Grow(1);
+              B.Grow('ab');
+              Writeln(B.Area, B.Name, B[2], B.Sides[1]);
+              S := B;
+              O := TBigBox.Create;
+              B := O;
+              S := O as IShape;
+              Writeln(O is IBox, S.Area, B[1]);
+              O.OnGrow := TBigBox(O).Notify;
+              if Assigned(O.OnGrow) then O.OnGrow(nil);
+            end.
+            """;
+        var sources = PcuTests.Files(u: PcuTests.InterfaceUnit, program: Program);
+        var reference = Emit(sources, PcuTests.Options(), EmitStage.Ll);
+        Assert.True(reference.Success, string.Join("\n", reference.Diagnostics.Select(d => d.ToText())));
+        var pcus = PcuTests.Pcus(PcuTests.Files(u: PcuTests.InterfaceUnit, program: Program));
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", Program)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+        foreach (var unit in new[] { "U", "V" })
+        {
+            fs.Add(Path.Combine(Lib, unit + ".pcu"), pcus[unit]).Add(Path.Combine(Lib, unit + ".obj"), "");
+        }
+
+        var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(["P", "System"], result.CompiledUnits);
+        Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), fs.ReadAllText(@"C:\p\obj\P.ll"));
+    }
+
     [Fact]
     [Trait("Req", "LANG-510")]
     public void ProgramAgainstPcuOnlyUnits_GivesTheSameProgramIrAsAgainstTheirSources()

@@ -328,6 +328,15 @@ internal static class PcuReader
                     return record;
                 }
 
+                case "procedural" when entry["ofObject"] is JsonValue ofObject && ofObject.GetValue<bool>():
+                {
+                    var methodPointer = new MethodPointerTypeSymbol(name, _unit, []);                    // C-103
+                    _byId[id] = methodPointer;
+                    methodPointer.Signature.Parameters = Parameters(entry, methodPointer.Signature);
+                    methodPointer.Signature.ReturnType = entry["result"] is null ? null : Type(entry, "result");
+                    return methodPointer;
+                }
+
                 case "procedural":
                 {
                     var procedural = new ProceduralTypeSymbol(name, _unit, []);
@@ -339,6 +348,8 @@ internal static class PcuReader
 
                 case "class":
                     return Class(id, entry, name);
+                case "interface":
+                    return Interface(id, entry, name);
                 case "classRef":
                 {
                     var target = Type(entry, "target") as ClassTypeSymbol ?? throw new PcuFormatException($"'{name}' does not refer to a class");
@@ -406,6 +417,58 @@ internal static class PcuReader
             }
 
             type.Properties = [.. Array(entry, "properties").Select(p => Property(type, p!))];
+            // C-205: the listed interfaces with their hidden field offsets; the implementing methods matter only to the declaring
+            // unit (its IMTs and thunks), so an imported class carries none
+            type.Interfaces = [.. Array(entry, "interfaces").Select(i => new ImplementedInterface(
+                Type(i!, "type") as InterfaceTypeSymbol ?? throw new PcuFormatException($"an interface of '{name}' is not an interface"),
+                i!["offset"]!.GetValue<long>(), []))];
+            return type;
+        }
+
+        /// <summary>C-205: an interface of architecture.md §6 — parent, GUID, methods with their IMT slots, properties.</summary>
+        private InterfaceTypeSymbol Interface(int id, JsonObject entry, string name)
+        {
+            var type = new InterfaceTypeSymbol(name, _unit, []) { IsForward = false };
+            _byId[id] = type;                                                   // before the members: they may name the interface
+            if (string.Equals(_unit.Name, "System", StringComparison.OrdinalIgnoreCase) && string.Equals(name, "IInterface", StringComparison.OrdinalIgnoreCase))
+            {
+                types.IInterface = type;                                        // the root interface (ABI-094)
+            }
+
+            type.Parent = entry["parent"] is null ? null
+                : Type(entry, "parent") as InterfaceTypeSymbol ?? throw new PcuFormatException($"the parent of '{name}' is not an interface");
+            if (entry["guid"] is JsonValue guid)
+            {
+                type.Guid = System.Guid.TryParseExact(guid.GetValue<string>(), "B", out var parsed)
+                    ? [.. parsed.ToByteArray()] : throw new PcuFormatException($"GUID of '{name}'");
+            }
+
+            type.Methods = [.. Array(entry, "methods").Select(m =>
+            {
+                var method = new MethodSymbol(Text(m, "name"), type, [], declaration: null!, MethodKind.Ordinary, Visibility.Public);
+                method.Parameters = Parameters(m!, method);
+                method.ReturnType = m!["result"] is null ? null : Type(m, "result");
+                method.IsOverload = Array(m, "flags").Any(f => f!.GetValue<string>() == "overload");
+                method.VmtSlot = m["slot"]!.GetValue<int>();
+                method.SelfParameter = new ParameterSymbol("Self", type, ParameterMode.Value, -1, method, []);
+                return method;
+            })];
+            MethodSymbol? Slot(JsonNode? slot) => slot is JsonValue value
+                ? type.AllMethods.ElementAtOrDefault(value.GetValue<int>()) ?? throw new PcuFormatException($"accessor slot of '{name}'")
+                : null;
+            type.Properties = [.. Array(entry, "properties").Select(p =>
+            {
+                var property = new PropertySymbol(Text(p, "name"), type, [], Visibility.Public)
+                {
+                    Type = Type(p!, "type"),
+                    Index = p!["index"] is JsonValue index ? index.GetValue<int>() : null,
+                    IsDefault = p["isDefault"]!.GetValue<bool>(),
+                    ReadMethod = Slot(p["read"]),
+                    WriteMethod = Slot(p["write"]),
+                };
+                property.Parameters = [.. Array(p, "params").Select((q, i) => new ParameterSymbol(Text(q, "name"), Type(q!, "type"), ParameterMode.Value, i, property, []))];
+                return property;
+            })];
             return type;
         }
 
@@ -515,6 +578,7 @@ internal static class PcuReader
         {
             "nil" => types.Nil,
             "[]" => types.EmptySet,
+            "untyped" => types.Untyped,
             _ => types.Scope.LookupLocal(name) as TypeSymbol ?? throw new PcuFormatException($"'{name}' is not a predeclared type"),
         };
     }

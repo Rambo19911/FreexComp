@@ -1,0 +1,11 @@
+dog: woof
+dog TRUE
+animal dog
+animal dog
+free dog
+animal dog
+animal dog
+dog: woof
+TRUE
+free dog
+done

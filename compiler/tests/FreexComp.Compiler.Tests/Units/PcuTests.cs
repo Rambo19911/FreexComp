@@ -568,6 +568,70 @@ public sealed class PcuTests
         Assert.Equal(pcus["U"], again["U"]);
     }
 
+    /// <summary>C-205: a unit with interfaces (GUID, ancestor, overloads, properties) and classes implementing them.</summary>
+    internal const string InterfaceUnit = """
+        unit U;
+        interface
+        uses V;
+        type
+          IShape = interface
+            ['{0A1B2C3D-0000-1111-2222-333344445555}']
+            function Area: Integer;
+            function GetName: string;
+            property Name: string read GetName;
+          end;
+          IBox = interface(IShape)
+            ['{0A1B2C3D-6666-7777-8888-9999AAAABBBB}']
+            procedure Grow(N: Integer); overload;
+            procedure Grow(const S: string); overload;
+            function GetSide(I: Integer): Integer;
+            property Sides[I: Integer]: Integer read GetSide; default;
+          end;
+          TNotify = procedure(Sender: TObject) of object;
+          TBox = class(TInterfacedObject, IBox)
+            FSide: Integer;
+            FOnGrow: TNotify;
+            property OnGrow: TNotify read FOnGrow write FOnGrow;
+            function Area: Integer;
+            function GetName: string;
+            procedure Grow(N: Integer); overload;
+            procedure Grow(const S: string); overload;
+            function GetSide(I: Integer): Integer; virtual;
+          end;
+        function MakeBox(Side: Integer): IBox;
+        implementation
+        function TBox.Area: Integer; begin Result := FSide * FSide end;
+        function TBox.GetName: string; begin Result := 'box' end;
+        procedure TBox.Grow(N: Integer); begin Inc(FSide, N) end;
+        procedure TBox.Grow(const S: string); begin Inc(FSide, Length(S)) end;
+        function TBox.GetSide(I: Integer): Integer; begin Result := FSide + I end;
+        function MakeBox(Side: Integer): IBox; var B: TBox; begin B := TBox.Create; B.FSide := Side; Result := B end;
+        end.
+        """;
+
+    /// <summary>C-205: interface types and the classes' <c>interfaces</c> entries survive write → import → write byte for byte.</summary>
+    [Fact]
+    [Trait("Req", "CMP-160")]
+    [Trait("Req", "LANG-660")]
+    public void RoundTrip_Interfaces()
+    {
+        const string Empty = "program P;\nuses U;\nbegin\nend.\n";
+        var pcus = Pcus(Files(u: InterfaceUnit, program: Empty));
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", Empty)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
+            .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
+
+        var again = Compilation.Create(Options() with { SearchPaths = [@"C:\lib"] }, [], fs).PcuTexts().ToDictionary(t => t.Unit, t => t.Text);
+
+        Assert.Contains("\"kind\":\"interface\"", pcus["U"], StringComparison.Ordinal);
+        Assert.Contains("\"ofObject\":true", pcus["U"], StringComparison.Ordinal);                     // C-103
+        Assert.Contains("\"guid\":\"{0A1B2C3D-0000-1111-2222-333344445555}\"", pcus["U"], StringComparison.Ordinal);
+        Assert.Matches("\"name\":\"Sides\",\"type\":\\d+,\"read\":7,\"write\":null,\"index\":null", pcus["U"]);
+        Assert.Equal(pcus["U"], again["U"]);
+    }
+
     /// <summary>
     /// C-106…C-108: open array and <c>array of const</c> parameters (element type + <c>openArray</c>, <c>arrayOfConst</c>) and a
     /// variant record (<c>variant</c>, overlapping offsets) survive write → import → write byte for byte.
@@ -605,6 +669,39 @@ public sealed class PcuTests
         Assert.Contains("\"linkName\":\"U.Show$ca:const\"", pcus["U"], StringComparison.Ordinal);
         Assert.Contains("\"openArray\":true,\"arrayOfConst\":true", pcus["U"], StringComparison.Ordinal);
         Assert.Contains("\"variant\":true", pcus["U"], StringComparison.Ordinal);
+        Assert.Equal(pcus["U"], again["U"]);
+    }
+
+    /// <summary>C-202: untyped parameters are written as the builtin <c>untyped</c> and read back (overloads mangle it as a type).</summary>
+    [Fact]
+    [Trait("Req", "CMP-160")]
+    [Trait("Req", "LANG-420")]
+    public void RoundTrip_UntypedParameters()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            uses V;
+            procedure Fill(var Data; Count: Integer); overload;
+            procedure Fill(const Source; out Dest); overload;
+            implementation
+            procedure Fill(var Data; Count: Integer); begin end;
+            procedure Fill(const Source; out Dest); begin end;
+            end.
+            """;
+        const string Empty = "program P;\nuses U;\nbegin\nend.\n";
+        var pcus = Pcus(Files(u: Unit, program: Empty));
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", Empty)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
+            .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
+
+        var again = Compilation.Create(Options() with { SearchPaths = [@"C:\lib"] }, [], fs).PcuTexts().ToDictionary(t => t.Unit, t => t.Text);
+
+        Assert.Contains("\"linkName\":\"U.Fill$v:untyped,Integer\"", pcus["U"], StringComparison.Ordinal);
+        Assert.Contains("\"linkName\":\"U.Fill$c:untyped,o:untyped\"", pcus["U"], StringComparison.Ordinal);
+        Assert.Contains("\"kind\":\"builtin\",\"name\":\"untyped\"}", pcus["U"], StringComparison.Ordinal);
         Assert.Equal(pcus["U"], again["U"]);
     }
 

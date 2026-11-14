@@ -430,6 +430,7 @@ internal sealed class PcuWriter(PcuContext context)
         private string? BuiltInName(TypeSymbol type) =>
             ReferenceEquals(type, _types.Nil) ? "nil"
             : ReferenceEquals(type, _types.EmptySet) ? "[]"
+            : ReferenceEquals(type, _types.Untyped) ? "untyped"                         // C-202: an untyped parameter
             : ReferenceEquals(_types.Scope.LookupLocal(type.Name), type) ? type.Name
             : null;
 
@@ -581,6 +582,14 @@ internal sealed class PcuWriter(PcuContext context)
                     entry["ofObject"] = false;
                     entry["reference"] = false;
                     return;
+                case MethodPointerTypeSymbol methodPointer:
+                    entry["kind"] = "procedural";                               // C-103: architecture.md §6 ofObject
+                    entry["name"] = methodPointer.Name;
+                    entry["params"] = Parameters(methodPointer.Signature);
+                    entry["result"] = methodPointer.Signature.ReturnType is { } methodResult ? TypeId(methodResult) : null;
+                    entry["ofObject"] = true;
+                    entry["reference"] = false;
+                    return;
                 case ClassTypeSymbol @class:
                     // architecture.md §6 `class` (C-080); interfaces, properties and RTTI arrive with M2.5
                     entry["kind"] = "class";
@@ -652,7 +661,17 @@ internal sealed class PcuWriter(PcuContext context)
                         ["flags"] = Strings(m.IsOverload ? new[] { "overload" } : Array.Empty<string>()),
                         ["slot"] = m.VmtSlot,
                     })]);
-                    entry["properties"] = new JsonArray();
+                    // C-205: accessors are interface methods, named by their IMT slot's method name (they have no link name)
+                    entry["properties"] = new JsonArray([.. intf.Properties.Select(p => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = p.Name,
+                        ["type"] = TypeId(p.Type),
+                        ["read"] = p.ReadMethod?.VmtSlot,
+                        ["write"] = p.WriteMethod?.VmtSlot,
+                        ["index"] = p.Index,
+                        ["params"] = new JsonArray([.. p.Parameters.Select(q => (JsonNode?)new JsonObject { ["name"] = q.Name, ["type"] = TypeId(q.Type) })]),
+                        ["isDefault"] = p.IsDefault,
+                    })]);
                     return;
                 case ClassRefTypeSymbol reference:
                     entry["kind"] = "classRef";                                     // C-086

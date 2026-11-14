@@ -28,6 +28,8 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
             ClassTypeSymbol or ClassRefTypeSymbol => IrType.Ptr,            // ABI-071: the instance / VMT address
             InterfaceTypeSymbol => IrType.Ptr,                              // ABI-090: the hidden field's address
             TextTypeSymbol => new ArrayIrType(type.Size, IrType.I8),
+            UntypedTypeSymbol => new ArrayIrType(0, IrType.I8),
+            MethodPointerTypeSymbol => new StructIrType([IrType.Ptr, IrType.Ptr]),  // ABI §2: { Code, Data } (C-103)            // C-202: only ever reached through its address
             SetTypeSymbol { IsSmall: true } => IrType.Int(checked((int)type.Size * 8)),
             SetTypeSymbol => new ArrayIrType(type.Size, IrType.I8),          // big set (rtl-abi.md §5, CMP-336)
             ArrayTypeSymbol array => new ArrayIrType(array.Length, Of(array.ElementType).StorageType),   // CMP-308, ABI-062

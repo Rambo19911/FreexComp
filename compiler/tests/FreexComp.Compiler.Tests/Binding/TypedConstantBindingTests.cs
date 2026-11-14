@@ -91,8 +91,15 @@ public sealed class TypedConstantBindingTests
     [InlineData("type T = record X: Integer end; const P: T = (X: 1); begin P.X := 2 end.", "E2053(1,60): Left side cannot be assigned to")]
     [InlineData("const A: Integer = 1; begin Inc(A) end.", "E2112(1,33): Constant object cannot be passed as var parameter")]
     [InlineData("const A: Integer = 1; procedure P(var x: Integer); begin end; begin P(A) end.", "E2112(1,71): Constant object cannot be passed as var parameter")]
-    [InlineData("const S: string = 'x'; begin end.", "E2900(1,10): Feature not supported: initialised string")]
+    [InlineData("const D: array of Integer = nil; begin end.", "E2900(1,10): Feature not supported: initialised array of Integer")]   // strings: C-203
     public void Errors(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
+
+    /// <summary>C-203: typed constants (and initialised variables) of strings and of arrays/records of strings bind their literals.</summary>
+    [Theory]
+    [Trait("Req", "LANG-344")]
+    [InlineData("const S: string = 'x'; A: array[0..1] of string = ('a', ''); R: record N: AnsiString end = (N: 'n'); var G: string = 'g'; begin end.")]
+    [InlineData("procedure P; const L: array[1..2] of string = ('p', 'q'); begin Writeln(L[1]) end; begin end.")]
+    public void ManagedStringConstants_Bind(string text) => Assert.Empty(BindDiagnostics(text));
 
     [Theory]
     [Trait("Req", "LANG-344")]

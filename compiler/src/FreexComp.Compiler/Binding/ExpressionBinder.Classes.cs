@@ -213,9 +213,9 @@ internal sealed partial class ExpressionBinder
             return Error(binary, operand);
         }
 
-        if (target is { TypeKind: TypeKind.Interface })
+        if (target is InterfaceTypeSymbol intf)
         {
-            return Unsupported(binary.Right, "'" + binary.OperatorToken.Text.ToLowerInvariant() + "' with an interface");  // LANG-650, M2.5
+            return BindInterfaceTest(binary, operand, intf, isAs);
         }
 
         if (target is not ClassTypeSymbol type)
@@ -243,6 +243,27 @@ internal sealed partial class ExpressionBinder
         }
 
         return new BoundTypeTestExpression(binary, operand, type, isAs, isAs ? type : _types.Boolean);
+    }
+
+    /// <summary>
+    /// LANG-650/651 (C-100): <c>o is I</c> (an object), <c>o as I</c> / <c>i as I</c> (an object or an interface) with <c>I</c> an
+    /// interface that has a GUID (E2640); any other left operand is E2603. The run-time test is always made (CMP-373).
+    /// </summary>
+    private BoundExpression BindInterfaceTest(BinaryExpressionSyntax binary, BoundExpression operand, InterfaceTypeSymbol target, bool isAs)
+    {
+        if (operand.Type is not (ClassTypeSymbol or InterfaceTypeSymbol) || operand.Type is InterfaceTypeSymbol && !isAs)
+        {
+            _diagnostics.Report(binary.Left, "E2603");
+            return Error(binary, operand);
+        }
+
+        if (target.Guid is null)
+        {
+            _diagnostics.Report(binary.Right, "E2640", target.Name);
+            return Error(binary, operand);
+        }
+
+        return new BoundTypeTestExpression(binary, operand, target, isAs, isAs ? target : _types.Boolean);
     }
 
     /// <summary>The VMT of an instance (<c>o.ClassType</c>, CMP-367: <c>load ptr, ptr %o</c>) as a class reference value.</summary>
@@ -556,6 +577,11 @@ internal sealed partial class ExpressionBinder
                 return null;
             }
 
+            if (intf.SelfAndAncestors().SelectMany(i => i.Properties).FirstOrDefault(p => IdentifierComparer.Instance.Equals(p.Name, name)) is { } property)
+            {
+                return PropertyAccess(syntax, property, receiver);                  // LANG-664 (C-101): accessor calls through the IMT
+            }
+
             _diagnostics.Report(syntax.Name, "E2005", intf.Name, name);
             return Error(syntax, receiver);
         }
@@ -680,9 +706,9 @@ internal sealed partial class ExpressionBinder
     /// <summary>A member that is no method in statement position: a call through a procedural field (LANG-484) or E2060 / E2900.</summary>
     private BoundStatement MemberValueStatement(StatementSyntax statement, ExpressionSyntax expression, BoundExpression value, ArgumentListSyntax? argumentList)
     {
-        if (value.Type is ProceduralTypeSymbol type)
+        if (SignatureOf(value.Type) is { } type)
         {
-            var (signature, arguments) = BindCall(expression, [type.Signature], argumentList);
+            var (signature, arguments) = BindCall(expression, [type], argumentList);
             return signature is null ? new BoundErrorStatement(statement) : new BoundCallStatement(statement, signature, arguments, value);
         }
 

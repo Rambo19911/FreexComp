@@ -105,6 +105,10 @@ internal static class ManagedRewriter
                 return StringConversions.Convert(context, target, conversion);
             case BoundArrayConstructor constructor:
                 return Construct(context, target, constructor);
+            case BoundTypeTestExpression { Interface: { } intf, IsAs: true } test:
+                // CMP-373 (C-100): _ObjToIntf(@dest, o, @guid) / _IntfCast(@dest, i, @guid); they release the old value
+                return Call(Helper(test.Operand.Type is InterfaceTypeSymbol ? "_IntfCast" : "_ObjToIntf", context.Types.Pointer, context.Types.Pointer, context.Types.Pointer),
+                    AddressOf(context, target), context.Lower(test.Operand), new LGuidRef(intf, context.Types.Pointer));
             default:
                 return null;
         }
@@ -343,7 +347,7 @@ internal static class ManagedRewriter
         LArrayLength l => References(l.Array, local),
         LArrayElement e => References(e.Array, local) || References(e.Index, local) || (e.Length is { } n && References(n, local)),
         LOpenArray o => References(o.Data, local) || (o.High is { } h && References(h, local)),
-        LTypeInfo => false,
+        LTypeInfo or LGuidRef => false,
         LStringIndex i => References(i.String, local) || References(i.Index, local),
         LAtomic a => References(a.Target, local) || References(a.Value, local) || (a.Comparand is { } c && References(c, local)),
         LBlock b => b.Statements.Any(s => References(s, local)),

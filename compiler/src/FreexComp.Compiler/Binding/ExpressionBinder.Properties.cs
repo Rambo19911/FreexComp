@@ -139,7 +139,7 @@ internal sealed partial class ExpressionBinder
     private BoundExpression DefaultPropertyAccess(ElementAccessExpressionSyntax element, int start, PropertySymbol property, BoundExpression self)
     {
         var count = property.Parameters.Length;
-        if (!CheckAccess(element, property, property.ContainingType, self.Type))
+        if (property.ContainingInterface is null && !CheckAccess(element, property, property.ContainingType, self.Type))
         {
             return Error(element, self);
         }

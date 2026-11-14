@@ -47,6 +47,29 @@ public sealed class RoutineBindingTests
         Assert.False(p.IsNested);
     }
 
+    /// <summary>
+    /// C-202 / routines.md §3: untyped <c>var</c>/<c>const</c>/<c>out</c> parameters take a variable of any type; inside the
+    /// callee they are used through <c>@a</c>, a variable typecast <c>T(a)</c> (any size, managed included) or as untyped arguments.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-420")]
+    [Trait("Req", "LANG-421")]
+    [InlineData("procedure P(var A; const B; out C); begin end; var X: Integer; S: string; R: record F: Byte end; Q: ^Integer; " +
+        "const K: Integer = 1; begin P(X, S, R); P(S, K, Q^); P(R.F, X, X) end.", null)]
+    [InlineData("procedure P(var A); var I: Integer; begin I := Integer(A); Integer(A) := I + 1; Move(A, I, 4); P(A) end; begin end.", null)]
+    [InlineData("procedure P(const A); var Q: Pointer; S: string; begin Q := @A; S := string(A); P(A); FillChar(Q^, 1, 0) end; begin end.", null)]
+    [InlineData("procedure P(out A); begin Pointer(A) := nil end; begin end.", null)]
+    [InlineData("procedure P(var A); begin end; begin P(1) end.", "E2112(1,51): Constant object cannot be passed as var parameter")]
+    [InlineData("procedure P(const A); begin end; var X: Integer; begin P(X + 1) end.", "E2033(1,69): Cannot take the address of this expression")]
+    [InlineData("procedure P(var A); var I: Integer; begin I := A end; begin end.", "E2010(1,59): Incompatible types: 'untyped' and 'Integer'")]
+    [InlineData("procedure P(const A); begin Integer(A) := 1 end; begin end.", "E2053(1,40): Left side cannot be assigned to")]
+    [InlineData("procedure P(const A); procedure Q(var B); begin end; begin Q(A) end; begin end.", "E2112(1,73): Constant object cannot be passed as var parameter")]
+    [InlineData("procedure P(A); begin end; begin end.", "E2118(1,24): Untyped parameter 'A' must be declared var, const or out")]
+    public void UntypedParameters(string text, string? expected)
+    {
+        Assert.Equal(expected is null ? [] : [expected], Errors(text));
+    }
+
     [Fact]
     [Trait("Req", "LANG-410")]
     public void Function_HasAResultVariable()
@@ -107,7 +130,7 @@ public sealed class RoutineBindingTests
     [InlineData("procedure P(a, A: Integer); begin end; begin end.", "E2004(1,27): Identifier redeclared: 'A'")]
     [InlineData("function F(Result: Integer): Integer; begin end; begin end.", "E2004(1,23): Identifier redeclared: 'Result'")]
     [InlineData("function F; begin end; begin end.", "E2102(1,21): Function needs a result type")]
-    [InlineData("procedure P(var a); begin end; begin end.", "E2900(1,24): Feature not supported: untyped parameter")]
+    [InlineData("procedure P(var a); begin a := 1 end; begin end.", "E2010(1,43): Incompatible types: 'Integer' and 'untyped'")]   // C-202 (was E2900 until untyped parameters)
     [InlineData("procedure P(a, b: Integer = 1); begin end; begin end.", "E2115(1,40): Default value not allowed for a parameter group")]   // C-105
     [InlineData("procedure P; virtual; begin end; begin end.", "E1114(1,25): Directive 'virtual' is not allowed here")]
     [InlineData("procedure P(x: Integer); begin end; procedure Q; begin P end; begin end.",

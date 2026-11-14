@@ -33,6 +33,7 @@ internal enum BoundKind
     ClassReferenceExpression,
     PropertyAccessExpression,
     TypeTestExpression,
+    MethodPointerExpression,
 
     // statements
     Block,
@@ -389,15 +390,17 @@ internal sealed class BoundFieldAccessExpression : BoundExpression
 
 /// <summary>
 /// <c>o is T</c> (Boolean; <c>_IsClass</c>, or <c>_ClassInherits</c> when <see cref="Operand"/> is a class reference) and
-/// <c>o as T</c> (typed <c>T</c>; <c>_AsClass</c>) for a class <see cref="Class"/> (LANG-650/651, CMP-367, ABI §9.6).
+/// <c>o as T</c> (typed <c>T</c>; <c>_AsClass</c>) for a class <see cref="Target"/> (LANG-650/651, CMP-367, ABI §9.6); for an
+/// interface <see cref="Target"/> (C-100, CMP-373) <c>o is I</c> = <c>_ObjSupports</c>, <c>o as I</c> = <c>_ObjToIntf</c>,
+/// <c>i as I</c> = <c>_IntfCast</c> (a managed value written into its destination).
 /// </summary>
 internal sealed class BoundTypeTestExpression : BoundExpression
 {
-    public BoundTypeTestExpression(SyntaxNode syntax, BoundExpression operand, ClassTypeSymbol @class, bool isAs, TypeSymbol type)
+    public BoundTypeTestExpression(SyntaxNode syntax, BoundExpression operand, TypeSymbol target, bool isAs, TypeSymbol type)
         : base(syntax, type, constantValue: null)
     {
         Operand = operand;
-        Class = @class;
+        Target = target;
         IsAs = isAs;
     }
 
@@ -405,7 +408,12 @@ internal sealed class BoundTypeTestExpression : BoundExpression
 
     public BoundExpression Operand { get; }
 
-    public ClassTypeSymbol Class { get; }
+    /// <summary>The class or interface tested for.</summary>
+    public TypeSymbol Target { get; }
+
+    public ClassTypeSymbol Class => (ClassTypeSymbol)Target;
+
+    public InterfaceTypeSymbol? Interface => Target as InterfaceTypeSymbol;
 
     public bool IsAs { get; }
 }
@@ -965,6 +973,30 @@ internal sealed class BoundClassReferenceExpression : BoundExpression
     public override BoundKind Kind => BoundKind.ClassReferenceExpression;
 
     public ClassTypeSymbol Class { get; }
+}
+
+/// <summary>
+/// LANG-481 / CMP-378 (C-103): the method pointer <c>{ Code, Data }</c> of <see cref="Method"/> on <see cref="Self"/> (an instance,
+/// or a class reference for a class method): Code is the method's address, or the VMT slot read from Self when
+/// <see cref="IsVirtual"/>.
+/// </summary>
+internal sealed class BoundMethodPointerExpression : BoundExpression
+{
+    public BoundMethodPointerExpression(SyntaxNode syntax, MethodSymbol method, BoundExpression self, bool isVirtual, TypeSymbol type)
+        : base(syntax, type, constantValue: null)
+    {
+        Method = method;
+        Self = self;
+        IsVirtual = isVirtual;
+    }
+
+    public override BoundKind Kind => BoundKind.MethodPointerExpression;
+
+    public MethodSymbol Method { get; }
+
+    public BoundExpression Self { get; }
+
+    public bool IsVirtual { get; }
 }
 
 /// <summary>A procedure call, or a function call whose result is discarded (LANG-307, 352); arguments as in <see cref="BoundCallExpression"/>.</summary>

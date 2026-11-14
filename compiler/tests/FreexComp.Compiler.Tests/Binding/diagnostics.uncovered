@@ -18,7 +18,6 @@ E2071  M2.5  goto/labels (LANG-380)
 E2072  M2.5  goto/labels (LANG-380)
 E2073  M2.5  goto/labels (LANG-380)
 E2075  M2.6  inline variable type inference (LANG-385)
-E2131  M2.5  overloaded routine as procedural value
 E2200  elsewhere UnitBindingTests  needs a unit file (uses entry with in)
 E2201  elsewhere UnitBindingTests  needs a unit file whose heading differs from its file name
 E2202  elsewhere UnitBindingTests  unit resolution over the file system (also EmitTests: System not found)
@@ -32,8 +31,6 @@ E2604  reserved  lead decision 2026-11-14 (C-096): no case needs it; unrelated c
 E2611  M2.5  published fields (RTTI)
 E2627  M2.5  message methods (LANG-622)
 E2630  M2.5  published properties
-E2640  M2.5  interfaces
-E2641  M2.5  interfaces
 E2700  M2.6  generics
 E2701  M2.6  generics
 E2702  M2.6  generics

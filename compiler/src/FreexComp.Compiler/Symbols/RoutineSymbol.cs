@@ -42,7 +42,11 @@ public sealed class ParameterSymbol : Symbol
     /// <summary>0-based position in the parameter list.</summary>
     public int Ordinal { get; }
 
-    internal bool IsByReference => Mode is ParameterMode.Var or ParameterMode.Out;
+    /// <summary>Passed as the address of the caller's variable: <c>var</c>, <c>out</c>, and untyped <c>const</c> (C-202).</summary>
+    internal bool IsByReference => Mode is ParameterMode.Var or ParameterMode.Out || IsUntyped;
+
+    /// <summary>An untyped <c>var</c>/<c>const</c>/<c>out</c> parameter (routines.md §3, C-202).</summary>
+    public bool IsUntyped => Type is UntypedTypeSymbol;
 
     /// <summary><c>param [const|var|out] Name: Type</c> (CMP-731).</summary>
     public override string ToDisplayString() => $"param {Prefix(Mode)}{Name}: {Type.Name}";
@@ -75,8 +79,8 @@ public class RoutineSymbol : Symbol
         Declaration = null!;
     }
 
-    /// <summary>The signature of a procedural type (LANG-480): declared in no scope, without declaration or body.</summary>
-    internal RoutineSymbol(string name, ProceduralTypeSymbol type)
+    /// <summary>The signature of a procedural or method pointer type (LANG-480/481): declared in no scope, without declaration or body.</summary>
+    internal RoutineSymbol(string name, TypeSymbol type)
         : base(SymbolKind.Routine, name, type, type.Locations)
     {
         Declaration = null!;

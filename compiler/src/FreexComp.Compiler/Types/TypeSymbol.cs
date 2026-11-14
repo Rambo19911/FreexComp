@@ -530,6 +530,7 @@ internal static class VarRecs
     /// </summary>
     public static int? VTypeOf(TypeSymbol type, ConstantValue? constant) => type switch
     {
+        IntegerTypeSymbol { Bits: 64 } => VInt64,                           // C-204: the static type decides (lead decision 2026-11-14)
         IntegerTypeSymbol when constant?.Value is System.Numerics.BigInteger value => value >= int.MinValue && value <= int.MaxValue ? VInteger : VInt64,
         IntegerTypeSymbol { Bits: <= 32 } or EnumTypeSymbol => VInteger,
         IntegerTypeSymbol => VInt64,
@@ -630,6 +631,31 @@ public sealed class ProceduralTypeSymbol : TypeSymbol
     public RoutineSymbol Signature { get; }
 }
 
+/// <summary>
+/// A method pointer <c>procedure(…) of object</c> (LANG-481, ABI §2): 16 bytes <c>{ ptr Code, ptr Data }</c>, an aggregate (copied,
+/// passed and returned like a 16-byte record, ABI-080/081). <see cref="Signature"/> carries the declared parameters; a call
+/// passes Data as the leading <c>Self</c> (CMP-378).
+/// </summary>
+public sealed class MethodPointerTypeSymbol : TypeSymbol
+{
+    internal MethodPointerTypeSymbol(string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.MethodPointer, name, size: 16, alignment: 8, containingSymbol, locations)
+    {
+        Signature = new RoutineSymbol(name, this);
+    }
+
+    /// <summary>Parameters and result type (set by the declaration binder).</summary>
+    public RoutineSymbol Signature { get; }
+
+    /// <summary>The storage seen as <c>record Code, Data: Pointer end</c> (field 0 = Code, field 1 = Data), for the lowering.</summary>
+    internal static RecordTypeSymbol Parts(TypeSymbol pointer)
+    {
+        var record = new RecordTypeSymbol("", 16, 8, isPacked: false, packing: 8, isAnonymous: true, containingSymbol: null, []);
+        record.Fields = [new FieldSymbol("Code", pointer, 0, record, []), new FieldSymbol("Data", pointer, 8, record, [])];
+        return record;
+    }
+}
+
 /// <summary>LANG-483 signature compatibility of routines and procedural types.</summary>
 internal static class Signatures
 {
@@ -648,6 +674,17 @@ internal static class Signatures
     {
         var parameters = routine.Parameters.IsEmpty ? "" : "(" + string.Join(", ", routine.Parameters.Select(p => ParameterSymbol.Prefix(p.Mode) + p.Type.Name)) + ")";
         return routine.ReturnType is null ? "procedure" + parameters : $"function{parameters}: {routine.ReturnType.Name}";
+    }
+}
+
+/// <summary>
+/// The type of an untyped <c>var</c>/<c>const</c>/<c>out</c> parameter (routines.md §3, C-202): a reference to a variable of any
+/// type, passed as <c>ptr</c> (ABI-080); usable only through <c>@a</c>, a variable typecast <c>T(a)</c> or as an untyped argument.
+/// </summary>
+public sealed class UntypedTypeSymbol : TypeSymbol
+{
+    internal UntypedTypeSymbol() : base(TypeKind.Untyped, "untyped", size: 0, alignment: 1)
+    {
     }
 }
 

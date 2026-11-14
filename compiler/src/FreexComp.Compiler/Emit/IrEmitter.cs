@@ -163,6 +163,10 @@ internal static class IrEmitter
         var vmts = classes.Select(c => (Class: c, Constant: Vmt(module, c))).ToImmutableArray();
         module.DeclarePending();
 
+        // the globals' initialisers too: typed constants may hold string literals (C-203; PChar constants since C-063)
+        var initializers = variables.Select(v => v.Initializer is { } value && v.Type.Size > 0
+            ? StorageConstant(module, value, v.Type) : new IrZeroConstant(TypeLayout.Allocated(v.Type).StorageType)).ToImmutableArray();
+
         foreach (var (name, literal) in module.StringLiterals)
         {
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, literal, Alignment: 16, UnnamedAddr: true));
@@ -185,6 +189,11 @@ internal static class IrEmitter
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.LinkOnceOdr, IsConstant: true, block, Alignment: 8));     // CMP-405, CMP-365
         }
 
+        foreach (var intf in module.Guids)
+        {
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.Guid(intf), IrLinkage.LinkOnceOdr, IsConstant: true, GuidConstant(intf), Alignment: 4));   // CMP-373
+        }
+
         foreach (var (type, constant) in vmts)
         {
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.Vmt(type), interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal,
@@ -201,10 +210,9 @@ internal static class IrEmitter
             DefineUnitTable(module, units);
         }
 
-        foreach (var variable in variables)
+        foreach (var (variable, initializer) in variables.Zip(initializers))
         {
             var layout = TypeLayout.Allocated(variable.Type);
-            var initializer = variable.Initializer is { } value && variable.Type.Size > 0 ? StorageConstant(module, value, variable.Type) : new IrZeroConstant(layout.StorageType);
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
                 interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null
                 || variable.ContainingSymbol is ClassTypeSymbol owner && interfaceMembers.Contains(owner) ? IrLinkage.External : IrLinkage.Internal,
@@ -560,6 +568,10 @@ internal static class IrEmitter
                 return module.CharPointerLiteral(text, pointer);                                  // LANG-245 (C-063)
             case (StringTypeSymbol { Variant: StringVariant.Short } shortString, string text):
                 return ModuleState.ShortStringConstant(text, shortString);
+            case (StringTypeSymbol ansi, string text) when Strings.IsAnsi(ansi):
+                return module.AnsiStringLiteral(text, ansi.CodePage);                             // C-203: the constant literal (ABI-020)
+            case (StringTypeSymbol, string text):
+                return module.StringLiteral(text);
             case (ArrayTypeSymbol array, ImmutableArray<ConstantValue?> elements):
                 return new IrArrayConstant((ArrayIrType)TypeLayout.Of(array).StorageType, [.. elements.Select(e => Element(e, array.ElementType))]);
             case (RecordTypeSymbol record, ImmutableArray<ConstantValue?> fields):
@@ -876,6 +888,20 @@ internal sealed class ModuleState(IIrWriter writer)
         }
 
         return new LinkName(UnitName + ".$rtti." + type.Name, AlwaysQuote: true);
+    }
+
+    /// <summary>The GUID constants used in this module (CMP-373), first-use order.</summary>
+    public List<InterfaceTypeSymbol> Guids { get; } = [];
+
+    /// <summary>CMP-373: <c>@"U.IBar.$guid"</c>, a <c>linkonce_odr</c> constant (with its comdat) defined in every module that uses it.</summary>
+    public IrGlobal Guid(InterfaceTypeSymbol intf)
+    {
+        if (!Guids.Contains(intf))
+        {
+            Guids.Add(intf);
+        }
+
+        return new IrGlobal(Mangler.Guid(intf));
     }
 
     private readonly Dictionary<string, IrGlobal> _aggregateReferences = new(StringComparer.Ordinal);
@@ -2083,6 +2109,8 @@ internal sealed class FunctionEmitter
                 return _module.Routine(routine.Routine);                            // CMP-340: ptr @"link.name"
             case LClassRef reference:
                 return _module.Vmt(reference.Class);                                // CMP-367: ptr @"U.TFoo.$vmt"
+            case LGuidRef guid:
+                return _module.Guid(guid.Interface);                                // CMP-373: ptr @"U.IBar.$guid"
             case LTlsDescriptor descriptor:
                 return _module.TlsDescriptor(descriptor.Unit);                      // ABI-180
             case LThreadVarAddress threadVar:

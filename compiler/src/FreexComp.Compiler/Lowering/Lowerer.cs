@@ -113,7 +113,7 @@ internal static class Lowerer
 
     /// <summary>Types held in memory as <c>[N x T]</c> or structs (big sets, static arrays, records): never SSA values (see the aggregate nodes).</summary>
     public static bool IsAggregate(TypeSymbol type) =>
-        type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol or RecordTypeSymbol or StringTypeSymbol { Variant: StringVariant.Short };
+        type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol or RecordTypeSymbol or StringTypeSymbol { Variant: StringVariant.Short } or MethodPointerTypeSymbol;
 
     /// <summary>The bound <c>System</c> whose text-file routines get <c>_IOCheck</c> (ABI-132); null while lowering System itself.</summary>
     private static UnitSymbol? CheckedSystemOf(BindingResult result) => ReferenceEquals(result.System, result.Unit) ? null : result.System;
@@ -598,6 +598,12 @@ internal sealed class LoweringContext
             throw new InvalidOperationException("Cannot lower an erroneous expression.");
         }
 
+        if (expression.ConstantValue is not null && expression.Type is MethodPointerTypeSymbol)
+        {
+            var empty = new LLocalRef(NewTemp(expression.Type));                    // nil method pointer: a zeroed temporary (C-103)
+            return new LSequence(new LZero(new LAddrOf(empty, Types.Pointer), expression.Type), empty);
+        }
+
         if (expression.ConstantValue is { } constant)
         {
             return constant.Value is string text ? new LStringLiteral(text, expression.Type) : new LConst(constant, expression.Type);
@@ -619,6 +625,10 @@ internal sealed class LoweringContext
                 return ReferenceEquals(parameter.Parameter.ContainingSymbol, Routine)
                     ? new LParamRef(parameter.Parameter)
                     : Outer(parameter.Parameter, parameter.Parameter.Type);
+            case BoundConversionExpression { Type: PointerTypeSymbol, Operand.Type: MethodPointerTypeSymbol } conversion:
+                return new LField(new LView(Lower(conversion.Operand), MethodParts), MethodParts.Fields[0]);      // Assigned / = nil: the Code
+            case BoundConversionExpression { Type: MethodPointerTypeSymbol, Operand.Type: MethodPointerTypeSymbol } conversion:
+                return new LView(Lower(conversion.Operand), conversion.Type);           // LANG-483: the same { Code, Data } (C-103)
             case BoundConversionExpression { Type: StringTypeSymbol } conversion when !ReferenceEquals(conversion.Type, conversion.Operand.Type):
                 return ManagedRewriter.Value(this, conversion);                         // LANG-245 (CMP-324, C-063)
             case BoundConversionExpression { IsExplicit: true, Type: PointerTypeSymbol { PointedType: not null } pointer, Operand.Type: StringTypeSymbol } conversion:
@@ -673,6 +683,13 @@ internal sealed class LoweringContext
                     : new LField(Lower(field.Record), field.Field);                     // CMP-307
             case BoundClassReferenceExpression reference:
                 return new LClassRef(reference.Class, reference.Type);                  // CMP-367 TFoo.Create
+            case BoundMethodPointerExpression methodPointer:
+                return MethodPointer(methodPointer);
+            case BoundTypeTestExpression { Interface: not null, IsAs: true } test:
+                return ManagedRewriter.Value(this, test);                               // CMP-373: written into a managed temporary
+            case BoundTypeTestExpression { Interface: { } intf } test:
+                return new LCall(new LHelperCallee(new RuntimeHelper("_ObjSupports", [Types.Pointer, Types.Pointer], Types.Boolean, IsNoReturn: false)),
+                    [Lower(test.Operand), new LGuidRef(intf, Types.Pointer)]);          // CMP-373 o is I
             case BoundTypeTestExpression test:
             {
                 // CMP-367: _IsClass(o, VMT) / _AsClass(o, VMT); for a class reference _ClassInherits(c, VMT) (ABI §9.6)
@@ -985,8 +1002,49 @@ internal sealed class LoweringContext
     /// written back after the call.
     /// </summary>
     /// <summary>The routine, or a call through the procedural value <paramref name="target"/> (CMP-378).</summary>
-    private LRoutineCallee Callee(RoutineSymbol routine, BoundExpression? target, BoundReceiver? receiver) =>
-        new(routine, target is null ? null : Lower(target), receiver?.Self is { } self ? Lower(self) : null, receiver?.Flag, receiver?.IsVirtual ?? false);
+    private LRoutineCallee Callee(RoutineSymbol routine, BoundExpression? target, BoundReceiver? receiver)
+    {
+        if (target is { Type: MethodPointerTypeSymbol })
+        {
+            // CMP-378 (C-103): call Code(Data, args) — the method pointer is evaluated once (Code is read first)
+            var value = Lower(target);
+            LExpression first = value, second = value;
+            if (value is not (LLocalRef or LGlobalRef or LParamRef or LOuterRef or LDeref or LField or LIndex or LArrayElement))
+            {
+                var copy = new LLocalRef(NewTemp(target.Type));
+                (first, second) = (new LSequence(new LAssign(copy, value), copy), copy);
+            }
+
+            return new LRoutineCallee(routine, new LField(new LView(first, MethodParts), MethodParts.Fields[0]),
+                new LField(new LView(second, MethodParts), MethodParts.Fields[1]));
+        }
+
+        return new(routine, target is null ? null : Lower(target), receiver?.Self is { } self ? Lower(self) : null, receiver?.Flag, receiver?.IsVirtual ?? false);
+    }
+
+    private RecordTypeSymbol? _methodParts;
+
+    /// <summary>A method pointer's storage as <c>record Code, Data: Pointer end</c> (C-103).</summary>
+    public RecordTypeSymbol MethodParts => _methodParts ??= MethodPointerTypeSymbol.Parts(Types.Pointer);
+
+    /// <summary>
+    /// CMP-378 (C-103): a method pointer value in a temporary — Data := Self, then Code := the method's address, or the VMT slot
+    /// read through Data (the instance's VMT, or the class reference itself for a class method).
+    /// </summary>
+    private LExpression MethodPointer(BoundMethodPointerExpression value)
+    {
+        var temporary = new LLocalRef(NewTemp(value.Type));
+        var data = new LField(new LView(temporary, MethodParts), MethodParts.Fields[1]);
+        var code = new LField(new LView(temporary, MethodParts), MethodParts.Fields[0]);
+        LExpression address = new LRoutineAddress(value.Method, Types.Pointer);
+        if (value.IsVirtual)
+        {
+            var vmt = value.Method.IsClassMethod ? (LExpression)data : new LDeref(data, Types.Pointer);
+            address = new LDeref(new LPointerOffset(vmt, Constant(64 + 8 * value.Method.VmtSlot, Types.Int64), Types.Byte, Types.Pointer), Types.Pointer);
+        }
+
+        return new LSequence(new LBlock([new LAssign(data, Convert(Lower(value.Self), Types.Pointer)), new LAssign(code, address)]), temporary);
+    }
 
     private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null, BoundReceiver? receiver = null)
     {

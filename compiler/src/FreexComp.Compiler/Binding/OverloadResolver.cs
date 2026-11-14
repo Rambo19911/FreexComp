@@ -117,6 +117,13 @@ internal sealed class OverloadResolver(Conversions conversions)
     public int? Cost(BoundExpression argument, ParameterSymbol parameter, Func<BoundExpression, bool> isVariable)
     {
         var (source, destination) = (argument.Type, parameter.Type);
+        if (parameter.IsUntyped)
+        {
+            // LANG-442 row 4 (C-202): anything → untyped parameter; a variable (var/out) or any addressable reference (const)
+            var accepted = parameter.Mode == ParameterMode.Const ? ExpressionBinder.IsAddressable(argument) : isVariable(argument);
+            return accepted ? 4 : null;
+        }
+
         if (parameter.IsByReference)
         {
             var matches = destination is OpenArrayTypeSymbol ? conversions.Classify(source, destination).Exists : Pointers.SameType(source, destination);

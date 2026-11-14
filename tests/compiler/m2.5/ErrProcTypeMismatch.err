@@ -1,0 +1,4 @@
+ErrProcTypeMismatch.pas(43,8): error E2010: Incompatible types: 'function(Byte): Integer' and 'TIntFunc'
+ErrProcTypeMismatch.pas(44,8): error E2010: Incompatible types: 'procedure(Integer)' and 'TProc'
+ErrProcTypeMismatch.pas(45,8): error E2010: Incompatible types: 'function(Integer): Integer of object' and 'TIntFunc'
+ErrProcTypeMismatch.pas(46,8): error E2131: No overload of 'Over' matches procedural type 'TIntFunc'

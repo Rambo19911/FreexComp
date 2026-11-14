@@ -163,6 +163,9 @@ public sealed class BuiltInTypes
     /// <summary>The type of erroneous expressions (not declared in any scope).</summary>
     public TypeSymbol Error { get; } = new ErrorTypeSymbol();
 
+    /// <summary>The type of untyped <c>var</c>/<c>const</c>/<c>out</c> parameters (C-202; not declared in any scope).</summary>
+    public TypeSymbol Untyped { get; } = new UntypedTypeSymbol();
+
     /// <summary>The type of the constructor <c>[]</c> without context: compatible with every set type (LANG-251; in no scope).</summary>
     public SetTypeSymbol EmptySet { get; } = new("[]", elementType: null, containingSymbol: null, locations: []);
 

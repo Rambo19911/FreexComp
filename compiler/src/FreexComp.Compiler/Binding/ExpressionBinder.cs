@@ -86,7 +86,117 @@ internal sealed partial class ExpressionBinder
             }
             : expected is ProceduralTypeSymbol procedural
                 ? BindProceduralValue(syntax, procedural)
-                : BindExpression(syntax);
+                : expected is MethodPointerTypeSymbol methodPointer
+                    ? BindMethodPointerValue(syntax, methodPointer)
+                    : BindExpression(syntax);
+
+    /// <summary>
+    /// LANG-481 (C-103): <paramref name="syntax"/> where a method pointer of <paramref name="type"/> is expected — <c>Obj.Method</c>,
+    /// <c>Method</c> inside a method (on <c>Self</c>), <c>TClass.ClassMethod</c> / <c>ClassRef.ClassMethod</c> (data = the class), each
+    /// also with <c>@</c>; anything else (another method pointer, <c>nil</c>, a call) binds without the implicit call.
+    /// </summary>
+    private BoundExpression BindMethodPointerValue(ExpressionSyntax syntax, MethodPointerTypeSymbol type)
+    {
+        var inner = Unparenthesized(syntax);
+        var addressOf = inner is AddressOfExpressionSyntax at ? at : null;
+        var target = addressOf is null ? inner : Unparenthesized(addressOf.Operand);
+        ImmutableArray<RoutineSymbol> candidates = [];
+        BoundExpression? self = null;
+        ClassTypeSymbol? owner = null;
+        IdentifierNameSyntax? name = null;
+        switch (target)
+        {
+            case IdentifierNameSyntax { Identifier: { IsMissing: false } plainToken } plainName
+                when _scope.For(plainName).LookupCandidates(plainToken.Value as string ?? plainToken.Text) is [var routine and not MethodSymbol, ..] routines
+                    && !(addressOf is null && routines.Length == 1 && routine is { ReturnType: { } plainResult, Parameters.IsEmpty: true }
+                        && _conversions.Classify(plainResult, type).Exists):
+                _diagnostics.Report(syntax, "E2010", Signatures.Display(routine), type.Name);       // a global routine has no Data
+                return Error(syntax);
+            case IdentifierNameSyntax { Identifier: { IsMissing: false } token } identifier
+                when _scope.For(identifier).LookupCandidates(token.Value as string ?? token.Text) is [MethodSymbol { ContainingInterface: null }, ..] methods
+                    && CurrentMethod is { SelfParameter: not null } current:
+                (candidates, name, owner) = (methods, identifier, current.ContainingType);
+                self = SelfOf(current, identifier);
+                break;
+            case MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.IsMissing: false } memberName } member:
+            {
+                var memberText = memberName.Identifier.Value as string ?? memberName.Identifier.Text;
+                if (_scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } q } qualifier
+                    && _scope.For(qualifier).Lookup(q.Value as string ?? q.Text) is ClassTypeSymbol @class)
+                {
+                    owner = @class;
+                    self = new BoundClassReferenceExpression(qualifier, @class, @class.Reference);
+                }
+                else if (_scope.Unqualified(member.Expression) is not IdentifierNameSyntax { Identifier: var u } unit
+                    || _scope.For(unit).Lookup(u.Value as string ?? u.Text) is not (UnitSymbol or TypeSymbol))
+                {
+                    var receiver = BindExpression(member.Expression);
+                    if (receiver.HasErrors)
+                    {
+                        return Error(syntax, receiver);
+                    }
+
+                    (owner, self) = receiver.Type switch
+                    {
+                        ClassTypeSymbol c => (c, receiver),
+                        ClassRefTypeSymbol r => (r.Class, receiver),
+                        _ => (null, null),
+                    };
+                }
+
+                if (owner is not null)
+                {
+                    candidates = MemberCandidates(owner, memberText);
+                    name = memberName;
+                }
+
+                break;
+            }
+        }
+
+        if (candidates.IsEmpty || !candidates.All(c => c is MethodSymbol) || self is null
+            || addressOf is null && candidates is [{ ReturnType: { } result, Parameters.IsEmpty: true } only]
+                && !Signatures.Compatible(only, type.Signature) && _conversions.Classify(result, type).Exists)
+        {
+            return BindOperand(syntax);                                         // not a method, or a method call yielding the value
+        }
+
+        var compatible = candidates.Cast<MethodSymbol>().Where(m => Signatures.Compatible(m, type.Signature)).ToList();
+        if (compatible.FirstOrDefault() is not { } method)
+        {
+            if (candidates.Length > 1)
+            {
+                _diagnostics.Report(syntax, "E2131", candidates[0].Name, type.Name);
+            }
+            else
+            {
+                _diagnostics.Report(syntax, "E2010", Signatures.Display(candidates[0]) + (candidates[0] is MethodSymbol { MethodKind: MethodKind.ClassStatic } ? "" : " of object"), type.Name);
+            }
+
+            return Error(syntax, self);
+        }
+
+        // instance methods need an instance; class methods take the class (an instance's VMT); static methods, constructors and
+        // destructors have no method pointer (E2010)
+        var onClass = self.Type is ClassRefTypeSymbol;
+        if (method.MethodKind is MethodKind.ClassStatic or MethodKind.Constructor or MethodKind.Destructor || onClass && !method.IsClassMethod)
+        {
+            _diagnostics.Report(syntax, "E2010", Signatures.Display(method) + (method.MethodKind == MethodKind.ClassStatic ? "" : " of object"), type.Name);
+            return Error(syntax, self);
+        }
+
+        if (!CheckAccess(name!, method, method.ContainingType, owner))
+        {
+            return Error(syntax, self);
+        }
+
+        if (method.IsClassMethod && !onClass)
+        {
+            self = ClassOf(syntax, self);
+        }
+
+        return new BoundMethodPointerExpression(syntax, method, self, method.IsDispatched, type);
+    }
 
     // ------------------------------------------------------------------ procedural values (LANG-480…484, C-161)
 
@@ -110,16 +220,63 @@ internal sealed partial class ExpressionBinder
             }
         }
 
+        // LANG-480 (C-102): TClass.StaticMethod / @TClass.StaticMethod — a class static method of a class named by the qualifier
+        if (Unparenthesized(addressOf is null ? inner : Unparenthesized(addressOf.Operand)) is MemberAccessExpressionSyntax
+            {
+                Name: IdentifierNameSyntax { Identifier: { IsMissing: false } memberToken } memberName,
+            } member
+            && _scope.Unqualified(member.Expression) is IdentifierNameSyntax { Identifier: { IsMissing: false } classToken } className
+            && _scope.For(className).Lookup(classToken.Value as string ?? classToken.Text) is ClassTypeSymbol @class
+            && MemberCandidates(@class, memberToken.Value as string ?? memberToken.Text) is { IsEmpty: false } methods
+            && !(addressOf is null && methods is [{ ReturnType: { } methodResult, Parameters.IsEmpty: true } only]
+                && !Signatures.Compatible(only, type.Signature) && _conversions.Classify(methodResult, type).Exists))
+        {
+            // other methods are reported by RoutineValue (E2010: no plain procedural value)
+            return RoutineValue(syntax, memberName, methods, type);
+        }
+
+        // Obj.Method of an instance: a method pointer, not a plain procedural value (E2010, C-103)
+        if (Unparenthesized(addressOf is null ? inner : Unparenthesized(addressOf.Operand)) is MemberAccessExpressionSyntax
+            {
+                Name: IdentifierNameSyntax { Identifier: { IsMissing: false } instanceMember },
+            } access
+            && (_scope.Unqualified(access.Expression) is not IdentifierNameSyntax { Identifier: var head } headName
+                || _scope.For(headName).Lookup(head.Value as string ?? head.Text) is VariableSymbol or ParameterSymbol or FieldSymbol)
+            && BindExpression(access.Expression) is { HasErrors: false, Type: ClassTypeSymbol instanceClass } instance
+            && MemberCandidates(instanceClass, instanceMember.Value as string ?? instanceMember.Text) is [MethodSymbol { MethodKind: not MethodKind.ClassStatic } first, ..] instanceMethods
+            && !(addressOf is null && instanceMethods.Length == 1 && first is { ReturnType: { } instanceResult, Parameters.IsEmpty: true }
+                && _conversions.Classify(instanceResult, type).Exists))
+        {
+            _diagnostics.Report(syntax, "E2010", Signatures.Display(first) + " of object", type.Name);
+            return Error(syntax, instance);
+        }
+
         return BindOperand(syntax);
     }
 
-    /// <summary>The address of a global routine as a value of <paramref name="type"/> (LANG-480, 483; E2130 for a nested routine, LANG-451).</summary>
+    /// <summary>
+    /// The address of a global routine or a <c>class static</c> method as a value of <paramref name="type"/> (LANG-480, 483; E2130
+    /// for a nested routine, LANG-451); of an overload set the one compatible with the type (E2131 when none, C-102). Other
+    /// methods are no plain procedural values (E2010).
+    /// </summary>
     private BoundExpression RoutineValue(ExpressionSyntax syntax, IdentifierNameSyntax name, ImmutableArray<RoutineSymbol> candidates, ProceduralTypeSymbol type)
     {
         var routine = candidates[0];
         if (candidates.Length > 1)
         {
-            return Unsupported(syntax, "overloaded routine as procedural value");              // LANG-483, M2.5
+            if (candidates.FirstOrDefault(c => Signatures.Compatible(c, type.Signature) && c is not MethodSymbol { MethodKind: not MethodKind.ClassStatic }) is not { } match)
+            {
+                _diagnostics.Report(syntax, "E2131", routine.Name, type.Name);
+                return Error(syntax);
+            }
+
+            routine = match;
+        }
+
+        if (routine is MethodSymbol { MethodKind: not MethodKind.ClassStatic })
+        {
+            _diagnostics.Report(syntax, "E2010", Signatures.Display(routine) + " of object", type.Name);     // a method needs 'of object' (LANG-481)
+            return Error(syntax);
         }
 
         if (routine.IsNested)
@@ -143,23 +300,31 @@ internal sealed partial class ExpressionBinder
     /// </summary>
     private static BoundExpression Called(BoundExpression value) =>
         value is not (BoundAddressOfExpression or BoundCallExpression or BoundErrorExpression)
-        && value.Type is ProceduralTypeSymbol { Signature: { ReturnType: not null, Parameters.IsEmpty: true } signature }
+        && SignatureOf(value.Type) is { ReturnType: not null, Parameters.IsEmpty: true } signature
             ? new BoundCallExpression(value.Syntax, signature, [], value)
             : value;
+
+    /// <summary>The signature called through a value of <paramref name="type"/>: a plain procedural type or a method pointer (C-103).</summary>
+    private static RoutineSymbol? SignatureOf(TypeSymbol type) => type switch
+    {
+        ProceduralTypeSymbol procedural => procedural.Signature,
+        MethodPointerTypeSymbol method => method.Signature,
+        _ => null,
+    };
 
     /// <summary><c>target(args)</c>: a call through a procedural value, else E2900 "routine call".</summary>
     private BoundExpression CallThrough(InvocationExpressionSyntax invocation, BoundExpression target) =>
         target.HasErrors ? Error(invocation, target)
-        : target.Type is ProceduralTypeSymbol type ? IndirectCall(invocation, target, type, invocation.ArgumentList)
+        : SignatureOf(target.Type) is { } type ? IndirectCall(invocation, target, type, invocation.ArgumentList)
         : Unsupported(invocation, "routine call");
 
     /// <summary>
     /// LANG-484 <c>target(args)</c> through a procedural value (arguments checked like a direct call; E2034 for a procedure type
     /// in an expression).
     /// </summary>
-    private BoundExpression IndirectCall(SyntaxNode call, BoundExpression target, ProceduralTypeSymbol type, ArgumentListSyntax? argumentList)
+    private BoundExpression IndirectCall(SyntaxNode call, BoundExpression target, RoutineSymbol type, ArgumentListSyntax? argumentList)
     {
-        var (signature, arguments) = BindCall(call, [type.Signature], argumentList);
+        var (signature, arguments) = BindCall(call, [type], argumentList);
         if (signature is null)
         {
             return Error(call, [target, .. arguments]);
@@ -195,9 +360,9 @@ internal sealed partial class ExpressionBinder
             return new BoundErrorStatement(statement);
         }
 
-        if (target.Type is ProceduralTypeSymbol type)
+        if (SignatureOf(target.Type) is { } type)
         {
-            var (signature, arguments) = BindCall(statement.Expression, [type.Signature], invocation?.ArgumentList);
+            var (signature, arguments) = BindCall(statement.Expression, [type], invocation?.ArgumentList);
             return signature is null ? new BoundErrorStatement(statement) : new BoundCallStatement(statement, signature, arguments, target);
         }
 
@@ -568,7 +733,7 @@ internal sealed partial class ExpressionBinder
         for (var i = taken; i < syntax.Indexes.Count; i++)
         {
             var indexSyntax = syntax.Indexes[i];
-            if (result.Type is ClassTypeSymbol owner && owner.DefaultProperty is { } defaultProperty)
+            if (((result.Type as ClassTypeSymbol)?.DefaultProperty ?? (result.Type as InterfaceTypeSymbol)?.DefaultProperty) is { } defaultProperty)
             {
                 // LANG-642: Obj[i] = Obj.Items[i]
                 if (i + defaultProperty.Parameters.Length > syntax.Indexes.Count)
@@ -1062,8 +1227,9 @@ internal sealed partial class ExpressionBinder
 
         if (intrinsic.Intrinsic == IntrinsicKind.Assigned)
         {
-            if (operand.Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol)
+            if (operand.Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol)
             {
+                // a method pointer is assigned when its Code is not nil (LANG-481, C-103)
                 // intrinsics.md §1 (C-067): a dynamic array is assigned when its block reference is not nil (LANG-257)
                 var reference = new BoundConversionExpression(syntax, operand, _types.Pointer, ConversionKind.Explicit, isExplicit: true, constantValue: null);
                 return new BoundIntrinsicCallExpression(invocation, intrinsic, [reference], _types.Boolean, constantValue: null);
@@ -1476,6 +1642,11 @@ internal sealed partial class ExpressionBinder
     /// <summary>LANG-290 last row: same size, neither type managed (E2041 at the cast otherwise).</summary>
     private BoundExpression VariableTypecast(SyntaxNode node, TypeSymbol target, BoundExpression operand)
     {
+        if (operand.Type is UntypedTypeSymbol && target.Size >= 0)
+        {
+            return new BoundVariableTypecastExpression(node, operand, target);      // C-202: an untyped parameter as any type
+        }
+
         if (operand.Type.IsManaged || target.IsManaged || operand.Type.Size != target.Size || target.Size < 0)
         {
             _diagnostics.Report(node, "E2041");
@@ -1535,10 +1706,13 @@ internal sealed partial class ExpressionBinder
             var byReference = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].IsByReference;
             // a dynamic-array value parameter of the only candidate gives an array constructor its type (LANG-259), a
             // procedural one makes a routine name its address (LANG-480)
-            var expected = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol
+            var expected = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol
                 ? candidates[0].Parameters[i].Type
                 : OpenArrayContext(candidates, i);
-            var bound = byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression, expected);
+            // an untyped parameter (C-202) also takes p^ of an untyped pointer (a byte variable, as for Move)
+            var untyped = byReference && candidates[0].Parameters[i].IsUntyped && Unparenthesized(argument.Expression) is DereferenceExpressionSyntax;
+            var bound = untyped ? BindDereference((DereferenceExpressionSyntax)Unparenthesized(argument.Expression), untyped: true)
+                : byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression, expected);
             hasErrors |= bound.HasErrors;
             builder.Add(bound);
         }
@@ -1632,9 +1806,26 @@ internal sealed partial class ExpressionBinder
             return true;
         }
 
+        if (parameter is { IsUntyped: true, Mode: ParameterMode.Const })
+        {
+            // C-202: any variable reference (typed constants and const parameters included); values have no address
+            if (!IsAddressable(argument) || IsPropertyRead(argument))
+            {
+                _diagnostics.Report(syntax, "E2033");
+                return false;
+            }
+
+            return true;
+        }
+
         if (!CheckVariableReference(argument, syntax))
         {
             return false;
+        }
+
+        if (parameter.IsUntyped)
+        {
+            return true;                                                // C-202: a variable of any type
         }
 
         if (parameter.Type is OpenArrayTypeSymbol ? !_conversions.Classify(argument.Type, parameter.Type).Exists : !Pointers.SameType(argument.Type, parameter.Type))
@@ -2029,6 +2220,33 @@ internal sealed partial class ExpressionBinder
             if (sameOrNil && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
             {
                 return new BoundBinaryExpression(binary, kind, left, right, lt is DynamicArrayTypeSymbol ? lt : rt, boolean, constantValue: null);
+            }
+
+            return Inapplicable(binary, left, right);
+        }
+
+        if (lt is MethodPointerTypeSymbol || rt is MethodPointerTypeSymbol)
+        {
+            // LANG-481 (C-103): = and <> against nil test the Code part
+            if ((lt is MethodPointerTypeSymbol && right.Type == _types.Nil || rt is MethodPointerTypeSymbol && left.Type == _types.Nil)
+                && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
+            {
+                BoundExpression Code(BoundExpression e) => e.Type is MethodPointerTypeSymbol
+                    ? new BoundConversionExpression(e.Syntax, e, _types.Pointer, ConversionKind.Explicit, isExplicit: true, constantValue: null)
+                    : e;
+                return new BoundBinaryExpression(binary, kind, Code(left), Code(right), _types.Pointer, boolean, constantValue: null);
+            }
+
+            return Inapplicable(binary, left, right);
+        }
+
+        if (lt is InterfaceTypeSymbol || rt is InterfaceTypeSymbol)
+        {
+            // LANG-666 (C-100): = and <> compare the interface pointers (any two interfaces), or with nil
+            var comparable = lt is InterfaceTypeSymbol && (rt is InterfaceTypeSymbol || right.Type == _types.Nil) || rt is InterfaceTypeSymbol && left.Type == _types.Nil;
+            if (comparable && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
+            {
+                return new BoundBinaryExpression(binary, kind, left, right, lt is InterfaceTypeSymbol ? lt : rt, boolean, constantValue: null);
             }
 
             return Inapplicable(binary, left, right);

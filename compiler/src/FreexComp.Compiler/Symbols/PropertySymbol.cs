@@ -12,12 +12,16 @@ namespace FreexComp.Compiler.Symbols;
 /// </summary>
 public sealed class PropertySymbol : Symbol
 {
-    internal PropertySymbol(string name, ClassTypeSymbol containingType, ImmutableArray<Location> locations, Visibility visibility)
+    internal PropertySymbol(string name, TypeSymbol containingType, ImmutableArray<Location> locations, Visibility visibility)
         : base(SymbolKind.Property, name, containingType, locations, visibility)
     {
     }
 
+    /// <summary>The declaring class; never read it for an interface property (<see cref="ContainingInterface"/>).</summary>
     public ClassTypeSymbol ContainingType => (ClassTypeSymbol)ContainingSymbol!;
+
+    /// <summary>The declaring interface of an interface property (LANG-660, C-101): its accessors are interface methods.</summary>
+    public InterfaceTypeSymbol? ContainingInterface => ContainingSymbol as InterfaceTypeSymbol;
 
     public TypeSymbol Type { get; internal set; } = null!;
 

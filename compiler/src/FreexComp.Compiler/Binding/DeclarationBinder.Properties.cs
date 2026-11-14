@@ -190,6 +190,13 @@ internal sealed partial class DeclarationBinder
             return true;
         }
 
+        return MatchAccessor(property, methods, value, write);
+    }
+
+    /// <summary>The accessor method among <paramref name="methods"/> with the index parameters, <c>Index</c>, then (setter) the value; E2636 otherwise.</summary>
+    private bool MatchAccessor(PropertySymbol property, List<MethodSymbol> methods, ExpressionSyntax value, bool write)
+    {
+        var text = value.ToString().Trim();
         List<TypeSymbol> expected = [.. property.Parameters.Select(p => p.Type)];
         if (property.Index is not null)
         {

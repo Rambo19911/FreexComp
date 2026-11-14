@@ -121,6 +121,8 @@ var p: Pointer;
   procedure Inner; begin end;
 begin p := @Inner end;
 begin end.
+=== E2131 1,190
+type T = function(X: Byte): Integer; function F(X: Integer): Integer; overload; begin Result := X end; function F(X: string): Integer; overload; begin Result := 0 end; var P: T; begin P := F end.
 === E2912 1,32
 var i: Integer; begin Write(i:2:1) end.
 === E2913 2,18
@@ -298,6 +300,10 @@ type TA = class procedure P; virtual; final; end; TB = class(TA) procedure P; ov
 type TA = class procedure P; virtual; override; end; procedure TA.P; begin end; begin end.
 === E2626 1,119
 type TA = class procedure P; virtual; abstract; end; TB = class(TA) procedure P; override; end; procedure TB.P; begin inherited P end; begin end.
+=== E2640 1,69
+type I = interface end; TA = class(I) end; var A: TA; begin if A is I then end.
+=== E2641 1,58
+type TA = class end; TB = class end; var A: TA; begin if A is TB then end.
 === E2650 1,21
 type I = interface ['{bad}'] end; begin end.
 === E2651 1,49

@@ -53,6 +53,7 @@ internal static class LoweredDump
         LArrayLength l => $"(arraylength {Of(l.Array)})",
         LArrayElement e => $"(elem{(e.IsChecked ? "!" : "")} {Of(e.Array)} {Of(e.Index)})",
         LTypeInfo t => $"(typeinfo {t.Described.Name})",
+        LGuidRef g => $"(guid {g.Interface.Name})",
         LStringIndex i => $"(char{(i.IsChecked ? "!" : "")} {Of(i.String)} {Of(i.Index)})",
         LAtomic a => a.Comparand is null ? $"(atomic {a.Operator} {Of(a.Target)} {Of(a.Value)})" : $"(atomic {a.Operator} {Of(a.Target)} {Of(a.Value)} {Of(a.Comparand)})",
         LReturn => "(return)",

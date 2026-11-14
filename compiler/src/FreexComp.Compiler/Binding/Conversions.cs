@@ -37,6 +37,8 @@ internal sealed class Conversions
             (PointerTypeSymbol s, PointerTypeSymbol d) when Pointers.Compatible(s, d) => Pointer,                  // rule 9
             (PointerTypeSymbol { Name: "nil" }, DynamicArrayTypeSymbol or ProceduralTypeSymbol) => Pointer,         // LANG-266 (C-064, C-161)
             (ProceduralTypeSymbol s, ProceduralTypeSymbol d) when Signatures.Compatible(s.Signature, d.Signature) => Pointer,    // LANG-483
+            (PointerTypeSymbol { Name: "nil" }, MethodPointerTypeSymbol) => Pointer,                               // LANG-481 (C-103)
+            (MethodPointerTypeSymbol s, MethodPointerTypeSymbol d) when Signatures.Compatible(s.Signature, d.Signature) => Pointer,
             (PointerTypeSymbol { Name: "nil" }, ClassTypeSymbol) => Pointer,                                       // LANG-600: nil (C-080)
             (ClassTypeSymbol s, ClassTypeSymbol d) when s.InheritsFrom(d) => Pointer,                              // descendant → ancestor
             (PointerTypeSymbol { Name: "nil" }, ClassRefTypeSymbol) => Pointer,                                    // LANG-266 (C-086)

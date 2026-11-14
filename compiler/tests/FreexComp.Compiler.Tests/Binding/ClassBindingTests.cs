@@ -384,6 +384,49 @@ public sealed class ClassBindingTests
         Assert.Equal(expected is null ? [] : [expected], diagnostics);
     }
 
+    /// <summary>C-100 / LANG-650, 651, 665: <c>is</c>/<c>as</c> with interfaces (positions stripped); E2640 without a GUID.</summary>
+    [Theory]
+    [Trait("Req", "LANG-650")]
+    [Trait("Req", "LANG-651")]
+    [InlineData("if A is IG then; if X is IG then; G := A as IG; G := X as IG; G := G as IG; G := N as IG; G := H as IH; G := A; H := A; G := H;", null)]
+    [InlineData("if A is IZ then;", "E2640: Interface 'IZ' has no GUID; 'is'/'as' requires one")]
+    [InlineData("N := G as IZ;", "E2640: Interface 'IZ' has no GUID; 'is'/'as' requires one")]
+    [InlineData("if G is IG then;", "E2603: Class type required")]
+    [InlineData("if I is IG then;", "E2603: Class type required")]
+    [InlineData("A := G as TA;", "E2603: Class type required")]
+    [InlineData("if G = nil then; if nil <> G then; if G = H then; if N <> G then;", null)]
+    [InlineData("if G = A then;", "E2011: Operator '=' not applicable to operand type(s) 'IG' and 'TA'")]
+    [InlineData("if G < H then;", "E2011: Operator '<' not applicable to operand type(s) 'IG' and 'IH'")]
+    [InlineData("A := G;", "E2010: Incompatible types: 'IG' and 'TA'")]
+    [InlineData("G := X;", "E2010: Incompatible types: 'TX' and 'IG'")]
+    [InlineData("G := N;", "E2010: Incompatible types: 'IZ' and 'IG'")]
+    public void IsAs_Interfaces(string body, string? expected)
+    {
+        var diagnostics = BindDiagnostics("type IZ = interface end; IG = interface ['{00000001-0002-0003-0004-000000000005}'] end; " +
+                "IH = interface(IG) ['{00000001-0002-0003-0004-000000000006}'] end; TA = class(IH) end; TX = class end; " +
+                $"var A: TA; X: TX; G: IG; H: IH; N: IZ; I: Integer; begin {body} end.")
+            .Select(d => System.Text.RegularExpressions.Regex.Replace(d, @"\(\d+,\d+\)", ""));
+        Assert.Equal(expected is null ? [] : [expected], diagnostics);
+    }
+
+    /// <summary>C-101 / LANG-660, 664: interface property accessors are methods of the interface chain (positions stripped).</summary>
+    [Theory]
+    [Trait("Req", "LANG-660")]
+    [Trait("Req", "LANG-664")]
+    [InlineData("property P: Integer read Get write Put; property Q[I: Integer]: Integer read At; default;", "G.P := G.P + G.Q[1] + G[2];", null)]
+    [InlineData("property P: Integer read F;", "", "E2003: Undeclared identifier 'F'")]
+    [InlineData("property P: string read Get;", "", "E2636: Property accessor 'Get' is not compatible with property type 'string'")]
+    [InlineData("property P: Integer read Get;", "G.P := 1;", "E2633: Cannot assign to a read-only property")]
+    [InlineData("class property P: Integer read Get;", "", "E2900: Feature not supported: interface class property")]
+    [InlineData("property P: Integer read Get;", "G.X := 1;", "E2005: 'IH' does not contain a member named 'X'")]
+    public void InterfaceProperties(string declarations, string body, string? expected)
+    {
+        var diagnostics = BindDiagnostics("type IG = interface function Get: Integer; procedure Put(V: Integer); function At(I: Integer): Integer; " +
+                $"end; IH = interface(IG) {declarations} end; var G: IH; begin {body} end.")
+            .Select(d => System.Text.RegularExpressions.Regex.Replace(d, @"\(\d+,\d+\)", ""));
+        Assert.Equal(expected is null ? [] : [expected], diagnostics);
+    }
+
     /// <summary>A definition whose parameters match no declaration defines nothing: E2606, and the declaration stays E2605.</summary>
     [Fact]
     [Trait("Req", "LANG-620")]

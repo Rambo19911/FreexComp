@@ -4,3 +4,4 @@
 6: ptr=TRUE ptr=FALSE pachar=p pchar=w obj=TRUE class=TRUE
 2: int=1 ustr=two
 1: int=1
+6: int64=7 int64=8 int64=9 int64=8 int64=4294967295 int=7

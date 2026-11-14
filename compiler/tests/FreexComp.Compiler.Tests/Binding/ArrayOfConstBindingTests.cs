@@ -41,6 +41,22 @@ public sealed class ArrayOfConstBindingTests
             BoundDump.Of(result.Bodies[^1]));
     }
 
+    /// <summary>
+    /// C-204 (lead decision 2026-11-14, LANG-433 vs ABI §9.10): the static type decides — every expression of a 64-bit integer type
+    /// (variables, typed constant casts) is <c>vtInt64</c>; other integer constants are <c>vtInteger</c> when they fit Integer.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-433")]
+    public void Int64VariableIsVtInt64()
+    {
+        var (result, _) = Bind(Prelude + "var i64: Int64; u64: UInt64; c: Cardinal; w: Word; " +
+            "begin P([i64, u64, i64 + 1, Int64(5), UInt64(7), c, w, 5, 5000000000, High(Cardinal), -1]) end.");
+        Assert.Empty(Format(result.Diagnostics));
+        var call = Assert.IsType<FreexComp.Compiler.Binding.BoundCallStatement>(Assert.Single(result.Bodies[^1].Statements));
+        var elements = Assert.IsType<FreexComp.Compiler.Binding.BoundArrayConstructor>(call.Arguments[0]).Elements;
+        Assert.Equal([16, 16, 16, 16, 16, 0, 0, 0, 16, 16, 0], elements.Select(e => VarRecs.VTypeOf(e.Type, e.ConstantValue)!.Value));
+    }
+
     /// <summary>LANG-433: no other kinds of elements (E2010 at the element), no single value, no <c>var</c> constructor.</summary>
     [Theory]
     [Trait("Req", "LANG-433")]

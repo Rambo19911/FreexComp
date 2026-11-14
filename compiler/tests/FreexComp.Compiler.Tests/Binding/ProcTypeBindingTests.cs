@@ -39,6 +39,42 @@ public sealed class ProcTypeBindingTests
     [InlineData("var F: TF; P: Pointer; N: NativeInt; begin P := Pointer(F); F := TF(P); N := NativeInt(F); end.")]
     public void Subset_BindsWithoutDiagnostics(string body) => Assert.Empty(BindDiagnostics(Header + body));
 
+    /// <summary>
+    /// C-102 / LANG-480, 483: <c>class static</c> methods (unqualified inside the class, qualified, with <c>@</c>) and overloaded
+    /// routines (the overload compatible with the target type; E2131 when none) as procedural values; instance methods are E2010.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-480")]
+    [Trait("Req", "LANG-483")]
+    [InlineData("type TC = class class function S(X: Integer): Integer; static; class function Get: TF; static; end; " +
+        "class function TC.S(X: Integer): Integer; begin Result := X end; class function TC.Get: TF; begin Result := S end; " +
+        "var F: TF; begin F := TC.S; F := @TC.S; F := TC.Get; end.", null)]
+    [InlineData("function O(X: string): Integer; overload; begin Result := 0 end; function O(X: Integer): Integer; overload; begin Result := X end; " +
+        "function Apply(F: TF): Integer; begin Result := F(1) end; var F: TF; N: Integer; begin F := O; F := @O; N := Apply(O); end.", null)]
+    [InlineData("function O(X: string): Integer; overload; begin Result := 0 end; function O(X: Byte): Integer; overload; begin Result := X end; " +
+        "var F: TF; begin F := O; end.", "E2131: No overload of 'O' matches procedural type 'TF'")]
+    [InlineData("type TC = class function M(X: Integer): Integer; end; function TC.M(X: Integer): Integer; begin Result := X end; " +
+        "var F: TF; begin F := TC.M; end.", "E2010: Incompatible types: 'function(Integer): Integer of object' and 'TF'")]
+    public void MethodAndOverloadSources(string body, string? expected) => AssertDiagnostics(body, expected);
+
+    /// <summary>C-103 / LANG-481: method pointers from instance and class methods, copies, nil, Assigned, calls; E2010 for other sources.</summary>
+    [Theory]
+    [Trait("Req", "LANG-481")]
+    [InlineData("var C: TC; E, G: TE; begin E := C.M; E := @C.M; E := TC.K; E := C.K; G := E; E := nil; if Assigned(E) or (E = nil) or (nil <> G) then E(1); end.", null)]
+    [InlineData("procedure TC.N; var E: TE; begin E := M; E := K; E(2) end; var C: TC; begin end.", null)]
+    [InlineData("procedure P(X: Integer); begin end; var E: TE; begin E := P; end.", "E2010: Incompatible types: 'procedure(Integer)' and 'TE'")]
+    [InlineData("var E: TE; begin E := TC.M; end.", "E2010: Incompatible types: 'procedure(Integer) of object' and 'TE'")]
+    [InlineData("var C: TC; F: TF; begin F := C.M; end.", "E2010: Incompatible types: 'procedure(Integer) of object' and 'TF'")]
+    public void MethodPointers(string body, string? expected) =>
+        AssertDiagnostics("type TE = procedure(X: Integer) of object; TC = class procedure M(X: Integer); class procedure K(X: Integer); procedure N; end; " +
+            "procedure TC.M(X: Integer); begin end; class procedure TC.K(X: Integer); begin end; " + (body.StartsWith("procedure TC.N") ? "" : "procedure TC.N; begin end; ") + body, expected);
+
+    private static void AssertDiagnostics(string body, string? expected)
+    {
+        var diagnostics = BindDiagnostics(Header + body).Select(d => System.Text.RegularExpressions.Regex.Replace(d, @"\(\d+,\d+\)", ""));
+        Assert.Equal(expected is null ? [] : [expected], diagnostics);
+    }
+
     [Theory]
     [Trait("Req", "LANG-483")]
     [InlineData("procedure Q(X: Word); begin end; var P: procedure(X: Integer); begin P := Q; end.",

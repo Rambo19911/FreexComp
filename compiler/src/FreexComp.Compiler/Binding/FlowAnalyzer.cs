@@ -794,6 +794,9 @@ internal sealed class FlowAnalyzer
             case BoundTypeTestExpression test:
                 return Eval(test.Operand, state);
 
+            case BoundMethodPointerExpression methodPointer:
+                return Eval(methodPointer.Self, state);
+
             case BoundPointerArithmeticExpression arithmetic:
                 return Eval(arithmetic.Offset, Eval(arithmetic.Pointer, state));
 

@@ -35,6 +35,11 @@ type
   end;
   PGUID = ^TGUID;
 
+  { ABI section 2 / 9.6: the parts of a method pointer (C-103) }
+  TMethod = record
+    Code, Data: Pointer;
+  end;
+
   TObject = class
   public
     constructor Create;
@@ -54,14 +59,13 @@ type
     class function ClassParent: TClass;
     class function InheritsFrom(AClass: TClass): Boolean;
     class function InstanceSize: Integer;
-    function GetInterface(const IID: TGUID; out Obj: Pointer): Boolean;
+    function GetInterface(const IID: TGUID; out Obj): Boolean;
   end;
 
-  { ABI-094 / ABI-097 (C-099). The untyped "out Obj" of ABI-094 is "out Obj: Pointer" here: untyped parameters are not
-    implemented yet, and the IR is the same (ptr). }
+  { ABI-094 / ABI-097 (C-099; untyped out Obj since C-202) }
   IInterface = interface
     ['{00000000-0000-0000-C000-000000000046}']
-    function QueryInterface(const IID: TGUID; out Obj: Pointer): HResult;
+    function QueryInterface(const IID: TGUID; out Obj): HResult;
     function _AddRef: Integer;
     function _Release: Integer;
   end;
@@ -71,7 +75,7 @@ type
   TInterfacedObject = class(TObject, IInterface)
   protected
     FRefCount: Integer;
-    function QueryInterface(const IID: TGUID; out Obj: Pointer): HResult;
+    function QueryInterface(const IID: TGUID; out Obj): HResult;
     function _AddRef: Integer;
     function _Release: Integer;
   public
@@ -3313,7 +3317,7 @@ begin
     PPImt(Old)^^.Release(Old);
 end;
 
-function TObject.GetInterface(const IID: TGUID; out Obj: Pointer): Boolean;
+function TObject.GetInterface(const IID: TGUID; out Obj): Boolean;
 var
   Entry: PByte;
 begin
@@ -3321,11 +3325,11 @@ begin
   Result := Entry <> nil;
   if Result then
   begin
-    Obj := PByte(Self) + PNativeInt(Entry + 24)^;
-    _IntfAddRef(Obj);
+    Pointer(Obj) := PByte(Self) + PNativeInt(Entry + 24)^;
+    _IntfAddRef(Pointer(Obj));
   end
   else
-    Obj := nil;
+    Pointer(Obj) := nil;
 end;
 
 { object 'as' interface: error 228 (EIntfCastError) when the class does not support IID; nil gives nil }
@@ -3364,7 +3368,7 @@ begin
   Result := (Obj <> nil) and (FindIntfEntry(PPointer(Obj)^, IID) <> nil);
 end;
 
-function TInterfacedObject.QueryInterface(const IID: TGUID; out Obj: Pointer): HResult;
+function TInterfacedObject.QueryInterface(const IID: TGUID; out Obj): HResult;
 begin
   if GetInterface(IID, Obj) then
     Result := 0

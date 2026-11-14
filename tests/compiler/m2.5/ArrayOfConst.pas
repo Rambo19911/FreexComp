@@ -72,5 +72,7 @@ begin
   Show([D, 2.5, Big, 5000000000, S, 'lit', Concat3('x', 'y', 'z'), A, Short]);
   Show([nil, P, PA, PW, O, TFoo]);
   Twice([1, 'two']);
+  Big := 7;
+  Show([Big, Int64(8), UInt64(9), Big + 1, High(Cardinal), C]);
   O.Free;
 end.

@@ -913,10 +913,21 @@ internal sealed partial class DeclarationBinder
         return type.TypeKind == TypeKind.Error || !IsStaticallyInitializable(type, declaration.Type) ? null : BindTypedConstant(initializer, type);
     }
 
-    /// <summary>Managed types (strings, C-060) and <c>Text</c> have no static initialiser yet: E2900 at the type.</summary>
+    /// <summary>
+    /// Managed types are statically initialised only when their managed parts are long strings (C-203: they hold constant
+    /// literals, ABI-020); dynamic arrays, interfaces and <c>Text</c> have no static initialiser yet: E2900 at the type.
+    /// </summary>
     private bool IsStaticallyInitializable(TypeSymbol type, TypeSyntax syntax)
     {
-        if (type.IsManaged || type is TextTypeSymbol)
+        static bool StringsOnly(TypeSymbol t) => !t.IsManaged || t switch
+        {
+            StringTypeSymbol => true,
+            ArrayTypeSymbol array => StringsOnly(array.ElementType),
+            RecordTypeSymbol record => record.Fields.All(f => StringsOnly(f.Type)),
+            _ => false,
+        };
+
+        if (!StringsOnly(type) || type is TextTypeSymbol)
         {
             _diagnostics.Report(syntax, "E2900", "initialised " + type.Name);
             return false;
@@ -1260,12 +1271,20 @@ internal sealed partial class DeclarationBinder
             return Unsupported(syntax, "anonymous method type");                // LANG-720, M2.6
         }
 
+        ImmutableArray<Text.Location> locations = declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [];
+        TypeSymbol type;
+        RoutineSymbol signature;
         if (syntax.ObjectKeyword is not null)
         {
-            return Unsupported(syntax, "method pointer");                       // LANG-481, M2.5
+            var method = new MethodPointerTypeSymbol(typeName, _container, locations);         // LANG-481 (C-103)
+            (type, signature) = (method, method.Signature);
+        }
+        else
+        {
+            var plain = new ProceduralTypeSymbol(typeName, _container, locations);
+            (type, signature) = (plain, plain.Signature);
         }
 
-        var type = new ProceduralTypeSymbol(typeName, _container, declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : []);
         if (syntax.Keyword.Kind == SyntaxKind.FunctionKeyword)
         {
             var result = syntax.ResultType is { IsMissing: false } resultType ? BindType(resultType) : _types.Error;
@@ -1275,10 +1294,10 @@ internal sealed partial class DeclarationBinder
                 result = _types.Error;
             }
 
-            type.Signature.ReturnType = result;
+            signature.ReturnType = result;
         }
 
-        type.Signature.Parameters = BindParameters(syntax.ParameterList, type.Signature, new Scope(ScopeKind.Routine, parent: null, type.Signature), report: true);
+        signature.Parameters = BindParameters(syntax.ParameterList, signature, new Scope(ScopeKind.Routine, parent: null, signature), report: true);
         return type;
     }
 
@@ -1290,7 +1309,7 @@ internal sealed partial class DeclarationBinder
     private ConstantValue? BindDefaultValue(ParameterSyntax parameter, ExpressionSyntax value, ParameterMode mode, TypeSymbol type, Symbol owner, bool report)
     {
         var diagnostics = report ? _diagnostics : new DiagnosticBag();
-        if (owner is not RoutineSymbol || owner.ContainingSymbol is ProceduralTypeSymbol)
+        if (owner is not RoutineSymbol || owner.ContainingSymbol is ProceduralTypeSymbol or MethodPointerTypeSymbol)
         {
             diagnostics.Report(value, "E2900", "default parameter value outside a routine declaration");
             return null;
@@ -1334,11 +1353,8 @@ internal sealed partial class DeclarationBinder
                 SyntaxKind.OutKeyword => ParameterMode.Out,
                 _ => ParameterMode.Value,
             };
-            var type = parameter.Type is { } typeSyntax ? BindType(typeSyntax, parameter: true) : _types.Error;
-            if (parameter.Type is null && mode != ParameterMode.Value && report)
-            {
-                _diagnostics.Report(parameter, "E2900", "untyped parameter");                  // M2.2
-            }
+            // routines.md §3 (C-202): no type = untyped, only with var/const/out (E2118 below)
+            var type = parameter.Type is { } typeSyntax ? BindType(typeSyntax, parameter: true) : mode == ParameterMode.Value ? _types.Error : _types.Untyped;
 
             var defaultConstant = parameter.DefaultValue is { } defaultValue ? BindDefaultValue(parameter, defaultValue, mode, type, owner, report) : null;
             if (parameter.DefaultValue is not null)

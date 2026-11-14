@@ -34,6 +34,9 @@ public sealed class InterfaceTypeSymbol : TypeSymbol
     /// <summary>ABI-091: the IMT order — the ancestors' methods (root first), then the own ones.</summary>
     public ImmutableArray<MethodSymbol> AllMethods => Parent is null ? Methods : [.. Parent.AllMethods, .. Methods];
 
+    /// <summary>The nearest default array property of the interface or an ancestor (LANG-642, C-101); null when there is none.</summary>
+    public PropertySymbol? DefaultProperty => SelfAndAncestors().SelectMany(i => i.Properties).FirstOrDefault(p => p.IsDefault);
+
     public override bool IsManaged => true;
 
     public override ImmutableArray<Symbol> Members => [.. Methods, .. Properties];

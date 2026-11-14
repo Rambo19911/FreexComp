@@ -1611,6 +1611,39 @@ public sealed class IrSnapshotTests
             + "ptr @\"M.TFoo.$thunk.M.IQux.Name\", ptr @\"M.TFoo.$thunk.M.IQux.Qux\"], align 8", text);
     }
 
+    /// <summary>C-100 / CMP-373: <c>is</c>/<c>as</c> with an interface pass the <c>linkonce_odr</c> GUID constant to the RTL helpers.</summary>
+    [Fact]
+    [Trait("Req", "CMP-373")]
+    [Trait("Req", "LANG-650")]
+    [Trait("Req", "LANG-651")]
+    public void InterfaceIsAs_PassTheGuidConstant()
+    {
+        var text = Emit("""
+            unit M;
+            interface
+            type
+              IBar = interface ['{01234567-89AB-CDEF-0123-456789ABCDEF}'] end;
+              TFoo = class(IBar) end;
+            function Test(O: TFoo; const I: IBar): Boolean;
+            implementation
+            function Test(O: TFoo; const I: IBar): Boolean;
+            var B: IBar;
+            begin
+              B := O as IBar;
+              B := I as IBar;
+              Result := O is IBar;
+            end;
+            end.
+            """);
+        Assert.Contains("$\"M.IBar.$guid\" = comdat any", text);
+        Assert.Contains("@\"M.IBar.$guid\" = linkonce_odr constant [16 x i8] [i8 103, i8 69, i8 35, i8 1, i8 -85, i8 -119, i8 -17, i8 -51, "
+            + "i8 1, i8 35, i8 69, i8 103, i8 -119, i8 -85, i8 -51, i8 -17], comdat, align 4", text);
+        Assert.Contains("invoke void @\"System._ObjToIntf\"(ptr %B.addr, ptr %", text);
+        Assert.Contains(", ptr @\"M.IBar.$guid\")", text);
+        Assert.Contains("invoke void @\"System._IntfCast\"(ptr %B.addr, ptr %", text);
+        Assert.Matches(@"call i8 @""System._ObjSupports""\(ptr %\w+, ptr @""M.IBar.\$guid""\)", text);
+    }
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["Thunk"] = ThunkSource,

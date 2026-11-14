@@ -69,11 +69,15 @@ internal sealed partial class DeclarationBinder
 
         var methods = ImmutableArray.CreateBuilder<MethodSymbol>();
         var names = new Dictionary<string, Symbol>(IdentifierComparer.Instance);
+        var properties = new List<PropertyDeclarationSyntax>();
         var slot = type.Parent?.AllMethods.Length ?? 0;
         foreach (var (member, _) in Members(syntax.Members, Visibility.Public))
         {
             switch (member)
             {
+                case PropertyDeclarationSyntax property:
+                    properties.Add(property);                                   // bound after the methods (their accessors)
+                    break;
                 case MethodDeclarationSyntax method when BindInterfaceMethod(type, method) is { } symbol:
                     if (names.TryGetValue(symbol.Name, out var existing)
                         && !(existing is MethodSymbol other && other.IsOverload && symbol.IsOverload && !SameParameterTypes(other, symbol)))
@@ -98,6 +102,122 @@ internal sealed partial class DeclarationBinder
         }
 
         type.Methods = methods.ToImmutable();
+        type.Properties = BindInterfaceProperties(type, properties, names);
+    }
+
+    /// <summary>
+    /// LANG-660/664 (C-101): interface properties; accessors are methods of the interface or an ancestor (a name that is no such
+    /// method is E2003; a field-style accessor cannot exist). Array, default and <c>index</c> properties as for classes (LANG-642/643);
+    /// <c>class property</c> and <c>implements</c> are E2900.
+    /// </summary>
+    private ImmutableArray<PropertySymbol> BindInterfaceProperties(InterfaceTypeSymbol type, List<PropertyDeclarationSyntax> properties, Dictionary<string, Symbol> names)
+    {
+        var bound = ImmutableArray.CreateBuilder<PropertySymbol>();
+        foreach (var syntax in properties)
+        {
+            if (syntax.Identifier.IsMissing)
+            {
+                continue;
+            }
+
+            if (syntax.ClassKeyword is { } classKeyword)
+            {
+                _diagnostics.Report(classKeyword, "E2900", "interface class property");
+                continue;
+            }
+
+            var name = NameOf(syntax.Identifier);
+            var property = new PropertySymbol(name, type, [DiagnosticBag.LocationOf(syntax.Identifier)], Visibility.Public);
+            if (!names.TryAdd(name, property))
+            {
+                _diagnostics.ReportRedeclared(syntax.Identifier, name, names[name]);
+                continue;
+            }
+
+            if (syntax.Type is null)
+            {
+                _diagnostics.Report(syntax.Identifier, "E2900", "interface property redeclaration");
+                continue;
+            }
+
+            property.Type = BindType(syntax.Type);
+            property.Parameters = BindParameters(syntax.Parameters, property, new Scope(ScopeKind.Routine, parent: null, property), report: true);
+            if (property.Type.TypeKind == TypeKind.Error || property.Parameters.Any(p => p.Type.TypeKind == TypeKind.Error))
+            {
+                continue;
+            }
+
+            if (syntax.DefaultKeyword is { } defaultKeyword)
+            {
+                if (!property.IsArrayProperty)
+                {
+                    _diagnostics.Report(defaultKeyword, "E2900", "default on a non-array property");
+                    continue;
+                }
+
+                if (bound.Any(p => p.IsDefault))
+                {
+                    _diagnostics.Report(defaultKeyword, "E2635", type.Name);
+                }
+                else
+                {
+                    property.IsDefault = true;
+                }
+            }
+
+            var ok = true;
+            if (syntax.Specifiers.FirstOrDefault(s => s.Keyword.ContextualKind == SyntaxKind.IndexKeyword)?.Value is { } indexValue)
+            {
+                ok &= BindPropertyIndex(property, indexValue);
+            }
+
+            foreach (var specifier in syntax.Specifiers)
+            {
+                switch (specifier.Keyword.ContextualKind)
+                {
+                    case SyntaxKind.ReadKeyword or SyntaxKind.WriteKeyword when specifier.Value is { } value:
+                        ok &= BindInterfaceAccessor(type, property, value, write: specifier.Keyword.ContextualKind == SyntaxKind.WriteKeyword);
+                        break;
+                    case SyntaxKind.ImplementsKeyword:
+                        Unsupported(specifier.Keyword, "implements");
+                        ok = false;
+                        break;
+                }
+            }
+
+            if (ok && !property.IsReadable && !property.IsWritable)
+            {
+                _diagnostics.Report(syntax.Identifier, "E2631", property.Name);                                // LANG-641
+                ok = false;
+            }
+
+            if (ok)
+            {
+                bound.Add(property);
+            }
+        }
+
+        return bound.ToImmutable();
+    }
+
+    /// <summary>A <c>read</c>/<c>write</c> accessor of an interface property: a method of the interface chain (E2636 when none fits).</summary>
+    private bool BindInterfaceAccessor(InterfaceTypeSymbol type, PropertySymbol property, ExpressionSyntax value, bool write)
+    {
+        if (value is not IdentifierNameSyntax { Identifier: { IsMissing: false } token } name)
+        {
+            _diagnostics.Report(value, "E2636", value.ToString().Trim(), property.Type.Name);
+            return false;
+        }
+
+        var text = NameOf(token);
+        var methods = type.SelfAndAncestors().SelectMany(i => i.Methods).Where(m => IdentifierComparer.Instance.Equals(m.Name, text)).ToList();
+        if (methods.Count == 0)
+        {
+            _diagnostics.ReportUndeclared(name, text);
+            return false;
+        }
+
+        return MatchAccessor(property, methods, value, write);
     }
 
     /// <summary>The ancestor interface: the heritage entry (E2652 for a non-interface, E2007 while forward), else <c>IInterface</c>.</summary>

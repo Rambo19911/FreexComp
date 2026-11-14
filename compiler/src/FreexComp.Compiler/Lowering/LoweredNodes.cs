@@ -578,6 +578,12 @@ internal sealed class LClassRef(ClassTypeSymbol type, TypeSymbol pointerType) : 
     public ClassTypeSymbol Class { get; } = type;
 }
 
+/// <summary>The GUID constant of <see cref="Interface"/> (CMP-373 <c>@"U.I.$guid"</c>, <c>TGUID</c> memory order); type <c>Pointer</c>.</summary>
+internal sealed class LGuidRef(InterfaceTypeSymbol intf, TypeSymbol pointerType) : LExpression(pointerType)
+{
+    public InterfaceTypeSymbol Interface { get; } = intf;
+}
+
 /// <summary>
 /// <c>FillChar</c> (CMP-412): <c>llvm.memset</c> of <see cref="Count"/> bytes (<c>Int64</c>) of <see cref="Value"/> (a <c>Byte</c>) at the
 /// address of the variable reference <see cref="Target"/> (its access alignment, CMP-309).
