@@ -65,7 +65,7 @@ public sealed class FoldingVisualTests
         doc.Folding.SetFolded(Region(6), true);
         section = Assert.Single(_foldings(view), s => s.Tag is FoldRegion { StartLine: 6 });
         Assert.True(section.IsFolded);
-        view.UnfoldAndSelect(section);
+        DoubleClick(h, BoxPoint(h, doc, editor, Region(6)));
         Assert.Empty(Folded(probe));
         Assert.Equal(Region(6).StartOffset, editor.SelectionStart);
         Assert.Equal(Region(6).EndOffset - Region(6).StartOffset, editor.SelectionLength);
@@ -135,15 +135,11 @@ public sealed class FoldingVisualTests
         Dispatcher.UIThread.RunJobs();
         Assert.Empty(Folded(probe));
 
-        // A double-click (the box's BoxDoubleClicked, as NavigationUnfolds drives it) unfolds and selects the hidden
-        // text and cancels the pending single click.
+        // A double-click (real pointer input, ClickCount == 2) unfolds and selects the hidden text and cancels the
+        // pending single click of its first press.
         doc.Folding.SetFolded(Region(6), true);
-        box = Box();
-        h.Window.MouseDown(box, Avalonia.Input.MouseButton.Left);
-        h.Window.MouseUp(box, Avalonia.Input.MouseButton.Left);
-        Dispatcher.UIThread.RunJobs();
-        var view = (CodeEditorView)probe;
-        view.UnfoldAndSelect(Assert.Single(_foldings(view), s => s.Tag is FoldRegion { StartLine: 6 }));
+        DoubleClick(h, Box());
+        Assert.Empty(Folded(probe));
         doc.Folding.SetFolded(Region(6), true); // folded again before the double-click time ends
         h.Clock.Advance(TimeSpan.FromSeconds(1));
         Dispatcher.UIThread.RunJobs();
@@ -157,6 +153,63 @@ public sealed class FoldingVisualTests
         Assert.Equal(doc.Buffer.GetText(doc.Buffer.GetOffset(5, 1), doc.Buffer.GetOffset(13, 1) - doc.Buffer.GetOffset(5, 1)),
             ((TestSupport.FakeClipboard)h.Services.Clipboard).Text);
         Assert.Contains("Writeln;", ((TestSupport.FakeClipboard)h.Services.Clipboard).Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// IDE-ED-058 / UI-ED-035: a double-click on the <c>…</c> box, sent as two presses through the headless pointer (the
+    /// second arrives with <c>ClickCount == 2</c>), unfolds the region and selects the text it hid; the single click of
+    /// the first press never fires afterwards.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-058")]
+    [Trait("Req", "UI-ED-035")]
+    public async Task DoubleClickUnfoldsAndSelects()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = Unit);
+        var (doc, editor, probe) = await OpenAsync(h, "A.pas");
+        FoldRegion Region(int startLine) => doc.Folding.Regions.First(r => r.StartLine == startLine);
+        var clickCounts = new List<int>();
+        editor.TextArea.TextView.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent,
+            (_, e) => clickCounts.Add(e.ClickCount), Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        doc.Folding.SetFolded(Region(6), true);
+        Assert.Equal(["6-12"], Folded(probe));
+        DoubleClick(h, BoxPoint(h, doc, editor, Region(6)));
+
+        Assert.Equal([1, 2], clickCounts); // real input: the second press is the double-click
+        Assert.Empty(Folded(probe));
+        Assert.Equal(Region(6).StartOffset, editor.SelectionStart);
+        Assert.Equal(Region(6).EndOffset - Region(6).StartOffset, editor.SelectionLength);
+        Assert.Equal(Region(6).EndOffset, editor.CaretOffset);
+
+        // The first press's pending single click was cancelled: folding again within the double-click time stays folded.
+        doc.Folding.SetFolded(Region(6), true);
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["6-12"], Folded(probe));
+    }
+
+    /// <summary>Two left presses at one point, as the OS reports a double-click.</summary>
+    private static void DoubleClick(HeadlessHarness h, Avalonia.Point point)
+    {
+        for (var i = 0; i < 2; i++)
+        {
+            h.Window.MouseDown(point, Avalonia.Input.MouseButton.Left);
+            h.Window.MouseUp(point, Avalonia.Input.MouseButton.Left);
+        }
+
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>A point inside the <c>…</c> box of the folded <paramref name="region"/>, in window coordinates.</summary>
+    private static Avalonia.Point BoxPoint(HeadlessHarness h, Core.ViewModels.TextDocumentViewModel doc, AvaloniaEdit.TextEditor editor, FoldRegion region)
+    {
+        Dispatcher.UIThread.RunJobs();
+        var textView = editor.TextArea.TextView;
+        var start = doc.Buffer.GetPosition(region.StartOffset);
+        var p = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(start.Line, start.Column), AvaloniaEdit.Rendering.VisualYPosition.LineMiddle)
+                - textView.ScrollOffset + new Avalonia.Point(6, 0);
+        return textView.TranslatePoint(p, h.Window)!.Value;
     }
 
     private static IEnumerable<FoldingSection> _foldings(CodeEditorView view) =>

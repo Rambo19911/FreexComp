@@ -84,6 +84,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         textView.Bind(TextView.ColumnRulerPenProperty, // UI-ED-057
             textView.GetResourceObservable("FxcEditorRulerBrush", brush => brush is IBrush b ? new Pen(b, 1) : null));
         RemoveBuiltInBindings(area);
+        NoLigaturesTransformer.Install(textView); // UI-TOK-021
 
         // editor.md §2: glyph margin, line numbers, fold margin, change bar, then the text padding.
         _glyphMargin = new GlyphMargin(area);
@@ -551,7 +552,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     }
 
     /// <summary>Double-click on the <c>…</c> box: unfolds it and selects the text it hid (UI-ED-035, IDE-ED-058).</summary>
-    internal void UnfoldAndSelect(FoldingSection section)
+    private void UnfoldAndSelect(FoldingSection section)
     {
         _pendingBoxClick?.Dispose(); // the double-click replaces the pending single click
         _pendingBoxClick = null;
@@ -874,6 +875,37 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
     double IEditorTestProbe.GutterWidth =>
         _editor.TextArea.LeftMargins.OfType<GutterMargin>().Where(m => m.IsVisible).Sum(m => m.MarginWidth);
+
+    /// <summary>
+    /// UI-ED-014 per visual row: a glyph or fold-marker shape belongs to the row holding its vertical centre; a change-bar
+    /// shape counts for every row it covers completely.
+    /// </summary>
+    IReadOnlyList<EditorVisualRow> IEditorTestProbe.VisualRows(int line)
+    {
+        var textView = _editor.TextArea.TextView;
+        if (line < 1 || line > textView.Document.LineCount || !textView.VisualLinesValid
+            || textView.GetVisualLine(line) is not { } visual || visual.FirstDocumentLine.LineNumber != line)
+            return [];
+        const double Epsilon = 0.01;
+        var glyphs = _glyphMargin.IsVisible ? _glyphMargin.DrawnShapes(visual) : [];
+        var markers = _foldMargin.IsVisible ? _foldMargin.DrawnShapes(visual).Where(s => s.Stroked).ToList() : [];
+        var bars = _changeBar.IsVisible ? _changeBar.DrawnShapes(visual) : [];
+        var state = _changeBar.Source.StateOf(line).ToString();
+        var rows = new List<EditorVisualRow>();
+        var top = visual.VisualTop - textView.VerticalOffset;
+        foreach (var textLine in visual.TextLines)
+        {
+            double rowTop = top, rowBottom = top + textLine.Height;
+            bool Holds((Rect Bounds, bool Stroked) s) => s.Bounds.Center.Y >= rowTop && s.Bounds.Center.Y < rowBottom;
+            rows.Add(new EditorVisualRow(rowTop, textLine.Height,
+                glyphs.Any(Holds) ? _document?.Decorations.GlyphAt(line)?.ProbeName : null,
+                markers.Any(Holds),
+                bars.Any(s => s.Bounds.Top <= rowTop + Epsilon && s.Bounds.Bottom >= rowBottom - Epsilon) ? state : "None"));
+            top = rowBottom;
+        }
+
+        return rows;
+    }
 
     /// <summary>One <see cref="SyntaxColorizer"/> over the document's language (IDE-P1-057); null removes it.</summary>
     private void SetColorizer(TextDocumentViewModel? document)

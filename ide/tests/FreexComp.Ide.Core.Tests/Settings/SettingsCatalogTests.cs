@@ -103,6 +103,82 @@ public sealed class SettingsCatalogTests
         Assert.Equal("italic", SettingsCatalog.StyleKey("light", "syntax.comment").Default);
     }
 
+    /// <summary>
+    /// IDE-SET-031: no source file under <c>ide/src</c> except <c>SettingsCatalog.cs</c> names a setting by a string
+    /// literal (<c>Settings.Get("…")</c>, <c>IsDefault("…")</c>, <c>e.Key == "…"</c>, …): keys come from the catalog fields.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-SET-031")]
+    public void NoStringKeysInSource()
+    {
+        var offenders = StringKeyLiterals(Path.Combine(SpecTables.RepoRootPath(), "ide", "src"));
+        Assert.True(offenders.Count == 0, "Settings named by string literal (IDE-SET-031):\n" + string.Join("\n", offenders));
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-SET-031")]
+    public void StringKeyScanFindsLiterals()
+    {
+        var root = Directory.CreateTempSubdirectory("fxc-set031-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "A.cs"), "var a = settings.Get(\"editor.tabWidth\");\nvar b = \"editor.tab\" + x;");
+            File.WriteAllText(Path.Combine(root, "B.cs"), "if (e.Key == \"colors.dark.syntax.keyword\") { }\nsettings.IsDefault(\"files.trimTrailingWhitespaceOnSave\");");
+            File.WriteAllText(Path.Combine(root, "C.cs"), "Command(\"designer.lockControls\");\nsettings.Get(\"designer.lockControls\");\nStrings.Get(\"file.save\");");
+            File.WriteAllText(Path.Combine(root, "SettingsCatalog.cs"), "Bool(\"editor.wordWrap\", false);");
+            var offenders = StringKeyLiterals(root);
+            Assert.Equal(["A.cs(1)", "B.cs(1)", "B.cs(2)", "C.cs(2)"], offenders.Select(o => o[..o.IndexOf(':', StringComparison.Ordinal)]).Order(StringComparer.Ordinal));
+            Assert.Contains(offenders, o => o.StartsWith("A.cs(1)", StringComparison.Ordinal));
+            Assert.DoesNotContain(offenders, o => o.StartsWith("SettingsCatalog.cs", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A string literal names a setting when it is a catalog key name or a per-token color key (<c>colors.light.*</c>).
+    /// Key names that are also command ids (<c>designer.lockControls</c>) count only as the first argument of a
+    /// settings call (<c>Get/Set/IsDefault/Reset/ResetAll</c>) or in a <c>Key ==</c> comparison, because the same text
+    /// is a legitimate command id elsewhere.
+    /// </summary>
+    private static List<string> StringKeyLiterals(string root)
+    {
+        var commandIds = FreexComp.Ide.Core.Commands.CommandCatalog.All.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+        var allNames = SettingsCatalog.All.Select(k => k.Name).ToHashSet(StringComparer.Ordinal);
+        var settingContext = new System.Text.RegularExpressions.Regex(
+            @"(\b(Get|Set|IsDefault|Reset|ResetAll)\s*(<[^>]*>)?\s*\(\s*|\bKey\s*(==|!=|is)\s*)""(?<key>[^""]*)""");
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(root, file);
+            if (relative.Split(Path.DirectorySeparatorChar).Any(p => p is "bin" or "obj")
+                || Path.GetExtension(file) is not (".cs" or ".axaml")
+                || Path.GetFileName(file) == "SettingsCatalog.cs")
+            {
+                continue;
+            }
+
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var inSettingCall = settingContext.Matches(lines[i]).Any(m => allNames.Contains(m.Groups["key"].Value));
+                var literalKey = System.Text.RegularExpressions.Regex.Matches(lines[i], "\"((?:[^\"\\\\]|\\\\.)*)\"")
+                    .Select(m => m.Groups[1].Value)
+                    .Any(text => (allNames.Contains(text) && !commandIds.Contains(text))
+                                 || text.StartsWith("colors.light.", StringComparison.Ordinal)
+                                 || text.StartsWith("colors.dark.", StringComparison.Ordinal));
+                if (inSettingCall || literalKey)
+                {
+                    offenders.Add($"{relative}({i + 1}): {lines[i].Trim()}");
+                }
+            }
+        }
+
+        return offenders;
+    }
+
     private static Expected FromKeyRow(string name, string type, string defaultText, string rule)
     {
         if (type.StartsWith("enum(", StringComparison.Ordinal))

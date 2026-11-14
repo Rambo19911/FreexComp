@@ -76,4 +76,36 @@ public sealed class EditorHostingTests
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("Consolas", editor.FontFamily.ToString());
     }
+
+    /// <summary>
+    /// UI-TOK-021 "Ligatures are off": every text run the editor shapes switches the ligature features off (<c>liga</c>,
+    /// <c>clig</c>, <c>calt</c> = 0), also with a user font and with syntax colours applied. Headless tests cannot see
+    /// glyphs (IDE-TEST-010), so the shaping input is asserted.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TOK-021")]
+    public async Task LigaturesOff()
+    {
+        var (h, doc, editor) = await OpenAsync();
+        await using var _ = h;
+        editor.TextArea.Focus();
+        h.Type("x := a <= b; // => != ->\r\n");
+        h.Services.Settings.Set(SettingsCatalog.EditorFontFamily, "Fira Code");
+        Dispatcher.UIThread.RunJobs();
+
+        var textView = editor.TextArea.TextView;
+        var runs = Enumerable.Range(1, doc.Buffer.LineCount)
+            .Select(n => textView.GetOrConstructVisualLine(textView.Document.GetLineByNumber(n)))
+            .SelectMany(l => l.TextLines).SelectMany(t => t.TextRuns)
+            .OfType<Avalonia.Media.TextFormatting.ShapedTextRun>()
+            .ToList();
+        Assert.NotEmpty(runs);
+        Assert.All(runs, run =>
+        {
+            var features = run.Properties.FontFeatures;
+            Assert.NotNull(features);
+            foreach (var tag in new[] { "liga", "clig", "calt" })
+                Assert.Contains(features, f => f.Tag == tag && f.Value == 0);
+        });
+    }
 }

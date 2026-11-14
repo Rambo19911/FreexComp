@@ -365,6 +365,57 @@ public sealed class EditorVisualTests
         Assert.DoesNotContain(Shapes(bar), s => s.Fill == saved);
     }
 
+    /// <summary>
+    /// UI-ED-014: with word wrap on, a wrapped line's glyph and fold marker are drawn beside its first visual row only,
+    /// and its change bar spans every visual row. Asserted per row through <see cref="IEditorTestProbe.VisualRows"/>.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-014")]
+    public async Task VisualRows()
+    {
+        var longLine = "begin // " + string.Join(" ", Enumerable.Repeat("wrapped", 80));
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings[SettingsCatalog.EditorWordWrap.Name] = true;
+            o.InitialFiles["A.pas"] = "program P;\r\n" + longLine + "\r\n  Writeln;\r\n  Writeln;\r\nend.\r\n";
+        });
+        var (doc, editor, probe) = await OpenAsync(h, "A.pas");
+        Assert.Contains(doc.Folding.Regions, r => r.StartLine == 2);
+
+        var glyphs = new FakeDecorations();
+        doc.Decorations.Add(glyphs);
+        glyphs.Glyphs[1] = [new LineGlyph(LineGlyphKind.Bookmark)];
+        glyphs.Glyphs[2] = [new LineGlyph(LineGlyphKind.Breakpoint)];
+        glyphs.Raise();
+        var changes = new FakeLineChanges();
+        changes.States[1] = LineChangeState.Saved;
+        changes.States[2] = LineChangeState.Modified;
+        doc.LineChanges = changes;
+        editor.TextArea.Caret.Offset = doc.Buffer.GetOffset(3, 3); // inside the region: its expanded marker shows (UI-ED-032)
+        Dispatcher.UIThread.RunJobs();
+
+        // A line that fits keeps one row with everything on it.
+        var first = Assert.Single(probe.VisualRows(1));
+        Assert.Equal(("Bookmark", false, "Saved"), (first.Glyph, first.FoldMarker, first.ChangeBar));
+
+        // The wrapped line: glyph and fold marker on row 1 only, the change bar on all rows, rows stacked without gaps.
+        var rows = probe.VisualRows(2);
+        Assert.True(rows.Count >= 2, $"line 2 wraps ({rows.Count} row)");
+        Assert.Equal(("Breakpoint", true, "Modified"), (rows[0].Glyph, rows[0].FoldMarker, rows[0].ChangeBar));
+        Assert.All(rows.Skip(1), r => Assert.Equal(((string?)null, false, "Modified"), (r.Glyph, r.FoldMarker, r.ChangeBar)));
+        for (var i = 1; i < rows.Count; i++)
+            Assert.Equal(rows[i - 1].Top + rows[i - 1].Height, rows[i].Top, 3);
+
+        // Word wrap off: the same line is one row again.
+        await h.ExecuteAsync("view.wordWrap");
+        Dispatcher.UIThread.RunJobs();
+        var unwrapped = Assert.Single(probe.VisualRows(2));
+        Assert.Equal(("Breakpoint", true, "Modified"), (unwrapped.Glyph, unwrapped.FoldMarker, unwrapped.ChangeBar));
+
+        // A line not on screen has no rows.
+        Assert.Empty(probe.VisualRows(99));
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-ED-050")]
     public async Task CurrentLineHiddenWithMultiLineSelection()

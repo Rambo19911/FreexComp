@@ -56,17 +56,45 @@ public abstract class GutterMargin : AbstractMargin
         if (TextView is not { VisualLinesValid: true } textView)
             return;
         foreach (var line in textView.VisualLines)
-        {
-            var top = line.VisualTop - textView.VerticalOffset;
-            RenderLine(context, line, line.FirstDocumentLine.LineNumber, top, line.TextLines[0].Height, line.Height);
-        }
+            RenderVisualLine(context, line);
     }
+
+    private void RenderVisualLine(DrawingContext context, VisualLine line) =>
+        RenderLine(context, line, line.FirstDocumentLine.LineNumber, line.VisualTop - TextView!.VerticalOffset, line.TextLines[0].Height, line.Height);
 
     /// <summary>
     /// Draws the margin's part of one visual line: <paramref name="rowHeight"/> is its first row (glyphs, numbers and
     /// fold markers go there, UI-ED-014), <paramref name="height"/> all its rows.
     /// </summary>
     protected abstract void RenderLine(DrawingContext context, VisualLine line, int lineNumber, double top, double rowHeight, double height);
+
+    /// <summary>
+    /// What <see cref="RenderLine"/> draws for one visual line, as in <see cref="Render"/> (for
+    /// <see cref="IEditorTestProbe.VisualRows"/>): each shape's bounds in margin coordinates and whether it is stroked.
+    /// </summary>
+    internal IReadOnlyList<(Rect Bounds, bool Stroked)> DrawnShapes(VisualLine line)
+    {
+        var group = new DrawingGroup();
+        using (var context = group.Open())
+            RenderVisualLine(context, line);
+        var shapes = new List<(Rect, bool)>();
+        Collect(group, Matrix.Identity);
+        return shapes;
+
+        void Collect(Drawing drawing, Matrix transform)
+        {
+            if (drawing is DrawingGroup g)
+            {
+                var inner = g.Transform is { } t ? t.Value * transform : transform;
+                foreach (var child in g.Children)
+                    Collect(child, inner);
+            }
+            else if (drawing is GeometryDrawing { Geometry: { } geometry } shape)
+            {
+                shapes.Add((geometry.Bounds.TransformToAABB(transform), shape.Pen is not null));
+            }
+        }
+    }
 
     /// <summary>The theme brush of a colour token (<c>editor.lineNumber</c> → <c>FxcEditorLineNumberBrush</c>).</summary>
     protected IBrush? Brush(string token) =>

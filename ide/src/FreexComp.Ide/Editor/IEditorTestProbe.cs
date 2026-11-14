@@ -35,4 +35,17 @@ public interface IEditorTestProbe
 
     /// <summary>Width of the visible gutter margins in DIP (glyph margin, line numbers, fold margin, change bar).</summary>
     double GutterWidth { get; }
+
+    /// <summary>
+    /// The visual rows of a document line, top to bottom (one row unless word wrap breaks the line), each with what
+    /// the gutter draws beside it (UI-ED-014). Read from what the margins draw. Empty when the line is not on screen.
+    /// </summary>
+    IReadOnlyList<EditorVisualRow> VisualRows(int line);
 }
+
+/// <summary>
+/// One visual row of a document line (<see cref="IEditorTestProbe.VisualRows"/>): top and height in text-view
+/// coordinates (DIP); the glyph drawn beside the row (probe name as in <see cref="IEditorTestProbe.GlyphAt"/>) or null;
+/// whether a fold marker is drawn beside it; the change-bar state drawn over its full height ("None" | "Modified" | "Saved").
+/// </summary>
+public sealed record EditorVisualRow(double Top, double Height, string? Glyph, bool FoldMarker, string ChangeBar);
