@@ -6,3 +6,6 @@ TRUE
 TRUE TRUE
 TRUE TRUE
 FALSE TRUE
+                    NAN|                    INF|                   -INF|
+NAN| INF|-INF|   NAN|
+ -INF|-INF

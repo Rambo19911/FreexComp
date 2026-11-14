@@ -10,7 +10,8 @@ namespace FreexComp.Compiler.Lowering;
 /// then <c>_WriteLn</c> for <c>Writeln</c>, <c>_WriteEnd</c>, and <c>_IOCheck</c> in <c>{$I+}</c> state (ABI-132). The file is
 /// the given <c>Text</c> variable or <c>System.Output</c>, passed by address. M2.1 argument types: integers (<c>_WriteInt</c>
 /// as <c>Int64</c> / <c>_WriteUInt</c> as <c>UInt64</c>), the Boolean family (<c>_WriteBool</c>, normalised to <c>Boolean</c>),
-/// <c>Char</c>/<c>AnsiChar</c> (<c>_WriteWChar</c>/<c>_WriteAChar</c>) and string constants (<c>_WriteUStr</c>).
+/// <c>Char</c>/<c>AnsiChar</c> (<c>_WriteWChar</c>/<c>_WriteAChar</c>), string constants (<c>_WriteUStr</c>) and reals
+/// (<c>_WriteFloat</c> with width and decimals, C-059).
 /// </summary>
 internal static class WriteRewriter
 {
@@ -25,6 +26,16 @@ internal static class WriteRewriter
         foreach (var argument in write.Arguments)
         {
             var value = context.Lower(argument.Value);
+            if (argument.Value.Type is RealTypeSymbol)
+            {
+                // CMP-410: _WriteFloat(T, v as Double, w, d); Write(x) = w 23, d -1; Write(x:w) = d -1
+                var realWidth = argument.Width is { } rw ? context.Lower(rw) : context.Constant(23, types.Integer);
+                var decimals = argument.Decimals is { } d ? context.Lower(d) : context.Constant(BigInteger.MinusOne, types.Integer);
+                statements.Add(Call("_WriteFloat", [types.Pointer, types.Double, types.Integer, types.Integer],
+                    [file, context.Convert(value, types.Double), realWidth, decimals]));
+                continue;
+            }
+
             var width = argument.Width is { } w ? context.Lower(w) : context.Constant(BigInteger.Zero, types.Integer);
             var (name, parameterType) = argument.Value.Type switch
             {

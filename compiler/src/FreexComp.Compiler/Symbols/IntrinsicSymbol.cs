@@ -26,6 +26,9 @@ internal enum IntrinsicKind
 
     // M2.2 pointer functions (intrinsics.md)
     Assigned, Addr, Ptr,
+
+    // M2.2 real functions (intrinsics.md, C-059; Trunc/Round are constant-foldable, LANG-340)
+    Trunc, Round, Int, Frac, Sqrt,
 }
 
 /// <summary>A compiler-magic routine predeclared in the outermost scope (LANG-900); user symbols may hide it.</summary>

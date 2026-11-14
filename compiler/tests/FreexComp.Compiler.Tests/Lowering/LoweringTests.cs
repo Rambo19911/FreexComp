@@ -96,6 +96,21 @@ public sealed class LoweringTests
             "(if (Not:Boolean (Greater @i 0:Integer)) (block (call _Assert nil:Pointer 'test.pas' 1:Integer) (unreachable)))",
             MainBody("f: Boolean; i: Integer", "Assert(f, 'm'); {$C-} Assert(f) {$C+}; Assert(i > 0)"));
 
+    /// <summary>
+    /// C-176 (intrinsics.md, rtl-abi.md: a count ≤ 0 does nothing): a variable count is evaluated once into a temporary and
+    /// guards the <c>llvm.memset</c>/<c>llvm.memmove</c> with <c>count &gt; 0</c>; a positive constant count needs no guard, a
+    /// constant count ≤ 0 generates nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-412")]
+    public void MoveFill_NonPositiveCountDoesNothing() =>
+        Assert.Equal(
+            "(block (:= $tmp1 (conv NativeInt @i)) (if (Greater $tmp1 0:NativeInt) (memset @a $tmp1 (conv Byte 7:Integer)))) " +
+            "(block (:= $tmp2 @n) (if (Greater $tmp2 0:NativeInt) (memmove @a @b $tmp2))) " +
+            "(memset @a 4:NativeInt (conv Byte 0:Integer)) (memmove @a @b 2:NativeInt) (block) (block)",
+            MainBody("a, b: array[0..3] of Byte; i: Integer; n: NativeInt",
+                "FillChar(a, i, 7); Move(a, b, n); FillChar(a, 4, 0); Move(a, b, 2); FillChar(a, 0, 1); Move(a, b, -3)"));
+
     // ------------------------------------------------------------------ for (CMP-321, LANG-361)
 
     [Fact]
@@ -146,6 +161,19 @@ public sealed class LoweringTests
             "(call _WriteLn (addr @System.Output)) (call _WriteEnd (addr @System.Output)) (call _IOCheck)) " +
             "(block (call _WriteLn (addr @System.Output)) (call _WriteEnd (addr @System.Output)))",
             MainBody("i: Integer", "Writeln('ab', i:i); {$I-} Writeln()"));
+
+    /// <summary>
+    /// C-059 / CMP-410: a real goes to <c>_WriteFloat(T, v as Double, w, d)</c> — <c>Write(x)</c> passes 23 and −1,
+    /// <c>Write(x:w)</c> w and −1, <c>Write(x:w:d)</c> w and d.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-410")]
+    public void Writeln_Reals_WriteFloatWithWidthAndDecimals() =>
+        Assert.Equal(
+            "(block (call _WriteFloat (addr @System.Output) @d 23:Integer -1:Integer) (call _WriteEnd (addr @System.Output))) " +
+            "(block (call _WriteFloat (addr @System.Output) (conv Double @s) @i -1:Integer) (call _WriteEnd (addr @System.Output))) " +
+            "(block (call _WriteFloat (addr @System.Output) @d 0:Integer @i) (call _WriteLn (addr @System.Output)) (call _WriteEnd (addr @System.Output)))",
+            MainBody("d: Double; s: Single; i: Integer", "{$I-} Write(d); Write(s:i); Writeln(d:0:i)"));
 
     // ------------------------------------------------------------------ checks (CMP-312, 314; C-039)
 
@@ -301,6 +329,18 @@ public sealed class LoweringTests
     [Trait("Req", "CMP-412")]
     public void Intrinsic_RealAbsAndSqr(string parameter, string expression, string expected) =>
         Assert.Equal($"(:= Result {expected})", Body($"function F({parameter}): Double; begin Result := {expression} end;"));
+
+    /// <summary>C-059 / CMP-412: <c>Trunc</c>/<c>Round</c>/<c>Int</c>/<c>Frac</c> call their RTL helpers (rtl-abi.md §9.10) with a Double; <c>Sqrt</c> is <c>llvm.sqrt.f64</c>.</summary>
+    [Theory]
+    [InlineData("Trunc(x)", "Int64", "(call _Trunc:Int64 x)")]
+    [InlineData("Round(s)", "Int64", "(call _Round:Int64 (conv Double s))")]
+    [InlineData("Int(x)", "Double", "(call _Int:Double x)")]
+    [InlineData("Frac(i)", "Double", "(call _Frac:Double (conv Double i))")]
+    [InlineData("Sqrt(x)", "Double", "(Sqrt:Double x)")]
+    [Trait("Req", "CMP-412")]
+    public void Intrinsic_RealFunctions(string expression, string resultType, string expected) =>
+        Assert.Equal($"(:= Result {expected})",
+            Body($"function F(x: Double; s: Single; i: Integer): {resultType}; begin Result := {expression} end;"));
 
     [Fact]
     [Trait("Req", "CMP-412")]

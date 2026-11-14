@@ -97,6 +97,11 @@ public sealed class BuiltInTypes
         Intrinsic("Assigned", IntrinsicKind.Assigned, "Assigned(P: Pointer): Boolean");
         Intrinsic("Addr", IntrinsicKind.Addr, "Addr(X): Pointer");
         Intrinsic("Ptr", IntrinsicKind.Ptr, "Ptr(Address: NativeUInt): Pointer");
+        Intrinsic("Trunc", IntrinsicKind.Trunc, "Trunc(X: Double): Int64");
+        Intrinsic("Round", IntrinsicKind.Round, "Round(X: Double): Int64");
+        Intrinsic("Int", IntrinsicKind.Int, "Int(X: Double): Double");
+        Intrinsic("Frac", IntrinsicKind.Frac, "Frac(X: Double): Double");
+        Intrinsic("Sqrt", IntrinsicKind.Sqrt, "Sqrt(X: Double): Double");
     }
 
     /// <summary>

@@ -96,6 +96,26 @@ public sealed class EmitTests
         Assert.Contains("call void @\"System._WriteLn\"(ptr @\"System.Output\")\n", text);
     }
 
+    /// <summary>C-175: a routine defined in another unit (here System's <c>memcmp</c>, <c>_GetMem</c>) gets a <c>declare</c> (CMP-340).</summary>
+    [Fact]
+    [Trait("Req", "CMP-340")]
+    [Trait("Req", "LANG-511")]
+    public void CallToSystemRoutine_IsDeclared()
+    {
+        var ir = EmitProgramIr("Repro", """
+            program Repro;
+            var A, B: array[0..3] of Byte; P: Pointer;
+            begin
+              Writeln(memcmp(@A[0], @B[0], 4));
+              P := _GetMem(8);
+            end.
+            """);
+
+        Assert.Contains("call i32 @memcmp(ptr ", ir);
+        Assert.Contains("declare i32 @memcmp(ptr, ptr, i64)\n", ir);
+        Assert.Contains("declare ptr @\"System._GetMem\"(i64)\n", ir);
+    }
+
     [Fact]
     [Trait("Req", "LANG-511")]
     public void ProgramSeesSystemInterfaceSymbols_AndItsOwnDeclarationsHideThem()
@@ -286,7 +306,7 @@ public sealed class EmitTests
         Assert.True(exists);
     }
 
-    private static async Task<(int ExitCode, List<string> StdOut, List<string> StdErr)> BuildAndRun(
+    internal static async Task<(int ExitCode, List<string> StdOut, List<string> StdErr)> BuildAndRun(
         string name, string source, OptimizationLevel optimization)
     {
         var toolchain = Path.GetDirectoryName(Clang.Path)!;

@@ -199,6 +199,23 @@ public sealed class FlowAnalysisTests
         Assert.Empty(Flow(Proc("var x: Integer; procedure Q; begin Writeln(x) end;", "x := 1; Q")));
     }
 
+    /// <summary>
+    /// C-177: taking the address of a local counts as a use for H2002 — stores before and after <c>@x</c> may be read
+    /// through the pointer, so none of them is reported. Unrelated locals keep their H2002.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-390")]
+    public void AddressOfCountsAsUse()
+    {
+        const string decls = "var x: Integer; p: ^Integer;";
+        Assert.Empty(Flow(Proc(decls, "x := 1; p := @x; Writeln(p^)")));
+        Assert.Empty(Flow(Proc(decls, "x := 1; p := @x; p^ := 5")));
+        Assert.Empty(Flow(Proc(decls, "p := @x; x := 2; Writeln(p^)")));
+        Assert.Empty(Flow(Proc(decls, "x := 1; while b do begin p := @x; Writeln(p^); x := 3 end")));
+        var text = Proc("var x, y: Integer; p: ^Integer;", "y := 1; x := 1; p := @x; Writeln(p^)");
+        Assert.Equal([At("H2002", text, "|y := 1")], Flow(text));
+    }
+
     // ------------------------------------------------------------------ switches (CMP-505) and errors
 
     [Fact]

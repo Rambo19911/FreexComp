@@ -43,6 +43,14 @@ public sealed class WriteBindingTests
     [InlineData("Write(c:i - 1)", "(Write (: c:Char (Subtract:Integer i:Integer 1:Integer)))")]
     public void WidthSpecifiers_AreIntegers(string statement, string expected) => Assert.Equal("(block " + expected + ")", Body(statement));
 
+    /// <summary>C-059 (LANG-911, 930, 931): reals are written unconverted; <c>:w</c> and <c>:d</c> are converted to Integer.</summary>
+    [Theory]
+    [Trait("Req", "LANG-911")]
+    [InlineData("Write(d)", "(Write d:Double)")]
+    [InlineData("Writeln(d:i, 2.5:0:2)", "(Writeln (: d:Double i:Integer) (: 2.5:Double 0:Integer 2:Integer))")]
+    [InlineData("Write(t, d:b:b + 1)", "(Write (file t:Text) (: d:Double (conv Integer b:Byte) (Add:Integer (conv Integer b:Byte) 1:Integer)))")]
+    public void Reals_WithWidthAndDecimals(string statement, string expected) => Assert.Equal("(block " + expected + ")", Body(statement));
+
     [Theory]
     [Trait("Req", "LANG-911")]
     [InlineData("Write(i:2^:1)", "E2912: Decimals specifier ':d' is only allowed for real values")]
@@ -51,8 +59,8 @@ public sealed class WriteBindingTests
     [InlineData("Write(^t:3)", "E2913: Type 'Text' is not allowed in Write/Writeln")]
     [InlineData("Write(i:^'x')", "E2010: Incompatible types: 'Char' and 'Integer'")]
     [InlineData("Write(i:^1.5)", "E2010: Incompatible types: 'Double' and 'Integer'")]
-    [InlineData("Write(^d)", "E2900: Feature not supported: Write of a real value")]
-    [InlineData("Write(^d:0:2)", "E2900: Feature not supported: Write of a real value")]
+    [InlineData("Write(d:1:^'x')", "E2010: Incompatible types: 'Char' and 'Integer'")]
+    [InlineData("Write(q:1^:2)", "E2912: Decimals specifier ':d' is only allowed for real values")]
     [InlineData("Write(^s)", "E2900: Feature not supported: Write of a string variable")]
     [InlineData("Write(^pc)", "E2900: Feature not supported: Write of a PChar")]
     [InlineData("Write(^x)", "E2003: Undeclared identifier 'x'")]

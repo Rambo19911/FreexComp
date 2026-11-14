@@ -1,4 +1,4 @@
-// covers: LANG-226, LANG-232
+// covers: LANG-226, LANG-232, LANG-932
 program RealSpecialValues;
 var
   Zero, One, PosInf, NegInf, NaN, D: Double;
@@ -32,4 +32,10 @@ begin
   Writeln(S = PosInf, ' ', S > 3e38);
   S := NaN;
   Writeln(S = S, ' ', S <> S);
+
+  { LANG-932: NAN, INF, -INF right-justified in the width (scientific default 23), in both formats }
+  Writeln(NaN, '|', PosInf, '|', NegInf, '|');
+  Writeln(NaN:0, '|', PosInf:4, '|', NegInf:0:2, '|', NaN:6:1, '|');
+  S := NegInf;
+  Writeln(S:5, '|', S:0:0);
 end.

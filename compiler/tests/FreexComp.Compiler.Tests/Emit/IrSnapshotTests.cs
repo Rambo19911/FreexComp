@@ -940,8 +940,35 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-059: <c>Trunc</c>/<c>Round</c>/<c>Int</c>/<c>Frac</c> as RTL helper calls on a <c>double</c>, <c>Sqrt</c> as
+    /// <c>llvm.sqrt.f64</c>, a Single operand extended first (CMP-412), and <c>_WriteFloat</c> with the CMP-410 widths.
+    /// </summary>
+    internal const string RealIntrinsicsSource = """
+        unit M;
+        interface
+        procedure Show(d: Double; s: Single; w: Integer);
+        function Parts(d: Double; s: Single; i: Integer): Int64;
+        implementation
+        procedure Show(d: Double; s: Single; w: Integer);
+        begin
+          Write(d);
+          Write(s:w);
+          Writeln(d:w:2, Sqrt(s));
+        end;
+        function Parts(d: Double; s: Single; i: Integer): Int64;
+        var
+          x: Double;
+        begin
+          x := Int(d) + Frac(s) + Sqrt(d) + Sqrt(i);
+          Result := Trunc(x) + Round(s) + Trunc(2.5) + Round(2.5);
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["RealIntrinsics"] = RealIntrinsicsSource,
         ["Reals"] = RealsSource,
         ["Typecasts"] = TypecastsSource,
         ["Pointers"] = PointersSource,
@@ -1211,6 +1238,31 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-315")]
     [Trait("Req", "CMP-316")]
     public void Reals() => Snapshot.Verify("Reals", Emit(RealsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-410")]
+    [Trait("Req", "CMP-412")]
+    public void RealIntrinsics() => Snapshot.Verify("RealIntrinsics", Emit(RealIntrinsicsSource));
+
+    /// <summary>C-059: the helper declarations of rtl-abi.md §9.9/§9.10 and the CMP-410 arguments of <c>_WriteFloat</c>.</summary>
+    [Fact]
+    [Trait("Req", "CMP-410")]
+    [Trait("Req", "CMP-412")]
+    public void RealIntrinsics_UseTheAbiHelpers()
+    {
+        var text = Emit(RealIntrinsicsSource);
+
+        foreach (var line in (string[])["declare i64 @\"System._Trunc\"(double)\n", "declare i64 @\"System._Round\"(double)\n",
+                     "declare double @\"System._Int\"(double)\n", "declare double @\"System._Frac\"(double)\n",
+                     "declare double @llvm.sqrt.f64(double)\n", "declare void @\"System._WriteFloat\"(ptr, double, i32, i32)\n"])
+        {
+            Assert.Contains(line, text);
+        }
+
+        Assert.Contains(", i32 23, i32 -1)\n", text);                                                  // Write(d)
+        Assert.Contains(" = fpext float ", text);
+        Assert.Equal(2, text.Split("call i64 @\"System._").Length - 1);                                 // Trunc(2.5), Round(2.5) are folded
+    }
 
     /// <summary>C-058: the CMP-313/315/316 instructions; no fast-math flags and no overflow intrinsics on reals under <c>{$Q+}</c>.</summary>
     [Fact]

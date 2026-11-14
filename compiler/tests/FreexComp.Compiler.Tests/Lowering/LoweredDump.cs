@@ -47,6 +47,8 @@ internal static class LoweredDump
         LBreak b => $"(break {b.Label})",
         LContinue c => $"(continue {c.Label})",
         LSwitch s => Switch(s),
+        LMemSet m => $"(memset {Of(m.Target)} {Of(m.Count)} {Of(m.Value)})",
+        LMemMove m => $"(memmove {Of(m.Source)} {Of(m.Destination)} {Of(m.Count)})",
         LReturn => "(return)",
         LUnreachable => "(unreachable)",
         _ => throw new ArgumentOutOfRangeException(nameof(node), node.GetType().Name),

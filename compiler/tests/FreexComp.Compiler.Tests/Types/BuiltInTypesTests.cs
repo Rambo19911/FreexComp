@@ -76,6 +76,7 @@ public sealed class BuiltInTypesTests
             "Length",                                                                       // M2.2 (C-052)
             "New", "Dispose", "GetMem", "FreeMem", "ReallocMem", "FillChar", "Move", "Assigned", "Addr", "Ptr",   // M2.2 (C-056)
             "Assert",                                                                                       // M2.2 (C-057)
+            "Trunc", "Round", "Int", "Frac", "Sqrt",                                                         // M2.2 (C-059)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

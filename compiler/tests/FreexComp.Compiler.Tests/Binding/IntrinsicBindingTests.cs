@@ -129,6 +129,56 @@ public sealed class IntrinsicBindingTests
     public void M21Sqr_ConstantOverflow_IsE2051() =>
         Assert.Equal(["E2051(1,131): Constant expression overflow"], ConstantErrors("Sqr(Int64(5000000000))"));
 
+    // ------------------------------------------------------------------ Trunc, Round, Int, Frac, Sqrt (C-059)
+
+    /// <summary>intrinsics.md: the operand converts to <c>Double</c> (integers and <c>Single</c> too); Trunc/Round give Int64, the others Double.</summary>
+    [Fact]
+    [Trait("Req", "LANG-231")]
+    public void RealFunctions_InBodies() =>
+        Assert.Equal(
+            "(block (:= q:Int64 (Trunc:Int64 d:Double)) (:= q:Int64 (Round:Int64 d:Double)) (:= d:Double (Int:Double d:Double)) " +
+            "(:= d:Double (Frac:Double d:Double)) (:= d:Double (Sqrt:Double d:Double)) (:= i:Integer (conv Integer (Trunc:Int64 (conv Double i:Integer)))) " +
+            "(:= d:Double (Sqrt:Double (conv Double q:Int64))) (:= d:Double (Sqrt:Double 2.0:Double)) (:= q:Int64 3:Int64))",
+            Body("q := Trunc(d); q := Round(d); d := Int(d); d := Frac(d); d := Sqrt(d); i := Trunc(i); d := Sqrt(q); d := Sqrt(2); q := Round(2.5 + 0.5)"));
+
+    [Fact]
+    [Trait("Req", "LANG-230")]
+    public void RealFunctions_SingleOperandConvertsToDouble() =>
+        Assert.Equal("(block (:= q:Int64 (Round:Int64 (conv Double s:Single))) (:= s:Single (conv Single (Frac:Double (conv Double s:Single)))))",
+            BoundDump.Of(Assert.Single(Bind("program T; var s: Single; q: Int64; begin q := Round(s); s := Frac(s) end.").Result.Bodies)));
+
+    /// <summary>LANG-340: Trunc and Round fold (toward zero / ties to even); Int, Frac and Sqrt are not constant expressions.</summary>
+    [Theory]
+    [Trait("Req", "LANG-340")]
+    [InlineData("Trunc(2.7)", "2:Int64")]
+    [InlineData("Trunc(-2.7)", "-2:Int64")]
+    [InlineData("Trunc(7)", "7:Int64")]
+    [InlineData("Round(2.5)", "2:Int64")]
+    [InlineData("Round(3.5)", "4:Int64")]
+    [InlineData("Round(-2.5)", "-2:Int64")]
+    [InlineData("Round(-2.51)", "-3:Int64")]
+    [InlineData("Round(1e18)", "1000000000000000000:Int64")]
+    public void RealFunctions_Fold(string expression, string expected) => Assert.Equal(expected, Constant(expression));
+
+    [Theory]
+    [Trait("Req", "LANG-340")]
+    [InlineData("Int(2.5)", "E2050(1,131): Constant expression expected")]
+    [InlineData("Frac(2.5)", "E2050(1,131): Constant expression expected")]
+    [InlineData("Sqrt(4)", "E2050(1,131): Constant expression expected")]
+    [InlineData("Trunc(1e19)", "E2051(1,131): Constant expression overflow")]
+    [InlineData("Round(-1e19)", "E2051(1,131): Constant expression overflow")]
+    [InlineData("Trunc('a')", "E2010(1,137): Incompatible types: 'Char' and 'Double'")]
+    public void RealFunctions_ConstantErrors(string expression, string expected) => Assert.Equal([expected], ConstantErrors(expression));
+
+    [Theory]
+    [Trait("Req", "LANG-900")]
+    [InlineData("q := Trunc(c)", "E2010(1,138): Incompatible types: 'Char' and 'Double'")]
+    [InlineData("d := Sqrt(f)", "E2010(1,137): Incompatible types: 'Boolean' and 'Double'")]
+    [InlineData("i := Round(d)", null)]
+    [InlineData("d := Trunc(d)", null)]
+    [InlineData("q := Int(d)", "E2010(1,132): Incompatible types: 'Double' and 'Int64'")]
+    public void RealFunctions_Errors(string statement, string? expected) => Assert.Equal(expected is null ? [] : [expected], Errors(statement));
+
     // ------------------------------------------------------------------ Low, High, SizeOf (LANG-902, 903)
 
     [Theory]

@@ -700,7 +700,10 @@ internal sealed class ConstantFolder
             return null;
         }
 
-        return FoldIntrinsic(invocation, intrinsic, operand, resultType);
+        // LANG-340 lists Trunc and Round, not Int, Frac, Sqrt
+        return intrinsic.Intrinsic is IntrinsicKind.Int or IntrinsicKind.Frac or IntrinsicKind.Sqrt
+            ? NotConstant(invocation)
+            : FoldIntrinsic(invocation, intrinsic, operand, resultType);
     }
 
     /// <summary>
@@ -727,6 +730,16 @@ internal sealed class ConstantFolder
 
             case IntrinsicKind.Abs or IntrinsicKind.Sqr when operand is RealTypeSymbol { RealKind: not RealKind.Currency }:
                 return operand;
+
+            // intrinsics.md: (X: Double) — integer and real operands convert to Double (LANG-231)
+            case IntrinsicKind.Trunc or IntrinsicKind.Round or IntrinsicKind.Int or IntrinsicKind.Frac or IntrinsicKind.Sqrt:
+                if (operand is not (IntegerTypeSymbol or RealTypeSymbol { RealKind: not RealKind.Currency }))
+                {
+                    _diagnostics.Report(at, "E2010", operand.Name, _types.Double.Name);
+                    return null;
+                }
+
+                return intrinsic.Intrinsic is IntrinsicKind.Trunc or IntrinsicKind.Round ? _types.Int64 : _types.Double;
         }
 
         if (operand is not IntegerTypeSymbol integer)
@@ -776,6 +789,25 @@ internal sealed class ConstantFolder
 
             case IntrinsicKind.Abs:
                 return Integer(BigInteger.Abs((BigInteger)value!), call);
+
+            case IntrinsicKind.Trunc or IntrinsicKind.Round:
+            {
+                // toward zero / to nearest with ties to even (intrinsics.md); E2051 outside Int64
+                var result = value switch
+                {
+                    BigInteger exact => exact,
+                    double d when intrinsic.Intrinsic == IntrinsicKind.Trunc && double.IsFinite(d) => new BigInteger(Math.Truncate(d)),
+                    double d when double.IsFinite(d) => new BigInteger(Math.Round(d, MidpointRounding.ToEven)),
+                    _ => BigInteger.MinusOne << 64,                                              // NaN/INF: out of range
+                };
+                if (result < long.MinValue || result > long.MaxValue)
+                {
+                    _diagnostics.Report(call, "E2051");
+                    return null;
+                }
+
+                return new ConstantValue(result, _types.Int64);
+            }
 
             case IntrinsicKind.Sqr:
                 return Integer((BigInteger)value! * (BigInteger)value, call);

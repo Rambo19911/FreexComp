@@ -58,6 +58,15 @@ internal static class IntrinsicRewriter
                 return context.Compare(LCompareOperator.NotEqual, operand, Nil(context));
             case IntrinsicKind.Ptr:
                 return new LConvert(operand, call.Type);                                     // inttoptr (CMP-313)
+            case IntrinsicKind.Sqrt:
+                return new LUnary(LUnaryOperator.Sqrt, operand);                             // llvm.sqrt.f64 (CMP-412)
+            case IntrinsicKind.Trunc or IntrinsicKind.Round or IntrinsicKind.Int or IntrinsicKind.Frac:
+            {
+                // CMP-412: RTL helpers _Trunc/_Round (→ Int64) and _Int/_Frac (→ Double), rtl-abi.md §9.10; the operand is a Double
+                var helper = new RuntimeHelper("_" + call.Intrinsic.Intrinsic, [context.Types.Double], call.Type, IsNoReturn: false);
+                return new LCall(new LHelperCallee(helper), [operand]);
+            }
+
             default:
                 throw new InvalidOperationException($"{call.Intrinsic.Name} with a non-constant result is not an M2.1 intrinsic.");
         }
@@ -135,10 +144,12 @@ internal static class IntrinsicRewriter
                 return MemoryStatement(context, call);
 
             case IntrinsicKind.FillChar:
-                return new LMemSet(context.Lower(call.Arguments[0]), context.Lower(call.Arguments[1]), context.Convert(context.Lower(call.Arguments[2]), context.Types.Byte));
+                return PositiveCount(context, context.Lower(call.Arguments[1]),
+                    count => new LMemSet(context.Lower(call.Arguments[0]), count, context.Convert(context.Lower(call.Arguments[2]), context.Types.Byte)));
 
             case IntrinsicKind.Move:
-                return new LMemMove(context.Lower(call.Arguments[0]), context.Lower(call.Arguments[1]), context.Lower(call.Arguments[2]));
+                return PositiveCount(context, context.Lower(call.Arguments[2]),
+                    count => new LMemMove(context.Lower(call.Arguments[0]), context.Lower(call.Arguments[1]), count));
 
             case IntrinsicKind.Include or IntrinsicKind.Exclude:
                 return SetRewriter.IncludeExclude(context, call, call.Intrinsic.Intrinsic == IntrinsicKind.Include);
@@ -175,6 +186,25 @@ internal static class IntrinsicRewriter
         var line = context.Constant(location.LineSpan.Start.Line + 1, types.Integer);
         var fail = new LBlock([new LCallStatement(new LHelperCallee(helper), [message, file, line]), new LUnreachable()]);
         return new LIf(new LUnary(LUnaryOperator.Not, context.Lower(call.Arguments[0])), fail, @else: null);
+    }
+
+    /// <summary>
+    /// C-176 (intrinsics.md, rtl-abi.md: <c>FillChar</c>/<c>Move</c> with a count ≤ 0 do nothing): a constant count &gt; 0 is used
+    /// as is, a constant count ≤ 0 gives nothing; any other count is stored once in a temporary that guards the operation
+    /// (<c>t := count; if t &gt; 0 then op(t)</c>). The count is evaluated before the variable arguments' addresses.
+    /// </summary>
+    private static LStatement PositiveCount(LoweringContext context, LExpression count, Func<LExpression, LStatement> operation)
+    {
+        if (count is LConst { Value.Value: BigInteger constant })
+        {
+            return constant.Sign > 0 ? operation(count) : new LBlock([]);
+        }
+
+        var temp = context.NewTemp(count.Type);
+        return new LBlock([
+            new LAssign(new LLocalRef(temp), count),
+            new LIf(context.Compare(LCompareOperator.Greater, new LLocalRef(temp), context.Constant(BigInteger.Zero, count.Type)), operation(new LLocalRef(temp)), @else: null),
+        ]);
     }
 
     /// <summary>Evaluates <paramref name="value"/> once; <paramref name="body"/> reads it through the given reference factory.</summary>

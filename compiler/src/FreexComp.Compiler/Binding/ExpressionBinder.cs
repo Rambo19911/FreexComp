@@ -569,7 +569,13 @@ internal sealed class ExpressionBinder
             return Error(invocation, operand);
         }
 
-        if (operand.ConstantValue is { } constant)
+        if (intrinsic.Intrinsic is IntrinsicKind.Trunc or IntrinsicKind.Round or IntrinsicKind.Int or IntrinsicKind.Frac or IntrinsicKind.Sqrt)
+        {
+            operand = Convert(operand, _types.Double);                      // (X: Double), C-059
+        }
+
+        // LANG-340: Int, Frac and Sqrt are not folded (not constant expressions)
+        if (operand.ConstantValue is { } constant && intrinsic.Intrinsic is not (IntrinsicKind.Int or IntrinsicKind.Frac or IntrinsicKind.Sqrt))
         {
             return _folder.FoldIntrinsic(invocation, intrinsic, constant, resultType) is { } folded
                 ? new BoundIntrinsicCallExpression(invocation, intrinsic, [operand], folded.Type, folded)

@@ -276,6 +276,9 @@ internal enum LUnaryOperator
 
     /// <summary>Real absolute value (<c>llvm.fabs</c>, CMP-412); integer <c>Abs</c> is lowered to a select.</summary>
     Abs,
+
+    /// <summary>Square root of a <c>Double</c> (<c>llvm.sqrt.f64</c>, CMP-412; negative → NaN).</summary>
+    Sqrt,
 }
 
 /// <summary>A unary operation; <see cref="IsChecked"/> = integer negation under <c>{$Q+}</c> (CMP-312, set by <see cref="CheckRewriter"/>).</summary>

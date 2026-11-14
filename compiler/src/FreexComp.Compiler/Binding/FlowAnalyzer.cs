@@ -106,7 +106,7 @@ internal sealed class FlowAnalyzer
             }
         }
 
-        foreach (var (variable, target) in _stores.Where(s => !_readStores.Contains(s.Target)).DistinctBy(s => s.Target))
+        foreach (var (variable, target) in _stores.Where(s => _deadStoreTracked.Contains(s.Variable) && !_readStores.Contains(s.Target)).DistinctBy(s => s.Target))
         {
             Report(target.FirstToken(), DiagnosticBag.LocationOf(target), "H2002", variable.Name);
         }
@@ -645,7 +645,9 @@ internal sealed class FlowAnalyzer
                 return Eval(field.Record, state);
 
             case BoundAddressOfExpression { Operand: BoundVariableExpression variable }:
-                Assign(variable.Variable, state, null);                         // may be written through the pointer
+                // C-177: the pointer may read any store, before or after this point: no H2002 for the variable at all
+                _deadStoreTracked.Remove(variable.Variable);
+                Assign(variable.Variable, state, null);                         // may be written through the pointer (W1041)
                 return state;
 
             case BoundAddressOfExpression addressOf:

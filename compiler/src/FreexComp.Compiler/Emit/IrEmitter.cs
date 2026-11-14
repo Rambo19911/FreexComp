@@ -353,14 +353,25 @@ internal sealed class ModuleState(IIrWriter writer)
     /// <summary>Link names of the routines defined in this module: helper calls in unit System use them directly.</summary>
     public HashSet<string> DefinedRoutines { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>The function to call: routines with a body in this unit directly, others through a declaration.</summary>
-    public IrGlobal Routine(RoutineSymbol routine) =>
-        routine.Definition is null
-            ? Declare(new IrFunctionDeclaration(Mangler.Routine(routine), IrEmitter.ReturnType(routine), IrEmitter.ParameterTypes(routine))
-            {
-                DllImport = routine.LibraryName is not null,
-            })
-            : new IrGlobal(Mangler.Routine(routine));
+    /// <summary>
+    /// The function to call: routines with a body in this module directly, all others (external routines, routines of other
+    /// units such as System's, C-175) through a declaration. A noreturn routine is declared with <c>#1</c>, like the helpers.
+    /// </summary>
+    public IrGlobal Routine(RoutineSymbol routine)
+    {
+        var name = Mangler.Routine(routine);
+        if (DefinedRoutines.Contains(name.Text))
+        {
+            return new IrGlobal(name);
+        }
+
+        UsesNoReturn |= routine.IsNoReturn;
+        return Declare(new IrFunctionDeclaration(name, IrEmitter.ReturnType(routine), IrEmitter.ParameterTypes(routine),
+            routine.IsNoReturn ? IrEmitter.NoReturnGroup : null)
+        {
+            DllImport = routine.LibraryName is not null,
+        });
+    }
 
     public bool UsesNoReturn { get; private set; }
 
@@ -1313,6 +1324,13 @@ internal sealed class FunctionEmitter
                 var name = operand.Type == IrType.Float ? "llvm.fabs.f32" : "llvm.fabs.f64";
                 var fabs = _module.Intrinsic(name, operand.Type, [operand.Type]);
                 return _w.Call(NewTemp(), operand.Type, fabs, [operand])!;
+            }
+
+            case LUnaryOperator.Sqrt:
+            {
+                var name = operand.Type == IrType.Float ? "llvm.sqrt.f32" : "llvm.sqrt.f64";
+                var sqrt = _module.Intrinsic(name, operand.Type, [operand.Type]);
+                return _w.Call(NewTemp(), operand.Type, sqrt, [operand])!;
             }
 
             default:

@@ -470,9 +470,9 @@ internal sealed class BodyBinder
     // ------------------------------------------------------------------ Write, Writeln (LANG-910…922)
 
     /// <summary>
-    /// LANG-910/911: an optional leading <c>Text</c> variable, then <c>e[:w[:d]]</c> arguments. M2.1 writes integers,
-    /// Booleans, chars and string constants; reals, string variables and <c>PChar</c> arrive with M2.2 (E2900); other
-    /// types are E2913. One diagnostic per argument; the statement is an error statement after any.
+    /// LANG-910/911: an optional leading <c>Text</c> variable, then <c>e[:w[:d]]</c> arguments. Written: integers,
+    /// Booleans, chars, string constants and reals (<c>:d</c> only for reals, E2912); string variables and <c>PChar</c>
+    /// arrive with M2.2 (E2900); other types are E2913. One diagnostic per argument; the statement is an error statement after any.
     /// </summary>
     private BoundStatement BindWrite(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
     {
@@ -511,9 +511,9 @@ internal sealed class BodyBinder
                 continue;
             }
 
-            if (argument.DecimalsColonToken is { } decimalsColon)
+            if (argument.DecimalsColonToken is { } decimalsColon && value.Type is not RealTypeSymbol)
             {
-                _diagnostics.Report(decimalsColon, "E2912");                        // reals only (M2.2)
+                _diagnostics.Report(decimalsColon, "E2912");                        // reals only (LANG-911)
                 ok = false;
                 continue;
             }
@@ -521,20 +521,24 @@ internal sealed class BodyBinder
             var width = argument.Width is { } w
                 ? _expressions.ConvertForAssignment(_expressions.BindExpression(w), _types.Integer, w)
                 : null;
-            ok &= width?.HasErrors != true;
-            bound.Add(new BoundWriteArgument(argument, value, width, decimals: null));
+            var decimals = argument.Decimals is { } d
+                ? _expressions.ConvertForAssignment(_expressions.BindExpression(d), _types.Integer, d)
+                : null;
+            ok &= width?.HasErrors != true && decimals?.HasErrors != true;
+            bound.Add(new BoundWriteArgument(argument, value, width, decimals));
         }
 
         return ok ? new BoundWriteStatement(statement, intrinsic, file, bound.ToImmutable()) : new BoundErrorStatement(statement);
     }
 
-    /// <summary>Null when <paramref name="value"/> can be written in M2.1; "" for E2913; else the E2900 feature name.</summary>
+    /// <summary>Null when <paramref name="value"/> can be written; "" for E2913; else the E2900 feature name.</summary>
     private static string? WriteTypeError(BoundExpression value) => value.Type switch
     {
         IntegerTypeSymbol or BooleanTypeSymbol or CharTypeSymbol => null,
         StringTypeSymbol when value.ConstantValue != null => null,
         StringTypeSymbol => "Write of a string variable",
-        RealTypeSymbol => "Write of a real value",
+        RealTypeSymbol { RealKind: RealKind.Currency } => "Write of a Currency value",
+        RealTypeSymbol => null,
         PointerTypeSymbol { AllowsPointerMath: true } => "Write of a PChar",
         _ => "",
     };
