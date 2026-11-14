@@ -353,9 +353,13 @@ internal sealed partial class ExpressionBinder
         {
             case null:
                 return Error(name);
+            case VariableSymbol { ContainingSymbol: ClassTypeSymbol } classVar:
+                return ClassVariable(name, name, classVar, CurrentMethod?.ContainingType);      // LANG-615 inside a method
             case VariableSymbol variable:
                 NoteReference(variable);
                 return new BoundVariableExpression(name, variable);
+            case PropertySymbol property:
+                return ImplicitProperty(name, property);                            // LANG-641 inside a method
             case ParameterSymbol parameter:
                 NoteReference(parameter);
                 return new BoundParameterExpression(name, parameter);
@@ -373,6 +377,8 @@ internal sealed partial class ExpressionBinder
                 return Error(name);                                     // its declaration already reported the error
             case EnumMemberSymbol member:
                 return new BoundLiteral(name, member.Value);
+            case ClassTypeSymbol classType:
+                return new BoundClassReferenceExpression(name, classType, classType.Reference);   // LANG-652: a class name as a value
             case TypeSymbol type:
                 _diagnostics.Report(name, "E2009", type.Name);
                 return Error(name);
@@ -424,9 +430,9 @@ internal sealed partial class ExpressionBinder
             return Error(syntax, operand);
         }
 
-        if (!IsAddressable(operand))
+        if (!IsAddressable(operand) || IsPropertyRead(operand))
         {
-            _diagnostics.Report(operandSyntax, "E2033");
+            _diagnostics.Report(operandSyntax, "E2033");                    // also @Prop (LANG-645)
             return Error(syntax, operand);
         }
 
@@ -496,15 +502,41 @@ internal sealed partial class ExpressionBinder
     /// </summary>
     private BoundExpression BindElementAccess(ElementAccessExpressionSyntax syntax)
     {
+        // an array property named by syntax.Expression takes the first indexes (LANG-642)
+        var saved = (_indexedBy, _indexesTaken);
+        (_indexedBy, _indexesTaken) = (syntax, 0);
         var result = BindExpression(syntax.Expression);
+        var taken = _indexesTaken;
+        (_indexedBy, _indexesTaken) = saved;
         if (result.HasErrors)
         {
             return Error(syntax, result);
         }
 
         var first = true;
-        foreach (var indexSyntax in syntax.Indexes)
+        for (var i = taken; i < syntax.Indexes.Count; i++)
         {
+            var indexSyntax = syntax.Indexes[i];
+            if (result.Type is ClassTypeSymbol owner && owner.DefaultProperty is { } defaultProperty)
+            {
+                // LANG-642: Obj[i] = Obj.Items[i]
+                if (i + defaultProperty.Parameters.Length > syntax.Indexes.Count)
+                {
+                    _diagnostics.Report(syntax, "E2110", defaultProperty.Name);
+                    return Error(syntax, result);
+                }
+
+                result = DefaultPropertyAccess(syntax, i, defaultProperty, result);
+                if (result.HasErrors)
+                {
+                    return result;
+                }
+
+                i += defaultProperty.Parameters.Length - 1;
+                first = true;
+                continue;
+            }
+
             if (result.Type is PointerTypeSymbol { PointedType: ArrayTypeSymbol pointedArray } && !AllowsPointerMath(result.Type, syntax.FirstToken()))
             {
                 result = new BoundDereferenceExpression(syntax.Expression, result, pointedArray);   // p[i] = p^[i] (extended syntax)
@@ -680,6 +712,10 @@ internal sealed partial class ExpressionBinder
         {
             _diagnostics.Report(name, "E2132");
         }
+        else if (symbol is null && CurrentMethod is null && IdentifierComparer.Instance.Equals(text, "Self"))
+        {
+            _diagnostics.Report(name, "E2134");                                   // LANG-621
+        }
         else if (symbol is null)
         {
             _diagnostics.ReportUndeclared(name, text);
@@ -729,7 +765,7 @@ internal sealed partial class ExpressionBinder
             return ImplicitMethodCall(invocation, name, invocation.ArgumentList);
         }
 
-        if (symbol is VariableSymbol or ParameterSymbol or ConstantSymbol)
+        if (symbol is VariableSymbol or ParameterSymbol or ConstantSymbol or PropertySymbol)
         {
             return CallThrough(invocation, BindOperand(invocation.Expression));        // p(x) (LANG-484)
         }
@@ -1246,6 +1282,9 @@ internal sealed partial class ExpressionBinder
             (PointerTypeSymbol, ProceduralTypeSymbol) => true,
             (ClassTypeSymbol, ClassTypeSymbol or PointerTypeSymbol or IntegerTypeSymbol { Bits: 64 }) => true,     // LANG-290: the reference (C-080)
             (PointerTypeSymbol, ClassTypeSymbol) => true,
+            (ClassRefTypeSymbol, ClassRefTypeSymbol or PointerTypeSymbol or IntegerTypeSymbol { Bits: 64 }) => true,  // LANG-290 (C-086)
+            (PointerTypeSymbol, ClassRefTypeSymbol) => true,
+            (_, ClassRefTypeSymbol) when source.IsOrdinal => true,
             (IntegerTypeSymbol or RealTypeSymbol, RealTypeSymbol) => true,
             _ => false,
         };
@@ -1495,6 +1534,12 @@ internal sealed partial class ExpressionBinder
     /// </summary>
     public bool CheckVariableReference(BoundExpression argument, ExpressionSyntax syntax)
     {
+        if (IsPropertyRead(argument))
+        {
+            _diagnostics.Report(syntax, "E2113");                       // LANG-645: properties are not variables
+            return false;
+        }
+
         switch (BoundIndexExpression.RootOf(argument))
         {
             case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
@@ -1533,7 +1578,8 @@ internal sealed partial class ExpressionBinder
         {
             var (parameter, argument) = (candidate.Parameters[i], arguments[i]);
             var compatible = parameter.IsByReference
-                ? BoundIndexExpression.RootOf(argument) is BoundVariableExpression or BoundDereferenceExpression or BoundFieldAccessExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }
+                ? !IsPropertyRead(argument)
+                  && BoundIndexExpression.RootOf(argument) is BoundVariableExpression or BoundDereferenceExpression or BoundFieldAccessExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }
                   && Pointers.SameType(argument.Type, parameter.Type)
                 : ReferenceEquals(argument.Type, parameter.Type)
                   || (argument.ConstantValue is { } constant
@@ -1609,6 +1655,11 @@ internal sealed partial class ExpressionBinder
     private BoundExpression BindBinary(BinaryExpressionSyntax binary)
     {
         var op = binary.OperatorToken;
+        if (op.Kind is SyntaxKind.IsKeyword or SyntaxKind.AsKeyword)
+        {
+            return BindTypeTest(binary, isAs: op.Kind == SyntaxKind.AsKeyword);       // LANG-650, 651
+        }
+
         BoundExpression left, right;
         // a set constructor takes the set type of the other operand (LANG-251); the element of 'in' gives no set context
         if (Unparenthesized(binary.Right) is SetConstructorSyntax && Unparenthesized(binary.Left) is not SetConstructorSyntax && op.Kind != SyntaxKind.InKeyword)
@@ -1900,6 +1951,23 @@ internal sealed partial class ExpressionBinder
             if (comparable && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
             {
                 return new BoundBinaryExpression(binary, kind, left, right, lt is ClassTypeSymbol ? lt : rt, boolean, constantValue: null);
+            }
+
+            return Inapplicable(binary, left, right);
+        }
+
+        if (lt is ClassRefTypeSymbol || rt is ClassRefTypeSymbol)
+        {
+            // LANG-652: = and <> compare class references of related classes, or with nil (C-086)
+            var comparable = (lt, rt) switch
+            {
+                (ClassRefTypeSymbol l, ClassRefTypeSymbol r) => l.Class.InheritsFrom(r.Class) || r.Class.InheritsFrom(l.Class),
+                (ClassRefTypeSymbol, _) => right.Type == _types.Nil,
+                _ => left.Type == _types.Nil,
+            };
+            if (comparable && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
+            {
+                return new BoundBinaryExpression(binary, kind, left, right, lt is ClassRefTypeSymbol ? lt : rt, boolean, constantValue: null);
             }
 
             return Inapplicable(binary, left, right);

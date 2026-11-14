@@ -702,6 +702,9 @@ internal sealed class FlowAnalyzer
             case BoundClassReferenceExpression:
                 return state;
 
+            case BoundTypeTestExpression test:
+                return Eval(test.Operand, state);
+
             case BoundPointerArithmeticExpression arithmetic:
                 return Eval(arithmetic.Offset, Eval(arithmetic.Pointer, state));
 

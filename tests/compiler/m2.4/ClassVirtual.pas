@@ -1,7 +1,7 @@
-// covers: LANG-622, LANG-623, CMP-366, CMP-367, ABI-073, ABI-074
+// covers: LANG-622, LANG-623, LANG-641, LANG-650, CMP-366, CMP-367, ABI-073, ABI-074
 program ClassVirtual;
 
-{ classes-interfaces.md section 11 without the property (C-085) and the 'is' line (C-087): an abstract Area
+{ classes-interfaces.md section 11: an abstract Area
   overridden in two descendants, dispatched through a TShape reference; a static method calling a virtual one;
   a three-level chain where the middle class does not override; Destroy overridden and reached through Free. }
 
@@ -14,6 +14,7 @@ type
     function Area: Double; virtual; abstract;
     procedure Describe;
     function Kind: string; virtual;
+    property Name: string read FName;
   end;
 
   TRect = class(TShape)
@@ -44,7 +45,7 @@ end;
 
 procedure TShape.Describe;
 begin
-  Writeln(FName, ' ', Area:0:2, ' ', Kind);
+  Writeln(Name, ' ', Area:0:2, ' ', Kind);
 end;
 
 function TShape.Kind: string;
@@ -100,6 +101,7 @@ var
 begin
   S := TRect.Create(2, 3);
   S.Describe;
+  Writeln(S is TRect, ' ', S is TCircle);
   S.Free;
   S := TCircle.Create(1);
   S.Describe;

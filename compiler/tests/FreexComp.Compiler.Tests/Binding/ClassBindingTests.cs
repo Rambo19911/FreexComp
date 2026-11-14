@@ -222,6 +222,168 @@ public sealed class ClassBindingTests
         Assert.Empty(Assert.IsType<BoundBlock>(q[2]).Statements);
     }
 
+    private const string PropertyClasses =
+        "type TRec = record X: Integer; end; TA = class F: Integer; B: Byte; R: TRec; function GetR: TRec; function GetI(I: Integer): Integer; " +
+        "procedure SetF(V: Integer); {0} end; function TA.GetR: TRec; begin end; function TA.GetI(I: Integer): Integer; begin end; " +
+        "procedure TA.SetF(V: Integer); begin end; procedure V(var X: Integer); begin end; var A: TA; I: Integer; begin {1} end.";
+
+    /// <summary>C-085 / LANG-641…646: property declaration and use errors (positions stripped).</summary>
+    [Theory]
+    [Trait("Req", "LANG-641")]
+    [Trait("Req", "LANG-642")]
+    [Trait("Req", "LANG-645")]
+    [Trait("Req", "LANG-646")]
+    [InlineData("property P: Integer;", "", "E2631: Property 'P' needs a read or write specifier")]
+    [InlineData("property P: Integer write F;", "I := A.P", "E2632: Cannot read a write-only property")]
+    [InlineData("property P: Integer read F;", "A.P := 1", "E2633: Cannot assign to a read-only property")]
+    [InlineData("property P[I: Integer]: Integer read F;", "", "E2634: Array property accessors must be methods")]
+    [InlineData("property P[I: Integer]: Integer read GetI; default; property Q[I: Integer]: Integer read GetI; default;", "", "E2635: Class 'TA' already has a default array property")]
+    [InlineData("property P: Integer read B;", "", "E2636: Property accessor 'B' is not compatible with property type 'Integer'")]
+    [InlineData("property P: Integer read GetI;", "", "E2636: Property accessor 'GetI' is not compatible with property type 'Integer'")]
+    [InlineData("property P: Integer write GetI;", "", "E2636: Property accessor 'GetI' is not compatible with property type 'Integer'")]
+    [InlineData("property P: Integer read Nope;", "", "E2003: Undeclared identifier 'Nope'")]
+    [InlineData("property P: Integer read F write F;", "V(A.P)", "E2113: Variable required")]
+    [InlineData("property P: Integer read F write F;", "Inc(A.P)", "E2113: Variable required")]
+    [InlineData("property P: Integer read F write SetF;", "V(A.P)", "E2113: Variable required")]
+    [InlineData("property P: Integer read F write F;", "A.P := @A.P", "E2033: Cannot take the address of this expression")]
+    [InlineData("property P: TRec read GetR;", "A.P.X := 1", "E2053: Left side cannot be assigned to")]
+    [InlineData("property P[I: Integer]: Integer read GetI;", "I := A.P", "E2110: Not enough actual parameters for 'P'")]
+    [InlineData("property P[I: Integer]: Integer read GetI;", "I := A.P[1, 2]", "E2017: Array type required")]
+    [InlineData("property P: Integer read R.X write R.X; property Q: TRec read R; property S[I: Integer]: Integer read GetI write SetF;", "A.P := A.Q.X; A.R.X := A.P", "E2636: Property accessor 'SetF' is not compatible with property type 'Integer'")]
+    public void Properties_Errors(string member, string body, string expected)
+    {
+        var diagnostics = BindDiagnostics(string.Format(PropertyClasses, member, body))
+            .Select(d => System.Text.RegularExpressions.Regex.Replace(d, @"\(\d+,\d+\)", ""));
+        Assert.Equal([expected], diagnostics);
+    }
+
+    /// <summary>LANG-646: a redeclaration without type needs an inherited property (E2637); it keeps the type and replaces listed accessors.</summary>
+    [Fact]
+    [Trait("Req", "LANG-646")]
+    public void Properties_Redeclaration()
+    {
+        Assert.Equal(["E2637(1,86): Property 'Q' does not exist in an ancestor class"],
+            BindDiagnostics("type TA = class F: Integer; property P: Integer read F; end; TB = class(TA) property Q; end; begin end."));
+        var (result, _) = Bind("type TA = class F, G: Integer; property P: Integer read F write F; end; TB = class(TA) property P read G; end; begin end.");
+        Assert.Empty(Format(result.Diagnostics));
+        var p = Lookup<ClassTypeSymbol>(result, "TB").Properties.Single();
+        Assert.Equal(("Integer", "G", "F"), (p.Type.Name, p.ReadPath.Single().Name, p.WritePath.Single().Name));
+    }
+
+    /// <summary>C-085 / CMP-367: reads become field accesses or getter calls (virtual getters dispatch), writes stores or setter calls.</summary>
+    [Fact]
+    [Trait("Req", "LANG-641")]
+    [Trait("Req", "LANG-643")]
+    public void Properties_BindToAccessors()
+    {
+        var (result, _) = Bind("""
+            type
+              TA = class
+                F: Integer;
+                function Get(Index: Integer): Integer; virtual;
+                procedure SetIt(Index: Integer; V: Integer);
+                property P: Integer read F write F;
+                property Q: Integer index 7 read Get write SetIt;
+              end;
+            function TA.Get(Index: Integer): Integer; begin Result := Index end;
+            procedure TA.SetIt(Index: Integer; V: Integer); begin end;
+            var A: TA; I: Integer;
+            begin I := A.P; A.P := 1; I := A.Q; A.Q := 2 end.
+            """);
+        Assert.Empty(Format(result.Diagnostics));
+        var main = result.Bodies[0].Statements;
+        var read = Assert.IsType<BoundFieldAccessExpression>(Assert.IsType<BoundAssignmentStatement>(main[0]).Value);
+        Assert.Equal("P", read.Property!.Name);
+        Assert.Null(Assert.IsType<BoundFieldAccessExpression>(Assert.IsType<BoundAssignmentStatement>(main[1]).Target).Property);
+        var get = Assert.IsType<BoundCallExpression>(Assert.IsType<BoundAssignmentStatement>(main[2]).Value);
+        Assert.Equal(("Get", true, "7"), (get.Routine.Name, get.Receiver!.IsVirtual, get.Arguments.Single().ConstantValue!.ToDisplayString()));
+        var set = Assert.IsType<BoundCallStatement>(main[3]);
+        Assert.Equal(("SetIt", 2), (set.Routine.Name, set.Arguments.Length));
+    }
+
+    private const string ReferenceClasses =
+        "type TA = class F: Integer; class var N: Integer; constructor Create; virtual; procedure P; class procedure CP; virtual; " +
+        "class procedure SP; static; end; TB = class(TA) end; TX = class end; TAClass = class of TA; TBClass = class of TB; " +
+        "constructor TA.Create; begin end; procedure TA.P; begin end; class procedure TA.CP; begin {0} end; class procedure TA.SP; begin {1} end; " +
+        "var A: TA; CA: TAClass; CB: TBClass; begin {2} end.";
+
+    /// <summary>C-086 / LANG-652, 653, 620, 615: class references, class and static methods, class vars (positions stripped).</summary>
+    [Theory]
+    [Trait("Req", "LANG-652")]
+    [Trait("Req", "LANG-653")]
+    [Trait("Req", "LANG-620")]
+    [InlineData("", "", "CA := TB; CA := CB; CA := nil; CB := TB; A := CA.Create; CA.CP; CA.SP; TA.CP; A.CP; A.SP; TA.N := 1; A.N := CA.N; if CA = CB then; if CA <> TB then;", null)]
+    [InlineData("", "", "CB := CA;", "E2010: Incompatible types: 'TAClass' and 'TBClass'")]
+    [InlineData("", "", "CA := TX;", "E2010: Incompatible types: 'class of TX' and 'TAClass'")]
+    [InlineData("", "", "CA.P;", "E2607: Constructor or class method expected for a call on a class reference")]
+    [InlineData("", "", "TA.P;", "E2607: Constructor or class method expected for a call on a class reference")]
+    [InlineData("F := 1;", "", "", "E2608: Instance member 'F' is not accessible from a class method")]
+    [InlineData("P;", "", "", "E2608: Instance member 'P' is not accessible from a class method")]
+    [InlineData("N := 1; SP; CP; Self.CP; if Create = nil then; if Self.Create <> nil then;", "N := 2; SP; CP;", "", null)]
+    public void ClassReferences(string inClassMethod, string inStaticMethod, string inMain, string? expected)
+    {
+        var diagnostics = BindDiagnostics(string.Format(ReferenceClasses, inClassMethod, inStaticMethod, inMain))
+            .Select(d => System.Text.RegularExpressions.Regex.Replace(d, @"\(\d+,\d+\)", ""));
+        Assert.Equal(expected is null ? [] : [expected], diagnostics);
+    }
+
+    /// <summary>
+    /// C-086 / CMP-367: on a class name Self is the VMT (static call), on a class-reference value the value itself (virtual
+    /// class methods and constructors dispatch; constructors get Alloc = 1), on an instance its VMT; static methods have no Self.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-367")]
+    [Trait("Req", "LANG-633")]
+    public void ClassReferences_Receivers()
+    {
+        var (result, _) = Bind(string.Format(ReferenceClasses, "", "", "A := CA.Create; TA.CP; CA.CP; A.CP; A.SP"));
+        Assert.Empty(Format(result.Diagnostics));
+        var main = result.Bodies[0].Statements;
+        var create = Assert.IsType<BoundCallExpression>(Assert.IsType<BoundAssignmentStatement>(main[0]).Value);
+        Assert.Equal((true, 1), (create.Receiver!.IsVirtual, create.Receiver.Flag));
+        Assert.IsType<BoundVariableExpression>(create.Receiver.Self);
+        var calls = main.Skip(1).Cast<BoundCallStatement>().Select(c => c.Receiver!).ToList();
+        Assert.Equal((false, typeof(BoundClassReferenceExpression)), (calls[0].IsVirtual, calls[0].Self!.GetType()));
+        Assert.Equal((true, typeof(BoundVariableExpression)), (calls[1].IsVirtual, calls[1].Self!.GetType()));
+        Assert.Equal((true, typeof(BoundDereferenceExpression)), (calls[2].IsVirtual, calls[2].Self!.GetType()));
+        Assert.Same(BoundReceiver.Static, calls[3]);
+        var cp = result.Declarations.Scope.Lookup("TA") as ClassTypeSymbol;
+        Assert.IsType<ClassRefTypeSymbol>(cp!.Methods.Single(m => m.Name == "CP").SelfParameter!.Type);
+        Assert.Null(cp.Methods.Single(m => m.Name == "SP").SelfParameter);
+    }
+
+    /// <summary>C-088 / LANG-624, 621: <c>inherited</c> and <c>Self</c> outside a method; <c>inherited</c> of an abstract method.</summary>
+    [Theory]
+    [Trait("Req", "LANG-624")]
+    [InlineData("procedure P; begin inherited; end; begin end.", "E2133(1,20): 'inherited' is only allowed inside a method")]
+    [InlineData("function F: Integer; begin Result := inherited F; end; begin end.", "E2133(1,38): 'inherited' is only allowed inside a method")]
+    [InlineData("var X: Pointer; begin X := Self end.", "E2134(1,28): 'Self' is only available inside a method")]
+    [InlineData("type TA = class procedure P; virtual; abstract; end; TB = class(TA) procedure P; override; end; procedure TB.P; begin inherited P end; begin end.",
+        "E2626(1,119): Cannot call abstract method 'P' with 'inherited'")]
+    public void Inherited_Errors(string source, string expected)
+    {
+        Assert.Equal([expected], BindDiagnostics(source));
+    }
+
+    /// <summary>C-087 / LANG-650, 651: <c>is</c>/<c>as</c> operands (positions stripped).</summary>
+    [Theory]
+    [Trait("Req", "LANG-650")]
+    [Trait("Req", "LANG-651")]
+    [InlineData("if A is TB then; B := A as TB; A := B as TA; if C is TB then; if B is TA then;", null)]
+    [InlineData("if A is TX then;", "E2641: Types 'TA' and 'TX' are unrelated; this test is never true")]
+    [InlineData("B := X as TB;", "E2641: Types 'TX' and 'TB' are unrelated; this test is never true")]
+    [InlineData("if I is TA then;", "E2603: Class type required")]
+    [InlineData("if A is Integer then;", "E2603: Class type required")]
+    [InlineData("A := C as TA;", "E2603: Class type required")]
+    [InlineData("if A is Nope then;", "E2003: Undeclared identifier 'Nope'")]
+    public void IsAs(string body, string? expected)
+    {
+        var diagnostics = BindDiagnostics("type TA = class end; TB = class(TA) end; TX = class end; TAClass = class of TA; " +
+                $"var A: TA; B: TB; X: TX; C: TAClass; I: Integer; begin {body} end.")
+            .Select(d => System.Text.RegularExpressions.Regex.Replace(d, @"\(\d+,\d+\)", ""));
+        Assert.Equal(expected is null ? [] : [expected], diagnostics);
+    }
+
     /// <summary>A definition whose parameters match no declaration defines nothing: E2606, and the declaration stays E2605.</summary>
     [Fact]
     [Trait("Req", "LANG-620")]

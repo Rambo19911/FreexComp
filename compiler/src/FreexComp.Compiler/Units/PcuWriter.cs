@@ -566,6 +566,14 @@ internal sealed class PcuWriter(PcuContext context)
                         ["offset"] = f.Offset,
                         ["visibility"] = VisibilityName(f.Visibility),
                         ["classVar"] = false,
+                    }), .. @class.ClassVariables.Select(v => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = v.Name,
+                        ["type"] = TypeId(v.Type),
+                        ["offset"] = 0,
+                        ["visibility"] = VisibilityName(v.Visibility),
+                        ["classVar"] = true,
+                        ["linkName"] = Emit.Mangler.GlobalVariable(v).Text,          // CMP-370 (C-086)
                     })]);
                     entry["methods"] = new JsonArray([.. @class.Methods.Select(m => (JsonNode?)new JsonObject
                     {
@@ -578,14 +586,35 @@ internal sealed class PcuWriter(PcuContext context)
                         ["binding"] = Binding(m),
                         ["slot"] = m.VmtSlot,
                     })]);
-                    entry["properties"] = new JsonArray();
+                    entry["properties"] = new JsonArray([.. @class.Properties.Select(p => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = p.Name,
+                        ["type"] = TypeId(p.Type),
+                        ["visibility"] = VisibilityName(p.Visibility),
+                        ["read"] = Accessor(p.ReadPath, p.ReadMethod),
+                        ["write"] = Accessor(p.WritePath, p.WriteMethod),
+                        ["stored"] = null,
+                        ["default"] = null,
+                        ["index"] = p.Index,
+                        ["params"] = new JsonArray([.. p.Parameters.Select(q => (JsonNode?)new JsonObject { ["name"] = q.Name, ["type"] = TypeId(q.Type) })]),
+                        ["isDefault"] = p.IsDefault,
+                    })]);                                                                   // C-085
                     entry["vmtLinkName"] = Emit.Mangler.Vmt(@class).Text;
                     entry["vmtSlotCount"] = @class.VmtSlotCount;
+                    return;
+                case ClassRefTypeSymbol reference:
+                    entry["kind"] = "classRef";                                     // C-086
+                    entry["name"] = reference.Name;
+                    entry["target"] = TypeId(reference.Class);
                     return;
                 default:
                     throw new NotSupportedException($".pcu description of type '{type.Name}' ({type.TypeKind})");
             }
         }
+
+        /// <summary>A property accessor: the field path (<c>FRect.Left</c>) or the method's link name; null without one.</summary>
+        private static string? Accessor(ImmutableArray<Symbol> path, MethodSymbol? method) =>
+            method is not null ? method.LinkName : path.IsEmpty ? null : string.Join(".", path.Select(s => s.Name));
 
         private static string VisibilityName(Visibility visibility) => visibility switch
         {

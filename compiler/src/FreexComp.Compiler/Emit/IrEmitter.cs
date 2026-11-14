@@ -70,7 +70,8 @@ internal static class IrEmitter
         // globals are defined after the functions (CMP-301: string literals, found while emitting, come first)
         // typed constants are read-only globals (LANG-344); those of routines follow the unit's own
         var variables = unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers)
-            .Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).OfType<VariableSymbol>().Concat(unit.Statics).ToImmutableArray();
+            .Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).OfType<VariableSymbol>().Concat(unit.Statics)
+            .Concat(classes.SelectMany(c => c.ClassVariables)).ToImmutableArray();                 // CMP-370: class vars are globals
         foreach (var variable in variables)
         {
             module.Globals[variable] = new IrGlobal(Mangler.GlobalVariable(variable));
@@ -164,7 +165,8 @@ internal static class IrEmitter
             var layout = TypeLayout.Allocated(variable.Type);
             var initializer = variable.Initializer is { } value && variable.Type.Size > 0 ? StorageConstant(module, value, variable.Type) : new IrZeroConstant(layout.StorageType);
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
-                interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null ? IrLinkage.External : IrLinkage.Internal,
+                interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null
+                || variable.ContainingSymbol is ClassTypeSymbol owner && interfaceMembers.Contains(owner) ? IrLinkage.External : IrLinkage.Internal,
                 IsConstant: variable.IsReadOnly, initializer, layout.Alignment));
         }
 
@@ -352,7 +354,7 @@ internal static class IrEmitter
         (BooleanTypeSymbol, BigInteger i) => IrIntConstant.I1(!i.IsZero),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, BigInteger i) => new IrFloatConstant((FloatingIrType)ValueType(type), (double)i),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, double d) => new IrFloatConstant((FloatingIrType)ValueType(type), d),
-        (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol, null) => new IrNullConstant(),
+        (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol, null) => new IrNullConstant(),
         (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
         (SetTypeSymbol { IsSmall: true }, BigInteger mask) => new IrIntConstant((IntegerIrType)ValueType(type), mask),       // CMP-335
         (SetTypeSymbol, BigInteger mask) => BigSetConstant(mask, type.Size),                                                  // CMP-336
@@ -1580,7 +1582,8 @@ internal sealed class FunctionEmitter
             if (callee.IsVirtual)
             {
                 var method = (MethodSymbol)routine;
-                var vmt = method.IsClassMethod ? self : _w.Load(NewTemp(), IrType.Ptr, self, 8);
+                // Self is the VMT itself for class methods and for an allocating constructor call (CMP-367: through a class reference)
+                var vmt = method.IsClassMethod || method.MethodKind == MethodKind.Constructor && callee.Flag == 1 ? self : _w.Load(NewTemp(), IrType.Ptr, self, 8);
                 var slot = _w.GetElementPtr(NewTemp(), IrType.I8, vmt, [IrIntConstant.I64(64 + 8 * method.VmtSlot)]);
                 function = _w.Load(NewTemp(), IrType.Ptr, slot, 8);
             }

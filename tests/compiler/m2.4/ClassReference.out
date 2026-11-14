@@ -1,0 +1,18 @@
+animal created
+dog created
+woof TDog TDog
+TRUE FALSE TRUE TRUE
+animal created
+TAnimal: ... FALSE TRUE
+animal created
+dog created
+TDog: woof TRUE TRUE
+animal created
+dog created
+TPuppy: yip TRUE TRUE
+TDog TAnimal
+TObject
+8 8
+TRUE
+animal created
+TAnimal

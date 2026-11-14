@@ -16,8 +16,9 @@ public sealed class VariableSymbol : Symbol
         bool isGlobal,
         Symbol? containingSymbol,
         ImmutableArray<Location> locations,
-        ConstantValue? initializer = null)
-        : base(isGlobal ? SymbolKind.Variable : SymbolKind.Local, name, containingSymbol, locations)
+        ConstantValue? initializer = null,
+        Visibility visibility = Visibility.Public)
+        : base(isGlobal ? SymbolKind.Variable : SymbolKind.Local, name, containingSymbol, locations, visibility)
     {
         Type = type;
         IsGlobal = isGlobal;

@@ -82,9 +82,14 @@ internal sealed class BodyBinder
     }
 
     /// <summary>LANG-350/351: the target must be a variable reference; the value is converted to its type.</summary>
-    private BoundAssignmentStatement BindAssignment(AssignmentStatementSyntax assignment)
+    private BoundStatement BindAssignment(AssignmentStatementSyntax assignment)
     {
-        var target = FunctionResult(assignment.Target) ?? _expressions.BindVariable(assignment.Target);
+        var target = FunctionResult(assignment.Target) ?? _expressions.BindAssignmentTarget(assignment.Target);
+        if (target is BoundPropertyAccessExpression property)
+        {
+            return _expressions.BindPropertyAssignment(assignment, property);           // LANG-641
+        }
+
         var value = _expressions.BindExpression(assignment.Value, target.Type);           // a set constructor takes the target's type
         if (target.HasErrors)
         {

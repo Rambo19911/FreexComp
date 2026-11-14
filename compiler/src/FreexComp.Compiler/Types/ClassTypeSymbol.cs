@@ -44,7 +44,19 @@ public sealed class ClassTypeSymbol : TypeSymbol
 
     public int VmtSlotCount => VirtualSlots.Length;
 
-    public override ImmutableArray<Symbol> Members => [.. Fields, .. Methods];
+    /// <summary>
+    /// The class's own <c>class var</c> fields (LANG-615, CMP-370): globals of the declaring unit named <c>U.TClass.Name</c>, shared
+    /// with descendants.
+    /// </summary>
+    public ImmutableArray<VariableSymbol> ClassVariables { get; internal set; } = [];
+
+    /// <summary>The class's own properties in declaration order (LANG-641…647).</summary>
+    public ImmutableArray<PropertySymbol> Properties { get; internal set; } = [];
+
+    /// <summary>The nearest default array property of the class or an ancestor (LANG-642); null when there is none.</summary>
+    public PropertySymbol? DefaultProperty => SelfAndAncestors().SelectMany(c => c.Properties).FirstOrDefault(p => p.IsDefault);
+
+    public override ImmutableArray<Symbol> Members => [.. Fields, .. ClassVariables, .. Methods, .. Properties];
 
     public override TypeSymbol? BaseType => Parent;
 
@@ -64,4 +76,27 @@ public sealed class ClassTypeSymbol : TypeSymbol
 
     /// <summary><c>type TFoo = class(TBar)</c> (CMP-731).</summary>
     public override string ToDisplayString() => Parent is null ? $"type {Name} = class" : $"type {Name} = class({Parent.Name})";
+
+    private ClassRefTypeSymbol? _reference;
+
+    /// <summary>The anonymous <c>class of</c> this class: the type of the class name used as a value and of <c>Self</c> in class methods (LANG-652).</summary>
+    public ClassRefTypeSymbol Reference => _reference ??= new ClassRefTypeSymbol("class of " + Name, this, containingSymbol: null, []);
+}
+
+/// <summary>
+/// <c>class of TFoo</c> (LANG-652): a value is the address of the VMT of <c>TFoo</c> or of a descendant (ABI-071), 8 bytes, <c>ptr</c>.
+/// </summary>
+public sealed class ClassRefTypeSymbol : TypeSymbol
+{
+    internal ClassRefTypeSymbol(string name, ClassTypeSymbol @class, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.ClassRef, name, size: 8, alignment: 8, containingSymbol, locations)
+    {
+        Class = @class;
+    }
+
+    /// <summary>The class referred to (may still be forward-declared while the type section is bound).</summary>
+    public ClassTypeSymbol Class { get; }
+
+    /// <summary><c>type TFooClass = class of TFoo</c> (CMP-731).</summary>
+    public override string ToDisplayString() => $"type {Name} = class of {Class.Name}";
 }

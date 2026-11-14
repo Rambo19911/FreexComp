@@ -21,7 +21,11 @@ var
 
 type
   { the root class (rtl-abi.md 7.1/7.2, C-082): the virtual methods in ABI-073 slot order. The message parameters are
-    typed Pointer until untyped var parameters exist (same IR: ptr). ToString returns '' until ClassName exists (C-089). }
+    typed Pointer until untyped var parameters exist (same IR: ptr). ToString returns '' until ClassName exists (C-089).
+    TClass and the class functions after the virtual methods arrive with class references (C-086). }
+  TObject = class;
+  TClass = class of TObject;
+
   TObject = class
   public
     constructor Create;
@@ -36,6 +40,11 @@ type
     function GetHashCode: Integer; virtual;
     procedure Dispatch(var Message: Pointer); virtual;
     procedure DefaultHandler(var Message: Pointer); virtual;
+    function ClassType: TClass;
+    class function ClassName: string;
+    class function ClassParent: TClass;
+    class function InheritsFrom(AClass: TClass): Boolean;
+    class function InstanceSize: Integer;
   end;
 
 procedure _Startup(UnitTable: Pointer; UnitCount: NativeInt);
@@ -48,6 +57,12 @@ procedure _OverflowError; noreturn;
 procedure _DivZeroError; noreturn;
 procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;
 procedure _AbstractError; noreturn;
+procedure _InvalidCast; noreturn;
+
+{ class tests (ABI section 9.6, C-087) }
+function _IsClass(Obj: Pointer; VMT: Pointer): Boolean;
+function _AsClass(Obj: Pointer; VMT: Pointer): Pointer;
+function _ClassInherits(VMT, AncestorVMT: Pointer): Boolean;
 procedure _IOCheck;
 
 var
@@ -2988,6 +3003,64 @@ end;
 
 procedure TObject.DefaultHandler(var Message: Pointer);
 begin
+end;
+
+{ ---- class references (LANG-652, ABI §7.2: Parent at VMT+0, InstanceSize at +8, ClassName at +16; Self is the VMT) }
+
+function TObject.ClassType: TClass;
+begin
+  Result := TClass(PPointer(Self)^);
+end;
+
+class function TObject.ClassName: string;
+begin
+  _UStrAsg(PPointer(@Result)^, PPointer(PByte(Self) + 16)^);
+end;
+
+class function TObject.ClassParent: TClass;
+begin
+  Result := TClass(PPointer(Self)^);
+end;
+
+class function TObject.InheritsFrom(AClass: TClass): Boolean;
+var
+  C: TClass;
+begin
+  C := Self;
+  while (C <> nil) and (C <> AClass) do
+    C := C.ClassParent;
+  Result := C <> nil;
+end;
+
+class function TObject.InstanceSize: Integer;
+begin
+  Result := Integer(PNativeInt(PByte(Self) + 8)^);
+end;
+
+{ ---- class tests (ABI section 9.6): a nil class reference inherits from nothing (LANG-650) }
+
+procedure _InvalidCast;
+begin
+  _RunError(219);
+end;
+
+function _ClassInherits(VMT, AncestorVMT: Pointer): Boolean;
+begin
+  while (VMT <> nil) and (VMT <> AncestorVMT) do
+    VMT := PPointer(VMT)^;
+  Result := VMT <> nil;
+end;
+
+function _IsClass(Obj: Pointer; VMT: Pointer): Boolean;
+begin
+  Result := (Obj <> nil) and _ClassInherits(PPointer(Obj)^, VMT);
+end;
+
+function _AsClass(Obj: Pointer; VMT: Pointer): Pointer;
+begin
+  if (Obj <> nil) and not _ClassInherits(PPointer(Obj)^, VMT) then
+    _InvalidCast;
+  Result := Obj;
 end;
 
 end.

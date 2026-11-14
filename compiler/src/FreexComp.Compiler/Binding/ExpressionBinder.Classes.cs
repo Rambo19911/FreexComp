@@ -96,6 +96,10 @@ internal sealed partial class ExpressionBinder
         return allowed;
     }
 
+    /// <summary>A <c>class var</c> (LANG-615, CMP-370): the class's global, after the visibility check against <paramref name="receiver"/>.</summary>
+    private BoundExpression ClassVariable(SyntaxNode syntax, SyntaxNode at, VariableSymbol classVar, TypeSymbol? receiver) =>
+        CheckAccess(at, classVar, (ClassTypeSymbol)classVar.ContainingSymbol!, receiver) ? new BoundVariableExpression(syntax, classVar) : Error(syntax);
+
     /// <summary>A field named inside a method (LANG-621): <c>Self.F</c>.</summary>
     private BoundExpression ImplicitField(IdentifierNameSyntax name, FieldSymbol field)
     {
@@ -122,9 +126,9 @@ internal sealed partial class ExpressionBinder
         var candidates = ImmutableArray.CreateBuilder<RoutineSymbol>();
         foreach (var owner in type.SelfAndAncestors())
         {
-            if (owner.Fields.Any(f => IdentifierComparer.Instance.Equals(f.Name, name)))
+            if (owner.Members.Any(m => m is not MethodSymbol && IdentifierComparer.Instance.Equals(m.Name, name)))
             {
-                break;
+                break;                                                          // a field, class var or property hides the methods
             }
 
             var methods = owner.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name)).ToList();
@@ -150,7 +154,7 @@ internal sealed partial class ExpressionBinder
 
         var receiverType = kind switch
         {
-            ReceiverKind.Instance => instance!.Type,
+            ReceiverKind.Instance => instance!.Type is ClassRefTypeSymbol reference ? reference.Class : instance.Type,
             ReceiverKind.ClassName => className,
             _ => CurrentMethod?.ContainingType,
         };
@@ -163,12 +167,132 @@ internal sealed partial class ExpressionBinder
         return new MethodCall(receiver is null ? null : method, arguments, receiver);
     }
 
+    /// <summary>
+    /// LANG-650/651 (C-087): <c>o is T</c> / <c>c is T</c> (a class reference) / <c>o as T</c> with <c>T</c> a class name. E2603 when
+    /// <c>T</c> or the left operand is no class (interfaces: M2.5), E2641 when the classes are unrelated.
+    /// </summary>
+    private BoundExpression BindTypeTest(BinaryExpressionSyntax binary, bool isAs)
+    {
+        var operand = BindExpression(binary.Left);
+        TypeSymbol? target = null;
+        if (_scope.Unqualified(Unparenthesized(binary.Right)) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name)
+        {
+            target = _scope.For(name).Lookup(token.Value as string ?? token.Text) as TypeSymbol;
+            if (target is null && _scope.For(name).Lookup(token.Value as string ?? token.Text) is null)
+            {
+                _diagnostics.ReportUndeclared(name, token.Value as string ?? token.Text);
+                return Error(binary, operand);
+            }
+        }
+
+        if (operand.HasErrors || target is ErrorTypeSymbol)
+        {
+            return Error(binary, operand);
+        }
+
+        if (target is { TypeKind: TypeKind.Interface })
+        {
+            return Unsupported(binary.Right, "'" + binary.OperatorToken.Text.ToLowerInvariant() + "' with an interface");  // LANG-650, M2.5
+        }
+
+        if (target is not ClassTypeSymbol type)
+        {
+            _diagnostics.Report(binary.Right, "E2603");
+            return Error(binary, operand);
+        }
+
+        var source = operand.Type switch
+        {
+            ClassTypeSymbol c => c,
+            ClassRefTypeSymbol r when !isAs => r.Class,
+            _ => null,
+        };
+        if (source is null)
+        {
+            _diagnostics.Report(binary.Left, "E2603");
+            return Error(binary, operand);
+        }
+
+        if (!source.InheritsFrom(type) && !type.InheritsFrom(source))
+        {
+            _diagnostics.Report(binary, "E2641", source.Name, type.Name);
+            return Error(binary, operand);
+        }
+
+        return new BoundTypeTestExpression(binary, operand, type, isAs, isAs ? type : _types.Boolean);
+    }
+
+    /// <summary>The VMT of an instance (<c>o.ClassType</c>, CMP-367: <c>load ptr, ptr %o</c>) as a class reference value.</summary>
+    private static BoundExpression ClassOf(SyntaxNode syntax, BoundExpression instance) =>
+        new BoundDereferenceExpression(syntax, instance, ((ClassTypeSymbol)instance.Type).Reference);
+
+    /// <summary>
+    /// LANG-620/653 and CMP-367 for class methods: <c>Self</c> is the class reference — the VMT of a class name, a class-reference
+    /// value, the VMT of an instance, or the current <c>Self</c>; virtual class methods dispatch except on a class name and with
+    /// <c>inherited</c>. Static class methods have no <c>Self</c>.
+    /// </summary>
+    private BoundReceiver? ClassMethodReceiver(SyntaxNode call, MethodSymbol method, ReceiverKind kind, BoundExpression? instance, ClassTypeSymbol? className)
+    {
+        if (method.MethodKind == MethodKind.ClassStatic)
+        {
+            return BoundReceiver.Static;
+        }
+
+        switch (kind)
+        {
+            case ReceiverKind.ClassName:
+                return new BoundReceiver(new BoundClassReferenceExpression(call, className!, className!.Reference), IsVirtual: false, Flag: null);
+            case ReceiverKind.Instance when instance!.Type is ClassRefTypeSymbol:
+                return new BoundReceiver(instance, IsVirtual: method.IsDispatched, Flag: null);
+            case ReceiverKind.Instance:
+                return new BoundReceiver(ClassOf(call, instance!), IsVirtual: method.IsDispatched, Flag: null);
+        }
+
+        var current = CurrentMethod;
+        if (current is null)
+        {
+            _diagnostics.Report(call, "E2608", method.Name);
+            return null;
+        }
+
+        var inherited = kind == ReceiverKind.Inherited;
+        if (inherited && method.IsAbstract)
+        {
+            _diagnostics.Report(call, "E2626", method.Name);                         // LANG-624
+            return null;
+        }
+
+        BoundExpression self = current switch
+        {
+            { SelfParameter: null } => new BoundClassReferenceExpression(call, current.ContainingType, current.ContainingType.Reference),
+            { IsClassMethod: true } => SelfOf(current, call),
+            _ => ClassOf(call, SelfOf(current, call)),
+        };
+        return new BoundReceiver(self, IsVirtual: !inherited && method.IsDispatched && current.SelfParameter is not null, Flag: null);
+    }
+
     private BoundReceiver? Receiver(SyntaxNode call, MethodSymbol method, ReceiverKind kind, BoundExpression? instance, ClassTypeSymbol? className)
     {
         if (method.IsClassMethod)
         {
-            Unsupported(call, "class method call");                                     // LANG-653, C-086
-            return null;
+            return ClassMethodReceiver(call, method, kind, instance, className);
+        }
+
+        if (kind == ReceiverKind.Instance && instance!.Type is ClassRefTypeSymbol)
+        {
+            if (method.MethodKind != MethodKind.Constructor)
+            {
+                _diagnostics.Report(call, "E2607");
+                return null;
+            }
+
+            // LANG-630/633: on a class-reference value — allocates; a virtual constructor dispatches on the run-time class
+            return new BoundReceiver(instance, IsVirtual: method.IsDispatched, Flag: 1);
+        }
+
+        if (kind == ReceiverKind.Implicit && method.MethodKind == MethodKind.Constructor && CurrentMethod is { IsClassMethod: true, SelfParameter: not null } classMethod)
+        {
+            return new BoundReceiver(SelfOf(classMethod, call), IsVirtual: method.IsDispatched, Flag: 1);   // Create inside a class method
         }
 
         switch (kind)
@@ -183,7 +307,7 @@ internal sealed partial class ExpressionBinder
                 }
 
                 // LANG-630/633: on a class name — allocates (Alloc = 1), bound statically to that class's constructor
-                return new BoundReceiver(new BoundClassReferenceExpression(call, className!, _types.Pointer), IsVirtual: false, Flag: 1);
+                return new BoundReceiver(new BoundClassReferenceExpression(call, className!, className!.Reference), IsVirtual: false, Flag: 1);
             case ReceiverKind.ClassName:
                 _diagnostics.Report(call, "E2607");
                 return null;
@@ -237,6 +361,7 @@ internal sealed partial class ExpressionBinder
         {
             BoundClassReferenceExpression reference => reference.Class,
             { Type: ClassTypeSymbol instance } => instance,
+            { Type: ClassRefTypeSymbol reference } => reference.Class,         // LANG-633: the static class of the reference
             _ => null,
         } : null;
         return new BoundCallExpression(call, method.Method, method.Arguments, type: type) { Receiver = method.Receiver };
@@ -265,6 +390,14 @@ internal sealed partial class ExpressionBinder
             && _scope.For(qualifierName).Lookup(qualifier.Value as string ?? qualifier.Text) is ClassTypeSymbol className)
         {
             var candidates = MemberCandidates(className, name);
+            switch (className.GetMembers(name).FirstOrDefault())
+            {
+                case PropertySymbol { IsClassProperty: true } property:                 // LANG-647
+                    return CheckAccess(syntax.Name, property, property.ContainingType, className) ? PropertyAccess(syntax, property, self: null) : Error(syntax);
+                case VariableSymbol classVar:                                           // LANG-615
+                    return ClassVariable(syntax, syntax.Name, classVar, className);
+            }
+
             if (candidates.IsEmpty)
             {
                 _diagnostics.Report(syntax.Name, className.GetMembers(name).Any() ? "E2607" : "E2005", className.Name, name);
@@ -290,18 +423,52 @@ internal sealed partial class ExpressionBinder
                 return null;
             }
 
-            if (type.GetMembers(name).FirstOrDefault() is FieldSymbol field)
+            switch (type.GetMembers(name).FirstOrDefault())
             {
-                if (field.ContainingSymbol is ClassTypeSymbol owner && !CheckAccess(syntax.Name, field, owner, type))
-                {
-                    return Error(syntax, receiver);
-                }
+                case FieldSymbol field:
+                    if (field.ContainingSymbol is ClassTypeSymbol owner && !CheckAccess(syntax.Name, field, owner, type))
+                    {
+                        return Error(syntax, receiver);
+                    }
 
-                return new BoundFieldAccessExpression(syntax, receiver, field);
+                    return new BoundFieldAccessExpression(syntax, receiver, field);
+                case VariableSymbol classVar:
+                    return ClassVariable(syntax, syntax.Name, classVar, type);
+                case PropertySymbol property:
+                    if (!CheckAccess(syntax.Name, property, property.ContainingType, type))
+                    {
+                        return Error(syntax, receiver);
+                    }
+
+                    // LANG-647: class property accessors are class vars or static class methods — no Self
+                    return PropertyAccess(syntax, property, property.IsClassProperty ? null : receiver);
             }
 
             _diagnostics.Report(syntax.Name, "E2005", type.Name, name);
             return Error(syntax, receiver);
+        }
+
+        if (receiver.Type is ClassRefTypeSymbol reference)
+        {
+            // LANG-652: constructors, class methods, class vars and class properties through a class-reference value
+            var target = reference.Class;
+            switch (target.GetMembers(name).FirstOrDefault())
+            {
+                case PropertySymbol { IsClassProperty: true } property:
+                    return CheckAccess(syntax.Name, property, property.ContainingType, target) ? PropertyAccess(syntax, property, self: null) : Error(syntax, receiver);
+                case VariableSymbol classVar:
+                    return ClassVariable(syntax, syntax.Name, classVar, target);
+            }
+
+            var candidates = MemberCandidates(target, name);
+            if (candidates.IsEmpty)
+            {
+                _diagnostics.Report(syntax.Name, target.GetMembers(name).Any() ? "E2607" : "E2005", target.Name, name);
+                return Error(syntax, receiver);
+            }
+
+            methodCall = BindMethodCall(call, candidates, ReceiverKind.Instance, receiver, null, argumentList);
+            return null;
         }
 
         return RecordMember(syntax, receiver);
@@ -316,7 +483,7 @@ internal sealed partial class ExpressionBinder
     {
         if (CurrentMethod is not { } current)
         {
-            Unsupported(call, "inherited outside a method");
+            _diagnostics.Report(call, "E2133");                                      // LANG-624
             return new MethodCall(null, [], null);
         }
 

@@ -1,0 +1,16 @@
+top set 3
+mid set 3
+base set 6
+6 7
+70
+hello from base
+hello from base
+hello from top
+bye, value 6 extra 7
+mid log x!
+base log x! 2
+base log y 5
+mid log z
+base log z 0
+base twice
+100

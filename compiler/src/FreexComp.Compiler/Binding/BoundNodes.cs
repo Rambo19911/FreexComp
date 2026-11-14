@@ -31,6 +31,8 @@ internal enum BoundKind
     VariableTypecastExpression,
     ArrayConstructor,
     ClassReferenceExpression,
+    PropertyAccessExpression,
+    TypeTestExpression,
 
     // statements
     Block,
@@ -135,6 +137,9 @@ internal sealed class BoundVariableExpression : BoundExpression
     public override BoundKind Kind => BoundKind.VariableExpression;
 
     public VariableSymbol Variable { get; }
+
+    /// <summary>The class property read through this <c>class var</c> accessor (LANG-647; not a variable, LANG-645).</summary>
+    public PropertySymbol? Property { get; init; }
 }
 
 /// <summary>
@@ -371,6 +376,56 @@ internal sealed class BoundFieldAccessExpression : BoundExpression
     public BoundExpression Record { get; }
 
     public FieldSymbol Field { get; }
+
+    /// <summary>The property read through this field accessor (LANG-641/645: not a variable for <c>var</c>, <c>@</c>, <c>Inc</c>).</summary>
+    public PropertySymbol? Property { get; init; }
+}
+
+/// <summary>
+/// <c>o is T</c> (Boolean; <c>_IsClass</c>, or <c>_ClassInherits</c> when <see cref="Operand"/> is a class reference) and
+/// <c>o as T</c> (typed <c>T</c>; <c>_AsClass</c>) for a class <see cref="Class"/> (LANG-650/651, CMP-367, ABI §9.6).
+/// </summary>
+internal sealed class BoundTypeTestExpression : BoundExpression
+{
+    public BoundTypeTestExpression(SyntaxNode syntax, BoundExpression operand, ClassTypeSymbol @class, bool isAs, TypeSymbol type)
+        : base(syntax, type, constantValue: null)
+    {
+        Operand = operand;
+        Class = @class;
+        IsAs = isAs;
+    }
+
+    public override BoundKind Kind => BoundKind.TypeTestExpression;
+
+    public BoundExpression Operand { get; }
+
+    public ClassTypeSymbol Class { get; }
+
+    public bool IsAs { get; }
+}
+
+/// <summary>
+/// A property as the whole target of an assignment (LANG-641): the receiver and converted index arguments, before the write is
+/// resolved to a field store or a setter call. Produced and consumed by the body binder only.
+/// </summary>
+internal sealed class BoundPropertyAccessExpression : BoundExpression
+{
+    public BoundPropertyAccessExpression(SyntaxNode syntax, PropertySymbol property, BoundExpression? self, ImmutableArray<BoundExpression> indexes)
+        : base(syntax, property.Type, constantValue: null)
+    {
+        Property = property;
+        Self = self;
+        Indexes = indexes;
+    }
+
+    public override BoundKind Kind => BoundKind.PropertyAccessExpression;
+
+    public PropertySymbol Property { get; }
+
+    /// <summary>The instance, the class reference of a class property; null for static accessors.</summary>
+    public BoundExpression? Self { get; }
+
+    public ImmutableArray<BoundExpression> Indexes { get; }
 }
 
 /// <summary>
@@ -758,7 +813,11 @@ internal sealed class BoundCallExpression : BoundExpression
 /// flag (<c>Alloc</c> 1 for a call on a class name, 0 for <c>inherited</c> and calls on an instance; <c>Dealloc</c> 1 for
 /// <c>Obj.Destroy</c>, 0 for <c>inherited Destroy</c>).
 /// </summary>
-internal sealed record BoundReceiver(BoundExpression Self, bool IsVirtual, int? Flag);
+internal sealed record BoundReceiver(BoundExpression? Self, bool IsVirtual, int? Flag)
+{
+    /// <summary>A <c>class … static</c> method (LANG-620): no <c>Self</c>, a direct call.</summary>
+    public static readonly BoundReceiver Static = new(null, IsVirtual: false, Flag: null);
+}
 
 /// <summary>A class name as a constructor's <c>Self</c>: the address of its VMT (ABI-071), type <c>Pointer</c>.</summary>
 internal sealed class BoundClassReferenceExpression : BoundExpression

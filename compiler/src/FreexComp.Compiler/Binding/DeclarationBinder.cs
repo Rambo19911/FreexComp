@@ -1083,11 +1083,15 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>The formal parameters of <paramref name="owner"/> (LANG-420 table); E2004 for duplicate names in <paramref name="names"/>.</summary>
-    private ImmutableArray<ParameterSymbol> BindParameters(ParameterListSyntax? list, RoutineSymbol owner, Scope names, bool report)
+    private ImmutableArray<ParameterSymbol> BindParameters(ParameterListSyntax? list, Symbol owner, Scope names, bool report) =>
+        BindParameters(list?.Parameters ?? default, owner, names, report);
+
+    /// <summary>A formal parameter list (also the index parameters of an array property, LANG-642).</summary>
+    private ImmutableArray<ParameterSymbol> BindParameters(SeparatedSyntaxList<ParameterSyntax> list, Symbol owner, Scope names, bool report)
     {
         var routine = owner;
         var parameters = ImmutableArray.CreateBuilder<ParameterSymbol>();
-        foreach (var parameter in list?.Parameters ?? default)
+        foreach (var parameter in list)
         {
             var mode = parameter.Modifier?.ContextualKind switch
             {
@@ -1264,6 +1268,20 @@ internal sealed partial class DeclarationBinder
                 return BindPointer(pointer, typeName, declared);
             case ProceduralTypeSyntax procedural:
                 return BindProcedural(procedural, typeName, declaredAt);
+            case ClassRefTypeSyntax classRef:
+                // LANG-652: class of C, C a class (possibly still forward-declared in this section)
+                switch (BindType(classRef.ClassType))
+                {
+                    case ClassTypeSymbol referenced when declaredAt is { } at:
+                        return new ClassRefTypeSymbol(typeName, referenced, _container, [DiagnosticBag.LocationOf(at)]);
+                    case ClassTypeSymbol referenced:
+                        return referenced.Reference;
+                    case ErrorTypeSymbol error:
+                        return error;
+                    default:
+                        _diagnostics.Report(classRef.ClassType, "E2603");
+                        return _types.Error;
+                }
             case ArrayTypeSyntax { ElementType: null }:
                 return Unsupported(type, "array of const");                     // M2.5
             case ArrayTypeSyntax when parameter:

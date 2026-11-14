@@ -42,7 +42,9 @@ internal static class Lowerer
 
     /// <summary>The unit's (or program's) global variables of managed types in declaration order (interface first; LANG-523).</summary>
     public static ImmutableArray<VariableSymbol> ManagedGlobals(UnitSymbol unit) =>
-        [.. unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<VariableSymbol>().Where(v => v is { IsGlobal: true, IsReadOnly: false, Type.IsManaged: true })];
+        [.. unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<VariableSymbol>()
+            .Concat(DeclarationBinder.ClassesOf(unit).SelectMany(c => c.ClassVariables))                   // then class vars (LANG-615)
+            .Where(v => v is { IsGlobal: true, IsReadOnly: false, Type.IsManaged: true })];
 
     public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body)
     {
@@ -395,6 +397,14 @@ internal sealed class LoweringContext
                     : new LField(Lower(field.Record), field.Field);                     // CMP-307
             case BoundClassReferenceExpression reference:
                 return new LClassRef(reference.Class, reference.Type);                  // CMP-367 TFoo.Create
+            case BoundTypeTestExpression test:
+            {
+                // CMP-367: _IsClass(o, VMT) / _AsClass(o, VMT); for a class reference _ClassInherits(c, VMT) (ABI §9.6)
+                var helper = test.IsAs ? "_AsClass" : test.Operand.Type is ClassRefTypeSymbol ? "_ClassInherits" : "_IsClass";
+                return new LCall(new LHelperCallee(new RuntimeHelper(helper, [Types.Pointer, Types.Pointer], test.Type, IsNoReturn: false)),
+                    [Lower(test.Operand), new LClassRef(test.Class, Types.Pointer)]);
+            }
+
             case BoundAddressOfExpression { Routine: { } routine } addressOf:
                 return new LRoutineAddress(routine, addressOf.Type);                    // CMP-340
             case BoundAddressOfExpression addressOf:
@@ -594,7 +604,7 @@ internal sealed class LoweringContext
     /// </summary>
     /// <summary>The routine, or a call through the procedural value <paramref name="target"/> (CMP-378).</summary>
     private LRoutineCallee Callee(RoutineSymbol routine, BoundExpression? target, BoundReceiver? receiver) =>
-        new(routine, target is null ? null : Lower(target), receiver is null ? null : Lower(receiver.Self), receiver?.Flag, receiver?.IsVirtual ?? false);
+        new(routine, target is null ? null : Lower(target), receiver?.Self is { } self ? Lower(self) : null, receiver?.Flag, receiver?.IsVirtual ?? false);
 
     private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null, BoundReceiver? receiver = null)
     {

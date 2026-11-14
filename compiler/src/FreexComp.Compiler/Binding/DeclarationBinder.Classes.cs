@@ -69,7 +69,9 @@ internal sealed partial class DeclarationBinder
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
         var methods = ImmutableArray.CreateBuilder<MethodSymbol>();
         var names = new Dictionary<string, Symbol>(IdentifierComparer.Instance);
-        var end = type.Parent?.InstanceSize ?? 8;                               // offset 0: the VMT pointer (ABI §7.1)
+        var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
+        var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
+        var end = type.Parent?.InstanceSize ?? 8;                              // offset 0: the VMT pointer (ABI §7.1)
         foreach (var (member, visibility) in Members(syntax.Members, Visibility.Public))
         {
             switch (member)
@@ -85,7 +87,7 @@ internal sealed partial class DeclarationBinder
 
                     break;
                 case ClassVarSectionSyntax section:
-                    Unsupported(section.ClassKeyword!.Value, "class var");                              // LANG-615, C-086
+                    BindClassVariables(type, section, visibility, classVariables, names);              // LANG-615, CMP-370
                     break;
                 case MethodDeclarationSyntax method when BindMethodDeclaration(type, method, visibility) is { } symbol:
                     if (names.TryGetValue(symbol.Name, out var existing)
@@ -101,7 +103,7 @@ internal sealed partial class DeclarationBinder
                 case MethodDeclarationSyntax:
                     break;
                 case PropertyDeclarationSyntax property:
-                    Unsupported(property.PropertyKeyword, "property");                                   // LANG-641, C-085
+                    properties.Add((property, visibility));                     // bound once all fields and methods are known
                     break;
                 default:
                     Unsupported(member, "class " + FeatureName(member.Kind));
@@ -110,9 +112,11 @@ internal sealed partial class DeclarationBinder
         }
 
         type.Fields = fields.ToImmutable();
+        type.ClassVariables = classVariables.ToImmutable();
         type.InstanceSize = (end + 7) / 8 * 8;                                   // ABI-070
         type.Methods = methods.ToImmutable();
         type.VirtualSlots = AssignSlots(type);
+        type.Properties = BindProperties(type, properties, names);
     }
 
     private void Unsupported(SyntaxToken token, string feature) => _diagnostics.Report(token, "E2900", feature);
@@ -177,6 +181,39 @@ internal sealed partial class DeclarationBinder
             default:
                 _diagnostics.Report(first, "E2603");
                 return root;
+        }
+    }
+
+    /// <summary><c>class var</c> fields (LANG-615): global variables owned by the class (link name <c>U.TClass.Name</c>, CMP-370).</summary>
+    private void BindClassVariables(ClassTypeSymbol type, ClassVarSectionSyntax section, Visibility visibility,
+        ImmutableArray<VariableSymbol>.Builder classVariables, Dictionary<string, Symbol> names)
+    {
+        foreach (var field in section.Fields)
+        {
+            var fieldType = BindType(field.Type);
+            if (fieldType.TypeKind == TypeKind.Error)
+            {
+                continue;
+            }
+
+            if (fieldType is TextTypeSymbol)
+            {
+                Unsupported(field.Type, "class var of type " + fieldType.Name);
+                continue;
+            }
+
+            foreach (var identifier in field.Identifiers.Select(i => i.Identifier).Where(i => !i.IsMissing))
+            {
+                var name = NameOf(identifier);
+                var symbol = new VariableSymbol(name, fieldType, isGlobal: true, type, [DiagnosticBag.LocationOf(identifier)], visibility: visibility);
+                if (!names.TryAdd(name, symbol))
+                {
+                    _diagnostics.ReportRedeclared(identifier, name, names[name]);
+                    continue;
+                }
+
+                classVariables.Add(symbol);
+            }
         }
     }
 
@@ -258,8 +295,8 @@ internal sealed partial class DeclarationBinder
 
         if (kind != MethodKind.ClassStatic)
         {
-            // ABI-084: the instance; for class methods the VMT (typed Pointer until class references, C-086)
-            method.SelfParameter = new ParameterSymbol("Self", isClass ? _types.Pointer : type, ParameterMode.Value, -1, method, []);
+            // ABI-084: the instance; for class methods the VMT, typed class of the class (LANG-620)
+            method.SelfParameter = new ParameterSymbol("Self", isClass ? type.Reference : type, ParameterMode.Value, -1, method, []);
         }
 
         if (kind is MethodKind.Constructor or MethodKind.Destructor)
