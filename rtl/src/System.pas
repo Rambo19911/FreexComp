@@ -28,6 +28,35 @@ type
   HResult = Integer;                   { ABI section 9.6; HRESULT is the same identifier }
   TProcedure = procedure;
 
+  // TODO(M2.4, C-086): TClass = class of TObject, with ClassType, ClassParent and InheritsFrom (class reference types
+  // are E2900 today). TODO(M2.5): Dispatch / DefaultHandler take an untyped var parameter (typed Pointer until the
+  // compiler has untyped parameters: the same IR, ptr), _Dispatch, GetInterface, GetInterfaceEntry. TODO(M2.5, RTTI):
+  // ClassInfo, ClassNameIs, MethodAddress, MethodName, FieldAddress, UnitName.
+
+  { the root class (system.md section 13, rtl-abi.md 7.1/7.2): the ten virtual methods in ABI-073 slot order - do not
+    reorder them. Constructors are ptr (ptr, i8 Alloc), destructors void (ptr, i8 Dealloc) (ABI-075/076); the compiler
+    emits the protocol and calls NewInstance, AfterConstruction, BeforeDestruction and FreeInstance itself.
+    ClassName and InstanceSize are declared but cannot be called before class method calls (C-086). }
+  TObject = class
+  public
+    destructor Destroy; virtual;
+    procedure AfterConstruction; virtual;
+    procedure BeforeDestruction; virtual;
+    class function NewInstance: TObject; virtual;
+    procedure FreeInstance; virtual;
+    function ToString: string; virtual;
+    function Equals(Obj: TObject): Boolean; virtual;
+    function GetHashCode: Integer; virtual;
+    procedure Dispatch(var Message: Pointer); virtual;
+    procedure DefaultHandler(var Message: Pointer); virtual;
+    constructor Create;
+    procedure Free;
+    class function InitInstance(Instance: Pointer): TObject;
+    procedure CleanupInstance;
+    class function ClassName: string;
+    class function InstanceSize: Integer;
+  end;
+
   { RTL-062: the pluggable memory manager; FreeMem returns 0 on success }
   TMemoryManager = record
     GetMem: function(Size: NativeInt): Pointer;
@@ -53,6 +82,7 @@ var
   ErrorAddr: Pointer;
   ErrorProc: procedure(Code: Integer; Addr: Pointer);                                    { ABI-101 }
   AssertErrorProc: procedure(const Msg, FileName: string; Line: Integer; Addr: Pointer); { ABI-103 }
+  AbstractErrorProc: TProcedure;                                                         { ABI-103 }
   ShowErrorProc: procedure(const Text: string);                                          { RTL-132, IsConsole = False }
   IsConsole: Boolean;
   IsLibrary: Boolean;
@@ -71,6 +101,7 @@ procedure _RangeError; noreturn;
 procedure _OverflowError; noreturn;
 procedure _DivZeroError; noreturn;
 procedure _InvalidCast; noreturn;
+procedure _AbstractError; noreturn;                                  { IR void(): the code of abstract VMT slots }
 procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;   { Msg/FileName: UnicodeString refs, Msg may be nil }
 procedure _IOCheck;
 
@@ -2373,6 +2404,14 @@ begin
   _RunError(219);
 end;
 
+{ ABI-103: the code of every abstract VMT slot; AbstractErrorProc first when assigned, then runtime error 211 }
+procedure _AbstractError;
+begin
+  if Assigned(AbstractErrorProc) then
+    AbstractErrorProc();
+  _RunError(211);
+end;
+
 { ABI-103, RTL-137: AssertErrorProc first when assigned (Msg nil arrives as ''); if it is nil or returns,
   '<Msg> (<FileName>, line <Line>)' + CR LF on ErrOutput ('Assertion failed' when Msg is nil), then runtime error 227 }
 procedure _Assert(Msg, FileName: Pointer; Line: Integer);
@@ -4522,6 +4561,125 @@ begin
   R := TextRec(T);
   if (R^.Kind = skConsole) or R^.Std then
     FlushText(R^);
+end;
+
+{ ---------------------------------------------------------------- TObject (system.md section 13, ABI-070 ... 077) }
+{ VMT fields read here (rtl-abi.md 7.2): Parent at +0, InstanceSize at +8, ClassName (a static UnicodeString) at +16,
+  InitTable at +48 = Count, then Count (TypeInfo, Offset) pairs of the managed fields the class itself declares.
+  Inside class methods Self is the VMT pointer. }
+
+const
+  VmtParent = 0;
+  VmtInstanceSize = 8;
+  VmtClassName = 16;
+  VmtInitTable = 48;
+
+constructor TObject.Create;
+begin
+end;
+
+{ ABI-077 }
+procedure TObject.Free;
+begin
+  if Self <> nil then
+    Destroy;
+end;
+
+destructor TObject.Destroy;
+begin
+end;
+
+procedure TObject.AfterConstruction;
+begin
+end;
+
+procedure TObject.BeforeDestruction;
+begin
+end;
+
+{ InitInstance for class VMT: zero fill, the VMT pointer at offset 0 (a plain routine because class methods cannot
+  call each other before C-086) }
+function InitObject(VMT, Instance: Pointer): Pointer;
+begin
+  memset(Instance, 0, NativeUInt(PNativeInt(PByte(VMT) + VmtInstanceSize)^));
+  PPointer(Instance)^ := VMT;
+  // TODO(M2.5): store the hidden interface pointers of the class and every ancestor (IntfTable walk, ABI-072)
+  Result := Instance;
+end;
+
+{ ABI-072, RTL-151 step 1: a block of InstanceSize bytes from _GetMem, set up as InitInstance does }
+class function TObject.NewInstance: TObject;
+begin
+  Result := TObject(InitObject(Self, _GetMem(PNativeInt(PByte(Self) + VmtInstanceSize)^)));
+end;
+
+class function TObject.InitInstance(Instance: Pointer): TObject;
+begin
+  Result := TObject(InitObject(Self, Instance));
+end;
+
+{ ABI-072, RTL-152 }
+procedure TObject.FreeInstance;
+begin
+  CleanupInstance;
+  _FreeMem(Pointer(Self));
+end;
+
+{ the managed fields of the class and of every ancestor, most-derived first }
+procedure TObject.CleanupInstance;
+var
+  VMT, Table: PByte;
+  Count, I: NativeInt;
+begin
+  VMT := PPointer(Self)^;
+  while VMT <> nil do
+  begin
+    Table := PPointer(VMT + VmtInitTable)^;
+    if Table <> nil then
+    begin
+      Count := PNativeInt(Table)^;
+      for I := 0 to Count - 1 do
+        _Finalize(PByte(Self) + PNativeInt(Table + 16 + I * 16)^, PPointer(Table + 8 + I * 16)^);
+    end;
+    VMT := PPointer(VMT + VmtParent)^;
+  end;
+end;
+
+{ = ClassName (read from the VMT directly: class method calls wait for C-086) }
+function TObject.ToString: string;
+begin
+  _UStrAsg(PPointer(@Result)^, PPointer(PByte(PPointer(Self)^) + VmtClassName)^);
+end;
+
+function TObject.Equals(Obj: TObject): Boolean;
+begin
+  Result := Obj = Self;
+end;
+
+{ low 32 bits of (address shr 4) }
+function TObject.GetHashCode: Integer;
+begin
+  Result := Integer(NativeUInt(Self) shr 4);
+end;
+
+procedure TObject.Dispatch(var Message: Pointer);
+begin
+  // TODO(M2.5): _Dispatch(Self, Message) searching the MsgTables (RTL-153) once the compiler has message methods
+  DefaultHandler(Message);
+end;
+
+procedure TObject.DefaultHandler(var Message: Pointer);
+begin
+end;
+
+class function TObject.ClassName: string;
+begin
+  _UStrAsg(PPointer(@Result)^, PPointer(PByte(Self) + VmtClassName)^);
+end;
+
+class function TObject.InstanceSize: Integer;
+begin
+  Result := Integer(PNativeInt(PByte(Self) + VmtInstanceSize)^);
 end;
 
 { ---------------------------------------------------------------- memory primitives (RTL-065) }

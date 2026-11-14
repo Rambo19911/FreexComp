@@ -1,0 +1,35 @@
+# TObject itself
+ok Create returns an instance
+ok one block per instance
+ok VMT pointer stored at offset 0
+ok TObject InstanceSize (VMT+8)
+ok ToString = ClassName
+ok Equals self
+ok Equals nil
+ok GetHashCode = address shr 4
+ok leaked after Free
+# virtual destructor chain
+ok construction order
+ok ToString of a descendant
+ok Free through a TObject reference
+ok Destroy through a TObject reference
+ok leaked
+# managed fields
+ok string field starts empty
+ok dynamic array field starts empty
+ok string array field starts empty
+ok string array element
+ok fields usable
+ok fields own blocks
+ok leaked (base and leaf InitTables walked)
+# Free on nil
+ok no destructor runs
+# NewInstance zero-fills
+ok TPlain InstanceSize (VMT+8)
+ok every byte after the VMT pointer is zero
+ok Int64 field
+ok Integer field
+ok string field
+ok Pointer field
+ok leaked
+# passed 29 failed 0
