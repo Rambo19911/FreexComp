@@ -147,6 +147,18 @@ procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
 procedure _WriteLn(var T: Text);
 procedure _WriteEnd(var T: Text);
 
+{ Str and Val (rtl-abi.md section 9.10, lead note C-062; system.md RTL-079, LANG-950/951). Str writes exactly the text
+  Write would write into Dest. Val accepts leading spaces, a sign, decimal digits or $ / 0x / 0X hex digits (reals:
+  digits [. digits] [e [sign] digits], also . digits, INF and NAN); no trailing characters. On failure the result is
+  0 and Code the 1-based index of the first offending character (Length + 1 when the text ends too early); a value
+  outside Int64 / UInt64 gives Code = Length(S). _ValFloat is correctly rounded (half-even). }
+procedure _StrInt(var Dest: Pointer; V: Int64; Width: Integer);
+procedure _StrUInt(var Dest: Pointer; V: UInt64; Width: Integer);
+procedure _StrFloat(var Dest: Pointer; V: Double; Width, Decimals: Integer);
+function _ValInt(S: Pointer; var Code: Integer): Int64;
+function _ValUInt(S: Pointer; var Code: Integer): UInt64;
+function _ValFloat(S: Pointer; var Code: Integer): Double;
+
 { symbols LLVM-generated code may reference, exact link names (rtl-abi.md section 9.2, RTL-065); the compiler gives
   them the no-builtins attribute (CMP-610), so their loops are not turned back into calls to themselves }
 function memcpy(Dest, Src: Pointer; N: NativeUInt): Pointer; public name 'memcpy';
@@ -1111,10 +1123,10 @@ end;
 { Free-format digit generation with exact big-integer arithmetic (the classic method: the value and the half-gaps
   to its neighbours are the ratios R/S, MPlus/S, MMinus/S, scaled by a power of ten so that the first digit comes
   out of 10R/S). Fixed precision uses the same scaling and rounds the remainder half-even. The numbers stay below
-  2^1140, so 40 limbs suffice. }
+  2^1140 here; decimal-to-binary conversion (_ValFloat) needs up to about 2^3750, hence 128 limbs. }
 
 const
-  BigLimbs = 40;
+  BigLimbs = 128;
 
 type
   TBig = record
@@ -1975,12 +1987,10 @@ begin
   end;
 end;
 
-procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
+{ the text of Write(V:Width:Decimals) before padding; Decimals < 0 is the scientific form }
+procedure FloatText(V: Double; Width, Decimals: Integer; var X: TFloatText);
 var
-  X: TFloatText;
   Bits: UInt64;
-  I: Integer;
-  P: PTextRec;
 begin
   X.Len := 0;
   Bits := PUInt64(@V)^;
@@ -2006,10 +2016,499 @@ begin
     ScientificText(V, Width, X)
   else
     FixedText(V, Decimals, X);
+end;
+
+procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
+var
+  X: TFloatText;
+  I: Integer;
+  P: PTextRec;
+begin
+  FloatText(V, Width, Decimals, X);
   P := TextRec(T);
   PutSpaces(P^, Width - X.Len);
   for I := 0 to X.Len - 1 do
     PutUnit(P^, X.C[I]);
+end;
+
+{ ---------------------------------------------------------------- Str (LANG-951: exactly the text Write produces) }
+
+{ Dest := X right-aligned in Width (padded with spaces on the left) }
+procedure TextToStr(var Dest: Pointer; const X: TFloatText; Width: Integer);
+var
+  N: Pointer;
+  Pad, I: Integer;
+  P: PWord;
+begin
+  Pad := 0;
+  if Width > X.Len then
+    Pad := Width - X.Len;
+  N := nil;
+  if Pad + X.Len > 0 then
+  begin
+    N := NewUStr(Pad + X.Len);
+    P := N;
+    for I := 0 to Pad - 1 do
+      P[I] := 32;
+    for I := 0 to X.Len - 1 do
+      P[Pad + I] := X.C[I];
+  end;
+  Replace(Dest, N);
+end;
+
+procedure UIntText(V: UInt64; var X: TFloatText);
+var
+  Digits: array[0..19] of Byte;
+  N, I: Integer;
+begin
+  N := 0;
+  repeat
+    Digits[N] := 48 + V mod 10;
+    V := V div 10;
+    N := N + 1;
+  until V = 0;
+  for I := N - 1 downto 0 do
+    AddChar(X, Digits[I]);
+end;
+
+procedure _StrInt(var Dest: Pointer; V: Int64; Width: Integer);
+var
+  X: TFloatText;
+begin
+  X.Len := 0;
+  if V < 0 then
+  begin
+    AddChar(X, Ord('-'));
+    UIntText(UInt64(0) - UInt64(V), X);  { the magnitude, also of Low(Int64) }
+  end
+  else
+    UIntText(V, X);
+  TextToStr(Dest, X, Width);
+end;
+
+procedure _StrUInt(var Dest: Pointer; V: UInt64; Width: Integer);
+var
+  X: TFloatText;
+begin
+  X.Len := 0;
+  UIntText(V, X);
+  TextToStr(Dest, X, Width);
+end;
+
+procedure _StrFloat(var Dest: Pointer; V: Double; Width, Decimals: Integer);
+var
+  X: TFloatText;
+begin
+  FloatText(V, Width, Decimals, X);
+  TextToStr(Dest, X, Width);
+end;
+
+{ ---------------------------------------------------------------- Val (RTL-079, LANG-950) }
+
+const
+  ChPlus = 43;
+  ChMinus = 45;
+  ChDot = 46;
+  ChSpace = 32;
+
+{ value of the digit C (decimal, or hex when Hex), -1 when it is none }
+function DigitValue(C: Cardinal; Hex: Boolean): Integer;
+begin
+  Result := -1;
+  if (C >= 48) and (C <= 57) then
+    Result := Integer(C) - 48
+  else if Hex and (C >= 65) and (C <= 70) then
+    Result := Integer(C) - 55
+  else if Hex and (C >= 97) and (C <= 102) then
+    Result := Integer(C) - 87;
+end;
+
+{ leading spaces (U+0020 only), then an optional sign; I is the index after them }
+procedure ValPrefix(P: PWord; Len: Integer; var I: Integer; var Negative: Boolean);
+begin
+  I := 0;
+  while (I < Len) and (P[I] = ChSpace) do
+    I := I + 1;
+  Negative := False;
+  if (I < Len) and ((P[I] = ChPlus) or (P[I] = ChMinus)) then
+  begin
+    Negative := P[I] = ChMinus;
+    I := I + 1;
+  end;
+end;
+
+{ the magnitude of an integer text, Code <> 0 on a syntax error; Over when it needs more than 64 bits }
+function ValMagnitude(S: Pointer; var Code: Integer; var Negative, Hex, Over: Boolean): UInt64;
+var
+  P: PWord;
+  Len, I, Digit: Integer;
+begin
+  Result := 0;
+  P := S;
+  Len := StrLength(S);
+  ValPrefix(P, Len, I, Negative);
+  Hex := False;
+  Over := False;
+  if (I < Len) and (P[I] = 36) then                  { $ }
+  begin
+    Hex := True;
+    I := I + 1;
+  end
+  else if (I + 1 < Len) and (P[I] = 48) and ((P[I + 1] = 120) or (P[I + 1] = 88)) then   { 0x 0X }
+  begin
+    Hex := True;
+    I := I + 2;
+  end;
+  if I >= Len then
+  begin
+    Code := Len + 1;
+    Exit;
+  end;
+  while I < Len do
+  begin
+    Digit := DigitValue(P[I], Hex);
+    if Digit < 0 then
+    begin
+      Code := I + 1;
+      Result := 0;
+      Exit;
+    end;
+    if Hex then
+    begin
+      if (Result shr 60) <> 0 then
+        Over := True;
+      Result := (Result shl 4) or UInt64(Digit);
+    end
+    else
+    begin
+      if (Result > 1844674407370955161) or ((Result = 1844674407370955161) and (Digit > 5)) then
+        Over := True;
+      Result := Result * 10 + UInt64(Digit);
+    end;
+    I := I + 1;
+  end;
+  Code := 0;
+end;
+
+{ decimal: -2^63 .. 2^63 - 1; hex digits fill the 64 bits ($FFFFFFFFFFFFFFFF = -1) and a sign negates them }
+function _ValInt(S: Pointer; var Code: Integer): Int64;
+var
+  M: UInt64;
+  Negative, Hex, Over: Boolean;
+begin
+  Result := 0;
+  M := ValMagnitude(S, Code, Negative, Hex, Over);
+  if Code <> 0 then
+    Exit;
+  if not Hex and ((M > UInt64(SignMask)) or (not Negative and (M = UInt64(SignMask)))) then
+    Over := True;
+  if Over then
+  begin
+    Code := StrLength(S);
+    Exit;
+  end;
+  if Negative then
+    M := UInt64(0) - M;
+  Result := Int64(M);
+end;
+
+{ a minus sign is accepted only before zero }
+function _ValUInt(S: Pointer; var Code: Integer): UInt64;
+var
+  M: UInt64;
+  Negative, Hex, Over: Boolean;
+begin
+  Result := 0;
+  M := ValMagnitude(S, Code, Negative, Hex, Over);
+  if Code <> 0 then
+    Exit;
+  if Over or (Negative and (M <> 0)) then
+  begin
+    Code := StrLength(S);
+    Exit;
+  end;
+  Result := M;
+end;
+
+{ Correctly rounded decimal -> binary (LANG-943). The significant digits D (at most ValDigitsMax; later non-zero
+  digits are kept as one final digit 1, which is exact for rounding because every halfway point between two Doubles
+  has at most 767 significant digits) and the exponent E10 give the exact ratio V = R / S of big integers. With
+  V = Q * 2^E, 2^52 <= Q < 2^53 (E = -1074 for subnormals), Q is the integer quotient rounded half-even by the
+  remainder. }
+
+const
+  ValDigitsMax = 780;
+  ValExponentMax = 100000;             { larger exponents only overflow or underflow }
+
+function BigBitLength(const A: TBig): Integer;
+var
+  Top: Cardinal;
+begin
+  Result := 0;
+  if A.Len = 0 then
+    Exit;
+  Result := (A.Len - 1) * 32;
+  Top := A.W[A.Len - 1];
+  while Top <> 0 do
+  begin
+    Result := Result + 1;
+    Top := Top shr 1;
+  end;
+end;
+
+{ Compare(A * 2^ShiftA, B * 2^ShiftB), shifts >= 0 }
+function BigCmpShifted(const A: TBig; ShiftA: Integer; const B: TBig; ShiftB: Integer): Integer;
+var
+  X, Y: TBig;
+begin
+  X := A;
+  Y := B;
+  BigShl(X, ShiftA);
+  BigShl(Y, ShiftB);
+  Result := BigCmp(X, Y);
+end;
+
+{ D = Digits[0..Count-1] (Digits[0] <> 0), value D * 10^E10 }
+function DecimalToDouble(Digits: PByte; Count, E10: Integer; Negative: Boolean): Double;
+var
+  R, S, T, Small: TBig;
+  I, E, B: Integer;
+  Q, Bits: UInt64;
+begin
+  Bits := 0;
+  if Count + E10 > 310 then
+    Bits := $7FF0000000000000          { at least 10^310: infinity }
+  else if Count + E10 > -324 then      { otherwise below 10^-324, which rounds to zero }
+  begin
+    BigSet(R, 0);
+    for I := 0 to Count - 1 do
+    begin
+      BigMulSmall(R, 10);
+      BigSet(Small, Digits[I]);
+      BigAdd(R, Small);
+    end;
+    BigSet(S, 1);
+    if E10 >= 0 then
+      BigMulPow10(R, E10)
+    else
+      BigMulPow10(S, -E10);
+    E := BigBitLength(R) - BigBitLength(S) - 53;   { R / (S * 2^E) lies in (2^52, 2^54) }
+    if E + 53 >= 0 then
+      I := BigCmpShifted(R, 0, S, E + 53)
+    else
+      I := BigCmpShifted(R, -(E + 53), S, 0);
+    if I >= 0 then
+      E := E + 1;
+    if E < -1074 then
+      E := -1074;
+    if E >= 0 then
+      BigShl(S, E)
+    else
+      BigShl(R, -E);
+    Q := 0;                            { Q := R div S (below 2^53), R := R mod S }
+    for B := 53 downto 0 do
+    begin
+      T := S;
+      BigShl(T, B);
+      if BigCmp(R, T) >= 0 then
+      begin
+        BigSub(R, T);
+        Q := Q or (UInt64(1) shl B);
+      end;
+    end;
+    BigShl(R, 1);
+    I := BigCmp(R, S);
+    if (I > 0) or ((I = 0) and ((Q and 1) <> 0)) then
+      Q := Q + 1;
+    if Q = (UInt64(1) shl 53) then
+    begin
+      Q := UInt64(1) shl 52;
+      E := E + 1;
+    end;
+    if E > 971 then
+      Bits := $7FF0000000000000
+    else if Q >= (UInt64(1) shl 52) then
+      Bits := (UInt64(E + 1075) shl 52) or (Q and FracMask)
+    else
+      Bits := Q;                       { subnormal: E = -1074, biased exponent 0 }
+  end;
+  if Negative then
+    Bits := Bits or SignMask;
+  Result := BitsDouble(Bits);
+end;
+
+{ the word W (upper case) at P[I..] up to the end, case-insensitive; otherwise Code = the offending index }
+function MatchWord(P: PWord; Len, I: Integer; const W: string; var Code: Integer): Boolean;
+var
+  K: Integer;
+  C: Cardinal;
+begin
+  Result := False;
+  for K := 1 to Length(W) do
+  begin
+    if I >= Len then
+    begin
+      Code := Len + 1;
+      Exit;
+    end;
+    C := P[I];
+    if (C >= 97) and (C <= 122) then
+      C := C - 32;
+    if C <> Ord(W[K]) then
+    begin
+      Code := I + 1;
+      Exit;
+    end;
+    I := I + 1;
+  end;
+  if I < Len then
+  begin
+    Code := I + 1;
+    Exit;
+  end;
+  Result := True;
+end;
+
+function _ValFloat(S: Pointer; var Code: Integer): Double;
+var
+  P: PWord;
+  Len, I, Count, E10, Exponent, Digit, Seen: Integer;
+  Negative, NegativeExponent, Sticky, Fraction: Boolean;
+  Digits: array[0..ValDigitsMax] of Byte;
+  C: Cardinal;
+begin
+  Result := 0;
+  P := S;
+  Len := StrLength(S);
+  ValPrefix(P, Len, I, Negative);
+  if I >= Len then
+  begin
+    Code := Len + 1;
+    Exit;
+  end;
+  C := P[I];
+  if (C = 73) or (C = 105) or (C = 78) or (C = 110) then   { I i N n }
+  begin
+    if (C = 73) or (C = 105) then
+    begin
+      if MatchWord(P, Len, I, 'INF', Code) then
+        Result := BitsDouble($7FF0000000000000)
+      else
+        Exit;
+    end
+    else if MatchWord(P, Len, I, 'NAN', Code) then
+      Result := BitsDouble($7FF8000000000000)
+    else
+      Exit;
+    Code := 0;
+    if Negative then
+      Result := -Result;
+    Exit;
+  end;
+  Count := 0;
+  E10 := 0;
+  Seen := 0;
+  Sticky := False;
+  Fraction := False;
+  while I < Len do
+  begin
+    C := P[I];
+    if (C = ChDot) and not Fraction then
+    begin
+      Fraction := True;
+      I := I + 1;
+      if I >= Len then
+      begin
+        Code := Len + 1;               { a point needs a digit after it }
+        Exit;
+      end;
+      if DigitValue(P[I], False) < 0 then
+      begin
+        Code := I + 1;
+        Exit;
+      end;
+      Continue;
+    end;
+    Digit := DigitValue(C, False);
+    if Digit < 0 then
+      Break;
+    Seen := Seen + 1;
+    if (Count = 0) and (Digit = 0) then
+    begin
+      if Fraction then
+        E10 := E10 - 1;
+    end
+    else if Count < ValDigitsMax then
+    begin
+      Digits[Count] := Digit;
+      Count := Count + 1;
+      if Fraction then
+        E10 := E10 - 1;
+    end
+    else
+    begin
+      if not Fraction then
+        E10 := E10 + 1;
+      if Digit <> 0 then
+        Sticky := True;
+    end;
+    I := I + 1;
+  end;
+  if Seen = 0 then
+  begin
+    Code := I + 1;
+    Exit;
+  end;
+  if (I < Len) and ((P[I] = 69) or (P[I] = 101)) then   { E e }
+  begin
+    I := I + 1;
+    NegativeExponent := False;
+    if (I < Len) and ((P[I] = ChPlus) or (P[I] = ChMinus)) then
+    begin
+      NegativeExponent := P[I] = ChMinus;
+      I := I + 1;
+    end;
+    if I >= Len then
+    begin
+      Code := Len + 1;
+      Exit;
+    end;
+    if DigitValue(P[I], False) < 0 then
+    begin
+      Code := I + 1;
+      Exit;
+    end;
+    Exponent := 0;
+    while (I < Len) and (DigitValue(P[I], False) >= 0) do
+    begin
+      if Exponent < ValExponentMax then
+        Exponent := Exponent * 10 + DigitValue(P[I], False);
+      I := I + 1;
+    end;
+    if NegativeExponent then
+      E10 := E10 - Exponent
+    else
+      E10 := E10 + Exponent;
+  end;
+  if I < Len then
+  begin
+    Code := I + 1;
+    Exit;
+  end;
+  Code := 0;
+  if Count = 0 then
+  begin
+    if Negative then
+      Result := BitsDouble(SignMask);
+    Exit;
+  end;
+  if Sticky then
+  begin
+    Digits[Count] := 1;
+    Count := Count + 1;
+    E10 := E10 - 1;
+  end;
+  Result := DecimalToDouble(@Digits[0], Count, E10, Negative);
 end;
 
 { RTL-092: CR LF on every kind }
