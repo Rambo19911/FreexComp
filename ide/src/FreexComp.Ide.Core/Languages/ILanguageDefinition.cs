@@ -134,6 +134,9 @@ public abstract class WholeTextClassifier : ITokenClassifier
 
     public event EventHandler? ClassificationChanged;
 
+    /// <summary>A background lex runs or its result has not been applied yet (tests drain it, I-179).</summary>
+    internal bool IsLexing => _runningVersion >= 0;
+
     public IReadOnlyList<TokenClassSpan> Classify(ITextBuffer buffer, LineRange lines)
     {
         ArgumentNullException.ThrowIfNull(buffer);

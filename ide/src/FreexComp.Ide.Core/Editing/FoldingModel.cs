@@ -226,6 +226,9 @@ public sealed class FoldingModel
 
     private Task? _running;
 
+    /// <summary>A background run is in progress or its result has not been applied yet (tests drain it, I-179).</summary>
+    internal bool IsComputing => _running is { IsCompleted: false };
+
     /// <summary>
     /// One run at a time over a <see cref="StringTextBuffer"/> snapshot; a result for an outdated version (or another
     /// provider) is dropped and the current text is folded again (IDE-ARCH-083). The result is applied on the

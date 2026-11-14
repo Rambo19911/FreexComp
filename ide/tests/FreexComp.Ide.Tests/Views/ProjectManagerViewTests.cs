@@ -1,8 +1,11 @@
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
@@ -372,6 +375,60 @@ public sealed class ProjectManagerViewTests
         await h.ExecuteAsync("file.closeProject");
         Assert.Empty(pm.Roots);
         Assert.True(h.Find<Control>("Tool.ProjectManager.Empty").IsVisible);
+    }
+
+    /// <summary>
+    /// IDE-PM-101 with UI-TW-017 (I-180): in a 300-unit project the tree is virtualized, so the active document's row
+    /// has no container until it is scrolled to; sync-with-editor brings it into view (scroll by item) and selects it.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-101")]
+    [Trait("Req", "UI-TW-017")]
+    public async Task SyncScrollsToUnrealizedRow()
+    {
+        var units = new System.Text.StringBuilder();
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            for (var i = 0; i < 300; i++)
+            {
+                units.Append($$""", { "path": "Gen{{i:D3}}.pas" }""");
+                o.InitialFiles[$@"Hello\Gen{i:D3}.pas"] = $"unit Gen{i:D3};\ninterface\nimplementation\nend.\n";
+            }
+
+            HelloProject(o, units.ToString());
+        });
+        var pm = await OpenHelloAsync(h);
+        Dispatcher.UIThread.RunJobs();
+        const string last = Row + "Gen299.pas";
+        Assert.Null(h.TryFind<TreeViewItem>(last)); // not realized: far below the viewport
+
+        Assert.True(await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "Hello", "Gen299.pas")) is { Success: true });
+        await h.ExecuteAsync("projectManager.syncWithEditor");
+        Dispatcher.UIThread.RunJobs();
+        AssertSelectedInView();
+
+        // Collapsed to the root row (the tree scrolls back to the top), sync expands the root and scrolls once more,
+        // although the selection did not change.
+        await h.ExecuteAsync("projectManager.collapseAll");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["$project"], VisibleKeys(pm));
+        await h.ExecuteAsync("projectManager.syncWithEditor");
+        Dispatcher.UIThread.RunJobs();
+        AssertSelectedInView();
+
+        void AssertSelectedInView()
+        {
+            Assert.Equal(["Gen299.pas"], pm.Selection.Select(n => n.Key));
+            var row = h.TryFind<TreeViewItem>(last);
+            Assert.NotNull(row);
+            Assert.True(row!.IsSelected);
+            // The row's visible part (its header: icon and name; the item's 1 px layout padding aside) is inside the viewport.
+            var header = row.FindDescendantOfType<FreexComp.Ide.Views.ProjectNodeView>()!;
+            var viewport = h.Find<TreeView>("Tool.ProjectManager.Tree").FindDescendantOfType<ScrollContentPresenter>()!;
+            var top = header.TranslatePoint(new Point(0, 0), viewport)!.Value.Y;
+            Assert.True(top >= 0 && top + header.Bounds.Height <= viewport.Bounds.Height,
+                $"row at {top:F1}..{top + header.Bounds.Height:F1} inside the viewport of height {viewport.Bounds.Height:F1}");
+        }
     }
 
     /// <summary>

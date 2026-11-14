@@ -25,6 +25,9 @@ public sealed class CodeTokenIndex
     /// <summary>A background scan ended (raised on the synchronization context that started it): ask <see cref="Current"/> again.</summary>
     public event EventHandler? Changed;
 
+    /// <summary>A background scan is in progress or its result has not been delivered yet (tests drain it, I-179).</summary>
+    internal bool IsScanning => _running is { IsCompleted: false };
+
     /// <summary>The tokens of the buffer's current version, or null while a large buffer is being scanned.</summary>
     public CodeTokens? Current
     {

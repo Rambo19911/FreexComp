@@ -33,6 +33,7 @@ public sealed class ProjectManagerView : UserControl
     private ProjectManagerViewModel? _model;
     private Window? _window;
     private bool _syncing;
+    private bool _fromTree;
 
     public ProjectManagerView()
     {
@@ -152,33 +153,68 @@ public sealed class ProjectManagerView : UserControl
     {
         if (_syncing || _model is null)
             return;
-        _model.SetSelection([.. _tree.SelectedItems.OfType<ProjectNodeViewModel>()]);
-    }
-
-    /// <summary>The model's selection (sync, Show, UI-TW-109 corrections) goes to the tree; the last row is brought into view.</summary>
-    private void OnModelSelectionChanged(object? sender, EventArgs e)
-    {
-        if (_model is null || _model.Selection.SequenceEqual(_tree.SelectedItems.OfType<ProjectNodeViewModel>()))
-            return;
-        _syncing = true;
+        _fromTree = true;
         try
         {
-            _tree.SelectedItems.Clear();
-            foreach (var node in _model.Selection)
-                _tree.SelectedItems.Add(node);
+            _model.SetSelection([.. _tree.SelectedItems.OfType<ProjectNodeViewModel>()]);
         }
         finally
         {
-            _syncing = false;
+            _fromTree = false;
+        }
+    }
+
+    /// <summary>
+    /// The model's selection (sync, Show, UI-TW-109 corrections) goes to the tree; the last row is brought into view —
+    /// also when the selection is unchanged but was set by the model (sync after Collapse All, I-180).
+    /// </summary>
+    private void OnModelSelectionChanged(object? sender, EventArgs e)
+    {
+        if (_model is null)
+            return;
+        var differs = !_model.Selection.SequenceEqual(_tree.SelectedItems.OfType<ProjectNodeViewModel>());
+        if (differs)
+        {
+            _syncing = true;
+            try
+            {
+                _tree.SelectedItems.Clear();
+                foreach (var node in _model.Selection)
+                    _tree.SelectedItems.Add(node);
+            }
+            finally
+            {
+                _syncing = false;
+            }
         }
 
-        if (_model.Selection.Count > 0)
+        if (_model.Selection.Count > 0 && (differs || !_fromTree))
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                if (_model is { Selection.Count: > 0 } m && _tree.TreeContainerFromItem(m.Selection[^1]) is Control container)
-                    container.BringIntoView();
+                if (_model is { Selection.Count: > 0 } m)
+                    ScrollIntoView(m.Selection[^1]);
             }, Avalonia.Threading.DispatcherPriority.Loaded);
+        }
+    }
+
+    /// <summary>
+    /// UI-TW-017 (I-180): the rows are virtualized, so the row of <paramref name="node"/> may have no container yet.
+    /// From the root down, each level scrolls its child into view by item, which realizes that child's container
+    /// (the last one, the node's row, ends up with its header in view).
+    /// </summary>
+    private void ScrollIntoView(ProjectNodeViewModel node)
+    {
+        var path = new Stack<ProjectNodeViewModel>();
+        for (var n = node; n is not null; n = n.Parent)
+            path.Push(n);
+        ItemsControl owner = _tree;
+        while (path.TryPop(out var item))
+        {
+            owner.ScrollIntoView(item);
+            if (owner.ContainerFromItem(item) is not TreeViewItem row)
+                return;
+            owner = row;
         }
     }
 
