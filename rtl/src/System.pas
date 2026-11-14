@@ -14,16 +14,26 @@ type
   PNativeInt = ^NativeInt;
   PNativeUInt = ^NativeUInt;
   PPointer = ^Pointer;
+  TProcedure = procedure;
+
+  { RTL-062: the pluggable memory manager; FreeMem returns 0 on success }
+  TMemoryManager = record
+    GetMem: function(Size: NativeInt): Pointer;
+    FreeMem: function(P: Pointer): Integer;
+    ReallocMem: function(P: Pointer; Size: NativeInt): Pointer;
+    AllocMem: function(Size: NativeInt): Pointer;
+  end;
 
 var
   Input: Text;
   Output: Text;
   ErrOutput: Text;
   ExitCode: Integer;
-  ExitProc: Pointer;
+  ExitProc: Pointer;                   { head of the exit-procedure chain, called as TProcedure (ABI-104 step 1) }
   ErrorAddr: Pointer;
-  // TODO(C-161): ErrorProc: procedure(Code: Integer; Addr: Pointer) (ABI-101); declared as a Pointer until then
-  ErrorProc: Pointer;
+  ErrorProc: procedure(Code: Integer; Addr: Pointer);                                    { ABI-101 }
+  AssertErrorProc: procedure(const Msg, FileName: string; Line: Integer; Addr: Pointer); { ABI-103 }
+  ShowErrorProc: procedure(const Text: string);                                          { RTL-132, IsConsole = False }
   IsConsole: Boolean;
   IsLibrary: Boolean;
   HInstance: THandle;
@@ -51,6 +61,9 @@ function _ReallocMem(P: Pointer; Size: NativeInt): Pointer;
 function _AllocZero(Size: NativeInt): Pointer;
 function _LiveAllocCount: NativeInt;
 function AllocMem(Size: NativeInt): Pointer;
+procedure GetMemoryManager(var M: TMemoryManager);
+procedure SetMemoryManager(const M: TMemoryManager);
+function IsMemoryManagerSet: Boolean;
 
 { UnicodeString helpers (rtl-abi.md section 3, 9.3; system.md section 8). A string value is nil ('') or points at the
   first element of a block with the TStrRec header in front; RefCount -1 marks a static literal block. Every helper
@@ -274,8 +287,8 @@ const
 type
   { rtl-abi.md ABI-100: one unit-table entry }
   TUnitEntry = record
-    Init: Pointer;
-    Final: Pointer;
+    Init: TProcedure;                  { either may be nil }
+    Final: TProcedure;
   end;
   PUnitEntry = ^TUnitEntry;
 
@@ -316,7 +329,7 @@ function TlsAlloc: Cardinal; stdcall; external kernel32 name 'TlsAlloc';
 function TlsFree(dwTlsIndex: Cardinal): LongBool; stdcall; external kernel32 name 'TlsFree';
 function TlsGetValue(dwTlsIndex: Cardinal): Pointer; stdcall; external kernel32 name 'TlsGetValue';
 function TlsSetValue(dwTlsIndex: Cardinal; lpTlsValue: Pointer): LongBool; stdcall; external kernel32 name 'TlsSetValue';
-{ TODO(C-161): lpStartAddress is a Pointer until procedural types exist; BeginThread (system.md section 5.1) wraps it }
+{ lpStartAddress is a stdcall routine address; BeginThread (system.md section 5.1, R-076) wraps it }
 function CreateThread(lpThreadAttributes: Pointer; dwStackSize: NativeUInt; lpStartAddress, lpParameter: Pointer;
   dwCreationFlags: Cardinal; lpThreadId: Pointer): THandle; stdcall; external kernel32 name 'CreateThread';
 function WaitForSingleObject(hHandle: THandle; dwMilliseconds: Cardinal): Cardinal; stdcall;
@@ -339,9 +352,10 @@ begin
 end;
 
 { ---------------------------------------------------------------- memory manager (RTL-060 ... RTL-064) }
-{ The default manager maps onto the process heap, whose blocks are 16-byte aligned on Win64 (RTL-061).
-  TODO(C-161): TMemoryManager, GetMemoryManager, SetMemoryManager and IsMemoryManagerSet (RTL-062) need procedural
-  types; every allocation already goes through the four routines below, which will dispatch through the manager. }
+{ The default manager maps onto the process heap, whose blocks are 16-byte aligned on Win64 (RTL-061), and keeps the
+  RTL-064 counters. Every allocation of the RTL and of compiled code goes through the routines below, which dispatch
+  through the current manager (RTL-062). They own the Size <= 0 / nil rules and the runtime errors (nil result: 203,
+  FreeMem result <> 0: 204), so a manager only sees requests with Size > 0 and P <> nil. }
 
 const
   HEAP_ZERO_MEMORY = $00000008;
@@ -349,40 +363,94 @@ const
 var
   BlocksAllocated: NativeInt;          { RTL-064 counters }
   BlocksFreed: NativeInt;
+  MemMgr: TMemoryManager;              { the current manager; DefaultMemMgr from _Startup on }
+  DefaultMemMgr: TMemoryManager;
 
-function HeapAllocate(Flags: Cardinal; Size: NativeInt): Pointer;
+function SysGetMem(Size: NativeInt): Pointer;
 begin
-  Result := nil;
-  if Size <= 0 then
-    Exit;
-  Result := HeapAlloc(ProcessHeap, Flags, Size);
-  if Result = nil then
-    _RunError(203);
-  AtomicIncrement(BlocksAllocated);    { RTL-064: interlocked counters }
+  Result := HeapAlloc(ProcessHeap, 0, Size);
+  if Result <> nil then
+    AtomicIncrement(BlocksAllocated);  { RTL-064: interlocked counters }
+end;
+
+function SysFreeMem(P: Pointer): Integer;
+begin
+  Result := 1;
+  if HeapFree(ProcessHeap, 0, P) then
+  begin
+    AtomicIncrement(BlocksFreed);
+    Result := 0;
+  end;
+end;
+
+function SysReallocMem(P: Pointer; Size: NativeInt): Pointer;
+begin
+  Result := HeapReAlloc(ProcessHeap, 0, P, Size);
+end;
+
+function SysAllocMem(Size: NativeInt): Pointer;
+begin
+  Result := HeapAlloc(ProcessHeap, HEAP_ZERO_MEMORY, Size);
+  if Result <> nil then
+    AtomicIncrement(BlocksAllocated);
+end;
+
+procedure InitMemoryManager;
+begin
+  DefaultMemMgr.GetMem := SysGetMem;
+  DefaultMemMgr.FreeMem := SysFreeMem;
+  DefaultMemMgr.ReallocMem := SysReallocMem;
+  DefaultMemMgr.AllocMem := SysAllocMem;
+  MemMgr := DefaultMemMgr;
+end;
+
+procedure GetMemoryManager(var M: TMemoryManager);
+begin
+  M := MemMgr;
+end;
+
+procedure SetMemoryManager(const M: TMemoryManager);
+begin
+  MemMgr := M;
+end;
+
+function IsMemoryManagerSet: Boolean;
+begin
+  Result := (MemMgr.GetMem <> DefaultMemMgr.GetMem) or (MemMgr.FreeMem <> DefaultMemMgr.FreeMem)
+    or (MemMgr.ReallocMem <> DefaultMemMgr.ReallocMem) or (MemMgr.AllocMem <> DefaultMemMgr.AllocMem);
 end;
 
 function _GetMem(Size: NativeInt): Pointer;
 begin
-  Result := HeapAllocate(0, Size);
+  Result := nil;
+  if Size <= 0 then
+    Exit;
+  Result := MemMgr.GetMem(Size);
+  if Result = nil then
+    _RunError(203);
 end;
 
 function _AllocZero(Size: NativeInt): Pointer;
 begin
-  Result := HeapAllocate(HEAP_ZERO_MEMORY, Size);
+  Result := nil;
+  if Size <= 0 then
+    Exit;
+  Result := MemMgr.AllocMem(Size);
+  if Result = nil then
+    _RunError(203);
 end;
 
 function AllocMem(Size: NativeInt): Pointer;
 begin
-  Result := HeapAllocate(HEAP_ZERO_MEMORY, Size);
+  Result := _AllocZero(Size);
 end;
 
 procedure _FreeMem(P: Pointer);
 begin
   if P = nil then
     Exit;
-  if not HeapFree(ProcessHeap, 0, P) then
+  if MemMgr.FreeMem(P) <> 0 then
     _RunError(204);
-  AtomicIncrement(BlocksFreed);
 end;
 
 function _ReallocMem(P: Pointer; Size: NativeInt): Pointer;
@@ -396,7 +464,7 @@ begin
   end
   else
   begin
-    Result := HeapReAlloc(ProcessHeap, 0, P, Size);
+    Result := MemMgr.ReallocMem(P, Size);
     if Result = nil then
       _RunError(203);                  { the block stays where it was; the process ends }
   end;
@@ -2107,6 +2175,7 @@ begin
   Units := UnitTable;
   Entries := UnitCount;
   ProcessHeap := GetProcessHeap;
+  InitMemoryManager;
   HInstance := GetModuleHandleW(nil);
   MainThreadID := GetCurrentThreadId;
   CmdLine := GetCommandLineW;
@@ -2118,36 +2187,42 @@ begin
   ExitCode := 0;
 end;
 
-{ ABI-100: Init routines in table order, counting the completed ones }
+{ ABI-100: Init routines in table order; InitCount counts the entries whose Init returned, so a unit whose
+  initialization halts is not finalised (ABI-104 step 2) }
 procedure _InitUnits;
 var
   I: NativeInt;
 begin
   for I := 0 to Entries - 1 do
   begin
-    // TODO(C-161): call Units[I].Init through a procedural type. Until then no unit with an initialization part
-    // can be linked (only program + System exist before C-068), so a non-nil entry is an invalid pointer operation.
-    if Units[I].Init <> nil then
-      _RunError(204);
+    if Assigned(Units[I].Init) then
+      Units[I].Init;
     InitCount := I + 1;
   end;
 end;
 
 { ---------------------------------------------------------------- shutdown (ABI-104) }
+{ Steps 1 and 2 take each exit procedure off the chain and each unit off the count before calling it, so a
+  re-entrant _Halt from inside them goes on with the next exit procedure / the next unit and nothing runs twice.
+  Steps 3 and 4 run at most once (ShutdownStep). }
 
 procedure _Halt0;
+var
+  P: Pointer;
+  Proc: TProcedure;
 begin
-  if ShutdownStep < 1 then
+  while ExitProc <> nil do
   begin
-    ShutdownStep := 1;
-    // TODO(C-161): call the ExitProc chain (R-010); ExitProc cannot be called before procedural types exist
+    P := ExitProc;
     ExitProc := nil;
+    Proc := TProcedure(P);
+    Proc;
   end;
-  if ShutdownStep < 2 then
+  while InitCount > 0 do
   begin
-    ShutdownStep := 2;
-    // TODO(C-161): call Final of entries InitCount-1 ... 0 (R-010); _InitUnits guarantees there is none yet
-    InitCount := 0;
+    InitCount := InitCount - 1;
+    if Assigned(Units[InitCount].Final) then
+      Units[InitCount].Final;
   end;
   if ShutdownStep < 3 then
     ShutdownStep := 3;                 { leak report: R-077 }
@@ -2166,35 +2241,94 @@ begin
   _Halt0;
 end;
 
-{ RTL-131/132, ABI-101 }
-procedure _RunError(Code: Integer);
+type
+  TErrorText = array[0..47] of WideChar;
+
+{ 'Runtime error <Code> at $<16 upper-case hex digits of ErrorAddr>' into Buf without allocating (the fatal path
+  must work while the memory manager fails); returns the number of characters }
+function ErrorText(Code: Integer; var Buf: TErrorText): Integer;
+const
+  Prefix = 'Runtime error ';
+  Middle = ' at $';
 var
-  R: PTextRec;
+  N, Count, Shift, I: Integer;
+  Value: Int64;
+  Digits: array[0..11] of WideChar;
   Address: NativeUInt;
-  Shift: Integer;
   Digit: Cardinal;
 begin
-  // TODO(C-173): ErrorAddr := _ReturnAddress (the caller's address); it stays nil until the intrinsic exists
-  ErrorAddr := nil;
-  // TODO(C-161): if ErrorProc <> nil then call ErrorProc(Code, ErrorAddr) (it normally raises and does not return);
-  // a procedural variable cannot be called before C-161, so the fatal path is always taken
-  ExitCode := Code;
-  FinishText(Output);
-  // TODO(C-161): with IsConsole = False and ShowErrorProc set, pass the text to ShowErrorProc instead
-  R := TextRec(ErrOutput);
-  Write(ErrOutput, 'Runtime error ', Code, ' at $');
+  N := 0;
+  for I := 1 to Length(Prefix) do
+  begin
+    Buf[N] := Prefix[I];
+    N := N + 1;
+  end;
+  Value := Code;
+  if Value < 0 then
+  begin
+    Buf[N] := '-';
+    N := N + 1;
+    Value := -Value;
+  end;
+  Count := 0;
+  repeat
+    Digits[Count] := WideChar(48 + Value mod 10);
+    Count := Count + 1;
+    Value := Value div 10;
+  until Value = 0;
+  while Count > 0 do
+  begin
+    Count := Count - 1;
+    Buf[N] := Digits[Count];
+    N := N + 1;
+  end;
+  for I := 1 to Length(Middle) do
+  begin
+    Buf[N] := Middle[I];
+    N := N + 1;
+  end;
   Address := NativeUInt(ErrorAddr);
   Shift := 60;
   while Shift >= 0 do
   begin
     Digit := (Address shr Shift) and $F;
     if Digit < 10 then
-      PutUnit(R^, 48 + Digit)
+      Buf[N] := WideChar(48 + Digit)
     else
-      PutUnit(R^, 55 + Digit);         { 'A' - 10 }
+      Buf[N] := WideChar(55 + Digit);  { 'A' - 10 }
+    N := N + 1;
     Shift := Shift - 4;
   end;
-  Writeln(ErrOutput);
+  Result := N;
+end;
+
+{ RTL-131/132, ABI-101 }
+procedure _RunError(Code: Integer);
+var
+  Buf: TErrorText;
+  Len, I: Integer;
+  R: PTextRec;
+  S: string;
+begin
+  // TODO(C-173): ErrorAddr := _ReturnAddress (the caller's address); it stays nil until the intrinsic exists
+  ErrorAddr := nil;
+  if Assigned(ErrorProc) then
+    ErrorProc(Code, ErrorAddr);        { normally raises and does not return }
+  ExitCode := Code;
+  FinishText(Output);
+  Len := ErrorText(Code, Buf);
+  if not IsConsole and Assigned(ShowErrorProc) then
+  begin
+    _UStrFromPWCharLen(PPointer(@S)^, @Buf[0], Len);
+    ShowErrorProc(S);
+  end
+  else
+  begin
+    R := TextRec(ErrOutput);
+    for I := 0 to Len - 1 do
+      PutUnit(R^, Ord(Buf[I]));
+    Writeln(ErrOutput);
+  end;
   _Halt(Code);
 end;
 
@@ -2219,11 +2353,19 @@ begin
   _RunError(219);
 end;
 
-{ ABI-103, RTL-137: '<Msg> (<FileName>, line <Line>)' + CR LF on ErrOutput ('Assertion failed' when Msg is nil),
-  then runtime error 227.
-  TODO(R-067): call AssertErrorProc first when assigned (needs procedural types, C-161) }
+{ ABI-103, RTL-137: AssertErrorProc first when assigned (Msg nil arrives as ''); if it is nil or returns,
+  '<Msg> (<FileName>, line <Line>)' + CR LF on ErrOutput ('Assertion failed' when Msg is nil), then runtime error 227 }
 procedure _Assert(Msg, FileName: Pointer; Line: Integer);
+var
+  M, F: string;
 begin
+  if Assigned(AssertErrorProc) then
+  begin
+    _UStrAsg(PPointer(@M)^, Msg);
+    _UStrAsg(PPointer(@F)^, FileName);
+    // TODO(C-173): Addr = the caller's address (_ReturnAddress); nil until the intrinsic exists
+    AssertErrorProc(M, F, Line, nil);
+  end;
   if Msg = nil then
     Write(ErrOutput, 'Assertion failed')
   else

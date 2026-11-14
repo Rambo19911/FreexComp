@@ -1,0 +1,7 @@
+set at start FALSE
+default fields assigned TRUE
+set while mine TRUE
+live blocks after 0
+Get returned mine TRUE
+set after restore FALSE
+gets 2, frees 5, reallocs 1, allocs 3

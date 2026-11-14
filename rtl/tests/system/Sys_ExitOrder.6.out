@@ -1,0 +1,13 @@
+init A
+init B
+init B done
+init C
+main
+run error 201 in main
+exit main 2, run 1
+exit main 1, ExitCode 201
+exit A, ExitCode 201
+final C
+final C done
+final B
+final A

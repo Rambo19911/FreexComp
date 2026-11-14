@@ -1,0 +1,13 @@
+init A
+init B
+init B done
+init C
+main
+main done
+exit main 2, run 1
+exit main 1, ExitCode 0
+exit A, ExitCode 0
+final C
+final C done
+final B
+final A

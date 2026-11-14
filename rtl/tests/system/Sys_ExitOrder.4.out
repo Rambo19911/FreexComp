@@ -1,0 +1,5 @@
+init A
+init B
+halt 4 in init B
+exit A, ExitCode 4
+final A

@@ -1,0 +1,2 @@
+^unhooked \(Sys_AssertHook\.pas, line 33\)$
+^Runtime error 227 at \$[0-9A-F]{16}$

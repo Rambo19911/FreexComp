@@ -1,0 +1,14 @@
+init A
+init B
+init B done
+init C
+main
+main done
+exit main 2, run 1
+halt 6 in exit main 2
+exit main 1, ExitCode 6
+exit A, ExitCode 6
+final C
+final C done
+final B
+final A
