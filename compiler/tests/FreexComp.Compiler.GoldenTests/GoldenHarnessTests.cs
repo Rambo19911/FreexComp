@@ -218,12 +218,15 @@ public sealed class GoldenHarnessTests : IDisposable
 
     [Fact]
     [Trait("Req", "CMP-903")]
-    public void SelectRtl_EnvironmentWins_ThenRtlSrc_ThenTheMiniRtl()
+    public void SelectRtl_EnvironmentWins_ThenTheMiniRtlUntilHandOver_ThenRtlSrc()
     {
         Assert.Equal(Path.Combine(_root, "custom"), GoldenSetup.SelectRtl(_root, Path.Combine(_root, "custom")));
-        Assert.Equal(Path.Combine(_root, "compiler", "tests", "minirtl"), GoldenSetup.SelectRtl(_root, null));
 
+        var mini = Put("compiler/tests/minirtl/System.pas", "unit System; interface implementation end.");
         Put("rtl/src/System.pas", "unit System; interface implementation end.");
+        Assert.Equal(Path.Combine(_root, "compiler", "tests", "minirtl"), GoldenSetup.SelectRtl(_root, null)); // both exist: mini RTL
+
+        File.Delete(mini); // CMP-631 hand-over (C-149) deletes the mini RTL
         Assert.Equal(Path.Combine(_root, "rtl", "src"), GoldenSetup.SelectRtl(_root, ""));
     }
 

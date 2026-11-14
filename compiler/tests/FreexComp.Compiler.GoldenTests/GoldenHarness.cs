@@ -120,7 +120,10 @@ public sealed record GoldenSetup(string OpcPath, string RtlDirectory, string Too
         SelectRtl(RepositoryRoot, Environment.GetEnvironmentVariable("OPC_TEST_RTL")),
         Path.Combine(RepositoryRoot, "third_party", "llvm", "bin"));
 
-    /// <summary>CMP-903: <c>OPC_TEST_RTL</c>, else <c>rtl/src</c> when it holds <c>System.pas</c>, else <c>compiler/tests/minirtl</c>.</summary>
+    /// <summary>
+    /// CMP-903 (lead decision 2026-11-14): <c>OPC_TEST_RTL</c>, else the mini RTL while
+    /// <c>compiler/tests/minirtl/System.pas</c> exists (until the CMP-631 hand-over, C-149 deletes it), else <c>rtl/src</c>.
+    /// </summary>
     public static string SelectRtl(string root, string? environment)
     {
         if (!string.IsNullOrEmpty(environment))
@@ -128,8 +131,8 @@ public sealed record GoldenSetup(string OpcPath, string RtlDirectory, string Too
             return environment;
         }
 
-        var rtl = Path.Combine(root, "rtl", "src");
-        return System.IO.File.Exists(Path.Combine(rtl, "System.pas")) ? rtl : Path.Combine(root, "compiler", "tests", "minirtl");
+        var mini = Path.Combine(root, "compiler", "tests", "minirtl");
+        return System.IO.File.Exists(Path.Combine(mini, "System.pas")) ? mini : Path.Combine(root, "rtl", "src");
     }
 
     private static string FindRoot()
