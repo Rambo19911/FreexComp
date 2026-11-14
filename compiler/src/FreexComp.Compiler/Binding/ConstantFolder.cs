@@ -92,8 +92,7 @@ internal sealed class ConstantFolder
                 var text = token.Value as string ?? "";
                 return text.Length == 1 ? new ConstantValue(new BigInteger(text[0]), _types.Char) : new ConstantValue(text, _types.String);
             case SyntaxKind.NilKeyword:
-                _diagnostics.Report(literal, "E2900", "nil constant");
-                return null;
+                return new ConstantValue(null, _types.Nil);             // LANG-266
             default:
                 return null;
         }
@@ -306,6 +305,19 @@ internal sealed class ConstantFolder
     /// <summary>A binary operator on constants; diagnostics (E2011, E2051, E2052) at <paramref name="op"/>.</summary>
     internal ConstantValue? FoldBinary(SyntaxToken op, ConstantValue left, ConstantValue right)
     {
+        if (left.Type is PointerTypeSymbol || right.Type is PointerTypeSymbol)
+        {
+            // nil = nil / nil <> nil (LANG-266); no other operator applies to pointer constants
+            if (left.Value is null && right.Value is null && op.Kind is SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken
+                && left.Type is PointerTypeSymbol && right.Type is PointerTypeSymbol)
+            {
+                return new ConstantValue(op.Kind == SyntaxKind.EqualsToken, _types.Boolean);
+            }
+
+            _diagnostics.Report(op, "E2011", op.Text, $"'{left.Type.Name}' and '{right.Type.Name}'");
+            return null;
+        }
+
         var result = op.Kind == SyntaxKind.InKeyword ? In(op, left, right)
             : left.Type is SetTypeSymbol || right.Type is SetTypeSymbol ? SetOperation(op, left, right)
             : op.Kind switch

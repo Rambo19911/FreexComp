@@ -6,5 +6,6 @@ GetProcessHeap
 GetStdHandle
 HeapAlloc
 HeapFree
+HeapReAlloc
 WideCharToMultiByte
 WriteFile

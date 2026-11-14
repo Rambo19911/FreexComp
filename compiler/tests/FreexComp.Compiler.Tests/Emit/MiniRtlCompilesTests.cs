@@ -95,7 +95,10 @@ public sealed class MiniRtlCompilesTests
         Assert.DoesNotContain("external global", text);
         Assert.DoesNotContain("declare void @\"System.", text);
         Assert.Contains("call void @\"System._WriteUStr\"(ptr @\"System.ErrOutput\", ", text);
-        Assert.Contains("declare dllimport void @RtlMoveMemory(ptr, ptr, i64)\n", text);
+        // C-056: memory is accessed through pointers, no longer through ntdll's RtlMoveMemory/RtlFillMemory
+        Assert.DoesNotContain("@RtlMoveMemory", text);
+        Assert.DoesNotContain("@RtlFillMemory", text);
+        Assert.Contains("declare dllimport ptr @HeapReAlloc(i64, i32, ptr, i64)\n", text);
     }
 
     [Fact]

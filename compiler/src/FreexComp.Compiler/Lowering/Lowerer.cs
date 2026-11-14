@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Numerics;
 using FreexComp.Compiler.Binding;
+using FreexComp.Compiler.Emit;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Types;
@@ -199,9 +200,9 @@ internal sealed class LoweringContext
             case BoundHaltStatement halt:
                 return CallNoReturn(Halt, halt.ExitCode is null ? Constant(BigInteger.Zero, Types.Integer) : Lower(halt.ExitCode));
             case BoundCallStatement call:
-                return new LCallStatement(new LRoutineCallee(call.Routine), Arguments(call.Routine, call.Arguments));
+                return CallStatement(call.Routine, call.Arguments);
             case BoundExpressionStatement { Expression: BoundCallExpression call }:
-                return new LCallStatement(new LRoutineCallee(call.Routine), Arguments(call.Routine, call.Arguments));
+                return CallStatement(call.Routine, call.Arguments);
             case BoundIntrinsicCallStatement intrinsic:
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
             case BoundWriteStatement write:
@@ -252,7 +253,7 @@ internal sealed class LoweringContext
             case BoundBinaryExpression binary:
                 return Binary(binary);
             case BoundCallExpression call:
-                return new LCall(new LRoutineCallee(call.Routine), Arguments(call.Routine, call.Arguments));
+                return Call(call.Routine, call.Arguments);
             case BoundIntrinsicCallExpression intrinsic:
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
             case BoundSetConstructor constructor:
@@ -261,6 +262,14 @@ internal sealed class LoweringContext
                 return Index(index);
             case BoundFieldAccessExpression field:
                 return new LField(Lower(field.Record), field.Field);                     // CMP-307
+            case BoundAddressOfExpression { Routine: { } routine } addressOf:
+                return new LRoutineAddress(routine, addressOf.Type);                    // CMP-340
+            case BoundAddressOfExpression addressOf:
+                return new LAddrOf(Lower(addressOf.Operand!), addressOf.Type);
+            case BoundDereferenceExpression dereference:
+                return new LDeref(Lower(dereference.Pointer), dereference.Type);
+            case BoundPointerArithmeticExpression arithmetic:
+                return PointerArithmetic(arithmetic);
             default:
                 throw new InvalidOperationException($"Cannot lower {expression.Kind}.");
         }
@@ -292,6 +301,32 @@ internal sealed class LoweringContext
         var wide = Convert(value, Types.Int64);
         return new LIndex(target, array.Low.IsZero ? wide : new LBinary(LBinaryOperator.Subtract, wide, Constant(array.Low, Types.Int64)), array.ElementType);
     }
+
+    /// <summary>
+    /// CMP-342: <c>p ± n</c> = GEP over the element type (bytes for the untyped <c>Pointer</c>); <c>p - q</c> = the byte distance
+    /// (<c>ptrtoint</c>, <c>sub</c>) divided by the element size.
+    /// </summary>
+    private LExpression PointerArithmetic(BoundPointerArithmeticExpression arithmetic)
+    {
+        var pointer = Lower(arithmetic.Pointer);
+        var offset = Lower(arithmetic.Offset);
+        var size = Pointers.ElementSize(arithmetic.PointerType);
+        if (arithmetic.Difference)
+        {
+            var bytes = new LBinary(LBinaryOperator.Subtract, Convert(pointer, Types.NativeInt), Convert(offset, Types.NativeInt));
+            return size == 1 ? bytes : new LBinary(LBinaryOperator.IntegerDivide, bytes, Constant(size, Types.NativeInt));
+        }
+
+        return Offset(pointer, arithmetic.Subtract ? Negated(offset) : offset, arithmetic.PointerType, arithmetic.Type);
+    }
+
+    /// <summary><c>-x</c> without overflow check; a constant is negated at compile time.</summary>
+    public LExpression Negated(LExpression value) =>
+        value is LConst { Value.Value: BigInteger constant } ? Constant(-constant, value.Type) : new LUnary(LUnaryOperator.Negate, value);
+
+    /// <summary><paramref name="pointer"/> moved by <paramref name="index"/> elements of <paramref name="pointerType"/> (CMP-342).</summary>
+    public LExpression Offset(LExpression pointer, LExpression index, PointerTypeSymbol pointerType, TypeSymbol resultType) =>
+        new LPointerOffset(pointer, index, pointerType.PointedType ?? Types.Byte, resultType);
 
     private LExpression Binary(BoundBinaryExpression binary)
     {
@@ -336,11 +371,74 @@ internal sealed class LoweringContext
         }, left, right, CheckRewriter.StateOf(binary));
     }
 
-    /// <summary>Value and <c>const</c> arguments as values; <c>var</c>/<c>out</c> arguments as the variable's address.</summary>
-    private ImmutableArray<LExpression> Arguments(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments) =>
-        [.. arguments.Select((argument, i) => routine.Parameters[i].IsByReference
-            ? new LAddrOf(Lower(argument), Types.Pointer)
-            : Lowerer.IsAggregate(routine.Parameters[i].Type)
-                ? throw new NotSupportedException("aggregate parameters and results (C-055)")
-                : Lower(argument))];
+    /// <summary>
+    /// Value and <c>const</c> arguments as values; <c>var</c>/<c>out</c> arguments as the variable's address. ABI-080: an aggregate
+    /// of size 1, 2, 4 or 8 stays an aggregate operand (the emitter loads it as <c>iN</c>); a larger value aggregate is copied
+    /// into a fresh temporary whose address is passed, a larger <c>const</c> one passes the original's address (a copy when
+    /// the original may be less aligned than its type, CMP-309). A <c>var</c>/<c>out</c> argument less aligned than its type (a
+    /// field of a packed record) is passed as an aligned temporary copied in before and back after the call
+    /// (<paramref name="writeBacks"/>), since the callee accesses it with the type's alignment (CMP-309).
+    /// </summary>
+    private ImmutableArray<LExpression> Arguments(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, List<LStatement> writeBacks) =>
+        [.. arguments.Select((argument, i) => Argument(routine.Parameters[i], Lower(argument), writeBacks))];
+
+    private LExpression Argument(ParameterSymbol parameter, LExpression argument, List<LStatement> writeBacks)
+    {
+        var aligned = FunctionEmitter.AccessAlignment(argument) >= TypeLayout.Of(parameter.Type).Alignment;
+        if (parameter.IsByReference)
+        {
+            if (aligned)
+            {
+                return new LAddrOf(argument, Types.Pointer);
+            }
+
+            var temporary = new LLocalRef(NewTemp(parameter.Type));
+            writeBacks.Add(new LAssign(argument, temporary));
+            return new LSequence(new LAssign(temporary, argument), new LAddrOf(temporary, Types.Pointer));
+        }
+
+        if (!IrEmitter.IsPassedByAddress(parameter))
+        {
+            return argument;
+        }
+
+        if (parameter.Mode == ParameterMode.Const && aligned)
+        {
+            return new LAddrOf(argument, Types.Pointer);
+        }
+
+        var copy = new LLocalRef(NewTemp(parameter.Type));
+        return new LSequence(new LAssign(copy, argument), new LAddrOf(copy, Types.Pointer));
+    }
+
+    /// <summary>
+    /// A call with a result. ABI-081: an aggregate result is assigned to a fresh temporary (the emitter passes its address as
+    /// the hidden <c>Result</c> or stores the returned <c>iN</c>), which is the value; so is any result when arguments are
+    /// written back after the call.
+    /// </summary>
+    private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+    {
+        var writeBacks = new List<LStatement>();
+        var call = new LCall(new LRoutineCallee(routine), Arguments(routine, arguments, writeBacks));
+        if (!Lowerer.IsAggregate(call.Type) && writeBacks.Count == 0)
+        {
+            return call;
+        }
+
+        var result = new LLocalRef(NewTemp(call.Type));
+        return new LSequence(new LBlock([new LAssign(result, call), .. writeBacks]), result);
+    }
+
+    /// <summary>A call statement; a discarded aggregate result still needs storage (ABI-081).</summary>
+    private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+    {
+        if (routine.ReturnType is { } type && Lowerer.IsAggregate(type))
+        {
+            return ((LSequence)Call(routine, arguments)).First;
+        }
+
+        var writeBacks = new List<LStatement>();
+        var call = new LCallStatement(new LRoutineCallee(routine), Arguments(routine, arguments, writeBacks));
+        return writeBacks.Count == 0 ? call : new LBlock([call, .. writeBacks]);
+    }
 }

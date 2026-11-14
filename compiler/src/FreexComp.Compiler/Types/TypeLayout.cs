@@ -31,6 +31,13 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
         return new TypeLayout(type.Size, type.Alignment, storage);
     }
 
+    /// <summary>
+    /// The layout of a variable's own storage (alloca, global, frame field): <see cref="Of"/>, except that a type of size 0 (an
+    /// empty record) occupies one byte, <c>[1 x i8]</c>, so that distinct variables have distinct addresses (ABI-060).
+    /// </summary>
+    public static TypeLayout Allocated(TypeSymbol type) =>
+        type.Size == 0 ? new TypeLayout(1, Math.Max(1, type.Alignment), new ArrayIrType(1, IrType.I8)) : Of(type);
+
     /// <summary>The struct index of each field of <paramref name="record"/> (padding fields shift them, CMP-307).</summary>
     public static ImmutableArray<int> FieldIndexes(RecordTypeSymbol record) => Record(record).FieldIndexes;
 

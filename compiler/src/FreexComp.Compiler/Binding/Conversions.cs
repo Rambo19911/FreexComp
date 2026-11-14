@@ -13,6 +13,7 @@ internal sealed class Conversions
     private static readonly Conversion Identity = new(ConversionKind.Identity, IsImplicit: true, Exists: true);
     private static readonly Conversion Numeric = new(ConversionKind.ImplicitNumeric, IsImplicit: true, Exists: true);
     private static readonly Conversion NoConversion = new(ConversionKind.None, IsImplicit: false, Exists: false);
+    private static readonly Conversion Pointer = new(ConversionKind.ImplicitReference, IsImplicit: true, Exists: true);
 
     /// <summary>The implicit conversion from <paramref name="source"/> to <paramref name="destination"/> (type level, no constants).</summary>
     public Conversion Classify(TypeSymbol source, TypeSymbol destination)
@@ -32,6 +33,7 @@ internal sealed class Conversions
             (EnumTypeSymbol, EnumTypeSymbol) when Ordinals.SameHost(source, destination) => Numeric,  // rule 5
             (BooleanTypeSymbol, BooleanTypeSymbol) => Numeric,
             (SetTypeSymbol s, SetTypeSymbol d) when d.ElementType != null && Sets.Compatible(s, d) => Numeric,     // rule 8
+            (PointerTypeSymbol s, PointerTypeSymbol d) when Pointers.Compatible(s, d) => Pointer,                  // rule 9
             _ => NoConversion,
         };
     }
@@ -89,10 +91,11 @@ internal sealed class Conversions
         };
     }
 
-    /// <summary>E2010; E2900 for string and pointer conversions, which arrive with M2.2 (LANG-245, 266, 267).</summary>
+    /// <summary>E2010; E2900 for string conversions and <c>PChar</c> ↔ string, which arrive with M2.2 (LANG-245).</summary>
     public void ReportIncompatible(TypeSymbol source, TypeSymbol destination, SyntaxNode at, DiagnosticBag diagnostics)
     {
-        var later = source is PointerTypeSymbol || destination is PointerTypeSymbol
+        var later = (source is PointerTypeSymbol { AllowsPointerMath: true } && destination is StringTypeSymbol)
+            || (destination is PointerTypeSymbol { AllowsPointerMath: true } && source is StringTypeSymbol)
             || (destination is StringTypeSymbol && source is StringTypeSymbol or CharTypeSymbol)
             || (source is StringTypeSymbol && destination is StringTypeSymbol or CharTypeSymbol);
         if (later)

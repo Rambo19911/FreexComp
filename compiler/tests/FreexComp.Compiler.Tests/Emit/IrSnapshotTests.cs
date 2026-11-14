@@ -795,8 +795,73 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-056: <c>@</c>/<c>^</c> (CMP-340), pointer arithmetic (CMP-342), <c>New</c>/<c>Dispose</c>/<c>GetMem</c>/<c>FreeMem</c>,
+    /// <c>FillChar</c>/<c>Move</c> (CMP-412), <c>@</c> in typed constants, an empty record (one byte when allocated, ABI-060) and a
+    /// <c>var</c> argument in a packed record (copied through an aligned temporary, CMP-309).
+    /// </summary>
+    internal const string PointersSource = """
+        unit M;
+        interface
+        type
+          PInt = ^Integer;
+          PNode = ^TNode;
+          TNode = record V: Integer; Next: PNode; end;
+          TEmpty = record end;
+          TPacked = packed record B: Byte; I: Integer; end;
+        var
+          G: Integer;
+          E: TEmpty;
+          K: TPacked;
+        const
+          CG: PInt = @G;
+          Table: array[0..1] of Pointer = (@G, nil);
+        procedure Bump(var V: Integer);
+        procedure Use;
+        implementation
+        procedure Bump(var V: Integer);
+        begin
+          V := V + 1;
+        end;
+        procedure Use;
+        var
+          p, q: PInt;
+          n: PNode;
+          c: PChar;
+          d: NativeInt;
+          u: Pointer;
+          e2: TEmpty;
+        begin
+          p := @G;
+          p^ := p^ + 1;
+          New(n);
+          n.V := 1;
+          n^.Next := nil;
+          Dispose(n);
+          GetMem(u, 16);
+          FillChar(u^, 16, 0);
+          Move(G, u^, 4);
+          FreeMem(u);
+          c := c + 2;
+          d := c - c;
+        {$POINTERMATH ON}
+          q := p - 1;
+          d := q - p;
+        {$POINTERMATH OFF}
+          Inc(p, 3);
+          if Assigned(p) and (p <> CG) then
+            u := @Bump;
+          Bump(K.I);
+          u := @E;
+          u := @e2;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Pointers"] = PointersSource,
+        ["AggregateAbi"] = AbiLoweringTests.Source,
         ["TypedConstants"] = TypedConstantsSource,
         ["Records"] = RecordsSource,
         ["StaticArrays"] = StaticArraysSource,
@@ -1043,6 +1108,41 @@ public sealed class IrSnapshotTests
         Assert.Contains("getelementptr inbounds i8, ptr ", text);
         Assert.Contains("@\"M.Vowels\" = global [32 x i8] [i8 0, ", text);
         Assert.Contains("= private unnamed_addr constant [32 x i8] ", text);
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-340")]
+    [Trait("Req", "CMP-342")]
+    public void Pointers() => Snapshot.Verify("Pointers", Emit(PointersSource));
+
+    /// <summary>CMP-340/342/412 forms; ABI-060 one-byte empty records; CMP-309 copy-in/copy-out for a packed var argument.</summary>
+    [Fact]
+    [Trait("Req", "CMP-340")]
+    [Trait("Req", "CMP-341")]
+    [Trait("Req", "CMP-342")]
+    [Trait("Req", "CMP-412")]
+    [Trait("Req", "ABI-060")]
+    public void Pointers_AddressesArithmeticAndMemoryIntrinsics()
+    {
+        var text = Emit(PointersSource);
+
+        Assert.Contains("store ptr @\"M.G\", ptr %p.addr, align 8\n", text);                        // p := @G
+        Assert.Contains("call ptr @\"System._AllocZero\"(i64 16)\n", text);                          // New(n): SizeOf(TNode)
+        Assert.Contains("call void @\"System._FreeMem\"(ptr ", text);
+        Assert.Contains("call ptr @\"System._GetMem\"(i64 16)\n", text);
+        Assert.Matches(@"call void @llvm\.memset\.p0\.i64\(ptr align 1 %t\d+, i8 0, i64 16, i1 false\)", text);
+        Assert.Matches(@"call void @llvm\.memmove\.p0\.p0\.i64\(ptr align 1 %t\d+, ptr align 4 @""M\.G"", i64 4, i1 false\)", text);
+        Assert.Matches(@"getelementptr inbounds i16, ptr %t\d+, i64 2\n", text);                    // c + 2
+        Assert.Matches(@"getelementptr inbounds i32, ptr %t\d+, i64 3\n", text);                    // Inc(p, 3)
+        Assert.Matches(@"ptrtoint ptr %t\d+ to i64\n", text);                                        // p - q
+        Assert.Matches(@"sdiv i64 %t\d+, 4\n", text);
+        Assert.Contains("store ptr @\"M.Bump\", ptr %u.addr, align 8\n", text);                    // @Routine
+        Assert.Contains("@\"M.CG\" = constant ptr @\"M.G\", align 8\n", text);
+        Assert.Contains("@\"M.Table\" = constant [2 x ptr] [ptr @\"M.G\", ptr null], align 8\n", text);
+        Assert.Contains("@\"M.E\" = global [1 x i8] zeroinitializer, align 1\n", text);            // empty record: one byte
+        Assert.Contains("%e2.addr = alloca [1 x i8], align 1\n", text);
+        // Bump(K.I): K.I is copied into an aligned temporary and back (the callee assumes align 4)
+        Assert.Matches(@"load i32, ptr %t\d+, align 1\n  store i32 %t\d+, ptr %\$tmp\d+\.addr, align 4\n  call void @""M\.Bump""\(ptr %\$tmp\d+\.addr\)\n", text);
     }
 
     [Fact]

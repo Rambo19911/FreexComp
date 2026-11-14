@@ -150,7 +150,7 @@ procedure P; begin Result := 1 end; begin end.
 === E2207 1,31
 procedure P; var i: Integer = 1; begin end; begin end.
 === E2900 1,8
-var p: ^Integer; begin end.
+var p: array of Integer; begin end.
 === E2911 1,28
 var i: Integer; begin i := High(Double) end.
 === E2915 1,33
@@ -235,3 +235,9 @@ type T = record X, Y: Integer end; const P: T = (Z: 1); begin end.
 const A: Integer = 1; begin A := 2 end.
 === E2112 1,33
 const A: Integer = 1; begin Inc(A) end.
+=== E2015 1,11
+type P = ^TMissing; begin end.
+=== E2018 1,28
+var i: Integer; begin i := i^ end.
+=== E2033 1,30
+var p: ^Integer; begin p := @1 end.

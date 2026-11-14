@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Numerics;
+using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Lowering;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Types;
@@ -26,8 +27,11 @@ internal static class IrEmitter
     /// <summary><c>attributes #2</c>: routines whose link name is a C memory routine (CMP-302, 610).</summary>
     public const int NoBuiltinsGroup = 2;
 
-    /// <summary>CMP-610: link names that get <see cref="NoBuiltinsGroup"/> so the optimiser cannot turn their loops into calls to themselves.</summary>
-    private static readonly HashSet<string> MemoryRoutineNames = new(StringComparer.Ordinal) { "memcpy", "memmove", "memset", "memcmp" };
+    /// <summary>
+    /// CMP-610: link names that get <see cref="NoBuiltinsGroup"/> so the optimiser cannot turn their loops into calls to themselves;
+    /// <c>strlen</c>/<c>wcslen</c> because loop-idiom recognition at <c>-O2</c> turns a PChar scan into them (C-056).
+    /// </summary>
+    private static readonly HashSet<string> MemoryRoutineNames = new(StringComparer.Ordinal) { "memcpy", "memmove", "memset", "memcmp", "strlen", "wcslen" };
 
     /// <summary>CMP-611: the x64 stack probe, appended verbatim to unit <c>System</c> (ADR 001; never imported, never in <c>System.pas</c>).</summary>
     private static readonly ImmutableArray<string> StackProbe =
@@ -125,13 +129,14 @@ internal static class IrEmitter
 
         foreach (var variable in variables)
         {
-            var layout = TypeLayout.Of(variable.Type);
-            var initializer = variable.Initializer is { } value ? StorageConstant(value, variable.Type) : new IrZeroConstant(layout.StorageType);
+            var layout = TypeLayout.Allocated(variable.Type);
+            var initializer = variable.Initializer is { } value && variable.Type.Size > 0 ? StorageConstant(module, value, variable.Type) : new IrZeroConstant(layout.StorageType);
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
                 interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null ? IrLinkage.External : IrLinkage.Internal,
                 IsConstant: variable.IsReadOnly, initializer, layout.Alignment));
         }
 
+        module.DeclarePending();                                        // routines whose address a typed constant holds
         foreach (var (name, type) in module.ExternalVariables)
         {
             var layout = TypeLayout.Of(type);
@@ -207,23 +212,57 @@ internal static class IrEmitter
         return routines.Where(r => !r.Routine!.IsNested).SelectMany(WithNested);
     }
 
-    /// <summary>The IR parameter types of <paramref name="routine"/> (ABI-080, 082): static link, then per parameter value or <c>ptr</c>.</summary>
+    /// <summary>
+    /// The IR parameter types of <paramref name="routine"/> (ABI-080, 082): static link, hidden <c>ptr Result</c> (ABI-081),
+    /// then per parameter its value, an <c>iN</c> holding a small aggregate, or <c>ptr</c>.
+    /// </summary>
     internal static ImmutableArray<IrType> ParameterTypes(RoutineSymbol routine) =>
         [.. (routine.IsNested ? [IrType.Ptr] : Array.Empty<IrType>()),
-         .. routine.Parameters.Select(p => p.IsByReference ? IrType.Ptr : ScalarStorage(p.Type))];
+         .. (HasHiddenResult(routine) ? [IrType.Ptr] : Array.Empty<IrType>()),
+         .. routine.Parameters.Select(ParameterType)];
 
-    internal static IrType ReturnType(RoutineSymbol routine) => routine.ReturnType is { } type ? ScalarStorage(type) : IrType.Void;
+    /// <summary>The IR type of one declared parameter (ABI-080).</summary>
+    internal static IrType ParameterType(ParameterSymbol parameter) => IsPassedByAddress(parameter) ? IrType.Ptr : ScalarStorage(parameter.Type);
 
-    /// <summary>The storage type of a value parameter or result; aggregates follow ABI-080/081 with task C-055.</summary>
+    /// <summary>ABI-081: the value, an <c>iN</c> for an aggregate of size 1, 2, 4 or 8, <c>void</c> with a hidden result.</summary>
+    internal static IrType ReturnType(RoutineSymbol routine) =>
+        routine.ReturnType is { } type && !HasHiddenResult(routine) ? ScalarStorage(type) : IrType.Void;
+
+    /// <summary>ABI-080/081: an aggregate (record, static array, big set) of size 1, 2, 4 or 8 travels as an integer of its size.</summary>
+    internal static bool IsPassedAsInteger(TypeSymbol type) => Lowerer.IsAggregate(type) && type.Size is 1 or 2 or 4 or 8;
+
+    /// <summary>
+    /// ABI-080: the parameter arrives as a <c>ptr</c> — <c>var</c>/<c>out</c>, and value/<c>const</c> aggregates of other sizes
+    /// (value: the caller's copy, which the callee owns; <c>const</c>: the original).
+    /// </summary>
+    internal static bool IsPassedByAddress(ParameterSymbol parameter) =>
+        parameter.IsByReference || Lowerer.IsAggregate(parameter.Type) && !IsPassedAsInteger(parameter.Type);
+
+    /// <summary>ABI-081: the result is an aggregate not of size 1, 2, 4 or 8, written through a hidden <c>ptr Result</c> parameter.</summary>
+    internal static bool HasHiddenResult(RoutineSymbol routine) =>
+        routine.ReturnType is { } type && Lowerer.IsAggregate(type) && !IsPassedAsInteger(type);
+
+    /// <summary>
+    /// The variable lives at an address the routine receives (a by-address parameter, the hidden <c>Result</c>): a frame
+    /// record stores that pointer (CMP-345).
+    /// </summary>
+    internal static bool HoldsAddress(Symbol variable) => variable switch
+    {
+        ParameterSymbol parameter => IsPassedByAddress(parameter),
+        VariableSymbol { ContainingSymbol: RoutineSymbol routine } local => ReferenceEquals(routine.ResultVariable, local) && HasHiddenResult(routine),
+        _ => false,
+    };
+
+    /// <summary>The storage type of a value parameter or result; small aggregates as <c>iN</c> (ABI-080/081).</summary>
     private static IrType ScalarStorage(TypeSymbol type) =>
-        Lowerer.IsAggregate(type) ? throw new NotSupportedException("aggregate parameters and results (C-055)") : TypeLayout.Of(type).StorageType;
+        IsPassedAsInteger(type) ? IrType.Int((int)type.Size * 8) : TypeLayout.Of(type).StorageType;
 
-    /// <summary>Layout of a frame field: the variable's storage, or a <c>ptr</c> for a by-reference parameter (CMP-345).</summary>
+    /// <summary>Layout of a frame field: the variable's storage, or a <c>ptr</c> when it lives at a received address (CMP-345).</summary>
     internal static TypeLayout FieldLayout(Symbol variable) => variable switch
     {
-        ParameterSymbol { IsByReference: true } => new TypeLayout(8, 8, IrType.Ptr),
-        ParameterSymbol parameter => TypeLayout.Of(parameter.Type),
-        VariableSymbol local => TypeLayout.Of(local.Type),
+        _ when HoldsAddress(variable) => new TypeLayout(8, 8, IrType.Ptr),
+        ParameterSymbol parameter => TypeLayout.Allocated(parameter.Type),
+        VariableSymbol local => TypeLayout.Allocated(local.Type),
         _ => throw new InvalidOperationException($"'{variable.Name}' cannot live in a frame record."),
     };
 
@@ -257,13 +296,17 @@ internal static class IrEmitter
     /// A constant in memory form: Booleans as 0/1, C-style Booleans as 0/−1 (CMP-305); static arrays and records element by
     /// element (CMP-341), omitted record fields and padding as <c>zeroinitializer</c>.
     /// </summary>
-    private static IrConstant StorageConstant(ConstantValue constant, TypeSymbol type)
+    private static IrConstant StorageConstant(ModuleState module, ConstantValue constant, TypeSymbol type)
     {
         IrConstant Element(ConstantValue? value, TypeSymbol elementType) =>
-            value is null ? new IrZeroConstant(TypeLayout.Of(elementType).StorageType) : StorageConstant(value, elementType);
+            value is null ? new IrZeroConstant(TypeLayout.Of(elementType).StorageType) : StorageConstant(module, value, elementType);
 
         switch (type, constant.Value)
         {
+            case (PointerTypeSymbol, AddressConstant { Target: VariableSymbol variable }):
+                return module.Global(variable);                                                   // LANG-265 @X in a typed constant
+            case (PointerTypeSymbol, AddressConstant { Target: RoutineSymbol routine }):
+                return module.Routine(routine);
             case (ArrayTypeSymbol array, ImmutableArray<ConstantValue?> elements):
                 return new IrArrayConstant((ArrayIrType)TypeLayout.Of(array).StorageType, [.. elements.Select(e => Element(e, array.ElementType))]);
             case (RecordTypeSymbol record, ImmutableArray<ConstantValue?> fields):
@@ -498,14 +541,21 @@ internal sealed class FunctionEmitter
     public void Emit()
     {
         var link = _routine is { IsNested: true } ? new IrParameter(IrType.Ptr, Unique("$link")) : null;
-        var parameters = _parameters
-            .Select(p => new IrParameter(p.IsByReference ? IrType.Ptr : TypeLayout.Of(p.Type).StorageType, Unique(p.Name)))
-            .ToImmutableArray();
+        var hidden = _routine is not null && IrEmitter.HasHiddenResult(_routine) ? new IrParameter(IrType.Ptr, Unique("Result")) : null;
+        var parameters = _parameters.Select(p => new IrParameter(IrEmitter.ParameterType(p), Unique(p.Name))).ToImmutableArray();
+        ImmutableArray<IrParameter> leading = [.. new[] { link, hidden }.OfType<IrParameter>()];
         var values = _w.BeginFunction(new IrFunctionDefinition(_name, _linkage, _routine is null ? IrType.Void : IrEmitter.ReturnType(_routine),
-            link is null ? parameters : parameters.Insert(0, link), _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine)));
+            leading.AddRange(parameters), _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine)));
         if (link is not null)
         {
             _link = values[0];
+            values = values.RemoveAt(0);
+        }
+
+        IrValue? hiddenResult = null;
+        if (hidden is not null)
+        {
+            hiddenResult = values[0];
             values = values.RemoveAt(0);
         }
 
@@ -523,7 +573,7 @@ internal sealed class FunctionEmitter
         for (var i = 0; i < _parameters.Length; i++)
         {
             var parameter = _parameters[i];
-            if (parameter.IsByReference)
+            if (IrEmitter.IsPassedByAddress(parameter))
             {
                 _parameterAddresses[parameter] = values[i];
                 continue;
@@ -531,15 +581,22 @@ internal sealed class FunctionEmitter
 
             if (!IsCaptured(parameter))
             {
-                var layout = TypeLayout.Of(parameter.Type);
+                var layout = TypeLayout.Allocated(parameter.Type);
                 _parameterAddresses[parameter] = _w.Alloca(Unique(values[i].Name + ".addr"), layout.StorageType, layout.Alignment);
             }
         }
 
-        foreach (var local in _body.Locals.Where(l => !IsCaptured(l.Variable)))
+        foreach (var local in _body.Locals)
         {
-            var layout = TypeLayout.Of(local.Type);
-            _locals[local] = _w.Alloca(Unique(local.Name + ".addr"), layout.StorageType, layout.Alignment);
+            if (hiddenResult is not null && ReferenceEquals(local.Variable, _routine!.ResultVariable))
+            {
+                _locals[local] = hiddenResult;                  // ABI-081: Result is the caller's storage
+            }
+            else if (!IsCaptured(local.Variable))
+            {
+                var layout = TypeLayout.Allocated(local.Type);
+                _locals[local] = _w.Alloca(Unique(local.Name + ".addr"), layout.StorageType, layout.Alignment);
+            }
         }
 
         if (_frame is not null)
@@ -551,8 +608,11 @@ internal sealed class FunctionEmitter
                     [IrIntConstant.I32(0), IrIntConstant.I32(_frame.FieldOf(variable))]);
                 switch (variable)
                 {
-                    case ParameterSymbol { IsByReference: true } parameter:
+                    case ParameterSymbol parameter when IrEmitter.HoldsAddress(parameter):
                         spills.Add((_parameterAddresses[parameter], address, 8));
+                        break;
+                    case VariableSymbol when IrEmitter.HoldsAddress(variable):
+                        spills.Add((hiddenResult!, address, 8));
                         break;
                     case ParameterSymbol parameter:
                         _parameterAddresses[parameter] = address;
@@ -567,7 +627,7 @@ internal sealed class FunctionEmitter
         for (var i = 0; i < _parameters.Length; i++)
         {
             var parameter = _parameters[i];
-            if (!parameter.IsByReference)
+            if (!IrEmitter.IsPassedByAddress(parameter))
             {
                 spills.Add((values[i], _parameterAddresses[parameter], TypeLayout.Of(parameter.Type).Alignment));
             }
@@ -582,11 +642,12 @@ internal sealed class FunctionEmitter
         FallThrough(Exit);
 
         Start(Exit);
-        if (_routine?.ResultVariable is { } result)
+        if (_routine?.ResultVariable is { } result && hiddenResult is null)
         {
+            // ABI-081: a small aggregate is returned as the integer holding its bytes
             var local = _body.Locals.Single(l => ReferenceEquals(l.Variable, result));
             var layout = TypeLayout.Of(local.Type);
-            _w.Ret(_w.Load(NewTemp(), layout.StorageType, _locals[local], layout.Alignment));
+            _w.Ret(_w.Load(NewTemp(), IrEmitter.ReturnType(_routine), _locals[local], layout.Alignment));
         }
         else
         {
@@ -658,6 +719,22 @@ internal sealed class FunctionEmitter
                 }
 
                 break;
+            case LAssign { Value: LCall { Callee: LRoutineCallee callee } call } assign when Lowerer.IsAggregate(assign.Target.Type):
+            {
+                // ABI-081: the lowering assigns aggregate results only to fresh temporaries, so the target cannot alias the arguments
+                var target = Address(assign.Target);
+                if (IrEmitter.HasHiddenResult(callee.Routine))
+                {
+                    Call(named: false, callee.Routine, call.Arguments, target);
+                }
+                else
+                {
+                    _w.Store(Call(named: true, callee.Routine, call.Arguments)!, target, AccessAlignment(assign.Target));
+                }
+
+                break;
+            }
+
             case LAssign assign when Lowerer.IsAggregate(assign.Target.Type):
             {
                 var source = Address(assign.Value);
@@ -678,6 +755,29 @@ internal sealed class FunctionEmitter
                 var memset = _module.Intrinsic("llvm.memset.p0.i64", IrType.Void, [IrType.Ptr, IrType.I8, IrType.I64, IrType.I1]);
                 _w.Call(null, IrType.Void, memset,
                     [new IrAlignedPointer(Value(zero.Address), layout.Alignment), new IrIntConstant(IrType.I8, 0), IrIntConstant.I64(layout.Size), IrIntConstant.I1(false)]);
+                break;
+            }
+
+            case LMemSet fill:
+            {
+                // CMP-412: FillChar → llvm.memset (the variable's access alignment, CMP-309)
+                var address = Address(fill.Target);
+                var count = Value(fill.Count);
+                var value = Value(fill.Value);
+                var memset = _module.Intrinsic("llvm.memset.p0.i64", IrType.Void, [IrType.Ptr, IrType.I8, IrType.I64, IrType.I1]);
+                _w.Call(null, IrType.Void, memset, [new IrAlignedPointer(address, AccessAlignment(fill.Target)), value, count, IrIntConstant.I1(false)]);
+                break;
+            }
+
+            case LMemMove move:
+            {
+                // CMP-412: Move → llvm.memmove (overlap allowed)
+                var source = Address(move.Source);
+                var destination = Address(move.Destination);
+                var count = Value(move.Count);
+                var memmove = _module.Intrinsic("llvm.memmove.p0.p0.i64", IrType.Void, [IrType.Ptr, IrType.Ptr, IrType.I64, IrType.I1]);
+                _w.Call(null, IrType.Void, memmove,
+                    [new IrAlignedPointer(destination, AccessAlignment(move.Destination)), new IrAlignedPointer(source, AccessAlignment(move.Source)), count, IrIntConstant.I1(false)]);
                 break;
             }
 
@@ -901,6 +1001,9 @@ internal sealed class FunctionEmitter
                 return _w.GetElementPtr(NewTemp(), TypeLayout.Of(index.Array.Type).StorageType, array, [IrIntConstant.I64(0), offset]);
             }
 
+            case LDeref dereference:
+                return Value(dereference.Pointer);                                  // CMP-340: p^ is the pointer value as an address
+
             case LField field:
             {
                 // CMP-307: getelementptr inbounds %"U.TRec", ptr %r, i32 0, i32 <fieldIndex>
@@ -970,7 +1073,7 @@ internal sealed class FunctionEmitter
     /// records to <c>min(field alignment, packing)</c> and to the alignment of the enclosing record or array storage
     /// (a field of a <c>packed record</c> is accessed with <c>align 1</c>).
     /// </summary>
-    private static int AccessAlignment(LExpression variable) => variable switch
+    internal static int AccessAlignment(LExpression variable) => variable switch
     {
         LField field => Math.Min(Math.Min(field.Type.Alignment, ((RecordTypeSymbol)field.Record.Type).Packing), AccessAlignment(field.Record)),
         LIndex index => Math.Min(index.Type.Alignment, AccessAlignment(index.Array)),
@@ -1023,7 +1126,7 @@ internal sealed class FunctionEmitter
         var frame = _module.Frames[outer.Owner];
         var address = FrameOf(outer.Owner);
         var field = _w.GetElementPtr(NewTemp(), frame.Type, address, [IrIntConstant.I32(0), IrIntConstant.I32(frame.FieldOf(outer.Variable))]);
-        return outer.Variable is ParameterSymbol { IsByReference: true } ? _w.Load(NewTemp(), IrType.Ptr, field, 8) : field;
+        return IrEmitter.HoldsAddress(outer.Variable) ? _w.Load(NewTemp(), IrType.Ptr, field, 8) : field;
     }
 
     /// <summary>The frame record of <paramref name="routine"/>, this routine or an enclosing one (null value when it has none).</summary>
@@ -1047,7 +1150,11 @@ internal sealed class FunctionEmitter
     /// A direct call (ABI-082): the static link of a nested callee (its parent's frame) first, then value arguments in storage
     /// form and <c>var</c>/<c>out</c> arguments as addresses (<see cref="LAddrOf"/>). <paramref name="named"/> false discards the result.
     /// </summary>
-    private IrLocal? Call(bool named, RoutineSymbol routine, ImmutableArray<LExpression> arguments)
+    /// <remarks>
+    /// ABI-080/081: <paramref name="resultAddress"/> is the hidden <c>Result</c> argument; a small aggregate argument is loaded as
+    /// <c>iN</c> from its storage; a by-address aggregate argument is already an address (<see cref="LAddrOf"/>, from the lowering).
+    /// </remarks>
+    private IrLocal? Call(bool named, RoutineSymbol routine, ImmutableArray<LExpression> arguments, IrValue? resultAddress = null)
     {
         var values = ImmutableArray.CreateBuilder<IrValue>();
         if (routine.IsNested)
@@ -1055,11 +1162,23 @@ internal sealed class FunctionEmitter
             values.Add(FrameOf((RoutineSymbol)routine.ContainingSymbol!));
         }
 
+        if (IrEmitter.HasHiddenResult(routine))
+        {
+            values.Add(resultAddress ?? throw new InvalidOperationException($"'{routine.Name}' needs a result address."));
+        }
+
         for (var i = 0; i < arguments.Length; i++)
         {
             var parameter = routine.Parameters[i];
+            if (!IrEmitter.IsPassedByAddress(parameter) && IrEmitter.IsPassedAsInteger(parameter.Type))
+            {
+                var address = Address(arguments[i]);
+                values.Add(_w.Load(NewTemp(), IrEmitter.ParameterType(parameter), address, AccessAlignment(arguments[i])));
+                continue;
+            }
+
             var value = Value(arguments[i]);
-            values.Add(parameter.IsByReference ? value : ToStorage(value, parameter.Type));
+            values.Add(IrEmitter.IsPassedByAddress(parameter) ? value : ToStorage(value, parameter.Type));
         }
 
         return _w.Call(named ? NewTemp() : null, IrEmitter.ReturnType(routine), _module.Routine(routine), values.ToImmutable());
@@ -1099,12 +1218,22 @@ internal sealed class FunctionEmitter
         {
             case LConst constant:
                 return IrEmitter.ValueConstant(constant.Value, constant.Type);
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex or LField when Lowerer.IsAggregate(expression.Type):
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex or LField or LDeref when Lowerer.IsAggregate(expression.Type):
                 throw new InvalidOperationException("An aggregate has no SSA value; use its address.");
             case LView view:
                 return _w.Load(NewTemp(), TypeLayout.Of(view.Type).StorageType, Address(view), AlignmentOf(view));
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField:
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField or LDeref:
                 return Load(Address(expression), expression.Type, AccessAlignment(expression));
+            case LPointerOffset offset:
+            {
+                // CMP-342: getelementptr inbounds T, ptr %p, i64 %n
+                var pointer = Value(offset.Pointer);
+                var index = Value(offset.Index);
+                return _w.GetElementPtr(NewTemp(), TypeLayout.Of(offset.ElementType).StorageType, pointer, [index]);
+            }
+
+            case LRoutineAddress routine:
+                return _module.Routine(routine.Routine);                            // CMP-340: ptr @"link.name"
             case LSequence sequence:
                 Statement(sequence.First);
                 return Value(sequence.Value);

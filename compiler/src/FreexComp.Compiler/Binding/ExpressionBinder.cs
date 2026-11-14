@@ -91,6 +91,8 @@ internal sealed class ExpressionBinder
                 return BindInvocation(invocation);
             case AddressOfExpressionSyntax addressOf:
                 return BindAddressOf(addressOf);
+            case DereferenceExpressionSyntax dereference:
+                return BindDereference(dereference, untyped: false);
             case ElementAccessExpressionSyntax elementAccess:
                 return BindElementAccess(elementAccess);
             case PredefinedTypeExpressionSyntax predefined:
@@ -168,10 +170,6 @@ internal sealed class ExpressionBinder
 
     private BoundExpression BindLiteral(LiteralExpressionSyntax literal)
     {
-        if (literal.Token.Kind == SyntaxKind.NilKeyword)
-        {
-            return Unsupported(literal, "nil");                         // pointers arrive with M2.2
-        }
 
         return _folder.FoldLiteral(literal) is { } value ? new BoundLiteral(literal, value) : Error(literal);
     }
@@ -212,18 +210,93 @@ internal sealed class ExpressionBinder
         }
     }
 
-    /// <summary>LANG-451: E2130 for a nested routine; the rest of <c>@</c> arrives with pointers (M2.2).</summary>
-    private BoundExpression BindAddressOf(AddressOfExpressionSyntax addressOf)
+    /// <summary>
+    /// LANG-265 <c>@x</c>: the address (type <c>Pointer</c>) of a variable reference — variable, parameter, field, array element,
+    /// dereference — or the code address of a routine (E2130 for a nested one, LANG-451; overloaded routines: M2.5).
+    /// E2033 for anything else.
+    /// </summary>
+    private BoundExpression BindAddressOf(AddressOfExpressionSyntax addressOf) => AddressOf(addressOf, addressOf.Operand);
+
+    /// <summary><c>@operand</c> / <c>Addr(operand)</c> bound at <paramref name="syntax"/>.</summary>
+    private BoundExpression AddressOf(SyntaxNode syntax, ExpressionSyntax operandSyntax)
     {
-        if (addressOf.Operand is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
-            && _scope.LookupCandidates(token.Value as string ?? token.Text) is [{ IsNested: true } nested, ..])
+        if (Unparenthesized(operandSyntax) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
+            && _scope.LookupCandidates(token.Value as string ?? token.Text) is [var routine, ..])
         {
-            _diagnostics.Report(name, "E2130", nested.Name);
-            return Error(addressOf);
+            if (routine.IsNested)
+            {
+                _diagnostics.Report(name, "E2130", routine.Name);
+                return Error(syntax);
+            }
+
+            return new BoundAddressOfExpression(syntax, operand: null, routine, _types.Pointer);
         }
 
-        return Unsupported(addressOf, DeclarationBinder.FeatureName(addressOf.Kind));
+        var operand = BindExpression(operandSyntax);
+        if (operand.HasErrors)
+        {
+            return Error(syntax, operand);
+        }
+
+        if (!IsAddressable(operand))
+        {
+            _diagnostics.Report(operandSyntax, "E2033");
+            return Error(syntax, operand);
+        }
+
+        return new BoundAddressOfExpression(syntax, operand, routine: null, _types.Pointer);
     }
+
+    /// <summary>A variable reference whose storage has an address (constants and values have none; typed constants do).</summary>
+    internal static bool IsAddressable(BoundExpression expression) =>
+        BoundIndexExpression.RootOf(expression) is BoundVariableExpression or BoundParameterExpression or BoundDereferenceExpression;
+
+    /// <summary>
+    /// LANG-265 <c>p^</c>: the variable of the pointed type; E2018 when <c>p</c> is no typed pointer. <paramref name="untyped"/>
+    /// (an untyped <c>var</c>/<c>const</c> argument such as <c>FillChar(P^, …)</c>) also accepts the untyped <c>Pointer</c>,
+    /// giving a byte-typed variable.
+    /// </summary>
+    internal BoundExpression BindDereference(DereferenceExpressionSyntax syntax, bool untyped)
+    {
+        var pointer = BindExpression(syntax.Expression);
+        if (pointer.HasErrors)
+        {
+            return Error(syntax, pointer);
+        }
+
+        return pointer.Type switch
+        {
+            PointerTypeSymbol { PointedType: { } target } when pointer.Type != _types.Nil => new BoundDereferenceExpression(syntax, pointer, target),
+            PointerTypeSymbol when untyped && pointer.Type != _types.Nil => new BoundDereferenceExpression(syntax, pointer, _types.Byte),
+            _ => ReportPointerRequired(syntax, pointer),
+        };
+    }
+
+    private BoundErrorExpression ReportPointerRequired(SyntaxNode syntax, BoundExpression operand)
+    {
+        _diagnostics.Report(syntax, "E2018");
+        return Error(syntax, operand);
+    }
+
+    /// <summary>
+    /// An argument for an untyped <c>var</c>/<c>const</c> parameter (<c>FillChar</c>, <c>Move</c>): a variable reference of any
+    /// type, also <c>p^</c> of an untyped pointer; E2033 when it has no address.
+    /// </summary>
+    internal BoundExpression BindUntypedArgument(ExpressionSyntax syntax)
+    {
+        var operand = Unparenthesized(syntax) is DereferenceExpressionSyntax dereference ? BindDereference(dereference, untyped: true) : BindExpression(syntax);
+        if (!operand.HasErrors && !IsAddressable(operand))
+        {
+            _diagnostics.Report(syntax, "E2033");
+            return Error(syntax, operand);
+        }
+
+        return operand;
+    }
+
+    /// <summary>Pointer arithmetic is allowed for <c>PChar</c>/<c>PAnsiChar</c> and under <c>{$POINTERMATH ON}</c> at <paramref name="at"/> (LANG-247).</summary>
+    private static bool AllowsPointerMath(TypeSymbol type, SyntaxToken at) =>
+        type is PointerTypeSymbol pointer && (pointer.AllowsPointerMath || at.DirectiveState.PointerMath);
 
     /// <summary>
     /// LANG-255/258 <c>a[i, j]</c> = <c>a[i][j]</c> on static arrays: each index an ordinal compatible with the index type
@@ -241,6 +314,39 @@ internal sealed class ExpressionBinder
         var first = true;
         foreach (var indexSyntax in syntax.Indexes)
         {
+            if (result.Type is PointerTypeSymbol { PointedType: ArrayTypeSymbol pointedArray } && !AllowsPointerMath(result.Type, syntax.FirstToken()))
+            {
+                result = new BoundDereferenceExpression(syntax.Expression, result, pointedArray);   // p[i] = p^[i] (extended syntax)
+            }
+            else if (result.Type is PointerTypeSymbol pointer && AllowsPointerMath(pointer, syntax.FirstToken()) && pointer != _types.Nil)
+            {
+                // LANG-247: p[i] = (p + i)^, 0-based
+                first = false;
+                var offset = BindExpression(indexSyntax);
+                if (offset.HasErrors)
+                {
+                    return Error(syntax, result, offset);
+                }
+
+                if (offset.Type is not IntegerTypeSymbol || pointer.PointedType is null)
+                {
+                    if (pointer.PointedType is null)
+                    {
+                        _diagnostics.Report(syntax.Expression, "E2018");
+                    }
+                    else
+                    {
+                        _conversions.ReportIncompatible(offset.Type, _types.NativeInt, indexSyntax, _diagnostics);
+                    }
+
+                    return Error(syntax, result, offset);
+                }
+
+                var element = new BoundPointerArithmeticExpression(syntax, result, Convert(offset, _types.NativeInt), subtract: false, difference: false, pointer);
+                result = new BoundDereferenceExpression(syntax, element, pointer.PointedType);
+                continue;
+            }
+
             if (result.Type is not ArrayTypeSymbol array)
             {
                 if (!first)
@@ -305,6 +411,11 @@ internal sealed class ExpressionBinder
         if (record.HasErrors || syntax.Name.Identifier.IsMissing)
         {
             return Error(syntax, record);
+        }
+
+        if (record.Type is PointerTypeSymbol { PointedType: RecordTypeSymbol pointed })
+        {
+            record = new BoundDereferenceExpression(syntax.Expression, record, pointed);       // p.F = p^.F (extended syntax)
         }
 
         if (record.Type is not RecordTypeSymbol recordType || syntax.Name is not IdentifierNameSyntax)
@@ -411,6 +522,11 @@ internal sealed class ExpressionBinder
     /// </summary>
     private BoundExpression BindIntrinsicFunction(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
     {
+        if (intrinsic.Intrinsic is IntrinsicKind.Assigned or IntrinsicKind.Addr or IntrinsicKind.Ptr)
+        {
+            return BindPointerFunction(invocation, intrinsic);
+        }
+
         if (!_folder.CheckSingleArgument(invocation, intrinsic))
         {
             return Error(invocation);
@@ -458,6 +574,51 @@ internal sealed class ExpressionBinder
         }
 
         return new BoundIntrinsicCallExpression(invocation, intrinsic, [operand], resultType, constantValue: null);
+    }
+
+    /// <summary>
+    /// intrinsics.md: <c>Addr(x)</c> = <c>@x</c>; <c>Assigned(p)</c> = <c>p &lt;&gt; nil</c> for a pointer (procedural types: C-161);
+    /// <c>Ptr(n)</c> turns an integer into a <c>Pointer</c>. One argument (E2110 / E2111), E2010 for a wrong type.
+    /// </summary>
+    private BoundExpression BindPointerFunction(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count != 1)
+        {
+            _diagnostics.Report(arguments.Count == 0 ? invocation : arguments[1], arguments.Count == 0 ? "E2110" : "E2111", intrinsic.Name);
+            return Error(invocation);
+        }
+
+        var syntax = arguments[0].Expression;
+        if (intrinsic.Intrinsic == IntrinsicKind.Addr)
+        {
+            return AddressOf(invocation, syntax);
+        }
+
+        var operand = BindExpression(syntax);
+        if (operand.HasErrors)
+        {
+            return Error(invocation, operand);
+        }
+
+        if (intrinsic.Intrinsic == IntrinsicKind.Assigned)
+        {
+            if (operand.Type is not PointerTypeSymbol)
+            {
+                _diagnostics.Report(syntax, "E2010", operand.Type.Name, _types.Pointer.Name);
+                return Error(invocation, operand);
+            }
+
+            return new BoundIntrinsicCallExpression(invocation, intrinsic, [Convert(operand, _types.Pointer)], _types.Boolean, constantValue: null);
+        }
+
+        if (operand.Type is not IntegerTypeSymbol)
+        {
+            _diagnostics.Report(syntax, "E2010", operand.Type.Name, _types.NativeUInt.Name);
+            return Error(invocation, operand);
+        }
+
+        return new BoundIntrinsicCallExpression(invocation, intrinsic, [Convert(operand, _types.NativeUInt)], _types.Pointer, constantValue: null);
     }
 
     /// <summary>The argument of <c>Low</c>/<c>High</c>/<c>SizeOf</c>: a type name (bound argument null) or an expression.</summary>
@@ -630,7 +791,7 @@ internal sealed class ExpressionBinder
             return false;
         }
 
-        if (!ReferenceEquals(argument.Type, parameter.Type))
+        if (!Pointers.SameType(argument.Type, parameter.Type))
         {
             _diagnostics.Report(syntax, "E2010", argument.Type.Name, parameter.Type.Name);
             return false;
@@ -655,6 +816,7 @@ internal sealed class ExpressionBinder
                 _diagnostics.Report(syntax, "E2112");                   // a typed constant (LANG-344)
                 return false;
             case BoundVariableExpression:
+            case BoundDereferenceExpression:
             case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:
                 break;
             case BoundParameterExpression:
@@ -681,8 +843,8 @@ internal sealed class ExpressionBinder
         {
             var (parameter, argument) = (candidate.Parameters[i], arguments[i]);
             var compatible = parameter.IsByReference
-                ? BoundIndexExpression.RootOf(argument) is BoundVariableExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }
-                  && ReferenceEquals(argument.Type, parameter.Type)
+                ? BoundIndexExpression.RootOf(argument) is BoundVariableExpression or BoundDereferenceExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }
+                  && Pointers.SameType(argument.Type, parameter.Type)
                 : ReferenceEquals(argument.Type, parameter.Type)
                   || (argument.ConstantValue is { } constant
                       ? _conversions.ConvertConstant(constant, parameter.Type, argument.Syntax, new DiagnosticBag()) != null
@@ -811,6 +973,11 @@ internal sealed class ExpressionBinder
                     return IntegerOperation(binary, left, right);
                 }
 
+                if (op.Kind != SyntaxKind.AsteriskToken && (lt is PointerTypeSymbol || rt is PointerTypeSymbol))
+                {
+                    return PointerArithmetic(binary, left, right);
+                }
+
                 return IsNumeric(lt) && IsNumeric(rt) ? RealOperation(binary, left, right) : Inapplicable(binary, left, right);
 
             case SyntaxKind.SlashToken:
@@ -843,6 +1010,37 @@ internal sealed class ExpressionBinder
             default:
                 return Unsupported(op, binary, $"operator '{op.Text}'");      // in, is, as: sets and classes (M2.2+)
         }
+    }
+
+    /// <summary>
+    /// LANG-247 (CMP-342): <c>p + n</c>, <c>n + p</c>, <c>p - n</c> (the pointer's type) and <c>p - q</c> of two compatible pointers
+    /// (a <c>NativeInt</c> element count), for <c>PChar</c>-like pointers and under <c>{$POINTERMATH ON}</c> (the untyped
+    /// <c>Pointer</c> counts bytes there); E2011 otherwise.
+    /// </summary>
+    private BoundExpression PointerArithmetic(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
+    {
+        var op = binary.OperatorToken;
+        var subtract = op.Kind == SyntaxKind.MinusToken;
+        if (left.Type is PointerTypeSymbol pointer && AllowsPointerMath(pointer, op) && pointer != _types.Nil)
+        {
+            if (right.Type is IntegerTypeSymbol)
+            {
+                return new BoundPointerArithmeticExpression(binary, left, Convert(right, _types.NativeInt), subtract, difference: false, pointer);
+            }
+
+            if (subtract && right.Type is PointerTypeSymbol other && other != _types.Nil && Pointers.Compatible(other, pointer)
+                && Pointers.ElementSize(pointer) == Pointers.ElementSize(other))
+            {
+                return new BoundPointerArithmeticExpression(binary, left, right, subtract: true, difference: true, _types.NativeInt);
+            }
+        }
+        else if (!subtract && left.Type is IntegerTypeSymbol && right.Type is PointerTypeSymbol rightPointer && AllowsPointerMath(rightPointer, op)
+            && rightPointer != _types.Nil)
+        {
+            return new BoundPointerArithmeticExpression(binary, right, Convert(left, _types.NativeInt), subtract: false, difference: false, rightPointer);
+        }
+
+        return Inapplicable(binary, left, right);
     }
 
     /// <summary>LANG-221/222: both operands in the combined computation type; W1010 for signed mixed with UInt64.</summary>
@@ -917,6 +1115,17 @@ internal sealed class ExpressionBinder
         if (lt is BooleanTypeSymbol && rt is BooleanTypeSymbol)
         {
             return new BoundBinaryExpression(binary, kind, Convert(left, boolean), Convert(right, boolean), boolean, boolean, constantValue: null);
+        }
+
+        if (lt is PointerTypeSymbol lp && rt is PointerTypeSymbol rp && Pointers.Compatible(lp, rp))
+        {
+            // LANG-266/267: = and <> for compatible pointers (nil included); ordering where pointer arithmetic is allowed (LANG-247)
+            var ordering = kind is not (BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual);
+            if (!ordering || AllowsPointerMath(lp, binary.OperatorToken) && AllowsPointerMath(rp, binary.OperatorToken))
+            {
+                var pointer = _types.Pointer;
+                return new BoundBinaryExpression(binary, kind, Convert(left, pointer), Convert(right, pointer), pointer, boolean, constantValue: null);
+            }
         }
 
         if (lt is EnumTypeSymbol && rt is EnumTypeSymbol)

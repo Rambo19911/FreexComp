@@ -298,10 +298,12 @@ public sealed class ConstantFolderTests
         Assert.Empty(result.Diagnostics);
     }
 
+    /// <summary>C-056 / LANG-266: <c>nil</c> is a constant (it was E2900 before pointers existed); <c>nil = nil</c> folds.</summary>
     [Theory]
-    [InlineData("nil", "E2900(1,11): Feature not supported: nil constant")]
-    public void LaterMilestoneConstants_AreE2900(string expression, string expected) =>
-        Assert.Equal([expected], FoldErrors(expression));
+    [InlineData("nil")]
+    [InlineData("nil = nil")]
+    public void NilConstants_Fold(string expression) =>
+        Assert.Empty(FoldErrors(expression));
 
     /// <summary>C-050: set constants fold (they were E2900 until M2.2); details in SetBindingTests.</summary>
     [Fact]

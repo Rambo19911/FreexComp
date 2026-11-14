@@ -25,6 +25,9 @@ internal enum BoundKind
     SetConstructor,
     IndexExpression,
     FieldAccessExpression,
+    AddressOfExpression,
+    DereferenceExpression,
+    PointerArithmeticExpression,
 
     // statements
     Block,
@@ -322,6 +325,75 @@ internal sealed class BoundFieldAccessExpression : BoundExpression
     public BoundExpression Record { get; }
 
     public FieldSymbol Field { get; }
+}
+
+/// <summary>
+/// <c>@x</c> / <c>Addr(x)</c> (LANG-265): the address of the variable reference <see cref="Operand"/>, or the code address of
+/// <see cref="Routine"/>; type <c>Pointer</c>. A typed constant may hold one (<see cref="AddressConstant"/>).
+/// </summary>
+internal sealed class BoundAddressOfExpression : BoundExpression
+{
+    public BoundAddressOfExpression(SyntaxNode syntax, BoundExpression? operand, RoutineSymbol? routine, TypeSymbol pointer)
+        : base(syntax, pointer, constantValue: null)
+    {
+        Operand = operand;
+        Routine = routine;
+    }
+
+    public override BoundKind Kind => BoundKind.AddressOfExpression;
+
+    public BoundExpression? Operand { get; }
+
+    public RoutineSymbol? Routine { get; }
+}
+
+/// <summary><c>p^</c> (LANG-265): the variable <see cref="Pointer"/> points to, of the pointed type (a byte for an untyped pointer in an untyped argument).</summary>
+internal sealed class BoundDereferenceExpression : BoundExpression
+{
+    public BoundDereferenceExpression(SyntaxNode syntax, BoundExpression pointer, TypeSymbol type)
+        : base(syntax, type, constantValue: null)
+    {
+        Pointer = pointer;
+    }
+
+    public override BoundKind Kind => BoundKind.DereferenceExpression;
+
+    public BoundExpression Pointer { get; }
+}
+
+/// <summary>
+/// LANG-247 pointer arithmetic (CMP-342): <see cref="Pointer"/> ± <see cref="Offset"/> elements (<see cref="Difference"/> false; the
+/// pointer's type), or the element count <see cref="Pointer"/> − <see cref="Offset"/> of two pointers (<c>NativeInt</c>).
+/// An integer offset is already converted to <c>NativeInt</c>.
+/// </summary>
+internal sealed class BoundPointerArithmeticExpression : BoundExpression
+{
+    public BoundPointerArithmeticExpression(SyntaxNode syntax, BoundExpression pointer, BoundExpression offset, bool subtract, bool difference, TypeSymbol type)
+        : base(syntax, type, constantValue: null)
+    {
+        Pointer = pointer;
+        Offset = offset;
+        Subtract = subtract;
+        Difference = difference;
+    }
+
+    public override BoundKind Kind => BoundKind.PointerArithmeticExpression;
+
+    public BoundExpression Pointer { get; }
+
+    public BoundExpression Offset { get; }
+
+    public bool Subtract { get; }
+
+    public bool Difference { get; }
+
+    public PointerTypeSymbol PointerType => (PointerTypeSymbol)Pointer.Type;
+}
+
+/// <summary>The value of a typed constant <c>@X</c> (LANG-265, 344): the address of a global variable or routine.</summary>
+internal sealed record AddressConstant(Symbol Target)
+{
+    public override string ToString() => "@" + Target.Name;
 }
 
 /// <summary>One element <c>a</c> (<see cref="High"/> null) or range <c>a..b</c> of a set constructor.</summary>

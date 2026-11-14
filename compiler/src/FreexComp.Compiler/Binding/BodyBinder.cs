@@ -98,6 +98,7 @@ internal sealed class BodyBinder
                 _diagnostics.Report(assignment.Target, "E2053");                        // a typed constant (LANG-344)
                 return new BoundAssignmentStatement(assignment, target, value);
             case BoundVariableExpression:
+            case BoundDereferenceExpression:
             case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:
                 break;
             case BoundConversionExpression { IsExplicit: true }:
@@ -367,6 +368,9 @@ internal sealed class BodyBinder
             IntrinsicKind.Exit when _routine?.ReturnType != null => (0, 1),          // LANG-413
             IntrinsicKind.Inc or IntrinsicKind.Dec => (1, 2),
             IntrinsicKind.Include or IntrinsicKind.Exclude => (2, 2),
+            IntrinsicKind.New or IntrinsicKind.Dispose or IntrinsicKind.FreeMem => (1, 1),
+            IntrinsicKind.GetMem or IntrinsicKind.ReallocMem => (2, 2),
+            IntrinsicKind.FillChar or IntrinsicKind.Move => (3, 3),
             _ => (0, 0),
         };
         if (count < minArguments)
@@ -409,6 +413,10 @@ internal sealed class BodyBinder
                     _expressions.BindExpression(arguments[0].Expression, _routine!.ReturnType), _routine.ReturnType!, arguments[0].Expression));
             case IntrinsicKind.Include or IntrinsicKind.Exclude:
                 return BindIncludeExclude(statement, intrinsic, arguments);
+            case IntrinsicKind.New or IntrinsicKind.Dispose or IntrinsicKind.GetMem or IntrinsicKind.FreeMem or IntrinsicKind.ReallocMem:
+                return BindMemory(statement, intrinsic, arguments);
+            case IntrinsicKind.FillChar or IntrinsicKind.Move:
+                return BindFillMove(statement, intrinsic, arguments);
             case IntrinsicKind.Exit:
                 return new BoundExitStatement(statement, value: null);
             default:
@@ -531,17 +539,12 @@ internal sealed class BodyBinder
             return new BoundErrorStatement(statement);
         }
 
-        if (!target.Type.IsOrdinal)
+        // intrinsics.md: a typed pointer moves by n elements; the untyped Pointer by n bytes under {$POINTERMATH ON} (LANG-247)
+        var isPointer = target.Type is PointerTypeSymbol { PointedType: not null }
+            || (target.Type is PointerTypeSymbol && syntax.FirstToken().DirectiveState.PointerMath);
+        if (!target.Type.IsOrdinal && !isPointer)
         {
-            if (target.Type is PointerTypeSymbol)
-            {
-                _diagnostics.Report(syntax, "E2900", "pointer arithmetic");
-            }
-            else
-            {
-                _diagnostics.Report(syntax, "E2013");
-            }
-
+            _diagnostics.Report(syntax, "E2013");
             return new BoundErrorStatement(statement);
         }
 
@@ -552,5 +555,87 @@ internal sealed class BodyBinder
         }
 
         return new BoundIntrinsicCallStatement(statement, intrinsic, step is null ? [target] : [target, step]);
+    }
+
+    /// <summary>
+    /// LANG-268 and intrinsics.md: <c>New(p)</c>/<c>Dispose(p)</c> on a typed pointer variable (E2018 otherwise); <c>GetMem(p, n)</c>,
+    /// <c>ReallocMem(p, n)</c> on a pointer variable (E2010 otherwise), <c>n</c> converted to <c>NativeInt</c>; <c>FreeMem(p)</c> on
+    /// any pointer value.
+    /// </summary>
+    private BoundStatement BindMemory(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var syntax = arguments[0].Expression;
+        var pointer = _expressions.BindExpression(syntax);
+        var size = arguments.Count == 2 ? _expressions.BindExpression(arguments[1].Expression) : null;
+        if (pointer.HasErrors || size?.HasErrors == true)
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        if (intrinsic.Intrinsic is IntrinsicKind.New or IntrinsicKind.Dispose)
+        {
+            if (pointer.Type is not PointerTypeSymbol { PointedType: not null } || ReferenceEquals(pointer.Type, _types.Nil))
+            {
+                _diagnostics.Report(syntax, "E2018");
+                return new BoundErrorStatement(statement);
+            }
+        }
+        else if (pointer.Type is not PointerTypeSymbol)
+        {
+            _diagnostics.Report(syntax, "E2010", pointer.Type.Name, _types.Pointer.Name);
+            return new BoundErrorStatement(statement);
+        }
+
+        if (intrinsic.Intrinsic is not (IntrinsicKind.FreeMem or IntrinsicKind.Dispose) && !_expressions.CheckVariableReference(pointer, syntax))
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        if (size is null)
+        {
+            return new BoundIntrinsicCallStatement(statement, intrinsic, [pointer]);
+        }
+
+        size = _expressions.ConvertForAssignment(size, _types.NativeInt, arguments[1].Expression);
+        return size.HasErrors ? new BoundErrorStatement(statement) : new BoundIntrinsicCallStatement(statement, intrinsic, [pointer, size]);
+    }
+
+    /// <summary>
+    /// intrinsics.md: <c>FillChar(var X; Count; Value)</c> with an ordinal <c>Value</c> (E2010 otherwise) and
+    /// <c>Move(const Source; var Dest; Count)</c>; the untyped arguments are variable references of any type (also <c>p^</c> of an
+    /// untyped pointer); <c>Count</c> is converted to <c>NativeInt</c>.
+    /// </summary>
+    private BoundStatement BindFillMove(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var fill = intrinsic.Intrinsic == IntrinsicKind.FillChar;
+        var first = _expressions.BindUntypedArgument(arguments[0].Expression);
+        var second = fill ? _expressions.BindExpression(arguments[2].Expression) : _expressions.BindUntypedArgument(arguments[1].Expression);
+        var count = _expressions.BindExpression(arguments[fill ? 1 : 2].Expression);
+        if (first.HasErrors || second.HasErrors || count.HasErrors)
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        var target = fill ? first : second;
+        var targetSyntax = arguments[fill ? 0 : 1].Expression;
+        if (!_expressions.CheckVariableReference(target, targetSyntax))
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        count = _expressions.ConvertForAssignment(count, _types.NativeInt, arguments[fill ? 1 : 2].Expression);
+        if (count.HasErrors)
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        if (fill && !second.Type.IsOrdinal)
+        {
+            _diagnostics.Report(arguments[2].Expression, "E2010", second.Type.Name, _types.Byte.Name);
+            return new BoundErrorStatement(statement);
+        }
+
+        // arguments in parameter order: FillChar(X, Count, Value), Move(Source, Dest, Count)
+        return new BoundIntrinsicCallStatement(statement, intrinsic, fill ? [first, count, second] : [first, second, count]);
     }
 }

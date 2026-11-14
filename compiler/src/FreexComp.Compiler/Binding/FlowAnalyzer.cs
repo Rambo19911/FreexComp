@@ -421,6 +421,26 @@ internal sealed class FlowAnalyzer
 
                 return state;
 
+            case IntrinsicKind.New or IntrinsicKind.GetMem or IntrinsicKind.FillChar:
+                // the first argument is only written (FillChar: Count and Value are read first)
+                foreach (var argument in statement.Arguments.Skip(1))
+                {
+                    state = Eval(argument, state);
+                }
+
+                return AssignOrEval(statement.Arguments[0], state);
+
+            case IntrinsicKind.Move:
+                return AssignOrEval(statement.Arguments[1], Eval(statement.Arguments[2], Eval(statement.Arguments[0], state)));
+
+            case IntrinsicKind.Dispose or IntrinsicKind.FreeMem or IntrinsicKind.ReallocMem:
+                foreach (var argument in statement.Arguments)
+                {
+                    state = Eval(argument, state);
+                }
+
+                return state;
+
             case IntrinsicKind.RunError:
                 foreach (var argument in statement.Arguments)
                 {
@@ -432,6 +452,18 @@ internal sealed class FlowAnalyzer
             default:
                 throw new InvalidOperationException($"Flow analysis does not handle intrinsic {statement.Intrinsic.Intrinsic}.");
         }
+    }
+
+    /// <summary>A written argument: a variable becomes assigned; other variable references are evaluated (their parts are read).</summary>
+    private State? AssignOrEval(BoundExpression target, State? state)
+    {
+        if (target is BoundVariableExpression variable)
+        {
+            Assign(variable.Variable, state, null);
+            return state;
+        }
+
+        return Eval(target, state);
     }
 
     private State? VisitWhile(BoundWhileStatement statement, State? entry)
@@ -604,6 +636,19 @@ internal sealed class FlowAnalyzer
 
             case BoundFieldAccessExpression field:
                 return Eval(field.Record, state);
+
+            case BoundAddressOfExpression { Operand: BoundVariableExpression variable }:
+                Assign(variable.Variable, state, null);                         // may be written through the pointer
+                return state;
+
+            case BoundAddressOfExpression addressOf:
+                return addressOf.Operand is null ? state : Eval(addressOf.Operand, state);
+
+            case BoundDereferenceExpression dereference:
+                return Eval(dereference.Pointer, state);
+
+            case BoundPointerArithmeticExpression arithmetic:
+                return Eval(arithmetic.Offset, Eval(arithmetic.Pointer, state));
 
             case BoundSetConstructor constructor:
                 foreach (var element in constructor.Elements)

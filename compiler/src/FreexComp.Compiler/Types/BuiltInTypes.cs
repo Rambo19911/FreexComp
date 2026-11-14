@@ -86,6 +86,16 @@ public sealed class BuiltInTypes
         Intrinsic("Hi", IntrinsicKind.Hi, "Hi(X: Integer): Byte");
         Intrinsic("Swap", IntrinsicKind.Swap, "Swap(X: Integer): Word");
         Intrinsic("Length", IntrinsicKind.Length, "Length(X: String or Array): Integer");
+        Intrinsic("New", IntrinsicKind.New, "New(var P: Pointer)");
+        Intrinsic("Dispose", IntrinsicKind.Dispose, "Dispose(var P: Pointer)");
+        Intrinsic("GetMem", IntrinsicKind.GetMem, "GetMem(var P: Pointer; Size: NativeInt)");
+        Intrinsic("FreeMem", IntrinsicKind.FreeMem, "FreeMem(P: Pointer)");
+        Intrinsic("ReallocMem", IntrinsicKind.ReallocMem, "ReallocMem(var P: Pointer; Size: NativeInt)");
+        Intrinsic("FillChar", IntrinsicKind.FillChar, "FillChar(var X; Count: NativeInt; Value: Ordinal)");
+        Intrinsic("Move", IntrinsicKind.Move, "Move(const Source; var Dest; Count: NativeInt)");
+        Intrinsic("Assigned", IntrinsicKind.Assigned, "Assigned(P: Pointer): Boolean");
+        Intrinsic("Addr", IntrinsicKind.Addr, "Addr(X): Pointer");
+        Intrinsic("Ptr", IntrinsicKind.Ptr, "Ptr(Address: NativeUInt): Pointer");
     }
 
     /// <summary>
@@ -122,6 +132,9 @@ public sealed class BuiltInTypes
     public TypeSymbol PChar { get; }
     public TypeSymbol PAnsiChar { get; }
     public TypeSymbol Text { get; }
+
+    /// <summary>The type of <c>nil</c> (LANG-266): a pointer compatible with every pointer type (not declared in any scope).</summary>
+    public PointerTypeSymbol Nil { get; } = new("nil", pointedType: null, allowsPointerMath: false);
 
     /// <summary>The type of erroneous expressions (not declared in any scope).</summary>
     public TypeSymbol Error { get; } = new ErrorTypeSymbol();

@@ -175,6 +175,9 @@ internal sealed class DeclarationBinder
     /// </summary>
     private void BindTypeSection(TypeSectionSyntax section, ImmutableArray<Symbol>.Builder declared)
     {
+        // LANG-208: ^T may name a type declared later in this section; such pointers are completed after the section
+        _sectionTypeNames = [.. section.Declarations.Where(d => !d.Identifier.IsMissing).Select(d => NameOf(d.Identifier))];
+        _forwardPointers = [];
         foreach (var declaration in section.Declarations)
         {
             var identifier = declaration.Identifier;
@@ -209,6 +212,45 @@ internal sealed class DeclarationBinder
                 _diagnostics.ReportRedeclared(identifier, name, previous!);
             }
         }
+
+        foreach (var (pointer, pointedName) in _forwardPointers)
+        {
+            if (_scope.LookupLocal(NameOf(pointedName.Identifier)) is TypeSymbol target)
+            {
+                pointer.PointedType = target;
+            }
+            else
+            {
+                _diagnostics.Report(pointedName, "E2015", NameOf(pointedName.Identifier));
+                pointer.PointedType = _types.Error;
+            }
+        }
+
+        _sectionTypeNames = null;
+        _forwardPointers = null;
+    }
+
+    private HashSet<string>? _sectionTypeNames;
+    private List<(PointerTypeSymbol Pointer, IdentifierNameSyntax Name)>? _forwardPointers;
+
+    /// <summary>
+    /// LANG-265 <c>^T</c>: a typed pointer named after its declaration (or <c>^T</c>). A <c>T</c> declared later in the current type
+    /// section — or not declared at all yet — is resolved at the section's end (LANG-208, E2015 when the section does not declare it).
+    /// </summary>
+    private TypeSymbol BindPointer(PointerTypeSyntax syntax, string name, ImmutableArray<Symbol>.Builder? declared)
+    {
+        if (syntax.PointedType is NamedTypeSyntax { Name: IdentifierNameSyntax { Identifier.IsMissing: false } pointedName }
+            && _forwardPointers is not null
+            && (_sectionTypeNames!.Contains(NameOf(pointedName.Identifier)) && _scope.LookupLocal(NameOf(pointedName.Identifier)) is null
+                || _scope.Lookup(NameOf(pointedName.Identifier)) is null))
+        {
+            var forward = new PointerTypeSymbol(name, pointedType: null, allowsPointerMath: false);
+            _forwardPointers.Add((forward, pointedName));
+            return forward;
+        }
+
+        var target = BindType(syntax.PointedType, declared: declared);
+        return target.TypeKind == TypeKind.Error ? _types.Error : new PointerTypeSymbol(name, target, allowsPointerMath: false);
     }
 
     // ------------------------------------------------------------------ enumerations and subranges (LANG-210…212)
@@ -604,6 +646,8 @@ internal sealed class DeclarationBinder
                 return BindArrayConstant(aggregate, [.. aggregate.Elements], type);
             case ParenthesizedExpressionSyntax parenthesized when type is ArrayTypeSymbol:
                 return BindArrayConstant(parenthesized, [parenthesized.Expression], type);
+            case AddressOfExpressionSyntax addressOf:
+                return BindAddressConstant(addressOf, type);
             case ExpressionSyntax expression:
             {
                 // converted to the declared type (LANG-280), so the value carries that type
@@ -614,6 +658,30 @@ internal sealed class DeclarationBinder
             default:
                 return NotConstant(node);
         }
+    }
+
+    /// <summary>
+    /// LANG-265/344 <c>@X</c> in a typed constant or initialiser: the address of a global variable, a typed constant or a
+    /// top-level routine (E2033 for anything else), converted to the pointer type of the constant (E2010 otherwise).
+    /// </summary>
+    private ConstantValue? BindAddressConstant(AddressOfExpressionSyntax syntax, TypeSymbol type)
+    {
+        Symbol? target = syntax.Operand is IdentifierNameSyntax { Identifier.IsMissing: false } name
+            ? _scope.Lookup(NameOf(name.Identifier)) switch
+            {
+                VariableSymbol { IsGlobal: true } global => global,
+                ConstantSymbol { IsTyped: true, Storage: { } storage } => storage,
+                RoutineSymbol { IsNested: false } routine => routine,
+                _ => null,
+            }
+            : null;
+        if (target is null)
+        {
+            _diagnostics.Report(syntax.Operand, "E2033");
+            return null;
+        }
+
+        return _conversions.ConvertConstant(new ConstantValue(new AddressConstant(target), _types.Pointer), type, syntax, _diagnostics);
     }
 
     private ConstantValue? BindArrayConstant(SyntaxNode syntax, IReadOnlyList<SyntaxNode> elements, TypeSymbol type)
@@ -1026,6 +1094,8 @@ internal sealed class DeclarationBinder
                 return BindArray(array, typeName, declaredAt, declared);
             case RecordTypeSyntax record:
                 return BindRecord(record, typeName, declaredAt, declared);
+            case PointerTypeSyntax pointer:
+                return BindPointer(pointer, typeName, declared);
             case ArrayTypeSyntax array:
                 return Unsupported(type, array.ElementType is null ? "array of const" : "dynamic array type");      // C-064, M2.5
             case NamedTypeSyntax { Name: IdentifierNameSyntax name }:

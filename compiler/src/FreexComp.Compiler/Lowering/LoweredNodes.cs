@@ -422,3 +422,53 @@ internal sealed class LTestBit(LExpression address, LExpression element, TypeSym
 
     public LExpression Element { get; } = element;
 }
+
+// ---------------------------------------------------------------------- pointers (C-056)
+
+/// <summary><c>p^</c> (CMP-340): the variable at the address <see cref="Pointer"/> (a <c>ptr</c> value), a variable reference of its type.</summary>
+internal sealed class LDeref(LExpression pointer, TypeSymbol type) : LExpression(type)
+{
+    public LExpression Pointer { get; } = pointer;
+}
+
+/// <summary>
+/// CMP-342 <c>p + n</c>: <c>getelementptr inbounds T, ptr p, i64 n</c> with <see cref="ElementType"/> <c>T</c>; <see cref="Index"/> is an
+/// <c>Int64</c>-sized integer (already negated for <c>p - n</c>).
+/// </summary>
+internal sealed class LPointerOffset(LExpression pointer, LExpression index, TypeSymbol elementType, TypeSymbol type) : LExpression(type)
+{
+    public LExpression Pointer { get; } = pointer;
+
+    public LExpression Index { get; } = index;
+
+    public TypeSymbol ElementType { get; } = elementType;
+}
+
+/// <summary><c>@Routine</c> (CMP-340): the routine's code address <c>ptr @"link.name"</c>.</summary>
+internal sealed class LRoutineAddress(RoutineSymbol routine, TypeSymbol pointerType) : LExpression(pointerType)
+{
+    public RoutineSymbol Routine { get; } = routine;
+}
+
+/// <summary>
+/// <c>FillChar</c> (CMP-412): <c>llvm.memset</c> of <see cref="Count"/> bytes (<c>Int64</c>) of <see cref="Value"/> (a <c>Byte</c>) at the
+/// address of the variable reference <see cref="Target"/> (its access alignment, CMP-309).
+/// </summary>
+internal sealed class LMemSet(LExpression target, LExpression count, LExpression value) : LStatement
+{
+    public LExpression Target { get; } = target;
+
+    public LExpression Count { get; } = count;
+
+    public LExpression Value { get; } = value;
+}
+
+/// <summary><c>Move</c> (CMP-412): <c>llvm.memmove</c> of <see cref="Count"/> bytes from the variable reference <see cref="Source"/> to <see cref="Destination"/>.</summary>
+internal sealed class LMemMove(LExpression source, LExpression destination, LExpression count) : LStatement
+{
+    public LExpression Source { get; } = source;
+
+    public LExpression Destination { get; } = destination;
+
+    public LExpression Count { get; } = count;
+}

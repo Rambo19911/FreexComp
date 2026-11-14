@@ -371,6 +371,24 @@ internal static class Sets
         : right.Size > left.Size ? right : left;
 }
 
+/// <summary>Pointer identity and compatibility (LANG-206, 266, 267).</summary>
+internal static class Pointers
+{
+    /// <summary>The same type: identical, or two typed pointer types to the same type (LANG-206).</summary>
+    public static bool SameType(TypeSymbol a, TypeSymbol b) =>
+        ReferenceEquals(a, b) || a is PointerTypeSymbol { PointedType: { } x } && b is PointerTypeSymbol { PointedType: { } y } && ReferenceEquals(x, y);
+
+    /// <summary>
+    /// LANG-266/267: <c>nil</c> and the untyped <c>Pointer</c> go with every pointer type in both directions; two typed pointers
+    /// only when they point to the same type.
+    /// </summary>
+    public static bool Compatible(PointerTypeSymbol source, PointerTypeSymbol destination) =>
+        source.PointedType is null || destination.PointedType is null || ReferenceEquals(source.PointedType, destination.PointedType);
+
+    /// <summary>The element type of pointer arithmetic: the pointed type, a byte for the untyped <c>Pointer</c> (CMP-342).</summary>
+    public static long ElementSize(PointerTypeSymbol pointer) => pointer.PointedType?.Size ?? 1;
+}
+
 /// <summary>The ordinal view of the ordinal types (LANG-210…213, 280 rules 2, 4, 5, 6).</summary>
 internal static class Ordinals
 {
@@ -448,7 +466,8 @@ public sealed class PointerTypeSymbol : TypeSymbol
         AllowsPointerMath = allowsPointerMath;
     }
 
-    public TypeSymbol? PointedType { get; }
+    /// <summary>Set after construction for a forward reference <c>^T</c> to a type declared later in the same section (LANG-208).</summary>
+    public TypeSymbol? PointedType { get; internal set; }
 
     /// <summary>Pointer arithmetic without <c>{$POINTERMATH ON}</c> (<c>PChar</c>, <c>PAnsiChar</c>).</summary>
     public bool AllowsPointerMath { get; }

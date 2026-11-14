@@ -12,11 +12,17 @@ internal enum IntrinsicKind
     // M2.2 procedures
     Include, Exclude,
 
+    // M2.2 memory procedures (LANG-268, intrinsics.md)
+    New, Dispose, GetMem, FreeMem, ReallocMem, FillChar, Move,
+
     // M2.1 functions (constant-foldable, LANG-340)
     Succ, Pred, Ord, Chr, Odd, Abs, Sqr, Low, High, SizeOf, Lo, Hi, Swap,
 
     // M2.2 functions (Length: constant for static arrays and string constants)
     Length,
+
+    // M2.2 pointer functions (intrinsics.md)
+    Assigned, Addr, Ptr,
 }
 
 /// <summary>A compiler-magic routine predeclared in the outermost scope (LANG-900); user symbols may hide it.</summary>

@@ -54,8 +54,53 @@ internal static class IntrinsicRewriter
                 return context.Convert(swapped, call.Type);
             }
 
+            case IntrinsicKind.Assigned:
+                return context.Compare(LCompareOperator.NotEqual, operand, Nil(context));
+            case IntrinsicKind.Ptr:
+                return new LConvert(operand, call.Type);                                     // inttoptr (CMP-313)
             default:
                 throw new InvalidOperationException($"{call.Intrinsic.Name} with a non-constant result is not an M2.1 intrinsic.");
+        }
+    }
+
+    private static LConst Nil(LoweringContext context) => new(new ConstantValue(null, context.Types.Pointer), context.Types.Pointer);
+
+    /// <summary>rtl-abi.md §9.2 helpers: <c>_GetMem</c>, <c>_AllocZero</c> (Size → Pointer), <c>_FreeMem</c>, <c>_ReallocMem</c>.</summary>
+    private static RuntimeHelper Memory(LoweringContext context, string name) => name switch
+    {
+        "_FreeMem" => new RuntimeHelper(name, [context.Types.Pointer], ReturnType: null, IsNoReturn: false),
+        "_ReallocMem" => new RuntimeHelper(name, [context.Types.Pointer, context.Types.NativeInt], context.Types.Pointer, IsNoReturn: false),
+        _ => new RuntimeHelper(name, [context.Types.NativeInt], context.Types.Pointer, IsNoReturn: false),
+    };
+
+    /// <summary>
+    /// LANG-268 / CMP-340: <c>New(p)</c> = <c>p := _AllocZero(SizeOf(p^))</c> (an empty record occupies one byte, ABI-060);
+    /// <c>Dispose(p)</c> = <c>_FreeMem(p)</c> (no managed types yet); <c>GetMem</c>/<c>FreeMem</c>/<c>ReallocMem</c> map to their helpers.
+    /// </summary>
+    private static LStatement MemoryStatement(LoweringContext context, BoundIntrinsicCallStatement call)
+    {
+        var pointer = call.Arguments[0];
+        switch (call.Intrinsic.Intrinsic)
+        {
+            case IntrinsicKind.New:
+            {
+                var size = Math.Max(1, ((PointerTypeSymbol)pointer.Type).PointedType!.Size);
+                var allocate = new LCall(new LHelperCallee(Memory(context, "_AllocZero")), [context.Constant(size, context.Types.NativeInt)]);
+                return new LAssign(context.Lower(pointer), allocate);
+            }
+
+            case IntrinsicKind.GetMem:
+                return new LAssign(context.Lower(pointer), new LCall(new LHelperCallee(Memory(context, "_GetMem")), [context.Lower(call.Arguments[1])]));
+            case IntrinsicKind.ReallocMem:
+            {
+                var target = context.Lower(pointer);
+                var resized = new LCall(new LHelperCallee(Memory(context, "_ReallocMem")),
+                    [context.Convert(context.Lower(pointer), context.Types.Pointer), context.Lower(call.Arguments[1])]);
+                return new LAssign(target, resized);
+            }
+
+            default:                                                                         // Dispose, FreeMem
+                return new LCallStatement(new LHelperCallee(Memory(context, "_FreeMem")), [context.Convert(context.Lower(pointer), context.Types.Pointer)]);
         }
     }
 
@@ -63,6 +108,21 @@ internal static class IntrinsicRewriter
     {
         switch (call.Intrinsic.Intrinsic)
         {
+            case IntrinsicKind.Inc or IntrinsicKind.Dec when call.Arguments[0].Type is PointerTypeSymbol pointer:
+            {
+                // intrinsics.md: a typed pointer moves by n elements (CMP-342)
+                var target = call.Arguments[0];
+                LExpression step = call.Arguments.Length == 2
+                    ? context.Convert(context.Lower(call.Arguments[1]), context.Types.NativeInt)
+                    : context.Constant(BigInteger.One, context.Types.NativeInt);
+                if (call.Intrinsic.Intrinsic == IntrinsicKind.Dec)
+                {
+                    step = context.Negated(step);
+                }
+
+                return new LAssign(context.Lower(target), context.Offset(context.Lower(target), step, pointer, pointer));
+            }
+
             case IntrinsicKind.Inc or IntrinsicKind.Dec:
             {
                 var target = call.Arguments[0];
@@ -70,6 +130,15 @@ internal static class IntrinsicRewriter
                 var op = call.Intrinsic.Intrinsic == IntrinsicKind.Inc ? LBinaryOperator.Add : LBinaryOperator.Subtract;
                 return new LAssign(context.Lower(target), context.Step(context.Lower(target), target.Type, op, step, CheckRewriter.StateOf(call)));
             }
+
+            case IntrinsicKind.New or IntrinsicKind.Dispose or IntrinsicKind.GetMem or IntrinsicKind.FreeMem or IntrinsicKind.ReallocMem:
+                return MemoryStatement(context, call);
+
+            case IntrinsicKind.FillChar:
+                return new LMemSet(context.Lower(call.Arguments[0]), context.Lower(call.Arguments[1]), context.Convert(context.Lower(call.Arguments[2]), context.Types.Byte));
+
+            case IntrinsicKind.Move:
+                return new LMemMove(context.Lower(call.Arguments[0]), context.Lower(call.Arguments[1]), context.Lower(call.Arguments[2]));
 
             case IntrinsicKind.Include or IntrinsicKind.Exclude:
                 return SetRewriter.IncludeExclude(context, call, call.Intrinsic.Intrinsic == IntrinsicKind.Include);

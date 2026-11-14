@@ -14,11 +14,8 @@
 E2001  M2.4  declaration mismatch of a forward class / method
 E2007  M2.2  incomplete type (pointer forward, records)
 E2008  reserved  LANG-516 makes this unused
-E2015  M2.2  ^T forward reference (LANG-208)
-E2018  M2.2  pointer type required (dereference)
 E2022  M2.2  circular type definition
 E2023  M2.2  result type restrictions (LANG-412)
-E2033  M2.2  address-of (@ on expressions)
 E2041  M2.2  variable typecasts
 E2054  M2.2  string constant too long (short strings)
 E2067  M2.4  leaving a finally part (LANG-363)
