@@ -966,8 +966,94 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-060: UnicodeString variables (CMP-320/324/325): <c>_UStrAsg</c>, <c>_UStrFromWChar</c>, results through the hidden
+    /// <c>Result</c> (into a local or a temporary), value parameters with <c>_UStrAddRef</c>, an <c>out</c> parameter cleared,
+    /// zeroed locals and temporaries, the <c>cleanup</c> block on every exit, inline <c>Length</c> and characters with
+    /// <c>{$R+}</c>, Write of a string value.
+    /// </summary>
+    internal const string StringsSource = """
+        unit M;
+        interface
+        function Echo(s: string): string;
+        procedure Use(const c: string; var v: string; out o: string);
+        function Len(const s: string; i: Integer): Integer;
+        implementation
+        var
+          G: string;
+        function Echo(s: string): string;
+        begin
+          Result := s;
+        end;
+        procedure Use(const c: string; var v: string; out o: string);
+        var
+          t: string;
+          ch: Char;
+        begin
+          t := c;
+          v := 'lit';
+          o := Echo(t);
+          t := Echo(v);
+          ch := t[1];
+          t := ch;
+          G := t;
+          Writeln(t);
+          if Length(t) > 2 then
+            Exit;
+          Echo(G);
+        end;
+        function Len(const s: string; i: Integer): Integer;
+        begin
+        {$R+}
+          Result := Length(s) + Ord(s[i]);
+        {$R-}
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-061: CMP-324 string operators — <c>_UStrCat</c>, <c>_UStrCatN</c> over a stack <c>[n x ptr]</c>, a char part through
+    /// <c>_UStrFromWChar</c>, <c>_UStrEq</c>/<c>_UStrCmp</c>, <c>''</c> tests without a call, and <c>s[i] := c</c> after
+    /// <c>_UStrUnique</c> with and without <c>{$R+}</c>.
+    /// </summary>
+    internal const string StringOperatorsSource = """
+        unit M;
+        interface
+        function Join(const a, b, c: string; ch: Char): string;
+        function Order(const a, b: string): Integer;
+        procedure Poke(var s: string; i: Integer; ch: Char);
+        implementation
+        function Join(const a, b, c: string; ch: Char): string;
+        begin
+          Result := a + b;
+          Result := a + b + c;
+          Result := Result + ch;
+          Result := ch + ch;
+        end;
+        function Order(const a, b: string): Integer;
+        begin
+          Result := 0;
+          if a = b then Result := 1;
+          if a <> b then Result := Result + 2;
+          if a < b then Result := Result + 4;
+          if a >= b then Result := Result + 8;
+          if a = '' then Result := Result + 16;
+          if a + b <> '' then Result := Result + 32;
+        end;
+        procedure Poke(var s: string; i: Integer; ch: Char);
+        begin
+          s[i] := ch;
+        {$R+}
+          s[i + 1] := s[i];
+        {$R-}
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Strings"] = StringsSource,
+        ["StringOperators"] = StringOperatorsSource,
         ["RealIntrinsics"] = RealIntrinsicsSource,
         ["Reals"] = RealsSource,
         ["Typecasts"] = TypecastsSource,
@@ -1243,6 +1329,92 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-410")]
     [Trait("Req", "CMP-412")]
     public void RealIntrinsics() => Snapshot.Verify("RealIntrinsics", Emit(RealIntrinsicsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-320")]
+    [Trait("Req", "CMP-324")]
+    [Trait("Req", "CMP-325")]
+    public void Strings() => Snapshot.Verify("Strings", Emit(StringsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-324")]
+    [Trait("Req", "LANG-243")]
+    [Trait("Req", "LANG-244")]
+    public void StringOperators() => Snapshot.Verify("StringOperators", Emit(StringOperatorsSource));
+
+    /// <summary>C-061: the CMP-324 operator rows as emitted (helpers, the parts array, nil tests, unique before a character store).</summary>
+    [Fact]
+    [Trait("Req", "CMP-324")]
+    [Trait("Req", "CMP-331")]
+    [Trait("Req", "ABI-024")]
+    public void StringOperators_UseTheCmp324Helpers()
+    {
+        var text = Emit(StringOperatorsSource);
+
+        foreach (var line in (string[])[
+                     "  call void @\"System._UStrCat\"(ptr %Result, ptr %",
+                     " = alloca [3 x ptr], align 8\n",
+                     ", i32 3)\n",
+                     "  call void @\"System._UStrCatN\"(ptr %Result, ptr %$tmp",
+                     " = call i8 @\"System._UStrEq\"(ptr %",
+                     " = call i32 @\"System._UStrCmp\"(ptr %",
+                     " = icmp slt i32 %",
+                     " = icmp sge i32 %",
+                     " = icmp eq ptr %",
+                     " = icmp ne ptr %",
+                     "  call void @\"System._UStrUnique\"(ptr %s)\n",
+                     "declare i8 @\"System._UStrEq\"(ptr, ptr)\n",
+                     "declare i32 @\"System._UStrCmp\"(ptr, ptr)\n",
+                     "declare void @\"System._UStrCatN\"(ptr, ptr, i32)\n",
+                     "declare void @\"System._UStrUnique\"(ptr)\n",
+                 ])
+        {
+            Assert.Contains(line, text);
+        }
+
+        var poke = text[text.IndexOf("define void @\"M.Poke\"", StringComparison.Ordinal)..];
+        poke = poke[..poke.IndexOf("\n}\n", StringComparison.Ordinal)];
+        Assert.Equal(2, poke.Split("_UStrUnique").Length - 1);                                      // one per written character
+        Assert.Equal(2, poke.Split(" = icmp ult i64 ").Length - 1);                                 // {$R+}: the read and the write are checked
+    }
+
+    /// <summary>C-060: the CMP-324 table rows and CMP-325 rules 1–4 as emitted.</summary>
+    [Fact]
+    [Trait("Req", "CMP-324")]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "ABI-023")]
+    [Trait("Req", "ABI-031")]
+    [Trait("Req", "ABI-032")]
+    public void Strings_UseTheAbiHelpersAndOneCleanupBlock()
+    {
+        var text = Emit(StringsSource);
+
+        foreach (var line in (string[])[
+                     "define void @\"M.Echo\"(ptr %Result, ptr %s) #0 {\n",
+                     "  call void @\"System._UStrAddRef\"(ptr %t1)\n",                     // rule 3, value parameter
+                     "  store ptr null, ptr %t.addr, align 8\n",                            // rule 1
+                     "  call void @\"System._UStrClr\"(ptr %o)\n",                          // the out parameter, ABI-030
+                     "  call void @\"System._UStrAsg\"(ptr %v, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [4 x i16] }, ptr @.str.0, i32 0, i32 5))\n",
+                     "  call void @\"M.Echo\"(ptr %$tmp1.addr, ptr %",                      // o := Echo(t): o is no local
+                     "  call void @\"M.Echo\"(ptr %t.addr, ptr %",                          // t := Echo(v): into t (rule 4)
+                     "  call void @\"System._UStrFromWChar\"(ptr %t.addr, i16 %",
+                     "  call void @\"System._UStrAsg\"(ptr @\"M.G\", ptr %",
+                     " = getelementptr inbounds i8, ptr %", ", i64 -12\n",                  // ABI-023
+                     " = getelementptr inbounds i16, ptr %",                                // ABI-024
+                     " = icmp ult i64 %",                                                   // CMP-331
+                     "cleanup:\n  call void @\"System._UStrClr\"(ptr %t.addr)\n  call void @\"System._UStrClr\"(ptr %$tmp1.addr)\n  call void @\"System._UStrClr\"(ptr %$tmp2.addr)\n  br label %exit\n",
+                     "declare void @\"System._UStrAsg\"(ptr, ptr)\n",
+                     "declare void @\"System._UStrFromWChar\"(ptr, i16)\n",
+                 ])
+        {
+            Assert.Contains(line, text);
+        }
+
+        var use = text[text.IndexOf("define void @\"M.Use\"", StringComparison.Ordinal)..];
+        use = use[..use.IndexOf("\n}\n", StringComparison.Ordinal)];
+        Assert.Equal(2, use.Split("label %cleanup").Length - 1);                                   // Exit (a direct branch arm) and the end of the body
+        Assert.DoesNotContain("select", use);                                                       // no speculative load from nil
+    }
 
     /// <summary>C-059: the helper declarations of rtl-abi.md §9.9/§9.10 and the CMP-410 arguments of <c>_WriteFloat</c>.</summary>
     [Fact]

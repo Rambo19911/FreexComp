@@ -232,8 +232,15 @@ public sealed class IntrinsicBindingTests
 
     [Fact]
     [Trait("Req", "LANG-902")]
-    public void M21High_OfAStringVariable_WaitsForLength() =>
-        Assert.Equal(["E2900(1,132): Feature not supported: High of a string variable"], Errors("i := High(s)"));
+    [Trait("Req", "ABI-023")]
+    public void HighAndLength_OfAStringVariable_AreRuntimeCalls() =>
+        Assert.Equal("(block (:= i:Integer (High:Integer s:string)) (:= i:Integer (Length:Integer s:string)) (:= i:Integer 3:Integer))",
+            Body("i := High(s); i := Length(s); i := Length('abc')"));
+
+    [Fact]
+    [Trait("Req", "LANG-902")]
+    public void High_OfAnAnsiStringVariable_WaitsForC063() =>
+        Assert.Equal(["E2900(1,147): Feature not supported: High of a string variable"], BindDiagnostics("program T; " + Vars + "a: AnsiString; begin i := High(a) end."));
 
     // ------------------------------------------------------------------ Lo, Hi, Swap
 
@@ -302,11 +309,16 @@ public sealed class IntrinsicBindingTests
         Assert.Equal("(block (Assert (Greater:Boolean i:Integer 0:Integer)) (Assert f:Boolean 'no f':string) (Assert True:Boolean))",
             Body("Assert(i > 0); Assert(f, 'no f'); Assert(ByteBool(True))"));
 
+    /// <summary>C-060 (types.md lead note C-057/C-058): the message may be any string value; a character is converted (LANG-245).</summary>
+    [Fact]
+    [Trait("Req", "LANG-900")]
+    public void Assert_StringValueMessage() =>
+        Assert.Equal("(block (Assert f:Boolean s:string) (Assert f:Boolean (conv string c:Char)))", Body("Assert(f, s); Assert(f, c)"));
+
     [Theory]
     [Trait("Req", "LANG-900")]
     [InlineData("Assert(i)", "E2010(1,134): Incompatible types: 'Integer' and 'Boolean'")]
     [InlineData("Assert(f, 3)", "E2010(1,137): Incompatible types: 'Integer' and 'string'")]
-    [InlineData("Assert(f, s)", "E2900(1,137): Feature not supported: Assert message that is not a constant")]
     [InlineData("Assert", "E2110(1,127): Not enough actual parameters for 'Assert'")]
     [InlineData("Assert(f, 'a', 1)", "E2111(1,142): Too many actual parameters for 'Assert'")]
     [InlineData("i := Assert(f)", "E2034(1,132): Expression has no value (procedure call used as a value)")]

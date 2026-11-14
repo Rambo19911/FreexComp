@@ -42,6 +42,16 @@ procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
 procedure _WriteLn(var T: Text);
 procedure _WriteEnd(var T: Text);
 
+procedure _UStrClr(var S: Pointer);
+procedure _UStrAddRef(S: Pointer);
+procedure _UStrAsg(var Dest: Pointer; Src: Pointer);
+procedure _UStrFromWChar(var Dest: Pointer; C: WideChar);
+procedure _UStrCat(var Dest: Pointer; A, B: Pointer);
+procedure _UStrCatN(var Dest: Pointer; Parts: Pointer; Count: Integer);
+function _UStrCmp(A, B: Pointer): Integer;
+function _UStrEq(A, B: Pointer): Boolean;
+procedure _UStrUnique(var S: Pointer);
+
 procedure _SetUnion(Dest, A, B: Pointer);
 procedure _SetInter(Dest, A, B: Pointer);
 procedure _SetDiff(Dest, A, B: Pointer);
@@ -73,6 +83,7 @@ type
   PNativeInt = ^NativeInt;
   PPointer = ^Pointer;
   PUInt64 = ^UInt64;
+  PWord = ^Word;
 
 const
   kernel32 = 'kernel32.dll';
@@ -81,6 +92,7 @@ const
   STD_ERROR_HANDLE = -12;
   HEAP_ZERO_MEMORY = 8;
   ScratchSize = 64;
+  MaxUStrLength = $7FFFFFFE;                 { ABI-026: 2^31 - 2 elements }
   { exact float formatting (LANG-930...933): a Double is M * 2^E with M < 2^53 and -1074 <= E <= 971, so its exact decimal
     expansion has at most 767 digits; it is computed in base-10^9 limbs }
   LimbBase = 1000000000;
@@ -385,6 +397,229 @@ end;
 { unbuffered: nothing to flush }
 procedure _WriteEnd(var T: Text);
 begin
+end;
+
+{ ------------------------------------------------------------------ UnicodeString (rtl-abi.md section 3, 9.3)
+  S points at the first character of a block: RefCount (Int32) at S - 16, Length at S - 12, CodePage (Word) at S - 8,
+  ElemSize at S - 6, reserved Int32 at S - 4. nil is ''. RefCount -1 marks a static literal: never counted, never freed.
+  Single-threaded test RTL: reference counts are plain increments (the real RTL uses interlocked ones, ABI-022). }
+
+function UStrLength(S: Pointer): Integer;
+var
+  LenField: PInteger;
+begin
+  Result := 0;
+  if S <> nil then
+  begin
+    LenField := S - 12;
+    Result := LenField^;
+  end;
+end;
+
+{ a heap block for Len > 0 characters, RefCount 1, terminator set, characters not initialised (ABI-020); error 203 past ABI-026 }
+function NewUStr(Len: Integer): Pointer;
+var
+  Block: PByte;
+  Header: PInteger;
+  Words: PWord;
+  Chars: PChar;
+begin
+  if Len > MaxUStrLength then
+    _RunError(203);
+  Block := _GetMem(16 + (NativeInt(Len) + 1) * 2);
+  Header := PInteger(Block);
+  Header[0] := 1;
+  Header[1] := Len;
+  Words := PWord(Block + 8);
+  Words[0] := 1200;
+  Words[1] := 2;
+  Header[3] := 0;
+  Result := Block + 16;
+  Chars := Result;
+  Chars[Len] := #0;
+end;
+
+procedure ReleaseUStr(S: Pointer);
+var
+  Count: PInteger;
+begin
+  if S <> nil then
+  begin
+    Count := S - 16;
+    if Count^ > 0 then
+    begin
+      Count^ := Count^ - 1;
+      if Count^ = 0 then
+        _FreeMem(S - 16);
+    end;
+  end;
+end;
+
+{ Dest := P, which already carries its reference; the old value is released afterwards (P may be built from it) }
+procedure SetUStr(var Dest: Pointer; P: Pointer);
+var
+  Old: Pointer;
+begin
+  Old := Dest;
+  Dest := P;
+  ReleaseUStr(Old);
+end;
+
+procedure _UStrAddRef(S: Pointer);
+var
+  Count: PInteger;
+begin
+  if S <> nil then
+  begin
+    Count := S - 16;
+    if Count^ > 0 then
+      Count^ := Count^ + 1;
+  end;
+end;
+
+procedure _UStrClr(var S: Pointer);
+begin
+  SetUStr(S, nil);
+end;
+
+procedure _UStrAsg(var Dest: Pointer; Src: Pointer);
+begin
+  _UStrAddRef(Src);
+  SetUStr(Dest, Src);
+end;
+
+procedure _UStrFromWChar(var Dest: Pointer; C: WideChar);
+var
+  P: Pointer;
+  Chars: PChar;
+begin
+  P := NewUStr(1);
+  Chars := P;
+  Chars[0] := C;
+  SetUStr(Dest, P);
+end;
+
+procedure CopyChars(Dest, Src: PChar; Count: Integer);
+var
+  I: Integer;
+begin
+  for I := 0 to Count - 1 do
+    Dest[I] := Src[I];
+end;
+
+{ Dest := A + B; a part that is '' gives the other one shared (ABI-021); Dest may be A or B }
+procedure _UStrCat(var Dest: Pointer; A, B: Pointer);
+var
+  LA, LB: Integer;
+  P: Pointer;
+  Chars: PChar;
+begin
+  LA := UStrLength(A);
+  LB := UStrLength(B);
+  if LA = 0 then
+    _UStrAsg(Dest, B)
+  else if LB = 0 then
+    _UStrAsg(Dest, A)
+  else
+  begin
+    if LA > MaxUStrLength - LB then
+      _RunError(203);
+    P := NewUStr(LA + LB);
+    Chars := P;
+    CopyChars(Chars, A, LA);
+    CopyChars(Chars + LA, B, LB);
+    SetUStr(Dest, P);
+  end;
+end;
+
+{ Dest := Parts[0] + ... + Parts[Count - 1] (Parts: PPointer; the declared Pointer avoids a PPointer type in the interface) }
+procedure _UStrCatN(var Dest: Pointer; Parts: Pointer; Count: Integer);
+var
+  List: PPointer;
+  Total, Len, At, I, NonEmpty: Integer;
+  Only, P: Pointer;
+  Chars: PChar;
+begin
+  List := Parts;
+  Total := 0;
+  NonEmpty := 0;
+  Only := nil;
+  for I := 0 to Count - 1 do
+  begin
+    Len := UStrLength(List[I]);
+    if Len > 0 then
+    begin
+      if Total > MaxUStrLength - Len then
+        _RunError(203);
+      Total := Total + Len;
+      NonEmpty := NonEmpty + 1;
+      Only := List[I];
+    end;
+  end;
+  if NonEmpty <= 1 then
+    _UStrAsg(Dest, Only)
+  else
+  begin
+    P := NewUStr(Total);
+    Chars := P;
+    At := 0;
+    for I := 0 to Count - 1 do
+    begin
+      Len := UStrLength(List[I]);
+      CopyChars(Chars + At, List[I], Len);
+      At := At + Len;
+    end;
+    SetUStr(Dest, P);
+  end;
+end;
+
+{ ordinal comparison of UTF-16 code units; on a common prefix the shorter string is smaller }
+function _UStrCmp(A, B: Pointer): Integer;
+var
+  LA, LB, N, I: Integer;
+  X, Y: PChar;
+begin
+  LA := UStrLength(A);
+  LB := UStrLength(B);
+  N := LA;
+  if LB < N then
+    N := LB;
+  X := A;
+  Y := B;
+  for I := 0 to N - 1 do
+    if X[I] <> Y[I] then
+      Exit(Ord(X[I]) - Ord(Y[I]));
+  Result := LA - LB;
+end;
+
+function _UStrEq(A, B: Pointer): Boolean;
+begin
+  if A = B then
+    Result := True
+  else if UStrLength(A) <> UStrLength(B) then
+    Result := False
+  else
+    Result := _UStrCmp(A, B) = 0;
+end;
+
+{ afterwards S is nil or a heap block with RefCount 1: a shared or static block is copied first (copy-on-write, LANG-241) }
+procedure _UStrUnique(var S: Pointer);
+var
+  Count: PInteger;
+  Len: Integer;
+  P: Pointer;
+begin
+  if S <> nil then
+  begin
+    Count := S - 16;
+    if Count^ <> 1 then
+    begin
+      Len := UStrLength(S);
+      P := NewUStr(Len);
+      CopyChars(P, S, Len);
+      SetUStr(S, P);
+    end;
+  end;
 end;
 
 { ------------------------------------------------------------------ reals (intrinsics.md LANG-930...933, rtl-abi.md 9.9/9.10) }

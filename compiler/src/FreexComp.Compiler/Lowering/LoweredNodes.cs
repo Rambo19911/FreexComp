@@ -14,7 +14,13 @@ namespace FreexComp.Compiler.Lowering;
 /// <param name="Routine">Null for the program block and unit initialization/finalization sections.</param>
 /// <param name="Locals">Storage the body needs: <c>Result</c>, declared locals (scope order), then compiler temporaries.</param>
 /// <param name="Frame">The routine's frame record (CMP-345), or null when it needs none.</param>
-internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal> Locals, LBlock Body, LoweredFrame? Frame = null);
+/// <param name="Cleanup">
+/// CMP-325 rule 2: the function-level cleanup scope — finalisation of the managed value parameters, locals and temporaries in
+/// declaration order — or null when the body has none. The emitter routes every exit through block <c>cleanup</c> holding it.
+/// EH milestone hook (CMP-393/394): the same statements become the <c>cleanuppad</c> funclet, calls inside the body become
+/// <c>invoke</c>s unwinding to it.
+/// </param>
+internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal> Locals, LBlock Body, LoweredFrame? Frame = null, LBlock? Cleanup = null);
 
 /// <summary>
 /// A frame record (CMP-345): field 0 is the routine's static link (null for a top-level routine), then
@@ -425,6 +431,32 @@ internal sealed class LTestBit(LExpression address, LExpression element, TypeSym
     public LExpression Address { get; } = address;
 
     public LExpression Element { get; } = element;
+}
+
+// ---------------------------------------------------------------------- UnicodeString (C-060, C-061)
+// A string value is its payload pointer (ptr, nil = ''). Managed assignments, temporaries and lifetimes are explicit
+// helper calls made by ManagedRewriter: an LAssign to a managed target exists only as "the call writes its result into
+// the target" (a hidden-Result call, CMP-325 rule 4).
+
+/// <summary>ABI-023 / CMP-324: <c>Length(s)</c> of the string value <see cref="String"/> (<c>Integer</c>), 0 for <c>nil</c> without loading.</summary>
+internal sealed class LStringLength(LExpression @string, TypeSymbol integer) : LExpression(integer)
+{
+    public LExpression String { get; } = @string;
+}
+
+/// <summary>
+/// ABI-024 / CMP-324: character <see cref="Index"/> (zero-based, <c>Int64</c>: i − 1) of the string <see cref="String"/>, a
+/// variable reference of type <c>Char</c>. Read: the string value plus <c>2·Index</c>. Written (assignment target, address taken):
+/// <see cref="String"/> is a variable reference made unique first (<c>_UStrUnique</c>, LANG-241), then reloaded.
+/// <see cref="IsChecked"/>: <c>{$R+}</c> test <c>Index &lt;u Length</c> (CMP-331) → <c>_RangeError</c>.
+/// </summary>
+internal sealed class LStringIndex(LExpression @string, LExpression index, bool isChecked, TypeSymbol @char) : LExpression(@char)
+{
+    public LExpression String { get; } = @string;
+
+    public LExpression Index { get; } = index;
+
+    public bool IsChecked { get; } = isChecked;
 }
 
 // ---------------------------------------------------------------------- pointers (C-056)

@@ -271,8 +271,9 @@ internal sealed class BoundSetConstructor : BoundExpression
 }
 
 /// <summary>
-/// <c>a[i]</c> of a static array (LANG-255; <c>a[i, j]</c> = <c>a[i][j]</c>): a variable when <see cref="Array"/> is one.
-/// <see cref="Index"/> keeps its own type (ordinal, compatible with the index type); range checks are the lowerer's (CMP-331).
+/// <c>a[i]</c> of a static array (LANG-255; <c>a[i, j]</c> = <c>a[i][j]</c>) or <c>s[i]</c> of a UnicodeString (LANG-241,
+/// <see cref="IsStringElement"/>, a <c>Char</c>, 1-based): a variable when <see cref="Array"/> is one. <see cref="Index"/> keeps
+/// its own type (ordinal, compatible with the index type; an integer for strings); range checks are the lowerer's (CMP-331).
 /// </summary>
 internal sealed class BoundIndexExpression : BoundExpression
 {
@@ -290,6 +291,8 @@ internal sealed class BoundIndexExpression : BoundExpression
     public BoundExpression Index { get; }
 
     public ArrayTypeSymbol ArrayType => (ArrayTypeSymbol)Array.Type;
+
+    public bool IsStringElement => Array.Type is StringTypeSymbol;
 
     /// <summary>The variable or parameter an element/field access or variable typecast chain starts from (the expression itself otherwise).</summary>
     public static BoundExpression RootOf(BoundExpression expression)

@@ -29,6 +29,138 @@ public sealed class LoweringTests
 
     private static string Locals(LoweredBody body) => string.Join(" ", body.Locals.Select(l => $"{l.Name}:{l.Type.Name}"));
 
+    // ------------------------------------------------------------------ UnicodeString (CMP-324, CMP-325, C-060)
+
+    private static string Cleanup(LoweredBody body) => body.Cleanup is { } cleanup ? LoweredDump.Of(cleanup) : "none";
+
+    /// <summary>
+    /// CMP-325 rules 1–3: managed locals zeroed first, value parameters add a reference, <c>out</c> parameters are cleared; the
+    /// cleanup scope finalises value parameters then locals (not <c>const</c>/<c>var</c>/<c>out</c> parameters).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "ABI-030")]
+    [Trait("Req", "ABI-031")]
+    public void ManagedLifetimes_ZeroAddRefAndCleanup()
+    {
+        var body = Routine(Lower("program T; procedure F(a: string; const b: string; var c: string; out d: string); var s: string; begin s := a end; begin end."), "F");
+
+        Assert.Equal("(zero (addr s)) (call _UStrAddRef a) (call _UStrClr (addr d)) (call _UStrAsg (addr s) a)",
+            string.Join(" ", body.Body.Statements.Select(LoweredDump.Of)));
+        Assert.Equal("(block (call _UStrClr (addr a)) (call _UStrClr (addr s)))", Cleanup(body));
+        Assert.Equal("s:string", Locals(body));
+    }
+
+    /// <summary>A routine without managed parameters, locals or temporaries gets no cleanup scope; neither does a <c>const</c>-only one.</summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    public void ManagedLifetimes_NoneWithoutManagedStorage()
+    {
+        var unit = Lower("program T; procedure F(i: Integer); begin end; procedure G(const s: string); begin end; begin end.");
+
+        Assert.Equal("none", Cleanup(Routine(unit, "F")));
+        Assert.Equal("none", Cleanup(Routine(unit, "G")));
+        Assert.Empty(Routine(unit, "G").Body.Statements);
+    }
+
+    /// <summary>
+    /// CMP-324 / CMP-325 rule 4: <c>_UStrAsg</c> for values, <c>_UStrFromWChar</c> for a character, a call writes into a local the
+    /// arguments do not mention, else into a temporary assigned afterwards; a discarded result still gets a temporary; the
+    /// function's own <c>Result</c> is never a hidden-Result target (it is the caller's storage).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-324")]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "ABI-032")]
+    public void ManagedAssignments_HelpersAndHiddenResultTargets()
+    {
+        var unit = Lower("program T; function G(x: string): string; begin Result := G(x) end; " +
+                         "procedure F(c: Char); var s, t: string; begin s := 'ab'; s := c; t := G(s); s := G(s); G(t) end; begin end.");
+        var f = Routine(unit, "F");
+        var g = Routine(unit, "G");
+
+        Assert.Equal(
+            "(zero (addr s)) (zero (addr t)) (zero (addr $tmp1)) (zero (addr $tmp2)) " +
+            "(call _UStrAsg (addr s) 'ab') (call _UStrFromWChar (addr s) c) (block (:= t (call G:string s))) " +
+            "(block (:= $tmp1 (call G:string s)) (call _UStrAsg (addr s) $tmp1)) (block (:= $tmp2 (call G:string t)))",
+            string.Join(" ", f.Body.Statements.Select(LoweredDump.Of)));
+        Assert.Equal("(block (call _UStrClr (addr s)) (call _UStrClr (addr t)) (call _UStrClr (addr $tmp1)) (call _UStrClr (addr $tmp2)))", Cleanup(f));
+        Assert.Equal(
+            "(zero (addr $tmp1)) (call _UStrAddRef x) (block (:= $tmp1 (call G:string x)) (call _UStrAsg (addr Result) $tmp1))",
+            string.Join(" ", g.Body.Statements.Select(LoweredDump.Of)));
+        Assert.Equal("(block (call _UStrClr (addr x)) (call _UStrClr (addr $tmp1)))", Cleanup(g));
+    }
+
+    /// <summary>CMP-325 rule 4: a local captured by a nested routine never receives a result directly.</summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    public void ManagedAssignments_CapturedLocalGoesThroughATemporary() =>
+        Assert.Equal(
+            "(zero (addr s)) (zero (addr $tmp1)) (block (:= $tmp1 (call G:string)) (call _UStrAsg (addr s) $tmp1)) (call N)",
+            Body("function G: string; begin Result := 'g' end; procedure F; var s: string; procedure N; begin s := '' end; begin s := G; N end;"));
+
+    /// <summary>ABI-023/024, CMP-331: <c>Length</c> and <c>High</c> of a string value, a character at <c>i − 1</c>; checked under <c>{$R+}</c>.</summary>
+    [Fact]
+    [Trait("Req", "ABI-023")]
+    [Trait("Req", "ABI-024")]
+    [Trait("Req", "CMP-331")]
+    public void StringLengthAndCharacters() =>
+        Assert.Equal(
+            "(:= @i (length @s)) (:= @i (length @s)) (:= @c (char @s (Subtract:Int64 (conv Int64 @i) 1:Int64))) (:= @c (char! @s 1:Int64))",
+            MainBody("s: string; i: Integer; c: Char", "i := Length(s); i := High(s); c := s[i]; {$R+} c := s[2] {$R-}"));
+
+    /// <summary>
+    /// CMP-324 (C-061): two operands → <c>_UStrCat</c> into the target, more → a <c>[n x ptr]</c> array and <c>_UStrCatN</c> (a char
+    /// part through a managed temporary); <c>=</c>/<c>&lt;&gt;</c> → <c>_UStrEq</c>, against <c>''</c> a nil test, ordering →
+    /// <c>_UStrCmp</c> against 0; a character as an assignment target is a string element (made unique by the emitter).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-324")]
+    [Trait("Req", "LANG-243")]
+    [Trait("Req", "LANG-244")]
+    public void StringOperators_LowerToTheCmp324Helpers() =>
+        Assert.Equal(
+            "(zero (addr $tmp1)) (call _UStrCat (addr @s) @s @t) " +
+            "(block (:= ([] $tmp2 0:Int64) @s) (:= ([] $tmp2 1:Int64) 'x') (:= ([] $tmp2 2:Int64) (seq (call _UStrFromWChar (addr $tmp1) @c) $tmp1)) " +
+            "(call _UStrCatN (addr @s) (addr $tmp2) 3:Integer)) " +
+            "(:= @f (call _UStrEq:Boolean @s @t)) (:= @f (Not:Boolean (call _UStrEq:Boolean @s @t))) (:= @f (Equal @s '')) (:= @f (NotEqual @s '')) " +
+            "(:= @f (Less (call _UStrCmp:Integer @s @t) 0:Integer)) (:= (char @s (Subtract:Int64 (conv Int64 @i) 1:Int64)) @c)",
+            MainBody("s, t: string; c: Char; f: Boolean; i: Integer",
+                "s := s + t; s := s + 'x' + c; f := s = t; f := s <> t; f := s = ''; f := '' <> s; f := s < t; s[i] := c"));
+
+    /// <summary>A concatenation used as a value is built in a managed temporary (CMP-325 rule 5), finalised at exit.</summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    public void Concatenation_AsAValueUsesATemporary()
+    {
+        var body = Routine(Lower("program T; function F(const a, b: string): Integer; begin Result := Length(a + b) end; begin end."), "F");
+
+        Assert.Equal("(zero (addr $tmp1)) (:= Result (length (seq (call _UStrCat (addr $tmp1) a b) $tmp1)))",
+            string.Join(" ", body.Body.Statements.Select(LoweredDump.Of)));
+        Assert.Equal("(block (call _UStrClr (addr $tmp1)))", Cleanup(body));
+    }
+
+    /// <summary>C-060: a string-valued <c>Assert</c> message is passed as its value; a character goes through a managed temporary.</summary>
+    [Fact]
+    [Trait("Req", "CMP-412")]
+    public void Assert_StringValueMessage() =>
+        Assert.Matches(
+            @"^\(zero \(addr \$tmp1\)\) \(if \(Not:Boolean @f\) \(block \(call _Assert @s '[^']+' 1:Integer\) \(unreachable\)\)\) " +
+            @"\(if \(Not:Boolean @f\) \(block \(call _Assert \(seq \(call _UStrFromWChar \(addr \$tmp1\) @c\) \$tmp1\) '[^']+' 1:Integer\) \(unreachable\)\)\)$",
+            MainBody("f: Boolean; s: string; c: Char", "Assert(f, s); Assert(f, c)"));
+
+    /// <summary>The program block's temporaries are zeroed and finalised like a routine's; globals are not (rule 7: the unit's $final, C-071).</summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    public void ProgramBlock_FinalisesItsTemporariesOnly()
+    {
+        var body = Assert.Single(Lower("program T; function G: string; begin Result := 'g' end; var s: string; begin s := G; Writeln(G) end.").Bodies);
+
+        Assert.StartsWith("(zero (addr $tmp1)) (zero (addr $tmp2)) (block (:= $tmp1 (call G:string)) (call _UStrAsg (addr @s) $tmp1))",
+            string.Join(" ", body.Body.Statements.Select(LoweredDump.Of)));
+        Assert.Equal("(block (call _UStrClr (addr $tmp1)) (call _UStrClr (addr $tmp2)))", Cleanup(body));
+    }
+
     // ------------------------------------------------------------------ static arrays (CMP-308, CMP-331) and big sets (CMP-336)
 
     /// <summary>CMP-308: the index minus Low in Int64; constant indexes folded; under {$R+} checked against the bounds (CMP-331).</summary>

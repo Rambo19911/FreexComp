@@ -347,6 +347,26 @@ internal sealed class ExpressionBinder
                 continue;
             }
 
+            if (first && result.Type is StringTypeSymbol { Variant: StringVariant.Unicode })
+            {
+                // LANG-241: s[i] is a Char variable when s is one, 1-based; the index is an integer (E2010 at it)
+                first = false;
+                var position = BindExpression(indexSyntax);
+                if (position.HasErrors)
+                {
+                    return Error(syntax, result, position);
+                }
+
+                if (position.Type is not IntegerTypeSymbol)
+                {
+                    _conversions.ReportIncompatible(position.Type, _types.Integer, indexSyntax, _diagnostics);
+                    return Error(syntax, result, position);
+                }
+
+                result = new BoundIndexExpression(syntax, result, position, _types.Char);
+                continue;
+            }
+
             if (result.Type is not ArrayTypeSymbol array)
             {
                 if (!first)
@@ -355,7 +375,7 @@ internal sealed class ExpressionBinder
                 }
                 else if (result.Type is StringTypeSymbol)
                 {
-                    return Unsupported(syntax, "string indexing");                  // C-061
+                    return Unsupported(syntax, "string indexing");                  // AnsiString / ShortString: C-063
                 }
                 else
                 {
@@ -546,6 +566,7 @@ internal sealed class ExpressionBinder
             // the operand is never evaluated (LANG-903), so it captures nothing (lead decision C-029)
             var captured = CapturedVariables.Count;
             var (type, argument) = BindTypeOrValue(syntax);
+            var operandCaptures = CapturedVariables.GetRange(captured, CapturedVariables.Count - captured);
             CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);
             if (type.TypeKind == TypeKind.Error)
             {
@@ -553,9 +574,16 @@ internal sealed class ExpressionBinder
             }
 
             var value = _folder.FoldTypeIntrinsic(invocation, intrinsic, type, argument?.ConstantValue, argument is null, out var needsRuntime);
+            if (needsRuntime && type is StringTypeSymbol { Variant: StringVariant.Unicode })
+            {
+                // Length/High of a UnicodeString value: its length at run time (ABI-023, C-060); the operand is evaluated
+                CapturedVariables.AddRange(operandCaptures.Where(v => !CapturedVariables.Contains(v)));
+                return new BoundIntrinsicCallExpression(invocation, intrinsic, [argument!], _types.Integer, constantValue: null);
+            }
+
             if (needsRuntime)
             {
-                return Unsupported(invocation, intrinsic.Name + " of a string variable");    // string length, C-060/C-062
+                return Unsupported(invocation, intrinsic.Name + " of a string variable");    // other string kinds: C-063
             }
 
             return value is null
@@ -1038,7 +1066,10 @@ internal sealed class ExpressionBinder
             case SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.AsteriskToken:
                 if (op.Kind == SyntaxKind.PlusToken && (lt is StringTypeSymbol || rt is StringTypeSymbol || (lt is CharTypeSymbol && rt is CharTypeSymbol)))
                 {
-                    return Unsupported(op, binary, "string expression");      // concatenation, LANG-243 (M2.2)
+                    // LANG-243: UnicodeString and character operands concatenate to a UnicodeString (C-061)
+                    return IsUnicodeOperand(lt) && IsUnicodeOperand(rt)
+                        ? new BoundBinaryExpression(binary, BoundBinaryOperatorKind.Add, AsString(left), AsString(right), _types.String, _types.String, constantValue: null)
+                        : Unsupported(op, binary, "string expression");      // AnsiString, ShortString, PChar operands: C-063
                 }
 
                 if (lt is IntegerTypeSymbol && rt is IntegerTypeSymbol)
@@ -1129,6 +1160,12 @@ internal sealed class ExpressionBinder
         return new BoundBinaryExpression(binary, OperatorKind(binary.OperatorToken), Convert(left, type), Convert(right, type), type, type, constantValue: null);
     }
 
+    /// <summary>An operand of a UnicodeString operation (LANG-243/244): a UnicodeString or a character.</summary>
+    private static bool IsUnicodeOperand(TypeSymbol type) => type is StringTypeSymbol { Variant: StringVariant.Unicode } or CharTypeSymbol;
+
+    /// <summary>A UnicodeString or character operand as a UnicodeString (LANG-245; a constant character folds to a string constant).</summary>
+    private BoundExpression AsString(BoundExpression operand) => ConvertForAssignment(operand, _types.String, operand.Syntax);
+
     /// <summary>LANG-226/230: Single when both are Single (or a Single and an integer constant exact in Single), else Double.</summary>
     private BoundBinaryExpression RealOperation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
     {
@@ -1163,7 +1200,10 @@ internal sealed class ExpressionBinder
         var (lt, rt) = (left.Type, right.Type);
         if (lt is StringTypeSymbol || rt is StringTypeSymbol)
         {
-            return Unsupported(binary.OperatorToken, binary, "string expression");    // LANG-244 (M2.2)
+            // LANG-244: ordinal comparison as UnicodeStrings; a character operand becomes a 1-char string (C-061)
+            return IsUnicodeOperand(lt) && IsUnicodeOperand(rt)
+                ? new BoundBinaryExpression(binary, kind, AsString(left), AsString(right), _types.String, boolean, constantValue: null)
+                : Unsupported(binary.OperatorToken, binary, "string expression");    // other string kinds: C-063
         }
 
         if (lt is IntegerTypeSymbol && rt is IntegerTypeSymbol)

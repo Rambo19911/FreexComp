@@ -1,0 +1,24 @@
+value in: original
+value now: changed
+after value: original
+const: original 8
+const: literal 7
+var in: original
+after var: from var
+out in: []
+after out: from out
+hello
+hello
+hello
+hello
+yes no
+twice
+nested
+right left
+global
+global
+const: arg 3
+value in: hello
+value now: changed
+xx
+[  hello]q1

@@ -31,11 +31,15 @@ internal static class Lowerer
 
     public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body)
     {
-        var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>()) { Output = OutputOf(result) };
+        var captured = result.GetCapturedVariables(body.Routine);
+        var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>())
+        {
+            Output = OutputOf(result),
+            Captured = [.. captured],
+        };
         var lowered = context.Finish(body.Body);
         // CMP-345: a frame when nested routines capture something of this routine, and for a nested routine with nested
         // routines of its own (field 0 continues the static link chain they walk)
-        var captured = result.GetCapturedVariables(body.Routine);
         var needsFrame = !captured.IsEmpty || body.Routine.IsNested && !body.NestedRoutines.IsEmpty;
         return needsFrame ? lowered with { Frame = new LoweredFrame(captured) } : lowered;
     }
@@ -84,6 +88,9 @@ internal sealed class LoweringContext
     /// <summary><c>System.Output</c> as bound (LANG-910); null when the unit was bound without <c>System</c> (white-box tests).</summary>
     public VariableSymbol? Output { get; init; }
 
+    /// <summary>This routine's variables, parameters and <c>Result</c> that nested routines reference (they live in the frame record).</summary>
+    public ImmutableHashSet<Symbol> Captured { get; init; } = [];
+
     /// <summary><c>procedure _RunError(Code: Integer)</c>, noreturn (rtl-abi.md §9.1).</summary>
     public RuntimeHelper RunError { get; }
 
@@ -93,7 +100,7 @@ internal sealed class LoweringContext
     public LoweredBody Finish(BoundBlock body)
     {
         var block = (LBlock)Lower(body);
-        return new LoweredBody(Routine, [.. _locals], block);
+        return ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], block));
     }
 
     // ------------------------------------------------------------------ helpers for the rewriters
@@ -167,6 +174,8 @@ internal sealed class LoweringContext
         {
             case BoundBlock block:
                 return new LBlock([.. block.Statements.Select(Lower)]);
+            case BoundAssignmentStatement { Target.Type.IsManaged: true } assignment:
+                return ManagedRewriter.Assign(this, Lower(assignment.Target), assignment.Value);
             case BoundAssignmentStatement assignment:
                 return new LAssign(Lower(assignment.Target), Lower(assignment.Value));
             case BoundIfStatement ifStatement:
@@ -195,6 +204,8 @@ internal sealed class LoweringContext
                 return new LContinue(_loops.Peek());
             case BoundExitStatement { Value: null }:
                 return new LReturn();
+            case BoundExitStatement { Value.Type.IsManaged: true } exit:
+                return new LBlock([ManagedRewriter.Assign(this, new LLocalRef(_variables[Routine!.ResultVariable!]), exit.Value!), new LReturn()]);
             case BoundExitStatement exit:
                 return new LBlock([new LAssign(new LLocalRef(_variables[Routine!.ResultVariable!]), Lower(exit.Value)), new LReturn()]);
             case BoundHaltStatement halt:
@@ -238,6 +249,12 @@ internal sealed class LoweringContext
                 return ReferenceEquals(parameter.Parameter.ContainingSymbol, Routine)
                     ? new LParamRef(parameter.Parameter)
                     : new LOuterRef(parameter.Parameter, parameter.Parameter.Type);
+            case BoundConversionExpression { Type: StringTypeSymbol, Operand.Type: CharTypeSymbol } conversion:
+                return ManagedRewriter.Value(this, conversion);                         // LANG-245: a 1-char string (CMP-324)
+            case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: StringTypeSymbol } concatenation:
+                return ManagedRewriter.Value(this, concatenation);                      // LANG-243 (CMP-324)
+            case BoundIndexExpression { IsStringElement: true } element:
+                return StringElement(element);
             case BoundConversionExpression { Type: SetTypeSymbol target, Operand.Type: SetTypeSymbol } conversion:
                 return SetRewriter.Convert(this, Lower(conversion.Operand), target);
             case BoundConversionExpression { IsExplicit: true, Type: PointerTypeSymbol, Operand.Type: { IsOrdinal: true, Size: < 8 } source } conversion:
@@ -308,6 +325,20 @@ internal sealed class LoweringContext
     }
 
     /// <summary>
+    /// ABI-024: character <c>i − 1</c> (in <c>Int64</c>) of the string; under <c>{$R+}</c> checked against the length (CMP-331).
+    /// A constant index is folded.
+    /// </summary>
+    private LExpression StringElement(BoundIndexExpression element)
+    {
+        var target = Lower(element.Array);
+        var index = Lower(element.Index);
+        LExpression zeroBased = index is LConst { Value.Value: BigInteger constant }
+            ? Constant(constant - 1, Types.Int64)
+            : new LBinary(LBinaryOperator.Subtract, Convert(index, Types.Int64), Constant(BigInteger.One, Types.Int64));
+        return new LStringIndex(target, zeroBased, CheckRewriter.StateOf(element).RangeChecks, Types.Char);
+    }
+
+    /// <summary>
     /// CMP-342: <c>p ± n</c> = GEP over the element type (bytes for the untyped <c>Pointer</c>); <c>p - q</c> = the byte distance
     /// (<c>ptrtoint</c>, <c>sub</c>) divided by the element size.
     /// </summary>
@@ -338,6 +369,11 @@ internal sealed class LoweringContext
         if (binary.OperandType is SetTypeSymbol)
         {
             return SetRewriter.Binary(this, binary);
+        }
+
+        if (binary.OperandType is StringTypeSymbol)
+        {
+            return ManagedRewriter.Compare(this, binary);                               // LANG-244 (CMP-324)
         }
 
         var left = Lower(binary.Left);
@@ -425,19 +461,47 @@ internal sealed class LoweringContext
     {
         var writeBacks = new List<LStatement>();
         var call = new LCall(new LRoutineCallee(routine), Arguments(routine, arguments, writeBacks));
-        if (!Lowerer.IsAggregate(call.Type) && writeBacks.Count == 0)
+        if (!Lowerer.IsAggregate(call.Type) && !call.Type.IsManaged && writeBacks.Count == 0)
         {
             return call;
         }
 
+        // a managed result goes to a managed temporary (CMP-325 rule 4/5), zeroed in the entry block and finalised at exit
         var result = new LLocalRef(NewTemp(call.Type));
         return new LSequence(new LBlock([new LAssign(result, call), .. writeBacks]), result);
     }
 
-    /// <summary>A call statement; a discarded aggregate result still needs storage (ABI-081).</summary>
+    /// <summary>
+    /// CMP-325 rule 4: <c>target := F(args)</c> for a managed result. The target's address is the hidden <c>Result</c> only when
+    /// <see cref="ReceivesResultDirectly"/>; otherwise a temporary receives it and is assigned with <c>_UStrAsg</c>.
+    /// </summary>
+    public LStatement CallInto(LExpression target, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+    {
+        var writeBacks = new List<LStatement>();
+        var call = new LCall(new LRoutineCallee(routine), Arguments(routine, arguments, writeBacks));
+        if (ReceivesResultDirectly(target, call))
+        {
+            return new LBlock([new LAssign(target, call), .. writeBacks]);
+        }
+
+        var result = new LLocalRef(NewTemp(call.Type));
+        return new LBlock([new LAssign(result, call), .. writeBacks, ManagedRewriter.Assign(this, target, result)]);
+    }
+
+    /// <summary>
+    /// CMP-325 rule 4: a declared local of this body (not <c>Result</c>, which is the caller's storage) that no nested routine
+    /// captures and that the call's arguments do not mention.
+    /// </summary>
+    private bool ReceivesResultDirectly(LExpression target, LCall call) =>
+        target is LLocalRef { Local: { Variable: { } variable } local }
+        && !ReferenceEquals(variable, Routine?.ResultVariable)
+        && !Captured.Contains(variable)
+        && !call.Arguments.Any(a => ManagedRewriter.References(a, local));
+
+    /// <summary>A call statement; a discarded aggregate or managed result still needs storage (ABI-081).</summary>
     private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
     {
-        if (routine.ReturnType is { } type && Lowerer.IsAggregate(type))
+        if (routine.ReturnType is { } type && (Lowerer.IsAggregate(type) || type.IsManaged))
         {
             return ((LSequence)Call(routine, arguments)).First;
         }

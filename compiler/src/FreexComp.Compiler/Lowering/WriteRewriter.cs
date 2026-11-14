@@ -44,7 +44,7 @@ internal static class WriteRewriter
                 BooleanTypeSymbol => ("_WriteBool", types.Boolean),
                 CharTypeSymbol { IsWide: true } => ("_WriteWChar", types.Char),
                 CharTypeSymbol => ("_WriteAChar", types.AnsiChar),
-                StringTypeSymbol { Variant: StringVariant.Unicode } when value is LStringLiteral => ("_WriteUStr", types.Pointer),
+                StringTypeSymbol { Variant: StringVariant.Unicode } => ("_WriteUStr", types.Pointer),
                 var other => throw new NotSupportedException($"Write of '{other.Name}' is not lowered yet."),
             };
             var converted = parameterType == types.Pointer ? value : context.Convert(value, parameterType);

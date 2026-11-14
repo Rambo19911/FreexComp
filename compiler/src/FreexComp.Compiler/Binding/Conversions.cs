@@ -14,6 +14,7 @@ internal sealed class Conversions
     private static readonly Conversion Numeric = new(ConversionKind.ImplicitNumeric, IsImplicit: true, Exists: true);
     private static readonly Conversion NoConversion = new(ConversionKind.None, IsImplicit: false, Exists: false);
     private static readonly Conversion Pointer = new(ConversionKind.ImplicitReference, IsImplicit: true, Exists: true);
+    private static readonly Conversion String = new(ConversionKind.ImplicitString, IsImplicit: true, Exists: true);
 
     /// <summary>The implicit conversion from <paramref name="source"/> to <paramref name="destination"/> (type level, no constants).</summary>
     public Conversion Classify(TypeSymbol source, TypeSymbol destination)
@@ -34,6 +35,7 @@ internal sealed class Conversions
             (BooleanTypeSymbol, BooleanTypeSymbol) => Numeric,
             (SetTypeSymbol s, SetTypeSymbol d) when d.ElementType != null && Sets.Compatible(s, d) => Numeric,     // rule 8
             (PointerTypeSymbol s, PointerTypeSymbol d) when Pointers.Compatible(s, d) => Pointer,                  // rule 9
+            (CharTypeSymbol, StringTypeSymbol { Variant: StringVariant.Unicode }) => String,                      // LANG-245: a 1-char string
             _ => NoConversion,
         };
     }
@@ -90,6 +92,8 @@ internal sealed class Conversions
 
         return destination switch
         {
+            // LANG-245: a character constant becomes a 1-char string constant (AnsiChar zero-extended, ABI-027)
+            StringTypeSymbol when value.Value is BigInteger unit => new ConstantValue(((char)(int)unit).ToString(), destination),
             // a set keeps the elements its capacity holds (like the run-time truncation)
             SetTypeSymbol set => new ConstantValue((BigInteger)value.Value! & ((BigInteger.One << set.Capacity) - 1), destination),
             RealTypeSymbol { RealKind: RealKind.Single } => new ConstantValue((double)(float)RealValue(value), destination),

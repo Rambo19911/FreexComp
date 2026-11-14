@@ -312,10 +312,30 @@ public sealed class ExpressionTypingTests
         Assert.Equal("<error>", dump);
     }
 
+    /// <summary>C-061 (LANG-243/244): the former M2.2 placeholders are typed string operations now.</summary>
     [Theory]
-    [InlineData("str + str", "E2900(2,10): Feature not supported: string expression")]
-    [InlineData("ch + ch", "E2900(2,9): Feature not supported: string expression")]
-    [InlineData("str = 'a'", "E2900(2,10): Feature not supported: string expression")]
-    public void StringOperators_ArriveWithM22(string expression, string expected) =>
-        Assert.Equal([expected], BindExpression(expression).Diagnostics);
+    [Trait("Req", "LANG-243")]
+    [Trait("Req", "LANG-244")]
+    [InlineData("str + str", "(Add:string str:string str:string)")]
+    [InlineData("ch + ch", "(Add:string (conv string ch:Char) (conv string ch:Char))")]
+    [InlineData("str = 'a'", "(Equal:Boolean str:string 'a':string)")]
+    public void StringOperators_AreTyped(string expression, string expected) => Assert.Equal(expected, Typed(expression));
+
+    /// <summary>String operators with another string kind still wait for C-063 (E2900 at the operator).</summary>
+    [Theory]
+    [InlineData("str + ansi", "E2900(2,10): Feature not supported: string expression")]
+    [InlineData("ansi = str", "E2900(2,11): Feature not supported: string expression")]
+    public void StringOperators_OfOtherStringKinds_WaitForC063(string expression, string expected) =>
+        Assert.Equal([expected], BindExpressionWithAnsi(expression));
+
+    private static string[] BindExpressionWithAnsi(string expression)
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(TestPath, $"program P; {Variables} var ansi: AnsiString; begin\nX := {expression};\nend."));
+        var types = new BuiltInTypes();
+        var declarations = DeclarationBinder.BindCompilationUnit(tree, types);
+        var assignment = tree.Root.DescendantNodes().OfType<AssignmentStatementSyntax>().First();
+        var diagnostics = new DiagnosticBag();
+        new ExpressionBinder(types, declarations.Scope, diagnostics).BindExpression(assignment.Value);
+        return Format(diagnostics.ToImmutable());
+    }
 }

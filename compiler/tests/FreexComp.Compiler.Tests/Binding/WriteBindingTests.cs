@@ -7,7 +7,8 @@ namespace FreexComp.Compiler.Tests.Binding;
 public sealed class WriteBindingTests
 {
     private const string Vars =
-        "var i: Integer; b: Byte; c: Char; a: AnsiChar; f: Boolean; lb: LongBool; q: Int64; u: UInt64; d: Double; s: string; t: Text; p: Pointer; pc: PChar; ";
+        "var i: Integer; b: Byte; c: Char; a: AnsiChar; f: Boolean; lb: LongBool; q: Int64; u: UInt64; d: Double; s: string; t: Text; p: Pointer; pc: PChar; " +
+        "sa: AnsiString; ";
 
     // "program T; " + Vars + "begin " puts the first statement at this column
     private static readonly int First = "program T; ".Length + Vars.Length + "begin ".Length + 1;
@@ -34,6 +35,7 @@ public sealed class WriteBindingTests
     [InlineData("Writeln('ab', 1 + 2, True, 'x')", "(Writeln 'ab':string 3:Integer True:Boolean 'x':Char)")]
     [InlineData("Writeln(t, i)", "(Writeln (file t:Text) i:Integer)")]
     [InlineData("Write(t)", "(Write (file t:Text))")]
+    [InlineData("Write(s, s:3)", "(Write s:string (: s:string 3:Integer))")]
     public void WriteArguments(string statement, string expected) => Assert.Equal("(block " + expected + ")", Body(statement));
 
     [Theory]
@@ -61,7 +63,7 @@ public sealed class WriteBindingTests
     [InlineData("Write(i:^1.5)", "E2010: Incompatible types: 'Double' and 'Integer'")]
     [InlineData("Write(d:1:^'x')", "E2010: Incompatible types: 'Char' and 'Integer'")]
     [InlineData("Write(q:1^:2)", "E2912: Decimals specifier ':d' is only allowed for real values")]
-    [InlineData("Write(^s)", "E2900: Feature not supported: Write of a string variable")]
+    [InlineData("Write(^sa)", "E2900: Feature not supported: Write of a string variable")]
     [InlineData("Write(^pc)", "E2900: Feature not supported: Write of a PChar")]
     [InlineData("Write(^x)", "E2003: Undeclared identifier 'x'")]
     [InlineData("i := ^Writeln", "E2034: Expression has no value (procedure call used as a value)")]

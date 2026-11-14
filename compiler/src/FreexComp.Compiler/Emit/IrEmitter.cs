@@ -238,9 +238,12 @@ internal static class IrEmitter
     internal static bool IsPassedByAddress(ParameterSymbol parameter) =>
         parameter.IsByReference || Lowerer.IsAggregate(parameter.Type) && !IsPassedAsInteger(parameter.Type);
 
-    /// <summary>ABI-081: the result is an aggregate not of size 1, 2, 4 or 8, written through a hidden <c>ptr Result</c> parameter.</summary>
+    /// <summary>
+    /// ABI-081: the result is an aggregate not of size 1, 2, 4 or 8, or of a managed type (ABI-032), written through a hidden
+    /// <c>ptr Result</c> parameter.
+    /// </summary>
     internal static bool HasHiddenResult(RoutineSymbol routine) =>
-        routine.ReturnType is { } type && Lowerer.IsAggregate(type) && !IsPassedAsInteger(type);
+        routine.ReturnType is { } type && (type.IsManaged || Lowerer.IsAggregate(type) && !IsPassedAsInteger(type));
 
     /// <summary>
     /// The variable lives at an address the routine receives (a by-address parameter, the hidden <c>Result</c>): a frame
@@ -507,6 +510,7 @@ internal sealed class FunctionEmitter
 {
     private static readonly IrBlock Entry = new("entry");
     private static readonly IrBlock Exit = new("exit");
+    private static readonly IrBlock CleanupBlock = new("cleanup");
 
     private readonly ModuleState _module;
     private readonly IIrWriter _w;
@@ -515,7 +519,10 @@ internal sealed class FunctionEmitter
     private readonly ImmutableArray<ParameterSymbol> _parameters;
     private readonly LinkName _name;
     private readonly IrLinkage _linkage;
-    private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase) { Entry.Name, Exit.Name };
+    private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase) { Entry.Name, Exit.Name, CleanupBlock.Name };
+
+    /// <summary>Where <c>Exit</c> and the end of the body go: block <c>cleanup</c> when the body has a cleanup scope, else <c>exit</c>.</summary>
+    private readonly IrBlock _returnTarget;
     private readonly Dictionary<LLocal, IrValue> _locals = [];
     private readonly Dictionary<ParameterSymbol, IrValue> _parameterAddresses = [];
     private readonly Dictionary<LTempValue, IrValue> _temps = [];
@@ -541,6 +548,7 @@ internal sealed class FunctionEmitter
         _parameters = _routine?.Parameters ?? [];
         _name = name ?? Mangler.Routine(_routine ?? throw new ArgumentException("A body without routine needs a name.", nameof(name)));
         _linkage = linkage;
+        _returnTarget = body.Cleanup is null ? Exit : CleanupBlock;
     }
 
     /// <summary>
@@ -650,7 +658,15 @@ internal sealed class FunctionEmitter
         }
 
         Statement(_body.Body);
-        FallThrough(Exit);
+        FallThrough(_returnTarget);
+        if (_body.Cleanup is { } cleanup)
+        {
+            // CMP-325 rule 2: the function-level cleanup scope on the normal exit path. EH milestone (CMP-393): the same
+            // finalisation sequence is emitted again in a cleanuppad funclet, and calls in the body become invokes (CMP-394).
+            Start(CleanupBlock);
+            Statement(cleanup);
+            FallThrough(Exit);
+        }
 
         Start(Exit);
         if (_routine?.ResultVariable is { } result && hiddenResult is null)
@@ -730,9 +746,11 @@ internal sealed class FunctionEmitter
                 }
 
                 break;
-            case LAssign { Value: LCall { Callee: LRoutineCallee callee } call } assign when Lowerer.IsAggregate(assign.Target.Type):
+            case LAssign { Value: LCall { Callee: LRoutineCallee callee } call } assign
+                when Lowerer.IsAggregate(assign.Target.Type) || IrEmitter.HasHiddenResult(callee.Routine):
             {
-                // ABI-081: the lowering assigns aggregate results only to fresh temporaries, so the target cannot alias the arguments
+                // ABI-081: the lowering assigns aggregate results only to fresh temporaries, so the target cannot alias the arguments;
+                // a managed result goes to a temporary or a local the arguments do not mention (CMP-325 rule 4)
                 var target = Address(assign.Target);
                 if (IrEmitter.HasHiddenResult(callee.Routine))
                 {
@@ -754,11 +772,16 @@ internal sealed class FunctionEmitter
                 break;
             }
 
+            case LAssign assign when assign.Target.Type.IsManaged:
+                throw new InvalidOperationException("A managed assignment must be lowered to helper calls (ManagedRewriter).");
             case LAssign { Target: LView view } assign:
                 Store(Value(assign.Value), Address(view), view.Type, AlignmentOf(view));
                 break;
             case LAssign assign:
-                Store(Value(assign.Value), Address(assign.Target), assign.Target.Type, AccessAlignment(assign.Target));
+                Store(Value(assign.Value), WrittenAddress(assign.Target), assign.Target.Type, AccessAlignment(assign.Target));
+                break;
+            case LZero { Type.IsManaged: true } zero:
+                _w.Store(new IrNullConstant(), Value(zero.Address), 8);              // CMP-325 rule 1: store ptr null
                 break;
             case LZero zero:
             {
@@ -772,7 +795,7 @@ internal sealed class FunctionEmitter
             case LMemSet fill:
             {
                 // CMP-412: FillChar → llvm.memset (the variable's access alignment, CMP-309)
-                var address = Address(fill.Target);
+                var address = WrittenAddress(fill.Target);
                 var count = Value(fill.Count);
                 var value = Value(fill.Value);
                 var memset = _module.Intrinsic("llvm.memset.p0.i64", IrType.Void, [IrType.Ptr, IrType.I8, IrType.I64, IrType.I1]);
@@ -784,7 +807,7 @@ internal sealed class FunctionEmitter
             {
                 // CMP-412: Move → llvm.memmove (overlap allowed)
                 var source = Address(move.Source);
-                var destination = Address(move.Destination);
+                var destination = WrittenAddress(move.Destination);
                 var count = Value(move.Count);
                 var memmove = _module.Intrinsic("llvm.memmove.p0.p0.i64", IrType.Void, [IrType.Ptr, IrType.Ptr, IrType.I64, IrType.I1]);
                 _w.Call(null, IrType.Void, memmove,
@@ -818,7 +841,7 @@ internal sealed class FunctionEmitter
                 Jump(JumpTarget(statement)!);
                 break;
             case LReturn:
-                Jump(Exit);
+                Jump(_returnTarget);
                 break;
             case LUnreachable:
                 _w.Unreachable();
@@ -863,7 +886,7 @@ internal sealed class FunctionEmitter
     {
         LBreak jump => _loops[jump.Label].Break,
         LContinue jump => _loops[jump.Label].Continue,
-        LReturn => Exit,
+        LReturn => _returnTarget,
         LBlock { Statements: [var single] } => JumpTarget(single),
         _ => null,
     };
@@ -1015,6 +1038,9 @@ internal sealed class FunctionEmitter
             case LDeref dereference:
                 return Value(dereference.Pointer);                                  // CMP-340: p^ is the pointer value as an address
 
+            case LStringIndex element:
+                return StringElement(element, Value(element.String));               // ABI-024: read access
+
             case LField field:
             {
                 // CMP-307: getelementptr inbounds %"U.TRec", ptr %r, i32 0, i32 <fieldIndex>
@@ -1027,6 +1053,61 @@ internal sealed class FunctionEmitter
             default:
                 throw new InvalidOperationException($"{variable.GetType().Name} is not a variable reference.");
         }
+    }
+
+    /// <summary>
+    /// The address of a variable reference about to be written (assignment target, <c>var</c> argument, address taken): a string
+    /// character first makes its string unique (LANG-241, CMP-324 <c>s[i] := c</c>: <c>_UStrUnique(@s)</c>, reload, GEP).
+    /// </summary>
+    private IrValue WrittenAddress(LExpression variable)
+    {
+        if (variable is not LStringIndex element)
+        {
+            return Address(variable);
+        }
+
+        var stringAddress = Address(element.String);
+        var unique = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_UStrUnique"), IrType.Void, [IrType.Ptr]));
+        _w.Call(null, IrType.Void, unique, [stringAddress]);
+        return StringElement(element, _w.Load(NewTemp(), IrType.Ptr, stringAddress, 8));
+    }
+
+    /// <summary>CMP-324/331: <c>getelementptr inbounds i16, ptr %s, i64 %i0</c>, under <c>{$R+}</c> after <c>%i0 &lt;u Length</c>.</summary>
+    private IrValue StringElement(LStringIndex element, IrValue text)
+    {
+        var index = Value(element.Index);
+        if (element.IsChecked)
+        {
+            var length32 = StringLength(text);
+            var length = _w.Cast(NewTemp(), IrCastOperator.ZExt, length32, IrType.I64);
+            var inRange = _w.ICmp(NewTemp(), IrIntPredicate.Ult, index, length);
+            var id = NewConstruct();
+            IrBlock error = Block("range.error", id), ok = Block("range.ok", id);
+            _w.CondBr(inRange, ok, error);
+            ErrorBlock(error, "_RangeError");
+            Start(ok);
+        }
+
+        return _w.GetElementPtr(NewTemp(), IrType.I16, text, [index]);
+    }
+
+    /// <summary>
+    /// ABI-023 / CMP-324: <c>Length</c> of a string value without loading from <c>nil</c>: <c>icmp eq ptr %s, null</c> → block
+    /// <c>len.end.N</c> directly, else <c>len.load.N</c> loads the <c>i32</c> at <c>s − 12</c>; a <c>phi</c> joins them.
+    /// </summary>
+    private IrValue StringLength(IrValue text)
+    {
+        var isNil = _w.ICmp(NewTemp(), IrIntPredicate.Eq, text, new IrNullConstant());
+        var from = _current;
+        var id = NewConstruct();
+        IrBlock load = Block("len.load", id), end = Block("len.end", id);
+        _w.CondBr(isNil, end, load);
+        Start(load);
+        var field = _w.GetElementPtr(NewTemp(), IrType.I8, text, [IrIntConstant.I64(-12)]);
+        var length = _w.Load(NewTemp(), IrType.I32, field, 4);
+        _w.Br(end);
+        Start(end);
+        return _w.Phi(NewTemp(), IrType.I32, [(IrIntConstant.I32(0), from), (length, load)]);
     }
 
     /// <summary>
@@ -1236,7 +1317,7 @@ internal sealed class FunctionEmitter
                 throw new InvalidOperationException("An aggregate has no SSA value; use its address.");
             case LView view:
                 return Load(Address(view), view.Type, AlignmentOf(view));
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField or LDeref:
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField or LDeref or LStringIndex:
                 return Load(Address(expression), expression.Type, AccessAlignment(expression));
             case LPointerOffset offset:
             {
@@ -1270,7 +1351,9 @@ internal sealed class FunctionEmitter
             case LStringLiteral { Type: StringTypeSymbol { Variant: StringVariant.Unicode } } literal:
                 return _module.StringLiteral(literal.Value);
             case LAddrOf addressOf:
-                return Address(addressOf.Variable);
+                return WrittenAddress(addressOf.Variable);                         // a var argument or @x may be written through
+            case LStringLength length:
+                return StringLength(Value(length.String));
             case LTemp temp:
                 _temps.Add(temp.Temp, Value(temp.Value));
                 return Value(temp.Body);

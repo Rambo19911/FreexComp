@@ -9,7 +9,7 @@ namespace FreexComp.Compiler.Tests.Lowering;
 /// <c>(select c a b)</c>, <c>(addr x)</c>, <c>(call Name:Type args…)</c>, <c>(let $vN value body)</c>. Statements:
 /// <c>(block …)</c>, <c>(:= t v)</c>, <c>(if c then [else])</c>, <c>(loop L body [step])</c>, <c>(break L)</c>,
 /// <c>(continue L)</c>, <c>(switch sel (case [values] [ranges] body)… [(default body)])</c>, <c>(call Name args…)</c>,
-/// <c>(return)</c>, <c>(unreachable)</c>.
+/// <c>(return)</c>, <c>(unreachable)</c>. Strings: <c>(length s)</c>, <c>(char s i0)</c> (<c>char!</c> = range-checked).
 /// </summary>
 internal static class LoweredDump
 {
@@ -49,6 +49,8 @@ internal static class LoweredDump
         LSwitch s => Switch(s),
         LMemSet m => $"(memset {Of(m.Target)} {Of(m.Count)} {Of(m.Value)})",
         LMemMove m => $"(memmove {Of(m.Source)} {Of(m.Destination)} {Of(m.Count)})",
+        LStringLength l => $"(length {Of(l.String)})",
+        LStringIndex i => $"(char{(i.IsChecked ? "!" : "")} {Of(i.String)} {Of(i.Index)})",
         LReturn => "(return)",
         LUnreachable => "(unreachable)",
         _ => throw new ArgumentOutOfRangeException(nameof(node), node.GetType().Name),

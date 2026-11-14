@@ -54,6 +54,8 @@ internal static class IntrinsicRewriter
                 return context.Convert(swapped, call.Type);
             }
 
+            case IntrinsicKind.Length or IntrinsicKind.High when argument.Type is StringTypeSymbol:
+                return new LStringLength(operand, context.Types.Integer);                       // ABI-023 (High = Length, intrinsics.md §1)
             case IntrinsicKind.Assigned:
                 return context.Compare(LCompareOperator.NotEqual, operand, Nil(context));
             case IntrinsicKind.Ptr:
@@ -181,7 +183,8 @@ internal static class IntrinsicRewriter
         var types = context.Types;
         var location = DiagnosticBag.LocationOf(token);
         var helper = new RuntimeHelper("_Assert", [types.Pointer, types.Pointer, types.Integer], ReturnType: null, IsNoReturn: true);
-        LExpression message = call.Arguments.Length == 2 ? new LStringLiteral((string)call.Arguments[1].ConstantValue!.Value!, types.String) : Nil(context);
+        // a constant message is a literal; a string value (C-060) is passed as is (a borrowed reference, valid during the call)
+        LExpression message = call.Arguments.Length == 2 ? context.Lower(call.Arguments[1]) : Nil(context);
         var file = new LStringLiteral(System.IO.Path.GetFileName(location.Path), types.String);
         var line = context.Constant(location.LineSpan.Start.Line + 1, types.Integer);
         var fail = new LBlock([new LCallStatement(new LHelperCallee(helper), [message, file, line]), new LUnreachable()]);

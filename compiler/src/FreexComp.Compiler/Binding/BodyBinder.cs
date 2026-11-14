@@ -457,8 +457,14 @@ internal sealed class BodyBinder
                 message = new BoundLiteral(syntax, new ConstantValue(((char)(int)code).ToString(), _types.String));
                 break;
             case { Type: StringTypeSymbol or CharTypeSymbol }:
-                _diagnostics.Report(syntax, "E2900", "Assert message that is not a constant");
-                return new BoundErrorStatement(statement);
+                // C-060: any string value (a character converted, LANG-245; other string kinds wait for C-063)
+                message = _expressions.ConvertForAssignment(message, _types.String, syntax);
+                if (message.HasErrors)
+                {
+                    return new BoundErrorStatement(statement);
+                }
+
+                break;
             default:
                 _conversions.ReportIncompatible(message.Type, _types.String, syntax, _diagnostics);
                 return new BoundErrorStatement(statement);
@@ -536,6 +542,7 @@ internal sealed class BodyBinder
     {
         IntegerTypeSymbol or BooleanTypeSymbol or CharTypeSymbol => null,
         StringTypeSymbol when value.ConstantValue != null => null,
+        StringTypeSymbol { Variant: StringVariant.Unicode } => null,                 // C-060
         StringTypeSymbol => "Write of a string variable",
         RealTypeSymbol { RealKind: RealKind.Currency } => "Write of a Currency value",
         RealTypeSymbol => null,
