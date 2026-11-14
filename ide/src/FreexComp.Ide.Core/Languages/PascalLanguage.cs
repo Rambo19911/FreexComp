@@ -42,7 +42,8 @@ public sealed class PascalClassifier : WholeTextClassifier
 
     protected override List<TokenClassSpan> Lex(string text)
     {
-        var tokens = Lexer.Tokenize(SourceText.From(PlaceholderPath, text));
+        var source = SourceText.From(PlaceholderPath, text);
+        var tokens = Lexer.Tokenize(source);
         var spans = new List<TokenClassSpan>();
         foreach (var span in Classifier.GetLexicalClassifications(tokens, new TextSpan(0, text.Length)))
         {
@@ -50,6 +51,34 @@ public sealed class PascalClassifier : WholeTextClassifier
             if (token.Length > 0)
                 spans.Add(new TokenClassSpan(span.Span.Start, span.Span.Length, token));
         }
+
+        if (spans.Any(s => s.TokenClass == ColorTokens.Invalid))
+            AttachDiagnostics(spans, Lexer.GetDiagnostics(source)); // lexed a second time only when there is an error
         return spans;
+    }
+
+    /// <summary>
+    /// I-174: every invalid span gets the code and message of the first lexer error inside it (a zero-length
+    /// diagnostic counts at the span's end too), so the error marker's tooltip can show it (UI-ED-131).
+    /// </summary>
+    private static void AttachDiagnostics(List<TokenClassSpan> spans, IReadOnlyList<Diagnostic> diagnostics)
+    {
+        for (int i = 0; i < spans.Count; i++)
+        {
+            var span = spans[i];
+            if (span.TokenClass != ColorTokens.Invalid)
+                continue;
+            int end = span.Offset + span.Length;
+            foreach (var diagnostic in diagnostics)
+            {
+                var at = diagnostic.Location.Span;
+                bool inside = at.Length == 0 ? at.Start >= span.Offset && at.Start <= end : at.Start < end && at.Start + at.Length > span.Offset;
+                if (diagnostic.Severity == DiagnosticSeverity.Error && inside)
+                {
+                    spans[i] = span with { Code = diagnostic.Code, Message = diagnostic.Message };
+                    break;
+                }
+            }
+        }
     }
 }

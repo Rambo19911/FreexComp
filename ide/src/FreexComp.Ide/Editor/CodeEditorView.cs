@@ -54,6 +54,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private FoldingManager? _foldings;
     private FoldBoxGenerator? _foldBoxes;
     private FoldingSection? _tooltipFolding;
+    private IReadOnlyList<TextMarker> _tooltipMarkers = [];
     private bool _applying;
     private bool _scrollPending;
     private SyntaxColorizer? _colorizer;
@@ -127,8 +128,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         area.AddHandler(PointerMovedEvent, (_, e) => _foldMargin.IsPointerNear = e.GetPosition(textView).X < FoldMarkerHoverZone,
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         area.PointerExited += (_, _) => _foldMargin.IsPointerNear = false;
-        textView.PointerMoved += (_, e) => ShowFoldTooltip(e.GetPosition(textView));
-        textView.PointerExited += (_, _) => ShowFoldTooltip(null);
+        textView.PointerMoved += (_, e) => ShowTextTooltip(e.GetPosition(textView));
+        textView.PointerExited += (_, _) => ShowTextTooltip(null);
         textView.ScrollOffsetChanged += (_, _) => MirrorScroll();
         Child = new Panel { Children = { _editor, _findPanel } }; // UI-ED-102: the find panel floats over the text
         _findPanel.PropertyChanged += (_, e) =>
@@ -410,7 +411,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
     private void UninstallFoldings()
     {
-        ShowFoldTooltip(null);
+        ShowTextTooltip(null);
         if (_foldBoxes is not null)
         {
             _editor.TextArea.TextView.ElementGenerators.Remove(_foldBoxes);
@@ -434,7 +435,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         if (_foldings is null || _document is not { } document)
             return;
         _foldMargin.HoveredFolding = null;
-        ShowFoldTooltip(null);
+        ShowTextTooltip(null);
         _foldings.Clear();
         foreach (var region in document.Folding.Regions)
         {
@@ -465,22 +466,73 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         area.Selection = Selection.Create(area, region.StartOffset, region.EndOffset);
     }
 
-    /// <summary>UI-ED-035: hovering a <c>…</c> box shows the folded text.</summary>
-    private void ShowFoldTooltip(Point? position)
+    /// <summary>
+    /// UI-ED-035: hovering a <c>…</c> box shows the folded text; elsewhere, UI-ED-131: hovering text covered by markers
+    /// shows the error tooltip (the standard tooltip delay).
+    /// </summary>
+    private void ShowTextTooltip(Point? position)
     {
         var textView = _editor.TextArea.TextView;
         FoldingSection? section = null;
-        if (position is { } p && _foldBoxes is not null && textView.VisualLinesValid)
+        IReadOnlyList<TextMarker> markers = [];
+        if (position is { } p && textView.VisualLinesValid)
         {
             var visual = new Point(p.X + textView.HorizontalOffset, p.Y + textView.VerticalOffset);
-            if (textView.GetVisualLineFromVisualTop(visual.Y) is { } line)
-                section = FoldBoxGenerator.BoxAt(line, line.GetVisualColumnFloor(visual));
+            if (textView.GetVisualLineFromVisualTop(visual.Y) is { } line && visual.Y < line.VisualTop + line.Height)
+            {
+                int column = line.GetVisualColumnFloor(visual);
+                if (_foldBoxes is not null)
+                    section = FoldBoxGenerator.BoxAt(line, column);
+                if (section is null && _document is { } document)
+                    markers = document.Decorations.MarkersAt(line.FirstDocumentLine.Offset + line.GetRelativeOffset(column)); // UI-ED-131
+            }
         }
 
-        if (section == _tooltipFolding)
+        if (section == _tooltipFolding && markers.SequenceEqual(_tooltipMarkers))
             return;
         _tooltipFolding = section;
-        ToolTip.SetTip(textView, section?.Tag is FoldRegion region ? BuildFoldTooltip(region) : null);
+        _tooltipMarkers = markers;
+        ToolTip.SetTip(textView, section?.Tag is FoldRegion region ? BuildFoldTooltip(region)
+            : markers.Count > 0 ? BuildErrorTooltip(markers)
+            : null);
+    }
+
+    /// <summary>
+    /// UI-ED-131 (AutomationId <c>Editor.ErrorTip</c>): one row per marker, most severe first — severity icon (16), code
+    /// in <c>type.codeSmall</c> <c>text.secondary</c>, message in <c>type.body</c>.
+    /// </summary>
+    private static StackPanel BuildErrorTooltip(IReadOnlyList<TextMarker> markers)
+    {
+        var rows = new StackPanel { Spacing = 4 };
+        AutomationProperties.SetAutomationId(rows, "Editor.ErrorTip");
+        foreach (var marker in markers)
+        {
+            var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+            row.Children.Add(new Icons.IdeIcon
+            {
+                IconName = marker.Severity switch
+                {
+                    MarkerSeverity.Error => "error",
+                    MarkerSeverity.Warning => "warning",
+                    _ => "hint",
+                },
+                Width = 16,
+                Height = 16,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            });
+            if (marker.Code is { } code)
+            {
+                var codeText = new TextBlock { Text = code, Classes = { "codeSmall" } };
+                Bind(codeText, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
+                row.Children.Add(codeText);
+            }
+
+            if (marker.Message is { } message)
+                row.Children.Add(new TextBlock { Text = message, Classes = { "body" }, TextWrapping = TextWrapping.Wrap, MaxWidth = 480 });
+            rows.Children.Add(row);
+        }
+
+        return rows;
     }
 
     /// <summary>The first 20 hidden lines of a region, a last line <c>…</c> when cut (UI-ED-035).</summary>

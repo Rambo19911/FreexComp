@@ -120,6 +120,16 @@ public sealed class EditorDecorations
     /// <summary>The marker pieces drawn: the most severe marker per character (UI-ED-067, <see cref="TextMarkers.Resolve"/>).</summary>
     public IReadOnlyList<TextMarker> DrawnMarkers => TextMarkers.Resolve(Markers);
 
+    /// <summary>The most rows the error tooltip lists (UI-ED-131).</summary>
+    public const int MaxErrorTipRows = 5;
+
+    /// <summary>
+    /// UI-ED-131: the markers covering the character at <paramref name="offset"/> (a zero-length marker covers one,
+    /// UI-ED-066), most severe first (ties keep provider order), at most <see cref="MaxErrorTipRows"/>.
+    /// </summary>
+    public IReadOnlyList<TextMarker> MarkersAt(int offset) =>
+        [.. Markers.Where(m => m.Offset <= offset && offset < m.DrawnEnd).OrderByDescending(m => m.Severity).Take(MaxErrorTipRows)];
+
     /// <summary>UI-ED-021: the tooltip of the line's glyphs, one line per glyph (highest priority first), or null.</summary>
     public string? ToolTipAt(int line)
     {

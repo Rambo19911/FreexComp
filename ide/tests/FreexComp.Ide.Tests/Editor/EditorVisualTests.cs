@@ -192,6 +192,60 @@ public sealed class EditorVisualTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-131")]
+    public async Task ErrorMarkerToolTip()
+    {
+        const string text = "X := 'abc;\r\nY := 1;\r\n";
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = text);
+        var (doc, editor, _) = await OpenAsync(h, "A.pas");
+        var textView = editor.TextArea.TextView;
+        Control? TipAt(int line, int column)
+        {
+            textView.EnsureVisualLines();
+            var position = textView.GetVisualPosition(new TextViewPosition(line, column), VisualYPosition.LineMiddle) - textView.ScrollOffset;
+            h.Window.MouseMove(textView.TranslatePoint(position + new Point(textView.WideSpaceWidth / 2, 0), h.Window)!.Value);
+            Dispatcher.UIThread.RunJobs();
+            return ToolTip.GetTip(textView) as Control;
+        }
+
+        static List<(string? Icon, string? Code, string? Message)> Rows(Control tip)
+        {
+            Assert.Equal("Editor.ErrorTip", AutomationIds.Get(tip));
+            return [.. Assert.IsType<StackPanel>(tip).Children.Cast<StackPanel>().Select(row => (
+                row.Children.OfType<Icons.IdeIcon>().Single().IconName,
+                row.Children.OfType<TextBlock>().SingleOrDefault(t => t.Classes.Contains("codeSmall"))?.Text,
+                row.Children.OfType<TextBlock>().SingleOrDefault(t => t.Classes.Contains("body"))?.Text))];
+        }
+
+        // The lexer-error marker of the unterminated string carries the lexer's code and message.
+        var lexical = Assert.Single(FreexComp.Compiler.Syntax.Lexer.GetDiagnostics(FreexComp.Compiler.SourceText.From(@"C:\A.pas", text)),
+            d => d.Severity == FreexComp.Compiler.DiagnosticSeverity.Error);
+        var tip = Assert.IsAssignableFrom<Control>(TipAt(1, 8)); // the "b" of 'abc
+        Assert.Equal([("error", lexical.Code, lexical.Message)], Rows(tip));
+        Assert.Null(TipAt(2, 1)); // no marker on "Y"
+
+        // Several markers at the position: one row each, most severe first, at most 5 (the hint is the sixth).
+        var other = new FakeDecorations();
+        other.TextMarkers.AddRange([
+            new TextMarker(0, 10, MarkerSeverity.Hint, "H1", "hint one"),
+            new TextMarker(5, 5, MarkerSeverity.Warning, "W1", "warning one"),
+            new TextMarker(7, 0, MarkerSeverity.Warning, "W2", "warning two"), // zero length: covers one character
+            new TextMarker(2, 6, MarkerSeverity.Warning, "W3", "warning three"),
+            new TextMarker(7, 2, MarkerSeverity.Warning, "W4", "warning four"),
+        ]);
+        doc.Decorations.Add(other);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal([("error", lexical.Code, lexical.Message), ("warning", "W1", "warning one"), ("warning", "W2", "warning two"),
+            ("warning", "W3", "warning three"), ("warning", "W4", "warning four")], Rows(Assert.IsAssignableFrom<Control>(TipAt(1, 8))));
+        Assert.Equal([("hint", "H1", "hint one")], Rows(Assert.IsAssignableFrom<Control>(TipAt(1, 1))));
+
+        // Fixing the string removes the lexer marker and its row.
+        doc.Buffer.ApplyEdits([new Core.Text.TextEdit(9, 0, "'")]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(Rows(Assert.IsAssignableFrom<Control>(TipAt(1, 8))), r => r.Icon == "error");
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-ED-020")]
     [Trait("Req", "UI-ED-004")]
     public async Task GlyphPriority()

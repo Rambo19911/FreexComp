@@ -75,6 +75,34 @@ public sealed class PlatformServicesTests
         Assert.Equal(["due"], fired);
     }
 
+    /// <summary>
+    /// I-173: Core schedules from the thread pool too (<c>SharingRetry</c> after an awaited settings/keymap save); the
+    /// callback still runs on the UI thread, and disposing from the pool cancels.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-085")]
+    public async Task ClockAcceptsSchedulesFromOtherThreads()
+    {
+        IClock clock = new DispatcherClock();
+        var fired = new List<(string Name, bool OnUiThread)>();
+        var frame = new DispatcherFrame();
+        using var safety = DispatcherTimer.RunOnce(() => frame.Continue = false, Timeout);
+
+        await Task.Run(() =>
+        {
+            clock.Schedule(TimeSpan.FromMilliseconds(1), () => fired.Add(("cancelled", Dispatcher.UIThread.CheckAccess()))).Dispose();
+            clock.Schedule(TimeSpan.FromMilliseconds(20), () =>
+            {
+                fired.Add(("due", Dispatcher.UIThread.CheckAccess()));
+                frame.Continue = false;
+            });
+        }, TestContext.Current.CancellationToken);
+
+        Dispatcher.UIThread.PushFrame(frame);
+
+        Assert.Equal([("due", true)], fired);
+    }
+
     [AvaloniaFact]
     public async Task ClipboardValidatesArgumentsAndToleratesMissingWindow()
     {

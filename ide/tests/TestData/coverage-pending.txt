@@ -63,7 +63,6 @@ UI-ED-070 no test yet
 UI-ED-100 no test yet
 UI-ED-101 no test yet
 UI-ED-102 no test yet
-UI-ED-131 I-156 (markers)
 UI-ED-132 no test yet
 UI-MENU-031 no test yet
 UI-MENU-040 no test yet

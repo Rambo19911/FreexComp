@@ -115,6 +115,11 @@ public sealed class FileChangeTests
         _watchers.RaiseError(@"C:\p", new InternalBufferOverflowException());
         await _services.FileChanges.WhenIdle();
         Assert.Equal("after error\r\n", doc.Buffer.Text);
+        // I-173: the Changed event of that write left a debounce pending; let it run out here (it finds nothing new),
+        // or it fires inside the next WriteExternally's clock advance and races the disk write and the next check
+        // (two awaited checks resuming on two pool threads could both add an ExternalChange bar).
+        await SettleAsync();
+        Assert.Equal("after error\r\n", doc.Buffer.Text);
 
         // With environment.autoReloadUnmodified off: the ExternalChange bar (Reload / Keep My Version).
         _services.Settings.Set(SettingsCatalog.EnvironmentAutoReloadUnmodified, false);

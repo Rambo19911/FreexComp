@@ -8,9 +8,10 @@ public readonly record struct LineRange(int FirstLine, int LastLine);
 
 /// <summary>
 /// IDE-side coloured span (architecture.md §11): <see cref="TokenClass"/> is a colour-token name
-/// (<c>syntax.keyword</c>, …; design-tokens.md §3.1). Not the compiler's <c>ClassifiedSpan</c>.
+/// (<c>syntax.keyword</c>, …; design-tokens.md §3.1). Not the compiler's <c>ClassifiedSpan</c>. A <c>syntax.invalid</c>
+/// span may carry the lexer's diagnostic <paramref name="Code"/> and <paramref name="Message"/> (error tooltip, UI-ED-131).
 /// </summary>
-public readonly record struct TokenClassSpan(int Offset, int Length, string TokenClass);
+public readonly record struct TokenClassSpan(int Offset, int Length, string TokenClass, string? Code = null, string? Message = null);
 
 /// <summary>Colours a buffer (architecture.md §11). One instance per document; UI thread only.</summary>
 public interface ITokenClassifier

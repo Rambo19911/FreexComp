@@ -105,7 +105,7 @@ public sealed class LexerErrorMarkers : IEditorDecorationProvider
             _version = _buffer.Version;
             _markers = [.. _classifier!.Classify(_buffer, new LineRange(1, _buffer.LineCount))
                 .Where(s => s.TokenClass == ColorTokens.Invalid)
-                .Select(s => new TextMarker(s.Offset, s.Length, MarkerSeverity.Error))];
+                .Select(s => new TextMarker(s.Offset, s.Length, MarkerSeverity.Error, s.Code, s.Message))];
         }
 
         return _markers;
