@@ -1,0 +1,3 @@
+ErrMultiple.pas(9,3): error E2003: Undeclared identifier 'Unknown1'
+ErrMultiple.pas(13,8): error E2010: Incompatible types: 'Integer' and 'Boolean'
+ErrMultiple.pas(14,8): error E2003: Undeclared identifier 'Unknown2'

@@ -188,10 +188,26 @@ public static class GoldenRunner
         var failure = await RunInAsync(@case, o2, setup, temp, ct).ConfigureAwait(false);
         if (failure is null)
         {
-            Directory.Delete(temp, recursive: true);                                // kept on failure for inspection (TESTING.md rule 3)
+            TryDelete(temp);                                                        // kept on failure for inspection (TESTING.md rule 3)
         }
 
         return failure is null ? null : $"{@case.Id}{(o2 ? " -O2" : "")}: {failure}\n(work directory: {temp})";
+    }
+
+    /// <summary>
+    /// Best-effort clean-up of a passed case's folder: the just-exited program's image can stay locked for a moment
+    /// (the OS or a scanner still holds it), which must not turn a passing case into a failure.
+    /// </summary>
+    internal static void TryDelete(string directory)
+    {
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // left behind under %TEMP%\FreexComp.Tests
+        }
     }
 
     private static async Task<string?> RunInAsync(GoldenCase @case, bool o2, GoldenSetup setup, string temp, CancellationToken ct)

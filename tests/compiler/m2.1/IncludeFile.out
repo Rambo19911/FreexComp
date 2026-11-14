@@ -1,0 +1,4 @@
+included 42
+statement from include
+22
+switch set in the include stays set

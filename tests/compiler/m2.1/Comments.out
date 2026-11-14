@@ -1,0 +1,5 @@
+1
+3
+{not a comment} (*nor this*) //nor this
+paren-star directive
+end

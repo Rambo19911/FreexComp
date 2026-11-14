@@ -1,0 +1,4 @@
+ErrUndeclared.pas(8,3): error E2003: Undeclared identifier 'Missing'
+ErrUndeclared.pas(13,8): error E2003: Undeclared identifier 'Y'
+ErrUndeclared.pas(15,11): error E2003: Undeclared identifier 'Undef'
+ErrUndeclared.pas(16,3): error E2003: Undeclared identifier 'Missing'

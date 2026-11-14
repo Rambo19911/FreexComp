@@ -1,0 +1,1 @@
+ErrSemicolonBeforeElse.pas(8,24): error E1105: ';' not allowed before 'else'

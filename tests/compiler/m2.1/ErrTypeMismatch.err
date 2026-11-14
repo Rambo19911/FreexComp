@@ -1,0 +1,5 @@
+ErrTypeMismatch.pas(13,8): error E2010: Incompatible types: 'Boolean' and 'Integer'
+ErrTypeMismatch.pas(14,8): error E2010: Incompatible types: 'Integer' and 'Boolean'
+ErrTypeMismatch.pas(15,8): error E2010: Incompatible types: 'Integer' and 'Char'
+ErrTypeMismatch.pas(16,8): error E2010: Incompatible types: 'Char' and 'Integer'
+ErrTypeMismatch.pas(17,5): error E2010: Incompatible types: 'Boolean' and 'Integer'

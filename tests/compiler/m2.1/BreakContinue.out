@@ -1,0 +1,5 @@
+2 4 | for I=6
+1 2 4 5 7 8 10 | while I=11
+repeat N=13 I=5
+continue reaches until, I=3
+11 13 21 31 33 |

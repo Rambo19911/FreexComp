@@ -1,0 +1,10 @@
+30
+inner: base=3 level1=3 level2=107
+inner: base=3 level1=6 level2=114
+middle: level2=114
+outer: level1=6
+16
+18
+720
+inner X=5
+outer X=1

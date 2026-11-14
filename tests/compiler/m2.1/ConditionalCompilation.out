@@ -1,0 +1,14 @@
+FROMCLI defined
+symbols are case-insensitive
+IFNDEF of an unknown symbol
+DEFINE works
+UNDEF works
+MSWINDOWS
+WIN64 and CPUX64
+level is three
+Declared works
+SizeOf in IF
+nested else
+range checks off
+range checks on
+end

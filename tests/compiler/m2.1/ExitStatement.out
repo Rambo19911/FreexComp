@@ -1,0 +1,9 @@
+start 1 normal end
+start 5 exit early
+7 13
+-1 0 1
+6 -1
+400
+inner before
+outer continues
+main before exit

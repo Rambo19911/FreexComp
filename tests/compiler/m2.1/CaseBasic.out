@@ -1,0 +1,16 @@
+0: zero
+2: small
+7: digit
+10: special
+25: special
+100: special
+-3: negative 3
+50: other value
+5000: large range
+-6: other value
+two
+selector evaluated 1 time(s)
+high byte
+big
+abc
+true

@@ -1,0 +1,3 @@
+WarnUninitialized.pas(8,1): warning W1042: Return value of function 'NoResult' might be undefined
+WarnUninitialized.pas(14,8): warning W1041: Variable 'X' might not have been initialized
+WarnUninitialized.pas(24,11): warning W1041: Variable 'Z' might not have been initialized

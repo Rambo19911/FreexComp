@@ -1,0 +1,13 @@
+-3 negative
+0 zero
+7 small
+42 large
+TRUE TRUE: both
+TRUE FALSE: A only
+FALSE TRUE: not A
+++
++0
++-
+A<=0
+in range
+done

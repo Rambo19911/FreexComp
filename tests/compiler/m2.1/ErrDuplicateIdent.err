@@ -1,0 +1,4 @@
+ErrDuplicateIdent.pas(5,3): error E2004: Identifier redeclared: 'X'
+ErrDuplicateIdent.pas(7,3): error E2004: Identifier redeclared: 'X'
+ErrDuplicateIdent.pas(11,3): error E2004: Identifier redeclared: 'A'
+ErrDuplicateIdent.pas(17,3): error E2004: Identifier redeclared: 'Result'

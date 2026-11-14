@@ -30,6 +30,24 @@ public sealed class GoldenHarnessTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    // ---- clean-up (C-047) ----
+
+    [Fact]
+    [Trait("Req", "CMP-901")]
+    public void CleanUp_LockedFileInThePassedCaseFolder_DoesNotFailTheCase()
+    {
+        var locked = Put("case/Prog.exe", "image");
+        var folder = Path.GetDirectoryName(locked)!;
+
+        using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            GoldenRunner.TryDelete(folder);                                         // the OS still holds the image
+        }
+
+        GoldenRunner.TryDelete(folder);
+        Assert.False(Directory.Exists(folder));
+    }
+
     // ---- discovery (CMP-900, 901) ----
 
     [Fact]

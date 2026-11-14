@@ -1,0 +1,3 @@
+HintUnusedVar.pas(6,3): hint H2001: Variable 'Unused' is declared but never used
+HintUnusedVar.pas(8,6): hint H2001: Variable 'B' is declared but never used
+HintUnusedVar.pas(17,3): hint H2001: Variable 'Never' is declared but never used

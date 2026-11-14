@@ -1,0 +1,5 @@
+ErrWrongArgCount.pas(14,3): error E2110: Not enough actual parameters for 'Two'
+ErrWrongArgCount.pas(15,13): error E2111: Too many actual parameters for 'Two'
+ErrWrongArgCount.pas(16,11): error E2110: Not enough actual parameters for 'One'
+ErrWrongArgCount.pas(17,18): error E2111: Too many actual parameters for 'One'
+ErrWrongArgCount.pas(18,15): error E2110: Not enough actual parameters for 'One'

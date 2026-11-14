@@ -1,0 +1,8 @@
+local X=100 Y=102
+global X=1 Y=102
+local Count=2
+local Count=2
+global Count=50
+42 12
+deep Y=y Z=TRUE global X=1
+102

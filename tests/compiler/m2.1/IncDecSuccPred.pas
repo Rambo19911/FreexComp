@@ -1,0 +1,54 @@
+// covers: LANG-213, LANG-901
+program IncDecSuccPred;
+var
+  I: Integer;
+  B: Byte;
+  C: Char;
+  X: Int64;
+  U: Cardinal;
+  F: Boolean;
+  N: Integer;
+begin
+  I := 10;
+  Inc(I);
+  Writeln(I);
+  Inc(I, 5);
+  Writeln(I);
+  Dec(I);
+  Writeln(I);
+  Dec(I, 20);
+  Writeln(I);
+  N := 3;
+  Inc(I, N * 2);
+  Writeln(I);
+  Dec(I, -N);
+  Writeln(I);
+  B := 254;
+  Inc(B);
+  Writeln(B);
+  Inc(B);
+  Writeln(B);
+  Dec(B, 2);
+  Writeln(B);
+  C := 'a';
+  Inc(C);
+  Writeln(C);
+  Inc(C, 3);
+  Writeln(C);
+  Dec(C, 2);
+  Writeln(C);
+  X := 5000000000;
+  Inc(X, 5000000000);
+  Writeln(X);
+  Dec(X);
+  Writeln(X);
+  U := 0;
+  Dec(U);
+  Writeln(U);
+  Writeln(Succ(I), ' ', Pred(I), ' ', Succ(Succ(5)), ' ', Pred(0));
+  Writeln(Succ('y'), ' ', Pred('b'), ' ', Succ(False), ' ', Pred(True));
+  Writeln(Succ(X), ' ', Pred(U), ' ', Succ(B));
+  F := False;
+  Inc(F);
+  Writeln(F);
+end.
