@@ -520,7 +520,7 @@ internal sealed class ConstantFolder
             return Folded.NotApplicable;
         }
 
-        if (!Sets.AcceptsElement(type, element.Type))
+        if (!Sets.AcceptsElement(type, element.Type) && !IsAnsiCharConstant(element, type))
         {
             _diagnostics.Report(op, "E2010", element.Type.Name, type.ElementType!.Name);
             return Folded.Failed;
@@ -570,6 +570,13 @@ internal sealed class ConstantFolder
         return new ConstantValue(SetMask(type, ranges.Select(r => (OrdinalOf(r.Low)!.Value, OrdinalOf(r.High)!.Value))), type);
     }
 
+    /// <summary>
+    /// LANG-262 (C-200): a <c>Char</c> constant ≤ #255 is an <c>AnsiChar</c> constant where a <c>set of AnsiChar</c> (or of an
+    /// <c>AnsiChar</c> subrange) expects an element: a constructor element, the left operand of <c>in</c>.
+    /// </summary>
+    internal static bool IsAnsiCharConstant(ConstantValue value, SetTypeSymbol set) =>
+        set.ElementType is CharTypeSymbol { IsWide: false } && value.Type is CharTypeSymbol { IsWide: true } && value.Value is BigInteger code && code >= 0 && code <= 255;
+
     /// <summary>E2013 / E2010 / E2012 at <paramref name="at"/> unless <paramref name="value"/> is an ordinal of the set's element type range.</summary>
     internal bool CheckSetElement(SetTypeSymbol set, ConstantValue value, SyntaxNode at)
     {
@@ -579,7 +586,7 @@ internal sealed class ConstantFolder
             return false;
         }
 
-        if (!Sets.AcceptsElement(set, value.Type))
+        if (!Sets.AcceptsElement(set, value.Type) && !IsAnsiCharConstant(value, set))
         {
             _diagnostics.Report(at, "E2010", value.Type.Name, set.ElementType!.Name);
             return false;

@@ -1386,6 +1386,7 @@ internal sealed partial class ExpressionBinder
             (PointerTypeSymbol, ProceduralTypeSymbol) => true,
             (ClassTypeSymbol, ClassTypeSymbol or PointerTypeSymbol or IntegerTypeSymbol { Bits: 64 }) => true,     // LANG-290: the reference (C-080)
             (PointerTypeSymbol, ClassTypeSymbol) => true,
+            (InterfaceTypeSymbol, IntegerTypeSymbol { Bits: 64 } or PointerTypeSymbol) => true,      // types.md row 244 (C-098): the reference, uncounted
             (ClassRefTypeSymbol, ClassRefTypeSymbol or PointerTypeSymbol or IntegerTypeSymbol { Bits: 64 }) => true,  // LANG-290 (C-086)
             (PointerTypeSymbol, ClassRefTypeSymbol) => true,
             (_, ClassRefTypeSymbol) when source.IsOrdinal => true,
@@ -2204,6 +2205,17 @@ internal sealed partial class ExpressionBinder
             return Inapplicable(binary, left, right);
         }
 
+        if (Conversions.AnsiCharSetConstant(left.ConstantValue, r) is { } leftAnsi)
+        {
+            left = new BoundLiteral(left.Syntax, leftAnsi);                          // C-200: ['a'] + S with S a set of AnsiChar
+            l = r;
+        }
+        else if (Conversions.AnsiCharSetConstant(right.ConstantValue, l) is { } rightAnsi)
+        {
+            right = new BoundLiteral(right.Syntax, rightAnsi);
+            r = l;
+        }
+
         if (!Sets.Compatible(l, r))
         {
             _diagnostics.Report(op, "E2010", l.Name, r.Name);
@@ -2221,6 +2233,12 @@ internal sealed partial class ExpressionBinder
         if (set.Type is not SetTypeSymbol type || !element.Type.IsOrdinal)
         {
             return Inapplicable(binary, element, set);
+        }
+
+        if (element.ConstantValue is { } constant && ConstantFolder.IsAnsiCharConstant(constant, type))
+        {
+            // LANG-262 (C-200): the character constant becomes an AnsiChar of the set's base type
+            element = new BoundLiteral(element.Syntax, new ConstantValue(constant.Value, Ordinals.Host(type.ElementType!)));
         }
 
         if (!Sets.AcceptsElement(type, element.Type))
@@ -2279,7 +2297,10 @@ internal sealed partial class ExpressionBinder
             return Error(syntax, [.. children]);
         }
 
-        var built = elements.MoveToImmutable();
+        // LANG-262 (C-200): character constants in a set of AnsiChar are AnsiChar elements
+        BoundExpression Element(BoundExpression e) => e.ConstantValue is { } v && ConstantFolder.IsAnsiCharConstant(v, type)
+            ? new BoundLiteral(e.Syntax, new ConstantValue(v.Value, Ordinals.Host(type.ElementType!))) : e;
+        var built = elements.Select(e => new BoundSetElement(Element(e.Low), e.High is null ? null : Element(e.High))).ToImmutableArray();
         var mask = constant
             ? new ConstantValue(ConstantFolder.SetMask(type, built.Select(e => (OrdinalOf(e.Low.ConstantValue!), OrdinalOf((e.High ?? e.Low).ConstantValue!)))), type)
             : null;

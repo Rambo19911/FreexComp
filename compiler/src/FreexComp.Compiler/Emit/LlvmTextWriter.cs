@@ -59,7 +59,15 @@ internal sealed class LlvmTextWriter : IIrWriter
             line.Append("unnamed_addr ");
         }
 
-        line.Append(global.IsConstant ? "constant " : "global ").Append(Typed(global.Initializer)).Append(", align ").Append(Int(global.Alignment));
+        line.Append(global.IsConstant ? "constant " : "global ").Append(Typed(global.Initializer));
+        if (global.Linkage == IrLinkage.LinkOnceOdr)
+        {
+            // C-199: on COFF a linkonce_odr definition without a comdat becomes a weak external, which lld-link rejects as a duplicate
+            _globals.Add($"${Name(global.Name)} = comdat any");
+            line.Append(", comdat");
+        }
+
+        line.Append(", align ").Append(Int(global.Alignment));
         _globals.Add(line.ToString());
         return new IrGlobal(global.Name);
     }
@@ -222,10 +230,11 @@ internal sealed class LlvmTextWriter : IIrWriter
             $"cmpxchg {Typed(address)}, {Typed(comparand)}, {Typed(newValue)} seq_cst seq_cst, align {Int(alignment)}");
     }
 
-    public IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, IrValue? funclet = null)
+    public IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, IrValue? funclet = null,
+        bool mustTail = false)
     {
         RequirePointer(callee);
-        var text = $"call {Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}{Bundle(funclet)}";
+        var text = $"{(mustTail ? "musttail " : "")}call {Type(returnType)} {Value(callee)}({string.Join(", ", arguments.Select(Typed))}){Group(attributeGroup)}{Bundle(funclet)}";
         return CallLike(name, returnType, text, terminates: false);
     }
 

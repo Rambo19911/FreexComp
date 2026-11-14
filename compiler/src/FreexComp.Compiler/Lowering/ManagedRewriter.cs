@@ -26,8 +26,8 @@ internal static class ManagedRewriter
 
     private static LAddrOf AddressOf(LoweringContext context, LExpression variable) => new(variable, context.Types.Pointer);
 
-    /// <summary>The helper family of a managed type (rtl-abi.md §9.3/§9.4): <c>UStr</c> or <c>AStr</c>.</summary>
-    private static string Family(TypeSymbol type) => Strings.IsAnsi(type) ? "AStr" : "UStr";
+    /// <summary>The helper family of a managed type (rtl-abi.md §9.3/§9.4/§9.6): <c>UStr</c>, <c>AStr</c> or <c>Intf</c> (C-099).</summary>
+    private static string Family(TypeSymbol type) => type is InterfaceTypeSymbol ? "Intf" : Strings.IsAnsi(type) ? "AStr" : "UStr";
 
     /// <summary>The type info argument of the <c>_DynArray*</c> helpers (ABI-044).</summary>
     private static LTypeInfo TypeInfo(LoweringContext context, TypeSymbol type) => new(type, context.Types.Pointer);
@@ -70,9 +70,9 @@ internal static class ManagedRewriter
             return fill;
         }
 
-        if (target.Type is DynamicArrayTypeSymbol && value.ConstantValue is { Value: null })
+        if (target.Type is DynamicArrayTypeSymbol or InterfaceTypeSymbol && value.ConstantValue is { Value: null })
         {
-            return Clear(context, target);                                  // CMP-330: a := nil
+            return Clear(context, target);                                  // CMP-330: a := nil; CMP-373: i := nil
         }
 
         return Assign(context, target, context.Lower(value));

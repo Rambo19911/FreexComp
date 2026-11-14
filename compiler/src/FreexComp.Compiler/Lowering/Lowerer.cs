@@ -390,6 +390,18 @@ internal sealed class LoweringContext
 
     public LConst Constant(BigInteger value, TypeSymbol type) => new(new ConstantValue(value, type), type);
 
+    /// <summary>
+    /// CMP-373 row 1 (LANG-665, C-098): the address of the hidden interface field at <paramref name="offset"/> inside the object,
+    /// <c>nil</c> for <c>nil</c> (the object is evaluated once).
+    /// </summary>
+    public LExpression ObjectToInterface(LExpression instance, long offset, TypeSymbol type)
+    {
+        var value = NewValue(instance.Type);
+        var isNil = Compare(LCompareOperator.Equal, Convert(new LTempRef(value), Types.Pointer), new LConst(new ConstantValue(null, Types.Nil), Types.Pointer));
+        return new LTemp(value, instance, new LSelect(isNil, new LConst(new ConstantValue(null, Types.Nil), type),
+            new LPointerOffset(new LTempRef(value), Constant(offset, Types.Int64), Types.Byte, type)));
+    }
+
     public LCompare Compare(LCompareOperator op, LExpression left, LExpression right) => new(op, left, right, Types.Boolean);
 
     /// <summary>
@@ -629,6 +641,8 @@ internal sealed class LoweringContext
             case BoundConversionExpression { IsExplicit: true, Type: PointerTypeSymbol, Operand.Type: { IsOrdinal: true, Size: < 8 } source } conversion:
                 // LANG-290: an ordinal is extended to 64 bits by its own signedness before it becomes a pointer
                 return Convert(Convert(Lower(conversion.Operand), source is IntegerTypeSymbol { IsSigned: true } ? Types.Int64 : Types.UInt64), conversion.Type);
+            case BoundConversionExpression { Type: InterfaceTypeSymbol target, Operand.Type: ClassTypeSymbol source } conversion:
+                return ObjectToInterface(Lower(conversion.Operand), source.FindInterface(target)!.Offset, target);
             case BoundConversionExpression conversion:
                 return conversion.IsExplicit
                     ? Convert(Lower(conversion.Operand), conversion.Type)

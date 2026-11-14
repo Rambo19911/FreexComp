@@ -191,6 +191,11 @@ internal static class IrEmitter
                 IsConstant: true, constant, Alignment: 8));
         }
 
+        foreach (var type in classes)
+        {
+            EmitInterfaceTables(module, type, interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal);    // C-098: IMTs after the VMTs
+        }
+
         if (unit.Unit.IsProgram)
         {
             DefineUnitTable(module, units);
@@ -347,6 +352,28 @@ internal static class IrEmitter
             initTable = new IrGlobal(Mangler.InitTable(type));
         }
 
+        IrConstant intfTable = new IrNullConstant();
+        if (!type.Interfaces.IsEmpty)
+        {
+            // ABI-095: { i64 Count, [Count x { [16 x i8] Guid, ptr Imt, i64 Offset }] } — each listed interface, then its ancestors
+            var entry = new StructIrType([GuidType, IrType.Ptr, IrType.I64]);
+            var rows = new List<(InterfaceTypeSymbol Interface, ImplementedInterface Listed)>();
+            foreach (var listed in type.Interfaces)
+            {
+                foreach (var intf in listed.Interface.SelfAndAncestors().Where(i => !rows.Exists(r => ReferenceEquals(r.Interface, i))))
+                {
+                    rows.Add((intf, listed));
+                }
+            }
+
+            var entries = new ArrayIrType(rows.Count, entry);
+            var table = new IrStructConstant(new StructIrType([IrType.I64, entries]), [IrIntConstant.I64(rows.Count),
+                new IrArrayConstant(entries, [.. rows.Select(r => (IrConstant)new IrStructConstant(entry,
+                    [GuidConstant(r.Interface), new IrGlobal(Mangler.Imt(type, r.Listed.Interface)), IrIntConstant.I64(r.Listed.Offset)]))])]);
+            module.AggregateConstants.Add((Mangler.IntfTable(type), table, 8));
+            intfTable = new IrGlobal(Mangler.IntfTable(type));
+        }
+
         var slots = new ArrayIrType(type.VirtualSlots.Length, IrType.Ptr);
         IrConstant Slot(MethodSymbol method) => method.IsAbstract ? module.NoReturnHelper("_AbstractError") : module.Routine(method);
         var vmtType = new StructIrType([IrType.Ptr, IrType.I64, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, slots]);
@@ -356,13 +383,65 @@ internal static class IrEmitter
             IrIntConstant.I64(type.InstanceSize),
             module.StringLiteral(type.Name),
             new IrNullConstant(),
-            new IrNullConstant(),
+            intfTable,
             new IrNullConstant(),
             initTable,
             new IrNullConstant(),
             type.VirtualSlots.IsEmpty ? new IrZeroConstant(slots) : new IrArrayConstant(slots, [.. type.VirtualSlots.Select(Slot)]),
         ]);
     }
+
+    /// <summary>
+    /// CMP-371/372 (C-098): per interface the class lists, one internal thunk per IMT slot — <c>Self</c> = the interface reference
+    /// minus the hidden field's offset, then a <c>musttail</c> call of the implementing method (through its VMT slot when it is
+    /// virtual, so overrides are honoured) with the same IR parameter list — and the IMT constant of the thunks.
+    /// </summary>
+    private static void EmitInterfaceTables(ModuleState module, ClassTypeSymbol type, IrLinkage linkage)
+    {
+        var w = module.Writer;
+        foreach (var listed in type.Interfaces)
+        {
+            var thunks = ImmutableArray.CreateBuilder<IrConstant>();
+            for (var k = 0; k < listed.Implementations.Length; k++)
+            {
+                var target = listed.Implementations[k];
+                var name = Mangler.Thunk(type, listed.Interface, listed.Interface.AllMethods[k]);
+                var returnType = ReturnType(target);
+                var parameters = ParameterTypes(target).Select((t, i) => new IrParameter(t, i == 0 ? "iref" : "p" + i)).ToImmutableArray();
+                var values = w.BeginFunction(new IrFunctionDefinition(name, IrLinkage.Internal, returnType, parameters, RoutineGroup));
+                w.AppendBlock(new IrBlock("entry"));
+                var self = w.GetElementPtr("self", IrType.I8, values[0], [IrIntConstant.I64(-listed.Offset)]);
+                IrValue callee;
+                if (target.IsDispatched)
+                {
+                    var vmt = w.Load("vmt", IrType.Ptr, self, 8);
+                    var slot = w.GetElementPtr("slot", IrType.I8, vmt, [IrIntConstant.I64(64 + 8 * target.VmtSlot)]);
+                    callee = w.Load("fn", IrType.Ptr, slot, 8);
+                }
+                else
+                {
+                    callee = module.Routine(target);
+                }
+
+                var result = w.Call(returnType is VoidIrType ? null : "r", returnType, callee, [self, .. values.Skip(1)], mustTail: true);
+                w.Ret(result);
+                w.EndFunction();
+                module.DeclarePending();
+                thunks.Add(new IrGlobal(name));
+            }
+
+            var imt = new ArrayIrType(thunks.Count, IrType.Ptr);
+            w.DefineGlobal(new IrGlobalDefinition(Mangler.Imt(type, listed.Interface), linkage, IsConstant: true,
+                thunks.Count == 0 ? new IrZeroConstant(imt) : new IrArrayConstant(imt, thunks.ToImmutable()), Alignment: 8));
+        }
+    }
+
+    /// <summary>ABI-096: <c>TGUID</c> as <c>[16 x i8]</c>.</summary>
+    internal static readonly ArrayIrType GuidType = new(16, IrType.I8);
+
+    /// <summary>The interface's GUID bytes in <c>TGUID</c> memory order; all zero without a GUID (ABI-095).</summary>
+    internal static IrConstant GuidConstant(InterfaceTypeSymbol intf) =>
+        intf.Guid is { } guid ? new IrArrayConstant(GuidType, [.. guid.Select(b => (IrConstant)new IrIntConstant(IrType.I8, b))]) : new IrZeroConstant(GuidType);
 
     private static IEnumerable<LoweredBody> InEmissionOrder(ImmutableArray<LoweredBody> routines)
     {
@@ -445,7 +524,7 @@ internal static class IrEmitter
         (BooleanTypeSymbol, BigInteger i) => IrIntConstant.I1(!i.IsZero),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, BigInteger i) => new IrFloatConstant((FloatingIrType)ValueType(type), (double)i),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, double d) => new IrFloatConstant((FloatingIrType)ValueType(type), d),
-        (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol, null) => new IrNullConstant(),
+        (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or InterfaceTypeSymbol, null) => new IrNullConstant(),
         (PointerTypeSymbol, BigInteger address) => new IrIntToPtrConstant(address),                                         // C-185
         (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
         (SetTypeSymbol { IsSmall: true }, BigInteger mask) => new IrIntConstant((IntegerIrType)ValueType(type), mask),       // CMP-335
@@ -731,6 +810,12 @@ internal sealed class ModuleState(IIrWriter writer)
                 array.ElementType.IsManaged ? Element(array.ElementType) : new IrNullConstant(),
             ],
             RecordTypeSymbol record => RecordFields(record, Name()),
+            InterfaceTypeSymbol intf =>
+            [
+                // ABI §10 tkInterface (C-099): Parent, Guid, own method count
+                new IrIntConstant(IrType.I8, 15), Pad7, Name(), intf.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
+                IrEmitter.GuidConstant(intf), IrIntConstant.I64(intf.Methods.Length),
+            ],
             ArrayTypeSymbol array =>
             [
                 new IrIntConstant(IrType.I8, 13), Pad7, Name(), IrIntConstant.I64(array.Size), IrIntConstant.I64(ElementCount(array)), Element(Innermost(array)),
@@ -763,7 +848,7 @@ internal sealed class ModuleState(IIrWriter writer)
     }
 
     private static bool HasTypeInfo(TypeSymbol type) =>
-        type is StringTypeSymbol { Variant: not StringVariant.Short } or DynamicArrayTypeSymbol or RecordTypeSymbol or ArrayTypeSymbol;
+        type is StringTypeSymbol { Variant: not StringVariant.Short } or DynamicArrayTypeSymbol or RecordTypeSymbol or ArrayTypeSymbol or InterfaceTypeSymbol;
 
     private static TypeSymbol Innermost(ArrayTypeSymbol array) => array.ElementType is ArrayTypeSymbol inner ? Innermost(inner) : array.ElementType;
 
@@ -1896,7 +1981,8 @@ internal sealed class FunctionEmitter
                 var method = (MethodSymbol)routine;
                 // Self is the VMT itself for class methods and for an allocating constructor call (CMP-367: through a class reference)
                 var vmt = method.IsClassMethod || method.MethodKind == MethodKind.Constructor && callee.Flag == 1 ? self : _w.Load(NewTemp(), IrType.Ptr, self, 8);
-                var slot = _w.GetElementPtr(NewTemp(), IrType.I8, vmt, [IrIntConstant.I64(64 + 8 * method.VmtSlot)]);
+                // ABI-093: an interface method's code is slot k of the IMT the interface reference points to (CMP-373)
+                var slot = _w.GetElementPtr(NewTemp(), IrType.I8, vmt, [IrIntConstant.I64((method.ContainingInterface is null ? 64 : 0) + 8 * method.VmtSlot)]);
                 function = _w.Load(NewTemp(), IrType.Ptr, slot, 8);
             }
         }

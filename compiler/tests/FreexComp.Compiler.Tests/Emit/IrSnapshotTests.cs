@@ -1548,8 +1548,72 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-098: an interface descending from another, implemented by a class (no <c>TObject</c> in the stub System: the hidden IMT
+    /// field follows <c>N</c> at offset 16): one thunk per IMT slot (CMP-372; <c>Get</c> is virtual, so its thunk loads the VMT slot;
+    /// <c>Name</c> has a hidden <c>Result</c>), the IMT (CMP-371) and the <c>IntfTable</c> listing <c>IQux</c> and its ancestor <c>IBar</c>
+    /// with the same IMT (ABI-095); interface calls through IMT slots (ABI-093), descendant → ancestor assignment (<c>_IntfAsg</c>).
+    /// </summary>
+    internal const string ThunkSource = """
+        unit M;
+        interface
+        type
+          IBar = interface
+            procedure Baz(A: Integer);
+            function Get: Integer;
+            function Name: string;
+          end;
+          IQux = interface(IBar)
+            procedure Qux;
+          end;
+          TFoo = class(IQux)
+            N: Integer;
+            procedure Baz(A: Integer);
+            function Get: Integer; virtual;
+            function Name: string;
+            procedure Qux;
+          end;
+        function Run(const Q: IQux): Integer;
+        implementation
+        procedure TFoo.Baz(A: Integer); begin N := A end;
+        function TFoo.Get: Integer; begin Result := N end;
+        function TFoo.Name: string; begin Result := 'foo' end;
+        procedure TFoo.Qux; begin end;
+        function Run(const Q: IQux): Integer;
+        var B: IBar;
+        begin
+          Q.Baz(2);
+          Q.Qux;
+          B := Q;
+          Result := B.Get;
+        end;
+        end.
+        """;
+
+    [Fact]
+    [Trait("Req", "CMP-371")]
+    [Trait("Req", "CMP-372")]
+    [Trait("Req", "CMP-373")]
+    [Trait("Req", "ABI-093")]
+    [Trait("Req", "ABI-095")]
+    public void Thunk() => Snapshot.Verify("Thunk", Emit(ThunkSource));
+
+    [Fact]
+    [Trait("Req", "CMP-372")]
+    public void Thunk_SubtractsTheFieldOffsetAndTailCalls()
+    {
+        var text = Emit(ThunkSource);
+        Assert.Contains("define internal void @\"M.TFoo.$thunk.M.IQux.Baz\"(ptr %iref, i32 %p1) #0 {", text);
+        Assert.Contains("%self = getelementptr inbounds i8, ptr %iref, i64 -16", text);
+        Assert.Contains("musttail call void @\"M.TFoo.Baz\"(ptr %self, i32 %p1)", text);
+        Assert.Contains("%r = musttail call i32 %fn(ptr %self)", text);                                        // virtual Get: VMT slot
+        Assert.Contains("@\"M.TFoo.$imt.M.IQux\" = constant [4 x ptr] [ptr @\"M.TFoo.$thunk.M.IQux.Baz\", ptr @\"M.TFoo.$thunk.M.IQux.Get\", "
+            + "ptr @\"M.TFoo.$thunk.M.IQux.Name\", ptr @\"M.TFoo.$thunk.M.IQux.Qux\"], align 8", text);
+    }
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Thunk"] = ThunkSource,
         ["ThreadVar"] = ThreadVarSource,
         ["TryExcept"] = TryExceptSource,
         ["TryFinally"] = TryFinallySource,
@@ -1590,6 +1654,27 @@ public sealed class IrSnapshotTests
         ["Calls"] = CallsSource,
         ["NestedFrame"] = NestedFrameSource,
     };
+
+    /// <summary>C-199: every <c>linkonce_odr</c> global of every snapshot module has <c>, comdat</c> and its <c>$name = comdat any</c>.</summary>
+    [Fact]
+    [Trait("Req", "CMP-365")]
+    public void LinkOnceOdrGlobals_HaveComdats()
+    {
+        var checkedCount = 0;
+        foreach (var (name, source) in Sources)
+        {
+            var lines = Emit(source).ReplaceLineEndings("\n").Split('\n');
+            foreach (var line in lines.Where(l => l.StartsWith('@') && l.Contains(" = linkonce_odr ", StringComparison.Ordinal)))
+            {
+                var global = line[1..line.IndexOf(" = ", StringComparison.Ordinal)];
+                Assert.True(line.Contains(", comdat, align", StringComparison.Ordinal), $"{name}: {line}");
+                Assert.Contains("$" + global + " = comdat any", lines);
+                checkedCount++;
+            }
+        }
+
+        Assert.True(checkedCount > 0, "no linkonce_odr global in the snapshot sources");
+    }
 
     [Fact]
     [Trait("Req", "LANG-462")]

@@ -1,0 +1,2 @@
+ErrIntfMissingMethod.pas(13,35): error E2651: Missing implementation of interface method 'IFoo.B'
+ErrIntfMissingMethod.pas(13,35): error E2651: Missing implementation of interface method 'IFoo.C'

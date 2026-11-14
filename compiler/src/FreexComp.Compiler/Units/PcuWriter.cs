@@ -586,7 +586,12 @@ internal sealed class PcuWriter(PcuContext context)
                     entry["kind"] = "class";
                     entry["name"] = @class.Name;
                     entry["parent"] = @class.Parent is { } parent ? TypeId(parent) : null;
-                    entry["interfaces"] = new JsonArray();
+                    // C-098: listed interfaces with their hidden field offsets (architecture.md §6 names only the key)
+                    entry["interfaces"] = new JsonArray([.. @class.Interfaces.Select(i => (JsonNode?)new JsonObject
+                    {
+                        ["type"] = TypeId(i.Interface),
+                        ["offset"] = i.Offset,
+                    })]);
                     entry["instanceSize"] = @class.InstanceSize;
                     entry["flags"] = Strings([.. @class.IsAbstract ? ["abstract"] : Array.Empty<string>(), .. @class.IsSealed ? ["sealed"] : Array.Empty<string>()]);
                     entry["fields"] = new JsonArray([.. @class.Fields.Select(f => (JsonNode?)new JsonObject
@@ -632,6 +637,22 @@ internal sealed class PcuWriter(PcuContext context)
                     })]);                                                                   // C-085
                     entry["vmtLinkName"] = Emit.Mangler.Vmt(@class).Text;
                     entry["vmtSlotCount"] = @class.VmtSlotCount;
+                    return;
+                case InterfaceTypeSymbol intf:
+                    // architecture.md §6 `interface` (C-098); methods carry their IMT slot, no link name (they have no body)
+                    entry["kind"] = "interface";
+                    entry["name"] = intf.Name;
+                    entry["parent"] = intf.Parent is { } parentInterface ? TypeId(parentInterface) : null;
+                    entry["guid"] = intf.Guid is { } guid ? new System.Guid([.. guid]).ToString("B").ToUpperInvariant() : null;
+                    entry["methods"] = new JsonArray([.. intf.Methods.Select(m => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = m.Name,
+                        ["params"] = Parameters(m),
+                        ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
+                        ["flags"] = Strings(m.IsOverload ? new[] { "overload" } : Array.Empty<string>()),
+                        ["slot"] = m.VmtSlot,
+                    })]);
+                    entry["properties"] = new JsonArray();
                     return;
                 case ClassRefTypeSymbol reference:
                     entry["kind"] = "classRef";                                     // C-086

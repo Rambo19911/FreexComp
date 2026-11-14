@@ -53,6 +53,20 @@ public sealed class ClassTypeSymbol : TypeSymbol
     /// <summary>The class's own properties in declaration order (LANG-641…647).</summary>
     public ImmutableArray<PropertySymbol> Properties { get; internal set; } = [];
 
+    /// <summary>
+    /// The interfaces listed in the class's own declaration, in listing order, with their hidden fields after the fields (ABI §7.1)
+    /// and their implementing methods (LANG-661, C-098).
+    /// </summary>
+    public ImmutableArray<ImplementedInterface> Interfaces { get; internal set; } = [];
+
+    /// <summary>
+    /// LANG-665: the nearest listed interface (of this class or an ancestor, the class first) that is <paramref name="target"/> or a
+    /// descendant of it — its hidden field is the interface reference (a descendant IMT is prefix-compatible, ABI-095); null when
+    /// the class does not implement <paramref name="target"/>.
+    /// </summary>
+    public ImplementedInterface? FindInterface(InterfaceTypeSymbol target) =>
+        SelfAndAncestors().SelectMany(c => c.Interfaces).FirstOrDefault(i => i.Interface.InheritsFrom(target));
+
     /// <summary>The nearest default array property of the class or an ancestor (LANG-642); null when there is none.</summary>
     public PropertySymbol? DefaultProperty => SelfAndAncestors().SelectMany(c => c.Properties).FirstOrDefault(p => p.IsDefault);
 

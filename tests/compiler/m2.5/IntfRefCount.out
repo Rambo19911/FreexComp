@@ -1,0 +1,15 @@
+create one
+0
+1
+2
+1
+release last
+destroy one
+create local
+in scope 1
+destroy local
+create two
+create three
+destroy two
+end
+destroy three

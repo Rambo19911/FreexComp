@@ -64,7 +64,9 @@ internal sealed partial class DeclarationBinder
         type.IsForward = false;
         type.IsAbstract = syntax.Modifier?.ContextualKind == SyntaxKind.AbstractKeyword;
         type.IsSealed = syntax.Modifier?.ContextualKind == SyntaxKind.SealedKeyword;
-        type.Parent = BindParent(type, syntax.Heritage);
+        var listed = new List<(InterfaceTypeSymbol Interface, TypeSyntax Syntax)>();
+        var resolutions = new List<MethodResolutionSyntax>();
+        type.Parent = BindParent(type, syntax.Heritage, listed);
 
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
         var methods = ImmutableArray.CreateBuilder<MethodSymbol>();
@@ -105,6 +107,9 @@ internal sealed partial class DeclarationBinder
                 case PropertyDeclarationSyntax property:
                     properties.Add((property, visibility));                     // bound once all fields and methods are known
                     break;
+                case MethodResolutionSyntax resolution:
+                    resolutions.Add(resolution);                                // LANG-661, bound with the listed interfaces
+                    break;
                 default:
                     Unsupported(member, "class " + FeatureName(member.Kind));
                     break;
@@ -113,9 +118,10 @@ internal sealed partial class DeclarationBinder
 
         type.Fields = fields.ToImmutable();
         type.ClassVariables = classVariables.ToImmutable();
-        type.InstanceSize = (end + 7) / 8 * 8;                                   // ABI-070
         type.Methods = methods.ToImmutable();
         type.VirtualSlots = AssignSlots(type);
+        end = BindImplementedInterfaces(type, listed, resolutions, end);       // ABI §7.1: the hidden IMT pointers follow the fields
+        type.InstanceSize = (end + 7) / 8 * 8;                                   // ABI-070
         type.Properties = BindProperties(type, properties, names);
     }
 
@@ -150,9 +156,11 @@ internal sealed partial class DeclarationBinder
 
     /// <summary>
     /// LANG-600: the first heritage entry is the parent class (E2007 while it is only forward-declared, E2601 when sealed,
-    /// E2603 for a non-class type); without heritage the parent is <c>TObject</c>. Implemented interfaces are M2.5 (E2900).
+    /// E2603 for a non-class type); without heritage the parent is <c>TObject</c>. The other entries — and the first when it is an
+    /// interface (the parent is then <c>TObject</c>) — are the implemented interfaces, added to <paramref name="listed"/> (E2652
+    /// for a non-interface, E2007 while forward; LANG-661, C-098).
     /// </summary>
-    private ClassTypeSymbol? BindParent(ClassTypeSymbol type, HeritageSyntax? heritage)
+    private ClassTypeSymbol? BindParent(ClassTypeSymbol type, HeritageSyntax? heritage, List<(InterfaceTypeSymbol Interface, TypeSyntax Syntax)> listed)
     {
         var root = _types.TObject as ClassTypeSymbol;
         if (heritage is null || heritage.Types.Count == 0)
@@ -160,14 +168,30 @@ internal sealed partial class DeclarationBinder
             return ReferenceEquals(root, type) ? null : root;
         }
 
-        for (var i = 1; i < heritage.Types.Count; i++)
+        var firstType = BindType(heritage.Types[0]);
+        for (var i = firstType is InterfaceTypeSymbol ? 0 : 1; i < heritage.Types.Count; i++)
         {
-            Unsupported(heritage.Types[i], "implemented interface");                                      // LANG-661, M2.5
+            switch (i == 0 ? firstType : BindType(heritage.Types[i]))
+            {
+                case InterfaceTypeSymbol { IsForward: true } forward:
+                    _diagnostics.Report(heritage.Types[i], "E2007", forward.Name);
+                    break;
+                case InterfaceTypeSymbol intf:
+                    listed.Add((intf, heritage.Types[i]));
+                    break;
+                case ErrorTypeSymbol:
+                    break;
+                default:
+                    _diagnostics.Report(heritage.Types[i], "E2652");
+                    break;
+            }
         }
 
         var first = heritage.Types[0];
-        switch (BindType(first))
+        switch (firstType)
         {
+            case InterfaceTypeSymbol:
+                return ReferenceEquals(root, type) ? null : root;
             case ClassTypeSymbol parent when ReferenceEquals(parent, type) || parent.IsForward:
                 _diagnostics.Report(first, "E2007", parent.Name);
                 return root;

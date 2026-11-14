@@ -13,12 +13,18 @@ target triple = "x86_64-pc-windows-msvc"
 @.str.5 = private unnamed_addr constant { i32, i32, i16, i16, i32, [7 x i16] } { i32 -1, i32 6, i16 1200, i16 2, i32 0, [7 x i16] [i16 84, i16 78, i16 97, i16 109, i16 101, i16 115, i16 0] }, align 16
 @"M.TSmall.$rtti.fields" = private unnamed_addr constant [1 x { ptr, i64 }] [{ ptr, i64 } { ptr @"System.string.$rtti", i64 0 }], align 8
 @"M.TPerson.$rtti.fields" = private unnamed_addr constant [2 x { ptr, i64 }] [{ ptr, i64 } { ptr @"System.string.$rtti", i64 0 }, { ptr, i64 } { ptr @"M.$rtti.array of AnsiString", i64 16 }], align 8
-@"System.string.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i16, [6 x i8] } { i8 9, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [7 x i16] }, ptr @.str.1, i32 0, i32 5), i16 1200, [6 x i8] zeroinitializer }, align 8
-@"M.TSmall.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i64, i64, ptr } { i8 12, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [7 x i16] }, ptr @.str.0, i32 0, i32 5), i64 8, i64 1, ptr @"M.TSmall.$rtti.fields" }, align 8
-@"System.AnsiString.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i16, [6 x i8] } { i8 10, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [11 x i16] }, ptr @.str.3, i32 0, i32 5), i16 -535, [6 x i8] zeroinitializer }, align 8
-@"M.$rtti.array of AnsiString" = linkonce_odr constant { i8, [7 x i8], ptr, i64, ptr, ptr } { i8 14, [7 x i8] zeroinitializer, ptr null, i64 8, ptr @"System.AnsiString.$rtti", ptr @"System.AnsiString.$rtti" }, align 8
-@"M.TPerson.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i64, i64, ptr } { i8 12, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [8 x i16] }, ptr @.str.2, i32 0, i32 5), i64 24, i64 2, ptr @"M.TPerson.$rtti.fields" }, align 8
-@"M.TNames.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i64, i64, ptr } { i8 13, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [7 x i16] }, ptr @.str.5, i32 0, i32 5), i64 16, i64 2, ptr @"System.string.$rtti" }, align 8
+$"System.string.$rtti" = comdat any
+@"System.string.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i16, [6 x i8] } { i8 9, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [7 x i16] }, ptr @.str.1, i32 0, i32 5), i16 1200, [6 x i8] zeroinitializer }, comdat, align 8
+$"M.TSmall.$rtti" = comdat any
+@"M.TSmall.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i64, i64, ptr } { i8 12, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [7 x i16] }, ptr @.str.0, i32 0, i32 5), i64 8, i64 1, ptr @"M.TSmall.$rtti.fields" }, comdat, align 8
+$"System.AnsiString.$rtti" = comdat any
+@"System.AnsiString.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i16, [6 x i8] } { i8 10, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [11 x i16] }, ptr @.str.3, i32 0, i32 5), i16 -535, [6 x i8] zeroinitializer }, comdat, align 8
+$"M.$rtti.array of AnsiString" = comdat any
+@"M.$rtti.array of AnsiString" = linkonce_odr constant { i8, [7 x i8], ptr, i64, ptr, ptr } { i8 14, [7 x i8] zeroinitializer, ptr null, i64 8, ptr @"System.AnsiString.$rtti", ptr @"System.AnsiString.$rtti" }, comdat, align 8
+$"M.TPerson.$rtti" = comdat any
+@"M.TPerson.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i64, i64, ptr } { i8 12, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [8 x i16] }, ptr @.str.2, i32 0, i32 5), i64 24, i64 2, ptr @"M.TPerson.$rtti.fields" }, comdat, align 8
+$"M.TNames.$rtti" = comdat any
+@"M.TNames.$rtti" = linkonce_odr constant { i8, [7 x i8], ptr, i64, i64, ptr } { i8 13, [7 x i8] zeroinitializer, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [7 x i16] }, ptr @.str.5, i32 0, i32 5), i64 16, i64 2, ptr @"System.string.$rtti" }, comdat, align 8
 
 declare void @"System._AddRef"(ptr, ptr)
 declare void @"System._CopyRecord"(ptr, ptr, ptr)

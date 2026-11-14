@@ -56,6 +56,37 @@ public sealed class OverloadResolverTests
         "E2122: Ambiguous overloaded call to 'Q'")]                                   // narrowing either way (2 = 2)
     public void IntegerLiterals(string declarations, string call, string expected) => Assert.Equal(expected, Chosen(declarations, call));
 
+    private const string IntToStrLike =
+        "function S(V: Integer): string; overload; begin Result := '' end; function S(V: Int64): string; overload; begin Result := '' end; " +
+        "function S(V: UInt64): string; overload; begin Result := '' end; " +
+        "function H(V: Int64; D: Integer): string; overload; begin Result := '' end; function H(V: UInt64; D: Integer): string; overload; begin Result := '' end;";
+
+    /// <summary>
+    /// C-201 (types.md lead decision, LANG-442 dominance): among widening targets that all fit the source range the narrower one
+    /// wins, at equal size the signed one; narrowing pairs stay ambiguous.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-442")]
+    [InlineData("S(vw)", "T.S$Integer")]                    // Word → Integer and → Int64 / UInt64 all widen: the narrowest
+    [InlineData("S(vb)", "T.S$Integer")]
+    [InlineData("S(vc)", "T.S$Int64")]                      // Cardinal → Int64 / UInt64 (Integer narrows): equal size, signed
+    [InlineData("H(vc, 8)", "T.H$Int64,Integer")]
+    [InlineData("H(vw, 8)", "T.H$Int64,Integer")]
+    public void IntegerWideningPrefersNarrowerThenSigned(string call, string expected) => Assert.Equal(expected, ChosenCall(IntToStrLike, call));
+
+    /// <summary>The function <c>text := call</c> picks, or the diagnostics.</summary>
+    private static string ChosenCall(string declarations, string call)
+    {
+        var (result, _) = Bind("program T; " + declarations + " var vb: Byte; vw: Word; vc: Cardinal; text: string; begin text := " + call + " end.");
+        if (!result.Diagnostics.IsEmpty)
+        {
+            return string.Join("; ", result.Diagnostics.Select(d => $"{d.Code}: {d.Message}"));
+        }
+
+        var assignment = Assert.IsType<BoundAssignmentStatement>(Assert.Single(result.Bodies[0].Statements));
+        return Assert.IsType<BoundCallExpression>(assignment.Value).Routine.LinkName;
+    }
+
     [Theory]
     [Trait("Req", "LANG-442")]
     [InlineData("C('a')", "T.C$Char")]

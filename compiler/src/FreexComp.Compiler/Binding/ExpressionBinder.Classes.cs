@@ -144,6 +144,23 @@ internal sealed partial class ExpressionBinder
         return candidates.ToImmutable();
     }
 
+    /// <summary>LANG-441 over the interface chain (C-098): as <see cref="MemberCandidates"/> for the methods of interfaces.</summary>
+    private static ImmutableArray<RoutineSymbol> InterfaceCandidates(InterfaceTypeSymbol type, string name)
+    {
+        var candidates = ImmutableArray.CreateBuilder<RoutineSymbol>();
+        foreach (var owner in type.SelfAndAncestors())
+        {
+            var methods = owner.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name)).ToList();
+            candidates.AddRange(methods.Where(m => !candidates.Any(c => SameParameters(c, m))));
+            if (methods.Count > 0 && methods.Any(m => !m.IsOverload))
+            {
+                break;
+            }
+        }
+
+        return candidates.ToImmutable();
+    }
+
     private static bool SameParameters(RoutineSymbol a, RoutineSymbol b) =>
         a.Parameters.Length == b.Parameters.Length
         && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && ReferenceEquals(p.First.Type, p.Second.Type));
@@ -164,7 +181,7 @@ internal sealed partial class ExpressionBinder
             ReceiverKind.ClassName => className,
             _ => CurrentMethod?.ContainingType,
         };
-        if (!CheckAccess(call, method, method.ContainingType, receiverType))
+        if (method.ContainingInterface is null && !CheckAccess(call, method, method.ContainingType, receiverType))
         {
             return new MethodCall(null, arguments, null);
         }
@@ -526,6 +543,20 @@ internal sealed partial class ExpressionBinder
             }
 
             _diagnostics.Report(syntax.Name, "E2005", type.Name, name);
+            return Error(syntax, receiver);
+        }
+
+        if (receiver.Type is InterfaceTypeSymbol intf)
+        {
+            // LANG-664 (C-098): a method of the interface or an ancestor, called through the IMT (ABI-093)
+            var candidates = InterfaceCandidates(intf, name);
+            if (!candidates.IsEmpty)
+            {
+                methodCall = BindMethodCall(call, candidates, ReceiverKind.Instance, receiver, null, argumentList);
+                return null;
+            }
+
+            _diagnostics.Report(syntax.Name, "E2005", intf.Name, name);
             return Error(syntax, receiver);
         }
 

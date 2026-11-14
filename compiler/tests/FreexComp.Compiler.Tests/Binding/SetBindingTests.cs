@@ -48,6 +48,20 @@ public sealed class SetBindingTests
             new[] { "U", "I", "D", "Empty", "Member", "Outside", "Same", "Sub", "Sup" }.Select(Value));
     }
 
+    /// <summary>
+    /// C-200 (LANG-262): character constants ≤ #255 in a <c>set of AnsiChar</c> context — a constructor given the set type, an
+    /// argument constructor, a constant set, and the left operand of <c>in</c> — convert to <c>AnsiChar</c>; #256 and above stay E2010.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-262")]
+    [Trait("Req", "LANG-252")]
+    [InlineData("type TS = set of AnsiChar; procedure Q(const S: TS); begin Writeln('a' in S) end; var B: TS; begin B := ['a'..'z']; Q(B); Q(['a']) end.", "")]
+    [InlineData("type TS = set of AnsiChar; const C: TS = ['0'..'9', 'x']; var B: TS; ok: Boolean; begin B := C + ['_']; ok := '_' in B; ok := 'q' in ['q'] end.", "")]
+    [InlineData("type TS = set of AnsiChar; var B: TS; begin B := [#$100] end.", "E2010(1,51): Incompatible types: 'Char' and 'AnsiChar'")]
+    [InlineData("type TS = set of AnsiChar; var B: TS; ok: Boolean; begin ok := #$263A in B end.", "E2010(1,71): Incompatible types: 'Char' and 'AnsiChar'")]
+    public void CharConstantsInAnsiCharSets(string text, string expected) =>
+        Assert.Equal(expected.Length == 0 ? [] : [expected], BindDiagnostics(text));
+
     [Theory]
     [Trait("Req", "LANG-280")]
     [InlineData("type S = set of 0..7; T = set of 0..31; var a: S; b: T; begin a := b; b := a; b := a + b end.")]

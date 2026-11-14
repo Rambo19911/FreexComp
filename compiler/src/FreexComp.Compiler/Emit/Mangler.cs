@@ -59,6 +59,22 @@ internal static class Mangler
     /// <summary>The <c>InitTable</c> of a class (ABI §7.2 VMT+48): <c>U.TFoo.$inittable</c>.</summary>
     public static LinkName InitTable(ClassTypeSymbol type) => new(type.QualifiedName + ".$inittable", AlwaysQuote: true);
 
+    /// <summary>The IMT of a class for one listed interface (ABI-091, CMP-371): <c>U.TFoo.$imt.IU.IBar</c>.</summary>
+    public static LinkName Imt(ClassTypeSymbol type, InterfaceTypeSymbol intf) => new(type.QualifiedName + ".$imt." + intf.QualifiedName, AlwaysQuote: true);
+
+    /// <summary>
+    /// The thunk of IMT slot <paramref name="slot"/> (CMP-372, codegen.md §12): <c>U.TFoo.$thunk.IU.IBar.Method</c>; an overloaded
+    /// interface method adds <c>$</c> and its parameter signature like a routine (C-098).
+    /// </summary>
+    public static LinkName Thunk(ClassTypeSymbol type, InterfaceTypeSymbol intf, MethodSymbol method) =>
+        new(type.QualifiedName + ".$thunk." + intf.QualifiedName + "." + method.Name + (method.IsOverload ? "$" + Signature(method.Parameters) : ""), AlwaysQuote: true);
+
+    /// <summary>The <c>IntfTable</c> of a class (ABI-095, VMT+32): <c>U.TFoo.$intftable</c>.</summary>
+    public static LinkName IntfTable(ClassTypeSymbol type) => new(type.QualifiedName + ".$intftable", AlwaysQuote: true);
+
+    /// <summary>The GUID constant of an interface (CMP-373): <c>U.IBar.$guid</c>.</summary>
+    public static LinkName Guid(InterfaceTypeSymbol intf) => new(intf.QualifiedName + ".$guid", AlwaysQuote: true);
+
     /// <summary>A runtime helper of unit System (rtl-abi.md §9): <c>System._Name</c>.</summary>
     public static LinkName RuntimeHelper(string name) => new("System." + name, AlwaysQuote: true);
 

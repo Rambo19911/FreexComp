@@ -1,11 +1,11 @@
-# Diagnostic codes without a case in diagnostics.cases (testing.md §3, BinderDiagnosticTests.EveryDiagnosticIsCovered).
+# Diagnostic codes without a case in diagnostics.cases (testing.md Ā§3, BinderDiagnosticTests.EveryDiagnosticIsCovered).
 # Scope: every E2xxx, W1xxx, W4xxx and Hxxxx code of DiagnosticCatalog (the codes opc itself reports outside the
 # lexer, parser and driver error ranges). Each such code has a case or exactly one line here:
 #   CODE  STATUS  reason
 # STATUS is one of
-#   reserved | retired        must match the "(reserved…)"/"(retired…)" note of its row in diagnostics.md
+#   reserved | retired        must match the "(reservedā€¦)"/"(retiredā€¦)" note of its row in diagnostics.md
 #   unemitted                 reserved by a lead decision note (not by its row): never reported, no source file names it
-#   M2.2 … M2.6 | Phase3 | Phase4 | Phase8
+#   M2.2 ā€¦ M2.6 | Phase3 | Phase4 | Phase8
 #                             not reachable yet: the milestone/phase whose feature reports it; the task that makes it
 #                             reachable moves it to diagnostics.cases (C-127 empties the M2.x part)
 #   elsewhere <TestClass>     reported only by the driver or the toolchain, not by a source snippet; <TestClass> is a
@@ -34,11 +34,6 @@ E2627  M2.5  message methods (LANG-622)
 E2630  M2.5  published properties
 E2640  M2.5  interfaces
 E2641  M2.5  interfaces
-E2650  M2.5  interfaces
-E2651  M2.5  interfaces
-E2652  M2.5  interfaces
-E2653  M2.5  interfaces
-E2654  M2.5  interfaces
 E2700  M2.6  generics
 E2701  M2.6  generics
 E2702  M2.6  generics

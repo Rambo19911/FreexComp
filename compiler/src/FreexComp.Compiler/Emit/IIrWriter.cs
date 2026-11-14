@@ -110,8 +110,12 @@ internal interface IIrWriter
     /// Direct or indirect call. <paramref name="name"/> must be null for <c>void</c>; may be null for a discarded result
     /// (then null is returned). <paramref name="attributeGroup"/> is the call-site group (<c>#1</c> for noreturn helpers).
     /// </summary>
-    /// <remarks><paramref name="funclet"/>: the pad token of the funclet the call is in (<c>[ "funclet"(token %cl) ]</c>, CMP-392/393).</remarks>
-    IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, IrValue? funclet = null);
+    /// <remarks>
+    /// <paramref name="funclet"/>: the pad token of the funclet the call is in (<c>[ "funclet"(token %cl) ]</c>, CMP-392/393).
+    /// <paramref name="mustTail"/>: <c>musttail call</c> (interface thunks, CMP-372); a <c>ret</c> of its result must follow.
+    /// </remarks>
+    IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null, IrValue? funclet = null,
+        bool mustTail = false);
 
     /// <summary>
     /// <c>invoke … to label %normal unwind label %unwind</c> (CMP-394): a terminator. A function with an invoke or a pad gets

@@ -15,7 +15,8 @@ public enum MethodKind { Ordinary, Constructor, Destructor, ClassMethod, ClassSt
 /// </summary>
 public sealed class MethodSymbol : RoutineSymbol
 {
-    internal MethodSymbol(string name, ClassTypeSymbol containingType, ImmutableArray<Location> locations, MethodDeclarationSyntax declaration,
+    /// <param name="containingType">A class, or an interface (C-098: interface methods have no body; <see cref="VmtSlot"/> is the IMT slot).</param>
+    internal MethodSymbol(string name, TypeSymbol containingType, ImmutableArray<Location> locations, MethodDeclarationSyntax declaration,
         MethodKind methodKind, Visibility visibility)
         : base(SymbolKind.Method, name, containingType, locations, visibility)
     {
@@ -25,7 +26,11 @@ public sealed class MethodSymbol : RoutineSymbol
 
     public MethodKind MethodKind { get; }
 
+    /// <summary>The declaring class; throws for an interface method (see <see cref="ContainingInterface"/>).</summary>
     public ClassTypeSymbol ContainingType => (ClassTypeSymbol)ContainingSymbol!;
+
+    /// <summary>The declaring interface of an interface method (LANG-660); null for class methods.</summary>
+    public InterfaceTypeSymbol? ContainingInterface => ContainingSymbol as InterfaceTypeSymbol;
 
     /// <summary>Introduces a VMT slot (<c>virtual</c> or <c>dynamic</c>, ABI-074).</summary>
     public bool IsVirtual { get; internal set; }
@@ -73,6 +78,6 @@ public sealed class MethodSymbol : RoutineSymbol
         };
         var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(p => $"{ParameterSymbol.Prefix(p.Mode)}{p.Name}: {p.Type.Name}")) + ")";
         var result = ReturnType is not null && MethodKind is not MethodKind.Constructor ? ": " + ReturnType.Name : "";
-        return $"{keyword} {ContainingType.Name}.{Name}{parameters}{result}";
+        return $"{keyword} {ContainingSymbol!.Name}.{Name}{parameters}{result}";
     }
 }

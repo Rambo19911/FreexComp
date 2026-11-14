@@ -212,6 +212,7 @@ internal sealed partial class DeclarationBinder
         _sectionTypeNames = new(section.Declarations.Where(d => !d.Identifier.IsMissing).Select(d => NameOf(d.Identifier)), IdentifierComparer.Instance);
         _forwardPointers = [];
         var forwardClasses = new List<(ClassTypeSymbol Type, SyntaxToken Identifier)>();
+        var forwardInterfaces = new List<(InterfaceTypeSymbol Type, SyntaxToken Identifier)>();
         foreach (var declaration in section.Declarations)
         {
             var identifier = declaration.Identifier;
@@ -223,6 +224,12 @@ internal sealed partial class DeclarationBinder
             if (declaration.Type is ClassTypeSyntax classSyntax && declaration.TypeParameterList is null && declaration.TypeKeyword is null)
             {
                 BindClassDeclaration(identifier, classSyntax, declared, forwardClasses);
+                continue;
+            }
+
+            if (declaration.Type is InterfaceTypeSyntax interfaceSyntax && declaration.TypeParameterList is null && declaration.TypeKeyword is null)
+            {
+                BindInterfaceDeclaration(identifier, interfaceSyntax, declared, forwardInterfaces);                // C-098
                 continue;
             }
 
@@ -278,6 +285,11 @@ internal sealed partial class DeclarationBinder
         foreach (var (type, identifier) in forwardClasses.Where(f => f.Type.IsForward))
         {
             _diagnostics.Report(identifier, "E2015", type.Name);                    // LANG-601
+        }
+
+        foreach (var (type, identifier) in forwardInterfaces.Where(f => f.Type.IsForward))
+        {
+            _diagnostics.Report(identifier, "E2015", type.Name);
         }
 
         _sectionTypeNames = null;

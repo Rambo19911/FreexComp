@@ -40,6 +40,9 @@ internal sealed class Conversions
             (PointerTypeSymbol { Name: "nil" }, ClassTypeSymbol) => Pointer,                                       // LANG-600: nil (C-080)
             (ClassTypeSymbol s, ClassTypeSymbol d) when s.InheritsFrom(d) => Pointer,                              // descendant → ancestor
             (PointerTypeSymbol { Name: "nil" }, ClassRefTypeSymbol) => Pointer,                                    // LANG-266 (C-086)
+            (PointerTypeSymbol { Name: "nil" }, InterfaceTypeSymbol) => Pointer,                                   // LANG-266 (C-098)
+            (InterfaceTypeSymbol s, InterfaceTypeSymbol d) when s.InheritsFrom(d) => Pointer,                      // LANG-665: same pointer
+            (ClassTypeSymbol s, InterfaceTypeSymbol d) when s.FindInterface(d) is not null => Pointer,             // LANG-665: + hidden field offset
             (ClassRefTypeSymbol s, ClassRefTypeSymbol d) when s.Class.InheritsFrom(d.Class) => Pointer,            // LANG-280 rule 10
             (CharTypeSymbol, StringTypeSymbol) => String,                                                         // LANG-245: a 1-char string
             (StringTypeSymbol, StringTypeSymbol) => String,                                                       // LANG-245 (C-063)
@@ -84,6 +87,11 @@ internal sealed class Conversions
             return new ConstantValue(code, destination);
         }
 
+        if (destination is SetTypeSymbol ansiSet && AnsiCharSetConstant(value, ansiSet) is { } ansi)
+        {
+            return ansi;                                                    // LANG-262 (C-200)
+        }
+
         var conversion = Classify(source, destination);
         if (!conversion.Exists)
         {
@@ -120,6 +128,31 @@ internal sealed class Conversions
             RealTypeSymbol => new ConstantValue(RealValue(value), destination),
             _ => new ConstantValue(value.Value, destination),
         };
+    }
+
+    /// <summary>
+    /// LANG-262 (C-200): a constant set of <c>Char</c> elements (a constructor's natural type <c>set of #0..#N</c>) whose elements
+    /// are all ≤ #255, as a constant of the <c>set of AnsiChar</c> type <paramref name="destination"/>; null when it is no such pair.
+    /// </summary>
+    public static ConstantValue? AnsiCharSetConstant(ConstantValue? value, SetTypeSymbol destination) =>
+        value is { Type: SetTypeSymbol { ElementType: CharTypeSymbol { IsWide: true } }, Value: BigInteger mask }
+        && destination.ElementType is CharTypeSymbol { IsWide: false } && mask >> 256 == BigInteger.Zero
+        && Ordinals.Bounds(destination.ElementType) is { } bounds && Fits(mask, bounds.Low, bounds.High)
+            ? new ConstantValue(mask, destination)
+            : null;
+
+    /// <summary>Every bit of <paramref name="mask"/> lies in <paramref name="low"/>..<paramref name="high"/>.</summary>
+    private static bool Fits(BigInteger mask, BigInteger low, BigInteger high)
+    {
+        for (var bit = 0; !(mask >> bit).IsZero; bit++)
+        {
+            if (!(mask >> bit).IsEven && (bit < low || bit > high))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>E2010.</summary>

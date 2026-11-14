@@ -33,7 +33,7 @@ internal sealed class OverloadResolver(Conversions conversions)
             return new Resolution(applicable.Count == 1 ? applicable[0].Routine : null, []);
         }
 
-        var best = applicable.Where(a => applicable.All(b => ReferenceEquals(a.Routine, b.Routine) || Better(a.Costs, b.Costs))).ToList();
+        var best = applicable.Where(a => applicable.All(b => ReferenceEquals(a.Routine, b.Routine) || Better(a.Routine, a.Costs, b.Routine, b.Costs))).ToList();
         if (best.Count == 1)
         {
             return new Resolution(best[0].Routine, []);
@@ -76,7 +76,42 @@ internal sealed class OverloadResolver(Conversions conversions)
         return costs;
     }
 
-    private static bool Better(int[] a, int[] b) => a.Zip(b).All(p => p.First <= p.Second) && a.Zip(b).Any(p => p.First < p.Second);
+    /// <summary>
+    /// Dominance: not worse at any position, better at one. At equal cost 1 between two integer parameters (both widen the
+    /// argument, C-201 lead decision) the narrower parameter type is better, at equal size the signed one.
+    /// </summary>
+    private static bool Better(RoutineSymbol a, int[] aCosts, RoutineSymbol b, int[] bCosts)
+    {
+        var better = false;
+        for (var i = 0; i < aCosts.Length; i++)
+        {
+            var order = aCosts[i].CompareTo(bCosts[i]);
+            if (order == 0 && aCosts[i] == 1)
+            {
+                order = WideningOrder(a.Parameters[i].Type, b.Parameters[i].Type);
+            }
+
+            if (order > 0)
+            {
+                return false;
+            }
+
+            better |= order < 0;
+        }
+
+        return better;
+    }
+
+    /// <summary>-1 when integer target <paramref name="a"/> is the better widening target (narrower, else signed), 1 when <paramref name="b"/> is, else 0.</summary>
+    private static int WideningOrder(TypeSymbol a, TypeSymbol b)
+    {
+        if (a is not IntegerTypeSymbol x || b is not IntegerTypeSymbol y || ReferenceEquals(a, b))
+        {
+            return 0;
+        }
+
+        return x.Size != y.Size ? x.Size.CompareTo(y.Size) : x.IsSigned == y.IsSigned ? 0 : x.IsSigned ? -1 : 1;
+    }
 
     /// <summary>The LANG-442 cost table entry for passing <paramref name="argument"/> to <paramref name="parameter"/>; null = not applicable.</summary>
     public int? Cost(BoundExpression argument, ParameterSymbol parameter, Func<BoundExpression, bool> isVariable)

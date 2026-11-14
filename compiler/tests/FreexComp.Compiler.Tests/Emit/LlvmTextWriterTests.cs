@@ -85,6 +85,26 @@ public sealed class LlvmTextWriterTests
             """), text);
     }
 
+    /// <summary>C-199 (codegen.md lead decision): a <c>linkonce_odr</c> global carries its own COFF comdat, so lld-link folds copies.</summary>
+    [Fact]
+    [Trait("Req", "CMP-365")]
+    public void LinkOnceOdrGlobal_HasAComdat()
+    {
+        var text = Write(w =>
+        {
+            w.DefineGlobal(new(Pascal("System.string.$rtti"), IrLinkage.LinkOnceOdr, true, IrIntConstant.I32(9), 8));
+            w.DefineGlobal(new(Pascal("M.A"), IrLinkage.Internal, false, IrIntConstant.I32(5), 4));
+        });
+
+        Assert.Equal(Header + Lines("""
+
+            $"System.string.$rtti" = comdat any
+            @"System.string.$rtti" = linkonce_odr constant i32 9, comdat, align 8
+            @"M.A" = internal global i32 5, align 4
+
+            """), text);
+    }
+
     private static void DefineEmpty(IIrWriter w, string name, IrLinkage linkage)
     {
         w.BeginFunction(new(Pascal(name), linkage, IrType.Void, [], 0));
