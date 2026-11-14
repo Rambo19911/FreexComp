@@ -49,6 +49,9 @@ public sealed class KeymapService : IKeymapService
 
     public event EventHandler? Changed;
 
+    /// <summary>A UI-KEY-008 gesture that cannot be re-bound (<c>Alt+F4</c>, <c>Alt+Space</c>, <c>Ctrl+Alt+Delete</c>, <c>Ctrl+Escape</c>).</summary>
+    public static bool IsReserved(KeyGesture gesture) => Reserved.Contains(gesture);
+
     public Keymap Current { get; private set; }
 
     /// <summary>The most recently started save (tests await it after advancing the clock).</summary>
@@ -146,7 +149,9 @@ public sealed class KeymapService : IKeymapService
             throw new ArgumentException($"Unknown command id '{commandId}'.", nameof(commandId));
         }
 
-        if (gestures.FirstOrDefault(Reserved.Contains) is { Key: not null } reserved)
+        // A reserved default (file.exit's Alt+F4) may stay; it cannot be given to anything else.
+        var defaults = Defaults(commandId);
+        if (gestures.FirstOrDefault(g => Reserved.Contains(g) && !defaults.Contains(g)) is { Key: not null } reserved)
         {
             throw new ArgumentException($"{reserved} is reserved and cannot be assigned.", nameof(gestures));
         }

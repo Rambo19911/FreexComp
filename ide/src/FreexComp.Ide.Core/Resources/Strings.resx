@@ -3425,4 +3425,288 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Right margin</value>
     <comment>dialogs.md §9.4 element label</comment>
   </data>
+  <data name="Options_Page_KeyMappings" xml:space="preserve">
+    <value>Key Mappings</value>
+    <comment>dialogs.md §9.5 page title</comment>
+  </data>
+  <data name="Options_Tree_KeyMappings" xml:space="preserve">
+    <value>Key Mappings</value>
+    <comment>dialogs.md §9 page tree</comment>
+  </data>
+  <data name="Options_Keys_Filter" xml:space="preserve">
+    <value>Filter commands</value>
+    <comment>dialogs.md §9.5 Filter placeholder</comment>
+  </data>
+  <data name="Options_Keys_ByShortcut" xml:space="preserve">
+    <value>Search by _shortcut</value>
+    <comment>dialogs.md §9.5</comment>
+  </data>
+  <data name="Options_Keys_Command" xml:space="preserve">
+    <value>Command</value>
+    <comment>dialogs.md §9.5 column</comment>
+  </data>
+  <data name="Options_Keys_Shortcut" xml:space="preserve">
+    <value>Shortcut</value>
+    <comment>dialogs.md §9.5 column</comment>
+  </data>
+  <data name="Options_Keys_Scope" xml:space="preserve">
+    <value>Scope</value>
+    <comment>dialogs.md §9.5 column</comment>
+  </data>
+  <data name="Options_Keys_Commands" xml:space="preserve">
+    <value>Commands</value>
+    <comment>dialogs.md §9.5 grid accessible name</comment>
+  </data>
+  <data name="Options_Keys_CurrentFor" xml:space="preserve">
+    <value>Shortcuts for &quot;{0}&quot;:</value>
+    <comment>dialogs.md §9.5; 0 = command title</comment>
+  </data>
+  <data name="Options_Keys_Remove" xml:space="preserve">
+    <value>Remove {0}</value>
+    <comment>dialogs.md §9.5 chip × accessible name; 0 = gesture</comment>
+  </data>
+  <data name="Options_Keys_NewShortcut" xml:space="preserve">
+    <value>_Press new shortcut:</value>
+    <comment>dialogs.md §9.5</comment>
+  </data>
+  <data name="Options_Keys_Assign" xml:space="preserve">
+    <value>_Assign</value>
+    <comment>dialogs.md §9.5</comment>
+  </data>
+  <data name="Options_Keys_ResetCommand" xml:space="preserve">
+    <value>_Reset Command</value>
+    <comment>dialogs.md §9.5</comment>
+  </data>
+  <data name="Options_Keys_ResetAll" xml:space="preserve">
+    <value>Reset A_ll…</value>
+    <comment>dialogs.md §9.5</comment>
+  </data>
+  <data name="Options_Keys_Scope_Global" xml:space="preserve">
+    <value>Global</value>
+    <comment>commands.md §1 scope</comment>
+  </data>
+  <data name="Options_Keys_Scope_Editor" xml:space="preserve">
+    <value>Editor</value>
+    <comment>commands.md §1 scope</comment>
+  </data>
+  <data name="Options_Keys_Scope_Designer" xml:space="preserve">
+    <value>Designer</value>
+    <comment>commands.md §1 scope</comment>
+  </data>
+  <data name="Options_Keys_Scope_ProjectManager" xml:space="preserve">
+    <value>Project Manager</value>
+    <comment>commands.md §1 scope</comment>
+  </data>
+  <data name="Options_Keys_Scope_ToolList" xml:space="preserve">
+    <value>Tool window</value>
+    <comment>commands.md §1 scope</comment>
+  </data>
+  <data name="Options_Keys_Scope_Focus" xml:space="preserve">
+    <value>Focus</value>
+    <comment>commands.md §1 scope</comment>
+  </data>
+  <data name="CmdCategory_file" xml:space="preserve">
+    <value>File</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_edit" xml:space="preserve">
+    <value>Edit</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_refactor" xml:space="preserve">
+    <value>Refactor</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_search" xml:space="preserve">
+    <value>Search</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_view" xml:space="preserve">
+    <value>View</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_project" xml:space="preserve">
+    <value>Project</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_run" xml:space="preserve">
+    <value>Run</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_designer" xml:space="preserve">
+    <value>Designer</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_component" xml:space="preserve">
+    <value>Component</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_tools" xml:space="preserve">
+    <value>Tools</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_window" xml:space="preserve">
+    <value>Window</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_help" xml:space="preserve">
+    <value>Help</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_messages" xml:space="preserve">
+    <value>Messages</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_output" xml:space="preserve">
+    <value>Output</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_searchResults" xml:space="preserve">
+    <value>Search Results</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_projectManager" xml:space="preserve">
+    <value>Project Manager</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_structure" xml:space="preserve">
+    <value>Structure</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_breakpoints" xml:space="preserve">
+    <value>Breakpoints</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_callStack" xml:space="preserve">
+    <value>Call Stack</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_watches" xml:space="preserve">
+    <value>Watches</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_locals" xml:space="preserve">
+    <value>Local Variables</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_threads" xml:space="preserve">
+    <value>Threads</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_eventLog" xml:space="preserve">
+    <value>Event Log</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_objectInspector" xml:space="preserve">
+    <value>Object Inspector</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_toolPalette" xml:space="preserve">
+    <value>Tool Palette</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="CmdCategory_todo" xml:space="preserve">
+    <value>To-Do List</value>
+    <comment>command category display name</comment>
+  </data>
+  <data name="Options_Page_Environment_General" xml:space="preserve">
+    <value>Environment › General</value>
+    <comment>dialogs.md §9.6 page title</comment>
+  </data>
+  <data name="Options_Tree_Environment_General" xml:space="preserve">
+    <value>General</value>
+    <comment>dialogs.md §9 page tree</comment>
+  </data>
+  <data name="Options_Page_Environment_Files" xml:space="preserve">
+    <value>Environment › Files</value>
+    <comment>dialogs.md §9.7 page title</comment>
+  </data>
+  <data name="Options_Tree_Environment_Files" xml:space="preserve">
+    <value>Files</value>
+    <comment>dialogs.md §9 page tree</comment>
+  </data>
+  <data name="Options_Page_ToolchainPaths" xml:space="preserve">
+    <value>Toolchain Paths</value>
+    <comment>dialogs.md §9.9 page title</comment>
+  </data>
+  <data name="Options_Tree_ToolchainPaths" xml:space="preserve">
+    <value>Toolchain Paths</value>
+    <comment>dialogs.md §9 page tree</comment>
+  </data>
+  <data name="Options_Theme_System" xml:space="preserve">
+    <value>Follow system</value>
+    <comment>dialogs.md §9.6 Theme choice</comment>
+  </data>
+  <data name="Options_Group_Startup" xml:space="preserve">
+    <value>Start-up</value>
+    <comment>dialogs.md §9.6 group heading</comment>
+  </data>
+  <data name="Options_LineEnding_CrLf" xml:space="preserve">
+    <value>Windows (CRLF)</value>
+    <comment>dialogs.md §9.7 line-ending choice</comment>
+  </data>
+  <data name="Options_LineEnding_Lf" xml:space="preserve">
+    <value>Unix (LF)</value>
+    <comment>dialogs.md §9.7 line-ending choice</comment>
+  </data>
+  <data name="Options_Browse" xml:space="preserve">
+    <value>Browse</value>
+    <comment>path field Browse button accessible name and tooltip</comment>
+  </data>
+  <data name="Options_Field_Theme" xml:space="preserve">
+    <value>_Theme:</value>
+    <comment>dialogs.md §9.6</comment>
+  </data>
+  <data name="Options_Field_ShowFullPath" xml:space="preserve">
+    <value>Show full _path in title bar</value>
+    <comment>dialogs.md §9.6</comment>
+  </data>
+  <data name="Options_Field_ReopenLastProject" xml:space="preserve">
+    <value>_Reopen the last project at start-up</value>
+    <comment>dialogs.md §9.6</comment>
+  </data>
+  <data name="Options_Field_RestoreOpenFiles" xml:space="preserve">
+    <value>Restore _open files</value>
+    <comment>dialogs.md §9.6</comment>
+  </data>
+  <data name="Options_Field_ShowWelcome" xml:space="preserve">
+    <value>Show _Welcome page at start-up</value>
+    <comment>dialogs.md §9.6</comment>
+  </data>
+  <data name="Options_Field_DefaultProjectsDir" xml:space="preserve">
+    <value>_Default project folder:</value>
+    <comment>dialogs.md §9.6</comment>
+  </data>
+  <data name="Options_Field_DefaultEncoding" xml:space="preserve">
+    <value>_Encoding of new files:</value>
+    <comment>dialogs.md §9.7</comment>
+  </data>
+  <data name="Options_Field_DefaultLineEnding" xml:space="preserve">
+    <value>_Line endings of new files:</value>
+    <comment>dialogs.md §9.7</comment>
+  </data>
+  <data name="Options_Field_TrimTrailing" xml:space="preserve">
+    <value>_Trim trailing whitespace on save</value>
+    <comment>dialogs.md §9.7</comment>
+  </data>
+  <data name="Options_Field_FinalNewline" xml:space="preserve">
+    <value>End files with a line _break</value>
+    <comment>dialogs.md §9.7</comment>
+  </data>
+  <data name="Options_Field_DetectExternal" xml:space="preserve">
+    <value>_Detect changes made outside FreexComp</value>
+    <comment>dialogs.md §9.7</comment>
+  </data>
+  <data name="Options_Field_AutoReload" xml:space="preserve">
+    <value>_Reload unmodified files that change on disk</value>
+    <comment>dialogs.md §9.7</comment>
+  </data>
+  <data name="Options_Field_RecoveryInterval" xml:space="preserve">
+    <value>Save recovery copies e_very (seconds, 0 = off):</value>
+    <comment>dialogs.md §9.7</comment>
+  </data>
+  <data name="Options_Field_LargeFile" xml:space="preserve">
+    <value>Treat files lar_ger than (MB) as large:</value>
+    <comment>dialogs.md §9.7</comment>
+  </data>
 </root>

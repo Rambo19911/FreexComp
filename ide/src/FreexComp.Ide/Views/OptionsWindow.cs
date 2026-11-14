@@ -96,7 +96,12 @@ public sealed class OptionsWindow : DialogWindow
             else
             {
                 if (!built.TryGetValue(page, out var control))
-                    built[page] = control = page.Id == OptionsViewModel.ColorsPage ? ColorsPageView.Create(model.Colors) : CreatePage(page);
+                    built[page] = control = page.Id switch
+                    {
+                        OptionsViewModel.ColorsPage => ColorsPageView.Create(model.Colors),
+                        OptionsViewModel.KeyMappingsPage => KeyMappingsPageView.Create(model.KeyMappings),
+                        _ => CreatePage(model, page),
+                    };
                 control.IsEnabled = !page.IsLaterPhase;
                 content.Content = control;
             }
@@ -169,7 +174,7 @@ public sealed class OptionsWindow : DialogWindow
     }
 
     /// <summary>One page: label column, field column, reset column; check boxes span the first two columns.</summary>
-    private static Control CreatePage(OptionsPage page)
+    private static Control CreatePage(OptionsViewModel model, OptionsPage page)
     {
         var panel = new StackPanel { Margin = new Thickness(0, 0, 16, 0) }; // clear of the overlay scroll bar
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
@@ -204,12 +209,12 @@ public sealed class OptionsWindow : DialogWindow
             else
             {
                 AddRow(label, 0);
-                AddRow(editor, 1);
+                AddRow(field.Kind == OptionFieldKind.Path ? WithBrowse(model, field, editor) : editor, 1);
             }
 
             AddRow(CreateReset(field), 2);
             row++;
-            if (field.Kind == OptionFieldKind.Integer)
+            if (field.Kind is OptionFieldKind.Integer or OptionFieldKind.Path)
             {
                 AddRow(CreateError(field), 1, 2);
                 row++;
@@ -268,6 +273,23 @@ public sealed class OptionsWindow : DialogWindow
                 editor = number;
                 label = CreateLabel(field, number);
                 break;
+            case OptionFieldKind.Path:
+                var box = new TextBox { Text = field.Text, PlaceholderText = field.Placeholder, Margin = new Thickness(0, 2, 0, 2) };
+                box.TextChanged += (_, _) =>
+                {
+                    if (box.Text is { } text && text != field.Text)
+                        field.Text = text;
+                };
+                field.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(OptionField.Text) && box.Text != field.Text)
+                        box.Text = field.Text;
+                    else if (e.PropertyName == nameof(OptionField.Error))
+                        box.Classes.Set("invalid", field.Error is not null);
+                };
+                editor = box;
+                label = CreateLabel(field, box);
+                break;
             default:
                 var combo = new ComboBox
                 {
@@ -316,6 +338,27 @@ public sealed class OptionsWindow : DialogWindow
             }
         };
         return editor;
+    }
+
+    /// <summary>A path field with its Browse button (<c>&lt;Field&gt;.Browse</c>, dialogs.md §24.2) at the right.</summary>
+    private static Control WithBrowse(OptionsViewModel model, OptionField field, Control editor)
+    {
+        var browse = new Button { Content = "…", Margin = new Thickness(4, 2, 0, 2), VerticalAlignment = VerticalAlignment.Center, IsEnabled = field.IsEnabled };
+        browse.Bind(HeightProperty, browse.GetResourceObservable("FxcMetricButtonHeight"));
+        AutomationProperties.SetAutomationId(browse, Id(field.Id + ".Browse"));
+        AutomationProperties.SetName(browse, Strings.Options_Browse);
+        ToolTip.SetTip(browse, Strings.Options_Browse);
+        browse.Click += async (_, _) => await model.BrowseAsync(field);
+        field.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(OptionField.IsEnabled))
+                browse.IsEnabled = field.IsEnabled;
+        };
+        var panel = new DockPanel();
+        DockPanel.SetDock(browse, Avalonia.Controls.Dock.Right);
+        panel.Children.Add(browse);
+        panel.Children.Add(editor);
+        return panel;
     }
 
     /// <summary>A label whose mnemonic focuses <paramref name="target"/>; highlighted while it matches the filter.</summary>

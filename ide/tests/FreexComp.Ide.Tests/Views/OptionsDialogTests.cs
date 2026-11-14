@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AvaloniaEdit;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Settings;
@@ -56,6 +57,64 @@ public sealed class OptionsDialogTests
         ("RightMargin", "_Right margin column:", SettingsCatalog.EditorRightMargin, true),
     ];
 
+    /// <summary>dialogs.md §9.6, Phase 1 fields.</summary>
+    private static readonly (string Field, string Label, ISettingKey Key, bool Enabled)[] EnvironmentGeneralFields =
+    [
+        ("Theme", "_Theme:", SettingsCatalog.AppearanceTheme, true),
+        ("ShowFullPath", "Show full _path in title bar", SettingsCatalog.AppearanceShowFullPathInTitle, true),
+        ("ReopenLastProject", "_Reopen the last project at start-up", SettingsCatalog.EnvironmentReopenLastProject, true),
+        ("RestoreOpenFiles", "Restore _open files", SettingsCatalog.EnvironmentRestoreOpenFiles, true),
+        ("ShowWelcome", "Show _Welcome page at start-up", SettingsCatalog.EnvironmentShowWelcomeOnStartup, true),
+        ("DefaultProjectsDir", "_Default project folder:", SettingsCatalog.EnvironmentDefaultProjectsDir, true),
+    ];
+
+    /// <summary>dialogs.md §9.7 (all P1).</summary>
+    private static readonly (string Field, string Label, ISettingKey Key, bool Enabled)[] EnvironmentFilesFields =
+    [
+        ("DefaultEncoding", "_Encoding of new files:", SettingsCatalog.FilesDefaultEncoding, true),
+        ("DefaultLineEnding", "_Line endings of new files:", SettingsCatalog.FilesDefaultLineEnding, true),
+        ("TrimTrailing", "_Trim trailing whitespace on save", SettingsCatalog.FilesTrimTrailingWhitespaceOnSave, true),
+        ("FinalNewline", "End files with a line _break", SettingsCatalog.FilesEnsureFinalNewline, true),
+        ("DetectExternal", "_Detect changes made outside FreexComp", SettingsCatalog.FilesDetectExternalChanges, true),
+        ("AutoReload", "_Reload unmodified files that change on disk", SettingsCatalog.EnvironmentAutoReloadUnmodified, true),
+        ("RecoveryInterval", "Save recovery copies e_very (seconds, 0 = off):", SettingsCatalog.EnvironmentRecoveryIntervalSeconds, true),
+        ("LargeFile", "Treat files lar_ger than (MB) as large:", SettingsCatalog.FilesLargeFileThresholdMb, true),
+    ];
+
+    private static List<string> ChoiceTexts(DialogDriver dlg, string field) =>
+        [.. ((ComboBox)dlg.Find<Control>(field)).Items.Cast<OptionChoice>().Select(c => c.Display)];
+
+    /// <summary>Checks each field's control, label, key, value and enabled state against the settings.</summary>
+    private static void CheckFields(DialogDriver dlg, ISettingsService settings, (string Field, string Label, ISettingKey Key, bool Enabled)[] fields)
+    {
+        var model = (OptionsViewModel)dlg.Window.Model;
+        foreach (var (field, label, key, enabled) in fields)
+        {
+            Assert.Same(SettingsCatalog.All.Single(k => k.Name == key.Name), model.Field(field).Key);
+            var control = dlg.Find<Control>(field);
+            Assert.True(control.IsEffectivelyVisible, field);
+            Assert.Equal(enabled, control.IsEffectivelyEnabled);
+            Assert.Equal(label, LabelOf(dlg, field).Content);
+            switch (key)
+            {
+                case SettingKey<bool> b:
+                    Assert.Equal(settings.Get(b), ((CheckBox)control).IsChecked);
+                    break;
+                case SettingKey<int> i:
+                    Assert.Equal(settings.Get(i).ToString(System.Globalization.CultureInfo.InvariantCulture), FieldText(dlg, field));
+                    break;
+                case SettingKey<string> s when control is ComboBox combo:
+                    Assert.Equal(settings.Get(s), ((OptionChoice)combo.SelectedItem!).Value);
+                    break;
+                case SettingKey<string> s:
+                    Assert.Equal(settings.Get(s), ((TextBox)control).Text);
+                    break;
+            }
+
+            Assert.Equal(!settings.IsDefault(key.Name), dlg.TryFind<Button>(field + ".Reset")?.IsEffectivelyVisible == true);
+        }
+    }
+
     private static void SetText(DialogDriver dlg, string field, string text)
     {
         var control = dlg.Find<Control>(field);
@@ -106,7 +165,7 @@ public sealed class OptionsDialogTests
         Assert.Equal("Options", dlg.Window.Title);
         Assert.Equal((820.0, 580.0, true), (dlg.Window.Width, dlg.Window.Height, dlg.Window.CanResize));
         Assert.Equal((820.0, 580.0), (dlg.Window.MinWidth, dlg.Window.MinHeight));
-        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "Designer"], VisiblePages(dlg));
+        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "KeyMappings", "Environment", "Environment.General", "Environment.Files", "Designer", "ToolchainPaths"], VisiblePages(dlg));
         Assert.Equal("Editor › General", PageTitle(dlg)); // first time: Editor.General (UI-DLG-092)
         Assert.Equal("Dialog.Options.Filter", dlg.FocusedAutomationId);
 
@@ -231,9 +290,9 @@ public sealed class OptionsDialogTests
         Assert.True(IsHighlighted(dlg, "RightMargin"));
         Assert.False(IsHighlighted(dlg, "FontSize"));
 
-        // Several pages: "line" matches labels on both editor pages; the current page stays selected.
+        // Several pages: "line" matches labels on both editor pages and Environment › Files; the current page stays selected.
         SetText(dlg, "Filter", "line");
-        Assert.Equal(["Editor", "Editor.General", "Editor.Display"], VisiblePages(dlg));
+        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Environment", "Environment.Files"], VisiblePages(dlg));
         Assert.Equal("Editor › Display", PageTitle(dlg));
         Assert.True(IsHighlighted(dlg, "ShowLineNumbers"));
         Assert.True(IsHighlighted(dlg, "HighlightCurrentLine"));
@@ -256,7 +315,7 @@ public sealed class OptionsDialogTests
 
         // Cleared: every page is back, nothing is highlighted.
         SetText(dlg, "Filter", "");
-        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "Designer"], VisiblePages(dlg));
+        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "KeyMappings", "Environment", "Environment.General", "Environment.Files", "Designer", "ToolchainPaths"], VisiblePages(dlg));
         Assert.False(dlg.Find<TextBlock>("FilterEmpty").IsEffectivelyVisible);
         dlg.Click("Page.Editor.Display");
         Assert.False(IsHighlighted(dlg, "ShowLineNumbers"));
@@ -352,5 +411,96 @@ public sealed class OptionsDialogTests
         Assert.Equal(["editor.fontSize", "editor.showLineNumbers", "(batch)"], events);
         Assert.True(settings.IsDefault(SettingsCatalog.EditorShowLineNumbers.Name));
         Assert.Equal(gutter, probe.GutterWidth);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-090")]
+    [Trait("Req", "UI-DLG-093")]
+    [Trait("Req", "UI-DLG-094")]
+    public async Task EnvironmentPagesBindSettings()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light";
+            o.Settings["files.largeFileThresholdMb"] = 20;
+        });
+        var settings = h.Services.Settings;
+
+        var running = h.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+        var dlg = await h.WaitForDialogAsync("Options");
+        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Editor.CodeTemplates", "Colors", "KeyMappings", "Environment",
+            "Environment.General", "Environment.Files", "Designer", "ToolchainPaths"], VisiblePages(dlg));
+
+        // Environment › General: every P1 field bound to its key; the theme combo lists the three values.
+        Assert.Equal("Environment › General", PageTitle(dlg));
+        CheckFields(dlg, settings, EnvironmentGeneralFields);
+        Assert.Equal(["Follow system", "Light", "Dark"], ChoiceTexts(dlg, "Theme"));
+        Assert.Equal("Start-up", dlg.Window.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == "Start-up").Text);
+
+        // Default project folder: placeholder = the built-in default; a relative path is refused; Browse picks a folder.
+        var folder = dlg.Find<TextBox>("DefaultProjectsDir");
+        Assert.Equal(Path.Combine(h.Services.UserPaths.DocumentsDirectory, "FreexComp Projects"), folder.PlaceholderText);
+        SetText(dlg, "DefaultProjectsDir", @"relative\folder");
+        Assert.Equal("The folder path is not valid.", dlg.ErrorText("DefaultProjectsDir"));
+        Assert.False(dlg.Find<Button>("Ok").IsEnabled);
+        h.FileDialogs.NextFolder(h.TempDir);
+        dlg.Click("DefaultProjectsDir.Browse");
+        await h.WaitForAsync(() => folder.Text == h.TempDir, "folder picked");
+        Assert.Equal("folder.DefaultProjectsDir", h.FileDialogs.Requests.Last().PromptId);
+        Assert.Null(dlg.ErrorText("DefaultProjectsDir"));
+        Assert.True(dlg.Find<Button>("Ok").IsEnabled);
+
+        // Change the other fields in the UI.
+        ((ComboBox)dlg.Find<Control>("Theme")).SelectedIndex = 2; // Dark
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Core.Platform.ThemeKind.Light, h.Services.Theme.ActualTheme); // pending: not applied yet
+        foreach (var check in new[] { "ShowFullPath", "ReopenLastProject", "RestoreOpenFiles", "ShowWelcome" })
+            dlg.Click(check);
+
+        // Environment › Files: every field bound; Reload depends on Detect; the recovery interval is validated.
+        dlg.Click("Page.Environment.Files");
+        Assert.Equal("Environment › Files", PageTitle(dlg));
+        CheckFields(dlg, settings, EnvironmentFilesFields);
+        Assert.Equal(["UTF-8", "UTF-8 with BOM", "UTF-16 LE", "UTF-16 BE", "Western (Windows-1252)"], ChoiceTexts(dlg, "DefaultEncoding"));
+        Assert.Equal(["Windows (CRLF)", "Unix (LF)"], ChoiceTexts(dlg, "DefaultLineEnding"));
+        dlg.Click("AutoReload");
+        dlg.Click("DetectExternal");
+        Assert.False(dlg.Find<CheckBox>("AutoReload").IsEffectivelyEnabled);
+        SetText(dlg, "RecoveryInterval", "3");
+        Assert.Equal("Enter 0 to turn recovery copies off, or an interval from 5 to 600 seconds.", dlg.ErrorText("RecoveryInterval"));
+        SetText(dlg, "RecoveryInterval", "0");
+        Assert.Null(dlg.ErrorText("RecoveryInterval"));
+        SetText(dlg, "LargeFile", "201");
+        Assert.Equal("Enter a size from 1 to 200 MB.", dlg.ErrorText("LargeFile"));
+        SetText(dlg, "LargeFile", "50");
+        ((ComboBox)dlg.Find<Control>("DefaultEncoding")).SelectedIndex = 4;
+        ((ComboBox)dlg.Find<Control>("DefaultLineEnding")).SelectedIndex = 1;
+        Dispatcher.UIThread.RunJobs();
+        dlg.Click("TrimTrailing");
+        dlg.Click("FinalNewline");
+
+        // Toolchain Paths: Phase 3 page, shown with the later-version note.
+        dlg.Click("Page.ToolchainPaths");
+        Assert.Equal("Toolchain Paths", PageTitle(dlg));
+        Assert.True(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
+
+        // OK writes every changed key; the theme then applies.
+        dlg.Click("Ok");
+        await running;
+        Assert.Equal("dark", settings.Get(SettingsCatalog.AppearanceTheme));
+        Assert.Equal(Core.Platform.ThemeKind.Dark, h.Services.Theme.ActualTheme);
+        Assert.True(settings.Get(SettingsCatalog.AppearanceShowFullPathInTitle));
+        Assert.False(settings.Get(SettingsCatalog.EnvironmentReopenLastProject));
+        Assert.False(settings.Get(SettingsCatalog.EnvironmentRestoreOpenFiles));
+        Assert.True(settings.Get(SettingsCatalog.EnvironmentShowWelcomeOnStartup)); // preset false in the harness
+        Assert.Equal(h.TempDir, settings.Get(SettingsCatalog.EnvironmentDefaultProjectsDir));
+        Assert.Equal("windows-1252", settings.Get(SettingsCatalog.FilesDefaultEncoding));
+        Assert.Equal("lf", settings.Get(SettingsCatalog.FilesDefaultLineEnding));
+        Assert.True(settings.Get(SettingsCatalog.FilesTrimTrailingWhitespaceOnSave));
+        Assert.False(settings.Get(SettingsCatalog.FilesEnsureFinalNewline));
+        Assert.False(settings.Get(SettingsCatalog.FilesDetectExternalChanges));
+        Assert.False(settings.Get(SettingsCatalog.EnvironmentAutoReloadUnmodified));
+        Assert.Equal(0, settings.Get(SettingsCatalog.EnvironmentRecoveryIntervalSeconds));
+        Assert.Equal(50, settings.Get(SettingsCatalog.FilesLargeFileThresholdMb));
     }
 }

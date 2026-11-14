@@ -16,6 +16,9 @@ public enum OptionFieldKind
 
     /// <summary>Combo of a <c>string</c> key; the entries are <see cref="OptionField.Choices"/>.</summary>
     Choice,
+
+    /// <summary>Folder text field with a Browse button of a <c>string</c> key; typed text is checked by <see cref="OptionField.TextValidator"/>.</summary>
+    Path,
 }
 
 /// <summary>One entry of a combo field: the stored value and its display text.</summary>
@@ -67,6 +70,12 @@ public sealed class OptionField : ObservableObject
     /// <summary>Id of a check-box field that must be checked for this field to be enabled, or null.</summary>
     public string? EnabledBy { get; init; }
 
+    /// <summary>A <see cref="OptionFieldKind.Path"/> field: true for an acceptable text (it becomes the value).</summary>
+    public Func<string, bool>? TextValidator { get; init; }
+
+    /// <summary>Placeholder of a <see cref="OptionFieldKind.Path"/> field (shown while it is empty).</summary>
+    public string? Placeholder { get; init; }
+
     /// <summary>The combo entries of a <see cref="OptionFieldKind.Choice"/> field.</summary>
     public System.Collections.ObjectModel.ObservableCollection<OptionChoice> Choices { get; } = [];
 
@@ -93,7 +102,7 @@ public sealed class OptionField : ObservableObject
         }
     }
 
-    /// <summary>The integer field's text; a valid number in range becomes <see cref="Value"/>.</summary>
+    /// <summary>The integer or path field's text; a valid number in range (a valid path) becomes <see cref="Value"/>.</summary>
     public string Text
     {
         get => _text;
@@ -102,12 +111,17 @@ public sealed class OptionField : ObservableObject
             ArgumentNullException.ThrowIfNull(value);
             if (!SetProperty(ref _text, value))
                 return;
-            if (Kind == OptionFieldKind.Integer
-                && int.TryParse(value.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number)
-                && Key.IsValid(number))
+            object? parsed = Kind switch
             {
-                var changed = !SettingValues.AreEqual(_value, number);
-                _value = number;
+                OptionFieldKind.Integer when int.TryParse(value.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number)
+                    && Key.IsValid(number) => number,
+                OptionFieldKind.Path when TextValidator?.Invoke(value) != false => value,
+                _ => null,
+            };
+            if (parsed is not null)
+            {
+                var changed = !SettingValues.AreEqual(_value, parsed);
+                _value = parsed;
                 Error = null;
                 if (changed)
                     OnPropertyChanged(nameof(Value));
@@ -153,7 +167,9 @@ public sealed class OptionField : ObservableObject
     private string DefaultText => Key.DefaultValue switch
     {
         bool b => b ? Strings.Options_On : Strings.Options_Off,
-        "" when Kind == OptionFieldKind.Choice => Strings.Options_DefaultChoice,
+        "" when Kind == OptionFieldKind.Choice => Choices.FirstOrDefault(c => c.Value.Length == 0)?.Display ?? Strings.Options_DefaultChoice,
+        string s when Kind == OptionFieldKind.Choice && Choices.FirstOrDefault(c => c.Value == s) is { } choice => choice.Display,
+        "" when Kind == OptionFieldKind.Path => Placeholder ?? "",
         var v => Format(v),
     };
 

@@ -95,6 +95,10 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     public const string EditorGeneralPage = "Editor.General";
     public const string EditorDisplayPage = "Editor.Display";
     public const string ColorsPage = "Colors";
+    public const string KeyMappingsPage = "KeyMappings";
+    public const string EnvironmentGeneralPage = "Environment.General";
+    public const string EnvironmentFilesPage = "Environment.Files";
+    public const string ToolchainPathsPage = "ToolchainPaths";
 
     /// <summary>UI-DLG-096: the fixed Pascal sample of the previews (Editor › Display shows the first 6 lines).</summary>
     public static readonly IReadOnlyList<string> PreviewSample =
@@ -113,6 +117,8 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
 
     private readonly ISettingsService _settings;
     private readonly ILayoutService _layout;
+    private readonly IKeymapService _keymap;
+    private readonly FilePrompts _prompts;
     private readonly int _implementedPhase;
     private readonly Dictionary<string, OptionField> _fields = new(StringComparer.Ordinal);
     private OptionsPage? _selectedPage;
@@ -122,13 +128,17 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// <param name="pageId">The page to open (a <c>tools.options</c> argument); null = the page last shown.</param>
     /// <param name="implementedPhase">Pages and fields of later phases are shown disabled.</param>
     /// <param name="actualTheme">The theme in effect: the Colors page edits its set first.</param>
-    public OptionsViewModel(ISettingsService settings, ILayoutService layout, IDialogService dialogs, ThemeKind actualTheme, string? pageId,
-        int implementedPhase)
+    public OptionsViewModel(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
+        ThemeKind actualTheme, string? pageId, int implementedPhase)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(keymap);
+        ArgumentNullException.ThrowIfNull(prompts);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(dialogs);
         _settings = settings;
+        _keymap = keymap;
+        _prompts = prompts;
         _layout = layout;
         _implementedPhase = implementedPhase;
 
@@ -171,15 +181,46 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         var templates = Page("Editor.CodeTemplates", 3, []);
         Colors = new ColorsPageViewModel(settings, dialogs, actualTheme);
         var colors = new OptionsPage(ColorsPage, Strings.Options_Page_Colors, Strings.Options_Tree_Colors, 1, []) { OtherLabels = ColorsPageViewModel.FieldLabels };
+        KeyMappings = new KeyMappingsPageViewModel(keymap, dialogs, implementedPhase);
+        var keys = new OptionsPage(KeyMappingsPage, Strings.Options_Page_KeyMappings, Strings.Options_Tree_KeyMappings, 1, [])
+        {
+            OtherLabels = KeyMappingsPageViewModel.FieldLabels,
+        };
+        // dialogs.md §9.6 / §9.7: the Phase 1 fields (later groups join with their phases).
+        var environmentGeneral = Page(EnvironmentGeneralPage, 1,
+        [
+            FixedChoice("Theme", SettingsCatalog.AppearanceTheme, 1,
+                ("system", Strings.Options_Theme_System), ("light", Strings.Options_Theme_Light), ("dark", Strings.Options_Theme_Dark)),
+            Check("ShowFullPath", SettingsCatalog.AppearanceShowFullPathInTitle, 1),
+            Check("ReopenLastProject", SettingsCatalog.EnvironmentReopenLastProject, 1, Strings.Options_Group_Startup),
+            Check("RestoreOpenFiles", SettingsCatalog.EnvironmentRestoreOpenFiles, 1),
+            Check("ShowWelcome", SettingsCatalog.EnvironmentShowWelcomeOnStartup, 1),
+            FolderPath("DefaultProjectsDir", SettingsCatalog.EnvironmentDefaultProjectsDir, 1, prompts.BuiltInProjectsDirectory),
+        ]);
+        var environmentFiles = Page(EnvironmentFilesPage, 1,
+        [
+            FixedChoice("DefaultEncoding", SettingsCatalog.FilesDefaultEncoding, 1,
+                [.. new[] { "utf-8", "utf-8-bom", "utf-16le", "utf-16be", "windows-1252" }.Select(v => (v, Resource("Encoding_" + v.Replace('-', '_'))))]),
+            FixedChoice("DefaultLineEnding", SettingsCatalog.FilesDefaultLineEnding, 1,
+                ("crlf", Strings.Options_LineEnding_CrLf), ("lf", Strings.Options_LineEnding_Lf)),
+            Check("TrimTrailing", SettingsCatalog.FilesTrimTrailingWhitespaceOnSave, 1),
+            Check("FinalNewline", SettingsCatalog.FilesEnsureFinalNewline, 1),
+            Check("DetectExternal", SettingsCatalog.FilesDetectExternalChanges, 1),
+            Check("AutoReload", SettingsCatalog.EnvironmentAutoReloadUnmodified, 1, enabledBy: "DetectExternal"),
+            Integer("RecoveryInterval", SettingsCatalog.EnvironmentRecoveryIntervalSeconds, 1, () => Strings.Msg_Options_RecoveryRange),
+            Integer("LargeFile", SettingsCatalog.FilesLargeFileThresholdMb, 1, () => Strings.Msg_Options_LargeFileRange),
+        ]);
         var designer = Page("Designer", 5, []);
-        Pages = [general, display, templates, colors, designer];
+        var toolchain = Page(ToolchainPathsPage, 3, []); // its keys are Phase 3 (settings.md §4); fields and validation: I-093
+        Pages = [general, display, templates, colors, keys, environmentGeneral, environmentFiles, designer, toolchain];
         foreach (var page in Pages)
         {
             page.IsLaterPhase = page.Phase > implementedPhase;
         }
 
-        Rows = BuildRows([("Editor", [general, display, templates]), (null, [colors, designer])]);
+        Rows = BuildRows([("Editor", [general, display, templates]), (null, [colors, keys]), ("Environment", [environmentGeneral, environmentFiles]), (null, [designer, toolchain])]);
         Colors.PendingChanged += (_, _) => Update();
+        KeyMappings.PendingChanged += (_, _) => Update();
         Colors.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ColorsPageViewModel.ColorError))
@@ -249,6 +290,9 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// <summary>The Colors page (dialogs.md §9.4).</summary>
     public ColorsPageViewModel Colors { get; }
 
+    /// <summary>The Key Mappings page (dialogs.md §9.5).</summary>
+    public KeyMappingsPageViewModel KeyMappings { get; }
+
     /// <summary>The page tree in display order: group rows followed by their pages.</summary>
     public IReadOnlyList<OptionsTreeRow> Rows { get; }
 
@@ -283,19 +327,23 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     }
 
     /// <summary>True while a pending value differs from its setting.</summary>
-    public bool HasChanges => Colors.HasChanges || _fields.Values.Any(f => !SettingValues.AreEqual(f.Value, Read(f.Key)));
+    public bool HasChanges => Colors.HasChanges || KeyMappings.HasChanges || _fields.Values.Any(f => !SettingValues.AreEqual(f.Value, Read(f.Key)));
 
     public bool HasErrors => Colors.HasErrors || _fields.Values.Any(f => f.Error is not null);
 
     /// <exception cref="KeyNotFoundException">Unknown field id.</exception>
     public OptionField Field(string id) => _fields[id];
 
-    /// <summary>Registers <c>tools.options</c> (optional argument: the page id to open, e.g. from status-bar field R5).</summary>
-    public static void RegisterCommands(ICommandService commands, ISettingsService settings, ILayoutService layout, IDialogService dialogs,
-        IThemeService theme, int implementedPhase)
+    /// <summary>
+    /// Registers <c>tools.options</c> (optional argument: the page id to open, e.g. from status-bar field R5) and
+    /// <c>tools.keyMappings</c> (opens the Key Mappings page, UI-DLG-092).
+    /// </summary>
+    public static void RegisterCommands(ICommandService commands, ISettingsService settings, IKeymapService keymap, ILayoutService layout,
+        IDialogService dialogs, FilePrompts prompts, IThemeService theme, int implementedPhase)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("tools.options", new OpenHandler(settings, layout, dialogs, theme, implementedPhase));
+        commands.RegisterHandler("tools.options", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, null));
+        commands.RegisterHandler("tools.keyMappings", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, KeyMappingsPage));
     }
 
     /// <summary>A row was selected: a group selects its first visible page (UI-DLG-090).</summary>
@@ -305,6 +353,14 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         var page = row.Page ?? row.Children.FirstOrDefault(c => c.IsVisible)?.Page;
         if (page is not null && page.IsVisible)
             SelectedPage = page;
+    }
+
+    /// <summary>A path field's Browse button: the folder picker (<c>folder.&lt;fieldId&gt;</c>); a picked folder becomes the value.</summary>
+    public async Task BrowseAsync(OptionField field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        if (await _prompts.PickFolderAsync(field.Id, (string)field.Value) is { } folder)
+            field.Value = folder;
     }
 
     /// <summary>The installed monospaced font families (from the view; the toolkit's font list is a view concern).</summary>
@@ -330,7 +386,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         if (HasErrors)
             return;
         var changed = _fields.Values.Where(f => !SettingValues.AreEqual(f.Value, Read(f.Key))).ToList();
-        if (changed.Count == 0 && !Colors.HasChanges)
+        if (changed.Count == 0 && !Colors.HasChanges && !KeyMappings.HasChanges)
             return;
         using (_settings.BeginBatch())
         {
@@ -342,8 +398,10 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Colors.Apply();
         }
 
+        KeyMappings.Apply(); // key-map changes go through IKeymapService (UI-DLG-093)
         Update();
         await _settings.FlushAsync();
+        await _keymap.FlushAsync();
     }
 
     private async Task OkAsync()
@@ -449,8 +507,28 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         return new OptionsPage(id, Resource("Options_Page_" + key), Resource("Options_Tree_" + key), phase, fields);
     }
 
-    private OptionField Check(string id, SettingKey<bool> key, int phase, string? heading = null) =>
-        new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Check, _settings.Get(key), phase, null) { GroupHeading = heading };
+    private OptionField Check(string id, SettingKey<bool> key, int phase, string? heading = null, string? enabledBy = null) =>
+        new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Check, _settings.Get(key), phase, null) { GroupHeading = heading, EnabledBy = enabledBy };
+
+    /// <summary>A combo with a fixed list of stored values and their display texts.</summary>
+    private OptionField FixedChoice(string id, SettingKey<string> key, int phase, params (string Value, string Display)[] choices)
+    {
+        var field = new OptionField(id, Resource("Options_Field_" + id), key, OptionFieldKind.Choice, _settings.Get(key), phase, null);
+        foreach (var (value, display) in choices)
+        {
+            field.Choices.Add(new OptionChoice(value, display));
+        }
+
+        return field;
+    }
+
+    /// <summary>A folder field: empty or an absolute valid path (else <c>Msg.Project.LocationInvalid</c>), with Browse.</summary>
+    private OptionField FolderPath(string id, SettingKey<string> key, int phase, string placeholder) =>
+        new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Path, _settings.Get(key), phase, () => Strings.Msg_Project_LocationInvalid)
+        {
+            Placeholder = placeholder,
+            TextValidator = text => text.Length == 0 || Projects.NewProjectValidation.NormalizeLocation(text) is not null,
+        };
 
     private OptionField Integer(string id, SettingKey<int> key, int phase, Func<string> rangeMessage, string? enabledBy = null) =>
         new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Integer, _settings.Get(key), phase, rangeMessage) { EnabledBy = enabledBy };
@@ -470,12 +548,12 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     private static string Resource(string name) =>
         Strings.ResourceManager.GetString(name, CultureInfo.CurrentCulture) ?? throw new InvalidOperationException($"Missing resource {name}.");
 
-    private sealed class OpenHandler(ISettingsService settings, ILayoutService layout, IDialogService dialogs, IThemeService theme, int implementedPhase)
-        : ICommandHandler
+    private sealed class OpenHandler(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
+        IThemeService theme, int implementedPhase, string? fixedPage) : ICommandHandler
     {
         public bool CanExecute(string? argument) => true;
 
         public Task ExecuteAsync(string? argument) =>
-            dialogs.ShowAsync(new OptionsViewModel(settings, layout, dialogs, theme.ActualTheme, argument, implementedPhase));
+            dialogs.ShowAsync(new OptionsViewModel(settings, keymap, layout, dialogs, prompts, theme.ActualTheme, fixedPage ?? argument, implementedPhase));
     }
 }
