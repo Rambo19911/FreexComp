@@ -22,7 +22,14 @@ public sealed class App : Application
             var platform = CompositionRoot.CreatePlatform(options, () => window);
             Services = CompositionRoot.Build(options, platform);
             window = CompositionRoot.CreateMainWindow(Services);
-            desktop.Exit += (_, _) => (platform.Log as IDisposable)?.Dispose();
+            var services = Services;
+            window.Opened += (_, _) => _ = services.Recovery.RecoverAsync(); // step 9 (IDE-P1-123)
+            desktop.Exit += (_, _) =>
+            {
+                // IDE-P1-122: a normal exit leaves no recovery folder (the queue runs on the thread pool, so this cannot deadlock).
+                services.Recovery.DeleteInstanceDirectoryAsync().GetAwaiter().GetResult();
+                (platform.Log as IDisposable)?.Dispose();
+            };
             desktop.MainWindow = window;
         }
 

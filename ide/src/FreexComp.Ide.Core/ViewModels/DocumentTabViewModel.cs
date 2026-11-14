@@ -37,6 +37,9 @@ public sealed class DocumentTabViewModel : ObservableObject
                     OnPropertyChanged(nameof(IsReadOnly));
                     OnPropertyChanged(nameof(ToolTip));
                     break;
+                case nameof(DocumentViewModel.IsDeletedOnDisk):
+                    OnPropertyChanged(nameof(IsDeletedOnDisk));
+                    break;
             }
         };
     }
@@ -71,6 +74,9 @@ public sealed class DocumentTabViewModel : ObservableObject
     public bool IsModified => Document.IsModified;
 
     public bool IsReadOnly => Document.IsReadOnly;
+
+    /// <summary>UI-ED-074: the file was deleted on disk; the title is drawn struck through.</summary>
+    public bool IsDeletedOnDisk => Document.IsDeletedOnDisk;
 
     public bool IsActive
     {

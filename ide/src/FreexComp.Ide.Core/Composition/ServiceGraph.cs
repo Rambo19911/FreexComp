@@ -63,6 +63,11 @@ public static class ServiceGraph
         documents.Clipboard = platform.Clipboard;
         documents.RegisterCommands(commands);
         KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
+        var fileChanges = new FileChangeService(documents, platform.FileSystem, platform.FileWatchers, platform.Clock, platform.Dispatcher,
+            settings, status, platform.Log, commands);
+        documents.WriteGuard = fileChanges.BeginOwnWrite;
+        var recovery = new RecoveryService(documents, platform.FileSystem, platform.UserPaths, platform.Clock, settings, platform.Log,
+            safeMode: options.Arguments.Any(a => string.Equals(a, "--safe", StringComparison.OrdinalIgnoreCase))); // IDE-P1-012
         var find = new FindService(layout, status, platform.Clock, documents);
         find.RegisterCommands(commands);
         var navigation = new NavigationService(documents, platform.Dialogs, status, platform.FileSystem);
@@ -144,6 +149,8 @@ public static class ServiceGraph
             Languages = languages,
             FilePrompts = prompts,
             Documents = documents,
+            FileChanges = fileChanges,
+            Recovery = recovery,
             Projects = projects,
             Session = session,
             RecentItems = recent,

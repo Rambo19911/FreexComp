@@ -55,6 +55,12 @@ public interface IDocumentService
     TextDocumentViewModel NewUntitledUnit();
 
     /// <summary>
+    /// An untitled document named <paramref name="name"/> holding <paramref name="text"/> (a recovered copy,
+    /// IDE-P1-123), opened and activated; like every untitled document it is modified.
+    /// </summary>
+    TextDocumentViewModel OpenUntitled(string name, string text, Text.FileEncoding encoding, Services.LineEndingKind lineEnding);
+
+    /// <summary>
     /// <c>view.welcomePage</c> (IDE-WEL-020): activates the open Welcome page, else opens it as a new tab. Never part of
     /// a session.
     /// </summary>

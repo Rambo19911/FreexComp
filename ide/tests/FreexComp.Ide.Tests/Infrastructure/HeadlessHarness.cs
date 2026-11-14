@@ -46,6 +46,12 @@ public sealed class HarnessOptions
     public List<Core.ToolWindows.ToolWindowDefinition> ToolWindows { get; } = [];
 
     public double Scale { get; set; } = 1.0;
+
+    /// <summary>
+    /// Watch with the real <c>FileSystemWatcher</c> (<see cref="FileSystemWatcherFactory"/>) instead of the manual one;
+    /// <see cref="HeadlessHarness.WriteFileExternally"/> then raises nothing itself.
+    /// </summary>
+    public bool RealFileWatchers { get; set; }
 }
 
 /// <summary>Thrown by <see cref="HeadlessHarness.DisposeAsync"/> when a test left a failure behind (IDE-TEST-014).</summary>
@@ -64,6 +70,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
     private readonly int _bindingErrorStart;
     private readonly RecordingLog _log;
     private readonly ManualFileWatcherFactory _watchers;
+    private readonly bool _realWatchers;
     private readonly List<string> _unhandled = [];
     private MainWindow? _window;
     private bool _errorExpected;
@@ -85,6 +92,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
         Messages = new MessageScript(new WindowDialogService(() => _window, clipboard));
         _log = new RecordingLog();
         _watchers = new ManualFileWatcherFactory();
+        _realWatchers = options.RealFileWatchers;
         FileDialogs = new FakeFileDialogService();
 
         Dispatcher.UIThread.UnhandledException += OnUnhandledException;
@@ -97,7 +105,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.FileDialogs = FileDialogs;
             o.Clipboard = clipboard;
             o.Log = _log;
-            o.FileWatchers = _watchers;
+            o.FileWatchers = options.RealFileWatchers ? new FileSystemWatcherFactory() : _watchers;
             o.UserDir = UserDir;
             o.ThemeHost = new AvaloniaThemeHost(Application.Current!);
             o.TextBuffers = new AvaloniaEditTextBufferFactory();
@@ -247,9 +255,10 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
     /// <summary>
     /// Loops { run dispatcher jobs; advance the clock 10 ms; yield } until <paramref name="condition"/> holds, for at
-    /// most 5 s of wall time (IDE-TEST-013).
+    /// most 5 s of wall time (IDE-TEST-013), or <paramref name="limit"/> when the condition waits for the OS (a real
+    /// file watcher).
     /// </summary>
-    public async Task WaitForAsync(Func<bool> condition, string description)
+    public async Task WaitForAsync(Func<bool> condition, string description, TimeSpan? limit = null)
     {
         var watch = Stopwatch.StartNew();
         while (true)
@@ -260,7 +269,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
                 return;
             }
 
-            if (watch.Elapsed > WaitLimit)
+            if (watch.Elapsed > (limit ?? WaitLimit))
             {
                 throw new HarnessAssertionException($"Timed out waiting for: {description}");
             }
@@ -289,7 +298,11 @@ public sealed class HeadlessHarness : IAsyncDisposable
         var existed = File.Exists(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
-        _watchers.Raise(new FileChange(existed ? FileChangeKind.Changed : FileChangeKind.Created, path));
+        if (!_realWatchers)
+        {
+            _watchers.Raise(new FileChange(existed ? FileChangeKind.Changed : FileChangeKind.Created, path));
+        }
+
         Dispatcher.UIThread.RunJobs();
     }
 

@@ -107,6 +107,9 @@ public sealed class MainWindowViewModel : ObservableObject
     /// <summary>The focused element's own command state changed (e.g. a TextBox selection): re-query CanExecute.</summary>
     public void InvalidateCommands() => _services.Commands.InvalidateCanExecute();
 
+    /// <summary>IDE-P1-110 (b): the main window was activated; every open file is re-checked for external changes.</summary>
+    public void OnActivated() => _services.FileChanges.CheckAll();
+
     /// <summary>UI-WIN-052/053: where the window opens, given the work areas of the current monitors (DIP).</summary>
     public WindowPlacement RestorePlacement(IReadOnlyList<WorkArea> workAreas, WorkArea primary) =>
         WindowPlacementRules.Restore(_services.Layout.WindowPlacement, workAreas, primary);

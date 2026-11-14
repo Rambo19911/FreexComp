@@ -18,8 +18,12 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     public const string EncodingInfoBarKind = "Encoding";
     public const string MixedLineEndingsInfoBarKind = "MixedLineEndings";
     public const string ReadOnlyInfoBarKind = "ReadOnly";
+    public const string ExternalChangeInfoBarKind = "ExternalChange";
+    public const string ExternalDeleteInfoBarKind = "ExternalDelete";
+    public const string RecoveredInfoBarKind = "Recovered";
 
     private string? _filePath;
+    private bool _forcedModified;
     private readonly string? _untitledName;
     private ILanguageDefinition _language;
     private FileEncoding _encoding;
@@ -157,7 +161,25 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// An untitled document is always modified (IDE-P1-033).
     /// </summary>
     public override bool IsModified =>
-        _filePath is null || !Buffer.IsAtSavePoint || _encoding != _savedEncoding || LineEnding.Kind != _savedLineEnding;
+        _filePath is null || _forcedModified || !Buffer.IsAtSavePoint || _encoding != _savedEncoding || LineEnding.Kind != _savedLineEnding;
+
+    /// <summary>
+    /// The file as last loaded, saved or reloaded (IDE-P1-110); null when unknown (untitled, or the file could not be
+    /// examined after a save). Kept by the document and file-change services.
+    /// </summary>
+    internal Models.DiskStamp? DiskStamp { get; set; }
+
+    /// <summary>
+    /// Marks the document modified without changing its text (Keep in Editor of a deleted file, IDE-P1-115; a recovered
+    /// copy, IDE-P1-123) until it is saved or reloaded.
+    /// </summary>
+    internal void MarkModified()
+    {
+        if (_forcedModified)
+            return;
+        _forcedModified = true;
+        OnPropertyChanged(nameof(IsModified));
+    }
 
     public override bool IsReadOnly => Buffer.IsReadOnly;
 
@@ -305,6 +327,10 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
         _savedEncoding = _encoding;
         _savedLineEnding = LineEnding.Kind;
+        _forcedModified = false;
+        // The text is the disk version now: bars about another version are obsolete (IDE-P1-114, IDE-P1-123).
+        RemoveInfoBar(ExternalChangeInfoBarKind);
+        RemoveInfoBar(RecoveredInfoBarKind);
         _lineChangeTracker.Reset(); // IDE-ED-045
         ForgetSelections(); // the undo history is gone
         EndEdit(EditKind.None, whitespace: false);
@@ -380,6 +406,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _language = language;
         Buffer.MarkSavePoint();
         _lineChangeTracker.MarkSaved();
+        _forcedModified = false;
         _savedEncoding = _encoding;
         _savedLineEnding = LineEnding.Kind;
         if (renamed)

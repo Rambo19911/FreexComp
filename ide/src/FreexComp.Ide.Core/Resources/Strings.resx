@@ -2721,6 +2721,26 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Reload</value>
     <comment>UI-DLG-024: message-box button</comment>
   </data>
+  <data name="Button_ReloadAndDiscard" xml:space="preserve">
+    <value>Reload and Discard My Changes</value>
+    <comment>Msg.File.ExternalChangeDirty info-bar button (IDE-P1-114)</comment>
+  </data>
+  <data name="Button_KeepMyVersion" xml:space="preserve">
+    <value>Keep My Version</value>
+    <comment>Msg.File.ExternalChange / ExternalChangeDirty info-bar button (IDE-P1-113, IDE-P1-114)</comment>
+  </data>
+  <data name="Button_KeepInEditor" xml:space="preserve">
+    <value>Keep in Editor</value>
+    <comment>Msg.File.ExternalDelete info-bar button (IDE-P1-115)</comment>
+  </data>
+  <data name="Button_KeepRecovered" xml:space="preserve">
+    <value>Keep Recovered Version</value>
+    <comment>Msg.File.Recovered info-bar button (IDE-P1-123)</comment>
+  </data>
+  <data name="Button_DiscardAndReload" xml:space="preserve">
+    <value>Discard and Reload from Disk</value>
+    <comment>Msg.File.Recovered info-bar button (IDE-P1-123)</comment>
+  </data>
   <data name="Button_OpenOptions" xml:space="preserve">
     <value>Open Options</value>
     <comment>UI-DLG-024: message-box button</comment>

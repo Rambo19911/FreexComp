@@ -46,6 +46,8 @@ public sealed record IdeServices
     public required ILanguageRegistry Languages { get; init; }
     public required FilePrompts FilePrompts { get; init; }
     public required IDocumentService Documents { get; init; }
+    public required IFileChangeService FileChanges { get; init; }
+    public required IRecoveryService Recovery { get; init; }
     public required IProjectService Projects { get; init; }
     public required ISessionService Session { get; init; }
     public required IRecentItemsService RecentItems { get; init; }

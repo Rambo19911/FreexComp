@@ -136,6 +136,7 @@ public sealed class DocumentTabView : Border
         if (this.TryFindResource("FxcMetricDocumentTabPadding", out var padding) && padding is double horizontal)
             _padding.Padding = new Thickness(horizontal, 0);
         _title.Text = tab.Title;
+        _title.TextDecorations = tab.IsDeletedOnDisk ? TextDecorations.Strikethrough : null; // UI-ED-074
         _suffix.Text = tab.Suffix;
         _suffix.IsVisible = tab.Suffix is not null;
         _lock.IsVisible = tab.IsReadOnly;

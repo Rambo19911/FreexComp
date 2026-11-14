@@ -32,6 +32,18 @@ public abstract class DocumentViewModel : ObservableObject
 
     public abstract bool IsReadOnly { get; }
 
+    private bool _isDeletedOnDisk;
+
+    /// <summary>
+    /// The document's file was deleted or moved away outside the IDE (IDE-P1-115): the tab title is drawn struck through
+    /// (UI-ED-074). Set by the file-change service; cleared when the file is back or saved again.
+    /// </summary>
+    public bool IsDeletedOnDisk
+    {
+        get => _isDeletedOnDisk;
+        internal set => SetProperty(ref _isDeletedOnDisk, value);
+    }
+
     public virtual bool CanClose => true;
 
     /// <summary>At most this many info bars are visible; further ones queue (UI-ED-092).</summary>

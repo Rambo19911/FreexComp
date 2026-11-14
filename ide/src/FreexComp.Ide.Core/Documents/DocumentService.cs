@@ -82,6 +82,12 @@ public sealed class DocumentService : IDocumentService
     /// <summary>The OS clipboard of the documents' clipboard commands (IDE-ED-038; set by the service graph).</summary>
     public IClipboardService? Clipboard { get; set; }
 
+    /// <summary>
+    /// IDE-P1-086: called before a document's file is written, disposed on the UI thread after the new stamp is recorded
+    /// (the file-change service; set by the service graph).
+    /// </summary>
+    public Func<string, IDisposable>? WriteGuard { get; set; }
+
     /// <summary>Creates the Welcome page (welcome-page.md; set by the service graph).</summary>
     public Func<WelcomeDocumentViewModel>? WelcomeFactory { get; set; }
 
@@ -202,6 +208,15 @@ public sealed class DocumentService : IDocumentService
         var lineEnding = DefaultLineEnding;
         var buffer = _buffers.Create(UnitSkeleton(Path.GetFileNameWithoutExtension(name), LineEndingDetector.NewLineText(lineEnding)), lineEnding);
         var document = new TextDocumentViewModel(buffer, null, name, _languages.ForPath(name), DefaultEncoding, lineEnding);
+        Add(document);
+        return document;
+    }
+
+    public TextDocumentViewModel OpenUntitled(string name, string text, FileEncoding encoding, LineEndingKind lineEnding)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(text);
+        var document = new TextDocumentViewModel(_buffers.Create(text, lineEnding), null, name, _languages.ForPath(name), encoding, lineEnding);
         Add(document);
         return document;
     }
@@ -363,25 +378,12 @@ public sealed class DocumentService : IDocumentService
         if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.RevertConfirm", [text.Title])) != "Revert")
             return false;
 
-        byte[] bytes;
-        try
-        {
-            bytes = await Task.Run(() => _fileSystem.ReadAllBytes(path)); // IDE-ARCH-081
-        }
-        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
-        {
-            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.NotFound", [path]));
+        if (await ReadForReopenAsync(path) is not { } read)
             return false;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.OpenFailed", [path, ex.Message]));
-            return false;
-        }
 
-        // Deleting the recovery copy (IDE-P1-122, I-063) and resetting line-change marks (IDE-ED-045) join with
-        // their services.
-        text.Reload(FileEncodings.Decode(bytes, text.Encoding));
+        // The recovery copy is deleted by the recovery service when the document becomes unmodified (IDE-P1-122).
+        text.Reload(FileEncodings.Decode(read.Bytes, text.Encoding));
+        text.DiskStamp = read.Stamp;
         _commands?.InvalidateCanExecute();
         return true;
     }
@@ -391,7 +393,7 @@ public sealed class DocumentService : IDocumentService
         ArgumentNullException.ThrowIfNull(document);
         if (document is not TextDocumentViewModel { FilePath: { } path } text)
             return false;
-        if (await ReadForReopenAsync(path) is not { } bytes)
+        if (await ReadForReopenAsync(path) is not { Bytes: var bytes })
             return false;
 
         var detected = EncodingDetector.Detect(bytes);
@@ -402,17 +404,26 @@ public sealed class DocumentService : IDocumentService
         // dialogs.md section 18: re-read at Reopen; invalid byte sequences become U+FFFD.
         if (await ReadForReopenAsync(path) is not { } current)
             return false;
-        text.ReloadWithEncoding(FileEncodings.Decode(current, chosen), chosen);
+        text.ReloadWithEncoding(FileEncodings.Decode(current.Bytes, chosen), chosen);
+        text.DiskStamp = current.Stamp;
         _commands?.InvalidateCanExecute();
         return true;
     }
 
-    /// <summary>The file's bytes, or null after <c>Msg.File.NotFound</c> / <c>Msg.File.OpenFailed</c>.</summary>
-    private async Task<byte[]?> ReadForReopenAsync(string path)
+    /// <summary>
+    /// The file's bytes and stamp (time taken before reading, IDE-P1-110), or null after <c>Msg.File.NotFound</c> /
+    /// <c>Msg.File.OpenFailed</c>.
+    /// </summary>
+    private async Task<(byte[] Bytes, DiskStamp Stamp)?> ReadForReopenAsync(string path)
     {
         try
         {
-            return await Task.Run(() => _fileSystem.ReadAllBytes(path)); // IDE-ARCH-081
+            return await Task.Run(() => // IDE-ARCH-081
+            {
+                var lastWrite = _fileSystem.GetLastWriteTimeUtc(path);
+                var bytes = _fileSystem.ReadAllBytes(path);
+                return ((byte[], DiskStamp)?)(bytes, DiskStamp.Of(lastWrite, bytes));
+            });
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -526,16 +537,22 @@ public sealed class DocumentService : IDocumentService
             return OperationResult.Fail("Msg.File.EncodingLossy", FileEncodings.DisplayName(document.Encoding));
 
         var bytes = FileEncodings.Encode(text, document.Encoding);
+        using var ownWrite = WriteGuard?.Invoke(fullPath); // IDE-P1-086: the watcher ignores our own write
         try
         {
-            await Task.Run(() => AtomicFileWriter.Write(_fileSystem, fullPath, bytes)); // IDE-ARCH-081: off the UI thread
+            // IDE-ARCH-081: off the UI thread. The new timestamp/size are recorded (IDE-P1-080 step 5).
+            document.DiskStamp = await Task.Run(() =>
+            {
+                AtomicFileWriter.Write(_fileSystem, fullPath, bytes);
+                return StampAfterWrite(fullPath, bytes);
+            });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return OperationResult.Fail("Msg.File.SaveFailed", fullPath, ex.Message);
         }
 
-        // Recording the file timestamp/size (I-062) and deleting the recovery copy (I-063) join with their services.
+        // The recovery copy is deleted by the recovery service on DocumentSaved (IDE-P1-080 step 5).
         document.MarkSaved(fullPath, document.IsLargeFile ? _languages.PlainText : _languages.ForPath(fullPath)); // IDE-P1-054
         document.SetReadOnly(false); // a read-only document saved under a new name now has a file we just wrote
         UpdateTitleSuffixes();
@@ -545,6 +562,19 @@ public sealed class DocumentService : IDocumentService
         _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_Saved, document.Title), StatusMessageDuration);
         _commands?.InvalidateCanExecute();
         return OperationResult.Ok;
+    }
+
+    /// <summary>The stamp of the file just written; null when it cannot be examined (the next check records it).</summary>
+    private DiskStamp? StampAfterWrite(string path, byte[] bytes)
+    {
+        try
+        {
+            return DiskStamp.Of(_fileSystem.GetLastWriteTimeUtc(path), bytes);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -595,6 +625,7 @@ public sealed class DocumentService : IDocumentService
     {
         EncodingDetection detection;
         bool writable;
+        DiskStamp stamp;
         var large = false;
         try
         {
@@ -608,9 +639,14 @@ public sealed class DocumentService : IDocumentService
                 large = true;
             }
 
-            // IDE-P1-040: the open-for-write probe.
-            (detection, writable) = await Task.Run(() =>
-                (EncodingDetector.Detect(_fileSystem.ReadAllBytes(fullPath)), _fileSystem.CanOpenForWrite(fullPath)));
+            // IDE-P1-040: the open-for-write probe. The time is taken before reading, so a write in between is seen
+            // as a change later rather than missed (IDE-P1-110).
+            (detection, writable, stamp) = await Task.Run(() =>
+            {
+                var lastWrite = _fileSystem.GetLastWriteTimeUtc(fullPath);
+                var bytes = _fileSystem.ReadAllBytes(fullPath);
+                return (EncodingDetector.Detect(bytes), _fileSystem.CanOpenForWrite(fullPath), DiskStamp.Of(lastWrite, bytes));
+            });
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -627,7 +663,7 @@ public sealed class DocumentService : IDocumentService
         var lineEnding = DefaultLineEnding;
         // IDE-P1-054: a large file is Plain Text (no highlighting, folding or bracket matching), word wrap off.
         var document = new TextDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, null,
-            large ? _languages.PlainText : _languages.ForPath(fullPath), detection.Encoding, lineEnding) { IsLargeFile = large };
+            large ? _languages.PlainText : _languages.ForPath(fullPath), detection.Encoding, lineEnding) { IsLargeFile = large, DiskStamp = stamp };
         document.ReopenWithEncodingHandler = () => ReopenWithEncodingAsync(document);
         document.ShowLoadInfoBars(detection.IsFallback);
         if (!writable)
