@@ -16,7 +16,7 @@ public sealed record EmitOptions
 {
     public EmitStage Stage { get; init; } = EmitStage.Exe;
 
-    /// <summary>"" → &lt;ObjectDirectory&gt;/../&lt;main&gt;.exe.</summary>
+    /// <summary>"" → &lt;directory of the main file&gt;\&lt;main&gt;.exe (api.md addendum C-044).</summary>
     public string OutputPath { get; init; } = "";
 
     public bool Verbose { get; init; }
@@ -213,7 +213,7 @@ public sealed class Compilation
         }
 
         var output = string.IsNullOrEmpty(options.OutputPath)
-            ? PathUtil.Normalize(Path.Combine(objectDirectory, "..", Path.GetFileNameWithoutExtension(mainPath) + ".exe"))
+            ? PathUtil.Normalize(Path.Combine(Path.GetDirectoryName(mainPath)!, Path.GetFileNameWithoutExtension(mainPath) + ".exe"))
             : PathUtil.Normalize(options.OutputPath);
         var linked = await new LinkInvoker(runner, toolchain.LldLink, FileSystem).LinkAsync(
             new LinkRequest(output, objectDirectory, objects)
@@ -221,6 +221,7 @@ public sealed class Compilation
                 AppType = Options.AppType,
                 DebugInfo = Options.DebugInfo,
                 DebugFormat = Options.DebugFormat,
+                ManifestPath = Options.Manifest is "" or "default" or "none" ? null : PathUtil.Normalize(Options.Manifest),   // default manifest: C-167
                 ImportLibraries = libraries.ToImmutable(),
                 ImportDefinitions = definitions.ToImmutableDictionary(StringComparer.Ordinal),
             },

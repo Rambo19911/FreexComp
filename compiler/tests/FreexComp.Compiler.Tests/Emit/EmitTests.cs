@@ -202,6 +202,26 @@ public sealed class EmitTests
         Assert.Equal(0, exitCode);
     }
 
+    [Fact]
+    [Trait("Category", "Toolchain")]
+    [Trait("Req", "CMP-627")]
+    public void DefaultOutputPath_IsTheMainFileNameNextToTheMainFile()
+    {
+        Assert.True(File.Exists(Clang.Path), $"Pinned toolchain missing: {Clang.Path} (run scripts/bootstrap.ps1).");
+        var dir = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
+        var main = PathUtil.Normalize(Path.Combine(dir, "EmptyProgram.pas"));
+        PhysicalFileSystem.Instance.WriteAllBytes(main, Encoding.UTF8.GetBytes(EmptyProgramSource));
+        var options = new CompilationOptions { MainFile = main, RtlDirectory = MiniRtl, ToolchainDirectory = Path.GetDirectoryName(Clang.Path)! };
+
+        var result = Compilation.Create(options, [], PhysicalFileSystem.Instance).Emit(new EmitOptions(), TestContext.Current.CancellationToken);
+
+        var exists = File.Exists(Path.Combine(dir, "EmptyProgram.exe"));
+        Directory.Delete(dir, recursive: true);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(Path.Combine(main[..main.LastIndexOf('\\')], "EmptyProgram.exe"), result.OutputPath);
+        Assert.True(exists);
+    }
+
     private static async Task<(int ExitCode, List<string> StdOut, List<string> StdErr)> BuildAndRun(
         string name, string source, OptimizationLevel optimization)
     {

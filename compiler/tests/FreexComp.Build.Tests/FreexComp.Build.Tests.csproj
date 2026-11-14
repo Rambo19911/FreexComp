@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\FreexComp.Build\FreexComp.Build.csproj" />
+    <ProjectReference Include="..\..\src\opc\opc.csproj" />
   </ItemGroup>
 </Project>

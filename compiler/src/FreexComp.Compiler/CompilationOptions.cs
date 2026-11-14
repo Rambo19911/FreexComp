@@ -51,4 +51,31 @@ public sealed record CompilationOptions
 
     /// <summary>CMP-154.</summary>
     public bool UsePcuCache { get; init; } = true;
+
+    /// <summary>Default RTTI scope, <c>broad</c> | <c>published</c> (LANG-648; <c>--rtti</c>, <c>.pproj</c> <c>rtti</c>).</summary>
+    public string Rtti { get; init; } = "broad";
+
+    /// <summary>
+    /// Application manifest (CMP-628): <c>default</c> | <c>none</c> | absolute path of a manifest file; "" → <c>default</c>
+    /// for GUI apps, <c>none</c> for console apps.
+    /// </summary>
+    public string Manifest { get; init; } = "";
+
+    /// <summary>Unit scope names tried as prefixes for unresolved unit names, in order (LANG-535; <c>--unit-scope</c>).</summary>
+    public ImmutableArray<string> UnitScopeNames { get; init; } = [];
+}
+
+/// <summary>CMP-241: the ABI version of compiled code (rtl-abi.md).</summary>
+public static class AbiInfo
+{
+    public const int Version = 1;
+}
+
+/// <summary>CMP-241: the compiler version printed by <c>opc --version</c>.</summary>
+public static class CompilerInfo
+{
+    public const string Version = "0.1.0";
+
+    /// <summary>The LLVM version the compiler is pinned to (scripts/toolchain.json, CMP-601).</summary>
+    public const string LlvmPin = Toolchain.ToolchainVersionCheck.PinnedVersion;
 }
