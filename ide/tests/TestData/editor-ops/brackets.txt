@@ -1,0 +1,104 @@
+# name: IDE-ED-072 from an opener to just after its closer
+--- before
+X := F|(a, (b));
+--- action
+command search.goToMatchingBracket
+--- after
+X := F(a, (b))|;
+====
+# name: IDE-ED-072 from a closer to just before its opener
+--- before
+X := F(a, (b))|;
+--- action
+command search.goToMatchingBracket
+--- after
+X := F|(a, (b));
+====
+# name: IDE-ED-072 brackets in strings and comments do not count
+--- before
+X := F|(')', { ) } b);
+--- action
+command search.goToMatchingBracket
+--- after
+X := F(')', { ) } b)|;
+====
+# name: IDE-ED-072 from inside a keyword to the start of its partner
+--- before
+beg|in
+··A;
+end;
+--- action
+command search.goToMatchingBracket
+--- after
+begin
+··A;
+|end;
+====
+# name: IDE-ED-072 from end back to the start of begin
+--- before
+begin
+··A;
+e|nd;
+--- action
+command search.goToMatchingBracket
+--- after
+|begin
+··A;
+end;
+====
+# name: IDE-ED-072 without a bracket at the caret to the nearest enclosing bracket
+--- before
+F(a, b|c);
+--- action
+command search.goToMatchingBracket
+--- after
+F|(a, bc);
+====
+# name: IDE-ED-072 without a bracket at the caret to the nearest enclosing keyword
+--- before
+begin
+··F(a);
+··A|;
+end;
+--- action
+command search.goToMatchingBracket
+--- after
+|begin
+··F(a);
+··A;
+end;
+====
+# name: IDE-ED-072 the selection is replaced by the caret
+--- before
+‹F›(a);
+--- action
+command search.goToMatchingBracket
+--- after
+F(a)|;
+====
+# name: IDE-ED-072 nothing to go to
+# status: Msg_Editor_BracketNotFound
+--- before
+X| := 1;
+--- action
+command search.goToMatchingBracket
+--- after
+X| := 1;
+====
+# name: IDE-ED-072 a bracket without partner
+# status: Msg_Editor_BracketNotFound
+--- before
+X := a)|;
+--- action
+command search.goToMatchingBracket
+--- after
+X := a)|;
+====
+# name: IDE-ED-072 works in a read-only document
+# readonly: true
+--- before
+F|(a);
+--- action
+command search.goToMatchingBracket
+--- after
+F(a)|;

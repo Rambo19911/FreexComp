@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.Editing;
+using AvaloniaEdit.Rendering;
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ViewModels;
@@ -275,6 +276,105 @@ public sealed class EditorVisualTests
 
         Set(h, SettingsCatalog.EditorHighlightCurrentLine, false);
         Assert.Null(probe.LineBackgroundAt(3));
+    }
+
+    /// <summary>What a background renderer draws: (fill colour, outline colour, bounds) per geometry.</summary>
+    private static List<(Color? Fill, Color? Pen, Rect Bounds)> Drawn(TextView textView, IBackgroundRenderer renderer)
+    {
+        var group = new DrawingGroup();
+        using (var context = group.Open())
+            renderer.Draw(textView, context);
+        return [.. group.Children.OfType<GeometryDrawing>()
+            .Select(d => ((d.Brush as ISolidColorBrush)?.Color, (d.Pen?.Brush as ISolidColorBrush)?.Color, d.Geometry?.Bounds ?? default))];
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-053")]
+    [Trait("Req", "IDE-ED-070")]
+    public async Task BracketMatchPrefersBracketBeforeCaret()
+    {
+        const string text = "F(a)(b);\r\nbegin\r\n  X := '(' + a);\r\nend;\r\n";
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light";
+            o.InitialFiles["A.pas"] = text;
+        });
+        var (_, editor, probe) = await OpenAsync(h, "A.pas");
+        var area = editor.TextArea;
+        var renderer = area.TextView.BackgroundRenderers.OfType<BracketMatchRenderer>().Single();
+        Assert.Equal(KnownLayer.Selection, renderer.Layer);
+        void CaretAt(int offset)
+        {
+            area.Caret.Offset = offset;
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        // Between ")" and "(": the bracket before the caret wins.
+        CaretAt(4);
+        Assert.Equal([(1, 1), (3, 1)], probe.BracketHighlights);
+        var bg = Color.Parse("#E3F2EF");
+        var border = Color.Parse("#0F7B6C");
+        var drawn = Drawn(area.TextView, renderer);
+        Assert.Equal(2, drawn.Count(d => d.Fill == bg));
+        Assert.Equal(2, drawn.Count(d => d.Pen == border));
+        CaretAt(5);
+        Assert.Equal([(4, 1), (6, 1)], probe.BracketHighlights);
+
+        // Inside a string nothing pairs; a keyword pairs with its end; a bracket without partner is outlined in red.
+        var quote = text.IndexOf("'('", StringComparison.Ordinal);
+        CaretAt(quote + 1);
+        Assert.Empty(probe.BracketHighlights);
+        CaretAt(text.IndexOf("begin", StringComparison.Ordinal) + 2);
+        Assert.Equal([(10, 5), (text.IndexOf("end;", StringComparison.Ordinal), 3)], probe.BracketHighlights);
+        CaretAt(text.IndexOf("a);", StringComparison.Ordinal) + 2);
+        Assert.Equal([(text.IndexOf("a);", StringComparison.Ordinal) + 1, 1)], probe.BracketHighlights);
+        drawn = Drawn(area.TextView, renderer);
+        Assert.DoesNotContain(drawn, d => d.Fill == bg);
+        Assert.Contains(drawn, d => d.Pen == Color.Parse("#B3261E")); // editor.squiggle.error
+
+        // editor.highlightMatchingBrackets turns it off.
+        CaretAt(4);
+        Assert.NotEmpty(probe.BracketHighlights);
+        Set(h, SettingsCatalog.EditorHighlightMatchingBrackets, false);
+        Assert.Empty(probe.BracketHighlights);
+        Assert.Empty(Drawn(area.TextView, renderer));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-056")]
+    [Trait("Req", "IDE-ED-073")]
+    public async Task IndentGuidesFollowCaretBlock()
+    {
+        const string text = "begin\r\n  begin\r\n    A;\r\n  end;\r\nend;\r\n";
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light"; // editor.tabWidth = 2 (default)
+            o.InitialFiles["A.pas"] = text;
+        });
+        var (doc, editor, _) = await OpenAsync(h, "A.pas");
+        var area = editor.TextArea;
+        var renderer = area.TextView.BackgroundRenderers.OfType<IndentGuideRenderer>().Single();
+        Assert.Equal(KnownLayer.Background, renderer.Layer);
+        var guide = Color.Parse("#E4E8E3");
+        var active = Color.Parse("#B4BAB3");
+
+        // Lines 2–4 have a guide at column 0, line 3 one at column 2 too; the caret in "A;" makes column 2 active.
+        area.Caret.Offset = doc.Buffer.GetOffset(3, 6);
+        Dispatcher.UIThread.RunJobs();
+        var drawn = Drawn(area.TextView, renderer);
+        Assert.Equal(3, drawn.Count(d => d.Pen == guide));
+        Assert.Equal(1, drawn.Count(d => d.Pen == active));
+        var x = area.TextView.GetVisualPosition(new TextViewPosition(3, 3), VisualYPosition.LineTop).X - area.TextView.HorizontalOffset;
+        Assert.Equal(Math.Round(x) + 0.5, drawn.Single(d => d.Pen == active).Bounds.X); // left edge of the column, pixel-snapped
+
+        // On the outer "begin" the outer block is active (column 0 over lines 2–4).
+        area.Caret.Offset = doc.Buffer.GetOffset(1, 3);
+        Dispatcher.UIThread.RunJobs();
+        drawn = Drawn(area.TextView, renderer);
+        Assert.Equal(3, drawn.Count(d => d.Pen == active));
+
+        Set(h, SettingsCatalog.EditorShowIndentGuides, false);
+        Assert.Empty(Drawn(area.TextView, renderer));
     }
 
     [AvaloniaFact(Timeout = 30000)]

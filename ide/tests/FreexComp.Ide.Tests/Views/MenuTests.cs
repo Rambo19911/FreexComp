@@ -194,7 +194,7 @@ public sealed partial class MenuTests
     {
         ["file.exit"] = "I-086",
         ["search.find"] = "I-058", ["search.replace"] = "I-058", ["search.findNext"] = "I-058", ["search.findPrevious"] = "I-058",
-        ["search.findSelectionNext"] = "I-058", ["search.goToLine"] = "I-059", ["search.goToMatchingBracket"] = "I-052",
+        ["search.findSelectionNext"] = "I-058", ["search.goToLine"] = "I-059",
         ["search.navigateBack"] = "I-060", ["search.navigateForward"] = "I-060",
         ["view.wordWrap"] = "I-055", ["view.showWhitespace"] = "I-055", ["view.zoomIn"] = "I-055", ["view.zoomOut"] = "I-055",
         ["view.zoomReset"] = "I-055",
@@ -210,6 +210,9 @@ public sealed partial class MenuTests
         "edit.indent", "edit.outdent",
     ];
 
+    /// <summary>I-052: enabled in every text document, read-only too ("text").</summary>
+    private static readonly string[] TextCommands = ["search.goToMatchingBracket"];
+
     /// <summary>I-048: these also depend on the caret (first / last touched line, a selection or a word under the caret).</summary>
     private static readonly string[] CaretCommands = ["edit.moveLineUp", "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"];
 
@@ -221,7 +224,7 @@ public sealed partial class MenuTests
         "edit.convertLineEndings:crlf", "edit.convertLineEndings:lf", "edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll",
         "project.addNewUnit", "project.addExistingFile", "project.removeFile", "project.viewSource",
         "window.nextDocument", "window.previousDocument", "window.documents", "window.closeToolWindow",
-        .. PascalTextCommands, .. CaretCommands,
+        .. PascalTextCommands, .. CaretCommands, .. TextCommands,
     ];
 
     private static readonly string[] FoldCommands = ["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll"];
@@ -286,7 +289,7 @@ public sealed partial class MenuTests
         var a = FocusEditor(h, "A.pas");
         a.TextArea.Caret.Line = 8;
         string[] cleanA = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "edit.paste", "edit.delete", "edit.selectAll",
-            "edit.convertLineEndings:lf", "edit.fold", "edit.foldAll", "window.documents", .. PascalTextCommands];
+            "edit.convertLineEndings:lf", "edit.fold", "edit.foldAll", "window.documents", .. PascalTextCommands, .. TextCommands];
         AssertEnabled(h, "clean", [.. cleanA, .. CaretCommands]); // the caret is on "begin" of line 8
 
         // A selection enables Cut and Copy.
@@ -323,7 +326,7 @@ public sealed partial class MenuTests
             AssertEnabled(h, "read-only",
             [
                 "file.clearRecent", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.copy", "edit.delete", "edit.selectAll",
-                "window.nextDocument", "window.previousDocument", "window.documents",
+                "window.nextDocument", "window.previousDocument", "window.documents", .. TextCommands,
             ]);
         }
         finally
@@ -338,7 +341,7 @@ public sealed partial class MenuTests
         [
             "file.clearRecent", "file.save", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.paste",
             "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "window.nextDocument", "window.previousDocument", "window.documents",
-            .. PascalTextCommands,
+            .. PascalTextCommands, .. TextCommands,
         ], FoldAndCaretCommands);
 
         // A generated document is no file: no Save / Save As / Revert / text commands; Select All and Copy work.
@@ -368,7 +371,7 @@ public sealed partial class MenuTests
         FocusEditor(h, "P.pas");
         string[] project = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "file.closeProject", "edit.paste",
             "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "project.addNewUnit", "project.addExistingFile", "project.viewSource",
-            "window.documents", .. PascalTextCommands];
+            "window.documents", .. PascalTextCommands, .. TextCommands];
 
         // The main source cannot be removed from the project; another member can.
         AssertEnabled(h, "main source", project, FoldAndCaretCommands);

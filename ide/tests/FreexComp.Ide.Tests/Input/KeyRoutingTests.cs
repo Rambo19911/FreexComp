@@ -26,10 +26,10 @@ public sealed class KeyRoutingTests
         await using var h = await HeadlessHarness.StartAsync();
         var duplicate = new Recorder();
         var global = new Recorder();
-        // An Editor-scope command without a handler yet (I-052), moved onto Ctrl+D (edit.duplicateLine has a handler).
-        h.Services.Commands.RegisterHandler("search.goToMatchingBracket", duplicate);
+        // An Editor-scope command without a handler yet (I-059), moved onto Ctrl+D (edit.duplicateLine has a handler).
+        h.Services.Commands.RegisterHandler("search.goToLine", duplicate);
         h.Services.Keymap.SetGestures("edit.duplicateLine", []);
-        h.Services.Keymap.SetGestures("search.goToMatchingBracket", [CoreGesture.Parse("Ctrl+D")]);
+        h.Services.Keymap.SetGestures("search.goToLine", [CoreGesture.Parse("Ctrl+D")]);
         h.Services.Commands.RegisterHandler("file.showInExplorer", global); // Global, not yet handled
         h.Services.Keymap.SetGestures("file.showInExplorer", [CoreGesture.Parse("Ctrl+D")]);
         var editor = AddFocusable(h, "StatusBar.TestEditor");

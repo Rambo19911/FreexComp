@@ -56,6 +56,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private readonly CurrentLineRenderer _currentLine;
     private readonly LineStateBackgroundRenderer _lineStates;
     private TextDocumentViewModel? _document;
+    private CodeTokenIndex? _tokens;
     private FoldingManager? _foldings;
     private FoldBoxGenerator? _foldBoxes;
     private FoldingSection? _tooltipFolding;
@@ -100,6 +101,9 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         _lineStates = new LineStateBackgroundRenderer(this);
         textView.BackgroundRenderers.Add(_currentLine);
         textView.BackgroundRenderers.Add(_lineStates);
+        textView.BackgroundRenderers.Add(new IndentGuideRenderer(this, CurrentGuides));
+        textView.BackgroundRenderers.Add(new OccurrenceRenderer(this, () => _document?.WordHighlights.Highlights ?? []));
+        textView.BackgroundRenderers.Add(new BracketMatchRenderer(this, CurrentBracketMatch));
         ApplyOptions(EditorOptions.Default);
 
         area.TextEntering += OnTextEntering;
@@ -252,6 +256,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
         SetColorizer(null);
         SetDecorations(null);
+        SetTokens(null);
         UninstallFoldings();
 
         _document = null; // nothing is mirrored while the editor switches documents
@@ -267,6 +272,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         ApplySelection(document);
         SetColorizer(document);
         SetDecorations(document);
+        SetTokens(document);
         InstallFoldings();
         ApplyOptions(document.Options);
         _document = document;
@@ -513,6 +519,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             return;
         }
 
+        if (e.PropertyName == nameof(EditorOptions.HighlightWordOccurrences))
+            _document?.WordHighlights.OptionChanged();
         ApplyOptions((EditorOptions)sender!);
     }
 
@@ -536,7 +544,39 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
     private void OnDecorationsChanged(object? sender, EventArgs e) => InvalidateBackground();
 
-    private void InvalidateBackground() => _editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+    /// <summary>The background decorations (current line, line states, guides) and those under the selection (bracket match).</summary>
+    private void InvalidateBackground()
+    {
+        _editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        _editor.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+    }
+
+    /// <summary>The document's tokens (brackets, keywords, identifiers) follow it; a background scan that ends redraws.</summary>
+    private void SetTokens(TextDocumentViewModel? document)
+    {
+        _tokens?.Changed -= OnTokensChanged;
+        _document?.WordHighlights.Changed -= OnTokensChanged;
+        _tokens = document?.Tokens;
+        _tokens?.Changed += OnTokensChanged;
+        document?.WordHighlights.Changed += OnTokensChanged;
+        document?.WordHighlights.OptionChanged(); // the setting may have changed while the document had no view
+    }
+
+    private void OnTokensChanged(object? sender, EventArgs e) => InvalidateBackground();
+
+    /// <summary>UI-ED-053: the bracket or keyword at the caret and its partner, when <c>editor.highlightMatchingBrackets</c> is on.</summary>
+    private BracketMatch? CurrentBracketMatch() =>
+        _document is { Options.HighlightMatchingBrackets: true } document ? document.Tokens.Current?.MatchAt(_editor.TextArea.Caret.Offset) : null;
+
+    /// <summary>UI-ED-056: guides while <c>editor.showIndentGuides</c> is on and word wrap is off.</summary>
+    private IndentGuideRenderer.State? CurrentGuides()
+    {
+        if (_document is not { Options.ShowIndentGuides: true } document || _editor.WordWrap)
+            return null;
+        var tabWidth = Math.Max(1, document.Options.TabWidth);
+        var active = document.Tokens.Current is { } tokens ? IndentGuides.Active(document.Buffer, tokens, _editor.TextArea.Caret.Offset, tabWidth) : null;
+        return new IndentGuideRenderer.State(document.Buffer, tabWidth, active);
+    }
 
     // IEditorTestProbe (editor.md §13.3)
 
@@ -567,9 +607,13 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         return "syntax.text";
     }
 
-    IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.BracketHighlights => []; // bracket matching: I-052
+    IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.BracketHighlights =>
+        CurrentBracketMatch() is not { } match ? []
+        : match.Partner is { } partner ? [.. new[] { match.Bracket, partner }.OrderBy(t => t.Offset).Select(t => (t.Offset, t.Length))]
+        : [(match.Bracket.Offset, match.Bracket.Length)];
 
-    IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.OccurrenceHighlights => []; // word highlight: I-053
+    IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.OccurrenceHighlights =>
+        _document is null ? [] : [.. _document.WordHighlights.Highlights.Select(t => (t.Offset, t.Length))];
 
     double IEditorTestProbe.GutterWidth =>
         _editor.TextArea.LeftMargins.OfType<GutterMargin>().Where(m => m.IsVisible).Sum(m => m.MarginWidth);

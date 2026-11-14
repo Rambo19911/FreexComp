@@ -132,37 +132,47 @@ public sealed class PascalIndentRules : IIndentRules
     private static List<int> OpenBlocks(ImmutableArray<SyntaxToken> tokens, int end)
     {
         var stack = new List<int>();
-        SyntaxKind KindAt(int i) => i >= 0 && i < tokens.Length ? tokens[i].Kind : SyntaxKind.None;
-        bool TopIs(SyntaxKind kind) => stack.Count > 0 && tokens[stack[^1]].Kind == kind;
         for (int i = 0; i < end; i++)
         {
-            var prev = KindAt(i - 1);
-            var next = KindAt(i + 1);
-            switch (tokens[i].Kind)
-            {
-                case SyntaxKind.BeginKeyword or SyntaxKind.TryKeyword or SyntaxKind.RecordKeyword or SyntaxKind.RepeatKeyword:
-                case SyntaxKind.CaseKeyword when !TopIs(SyntaxKind.RecordKeyword):
-                case SyntaxKind.ObjectKeyword when prev == SyntaxKind.EqualsToken:
-                case SyntaxKind.IdentifierToken when IsAsm(tokens[i]):
-                    stack.Add(i);
-                    break;
-                case SyntaxKind.ClassKeyword when prev == SyntaxKind.EqualsToken && !IsShortForm(tokens, i)
-                                                  && next is not (SyntaxKind.SemicolonToken or SyntaxKind.OfKeyword or SyntaxKind.FunctionKeyword
-                                                      or SyntaxKind.ProcedureKeyword or SyntaxKind.VarKeyword or SyntaxKind.PropertyKeyword
-                                                      or SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword)
-                                                  && (i + 1 >= tokens.Length || Contextual(tokens[i + 1]) != SyntaxKind.OperatorKeyword):
-                case SyntaxKind.InterfaceKeyword when prev == SyntaxKind.EqualsToken && next != SyntaxKind.SemicolonToken && !IsShortForm(tokens, i):
-                    stack.Add(i);
-                    break;
-                case SyntaxKind.EndKeyword when stack.Count > 0 && !TopIs(SyntaxKind.RepeatKeyword):
-                case SyntaxKind.UntilKeyword when TopIs(SyntaxKind.RepeatKeyword):
-                    stack.RemoveAt(stack.Count - 1);
-                    break;
-            }
+            var top = stack.Count > 0 ? tokens[stack[^1]].Kind : SyntaxKind.None;
+            if (IsBlockOpener(tokens, i, top))
+                stack.Add(i);
+            else if (ClosesBlock(tokens[i].Kind, top))
+                stack.RemoveAt(stack.Count - 1);
         }
 
         return stack;
     }
+
+    /// <summary>IDE-ED-052: the token at <paramref name="i"/> opens a block while <paramref name="top"/> is the innermost open one.</summary>
+    internal static bool IsBlockOpener(ImmutableArray<SyntaxToken> tokens, int i, SyntaxKind top)
+    {
+        SyntaxKind KindAt(int k) => k >= 0 && k < tokens.Length ? tokens[k].Kind : SyntaxKind.None;
+        var prev = KindAt(i - 1);
+        var next = KindAt(i + 1);
+        return tokens[i].Kind switch
+        {
+            SyntaxKind.BeginKeyword or SyntaxKind.TryKeyword or SyntaxKind.RecordKeyword or SyntaxKind.RepeatKeyword => true,
+            SyntaxKind.CaseKeyword => top != SyntaxKind.RecordKeyword,
+            SyntaxKind.ObjectKeyword => prev == SyntaxKind.EqualsToken,
+            SyntaxKind.IdentifierToken => IsAsm(tokens[i]),
+            SyntaxKind.ClassKeyword => prev == SyntaxKind.EqualsToken && !IsShortForm(tokens, i)
+                && next is not (SyntaxKind.SemicolonToken or SyntaxKind.OfKeyword or SyntaxKind.FunctionKeyword
+                    or SyntaxKind.ProcedureKeyword or SyntaxKind.VarKeyword or SyntaxKind.PropertyKeyword
+                    or SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword)
+                && (i + 1 >= tokens.Length || Contextual(tokens[i + 1]) != SyntaxKind.OperatorKeyword),
+            SyntaxKind.InterfaceKeyword => prev == SyntaxKind.EqualsToken && next != SyntaxKind.SemicolonToken && !IsShortForm(tokens, i),
+            _ => false,
+        };
+    }
+
+    /// <summary>IDE-ED-052: <c>end</c> closes any open block but <c>repeat</c>, <c>until</c> only <c>repeat</c>.</summary>
+    internal static bool ClosesBlock(SyntaxKind kind, SyntaxKind top) => kind switch
+    {
+        SyntaxKind.EndKeyword => top is not (SyntaxKind.None or SyntaxKind.RepeatKeyword),
+        SyntaxKind.UntilKeyword => top == SyntaxKind.RepeatKeyword,
+        _ => false,
+    };
 
     /// <summary><c>class(TBase);</c> / <c>interface(IBase);</c>: a complete declaration without a body.</summary>
     private static bool IsShortForm(ImmutableArray<SyntaxToken> tokens, int i)

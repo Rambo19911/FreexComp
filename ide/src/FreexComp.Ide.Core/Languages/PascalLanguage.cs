@@ -22,6 +22,8 @@ public sealed class PascalLanguage : ILanguageDefinition
     public Editing.IFoldingProvider CreateFoldingProvider() => new PascalFoldingProvider();
 
     public IIndentRules IndentRules { get; } = new PascalIndentRules();
+
+    public Editing.CodeTokens ScanCodeTokens(string text) => PascalCodeTokens.Scan(text);
 }
 
 /// <summary>

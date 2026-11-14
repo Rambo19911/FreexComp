@@ -45,6 +45,8 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _savedLineEnding = LineEnding.Kind;
         _lineChanges = _lineChangeTracker = new LineChangeTracker(buffer);
         Folding = new FoldingModel(buffer, ViewState, language.CreateFoldingProvider());
+        Tokens = new CodeTokenIndex(buffer, language);
+        WordHighlights = new WordHighlighter(buffer, ViewState, Tokens, () => Clock, () => Options.HighlightWordOccurrences);
         InitTyping();
 
         buffer.Changed += (_, _) => OnPropertyChanged(nameof(IsModified));
@@ -85,6 +87,12 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>Fold regions and their folded state (editor-features.md §5); handles the <c>edit.fold*</c> commands.</summary>
     public FoldingModel Folding { get; }
 
+    /// <summary>Brackets, block keywords and identifiers of the current text (editor-features.md §7).</summary>
+    public CodeTokenIndex Tokens { get; }
+
+    /// <summary>Other occurrences of the identifier at the caret (IDE-ED-074); the view calls <see cref="WordHighlighter.OptionChanged"/>.</summary>
+    public WordHighlighter WordHighlights { get; }
+
     /// <summary>The name of an untitled document (<c>Unit1.pas</c>); null once it has a path.</summary>
     public string? UntitledName => _filePath is null ? _untitledName : null;
 
@@ -123,6 +131,8 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
     Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
     {
+        if (commandId == GoToMatchingBracketCommandId)
+            return GoToMatchingBracketAsync();
         if (IsEditingCommand(commandId))
             return Task.FromResult(CanExecuteEditing(commandId) && ExecuteEditing(commandId));
         switch (commandId)
@@ -321,6 +331,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
             OnPropertyChanged(nameof(UntitledName));
             OnPropertyChanged(nameof(Language));
             Folding.SetProvider(language.CreateFoldingProvider());
+            Tokens.SetLanguage(language);
         }
 
         OnPropertyChanged(nameof(IsModified));

@@ -15,8 +15,33 @@ public partial class TextDocumentViewModel
     [
         "edit.duplicateLine", "edit.deleteLine", "edit.moveLineUp", "edit.moveLineDown", "edit.toggleLineComment",
         "edit.toggleBlockComment", "edit.upperCase", "edit.lowerCase", "edit.trimTrailingWhitespace", "edit.indent", "edit.outdent",
-        ToggleOverwriteCommandId,
+        ToggleOverwriteCommandId, GoToMatchingBracketCommandId,
     ];
+
+    private const string GoToMatchingBracketCommandId = "search.goToMatchingBracket";
+
+    /// <summary>
+    /// IDE-ED-072: the caret moves to the partner of the bracket or keyword at the caret, else to the nearest enclosing
+    /// opener; none → <c>Msg.Editor.BracketNotFound</c>. Also in read-only documents (menus.md "text"). A large buffer's
+    /// tokens are awaited, not scanned on the UI thread.
+    /// </summary>
+    private async Task<bool> GoToMatchingBracketAsync()
+    {
+        var version = Buffer.Version;
+        var tokens = await Tokens.GetAsync();
+        if (Buffer.Version != version)
+            return false; // edited meanwhile
+        if (tokens.MatchingBracketTarget(Selection.Caret) is not { } target)
+        {
+            StatusMessage?.Invoke(this, Strings.Msg_Editor_BracketNotFound);
+            return true;
+        }
+
+        Folding.Reveal(target);
+        Selection = TextSelection.At(target);
+        RevealCaretRequested?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
 
     /// <summary>A status-bar message for the user (an operation that could not be done), already formatted.</summary>
     public event EventHandler<string>? StatusMessage;
@@ -46,6 +71,8 @@ public partial class TextDocumentViewModel
     {
         if (commandId == ToggleOverwriteCommandId)
             return CanToggleOverwrite;
+        if (commandId == GoToMatchingBracketCommandId)
+            return true;
         if (Buffer.IsReadOnly)
             return false; // menus.md: "text and writable"
         var selection = Selection;

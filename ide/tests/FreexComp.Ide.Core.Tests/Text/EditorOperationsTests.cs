@@ -87,12 +87,12 @@ public sealed class EditorOperationsTests
     private static readonly Dictionary<string, string> Pending = new(StringComparer.Ordinal)
     {
         ["IDE-ED-024"] = "I-120", ["IDE-ED-038"] = "I-054",
-        ["IDE-ED-039"] = "I-055", ["IDE-ED-040"] = "I-055", ["IDE-ED-070"] = "I-052", ["IDE-ED-071"] = "I-052",
-        ["IDE-ED-072"] = "I-052", ["IDE-ED-073"] = "I-052", ["IDE-ED-074"] = "I-053",
+        ["IDE-ED-039"] = "I-055", ["IDE-ED-040"] = "I-055",
     };
 
     /// <summary>Rules the case format cannot express; a test elsewhere under <c>ide/tests</c> carries their <c>Req</c> trait.</summary>
-    private static readonly string[] CoveredElsewhere = ["IDE-ED-010", "IDE-ED-012", "IDE-ED-026", "IDE-ED-045", "IDE-ED-046"];
+    private static readonly string[] CoveredElsewhere =
+        ["IDE-ED-010", "IDE-ED-012", "IDE-ED-026", "IDE-ED-045", "IDE-ED-046", "IDE-ED-070", "IDE-ED-071", "IDE-ED-073", "IDE-ED-074"];
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-TEST-021")]

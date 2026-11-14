@@ -24,6 +24,9 @@ public sealed class EditorOptions : INotifyPropertyChanged
         [SettingsCatalog.EditorSmartHome.Name] = nameof(SmartHome),
         [SettingsCatalog.EditorAutoCloseBrackets.Name] = nameof(AutoCloseBrackets),
         [SettingsCatalog.EditorRectangularSelection.Name] = nameof(RectangularSelection),
+        [SettingsCatalog.EditorHighlightMatchingBrackets.Name] = nameof(HighlightMatchingBrackets),
+        [SettingsCatalog.EditorHighlightWordOccurrences.Name] = nameof(HighlightWordOccurrences),
+        [SettingsCatalog.EditorShowIndentGuides.Name] = nameof(ShowIndentGuides),
     };
 
     private readonly ISettingsService? _settings;
@@ -76,6 +79,15 @@ public sealed class EditorOptions : INotifyPropertyChanged
 
     /// <summary>IDE-ED-026: <c>editor.rectangularSelection</c> (Alt+drag, Alt+Shift+Arrows).</summary>
     public bool RectangularSelection => Get(SettingsCatalog.EditorRectangularSelection);
+
+    /// <summary>UI-ED-053: <c>editor.highlightMatchingBrackets</c>.</summary>
+    public bool HighlightMatchingBrackets => Get(SettingsCatalog.EditorHighlightMatchingBrackets);
+
+    /// <summary>UI-ED-054: <c>editor.highlightWordOccurrences</c>.</summary>
+    public bool HighlightWordOccurrences => Get(SettingsCatalog.EditorHighlightWordOccurrences);
+
+    /// <summary>UI-ED-056: <c>editor.showIndentGuides</c>.</summary>
+    public bool ShowIndentGuides => Get(SettingsCatalog.EditorShowIndentGuides);
 
     /// <summary>
     /// The style of a syntax token in a theme: <c>colors.&lt;theme&gt;.&lt;token&gt;.style</c> (<c>regular</c>,

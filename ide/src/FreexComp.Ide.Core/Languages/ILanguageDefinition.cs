@@ -53,6 +53,40 @@ public interface ILanguageDefinition
 
     /// <summary>Language-specific indentation (IDE-ED-007/008); null = only the language-neutral rules.</summary>
     IIndentRules? IndentRules => null;
+
+    /// <summary>
+    /// The brackets, block keywords and identifiers of <paramref name="text"/> from this language's lexer, paired
+    /// (editor-features.md §7); none for a language without a lexer. Must never throw; may run on the thread pool.
+    /// </summary>
+    Editing.CodeTokens ScanCodeTokens(string text) => Editing.CodeTokens.Empty;
+}
+
+/// <summary>Bracket <see cref="Editing.CodeTokens"/> from the symbol spans of a <see cref="WholeTextClassifier"/> lexer.</summary>
+internal static class SymbolSpanCodeTokens
+{
+    public static Editing.CodeTokens Scan(WholeTextClassifier lexer, string text, IReadOnlyList<(char Open, char Close)> brackets)
+    {
+        var spans = lexer.LexText(text);
+        var tokens = new List<Editing.CodeToken>();
+        var keys = new List<char>();
+        for (int i = 0; i < spans.Count; i++)
+        {
+            var span = spans[i];
+            if (span.Length != 1 || span.TokenClass != ColorTokens.Symbol)
+                continue;
+            var c = text[span.Offset];
+            foreach (var (open, close) in brackets)
+            {
+                if (c == open || c == close)
+                {
+                    tokens.Add(new Editing.CodeToken(span.Offset, 1, c == open ? Editing.CodeTokenKind.Open : Editing.CodeTokenKind.Close, i));
+                    keys.Add(open);
+                }
+            }
+        }
+
+        return new Editing.CodeTokens(text, tokens, Editing.CodeTokens.PairBrackets(tokens, k => keys[k]), ignoreCase: false);
+    }
 }
 
 /// <summary>The language-specific indentation rules of editor-features.md §2.</summary>
@@ -190,4 +224,7 @@ public abstract class WholeTextClassifier : ITokenClassifier
 
     /// <summary>All spans of <paramref name="text"/>, sorted by offset. Must never throw.</summary>
     protected abstract List<TokenClassSpan> Lex(string text);
+
+    /// <summary><see cref="Lex"/> without the cache (bracket tokens, <see cref="SymbolSpanCodeTokens"/>); thread-safe.</summary>
+    internal List<TokenClassSpan> LexText(string text) => Lex(text);
 }
