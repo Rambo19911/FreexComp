@@ -69,6 +69,7 @@ internal sealed partial class ExpressionBinder
             return true;
         }
 
+        member.IsReferenced = true;                                                     // H2003 (C-096)
         var current = CurrentMethod?.ContainingType;
         var sameUnit = owner.ContainingSymbol is UnitSymbol unit && ReferenceEquals(unit, CurrentUnit);
         var own = ReferenceEquals(current, owner);

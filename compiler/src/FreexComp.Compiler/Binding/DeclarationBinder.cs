@@ -226,6 +226,14 @@ internal sealed partial class DeclarationBinder
                 continue;
             }
 
+            if (forwardClasses.FindIndex(f => f.Type.IsForward && IdentifierComparer.Instance.Equals(f.Type.Name, NameOf(identifier))) is var forward and >= 0)
+            {
+                // a forward class completed by another kind of type (C-096): E2001 once, instead of E2004 + E2015
+                _diagnostics.Report(identifier, "E2001", NameOf(identifier));
+                forwardClasses.RemoveAt(forward);
+                continue;
+            }
+
             TypeSymbol type;
             _declaringType = (NameOf(identifier), declaration.Type);
             if (declaration.TypeParameterList is { } typeParameters)
@@ -661,14 +669,34 @@ internal sealed partial class DeclarationBinder
 
     private void BindVarSection(VarSectionSyntax section, ImmutableArray<Symbol>.Builder declared)
     {
-        if (section.Keyword.Kind == SyntaxKind.ThreadVarKeyword)
+        var isThreadVar = section.Keyword.Kind == SyntaxKind.ThreadVarKeyword;
+        if (isThreadVar && !IsGlobalLevel)
         {
-            _diagnostics.Report(section.Keyword, "E2900", "threadvar");     // LANG-345, M2.4
+            _diagnostics.Report(section.Keyword, "E1100", section.Keyword.Text);   // LANG-345: unit or program level only
+            isThreadVar = false;
         }
 
         foreach (var declaration in section.Declarations)
         {
             var type = BindType(declaration.Type, declared: declared);
+            if (isThreadVar && declaration.Initializer is { } threadVarInitializer)
+            {
+                _diagnostics.Report(threadVarInitializer, "E2207");               // LANG-345: no initialiser
+                continue;
+            }
+
+            if (isThreadVar && type.IsManaged)
+            {
+                _diagnostics.Report(declaration.Type, "E2900", "managed threadvar");   // LANG-345
+                continue;
+            }
+
+            if (isThreadVar && declaration.PublicDirective is { } threadVarPublic)
+            {
+                _diagnostics.Report(threadVarPublic.Keyword, "E2900", "public name on a threadvar");
+                continue;
+            }
+
             var initializer = declaration.Initializer is { } node ? BindInitializer(declaration, node, type) : null;
             var linkName = declaration.PublicDirective is { } publicDirective ? BindVariablePublicName(declaration, publicDirective) : null;
             foreach (var name in declaration.Identifiers)
@@ -677,10 +705,24 @@ internal sealed partial class DeclarationBinder
                 if (!identifier.IsMissing)
                 {
                     Declare(identifier, new VariableSymbol(NameOf(identifier), type, IsGlobalLevel, _container,
-                        [DiagnosticBag.LocationOf(identifier)], initializer) { ExplicitLinkName = linkName }, declared);
+                        [DiagnosticBag.LocationOf(identifier)], initializer)
+                    {
+                        ExplicitLinkName = linkName,
+                        ThreadVarOffset = isThreadVar ? NextThreadVarOffset(type) : null,
+                    }, declared);
                 }
             }
         }
+    }
+
+    /// <summary>ABI-180: the next field of the unit's threadvar record (ABI-060 natural alignment, declaration order).</summary>
+    private long NextThreadVarOffset(TypeSymbol type)
+    {
+        var unit = (UnitSymbol)_container!;
+        var alignment = Math.Max(1, type.Alignment);
+        var offset = (unit.ThreadVarSize + alignment - 1) / alignment * alignment;
+        unit.ThreadVarSize = offset + type.Size;
+        return offset;
     }
 
     /// <summary>LANG-470 <c>var x: T; public name 'sym';</c>: one global variable only (else E2900 / E1101).</summary>

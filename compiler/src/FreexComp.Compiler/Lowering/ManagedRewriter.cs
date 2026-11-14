@@ -322,7 +322,7 @@ internal static class ManagedRewriter
     {
         LLocalRef reference => ReferenceEquals(reference.Local, local),
         LConst or LGlobalRef or LStringLiteral or LParamRef or LOuterRef or LTempRef or LRoutineAddress or LClassRef
-            or LReturn or LUnreachable or LBreak or LContinue => false,
+            or LThreadVarAddress or LTlsDescriptor or LReturn or LUnreachable or LBreak or LContinue => false,
         LAddrOf a => References(a.Variable, local),
         LUnary u => References(u.Operand, local),
         LBinary b => References(b.Left, local) || References(b.Right, local),

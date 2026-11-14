@@ -40,6 +40,9 @@ internal static class Mangler
 
     public static LinkName UnitFinal(UnitSymbol unit) => new(unit.Name + ".$final", AlwaysQuote: true);
 
+    /// <summary>The threadvar descriptor of a unit or program (ABI-180): <c>U.$tls</c>.</summary>
+    public static LinkName TlsDescriptor(UnitSymbol unit) => new(unit.Name + ".$tls", AlwaysQuote: true);
+
     /// <summary>Name of the frame record struct type of <paramref name="routine"/> (CMP-345).</summary>
     public static LinkName FrameType(RoutineSymbol routine) => new(RoutineText(routine) + ".$frame", AlwaysQuote: true);
 

@@ -38,6 +38,13 @@ public sealed class VariableSymbol : Symbol
     /// <summary>The <c>public name</c> of a global variable (LANG-470); null otherwise.</summary>
     internal string? ExplicitLinkName { get; set; }
 
-    /// <summary><c>var Name: Type</c> (CMP-731).</summary>
-    public override string ToDisplayString() => $"var {Name}: {Type.Name}";
+    /// <summary>
+    /// A <c>threadvar</c> (LANG-345): its offset in the threadvar record of its unit (ABI-180); null for every other variable.
+    /// </summary>
+    internal long? ThreadVarOffset { get; init; }
+
+    public bool IsThreadVar => ThreadVarOffset is not null;
+
+    /// <summary><c>var Name: Type</c> / <c>threadvar Name: Type</c> (CMP-731).</summary>
+    public override string ToDisplayString() => $"{(IsThreadVar ? "threadvar" : "var")} {Name}: {Type.Name}";
 }

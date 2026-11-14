@@ -280,4 +280,56 @@ public sealed class FlowAnalysisTests
         Assert.Equal(["E2003(1,55): Undeclared identifier 'z'"], Format(result.Diagnostics));
         Assert.Empty(FlowAnalyzer.Analyze(result));
     }
+
+    // ------------------------------------------------------------------ H2003 (C-096, diagnostics.md lead decision)
+
+    private static string[] UnusedPrivates(string text) => [.. Flow(text).Where(d => d.StartsWith("H2003", StringComparison.Ordinal))];
+
+    [Fact]
+    [Trait("Req", "CMP-500")]
+    public void H2003_UnreferencedPrivateMembersOfAProgramClass()
+    {
+        var text = "program T; type TA = class private F: Integer; G: Integer; H: Integer; procedure M; procedure N; property P: Integer read G; "
+            + "class var V: Integer; class var W: Integer; strict private S: Integer; public procedure Run; end; "
+            + "procedure TA.M; begin end; procedure TA.N; begin end; procedure TA.Run; begin N; H := 1; W := H end; "
+            + "var A: TA; begin A := nil; A.Run end.";
+        Assert.Equal(
+            [At("H2003", text, "private |F"), At("H2003", text, "procedure |M;"), At("H2003", text, "property |P"),
+             At("H2003", text, "class var |V"), At("H2003", text, "|S: Integer")],
+            UnusedPrivates(text));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-500")]
+    public void H2003_ReferencesFromOutsideTheClassAndThroughProperties_Count()
+    {
+        var text = "program T; type TA = class private F: Integer; function GetX: Integer; procedure SetX(V: Integer); public property X: Integer read GetX write SetX; "
+            + "property Y: Integer read F; end; function TA.GetX: Integer; begin Result := 0 end; procedure TA.SetX(V: Integer); begin end; "
+            + "type TB = class private Q: Integer; end; var A: TA; B: TB; begin A := nil; B := nil; B.Q := A.X; Writeln(B.Q) end.";
+        Assert.Empty(UnusedPrivates(text));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-500")]
+    public void H2003_NotForVirtualOrOverrideMethods()
+    {
+        var text = "program T; type TA = class private procedure V; virtual; end; TB = class(TA) private procedure V; override; end; "
+            + "procedure TA.V; begin end; procedure TB.V; begin end; var B: TB; begin B := nil; Writeln(B = nil) end.";
+        Assert.Empty(UnusedPrivates(text));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-500")]
+    public void H2003_OnlyForClassesOfTheImplementationPart()
+    {
+        var text = "unit test; interface type TA = class private F: Integer; end; implementation type TB = class private G: Integer; end; end.";
+        Assert.Equal([At("H2003", text, "private |G")], UnusedPrivates(text));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-505")]
+    public void H2003_FollowsTheHintSwitchAtTheDeclaration()
+    {
+        Assert.Empty(UnusedPrivates("program T; {$HINTS OFF} type TA = class private F: Integer; end; {$HINTS ON} var A: TA; begin A := nil; Writeln(A = nil) end."));
+    }
 }

@@ -41,8 +41,16 @@ internal static class Lowerer
             Initialization = bodies.FirstOrDefault(b => b.Syntax is InitializationSectionSyntax).Lowered,
             Finalization = finalization,
             Statics = [.. result.Routines.SelectMany(r => r.Scope.Symbols.OfType<ConstantSymbol>()).Select(c => c.Storage).OfType<VariableSymbol>()],
+            ThreadVars = ThreadVars(result.Unit),
+            TlsRegistration = ThreadVars(result.Unit).IsEmpty ? null
+                : new LCallStatement(new LHelperCallee(new RuntimeHelper("_TlsRegister", [result.Types.Pointer], ReturnType: null, IsNoReturn: false)),
+                    [new LTlsDescriptor(result.Unit, result.Types.Pointer)]),                                        // ABI-180
         };
     }
+
+    /// <summary>The unit's (or program's) threadvars in declaration order (interface first; LANG-345, ABI-180).</summary>
+    public static ImmutableArray<VariableSymbol> ThreadVars(UnitSymbol unit) =>
+        [.. unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<VariableSymbol>().Where(v => v.IsThreadVar).Distinct()];
 
     /// <summary>The unit's (or program's) global variables of managed types in declaration order (interface first; LANG-523).</summary>
     public static ImmutableArray<VariableSymbol> ManagedGlobals(UnitSymbol unit) =>
@@ -513,6 +521,8 @@ internal sealed class LoweringContext
 
         switch (expression)
         {
+            case BoundVariableExpression { Variable: { IsThreadVar: true } threadVar }:
+                return new LDeref(new LThreadVarAddress(threadVar, Types.Pointer), threadVar.Type);    // CMP-414
             case BoundVariableExpression { Variable: { IsGlobal: true } global }:
                 return new LGlobalRef(global);
             case BoundVariableExpression variable when BodyGlobals?.Exists(g => ReferenceEquals(g.Variable, variable.Variable)) == true:

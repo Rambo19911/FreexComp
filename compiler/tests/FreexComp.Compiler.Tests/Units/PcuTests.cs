@@ -119,7 +119,8 @@ public sealed class PcuTests
 
         var pcu = (JsonObject)JsonNode.Parse(Pcus(fs, options)["U"])!;
 
-        Assert.Equal($"opc {CompilerInfo.Version}; abi {AbiInfo.Version}; llvm {CompilerInfo.LlvmPin}", (string)pcu["compilerFingerprint"]!);
+        Assert.Equal($"opc {CompilerInfo.Version}; abi {AbiInfo.Version}; llvm {CompilerInfo.LlvmPin}; build {typeof(PcuWriter).Assembly.ManifestModule.ModuleVersionId:N}",
+            (string)pcu["compilerFingerprint"]!);
         Assert.Equal(Compilation.Create(options, [], fs).OptionsFingerprint(), (string)pcu["optionsFingerprint"]!);
         Assert.NotEqual((string)Pcu("U", fs)["optionsFingerprint"]!, (string)pcu["optionsFingerprint"]!);
     }

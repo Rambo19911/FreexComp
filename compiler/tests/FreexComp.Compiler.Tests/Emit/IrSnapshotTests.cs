@@ -1486,8 +1486,38 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-165: threadvars of the interface (descriptor with external linkage) and of the implementation; a read, a write, a
+    /// <c>var</c> argument and <c>@</c> each compute the address through <c>_TlsBase</c> and the descriptor (CMP-414); <c>$init</c> of a
+    /// unit without initialization section registers the descriptor (ABI-180). Record: Depth 0, Mark 4, Sum 8; size 16.
+    /// </summary>
+    internal const string ThreadVarSource = """
+        unit M;
+        interface
+        threadvar
+          Depth: Integer;
+        procedure Enter(var Level: Integer);
+        function Run: Int64;
+        implementation
+        threadvar
+          Mark: Byte;
+          Sum: Int64;
+        procedure Enter(var Level: Integer); begin Level := Level + 1 end;
+        function Run: Int64;
+        var P: ^Int64;
+        begin
+          Enter(Depth);
+          Mark := 2;
+          P := @Sum;
+          P^ := Depth + Mark;
+          Result := Sum;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["ThreadVar"] = ThreadVarSource,
         ["TryExcept"] = TryExceptSource,
         ["TryFinally"] = TryFinallySource,
         ["Vmt"] = VmtSource,
@@ -1743,6 +1773,30 @@ public sealed class IrSnapshotTests
 
         var definitions = text.Split('\n').Where(l => l.StartsWith($"@\"M.$rtti.{type}\" = ", StringComparison.Ordinal)).ToList();
         Assert.Single(definitions);
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-414")]
+    [Trait("Req", "ABI-180")]
+    [Trait("Req", "ABI-181")]
+    public void ThreadVar() => Snapshot.Verify("ThreadVar", Emit(ThreadVarSource));
+
+    /// <summary>CMP-414 / ABI-180: the descriptor, its registration first in <c>$init</c>, the four-instruction access; no module global per threadvar.</summary>
+    [Fact]
+    [Trait("Req", "CMP-414")]
+    [Trait("Req", "ABI-180")]
+    [Trait("Req", "ABI-181")]
+    public void ThreadVar_UsesTheCmp414Shape()
+    {
+        var text = Emit(ThreadVarSource);
+
+        Assert.Contains("@\"M.$tls\" = global { i64, i64 } { i64 16, i64 -1 }, align 8\n", text);
+        Assert.Contains("define void @\"M.$init\"() #0 {\nentry:\n  call void @\"System._TlsRegister\"(ptr @\"M.$tls\")\n", text);
+        Assert.Contains("call ptr @\"System._TlsBase\"()\n", text);
+        Assert.Matches(@"  %(t\d+) = call ptr @""System._TlsBase""\(\)\n  %(t\d+) = load i64, ptr getelementptr inbounds \(i8, ptr @""M.\$tls"", i64 8\), align 8\n"
+            + @"  %(t\d+) = getelementptr inbounds i8, ptr %\1, i64 %\2\n  %t\d+ = getelementptr inbounds i8, ptr %\3, i64 8\n", text);
+        Assert.DoesNotContain("@\"M.Depth\"", text);
+        Assert.DoesNotContain("@\"M.Sum\"", text);
     }
 
     [Fact]

@@ -83,7 +83,7 @@ public sealed class BinderDiagnosticTests
     private static readonly string UncoveredPath =
         System.IO.Path.Combine(RepoPaths.Root, "compiler", "tests", "FreexComp.Compiler.Tests", "Binding", "diagnostics.uncovered");
 
-    private static readonly string[] Statuses = ["reserved", "retired", "M2.2", "M2.3", "M2.4", "M2.5", "M2.6", "Phase3", "Phase4", "Phase8", "elsewhere"];
+    private static readonly string[] Statuses = ["reserved", "retired", "unemitted", "M2.2", "M2.3", "M2.4", "M2.5", "M2.6", "Phase3", "Phase4", "Phase8", "elsewhere"];
 
     /// <summary>The codes this suite answers for: E2xxx, W1xxx, W4xxx and Hxxxx (E0/E1/E4 have their own suites, W9 is the build engine's).</summary>
     private static IEnumerable<string> CodesInScope() =>
@@ -143,7 +143,26 @@ public sealed class BinderDiagnosticTests
         static string Row(string[] cells) => string.Join("|", cells);
     }
 
+    /// <summary>
+    /// C-096: codes reserved by a lead decision (E2604, W1081) are never reported: no compiler source outside the catalogue
+    /// names them.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-500")]
+    public void UnemittedCodes_AreNamedOnlyByTheCatalogue()
+    {
+        var unemitted = ReadUncovered().Where(u => u.Status == "unemitted").Select(u => u.Code).ToList();
+        Assert.Equal(["E2604", "W1081"], unemitted.Order(StringComparer.Ordinal));
+        var sources = Directory.EnumerateFiles(System.IO.Path.Combine(RepoPaths.Root, "compiler", "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(p => !p.Contains($"{System.IO.Path.DirectorySeparatorChar}obj{System.IO.Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !string.Equals(System.IO.Path.GetFileName(p), "DiagnosticCatalog.cs", StringComparison.Ordinal));
+        var named = sources.SelectMany(p => unemitted.Where(c => File.ReadAllText(p).Contains('"' + c + '"', StringComparison.Ordinal)).Select(c => $"{c}: {p}"));
+        Assert.Empty(named);
+    }
+
     [Theory]
+    [InlineData("E2001")]
+    [InlineData("H2003")]
     [InlineData("E2002")]
     [InlineData("E2003")]
     [InlineData("E2004")]

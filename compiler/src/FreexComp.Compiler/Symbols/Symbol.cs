@@ -57,6 +57,12 @@ public abstract class Symbol
 
     public Visibility Visibility { get; }
 
+    /// <summary>
+    /// Binder bookkeeping for H2003 (C-096): a <c>private</c>/<c>strict private</c> class member has been named by an
+    /// access (allowed or not) in its unit. Only set, never cleared; not part of the declared symbol.
+    /// </summary>
+    internal bool IsReferenced { get; set; }
+
     /// <summary>Doc comment text (LANG-142); filled by the declaration binder.</summary>
     public string? Documentation { get; init; }
 
@@ -85,6 +91,12 @@ public sealed class UnitSymbol : Symbol
     public ImmutableArray<Symbol> ImplementationMembers { get; internal set; } = [];
 
     public bool IsProgram { get; }
+
+    /// <summary>
+    /// End of the last field of the unit's threadvar record so far (ABI-180; filled while the var sections are bound, or
+    /// from the <c>.pcu</c>); the descriptor's <c>Size</c> is this rounded up to 16.
+    /// </summary>
+    internal long ThreadVarSize { get; set; }
 
     public override string ToDisplayString() => (IsProgram ? "program " : "unit ") + Name;
 }

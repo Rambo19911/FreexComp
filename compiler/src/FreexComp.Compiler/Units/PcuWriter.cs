@@ -33,8 +33,15 @@ internal sealed class PcuWriter(PcuContext context)
 {
     public const int FormatVersion = 1;
 
-    /// <summary>CMP-150 rule 2: compiler version, ABI version, pinned LLVM version.</summary>
-    public static string CompilerFingerprint => $"opc {CompilerInfo.Version}; abi {AbiInfo.Version}; llvm {CompilerInfo.LlvmPin}";
+    /// <summary>
+    /// CMP-150 rule 2: compiler version, ABI version, pinned LLVM version and the build of the compiler assembly (C-195: its
+    /// MVID, which the deterministic build changes whenever the binary changes, so a rebuilt compiler never reuses stale output).
+    /// </summary>
+    public static string CompilerFingerprint { get; } = CompilerFingerprintFor(typeof(PcuWriter).Assembly.ManifestModule.ModuleVersionId);
+
+    /// <summary>The fingerprint of the compiler build <paramref name="build"/> (an assembly MVID) of this version.</summary>
+    internal static string CompilerFingerprintFor(Guid build) =>
+        $"opc {CompilerInfo.Version}; abi {AbiInfo.Version}; llvm {CompilerInfo.LlvmPin}; build {build:N}";
 
     private static readonly JsonSerializerOptions Compact = new() { WriteIndented = false, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
@@ -291,6 +298,11 @@ internal sealed class PcuWriter(PcuContext context)
                     Head(entry, "var", name, variable);
                     entry["type"] = TypeId(variable.Type);
                     entry["linkName"] = Emit.Mangler.GlobalVariable(variable).Text;
+                    if (variable.ThreadVarOffset is { } threadVarOffset)
+                    {
+                        entry["threadVarOffset"] = threadVarOffset;                     // ABI-181: reached through U.$tls (C-165)
+                    }
+
                     return entry;
                 case TypeSymbol type:
                     Head(entry, "typeAlias", name, type);

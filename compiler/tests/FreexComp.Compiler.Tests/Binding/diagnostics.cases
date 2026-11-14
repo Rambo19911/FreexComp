@@ -336,3 +336,9 @@ type TA = class function G(I: Integer): Integer; property P[I: Integer]: Integer
 type TA = class F: string; property P: Integer read F; end; begin end.
 === E2637 1,46
 type TA = class end; TB = class(TA) property P; end; begin end.
+=== E2001 1,18
+type TA = class; TA = record X: Integer end; begin end.
+=== E2001 1,29
+type TA = class; TB = (B1); TA = (A1, A2); begin end.
+=== H2003 1,25
+type TA = class private F: Integer; end; var A: TA; begin A := nil; Writeln(A = nil) end.

@@ -4,6 +4,7 @@
 #   CODE  STATUS  reason
 # STATUS is one of
 #   reserved | retired        must match the "(reserved…)"/"(retired…)" note of its row in diagnostics.md
+#   unemitted                 reserved by a lead decision note (not by its row): never reported, no source file names it
 #   M2.2 … M2.6 | Phase3 | Phase4 | Phase8
 #                             not reachable yet: the milestone/phase whose feature reports it; the task that makes it
 #                             reachable moves it to diagnostics.cases (C-127 empties the M2.x part)
@@ -11,7 +12,6 @@
 #                             test class of FreexComp.Compiler.Tests that covers it
 # A code with a case must not be listed; M2.1 is never a valid status.
 
-E2001  M2.4  declaration mismatch of a forward class / method
 E2008  reserved  LANG-516 makes this unused
 E2068  M2.5  with statement (LANG-375)
 E2069  M2.5  for-in (LANG-362)
@@ -36,7 +36,7 @@ E2205  elsewhere UnitGraphTests  needs unit files (location and path: LANG-513, 
 E2206  elsewhere UnitBindingTests  needs a second program file
 E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  M2.3  unit alias table
-E2604  M2.4  classes
+E2604  unemitted  lead decision 2026-11-14 (C-096): no case needs it; unrelated classes are E2641, invalid inherited is E2626
 E2611  M2.5  published fields (RTTI)
 E2627  M2.5  message methods (LANG-622)
 E2630  M2.5  published properties
@@ -70,11 +70,10 @@ W1050  M2.3  hint directives used outside their unit (LANG-472)
 W1051  M2.3  hint directives used outside their unit (LANG-472)
 W1052  M2.3  hint directives used outside their unit (LANG-472)
 W1070  M2.6  attributes
-W1081  M2.4  unreachable code waits for exceptions (C-031)
+W1081  unemitted  lead decision 2026-11-14 (C-096): LANG-808 gives no diagnostic for code after raise
 W4002  elsewhere ToolchainTests  toolchain version check
 W4003  Phase4  application manifest (C-167)
 H1002  elsewhere EmitTests  the driver compares the program heading with the file name
-H2003  M2.4  private class members
 H2004  Phase3  language service only
 H2005  Phase8  off by default; no milestone implements it yet
 H2010  M2.6  attributes

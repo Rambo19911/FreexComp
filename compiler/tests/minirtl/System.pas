@@ -99,6 +99,11 @@ function _ReallocMem(P: Pointer; Size: NativeInt): Pointer;
 function _AllocZero(Size: NativeInt): Pointer;
 function _LiveAllocCount: NativeInt;
 
+{ threadvars (ABI-180/181, C-165): one TLS slot holds the calling thread's block, allocated zero-filled on first use and
+  zero-extended when units registered more since; never freed here (the mini RTL has no EndThread) }
+function _TlsBase: Pointer;
+procedure _TlsRegister(Desc: Pointer);
+
 procedure _WriteUStr(var T: Text; S: Pointer; Width: Integer);
 procedure _WriteWChar(var T: Text; C: WideChar; Width: Integer);
 procedure _WriteAChar(var T: Text; C: AnsiChar; Width: Integer);
@@ -257,6 +262,13 @@ procedure ExitProcess(Code: Integer); external kernel32;
 function CreateFileW(Name: Pointer; Access, Share: Cardinal; Security: NativeInt; Disposition, Flags: Cardinal;
   Template: NativeInt): NativeInt; external kernel32;
 function GetLastError: Cardinal; external kernel32;
+function TlsAlloc: Cardinal; external kernel32;
+function TlsGetValue(Index: Cardinal): Pointer; external kernel32;
+function TlsSetValue(Index: Cardinal; Value: Pointer): Integer; external kernel32;
+
+var
+  TlsSlot: Cardinal;                         { the threadvar block of each thread (ABI-181) }
+  TlsTotal: NativeInt;                       { size of all registered threadvar records (ABI-180) }
 
 
 { the OS handle in the first 8 bytes of a Text variable }
@@ -307,6 +319,7 @@ begin
   Units := UnitTable;
   UnitEntries := UnitCount;
   Heap := GetProcessHeap;
+  TlsSlot := TlsAlloc;
   Scratch := HeapAlloc(Heap, 0, ScratchSize);
   SetHandle(Input, GetStdHandle(STD_INPUT_HANDLE));
   SetHandle(Output, GetStdHandle(STD_OUTPUT_HANDLE));
@@ -522,6 +535,37 @@ begin
     if Result = nil then
       _RunError(203);
   end;
+end;
+
+{ ABI-180: the record of the registering unit starts at the current total (unit initialisation runs on one thread) }
+procedure _TlsRegister(Desc: Pointer);
+var
+  D: PNativeInt;
+begin
+  D := Desc;
+  D[1] := TlsTotal;
+  TlsTotal := TlsTotal + D[0];
+end;
+
+{ ABI-181: the block's first 16 bytes hold its data size, the data follows (16-byte aligned: HeapAlloc blocks are) }
+function _TlsBase: Pointer;
+var
+  Block: PNativeInt;
+begin
+  Block := TlsGetValue(TlsSlot);
+  if Block = nil then
+  begin
+    Block := HeapAlloc(Heap, HEAP_ZERO_MEMORY, TlsTotal + 16);
+    Block[0] := TlsTotal;
+    TlsSetValue(TlsSlot, Block);
+  end
+  else if Block[0] < TlsTotal then
+  begin
+    Block := HeapReAlloc(Heap, HEAP_ZERO_MEMORY, Block, TlsTotal + 16);
+    Block[0] := TlsTotal;
+    TlsSetValue(TlsSlot, Block);
+  end;
+  Result := PByte(Block) + 16;
 end;
 
 function _AllocZero(Size: NativeInt): Pointer;

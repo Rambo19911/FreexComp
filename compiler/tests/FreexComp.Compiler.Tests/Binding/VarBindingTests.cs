@@ -31,6 +31,28 @@ public sealed class VarBindingTests
         Assert.Equal(["A", "B", "C", "S"], result.Unit.ImplementationMembers.Select(s => s.Name));
     }
 
+    /// <summary>C-165: threadvars are global variables laid out as one record per unit, interface first (LANG-345, ABI-180).</summary>
+    [Fact]
+    [Trait("Req", "LANG-345")]
+    [Trait("Req", "ABI-180")]
+    public void ThreadVars_AreLaidOutLikeARecordPerUnit()
+    {
+        var (result, _) = Bind("unit test; interface threadvar A: Byte; B: Int64; var G: Integer; implementation threadvar C: Word; D: array[0..2] of Byte; E: Integer; end.");
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Equal([0L, 8L, 16L, 18L, 24L], new[] { "A", "B", "C", "D", "E" }.Select(n => Variable(result, n).ThreadVarOffset!.Value));
+        Assert.Equal((false, null), (Variable(result, "G").IsThreadVar, Variable(result, "G").ThreadVarOffset));
+        Assert.Equal(("threadvar A: Byte", true), (Variable(result, "A").ToDisplayString(), Variable(result, "A").IsGlobal));
+        Assert.Equal(28L, result.Unit.ThreadVarSize);
+    }
+
+    [Theory]
+    [Trait("Req", "LANG-345")]
+    [InlineData("procedure P; threadvar X: Integer; begin end; begin end.", "E1100(1,14): Syntax error: unexpected 'threadvar'")]
+    [InlineData("threadvar S: string; begin end.", "E2900(1,14): Feature not supported: managed threadvar")]
+    [InlineData("threadvar X: Integer = 1; begin end.", "E2207(1,24): Initialized variables are only allowed at unit or program level")]
+    public void ThreadVars_Restrictions(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
+
     [Fact]
     public void Alias_TypeNames_BindToTheTargetType()
     {
@@ -92,7 +114,7 @@ public sealed class VarBindingTests
     public void InvalidInitializers(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
 
     [Theory]
-    [InlineData("threadvar T: Integer; begin end.", "E2900(1,1): Feature not supported: threadvar")]
+    [InlineData("threadvar T: string; begin end.", "E2900(1,14): Feature not supported: managed threadvar")]     // C-165: plain ones bind
     [InlineData("procedure P(X: array of Integer); begin end; begin end.", "E2900(1,16): Feature not supported: open array parameter")]
     [InlineData("var X: procedure of object; begin end.", "E2900(1,8): Feature not supported: method pointer")]     // C-161: plain ones bind
     [InlineData("var X: reference to procedure; begin end.", "E2900(1,8): Feature not supported: anonymous method type")]

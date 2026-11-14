@@ -120,7 +120,11 @@ internal static class PcuReader
 
                 case "var":
                 {
-                    var variable = new VariableSymbol(name, Type(entry, "type"), isGlobal: true, _unit, locations) { Documentation = Doc(entry) };
+                    var variable = new VariableSymbol(name, Type(entry, "type"), isGlobal: true, _unit, locations)
+                    {
+                        Documentation = Doc(entry),
+                        ThreadVarOffset = entry["threadVarOffset"]?.GetValue<long>(),          // C-165
+                    };
                     variable.ExplicitLinkName = Explicit(Text(entry, "linkName"), Emit.Mangler.GlobalVariable(variable).Text);
                     return variable;
                 }

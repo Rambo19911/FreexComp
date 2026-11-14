@@ -47,6 +47,12 @@ internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> 
 
     public LoweredBody? Initialization { get; init; }
 
+    /// <summary>The unit's threadvars (ABI-180), declaration order; they have no module global.</summary>
+    public ImmutableArray<VariableSymbol> ThreadVars { get; init; } = [];
+
+    /// <summary><c>_TlsRegister(@"U.$tls")</c> when the unit declares threadvars (first in <c>$init</c>; a program's after <c>_InitUnits</c>).</summary>
+    public LStatement? TlsRegistration { get; init; }
+
     public LoweredBody? Finalization { get; init; }
 }
 
@@ -533,6 +539,21 @@ internal sealed class LPointerOffset(LExpression pointer, LExpression index, Typ
 internal sealed class LRoutineAddress(RoutineSymbol routine, TypeSymbol pointerType) : LExpression(pointerType)
 {
     public RoutineSymbol Routine { get; } = routine;
+}
+
+/// <summary>
+/// CMP-414: the calling thread's address of the threadvar <see cref="Variable"/> (<c>_TlsBase() + U.$tls.Offset + k</c>,
+/// ABI-181); computed at every use, never cached across statements.
+/// </summary>
+internal sealed class LThreadVarAddress(VariableSymbol variable, TypeSymbol pointerType) : LExpression(pointerType)
+{
+    public VariableSymbol Variable { get; } = variable;
+}
+
+/// <summary>The threadvar descriptor <c>@"U.$tls"</c> of <see cref="Unit"/> (ABI-180); type <c>Pointer</c>.</summary>
+internal sealed class LTlsDescriptor(UnitSymbol unit, TypeSymbol pointerType) : LExpression(pointerType)
+{
+    public UnitSymbol Unit { get; } = unit;
 }
 
 /// <summary>The VMT of <see cref="Class"/> (ABI-071 class reference, CMP-366 <c>@"U.T.$vmt"</c>); type <c>Pointer</c>.</summary>

@@ -26,6 +26,9 @@ internal sealed record BindingResult(
     /// </summary>
     public UnitSymbol? System { get; init; }
 
+    /// <summary>The bound tree (null for units read from a precompiled file).</summary>
+    public SyntaxTree? Tree { get; init; }
+
     public Scope? InterfaceScope => Declarations.InterfaceScope;
 
     public Scope Scope => Declarations.Scope;
@@ -137,7 +140,7 @@ internal static class Binder
             .ThenBy(d => d.Location.Span.Start);
         var systemUnit = system
             ?? (declarations.Unit is { IsProgram: false } own && string.Equals(own.Name, "System", StringComparison.OrdinalIgnoreCase) ? own : null);
-        return new BindingResult(types, declarations, bodies.ToImmutable(), routines.ToImmutable(), [.. all]) { System = systemUnit };
+        return new BindingResult(types, declarations, bodies.ToImmutable(), routines.ToImmutable(), [.. all]) { System = systemUnit, Tree = tree };
     }
 
     /// <summary>Binds one routine body on its own (CMP-114), e.g. for the language service.</summary>

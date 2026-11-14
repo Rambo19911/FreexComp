@@ -46,6 +46,11 @@ internal sealed class FlowAnalyzer
             all.AddRange(Analyze(unit, body));
         }
 
+        if (unit.Diagnostics.All(d => d.Severity != DiagnosticSeverity.Error))
+        {
+            all.AddRange(UnusedPrivateMembers(unit));
+        }
+
         return [.. all.OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase).ThenBy(d => d.Location.Span.Start)];
     }
 
@@ -75,6 +80,53 @@ internal sealed class FlowAnalyzer
         var definition = body.Routine.Definition!;
         var diagnostics = analyzer.Run(body.Body, locals.Where(v => !captured.Contains(v)), definition.Block!.Body.LastToken());
         return [.. diagnostics.OrderBy(d => d.Location.Span.Start)];
+    }
+
+    /// <summary>
+    /// H2003 (C-096, diagnostics.md lead decision): a <c>private</c>/<c>strict private</c> field, method, property or
+    /// <c>class var</c> of a class of the implementation part (or of a program) that nothing in the unit names, at its
+    /// declaration. A member named by a property accessor counts as referenced; virtual and override methods are reached
+    /// through the VMT and are never reported.
+    /// </summary>
+    private static List<Diagnostic> UnusedPrivateMembers(BindingResult unit)
+    {
+        var analyzer = new FlowAnalyzer(null);
+        if (unit.Tree is not { } tree)
+        {
+            return analyzer._diagnostics;
+        }
+
+        var classes = unit.Unit.ImplementationMembers.Except(unit.Unit.InterfaceMembers).OfType<ClassTypeSymbol>()
+            .Where(c => ReferenceEquals(c.ContainingSymbol, unit.Unit)).Distinct().ToList();
+        var candidates = classes.SelectMany(c => c.Members)
+            .Where(m => m.Visibility is Visibility.Private or Visibility.StrictPrivate && !m.IsReferenced && !m.Locations.IsEmpty)
+            .Where(m => m is not MethodSymbol method || !(method.IsVirtual || method.IsOverride))
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            return analyzer._diagnostics;
+        }
+
+        var accessors = classes.SelectMany(c => c.Properties)
+            .SelectMany(p => p.ReadPath.Concat(p.WritePath).Append(p.ReadMethod).Append(p.WriteMethod))
+            .OfType<Symbol>().ToHashSet();
+        var tokens = new Dictionary<(string Path, int Start), SyntaxToken>();
+        foreach (var token in tree.Root.DescendantTokens())
+        {
+            var location = DiagnosticBag.LocationOf(token);
+            tokens.TryAdd((location.Path, location.Span.Start), token);
+        }
+
+        foreach (var member in candidates.Where(m => !accessors.Contains(m)))
+        {
+            var location = member.Locations[0];
+            if (tokens.TryGetValue((location.Path, location.Span.Start), out var token))
+            {
+                analyzer.Report(token, location, "H2003", member.Name);
+            }
+        }
+
+        return analyzer._diagnostics;
     }
 
     /// <summary>Scalar types that are assigned as a whole and are not initialised (LANG-391).</summary>

@@ -523,7 +523,7 @@ public sealed class Compilation
 
         var unit = loaded.Result!;
         var used = !unit.Bodies.IsEmpty || !Lowerer.ManagedGlobals(unit.Unit).IsEmpty;
-        return new(unit.Unit, HasInit: used, HasFinal: used);
+        return new(unit.Unit, HasInit: used || !Lowerer.ThreadVars(unit.Unit).IsEmpty, HasFinal: used);     // $init registers threadvars (ABI-180)
     }
 
     /// <summary>

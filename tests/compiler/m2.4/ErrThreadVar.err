@@ -1,0 +1,2 @@
+ErrThreadVar.pas(5,9): error E2900: Feature not supported: managed threadvar
+ErrThreadVar.pas(6,20): error E2207: Initialized variables are only allowed at unit or program level

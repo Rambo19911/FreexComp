@@ -95,7 +95,8 @@ internal static class IrEmitter
         // typed constants are read-only globals (LANG-344); those of routines follow the unit's own
         var variables = unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers)
             .Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).OfType<VariableSymbol>().Concat(unit.Statics)
-            .Concat(classes.SelectMany(c => c.ClassVariables)).ToImmutableArray();                 // CMP-370: class vars are globals
+            .Concat(classes.SelectMany(c => c.ClassVariables))                                       // CMP-370: class vars are globals
+            .Where(v => !v.IsThreadVar).ToImmutableArray();                                            // threadvars: ABI-180/181
         foreach (var variable in variables)
         {
             module.Globals[variable] = new IrGlobal(Mangler.GlobalVariable(variable));
@@ -145,8 +146,14 @@ internal static class IrEmitter
         }
         else
         {
-            // CMP-350: every unit defines both, possibly empty
-            new FunctionEmitter(module, unit.Initialization ?? EmptyBody(), IrLinkage.External, Mangler.UnitInit(unit.Unit)).Emit();
+            // CMP-350: every unit defines both, possibly empty; $init registers the threadvar descriptor first (ABI-180)
+            var initialization = unit.Initialization ?? EmptyBody();
+            if (unit.TlsRegistration is { } register)
+            {
+                initialization = initialization with { Body = new LBlock([register, initialization.Body]) };
+            }
+
+            new FunctionEmitter(module, initialization, IrLinkage.External, Mangler.UnitInit(unit.Unit)).Emit();
             module.DeclarePending();
             new FunctionEmitter(module, unit.Finalization ?? EmptyBody(), IrLinkage.External, Mangler.UnitFinal(unit.Unit)).Emit();
             module.DeclarePending();
@@ -204,6 +211,15 @@ internal static class IrEmitter
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Internal, IsConstant: false, new IrNullConstant(), Alignment: 8));
         }
 
+        if (!unit.ThreadVars.IsEmpty)
+        {
+            // ABI-180 / CMP-414: { i64 Size, i64 Offset = -1 }; external when other units reach interface threadvars through it
+            var size = (unit.Unit.ThreadVarSize + 15) / 16 * 16;
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.TlsDescriptor(unit.Unit),
+                unit.ThreadVars.Any(interfaceMembers.Contains) ? IrLinkage.External : IrLinkage.Internal, IsConstant: false,
+                new IrStructConstant(TlsDescriptorType, [IrIntConstant.I64(size), IrIntConstant.I64(-1)]), Alignment: 8));
+        }
+
         module.DeclarePending();                                        // routines whose address a typed constant holds
         foreach (var (name, type) in module.ExternalVariables)
         {
@@ -214,6 +230,11 @@ internal static class IrEmitter
         foreach (var name in module.ExternalVmts)
         {
             writer.DeclareGlobal(name, IrType.Ptr, 8);                          // another unit's VMT: only its address is used
+        }
+
+        foreach (var name in module.ExternalTlsDescriptors)
+        {
+            writer.DeclareGlobal(name, TlsDescriptorType, 8);                   // another unit's threadvar descriptor (CMP-414)
         }
 
         writer.DefineAttributeGroup(RoutineGroup, [IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
@@ -245,6 +266,7 @@ internal static class IrEmitter
     private static readonly LinkName MainName = new("$main", AlwaysQuote: true);
     private static readonly LinkName StartName = new("_start", AlwaysQuote: false);
     private static readonly StructIrType UnitEntryType = new([IrType.Ptr, IrType.Ptr]);
+    private static readonly StructIrType TlsDescriptorType = new([IrType.I64, IrType.I64]);
 
     private static LoweredBody EmptyBody() => new(null, [], new LBlock([]));
 
@@ -253,7 +275,8 @@ internal static class IrEmitter
     {
         var main = unit.Bodies.IsEmpty ? EmptyBody() : unit.Bodies[0];
         var initUnits = new LCallStatement(new LHelperCallee(new RuntimeHelper("_InitUnits", [], ReturnType: null, IsNoReturn: false)), []);
-        new FunctionEmitter(module, main with { Body = new LBlock([initUnits, main.Body]) }, IrLinkage.Internal, MainName).Emit();
+        LStatement[] statements = unit.TlsRegistration is { } register ? [initUnits, register, main.Body] : [initUnits, main.Body];   // ABI-180
+        new FunctionEmitter(module, main with { Body = new LBlock([.. statements]) }, IrLinkage.Internal, MainName).Emit();
         module.DeclarePending();
     }
 
@@ -535,6 +558,23 @@ internal sealed class ModuleState(IIrWriter writer)
         if (!OwnClasses.Contains(type))
         {
             _externalVmts.Add(name);
+        }
+
+        return new IrGlobal(name);
+    }
+
+    private readonly SortedSet<LinkName> _externalTlsDescriptors = new(Comparer<LinkName>.Create((a, b) => string.CompareOrdinal(a.Text, b.Text)));
+
+    /// <summary>Threadvar descriptors of other units referenced here (ABI-180), sorted by link name.</summary>
+    public IEnumerable<LinkName> ExternalTlsDescriptors => _externalTlsDescriptors;
+
+    /// <summary>The threadvar descriptor <c>@"U.$tls"</c> of <paramref name="unit"/>, declared external when another unit defines it.</summary>
+    public IrGlobal TlsDescriptor(UnitSymbol unit)
+    {
+        var name = Mangler.TlsDescriptor(unit);
+        if (!string.Equals(unit.Name, UnitName, StringComparison.OrdinalIgnoreCase))
+        {
+            _externalTlsDescriptors.Add(name);
         }
 
         return new IrGlobal(name);
@@ -1925,6 +1965,18 @@ internal sealed class FunctionEmitter
                 return _module.Routine(routine.Routine);                            // CMP-340: ptr @"link.name"
             case LClassRef reference:
                 return _module.Vmt(reference.Class);                                // CMP-367: ptr @"U.TFoo.$vmt"
+            case LTlsDescriptor descriptor:
+                return _module.TlsDescriptor(descriptor.Unit);                      // ABI-180
+            case LThreadVarAddress threadVar:
+            {
+                // CMP-414: _TlsBase() + the unit's block offset (descriptor field 1) + the variable's record offset
+                var tlsBase = CallHelper(NewTemp(), IrType.Ptr, "_TlsBase", _module.Function(
+                    new IrFunctionDeclaration(Mangler.RuntimeHelper("_TlsBase"), IrType.Ptr, [])), [])!;
+                var descriptor = _module.TlsDescriptor(threadVar.Variable.ContainingUnit!);
+                var offset = _w.Load(NewTemp(), IrType.I64, new IrGepConstant(IrType.I8, descriptor, [IrIntConstant.I64(8)]), 8);
+                var block = _w.GetElementPtr(NewTemp(), IrType.I8, tlsBase, [offset]);
+                return _w.GetElementPtr(NewTemp(), IrType.I8, block, [IrIntConstant.I64(threadVar.Variable.ThreadVarOffset!.Value)]);
+            }
             case LSequence sequence:
                 Statement(sequence.First);
                 return Value(sequence.Value);

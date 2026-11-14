@@ -83,6 +83,25 @@ public sealed class UnitCacheTests
         Assert.Equal("CMP-150 rule 2: another compiler fingerprint", CheckU(fs, cache, pcus));
     }
 
+    /// <summary>
+    /// C-195: the fingerprint names the build of the compiler assembly (its MVID, which a deterministic build changes with
+    /// every change of the binary), so a <c>.pcu</c> written by another build of the same version is out of date.
+    /// </summary>
+    [Fact]
+    public void CompilerChange_InvalidatesCache()
+    {
+        var build = typeof(PcuWriter).Assembly.ManifestModule.ModuleVersionId;
+        Assert.Equal(PcuWriter.CompilerFingerprintFor(build), PcuWriter.CompilerFingerprint);
+        Assert.EndsWith($"; build {build:N}", PcuWriter.CompilerFingerprint, StringComparison.Ordinal);
+
+        var rebuilt = PcuWriter.CompilerFingerprintFor(new Guid("0123456789abcdef0123456789abcdef"));
+        Assert.NotEqual(PcuWriter.CompilerFingerprint, rebuilt);
+        var (fs, pcus, _) = Cached();
+        var cache = new UnitCache(fs, rebuilt, (string)pcus["U"]["optionsFingerprint"]!);
+
+        Assert.Equal("CMP-150 rule 2: another compiler fingerprint", CheckU(fs, cache, pcus));
+    }
+
     [Fact]
     public void Rule3_AnotherOptionsFingerprint()
     {
