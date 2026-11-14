@@ -55,7 +55,7 @@ public partial class TextDocumentViewModel
                 return true;
             case PasteCommandId:
                 if (await ReadClipboardAsync() is { Length: > 0 } text)
-                    PasteFromClipboard(text);
+                    PasteFromClipboard(text, await WithClipboardRetryAsync(clipboard => clipboard.GetFormatAsync(IClipboardService.LineFormat)) == text);
                 return true;
             case DeleteCommandId:
                 DeleteForward();
@@ -66,27 +66,27 @@ public partial class TextDocumentViewModel
         }
     }
 
-    /// <summary>The selection (<see cref="CopySelection"/>), else the caret line with its line break, remembered as a line.</summary>
-    private string CopyText()
+    /// <summary>
+    /// The selection (<see cref="CopySelection"/>), else the caret line with its line break, marked as a line with
+    /// <see cref="IClipboardService.LineFormat"/> (I-170: on the OS clipboard, so other IDE instances see it).
+    /// </summary>
+    private (string Text, bool IsLine) CopyText()
     {
         if (!Selection.IsEmpty || Block is not null)
-        {
-            BlockClipboard.LineText = null;
-            return CopySelection();
-        }
+            return (CopySelection(), false);
 
         var (offset, length, breakLength) = Buffer.GetLine(ViewState.Caret.Line);
         var line = Buffer.GetText(offset, length + breakLength);
         if (breakLength == 0)
             line += LineEnding.NewLine;
         BlockClipboard.Text = null;
-        return BlockClipboard.LineText = line;
+        return (line, true);
     }
 
-    /// <summary>A line copied by <see cref="CopyText"/> goes in as a full line above the caret line (caret column kept).</summary>
-    private void PasteFromClipboard(string text)
+    /// <summary>A copied line (<paramref name="isLine"/>) goes in as a full line above the caret line (caret column kept).</summary>
+    private void PasteFromClipboard(string text, bool isLine)
     {
-        if (text != BlockClipboard.LineText || !Selection.IsEmpty || Block is not null)
+        if (!isLine || !Selection.IsEmpty || Block is not null)
         {
             Paste(text);
             return;
@@ -105,10 +105,13 @@ public partial class TextDocumentViewModel
         });
     }
 
-    private async Task<bool> WriteClipboardAsync(string text) =>
+    private async Task<bool> WriteClipboardAsync((string Text, bool IsLine) copy) =>
         await WithClipboardRetryAsync(async clipboard =>
         {
-            await clipboard.SetTextAsync(text);
+            if (copy.IsLine)
+                await clipboard.SetTextAsync(copy.Text, new Dictionary<string, string> { [IClipboardService.LineFormat] = copy.Text });
+            else
+                await clipboard.SetTextAsync(copy.Text);
             return true;
         });
 

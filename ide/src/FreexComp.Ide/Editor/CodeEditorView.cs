@@ -48,6 +48,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private readonly ChangeBarMargin _changeBar;
     private readonly CurrentLineRenderer _currentLine;
     private readonly LineStateBackgroundRenderer _lineStates;
+    private readonly TextMarkerRenderer _markers;
     private TextDocumentViewModel? _document;
     private CodeTokenIndex? _tokens;
     private FoldingManager? _foldings;
@@ -68,7 +69,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         _editor.ShowLineNumbers = false; // our own margins replace AvaloniaEdit's (editor.md §2)
         Bind(_editor, TextEditor.BackgroundProperty, "FxcBgEditorBrush");
         Bind(_editor, TextEditor.ForegroundProperty, "FxcSyntaxTextBrush");
-        Bind(area, TextArea.CaretBrushProperty, "FxcEditorCaretBrush");
+        BindCaret(overwrite: false);
         Bind(area, TextArea.SelectionBrushProperty, "FxcEditorSelectionBgBrush");
         Bind(textView, TextView.NonPrintableCharacterBrushProperty, "FxcEditorWhitespaceBrush"); // UI-ED-058
         textView.Bind(TextView.ColumnRulerPenProperty, // UI-ED-057
@@ -81,7 +82,11 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         _foldMargin = new FoldMargin(area) { ToggleRequested = ToggleFolding };
         _changeBar = new ChangeBarMargin(area);
         foreach (var margin in new Control[] { _glyphMargin, _lineNumbers, _foldMargin, _changeBar, new TextPaddingMargin() })
+        {
             area.LeftMargins.Add(margin);
+            if (margin is GutterMargin gutter)
+                gutter.ContextMenuRequested = OpenGutterMenu;
+        }
 
         // editor.md §6: our current-line highlight (the built-in one is off), line-state backgrounds over it.
         var options = _editor.Options;
@@ -100,6 +105,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         textView.BackgroundRenderers.Add(new FindMatchRenderer(this, () => _find));
         textView.BackgroundRenderers.Add(new OccurrenceRenderer(this, () => _document?.WordHighlights.Highlights ?? []));
         textView.BackgroundRenderers.Add(new BracketMatchRenderer(this, CurrentBracketMatch));
+        _markers = new TextMarkerRenderer(this); // editor.md §6 row 12
+        textView.BackgroundRenderers.Add(_markers);
         ApplyOptions(EditorOptions.Default);
 
         area.TextEntering += OnTextEntering;
@@ -175,6 +182,24 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             BindDocument(DataContext as TextDocumentViewModel);
     }
 
+    private IDisposable? _caretBrush;
+
+    /// <summary>UI-ED-052: overwrite mode draws a block caret (AvaloniaEdit's overstrike caret) at 50 % opacity.</summary>
+    private void SetOverwrite(bool overwrite)
+    {
+        _editor.TextArea.OverstrikeMode = overwrite;
+        BindCaret(overwrite);
+    }
+
+    /// <summary><c>editor.caret</c>, following the theme; at 50 % opacity for the overwrite block (AvaloniaEdit draws it opaque).</summary>
+    private void BindCaret(bool overwrite)
+    {
+        _caretBrush?.Dispose();
+        var area = _editor.TextArea;
+        _caretBrush = area.Bind(TextArea.CaretBrushProperty, area.GetResourceObservable("FxcEditorCaretBrush",
+            brush => overwrite && brush is ISolidColorBrush solid ? new SolidColorBrush(solid.Color, 0.5) : brush));
+    }
+
     private static void Bind(Control target, AvaloniaProperty property, string resourceKey) =>
         target.Bind(property, target.GetResourceObservable(resourceKey));
 
@@ -233,7 +258,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             return;
 
         _editor.IsReadOnly = document.IsReadOnly;
-        _editor.TextArea.OverstrikeMode = document.ViewState.Overwrite;
+        SetOverwrite(document.ViewState.Overwrite);
         SetAutomationIds(document);
         ApplySelection(document);
         SetColorizer(document);
@@ -286,6 +311,26 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             _editor.TextArea.Focus();
     }
 
+    /// <summary>
+    /// UI-ED-022: the gutter context menu of <paramref name="line"/>; the caret moves to that line first (unless it is
+    /// already there), so the line commands act on it.
+    /// </summary>
+    private void OpenGutterMenu(GutterMargin margin, int line)
+    {
+        if (_document?.GutterMenu is not { } build)
+            return;
+        var area = _editor.TextArea;
+        if (area.Caret.Line != line)
+        {
+            area.ClearSelection();
+            area.Caret.Offset = _editor.Document.GetLineByNumber(line).Offset;
+        }
+
+        var menu = Views.MenuBarBuilder.CreateContextMenu(build(line));
+        margin.ContextMenu = menu;
+        menu.Open(margin);
+    }
+
     /// <summary>"Focus the editor" (<c>window.focusEditor</c>, pane cycling): the text, not the first focusable element.</summary>
     public bool FocusText() => _document is not null && _editor.TextArea.Focus();
 
@@ -336,6 +381,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         _glyphMargin.Decorations = document?.Decorations;
         _currentLine.Decorations = document?.Decorations;
         _lineStates.Decorations = document?.Decorations;
+        _markers.Decorations = document?.Decorations;
         _changeBar.Source = document?.LineChanges ?? NoLineChanges.Instance;
         InvalidateBackground();
     }
@@ -617,7 +663,9 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     string? IEditorTestProbe.LineBackgroundAt(int line) =>
         _document?.Decorations.LineBackgroundAt(line) ?? (_currentLine.HighlightedLine == line ? "editor.currentLine.bg" : null);
 
-    IReadOnlyList<(int Offset, int Length, string Kind)> IEditorTestProbe.Markers => []; // the marker service comes with diagnostics
+    /// <summary>The drawn marker pieces (UI-ED-067: the most severe per character); Kind = <c>Error</c>, <c>Warning</c>, <c>Hint</c>.</summary>
+    IReadOnlyList<(int Offset, int Length, string Kind)> IEditorTestProbe.Markers =>
+        _document is null ? [] : [.. _document.Decorations.DrawnMarkers.Select(m => (m.Offset, m.Length, m.Severity.ToString()))];
 
     string IEditorTestProbe.ChangeBarAt(int line) => _changeBar.Source.StateOf(line).ToString();
 
@@ -685,7 +733,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         if (e.PropertyName is nameof(EditorViewState.Caret) or nameof(EditorViewState.SelectionAnchor) or nameof(EditorViewState.RectangularSelection))
             ApplySelection(document);
         else if (e.PropertyName == nameof(EditorViewState.Overwrite))
-            _editor.TextArea.OverstrikeMode = document.ViewState.Overwrite; // UI-ED-052: block caret
+            SetOverwrite(document.ViewState.Overwrite);
         else if (e.PropertyName is nameof(EditorViewState.FontSize) or nameof(EditorViewState.WordWrap))
             ApplyZoomAndWrap();
     }

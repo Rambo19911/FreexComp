@@ -16,10 +16,41 @@ public enum LineGlyphKind
 
 /// <summary>
 /// One glyph on a line. <paramref name="Number"/> is the digit of a numbered bookmark (1–9, 0 = none);
-/// <paramref name="ToolTip"/> is the provider's tooltip text (UI-ED-021).
+/// <paramref name="ToolTip"/> is the provider's text for kinds without a standard one (an error marker's first error
+/// message, a call frame); <paramref name="Condition"/> / <paramref name="PassCount"/> describe a breakpoint (UI-ED-021).
 /// </summary>
-public sealed record LineGlyph(LineGlyphKind Kind, int Number = 0, string? ToolTip = null)
+public sealed record LineGlyph(LineGlyphKind Kind, int Number = 0, string? ToolTip = null, string? Condition = null, int PassCount = 0)
 {
+    /// <summary>
+    /// UI-ED-021: the glyph's tooltip line on 1-based <paramref name="line"/>, from the <c>Msg.Editor.Tip.*</c> texts
+    /// (breakpoint with condition / pass count / disabled, unverified breakpoint, bookmark, execution point); an error
+    /// marker or call frame shows the provider's <see cref="ToolTip"/>. Null = no line.
+    /// </summary>
+    public string? FormatToolTip(int line)
+    {
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        switch (Kind)
+        {
+            case LineGlyphKind.BreakpointUnverified:
+                return Resources.Strings.Msg_Debug_BreakpointUnverified;
+            case LineGlyphKind.Bookmark:
+                return Number > 0 ? string.Format(culture, Resources.Strings.Msg_Editor_Tip_BookmarkNumbered, Number) : Resources.Strings.Msg_Editor_Tip_Bookmark;
+            case LineGlyphKind.Execution:
+                return Resources.Strings.Msg_Editor_Tip_ExecutionPoint;
+            case LineGlyphKind.Error or LineGlyphKind.Frame:
+                return ToolTip;
+        }
+
+        var text = new System.Text.StringBuilder(string.Format(culture, Resources.Strings.Msg_Editor_Tip_Breakpoint, line));
+        if (Condition is { Length: > 0 })
+            text.Append(string.Format(culture, Resources.Strings.Msg_Editor_Tip_BreakpointCondition, Condition));
+        if (PassCount > 0)
+            text.Append(string.Format(culture, Resources.Strings.Msg_Editor_Tip_BreakpointPassCount, PassCount));
+        if (Kind is LineGlyphKind.BreakpointDisabled or LineGlyphKind.BreakpointConditionalDisabled)
+            text.Append(Resources.Strings.Msg_Editor_Tip_BreakpointDisabled);
+        return text.ToString();
+    }
+
     /// <summary>editor.md §3: 1 (highest) = execution arrow … 5 = error marker.</summary>
     public int Priority => Kind switch
     {
@@ -37,13 +68,17 @@ public sealed record LineGlyph(LineGlyphKind Kind, int Number = 0, string? ToolT
 }
 
 /// <summary>
-/// A source of glyph-margin glyphs (architecture.md §11 "Editor margin / renderer"): bookmarks (P3), error markers
-/// (P3), breakpoints and the execution point (P6). Raise <see cref="Changed"/> when any line's glyphs change.
+/// A source of glyph-margin glyphs and text markers (architecture.md §11 "Editor margin / renderer"): lexer errors
+/// (P1), bookmarks and diagnostics (P3), breakpoints and the execution point (P6). Raise <see cref="Changed"/> when
+/// any line's glyphs or any marker change.
 /// </summary>
 public interface IEditorDecorationProvider
 {
     /// <summary>The glyphs of the 1-based <paramref name="line"/>, in any order.</summary>
     IReadOnlyList<LineGlyph> GetLineGlyphs(int line);
+
+    /// <summary>The provider's text markers (editor.md §7), in any order; may overlap.</summary>
+    IReadOnlyList<TextMarker> GetMarkers() => [];
 
     event EventHandler? Changed;
 }
@@ -78,6 +113,19 @@ public sealed class EditorDecorations
     /// <summary>All glyphs of the line, highest priority first (the first is drawn, all go into the tooltip).</summary>
     public IReadOnlyList<LineGlyph> GlyphsAt(int line) =>
         _providers.Count == 0 ? [] : [.. _providers.SelectMany(p => p.GetLineGlyphs(line)).OrderBy(g => g.Priority)];
+
+    /// <summary>Every provider's markers.</summary>
+    public IReadOnlyList<TextMarker> Markers => _providers.Count == 0 ? [] : [.. _providers.SelectMany(p => p.GetMarkers())];
+
+    /// <summary>The marker pieces drawn: the most severe marker per character (UI-ED-067, <see cref="TextMarkers.Resolve"/>).</summary>
+    public IReadOnlyList<TextMarker> DrawnMarkers => TextMarkers.Resolve(Markers);
+
+    /// <summary>UI-ED-021: the tooltip of the line's glyphs, one line per glyph (highest priority first), or null.</summary>
+    public string? ToolTipAt(int line)
+    {
+        var lines = GlyphsAt(line).Select(g => g.FormatToolTip(line)).OfType<string>().ToList();
+        return lines.Count == 0 ? null : string.Join(Environment.NewLine, lines);
+    }
 
     /// <summary>The glyph drawn on the line, or null.</summary>
     public LineGlyph? GlyphAt(int line) => GlyphsAt(line).FirstOrDefault();

@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using Avalonia.Themes.Fluent;
 using FreexComp.Ide.Core.Composition;
 
 namespace FreexComp.Ide;
@@ -10,7 +12,17 @@ public sealed class App : Application
     /// <summary>The service graph of this process; null in the headless test application.</summary>
     internal IdeServices? Services { get; private set; }
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+
+        // UI-TOK-007: Fluent's brushes resolve their palette colours inside the theme's own resources first, so the
+        // overrides are merged there too (App.axaml merges them into the application resources for the brush keys).
+        var fluent = Styles.OfType<FluentTheme>().Single();
+        fluent.Resources.MergedDictionaries.Add((ResourceDictionary)AvaloniaXamlLoader.Load(FluentOverrides));
+    }
+
+    internal static readonly Uri FluentOverrides = new("avares://FreexComp.Ide/Themes/FluentOverrides.axaml");
 
     public override void OnFrameworkInitializationCompleted()
     {

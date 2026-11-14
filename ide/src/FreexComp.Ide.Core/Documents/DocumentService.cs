@@ -288,6 +288,17 @@ public sealed class DocumentService : IDocumentService
         Activate(_documents[next]);
     }
 
+    public void Move(DocumentViewModel document, int index)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        var from = _documents.IndexOf(document);
+        if (from < 0)
+            throw new ArgumentException("The document is not open.", nameof(document));
+        index = Math.Clamp(index, 0, _documents.Count - 1);
+        if (index != from)
+            _documents.Move(from, index);
+    }
+
     public bool Close(DocumentViewModel document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -716,6 +727,7 @@ public sealed class DocumentService : IDocumentService
             textDocument.BlockClipboard = _blockClipboard;
             textDocument.Clock = Clock;
             textDocument.Clipboard = Clipboard;
+            textDocument.GutterMenu = line => _commands is null ? [] : Menus.GutterMenu.Build(textDocument.Decorations.GlyphsAt(line), _commands, _settings);
             textDocument.ViewState.WordWrap = _editorOptions.WordWrap; // IDE-ED-040; a restored session replaces it
             textDocument.ViewState.PropertyChanged += (_, e) =>
             {

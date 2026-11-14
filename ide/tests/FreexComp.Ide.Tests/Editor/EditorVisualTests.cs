@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
@@ -112,9 +113,82 @@ public sealed class EditorVisualTests
 
         public event EventHandler? Changed;
 
+        public List<TextMarker> TextMarkers { get; } = [];
+
         public IReadOnlyList<LineGlyph> GetLineGlyphs(int line) => Glyphs.GetValueOrDefault(line, []);
 
+        public IReadOnlyList<TextMarker> GetMarkers() => TextMarkers;
+
         public void Raise() => Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-062")]
+    [Trait("Req", "UI-ED-063")]
+    [Trait("Req", "UI-ED-064")]
+    [Trait("Req", "UI-ED-065")]
+    [Trait("Req", "UI-ED-066")]
+    [Trait("Req", "UI-ED-067")]
+    [Trait("Req", "UI-ED-068")]
+    public async Task SquigglePerSeverityAndOverlap()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light";
+            o.InitialFiles["A.pas"] = "X := 'abc;\r\nY := 1;\r\n  Z;\r\n  W;\r\n  V;";
+        });
+        var (doc, editor, probe) = await OpenAsync(h, "A.pas");
+        var textView = editor.TextArea.TextView;
+        var renderer = textView.BackgroundRenderers.OfType<TextMarkerRenderer>().Single();
+        Color error = Color.Parse("#B3261E"), warning = Color.Parse("#8A5A00"), hint = Color.Parse("#6B4FA0");
+        List<(Color? Pen, Color? Fill, Rect Bounds)> Drawn()
+        {
+            textView.EnsureVisualLines();
+            var group = new DrawingGroup();
+            using (var context = group.Open())
+                renderer.Draw(textView, context);
+            return [.. group.Children.OfType<GeometryDrawing>().Select(d => ((d.Pen?.Brush as ISolidColorBrush)?.Color, (d.Brush as ISolidColorBrush)?.Color, d.Geometry!.Bounds))];
+        }
+
+        // UI-ED-068: the unterminated string (a lexer error token) has an error marker.
+        Assert.Equal([(5, 5, "Error")], probe.Markers);
+        Assert.Equal([error], Drawn().Select(d => d.Pen));
+
+        // UI-ED-067: overlapping markers — each character shows only the most severe one; a zero-length marker at the
+        // end of line 2 is one character wide (UI-ED-066).
+        var other = new FakeDecorations();
+        other.TextMarkers.AddRange([new TextMarker(0, 8, MarkerSeverity.Warning), new TextMarker(12, 4, MarkerSeverity.Hint), new TextMarker(19, 0, MarkerSeverity.Warning)]);
+        doc.Decorations.Add(other);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal([(0, 5, "Warning"), (5, 5, "Error"), (12, 4, "Hint"), (19, 1, "Warning")], probe.Markers);
+        var drawn = Drawn();
+        Assert.Equal([warning, error, warning], drawn.Where(d => d.Pen is not null).Select(d => d.Pen));
+        Assert.Equal(3, drawn.Count(d => d.Fill == hint)); // UI-ED-065: three dots
+        var squiggles = drawn.Where(d => d.Pen is not null).ToList();
+        Assert.Equal(3, squiggles[1].Bounds.Height, 3);     // error: peak-to-peak 3
+        Assert.Equal(2, squiggles[0].Bounds.Height, 3);     // warning: peak-to-peak 2
+        Assert.True(squiggles[2].Bounds.Width >= textView.WideSpaceWidth - 4, "zero-length marker drawn one character wide");
+
+        // Fixing the string removes the lexer marker; the other markers stay.
+        doc.Buffer.ApplyEdits([new Core.Text.TextEdit(9, 0, "'")]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal([(0, 8, "Warning"), (12, 4, "Hint"), (19, 1, "Warning")], probe.Markers);
+
+        // UI-ED-066: a marker over five lines underlines only the first three, later lines from their first non-blank.
+        other.TextMarkers.Clear();
+        other.TextMarkers.Add(new TextMarker(0, doc.Buffer.Length, MarkerSeverity.Warning));
+        other.Raise();
+        Dispatcher.UIThread.RunJobs();
+        var lines = Drawn();
+        Assert.Equal(3, lines.Count);
+        Assert.True(lines[2].Bounds.Left > lines[0].Bounds.Left + textView.WideSpaceWidth, "line 3 starts at its first non-blank");
+        Assert.True(lines.Select(l => l.Bounds.Top).Distinct().Count() == 3);
+
+        // UI-ED-063…065 geometry: vertices every 2 px from the left edge snapped to 4 px; hint dots at a 3 px pitch.
+        Assert.Equal([new Point(4, 10), new Point(6, 13), new Point(8, 10), new Point(10, 13), new Point(12, 10), new Point(14, 13)],
+            MarkerGeometry.Squiggle(5, 13, 10, MarkerGeometry.ErrorPeakToPeak));
+        Assert.Equal([new Point(0, 0), new Point(2, 2), new Point(4, 0)], MarkerGeometry.Squiggle(0, 4, 0, MarkerGeometry.WarningPeakToPeak));
+        Assert.Equal([new Point(10.75, 5.75), new Point(13.75, 5.75), new Point(16.75, 5.75)], MarkerGeometry.HintDots(10, 5));
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -466,5 +540,118 @@ public sealed class EditorVisualTests
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("x1\r\nx2\r\nx3\r\n", editor.TextArea.Selection.GetText());
         Assert.Equal(new Core.Text.TextPosition(4, 1), doc.ViewState.Caret);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-021")]
+    [Trait("Req", "UI-ED-022")]
+    public async Task GlyphContextMenuAndTooltip()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = Lines(8));
+        var (doc, editor, _) = await OpenAsync(h, "A.pas");
+        var gutter = Margin<GlyphMargin>(editor);
+        var lineHeight = editor.TextArea.TextView.DefaultLineHeight;
+        Point LineCenter(Control margin, int line) => margin.TranslatePoint(new Point(margin.Bounds.Width / 2, (line - 0.5) * lineHeight), h.Window)!.Value;
+        var glyphs = new FakeDecorations();
+        doc.Decorations.Add(glyphs);
+        glyphs.Glyphs[2] = [new LineGlyph(LineGlyphKind.BreakpointConditionalDisabled, Condition: "I > 3", PassCount: 2)];
+        glyphs.Glyphs[3] = [new LineGlyph(LineGlyphKind.Bookmark, 4), new LineGlyph(LineGlyphKind.Execution), new LineGlyph(LineGlyphKind.Breakpoint)];
+        glyphs.Glyphs[4] = [new LineGlyph(LineGlyphKind.BreakpointUnverified), new LineGlyph(LineGlyphKind.Bookmark)];
+        glyphs.Glyphs[5] = [new LineGlyph(LineGlyphKind.Error, ToolTip: "E2003 Undeclared identifier: 'Foo'")];
+        glyphs.Raise();
+        Dispatcher.UIThread.RunJobs();
+
+        // UI-ED-021: tooltips from the Msg.Editor.Tip texts, one line per glyph, highest priority first.
+        string? TipAt(int line)
+        {
+            h.Window.MouseMove(LineCenter(gutter, line));
+            Dispatcher.UIThread.RunJobs();
+            return ToolTip.GetTip(gutter) as string;
+        }
+
+        var nl = Environment.NewLine;
+        Assert.Equal("Breakpoint at line 2, condition: I > 3, pass count: 2, disabled", TipAt(2));
+        Assert.Equal("Execution point" + nl + "Breakpoint at line 3" + nl + "Bookmark 4", TipAt(3));
+        Assert.Equal("The breakpoint is not on a line that produces code." + nl + "Bookmark", TipAt(4));
+        Assert.Equal("E2003 Undeclared identifier: 'Foo'", TipAt(5));
+        Assert.Null(TipAt(6));
+
+        ContextMenu RightClick(Control margin, int line)
+        {
+            h.Window.MouseDown(LineCenter(margin, line), Avalonia.Input.MouseButton.Right);
+            h.Window.MouseUp(LineCenter(margin, line), Avalonia.Input.MouseButton.Right);
+            Dispatcher.UIThread.RunJobs();
+            var menu = Assert.IsType<ContextMenu>(margin.ContextMenu);
+            Assert.True(menu.IsOpen);
+            return menu;
+        }
+
+        static List<string?> Ids(ContextMenu menu) => [.. menu.Items.Cast<Control>().Select(c => c is Separator ? null : AutomationIds.Get(c))];
+        static string Header(ContextMenu menu, int index) => (string)((MenuItem)menu.Items[index]!).Header!;
+
+        // UI-ED-022: on a breakpoint glyph — enable/disable, properties, —, Delete Breakpoint (run.toggleBreakpoint);
+        // the caret moves to the clicked line, so the commands act on it.
+        var menu = RightClick(gutter, 3);
+        Assert.Equal(["Context.run.toggleBreakpointEnabled", "Context.run.breakpointProperties", null, "Context.run.toggleBreakpoint"], Ids(menu));
+        Assert.Equal("_Delete Breakpoint", Header(menu, 3));
+        Assert.Equal(3, doc.ViewState.Caret.Line);
+        menu.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        // Elsewhere in the gutter (also over the line numbers): toggle breakpoint, toggle bookmark, —, three setting toggles.
+        menu = RightClick(Margin<LineNumberMargin>(editor), 6);
+        Assert.Equal(["Context.run.toggleBreakpoint", "Context.search.bookmark.toggle", null,
+            "Context." + Core.Menus.GutterMenu.LineNumbersAction, "Context." + Core.Menus.GutterMenu.FoldingMarkersAction,
+            "Context." + Core.Menus.GutterMenu.ChangeBarAction], Ids(menu));
+        Assert.Equal(6, doc.ViewState.Caret.Line);
+        var lineNumbers = (MenuItem)menu.Items[3]!;
+        Assert.True(lineNumbers.IsChecked);
+        Assert.Equal(MenuItemToggleType.CheckBox, lineNumbers.ToggleType);
+        lineNumbers.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Services.Settings.Get(SettingsCatalog.EditorShowLineNumbers));
+        Assert.False(Margin<LineNumberMargin>(editor).IsVisible);
+        menu.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        menu = RightClick(gutter, 7);
+        Assert.False(((MenuItem)menu.Items[3]!).IsChecked);
+        Assert.True(((MenuItem)menu.Items[4]!).IsChecked);
+        menu.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-052")]
+    public async Task OverwriteCaretHalfOpaque()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light";
+            o.InitialFiles["A.pas"] = Lines(3);
+        });
+        var (doc, editor, _) = await OpenAsync(h, "A.pas");
+        var area = editor.TextArea;
+        area.Focus();
+        Dispatcher.UIThread.RunJobs();
+        Color light = Color.Parse("#1C211E"), dark = Color.Parse("#E4E8E5"); // editor.caret
+        ISolidColorBrush Caret() => Assert.IsAssignableFrom<ISolidColorBrush>(area.CaretBrush);
+
+        // Insert mode: the opaque editor.caret bar.
+        Assert.Equal((light, 1.0), (Caret().Color, Caret().Opacity));
+
+        // Overwrite mode: a block of editor.caret at 50 % opacity; also after a theme switch.
+        h.Press("Insert");
+        Assert.True(area.OverstrikeMode);
+        Assert.Equal((light, 0.5), (Caret().Color, Caret().Opacity));
+        h.Services.Settings.Set(SettingsCatalog.AppearanceTheme, "dark");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal((dark, 0.5), (Caret().Color, Caret().Opacity));
+
+        // Back to insert mode: opaque again.
+        h.Press("Insert");
+        Assert.False(area.OverstrikeMode);
+        Assert.Equal((dark, 1.0), (Caret().Color, Caret().Opacity));
+        Assert.False(doc.ViewState.Overwrite);
     }
 }

@@ -1,6 +1,10 @@
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Resources;
@@ -149,6 +153,127 @@ public sealed class DocumentTabTests
         await h.WaitForAsync(() => h.Messages.Requests.Count == 1, "save prompt");
         Assert.Equal([a, b], documents.Documents);
     }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-076")]
+    public async Task DragReordersTabs()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["A.pas"] = "a";
+            o.InitialFiles["B.pas"] = "b";
+            o.InitialFiles["C.pas"] = "c";
+        });
+        var a = await OpenAsync(h, "A.pas");
+        var b = await OpenAsync(h, "B.pas");
+        var c = await OpenAsync(h, "C.pas");
+        var documents = h.Services.Documents;
+        Control Tab(string name) => h.Find<Control>("DocumentTab." + name);
+        Point Center(string name) => Tab(name).TranslatePoint(new Point(Tab(name).Bounds.Width / 2, Tab(name).Bounds.Height / 2), h.Window)!.Value;
+        Avalonia.Controls.Shapes.Rectangle Indicator() => h.Find<Control>("DocumentArea").GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Rectangle>().Single(r => r.Name == "TabDropIndicator");
+
+        // Pressing and moving a few DIP is still a click: nothing moves, no indicator.
+        var start = Center("A.pas");
+        h.Window.MouseDown(start, MouseButton.Left);
+        h.Window.MouseMove(start + new Point(2, 0), RawInputModifiers.LeftMouseButton);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(Indicator().IsVisible);
+        h.Window.MouseUp(start + new Point(2, 0), MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal([a, b, c], documents.Documents);
+        Assert.Same(a, documents.ActiveDocument);
+
+        // Dragging A past C's centre: a 2 px accent line marks the drop position after C, then A moves there.
+        var target = Center("C.pas") + new Point(Tab("C.pas").Bounds.Width / 4, 0);
+        h.Window.MouseDown(start, MouseButton.Left);
+        h.Window.MouseMove(start + new Point(10, 0), RawInputModifiers.LeftMouseButton);
+        h.Window.MouseMove(target, RawInputModifiers.LeftMouseButton);
+        Dispatcher.UIThread.RunJobs();
+        var line = Indicator();
+        Assert.True(line.IsVisible);
+        Assert.Equal(2, line.Width);
+        Assert.Equal(GetBrushColor(h, "FxcAccentDefaultBrush"), ((ISolidColorBrush)line.Fill!).Color);
+        var lineX = line.TranslatePoint(new Point(line.Width / 2, 0), h.Window)!.Value.X;
+        var cRight = Tab("C.pas").TranslatePoint(new Point(Tab("C.pas").Bounds.Width, 0), h.Window)!.Value.X;
+        Assert.InRange(lineX, cRight - 2, cRight + 2);
+        h.Window.MouseUp(target, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(Indicator().IsVisible);
+        Assert.Equal([b, c, a], documents.Documents);
+        Assert.True(Center("A.pas").X > Center("C.pas").X);
+
+        // Dragging C to the very left: before B. Ctrl+PageDown follows the new visual order.
+        h.Drag("DocumentTab.C.pas", Center("B.pas").X - Center("C.pas").X - Tab("B.pas").Bounds.Width / 4, 0);
+        Assert.Equal([c, b, a], documents.Documents);
+        documents.Activate(c);
+        h.Press("Ctrl+PageDown");
+        Assert.Same(b, documents.ActiveDocument);
+
+        // Dropping a tab on its own position changes nothing.
+        h.Drag("DocumentTab.B.pas", 10, 0);
+        Assert.Equal([c, b, a], documents.Documents);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-072")]
+    [Trait("Req", "UI-ED-073")]
+    [Trait("Req", "UI-TOK-050")]
+    public async Task TabsAreKeyboardFocusable()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["A.pas"] = "a";
+            o.InitialFiles["B.pas"] = "b";
+            o.InitialFiles["C.pas"] = "c";
+        });
+        var a = await OpenAsync(h, "A.pas");
+        var b = await OpenAsync(h, "B.pas");
+        await OpenAsync(h, "C.pas");
+        var documents = h.Services.Documents;
+        Border Ring(string id) // the element's own ring (a tab also contains its close button's ring)
+        {
+            var element = h.Find<Control>(id);
+            return element.GetVisualDescendants().OfType<Border>().First(r => r.Name == "FocusRing" && r.FindAncestorOfType<Button>() == element as Button);
+        }
+
+        // A mouse click activates without leaving focus on the tab (the editor gets it) and shows no ring.
+        h.Click("DocumentTab.A.pas");
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.A.pas", "editor A focused after the click");
+        Assert.False(Ring("DocumentTab.A.pas").IsVisible);
+
+        // Keyboard focus on a tab: 2 px border.focus ring; the close slot shows its × while the tab has focus.
+        var tabB = h.Find<Control>("DocumentTab.B.pas");
+        Assert.True(tabB.Focusable);
+        tabB.Focus(NavigationMethod.Tab);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("DocumentTab.B.pas", h.FocusedAutomationId);
+        var ring = Ring("DocumentTab.B.pas");
+        Assert.True(ring.IsVisible);
+        Assert.Equal(new Thickness(2), ring.BorderThickness);
+        Assert.Equal(GetBrushColor(h, "FxcBorderFocusBrush"), ((ISolidColorBrush)ring.BorderBrush!).Color);
+        Assert.True(h.Find<Control>("DocumentTab.B.pas.Close").IsVisible);
+        Assert.Same(a, documents.ActiveDocument); // focusing does not activate
+
+        // Right / Left move between tabs; Enter (or Space) activates the focused tab and keeps the focus there.
+        h.Press("Right");
+        Assert.Equal("DocumentTab.C.pas", h.FocusedAutomationId);
+        Assert.False(Ring("DocumentTab.B.pas").IsVisible);
+        h.Press("Left");
+        Assert.Equal("DocumentTab.B.pas", h.FocusedAutomationId);
+        h.Press("Enter");
+        Assert.Same(b, documents.ActiveDocument);
+        Assert.Equal("DocumentTab.B.pas", h.FocusedAutomationId);
+
+        // Tab reaches the close slot (ring there too); Enter closes that tab.
+        h.Press("Tab");
+        Assert.Equal("DocumentTab.B.pas.Close", h.FocusedAutomationId);
+        Assert.True(Ring("DocumentTab.B.pas.Close").IsVisible);
+        h.Press("Enter");
+        await h.WaitForAsync(() => !documents.Documents.Contains(b), "B closed");
+    }
+
+    private static Color GetBrushColor(HeadlessHarness h, string key) =>
+        h.Window.TryFindResource(key, h.Window.ActualThemeVariant, out var brush) ? ((ISolidColorBrush)brush!).Color : throw new InvalidOperationException(key);
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-ED-078")]

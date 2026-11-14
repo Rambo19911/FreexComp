@@ -109,6 +109,9 @@ public sealed class MenuItemModel : ObservableObject
     /// <summary>The action of an action item (always enabled); null for command items.</summary>
     public Action? Run { get; private init; }
 
+    /// <summary>An action item with a check mark: whether it is checked when the menu is built; null = no check mark.</summary>
+    public bool? IsCheckedAction { get; private init; }
+
     public bool IsEnabled => Run is not null || _alwaysEnabled
         || (Command is not null ? Command.CanExecute(Argument) : Children.Any(c => !c.IsSeparator && c.IsEnabled));
 
@@ -118,8 +121,9 @@ public sealed class MenuItemModel : ObservableObject
         new(null, label, command, argument, toggleKind, [], false, false, toolTip);
 
     /// <summary>An item that runs <paramref name="run"/> (no command; IDE-WEL-008 Pin/Unpin, Remove from List).</summary>
-    internal static MenuItemModel ForAction(string actionId, string label, Action run) =>
-        new(null, label, null, null, MenuToggleKind.None, [], false, false) { ActionId = actionId, Run = run };
+    internal static MenuItemModel ForAction(string actionId, string label, Action run, bool? isChecked = null) =>
+        new(null, label, null, null, isChecked is null ? MenuToggleKind.None : MenuToggleKind.Check, [], false, false)
+        { ActionId = actionId, Run = run, IsCheckedAction = isChecked };
 
     internal static MenuItemModel ForSubmenu(string key, string label, IReadOnlyList<MenuItemModel> children, bool alwaysEnabled) =>
         new(key, label, null, null, MenuToggleKind.None, children, false, alwaysEnabled);

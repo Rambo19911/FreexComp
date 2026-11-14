@@ -58,8 +58,7 @@ internal static class KeyMappingsPageView
         top.Children.Add(resetAll);
 
         // The grid: header and rows.
-        var header = Cells(Strings.Options_Keys_Command, Strings.Options_Keys_Shortcut, Strings.Options_Keys_Scope, "bodyStrong");
-        header.Margin = new Thickness(9, 0, 9, 2);
+        var header = Header(model);
         var list = CreateList(model);
         var frame = new Border { BorderThickness = new Thickness(1), Child = list, Height = 240 };
         frame.Bind(Border.BorderBrushProperty, frame.GetResourceObservable("FxcBorderDefaultBrush"));
@@ -238,6 +237,41 @@ internal static class KeyMappingsPageView
             AutomationProperties.SetName(item, row.Text);
         };
         return list;
+    }
+
+    /// <summary>The column headers; Command and Scope sort (I-164), Shortcut does not (dialogs.md §9.5).</summary>
+    private static Grid Header(KeyMappingsPageViewModel model)
+    {
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,220,120"), Margin = new Thickness(9, 0, 9, 2) };
+        var shortcut = Text(Strings.Options_Keys_Shortcut, "bodyStrong");
+        Grid.SetColumn(shortcut, 1);
+        var scope = HeaderButton(Strings.Options_Keys_Scope, "Scope", () => model.SortBy(KeyMappingsSort.Scope));
+        Grid.SetColumn(scope, 2);
+        grid.Children.Add(HeaderButton(Strings.Options_Keys_Command, "Command", () => model.SortBy(KeyMappingsSort.Command)));
+        grid.Children.Add(shortcut);
+        grid.Children.Add(scope);
+        return grid;
+    }
+
+    /// <summary>A flat header button (<c>KeyMappings.Column.&lt;field&gt;</c>) that sorts by its column.</summary>
+    private static Button HeaderButton(string text, string field, Action sort)
+    {
+        var label = Text(text, "bodyStrong");
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        var button = new Button
+        {
+            Content = label,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            MinHeight = 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+        };
+        AutomationProperties.SetAutomationId(button, Id("KeyMappings.Column." + field));
+        AutomationProperties.SetName(button, text);
+        button.Click += (_, _) => sort();
+        return button;
     }
 
     /// <summary>Command (<c>*</c>), Shortcut (220), Scope (120).</summary>

@@ -83,6 +83,46 @@ public sealed class EditorOperationsTests
         }
     }
 
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-033")]
+    public async Task MoveKeepsInnerFolds()
+    {
+        var fs = new InMemoryFileSystem();
+        var services = TestComposition.Build(o => o.FileSystem = fs);
+        fs.CreateDirectory(@"C:\t");
+        fs.WriteAllBytes(@"C:\t\U.pas", Encoding.UTF8.GetBytes(string.Join("\r\n",
+            "unit U;", "interface", "implementation", "procedure A;", "begin", "  X;", "end;", "procedure B;", "begin", "end;", "var I: Integer;", "end.")));
+        var doc = Assert.IsType<TextDocumentViewModel>((await services.Documents.OpenAsync(@"C:\t\U.pas")).Value);
+        FreexComp.Ide.Core.Editing.FoldRegion Routine(string name) => doc.Folding.Regions.Single(r => r.StartLineText == "procedure " + name + ";");
+        List<string> Folded() => [.. doc.Folding.Regions.Where(r => r.IsFolded).Select(r => $"{r.StartLineText} {r.StartLine}-{r.EndLine}")];
+        async Task MoveAsync(string direction, int caretLine)
+        {
+            doc.ViewState.SelectionAnchor = null;
+            doc.ViewState.Caret = new TextPosition(caretLine, 1);
+            Assert.True(services.Commands.CanExecute("edit.moveLine" + direction));
+            await services.Commands.ExecuteAsync("edit.moveLine" + direction);
+        }
+
+        // The folded routine A (4-7) moves down below B's heading line as a whole and stays folded.
+        doc.Folding.SetFolded(Routine("A"), true);
+        await MoveAsync("Down", 4);
+        Assert.Equal("procedure B;", doc.Buffer.GetText(doc.Buffer.GetLine(4).Offset, doc.Buffer.GetLine(4).Length));
+        Assert.Equal(["procedure A; 5-8"], Folded());
+        Assert.Equal(new TextPosition(5, 1), doc.ViewState.Caret); // the caret moved with the text
+
+        // Moving across a folded region moves over the whole region; both stay folded.
+        await MoveAsync("Up", 5); // A back above B
+        doc.Folding.SetFolded(Routine("B"), true);
+        Assert.Equal(["procedure A; 4-7", "procedure B; 8-10"], Folded());
+        await MoveAsync("Down", 4); // A jumps over the folded B
+        Assert.Equal(["procedure B; 4-6", "procedure A; 7-10"], Folded());
+        await MoveAsync("Down", 7); // A moves below "var I: Integer;"
+        Assert.Equal(["procedure B; 4-6", "procedure A; 8-11"], Folded());
+
+        // One undo step per move; the text comes back.
+        doc.Buffer.Undo();
+        Assert.Equal("procedure A;", doc.Buffer.GetText(doc.Buffer.GetLine(7).Offset, doc.Buffer.GetLine(7).Length));
+    }
     /// <summary>Rules of editor-features.md §2–§4 and §7 whose behaviour arrives with a later task (no case yet).</summary>
     private static readonly Dictionary<string, string> Pending = new(StringComparer.Ordinal)
     {

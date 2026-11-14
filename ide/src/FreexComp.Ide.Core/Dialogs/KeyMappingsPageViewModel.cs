@@ -49,6 +49,14 @@ public sealed class KeyMappingRow : ObservableObject
     }
 }
 
+/// <summary>Sort column of the Key Mappings grid (dialogs.md §9.5: Command and Scope are sortable).</summary>
+public enum KeyMappingsSort
+{
+    Natural,
+    Command,
+    Scope,
+}
+
 /// <summary>A gesture chip of the selected command; reserved gestures (UI-A11Y-015) cannot be removed.</summary>
 public sealed record KeyGestureChip(KeyGesture Gesture, bool CanRemove)
 {
@@ -69,6 +77,8 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
     private readonly Dictionary<string, KeyMappingRow> _rows = new(StringComparer.Ordinal);
     private string _filter = "";
     private bool _byShortcut;
+    private KeyMappingsSort _sort = KeyMappingsSort.Natural;
+    private bool _descending;
     private KeyMappingRow? _selectedRow;
     private KeyGesture? _captured;
     private string? _captureError;
@@ -116,6 +126,36 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
             if (SetProperty(ref _filter, value))
                 ApplyFilter();
         }
+    }
+
+    /// <summary>The grid's sort column (<see cref="KeyMappingsSort.Natural"/> = category order of commands.md, then title).</summary>
+    public KeyMappingsSort Sort => _sort;
+
+    public bool SortDescending => _descending;
+
+    /// <summary>
+    /// A column header was clicked: sorts the visible rows by it (Command by its text, Scope by its text then the
+    /// command), a second click on the same column reverses (as in the Documents dialog); the filter keeps the order.
+    /// </summary>
+    public void SortBy(KeyMappingsSort sort)
+    {
+        _descending = _sort == sort && !_descending;
+        _sort = sort;
+        OnPropertyChanged(nameof(Sort));
+        OnPropertyChanged(nameof(SortDescending));
+        ApplyFilter();
+    }
+
+    private List<KeyMappingRow> Ordered(IEnumerable<KeyMappingRow> rows)
+    {
+        var comparer = StringComparer.CurrentCultureIgnoreCase;
+        var ordered = _sort switch
+        {
+            KeyMappingsSort.Command => rows.OrderBy(r => r.Text, comparer),
+            KeyMappingsSort.Scope => rows.OrderBy(r => r.ScopeText, comparer).ThenBy(r => r.Text, comparer),
+            _ => rows,
+        };
+        return [.. _descending ? ordered.Reverse() : ordered];
     }
 
     /// <summary>The filter box captures a gesture and the grid lists the commands bound to it.</summary>
@@ -362,7 +402,7 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
                                           || r.CommandId.Contains(text, StringComparison.OrdinalIgnoreCase);
         }
 
-        var visible = Rows.Where(match).ToList();
+        var visible = Ordered(Rows.Where(match));
         if (visible.SequenceEqual(VisibleRows))
             return;
         VisibleRows.Clear();

@@ -12,7 +12,6 @@ IDE-ARCH-060 no test yet
 IDE-ARCH-062 no test yet
 IDE-ARCH-080 no test yet
 IDE-ARCH-082 no test yet
-IDE-ARCH-083 no test yet
 IDE-ARCH-084 no test yet
 IDE-ARCH-101 no test yet
 IDE-ARCH-113 no test yet
@@ -60,9 +59,6 @@ UI-DLG-072 no test yet
 UI-ED-014 no test yet
 UI-ED-041 no test yet
 UI-ED-061 no test yet
-UI-ED-062 I-156 (markers)
-UI-ED-067 I-156 (markers)
-UI-ED-068 I-156 (markers)
 UI-ED-070 no test yet
 UI-ED-100 no test yet
 UI-ED-101 no test yet
@@ -76,7 +72,6 @@ UI-MENU-043 no test yet
 UI-MENU-044 no test yet
 UI-MSG-002 no test yet
 UI-TB-001 no test yet
-UI-TOK-007 I-152
 UI-TOK-020 no test yet
 UI-TOK-021 no test yet
 UI-TOK-022 no test yet

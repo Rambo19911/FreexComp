@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using FreexComp.Ide.Core.Platform;
 
@@ -26,4 +27,28 @@ public sealed class AvaloniaClipboard(Func<TopLevel?> topLevel) : IClipboardServ
             await clipboard.SetTextAsync(text);
         }
     }
+
+    /// <summary>The text and each extra format in one data item; a format name goes to the OS unchanged (a registered clipboard format).</summary>
+    public async Task SetTextAsync(string text, IReadOnlyDictionary<string, string> formats)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(formats);
+        if (topLevel()?.Clipboard is not { } clipboard)
+            return;
+        var item = new DataTransferItem();
+        item.SetText(text);
+        foreach (var (name, value) in formats)
+            item.Set(Format(name), value);
+        var data = new DataTransfer();
+        data.Add(item);
+        await clipboard.SetDataAsync(data);
+    }
+
+    public async Task<string?> GetFormatAsync(string format)
+    {
+        ArgumentNullException.ThrowIfNull(format);
+        return topLevel()?.Clipboard is { } clipboard ? await clipboard.TryGetValueAsync(Format(format)) : null;
+    }
+
+    private static DataFormat<string> Format(string name) => DataFormat.CreateStringPlatformFormat(name);
 }

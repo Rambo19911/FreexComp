@@ -1,24 +1,202 @@
-<!-- UI-TOK-007: Fluent accent resources set to accent.default (SystemAccentColor), accent.hover (Light1-3) and accent.pressed (Dark1-3). -->
+<!-- UI-TOK-007: Fluent's colour resources follow our tokens. App.axaml.cs merges this dictionary into the FluentTheme's
+     own resources (so the palette colours below reach every Fluent brush that refers to them) and into the
+     application resources (so the explicit brush keys win over Fluent's own brushes for every control).
+     Light is keyed Default like Fluent's own light dictionary: its brushes resolve palette colours under that key.
+     Palette: System*Color = the Fluent palette; SystemAccentColor* = accent.default / accent.hover / accent.pressed. -->
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <ResourceDictionary.ThemeDictionaries>
-    <ResourceDictionary x:Key="Light">
-      <Color x:Key="SystemAccentColor">#0F7B6C</Color>
-      <Color x:Key="SystemAccentColorLight1">#0C6B5E</Color>
-      <Color x:Key="SystemAccentColorLight2">#0C6B5E</Color>
-      <Color x:Key="SystemAccentColorLight3">#0C6B5E</Color>
-      <Color x:Key="SystemAccentColorDark1">#095A4F</Color>
-      <Color x:Key="SystemAccentColorDark2">#095A4F</Color>
-      <Color x:Key="SystemAccentColorDark3">#095A4F</Color>
+    <ResourceDictionary x:Key="Default">
+      <!-- Palette and accent colours (read by the Fluent brushes). -->
+      <Color x:Key="SystemAltHighColor">#FFFFFF</Color> <!-- bg.editor -->
+      <Color x:Key="SystemAltLowColor">#FAFAF8</Color> <!-- bg.panel -->
+      <Color x:Key="SystemAltMediumColor">#FFFFFF</Color> <!-- bg.raised -->
+      <Color x:Key="SystemAltMediumHighColor">#FFFFFF</Color> <!-- bg.raised -->
+      <Color x:Key="SystemAltMediumLowColor">#FFFFFF</Color> <!-- bg.editor -->
+      <Color x:Key="SystemBaseHighColor">#1C211E</Color> <!-- text.primary -->
+      <Color x:Key="SystemBaseMediumHighColor">#1C211E</Color> <!-- text.primary -->
+      <Color x:Key="SystemBaseMediumColor">#515A54</Color> <!-- text.secondary -->
+      <Color x:Key="SystemBaseMediumLowColor">#9AA29A</Color> <!-- border.strong -->
+      <Color x:Key="SystemBaseLowColor">#C9CEC7</Color> <!-- border.default -->
+      <Color x:Key="SystemChromeAltLowColor">#1C211E</Color> <!-- text.primary -->
+      <Color x:Key="SystemChromeBlackHighColor">#1C211E</Color> <!-- text.primary -->
+      <Color x:Key="SystemChromeBlackLowColor">#33000000</Color> <!-- shadow.popup -->
+      <Color x:Key="SystemChromeBlackMediumLowColor">#33000000</Color> <!-- shadow.popup -->
+      <Color x:Key="SystemChromeBlackMediumColor">#33000000</Color> <!-- shadow.popup -->
+      <Color x:Key="SystemChromeDisabledHighColor">#C9CEC7</Color> <!-- border.default -->
+      <Color x:Key="SystemChromeDisabledLowColor">#9AA29A</Color> <!-- text.disabled -->
+      <Color x:Key="SystemChromeHighColor">#9AA29A</Color> <!-- border.strong -->
+      <Color x:Key="SystemChromeLowColor">#F3F4F2</Color> <!-- bg.window -->
+      <Color x:Key="SystemChromeMediumColor">#FFFFFF</Color> <!-- bg.raised -->
+      <Color x:Key="SystemChromeMediumLowColor">#FFFFFF</Color> <!-- bg.raised -->
+      <Color x:Key="SystemChromeWhiteColor">#FFFFFF</Color> <!-- text.onAccent -->
+      <Color x:Key="SystemChromeGrayColor">#737D76</Color> <!-- text.tertiary -->
+      <Color x:Key="SystemListLowColor">#E4E8E3</Color> <!-- bg.hover -->
+      <Color x:Key="SystemListMediumColor">#D5DBD4</Color> <!-- bg.pressed -->
+      <Color x:Key="SystemErrorTextColor">#B3261E</Color> <!-- status.error -->
+      <Color x:Key="SystemRegionColor">#F3F4F2</Color> <!-- bg.window -->
+      <Color x:Key="SystemRevealListLowColor">#E4E8E3</Color> <!-- bg.hover -->
+      <Color x:Key="SystemRevealListMediumColor">#D5DBD4</Color> <!-- bg.pressed -->
+      <Color x:Key="SystemAccentColor">#0F7B6C</Color> <!-- accent.default -->
+      <Color x:Key="SystemAccentColorLight1">#0C6B5E</Color> <!-- accent.hover -->
+      <Color x:Key="SystemAccentColorLight2">#0C6B5E</Color> <!-- accent.hover -->
+      <Color x:Key="SystemAccentColorLight3">#0C6B5E</Color> <!-- accent.hover -->
+      <Color x:Key="SystemAccentColorDark1">#095A4F</Color> <!-- accent.pressed -->
+      <Color x:Key="SystemAccentColorDark2">#095A4F</Color> <!-- accent.pressed -->
+      <Color x:Key="SystemAccentColorDark3">#095A4F</Color> <!-- accent.pressed -->
+      <Color x:Key="HyperlinkVisitedColor">#0C6B5E</Color> <!-- text.link -->
+      <!-- Fluent brushes with their own colour or opacity. -->
+      <SolidColorBrush x:Key="AutoCompleteBoxSuggestionsListBorderBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#E4E8E3" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="CalendarDatePickerBackgroundFocused" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="CalendarViewSelectedHoverBorderBrush" Color="#0C6B5E" /> <!-- accent.hover -->
+      <SolidColorBrush x:Key="CalendarViewSelectedPressedBorderBrush" Color="#095A4F" /> <!-- accent.pressed -->
+      <SolidColorBrush x:Key="CaptionButtonBackground" Color="#F3F4F2" /> <!-- bg.window -->
+      <SolidColorBrush x:Key="CaptionButtonBorderBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="CaptionButtonForeground" Color="#1C211E" /> <!-- text.primary -->
+      <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="DatePickerFlyoutPresenterBorderBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="DatePickerFlyoutPresenterHighlightFill" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ExpanderChevronBackgroundPointerOver" Color="#E4E8E3" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="FlyoutBorderThemeBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="HyperlinkButtonBackgroundPointerOver" Color="#E4E8E3" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="HyperlinkButtonBackgroundPressed" Color="#D5DBD4" /> <!-- bg.pressed -->
+      <SolidColorBrush x:Key="HyperlinkButtonForegroundVisited" Color="#0C6B5E" /> <!-- text.link -->
+      <SolidColorBrush x:Key="HyperlinkButtonForegroundVisitedPointerOver" Color="#0C6B5E" /> <!-- text.link -->
+      <SolidColorBrush x:Key="HyperlinkButtonForegroundVisitedPressed" Color="#0C6B5E" /> <!-- text.link -->
+      <SolidColorBrush x:Key="HyperlinkVisitedBrush" Color="#0C6B5E" /> <!-- text.link -->
+      <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="NotificationCardBackgroundBrush" Color="#FFFFFF" /> <!-- bg.raised -->
+      <SolidColorBrush x:Key="NotificationCardErrorBackgroundBrush" Color="#FBE9E7" /> <!-- status.error.bg -->
+      <SolidColorBrush x:Key="NotificationCardInformationBackgroundBrush" Color="#E6F0FA" /> <!-- status.info.bg -->
+      <SolidColorBrush x:Key="NotificationCardProgressBackgroundBrush" Color="#E9EBE7" /> <!-- bg.sunken -->
+      <SolidColorBrush x:Key="NotificationCardSuccessBackgroundBrush" Color="#E7F4E8" /> <!-- status.success.bg -->
+      <SolidColorBrush x:Key="NotificationCardWarningBackgroundBrush" Color="#FFF4D6" /> <!-- status.warning.bg -->
+      <SolidColorBrush x:Key="RefreshVisualizerForeground" Color="#1C211E" /> <!-- text.primary -->
+      <SolidColorBrush x:Key="RepeatButtonBackgroundPointerOver" Color="#E4E8E3" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="ScrollBarTrackFill" Color="#FAFAF8" /> <!-- bg.panel -->
+      <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="#FAFAF8" /> <!-- bg.panel -->
+      <SolidColorBrush x:Key="ScrollViewerScrollBarsSeparatorBackground" Color="#FAFAF8" /> <!-- bg.panel -->
+      <SolidColorBrush x:Key="SplitButtonBackgroundPointerOver" Color="#E4E8E3" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="SystemControlHighlightAccent2RevealBackgroundBrush" Color="#0C6B5E" /> <!-- accent.hover -->
+      <SolidColorBrush x:Key="SystemControlHighlightAccent3RevealBackgroundBrush" Color="#095A4F" /> <!-- accent.pressed -->
+      <SolidColorBrush x:Key="SystemControlHighlightAltListAccentHighBrush" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightAltListAccentLowBrush" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightAltListAccentMediumBrush" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlTransientBorderBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="TableViewRowBackgroundSelected" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="TableViewRowBackgroundSelectedPointerOver" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="TableViewRowBackgroundSelectedPressed" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="TimePickerFlyoutPresenterBorderBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="TimePickerFlyoutPresenterHighlightFill" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#E4E8E3" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#0C6B5E" /> <!-- accent.hover -->
+      <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#C9CEC7" /> <!-- border.default -->
+      <SolidColorBrush x:Key="TreeViewItemBackgroundSelected" Color="#CFE9E3" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="TreeViewItemBackgroundSelectedPointerOver" Color="#CFE9E3" /> <!-- bg.selected -->
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
-      <Color x:Key="SystemAccentColor">#3FC1AE</Color>
-      <Color x:Key="SystemAccentColorLight1">#5AD0BE</Color>
-      <Color x:Key="SystemAccentColorLight2">#5AD0BE</Color>
-      <Color x:Key="SystemAccentColorLight3">#5AD0BE</Color>
-      <Color x:Key="SystemAccentColorDark1">#2FA897</Color>
-      <Color x:Key="SystemAccentColorDark2">#2FA897</Color>
-      <Color x:Key="SystemAccentColorDark3">#2FA897</Color>
+      <!-- Palette and accent colours (read by the Fluent brushes). -->
+      <Color x:Key="SystemAltHighColor">#171A19</Color> <!-- bg.editor -->
+      <Color x:Key="SystemAltLowColor">#222725</Color> <!-- bg.panel -->
+      <Color x:Key="SystemAltMediumColor">#2A302D</Color> <!-- bg.raised -->
+      <Color x:Key="SystemAltMediumHighColor">#2A302D</Color> <!-- bg.raised -->
+      <Color x:Key="SystemAltMediumLowColor">#171A19</Color> <!-- bg.editor -->
+      <Color x:Key="SystemBaseHighColor">#E4E8E5</Color> <!-- text.primary -->
+      <Color x:Key="SystemBaseMediumHighColor">#E4E8E5</Color> <!-- text.primary -->
+      <Color x:Key="SystemBaseMediumColor">#A9B2AC</Color> <!-- text.secondary -->
+      <Color x:Key="SystemBaseMediumLowColor">#5C665F</Color> <!-- border.strong -->
+      <Color x:Key="SystemBaseLowColor">#3A423E</Color> <!-- border.default -->
+      <Color x:Key="SystemChromeAltLowColor">#E4E8E5</Color> <!-- text.primary -->
+      <Color x:Key="SystemChromeBlackHighColor">#E4E8E5</Color> <!-- text.primary -->
+      <Color x:Key="SystemChromeBlackLowColor">#99000000</Color> <!-- shadow.popup -->
+      <Color x:Key="SystemChromeBlackMediumLowColor">#99000000</Color> <!-- shadow.popup -->
+      <Color x:Key="SystemChromeBlackMediumColor">#99000000</Color> <!-- shadow.popup -->
+      <Color x:Key="SystemChromeDisabledHighColor">#3A423E</Color> <!-- border.default -->
+      <Color x:Key="SystemChromeDisabledLowColor">#66706A</Color> <!-- text.disabled -->
+      <Color x:Key="SystemChromeHighColor">#5C665F</Color> <!-- border.strong -->
+      <Color x:Key="SystemChromeLowColor">#1B1F1D</Color> <!-- bg.window -->
+      <Color x:Key="SystemChromeMediumColor">#2A302D</Color> <!-- bg.raised -->
+      <Color x:Key="SystemChromeMediumLowColor">#2A302D</Color> <!-- bg.raised -->
+      <Color x:Key="SystemChromeWhiteColor">#06201C</Color> <!-- text.onAccent -->
+      <Color x:Key="SystemChromeGrayColor">#838E87</Color> <!-- text.tertiary -->
+      <Color x:Key="SystemListLowColor">#313835</Color> <!-- bg.hover -->
+      <Color x:Key="SystemListMediumColor">#3A423E</Color> <!-- bg.pressed -->
+      <Color x:Key="SystemErrorTextColor">#F2867E</Color> <!-- status.error -->
+      <Color x:Key="SystemRegionColor">#1B1F1D</Color> <!-- bg.window -->
+      <Color x:Key="SystemRevealListLowColor">#313835</Color> <!-- bg.hover -->
+      <Color x:Key="SystemRevealListMediumColor">#3A423E</Color> <!-- bg.pressed -->
+      <Color x:Key="SystemAccentColor">#3FC1AE</Color> <!-- accent.default -->
+      <Color x:Key="SystemAccentColorLight1">#5AD0BE</Color> <!-- accent.hover -->
+      <Color x:Key="SystemAccentColorLight2">#5AD0BE</Color> <!-- accent.hover -->
+      <Color x:Key="SystemAccentColorLight3">#5AD0BE</Color> <!-- accent.hover -->
+      <Color x:Key="SystemAccentColorDark1">#2FA897</Color> <!-- accent.pressed -->
+      <Color x:Key="SystemAccentColorDark2">#2FA897</Color> <!-- accent.pressed -->
+      <Color x:Key="SystemAccentColorDark3">#2FA897</Color> <!-- accent.pressed -->
+      <Color x:Key="HyperlinkVisitedColor">#5AD0BE</Color> <!-- text.link -->
+      <!-- Fluent brushes with their own colour or opacity. -->
+      <SolidColorBrush x:Key="AutoCompleteBoxSuggestionsListBorderBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#313835" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="CalendarDatePickerBackgroundFocused" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="CalendarViewSelectedHoverBorderBrush" Color="#5AD0BE" /> <!-- accent.hover -->
+      <SolidColorBrush x:Key="CalendarViewSelectedPressedBorderBrush" Color="#2FA897" /> <!-- accent.pressed -->
+      <SolidColorBrush x:Key="CaptionButtonBackground" Color="#1B1F1D" /> <!-- bg.window -->
+      <SolidColorBrush x:Key="CaptionButtonBorderBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="CaptionButtonForeground" Color="#E4E8E5" /> <!-- text.primary -->
+      <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="DatePickerFlyoutPresenterBorderBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="DatePickerFlyoutPresenterHighlightFill" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ExpanderChevronBackgroundPointerOver" Color="#313835" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="FlyoutBorderThemeBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="HyperlinkButtonBackgroundPointerOver" Color="#313835" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="HyperlinkButtonBackgroundPressed" Color="#3A423E" /> <!-- bg.pressed -->
+      <SolidColorBrush x:Key="HyperlinkButtonForegroundVisited" Color="#5AD0BE" /> <!-- text.link -->
+      <SolidColorBrush x:Key="HyperlinkButtonForegroundVisitedPointerOver" Color="#5AD0BE" /> <!-- text.link -->
+      <SolidColorBrush x:Key="HyperlinkButtonForegroundVisitedPressed" Color="#5AD0BE" /> <!-- text.link -->
+      <SolidColorBrush x:Key="HyperlinkVisitedBrush" Color="#5AD0BE" /> <!-- text.link -->
+      <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="NotificationCardBackgroundBrush" Color="#2A302D" /> <!-- bg.raised -->
+      <SolidColorBrush x:Key="NotificationCardErrorBackgroundBrush" Color="#3D1F1C" /> <!-- status.error.bg -->
+      <SolidColorBrush x:Key="NotificationCardInformationBackgroundBrush" Color="#1A2C40" /> <!-- status.info.bg -->
+      <SolidColorBrush x:Key="NotificationCardProgressBackgroundBrush" Color="#141716" /> <!-- bg.sunken -->
+      <SolidColorBrush x:Key="NotificationCardSuccessBackgroundBrush" Color="#1C3320" /> <!-- status.success.bg -->
+      <SolidColorBrush x:Key="NotificationCardWarningBackgroundBrush" Color="#3A2F14" /> <!-- status.warning.bg -->
+      <SolidColorBrush x:Key="RefreshVisualizerForeground" Color="#E4E8E5" /> <!-- text.primary -->
+      <SolidColorBrush x:Key="RepeatButtonBackgroundPointerOver" Color="#313835" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="ScrollBarTrackFill" Color="#222725" /> <!-- bg.panel -->
+      <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="#222725" /> <!-- bg.panel -->
+      <SolidColorBrush x:Key="ScrollViewerScrollBarsSeparatorBackground" Color="#222725" /> <!-- bg.panel -->
+      <SolidColorBrush x:Key="SplitButtonBackgroundPointerOver" Color="#313835" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="SystemControlHighlightAccent2RevealBackgroundBrush" Color="#5AD0BE" /> <!-- accent.hover -->
+      <SolidColorBrush x:Key="SystemControlHighlightAccent3RevealBackgroundBrush" Color="#2FA897" /> <!-- accent.pressed -->
+      <SolidColorBrush x:Key="SystemControlHighlightAltListAccentHighBrush" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightAltListAccentLowBrush" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightAltListAccentMediumBrush" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="SystemControlTransientBorderBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="TableViewRowBackgroundSelected" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="TableViewRowBackgroundSelectedPointerOver" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="TableViewRowBackgroundSelectedPressed" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="TimePickerFlyoutPresenterBorderBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="TimePickerFlyoutPresenterHighlightFill" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="#313835" /> <!-- bg.hover -->
+      <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#5AD0BE" /> <!-- accent.hover -->
+      <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#3A423E" /> <!-- border.default -->
+      <SolidColorBrush x:Key="TreeViewItemBackgroundSelected" Color="#1F4D46" /> <!-- bg.selected -->
+      <SolidColorBrush x:Key="TreeViewItemBackgroundSelectedPointerOver" Color="#1F4D46" /> <!-- bg.selected -->
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

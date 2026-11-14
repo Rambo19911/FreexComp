@@ -197,14 +197,20 @@ public sealed class ProjectService : IProjectService
             n++;
         var name = $"Unit{n}";
         var path = Path.Combine(folder, name + ".pas");
-        try
+        var bytes = SourceBytes(UnitSkeleton(name));
+        while (true)
         {
-            AtomicFileWriter.Write(_fileSystem, path, SourceBytes(UnitSkeleton(name)));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveFailed", [path, e.Message]));
-            return false;
+            try
+            {
+                AtomicFileWriter.Write(_fileSystem, path, bytes);
+                break;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Retry and Cancel only, as in the New File dialog (UI-DLG-040): there is no document to "Save As" yet.
+                if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveFailed", [path, e.Message], Buttons: ["Retry", "Cancel"])) != "Retry")
+                    return false;
+            }
         }
 
         var projectPath = ToProjectPath(path);

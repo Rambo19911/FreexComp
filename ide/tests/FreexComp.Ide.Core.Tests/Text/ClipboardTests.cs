@@ -1,6 +1,7 @@
 using System.Text;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Composition;
+using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
@@ -129,5 +130,47 @@ public sealed class ClipboardTests
         Assert.True(commands.CanExecute("edit.copy"));
         Assert.False(commands.CanExecute("edit.cut"));
         Assert.False(commands.CanExecute("edit.paste"));
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-038")]
+    public async Task LineFormatAcrossInstances()
+    {
+        // Two IDE instances share the OS clipboard.
+        var clipboard = new FakeClipboard();
+        var (first, a) = await OpenAsync("one\r\ntwo\r\nthree", clipboard, new ManualClock());
+        var (second, b) = await OpenAsync("alpha\r\nbeta", clipboard, new ManualClock());
+
+        // A line copied in the first instance carries the line format (application/x-freexcomp-line) next to its text …
+        Caret(a, 2, 1);
+        await first.Commands.ExecuteAsync("edit.copy");
+        Assert.Equal("two\r\n", clipboard.Text);
+        Assert.Equal("two\r\n", clipboard.Formats[IClipboardService.LineFormat]);
+
+        // … so the second instance pastes it as a full line above the caret line, keeping the caret column.
+        Caret(b, 2, 3);
+        await second.Commands.ExecuteAsync("edit.paste");
+        Assert.Equal("alpha\r\ntwo\r\nbeta", b.Buffer.Text);
+        Assert.Equal(new TextPosition(3, 3), b.ViewState.Caret);
+
+        // The same text copied as a selection, or by another program, has no line format: pasted at the caret.
+        b.Selection = new TextSelection(7, 12); // "two\r\n"
+        await second.Commands.ExecuteAsync("edit.copy");
+        Assert.Equal("two\r\n", clipboard.Text);
+        Assert.Empty(clipboard.Formats);
+        Caret(a, 1, 2);
+        await first.Commands.ExecuteAsync("edit.paste");
+        Assert.Equal("otwo\r\nne\r\ntwo\r\nthree", a.Buffer.Text);
+
+        b.ViewState.SelectionAnchor = null;
+        Caret(b, 3, 1);
+        await second.Commands.ExecuteAsync("edit.copy"); // the line "beta" (with the document's break)
+        Assert.Equal("beta\r\n", clipboard.Formats[IClipboardService.LineFormat]);
+        clipboard.Text = "beta\r\n"; // another program copies the same text: its copy replaces every format
+        Assert.Empty(clipboard.Formats);
+        Caret(a, 1, 3);
+        await first.Commands.ExecuteAsync("edit.paste");
+        Assert.StartsWith("otbeta\r\nwo\r\n", a.Buffer.Text, StringComparison.Ordinal); // at the caret, not as a line above
+        Assert.Equal(new TextPosition(2, 1), a.ViewState.Caret);
     }
 }

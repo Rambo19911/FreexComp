@@ -146,4 +146,74 @@ public sealed class FoldingTests
         Assert.True(Routine(document, "procedure A;").IsFolded);
         Assert.Equal([4], document.ViewState.FoldedLines);
     }
-}
+
+    /// <summary>Pascal regions; for a buffer other than <see cref="Document"/> (a background snapshot) it first waits for <see cref="Gate"/>.</summary>
+    private sealed class GatedProvider : IFoldingProvider
+    {
+        private readonly PascalFoldingProvider _inner = new();
+
+        public ITextBuffer? Document { get; set; }
+
+        public ManualResetEventSlim Gate { get; } = new(false);
+
+        /// <summary>True on a thread while the test calls into the model synchronously (a thread-pool thread that runs later sees false).</summary>
+        public ThreadLocal<bool> InsideCaller { get; } = new();
+
+        public System.Collections.Concurrent.ConcurrentQueue<(bool OnDocument, bool Synchronous, string Text)> Calls { get; } = new();
+
+        public IReadOnlyList<FoldRegion> GetRegions(ITextBuffer buffer)
+        {
+            var onDocument = ReferenceEquals(buffer, Document);
+            Calls.Enqueue((onDocument, InsideCaller.Value, buffer.Text));
+            if (!onDocument)
+                Gate.Wait(TimeSpan.FromSeconds(20));
+            return _inner.GetRegions(buffer);
+        }
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-081")]
+    [Trait("Req", "IDE-ARCH-083")]
+    public async Task LargeBufferRecomputesInBackground()
+    {
+        // A small buffer: computed at once, on the calling thread, from the document buffer itself.
+        var small = new StringTextBuffer("procedure A;\r\nbegin\r\nend;\r\n");
+        var smallProvider = new GatedProvider { Document = small };
+        smallProvider.InsideCaller.Value = true;
+        var smallModel = new FoldingModel(small, new EditorViewState(), smallProvider);
+        smallProvider.InsideCaller.Value = false;
+        Assert.Equal("1-3 routine", Format(smallModel.Regions));
+        Assert.True(smallProvider.Calls.TryDequeue(out var call) && call.OnDocument && call.Synchronous);
+
+        // Larger than 200 KB: a snapshot of the text is folded on the thread pool; nothing changes until it arrives.
+        var filler = string.Concat(Enumerable.Repeat("// " + new string('x', 97) + "\r\n", WholeTextClassifier.BackgroundThreshold / 100 + 10));
+        var buffer = new StringTextBuffer("procedure A;\r\nbegin\r\nend;\r\n" + filler);
+        Assert.True(buffer.Length > WholeTextClassifier.BackgroundThreshold);
+        var provider = new GatedProvider { Document = buffer };
+        var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        provider.InsideCaller.Value = true;
+        var model = new FoldingModel(buffer, new EditorViewState(), provider);
+        model.Changed += (_, _) =>
+        {
+            if (Format(model.Regions).StartsWith("1-3 routine\n4-6 routine", StringComparison.Ordinal))
+                changed.TrySetResult();
+        };
+        Assert.Empty(model.Regions);
+
+        // Two edits while the first run waits: the outdated results are dropped, the latest text is folded.
+        buffer.ApplyEdits([new TextEdit(buffer.Length, 0, "procedure Z;\r\nbegin\r\nend;\r\n")]);
+        buffer.ApplyEdits([new TextEdit(0, 0, "procedure B;\r\nbegin\r\nend;\r\n")]);
+        Assert.Empty(model.Regions);
+        provider.InsideCaller.Value = false;
+        provider.Gate.Set();
+        await changed.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+
+        // B, A, the filler comments and Z of the latest text.
+        Assert.Equal(Format(new PascalFoldingProvider().GetRegions(new StringTextBuffer(buffer.Text))), Format(model.Regions));
+        Assert.EndsWith("routine", Format(model.Regions), StringComparison.Ordinal);
+        var calls = provider.Calls.ToList();
+        Assert.All(calls, c => Assert.False(c.OnDocument));                                  // never the live buffer
+        Assert.All(calls, c => Assert.False(c.Synchronous));                                // never inside the edit
+        Assert.Equal(buffer.Text, calls[^1].Text);
+        Assert.True(calls.Count >= 2, "the outdated snapshot was folded again from the latest text");
+    }}

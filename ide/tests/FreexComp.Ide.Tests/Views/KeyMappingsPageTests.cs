@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -231,5 +232,53 @@ public sealed class KeyMappingsPageTests
         await running;
         Assert.False(dlg.Window.IsVisible);
         Assert.Equal(["Ctrl+Shift+L"], Gestures(h.Services.Keymap, "designer.lockControls"));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-092")]
+    public async Task ColumnsSort()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var running = h.Services.Commands.ExecuteAsync("tools.keyMappings");
+        var dlg = await h.WaitForDialogAsync("Options");
+        SetText(dlg, "KeyMappings.Filter", "copy");
+        var natural = Rows(dlg);
+        Assert.True(natural.Count >= 3, string.Join(", ", natural));
+
+        // Rows top to bottom by screen position (containers are recycled), with their Command and Scope texts.
+        List<(string Id, string Command, string Scope)> Shown()
+        {
+            Dispatcher.UIThread.RunJobs();
+            return [.. dlg.FindAll(RowPrefix).Where(c => c.IsEffectivelyVisible)
+                .OrderBy(c => c.TranslatePoint(default, dlg.Window)!.Value.Y)
+                .Select(c => AutomationIds.Get(c)![RowPrefix.Length..])
+                .Select(id => (id, Cells(dlg, id)[0], Cells(dlg, id)[2]))];
+        }
+
+        var comparer = StringComparer.CurrentCultureIgnoreCase;
+        Assert.True(Shown().Select(r => r.Scope).Distinct().Count() >= 2, "the filter shows several scopes");
+        Assert.Equal(natural, Shown().Select(r => r.Id));
+
+        // Command: ascending, a second click descending.
+        dlg.Click("KeyMappings.Column.Command");
+        var byCommand = Shown();
+        Assert.Equal(byCommand.OrderBy(r => r.Command, comparer).Select(r => r.Id), byCommand.Select(r => r.Id));
+        Assert.NotEqual(natural, byCommand.Select(r => r.Id));
+        dlg.Click("KeyMappings.Column.Command");
+        Assert.Equal(byCommand.Select(r => r.Id).Reverse(), Shown().Select(r => r.Id));
+
+        // Scope: ascending (ties by command), a second click descending; the filter keeps the order.
+        dlg.Click("KeyMappings.Column.Scope");
+        var byScope = Shown();
+        Assert.Equal(byScope.OrderBy(r => r.Scope, comparer).ThenBy(r => r.Command, comparer).Select(r => r.Id), byScope.Select(r => r.Id));
+        SetText(dlg, "KeyMappings.Filter", "cop");
+        var refiltered = Shown();
+        Assert.Equal(refiltered.OrderBy(r => r.Scope, comparer).ThenBy(r => r.Command, comparer).Select(r => r.Id), refiltered.Select(r => r.Id));
+        dlg.Click("KeyMappings.Column.Scope");
+        var descending = Shown();
+        Assert.Equal(refiltered.Select(r => r.Id).Reverse(), descending.Select(r => r.Id));
+
+        dlg.Press("Escape");
+        await running;
     }
 }

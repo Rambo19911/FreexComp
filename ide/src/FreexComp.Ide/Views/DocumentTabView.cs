@@ -6,6 +6,8 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
+using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Icons;
@@ -21,13 +23,14 @@ public sealed class DocumentTabView : Border
     private readonly TextBlock _title = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _suffix = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
     private readonly IdeIcon _lock = new() { IconName = "lock", Width = 16, Height = 16, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
+    private readonly Border _ring = FocusRing();
+    private readonly Border _closeRing = FocusRing();
     private readonly Button _close = new()
     {
-        Content = new IdeIcon { IconName = "close", Width = 16, Height = 16 },
         Padding = new Thickness(0),
         BorderThickness = new Thickness(0),
         Background = Brushes.Transparent,
-        Focusable = false,
+        FocusAdorner = null, // our own ring (_closeRing)
     };
 
     private readonly Ellipse _dot = new() { Width = 8, Height = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -37,9 +40,17 @@ public sealed class DocumentTabView : Border
     private IDisposable? _background;
     private IDisposable? _indicator;
     private IDisposable? _foreground;
+    private bool _keyboardFocus;
+    private bool _pointerFocus;
 
     public DocumentTabView()
     {
+        Focusable = true; // I-155: keyboard focus with its own ring (UI-TOK-050); a click hands focus to the document
+        FocusAdorner = null;
+        _close.Content = new Panel { Children = { new IdeIcon { IconName = "close", Width = 16, Height = 16 }, _closeRing } };
+        _close.GotFocus += (_, e) => OnFocused(_closeRing, e.NavigationMethod);
+        AddHandler(PointerReleasedEvent, OnReleased, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+        _close.LostFocus += (_, _) => { _closeRing.IsVisible = false; Update(); };
         this.Bind(HeightProperty, this.GetResourceObservable("FxcMetricDocumentTabHeight"));
         this.Bind(MinWidthProperty, this.GetResourceObservable("FxcMetricDocumentTabMinWidth"));
         this.Bind(MaxWidthProperty, this.GetResourceObservable("FxcMetricDocumentTabMaxWidth"));
@@ -78,7 +89,76 @@ public sealed class DocumentTabView : Border
         row.Children.Add(_title);
         row.Children.Add(_suffix);
         padding.Child = row;
-        Child = new DockPanel { Children = { separator, padding } };
+        Child = new DockPanel { Children = { separator, new Panel { Children = { padding, _ring } } } };
+    }
+
+    /// <summary>UI-TOK-050 / design-tokens §9: a 2 px <c>border.focus</c> ring inside the bounds, keyboard focus only.</summary>
+    private static Border FocusRing()
+    {
+        var ring = new Border { Name = "FocusRing", BorderThickness = new Thickness(2), IsVisible = false, IsHitTestVisible = false };
+        ring.Bind(BorderBrushProperty, ring.GetResourceObservable("FxcBorderFocusBrush"));
+        return ring;
+    }
+
+    protected override void OnGotFocus(FocusChangedEventArgs e)
+    {
+        base.OnGotFocus(e);
+        if (e.Source == this)
+            OnFocused(_ring, e.NavigationMethod);
+    }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        _ring.IsVisible = false;
+        Update();
+    }
+
+    /// <summary>
+    /// Keyboard focus shows the ring; pointer focus (a click on the tab or its close slot) moves on to the active
+    /// document, as before the tabs were focusable (I-045: activating a tab focuses the editor).
+    /// </summary>
+    private void OnFocused(Border ring, NavigationMethod method)
+    {
+        _keyboardFocus = method is NavigationMethod.Tab or NavigationMethod.Directional;
+        ring.IsVisible = _keyboardFocus;
+        Update();
+        _pointerFocus = method == NavigationMethod.Pointer;
+    }
+
+    /// <summary>After the click (the close button's runs on release) the pointer-focused tab hands focus on.</summary>
+    private void OnReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_pointerFocus)
+            return;
+        _pointerFocus = false;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (IsKeyboardFocusWithin && TopLevel.GetTopLevel(this)?.DataContext is MainWindowViewModel window)
+                window.Layout.FocusPane(Pane.Documents);
+        }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>I-155 keys on a focused tab: Enter / Space activate it (focus stays), Left / Right move to the neighbour tab.</summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Handled || e.Source != this || e.KeyModifiers != KeyModifiers.None || _tab is null || Area is null)
+            return;
+
+        switch (e.Key)
+        {
+            case Key.Enter or Key.Space:
+                Area.Activate(_tab);
+                e.Handled = true;
+                break;
+            case Key.Left or Key.Right when Parent is Panel strip:
+                var index = strip.Children.IndexOf(this) + (e.Key == Key.Right ? 1 : -1);
+                if (index >= 0 && index < strip.Children.Count)
+                    strip.Children[index].Focus(NavigationMethod.Directional);
+                e.Handled = true;
+                break;
+        }
     }
 
     /// <summary>The document area whose commands the tab uses.</summary>
@@ -106,8 +186,8 @@ public sealed class DocumentTabView : Border
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (_tab is null || Area is null)
-            return;
+        if (e.Handled || _tab is null || Area is null)
+            return; // a press on the close slot is the button's (activating would move focus away from it before the click)
 
         var kind = e.GetCurrentPoint(this).Properties.PointerUpdateKind;
         if (kind == PointerUpdateKind.MiddleButtonPressed)
@@ -144,7 +224,7 @@ public sealed class DocumentTabView : Border
         _title.Classes.Set("bodyStrong", tab.IsActive);
 
         // UI-ED-072/073: the dot replaces the × while modified, except on hover / keyboard focus of the slot.
-        var hovered = IsPointerOver || _close.IsFocused;
+        var hovered = IsPointerOver || _close.IsFocused || (_keyboardFocus && IsFocused);
         if (tab.IsModified)
         {
             if (!_slot.Children.Contains(_dot))

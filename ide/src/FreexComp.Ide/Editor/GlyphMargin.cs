@@ -12,7 +12,8 @@ namespace FreexComp.Ide.Editor;
 /// <summary>
 /// Glyph margin (editor.md §3): 2 px left padding + one 16 × 16 slot per line with the highest-priority glyph of the
 /// document's <see cref="EditorDecorations"/>; an execution arrow on a breakpoint line is drawn over the disc. Vector
-/// geometry per §3.1. The tooltip lists the providers' texts of all glyphs on the line (UI-ED-021).
+/// geometry per §3.1. The tooltip has one line per glyph on the line (UI-ED-021, <see cref="EditorDecorations.ToolTipAt"/>); a
+/// right click asks for the gutter menu (UI-ED-022, <see cref="GutterMargin.ContextMenuRequested"/>).
 /// </summary>
 public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
 {
@@ -59,8 +60,7 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        var tips = TextView is null ? [] : _decorations?.GlyphsAt(LineAt(e.GetPosition(this).Y)).Select(g => g.ToolTip).OfType<string>().ToList() ?? [];
-        ToolTip.SetTip(this, tips.Count == 0 ? null : string.Join(Environment.NewLine, tips));
+        ToolTip.SetTip(this, TextView is null ? null : _decorations?.ToolTipAt(LineAt(e.GetPosition(this).Y))); // UI-ED-021
     }
 
     private void DrawGlyph(DrawingContext context, LineGlyph glyph)

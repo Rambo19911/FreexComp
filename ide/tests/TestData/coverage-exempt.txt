@@ -42,19 +42,12 @@ UI-DLG-052 platform: done by the OS picker or the OS, not by the IDE
 UI-ED-001 structural: code organisation rule (namespaces, base classes, file locations)
 UI-ED-002 structural: code organisation rule (namespaces, base classes, file locations)
 UI-ED-013 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-ED-021 later phase: the rule text names a later phase or a later-phase element
-UI-ED-022 later phase: the rule text names a later phase or a later-phase element
 UI-ED-023 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-031 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-032 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-033 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-051 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-ED-052 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-059 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-ED-063 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-ED-064 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-ED-065 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-ED-066 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-130 later phase: the rule text names a later phase or a later-phase element
 UI-KEY-006 absence: states that a feature does not exist in Phases 1-7
 UI-MENU-020 later phase: the rule text names a later phase or a later-phase element
@@ -85,7 +78,6 @@ UI-TB-007 absence: states that a feature does not exist in Phases 1-7
 UI-TB-009 later phase: the rule text names a later phase or a later-phase element
 UI-TB-010 later phase: the rule text names a later phase or a later-phase element
 UI-TOK-001 structural: code organisation rule (namespaces, base classes, file locations)
-UI-TOK-050 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-TOK-051 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-TOK-052 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-TOK-053 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)

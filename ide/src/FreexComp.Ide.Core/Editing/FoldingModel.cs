@@ -56,6 +56,52 @@ public sealed class FoldingModel
         }
     }
 
+    /// <summary>Folds to restore once the regions of this buffer version are computed (a move in a large buffer).</summary>
+    private (long Version, List<(int Line, FoldKind Kind, string Text)> Folds)? _pendingFolds;
+
+    /// <summary>
+    /// IDE-ED-033: runs the line-move <paramref name="edit"/>; every folded region lying inside one of
+    /// <paramref name="moves"/> (1-based line ranges moved by <c>Delta</c> lines) is folded again at its new place, matched by
+    /// kind and start-line text (the edit itself would unfold or lose it). Returns the edit's result.
+    /// </summary>
+    public bool KeepFoldedThroughMove(IReadOnlyList<(int First, int Last, int Delta)> moves, Func<bool> edit)
+    {
+        ArgumentNullException.ThrowIfNull(moves);
+        ArgumentNullException.ThrowIfNull(edit);
+        List<(int Line, FoldKind Kind, string Text)> keep =
+            [.. from r in _regions where r.IsFolded from m in moves where r.StartLine >= m.First && r.EndLine <= m.Last select (r.StartLine + m.Delta, r.Kind, r.StartLineText)];
+        if (!edit())
+            return false;
+        if (keep.Count == 0)
+            return true;
+        if (_running is null or { IsCompleted: true })
+        {
+            if (Refold(keep))
+                Publish();
+        }
+        else
+        {
+            _pendingFolds = (_buffer.Version, keep); // applied when the background regions of this version arrive
+        }
+
+        return true;
+    }
+
+    private bool Refold(List<(int Line, FoldKind Kind, string Text)> folds)
+    {
+        bool any = false;
+        foreach (var (line, kind, text) in folds)
+        {
+            if (_regions.FirstOrDefault(r => !r.IsFolded && r.StartLine == line && r.Kind == kind && r.StartLineText == text) is { } region)
+            {
+                SetFoldedCore(region, true);
+                any = true;
+            }
+        }
+
+        return any;
+    }
+
     // edit.fold / edit.unfold / edit.foldAll / edit.unfoldAll (IDE-ED-054)
 
     public bool CanFold => RegionToFold() is not null;
@@ -166,10 +212,50 @@ public sealed class FoldingModel
         Recompute();
     }
 
+    /// <summary>
+    /// Regions of the current text: at once, or for a buffer larger than <see cref="Languages.WholeTextClassifier.BackgroundThreshold"/>
+    /// from a snapshot on the thread pool (IDE-ARCH-081, I-159); until that result arrives the previous regions stay.
+    /// </summary>
     private void Recompute()
     {
+        if (_provider is { } provider && _buffer.Length > Languages.WholeTextClassifier.BackgroundThreshold)
+            StartBackground(provider);
+        else
+            Apply(_provider?.GetRegions(_buffer).ToList() ?? []);
+    }
+
+    private Task? _running;
+
+    /// <summary>
+    /// One run at a time over a <see cref="StringTextBuffer"/> snapshot; a result for an outdated version (or another
+    /// provider) is dropped and the current text is folded again (IDE-ARCH-083). The result is applied on the
+    /// synchronization context that started the run (the UI thread).
+    /// </summary>
+    private void StartBackground(IFoldingProvider provider)
+    {
+        if (_running is { IsCompleted: false })
+            return; // the running result will be outdated: it re-runs when it ends
+        var version = _buffer.Version;
+        var text = _buffer.Text;
+        var context = SynchronizationContext.Current;
+        _running = Task.Run(() => provider.GetRegions(new StringTextBuffer(text)).ToList()).ContinueWith(
+            t =>
+            {
+                _running = null;
+                if (version == _buffer.Version && ReferenceEquals(provider, _provider))
+                    Apply(t.Result);
+                else
+                    Recompute();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnRanToCompletion,
+            context is null ? TaskScheduler.Default : TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    /// <summary>The new regions replace the old ones; folded regions stay folded where they still are (IDE-ED-056).</summary>
+    private void Apply(List<FoldRegion> regions)
+    {
         var folded = _regions.Where(r => r.IsFolded).ToList();
-        var regions = _provider?.GetRegions(_buffer).ToList() ?? [];
         foreach (var region in regions)
         {
             var same = folded.FirstOrDefault(old => old.Kind == region.Kind && old.StartLineText == region.StartLineText
@@ -182,6 +268,12 @@ public sealed class FoldingModel
         }
 
         _regions = regions;
+        if (_pendingFolds is { } pending && pending.Version == _buffer.Version)
+        {
+            _pendingFolds = null;
+            Refold(pending.Folds);
+        }
+
         Publish();
     }
 

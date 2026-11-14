@@ -81,6 +81,17 @@ public sealed class DocumentAreaViewModel : ObservableObject
     /// <summary>UI-ED-076 left click; UI-ED-079 a right click activates before the context menu opens.</summary>
     public void Activate(DocumentTabViewModel tab) => Documents.Activate(tab.Document);
 
+    /// <summary>
+    /// UI-ED-076: a tab dragged to insertion position <paramref name="insertAt"/> (0 = before the first tab, Count =
+    /// after the last) moves there in tab order.
+    /// </summary>
+    public void MoveTab(DocumentTabViewModel tab, int insertAt)
+    {
+        var from = Tabs.IndexOf(tab);
+        if (from >= 0)
+            Documents.Move(tab.Document, insertAt > from ? insertAt - 1 : insertAt);
+    }
+
     /// <summary>UI-ED-073 close button, UI-ED-076 middle click: closes with the unsaved-changes prompt.</summary>
     public Task<bool> CloseAsync(DocumentTabViewModel tab) => Documents.CloseAsync(tab.Document);
 

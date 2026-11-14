@@ -50,6 +50,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _lineChanges = _lineChangeTracker = new LineChangeTracker(buffer);
         Folding = new FoldingModel(buffer, ViewState, language.CreateFoldingProvider());
         Tokens = new CodeTokenIndex(buffer, language);
+        Decorations.Add(new LexerErrorMarkers(buffer, () => _language)); // UI-ED-068
         WordHighlights = new WordHighlighter(buffer, ViewState, Tokens, () => Clock, () => Options.HighlightWordOccurrences && !_showsFindMatches);
         InitTyping();
 
@@ -80,6 +81,9 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
     /// <summary>Glyph-margin glyphs and line backgrounds (editor.md §3): bookmarks, diagnostics, breakpoints add providers.</summary>
     public EditorDecorations Decorations { get; } = new();
+
+    /// <summary>UI-ED-022: the gutter context menu for a 1-based line (set by the document service); null = none.</summary>
+    public Func<int, IReadOnlyList<Menus.MenuItemModel>>? GutterMenu { get; internal set; }
 
     /// <summary>Change-bar states per line (UI-ED-040): the document's <see cref="LineChangeTracker"/> (tests may replace it).</summary>
     public ILineChangeSource LineChanges

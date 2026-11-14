@@ -104,7 +104,7 @@ public partial class TextDocumentViewModel
             "edit.duplicateLine" => EditorOperations.DuplicateLine(Buffer, selection, LineEnding.NewLine),
             "edit.deleteLine" => EditorOperations.DeleteLine(Buffer, selection, tabWidth),
             "edit.moveLineUp" or "edit.moveLineDown" => EditorOperations.MoveLines(Buffer, selection, commandId == "edit.moveLineUp",
-                [.. Folding.Regions.Where(r => r.IsFolded).Select(r => (r.StartLine, r.EndLine))], LineEnding.NewLine),
+                FoldedLineRanges(), LineEnding.NewLine),
             "edit.toggleLineComment" => EditorOperations.ToggleLineComment(Buffer, selection, _language.LineComment!, tabWidth),
             "edit.toggleBlockComment" => EditorOperations.ToggleBlockComment(Buffer, selection, out refused),
             "edit.upperCase" => EditorOperations.ChangeCase(Buffer, selection, upper: true),
@@ -116,8 +116,18 @@ public partial class TextDocumentViewModel
         };
         if (refused is not null)
             StatusMessage?.Invoke(this, Strings.ResourceManager.GetString(refused, Strings.Culture) ?? refused);
+        if (commandId is "edit.moveLineUp" or "edit.moveLineDown" && result is not null
+            && EditorOperations.MoveRanges(Buffer, selection, commandId == "edit.moveLineUp", FoldedLineRanges()) is var (first, last, otherFirst, otherLast))
+        {
+            // IDE-ED-033: folded regions in the moved block, and a folded region moved over, stay folded.
+            int block = last - first + 1, other = otherLast - otherFirst + 1, sign = commandId == "edit.moveLineUp" ? -1 : 1;
+            return Command(() => Folding.KeepFoldedThroughMove([(first, last, sign * other), (otherFirst, otherLast, -sign * block)], () => Apply(result)));
+        }
+
         return Command(() => Apply(result));
     }
+
+    private List<(int StartLine, int EndLine)> FoldedLineRanges() => [.. Folding.Regions.Where(r => r.IsFolded).Select(r => (r.StartLine, r.EndLine))];
 
     /// <summary>Applies <paramref name="result"/> as one undo step (refused while read-only) and selects its selection.</summary>
     public bool Apply(EditResult? result)

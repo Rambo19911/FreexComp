@@ -414,6 +414,51 @@ public sealed class ProjectServiceTests
         Assert.Null(_services.Documents.ActiveDocument!.FilePath);
     }
 
+    /// <summary>
+    /// A unit that cannot be written: <c>Msg.File.SaveFailed</c> with Retry and Cancel only (there is no document to
+    /// "Save As" yet, as in the New File dialog, UI-DLG-040); Retry writes again, Cancel creates nothing.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-041")]
+    public async Task AddNewUnitWriteFailureOffersRetry()
+    {
+        var fs = new RecordingFileSystem(_fs);
+        var services = TestComposition.Build(o =>
+        {
+            o.FileSystem = fs;
+            o.Log = _log;
+        });
+        var dialogs = (FakeDialogService)services.Dialogs;
+        WriteHello();
+        Assert.True(await services.Projects.OpenAsync(ProjectPath));
+        var unit3 = Dir + @"\Unit3.pas";
+        var failures = 2;
+        fs.FailWhen = call => call.StartsWith("WriteAllBytesDurable " + unit3, StringComparison.Ordinal) && failures-- > 0;
+        dialogs.Enqueue("Msg.File.SaveFailed", "Retry", "Retry");
+
+        // Two failed writes, two answers Retry: the third write succeeds and the unit is added and opened.
+        Assert.True(await services.Projects.AddNewUnitAsync());
+        var asked = dialogs.Requests.Where(r => r.MessageId == "Msg.File.SaveFailed").ToList();
+        Assert.Equal(2, asked.Count);
+        Assert.All(asked, r => Assert.Equal(["Retry", "Cancel"], r.Buttons!));
+        Assert.Equal(unit3, asked[0].Args[0]);
+        Assert.True(_fs.FileExists(unit3));
+        Assert.Equal("Unit3.pas", services.Projects.Project!.Files[^1].Path);
+        Assert.Equal(unit3, services.Documents.ActiveDocument?.FilePath);
+
+        // Cancel: nothing is created, the project is unchanged.
+        var before = Saved();
+        var unit4 = Dir + @"\Unit4.pas";
+        fs.FailWhen = call => call.StartsWith("WriteAllBytesDurable " + unit4, StringComparison.Ordinal);
+        dialogs.Enqueue("Msg.File.SaveFailed", "Cancel");
+        Assert.False(await services.Projects.AddNewUnitAsync());
+        fs.FailWhen = null;
+        Assert.Equal(3, dialogs.Requests.Count(r => r.MessageId == "Msg.File.SaveFailed"));
+        Assert.Equal(["Retry", "Cancel"], dialogs.Requests[^1].Buttons!);
+        Assert.False(_fs.FileExists(unit4));
+        Assert.Equal(before, Saved());
+        Assert.DoesNotContain(services.Projects.Project!.Files, f => f.Path == "Unit4.pas");
+    }
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-050")]
     [Trait("Req", "IDE-PM-051")]

@@ -20,9 +20,20 @@ public abstract class GutterMargin : AbstractMargin
         Area = area;
         Cursor = new Cursor(StandardCursorType.Arrow);
         ActualThemeVariantChanged += (_, _) => InvalidateVisual();
+        AddHandler(PointerReleasedEvent, (_, e) =>
+        {
+            if (e.InitialPressMouseButton == MouseButton.Right && TextView is { VisualLinesValid: true } && ContextMenuRequested is { } open)
+            {
+                e.Handled = true;
+                open(this, LineAt(e.GetPosition(this).Y));
+            }
+        }, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
     protected TextArea Area { get; }
+
+    /// <summary>UI-ED-022: a right click on the margin asks for the gutter context menu of that 1-based line.</summary>
+    public Action<GutterMargin, int>? ContextMenuRequested { get; set; }
 
     /// <summary>The width this margin takes while visible (DIP).</summary>
     public abstract double MarginWidth { get; }

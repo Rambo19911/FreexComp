@@ -1,8 +1,10 @@
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Media;
 using Avalonia.Threading;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Icons;
 using FreexComp.Ide.Tests.Infrastructure;
@@ -467,5 +469,48 @@ public sealed class ProjectManagerViewTests
         await running;
         Assert.StartsWith("program Start;", File.ReadAllText(Path.Combine(dir, "Start.pas")), StringComparison.Ordinal);
         Assert.Contains("\"mainSource\": \"Start.pas\"", File.ReadAllText(Path.Combine(dir, "Hello.pproj")), StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-113")]
+    [Trait("Req", "IDE-PM-033")]
+    public async Task DropAddsFiles()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light";
+            HelloProject(o);
+            o.InitialFiles[@"Hello\Added.pas"] = "unit Added;\ninterface\nimplementation\n{$FORM Added.form}\nend.\n";
+            o.InitialFiles[@"Hello\Added.form"] = "object Added: TForm\nend\n";
+            o.InitialFiles[@"Hello\docs\readme.txt"] = "readme\n";
+        });
+        var pm = await OpenHelloAsync(h);
+        string Abs(string relative) => Path.Combine(h.TempDir, "Hello", relative);
+        var tree = h.Find<TreeView>("Tool.ProjectManager.Tree");
+        var restBackground = tree.Background;
+
+        // Files dragged over the tree: the drop-target highlight (accent.subtle); dragged away: gone again.
+        var data = await h.DragFilesOverAsync("Tool.ProjectManager.Tree", Abs("Added.pas"));
+        Assert.Equal(Color.Parse("#E3F2EF"), Assert.IsAssignableFrom<ISolidColorBrush>(tree.Background).Color);
+        h.DragLeave(data);
+        Assert.Equal(restBackground, tree.Background);
+
+        // Dropped: added as project.addExistingFile does (a unit with its {$FORM} companion), saved at once, the added
+        // rows selected (IDE-PM-033); nothing opens.
+        await h.DropFilesAsync("Tool.ProjectManager.Tree", Abs("Added.pas"), Abs(@"docs\readme.txt"));
+        await h.WaitForAsync(() => h.Services.Projects.IsMember(Abs(@"docs\readme.txt")), "files added");
+        Assert.Equal(restBackground, tree.Background);
+        Assert.True(h.Services.Projects.IsMember(Abs("Added.pas")));
+        Assert.Contains(h.Services.Projects.Project!.Files, f => f.Path == "Added.pas" && f.Form == "Added.form");
+        Assert.Contains("Added.form", File.ReadAllText(Abs("Hello.pproj")), StringComparison.Ordinal); // saved at once
+        Assert.Equal([Abs("Added.pas"), Abs(@"docs\readme.txt")], pm.Selection.Select(n => n.FullPath).Order(StringComparer.OrdinalIgnoreCase));
+        Assert.DoesNotContain(h.Services.Documents.Documents, d => d.FilePath == Abs("Added.pas"));
+
+        // A member dropped again: the status bar says so, the project is unchanged.
+        var before = File.ReadAllText(Abs("Hello.pproj"));
+        await h.DropFilesAsync("Tool.ProjectManager.Tree", Abs("Added.pas"));
+        await h.WaitForAsync(() => h.Services.Status.Message is not null, "status message");
+        Assert.Equal(string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Msg_Project_FileAlreadyInProject, "Added.pas"), h.Services.Status.Message);
+        Assert.Equal(before, File.ReadAllText(Abs("Hello.pproj")));
     }
 }

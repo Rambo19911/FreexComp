@@ -75,6 +75,11 @@ public sealed class LargeFileTests
         var normal = Assert.IsType<TextDocumentViewModel>((await services.Documents.OpenAsync(Path)).Value);
         Assert.Equal(3, dialogs.Requests.Count);
         Assert.Equal(("pascal", false, true), (normal.Language.Id, normal.IsLargeFile, normal.ViewState.WordWrap));
+        // Above 200 KB its regions are computed in the background (I-159).
+        var folded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        normal.Folding.Changed += (_, _) => folded.TrySetResult();
+        if (normal.Folding.Regions.Count == 0)
+            await folded.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
         Assert.NotEmpty(normal.Folding.Regions);
     }
 }

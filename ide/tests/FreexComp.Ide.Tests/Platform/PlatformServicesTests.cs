@@ -83,6 +83,31 @@ public sealed class PlatformServicesTests
         await Assert.ThrowsAsync<ArgumentNullException>(() => clipboard.SetTextAsync(null!));
         Assert.Null(await clipboard.GetTextAsync());
         await clipboard.SetTextAsync("x"); // no window yet: ignored
+        await clipboard.SetTextAsync("x", new Dictionary<string, string> { [IClipboardService.LineFormat] = "x" });
+        Assert.Null(await clipboard.GetFormatAsync(IClipboardService.LineFormat));
+    }
+
+    /// <summary>I-170: the line format goes to the window's clipboard with the text; a plain copy replaces it.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-038")]
+    public async Task ClipboardCarriesTheLineFormat()
+    {
+        var window = new Avalonia.Controls.Window();
+        window.Show();
+        try
+        {
+            IClipboardService clipboard = new AvaloniaClipboard(() => window);
+            await clipboard.SetTextAsync("two\r\n", new Dictionary<string, string> { [IClipboardService.LineFormat] = "two\r\n" });
+            Assert.Equal("two\r\n", await clipboard.GetTextAsync());
+            Assert.Equal("two\r\n", await clipboard.GetFormatAsync(IClipboardService.LineFormat));
+            await clipboard.SetTextAsync("other");
+            Assert.Equal("other", await clipboard.GetTextAsync());
+            Assert.Null(await clipboard.GetFormatAsync(IClipboardService.LineFormat));
+        }
+        finally
+        {
+            window.Close();
+        }
     }
 
     [Fact(Timeout = 30000)]

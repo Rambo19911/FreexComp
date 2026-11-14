@@ -1,9 +1,12 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
 using FreexComp.Ide.Core.Themes;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 
@@ -31,7 +34,7 @@ public sealed partial class TokenTests
         }
 
         var fluent = Theme(Load("FluentOverrides"));
-        Assert.Equal(Keys(fluent["Light"]), Keys(fluent["Dark"]));
+        Assert.Equal(Keys(fluent["Default"]), Keys(fluent["Dark"])); // light = Default, like Fluent's own dictionary
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -70,7 +73,7 @@ public sealed partial class TokenTests
             problems.AddRange(Keys(dict).Where(k => !specKeys.Contains(k)).Select(k => $"{theme}: {k} is not a token of design-tokens.md"));
 
             // UI-TOK-007: Fluent accent resources follow accent.default / hover / pressed.
-            var fluent = Theme(Load("FluentOverrides"))[theme];
+            var fluent = Theme(Load("FluentOverrides"))[theme == "Light" ? "Default" : theme];
             var accent = tokens.ToDictionary(t => t.Token, t => ParseSpecColor(column == 1 ? t.Light : t.Dark));
             foreach (var (fluentKey, token) in new[] { ("SystemAccentColor", "accent.default"), ("SystemAccentColorLight1", "accent.hover"), ("SystemAccentColorDark1", "accent.pressed") })
             {
@@ -123,6 +126,84 @@ public sealed partial class TokenTests
 
         Assert.True(checkedPairs > 100, $"only {checkedPairs} pairs parsed from §2.6");
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    /// <summary>
+    /// UI-TOK-007: every colour resource the running <see cref="FluentTheme"/> exposes (enumerated at run time, so a
+    /// toolkit update that adds keys is caught) resolves, from the application, to a colour token of that theme.
+    /// Brushes must be opaque (Opacity 1, otherwise the drawn colour is not the token's); fully transparent
+    /// resources mean "no colour" and are allowed.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TOK-007")]
+    public void FluentResourcesOverridden()
+    {
+        var fluent = Application.Current!.Styles.OfType<FluentTheme>().Single();
+        var keys = new SortedSet<string>(StringComparer.Ordinal);
+        CollectKeys(fluent.Resources, keys);
+        Assert.True(keys.Count > 500, $"only {keys.Count} Fluent resource keys found");
+
+        var problems = new List<string>();
+        var colours = 0;
+        foreach (var (name, variant) in new[] { ("Light", ThemeVariant.Light), ("Dark", ThemeVariant.Dark) })
+        {
+            var tokens = Load(name).Values.OfType<Color>().ToHashSet();
+            foreach (var key in keys)
+            {
+                if (!Application.Current.TryGetResource(key, variant, out var value))
+                {
+                    continue;
+                }
+
+                switch (value)
+                {
+                    case Color c:
+                        colours++;
+                        if (c.A != 0 && !tokens.Contains(c))
+                        {
+                            problems.Add($"{name}: {key} = {c} is not a token colour");
+                        }
+
+                        break;
+                    case ISolidColorBrush b:
+                        colours++;
+                        if (b.Color.A != 0 && (!tokens.Contains(b.Color) || b.Opacity != 1))
+                        {
+                            problems.Add($"{name}: {key} = {b.Color} (opacity {b.Opacity}) is not a token colour");
+                        }
+
+                        break;
+                    case IBrush other:
+                        colours++;
+                        problems.Add($"{name}: {key} is a {other.GetType().Name}, not a token brush");
+                        break;
+                }
+            }
+        }
+
+        Assert.True(colours > 1000, $"only {colours} colour resources resolved");
+        Assert.True(problems.Count == 0, problems.Count + " Fluent colour resources not overridden:" + Environment.NewLine + string.Join(Environment.NewLine, problems));
+    }
+
+    private static void CollectKeys(IResourceDictionary dict, ISet<string> keys)
+    {
+        foreach (var key in dict.Keys)
+        {
+            if (key is string s)
+            {
+                keys.Add(s);
+            }
+        }
+
+        foreach (var theme in dict.ThemeDictionaries.Values.OfType<IResourceDictionary>())
+        {
+            CollectKeys(theme, keys);
+        }
+
+        foreach (var merged in dict.MergedDictionaries.OfType<IResourceDictionary>())
+        {
+            CollectKeys(merged, keys);
+        }
     }
 
     /// <summary>

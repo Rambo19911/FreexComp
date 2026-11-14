@@ -191,7 +191,12 @@ public static class EditorOperations
     /// edge. <paramref name="foldedRegions"/> (start and end line of each folded region) are moved over as a whole, and a
     /// folded region starting on the last touched line moves with the block.
     /// </summary>
-    public static EditResult? MoveLines(ITextBuffer buffer, TextSelection selection, bool up, IReadOnlyList<(int StartLine, int EndLine)> foldedRegions, string newLine)
+    /// <summary>
+    /// IDE-ED-033: the lines <c>edit.moveLineUp/Down</c> swaps — the touched lines (extended over a folded region
+    /// starting on the last one) and the neighbour line (extended over a whole folded region); null at the document edge.
+    /// </summary>
+    public static (int First, int Last, int OtherFirst, int OtherLast)? MoveRanges(ITextBuffer buffer, TextSelection selection, bool up,
+        IReadOnlyList<(int StartLine, int EndLine)> foldedRegions)
     {
         ArgumentNullException.ThrowIfNull(buffer);
         ArgumentNullException.ThrowIfNull(foldedRegions);
@@ -225,6 +230,15 @@ public static class EditorOperations
                     otherLast = Math.Max(otherLast, Math.Min(e, buffer.LineCount));
             }
         }
+
+        return (first, last, otherFirst, otherLast);
+    }
+    public static EditResult? MoveLines(ITextBuffer buffer, TextSelection selection, bool up, IReadOnlyList<(int StartLine, int EndLine)> foldedRegions, string newLine)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        ArgumentNullException.ThrowIfNull(foldedRegions);
+        if (MoveRanges(buffer, selection, up, foldedRegions) is not (int first, int last, int otherFirst, int otherLast))
+            return null;
 
         string Lines(int a, int b)
         {

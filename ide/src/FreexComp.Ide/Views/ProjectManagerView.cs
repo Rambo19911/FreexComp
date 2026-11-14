@@ -57,11 +57,33 @@ public sealed class ProjectManagerView : UserControl
         _tree.SelectionChanged += OnTreeSelectionChanged;
         _tree.AddHandler(ContextRequestedEvent, OnContextRequested, RoutingStrategies.Tunnel);
         _tree.AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
+        // UI-TW-113: files dragged from the OS over the tree get the drop-target highlight (design-tokens §2.3
+        // accent.subtle); the main window adds them on drop (MainWindowViewModel.DropFilesAsync).
+        _tree.AddHandler(DragDrop.DragEnterEvent, OnFilesDraggedOver);
+        _tree.AddHandler(DragDrop.DragOverEvent, OnFilesDraggedOver);
+        _tree.AddHandler(DragDrop.DragLeaveEvent, (_, _) => SetDropTarget(false), handledEventsToo: true);
+        _tree.AddHandler(DragDrop.DropEvent, (_, _) => SetDropTarget(false), handledEventsToo: true);
 
         _empty = CreateEmptyState();
         var body = new Panel { Children = { _tree, _empty } };
         DockPanel.SetDock(_barHost, Avalonia.Controls.Dock.Top);
         Content = new DockPanel { Children = { _barHost, body } };
+    }
+
+    private IDisposable? _dropHighlight;
+
+    private void OnFilesDraggedOver(object? sender, DragEventArgs e) =>
+        SetDropTarget(e.DataTransfer.TryGetFiles() is { Length: > 0 });
+
+    private void SetDropTarget(bool on)
+    {
+        if (on && _dropHighlight is null)
+            _dropHighlight = _tree.Bind(BackgroundProperty, _tree.GetResourceObservable("FxcAccentSubtleBrush"));
+        else if (!on)
+        {
+            _dropHighlight?.Dispose();
+            _dropHighlight = null;
+        }
     }
 
     protected override void OnDataContextChanged(EventArgs e)

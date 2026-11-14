@@ -48,6 +48,12 @@ public static class MenuBarBuilder
         if (model.Run is { } run)
         {
             AutomationProperties.SetAutomationId(item, (context ? "Context." : "Menu.") + model.ActionId);
+            if (model.IsCheckedAction is { } isChecked)
+            {
+                item.ToggleType = MenuItemToggleType.CheckBox;
+                item.IsChecked = isChecked;
+            }
+
             item.Click += (_, _) => run();
             return item;
         }

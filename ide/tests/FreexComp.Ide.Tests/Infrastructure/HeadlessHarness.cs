@@ -309,6 +309,19 @@ public sealed class HeadlessHarness : IAsyncDisposable
     /// </summary>
     public async Task DropFilesAsync(string automationId, params string[] paths)
     {
+        var data = await DragFilesOverAsync(automationId, paths);
+        Window.DragDrop(CenterOf(automationId), RawDragEventType.Drop, data, AllDragEffects, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private const DragDropEffects AllDragEffects = DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link;
+
+    /// <summary>
+    /// Drags <paramref name="paths"/> from the OS file manager over the element's centre without dropping (enter,
+    /// over); <see cref="DragLeave"/> takes them away again. Returns the dragged data.
+    /// </summary>
+    public async Task<IDataTransfer> DragFilesOverAsync(string automationId, params string[] paths)
+    {
         var point = CenterOf(automationId);
         var data = new DataTransfer();
         foreach (var path in paths)
@@ -318,9 +331,16 @@ public sealed class HeadlessHarness : IAsyncDisposable
             data.Add(DataTransferItem.CreateFile(file));
         }
 
-        Window.DragDrop(point, RawDragEventType.DragEnter, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, RawInputModifiers.None);
-        Window.DragDrop(point, RawDragEventType.DragOver, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, RawInputModifiers.None);
-        Window.DragDrop(point, RawDragEventType.Drop, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, RawInputModifiers.None);
+        Window.DragDrop(point, RawDragEventType.DragEnter, data, AllDragEffects, RawInputModifiers.None);
+        Window.DragDrop(point, RawDragEventType.DragOver, data, AllDragEffects, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+        return data;
+    }
+
+    /// <summary>The dragged files leave the window (the user drags them away or cancels).</summary>
+    public void DragLeave(IDataTransfer data)
+    {
+        Window.DragDrop(new Point(-1, -1), RawDragEventType.DragLeave, data, AllDragEffects, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
     }
 

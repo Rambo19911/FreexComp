@@ -28,6 +28,17 @@ public sealed class DocumentTabStrip : Border
     private readonly Dictionary<DocumentTabViewModel, DocumentTabView> _views = [];
     private DocumentAreaViewModel? _model;
 
+    /// <summary>UI-ED-076: the drop position line while a tab is dragged.</summary>
+    private readonly Avalonia.Controls.Shapes.Rectangle _dropIndicator = new() { Name = "TabDropIndicator", Width = 2, IsVisible = false, IsHitTestVisible = false };
+    private readonly Canvas _overlay = new() { IsHitTestVisible = false };
+    private DocumentTabView? _dragTab;
+    private Point _dragStart;
+    private bool _dragging;
+    private int _dropAt;
+
+    /// <summary>Pointer travel (DIP) before a press on a tab becomes a drag.</summary>
+    private const double DragThreshold = 4;
+
     public DocumentTabStrip()
     {
         this.Bind(BackgroundProperty, this.GetResourceObservable("FxcBgSunkenBrush"));
@@ -58,7 +69,7 @@ public sealed class DocumentTabStrip : Border
         {
             HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = _tabs,
+            Content = new Panel { Children = { _tabs, _overlay } },
             Background = Brushes.Transparent,
         };
         _scroll.Bind(MinHeightProperty, this.GetResourceObservable("FxcMetricDocumentTabHeight"));
@@ -74,6 +85,55 @@ public sealed class DocumentTabStrip : Border
         };
 
         Child = new DockPanel { Children = { _overflow, _scroll } };
+
+        _dropIndicator.Bind(Avalonia.Controls.Shapes.Shape.FillProperty, this.GetResourceObservable("FxcAccentDefaultBrush"));
+        _dropIndicator.Bind(HeightProperty, this.GetResourceObservable("FxcMetricDocumentTabHeight"));
+        _overlay.Children.Add(_dropIndicator);
+        _tabs.AddHandler(PointerPressedEvent, OnTabPressed);
+        _tabs.AddHandler(PointerMovedEvent, OnTabMoved, handledEventsToo: true);
+        _tabs.AddHandler(PointerReleasedEvent, OnTabReleased, handledEventsToo: true);
+        _tabs.AddHandler(PointerCaptureLostEvent, (_, _) => EndDrag());
+    }
+
+    private void OnTabPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(_tabs).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
+            return;
+        _dragTab = (e.Source as Visual)?.FindAncestorOfType<DocumentTabView>(includeSelf: true);
+        _dragStart = e.GetPosition(_tabs);
+        _dragging = false;
+    }
+
+    private void OnTabMoved(object? sender, PointerEventArgs e)
+    {
+        if (_dragTab is null)
+            return;
+        var position = e.GetPosition(_tabs);
+        if (!_dragging && Math.Abs(position.X - _dragStart.X) < DragThreshold)
+            return;
+
+        _dragging = true;
+        var views = _tabs.Children.OfType<DocumentTabView>().ToList();
+        _dropAt = views.Count(v => v.Bounds.Center.X < position.X);
+        var x = _dropAt < views.Count ? views[_dropAt].Bounds.Left : views[^1].Bounds.Right;
+        Canvas.SetLeft(_dropIndicator, x - _dropIndicator.Width / 2);
+        _dropIndicator.IsVisible = true;
+    }
+
+    private void OnTabReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var tab = _dragging ? _dragTab?.DataContext as DocumentTabViewModel : null;
+        var at = _dropAt;
+        EndDrag();
+        if (tab is not null)
+            _model?.MoveTab(tab, at); // UI-ED-076: dragging out of the strip is not supported (the X position counts)
+    }
+
+    private void EndDrag()
+    {
+        _dragTab = null;
+        _dragging = false;
+        _dropIndicator.IsVisible = false;
     }
 
     protected override void OnDataContextChanged(EventArgs e)

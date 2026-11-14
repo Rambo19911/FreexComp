@@ -79,6 +79,9 @@ public interface IDocumentService
     /// </summary>
     void ActivateNext(bool forward, bool mru);
 
+    /// <summary>UI-ED-076: moves an open document to <paramref name="index"/> in tab order (the MRU order is unchanged).</summary>
+    void Move(DocumentViewModel document, int index);
+
     /// <summary>
     /// Closes without asking (prompts for modified documents: <c>file.close</c>); false when a
     /// <see cref="DocumentClosing"/> handler canceled. The most recently used remaining document becomes active.

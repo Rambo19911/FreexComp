@@ -3942,4 +3942,19 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Replace All (Alt+A)</value>
     <comment>dialogs.md §10 tooltip</comment>
   </data>
+  <data name="Editor_Gutter_BreakpointProperties" xml:space="preserve">
+    <value>Breakpoint &amp;Properties…</value>
+  </data>
+  <data name="Editor_Gutter_DeleteBreakpoint" xml:space="preserve">
+    <value>&amp;Delete Breakpoint</value>
+  </data>
+  <data name="Editor_Gutter_LineNumbers" xml:space="preserve">
+    <value>Line &amp;Numbers</value>
+  </data>
+  <data name="Editor_Gutter_FoldingMarkers" xml:space="preserve">
+    <value>&amp;Folding Markers</value>
+  </data>
+  <data name="Editor_Gutter_ChangeBar" xml:space="preserve">
+    <value>&amp;Change Bar</value>
+  </data>
 </root>
