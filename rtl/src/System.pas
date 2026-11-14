@@ -50,6 +50,36 @@ function _AllocZero(Size: NativeInt): Pointer;
 function _LiveAllocCount: NativeInt;
 function AllocMem(Size: NativeInt): Pointer;
 
+{ big sets: 32-byte operands, bit k = bit k mod 8 of byte k div 8 (rtl-abi.md ABI-050, section 9.8) }
+procedure _SetUnion(Dest, A, B: Pointer);
+procedure _SetInter(Dest, A, B: Pointer);
+procedure _SetDiff(Dest, A, B: Pointer);
+procedure _SetSymDiff(Dest, A, B: Pointer);
+function _SetEq(A, B: Pointer): Boolean;
+function _SetLe(A, B: Pointer): Boolean;
+procedure _SetRange(Dest: Pointer; Lo, Hi: Integer);
+
+{ exact decimal digits of a binary float (system.md RTL-100); used by the float Write/Str helpers and SysUtils }
+const
+  FloatDigitsMax = 768;                { a Double's exact expansion has at most 767 significant digits }
+
+type
+  TFloatDigits = record
+    Count: Integer;                    { digits in Digits[0..Count-1]; 0 for zero, infinity and NaN }
+    Exponent: Integer;                 { value = 0.D0 D1 ... D(Count-1) x 10^Exponent }
+    Negative: Boolean;                 { the sign bit (also set for -0, -Inf and a NaN with the sign bit) }
+    IsNaN: Boolean;
+    IsInfinite: Boolean;
+    Digits: array[0..FloatDigitsMax - 1] of Byte;   { values 0..9, Digits[0] <> 0 }
+  end;
+
+{ shortest digits that read back (round-half-even) to the same Double, or to the same Single when IsSingle (V must
+  then hold a Single value); of the shortest candidates the one nearest to V, a tie going to the even digit }
+procedure _FloatDigitsShortest(V: Double; IsSingle: Boolean; var R: TFloatDigits);
+{ the exact value rounded to Precision significant digits (clipped to 1..FloatDigitsMax) with round-half-even;
+  Count = Precision, trailing zeros included }
+procedure _FloatDigitsPrecision(V: Double; Precision: Integer; var R: TFloatDigits);
+
 { text output (rtl-abi.md section 9.9) }
 procedure _WriteUStr(var T: Text; S: Pointer; Width: Integer);
 procedure _WriteWChar(var T: Text; C: WideChar; Width: Integer);
@@ -454,6 +484,521 @@ end;
 procedure _IOCheck;
 begin
   // TODO(R-032): read and reset the per-thread InOutRes; no helper records an I/O error before R-031
+end;
+
+{ ---------------------------------------------------------------- big sets (rtl-abi.md section 9.8) }
+{ Dest may be the same block as A or B: every byte is read before the same byte of Dest is written. }
+
+const
+  SetBytes = 32;
+
+procedure _SetUnion(Dest, A, B: Pointer);
+var
+  D, X, Y: PByte;
+  I: Integer;
+begin
+  D := Dest;
+  X := A;
+  Y := B;
+  for I := 0 to SetBytes - 1 do
+    D[I] := X[I] or Y[I];
+end;
+
+procedure _SetInter(Dest, A, B: Pointer);
+var
+  D, X, Y: PByte;
+  I: Integer;
+begin
+  D := Dest;
+  X := A;
+  Y := B;
+  for I := 0 to SetBytes - 1 do
+    D[I] := X[I] and Y[I];
+end;
+
+procedure _SetDiff(Dest, A, B: Pointer);
+var
+  D, X, Y: PByte;
+  I: Integer;
+begin
+  D := Dest;
+  X := A;
+  Y := B;
+  for I := 0 to SetBytes - 1 do
+    D[I] := X[I] and not Y[I];
+end;
+
+procedure _SetSymDiff(Dest, A, B: Pointer);
+var
+  D, X, Y: PByte;
+  I: Integer;
+begin
+  D := Dest;
+  X := A;
+  Y := B;
+  for I := 0 to SetBytes - 1 do
+    D[I] := X[I] xor Y[I];
+end;
+
+function _SetEq(A, B: Pointer): Boolean;
+var
+  X, Y: PByte;
+  I: Integer;
+begin
+  X := A;
+  Y := B;
+  Result := False;
+  for I := 0 to SetBytes - 1 do
+    if X[I] <> Y[I] then
+      Exit;
+  Result := True;
+end;
+
+{ A <= B: no element of A is missing from B }
+function _SetLe(A, B: Pointer): Boolean;
+var
+  X, Y: PByte;
+  I: Integer;
+begin
+  X := A;
+  Y := B;
+  Result := False;
+  for I := 0 to SetBytes - 1 do
+    if X[I] and not Y[I] <> 0 then
+      Exit;
+  Result := True;
+end;
+
+{ Lo > Hi is tested first: the compiler clips the bounds under $R- so that this is the only case outside 0..255 }
+procedure _SetRange(Dest: Pointer; Lo, Hi: Integer);
+var
+  D: PByte;
+  K: Integer;
+begin
+  if Lo > Hi then
+    Exit;
+  if (Lo < 0) or (Hi > 255) then
+    _RangeError;
+  D := Dest;
+  for K := Lo to Hi do
+    D[K shr 3] := D[K shr 3] or (1 shl (K and 7));
+end;
+
+{ ---------------------------------------------------------------- float digits (RTL-100) }
+{ Free-format digit generation with exact big-integer arithmetic (the classic method: the value and the half-gaps
+  to its neighbours are the ratios R/S, MPlus/S, MMinus/S, scaled by a power of ten so that the first digit comes
+  out of 10R/S). Fixed precision uses the same scaling and rounds the remainder half-even. The numbers stay below
+  2^1140, so 40 limbs suffice. }
+
+const
+  BigLimbs = 40;
+
+type
+  TBig = record
+    Len: Integer;                      { limbs in use, W[Len-1] <> 0; 0 for the value 0 }
+    W: array[0..BigLimbs - 1] of Cardinal;
+  end;
+  PUInt64 = ^UInt64;
+
+procedure BigSet(var A: TBig; V: UInt64);
+begin
+  A.W[0] := Cardinal(V and $FFFFFFFF);
+  A.W[1] := Cardinal(V shr 32);
+  if A.W[1] <> 0 then
+    A.Len := 2
+  else if A.W[0] <> 0 then
+    A.Len := 1
+  else
+    A.Len := 0;
+end;
+
+procedure BigMulSmall(var A: TBig; M: Cardinal);
+var
+  I: Integer;
+  Carry: UInt64;
+begin
+  Carry := 0;
+  for I := 0 to A.Len - 1 do
+  begin
+    Carry := UInt64(A.W[I]) * M + Carry;
+    A.W[I] := Cardinal(Carry and $FFFFFFFF);
+    Carry := Carry shr 32;
+  end;
+  if Carry <> 0 then
+  begin
+    A.W[A.Len] := Cardinal(Carry);
+    A.Len := A.Len + 1;
+  end;
+end;
+
+procedure BigMulPow10(var A: TBig; N: Integer);
+var
+  M: Cardinal;
+begin
+  while N >= 9 do
+  begin
+    BigMulSmall(A, 1000000000);
+    N := N - 9;
+  end;
+  M := 1;
+  while N > 0 do
+  begin
+    M := M * 10;
+    N := N - 1;
+  end;
+  BigMulSmall(A, M);
+end;
+
+{ A := A * 2^N, N >= 0 }
+procedure BigShl(var A: TBig; N: Integer);
+var
+  Words, Bits, I: Integer;
+begin
+  if A.Len = 0 then
+    Exit;
+  Words := N shr 5;
+  Bits := N and 31;
+  if Bits = 0 then
+    for I := A.Len - 1 downto 0 do
+      A.W[I + Words] := A.W[I]
+  else
+  begin
+    A.W[A.Len + Words] := A.W[A.Len - 1] shr (32 - Bits);
+    for I := A.Len - 1 downto 1 do
+      A.W[I + Words] := Cardinal(((UInt64(A.W[I]) shl Bits) or (A.W[I - 1] shr (32 - Bits))) and $FFFFFFFF);
+    A.W[Words] := Cardinal((UInt64(A.W[0]) shl Bits) and $FFFFFFFF);
+    A.Len := A.Len + 1;
+  end;
+  for I := 0 to Words - 1 do
+    A.W[I] := 0;
+  A.Len := A.Len + Words;
+  if A.W[A.Len - 1] = 0 then
+    A.Len := A.Len - 1;
+end;
+
+function BigCmp(const A, B: TBig): Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  if A.Len <> B.Len then
+  begin
+    if A.Len < B.Len then
+      Result := -1
+    else
+      Result := 1;
+    Exit;
+  end;
+  for I := A.Len - 1 downto 0 do
+    if A.W[I] <> B.W[I] then
+    begin
+      if A.W[I] < B.W[I] then
+        Result := -1
+      else
+        Result := 1;
+      Exit;
+    end;
+end;
+
+procedure BigAdd(var A: TBig; const B: TBig);
+var
+  I, N: Integer;
+  Sum: UInt64;
+begin
+  N := A.Len;
+  if B.Len > N then
+    N := B.Len;
+  Sum := 0;
+  for I := 0 to N - 1 do
+  begin
+    if I < A.Len then
+      Sum := Sum + A.W[I];
+    if I < B.Len then
+      Sum := Sum + B.W[I];
+    A.W[I] := Cardinal(Sum and $FFFFFFFF);
+    Sum := Sum shr 32;
+  end;
+  A.Len := N;
+  if Sum <> 0 then
+  begin
+    A.W[N] := Cardinal(Sum);
+    A.Len := N + 1;
+  end;
+end;
+
+{ A := A - B, A >= B }
+procedure BigSub(var A: TBig; const B: TBig);
+var
+  I: Integer;
+  D: Int64;
+  Borrow: Int64;
+begin
+  Borrow := 0;
+  for I := 0 to A.Len - 1 do
+  begin
+    D := Int64(A.W[I]) - Borrow;
+    if I < B.Len then
+      D := D - B.W[I];
+    if D < 0 then
+    begin
+      D := D + $100000000;
+      Borrow := 1;
+    end
+    else
+      Borrow := 0;
+    A.W[I] := Cardinal(D);
+  end;
+  while (A.Len > 0) and (A.W[A.Len - 1] = 0) do
+    A.Len := A.Len - 1;
+end;
+
+{ Compare(A + B, C) }
+function BigCmpSum(const A, B, C: TBig): Integer;
+var
+  T: TBig;
+begin
+  T := A;
+  BigAdd(T, B);
+  Result := BigCmp(T, C);
+end;
+
+{ next digit: R := 10 R mod S, result 10 R div S (0..9 while R < S) }
+function BigNextDigit(var R: TBig; const S: TBig): Integer;
+begin
+  BigMulSmall(R, 10);
+  Result := 0;
+  while BigCmp(R, S) >= 0 do
+  begin
+    BigSub(R, S);
+    Result := Result + 1;
+  end;
+end;
+
+{ estimate of the decimal exponent K with 10^(K-1) <= F * 2^E < 10^K, possibly one off (log10(2) ~ 1233/4096) }
+function EstimateExponent(F: UInt64; E: Integer): Integer;
+var
+  Bits: Integer;
+begin
+  Bits := 0;
+  while F <> 0 do
+  begin
+    Bits := Bits + 1;
+    F := F shr 1;
+  end;
+  Result := ((E + Bits - 1) * 1233) div 4096 + 1;
+end;
+
+{ R/S := F * 2^E, multiplied by 10^-K for the estimated K }
+procedure ScaleValue(F: UInt64; E, K: Integer; var R, S: TBig);
+begin
+  BigSet(R, F);
+  BigSet(S, 1);
+  if E >= 0 then
+    BigShl(R, E)
+  else
+    BigShl(S, -E);
+  if K >= 0 then
+    BigMulPow10(S, K)
+  else
+    BigMulPow10(R, -K);
+end;
+
+{ the bits of V converted to Single.
+  TODO(C-177): a local "S := V; ... PCardinal(@S)^" gets a false hint H2002 (the address use is not seen as a read) }
+function SingleBits(S: Single): Cardinal;
+begin
+  Result := PCardinal(@S)^;
+end;
+
+{ sign, NaN, infinity, zero; False when V is finite and not zero, with V = F * 2^E, F < 2^Precision, E >= MinE }
+function DecodeFloat(V: Double; IsSingle: Boolean; var R: TFloatDigits; var F: UInt64; var E, MinE: Integer;
+  var Hidden: UInt64): Boolean;
+var
+  Bits: UInt64;
+  Bits32: Cardinal;
+  BiasedExp: Integer;
+  Frac: UInt64;
+  MaxExp, Bias, FracBits: Integer;
+begin
+  if IsSingle then
+  begin
+    Bits32 := SingleBits(V);
+    R.Negative := (Bits32 shr 31) <> 0;
+    BiasedExp := (Bits32 shr 23) and $FF;
+    Frac := Bits32 and $7FFFFF;
+    MaxExp := $FF;
+    Bias := 150;
+    FracBits := 23;
+  end
+  else
+  begin
+    Bits := PUInt64(@V)^;
+    R.Negative := (Bits shr 63) <> 0;
+    BiasedExp := (Bits shr 52) and $7FF;
+    Frac := Bits and $FFFFFFFFFFFFF;
+    MaxExp := $7FF;
+    Bias := 1075;
+    FracBits := 52;
+  end;
+  R.Count := 0;
+  R.Exponent := 0;
+  R.IsNaN := (BiasedExp = MaxExp) and (Frac <> 0);
+  R.IsInfinite := (BiasedExp = MaxExp) and (Frac = 0);
+  Hidden := UInt64(1) shl FracBits;
+  MinE := 1 - Bias;
+  if BiasedExp = 0 then
+  begin
+    F := Frac;
+    E := MinE;
+  end
+  else
+  begin
+    F := Frac or Hidden;
+    E := BiasedExp - Bias;
+  end;
+  Result := (BiasedExp <> MaxExp) and (F <> 0);
+end;
+
+procedure _FloatDigitsShortest(V: Double; IsSingle: Boolean; var R: TFloatDigits);
+var
+  F, Hidden: UInt64;
+  E, MinE, K, Digit, C: Integer;
+  Even, Unequal, Low, High: Boolean;
+  Rm, S, MPlus, MMinus, T: TBig;
+begin
+  if not DecodeFloat(V, IsSingle, R, F, E, MinE, Hidden) then
+    Exit;
+  Even := (F and 1) = 0;               { the reader rounds half-even: an even F also owns both boundaries }
+  Unequal := (F = Hidden) and (E > MinE);   { the gap below a power of two is half the gap above }
+  K := EstimateExponent(F, E);
+  { 2 V = R/S with half-gaps MPlus/S, MMinus/S; with unequal gaps everything is doubled once more }
+  if Unequal then
+  begin
+    ScaleValue(F * 4, E, K, Rm, S);
+    BigSet(MPlus, 2);
+    BigSet(MMinus, 1);
+    BigShl(S, 2);
+  end
+  else
+  begin
+    ScaleValue(F * 2, E, K, Rm, S);
+    BigSet(MPlus, 1);
+    BigSet(MMinus, 1);
+    BigShl(S, 1);
+  end;
+  if E >= 0 then
+  begin
+    BigShl(MPlus, E);
+    BigShl(MMinus, E);
+  end;
+  if K < 0 then
+  begin
+    BigMulPow10(MPlus, -K);
+    BigMulPow10(MMinus, -K);
+  end;
+  { fix K: the upper boundary (R + MPlus)/S must lie below 1 (or at 1 when it is excluded) and not below 1/10 }
+  while True do
+  begin
+    C := BigCmpSum(Rm, MPlus, S);
+    if (C > 0) or (Even and (C = 0)) then
+    begin
+      BigMulSmall(S, 10);
+      K := K + 1;
+    end
+    else
+      Break;
+  end;
+  while True do
+  begin
+    T := Rm;
+    BigAdd(T, MPlus);
+    BigMulSmall(T, 10);
+    C := BigCmp(T, S);
+    if (C < 0) or (not Even and (C = 0)) then
+    begin
+      BigMulSmall(Rm, 10);
+      BigMulSmall(MPlus, 10);
+      BigMulSmall(MMinus, 10);
+      K := K - 1;
+    end
+    else
+      Break;
+  end;
+  R.Exponent := K;
+  repeat
+    Digit := BigNextDigit(Rm, S);
+    BigMulSmall(MPlus, 10);
+    BigMulSmall(MMinus, 10);
+    C := BigCmp(Rm, MMinus);
+    Low := (C < 0) or (Even and (C = 0));        { the digits so far are inside the interval }
+    C := BigCmpSum(Rm, MPlus, S);
+    High := (C > 0) or (Even and (C = 0));       { the digits so far plus one unit are inside the interval }
+    if Low and High then
+    begin
+      T := Rm;
+      BigShl(T, 1);
+      C := BigCmp(T, S);
+      if (C > 0) or ((C = 0) and ((Digit and 1) <> 0)) then
+        Digit := Digit + 1;
+    end
+    else if High then
+      Digit := Digit + 1;
+    R.Digits[R.Count] := Digit;
+    R.Count := R.Count + 1;
+  until Low or High;
+end;
+
+procedure _FloatDigitsPrecision(V: Double; Precision: Integer; var R: TFloatDigits);
+var
+  F, Hidden: UInt64;
+  E, MinE, K, I, C: Integer;
+  Rm, S, T: TBig;
+begin
+  if not DecodeFloat(V, False, R, F, E, MinE, Hidden) then
+    Exit;
+  if Precision < 1 then
+    Precision := 1
+  else if Precision > FloatDigitsMax then
+    Precision := FloatDigitsMax;
+  K := EstimateExponent(F, E);
+  ScaleValue(F, E, K, Rm, S);
+  { fix K: 1/10 <= R/S < 1 }
+  while BigCmp(Rm, S) >= 0 do
+  begin
+    BigMulSmall(S, 10);
+    K := K + 1;
+  end;
+  while True do
+  begin
+    T := Rm;
+    BigMulSmall(T, 10);
+    if BigCmp(T, S) >= 0 then
+      Break;
+    Rm := T;
+    K := K - 1;
+  end;
+  for I := 0 to Precision - 1 do
+    R.Digits[I] := BigNextDigit(Rm, S);
+  R.Count := Precision;
+  R.Exponent := K;
+  BigShl(Rm, 1);
+  C := BigCmp(Rm, S);
+  if (C > 0) or ((C = 0) and ((R.Digits[Precision - 1] and 1) <> 0)) then
+  begin
+    I := Precision - 1;
+    while (I >= 0) and (R.Digits[I] = 9) do
+    begin
+      R.Digits[I] := 0;
+      I := I - 1;
+    end;
+    if I < 0 then
+    begin
+      R.Digits[0] := 1;                { 9.99 -> 10.0: the digits are 1 0 0, one decade higher }
+      R.Exponent := K + 1;
+    end
+    else
+      R.Digits[I] := R.Digits[I] + 1;
+  end;
 end;
 
 { ---------------------------------------------------------------- Write helpers (system.md section 10.2) }
