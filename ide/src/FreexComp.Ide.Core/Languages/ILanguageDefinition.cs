@@ -47,6 +47,9 @@ public interface ILanguageDefinition
     IReadOnlyList<(char Open, char Close)> Brackets { get; }
 
     ITokenClassifier CreateClassifier();
+
+    /// <summary>Fold regions of this file type (IDE-ED-051…053); null when it has none.</summary>
+    Editing.IFoldingProvider? CreateFoldingProvider();
 }
 
 /// <summary>Colour-token names, taken from the compiler area's single mapping (<see cref="Classifier.GetColorToken"/>).</summary>

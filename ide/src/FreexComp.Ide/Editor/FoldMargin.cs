@@ -11,12 +11,14 @@ namespace FreexComp.Ide.Editor;
 /// Fold margin (UI-ED-030…032): 14 px, reads the foldings of the view's <see cref="FoldingManager"/> (AvaloniaEdit's
 /// own folding margin is not used). Chevrons 12 × 12, stroke 1.25, <c>editor.foldMarker</c>: <c>⌄</c> expanded,
 /// <c>›</c> collapsed. Expanded markers show only while the pointer is near the gutter or the caret is inside their
-/// region; collapsed markers always. A click on a marker toggles its fold.
+/// region; collapsed markers always. A click on a marker asks <see cref="ToggleRequested"/> to toggle its fold. While
+/// the pointer hovers a marker, its region's lines get <c>editor.wordHighlight.bg</c> in this margin only (UI-ED-033).
 /// </summary>
 public sealed class FoldMargin : GutterMargin
 {
     private FoldingManager? _manager;
     private bool _pointerNear;
+    private FoldingSection? _hovered;
 
     public FoldMargin(TextArea area) : base(area) =>
         area.Caret.PositionChanged += (_, _) => InvalidateVisual();
@@ -47,8 +49,28 @@ public sealed class FoldMargin : GutterMargin
         }
     }
 
+    /// <summary>A click on a marker: the editor view toggles the fold through the document's folding model.</summary>
+    public Action<FoldingSection>? ToggleRequested { get; set; }
+
+    /// <summary>The folding whose marker the pointer is over (UI-ED-033), or null.</summary>
+    public FoldingSection? HoveredFolding
+    {
+        get => _hovered;
+        internal set
+        {
+            if (_hovered == value)
+                return;
+            _hovered = value;
+            InvalidateVisual();
+        }
+    }
+
     protected override void RenderLine(DrawingContext context, VisualLine line, int lineNumber, double top, double rowHeight, double height)
     {
+        if (_hovered is { } hovered && TextView?.Document is { } document && hovered.StartOffset <= document.TextLength
+            && hovered.EndOffset <= document.TextLength
+            && document.GetLineByOffset(hovered.StartOffset).LineNumber <= lineNumber && lineNumber <= document.GetLineByOffset(hovered.EndOffset).LineNumber)
+            context.FillRectangle(Brush("editor.wordHighlight.bg") ?? Brushes.Transparent, new Rect(0, top, MarginWidth, height));
         if (FoldingStartingOn(line) is not { } folding)
             return;
         var caret = Area.Caret.Offset;
@@ -87,10 +109,26 @@ public sealed class FoldMargin : GutterMargin
         var line = textView.GetVisualLineFromVisualTop(e.GetPosition(this).Y + textView.VerticalOffset);
         if (line is not null && FoldingStartingOn(line) is { } folding)
         {
-            folding.IsFolded = !folding.IsFolded;
+            if (ToggleRequested is { } toggle)
+                toggle(folding);
+            else
+                folding.IsFolded = !folding.IsFolded;
             e.Handled = true;
             InvalidateVisual();
         }
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        var line = TextView?.GetVisualLineFromVisualTop(e.GetPosition(this).Y + TextView.VerticalOffset);
+        HoveredFolding = line is null ? null : FoldingStartingOn(line);
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        HoveredFolding = null;
     }
 
     /// <summary>The outermost folding that starts on the visual line's first document line.</summary>

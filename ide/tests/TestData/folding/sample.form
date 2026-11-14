@@ -1,0 +1,14 @@
+object MainForm: TMainForm
+  Caption = 'Main'
+  object Panel1: TPanel
+    Align = alTop
+  end
+  Items = <
+    item
+      Kind = ikOne
+    end
+    item
+    end>
+  inherited Btn: TButton
+  end
+end

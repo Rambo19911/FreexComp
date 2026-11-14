@@ -13,6 +13,7 @@ public sealed class PlainTextLanguage : ILanguageDefinition
     public (string Start, string End)? BlockComment => null;
     public IReadOnlyList<(char Open, char Close)> Brackets { get; } = [];
     public ITokenClassifier CreateClassifier() => new NoColors();
+    public Editing.IFoldingProvider? CreateFoldingProvider() => null;
 
     private sealed class NoColors : ITokenClassifier
     {

@@ -25,7 +25,8 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     private FileEncoding _encoding;
     private FileEncoding _savedEncoding;
     private LineEndingKind _savedLineEnding;
-    private ILineChangeSource _lineChanges = NoLineChanges.Instance;
+    private readonly LineChangeTracker _lineChangeTracker;
+    private ILineChangeSource _lineChanges;
 
     /// <param name="filePath">Absolute normalized path; null for an untitled document named <paramref name="untitledName"/>.</param>
     public TextDocumentViewModel(ITextBuffer buffer, string? filePath, string? untitledName, ILanguageDefinition language,
@@ -42,6 +43,8 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _encoding = _savedEncoding = encoding;
         LineEnding = new LineEndingModel(buffer, defaultLineEnding);
         _savedLineEnding = LineEnding.Kind;
+        _lineChanges = _lineChangeTracker = new LineChangeTracker(buffer);
+        Folding = new FoldingModel(buffer, ViewState, language.CreateFoldingProvider());
 
         buffer.Changed += (_, _) => OnPropertyChanged(nameof(IsModified));
         LineEnding.KindChanged += (_, _) =>
@@ -71,12 +74,15 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>Glyph-margin glyphs and line backgrounds (editor.md §3): bookmarks, diagnostics, breakpoints add providers.</summary>
     public EditorDecorations Decorations { get; } = new();
 
-    /// <summary>Change-bar states per line (UI-ED-040); no marks until the line-change tracker (I-046) is set here.</summary>
+    /// <summary>Change-bar states per line (UI-ED-040): the document's <see cref="LineChangeTracker"/> (tests may replace it).</summary>
     public ILineChangeSource LineChanges
     {
         get => _lineChanges;
         set => SetProperty(ref _lineChanges, value ?? throw new ArgumentNullException(nameof(value)));
     }
+
+    /// <summary>Fold regions and their folded state (editor-features.md §5); handles the <c>edit.fold*</c> commands.</summary>
+    public FoldingModel Folding { get; }
 
     /// <summary>The name of an untitled document (<c>Unit1.pas</c>); null once it has a path.</summary>
     public string? UntitledName => _filePath is null ? _untitledName : null;
@@ -96,7 +102,8 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
     /// <summary>
     /// The document itself: <c>edit.undo</c> / <c>edit.redo</c> through <see cref="ITextBuffer.Undo"/> /
-    /// <see cref="ITextBuffer.Redo"/> (never the editor's own undo stack, IDE-ARCH-030), everything else to
+    /// <see cref="ITextBuffer.Redo"/> (never the editor's own undo stack, IDE-ARCH-030), the fold commands to
+    /// <see cref="Folding"/>, everything else to
     /// <see cref="LineEnding"/>. The editor view adds the commands that need its selection.
     /// </summary>
     public override ICommandTarget? CommandTarget => this;
@@ -105,11 +112,27 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     {
         UndoCommandId => !Buffer.IsReadOnly && Buffer.CanUndo,
         RedoCommandId => !Buffer.IsReadOnly && Buffer.CanRedo,
+        FoldCommandId => Folding.CanFold,
+        UnfoldCommandId => Folding.CanUnfold,
+        FoldAllCommandId => Folding.CanFoldAll,
+        UnfoldAllCommandId => Folding.CanUnfoldAll,
         _ => LineEnding.CanExecute(commandId, argument),
     };
 
     Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
     {
+        switch (commandId)
+        {
+            case FoldCommandId:
+                return Task.FromResult(Folding.Fold());
+            case UnfoldCommandId:
+                return Task.FromResult(Folding.Unfold());
+            case FoldAllCommandId:
+                return Task.FromResult(Folding.FoldAll());
+            case UnfoldAllCommandId:
+                return Task.FromResult(Folding.UnfoldAll());
+        }
+
         if (commandId is not (UndoCommandId or RedoCommandId))
             return LineEnding.ExecuteAsync(commandId, argument);
         if (!((ICommandTarget)this).CanExecute(commandId, argument))
@@ -123,6 +146,10 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
     private const string UndoCommandId = "edit.undo";
     private const string RedoCommandId = "edit.redo";
+    private const string FoldCommandId = "edit.fold";
+    private const string UnfoldCommandId = "edit.unfold";
+    private const string FoldAllCommandId = "edit.foldAll";
+    private const string UnfoldAllCommandId = "edit.unfoldAll";
 
     /// <summary>Changes only the encoding used for the next save; the document becomes modified (IDE-P1-074).</summary>
     public void SetEncoding(FileEncoding encoding)
@@ -194,6 +221,7 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
         _savedEncoding = _encoding;
         _savedLineEnding = LineEnding.Kind;
+        _lineChangeTracker.Reset(); // IDE-ED-045
         ViewState.Caret = Buffer.GetPosition(Buffer.GetOffset(Math.Clamp(caret.Line, 1, Buffer.LineCount), caret.Column));
         ShowLoadInfoBars(encodingFallback: false);
         OnPropertyChanged(nameof(IsModified));
@@ -247,6 +275,7 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _filePath = path;
         _language = language;
         Buffer.MarkSavePoint();
+        _lineChangeTracker.MarkSaved();
         _savedEncoding = _encoding;
         _savedLineEnding = LineEnding.Kind;
         if (renamed)
@@ -255,6 +284,7 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
             OnPropertyChanged(nameof(Title));
             OnPropertyChanged(nameof(UntitledName));
             OnPropertyChanged(nameof(Language));
+            Folding.SetProvider(language.CreateFoldingProvider());
         }
 
         OnPropertyChanged(nameof(IsModified));

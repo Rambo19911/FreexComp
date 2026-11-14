@@ -108,6 +108,13 @@ public sealed class DocumentService : IDocumentService
             _ => RevertAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeOthers", new AsyncHandler(
             _ => ActiveDocument is not null && _documents.Count > 1, _ => CloseAllAsync(except: ActiveDocument)));
+        // IDE-ED-054: the fold commands act on the active document (its TextDocumentViewModel.Folding).
+        foreach (var id in (string[])["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll"])
+        {
+            commands.RegisterHandler(id, new AsyncHandler(
+                arg => ActiveDocument?.CommandTarget is { } target && target.CanExecute(id, arg),
+                arg => ActiveDocument!.CommandTarget!.ExecuteAsync(id, arg)));
+        }
     }
 
     public async Task<OperationResult<DocumentViewModel>> OpenAsync(string path)

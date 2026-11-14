@@ -16,6 +16,7 @@ public sealed class JsonLanguage : ILanguageDefinition
     public (string Start, string End)? BlockComment => null;
     public IReadOnlyList<(char Open, char Close)> Brackets { get; } = [('{', '}'), ('[', ']')];
     public ITokenClassifier CreateClassifier() => new JsonClassifier();
+    public Editing.IFoldingProvider CreateFoldingProvider() => BlockFoldingProvider.ForJson(CreateClassifier);
 
     private sealed class JsonClassifier : WholeTextClassifier
     {

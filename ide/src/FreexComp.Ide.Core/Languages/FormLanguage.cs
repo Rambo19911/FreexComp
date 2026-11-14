@@ -15,6 +15,7 @@ public sealed class FormLanguage : ILanguageDefinition
     public (string Start, string End)? BlockComment => null;
     public IReadOnlyList<(char Open, char Close)> Brackets { get; } = [('(', ')'), ('[', ']'), ('<', '>'), ('{', '}')];
     public ITokenClassifier CreateClassifier() => new FormClassifier();
+    public Editing.IFoldingProvider CreateFoldingProvider() => BlockFoldingProvider.ForForm(CreateClassifier);
 
     private sealed class FormClassifier : WholeTextClassifier
     {

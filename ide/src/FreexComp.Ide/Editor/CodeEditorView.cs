@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
@@ -55,6 +56,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private readonly LineStateBackgroundRenderer _lineStates;
     private TextDocumentViewModel? _document;
     private FoldingManager? _foldings;
+    private FoldBoxGenerator? _foldBoxes;
+    private FoldingSection? _tooltipFolding;
     private bool _applying;
     private bool _scrollPending;
     private SyntaxColorizer? _colorizer;
@@ -79,7 +82,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         // editor.md §2: glyph margin, line numbers, fold margin, change bar, then the text padding.
         _glyphMargin = new GlyphMargin(area);
         _lineNumbers = new LineNumberMargin(area);
-        _foldMargin = new FoldMargin(area);
+        _foldMargin = new FoldMargin(area) { ToggleRequested = ToggleFolding };
         _changeBar = new ChangeBarMargin(area);
         foreach (var margin in new Control[] { _glyphMargin, _lineNumbers, _foldMargin, _changeBar, new TextPaddingMargin() })
             area.LeftMargins.Add(margin);
@@ -114,6 +117,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         area.AddHandler(PointerMovedEvent, (_, e) => _foldMargin.IsPointerNear = e.GetPosition(textView).X < FoldMarkerHoverZone,
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         area.PointerExited += (_, _) => _foldMargin.IsPointerNear = false;
+        textView.PointerMoved += (_, e) => ShowFoldTooltip(e.GetPosition(textView));
+        textView.PointerExited += (_, _) => ShowFoldTooltip(null);
         textView.ScrollOffsetChanged += (_, _) => MirrorScroll();
         Child = _editor;
         // UI-ED-003: the brushes bound above follow the theme by themselves; syntax colours need a redraw (the
@@ -225,15 +230,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             old.ViewState.PropertyChanged -= OnViewStatePropertyChanged;
             old.Options.PropertyChanged -= OnOptionsChanged;
             old.Decorations.Changed -= OnDecorationsChanged;
+            old.Folding.Changed -= OnFoldingChanged;
         }
 
         SetColorizer(null);
         SetDecorations(null);
-        if (_foldings is not null)
-        {
-            FoldingManager.Uninstall(_foldings);
-            _foldings = null;
-        }
+        UninstallFoldings();
 
         _document = null; // nothing is mirrored while the editor switches documents
         // Unbound: an empty document, not null (the editor template binds to Document.Text), and no reference to the old one.
@@ -254,6 +256,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         document.ViewState.PropertyChanged += OnViewStatePropertyChanged;
         document.Options.PropertyChanged += OnOptionsChanged;
         document.Decorations.Changed += OnDecorationsChanged;
+        document.Folding.Changed += OnFoldingChanged;
+        SyncFoldings();
 
         // The scroll offsets can be applied once the editor has measured its text.
         _scrollPending = true;
@@ -318,8 +322,9 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     }
 
     /// <summary>
-    /// UI-ED-030: a <see cref="FoldingManager"/> on the text area (its foldings are filled by the folding task); its own
-    /// folding margin is replaced by <see cref="FoldMargin"/>.
+    /// UI-ED-030: a <see cref="FoldingManager"/> on the text area, filled from the document's
+    /// <see cref="TextDocumentViewModel.Folding"/>; its own folding margin is replaced by <see cref="FoldMargin"/> and its
+    /// box by <see cref="FoldBoxGenerator"/> (UI-ED-034).
     /// </summary>
     private void InstallFoldings()
     {
@@ -327,8 +332,154 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         _foldings = FoldingManager.Install(area);
         foreach (var builtIn in area.LeftMargins.OfType<FoldingMargin>().ToList())
             area.LeftMargins.Remove(builtIn);
+        var generators = area.TextView.ElementGenerators;
+        if (generators.OfType<FoldingElementGenerator>().FirstOrDefault() is { } inner)
+        {
+            generators.Remove(inner);
+            _foldBoxes = new FoldBoxGenerator(inner, Brush) { BoxDoubleClicked = UnfoldAndSelect };
+            generators.Add(_foldBoxes);
+        }
+
         _foldMargin.Manager = _foldings;
     }
+
+    private void UninstallFoldings()
+    {
+        ShowFoldTooltip(null);
+        if (_foldBoxes is not null)
+        {
+            _editor.TextArea.TextView.ElementGenerators.Remove(_foldBoxes);
+            _foldBoxes = null;
+        }
+
+        if (_foldings is not null)
+        {
+            FoldingManager.Uninstall(_foldings);
+            _foldings = null;
+        }
+
+        _foldMargin.Manager = null;
+    }
+
+    private void OnFoldingChanged(object? sender, EventArgs e) => SyncFoldings();
+
+    /// <summary>The manager's foldings become the document's regions with their folded state.</summary>
+    private void SyncFoldings()
+    {
+        if (_foldings is null || _document is not { } document)
+            return;
+        _foldMargin.HoveredFolding = null;
+        ShowFoldTooltip(null);
+        _foldings.Clear();
+        foreach (var region in document.Folding.Regions)
+        {
+            var section = _foldings.CreateFolding(region.StartOffset, region.EndOffset);
+            section.Title = region.Title;
+            section.Tag = region;
+            section.IsFolded = region.IsFolded;
+        }
+
+        _foldMargin.InvalidateVisual();
+    }
+
+    /// <summary>A click on a fold marker (UI-ED-012).</summary>
+    private void ToggleFolding(FoldingSection section)
+    {
+        if (_document is { } document && section.Tag is FoldRegion region)
+            document.Folding.SetFolded(region, !region.IsFolded);
+    }
+
+    /// <summary>Double-click on the <c>…</c> box: unfolds it and selects the text it hid (UI-ED-035, IDE-ED-058).</summary>
+    internal void UnfoldAndSelect(FoldingSection section)
+    {
+        if (_document is not { } document || section.Tag is not FoldRegion region)
+            return;
+        document.Folding.SetFolded(region, false);
+        var area = _editor.TextArea;
+        area.Caret.Offset = region.EndOffset;
+        area.Selection = Selection.Create(area, region.StartOffset, region.EndOffset);
+    }
+
+    /// <summary>UI-ED-035: hovering a <c>…</c> box shows the folded text.</summary>
+    private void ShowFoldTooltip(Point? position)
+    {
+        var textView = _editor.TextArea.TextView;
+        FoldingSection? section = null;
+        if (position is { } p && _foldBoxes is not null && textView.VisualLinesValid)
+        {
+            var visual = new Point(p.X + textView.HorizontalOffset, p.Y + textView.VerticalOffset);
+            if (textView.GetVisualLineFromVisualTop(visual.Y) is { } line)
+                section = FoldBoxGenerator.BoxAt(line, line.GetVisualColumnFloor(visual));
+        }
+
+        if (section == _tooltipFolding)
+            return;
+        _tooltipFolding = section;
+        ToolTip.SetTip(textView, section?.Tag is FoldRegion region ? BuildFoldTooltip(region) : null);
+    }
+
+    /// <summary>The first 20 hidden lines of a region, a last line <c>…</c> when cut (UI-ED-035).</summary>
+    internal IReadOnlyList<string> FoldTooltipLines(FoldRegion region)
+    {
+        if (_document is not { } document)
+            return [];
+        var buffer = document.Buffer;
+        var lines = new List<string>();
+        for (int line = region.StartLine + 1; line <= Math.Min(region.EndLine, buffer.LineCount) && lines.Count < FoldTooltipMaxLines; line++)
+        {
+            var (offset, length, _) = buffer.GetLine(line);
+            lines.Add(buffer.GetText(offset, length));
+        }
+
+        if (region.EndLine - region.StartLine > FoldTooltipMaxLines)
+            lines.Add(FoldRegion.DefaultTitle);
+        return lines;
+    }
+
+    private const int FoldTooltipMaxLines = 20;
+
+    /// <summary>The tooltip content: syntax-coloured lines in <c>type.codeSmall</c>, at most 640 wide.</summary>
+    private TextBlock BuildFoldTooltip(FoldRegion region)
+    {
+        var block = new TextBlock { MaxWidth = 640, TextWrapping = TextWrapping.NoWrap };
+        Bind(block, TextBlock.FontFamilyProperty, "FxcFontMono");
+        Bind(block, TextBlock.FontSizeProperty, "FxcTypeCodeSmallSize");
+        if (_document is not { } document)
+            return block;
+        var buffer = document.Buffer;
+        var classifier = _colorizer?.Classifier;
+        var lines = FoldTooltipLines(region);
+        for (int i = 0; i < lines.Count; i++)
+        {
+            if (i > 0)
+                block.Inlines!.Add(new LineBreak());
+            int lineNumber = region.StartLine + 1 + i;
+            bool cut = i == FoldTooltipMaxLines;
+            int position = 0, lineOffset = cut ? 0 : buffer.GetLine(lineNumber).Offset;
+            if (!cut && classifier is not null)
+            {
+                foreach (var span in classifier.Classify(buffer, new LineRange(lineNumber, lineNumber)))
+                {
+                    int start = Math.Max(0, span.Offset - lineOffset), end = Math.Min(lines[i].Length, span.Offset + span.Length - lineOffset);
+                    if (start >= end || start < position)
+                        continue;
+                    if (start > position)
+                        block.Inlines!.Add(new Run(lines[i][position..start]));
+                    block.Inlines!.Add(new Run(lines[i][start..end]) { Foreground = Brush(span.TokenClass) });
+                    position = end;
+                }
+            }
+
+            if (position < lines[i].Length)
+                block.Inlines!.Add(new Run(lines[i][position..]));
+        }
+
+        return block;
+    }
+
+    /// <summary>The current theme's brush of a colour token.</summary>
+    private IBrush? Brush(string token) =>
+        this.TryFindResource(Icons.IconCatalog.BrushKey(token), ActualThemeVariant, out var value) ? value as IBrush : null;
 
     private void OnOptionsChanged(object? sender, PropertyChangedEventArgs e) => ApplyOptions((EditorOptions)sender!);
 

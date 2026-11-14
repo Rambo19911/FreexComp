@@ -19,6 +19,7 @@ public sealed class PascalLanguage : ILanguageDefinition
     public (string Start, string End)? BlockComment => ("{", "}");
     public IReadOnlyList<(char Open, char Close)> Brackets { get; } = [('(', ')'), ('[', ']')];
     public ITokenClassifier CreateClassifier() => new PascalClassifier();
+    public Editing.IFoldingProvider CreateFoldingProvider() => new PascalFoldingProvider();
 }
 
 /// <summary>
