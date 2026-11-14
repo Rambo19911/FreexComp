@@ -291,6 +291,9 @@ public sealed class ArrayTypeSymbol : TypeSymbol
 
     public long Length => (long)(High - Low + 1);
 
+    /// <summary>An array of a managed element type is managed (CMP-325, C-065).</summary>
+    public override bool IsManaged => ElementType.IsManaged;
+
     /// <summary>Number of values of an ordinal index type (may exceed the LANG-255 limit; the binder checks it first).</summary>
     internal static long LengthOf(TypeSymbol indexType)
     {
@@ -326,6 +329,9 @@ public sealed class RecordTypeSymbol : TypeSymbol
     public bool IsAnonymous { get; }
 
     public override ImmutableArray<Symbol> Members => [.. Fields];
+
+    /// <summary>A record with any managed field is managed (CMP-325, C-065; its <c>tkRecord</c> block lists those fields).</summary>
+    public override bool IsManaged => Fields.Any(f => f.Type.IsManaged);
 
     /// <summary>
     /// ABI-060: each field at the next multiple of <c>min(alignment, packing)</c>; record alignment = the largest of those (1

@@ -87,6 +87,31 @@ public sealed class LoweringTests
         Assert.Equal("(block (call _DynArrayClr (addr a) (typeinfo TA)) (call _DynArrayClr (addr g) (typeinfo TG)))", Cleanup(body));
     }
 
+    /// <summary>
+    /// C-065 (CMP-325 rules 1–3 and 6, ABI-080): managed records and static arrays are zeroed, assigned with <c>_CopyRecord</c>,
+    /// finalised with <c>_Finalize</c>; an 8-byte value parameter gets the callee's <c>_AddRef</c>, a larger one is the caller's
+    /// copy (made with <c>_CopyRecord</c> into a temporary the caller finalises) and is not counted by the callee.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "ABI-080")]
+    public void ManagedRecords_UseCopyRecordAddRefAndFinalize()
+    {
+        var unit = Lower("program T; type TR = record s: string; i: Int64 end; TS = record s: string end; TA = array[1..2] of TR; " +
+                         "procedure G(r: TR; s: TS); begin end; " +
+                         "procedure F(r: TR; s: TS); var a: TA; begin a[1] := r; G(a[2], s) end; begin end.");
+        var f = Routine(unit, "F");
+
+        Assert.Equal(
+            "(zero (addr a)) (zero (addr $tmp1)) " +
+            "(call _AddRef (addr s) (typeinfo TS)) " +
+            "(call _CopyRecord (addr ([] a 0:Int64)) (addr r) (typeinfo TR)) " +
+            "(call G (seq (call _CopyRecord (addr $tmp1) (addr ([] a 1:Int64)) (typeinfo TR)) (addr $tmp1)) s)",
+            string.Join(" ", f.Body.Statements.Select(LoweredDump.Of)));
+        Assert.Equal("(block (call _Finalize (addr s) (typeinfo TS)) (call _Finalize (addr a) (typeinfo TA)) (call _Finalize (addr $tmp1) (typeinfo TR)))", Cleanup(f));
+        Assert.Equal("(block (call _Finalize (addr s) (typeinfo TS)))", Cleanup(Routine(unit, "G")));
+    }
+
     /// <summary>A routine without managed parameters, locals or temporaries gets no cleanup scope; neither does a <c>const</c>-only one.</summary>
     [Fact]
     [Trait("Req", "CMP-325")]
@@ -388,6 +413,36 @@ public sealed class LoweringTests
             LoweredDump.Of(Assert.Single(p.Body.Statements)));
         Assert.Equal("b:Byte $tmp1:Byte $tmp2:Byte", Locals(p));
     }
+
+    // ------------------------------------------------------------------ Read/Readln, Eof/Eoln (CMP-411; C-066)
+
+    /// <summary>
+    /// CMP-411: one helper per variable — <c>_ReadInt</c> stored directly for Int64, through a checked temporary (runtime error
+    /// 106 outside the variable's range) for narrower types, <c>_ReadUInt</c> for UInt64, <c>_ReadFloat</c> converted for
+    /// Single, <c>_ReadWChar</c>, <c>_ReadUStr(T, @s)</c> — then <c>_ReadLn</c>, <c>_ReadEnd</c> and <c>_IOCheck</c> under
+    /// <c>{$I+}</c>; the file is <c>Input</c> or the given <c>Text</c> variable.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-411")]
+    [Trait("Req", "LANG-942")]
+    public void Readln_HelperPerVariableThenLnEndAndIOCheck() =>
+        Assert.Equal(
+            "(block (:= @q (call _ReadInt:Int64 (addr @System.Input))) " +
+            "(:= $tmp1 (call _ReadInt:Int64 (addr @System.Input))) " +
+            "(if (ConditionalOr:Boolean (Less $tmp1 0:Int64) (Greater $tmp1 255:Int64)) (block (call _RunError 106:Integer) (unreachable))) " +
+            "(:= @b (conv Byte $tmp1)) " +
+            "(:= @u (call _ReadUInt:UInt64 (addr @System.Input))) (:= @g (conv Single (call _ReadFloat:Double (addr @System.Input)))) " +
+            "(:= @c (call _ReadWChar:Char (addr @System.Input))) (call _ReadUStr (addr @System.Input) (addr @s)) " +
+            "(call _ReadLn (addr @System.Input)) (call _ReadEnd (addr @System.Input)) (call _IOCheck)) " +
+            "(block (call _ReadEnd (addr @t)))",
+            MainBody("q: Int64; b: Byte; u: UInt64; g: Single; c: Char; s: string; t: Text", "Readln(q, b, u, g, c, s); {$I-} Read(t)"));
+
+    [Fact]
+    [Trait("Req", "LANG-946")]
+    public void EofEoln_CallTheirHelpers() =>
+        Assert.Equal(
+            "(:= @f (call _Eof:Boolean (addr @System.Input))) (:= @f (call _Eoln:Boolean (addr @t)))",
+            MainBody("f: Boolean; t: Text", "f := Eof; f := Eoln(t)"));
 
     // ------------------------------------------------------------------ Write/Writeln (CMP-410; C-040)
 

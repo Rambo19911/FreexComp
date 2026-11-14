@@ -79,4 +79,87 @@ internal static class WriteRewriter
 
     private static LCallStatement Call(string name, ImmutableArray<TypeSymbol> parameterTypes, ImmutableArray<LExpression> arguments) =>
         new(new LHelperCallee(new RuntimeHelper(name, parameterTypes, ReturnType: null, IsNoReturn: false)), arguments);
+
+    private static LCall Function(LoweringContext context, string name, TypeSymbol result, LExpression file) =>
+        new(new LHelperCallee(new RuntimeHelper(name, [context.Types.Pointer], result, IsNoReturn: false)), [file]);
+
+    /// <summary>The address of the given <c>Text</c> variable, or of <c>System.Input</c> (a runtime-variable reference without System).</summary>
+    private static LAddrOf InputFile(LoweringContext context, BoundExpression? file) =>
+        new(file is not null ? context.Lower(file)
+            : context.Input is { } input ? new LGlobalRef(input) : new LRuntimeVariableRef(new RuntimeVariable("Input", context.Types.Text)),
+            context.Types.Pointer);
+
+    // ------------------------------------------------------------------ Read, Readln, Eof, Eoln (C-066)
+
+    /// <summary>
+    /// CMP-411 / LANG-940…945: per variable, left to right, <c>_ReadInt</c> (Int64; a variable of a narrower range is checked
+    /// against its type's bounds — outside is runtime error 106 — then stored truncated), <c>_ReadUInt</c> for a range beyond
+    /// Int64 (<c>UInt64</c>), <c>_ReadFloat</c> (converted to the variable's real type), <c>_ReadWChar</c>,
+    /// <c>_ReadUStr(T, @s)</c>; then <c>_ReadLn(T)</c> for <c>Readln</c>, <c>_ReadEnd(T)</c> and, in <c>{$I+}</c> state,
+    /// <c>_IOCheck</c> (ABI-132). The file is the leading <c>Text</c> argument or <c>System.Input</c>.
+    /// </summary>
+    public static LStatement Read(LoweringContext context, BoundIntrinsicCallStatement read)
+    {
+        var types = context.Types;
+        var hasFile = read.Arguments.Length > 0 && read.Arguments[0].Type is TextTypeSymbol;
+        var file = InputFile(context, hasFile ? read.Arguments[0] : null);
+        var statements = ImmutableArray.CreateBuilder<LStatement>();
+        foreach (var variable in read.Arguments.Skip(hasFile ? 1 : 0))
+        {
+            switch (variable.Type)
+            {
+                case IntegerTypeSymbol when Ordinals.Bounds(variable.Type)!.Value.High > long.MaxValue:
+                    statements.Add(new LAssign(context.Lower(variable), context.Convert(Function(context, "_ReadUInt", types.UInt64, file), variable.Type)));
+                    break;
+                case IntegerTypeSymbol:
+                {
+                    var (low, high) = Ordinals.Bounds(variable.Type)!.Value;
+                    var value = Function(context, "_ReadInt", types.Int64, file);
+                    if (low == long.MinValue && high == long.MaxValue)
+                    {
+                        statements.Add(new LAssign(context.Lower(variable), context.Convert(value, variable.Type)));
+                        break;
+                    }
+
+                    // LANG-942: a value outside the variable's range is runtime error 106
+                    var read64 = new LLocalRef(context.NewTemp(types.Int64));
+                    var outside = new LBinary(LBinaryOperator.ConditionalOr,
+                        context.Compare(LCompareOperator.Less, read64, context.Constant(low, types.Int64)),
+                        context.Compare(LCompareOperator.Greater, read64, context.Constant(high, types.Int64)));
+                    statements.Add(new LAssign(read64, value));
+                    statements.Add(new LIf(outside, context.CallNoReturn(context.RunError, context.Constant(106, types.Integer)), @else: null));
+                    statements.Add(new LAssign(context.Lower(variable), context.Convert(read64, variable.Type)));
+                    break;
+                }
+
+                case RealTypeSymbol:
+                    statements.Add(new LAssign(context.Lower(variable), context.Convert(Function(context, "_ReadFloat", types.Double, file), variable.Type)));
+                    break;
+                case CharTypeSymbol:
+                    statements.Add(new LAssign(context.Lower(variable), context.Convert(Function(context, "_ReadWChar", types.Char, file), variable.Type)));
+                    break;
+                default:                                                                    // string (LANG-945)
+                    statements.Add(Call("_ReadUStr", [types.Pointer, types.Pointer], [file, new LAddrOf(context.Lower(variable), types.Pointer)]));
+                    break;
+            }
+        }
+
+        if (read.Intrinsic.Intrinsic == Symbols.IntrinsicKind.Readln)
+        {
+            statements.Add(Call("_ReadLn", [types.Pointer], [file]));
+        }
+
+        statements.Add(Call("_ReadEnd", [types.Pointer], [file]));
+        if (read.Syntax.FirstToken().DirectiveState.IoChecks)
+        {
+            statements.Add(Call("_IOCheck", [], []));
+        }
+
+        return new LBlock(statements.ToImmutable());
+    }
+
+    /// <summary>LANG-946: <c>Eof</c>/<c>Eoln</c> = <c>_Eof(@F)</c>/<c>_Eoln(@F)</c> (rtl-abi.md §9.9), <c>F</c> = <c>Input</c> by default.</summary>
+    public static LExpression TextFunction(LoweringContext context, BoundIntrinsicCallExpression call) =>
+        Function(context, call.Intrinsic.Intrinsic == Symbols.IntrinsicKind.Eof ? "_Eof" : "_Eoln", context.Types.Boolean,
+            InputFile(context, call.Arguments.IsEmpty ? null : call.Arguments[0]));
 }

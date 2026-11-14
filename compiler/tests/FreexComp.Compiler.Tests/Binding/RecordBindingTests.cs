@@ -80,9 +80,31 @@ public sealed class RecordBindingTests
     [InlineData("type T = record a: Integer end; var x: T; i: Integer; begin i := x end.", "E2010(1,66): Incompatible types: 'T' and 'Integer'")]
     public void Incompatible(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
 
-    /// <summary>Features of later tasks report E2900: managed fields (C-065), variant parts (C-108), record methods (M2.6).</summary>
+    /// <summary>
+    /// C-065: a managed field makes a record managed, a managed element a static array (also nested); plain records and arrays
+    /// stay unmanaged. All bind without diagnostics, as dynamic arrays of them do.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    public void ManagedFieldsAndElements_MakeTheTypeManaged()
+    {
+        var (result, _) = Bind("type TR = record s: string; i: Integer end; TP = record x: Integer end; TN = record r: TR end; " +
+                               "TA = array[1..2] of string; TB = array[0..1, 0..1] of TR; TC = array[1..2] of TP; TD = array of TN; " +
+                               "var a: TA; begin end.");
+
+        Assert.Empty(result.Diagnostics);
+        bool Managed(string name) => ((TypeSymbol)result.Declarations.Scope.Lookup(name)!).IsManaged;
+        Assert.True(Managed("TR"));
+        Assert.False(Managed("TP"));
+        Assert.True(Managed("TN"));
+        Assert.True(Managed("TA"));
+        Assert.True(Managed("TB"));
+        Assert.False(Managed("TC"));
+        Assert.True(Managed("TD"));
+    }
+
+    /// <summary>Features of later tasks report E2900: variant parts (C-108), record methods (M2.6).</summary>
     [Theory]
-    [InlineData("type T = record s: string end; begin end.", "E2900(1,20): Feature not supported: record with managed fields")]
     [InlineData("type T = record a: Integer; case b: Byte of 0: (c: Byte) end; begin end.", "E2900(1,29): Feature not supported: variant part")]
     [InlineData("type T = record f: Text end; begin end.", "E2900(1,20): Feature not supported: record field of type Text")]
     public void LaterFeatures_AreE2900(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));

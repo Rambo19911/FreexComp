@@ -35,6 +35,7 @@ internal static class Lowerer
         var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>())
         {
             Output = OutputOf(result),
+            Input = SystemVariable(result, "Input"),
             Captured = [.. captured],
             AddressTaken = body.AddressTaken,
         };
@@ -47,15 +48,18 @@ internal static class Lowerer
 
     /// <summary>The program block or a unit initialization/finalization section (globals only, no locals).</summary>
     public static LoweredBody LowerBody(BindingResult result, BoundBlock block) =>
-        new LoweringContext(result.Types, routine: null, locals: []) { Output = OutputOf(result) }.Finish(block);
+        new LoweringContext(result.Types, routine: null, locals: []) { Output = OutputOf(result), Input = SystemVariable(result, "Input") }.Finish(block);
 
     /// <summary>Types held in memory as <c>[N x T]</c> or structs (big sets, static arrays, records): never SSA values (see the aggregate nodes).</summary>
     public static bool IsAggregate(TypeSymbol type) =>
         type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol or RecordTypeSymbol or StringTypeSymbol { Variant: StringVariant.Short };
 
     /// <summary>The variable <c>Output</c> of the bound <c>System</c> (default file of <c>Write</c>, LANG-910), or null without one.</summary>
-    private static VariableSymbol? OutputOf(BindingResult result) =>
-        result.System?.InterfaceMembers.OfType<VariableSymbol>().FirstOrDefault(v => IdentifierComparer.Instance.Equals(v.Name, "Output"));
+    private static VariableSymbol? OutputOf(BindingResult result) => SystemVariable(result, "Output");
+
+    /// <summary>The interface variable <paramref name="name"/> of the bound <c>System</c> (<c>Output</c>, <c>Input</c>), or null.</summary>
+    private static VariableSymbol? SystemVariable(BindingResult result, string name) =>
+        result.System?.InterfaceMembers.OfType<VariableSymbol>().FirstOrDefault(v => IdentifierComparer.Instance.Equals(v.Name, name));
 }
 
 /// <summary>Per-body lowering state (locals, temporaries, loop labels) and the translation of plain nodes.</summary>
@@ -89,6 +93,9 @@ internal sealed class LoweringContext
 
     /// <summary><c>System.Output</c> as bound (LANG-910); null when the unit was bound without <c>System</c> (white-box tests).</summary>
     public VariableSymbol? Output { get; init; }
+
+    /// <summary><c>System.Input</c> as bound (default file of <c>Read</c>/<c>Eof</c>, LANG-940); null without <c>System</c>.</summary>
+    public VariableSymbol? Input { get; init; }
 
     /// <summary>This routine's variables, parameters and <c>Result</c> that nested routines reference (they live in the frame record).</summary>
     public ImmutableHashSet<Symbol> Captured { get; init; } = [];
@@ -470,8 +477,8 @@ internal sealed class LoweringContext
             }
 
             var temporary = new LLocalRef(NewTemp(parameter.Type));
-            writeBacks.Add(new LAssign(argument, temporary));
-            return new LSequence(new LAssign(temporary, argument), new LAddrOf(temporary, Types.Pointer));
+            writeBacks.Add(Copy(argument, temporary));
+            return new LSequence(Copy(temporary, argument), new LAddrOf(temporary, Types.Pointer));
         }
 
         if (!IrEmitter.IsPassedByAddress(parameter))
@@ -484,9 +491,15 @@ internal sealed class LoweringContext
             return new LAddrOf(argument, Types.Pointer);
         }
 
+        // ABI-080 / CMP-325 rule 6: the caller's copy of a managed record or array holds its own references (finalised with the
+        // caller's temporaries)
         var copy = new LLocalRef(NewTemp(parameter.Type));
-        return new LSequence(new LAssign(copy, argument), new LAddrOf(copy, Types.Pointer));
+        return new LSequence(Copy(copy, argument), new LAddrOf(copy, Types.Pointer));
     }
+
+    /// <summary><c>target := value</c> between storage of one type: a plain copy, or the managed assignment helper.</summary>
+    private LStatement Copy(LExpression target, LExpression value) =>
+        target.Type.IsManaged ? ManagedRewriter.Assign(this, target, value) : new LAssign(target, value);
 
     /// <summary>
     /// A call with a result. ABI-081: an aggregate result is assigned to a fresh temporary (the emitter passes its address as

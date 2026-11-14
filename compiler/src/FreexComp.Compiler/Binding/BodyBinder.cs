@@ -366,6 +366,11 @@ internal sealed class BodyBinder
             return BindWrite(statement, intrinsic, arguments);
         }
 
+        if (intrinsic.Intrinsic is IntrinsicKind.Read or IntrinsicKind.Readln)
+        {
+            return BindRead(statement, intrinsic, arguments);
+        }
+
         var count = arguments.Count;
         var (minArguments, maxArguments) = intrinsic.Intrinsic switch
         {
@@ -715,6 +720,54 @@ internal sealed class BodyBinder
         }
 
         return ok ? new BoundWriteStatement(statement, intrinsic, file, bound.ToImmutable()) : new BoundErrorStatement(statement);
+    }
+
+    // ------------------------------------------------------------------ Read, Readln (LANG-940…946, C-066)
+
+    /// <summary>
+    /// LANG-940: an optional leading <c>Text</c> variable, then assignable variables of an integer type, a real type (not
+    /// <c>Currency</c>), <c>Char</c> or <c>string</c> (E2914 for any other type; widths E2915). Bound as an intrinsic statement
+    /// whose arguments are the file (when given) followed by the variables.
+    /// </summary>
+    private BoundStatement BindRead(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var bound = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
+        var ok = true;
+        for (var k = 0; k < arguments.Count; k++)
+        {
+            var argument = arguments[k];
+            if (argument.WidthColonToken is { } colon)
+            {
+                _diagnostics.Report(colon, "E2915");
+                ok = false;
+                continue;
+            }
+
+            var variable = _expressions.BindVariable(argument.Expression);
+            if (variable.HasErrors || !_expressions.CheckVariableReference(variable, argument.Expression))
+            {
+                ok = false;
+                continue;
+            }
+
+            if (k == 0 && variable.Type is TextTypeSymbol)
+            {
+                bound.Add(variable);
+                continue;
+            }
+
+            if (variable.Type is not (IntegerTypeSymbol or RealTypeSymbol { RealKind: not RealKind.Currency } or CharTypeSymbol { IsWide: true }
+                or StringTypeSymbol { Variant: StringVariant.Unicode }))
+            {
+                _diagnostics.Report(argument.Expression, "E2914", variable.Type.Name);
+                ok = false;
+                continue;
+            }
+
+            bound.Add(variable);
+        }
+
+        return ok ? new BoundIntrinsicCallStatement(statement, intrinsic, bound.ToImmutable()) : new BoundErrorStatement(statement);
     }
 
     /// <summary>Null when <paramref name="value"/> can be written; "" for E2913; else the E2900 feature name.</summary>

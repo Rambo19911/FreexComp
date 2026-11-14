@@ -940,6 +940,11 @@ internal sealed class FunctionEmitter
 
             case LAssign assign when Lowerer.IsAggregate(assign.Target.Type):
             {
+                if (assign.Target.Type.IsManaged)
+                {
+                    throw new InvalidOperationException("A managed record or array assignment must be lowered to _CopyRecord (ManagedRewriter).");
+                }
+
                 var source = Address(assign.Value);
                 Copy(Address(assign.Target), source, assign.Target.Type, AccessAlignment(assign.Target), AccessAlignment(assign.Value),
                     mayOverlap: SameArrayVariable(assign.Target, assign.Value));
@@ -954,7 +959,7 @@ internal sealed class FunctionEmitter
             case LAssign assign:
                 Store(Value(assign.Value), WrittenAddress(assign.Target), assign.Target.Type, AccessAlignment(assign.Target));
                 break;
-            case LZero { Type.IsManaged: true } zero:
+            case LZero { Type.IsManaged: true } zero when !Lowerer.IsAggregate(zero.Type):
                 _w.Store(new IrNullConstant(), Value(zero.Address), 8);              // CMP-325 rule 1: store ptr null
                 break;
             case LZero zero:

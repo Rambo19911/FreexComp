@@ -1210,9 +1210,85 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-065: managed records and static arrays (CMP-325 rules 1–3 and 6, ABI-080/081, ABI-110): <c>_CopyRecord</c> for assignment,
+    /// the caller's referenced copy of a large value argument, <c>_AddRef</c>/<c>_Finalize</c> of an 8-byte value parameter the
+    /// callee receives as <c>i64</c>, <c>_Finalize</c> of an <c>out</c> parameter and in the cleanup block, a hidden managed result,
+    /// <c>Dispose</c> of a managed target, and the <c>tkRecord</c>/<c>tkArray</c> blocks with their managed-field tables.
+    /// </summary>
+    internal const string ManagedRecordsSource = """
+        unit M;
+        interface
+        type
+          TPerson = record
+            Name: string;
+            Age: Integer;
+            Tags: array of AnsiString;
+          end;
+          TSmall = record S: string end;
+          TNames = array[1..2] of string;
+          PPerson = ^TPerson;
+        function Make(const n: string): TPerson;
+        procedure Take(p: TPerson; s: TSmall; out o: TPerson);
+        procedure Use(q: PPerson);
+        implementation
+        function Make(const n: string): TPerson;
+        begin
+          Result.Name := n;
+        end;
+        procedure Take(p: TPerson; s: TSmall; out o: TPerson);
+        begin
+          o := p;
+          s.S := p.Name;
+        end;
+        procedure Use(q: PPerson);
+        var
+          a: TPerson;
+          names, copy: TNames;
+          small: TSmall;
+        begin
+          a := Make('x');
+          names[1] := a.Name;
+          copy := names;
+          Take(a, small, q^);
+          Dispose(q);
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-066: CMP-411 as emitted — <c>_ReadInt</c>/<c>_ReadUInt</c>/<c>_ReadFloat</c>/<c>_ReadWChar</c>/<c>_ReadUStr</c> on
+    /// <c>System.Input</c> or a <c>Text</c> variable, the error-106 range check of a narrow integer, <c>fptrunc</c> for Single,
+    /// <c>_ReadLn</c>/<c>_ReadEnd</c>/<c>_IOCheck</c>, and <c>_Eof</c>/<c>_Eoln</c> returning Boolean.
+    /// </summary>
+    internal const string ReadTextSource = """
+        unit M;
+        interface
+        procedure Scan(var t: Text);
+        implementation
+        procedure Scan(var t: Text);
+        var
+          n: Integer;
+          w: Word;
+          q: UInt64;
+          g: Single;
+          c: Char;
+          s: string;
+        begin
+          while not Eof do
+            Readln(n, w, q, g, c, s);
+          {$I-}
+          if Eoln(t) then
+            Read(t, s);
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["Atomic"] = AtomicSource,
+        ["ReadText"] = ReadTextSource,
+        ["ManagedRecords"] = ManagedRecordsSource,
         ["ByteStrings"] = ByteStringsSource,
         ["DynArrays"] = DynArraysSource,
         ["StringFunctions"] = StringFunctionsSource,
@@ -1568,6 +1644,80 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-405")]
     [Trait("Req", "ABI-044")]
     public void DynArrays() => Snapshot.Verify("DynArrays", Emit(DynArraysSource));
+
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "ABI-110")]
+    public void ManagedRecords() => Snapshot.Verify("ManagedRecords", Emit(ManagedRecordsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-411")]
+    [Trait("Req", "LANG-946")]
+    public void ReadText() => Snapshot.Verify("ReadText", Emit(ReadTextSource));
+
+    /// <summary>C-066: the rtl-abi.md §9.9 input helpers as declared and called (CMP-411).</summary>
+    [Fact]
+    [Trait("Req", "CMP-411")]
+    [Trait("Req", "ABI-132")]
+    public void ReadText_UsesTheAbiHelpers()
+    {
+        var text = Emit(ReadTextSource);
+
+        foreach (var line in (string[])[
+                     "declare i64 @\"System._ReadInt\"(ptr)\n", "declare i64 @\"System._ReadUInt\"(ptr)\n",
+                     "declare double @\"System._ReadFloat\"(ptr)\n", "declare i16 @\"System._ReadWChar\"(ptr)\n",
+                     "declare void @\"System._ReadUStr\"(ptr, ptr)\n", "declare void @\"System._ReadLn\"(ptr)\n",
+                     "declare void @\"System._ReadEnd\"(ptr)\n", "declare i8 @\"System._Eof\"(ptr)\n", "declare i8 @\"System._Eoln\"(ptr)\n",
+                     "@\"System.Input\" = external global [624 x i8], align 8\n",
+                     " = call i64 @\"System._ReadInt\"(ptr @\"System.Input\")\n",
+                     " = call i8 @\"System._Eof\"(ptr @\"System.Input\")\n",
+                     "  call void @\"System._RunError\"(i32 106) #1\n",
+                     " = fptrunc double ",
+                     "  call void @\"System._ReadUStr\"(ptr @\"System.Input\", ptr %s.addr)\n",
+                 ])
+        {
+            Assert.Contains(line, text);
+        }
+
+        Assert.Equal(1, text.Split("call void @\"System._IOCheck\"()").Length - 1);              // {$I-} for Read(t, s)
+        Assert.Equal(2, text.Split("call void @\"System._RunError\"(i32 106)").Length - 1);       // Integer and Word; UInt64 needs no check
+    }
+
+    /// <summary>C-065: the rtl-abi.md §9.5 helpers at the CMP-325 rule 1–3 and 6 points.</summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "CMP-340")]
+    [Trait("Req", "ABI-080")]
+    [Trait("Req", "ABI-110")]
+    public void ManagedRecords_UseCopyRecordAddRefAndFinalize()
+    {
+        var text = Emit(ManagedRecordsSource);
+
+        foreach (var line in (string[])[
+                     "define void @\"M.Make\"(ptr %Result, ptr %n) #0 {\n",                    // ABI-081: a managed result is hidden
+                     "define void @\"M.Take\"(ptr %p, i64 %s, ptr %o) #0 {\n",                 // ABI-080: 24 bytes by address, 8 as i64
+                     "  call void @\"System._AddRef\"(ptr %s.addr, ptr @\"M.TSmall.$rtti\")\n",       // the callee's own reference
+                     "  call void @\"System._Finalize\"(ptr %o, ptr @\"M.TPerson.$rtti\")\n",         // the out parameter
+                     "  call void @\"System._CopyRecord\"(ptr %o, ptr %p, ptr @\"M.TPerson.$rtti\")\n",
+                     "  call void @\"M.Make\"(ptr %a.addr, ptr ",                                      // rule 4: into a
+                     "  call void @\"System._CopyRecord\"(ptr %copy.addr, ptr %names.addr, ptr @\"M.TNames.$rtti\")\n",
+                     "  call void @\"System._CopyRecord\"(ptr %$tmp1.addr, ptr %a.addr, ptr @\"M.TPerson.$rtti\")\n",   // the argument copy
+                     "  call void @llvm.memset.p0.i64(ptr align 8 %a.addr, i8 0, i64 24, i1 false)\n",               // rule 1
+                     "  call void @\"System._Finalize\"(ptr %$tmp1.addr, ptr @\"M.TPerson.$rtti\")\n",              // the caller finalises its copy
+                     "declare void @\"System._CopyRecord\"(ptr, ptr, ptr)\n",
+                     "@\"M.TPerson.$rtti.fields\" = private unnamed_addr constant [2 x { ptr, i64 }] [{ ptr, i64 } { ptr @\"System.string.$rtti\", i64 0 }, { ptr, i64 } { ptr @\"M.$rtti.array of AnsiString\", i64 16 }], align 8\n",
+                 ])
+        {
+            Assert.Contains(line, text);
+        }
+
+        var take = text[text.IndexOf("define void @\"M.Take\"", StringComparison.Ordinal)..];
+        take = take[..take.IndexOf("\n}\n", StringComparison.Ordinal)];
+        Assert.DoesNotContain("(ptr %p, ptr @\"M.TPerson.$rtti\")", take);                                // no reference counting of the caller's copy
+        var use = text[text.IndexOf("define void @\"M.Use\"", StringComparison.Ordinal)..];
+        use = use[..use.IndexOf("\n}\n", StringComparison.Ordinal)];
+        Assert.Matches(@"call void @""System\._Finalize""\(ptr %t\d+, ptr @""M\.TPerson\.\$rtti""\)\n  %t\d+ = load ptr, ptr %\$tmp2\.addr, align 8\n  call void @""System\._FreeMem""\(ptr %t\d+\)\n", use);   // Dispose
+    }
 
     /// <summary>C-061: the CMP-324 operator rows as emitted (helpers, the parts array, nil tests, unique before a character store).</summary>
     [Fact]

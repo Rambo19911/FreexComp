@@ -95,7 +95,6 @@ E2800  M2.4  exceptions
 E2801  M2.4  exceptions
 E2802  M2.4  exceptions
 E2910  M2.2  procedural types
-E2914  M2.2  Read/Readln
 W1003  M2.3  {$APPTYPE} in a unit
 W1011  M2.2  comparison always true/false (no language rule names it yet)
 W1012  M2.2  subranges

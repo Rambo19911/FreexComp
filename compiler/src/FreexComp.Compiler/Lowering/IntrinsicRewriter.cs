@@ -26,6 +26,11 @@ internal static class IntrinsicRewriter
             return StringRewriter.Function(context, call);
         }
 
+        if (call.Intrinsic.Intrinsic is IntrinsicKind.Eof or IntrinsicKind.Eoln)
+        {
+            return WriteRewriter.TextFunction(context, call);                               // C-066
+        }
+
         var argument = call.Arguments[0];
         var operand = context.Lower(argument);
         var state = CheckRewriter.StateOf(call);
@@ -156,7 +161,7 @@ internal static class IntrinsicRewriter
 
     /// <summary>
     /// LANG-268 / CMP-340: <c>New(p)</c> = <c>p := _AllocZero(SizeOf(p^))</c> (an empty record occupies one byte, ABI-060);
-    /// <c>Dispose(p)</c> = <c>_FreeMem(p)</c> (no managed types yet); <c>GetMem</c>/<c>FreeMem</c>/<c>ReallocMem</c> map to their helpers.
+    /// <c>Dispose(p)</c> = <c>_FreeMem(p)</c>, after <c>_Finalize(p, TI)</c> for a managed target (C-065); <c>GetMem</c>/<c>FreeMem</c>/<c>ReallocMem</c> map to their helpers.
     /// </summary>
     private static LStatement MemoryStatement(LoweringContext context, BoundIntrinsicCallStatement call)
     {
@@ -180,6 +185,18 @@ internal static class IntrinsicRewriter
                 return new LAssign(target, resized);
             }
 
+            case IntrinsicKind.Dispose when ((PointerTypeSymbol)pointer.Type).PointedType is { IsManaged: true } pointed:
+            {
+                // CMP-340 (C-065): _Finalize(p, TI) of a managed target, then _FreeMem(p); p is evaluated once
+                var saved = new LLocalRef(context.NewTemp(context.Types.Pointer));
+                var finalize = new RuntimeHelper("_Finalize", [context.Types.Pointer, context.Types.Pointer], ReturnType: null, IsNoReturn: false);
+                return new LBlock([
+                    new LAssign(saved, context.Convert(context.Lower(pointer), context.Types.Pointer)),
+                    new LCallStatement(new LHelperCallee(finalize), [saved, new LTypeInfo(pointed, context.Types.Pointer)]),
+                    new LCallStatement(new LHelperCallee(Memory(context, "_FreeMem")), [saved]),
+                ]);
+            }
+
             default:                                                                         // Dispose, FreeMem
                 return new LCallStatement(new LHelperCallee(Memory(context, "_FreeMem")), [context.Convert(context.Lower(pointer), context.Types.Pointer)]);
         }
@@ -189,6 +206,9 @@ internal static class IntrinsicRewriter
     {
         switch (call.Intrinsic.Intrinsic)
         {
+            case IntrinsicKind.Read or IntrinsicKind.Readln:
+                return WriteRewriter.Read(context, call);                                   // CMP-411 (C-066)
+
             case IntrinsicKind.Inc or IntrinsicKind.Dec when call.Arguments[0].Type is PointerTypeSymbol pointer:
             {
                 // intrinsics.md: a typed pointer moves by n elements (CMP-342)

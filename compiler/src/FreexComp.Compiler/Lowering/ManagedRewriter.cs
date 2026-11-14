@@ -32,15 +32,28 @@ internal static class ManagedRewriter
     /// <summary>The type info argument of the <c>_DynArray*</c> helpers (ABI-044).</summary>
     private static LTypeInfo TypeInfo(LoweringContext context, TypeSymbol type) => new(type, context.Types.Pointer);
 
-    /// <summary><c>_UStrClr(var S)</c> / <c>_AStrClr(var S)</c> / <c>_DynArrayClr(var A, TI)</c>: release, <c>S := nil</c>.</summary>
-    public static LStatement Clear(LoweringContext context, LExpression variable) =>
-        variable.Type is DynamicArrayTypeSymbol
-            ? Call(Helper("_DynArrayClr", context.Types.Pointer, context.Types.Pointer), AddressOf(context, variable), TypeInfo(context, variable.Type))
-            : Call(Helper("_" + Family(variable.Type) + "Clr", context.Types.Pointer), AddressOf(context, variable));
+    /// <summary>A managed record or static array (C-065): handled through its type info by <c>_Finalize</c>/<c>_AddRef</c>/<c>_CopyRecord</c>.</summary>
+    public static bool IsManagedAggregate(TypeSymbol type) => type.IsManaged && type is RecordTypeSymbol or ArrayTypeSymbol;
 
-    /// <summary><c>_UStrAddRef(S)</c> / <c>_AStrAddRef(S)</c> / <c>_DynArrayAddRef(A)</c> (ABI-031).</summary>
+    /// <summary>
+    /// <c>_UStrClr(var S)</c> / <c>_AStrClr(var S)</c> / <c>_DynArrayClr(var A, TI)</c>: release, <c>S := nil</c>; a managed record or
+    /// static array: <c>_Finalize(@v, TI)</c> (rtl-abi.md §9.5).
+    /// </summary>
+    public static LStatement Clear(LoweringContext context, LExpression variable) =>
+        IsManagedAggregate(variable.Type)
+            ? Call(Helper("_Finalize", context.Types.Pointer, context.Types.Pointer), AddressOf(context, variable), TypeInfo(context, variable.Type))
+            : variable.Type is DynamicArrayTypeSymbol
+                ? Call(Helper("_DynArrayClr", context.Types.Pointer, context.Types.Pointer), AddressOf(context, variable), TypeInfo(context, variable.Type))
+                : Call(Helper("_" + Family(variable.Type) + "Clr", context.Types.Pointer), AddressOf(context, variable));
+
+    /// <summary>
+    /// <c>_UStrAddRef(S)</c> / <c>_AStrAddRef(S)</c> / <c>_DynArrayAddRef(A)</c> (ABI-031); a managed record or static array:
+    /// <c>_AddRef(@v, TI)</c>.
+    /// </summary>
     private static LStatement AddRef(LoweringContext context, LExpression value) =>
-        Call(Helper(value.Type is DynamicArrayTypeSymbol ? "_DynArrayAddRef" : "_" + Family(value.Type) + "AddRef", context.Types.Pointer), value);
+        IsManagedAggregate(value.Type)
+            ? Call(Helper("_AddRef", context.Types.Pointer, context.Types.Pointer), AddressOf(context, value), TypeInfo(context, value.Type))
+            : Call(Helper(value.Type is DynamicArrayTypeSymbol ? "_DynArrayAddRef" : "_" + Family(value.Type) + "AddRef", context.Types.Pointer), value);
 
     // ------------------------------------------------------------------ assignments (CMP-324, CMP-325 rule 4)
 
@@ -67,10 +80,13 @@ internal static class ManagedRewriter
 
     /// <summary>
     /// <c>_UStrAsg(@target, value)</c> / <c>_AStrAsg</c> / <c>_DynArrayAsg(@target, value, TI)</c>: add a reference to the value,
-    /// release the old one.
+    /// release the old one. A managed record or static array: <c>_CopyRecord(@target, @value, TI)</c> (CMP-325 rule 6).
     /// </summary>
     public static LStatement Assign(LoweringContext context, LExpression target, LExpression value) =>
-        target.Type is DynamicArrayTypeSymbol
+        IsManagedAggregate(target.Type)
+            ? Call(Helper("_CopyRecord", context.Types.Pointer, context.Types.Pointer, context.Types.Pointer),
+                AddressOf(context, target), AddressOf(context, value), TypeInfo(context, target.Type))
+        : target.Type is DynamicArrayTypeSymbol
             ? Call(Helper("_DynArrayAsg", context.Types.Pointer, context.Types.Pointer, context.Types.Pointer), AddressOf(context, target), value, TypeInfo(context, target.Type))
             : Call(Helper("_" + Family(target.Type) + "Asg", context.Types.Pointer, context.Types.Pointer), AddressOf(context, target), value);
 
@@ -246,8 +262,10 @@ internal static class ManagedRewriter
         var locals = body.Locals.Where(l => l.Type.IsManaged && !(routine is not null && ReferenceEquals(l.Variable, routine.ResultVariable) && IrEmitter.HasHiddenResult(routine)))
             .ToImmutableArray();
         var parameters = routine?.Parameters.Where(p => p.Type.IsManaged).ToImmutableArray() ?? [];
-        var valueParameters = parameters.Where(p => p.Mode == ParameterMode.Value).ToImmutableArray();
-        if (locals.IsEmpty && parameters.IsEmpty)
+        // ABI-080 / CMP-325 rule 6: a managed record or array passed by address is the caller's copy, which the caller
+        // references and finalises; the callee takes its own reference only to values it receives in its own storage
+        var valueParameters = parameters.Where(p => p.Mode == ParameterMode.Value && !IrEmitter.IsPassedByAddress(p)).ToImmutableArray();
+        if (locals.IsEmpty && valueParameters.IsEmpty && !parameters.Any(p => p.Mode == ParameterMode.Out))
         {
             return body;
         }

@@ -438,7 +438,7 @@ internal sealed class DeclarationBinder
     /// LANG-255 static array: ordinal index types (E2013 at the index type) of at most 2^31−1 elements and a total size of at
     /// most 2^31−1 bytes (E2031 at the array type). <c>array[I1, I2] of T</c> is <c>array[I1] of array[I2] of T</c>; the inner
     /// types are named by their constructor (<c>array[I2] of T</c>). <c>packed</c> changes nothing (elements are not padded).
-    /// Arrays of managed types arrive with C-065.
+    /// A managed element type makes the array managed (C-065).
     /// </summary>
     /// <summary>
     /// LANG-257 <c>array of T</c> (C-064): a new dynamic array type (LANG-206); any element type with a size, managed ones included.
@@ -456,10 +456,6 @@ internal sealed class DeclarationBinder
             return Unsupported(syntax.ElementType!, "array of " + element.Name);
         }
 
-        if (element is RecordTypeSymbol or ArrayTypeSymbol && element.IsManaged)
-        {
-            return Unsupported(syntax.ElementType!, "array of a managed record or array");     // C-065
-        }
 
         ImmutableArray<Text.Location> locations = declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [];
         return new DynamicArrayTypeSymbol(name, element, declaredAt is null ? null : _container, locations);
@@ -497,10 +493,6 @@ internal sealed class DeclarationBinder
             return _types.Error;
         }
 
-        if (element.IsManaged)
-        {
-            return Unsupported(syntax.ElementType!, "array of a managed type");          // C-065
-        }
 
         if (element.Size < 0 || element is TextTypeSymbol)
         {
@@ -530,7 +522,7 @@ internal sealed class DeclarationBinder
     /// <summary>
     /// LANG-260/263 record without variant part: fields in declaration order (E2004 at a repeated name), laid out per ABI-060
     /// with packing 1 for <c>packed record</c>, else the <c>{$ALIGN}</c> value at the <c>record</c> keyword. Managed fields
-    /// (C-065), variant parts (C-108) and non-field members (M2.6) are E2900.
+    /// make the record managed (C-065); variant parts (C-108) and non-field members (M2.6) are E2900.
     /// </summary>
     private TypeSymbol BindRecord(RecordTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
     {
@@ -553,12 +545,6 @@ internal sealed class DeclarationBinder
                 continue;
             }
 
-            if (type.IsManaged)
-            {
-                Unsupported(field.Type, "record with managed fields");                       // C-065
-                failed = true;
-                continue;
-            }
 
             if (type.Size < 0 || type is TextTypeSymbol)
             {

@@ -21,6 +21,9 @@ internal enum IntrinsicKind
     // M2.2 string procedures (intrinsics.md, C-062)
     SetLength, Delete, Insert, Str, Val,
 
+    // M2.2 text input (intrinsics.md §3, C-066)
+    Read, Readln,
+
     // M2.1 functions (constant-foldable, LANG-340)
     Succ, Pred, Ord, Chr, Odd, Abs, Sqr, Low, High, SizeOf, Lo, Hi, Swap,
 
@@ -38,6 +41,9 @@ internal enum IntrinsicKind
 
     // M2.2 string functions (intrinsics.md, C-062; not constant, LANG-340)
     Copy, Pos, Concat, UpCase,
+
+    // M2.2 text-file functions (intrinsics.md, LANG-946, C-066; never constant)
+    Eof, Eoln,
 }
 
 /// <summary>A compiler-magic routine predeclared in the outermost scope (LANG-900); user symbols may hide it.</summary>
@@ -62,7 +68,7 @@ public sealed class IntrinsicSymbol : Symbol
     internal bool IsStringFunction => Intrinsic is >= IntrinsicKind.Copy and <= IntrinsicKind.UpCase;
 
     /// <summary>A function-like intrinsic that is never a constant expression (not in the LANG-340 list).</summary>
-    internal bool IsNeverConstant => IsAtomic || IsStringFunction;
+    internal bool IsNeverConstant => IsAtomic || IsStringFunction || Intrinsic is IntrinsicKind.Eof or IntrinsicKind.Eoln;
 
     /// <summary>Signature-help form, e.g. <c>Halt[(ExitCode: Integer)]</c>.</summary>
     public string Signature { get; }

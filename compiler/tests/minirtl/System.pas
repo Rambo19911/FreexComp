@@ -12,6 +12,7 @@ unit System;
 interface
 
 var
+  Input: Text;
   Output: Text;
   ErrOutput: Text;
   ExitCode: Integer;
@@ -31,6 +32,7 @@ function _GetMem(Size: NativeInt): Pointer;
 procedure _FreeMem(P: Pointer);
 function _ReallocMem(P: Pointer; Size: NativeInt): Pointer;
 function _AllocZero(Size: NativeInt): Pointer;
+function _LiveAllocCount: NativeInt;
 
 procedure _WriteUStr(var T: Text; S: Pointer; Width: Integer);
 procedure _WriteWChar(var T: Text; C: WideChar; Width: Integer);
@@ -41,6 +43,15 @@ procedure _WriteBool(var T: Text; V: Boolean; Width: Integer);
 procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
 procedure _WriteLn(var T: Text);
 procedure _WriteEnd(var T: Text);
+function _ReadInt(var T: Text): Int64;
+function _ReadUInt(var T: Text): UInt64;
+function _ReadFloat(var T: Text): Double;
+function _ReadWChar(var T: Text): WideChar;
+procedure _ReadUStr(var T: Text; var S: Pointer);
+procedure _ReadLn(var T: Text);
+procedure _ReadEnd(var T: Text);
+function _Eof(var T: Text): Boolean;
+function _Eoln(var T: Text): Boolean;
 
 procedure _UStrClr(var S: Pointer);
 procedure _UStrAddRef(S: Pointer);
@@ -84,6 +95,9 @@ procedure _DynArrayAddRef(A: Pointer);
 procedure _DynArrayAsg(var Dest: Pointer; Src: Pointer; TI: Pointer);
 procedure _DynArraySetLen(var A: Pointer; TI: Pointer; DimCount: NativeInt; Dims: Pointer);
 procedure _DynArrayCopy(var Dest: Pointer; Src: Pointer; TI: Pointer; Index, Count: NativeInt);
+procedure _Finalize(P: Pointer; TI: Pointer);
+procedure _AddRef(P: Pointer; TI: Pointer);
+procedure _CopyRecord(Dest, Src: Pointer; TI: Pointer);
 
 procedure _StrInt(var Dest: Pointer; V: Int64; Width: Integer);
 procedure _StrUInt(var Dest: Pointer; V: UInt64; Width: Integer);
@@ -128,6 +142,7 @@ type
 const
   kernel32 = 'kernel32.dll';
   CP_UTF8 = 65001;
+  STD_INPUT_HANDLE = -10;
   STD_OUTPUT_HANDLE = -11;
   STD_ERROR_HANDLE = -12;
   HEAP_ZERO_MEMORY = 8;
@@ -145,6 +160,7 @@ const
 var
   _fltused: Integer = $9875; public name '_fltused';
   Heap: NativeInt;
+  LiveBlocks: NativeInt;                     { _LiveAllocCount (CMP-912) }
   Scratch: PByte;
   Units: PPointer;
   UnitEntries: NativeInt;
@@ -163,6 +179,7 @@ function HeapAlloc(Heap: NativeInt; Flags: Cardinal; Size: NativeUInt): Pointer;
 function HeapReAlloc(Heap: NativeInt; Flags: Cardinal; P: Pointer; Size: NativeUInt): Pointer; external kernel32;
 function HeapFree(Heap: NativeInt; Flags: Cardinal; P: Pointer): Integer; external kernel32;
 function WriteFile(H: NativeInt; Buffer: Pointer; Count: Integer; var Written: Integer; Overlapped: NativeInt): Integer; external kernel32;
+function ReadFile(H: NativeInt; Buffer: Pointer; Count: Integer; var Done: Integer; Overlapped: NativeInt): Integer; external kernel32;
 function WideCharToMultiByte(CodePage, Flags: Cardinal; Src: Pointer; SrcLen: Integer; Dest: Pointer; DestSize: Integer;
   DefaultChar, UsedDefault: NativeInt): Integer; external kernel32;
 procedure ExitProcess(Code: Integer); external kernel32;
@@ -217,6 +234,7 @@ begin
   UnitEntries := UnitCount;
   Heap := GetProcessHeap;
   Scratch := HeapAlloc(Heap, 0, ScratchSize);
+  SetHandle(Input, GetStdHandle(STD_INPUT_HANDLE));
   SetHandle(Output, GetStdHandle(STD_OUTPUT_HANDLE));
   SetHandle(ErrOutput, GetStdHandle(STD_ERROR_HANDLE));
   ExitCode := 0;
@@ -293,13 +311,22 @@ begin
     Result := HeapAlloc(Heap, 0, Size);
     if Result = nil then
       _RunError(203);
+    LiveBlocks := LiveBlocks + 1;
   end;
 end;
 
 procedure _FreeMem(P: Pointer);
 begin
   if P <> nil then
+  begin
     HeapFree(Heap, 0, P);
+    LiveBlocks := LiveBlocks - 1;
+  end;
+end;
+
+function _LiveAllocCount: NativeInt;
+begin
+  Result := LiveBlocks;
 end;
 
 function _ReallocMem(P: Pointer; Size: NativeInt): Pointer;
@@ -327,6 +354,7 @@ begin
     Result := HeapAlloc(Heap, HEAP_ZERO_MEMORY, Size);
     if Result = nil then
       _RunError(203);
+    LiveBlocks := LiveBlocks + 1;
   end;
 end;
 
@@ -2135,7 +2163,8 @@ end;
 { ------------------------------------------------------------------ dynamic arrays (rtl-abi.md 4, 9.5, 10; C-064)
   A points at element 0: RefCount (Int32) at A - 16, Length (NativeInt) at A - 8; nil is empty. TI is the tkDynArray block:
   Kind at 0, ElSize at 16, ElType at 24, ManagedElType at 32 (nil when the elements are not managed). Managed elements are
-  strings (tkUString 9 / tkAString 10) or dynamic arrays (tkDynArray 14); managed records arrive with C-065. }
+  strings (tkUString 9 / tkAString 10), dynamic arrays (tkDynArray 14), managed records (tkRecord 12) or static arrays
+  (tkArray 13), handled by _AddRef/_Finalize (C-065). }
 
 function DynLength(A: Pointer): NativeInt;
 var
@@ -2157,35 +2186,112 @@ begin
   Result := P^;
 end;
 
+{ C-065: managed values by type info kind (rtl-abi.md 10): strings (9, 10) and dynamic arrays (14) are one pointer; a
+  tkRecord (12) block has Size at 16, ManagedCount at 24 and ManagedFields at 32 (entries of TypeInfo, Offset); a tkArray
+  (13) block has Size at 16, the total ElCount at 24 and the innermost ElType at 32 }
+
+function ValueSize(TI: Pointer): NativeInt;
+var
+  Kind: PByte;
+begin
+  Kind := TI;
+  if (Kind^ = 12) or (Kind^ = 13) then
+    Result := TIField(TI, 16)
+  else
+    Result := 8;
+end;
+
 { +1 / release on each of Count managed values of type ElTI stored at P }
 procedure AddRefValues(P: Pointer; ElTI: Pointer; Count: NativeInt);
 var
-  I: NativeInt;
-  Kind: PByte;
-  Slots: PPointer;
+  I, Size: NativeInt;
 begin
-  Kind := ElTI;
-  Slots := P;
+  Size := ValueSize(ElTI);
   for I := 0 to Count - 1 do
-    if Kind^ = 14 then
-      _DynArrayAddRef(Slots[I])
-    else
-      _UStrAddRef(Slots[I]);
+    _AddRef(P + I * Size, ElTI);
 end;
 
 procedure FinalizeValues(P: Pointer; ElTI: Pointer; Count: NativeInt);
 var
-  I: NativeInt;
-  Kind: PByte;
-  Slots: PPointer;
+  I, Size: NativeInt;
 begin
-  Kind := ElTI;
-  Slots := P;
+  Size := ValueSize(ElTI);
   for I := 0 to Count - 1 do
-    if Kind^ = 14 then
-      _DynArrayClr(Slots[I], ElTI)
-    else
-      _UStrClr(Slots[I]);
+    _Finalize(P + I * Size, ElTI);
+end;
+
+{ the managed fields of a record: Count entries of (TypeInfo, Offset) }
+procedure RecordFields(TI: Pointer; var Fields: PNativeInt; var Count: NativeInt);
+begin
+  Count := TIField(TI, 24);
+  Fields := PNativeInt(TIField(TI, 32));
+end;
+
+{ one managed value of type TI at P is released and its references set to nil }
+procedure _Finalize(P: Pointer; TI: Pointer);
+var
+  Kind: PByte;
+  Slot: PPointer;
+  Fields: PNativeInt;
+  Count, I: NativeInt;
+begin
+  Kind := TI;
+  Slot := P;
+  case Kind^ of
+    9: _UStrClr(Slot^);
+    10: _AStrClr(Slot^);
+    14: _DynArrayClr(Slot^, TI);
+    12:
+      begin
+        RecordFields(TI, Fields, Count);
+        for I := 0 to Count - 1 do
+          _Finalize(P + Fields[2 * I + 1], Pointer(Fields[2 * I]));
+      end;
+    13:
+      begin
+        Count := TIField(TI, 24);
+        FinalizeValues(P, Pointer(TIField(TI, 32)), Count);
+      end;
+  end;
+end;
+
+{ +1 on every reference inside one value of type TI at P (after a raw copy) }
+procedure _AddRef(P: Pointer; TI: Pointer);
+var
+  Kind: PByte;
+  Slot: PPointer;
+  Fields: PNativeInt;
+  Count, I: NativeInt;
+begin
+  Kind := TI;
+  Slot := P;
+  case Kind^ of
+    9: _UStrAddRef(Slot^);
+    10: _AStrAddRef(Slot^);
+    14: _DynArrayAddRef(Slot^);
+    12:
+      begin
+        RecordFields(TI, Fields, Count);
+        for I := 0 to Count - 1 do
+          _AddRef(P + Fields[2 * I + 1], Pointer(Fields[2 * I]));
+      end;
+    13:
+      begin
+        Count := TIField(TI, 24);
+        AddRefValues(P, Pointer(TIField(TI, 32)), Count);
+      end;
+  end;
+end;
+
+{ Dest := Src for a managed record or static array: Src's references are added first (Src may share blocks with Dest),
+  then Dest's are released and the bytes copied; Dest = Src does nothing }
+procedure _CopyRecord(Dest, Src: Pointer; TI: Pointer);
+begin
+  if Dest = Src then
+    Exit;
+  _AddRef(Src, TI);
+  _Finalize(Dest, TI);
+  CopyBytes(Dest, Src, ValueSize(TI));
 end;
 
 { a zero-filled block of Len > 0 elements of ElSize bytes, RefCount 1 }
@@ -2329,6 +2435,340 @@ begin
   Old := Dest;
   Dest := P;
   ReleaseDynArray(Old, TI);
+end;
+
+{ ------------------------------------------------------------------ text input (rtl-abi.md 9.9, LANG-940...946; C-066)
+  Input bytes are buffered in the Text variable after the handle: Pos (Integer) at 8, Len at 12, a pending low surrogate
+  (Integer, 0 = none) at 16, the end-of-file flag at 20 and InBufferSize bytes from 32. Bytes are UTF-8 (ABI-131). A
+  malformed number (LANG-942/943) is runtime error 106 right away: InOutRes and the deferred _IOCheck arrive with C-166. }
+
+const
+  InBufferSize = 512;
+
+function InField(var T: Text; Offset: Integer): PInteger;
+var
+  State: PByte;
+begin
+  State := @T;
+  Result := PInteger(State + Offset);
+end;
+
+{ the next input byte without consuming it, or -1 at end of file (the buffer is refilled with ReadFile when empty) }
+function PeekByte(var T: Text): Integer;
+var
+  State: PByte;
+  Pos, Len, Ended: PInteger;
+  Done: Integer;
+begin
+  State := @T;
+  Pos := InField(T, 8);
+  Len := InField(T, 12);
+  Ended := InField(T, 20);
+  if (Pos^ >= Len^) and (Ended^ = 0) then
+  begin
+    Pos^ := 0;
+    Len^ := 0;
+    Done := 0;
+    if (ReadFile(HandleOf(T), State + 32, InBufferSize, Done, 0) = 0) or (Done <= 0) then
+      Ended^ := 1
+    else
+      Len^ := Done;
+  end;
+  if Pos^ < Len^ then
+    Result := State[32 + Pos^]
+  else
+    Result := -1;
+end;
+
+{ consumes the byte PeekByte returned (only after a result >= 0) }
+procedure SkipByte(var T: Text);
+var
+  Pos: PInteger;
+begin
+  Pos := InField(T, 8);
+  Pos^ := Pos^ + 1;
+end;
+
+{ LANG-942: skips spaces, tabs, CR and LF; the next byte or -1 }
+function SkipBlanks(var T: Text): Integer;
+begin
+  Result := PeekByte(T);
+  while (Result = 32) or (Result = 9) or (Result = 13) or (Result = 10) do
+  begin
+    SkipByte(T);
+    Result := PeekByte(T);
+  end;
+end;
+
+function IsLineEnd(B: Integer): Boolean;
+begin
+  Result := (B < 0) or (B = 13) or (B = 10);
+end;
+
+{ a number cannot start in the middle of a surrogate pair }
+procedure CheckNoPending(var T: Text);
+var
+  Pending: PInteger;
+begin
+  Pending := InField(T, 16);
+  if Pending^ <> 0 then
+    _RunError(106);
+end;
+
+{ LANG-942: [+|-] then decimal digits, or $ and hex digits; stops before the first byte that cannot continue the number.
+  No digits or a magnitude beyond UInt64 is error 106; at end of file before any non-blank byte Present is False. }
+function ReadMagnitude(var T: Text; var Negative, Present: Boolean): UInt64;
+var
+  B, Digits: Integer;
+  Digit, Base: UInt64;
+begin
+  Result := 0;
+  Negative := False;
+  Present := True;
+  CheckNoPending(T);
+  B := SkipBlanks(T);
+  if B < 0 then
+  begin
+    Present := False;
+    Exit;
+  end;
+  if (B = 43) or (B = 45) then
+  begin
+    Negative := B = 45;
+    SkipByte(T);
+    B := PeekByte(T);
+  end;
+  Base := 10;
+  if B = 36 then
+  begin
+    Base := 16;
+    SkipByte(T);
+    B := PeekByte(T);
+  end;
+  Digits := 0;
+  while True do
+  begin
+    if (B >= 48) and (B <= 57) then
+      Digit := B - 48
+    else if (Base = 16) and (B >= 65) and (B <= 70) then
+      Digit := B - 55
+    else if (Base = 16) and (B >= 97) and (B <= 102) then
+      Digit := B - 87
+    else
+      Break;
+    if Result > (High(UInt64) - Digit) div Base then
+      _RunError(106);
+    Result := Result * Base + Digit;
+    Digits := Digits + 1;
+    SkipByte(T);
+    B := PeekByte(T);
+  end;
+  if Digits = 0 then
+    _RunError(106);
+end;
+
+function _ReadInt(var T: Text): Int64;
+var
+  M: UInt64;
+  Negative, Present: Boolean;
+begin
+  M := ReadMagnitude(T, Negative, Present);
+  Result := 0;
+  if (not Present) or (M = 0) then
+    Exit;
+  if Negative then
+  begin
+    if M - 1 > UInt64(High(Int64)) then
+      _RunError(106);
+    Result := -Int64(M - 1) - 1;
+  end
+  else
+  begin
+    if M > UInt64(High(Int64)) then
+      _RunError(106);
+    Result := Int64(M);
+  end;
+end;
+
+function _ReadUInt(var T: Text): UInt64;
+var
+  Negative, Present: Boolean;
+begin
+  Result := ReadMagnitude(T, Negative, Present);
+  if Negative and (Result <> 0) then
+    _RunError(106);
+end;
+
+{ LANG-943: the token (digits, '.', letters for exponents and INF/NAN, a sign first or after e/E) is converted by
+  _ValFloat; anything it rejects is error 106; at end of file 0.0 }
+function _ReadFloat(var T: Text): Double;
+var
+  Bytes: array[0..255] of Byte;
+  Count, B, Code: Integer;
+  Previous: Integer;
+  S: Pointer;
+begin
+  Result := 0;
+  CheckNoPending(T);
+  B := SkipBlanks(T);
+  if B < 0 then
+    Exit;
+  Count := 0;
+  Previous := 0;
+  while (B >= 0) and (((B >= 48) and (B <= 57)) or (B = 46) or ((B >= 65) and (B <= 90)) or ((B >= 97) and (B <= 122))
+    or (((B = 43) or (B = 45)) and ((Count = 0) or (Previous = 69) or (Previous = 101)))) do
+  begin
+    if Count = 256 then
+      _RunError(106);
+    Bytes[Count] := B;
+    Count := Count + 1;
+    Previous := B;
+    SkipByte(T);
+    B := PeekByte(T);
+  end;
+  S := nil;
+  SetAsciiUStr(S, PByte(@Bytes), Count, 0);
+  Code := 0;
+  Result := _ValFloat(S, Code);
+  _UStrClr(S);
+  if Code <> 0 then
+    _RunError(106);
+end;
+
+{ LANG-944: the next UTF-16 unit without skipping anything (a CR, an LF); #26 at end of file; the low surrogate of a pair
+  is kept for the next read }
+function _ReadWChar(var T: Text): WideChar;
+var
+  Pending: PInteger;
+  B, Need, Count: Integer;
+  Bytes: array[0..3] of Byte;
+  Units: array[0..3] of Word;
+begin
+  Pending := InField(T, 16);
+  if Pending^ <> 0 then
+  begin
+    Result := WideChar(Pending^);
+    Pending^ := 0;
+    Exit;
+  end;
+  B := PeekByte(T);
+  if B < 0 then
+  begin
+    Result := #26;
+    Exit;
+  end;
+  SkipByte(T);
+  Bytes[0] := B;
+  Count := 1;
+  Need := 0;
+  if B >= $F0 then
+    Need := 3
+  else if B >= $E0 then
+    Need := 2
+  else if B >= $C0 then
+    Need := 1;
+  while Need > 0 do
+  begin
+    B := PeekByte(T);
+    if (B < $80) or (B >= $C0) then
+      Break;
+    SkipByte(T);
+    Bytes[Count] := B;
+    Count := Count + 1;
+    Need := Need - 1;
+  end;
+  if DecodeUtf8(PByte(@Bytes), Count, PWord(@Units)) >= 2 then
+    Pending^ := Units[1];
+  Result := WideChar(Units[0]);
+end;
+
+{ LANG-945: everything up to (not including) the next line terminator or the end of file }
+procedure _ReadUStr(var T: Text; var S: Pointer);
+var
+  Buffer: PByte;
+  Size, Count, B, Units, First: Integer;
+  Pending: PInteger;
+  P: Pointer;
+  Chars: PChar;
+begin
+  Size := 64;
+  Count := 0;
+  Buffer := _GetMem(Size);
+  B := PeekByte(T);
+  while not IsLineEnd(B) do
+  begin
+    if Count = Size then
+    begin
+      Size := 2 * Size;
+      Buffer := _ReallocMem(Buffer, Size);
+    end;
+    Buffer[Count] := B;
+    Count := Count + 1;
+    SkipByte(T);
+    B := PeekByte(T);
+  end;
+  Pending := InField(T, 16);
+  First := 0;
+  if Pending^ <> 0 then
+    First := 1;
+  Units := First + DecodeUtf8(Buffer, Count, nil);
+  if Units = 0 then
+    _UStrClr(S)
+  else
+  begin
+    P := NewUStr(Units);
+    Chars := P;
+    if First = 1 then
+      Chars[0] := WideChar(Pending^);
+    DecodeUtf8(Buffer, Count, PWord(Chars + First));
+    SetUStr(S, P);
+  end;
+  Pending^ := 0;
+  _FreeMem(Buffer);
+end;
+
+{ skips to and past the next line terminator (CR LF, LF or CR, LANG-941) }
+procedure _ReadLn(var T: Text);
+var
+  B: Integer;
+  Pending: PInteger;
+begin
+  Pending := InField(T, 16);
+  Pending^ := 0;
+  B := PeekByte(T);
+  while not IsLineEnd(B) do
+  begin
+    SkipByte(T);
+    B := PeekByte(T);
+  end;
+  if B = 13 then
+  begin
+    SkipByte(T);
+    if PeekByte(T) = 10 then
+      SkipByte(T);
+  end
+  else if B = 10 then
+    SkipByte(T);
+end;
+
+procedure _ReadEnd(var T: Text);
+begin
+end;
+
+function _Eof(var T: Text): Boolean;
+var
+  Pending: PInteger;
+begin
+  Pending := InField(T, 16);
+  Result := (Pending^ = 0) and (PeekByte(T) < 0);
+end;
+
+function _Eoln(var T: Text): Boolean;
+var
+  Pending: PInteger;
+begin
+  Pending := InField(T, 16);
+  Result := (Pending^ = 0) and IsLineEnd(PeekByte(T));
 end;
 
 end.

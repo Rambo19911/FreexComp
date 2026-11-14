@@ -434,6 +434,15 @@ internal sealed class FlowAnalyzer
             case IntrinsicKind.Move:
                 return AssignOrEval(statement.Arguments[1], Eval(statement.Arguments[2], Eval(statement.Arguments[0], state)));
 
+            case IntrinsicKind.Read or IntrinsicKind.Readln:
+                // C-066: the file is read, every variable is only written, left to right
+                foreach (var argument in statement.Arguments)
+                {
+                    state = argument.Type is TextTypeSymbol ? Eval(argument, state) : AssignOrEval(argument, state);
+                }
+
+                return state;
+
             case IntrinsicKind.SetLength or IntrinsicKind.Delete or IntrinsicKind.Insert:
             {
                 // the string is read and written (C-062)

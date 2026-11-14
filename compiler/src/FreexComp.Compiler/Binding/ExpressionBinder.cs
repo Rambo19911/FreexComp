@@ -214,6 +214,8 @@ internal sealed class ExpressionBinder
             case TypeSymbol type:
                 _diagnostics.Report(name, "E2009", type.Name);
                 return Error(name);
+            case IntrinsicSymbol { Intrinsic: IntrinsicKind.Eof or IntrinsicKind.Eoln } textFunction:
+                return new BoundIntrinsicCallExpression(name, textFunction, [], _types.Boolean, constantValue: null);    // of Input (C-066)
             case IntrinsicSymbol { IsFunction: true } function:
                 _diagnostics.Report(name, "E2110", function.Name);
                 return Error(name);
@@ -602,6 +604,11 @@ internal sealed class ExpressionBinder
             return BindStringFunction(invocation, intrinsic);
         }
 
+        if (intrinsic.Intrinsic is IntrinsicKind.Eof or IntrinsicKind.Eoln)
+        {
+            return BindTextFunction(invocation, intrinsic);
+        }
+
         if (!_folder.CheckSingleArgument(invocation, intrinsic))
         {
             return Error(invocation);
@@ -659,6 +666,42 @@ internal sealed class ExpressionBinder
         }
 
         return new BoundIntrinsicCallExpression(invocation, intrinsic, [operand], resultType, constantValue: null);
+    }
+
+    /// <summary>
+    /// LANG-946 (C-066): <c>Eof</c>/<c>Eoln[(var F: Text)]: Boolean</c> — no argument means <c>Input</c>; the argument is an
+    /// assignable <c>Text</c> variable (E2111 for more arguments, E2010 for another type).
+    /// </summary>
+    private BoundExpression BindTextFunction(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count > 1)
+        {
+            _diagnostics.Report(arguments[1], "E2111", intrinsic.Name);
+            return Error(invocation);
+        }
+
+        if (arguments.Count == 0)
+        {
+            return new BoundIntrinsicCallExpression(invocation, intrinsic, [], _types.Boolean, constantValue: null);
+        }
+
+        var syntax = arguments[0].Expression;
+        var file = BindVariable(syntax);
+        if (file.HasErrors)
+        {
+            return Error(invocation, file);
+        }
+
+        if (file.Type is not TextTypeSymbol)
+        {
+            _diagnostics.Report(syntax, "E2010", file.Type.Name, _types.Text.Name);
+            return Error(invocation, file);
+        }
+
+        return CheckVariableReference(file, syntax)
+            ? new BoundIntrinsicCallExpression(invocation, intrinsic, [file], _types.Boolean, constantValue: null)
+            : Error(invocation, file);
     }
 
     /// <summary>

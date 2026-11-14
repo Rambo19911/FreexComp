@@ -115,6 +115,10 @@ public sealed class BuiltInTypes
         Intrinsic("Pos", IntrinsicKind.Pos, "Pos(const SubStr, S: string[; Offset: Integer]): Integer");
         Intrinsic("Concat", IntrinsicKind.Concat, "Concat(S1, S2, ...: string): string");
         Intrinsic("UpCase", IntrinsicKind.UpCase, "UpCase(C: Char): Char");
+        Intrinsic("Read", IntrinsicKind.Read, "Read([var F: Text;] var V1, ...)");
+        Intrinsic("Readln", IntrinsicKind.Readln, "Readln([var F: Text;] var V1, ...)");
+        Intrinsic("Eof", IntrinsicKind.Eof, "Eof[(var F: Text)]: Boolean");
+        Intrinsic("Eoln", IntrinsicKind.Eoln, "Eoln[(var F: Text)]: Boolean");
     }
 
     /// <summary>

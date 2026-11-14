@@ -9,6 +9,7 @@ GetStdHandle
 HeapAlloc
 HeapFree
 HeapReAlloc
+ReadFile
 WaitForSingleObject
 WideCharToMultiByte
 WriteFile

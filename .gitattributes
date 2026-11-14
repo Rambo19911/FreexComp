@@ -11,3 +11,4 @@ rtl/tests/**/*.in -text
 rtl/tests/**/*.out -text
 rtl/tests/**/*.err.txt -text
 rtl/tests/**/*.exit -text
+tests/compiler/**/*.in -text

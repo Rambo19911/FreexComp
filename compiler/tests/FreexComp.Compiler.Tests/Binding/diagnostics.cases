@@ -214,6 +214,8 @@ type T = (A = -1); begin end.
 {$SCOPEDENUMS ON} type T = (A); var X: T; begin X := A end.
 === E2913 1,29
 type T = (A); begin Writeln(A) end.
+=== E2914 1,30
+var b: Boolean; begin Readln(b) end.
 === E2030 1,17
 type T = set of 0..300; begin end.
 === E2030 1,17
