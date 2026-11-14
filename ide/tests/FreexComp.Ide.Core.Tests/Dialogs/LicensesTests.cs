@@ -55,6 +55,57 @@ public sealed class LicensesTests
         }
     }
 
+    /// <summary>Build-only packages in the IDE's resolved graph: not shipped, so they need no notice (lead note 2026-11-14).</summary>
+    private static readonly string[] BuildOnlyPackages = ["Avalonia.BuildServices"];
+
+    /// <summary>
+    /// I-165: every package in the IDE's resolved graph (<c>obj/project.assets.json</c>, direct and transitive) that puts a
+    /// runtime, native or runtime-target asset into the output is covered by a notice with the same version. The JSON is
+    /// the authority for transitive packages. Build-only packages are excluded explicitly and must really ship nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UI-DLG-161")]
+    public void EveryShippedTransitivePackageHasNotice()
+    {
+        var notices = ThirdPartyNotices.LoadEmbedded();
+        var assetsPath = Path.Combine(SpecTables.RepoRootPath(), "ide", "src", "FreexComp.Ide", "obj", "project.assets.json");
+        Assert.True(File.Exists(assetsPath), "Restore the IDE project first: " + assetsPath);
+        using var assets = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(assetsPath));
+
+        var packages = new List<(string Id, string Version, bool Shipped)>();
+        foreach (var target in assets.RootElement.GetProperty("targets").EnumerateObject())
+        {
+            foreach (var library in target.Value.EnumerateObject())
+            {
+                if (library.Value.GetProperty("type").GetString() != "package")
+                {
+                    continue;
+                }
+
+                var shipped = new[] { "runtime", "native", "runtimeTargets" }.Any(kind =>
+                    library.Value.TryGetProperty(kind, out var files)
+                    && files.EnumerateObject().Any(f => !f.Name.EndsWith("/_._", StringComparison.Ordinal)));
+                var separator = library.Name.IndexOf('/', StringComparison.Ordinal);
+                packages.Add((library.Name[..separator], library.Name[(separator + 1)..], shipped));
+            }
+        }
+
+        Assert.Contains(packages, p => p.Id == "SkiaSharp" && p.Shipped);
+        foreach (var excluded in packages.Where(p => BuildOnlyPackages.Contains(p.Id, StringComparer.OrdinalIgnoreCase)))
+        {
+            Assert.False(excluded.Shipped, $"Build-only package '{excluded.Id}' puts files into the output");
+        }
+
+        var missing = packages
+            .Where(p => p.Shipped && !BuildOnlyPackages.Contains(p.Id, StringComparer.OrdinalIgnoreCase))
+            .Where(p => !notices.Any(n => n.Version == p.Version && n.Packages.Contains(p.Id, StringComparer.OrdinalIgnoreCase)))
+            .Select(p => $"{p.Id} {p.Version}")
+            .Distinct()
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        Assert.True(missing.Count == 0, "Shipped packages without a notice: " + string.Join(", ", missing));
+    }
+
     [Fact]
     [Trait("Req", "UI-DLG-160")]
     public void ComponentsSortedByNameFirstSelected()
