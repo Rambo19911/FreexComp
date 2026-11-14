@@ -243,4 +243,22 @@ public sealed class IntrinsicBindingTests
             Assert.IsType<IntrinsicSymbol>(types.Scope.LookupLocal(name));
         }
     }
+
+    // ------------------------------------------------------------------ Assert (intrinsics.md §1, C-057)
+
+    [Fact]
+    [Trait("Req", "LANG-900")]
+    public void Assert_ConditionAndOptionalConstantMessage() =>
+        Assert.Equal("(block (Assert (Greater:Boolean i:Integer 0:Integer)) (Assert f:Boolean 'no f':string) (Assert True:Boolean))",
+            Body("Assert(i > 0); Assert(f, 'no f'); Assert(ByteBool(True))"));
+
+    [Theory]
+    [Trait("Req", "LANG-900")]
+    [InlineData("Assert(i)", "E2010(1,134): Incompatible types: 'Integer' and 'Boolean'")]
+    [InlineData("Assert(f, 3)", "E2010(1,137): Incompatible types: 'Integer' and 'string'")]
+    [InlineData("Assert(f, s)", "E2900(1,137): Feature not supported: Assert message that is not a constant")]
+    [InlineData("Assert", "E2110(1,127): Not enough actual parameters for 'Assert'")]
+    [InlineData("Assert(f, 'a', 1)", "E2111(1,142): Too many actual parameters for 'Assert'")]
+    [InlineData("i := Assert(f)", "E2034(1,132): Expression has no value (procedure call used as a value)")]
+    public void Assert_Errors(string statement, string expected) => Assert.Equal([expected], Errors(statement));
 }

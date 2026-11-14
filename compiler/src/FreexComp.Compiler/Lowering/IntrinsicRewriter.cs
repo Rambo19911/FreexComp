@@ -146,9 +146,35 @@ internal static class IntrinsicRewriter
             case IntrinsicKind.RunError:
                 return context.CallNoReturn(context.RunError,
                     call.Arguments.IsEmpty ? context.Constant(BigInteger.Zero, context.Types.Integer) : context.Lower(call.Arguments[0]));
+            case IntrinsicKind.Assert:
+                return Assert(context, call);
             default:
                 throw new InvalidOperationException($"Unknown intrinsic statement {call.Intrinsic.Name}.");
         }
+    }
+
+    /// <summary>
+    /// intrinsics.md §5 / CMP-412: <c>if not c then _Assert(msg or nil, 'file', line)</c> under <c>{$C+}</c> at the statement's first
+    /// token; nothing (the condition is not evaluated) under <c>{$C-}</c>. The file is the name of the source file holding the
+    /// <c>Assert</c> token, without directory (ABI-103 prints it so; C-057 decision: the compiler passes no directory), the line
+    /// is 1-based.
+    /// </summary>
+    private static LStatement Assert(LoweringContext context, BoundIntrinsicCallStatement call)
+    {
+        var token = call.Syntax.FirstToken();
+        if (!token.DirectiveState.Assertions)
+        {
+            return new LBlock([]);
+        }
+
+        var types = context.Types;
+        var location = DiagnosticBag.LocationOf(token);
+        var helper = new RuntimeHelper("_Assert", [types.Pointer, types.Pointer, types.Integer], ReturnType: null, IsNoReturn: true);
+        LExpression message = call.Arguments.Length == 2 ? new LStringLiteral((string)call.Arguments[1].ConstantValue!.Value!, types.String) : Nil(context);
+        var file = new LStringLiteral(System.IO.Path.GetFileName(location.Path), types.String);
+        var line = context.Constant(location.LineSpan.Start.Line + 1, types.Integer);
+        var fail = new LBlock([new LCallStatement(new LHelperCallee(helper), [message, file, line]), new LUnreachable()]);
+        return new LIf(new LUnary(LUnaryOperator.Not, context.Lower(call.Arguments[0])), fail, @else: null);
     }
 
     /// <summary>Evaluates <paramref name="value"/> once; <paramref name="body"/> reads it through the given reference factory.</summary>

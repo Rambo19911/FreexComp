@@ -28,6 +28,7 @@ internal enum BoundKind
     AddressOfExpression,
     DereferenceExpression,
     PointerArithmeticExpression,
+    VariableTypecastExpression,
 
     // statements
     Block,
@@ -290,7 +291,7 @@ internal sealed class BoundIndexExpression : BoundExpression
 
     public ArrayTypeSymbol ArrayType => (ArrayTypeSymbol)Array.Type;
 
-    /// <summary>The variable or parameter an element/field access chain starts from (the expression itself otherwise).</summary>
+    /// <summary>The variable or parameter an element/field access or variable typecast chain starts from (the expression itself otherwise).</summary>
     public static BoundExpression RootOf(BoundExpression expression)
     {
         while (true)
@@ -303,11 +304,31 @@ internal sealed class BoundIndexExpression : BoundExpression
                 case BoundFieldAccessExpression field:
                     expression = field.Record;
                     break;
+                case BoundVariableTypecastExpression typecast:
+                    expression = typecast.Operand;
+                    break;
                 default:
                     return expression;
             }
         }
     }
+}
+
+/// <summary>
+/// A variable typecast <c>T(v)</c> (LANG-290 last row): the storage of the variable reference <see cref="Operand"/> read or
+/// written as type <see cref="BoundExpression.Type"/> of the same size; a variable when the operand is one.
+/// </summary>
+internal sealed class BoundVariableTypecastExpression : BoundExpression
+{
+    public BoundVariableTypecastExpression(SyntaxNode syntax, BoundExpression operand, TypeSymbol type)
+        : base(syntax, type, constantValue: null)
+    {
+        Operand = operand;
+    }
+
+    public override BoundKind Kind => BoundKind.VariableTypecastExpression;
+
+    public BoundExpression Operand { get; }
 }
 
 /// <summary><c>r.F</c> of a record (LANG-260): a variable when <see cref="Record"/> is one.</summary>

@@ -75,6 +75,7 @@ public sealed class BuiltInTypesTests
             "Inc", "Dec", "RunError", "Write", "Writeln", "Include", "Exclude", "Succ", "Pred", "Ord", "Chr", "Odd", "Abs", "Sqr", "Low", "High", "SizeOf", "Lo", "Hi", "Swap",
             "Length",                                                                       // M2.2 (C-052)
             "New", "Dispose", "GetMem", "FreeMem", "ReallocMem", "FillChar", "Move", "Assigned", "Addr", "Ptr",   // M2.2 (C-056)
+            "Assert",                                                                                       // M2.2 (C-057)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

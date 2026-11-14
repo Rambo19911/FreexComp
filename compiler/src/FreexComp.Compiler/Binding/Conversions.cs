@@ -76,6 +76,13 @@ internal sealed class Conversions
             return null;
         }
 
+        // C-058 decision: a finite constant that overflows Single is E2012 rather than a silent infinity (types.md is silent)
+        if (destination is RealTypeSymbol { RealKind: RealKind.Single } && RealValue(value) is var real && double.IsFinite(real) && float.IsInfinity((float)real))
+        {
+            diagnostics.Report(at, "E2012", value.ToDisplayString(), destination.Name);
+            return null;
+        }
+
         if (conversion.Kind == ConversionKind.Identity)
         {
             return value;

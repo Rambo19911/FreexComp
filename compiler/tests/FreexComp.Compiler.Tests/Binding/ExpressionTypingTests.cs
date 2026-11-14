@@ -170,6 +170,27 @@ public sealed class ExpressionTypingTests
     [InlineData("s - d", "(Subtract:Double (conv Double s:Single) d:Double)")]
     public void RealMixing(string expression, string expected) => Assert.Equal(expected, Typed(expression));
 
+    /// <summary>
+    /// C-058: LANG-230 (an integer constant keeps a Single operation only when Single holds it exactly; real constants are
+    /// Double), LANG-232 (comparisons in the operation type), LANG-233 (constants folded in Double).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-230")]
+    [Trait("Req", "LANG-232")]
+    [Trait("Req", "LANG-233")]
+    [InlineData("s + 16777216", "(Add:Single s:Single 16777216.0:Single)")]
+    [InlineData("s + 16777217", "(Add:Double (conv Double s:Single) 16777217.0:Double)")]
+    [InlineData("s < 1", "(Less:Boolean s:Single 1.0:Single)")]
+    [InlineData("s = 0.5", "(Equal:Boolean (conv Double s:Single) 0.5:Double)")]
+    [InlineData("d <> d", "(NotEqual:Boolean d:Double d:Double)")]
+    [InlineData("u / 2", "(Divide:Double (conv Double u:UInt64) 2.0:Double)")]
+    [InlineData("-s", "(Negate:Single s:Single)")]
+    [InlineData("i64 * 1.5", "(Multiply:Double (conv Double i64:Int64) 1.5:Double)")]
+    [InlineData("0.1 + 0.2", "0.30000000000000004:Double")]
+    [InlineData("1 / 3 * 3", "1.0:Double")]
+    [InlineData("-Pi < -3", "True:Boolean")]
+    public void Reals_Typing(string expression, string expected) => Assert.Equal(expected, Typed(expression));
+
     // ------------------------------------------------------------------ LANG-227: unary operators
 
     [Theory]

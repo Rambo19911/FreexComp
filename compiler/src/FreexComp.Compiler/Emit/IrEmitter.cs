@@ -744,7 +744,7 @@ internal sealed class FunctionEmitter
             }
 
             case LAssign { Target: LView view } assign:
-                _w.Store(Value(assign.Value), Address(view), AlignmentOf(view));
+                Store(Value(assign.Value), Address(view), view.Type, AlignmentOf(view));
                 break;
             case LAssign assign:
                 Store(Value(assign.Value), Address(assign.Target), assign.Target.Type, AccessAlignment(assign.Target));
@@ -1018,8 +1018,11 @@ internal sealed class FunctionEmitter
         }
     }
 
-    /// <summary>A view of an aggregate's bytes is aligned no better than the aggregate (a small set inside a big set: 1).</summary>
-    private static int AlignmentOf(LView view) => Math.Min(TypeLayout.Of(view.Type).Alignment, TypeLayout.Of(view.Aggregate.Type).Alignment);
+    /// <summary>
+    /// A view of a variable's bytes is aligned no better than the variable's access (a small set inside a big set: 1; a variable
+    /// typecast of a packed field: 1).
+    /// </summary>
+    private static int AlignmentOf(LView view) => Math.Min(TypeLayout.Of(view.Type).Alignment, AccessAlignment(view.Aggregate));
 
     /// <summary>CMP-326: both sides are elements of the same array variable (<c>a[i] := a[j]</c>), so they may overlap.</summary>
     private static bool SameArrayVariable(LExpression target, LExpression source)
@@ -1221,7 +1224,7 @@ internal sealed class FunctionEmitter
             case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex or LField or LDeref when Lowerer.IsAggregate(expression.Type):
                 throw new InvalidOperationException("An aggregate has no SSA value; use its address.");
             case LView view:
-                return _w.Load(NewTemp(), TypeLayout.Of(view.Type).StorageType, Address(view), AlignmentOf(view));
+                return Load(Address(view), view.Type, AlignmentOf(view));
             case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField or LDeref:
                 return Load(Address(expression), expression.Type, AccessAlignment(expression));
             case LPointerOffset offset:

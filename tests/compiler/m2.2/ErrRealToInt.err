@@ -1,0 +1,7 @@
+ErrRealToInt.pas(15,8): error E2010: Incompatible types: 'Double' and 'Integer'
+ErrRealToInt.pas(16,8): error E2010: Incompatible types: 'Single' and 'Byte'
+ErrRealToInt.pas(17,8): error E2010: Incompatible types: 'Double' and 'Int64'
+ErrRealToInt.pas(18,8): error E2010: Incompatible types: 'Double' and 'Integer'
+ErrRealToInt.pas(19,5): error E2010: Incompatible types: 'Double' and 'Integer'
+ErrRealToInt.pas(20,8): error E2010: Incompatible types: 'Double' and 'Integer'
+ErrRealToInt.pas(21,8): error E2040: Invalid typecast from 'Double' to 'Integer'

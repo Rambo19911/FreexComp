@@ -15,6 +15,9 @@ internal enum IntrinsicKind
     // M2.2 memory procedures (LANG-268, intrinsics.md)
     New, Dispose, GetMem, FreeMem, ReallocMem, FillChar, Move,
 
+    // M2.2 checks (intrinsics.md, C-057)
+    Assert,
+
     // M2.1 functions (constant-foldable, LANG-340)
     Succ, Pred, Ord, Chr, Odd, Abs, Sqr, Low, High, SizeOf, Lo, Hi, Swap,
 

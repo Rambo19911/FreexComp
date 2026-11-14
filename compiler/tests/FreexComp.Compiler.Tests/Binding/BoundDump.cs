@@ -5,7 +5,7 @@ namespace FreexComp.Compiler.Tests.Binding;
 /// <summary>
 /// S-expression form of a bound tree for assertions: a node with a constant value prints as <c>value:Type</c>,
 /// a variable as <c>name:Type</c>, an implicit conversion as <c>(conv Type operand)</c>, a typecast as
-/// <c>(cast Type operand)</c>, an operator as <c>(Kind:Type operands…)</c>. Statements: <c>(block …)</c>,
+/// <c>(cast Type operand)</c>, a variable typecast as <c>(vcast Type variable)</c>, an operator as <c>(Kind:Type operands…)</c>. Statements: <c>(block …)</c>,
 /// <c>(:= target value)</c>, <c>(if c then [else])</c>, <c>(while c body)</c>, <c>(repeat block c)</c>,
 /// <c>(for v to|downto start finish body)</c>, <c>(case selector (arm [labels] body)… [(else block)])</c>,
 /// <c>(break)</c>, <c>(continue)</c>, <c>(exit [value])</c>, <c>(halt [code])</c>; intrinsics <c>(Name:Type args…)</c> /
@@ -23,6 +23,7 @@ internal static class BoundDump
         BoundIntrinsicCallExpression c => List($"{c.Intrinsic.Name}:{c.Type.Name}", c.Arguments),
         BoundConversionExpression { IsExplicit: false } c => $"(conv {c.Type.Name} {Of(c.Operand)})",
         BoundConversionExpression c => $"(cast {c.Type.Name} {Of(c.Operand)})",
+        BoundVariableTypecastExpression v => $"(vcast {v.Type.Name} {Of(v.Operand)})",
         BoundUnaryExpression u => $"({u.OperatorKind}:{u.Type.Name} {Of(u.Operand)})",
         BoundBinaryExpression b => $"({b.OperatorKind}:{b.Type.Name} {Of(b.Left)} {Of(b.Right)})",
         BoundSetConstructor s => "(" + string.Join(" ", s.Elements.Select(e => e.High is null ? Of(e.Low) : $"(.. {Of(e.Low)} {Of(e.High)})").Prepend($"set {s.Type.Name}")) + ")",

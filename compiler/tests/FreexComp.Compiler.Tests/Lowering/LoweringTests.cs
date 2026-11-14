@@ -66,6 +66,36 @@ public sealed class LoweringTests
             text);
     }
 
+    // ------------------------------------------------------------------ typecasts (LANG-290) and Assert (C-057)
+
+    /// <summary>
+    /// LANG-290: an ordinal becomes a pointer after extension to 64 bits by its own signedness, a pointer an ordinal by
+    /// <c>ptrtoint</c>; a variable typecast is a view of the variable's storage, also as an assignment target.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-290")]
+    [Trait("Req", "CMP-313")]
+    public void Typecasts_ValueCastsConvertVariableTypecastsView() =>
+        Assert.Equal(
+            "(:= @p (conv Pointer (conv Int64 @i))) (:= @p (conv Pointer (conv UInt64 @b))) (:= @p (conv Pointer @q)) " +
+            "(:= @n (conv NativeInt @p)) (:= @i (view Integer @r)) (:= (view Integer @c) 5:Integer) (:= (. (view TR @i) A) 1:Integer)",
+            string.Join(" ", Lower("program T; type TR = record A: Integer end; var p: Pointer; q: PChar; i: Integer; b: Byte; c: Cardinal; " +
+                    "n: NativeInt; r: TR; begin p := Pointer(i); p := Pointer(b); p := Pointer(q); n := NativeInt(p); i := Integer(r); " +
+                    "Integer(c) := 5; TR(i).A := 1 end.")
+                .Bodies.Single().Body.Statements.Select(LoweredDump.Of)));
+
+    /// <summary>
+    /// intrinsics.md: <c>Assert(c[, m])</c> under <c>{$C+}</c> is <c>if not c then _Assert(m or nil, file name, line)</c> (noreturn,
+    /// ABI-103); under <c>{$C-}</c> it generates nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-412")]
+    public void Assert_IsAConditionalNoReturnCallUnlessAssertionsAreOff() =>
+        Assert.Equal(
+            "(if (Not:Boolean @f) (block (call _Assert 'm' 'test.pas' 1:Integer) (unreachable))) (block) " +
+            "(if (Not:Boolean (Greater @i 0:Integer)) (block (call _Assert nil:Pointer 'test.pas' 1:Integer) (unreachable)))",
+            MainBody("f: Boolean; i: Integer", "Assert(f, 'm'); {$C-} Assert(f) {$C+}; Assert(i > 0)"));
+
     // ------------------------------------------------------------------ for (CMP-321, LANG-361)
 
     [Fact]

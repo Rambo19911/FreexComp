@@ -465,8 +465,16 @@ internal sealed class ExpressionBinder
         return symbol;
     }
 
+    /// <summary>
+    /// <paramref name="syntax"/> where a variable is required (an assignment target, a <c>var</c> argument, the operand of
+    /// <c>Inc</c>/<c>Dec</c>/<c>Include</c>/<c>Exclude</c>): there a cast <c>T(v)</c> of a variable is a variable typecast even when
+    /// a value cast would apply (LANG-290 last row; E2041 for managed types and different sizes).
+    /// </summary>
+    public BoundExpression BindVariable(ExpressionSyntax syntax) =>
+        Unparenthesized(syntax) is InvocationExpressionSyntax invocation ? BindInvocation(invocation, variableContext: true) : BindExpression(syntax);
+
     /// <summary>A typecast <c>T(x)</c> or a function call; intrinsics are bound from C-029 on.</summary>
-    private BoundExpression BindInvocation(InvocationExpressionSyntax invocation)
+    private BoundExpression BindInvocation(InvocationExpressionSyntax invocation, bool variableContext = false)
     {
         if (invocation.Expression is not IdentifierNameSyntax name)
         {
@@ -513,7 +521,7 @@ internal sealed class ExpressionBinder
         }
 
         var operand = BindExpression(arguments[0].Expression);
-        return operand.HasErrors || target.TypeKind == TypeKind.Error ? Error(invocation, operand) : BindTypecast(invocation, target, operand);
+        return operand.HasErrors || target.TypeKind == TypeKind.Error ? Error(invocation, operand) : BindTypecast(invocation, target, operand, variableContext);
     }
 
     /// <summary>
@@ -638,31 +646,87 @@ internal sealed class ExpressionBinder
         return (argument.Type, argument);
     }
 
-    /// <summary>LANG-290: ordinal → ordinal and integer → real; real → anything is E2040; the rest arrives with C-057.</summary>
-    private BoundExpression BindTypecast(InvocationExpressionSyntax node, TypeSymbol target, BoundExpression operand)
+    /// <summary>
+    /// LANG-290. Value casts: ordinal → ordinal (folded for constants), ordinal → pointer, pointer → 8-byte integer, pointer →
+    /// pointer, integer → real and real → real (converting; C-057 decision: real → real converts like the implicit
+    /// conversion). A cast from a real to anything else is E2040. Otherwise a cast of a variable reference is a variable
+    /// typecast (<see cref="BoundVariableTypecastExpression"/>) when both types have the same size and neither is managed (E2041
+    /// otherwise); any other cast is E2040. In a <paramref name="variableContext"/> a variable operand always gives a variable
+    /// typecast. Casts involving strings arrive with the string tasks (E2900).
+    /// </summary>
+    private BoundExpression BindTypecast(InvocationExpressionSyntax node, TypeSymbol target, BoundExpression operand, bool variableContext)
     {
         var source = operand.Type;
-        if (source is RealTypeSymbol)
+        if (source is StringTypeSymbol || target is StringTypeSymbol)
+        {
+            if (!IsAddressable(operand) || (source is StringTypeSymbol && target is StringTypeSymbol or PointerTypeSymbol)
+                || (target is StringTypeSymbol && source is StringTypeSymbol or PointerTypeSymbol or CharTypeSymbol))
+            {
+                return Unsupported(node, "string typecast");            // LANG-245/290 rows 7 and 8 (C-060…C-062)
+            }
+        }
+
+        if (variableContext && IsAddressable(operand))
+        {
+            return VariableTypecast(node, target, operand);
+        }
+
+        if (source is RealTypeSymbol && target is not RealTypeSymbol)
         {
             _diagnostics.Report(node, "E2040", source.Name, target.Name);
             return Error(node, operand);
         }
 
-        ConstantValue? constant;
-        if (source.IsOrdinal && target.IsOrdinal)
+        var isValueCast = (source, target) switch
         {
-            constant = operand.ConstantValue is { } value ? _folder.FoldTypecast(node, target, value) : null;
+            _ when source.IsOrdinal && target.IsOrdinal => true,
+            (_, PointerTypeSymbol) when source.IsOrdinal => true,
+            (PointerTypeSymbol, IntegerTypeSymbol { Bits: 64 }) => true,
+            (PointerTypeSymbol, PointerTypeSymbol) => true,
+            (IntegerTypeSymbol or RealTypeSymbol, RealTypeSymbol) => true,
+            _ => false,
+        };
+        if (!isValueCast)
+        {
+            if (IsAddressable(operand))
+            {
+                return VariableTypecast(node, target, operand);
+            }
+
+            _diagnostics.Report(node, "E2040", source.Name, target.Name);
+            return Error(node, operand);
         }
-        else if (source is IntegerTypeSymbol && target is RealTypeSymbol)
+
+        ConstantValue? constant = null;                                 // integer → real is no constant expression (LANG-340, lead decision C-024)
+        if (operand.ConstantValue is { } value)
         {
-            constant = null;                                            // not a constant expression (LANG-340, lead decision C-024)
-        }
-        else
-        {
-            return Unsupported(node, "typecast");
+            if (source.IsOrdinal && target.IsOrdinal)
+            {
+                constant = _folder.FoldTypecast(node, target, value);
+                if (constant is null)
+                {
+                    return Error(node, operand);
+                }
+            }
+            else if (source is PointerTypeSymbol && target is PointerTypeSymbol && value.Value is null)
+            {
+                constant = new ConstantValue(null, target);             // nil of the target pointer type
+            }
         }
 
         return new BoundConversionExpression(node, operand, target, ConversionKind.Explicit, isExplicit: true, constant);
+    }
+
+    /// <summary>LANG-290 last row: same size, neither type managed (E2041 at the cast otherwise).</summary>
+    private BoundExpression VariableTypecast(InvocationExpressionSyntax node, TypeSymbol target, BoundExpression operand)
+    {
+        if (operand.Type.IsManaged || target.IsManaged || operand.Type.Size != target.Size || target.Size < 0)
+        {
+            _diagnostics.Report(node, "E2041");
+            return Error(node, operand);
+        }
+
+        return new BoundVariableTypecastExpression(node, operand, target);
     }
 
     // ------------------------------------------------------------------ calls (LANG-420, 421, 441)
@@ -697,15 +761,18 @@ internal sealed class ExpressionBinder
         var syntaxes = argumentList?.Arguments ?? default;
         var builder = ImmutableArray.CreateBuilder<BoundExpression>(syntaxes.Count);
         var hasErrors = false;
-        foreach (var argument in syntaxes)
+        for (var i = 0; i < syntaxes.Count; i++)
         {
+            var argument = syntaxes[i];
             if (argument.WidthColonToken is { } colon)
             {
                 _diagnostics.Report(colon, "E2915");
                 hasErrors = true;
             }
 
-            var bound = BindExpression(argument.Expression);
+            // a var/out parameter of the only candidate is a variable context (variable typecasts, LANG-290)
+            var byReference = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].IsByReference;
+            var bound = byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression);
             hasErrors |= bound.HasErrors;
             builder.Add(bound);
         }

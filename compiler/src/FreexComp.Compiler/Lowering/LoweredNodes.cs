@@ -389,7 +389,8 @@ internal sealed class LSequence(LStatement first, LExpression value) : LExpressi
 
 /// <summary>
 /// A variable reference to the first <c>SizeOf(Type)</c> bytes of <see cref="Aggregate"/>'s storage read or written as
-/// <see cref="LExpression.Type"/> (a small set inside a big set's bytes: ABI-050 bit order is the integer's).
+/// <see cref="LExpression.Type"/> (a small set inside a big set's bytes: ABI-050 bit order is the integer's; a variable typecast,
+/// LANG-290, of any variable reference of the same size).
 /// </summary>
 internal sealed class LView(LExpression aggregate, TypeSymbol type) : LExpression(type)
 {

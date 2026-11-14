@@ -858,8 +858,92 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-057: value typecasts (ordinal → pointer after sign extension, pointer → pointer, pointer → integer, ordinal → ordinal,
+    /// LANG-290 rows 1–4), variable typecasts as values and targets (also of a packed field: <c>align 1</c>), a distinct type
+    /// (LANG-205) and <c>Assert</c> with and without message and under <c>{$C-}</c>.
+    /// </summary>
+    internal const string TypecastsSource = """
+        unit M;
+        interface
+        type
+          TMy = type Integer;
+          TRec8 = record A, B: Integer; end;
+          TPacked = packed record B: Byte; I: Integer; end;
+        procedure Use(var r: TRec8; m: TMy);
+        implementation
+        procedure Use(var r: TRec8; m: TMy);
+        var
+          i: Integer;
+          b: ShortInt;
+          q: Int64;
+          p: Pointer;
+          pc: PChar;
+          f: Boolean;
+          k: TPacked;
+        begin
+          p := Pointer(b);
+          pc := PChar(p);
+          q := NativeInt(pc);
+          i := Integer(Cardinal(q));
+          f := Boolean(i);
+          q := Int64(r);
+          TRec8(q).B := m;
+          Cardinal(k.I) := 7;
+          Assert(f, 'flag');
+          Assert(i > m);
+          {$C-} Assert(i = 0); {$C+}
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-058: real constants (hexadecimal, a Single one rounded), CMP-316 arithmetic in <c>double</c> and in <c>float</c> (both
+    /// operands Single), <c>fneg</c>, CMP-313 conversions (<c>sitofp</c>/<c>uitofp</c>, <c>fpext</c>/<c>fptrunc</c>), CMP-315
+    /// comparisons (<c>&lt;&gt;</c> is <c>une</c>), real parameters and results, an initialised Single global and <c>{$Q+}</c>
+    /// (no checks on reals).
+    /// </summary>
+    internal const string RealsSource = """
+        unit M;
+        interface
+        var
+          G: Single = 0.1;
+        function Mix(d: Double; s: Single; i: Integer; c: Cardinal; u: UInt64): Double;
+        function Scale(s: Single): Single;
+        function Order(a, b: Double): Integer;
+        implementation
+        function Mix(d: Double; s: Single; i: Integer; c: Cardinal; u: UInt64): Double;
+        var
+          t: Single;
+        begin
+        {$Q+}
+          t := s * s - G;
+          Result := (d + i) * c / u - t;
+          Result := -Result + i / 2;
+          G := Result;
+        {$Q-}
+        end;
+        function Scale(s: Single): Single;
+        begin
+          Result := s * 2 + 0.5;
+        end;
+        function Order(a, b: Double): Integer;
+        begin
+          Result := 0;
+          if a = b then Result := 1;
+          if a <> b then Result := Result + 2;
+          if a < b then Result := Result + 4;
+          if a <= b then Result := Result + 8;
+          if a > b then Result := Result + 16;
+          if a >= b then Result := Result + 32;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Reals"] = RealsSource,
+        ["Typecasts"] = TypecastsSource,
         ["Pointers"] = PointersSource,
         ["AggregateAbi"] = AbiLoweringTests.Source,
         ["TypedConstants"] = TypedConstantsSource,
@@ -1114,6 +1198,61 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-340")]
     [Trait("Req", "CMP-342")]
     public void Pointers() => Snapshot.Verify("Pointers", Emit(PointersSource));
+
+    [Fact]
+    [Trait("Req", "LANG-290")]
+    [Trait("Req", "LANG-205")]
+    [Trait("Req", "CMP-313")]
+    [Trait("Req", "CMP-412")]
+    public void Typecasts() => Snapshot.Verify("Typecasts", Emit(TypecastsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-313")]
+    [Trait("Req", "CMP-315")]
+    [Trait("Req", "CMP-316")]
+    public void Reals() => Snapshot.Verify("Reals", Emit(RealsSource));
+
+    /// <summary>C-058: the CMP-313/315/316 instructions; no fast-math flags and no overflow intrinsics on reals under <c>{$Q+}</c>.</summary>
+    [Fact]
+    [Trait("Req", "CMP-313")]
+    [Trait("Req", "CMP-315")]
+    [Trait("Req", "CMP-316")]
+    [Trait("Req", "LANG-232")]
+    public void Reals_UseTheSpecInstructions()
+    {
+        var text = Emit(RealsSource);
+
+        Assert.Contains("@\"M.G\" = global float 0x3FB99999A0000000, align 4\n", text);             // 0.1 rounded to Single
+        foreach (var instruction in (string[])[" = fmul float ", " = fsub float ", " = fadd double ", " = fmul double ", " = fdiv double ",
+                     " = fsub double ", " = fneg double ", " = sitofp i32 ", " = uitofp i32 ", " = uitofp i64 ", " = fpext float ",
+                     " = fptrunc double ", " = fcmp oeq double ", " = fcmp une double ", " = fcmp olt double ",
+                     " = fcmp ole double ", " = fcmp ogt double ", " = fcmp oge double "])
+        {
+            Assert.Contains(instruction, text);
+        }
+
+        Assert.Contains(", 0x4000000000000000\n", text);                                            // s * 2 stays Single (LANG-230)
+        Assert.DoesNotContain("with.overflow", text);
+        Assert.DoesNotContain(" fast ", text);
+    }
+
+    /// <summary>C-057: the casts' instructions and the <c>Assert</c> call (ABI-103: message or null, file name, line; noreturn).</summary>
+    [Fact]
+    [Trait("Req", "LANG-290")]
+    [Trait("Req", "CMP-412")]
+    public void Typecasts_ExtendViewAndAssert()
+    {
+        var text = Emit(TypecastsSource);
+
+        Assert.Contains("  %t2 = sext i8 %t1 to i64\n  %t3 = inttoptr i64 %t2 to ptr\n", text);
+        Assert.Contains(" = ptrtoint ptr ", text);
+        Assert.Contains("store i32 7, ptr %t", text);
+        Assert.Contains(", align 1\n", text);
+        Assert.Contains("call void @\"System._Assert\"(ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [5 x i16] }, ptr @.str.0, i32 0, i32 5), ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [6 x i16] }, ptr @.str.1, i32 0, i32 5), i32 27) #1\n", text);
+        Assert.Contains("call void @\"System._Assert\"(ptr null, ptr getelementptr inbounds ({ i32, i32, i16, i16, i32, [6 x i16] }, ptr @.str.1, i32 0, i32 5), i32 28) #1\n", text);
+        Assert.Equal(2, text.Split("call void @\"System._Assert\"").Length - 1);
+        Assert.Contains("declare void @\"System._Assert\"(ptr, ptr, i32) #1\n", text);
+    }
 
     /// <summary>CMP-340/342/412 forms; ABI-060 one-byte empty records; CMP-309 copy-in/copy-out for a packed var argument.</summary>
     [Fact]

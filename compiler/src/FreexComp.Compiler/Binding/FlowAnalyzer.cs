@@ -306,7 +306,8 @@ internal sealed class FlowAnalyzer
                 return state;
 
             case BoundAssignmentStatement assignment:
-                if (assignment.Target is BoundVariableExpression target)
+                // a variable typecast of the same size overwrites the whole variable (LANG-290)
+                if ((assignment.Target as BoundVariableExpression ?? (assignment.Target as BoundVariableTypecastExpression)?.Operand as BoundVariableExpression) is { } target)
                 {
                     state = Eval(assignment.Value, state);
                     Assign(target.Variable, state, target.Syntax);
@@ -440,6 +441,9 @@ internal sealed class FlowAnalyzer
                 }
 
                 return state;
+
+            case IntrinsicKind.Assert:
+                return Eval(statement.Arguments[0], state);                       // the failing branch never returns
 
             case IntrinsicKind.RunError:
                 foreach (var argument in statement.Arguments)
@@ -597,6 +601,9 @@ internal sealed class FlowAnalyzer
 
             case BoundConversionExpression conversion:
                 return Eval(conversion.Operand, state);
+
+            case BoundVariableTypecastExpression typecast:
+                return Eval(typecast.Operand, state);
 
             case BoundUnaryExpression unary:
                 return Eval(unary.Operand, state);

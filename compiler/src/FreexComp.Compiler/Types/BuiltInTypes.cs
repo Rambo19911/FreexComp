@@ -93,6 +93,7 @@ public sealed class BuiltInTypes
         Intrinsic("ReallocMem", IntrinsicKind.ReallocMem, "ReallocMem(var P: Pointer; Size: NativeInt)");
         Intrinsic("FillChar", IntrinsicKind.FillChar, "FillChar(var X; Count: NativeInt; Value: Ordinal)");
         Intrinsic("Move", IntrinsicKind.Move, "Move(const Source; var Dest; Count: NativeInt)");
+        Intrinsic("Assert", IntrinsicKind.Assert, "Assert(Condition: Boolean[; Message: string])");
         Intrinsic("Assigned", IntrinsicKind.Assigned, "Assigned(P: Pointer): Boolean");
         Intrinsic("Addr", IntrinsicKind.Addr, "Addr(X): Pointer");
         Intrinsic("Ptr", IntrinsicKind.Ptr, "Ptr(Address: NativeUInt): Pointer");

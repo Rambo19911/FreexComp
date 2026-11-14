@@ -240,10 +240,15 @@ internal sealed class LoweringContext
                     : new LOuterRef(parameter.Parameter, parameter.Parameter.Type);
             case BoundConversionExpression { Type: SetTypeSymbol target, Operand.Type: SetTypeSymbol } conversion:
                 return SetRewriter.Convert(this, Lower(conversion.Operand), target);
+            case BoundConversionExpression { IsExplicit: true, Type: PointerTypeSymbol, Operand.Type: { IsOrdinal: true, Size: < 8 } source } conversion:
+                // LANG-290: an ordinal is extended to 64 bits by its own signedness before it becomes a pointer
+                return Convert(Convert(Lower(conversion.Operand), source is IntegerTypeSymbol { IsSigned: true } ? Types.Int64 : Types.UInt64), conversion.Type);
             case BoundConversionExpression conversion:
                 return conversion.IsExplicit
                     ? Convert(Lower(conversion.Operand), conversion.Type)
                     : CheckRewriter.Convert(this, Lower(conversion.Operand), conversion.Type, CheckRewriter.StateOf(conversion));
+            case BoundVariableTypecastExpression typecast:
+                return new LView(Lower(typecast.Operand), typecast.Type);              // LANG-290: the variable's storage as another type
             case BoundUnaryExpression { OperatorKind: BoundUnaryOperatorKind.Identity } unary:
                 return Lower(unary.Operand);
             case BoundUnaryExpression { OperatorKind: BoundUnaryOperatorKind.Negate } unary:

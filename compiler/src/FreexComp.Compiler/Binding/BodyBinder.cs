@@ -16,6 +16,7 @@ internal sealed class BodyBinder
     private readonly Scope _scope;
     private readonly DiagnosticBag _diagnostics;
     private readonly ExpressionBinder _expressions;
+    private readonly Conversions _conversions = new();
     private readonly RoutineSymbol? _routine;
     private int _loopDepth;
 
@@ -81,7 +82,7 @@ internal sealed class BodyBinder
     /// <summary>LANG-350/351: the target must be a variable reference; the value is converted to its type.</summary>
     private BoundAssignmentStatement BindAssignment(AssignmentStatementSyntax assignment)
     {
-        var target = FunctionResult(assignment.Target) ?? _expressions.BindExpression(assignment.Target);
+        var target = FunctionResult(assignment.Target) ?? _expressions.BindVariable(assignment.Target);
         var value = _expressions.BindExpression(assignment.Value, target.Type);           // a set constructor takes the target's type
         if (target.HasErrors)
         {
@@ -101,9 +102,6 @@ internal sealed class BodyBinder
             case BoundDereferenceExpression:
             case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:
                 break;
-            case BoundConversionExpression { IsExplicit: true }:
-                _diagnostics.Report(assignment.Target, "E2900", "variable typecast");     // LANG-290, C-057
-                return new BoundAssignmentStatement(assignment, target, value);
             default:
                 _diagnostics.Report(assignment.Target, "E2053");
                 return new BoundAssignmentStatement(assignment, target, value);
@@ -371,6 +369,7 @@ internal sealed class BodyBinder
             IntrinsicKind.New or IntrinsicKind.Dispose or IntrinsicKind.FreeMem => (1, 1),
             IntrinsicKind.GetMem or IntrinsicKind.ReallocMem => (2, 2),
             IntrinsicKind.FillChar or IntrinsicKind.Move => (3, 3),
+            IntrinsicKind.Assert => (1, 2),
             _ => (0, 0),
         };
         if (count < minArguments)
@@ -417,6 +416,8 @@ internal sealed class BodyBinder
                 return BindMemory(statement, intrinsic, arguments);
             case IntrinsicKind.FillChar or IntrinsicKind.Move:
                 return BindFillMove(statement, intrinsic, arguments);
+            case IntrinsicKind.Assert:
+                return BindAssert(statement, intrinsic, arguments);
             case IntrinsicKind.Exit:
                 return new BoundExitStatement(statement, value: null);
             default:
@@ -425,6 +426,45 @@ internal sealed class BodyBinder
                     : null;
                 return new BoundHaltStatement(statement, code);
         }
+    }
+
+    /// <summary>
+    /// intrinsics.md <c>Assert(Cond[, Msg])</c>: <c>Cond</c> converted to <c>Boolean</c> (E2010), <c>Msg</c> a string or character
+    /// constant, kept as a <c>string</c> constant (string variables wait for the string tasks: E2900). Bound also under
+    /// <c>{$C-}</c>; the lowering drops it there.
+    /// </summary>
+    private BoundStatement BindAssert(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var condition = _expressions.ConvertForAssignment(_expressions.BindExpression(arguments[0].Expression), _types.Boolean, arguments[0].Expression);
+        if (arguments.Count == 1)
+        {
+            return condition.HasErrors ? new BoundErrorStatement(statement) : new BoundIntrinsicCallStatement(statement, intrinsic, [condition]);
+        }
+
+        var syntax = arguments[1].Expression;
+        var message = _expressions.BindExpression(syntax);
+        if (condition.HasErrors || message.HasErrors)
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        switch (message)
+        {
+            case { ConstantValue.Value: string text }:
+                message = new BoundLiteral(syntax, new ConstantValue(text, _types.String));
+                break;
+            case { Type: CharTypeSymbol, ConstantValue.Value: BigInteger code }:
+                message = new BoundLiteral(syntax, new ConstantValue(((char)(int)code).ToString(), _types.String));
+                break;
+            case { Type: StringTypeSymbol or CharTypeSymbol }:
+                _diagnostics.Report(syntax, "E2900", "Assert message that is not a constant");
+                return new BoundErrorStatement(statement);
+            default:
+                _conversions.ReportIncompatible(message.Type, _types.String, syntax, _diagnostics);
+                return new BoundErrorStatement(statement);
+        }
+
+        return new BoundIntrinsicCallStatement(statement, intrinsic, [condition, message]);
     }
 
     // ------------------------------------------------------------------ Write, Writeln (LANG-910…922)
@@ -506,7 +546,7 @@ internal sealed class BodyBinder
     private BoundStatement BindIncludeExclude(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
     {
         var syntax = arguments[0].Expression;
-        var target = _expressions.BindExpression(syntax);
+        var target = _expressions.BindVariable(syntax);
         var element = _expressions.BindExpression(arguments[1].Expression);
         if (target.HasErrors || element.HasErrors || !_expressions.CheckVariableReference(target, syntax))
         {
@@ -532,7 +572,7 @@ internal sealed class BodyBinder
     private BoundStatement BindIncDec(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
     {
         var syntax = arguments[0].Expression;
-        var target = _expressions.BindExpression(syntax);
+        var target = _expressions.BindVariable(syntax);
         var step = arguments.Count == 2 ? _expressions.BindExpression(arguments[1].Expression) : null;
         if (target.HasErrors || step?.HasErrors == true || !_expressions.CheckVariableReference(target, syntax))
         {

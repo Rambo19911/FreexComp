@@ -191,10 +191,9 @@ internal sealed class DeclarationBinder
             {
                 type = Unsupported(typeParameters, "generic type");           // M2.6
             }
-            else if (declaration.TypeKeyword is { } distinct)
+            else if (declaration.TypeKeyword is not null)
             {
-                _diagnostics.Report(distinct, "E2900", "distinct type");     // LANG-205, C-057
-                type = _types.Error;
+                type = BindDistinctType(declaration.Type, identifier, declared);
             }
             else
             {
@@ -228,6 +227,50 @@ internal sealed class DeclarationBinder
 
         _sectionTypeNames = null;
         _forwardPointers = null;
+    }
+
+    /// <summary>
+    /// LANG-205 <c>type T = type U</c>: a new type with the representation of <c>U</c>, assignment-compatible with it. Ordinal
+    /// types become a full-range subrange of <c>U</c>'s host (so char and enumeration rules still match); reals, Booleans and
+    /// pointers a copy. A type constructor after <c>type</c> is already a new type (LANG-206). Distinct copies of structured
+    /// and managed named types are E2900 (C-057 decision).
+    /// </summary>
+    private TypeSymbol BindDistinctType(TypeSyntax syntax, SyntaxToken identifier, ImmutableArray<Symbol>.Builder declared)
+    {
+        var source = BindType(syntax, identifier, declared);
+        if (syntax is not NamedTypeSyntax || source.TypeKind == TypeKind.Error)
+        {
+            return source;
+        }
+
+        var name = NameOf(identifier);
+        ImmutableArray<Text.Location> locations = [DiagnosticBag.LocationOf(identifier)];
+        switch (source)
+        {
+            case IntegerTypeSymbol integer:
+                return new IntegerTypeSymbol(name, integer.BaseType as IntegerTypeSymbol ?? integer, integer.Min, integer.Max, _container, locations);
+            case CharTypeSymbol c:
+                return new CharTypeSymbol(name, (CharTypeSymbol)Ordinals.Host(c), c.MinValue, c.MaxValue, _container, locations);
+            case EnumTypeSymbol e:
+                return new EnumTypeSymbol(name, (EnumTypeSymbol)Ordinals.Host(e), e.Low, e.High, _container, locations);
+            case BooleanTypeSymbol boolean:
+                return new BooleanTypeSymbol(name, (int)boolean.Size, boolean.IsCStyle);
+            case RealTypeSymbol { RealKind: not RealKind.Currency } real:
+                return new RealTypeSymbol(name, real.RealKind);
+            case PointerTypeSymbol { PointedType: var pointed } pointer when !ReferenceEquals(pointer, _types.Nil):
+                return new PointerTypeSymbol(name, pointed, pointer.AllowsPointerMath);
+            default:
+                return Unsupported(syntax, "distinct type of " + KindName(source));
+        }
+
+        static string KindName(TypeSymbol type) => type switch
+        {
+            RecordTypeSymbol => "a record",
+            ArrayTypeSymbol => "an array",
+            SetTypeSymbol => "a set",
+            StringTypeSymbol => "a string type",
+            _ => $"'{type.Name}'",
+        };
     }
 
     private HashSet<string>? _sectionTypeNames;

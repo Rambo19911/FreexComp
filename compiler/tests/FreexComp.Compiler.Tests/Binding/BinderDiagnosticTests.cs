@@ -166,6 +166,7 @@ public sealed class BinderDiagnosticTests
     [InlineData("E2035")]
     [InlineData("E2036")]
     [InlineData("E2037")]
+    [InlineData("E2041")]
     [InlineData("E2053")]
     [InlineData("E2060")]
     [InlineData("E2061")]

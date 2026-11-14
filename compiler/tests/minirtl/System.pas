@@ -23,6 +23,7 @@ procedure _RunError(Code: Integer); noreturn;
 procedure _RangeError; noreturn;
 procedure _OverflowError; noreturn;
 procedure _DivZeroError; noreturn;
+procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;
 procedure _IOCheck;
 
 function _GetMem(Size: NativeInt): Pointer;
@@ -90,11 +91,6 @@ function WideCharToMultiByte(CodePage, Flags: Cardinal; Src: Pointer; SrcLen: In
   DefaultChar, UsedDefault: NativeInt): Integer; external kernel32;
 procedure ExitProcess(Code: Integer); external kernel32;
 
-{ typed pointers of different types meet through Pointer (LANG-267) }
-function Untyped(P: Pointer): Pointer;
-begin
-  Result := P;
-end;
 
 { the OS handle in the first 8 bytes of a Text variable }
 function HandleOf(var T: Text): NativeInt;
@@ -194,6 +190,19 @@ begin
   _RunError(200);
 end;
 
+{ ABI-103 without AssertErrorProc (SysUtils is M2.4): '<Msg> (<FileName>, line <Line>)' on ErrOutput, then error 227 }
+procedure _Assert(Msg, FileName: Pointer; Line: Integer);
+begin
+  if Msg = nil then
+    Write(ErrOutput, 'Assertion failed')
+  else
+    _WriteUStr(ErrOutput, Msg, 0);
+  Write(ErrOutput, ' (');
+  _WriteUStr(ErrOutput, FileName, 0);
+  Writeln(ErrOutput, ', line ', Line, ')');
+  _RunError(227);
+end;
+
 { InOutRes arrives with task C-166; no helper records an I/O error yet }
 procedure _IOCheck;
 begin
@@ -274,7 +283,7 @@ var
   Unit16: PChar;
 begin
   WritePadding(T, Width, 1);
-  Unit16 := Untyped(Scratch);
+  Unit16 := PChar(Scratch);
   Unit16^ := C;
   Size := WideCharToMultiByte(CP_UTF8, 0, Scratch, 1, Scratch + 8, 8, 0, 0);
   WriteBytes(T, Scratch + 8, Size);
@@ -285,7 +294,7 @@ var
   Byte8: PAnsiChar;
 begin
   WritePadding(T, Width, 1);
-  Byte8 := Untyped(Scratch);
+  Byte8 := PAnsiChar(Scratch);
   Byte8^ := C;
   WriteBytes(T, Scratch, 1);
 end;

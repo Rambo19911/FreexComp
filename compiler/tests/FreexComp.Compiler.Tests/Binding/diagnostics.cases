@@ -123,6 +123,8 @@ var i: Integer; begin i := Ord(1.5) end.
 procedure P; begin end; var i: Integer; begin i := P end.
 === E2040 1,28
 var b: Boolean; begin b := Boolean(1.5) end.
+=== E2041 1,20
+var b: Byte; begin Integer(b) := 1 end.
 === E2050 1,27
 var i: Integer; const C = i; begin end.
 === E2051 1,31
