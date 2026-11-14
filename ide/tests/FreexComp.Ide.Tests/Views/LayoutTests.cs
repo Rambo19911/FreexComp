@@ -65,9 +65,12 @@ public sealed class LayoutTests
     [Trait("Req", "UI-TW-005")]
     public async Task EmptyDockCollapses()
     {
-        // The shell of Phase 1 has no registered tool window yet: every dock is collapsed.
+        // Phase 1 registers only the Project Manager (I-068): with it hidden, every dock is empty and collapsed.
         await using (var h = await HeadlessHarness.StartAsync())
         {
+            Assert.True(h.Find<Control>("Dock.Left").IsVisible);
+            Assert.True(h.Services.ToolWindows.Hide("ProjectManager"));
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
             Assert.False(h.Find<Control>("Dock.Left").IsVisible);
             Assert.False(h.Find<Control>("Dock.Right").IsVisible);
             Assert.False(h.Find<Control>("Dock.Bottom").IsVisible);

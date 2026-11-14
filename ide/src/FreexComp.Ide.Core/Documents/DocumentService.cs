@@ -66,6 +66,12 @@ public sealed class DocumentService : IDocumentService
     /// <summary>UI-DLG-053: opens a <c>.pproj</c> picked in <c>file.open</c> as the project (set by the service graph).</summary>
     public Func<string, Task>? ProjectOpener { get; set; }
 
+    /// <summary>
+    /// <c>file.newUnit</c> while a project is open (IDE-PM-040): returns false when there is no project, so an untitled
+    /// unit is made instead (set by the service graph).
+    /// </summary>
+    public Func<Task<bool>>? ProjectNewUnit { get; set; }
+
     public event EventHandler<DocumentEventArgs>? DocumentOpened;
 
     public event EventHandler<DocumentClosingEventArgs>? DocumentClosing;
@@ -96,7 +102,12 @@ public sealed class DocumentService : IDocumentService
             arg => FindById(arg) is not null,
             arg => Activate(FindById(arg)!)));
         // Without a project (IDE-P1-033); with one, the project service routes it to project.addNewUnit.
-        commands.RegisterHandler("file.newUnit", new Handler(_ => true, _ => NewUntitledUnit()));
+        // I-069: with a project open the project service adds a project unit instead (IDE-PM-040).
+        commands.RegisterHandler("file.newUnit", new AsyncHandler(_ => true, async _ =>
+        {
+            if (ProjectNewUnit is null || !await ProjectNewUnit())
+                NewUntitledUnit();
+        }));
         commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeAll", new AsyncHandler(_ => _documents.Count > 0, _ => CloseAllAsync()));
         commands.RegisterHandler("file.open", new AsyncHandler(_ => true, _ => OpenPickedFilesAsync()));

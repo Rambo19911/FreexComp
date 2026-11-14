@@ -13,6 +13,9 @@ namespace FreexComp.Ide.Views;
 /// </summary>
 public sealed class InfoBarView : Border
 {
+    /// <summary>The AutomationId stem: <c>InfoBar</c> in documents, <c>Tool.&lt;Name&gt;.InfoBar</c> in a tool window (tool-windows.md §17.3).</summary>
+    public string AutomationIdBase { get; init; } = "InfoBar";
+
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
@@ -21,7 +24,8 @@ public sealed class InfoBarView : Border
 
     private Control Build(InfoBarViewModel model)
     {
-        AutomationProperties.SetAutomationId(this, AutomationIds.InfoBar(model.Kind));
+        var id = AutomationIdBase + "." + model.Kind;
+        AutomationProperties.SetAutomationId(this, id);
         this.Bind(BackgroundProperty, this.GetResourceObservable(model.Severity switch
         {
             InfoBarSeverity.Warning => "FxcStatusWarningBgBrush",
@@ -37,7 +41,7 @@ public sealed class InfoBarView : Border
         foreach (var action in model.Actions)
         {
             var button = new Button { Content = action.Label };
-            AutomationProperties.SetAutomationId(button, AutomationIds.InfoBarAction(model.Kind, action.Name));
+            AutomationProperties.SetAutomationId(button, id + ".Action." + action.Name);
             AutomationProperties.SetName(button, action.Label);
             button.Click += async (_, _) => await action.ExecuteAsync();
             buttons.Children.Add(button);
@@ -46,7 +50,7 @@ public sealed class InfoBarView : Border
         if (model.CanDismiss)
         {
             var dismiss = new Button { Content = "×" };
-            AutomationProperties.SetAutomationId(dismiss, AutomationIds.InfoBar(model.Kind) + ".Dismiss");
+            AutomationProperties.SetAutomationId(dismiss, id + ".Dismiss");
             AutomationProperties.SetName(dismiss, Strings.InfoBar_Dismiss);
             ToolTip.SetTip(dismiss, Strings.InfoBar_Dismiss);
             dismiss.Click += (_, _) => model.Dismiss();
@@ -56,7 +60,7 @@ public sealed class InfoBarView : Border
         DockPanel.SetDock(buttons, Avalonia.Controls.Dock.Right);
         row.Children.Add(buttons);
         var text = new TextBlock { Text = model.Text, Classes = { "body" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
-        AutomationProperties.SetAutomationId(text, AutomationIds.InfoBar(model.Kind) + ".Text");
+        AutomationProperties.SetAutomationId(text, id + ".Text");
         text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable("FxcTextPrimaryBrush"));
         row.Children.Add(text);
         return row;

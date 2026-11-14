@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Dialogs;
@@ -323,5 +324,131 @@ public sealed class ProjectServiceTests
 
         Assert.True(await Projects.CloseAsync());
         Assert.Equal(@"C:\other\Loose.pas – FreexComp", window.Title);
+    }
+
+    private ProjectManagerViewModel ProjectManager => (ProjectManagerViewModel)_services.ToolWindows.Get("ProjectManager")!;
+
+    private string Saved() => Encoding.UTF8.GetString(_fs.ReadAllBytes(ProjectPath));
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-040")]
+    [Trait("Req", "IDE-PM-041")]
+    [Trait("Req", "IDE-PM-042")]
+    [Trait("Req", "IDE-PM-004")]
+    public async Task AddNewUnitNamesAndSkeleton()
+    {
+        WriteHello();
+        File(Dir + @"\Unit3.pas", "unit Unit3;\n"); // on disk in the target folder, not in the project
+        Assert.False(_services.Commands.CanExecute("project.addNewUnit"));
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        Assert.True(_services.Commands.CanExecute("project.addNewUnit"));
+        var mainText = _fs.ReadAllBytes(Dir + @"\Hello.pas");
+
+        // Unit1 and Unit2 are project units (sub/Unit2.pas counts), Unit3.pas exists in the main source's folder.
+        await _services.Commands.ExecuteAsync("project.addNewUnit");
+
+        var path = Dir + @"\Unit4.pas";
+        Assert.Equal("unit Unit4;\r\n\r\ninterface\r\n\r\nimplementation\r\n\r\nend.\r\n", Encoding.UTF8.GetString(_fs.ReadAllBytes(path)));
+        Assert.Equal(["Hello.pas", "Unit1.pas", "sub/Unit2.pas", "Unit4.pas"], Projects.Project!.Files.Select(f => f.Path));
+        Assert.Contains("\"path\": \"Unit4.pas\"", Saved(), StringComparison.Ordinal); // saved at once (IDE-PM-004)
+        var document = Assert.IsType<TextDocumentViewModel>(_services.Documents.ActiveDocument);
+        Assert.Equal(path, document.FilePath);
+        Assert.False(document.IsModified);
+        Assert.Equal(new TextPosition(6, 1), document.ViewState.Caret); // the empty line after implementation
+        Assert.Equal(mainText, _fs.ReadAllBytes(Dir + @"\Hello.pas")); // uses clause untouched (IDE-PM-042)
+
+        // A selected folder row is the target folder; settings decide line ending and encoding.
+        _services.Settings.Set(SettingsCatalog.FilesDefaultLineEnding, "lf");
+        ProjectManager.Select(ProjectManager.Find("sub/")!);
+        await _services.Commands.ExecuteAsync("project.addNewUnit");
+        Assert.Equal("unit Unit3;\n\ninterface\n\nimplementation\n\nend.\n", Encoding.UTF8.GetString(_fs.ReadAllBytes(Dir + @"\sub\Unit3.pas")));
+        Assert.Equal("sub/Unit3.pas", Projects.Project!.Files[^1].Path);
+        Assert.Equal(["sub/Unit3.pas"], ProjectManager.Selection.Select(n => n.Key)); // the affected row is selected (IDE-PM-033)
+
+        // file.newUnit adds a project unit while a project is open (a file row selected: the main source's folder).
+        ProjectManager.Select(ProjectManager.Find("Unit1.pas")!);
+        await _services.Commands.ExecuteAsync("file.newUnit");
+        Assert.Equal("Unit5.pas", Projects.Project!.Files[^1].Path);
+        Assert.Equal(Dir + @"\Unit5.pas", _services.Documents.ActiveDocument!.FilePath);
+
+        // Without a project file.newUnit makes an untitled unit again.
+        Assert.True(await Projects.CloseAsync());
+        await _services.Commands.ExecuteAsync("file.newUnit");
+        Assert.Null(_services.Documents.ActiveDocument!.FilePath);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-050")]
+    [Trait("Req", "IDE-PM-051")]
+    [Trait("Req", "IDE-PM-052")]
+    [Trait("Req", "IDE-PM-030")]
+    public async Task AddExistingDetectsFormCompanion()
+    {
+        WriteHello();
+        var main = File(Dir + @"\forms\Main.pas", "unit Main;\n\ninterface\n\n{$FORM Main.form}\n\nimplementation\n\nend.\n");
+        var mainForm = File(Dir + @"\forms\Main.form", "object Main: TForm\nend\n");
+        var other = File(Dir + @"\Other.pas", "unit Other;\n// {$FORM Other.form} is only a comment\ninterface\nimplementation\nend.\n");
+        File(Dir + @"\Other.form", "object Other: TForm\nend\n");
+        var near = File(@"C:\p\Shared\Near.pas", "unit Near;\ninterface\nimplementation\nend.\n");
+        var far = File(@"D:\libs\Far.pas", "unit Far;\ninterface\nimplementation\nend.\n");
+        var notes = File(Dir + @"\docs\readme.md", "# readme\n");
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        var opened = _services.Documents.Documents.Count;
+
+        // A .form file is refused with a status message; a file already in the project is skipped with one.
+        Pickers.NextOpen(mainForm);
+        await _services.Commands.ExecuteAsync("project.addExistingFile");
+        Assert.Equal(Strings.Status_AddFormViaUnit, _services.Status.Message);
+        Pickers.NextOpen(Dir + @"\UNIT1.pas");
+        await _services.Commands.ExecuteAsync("project.addExistingFile");
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_FileAlreadyInProject, "UNIT1.pas"), _services.Status.Message);
+        Assert.Equal(["Hello.pas", "Unit1.pas", "sub/Unit2.pas"], Projects.Project!.Files.Select(f => f.Path));
+
+        Pickers.NextOpen(main, other, near, far, notes);
+        await _services.Commands.ExecuteAsync("project.addExistingFile");
+
+        Assert.Equal(
+            [
+                new ProjectFileItem("Hello.pas", null, "unit"),
+                new ProjectFileItem("Unit1.pas", null, "unit"),
+                new ProjectFileItem("sub/Unit2.pas", null, "unit"),
+                new ProjectFileItem("forms/Main.pas", "forms/Main.form", "unit"),
+                new ProjectFileItem("Other.pas", null, "unit"),
+                new ProjectFileItem("../Shared/Near.pas", null, "unit"),
+                new ProjectFileItem("D:/libs/Far.pas", null, "unit"),
+                new ProjectFileItem("docs/readme.md", null, "other"),
+            ],
+            Projects.Project!.Files);
+        var saved = Saved();
+        Assert.Contains("\"form\": \"forms/Main.form\"", saved, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"kind\"", saved, StringComparison.Ordinal); // derived from the extension, not written
+        Assert.True(Projects.IsMember(mainForm));
+        Assert.Equal(opened, _services.Documents.Documents.Count); // added files are not opened
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-031")]
+    public async Task DuplicateUnitNameIsRefused()
+    {
+        WriteHello();
+        var duplicate = File(@"C:\other\unit1.pas", "unit unit1;\ninterface\nimplementation\nend.\n");
+        var fresh = File(@"C:\other\Fresh.pas", "unit Fresh;\ninterface\nimplementation\nend.\n");
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        var before = Saved();
+        Dialogs.Answer("Msg.Project.DuplicateUnitName", "OK");
+
+        Pickers.NextOpen(duplicate);
+        await _services.Commands.ExecuteAsync("project.addExistingFile");
+
+        var message = Assert.Single(Dialogs.Requests, r => r.MessageId == "Msg.Project.DuplicateUnitName");
+        Assert.Equal(["unit1"], message.Args);
+        Assert.Equal(before, Saved());
+        Assert.Equal(3, Projects.Project!.Files.Count);
+
+        // The other chosen files are still added.
+        Pickers.NextOpen(duplicate, fresh);
+        await _services.Commands.ExecuteAsync("project.addExistingFile");
+        Assert.Equal("../../other/Fresh.pas", Projects.Project!.Files[^1].Path);
+        Assert.Equal(4, Projects.Project!.Files.Count);
     }
 }

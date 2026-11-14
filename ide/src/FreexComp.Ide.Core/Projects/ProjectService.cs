@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using FreexComp.Build;
 using FreexComp.Compiler;
@@ -22,6 +23,7 @@ namespace FreexComp.Ide.Core.Projects;
 public sealed class ProjectService : IProjectService
 {
     private const string LogCategory = "project";
+    private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
 
     private readonly IdeFileSystem _fileSystem;
     private readonly IDocumentService _documents;
@@ -66,6 +68,16 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("file.openProject", new Handler(_ => true, _ => PickAndOpenAsync()));
         commands.RegisterHandler("file.closeProject", new Handler(_ => Project is not null, _ => CloseAsync()));
         commands.RegisterHandler("project.viewSource", new Handler(_ => Project is not null, _ => ViewSourceAsync()));
+        commands.RegisterHandler("project.addNewUnit", new Handler(_ => Project is not null, _ => AddNewUnitAsync()));
+        commands.RegisterHandler("project.addExistingFile", new Handler(_ => Project is not null, _ => PickAndAddExistingAsync()));
+    }
+
+    /// <summary><c>project.addExistingFile</c> (IDE-PM-050): the multi-select picker, then <see cref="AddExistingFilesAsync"/>.</summary>
+    private async Task PickAndAddExistingAsync()
+    {
+        var picked = await _prompts.AddExistingAsync();
+        if (picked.Count > 0)
+            await AddExistingFilesAsync(picked);
     }
 
     public async Task<bool> OpenAsync(string path)
@@ -128,6 +140,231 @@ public sealed class ProjectService : IProjectService
     }
 
     public bool IsMember(string? path) => path is not null && _members.Contains(Path.GetFullPath(path));
+
+    public string? ResolvePath(string projectPath) => _project is null ? null : Resolve(projectPath);
+
+    /// <summary>The folder of the selected Project Manager row when it is a folder row (IDE-PM-040; set by the service graph).</summary>
+    public Func<string?>? SelectedFolder { get; set; }
+
+    public event EventHandler<IReadOnlyList<string>>? FilesAdded;
+
+    public async Task<bool> AddNewUnitAsync()
+    {
+        if (_project is null)
+            return false;
+
+        // IDE-PM-040: the selected folder inside the project directory, else the main source's folder.
+        var folder = SelectedFolder?.Invoke() is { } selected && IsInside(selected, _project.Directory)
+            ? Path.GetFullPath(selected)
+            : Path.GetDirectoryName(Resolve(_project.MainSource))!;
+        var units = UnitNames(_project);
+        var n = 1;
+        while (units.Contains($"Unit{n}") || _fileSystem.FileExists(Path.Combine(folder, $"Unit{n}.pas")))
+            n++;
+        var name = $"Unit{n}";
+        var path = Path.Combine(folder, name + ".pas");
+        try
+        {
+            AtomicFileWriter.Write(_fileSystem, path, SourceBytes($"unit {name};\n\ninterface\n\nimplementation\n\nend.\n"));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveFailed", [path, e.Message]));
+            return false;
+        }
+
+        var projectPath = ToProjectPath(path);
+        if (!await SaveChangedProjectAsync(_project with { Files = FilesForMutation(_project).Add(new ProjectFile(projectPath, null, null)) }))
+        {
+            DeleteQuietly(path);
+            return false;
+        }
+
+        FilesAdded?.Invoke(this, [projectPath]);
+        var opened = await _documents.OpenAsync(path);
+        if (opened.Value is TextDocumentViewModel document)
+            document.ViewState.Caret = new TextPosition(6, 1); // IDE-PM-041: the empty line after implementation
+        else if (!opened.Success)
+            await _dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
+        return true;
+    }
+
+    public async Task<int> AddExistingFilesAsync(IReadOnlyList<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        if (_project is null)
+            return 0;
+        var units = UnitNames(_project);
+        var files = FilesForMutation(_project).ToBuilder();
+        var added = new List<string>();
+        var addedFull = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in paths.Select(Path.GetFullPath))
+        {
+            var fileName = Path.GetFileName(path);
+            var extension = Path.GetExtension(path);
+            if (extension.Equals(".form", StringComparison.OrdinalIgnoreCase))
+            {
+                _status.ShowMessage(Strings.Status_AddFormViaUnit, StatusDuration); // IDE-PM-051
+                continue;
+            }
+
+            if (_members.Contains(path) || addedFull.Contains(path))
+            {
+                _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_FileAlreadyInProject, fileName), StatusDuration);
+                continue;
+            }
+
+            var isUnit = extension.Equals(".pas", StringComparison.OrdinalIgnoreCase);
+            var unitName = Path.GetFileNameWithoutExtension(path);
+            if (isUnit && !units.Add(unitName))
+            {
+                await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.DuplicateUnitName", [unitName])); // IDE-PM-031
+                continue;
+            }
+
+            var form = isUnit ? FormCompanion(path) : null;
+            var projectPath = ToProjectPath(path);
+            files.Add(new ProjectFile(projectPath, form is null ? null : ToProjectPath(form), null));
+            added.Add(projectPath);
+            addedFull.Add(path);
+        }
+
+        if (added.Count == 0 || !await SaveChangedProjectAsync(_project with { Files = files.ToImmutable() }))
+            return 0;
+        FilesAdded?.Invoke(this, added);
+        return added.Count;
+    }
+
+    /// <summary>
+    /// IDE-PM-051: the sibling <c>&lt;base&gt;.form</c> when it exists and the unit's text has a <c>{$FORM &lt;base&gt;.form}</c>
+    /// directive (directive trivia of the compiler lexer, so a directive inside a comment does not count).
+    /// </summary>
+    private string? FormCompanion(string unitPath)
+    {
+        var form = Path.ChangeExtension(unitPath, ".form");
+        if (!_fileSystem.FileExists(form))
+            return null;
+        string text;
+        try
+        {
+            text = EncodingDetector.Detect(_fileSystem.ReadAllBytes(unitPath)).Text;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        var expected = Path.GetFileName(form);
+        foreach (var token in Lexer.Tokenize(SourceText.From(unitPath, text)))
+        {
+            foreach (var trivia in token.LeadingTrivia.Concat(token.TrailingTrivia))
+            {
+                if (trivia.Kind == SyntaxKind.DirectiveTrivia && trivia.Directive is { Name: "FORM" } directive
+                    && string.Equals(directive.Argument.Trim().Trim('\''), expected, StringComparison.OrdinalIgnoreCase))
+                    return form;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>IDE-PM-031: unit names (file base names of unit entries and the main source), case-insensitive.</summary>
+    private static HashSet<string> UnitNames(Project project) =>
+        FilesForMutation(project).Where(f => !string.IsNullOrEmpty(f.Path) && f.EffectiveKind == "unit")
+            .Select(f => Path.GetFileNameWithoutExtension(f.Path.Replace('/', Path.DirectorySeparatorChar)))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The <c>files</c> list to mutate; an omitted list stands for the main source alone (CMP-810).</summary>
+    private static ImmutableArray<ProjectFile> FilesForMutation(Project project) =>
+        project.Files.IsEmpty ? [new ProjectFile(project.MainSource, null, null)] : project.Files;
+
+    /// <summary>
+    /// IDE-PM-030: relative to the project directory with '/' when on the same drive and at most three <c>..</c>
+    /// segments are needed; otherwise absolute with '/'.
+    /// </summary>
+    private string ToProjectPath(string fullPath)
+    {
+        var directory = _project!.Directory;
+        if (string.Equals(Path.GetPathRoot(fullPath), Path.GetPathRoot(directory), StringComparison.OrdinalIgnoreCase))
+        {
+            var relative = Path.GetRelativePath(directory, fullPath).Replace('\\', '/');
+            if (!Path.IsPathRooted(relative) && relative.Split('/').Count(s => s == "..") <= 3)
+                return relative;
+        }
+
+        return fullPath.Replace('\\', '/');
+    }
+
+    private static bool IsInside(string path, string directory)
+    {
+        var relative = Path.GetRelativePath(directory, Path.GetFullPath(path));
+        return !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    /// <summary>A new source file's bytes: LF text converted to <c>files.defaultLineEnding</c>, encoded per <c>files.defaultEncoding</c>.</summary>
+    private byte[] SourceBytes(string lfText)
+    {
+        if (_settings.Get(SettingsCatalog.FilesDefaultLineEnding) != "lf")
+            lfText = lfText.Replace("\n", "\r\n", StringComparison.Ordinal);
+        var encoding = FileEncodings.FromId(_settings.Get(SettingsCatalog.FilesDefaultEncoding)) ?? FileEncoding.Utf8;
+        return FileEncodings.Encode(lfText, encoding);
+    }
+
+    private void DeleteQuietly(string path)
+    {
+        try
+        {
+            _fileSystem.DeleteFile(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _log.Warning(LogCategory, $"{path}: not removed after a failed project save", e);
+        }
+    }
+
+    public async Task<bool> RemoveFromProjectAsync(IReadOnlyList<string> projectPaths)
+    {
+        ArgumentNullException.ThrowIfNull(projectPaths);
+        if (_project is null)
+            return false;
+        var remove = projectPaths.Select(Resolve).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        remove.Remove(Resolve(_project.MainSource)); // IDE-PM-060
+        var changed = false;
+        var files = ImmutableArray.CreateBuilder<ProjectFile>();
+        foreach (var file in _project.Files)
+        {
+            if (!string.IsNullOrEmpty(file.Path) && remove.Contains(Resolve(file.Path)))
+            {
+                changed = true;
+                continue;
+            }
+
+            if (file.Form is { } form && remove.Contains(Resolve(form)))
+            {
+                files.Add(file with { Form = null });
+                changed = true;
+                continue;
+            }
+
+            files.Add(file);
+        }
+
+        return changed && await SaveChangedProjectAsync(_project with { Files = files.ToImmutable() });
+    }
+
+    /// <summary>IDE-PM-004: a file-list mutation is saved immediately; on failure the in-memory project stays as it was.</summary>
+    private async Task<bool> SaveChangedProjectAsync(Project project)
+    {
+        var saved = ProjectFileAccess.Save(project, _fileSystem);
+        if (!saved.Success)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest(saved.MessageId!, saved.Args));
+            return false;
+        }
+
+        SetProject(project);
+        return true;
+    }
 
     public async Task<bool> ViewSourceAsync() =>
         _project is not null && await OpenDocumentAsync(Resolve(_project.MainSource));
@@ -194,10 +431,7 @@ public sealed class ProjectService : IProjectService
                 }
                 else
                 {
-                    if (_settings.Get(SettingsCatalog.FilesDefaultLineEnding) != "lf")
-                        text = text.Replace("\n", "\r\n", StringComparison.Ordinal);
-                    var encoding = FileEncodings.FromId(_settings.Get(SettingsCatalog.FilesDefaultEncoding)) ?? FileEncoding.Utf8;
-                    AtomicFileWriter.Write(_fileSystem, path, FileEncodings.Encode(text, encoding));
+                    AtomicFileWriter.Write(_fileSystem, path, SourceBytes(text));
                 }
             }
 

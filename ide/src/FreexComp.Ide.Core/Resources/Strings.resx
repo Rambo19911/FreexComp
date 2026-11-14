@@ -2865,4 +2865,40 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Browse</value>
     <comment>UI-DLG-011: automation name of the … button</comment>
   </data>
+  <data name="ProjectManager_ModifiedSuffix" xml:space="preserve">
+    <value>, modified</value>
+    <comment>UI-TW-105: automation name suffix of a modified row</comment>
+  </data>
+  <data name="ProjectManager_External" xml:space="preserve">
+    <value>External</value>
+    <comment>UI-TW-101: virtual folder of files outside the project directory</comment>
+  </data>
+  <data name="ProjectManager_NoProject_Secondary" xml:space="preserve">
+    <value>Create a new project or open an existing one.</value>
+    <comment>Msg.Project.NoProject secondary line (states-and-messages.md)</comment>
+  </data>
+  <data name="Button_Show" xml:space="preserve">
+    <value>Show</value>
+    <comment>Msg.Project.MissingFiles* info bar</comment>
+  </data>
+  <data name="Button_RemoveFromProject" xml:space="preserve">
+    <value>Remove from Project</value>
+    <comment>Msg.Project.MissingFiles* info bar</comment>
+  </data>
+  <data name="Menu_projectManager_open" xml:space="preserve">
+    <value>&amp;Open</value>
+    <comment>tool-windows.md §2 Project Manager context menu (title: commands.md)</comment>
+  </data>
+  <data name="Menu_projectManager_collapseAll" xml:space="preserve">
+    <value>Collapse &amp;All</value>
+    <comment>tool-windows.md §2 Project Manager context menu</comment>
+  </data>
+  <data name="Menu_project_renameFile" xml:space="preserve">
+    <value>Re&amp;name File…</value>
+    <comment>tool-windows.md §2 Project Manager context menu</comment>
+  </data>
+  <data name="Menu_project_deleteFile" xml:space="preserve">
+    <value>&amp;Delete File from Disk…</value>
+    <comment>tool-windows.md §2 Project Manager context menu</comment>
+  </data>
 </root>

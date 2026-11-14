@@ -20,7 +20,9 @@ public static class ServiceGraph
     /// <summary>Commands of later phases get <c>CanExecute = false</c> stubs (UI-CMD-004).</summary>
     public const int ImplementedPhase = 1;
 
-    public static IdeServices Build(StartupOptions options, IPlatformServices platform)
+    /// <param name="toolWindows">Tool windows registered after the production ones (tests, IDE-ARCH-100); one named like a
+    /// production tool window is registered instead of it.</param>
+    public static IdeServices Build(StartupOptions options, IPlatformServices platform, IReadOnlyList<ToolWindowDefinition>? toolWindows = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(platform);
@@ -42,7 +44,7 @@ public static class ServiceGraph
 
         var layout = new LayoutService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log, status, commands);
         layout.Load(); // step 7: UI state (small file, synchronous)
-        var toolWindows = new ToolWindowService(commands, focus, platform.Clock, layout, ImplementedPhase); // tool windows register here (IDE-ARCH-100)
+        var toolWindowService = new ToolWindowService(commands, focus, platform.Clock, layout, ImplementedPhase); // tool windows register here (IDE-ARCH-100)
         theme.RegisterCommands(commands);
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
@@ -56,7 +58,31 @@ public static class ServiceGraph
             ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock);
         projects.RegisterCommands(commands);
         documents.ProjectOpener = path => projects.OpenAsync(path);
+        var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
+            platform.Log, ImplementedPhase);
+        projectManager.RegisterCommands();
+        projects.SelectedFolder = () => projectManager.SelectedFolderPath;
+        documents.ProjectNewUnit = async () =>
+        {
+            if (projects.Project is null)
+                return false;
+            await projects.AddNewUnitAsync(); // a failure is reported there; no untitled unit instead
+            return true;
+        };
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
+
+        // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.
+        var extras = toolWindows ?? [];
+        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition])
+        {
+            if (!extras.Any(e => e.Name == definition.Name))
+                toolWindowService.Register(definition);
+        }
+
+        foreach (var definition in extras)
+        {
+            toolWindowService.Register(definition);
+        }
 
         return new IdeServices
         {
@@ -80,7 +106,7 @@ public static class ServiceGraph
             Commands = commands,
             FocusTracker = focus,
             Layout = layout,
-            ToolWindows = toolWindows,
+            ToolWindows = toolWindowService,
             Languages = languages,
             FilePrompts = prompts,
             Documents = documents,

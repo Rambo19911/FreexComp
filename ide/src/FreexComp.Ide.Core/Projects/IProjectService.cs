@@ -33,6 +33,36 @@ public interface IProjectService
     /// </summary>
     bool IsMember(string? path);
 
+    /// <summary>
+    /// Removes the entries with the given project paths (as stored, '/') from <c>files</c> without asking; a path equal
+    /// to an entry's <c>form</c> drops only that form reference. The main source is never removed (IDE-PM-060). The
+    /// project is saved at once (IDE-PM-004); a failed save is reported and nothing changes. True when something was
+    /// removed and saved. Files stay on disk; open documents stay open.
+    /// </summary>
+    Task<bool> RemoveFromProjectAsync(IReadOnlyList<string> projectPaths);
+
+    /// <summary>
+    /// <c>project.addNewUnit</c> / <c>file.newUnit</c> with a project (IDE-PM-040…042): creates <c>Unit&lt;N&gt;.pas</c> with
+    /// the skeleton in the selected Project Manager folder (else the main source's folder), appends it to <c>files</c>,
+    /// saves the project and opens the unit with the caret on the empty line after <c>implementation</c>. False without
+    /// a project or on a reported failure.
+    /// </summary>
+    Task<bool> AddNewUnitAsync();
+
+    /// <summary>
+    /// IDE-PM-050/051: adds the files by reference — <c>.form</c> files are refused (<c>Status_AddFormViaUnit</c>), files
+    /// already in the project skipped (<c>Msg.Project.FileAlreadyInProject</c>), duplicate unit names refused
+    /// (<c>Msg.Project.DuplicateUnitName</c>); a unit with its <c>{$FORM}</c> companion gets <c>form</c>. Saved at once, not
+    /// opened. Returns the number added.
+    /// </summary>
+    Task<int> AddExistingFilesAsync(IReadOnlyList<string> paths);
+
+    /// <summary>Files were added (project paths as stored); the Project Manager selects their rows (IDE-PM-033).</summary>
+    event EventHandler<IReadOnlyList<string>>? FilesAdded;
+
+    /// <summary>The absolute path of a project path ('/', relative to the project directory or absolute); null without a project.</summary>
+    string? ResolvePath(string projectPath);
+
     /// <summary><c>project.viewSource</c> (IDE-PM-015): opens and activates the main source. False on failure (reported).</summary>
     Task<bool> ViewSourceAsync();
 

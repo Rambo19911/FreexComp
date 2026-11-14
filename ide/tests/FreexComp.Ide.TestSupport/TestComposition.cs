@@ -36,7 +36,10 @@ public sealed class TestCompositionOptions
     /// <summary>Command-line arguments other than <c>--user-dir</c>.</summary>
     public List<string> Arguments { get; } = [];
 
-    /// <summary>Tool windows registered after the production ones, in order (IDE-ARCH-100).</summary>
+    /// <summary>
+    /// Tool windows registered after the production ones, in order (IDE-ARCH-100); one with the name of a production
+    /// tool window (a sample <c>ProjectManager</c>) is registered instead of it.
+    /// </summary>
     public List<ToolWindowDefinition> ToolWindows { get; } = [];
 }
 
@@ -66,12 +69,6 @@ public static class TestComposition
             o.ThemeHost,
             o.TextBuffers);
 
-        var services = ServiceGraph.Build(options, platform);
-        foreach (var definition in o.ToolWindows)
-        {
-            services.ToolWindows.Register(definition);
-        }
-
-        return services;
+        return ServiceGraph.Build(options, platform, o.ToolWindows);
     }
 }
