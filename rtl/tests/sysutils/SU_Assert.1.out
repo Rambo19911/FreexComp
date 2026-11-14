@@ -1,0 +1,9 @@
+# caught assertions
+ok message, file and line
+ok no message: Assertion failed
+ok empty message: Assertion failed
+ok message from a variable
+ok a passing Assert does nothing
+ok AssertErrorProc installed
+ok ExceptProc installed
+# passed 7 failed 0

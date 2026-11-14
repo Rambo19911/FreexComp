@@ -1,0 +1,21 @@
+# Now, Date, Time
+ok Now between two GetLocalTime readings
+ok Date has no time part
+ok Date = today
+ok Time is a time of day
+ok Time close to the time of Now
+ok CurrentYear = year of Now
+ok CurrentYear plausible
+# GetTickCount64, Sleep
+ok tick count positive
+ok tick count does not go back
+# GetEnvironmentVariable
+ok undefined variable gives empty
+ok variable set
+ok defined variable
+ok long variable set
+ok longer than a first buffer
+ok empty value set
+ok empty value
+ok empty name
+# passed 17 failed 0

@@ -1,0 +1,37 @@
+# Abort
+ok class
+ok message
+# OS errors
+ok SysErrorMessage(2): text without trailing white space
+ok unknown code gives empty
+ok RaiseLastOSError(5) ErrorCode
+ok RaiseLastOSError(5) message
+ok RaiseLastOSError(0) ErrorCode
+ok RaiseLastOSError(0) message
+ok GetLastError
+ok RaiseLastOSError uses GetLastError
+ok Win32Check(True)
+ok Win32Check(False) raises with GetLastError
+# OutOfMemoryError
+ok class
+ok message
+ok the pre-allocated instance
+# ExceptionErrorMessage, ShowException
+ok length
+ok text for an Exception
+ok truncated to the buffer
+ok truncated text
+ok no message line for a non-Exception
+ok length for a non-Exception
+ok ShowException text (GUI path)
+# version
+ok Win32MajorVersion
+ok Win32MinorVersion
+ok Win32BuildNumber
+ok CheckWin32Version(6, 1)
+ok CheckWin32Version(own)
+ok CheckWin32Version(next major)
+ok CheckWin32Version(next minor)
+# passed 29 failed 0
+exit proc B
+exit proc A

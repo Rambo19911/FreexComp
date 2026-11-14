@@ -1,0 +1,80 @@
+# dates
+ok date '2024-03-05'
+ok date '  2024-3-5  '
+ok date '2024/03/05'
+ok date '2024.03.05'
+ok date '0001-01-01'
+ok date '9999-12-31'
+ok date '1899-12-29'
+ok date '2024-02-30'
+ok date '2023-02-29'
+ok date '2024-13-01'
+ok date '2024-00-10'
+ok date ''
+ok date '2024'
+ok date '2024-03-05-01'
+ok date '2024--05'
+ok date '2024-Mar-05'
+ok date '2024-03-05x'
+ok date '+2024-03-05'
+ok date '05/03/2024'
+ok date '5.3.2024'
+ok date '3 5 2024'
+ok date '3/5/2024'
+ok date '03-05'
+ok date '05/03'
+ok date '3/5'
+ok date '24-03-05'
+ok date '5/3/99'
+ok date '5/3/0'
+ok date '5/3/024'
+# times
+ok time '14'
+ok time '14:07'
+ok time '14:07:09'
+ok time '14:07:09.045'
+ok time ' 9:5:3 '
+ok time '0:00'
+ok time '23:59:59.999'
+ok time '2:07 PM'
+ok time '2:07pm'
+ok time '12:30 am'
+ok time '12:30 PM'
+ok time '11:59:59 AM'
+ok time '13:00 PM'
+ok time '24:00'
+ok time '12:60'
+ok time '12:00:60'
+ok time '12:00:00.1000'
+ok time ''
+ok time '12:'
+ok time ':30'
+ok time '12:30:'
+ok time '12.30'
+ok time '12:30 XM'
+ok time '1:2:3:4'
+# date and time
+ok date-time '2024-03-05 14:07:09'
+ok date-time '2024-03-05'
+ok date-time '2024-03-05   2:07 pm'
+ok date-time '14:07'
+ok date-time '1899-12-29 06:00'
+ok date-time '2024-03-05 25:00'
+ok date-time '2024-03-32 10:00'
+ok date-time ''
+ok date-time 'soon'
+ok settings: separator and PM string
+ok settings: value
+ok settings: AM string
+ok settings: AM value
+ok PM is accepted with any settings
+ok PM value
+# Def forms
+ok StrToDateDef valid
+ok StrToDateDef default
+ok StrToDateDef(FS) default
+ok StrToTimeDef valid
+ok StrToTimeDef(FS) default
+ok StrToDateTimeDef valid
+ok StrToDateTimeDef(FS) default
+# passed 75 failed 0

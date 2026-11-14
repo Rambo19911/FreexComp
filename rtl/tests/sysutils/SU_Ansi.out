@@ -1,0 +1,36 @@
+# AnsiUpperCase / AnsiLowerCase
+ok ASCII upper
+ok ASCII lower
+ok empty upper
+ok empty lower
+ok Latin-1 and Cyrillic upper
+ok lower of upper
+ok UpperCase stays ASCII-only
+ok argument kept
+ok argument not changed
+ok long string
+# AnsiCompareStr / AnsiCompareText / AnsiSame*
+ok CompareStr less
+ok CompareStr greater
+ok CompareStr equal
+ok CompareStr empty
+ok CompareStr empty first
+ok CompareStr longer
+ok CompareStr is case-sensitive
+ok CompareText ignores case
+ok CompareText less
+ok CompareText greater
+ok CompareText empty
+ok SameStr equal
+ok SameStr case
+ok SameText case
+ok SameText length
+ok SameText empty
+ok result is -1, 0 or 1
+ok result is -1, 0 or 1 (text)
+# AnsiPos
+ok found
+ok not found
+ok empty substring
+ok first occurrence
+# passed 32 failed 0

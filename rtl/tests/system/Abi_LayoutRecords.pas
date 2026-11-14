@@ -13,6 +13,7 @@ var
   DI: TDynArrayTypeInfo;
   RI: TRecordTypeInfo;
   MF: TManagedField;
+  IE: TIntfEntry;
   AI: TArrayTypeInfo;
   V: TVmtHeader;
   H: PVmtHeader;
@@ -45,6 +46,8 @@ begin
   Writeln('TRecordTypeInfo ', SizeOf(TRecordTypeInfo), ': ', Offset(@RI, @RI.Kind), ' ', Offset(@RI, @RI.Name), ' ',
     Offset(@RI, @RI.Size), ' ', Offset(@RI, @RI.ManagedCount), ' ', Offset(@RI, @RI.ManagedFields));
   Writeln('TManagedField ', SizeOf(TManagedField), ': ', Offset(@MF, @MF.TypeInfo), ' ', Offset(@MF, @MF.Offset));
+  Writeln('TIntfEntry ', SizeOf(TIntfEntry), ': ', Offset(@IE, @IE.Guid), ' ', Offset(@IE, @IE.Imt), ' ',
+    Offset(@IE, @IE.Offset));
   Writeln('TArrayTypeInfo ', SizeOf(TArrayTypeInfo), ': ', Offset(@AI, @AI.Kind), ' ', Offset(@AI, @AI.Name), ' ',
     Offset(@AI, @AI.Size), ' ', Offset(@AI, @AI.ElCount), ' ', Offset(@AI, @AI.ElType));
   Writeln('TVmtHeader ', SizeOf(TVmtHeader), ': ', Offset(@V, @V.Parent), ' ', Offset(@V, @V.InstanceSize), ' ',

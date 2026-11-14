@@ -1,0 +1,36 @@
+# constants
+ok fmOpenRead
+ok fmOpenWrite
+ok fmOpenReadWrite
+ok fmShareExclusive
+ok fmShareDenyWrite
+ok fmShareDenyRead
+ok fmShareDenyNone
+ok faDirectory
+ok faAnyFile
+ok fsFromEnd
+# FileCreate, FileSeek, FileClose
+ok FileCreate
+ok position after writing
+ok fsFromEnd
+ok fsFromBeginning
+ok read at the position
+ok negative offset from the end
+ok before the start: -1
+ok FileCreate is exclusive by default
+ok invalid handle: -1
+ok FileCreate with a share mode truncates
+ok empty after FileCreate
+ok deny write allows another reader
+ok deny write refuses another writer
+# FileOpen
+ok missing file
+ok fmOpenRead
+ok contents
+ok share 0 means deny none (RTL-260)
+ok exclusive open
+ok exclusive refuses a second open
+ok fmOpenReadWrite
+ok read and write
+ok fmOpenWrite cannot read
+# passed 32 failed 0

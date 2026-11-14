@@ -6,6 +6,7 @@ TTextRec input: 552 556 560 561 562 563 564 565 59
 TDynArrayTypeInfo 40: 0 8 16 24 32
 TRecordTypeInfo 40: 0 8 16 24 32
 TManagedField 16: 0 8
+TIntfEntry 32: 0 16 24
 TArrayTypeInfo 40: 0 8 16 24 32
 TVmtHeader 64: 0 8 16 24 32 40 48 56 slots 64
 TObject VMT: parent nil TRUE, size 8, init table nil TRUE

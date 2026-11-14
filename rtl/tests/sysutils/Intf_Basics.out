@@ -1,0 +1,38 @@
+# GUID text
+ok D1
+ok D2
+ok D3
+ok D4[0]
+ok D4[1]
+ok D4[2]
+ok D4[7]
+ok round trip
+ok lower-case hex accepted
+ok output is upper-case
+ok IsEqualGUID differs in the last byte
+ok zero GUID
+ok IInterface D4[0]
+ok IInterface D4[7]
+# bad GUID text
+ok bad text ''
+ok bad text '6F1D2A10-3B4C-4D5E-8F90-A1B2C3D4E5F6'
+ok bad text '{6F1D2A10-3B4C-4D5E-8F90-A1B2C3D4E5F}'
+ok bad text '{6F1D2A10-3B4C-4D5E-8F90-A1B2C3D4E5F60}'
+ok bad text '{6F1D2A10-3B4C-4D5E-8F90-A1B2C3D4E5FG}'
+ok bad text '{6F1D2A10+3B4C-4D5E-8F90-A1B2C3D4E5F6}'
+ok bad text '{6F1D2A10-3B4C-4D5E-8F90-A1B2C3D4E5F6)'
+# Supports
+ok two references
+ok interface supports IShape
+ok interface does not support IOther
+ok Supports(interface) leaves no reference
+ok object supports IShape
+ok object supports IInterface
+ok object does not support IOther
+ok Supports(object) leaves no reference
+ok class supports IShape
+ok class without interfaces
+ok plain object
+ok nil object
+ok nil interface
+# passed 34 failed 0

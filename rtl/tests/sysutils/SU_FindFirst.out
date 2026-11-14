@@ -1,0 +1,19 @@
+# FindFirst / FindNext / FindClose
+ok plain files only (hidden skipped)
+ok hidden asked for
+ok no directories without faDirectory
+ok directories with . and ..
+ok faAnyFile
+ok found
+ok Name
+ok Size
+ok Attr of a file
+ok TimeStamp is local time
+ok ERROR_NO_MORE_FILES at the end
+ok FindClose twice is safe
+ok directory found
+ok Attr of a directory
+ok ERROR_FILE_NOT_FOUND
+ok a directory that is not asked for
+ok missing directory
+# passed 17 failed 0

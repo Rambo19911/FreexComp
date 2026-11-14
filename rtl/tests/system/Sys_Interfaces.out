@@ -1,0 +1,100 @@
+# TGUID (ABI-096)
+ok SizeOf(TGUID)
+ok D1 little-endian at 0
+ok D2 at 4
+ok D3 at 6
+ok D4 at 8
+ok D4[7] at 15
+ok S_OK
+ok S_FALSE
+ok E_NOINTERFACE
+# TInterfacedObject counting (RTL-154/155)
+ok count 0 after construction
+ok one reference
+ok two references
+ok self-assignment keeps the count
+ok _AddRef through the IMT returns the new count
+ok _Release through the IMT returns the new count
+ok nil releases
+ok still alive
+ok freed at count 0
+ok leaked
+# construction guard (RTL-154)
+ok guard count 1 during the constructor, not freed
+ok usable after construction
+ok freed by the last release
+ok leaked
+# hidden interface fields (ABI-072/095)
+ok TLeaf has an IntfTable
+ok own hidden fields hold their IMTs
+ok TBase hidden fields hold their IMTs
+ok TInterfacedObject hidden field
+ok GetInterfaceEntry finds an ancestor class's interface
+ok GetInterfaceEntry unknown GUID
+ok GetInterfaceEntry never finds the zero GUID
+ok TObject has no interfaces
+ok IInterface found through TInterfacedObject
+ok GetInterface own
+ok GetInterface gives the hidden field address
+ok GetInterface counts
+ok release the found reference
+ok GetInterface ancestor class
+ok ancestor class field address
+ok GetInterface unknown
+ok GetInterface failure sets nil
+ok no count left
+ok freed
+ok leaked
+# QueryInterface
+ok IUnknown = IInterface
+ok S_OK
+ok found reference
+ok QueryInterface counts
+ok E_NOINTERFACE
+ok failure sets nil
+ok IInterface itself
+ok freed
+ok leaked
+# helpers (ABI 9.6)
+ok _ObjToIntf found
+ok _ObjToIntf counts
+ok _IntfAsg copies
+ok _IntfAsg adds a reference
+ok _IntfAddRef
+ok _IntfCast to another interface
+ok _IntfCast released the old destination
+ok _IntfAsg self
+ok _IntfClr sets nil
+ok _IntfClr releases
+ok _IntfClr nil is a no-op
+ok _IntfCast nil gives nil
+ok _ObjToIntf nil gives nil
+ok _ObjSupports ancestor interface
+ok _ObjSupports own interface
+ok _ObjSupports unknown
+ok _ObjSupports zero GUID
+ok _ObjSupports nil
+ok _ObjSupports does not count
+ok freed by _IntfClr
+ok leaked
+# managed interface parts (kind 15)
+ok parameter copy
+ok record field holds a reference
+ok record copy (_CopyRecord) adds a reference
+ok record field cleared
+ok static array elements
+ok dynamic array element
+ok shrinking a dynamic array releases
+ok two dynamic array elements
+ok dynamic array cleared
+ok class field
+ok class field released by Free
+ok all locals finalized
+ok alive
+ok freed
+ok leaked
+# interface without a GUID
+ok class to interface without a GUID
+ok counted
+ok freed
+# passed 91 failed 0

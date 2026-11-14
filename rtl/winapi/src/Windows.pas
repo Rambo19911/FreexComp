@@ -886,6 +886,9 @@ const
   NORM_IGNOREKANATYPE = $00010000;
   NORM_IGNOREWIDTH = $00020000;
   NORM_LINGUISTIC_CASING = $08000000;
+  LCMAP_LOWERCASE = $00000100;
+  LCMAP_UPPERCASE = $00000200;
+  LCMAP_LINGUISTIC_CASING = $01000000;
   CSTR_LESS_THAN = 1;
   CSTR_EQUAL = 2;
   CSTR_GREATER_THAN = 3;
@@ -2046,6 +2049,9 @@ function GetLocaleInfoEx(lpLocaleName: LPCWSTR; LCType: LCTYPE; lpLCData: LPWSTR
 function CompareStringEx(lpLocaleName: LPCWSTR; dwCmpFlags: DWORD; lpString1: LPCWSTR; cchCount1: Integer;
   lpString2: LPCWSTR; cchCount2: Integer; lpVersionInformation: Pointer; lpReserved: Pointer; lParam: LPARAM): Integer;
   stdcall; external kernel32 name 'CompareStringEx';
+function LCMapStringEx(lpLocaleName: LPCWSTR; dwMapFlags: DWORD; lpSrcStr: LPCWSTR; cchSrc: Integer; lpDestStr: LPWSTR;
+  cchDest: Integer; lpVersionInformation: Pointer; lpReserved: Pointer; sortHandle: LPARAM): Integer; stdcall;
+  external kernel32 name 'LCMapStringEx';
 
 { ---------------------------------------------------------------- kernel32: threads / synchronisation }
 function CreateThread(lpThreadAttributes: PSecurityAttributes; dwStackSize: SIZE_T; lpStartAddress: TFNThreadStartRoutine;

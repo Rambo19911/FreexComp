@@ -55,6 +55,11 @@ function TryStrToInt(const S: string; out Value: Integer): Boolean;
 function TryStrToInt64(const S: string; out Value: Int64): Boolean;
 function TryStrToUInt(const S: string; out Value: Cardinal): Boolean;
 function TryStrToUInt64(const S: string; out Value: UInt64): Boolean;
+{ R-068: the raising forms; EConvertError '<S>' is not a valid integer value (S untrimmed) }
+function StrToInt(const S: string): Integer;
+function StrToInt64(const S: string): Int64;
+function StrToUInt(const S: string): Cardinal;
+function StrToUInt64(const S: string): UInt64;
 function StrToIntDef(const S: string; Default: Integer): Integer;
 function StrToInt64Def(const S: string; Default: Int64): Int64;
 function StrToUIntDef(const S: string; Default: Cardinal): Cardinal;
@@ -63,6 +68,7 @@ function BoolToStr(B: Boolean; UseBoolStrs: Boolean = False): string;
 { 'true' / 'false' (any case), else a number in FormatSettings: non-zero is True }
 function TryStrToBool(const S: string; out Value: Boolean): Boolean;
 function StrToBoolDef(const S: string; Default: Boolean): Boolean;
+function StrToBool(const S: string): Boolean;
 
 { ------------------------------------------------------------------------------ case and comparison (7.1, 7.2) }
 function UpperCase(const S: string): string;
@@ -71,6 +77,15 @@ function CompareStr(const S1, S2: string): Integer;
 function CompareText(const S1, S2: string): Integer;
 function SameStr(const S1, S2: string): Boolean;
 function SameText(const S1, S2: string): Boolean;
+{ section 7.3: OS collation (CompareStringEx, user locale) and full simple case mapping; the only locale-dependent
+  string routines }
+function AnsiUpperCase(const S: string): string;
+function AnsiLowerCase(const S: string): string;
+function AnsiCompareStr(const S1, S2: string): Integer;
+function AnsiCompareText(const S1, S2: string): Integer;
+function AnsiSameStr(const S1, S2: string): Boolean;
+function AnsiSameText(const S1, S2: string): Boolean;
+function AnsiPos(const Substr, S: string): Integer;
 function CompareMem(P1, P2: Pointer; Length: Integer): Boolean;
 function Trim(const S: string): string;
 function TrimLeft(const S: string): string;
@@ -94,6 +109,15 @@ function WrapText(const Line: string; MaxCol: Integer = 45): string; overload;
 function AdjustLineBreaks(const S: string; Style: TTextLineBreakStyle = tlbsCRLF): string;
 function IsValidIdent(const Ident: string; AllowDots: Boolean = False): Boolean;
 function CharInSet(C: Char; const CharSet: TSysCharSet): Boolean;
+// GUID text {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}, upper-case hex (section 7.2); CreateGUID waits for ole32 (Phase 8+)
+function StringToGUID(const S: string): TGUID;
+function GUIDToString(const Guid: TGUID): string;
+function IsEqualGUID(const Guid1, Guid2: TGUID): Boolean;
+{ section 2.4: a nil instance supports nothing; no reference is left behind.
+  TODO(C-202): the overloads with an untyped "out Intf" parameter. }
+function Supports(const Instance: IInterface; const IID: TGUID): Boolean; overload;
+function Supports(const Instance: TObject; const IID: TGUID): Boolean; overload;
+function Supports(const AClass: TClass; const IID: TGUID): Boolean; overload;
 
 { ---------------------------------------------------------------------------------------- PChar routines (7.4) }
 function StrLen(P: PChar): Cardinal;
@@ -143,6 +167,69 @@ function ExtractRelativePath(const BaseName, DestName: string): string;
 function IsRelativePath(const Path: string): Boolean;
 function SameFileName(const S1, S2: string): Boolean;
 
+{ --------------------------------------------------------------------------------- files and directories (8.1) }
+const
+  fmOpenRead = $0000;
+  fmOpenWrite = $0001;
+  fmOpenReadWrite = $0002;
+  fmShareExclusive = $0010;
+  fmShareDenyWrite = $0020;
+  fmShareDenyRead = $0030;
+  fmShareDenyNone = $0040;
+  INVALID_HANDLE_VALUE = THandle(-1);
+  faReadOnly = $01;
+  faHidden = $02;
+  faSysFile = $04;
+  faDirectory = $10;
+  faArchive = $20;
+  faNormal = $80;
+  faTemporary = $100;
+  faSymLink = $400;
+  faAnyFile = $1FF;
+  fsFromBeginning = 0;
+  fsFromCurrent = 1;
+  fsFromEnd = 2;
+
+type
+  { ExcludeAttr, FindHandle and FindData belong to FindFirst / FindNext / FindClose }
+  TSearchRec = record
+    Name: string;
+    Size: Int64;
+    Attr: Integer;
+    TimeStamp: TDateTime;
+    ExcludeAttr: Integer;
+    FindHandle: THandle;
+    FindData: TWin32FindDataW;
+  end;
+
+{ RTL-260: access from Mode and 3, share from Mode and $F0 (0 = deny none); INVALID_HANDLE_VALUE on failure.
+  TODO(C-202): FileRead / FileWrite take untyped Buffer parameters. }
+function FileOpen(const FileName: string; Mode: Cardinal): THandle;
+function FileCreate(const FileName: string): THandle; overload;
+function FileCreate(const FileName: string; Mode: Cardinal): THandle; overload;
+function FileSeek(Handle: THandle; const Offset: Int64; Origin: Integer): Int64;
+procedure FileClose(Handle: THandle);
+function FileExists(const FileName: string): Boolean;
+function DirectoryExists(const Directory: string): Boolean;
+function DeleteFile(const FileName: string): Boolean;
+function RenameFile(const OldName, NewName: string): Boolean;
+function CreateDir(const Dir: string): Boolean;
+function RemoveDir(const Dir: string): Boolean;
+function SetCurrentDir(const Dir: string): Boolean;
+function GetCurrentDir: string;
+{ every missing level; '' raises EInOutError }
+function ForceDirectories(Dir: string): Boolean;
+{ the last-write time in local time }
+function FileAge(const FileName: string; out FileDateTime: TDateTime): Boolean;
+function FileGetAttr(const FileName: string): Integer;
+function FileSetAttr(const FileName: string; Attr: Integer): Integer;
+function GetTempDir: string;
+function GetModuleName(Module: THandle): string;
+{ 0 = found, else a Win32 error (18 at the end, 2 when nothing matches) }
+function FindFirst(const Path: string; Attr: Integer; var F: TSearchRec): Integer;
+function FindNext(var F: TSearchRec): Integer;
+procedure FindClose(var F: TSearchRec);
+
 { ------------------------------------------------------------------------------------- floats and text (5) }
 type
   TFloatFormat = (ffGeneral, ffExponent, ffFixed, ffNumber, ffCurrency);
@@ -155,6 +242,8 @@ function FloatToStrF(Value: Double; Format: TFloatFormat; Precision, Digits: Int
 function TryStrToFloat(const S: string; out Value: Double): Boolean; overload;
 function TryStrToFloat(const S: string; out Value: Double; const FS: TFormatSettings): Boolean; overload;
 function StrToFloatDef(const S: string; const Default: Double): Double; overload;
+function StrToFloat(const S: string): Double; overload;
+function StrToFloat(const S: string; const FS: TFormatSettings): Double; overload;
 function StrToFloatDef(const S: string; const Default: Double; const FS: TFormatSettings): Double; overload;
 
 { ------------------------------------------------------------------------------------------ date and time (6) }
@@ -186,6 +275,46 @@ function DayOfWeek(const DateTime: TDateTime): Word;
 function IncMonth(const DateTime: TDateTime; NumberOfMonths: Integer = 1): TDateTime;
 procedure DateTimeToSystemTime(const DateTime: TDateTime; var SystemTime: TSystemTime);
 function SystemTimeToDateTime(const SystemTime: TSystemTime): TDateTime;
+{ the local clock (GetLocalTime, millisecond resolution) }
+function Now: TDateTime;
+function Date: TDateTime;
+function Time: TDateTime;
+function CurrentYear: Word;
+procedure Sleep(Milliseconds: Cardinal);
+function GetTickCount64: UInt64;
+{ section 8.1: '' when Name is not defined }
+function GetEnvironmentVariable(const Name: string): string;
+{ RTL-243/244: the date/time picture language; an empty format is 'c' }
+function FormatDateTime(const Fmt: string; DateTime: TDateTime): string; overload;
+function FormatDateTime(const Fmt: string; DateTime: TDateTime; const FS: TFormatSettings): string; overload;
+procedure DateTimeToString(var Result: string; const Fmt: string; DateTime: TDateTime); overload;
+procedure DateTimeToString(var Result: string; const Fmt: string; DateTime: TDateTime;
+  const FS: TFormatSettings); overload;
+function DateToStr(const DateTime: TDateTime): string; overload;
+function DateToStr(const DateTime: TDateTime; const FS: TFormatSettings): string; overload;
+function TimeToStr(const DateTime: TDateTime): string; overload;
+function TimeToStr(const DateTime: TDateTime; const FS: TFormatSettings): string; overload;
+function DateTimeToStr(const DateTime: TDateTime): string; overload;
+function DateTimeToStr(const DateTime: TDateTime; const FS: TFormatSettings): string; overload;
+{ RTL-245: parsing; part order from ShortDateFormat, separators DateSeparator / TimeSeparator plus the fixed ones }
+function TryStrToDate(const S: string; out Value: TDateTime): Boolean; overload;
+function TryStrToDate(const S: string; out Value: TDateTime; const FS: TFormatSettings): Boolean; overload;
+function TryStrToTime(const S: string; out Value: TDateTime): Boolean; overload;
+function TryStrToTime(const S: string; out Value: TDateTime; const FS: TFormatSettings): Boolean; overload;
+function TryStrToDateTime(const S: string; out Value: TDateTime): Boolean; overload;
+function TryStrToDateTime(const S: string; out Value: TDateTime; const FS: TFormatSettings): Boolean; overload;
+function StrToDate(const S: string): TDateTime; overload;
+function StrToDate(const S: string; const FS: TFormatSettings): TDateTime; overload;
+function StrToTime(const S: string): TDateTime; overload;
+function StrToTime(const S: string; const FS: TFormatSettings): TDateTime; overload;
+function StrToDateTime(const S: string): TDateTime; overload;
+function StrToDateTime(const S: string; const FS: TFormatSettings): TDateTime; overload;
+function StrToDateDef(const S: string; const Default: TDateTime): TDateTime; overload;
+function StrToDateDef(const S: string; const Default: TDateTime; const FS: TFormatSettings): TDateTime; overload;
+function StrToTimeDef(const S: string; const Default: TDateTime): TDateTime; overload;
+function StrToTimeDef(const S: string; const Default: TDateTime; const FS: TFormatSettings): TDateTime; overload;
+function StrToDateTimeDef(const S: string; const Default: TDateTime): TDateTime; overload;
+function StrToDateTimeDef(const S: string; const Default: TDateTime; const FS: TFormatSettings): TDateTime; overload;
 
 { ------------------------------------------------------------------------------------------------ Format (4) }
 function Format(const Fmt: string; const Args: array of const): string; overload;
@@ -277,6 +406,29 @@ type
   EEncodingError = class(Exception);
   EFileNotFoundException = class(Exception);
   EDirectoryNotFoundException = class(Exception);
+
+{ ------------------------------------------------------------------------------------- helper routines (2.4, 10) }
+procedure Abort;
+procedure RaiseLastOSError; overload;
+procedure RaiseLastOSError(LastError: Integer); overload;
+{ the OS text of ErrorCode without trailing white space; '' for an unknown code }
+function SysErrorMessage(ErrorCode: Cardinal): string;
+function Win32Check(RetVal: LongBool): LongBool;
+procedure OutOfMemoryError;
+{ 'Exception <Class> in module <exe> at <16 hex>.' + line break + message (Exception only); at most Size - 1 characters
+  and a terminator are written to Buffer; the result is the number of characters written }
+function ExceptionErrorMessage(ExceptObject: TObject; ExceptAddr: Pointer; Buffer: PChar; Size: Integer): Integer;
+procedure ShowException(ExceptObject: TObject; ExceptAddr: Pointer);
+{ Proc runs at program end, the last added first (one System.ExitProc hook runs the list) }
+procedure AddExitProc(Proc: TProcedure);
+function GetLastError: Cardinal;
+function CheckWin32Version(Major: Integer; Minor: Integer = 0): Boolean;
+
+var
+  { RtlGetVersion at initialization }
+  Win32MajorVersion: Integer;
+  Win32MinorVersion: Integer;
+  Win32BuildNumber: Integer;
 
 implementation
 
@@ -404,6 +556,12 @@ begin
   Result := HexText(Value, 16);
 end;
 
+{ EConvertError with Msg formatted with the (untrimmed) text S }
+procedure ConvertError(const Msg, S: string);
+begin
+  raise EConvertError.CreateFmt(Msg, [S]);
+end;
+
 function TryStrToInt64(const S: string; out Value: Int64): Boolean;
 var
   Code: Integer;
@@ -441,6 +599,30 @@ begin
   Result := TryStrToUInt64(S, V) and (V <= $FFFFFFFF);
   if Result then
     Value := Cardinal(V);
+end;
+
+function StrToInt(const S: string): Integer;
+begin
+  if not TryStrToInt(S, Result) then
+    ConvertError(SInvalidInteger, S);
+end;
+
+function StrToInt64(const S: string): Int64;
+begin
+  if not TryStrToInt64(S, Result) then
+    ConvertError(SInvalidInteger, S);
+end;
+
+function StrToUInt(const S: string): Cardinal;
+begin
+  if not TryStrToUInt(S, Result) then
+    ConvertError(SInvalidInteger, S);
+end;
+
+function StrToUInt64(const S: string): UInt64;
+begin
+  if not TryStrToUInt64(S, Result) then
+    ConvertError(SInvalidInteger, S);
 end;
 
 function StrToIntDef(const S: string; Default: Integer): Integer;
@@ -501,6 +683,12 @@ function StrToBoolDef(const S: string; Default: Boolean): Boolean;
 begin
   if not TryStrToBool(S, Result) then
     Result := Default;
+end;
+
+function StrToBool(const S: string): Boolean;
+begin
+  if not TryStrToBool(S, Result) then
+    ConvertError(SInvalidBoolean, S);
 end;
 
 { ------------------------------------------------------------------------------ case and comparison (7.1, 7.2) }
@@ -586,6 +774,84 @@ end;
 function SameText(const S1, S2: string): Boolean;
 begin
   Result := (Length(S1) = Length(S2)) and (CompareText(S1, S2) = 0);
+end;
+
+{ ------------------------------------------------------------------------------------- Ansi* family (7.3) }
+{ RTL-255 / RTL-841: case mapping by LCMapStringEx (kernel32), so that a console program does not import user32;
+  without LCMAP_LINGUISTIC_CASING the mapping is the locale-neutral simple one. }
+
+function MapCase(const S: string; Flags: DWORD): string;
+var
+  N: Integer;
+begin
+  Result := S;
+  if S = '' then
+    Exit;
+  N := LCMapStringEx(LOCALE_NAME_USER_DEFAULT, Flags, PChar(S), Length(S), nil, 0, nil, nil, 0);
+  if N <= 0 then
+    Exit;
+  SetLength(Result, N);
+  UniqueString(Result);
+  if LCMapStringEx(LOCALE_NAME_USER_DEFAULT, Flags, PChar(S), Length(S), PChar(Result), N, nil, nil, 0) <= 0 then
+    Result := S;
+end;
+
+function AnsiUpperCase(const S: string): string;
+begin
+  Result := MapCase(S, LCMAP_UPPERCASE);
+end;
+
+function AnsiLowerCase(const S: string): string;
+begin
+  Result := MapCase(S, LCMAP_LOWERCASE);
+end;
+
+{ CompareStringEx (user locale) − 2, i.e. -1, 0 or 1; an empty operand sorts first without an OS call; should the
+  call fail, the ordinal comparison decides }
+function LocaleCompare(const S1, S2: string; Flags: DWORD): Integer;
+begin
+  if (S1 = '') or (S2 = '') then
+    Result := Ord(S1 <> '') - Ord(S2 <> '')
+  else
+  begin
+    Result := CompareStringEx(LOCALE_NAME_USER_DEFAULT, Flags, PChar(S1), Length(S1), PChar(S2), Length(S2), nil, nil,
+      0);
+    if Result = 0 then
+    begin
+      Result := CompareStr(S1, S2);
+      if Result < 0 then
+        Result := -1
+      else if Result > 0 then
+        Result := 1;
+    end
+    else
+      Result := Result - CSTR_EQUAL;
+  end;
+end;
+
+function AnsiCompareStr(const S1, S2: string): Integer;
+begin
+  Result := LocaleCompare(S1, S2, 0);
+end;
+
+function AnsiCompareText(const S1, S2: string): Integer;
+begin
+  Result := LocaleCompare(S1, S2, NORM_IGNORECASE);
+end;
+
+function AnsiSameStr(const S1, S2: string): Boolean;
+begin
+  Result := AnsiCompareStr(S1, S2) = 0;
+end;
+
+function AnsiSameText(const S1, S2: string): Boolean;
+begin
+  Result := AnsiCompareText(S1, S2) = 0;
+end;
+
+function AnsiPos(const Substr, S: string): Integer;
+begin
+  Result := Pos(Substr, S);
 end;
 
 function CompareMem(P1, P2: Pointer; Length: Integer): Boolean;
@@ -794,8 +1060,7 @@ end;
 
 function WrapText(const Line: string; MaxCol: Integer): string;
 begin
-  { TODO(compiler): char literals in a set of AnsiChar need the casts (E2010 today) }
-  Result := WrapText(Line, sLineBreak, [AnsiChar(' '), AnsiChar(#9), AnsiChar('-')], MaxCol);
+  Result := WrapText(Line, sLineBreak, [' ', #9, '-'], MaxCol);
 end;
 
 function AdjustLineBreaks(const S: string; Style: TTextLineBreakStyle): string;
@@ -855,6 +1120,121 @@ end;
 function CharInSet(C: Char; const CharSet: TSysCharSet): Boolean;
 begin
   Result := (Ord(C) <= 255) and (AnsiChar(Ord(C)) in CharSet);
+end;
+
+{ ------------------------------------------------------------------------------------------------- GUIDs (7.2) }
+
+const
+  { the length of the text form, braces included }
+  GuidTextLength = 38;
+
+function HexDigitValue(C: Char): Integer;
+begin
+  case C of
+    '0'..'9': Result := Ord(C) - Ord('0');
+    'A'..'F': Result := Ord(C) - Ord('A') + 10;
+    'a'..'f': Result := Ord(C) - Ord('a') + 10;
+  else
+    Result := -1;
+  end;
+end;
+
+{ the value of Count hex digits of S from Index on; False when one is not a hex digit }
+function ReadHex(const S: string; Index, Count: Integer; out Value: Cardinal): Boolean;
+var
+  I, D: Integer;
+begin
+  Value := 0;
+  Result := False;
+  for I := Index to Index + Count - 1 do
+  begin
+    D := HexDigitValue(S[I]);
+    if D < 0 then
+      Exit;
+    Value := Value * 16 + Cardinal(D);
+  end;
+  Result := True;
+end;
+
+function StringToGUID(const S: string): TGUID;
+var
+  V: Cardinal;
+  I: Integer;
+  Ok: Boolean;
+begin
+  V := 0;
+  Ok := (Length(S) = GuidTextLength) and (S[1] = '{') and (S[10] = '-') and (S[15] = '-') and (S[20] = '-') and
+    (S[25] = '-') and (S[38] = '}');
+  if Ok then
+    Ok := ReadHex(S, 2, 8, V);
+  if Ok then
+  begin
+    Result.D1 := V;
+    Ok := ReadHex(S, 11, 4, V);
+  end;
+  if Ok then
+  begin
+    Result.D2 := Word(V);
+    Ok := ReadHex(S, 16, 4, V);
+  end;
+  if Ok then
+  begin
+    Result.D3 := Word(V);
+    for I := 0 to 7 do
+      if Ok then
+      begin
+        if I < 2 then
+          Ok := ReadHex(S, 21 + 2 * I, 2, V)
+        else
+          Ok := ReadHex(S, 26 + 2 * (I - 2), 2, V);
+        Result.D4[I] := Byte(V);
+      end;
+  end;
+  if not Ok then
+    raise EConvertError.CreateFmt(SInvalidGUID, [S]);
+end;
+
+function GUIDToString(const Guid: TGUID): string;
+var
+  I: Integer;
+begin
+  Result := '{' + IntToHex(Guid.D1, 8) + '-' + IntToHex(Guid.D2, 4) + '-' + IntToHex(Guid.D3, 4) + '-' +
+    IntToHex(Guid.D4[0], 2) + IntToHex(Guid.D4[1], 2) + '-';
+  for I := 2 to 7 do
+    Result := Result + IntToHex(Guid.D4[I], 2);
+  Result := Result + '}';
+end;
+
+function IsEqualGUID(const Guid1, Guid2: TGUID): Boolean;
+var
+  I: Integer;
+begin
+  Result := (Guid1.D1 = Guid2.D1) and (Guid1.D2 = Guid2.D2) and (Guid1.D3 = Guid2.D3);
+  for I := 0 to 7 do
+    if Guid1.D4[I] <> Guid2.D4[I] then
+      Result := False;
+end;
+
+function Supports(const Instance: IInterface; const IID: TGUID): Boolean;
+var
+  P: Pointer;
+begin
+  Result := False;
+  { TODO(compiler): "Instance = nil" on an interface is E2011 today }
+  if Pointer(Instance) = nil then
+    Exit;
+  Result := Instance.QueryInterface(IID, P) = S_OK;
+  _IntfClr(P);
+end;
+
+function Supports(const Instance: TObject; const IID: TGUID): Boolean;
+begin
+  Result := _ObjSupports(Pointer(Instance), @IID);
+end;
+
+function Supports(const AClass: TClass; const IID: TGUID): Boolean;
+begin
+  Result := (AClass <> nil) and (AClass.GetInterfaceEntry(IID) <> nil);
 end;
 
 { ---------------------------------------------------------------------------------------- PChar routines (7.4) }
@@ -1293,6 +1673,249 @@ begin
   Result := SameText(S1, S2);
 end;
 
+{ -------------------------------------------------------------------------------- files and directories (8.1) }
+
+{ the share flags of Mode and $F0 (RTL-260: 0 = deny none) }
+function ShareFlags(Mode: Cardinal): DWORD;
+begin
+  case Mode and $F0 of
+    fmShareExclusive: Result := 0;
+    fmShareDenyWrite: Result := FILE_SHARE_READ;
+    fmShareDenyRead: Result := FILE_SHARE_WRITE;
+  else
+    Result := FILE_SHARE_READ or FILE_SHARE_WRITE;
+  end;
+end;
+
+function FileOpen(const FileName: string; Mode: Cardinal): THandle;
+var
+  Access: DWORD;
+begin
+  case Mode and 3 of
+    fmOpenRead: Access := GENERIC_READ;
+    fmOpenWrite: Access := GENERIC_WRITE;
+  else
+    Access := GENERIC_READ or GENERIC_WRITE;
+  end;
+  Result := CreateFileW(PChar(FileName), Access, ShareFlags(Mode), nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+end;
+
+{ share from Mode as in FileOpen, except that 0 is exclusive (the default of the one-argument form) }
+function FileCreate(const FileName: string; Mode: Cardinal): THandle;
+var
+  Share: DWORD;
+begin
+  if Mode and $F0 = 0 then
+    Share := 0
+  else
+    Share := ShareFlags(Mode);
+  Result := CreateFileW(PChar(FileName), GENERIC_READ or GENERIC_WRITE, Share, nil, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+    0);
+end;
+
+function FileCreate(const FileName: string): THandle;
+begin
+  Result := FileCreate(FileName, fmShareExclusive);
+end;
+
+function FileSeek(Handle: THandle; const Offset: Int64; Origin: Integer): Int64;
+begin
+  if not SetFilePointerEx(Handle, Offset, @Result, DWORD(Origin)) then
+    Result := -1;
+end;
+
+procedure FileClose(Handle: THandle);
+begin
+  CloseHandle(Handle);
+end;
+
+function FileExists(const FileName: string): Boolean;
+var
+  A: DWORD;
+begin
+  A := GetFileAttributesW(PChar(FileName));
+  Result := (A <> INVALID_FILE_ATTRIBUTES) and (A and FILE_ATTRIBUTE_DIRECTORY = 0);
+end;
+
+function DirectoryExists(const Directory: string): Boolean;
+var
+  A: DWORD;
+begin
+  A := GetFileAttributesW(PChar(Directory));
+  Result := (A <> INVALID_FILE_ATTRIBUTES) and (A and FILE_ATTRIBUTE_DIRECTORY <> 0);
+end;
+
+function DeleteFile(const FileName: string): Boolean;
+begin
+  Result := DeleteFileW(PChar(FileName));
+end;
+
+function RenameFile(const OldName, NewName: string): Boolean;
+begin
+  Result := MoveFileW(PChar(OldName), PChar(NewName));
+end;
+
+function CreateDir(const Dir: string): Boolean;
+begin
+  Result := CreateDirectoryW(PChar(Dir), nil);
+end;
+
+function RemoveDir(const Dir: string): Boolean;
+begin
+  Result := RemoveDirectoryW(PChar(Dir));
+end;
+
+function SetCurrentDir(const Dir: string): Boolean;
+begin
+  Result := SetCurrentDirectoryW(PChar(Dir));
+end;
+
+function GetCurrentDir: string;
+var
+  Len: DWORD;
+begin
+  Result := '';
+  Len := GetCurrentDirectoryW(0, nil);
+  if Len = 0 then
+    Exit;
+  SetLength(Result, Len);
+  Len := GetCurrentDirectoryW(Len, PChar(Result));
+  SetLength(Result, Len);
+end;
+
+{ creates the parent first; a level that cannot be split further (a drive, a root, a single name) ends the recursion }
+function ForceDirectories(Dir: string): Boolean;
+var
+  Parent: string;
+begin
+  if Dir = '' then
+    raise EInOutError.Create(SCannotCreateDir);
+  Dir := ExcludeTrailingPathDelimiter(Dir);
+  Result := True;
+  if (Dir = '') or DirectoryExists(Dir) then
+    Exit;
+  Parent := ExcludeTrailingPathDelimiter(ExtractFilePath(Dir));
+  if (Parent <> '') and (Length(Parent) < Length(Dir)) and (Parent <> ExtractFileDrive(Dir)) then
+    Result := ForceDirectories(Parent);
+  if Result then
+    Result := CreateDir(Dir) or DirectoryExists(Dir);
+end;
+
+{ a FILETIME (UTC) as a local TDateTime }
+function FileTimeToLocal(var FT: TFileTime; out DT: TDateTime): Boolean;
+var
+  Local: TFileTime;
+  ST: TSystemTime;
+begin
+  Result := FileTimeToLocalFileTime(FT, Local) and FileTimeToSystemTime(Local, ST);
+  if Result then
+    DT := SystemTimeToDateTime(ST)
+  else
+    DT := 0;
+end;
+
+function FileAge(const FileName: string; out FileDateTime: TDateTime): Boolean;
+var
+  Data: TWin32FileAttributeData;
+begin
+  FileDateTime := 0;
+  Result := GetFileAttributesExW(PChar(FileName), GetFileExInfoStandard, @Data) and
+    FileTimeToLocal(Data.ftLastWriteTime, FileDateTime);
+end;
+
+function FileGetAttr(const FileName: string): Integer;
+begin
+  Result := Integer(GetFileAttributesW(PChar(FileName)));
+end;
+
+{ 0 or the Win32 error }
+function FileSetAttr(const FileName: string; Attr: Integer): Integer;
+begin
+  if SetFileAttributesW(PChar(FileName), DWORD(Attr)) then
+    Result := 0
+  else
+    Result := Integer(Windows.GetLastError);
+end;
+
+function GetTempDir: string;
+var
+  Buffer: array[0..MAX_PATH + 1] of Char;
+  Len: DWORD;
+begin
+  Len := GetTempPathW(MAX_PATH + 1, @Buffer[0]);
+  SetString(Result, PChar(@Buffer[0]), Integer(Len));
+  if Result <> '' then
+    Result := IncludeTrailingPathDelimiter(Result);
+end;
+
+function GetModuleName(Module: THandle): string;
+var
+  Buffer: array[0..32767] of Char;
+  Len: DWORD;
+begin
+  Len := GetModuleFileNameW(HMODULE(Module), @Buffer[0], Length(Buffer));
+  SetString(Result, PChar(@Buffer[0]), Integer(Len));
+end;
+
+{ the entry in F.FindData copied to the public fields }
+procedure FillSearchRec(var F: TSearchRec);
+begin
+  F.Name := StrPas(@F.FindData.cFileName[0]);
+  F.Size := (Int64(F.FindData.nFileSizeHigh) shl 32) or Int64(F.FindData.nFileSizeLow);
+  F.Attr := Integer(F.FindData.dwFileAttributes);
+  FileTimeToLocal(F.FindData.ftLastWriteTime, F.TimeStamp);
+end;
+
+{ the current entry, or the next one without an excluded attribute; 0 or the Win32 error }
+function FindMatching(var F: TSearchRec): Integer;
+begin
+  while Integer(F.FindData.dwFileAttributes) and F.ExcludeAttr <> 0 do
+    if not FindNextFileW(F.FindHandle, F.FindData) then
+    begin
+      Result := Integer(Windows.GetLastError);
+      Exit;
+    end;
+  FillSearchRec(F);
+  Result := 0;
+end;
+
+function FindFirst(const Path: string; Attr: Integer; var F: TSearchRec): Integer;
+begin
+  F.ExcludeAttr := not Attr and (faHidden or faSysFile or faDirectory);
+  F.FindHandle := FindFirstFileW(PChar(Path), F.FindData);
+  if F.FindHandle = INVALID_HANDLE_VALUE then
+  begin
+    Result := Integer(Windows.GetLastError);
+    Exit;
+  end;
+  Result := FindMatching(F);
+  if Result = ERROR_NO_MORE_FILES then
+    Result := ERROR_FILE_NOT_FOUND;
+  if Result <> 0 then
+    FindClose(F);
+end;
+
+function FindNext(var F: TSearchRec): Integer;
+begin
+  if (F.FindHandle = INVALID_HANDLE_VALUE) or (F.FindHandle = 0) then
+  begin
+    Result := ERROR_NO_MORE_FILES;
+    Exit;
+  end;
+  if FindNextFileW(F.FindHandle, F.FindData) then
+    Result := FindMatching(F)
+  else
+    Result := Integer(Windows.GetLastError);
+end;
+
+{ safe to call twice }
+procedure FindClose(var F: TSearchRec);
+begin
+  if (F.FindHandle <> INVALID_HANDLE_VALUE) and (F.FindHandle <> 0) then
+    Windows.FindClose(F.FindHandle);
+  F.FindHandle := INVALID_HANDLE_VALUE;
+end;
+
 { ------------------------------------------------------------------------------------- floats and text (5) }
 
 function DigitChar(D: Byte): Char;
@@ -1595,6 +2218,17 @@ begin
   Result := StrToFloatDef(S, Default, FormatSettings);
 end;
 
+function StrToFloat(const S: string; const FS: TFormatSettings): Double;
+begin
+  if not TryStrToFloat(S, Result, FS) then
+    ConvertError(SInvalidFloat, S);
+end;
+
+function StrToFloat(const S: string): Double;
+begin
+  Result := StrToFloat(S, FormatSettings);
+end;
+
 { ------------------------------------------------------------------------------------------ date and time (6) }
 
 function IsLeapYear(Year: Word): Boolean;
@@ -1765,6 +2399,668 @@ begin
     Result := Result + EncodeTime(SystemTime.wHour, SystemTime.wMinute, SystemTime.wSecond, SystemTime.wMilliseconds)
   else
     Result := Result - EncodeTime(SystemTime.wHour, SystemTime.wMinute, SystemTime.wSecond, SystemTime.wMilliseconds);
+end;
+
+{ ---------------------------------------------------------------------------------------------- the clock (6) }
+
+function Now: TDateTime;
+var
+  ST: TSystemTime;
+begin
+  GetLocalTime(ST);
+  Result := SystemTimeToDateTime(ST);
+end;
+
+function Date: TDateTime;
+var
+  ST: TSystemTime;
+begin
+  GetLocalTime(ST);
+  Result := EncodeDate(ST.wYear, ST.wMonth, ST.wDay);
+end;
+
+function Time: TDateTime;
+var
+  ST: TSystemTime;
+begin
+  GetLocalTime(ST);
+  Result := EncodeTime(ST.wHour, ST.wMinute, ST.wSecond, ST.wMilliseconds);
+end;
+
+function CurrentYear: Word;
+var
+  ST: TSystemTime;
+begin
+  GetLocalTime(ST);
+  Result := ST.wYear;
+end;
+
+procedure Sleep(Milliseconds: Cardinal);
+begin
+  Windows.Sleep(Milliseconds);
+end;
+
+function GetTickCount64: UInt64;
+begin
+  Result := Windows.GetTickCount64;
+end;
+
+function GetEnvironmentVariable(const Name: string): string;
+var
+  Len: DWORD;
+begin
+  Result := '';
+  if Name = '' then
+    Exit;
+  SetLength(Result, 256);
+  Len := GetEnvironmentVariableW(PChar(Name), PChar(Result), 256);
+  if Len > 256 then
+  begin
+    { too small: Len is the size needed, terminator included }
+    SetLength(Result, Len);
+    Len := GetEnvironmentVariableW(PChar(Name), PChar(Result), Len);
+  end;
+  SetLength(Result, Len);
+end;
+
+{ ------------------------------------------------------------------------------------ FormatDateTime (RTL-243) }
+
+const
+  MaxDateExpansionDepth = 2;           { RTL-244 }
+
+{ V in decimal, left-padded with zeros to Width digits }
+function PadNum(V: Integer; Width: Integer): string;
+begin
+  Result := IntToStr(V);
+  while Length(Result) < Width do
+    Result := '0' + Result;
+end;
+
+function UpChar(C: Char): Char;
+begin
+  if (C >= 'a') and (C <= 'z') then
+    Result := Char(Ord(C) - 32)
+  else
+    Result := C;
+end;
+
+{ the text of F from I on starts with Pattern (ASCII case-insensitive) }
+function MatchesAt(const F: string; I: Integer; const Pattern: string): Boolean;
+var
+  K: Integer;
+begin
+  Result := False;
+  if I + Length(Pattern) - 1 > Length(F) then
+    Exit;
+  for K := 1 to Length(Pattern) do
+    if UpChar(F[I + K - 1]) <> UpChar(Pattern[K]) then
+      Exit;
+  Result := True;
+end;
+
+{ the length of the AM/PM specifier at F[I] ('am/pm' 5, 'ampm' 4, 'a/p' 3), or 0 }
+function AmPmLength(const F: string; I: Integer): Integer;
+begin
+  if MatchesAt(F, I, 'am/pm') then
+    Result := 5
+  else if MatchesAt(F, I, 'ampm') then
+    Result := 4
+  else if MatchesAt(F, I, 'a/p') then
+    Result := 3
+  else
+    Result := 0;
+end;
+
+{ F contains an AM/PM specifier outside quoted text }
+function HasAmPm(const F: string): Boolean;
+var
+  I: Integer;
+  Q: Char;
+begin
+  Result := False;
+  I := 1;
+  while I <= Length(F) do
+  begin
+    if (F[I] = '''') or (F[I] = '"') then
+    begin
+      Q := F[I];
+      I := I + 1;
+      while (I <= Length(F)) and (F[I] <> Q) do
+        I := I + 1;
+    end
+    else if AmPmLength(F, I) > 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+    I := I + 1;
+  end;
+end;
+
+{ appends DateTime formatted with F to R; F is a format at expansion depth Depth (the caller's format is depth 0) }
+procedure AppendDateTime(var R: string; const F: string; DateTime: TDateTime; const FS: TFormatSettings; Depth: Integer);
+var
+  Y, Mo, D, H, Mi, S, MS: Word;
+  I, Run, Take, Len: Integer;
+  C, U, Q: Char;
+  Twelve, AfterHour: Boolean;
+begin
+  if Depth > MaxDateExpansionDepth then
+    Exit;
+  DecodeDate(DateTime, Y, Mo, D);
+  DecodeTime(DateTime, H, Mi, S, MS);
+  Twelve := HasAmPm(F);
+  AfterHour := False;
+  I := 1;
+  while I <= Length(F) do
+  begin
+    C := F[I];
+    if (C = '''') or (C = '"') then
+    begin
+      Q := C;
+      I := I + 1;
+      while (I <= Length(F)) and (F[I] <> Q) do
+      begin
+        R := R + F[I];
+        I := I + 1;
+      end;
+      I := I + 1;
+      Continue;
+    end;
+    Len := AmPmLength(F, I);
+    if Len > 0 then
+    begin
+      if Len = 4 then
+      begin
+        if H < 12 then
+          R := R + FS.TimeAMString
+        else
+          R := R + FS.TimePMString;
+      end
+      else if H < 12 then
+        R := R + Copy(F, I, Len div 2)
+      else
+        R := R + Copy(F, I + Len div 2 + 1, Len div 2);
+      I := I + Len;
+      AfterHour := False;
+      Continue;
+    end;
+    U := UpChar(C);
+    Run := 1;
+    while (I + Run <= Length(F)) and (UpChar(F[I + Run]) = U) do
+      Run := Run + 1;
+    Take := 1;
+    case U of
+      'D':
+        begin
+          if Run > 6 then
+            Take := 6
+          else
+            Take := Run;
+          case Take of
+            1: R := R + IntToStr(D);
+            2: R := R + PadNum(D, 2);
+            3: R := R + FS.ShortDayNames[DayOfWeek(DateTime)];
+            4: R := R + FS.LongDayNames[DayOfWeek(DateTime)];
+            5: AppendDateTime(R, FS.ShortDateFormat, DateTime, FS, Depth + 1);
+          else
+            AppendDateTime(R, FS.LongDateFormat, DateTime, FS, Depth + 1);
+          end;
+        end;
+      'M':
+        begin
+          if Run > 4 then
+            Take := 4
+          else
+            Take := Run;
+          if AfterHour and (Take <= 2) then
+            R := R + PadNum(Mi, Take)
+          else
+            case Take of
+              1: R := R + IntToStr(Mo);
+              2: R := R + PadNum(Mo, 2);
+              3: R := R + FS.ShortMonthNames[Mo];
+            else
+              R := R + FS.LongMonthNames[Mo];
+            end;
+        end;
+      'Y':
+        begin
+          if Run > 4 then
+            Take := 4
+          else
+            Take := Run;
+          if Take <= 2 then
+            R := R + PadNum(Y mod 100, 2)
+          else
+            R := R + PadNum(Y, 4);
+        end;
+      'H':
+        begin
+          if Run > 2 then
+            Take := 2
+          else
+            Take := Run;
+          if Twelve then
+          begin
+            if H mod 12 = 0 then
+              R := R + PadNum(12, Take)
+            else
+              R := R + PadNum(H mod 12, Take);
+          end
+          else
+            R := R + PadNum(H, Take);
+        end;
+      'N':
+        begin
+          if Run > 2 then
+            Take := 2
+          else
+            Take := Run;
+          R := R + PadNum(Mi, Take);
+        end;
+      'S':
+        begin
+          if Run > 2 then
+            Take := 2
+          else
+            Take := Run;
+          R := R + PadNum(S, Take);
+        end;
+      'Z':
+        begin
+          if Run > 3 then
+            Take := 3
+          else
+            Take := Run;
+          if Take = 3 then
+            R := R + PadNum(MS, 3)
+          else
+            R := R + IntToStr(MS);
+        end;
+      'T':
+        begin
+          if Run > 2 then
+            Take := 2
+          else
+            Take := Run;
+          if Take = 1 then
+            AppendDateTime(R, FS.ShortTimeFormat, DateTime, FS, Depth + 1)
+          else
+            AppendDateTime(R, FS.LongTimeFormat, DateTime, FS, Depth + 1);
+        end;
+      'C':
+        begin
+          AppendDateTime(R, FS.ShortDateFormat, DateTime, FS, Depth + 1);
+          if (H <> 0) or (Mi <> 0) or (S <> 0) or (MS <> 0) then
+          begin
+            R := R + ' ';
+            AppendDateTime(R, FS.LongTimeFormat, DateTime, FS, Depth + 1);
+          end;
+        end;
+      '/':
+        R := R + FS.DateSeparator;
+      ':':
+        R := R + FS.TimeSeparator;
+    else
+      R := R + C;
+    end;
+    { m means minutes when the nearest preceding field specifier is h/hh; separators and literals do not count }
+    case U of
+      'H':
+        AfterHour := True;
+      'D', 'M', 'Y', 'N', 'S', 'Z', 'T', 'C':
+        AfterHour := False;
+    end;
+    I := I + Take;
+  end;
+end;
+
+procedure DateTimeToString(var Result: string; const Fmt: string; DateTime: TDateTime; const FS: TFormatSettings);
+var
+  R: string;
+begin
+  R := '';
+  if Fmt = '' then
+    AppendDateTime(R, 'c', DateTime, FS, 0)
+  else
+    AppendDateTime(R, Fmt, DateTime, FS, 0);
+  Result := R;
+end;
+
+procedure DateTimeToString(var Result: string; const Fmt: string; DateTime: TDateTime);
+begin
+  DateTimeToString(Result, Fmt, DateTime, FormatSettings);
+end;
+
+function FormatDateTime(const Fmt: string; DateTime: TDateTime; const FS: TFormatSettings): string;
+begin
+  DateTimeToString(Result, Fmt, DateTime, FS);
+end;
+
+function FormatDateTime(const Fmt: string; DateTime: TDateTime): string;
+begin
+  DateTimeToString(Result, Fmt, DateTime, FormatSettings);
+end;
+
+function DateToStr(const DateTime: TDateTime; const FS: TFormatSettings): string;
+begin
+  Result := FormatDateTime(FS.ShortDateFormat, DateTime, FS);
+end;
+
+function DateToStr(const DateTime: TDateTime): string;
+begin
+  Result := DateToStr(DateTime, FormatSettings);
+end;
+
+function TimeToStr(const DateTime: TDateTime; const FS: TFormatSettings): string;
+begin
+  Result := FormatDateTime(FS.LongTimeFormat, DateTime, FS);
+end;
+
+function TimeToStr(const DateTime: TDateTime): string;
+begin
+  Result := TimeToStr(DateTime, FormatSettings);
+end;
+
+function DateTimeToStr(const DateTime: TDateTime; const FS: TFormatSettings): string;
+begin
+  Result := FormatDateTime('c', DateTime, FS);
+end;
+
+function DateTimeToStr(const DateTime: TDateTime): string;
+begin
+  Result := DateTimeToStr(DateTime, FormatSettings);
+end;
+
+{ ------------------------------------------------------------------------------- date/time parsing (RTL-245) }
+
+function IsDigitChar(C: Char): Boolean;
+begin
+  Result := (C >= '0') and (C <= '9');
+end;
+
+{ 1 .. MaxDigits decimal digits of S from I on; I moves past every digit read (Digits counts them) }
+function ScanNumber(const S: string; var I: Integer; MaxDigits: Integer; out Value, Digits: Integer): Boolean;
+begin
+  Value := 0;
+  Digits := 0;
+  while (I <= Length(S)) and IsDigitChar(S[I]) do
+  begin
+    if Digits < MaxDigits then
+      Value := Value * 10 + (Ord(S[I]) - Ord('0'));
+    Digits := Digits + 1;
+    I := I + 1;
+  end;
+  Result := (Digits > 0) and (Digits <= MaxDigits);
+end;
+
+{ 'Y', 'M', 'D' in the order of their first occurrence in ShortDateFormat; 'YMD' when a letter is missing }
+function DateOrder(const FS: TFormatSettings): string;
+var
+  I: Integer;
+  U: Char;
+begin
+  Result := '';
+  for I := 1 to Length(FS.ShortDateFormat) do
+  begin
+    U := UpChar(FS.ShortDateFormat[I]);
+    if ((U = 'Y') or (U = 'M') or (U = 'D')) and (Pos(U, Result) = 0) then
+      Result := Result + U;
+  end;
+  if Length(Result) <> 3 then
+    Result := 'YMD';
+end;
+
+{ a date of 2 or 3 numeric parts from S[I] on; I ends after the last part (the caller checks what follows) }
+function ScanDate(const S: string; var I: Integer; const FS: TFormatSettings; out Value: TDateTime): Boolean;
+var
+  Parts, Digits: array[0..2] of Integer;
+  N, K, Y, M, D, YDigits, Start: Integer;
+  Order: string;
+  C: Char;
+begin
+  Value := 0;
+  Result := False;
+  N := 0;
+  while True do
+  begin
+    if not ScanNumber(S, I, 4, Parts[N], Digits[N]) then
+      Exit;
+    N := N + 1;
+    if (N = 3) or (I >= Length(S)) then
+      Break;
+    C := S[I];
+    if ((C = FS.DateSeparator) or (C = '/') or (C = '-') or (C = '.')) and IsDigitChar(S[I + 1]) then
+      I := I + 1
+    else
+      Break;
+  end;
+  if N < 2 then
+    Exit;
+  Order := DateOrder(FS);
+  Y := CurrentYear;
+  YDigits := 4;
+  M := 0;
+  D := 0;
+  if N = 2 then
+  begin
+    if Pos('M', Order) < Pos('D', Order) then
+    begin
+      M := Parts[0];
+      D := Parts[1];
+    end
+    else
+    begin
+      D := Parts[0];
+      M := Parts[1];
+    end;
+  end
+  else
+    for K := 0 to 2 do
+      case Order[K + 1] of
+        'Y':
+          begin
+            Y := Parts[K];
+            YDigits := Digits[K];
+          end;
+        'M': M := Parts[K];
+      else
+        D := Parts[K];
+      end;
+  if YDigits <= 2 then
+  begin
+    Start := CurrentYear - FS.TwoDigitYearCenturyWindow;
+    Y := (Start div 100) * 100 + Y;
+    if Y < Start then
+      Y := Y + 100;
+  end;
+  Result := (Y >= 1) and (Y <= 9999) and TryEncodeDate(Word(Y), Word(M), Word(D), Value);
+end;
+
+{ the text Pattern (case-insensitive) is non-empty and equals S from I to the end }
+function RestIs(const S: string; I: Integer; const Pattern: string): Boolean;
+begin
+  Result := (Pattern <> '') and (Length(S) - I + 1 = Length(Pattern)) and MatchesAt(S, I, Pattern);
+end;
+
+{ h[:n[:s[.z]]] [AM/PM] from S[I] to the end of S }
+function ScanTime(const S: string; I: Integer; const FS: TFormatSettings; out Value: TDateTime): Boolean;
+var
+  Fields: array[0..2] of Integer;
+  Count, MS, Digits: Integer;
+  IsAm, IsPm: Boolean;
+begin
+  Value := 0;
+  Result := False;
+  Fields[1] := 0;
+  Fields[2] := 0;
+  MS := 0;
+  if not ScanNumber(S, I, 2, Fields[0], Digits) then
+    Exit;
+  Count := 1;
+  while (Count < 3) and (I <= Length(S)) and ((S[I] = FS.TimeSeparator) or (S[I] = ':')) do
+  begin
+    I := I + 1;
+    if not ScanNumber(S, I, 2, Fields[Count], Digits) then
+      Exit;
+    Count := Count + 1;
+  end;
+  if (Count = 3) and (I <= Length(S)) and (S[I] = '.') then
+  begin
+    I := I + 1;
+    if not ScanNumber(S, I, 3, MS, Digits) then
+      Exit;
+  end;
+  while (I <= Length(S)) and (S[I] = ' ') do
+    I := I + 1;
+  if I <= Length(S) then
+  begin
+    IsAm := RestIs(S, I, FS.TimeAMString) or RestIs(S, I, 'AM');
+    IsPm := not IsAm and (RestIs(S, I, FS.TimePMString) or RestIs(S, I, 'PM'));
+    if not IsAm and not IsPm then
+      Exit;
+    if Fields[0] > 12 then
+      Exit;
+    if Fields[0] = 12 then
+      Fields[0] := 0;
+    if IsPm then
+      Fields[0] := Fields[0] + 12;
+  end;
+  Result := TryEncodeTime(Word(Fields[0]), Word(Fields[1]), Word(Fields[2]), Word(MS), Value);
+end;
+
+function TryStrToDate(const S: string; out Value: TDateTime; const FS: TFormatSettings): Boolean;
+var
+  T: string;
+  I: Integer;
+begin
+  T := Trim(S);
+  I := 1;
+  Result := ScanDate(T, I, FS, Value) and (I > Length(T));
+  if not Result then
+    Value := 0;
+end;
+
+function TryStrToDate(const S: string; out Value: TDateTime): Boolean;
+begin
+  Result := TryStrToDate(S, Value, FormatSettings);
+end;
+
+function TryStrToTime(const S: string; out Value: TDateTime; const FS: TFormatSettings): Boolean;
+begin
+  Result := ScanTime(Trim(S), 1, FS, Value);
+end;
+
+function TryStrToTime(const S: string; out Value: TDateTime): Boolean;
+begin
+  Result := TryStrToTime(S, Value, FormatSettings);
+end;
+
+{ a date, then optionally white space and a time; a time alone gives date 0 }
+function TryStrToDateTime(const S: string; out Value: TDateTime; const FS: TFormatSettings): Boolean;
+var
+  T: string;
+  I: Integer;
+  D, Tm: TDateTime;
+begin
+  T := Trim(S);
+  I := 1;
+  Value := 0;
+  if ScanDate(T, I, FS, D) then
+  begin
+    if I > Length(T) then
+    begin
+      Value := D;
+      Result := True;
+      Exit;
+    end;
+    Result := False;
+    if (T[I] <> ' ') and (T[I] <> #9) then
+      Exit;
+    while (I <= Length(T)) and ((T[I] = ' ') or (T[I] = #9)) do
+      I := I + 1;
+    if not ScanTime(T, I, FS, Tm) then
+      Exit;
+    if D >= 0 then
+      Value := D + Tm
+    else
+      Value := D - Tm;
+    Result := True;
+  end
+  else
+    Result := ScanTime(T, 1, FS, Value);
+end;
+
+function TryStrToDateTime(const S: string; out Value: TDateTime): Boolean;
+begin
+  Result := TryStrToDateTime(S, Value, FormatSettings);
+end;
+
+function StrToDate(const S: string; const FS: TFormatSettings): TDateTime;
+begin
+  if not TryStrToDate(S, Result, FS) then
+    ConvertError(SInvalidDate, S);
+end;
+
+function StrToDate(const S: string): TDateTime;
+begin
+  Result := StrToDate(S, FormatSettings);
+end;
+
+function StrToTime(const S: string; const FS: TFormatSettings): TDateTime;
+begin
+  if not TryStrToTime(S, Result, FS) then
+    ConvertError(SInvalidTime, S);
+end;
+
+function StrToTime(const S: string): TDateTime;
+begin
+  Result := StrToTime(S, FormatSettings);
+end;
+
+function StrToDateTime(const S: string; const FS: TFormatSettings): TDateTime;
+begin
+  if not TryStrToDateTime(S, Result, FS) then
+    ConvertError(SInvalidDateTime, S);
+end;
+
+function StrToDateTime(const S: string): TDateTime;
+begin
+  Result := StrToDateTime(S, FormatSettings);
+end;
+
+function StrToDateDef(const S: string; const Default: TDateTime; const FS: TFormatSettings): TDateTime;
+begin
+  if not TryStrToDate(S, Result, FS) then
+    Result := Default;
+end;
+
+function StrToDateDef(const S: string; const Default: TDateTime): TDateTime;
+begin
+  Result := StrToDateDef(S, Default, FormatSettings);
+end;
+
+function StrToTimeDef(const S: string; const Default: TDateTime; const FS: TFormatSettings): TDateTime;
+begin
+  if not TryStrToTime(S, Result, FS) then
+    Result := Default;
+end;
+
+function StrToTimeDef(const S: string; const Default: TDateTime): TDateTime;
+begin
+  Result := StrToTimeDef(S, Default, FormatSettings);
+end;
+
+function StrToDateTimeDef(const S: string; const Default: TDateTime; const FS: TFormatSettings): TDateTime;
+begin
+  if not TryStrToDateTime(S, Result, FS) then
+    Result := Default;
+end;
+
+function StrToDateTimeDef(const S: string; const Default: TDateTime): TDateTime;
+begin
+  Result := StrToDateTimeDef(S, Default, FormatSettings);
 end;
 
 { ------------------------------------------------------------------------------------------------ Format (4) }
@@ -2214,6 +3510,143 @@ begin
   Result := Pointer(E);
 end;
 
+{ ---------------------------------------------------------------------------------- helper routines (2.4, 10) }
+
+procedure Abort;
+begin
+  raise EAbort.Create(SOperationAborted);
+end;
+
+function SysErrorMessage(ErrorCode: Cardinal): string;
+var
+  Buffer: array[0..1023] of Char;
+  Len: DWORD;
+begin
+  Len := FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM or FORMAT_MESSAGE_IGNORE_INSERTS, nil, ErrorCode, 0, @Buffer[0],
+    Length(Buffer), nil);
+  while (Len > 0) and (Buffer[Len - 1] <= ' ') do
+    Len := Len - 1;
+  SetString(Result, PChar(@Buffer[0]), Integer(Len));
+end;
+
+procedure RaiseLastOSError(LastError: Integer);
+var
+  E: EOSError;
+begin
+  if LastError <> 0 then
+    E := EOSError.CreateFmt(SOSError, [LastError, SysErrorMessage(Cardinal(LastError))])
+  else
+    E := EOSError.Create(SUnkOSError);
+  E.ErrorCode := Cardinal(LastError);
+  raise E;
+end;
+
+procedure RaiseLastOSError;
+begin
+  RaiseLastOSError(Integer(Windows.GetLastError));
+end;
+
+function Win32Check(RetVal: LongBool): LongBool;
+begin
+  if not RetVal then
+    RaiseLastOSError;
+  Result := RetVal;
+end;
+
+procedure OutOfMemoryError;
+begin
+  raise OutOfMemoryInstance;
+end;
+
+function ExceptionText(ExceptObject: TObject; ExceptAddr: Pointer): string;
+begin
+  Result := Format(SExceptionInModule, [ExceptObject.ClassName, ExtractFileName(ParamStr(0)),
+    IntToHex(NativeInt(ExceptAddr), 16)]);
+  if ExceptObject is Exception then
+    Result := Result + sLineBreak + Exception(ExceptObject).Message;
+end;
+
+function ExceptionErrorMessage(ExceptObject: TObject; ExceptAddr: Pointer; Buffer: PChar; Size: Integer): Integer;
+var
+  S: string;
+  I: Integer;
+begin
+  Result := 0;
+  if (Buffer = nil) or (Size <= 0) then
+    Exit;
+  S := ExceptionText(ExceptObject, ExceptAddr);
+  Result := Length(S);
+  if Result > Size - 1 then
+    Result := Size - 1;
+  for I := 0 to Result - 1 do
+    Buffer[I] := S[I + 1];
+  Buffer[Result] := #0;
+end;
+
+procedure ShowException(ExceptObject: TObject; ExceptAddr: Pointer);
+var
+  S: string;
+begin
+  S := ExceptionText(ExceptObject, ExceptAddr);
+  if IsConsole or not Assigned(ShowErrorProc) then
+    Writeln(ErrOutput, S)
+  else
+    ShowErrorProc(S);
+end;
+
+var
+  ExitProcs: array of TProcedure;
+  SavedExitProc: Pointer;
+
+{ the System.ExitProc hook: the list, last added first, then the hook that was installed before AddExitProc }
+procedure RunExitProcs;
+var
+  P: TProcedure;
+begin
+  while Length(ExitProcs) > 0 do
+  begin
+    P := ExitProcs[High(ExitProcs)];
+    SetLength(ExitProcs, Length(ExitProcs) - 1);
+    P;
+  end;
+  ExitProc := SavedExitProc;
+end;
+
+procedure AddExitProc(Proc: TProcedure);
+begin
+  if Length(ExitProcs) = 0 then
+  begin
+    SavedExitProc := ExitProc;
+    ExitProc := @RunExitProcs;
+  end;
+  SetLength(ExitProcs, Length(ExitProcs) + 1);
+  ExitProcs[High(ExitProcs)] := Proc;
+end;
+
+function GetLastError: Cardinal;
+begin
+  Result := Windows.GetLastError;
+end;
+
+function CheckWin32Version(Major: Integer; Minor: Integer): Boolean;
+begin
+  Result := (Win32MajorVersion > Major) or ((Win32MajorVersion = Major) and (Win32MinorVersion >= Minor));
+end;
+
+procedure ReadVersion;
+var
+  V: TOSVersionInfoW;
+begin
+  FillChar(V, SizeOf(V), 0);
+  V.dwOSVersionInfoSize := SizeOf(V);
+  if RtlGetVersion(@V) = 0 then
+  begin
+    Win32MajorVersion := Integer(V.dwMajorVersion);
+    Win32MinorVersion := Integer(V.dwMinorVersion);
+    Win32BuildNumber := Integer(V.dwBuildNumber);
+  end;
+end;
+
 { System.AssertErrorProc (ABI-103, RTL-214) }
 procedure AssertHandler(const Msg, FileName: string; Line: Integer; Addr: Pointer);
 var
@@ -2251,6 +3684,7 @@ initialization
   ExceptObjProc := @MapOSException;
   AssertErrorProc := @AssertHandler;
   ExceptProc := @UnhandledHandler;
+  ReadVersion;
 
 finalization
   ExceptProc := nil;

@@ -1,0 +1,52 @@
+# exists, delete, rename
+ok FileExists
+ok FileExists missing
+ok a file is no directory
+ok RenameFile
+ok old name gone
+ok new name there
+ok RenameFile missing
+ok DeleteFile
+ok DeleteFile missing
+ok FileExists empty
+# directories
+ok GetCurrentDir without a trailing delimiter
+ok CreateDir
+ok CreateDir existing
+ok DirectoryExists
+ok a directory is no file
+ok SetCurrentDir
+ok GetCurrentDir after SetCurrentDir
+ok SetCurrentDir ..
+ok SetCurrentDir missing
+ok RemoveDir
+ok RemoveDir missing
+ok ForceDirectories
+ok all levels created
+ok ForceDirectories existing
+ok ForceDirectories with / and a trailing delimiter
+ok created with /
+ok ForceDirectories absolute
+ok absolute levels created
+ok GetCurrentDir of a root keeps the delimiter
+# ForceDirectories('')
+ok raises
+# attributes and age
+ok FileGetAttr of a file
+ok FileGetAttr missing
+ok FileGetAttr of a directory
+ok FileSetAttr
+ok read-only set
+ok read-only file cannot be deleted
+ok FileSetAttr normal
+ok FileSetAttr missing: Win32 error 2
+ok FileAge
+ok FileAge is local time, close to Now
+ok FileAge missing
+ok deleted
+# GetTempDir, GetModuleName
+ok GetTempDir ends with a delimiter
+ok GetTempDir exists
+ok GetModuleName(0) = the program
+ok GetModuleName(HInstance)
+# passed 46 failed 0

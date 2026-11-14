@@ -74,6 +74,14 @@ type
   end;
   PVmtHeader = ^TVmtHeader;
 
+  { ABI-095: IntfTable, when not nil, is a NativeInt Count followed by Count of these (32 bytes each) }
+  TIntfEntry = record
+    Guid: TGUID;                       { 0 }
+    Imt: Pointer;                      { 16 }
+    Offset: NativeInt;                 { 24: of the hidden field in the instance }
+  end;
+  PIntfEntry = ^TIntfEntry;
+
   { system.md RTL-127: a Text variable, 624 bytes (rtl-abi.md section 2) }
   TTextMode = (tmClosed, tmInput, tmOutput);
   TTextKind = (skConsole, skBytes, skAbsent);   { stream kind (RTL-090); "tk" is taken by TTypeKind }

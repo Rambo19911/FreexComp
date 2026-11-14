@@ -1,0 +1,61 @@
+# fields
+ok d dd
+ok ddd dddd
+ok ddddd = ShortDateFormat
+ok dddddd = LongDateFormat
+ok m mm mmm mmmm
+ok y yy yyy yyyy
+ok h hh
+ok n nn
+ok s ss
+ok z zzz
+ok t tt
+ok c with a time
+ok c at midnight
+ok empty format = c
+ok / and : from the invariant settings
+ok double-quoted literals
+ok single-quoted literal keeps specifier letters
+ok other characters copied
+ok case-insensitive specifiers, names as set
+ok upper-case month name specifier
+# m after h
+ok hh:mm = minutes
+ok h m = minutes
+ok quoted text between h and m
+ok m after d is the month again
+ok m before h is the month
+ok m after s is the month
+# 12-hour clock
+ok am/pm afternoon
+ok AM/PM as written
+ok a/p
+ok A/P
+ok ampm = TimePMString
+ok midnight is 12 am
+ok 01:30 is AM
+ok noon is 12 pm
+ok the specifier may come before the hour
+ok mixed case as written (am half)
+ok mixed case as written (pm half)
+ok quoted am/pm text is literal, 24-hour clock
+# negative values and expansion depth
+ok -1.25 = 1899-12-29 06:00
+ok self-referencing ShortDateFormat expands to nothing
+ok two levels of expansion
+ok self-referencing time formats expand to nothing
+# format settings and the ToStr routines
+ok / = DateSeparator
+ok : = TimeSeparator
+ok names from the settings
+ok DateToStr(FS)
+ok TimeToStr(FS) = LongTimeFormat
+ok DateTimeToStr(FS)
+ok DateTimeToStr(FS) at midnight
+ok DateToStr
+ok TimeToStr
+ok DateTimeToStr
+ok DateTimeToString
+ok DateTimeToString(FS)
+ok the global FormatSettings
+# passed 55 failed 0

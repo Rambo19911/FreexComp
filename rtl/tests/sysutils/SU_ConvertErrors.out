@@ -1,0 +1,35 @@
+# values
+ok StrToInt trims
+ok StrToInt hex
+ok StrToInt64
+ok StrToUInt
+ok StrToUInt64
+ok StrToFloat
+ok StrToFloat(FS)
+ok StrToBool true
+ok StrToBool 0
+ok StrToBool -1
+ok StrToDate
+ok StrToDate(FS)
+ok StrToTime
+ok StrToTime(FS)
+ok StrToDateTime
+ok StrToDateTime(FS)
+# EConvertError messages
+ok StrToInt keeps the untrimmed text
+ok StrToInt out of range
+ok StrToInt empty
+ok StrToInt64 out of range
+ok StrToUInt negative
+ok StrToUInt64 negative
+ok StrToFloat
+ok StrToBool
+ok StrToDate
+ok StrToTime
+ok StrToDateTime
+# EncodeDate, EncodeTime, Format
+ok EncodeDate
+ok EncodeTime
+ok Format type mismatch
+ok Format missing argument
+# passed 31 failed 0

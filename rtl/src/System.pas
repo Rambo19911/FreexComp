@@ -29,9 +29,18 @@ type
   TProcedure = procedure;
   TThreadFunc = function(Parameter: Pointer): Integer;    { BeginThread (system.md section 5.1) }
 
-  // TODO(M2.5): Dispatch / DefaultHandler take an untyped var parameter (typed Pointer until the compiler has untyped
-  // parameters: the same IR, ptr), _Dispatch, GetInterface, GetInterfaceEntry. TODO(M2.5, RTTI): ClassInfo,
-  // MethodAddress, MethodName, FieldAddress, UnitName.
+  // TODO(C-202): Dispatch / DefaultHandler take an untyped var parameter, GetInterface / QueryInterface an untyped out
+  // parameter (typed Pointer until the compiler has untyped parameters: the same IR, ptr). TODO(C-113): _Dispatch.
+  // TODO(C-112, RTTI): ClassInfo, MethodAddress, MethodName, FieldAddress, UnitName.
+
+  { ABI-096: 16 bytes }
+  TGUID = packed record
+    D1: Cardinal;
+    D2: Word;
+    D3: Word;
+    D4: array[0..7] of Byte;
+  end;
+  PGUID = ^TGUID;
 
   TObject = class;
   TClass = class of TObject;           { the VMT address (ABI-071) }
@@ -61,6 +70,32 @@ type
     class function ClassParent: TClass;
     class function InstanceSize: Integer;
     class function InheritsFrom(AClass: TClass): Boolean;
+    function GetInterface(const IID: TGUID; out Obj: Pointer): Boolean;
+    class function GetInterfaceEntry(const IID: TGUID): Pointer;
+  end;
+
+  { ABI-094, RTL-154: the root of every interface. TODO(C-202): QueryInterface's "out Obj" is untyped in the spec. }
+  IInterface = interface
+    ['{00000000-0000-0000-C000-000000000046}']
+    function QueryInterface(const IID: TGUID; out Obj: Pointer): HResult; stdcall;
+    function _AddRef: Integer; stdcall;
+    function _Release: Integer; stdcall;
+  end;
+  IUnknown = IInterface;
+
+  { ABI-097, RTL-154/155: a thread-safe counted IInterface; the count is 0 after construction (NewInstance sets 1 as a
+    guard that AfterConstruction takes back), and the object frees itself when the count drops to 0 }
+  TInterfacedObject = class(TObject, IInterface)
+  protected
+    FRefCount: Integer;
+    function QueryInterface(const IID: TGUID; out Obj: Pointer): HResult; stdcall;
+    function _AddRef: Integer; stdcall;
+    function _Release: Integer; stdcall;
+  public
+    procedure AfterConstruction; override;
+    procedure BeforeDestruction; override;
+    class function NewInstance: TObject; override;
+    property RefCount: Integer read FRefCount;
   end;
 
   { RTL-062: the pluggable memory manager; FreeMem returns 0 on success }
@@ -121,13 +156,6 @@ type
   TDate = type TDateTime;
   TTime = type TDateTime;
   PDateTime = ^TDateTime;
-  TGUID = packed record
-    D1: Cardinal;
-    D2: Word;
-    D3: Word;
-    D4: array[0..7] of Byte;
-  end;
-  PGUID = ^TGUID;
   TMethod = record
     Code, Data: Pointer;
   end;
@@ -206,6 +234,15 @@ function RaiseList: Pointer;
 function _IsClass(Obj: Pointer; VMT: Pointer): Boolean;
 function _AsClass(Obj: Pointer; VMT: Pointer): Pointer;
 function _ClassInherits(VMT, AncestorVMT: Pointer): Boolean;
+
+{ interfaces (rtl-abi.md section 9.6, ABI-090 ... 095): a reference is the address of a hidden field holding the IMT;
+  IID points at a TGUID; casts that fail are runtime error 228 }
+procedure _IntfClr(var I: Pointer);
+procedure _IntfAddRef(I: Pointer);
+procedure _IntfAsg(var Dest: Pointer; Src: Pointer);
+procedure _IntfCast(var Dest: Pointer; Src: Pointer; IID: Pointer);
+procedure _ObjToIntf(var Dest: Pointer; Obj: Pointer; IID: Pointer);
+function _ObjSupports(Obj: Pointer; IID: Pointer): Boolean;
 procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;   { Msg/FileName: UnicodeString refs, Msg may be nil }
 procedure _IOCheck;
 
@@ -1477,6 +1514,7 @@ const
   KindRecord = 12;
   KindArray = 13;
   KindDynArray = 14;
+  KindInterface = 15;
 
 function DynRec(A: Pointer): PDynArrayRec;
 begin
@@ -1669,6 +1707,9 @@ begin
     KindDynArray:
       for I := 0 to Count - 1 do
         _DynArrayClr(PPointer(P)[I], TI);
+    KindInterface:
+      for I := 0 to Count - 1 do
+        _IntfClr(PPointer(P)[I]);
     KindRecord:
       begin
         Rec := TI;
@@ -1713,6 +1754,9 @@ begin
     KindDynArray:
       for I := 0 to Count - 1 do
         _DynArrayAddRef(PPointer(P)[I]);
+    KindInterface:
+      for I := 0 to Count - 1 do
+        _IntfAddRef(PPointer(P)[I]);
     KindRecord:
       begin
         Rec := TI;
@@ -1768,6 +1812,9 @@ begin
     KindDynArray:
       for I := 0 to Count - 1 do
         _DynArrayAsg(PPointer(Dest)[I], PPointer(Src)[I], TI);
+    KindInterface:
+      for I := 0 to Count - 1 do
+        _IntfAsg(PPointer(Dest)[I], PPointer(Src)[I]);
   else
     _AddRefArray(Src, TI, Count);
     _FinalizeArray(Dest, TI, Count);
@@ -5273,12 +5320,30 @@ begin
   Result := InitInstance(_GetMem(InstanceSize));
 end;
 
-{ the one set-up path of an instance block: zero fill, the VMT pointer at offset 0 }
+{ the one set-up path of an instance block: zero fill, the VMT pointer at offset 0, and every hidden interface field
+  of the class and its ancestors set to its IMT (ABI-072, from each IntfTable) }
 class function TObject.InitInstance(Instance: Pointer): TObject;
+var
+  VMT: PVmtHeader;
+  Entry: PIntfEntry;
+  I, Count: NativeInt;
 begin
   memset(Instance, 0, NativeUInt(InstanceSize));
   PPointer(Instance)^ := Pointer(Self);
-  // TODO(M2.5): store the hidden interface pointers of the class and every ancestor (IntfTable walk, ABI-072)
+  VMT := Pointer(Self);
+  while VMT <> nil do
+  begin
+    if VMT^.IntfTable <> nil then
+    begin
+      Count := PNativeInt(VMT^.IntfTable)^;
+      Entry := PIntfEntry(PByte(VMT^.IntfTable) + SizeOf(NativeInt));
+      for I := 0 to Count - 1 do
+      begin
+        PPointer(PByte(Instance) + Entry[I].Offset)^ := Entry[I].Imt;
+      end;
+    end;
+    VMT := VMT^.Parent;
+  end;
   Result := TObject(Instance);
 end;
 
@@ -5390,6 +5455,197 @@ end;
 class function TObject.InheritsFrom(AClass: TClass): Boolean;
 begin
   Result := _ClassInherits(Pointer(Self), Pointer(AClass));
+end;
+
+{ ---------------------------------------------------------------- interfaces (system.md RTL-154/155, ABI 7.3, 9.6) }
+{ A reference points at a hidden field holding the IMT; slots 0..2 are QueryInterface, _AddRef, _Release, each called
+  with the reference as its first argument (ABI-091 ... 093). }
+
+type
+  TQueryInterfaceFunc = function(Ref: Pointer; IID: Pointer; Obj: Pointer): HResult;
+  TRefCountFunc = function(Ref: Pointer): Integer;
+  TImtHead = record
+    QueryInterface: TQueryInterfaceFunc;
+    AddRef: TRefCountFunc;
+    Release: TRefCountFunc;
+  end;
+  PImtHead = ^TImtHead;
+  PPImtHead = ^PImtHead;
+
+{ the 16 bytes at A and B are equal }
+function SameGuid(A, B: PByte): Boolean;
+var
+  K: Integer;
+begin
+  Result := False;
+  for K := 0 to 15 do
+    if A[K] <> B[K] then
+      Exit;
+  Result := True;
+end;
+
+{ the IntfTable entry for IID of the class VMT or the nearest ancestor that has one; nil when none. The all-zero GUID
+  of an interface declared without one is never found (ABI-095). }
+function FindIntfEntry(VMT: PVmtHeader; IID: PByte): PIntfEntry;
+const
+  Zero: array[0..15] of Byte = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+var
+  Entry: PIntfEntry;
+  I, Count: NativeInt;
+begin
+  Result := nil;
+  if SameGuid(IID, @Zero) then
+    Exit;
+  while VMT <> nil do
+  begin
+    if VMT^.IntfTable <> nil then
+    begin
+      Count := PNativeInt(VMT^.IntfTable)^;
+      Entry := PIntfEntry(PByte(VMT^.IntfTable) + SizeOf(NativeInt));
+      for I := 0 to Count - 1 do
+        if SameGuid(@Entry[I].Guid, IID) then
+        begin
+          Result := @Entry[I];
+          Exit;
+        end;
+    end;
+    VMT := VMT^.Parent;
+  end;
+end;
+
+procedure _IntfAddRef(I: Pointer);
+begin
+  if I <> nil then
+    PPImtHead(I)^^.AddRef(I);
+end;
+
+{ I is nil before _Release runs (a destructor reaching the same variable sees nil) }
+procedure _IntfClr(var I: Pointer);
+var
+  Old: Pointer;
+begin
+  Old := I;
+  if Old <> nil then
+  begin
+    I := nil;
+    PPImtHead(Old)^^.Release(Old);
+  end;
+end;
+
+{ Dest := Counted, a reference whose count is already taken (or nil); the old value released afterwards }
+procedure ReplaceIntf(var Dest: Pointer; Counted: Pointer);
+var
+  Old: Pointer;
+begin
+  Old := Dest;
+  Dest := Counted;
+  if Old <> nil then
+    PPImtHead(Old)^^.Release(Old);
+end;
+
+{ Src gains its reference before the old Dest is released, so Dest = Src is safe }
+procedure _IntfAsg(var Dest: Pointer; Src: Pointer);
+begin
+  _IntfAddRef(Src);
+  ReplaceIntf(Dest, Src);
+end;
+
+{ interface `as`: QueryInterface of Src; nil gives nil; failure is runtime error 228 (EIntfCastError) }
+procedure _IntfCast(var Dest: Pointer; Src: Pointer; IID: Pointer);
+var
+  P: Pointer;
+begin
+  if Src = nil then
+  begin
+    _IntfClr(Dest);
+    Exit;
+  end;
+  P := nil;
+  if PPImtHead(Src)^^.QueryInterface(Src, IID, @P) <> S_OK then
+    _RunError(228);
+  ReplaceIntf(Dest, P);
+end;
+
+{ object `as` interface, through the IntfTables; nil gives nil; failure is runtime error 228 }
+procedure _ObjToIntf(var Dest: Pointer; Obj: Pointer; IID: Pointer);
+var
+  P: Pointer;
+begin
+  if Obj = nil then
+  begin
+    _IntfClr(Dest);
+    Exit;
+  end;
+  if not TObject(Obj).GetInterface(PGUID(IID)^, P) then
+    _RunError(228);
+  ReplaceIntf(Dest, P);
+end;
+
+{ object `is` interface: no reference is taken }
+function _ObjSupports(Obj: Pointer; IID: Pointer): Boolean;
+begin
+  Result := (Obj <> nil) and (FindIntfEntry(PPointer(Obj)^, IID) <> nil);
+end;
+
+{ Obj := the counted reference for IID, or nil (False) }
+function TObject.GetInterface(const IID: TGUID; out Obj: Pointer): Boolean;
+var
+  Entry: PIntfEntry;
+begin
+  Entry := FindIntfEntry(PPointer(Self)^, @IID);
+  Result := Entry <> nil;
+  if Result then
+  begin
+    Obj := PByte(Pointer(Self)) + Entry^.Offset;
+    _IntfAddRef(Obj);
+  end
+  else
+    Obj := nil;
+end;
+
+{ the IntfTable entry (TIntfEntry, ABI-095) for IID, searching ancestors; nil when the class does not implement it }
+class function TObject.GetInterfaceEntry(const IID: TGUID): Pointer;
+begin
+  Result := FindIntfEntry(Pointer(Self), @IID);
+end;
+
+function TInterfacedObject.QueryInterface(const IID: TGUID; out Obj: Pointer): HResult;
+begin
+  if GetInterface(IID, Obj) then
+    Result := S_OK
+  else
+    Result := E_NOINTERFACE;
+end;
+
+function TInterfacedObject._AddRef: Integer;
+begin
+  Result := AtomicIncrement(FRefCount);
+end;
+
+function TInterfacedObject._Release: Integer;
+begin
+  Result := AtomicDecrement(FRefCount);
+  if Result = 0 then
+    Destroy;
+end;
+
+{ the construction guard: references taken and dropped inside a constructor cannot free the object }
+class function TInterfacedObject.NewInstance: TObject;
+begin
+  Result := inherited NewInstance;
+  TInterfacedObject(Result).FRefCount := 1;
+end;
+
+procedure TInterfacedObject.AfterConstruction;
+begin
+  AtomicDecrement(FRefCount);
+end;
+
+{ freeing an object that still has references is runtime error 204 (RTL-154) }
+procedure TInterfacedObject.BeforeDestruction;
+begin
+  if FRefCount <> 0 then
+    _RunError(204);
 end;
 
 { ---------------------------------------------------------------- class tests (rtl-abi.md section 9.6) }
