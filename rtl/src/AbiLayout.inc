@@ -1,6 +1,6 @@
 { The private records through which System reads the layouts shared with the compiler (RTL-029). This file is the
   only declaration: System includes it in its implementation and the test Abi_LayoutRecords includes it to assert
-  sizes and field offsets against rtl-abi.md. TVarRec (variant records, M2.5) is added with the task that needs
+  sizes and field offsets against rtl-abi.md. TVarRec is public (System interface, RTL-013); the same test checks
   it. }
 type
   { rtl-abi.md section 3.1: in front of the first element of a long string }

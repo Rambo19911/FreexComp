@@ -1,0 +1,37 @@
+# RTL-212 table
+ok RunError(200)
+ok RunError(201)
+ok RunError(202)
+ok RunError(203)
+ok RunError(204)
+ok RunError(205)
+ok RunError(206)
+ok RunError(207)
+ok RunError(208)
+ok RunError(211)
+ok RunError(215)
+ok RunError(216)
+ok RunError(218)
+ok RunError(219)
+ok RunError(228)
+ok RunError(2)
+ok RunError(3)
+ok RunError(4)
+ok RunError(5)
+ok RunError(6)
+ok RunError(100)
+ok RunError(101)
+ok RunError(102)
+ok RunError(103)
+ok RunError(104)
+ok RunError(105)
+ok RunError(106)
+ok RunError(150)
+ok RunError(1)
+ok RunError(230)
+# errors raised by compiled code
+ok div by zero in a callee
+ok range check
+ok overflow check
+ok no leaks
+# passed 34 failed 0

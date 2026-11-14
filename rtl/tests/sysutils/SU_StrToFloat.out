@@ -1,0 +1,34 @@
+# accepted
+ok TryStrToFloat '1.5'
+ok TryStrToFloat '  -2.25 '#9
+ok TryStrToFloat '1e3'
+ok TryStrToFloat '1E-2'
+ok TryStrToFloat '.5'
+ok TryStrToFloat '+7'
+ok TryStrToFloat '0.1'
+ok TryStrToFloat '123456789012345678901234567890'
+ok TryStrToFloat '2.2250738585072011e-308'
+ok TryStrToFloat '1e-400'
+ok TryStrToFloat '4.9e-324'
+ok TryStrToFloat '1.7976931348623157e308'
+ok TryStrToFloat 'INF'
+ok TryStrToFloat '-inf'
+# rejected
+ok rejects ''
+ok rejects '   '
+ok rejects '1,5'
+ok rejects '1,000.5'
+ok rejects '1.'
+ok rejects 'abc'
+ok rejects '1.5x'
+ok rejects '1e400'
+ok rejects '-1e309'
+ok rejects '1 2'
+# decimal separator from the settings
+ok TryStrToFloat '1,5'
+ok rejects '1.5'
+ok StrToFloatDef default
+ok StrToFloatDef value
+ok explicit settings overload
+ok explicit settings reject ;
+# passed 30 failed 0

@@ -1,0 +1,70 @@
+# hierarchy
+ok Exception < TObject
+ok EAbort < Exception
+ok EHeapException < Exception
+ok EOutOfMemory < EHeapException
+ok EInvalidPointer < EHeapException
+ok EInOutError < Exception
+ok EExternal < Exception
+ok EExternalException < EExternal
+ok EIntError < EExternal
+ok EDivByZero < EIntError
+ok ERangeError < EIntError
+ok EIntOverflow < EIntError
+ok EMathError < EExternal
+ok EInvalidOp < EMathError
+ok EZeroDivide < EMathError
+ok EOverflow < EMathError
+ok EUnderflow < EMathError
+ok EAccessViolation < EExternal
+ok EPrivilege < EExternal
+ok EStackOverflow < EExternal
+ok EControlC < EExternal
+ok EInvalidCast < Exception
+ok EConvertError < Exception
+ok EAssertionFailed < Exception
+ok EAbstractError < Exception
+ok EIntfCastError < Exception
+ok EOSError < Exception
+ok ENotImplemented < Exception
+ok ENotSupportedException < Exception
+ok EInvalidOpException < Exception
+ok EArgumentException < Exception
+ok EArgumentOutOfRangeException < EArgumentException
+ok EArgumentNilException < EArgumentException
+ok EEncodingError < Exception
+ok EFileNotFoundException < Exception
+ok EDirectoryNotFoundException < Exception
+ok EZeroDivide inherits EExternal
+ok ERangeError inherits Exception
+ok ERangeError is no EMathError
+ok EConvertError is no EExternal
+ok EOutOfMemory is no EExternal
+# Exception members
+ok Create
+ok ToString = Message
+ok HelpContext 0
+ok no InnerException
+ok GetBaseException of a single exception
+ok Message write
+ok CreateFmt
+ok CreateHelp message
+ok CreateHelp context
+ok HelpContext write
+ok CreateFmtHelp message
+ok CreateFmtHelp context
+ok FMessage at offset 8
+# RaiseOuterException
+ok outer caught
+ok inner attached
+ok inner class
+ok inner message
+ok GetBaseException follows InnerException
+ok outside a handler: no inner exception
+ok outside a handler: raised
+# pre-allocated heap exceptions
+ok EOutOfMemory message
+ok the same EOutOfMemory instance both times
+ok instance kept after its handler
+ok no leaks
+# passed 65 failed 0

@@ -1,0 +1,43 @@
+# length and copy
+ok StrLen nil
+ok StrLen
+ok StrEnd
+ok StrCopy
+ok StrLCopy cuts
+ok StrLCopy short source
+ok StrPCopy
+ok StrPLCopy
+ok StrCat
+ok StrLCat total length
+ok StrLCat already full
+# comparison
+ok StrComp equal
+ok StrComp less
+ok StrComp longer
+ok StrComp ordinal
+ok StrIComp
+ok StrIComp greater
+ok StrLComp prefix
+ok StrLComp less
+ok StrLIComp
+ok StrLIComp greater
+# search
+ok StrScan
+ok StrScan missing
+ok StrScan terminator
+ok StrRScan
+ok StrRScan missing
+ok StrPos
+ok StrPos missing
+# case
+ok StrUpper ASCII only
+ok StrLower ASCII only
+ok in place
+# allocation
+ok StrBufSize
+ok StrNew
+ok StrNew size includes terminator
+ok StrNew nil
+ok no leaks
+ok StrPas
+# passed 37 failed 0

@@ -1,0 +1,39 @@
+# UpperCase / LowerCase
+ok UpperCase
+ok LowerCase
+ok UpperCase leaves non-ASCII
+ok LowerCase leaves non-ASCII
+ok UpperCase empty
+ok UpperCase unchanged returns the same reference
+ok LowerCase unchanged
+ok Trim unchanged returns the same reference
+# CompareStr / CompareText
+ok CompareStr equal
+ok CompareStr less
+ok CompareStr greater
+ok CompareStr prefix
+ok CompareStr empty
+ok CompareStr ordinal case
+ok CompareStr normalised to 1
+ok CompareText equal
+ok CompareText ignores case
+ok CompareText less
+ok CompareText after upper-casing: _ > A
+ok CompareText non-ASCII is ordinal
+ok SameStr
+ok SameStr case
+ok SameText
+ok SameText length
+# CompareMem
+ok CompareMem equal prefix
+ok CompareMem differs
+ok CompareMem 0
+ok CompareMem negative
+# Trim
+ok Trim
+ok TrimLeft
+ok TrimRight
+ok Trim blanks
+ok TrimLeft empty
+ok Trim keeps U+00A0
+# passed 34 failed 0

@@ -1,0 +1,28 @@
+# access violations
+ok read message
+ok read ExceptionCode
+ok read ExceptionAddress
+ok write message
+ok write ExceptionCode
+ok write ExceptionAddress
+# other OS codes
+ok C0000094
+ok C0000094 ExceptionCode
+ok C0000095
+ok C0000095 ExceptionCode
+ok C000008E
+ok C000008E ExceptionCode
+ok C0000090
+ok C0000090 ExceptionCode
+ok C0000091
+ok C0000091 ExceptionCode
+ok C0000093
+ok C0000093 ExceptionCode
+ok C000001D
+ok C000001D ExceptionCode
+ok C0000096
+ok C0000096 ExceptionCode
+ok C000008C
+ok C000008C ExceptionCode
+ok no leaks
+# passed 25 failed 0

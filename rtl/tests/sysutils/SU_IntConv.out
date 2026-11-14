@@ -1,0 +1,61 @@
+# IntToStr / UIntToStr
+ok IntToStr 0
+ok IntToStr -42
+ok IntToStr MaxInt
+ok IntToStr Low(Integer)
+ok IntToStr Low(Int64)
+ok IntToStr Int64
+ok UIntToStr Cardinal
+ok UIntToStr UInt64
+# IntToHex
+ok IntToHex(255, 4)
+ok IntToHex(-1, 1)
+ok IntToHex(0, 0)
+ok never truncated
+ok IntToHex Int64 -1
+ok IntToHex Int64 padded
+ok IntToHex UInt64
+ok IntToHex Integer default digits
+ok IntToHex Int64 default digits
+# TryStrToInt and friends
+ok TryStrToInt 123
+ok TryStrToInt trims
+ok TryStrToInt hex
+ok TryStrToInt 0x
+ok TryStrToInt Low
+ok TryStrToInt overflow
+ok TryStrToInt hex out of range
+ok TryStrToInt empty
+ok TryStrToInt junk
+ok TryStrToInt inner space
+ok TryStrToInt64 Low
+ok TryStrToInt64 overflow
+ok TryStrToInt64 hex all bits
+ok TryStrToUInt max
+ok TryStrToUInt overflow
+ok TryStrToUInt minus
+ok TryStrToUInt minus zero
+ok TryStrToUInt64 max
+ok TryStrToUInt64 overflow
+ok TryStrToUInt64 minus
+ok StrToIntDef default
+ok StrToIntDef value
+ok StrToInt64Def default
+ok StrToUIntDef default
+ok StrToUInt64Def value
+# Booleans
+ok BoolToStr True
+ok BoolToStr False
+ok BoolToStr True strs
+ok BoolToStr False strs
+ok TryStrToBool TRUE
+ok TryStrToBool false
+ok TryStrToBool -1
+ok TryStrToBool 0
+ok TryStrToBool 2.5
+ok TryStrToBool 0.0
+ok TryStrToBool yes
+ok TryStrToBool empty
+ok StrToBoolDef default
+ok StrToBoolDef value
+# passed 56 failed 0

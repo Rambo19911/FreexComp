@@ -72,6 +72,76 @@ type
   end;
 
 const
+  { TVarRec.VType values (rtl-abi.md section 9.10, RTL-013); vtCurrency, vtVariant and vtWideString are reserved and
+    never produced by the compiler }
+  vtInteger = 0;
+  vtBoolean = 1;
+  vtChar = 2;
+  vtExtended = 3;
+  vtString = 4;
+  vtPointer = 5;
+  vtPChar = 6;
+  vtObject = 7;
+  vtClass = 8;
+  vtWideChar = 9;
+  vtPWideChar = 10;
+  vtAnsiString = 11;
+  vtCurrency = 12;
+  vtVariant = 13;
+  vtInterface = 14;
+  vtWideString = 15;
+  vtInt64 = 16;
+  vtUnicodeString = 17;
+
+type
+  { one element of an "array of const" argument (rtl-abi.md section 9.10): 16 bytes, VType at offset 0, the payload at
+    offset 8. String and interface references are not counted; VExtended and VInt64 point at temporaries. }
+  TVarRec = record
+    case VType: Byte of
+      vtInteger: (VInteger: Integer);
+      vtBoolean: (VBoolean: Boolean);
+      vtChar: (VChar: AnsiChar);
+      vtExtended: (VExtended: PDouble);
+      vtString: (VString: PShortString);
+      vtPointer: (VPointer: Pointer);
+      vtPChar: (VPChar: PAnsiChar);
+      vtObject: (VObject: TObject);
+      vtClass: (VClass: TClass);
+      vtWideChar: (VWideChar: WideChar);
+      vtPWideChar: (VPWideChar: PWideChar);
+      vtAnsiString: (VAnsiString: Pointer);
+      vtInterface: (VInterface: Pointer);
+      vtInt64: (VInt64: PInt64);
+      vtUnicodeString: (VUnicodeString: Pointer);
+  end;
+  PVarRec = ^TVarRec;
+
+  { system.md section 1.3 }
+  TDateTime = type Double;             { days since 1899-12-30T00:00, fraction = time of day }
+  TDate = type TDateTime;
+  TTime = type TDateTime;
+  PDateTime = ^TDateTime;
+  TGUID = packed record
+    D1: Cardinal;
+    D2: Word;
+    D3: Word;
+    D4: array[0..7] of Byte;
+  end;
+  PGUID = ^TGUID;
+  TMethod = record
+    Code, Data: Pointer;
+  end;
+  TBytes = array of Byte;
+  TTextLineBreakStyle = (tlbsLF, tlbsCRLF);
+
+const
+  { system.md section 2 }
+  MaxInt = 2147483647;
+  MaxLongInt = 2147483647;
+  sLineBreak = #13#10;
+  DefaultTextLineBreakStyle = tlbsCRLF;
+
+const
   { system.md RTL-154: COM result codes used by the interface support }
   S_OK = 0;
   S_FALSE = 1;

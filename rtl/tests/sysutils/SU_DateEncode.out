@@ -1,0 +1,67 @@
+# constants
+ok DateDelta
+ok UnixDateDelta
+ok MSecsPerDay
+ok SecsPerDay
+ok MinsPerDay
+ok MinDateTime
+ok MaxDateTime
+# TryEncodeDate
+ok TryEncodeDate 1899-12-30
+ok TryEncodeDate 1900-1-1
+ok TryEncodeDate 1970-1-1
+ok TryEncodeDate 2000-2-29
+ok TryEncodeDate 1-1-1
+ok TryEncodeDate 9999-12-31
+ok TryEncodeDate 1899-12-29
+ok invalid 0-1-1
+ok invalid 10000-1-1
+ok invalid 2001-2-29
+ok invalid 1900-2-29
+ok invalid 2000-13-1
+ok invalid 2000-0-1
+ok invalid 2000-4-31
+ok invalid 2000-1-0
+# DecodeDate
+ok DecodeDate 0
+ok DecodeDate min
+ok DecodeDate max
+ok DecodeDate leap day with time
+ok DecodeDate negative uses the integer part
+ok round trip every 997th day
+ok DecodeDateFully leap year
+ok DecodeDateFully 2000-01-01 is a Saturday
+ok DecodeDateFully 1900 not leap
+# time
+ok TryEncodeTime
+ok TryEncodeTime value
+ok hour 24 invalid
+ok minute 60 invalid
+ok second 60 invalid
+ok ms 1000 invalid
+ok DecodeTime
+ok DecodeTime last ms
+ok DecodeTime negative: absolute fraction
+ok DecodeTime clamps, no carry
+ok DecodeTime midnight
+# DayOfWeek / IsLeapYear
+ok 1899-12-30 Saturday
+ok 2024-03-03 Sunday
+ok 0001-01-01 Monday
+ok negative date Friday
+ok IsLeapYear 2000
+ok IsLeapYear 1900
+ok IsLeapYear 2024
+ok IsLeapYear 2023
+# IncMonth
+ok IncMonth clips to Feb 29
+ok IncMonth clips to Feb 28
+ok IncMonth over the year end
+ok IncMonth backwards
+ok IncMonth -12
+ok IncMonth +12 clips
+ok IncMonth keeps the time
+# TSystemTime
+ok DateTimeToSystemTime
+ok SystemTimeToDateTime
+# passed 59 failed 0

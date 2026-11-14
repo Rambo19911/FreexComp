@@ -1,0 +1,79 @@
+# normative examples
+ok Format('%d items', [3])
+ok Format('%5d|%-5d|', [42, 42])
+ok Format('%.3d', [-7])
+ok Format('%x', [-1])
+ok Format('%.2f', [3.14159])
+ok Format('%8.3f', [2.5])
+ok Format('%e', [1234.5])
+ok Format('%g', [0.5])
+ok Format('%n', [1234567.891])
+ok Format('%s=%s', ['a', 'b'])
+ok Format('%1:s %0:s %s', ['a', 'b'])
+ok Format('%*d', [4, 7])
+ok Format('%.2s', ['hello'])
+ok Format('100%%', [])
+ok Format('%d', ['x']) raises
+# more conversions
+ok d negative
+ok d Int64
+ok d Int64 prec
+ok d prec > 32 ignored
+ok u 32-bit pattern
+ok u 64-bit pattern
+ok u prec
+ok x
+ok X prec
+ok x Int64
+ok e from Integer
+ok e prec
+ok g exponent digits
+ok f rounds half-even
+ok f from Int64
+ok n negative
+ok m default decimals
+ok m prec
+ok g variable
+ok p nil
+ok p
+ok p object
+ok p class
+ok s of every string kind
+ok s nil PChar
+ok s prec keeps a whole pair
+ok s prec drops a split pair
+ok s width
+ok negative * width left-justifies
+ok * prec
+ok * index
+ok unused arguments
+ok %% before a letter
+ok type is case-insensitive
+ok index resets the counter
+ok FmtStr
+ok uses FormatSettings
+ok explicit settings overload
+ok StrFmt
+ok StrLFmt truncates
+# error paths
+ok lone % at the end
+ok width without type
+ok dot without type
+ok unknown type
+ok minus without type
+ok index without type
+ok s of a Boolean
+ok s of an Integer
+ok d of a real
+ok x of a real
+ok u of a string
+ok f of a string
+ok e of a Boolean
+ok p of an Integer
+ok * of a string
+ok * prec of a real
+ok missing argument
+ok index beyond arguments
+ok * consumes the last argument
+ok no arguments
+# passed 75 failed 0

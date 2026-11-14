@@ -1,0 +1,48 @@
+# InvariantFormatSettings
+ok invariant CurrencyString
+ok invariant CurrencyFormat
+ok invariant CurrencyDecimals
+ok invariant NegCurrFormat
+ok invariant ThousandSeparator
+ok invariant DecimalSeparator
+ok invariant DateSeparator
+ok invariant TimeSeparator
+ok invariant ListSeparator
+ok invariant ShortDateFormat
+ok invariant LongDateFormat
+ok invariant ShortTimeFormat
+ok invariant LongTimeFormat
+ok invariant TimeAMString
+ok invariant TimePMString
+ok invariant TwoDigitYearCenturyWindow
+ok invariant ShortMonthNames
+ok invariant LongMonthNames
+ok invariant ShortDayNames
+ok invariant LongDayNames
+# FormatSettings at start-up
+ok global CurrencyString
+ok global CurrencyFormat
+ok global CurrencyDecimals
+ok global NegCurrFormat
+ok global ThousandSeparator
+ok global DecimalSeparator
+ok global DateSeparator
+ok global TimeSeparator
+ok global ListSeparator
+ok global ShortDateFormat
+ok global LongDateFormat
+ok global ShortTimeFormat
+ok global LongTimeFormat
+ok global TimeAMString
+ok global TimePMString
+ok global TwoDigitYearCenturyWindow
+ok global ShortMonthNames
+ok global LongMonthNames
+ok global ShortDayNames
+ok global LongDayNames
+# independent copies
+ok invariant unchanged
+ok invariant names unchanged
+ok global changed
+ok copy does not alias
+# passed 44 failed 0

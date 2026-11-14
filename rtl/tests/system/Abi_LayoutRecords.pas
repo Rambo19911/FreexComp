@@ -16,6 +16,7 @@ var
   AI: TArrayTypeInfo;
   V: TVmtHeader;
   H: PVmtHeader;
+  VR: TVarRec;
 
 type
   TWithField = class
@@ -54,4 +55,14 @@ begin
   H := PVmtHeader(TWithField);
   Writeln('TWithField VMT: parent TObject ', H^.Parent = Pointer(TObject), ', size ', H^.InstanceSize, ', init count ',
     PNativeInt(H^.InitTable)^, ', field offset ', PManagedField(PByte(H^.InitTable) + 8)^.Offset);
+  { System's public TVarRec (rtl-abi.md section 9.10, RTL-013): VType at 0, every payload field at 8 }
+  Writeln('TVarRec ', SizeOf(TVarRec), ': ', Offset(@VR, @VR.VType), ' ', Offset(@VR, @VR.VInteger), ' ',
+    Offset(@VR, @VR.VBoolean), ' ', Offset(@VR, @VR.VChar), ' ', Offset(@VR, @VR.VExtended), ' ',
+    Offset(@VR, @VR.VString), ' ', Offset(@VR, @VR.VPointer), ' ', Offset(@VR, @VR.VPChar), ' ',
+    Offset(@VR, @VR.VObject), ' ', Offset(@VR, @VR.VClass), ' ', Offset(@VR, @VR.VWideChar), ' ',
+    Offset(@VR, @VR.VPWideChar), ' ', Offset(@VR, @VR.VAnsiString), ' ', Offset(@VR, @VR.VInterface), ' ',
+    Offset(@VR, @VR.VInt64), ' ', Offset(@VR, @VR.VUnicodeString));
+  Writeln('vt: ', vtInteger, ' ', vtBoolean, ' ', vtChar, ' ', vtExtended, ' ', vtString, ' ', vtPointer, ' ',
+    vtPChar, ' ', vtObject, ' ', vtClass, ' ', vtWideChar, ' ', vtPWideChar, ' ', vtAnsiString, ' ', vtCurrency, ' ',
+    vtVariant, ' ', vtInterface, ' ', vtWideString, ' ', vtInt64, ' ', vtUnicodeString);
 end.

@@ -1,0 +1,71 @@
+# ExtractFilePath / ExtractFileDir
+ok ExtractFilePath('C:\dir\file.txt')
+ok ExtractFilePath('C:file.txt')
+ok ExtractFilePath('file.txt')
+ok ExtractFilePath('a/b/c')
+ok ExtractFilePath('\\srv\share\x')
+ok ExtractFilePath('')
+ok ExtractFileDir('C:\dir\file.txt')
+ok ExtractFileDir('C:\file.txt')
+ok ExtractFileDir('\file.txt')
+ok ExtractFileDir('a/b/c')
+ok ExtractFileDir('C:x')
+ok ExtractFileDir('x')
+# ExtractFileName / ExtractFileExt
+ok ExtractFileName('C:\dir\file.txt')
+ok ExtractFileName('C:file.txt')
+ok ExtractFileName('a/b')
+ok ExtractFileName('C:\dir\')
+ok ExtractFileName('plain')
+ok ExtractFileExt('C:\dir\file.txt')
+ok ExtractFileExt('a.tar.gz')
+ok ExtractFileExt('C:\dir.d\file')
+ok ExtractFileExt('name.')
+ok ExtractFileExt('.hidden')
+ok ExtractFileExt('a/b.c/d')
+ok ExtractFileExt('')
+# ExtractFileDrive
+ok ExtractFileDrive('C:\dir')
+ok ExtractFileDrive('c:')
+ok ExtractFileDrive('\\srv\share\dir\f')
+ok ExtractFileDrive('\\srv\share')
+ok ExtractFileDrive('//srv/share/x')
+ok ExtractFileDrive('\dir')
+ok ExtractFileDrive('dir\f')
+ok ExtractFileDrive('\\srv')
+# ChangeFileExt / ChangeFilePath
+ok ChangeFileExt('a\b.txt')
+ok ChangeFileExt('a\b')
+ok ChangeFileExt('a\b.txt')
+ok ChangeFileExt('a.d\b')
+ok ChangeFilePath('C:\x\f.txt')
+ok ChangeFilePath('f.txt')
+# trailing delimiters
+ok IncludeTrailingPathDelimiter('C:\a')
+ok IncludeTrailingPathDelimiter('C:\a\')
+ok IncludeTrailingPathDelimiter('a/')
+ok IncludeTrailingPathDelimiter('')
+ok ExcludeTrailingPathDelimiter('C:\a\')
+ok ExcludeTrailingPathDelimiter('a//')
+ok ExcludeTrailingPathDelimiter('a')
+ok IsPathDelimiter \
+ok IsPathDelimiter /
+ok IsPathDelimiter not
+ok IsPathDelimiter beyond
+# relative paths
+ok IsRelativePath a\b
+ok IsRelativePath C:a
+ok IsRelativePath C:\a
+ok IsRelativePath \a
+ok IsRelativePath /a
+ok ExtractRelativePath('C:\a\b\x.txt')
+ok ExtractRelativePath('C:\a\c\x.txt')
+ok ExtractRelativePath('C:\x.txt')
+ok ExtractRelativePath('c:\A\B\y')
+ok ExtractRelativePath('D:\a\x')
+ok SameFileName
+ok SameFileName differs
+# ExpandFileName
+ok ExpandFileName relative
+ok ExpandFileName absolute
+# passed 63 failed 0

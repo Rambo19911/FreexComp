@@ -1,0 +1,55 @@
+# quoting
+ok QuotedStr
+ok QuotedStr doubles
+ok QuotedStr empty
+ok AnsiQuotedStr
+ok AnsiDequotedStr
+ok AnsiDequotedStr missing close
+ok AnsiDequotedStr not quoted
+ok AnsiDequotedStr empty
+ok AnsiExtractQuotedStr token
+ok AnsiExtractQuotedStr advances
+ok AnsiExtractQuotedStr no quote
+ok AnsiExtractQuotedStr no quote keeps Src
+# StringReplace
+ok first only
+ok all
+ok case sensitive
+ok ignore case
+ok non-overlapping
+ok empty pattern
+ok delete
+ok growing
+# delimiters
+ok IsDelimiter
+ok IsDelimiter not
+ok IsDelimiter index 0
+ok IsDelimiter beyond
+ok LastDelimiter
+ok LastDelimiter none
+# WrapText
+ok WrapText at space
+ok WrapText at dash
+ok WrapText short
+ok WrapText keeps quoted text
+ok WrapText BreakStr
+ok WrapText no break char
+# AdjustLineBreaks
+ok to CRLF
+ok to LF
+ok LF CR is two breaks
+# IsValidIdent
+ok ident
+ok digit first
+ok empty
+ok dot not allowed
+ok dots allowed
+ok empty part
+ok trailing dot
+ok ASCII only
+# CharInSet
+ok CharInSet
+ok CharInSet not
+ok CharInSet U+00FF
+ok CharInSet above U+00FF
+# passed 47 failed 0

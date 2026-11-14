@@ -1,6 +1,7 @@
 {
   "aliases": {
     "System.RTLConsts": "RTLConsts",
+    "System.SysUtils": "SysUtils",
     "System.Types": "Types",
     "Winapi.CommCtrl": "CommCtrl",
     "Winapi.CommDlg": "CommDlg",
