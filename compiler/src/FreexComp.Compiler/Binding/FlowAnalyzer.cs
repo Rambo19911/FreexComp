@@ -434,6 +434,35 @@ internal sealed class FlowAnalyzer
             case IntrinsicKind.Move:
                 return AssignOrEval(statement.Arguments[1], Eval(statement.Arguments[2], Eval(statement.Arguments[0], state)));
 
+            case IntrinsicKind.SetLength or IntrinsicKind.Delete or IntrinsicKind.Insert:
+            {
+                // the string is read and written (C-062)
+                foreach (var argument in statement.Arguments)
+                {
+                    state = Eval(argument, state);
+                }
+
+                if (statement.Arguments[statement.Intrinsic.Intrinsic == IntrinsicKind.Insert ? 1 : 0] is BoundVariableExpression edited)
+                {
+                    Assign(edited.Variable, state, null);
+                }
+
+                return state;
+            }
+
+            case IntrinsicKind.Str:
+                // [x, s, w?, d?]: the value and widths are read, the string only written
+                state = Eval(statement.Arguments[0], state);
+                foreach (var argument in statement.Arguments.Skip(2))
+                {
+                    state = Eval(argument, state);
+                }
+
+                return AssignOrEval(statement.Arguments[1], state);
+
+            case IntrinsicKind.Val:
+                return AssignOrEval(statement.Arguments[2], AssignOrEval(statement.Arguments[1], Eval(statement.Arguments[0], state)));
+
             case IntrinsicKind.Dispose or IntrinsicKind.FreeMem or IntrinsicKind.ReallocMem:
                 foreach (var argument in statement.Arguments)
                 {
@@ -634,6 +663,11 @@ internal sealed class FlowAnalyzer
                 foreach (var argument in intrinsic.Arguments)
                 {
                     state = Eval(argument, state);
+                }
+
+                if (intrinsic.Intrinsic.IsAtomic && intrinsic.Arguments[0] is BoundVariableExpression target)
+                {
+                    Assign(target.Variable, state, null);                       // read, then written (C-168)
                 }
 
                 return state;

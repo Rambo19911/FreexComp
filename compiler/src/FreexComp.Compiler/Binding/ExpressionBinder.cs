@@ -37,6 +37,9 @@ internal sealed class ExpressionBinder
     /// <summary>Variables, parameters and <c>Result</c> of enclosing routines referenced here, in first-reference order (CMP-345).</summary>
     public List<Symbol> CapturedVariables { get; } = [];
 
+    /// <summary>Variables whose address (or the address of a part) is taken with <c>@</c>/<c>Addr</c> (CMP-325 rule 4, C-062).</summary>
+    public HashSet<Symbol> AddressTakenVariables { get; } = [];
+
     /// <summary>Records <paramref name="symbol"/> as captured when it belongs to an enclosing routine (LANG-450).</summary>
     public void NoteReference(Symbol symbol)
     {
@@ -242,6 +245,11 @@ internal sealed class ExpressionBinder
         {
             _diagnostics.Report(operandSyntax, "E2033");
             return Error(syntax, operand);
+        }
+
+        if (BoundIndexExpression.RootOf(operand) is BoundVariableExpression { Variable: var variable })
+        {
+            AddressTakenVariables.Add(variable);
         }
 
         return new BoundAddressOfExpression(syntax, operand, routine: null, _types.Pointer);
@@ -555,6 +563,16 @@ internal sealed class ExpressionBinder
             return BindPointerFunction(invocation, intrinsic);
         }
 
+        if (intrinsic.IsAtomic)
+        {
+            return BindAtomic(invocation, intrinsic);
+        }
+
+        if (intrinsic.IsStringFunction)
+        {
+            return BindStringFunction(invocation, intrinsic);
+        }
+
         if (!_folder.CheckSingleArgument(invocation, intrinsic))
         {
             return Error(invocation);
@@ -661,6 +679,198 @@ internal sealed class ExpressionBinder
         }
 
         return new BoundIntrinsicCallExpression(invocation, intrinsic, [Convert(operand, _types.NativeUInt)], _types.Pointer, constantValue: null);
+    }
+
+    /// <summary>
+    /// ABI-172 / intrinsics.md (C-168): <c>AtomicIncrement</c>/<c>AtomicDecrement(var Target[; N])</c>,
+    /// <c>AtomicExchange(var Target; Value)</c>, <c>AtomicCmpExchange(var Target; NewValue, Comparand)</c>. <c>Target</c> is an
+    /// assignable variable of a 32-/64-bit integer type or a pointer type (E2010 otherwise); <c>N</c> is any integer expression
+    /// (kept unconverted; a typed pointer moves by <c>N</c> elements like <c>Inc</c>); the values are converted to the target's
+    /// type. The result has the target's type. Arguments: target first, then in source order.
+    /// </summary>
+    private BoundExpression BindAtomic(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        var (min, max) = intrinsic.Intrinsic switch
+        {
+            IntrinsicKind.AtomicIncrement or IntrinsicKind.AtomicDecrement => (1, 2),
+            IntrinsicKind.AtomicExchange => (2, 2),
+            _ => (3, 3),
+        };
+        if (arguments.Count < min)
+        {
+            _diagnostics.Report(invocation, "E2110", intrinsic.Name);
+            return Error(invocation);
+        }
+
+        if (arguments.Count > max)
+        {
+            _diagnostics.Report(arguments[max], "E2111", intrinsic.Name);
+            return Error(invocation);
+        }
+
+        foreach (var argument in arguments)
+        {
+            if (argument.WidthColonToken is { } colon)
+            {
+                _diagnostics.Report(colon, "E2915");
+                return Error(invocation);
+            }
+        }
+
+        var syntax = arguments[0].Expression;
+        var target = BindVariable(syntax);
+        if (target.HasErrors || !CheckVariableReference(target, syntax))
+        {
+            return Error(invocation, target);
+        }
+
+        if (target.Type is not (IntegerTypeSymbol { Size: 4 or 8 } or PointerTypeSymbol))
+        {
+            _diagnostics.Report(syntax, "E2010", target.Type.Name, _types.Integer.Name);
+            return Error(invocation, target);
+        }
+
+        var operands = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
+        operands.Add(target);
+        var counted = intrinsic.Intrinsic is IntrinsicKind.AtomicIncrement or IntrinsicKind.AtomicDecrement;
+        for (var k = 1; k < arguments.Count; k++)
+        {
+            var valueSyntax = arguments[k].Expression;
+            var value = counted ? BindExpression(valueSyntax) : BindExpression(valueSyntax, target.Type);
+            if (value.HasErrors)
+            {
+                return Error(invocation, [.. operands, value]);
+            }
+
+            if (counted && value.Type is not IntegerTypeSymbol)
+            {
+                _diagnostics.Report(valueSyntax, "E2010", value.Type.Name, _types.Integer.Name);
+                return Error(invocation, [.. operands, value]);
+            }
+
+            value = counted ? value : ConvertForAssignment(value, target.Type, valueSyntax);
+            if (value.HasErrors)
+            {
+                return Error(invocation, [.. operands, value]);
+            }
+
+            operands.Add(value);
+        }
+
+        return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), target.Type, constantValue: null);
+    }
+
+    /// <summary>
+    /// intrinsics.md §1 (C-062) on UnicodeStrings: <c>Copy(s, index[, count]): string</c>, <c>Pos(sub, s[, offset]): Integer</c>,
+    /// <c>Concat(s1, …): string</c> (bound as the <c>+</c> chain it equals; one argument is that string), <c>UpCase(c: Char): Char</c>.
+    /// String operands accept characters (LANG-245); integer operands convert to <c>Integer</c>. Other string kinds and dynamic
+    /// arrays: E2900 (C-063, C-064); other types E2010.
+    /// </summary>
+    private BoundExpression BindStringFunction(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        var (min, max) = intrinsic.Intrinsic switch
+        {
+            IntrinsicKind.Copy or IntrinsicKind.Pos => (2, 3),
+            IntrinsicKind.Concat => (1, int.MaxValue),
+            _ => (1, 1),
+        };
+        if (arguments.Count < min)
+        {
+            _diagnostics.Report(invocation, "E2110", intrinsic.Name);
+            return Error(invocation);
+        }
+
+        if (arguments.Count > max)
+        {
+            _diagnostics.Report(arguments[max], "E2111", intrinsic.Name);
+            return Error(invocation);
+        }
+
+        foreach (var argument in arguments)
+        {
+            if (argument.WidthColonToken is { } colon)
+            {
+                _diagnostics.Report(colon, "E2915");
+                return Error(invocation);
+            }
+        }
+
+        var operands = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
+        for (var k = 0; k < arguments.Count; k++)
+        {
+            var syntax = arguments[k].Expression;
+            var stringOperand = intrinsic.Intrinsic switch
+            {
+                IntrinsicKind.Copy => k == 0,
+                IntrinsicKind.Pos => k < 2,
+                IntrinsicKind.Concat => true,
+                _ => false,
+            };
+            var value = BindExpression(syntax);
+            value = value.HasErrors ? value
+                : stringOperand ? StringOperand(value, syntax, intrinsic.Name)
+                : intrinsic.Intrinsic == IntrinsicKind.UpCase ? CharOperand(value, syntax)
+                : ConvertForAssignment(value, _types.Integer, syntax);
+            if (value.HasErrors)
+            {
+                return Error(invocation, [.. operands, value]);
+            }
+
+            operands.Add(value);
+        }
+
+        switch (intrinsic.Intrinsic)
+        {
+            case IntrinsicKind.Concat:
+                // intrinsics.md: the same as '+' (LANG-243): left-nested additions of the operands
+                var result = operands[0];
+                for (var k = 1; k < operands.Count; k++)
+                {
+                    result = new BoundBinaryExpression(invocation, BoundBinaryOperatorKind.Add, result, operands[k], _types.String, _types.String, constantValue: null);
+                }
+
+                return result;
+            case IntrinsicKind.Copy:
+                return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), _types.String, constantValue: null);
+            case IntrinsicKind.Pos:
+                return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), _types.Integer, constantValue: null);
+            default:
+                return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), _types.Char, constantValue: null);
+        }
+    }
+
+    /// <summary>
+    /// A UnicodeString operand of a string intrinsic (C-062): a UnicodeString or a character (converted, LANG-245); other string
+    /// kinds E2900 (C-063); anything else E2010.
+    /// </summary>
+    internal BoundExpression StringOperand(BoundExpression value, ExpressionSyntax syntax, string intrinsic)
+    {
+        if (IsUnicodeOperand(value.Type))
+        {
+            return AsString(value);
+        }
+
+        if (value.Type is StringTypeSymbol)
+        {
+            return Unsupported(syntax, intrinsic + " of a " + value.Type.Name);
+        }
+
+        _diagnostics.Report(syntax, "E2010", value.Type.Name, _types.String.Name);
+        return Error(syntax, value);
+    }
+
+    /// <summary>The <c>Char</c> operand of <c>UpCase</c> (an <c>AnsiChar</c> widens, LANG-245); E2010 for anything else.</summary>
+    private BoundExpression CharOperand(BoundExpression value, ExpressionSyntax syntax)
+    {
+        if (value.Type is CharTypeSymbol)
+        {
+            return ConvertForAssignment(value, _types.Char, syntax);
+        }
+
+        _diagnostics.Report(syntax, "E2010", value.Type.Name, _types.Char.Name);
+        return Error(syntax, value);
     }
 
     /// <summary>The argument of <c>Low</c>/<c>High</c>/<c>SizeOf</c>: a type name (bound argument null) or an expression.</summary>

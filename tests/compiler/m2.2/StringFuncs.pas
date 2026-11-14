@@ -1,0 +1,63 @@
+// covers: CMP-412, LANG-243
+program StringFuncs;
+var
+  S, T: string;
+  C: Char;
+  I: Integer;
+begin
+  S := 'Hello, World';
+  Writeln(Copy(S, 1, 5));
+  Writeln(Copy(S, 8, 100));
+  Writeln(Copy(S, 8));
+  Writeln('[', Copy(S, 0, 3), ']');
+  Writeln('[', Copy(S, 13, 2), ']');
+  Writeln('[', Copy(S, 5, 0), ']');
+  Writeln('[', Copy(S, 5, -1), ']');
+  T := S;
+  Delete(T, 6, 2);
+  Writeln(T);
+  T := S;
+  Delete(T, 6, 100);
+  Writeln(T);
+  T := S;
+  Delete(T, 0, 3);
+  Writeln(T);
+  Delete(T, 13, 1);
+  Writeln(T);
+  Delete(T, 1, 0);
+  Writeln(T);
+  Writeln(S);
+  T := 'ace';
+  Insert('b', T, 2);
+  Writeln(T);
+  Insert('d', T, 4);
+  Writeln(T);
+  Insert('!', T, 100);
+  Writeln(T);
+  Insert('>', T, -5);
+  Writeln(T);
+  C := '#';
+  Insert(C, T, 1);
+  Writeln(T);
+  Insert(T, T, 2);
+  Writeln(T);
+  S := 'abcabc';
+  Writeln(Pos('b', S));
+  Writeln(Pos('bc', S, 3));
+  Writeln(Pos('x', S));
+  Writeln(Pos('', S));
+  Writeln(Pos('abcabcd', S));
+  Writeln(Pos('c', S, 7));
+  Writeln(Concat('a', 'b', 'c'));
+  T := Concat(S, '-', C, S);
+  Writeln(T);
+  Writeln(Concat(S));
+  Writeln(UpCase('a'), UpCase('z'), UpCase('A'), UpCase('1'), UpCase(#233));
+  S := 'mixed Case 42';
+  for I := 1 to Length(S) do
+    S[I] := UpCase(S[I]);
+  Writeln(S);
+  T := Copy(S, 1, 5);
+  T := Copy(T, 2, 3);
+  Writeln(T);
+end.

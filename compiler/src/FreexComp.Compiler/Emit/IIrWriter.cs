@@ -10,6 +10,9 @@ internal enum IrIntPredicate { Eq, Ne, Slt, Sle, Sgt, Sge, Ult, Ule, Ugt, Uge }
 
 internal enum IrFloatPredicate { Oeq, One, Olt, Ole, Ogt, Oge, Ueq, Une, Ult, Ule, Ugt, Uge, Ord, Uno }
 
+/// <summary>The <c>atomicrmw</c> operations the compiler emits (CMP-412, ABI-172).</summary>
+internal enum IrAtomicOperator { Add, Sub, Xchg }
+
 internal enum IrCastOperator { Trunc, ZExt, SExt, FPTrunc, FPExt, FPToSI, FPToUI, SIToFP, UIToFP, PtrToInt, IntToPtr, BitCast }
 
 /// <summary>
@@ -96,6 +99,12 @@ internal interface IIrWriter
     IrLocal GetElementPtr(string name, IrType sourceType, IrValue address, ImmutableArray<IrValue> indices, bool inBounds = true);
 
     IrLocal ExtractValue(string name, IrValue aggregate, int index);
+
+    /// <summary><c>atomicrmw op ptr %address, T %value seq_cst, align N</c>: the previous value (CMP-412).</summary>
+    IrLocal AtomicRmw(string name, IrAtomicOperator op, IrValue address, IrValue value, int alignment);
+
+    /// <summary><c>cmpxchg ptr %address, T %comparand, T %newValue seq_cst seq_cst, align N</c>: the pair <c>{ T, i1 }</c> (CMP-412).</summary>
+    IrLocal CmpXchg(string name, IrValue address, IrValue comparand, IrValue newValue, int alignment);
 
     /// <summary>
     /// Direct or indirect call. <paramref name="name"/> must be null for <c>void</c>; may be null for a discarded result

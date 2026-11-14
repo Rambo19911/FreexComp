@@ -654,6 +654,11 @@ internal sealed class ConstantFolder
 
     private ConstantValue? FoldIntrinsicCall(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
     {
+        if (intrinsic.IsNeverConstant)
+        {
+            return NotConstant(invocation);                          // not in the LANG-340 list
+        }
+
         if (!CheckSingleArgument(invocation, intrinsic))
         {
             return null;

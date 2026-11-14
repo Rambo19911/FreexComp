@@ -508,3 +508,23 @@ internal sealed class LMemMove(LExpression source, LExpression destination, LExp
 
     public LExpression Count { get; } = count;
 }
+// ---------------------------------------------------------------------- atomics (C-168)
+
+internal enum LAtomicOperator { Add, Subtract, Exchange, CompareExchange }
+
+/// <summary>
+/// CMP-412 / ABI-172: one sequentially consistent atomic operation on the variable reference <see cref="Target"/> (a 32-/64-bit
+/// integer or a pointer; add/subtract work on a pointer through its <c>NativeInt</c> <see cref="LView"/>): <c>atomicrmw add|sub|xchg</c>
+/// with <see cref="Value"/>, or <c>cmpxchg</c> storing <see cref="Value"/> when the target equals <see cref="Comparand"/>. The value
+/// is the target's <b>previous</b> content. Evaluation: the target's address, then <see cref="Value"/>, then <see cref="Comparand"/>.
+/// </summary>
+internal sealed class LAtomic(LAtomicOperator op, LExpression target, LExpression value, LExpression? comparand) : LExpression(target.Type)
+{
+    public LAtomicOperator Operator { get; } = op;
+
+    public LExpression Target { get; } = target;
+
+    public LExpression Value { get; } = value;
+
+    public LExpression? Comparand { get; } = comparand;
+}

@@ -137,6 +137,8 @@ internal sealed class BodyBinder
     /// <summary>Outer symbols referenced by this body (CMP-345).</summary>
     public IReadOnlyList<Symbol> CapturedVariables => _expressions.CapturedVariables;
 
+    public IReadOnlyCollection<Symbol> AddressTakenVariables => _expressions.AddressTakenVariables;
+
     /// <summary>LANG-452: control variables of enclosing routines' <c>for</c> loops are read-only here.</summary>
     public void AddReadOnlyVariables(IEnumerable<Symbol> variables) => ForVariables.UnionWith(variables);
 
@@ -157,6 +159,11 @@ internal sealed class BodyBinder
         }
 
         var expression = _expressions.BindExpression(statement.Expression);
+        if (symbol is IntrinsicSymbol { IsAtomic: true } && statement.Expression is InvocationExpressionSyntax)
+        {
+            return new BoundExpressionStatement(statement, expression);       // C-168: the result may be discarded
+        }
+
         if (!expression.HasErrors)
         {
             _diagnostics.Report(statement.Expression, "E2060", expression.Type.Name);
@@ -370,6 +377,8 @@ internal sealed class BodyBinder
             IntrinsicKind.GetMem or IntrinsicKind.ReallocMem => (2, 2),
             IntrinsicKind.FillChar or IntrinsicKind.Move => (3, 3),
             IntrinsicKind.Assert => (1, 2),
+            IntrinsicKind.SetLength or IntrinsicKind.Str => (2, 2),
+            IntrinsicKind.Delete or IntrinsicKind.Insert or IntrinsicKind.Val => (3, 3),
             _ => (0, 0),
         };
         if (count < minArguments)
@@ -384,7 +393,8 @@ internal sealed class BodyBinder
             return new BoundErrorStatement(statement);
         }
 
-        foreach (var argument in arguments)
+        // the value of Str may carry :w[:d] (LANG-951); everything else rejects widths
+        foreach (var argument in intrinsic.Intrinsic == IntrinsicKind.Str ? arguments.Skip(1) : arguments)
         {
             if (argument.WidthColonToken is { } colon)
             {
@@ -395,6 +405,12 @@ internal sealed class BodyBinder
 
         switch (intrinsic.Intrinsic)
         {
+            case IntrinsicKind.SetLength or IntrinsicKind.Delete or IntrinsicKind.Insert:
+                return BindStringEdit(statement, intrinsic, arguments);
+            case IntrinsicKind.Str:
+                return BindStr(statement, intrinsic, arguments);
+            case IntrinsicKind.Val:
+                return BindVal(statement, intrinsic, arguments);
             case IntrinsicKind.Inc or IntrinsicKind.Dec:
                 return BindIncDec(statement, intrinsic, arguments);
             case IntrinsicKind.RunError:
@@ -471,6 +487,150 @@ internal sealed class BodyBinder
         }
 
         return new BoundIntrinsicCallStatement(statement, intrinsic, [condition, message]);
+    }
+
+    // ------------------------------------------------------------------ string procedures (intrinsics.md §1, §4; C-062)
+
+    /// <summary>
+    /// <c>SetLength(var s; n)</c>, <c>Delete(var s; index, count)</c>, <c>Insert(const sub; var s; index)</c> on a UnicodeString
+    /// variable <c>s</c> (other string kinds and dynamic arrays: E2900; other types E2010); <c>sub</c> a string or character; the
+    /// integers converted to <c>Integer</c>. Arguments in parameter order.
+    /// </summary>
+    private BoundStatement BindStringEdit(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var targetIndex = intrinsic.Intrinsic == IntrinsicKind.Insert ? 1 : 0;
+        var bound = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
+        for (var k = 0; k < arguments.Count; k++)
+        {
+            var syntax = arguments[k].Expression;
+            var value = k == targetIndex ? StringVariable(syntax, intrinsic)
+                : k == 0 ? Operand(syntax, v => _expressions.StringOperand(v, syntax, intrinsic.Name))
+                : Operand(syntax, v => _expressions.ConvertForAssignment(v, _types.Integer, syntax));
+            if (value is null)
+            {
+                return new BoundErrorStatement(statement);
+            }
+
+            bound.Add(value);
+        }
+
+        return new BoundIntrinsicCallStatement(statement, intrinsic, bound.ToImmutable());
+    }
+
+    /// <summary>An expression bound and then checked/converted by <paramref name="check"/>; null after any error.</summary>
+    private BoundExpression? Operand(ExpressionSyntax syntax, Func<BoundExpression, BoundExpression> check)
+    {
+        var value = _expressions.BindExpression(syntax);
+        if (value.HasErrors)
+        {
+            return null;
+        }
+
+        value = check(value);
+        return value.HasErrors ? null : value;
+    }
+
+    /// <summary>The <c>var s: string</c> argument: an assignable UnicodeString variable; null after E2112/E2113/E2010/E2900.</summary>
+    private BoundExpression? StringVariable(ExpressionSyntax syntax, IntrinsicSymbol intrinsic)
+    {
+        var target = _expressions.BindVariable(syntax);
+        if (target.HasErrors || !_expressions.CheckVariableReference(target, syntax))
+        {
+            return null;
+        }
+
+        switch (target.Type)
+        {
+            case StringTypeSymbol { Variant: StringVariant.Unicode }:
+                return target;
+            case StringTypeSymbol:
+                _diagnostics.Report(syntax, "E2900", intrinsic.Name + " of a " + target.Type.Name);   // C-063
+                return null;
+            default:
+                _diagnostics.Report(syntax, "E2010", target.Type.Name, _types.String.Name);
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// LANG-951 <c>Str(x[:w[:d]]; var s)</c>: <c>x</c> an integer or real value (E2010 otherwise; <c>:d</c> for reals only, E2912), kept
+    /// unconverted; arguments <c>[x, s, w?, d?]</c> with the widths converted to <c>Integer</c>.
+    /// </summary>
+    private BoundStatement BindStr(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var argument = arguments[0];
+        var value = _expressions.BindExpression(argument.Expression);
+        if (value.HasErrors)
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        if (value.Type is not (IntegerTypeSymbol or RealTypeSymbol { RealKind: not RealKind.Currency }))
+        {
+            _diagnostics.Report(argument.Expression, "E2010", value.Type.Name, _types.Integer.Name);
+            return new BoundErrorStatement(statement);
+        }
+
+        if (argument.DecimalsColonToken is { } decimalsColon && value.Type is not RealTypeSymbol)
+        {
+            _diagnostics.Report(decimalsColon, "E2912");
+            return new BoundErrorStatement(statement);
+        }
+
+        var width = argument.Width is { } w ? Operand(w, v => _expressions.ConvertForAssignment(v, _types.Integer, w)) : null;
+        var decimals = argument.Decimals is { } d ? Operand(d, v => _expressions.ConvertForAssignment(v, _types.Integer, d)) : null;
+        var target = StringVariable(arguments[1].Expression, intrinsic);
+        if ((argument.Width != null && width is null) || (argument.Decimals != null && decimals is null) || target is null)
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        var bound = ImmutableArray.CreateBuilder<BoundExpression>(4);
+        bound.Add(value);
+        bound.Add(target);
+        if (width != null)
+        {
+            bound.Add(width);
+        }
+
+        if (decimals != null)
+        {
+            bound.Add(decimals);
+        }
+
+        return new BoundIntrinsicCallStatement(statement, intrinsic, bound.ToImmutable());
+    }
+
+    /// <summary>
+    /// LANG-950 <c>Val(const s; var v; var code)</c>: <c>s</c> a string or character, <c>v</c> an assignable integer or real
+    /// (not <c>Currency</c>) variable, <c>code</c> an assignable integer variable (E2010 otherwise).
+    /// </summary>
+    private BoundStatement BindVal(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var sourceSyntax = arguments[0].Expression;
+        var source = Operand(sourceSyntax, v => _expressions.StringOperand(v, sourceSyntax, intrinsic.Name));
+        var value = NumericVariable(arguments[1].Expression, real: true);
+        var code = NumericVariable(arguments[2].Expression, real: false);
+        return source is null || value is null || code is null
+            ? new BoundErrorStatement(statement)
+            : new BoundIntrinsicCallStatement(statement, intrinsic, [source, value, code]);
+    }
+
+    private BoundExpression? NumericVariable(ExpressionSyntax syntax, bool real)
+    {
+        var variable = _expressions.BindVariable(syntax);
+        if (variable.HasErrors || !_expressions.CheckVariableReference(variable, syntax))
+        {
+            return null;
+        }
+
+        if (variable.Type is IntegerTypeSymbol || (real && variable.Type is RealTypeSymbol { RealKind: not RealKind.Currency }))
+        {
+            return variable;
+        }
+
+        _diagnostics.Report(syntax, "E2010", variable.Type.Name, _types.Integer.Name);
+        return null;
     }
 
     // ------------------------------------------------------------------ Write, Writeln (LANG-910…922)

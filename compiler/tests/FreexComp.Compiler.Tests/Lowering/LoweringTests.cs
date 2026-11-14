@@ -99,6 +99,20 @@ public sealed class LoweringTests
             "(zero (addr s)) (zero (addr $tmp1)) (block (:= $tmp1 (call G:string)) (call _UStrAsg (addr s) $tmp1)) (call N)",
             Body("function G: string; begin Result := 'g' end; procedure F; var s: string; procedure N; begin s := '' end; begin s := G; N end;"));
 
+    /// <summary>
+    /// CMP-325 rule 4 (codegen.md lead note C-060/C-061, from C-062): a local whose address is taken (<c>@s</c>, <c>Addr(s)</c>,
+    /// also of one of its characters) never receives a result directly — the callee could reach it through the pointer.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "CMP-325")]
+    [InlineData("p := @s")]
+    [InlineData("p := Addr(s)")]
+    [InlineData("p := @s[1]")]
+    public void ManagedAssignments_AddressTakenLocalGoesThroughATemporary(string addressOf) =>
+        Assert.StartsWith(
+            "(zero (addr s)) (zero (addr $tmp1)) (block (:= $tmp1 (call G:string)) (call _UStrAsg (addr s) $tmp1)) (:= p ",
+            Body("function G: string; begin Result := 'g' end; procedure F(var p: Pointer); var s: string; begin s := G; " + addressOf + " end;"));
+
     /// <summary>ABI-023/024, CMP-331: <c>Length</c> and <c>High</c> of a string value, a character at <c>i − 1</c>; checked under <c>{$R+}</c>.</summary>
     [Fact]
     [Trait("Req", "ABI-023")]
@@ -139,6 +153,62 @@ public sealed class LoweringTests
             string.Join(" ", body.Body.Statements.Select(LoweredDump.Of)));
         Assert.Equal("(block (call _UStrClr (addr $tmp1)))", Cleanup(body));
     }
+
+    /// <summary>
+    /// C-062 (CMP-412): the string procedures call their rtl-abi.md §9.3/§9.10 helpers with the variable's address; <c>Copy</c> is
+    /// built into the target (rule 4 style, <c>Count</c> omitted = <c>MaxInt</c>), <c>Pos</c> defaults <c>Offset</c> to 1, <c>Str</c>
+    /// passes the <c>Write</c> widths (CMP-410: reals 23/−1 without width), <c>UpCase</c> is inline.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "CMP-412")]
+    [InlineData("procedure F(var s: string; n: Integer)", "SetLength(s, n)", "(call _UStrSetLen (addr s) n)")]
+    [InlineData("procedure F(var s: string; i, n: Integer)", "Delete(s, i, n)", "(call _UStrDelete (addr s) i n)")]
+    [InlineData("procedure F(const t: string; var s: string; i: Integer)", "Insert(t, s, i)", "(call _UStrInsert t (addr s) i)")]
+    [InlineData("function F(const s: string; i, n: Integer): string", "Result := Copy(s, i, n)", "(call _UStrCopy (addr Result) s i n)")]
+    [InlineData("function F(const s: string; i: Integer): string", "Result := Copy(s, i)", "(call _UStrCopy (addr Result) s i 2147483647:Integer)")]
+    [InlineData("function F(const s, t: string): Integer", "Result := Pos(t, s)", "(:= Result (call _UStrPos:Integer t s 1:Integer))")]
+    [InlineData("function F(const s, t: string; i: Integer): Integer", "Result := Pos(t, s, i)", "(:= Result (call _UStrPos:Integer t s i))")]
+    [InlineData("procedure F(var s: string; i: Integer)", "Str(i, s)", "(call _StrInt (addr s) (conv Int64 i) 0:Integer)")]
+    [InlineData("procedure F(var s: string; i: Cardinal)", "Str(i:4, s)", "(call _StrUInt (addr s) (conv UInt64 i) 4:Integer)")]
+    [InlineData("procedure F(var s: string; d: Double)", "Str(d, s)", "(call _StrFloat (addr s) d 23:Integer -1:Integer)")]
+    [InlineData("procedure F(var s: string; d: Single; w: Integer)", "Str(d:w, s)", "(call _StrFloat (addr s) (conv Double d) w -1:Integer)")]
+    [InlineData("procedure F(var s: string; d: Double)", "Str(d:8:2, s)", "(call _StrFloat (addr s) d 8:Integer 2:Integer)")]
+    [InlineData("function F(c: Char): Char", "Result := UpCase(c)",
+        "(:= Result (let $v1 c (select (And:Boolean (GreaterOrEqual $v1 'a':Char) (LessOrEqual $v1 'z':Char)) (conv Char (Subtract:Integer (conv Integer $v1) 32:Integer)) $v1)))")]
+    public void StringIntrinsics_CallTheirHelpers(string heading, string statement, string expected) =>
+        Assert.Equal(expected, Body($"{heading}; begin {statement} end;"));
+
+    /// <summary>
+    /// C-062, CMP-412 / LANG-950: <c>Val</c> reads <c>_ValInt</c>/<c>_ValUInt</c>/<c>_ValFloat</c> with the code in an <c>Integer</c>
+    /// temporary; a variable narrower than the helper's result is range-tested (out of range: code := Length(s), value 0).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "CMP-412")]
+    [Trait("Req", "LANG-950")]
+    [InlineData("v: Int64", "(:= $tmp2 (call _ValInt:Int64 s (addr $tmp1))) (:= v $tmp2) (:= code $tmp1)")]
+    [InlineData("v: UInt64", "(:= $tmp2 (call _ValUInt:UInt64 s (addr $tmp1))) (:= v $tmp2) (:= code $tmp1)")]
+    [InlineData("v: Double", "(:= $tmp2 (call _ValFloat:Double s (addr $tmp1))) (:= v $tmp2) (:= code $tmp1)")]
+    [InlineData("v: Single", "(:= $tmp2 (call _ValFloat:Double s (addr $tmp1))) (:= v (conv Single $tmp2)) (:= code $tmp1)")]
+    [InlineData("v: Byte",
+        "(:= $tmp2 (call _ValInt:Int64 s (addr $tmp1))) " +
+        "(if (And:Boolean (Equal $tmp1 0:Integer) (Or:Boolean (Less $tmp2 0:Int64) (Greater $tmp2 255:Int64))) (block (:= $tmp1 (length s)) (:= $tmp2 0:Int64))) " +
+        "(:= v (conv Byte $tmp2)) (:= code $tmp1)")]
+    [InlineData("v: Integer",
+        "(:= $tmp2 (call _ValInt:Int64 s (addr $tmp1))) " +
+        "(if (And:Boolean (Equal $tmp1 0:Integer) (Or:Boolean (Less $tmp2 -2147483648:Int64) (Greater $tmp2 2147483647:Int64))) (block (:= $tmp1 (length s)) (:= $tmp2 0:Int64))) " +
+        "(:= v (conv Integer $tmp2)) (:= code $tmp1)")]
+    public void Val_ReadsThroughTheHelpers(string variable, string expected) =>
+        Assert.Equal("(block " + expected + ")", Body($"procedure F(const s: string; var {variable}; var code: Integer); begin Val(s, v, code) end;"));
+
+    /// <summary>C-062: a string-valued <c>Val</c> source that needs a temporary is evaluated once (its value is reused for <c>Length</c>).</summary>
+    [Fact]
+    [Trait("Req", "LANG-950")]
+    public void Val_EvaluatesTheSourceOnce() =>
+        Assert.Equal(
+            "(zero (addr $tmp1)) (block (call _UStrCat (addr $tmp1) s s) (:= $tmp3 (call _ValInt:Int64 $tmp1 (addr $tmp2))) " +
+            "(if (And:Boolean (Equal $tmp2 0:Integer) (Or:Boolean (Less $tmp3 -32768:Int64) (Greater $tmp3 32767:Int64))) (block (:= $tmp2 (length $tmp1)) (:= $tmp3 0:Int64))) " +
+            "(:= v (conv SmallInt $tmp3)) (:= code (conv Word $tmp2)))",
+            Body("procedure F(const s: string; var v: SmallInt; var code: Word); begin Val(s + s, v, code) end;"));
 
     /// <summary>C-060: a string-valued <c>Assert</c> message is passed as its value; a character goes through a managed temporary.</summary>
     [Fact]

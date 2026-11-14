@@ -51,6 +51,18 @@ procedure _UStrCatN(var Dest: Pointer; Parts: Pointer; Count: Integer);
 function _UStrCmp(A, B: Pointer): Integer;
 function _UStrEq(A, B: Pointer): Boolean;
 procedure _UStrUnique(var S: Pointer);
+procedure _UStrSetLen(var S: Pointer; NewLen: Integer);
+procedure _UStrCopy(var Dest: Pointer; S: Pointer; Index, Count: Integer);
+procedure _UStrDelete(var S: Pointer; Index, Count: Integer);
+procedure _UStrInsert(Src: Pointer; var Dest: Pointer; Index: Integer);
+function _UStrPos(SubStr, S: Pointer; Offset: Integer): Integer;
+
+procedure _StrInt(var Dest: Pointer; V: Int64; Width: Integer);
+procedure _StrUInt(var Dest: Pointer; V: UInt64; Width: Integer);
+procedure _StrFloat(var Dest: Pointer; V: Double; Width, Decimals: Integer);
+function _ValInt(S: Pointer; var Code: Integer): Int64;
+function _ValUInt(S: Pointer; var Code: Integer): UInt64;
+function _ValFloat(S: Pointer; var Code: Integer): Double;
 
 procedure _SetUnion(Dest, A, B: Pointer);
 procedure _SetInter(Dest, A, B: Pointer);
@@ -342,26 +354,42 @@ begin
   Scratch[Pos] := 48 + Digit;
 end;
 
-procedure _WriteInt(var T: Text; V: Int64; Width: Integer);
+{ the decimal text of V in Scratch[Result..ScratchSize - 1] }
+function FormatInt(V: Int64): Integer;
 var
-  Pos: Integer;
   Digit: Int64;
   Negative: Boolean;
 begin
   Negative := V < 0;
-  Pos := ScratchSize;
+  Result := ScratchSize;
   repeat
     Digit := V mod 10;
     if Digit < 0 then
       Digit := -Digit;
-    PutDigit(Pos, Digit);
+    PutDigit(Result, Digit);
     V := V div 10;
   until V = 0;
   if Negative then
   begin
-    Pos := Pos - 1;
-    Scratch[Pos] := 45;
+    Result := Result - 1;
+    Scratch[Result] := 45;
   end;
+end;
+
+function FormatUInt(V: UInt64): Integer;
+begin
+  Result := ScratchSize;
+  repeat
+    PutDigit(Result, V mod 10);
+    V := V div 10;
+  until V = 0;
+end;
+
+procedure _WriteInt(var T: Text; V: Int64; Width: Integer);
+var
+  Pos: Integer;
+begin
+  Pos := FormatInt(V);
   WritePadding(T, Width, ScratchSize - Pos);
   WriteBytes(T, Scratch + Pos, ScratchSize - Pos);
 end;
@@ -370,11 +398,7 @@ procedure _WriteUInt(var T: Text; V: UInt64; Width: Integer);
 var
   Pos: Integer;
 begin
-  Pos := ScratchSize;
-  repeat
-    PutDigit(Pos, V mod 10);
-    V := V div 10;
-  until V = 0;
+  Pos := FormatUInt(V);
   WritePadding(T, Width, ScratchSize - Pos);
   WriteBytes(T, Scratch + Pos, ScratchSize - Pos);
 end;
@@ -862,8 +886,9 @@ begin
   end;
 end;
 
-{ CMP-410: Decimals < 0 = scientific in Width (the compiler passes 23 when no width is given), else fixed; LANG-932 specials }
-procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
+{ CMP-410: Decimals < 0 = scientific in Width (the compiler passes 23 when no width is given), else fixed; LANG-932 specials;
+  the text in FloatText[0..FloatLen - 1], unpadded }
+procedure FormatFloat(V: Double; Width, Decimals: Integer);
 var
   Bits: UInt64;
 begin
@@ -890,6 +915,11 @@ begin
     FormatScientific(Bits, Width)
   else
     FormatFixed(Bits, Decimals);
+end;
+
+procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
+begin
+  FormatFloat(V, Width, Decimals);
   WritePadding(T, Width, FloatLen);
   WriteBytes(T, @FloatText, FloatLen);
 end;
@@ -976,6 +1006,437 @@ end;
 function _Frac(X: Double): Double;
 begin
   Result := X - _Int(X);
+end;
+
+{ ------------------------------------------------------------------ string intrinsics (intrinsics.md section 1, rtl-abi.md 9.3; C-062)
+  Every edit builds a new block from the old characters before the old value is released, so Dest may be (or share) the
+  source operand. }
+
+{ ABI-020: a unique block of NewLen characters keeping min(old, new) of the old ones; NewLen <= 0 gives '' }
+procedure _UStrSetLen(var S: Pointer; NewLen: Integer);
+var
+  Keep: Integer;
+  P: Pointer;
+begin
+  if NewLen <= 0 then
+  begin
+    _UStrClr(S);
+    Exit;
+  end;
+  Keep := UStrLength(S);
+  if Keep > NewLen then
+    Keep := NewLen;
+  P := NewUStr(NewLen);
+  CopyChars(P, S, Keep);
+  SetUStr(S, P);
+end;
+
+{ Count characters of S from the 0-based Start as a new block (Count > 0) }
+function SubUStr(S: Pointer; Start, Count: Integer): Pointer;
+var
+  Chars: PChar;
+begin
+  Chars := S;
+  Result := NewUStr(Count);
+  CopyChars(Result, Chars + Start, Count);
+end;
+
+{ 1-based; Index < 1 counts from 1, Count is clamped to the end, nothing left gives '' }
+procedure _UStrCopy(var Dest: Pointer; S: Pointer; Index, Count: Integer);
+var
+  Len: Integer;
+begin
+  Len := UStrLength(S);
+  if Index < 1 then
+    Index := 1;
+  if (Index > Len) or (Count <= 0) then
+  begin
+    _UStrClr(Dest);
+    Exit;
+  end;
+  if Count > Len - Index + 1 then
+    Count := Len - Index + 1;
+  if Count = Len then
+    _UStrAsg(Dest, S)
+  else
+    SetUStr(Dest, SubUStr(S, Index - 1, Count));
+end;
+
+{ no-op unless 1 <= Index <= Length and Count > 0; Count is clamped to the end }
+procedure _UStrDelete(var S: Pointer; Index, Count: Integer);
+var
+  Len: Integer;
+  P: Pointer;
+  Chars, Old: PChar;
+begin
+  Len := UStrLength(S);
+  if (Index < 1) or (Index > Len) or (Count <= 0) then
+    Exit;
+  if Count > Len - Index + 1 then
+    Count := Len - Index + 1;
+  if Count = Len then
+  begin
+    _UStrClr(S);
+    Exit;
+  end;
+  P := NewUStr(Len - Count);
+  Chars := P;
+  Old := S;
+  CopyChars(Chars, Old, Index - 1);
+  CopyChars(Chars + (Index - 1), Old + (Index - 1 + Count), Len - Index + 1 - Count);
+  SetUStr(S, P);
+end;
+
+{ Index < 1 inserts at the front, past Length + 1 appends; an empty Src changes nothing }
+procedure _UStrInsert(Src: Pointer; var Dest: Pointer; Index: Integer);
+var
+  LS, LD: Integer;
+  P: Pointer;
+  Chars, Old, Part: PChar;
+begin
+  LS := UStrLength(Src);
+  if LS = 0 then
+    Exit;
+  LD := UStrLength(Dest);
+  if Index < 1 then
+    Index := 1;
+  if Index > LD + 1 then
+    Index := LD + 1;
+  if LS > MaxUStrLength - LD then
+    _RunError(203);
+  P := NewUStr(LD + LS);
+  Chars := P;
+  Old := Dest;
+  Part := Src;
+  CopyChars(Chars, Old, Index - 1);
+  CopyChars(Chars + (Index - 1), Part, LS);
+  CopyChars(Chars + (Index - 1 + LS), Old + (Index - 1), LD - Index + 1);
+  SetUStr(Dest, P);
+end;
+
+{ the first 1-based index >= Offset where SubStr occurs in S, else 0; an empty SubStr gives 0; Offset < 1 counts from 1 }
+function _UStrPos(SubStr, S: Pointer; Offset: Integer): Integer;
+var
+  LS, L, I, J: Integer;
+  X, Y: PChar;
+begin
+  Result := 0;
+  LS := UStrLength(SubStr);
+  L := UStrLength(S);
+  if Offset < 1 then
+    Offset := 1;
+  if LS = 0 then
+    Exit;
+  X := SubStr;
+  Y := S;
+  I := Offset - 1;
+  while I <= L - LS do
+  begin
+    J := 0;
+    while (J < LS) and (Y[I + J] = X[J]) do
+      J := J + 1;
+    if J = LS then
+      Exit(I + 1);
+    I := I + 1;
+  end;
+end;
+
+{ Dest := Width - Count spaces (when positive), then the Count ASCII bytes at Text (LANG-915 padding) }
+procedure SetAsciiUStr(var Dest: Pointer; Text: PByte; Count, Width: Integer);
+var
+  Pad, I: Integer;
+  P: Pointer;
+  Chars: PChar;
+begin
+  Pad := Width - Count;
+  if Pad < 0 then
+    Pad := 0;
+  if Pad + Count = 0 then
+  begin
+    _UStrClr(Dest);
+    Exit;
+  end;
+  P := NewUStr(Pad + Count);
+  Chars := P;
+  for I := 0 to Pad - 1 do
+    Chars[I] := ' ';
+  for I := 0 to Count - 1 do
+    Chars[Pad + I] := Chr(Text[I]);
+  SetUStr(Dest, P);
+end;
+
+{ LANG-951: exactly the text Write produces }
+procedure _StrInt(var Dest: Pointer; V: Int64; Width: Integer);
+var
+  Pos: Integer;
+begin
+  Pos := FormatInt(V);
+  SetAsciiUStr(Dest, Scratch + Pos, ScratchSize - Pos, Width);
+end;
+
+procedure _StrUInt(var Dest: Pointer; V: UInt64; Width: Integer);
+var
+  Pos: Integer;
+begin
+  Pos := FormatUInt(V);
+  SetAsciiUStr(Dest, Scratch + Pos, ScratchSize - Pos, Width);
+end;
+
+{ LANG-950 integer syntax: leading spaces, an optional sign, decimal digits or $ / 0x and hex digits, nothing after. The
+  magnitude (Overflow when it exceeds UInt64); Code = 1-based index of the first offending character, Length + 1 when the
+  text ends before a digit, else 0 }
+function ValMagnitude(S: Pointer; var Code: Integer; var Negative, Overflow: Boolean): UInt64;
+var
+  Len, I, Count: Integer;
+  Base, Digit: UInt64;
+  Chars: PChar;
+  C: Char;
+begin
+  Result := 0;
+  Negative := False;
+  Overflow := False;
+  Len := UStrLength(S);
+  Chars := S;
+  I := 0;
+  while (I < Len) and (Chars[I] = ' ') do
+    I := I + 1;
+  if (I < Len) and ((Chars[I] = '+') or (Chars[I] = '-')) then
+  begin
+    Negative := Chars[I] = '-';
+    I := I + 1;
+  end;
+  Base := 10;
+  if (I < Len) and (Chars[I] = '$') then
+  begin
+    Base := 16;
+    I := I + 1;
+  end
+  else if (I + 1 < Len) and (Chars[I] = '0') and ((Chars[I + 1] = 'x') or (Chars[I + 1] = 'X')) then
+  begin
+    Base := 16;
+    I := I + 2;
+  end;
+  Count := 0;
+  while I < Len do
+  begin
+    C := UpCase(Chars[I]);
+    if (C >= '0') and (C <= '9') then
+      Digit := Ord(C) - 48
+    else if (Base = 16) and (C >= 'A') and (C <= 'F') then
+      Digit := Ord(C) - 55
+    else
+    begin
+      Code := I + 1;
+      Exit(0);
+    end;
+    if Result > (High(UInt64) - Digit) div Base then
+      Overflow := True
+    else
+      Result := Result * Base + Digit;
+    Count := Count + 1;
+    I := I + 1;
+  end;
+  if Count = 0 then
+  begin
+    Code := Len + 1;
+    Exit(0);
+  end;
+  Code := 0;
+end;
+
+{ LANG-950: a value outside Int64 fails with Code = Length (the index of the last digit) and 0 }
+function _ValInt(S: Pointer; var Code: Integer): Int64;
+var
+  M: UInt64;
+  Negative, Overflow: Boolean;
+begin
+  Result := 0;
+  M := ValMagnitude(S, Code, Negative, Overflow);
+  if Code <> 0 then
+    Exit;
+  if Negative then
+  begin
+    if Overflow or (M > UInt64($8000000000000000)) then
+      Code := UStrLength(S)
+    else
+      Result := -Int64(M);
+  end
+  else if Overflow or (M > UInt64($7FFFFFFFFFFFFFFF)) then
+    Code := UStrLength(S)
+  else
+    Result := Int64(M);
+end;
+
+function _ValUInt(S: Pointer; var Code: Integer): UInt64;
+var
+  Negative, Overflow: Boolean;
+begin
+  Result := ValMagnitude(S, Code, Negative, Overflow);
+  if (Code = 0) and (Overflow or (Negative and (Result <> 0))) then
+  begin
+    Code := UStrLength(S);
+    Result := 0;
+  end;
+end;
+
+{ case-insensitive Word (upper case) at Chars[I..] }
+function HasWord(Chars: PChar; I, Len: Integer; const W: string): Boolean;
+var
+  K: Integer;
+begin
+  Result := I + Length(W) <= Len;
+  K := 0;
+  while Result and (K < Length(W)) do
+  begin
+    Result := UpCase(Chars[I + K]) = W[K + 1];
+    K := K + 1;
+  end;
+end;
+
+{ LANG-943 syntax after leading spaces: [+-] digits [. digits] [(e|E) [+-] digits], INF, NAN. Test RTL: correctly rounded only
+  when at most 19 significant digits give a mantissa <= 2^53 and the decimal exponent is within 22 (one exact rounding);
+  otherwise approximate (the real RTL rounds correctly, LANG-943). }
+function _ValFloat(S: Pointer; var Code: Integer): Double;
+var
+  Len, I, Exp, Scale, ExpValue, Digits: Integer;
+  Chars: PChar;
+  Negative, ExpNegative: Boolean;
+  M: UInt64;
+  Power: Double;
+begin
+  Result := 0.0;
+  Len := UStrLength(S);
+  Chars := S;
+  I := 0;
+  while (I < Len) and (Chars[I] = ' ') do
+    I := I + 1;
+  Negative := False;
+  if (I < Len) and ((Chars[I] = '+') or (Chars[I] = '-')) then
+  begin
+    Negative := Chars[I] = '-';
+    I := I + 1;
+  end;
+  if HasWord(Chars, I, Len, 'INF') and (I + 3 = Len) then
+  begin
+    Code := 0;
+    if Negative then
+      Exit(BitsDouble($FFF0000000000000));
+    Exit(BitsDouble($7FF0000000000000));
+  end;
+  if HasWord(Chars, I, Len, 'NAN') and (I + 3 = Len) then
+  begin
+    Code := 0;
+    Exit(BitsDouble($7FF8000000000000));
+  end;
+  M := 0;
+  Scale := 0;
+  Digits := 0;
+  { integer digits }
+  while (I < Len) and (Chars[I] >= '0') and (Chars[I] <= '9') do
+  begin
+    if M < 1000000000000000000 then
+      M := M * 10 + UInt64(Ord(Chars[I]) - 48)
+    else
+      Scale := Scale + 1;
+    Digits := Digits + 1;
+    I := I + 1;
+  end;
+  if Digits = 0 then
+  begin
+    if I < Len then Code := I + 1 else Code := Len + 1;
+    Exit(0.0);
+  end;
+  if (I < Len) and (Chars[I] = '.') then
+  begin
+    I := I + 1;
+    Digits := 0;
+    while (I < Len) and (Chars[I] >= '0') and (Chars[I] <= '9') do
+    begin
+      if M < 1000000000000000000 then
+      begin
+        M := M * 10 + UInt64(Ord(Chars[I]) - 48);
+        Scale := Scale - 1;
+      end;
+      Digits := Digits + 1;
+      I := I + 1;
+    end;
+    if Digits = 0 then
+    begin
+      if I < Len then Code := I + 1 else Code := Len + 1;
+      Exit(0.0);
+    end;
+  end;
+  if (I < Len) and ((Chars[I] = 'e') or (Chars[I] = 'E')) then
+  begin
+    I := I + 1;
+    ExpNegative := False;
+    if (I < Len) and ((Chars[I] = '+') or (Chars[I] = '-')) then
+    begin
+      ExpNegative := Chars[I] = '-';
+      I := I + 1;
+    end;
+    ExpValue := 0;
+    Digits := 0;
+    while (I < Len) and (Chars[I] >= '0') and (Chars[I] <= '9') do
+    begin
+      if ExpValue < 100000 then
+        ExpValue := ExpValue * 10 + (Ord(Chars[I]) - 48);
+      Digits := Digits + 1;
+      I := I + 1;
+    end;
+    if Digits = 0 then
+    begin
+      if I < Len then Code := I + 1 else Code := Len + 1;
+      Exit(0.0);
+    end;
+    if ExpNegative then
+      ExpValue := -ExpValue;
+    Scale := Scale + ExpValue;
+  end;
+  if I < Len then
+  begin
+    Code := I + 1;
+    Exit(0.0);
+  end;
+  Code := 0;
+  Result := M;
+  Exp := Scale;
+  if Exp < 0 then
+    Exp := -Exp;
+  Power := 1.0;
+  if M <> 0 then
+  begin
+    if Exp <= 22 then
+    begin
+      while Exp > 0 do
+      begin
+        Power := Power * 10.0;
+        Exp := Exp - 1;
+      end;
+      if Scale < 0 then
+        Result := Result / Power
+      else
+        Result := Result * Power;
+    end
+    else
+      while Exp > 0 do
+      begin
+        if Scale < 0 then
+          Result := Result / 10.0
+        else
+          Result := Result * 10.0;
+        Exp := Exp - 1;
+      end;
+  end;
+  if Negative then
+    Result := -Result;
+end;
+
+{ LANG-951: exactly the text Write produces }
+procedure _StrFloat(var Dest: Pointer; V: Double; Width, Decimals: Integer);
+begin
+  FormatFloat(V, Width, Decimals);
+  SetAsciiUStr(Dest, @FloatText, FloatLen, Width);
 end;
 
 { Big sets (rtl-abi.md section 9.8): 32 bytes, bit K in byte K shr 3; combined byte by byte, so Dest may be A or B

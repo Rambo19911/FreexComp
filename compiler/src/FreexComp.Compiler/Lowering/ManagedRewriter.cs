@@ -50,6 +50,8 @@ internal static class ManagedRewriter
                     return Concatenate(context, AddressOf(context, target), concatenation);
                 case BoundConversionExpression { Type: StringTypeSymbol, Operand.Type: CharTypeSymbol } conversion:
                     return FromChar(context, AddressOf(context, target), context.Lower(conversion.Operand));
+                case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
+                    return StringRewriter.CopyInto(context, AddressOf(context, target), copy);     // C-062: Dest may be the source
             }
         }
 
@@ -70,6 +72,7 @@ internal static class ManagedRewriter
         {
             BoundBinaryExpression concatenation => Concatenate(context, AddressOf(context, temporary), concatenation),
             BoundConversionExpression conversion => FromChar(context, AddressOf(context, temporary), context.Lower(conversion.Operand)),
+            BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy => StringRewriter.CopyInto(context, AddressOf(context, temporary), copy),
             _ => throw new InvalidOperationException($"{value.Kind} needs no managed temporary."),
         };
         return new LSequence(fill, temporary);
@@ -212,6 +215,7 @@ internal static class ManagedRewriter
         LPointerOffset p => References(p.Pointer, local) || References(p.Index, local),
         LStringLength l => References(l.String, local),
         LStringIndex i => References(i.String, local) || References(i.Index, local),
+        LAtomic a => References(a.Target, local) || References(a.Value, local) || (a.Comparand is { } c && References(c, local)),
         LBlock b => b.Statements.Any(s => References(s, local)),
         LAssign a => References(a.Target, local) || References(a.Value, local),
         LCallStatement c => c.Arguments.Any(a => References(a, local)),

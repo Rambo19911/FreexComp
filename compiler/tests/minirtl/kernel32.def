@@ -1,5 +1,7 @@
 LIBRARY kernel32.dll
 EXPORTS
+CloseHandle
+CreateThread
 ExitProcess
 GetCurrentProcessId
 GetProcessHeap
@@ -7,5 +9,6 @@ GetStdHandle
 HeapAlloc
 HeapFree
 HeapReAlloc
+WaitForSingleObject
 WideCharToMultiByte
 WriteFile

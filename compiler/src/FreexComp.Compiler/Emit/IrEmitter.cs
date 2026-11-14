@@ -1354,6 +1354,8 @@ internal sealed class FunctionEmitter
                 return WrittenAddress(addressOf.Variable);                         // a var argument or @x may be written through
             case LStringLength length:
                 return StringLength(Value(length.String));
+            case LAtomic atomic:
+                return Atomic(atomic);
             case LTemp temp:
                 _temps.Add(temp.Temp, Value(temp.Value));
                 return Value(temp.Body);
@@ -1387,6 +1389,31 @@ internal sealed class FunctionEmitter
             default:
                 throw new InvalidOperationException($"Cannot emit {expression.GetType().Name}.");
         }
+    }
+
+    /// <summary>
+    /// CMP-412 / ABI-172: the target's address (written: a string character is made unique first), then the operands;
+    /// <c>atomicrmw</c> returns the previous value, <c>cmpxchg</c> a pair whose field 0 is the previous value.
+    /// </summary>
+    private IrValue Atomic(LAtomic atomic)
+    {
+        var address = WrittenAddress(atomic.Target);
+        var alignment = AccessAlignment(atomic.Target);
+        var value = Value(atomic.Value);
+        if (atomic.Operator == LAtomicOperator.CompareExchange)
+        {
+            var comparand = Value(atomic.Comparand!);
+            var pair = _w.CmpXchg(NewTemp(), address, comparand, value, alignment);
+            return _w.ExtractValue(NewTemp(), pair, 0);
+        }
+
+        var op = atomic.Operator switch
+        {
+            LAtomicOperator.Add => IrAtomicOperator.Add,
+            LAtomicOperator.Subtract => IrAtomicOperator.Sub,
+            _ => IrAtomicOperator.Xchg,
+        };
+        return _w.AtomicRmw(NewTemp(), op, address, value, alignment);
     }
 
     private IrValue Unary(LUnary unary)

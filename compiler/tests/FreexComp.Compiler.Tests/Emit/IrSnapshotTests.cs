@@ -1050,8 +1050,76 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-168: atomic intrinsics inline (CMP-412, ABI-172): <c>atomicrmw add|sub</c> plus the operand for the new value,
+    /// <c>atomicrmw xchg</c>, <c>cmpxchg</c> + <c>extractvalue 0</c>, all <c>seq_cst</c>; 32-/64-bit integers and pointers (a
+    /// typed pointer moves by elements, through its <c>NativeInt</c> view), a global target, statement use.
+    /// </summary>
+    internal const string AtomicSource = """
+        unit M;
+        interface
+        type
+          PInt = ^Integer;
+        function Counters(var i: Integer; var q: Int64; n: Integer): Int64;
+        function Swaps(var p: Pointer; var t: PInt; q: Pointer; var c: Cardinal): Pointer;
+        implementation
+        var
+          G: Integer;
+        function Counters(var i: Integer; var q: Int64; n: Integer): Int64;
+        begin
+          Result := AtomicIncrement(i);
+          Result := Result + AtomicDecrement(q, n);
+          AtomicIncrement(G, 5);
+        end;
+        function Swaps(var p: Pointer; var t: PInt; q: Pointer; var c: Cardinal): Pointer;
+        begin
+          Result := AtomicExchange(p, q);
+          Result := AtomicCmpExchange(p, nil, Result);
+          AtomicIncrement(t, 2);
+          c := AtomicExchange(c, 7) + AtomicCmpExchange(c, 1, 7);
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-062: the string intrinsics through their rtl-abi.md helpers (<c>_UStrSetLen</c>, <c>_UStrDelete</c>, <c>_UStrInsert</c>,
+    /// <c>_UStrCopy</c> into a target or a temporary, <c>_UStrPos</c>, <c>_StrInt</c>/<c>_StrFloat</c>, <c>_ValInt</c>/<c>_ValFloat</c> with the
+    /// range test), <c>Concat</c> as <c>_UStrCatN</c>, <c>UpCase</c> inline on a written string element.
+    /// </summary>
+    internal const string StringFunctionsSource = """
+        unit M;
+        interface
+        function Edit(var s: string; const t: string; c: Char; i: Integer): string;
+        function Numbers(var s: string; i: Integer; d: Double; var code: Integer): Byte;
+        implementation
+        function Edit(var s: string; const t: string; c: Char; i: Integer): string;
+        begin
+          SetLength(s, i);
+          Delete(s, 2, i);
+          Insert(t, s, i);
+          Insert(c, s, 1);
+          Result := Copy(s, i, 2) + Concat(t, c);
+          s := Copy(s, 2);
+          Result[1] := UpCase(Result[1]);
+          if Pos(t, s) > Pos('x', s, i) then
+            Result := t;
+        end;
+        function Numbers(var s: string; i: Integer; d: Double; var code: Integer): Byte;
+        begin
+          Str(i, s);
+          Str(i:5, s);
+          Str(d, s);
+          Str(d:10:3, s);
+          Val(s, Result, code);
+          Val(s, d, code);
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Atomic"] = AtomicSource,
+        ["StringFunctions"] = StringFunctionsSource,
         ["Strings"] = StringsSource,
         ["StringOperators"] = StringOperatorsSource,
         ["RealIntrinsics"] = RealIntrinsicsSource,
@@ -1104,6 +1172,55 @@ public sealed class IrSnapshotTests
         Assert.Contains("@_fltused = global i32 39029, align 4\n", text);
         Assert.Contains("@\"M.Plain\" = internal global i32 zeroinitializer, align 4\n", text);
         Snapshot.Verify("ExternalDecl", text);
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-412")]
+    [Trait("Req", "ABI-172")]
+    public void Atomic() => Snapshot.Verify("Atomic", Emit(AtomicSource));
+
+    /// <summary>CMP-412: the atomic instructions with <c>seq_cst</c> and natural alignment; no helper call, no other intrinsic.</summary>
+    [Fact]
+    [Trait("Req", "CMP-412")]
+    [Trait("Req", "ABI-172")]
+    public void Atomic_UsesAtomicInstructions()
+    {
+        var text = Emit(AtomicSource);
+
+        Assert.Contains("  %t1 = atomicrmw add ptr %i, i32 1 seq_cst, align 4\n  %t2 = add i32 %t1, 1\n", text);
+        Assert.Contains("  %t7 = atomicrmw sub ptr %q, i64 %t6 seq_cst, align 8\n  %t8 = sub i64 %t7, %t6\n", text);
+        Assert.Contains("  %t10 = atomicrmw add ptr @\"M.G\", i32 5 seq_cst, align 4\n", text);
+        Assert.Contains("  %t2 = atomicrmw xchg ptr %p, ptr %t1 seq_cst, align 8\n", text);
+        Assert.Contains("  %t4 = cmpxchg ptr %p, ptr %t3, ptr null seq_cst seq_cst, align 8\n  %t5 = extractvalue { ptr, i1 } %t4, 0\n", text);
+        Assert.Contains("  %t6 = atomicrmw add ptr %t, i64 8 seq_cst, align 8\n  %t7 = add i64 %t6, 8\n  %t8 = inttoptr i64 %t7 to ptr\n", text);
+        Assert.Contains("  %t9 = atomicrmw xchg ptr %c, i32 7 seq_cst, align 4\n", text);
+        Assert.Contains("  %t10 = cmpxchg ptr %c, i32 7, i32 1 seq_cst seq_cst, align 4\n", text);
+        Assert.DoesNotContain("call", text);
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-412")]
+    public void StringFunctions() => Snapshot.Verify("StringFunctions", Emit(StringFunctionsSource));
+
+    /// <summary>C-062: the helpers are declared with the rtl-abi.md §9.3/§9.10 signatures; <c>UpCase</c> needs no call.</summary>
+    [Fact]
+    [Trait("Req", "CMP-412")]
+    public void StringFunctions_DeclareTheAbiHelpers()
+    {
+        var text = Emit(StringFunctionsSource);
+
+        Assert.Contains("declare void @\"System._UStrSetLen\"(ptr, i32)\n", text);
+        Assert.Contains("declare void @\"System._UStrDelete\"(ptr, i32, i32)\n", text);
+        Assert.Contains("declare void @\"System._UStrInsert\"(ptr, ptr, i32)\n", text);
+        Assert.Contains("declare void @\"System._UStrCopy\"(ptr, ptr, i32, i32)\n", text);
+        Assert.Contains("declare i32 @\"System._UStrPos\"(ptr, ptr, i32)\n", text);
+        Assert.Contains("declare void @\"System._StrInt\"(ptr, i64, i32)\n", text);
+        Assert.Contains("declare void @\"System._StrFloat\"(ptr, double, i32, i32)\n", text);
+        Assert.Contains("declare i64 @\"System._ValInt\"(ptr, ptr)\n", text);
+        Assert.Contains("declare double @\"System._ValFloat\"(ptr, ptr)\n", text);
+        Assert.Contains(", i32 2147483647)\n", text);
+        Assert.Contains("(ptr %s, double %t", text);
+        Assert.DoesNotContain("UpCase", text);
     }
 
     [Fact]

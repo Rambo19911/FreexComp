@@ -77,6 +77,8 @@ public sealed class BuiltInTypesTests
             "New", "Dispose", "GetMem", "FreeMem", "ReallocMem", "FillChar", "Move", "Assigned", "Addr", "Ptr",   // M2.2 (C-056)
             "Assert",                                                                                       // M2.2 (C-057)
             "Trunc", "Round", "Int", "Frac", "Sqrt",                                                         // M2.2 (C-059)
+            "AtomicIncrement", "AtomicDecrement", "AtomicExchange", "AtomicCmpExchange",                     // M2.2 (C-168)
+            "SetLength", "Delete", "Insert", "Str", "Val", "Copy", "Pos", "Concat", "UpCase",                // M2.2 (C-062)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

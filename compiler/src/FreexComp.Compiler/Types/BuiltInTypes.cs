@@ -94,6 +94,11 @@ public sealed class BuiltInTypes
         Intrinsic("FillChar", IntrinsicKind.FillChar, "FillChar(var X; Count: NativeInt; Value: Ordinal)");
         Intrinsic("Move", IntrinsicKind.Move, "Move(const Source; var Dest; Count: NativeInt)");
         Intrinsic("Assert", IntrinsicKind.Assert, "Assert(Condition: Boolean[; Message: string])");
+        Intrinsic("SetLength", IntrinsicKind.SetLength, "SetLength(var S: string; NewLength: Integer)");
+        Intrinsic("Delete", IntrinsicKind.Delete, "Delete(var S: string; Index, Count: Integer)");
+        Intrinsic("Insert", IntrinsicKind.Insert, "Insert(const Source: string; var S: string; Index: Integer)");
+        Intrinsic("Str", IntrinsicKind.Str, "Str(X[:Width[:Decimals]]; var S: string)");
+        Intrinsic("Val", IntrinsicKind.Val, "Val(const S: string; var V; var Code: Integer)");
         Intrinsic("Assigned", IntrinsicKind.Assigned, "Assigned(P: Pointer): Boolean");
         Intrinsic("Addr", IntrinsicKind.Addr, "Addr(X): Pointer");
         Intrinsic("Ptr", IntrinsicKind.Ptr, "Ptr(Address: NativeUInt): Pointer");
@@ -102,6 +107,14 @@ public sealed class BuiltInTypes
         Intrinsic("Int", IntrinsicKind.Int, "Int(X: Double): Double");
         Intrinsic("Frac", IntrinsicKind.Frac, "Frac(X: Double): Double");
         Intrinsic("Sqrt", IntrinsicKind.Sqrt, "Sqrt(X: Double): Double");
+        Intrinsic("AtomicIncrement", IntrinsicKind.AtomicIncrement, "AtomicIncrement(var Target[; Increment]): Target");
+        Intrinsic("AtomicDecrement", IntrinsicKind.AtomicDecrement, "AtomicDecrement(var Target[; Decrement]): Target");
+        Intrinsic("AtomicExchange", IntrinsicKind.AtomicExchange, "AtomicExchange(var Target; Value): Target");
+        Intrinsic("AtomicCmpExchange", IntrinsicKind.AtomicCmpExchange, "AtomicCmpExchange(var Target; NewValue, Comparand): Target");
+        Intrinsic("Copy", IntrinsicKind.Copy, "Copy(S: string; Index[, Count]: Integer): string");
+        Intrinsic("Pos", IntrinsicKind.Pos, "Pos(const SubStr, S: string[; Offset: Integer]): Integer");
+        Intrinsic("Concat", IntrinsicKind.Concat, "Concat(S1, S2, ...: string): string");
+        Intrinsic("UpCase", IntrinsicKind.UpCase, "UpCase(C: Char): Char");
     }
 
     /// <summary>

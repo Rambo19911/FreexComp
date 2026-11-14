@@ -200,6 +200,21 @@ internal sealed class LlvmTextWriter : IIrWriter
         return Define(new IrLocal(elementType, name), $"extractvalue {Typed(aggregate)}, {Int(index)}");
     }
 
+    public IrLocal AtomicRmw(string name, IrAtomicOperator op, IrValue address, IrValue value, int alignment)
+    {
+        RequirePointer(address);
+        return Define(new IrLocal(value.Type, name),
+            $"atomicrmw {op.ToString().ToLowerInvariant()} {Typed(address)}, {Typed(value)} seq_cst, align {Int(alignment)}");
+    }
+
+    public IrLocal CmpXchg(string name, IrValue address, IrValue comparand, IrValue newValue, int alignment)
+    {
+        RequirePointer(address);
+        RequireSameType(comparand, newValue);
+        return Define(new IrLocal(new StructIrType([comparand.Type, IrType.I1]), name),
+            $"cmpxchg {Typed(address)}, {Typed(comparand)}, {Typed(newValue)} seq_cst seq_cst, align {Int(alignment)}");
+    }
+
     public IrLocal? Call(string? name, IrType returnType, IrValue callee, ImmutableArray<IrValue> arguments, int? attributeGroup = null)
     {
         RequirePointer(callee);

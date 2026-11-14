@@ -53,7 +53,11 @@ internal sealed record BoundRoutineBody(
     BoundBlock Body,
     ImmutableArray<RoutineSymbol> NestedRoutines,
     ImmutableArray<Symbol> CapturedVariables,
-    ImmutableArray<Diagnostic> Diagnostics);
+    ImmutableArray<Diagnostic> Diagnostics)
+{
+    /// <summary>Variables of this body whose address is taken (<c>@x</c>, <c>Addr(x)</c>, also of a part of <c>x</c>).</summary>
+    public ImmutableHashSet<Symbol> AddressTaken { get; init; } = [];
+}
 
 /// <summary>Binds a compilation unit: declarations (CMP-113), then the routine and unit-level bodies (CMP-114).</summary>
 internal static class Binder
@@ -137,7 +141,10 @@ internal static class Binder
         var binder = new BodyBinder(types, scope, diagnostics, routine);
         binder.AddReadOnlyVariables(EnclosingForVariables(outer));
         var body = binder.BindBlock(block.Body, block.Body.Statements);
-        return new BoundRoutineBody(routine, scope, body, [.. locals.OfType<RoutineSymbol>()], [.. binder.CapturedVariables], diagnostics.ToImmutable());
+        return new BoundRoutineBody(routine, scope, body, [.. locals.OfType<RoutineSymbol>()], [.. binder.CapturedVariables], diagnostics.ToImmutable())
+        {
+            AddressTaken = [.. binder.AddressTakenVariables],
+        };
     }
 
     /// <summary>

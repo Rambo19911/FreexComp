@@ -16,6 +16,16 @@ internal static class IntrinsicRewriter
 {
     public static LExpression Rewrite(LoweringContext context, BoundIntrinsicCallExpression call)
     {
+        if (call.Intrinsic.IsAtomic)
+        {
+            return Atomic(context, call);
+        }
+
+        if (call.Intrinsic.Intrinsic is IntrinsicKind.Pos or IntrinsicKind.UpCase)
+        {
+            return StringRewriter.Function(context, call);
+        }
+
         var argument = call.Arguments[0];
         var operand = context.Lower(argument);
         var state = CheckRewriter.StateOf(call);
@@ -72,6 +82,60 @@ internal static class IntrinsicRewriter
             default:
                 throw new InvalidOperationException($"{call.Intrinsic.Name} with a non-constant result is not an M2.1 intrinsic.");
         }
+    }
+
+    /// <summary>
+    /// CMP-412 / ABI-172 (C-168): <c>AtomicExchange</c> → <c>atomicrmw xchg</c>, <c>AtomicCmpExchange(t, new, cmp)</c> →
+    /// <c>cmpxchg t, cmp, new</c> (both return the previous value); <c>AtomicIncrement</c>/<c>AtomicDecrement(t[, n])</c> →
+    /// <c>atomicrmw add|sub t, n</c> then <c>± n</c> again for the new value (wrapping, never checked). <c>n</c> is converted to the
+    /// target type; on a pointer target the operation works on its <c>NativeInt</c> view with <c>n × SizeOf(element)</c> (bytes
+    /// for the untyped <c>Pointer</c>) and the new value is converted back. A non-constant <c>n</c> is evaluated once, first.
+    /// </summary>
+    private static LExpression Atomic(LoweringContext context, BoundIntrinsicCallExpression call)
+    {
+        var target = context.Lower(call.Arguments[0]);
+        switch (call.Intrinsic.Intrinsic)
+        {
+            case IntrinsicKind.AtomicExchange:
+                return new LAtomic(LAtomicOperator.Exchange, target, context.Lower(call.Arguments[1]), comparand: null);
+            case IntrinsicKind.AtomicCmpExchange:
+                return new LAtomic(LAtomicOperator.CompareExchange, target, context.Lower(call.Arguments[1]), context.Lower(call.Arguments[2]));
+        }
+
+        var add = call.Intrinsic.Intrinsic == IntrinsicKind.AtomicIncrement;
+        var count = call.Arguments.Length == 1 ? context.Constant(BigInteger.One, context.Types.Integer) : context.Lower(call.Arguments[1]);
+        LExpression amount;
+        if (target.Type is PointerTypeSymbol pointer)
+        {
+            target = new LView(target, context.Types.NativeInt);
+            var size = Pointers.ElementSize(pointer);
+            amount = count is LConst { Value.Value: BigInteger n }
+                ? context.Constant(Wrap(n * size, context.Types.NativeInt), context.Types.NativeInt)
+                : size == 1 ? context.Convert(count, context.Types.NativeInt)
+                : new LBinary(LBinaryOperator.Multiply, context.Convert(count, context.Types.NativeInt), context.Constant(size, context.Types.NativeInt));
+        }
+        else
+        {
+            amount = count is LConst { Value.Value: BigInteger n }
+                ? context.Constant(Wrap(n, target.Type), target.Type)
+                : context.Convert(count, target.Type);
+        }
+
+        var op = add ? LAtomicOperator.Add : LAtomicOperator.Subtract;
+        var binary = add ? LBinaryOperator.Add : LBinaryOperator.Subtract;
+        LExpression updated = amount is LConst
+            ? new LBinary(binary, new LAtomic(op, target, amount, comparand: null), amount)
+            : Once(context, amount, n => new LBinary(binary, new LAtomic(op, target, n(), comparand: null), n()));
+        return context.Convert(updated, call.Type);
+    }
+
+    /// <summary>A constant reduced to the bits of an integer <paramref name="type"/> (the wrap of an unchecked conversion).</summary>
+    private static BigInteger Wrap(BigInteger value, TypeSymbol type)
+    {
+        var bits = (int)type.Size * 8;
+        var modulus = BigInteger.One << bits;
+        var low = ((value % modulus) + modulus) % modulus;
+        return ((IntegerTypeSymbol)type).IsSigned && low >= modulus >> 1 ? low - modulus : low;
     }
 
     private static LConst Nil(LoweringContext context) => new(new ConstantValue(null, context.Types.Pointer), context.Types.Pointer);
@@ -161,6 +225,8 @@ internal static class IntrinsicRewriter
                     call.Arguments.IsEmpty ? context.Constant(BigInteger.Zero, context.Types.Integer) : context.Lower(call.Arguments[0]));
             case IntrinsicKind.Assert:
                 return Assert(context, call);
+            case IntrinsicKind.SetLength or IntrinsicKind.Delete or IntrinsicKind.Insert or IntrinsicKind.Str or IntrinsicKind.Val:
+                return StringRewriter.Statement(context, call);
             default:
                 throw new InvalidOperationException($"Unknown intrinsic statement {call.Intrinsic.Name}.");
         }

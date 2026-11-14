@@ -203,6 +203,20 @@ public sealed class FlowAnalysisTests
     /// C-177: taking the address of a local counts as a use for H2002 — stores before and after <c>@x</c> may be read
     /// through the pointer, so none of them is reported. Unrelated locals keep their H2002.
     /// </summary>
+    /// <summary>
+    /// C-062/C-168: <c>Str</c> and <c>Val</c> only write their result variables; <c>SetLength</c>/<c>Delete</c>/<c>Insert</c> and the
+    /// atomics read and write their target (an unassigned target is W1041, like <c>Inc</c>).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-390")]
+    public void StringAndAtomicIntrinsics_ReadAndWriteTheirVariables()
+    {
+        Assert.Empty(Flow(Proc("var s: string; i, c: Integer;", "Val('1', i, c); Str(i:c, s); Writeln(s)")));
+        Assert.Empty(Flow(Proc("var s: string; i: Integer;", "s := 'ab'; SetLength(s, 3); Delete(s, 1, 1); Insert('x', s, 1); i := 0; AtomicIncrement(i); Writeln(s, i)")));
+        var text = Proc("var i: Integer;", "AtomicIncrement(i); Writeln(i)");
+        Assert.Equal([At("W1041", text, "|i);")], Flow(text));
+    }
+
     [Fact]
     [Trait("Req", "LANG-390")]
     public void AddressOfCountsAsUse()

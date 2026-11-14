@@ -36,6 +36,7 @@ internal static class Lowerer
         {
             Output = OutputOf(result),
             Captured = [.. captured],
+            AddressTaken = body.AddressTaken,
         };
         var lowered = context.Finish(body.Body);
         // CMP-345: a frame when nested routines capture something of this routine, and for a nested routine with nested
@@ -90,6 +91,9 @@ internal sealed class LoweringContext
 
     /// <summary>This routine's variables, parameters and <c>Result</c> that nested routines reference (they live in the frame record).</summary>
     public ImmutableHashSet<Symbol> Captured { get; init; } = [];
+
+    /// <summary>This routine's variables whose address is taken: never written directly as a hidden <c>Result</c> (C-062).</summary>
+    public ImmutableHashSet<Symbol> AddressTaken { get; init; } = [];
 
     /// <summary><c>procedure _RunError(Code: Integer)</c>, noreturn (rtl-abi.md §9.1).</summary>
     public RuntimeHelper RunError { get; }
@@ -214,6 +218,8 @@ internal sealed class LoweringContext
                 return CallStatement(call.Routine, call.Arguments);
             case BoundExpressionStatement { Expression: BoundCallExpression call }:
                 return CallStatement(call.Routine, call.Arguments);
+            case BoundExpressionStatement { Expression: BoundIntrinsicCallExpression { Intrinsic.IsAtomic: true } atomic }:
+                return new LAssign(new LLocalRef(NewTemp(atomic.Type)), Lower(atomic));     // C-168: a discarded result
             case BoundIntrinsicCallStatement intrinsic:
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
             case BoundWriteStatement write:
@@ -276,6 +282,8 @@ internal sealed class LoweringContext
                 return Binary(binary);
             case BoundCallExpression call:
                 return Call(call.Routine, call.Arguments);
+            case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
+                return ManagedRewriter.Value(this, copy);                               // C-062: a string value in a temporary
             case BoundIntrinsicCallExpression intrinsic:
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
             case BoundSetConstructor constructor:
@@ -490,12 +498,14 @@ internal sealed class LoweringContext
 
     /// <summary>
     /// CMP-325 rule 4: a declared local of this body (not <c>Result</c>, which is the caller's storage) that no nested routine
-    /// captures and that the call's arguments do not mention.
+    /// captures, whose address is never taken (the callee could reach it through a pointer, C-062) and that the call's
+    /// arguments do not mention.
     /// </summary>
     private bool ReceivesResultDirectly(LExpression target, LCall call) =>
         target is LLocalRef { Local: { Variable: { } variable } local }
         && !ReferenceEquals(variable, Routine?.ResultVariable)
         && !Captured.Contains(variable)
+        && !AddressTaken.Contains(variable)
         && !call.Arguments.Any(a => ManagedRewriter.References(a, local));
 
     /// <summary>A call statement; a discarded aggregate or managed result still needs storage (ABI-081).</summary>
