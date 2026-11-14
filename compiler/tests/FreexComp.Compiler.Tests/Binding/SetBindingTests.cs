@@ -78,6 +78,24 @@ public sealed class SetBindingTests
         Assert.DoesNotContain("set of", dump);
     }
 
+    /// <summary>types.md lead note 2026-11-14: <c>set of Char</c> and wide Char subranges are 256-bit sets without a diagnostic.</summary>
+    [Fact]
+    [Trait("Req", "LANG-250")]
+    public void SetOfChar_IsABigSetOfOrdinals0To255()
+    {
+        var (result, _) = Bind("""
+            type S = set of Char; L = set of 'a'..'z'; W = set of #100..#300; B = set of Byte;
+            var vs: S; vw: W; c: Char; ok: Boolean;
+            begin vs := ['a'..'z', c, #300]; vw := [c]; ok := (c in vs) and (vs <= ['a']); Include(vs, c); Exclude(vw, #200) end.
+            """);
+        Assert.Empty(result.Diagnostics);
+
+        SetTypeSymbol Set(string name) => Assert.IsType<SetTypeSymbol>(result.Declarations.Scope.Lookup(name));
+        Assert.Equal([(32L, 256, false), (32L, 256, false), (32L, 256, false), (32L, 256, false)],
+            new[] { "S", "L", "W", "B" }.Select(n => (Set(n).Size, Set(n).Capacity, Set(n).IsSmall)));
+        Assert.Equal(1, Set("S").Alignment);
+    }
+
     [Fact]
     [Trait("Req", "LANG-250")]
     public void ConstantSet_BitsAreTheElementOrdinals()

@@ -48,5 +48,8 @@ internal sealed record IrStructConstant(StructIrType StructType, ImmutableArray<
 /// </summary>
 internal sealed record IrGepConstant(IrType SourceType, IrGlobal Base, ImmutableArray<IrIntConstant> Indices) : IrConstant(IrType.Ptr);
 
+/// <summary>A pointer call argument with the <c>align N</c> parameter attribute: <c>ptr align N %p</c> (CMP-326 memcpy operands).</summary>
+internal sealed record IrAlignedPointer(IrValue Pointer, int Alignment) : IrValue(IrType.Ptr);
+
 /// <summary>A basic block label (CMP-303: <c>&lt;kind&gt;.&lt;N&gt;</c>, numbered by the emitter).</summary>
 internal sealed record IrBlock(string Name);

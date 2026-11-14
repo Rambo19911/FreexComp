@@ -648,7 +648,7 @@ internal sealed class ConstantFolder
         }
 
         var argument = invocation.ArgumentList.Arguments[0].Expression;
-        if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf)
+        if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)
         {
             // a type name, a variable (only its type matters, LANG-903) or a constant
             ConstantValue? value = null;
@@ -813,6 +813,20 @@ internal sealed class ConstantFolder
                 return new ConstantValue(new BigInteger(type.Size), _types.Integer);
             case (IntrinsicKind.SizeOf, _):
                 break;
+
+            // static arrays: Length = element count, Low/High = the index type's bounds (intrinsics.md §1)
+            case (IntrinsicKind.Length, ArrayTypeSymbol array):
+                return new ConstantValue(new BigInteger(array.Length), _types.Integer);
+            case (IntrinsicKind.Length, StringTypeSymbol) when !isTypeName && value?.Value is string text:
+                return new ConstantValue(new BigInteger(text.Length), _types.Integer);
+            case (IntrinsicKind.Length, StringTypeSymbol) when !isTypeName:
+                needsRuntime = true;
+                return null;
+            case (IntrinsicKind.Length, _):
+                break;
+            case (_, ArrayTypeSymbol array):
+                var bound = high ? array.High : array.Low;
+                return array.IndexType is BooleanTypeSymbol ? new ConstantValue(!bound.IsZero, array.IndexType) : new ConstantValue(bound, array.IndexType);
             case (_, BooleanTypeSymbol):
                 return new ConstantValue(high, type);
             case (_, IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol):

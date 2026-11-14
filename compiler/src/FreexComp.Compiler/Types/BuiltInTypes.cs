@@ -85,6 +85,7 @@ public sealed class BuiltInTypes
         Intrinsic("Lo", IntrinsicKind.Lo, "Lo(X: Integer): Byte");
         Intrinsic("Hi", IntrinsicKind.Hi, "Hi(X: Integer): Byte");
         Intrinsic("Swap", IntrinsicKind.Swap, "Swap(X: Integer): Word");
+        Intrinsic("Length", IntrinsicKind.Length, "Length(X: String or Array): Integer");
     }
 
     /// <summary>

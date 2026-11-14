@@ -14,6 +14,9 @@ internal enum IntrinsicKind
 
     // M2.1 functions (constant-foldable, LANG-340)
     Succ, Pred, Ord, Chr, Odd, Abs, Sqr, Low, High, SizeOf, Lo, Hi, Swap,
+
+    // M2.2 functions (Length: constant for static arrays and string constants)
+    Length,
 }
 
 /// <summary>A compiler-magic routine predeclared in the outermost scope (LANG-900); user symbols may hide it.</summary>

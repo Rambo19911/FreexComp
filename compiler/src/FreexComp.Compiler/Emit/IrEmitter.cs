@@ -111,6 +111,11 @@ internal static class IrEmitter
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, literal, Alignment: 16, UnnamedAddr: true));
         }
 
+        foreach (var (name, constant, alignment) in module.AggregateConstants)
+        {
+            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, constant, alignment, UnnamedAddr: true));
+        }
+
         if (unit.Unit.IsProgram)
         {
             DefineUnitTable(module, units);
@@ -203,9 +208,13 @@ internal static class IrEmitter
     /// <summary>The IR parameter types of <paramref name="routine"/> (ABI-080, 082): static link, then per parameter value or <c>ptr</c>.</summary>
     internal static ImmutableArray<IrType> ParameterTypes(RoutineSymbol routine) =>
         [.. (routine.IsNested ? [IrType.Ptr] : Array.Empty<IrType>()),
-         .. routine.Parameters.Select(p => p.IsByReference ? IrType.Ptr : TypeLayout.Of(p.Type).StorageType)];
+         .. routine.Parameters.Select(p => p.IsByReference ? IrType.Ptr : ScalarStorage(p.Type))];
 
-    internal static IrType ReturnType(RoutineSymbol routine) => routine.ReturnType is { } type ? TypeLayout.Of(type).StorageType : IrType.Void;
+    internal static IrType ReturnType(RoutineSymbol routine) => routine.ReturnType is { } type ? ScalarStorage(type) : IrType.Void;
+
+    /// <summary>The storage type of a value parameter or result; aggregates follow ABI-080/081 with task C-055.</summary>
+    private static IrType ScalarStorage(TypeSymbol type) =>
+        Lowerer.IsAggregate(type) ? throw new NotSupportedException("aggregate parameters and results (C-055)") : TypeLayout.Of(type).StorageType;
 
     /// <summary>Layout of a frame field: the variable's storage, or a <c>ptr</c> for a by-reference parameter (CMP-345).</summary>
     internal static TypeLayout FieldLayout(Symbol variable) => variable switch
@@ -229,8 +238,18 @@ internal static class IrEmitter
         (PointerTypeSymbol, null) => new IrNullConstant(),
         (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
         (SetTypeSymbol { IsSmall: true }, BigInteger mask) => new IrIntConstant((IntegerIrType)ValueType(type), mask),       // CMP-335
+        (SetTypeSymbol, BigInteger mask) => BigSetConstant(mask, type.Size),                                                  // CMP-336
         _ => throw new NotSupportedException($"Constant {constant} of type '{type.Name}' is not emitted yet."),
     };
+
+    /// <summary>ABI-050: bit <c>k</c> is bit <c>k mod 8</c> of byte <c>k div 8</c>; all zero → <c>zeroinitializer</c>.</summary>
+    private static IrConstant BigSetConstant(BigInteger mask, long size)
+    {
+        var type = new ArrayIrType(size, IrType.I8);
+        return mask.IsZero
+            ? new IrZeroConstant(type)
+            : new IrArrayConstant(type, [.. Enumerable.Range(0, (int)size).Select(i => (IrConstant)new IrIntConstant(IrType.I8, (mask >> (8 * i)) & 0xFF))]);
+    }
 
     /// <summary>A constant in memory form: Booleans as 0/1, C-style Booleans as 0/−1 (CMP-305).</summary>
     private static IrConstant StorageConstant(ConstantValue constant, TypeSymbol type)
@@ -308,6 +327,28 @@ internal sealed class ModuleState(IIrWriter writer)
         }
 
         return reference;
+    }
+
+    private readonly Dictionary<string, IrGlobal> _aggregateReferences = new(StringComparer.Ordinal);
+
+    /// <summary>Constant aggregates used as operands (<c>@.set.N</c>, CMP-336), first-use order, one per distinct value.</summary>
+    public List<(LinkName Name, IrConstant Value, int Alignment)> AggregateConstants { get; } = [];
+
+    /// <summary>
+    /// The address of a private constant holding <paramref name="value"/> (emitted after the string literals);
+    /// <paramref name="key"/> identifies the value.
+    /// </summary>
+    public IrGlobal AggregateConstant(string key, IrConstant value, int alignment)
+    {
+        if (!_aggregateReferences.TryGetValue(key, out var global))
+        {
+            var name = new LinkName(".set." + AggregateConstants.Count, AlwaysQuote: false);
+            AggregateConstants.Add((name, value, alignment));
+            global = new IrGlobal(name);
+            _aggregateReferences.Add(key, global);
+        }
+
+        return global;
     }
 
     /// <summary>The address of a System variable: this unit's own global when it defines it (unit System), else an external one.</summary>
@@ -589,9 +630,41 @@ internal sealed class FunctionEmitter
                 }
 
                 break;
+            case LAssign assign when Lowerer.IsAggregate(assign.Target.Type):
+            {
+                var source = Address(assign.Value);
+                Copy(Address(assign.Target), source, assign.Target.Type, mayOverlap: SameArrayVariable(assign.Target, assign.Value));
+                break;
+            }
+
+            case LAssign { Target: LView view } assign:
+                _w.Store(Value(assign.Value), Address(view), AlignmentOf(view));
+                break;
             case LAssign assign:
                 Store(Value(assign.Value), Address(assign.Target), assign.Target.Type);
                 break;
+            case LZero zero:
+            {
+                var layout = TypeLayout.Of(zero.Type);
+                var memset = _module.Intrinsic("llvm.memset.p0.i64", IrType.Void, [IrType.Ptr, IrType.I8, IrType.I64, IrType.I1]);
+                _w.Call(null, IrType.Void, memset,
+                    [new IrAlignedPointer(Value(zero.Address), layout.Alignment), new IrIntConstant(IrType.I8, 0), IrIntConstant.I64(layout.Size), IrIntConstant.I1(false)]);
+                break;
+            }
+
+            case LSetBit setBit:
+            {
+                var (address, bit) = BitAddress(setBit.Address, setBit.Element);
+                var bits = _w.Load(NewTemp(), IrType.I8, address, 1);
+                var mask = Shl8(bit);
+                var changed = setBit.Include
+                    ? _w.Binary(NewTemp(), IrBinaryOperator.Or, bits, mask)
+                    : _w.Binary(NewTemp(), IrBinaryOperator.And, bits, mask is IrIntConstant c
+                        ? new IrIntConstant(IrType.I8, ~c.Value & 0xFF)
+                        : _w.Binary(NewTemp(), IrBinaryOperator.Xor, mask, new IrIntConstant(IrType.I8, -1)));
+                _w.Store(changed, address, 1);
+                break;
+            }
             case LIf ifStatement:
                 If(ifStatement);
                 break;
@@ -768,15 +841,124 @@ internal sealed class FunctionEmitter
 
     // ------------------------------------------------------------------ storage
 
-    private IrValue Address(LExpression variable) => variable switch
+    /// <summary>The address of a variable reference or of an aggregate operand (constant, <see cref="LSequence"/>, <see cref="LView"/>).</summary>
+    private IrValue Address(LExpression variable)
     {
-        LLocalRef local => _locals[local.Local],
-        LGlobalRef global => _module.Global(global.Variable),
-        LRuntimeVariableRef runtime => _module.RuntimeVariable(runtime.Variable),
-        LParamRef parameter => _parameterAddresses[parameter.Parameter],
-        LOuterRef outer => OuterAddress(outer),
-        _ => throw new InvalidOperationException($"{variable.GetType().Name} is not a variable reference."),
-    };
+        switch (variable)
+        {
+            case LLocalRef local:
+                return _locals[local.Local];
+            case LGlobalRef global:
+                return _module.Global(global.Variable);
+            case LRuntimeVariableRef runtime:
+                return _module.RuntimeVariable(runtime.Variable);
+            case LParamRef parameter:
+                return _parameterAddresses[parameter.Parameter];
+            case LOuterRef outer:
+                return OuterAddress(outer);
+            case LConst constant when Lowerer.IsAggregate(constant.Type):
+                return _module.AggregateConstant(constant.Type.Size + ":" + constant.Value.Value, IrEmitter.ValueConstant(constant.Value, constant.Type),
+                    TypeLayout.Of(constant.Type).Alignment);
+            case LSequence sequence:
+                Statement(sequence.First);
+                return Address(sequence.Value);
+            case LView view:
+                return Address(view.Aggregate);
+            case LIndex index:
+            {
+                // CMP-308: getelementptr inbounds [N x T], ptr %a, i64 0, i64 %idx0
+                var array = Address(index.Array);
+                var offset = Value(index.Index);
+                return _w.GetElementPtr(NewTemp(), TypeLayout.Of(index.Array.Type).StorageType, array, [IrIntConstant.I64(0), offset]);
+            }
+
+            default:
+                throw new InvalidOperationException($"{variable.GetType().Name} is not a variable reference.");
+        }
+    }
+
+    /// <summary>A view of an aggregate's bytes is aligned no better than the aggregate (a small set inside a big set: 1).</summary>
+    private static int AlignmentOf(LView view) => Math.Min(TypeLayout.Of(view.Type).Alignment, TypeLayout.Of(view.Aggregate.Type).Alignment);
+
+    /// <summary>CMP-326: both sides are elements of the same array variable (<c>a[i] := a[j]</c>), so they may overlap.</summary>
+    private static bool SameArrayVariable(LExpression target, LExpression source)
+    {
+        static object? Root(LExpression e)
+        {
+            if (e is not LIndex)
+            {
+                return null;
+            }
+
+            while (e is LIndex index)
+            {
+                e = index.Array;
+            }
+
+            return e switch
+            {
+                LLocalRef l => l.Local,
+                LGlobalRef g => g.Variable,
+                LParamRef p => p.Parameter,
+                LOuterRef o => o.Variable,
+                _ => null,
+            };
+        }
+
+        return Root(target) is { } root && ReferenceEquals(root, Root(source));
+    }
+
+    /// <summary>
+    /// CMP-326: an aggregate copy — <c>load</c>/<c>store iN</c> for sizes 1, 2, 4, 8, else <c>llvm.memcpy</c> (<c>llvm.memmove</c>
+    /// when <paramref name="mayOverlap"/>) with the type's alignment on both pointers (the source is computed first).
+    /// </summary>
+    private void Copy(IrValue destination, IrValue source, TypeSymbol type, bool mayOverlap = false)
+    {
+        var layout = TypeLayout.Of(type);
+        if (layout.Size is 1 or 2 or 4 or 8)
+        {
+            var integer = IrType.Int((int)layout.Size * 8);
+            _w.Store(_w.Load(NewTemp(), integer, source, layout.Alignment), destination, layout.Alignment);
+            return;
+        }
+
+        var memcpy = _module.Intrinsic(mayOverlap ? "llvm.memmove.p0.p0.i64" : "llvm.memcpy.p0.p0.i64", IrType.Void, [IrType.Ptr, IrType.Ptr, IrType.I64, IrType.I1]);
+        _w.Call(null, IrType.Void, memcpy,
+            [new IrAlignedPointer(destination, layout.Alignment), new IrAlignedPointer(source, layout.Alignment), IrIntConstant.I64(layout.Size), IrIntConstant.I1(false)]);
+    }
+
+    /// <summary>CMP-336: <c>getelementptr inbounds i8, ptr set, i64 (x lshr 3)</c> and the bit number <c>x and 7</c> as <c>i8</c>.</summary>
+    private (IrValue Address, IrValue Bit) BitAddress(LExpression set, LExpression element)
+    {
+        var address = Value(set);
+        var x = Value(element);
+        if (x is IrIntConstant constant)
+        {
+            var byteAddress = constant.Value < 8 ? address : _w.GetElementPtr(NewTemp(), IrType.I8, address, [IrIntConstant.I64((long)(constant.Value >> 3))]);
+            return (byteAddress, new IrIntConstant(IrType.I8, constant.Value & 7));
+        }
+
+        var type = (IntegerIrType)x.Type;
+        IrValue index = _w.Binary(NewTemp(), IrBinaryOperator.LShr, x, new IrIntConstant(type, 3));
+        if (type.Bits < 64)
+        {
+            index = _w.Cast(NewTemp(), IrCastOperator.ZExt, index, IrType.I64);
+        }
+
+        var byteOf = _w.GetElementPtr(NewTemp(), IrType.I8, address, [index]);
+        IrValue bit = _w.Binary(NewTemp(), IrBinaryOperator.And, x, new IrIntConstant(type, 7));
+        if (type.Bits > 8)
+        {
+            bit = _w.Cast(NewTemp(), IrCastOperator.Trunc, bit, IrType.I8);
+        }
+
+        return (byteOf, bit);
+    }
+
+    /// <summary><c>1 shl bit</c> in <c>i8</c> (folded for a constant bit).</summary>
+    private IrValue Shl8(IrValue bit) => bit is IrIntConstant c
+        ? new IrIntConstant(IrType.I8, BigInteger.One << (int)c.Value)
+        : _w.Binary(NewTemp(), IrBinaryOperator.Shl, new IrIntConstant(IrType.I8, 1), bit);
 
     private bool IsCaptured(Symbol? variable) => variable is not null && _frame?.FieldOf(variable) > 0;
 
@@ -865,8 +1047,31 @@ internal sealed class FunctionEmitter
         {
             case LConst constant:
                 return IrEmitter.ValueConstant(constant.Value, constant.Type);
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef:
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex when Lowerer.IsAggregate(expression.Type):
+                throw new InvalidOperationException("An aggregate has no SSA value; use its address.");
+            case LView view:
+                return _w.Load(NewTemp(), TypeLayout.Of(view.Type).StorageType, Address(view), AlignmentOf(view));
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex:
                 return Load(Address(expression), expression.Type);
+            case LSequence sequence:
+                Statement(sequence.First);
+                return Value(sequence.Value);
+            case LTestBit test:
+            {
+                var (address, bit) = BitAddress(test.Address, test.Element);
+                var bits = _w.Load(NewTemp(), IrType.I8, address, 1);
+                var shifted = bit is IrIntConstant { Value.IsZero: true } ? bits : _w.Binary(NewTemp(), IrBinaryOperator.LShr, bits, bit);
+                var one = _w.Binary(NewTemp(), IrBinaryOperator.And, shifted, new IrIntConstant(IrType.I8, 1));
+                return _w.ICmp(NewTemp(), IrIntPredicate.Ne, one, new IrIntConstant(IrType.I8, 0));
+            }
+
+            case LCall { Callee: LHelperCallee helper } call:
+            {
+                var arguments = call.Arguments.Select((a, i) => ToStorage(Value(a), helper.Helper.ParameterTypes[i])).ToImmutableArray();
+                var storage = TypeLayout.Of(call.Type).StorageType;
+                var result = _w.Call(NewTemp(), storage, _module.Helper(helper.Helper), arguments)!;
+                return call.Type is BooleanTypeSymbol ? _w.ICmp(NewTemp(), IrIntPredicate.Ne, result, new IrIntConstant((IntegerIrType)storage, 0)) : result;
+            }
             case LStringLiteral { Type: StringTypeSymbol { Variant: StringVariant.Unicode } } literal:
                 return _module.StringLiteral(literal.Value);
             case LAddrOf addressOf:

@@ -88,7 +88,7 @@ internal sealed class BodyBinder
             return new BoundAssignmentStatement(assignment, target, value);
         }
 
-        switch (target)
+        switch (BoundIndexExpression.RootOf(target))                                    // an array element is assignable like its array
         {
             case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
             case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):

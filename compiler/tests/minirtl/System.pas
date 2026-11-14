@@ -32,6 +32,14 @@ procedure _WriteBool(var T: Text; V: Boolean; Width: Integer);
 procedure _WriteLn(var T: Text);
 procedure _WriteEnd(var T: Text);
 
+procedure _SetUnion(Dest, A, B: Pointer);
+procedure _SetInter(Dest, A, B: Pointer);
+procedure _SetDiff(Dest, A, B: Pointer);
+procedure _SetSymDiff(Dest, A, B: Pointer);
+function _SetEq(A, B: Pointer): Boolean;
+function _SetLe(A, B: Pointer): Boolean;
+procedure _SetRange(Dest: Pointer; Lo, Hi: Integer);
+
 function memcpy(Dest, Src: Pointer; N: NativeUInt): Pointer; public name 'memcpy';
 function memmove(Dest, Src: Pointer; N: NativeUInt): Pointer; public name 'memmove';
 function memset(Dest: Pointer; C: Integer; N: NativeUInt): Pointer; public name 'memset';
@@ -297,6 +305,97 @@ end;
 { unbuffered: nothing to flush }
 procedure _WriteEnd(var T: Text);
 begin
+end;
+
+{ Big sets (rtl-abi.md section 9.8): 32 bytes, bit K in byte K shr 3; combined byte by byte, so Dest may be A or B
+  (ABI-033). Op: 0 union, 1 intersection, 2 difference, 3 symmetric difference. }
+procedure SetCombine(Dest, A, B: Pointer; Op: Integer);
+var
+  I: Integer;
+  X, Y: Byte;
+begin
+  for I := 0 to 31 do
+  begin
+    LoadByte(X, Offset(A, I), 1);
+    LoadByte(Y, Offset(B, I), 1);
+    case Op of
+      0: X := X or Y;
+      1: X := X and Y;
+      2: X := X and not Y;
+    else
+      X := X xor Y;
+    end;
+    StoreByte(Offset(Dest, I), X, 1);
+  end;
+end;
+
+procedure _SetUnion(Dest, A, B: Pointer);
+begin
+  SetCombine(Dest, A, B, 0);
+end;
+
+procedure _SetInter(Dest, A, B: Pointer);
+begin
+  SetCombine(Dest, A, B, 1);
+end;
+
+procedure _SetDiff(Dest, A, B: Pointer);
+begin
+  SetCombine(Dest, A, B, 2);
+end;
+
+procedure _SetSymDiff(Dest, A, B: Pointer);
+begin
+  SetCombine(Dest, A, B, 3);
+end;
+
+function _SetEq(A, B: Pointer): Boolean;
+var
+  I: Integer;
+  X, Y: Byte;
+begin
+  Result := True;
+  for I := 0 to 31 do
+  begin
+    LoadByte(X, Offset(A, I), 1);
+    LoadByte(Y, Offset(B, I), 1);
+    if X <> Y then
+      Result := False;
+  end;
+end;
+
+{ A <= B: no bit of A outside B }
+function _SetLe(A, B: Pointer): Boolean;
+var
+  I: Integer;
+  X, Y: Byte;
+begin
+  Result := True;
+  for I := 0 to 31 do
+  begin
+    LoadByte(X, Offset(A, I), 1);
+    LoadByte(Y, Offset(B, I), 1);
+    if X and not Y <> 0 then
+      Result := False;
+  end;
+end;
+
+{ Dest += [Lo..Hi]; Lo > Hi adds nothing, otherwise both bounds must lie in 0..255 (runtime error 201) }
+procedure _SetRange(Dest: Pointer; Lo, Hi: Integer);
+var
+  K: Integer;
+  X: Byte;
+begin
+  if Lo > Hi then
+    Exit;
+  if (Lo < 0) or (Hi > 255) then
+    _RunError(201);
+  for K := Lo to Hi do
+  begin
+    LoadByte(X, Offset(Dest, K shr 3), 1);
+    X := X or (1 shl (K and 7));
+    StoreByte(Offset(Dest, K shr 3), X, 1);
+  end;
 end;
 
 function memcpy(Dest, Src: Pointer; N: NativeUInt): Pointer;

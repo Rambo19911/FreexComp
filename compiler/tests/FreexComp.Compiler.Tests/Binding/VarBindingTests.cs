@@ -93,7 +93,7 @@ public sealed class VarBindingTests
 
     [Theory]
     [InlineData("threadvar T: Integer; begin end.", "E2900(1,1): Feature not supported: threadvar")]
-    [InlineData("var X: array[1..2] of Integer; begin end.", "E2900(1,8): Feature not supported: array type")]
+    [InlineData("var X: array of Integer; begin end.", "E2900(1,8): Feature not supported: dynamic array type")]
     [InlineData("var X: ^Integer; begin end.", "E2900(1,8): Feature not supported: pointer type")]
     [InlineData("var X: string[10]; begin end.", "E2900(1,8): Feature not supported: short string type")]
     [InlineData("var X: Currency; begin end.", "E2900(1,8): Feature not supported: Currency")]

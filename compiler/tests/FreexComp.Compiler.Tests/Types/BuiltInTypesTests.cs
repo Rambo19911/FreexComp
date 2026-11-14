@@ -73,6 +73,7 @@ public sealed class BuiltInTypesTests
             "True", "False", "MaxInt", "MaxLongInt", "Pi",
             "Break", "Continue", "Exit", "Halt",                                            // intrinsics (LANG-900)
             "Inc", "Dec", "RunError", "Write", "Writeln", "Include", "Exclude", "Succ", "Pred", "Ord", "Chr", "Odd", "Abs", "Sqr", "Low", "High", "SizeOf", "Lo", "Hi", "Swap",
+            "Length",                                                                       // M2.2 (C-052)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

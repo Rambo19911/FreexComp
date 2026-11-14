@@ -3,8 +3,8 @@ using FreexComp.Compiler.Emit;
 namespace FreexComp.Compiler.Types;
 
 /// <summary>
-/// Size, alignment and LLVM storage type (the in-memory form, CMP-305) of a type, per rtl-abi.md §2. Scalars only so far;
-/// records, arrays, sets and classes are added with their milestones (C-052, C-053, C-080).
+/// Size, alignment and LLVM storage type (the in-memory form, CMP-305) of a type, per rtl-abi.md §2: scalars, sets, static
+/// arrays; records and classes are added with their milestones (C-053, C-080).
 /// </summary>
 internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
 {
@@ -21,7 +21,8 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
             StringTypeSymbol or PointerTypeSymbol => IrType.Ptr,
             TextTypeSymbol => new ArrayIrType(type.Size, IrType.I8),
             SetTypeSymbol { IsSmall: true } => IrType.Int(checked((int)type.Size * 8)),
-            SetTypeSymbol => new ArrayIrType(type.Size, IrType.I8),          // big set (rtl-abi.md §5); operations: C-051
+            SetTypeSymbol => new ArrayIrType(type.Size, IrType.I8),          // big set (rtl-abi.md §5, CMP-336)
+            ArrayTypeSymbol array => new ArrayIrType(array.Length, Of(array.ElementType).StorageType),   // CMP-308, ABI-062
             ErrorTypeSymbol => throw new InvalidOperationException("The error type has no layout."),
             _ => throw new NotSupportedException($"No layout for type kind {type.TypeKind} yet."),
         };

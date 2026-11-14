@@ -586,8 +586,119 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-051 / CMP-336: big-set constants (private arrays, initialised global), helper calls with temporaries, inline
+    /// element and range constructors, <c>in</c>, <c>Include</c>/<c>Exclude</c> ({$R-} guarded / {$R+} checked), small ↔ big.
+    /// </summary>
+    internal const string BigSetsSource = """
+        unit M;
+        interface
+        type
+          TChars = set of Char;
+          TBytes = set of Byte;
+          TSmall = set of 0..9;
+        var
+          Vowels: TChars = ['a', 'e', 'i', 'o', 'u'];
+        procedure Ops(var r, a, b: TChars);
+        function Compare(var a, b: TChars): Boolean;
+        function Has(c: Char; var s: TChars; i: Integer; var w: TBytes): Boolean;
+        procedure Change(var s: TChars; c, lo, hi: Char);
+        procedure Mixed(var b: TBytes; var d: TSmall);
+        implementation
+        procedure Ops(var r, a, b: TChars);
+        begin
+          r := (a + b) * ['a'..'z'] - b;
+          r := Vowels;
+        end;
+        function Compare(var a, b: TChars): Boolean;
+        begin
+          Result := (a = b) or (a <> []) and (a <= b) and (b >= ['x']);
+        end;
+        function Has(c: Char; var s: TChars; i: Integer; var w: TBytes): Boolean;
+        begin
+          Result := (c in s) and (i in w) and ('q' in s) and (#300 in s);
+        end;
+        procedure Change(var s: TChars; c, lo, hi: Char);
+        begin
+          s := [c, lo..hi, 'z'];
+          Include(s, c);
+          Exclude(s, 'a');
+        {$R+}
+          s := [c, lo..hi];
+          Include(s, c);
+        end;
+        {$R-}
+        procedure Mixed(var b: TBytes; var d: TSmall);
+        begin
+          b := d;
+          d := b;
+          b := b + d;
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-052 / CMP-308, 326, 331: element GEPs (index − Low in i64), multi-dimensional, enum/Char/Boolean indexes, copies
+    /// (memcpy, iN for 4 bytes, memmove for rows of one array), {$R+} index checks.
+    /// </summary>
+    internal const string StaticArraysSource = """
+        unit M;
+        interface
+        type
+          TColor = (Red, Green, Blue);
+          TVec = array[1..4] of Integer;
+          TGrid = array[0..2, 0..9] of Byte;
+          TFlags = array[TColor] of Boolean;
+          TCounts = array[Char] of Word;
+          TPair = array[0..1] of SmallInt;
+        var
+          G: TGrid;
+        procedure Fill(var v: TVec; x: Integer);
+        function Sum(var v: TVec): Integer;
+        procedure Copy2(var a, b: TVec; var p, q: TPair);
+        procedure Grid(i, j: Integer; c: TColor; ch: Char; var f: TFlags; var n: TCounts);
+        implementation
+        procedure Fill(var v: TVec; x: Integer);
+        var
+          i: Integer;
+          local: TVec;
+        begin
+          for i := 1 to 4 do
+            local[i] := x + i;
+          v := local;
+          v[2] := v[3];
+        end;
+        function Sum(var v: TVec): Integer;
+        var
+          i: Integer;
+        begin
+          Result := 0;
+          for i := Low(v) to High(v) do
+            Inc(Result, v[i]);
+        end;
+        procedure Copy2(var a, b: TVec; var p, q: TPair);
+        begin
+          a := b;
+          p := q;
+        end;
+        procedure Grid(i, j: Integer; c: TColor; ch: Char; var f: TFlags; var n: TCounts);
+        begin
+          G[i, j] := G[2][9];
+          G[i] := G[j];
+          f[c] := not f[Blue];
+          Inc(n[ch]);
+        {$R+}
+          G[i, j] := 1;
+          f[c] := True;
+          n[ch] := 0;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["StaticArrays"] = StaticArraysSource,
+        ["BigSets"] = BigSetsSource,
         ["Enums"] = EnumsSource,
         ["Sets"] = SetsSource,
         ["ExternalDecl"] = ExternalDeclSource,
@@ -719,6 +830,58 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-335")]
     [Trait("Req", "LANG-252")]
     public void Sets() => Snapshot.Verify("Sets", Emit(SetsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-336")]
+    [Trait("Req", "LANG-252")]
+    public void BigSets() => Snapshot.Verify("BigSets", Emit(BigSetsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-308")]
+    [Trait("Req", "CMP-331")]
+    public void StaticArrays() => Snapshot.Verify("StaticArrays", Emit(StaticArraysSource));
+
+    /// <summary>CMP-308 element addresses; CMP-326 copies; CMP-331 checks only under {$R+} and only where the index can leave the bounds.</summary>
+    [Fact]
+    [Trait("Req", "CMP-308")]
+    [Trait("Req", "CMP-326")]
+    [Trait("Req", "CMP-331")]
+    public void StaticArrays_ElementAddressesAndCopies()
+    {
+        var text = Emit(StaticArraysSource);
+
+        Assert.Contains("getelementptr inbounds [4 x i32], ptr %local.addr, i64 0, i64 %t", text);
+        Assert.Contains("getelementptr inbounds [3 x [10 x i8]], ptr @\"M.G\", i64 0, i64 2\n", text);
+        Assert.Contains("call void @llvm.memcpy.p0.p0.i64(ptr align 4 %v, ptr align 4 %local.addr, i64 16, i1 false)", text);
+        Assert.Contains("call void @llvm.memmove.p0.p0.i64(ptr align 1 %t", text);
+        Assert.Contains("@\"M.G\" = global [3 x [10 x i8]] zeroinitializer, align 1\n", text);
+        var copy2 = text[text.IndexOf("@\"M.Copy2\"", StringComparison.Ordinal)..text.IndexOf("@\"M.Grid\"", StringComparison.Ordinal)];
+        Assert.Contains("load i32, ptr %q, align 2", copy2);
+        var grid = text[text.IndexOf("define void @\"M.Grid\"", StringComparison.Ordinal)..];
+        Assert.Equal(2, grid.Split("call void @\"System._RangeError\"").Length - 1);
+    }
+
+    /// <summary>CMP-336: helpers with a temporary destination, inline <c>in</c> guarded by <c>x &lt;u 256</c>, 32-byte copies.</summary>
+    [Fact]
+    [Trait("Req", "CMP-336")]
+    public void BigSets_UseHelpersAndInlineBitTests()
+    {
+        var text = Emit(BigSetsSource);
+
+        Assert.Contains("call void @\"System._SetUnion\"(ptr %$tmp", text);
+        Assert.Contains("call void @\"System._SetInter\"(ptr %$tmp", text);
+        Assert.Contains("call void @\"System._SetDiff\"(ptr %$tmp", text);
+        Assert.Contains("call i8 @\"System._SetEq\"(ptr ", text);
+        Assert.Contains("call i8 @\"System._SetLe\"(ptr ", text);
+        Assert.Contains("call void @\"System._SetRange\"(ptr %$tmp", text);
+        Assert.Contains("call void @llvm.memset.p0.i64(ptr align 1 %$tmp", text);
+        Assert.Contains("call void @llvm.memcpy.p0.p0.i64(ptr align 1 %r, ptr align 1 ", text);
+        Assert.Contains("icmp ult i32 ", text);
+        Assert.Contains("lshr i32 ", text);
+        Assert.Contains("getelementptr inbounds i8, ptr ", text);
+        Assert.Contains("@\"M.Vowels\" = global [32 x i8] [i8 0, ", text);
+        Assert.Contains("= private unnamed_addr constant [32 x i8] ", text);
+    }
 
     [Fact]
     [Trait("Req", "CMP-321")]

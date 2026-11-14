@@ -91,6 +91,8 @@ internal sealed class ExpressionBinder
                 return BindInvocation(invocation);
             case AddressOfExpressionSyntax addressOf:
                 return BindAddressOf(addressOf);
+            case ElementAccessExpressionSyntax elementAccess:
+                return BindElementAccess(elementAccess);
             case PredefinedTypeExpressionSyntax predefined:
                 _diagnostics.Report(predefined, "E2009", predefined.Keyword.Text);
                 return Error(syntax);
@@ -221,6 +223,78 @@ internal sealed class ExpressionBinder
         return Unsupported(addressOf, DeclarationBinder.FeatureName(addressOf.Kind));
     }
 
+    /// <summary>
+    /// LANG-255/258 <c>a[i, j]</c> = <c>a[i][j]</c> on static arrays: each index an ordinal compatible with the index type
+    /// (E2010 at the index; it keeps its own type), a constant index inside the bounds (E2032 at the index). E2017 at the
+    /// indexed expression when it is no array, E2019 at the first extra index; string indexing arrives with C-061.
+    /// </summary>
+    private BoundExpression BindElementAccess(ElementAccessExpressionSyntax syntax)
+    {
+        var result = BindExpression(syntax.Expression);
+        if (result.HasErrors)
+        {
+            return Error(syntax, result);
+        }
+
+        var first = true;
+        foreach (var indexSyntax in syntax.Indexes)
+        {
+            if (result.Type is not ArrayTypeSymbol array)
+            {
+                if (!first)
+                {
+                    _diagnostics.Report(indexSyntax, "E2019", syntax.Expression.ToString().Trim());
+                }
+                else if (result.Type is StringTypeSymbol)
+                {
+                    return Unsupported(syntax, "string indexing");                  // C-061
+                }
+                else
+                {
+                    _diagnostics.Report(syntax.Expression, "E2017");
+                }
+
+                return Error(syntax, result);
+            }
+
+            first = false;
+            var index = BindExpression(indexSyntax);
+            if (index.HasErrors)
+            {
+                return Error(syntax, result, index);
+            }
+
+            if (!index.Type.IsOrdinal || !_conversions.Classify(index.Type, array.IndexType).Exists)
+            {
+                _conversions.ReportIncompatible(index.Type, array.IndexType, indexSyntax, _diagnostics);
+                return Error(syntax, result, index);
+            }
+
+            if (index.ConstantValue is { } constant)
+            {
+                var ordinal = constant.Value is bool b ? (b ? BigInteger.One : BigInteger.Zero) : (BigInteger)constant.Value!;
+                if (ordinal < array.Low || ordinal > array.High)
+                {
+                    _diagnostics.Report(indexSyntax, "E2032", OrdinalText(ordinal, constant.Type),
+                        OrdinalText(array.Low, array.IndexType), OrdinalText(array.High, array.IndexType));
+                    return Error(syntax, result, index);
+                }
+            }
+
+            result = new BoundIndexExpression(syntax, result, index, array.ElementType);
+        }
+
+        return result;
+    }
+
+    /// <summary>An ordinal as written in source: <c>'a'</c>, <c>True</c>, <c>1</c>, an enumeration element by name (<c>Red</c>).</summary>
+    private static string OrdinalText(BigInteger value, TypeSymbol type) => type switch
+    {
+        EnumTypeSymbol e when e.EnumMembers.FirstOrDefault(m => m.Ordinal == value) is { } member => member.Name,
+        BooleanTypeSymbol => new ConstantValue(!value.IsZero, type).ToDisplayString(),
+        _ => new ConstantValue(value, type).ToDisplayString(),
+    };
+
     /// <summary>The symbol a name binds to (LANG-310); E2003 and null when undeclared, null for a parser-inserted name.</summary>
     private Symbol? LookupName(IdentifierNameSyntax name)
     {
@@ -307,7 +381,7 @@ internal sealed class ExpressionBinder
         }
 
         var syntax = invocation.ArgumentList.Arguments[0].Expression;
-        if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf)
+        if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)
         {
             // the operand is never evaluated (LANG-903), so it captures nothing (lead decision C-029)
             var captured = CapturedVariables.Count;
@@ -321,7 +395,7 @@ internal sealed class ExpressionBinder
             var value = _folder.FoldTypeIntrinsic(invocation, intrinsic, type, argument?.ConstantValue, argument is null, out var needsRuntime);
             if (needsRuntime)
             {
-                return Unsupported(invocation, "High of a string variable");              // Length, M2.2
+                return Unsupported(invocation, intrinsic.Name + " of a string variable");    // string length, C-060/C-062
             }
 
             return value is null
@@ -535,7 +609,7 @@ internal sealed class ExpressionBinder
     /// </summary>
     public bool CheckVariableReference(BoundExpression argument, ExpressionSyntax syntax)
     {
-        switch (argument)
+        switch (BoundIndexExpression.RootOf(argument))
         {
             case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
             case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):
@@ -568,7 +642,7 @@ internal sealed class ExpressionBinder
         {
             var (parameter, argument) = (candidate.Parameters[i], arguments[i]);
             var compatible = parameter.IsByReference
-                ? argument is BoundVariableExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }
+                ? BoundIndexExpression.RootOf(argument) is BoundVariableExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }
                   && ReferenceEquals(argument.Type, parameter.Type)
                 : ReferenceEquals(argument.Type, parameter.Type)
                   || (argument.ConstantValue is { } constant

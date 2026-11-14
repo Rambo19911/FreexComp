@@ -314,7 +314,10 @@ internal sealed class DeclarationBinder
             value.Value is bool b ? (b ? System.Numerics.BigInteger.One : System.Numerics.BigInteger.Zero) : (System.Numerics.BigInteger)value.Value!;
     }
 
-    /// <summary>LANG-250: an ordinal base type (E2013) with ordinals in 0..255 (E2030), both at the base type.</summary>
+    /// <summary>
+    /// LANG-250: an ordinal base type (E2013) with ordinals in 0..255 (E2030), both at the base type; Char types of any range
+    /// are accepted (types.md lead note 2026-11-14).
+    /// </summary>
     private TypeSymbol BindSet(SetTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
     {
         var element = BindType(syntax.ElementType, declared: declared);
@@ -329,13 +332,82 @@ internal sealed class DeclarationBinder
             return _types.Error;
         }
 
-        if (bounds.Low < 0 || bounds.High > 255)
+        // types.md lead note 2026-11-14: set of Char (or a wider Char subrange) is the 256-bit set over Ord 0..255
+        if ((bounds.Low < 0 || bounds.High > 255) && element is not CharTypeSymbol)
         {
             _diagnostics.Report(syntax.ElementType, "E2030");
             return _types.Error;
         }
 
         return new SetTypeSymbol(name, element, _container, declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : []);
+    }
+
+    /// <summary>
+    /// LANG-255 static array: ordinal index types (E2013 at the index type) of at most 2^31−1 elements and a total size of at
+    /// most 2^31−1 bytes (E2031 at the array type). <c>array[I1, I2] of T</c> is <c>array[I1] of array[I2] of T</c>; the inner
+    /// types are named by their constructor (<c>array[I2] of T</c>). <c>packed</c> changes nothing (elements are not padded).
+    /// Arrays of managed types arrive with C-065.
+    /// </summary>
+    private TypeSymbol BindArray(ArrayTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
+    {
+        var indexTypes = new List<TypeSymbol>();
+        foreach (var indexSyntax in syntax.IndexTypes)
+        {
+            var index = BindType(indexSyntax, declared: declared);
+            if (index.TypeKind == TypeKind.Error)
+            {
+                return _types.Error;
+            }
+
+            if (Ordinals.Bounds(index) is not { } bounds)
+            {
+                _diagnostics.Report(indexSyntax, "E2013");
+                return _types.Error;
+            }
+
+            if (bounds.High - bounds.Low + 1 > int.MaxValue)
+            {
+                _diagnostics.Report(syntax, "E2031");
+                return _types.Error;
+            }
+
+            indexTypes.Add(index);
+        }
+
+        var element = BindType(syntax.ElementType!, declared: declared);
+        if (element.TypeKind == TypeKind.Error)
+        {
+            return _types.Error;
+        }
+
+        if (element.IsManaged)
+        {
+            return Unsupported(syntax.ElementType!, "array of a managed type");          // C-065
+        }
+
+        if (element.Size < 0 || element is TextTypeSymbol)
+        {
+            return Unsupported(syntax.ElementType!, "array of " + element.Name);
+        }
+
+        // innermost first: array[I1, I2] of T = array[I1] of (array[I2] of T)
+        ImmutableArray<Text.Location> locations = declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [];
+        var result = element;
+        for (var i = indexTypes.Count - 1; i >= 0; i--)
+        {
+            var size = (System.Numerics.BigInteger)ArrayTypeSymbol.LengthOf(indexTypes[i]) * result.Size;
+            if (size > int.MaxValue)
+            {
+                _diagnostics.Report(syntax, "E2031");
+                return _types.Error;
+            }
+
+            var innerName = i == 0 ? name
+                : $"array[{string.Join(", ", syntax.IndexTypes.Skip(i).Select(t => t.ToString().Trim()))}] of {syntax.ElementType!.ToString().Trim()}";
+            result = new ArrayTypeSymbol(innerName, indexTypes[i], result, i == 0 ? _container : null, i == 0 ? locations : []);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -778,6 +850,10 @@ internal sealed class DeclarationBinder
                 return BindSubrange(subrange, typeName, declaredAt);
             case SetTypeSyntax set:
                 return BindSet(set, typeName, declaredAt, declared);
+            case ArrayTypeSyntax { IndexTypes.Count: > 0, ElementType: not null } array:
+                return BindArray(array, typeName, declaredAt, declared);
+            case ArrayTypeSyntax array:
+                return Unsupported(type, array.ElementType is null ? "array of const" : "dynamic array type");      // C-064, M2.5
             case NamedTypeSyntax { Name: IdentifierNameSyntax name }:
                 return BindTypeName(name);
             case NamedTypeSyntax { Name: QualifiedNameSyntax }:

@@ -29,6 +29,33 @@ public sealed class LoweringTests
 
     private static string Locals(LoweredBody body) => string.Join(" ", body.Locals.Select(l => $"{l.Name}:{l.Type.Name}"));
 
+    // ------------------------------------------------------------------ static arrays (CMP-308, CMP-331) and big sets (CMP-336)
+
+    /// <summary>CMP-308: the index minus Low in Int64; constant indexes folded; under {$R+} checked against the bounds (CMP-331).</summary>
+    [Fact]
+    [Trait("Req", "CMP-308")]
+    [Trait("Req", "CMP-331")]
+    public void ArrayIndex_IsZeroBasedInt64AndRangeCheckedUnderR() =>
+        Assert.Equal(
+            "(:= ([] @a (Subtract:Int64 (conv Int64 @i) 1:Int64)) ([] @a 2:Int64)) " +
+            "(:= ([] ([] @m (conv Int64 @c)) (conv Int64 (range 0..9 @i))) 0:Byte)",
+            MainBody("a: array[1..10] of Integer; m: array[Boolean, 0..9] of Byte; i: Integer; c: Boolean",
+                "a[i] := a[3]; {$R+} m[c, i] := 0"));
+
+    /// <summary>CMP-336: a big-set constructor fills a zeroed temporary; <c>in</c> tests the bit behind an <c>x &lt;u 256</c> guard.</summary>
+    [Fact]
+    [Trait("Req", "CMP-336")]
+    public void BigSet_ConstructorAndIn()
+    {
+        var text = MainBody("s: set of Char; c: Char; b: Boolean", "s := [c, 'a']; b := c in s");
+
+        Assert.Equal(
+            "(:= @s (seq (block (zero (addr $tmp1)) (if (let $v1 (conv Cardinal (conv Integer @c)) (Less $v1 256:Cardinal)) (setbit (addr $tmp1) $v1)) " +
+            "(setbit (addr $tmp1) 97:Integer)) $tmp1)) " +
+            "(:= @b (let $v2 (conv Cardinal (conv Integer @c)) (let $v3 (addr @s) (ConditionalAnd:Boolean (Less $v2 256:Cardinal) (bit? $v3 $v2)))))",
+            text);
+    }
+
     // ------------------------------------------------------------------ for (CMP-321, LANG-361)
 
     [Fact]

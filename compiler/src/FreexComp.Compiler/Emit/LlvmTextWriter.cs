@@ -393,7 +393,9 @@ internal sealed class LlvmTextWriter : IIrWriter
         return packed ? "<" + inner + ">" : inner;
     }
 
-    private static string Typed(IrValue value) => Type(value.Type) + " " + Value(value);
+    private static string Typed(IrValue value) => value is IrAlignedPointer aligned
+        ? "ptr align " + Int(aligned.Alignment) + " " + Value(aligned.Pointer)
+        : Type(value.Type) + " " + Value(value);
 
     private static string Value(IrValue value) => value switch
     {

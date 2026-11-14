@@ -1,0 +1,17 @@
+[]
+[aeiou]
+TRUE FALSE FALSE
+[cdefgx]
+[]
+[abcdefiou]
+[abcdef]
+[bcdf]
+TRUE TRUE TRUE FALSE TRUE
+[Zeiou]
+FALSE
+[]
+{ 0 100 101 102 255 }
+TRUE FALSE FALSE
+FALSE
+[abc]
+32 32 32

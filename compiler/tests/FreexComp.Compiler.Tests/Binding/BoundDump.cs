@@ -26,6 +26,7 @@ internal static class BoundDump
         BoundUnaryExpression u => $"({u.OperatorKind}:{u.Type.Name} {Of(u.Operand)})",
         BoundBinaryExpression b => $"({b.OperatorKind}:{b.Type.Name} {Of(b.Left)} {Of(b.Right)})",
         BoundSetConstructor s => "(" + string.Join(" ", s.Elements.Select(e => e.High is null ? Of(e.Low) : $"(.. {Of(e.Low)} {Of(e.High)})").Prepend($"set {s.Type.Name}")) + ")",
+        BoundIndexExpression x => $"([] {Of(x.Array)} {Of(x.Index)}):{x.Type.Name}",
         BoundErrorExpression => "<error>",
         BoundBlock block => List("block", block.Statements),
         BoundAssignmentStatement a => $"(:= {Of(a.Target)} {Of(a.Value)})",

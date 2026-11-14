@@ -528,6 +528,24 @@ public sealed class LlvmTextWriterTests
         Assert.Contains("  %t1 = call i64 @\"M.F\"(i32 -1, ptr null)\n  call i64 @\"M.F\"(i32 2, ptr %fp)\n  call void %fp()\n", text);
     }
 
+    /// <summary>CMP-326: <c>llvm.memcpy</c> operands carry <c>align N</c>.</summary>
+    [Fact]
+    [Trait("Req", "CMP-326")]
+    public void Call_AlignedPointerArguments()
+    {
+        var text = Write(w =>
+        {
+            var memcpy = w.DeclareFunction(new(new LinkName("llvm.memcpy.p0.p0.i64", false), IrType.Void, [IrType.Ptr, IrType.Ptr, IrType.I64, IrType.I1]));
+            var p = w.BeginFunction(new(Pascal("M.G"), IrLinkage.External, IrType.Void, [new(IrType.Ptr, "d"), new(IrType.Ptr, "s")]));
+            w.AppendBlock(new IrBlock("entry"));
+            w.Call(null, IrType.Void, memcpy, [new IrAlignedPointer(p[0], 4), new IrAlignedPointer(p[1], 4), IrIntConstant.I64(12), IrIntConstant.I1(false)]);
+            w.Ret(null);
+            w.EndFunction();
+        });
+
+        Assert.Contains("  call void @llvm.memcpy.p0.p0.i64(ptr align 4 %d, ptr align 4 %s, i64 12, i1 false)\n", text);
+    }
+
     [Fact]
     public void Call_VoidWithName_Throws() =>
         Assert.Throws<InvalidOperationException>(() => BodyLine(IrType.Ptr, (w, x) => w.Call("t1", IrType.Void, x, [])));

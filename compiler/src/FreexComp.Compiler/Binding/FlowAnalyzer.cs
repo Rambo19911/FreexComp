@@ -582,7 +582,7 @@ internal sealed class FlowAnalyzer
                 return Call(call.Routine, call.Arguments, state);
 
             case BoundIntrinsicCallExpression intrinsic:
-                if (intrinsic.Intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf)
+                if (intrinsic.Intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)
                 {
                     foreach (var argument in intrinsic.Arguments)
                     {
@@ -598,6 +598,9 @@ internal sealed class FlowAnalyzer
                 }
 
                 return state;
+
+            case BoundIndexExpression index:
+                return Eval(index.Index, Eval(index.Array, state));
 
             case BoundSetConstructor constructor:
                 foreach (var element in constructor.Elements)

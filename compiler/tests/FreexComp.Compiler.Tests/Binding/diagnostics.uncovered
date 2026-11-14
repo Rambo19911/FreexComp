@@ -17,13 +17,9 @@ E2007  M2.2  incomplete type (pointer forward, records)
 E2008  reserved  LANG-516 makes this unused
 E2015  M2.2  ^T forward reference (LANG-208)
 E2016  M2.2  record/class/interface required (with, member access)
-E2017  M2.2  array type required (indexing)
 E2018  M2.2  pointer type required (dereference)
-E2019  M2.2  too many indexes
 E2022  M2.2  circular type definition
 E2023  M2.2  result type restrictions (LANG-412)
-E2031  M2.2  data structure too large
-E2032  M2.2  constant array index
 E2033  M2.2  address-of (@ on expressions)
 E2035  M2.2  typed constant arrays
 E2036  M2.2  typed constant arrays

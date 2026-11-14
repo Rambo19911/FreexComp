@@ -42,6 +42,9 @@ internal static class Lowerer
     public static LoweredBody LowerBody(BindingResult result, BoundBlock block) =>
         new LoweringContext(result.Types, routine: null, locals: []) { Output = OutputOf(result) }.Finish(block);
 
+    /// <summary>Types held in memory as <c>[N x T]</c> (big sets, static arrays): never SSA values (see the aggregate nodes).</summary>
+    public static bool IsAggregate(TypeSymbol type) => type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol;
+
     /// <summary>The variable <c>Output</c> of the bound <c>System</c> (default file of <c>Write</c>, LANG-910), or null without one.</summary>
     private static VariableSymbol? OutputOf(BindingResult result) =>
         result.System?.InterfaceMembers.OfType<VariableSymbol>().FirstOrDefault(v => IdentifierComparer.Instance.Equals(v.Name, "Output"));
@@ -233,6 +236,8 @@ internal sealed class LoweringContext
                 return ReferenceEquals(parameter.Parameter.ContainingSymbol, Routine)
                     ? new LParamRef(parameter.Parameter)
                     : new LOuterRef(parameter.Parameter, parameter.Parameter.Type);
+            case BoundConversionExpression { Type: SetTypeSymbol target, Operand.Type: SetTypeSymbol } conversion:
+                return SetRewriter.Convert(this, Lower(conversion.Operand), target);
             case BoundConversionExpression conversion:
                 return conversion.IsExplicit
                     ? Convert(Lower(conversion.Operand), conversion.Type)
@@ -251,9 +256,38 @@ internal sealed class LoweringContext
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
             case BoundSetConstructor constructor:
                 return SetRewriter.Constructor(this, constructor);
+            case BoundIndexExpression index:
+                return Index(index);
             default:
                 throw new InvalidOperationException($"Cannot lower {expression.Kind}.");
         }
+    }
+
+    /// <summary>
+    /// CMP-308: element <c>index − Low</c> in <c>Int64</c> (sign- or zero-extended by the index type; folded for a constant). Under
+    /// <c>{$R+}</c> the index is checked against the declared bounds in its computation type when its type can lie outside
+    /// (CMP-331, CMP-314); constant indexes were checked by the binder (E2032).
+    /// </summary>
+    private LExpression Index(BoundIndexExpression index)
+    {
+        var array = index.ArrayType;
+        var target = Lower(index.Array);
+        var value = Lower(index.Index);
+        if (value is LConst { Value.Value: var constant })
+        {
+            var ordinal = constant is bool b ? (b ? BigInteger.One : BigInteger.Zero) : (BigInteger)constant!;
+            return new LIndex(target, Constant(ordinal - array.Low, Types.Int64), array.ElementType);
+        }
+
+        if (CheckRewriter.StateOf(index).RangeChecks && Ordinals.Bounds(value.Type) is { } source && (source.Low < array.Low || source.High > array.High))
+        {
+            var computation = ComputationType(value.Type);
+            var bounds = Ordinals.Bounds(computation)!.Value;
+            value = new LRangeCheck(Convert(value, computation), BigInteger.Max(array.Low, bounds.Low), BigInteger.Min(array.High, bounds.High));
+        }
+
+        var wide = Convert(value, Types.Int64);
+        return new LIndex(target, array.Low.IsZero ? wide : new LBinary(LBinaryOperator.Subtract, wide, Constant(array.Low, Types.Int64)), array.ElementType);
     }
 
     private LExpression Binary(BoundBinaryExpression binary)
@@ -303,5 +337,7 @@ internal sealed class LoweringContext
     private ImmutableArray<LExpression> Arguments(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments) =>
         [.. arguments.Select((argument, i) => routine.Parameters[i].IsByReference
             ? new LAddrOf(Lower(argument), Types.Pointer)
-            : Lower(argument))];
+            : Lowerer.IsAggregate(routine.Parameters[i].Type)
+                ? throw new NotSupportedException("aggregate parameters and results (C-055)")
+                : Lower(argument))];
 }

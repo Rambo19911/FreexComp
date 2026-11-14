@@ -178,6 +178,28 @@ internal sealed class LSwitch(LExpression selector, ImmutableArray<LSwitchSectio
 
 internal sealed record LSwitchSection(ImmutableArray<BigInteger> Values, ImmutableArray<(BigInteger Low, BigInteger High)> Ranges, LStatement Body);
 
+/// <summary><c>llvm.memset</c> of <see cref="Size"/> zero bytes at <see cref="Address"/> (a <c>Pointer</c> value, CMP-336).</summary>
+internal sealed class LZero(LExpression address, TypeSymbol type) : LStatement
+{
+    public LExpression Address { get; } = address;
+
+    /// <summary>The type of the storage being cleared (size and alignment).</summary>
+    public TypeSymbol Type { get; } = type;
+}
+
+/// <summary>
+/// Sets (<see cref="Include"/>) or clears bit <see cref="Element"/> of the big set at <see cref="Address"/> (CMP-336: byte
+/// <c>x lshr 3</c>, bit <c>x and 7</c>). The element is an integer in 0..255; the lowering guards or checks it.
+/// </summary>
+internal sealed class LSetBit(LExpression address, LExpression element, bool include) : LStatement
+{
+    public LExpression Address { get; } = address;
+
+    public LExpression Element { get; } = element;
+
+    public bool Include { get; } = include;
+}
+
 /// <summary>Leaves the body (branch to its exit block, CMP-310).</summary>
 internal sealed class LReturn : LStatement;
 
@@ -332,7 +354,10 @@ internal sealed class LCall(LCallee callee, ImmutableArray<LExpression> argument
     public ImmutableArray<LExpression> Arguments { get; } = arguments;
 }
 
-/// <summary>Evaluates <see cref="Value"/> once, then <see cref="Body"/>, in which <see cref="LTempRef"/>s of <see cref="Temp"/> read it.</summary>
+/// <summary>
+/// Evaluates <see cref="Value"/> once, then <see cref="Body"/>, in which <see cref="LTempRef"/>s of <see cref="Temp"/> read it.
+/// As the condition of an <see cref="LIf"/> its value may also be read in the guarded branch (the condition dominates it).
+/// </summary>
 internal sealed class LTemp(LTempValue temp, LExpression value, LExpression body) : LExpression(body.Type)
 {
     public LTempValue Temp { get; } = temp;
@@ -345,4 +370,44 @@ internal sealed class LTemp(LTempValue temp, LExpression value, LExpression body
 internal sealed class LTempRef(LTempValue temp) : LExpression(temp.Type)
 {
     public LTempValue Temp { get; } = temp;
+}
+
+// ---------------------------------------------------------------------- aggregates (big sets, static arrays)
+// An expression of an aggregate type (storage [N x T], TypeLayout) is never an SSA value: it is a variable reference, an
+// aggregate constant (LConst), LSequence or LView/LIndex of one, used through its address (LAddrOf, LAssign copies).
+
+/// <summary>Executes <see cref="First"/>, then yields <see cref="Value"/> (e.g. a temporary filled by helper calls).</summary>
+internal sealed class LSequence(LStatement first, LExpression value) : LExpression(value.Type)
+{
+    public LStatement First { get; } = first;
+
+    public LExpression Value { get; } = value;
+}
+
+/// <summary>
+/// A variable reference to the first <c>SizeOf(Type)</c> bytes of <see cref="Aggregate"/>'s storage read or written as
+/// <see cref="LExpression.Type"/> (a small set inside a big set's bytes: ABI-050 bit order is the integer's).
+/// </summary>
+internal sealed class LView(LExpression aggregate, TypeSymbol type) : LExpression(type)
+{
+    public LExpression Aggregate { get; } = aggregate;
+}
+
+/// <summary>
+/// Element <see cref="Index"/> (zero-based, <c>Int64</c>: index − Low, CMP-308) of the static array <see cref="Array"/>, a
+/// variable reference of the element type.
+/// </summary>
+internal sealed class LIndex(LExpression array, LExpression index, TypeSymbol elementType) : LExpression(elementType)
+{
+    public LExpression Array { get; } = array;
+
+    public LExpression Index { get; } = index;
+}
+
+/// <summary>Bit <see cref="Element"/> (an integer in 0..255) of the big set at <see cref="Address"/> (CMP-336); type <c>Boolean</c>.</summary>
+internal sealed class LTestBit(LExpression address, LExpression element, TypeSymbol boolean) : LExpression(boolean)
+{
+    public LExpression Address { get; } = address;
+
+    public LExpression Element { get; } = element;
 }

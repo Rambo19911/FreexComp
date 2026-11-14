@@ -266,6 +266,40 @@ public sealed class SetTypeSymbol : TypeSymbol
     }
 }
 
+/// <summary>
+/// A static array <c>array[IndexType] of ElementType</c> (LANG-255, ABI-062): <see cref="Length"/> = High − Low + 1 elements,
+/// size <c>Length × SizeOf(ElementType)</c>, alignment of the element type. <c>array[I1, I2] of T</c> is an array of
+/// <c>array[I2] of T</c>.
+/// </summary>
+public sealed class ArrayTypeSymbol : TypeSymbol
+{
+    internal ArrayTypeSymbol(string name, TypeSymbol indexType, TypeSymbol elementType, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.Array, name, LengthOf(indexType) * elementType.Size, elementType.Alignment, containingSymbol, locations)
+    {
+        IndexType = indexType;
+        ElementType = elementType;
+        (Low, High) = Ordinals.Bounds(indexType)!.Value;
+    }
+
+    public TypeSymbol IndexType { get; }
+
+    public TypeSymbol ElementType { get; }
+
+    public BigInteger Low { get; }
+
+    public BigInteger High { get; }
+
+    public long Length => (long)(High - Low + 1);
+
+    /// <summary>Number of values of an ordinal index type (may exceed the LANG-255 limit; the binder checks it first).</summary>
+    internal static long LengthOf(TypeSymbol indexType)
+    {
+        var (low, high) = Ordinals.Bounds(indexType)!.Value;
+        var count = high - low + 1;
+        return count > long.MaxValue / 1024 ? long.MaxValue / 1024 : (long)count;
+    }
+}
+
 /// <summary>Set compatibility (LANG-250, 280 rule 8).</summary>
 internal static class Sets
 {

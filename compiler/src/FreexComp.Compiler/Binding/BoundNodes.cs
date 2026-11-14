@@ -23,6 +23,7 @@ internal enum BoundKind
     CallExpression,
     IntrinsicCallExpression,
     SetConstructor,
+    IndexExpression,
 
     // statements
     Block,
@@ -262,6 +263,39 @@ internal sealed class BoundSetConstructor : BoundExpression
     public ImmutableArray<BoundSetElement> Elements { get; }
 
     public SetTypeSymbol SetType => (SetTypeSymbol)Type;
+}
+
+/// <summary>
+/// <c>a[i]</c> of a static array (LANG-255; <c>a[i, j]</c> = <c>a[i][j]</c>): a variable when <see cref="Array"/> is one.
+/// <see cref="Index"/> keeps its own type (ordinal, compatible with the index type); range checks are the lowerer's (CMP-331).
+/// </summary>
+internal sealed class BoundIndexExpression : BoundExpression
+{
+    public BoundIndexExpression(SyntaxNode syntax, BoundExpression array, BoundExpression index, TypeSymbol elementType)
+        : base(syntax, elementType, constantValue: null)
+    {
+        Array = array;
+        Index = index;
+    }
+
+    public override BoundKind Kind => BoundKind.IndexExpression;
+
+    public BoundExpression Array { get; }
+
+    public BoundExpression Index { get; }
+
+    public ArrayTypeSymbol ArrayType => (ArrayTypeSymbol)Array.Type;
+
+    /// <summary>The variable or parameter an element access chain starts from (the expression itself otherwise).</summary>
+    public static BoundExpression RootOf(BoundExpression expression)
+    {
+        while (expression is BoundIndexExpression index)
+        {
+            expression = index.Array;
+        }
+
+        return expression;
+    }
 }
 
 /// <summary>One element <c>a</c> (<see cref="High"/> null) or range <c>a..b</c> of a set constructor.</summary>
