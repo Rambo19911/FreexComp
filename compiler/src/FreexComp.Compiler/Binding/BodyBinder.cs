@@ -146,7 +146,7 @@ internal sealed class BodyBinder
     private BoundStatement BindExpressionStatement(ExpressionStatementSyntax statement)
     {
         var name = CalledName(statement.Expression);
-        var symbol = name is null ? null : _scope.Lookup(name.Identifier.Value as string ?? name.Identifier.Text);
+        var symbol = name is null ? null : _scope.For(name).Lookup(name.Identifier.Value as string ?? name.Identifier.Text);
         if (symbol is IntrinsicSymbol { IsFunction: false } intrinsic)
         {
             return BindControlIntrinsic(statement, intrinsic);
@@ -347,13 +347,12 @@ internal sealed class BodyBinder
     // ------------------------------------------------------------------ Break, Continue, Exit, Halt (LANG-363, 364)
 
     /// <summary>The name a statement <c>Name</c> or <c>Name(…)</c> calls; null for other expressions.</summary>
-    private static IdentifierNameSyntax? CalledName(ExpressionSyntax expression)
+    private IdentifierNameSyntax? CalledName(ExpressionSyntax expression)
     {
         var name = expression switch
         {
-            IdentifierNameSyntax n => n,
-            InvocationExpressionSyntax { Expression: IdentifierNameSyntax n } => n,
-            _ => null,
+            InvocationExpressionSyntax invocation => _scope.Unqualified(invocation.Expression) as IdentifierNameSyntax,
+            _ => _scope.Unqualified(expression) as IdentifierNameSyntax,          // also U.Name (LANG-311)
         };
         return name is null || name.Identifier.IsMissing ? null : name;
     }

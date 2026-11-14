@@ -130,9 +130,11 @@ internal sealed class ExpressionBinder
             case PredefinedTypeExpressionSyntax predefined:
                 _diagnostics.Report(predefined, "E2009", predefined.Keyword.Text);
                 return Error(syntax);
+            case MemberAccessExpressionSyntax memberAccess when _scope.Unqualified(memberAccess) is IdentifierNameSyntax qualified:
+                return BindName(qualified);                                     // U.Name (LANG-311, 538)
             case MemberAccessExpressionSyntax memberAccess:
             {
-                // TEnum.Element (LANG-210), record fields (LANG-260); unit and class qualifications arrive later
+                // TEnum.Element (LANG-210), record fields (LANG-260); class qualifications arrive later
                 var member = _folder.LookupEnumMember(memberAccess, out var isEnumAccess);
                 return member is not null ? new BoundLiteral(memberAccess, member.Value)
                     : isEnumAccess ? Error(syntax)
@@ -259,8 +261,8 @@ internal sealed class ExpressionBinder
     /// <summary><c>@operand</c> / <c>Addr(operand)</c> bound at <paramref name="syntax"/>.</summary>
     private BoundExpression AddressOf(SyntaxNode syntax, ExpressionSyntax operandSyntax)
     {
-        if (Unparenthesized(operandSyntax) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
-            && _scope.LookupCandidates(token.Value as string ?? token.Text) is [var routine, ..])
+        if (_scope.Unqualified(Unparenthesized(operandSyntax)) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
+            && _scope.For(name).LookupCandidates(token.Value as string ?? token.Text) is [var routine, ..])
         {
             if (routine.IsNested)
             {
@@ -271,8 +273,8 @@ internal sealed class ExpressionBinder
             return new BoundAddressOfExpression(syntax, operand: null, routine, _types.Pointer);
         }
 
-        if (Unparenthesized(operandSyntax) is IdentifierNameSyntax { Identifier: { IsMissing: false } intrinsicToken } intrinsicName
-            && _scope.Lookup(intrinsicToken.Value as string ?? intrinsicToken.Text) is IntrinsicSymbol intrinsic)
+        if (_scope.Unqualified(Unparenthesized(operandSyntax)) is IdentifierNameSyntax { Identifier: { IsMissing: false } intrinsicToken } intrinsicName
+            && _scope.For(intrinsicName).Lookup(intrinsicToken.Value as string ?? intrinsicToken.Text) is IntrinsicSymbol intrinsic)
         {
             _diagnostics.Report(intrinsicName, "E2910", intrinsic.Name);     // intrinsics.md §0 (C-067): intrinsics have no address
             return Error(syntax);
@@ -489,12 +491,6 @@ internal sealed class ExpressionBinder
     /// </summary>
     private BoundExpression BindMemberAccess(MemberAccessExpressionSyntax syntax)
     {
-        if (syntax.Expression is IdentifierNameSyntax { Identifier: { IsMissing: false } token }
-            && _scope.Lookup(token.Value as string ?? token.Text) is UnitSymbol)
-        {
-            return Unsupported(syntax, DeclarationBinder.FeatureName(syntax.Kind));
-        }
-
         var record = BindExpression(syntax.Expression);
         if (record.HasErrors || syntax.Name.Identifier.IsMissing)
         {
@@ -540,7 +536,7 @@ internal sealed class ExpressionBinder
         }
 
         var text = token.Value as string ?? token.Text;
-        var symbol = _scope.Lookup(text);
+        var symbol = _scope.For(name).Lookup(text);
         if (symbol is null && _routine is { ReturnType: null } && IdentifierComparer.Instance.Equals(text, "Result"))
         {
             _diagnostics.Report(name, "E2132");
@@ -564,7 +560,7 @@ internal sealed class ExpressionBinder
     /// <summary>A typecast <c>T(x)</c> or a function call; intrinsics are bound from C-029 on.</summary>
     private BoundExpression BindInvocation(InvocationExpressionSyntax invocation, bool variableContext = false)
     {
-        if (invocation.Expression is not IdentifierNameSyntax name)
+        if (_scope.Unqualified(invocation.Expression) is not IdentifierNameSyntax name)
         {
             return Unsupported(invocation, "routine call");
         }
@@ -1036,7 +1032,8 @@ internal sealed class ExpressionBinder
             return (_types.String, null);
         }
 
-        if (syntax is IdentifierNameSyntax { Identifier: { IsMissing: false } token } && _scope.Lookup(token.Value as string ?? token.Text) is TypeSymbol type)
+        if (_scope.Unqualified(syntax) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
+            && _scope.For(name).Lookup(token.Value as string ?? token.Text) is TypeSymbol type)
         {
             return (type, null);
         }
@@ -1202,7 +1199,7 @@ internal sealed class ExpressionBinder
     public (RoutineSymbol? Routine, ImmutableArray<BoundExpression> Arguments) BindCall(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList)
     {
         var token = name.Identifier;
-        var candidates = _scope.LookupCandidates(token.Value as string ?? token.Text);
+        var candidates = _scope.For(name).LookupCandidates(token.Value as string ?? token.Text);
         var syntaxes = argumentList?.Arguments ?? default;
         var builder = ImmutableArray.CreateBuilder<BoundExpression>(syntaxes.Count);
         var hasErrors = false;

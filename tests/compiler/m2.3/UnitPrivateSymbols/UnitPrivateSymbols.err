@@ -1,0 +1,3 @@
+UnitPrivateSymbols.pas(6,11): error E2003: Undeclared identifier 'Secret'
+UnitPrivateSymbols.pas(7,3): error E2003: Undeclared identifier 'Hidden'
+UnitPrivateSymbols.pas(8,9): error E2003: Undeclared identifier 'Helper'

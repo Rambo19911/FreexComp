@@ -321,7 +321,7 @@ internal static class ManagedRewriter
     public static bool References(LNode node, LLocal local) => node switch
     {
         LLocalRef reference => ReferenceEquals(reference.Local, local),
-        LConst or LGlobalRef or LRuntimeVariableRef or LStringLiteral or LParamRef or LOuterRef or LTempRef or LRoutineAddress
+        LConst or LGlobalRef or LStringLiteral or LParamRef or LOuterRef or LTempRef or LRoutineAddress
             or LReturn or LUnreachable or LBreak or LContinue => false,
         LAddrOf a => References(a.Variable, local),
         LUnary u => References(u.Operand, local),

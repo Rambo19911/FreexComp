@@ -65,23 +65,26 @@ internal sealed class DeclarationBinder
     public static DeclarationBindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types, DiagnosticBag diagnostics, Scope? usesScope = null)
     {
         var outer = usesScope ?? types.Scope;
+        return BindImplementation(tree, BindInterface(tree, types, diagnostics, outer), types, diagnostics, outer);
+    }
+
+    /// <summary>
+    /// The first phase (C-069): a unit's symbol and interface section in an interface scope whose parent is
+    /// <paramref name="interfaceUses"/> (the interface-uses chain, LANG-515); a program's whole declaration part (its uses
+    /// chain). Importers may use the interface scope as soon as this returns (implementation-uses cycles, LANG-513).
+    /// </summary>
+    /// <returns>For a unit, <see cref="DeclarationBindingResult.Scope"/> is the interface scope until the second phase.</returns>
+    public static DeclarationBindingResult BindInterface(SyntaxTree tree, BuiltInTypes types, DiagnosticBag diagnostics, Scope interfaceUses)
+    {
         switch (tree.Root)
         {
             case UnitSyntax unit:
             {
                 var symbol = new UnitSymbol(NameOf(unit.Name), isProgram: false, [DiagnosticBag.LocationOf(unit.Name)]);
-                var interfaceScope = new Scope(ScopeKind.Unit, outer, symbol);
-                var implementationScope = new Scope(ScopeKind.Unit, interfaceScope, symbol);
+                var interfaceScope = new Scope(ScopeKind.Unit, interfaceUses, symbol);
                 symbol.InterfaceMembers = new DeclarationBinder(types, interfaceScope, symbol, diagnostics) { IsInterfaceSection = true }
                     .BindDeclarations(unit.InterfaceSection.Declarations);
-                symbol.ImplementationMembers = new DeclarationBinder(types, implementationScope, symbol, diagnostics, interfaceScope)
-                    .BindDeclarations(unit.ImplementationSection.Declarations);
-                foreach (var routine in symbol.InterfaceMembers.OfType<RoutineSymbol>().Where(r => r.AwaitsDefinition))
-                {
-                    diagnostics.Report(routine.Declaration.Heading.Name, "E2100", routine.Name);     // LANG-400
-                }
-
-                return new DeclarationBindingResult(symbol, interfaceScope, implementationScope, diagnostics.ToImmutable());
+                return new DeclarationBindingResult(symbol, interfaceScope, interfaceScope, diagnostics.ToImmutable());
             }
 
             case ProgramSyntax program:
@@ -89,7 +92,7 @@ internal sealed class DeclarationBinder
                 var symbol = program.Name is { IsMissing: false } name
                     ? new UnitSymbol(NameOf(name), isProgram: true, [DiagnosticBag.LocationOf(name)])
                     : new UnitSymbol(Path.GetFileNameWithoutExtension(tree.Text.Path), isProgram: true, []);
-                var scope = new Scope(ScopeKind.Unit, outer, symbol);
+                var scope = new Scope(ScopeKind.Unit, interfaceUses, symbol);
                 symbol.ImplementationMembers = new DeclarationBinder(types, scope, symbol, diagnostics)
                     .BindDeclarations(program.Block.Declarations);
                 return new DeclarationBindingResult(symbol, null, scope, diagnostics.ToImmutable());
@@ -98,9 +101,35 @@ internal sealed class DeclarationBinder
             default:
             {
                 var symbol = new UnitSymbol(Path.GetFileNameWithoutExtension(tree.Text.Path), isProgram: false, []);
-                return new DeclarationBindingResult(symbol, null, new Scope(ScopeKind.Unit, outer, symbol), diagnostics.ToImmutable());
+                return new DeclarationBindingResult(symbol, null, new Scope(ScopeKind.Unit, interfaceUses, symbol), diagnostics.ToImmutable());
             }
         }
+    }
+
+    /// <summary>
+    /// The second phase: a unit's implementation section in an implementation scope inside its interface scope, which is
+    /// chained to <paramref name="implementationUses"/> (the implementation-uses chain on top of the interface-uses chain:
+    /// LANG-310 searches implementation-uses before interface-uses). Nothing to do for a program.
+    /// </summary>
+    public static DeclarationBindingResult BindImplementation(SyntaxTree tree, DeclarationBindingResult interfacePart, BuiltInTypes types,
+        DiagnosticBag diagnostics, Scope implementationUses)
+    {
+        if (tree.Root is not UnitSyntax unit || interfacePart.InterfaceScope is not { } interfaceScope)
+        {
+            return interfacePart with { Diagnostics = diagnostics.ToImmutable() };
+        }
+
+        var symbol = interfacePart.Unit;
+        var ownInterface = ReferenceEquals(interfaceScope.Parent, implementationUses) ? interfaceScope : Scope.Reparented(interfaceScope, implementationUses);
+        var implementationScope = new Scope(ScopeKind.Unit, ownInterface, symbol);
+        symbol.ImplementationMembers = new DeclarationBinder(types, implementationScope, symbol, diagnostics, interfaceScope)
+            .BindDeclarations(unit.ImplementationSection.Declarations);
+        foreach (var routine in symbol.InterfaceMembers.OfType<RoutineSymbol>().Where(r => r.AwaitsDefinition))
+        {
+            diagnostics.Report(routine.Declaration.Heading.Name, "E2100", routine.Name);     // LANG-400
+        }
+
+        return new DeclarationBindingResult(symbol, interfaceScope, implementationScope, diagnostics.ToImmutable());
     }
 
     /// <summary>Binds the sections in order; returns the declared symbols in declaration order.</summary>
@@ -1180,8 +1209,12 @@ internal sealed class DeclarationBinder
                 return BindDynamicArray(array, typeName, declaredAt, declared);
             case NamedTypeSyntax { Name: IdentifierNameSyntax name }:
                 return BindTypeName(name);
-            case NamedTypeSyntax { Name: QualifiedNameSyntax }:
-                return Unsupported(type, "unit-qualified name");        // LANG-311, with units
+            case NamedTypeSyntax { Name: QualifiedNameSyntax { Right: IdentifierNameSyntax right } qualified }
+                when UnitQualifiers.Qualifier(_scope, qualified.Left) is not null:
+                return BindTypeName(right);                             // U.TName (LANG-311, 538)
+            case NamedTypeSyntax { Name: QualifiedNameSyntax qualified }:
+                _diagnostics.ReportUndeclared(qualified.Left, NameOf(qualified.Left));    // no used unit of that name
+                return _types.Error;
             case NamedTypeSyntax:
                 return Unsupported(type, "generic type");
             case StringTypeSyntax { Length: null }:
@@ -1223,7 +1256,7 @@ internal sealed class DeclarationBinder
         }
 
         var text = NameOf(identifier);
-        switch (_scope.Lookup(text))
+        switch (_scope.For(name).Lookup(text))
         {
             case null when _declaringType is { } declaring && IdentifierComparer.Instance.Equals(declaring.Name, text):
                 // C-067: a type naming itself (not through ^T, LANG-208): an alias of itself is circular, a use inside its own

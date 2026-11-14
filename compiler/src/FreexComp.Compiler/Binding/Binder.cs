@@ -65,11 +65,33 @@ internal static class Binder
     /// <param name="system">
     /// The bound unit <c>System</c> (same <paramref name="types"/>), used implicitly (LANG-511): its interface scope sits
     /// between the built-ins and this unit's scope (LANG-310). Null for <c>System</c> itself and for white-box tests.
+    /// Other uses entries are not resolved by this entry point.
     /// </param>
     public static BindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types, BindingResult? system = null)
     {
+        // white-box entry point: uses clauses are not resolved here (the compilation's UnitBinder does that, C-069)
         var diagnostics = new DiagnosticBag();
-        var declarations = DeclarationBinder.BindCompilationUnit(tree, types, diagnostics, system?.InterfaceScope);
+        var outer = SystemScope(types, system);
+        var interfacePart = DeclarationBinder.BindInterface(tree, types, diagnostics, outer);
+        return Complete(tree, interfacePart, types, diagnostics, outer, system?.Unit);
+    }
+
+    /// <summary>
+    /// The root of every unit's uses chain (LANG-310, 511): the built-ins, then the interface of <c>System</c> (qualifier
+    /// <c>System</c>) when bound.
+    /// </summary>
+    public static Scope SystemScope(BuiltInTypes types, BindingResult? system) =>
+        system?.InterfaceScope is { } systemInterface ? Scope.Uses(systemInterface, types.Scope, ["System"]) : types.Scope;
+
+    /// <summary>
+    /// The second phase of binding a compilation unit whose interface part is bound (<see cref="DeclarationBinder.BindInterface"/>):
+    /// the implementation declarations in the chain <paramref name="implementationUses"/>, then the routine bodies and the
+    /// unit-level bodies. <paramref name="diagnostics"/> is the bag of the interface phase (one E2003 set per unit level).
+    /// </summary>
+    public static BindingResult Complete(SyntaxTree tree, DeclarationBindingResult interfacePart, BuiltInTypes types, DiagnosticBag diagnostics,
+        Scope implementationUses, UnitSymbol? system)
+    {
+        var declarations = DeclarationBinder.BindImplementation(tree, interfacePart, types, diagnostics, implementationUses);
 
         // routine bodies, each with its own E2003 set (CMP-507); nested routines after their enclosing routine
         var routines = ImmutableArray.CreateBuilder<BoundRoutineBody>();
@@ -110,7 +132,7 @@ internal static class Binder
         var all = diagnostics.ToImmutable().Concat(routines.SelectMany(r => r.Diagnostics))
             .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase)
             .ThenBy(d => d.Location.Span.Start);
-        var systemUnit = system?.Unit
+        var systemUnit = system
             ?? (declarations.Unit is { IsProgram: false } own && string.Equals(own.Name, "System", StringComparison.OrdinalIgnoreCase) ? own : null);
         return new BindingResult(types, declarations, bodies.ToImmutable(), routines.ToImmutable(), [.. all]) { System = systemUnit };
     }

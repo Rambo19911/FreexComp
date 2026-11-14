@@ -91,34 +91,39 @@ public sealed class Compilation
         EmitResult Done(bool success, string? output, ImmutableArray<string> compiled) =>
             new(success && !diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), output, diagnostics.ToImmutable(), compiled, [], clock.Elapsed);
 
-        // front end: System first (it has no implicit System), then the main file against it (LANG-310, 511)
-        var systemPath = FindUnit(SystemUnitName, mainPath);
+        // front end: System first (it has no implicit System), then the main file and every unit it reaches (LANG-310, 511, C-069)
+        var resolver = Resolver(mainPath);
+        var systemPath = resolver.Resolve(SystemUnitName);
         if (systemPath is null)
         {
             diagnostics.Add(Diagnostic.Create("E2202", location, SystemUnitName));
             return Done(false, null, []);
         }
 
-        var types = new BuiltInTypes();
-        var system = Bind(systemPath, types, null, diagnostics);
-        if (system is null)
+        var unitBinder = new UnitBinder(new BuiltInTypes(), resolver, Parse);
+        unitBinder.BindAll(systemPath, mainPath);
+        var initOrder = unitBinder.InitializationOrder();
+        // CMP-156: diagnostics in unit init order (the main file last), then by position
+        foreach (var loaded in initOrder.Append(unitBinder.Main!).Concat(unitBinder.Units.Except(initOrder).Where(u => u != unitBinder.Main)))
         {
-            return Done(false, null, []);
+            diagnostics.AddRange(loaded.Diagnostics);
         }
 
-        var main = Bind(mainPath, types, system, diagnostics);
-        if (main is null || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error) || options.Stage == EmitStage.Check)
+        if (unitBinder.Main!.Result is not { } main || unitBinder.SystemUnit!.Result is not { } system
+            || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error) || options.Stage == EmitStage.Check)
         {
             return Done(true, null, []);
         }
 
         ct.ThrowIfCancellationRequested();
         var objectDirectory = ObjectDirectory(mainPath);
-        var units = ImmutableArray.Create(main, system);                         // link order: program, System (CMP-625)
+        // link order (CMP-625): the main file, System, then every other unit in init order (LANG-520); each emitted once
+        var units = ImmutableArray.Create(main).AddRange(initOrder.Where(u => u != unitBinder.Main).Select(u => u.Result!));
+        var unitTable = main.Unit.IsProgram ? [.. initOrder.Select(u => UnitTableEntryOf(u.Result!))] : ImmutableArray<UnitTableEntry>.Empty;
         var llPaths = ImmutableArray.CreateBuilder<string>();
         foreach (var unit in units)
         {
-            if (EmitIr(unit, system, location, diagnostics) is not { } text)
+            if (EmitIr(unit, unitTable, location, diagnostics) is not { } text)
             {
                 return Done(false, null, []);
             }
@@ -231,8 +236,8 @@ public sealed class Compilation
         return Done(linked.Success, linked.Success ? output : null, compiled);
     }
 
-    /// <summary>Parses and binds one file; null (with E0002/E0003) when it cannot be read.</summary>
-    private BindingResult? Bind(string path, BuiltInTypes types, BindingResult? system, ImmutableArray<Diagnostic>.Builder diagnostics)
+    /// <summary>Parses one file; null (with E0002/E0003) when it cannot be read.</summary>
+    private SyntaxTree? Parse(string path, IUsesScopes? uses, List<Diagnostic> diagnostics)
     {
         if (Read(path, diagnostics) is not { } text)
         {
@@ -240,9 +245,9 @@ public sealed class Compilation
         }
 
         var defines = Options.AppType == AppType.Console ? Options.Defines.Add("CONSOLE") : Options.Defines;
-        // {$IF} conditions are evaluated by the binder in the unit's System scope chain (LANG-862, C-032/C-046)
+        // {$IF} conditions are evaluated by the binder in the unit's uses chain (LANG-862, C-032/C-046/C-069)
         var parseOptions = DirectiveConditionEvaluator.WithBinder(
-            new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)] }, system);
+            new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)] }, uses);
         var tree = SyntaxTree.Parse(text, parseOptions, FileSystem);
         diagnostics.AddRange(tree.Diagnostics);
         if (tree.Root is ProgramSyntax { Name: { IsMissing: false } heading })
@@ -256,13 +261,10 @@ public sealed class Compilation
             }
         }
 
-        var result = Binder.BindCompilationUnit(tree, types, system);
-        diagnostics.AddRange(result.Diagnostics);
-        diagnostics.AddRange(FlowAnalyzer.Analyze(result));                    // CMP-115: a separate pass after binding (C-031)
-        return result;
+        return tree;
     }
 
-    private SourceText? Read(string path, ImmutableArray<Diagnostic>.Builder diagnostics)
+    private SourceText? Read(string path, List<Diagnostic> diagnostics)
     {
         if (_openFiles.TryGetValue(path, out var open))
         {
@@ -286,14 +288,20 @@ public sealed class Compilation
         }
     }
 
-    /// <summary>Lowers and emits one unit; the program gets the unit table (System with null entries until C-161).</summary>
-    private static string? EmitIr(BindingResult unit, BindingResult system, Location location, ImmutableArray<Diagnostic>.Builder diagnostics)
+    /// <summary>
+    /// CMP-355 entry of one unit. The RTL's <c>_InitUnits</c> rejects non-null entries (runtime error 204) until procedural types
+    /// exist (C-161), so only a unit with an initialization or finalization section gets its <c>$init</c>/<c>$final</c> (System never).
+    /// </summary>
+    private static UnitTableEntry UnitTableEntryOf(BindingResult unit) =>
+        new(unit.Unit, HasInitFinal: !ReferenceEquals(unit.System, unit.Unit) && !unit.Bodies.IsEmpty);
+
+    /// <summary>Lowers and emits one unit; the program gets the unit table.</summary>
+    private static string? EmitIr(BindingResult unit, ImmutableArray<UnitTableEntry> unitTable, Location location, ImmutableArray<Diagnostic>.Builder diagnostics)
     {
         try
         {
             var writer = new LlvmTextWriter();
-            // the mini RTL's _InitUnits rejects non-null entries (runtime error 204) until procedural types exist (C-161)
-            ImmutableArray<UnitTableEntry> table = unit.Unit.IsProgram ? [new UnitTableEntry(system.Unit, HasInitFinal: false)] : [];
+            ImmutableArray<UnitTableEntry> table = unit.Unit.IsProgram ? unitTable : [];
             IrEmitter.EmitUnit(Lowerer.Lower(unit), writer, table);
             return writer.GetText();
         }
@@ -319,9 +327,9 @@ public sealed class Compilation
         }
     }
 
-    /// <summary>LANG-510 for one unit name (C-068): open files are units already part of the compilation (ordinal path order).</summary>
-    private string? FindUnit(string name, string mainPath) =>
-        new UnitResolver(FileSystem, mainPath, Options.SearchPaths, RtlDirectory(), _openFiles.Keys.Order(StringComparer.Ordinal)).Resolve(name);
+    /// <summary>LANG-510 (C-068): open files are units already part of the compilation (ordinal path order).</summary>
+    private UnitResolver Resolver(string mainPath) =>
+        new(FileSystem, mainPath, Options.SearchPaths, RtlDirectory(), _openFiles.Keys.Order(StringComparer.Ordinal));
 
     /// <summary><c>--rtl</c>; "" → <c>%FREEXCOMP_HOME%\rtl\src</c>, else <c>rtl\src</c> next to the running executable (compiler-cli.md §1).</summary>
     private string RtlDirectory()

@@ -2011,7 +2011,7 @@ public sealed class IrSnapshotTests
     {
         var tree = SyntaxTree.Parse(SourceText.From(@"C:\p\M.pas", source));
         Assert.Empty(tree.Diagnostics);
-        var result = Binder.BindCompilationUnit(tree, new BuiltInTypes());
+        var result = BindWithStubSystem(tree);
         Assert.Empty(Format(result.Diagnostics));
         var writer = new LlvmTextWriter();
         IrEmitter.EmitUnit(Lowerer.Lower(result), writer);

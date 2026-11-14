@@ -51,6 +51,8 @@ internal sealed class ConstantFolder
                 return FoldBinary(binary);
             case InvocationExpressionSyntax invocation:
                 return FoldInvocation(invocation);
+            case MemberAccessExpressionSyntax memberAccess when _scope.Unqualified(memberAccess) is IdentifierNameSyntax qualified:
+                return FoldName(qualified);                                     // U.Name (LANG-311, 538)
             case MemberAccessExpressionSyntax memberAccess:
             {
                 var member = LookupEnumMember(memberAccess, out var isEnumAccess);
@@ -131,7 +133,7 @@ internal sealed class ConstantFolder
         }
 
         var text = token.Value as string ?? token.Text;
-        var symbol = _scope.Lookup(text);
+        var symbol = _scope.For(name).Lookup(text);
         if (symbol is null && IsDefined != null)
         {
             _diagnostics.Report(name, "E1203", text);
@@ -150,15 +152,17 @@ internal sealed class ConstantFolder
     /// </summary>
     internal EnumMemberSymbol? LookupEnumMember(MemberAccessExpressionSyntax access, out bool isEnumAccess)
     {
-        isEnumAccess = access.Expression is IdentifierNameSyntax { Identifier: { IsMissing: false } qualifier } && access.Name is IdentifierNameSyntax
-            && _scope.Lookup(qualifier.Value as string ?? qualifier.Text) is EnumTypeSymbol;
+        // the enumeration type may itself be unit-qualified: U.TEnum.Element
+        var qualifierName = _scope.Unqualified(access.Expression) as IdentifierNameSyntax;
+        isEnumAccess = qualifierName is { Identifier: { IsMissing: false } qualifier } && access.Name is IdentifierNameSyntax
+            && _scope.For(qualifierName).Lookup(qualifier.Value as string ?? qualifier.Text) is EnumTypeSymbol;
         if (!isEnumAccess)
         {
             return null;
         }
 
-        var qualifierToken = ((IdentifierNameSyntax)access.Expression).Identifier;
-        var type = (EnumTypeSymbol)_scope.Lookup(qualifierToken.Value as string ?? qualifierToken.Text)!;
+        var qualifierToken = qualifierName!.Identifier;
+        var type = (EnumTypeSymbol)_scope.For(qualifierName).Lookup(qualifierToken.Value as string ?? qualifierToken.Text)!;
         var name = access.Name.Identifier;
         if (name.IsMissing)
         {
@@ -178,7 +182,7 @@ internal sealed class ConstantFolder
     /// <summary>A typecast <c>T(v)</c> between ordinal types, or a foldable intrinsic (LANG-340).</summary>
     private ConstantValue? FoldInvocation(InvocationExpressionSyntax invocation)
     {
-        if (invocation.Expression is not IdentifierNameSyntax name)
+        if (_scope.Unqualified(invocation.Expression) is not IdentifierNameSyntax name)
         {
             return NotConstant(invocation);
         }
@@ -219,9 +223,10 @@ internal sealed class ConstantFolder
         {
             (true, IdentifierNameSyntax symbol) => IsDefined!(NameOf(symbol)),
             (false, IdentifierNameSyntax identifier) => _scope.Lookup(NameOf(identifier)) != null,
-            (false, MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax unit, Name: IdentifierNameSyntax member }) =>
-                _scope.Lookup(NameOf(unit)) is UnitSymbol u
-                && u.InterfaceMembers.Concat(u.ImplementationMembers).Any(m => IdentifierComparer.Instance.Equals(m.Name, NameOf(member))),
+            (false, MemberAccessExpressionSyntax { Name: IdentifierNameSyntax member } access) when UnitQualifiers.Qualifier(_scope, access.Expression) is { } unit =>
+                unit.Qualified.Lookup(NameOf(member)) != null,
+            (false, MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax or MemberAccessExpressionSyntax, Name: IdentifierNameSyntax }) =>
+                false,                                                  // Unit.Ident of a unit not used here
             _ => null,
         };
         if (value is null)
@@ -675,7 +680,7 @@ internal sealed class ConstantFolder
             {
                 (type, isTypeName) = (_types.String, true);
             }
-            else if (argument is IdentifierNameSyntax name && LookupName(name) is (TypeSymbol or VariableSymbol or ParameterSymbol) and var symbol)
+            else if (_scope.Unqualified(argument) is IdentifierNameSyntax name && LookupName(name) is (TypeSymbol or VariableSymbol or ParameterSymbol) and var symbol)
             {
                 (type, isTypeName) = symbol switch
                 {

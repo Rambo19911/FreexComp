@@ -96,8 +96,13 @@ public sealed class VarBindingTests
     [InlineData("procedure P(X: array of Integer); begin end; begin end.", "E2900(1,16): Feature not supported: open array parameter")]
     [InlineData("var X: procedure; begin end.", "E2900(1,8): Feature not supported: procedural type")]
     [InlineData("var X: Currency; begin end.", "E2900(1,8): Feature not supported: Currency")]
-    [InlineData("var X: System.Integer; begin end.", "E2900(1,8): Feature not supported: unit-qualified name")]
     public void LaterMilestoneConstructs_AreE2900(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
+
+    /// <summary>C-069: a qualified type name whose qualifier is no used unit (formerly E2900 "unit-qualified name").</summary>
+    [Fact]
+    [Trait("Req", "LANG-311")]
+    public void QualifiedTypeName_OfNoUsedUnit_IsE2003() =>
+        Assert.Equal(["E2003(1,8): Undeclared identifier 'Nowhere'"], BindDiagnostics("var X: Nowhere.Integer; begin end."));
 
     // ------------------------------------------------------------------ local (routine-level) declarations, LANG-402
 

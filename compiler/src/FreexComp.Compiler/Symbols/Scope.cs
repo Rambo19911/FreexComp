@@ -13,9 +13,75 @@ internal enum ScopeKind { BuiltIn, Unit, Uses, TypeMember, Routine, Block, With 
 /// </summary>
 internal sealed class Scope
 {
-    private readonly Dictionary<string, (Symbol Symbol, int Index)> _symbols = new(IdentifierComparer.Instance);
-    private readonly List<(string Name, Symbol Symbol)> _ordered = [];
-    private readonly Dictionary<string, List<(RoutineSymbol Routine, int Index)>> _overloads = new(IdentifierComparer.Instance);
+    private readonly Dictionary<string, (Symbol Symbol, int Index)> _symbols;
+    private readonly List<(string Name, Symbol Symbol)> _ordered;
+    private readonly Dictionary<string, List<(RoutineSymbol Routine, int Index)>> _overloads;
+
+    /// <summary>A view: the same declarations as <paramref name="source"/> (also those added later) under another parent.</summary>
+    private Scope(Scope source, ScopeKind kind, Scope? parent, ImmutableArray<string> qualifiers)
+    {
+        _symbols = source._symbols;
+        _ordered = source._ordered;
+        _overloads = source._overloads;
+        Kind = kind;
+        Parent = parent;
+        Owner = source.Owner;
+        ParentVisibleCount = int.MaxValue;
+        Qualifiers = qualifiers;
+        Source = source;
+    }
+
+    /// <summary>
+    /// LANG-310, 515: the interface scope <paramref name="unitInterface"/> of a used unit as a link of an importer's scope
+    /// chain (kind <see cref="ScopeKind.Uses"/>), qualifiable by <paramref name="qualifiers"/> (LANG-311, 538: the name as
+    /// written and the canonical name).
+    /// </summary>
+    public static Scope Uses(Scope unitInterface, Scope parent, ImmutableArray<string> qualifiers) =>
+        new(unitInterface, ScopeKind.Uses, parent, qualifiers);
+
+    /// <summary>A unit's own interface scope seen from its implementation, chained to the implementation-uses scopes.</summary>
+    public static Scope Reparented(Scope scope, Scope parent) => new(scope, scope.Kind, parent, []);
+
+    /// <summary>Names that qualify this used unit's interface symbols (<see cref="ScopeKind.Uses"/> only).</summary>
+    public ImmutableArray<string> Qualifiers { get; } = [];
+
+    /// <summary>The scope this one is a view of; null for an ordinary scope.</summary>
+    public Scope? Source { get; }
+
+    /// <summary>
+    /// The scope a unit-qualified name <c>U.Name</c> is looked up in (LANG-311): this used unit's interface only — for
+    /// <c>System</c> also the built-ins, which belong to it (LANG-200).
+    /// </summary>
+    public Scope Qualified
+    {
+        get
+        {
+            if (_qualified is null)
+            {
+                var builtIns = Parent is { Kind: ScopeKind.BuiltIn } parent ? parent : null;
+                _qualified = new Scope(this, ScopeKind.Uses, builtIns, Qualifiers);
+            }
+
+            return _qualified;
+        }
+    }
+
+    private Scope? _qualified;
+
+    /// <summary>The innermost scope along the parent chain that declares <paramref name="name"/> visibly; null when none does.</summary>
+    public Scope? DeclaringScope(string name)
+    {
+        var visible = int.MaxValue;
+        for (var scope = this; scope != null; visible = scope.ParentVisibleCount, scope = scope.Parent)
+        {
+            if (scope.TryGetVisible(name, visible, out _))
+            {
+                return scope;
+            }
+        }
+
+        return null;
+    }
 
     /// <param name="parentVisibleCount">
     /// When set, only the first that many declarations of <paramref name="parent"/> are visible from this scope: a nested
@@ -23,6 +89,9 @@ internal sealed class Scope
     /// </param>
     public Scope(ScopeKind kind, Scope? parent, Symbol? owner = null, int? parentVisibleCount = null)
     {
+        _symbols = new(IdentifierComparer.Instance);
+        _ordered = [];
+        _overloads = new(IdentifierComparer.Instance);
         Kind = kind;
         Parent = parent;
         Owner = owner;

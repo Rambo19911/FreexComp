@@ -30,14 +30,14 @@ E2131  M2.5  overloaded routine as procedural value
 E2133  M2.4  inherited (classes)
 E2134  M2.4  Self (classes)
 E2160  M2.5  variant records (LANG-261)
-E2200  M2.3  uses ... in (units)
-E2201  M2.3  unit name vs file name
-E2202  elsewhere EmitTests  only the driver reports it in M2.1 (System not found); unit resolution is M2.3
-E2203  M2.3  uses clause
-E2204  M2.3  uses clause
-E2205  M2.3  unit cycles
-E2206  M2.3  uses clause
-E2208  M2.3  unit aliases
+E2200  elsewhere UnitBindingTests  needs a unit file (uses entry with in)
+E2201  elsewhere UnitBindingTests  needs a unit file whose heading differs from its file name
+E2202  elsewhere UnitBindingTests  unit resolution over the file system (also EmitTests: System not found)
+E2203  elsewhere UnitBindingTests  uses entries are resolved by the compilation, not by a snippet
+E2204  elsewhere UnitBindingTests  needs a unit file
+E2205  elsewhere UnitBindingTests  needs unit files (C-070 adds UnitGraphTests)
+E2206  elsewhere UnitBindingTests  needs a second program file
+E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  M2.3  unit alias table
 E2600  M2.4  classes
 E2601  M2.4  classes

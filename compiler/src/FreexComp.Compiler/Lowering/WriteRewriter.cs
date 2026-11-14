@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Numerics;
 using FreexComp.Compiler.Binding;
+using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Types;
 
 namespace FreexComp.Compiler.Lowering;
@@ -18,10 +19,8 @@ internal static class WriteRewriter
     public static LStatement Rewrite(LoweringContext context, BoundWriteStatement write)
     {
         var types = context.Types;
-        // the default file is the bound System.Output (LANG-910, 511); units bound without System (white-box tests) use the
-        // same link name through a runtime-variable reference
-        LExpression output = context.Output is { } bound ? new LGlobalRef(bound) : new LRuntimeVariableRef(new RuntimeVariable("Output", types.Text));
-        var file = new LAddrOf(write.File is { } variable ? context.Lower(variable) : output, types.Pointer);
+        // the default file is the bound System.Output (LANG-910, 511)
+        var file = new LAddrOf(write.File is { } variable ? context.Lower(variable) : new LGlobalRef(SystemFile(context.Output, "Output")), types.Pointer);
         var statements = ImmutableArray.CreateBuilder<LStatement>();
         foreach (var argument in write.Arguments)
         {
@@ -83,11 +82,13 @@ internal static class WriteRewriter
     private static LCall Function(LoweringContext context, string name, TypeSymbol result, LExpression file) =>
         new(new LHelperCallee(new RuntimeHelper(name, [context.Types.Pointer], result, IsNoReturn: false)), [file]);
 
-    /// <summary>The address of the given <c>Text</c> variable, or of <c>System.Input</c> (a runtime-variable reference without System).</summary>
+    /// <summary>The address of the given <c>Text</c> variable, or of <c>System.Input</c>.</summary>
     private static LAddrOf InputFile(LoweringContext context, BoundExpression? file) =>
-        new(file is not null ? context.Lower(file)
-            : context.Input is { } input ? new LGlobalRef(input) : new LRuntimeVariableRef(new RuntimeVariable("Input", context.Types.Text)),
-            context.Types.Pointer);
+        new(file is not null ? context.Lower(file) : new LGlobalRef(SystemFile(context.Input, "Input")), context.Types.Pointer);
+
+    /// <summary><c>System.Output</c>/<c>System.Input</c> as bound; a unit bound without a <c>System</c> that declares it cannot use the default file.</summary>
+    private static VariableSymbol SystemFile(VariableSymbol? bound, string name) =>
+        bound ?? throw new InvalidOperationException($"The default file needs System.{name} (LANG-910, 940): bind the unit against a System.");
 
     // ------------------------------------------------------------------ Read, Readln, Eof, Eoln (C-066)
 

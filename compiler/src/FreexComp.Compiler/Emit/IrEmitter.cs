@@ -610,17 +610,6 @@ internal sealed class ModuleState(IIrWriter writer)
         return global;
     }
 
-    /// <summary>The address of a System variable: this unit's own global when it defines it (unit System), else an external one.</summary>
-    public IrGlobal RuntimeVariable(RuntimeVariable variable)
-    {
-        if (Globals.Values.FirstOrDefault(g => g.Name.Text == variable.LinkName.Text) is { } own)
-        {
-            return own;
-        }
-
-        return External(variable.LinkName, variable.Type);
-    }
-
     /// <summary>The address of a global variable: this unit's own, or one of another unit declared <c>external</c> (CMP-301).</summary>
     public IrGlobal Global(VariableSymbol variable) =>
         Globals.TryGetValue(variable, out var own) ? own : External(Mangler.GlobalVariable(variable), variable.Type);
@@ -1192,8 +1181,6 @@ internal sealed class FunctionEmitter
                 return _locals[local.Local];
             case LGlobalRef global:
                 return _module.Global(global.Variable);
-            case LRuntimeVariableRef runtime:
-                return _module.RuntimeVariable(runtime.Variable);
             case LParamRef parameter:
                 return _parameterAddresses[parameter.Parameter];
             case LOuterRef outer:
@@ -1536,11 +1523,11 @@ internal sealed class FunctionEmitter
         {
             case LConst constant:
                 return IrEmitter.ValueConstant(constant.Value, constant.Type);
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex or LField or LDeref or LArrayElement when Lowerer.IsAggregate(expression.Type):
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LView or LIndex or LField or LDeref or LArrayElement when Lowerer.IsAggregate(expression.Type):
                 throw new InvalidOperationException("An aggregate has no SSA value; use its address.");
             case LView view:
                 return Load(Address(view), view.Type, AlignmentOf(view));
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField or LDeref or LStringIndex or LArrayElement:
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LIndex or LField or LDeref or LStringIndex or LArrayElement:
                 return Load(Address(expression), expression.Type, AccessAlignment(expression));
             case LPointerOffset offset:
             {

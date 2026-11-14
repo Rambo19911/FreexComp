@@ -53,9 +53,6 @@ internal static class Mangler
     /// <summary>A runtime helper of unit System (rtl-abi.md §9): <c>System._Name</c>.</summary>
     public static LinkName RuntimeHelper(string name) => new("System." + name, AlwaysQuote: true);
 
-    /// <summary>A variable of unit System used by lowered code (<c>System.Output</c>, CMP-410).</summary>
-    public static LinkName SystemVariable(string name) => new("System." + name, AlwaysQuote: true);
-
     public static LinkName StringLiteral(int index) => new(".str." + index, AlwaysQuote: false);
 
     /// <summary>

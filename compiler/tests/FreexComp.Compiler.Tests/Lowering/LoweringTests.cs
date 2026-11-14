@@ -789,4 +789,18 @@ public sealed class LoweringTests
         Assert.Empty(Routine(unit, "B").Frame!.Variables);
         Assert.Null(Routine(unit, "C").Frame);
     }
+
+    /// <summary>
+    /// C-069: the default file of <c>Write</c> is always the bound <c>System.Output</c> (LANG-910) — a unit bound without a
+    /// <c>System</c> no longer gets a synthetic <c>System.Output</c> reference.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-910")]
+    public void Write_WithoutABoundSystem_IsRejected()
+    {
+        var tree = Compiler.Syntax.SyntaxTree.Parse(SourceText.From(TestPath, "program T; begin Writeln(1) end."));
+        var result = Compiler.Binding.Binder.BindCompilationUnit(tree, new FreexComp.Compiler.Types.BuiltInTypes());
+        Assert.Empty(Format(result.Diagnostics));
+        Assert.Contains("System.Output", Assert.Throws<InvalidOperationException>(() => Lowerer.Lower(result)).Message);
+    }
 }

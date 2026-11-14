@@ -17,8 +17,8 @@ internal static class LoweredDump
     {
         LConst c => $"{c.Value.ToDisplayString()}:{c.Type.Name}",
         LLocalRef l => l.Local.Name,
+        LGlobalRef { Variable.ContainingUnit.Name: "System" } g => "@System." + g.Variable.Name,      // Output, Input
         LGlobalRef g => "@" + g.Variable.Name,
-        LRuntimeVariableRef r => "@System." + r.Variable.Name,
         LStringLiteral s => $"'{s.Value}'",
         LParamRef p => p.Parameter.Name,
         LOuterRef o => "^" + o.Variable.Name,
