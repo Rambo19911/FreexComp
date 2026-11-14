@@ -4,11 +4,6 @@ program Sys_Heap;
 {$POINTERMATH ON}
 { Variant 1: allocation behaviour. Variant 2: an impossible request is runtime error 203.
   The variant is the last character of the command line (ParamStr arrives with R-011). }
-// TODO(C-072): call System's AllocMem and _LiveAllocCount directly; a call from the program to an ordinary System
-// routine is emitted without its "declare" today, so the link names are declared here and resolved by the linker.
-function AllocMem(Size: NativeInt): Pointer; external name 'System.AllocMem';
-function _LiveAllocCount: NativeInt; external name 'System._LiveAllocCount';
-
 type
   TPair = record
     A, B: Int64;

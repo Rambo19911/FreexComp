@@ -2,15 +2,6 @@
 program Sys_MoveFill;
 { Counts are held in variables so that the code generator calls memmove/memset instead of expanding them inline. }
 
-// TODO(C-072): call System's declarations directly; a call from the program to a System routine (here: with
-// "public name") is emitted without its "declare" today, so the link names are declared here and resolved by the linker.
-function memcpy(Dest, Src: Pointer; N: NativeUInt): Pointer; external name 'memcpy';
-function memmove(Dest, Src: Pointer; N: NativeUInt): Pointer; external name 'memmove';
-function memset(Dest: Pointer; C: Integer; N: NativeUInt): Pointer; external name 'memset';
-function memcmp(A, B: Pointer; N: NativeUInt): Integer; external name 'memcmp';
-function strlen(S: PAnsiChar): NativeUInt; external name 'strlen';
-function wcslen(S: PWideChar): NativeUInt; external name 'wcslen';
-
 var
   A, B: array[0..15] of Byte;
   S: array[0..7] of AnsiChar;

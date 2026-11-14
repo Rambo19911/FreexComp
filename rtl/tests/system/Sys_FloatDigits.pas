@@ -9,13 +9,6 @@ type
   PDouble = ^Double;
   PSingle = ^Single;
 
-// TODO(C-072): call System._FloatDigitsPrecision/_FloatDigitsShortest directly; a program's call to a System routine
-// is emitted without its "declare" today, so the link names are declared here and resolved by the linker.
-procedure FloatDigitsPrecision(V: Double; Precision: Integer; var R: TFloatDigits);
-  external name 'System._FloatDigitsPrecision';
-procedure FloatDigitsShortest(V: Double; IsSingle: Boolean; var R: TFloatDigits);
-  external name 'System._FloatDigitsShortest';
-
 var
   R: TFloatDigits;
 
@@ -54,7 +47,7 @@ end;
 procedure P(U: UInt64; N: Integer);
 begin
   Write(' p', N, ' ');
-  FloatDigitsPrecision(Bits(U), N, R);
+  _FloatDigitsPrecision(Bits(U), N, R);
   Show;
 end;
 
@@ -63,14 +56,14 @@ procedure D(U: UInt64);
 begin
   P(U, 17);
   Write(' s ');
-  FloatDigitsShortest(Bits(U), False, R);
+  _FloatDigitsShortest(Bits(U), False, R);
   Show;
 end;
 
 procedure F(U: Cardinal);
 begin
   Write(' f ');
-  FloatDigitsShortest(Bits32(U), True, R);
+  _FloatDigitsShortest(Bits32(U), True, R);
   Show;
 end;
 

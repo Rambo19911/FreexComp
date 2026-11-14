@@ -1,4 +1,4 @@
-﻿// covers: RTL-027
+// covers: RTL-027
 // opc-run: variants 1 2 3
 program Sys_Sets;
 { Big sets (256 bits, rtl-abi.md ABI-050, helpers of section 9.8): every binary operator, comparison and variable range
@@ -10,10 +10,6 @@ type
   TByteSet = set of Byte;
   TCharSet = set of Char;
   TRaw = array[0..31] of Byte;
-
-// TODO(C-072): call System._SetSymDiff directly; a program's call to a System routine is emitted without its
-// "declare" today, so the link name is declared here and resolved by the linker.
-procedure SetSymDiff(Dest, A, B: Pointer); external name 'System._SetSymDiff';
 
 var
   A, B, C, E: TByteSet;
@@ -83,7 +79,7 @@ begin
   Write('A-B'); Dump(C);
   C := B - A;
   Write('B-A'); Dump(C);
-  SetSymDiff(@C, @A, @B);             { no operator reaches it (the language has no symmetric difference) }
+  _SetSymDiff(@C, @A, @B);            { no operator reaches it (the language has no symmetric difference) }
   Write('A><B'); Dump(C);
   C := A + E;
   Write('A+[]'); Dump(C);

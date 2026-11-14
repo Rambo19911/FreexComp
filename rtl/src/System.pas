@@ -59,6 +59,12 @@ function _SetEq(A, B: Pointer): Boolean;
 function _SetLe(A, B: Pointer): Boolean;
 procedure _SetRange(Dest: Pointer; Lo, Hi: Integer);
 
+{ real conversions (rtl-abi.md section 9.10, system.md section 5.2); Sqrt is llvm.sqrt in the compiler }
+function _Trunc(X: Double): Int64;
+function _Round(X: Double): Int64;
+function _Int(X: Double): Double;
+function _Frac(X: Double): Double;
+
 { exact decimal digits of a binary float (system.md RTL-100); used by the float Write/Str helpers and SysUtils }
 const
   FloatDigitsMax = 768;                { a Double's exact expansion has at most 767 significant digits }
@@ -87,6 +93,7 @@ procedure _WriteAChar(var T: Text; C: AnsiChar; Width: Integer);
 procedure _WriteInt(var T: Text; V: Int64; Width: Integer);
 procedure _WriteUInt(var T: Text; V: UInt64; Width: Integer);
 procedure _WriteBool(var T: Text; V: Boolean; Width: Integer);
+procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
 procedure _WriteLn(var T: Text);
 procedure _WriteEnd(var T: Text);
 
@@ -803,18 +810,12 @@ begin
     BigMulPow10(R, -K);
 end;
 
-{ the bits of V converted to Single.
-  TODO(C-177): a local "S := V; ... PCardinal(@S)^" gets a false hint H2002 (the address use is not seen as a read) }
-function SingleBits(S: Single): Cardinal;
-begin
-  Result := PCardinal(@S)^;
-end;
-
 { sign, NaN, infinity, zero; False when V is finite and not zero, with V = F * 2^E, F < 2^Precision, E >= MinE }
 function DecodeFloat(V: Double; IsSingle: Boolean; var R: TFloatDigits; var F: UInt64; var E, MinE: Integer;
   var Hidden: UInt64): Boolean;
 var
   Bits: UInt64;
+  S: Single;
   Bits32: Cardinal;
   BiasedExp: Integer;
   Frac: UInt64;
@@ -822,7 +823,8 @@ var
 begin
   if IsSingle then
   begin
-    Bits32 := SingleBits(V);
+    S := V;
+    Bits32 := PCardinal(@S)^;
     R.Negative := (Bits32 shr 31) <> 0;
     BiasedExp := (Bits32 shr 23) and $FF;
     Frac := Bits32 and $7FFFFF;
@@ -948,18 +950,18 @@ begin
   until Low or High;
 end;
 
-procedure _FloatDigitsPrecision(V: Double; Precision: Integer; var R: TFloatDigits);
+{ V rounded to Count significant digits, or with Fixed to Count digits after the decimal point (then fewer than one
+  significant digit can remain: a value below the rounding unit gives zero or one unit). HalfEven selects the tie rule;
+  otherwise ties go away from zero. Count = digits produced (missing digits up to the requested position are 0). }
+procedure RoundedDigits(V: Double; Count: Integer; Fixed, HalfEven: Boolean; var R: TFloatDigits);
 var
   F, Hidden: UInt64;
-  E, MinE, K, I, C: Integer;
+  E, MinE, K, I, C, Precision: Integer;
   Rm, S, T: TBig;
+  Up: Boolean;
 begin
   if not DecodeFloat(V, False, R, F, E, MinE, Hidden) then
     Exit;
-  if Precision < 1 then
-    Precision := 1
-  else if Precision > FloatDigitsMax then
-    Precision := FloatDigitsMax;
   K := EstimateExponent(F, E);
   ScaleValue(F, E, K, Rm, S);
   { fix K: 1/10 <= R/S < 1 }
@@ -977,13 +979,24 @@ begin
     Rm := T;
     K := K - 1;
   end;
+  { now V = 0.D0 D1 ... x 10^K exactly }
+  Precision := Count;
+  if Fixed then
+    Precision := K + Count;
+  if Precision < 0 then
+    Exit;                              { below a tenth of the rounding unit: zero }
+  if Precision > FloatDigitsMax then
+    Precision := FloatDigitsMax;
   for I := 0 to Precision - 1 do
     R.Digits[I] := BigNextDigit(Rm, S);
   R.Count := Precision;
   R.Exponent := K;
   BigShl(Rm, 1);
-  C := BigCmp(Rm, S);
-  if (C > 0) or ((C = 0) and ((R.Digits[Precision - 1] and 1) <> 0)) then
+  C := BigCmp(Rm, S);                  { remainder against half a unit of the last digit }
+  Up := C > 0;
+  if C = 0 then
+    Up := not HalfEven or ((Precision > 0) and ((R.Digits[Precision - 1] and 1) <> 0));
+  if Up then
   begin
     I := Precision - 1;
     while (I >= 0) and (R.Digits[I] = 9) do
@@ -995,10 +1008,23 @@ begin
     begin
       R.Digits[0] := 1;                { 9.99 -> 10.0: the digits are 1 0 0, one decade higher }
       R.Exponent := K + 1;
+      if R.Count = 0 then
+        R.Count := 1;
     end
     else
       R.Digits[I] := R.Digits[I] + 1;
-  end;
+  end
+  else if Precision = 0 then
+    R.Exponent := 0;
+end;
+
+procedure _FloatDigitsPrecision(V: Double; Precision: Integer; var R: TFloatDigits);
+begin
+  if Precision < 1 then
+    Precision := 1
+  else if Precision > FloatDigitsMax then
+    Precision := FloatDigitsMax;
+  RoundedDigits(V, Precision, False, True, R);
 end;
 
 { ---------------------------------------------------------------- Write helpers (system.md section 10.2) }
@@ -1108,6 +1134,218 @@ begin
     PutUnit(R^, Ord('S'));
     PutUnit(R^, Ord('E'));
   end;
+end;
+
+{ ---------------------------------------------------------------- real conversions (system.md section 5.2) }
+{ Worked on the bit pattern X = (-1)^s * F * 2^(BiasedExp - 1075), so no floating-point rounding is involved. }
+
+type
+  PDouble = ^Double;
+
+const
+  FracMask = $000FFFFFFFFFFFFF;
+  SignMask = $8000000000000000;
+  MinInt64Bits = $C3E0000000000000;    { -2^63, the only value with |X| >= 2^63 inside Int64 }
+
+{ toward zero, or to nearest with ties to even; runtime error 207 outside Int64, for infinities and NaN }
+function IntegerOf(X: Double; Nearest: Boolean): Int64;
+var
+  Bits, F, Q, Rest, Half: UInt64;
+  BiasedExp, Shift: Integer;
+begin
+  Bits := PUInt64(@X)^;
+  BiasedExp := (Bits shr 52) and $7FF;
+  if BiasedExp >= 1023 + 63 then
+  begin
+    if Bits <> MinInt64Bits then
+      _RunError(207);
+    Result := Int64(UInt64(SignMask));
+    Exit;
+  end;
+  F := Bits and FracMask;
+  if BiasedExp <> 0 then
+    F := F or (UInt64(1) shl 52);
+  Shift := 1075 - BiasedExp;
+  if Shift <= 0 then
+    Q := F shl (-Shift)
+  else if Shift >= 64 then
+    Q := 0                             { |X| < 2^-11: truncates and rounds to 0 }
+  else
+  begin
+    Q := F shr Shift;
+    if Nearest then
+    begin
+      Rest := F and ((UInt64(1) shl Shift) - 1);
+      Half := UInt64(1) shl (Shift - 1);
+      if (Rest > Half) or ((Rest = Half) and ((Q and 1) <> 0)) then
+        Q := Q + 1;
+    end;
+  end;
+  if (Bits shr 63) <> 0 then
+    Result := Int64(UInt64(0) - Q)
+  else
+    Result := Int64(Q);
+end;
+
+function _Trunc(X: Double): Int64;
+begin
+  Result := IntegerOf(X, False);
+end;
+
+function _Round(X: Double): Int64;
+begin
+  Result := IntegerOf(X, True);
+end;
+
+{ the fraction bits below the binary point are cleared; |X| < 1 keeps only the sign (Int(-0.5) = -0) }
+function _Int(X: Double): Double;
+var
+  Bits: UInt64;
+  BiasedExp: Integer;
+begin
+  Bits := PUInt64(@X)^;
+  BiasedExp := (Bits shr 52) and $7FF;
+  if BiasedExp >= 1075 then
+  begin
+    Result := X;                       { already integral, or an infinity or NaN }
+    Exit;
+  end;
+  if BiasedExp < 1023 then
+    Bits := Bits and SignMask
+  else
+    Bits := Bits and not ((UInt64(1) shl (1075 - BiasedExp)) - 1);
+  Result := PDouble(@Bits)^;
+end;
+
+function _Frac(X: Double): Double;
+begin
+  Result := X - _Int(X);
+end;
+
+{ ---------------------------------------------------------------- float text (LANG-930 ... 933) }
+{ Decimals < 0: scientific, Width - 9 fraction digits (1..16); otherwise fixed with Decimals (at most 40) places.
+  Both round half away from zero on the exact value. }
+
+const
+  FloatTextMax = 400;                  { sign + 309 integer digits + point + 40 decimals, with room to spare }
+
+type
+  TFloatText = record
+    Len: Integer;
+    C: array[0..FloatTextMax - 1] of Byte;
+  end;
+
+procedure AddChar(var X: TFloatText; C: Integer);
+begin
+  X.C[X.Len] := C;
+  X.Len := X.Len + 1;
+end;
+
+{ digit I of R (0 beyond the generated ones) }
+function DigitAt(const R: TFloatDigits; I: Integer): Integer;
+begin
+  Result := 0;
+  if (I >= 0) and (I < R.Count) then
+    Result := R.Digits[I];
+end;
+
+procedure ScientificText(V: Double; Width: Integer; var X: TFloatText);
+var
+  R: TFloatDigits;
+  Fraction, I, E: Integer;
+begin
+  Fraction := Width - 9;
+  if Fraction < 1 then
+    Fraction := 1
+  else if Fraction > 16 then
+    Fraction := 16;
+  RoundedDigits(V, Fraction + 1, False, False, R);
+  if R.Negative and (R.Count > 0) then
+    AddChar(X, Ord('-'))
+  else
+    AddChar(X, Ord(' '));              { -0 prints with a space }
+  AddChar(X, 48 + DigitAt(R, 0));
+  AddChar(X, Ord('.'));
+  for I := 1 to Fraction do
+    AddChar(X, 48 + DigitAt(R, I));
+  AddChar(X, Ord('E'));
+  E := 0;
+  if R.Count > 0 then
+    E := R.Exponent - 1;
+  if E < 0 then
+  begin
+    AddChar(X, Ord('-'));
+    E := -E;
+  end
+  else
+    AddChar(X, Ord('+'));
+  AddChar(X, 48 + E div 1000);
+  AddChar(X, 48 + (E div 100) mod 10);
+  AddChar(X, 48 + (E div 10) mod 10);
+  AddChar(X, 48 + E mod 10);
+end;
+
+procedure FixedText(V: Double; Decimals: Integer; var X: TFloatText);
+var
+  R: TFloatDigits;
+  I: Integer;
+begin
+  if Decimals > 40 then
+    Decimals := 40;
+  RoundedDigits(V, Decimals, True, False, R);
+  if R.Negative and (R.Count > 0) then  { a value that rounds to zero has no minus sign }
+    AddChar(X, Ord('-'));
+  if (R.Count = 0) or (R.Exponent <= 0) then
+    AddChar(X, Ord('0'))
+  else
+    for I := 0 to R.Exponent - 1 do
+      AddChar(X, 48 + DigitAt(R, I));
+  if Decimals > 0 then
+  begin
+    AddChar(X, Ord('.'));
+    for I := 1 to Decimals do
+      if R.Count = 0 then
+        AddChar(X, Ord('0'))
+      else
+        AddChar(X, 48 + DigitAt(R, R.Exponent + I - 1));
+  end;
+end;
+
+procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
+var
+  X: TFloatText;
+  Bits: UInt64;
+  I: Integer;
+  P: PTextRec;
+begin
+  X.Len := 0;
+  Bits := PUInt64(@V)^;
+  if (Bits and $7FF0000000000000) = $7FF0000000000000 then
+  begin
+    { LANG-932: NAN, INF, -INF }
+    if (Bits and $000FFFFFFFFFFFFF) <> 0 then
+    begin
+      AddChar(X, Ord('N'));
+      AddChar(X, Ord('A'));
+      AddChar(X, Ord('N'));
+    end
+    else
+    begin
+      if (Bits shr 63) <> 0 then
+        AddChar(X, Ord('-'));
+      AddChar(X, Ord('I'));
+      AddChar(X, Ord('N'));
+      AddChar(X, Ord('F'));
+    end;
+  end
+  else if Decimals < 0 then
+    ScientificText(V, Width, X)
+  else
+    FixedText(V, Decimals, X);
+  P := TextRec(T);
+  PutSpaces(P^, Width - X.Len);
+  for I := 0 to X.Len - 1 do
+    PutUnit(P^, X.C[I]);
 end;
 
 { RTL-092: CR LF on every kind }
