@@ -4,6 +4,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Tests.Infrastructure;
 using CoreGesture = FreexComp.Ide.Core.Commands.KeyGesture;
@@ -117,6 +118,62 @@ public sealed partial class MenuTests
 
         Assert.True(dark.IsChecked);
         Assert.False(light.IsChecked);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-MENU-009")]
+    [Trait("Req", "IDE-P1-131")]
+    public async Task RecentListsAreGenerated()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var recent = h.Services.RecentItems;
+        var openRecent = Item(h, AutomationIds.SubMenu("File", "OpenRecent"));
+        Assert.False(openRecent.IsEnabled); // no recent item yet
+
+        const string longPath = @"C:\Users\someone\Documents\FreexComp Projects\A very long folder name\Hello\Hello.pproj";
+        recent.Add(RecentKind.Project, @"C:\p\One\One.pproj");
+        recent.Add(RecentKind.Project, longPath);
+        for (var n = 1; n <= 12; n++)
+            recent.Add(RecentKind.File, $@"C:\w\f{n}.pas");
+        recent.SetPinned(RecentKind.File, @"C:\w\f1.pas", true);
+
+        var file = Item(h, AutomationIds.TopMenu("File"));
+        file.Open();
+        Dispatcher.UIThread.RunJobs();
+        openRecent = Item(h, AutomationIds.SubMenu("File", "OpenRecent"));
+        Assert.True(openRecent.IsEnabled);
+        var rows = Flatten(openRecent.Items.Cast<object?>(), 0);
+
+        // Projects (pinned first, then newest), files (max 10), Clear; the first nine get digit mnemonics.
+        string[] files = [@"C:\w\f1.pas", .. Enumerable.Range(4, 9).Reverse().Select(n => $@"C:\w\f{n}.pas")];
+        Assert.Equal(
+            [
+                AutomationIds.Menu("file.openRecentProject", longPath) + @"|&1 C:\Users\…\A very long folder name\Hello\Hello.pproj",
+                AutomationIds.Menu("file.openRecentProject", @"C:\p\One\One.pproj") + @"|&2 C:\p\One\One.pproj",
+                "---",
+                .. files.Select((f, i) => AutomationIds.Menu("file.openRecentFile", f) + "|" + (i < 7 ? $"&{i + 3} " : "") + f),
+                "---",
+                AutomationIds.Menu("file.clearRecent") + "|&Clear Recent Lists",
+            ],
+            rows);
+        var longItem = Item(h, AutomationIds.Menu("file.openRecentProject", longPath));
+        Assert.Equal(longPath, ToolTip.GetTip(longItem));
+        Assert.True(((string)longItem.Header!).Length <= 60 + 3);
+        Assert.True(longItem.IsEffectivelyEnabled);
+
+        // The lists follow the service: clearing leaves the pinned file.
+        await h.ExecuteAsync("file.clearRecent");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(
+            [AutomationIds.Menu("file.openRecentFile", @"C:\w\f1.pas") + @"|&1 C:\w\f1.pas", "---", AutomationIds.Menu("file.clearRecent") + "|&Clear Recent Lists"],
+            Flatten(openRecent.Items.Cast<object?>(), 0));
+        Assert.True(openRecent.IsEnabled);
+        openRecent.Open();
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(Item(h, AutomationIds.Menu("file.clearRecent")).IsEffectivelyEnabled); // only a pinned entry left
+        Assert.True(Item(h, AutomationIds.Menu("file.openRecentFile", @"C:\w\f1.pas")).IsEffectivelyEnabled);
+        openRecent.Close();
+        file.Close();
     }
 
     private static CommandDefinition? Definition(MenuItem item) =>

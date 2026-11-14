@@ -118,6 +118,42 @@ public sealed class ProjectServiceTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-011")]
+    [Trait("Req", "IDE-PM-014")]
+    public async Task OpenRestoresSession()
+    {
+        WriteHello();
+        File(Dir + @"\.freexcomp\session.json", """
+            { "formatVersion": 1, "project": "Hello.pproj",
+              "documents": [ { "path": "sub/Unit2.pas", "caret": { "line": 2, "column": 3 } }, { "path": "Unit1.pas" } ],
+              "activeDocument": "sub/Unit2.pas" }
+            """);
+
+        // Step 4: the session's documents instead of the main source.
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        Assert.Equal([Dir + @"\sub\Unit2.pas", Dir + @"\Unit1.pas"], _services.Documents.Documents.Select(d => d.FilePath));
+        var unit2 = Assert.IsType<TextDocumentViewModel>(_services.Documents.ActiveDocument);
+        Assert.Equal(Dir + @"\sub\Unit2.pas", unit2.FilePath);
+        Assert.Equal(new TextPosition(2, 3), unit2.ViewState.Caret);
+
+        // Close writes the session before the members close (IDE-PM-014 step 3).
+        unit2.ViewState.Caret = new TextPosition(3, 1);
+        var paths = new List<string?>();
+        _services.Documents.DocumentClosed += (_, _) =>
+        {
+            var text = Encoding.UTF8.GetString(_fs.ReadAllBytes(Dir + @"\.freexcomp\session.json"));
+            paths.Add(text.Contains("\"line\": 3", StringComparison.Ordinal) ? "written" : "stale");
+        };
+        Assert.True(await Projects.CloseAsync());
+        Assert.Equal(["written", "written"], paths);
+
+        // environment.restoreOpenFiles off: only the main source opens.
+        _services.Settings.Set(SettingsCatalog.EnvironmentRestoreOpenFiles, false);
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        Assert.Equal(Dir + @"\Hello.pas", Assert.Single(_services.Documents.Documents).FilePath);
+    }
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-012")]
     public async Task EmptyFilePathIsIgnoredAndKept()
     {

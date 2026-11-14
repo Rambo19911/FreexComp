@@ -161,9 +161,9 @@ internal static class LayoutStateJson
         return names;
     }
 
-    private static string? Str(JsonNode? node) =>
+    internal static string? Str(JsonNode? node) =>
         node is JsonValue value && value.GetValueKind() == JsonValueKind.String ? value.GetValue<string>() : null;
 
-    private static int? Int(JsonNode? node) =>
+    internal static int? Int(JsonNode? node) =>
         Num(node) is { } d && d == Math.Floor(d) && d >= int.MinValue && d <= int.MaxValue ? (int)d : null;
 }

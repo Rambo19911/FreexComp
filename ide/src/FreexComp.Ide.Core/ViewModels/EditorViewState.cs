@@ -16,6 +16,7 @@ public sealed class EditorViewState : ObservableObject
     private bool _overwrite;
     private double _horizontalOffset;
     private double _verticalOffset;
+    private int _topLine = 1;
     private IReadOnlyList<int> _foldedLines = [];
 
     public double HorizontalOffset
@@ -28,6 +29,16 @@ public sealed class EditorViewState : ObservableObject
     {
         get => _verticalOffset;
         set => SetProperty(ref _verticalOffset, value);
+    }
+
+    /// <summary>
+    /// 1-based line at the top of the view (architecture.md §8.2 <c>scroll.line</c>). Mirrored by the editor view; a view
+    /// that is restored with <see cref="VerticalOffset"/> 0 scrolls to this line (session restore).
+    /// </summary>
+    public int TopLine
+    {
+        get => _topLine;
+        set => SetProperty(ref _topLine, Math.Max(1, value));
     }
 
     public TextPosition Caret

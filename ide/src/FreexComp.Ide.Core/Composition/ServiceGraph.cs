@@ -33,6 +33,8 @@ public static class ServiceGraph
         var theme = new ThemeService(settings, platform.ThemeHost); // step 5: theme applied
         var keymap = new KeymapService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log);
         keymap.Load();
+        var recent = new RecentItemsService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log);
+        recent.Load();
 
         var status = new StatusService(platform.Clock);
         var focus = new FocusTracker();
@@ -66,6 +68,22 @@ public static class ServiceGraph
             ? projectManager.SelectedFilePaths
             : null;
         projects.RenameInPlace = projectManager.BeginRename;
+        var session = new SessionService(platform.FileSystem, documents, projects, projectManager, layout, platform.UserPaths,
+            platform.Clock, platform.Log);
+        projects.Session = session;
+        projects.RecentItems = recent;
+        // IDE-P1-130: a file document that is not a member of the open project joins the recent files.
+        documents.DocumentOpened += (_, e) =>
+        {
+            if (e.Document.FilePath is { } path && !projects.IsMember(path))
+                recent.Add(RecentKind.File, path);
+        };
+        recent.RegisterCommands(commands, platform.Dialogs, path => projects.OpenAsync(path), async path =>
+        {
+            var opened = await documents.OpenAsync(path);
+            if (!opened.Success)
+                await platform.Dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
+        });
         documents.ProjectNewUnit = async () =>
         {
             if (projects.Project is null)
@@ -115,6 +133,8 @@ public static class ServiceGraph
             FilePrompts = prompts,
             Documents = documents,
             Projects = projects,
+            Session = session,
+            RecentItems = recent,
         };
     }
 }

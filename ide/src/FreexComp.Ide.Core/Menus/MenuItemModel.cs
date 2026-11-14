@@ -23,35 +23,55 @@ public sealed class MenuItemModel : ObservableObject
 {
     private readonly bool _alwaysEnabled;
 
+    private IReadOnlyList<MenuItemModel> _children = [];
+
     private MenuItemModel(string? key, string label, IdeCommand? command, string? argument, MenuToggleKind toggleKind,
-        IReadOnlyList<MenuItemModel> children, bool isSeparator, bool alwaysEnabled)
+        IReadOnlyList<MenuItemModel> children, bool isSeparator, bool alwaysEnabled, string? toolTip = null)
     {
         Key = key;
         Label = label;
         Command = command;
         Argument = argument;
         ToggleKind = toggleKind;
-        Children = children;
         IsSeparator = isSeparator;
+        ToolTip = toolTip;
         _alwaysEnabled = alwaysEnabled;
+        SetChildren(children);
+    }
 
+    /// <summary>
+    /// Replaces the children (a submenu with dynamic lists, UI-MENU-009); raises <see cref="Children"/> and
+    /// <see cref="IsEnabled"/> changes.
+    /// </summary>
+    internal void SetChildren(IReadOnlyList<MenuItemModel> children)
+    {
+        foreach (var child in _children)
+        {
+            if (child.Command is { } childCommand)
+                childCommand.CanExecuteChanged -= OnChildCanExecuteChanged;
+            else if (child.IsSubmenu)
+                child.PropertyChanged -= OnChildPropertyChanged;
+        }
+
+        _children = children;
         foreach (var child in children)
         {
             if (child.Command is { } childCommand)
-            {
-                childCommand.CanExecuteChanged += (_, _) => OnPropertyChanged(nameof(IsEnabled));
-            }
+                childCommand.CanExecuteChanged += OnChildCanExecuteChanged;
             else if (child.IsSubmenu)
-            {
-                child.PropertyChanged += (_, e) =>
-                {
-                    if (e.PropertyName == nameof(IsEnabled))
-                    {
-                        OnPropertyChanged(nameof(IsEnabled));
-                    }
-                };
-            }
+                child.PropertyChanged += OnChildPropertyChanged;
         }
+
+        OnPropertyChanged(nameof(Children));
+        OnPropertyChanged(nameof(IsEnabled));
+    }
+
+    private void OnChildCanExecuteChanged(object? sender, EventArgs e) => OnPropertyChanged(nameof(IsEnabled));
+
+    private void OnChildPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(IsEnabled))
+            OnPropertyChanged(nameof(IsEnabled));
     }
 
     /// <summary>Submenu key (<c>File.OpenRecent</c>); null for commands and separators.</summary>
@@ -71,7 +91,10 @@ public sealed class MenuItemModel : ObservableObject
 
     public MenuToggleKind ToggleKind { get; }
 
-    public IReadOnlyList<MenuItemModel> Children { get; }
+    public IReadOnlyList<MenuItemModel> Children => _children;
+
+    /// <summary>Tooltip of a generated entry (the full path of a recent item, UI-MENU-009); null otherwise.</summary>
+    public string? ToolTip { get; }
 
     public bool IsSeparator { get; }
 
@@ -82,8 +105,8 @@ public sealed class MenuItemModel : ObservableObject
 
     internal static MenuItemModel Separator() => new(null, "", null, null, MenuToggleKind.None, [], true, false);
 
-    internal static MenuItemModel ForCommand(string label, IdeCommand command, string? argument, MenuToggleKind toggleKind) =>
-        new(null, label, command, argument, toggleKind, [], false, false);
+    internal static MenuItemModel ForCommand(string label, IdeCommand command, string? argument, MenuToggleKind toggleKind, string? toolTip = null) =>
+        new(null, label, command, argument, toggleKind, [], false, false, toolTip);
 
     internal static MenuItemModel ForSubmenu(string key, string label, IReadOnlyList<MenuItemModel> children, bool alwaysEnabled) =>
         new(key, label, null, null, MenuToggleKind.None, children, false, alwaysEnabled);

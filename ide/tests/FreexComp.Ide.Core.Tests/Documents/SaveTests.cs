@@ -95,7 +95,9 @@ public sealed class SaveTests
         Assert.True(await documents.SaveAsync(doc));
         Assert.Equal("a\r\nb\r\n", Encoding.UTF8.GetString(inner.ReadAllBytes(path)));
         Assert.Empty(TempFiles());
-        var write = Assert.Single(fs.Calls, c => c.StartsWith("WriteAllBytesDurable ", StringComparison.Ordinal));
+        // Calls in the document's folder only: opening the file also writes the user's recent.json (I-074).
+        var documentCalls = fs.Calls.Where(c => c.Contains(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)).ToList();
+        var write = Assert.Single(documentCalls, c => c.StartsWith("WriteAllBytesDurable ", StringComparison.Ordinal));
         var tempPath = write["WriteAllBytesDurable ".Length..];
         Assert.DoesNotContain(fs.Calls, c => c.StartsWith("WriteAllBytes ", StringComparison.Ordinal)); // flushed to disk before the replace
         Assert.Equal(dir, Path.GetDirectoryName(tempPath));

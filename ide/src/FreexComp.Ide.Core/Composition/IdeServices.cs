@@ -47,4 +47,6 @@ public sealed record IdeServices
     public required FilePrompts FilePrompts { get; init; }
     public required IDocumentService Documents { get; init; }
     public required IProjectService Projects { get; init; }
+    public required ISessionService Session { get; init; }
+    public required IRecentItemsService RecentItems { get; init; }
 }

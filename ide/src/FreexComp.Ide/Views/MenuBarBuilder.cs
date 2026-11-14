@@ -50,6 +50,10 @@ public static class MenuBarBuilder
             AutomationProperties.SetAutomationId(item, context ? AutomationIds.Context(command.Id, model.Argument) : AutomationIds.Menu(command.Id, model.Argument));
             item.Command = command;
             item.CommandParameter = model.Argument;
+            if (model.ToolTip is { } tip)
+            {
+                ToolTip.SetTip(item, tip); // UI-MENU-009: the full path
+            }
             if (model.IconName is { } icon)
             {
                 item.Icon = new IdeIcon { IconName = icon }; // UI-MENU-008
@@ -82,6 +86,20 @@ public static class MenuBarBuilder
             item.Items.Add(Create(child, context));
         }
 
+        // A submenu with dynamic lists gets new children when the lists change (UI-MENU-009).
+        model.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(MenuItemModel.Children))
+            {
+                return;
+            }
+
+            item.Items.Clear();
+            foreach (var child in model.Children)
+            {
+                item.Items.Add(Create(child, context));
+            }
+        };
         return item;
     }
 

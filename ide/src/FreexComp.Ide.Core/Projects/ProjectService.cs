@@ -59,6 +59,12 @@ public sealed class ProjectService : IProjectService
 
     public ProjectModel? Project { get; private set; }
 
+    /// <summary>Restores the session at open step 4 and writes it on close (IDE-PM-011, -014; set by the service graph).</summary>
+    public ISessionService? Session { get; set; }
+
+    /// <summary>Records each opened project (IDE-PM-011 step 5; set by the service graph).</summary>
+    public IRecentItemsService? RecentItems { get; set; }
+
     public IReadOnlyList<ProjectTemplate> Templates { get; }
 
     public event EventHandler? ProjectChanged;
@@ -116,11 +122,17 @@ public sealed class ProjectService : IProjectService
             project = project with { ActiveConfiguration = project.ConfigurationNames[0] }; // IDE-PM-012: in memory
         SetProject(project);
 
-        // Step 4: the session (I-073) restores documents; without one the main source opens. A missing main source is
-        // reported by the missing-files check (step 7, UI-TW-107), not by a message box.
-        var main = await _documents.OpenAsync(Resolve(project.MainSource));
-        if (!main.Success)
-            _log.Warning(LogCategory, $"{project.FilePath}: main source not opened ({main.MessageId})");
+        // Step 4: the session restores documents (if environment.restoreOpenFiles); without any the main source opens. A
+        // missing main source is reported by the missing-files check (step 7, UI-TW-107), not by a message box.
+        var restored = Session is null ? 0 : await Session.RestoreAsync(_settings.Get(SettingsCatalog.EnvironmentRestoreOpenFiles));
+        if (restored == 0)
+        {
+            var main = await _documents.OpenAsync(Resolve(project.MainSource));
+            if (!main.Success)
+                _log.Warning(LogCategory, $"{project.FilePath}: main source not opened ({main.MessageId})");
+        }
+
+        RecentItems?.Add(RecentKind.Project, fullPath); // step 5 (IDE-P1-130)
         return true;
     }
 
@@ -135,7 +147,9 @@ public sealed class ProjectService : IProjectService
         if (!await _documents.PromptSaveChangesAsync(ordered))
             return false;
 
-        // The session write (I-073), Messages/Structure clearing (P3) and the file watcher (I-072) join here.
+        // IDE-PM-014 step 3: the session, before the members close. Messages/Structure clearing (P3) and the file
+        // watcher (I-072) join here.
+        Session?.Save();
         foreach (var document in ordered)
         {
             _documents.Close(document);

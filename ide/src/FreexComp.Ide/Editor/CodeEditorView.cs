@@ -266,8 +266,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             if (_document != document)
                 return;
             // TextEditor.ScrollToVerticalOffset does not move the template's ScrollViewer (AvaloniaEdit 12.0.0).
+            var state = document.ViewState;
+            var y = state.VerticalOffset;
+            if (y == 0 && state.TopLine > 1) // a restored session stores the top line, not the offset
+                y = _editor.TextArea.TextView.GetVisualTopByDocumentLine(Math.Min(state.TopLine, _editor.Document.LineCount));
             if (_editor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } scroller)
-                scroller.Offset = new Vector(document.ViewState.HorizontalOffset, document.ViewState.VerticalOffset);
+                scroller.Offset = new Vector(state.HorizontalOffset, y);
             _scrollPending = false;
             MirrorScroll();
             TakeFocusFromDocumentArea();
@@ -616,6 +620,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             return;
         document.ViewState.HorizontalOffset = _editor.HorizontalOffset;
         document.ViewState.VerticalOffset = _editor.VerticalOffset;
+        if (_editor.TextArea.TextView.GetDocumentLineByVisualTop(_editor.VerticalOffset) is { } top)
+            document.ViewState.TopLine = top.LineNumber;
     }
 
     /// <summary>AvaloniaEdit never inserts user text itself; Enter arrives here as a line break (IDE-P1-076).</summary>

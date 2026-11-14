@@ -413,6 +413,32 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel
         return visible;
     }
 
+    /// <summary>
+    /// <c>session.json</c> <c>projectManager.expanded</c>: the keys of the expanded rows that have children (the state
+    /// before a filter was typed while one is active).
+    /// </summary>
+    public IReadOnlyList<string> ExpandedKeys()
+    {
+        var state = _expansionBeforeFilter ?? ExpansionState();
+        return [.. Roots.SelectMany(r => r.SelfAndDescendants())
+            .Where(n => n.Children.Count > 0 && state.TryGetValue(n.Key, out var expanded) && expanded)
+            .Select(n => n.Key)];
+    }
+
+    /// <summary>
+    /// Session restore (UI-TW-012): rows with children are expanded exactly when listed; the row
+    /// <paramref name="selectedKey"/> is selected when it exists. Unknown keys are ignored.
+    /// </summary>
+    public void RestoreSessionState(IReadOnlyCollection<string> expandedKeys, string? selectedKey)
+    {
+        ArgumentNullException.ThrowIfNull(expandedKeys);
+        var expanded = expandedKeys.ToHashSet(StringComparer.Ordinal);
+        foreach (var node in Roots.SelectMany(r => r.SelfAndDescendants()).Where(n => n.Children.Count > 0))
+            node.IsExpanded = expanded.Contains(node.Key);
+        if (selectedKey is not null && Find(selectedKey) is { } selected)
+            Select(selected);
+    }
+
     private Dictionary<string, bool> ExpansionState() =>
         Roots.SelectMany(r => r.SelfAndDescendants()).ToDictionary(n => n.Key, n => n.IsExpanded, StringComparer.Ordinal);
 
