@@ -37,6 +37,19 @@ public class DialogWindow : Window
             Height = height;
         else
             SizeToContent = SizeToContent.Height;
+        if (model.CanResize)
+        {
+            // UI-DLG-005: the stated size is the minimum; the last size is remembered.
+            MinWidth = model.Width;
+            MinHeight = model.Height ?? 0;
+            if (model.StoredSize is { } stored)
+            {
+                Width = Math.Max(stored.Width, MinWidth);
+                Height = Math.Max(stored.Height, MinHeight);
+            }
+
+            Closed += (_, _) => model.StoredSize = (Width, Height);
+        }
         KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle);
         this.Bind(BackgroundProperty, this.GetResourceObservable("FxcBgPanelBrush"));
 

@@ -2,7 +2,10 @@ using FreexComp.Ide.Core.Platform;
 
 namespace FreexComp.Ide.TestSupport;
 
-/// <summary><see cref="IThemeHost"/> with a settable OS theme; raises the change event only when the actual theme changes.</summary>
+/// <summary>
+/// <see cref="IThemeHost"/> with a settable OS theme; raises the change event only when the actual theme changes;
+/// records colour overrides in <see cref="Colors"/>.
+/// </summary>
 public sealed class FakeThemeHost : IThemeHost
 {
     private ThemeKind _systemTheme = ThemeKind.Light;
@@ -21,7 +24,12 @@ public sealed class FakeThemeHost : IThemeHost
         set => Change(() => _systemTheme = value);
     }
 
+    /// <summary>Every <see cref="SetColor"/> call, last value per (theme, token).</summary>
+    public Dictionary<(ThemeKind Theme, string Token), string> Colors { get; } = [];
+
     public void Apply(ThemeKind? requested) => Change(() => Requested = requested);
+
+    public void SetColor(ThemeKind theme, string token, string color) => Colors[(theme, token)] = color;
 
     private void Change(Action change)
     {

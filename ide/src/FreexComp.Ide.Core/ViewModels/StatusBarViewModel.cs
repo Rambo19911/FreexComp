@@ -92,7 +92,7 @@ public sealed class StatusBarViewModel : ObservableObject
     /// <summary>R4 click: <c>edit.toggleOverwrite</c>.</summary>
     public IdeCommand InsertModeCommand { get; }
 
-    /// <summary>R5 click: Options (the page Editor › General is selected once the Options dialog exists).</summary>
+    /// <summary>R5 click: Options at the page Editor › General.</summary>
     public IdeCommand IndentCommand { get; }
 
     private EditorStatus? Editor => _status.Editor;
@@ -101,9 +101,11 @@ public sealed class StatusBarViewModel : ObservableObject
     public static void Activate(IdeCommand command)
     {
         ArgumentNullException.ThrowIfNull(command);
-        if (command.CanExecute(null))
+        // R5 opens Options at Editor › General (main-window.md §5).
+        var argument = command.Id == "tools.options" ? Dialogs.OptionsViewModel.EditorGeneralPage : null;
+        if (command.CanExecute(argument))
         {
-            command.Execute(null);
+            command.Execute(argument);
         }
     }
 

@@ -31,6 +31,12 @@ public sealed class ThemeService : IThemeService
             }
         };
         _host.ActualThemeChanged += (_, _) => Changed?.Invoke(this, EventArgs.Empty);
+        ApplyOverrides();
+        _settings.Changed += (_, e) =>
+        {
+            if (ColorToken(e.Key) is { } target && e.NewValue is string color)
+                _host.SetColor(target.Theme, target.Token, color);
+        };
     }
 
     public event EventHandler? Changed;
@@ -55,6 +61,33 @@ public sealed class ThemeService : IThemeService
             }
         };
         commands.InvalidateCanExecute();
+    }
+
+    /// <summary>IDE-SET-040: every overridden <c>colors.&lt;theme&gt;.&lt;token&gt;</c> replaces its theme resource.</summary>
+    public void ApplyOverrides()
+    {
+        foreach (var (token, _, _, _) in SettingsCatalog.EditorColorTokens)
+        {
+            foreach (var (name, kind) in new[] { (Light, ThemeKind.Light), (Dark, ThemeKind.Dark) })
+            {
+                var key = SettingsCatalog.ColorKey(name, token);
+                if (!_settings.IsDefault(key.Name))
+                    _host.SetColor(kind, token, _settings.Get(key));
+            }
+        }
+    }
+
+    /// <summary>The theme and token of a colour key (not a <c>.style</c> key); null for any other key.</summary>
+    private static (ThemeKind Theme, string Token)? ColorToken(string key)
+    {
+        foreach (var (name, kind) in new[] { (Light, ThemeKind.Light), (Dark, ThemeKind.Dark) })
+        {
+            var prefix = "colors." + name + ".";
+            if (key.StartsWith(prefix, StringComparison.Ordinal) && SettingsCatalog.EditorColorTokens.Any(t => t.Token == key[prefix.Length..]))
+                return (kind, key[prefix.Length..]);
+        }
+
+        return null;
     }
 
     private void Apply() => _host.Apply(RequestedTheme switch

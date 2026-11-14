@@ -48,7 +48,7 @@ public sealed class CompositionTests
         var services = TestComposition.Build();
 
         var error = Assert.Throws<InvalidOperationException>(services.Commands.VerifyAllHandled);
-        Assert.Contains("tools.options", error.Message, StringComparison.Ordinal);         // P1: needs its real handler
+        Assert.Contains("search.navigateBack", error.Message, StringComparison.Ordinal);   // P1: needs its real handler
         Assert.DoesNotContain("project.build", error.Message, StringComparison.Ordinal); // P3: stubbed
         Assert.False(services.Commands.CanExecute("project.build"));
     }

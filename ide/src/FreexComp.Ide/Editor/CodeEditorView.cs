@@ -128,6 +128,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             _colorizer?.ThemeChanged();
             textView.Redraw();
         };
+        // IDE-SET-040: a colour override replaces a theme resource.
+        ResourcesChanged += (_, _) =>
+        {
+            _colorizer?.ThemeChanged();
+            textView.Redraw();
+        };
     }
 
     /// <summary>The hosted editor (tests and later editor tasks).</summary>
@@ -485,7 +491,17 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private IBrush? Brush(string token) =>
         this.TryFindResource(Icons.IconCatalog.BrushKey(token), ActualThemeVariant, out var value) ? value as IBrush : null;
 
-    private void OnOptionsChanged(object? sender, PropertyChangedEventArgs e) => ApplyOptions((EditorOptions)sender!);
+    private void OnOptionsChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(EditorOptions.TokenStyle))
+        {
+            _colorizer?.ThemeChanged(); // colors.<theme>.<token>.style changed
+            _editor.TextArea.TextView.Redraw();
+            return;
+        }
+
+        ApplyOptions((EditorOptions)sender!);
+    }
 
     /// <summary>Margin visibility (editor.md §2), current line (UI-ED-050), ruler (UI-ED-057) and whitespace (UI-ED-058).</summary>
     private void ApplyOptions(EditorOptions options)
@@ -556,7 +572,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
         if (document is null)
             return;
-        _colorizer = new SyntaxColorizer(document.Buffer, document.Language.CreateClassifier(), this);
+        var options = document.Options;
+        _colorizer = new SyntaxColorizer(document.Buffer, document.Language.CreateClassifier(), this, options.TokenStyle);
         _colorizer.Classifier.ClassificationChanged += OnClassificationChanged;
         transformers.Add(_colorizer);
     }

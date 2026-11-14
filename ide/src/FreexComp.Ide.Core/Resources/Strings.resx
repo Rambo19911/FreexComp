@@ -2973,4 +2973,456 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>&amp;Delete File from Disk…</value>
     <comment>tool-windows.md §2 Project Manager context menu</comment>
   </data>
+  <data name="Button_Apply" xml:space="preserve">
+    <value>Apply</value>
+    <comment>UI-DLG-003 Apply (Options, Project Options)</comment>
+  </data>
+  <data name="Options_Title" xml:space="preserve">
+    <value>Options</value>
+    <comment>dialogs.md §9</comment>
+  </data>
+  <data name="Options_FilterPlaceholder" xml:space="preserve">
+    <value>Filter options</value>
+    <comment>dialogs.md §9 wireframe</comment>
+  </data>
+  <data name="Options_ResetToDefault" xml:space="preserve">
+    <value>Reset to default: {0}</value>
+    <comment>UI-DLG-094 tooltip; 0 = default value</comment>
+  </data>
+  <data name="Options_On" xml:space="preserve">
+    <value>on</value>
+    <comment>UI-DLG-094 default of a check box</comment>
+  </data>
+  <data name="Options_Off" xml:space="preserve">
+    <value>off</value>
+    <comment>UI-DLG-094 default of a check box</comment>
+  </data>
+  <data name="Options_DefaultChoice" xml:space="preserve">
+    <value>(Default)</value>
+    <comment>dialogs.md §9.2 FontFamily first entry</comment>
+  </data>
+  <data name="Options_Preview" xml:space="preserve">
+    <value>Preview</value>
+    <comment>dialogs.md §9.2 / §9.4 preview label</comment>
+  </data>
+  <data name="Options_Group_CodeInsight" xml:space="preserve">
+    <value>Code insight</value>
+    <comment>dialogs.md §9.1 group heading</comment>
+  </data>
+  <data name="Options_Tree_Editor" xml:space="preserve">
+    <value>Editor</value>
+    <comment>UI-DLG-090 tree group</comment>
+  </data>
+  <data name="Options_Tree_Environment" xml:space="preserve">
+    <value>Environment</value>
+    <comment>UI-DLG-090 tree group</comment>
+  </data>
+  <data name="Options_Tree_Editor_General" xml:space="preserve">
+    <value>General</value>
+    <comment>UI-DLG-090</comment>
+  </data>
+  <data name="Options_Tree_Editor_Display" xml:space="preserve">
+    <value>Display</value>
+    <comment>UI-DLG-090</comment>
+  </data>
+  <data name="Options_Tree_Editor_CodeTemplates" xml:space="preserve">
+    <value>Code Templates</value>
+    <comment>UI-DLG-090</comment>
+  </data>
+  <data name="Options_Tree_Designer" xml:space="preserve">
+    <value>Designer</value>
+    <comment>UI-DLG-090</comment>
+  </data>
+  <data name="Options_Page_Editor_General" xml:space="preserve">
+    <value>Editor › General</value>
+    <comment>dialogs.md §9.1 title</comment>
+  </data>
+  <data name="Options_Page_Editor_Display" xml:space="preserve">
+    <value>Editor › Display</value>
+    <comment>dialogs.md §9.2 title</comment>
+  </data>
+  <data name="Options_Page_Editor_CodeTemplates" xml:space="preserve">
+    <value>Editor › Code Templates</value>
+    <comment>dialogs.md §9.3 title</comment>
+  </data>
+  <data name="Options_Page_Designer" xml:space="preserve">
+    <value>Designer</value>
+    <comment>dialogs.md §9.8 title</comment>
+  </data>
+  <data name="Options_Field_TabWidth" xml:space="preserve">
+    <value>_Tab width:</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_InsertSpaces" xml:space="preserve">
+    <value>Insert _spaces instead of tabs</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_AutoIndent" xml:space="preserve">
+    <value>_Automatic indentation</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_AutoCloseBrackets" xml:space="preserve">
+    <value>Close _brackets and quotes automatically</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_AutoCloseBeginEnd" xml:space="preserve">
+    <value>Complete begin with _end</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_SmartHome" xml:space="preserve">
+    <value>_Home key goes to first non-blank character</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_CaretPastEol" xml:space="preserve">
+    <value>Allow caret beyond end of _line</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_RectangularSelection" xml:space="preserve">
+    <value>_Column selection with Alt</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_ScrollPastEnd" xml:space="preserve">
+    <value>Scroll _past the last line</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_MouseWheelZoom" xml:space="preserve">
+    <value>_Zoom with Ctrl+mouse wheel</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_CompletionAuto" xml:space="preserve">
+    <value>Show c_ompletions while typing</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_CompletionDelay" xml:space="preserve">
+    <value>_Delay (ms):</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_ParameterInfoAuto" xml:space="preserve">
+    <value>Show parameter in_fo after (</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_HoverEnabled" xml:space="preserve">
+    <value>Show symbol information on ho_ver</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_HoverDelay" xml:space="preserve">
+    <value>Hover dela_y (ms):</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_LiveDiagnostics" xml:space="preserve">
+    <value>_Underline errors while typing</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_LiveDiagnosticsDelay" xml:space="preserve">
+    <value>Error chec_k delay (ms):</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_FontFamily" xml:space="preserve">
+    <value>_Font:</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_FontSize" xml:space="preserve">
+    <value>_Size:</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_ShowLineNumbers" xml:space="preserve">
+    <value>Line _numbers</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_ShowFoldMargin" xml:space="preserve">
+    <value>F_olding markers</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_ShowChangeBar" xml:space="preserve">
+    <value>_Change bar</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_HighlightCurrentLine" xml:space="preserve">
+    <value>_Highlight current line</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_HighlightBrackets" xml:space="preserve">
+    <value>Highlight matching _brackets</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_HighlightOccurrences" xml:space="preserve">
+    <value>Highlight occurrences of the _word at the caret</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_ShowIndentGuides" xml:space="preserve">
+    <value>_Indentation guides</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_ShowWhitespace" xml:space="preserve">
+    <value>Show whi_tespace</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_WordWrap" xml:space="preserve">
+    <value>Wor_d wrap in newly opened files</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_CaretBlink" xml:space="preserve">
+    <value>Blinking c_aret</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Field_RightMargin" xml:space="preserve">
+    <value>_Right margin column:</value>
+    <comment>dialogs.md §9 field label</comment>
+  </data>
+  <data name="Options_Page_Colors" xml:space="preserve">
+    <value>Colors</value>
+    <comment>dialogs.md §9.4 title</comment>
+  </data>
+  <data name="Options_Tree_Colors" xml:space="preserve">
+    <value>Colors</value>
+    <comment>UI-DLG-090</comment>
+  </data>
+  <data name="Options_Theme_Light" xml:space="preserve">
+    <value>Light</value>
+    <comment>dialogs.md §9.4 Theme combo; Msg.Options.ResetColorsConfirm {0}</comment>
+  </data>
+  <data name="Options_Theme_Dark" xml:space="preserve">
+    <value>Dark</value>
+    <comment>dialogs.md §9.4 Theme combo; Msg.Options.ResetColorsConfirm {0}</comment>
+  </data>
+  <data name="Options_Colors_Theme" xml:space="preserve">
+    <value>_Theme:</value>
+    <comment>dialogs.md §9.4</comment>
+  </data>
+  <data name="Options_Colors_Element" xml:space="preserve">
+    <value>_Element</value>
+    <comment>dialogs.md §9.4</comment>
+  </data>
+  <data name="Options_Colors_Color" xml:space="preserve">
+    <value>_Color:</value>
+    <comment>dialogs.md §9.4</comment>
+  </data>
+  <data name="Options_Colors_Bold" xml:space="preserve">
+    <value>_Bold</value>
+    <comment>dialogs.md §9.4</comment>
+  </data>
+  <data name="Options_Colors_Italic" xml:space="preserve">
+    <value>_Italic</value>
+    <comment>dialogs.md §9.4</comment>
+  </data>
+  <data name="Options_Colors_Contrast" xml:space="preserve">
+    <value>Contrast against editor background:</value>
+    <comment>dialogs.md §9.4</comment>
+  </data>
+  <data name="Options_Colors_ContrastValue" xml:space="preserve">
+    <value>{0:0.0} : 1</value>
+    <comment>dialogs.md §9.4 contrast value; 0 = ratio</comment>
+  </data>
+  <data name="Options_Colors_ResetElement" xml:space="preserve">
+    <value>_Reset Element</value>
+    <comment>dialogs.md §9.4</comment>
+  </data>
+  <data name="Options_Colors_ResetAll" xml:space="preserve">
+    <value>Reset _All…</value>
+    <comment>dialogs.md §9.4</comment>
+  </data>
+  <data name="Options_Colors_GroupSyntax" xml:space="preserve">
+    <value>Syntax</value>
+    <comment>dialogs.md §9.4 element group</comment>
+  </data>
+  <data name="Options_Colors_GroupEditor" xml:space="preserve">
+    <value>Editor</value>
+    <comment>dialogs.md §9.4 element group</comment>
+  </data>
+  <data name="Options_Colors_Swatch" xml:space="preserve">
+    <value>Choose color</value>
+    <comment>UI-DLG-095 swatch button (automation name)</comment>
+  </data>
+  <data name="Options_Colors_Palette" xml:space="preserve">
+    <value>Colors</value>
+    <comment>UI-DLG-095 popup (automation name)</comment>
+  </data>
+  <data name="Options_Colors_Default" xml:space="preserve">
+    <value>Default</value>
+    <comment>UI-DLG-095 theme default entry</comment>
+  </data>
+  <data name="Options_Color_syntax_text" xml:space="preserve">
+    <value>Text</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_keyword" xml:space="preserve">
+    <value>Keyword</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_string" xml:space="preserve">
+    <value>String</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_char" xml:space="preserve">
+    <value>Character</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_number" xml:space="preserve">
+    <value>Number</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_comment" xml:space="preserve">
+    <value>Comment</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_directive" xml:space="preserve">
+    <value>Compiler directive</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_symbol" xml:space="preserve">
+    <value>Symbol</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_type" xml:space="preserve">
+    <value>Type</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_constant" xml:space="preserve">
+    <value>Constant</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_routine" xml:space="preserve">
+    <value>Routine</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_label" xml:space="preserve">
+    <value>Label</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_asm" xml:space="preserve">
+    <value>Assembler</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_attribute" xml:space="preserve">
+    <value>Attribute</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_invalid" xml:space="preserve">
+    <value>Invalid</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_syntax_inactive" xml:space="preserve">
+    <value>Inactive code</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_currentLine_bg" xml:space="preserve">
+    <value>Current line</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_currentLine_border" xml:space="preserve">
+    <value>Current line border</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_selection_bg" xml:space="preserve">
+    <value>Selection</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_selection_inactive_bg" xml:space="preserve">
+    <value>Inactive selection</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_caret" xml:space="preserve">
+    <value>Caret</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_lineNumber" xml:space="preserve">
+    <value>Line numbers</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_lineNumber_current" xml:space="preserve">
+    <value>Current line number</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_bracketMatch_bg" xml:space="preserve">
+    <value>Matching bracket</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_bracketMatch_border" xml:space="preserve">
+    <value>Matching bracket outline</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_wordHighlight_bg" xml:space="preserve">
+    <value>Word occurrences</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_findMatch_bg" xml:space="preserve">
+    <value>Find matches</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_findMatch_current_bg" xml:space="preserve">
+    <value>Current find match</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_indentGuide" xml:space="preserve">
+    <value>Indentation guides</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_indentGuide_active" xml:space="preserve">
+    <value>Active indentation guide</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_whitespace" xml:space="preserve">
+    <value>Whitespace</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_foldMarker" xml:space="preserve">
+    <value>Fold markers</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_foldedText_bg" xml:space="preserve">
+    <value>Folded text</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_changeBar_modified" xml:space="preserve">
+    <value>Change bar (modified)</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_changeBar_saved" xml:space="preserve">
+    <value>Change bar (saved)</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_breakpoint" xml:space="preserve">
+    <value>Breakpoint</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_breakpoint_disabled" xml:space="preserve">
+    <value>Disabled breakpoint</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_breakpoint_line_bg" xml:space="preserve">
+    <value>Breakpoint line</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_execution" xml:space="preserve">
+    <value>Execution point</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_execution_line_bg" xml:space="preserve">
+    <value>Execution line</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_callFrame_line_bg" xml:space="preserve">
+    <value>Call frame line</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_bookmark" xml:space="preserve">
+    <value>Bookmark</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_squiggle_error" xml:space="preserve">
+    <value>Error underline</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_squiggle_warning" xml:space="preserve">
+    <value>Warning underline</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_squiggle_hint" xml:space="preserve">
+    <value>Hint underline</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
+  <data name="Options_Color_editor_ruler" xml:space="preserve">
+    <value>Right margin</value>
+    <comment>dialogs.md §9.4 element label</comment>
+  </data>
 </root>

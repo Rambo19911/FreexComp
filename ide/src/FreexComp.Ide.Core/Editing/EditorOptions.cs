@@ -30,6 +30,8 @@ public sealed class EditorOptions : INotifyPropertyChanged
         {
             if (Properties.TryGetValue(e.Key, out var property))
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
+            else if (e.Key.StartsWith("colors.", StringComparison.Ordinal) && e.Key.EndsWith(".style", StringComparison.Ordinal))
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TokenStyle)));
         };
     }
 
@@ -53,6 +55,17 @@ public sealed class EditorOptions : INotifyPropertyChanged
     public int RightMargin => Get(SettingsCatalog.EditorRightMargin);
 
     public bool ShowWhitespace => Get(SettingsCatalog.EditorShowWhitespace);
+
+    /// <summary>
+    /// The style of a syntax token in a theme: <c>colors.&lt;theme&gt;.&lt;token&gt;.style</c> (<c>regular</c>,
+    /// <c>bold</c>, <c>italic</c>, <c>bolditalic</c>; settings.md §4.3); <c>regular</c> for tokens without a style key.
+    /// Changes raise <see cref="PropertyChanged"/> with this method's name.
+    /// </summary>
+    public string TokenStyle(bool dark, string token)
+    {
+        var entry = SettingsCatalog.EditorColorTokens.FirstOrDefault(t => t.Token == token);
+        return entry.Style is null ? "regular" : Get(SettingsCatalog.StyleKey(dark ? "dark" : "light", token));
+    }
 
     private T Get<T>(SettingKey<T> key) where T : notnull => _settings is null ? key.Default : _settings.Get(key);
 }

@@ -17,4 +17,10 @@ public interface IThemeHost
 
     /// <summary>Requests a theme; null follows the OS.</summary>
     void Apply(ThemeKind? requested);
+
+    /// <summary>
+    /// IDE-SET-040: replaces the colour of an editor token (<c>syntax.keyword</c>) in <paramref name="theme"/>'s resources
+    /// (<c>Fxc&lt;Token&gt;</c> and <c>Fxc&lt;Token&gt;Brush</c>); <paramref name="color"/> is <c>#RRGGBB</c>.
+    /// </summary>
+    void SetColor(ThemeKind theme, string token, string color);
 }

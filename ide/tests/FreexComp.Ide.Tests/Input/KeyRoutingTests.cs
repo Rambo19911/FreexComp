@@ -51,9 +51,9 @@ public sealed class KeyRoutingTests
     {
         await using var h = await HeadlessHarness.StartAsync();
         var copy = new Recorder();
-        var options = new Recorder(); // tools.options: a Global command with a gesture and no handler yet
+        var options = new Recorder(); // search.navigateBack: a Global command with a gesture and no handler yet
         var target = new Target();
-        h.Services.Commands.RegisterHandler("tools.options", options);
+        h.Services.Commands.RegisterHandler("search.navigateBack", options);
         var host = AddFocusable(h, "StatusBar.TestTool");
         CommandRouting.SetScope(host, CommandScope.ToolList);
         CommandRouting.SetToolWindow(host, "Messages");
@@ -71,7 +71,7 @@ public sealed class KeyRoutingTests
         Assert.Empty(target.Executed); // not routed: left to the TextBox
         Assert.Equal("abc", box.SelectedText); // the TextBox handled Ctrl+A itself
 
-        h.Press("Ctrl+,"); // global commands still work from a text input
+        h.Press("Alt+Left"); // global commands still work from a text input
         Assert.Equal(1, options.Calls);
 
         Focus(host);

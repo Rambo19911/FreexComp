@@ -75,6 +75,16 @@ public abstract class DialogViewModel : ObservableObject
 
     public virtual bool CanResize => false;
 
+    /// <summary>
+    /// UI-DLG-005: the last size of a resizable dialog (UI state <c>dialogs.&lt;Name&gt;.size</c>); null = never resized
+    /// or not remembered. The window reads it on open and writes it on close.
+    /// </summary>
+    public virtual (double Width, double Height)? StoredSize
+    {
+        get => null;
+        set { }
+    }
+
     public bool IsClosed { get; private set; }
 
     public event EventHandler? CloseRequested;
