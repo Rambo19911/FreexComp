@@ -4,8 +4,10 @@ using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Core.Services;
+using FreexComp.Ide.Core.Layout;
 
-namespace FreexComp.Ide.Core.Services;
+namespace FreexComp.Ide.Core.Editing;
 
 /// <summary>
 /// In-editor find and replace (phase1-shell.md §10): the search text, replacement and options shared by all editors

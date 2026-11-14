@@ -6,6 +6,7 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Dialogs;
 
@@ -99,24 +100,5 @@ public sealed class AboutViewModel : DialogViewModel<AboutResult>
         return build.Count == 0 ? text : text + " (" + Strings.About_Build + " " + string.Join(", ", build) + ")";
     }
 
-    /// <summary>Registers <c>help.about</c> and <c>help.licenses</c> (commands.md, owner IHelpService).</summary>
-    public static void RegisterCommands(ICommandService commands, IDialogService dialogs, IUserPaths paths, IClipboardService clipboard, ILayoutService layout)
-    {
-        ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("help.about", new Handler(async () =>
-        {
-            if (await dialogs.ShowAsync(new AboutViewModel(paths, clipboard)) == AboutResult.ShowLicenses)
-                await commands.ExecuteAsync("help.licenses");
-        }));
-        commands.RegisterHandler("help.licenses", new Handler(() => dialogs.ShowAsync(new LicensesViewModel(ThirdPartyNotices.LoadEmbedded(), layout))));
-    }
-
     private Task CopyInfoAsync() => _clipboard.SetTextAsync(InfoText);
-
-    private sealed class Handler(Func<Task> execute) : ICommandHandler
-    {
-        public bool CanExecute(string? argument) => true;
-
-        public Task ExecuteAsync(string? argument) => execute();
-    }
 }

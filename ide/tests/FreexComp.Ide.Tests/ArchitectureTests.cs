@@ -58,6 +58,57 @@ public sealed class ArchitectureTests
         Assert.Empty(used.Distinct().Order(StringComparer.Ordinal));
     }
 
+    private static bool IsTypeOrNested(string userType, string type) =>
+        userType == type || userType.StartsWith(type + "+", StringComparison.Ordinal);
+
+    private static IEnumerable<(string Assembly, IlReference Reference)> AllReferences() =>
+        IdeAssemblies.SelectMany(name => IlReferences.Read(Assembly.Load(name).Location).Select(r => (name, r)));
+
+    [Fact]
+    [Trait("Req", "IDE-SET-003")]
+    public void OnlyUserPathsAsksForOsFolders()
+    {
+        var callers = AllReferences()
+            .Where(x => x.Reference.TargetType == "System.Environment" && x.Reference.Member == "GetFolderPath")
+            .Select(x => x.Reference.UserType).Distinct().ToList();
+        Assert.NotEmpty(callers);
+        Assert.All(callers, t => Assert.True(IsTypeOrNested(t, "FreexComp.Ide.Core.Settings.UserPaths"), t));
+    }
+
+    [Fact]
+    [Trait("Req", "IDE-ARCH-023")]
+    public void DocumentsNeverTouchTheDisk()
+    {
+        // Content goes through IDocumentService; a document may only ask whether something exists (the Welcome page
+        // marks missing recent projects, IDE-WEL-005).
+        string[] disk = ["System.IO.File", "System.IO.FileInfo", "System.IO.FileStream", "System.IO.Directory", "System.IO.StreamReader",
+            "System.IO.StreamWriter"];
+        string[] contentAccess = ["ReadAllBytes", "WriteAllBytes", "WriteAllBytesDurable", "OverwriteFile", "ReplaceFile", "MoveFile", "DeleteFile",
+            "DeleteDirectory", "CreateDirectory"];
+        var documentTypes = AllReferences().Select(x => x.Reference)
+            .Where(r => r.UserType.StartsWith("FreexComp.Ide.Core.ViewModels.", StringComparison.Ordinal)
+                && r.UserType.Split('+')[0].EndsWith("DocumentViewModel", StringComparison.Ordinal))
+            .ToList();
+        Assert.Contains(documentTypes, r => r.UserType == "FreexComp.Ide.Core.ViewModels.TextDocumentViewModel");
+        Assert.Empty(documentTypes.Where(r => disk.Contains(r.TargetType)
+                || (r.TargetType == "FreexComp.Ide.Core.Platform.IFileSystem" && contentAccess.Contains(r.Member))).Select(r => $"{r.UserType} uses {r.TargetType}.{r.Member}").Distinct());
+    }
+
+    [Fact]
+    [Trait("Req", "IDE-ARCH-101")]
+    public void CompilerIsAnInProcessLibrary()
+    {
+        var core = Assembly.Load("FreexComp.Ide.Core").GetReferencedAssemblies().Select(a => a.Name).ToList();
+        Assert.Contains("FreexComp.Compiler", core); // lexer + classifier for highlighting
+        Assert.Contains("FreexComp.Build", core);    // the .pproj model
+
+        // The only process the IDE starts in Phase 1 is the OS file manager; it never shells out to opc for editor features.
+        var starters = AllReferences()
+            .Where(x => x.Reference.TargetType == "System.Diagnostics.Process" && x.Reference.Member == "Start")
+            .Select(x => x.Reference.UserType).Distinct().ToList();
+        Assert.All(starters, t => Assert.True(IsTypeOrNested(t, "FreexComp.Ide.Platform.WindowsShellService"), t));
+    }
+
     private static bool IsNetwork(string type)
     {
         var outer = type.Split('+')[0];

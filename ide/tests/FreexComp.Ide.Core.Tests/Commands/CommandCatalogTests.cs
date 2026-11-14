@@ -70,6 +70,26 @@ public sealed partial class CommandCatalogTests
         Assert.Throws<KeyNotFoundException>(() => CommandCatalog.Get("file.nope"));
     }
 
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-CMD-003")]
+    public void TitlesComeFromCmdResources()
+    {
+        Assert.All(CommandCatalog.All, c =>
+        {
+            Assert.Equal("Cmd_" + c.Id.Replace('.', '_'), c.TitleKey);
+            Assert.False(string.IsNullOrEmpty(Strings.ResourceManager.GetString(c.TitleKey, CultureInfo.InvariantCulture)), c.TitleKey);
+        });
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-CMD-006")]
+    public void ParameterizedCommandsHaveNoDefaultShortcut()
+    {
+        var parameterized = CommandCatalog.All.Where(c => c.TakesArgument).ToList();
+        Assert.Contains(parameterized, c => c.Id == "file.openRecentProject");
+        Assert.All(parameterized, c => Assert.Empty(c.DefaultGestures));
+    }
+
     /// <summary>One spec row → one or (for <c>a1 … a9</c> families) several commands.</summary>
     private static IEnumerable<Expected> ParseRow(IReadOnlyDictionary<string, string> row)
     {

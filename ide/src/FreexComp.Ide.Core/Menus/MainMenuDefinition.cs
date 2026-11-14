@@ -87,7 +87,7 @@ public static class MainMenuDefinition
                 Command("edit.unfoldAll"),
             ]),
             Separator,
-            Submenu("Edit.CodeInsight",
+            Submenu("Edit.CodeAssist",
             [
                 Command("edit.completeCode"),
                 Command("edit.parameterInfo"),

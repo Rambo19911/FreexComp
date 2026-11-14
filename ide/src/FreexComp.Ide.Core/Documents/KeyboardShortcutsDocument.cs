@@ -16,13 +16,7 @@ public static class KeyboardShortcutsDocument
 
     private const string ColumnGap = "  ";
 
-    public static void RegisterCommands(ICommandService commands, IDocumentService documents, IKeymapService keymap)
-    {
-        ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("help.keyboardShortcuts", new Handler(() =>
-            documents.ShowGenerated(Kind, Strings.Cmd_help_keyboardShortcuts, Build(keymap))));
-    }
-
+    /// <summary>The document text; shown by <c>IHelpService.ShowKeyboardShortcuts</c>.</summary>
     public static string Build(IKeymapService keymap)
     {
         ArgumentNullException.ThrowIfNull(keymap);
@@ -52,15 +46,4 @@ public static class KeyboardShortcutsDocument
 
     private static string TitleOf(CommandDefinition command) =>
         Strings.ResourceManager.GetString(command.TitleKey, CultureInfo.CurrentCulture) ?? command.Id;
-
-    private sealed class Handler(Action execute) : ICommandHandler
-    {
-        public bool CanExecute(string? argument) => true;
-
-        public Task ExecuteAsync(string? argument)
-        {
-            execute();
-            return Task.CompletedTask;
-        }
-    }
 }

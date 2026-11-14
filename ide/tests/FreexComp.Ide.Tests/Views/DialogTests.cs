@@ -69,6 +69,39 @@ public sealed class DialogTests
         await result;
     }
 
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-001")]
+    [Trait("Req", "UI-DLG-010")]
+    [Trait("Req", "UI-A11Y-014")]
+    public async Task ModalDialogIsOwnedAndMainWindowShortcutsWait()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        // Without a dialog Ctrl+N (file.new) opens New File.
+        h.Press("Ctrl+N");
+        var newFile = await h.WaitForDialogAsync("NewFile");
+        newFile.Press("Escape");
+        await h.WaitForAsync(() => !h.Window.OwnedWindows.Any(w => w.IsVisible), "New File closed");
+
+        var result = h.Services.Dialogs.ShowAsync(new SampleDialogViewModel());
+        var dlg = await h.WaitForDialogAsync("Sample");
+        Assert.Same(h.Window, dlg.Window.Owner);
+        Assert.False(dlg.Window.CanMinimize);
+        Assert.False(dlg.Window.CanMaximize);
+        Assert.False(dlg.Window.ShowInTaskbar);
+        Assert.Equal(WindowStartupLocation.CenterOwner, dlg.Window.WindowStartupLocation);
+
+        // Ctrl+N (file.new: the New File dialog) reaches the main window while the dialog is open: nothing happens.
+        h.Press("Ctrl+N");
+        Assert.Equal([dlg.Window], h.Window.OwnedWindows.Where(w => w.IsVisible));
+
+        dlg.Press("Escape");
+        await result;
+
+        Dispatcher.UIThread.RunJobs();
+        var open = h.Window.OwnedWindows.Where(w => w.IsVisible).Select(w => w.Title).ToList();
+        Assert.True(open.Count == 0, string.Join(", ", open)); // the key was not queued for later either
+    }
+
     /// <summary>
     /// A <see cref="Core.Services.MessageRequest"/> may limit the message's buttons (in definition order); UI-DLG-040:
     /// the New File dialog's write failure offers only Retry and Cancel.

@@ -5,6 +5,8 @@
   <!-- §4 Typography -->
   <FontFamily x:Key="FxcFontUi">Segoe UI Variable Text, Segoe UI, Inter, sans-serif</FontFamily>
   <FontFamily x:Key="FxcFontMono">Cascadia Mono, Consolas, Courier New, monospace</FontFamily>
+  <!-- UI-TOK-020: Fluent's control font (menus, buttons, inputs, windows) is font.ui. -->
+  <StaticResource x:Key="ContentControlThemeFontFamily" ResourceKey="FxcFontUi" />
   <x:Double x:Key="FxcTypeCaptionSize">11</x:Double>
   <x:Double x:Key="FxcTypeCaptionLineHeight">16</x:Double>
   <x:Double x:Key="FxcTypeBodySize">12</x:Double>

@@ -16,6 +16,7 @@ public sealed class FoldingTests
     [Trait("Req", "IDE-ED-051")]
     [Trait("Req", "IDE-ED-052")]
     [Trait("Req", "IDE-ED-053")]
+    [Trait("Req", "IDE-P1-060")]
     public void GoldenFilesMatch()
     {
         var registry = new LanguageRegistry();
@@ -94,6 +95,7 @@ public sealed class FoldingTests
     [Trait("Req", "IDE-ED-056")]
     [Trait("Req", "IDE-ED-057")]
     [Trait("Req", "IDE-ED-055")]
+    [Trait("Req", "IDE-P1-061")]
     public void StatePreservedAcrossEdits()
     {
         var document = Pascal(Source);
@@ -174,6 +176,8 @@ public sealed class FoldingTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-081")]
     [Trait("Req", "IDE-ARCH-083")]
+    [Trait("Req", "IDE-P1-061")]
+    [Trait("Req", "IDE-ARCH-033")]
     public async Task LargeBufferRecomputesInBackground()
     {
         // A small buffer: computed at once, on the calling thread, from the document buffer itself.

@@ -10,6 +10,7 @@ using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using IClock = FreexComp.Ide.Core.Platform.IClock;
 using IdeFileSystem = FreexComp.Ide.Core.Platform.IFileSystem;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Projects;
 

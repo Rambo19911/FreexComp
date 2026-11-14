@@ -7,13 +7,12 @@ namespace FreexComp.Ide.Tests.Platform;
 
 /// <summary>External change detection with the real <c>FileSystemWatcher</c> (IDE-P1-110).</summary>
 [Trait("Phase", "1")]
-[Trait("Kind", "Integration")]
+[Trait("Kind", "Ui")]
+[Trait("Category", "Integration")]
 public sealed class FileChangeTests
 {
-    /// <summary>The OS delivers watcher events late under load; the condition is polled, never slept on.</summary>
-    private static readonly TimeSpan WatcherLimit = TimeSpan.FromSeconds(30);
-
-    [AvaloniaFact(Timeout = 60000)]
+    // IDE-TEST-006: 30 s per test; IDE-TEST-013: the watcher event is awaited with the harness's 5 s wait.
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-110")]
     [Trait("Req", "IDE-P1-113")]
     public async Task RealWatcherDetectsChange()
@@ -30,7 +29,7 @@ public sealed class FileChangeTests
         // Another program rewrites the file: the watcher event (debounced on the harness clock) reloads it.
         h.WriteFileExternally("Watched.pas", "unit Watched;\r\n\r\n// changed outside\r\n");
         await h.WaitForAsync(() => document.Buffer.Text.Contains("changed outside", StringComparison.Ordinal),
-            "the real watcher reported the change", WatcherLimit);
+            "the real watcher reported the change");
         await h.Services.FileChanges.WhenIdle();
         Assert.False(document.IsModified);
         Assert.Empty(document.InfoBars);

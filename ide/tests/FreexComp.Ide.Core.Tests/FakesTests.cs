@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Platform;
+using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests;
@@ -115,6 +116,19 @@ public sealed class FakesTests
         fs.DeleteFile(c);
         Assert.False(fs.FileExists(c));
         fs.DeleteFile(c); // missing: no-op
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-054")]
+    [Trait("Req", "UI-DLG-027")]
+    public async Task FakeDialogServiceAnswersScriptedRequestsAndFailsOthers()
+    {
+        IDialogService dialogs = new FakeDialogService();
+        var fake = (FakeDialogService)dialogs;
+        fake.Answer("Msg.File.SaveChangesOne", "DontSave");
+        Assert.Equal("DontSave", await dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveChangesOne", ["a.pas"])));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => dialogs.ShowMessageAsync(new MessageRequest("Msg.File.RevertConfirm", ["a.pas"])));
+        Assert.Equal(["Msg.File.SaveChangesOne", "Msg.File.RevertConfirm"], fake.Requests.Select(r => r.MessageId));
     }
 
     [Fact(Timeout = 30000)]

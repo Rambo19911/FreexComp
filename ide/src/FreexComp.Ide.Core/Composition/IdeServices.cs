@@ -9,6 +9,8 @@ using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ToolWindows;
+using FreexComp.Ide.Core.Editing;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Composition;
 
@@ -54,4 +56,5 @@ public sealed record IdeServices
     public required IFindService Find { get; init; }
     public required INavigationService Navigation { get; init; }
     public required IApplicationService Application { get; init; }
+    public required IHelpService Help { get; init; }
 }

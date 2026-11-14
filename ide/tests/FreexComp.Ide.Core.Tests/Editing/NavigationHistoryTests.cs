@@ -6,6 +6,7 @@ using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
+using FreexComp.Ide.Core.Editing;
 
 namespace FreexComp.Ide.Core.Tests.Editing;
 

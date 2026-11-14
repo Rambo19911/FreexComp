@@ -337,6 +337,7 @@ public sealed class DocumentTabTests
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-038")]
+    [Trait("Req", "UI-A11Y-009")]
     public async Task CtrlTabUsesMruOrder()
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
@@ -364,5 +365,8 @@ public sealed class DocumentTabTests
 
         // The active document's view is shown in the document area.
         Assert.Same(c, h.Find<Control>("DocumentArea").GetVisualDescendants().OfType<FreexComp.Ide.Views.TextDocumentView>().Single().DataContext);
+
+        h.Press("Ctrl+W");                                  // UI-A11Y-009: closes the active document
+        Assert.Equal([a, b], documents.Documents);
     }
 }

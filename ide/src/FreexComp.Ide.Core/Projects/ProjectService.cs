@@ -17,6 +17,7 @@ using FreexComp.Ide.Core.ViewModels;
 using IClock = FreexComp.Ide.Core.Platform.IClock;
 using IdeFileSystem = FreexComp.Ide.Core.Platform.IFileSystem;
 using IShellService = FreexComp.Ide.Core.Platform.IShellService;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Projects;
 

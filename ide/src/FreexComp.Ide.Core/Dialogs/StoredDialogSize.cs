@@ -1,5 +1,6 @@
 using System.Globalization;
 using FreexComp.Ide.Core.Services;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Dialogs;
 

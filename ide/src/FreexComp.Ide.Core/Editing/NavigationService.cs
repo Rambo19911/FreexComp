@@ -5,8 +5,9 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Core.Services;
 
-namespace FreexComp.Ide.Core.Services;
+namespace FreexComp.Ide.Core.Editing;
 
 /// <summary>A navigation moved the caret of <see cref="Document"/> away from <see cref="From"/> (the history entry, IDE-ED-100).</summary>
 public sealed class NavigatedEventArgs(TextDocumentViewModel document, TextPosition from) : EventArgs

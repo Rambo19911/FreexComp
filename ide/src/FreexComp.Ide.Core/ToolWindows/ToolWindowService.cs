@@ -3,6 +3,7 @@ using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.ToolWindows;
 

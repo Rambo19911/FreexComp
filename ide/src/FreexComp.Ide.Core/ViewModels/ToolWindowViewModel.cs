@@ -6,6 +6,7 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.ToolWindows;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.ViewModels;
 

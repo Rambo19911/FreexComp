@@ -36,11 +36,11 @@ public sealed class MenuTests
         var services = TestComposition.Build();
         var menu = MainMenuModel.Build(services.Commands);
         var edit = menu.Single(m => m.Key == "Edit");
-        var codeInsight = edit.Children.Single(m => m.Key == "Edit.CodeInsight"); // P3 children only
+        var codeAssist = edit.Children.Single(m => m.Key == "Edit.CodeAssist"); // P3 children only
         var theme = menu.Single(m => m.Key == "View").Children.Single(m => m.Key == "View.Theme");
 
         Assert.All(menu, m => Assert.True(m.IsEnabled)); // UI-MENU-001
-        Assert.False(codeInsight.IsEnabled);
+        Assert.False(codeAssist.IsEnabled);
         Assert.True(theme.IsEnabled); // view.theme.* have handlers
         Assert.Equal(MenuToggleKind.Radio, theme.Children[0].ToggleKind);
         Assert.Equal(MenuToggleKind.Check, menu.Single(m => m.Key == "View").Children.Single(m => m.CommandId == "view.statusBar").ToggleKind);

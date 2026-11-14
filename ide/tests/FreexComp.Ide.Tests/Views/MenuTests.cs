@@ -58,7 +58,7 @@ public sealed partial class MenuTests
             Assert.False(i.Command!.CanExecute(i.CommandParameter), AutomationIds.Get(i));
         });
         Assert.All(h.Find<Menu>(AutomationIds.MenuBar).Items.Cast<MenuItem>(), top => Assert.True(top.IsEnabled));
-        Assert.False(Item(h, AutomationIds.SubMenu("Edit", "CodeInsight")).IsEnabled); // only P3+ children
+        Assert.False(Item(h, AutomationIds.SubMenu("Edit", "CodeAssist")).IsEnabled); // only P3+ children
         Assert.False(Item(h, AutomationIds.Menu("project.build")).Command!.CanExecute(null));
         Assert.True(Item(h, AutomationIds.Menu("view.theme.dark")).Command!.CanExecute(null)); // P1 with handler
     }

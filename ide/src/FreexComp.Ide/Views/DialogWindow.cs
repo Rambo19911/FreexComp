@@ -39,6 +39,8 @@ public class DialogWindow : Window
         AutomationProperties.SetAutomationId(this, AutomationIds.Dialog(model.Name));
         CanResize = model.CanResize;
         ShowInTaskbar = false;
+        CanMinimize = false; // UI-DLG-001: no minimize / maximize buttons
+        CanMaximize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Width = model.Width;
         if (model.Height is { } height)

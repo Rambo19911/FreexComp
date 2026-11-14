@@ -4,6 +4,7 @@ using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Dialogs;
 

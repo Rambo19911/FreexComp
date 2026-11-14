@@ -2,4 +2,12 @@
   <PropertyGroup>
     <RootNamespace>FreexComp.E2E.Tests</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- The IDE's headless harness and the shared Phase 1 scenario (testing.md §5.5, I-176). -->
+    <ProjectReference Include="..\..\..\ide\tests\FreexComp.Ide.Tests\FreexComp.Ide.Tests.csproj" />
+    <ProjectReference Include="..\..\..\ide\tests\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless.XUnit" />
+  </ItemGroup>
 </Project>

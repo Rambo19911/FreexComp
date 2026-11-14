@@ -1,7 +1,8 @@
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Core.Services;
 
-namespace FreexComp.Ide.Core.Services;
+namespace FreexComp.Ide.Core.Layout;
 
 /// <summary>
 /// Layout profiles, pane cycling and the global UI state file <c>R\uistate.json</c> (architecture.md §4 and §8.1,

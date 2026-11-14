@@ -2095,8 +2095,8 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_edit_unfoldAll" xml:space="preserve">
     <value>U&amp;nfold All</value>
   </data>
-  <data name="Menu_Edit_CodeInsight" xml:space="preserve">
-    <value>Code &amp;Insight</value>
+  <data name="Menu_Edit_CodeAssist" xml:space="preserve">
+    <value>Code A&amp;ssist</value>
   </data>
   <data name="Menu_edit_completeCode" xml:space="preserve">
     <value>&amp;Complete Code</value>
@@ -3043,8 +3043,8 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Preview</value>
     <comment>dialogs.md §9.2 / §9.4 preview label</comment>
   </data>
-  <data name="Options_Group_CodeInsight" xml:space="preserve">
-    <value>Code insight</value>
+  <data name="Options_Group_CodeAssistance" xml:space="preserve">
+    <value>Code assistance</value>
     <comment>dialogs.md §9.1 group heading</comment>
   </data>
   <data name="Options_Tree_Editor" xml:space="preserve">

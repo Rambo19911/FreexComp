@@ -122,8 +122,18 @@ public sealed class LoggingTests : IDisposable
         var blocker = Path.Combine(_dir, "file-not-dir");
         File.WriteAllText(blocker, "x");
 
-        using var log = new FileLog(blocker, () => _now, LogLevel.Info);
-        log.Error("a", "lost");
-        log.Flush();
+        var thrown = Record.Exception(() =>
+        {
+            using var log = new FileLog(blocker, () => _now, LogLevel.Info);
+            log.Error("a", "lost");
+            log.Flush(); // the background writer finished: the failed write did not stop it
+            log.Info("a", "also lost");
+            log.Flush();
+        });
+
+        Assert.Null(thrown);
+        // The entries are dropped: the blocking file is untouched and nothing was written anywhere else.
+        Assert.Equal("x", File.ReadAllText(blocker));
+        Assert.Equal([blocker], Directory.GetFileSystemEntries(_dir));
     }
 }

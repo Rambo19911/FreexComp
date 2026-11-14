@@ -5,6 +5,7 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Dialogs;
 
@@ -154,7 +155,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Check("RectangularSelection", SettingsCatalog.EditorRectangularSelection, 1),
             Check("ScrollPastEnd", SettingsCatalog.EditorScrollPastEnd, 1),
             Check("MouseWheelZoom", SettingsCatalog.EditorMouseWheelZoom, 1),
-            Check("CompletionAuto", SettingsCatalog.EditorCompletionAutoTrigger, 3, Strings.Options_Group_CodeInsight),
+            Check("CompletionAuto", SettingsCatalog.EditorCompletionAutoTrigger, 3, Strings.Options_Group_CodeAssistance),
             Integer("CompletionDelay", SettingsCatalog.EditorCompletionDelayMs, 3, DelayRange(SettingsCatalog.EditorCompletionDelayMs), enabledBy: "CompletionAuto"),
             Check("ParameterInfoAuto", SettingsCatalog.EditorParameterInfoAutoTrigger, 3),
             Check("HoverEnabled", SettingsCatalog.EditorHoverEnabled, 3),

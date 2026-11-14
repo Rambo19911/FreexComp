@@ -17,6 +17,7 @@ public sealed class LineChangeTrackerTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-045")]
     [Trait("Req", "IDE-ED-046")]
+    [Trait("Req", "UI-ED-041")]
     public void StatesAcrossEditSaveUndo()
     {
         var buffer = new StringTextBuffer("a\nb\nc\nd");
@@ -74,6 +75,7 @@ public sealed class LineChangeTrackerTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-045")]
+    [Trait("Req", "UI-ED-041")]
     public void DocumentSaveAndRevertDriveTheTracker()
     {
         var buffer = new StringTextBuffer("one\ntwo\n");

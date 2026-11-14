@@ -19,7 +19,7 @@ public sealed partial class KeymapTests
     [Trait("Req", "IDE-SET-061")]
     [Trait("Req", "UI-KEY-020")]
     [Trait("Req", "UI-KEY-021")]
-    public async Task UserOverridesStoredAsDifferences()
+    public async Task StoresOnlyDifferencesFromDefaults()
     {
         var keymap = CreateKeymapService();
         keymap.Load();

@@ -5,8 +5,9 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Projects;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Core.Services;
 
-namespace FreexComp.Ide.Core.Services;
+namespace FreexComp.Ide.Core.Composition;
 
 /// <summary>
 /// The exit sequence (main-window.md UI-WIN-072) and unhandled-exception handling (IDE-ARCH-091); the single place that

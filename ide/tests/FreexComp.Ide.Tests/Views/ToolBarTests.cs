@@ -65,6 +65,7 @@ public sealed class ToolBarTests
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TB-006")]
+    [Trait("Req", "UI-WIN-061")]
     public async Task OverflowMovesWholeToolbars()
     {
         await using var h = await HeadlessHarness.StartAsync();

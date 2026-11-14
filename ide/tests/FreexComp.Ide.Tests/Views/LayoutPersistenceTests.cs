@@ -17,6 +17,7 @@ public sealed class LayoutPersistenceTests
     [Trait("Req", "UI-WIN-055")]
     [Trait("Req", "UI-WIN-051")]
     [Trait("Req", "UI-WIN-050")]
+    [Trait("Req", "IDE-P1-023")]
     public async Task RoundTripIsStable()
     {
         byte[] saved;

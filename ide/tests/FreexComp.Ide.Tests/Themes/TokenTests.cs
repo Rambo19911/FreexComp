@@ -90,6 +90,7 @@ public sealed partial class TokenTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Category", "Spec")]
     [Trait("Req", "UI-TOK-006")]
+    [Trait("Req", "UI-A11Y-040")]
     public void ContrastRulesHold()
     {
         var path = SpecTables.DocPath("spec/ui/design-tokens.md");

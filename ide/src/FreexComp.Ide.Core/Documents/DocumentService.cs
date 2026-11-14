@@ -12,6 +12,7 @@ using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Documents;
 

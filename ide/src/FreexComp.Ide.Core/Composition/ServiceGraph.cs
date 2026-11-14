@@ -8,6 +8,8 @@ using FreexComp.Ide.Core.Projects;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ToolWindows;
+using FreexComp.Ide.Core.Editing;
+using FreexComp.Ide.Core.Layout;
 
 namespace FreexComp.Ide.Core.Composition;
 
@@ -67,7 +69,6 @@ public static class ServiceGraph
         var prompts = new FilePrompts(platform.FileDialogs, platform.FileSystem, layout, settings, platform.UserPaths,
             projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
         OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, ImplementedPhase);
-        AboutViewModel.RegisterCommands(commands, platform.Dialogs, platform.UserPaths, platform.Clipboard, layout);
         ShellCommands.RegisterCommands(commands, platform.Shell, platform.FileSystem, platform.UserPaths, platform.Log);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.Layout = layout;
@@ -75,7 +76,8 @@ public static class ServiceGraph
         documents.Clipboard = platform.Clipboard;
         documents.Shell = platform.Shell;
         documents.RegisterCommands(commands);
-        KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
+        var help = new HelpService(platform.Dialogs, platform.UserPaths, platform.Clipboard, layout, documents, keymap);
+        help.RegisterCommands(commands);
         var fileChanges = new FileChangeService(documents, platform.FileSystem, platform.FileWatchers, platform.Clock, platform.Dispatcher,
             settings, status, platform.Log, commands);
         documents.WriteGuard = fileChanges.BeginOwnWrite;
@@ -179,6 +181,7 @@ public static class ServiceGraph
             Find = find,
             Navigation = navigation,
             Application = application,
+            Help = help,
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;

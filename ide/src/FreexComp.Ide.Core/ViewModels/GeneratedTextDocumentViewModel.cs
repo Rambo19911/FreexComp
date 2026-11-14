@@ -2,6 +2,7 @@ using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Text;
+using FreexComp.Ide.Core.Editing;
 
 namespace FreexComp.Ide.Core.ViewModels;
 

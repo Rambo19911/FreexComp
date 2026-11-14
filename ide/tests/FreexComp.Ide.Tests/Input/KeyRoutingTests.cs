@@ -21,6 +21,7 @@ public sealed class KeyRoutingTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-KEY-004")]
     [Trait("Req", "IDE-ARCH-043")]
+    [Trait("Req", "IDE-SET-063")]
     public async Task InnermostScopeWins()
     {
         await using var h = await HeadlessHarness.StartAsync();

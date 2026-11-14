@@ -9,6 +9,7 @@ public sealed class ArchitectureTests
     [Fact]
     [Trait("Phase", "1")]
     [Trait("Req", "IDE-ARCH-001")]
+    [Trait("Req", "IDE-ARCH-052")]
     public void CoreHasNoUiReferences()
     {
         Assert.Empty(UiReferences(Assembly.Load("FreexComp.Ide.Core")));
@@ -20,6 +21,25 @@ public sealed class ArchitectureTests
     public void DesignerHasNoUiReferences()
     {
         Assert.Empty(UiReferences(Assembly.Load("FreexComp.Designer")));
+    }
+
+    /// <summary>
+    /// IDE-ARCH-004 (Phase 1 gate N2): services may use view-models only through interfaces; the concrete view-models
+    /// are created by their owners outside <c>Services</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "1")]
+    [Trait("Req", "IDE-ARCH-004")]
+    public void ServicesUseViewModelInterfacesOnly()
+    {
+        var core = typeof(Composition.IdeServices).Assembly;
+        var concrete = IlReferences.Read(core.Location)
+            .Where(r => r.UserNamespace.StartsWith("FreexComp.Ide.Core.Services", StringComparison.Ordinal))
+            .Where(r => r.TargetType.StartsWith("FreexComp.Ide.Core.ViewModels.", StringComparison.Ordinal))
+            .Where(r => core.GetType(r.TargetType) is not { IsInterface: true })
+            .Select(r => $"{r.UserType} uses {r.TargetType}{(r.Member is null ? "" : "." + r.Member)}")
+            .Distinct().Order(StringComparer.Ordinal).ToList();
+        Assert.True(concrete.Count == 0, string.Join(Environment.NewLine, concrete));
     }
 
     /// <summary>

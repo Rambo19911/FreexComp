@@ -35,6 +35,7 @@ public sealed class PlatformServicesTests
 
     [AvaloniaFact]
     [Trait("Req", "IDE-ARCH-012")]
+    [Trait("Req", "IDE-ARCH-080")]
     public async Task DispatcherAcceptsPostsFromOtherThreads()
     {
         IUiDispatcher dispatcher = new AvaloniaUiDispatcher();

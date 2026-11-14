@@ -261,6 +261,7 @@ public sealed class OptionsDialogTests
         running = h.Services.Commands.ExecuteAsync("tools.options", OptionsViewModel.EditorGeneralPage);
         dlg = await h.WaitForDialogAsync("Options");
         Assert.Equal("Editor › General", PageTitle(dlg));
+        Assert.Equal("Code assistance", ((OptionsViewModel)dlg.Window.Model).Field("CompletionAuto").GroupHeading); // menus.md N4
 
         // Selecting a group row selects its first child; a later-phase page shows the note and no editable content.
         dlg.Click("Page.Designer");

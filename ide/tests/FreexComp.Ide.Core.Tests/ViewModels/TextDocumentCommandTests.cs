@@ -15,6 +15,7 @@ public sealed class TextDocumentCommandTests
 
     [Fact]
     [Trait("Req", "IDE-ARCH-030")]
+    [Trait("Req", "IDE-P1-095")]
     public async Task UndoRedoUseTheBufferAndFollowItsState()
     {
         var doc = Create("abc");

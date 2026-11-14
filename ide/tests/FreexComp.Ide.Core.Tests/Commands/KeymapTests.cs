@@ -17,6 +17,7 @@ public sealed partial class KeymapTests
     [Trait("Req", "UI-KEY-009")]
     [Trait("Req", "UI-KEY-003")]
     [Trait("Req", "UI-KEY-004")]
+    [Trait("Req", "IDE-SET-063")]
     public void DefaultKeymapHasNoConflicts()
     {
         var bindings = DefaultKeymap.Bindings;

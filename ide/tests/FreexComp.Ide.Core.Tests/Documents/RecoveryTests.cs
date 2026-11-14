@@ -126,6 +126,7 @@ public sealed class RecoveryTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-123")]
     [Trait("Req", "IDE-P1-124")]
+    [Trait("Req", "IDE-SET-101")]
     public async Task OrphanedCopiesAreOfferedOnStart()
     {
         var saved = new DateTime(2025, 12, 31, 23, 15, 0, DateTimeKind.Utc);
@@ -193,6 +194,7 @@ public sealed class RecoveryTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-122")]
     [Trait("Req", "IDE-P1-035")]
+    [Trait("Req", "IDE-SET-101")]
     public async Task CopyDeletedOnSaveAndClose()
     {
         var saved = await OpenAsync(@"C:\p\Saved.pas", "s");

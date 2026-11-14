@@ -14,6 +14,7 @@ public sealed class AutomationIdTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-A11Y-030")]
     [Trait("Req", "UI-A11Y-035")]
+    [Trait("Req", "IDE-ARCH-056")]
     public async Task AllInteractiveControlsHaveIds()
     {
         await using var h = await HeadlessHarness.StartAsync();
@@ -84,6 +85,7 @@ public sealed class AutomationIdTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-A11Y-033")]
     [Trait("Req", "UI-A11Y-034")]
+    [Trait("Req", "UI-A11Y-032")]
     public void BuildersFollowTheFixedTable()
     {
         Assert.Equal("Menu.file.saveAll", AutomationIds.Menu("file.saveAll"));
