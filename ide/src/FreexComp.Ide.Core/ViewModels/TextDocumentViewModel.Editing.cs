@@ -15,6 +15,7 @@ public partial class TextDocumentViewModel
     [
         "edit.duplicateLine", "edit.deleteLine", "edit.moveLineUp", "edit.moveLineDown", "edit.toggleLineComment",
         "edit.toggleBlockComment", "edit.upperCase", "edit.lowerCase", "edit.trimTrailingWhitespace", "edit.indent", "edit.outdent",
+        ToggleOverwriteCommandId,
     ];
 
     /// <summary>A status-bar message for the user (an operation that could not be done), already formatted.</summary>
@@ -30,6 +31,7 @@ public partial class TextDocumentViewModel
         }
         set
         {
+            ViewState.RectangularSelection = false;
             ViewState.SelectionAnchor = value.IsEmpty ? null : Buffer.GetPosition(value.Anchor);
             ViewState.Caret = Buffer.GetPosition(value.Caret);
         }
@@ -42,6 +44,8 @@ public partial class TextDocumentViewModel
 
     private bool CanExecuteEditing(string commandId)
     {
+        if (commandId == ToggleOverwriteCommandId)
+            return CanToggleOverwrite;
         if (Buffer.IsReadOnly)
             return false; // menus.md: "text and writable"
         var selection = Selection;
@@ -59,6 +63,8 @@ public partial class TextDocumentViewModel
 
     private bool ExecuteEditing(string commandId)
     {
+        if (commandId == ToggleOverwriteCommandId)
+            return ToggleOverwrite();
         var selection = Selection;
         var tabWidth = Options.TabWidth;
         string? refused = null;
@@ -80,7 +86,7 @@ public partial class TextDocumentViewModel
         };
         if (refused is not null)
             StatusMessage?.Invoke(this, Strings.ResourceManager.GetString(refused, Strings.Culture) ?? refused);
-        return Apply(result);
+        return Command(() => Apply(result));
     }
 
     /// <summary>Applies <paramref name="result"/> as one undo step (refused while read-only) and selects its selection.</summary>
@@ -98,26 +104,6 @@ public partial class TextDocumentViewModel
     public IndentOptions IndentOptions => new(Math.Max(1, Options.TabWidth), Options.InsertSpaces, Options.AutoIndent, Options.SmartHome);
 
     /// <summary>
-    /// Typed text (the editor view's text input): replaces the selection through <see cref="TryInsertText"/>; a typed
-    /// closer is re-indented in the same undo step (IDE-ED-008).
-    /// </summary>
-    public bool TypeText(string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-        var selection = Selection;
-        var before = Buffer.Length;
-        using (Buffer.OpenUndoGroup())
-        {
-            if (!TryInsertText(selection.Start, selection.End - selection.Start, text))
-                return false;
-            Selection = TextSelection.At(selection.End + Buffer.Length - before);
-            Apply(EditorOperations.ReindentCloser(Buffer, Selection.Caret, IndentOptions, _language.IndentRules));
-        }
-
-        return true;
-    }
-
-    /// <summary>
     /// A key the editor view passes on when the keymap did not take it (gesture text of <c>KeyGesture</c>): Tab,
     /// Shift+Tab, Backspace, Enter and Home with the indentation rules of editor-features.md §2. True when handled;
     /// on a read-only document an edit is refused with <see cref="ReadOnlyEditRefused"/>.
@@ -130,16 +116,21 @@ public partial class TextDocumentViewModel
         switch (gesture)
         {
             case "Tab":
-                Apply(EditorOperations.Tab(Buffer, selection, options));
+                Command(() => Apply(EditorOperations.Tab(Buffer, selection, options)));
                 return true;
             case "Shift+Tab":
-                Apply(EditorOperations.Outdent(Buffer, selection, options));
+                Command(() => Apply(EditorOperations.Outdent(Buffer, selection, options)));
                 return true;
             case "Backspace" or "Shift+Backspace":
-                Apply(EditorOperations.Backspace(Buffer, selection, options));
+                if (Block is { } block)
+                    Command(() => ReplaceBlock(block.Left < block.Right ? block : block with { Left = Math.Max(0, block.Left - 1) }, ""));
+                else if (!selection.IsEmpty || _pairs.Exists(p => p.Opener == selection.Caret - 1 && p.Closer == selection.Caret))
+                    Command(() => PairDelete(selection) ?? Apply(EditorOperations.Backspace(Buffer, selection, options)));
+                else if (EditorOperations.Backspace(Buffer, selection, options) is { } backspace)
+                    DeleteKey(EditKind.Backspace, Buffer.GetText(backspace.Edits[0].Offset, backspace.Edits[0].Length), () => Apply(backspace));
                 return true;
             case "Enter" or "Shift+Enter":
-                Apply(EditorOperations.Enter(Buffer, selection, options, _language.IndentRules, LineEnding.NewLine));
+                Command(() => Apply(EditorOperations.Enter(Buffer, selection, options, _language.IndentRules, LineEnding.NewLine)));
                 return true;
             case "Home" or "Shift+Home":
                 Selection = EditorOperations.Home(Buffer, selection, options, extend: gesture == "Shift+Home");

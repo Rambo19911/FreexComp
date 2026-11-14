@@ -76,5 +76,12 @@ public interface ITextBuffer
     /// <summary>Changes until disposal form one undo step; nested groups merge into the outermost.</summary>
     IDisposable OpenUndoGroup(string? title = null);
 
+    /// <summary>
+    /// As <see cref="OpenUndoGroup"/>, but the changes join the previous undo step (typing grouping, IDE-P1-091) when
+    /// the last thing that happened was closing that step: not after an undo, a redo, <see cref="MarkSavePoint"/> or a
+    /// reset of the history.
+    /// </summary>
+    IDisposable OpenContinuedUndoGroup();
+
     event EventHandler<TextChangedEventArgs>? Changed;
 }

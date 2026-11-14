@@ -59,6 +59,7 @@ public static class ServiceGraph
         ShellCommands.RegisterCommands(commands, platform.Shell, platform.FileSystem, platform.UserPaths, platform.Log);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.Layout = layout;
+        documents.Clock = platform.Clock;
         documents.RegisterCommands(commands);
         KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
         projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,

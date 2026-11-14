@@ -19,6 +19,8 @@ public sealed class StringTextBuffer : ITextBuffer
     private List<Change>? _group;
     private int _groupDepth;
     private bool _replaying;
+    // The last thing that happened was closing an undo step (OpenContinuedUndoGroup may reopen it).
+    private bool _canContinue;
     // Undo-stack depth of the save point; -1 when it can no longer be reached.
     private int _savePoint;
 
@@ -106,6 +108,7 @@ public sealed class StringTextBuffer : ITextBuffer
             _undo.Clear();
             _redo.Clear();
             _savePoint = 0;
+            _canContinue = false;
         }
     }
 
@@ -123,6 +126,7 @@ public sealed class StringTextBuffer : ITextBuffer
         ThrowIfReadOnly();
         ThrowIfGroupOpen();
         if (_undo.Count == 0) throw new InvalidOperationException("Nothing to undo.");
+        _canContinue = false;
         var step = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
         _redo.Add(step); // before the replay: Changed handlers see the new save-point state
@@ -134,18 +138,37 @@ public sealed class StringTextBuffer : ITextBuffer
         ThrowIfReadOnly();
         ThrowIfGroupOpen();
         if (_redo.Count == 0) throw new InvalidOperationException("Nothing to redo.");
+        _canContinue = false;
         var step = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
         _undo.Add(step); // before the replay: Changed handlers see the new save-point state
         Replay(step);
     }
 
-    public void MarkSavePoint() => _savePoint = _undo.Count;
+    public void MarkSavePoint()
+    {
+        _savePoint = _undo.Count;
+        _canContinue = false;
+    }
 
     public IDisposable OpenUndoGroup(string? title = null)
     {
         if (_groupDepth++ == 0) _group = [];
         return new GroupScope(this);
+    }
+
+    public IDisposable OpenContinuedUndoGroup()
+    {
+        if (_groupDepth == 0 && _canContinue && _undo.Count > 0)
+        {
+            // The previous step is reopened: its changes stay first in the group.
+            _groupDepth++;
+            _group = _undo[^1];
+            _undo.RemoveAt(_undo.Count - 1);
+            return new GroupScope(this);
+        }
+
+        return OpenUndoGroup();
     }
 
     private void CloseUndoGroup()
@@ -157,6 +180,7 @@ public sealed class StringTextBuffer : ITextBuffer
         if (_savePoint > _undo.Count) _savePoint = -1; // the save point was in the discarded redo history
         _redo.Clear();
         _undo.Add(group);
+        _canContinue = true;
     }
 
     private void Replay(IEnumerable<Change> changes)

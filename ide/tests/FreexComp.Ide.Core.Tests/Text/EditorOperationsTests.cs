@@ -86,14 +86,13 @@ public sealed class EditorOperationsTests
     /// <summary>Rules of editor-features.md §2–§4 and §7 whose behaviour arrives with a later task (no case yet).</summary>
     private static readonly Dictionary<string, string> Pending = new(StringComparer.Ordinal)
     {
-        ["IDE-ED-020"] = "I-050", ["IDE-ED-021"] = "I-050", ["IDE-ED-022"] = "I-050", ["IDE-ED-023"] = "I-050",
-        ["IDE-ED-024"] = "I-120", ["IDE-ED-025"] = "I-050", ["IDE-ED-026"] = "I-050", ["IDE-ED-038"] = "I-054",
+        ["IDE-ED-024"] = "I-120", ["IDE-ED-038"] = "I-054",
         ["IDE-ED-039"] = "I-055", ["IDE-ED-040"] = "I-055", ["IDE-ED-070"] = "I-052", ["IDE-ED-071"] = "I-052",
         ["IDE-ED-072"] = "I-052", ["IDE-ED-073"] = "I-052", ["IDE-ED-074"] = "I-053",
     };
 
     /// <summary>Rules the case format cannot express; a test elsewhere under <c>ide/tests</c> carries their <c>Req</c> trait.</summary>
-    private static readonly string[] CoveredElsewhere = ["IDE-ED-010", "IDE-ED-012", "IDE-ED-045", "IDE-ED-046"];
+    private static readonly string[] CoveredElsewhere = ["IDE-ED-010", "IDE-ED-012", "IDE-ED-026", "IDE-ED-045", "IDE-ED-046"];
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-TEST-021")]

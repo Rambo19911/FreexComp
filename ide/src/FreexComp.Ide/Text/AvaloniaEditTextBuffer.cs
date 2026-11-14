@@ -27,6 +27,9 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
     private bool _replaying;
     private readonly List<Core.Text.TextChangedEventArgs> _replayed = [];
     private int _groupDepth;
+    private long _groupStartVersion;
+    // The last thing that happened was closing an undo step of ours (OpenContinuedUndoGroup may join it).
+    private bool _canContinue;
 
     public AvaloniaEditTextBuffer(string text, LineEndingKind defaultLineEnding)
     {
@@ -123,6 +126,7 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
     {
         ThrowIfReadOnly();
         if (!Document.UndoStack.CanUndo) throw new InvalidOperationException("Nothing to undo.");
+        _canContinue = false;
         Replay(Document.UndoStack.Undo, () =>
         {
             if (_side != SavePointSide.Lost)
@@ -135,6 +139,7 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
     {
         ThrowIfReadOnly();
         if (!Document.UndoStack.CanRedo) throw new InvalidOperationException("Nothing to redo.");
+        _canContinue = false;
         Replay(Document.UndoStack.Redo, () =>
         {
             if (_side != SavePointSide.Lost)
@@ -147,11 +152,29 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
     {
         Document.UndoStack.MarkAsOriginalFile();
         _side = SavePointSide.At;
+        _canContinue = false;
     }
 
     public IDisposable OpenUndoGroup(string? title = null)
     {
+        if (_groupDepth == 0)
+            _groupStartVersion = Version;
         Document.UndoStack.StartUndoGroup(title);
+        _groupDepth++;
+        return new GroupScope(this);
+    }
+
+    /// <summary>
+    /// AvaloniaEdit's continued group merges with the top undo step whenever its stack allows it; the conditions of
+    /// <see cref="ITextBuffer.OpenContinuedUndoGroup"/> (nothing undone, redone or saved since) are checked here, so the
+    /// save point never ends up inside a merged step.
+    /// </summary>
+    public IDisposable OpenContinuedUndoGroup()
+    {
+        if (_groupDepth > 0 || !_canContinue)
+            return OpenUndoGroup();
+        _groupStartVersion = Version;
+        Document.UndoStack.StartContinuedUndoGroup(null);
         _groupDepth++;
         return new GroupScope(this);
     }
@@ -160,6 +183,8 @@ public sealed class AvaloniaEditTextBuffer : ITextBuffer
     {
         _groupDepth--;
         Document.UndoStack.EndUndoGroup();
+        if (_groupDepth == 0 && Version != _groupStartVersion)
+            _canContinue = true;
     }
 
     /// <summary>

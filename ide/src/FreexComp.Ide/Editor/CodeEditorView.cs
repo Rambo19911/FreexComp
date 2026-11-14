@@ -166,20 +166,20 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         switch (commandId)
         {
             case CopyCommandId:
-                await SetClipboardAsync(area.Selection.GetText());
+                await SetClipboardAsync(document.CopySelection());
                 return true;
             case CutCommandId:
-                var cut = area.Selection.GetText();
-                if (InsertAtSelection(document, ""))
+                var cut = document.CopySelection();
+                if (document.DeleteSelection())
                     await SetClipboardAsync(cut);
                 return true;
             case PasteCommandId:
                 if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard && await clipboard.TryGetTextAsync() is { Length: > 0 } text
                     && _document == document)
-                    InsertAtSelection(document, text);
+                    document.Paste(text);
                 return true;
             case DeleteCommandId:
-                DeleteForward(document);
+                document.DeleteForward();
                 return true;
             case SelectAllCommandId:
                 area.Selection = Selection.Create(area, 0, area.Document.TextLength);
@@ -247,6 +247,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             old.Options.PropertyChanged -= OnOptionsChanged;
             old.Decorations.Changed -= OnDecorationsChanged;
             old.Folding.Changed -= OnFoldingChanged;
+            old.RevealCaretRequested -= OnRevealCaretRequested;
         }
 
         SetColorizer(null);
@@ -261,6 +262,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             return;
 
         _editor.IsReadOnly = document.IsReadOnly;
+        _editor.TextArea.OverstrikeMode = document.ViewState.Overwrite;
         SetAutomationIds(document);
         ApplySelection(document);
         SetColorizer(document);
@@ -273,6 +275,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         document.Options.PropertyChanged += OnOptionsChanged;
         document.Decorations.Changed += OnDecorationsChanged;
         document.Folding.Changed += OnFoldingChanged;
+        document.RevealCaretRequested += OnRevealCaretRequested;
         SyncFoldings();
 
         // The scroll offsets can be applied once the editor has measured its text.
@@ -526,6 +529,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             editorOptions.ColumnRulerPositions = [options.RightMargin];
         editorOptions.ShowSpaces = options.ShowWhitespace;
         editorOptions.ShowTabs = options.ShowWhitespace;
+        editorOptions.EnableRectangularSelection = options.RectangularSelection; // IDE-ED-026
+        editorOptions.IndentationSize = Math.Max(1, options.TabWidth);
         InvalidateBackground();
     }
 
@@ -593,9 +598,34 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     /// <summary>Core changed the caret or selection (revert, save trimming): the editor follows.</summary>
     private void OnViewStatePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (!_applying && _document is { } document
-            && e.PropertyName is nameof(EditorViewState.Caret) or nameof(EditorViewState.SelectionAnchor))
+        if (_applying || _document is not { } document)
+            return;
+        if (e.PropertyName is nameof(EditorViewState.Caret) or nameof(EditorViewState.SelectionAnchor) or nameof(EditorViewState.RectangularSelection))
             ApplySelection(document);
+        else if (e.PropertyName == nameof(EditorViewState.Overwrite))
+            _editor.TextArea.OverstrikeMode = document.ViewState.Overwrite; // UI-ED-052: block caret
+    }
+
+    /// <summary>
+    /// Scrolls the template's <see cref="ScrollViewer"/> vertically just enough to show the caret line
+    /// (AvaloniaEdit 12's own scrolling does not move it).
+    /// </summary>
+    private void OnRevealCaretRequested(object? sender, EventArgs e) => ScrollCaretIntoView();
+
+    private void ScrollCaretIntoView()
+    {
+        if (_scrollPending || _editor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is not { } scroller)
+            return;
+        var textView = _editor.TextArea.TextView;
+        var top = textView.GetVisualTopByDocumentLine(_editor.TextArea.Caret.Line);
+        var bottom = top + textView.DefaultLineHeight;
+        var y = scroller.Offset.Y;
+        if (top < y)
+            y = top;
+        else if (bottom > y + scroller.Viewport.Height)
+            y = bottom - scroller.Viewport.Height;
+        if (y != scroller.Offset.Y)
+            scroller.Offset = new Vector(scroller.Offset.X, Math.Max(0, y));
     }
 
     private void ApplySelection(TextDocumentViewModel document)
@@ -607,8 +637,10 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         {
             var caret = OffsetOf(document.Buffer, state.Caret);
             area.Caret.Offset = caret;
-            if (state.SelectionAnchor is { } anchor && OffsetOf(document.Buffer, anchor) != caret)
-                area.Selection = Selection.Create(area, OffsetOf(document.Buffer, anchor), caret);
+            if (state.SelectionAnchor is { } anchor && state.RectangularSelection)
+                area.Selection = new RectangleSelection(area, Position(document.Buffer, anchor), Position(document.Buffer, state.Caret));
+            else if (state.SelectionAnchor is { } linear && OffsetOf(document.Buffer, linear) != caret)
+                area.Selection = Selection.Create(area, OffsetOf(document.Buffer, linear), caret);
             else
                 area.ClearSelection();
         }
@@ -620,6 +652,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
     private static int OffsetOf(ITextBuffer buffer, TextPosition position) =>
         buffer.GetOffset(Math.Clamp(position.Line, 1, buffer.LineCount), position.Column);
+
+    private static TextViewPosition Position(ITextBuffer buffer, TextPosition position)
+    {
+        var clamped = buffer.GetPosition(OffsetOf(buffer, position));
+        return new TextViewPosition(clamped.Line, clamped.Column);
+    }
 
     private void MirrorSelection()
     {
@@ -634,6 +672,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             state.SelectionAnchor = area.Selection.IsEmpty
                 ? null
                 : new TextPosition(area.Selection.StartPosition.Line, area.Selection.StartPosition.Column);
+            state.RectangularSelection = area.Selection is RectangleSelection && !area.Selection.IsEmpty;
         }
         finally
         {
@@ -686,40 +725,6 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         if (key is null || (e.KeyModifiers != Avalonia.Input.KeyModifiers.None && e.KeyModifiers != Avalonia.Input.KeyModifiers.Shift))
             return;
         e.Handled = document.HandleKey(e.KeyModifiers == Avalonia.Input.KeyModifiers.Shift ? "Shift+" + key : key);
-    }
-
-    /// <summary>Replaces the selection (or inserts at the caret) through the document; the caret ends after the text.</summary>
-    private bool InsertAtSelection(TextDocumentViewModel document, string text)
-    {
-        var area = _editor.TextArea;
-        var (offset, length) = area.Selection.IsEmpty
-            ? (area.Caret.Offset, 0)
-            : (area.Selection.SurroundingSegment.Offset, area.Selection.SurroundingSegment.Length);
-        var before = document.Buffer.Length;
-        if (!document.TryInsertText(offset, length, text))
-            return false;
-        area.ClearSelection();
-        area.Caret.Offset = offset + document.Buffer.Length - before + length;
-        return true;
-    }
-
-    /// <summary><c>edit.delete</c>: the selection, else the character after the caret (a CRLF pair or a surrogate pair as one).</summary>
-    private void DeleteForward(TextDocumentViewModel document)
-    {
-        var area = _editor.TextArea;
-        if (!area.Selection.IsEmpty)
-        {
-            InsertAtSelection(document, "");
-            return;
-        }
-
-        var offset = area.Caret.Offset;
-        var next = area.Document.GetText(offset, Math.Min(2, area.Document.TextLength - offset));
-        if (next.Length == 0)
-            return;
-        var length = next is "\r\n" || (next.Length == 2 && char.IsSurrogatePair(next[0], next[1])) ? 2 : 1;
-        if (document.TryInsertText(offset, length, ""))
-            area.Caret.Offset = offset;
     }
 
     private async Task SetClipboardAsync(string text)

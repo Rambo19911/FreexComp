@@ -53,11 +53,24 @@ public sealed class EditorViewState : ObservableObject
         set => SetProperty(ref _selectionAnchor, value);
     }
 
+    /// <summary>Overwrite mode (IDE-ED-025): per document, for the IDE session only (not stored).</summary>
     public bool Overwrite
     {
         get => _overwrite;
         set => SetProperty(ref _overwrite, value);
     }
+
+    /// <summary>
+    /// The selection is a column block (IDE-ED-026): the lines from <see cref="SelectionAnchor"/> to <see cref="Caret"/>,
+    /// between their visual columns. Not stored in the session.
+    /// </summary>
+    public bool RectangularSelection
+    {
+        get => _rectangularSelection;
+        set => SetProperty(ref _rectangularSelection, value);
+    }
+
+    private bool _rectangularSelection;
 
     /// <summary>
     /// 1-based start lines of the folded regions, ascending (architecture.md §8.2 <c>folds</c>). Kept current by the

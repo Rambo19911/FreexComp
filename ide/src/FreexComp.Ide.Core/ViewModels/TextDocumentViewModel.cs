@@ -45,6 +45,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _savedLineEnding = LineEnding.Kind;
         _lineChanges = _lineChangeTracker = new LineChangeTracker(buffer);
         Folding = new FoldingModel(buffer, ViewState, language.CreateFoldingProvider());
+        InitTyping();
 
         buffer.Changed += (_, _) => OnPropertyChanged(nameof(IsModified));
         LineEnding.KindChanged += (_, _) =>
@@ -137,14 +138,26 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         }
 
         if (commandId is not (UndoCommandId or RedoCommandId))
-            return LineEnding.ExecuteAsync(commandId, argument);
+            return ExecuteLineEndingAsync(commandId, argument);
         if (!((ICommandTarget)this).CanExecute(commandId, argument))
             return Task.FromResult(false);
         if (commandId == UndoCommandId)
-            Buffer.Undo();
+            UndoStep();
         else
-            Buffer.Redo();
+            RedoStep();
         return Task.FromResult(true);
+    }
+
+    /// <summary><c>edit.convertLineEndings</c> (one undo step, IDE-P1-077) keeps the selections around it for undo/redo.</summary>
+    private async Task<bool> ExecuteLineEndingAsync(string commandId, string? argument)
+    {
+        var before = CurrentSelection;
+        var version = Buffer.Version;
+        var result = await LineEnding.ExecuteAsync(commandId, argument);
+        if (Buffer.Version != version)
+            RecordStep(before, version, continued: false);
+        EndEdit(EditKind.None, whitespace: false);
+        return result;
     }
 
     private const string UndoCommandId = "edit.undo";
@@ -225,6 +238,8 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _savedEncoding = _encoding;
         _savedLineEnding = LineEnding.Kind;
         _lineChangeTracker.Reset(); // IDE-ED-045
+        ForgetSelections(); // the undo history is gone
+        EndEdit(EditKind.None, whitespace: false);
         ViewState.Caret = Buffer.GetPosition(Buffer.GetOffset(Math.Clamp(caret.Line, 1, Buffer.LineCount), caret.Column));
         ShowLoadInfoBars(encodingFallback: false);
         OnPropertyChanged(nameof(IsModified));

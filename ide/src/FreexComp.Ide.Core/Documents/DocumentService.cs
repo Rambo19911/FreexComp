@@ -27,6 +27,7 @@ public sealed class DocumentService : IDocumentService
     private readonly ILanguageRegistry _languages;
     private readonly ISettingsService _settings;
     private readonly EditorOptions _editorOptions;
+    private readonly BlockClipboard _blockClipboard = new();
     private readonly IStatusService _status;
     private readonly IFocusTracker _focus;
     private readonly IDialogService _dialogs;
@@ -74,6 +75,9 @@ public sealed class DocumentService : IDocumentService
 
     /// <summary>The UI state holding the Documents dialog size (UI-DLG-005; set by the service graph).</summary>
     public ILayoutService? Layout { get; set; }
+
+    /// <summary>Typing pauses for undo grouping (IDE-P1-091; set by the service graph).</summary>
+    public IClock? Clock { get; set; }
 
     /// <summary>Creates the Welcome page (welcome-page.md; set by the service graph).</summary>
     public Func<WelcomeDocumentViewModel>? WelcomeFactory { get; set; }
@@ -632,7 +636,11 @@ public sealed class DocumentService : IDocumentService
     private void Add(DocumentViewModel document)
     {
         if (document is TextDocumentViewModel textDocument)
+        {
             textDocument.Options = _editorOptions;
+            textDocument.BlockClipboard = _blockClipboard;
+            textDocument.Clock = Clock;
+        }
         var index = ActiveDocument is null ? _documents.Count : _documents.IndexOf(ActiveDocument) + 1;
         _documents.Insert(index, document);
         var modified = document.IsModified;

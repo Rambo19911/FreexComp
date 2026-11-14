@@ -1,0 +1,65 @@
+# name: IDE-ED-020 auto-close bracket before a semicolon
+--- before
+X·:=·F|;
+--- action
+type (
+--- after
+X·:=·F(|);
+====
+# name: IDE-ED-020 no closer before an identifier
+--- before
+X·:=·|Y;
+--- action
+type (
+--- after
+X·:=·(|Y;
+====
+# name: IDE-ED-020 quote closed after a space, not inside a comment
+--- before
+S·:=·|;·//·it
+--- action
+type '
+--- after
+S·:=·'|';·//·it
+====
+# name: IDE-ED-020 no closing quote inside a comment
+--- before
+S·:=·1;·//·it|
+--- action
+type '
+--- after
+S·:=·1;·//·it'|
+====
+# name: IDE-ED-021 type-over steps over auto-inserted closers
+--- before
+X·:=·F|;
+--- action
+type ([1])
+--- after
+X·:=·F([1])|;
+====
+# name: IDE-ED-022 Backspace deletes an auto-inserted pair
+--- before
+X·:=·F|;
+--- action
+type (
+key Backspace
+--- after
+X·:=·F|;
+====
+# name: IDE-ED-023 selection wrapped in brackets stays selected
+--- before
+X·:=·‹A·+·B›;
+--- action
+type (
+--- after
+X·:=·(‹A·+·B›);
+====
+# name: IDE-ED-025 overwrite replaces the character at the caret
+--- before
+X·:=·|12;
+--- action
+command edit.toggleOverwrite
+type 34
+--- after
+X·:=·34|;

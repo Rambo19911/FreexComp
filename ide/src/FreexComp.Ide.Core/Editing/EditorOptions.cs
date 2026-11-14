@@ -22,6 +22,8 @@ public sealed class EditorOptions : INotifyPropertyChanged
         [SettingsCatalog.EditorInsertSpaces.Name] = nameof(InsertSpaces),
         [SettingsCatalog.EditorAutoIndent.Name] = nameof(AutoIndent),
         [SettingsCatalog.EditorSmartHome.Name] = nameof(SmartHome),
+        [SettingsCatalog.EditorAutoCloseBrackets.Name] = nameof(AutoCloseBrackets),
+        [SettingsCatalog.EditorRectangularSelection.Name] = nameof(RectangularSelection),
     };
 
     private readonly ISettingsService? _settings;
@@ -68,6 +70,12 @@ public sealed class EditorOptions : INotifyPropertyChanged
     public bool AutoIndent => Get(SettingsCatalog.EditorAutoIndent);
 
     public bool SmartHome => Get(SettingsCatalog.EditorSmartHome);
+
+    /// <summary>IDE-ED-020/023: <c>editor.autoCloseBrackets</c>.</summary>
+    public bool AutoCloseBrackets => Get(SettingsCatalog.EditorAutoCloseBrackets);
+
+    /// <summary>IDE-ED-026: <c>editor.rectangularSelection</c> (Alt+drag, Alt+Shift+Arrows).</summary>
+    public bool RectangularSelection => Get(SettingsCatalog.EditorRectangularSelection);
 
     /// <summary>
     /// The style of a syntax token in a theme: <c>colors.&lt;theme&gt;.&lt;token&gt;.style</c> (<c>regular</c>,

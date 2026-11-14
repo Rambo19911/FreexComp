@@ -22,6 +22,47 @@ public abstract class TextBufferContractTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-091")]
+    public void ContinuedUndoGroupJoinsThePreviousStep()
+    {
+        var b = CreateBuffer("");
+        b.ApplyEdits([new TextEdit(0, 0, "a")]);
+        using (b.OpenContinuedUndoGroup())
+            b.ApplyEdits([new TextEdit(1, 0, "b")]);
+        using (b.OpenContinuedUndoGroup())
+            b.ApplyEdits([new TextEdit(2, 0, "c")]);
+        Assert.False(b.IsAtSavePoint);
+        b.Undo();
+        Assert.Equal("", b.Text); // one step
+        Assert.True(b.IsAtSavePoint);
+
+        // Not after an undo or redo: the redone step stays as it was.
+        b.Redo();
+        using (b.OpenContinuedUndoGroup())
+            b.ApplyEdits([new TextEdit(3, 0, "d")]);
+        b.Undo();
+        Assert.Equal("abc", b.Text);
+
+        // Not across a save point: undoing the new text returns exactly to the saved state.
+        b.MarkSavePoint();
+        using (b.OpenContinuedUndoGroup())
+            b.ApplyEdits([new TextEdit(3, 0, "e")]);
+        using (b.OpenContinuedUndoGroup())
+            b.ApplyEdits([new TextEdit(4, 0, "f")]);
+        Assert.False(b.IsAtSavePoint);
+        b.Undo();
+        Assert.Equal("abc", b.Text);
+        Assert.True(b.IsAtSavePoint);
+        b.Undo();
+        Assert.Equal("", b.Text);
+        Assert.False(b.IsAtSavePoint);
+        b.Redo();
+        b.Redo();
+        Assert.Equal("abcef", b.Text);
+        Assert.False(b.CanRedo);
+    }
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-032")]
     public void ApplyEditsIsOneUndoStep()
     {
