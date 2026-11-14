@@ -130,7 +130,7 @@ internal sealed class LoweringContext
             (_, true) => Types.Int64,
             _ => Types.UInt64,
         },
-        CharTypeSymbol or BooleanTypeSymbol => Types.Integer,
+        CharTypeSymbol or BooleanTypeSymbol or EnumTypeSymbol => Types.Integer,
         _ => throw new InvalidOperationException($"'{ordinal.Name}' is not an ordinal type."),
     };
 
@@ -249,6 +249,8 @@ internal sealed class LoweringContext
                 return new LCall(new LRoutineCallee(call.Routine), Arguments(call.Routine, call.Arguments));
             case BoundIntrinsicCallExpression intrinsic:
                 return IntrinsicRewriter.Rewrite(this, intrinsic);
+            case BoundSetConstructor constructor:
+                return SetRewriter.Constructor(this, constructor);
             default:
                 throw new InvalidOperationException($"Cannot lower {expression.Kind}.");
         }
@@ -256,6 +258,11 @@ internal sealed class LoweringContext
 
     private LExpression Binary(BoundBinaryExpression binary)
     {
+        if (binary.OperandType is SetTypeSymbol)
+        {
+            return SetRewriter.Binary(this, binary);
+        }
+
         var left = Lower(binary.Left);
         var right = Lower(binary.Right);
         LCompareOperator? comparison = binary.OperatorKind switch

@@ -70,6 +70,8 @@ public sealed class BuiltInTypes
         Intrinsic("RunError", IntrinsicKind.RunError, "RunError[(ErrorCode: Integer)]");
         Intrinsic("Write", IntrinsicKind.Write, "Write([var F: Text;] Args)");
         Intrinsic("Writeln", IntrinsicKind.Writeln, "Writeln([var F: Text;] Args)");
+        Intrinsic("Include", IntrinsicKind.Include, "Include(var S: Set; Element)");
+        Intrinsic("Exclude", IntrinsicKind.Exclude, "Exclude(var S: Set; Element)");
         Intrinsic("Succ", IntrinsicKind.Succ, "Succ(X: Ordinal): Ordinal");
         Intrinsic("Pred", IntrinsicKind.Pred, "Pred(X: Ordinal): Ordinal");
         Intrinsic("Ord", IntrinsicKind.Ord, "Ord(X: Ordinal): Integer");
@@ -122,6 +124,9 @@ public sealed class BuiltInTypes
 
     /// <summary>The type of erroneous expressions (not declared in any scope).</summary>
     public TypeSymbol Error { get; } = new ErrorTypeSymbol();
+
+    /// <summary>The type of the constructor <c>[]</c> without context: compatible with every set type (LANG-251; in no scope).</summary>
+    public SetTypeSymbol EmptySet { get; } = new("[]", elementType: null, containingSymbol: null, locations: []);
 
     /// <summary>From unit <c>System</c>; null until System is bound or if it failed to load.</summary>
     public TypeSymbol? TObject { get; internal set; }

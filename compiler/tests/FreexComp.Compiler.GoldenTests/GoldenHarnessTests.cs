@@ -136,6 +136,22 @@ public sealed class GoldenHarnessTests : IDisposable
         Assert.Contains("m2.1/EmptyProgram", ids);
     }
 
+    /// <summary>CMP-911: every milestone directory of the corpus has its own golden test class (one collection each).</summary>
+    [Fact]
+    [Trait("Req", "CMP-911")]
+    public void Collections_OneTestClassPerMilestoneDirectory()
+    {
+        var directories = Directory.EnumerateDirectories(GoldenSetup.CorpusDirectory).Select(d => Path.GetFileName(d)).Order(StringComparer.Ordinal).ToList();
+        var classes = typeof(GoldenTheory).Assembly.GetTypes()
+            .Where(t => t.GetMethod("Cases") is not null && t.GetMethod("Golden") is not null)
+            .Select(t => ((IEnumerable<TheoryDataRow<string, string>>)t.GetMethod("Cases")!.Invoke(null, null)!).Select(r => r.Data.Item1.Split('/')[0]).Distinct().Single())
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(directories, GoldenTheory.Milestones.Order(StringComparer.Ordinal).ToList());
+        Assert.Equal(directories, classes);
+    }
+
     // ---- header comments (CMP-901, 904, 905) ----
 
     [Fact]

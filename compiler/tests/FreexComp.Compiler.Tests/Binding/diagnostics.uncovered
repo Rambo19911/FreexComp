@@ -12,21 +12,16 @@
 # A code with a case must not be listed; M2.1 is never a valid status.
 
 E2001  M2.4  declaration mismatch of a forward class / method
-E2005  M2.2  member access on records
 E2006  M2.2  qualification of a non-record/unit name
 E2007  M2.2  incomplete type (pointer forward, records)
 E2008  reserved  LANG-516 makes this unused
-E2014  M2.2  typed expression contexts of M2.2 types
 E2015  M2.2  ^T forward reference (LANG-208)
 E2016  M2.2  record/class/interface required (with, member access)
 E2017  M2.2  array type required (indexing)
 E2018  M2.2  pointer type required (dereference)
 E2019  M2.2  too many indexes
-E2020  M2.2  subrange bounds (LANG-211)
-E2021  M2.2  enumeration values (LANG-210)
 E2022  M2.2  circular type definition
 E2023  M2.2  result type restrictions (LANG-412)
-E2030  M2.2  set base range (LANG-250)
 E2031  M2.2  data structure too large
 E2032  M2.2  constant array index
 E2033  M2.2  address-of (@ on expressions)

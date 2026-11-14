@@ -227,7 +227,8 @@ internal static class IrEmitter
         (RealTypeSymbol { RealKind: not RealKind.Currency }, BigInteger i) => new IrFloatConstant((FloatingIrType)ValueType(type), (double)i),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, double d) => new IrFloatConstant((FloatingIrType)ValueType(type), d),
         (PointerTypeSymbol, null) => new IrNullConstant(),
-        (IntegerTypeSymbol or CharTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
+        (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
+        (SetTypeSymbol { IsSmall: true }, BigInteger mask) => new IrIntConstant((IntegerIrType)ValueType(type), mask),       // CMP-335
         _ => throw new NotSupportedException($"Constant {constant} of type '{type.Name}' is not emitted yet."),
     };
 

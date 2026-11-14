@@ -113,6 +113,9 @@ internal sealed class DeclarationBinder
                 case ConstSectionSyntax constSection:
                     BindConstSection(constSection, declared);
                     break;
+                case TypeSectionSyntax typeSection:
+                    BindTypeSection(typeSection, declared);
+                    break;
                 case VarSectionSyntax varSection:
                     BindVarSection(varSection, declared);
                     break;
@@ -159,6 +162,201 @@ internal sealed class DeclarationBinder
         }
     }
 
+    /// <summary>
+    /// LANG-205: <c>type T = U</c> declares <c>T</c> as another name of <c>U</c>; a type constructor (enumeration, subrange;
+    /// later milestones add the rest) creates a new type named <c>T</c>. Distinct types (<c>= type U</c>, C-057) and
+    /// generic types are E2900.
+    /// </summary>
+    private void BindTypeSection(TypeSectionSyntax section, ImmutableArray<Symbol>.Builder declared)
+    {
+        foreach (var declaration in section.Declarations)
+        {
+            var identifier = declaration.Identifier;
+            if (identifier.IsMissing)
+            {
+                continue;
+            }
+
+            TypeSymbol type;
+            if (declaration.TypeParameterList is { } typeParameters)
+            {
+                type = Unsupported(typeParameters, "generic type");           // M2.6
+            }
+            else if (declaration.TypeKeyword is { } distinct)
+            {
+                _diagnostics.Report(distinct, "E2900", "distinct type");     // LANG-205, C-057
+                type = _types.Error;
+            }
+            else
+            {
+                type = BindType(declaration.Type, identifier, declared);
+            }
+
+            var name = NameOf(identifier);
+            var previous = _sharedScope?.LookupLocal(name);
+            if (previous is null && _scope.TryDeclare(name, type, out previous))
+            {
+                declared.Add(type);
+            }
+            else
+            {
+                _diagnostics.ReportRedeclared(identifier, name, previous!);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ enumerations and subranges (LANG-210…212)
+
+    /// <summary>
+    /// LANG-210: ordinals 0, 1, 2… or explicit strictly ascending constants in 0..2^31−1 (E2021 at the value); the
+    /// elements are declared in this scope unless <c>{$SCOPEDENUMS ON}</c> held at the <c>(</c>.
+    /// </summary>
+    private EnumTypeSymbol BindEnum(EnumTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder declared)
+    {
+        var ordinals = new List<(EnumMemberSyntax Syntax, long Ordinal)>();
+        long next = 0;
+        foreach (var member in syntax.Members)
+        {
+            var ordinal = next;
+            if (member.Value is { } valueSyntax && _folder.Fold(valueSyntax) is { } value)
+            {
+                if (value is { Type: IntegerTypeSymbol, Value: System.Numerics.BigInteger explicitValue } && explicitValue >= next && explicitValue <= int.MaxValue)
+                {
+                    ordinal = (long)explicitValue;
+                }
+                else
+                {
+                    _diagnostics.Report(valueSyntax, "E2021");
+                }
+            }
+
+            ordinals.Add((member, ordinal));
+            next = ordinal + 1;
+        }
+
+        var state = syntax.OpenParenToken.DirectiveState;
+        var high = ordinals.Count == 0 ? 0 : ordinals[^1].Ordinal;
+        var type = new EnumTypeSymbol(name, EnumTypeSymbol.SizeFor(high, state.MinEnumSize), state.ScopedEnums, _container,
+            declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : []);
+        var members = ImmutableArray.CreateBuilder<EnumMemberSymbol>(ordinals.Count);
+        foreach (var (member, ordinal) in ordinals)
+        {
+            if (member.Identifier.IsMissing)
+            {
+                continue;
+            }
+
+            var symbol = new EnumMemberSymbol(NameOf(member.Identifier), type, ordinal, [DiagnosticBag.LocationOf(member.Identifier)]);
+            members.Add(symbol);
+            if (!type.IsScoped)
+            {
+                Declare(member.Identifier, symbol, declared);
+            }
+        }
+
+        type.SetMembers(members.ToImmutable());
+        return type;
+    }
+
+    /// <summary>
+    /// LANG-211/212: two constants of one ordinal type (E2010 otherwise; E2013 for non-ordinals), low ≤ high (E2020 at the
+    /// subrange). Integer subranges take the LANG-212 representation; enum and char subranges that of their host.
+    /// </summary>
+    private TypeSymbol BindSubrange(SubrangeTypeSyntax syntax, string name, SyntaxToken? declaredAt)
+    {
+        var low = _folder.Fold(syntax.Low);
+        var high = _folder.Fold(syntax.High);
+        if (low is null || high is null)
+        {
+            return _types.Error;
+        }
+
+        if (!low.Type.IsOrdinal || !high.Type.IsOrdinal)
+        {
+            _diagnostics.Report(low.Type.IsOrdinal ? syntax.High : syntax.Low, "E2013");
+            return _types.Error;
+        }
+
+        var compatible = (low.Type, high.Type) switch
+        {
+            (IntegerTypeSymbol, IntegerTypeSymbol) => true,
+            (CharTypeSymbol, CharTypeSymbol) or (EnumTypeSymbol, EnumTypeSymbol) => Ordinals.SameHost(low.Type, high.Type),
+            (BooleanTypeSymbol, BooleanTypeSymbol) => true,
+            _ => false,
+        };
+        if (!compatible)
+        {
+            _diagnostics.Report(syntax.High, "E2010", high.Type.Name, low.Type.Name);
+            return _types.Error;
+        }
+
+        var (lo, hi) = (OrdinalOf(low), OrdinalOf(high));
+        if (lo > hi)
+        {
+            _diagnostics.Report(syntax, "E2020");
+            return _types.Error;
+        }
+
+        ImmutableArray<Text.Location> locations = declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [];
+        switch (Ordinals.Host(low.Type))
+        {
+            case IntegerTypeSymbol:
+                return new IntegerTypeSymbol(name, SubrangeRepresentation(lo, hi), lo, hi, _container, locations);
+            case CharTypeSymbol host:
+                return new CharTypeSymbol(name, host, (int)lo, (int)hi, _container, locations);
+            case EnumTypeSymbol baseEnum:
+                return new EnumTypeSymbol(name, baseEnum, lo, hi, _container, locations);
+            default:
+                return Unsupported(syntax, "Boolean subrange");
+        }
+
+        static System.Numerics.BigInteger OrdinalOf(ConstantValue value) =>
+            value.Value is bool b ? (b ? System.Numerics.BigInteger.One : System.Numerics.BigInteger.Zero) : (System.Numerics.BigInteger)value.Value!;
+    }
+
+    /// <summary>LANG-250: an ordinal base type (E2013) with ordinals in 0..255 (E2030), both at the base type.</summary>
+    private TypeSymbol BindSet(SetTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
+    {
+        var element = BindType(syntax.ElementType, declared: declared);
+        if (element.TypeKind == TypeKind.Error)
+        {
+            return _types.Error;
+        }
+
+        if (Ordinals.Bounds(element) is not { } bounds)
+        {
+            _diagnostics.Report(syntax.ElementType, "E2013");
+            return _types.Error;
+        }
+
+        if (bounds.Low < 0 || bounds.High > 255)
+        {
+            _diagnostics.Report(syntax.ElementType, "E2030");
+            return _types.Error;
+        }
+
+        return new SetTypeSymbol(name, element, _container, declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : []);
+    }
+
+    /// <summary>
+    /// LANG-212: the first of ShortInt, Byte, SmallInt, Word, Integer, Cardinal, Int64, UInt64 holding both bounds; with a
+    /// non-negative low bound the signed type of each size is skipped.
+    /// </summary>
+    private IntegerTypeSymbol SubrangeRepresentation(System.Numerics.BigInteger low, System.Numerics.BigInteger high)
+    {
+        foreach (var candidate in (ReadOnlySpan<TypeSymbol>)[_types.ShortInt, _types.Byte, _types.SmallInt, _types.Word,
+                     _types.Integer, _types.Cardinal, _types.Int64, _types.UInt64])
+        {
+            var integer = (IntegerTypeSymbol)candidate;
+            if ((low < 0 || !integer.IsSigned) && low >= integer.Min && high <= integer.Max)
+            {
+                return integer;
+            }
+        }
+
+        return (IntegerTypeSymbol)_types.UInt64;                  // unreachable: constants are within the 64-bit ranges
+    }
+
     private void BindVarSection(VarSectionSyntax section, ImmutableArray<Symbol>.Builder declared)
     {
         if (section.Keyword.Kind == SyntaxKind.ThreadVarKeyword)
@@ -168,7 +366,7 @@ internal sealed class DeclarationBinder
 
         foreach (var declaration in section.Declarations)
         {
-            var type = BindType(declaration.Type);
+            var type = BindType(declaration.Type, declared: declared);
             var initializer = declaration.Initializer is { } node ? BindInitializer(declaration, node, type) : null;
             var linkName = declaration.PublicDirective is { } publicDirective ? BindVariablePublicName(declaration, publicDirective) : null;
             foreach (var name in declaration.Identifiers)
@@ -559,16 +757,27 @@ internal sealed class DeclarationBinder
         }
     }
 
-    /// <summary>The type a type syntax denotes; the error type (after a diagnostic) when it cannot be bound.</summary>
-    private TypeSymbol BindType(TypeSyntax type)
+    /// <summary>
+    /// The type a type syntax denotes; the error type (after a diagnostic) when it cannot be bound. A type constructor
+    /// creates a new type named after <paramref name="declaredAt"/> (a type declaration) or after its own text (an
+    /// anonymous type); enumeration elements go into <paramref name="declared"/>.
+    /// </summary>
+    private TypeSymbol BindType(TypeSyntax type, SyntaxToken? declaredAt = null, ImmutableArray<Symbol>.Builder? declared = null)
     {
         if (type.IsMissing)
         {
             return _types.Error;
         }
 
+        var typeName = declaredAt is { } identifier ? NameOf(identifier) : type.ToString().Trim();
         switch (type)
         {
+            case EnumTypeSyntax enumType:
+                return BindEnum(enumType, typeName, declaredAt, declared ?? ImmutableArray.CreateBuilder<Symbol>());
+            case SubrangeTypeSyntax subrange:
+                return BindSubrange(subrange, typeName, declaredAt);
+            case SetTypeSyntax set:
+                return BindSet(set, typeName, declaredAt, declared);
             case NamedTypeSyntax { Name: IdentifierNameSyntax name }:
                 return BindTypeName(name);
             case NamedTypeSyntax { Name: QualifiedNameSyntax }:

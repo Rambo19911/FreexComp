@@ -13,13 +13,15 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
         IrType storage = type switch
         {
             IntegerTypeSymbol integer => IrType.Int(integer.Bits),
-            BooleanTypeSymbol or CharTypeSymbol => IrType.Int(checked((int)type.Size * 8)),
+            BooleanTypeSymbol or CharTypeSymbol or EnumTypeSymbol => IrType.Int(checked((int)type.Size * 8)),
             RealTypeSymbol { RealKind: RealKind.Single } => IrType.Float,
             RealTypeSymbol { RealKind: RealKind.Double } => IrType.Double,
             RealTypeSymbol { RealKind: RealKind.Currency } => IrType.I64,
             StringTypeSymbol { Variant: StringVariant.Short } => new ArrayIrType(type.Size, IrType.I8),
             StringTypeSymbol or PointerTypeSymbol => IrType.Ptr,
             TextTypeSymbol => new ArrayIrType(type.Size, IrType.I8),
+            SetTypeSymbol { IsSmall: true } => IrType.Int(checked((int)type.Size * 8)),
+            SetTypeSymbol => new ArrayIrType(type.Size, IrType.I8),          // big set (rtl-abi.md §5); operations: C-051
             ErrorTypeSymbol => throw new InvalidOperationException("The error type has no layout."),
             _ => throw new NotSupportedException($"No layout for type kind {type.TypeKind} yet."),
         };

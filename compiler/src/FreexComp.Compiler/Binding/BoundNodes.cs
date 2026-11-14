@@ -22,6 +22,7 @@ internal enum BoundKind
     ParameterExpression,
     CallExpression,
     IntrinsicCallExpression,
+    SetConstructor,
 
     // statements
     Block,
@@ -208,13 +209,17 @@ internal enum BoundBinaryOperatorKind
     Greater,
     LessOrEqual,
     GreaterOrEqual,
+
+    /// <summary><c>x in S</c> (LANG-252): the element keeps its own type, <see cref="BoundBinaryExpression.OperandType"/> is the set type.</summary>
+    In,
 }
 
 /// <summary>
 /// A binary operator. Both operands are converted to <see cref="OperandType"/>, the type the operation is done in
 /// — except a comparison of a signed with an unsigned 64-bit operand (LANG-302), where the signed side is
 /// <c>Int64</c> and the unsigned side <c>UInt64</c> and the comparison is mathematical. For a shift the count is
-/// converted to the left operand's type.
+/// converted to the left operand's type. Set operators (LANG-252) have a set <see cref="OperandType"/>; for
+/// <see cref="BoundBinaryOperatorKind.In"/> only the set operand has it.
 /// </summary>
 internal sealed class BoundBinaryExpression : BoundExpression
 {
@@ -238,6 +243,29 @@ internal sealed class BoundBinaryExpression : BoundExpression
 
     public TypeSymbol OperandType { get; }
 }
+
+/// <summary>
+/// A set constructor <c>[a, b..c]</c> (LANG-251) of set type <see cref="BoundExpression.Type"/>. Element expressions keep
+/// their own (ordinal) type: out-of-range elements contribute nothing (CMP-335) or fail the <c>{$R+}</c> check against the
+/// element type, which the lowerer applies. A constructor of constants is a constant (a bit mask).
+/// </summary>
+internal sealed class BoundSetConstructor : BoundExpression
+{
+    public BoundSetConstructor(SyntaxNode syntax, ImmutableArray<BoundSetElement> elements, SetTypeSymbol type, ConstantValue? constantValue)
+        : base(syntax, type, constantValue)
+    {
+        Elements = elements;
+    }
+
+    public override BoundKind Kind => BoundKind.SetConstructor;
+
+    public ImmutableArray<BoundSetElement> Elements { get; }
+
+    public SetTypeSymbol SetType => (SetTypeSymbol)Type;
+}
+
+/// <summary>One element <c>a</c> (<see cref="High"/> null) or range <c>a..b</c> of a set constructor.</summary>
+internal sealed record BoundSetElement(BoundExpression Low, BoundExpression? High);
 
 /// <summary>A statement of a routine body, program block or initialization/finalization section.</summary>
 internal abstract class BoundStatement : BoundNode

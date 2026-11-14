@@ -179,3 +179,29 @@ begin end. trailing
 procedure P; var i: Integer; begin end; begin P end.
 === H2002 1,36
 procedure P; var i: Integer; begin i := 1; i := 2; Writeln(i) end; begin P end.
+=== E2005 1,38
+type T = (A); var X: T; begin X := T.B end.
+=== E2010 1,56
+type A = (A1); B = (B1); var X: Boolean; begin X := A1 = B1 end.
+=== E2012 1,38
+type T = 1..10; var X: T; begin X := 11 end.
+=== E2013 1,10
+type T = 1.5..2; begin end.
+=== E2020 1,10
+type T = 5..1; begin end.
+=== E2021 1,22
+type T = (A = 2, B = 1); begin end.
+=== E2021 1,15
+type T = (A = -1); begin end.
+=== E2003 1,54
+{$SCOPEDENUMS ON} type T = (A); var X: T; begin X := A end.
+=== E2913 1,29
+type T = (A); begin Writeln(A) end.
+=== E2030 1,17
+type T = set of 0..300; begin end.
+=== E2030 1,17
+type T = set of Char; begin end.
+=== E2014 1,31
+var I: Integer; begin Include(I, 1) end.
+=== E2011 1,63
+type S = set of 0..3; var a, b: S; ok: Boolean; begin ok := a > b end.

@@ -82,7 +82,7 @@ internal sealed class BodyBinder
     private BoundAssignmentStatement BindAssignment(AssignmentStatementSyntax assignment)
     {
         var target = FunctionResult(assignment.Target) ?? _expressions.BindExpression(assignment.Target);
-        var value = _expressions.BindExpression(assignment.Value);
+        var value = _expressions.BindExpression(assignment.Value, target.Type);           // a set constructor takes the target's type
         if (target.HasErrors)
         {
             return new BoundAssignmentStatement(assignment, target, value);
@@ -363,6 +363,7 @@ internal sealed class BodyBinder
             IntrinsicKind.Halt or IntrinsicKind.RunError => (0, 1),
             IntrinsicKind.Exit when _routine?.ReturnType != null => (0, 1),          // LANG-413
             IntrinsicKind.Inc or IntrinsicKind.Dec => (1, 2),
+            IntrinsicKind.Include or IntrinsicKind.Exclude => (2, 2),
             _ => (0, 0),
         };
         if (count < minArguments)
@@ -401,8 +402,10 @@ internal sealed class BodyBinder
             case IntrinsicKind.Continue:
                 return new BoundContinueStatement(statement);
             case IntrinsicKind.Exit when count == 1:
-                return new BoundExitStatement(statement,
-                    _expressions.ConvertForAssignment(_expressions.BindExpression(arguments[0].Expression), _routine!.ReturnType!, arguments[0].Expression));
+                return new BoundExitStatement(statement, _expressions.ConvertForAssignment(
+                    _expressions.BindExpression(arguments[0].Expression, _routine!.ReturnType), _routine.ReturnType!, arguments[0].Expression));
+            case IntrinsicKind.Include or IntrinsicKind.Exclude:
+                return BindIncludeExclude(statement, intrinsic, arguments);
             case IntrinsicKind.Exit:
                 return new BoundExitStatement(statement, value: null);
             default:
@@ -484,6 +487,32 @@ internal sealed class BodyBinder
         PointerTypeSymbol { AllowsPointerMath: true } => "Write of a PChar",
         _ => "",
     };
+
+    /// <summary>
+    /// LANG-253: <c>Include</c>/<c>Exclude(var S; x)</c>: <c>S</c> an assignable set variable (E2014 for another type), <c>x</c> an
+    /// element as in a set constructor (E2010 / E2012 for constants, unconverted otherwise).
+    /// </summary>
+    private BoundStatement BindIncludeExclude(ExpressionStatementSyntax statement, IntrinsicSymbol intrinsic, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var syntax = arguments[0].Expression;
+        var target = _expressions.BindExpression(syntax);
+        var element = _expressions.BindExpression(arguments[1].Expression);
+        if (target.HasErrors || element.HasErrors || !_expressions.CheckVariableReference(target, syntax))
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        if (target.Type is not SetTypeSymbol { ElementType: not null } set)
+        {
+            _diagnostics.Report(syntax, "E2014", "set");
+            return new BoundErrorStatement(statement);
+        }
+
+        var ok = element.ConstantValue is { } value
+            ? _expressions.CheckSetElement(set, value, arguments[1].Expression)
+            : _expressions.CheckSetElement(set, element, arguments[1].Expression);
+        return ok ? new BoundIntrinsicCallStatement(statement, intrinsic, [target, element]) : new BoundErrorStatement(statement);
+    }
 
     /// <summary>
     /// LANG-901: <c>Inc</c>/<c>Dec(var x[; n])</c>: <c>x</c> an assignable ordinal variable (typed pointers arrive with

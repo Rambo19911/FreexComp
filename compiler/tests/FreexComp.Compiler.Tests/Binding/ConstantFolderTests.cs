@@ -300,9 +300,13 @@ public sealed class ConstantFolderTests
 
     [Theory]
     [InlineData("nil", "E2900(1,11): Feature not supported: nil constant")]
-    [InlineData("[1, 2]", "E2900(1,11): Feature not supported: set constant")]
     public void LaterMilestoneConstants_AreE2900(string expression, string expected) =>
         Assert.Equal([expected], FoldErrors(expression));
+
+    /// <summary>C-050: set constants fold (they were E2900 until M2.2); details in SetBindingTests.</summary>
+    [Fact]
+    [Trait("Req", "LANG-251")]
+    public void SetConstant_Folds() => Assert.Empty(FoldErrors("[1, 2]"));
 
     [Fact]
     [Trait("Req", "LANG-344")]

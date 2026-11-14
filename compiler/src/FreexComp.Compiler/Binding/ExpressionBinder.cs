@@ -47,6 +47,25 @@ internal sealed class ExpressionBinder
         }
     }
 
+    /// <summary>
+    /// <paramref name="syntax"/> in a context of type <paramref name="expected"/>: a set constructor takes that set type
+    /// (LANG-251); anything else binds as without context.
+    /// </summary>
+    public BoundExpression BindExpression(ExpressionSyntax syntax, TypeSymbol? expected) =>
+        Unparenthesized(syntax) is SetConstructorSyntax constructor && expected is SetTypeSymbol { ElementType: not null } set
+            ? BindSetConstructor(constructor, set)
+            : BindExpression(syntax);
+
+    private static ExpressionSyntax Unparenthesized(ExpressionSyntax syntax)
+    {
+        while (syntax is ParenthesizedExpressionSyntax parenthesized)
+        {
+            syntax = parenthesized.Expression;
+        }
+
+        return syntax;
+    }
+
     public BoundExpression BindExpression(ExpressionSyntax syntax)
     {
         if (syntax.IsMissing)
@@ -56,6 +75,8 @@ internal sealed class ExpressionBinder
 
         switch (syntax)
         {
+            case SetConstructorSyntax constructor:
+                return BindSetConstructor(constructor, expected: null);
             case LiteralExpressionSyntax literal:
                 return BindLiteral(literal);
             case IdentifierNameSyntax name:
@@ -73,6 +94,14 @@ internal sealed class ExpressionBinder
             case PredefinedTypeExpressionSyntax predefined:
                 _diagnostics.Report(predefined, "E2009", predefined.Keyword.Text);
                 return Error(syntax);
+            case MemberAccessExpressionSyntax memberAccess:
+            {
+                // TEnum.Element (LANG-210); other qualifications arrive with records, units and classes
+                var member = _folder.LookupEnumMember(memberAccess, out var isEnumAccess);
+                return member is not null ? new BoundLiteral(memberAccess, member.Value)
+                    : isEnumAccess ? Error(syntax)
+                    : Unsupported(syntax, DeclarationBinder.FeatureName(syntax.Kind));
+            }
             default:
                 return Unsupported(syntax, DeclarationBinder.FeatureName(syntax.Kind));
         }
@@ -163,6 +192,8 @@ internal sealed class ExpressionBinder
                 return new BoundConstantExpression(name, constant, value);
             case ConstantSymbol:
                 return Error(name);                                     // its declaration already reported the error
+            case EnumMemberSymbol member:
+                return new BoundLiteral(name, member.Value);
             case TypeSymbol type:
                 _diagnostics.Report(name, "E2009", type.Name);
                 return Error(name);
@@ -612,14 +643,30 @@ internal sealed class ExpressionBinder
 
     private BoundExpression BindBinary(BinaryExpressionSyntax binary)
     {
-        var left = BindExpression(binary.Left);
-        var right = BindExpression(binary.Right);
+        var op = binary.OperatorToken;
+        BoundExpression left, right;
+        // a set constructor takes the set type of the other operand (LANG-251); the element of 'in' gives no set context
+        if (Unparenthesized(binary.Right) is SetConstructorSyntax && Unparenthesized(binary.Left) is not SetConstructorSyntax && op.Kind != SyntaxKind.InKeyword)
+        {
+            left = BindExpression(binary.Left);
+            right = BindExpression(binary.Right, left.Type);
+        }
+        else if (Unparenthesized(binary.Left) is SetConstructorSyntax && Unparenthesized(binary.Right) is not SetConstructorSyntax)
+        {
+            right = BindExpression(binary.Right);
+            left = BindExpression(binary.Left, right.Type);
+        }
+        else
+        {
+            left = BindExpression(binary.Left);
+            right = BindExpression(binary.Right);
+        }
+
         if (left.HasErrors || right.HasErrors)
         {
             return Error(binary, left, right);
         }
 
-        var op = binary.OperatorToken;
         if (left.ConstantValue is { } l && right.ConstantValue is { } r)
         {
             return _folder.FoldBinary(op, l, r) is { } folded
@@ -628,6 +675,16 @@ internal sealed class ExpressionBinder
         }
 
         var (lt, rt) = (left.Type, right.Type);
+        if (op.Kind == SyntaxKind.InKeyword)
+        {
+            return BindIn(binary, left, right);
+        }
+
+        if (lt is SetTypeSymbol || rt is SetTypeSymbol)
+        {
+            return SetOperation(binary, left, right);
+        }
+
         switch (op.Kind)
         {
             case SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.AsteriskToken:
@@ -749,12 +806,26 @@ internal sealed class ExpressionBinder
             return new BoundBinaryExpression(binary, kind, Convert(left, boolean), Convert(right, boolean), boolean, boolean, constantValue: null);
         }
 
+        if (lt is EnumTypeSymbol && rt is EnumTypeSymbol)
+        {
+            // LANG-303: one enumeration (subranges compare in their enumeration)
+            if (!Ordinals.SameHost(lt, rt))
+            {
+                _diagnostics.Report(binary.OperatorToken, "E2010", lt.Name, rt.Name);
+                return Error(binary, left, right);
+            }
+
+            var host = Ordinals.Host(lt);
+            return new BoundBinaryExpression(binary, kind, Convert(left, host), Convert(right, host), host, boolean, constantValue: null);
+        }
+
         if (lt is CharTypeSymbol && rt is CharTypeSymbol)
         {
-            // one char kind (LANG-280 rule 4); a character constant converts when its code fits the other kind
-            var type = ReferenceEquals(lt, rt) ? lt
-                : FitsCharType(left, rt) ? rt
-                : FitsCharType(right, lt) ? lt
+            // one char kind (LANG-280 rule 4, subranges in their char type); a character constant converts when its code
+            // fits the other kind
+            var type = Ordinals.SameHost(lt, rt) ? Ordinals.Host(lt)
+                : FitsCharType(left, rt) ? Ordinals.Host(rt)
+                : FitsCharType(right, lt) ? Ordinals.Host(lt)
                 : null;
             if (type != null)
             {
@@ -797,8 +868,130 @@ internal sealed class ExpressionBinder
         SyntaxKind.GreaterThanToken => BoundBinaryOperatorKind.Greater,
         SyntaxKind.LessThanEqualsToken => BoundBinaryOperatorKind.LessOrEqual,
         SyntaxKind.GreaterThanEqualsToken => BoundBinaryOperatorKind.GreaterOrEqual,
+        SyntaxKind.InKeyword => BoundBinaryOperatorKind.In,
         _ => throw new InvalidOperationException($"Not a binary operator: {op.Kind}"),
     };
+
+    // ------------------------------------------------------------------ sets (LANG-250…252)
+
+    /// <summary>
+    /// <c>+ - *</c> and <c>= &lt;&gt; &lt;= &gt;=</c> on compatible sets (E2010 otherwise), done in <see cref="Sets.Combine"/>;
+    /// <c>&lt; &gt;</c> and a set with a non-set are E2011.
+    /// </summary>
+    private BoundExpression SetOperation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
+    {
+        var op = binary.OperatorToken;
+        if (left.Type is not SetTypeSymbol l || right.Type is not SetTypeSymbol r
+            || op.Kind is not (SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.AsteriskToken or SyntaxKind.EqualsToken
+                or SyntaxKind.LessThanGreaterThanToken or SyntaxKind.LessThanEqualsToken or SyntaxKind.GreaterThanEqualsToken))
+        {
+            return Inapplicable(binary, left, right);
+        }
+
+        if (!Sets.Compatible(l, r))
+        {
+            _diagnostics.Report(op, "E2010", l.Name, r.Name);
+            return Error(binary, left, right);
+        }
+
+        var type = Sets.Combine(l, r);
+        var result = op.Kind is SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.AsteriskToken ? type : _types.Boolean;
+        return new BoundBinaryExpression(binary, OperatorKind(op), Convert(left, type), Convert(right, type), type, result, constantValue: null);
+    }
+
+    /// <summary>LANG-252 <c>x in S</c>: an ordinal of the set's element type (E2010 at <c>in</c>); the element is not converted.</summary>
+    private BoundExpression BindIn(BinaryExpressionSyntax binary, BoundExpression element, BoundExpression set)
+    {
+        if (set.Type is not SetTypeSymbol type || !element.Type.IsOrdinal)
+        {
+            return Inapplicable(binary, element, set);
+        }
+
+        if (!Sets.AcceptsElement(type, element.Type))
+        {
+            _diagnostics.Report(binary.OperatorToken, "E2010", element.Type.Name, type.ElementType!.Name);
+            return Error(binary, element, set);
+        }
+
+        return new BoundBinaryExpression(binary, BoundBinaryOperatorKind.In, element, set, type, _types.Boolean, constantValue: null);
+    }
+
+    /// <summary>
+    /// LANG-251 <c>[a, b..c]</c> of type <paramref name="expected"/>, or without context of its natural type
+    /// (<see cref="ConstantFolder.NaturalSetType"/>). Constant elements are checked against the element type (E2013, E2010,
+    /// E2012); other elements must be ordinals of a compatible type and stay unconverted (the lowerer guards or checks them).
+    /// </summary>
+    private BoundExpression BindSetConstructor(SetConstructorSyntax syntax, SetTypeSymbol? expected)
+    {
+        var elements = ImmutableArray.CreateBuilder<BoundSetElement>(syntax.Elements.Count);
+        var children = new List<BoundExpression>();
+        foreach (var element in syntax.Elements)
+        {
+            var low = BindExpression(element.Expression);
+            var high = element.UpperBound is { } upper ? BindExpression(upper) : null;
+            children.Add(low);
+            if (high != null)
+            {
+                children.Add(high);
+            }
+
+            elements.Add(new BoundSetElement(low, high));
+        }
+
+        if (children.Any(c => c.HasErrors))
+        {
+            return Error(syntax, [.. children]);
+        }
+
+        if (children.Count == 0)
+        {
+            var empty = expected ?? _types.EmptySet;
+            return new BoundSetConstructor(syntax, [], empty, new ConstantValue(BigInteger.Zero, empty));
+        }
+
+        var ordinals = children.Select(c => c.ConstantValue is { } value && c.Type.IsOrdinal ? OrdinalOf(value) : (BigInteger?)null).ToList();
+        var constant = ordinals.All(o => o is not null);
+        var type = expected ?? _folder.NaturalSetType(children[0].Type, constant ? ordinals.Min() : null, constant ? ordinals.Max() : null);
+        var ok = true;
+        foreach (var child in children)
+        {
+            ok &= child.ConstantValue is { } value ? CheckSetElement(type, value, child.Syntax) : CheckSetElement(type, child, child.Syntax);
+        }
+
+        if (!ok)
+        {
+            return Error(syntax, [.. children]);
+        }
+
+        var built = elements.MoveToImmutable();
+        var mask = constant
+            ? new ConstantValue(ConstantFolder.SetMask(type, built.Select(e => (OrdinalOf(e.Low.ConstantValue!), OrdinalOf((e.High ?? e.Low).ConstantValue!)))), type)
+            : null;
+        return new BoundSetConstructor(syntax, built, type, mask);
+    }
+
+    /// <summary>A constant set element: an ordinal in the element type's range (E2013, E2010, E2012 at <paramref name="at"/>).</summary>
+    public bool CheckSetElement(SetTypeSymbol set, ConstantValue value, SyntaxNode at) => _folder.CheckSetElement(set, value, at);
+
+    /// <summary>A run-time set element: an ordinal of a type the set accepts (E2013, E2010 at <paramref name="at"/>).</summary>
+    public bool CheckSetElement(SetTypeSymbol set, BoundExpression element, SyntaxNode at)
+    {
+        if (!element.Type.IsOrdinal)
+        {
+            _diagnostics.Report(at, "E2013");
+            return false;
+        }
+
+        if (!Sets.AcceptsElement(set, element.Type))
+        {
+            _diagnostics.Report(at, "E2010", element.Type.Name, set.ElementType!.Name);
+            return false;
+        }
+
+        return true;
+    }
+
+    private static BigInteger OrdinalOf(ConstantValue value) => value.Value is bool b ? (b ? BigInteger.One : BigInteger.Zero) : (BigInteger)value.Value!;
 
     // ------------------------------------------------------------------ typing rules
 

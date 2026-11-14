@@ -49,11 +49,6 @@ internal static class CheckRewriter
         return context.Convert(value, type);
     }
 
-    /// <summary>The value range of an integer or char type; null for other types.</summary>
-    private static (BigInteger Low, BigInteger High)? Bounds(TypeSymbol type) => type switch
-    {
-        IntegerTypeSymbol integer => (integer.Min, integer.Max),
-        CharTypeSymbol character => (BigInteger.Zero, character.MaxValue),
-        _ => null,
-    };
+    /// <summary>The value range of an integer, char or enumeration type (subranges: their bounds); null for other types.</summary>
+    private static (BigInteger Low, BigInteger High)? Bounds(TypeSymbol type) => type is BooleanTypeSymbol ? null : Ordinals.Bounds(type);
 }

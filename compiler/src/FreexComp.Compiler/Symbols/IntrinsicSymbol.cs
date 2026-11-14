@@ -9,6 +9,9 @@ internal enum IntrinsicKind
     // M2.1 procedures
     Inc, Dec, RunError, Write, Writeln,
 
+    // M2.2 procedures
+    Include, Exclude,
+
     // M2.1 functions (constant-foldable, LANG-340)
     Succ, Pred, Ord, Chr, Odd, Abs, Sqr, Low, High, SizeOf, Lo, Hi, Swap,
 }

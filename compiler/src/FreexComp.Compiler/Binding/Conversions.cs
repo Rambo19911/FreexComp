@@ -28,7 +28,10 @@ internal sealed class Conversions
             (IntegerTypeSymbol or RealTypeSymbol, RealTypeSymbol) when IsReal(destination) && (source is IntegerTypeSymbol || IsReal(source))
                 => Numeric,
             (CharTypeSymbol { IsWide: false }, CharTypeSymbol { IsWide: true }) => Numeric,    // zero-extended (LANG-245)
+            (CharTypeSymbol, CharTypeSymbol) when Ordinals.SameHost(source, destination) => Numeric,  // char subranges (rule 4)
+            (EnumTypeSymbol, EnumTypeSymbol) when Ordinals.SameHost(source, destination) => Numeric,  // rule 5
             (BooleanTypeSymbol, BooleanTypeSymbol) => Numeric,
+            (SetTypeSymbol s, SetTypeSymbol d) when d.ElementType != null && Sets.Compatible(s, d) => Numeric,     // rule 8
             _ => NoConversion,
         };
     }
@@ -64,7 +67,8 @@ internal sealed class Conversions
             return null;
         }
 
-        if (destination is IntegerTypeSymbol integer && value.Value is BigInteger number && (number < integer.Min || number > integer.Max))
+        if (destination is not BooleanTypeSymbol && value.Value is BigInteger number && Ordinals.Bounds(destination) is { } bounds
+            && (number < bounds.Low || number > bounds.High))
         {
             diagnostics.Report(at, "E2012", value.ToDisplayString(), destination.Name);
             return null;
@@ -77,6 +81,8 @@ internal sealed class Conversions
 
         return destination switch
         {
+            // a set keeps the elements its capacity holds (like the run-time truncation)
+            SetTypeSymbol set => new ConstantValue((BigInteger)value.Value! & ((BigInteger.One << set.Capacity) - 1), destination),
             RealTypeSymbol { RealKind: RealKind.Single } => new ConstantValue((double)(float)RealValue(value), destination),
             RealTypeSymbol => new ConstantValue(RealValue(value), destination),
             _ => new ConstantValue(value.Value, destination),

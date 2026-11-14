@@ -66,6 +66,45 @@ public sealed class TypeLayoutTests
         Assert.All(types, t => Assert.Equal((t.Size, t.Alignment), (TypeLayout.Of(t).Size, TypeLayout.Of(t).Alignment)));
     }
 
+    /// <summary>rtl-abi.md §2 enumeration and subrange rows (C-049): size = alignment, stored as iN.</summary>
+    [Theory]
+    [Trait("Req", "LANG-212")]
+    [InlineData("(A, B)", 1, "i8")]
+    [InlineData("(A, B = 256)", 2, "i16")]
+    [InlineData("(A, B = 65536)", 4, "i32")]
+    [InlineData("-1..200", 2, "i16")]
+    [InlineData("0..3000000000", 4, "i32")]
+    [InlineData("-1..3000000000", 8, "i64")]
+    [InlineData("'a'..'z'", 2, "i16")]
+    public void EnumsAndSubranges_MatchTheRtlAbiTable(string definition, long size, string llvm)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind($"type T = {definition}; begin end.");
+        var layout = TypeLayout.Of(Assert.IsAssignableFrom<TypeSymbol>(result.Declarations.Scope.Lookup("T")));
+
+        Assert.Equal((size, (int)size, llvm), (layout.Size, layout.Alignment, Describe(layout.StorageType)));
+    }
+
+    /// <summary>rtl-abi.md §5 (C-050): N = Ord(High) + 1 bits; small sets are iN with alignment = size, big sets [32 x i8] align 1.</summary>
+    [Theory]
+    [Trait("Req", "LANG-250")]
+    [InlineData("set of 0..7", 1, 1, "i8")]
+    [InlineData("set of 5..7", 1, 1, "i8")]
+    [InlineData("set of 0..8", 2, 2, "i16")]
+    [InlineData("set of 0..16", 4, 4, "i32")]
+    [InlineData("set of 0..32", 8, 8, "i64")]
+    [InlineData("set of 0..63", 8, 8, "i64")]
+    [InlineData("set of 0..64", 32, 1, "[32 x i8]")]
+    [InlineData("set of Byte", 32, 1, "[32 x i8]")]
+    [InlineData("set of Boolean", 1, 1, "i8")]
+    public void Sets_MatchTheRtlAbiTable(string definition, long size, int alignment, string llvm)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind($"type T = {definition}; begin end.");
+        Assert.Empty(result.Diagnostics);
+        var layout = TypeLayout.Of(Assert.IsAssignableFrom<TypeSymbol>(result.Declarations.Scope.Lookup("T")));
+
+        Assert.Equal((size, alignment, llvm), (layout.Size, layout.Alignment, Describe(layout.StorageType)));
+    }
+
     [Fact]
     public void Scalars_ErrorTypeHasNoLayout() => Assert.Throws<InvalidOperationException>(() => TypeLayout.Of(Types.Error));
 

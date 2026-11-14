@@ -72,7 +72,7 @@ public sealed class BuiltInTypesTests
             "RawByteString", "ShortString", "Pointer", "PChar", "PWideChar", "PAnsiChar", "Text", "TextFile",
             "True", "False", "MaxInt", "MaxLongInt", "Pi",
             "Break", "Continue", "Exit", "Halt",                                            // intrinsics (LANG-900)
-            "Inc", "Dec", "RunError", "Write", "Writeln", "Succ", "Pred", "Ord", "Chr", "Odd", "Abs", "Sqr", "Low", "High", "SizeOf", "Lo", "Hi", "Swap",
+            "Inc", "Dec", "RunError", "Write", "Writeln", "Include", "Exclude", "Succ", "Pred", "Ord", "Chr", "Odd", "Abs", "Sqr", "Low", "High", "SizeOf", "Lo", "Hi", "Swap",
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

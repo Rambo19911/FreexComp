@@ -71,6 +71,9 @@ internal static class IntrinsicRewriter
                 return new LAssign(context.Lower(target), context.Step(context.Lower(target), target.Type, op, step, CheckRewriter.StateOf(call)));
             }
 
+            case IntrinsicKind.Include or IntrinsicKind.Exclude:
+                return SetRewriter.IncludeExclude(context, call, call.Intrinsic.Intrinsic == IntrinsicKind.Include);
+
             case IntrinsicKind.RunError:
                 return context.CallNoReturn(context.RunError,
                     call.Arguments.IsEmpty ? context.Constant(BigInteger.Zero, context.Types.Integer) : context.Lower(call.Arguments[0]));

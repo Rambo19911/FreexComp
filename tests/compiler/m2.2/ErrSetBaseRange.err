@@ -1,0 +1,5 @@
+ErrSetBaseRange.pas(4,20): error E2030: Set base type out of range (0..255)
+ErrSetBaseRange.pas(5,18): error E2030: Set base type out of range (0..255)
+ErrSetBaseRange.pas(6,18): error E2030: Set base type out of range (0..255)
+ErrSetBaseRange.pas(7,19): error E2030: Set base type out of range (0..255)
+ErrSetBaseRange.pas(9,19): error E2030: Set base type out of range (0..255)

@@ -51,9 +51,14 @@ internal sealed class ConstantFolder
                 return FoldBinary(binary);
             case InvocationExpressionSyntax invocation:
                 return FoldInvocation(invocation);
-            case SetConstructorSyntax:
-                _diagnostics.Report(expression, "E2900", "set constant");
-                return null;
+            case MemberAccessExpressionSyntax memberAccess:
+            {
+                var member = LookupEnumMember(memberAccess, out var isEnumAccess);
+                return member?.Value ?? (isEnumAccess ? null : NotConstant(memberAccess));
+            }
+
+            case SetConstructorSyntax constructor:
+                return FoldSetConstructor(constructor);
             default:
                 if (!expression.ContainsDiagnostics)
                 {
@@ -103,6 +108,8 @@ internal sealed class ConstantFolder
                 return null;
             case ConstantSymbol { IsTyped: false } constant:
                 return constant.Value;
+            case EnumMemberSymbol member:
+                return member.Value;
             case TypeSymbol type:
                 _diagnostics.Report(name, "E2009", type.Name);
                 return null;
@@ -136,6 +143,37 @@ internal sealed class ConstantFolder
         }
 
         return symbol;
+    }
+
+    /// <summary>
+    /// <c>TEnum.Element</c> (LANG-210; the only qualified constant before records and units): E2005 for a missing element.
+    /// <paramref name="isEnumAccess"/> is false (and nothing is reported) when the qualifier is not an enumeration type.
+    /// </summary>
+    internal EnumMemberSymbol? LookupEnumMember(MemberAccessExpressionSyntax access, out bool isEnumAccess)
+    {
+        isEnumAccess = access.Expression is IdentifierNameSyntax { Identifier: { IsMissing: false } qualifier } && access.Name is IdentifierNameSyntax
+            && _scope.Lookup(qualifier.Value as string ?? qualifier.Text) is EnumTypeSymbol;
+        if (!isEnumAccess)
+        {
+            return null;
+        }
+
+        var qualifierToken = ((IdentifierNameSyntax)access.Expression).Identifier;
+        var type = (EnumTypeSymbol)_scope.Lookup(qualifierToken.Value as string ?? qualifierToken.Text)!;
+        var name = access.Name.Identifier;
+        if (name.IsMissing)
+        {
+            return null;
+        }
+
+        var text = name.Value as string ?? name.Text;
+        if (type.GetMembers(text).FirstOrDefault() is EnumMemberSymbol member)
+        {
+            return member;
+        }
+
+        _diagnostics.Report(access.Name, "E2005", type.Name, text);
+        return null;
     }
 
     /// <summary>A typecast <c>T(v)</c> between ordinal types, or a foldable intrinsic (LANG-340).</summary>
@@ -210,7 +248,7 @@ internal sealed class ConstantFolder
         return target switch
         {
             IntegerTypeSymbol integer => new ConstantValue(Wrap(ordinal, integer.Bits, integer.IsSigned), target),
-            CharTypeSymbol => new ConstantValue(Wrap(ordinal, (int)target.Size * 8, isSigned: false), target),
+            CharTypeSymbol or EnumTypeSymbol => new ConstantValue(Wrap(ordinal, (int)target.Size * 8, isSigned: false), target),
             _ => new ConstantValue(!ordinal.IsZero, target),
         };
     }
@@ -268,7 +306,9 @@ internal sealed class ConstantFolder
     /// <summary>A binary operator on constants; diagnostics (E2011, E2051, E2052) at <paramref name="op"/>.</summary>
     internal ConstantValue? FoldBinary(SyntaxToken op, ConstantValue left, ConstantValue right)
     {
-        var result = op.Kind switch
+        var result = op.Kind == SyntaxKind.InKeyword ? In(op, left, right)
+            : left.Type is SetTypeSymbol || right.Type is SetTypeSymbol ? SetOperation(op, left, right)
+            : op.Kind switch
         {
             SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.AsteriskToken => Arithmetic(op, left, right),
             SyntaxKind.SlashToken => Divide(op, left, right),
@@ -378,10 +418,16 @@ internal sealed class ConstantFolder
     private Folded Relational(SyntaxToken op, ConstantValue left, ConstantValue right)
     {
         int comparison;
-        if (left.Value is BigInteger l && right.Value is BigInteger r && IsInteger(left) == IsInteger(right)
-            && (IsInteger(left) || left.Type == right.Type))
+        if (left.Type is EnumTypeSymbol && right.Type is EnumTypeSymbol && !Ordinals.SameHost(left.Type, right.Type))
         {
-            comparison = l.CompareTo(r);             // integers (LANG-302: mathematical values) or chars
+            _diagnostics.Report(op, "E2010", left.Type.Name, right.Type.Name);       // LANG-303
+            return Folded.Failed;
+        }
+
+        if (left.Value is BigInteger l && right.Value is BigInteger r && IsInteger(left) == IsInteger(right)
+            && (IsInteger(left) || Ordinals.SameHost(left.Type, right.Type)))
+        {
+            comparison = l.CompareTo(r);             // integers (LANG-302: mathematical values), chars, enumerations
         }
         else if (RealOf(left) is { } a && RealOf(right) is { } b)
         {
@@ -410,6 +456,152 @@ internal sealed class ConstantFolder
             _ => comparison >= 0,
         };
         return new ConstantValue(result, _types.Boolean);
+    }
+
+    /// <summary>LANG-252 on two constant sets (bit masks): <c>+ - *</c>, <c>= &lt;&gt; &lt;= &gt;=</c>; E2010 for incompatible sets.</summary>
+    private Folded SetOperation(SyntaxToken op, ConstantValue left, ConstantValue right)
+    {
+        if (left.Type is not SetTypeSymbol l || right.Type is not SetTypeSymbol r)
+        {
+            return Folded.NotApplicable;
+        }
+
+        if (!Sets.Compatible(l, r))
+        {
+            _diagnostics.Report(op, "E2010", l.Name, r.Name);
+            return Folded.Failed;
+        }
+
+        var type = Sets.Combine(l, r);
+        var all = (BigInteger.One << type.Capacity) - 1;
+        var (a, b) = ((BigInteger)left.Value! & all, (BigInteger)right.Value! & all);
+        return op.Kind switch
+        {
+            SyntaxKind.PlusToken => new ConstantValue(a | b, type),
+            SyntaxKind.AsteriskToken => new ConstantValue(a & b, type),
+            SyntaxKind.MinusToken => new ConstantValue(a & ~b & all, type),
+            SyntaxKind.EqualsToken => new ConstantValue(a == b, _types.Boolean),
+            SyntaxKind.LessThanGreaterThanToken => new ConstantValue(a != b, _types.Boolean),
+            SyntaxKind.LessThanEqualsToken => new ConstantValue((a & ~b).IsZero, _types.Boolean),
+            SyntaxKind.GreaterThanEqualsToken => new ConstantValue((b & ~a).IsZero, _types.Boolean),
+            _ => Folded.NotApplicable,
+        };
+    }
+
+    /// <summary>LANG-252 <c>x in S</c>: False when <c>Ord(x)</c> is outside the set's capacity; E2010 for an element of another type.</summary>
+    private Folded In(SyntaxToken op, ConstantValue element, ConstantValue set)
+    {
+        if (set.Type is not SetTypeSymbol type || OrdinalOf(element) is not { } ordinal || !element.Type.IsOrdinal)
+        {
+            return Folded.NotApplicable;
+        }
+
+        if (!Sets.AcceptsElement(type, element.Type))
+        {
+            _diagnostics.Report(op, "E2010", element.Type.Name, type.ElementType!.Name);
+            return Folded.Failed;
+        }
+
+        var member = ordinal >= 0 && ordinal < type.Capacity && !((BigInteger)set.Value! >> (int)ordinal).IsEven;
+        return new ConstantValue(member, _types.Boolean);
+    }
+
+    // ------------------------------------------------------------------ set constructors (LANG-251)
+
+    /// <summary>
+    /// A constructor of constants without context: its natural type (<see cref="NaturalSetType"/>) and bit mask. E2013 for a
+    /// non-ordinal element, E2010 for elements of different types, E2012 for an ordinal outside the natural element type.
+    /// </summary>
+    private ConstantValue? FoldSetConstructor(SetConstructorSyntax constructor)
+    {
+        var ranges = new List<(ConstantValue Low, ConstantValue High, SyntaxNode At)>();
+        foreach (var element in constructor.Elements)
+        {
+            var low = Fold(element.Expression);
+            var high = element.UpperBound is { } upper ? Fold(upper) : low;
+            if (low is null || high is null)
+            {
+                return null;
+            }
+
+            ranges.Add((low, high, element));
+        }
+
+        if (ranges.Count == 0)
+        {
+            return new ConstantValue(BigInteger.Zero, _types.EmptySet);
+        }
+
+        var ordinals = ranges.SelectMany(r => new[] { r.Low, r.High }).Select(OrdinalOf).ToList();
+        var first = ranges[0].Low.Type;
+        var type = NaturalSetType(first, ordinals.All(o => o is not null) ? ordinals.Min() : null, ordinals.All(o => o is not null) ? ordinals.Max() : null);
+        foreach (var (low, high, at) in ranges)
+        {
+            if (!CheckSetElement(type, low, at) || !CheckSetElement(type, high, at))
+            {
+                return null;
+            }
+        }
+
+        return new ConstantValue(SetMask(type, ranges.Select(r => (OrdinalOf(r.Low)!.Value, OrdinalOf(r.High)!.Value))), type);
+    }
+
+    /// <summary>E2013 / E2010 / E2012 at <paramref name="at"/> unless <paramref name="value"/> is an ordinal of the set's element type range.</summary>
+    internal bool CheckSetElement(SetTypeSymbol set, ConstantValue value, SyntaxNode at)
+    {
+        if (!value.Type.IsOrdinal || OrdinalOf(value) is not { } ordinal)
+        {
+            _diagnostics.Report(at, "E2013");
+            return false;
+        }
+
+        if (!Sets.AcceptsElement(set, value.Type))
+        {
+            _diagnostics.Report(at, "E2010", value.Type.Name, set.ElementType!.Name);
+            return false;
+        }
+
+        if (set.ElementType is { } element && Ordinals.Bounds(element) is { } bounds && (ordinal < bounds.Low || ordinal > bounds.High))
+        {
+            _diagnostics.Report(at, "E2012", value.ToDisplayString(), element.Name);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// LANG-251 type of a constructor without context, from its first element's type: the enumeration (of a subrange), Boolean,
+    /// and for integers and chars with constant elements in 0..255 the subrange <c>0..max</c> (a small set when max &lt; 64),
+    /// otherwise <c>Byte</c> / a char subrange <c>#0..#255</c> (a big set; the spec's <c>set of 0..255</c>).
+    /// </summary>
+    internal SetTypeSymbol NaturalSetType(TypeSymbol element, BigInteger? min, BigInteger? max)
+    {
+        var host = Ordinals.Host(element);
+        var top = min is { } lo && max is { } hi && lo >= 0 && hi <= 255 ? hi : 255;
+        TypeSymbol elementType = host switch
+        {
+            IntegerTypeSymbol => top == 255 && max is null ? _types.Byte
+                : new IntegerTypeSymbol($"0..{top}", (IntegerTypeSymbol)_types.Byte, BigInteger.Zero, top, containingSymbol: null, locations: []),
+            CharTypeSymbol c => new CharTypeSymbol($"#0..#{top}", c, 0, (int)top, containingSymbol: null, locations: []),
+            _ => host,
+        };
+        return new SetTypeSymbol("set of " + elementType.Name, elementType, containingSymbol: null, locations: []);
+    }
+
+    /// <summary>The bits of the ranges' ordinals inside the set's capacity (empty ranges contribute nothing).</summary>
+    internal static BigInteger SetMask(SetTypeSymbol set, IEnumerable<(BigInteger Low, BigInteger High)> ranges)
+    {
+        var mask = BigInteger.Zero;
+        foreach (var (low, high) in ranges)
+        {
+            for (var v = BigInteger.Max(low, 0); v <= BigInteger.Min(high, set.Capacity - 1); v++)
+            {
+                mask |= BigInteger.One << (int)v;
+            }
+        }
+
+        return mask;
     }
 
     private Folded Inapplicable(SyntaxToken op, ConstantValue left, ConstantValue right)
@@ -623,7 +815,7 @@ internal sealed class ConstantFolder
                 break;
             case (_, BooleanTypeSymbol):
                 return new ConstantValue(high, type);
-            case (_, IntegerTypeSymbol or CharTypeSymbol):
+            case (_, IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol):
             {
                 var (min, max) = OrdinalBounds(type);
                 return new ConstantValue(high ? max : min, type);
@@ -662,12 +854,7 @@ internal sealed class ConstantFolder
         _ => _types.UInt64,
     };
 
-    private static (BigInteger Min, BigInteger Max) OrdinalBounds(TypeSymbol type) => type switch
-    {
-        IntegerTypeSymbol integer => (integer.Min, integer.Max),
-        CharTypeSymbol c => (BigInteger.Zero, new BigInteger(c.MaxValue)),
-        _ => (BigInteger.Zero, BigInteger.One),
-    };
+    private static (BigInteger Min, BigInteger Max) OrdinalBounds(TypeSymbol type) => Ordinals.Bounds(type) ?? (BigInteger.Zero, BigInteger.One);
 
     // ------------------------------------------------------------------ values
 

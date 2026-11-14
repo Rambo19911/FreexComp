@@ -494,8 +494,102 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>C-049: enumerations (i8/i16 storage), enum and integer subranges, range checks into subranges, enum case/for.</summary>
+    internal const string EnumsSource = """
+        unit M;
+        interface
+        type
+          TColor = (Red, Green, Blue);
+          TBright = Green..Blue;
+          TWide = (wLow, wHigh = 1000);
+          TPercent = 0..100;
+        var
+          Color: TColor = Blue;
+        function Next(C: TColor): TColor;
+        function Bright(C: TColor): TBright;
+        function Percent(I: Integer): TPercent;
+        function Count(W: TWide): Integer;
+        implementation
+        function Next(C: TColor): TColor;
+        begin
+          case C of
+            Red: Result := Green;
+            Green..Blue: Result := Succ(Red);
+          end;
+          if C < Blue then
+            Result := Succ(C);
+        end;
+        {$R+}
+        function Bright(C: TColor): TBright;
+        begin
+          Result := C;
+          Result := Succ(Result);
+        end;
+        function Percent(I: Integer): TPercent;
+        begin
+          Result := I;
+        end;
+        {$R-}
+        function Count(W: TWide): Integer;
+        var
+          X: TWide;
+        begin
+          Result := 0;
+          for X := wLow to W do
+            Inc(Result, Ord(X));
+        end;
+        end.
+        """;
+
+    /// <summary>C-050 / CMP-335: small-set constants, constructors (element, range, guarded / {$R+}), operators, in, Include/Exclude.</summary>
+    internal const string SetsSource = """
+        unit M;
+        interface
+        type
+          TColor = (Red, Green, Blue);
+          TColors = set of TColor;
+          TByteSet = set of 0..7;
+          TWide = set of 0..63;
+        var
+          Primary: TColors = [Red, Blue];
+        function Ops(a, b: TColors): TColors;
+        function Compare(a, b: TColors): Boolean;
+        function Has(c: TColor; s: TColors; i: Integer; w: TWide): Boolean;
+        procedure Change(var s: TByteSet; i: Integer);
+        function Range(lo, hi: Integer): TWide;
+        implementation
+        function Ops(a, b: TColors): TColors;
+        begin
+          Result := (a + b) * [Green, Blue] - b;
+        end;
+        function Compare(a, b: TColors): Boolean;
+        begin
+          Result := (a = b) or (a <> []) and (a <= b) and (b >= [Red]);
+        end;
+        function Has(c: TColor; s: TColors; i: Integer; w: TWide): Boolean;
+        begin
+          Result := (c in s) and (i in w) and (Blue in s);
+        end;
+        procedure Change(var s: TByteSet; i: Integer);
+        begin
+          s := [i];
+          Include(s, i);
+          Exclude(s, 3);
+        {$R+}
+          s := [i];
+        end;
+        {$R-}
+        function Range(lo, hi: Integer): TWide;
+        begin
+          Result := [lo..hi];
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["Enums"] = EnumsSource,
+        ["Sets"] = SetsSource,
         ["ExternalDecl"] = ExternalDeclSource,
         ["Writeln"] = WritelnSource,
         ["Checks"] = ChecksSource,
@@ -614,6 +708,17 @@ public sealed class IrSnapshotTests
         Assert.Contains("getelementptr inbounds %\"M.Outer.$frame\", ptr %$link, i32 0, i32 1\n", text);
         Assert.Contains("call void @\"M.Outer.Add\"(ptr %$frame, i32 2)", text);
     }
+
+    [Fact]
+    [Trait("Req", "LANG-210")]
+    [Trait("Req", "LANG-212")]
+    [Trait("Req", "CMP-314")]
+    public void Enums() => Snapshot.Verify("Enums", Emit(EnumsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-335")]
+    [Trait("Req", "LANG-252")]
+    public void Sets() => Snapshot.Verify("Sets", Emit(SetsSource));
 
     [Fact]
     [Trait("Req", "CMP-321")]

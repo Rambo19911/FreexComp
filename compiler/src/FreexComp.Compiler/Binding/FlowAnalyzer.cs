@@ -407,7 +407,7 @@ internal sealed class FlowAnalyzer
     {
         switch (statement.Intrinsic.Intrinsic)
         {
-            case IntrinsicKind.Inc or IntrinsicKind.Dec:
+            case IntrinsicKind.Inc or IntrinsicKind.Dec or IntrinsicKind.Include or IntrinsicKind.Exclude:
                 state = Eval(statement.Arguments[0], state);                      // reads, then writes the variable
                 foreach (var argument in statement.Arguments.Skip(1))
                 {
@@ -595,6 +595,14 @@ internal sealed class FlowAnalyzer
                 foreach (var argument in intrinsic.Arguments)
                 {
                     state = Eval(argument, state);
+                }
+
+                return state;
+
+            case BoundSetConstructor constructor:
+                foreach (var element in constructor.Elements)
+                {
+                    state = Eval(element.High, Eval(element.Low, state));
                 }
 
                 return state;
