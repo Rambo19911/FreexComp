@@ -21,12 +21,13 @@ internal static class Lowerer
     public static LoweredUnit Lower(BindingResult result)
     {
         // CMP-325 rule 7 / LANG-523: a unit's managed globals are released at the end of its $final (after the finalization
-        // statements), a program's at the end of its main block
+        // statements); a program's by a synthesised program $final, the last unit table entry, so they are released after the
+        // ExitProc chain (ABI-104 steps 1–2, C-183)
         var managed = ManagedGlobals(result.Unit);
         var bodies = result.Bodies.Select(b => (b.Syntax, Lowered: LowerBody(result, b,
-            result.Unit.IsProgram || b.Syntax is FinalizationSectionSyntax ? managed : []))).ToImmutableArray();
+            b.Syntax is FinalizationSectionSyntax ? managed : []))).ToImmutableArray();
         var finalization = bodies.FirstOrDefault(b => b.Syntax is FinalizationSectionSyntax).Lowered;
-        if (finalization is null && !result.Unit.IsProgram && !managed.IsEmpty)
+        if (finalization is null && !managed.IsEmpty)
         {
             finalization = LowerBody(result, block: null, managed);
         }

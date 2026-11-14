@@ -172,10 +172,11 @@ public sealed class UnitBindingTests
             ("X.pas", "unit X; interface function FX: Integer; implementation uses Y; function FX: Integer; begin Result := FY + 1 end; end."),
             ("Y.pas", "unit Y; interface uses X; function FY: Integer; implementation function FY: Integer; begin Result := 1 end; end.")));
 
+    /// <summary>C-070 settled the location (LANG-513): in the first-reached unit X, at its entry that opens the cycle (C-069: in Y).</summary>
     [Fact]
     [Trait("Req", "LANG-513")]
     public void InterfaceUsesCycle_IsE2205WithThePath() =>
-        Assert.Equal(["Y.pas(1,24): E2205 Circular unit reference: X → Y → X"], Check("""
+        Assert.Equal(["X.pas(1,24): E2205 Circular unit reference: X → Y → X"], Check("""
             program P;
             uses X;
             begin end.
@@ -313,14 +314,15 @@ public sealed class UnitBindingTests
 
     /// <summary>
     /// C-071 (CMP-325 rule 7, CMP-350, LANG-523): a unit's managed globals are released in its <c>$final</c> after the finalization
-    /// statements, in reverse declaration order; a program's at the end of <c>$main</c>; a unit whose only reason for a
-    /// <c>$final</c> is a managed global still gets a unit table entry.
+    /// statements, in reverse declaration order; a unit whose only reason for a <c>$final</c> is a managed global still gets
+    /// a unit table entry. The program's own globals: C-183 (lead decision 2026-11-14) replaced "at the end of <c>$main</c>" by
+    /// a program <c>$final</c> as the last table entry (<see cref="ProgramGlobals_ReleasedAfterExitProcChain"/>).
     /// </summary>
     [Fact]
     [Trait("Req", "CMP-325")]
     [Trait("Req", "CMP-350")]
     [Trait("Req", "LANG-523")]
-    public void ManagedGlobals_AreReleasedAtTheEndOfFinalAndOfMain()
+    public void ManagedGlobals_AreReleasedAtTheEndOfFinal()
     {
         var fs = Files("program P; uses A, B; var S: string; begin S := T + V end.",
             ("A.pas", "unit A; interface var T: string; D: array of Integer; implementation var U: string; initialization finalization Writeln(U); end."),
@@ -344,8 +346,48 @@ public sealed class UnitBindingTests
         Assert.Contains("define void @\"B.$final\"() #0 {\nentry:\n  br label %cleanup\ncleanup:\n  call void @\"System._UStrClr\"(ptr @\"B.V\")\n  br label %exit\n", other);
 
         var program = fs.ReadAllText(@"C:\p\obj\P.ll");
-        Assert.Matches("(?s)define internal void @\"\\$main\"\\(\\) #0 \\{.*\ncleanup:\n(  call void @\"System._UStrClr\"\\(ptr %\\$tmp\\d+\\)\n)*  call void @\"System._UStrClr\"\\(ptr @\"P.S\"\\)\n  br label %exit\n", program);
-        Assert.Contains("{ ptr, ptr } { ptr @\"A.$init\", ptr @\"A.$final\" }, { ptr, ptr } { ptr @\"B.$init\", ptr @\"B.$final\" }]", program);
+        Assert.Contains("define internal void @\"P.$final\"() #0 {\nentry:\n  br label %cleanup\ncleanup:\n  call void @\"System._UStrClr\"(ptr @\"P.S\")\n  br label %exit\n", program);
+        Assert.Contains("{ ptr, ptr } { ptr @\"A.$init\", ptr @\"A.$final\" }, { ptr, ptr } { ptr @\"B.$init\", ptr @\"B.$final\" }, " +
+            "{ ptr, ptr } { ptr null, ptr @\"P.$final\" }]", program);
+    }
+
+    /// <summary>
+    /// C-183 (lead decision 2026-11-14, ABI-104 steps 1–2): a program's managed globals are released by a program
+    /// <c>$final</c> registered as the <b>last</b> <c>$units</c> entry (no <c>$init</c>), so the shutdown finalises it first —
+    /// after the ExitProc chain, before the units' <c>$final</c> — and not at the end of <c>$main</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "ABI-104")]
+    [Trait("Req", "CMP-355")]
+    [Trait("Req", "LANG-523")]
+    public void ProgramGlobals_ReleasedAfterExitProcChain()
+    {
+        var fs = Files("program P; uses B; var S: string; D: array of Integer; begin S := V + V end.",
+            ("B.pas", "unit B; interface var V: string; implementation end."));
+        var result = Run(fs, EmitStage.Ll);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+
+        var program = fs.ReadAllText(@"C:\p\obj\P.ll");
+        var main = program[program.IndexOf("define internal void @\"$main\"() #0 {", StringComparison.Ordinal)..];
+        main = main[..main.IndexOf("\n}\n", StringComparison.Ordinal)];
+        Assert.Contains("call void @\"System._UStrCat\"(ptr @\"P.S\"", main);
+        Assert.DoesNotContain("_UStrClr\"(ptr @\"P.S\")", main);
+        Assert.DoesNotContain("_DynArrayClr\"(ptr @\"P.D\"", main);
+        Assert.Matches("""
+            (?s)define internal void @"P\.\$final"\(\) #0 \{
+            entry:
+              br label %cleanup
+            cleanup:
+              call void @"System._DynArrayClr"\(ptr @"P.D", ptr @[^)]+\)
+              call void @"System._UStrClr"\(ptr @"P.S"\)
+              br label %exit
+            """.Replace("\r\n", "\n"), program);
+        Assert.Contains("@\"$units\" = internal constant [3 x { ptr, ptr }] [" +
+            "{ ptr, ptr } { ptr null, ptr null }, " +                                        // the mini RTL's System has no sections
+            "{ ptr, ptr } { ptr @\"B.$init\", ptr @\"B.$final\" }, " +
+            "{ ptr, ptr } { ptr null, ptr @\"P.$final\" }], align 8", program);
+        Assert.Contains("call void @\"System._Startup\"(ptr @\"$units\", i64 3)", program);
+        Assert.DoesNotContain("declare void @\"P.$final\"", program);
     }
 
     /// <summary>A unit's interface routine and variable are referenced from the program module as external declarations.</summary>

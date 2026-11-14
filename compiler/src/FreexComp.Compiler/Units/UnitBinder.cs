@@ -73,6 +73,9 @@ internal sealed class UnitBinder : IUsesScopes
     private readonly List<LoadedUnit> _units = [];
     private readonly List<LoadedUnit> _interfaceStack = [];
 
+    /// <summary>The uses entry each unit on <see cref="_interfaceStack"/> is binding right now (the opening entry of an E2205 cycle).</summary>
+    private readonly Dictionary<LoadedUnit, UsedUnitSyntax> _entryInProgress = [];
+
     /// <param name="parse">Reads and parses a file with the given <c>{$IF}</c> chain provider; null (with E0002/E0003) when unreadable.</param>
     public UnitBinder(BuiltInTypes types, UnitResolver resolver, Func<string, IUsesScopes?, List<Diagnostic>, SyntaxTree?> parse)
     {
@@ -285,13 +288,27 @@ internal sealed class UnitBinder : IUsesScopes
                 continue;
             }
 
-            if (!EnsureInterface(used))
+            _entryInProgress[unit] = entry;
+            var bound = EnsureInterface(used);
+            _entryInProgress.Remove(unit);
+            if (!bound)
             {
                 if (used.Phase != UnitPhase.Failed)
                 {
-                    // LANG-513: an interface-uses cycle; the path in canonical names (LANG-539)
-                    var cycle = _interfaceStack.Skip(_interfaceStack.IndexOf(used)).Append(used).Select(u => u.Name);
-                    unit.Bag.Report(entry.Name, "E2205", string.Join(" → ", cycle));
+                    // LANG-513 (C-070): an interface-uses cycle, its path in canonical names (LANG-539) from the cycle's unit first
+                    // reached from the program, reported in that unit at its entry that leads into the cycle; a unit still being
+                    // parsed (reached through a {$IF} chain) is not on the stack: then at this entry
+                    var start = _interfaceStack.IndexOf(used);
+                    IEnumerable<LoadedUnit> members = start < 0 ? [used, unit] : _interfaceStack.Skip(start);
+                    var cycle = string.Join(" → ", members.Append(used).Select(u => u.Name));
+                    if (start >= 0 && _entryInProgress.TryGetValue(used, out var opening))
+                    {
+                        used.Bag.Report(opening.Name, "E2205", cycle);
+                    }
+                    else
+                    {
+                        unit.Bag.Report(entry.Name, "E2205", cycle);
+                    }
                 }
 
                 continue;

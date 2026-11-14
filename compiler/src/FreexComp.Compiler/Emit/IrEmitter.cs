@@ -101,6 +101,14 @@ internal static class IrEmitter
         if (unit.Unit.IsProgram)
         {
             EmitMain(module, unit);
+            if (unit.Finalization is { } final)
+            {
+                // C-183: the program's managed globals, released through its own (last) unit table entry
+                module.DefinedRoutines.Add(Mangler.UnitFinal(unit.Unit).Text);
+                new FunctionEmitter(module, final, IrLinkage.Internal, Mangler.UnitFinal(unit.Unit)).Emit();
+                module.DeclarePending();
+            }
+
             EmitStart(module, units.Length);
         }
         else
@@ -207,10 +215,9 @@ internal static class IrEmitter
     /// <summary>CMP-355: <c>@"$units" = internal constant [n x { ptr, ptr }]</c> of <c>{ $init, $final }</c> (or nulls), align 8.</summary>
     private static void DefineUnitTable(ModuleState module, ImmutableArray<UnitTableEntry> units)
     {
-        var entries = units.Select(u => (IrConstant)new IrStructConstant(UnitEntryType, u.HasInitFinal
-            ? [module.Function(new IrFunctionDeclaration(Mangler.UnitInit(u.Unit), IrType.Void, [])),
-               module.Function(new IrFunctionDeclaration(Mangler.UnitFinal(u.Unit), IrType.Void, []))]
-            : [new IrNullConstant(), new IrNullConstant()])).ToImmutableArray();
+        var entries = units.Select(u => (IrConstant)new IrStructConstant(UnitEntryType,
+            [u.HasInit ? module.Function(new IrFunctionDeclaration(Mangler.UnitInit(u.Unit), IrType.Void, [])) : new IrNullConstant(),
+             u.HasFinal ? module.Function(new IrFunctionDeclaration(Mangler.UnitFinal(u.Unit), IrType.Void, [])) : new IrNullConstant()])).ToImmutableArray();
         module.DeclarePending();
         module.Writer.DefineGlobal(new IrGlobalDefinition(UnitsName, IrLinkage.Internal, IsConstant: true,
             new IrArrayConstant(new ArrayIrType(units.Length, UnitEntryType), entries), Alignment: 8));
@@ -350,8 +357,11 @@ internal static class IrEmitter
     }
 }
 
-/// <summary>One <c>$units</c> entry (CMP-355): the unit's <c>$init</c>/<c>$final</c>, or two nulls when <paramref name="HasInitFinal"/> is false.</summary>
-internal sealed record UnitTableEntry(UnitSymbol Unit, bool HasInitFinal);
+/// <summary>
+/// One <c>$units</c> entry (CMP-355): the unit's <c>$init</c> and <c>$final</c>, each null when absent. The program's own entry
+/// (C-183) has only a <c>$final</c>.
+/// </summary>
+internal sealed record UnitTableEntry(UnitSymbol Unit, bool HasInit, bool HasFinal);
 
 /// <summary>A routine's frame record type and its captured variables (struct field <c>Indexes[i + 1]</c> holds <c>Variables[i]</c>, CMP-345).</summary>
 /// <remarks>Fields are padded like records when a variable's LLVM alignment is below its ABI alignment (<see cref="TypeLayout.Struct"/>).</remarks>

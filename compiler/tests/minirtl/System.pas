@@ -17,6 +17,7 @@ var
   ErrOutput: Text;
   ExitCode: Integer;
   InOutRes: Integer;                         { ABI-132; one global here (the mini RTL starts no threads), per thread in the RTL }
+  ExitProc: Pointer;                         { head of the exit-procedure chain, called as a procedure (ABI-104 step 1) }
 
 procedure _Startup(UnitTable: Pointer; UnitCount: NativeInt);
 procedure _InitUnits;
@@ -269,9 +270,20 @@ begin
 end;
 
 { ABI-104 step 2: Final of the initialised entries in reverse order, each at most once (the count drops before the call,
-  so a Halt inside a finalization continues with the next unit). The ExitProc chain and leak report are not in the mini RTL. }
+  so a Halt inside a finalization continues with the next unit). Step 1 before it: the ExitProc chain, each exit procedure
+  taken off the chain before it is called (a Halt inside one continues with the next). No leak report in the mini RTL. }
 procedure FinalizeUnits;
+var
+  P: Pointer;
+  Proc: TUnitProc;
 begin
+  while ExitProc <> nil do
+  begin
+    P := ExitProc;
+    ExitProc := nil;
+    Proc := TUnitProc(P);
+    Proc;
+  end;
   while InitCount > 0 do
   begin
     InitCount := InitCount - 1;

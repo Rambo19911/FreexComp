@@ -119,7 +119,7 @@ public sealed class Compilation
         var objectDirectory = ObjectDirectory(mainPath);
         // link order (CMP-625): the main file, System, then every other unit in init order (LANG-520); each emitted once
         var units = ImmutableArray.Create(main).AddRange(initOrder.Where(u => u != unitBinder.Main).Select(u => u.Result!));
-        var unitTable = main.Unit.IsProgram ? [.. initOrder.Select(u => UnitTableEntryOf(u.Result!))] : ImmutableArray<UnitTableEntry>.Empty;
+        var unitTable = UnitTable(main, initOrder);
         var llPaths = ImmutableArray.CreateBuilder<string>();
         foreach (var unit in units)
         {
@@ -293,8 +293,26 @@ public sealed class Compilation
     /// its <c>$final</c>, C-071) — System included — gets its <c>$init</c>/<c>$final</c>, which the RTL's <c>_InitUnits</c> /
     /// shutdown call through procedural types (ABI-100, C-161); other units have two nulls.
     /// </summary>
-    private static UnitTableEntry UnitTableEntryOf(BindingResult unit) =>
-        new(unit.Unit, HasInitFinal: !unit.Bodies.IsEmpty || !Lowering.Lowerer.ManagedGlobals(unit.Unit).IsEmpty);
+    private static UnitTableEntry UnitTableEntryOf(BindingResult unit)
+    {
+        var used = !unit.Bodies.IsEmpty || !Lowerer.ManagedGlobals(unit.Unit).IsEmpty;
+        return new(unit.Unit, HasInit: used, HasFinal: used);
+    }
+
+    /// <summary>
+    /// CMP-355 table in init order; a program with managed globals adds its own entry last (<c>null</c>, <c>P.$final</c>), so the
+    /// shutdown releases them right after the ExitProc chain and before any unit's <c>$final</c> (ABI-104, C-183).
+    /// </summary>
+    private static ImmutableArray<UnitTableEntry> UnitTable(BindingResult main, IEnumerable<LoadedUnit> initOrder)
+    {
+        if (!main.Unit.IsProgram)
+        {
+            return [];
+        }
+
+        var table = initOrder.Select(u => UnitTableEntryOf(u.Result!));
+        return Lowerer.ManagedGlobals(main.Unit).IsEmpty ? [.. table] : [.. table, new UnitTableEntry(main.Unit, HasInit: false, HasFinal: true)];
+    }
 
     /// <summary>Lowers and emits one unit; the program gets the unit table.</summary>
     private static string? EmitIr(BindingResult unit, ImmutableArray<UnitTableEntry> unitTable, Location location, ImmutableArray<Diagnostic>.Builder diagnostics)

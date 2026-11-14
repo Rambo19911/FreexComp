@@ -35,7 +35,7 @@ E2201  elsewhere UnitBindingTests  needs a unit file whose heading differs from 
 E2202  elsewhere UnitBindingTests  unit resolution over the file system (also EmitTests: System not found)
 E2203  elsewhere UnitBindingTests  uses entries are resolved by the compilation, not by a snippet
 E2204  elsewhere UnitBindingTests  needs a unit file
-E2205  elsewhere UnitBindingTests  needs unit files (C-070 adds UnitGraphTests)
+E2205  elsewhere UnitGraphTests  needs unit files (location and path: LANG-513, C-070)
 E2206  elsewhere UnitBindingTests  needs a second program file
 E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  M2.3  unit alias table

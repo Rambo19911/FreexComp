@@ -1,0 +1,1 @@
+Alpha.pas(5,6): error E2205: Circular unit reference: Alpha → Beta → Gamma → Alpha
