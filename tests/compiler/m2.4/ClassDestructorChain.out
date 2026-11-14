@@ -1,0 +1,25 @@
+TLeaf.Create begin
+TBase.Create
+TLeaf.Create end
+AfterConstruction
+--- Free through a TBase reference
+BeforeDestruction
+TLeaf.Destroy
+TMiddle.Destroy
+TBase.Destroy
+--- Destroy
+TBase.Create
+AfterConstruction
+BeforeDestruction
+TMiddle.Destroy
+TBase.Destroy
+--- another destructor
+TLeaf.Create begin
+TBase.Create
+TLeaf.Create end
+AfterConstruction
+BeforeDestruction
+TLeaf.Close
+TMiddle.Destroy
+TBase.Destroy
+leaked: 0

@@ -12,6 +12,7 @@ GetTickCount
 HeapAlloc
 HeapFree
 HeapReAlloc
+RaiseException
 ReadFile
 WaitForSingleObject
 WideCharToMultiByte

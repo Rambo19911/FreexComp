@@ -19,6 +19,25 @@ var
   InOutRes: Integer;                         { ABI-132; one global here (the mini RTL starts no threads), per thread in the RTL }
   ExitProc: Pointer;                         { head of the exit-procedure chain, called as a procedure (ABI-104 step 1) }
 
+type
+  { the root class (rtl-abi.md 7.1/7.2, C-082): the virtual methods in ABI-073 slot order. The message parameters are
+    typed Pointer until untyped var parameters exist (same IR: ptr). ToString returns '' until ClassName exists (C-089). }
+  TObject = class
+  public
+    constructor Create;
+    procedure Free;
+    destructor Destroy; virtual;
+    procedure AfterConstruction; virtual;
+    procedure BeforeDestruction; virtual;
+    class function NewInstance: TObject; virtual;
+    procedure FreeInstance; virtual;
+    function ToString: string; virtual;
+    function Equals(Obj: TObject): Boolean; virtual;
+    function GetHashCode: Integer; virtual;
+    procedure Dispatch(var Message: Pointer); virtual;
+    procedure DefaultHandler(var Message: Pointer); virtual;
+  end;
+
 procedure _Startup(UnitTable: Pointer; UnitCount: NativeInt);
 procedure _InitUnits;
 procedure _Halt(Code: Integer); noreturn;
@@ -2878,6 +2897,85 @@ var
 begin
   Pending := InField(T, 16);
   Result := (Pending^ = 0) and IsLineEnd(PeekByte(T));
+end;
+
+{ ---- TObject (ABI-072, ABI-073, ABI-077) }
+
+constructor TObject.Create;
+begin
+end;
+
+procedure TObject.Free;
+begin
+  if Self <> nil then
+    Destroy;
+end;
+
+destructor TObject.Destroy;
+begin
+end;
+
+procedure TObject.AfterConstruction;
+begin
+end;
+
+procedure TObject.BeforeDestruction;
+begin
+end;
+
+{ ABI-072: InstanceSize (VMT+8) zero-filled bytes, the VMT pointer at offset 0 }
+class function TObject.NewInstance: TObject;
+var
+  P: PPointer;
+begin
+  P := _AllocZero(PNativeInt(PByte(Self) + 8)^);
+  P^ := Self;
+  Result := TObject(P);
+end;
+
+{ ABI-072: the managed fields of the class and of every ancestor (InitTable at VMT+48: Count, then (TypeInfo, Offset)
+  pairs), then the block }
+procedure TObject.FreeInstance;
+var
+  VMT, Table: PByte;
+  Count, I: NativeInt;
+begin
+  VMT := PPointer(Self)^;
+  while VMT <> nil do
+  begin
+    Table := PPointer(VMT + 48)^;
+    if Table <> nil then
+    begin
+      Count := PNativeInt(Table)^;
+      for I := 0 to Count - 1 do
+        _Finalize(PByte(Self) + PNativeInt(Table + 16 + I * 16)^, PPointer(Table + 8 + I * 16)^);
+    end;
+    VMT := PPointer(VMT)^;
+  end;
+  _FreeMem(Pointer(Self));
+end;
+
+function TObject.ToString: string;
+begin
+  Result := '';
+end;
+
+function TObject.Equals(Obj: TObject): Boolean;
+begin
+  Result := Obj = Self;
+end;
+
+function TObject.GetHashCode: Integer;
+begin
+  Result := Integer(NativeInt(Self));
+end;
+
+procedure TObject.Dispatch(var Message: Pointer);
+begin
+end;
+
+procedure TObject.DefaultHandler(var Message: Pointer);
+begin
 end;
 
 end.

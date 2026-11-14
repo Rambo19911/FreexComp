@@ -94,7 +94,9 @@ internal abstract record LCallee
 }
 
 /// <summary>A routine; with <paramref name="Target"/> a call through that procedural value whose signature is <paramref name="Routine"/> (CMP-378).</summary>
-internal sealed record LRoutineCallee(RoutineSymbol Routine, LExpression? Target = null) : LCallee
+/// <remarks>A method call (CMP-367) passes <paramref name="Self"/> and the constructor/destructor <paramref name="Flag"/> first (ABI-082); with
+/// <paramref name="IsVirtual"/> the code address is read from the VMT slot of <c>Self</c>'s class (<c>Self</c> itself is the VMT for class methods).</remarks>
+internal sealed record LRoutineCallee(RoutineSymbol Routine, LExpression? Target = null, LExpression? Self = null, int? Flag = null, bool IsVirtual = false) : LCallee
 {
     public override TypeSymbol? ReturnType => Routine.ReturnType;
 
@@ -498,6 +500,12 @@ internal sealed class LPointerOffset(LExpression pointer, LExpression index, Typ
 internal sealed class LRoutineAddress(RoutineSymbol routine, TypeSymbol pointerType) : LExpression(pointerType)
 {
     public RoutineSymbol Routine { get; } = routine;
+}
+
+/// <summary>The VMT of <see cref="Class"/> (ABI-071 class reference, CMP-366 <c>@"U.T.$vmt"</c>); type <c>Pointer</c>.</summary>
+internal sealed class LClassRef(ClassTypeSymbol type, TypeSymbol pointerType) : LExpression(pointerType)
+{
+    public ClassTypeSymbol Class { get; } = type;
 }
 
 /// <summary>

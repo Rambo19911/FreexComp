@@ -9,7 +9,7 @@ namespace FreexComp.Compiler.GoldenTests;
 public static class GoldenTheory
 {
     /// <summary>The milestone directories that have a test class below (CMP-900: <c>m2.1</c> … <c>m2.6</c>).</summary>
-    public static readonly IReadOnlyList<string> Milestones = ["m2.1", "m2.2", "m2.3"];
+    public static readonly IReadOnlyList<string> Milestones = ["m2.1", "m2.2", "m2.3", "m2.4"];
 
     public static IEnumerable<TheoryDataRow<string, string>> CasesOf(string milestone) =>
         GoldenCorpus.Rows(GoldenCorpus.Discover(GoldenSetup.CorpusDirectory).Where(c => c.Id.StartsWith(milestone + "/", StringComparison.Ordinal)));
@@ -57,6 +57,19 @@ public sealed class GoldenM22Tests
 public sealed class GoldenM23Tests
 {
     public static IEnumerable<TheoryDataRow<string, string>> Cases() => GoldenTheory.CasesOf("m2.3");
+
+    [Theory]
+    [MemberData(nameof(Cases))]
+    public Task Golden(string id, string optimization) => GoldenTheory.RunAsync(id, optimization);
+}
+
+/// <summary>Milestone M2.4 — classes and exceptions (CMP-911 collection).</summary>
+[Trait("Phase", "2")]
+[Trait("Kind", "Golden")]
+[Trait("Category", "Toolchain")]
+public sealed class GoldenM24Tests
+{
+    public static IEnumerable<TheoryDataRow<string, string>> Cases() => GoldenTheory.CasesOf("m2.4");
 
     [Theory]
     [MemberData(nameof(Cases))]

@@ -96,7 +96,7 @@ internal static class ManagedRewriter
         switch (value)
         {
             case BoundCallExpression call:
-                return context.CallInto(target, call.Routine, call.Arguments, call.Target);
+                return context.CallInto(target, call.Routine, call.Arguments, call.Target, call.Receiver);
             case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: StringTypeSymbol } concatenation:
                 return Concatenate(context, target, concatenation);
             case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
@@ -321,7 +321,7 @@ internal static class ManagedRewriter
     public static bool References(LNode node, LLocal local) => node switch
     {
         LLocalRef reference => ReferenceEquals(reference.Local, local),
-        LConst or LGlobalRef or LStringLiteral or LParamRef or LOuterRef or LTempRef or LRoutineAddress
+        LConst or LGlobalRef or LStringLiteral or LParamRef or LOuterRef or LTempRef or LRoutineAddress or LClassRef
             or LReturn or LUnreachable or LBreak or LContinue => false,
         LAddrOf a => References(a.Variable, local),
         LUnary u => References(u.Operand, local),
@@ -330,7 +330,7 @@ internal static class ManagedRewriter
         LConvert c => References(c.Operand, local),
         LRangeCheck r => References(r.Value, local),
         LSelect s => References(s.Condition, local) || References(s.WhenTrue, local) || References(s.WhenFalse, local),
-        LCall c => c.Callee is LRoutineCallee { Target: { } t } && References(t, local) || c.Arguments.Any(a => References(a, local)),
+        LCall c => References(c.Callee, local) || c.Arguments.Any(a => References(a, local)),
         LTemp t => References(t.Value, local) || References(t.Body, local),
         LSequence s => References(s.First, local) || References(s.Value, local),
         LView v => References(v.Aggregate, local),
@@ -347,7 +347,7 @@ internal static class ManagedRewriter
         LAtomic a => References(a.Target, local) || References(a.Value, local) || (a.Comparand is { } c && References(c, local)),
         LBlock b => b.Statements.Any(s => References(s, local)),
         LAssign a => References(a.Target, local) || References(a.Value, local),
-        LCallStatement c => c.Callee is LRoutineCallee { Target: { } t } && References(t, local) || c.Arguments.Any(a => References(a, local)),
+        LCallStatement c => References(c.Callee, local) || c.Arguments.Any(a => References(a, local)),
         LIf i => References(i.Condition, local) || References(i.Then, local) || (i.Else is { } e && References(e, local)),
         LLoop l => References(l.Body, local) || (l.Step is { } s && References(s, local)),
         LSwitch s => References(s.Selector, local) || s.Sections.Any(c => References(c.Body, local)) || (s.Default is { } d && References(d, local)),
@@ -357,4 +357,8 @@ internal static class ManagedRewriter
         LMemMove m => References(m.Source, local) || References(m.Destination, local) || References(m.Count, local),
         _ => throw new InvalidOperationException($"Unknown lowered node {node.GetType().Name}."),
     };
+
+    /// <summary>The procedural value and the <c>Self</c> a call evaluates before its arguments.</summary>
+    private static bool References(LCallee callee, LLocal local) =>
+        callee is LRoutineCallee routine && (routine.Target is { } t && References(t, local) || routine.Self is { } s && References(s, local));
 }

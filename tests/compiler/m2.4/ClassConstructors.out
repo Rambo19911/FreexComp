@@ -1,0 +1,14 @@
+TBase.Create
+base 1
+TBase.Create
+TBase.CreateNamed named
+named 1
+TBase.Create
+TBase.CreateNamed derived
+derived 6
+5
+TBase.Create
+TBase.CreateNamed derived
+derived 1
+TRUE 0 0
+leaked: 0

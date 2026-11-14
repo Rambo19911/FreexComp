@@ -1,0 +1,3 @@
+ErrMethodNotImplemented.pas(7,14): error E2605: Method 'TShape.Area' is not implemented
+ErrMethodNotImplemented.pas(8,15): error E2605: Method 'TShape.Done' is not implemented
+ErrMethodNotImplemented.pas(15,18): error E2606: 'Resize' is not a member of class 'TShape'

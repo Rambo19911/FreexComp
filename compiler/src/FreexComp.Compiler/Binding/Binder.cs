@@ -95,8 +95,11 @@ internal static class Binder
 
         // routine bodies, each with its own E2003 set (CMP-507); nested routines after their enclosing routine
         var routines = ImmutableArray.CreateBuilder<BoundRoutineBody>();
+        // methods of the unit's classes (C-081) are bound with the routines, in definition order
         var pending = new Queue<RoutineSymbol>(declarations.Unit.InterfaceMembers.Concat(declarations.Unit.ImplementationMembers)
-            .OfType<RoutineSymbol>().Where(r => r.Definition != null)
+            .OfType<RoutineSymbol>()
+            .Concat(DeclarationBinder.ClassesOf(declarations.Unit).SelectMany(c => c.Methods))
+            .Where(r => r.Definition != null)
             .OrderBy(r => r.Definition!.Span.Start));
         while (pending.Count > 0)
         {
@@ -147,7 +150,30 @@ internal static class Binder
         // a routine sees the enclosing scope's declarations up to its own definition (LANG-402, C-172); for a unit's
         // implementation routine that limits the implementation scope only (the interface stays visible as its parent)
         var outer = routine.DefinitionScope!;
-        var scope = new Scope(ScopeKind.Routine, outer, routine, routine.DefinitionScopeVisibleCount);
+        Scope scope;
+        if (routine is MethodSymbol method)
+        {
+            // LANG-621: the members of the class and its ancestors are in scope (one scope per class, the class innermost); the
+            // limit of LANG-402 applies to the definition scope. Self comes first; parameters and locals hide members.
+            var members = outer;
+            int? visible = routine.DefinitionScopeVisibleCount;
+            foreach (var type in method.ContainingType.SelfAndAncestors().Reverse())
+            {
+                members = MemberScope(type, members, visible);
+                visible = null;
+            }
+
+            scope = new Scope(ScopeKind.Routine, members, routine);
+            if (method.SelfParameter is { } self)
+            {
+                scope.TryDeclare(self, out _);
+            }
+        }
+        else
+        {
+            scope = new Scope(ScopeKind.Routine, outer, routine, routine.DefinitionScopeVisibleCount);
+        }
+
         if (routine.ResultVariable is { } result)
         {
             scope.TryDeclare(result, out _);
@@ -167,6 +193,21 @@ internal static class Binder
         {
             AddressTaken = [.. binder.AddressTakenVariables],
         };
+    }
+
+    /// <summary>A fresh scope with the own members of <paramref name="type"/> (overloaded methods as one overload set).</summary>
+    private static Scope MemberScope(ClassTypeSymbol type, Scope parent, int? parentVisibleCount)
+    {
+        var scope = new Scope(ScopeKind.TypeMember, parent, type, parentVisibleCount);
+        foreach (var member in type.Members)
+        {
+            if (!scope.TryDeclare(member, out var existing) && member is RoutineSymbol routine && existing is RoutineSymbol)
+            {
+                scope.AddOverload(routine);
+            }
+        }
+
+        return scope;
     }
 
     /// <summary>

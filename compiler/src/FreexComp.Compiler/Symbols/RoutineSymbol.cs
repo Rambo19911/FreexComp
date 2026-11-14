@@ -71,7 +71,17 @@ public class RoutineSymbol : Symbol
         Declaration = null!;
     }
 
+    /// <summary>A method (<see cref="MethodSymbol"/>): declared in a class body, no <see cref="Declaration"/>.</summary>
+    private protected RoutineSymbol(SymbolKind kind, string name, Symbol containingSymbol, ImmutableArray<Location> locations, Visibility visibility)
+        : base(kind, name, containingSymbol, locations, visibility)
+    {
+        Declaration = null!;
+    }
+
     public ImmutableArray<ParameterSymbol> Parameters { get; internal set; } = [];
+
+    /// <summary>Parameters the IR passes before the hidden <c>Result</c> and <see cref="Parameters"/> (ABI-082): a method's <c>Self</c> and flag.</summary>
+    internal virtual ImmutableArray<ParameterSymbol> ImplicitParameters => [];
 
     /// <summary>Null for procedures.</summary>
     public TypeSymbol? ReturnType { get; internal set; }

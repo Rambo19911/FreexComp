@@ -19,7 +19,7 @@ internal sealed record DeclarationBindingResult(
 /// Binds declaration sections into a scope (CMP-113): creates the declared symbols in source order and reports
 /// declaration errors. One instance per scope being filled.
 /// </summary>
-internal sealed class DeclarationBinder
+internal sealed partial class DeclarationBinder
 {
     private readonly BuiltInTypes _types;
     private readonly Scope _scope;
@@ -95,6 +95,7 @@ internal sealed class DeclarationBinder
                 var scope = new Scope(ScopeKind.Unit, interfaceUses, symbol);
                 symbol.ImplementationMembers = new DeclarationBinder(types, scope, symbol, diagnostics)
                     .BindDeclarations(program.Block.Declarations);
+                ReportUnimplementedMethods(symbol, diagnostics);
                 return new DeclarationBindingResult(symbol, null, scope, diagnostics.ToImmutable());
             }
 
@@ -128,6 +129,8 @@ internal sealed class DeclarationBinder
         {
             diagnostics.Report(routine.Declaration.Heading.Name, "E2100", routine.Name);     // LANG-400
         }
+
+        ReportUnimplementedMethods(symbol, diagnostics);
 
         return new DeclarationBindingResult(symbol, interfaceScope, implementationScope, diagnostics.ToImmutable());
     }
@@ -208,11 +211,18 @@ internal sealed class DeclarationBinder
         // LANG-208: ^T may name a type declared later in this section; such pointers are completed after the section
         _sectionTypeNames = new(section.Declarations.Where(d => !d.Identifier.IsMissing).Select(d => NameOf(d.Identifier)), IdentifierComparer.Instance);
         _forwardPointers = [];
+        var forwardClasses = new List<(ClassTypeSymbol Type, SyntaxToken Identifier)>();
         foreach (var declaration in section.Declarations)
         {
             var identifier = declaration.Identifier;
             if (identifier.IsMissing)
             {
+                continue;
+            }
+
+            if (declaration.Type is ClassTypeSyntax classSyntax && declaration.TypeParameterList is null && declaration.TypeKeyword is null)
+            {
+                BindClassDeclaration(identifier, classSyntax, declared, forwardClasses);
                 continue;
             }
 
@@ -255,6 +265,11 @@ internal sealed class DeclarationBinder
                 _diagnostics.Report(pointedName, "E2015", NameOf(pointedName.Identifier));
                 pointer.PointedType = _types.Error;
             }
+        }
+
+        foreach (var (type, identifier) in forwardClasses.Where(f => f.Type.IsForward))
+        {
+            _diagnostics.Report(identifier, "E2015", type.Name);                    // LANG-601
         }
 
         _sectionTypeNames = null;
@@ -842,6 +857,12 @@ internal sealed class DeclarationBinder
     private void BindRoutine(RoutineDeclarationSyntax declaration, ImmutableArray<Symbol>.Builder declared)
     {
         var heading = declaration.Heading;
+        if (heading.Name is QualifiedNameSyntax)
+        {
+            BindMethodImplementation(declaration);                              // procedure TFoo.Bar (LANG-620)
+            return;
+        }
+
         if (!IsSupportedHeading(heading, out var identifier))
         {
             return;

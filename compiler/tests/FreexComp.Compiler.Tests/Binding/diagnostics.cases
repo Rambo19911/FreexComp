@@ -270,3 +270,33 @@ var P: Pointer; begin P := @Writeln end.
 var P: Pointer; begin P := Addr(Inc) end.
 === E2042 1,82
 type R = packed record B: Byte; I: Integer; end; var X: R; begin AtomicIncrement(X.I) end.
+=== E2601 1,40
+type TA = class sealed end; TB = class(TA) end; begin end.
+=== E2602 1,24
+procedure P; type TA = class end; begin end; begin end.
+=== E2603 1,17
+type TA = class(Integer) end; begin end.
+=== E2605 1,27
+type TA = class procedure P; end; begin end.
+=== E2606 1,35
+type TA = class end; procedure TA.P; begin end; begin end.
+=== E2607 1,68
+type TA = class procedure P; end; procedure TA.P; begin end; begin TA.P end.
+=== E2608 1,81
+type TA = class X: Integer; class procedure P; end; class procedure TA.P; begin X := 1 end; begin end.
+=== E2620 1,27
+type TA = class procedure P; override; end; procedure TA.P; begin end; begin end.
+=== E2621 1,69
+type TA = class procedure P; virtual; end; TB = class(TA) procedure P(X: Integer); override; end; procedure TA.P; begin end; procedure TB.P(X: Integer); begin end; begin end.
+=== E2622 1,27
+type TA = class procedure P; abstract; end; procedure TA.P; begin end; begin end.
+=== E2623 1,67
+type TA = class procedure P; virtual; abstract; end; procedure TA.P; begin end; begin end.
+=== E2624 1,76
+type TA = class procedure P; virtual; final; end; TB = class(TA) procedure P; override; end; procedure TA.P; begin end; procedure TB.P; begin end; begin end.
+=== E2625 1,27
+type TA = class procedure P; virtual; override; end; procedure TA.P; begin end; begin end.
+=== E2626 1,119
+type TA = class procedure P; virtual; abstract; end; TB = class(TA) procedure P; override; end; procedure TB.P; begin inherited P end; begin end.
+=== W1060 1,69
+type TA = class procedure P; virtual; end; TB = class(TA) procedure P; end; procedure TA.P; begin end; procedure TB.P; begin end; begin end.

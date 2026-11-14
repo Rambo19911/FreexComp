@@ -40,23 +40,9 @@ E2206  elsewhere UnitBindingTests  needs a second program file
 E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  M2.3  unit alias table
 E2600  M2.4  classes
-E2601  M2.4  classes
-E2602  M2.4  classes
-E2603  M2.4  classes
 E2604  M2.4  classes
-E2605  M2.4  classes
-E2606  M2.4  classes
-E2607  M2.4  classes
-E2608  M2.4  classes
 E2610  M2.4  visibility
 E2611  M2.5  published fields (RTTI)
-E2620  M2.4  virtual methods
-E2621  M2.4  virtual methods
-E2622  M2.4  virtual methods
-E2623  M2.4  virtual methods
-E2624  M2.4  virtual methods
-E2625  M2.4  method directives
-E2626  M2.4  inherited abstract call
 E2627  M2.5  message methods (LANG-622)
 E2630  M2.5  published properties
 E2631  M2.4  properties
@@ -98,7 +84,6 @@ W1030  Phase8  LANG-462 accepts 'safecall' silently (C-160 ExternalDecl snapshot
 W1050  M2.3  hint directives used outside their unit (LANG-472)
 W1051  M2.3  hint directives used outside their unit (LANG-472)
 W1052  M2.3  hint directives used outside their unit (LANG-472)
-W1060  M2.4  classes
 W1061  M2.4  classes
 W1062  M2.4  classes
 W1070  M2.6  attributes

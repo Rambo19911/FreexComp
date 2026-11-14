@@ -69,6 +69,8 @@ internal sealed class BodyBinder
                 return BindFor(forStatement);
             case CaseStatementSyntax caseStatement:
                 return BindCase(caseStatement);
+            case InheritedStatementSyntax inherited:
+                return _expressions.BindMethodCallStatement(inherited, inherited.Expression)!;      // LANG-624
             default:
                 if (!statement.ContainsDiagnostics)
                 {
@@ -100,6 +102,7 @@ internal sealed class BodyBinder
                 return new BoundAssignmentStatement(assignment, target, value);
             case BoundVariableExpression:
             case BoundDereferenceExpression:
+            case BoundFieldAccessExpression:
             case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:
                 break;
             default:
@@ -150,6 +153,11 @@ internal sealed class BodyBinder
         if (symbol is IntrinsicSymbol { IsFunction: false } intrinsic)
         {
             return BindControlIntrinsic(statement, intrinsic);
+        }
+
+        if (_expressions.BindMethodCallStatement(statement, statement.Expression) is { } methodCall)
+        {
+            return methodCall;                                                  // M(x), o.M(x), TFoo.Create (C-081)
         }
 
         if (symbol is RoutineSymbol)

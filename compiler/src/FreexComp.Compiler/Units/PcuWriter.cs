@@ -551,10 +551,65 @@ internal sealed class PcuWriter(PcuContext context)
                     entry["ofObject"] = false;
                     entry["reference"] = false;
                     return;
+                case ClassTypeSymbol @class:
+                    // architecture.md §6 `class` (C-080); interfaces, properties and RTTI arrive with M2.5
+                    entry["kind"] = "class";
+                    entry["name"] = @class.Name;
+                    entry["parent"] = @class.Parent is { } parent ? TypeId(parent) : null;
+                    entry["interfaces"] = new JsonArray();
+                    entry["instanceSize"] = @class.InstanceSize;
+                    entry["flags"] = Strings([.. @class.IsAbstract ? ["abstract"] : Array.Empty<string>(), .. @class.IsSealed ? ["sealed"] : Array.Empty<string>()]);
+                    entry["fields"] = new JsonArray([.. @class.Fields.Select(f => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = f.Name,
+                        ["type"] = TypeId(f.Type),
+                        ["offset"] = f.Offset,
+                        ["visibility"] = VisibilityName(f.Visibility),
+                        ["classVar"] = false,
+                    })]);
+                    entry["methods"] = new JsonArray([.. @class.Methods.Select(m => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = m.Name,
+                        ["linkName"] = m.LinkName,
+                        ["params"] = Parameters(m),
+                        ["result"] = m.ReturnType is { } result && m.MethodKind != MethodKind.Constructor ? TypeId(result) : null,
+                        ["flags"] = Strings(Flags(m)),
+                        ["visibility"] = VisibilityName(m.Visibility),
+                        ["binding"] = Binding(m),
+                        ["slot"] = m.VmtSlot,
+                    })]);
+                    entry["properties"] = new JsonArray();
+                    entry["vmtLinkName"] = Emit.Mangler.Vmt(@class).Text;
+                    entry["vmtSlotCount"] = @class.VmtSlotCount;
+                    return;
                 default:
                     throw new NotSupportedException($".pcu description of type '{type.Name}' ({type.TypeKind})");
             }
         }
+
+        private static string VisibilityName(Visibility visibility) => visibility switch
+        {
+            Visibility.StrictPrivate => "strict private",
+            Visibility.Private => "private",
+            Visibility.StrictProtected => "strict protected",
+            Visibility.Protected => "protected",
+            Visibility.Published => "published",
+            _ => "public",
+        };
+
+        /// <summary>The §6 <c>binding</c> of a method: its kind, else how it is dispatched.</summary>
+        private static string Binding(MethodSymbol method) => method switch
+        {
+            { MethodKind: MethodKind.Constructor } => "constructor",
+            { MethodKind: MethodKind.Destructor } => "destructor",
+            { MethodKind: MethodKind.ClassStatic } => "classStatic",
+            { IsAbstract: true } => "abstract",
+            { IsOverride: true, IsFinal: true } or { IsVirtual: true, IsFinal: true } => "final",
+            { IsOverride: true } => "override",
+            { IsVirtual: true } => "virtual",
+            { MethodKind: MethodKind.ClassMethod } => "class",
+            _ => "static",
+        };
 
         private void Subrange(JsonObject entry, string name, TypeSymbol host, BigInteger low, BigInteger high)
         {

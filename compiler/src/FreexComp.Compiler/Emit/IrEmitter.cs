@@ -60,7 +60,8 @@ internal static class IrEmitter
         }
 
         var interfaceMembers = unit.Unit.InterfaceMembers.Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).ToHashSet();
-        var module = new ModuleState(writer) { UnitName = unit.Unit.Name };
+        var classes = Binding.DeclarationBinder.ClassesOf(unit.Unit).ToImmutableArray();
+        var module = new ModuleState(writer) { UnitName = unit.Unit.Name, OwnClasses = [.. classes] };
         foreach (var body in unit.Routines)
         {
             module.DefinedRoutines.Add(Mangler.Routine(body.Routine!).Text);
@@ -91,6 +92,7 @@ internal static class IrEmitter
         {
             var routine = body.Routine!;
             var linkage = routine.ExplicitLinkName is not null || (!routine.IsNested && interfaceMembers.Contains(routine))
+                || routine is MethodSymbol method && interfaceMembers.Contains(method.ContainingType)
                 ? IrLinkage.External
                 : IrLinkage.Internal;
             new FunctionEmitter(module, body, linkage).Emit();
@@ -120,6 +122,10 @@ internal static class IrEmitter
             module.DeclarePending();
         }
 
+        // CMP-366: the VMTs are built before the literals are written (class names are UnicodeString literals)
+        var vmts = classes.Select(c => (Class: c, Constant: Vmt(module, c))).ToImmutableArray();
+        module.DeclarePending();
+
         foreach (var (name, literal) in module.StringLiterals)
         {
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, literal, Alignment: 16, UnnamedAddr: true));
@@ -142,6 +148,12 @@ internal static class IrEmitter
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.LinkOnceOdr, IsConstant: true, block, Alignment: 8));     // CMP-405, CMP-365
         }
 
+        foreach (var (type, constant) in vmts)
+        {
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.Vmt(type), interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal,
+                IsConstant: true, constant, Alignment: 8));
+        }
+
         if (unit.Unit.IsProgram)
         {
             DefineUnitTable(module, units);
@@ -161,6 +173,11 @@ internal static class IrEmitter
         {
             var layout = TypeLayout.Of(type);
             writer.DeclareGlobal(name, layout.StorageType, layout.Alignment);
+        }
+
+        foreach (var name in module.ExternalVmts)
+        {
+            writer.DeclareGlobal(name, IrType.Ptr, 8);                          // another unit's VMT: only its address is used
         }
 
         writer.DefineAttributeGroup(RoutineGroup, [IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
@@ -223,6 +240,42 @@ internal static class IrEmitter
             new IrArrayConstant(new ArrayIrType(units.Length, UnitEntryType), entries), Alignment: 8));
     }
 
+    /// <summary>
+    /// CMP-366 / rtl-abi.md §7.2: <c>{ Parent, InstanceSize, ClassName, TypeInfo, IntfTable, MsgTable, InitTable, Reserved, [N x ptr]
+    /// slots }</c>; abstract slots point to <c>System._AbstractError</c>. TypeInfo is null until class RTTI is emitted (M2.5).
+    /// </summary>
+    private static IrConstant Vmt(ModuleState module, ClassTypeSymbol type)
+    {
+        var managed = type.ManagedFields.ToImmutableArray();
+        IrConstant initTable = new IrNullConstant();
+        if (!managed.IsEmpty)
+        {
+            // ABI §7.2: { i64 Count, [Count x { ptr TypeInfo, i64 Offset }] }
+            var entry = new StructIrType([IrType.Ptr, IrType.I64]);
+            var entries = new ArrayIrType(managed.Length, entry);
+            var table = new IrStructConstant(new StructIrType([IrType.I64, entries]), [IrIntConstant.I64(managed.Length),
+                new IrArrayConstant(entries, [.. managed.Select(f => (IrConstant)new IrStructConstant(entry, [module.TypeInfo(f.Type), IrIntConstant.I64(f.Offset)]))])]);
+            module.AggregateConstants.Add((Mangler.InitTable(type), table, 8));
+            initTable = new IrGlobal(Mangler.InitTable(type));
+        }
+
+        var slots = new ArrayIrType(type.VirtualSlots.Length, IrType.Ptr);
+        IrConstant Slot(MethodSymbol method) => method.IsAbstract ? module.NoReturnHelper("_AbstractError") : module.Routine(method);
+        var vmtType = new StructIrType([IrType.Ptr, IrType.I64, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, slots]);
+        return new IrStructConstant(vmtType,
+        [
+            type.Parent is { } parent ? module.Vmt(parent) : new IrNullConstant(),
+            IrIntConstant.I64(type.InstanceSize),
+            module.StringLiteral(type.Name),
+            new IrNullConstant(),
+            new IrNullConstant(),
+            new IrNullConstant(),
+            initTable,
+            new IrNullConstant(),
+            type.VirtualSlots.IsEmpty ? new IrZeroConstant(slots) : new IrArrayConstant(slots, [.. type.VirtualSlots.Select(Slot)]),
+        ]);
+    }
+
     private static IEnumerable<LoweredBody> InEmissionOrder(ImmutableArray<LoweredBody> routines)
     {
         IEnumerable<LoweredBody> WithNested(LoweredBody body) =>
@@ -237,6 +290,7 @@ internal static class IrEmitter
     /// </summary>
     internal static ImmutableArray<IrType> ParameterTypes(RoutineSymbol routine) =>
         [.. (routine.IsNested ? [IrType.Ptr] : Array.Empty<IrType>()),
+         .. routine.ImplicitParameters.Select(ParameterType),
          .. (HasHiddenResult(routine) ? [IrType.Ptr] : Array.Empty<IrType>()),
          .. routine.Parameters.Select(ParameterType)];
 
@@ -298,7 +352,7 @@ internal static class IrEmitter
         (BooleanTypeSymbol, BigInteger i) => IrIntConstant.I1(!i.IsZero),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, BigInteger i) => new IrFloatConstant((FloatingIrType)ValueType(type), (double)i),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, double d) => new IrFloatConstant((FloatingIrType)ValueType(type), d),
-        (PointerTypeSymbol or ProceduralTypeSymbol, null) => new IrNullConstant(),
+        (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol, null) => new IrNullConstant(),
         (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
         (SetTypeSymbol { IsSmall: true }, BigInteger mask) => new IrIntConstant((IntegerIrType)ValueType(type), mask),       // CMP-335
         (SetTypeSymbol, BigInteger mask) => BigSetConstant(mask, type.Size),                                                  // CMP-336
@@ -403,6 +457,26 @@ internal sealed class ModuleState(IIrWriter writer)
     }
 
     public bool UsesNoReturn { get; private set; }
+
+    /// <summary>The classes this unit declares: their VMTs are defined here (CMP-366).</summary>
+    public HashSet<ClassTypeSymbol> OwnClasses { get; init; } = [];
+
+    private readonly SortedSet<LinkName> _externalVmts = new(Comparer<LinkName>.Create((a, b) => string.CompareOrdinal(a.Text, b.Text)));
+
+    /// <summary>VMTs of other units' classes referenced here, sorted by link name.</summary>
+    public IEnumerable<LinkName> ExternalVmts => _externalVmts;
+
+    /// <summary>The address of a class's VMT (ABI-071: a class reference), declared external when another unit defines it.</summary>
+    public IrGlobal Vmt(ClassTypeSymbol type)
+    {
+        var name = Mangler.Vmt(type);
+        if (!OwnClasses.Contains(type))
+        {
+            _externalVmts.Add(name);
+        }
+
+        return new IrGlobal(name);
+    }
 
     private readonly Dictionary<string, IrConstant> _literalReferences = new(StringComparer.Ordinal);
     private readonly SortedDictionary<string, (LinkName Name, TypeSymbol Type)> _externals = new(StringComparer.Ordinal);
@@ -689,7 +763,9 @@ internal sealed class FunctionEmitter
     private readonly IIrWriter _w;
     private readonly LoweredBody _body;
     private readonly RoutineSymbol? _routine;
+    /// <summary>Implicit parameters (a method's <c>Self</c> and flag, ABI-082) first, then the declared ones.</summary>
     private readonly ImmutableArray<ParameterSymbol> _parameters;
+    private readonly int _implicitCount;
     private readonly LinkName _name;
     private readonly IrLinkage _linkage;
     private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase) { Entry.Name, Exit.Name, CleanupBlock.Name };
@@ -718,7 +794,8 @@ internal sealed class FunctionEmitter
         _w = module.Writer;
         _body = body;
         _routine = body.Routine;
-        _parameters = _routine?.Parameters ?? [];
+        _implicitCount = _routine?.ImplicitParameters.Length ?? 0;
+        _parameters = _routine is null ? [] : [.. _routine.ImplicitParameters, .. _routine.Parameters];
         _name = name ?? Mangler.Routine(_routine ?? throw new ArgumentException("A body without routine needs a name.", nameof(name)));
         _linkage = linkage;
         _returnTarget = body.Cleanup is null ? Exit : CleanupBlock;
@@ -735,9 +812,11 @@ internal sealed class FunctionEmitter
         var link = _routine is { IsNested: true } ? new IrParameter(IrType.Ptr, Unique("$link")) : null;
         var hidden = _routine is not null && IrEmitter.HasHiddenResult(_routine) ? new IrParameter(IrType.Ptr, Unique("Result")) : null;
         var parameters = _parameters.Select(p => new IrParameter(IrEmitter.ParameterType(p), Unique(p.Name))).ToImmutableArray();
-        ImmutableArray<IrParameter> leading = [.. new[] { link, hidden }.OfType<IrParameter>()];
+        // ABI-082: [static link], [Self], [flag], [hidden Result], declared parameters
+        ImmutableArray<IrParameter> all = [.. new[] { link }.OfType<IrParameter>(), .. parameters[.._implicitCount],
+            .. new[] { hidden }.OfType<IrParameter>(), .. parameters[_implicitCount..]];
         var values = _w.BeginFunction(new IrFunctionDefinition(_name, _linkage, _routine is null ? IrType.Void : IrEmitter.ReturnType(_routine),
-            leading.AddRange(parameters), _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine)));
+            all, _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine)));
         if (link is not null)
         {
             _link = values[0];
@@ -747,8 +826,8 @@ internal sealed class FunctionEmitter
         IrValue? hiddenResult = null;
         if (hidden is not null)
         {
-            hiddenResult = values[0];
-            values = values.RemoveAt(0);
+            hiddenResult = values[_implicitCount];
+            values = values.RemoveAt(_implicitCount);
         }
 
         _w.AppendBlock(Entry);
@@ -848,6 +927,10 @@ internal sealed class FunctionEmitter
             var local = _body.Locals.Single(l => ReferenceEquals(l.Variable, result));
             var layout = TypeLayout.Of(local.Type);
             _w.Ret(_w.Load(NewTemp(), IrEmitter.ReturnType(_routine), _locals[local], layout.Alignment));
+        }
+        else if (_routine is MethodSymbol { MethodKind: MethodKind.Constructor, SelfParameter: { } self })
+        {
+            _w.Ret(_w.Load(NewTemp(), IrType.Ptr, _parameterAddresses[self], 8));     // ABI-075 / CMP-368: Result := Self
         }
         else
         {
@@ -1479,6 +1562,25 @@ internal sealed class FunctionEmitter
             values.Add(FrameOf((RoutineSymbol)routine.ContainingSymbol!));
         }
 
+        if (callee.Self is { } selfExpression)
+        {
+            // CMP-367: Self (the instance, or the VMT of a class method), then the Alloc/Dealloc flag
+            var self = Value(selfExpression);
+            values.Add(self);
+            if (callee.IsVirtual)
+            {
+                var method = (MethodSymbol)routine;
+                var vmt = method.IsClassMethod ? self : _w.Load(NewTemp(), IrType.Ptr, self, 8);
+                var slot = _w.GetElementPtr(NewTemp(), IrType.I8, vmt, [IrIntConstant.I64(64 + 8 * method.VmtSlot)]);
+                function = _w.Load(NewTemp(), IrType.Ptr, slot, 8);
+            }
+        }
+
+        if (callee.Flag is { } flag)
+        {
+            values.Add(new IrIntConstant(IrType.I8, flag));
+        }
+
         if (IrEmitter.HasHiddenResult(routine))
         {
             values.Add(resultAddress ?? throw new InvalidOperationException($"'{routine.Name}' needs a result address."));
@@ -1551,6 +1653,8 @@ internal sealed class FunctionEmitter
 
             case LRoutineAddress routine:
                 return _module.Routine(routine.Routine);                            // CMP-340: ptr @"link.name"
+            case LClassRef reference:
+                return _module.Vmt(reference.Class);                                // CMP-367: ptr @"U.TFoo.$vmt"
             case LSequence sequence:
                 Statement(sequence.First);
                 return Value(sequence.Value);

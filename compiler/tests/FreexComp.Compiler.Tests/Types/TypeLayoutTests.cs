@@ -186,6 +186,60 @@ public sealed class TypeLayoutTests
         Assert.Equal("{ i8, i64 }", Describe(TypeLayout.Of(variable.Type).StorageType));
     }
 
+    /// <summary>
+    /// C-080, ABI §7.1 / ABI-070 (hand-computed): fields after the VMT pointer (offset 8), each at the next multiple of its
+    /// alignment (cap 8, independent of <c>{$A}</c>), a descendant's group after the parent's <c>InstanceSize</c>; InstanceSize =
+    /// end rounded up to 8 (8 without fields). Bound without System, so a class without heritage is a root class.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "ABI-070")]
+    [Trait("Req", "LANG-615")]
+    [InlineData("TA = class end", "", 8)]
+    [InlineData("TA = class a: Byte end", "8", 16)]
+    [InlineData("TA = class a: Byte; b: Integer; c: Word end", "8 12 16", 24)]
+    [InlineData("TA = class a, b: Byte; c: Int64; d: Char end", "8 9 16 24", 32)]
+    [InlineData("TA = class s: string; d: Double; p: TA end", "8 16 24", 32)]
+    [InlineData("TA = class r: record x: Byte; y: Word end; z: Byte end", "8 12", 16)]
+    [InlineData("{$A1} TA = class a: Byte; b: Integer end", "8 12", 16)]
+    [InlineData("TA = class private a: Byte; public b: Int64; protected c: Byte end", "8 16 24", 32)]
+    public void Classes_InstanceLayoutFollowsTheAbi(string definition, string offsets, long instanceSize)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind($"type {definition}; begin end.");
+        Assert.Empty(result.Diagnostics);
+        var type = Assert.IsType<ClassTypeSymbol>(result.Declarations.Scope.Lookup("TA"));
+
+        Assert.Equal((offsets, instanceSize), (string.Join(" ", type.Fields.Select(f => f.Offset)), type.InstanceSize));
+    }
+
+    /// <summary>ABI §7.1: a class's fields start at its parent's InstanceSize, the root-most ancestor's fields first.</summary>
+    [Theory]
+    [Trait("Req", "ABI-070")]
+    [InlineData("TB = class(TA) x: Byte end", "16", 24)]
+    [InlineData("TB = class(TA) end", "", 16)]
+    [InlineData("TB = class(TA) d: Double; e: Byte end", "16 24", 32)]
+    [InlineData("TB = class(TC) x: Integer end", "24", 32)]
+    public void Classes_DescendantFieldsFollowTheParentInstance(string definition, string offsets, long instanceSize)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind($"type TA = class a: Integer end; TC = class(TA) c: Byte end; {definition}; begin end.");
+        Assert.Empty(result.Diagnostics);
+        var type = Assert.IsType<ClassTypeSymbol>(result.Declarations.Scope.Lookup("TB"));
+
+        Assert.Equal((offsets, instanceSize), (string.Join(" ", type.Fields.Select(f => f.Offset)), type.InstanceSize));
+        Assert.Equal(16, ((ClassTypeSymbol)result.Declarations.Scope.Lookup("TA")!).InstanceSize);
+        Assert.Equal(24, ((ClassTypeSymbol)result.Declarations.Scope.Lookup("TC")!).InstanceSize);
+    }
+
+    /// <summary>ABI-071 / CMP-367: a class value is a reference, 8 bytes, stored as <c>ptr</c>.</summary>
+    [Fact]
+    [Trait("Req", "ABI-071")]
+    public void Classes_AReferenceIsAPointer()
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind("type TA = class a, b, c: Int64 end; begin end.");
+        var layout = TypeLayout.Of(Assert.IsAssignableFrom<TypeSymbol>(result.Declarations.Scope.Lookup("TA")));
+
+        Assert.Equal((8L, 8, "ptr"), (layout.Size, layout.Alignment, Describe(layout.StorageType)));
+    }
+
     /// <summary>Structural description of the storage type, independent of the text writer.</summary>
     private static string Describe(IrType type, bool body = false) => type switch
     {

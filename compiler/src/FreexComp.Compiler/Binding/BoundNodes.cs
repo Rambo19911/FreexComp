@@ -30,6 +30,7 @@ internal enum BoundKind
     PointerArithmeticExpression,
     VariableTypecastExpression,
     ArrayConstructor,
+    ClassReferenceExpression,
 
     // statements
     Block,
@@ -323,6 +324,8 @@ internal sealed class BoundIndexExpression : BoundExpression
                 case BoundIndexExpression index:
                     expression = index.Array;
                     break;
+                case BoundFieldAccessExpression { Record.Type: ClassTypeSymbol } classField:
+                    return classField;                                  // an instance field lives behind the reference, like p^.F (C-080)
                 case BoundFieldAccessExpression field:
                     expression = field.Record;
                     break;
@@ -726,8 +729,9 @@ internal sealed class BoundParameterExpression : BoundExpression
 /// </summary>
 internal sealed class BoundCallExpression : BoundExpression
 {
-    public BoundCallExpression(SyntaxNode syntax, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null)
-        : base(syntax, routine.ReturnType!, constantValue: null)
+    public BoundCallExpression(SyntaxNode syntax, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null,
+        TypeSymbol? type = null)
+        : base(syntax, type ?? routine.ReturnType!, constantValue: null)
     {
         Routine = routine;
         Arguments = arguments;
@@ -743,6 +747,31 @@ internal sealed class BoundCallExpression : BoundExpression
 
     /// <summary>The procedural value called (LANG-484, evaluated before the arguments); null for a direct call.</summary>
     public BoundExpression? Target { get; }
+
+    /// <summary><c>Self</c> and dispatch of a method call (CMP-367); null for a routine.</summary>
+    public BoundReceiver? Receiver { get; init; }
+}
+
+/// <summary>
+/// The receiver of a method call (CMP-367, ABI-075/076/084): <see cref="Self"/> (evaluated before the arguments), whether the
+/// callee is taken from the VMT slot of <see cref="Self"/>'s class (<see cref="IsVirtual"/>), and the constructor/destructor
+/// flag (<c>Alloc</c> 1 for a call on a class name, 0 for <c>inherited</c> and calls on an instance; <c>Dealloc</c> 1 for
+/// <c>Obj.Destroy</c>, 0 for <c>inherited Destroy</c>).
+/// </summary>
+internal sealed record BoundReceiver(BoundExpression Self, bool IsVirtual, int? Flag);
+
+/// <summary>A class name as a constructor's <c>Self</c>: the address of its VMT (ABI-071), type <c>Pointer</c>.</summary>
+internal sealed class BoundClassReferenceExpression : BoundExpression
+{
+    public BoundClassReferenceExpression(SyntaxNode syntax, ClassTypeSymbol type, TypeSymbol pointer)
+        : base(syntax, pointer, constantValue: null)
+    {
+        Class = type;
+    }
+
+    public override BoundKind Kind => BoundKind.ClassReferenceExpression;
+
+    public ClassTypeSymbol Class { get; }
 }
 
 /// <summary>A procedure call, or a function call whose result is discarded (LANG-307, 352); arguments as in <see cref="BoundCallExpression"/>.</summary>
@@ -764,6 +793,9 @@ internal sealed class BoundCallStatement : BoundStatement
 
     /// <summary>As <see cref="BoundCallExpression.Target"/>.</summary>
     public BoundExpression? Target { get; }
+
+    /// <summary>As <see cref="BoundCallExpression.Receiver"/>.</summary>
+    public BoundReceiver? Receiver { get; init; }
 }
 
 /// <summary>

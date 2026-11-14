@@ -144,7 +144,9 @@ internal sealed class LoweringContext
 
     public LoweredBody Finish(BoundBlock? body, ImmutableArray<VariableSymbol> finalisedGlobals = default)
     {
-        var block = body is null ? new LBlock([]) : (LBlock)Lower(body);
+        var block = Routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } method && body is not null
+            ? Protocol(method, body)
+            : body is null ? new LBlock([]) : (LBlock)Lower(body);
         var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], block));
         if (finalisedGlobals.IsDefaultOrEmpty)
         {
@@ -154,6 +156,43 @@ internal sealed class LoweringContext
         // CMP-325 rule 7: after the body's own temporaries, the globals in reverse declaration order (CMP-350)
         var clears = finalisedGlobals.Reverse().Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)));
         return lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. clears]) };
+    }
+
+    /// <summary>The label <c>Exit</c> leaves in a constructor/destructor body, so that the epilogue still runs (CMP-368/369).</summary>
+    private LLoopLabel? _bodyLabel;
+
+    /// <summary>
+    /// CMP-368 without the exception path (C-082):
+    /// <c>if Alloc &lt;&gt; 0 then Self := NewInstance(Self)</c> (slot 3 of the class reference); body; <c>if Alloc &lt;&gt; 0 then
+    /// Self.AfterConstruction</c> (slot 1); the emitter returns <c>Self</c>. CMP-369: <c>if (Dealloc and 3) = 1 then
+    /// Self.BeforeDestruction</c> (slot 2); body; <c>if (Dealloc and 1) &lt;&gt; 0 then Self.FreeInstance</c> (slot 4). The body is a
+    /// one-pass loop so that <c>Exit</c> reaches the epilogue. Without the <c>TObject</c> slots (no System) only the body runs.
+    /// </summary>
+    private LBlock Protocol(MethodSymbol method, BoundBlock body)
+    {
+        _bodyLabel = NewLoop("body");
+        var user = new LLoop(_bodyLabel, new LBlock([Lower(body), new LBreak(_bodyLabel)]), step: null);
+        _bodyLabel = null;
+        var slots = method.ContainingType.VirtualSlots;
+        if (slots.Length < 5)
+        {
+            return new LBlock([user]);
+        }
+
+        var self = new LParamRef(method.SelfParameter!);
+        var flag = new LParamRef(method.FlagParameter!);
+        var zero = Constant(BigInteger.Zero, Types.Byte);
+        LStatement Virtual(int slot) => new LCallStatement(new LRoutineCallee(slots[slot], Self: self, IsVirtual: true), []);
+        if (method.MethodKind == MethodKind.Constructor)
+        {
+            var allocating = Compare(LCompareOperator.NotEqual, flag, zero);
+            var allocate = new LAssign(self, new LCall(new LRoutineCallee(slots[3], Self: self, IsVirtual: true), []));
+            return new LBlock([new LIf(allocating, allocate, @else: null), user, new LIf(allocating, Virtual(1), @else: null)]);
+        }
+
+        var outermost = Compare(LCompareOperator.Equal, new LBinary(LBinaryOperator.And, flag, Constant(3, Types.Byte)), Constant(BigInteger.One, Types.Byte));
+        var freeing = Compare(LCompareOperator.NotEqual, new LBinary(LBinaryOperator.And, flag, Constant(BigInteger.One, Types.Byte)), zero);
+        return new LBlock([new LIf(outermost, Virtual(2), @else: null), user, new LIf(freeing, Virtual(4), @else: null)]);
     }
 
     // ------------------------------------------------------------------ helpers for the rewriters
@@ -258,7 +297,7 @@ internal sealed class LoweringContext
             case BoundContinueStatement:
                 return new LContinue(_loops.Peek());
             case BoundExitStatement { Value: null }:
-                return new LReturn();
+                return _bodyLabel is { } bodyLabel ? new LBreak(bodyLabel) : new LReturn();       // CMP-368/369: through the epilogue
             case BoundExitStatement { Value.Type.IsManaged: true } exit:
                 return new LBlock([ManagedRewriter.Assign(this, new LLocalRef(_variables[Routine!.ResultVariable!]), exit.Value!), new LReturn()]);
             case BoundExitStatement { Value.Type: StringTypeSymbol { Variant: StringVariant.Short } } exit:
@@ -268,9 +307,9 @@ internal sealed class LoweringContext
             case BoundHaltStatement halt:
                 return CallNoReturn(Halt, halt.ExitCode is null ? Constant(BigInteger.Zero, Types.Integer) : Lower(halt.ExitCode));
             case BoundCallStatement call:
-                return IOChecked(call.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments, call.Target));
+                return IOChecked(call.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments, call.Target, call.Receiver));
             case BoundExpressionStatement { Expression: BoundCallExpression call } expression:
-                return IOChecked(expression.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments, call.Target));
+                return IOChecked(expression.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments, call.Target, call.Receiver));
             case BoundExpressionStatement { Expression: BoundIntrinsicCallExpression { Intrinsic.IsAtomic: true } atomic }:
                 return new LAssign(new LLocalRef(NewTemp(atomic.Type)), Lower(atomic));     // C-168: a discarded result
             case BoundIntrinsicCallStatement intrinsic:
@@ -341,7 +380,7 @@ internal sealed class LoweringContext
             case BoundBinaryExpression binary:
                 return Binary(binary);
             case BoundCallExpression call:
-                return Call(call.Routine, call.Arguments, call.Target);
+                return Call(call.Routine, call.Arguments, call.Target, call.Receiver);
             case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
                 return ManagedRewriter.Value(this, copy);                               // C-062: a string value in a temporary
             case BoundIntrinsicCallExpression intrinsic:
@@ -351,7 +390,11 @@ internal sealed class LoweringContext
             case BoundIndexExpression index:
                 return Index(index);
             case BoundFieldAccessExpression field:
-                return new LField(Lower(field.Record), field.Field);                     // CMP-307
+                return field.Record.Type is ClassTypeSymbol
+                    ? new LDeref(new LPointerOffset(Lower(field.Record), Constant(field.Field.Offset, Types.Int64), Types.Byte, Types.Pointer), field.Type)   // CMP-367
+                    : new LField(Lower(field.Record), field.Field);                     // CMP-307
+            case BoundClassReferenceExpression reference:
+                return new LClassRef(reference.Class, reference.Type);                  // CMP-367 TFoo.Create
             case BoundAddressOfExpression { Routine: { } routine } addressOf:
                 return new LRoutineAddress(routine, addressOf.Type);                    // CMP-340
             case BoundAddressOfExpression addressOf:
@@ -550,12 +593,13 @@ internal sealed class LoweringContext
     /// written back after the call.
     /// </summary>
     /// <summary>The routine, or a call through the procedural value <paramref name="target"/> (CMP-378).</summary>
-    private LRoutineCallee Callee(RoutineSymbol routine, BoundExpression? target) => new(routine, target is null ? null : Lower(target));
+    private LRoutineCallee Callee(RoutineSymbol routine, BoundExpression? target, BoundReceiver? receiver) =>
+        new(routine, target is null ? null : Lower(target), receiver is null ? null : Lower(receiver.Self), receiver?.Flag, receiver?.IsVirtual ?? false);
 
-    private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null)
+    private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null, BoundReceiver? receiver = null)
     {
         var writeBacks = new List<LStatement>();
-        var call = new LCall(Callee(routine, target), Arguments(routine, arguments, writeBacks));
+        var call = new LCall(Callee(routine, target, receiver), Arguments(routine, arguments, writeBacks));
         if (!Lowerer.IsAggregate(call.Type) && !call.Type.IsManaged && writeBacks.Count == 0)
         {
             return call;
@@ -570,10 +614,11 @@ internal sealed class LoweringContext
     /// CMP-325 rule 4: <c>target := F(args)</c> for a managed result. The target's address is the hidden <c>Result</c> only when
     /// <see cref="ReceivesResultDirectly"/>; otherwise a temporary receives it and is assigned with <c>_UStrAsg</c>.
     /// </summary>
-    public LStatement CallInto(LExpression target, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? procedural = null)
+    public LStatement CallInto(LExpression target, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? procedural = null,
+        BoundReceiver? receiver = null)
     {
         var writeBacks = new List<LStatement>();
-        var call = new LCall(Callee(routine, procedural), Arguments(routine, arguments, writeBacks));
+        var call = new LCall(Callee(routine, procedural, receiver), Arguments(routine, arguments, writeBacks));
         if (ReceivesResultDirectly(target, call))
         {
             return new LBlock([new LAssign(target, call), .. writeBacks]);
@@ -593,7 +638,7 @@ internal sealed class LoweringContext
         && !ReferenceEquals(variable, Routine?.ResultVariable)
         && !Captured.Contains(variable)
         && !AddressTaken.Contains(variable)
-        && !call.Arguments.Any(a => ManagedRewriter.References(a, local));
+        && !ManagedRewriter.References(call, local);
 
     /// <summary>ABI-132: <paramref name="call"/> then <c>_IOCheck</c> when the callee is a System text-file routine under <c>{$I+}</c>.</summary>
     private LStatement IOChecked(SyntaxNode syntax, RoutineSymbol routine, LStatement call) =>
@@ -605,15 +650,15 @@ internal sealed class LoweringContext
             : call;
 
     /// <summary>A call statement; a discarded aggregate or managed result still needs storage (ABI-081).</summary>
-    private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target)
+    private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target, BoundReceiver? receiver = null)
     {
         if (routine.ReturnType is { } type && (Lowerer.IsAggregate(type) || type.IsManaged))
         {
-            return ((LSequence)Call(routine, arguments, target)).First;
+            return ((LSequence)Call(routine, arguments, target, receiver)).First;
         }
 
         var writeBacks = new List<LStatement>();
-        var call = new LCallStatement(Callee(routine, target), Arguments(routine, arguments, writeBacks));
+        var call = new LCallStatement(Callee(routine, target, receiver), Arguments(routine, arguments, writeBacks));
         return writeBacks.Count == 0 ? call : new LBlock([call, .. writeBacks]);
     }
 }

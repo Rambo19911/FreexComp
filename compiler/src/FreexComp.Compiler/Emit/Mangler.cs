@@ -50,6 +50,12 @@ internal static class Mangler
     public static LinkName RecordType(RecordTypeSymbol record) => new(
         record.ContainingSymbol is RoutineSymbol routine ? RoutineText(routine) + "." + record.Name : record.QualifiedName, AlwaysQuote: true);
 
+    /// <summary>The VMT constant of a class (rtl-abi.md §7.2, CMP-360): <c>U.TFoo.$vmt</c>.</summary>
+    public static LinkName Vmt(ClassTypeSymbol type) => new(type.QualifiedName + ".$vmt", AlwaysQuote: true);
+
+    /// <summary>The <c>InitTable</c> of a class (ABI §7.2 VMT+48): <c>U.TFoo.$inittable</c>.</summary>
+    public static LinkName InitTable(ClassTypeSymbol type) => new(type.QualifiedName + ".$inittable", AlwaysQuote: true);
+
     /// <summary>A runtime helper of unit System (rtl-abi.md §9): <c>System._Name</c>.</summary>
     public static LinkName RuntimeHelper(string name) => new("System." + name, AlwaysQuote: true);
 
