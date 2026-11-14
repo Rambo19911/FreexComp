@@ -1,0 +1,28 @@
+start 0
+missing file 2
+reset by IOResult 0
+append missing file 2
+missing path 3
+directory 5
+unassigned 102
+write unassigned 102
+write closed 103
+close closed 103
+flush closed 103
+read output file 104
+sharing violation 5
+close 0
+write input file 105
+flush input file 105
+read 2 0
+0 106
+0.0 106
+0.0 106
+readln 0
+code page 1252 106
+SetInOutRes 77
+_IOCheck with 0 0
+write to read-only handle 0
+flush to read-only handle 101
+close 0
+Output to read-only handle 101

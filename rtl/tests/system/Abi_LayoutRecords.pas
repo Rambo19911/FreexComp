@@ -27,6 +27,9 @@ begin
   Writeln('TTextRec: ', Offset(@T, @T.Handle), ' ', Offset(@T, @T.Buffer), ' ', Offset(@T, @T.Mode), ' ',
     Offset(@T, @T.Kind), ' ', Offset(@T, @T.CodePage), ' ', Offset(@T, @T.BufPos), ' ', Offset(@T, @T.BufEnd), ' ',
     Offset(@T, @T.PendingHigh), ' ', Offset(@T, @T.EofSeen), ' ', Offset(@T, @T.Name), ' ', SizeOf(T.Name));
+  Writeln('TTextRec input: ', Offset(@T, @T.Magic), ' ', Offset(@T, @T.Look), ' ', Offset(@T, @T.LookCount), ' ',
+    Offset(@T, @T.StartDone), ' ', Offset(@T, @T.Std), ' ', Offset(@T, @T.LineStart), ' ', Offset(@T, @T.NameTooLong), ' ',
+    Offset(@T, @T.Padding), ' ', SizeOf(T.Padding));
   Writeln('TDynArrayTypeInfo ', SizeOf(TDynArrayTypeInfo), ': ', Offset(@DI, @DI.Kind), ' ', Offset(@DI, @DI.Name), ' ',
     Offset(@DI, @DI.ElSize), ' ', Offset(@DI, @DI.ElType), ' ', Offset(@DI, @DI.ManagedElType));
   Writeln('TRecordTypeInfo ', SizeOf(TRecordTypeInfo), ': ', Offset(@RI, @RI.Kind), ' ', Offset(@RI, @RI.Name), ' ',

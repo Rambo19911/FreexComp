@@ -68,14 +68,23 @@ type
     Mode: TTextMode;                   { 16 }
     Kind: TTextKind;                   { 17 }
     CodePage: Word;                    { 18 }
-    BufPos: Integer;                   { 20: bytes used (console kind: 2 per UTF-16 unit) }
-    BufEnd: Integer;                   { 24: input only }
+    BufPos: Integer;                   { 20: output: bytes used; input: next unread byte (console kind and code page
+                                         1200: 2 bytes per UTF-16 unit) }
+    BufEnd: Integer;                   { 24: input only: bytes valid in Buffer }
     PendingHigh: WideChar;             { 28: high surrogate waiting for its low half (RTL-093) }
-    EofSeen: Boolean;                  { 30 }
+    EofSeen: Boolean;                  { 30: input: the stream reported its end }
     Name: array[0..259] of WideChar;   { 32: empty for the standard streams }
-    Padding: array[0..71] of Byte;     { 552 ... 623 }
+    Magic: Cardinal;                   { 552: TextMagic once assigned (AssignFile or start-up); else unassigned (102) }
+    Look: array[0..1] of WideChar;     { 556: input: decoded UTF-16 units not yet consumed }
+    LookCount: Byte;                   { 560: 0 ... 2 }
+    StartDone: Boolean;                { 561: input: the first character was decoded (a leading BOM is skipped) }
+    Std: Boolean;                      { 562: the handle is a standard handle (never closed by CloseFile) }
+    LineStart: Boolean;                { 563: console input: the next ReadConsoleW starts a line (Ctrl+Z test) }
+    NameTooLong: Boolean;              { 564: the assigned name did not fit into Name }
+    Padding: array[0..58] of Byte;     { 565 ... 623 }
   end;
   PTextRec = ^TTextRec;
 
 const
   TextBufSize = 8192;
+  TextMagic = $54584654;               { 'TFXT' }

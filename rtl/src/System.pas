@@ -192,6 +192,42 @@ procedure _WriteFloat(var T: Text; V: Double; Width, Decimals: Integer);
 procedure _WriteLn(var T: Text);
 procedure _WriteEnd(var T: Text);
 
+{ text input (rtl-abi.md section 9.9; system.md section 10.4, LANG-940 ... 946). Numbers skip blanks (space, tab,
+  CR, LF); at end of file they read 0; a malformed number reads 0 and sets I/O error 106. Line ends: CR LF, LF, CR. }
+function _ReadInt(var T: Text): Int64;
+function _ReadUInt(var T: Text): UInt64;
+function _ReadFloat(var T: Text): Double;
+function _ReadWChar(var T: Text): WideChar;            { #26 at end of file }
+procedure _ReadUStr(var T: Text; var S: Pointer);      { up to, not including, the line end }
+procedure _ReadLn(var T: Text);
+procedure _ReadEnd(var T: Text);
+function _Eof(var T: Text): Boolean;
+function _Eoln(var T: Text): Boolean;
+{ Eof / Eoln after skipping blanks: SeekEof skips spaces, tabs and line ends, SeekEoln spaces and tabs (RTL-112) }
+function SeekEof(var F: Text): Boolean; overload;
+function SeekEof: Boolean; overload;
+function SeekEoln(var F: Text): Boolean; overload;
+function SeekEoln: Boolean; overload;
+
+{ disk text files (system.md section 10.5). Errors go to InOutRes (ABI-132): 102 unassigned, 103 not open, Win32
+  errors mapped by RTL-123. An empty name binds Reset to standard input and Rewrite / Append to standard output.
+  Disk files are UTF-8 (no BOM written, a BOM skipped) or, after SetTextCodePage(F, 1200), UTF-16LE with BOM. }
+procedure AssignFile(var F: Text; const Name: string);
+procedure Assign(var F: Text; const Name: string);
+procedure Reset(var F: Text);
+procedure Rewrite(var F: Text);
+procedure Append(var F: Text);
+procedure CloseFile(var F: Text);
+procedure Close(var F: Text);
+procedure Flush(var F: Text);
+procedure Erase(var F: Text);
+procedure Rename(var F: Text; const NewName: string);
+procedure SetTextCodePage(var F: Text; CodePage: Word);   { 65001 or 1200, checked when the file is opened (106) }
+
+{ the result of the last failed I/O operation (InOutRes, ABI-120/132): IOResult returns it and resets it to 0 }
+function IOResult: Integer;
+procedure SetInOutRes(Code: Integer);
+
 { Str and Val (rtl-abi.md section 9.10, lead note C-062; system.md RTL-079, LANG-950/951). Str writes exactly the text
   Write would write into Dest. Val accepts leading spaces, a sign, decimal digits or $ / 0x / 0X hex digits (reals:
   digits [. digits] [e [sign] digits], also . digits, INF and NAN); no trailing characters. On failure the result is
@@ -216,6 +252,7 @@ function wcslen(S: PWideChar): NativeUInt; public name 'wcslen';
 implementation
 
 {$POINTERMATH ON}
+{$I-}                                  { System reports I/O errors through InOutRes; it never calls _IOCheck itself }
 
 {$I AbiLayout.inc}                     { TStrRec, TDynArrayRec, TTextRec (RTL-029) }
 
@@ -248,6 +285,19 @@ function WriteConsoleW(hConsoleOutput: THandle; lpBuffer: Pointer; nNumberOfChar
   var lpNumberOfCharsWritten: Cardinal; lpReserved: Pointer): LongBool; stdcall; external kernel32 name 'WriteConsoleW';
 function GetConsoleMode(hConsoleHandle: THandle; var lpMode: Cardinal): LongBool; stdcall;
   external kernel32 name 'GetConsoleMode';
+function ReadFile(hFile: THandle; lpBuffer: Pointer; nNumberOfBytesToRead: Cardinal; var lpNumberOfBytesRead: Cardinal;
+  lpOverlapped: Pointer): LongBool; stdcall; external kernel32 name 'ReadFile';
+function ReadConsoleW(hConsoleInput: THandle; lpBuffer: Pointer; nNumberOfCharsToRead: Cardinal;
+  var lpNumberOfCharsRead: Cardinal; pInputControl: Pointer): LongBool; stdcall; external kernel32 name 'ReadConsoleW';
+function CreateFileW(lpFileName: PWideChar; dwDesiredAccess, dwShareMode: Cardinal; lpSecurityAttributes: Pointer;
+  dwCreationDisposition, dwFlagsAndAttributes: Cardinal; hTemplateFile: THandle): THandle; stdcall;
+  external kernel32 name 'CreateFileW';
+function CloseHandle(hObject: THandle): LongBool; stdcall; external kernel32 name 'CloseHandle';
+function SetFilePointerEx(hFile: THandle; liDistanceToMove: Int64; lpNewFilePointer: Pointer;
+  dwMoveMethod: Cardinal): LongBool; stdcall; external kernel32 name 'SetFilePointerEx';
+function DeleteFileW(lpFileName: PWideChar): LongBool; stdcall; external kernel32 name 'DeleteFileW';
+function MoveFileW(lpExistingFileName, lpNewFileName: PWideChar): LongBool; stdcall; external kernel32 name 'MoveFileW';
+function GetLastError: Cardinal; stdcall; external kernel32 name 'GetLastError';
 function GetTickCount: Cardinal; stdcall; external kernel32 name 'GetTickCount';
 function QueryPerformanceCounter(var lpPerformanceCount: Int64): LongBool; stdcall;
   external kernel32 name 'QueryPerformanceCounter';
@@ -1549,19 +1599,117 @@ end;
 
 { ---------------------------------------------------------------- text files: buffer and encoder (RTL-090 ... 093) }
 { Console kind: the buffer holds UTF-16 code units, written with WriteConsoleW. Byte-stream kind: the buffer holds
-  UTF-8, written with WriteFile. Absent kind: output is discarded. }
+  UTF-8, written with WriteFile. Absent kind: output is discarded. Code page 1200 (disk files): UTF-16LE units,
+  written with WriteFile. }
+
+const
+  ChTab = 9;
+  ChLF = 10;
+  ChCR = 13;
+  ChEofMark = 26;
+  ChDollar = 36;
+  ChBom = $FEFF;
+  CpUtf8 = 65001;
+  CpUtf16 = 1200;
+  ERROR_HANDLE_EOF = 38;
+  ERROR_BROKEN_PIPE = 109;
+  ERROR_NO_DATA = 232;
+
+var
+  // TODO(C-165): ABI-120 keeps InOutRes in the per-thread block; one process-wide variable until then
+  InOutRes: Integer;
+
+function IOResult: Integer;
+begin
+  Result := InOutRes;
+  InOutRes := 0;
+end;
+
+procedure SetInOutRes(Code: Integer);
+begin
+  InOutRes := Code;
+end;
+
+{ RTL-123: Win32 error -> I/O error }
+function IOErrorOf(Code: Cardinal): Integer;
+begin
+  case Code of
+    2, 3, 4, 6:
+      Result := Code;
+    5, 32, 33:
+      Result := 5;
+    39, 112:
+      Result := 101;
+  else
+    if Code < 256 then
+      Result := Code
+    else
+      Result := 5;
+  end;
+end;
+
+{ InOutRes from the calling thread's last Win32 error }
+procedure SetLastIOError;
+begin
+  InOutRes := IOErrorOf(GetLastError);
+end;
+
+{ RTL-124: the I/O error of using R for input (ForInput) or for output; 0 when that use is allowed }
+function UseError(var R: TTextRec; ForInput: Boolean): Integer;
+begin
+  if R.Magic <> TextMagic then
+    Result := 102
+  else if R.Mode = tmClosed then
+    Result := 103
+  else if ForInput and (R.Mode <> tmInput) then
+    Result := 104
+  else if not ForInput and (R.Mode <> tmOutput) then
+    Result := 105
+  else
+    Result := 0;
+end;
+
+{ True when R may be used that way; otherwise the error is recorded in InOutRes }
+function Usable(var R: TTextRec; ForInput: Boolean): Boolean;
+var
+  E: Integer;
+begin
+  E := UseError(R, ForInput);
+  if E <> 0 then
+    InOutRes := E;
+  Result := E = 0;
+end;
 
 procedure FlushText(var R: TTextRec);
 var
-  Written: Cardinal;
+  Written, Error: Cardinal;
+  Count: Integer;
+  Ok: Boolean;
 begin
-  if R.BufPos <= 0 then
+  if (R.Magic <> TextMagic) or (R.Mode <> tmOutput) or (R.BufPos <= 0) then
     Exit;
+  { RTL-094/095: a reader that closed the pipe silently discards the output; any other failure, and a short write
+    (disk full), is error 101 }
+  Ok := True;
+  Count := R.BufPos;
+  Written := 0;
   if R.Kind = skConsole then
-    WriteConsoleW(R.Handle, R.Buffer, R.BufPos div 2, Written, nil)
+  begin
+    Count := Count div 2;
+    Ok := WriteConsoleW(R.Handle, R.Buffer, Count, Written, nil);
+  end
   else if R.Kind = skBytes then
-    WriteFile(R.Handle, R.Buffer, R.BufPos, Written, nil);
-  // TODO(R-032): a failed write sets InOutRes := 101 unless the pipe is closed (RTL-094)
+    Ok := WriteFile(R.Handle, R.Buffer, Count, Written, nil)
+  else
+    Written := Count;
+  if not Ok then
+  begin
+    Error := GetLastError;
+    if (Error <> ERROR_BROKEN_PIPE) and (Error <> ERROR_NO_DATA) then
+      InOutRes := 101;
+  end
+  else if Integer(Written) <> Count then
+    InOutRes := 101;
   R.BufPos := 0;
 end;
 
@@ -1600,9 +1748,14 @@ end;
 { one UTF-16 code unit; a high surrogate waits in PendingHigh for its low half, also across statements (RTL-093) }
 procedure PutUnit(var R: TTextRec; U: Cardinal);
 begin
+  if (R.Magic <> TextMagic) or (R.Mode <> tmOutput) then
+  begin
+    InOutRes := UseError(R, False);    { RTL-124 }
+    Exit;
+  end;
   if R.Kind = skAbsent then
     Exit;
-  if R.Kind = skConsole then
+  if (R.Kind = skConsole) or (R.CodePage = CpUtf16) then
   begin
     PutByte(R, U and $FF);
     PutByte(R, U shr 8);
@@ -1637,38 +1790,64 @@ begin
 end;
 
 { ABI-104 step 4: an unpaired high surrogate left at the end is U+FFFD; then everything is written }
-procedure FinishText(var T: Text);
-var
-  R: PTextRec;
+procedure FinishRec(var R: TTextRec);
 begin
-  R := TextRec(T);
-  if R^.Buffer = nil then
+  if (R.Magic <> TextMagic) or (R.Mode <> tmOutput) then
     Exit;
-  if R^.PendingHigh <> #0 then
+  if R.PendingHigh <> #0 then          { only UTF-8 output keeps a pending surrogate }
   begin
-    R^.PendingHigh := #0;
-    PutCodePoint(R^, $FFFD);
+    R.PendingHigh := #0;
+    PutCodePoint(R, $FFFD);
   end;
-  FlushText(R^);
+  FlushText(R);
+end;
+
+procedure FinishText(var T: Text);
+begin
+  FinishRec(TextRec(T)^);
+end;
+
+{ RTL-090: the kind of a standard (or any) handle }
+function StreamKind(H: THandle): TTextKind;
+var
+  ConsoleMode: Cardinal;
+begin
+  if (H = 0) or (H = INVALID_HANDLE_VALUE) then
+    Result := skAbsent
+  else if GetConsoleMode(H, ConsoleMode) then
+    Result := skConsole
+  else
+    Result := skBytes;
+end;
+
+{ the state of a freshly opened file; the buffer is allocated }
+procedure StartText(var R: TTextRec; H: THandle; Kind: TTextKind; Mode: TTextMode; Std: Boolean);
+begin
+  R.Handle := H;
+  R.Kind := Kind;
+  R.Std := Std;
+  R.Buffer := _GetMem(TextBufSize);
+  R.BufPos := 0;
+  R.BufEnd := 0;
+  R.PendingHigh := #0;
+  R.EofSeen := False;
+  R.LookCount := 0;
+  R.StartDone := False;
+  R.LineStart := True;
+  R.Mode := Mode;
 end;
 
 { RTL-090: kind and buffer of a standard stream }
 procedure OpenStandard(var T: Text; Which: Cardinal; Mode: TTextMode);
 var
   R: PTextRec;
-  ConsoleMode: Cardinal;
+  H: THandle;
 begin
   R := TextRec(T);
-  R^.Handle := GetStdHandle(Which);
-  R^.Mode := Mode;
-  if (R^.Handle = 0) or (R^.Handle = INVALID_HANDLE_VALUE) then
-    R^.Kind := skAbsent
-  else if GetConsoleMode(R^.Handle, ConsoleMode) then
-    R^.Kind := skConsole
-  else
-    R^.Kind := skBytes;
-  R^.CodePage := 65001;
-  R^.Buffer := _GetMem(TextBufSize);
+  H := GetStdHandle(Which);
+  R^.Magic := TextMagic;
+  R^.CodePage := CpUtf8;
+  StartText(R^, H, StreamKind(H), Mode, True);
 end;
 
 { ---------------------------------------------------------------- start-up (ABI-105) }
@@ -1805,8 +1984,14 @@ end;
 
 { ABI-132: the compiler calls this after every text-I/O statement in $I+ state }
 procedure _IOCheck;
+var
+  Code: Integer;
 begin
-  // TODO(R-032): read and reset the per-thread InOutRes; no helper records an I/O error before R-031
+  Code := InOutRes;
+  if Code = 0 then
+    Exit;
+  InOutRes := 0;
+  _RunError(Code);
 end;
 
 { ---------------------------------------------------------------- big sets (rtl-abi.md section 9.8) }
@@ -3245,6 +3430,671 @@ begin
   Result := DecimalToDouble(@Digits[0], Count, E10, Negative);
 end;
 
+{ ---------------------------------------------------------------- text input (system.md section 10.4) }
+{ Byte-stream input keeps raw bytes in Buffer[BufPos .. BufEnd). A UTF-8 sequence cut by the end of the bytes read so
+  far is completed by moving the unread rest to the front and reading more (RTL-113). Console input keeps UTF-16
+  units from ReadConsoleW (2 bytes each), as does code page 1200. Decoded units wait in Look until consumed. }
+
+const
+  TokenMax = 256;                     { longer number tokens are malformed (106) }
+
+type
+  TToken = record
+    Len: Integer;
+    Long: Boolean;
+    C: array[0..TokenMax - 1] of WideChar;
+  end;
+
+{ appends input behind the unread bytes; False at the end of the stream }
+function ReadMore(var R: TTextRec): Boolean;
+var
+  Rest: Integer;
+  Got, Error: Cardinal;
+  Ok: Boolean;
+  O: PTextRec;
+begin
+  Result := False;
+  if R.EofSeen or (R.Kind = skAbsent) then
+    Exit;
+  O := TextRec(Output);
+  if (Pointer(@R) = Pointer(TextRec(Input))) and (O^.Magic = TextMagic) then
+    FlushText(O^);                     { RTL-110 }
+  Rest := R.BufEnd - R.BufPos;
+  if (Rest > 0) and (R.BufPos > 0) then
+    Move(R.Buffer[R.BufPos], R.Buffer[0], Rest);
+  R.BufPos := 0;
+  R.BufEnd := Rest;
+  Got := 0;
+  if R.Kind = skConsole then
+  begin
+    Ok := ReadConsoleW(R.Handle, R.Buffer + Rest, (TextBufSize - Rest) div 2, Got, nil);
+    Got := Got * 2;
+  end
+  else
+    Ok := ReadFile(R.Handle, R.Buffer + Rest, TextBufSize - Rest, Got, nil);
+  if not Ok then
+  begin
+    { a closed pipe (or a console end of input) is the end of the input; another failure is an I/O error too }
+    Error := GetLastError;
+    if (Error <> ERROR_BROKEN_PIPE) and (Error <> ERROR_HANDLE_EOF) then
+      InOutRes := IOErrorOf(Error);
+    Got := 0;
+  end;
+  if Got = 0 then
+  begin
+    R.EofSeen := True;
+    Exit;
+  end;
+  if R.Kind = skConsole then
+  begin
+    { RTL-112: a line that starts with Ctrl+Z ends the input; the line is consumed }
+    if R.LineStart and (PWord(R.Buffer + Rest)^ = ChEofMark) then
+    begin
+      R.EofSeen := True;
+      Exit;
+    end;
+    R.LineStart := PWord(R.Buffer + Rest + Got - 2)^ = ChLF;
+  end;
+  R.BufEnd := Rest + Integer(Got);
+  Result := True;
+end;
+
+{ the length of the UTF-8 sequence that NextUtf8 decodes for the lead byte B }
+function Utf8SeqLen(B: Cardinal): Integer;
+begin
+  if (B >= $C2) and (B <= $DF) then
+    Result := 2
+  else if (B >= $E0) and (B <= $EF) then
+    Result := 3
+  else if (B >= $F0) and (B <= $F4) then
+    Result := 4
+  else
+    Result := 1;
+end;
+
+{ decodes the next character into Look unless units are waiting; False at the end of the input. A byte-stream or
+  disk file that starts with U+FEFF (the BOM) skips it (RTL-091, RTL-121). }
+function FillLook(var R: TTextRec): Boolean;
+var
+  Need, I: Integer;
+  C: Cardinal;
+  Units, First: Boolean;
+begin
+  Result := True;
+  if R.LookCount > 0 then
+    Exit;
+  Units := (R.Kind = skConsole) or (R.CodePage = CpUtf16);
+  repeat
+    if (R.BufPos >= R.BufEnd) and not ReadMore(R) then
+    begin
+      Result := False;
+      Exit;
+    end;
+    if Units then
+      Need := 2
+    else
+      Need := Utf8SeqLen(R.Buffer[R.BufPos]);
+    while (R.BufEnd - R.BufPos < Need) and ReadMore(R) do
+      ;
+    if not Units then
+    begin
+      I := R.BufPos;
+      C := NextUtf8(R.Buffer, R.BufEnd, I);
+      R.BufPos := I;
+    end
+    else if R.BufEnd - R.BufPos < 2 then
+    begin
+      C := $FFFD;                      { an odd byte at the end of a UTF-16 stream }
+      R.BufPos := R.BufEnd;
+    end
+    else
+    begin
+      C := Cardinal(R.Buffer[R.BufPos]) or (Cardinal(R.Buffer[R.BufPos + 1]) shl 8);
+      R.BufPos := R.BufPos + 2;
+    end;
+    First := not R.StartDone;
+    R.StartDone := True;
+  until not (First and (C = ChBom) and (R.Kind <> skConsole));
+  if C >= $10000 then
+  begin
+    R.Look[0] := WideChar($D800 + ((C - $10000) shr 10));
+    R.Look[1] := WideChar($DC00 + ((C - $10000) and $3FF));
+    R.LookCount := 2;
+  end
+  else
+  begin
+    R.Look[0] := WideChar(C);
+    R.LookCount := 1;
+  end;
+end;
+
+{ the next UTF-16 unit without consuming it; -1 at the end of the input }
+function PeekUnit(var R: TTextRec): Integer;
+begin
+  if FillLook(R) then
+    Result := Ord(R.Look[0])
+  else
+    Result := -1;
+end;
+
+procedure SkipUnit(var R: TTextRec);
+begin
+  if R.LookCount = 0 then
+    Exit;
+  R.Look[0] := R.Look[1];
+  R.LookCount := R.LookCount - 1;
+end;
+
+function IsLineEnd(U: Integer): Boolean;
+begin
+  Result := (U = ChCR) or (U = ChLF);
+end;
+
+{ skips spaces and tabs, and line ends too when LineEnds }
+procedure SkipBlanks(var R: TTextRec; LineEnds: Boolean);
+var
+  U: Integer;
+begin
+  U := PeekUnit(R);
+  while (U = ChSpace) or (U = ChTab) or (LineEnds and IsLineEnd(U)) do
+  begin
+    SkipUnit(R);
+    U := PeekUnit(R);
+  end;
+end;
+
+procedure TakeUnit(var R: TTextRec; var T: TToken);
+begin
+  if T.Len < TokenMax then
+  begin
+    T.C[T.Len] := R.Look[0];
+    T.Len := T.Len + 1;
+  end
+  else
+    T.Long := True;
+  SkipUnit(R);
+end;
+
+{ LANG-942: [+ | -] then decimal digits, or $ and hex digits; the first unit that cannot continue stays unread }
+procedure IntegerToken(var R: TTextRec; var T: TToken);
+var
+  U: Integer;
+  Hex: Boolean;
+begin
+  T.Len := 0;
+  T.Long := False;
+  U := PeekUnit(R);
+  if (U = ChPlus) or (U = ChMinus) then
+  begin
+    TakeUnit(R, T);
+    U := PeekUnit(R);
+  end;
+  Hex := U = ChDollar;
+  if Hex then
+  begin
+    TakeUnit(R, T);
+    U := PeekUnit(R);
+  end;
+  while (U >= 0) and (DigitValue(Cardinal(U), Hex) >= 0) do
+  begin
+    TakeUnit(R, T);
+    U := PeekUnit(R);
+  end;
+end;
+
+{ LANG-943 token (codegen lead note C-066): digits, points and letters (INF, NAN, exponent), a sign at the start or
+  after e / E; the conversion decides whether it is well formed }
+procedure RealToken(var R: TTextRec; var T: TToken);
+var
+  U, Last: Integer;
+begin
+  T.Len := 0;
+  T.Long := False;
+  repeat
+    U := PeekUnit(R);
+    Last := 0;
+    if T.Len > 0 then
+      Last := Ord(T.C[T.Len - 1]);
+    if ((U >= 48) and (U <= 57)) or (U = ChDot) or ((U >= 65) and (U <= 90)) or ((U >= 97) and (U <= 122)) or
+      (((U = ChPlus) or (U = ChMinus)) and ((T.Len = 0) or (Last = 69) or (Last = 101))) then
+      TakeUnit(R, T)
+    else
+      Break;
+  until False;
+end;
+
+{ the token as a new string (reference count 1, or nil when empty) }
+function TokenText(const T: TToken): Pointer;
+var
+  S: Pointer;
+begin
+  S := nil;
+  _UStrFromPWCharLen(S, @T.C[0], T.Len);
+  Result := S;
+end;
+
+{ skips blanks incl. line ends; False at the end of the input or when T cannot be read (error recorded) }
+function StartNumber(var R: TTextRec): Boolean;
+begin
+  Result := False;
+  if not Usable(R, True) then
+    Exit;
+  SkipBlanks(R, True);
+  Result := PeekUnit(R) >= 0;
+end;
+
+function _ReadInt(var T: Text): Int64;
+var
+  R: PTextRec;
+  Tok: TToken;
+  S: Pointer;
+  Code: Integer;
+begin
+  Result := 0;
+  R := TextRec(T);
+  if not StartNumber(R^) then
+    Exit;
+  IntegerToken(R^, Tok);
+  S := TokenText(Tok);
+  Code := 0;
+  Result := _ValInt(S, Code);
+  _UStrClr(S);
+  if (Code <> 0) or Tok.Long then
+  begin
+    Result := 0;
+    InOutRes := 106;
+  end;
+end;
+
+function _ReadUInt(var T: Text): UInt64;
+var
+  R: PTextRec;
+  Tok: TToken;
+  S: Pointer;
+  Code: Integer;
+begin
+  Result := 0;
+  R := TextRec(T);
+  if not StartNumber(R^) then
+    Exit;
+  IntegerToken(R^, Tok);
+  S := TokenText(Tok);
+  Code := 0;
+  Result := _ValUInt(S, Code);
+  _UStrClr(S);
+  if (Code <> 0) or Tok.Long then
+  begin
+    Result := 0;
+    InOutRes := 106;
+  end;
+end;
+
+function _ReadFloat(var T: Text): Double;
+var
+  R: PTextRec;
+  Tok: TToken;
+  S: Pointer;
+  Code: Integer;
+begin
+  Result := 0;
+  R := TextRec(T);
+  if not StartNumber(R^) then
+    Exit;
+  RealToken(R^, Tok);
+  S := TokenText(Tok);
+  Code := 0;
+  Result := _ValFloat(S, Code);
+  _UStrClr(S);
+  if (Code <> 0) or Tok.Long then
+  begin
+    Result := 0;
+    InOutRes := 106;
+  end;
+end;
+
+{ LANG-944: the next unit, line ends included }
+function _ReadWChar(var T: Text): WideChar;
+var
+  R: PTextRec;
+begin
+  Result := WideChar(ChEofMark);
+  R := TextRec(T);
+  if not Usable(R^, True) then
+    Exit;
+  if FillLook(R^) then
+  begin
+    Result := R^.Look[0];
+    SkipUnit(R^);
+  end;
+end;
+
+procedure AppendUnits(var Acc: Pointer; P: PWideChar; Len: Integer);
+var
+  Part: Pointer;
+begin
+  Part := nil;
+  _UStrFromPWCharLen(Part, P, Len);
+  _UStrCat(Acc, Acc, Part);
+  _UStrClr(Part);
+end;
+
+{ LANG-945: everything up to the line end, which stays unread }
+procedure _ReadUStr(var T: Text; var S: Pointer);
+var
+  R: PTextRec;
+  Chunk: array[0..TokenMax - 1] of WideChar;
+  N, U: Integer;
+  Acc: Pointer;
+begin
+  Acc := nil;
+  R := TextRec(T);
+  if Usable(R^, True) then
+  begin
+    N := 0;
+    U := PeekUnit(R^);
+    while (U >= 0) and not IsLineEnd(U) do
+    begin
+      Chunk[N] := WideChar(U);
+      N := N + 1;
+      SkipUnit(R^);
+      if N = TokenMax then
+      begin
+        AppendUnits(Acc, @Chunk[0], N);
+        N := 0;
+      end;
+      U := PeekUnit(R^);
+    end;
+    if N > 0 then
+      AppendUnits(Acc, @Chunk[0], N);
+  end;
+  _UStrClr(S);
+  S := Acc;
+end;
+
+{ RTL-111: the rest of the line and its end (CR LF, LF or a lone CR) }
+procedure _ReadLn(var T: Text);
+var
+  R: PTextRec;
+  U: Integer;
+begin
+  R := TextRec(T);
+  if not Usable(R^, True) then
+    Exit;
+  U := PeekUnit(R^);
+  while (U >= 0) and not IsLineEnd(U) do
+  begin
+    SkipUnit(R^);
+    U := PeekUnit(R^);
+  end;
+  SkipUnit(R^);
+  if (U = ChCR) and (PeekUnit(R^) = ChLF) then
+    SkipUnit(R^);
+end;
+
+{ end of one Read/Readln statement: nothing is pending (the compiler calls _IOCheck next in $I+ state) }
+procedure _ReadEnd(var T: Text);
+begin
+end;
+
+function _Eof(var T: Text): Boolean;
+var
+  R: PTextRec;
+begin
+  Result := True;
+  R := TextRec(T);
+  if Usable(R^, True) then
+    Result := not FillLook(R^);
+end;
+
+function _Eoln(var T: Text): Boolean;
+var
+  R: PTextRec;
+  U: Integer;
+begin
+  Result := True;
+  R := TextRec(T);
+  if not Usable(R^, True) then
+    Exit;
+  U := PeekUnit(R^);
+  Result := (U < 0) or IsLineEnd(U);
+end;
+
+function SeekEof(var F: Text): Boolean;
+var
+  R: PTextRec;
+begin
+  Result := True;
+  R := TextRec(F);
+  if not Usable(R^, True) then
+    Exit;
+  SkipBlanks(R^, True);
+  Result := PeekUnit(R^) < 0;
+end;
+
+function SeekEof: Boolean;
+begin
+  Result := SeekEof(Input);
+end;
+
+function SeekEoln(var F: Text): Boolean;
+var
+  R: PTextRec;
+begin
+  Result := True;
+  R := TextRec(F);
+  if not Usable(R^, True) then
+    Exit;
+  SkipBlanks(R^, False);
+  Result := _Eoln(F);
+end;
+
+function SeekEoln: Boolean;
+begin
+  Result := SeekEoln(Input);
+end;
+
+{ ---------------------------------------------------------------- disk text files (system.md section 10.5) }
+
+const
+  GENERIC_READ = $80000000;
+  GENERIC_WRITE = $40000000;
+  FILE_SHARE_READ = $00000001;
+  CREATE_ALWAYS = 2;
+  OPEN_EXISTING = 3;
+  FILE_ATTRIBUTE_NORMAL = $00000080;
+  FILE_END = 2;
+  ERROR_FILENAME_EXCED_RANGE = 206;
+  NameMax = 259;                       { units of TTextRec.Name before its #0 }
+
+{ False (and error 102) when F was never assigned }
+function IsAssigned(var R: TTextRec): Boolean;
+begin
+  Result := R.Magic = TextMagic;
+  if not Result then
+    InOutRes := 102;
+end;
+
+{ Name into R.Name; False when it does not fit }
+function StoreName(var R: TTextRec; const Name: string): Boolean;
+var
+  I, Len: Integer;
+begin
+  Len := Length(Name);
+  Result := Len <= NameMax;
+  if not Result then
+    Exit;
+  for I := 1 to Len do
+    R.Name[I - 1] := Name[I];
+  R.Name[Len] := #0;
+end;
+
+{ flushes an output file, closes its handle (never a standard handle) and frees the buffer }
+procedure CloseText(var R: TTextRec);
+begin
+  if R.Mode = tmOutput then
+    FinishRec(R);
+  if not R.Std then
+    CloseHandle(R.Handle);
+  _FreeMem(R.Buffer);
+  R.Buffer := nil;
+  R.Handle := 0;
+  R.Mode := tmClosed;
+end;
+
+procedure AssignFile(var F: Text; const Name: string);
+var
+  R: PTextRec;
+begin
+  R := TextRec(F);
+  if (R^.Magic = TextMagic) and (R^.Mode <> tmClosed) then
+    CloseText(R^);
+  FillChar(R^, SizeOf(TTextRec), 0);
+  R^.Magic := TextMagic;
+  R^.CodePage := CpUtf8;
+  R^.NameTooLong := not StoreName(R^, Name);
+end;
+
+procedure Assign(var F: Text; const Name: string);
+begin
+  AssignFile(F, Name);
+end;
+
+{ RTL-121, 122, 124, 125: opens F in Mode; a file that is open is closed first }
+procedure OpenText(var F: Text; Mode: TTextMode; Access, Disposition: Cardinal; ToEnd: Boolean);
+var
+  R: PTextRec;
+  H: THandle;
+begin
+  R := TextRec(F);
+  if not IsAssigned(R^) then
+    Exit;
+  if R^.Mode <> tmClosed then
+    CloseText(R^);
+  if (R^.CodePage <> CpUtf8) and (R^.CodePage <> CpUtf16) then
+  begin
+    InOutRes := 106;
+    Exit;
+  end;
+  if R^.NameTooLong then
+  begin
+    InOutRes := ERROR_FILENAME_EXCED_RANGE;
+    Exit;
+  end;
+  if R^.Name[0] = #0 then
+  begin
+    if Mode = tmInput then
+      H := GetStdHandle(STD_INPUT_HANDLE)
+    else
+      H := GetStdHandle(STD_OUTPUT_HANDLE);
+    StartText(R^, H, StreamKind(H), Mode, True);
+    Exit;
+  end;
+  H := CreateFileW(@R^.Name[0], Access, FILE_SHARE_READ, nil, Disposition, FILE_ATTRIBUTE_NORMAL, 0);
+  if H = INVALID_HANDLE_VALUE then
+  begin
+    SetLastIOError;
+    Exit;
+  end;
+  if ToEnd and not SetFilePointerEx(H, 0, nil, FILE_END) then
+  begin
+    SetLastIOError;
+    CloseHandle(H);
+    Exit;
+  end;
+  StartText(R^, H, skBytes, Mode, False);
+  if (Mode = tmOutput) and (R^.CodePage = CpUtf16) and (Disposition = CREATE_ALWAYS) then
+  begin
+    PutByte(R^, $FF);                  { the UTF-16LE BOM }
+    PutByte(R^, $FE);
+  end;
+end;
+
+procedure Reset(var F: Text);
+begin
+  OpenText(F, tmInput, GENERIC_READ, OPEN_EXISTING, False);
+end;
+
+procedure Rewrite(var F: Text);
+begin
+  OpenText(F, tmOutput, GENERIC_WRITE, CREATE_ALWAYS, False);
+end;
+
+procedure Append(var F: Text);
+begin
+  OpenText(F, tmOutput, GENERIC_WRITE, OPEN_EXISTING, True);
+end;
+
+procedure CloseFile(var F: Text);
+var
+  R: PTextRec;
+begin
+  R := TextRec(F);
+  if not IsAssigned(R^) then
+    Exit;
+  if R^.Mode = tmClosed then
+    InOutRes := 103
+  else
+    CloseText(R^);
+end;
+
+procedure Close(var F: Text);
+begin
+  CloseFile(F);
+end;
+
+procedure Flush(var F: Text);
+var
+  R: PTextRec;
+begin
+  R := TextRec(F);
+  if Usable(R^, False) then
+    FlushText(R^);
+end;
+
+procedure Erase(var F: Text);
+var
+  R: PTextRec;
+begin
+  R := TextRec(F);
+  if not IsAssigned(R^) then
+    Exit;
+  if not DeleteFileW(@R^.Name[0]) then
+    SetLastIOError;
+end;
+
+procedure Rename(var F: Text; const NewName: string);
+var
+  R: PTextRec;
+  Target: array[0..NameMax] of WideChar;
+  I, Len: Integer;
+begin
+  R := TextRec(F);
+  if not IsAssigned(R^) then
+    Exit;
+  Len := Length(NewName);
+  if Len > NameMax then
+  begin
+    InOutRes := ERROR_FILENAME_EXCED_RANGE;
+    Exit;
+  end;
+  for I := 1 to Len do
+    Target[I - 1] := NewName[I];
+  Target[Len] := #0;
+  if MoveFileW(@R^.Name[0], @Target[0]) then
+    StoreName(R^, NewName)
+  else
+    SetLastIOError;
+end;
+
+procedure SetTextCodePage(var F: Text; CodePage: Word);
+var
+  R: PTextRec;
+begin
+  R := TextRec(F);
+  if IsAssigned(R^) then
+    R^.CodePage := CodePage;
+end;
+
 { RTL-092: CR LF on every kind }
 procedure _WriteLn(var T: Text);
 var
@@ -3256,13 +4106,13 @@ begin
 end;
 
 { end of a Write/Writeln statement: every file that is not a disk file is flushed (LANG-914, ABI _WriteEnd).
-  Disk files (R-031) carry a name; the standard streams have none. }
+  Disk files are flushed when their buffer is full, by Flush and by CloseFile (RTL-093). }
 procedure _WriteEnd(var T: Text);
 var
   R: PTextRec;
 begin
   R := TextRec(T);
-  if (R^.Kind = skConsole) or (R^.Name[0] = #0) then
+  if (R^.Kind = skConsole) or R^.Std then
     FlushText(R^);
 end;
 
