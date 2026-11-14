@@ -1,0 +1,105 @@
+# threadvars
+ok IsMultiThread before BeginThread
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok IsMultiThread after BeginThread
+ok exit code = result of thread 0
+ok Counter starts at 0 in thread 0
+ok Tag starts at 0 in thread 0
+ok own Counter in thread 0
+ok own Tag in thread 0
+ok exit code = result of thread 1
+ok Counter starts at 0 in thread 1
+ok Tag starts at 0 in thread 1
+ok own Counter in thread 1
+ok own Tag in thread 1
+ok exit code = result of thread 2
+ok Counter starts at 0 in thread 2
+ok Tag starts at 0 in thread 2
+ok own Counter in thread 2
+ok own Tag in thread 2
+ok exit code = result of thread 3
+ok Counter starts at 0 in thread 3
+ok Tag starts at 0 in thread 3
+ok own Counter in thread 3
+ok own Tag in thread 3
+ok main Counter unchanged
+ok main Tag unchanged
+# exceptions in threads
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok thread 0 caught its own exception
+ok ExceptObject in the thread's handler 0
+ok ExceptObject nil after the thread's handler 0
+ok thread 1 caught its own exception
+ok ExceptObject in the thread's handler 1
+ok ExceptObject nil after the thread's handler 1
+ok thread 2 caught its own exception
+ok ExceptObject in the thread's handler 2
+ok ExceptObject nil after the thread's handler 2
+ok thread 3 caught its own exception
+ok ExceptObject in the thread's handler 3
+ok ExceptObject nil after the thread's handler 3
+ok main handler still sees its own exception
+ok each thread's exception destroyed by its handler
+ok main exception destroyed by its handler
+# EndThread
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok exit code given to EndThread
+ok nothing after EndThread runs
+# shared string
+ok one owner before
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok thread 0 saw the string
+ok thread 1 saw the string
+ok thread 2 saw the string
+ok thread 3 saw the string
+ok reference count exact after 4 x 100000 assignments
+# release of the per-thread blocks
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok a running thread holds its per-thread block and its threadvar block
+ok hold thread result
+ok both freed when the thread function returns
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok EndThread exit code
+ok both freed by EndThread
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok busy thread 0 returned
+ok busy thread 0 caught
+ok busy thread 1 ended by EndThread
+ok busy thread 1 caught
+ok busy thread 2 returned
+ok busy thread 2 caught
+ok busy thread 3 ended by EndThread
+ok busy thread 3 caught
+ok no leaks after threads ending both ways
+# passed 99 failed 0

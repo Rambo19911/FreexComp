@@ -27,6 +27,7 @@ type
   PUnicodeString = ^UnicodeString;
   HResult = Integer;                   { ABI section 9.6; HRESULT is the same identifier }
   TProcedure = procedure;
+  TThreadFunc = function(Parameter: Pointer): Integer;    { BeginThread (system.md section 5.1) }
 
   // TODO(M2.5): Dispatch / DefaultHandler take an untyped var parameter (typed Pointer until the compiler has untyped
   // parameters: the same IR, ptr), _Dispatch, GetInterface, GetInterfaceEntry. TODO(M2.5, RTTI): ClassInfo,
@@ -96,6 +97,7 @@ var
   MainThreadID: Cardinal;
   CmdLine: PChar;
   RandSeed: Cardinal;                  { state of Random (RTL-040); 0 at start-up }
+  IsMultiThread: Boolean;              { set by BeginThread; informational (RTL-071) }
 
 { compiler support face (rtl-abi.md section 9.1) }
 procedure _Startup(UnitTable: Pointer; UnitCount: NativeInt);
@@ -329,6 +331,16 @@ procedure SetTextCodePage(var F: Text; CodePage: Word);   { 65001 or 1200, check
 function IOResult: Integer;
 procedure SetInOutRes(Code: Integer);
 
+{ threads (system.md section 5.1, rtl-abi.md ABI-120, ABI-180, ABI-181). BeginThread runs ThreadFunc inside a
+  top-level exception frame (an escaping exception is the unhandled-exception path of ABI-124, exit code 217) and
+  frees the thread's per-thread block and threadvar block when ThreadFunc returns; its result is the exit code.
+  EndThread frees them and ends the calling thread at once. _TlsRegister / _TlsBase are called by compiled code. }
+function BeginThread(SecurityAttributes: Pointer; StackSize: Cardinal; ThreadFunc: TThreadFunc; Parameter: Pointer;
+  CreationFlags: Cardinal; var ThreadId: Cardinal): THandle;
+procedure EndThread(ExitCode: Integer);
+procedure _TlsRegister(Desc: Pointer);
+function _TlsBase: Pointer;
+
 { Str and Val (rtl-abi.md section 9.10, lead note C-062; system.md RTL-079, LANG-950/951). Str writes exactly the text
   Write would write into Dest. Val accepts leading spaces, a sign, decimal digits or $ / 0x / 0X hex digits (reals:
   digits [. digits] [e [sign] digits], also . digits, INF and NAN); no trailing characters. On failure the result is
@@ -415,6 +427,7 @@ function TlsSetValue(dwTlsIndex: Cardinal; lpTlsValue: Pointer): LongBool; stdca
 { lpStartAddress is a stdcall routine address; BeginThread (system.md section 5.1, R-076) wraps it }
 function CreateThread(lpThreadAttributes: Pointer; dwStackSize: NativeUInt; lpStartAddress, lpParameter: Pointer;
   dwCreationFlags: Cardinal; lpThreadId: Pointer): THandle; stdcall; external kernel32 name 'CreateThread';
+procedure ExitThread(dwExitCode: Cardinal); stdcall; external kernel32 name 'ExitThread';
 function WaitForSingleObject(hHandle: THandle; dwMilliseconds: Cardinal): Cardinal; stdcall;
   external kernel32 name 'WaitForSingleObject';
 function GetCurrentProcessId: Cardinal; stdcall; external kernel32 name 'GetCurrentProcessId';
@@ -1941,12 +1954,14 @@ const
 
 { ---------------------------------------------------------------- per-thread block (ABI-120, ABI-173) }
 { One TlsAlloc slot, taken on first use by any thread (no unit initialisation needed), holds a pointer to the calling
-  thread's block, allocated zero-filled from the process heap on that thread's first use. Neither the slot nor the
-  blocks go through the memory manager, so they are not counted by RTL-064. A thread whose block cannot be had (slot
-  or heap exhausted) uses FallbackBlock, shared by all such threads. Both Tls calls change the thread's last error;
-  ThreadBlock restores it, so callers may read GetLastError after touching InOutRes.
-  The threadvar block pointer of ABI-120 joins this record with ABI-181; blocks are freed by EndThread / at the end
-  of a BeginThread routine once those exist (main thread: never). }
+  thread's block, allocated zero-filled on that thread's first use. The block and the thread's threadvar block
+  (ABI-181) come from the default manager's own routines (SysAllocMem / SysFreeMem, whatever manager is installed),
+  so they are counted by RTL-064: a thread started by BeginThread gives both back when it ends (EndThread or the
+  return of its thread function), and the leak report leaves out the main thread's blocks, which are never freed.
+  The main thread's block is made by _Startup, before any program code can read the counters. A thread whose block
+  cannot be had (slot or heap exhausted) uses FallbackBlock, shared by all such threads and never stored in the slot.
+  Both Tls calls change the thread's last error; ThreadBlock restores it, so callers may read GetLastError after
+  touching InOutRes. }
 
 const
   TLS_OUT_OF_INDEXES = $FFFFFFFF;
@@ -1975,12 +1990,15 @@ type
     HandledCount: Integer;
     InFlight: array[0..ExceptStackDepth - 1] of TInFlightExcept;
     Handled: array[0..ExceptStackDepth - 1] of THandledExcept;
+    TlsBlock: PNativeInt;              { ABI-181: nil until the first _TlsBase; [0] = data size, data at +16 }
   end;
   PThreadBlock = ^TThreadBlock;
 
 var
   ThreadSlot: NativeInt;               { TlsAlloc index + 1; 0 while no slot has been taken }
   FallbackBlock: TThreadBlock;
+  MainBlock: PThreadBlock;             { the main thread's block (never freed); nil if it is FallbackBlock }
+  TlsTotal: NativeInt;                 { ABI-180: size of all registered threadvar records }
 
 function ThreadSlotIndex: NativeInt;
 var
@@ -2012,12 +2030,12 @@ begin
     Result := PThreadBlock(TlsGetValue(Cardinal(Slot - 1)));
     if Result = nil then
     begin
-      Result := PThreadBlock(HeapAlloc(GetProcessHeap, HEAP_ZERO_MEMORY, SizeOf(TThreadBlock)));
+      Result := PThreadBlock(SysAllocMem(SizeOf(TThreadBlock)));
       if Result = nil then
         Result := @FallbackBlock
       else if not TlsSetValue(Cardinal(Slot - 1), Result) then
       begin
-        HeapFree(GetProcessHeap, 0, Result);
+        SysFreeMem(Result);
         Result := @FallbackBlock;
       end;
     end;
@@ -2037,6 +2055,138 @@ end;
 procedure SetInOutRes(Code: Integer);
 begin
   ThreadBlock^.InOutRes := Code;
+end;
+
+{ the calling thread's block if it has one (never allocates), else nil }
+function OwnThreadBlock: PThreadBlock;
+begin
+  Result := nil;
+  if ThreadSlot <> 0 then
+    Result := PThreadBlock(TlsGetValue(Cardinal(ThreadSlot - 1)));
+end;
+
+{ RTL-064 blocks held by a thread block: itself and its threadvar block }
+function HeldBlocks(B: PThreadBlock): NativeInt;
+begin
+  Result := 0;
+  if B = nil then
+    Exit;
+  Result := 1;
+  if B^.TlsBlock <> nil then
+    Result := 2;
+end;
+
+{ ABI-120: the end of a thread started by BeginThread gives back its threadvar block and its per-thread block; the
+  main thread keeps its own }
+procedure ReleaseThreadBlocks;
+var
+  B: PThreadBlock;
+begin
+  B := OwnThreadBlock;
+  if (B = nil) or (B = MainBlock) then
+    Exit;
+  TlsSetValue(Cardinal(ThreadSlot - 1), nil);
+  if B^.TlsBlock <> nil then
+    SysFreeMem(B^.TlsBlock);
+  SysFreeMem(B);
+end;
+
+{ ---------------------------------------------------------------- threadvars (ABI-180, ABI-181) }
+
+procedure FatalRunError(Code: Integer); forward;
+
+{ ABI-180: the record of the registering unit starts at the current total (unit initialisation runs on one thread).
+  Desc points at the descriptor (Size, Offset: Int64). }
+procedure _TlsRegister(Desc: Pointer);
+var
+  D: PNativeInt;
+begin
+  D := Desc;
+  D[1] := TlsTotal;
+  TlsTotal := TlsTotal + D[0];
+end;
+
+{ ABI-181: the calling thread's threadvar block, made or grown (zero-extended) to the current total. It never
+  raises: a block that cannot be had is fatal error 203 without ErrorProc. }
+function _TlsBase: Pointer;
+var
+  B: PThreadBlock;
+  Old, Block: PNativeInt;
+begin
+  B := ThreadBlock;
+  Block := B^.TlsBlock;
+  if (Block = nil) or (Block[0] < TlsTotal) then
+  begin
+    Old := Block;
+    Block := PNativeInt(SysAllocMem(TlsTotal + 16));
+    if Block = nil then
+      FatalRunError(203);
+    if Old <> nil then
+    begin
+      Move(PByte(Old)[16], PByte(Block)[16], Old[0]);
+      SysFreeMem(Old);
+    end;
+    Block[0] := TlsTotal;
+    B^.TlsBlock := Block;
+  end;
+  Result := PByte(Block) + 16;
+end;
+
+{ ---------------------------------------------------------------- BeginThread / EndThread (system.md section 5.1) }
+
+type
+  TThreadStart = record
+    Func: TThreadFunc;
+    Param: Pointer;
+  end;
+  PThreadStart = ^TThreadStart;
+
+{ the CreateThread routine: the start record is given back first, then ThreadFunc runs inside the thread's
+  top-level exception frame (RTL-135); an escaping exception is unhandled (ABI-124, exit code 217) }
+function ThreadStart(Start: PThreadStart): Cardinal; stdcall;
+var
+  Func: TThreadFunc;
+  Param: Pointer;
+begin
+  Func := Start^.Func;
+  Param := Start^.Param;
+  SysFreeMem(Start);
+  // TODO(C-174): RTL-042 sets MXCSR = $1F80 here (the Win64 default of a new thread, so nothing changes until then)
+  Result := 0;
+  try
+    Result := Cardinal(Func(Param));
+  except
+    _UnhandledException;
+  end;
+  ReleaseThreadBlocks;
+end;
+
+function BeginThread(SecurityAttributes: Pointer; StackSize: Cardinal; ThreadFunc: TThreadFunc; Parameter: Pointer;
+  CreationFlags: Cardinal; var ThreadId: Cardinal): THandle;
+var
+  Start: PThreadStart;
+  Error: Cardinal;
+begin
+  Result := 0;
+  Start := PThreadStart(SysGetMem(SizeOf(TThreadStart)));
+  if Start = nil then
+    Exit;
+  Start^.Func := ThreadFunc;
+  Start^.Param := Parameter;
+  IsMultiThread := True;
+  Result := CreateThread(SecurityAttributes, StackSize, @ThreadStart, Start, CreationFlags, @ThreadId);
+  if Result = 0 then
+  begin
+    Error := GetLastError;
+    SysFreeMem(Start);
+    SetLastError(Error);
+  end;
+end;
+
+procedure EndThread(ExitCode: Integer);
+begin
+  ReleaseThreadBlocks;
+  ExitThread(Cardinal(ExitCode));
 end;
 
 { RTL-123: Win32 error -> I/O error }
@@ -2280,6 +2430,9 @@ begin
   Entries := UnitCount;
   ProcessHeap := GetProcessHeap;
   InitMemoryManager;
+  MainBlock := ThreadBlock;            { counted from the start, so program code sees no change (RTL-064) }
+  if MainBlock = @FallbackBlock then
+    MainBlock := nil;
   HInstance := GetModuleHandleW(nil);
   MainThreadID := GetCurrentThreadId;
   CmdLine := GetCommandLineW;
@@ -2453,7 +2606,7 @@ end;
 { RTL-064, ABI-104 step 3: 'Memory leak detected: <n> block(s) not freed' when the counters differ; the text is built
   in a stack buffer and goes the RTL-132 way (ShowErrorProc in a GUI program, else ErrOutput and a line break). The
   buffers of Input, Output and ErrOutput are still in use (step 4 flushes them) and are not leaks: each one that is
-  allocated is subtracted. }
+  allocated is subtracted, and so are the per-thread blocks of the main thread and of the halting thread. }
 function StdBufferCount: NativeInt;
 begin
   Result := 0;
@@ -2475,7 +2628,9 @@ var
   N, Count, I: Integer;
   Value: NativeInt;
 begin
-  Value := _LiveAllocCount - StdBufferCount;
+  Value := _LiveAllocCount - StdBufferCount - HeldBlocks(MainBlock);
+  if OwnThreadBlock <> MainBlock then
+    Value := Value - HeldBlocks(OwnThreadBlock);   { _Halt on a BeginThread thread (unhandled exception) }
   if Value = 0 then
     Exit;
   N := 0;
