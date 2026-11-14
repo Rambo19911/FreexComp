@@ -22,7 +22,7 @@ public sealed class MainWindowViewModel : ObservableObject
         DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap, services.Documents);
         Layout = services.Layout.Layout;
         Layout.DocumentArea = DocumentArea;
-        StatusBar = new StatusBarViewModel(services.Status, services.Commands, services.Settings);
+        StatusBar = new StatusBarViewModel(services.Status, services.Commands, services.Settings, services.Documents);
         Layout.IsStatusBarShown = StatusBar.IsVisible;
         StatusBar.PropertyChanged += (_, e) =>
         {

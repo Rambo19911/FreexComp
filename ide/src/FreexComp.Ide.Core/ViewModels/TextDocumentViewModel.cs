@@ -260,12 +260,29 @@ public class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
         if (encodingFallback)
         {
-            // "Reopen with Encoding…" joins when its dialog exists (dialogs.md §18).
+            var convert = new InfoBarAction("ConvertToUtf8", Strings.Button_ConvertToUtf8, () => { SetEncoding(FileEncoding.Utf8); return Task.CompletedTask; });
             ShowInfoBar(new InfoBarViewModel(EncodingInfoBarKind, InfoBarSeverity.Warning,
                 string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_EncodingFallback, FileEncodings.DisplayName(_encoding)),
-                [new InfoBarAction("ConvertToUtf8", Strings.Button_ConvertToUtf8, () => { SetEncoding(FileEncoding.Utf8); return Task.CompletedTask; })],
+                ReopenWithEncodingHandler is { } reopen
+                    ? [new InfoBarAction("ReopenWithEncoding", Strings.Button_ReopenWithEncoding, reopen), convert]
+                    : [convert],
                 bar => RemoveInfoBar(bar.Kind)));
         }
+    }
+
+    /// <summary>"Reopen with Encoding…" of the <c>Encoding</c> info bar (dialogs.md section 18); set by the document service.</summary>
+    internal Func<Task>? ReopenWithEncodingHandler { get; set; }
+
+    /// <summary>
+    /// Reopen with Encoding (IDE-P1-074): <paramref name="text"/> was read from disk in <paramref name="encoding"/>, which
+    /// becomes the save encoding; then as <see cref="Reload"/> (undo cleared, new save point).
+    /// </summary>
+    internal void ReloadWithEncoding(string text, FileEncoding encoding)
+    {
+        _encoding = encoding;
+        RemoveInfoBar(EncodingInfoBarKind);
+        OnPropertyChanged(nameof(Encoding));
+        Reload(text);
     }
 
     /// <summary>A successful save to <paramref name="path"/>: the current state becomes the save point.</summary>

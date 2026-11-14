@@ -127,6 +127,71 @@ public sealed class StatusBarTests
         Assert.Equal("Saved Unit1.pas", h.Status.Message);
     }
 
+    private static List<MenuItem> MenuOf(HeadlessHarness h, string field) =>
+        [.. Assert.IsType<ContextMenu>(h.Find<Control>(AutomationIds.StatusBarField(field)).ContextMenu).Items.OfType<MenuItem>()];
+
+    private static void Choose(MenuItem item)
+    {
+        Assert.True(item.IsEffectivelyEnabled, AutomationIds.Get(item) + " is disabled");
+        item.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-WIN-042")]
+    [Trait("Req", "IDE-P1-074")]
+    [Trait("Req", "IDE-P1-076")]
+    public async Task EncodingAndLineEndingMenus()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = "one\r\ntwo\r\n");
+        var path = Path.Combine(h.TempDir, "A.pas");
+        var document = Assert.IsType<Core.ViewModels.TextDocumentViewModel>((await h.Services.Documents.OpenAsync(path)).Value);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("CRLF", h.Status.Field("LineEnding"));
+        Assert.Equal(h.Services.Commands.Get("edit.convertLineEndings").Title, ToolTip.GetTip(h.Find<Button>("StatusBar.LineEnding")));
+
+        // R6: the conversion commands; the current kind is disabled.
+        h.Click("StatusBar.LineEnding");
+        var items = MenuOf(h, "LineEnding");
+        Assert.Equal(["Context.edit.convertLineEndings:crlf", "Context.edit.convertLineEndings:lf"], items.Select(AutomationIds.Get));
+        Assert.False(items[0].IsEffectivelyEnabled);
+        Choose(items[1]);
+        h.Find<Control>("StatusBar.LineEnding").ContextMenu!.Close();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("one\ntwo\n", document.Buffer.Text);
+        Assert.Equal("LF", h.Status.Field("LineEnding"));
+        Assert.True(document.IsModified);
+
+        // R7: Reopen with Encoding…, then Save with Encoding ▸ with a bullet on the current encoding.
+        h.Click("StatusBar.Encoding");
+        items = MenuOf(h, "Encoding");
+        Assert.Equal(["StatusBar.Encoding.Reopen", "StatusBar.Encoding.SaveWith"], items.Select(AutomationIds.Get));
+        var saveWith = items[1].Items.OfType<MenuItem>().ToList();
+        Assert.Equal(
+            ["Context.edit.setEncoding:utf-8", "Context.edit.setEncoding:utf-8-bom", "Context.edit.setEncoding:utf-16le",
+             "Context.edit.setEncoding:utf-16be", "Context.edit.setEncoding:windows-1252"],
+            saveWith.Select(AutomationIds.Get));
+        Assert.Equal(["UTF-8", "UTF-8 with BOM", "UTF-16 LE", "UTF-16 BE", "Western (Windows-1252)"], saveWith.Select(i => i.Header as string));
+        Assert.Equal([true, false, false, false, false], saveWith.Select(i => i.IsChecked));
+        Choose(saveWith[2]);
+        h.Find<Control>("StatusBar.Encoding").ContextMenu!.Close();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Core.Text.FileEncoding.Utf16Le, document.Encoding);
+        Assert.Equal("UTF-16 LE", h.Status.Field("Encoding"));
+        await h.ExecuteAsync("file.save");
+        Assert.Equal([0xFF, 0xFE, (byte)'o', 0], File.ReadAllBytes(path)[..4]);
+        Assert.False(document.IsModified);
+
+        // "Reopen with Encoding…" opens the dialog for the active document.
+        h.Click("StatusBar.Encoding");
+        Choose(MenuOf(h, "Encoding")[0]);
+        h.Find<Control>("StatusBar.Encoding").ContextMenu!.Close();
+        var dlg = await h.WaitForDialogAsync("ReopenEncoding");
+        Assert.Equal("A.pas is currently read as: UTF-16 LE", dlg.Find<TextBlock>("Current").Text);
+        dlg.Press("Escape");
+        await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-042")]
     public async Task ArrowKeysMoveBetweenFields()
@@ -144,8 +209,15 @@ public sealed class StatusBarTests
         Assert.Equal("StatusBar.InsertMode", h.FocusedAutomationId);
         h.Press("Right");
         Assert.Equal("StatusBar.Indent", h.FocusedAutomationId);
+        h.Press("Right");
+        Assert.Equal("StatusBar.LineEnding", h.FocusedAutomationId); // R6/R7 are menu buttons (I-082)
+        h.Press("Right");
+        Assert.Equal("StatusBar.Encoding", h.FocusedAutomationId);
         h.Press("Right"); // the last field: stays
-        Assert.Equal("StatusBar.Indent", h.FocusedAutomationId);
+        Assert.Equal("StatusBar.Encoding", h.FocusedAutomationId);
+        h.Press("Left");
+        Assert.Equal("StatusBar.LineEnding", h.FocusedAutomationId);
+        h.Press("Left");
         h.Press("Left");
         Assert.Equal("StatusBar.InsertMode", h.FocusedAutomationId);
 

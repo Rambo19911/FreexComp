@@ -72,6 +72,9 @@ public sealed class DocumentService : IDocumentService
     /// </summary>
     public Func<Task<bool>>? ProjectNewUnit { get; set; }
 
+    /// <summary>The UI state holding the Documents dialog size (UI-DLG-005; set by the service graph).</summary>
+    public ILayoutService? Layout { get; set; }
+
     /// <summary>Creates the Welcome page (welcome-page.md; set by the service graph).</summary>
     public Func<WelcomeDocumentViewModel>? WelcomeFactory { get; set; }
 
@@ -126,11 +129,18 @@ public sealed class DocumentService : IDocumentService
             _ => RevertAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeOthers", new AsyncHandler(
             _ => ActiveDocument is not null && _documents.Count > 1, _ => CloseAllAsync(except: ActiveDocument)));
-        // IDE-ED-054: the fold commands act on the active document (its TextDocumentViewModel.Folding).
-        foreach (var id in (string[])["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll"])
+        commands.RegisterHandler("window.documents", new AsyncHandler(
+            _ => _documents.Count > 0, _ => _dialogs.ShowAsync(new DocumentsViewModel(this, Layout))));
+        // Status-bar R7 "Save with Encoding" (IDE-P1-074): only the encoding of the next save changes.
+        commands.RegisterHandler("edit.setEncoding", new Handler(
+            arg => ActiveDocument is TextDocumentViewModel && arg is not null && FileEncodings.FromId(arg) is not null,
+            arg => ((TextDocumentViewModel)ActiveDocument!).SetEncoding(FileEncodings.FromId(arg!)!.Value)));
+        // IDE-ED-054: the fold commands act on the active document (its TextDocumentViewModel.Folding); so does
+        // edit.convertLineEndings (status-bar R6, Edit menu), until the generic Editor-scope route (I-158).
+        foreach (var id in (string[])["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll", LineEndingModel.ConvertCommandId])
         {
             commands.RegisterHandler(id, new AsyncHandler(
-                arg => ActiveDocument?.CommandTarget is { } target && target.CanExecute(id, arg),
+                arg => ActiveDocument?.CommandTarget is { } target && target.CanExecute(id, arg) && !IsCurrentLineEnding(id, arg),
                 arg => ActiveDocument!.CommandTarget!.ExecuteAsync(id, arg)));
         }
     }
@@ -340,6 +350,46 @@ public sealed class DocumentService : IDocumentService
         return true;
     }
 
+    public async Task<bool> ReopenWithEncodingAsync(DocumentViewModel document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (document is not TextDocumentViewModel { FilePath: { } path } text)
+            return false;
+        if (await ReadForReopenAsync(path) is not { } bytes)
+            return false;
+
+        var detected = EncodingDetector.Detect(bytes);
+        var proposed = detected.IsBinary ? FileEncoding.Utf8 : detected.Encoding;
+        if (await _dialogs.ShowAsync(new ReopenEncodingViewModel(text.Title, text.Encoding, proposed, text.IsModified)) is not { } chosen)
+            return false;
+
+        // dialogs.md section 18: re-read at Reopen; invalid byte sequences become U+FFFD.
+        if (await ReadForReopenAsync(path) is not { } current)
+            return false;
+        text.ReloadWithEncoding(FileEncodings.Decode(current, chosen), chosen);
+        _commands?.InvalidateCanExecute();
+        return true;
+    }
+
+    /// <summary>The file's bytes, or null after <c>Msg.File.NotFound</c> / <c>Msg.File.OpenFailed</c>.</summary>
+    private async Task<byte[]?> ReadForReopenAsync(string path)
+    {
+        try
+        {
+            return await Task.Run(() => _fileSystem.ReadAllBytes(path)); // IDE-ARCH-081
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.NotFound", [path]));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.OpenFailed", [path, ex.Message]));
+        }
+
+        return null;
+    }
+
     public async Task<bool> SaveAllAsync()
     {
         var written = 0;
@@ -530,6 +580,7 @@ public sealed class DocumentService : IDocumentService
         var lineEnding = DefaultLineEnding;
         var document = new TextDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, null,
             _languages.ForPath(fullPath), detection.Encoding, lineEnding);
+        document.ReopenWithEncodingHandler = () => ReopenWithEncodingAsync(document);
         document.ShowLoadInfoBars(detection.IsFallback);
         if (!writable)
         {
@@ -685,6 +736,11 @@ public sealed class DocumentService : IDocumentService
         Canceled,
         PickerCanceled,
     }
+
+    /// <summary>menus.md: "Line Endings to CRLF/LF" is disabled while the document already has that kind.</summary>
+    private bool IsCurrentLineEnding(string commandId, string? argument) =>
+        commandId == LineEndingModel.ConvertCommandId && ActiveDocument is TextDocumentViewModel text
+        && (argument, text.LineEnding.Kind) is ("crlf", LineEndingKind.CrLf) or ("lf", LineEndingKind.Lf);
 
     private static bool IsOrderArgument(string? argument) => argument is null or MruArgument or VisualArgument;
 

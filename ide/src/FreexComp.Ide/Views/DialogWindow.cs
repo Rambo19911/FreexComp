@@ -150,13 +150,13 @@ public class DialogWindow : Window
     }
 
     /// <summary>
-    /// UI-DLG-004: a check box or radio button would take Enter as a click (toggling itself); in a dialog Enter is the
-    /// default button there too.
+    /// UI-DLG-004: a check box or radio button would take Enter as a click (toggling itself), a closed combo box would
+    /// swallow it; in a dialog Enter is the default button there too.
     /// </summary>
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None
-            && FocusManager?.GetFocusedElement() is Avalonia.Controls.Primitives.ToggleButton)
+            && FocusManager?.GetFocusedElement() is Avalonia.Controls.Primitives.ToggleButton or ComboBox { IsDropDownOpen: false })
         {
             e.Handled = true;
             _ = Model.PressDefaultAsync();

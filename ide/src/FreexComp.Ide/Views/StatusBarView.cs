@@ -28,8 +28,8 @@ public sealed class StatusBarView : DockPanel
     private readonly TextBlock _selection = Text(AutomationIds.StatusBarField("Selection"));
     private readonly Button _insertMode;
     private readonly Button _indent;
-    private readonly TextBlock _lineEnding = Text(AutomationIds.StatusBarField("LineEnding"));
-    private readonly TextBlock _encoding = Text(AutomationIds.StatusBarField("Encoding"));
+    private readonly Button _lineEnding;
+    private readonly Button _encoding;
     private readonly TextBlock _language = Text(AutomationIds.StatusBarField("Language"));
     private readonly List<Button> _buttons = [];
     private readonly List<Control> _editorFields = [];
@@ -48,7 +48,9 @@ public sealed class StatusBarView : DockPanel
         _insertMode = FieldButton("InsertMode", m => m.InsertModeCommand);
         _insertMode.MinWidth = 36;
         _indent = FieldButton("Indent", m => m.IndentCommand);
+        _lineEnding = FieldButton("LineEnding", m => m.LineEndingCommand, OpenLineEndingMenu);
         _lineEnding.MinWidth = 44;
+        _encoding = FieldButton("Encoding", m => m.EncodingCommand, OpenEncodingMenu);
         ((TextBlock)_state.Content!).MaxWidth = 360;
 
         var left = new StackPanel { Orientation = Orientation.Horizontal };
@@ -127,8 +129,8 @@ public sealed class StatusBarView : DockPanel
         ((Control)_selection.Parent!).IsVisible = m.HasEditor && m.HasSelection;
         SetText(_insertMode, m.InsertModeText);
         SetText(_indent, m.IndentText);
-        _lineEnding.Text = m.LineEndingText;
-        _encoding.Text = m.EncodingText;
+        SetText(_lineEnding, m.LineEndingText);
+        SetText(_encoding, m.EncodingText);
         _language.Text = m.LanguageText;
         foreach (var button in _buttons)
         {
@@ -136,7 +138,7 @@ public sealed class StatusBarView : DockPanel
         }
     }
 
-    private Button FieldButton(string name, Func<StatusBarViewModel, IdeCommand> command)
+    private Button FieldButton(string name, Func<StatusBarViewModel, IdeCommand> command, Action<Button>? openMenu = null)
     {
         var button = new StatusFieldButton
         {
@@ -152,13 +154,78 @@ public sealed class StatusBarView : DockPanel
         AutomationProperties.SetAutomationId(button, AutomationIds.StatusBarField(name));
         button.Click += (_, _) =>
         {
-            if (CommandOf(button) is { } c)
+            if (openMenu is not null)
+            {
+                openMenu(button);
+            }
+            else if (CommandOf(button) is { } c)
             {
                 StatusBarViewModel.Activate(c);
             }
         };
         _buttons.Add(button);
         return button;
+    }
+
+    /// <summary>R6 (main-window.md section 5): <c>edit.convertLineEndings:crlf</c> / <c>:lf</c>.</summary>
+    private void OpenLineEndingMenu(Button button)
+    {
+        if (_model is not { } m)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu();
+        foreach (var (argument, label) in StatusBarViewModel.LineEndingArguments)
+        {
+            menu.Items.Add(CommandItem(m.LineEndingCommand, argument, label, isChecked: null));
+        }
+
+        ShowMenu(button, menu);
+    }
+
+    /// <summary>R7: "Reopen with Encoding…", then "Save with Encoding" with a bullet on the current encoding.</summary>
+    private void OpenEncodingMenu(Button button)
+    {
+        if (_model is not { } m)
+        {
+            return;
+        }
+
+        var reopen = new MenuItem { Header = Core.Resources.Strings.StatusBar_ReopenWithEncoding, IsEnabled = m.CanReopenWithEncoding };
+        AutomationProperties.SetAutomationId(reopen, AutomationIds.StatusBarField("Encoding.Reopen"));
+        reopen.Click += async (_, _) => await m.ReopenWithEncodingAsync();
+        var saveWith = new MenuItem { Header = Core.Resources.Strings.StatusBar_SaveWithEncoding };
+        AutomationProperties.SetAutomationId(saveWith, AutomationIds.StatusBarField("Encoding.SaveWith"));
+        foreach (var (argument, label) in StatusBarViewModel.EncodingArguments)
+        {
+            saveWith.Items.Add(CommandItem(m.EncodingCommand, argument, label.Replace("_", "__", StringComparison.Ordinal), isChecked: argument == m.EncodingId));
+        }
+
+        var menu = new ContextMenu();
+        menu.Items.Add(reopen);
+        menu.Items.Add(saveWith);
+        ShowMenu(button, menu);
+    }
+
+    /// <summary>A command item (<c>Context.&lt;commandId&gt;:&lt;argument&gt;</c>); <paramref name="label"/> marks its mnemonic with <c>&amp;</c>.</summary>
+    private static MenuItem CommandItem(IdeCommand command, string argument, string label, bool? isChecked)
+    {
+        var item = new MenuItem { Header = label.Replace('&', '_'), Command = command, CommandParameter = argument };
+        if (isChecked is { } value)
+        {
+            item.ToggleType = MenuItemToggleType.Radio;
+            item.IsChecked = value;
+        }
+
+        AutomationProperties.SetAutomationId(item, AutomationIds.Context(command.Id, argument));
+        return item;
+    }
+
+    private static void ShowMenu(Button button, ContextMenu menu)
+    {
+        button.ContextMenu = menu;
+        menu.Open(button);
     }
 
     private IdeCommand? CommandOf(Button button) =>

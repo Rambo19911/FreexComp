@@ -114,6 +114,14 @@ public interface IDocumentService
     Task<bool> RevertAsync(DocumentViewModel document);
 
     /// <summary>
+    /// Reopen with Encoding (dialogs.md section 18, IDE-P1-074): the dialog proposes the encoding auto-detection would choose
+    /// when it differs from the current one, else UTF-8; on Reopen the file is re-read in the chosen encoding (invalid
+    /// bytes become U+FFFD), which becomes the save encoding; unsaved changes are discarded, the undo history cleared.
+    /// A read failure shows <c>Msg.File.NotFound</c> / <c>Msg.File.OpenFailed</c>. True when reloaded.
+    /// </summary>
+    Task<bool> ReopenWithEncodingAsync(DocumentViewModel document);
+
+    /// <summary>
     /// <c>file.saveAll</c> (IDE-P1-085): every modified document in tab order through <see cref="SaveAsync"/>'s
     /// questions; a canceled Save As picker skips that document, a failure answered with Cancel stops (false). Status
     /// <c>Msg.File.SavedAll</c> with the number of files written, or <c>Msg.File.NothingToSave</c>.

@@ -1,33 +1,39 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Text;
 
 namespace FreexComp.Ide.Core.ViewModels;
 
 /// <summary>
 /// Region 8, the status bar (main-window.md §5): state (L1), message (L3) and the active text editor's fields R2–R8.
 /// Fields of later phases (L2 progress, R1 diagnostics, R9 configuration, the designer field) arrive with their tasks;
-/// the R6/R7 menus with I-082. Texts come from <see cref="Strings"/>; the view only lays them out.
+/// R6/R7 open menus (I-082). Texts come from <see cref="Strings"/>; the view only lays them out.
 /// </summary>
 public sealed class StatusBarViewModel : ObservableObject
 {
     private readonly IStatusService _status;
     private readonly ISettingsService _settings;
+    private readonly IDocumentService? _documents;
 
-    public StatusBarViewModel(IStatusService status, ICommandService commands, ISettingsService settings)
+    public StatusBarViewModel(IStatusService status, ICommandService commands, ISettingsService settings, IDocumentService? documents = null)
     {
         ArgumentNullException.ThrowIfNull(status);
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(settings);
         _status = status;
         _settings = settings;
+        _documents = documents;
         StateCommand = commands.Get("view.messages");
         CaretCommand = commands.Get("search.goToLine");
         InsertModeCommand = commands.Get("edit.toggleOverwrite");
         IndentCommand = commands.Get("tools.options");
+        LineEndingCommand = commands.Get(LineEndingModel.ConvertCommandId);
+        EncodingCommand = commands.Get("edit.setEncoding");
         status.Changed += (_, _) => OnPropertyChanged(string.Empty);
         settings.Changed += (_, e) =>
         {
@@ -94,6 +100,33 @@ public sealed class StatusBarViewModel : ObservableObject
 
     /// <summary>R5 click: Options at the page Editor › General.</summary>
     public IdeCommand IndentCommand { get; }
+
+    /// <summary>R6 menu: <c>edit.convertLineEndings</c> with <see cref="LineEndingArguments"/>.</summary>
+    public IdeCommand LineEndingCommand { get; }
+
+    /// <summary>R6 menu entries: (argument, label with <c>&amp;</c> mnemonic) = the Edit menu's labels.</summary>
+    public static IReadOnlyList<(string Argument, string Label)> LineEndingArguments { get; } =
+    [
+        ("crlf", Strings.Menu_edit_convertLineEndings_crlf),
+        ("lf", Strings.Menu_edit_convertLineEndings_lf),
+    ];
+
+    /// <summary>R7 "Save with Encoding" submenu: <c>edit.setEncoding</c> with <see cref="EncodingArguments"/>.</summary>
+    public IdeCommand EncodingCommand { get; }
+
+    /// <summary>R7 submenu entries: (encoding id, display name).</summary>
+    public static IReadOnlyList<(string Argument, string Label)> EncodingArguments { get; } =
+        [.. Enum.GetValues<FileEncoding>().Select(e => (FileEncodings.ToId(e), FileEncodings.DisplayName(e)))];
+
+    /// <summary>The active editor's encoding id (the bullet in the R7 submenu); null without an editor.</summary>
+    public string? EncodingId => Editor?.EncodingId;
+
+    /// <summary>R7 "Reopen with Encoding…": possible for the active text document with a file.</summary>
+    public bool CanReopenWithEncoding => _documents?.ActiveDocument is TextDocumentViewModel { FilePath: not null };
+
+    /// <summary>R7 "Reopen with Encoding…" (dialogs.md section 18) for the active document.</summary>
+    public Task ReopenWithEncodingAsync() =>
+        CanReopenWithEncoding ? _documents!.ReopenWithEncodingAsync(_documents.ActiveDocument!) : Task.CompletedTask;
 
     private EditorStatus? Editor => _status.Editor;
 

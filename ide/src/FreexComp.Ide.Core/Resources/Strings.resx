@@ -3709,4 +3709,115 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Treat files lar_ger than (MB) as large:</value>
     <comment>dialogs.md §9.7</comment>
   </data>
+  <data name="Button_Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="About_Title" xml:space="preserve">
+    <value>About FreexComp</value>
+    <comment>dialogs.md §15</comment>
+  </data>
+  <data name="About_Version" xml:space="preserve">
+    <value>Version</value>
+    <comment>dialogs.md §15: "Version &lt;version&gt; (build &lt;date&gt;, &lt;commit&gt;)"</comment>
+  </data>
+  <data name="About_Build" xml:space="preserve">
+    <value>build</value>
+    <comment>dialogs.md §15</comment>
+  </data>
+  <data name="About_CopyInfo" xml:space="preserve">
+    <value>Copy Info</value>
+    <comment>dialogs.md §15 button (mnemonic C)</comment>
+  </data>
+  <data name="About_Licenses" xml:space="preserve">
+    <value>Third-Party Licenses…</value>
+    <comment>dialogs.md §15 button (mnemonic T)</comment>
+  </data>
+  <data name="About_Label_Product" xml:space="preserve">
+    <value>Product</value>
+    <comment>dialogs.md §15 Copy Info label</comment>
+  </data>
+  <data name="About_Label_Version" xml:space="preserve">
+    <value>Version</value>
+    <comment>dialogs.md §15 Copy Info label</comment>
+  </data>
+  <data name="About_Label_License" xml:space="preserve">
+    <value>License</value>
+    <comment>dialogs.md §15 Copy Info label</comment>
+  </data>
+  <data name="About_Label_Runtime" xml:space="preserve">
+    <value>Runtime</value>
+    <comment>dialogs.md §15 field label</comment>
+  </data>
+  <data name="About_Label_Toolchain" xml:space="preserve">
+    <value>Toolchain</value>
+    <comment>dialogs.md §15 field label</comment>
+  </data>
+  <data name="About_Label_Settings" xml:space="preserve">
+    <value>Settings</value>
+    <comment>dialogs.md §15 field label</comment>
+  </data>
+  <data name="Licenses_Title" xml:space="preserve">
+    <value>Third-Party Licenses</value>
+    <comment>dialogs.md §16</comment>
+  </data>
+  <data name="Button_ReopenWithEncoding" xml:space="preserve">
+    <value>Reopen with Encoding…</value>
+    <comment>Msg.File.EncodingFallback info-bar action</comment>
+  </data>
+  <data name="ReopenEncoding_Title" xml:space="preserve">
+    <value>Reopen with Encoding</value>
+    <comment>dialogs.md §18</comment>
+  </data>
+  <data name="ReopenEncoding_Encoding" xml:space="preserve">
+    <value>_Encoding:</value>
+    <comment>dialogs.md §18 label</comment>
+  </data>
+  <data name="ReopenEncoding_Reopen" xml:space="preserve">
+    <value>Reopen</value>
+    <comment>dialogs.md §18 default button (mnemonic R)</comment>
+  </data>
+  <data name="ReopenEncoding_DiscardAndReopen" xml:space="preserve">
+    <value>Discard Changes and Reopen</value>
+    <comment>dialogs.md §18 default button of a modified document (mnemonic D)</comment>
+  </data>
+  <data name="Documents_Title" xml:space="preserve">
+    <value>Documents</value>
+    <comment>dialogs.md §17</comment>
+  </data>
+  <data name="Documents_Activate" xml:space="preserve">
+    <value>Activate</value>
+    <comment>dialogs.md §17 button (mnemonic A)</comment>
+  </data>
+  <data name="Documents_Done" xml:space="preserve">
+    <value>Done</value>
+    <comment>dialogs.md §17 button</comment>
+  </data>
+  <data name="Documents_ModifiedPrefix" xml:space="preserve">
+    <value>● </value>
+    <comment>dialogs.md §17: modified documents are prefixed with the modified dot</comment>
+  </data>
+  <data name="Documents_ColumnName" xml:space="preserve">
+    <value>Name</value>
+    <comment>dialogs.md §17 column</comment>
+  </data>
+  <data name="Documents_ColumnFolder" xml:space="preserve">
+    <value>Folder</value>
+    <comment>dialogs.md §17 column</comment>
+  </data>
+  <data name="StatusBar_ReopenWithEncoding" xml:space="preserve">
+    <value>_Reopen with Encoding…</value>
+    <comment>main-window.md §5 R7 menu</comment>
+  </data>
+  <data name="StatusBar_SaveWithEncoding" xml:space="preserve">
+    <value>_Save with Encoding</value>
+    <comment>main-window.md §5 R7 menu</comment>
+  </data>
+  <data name="StatusBar_EncodingMenu" xml:space="preserve">
+    <value>Encoding</value>
+    <comment>main-window.md §5 R7 tooltip</comment>
+  </data>
+  <data name="Licenses_Components" xml:space="preserve">
+    <value>Components</value>
+    <comment>dialogs.md §16 list automation name</comment>
+  </data>
 </root>

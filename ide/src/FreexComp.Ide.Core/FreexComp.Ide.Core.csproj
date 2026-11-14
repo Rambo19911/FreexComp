@@ -30,4 +30,8 @@
     <!-- IDE-PM-020: new-project templates, resource names Templates/<id>/<file> (separators normalized at run time). -->
     <EmbeddedResource Include="Templates\**\*" LogicalName="Templates/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- UI-DLG-161: the Third-Party Licenses content, checked against THIRD-PARTY-NOTICES.md by LicensesTests. -->
+    <EmbeddedResource Include="Resources\ThirdPartyNotices.json" LogicalName="ThirdPartyNotices.json" />
+  </ItemGroup>
 </Project>
