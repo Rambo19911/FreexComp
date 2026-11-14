@@ -239,10 +239,14 @@ public sealed class Compilation
         }
 
         var defines = Options.AppType == AppType.Console ? Options.Defines.Add("CONSOLE") : Options.Defines;
-        var tree = SyntaxTree.Parse(text, new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)] }, FileSystem);
+        // {$IF} conditions are evaluated by the binder in the unit's System scope chain (LANG-862, C-032/C-046)
+        var parseOptions = DirectiveConditionEvaluator.WithBinder(
+            new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)] }, system);
+        var tree = SyntaxTree.Parse(text, parseOptions, FileSystem);
         diagnostics.AddRange(tree.Diagnostics);
         var result = Binder.BindCompilationUnit(tree, types, system);
         diagnostics.AddRange(result.Diagnostics);
+        diagnostics.AddRange(FlowAnalyzer.Analyze(result));                    // CMP-115: a separate pass after binding (C-031)
         return result;
     }
 

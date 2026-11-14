@@ -109,6 +109,55 @@ public sealed class EmitTests
     }
 
     [Fact]
+    [Trait("Req", "CMP-115")]
+    public void Check_RunsFlowAnalysisAfterBinding()
+    {
+        var (compilation, _) = InMemory("P", "program P;\nprocedure Q;\nvar X: Integer;\nbegin\nend;\nbegin\n  Q\nend.\n");
+
+        var result = compilation.Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        Assert.Equal([@"C:\p\P.pas(3,5): hint H2001: Variable 'X' is declared but never used"], result.Diagnostics.Select(d => d.ToText()));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-115")]
+    public void Check_EmptyProgram_ReportsNothing()
+    {
+        var (compilation, _) = InMemory("EmptyProgram", EmptyProgramSource);
+
+        var result = compilation.Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    [Trait("Req", "LANG-862")]
+    [Trait("Req", "LANG-511")]
+    public void IfDirective_SeesTheSystemInterface()
+    {
+        var (compilation, _) = InMemory("P", "program P;\nbegin\n{$IF not Declared(ExitCode)}\n  NotDeclaredAnywhere := 1;\n{$ELSE}\n  ExitCode := 7;\n{$ENDIF}\nend.\n");
+
+        var result = compilation.Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    [Trait("Req", "LANG-862")]
+    public void IfDirective_SizeOfASystemVariable_Folds()
+    {
+        var (compilation, _) = InMemory("P", "program P;\nbegin\n{$IF SizeOf(ExitCode) <> 4}\n  NotDeclaredAnywhere := 1;\n{$ELSE}\n  ExitCode := 7;\n{$ENDIF}\nend.\n");
+
+        var result = compilation.Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
     [Trait("Req", "CMP-350")]
     public void SystemModule_DefinesInitAndFinal()
     {
