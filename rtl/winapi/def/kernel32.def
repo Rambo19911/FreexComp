@@ -11,6 +11,7 @@ ExitThread
 FlushFileBuffers
 GetCommandLineW
 GetConsoleMode
+GetCurrentProcessId
 GetCurrentThreadId
 GetLastError
 GetModuleFileNameW
@@ -30,8 +31,10 @@ ReadFile
 SetFilePointerEx
 SetLastError
 TlsAlloc
+TlsFree
 TlsGetValue
 TlsSetValue
+WaitForSingleObject
 WideCharToMultiByte
 WriteConsoleW
 WriteFile

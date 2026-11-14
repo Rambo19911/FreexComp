@@ -306,6 +306,17 @@ function HeapAlloc(hHeap: THandle; dwFlags: Cardinal; dwBytes: NativeUInt): Poin
 function HeapFree(hHeap: THandle; dwFlags: Cardinal; lpMem: Pointer): LongBool; stdcall; external kernel32 name 'HeapFree';
 function HeapReAlloc(hHeap: THandle; dwFlags: Cardinal; lpMem: Pointer; dwBytes: NativeUInt): Pointer; stdcall;
   external kernel32 name 'HeapReAlloc';
+procedure SetLastError(dwErrCode: Cardinal); stdcall; external kernel32 name 'SetLastError';
+function TlsAlloc: Cardinal; stdcall; external kernel32 name 'TlsAlloc';
+function TlsFree(dwTlsIndex: Cardinal): LongBool; stdcall; external kernel32 name 'TlsFree';
+function TlsGetValue(dwTlsIndex: Cardinal): Pointer; stdcall; external kernel32 name 'TlsGetValue';
+function TlsSetValue(dwTlsIndex: Cardinal; lpTlsValue: Pointer): LongBool; stdcall; external kernel32 name 'TlsSetValue';
+{ TODO(C-161): lpStartAddress is a Pointer until procedural types exist; BeginThread (system.md section 5.1) wraps it }
+function CreateThread(lpThreadAttributes: Pointer; dwStackSize: NativeUInt; lpStartAddress, lpParameter: Pointer;
+  dwCreationFlags: Cardinal; lpThreadId: Pointer): THandle; stdcall; external kernel32 name 'CreateThread';
+function WaitForSingleObject(hHandle: THandle; dwMilliseconds: Cardinal): Cardinal; stdcall;
+  external kernel32 name 'WaitForSingleObject';
+function GetCurrentProcessId: Cardinal; stdcall; external kernel32 name 'GetCurrentProcessId';
 
 var
   _fltused: Integer = $9875; public name '_fltused';   { referenced by objects that use floating point }
@@ -1615,19 +1626,83 @@ const
   ERROR_BROKEN_PIPE = 109;
   ERROR_NO_DATA = 232;
 
+{ ---------------------------------------------------------------- per-thread block (ABI-120, ABI-173) }
+{ One TlsAlloc slot, taken on first use by any thread (no unit initialisation needed), holds a pointer to the calling
+  thread's block, allocated zero-filled from the process heap on that thread's first use. Neither the slot nor the
+  blocks go through the memory manager, so they are not counted by RTL-064. A thread whose block cannot be had (slot
+  or heap exhausted) uses FallbackBlock, shared by all such threads. Both Tls calls change the thread's last error;
+  ThreadBlock restores it, so callers may read GetLastError after touching InOutRes.
+  The exception stacks and the threadvar block pointer of ABI-120 join this record with R-061 / ABI-181; blocks are
+  freed by EndThread / at the end of a BeginThread routine once those exist (main thread: never). }
+
+const
+  TLS_OUT_OF_INDEXES = $FFFFFFFF;
+
+type
+  TThreadBlock = record
+    InOutRes: Integer;                 { ABI-132 }
+  end;
+  PThreadBlock = ^TThreadBlock;
+
 var
-  // TODO(C-165): ABI-120 keeps InOutRes in the per-thread block; one process-wide variable until then
-  InOutRes: Integer;
+  ThreadSlot: NativeInt;               { TlsAlloc index + 1; 0 while no slot has been taken }
+  FallbackBlock: TThreadBlock;
+
+function ThreadSlotIndex: NativeInt;
+var
+  Slot: Cardinal;
+begin
+  Result := ThreadSlot;
+  if Result <> 0 then
+    Exit;
+  Slot := TlsAlloc;
+  if Slot = TLS_OUT_OF_INDEXES then
+    Exit;                              { 0: no slot, every thread uses FallbackBlock }
+  Result := AtomicCmpExchange(ThreadSlot, NativeInt(Slot) + 1, 0);
+  if Result = 0 then
+    Result := NativeInt(Slot) + 1
+  else
+    TlsFree(Slot);                     { another thread published its slot first }
+end;
+
+function ThreadBlock: PThreadBlock;
+var
+  Error: Cardinal;
+  Slot: NativeInt;
+begin
+  Error := GetLastError;
+  Result := @FallbackBlock;
+  Slot := ThreadSlotIndex;
+  if Slot <> 0 then
+  begin
+    Result := PThreadBlock(TlsGetValue(Cardinal(Slot - 1)));
+    if Result = nil then
+    begin
+      Result := PThreadBlock(HeapAlloc(GetProcessHeap, HEAP_ZERO_MEMORY, SizeOf(TThreadBlock)));
+      if Result = nil then
+        Result := @FallbackBlock
+      else if not TlsSetValue(Cardinal(Slot - 1), Result) then
+      begin
+        HeapFree(GetProcessHeap, 0, Result);
+        Result := @FallbackBlock;
+      end;
+    end;
+  end;
+  SetLastError(Error);
+end;
 
 function IOResult: Integer;
+var
+  B: PThreadBlock;
 begin
-  Result := InOutRes;
-  InOutRes := 0;
+  B := ThreadBlock;
+  Result := B^.InOutRes;
+  B^.InOutRes := 0;
 end;
 
 procedure SetInOutRes(Code: Integer);
 begin
-  InOutRes := Code;
+  ThreadBlock^.InOutRes := Code;
 end;
 
 { RTL-123: Win32 error -> I/O error }
@@ -1651,7 +1726,7 @@ end;
 { InOutRes from the calling thread's last Win32 error }
 procedure SetLastIOError;
 begin
-  InOutRes := IOErrorOf(GetLastError);
+  SetInOutRes(IOErrorOf(GetLastError));
 end;
 
 { RTL-124: the I/O error of using R for input (ForInput) or for output; 0 when that use is allowed }
@@ -1676,7 +1751,7 @@ var
 begin
   E := UseError(R, ForInput);
   if E <> 0 then
-    InOutRes := E;
+    SetInOutRes(E);
   Result := E = 0;
 end;
 
@@ -1706,10 +1781,10 @@ begin
   begin
     Error := GetLastError;
     if (Error <> ERROR_BROKEN_PIPE) and (Error <> ERROR_NO_DATA) then
-      InOutRes := 101;
+      SetInOutRes(101);
   end
   else if Integer(Written) <> Count then
-    InOutRes := 101;
+    SetInOutRes(101);
   R.BufPos := 0;
 end;
 
@@ -1750,7 +1825,7 @@ procedure PutUnit(var R: TTextRec; U: Cardinal);
 begin
   if (R.Magic <> TextMagic) or (R.Mode <> tmOutput) then
   begin
-    InOutRes := UseError(R, False);    { RTL-124 }
+    SetInOutRes(UseError(R, False));    { RTL-124 }
     Exit;
   end;
   if R.Kind = skAbsent then
@@ -1987,11 +2062,9 @@ procedure _IOCheck;
 var
   Code: Integer;
 begin
-  Code := InOutRes;
-  if Code = 0 then
-    Exit;
-  InOutRes := 0;
-  _RunError(Code);
+  Code := IOResult;
+  if Code <> 0 then
+    _RunError(Code);
 end;
 
 { ---------------------------------------------------------------- big sets (rtl-abi.md section 9.8) }
@@ -3477,7 +3550,7 @@ begin
     { a closed pipe (or a console end of input) is the end of the input; another failure is an I/O error too }
     Error := GetLastError;
     if (Error <> ERROR_BROKEN_PIPE) and (Error <> ERROR_HANDLE_EOF) then
-      InOutRes := IOErrorOf(Error);
+      SetInOutRes(IOErrorOf(Error));
     Got := 0;
   end;
   if Got = 0 then
@@ -3702,7 +3775,7 @@ begin
   if (Code <> 0) or Tok.Long then
   begin
     Result := 0;
-    InOutRes := 106;
+    SetInOutRes(106);
   end;
 end;
 
@@ -3725,7 +3798,7 @@ begin
   if (Code <> 0) or Tok.Long then
   begin
     Result := 0;
-    InOutRes := 106;
+    SetInOutRes(106);
   end;
 end;
 
@@ -3748,7 +3821,7 @@ begin
   if (Code <> 0) or Tok.Long then
   begin
     Result := 0;
-    InOutRes := 106;
+    SetInOutRes(106);
   end;
 end;
 
@@ -3911,7 +3984,7 @@ function IsAssigned(var R: TTextRec): Boolean;
 begin
   Result := R.Magic = TextMagic;
   if not Result then
-    InOutRes := 102;
+    SetInOutRes(102);
 end;
 
 { Name into R.Name; False when it does not fit }
@@ -3972,12 +4045,12 @@ begin
     CloseText(R^);
   if (R^.CodePage <> CpUtf8) and (R^.CodePage <> CpUtf16) then
   begin
-    InOutRes := 106;
+    SetInOutRes(106);
     Exit;
   end;
   if R^.NameTooLong then
   begin
-    InOutRes := ERROR_FILENAME_EXCED_RANGE;
+    SetInOutRes(ERROR_FILENAME_EXCED_RANGE);
     Exit;
   end;
   if R^.Name[0] = #0 then
@@ -4032,7 +4105,7 @@ begin
   if not IsAssigned(R^) then
     Exit;
   if R^.Mode = tmClosed then
-    InOutRes := 103
+    SetInOutRes(103)
   else
     CloseText(R^);
 end;
@@ -4074,7 +4147,7 @@ begin
   Len := Length(NewName);
   if Len > NameMax then
   begin
-    InOutRes := ERROR_FILENAME_EXCED_RANGE;
+    SetInOutRes(ERROR_FILENAME_EXCED_RANGE);
     Exit;
   end;
   for I := 1 to Len do
