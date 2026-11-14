@@ -23,6 +23,13 @@ public interface IFileChangeService
 
     /// <summary>Completes when every check started so far has finished (tests, exit).</summary>
     Task WhenIdle();
+
+    /// <summary>
+    /// IDE-P1-117: watches the open project's file (its folder keeps a watcher while the project is open). A watcher event
+    /// for it (debounced like a document, own writes ignored) and every <see cref="CheckAll"/> run
+    /// <paramref name="check"/> on the UI thread. A null <paramref name="path"/> stops watching.
+    /// </summary>
+    void WatchProjectFile(string? path, Func<Task>? check);
 }
 
 /// <inheritdoc />
@@ -52,6 +59,9 @@ public sealed class FileChangeService : IFileChangeService
     private readonly Dictionary<string, int> _writing = new(PathComparer);
     private readonly Dictionary<string, DateTimeOffset> _quietUntil = new(PathComparer);
     private readonly List<Task> _running = [];
+    private string? _projectFile;
+    private Func<Task>? _projectCheck;
+    private IDisposable? _projectPending;
 
     public FileChangeService(IDocumentService documents, IFileSystem fileSystem, IFileWatcherFactory watchers, IClock clock,
         IUiDispatcher dispatcher, ISettingsService settings, IStatusService status, ILog log, ICommandService commands)
@@ -101,6 +111,12 @@ public sealed class FileChangeService : IFileChangeService
         _writing[path] = _writing.GetValueOrDefault(path) + 1;
         if (_pending.Remove(path, out var timer))
             timer.Dispose();
+        if (PathComparer.Equals(path, _projectFile))
+        {
+            _projectPending?.Dispose();
+            _projectPending = null;
+        }
+
         return new OwnWrite(this, path);
     }
 
@@ -112,6 +128,23 @@ public sealed class FileChangeService : IFileChangeService
         {
             Check(document);
         }
+
+        CheckProjectFile();
+    }
+
+    public void WatchProjectFile(string? path, Func<Task>? check)
+    {
+        _projectPending?.Dispose();
+        _projectPending = null;
+        _projectFile = path is null || check is null ? null : Path.GetFullPath(path);
+        _projectCheck = _projectFile is null ? null : check;
+        SyncWatchers();
+    }
+
+    private void CheckProjectFile()
+    {
+        if (Enabled && _projectFile is { } path && _projectCheck is { } check && !IsQuiet(path))
+            Track(check());
     }
 
     public async Task WhenIdle()
@@ -150,8 +183,8 @@ public sealed class FileChangeService : IFileChangeService
     private void SyncWatchers()
     {
         var wanted = Enabled
-            ? _documents.Documents.Select(d => d.FilePath).OfType<string>().Select(Path.GetDirectoryName).OfType<string>()
-                .ToHashSet(PathComparer)
+            ? _documents.Documents.Select(d => d.FilePath).Append(_projectFile).OfType<string>().Select(Path.GetDirectoryName)
+                .OfType<string>().ToHashSet(PathComparer)
             : [];
         foreach (var directory in _watchers.Keys.Where(d => !wanted.Contains(d)).ToList())
         {
@@ -186,6 +219,17 @@ public sealed class FileChangeService : IFileChangeService
             return;
         foreach (var path in (string?[])[change.Path, change.OldPath])
         {
+            if (path is not null && _projectFile is { } projectFile && PathComparer.Equals(Path.GetFullPath(path), projectFile)
+                && !IsQuiet(projectFile))
+            {
+                _projectPending?.Dispose();
+                _projectPending = _clock.Schedule(Debounce, () =>
+                {
+                    _projectPending = null;
+                    CheckProjectFile();
+                });
+            }
+
             if (path is null || FindDocument(Path.GetFullPath(path)) is not { FilePath: { } documentPath } || IsQuiet(documentPath))
                 continue;
             if (_pending.Remove(documentPath, out var timer))

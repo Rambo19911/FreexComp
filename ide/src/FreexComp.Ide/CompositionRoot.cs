@@ -46,14 +46,13 @@ public static class CompositionRoot
     /// <summary>Step 6 of start-up.</summary>
     public static IdeServices Build(StartupOptions options, IPlatformServices platform) => ServiceGraph.Build(options, platform);
 
-    /// <summary>Step 7 of start-up; the only place that creates the main window (the test harness calls it too).</summary>
+    /// <summary>
+    /// Step 7 of start-up; the only place that creates the main window (the test harness calls it too). The start-up
+    /// content (command line, last project, Welcome page) follows in step 9, <see cref="StartupSequence.RunAsync"/>.
+    /// </summary>
     public static MainWindow CreateMainWindow(IdeServices services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        // UI-WIN-071 / IDE-P1-015: the Welcome page is the start-up content when enabled (command-line paths and
-        // reopening the last project take precedence once I-085 adds them).
-        if (services.Settings.Get(SettingsCatalog.EnvironmentShowWelcomeOnStartup))
-            services.Documents.ShowWelcomePage();
         return new MainWindow { DataContext = new MainWindowViewModel(services) };
     }
 }

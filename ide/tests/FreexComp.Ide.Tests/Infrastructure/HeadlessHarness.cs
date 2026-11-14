@@ -20,8 +20,14 @@ namespace FreexComp.Ide.Tests.Infrastructure;
 /// <summary>Options of <see cref="HeadlessHarness.StartAsync"/> (testing.md §2.1).</summary>
 public sealed class HarnessOptions
 {
-    /// <summary>Command-line arguments; <c>--user-dir</c> is added by the harness.</summary>
+    /// <summary>
+    /// Command-line arguments; <c>--user-dir</c> is added by the harness. Relative paths resolve against
+    /// <see cref="HeadlessHarness.TempDir"/> (the process's current directory in production, IDE-P1-010).
+    /// </summary>
     public List<string> CommandLineArgs { get; } = [];
+
+    /// <summary>Message id → button id, scripted before start so that start-up message boxes are answered.</summary>
+    public Dictionary<string, string> MessageAnswers { get; } = new(StringComparer.Ordinal);
 
     /// <summary>Relative path (under <see cref="HeadlessHarness.TempDir"/>) → UTF-8 content, written before start.</summary>
     public Dictionary<string, string> InitialFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -39,6 +45,12 @@ public sealed class HarnessOptions
         ["run.consoleMode"] = "output",
         ["environment.showWelcomeOnStartup"] = false,
     };
+
+    /// <summary>
+    /// The per-test temp root (must not exist yet); null = a new folder under <c>%TEMP%\FreexComp.Tests</c>. Set it when
+    /// seeded user files must name absolute paths under <see cref="HeadlessHarness.TempDir"/> (<c>&lt;Root&gt;\work</c>).
+    /// </summary>
+    public string? Root { get; set; }
 
     public Size WindowSize { get; set; } = new(1440, 900); // IDE-TEST-018
 
@@ -79,7 +91,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
     private HeadlessHarness(HarnessOptions options)
     {
         _bindingErrorStart = BindingErrorSink.Instance.Count;
-        Root = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
+        Root = options.Root ?? Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
         TempDir = Path.Combine(Root, "work");
         UserDir = Path.Combine(Root, "user");
         Directory.CreateDirectory(TempDir);
@@ -90,6 +102,11 @@ public sealed class HeadlessHarness : IAsyncDisposable
         Clock = new ManualClock(DateTimeOffset.Now);
         var clipboard = new FakeClipboard();
         Messages = new MessageScript(new WindowDialogService(() => _window, clipboard));
+        foreach (var (messageId, buttonId) in options.MessageAnswers)
+        {
+            Messages.Answer(messageId, buttonId);
+        }
+
         _log = new RecordingLog();
         _watchers = new ManualFileWatcherFactory();
         _realWatchers = options.RealFileWatchers;
@@ -110,6 +127,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.ThemeHost = new AvaloniaThemeHost(Application.Current!);
             o.TextBuffers = new AvaloniaEditTextBufferFactory();
             o.Arguments.AddRange(options.CommandLineArgs);
+            o.WorkingDirectory = TempDir;
             o.ToolWindows.AddRange(options.ToolWindows);
         });
 
@@ -150,6 +168,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
     /// <summary>The status-bar fields (testing.md §2.1).</summary>
     public StatusBarDriver Status { get; }
 
+    /// <summary>The services' log lines.</summary>
+    public RecordingLog Log => _log;
+
     /// <summary>Every file-system call the services made.</summary>
     public RecordingFileSystem FileSystem { get; }
 
@@ -170,11 +191,38 @@ public sealed class HeadlessHarness : IAsyncDisposable
         }
     }
 
-    public static Task<HeadlessHarness> StartAsync(Action<HarnessOptions>? configure = null)
+    /// <summary>IDE-ARCH-015 step 9 (recovery, start-up content), started after the window is shown as in production.</summary>
+    public Task Startup { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Starts the shell and runs step 9 until it completes or shows a dialog (a start-up message box that is not
+    /// scripted through <see cref="HarnessOptions.MessageAnswers"/>; drive it, then await <see cref="Startup"/>).
+    /// </summary>
+    public static async Task<HeadlessHarness> StartAsync(Action<HarnessOptions>? configure = null)
     {
         var options = new HarnessOptions();
         configure?.Invoke(options);
-        return Task.FromResult(new HeadlessHarness(options));
+        var h = new HeadlessHarness(options);
+        h.Startup = StartupSequence.RunAsync(h.Services);
+        var watch = Stopwatch.StartNew();
+        while (!h.Startup.IsCompleted && !h.Window.OwnedWindows.Any(w => w.IsVisible))
+        {
+            if (watch.Elapsed > WaitLimit)
+            {
+                throw new HarnessAssertionException("Timed out waiting for the start-up sequence");
+            }
+
+            Dispatcher.UIThread.RunJobs();
+            await Task.Yield();
+        }
+
+        if (h.Startup.IsCompleted)
+        {
+            await h.Startup; // its exception, if any
+        }
+
+        Dispatcher.UIThread.RunJobs();
+        return h;
     }
 
     /// <exception cref="InvalidOperationException">No such element; the message lists similar ids.</exception>

@@ -23,7 +23,7 @@ public sealed class App : Application
             Services = CompositionRoot.Build(options, platform);
             window = CompositionRoot.CreateMainWindow(Services);
             var services = Services;
-            window.Opened += (_, _) => _ = services.Recovery.RecoverAsync(); // step 9 (IDE-P1-123)
+            window.Opened += (_, _) => _ = StartupSequence.RunAsync(services); // step 9: recovery, then the start-up content
             desktop.Exit += (_, _) =>
             {
                 // IDE-P1-122: a normal exit leaves no recovery folder (the queue runs on the thread pool, so this cannot deadlock).

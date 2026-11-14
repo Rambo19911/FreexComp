@@ -316,4 +316,82 @@ public sealed class FileChangeTests
         await _services.FileChanges.WhenIdle();
         Assert.DoesNotContain(_fs.Calls.Skip(calls), c => c.StartsWith("ReadAllBytes", StringComparison.Ordinal));
     }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P1-117")]
+    [Trait("Req", "IDE-P1-110")]
+    [Trait("Req", "IDE-P1-086")]
+    public async Task ProjectFileChangePromptsReload()
+    {
+        const string dir = @"C:\p\Hello";
+        const string project = dir + @"\Hello.pproj";
+        static string Pproj(params string[] files) =>
+            $$"""{ "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas", "files": [ {{string.Join(", ", files.Select(f => $$"""{ "path": "{{f}}" }"""))}} ] }""";
+        File(project, Pproj("Hello.pas"));
+        File(dir + @"\Hello.pas", "program Hello;\nbegin\nend.\n");
+        File(dir + @"\Unit1.pas", "unit Unit1;\ninterface\nimplementation\nend.\n");
+        File(dir + @"\Unit2.pas", "unit Unit2;\ninterface\nimplementation\nend.\n");
+        _services.Settings.Set(SettingsCatalog.EnvironmentRestoreOpenFiles, false);
+        Assert.True(await _services.Projects.OpenAsync(project));
+
+        // The project file is watched by itself: its folder keeps a watcher with no document open there.
+        Assert.True(_services.Documents.Close(_services.Documents.ActiveDocument!));
+        Assert.Empty(_services.Documents.Documents);
+        Assert.Equal([dir], _watchers.ActiveDirectories);
+        string[] Files() => [.. _services.Projects.Project!.Files.Select(f => f.Path)];
+        int Prompts() => _dialogs.Requests.Count(r => r.MessageId == "Msg.Project.ChangedOnDisk");
+
+        // The IDE's own write of the project file (adding a unit) is not reported (IDE-P1-086).
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(1, await _services.Projects.AddExistingFilesAsync([dir + @"\Unit1.pas"]));
+        _watchers.Raise(new FileChange(FileChangeKind.Changed, project));
+        await SettleAsync();
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        _services.FileChanges.CheckAll();
+        await _services.FileChanges.WhenIdle();
+        Assert.Equal(0, Prompts());
+        Assert.Equal(["Hello.pas", "Unit1.pas"], Files());
+
+        // Changed by another program, reported by the watcher: the dialog; Keep records the new timestamp.
+        WriteExternally(project, Pproj("Hello.pas", "Unit2.pas"));
+        _dialogs.Enqueue("Msg.Project.ChangedOnDisk", "Keep");
+        await SettleAsync();
+        Assert.Equal(1, Prompts());
+        Assert.Equal(["Hello.pas", "Unit1.pas"], Files()); // kept
+        _watchers.Raise(new FileChange(FileChangeKind.Changed, project));
+        await SettleAsync();
+        _services.FileChanges.CheckAll();
+        await _services.FileChanges.WhenIdle();
+        Assert.Equal(1, Prompts()); // the same change is not reported again
+
+        // A rewrite with identical bytes is silent.
+        WriteExternally(project, Pproj("Hello.pas", "Unit2.pas"));
+        await SettleAsync();
+        Assert.Equal(1, Prompts());
+
+        // A newer change found by the activation re-check: Reload re-reads the project; open documents stay open.
+        var main = await OpenAsync(dir + @"\Hello.pas", "program Hello;\nbegin\nend.\n");
+        main.Buffer.ApplyEdits([new TextEdit(0, 0, "{ mine }")]);
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        _disk.WriteAllBytes(project, Encoding.UTF8.GetBytes(Pproj("Hello.pas", "Unit1.pas", "Unit2.pas")));
+        _dialogs.Enqueue("Msg.Project.ChangedOnDisk", "Reload");
+        _services.FileChanges.CheckAll();
+        await _services.FileChanges.WhenIdle();
+        Assert.Equal(2, Prompts());
+        Assert.Equal(["Hello.pas", "Unit1.pas", "Unit2.pas"], Files());
+        Assert.True(_services.Projects.IsMember(dir + @"\Unit2.pas"));
+        Assert.Contains(main, _services.Documents.Documents);
+        Assert.Equal("{ mine }program Hello;\nbegin\nend.\n", main.Buffer.Text);
+        Assert.True(main.IsModified);
+        Assert.Equal([dir], _watchers.ActiveDirectories);
+
+        // After Close Project the project file is no longer watched (no document left in its folder).
+        _dialogs.Answer("Msg.File.SaveChangesOne", "DontSave");
+        Assert.True(await _services.Projects.CloseAsync());
+        Assert.Empty(_watchers.ActiveDirectories);
+        WriteExternally(project, Pproj("Hello.pas"));
+        _services.FileChanges.CheckAll();
+        await SettleAsync();
+        Assert.Equal(2, Prompts());
+    }
 }

@@ -36,6 +36,9 @@ public sealed class TestCompositionOptions
     /// <summary>Command-line arguments other than <c>--user-dir</c>.</summary>
     public List<string> Arguments { get; } = [];
 
+    /// <summary>The directory relative command-line paths resolve against (IDE-P1-010); null = the current directory.</summary>
+    public string? WorkingDirectory { get; set; }
+
     /// <summary>
     /// Tool windows registered after the production ones, in order (IDE-ARCH-100); one with the name of a production
     /// tool window (a sample <c>ProjectManager</c>) is registered instead of it.
@@ -51,7 +54,7 @@ public static class TestComposition
         var o = new TestCompositionOptions();
         configure?.Invoke(o);
 
-        var options = StartupOptions.Parse([.. o.Arguments, StartupOptions.UserDirOption, o.UserDir]);
+        var options = StartupOptions.Parse([.. o.Arguments, StartupOptions.UserDirOption, o.UserDir], o.WorkingDirectory);
 
         // The environment variable is ignored and the OS folders are never asked for (IDE-TEST-003).
         var paths = UserPaths.Create(options.UserDir, _ => null, _ => throw new InvalidOperationException("Real user folder requested."));

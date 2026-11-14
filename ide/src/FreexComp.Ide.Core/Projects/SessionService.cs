@@ -54,15 +54,18 @@ public sealed class SessionService : ISessionService
     private readonly IUserPaths _paths;
     private readonly IClock _clock;
     private readonly ILog _log;
+    private readonly bool _safeMode;
     private JsonObject? _root;
     private string? _rootPath;
     private bool _readOnly;
     private bool _writeFailureLogged;
     private IDisposable? _saveTimer;
 
+    /// <param name="safeMode"><c>--safe</c> (IDE-P1-012): nothing is restored and no session file is written.</param>
     public SessionService(IdeFileSystem fileSystem, IDocumentService documents, IProjectService projects, ProjectManagerViewModel projectManager,
-        ILayoutService layout, IUserPaths paths, IClock clock, ILog log)
+        ILayoutService layout, IUserPaths paths, IClock clock, ILog log, bool safeMode = false)
     {
+        _safeMode = safeMode;
         _fs = fileSystem;
         _documents = documents;
         _projects = projects;
@@ -93,6 +96,8 @@ public sealed class SessionService : ISessionService
 
     public async Task<int> RestoreAsync(bool restoreDocuments = true)
     {
+        if (_safeMode)
+            return 0;
         _writeFailureLogged = false;
         var root = Load(SessionPath);
         if (_projects.Project is not null && root["projectManager"] is JsonObject tree)
@@ -136,6 +141,8 @@ public sealed class SessionService : ISessionService
     {
         _saveTimer?.Dispose();
         _saveTimer = null;
+        if (_safeMode)
+            return;
         var path = SessionPath;
         var root = _rootPath == path ? _root! : Load(path);
         if (_readOnly)

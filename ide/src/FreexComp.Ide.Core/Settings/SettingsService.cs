@@ -55,6 +55,9 @@ public sealed class SettingsService : ISettingsService
     /// <summary>The most recently started save (tests await it after advancing the clock).</summary>
     internal Task LastSaveTask { get; private set; } = Task.CompletedTask;
 
+    /// <summary><c>--safe</c> (IDE-P1-012), instead of <see cref="Load"/>: default values; the file is neither read nor written.</summary>
+    public void LoadSafeMode() => _readOnly = true;
+
     /// <summary>Synchronous initial load (IDE-SET-020); call once, before any other member.</summary>
     public void Load()
     {

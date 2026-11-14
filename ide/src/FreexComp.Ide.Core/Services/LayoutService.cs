@@ -78,6 +78,9 @@ public sealed class LayoutService : ILayoutService
         }
     }
 
+    /// <summary><c>--safe</c> (IDE-P1-012), instead of <see cref="Load"/>: the default layout; the file is neither read nor written.</summary>
+    public void LoadSafeMode() => _readOnly = true;
+
     /// <summary>Synchronous load at start-up (IDE-ARCH-015 step 7); a missing file means first start.</summary>
     public void Load()
     {

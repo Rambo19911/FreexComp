@@ -20,10 +20,11 @@ public enum RecentKind
 }
 
 /// <summary>One <c>recent.json</c> entry; <paramref name="LastOpened"/> is UTC with seconds precision.</summary>
-public sealed record RecentItem(string Path, DateTimeOffset LastOpened, bool Pinned);
+/// <param name="OpenAtExit">Projects only (IDE-P1-016): the project was open when an IDE last exited.</param>
+public sealed record RecentItem(string Path, DateTimeOffset LastOpened, bool Pinned, bool OpenAtExit = false);
 
 /// <summary>
-/// The recent projects and files (settings.md §6, phase1-shell.md §13), kept in <c>R\recent.json</c>. UI thread only;
+/// The recent projects and files (settings.md Ā§6, phase1-shell.md Ā§13), kept in <c>R\recent.json</c>. UI thread only;
 /// the small file is read and written synchronously.
 /// </summary>
 public interface IRecentItemsService
@@ -46,6 +47,15 @@ public interface IRecentItemsService
 
     /// <summary><c>file.clearRecent</c> (IDE-SET-074): every unpinned entry of both lists.</summary>
     void ClearUnpinned();
+
+    /// <summary>
+    /// IDE-P1-016: the project <paramref name="path"/> is open (set when it opens) or was closed by the user (cleared);
+    /// an exit leaves the flag set, so the next start-up can reopen it.
+    /// </summary>
+    void SetOpenAtExit(string path, bool open);
+
+    /// <summary>IDE-P1-016: the flagged project with the newest <see cref="RecentItem.LastOpened"/>, or null.</summary>
+    RecentItem? LastProject { get; }
 }
 
 /// <inheritdoc />
@@ -68,15 +78,32 @@ public sealed class RecentItemsService : IRecentItemsService
         [RecentKind.File] = new(StringComparer.OrdinalIgnoreCase),
     };
 
-    public RecentItemsService(IUserPaths paths, IFileSystem fileSystem, IClock clock, ILog log)
+    /// <param name="safeMode"><c>--safe</c> (IDE-P1-012): the lists are read but the file is never written.</param>
+    public RecentItemsService(IUserPaths paths, IFileSystem fileSystem, IClock clock, ILog log, bool safeMode = false)
     {
         _fs = fileSystem;
         _clock = clock;
         _log = log;
+        _safeMode = safeMode;
         _path = Path.Combine(paths.RoamingDirectory, "recent.json");
     }
 
+    private readonly bool _safeMode;
+
     public IReadOnlyList<RecentItem> Projects => _lists[RecentKind.Project];
+
+    public RecentItem? LastProject => Projects.Where(p => p.OpenAtExit).MaxBy(p => p.LastOpened);
+
+    public void SetOpenAtExit(string path, bool open)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        var list = _lists[RecentKind.Project];
+        var index = list.FindIndex(i => SamePath(i.Path, path));
+        if (index < 0 || list[index].OpenAtExit == open)
+            return;
+        list[index] = list[index] with { OpenAtExit = open };
+        Commit();
+    }
 
     public IReadOnlyList<RecentItem> Files => _lists[RecentKind.File];
 
@@ -107,7 +134,8 @@ public sealed class RecentItemsService : IRecentItemsService
         _removed[kind].Remove(full);
         var now = _clock.Now.ToUniversalTime();
         // First, so that it leads the entries opened within the same second.
-        list.Insert(0, new RecentItem(full, new DateTimeOffset(now.Ticks - now.Ticks % TimeSpan.TicksPerSecond, TimeSpan.Zero), existing?.Pinned ?? false));
+        list.Insert(0, new RecentItem(full, new DateTimeOffset(now.Ticks - now.Ticks % TimeSpan.TicksPerSecond, TimeSpan.Zero),
+            existing?.Pinned ?? false, existing?.OpenAtExit ?? false));
         Commit();
     }
 
@@ -251,7 +279,8 @@ public sealed class RecentItemsService : IRecentItemsService
             if (items.Any(i => SamePath(i.Path, path)))
                 continue;
             var pinned = entry["pinned"] is JsonValue value && value.GetValueKind() == JsonValueKind.True;
-            items.Add(new RecentItem(Path.GetFullPath(path), lastOpened.ToUniversalTime(), pinned));
+            var openAtExit = entry["openAtExit"] is JsonValue open && open.GetValueKind() == JsonValueKind.True;
+            items.Add(new RecentItem(Path.GetFullPath(path), lastOpened.ToUniversalTime(), pinned, openAtExit));
         }
 
         return items;
@@ -259,6 +288,8 @@ public sealed class RecentItemsService : IRecentItemsService
 
     private void Save()
     {
+        if (_safeMode)
+            return;
         var root = new JsonObject
         {
             ["formatVersion"] = SupportedFormatVersion,
@@ -285,11 +316,17 @@ public sealed class RecentItemsService : IRecentItemsService
 
     private static JsonArray WriteList(List<RecentItem> items) =>
     [
-        .. items.Select(i => (JsonNode)new JsonObject
+        .. items.Select(i =>
         {
-            ["path"] = i.Path,
-            ["lastOpened"] = i.LastOpened.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
-            ["pinned"] = i.Pinned,
+            var entry = new JsonObject
+            {
+                ["path"] = i.Path,
+                ["lastOpened"] = i.LastOpened.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+                ["pinned"] = i.Pinned,
+            };
+            if (i.OpenAtExit)
+                entry["openAtExit"] = true; // IDE-P1-016; written only while set
+            return (JsonNode)entry;
         }),
     ];
 

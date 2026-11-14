@@ -57,6 +57,9 @@ public sealed class KeymapService : IKeymapService
     /// <summary>The most recently started save (tests await it after advancing the clock).</summary>
     internal Task LastSaveTask { get; private set; } = Task.CompletedTask;
 
+    /// <summary><c>--safe</c> (IDE-P1-012), instead of <see cref="Load"/>: the default keymap; the file is neither read nor written.</summary>
+    public void LoadSafeMode() => _readOnly = true;
+
     /// <summary>Synchronous load at start-up; a missing file means defaults.</summary>
     public void Load()
     {

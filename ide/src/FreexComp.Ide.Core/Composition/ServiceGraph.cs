@@ -28,12 +28,20 @@ public static class ServiceGraph
         ArgumentNullException.ThrowIfNull(platform);
 
         // IDE-ARCH-015 step 4: synchronous load of the user files before anything reads them.
+        // IDE-P1-012: --safe starts from the defaults and writes none of the user files.
+        var safe = options.Safe;
         var settings = new SettingsService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log, SettingsCatalog.All);
-        settings.Load();
+        if (safe)
+            settings.LoadSafeMode();
+        else
+            settings.Load();
         var theme = new ThemeService(settings, platform.ThemeHost); // step 5: theme applied
         var keymap = new KeymapService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log);
-        keymap.Load();
-        var recent = new RecentItemsService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log);
+        if (safe)
+            keymap.LoadSafeMode();
+        else
+            keymap.Load();
+        var recent = new RecentItemsService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log, safe);
         recent.Load();
 
         var status = new StatusService(platform.Clock);
@@ -45,7 +53,10 @@ public static class ServiceGraph
         }
 
         var layout = new LayoutService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log, status, commands);
-        layout.Load(); // step 7: UI state (small file, synchronous)
+        if (safe)
+            layout.LoadSafeMode();
+        else
+            layout.Load(); // step 7: UI state (small file, synchronous)
         var toolWindowService = new ToolWindowService(commands, focus, platform.Clock, layout, ImplementedPhase); // tool windows register here (IDE-ARCH-100)
         theme.RegisterCommands(commands);
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
@@ -67,7 +78,7 @@ public static class ServiceGraph
             settings, status, platform.Log, commands);
         documents.WriteGuard = fileChanges.BeginOwnWrite;
         var recovery = new RecoveryService(documents, platform.FileSystem, platform.UserPaths, platform.Clock, settings, platform.Log,
-            safeMode: options.Arguments.Any(a => string.Equals(a, "--safe", StringComparison.OrdinalIgnoreCase))); // IDE-P1-012
+            safeMode: safe); // IDE-P1-012
         var find = new FindService(layout, status, platform.Clock, documents);
         find.RegisterCommands(commands);
         var navigation = new NavigationService(documents, platform.Dialogs, status, platform.FileSystem);
@@ -75,6 +86,8 @@ public static class ServiceGraph
         projects =new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
             ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock, platform.Shell);
         projects.RegisterCommands(commands);
+        projects.FileChanges = fileChanges; // IDE-P1-117
+        projects.WriteGuard = fileChanges.BeginOwnWrite;
         documents.ProjectOpener = path => projects.OpenAsync(path);
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
             platform.Log, ImplementedPhase);
@@ -85,7 +98,7 @@ public static class ServiceGraph
             : null;
         projects.RenameInPlace = projectManager.BeginRename;
         var session = new SessionService(platform.FileSystem, documents, projects, projectManager, layout, platform.UserPaths,
-            platform.Clock, platform.Log);
+            platform.Clock, platform.Log, safe);
         projects.Session = session;
         projects.RecentItems = recent;
         // IDE-P1-130: a file document that is not a member of the open project joins the recent files.

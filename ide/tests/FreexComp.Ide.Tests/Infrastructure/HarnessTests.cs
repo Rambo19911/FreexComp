@@ -70,13 +70,14 @@ public sealed class HarnessTests
         {
             o.InitialFiles["src/a.pas"] = "unit a;";
             o.Settings["editor.tabWidth"] = 5;
-            o.CommandLineArgs.Add("x.pas");
+            o.CommandLineArgs.Add("src/a.pas"); // relative to TempDir (I-085: start-up opens it)
         });
 
         Assert.Equal("unit a;", File.ReadAllText(Path.Combine(h.TempDir, "src", "a.pas")));
         Assert.Equal(5, h.Services.Settings.Get(SettingsCatalog.EditorTabWidth));
         Assert.Equal("output", h.Services.Settings.Get(SettingsCatalog.RunConsoleMode)); // harness preset
-        Assert.Equal(["x.pas"], h.Services.Options.Arguments);
+        Assert.Equal(["src/a.pas"], h.Services.Options.Arguments);
+        Assert.Equal(Path.Combine(h.TempDir, "src", "a.pas"), h.Services.Documents.ActiveDocument?.FilePath);
         Assert.Equal(h.UserDir, h.Services.Options.UserDir);
     }
 

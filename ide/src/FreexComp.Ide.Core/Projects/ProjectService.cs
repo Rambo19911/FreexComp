@@ -39,6 +39,8 @@ public sealed class ProjectService : IProjectService
     private readonly HashSet<string> _members = new(StringComparer.OrdinalIgnoreCase);
     private ICommandService? _commands;
     private Project? _project;
+    private DiskStamp? _projectStamp; // the project file as loaded or last written by this service (IDE-P1-117)
+    private bool _checkingProjectFile;
 
     public ProjectService(IdeFileSystem fileSystem, IDocumentService documents, IDialogService dialogs, IStatusService status,
         ILog log, FilePrompts prompts, ISettingsService settings, IReadOnlyList<ProjectTemplate> templates, ILayoutService layout,
@@ -66,6 +68,12 @@ public sealed class ProjectService : IProjectService
     public IRecentItemsService? RecentItems { get; set; }
 
     public IReadOnlyList<ProjectTemplate> Templates { get; }
+
+    /// <summary>Watches the open project's file (IDE-P1-117; set by the service graph).</summary>
+    public IFileChangeService? FileChanges { get; set; }
+
+    /// <summary>IDE-P1-086: marks the service's own writes of the project file so the watcher ignores them (set by the service graph).</summary>
+    public Func<string, IDisposable>? WriteGuard { get; set; }
 
     public event EventHandler? ProjectChanged;
 
@@ -102,9 +110,10 @@ public sealed class ProjectService : IProjectService
 
         // Steps 1-2 off the UI thread (IDE-ARCH-081) with the status "Opening <name>…".
         ProjectLoadResult load;
+        DiskStamp? stamp;
         using (_status.ShowStickyMessage(string.Format(CultureInfo.CurrentCulture, Strings.Status_OpeningProject, Path.GetFileNameWithoutExtension(fullPath))))
         {
-            load = await Task.Run(() => ProjectFileAccess.Load(fullPath, _fileSystem));
+            (load, stamp) = await Task.Run(() => (ProjectFileAccess.Load(fullPath, _fileSystem), ReadStamp(fullPath)));
         }
 
         var error = load.Project is { } loaded ? Validate(loaded) : load.Error;
@@ -121,6 +130,7 @@ public sealed class ProjectService : IProjectService
         var project = load.Project!;
         if (!project.Configurations.ContainsKey(project.ActiveConfiguration))
             project = project with { ActiveConfiguration = project.ConfigurationNames[0] }; // IDE-PM-012: in memory
+        _projectStamp = stamp;
         SetProject(project);
 
         // Step 4: the session restores documents (if environment.restoreOpenFiles); without any the main source opens. A
@@ -134,6 +144,7 @@ public sealed class ProjectService : IProjectService
         }
 
         RecentItems?.Add(RecentKind.Project, fullPath); // step 5 (IDE-P1-130)
+        RecentItems?.SetOpenAtExit(fullPath, true); // IDE-P1-016: until the user closes it
         return true;
     }
 
@@ -148,15 +159,17 @@ public sealed class ProjectService : IProjectService
         if (!await _documents.PromptSaveChangesAsync(ordered))
             return false;
 
-        // IDE-PM-014 step 3: the session, before the members close. Messages/Structure clearing (P3) and the file
-        // watcher (I-072) join here.
+        // IDE-PM-014 step 3: the session, before the members close. Messages/Structure clearing (P3) joins here; the
+        // project-file watch ends in SetProject(null).
         Session?.Save();
         foreach (var document in ordered)
         {
             _documents.Close(document);
         }
 
+        var closed = _project.FilePath;
         SetProject(null);
+        RecentItems?.SetOpenAtExit(closed, false); // IDE-P1-016: closed by the user (the exit flow must not come here)
         return true;
     }
 
@@ -667,7 +680,7 @@ public sealed class ProjectService : IProjectService
             // (4)+(7) the project file, saved before the texts so that a failure there can still be undone.
             var projectBytes = _fileSystem.ReadAllBytes(original.FilePath);
             SaveOrThrow(renamed);
-            undo.Push(() => AtomicFileWriter.Write(_fileSystem, original.FilePath, projectBytes)); // the exact bytes back
+            undo.Push(() => WriteProjectFile(original.FilePath, () => AtomicFileWriter.Write(_fileSystem, original.FilePath, projectBytes))); // the exact bytes back
 
             // (5)-(6) heading and {$FORM} in the buffer or the file; the open document follows the new path.
             if (IsUnitFile(oldName))
@@ -724,9 +737,111 @@ public sealed class ProjectService : IProjectService
 
     private void SaveOrThrow(Project project)
     {
-        var saved = ProjectFileAccess.Save(project, _fileSystem);
+        var saved = SaveProjectFile(project);
         if (!saved.Success)
             throw new IOException(saved.Args[^1]);
+    }
+
+    /// <summary>Writes the open project's file as this service's own change (IDE-P1-086) and records its new stamp.</summary>
+    private OperationResult SaveProjectFile(Project project)
+    {
+        var saved = OperationResult.Ok;
+        WriteProjectFile(project.FilePath, () => saved = ProjectFileAccess.Save(project, _fileSystem));
+        return saved;
+    }
+
+    private void WriteProjectFile(string path, Action write)
+    {
+        using (WriteGuard?.Invoke(path))
+        {
+            write();
+        }
+
+        _projectStamp = ReadStamp(path);
+    }
+
+    /// <summary>The project file's stamp now; null when it cannot be read.</summary>
+    private DiskStamp? ReadStamp(string path)
+    {
+        try
+        {
+            var lastWrite = _fileSystem.GetLastWriteTimeUtc(path);
+            return DiskStamp.Of(lastWrite, _fileSystem.ReadAllBytes(path));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// IDE-P1-117 (run by the file-change service): a project file changed by another program asks
+    /// <c>Msg.Project.ChangedOnDisk</c>; Reload re-reads the project (open documents stay open), Keep records the new
+    /// stamp. An identical rewrite only records the stamp; a missing or unreadable file is left to the next check.
+    /// </summary>
+    private async Task CheckProjectFileAsync()
+    {
+        if (_project is not { } project || _checkingProjectFile)
+            return;
+        var path = project.FilePath;
+        var recorded = _projectStamp;
+        _checkingProjectFile = true;
+        try
+        {
+            var current = await Task.Run(() => ChangedStamp(path, recorded));
+            if (current is null || _project is null || !string.Equals(_project.FilePath, path, StringComparison.OrdinalIgnoreCase)
+                || !ReferenceEquals(_projectStamp, recorded))
+                return; // unchanged, closed or written by us meanwhile
+            if (recorded is null || recorded.Hash == current.Hash)
+            {
+                _projectStamp = current; // IDE-P1-112: same bytes, new timestamp (unknown before: start from here)
+                return;
+            }
+
+            if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.ChangedOnDisk", [])) == "Reload")
+                await ReloadProjectAsync(path);
+            else
+                _projectStamp = current;
+        }
+        finally
+        {
+            _checkingProjectFile = false;
+        }
+    }
+
+    private DiskStamp? ChangedStamp(string path, DiskStamp? recorded)
+    {
+        try
+        {
+            if (!_fileSystem.FileExists(path))
+                return null;
+            if (recorded is not null && recorded.Matches(_fileSystem.GetLastWriteTimeUtc(path), _fileSystem.GetLength(path)))
+                return null;
+            return ReadStamp(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _log.Warning(LogCategory, $"Cannot check {path}.", e);
+            return null;
+        }
+    }
+
+    /// <summary>Reload (IDE-P1-117): the project as it is on disk replaces the one in memory; documents stay open.</summary>
+    private async Task ReloadProjectAsync(string path)
+    {
+        var (load, stamp) = await Task.Run(() => (ProjectFileAccess.Load(path, _fileSystem), ReadStamp(path)));
+        _projectStamp = stamp; // this version is not reported again, whether it loads or not
+        var error = load.Project is { } loaded ? Validate(loaded) : load.Error;
+        if (!error.Success)
+        {
+            await _dialogs.ShowMessageAsync(new MessageRequest(error.MessageId!, error.Args));
+            return;
+        }
+
+        var project = load.Project!;
+        if (!project.Configurations.ContainsKey(project.ActiveConfiguration))
+            project = project with { ActiveConfiguration = project.ConfigurationNames[0] };
+        SetProject(project);
     }
 
     /// <summary>
@@ -797,7 +912,7 @@ public sealed class ProjectService : IProjectService
     /// <summary>IDE-PM-004: a file-list mutation is saved immediately; on failure the in-memory project stays as it was.</summary>
     private async Task<bool> SaveChangedProjectAsync(Project project)
     {
-        var saved = ProjectFileAccess.Save(project, _fileSystem);
+        var saved = SaveProjectFile(project);
         if (!saved.Success)
         {
             await _dialogs.ShowMessageAsync(new MessageRequest(saved.MessageId!, saved.Args));
@@ -979,6 +1094,9 @@ public sealed class ProjectService : IProjectService
             }
         }
 
+        if (project is null)
+            _projectStamp = null;
+        FileChanges?.WatchProjectFile(project?.FilePath, project is null ? null : CheckProjectFileAsync);
         ProjectChanged?.Invoke(this, EventArgs.Empty);
         _commands?.InvalidateCanExecute();
     }

@@ -1032,6 +1032,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="App_ProductName" xml:space="preserve">
     <value>FreexComp</value>
   </data>
+  <data name="App_Usage" xml:space="preserve">
+    <value>FreexComp.exe [&lt;path&gt; …] [--new-window] [--user-dir &lt;dir&gt;] [--safe] [--version] [--help]</value>
+  </data>
   <data name="Cmd_file_newProject" xml:space="preserve">
     <value>New Project…</value>
   </data>
