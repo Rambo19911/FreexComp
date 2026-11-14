@@ -40,8 +40,8 @@ internal sealed record IrZeroConstant(IrType ZeroType) : IrConstant(ZeroType);
 /// <summary><c>[T a, T b]</c>.</summary>
 internal sealed record IrArrayConstant(ArrayIrType ArrayType, ImmutableArray<IrConstant> Elements) : IrConstant(ArrayType);
 
-/// <summary><c>{ T1 a, T2 b }</c>.</summary>
-internal sealed record IrStructConstant(StructIrType StructType, ImmutableArray<IrConstant> Fields) : IrConstant(StructType);
+/// <summary><c>{ T1 a, T2 b }</c>; typed as <paramref name="AsType"/> (a named struct with that body) when given.</summary>
+internal sealed record IrStructConstant(StructIrType StructType, ImmutableArray<IrConstant> Fields, IrType? AsType = null) : IrConstant(AsType ?? StructType);
 
 /// <summary>
 /// The constant expression <c>getelementptr inbounds (SourceType, ptr @Base, indices…)</c> (CMP-320 string references).

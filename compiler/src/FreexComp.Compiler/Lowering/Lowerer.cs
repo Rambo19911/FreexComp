@@ -24,6 +24,7 @@ internal static class Lowerer
         {
             Initialization = bodies.FirstOrDefault(b => b.Syntax is InitializationSectionSyntax).Lowered,
             Finalization = bodies.FirstOrDefault(b => b.Syntax is FinalizationSectionSyntax).Lowered,
+            Statics = [.. result.Routines.SelectMany(r => r.Scope.Symbols.OfType<ConstantSymbol>()).Select(c => c.Storage).OfType<VariableSymbol>()],
         };
     }
 
@@ -42,8 +43,8 @@ internal static class Lowerer
     public static LoweredBody LowerBody(BindingResult result, BoundBlock block) =>
         new LoweringContext(result.Types, routine: null, locals: []) { Output = OutputOf(result) }.Finish(block);
 
-    /// <summary>Types held in memory as <c>[N x T]</c> (big sets, static arrays): never SSA values (see the aggregate nodes).</summary>
-    public static bool IsAggregate(TypeSymbol type) => type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol;
+    /// <summary>Types held in memory as <c>[N x T]</c> or structs (big sets, static arrays, records): never SSA values (see the aggregate nodes).</summary>
+    public static bool IsAggregate(TypeSymbol type) => type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol or RecordTypeSymbol;
 
     /// <summary>The variable <c>Output</c> of the bound <c>System</c> (default file of <c>Write</c>, LANG-910), or null without one.</summary>
     private static VariableSymbol? OutputOf(BindingResult result) =>
@@ -258,6 +259,8 @@ internal sealed class LoweringContext
                 return SetRewriter.Constructor(this, constructor);
             case BoundIndexExpression index:
                 return Index(index);
+            case BoundFieldAccessExpression field:
+                return new LField(Lower(field.Record), field.Field);                     // CMP-307
             default:
                 throw new InvalidOperationException($"Cannot lower {expression.Kind}.");
         }

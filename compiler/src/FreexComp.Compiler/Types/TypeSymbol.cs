@@ -300,6 +300,55 @@ public sealed class ArrayTypeSymbol : TypeSymbol
     }
 }
 
+/// <summary>
+/// A record without variant part (LANG-260, ABI-060): <see cref="Fields"/> in declaration order with their offsets; size and
+/// alignment from ABI-060 with the packing <see cref="Packing"/> (1 for <c>packed record</c>, else the <c>{$ALIGN}</c> value at
+/// the <c>record</c> keyword). <see cref="IsAnonymous"/> records (no type declaration) are named by their source text.
+/// </summary>
+public sealed class RecordTypeSymbol : TypeSymbol
+{
+    internal RecordTypeSymbol(string name, long size, int alignment, bool isPacked, int packing, bool isAnonymous, Symbol? containingSymbol,
+        ImmutableArray<Location> locations)
+        : base(TypeKind.Record, name, size, alignment, containingSymbol, locations)
+    {
+        IsPacked = isPacked;
+        Packing = packing;
+        IsAnonymous = isAnonymous;
+    }
+
+    public ImmutableArray<FieldSymbol> Fields { get; internal set; } = [];
+
+    public bool IsPacked { get; }
+
+    /// <summary>The ABI-060 cap <c>A</c> on field alignment: 1, 2, 4 or 8.</summary>
+    public int Packing { get; }
+
+    public bool IsAnonymous { get; }
+
+    public override ImmutableArray<Symbol> Members => [.. Fields];
+
+    /// <summary>
+    /// ABI-060: each field at the next multiple of <c>min(alignment, packing)</c>; record alignment = the largest of those (1
+    /// when empty), size rounded up to it.
+    /// </summary>
+    internal static (ImmutableArray<long> Offsets, long Size, int Alignment) Layout(IEnumerable<TypeSymbol> fieldTypes, int packing)
+    {
+        var offsets = ImmutableArray.CreateBuilder<long>();
+        long end = 0;
+        var alignment = 1;
+        foreach (var type in fieldTypes)
+        {
+            var fieldAlignment = Math.Min(type.Alignment, packing);
+            alignment = Math.Max(alignment, fieldAlignment);
+            var offset = (end + fieldAlignment - 1) / fieldAlignment * fieldAlignment;
+            offsets.Add(offset);
+            end = offset + type.Size;
+        }
+
+        return (offsets.ToImmutable(), (end + alignment - 1) / alignment * alignment, alignment);
+    }
+}
+
 /// <summary>Set compatibility (LANG-250, 280 rule 8).</summary>
 internal static class Sets
 {

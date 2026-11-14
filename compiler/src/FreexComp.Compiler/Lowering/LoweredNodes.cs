@@ -30,6 +30,9 @@ internal sealed record LoweredFrame(ImmutableArray<Symbol> Variables);
 /// </summary>
 internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> Routines, ImmutableArray<LoweredBody> Bodies)
 {
+    /// <summary>The static storage of typed constants declared in routines (LANG-344), in routine binding order.</summary>
+    public ImmutableArray<VariableSymbol> Statics { get; init; } = [];
+
     public LoweredBody? Initialization { get; init; }
 
     public LoweredBody? Finalization { get; init; }
@@ -402,6 +405,14 @@ internal sealed class LIndex(LExpression array, LExpression index, TypeSymbol el
     public LExpression Array { get; } = array;
 
     public LExpression Index { get; } = index;
+}
+
+/// <summary>Field <see cref="Field"/> of the record <see cref="Record"/> (CMP-307), a variable reference of the field type.</summary>
+internal sealed class LField(LExpression record, FieldSymbol field) : LExpression(field.Type)
+{
+    public LExpression Record { get; } = record;
+
+    public FieldSymbol Field { get; } = field;
 }
 
 /// <summary>Bit <see cref="Element"/> (an integer in 0..255) of the big set at <see cref="Address"/> (CMP-336); type <c>Boolean</c>.</summary>

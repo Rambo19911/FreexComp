@@ -310,12 +310,14 @@ public sealed class ConstantFolderTests
 
     [Fact]
     [Trait("Req", "LANG-344")]
-    public void TypedConstant_IsE2900UntilM22()
+    public void TypedConstant_IsNotAConstantExpression()
     {
-        var (result, _) = Bind("const T: Integer = 5; begin end.");
+        // C-054 replaced the interim E2900: a typed constant binds (read-only storage) but cannot be folded (LANG-340)
+        var (result, _) = Bind("const T: Integer = 5; U = T; begin end.");
 
-        Assert.Equal(["E2900(1,7): Feature not supported: typed constant"], Format(result.Diagnostics));
-        Assert.True(Assert.IsType<ConstantSymbol>(result.Scope.LookupLocal("T")).IsTyped);
+        Assert.Equal(["E2050(1,27): Constant expression expected"], Format(result.Diagnostics));
+        var constant = Assert.IsType<ConstantSymbol>(result.Scope.LookupLocal("T"));
+        Assert.Equal((true, "5"), (constant.IsTyped, constant.Value!.ToDisplayString()));
     }
 
     [Fact]

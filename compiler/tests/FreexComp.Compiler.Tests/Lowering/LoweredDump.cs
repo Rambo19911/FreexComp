@@ -33,6 +33,7 @@ internal static class LoweredDump
         LTemp t => $"(let {t.Temp} {Of(t.Value)} {Of(t.Body)})",
         LTempRef t => t.Temp.ToString(),
         LIndex i => $"([] {Of(i.Array)} {Of(i.Index)})",
+        LField f => $"(. {Of(f.Record)} {f.Field.Name})",
         LSequence s => $"(seq {Of(s.First)} {Of(s.Value)})",
         LView v => $"(view {v.Type.Name} {Of(v.Aggregate)})",
         LTestBit t => $"(bit? {Of(t.Address)} {Of(t.Element)})",

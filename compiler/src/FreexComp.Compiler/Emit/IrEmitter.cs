@@ -55,7 +55,7 @@ internal static class IrEmitter
             }
         }
 
-        var interfaceMembers = unit.Unit.InterfaceMembers.ToHashSet();
+        var interfaceMembers = unit.Unit.InterfaceMembers.Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).ToHashSet();
         var module = new ModuleState(writer);
         foreach (var body in unit.Routines)
         {
@@ -63,7 +63,9 @@ internal static class IrEmitter
         }
 
         // globals are defined after the functions (CMP-301: string literals, found while emitting, come first)
-        var variables = unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers).OfType<VariableSymbol>().ToImmutableArray();
+        // typed constants are read-only globals (LANG-344); those of routines follow the unit's own
+        var variables = unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers)
+            .Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).OfType<VariableSymbol>().Concat(unit.Statics).ToImmutableArray();
         foreach (var variable in variables)
         {
             module.Globals[variable] = new IrGlobal(Mangler.GlobalVariable(variable));
@@ -74,9 +76,9 @@ internal static class IrEmitter
         {
             if (body.Frame is { } frame)
             {
-                var type = writer.DeclareStruct(Mangler.FrameType(body.Routine!),
-                    new StructIrType([IrType.Ptr, .. frame.Variables.Select(v => FieldLayout(v).StorageType)]));
-                module.Frames[body.Routine!] = new FrameRecord(type, frame.Variables);
+                var (structType, indexes) = TypeLayout.Struct([new TypeLayout(8, 8, IrType.Ptr), .. frame.Variables.Select(FieldLayout)]);
+                var type = writer.DeclareStruct(Mangler.FrameType(body.Routine!), structType);
+                module.Frames[body.Routine!] = new FrameRecord(type, frame.Variables, indexes);
             }
         }
 
@@ -127,7 +129,7 @@ internal static class IrEmitter
             var initializer = variable.Initializer is { } value ? StorageConstant(value, variable.Type) : new IrZeroConstant(layout.StorageType);
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
                 interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null ? IrLinkage.External : IrLinkage.Internal,
-                IsConstant: false, initializer, layout.Alignment));
+                IsConstant: variable.IsReadOnly, initializer, layout.Alignment));
         }
 
         foreach (var (name, type) in module.ExternalVariables)
@@ -251,9 +253,34 @@ internal static class IrEmitter
             : new IrArrayConstant(type, [.. Enumerable.Range(0, (int)size).Select(i => (IrConstant)new IrIntConstant(IrType.I8, (mask >> (8 * i)) & 0xFF))]);
     }
 
-    /// <summary>A constant in memory form: Booleans as 0/1, C-style Booleans as 0/−1 (CMP-305).</summary>
+    /// <summary>
+    /// A constant in memory form: Booleans as 0/1, C-style Booleans as 0/−1 (CMP-305); static arrays and records element by
+    /// element (CMP-341), omitted record fields and padding as <c>zeroinitializer</c>.
+    /// </summary>
     private static IrConstant StorageConstant(ConstantValue constant, TypeSymbol type)
     {
+        IrConstant Element(ConstantValue? value, TypeSymbol elementType) =>
+            value is null ? new IrZeroConstant(TypeLayout.Of(elementType).StorageType) : StorageConstant(value, elementType);
+
+        switch (type, constant.Value)
+        {
+            case (ArrayTypeSymbol array, ImmutableArray<ConstantValue?> elements):
+                return new IrArrayConstant((ArrayIrType)TypeLayout.Of(array).StorageType, [.. elements.Select(e => Element(e, array.ElementType))]);
+            case (RecordTypeSymbol record, ImmutableArray<ConstantValue?> fields):
+            {
+                var storage = TypeLayout.Of(record).StorageType;
+                var body = storage as StructIrType ?? ((NamedStructIrType)storage).Body!;
+                var values = body.Fields.Select(f => (IrConstant)new IrZeroConstant(f)).ToArray();          // padding
+                var indexes = TypeLayout.FieldIndexes(record);
+                for (var i = 0; i < fields.Length; i++)
+                {
+                    values[indexes[i]] = Element(fields[i], record.Fields[i].Type);
+                }
+
+                return new IrStructConstant(body, [.. values], storage);
+            }
+        }
+
         var value = ValueConstant(constant, type);
         return type is BooleanTypeSymbol boolean
             ? new IrIntConstant((IntegerIrType)TypeLayout.Of(type).StorageType, ((IrIntConstant)value).Value.IsZero ? 0 : boolean.IsCStyle ? -1 : 1)
@@ -264,10 +291,11 @@ internal static class IrEmitter
 /// <summary>One <c>$units</c> entry (CMP-355): the unit's <c>$init</c>/<c>$final</c>, or two nulls when <paramref name="HasInitFinal"/> is false.</summary>
 internal sealed record UnitTableEntry(UnitSymbol Unit, bool HasInitFinal);
 
-/// <summary>A routine's frame record type and its captured variables (field <c>i + 1</c> holds <c>Variables[i]</c>, CMP-345).</summary>
-internal sealed record FrameRecord(NamedStructIrType Type, ImmutableArray<Symbol> Variables)
+/// <summary>A routine's frame record type and its captured variables (struct field <c>Indexes[i + 1]</c> holds <c>Variables[i]</c>, CMP-345).</summary>
+/// <remarks>Fields are padded like records when a variable's LLVM alignment is below its ABI alignment (<see cref="TypeLayout.Struct"/>).</remarks>
+internal sealed record FrameRecord(NamedStructIrType Type, ImmutableArray<Symbol> Variables, ImmutableArray<int> Indexes)
 {
-    public int FieldOf(Symbol variable) => Variables.IndexOf(variable) is var i and >= 0 ? i + 1 : -1;
+    public int FieldOf(Symbol variable) => Variables.IndexOf(variable) is var i and >= 0 ? Indexes[i + 1] : -1;
 }
 
 /// <summary>Module-wide state shared by the function emitters.</summary>
@@ -633,7 +661,8 @@ internal sealed class FunctionEmitter
             case LAssign assign when Lowerer.IsAggregate(assign.Target.Type):
             {
                 var source = Address(assign.Value);
-                Copy(Address(assign.Target), source, assign.Target.Type, mayOverlap: SameArrayVariable(assign.Target, assign.Value));
+                Copy(Address(assign.Target), source, assign.Target.Type, AccessAlignment(assign.Target), AccessAlignment(assign.Value),
+                    mayOverlap: SameArrayVariable(assign.Target, assign.Value));
                 break;
             }
 
@@ -641,7 +670,7 @@ internal sealed class FunctionEmitter
                 _w.Store(Value(assign.Value), Address(view), AlignmentOf(view));
                 break;
             case LAssign assign:
-                Store(Value(assign.Value), Address(assign.Target), assign.Target.Type);
+                Store(Value(assign.Value), Address(assign.Target), assign.Target.Type, AccessAlignment(assign.Target));
                 break;
             case LZero zero:
             {
@@ -872,6 +901,15 @@ internal sealed class FunctionEmitter
                 return _w.GetElementPtr(NewTemp(), TypeLayout.Of(index.Array.Type).StorageType, array, [IrIntConstant.I64(0), offset]);
             }
 
+            case LField field:
+            {
+                // CMP-307: getelementptr inbounds %"U.TRec", ptr %r, i32 0, i32 <fieldIndex>
+                var record = (RecordTypeSymbol)field.Record.Type;
+                var address = Address(field.Record);
+                var position = TypeLayout.FieldIndexes(record)[record.Fields.IndexOf(field.Field)];
+                return _w.GetElementPtr(NewTemp(), TypeLayout.Of(record).StorageType, address, [IrIntConstant.I32(0), IrIntConstant.I32(position)]);
+            }
+
             default:
                 throw new InvalidOperationException($"{variable.GetType().Name} is not a variable reference.");
         }
@@ -890,9 +928,9 @@ internal sealed class FunctionEmitter
                 return null;
             }
 
-            while (e is LIndex index)
+            while (e is LIndex or LField)
             {
-                e = index.Array;
+                e = e is LIndex index ? index.Array : ((LField)e).Record;
             }
 
             return e switch
@@ -912,20 +950,34 @@ internal sealed class FunctionEmitter
     /// CMP-326: an aggregate copy — <c>load</c>/<c>store iN</c> for sizes 1, 2, 4, 8, else <c>llvm.memcpy</c> (<c>llvm.memmove</c>
     /// when <paramref name="mayOverlap"/>) with the type's alignment on both pointers (the source is computed first).
     /// </summary>
-    private void Copy(IrValue destination, IrValue source, TypeSymbol type, bool mayOverlap = false)
+    private void Copy(IrValue destination, IrValue source, TypeSymbol type, int destinationAlignment, int sourceAlignment, bool mayOverlap = false)
     {
         var layout = TypeLayout.Of(type);
         if (layout.Size is 1 or 2 or 4 or 8)
         {
             var integer = IrType.Int((int)layout.Size * 8);
-            _w.Store(_w.Load(NewTemp(), integer, source, layout.Alignment), destination, layout.Alignment);
+            _w.Store(_w.Load(NewTemp(), integer, source, sourceAlignment), destination, destinationAlignment);
             return;
         }
 
         var memcpy = _module.Intrinsic(mayOverlap ? "llvm.memmove.p0.p0.i64" : "llvm.memcpy.p0.p0.i64", IrType.Void, [IrType.Ptr, IrType.Ptr, IrType.I64, IrType.I1]);
         _w.Call(null, IrType.Void, memcpy,
-            [new IrAlignedPointer(destination, layout.Alignment), new IrAlignedPointer(source, layout.Alignment), IrIntConstant.I64(layout.Size), IrIntConstant.I1(false)]);
+            [new IrAlignedPointer(destination, destinationAlignment), new IrAlignedPointer(source, sourceAlignment), IrIntConstant.I64(layout.Size), IrIntConstant.I1(false)]);
     }
+
+    /// <summary>
+    /// The alignment an access to <paramref name="variable"/> may assume (CMP-309): the type's alignment, reduced inside
+    /// records to <c>min(field alignment, packing)</c> and to the alignment of the enclosing record or array storage
+    /// (a field of a <c>packed record</c> is accessed with <c>align 1</c>).
+    /// </summary>
+    private static int AccessAlignment(LExpression variable) => variable switch
+    {
+        LField field => Math.Min(Math.Min(field.Type.Alignment, ((RecordTypeSymbol)field.Record.Type).Packing), AccessAlignment(field.Record)),
+        LIndex index => Math.Min(index.Type.Alignment, AccessAlignment(index.Array)),
+        LView view => AlignmentOf(view),
+        LSequence sequence => AccessAlignment(sequence.Value),
+        _ => TypeLayout.Of(variable.Type).Alignment,
+    };
 
     /// <summary>CMP-336: <c>getelementptr inbounds i8, ptr set, i64 (x lshr 3)</c> and the bit number <c>x and 7</c> as <c>i8</c>.</summary>
     private (IrValue Address, IrValue Bit) BitAddress(LExpression set, LExpression element)
@@ -1014,16 +1066,16 @@ internal sealed class FunctionEmitter
     }
 
     /// <summary>Loads a value in SSA form: Booleans are compared <c>ne 0</c> after the load (CMP-305).</summary>
-    private IrValue Load(IrValue address, TypeSymbol type)
+    private IrValue Load(IrValue address, TypeSymbol type, int? alignment = null)
     {
         var layout = TypeLayout.Of(type);
-        var loaded = _w.Load(NewTemp(), layout.StorageType, address, layout.Alignment);
+        var loaded = _w.Load(NewTemp(), layout.StorageType, address, alignment ?? layout.Alignment);
         return type is BooleanTypeSymbol ? _w.ICmp(NewTemp(), IrIntPredicate.Ne, loaded, new IrIntConstant((IntegerIrType)layout.StorageType, 0)) : loaded;
     }
 
     /// <summary>Stores an SSA value: <c>zext</c> for <c>Boolean</c>, <c>sext</c> (all ones) for C-style Booleans (CMP-305).</summary>
-    private void Store(IrValue value, IrValue address, TypeSymbol type) =>
-        _w.Store(ToStorage(value, type), address, TypeLayout.Of(type).Alignment);
+    private void Store(IrValue value, IrValue address, TypeSymbol type, int? alignment = null) =>
+        _w.Store(ToStorage(value, type), address, alignment ?? TypeLayout.Of(type).Alignment);
 
     /// <summary>An SSA value in memory/argument form: <c>zext</c> for <c>Boolean</c>, <c>sext</c> (all ones) for C-style Booleans.</summary>
     private IrValue ToStorage(IrValue value, TypeSymbol type)
@@ -1047,12 +1099,12 @@ internal sealed class FunctionEmitter
         {
             case LConst constant:
                 return IrEmitter.ValueConstant(constant.Value, constant.Type);
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex when Lowerer.IsAggregate(expression.Type):
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex or LField when Lowerer.IsAggregate(expression.Type):
                 throw new InvalidOperationException("An aggregate has no SSA value; use its address.");
             case LView view:
                 return _w.Load(NewTemp(), TypeLayout.Of(view.Type).StorageType, Address(view), AlignmentOf(view));
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex:
-                return Load(Address(expression), expression.Type);
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField:
+                return Load(Address(expression), expression.Type, AccessAlignment(expression));
             case LSequence sequence:
                 Statement(sequence.First);
                 return Value(sequence.Value);

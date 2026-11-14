@@ -181,6 +181,12 @@ procedure P; var i: Integer; begin end; begin P end.
 procedure P; var i: Integer; begin i := 1; i := 2; Writeln(i) end; begin P end.
 === E2005 1,38
 type T = (A); var X: T; begin X := T.B end.
+=== E2005 1,51
+type T = record a: Integer end; var x: T; begin x.b := 0 end.
+=== E2006 1,23
+var i: Integer; begin i.x := 0 end.
+=== E2004 1,23
+type T = record a, b, a: Integer end; begin end.
 === E2010 1,56
 type A = (A1); B = (B1); var X: Boolean; begin X := A1 = B1 end.
 === E2012 1,38
@@ -217,3 +223,15 @@ var A: array[1..3] of Integer; begin A[4] := 0 end.
 type E = (X, Y, Z); var A: array[X..Y] of Byte; begin A[Z] := 0 end.
 === E2011 1,63
 type S = set of 0..3; var a, b: S; ok: Boolean; begin ok := a > b end.
+=== E2016 1,20
+const B: Integer = (X: 1); begin end.
+=== E2035 1,35
+const A: array[1..3] of Integer = (1, 2); begin end.
+=== E2036 1,35
+const A: array[1..2] of Integer = (1, 2, 3); begin end.
+=== E2037 1,50
+type T = record X, Y: Integer end; const P: T = (Z: 1); begin end.
+=== E2053 1,29
+const A: Integer = 1; begin A := 2 end.
+=== E2112 1,33
+const A: Integer = 1; begin Inc(A) end.

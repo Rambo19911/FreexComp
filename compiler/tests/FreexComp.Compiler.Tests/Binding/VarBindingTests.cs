@@ -88,7 +88,7 @@ public sealed class VarBindingTests
     [Theory]
     [InlineData("var X: Integer = Missing; begin end.", "E2003(1,18): Undeclared identifier 'Missing'")]
     [InlineData("var A, B: Integer = 1; begin end.", "E1101(1,19): ';' expected but '=' found")]
-    [InlineData("var X: Integer = (1, 2); begin end.", "E2900(1,18): Feature not supported: structured initializer")]
+    [InlineData("var X: Integer = (1, 2); begin end.", "E2017(1,18): Array type required")]          // C-054: no longer E2900
     public void InvalidInitializers(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
 
     [Theory]

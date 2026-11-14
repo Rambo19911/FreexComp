@@ -602,6 +602,9 @@ internal sealed class FlowAnalyzer
             case BoundIndexExpression index:
                 return Eval(index.Index, Eval(index.Array, state));
 
+            case BoundFieldAccessExpression field:
+                return Eval(field.Record, state);
+
             case BoundSetConstructor constructor:
                 foreach (var element in constructor.Elements)
                 {

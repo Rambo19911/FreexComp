@@ -695,8 +695,110 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-053 / CMP-306, 307, 309, 326: named struct types (plain, packed, padded for {$A4}), field GEPs through nested records
+    /// and arrays, packed-field accesses with align 1, record copies (iN for 8 bytes, memcpy otherwise), a captured record.
+    /// </summary>
+    internal const string RecordsSource = """
+        unit M;
+        interface
+        type
+          TPoint = record X, Y: Integer; end;
+          TRect = record A, B: TPoint; Tag: Char; end;
+          TPacked = packed record B: Byte; I: Integer; end;
+        {$A4}
+          TFour = record B: Byte; D: Int64; end;
+        {$A8}
+          TLine = record P: array[0..1] of TPoint; F: TFour; end;
+        var
+          G: TRect;
+        procedure Move(var p: TPoint; dx: Integer);
+        procedure Copy(var r: TRect; var q: TPacked; var f: TFour);
+        procedure Line(var l: TLine; i: Integer);
+        procedure Outer;
+        implementation
+        procedure Move(var p: TPoint; dx: Integer);
+        begin
+          p.X := p.X + dx;
+        end;
+        procedure Copy(var r: TRect; var q: TPacked; var f: TFour);
+        var
+          local: TRect;
+          pt: TPoint;
+        begin
+          local := r;
+          r := G;
+          G := local;
+          pt := local.B;
+          G.A := pt;
+          q.I := q.B;
+          f.D := 7;
+        end;
+        procedure Line(var l: TLine; i: Integer);
+        begin
+          l.P[i].Y := l.P[0].X;
+          l.P[1] := l.P[i];
+          l.F.B := 1;
+        end;
+        procedure Outer;
+        var
+          r: TPoint;
+          b: Byte;
+          f: TFour;
+          procedure Inner;
+          begin
+            r.Y := 2;
+            f.D := b;
+          end;
+        begin
+          r.X := 1;
+          b := 3;
+          Inner;
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-054 / CMP-341: typed constants are <c>constant</c> globals, initialised variables <c>global</c>s with the value; arrays
+    /// element by element, records field by field (padding and omitted trailing fields zero), routine-local typed constants
+    /// named after the routine.
+    /// </summary>
+    internal const string TypedConstantsSource = """
+        unit M;
+        interface
+        type
+          TPoint = record X, Y: Integer; end;
+        {$A4}
+          TFour = record B: Byte; D: Int64; end;
+        {$A8}
+        const
+          Table: array[0..2] of Integer = (1, 2, 3);
+          Origin: TPoint = (X: 5; Y: -6);
+        var
+          Grid: array[1..2, 1..2] of Byte = ((1, 2), (3, 4));
+        function Pick(i: Integer): Integer;
+        implementation
+        const
+          Four: TFour = (B: 1; D: 2);
+          Half: TPoint = (X: 9);
+          Flags: array[Boolean] of Boolean = (False, True);
+          Small: set of 0..7 = [0, 7];
+        var
+          Start: TPoint = (X: 1; Y: 2);
+        function Pick(i: Integer): Integer;
+        const
+          Local: array[0..1] of Word = (10, 20);
+        begin
+          Result := Table[i] + Local[i] + Origin.Y + Four.D + Half.X;
+          Start := Origin;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["TypedConstants"] = TypedConstantsSource,
+        ["Records"] = RecordsSource,
         ["StaticArrays"] = StaticArraysSource,
         ["BigSets"] = BigSetsSource,
         ["Enums"] = EnumsSource,
@@ -840,6 +942,66 @@ public sealed class IrSnapshotTests
     [Trait("Req", "CMP-308")]
     [Trait("Req", "CMP-331")]
     public void StaticArrays() => Snapshot.Verify("StaticArrays", Emit(StaticArraysSource));
+
+    [Fact]
+    [Trait("Req", "CMP-306")]
+    [Trait("Req", "CMP-307")]
+    public void Records() => Snapshot.Verify("Records", Emit(RecordsSource));
+
+    /// <summary>CMP-306 struct types, CMP-307 field GEPs, CMP-309 alignments of packed fields, CMP-326 copies.</summary>
+    [Fact]
+    [Trait("Req", "CMP-306")]
+    [Trait("Req", "CMP-307")]
+    [Trait("Req", "CMP-309")]
+    [Trait("Req", "CMP-326")]
+    public void Records_StructTypesFieldAddressesAndCopies()
+    {
+        var text = Emit(RecordsSource);
+
+        Assert.Contains("%\"M.TRect\" = type { %\"M.TPoint\", %\"M.TPoint\", i16 }\n", text);
+        Assert.Contains("%\"M.TPoint\" = type { i32, i32 }\n", text);
+        Assert.Contains("%\"M.TPacked\" = type <{ i8, i32 }>\n", text);
+        Assert.Contains("%\"M.TFour\" = type <{ i8, [3 x i8], i64 }>\n", text);
+        Assert.Contains("%\"M.TLine\" = type { [2 x %\"M.TPoint\"], %\"M.TFour\" }\n", text);
+        // f (ABI alignment 4, LLVM alignment 1) at offset 20 of the frame: packed with explicit padding (CMP-345 + CMP-306)
+        Assert.Contains("%\"M.Outer.$frame\" = type <{ ptr, %\"M.TPoint\", i8, [3 x i8], %\"M.TFour\" }>\n", text);
+        Assert.Contains("getelementptr inbounds %\"M.Outer.$frame\", ptr %$link, i32 0, i32 4\n", text);
+        Assert.Contains("getelementptr inbounds %\"M.TPoint\", ptr %p, i32 0, i32 0\n", text);
+        Assert.Contains("getelementptr inbounds %\"M.TFour\", ptr %f, i32 0, i32 2\n", text);
+        Assert.Contains(", ptr align 4 %r, i64 20, i1 false)", text);
+        Assert.Contains("@\"M.G\" = global %\"M.TRect\" zeroinitializer, align 4\n", text);
+        var copy = text[text.IndexOf("define void @\"M.Copy\"", StringComparison.Ordinal)..text.IndexOf("define void @\"M.Line\"", StringComparison.Ordinal)];
+        Assert.Contains("load i64, ptr %t", copy);                                        // pt := local.B (8 bytes)
+        Assert.Matches(@"store i32 %t\d+, ptr %t\d+, align 1\n", copy);                  // q.I in a packed record
+        Assert.Matches(@"store i64 7, ptr %t\d+, align 4\n", copy);                       // f.D at offset 4 under {$A4}
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-341")]
+    [Trait("Req", "LANG-344")]
+    public void TypedConstants() => Snapshot.Verify("TypedConstants", Emit(TypedConstantsSource));
+
+    /// <summary>CMP-341 verbatim for the interface table; records with padding; routine-local constants; initialised variables.</summary>
+    [Fact]
+    [Trait("Req", "CMP-341")]
+    [Trait("Req", "LANG-344")]
+    [Trait("Req", "LANG-522")]
+    public void TypedConstants_AreConstantGlobalsWithTheirValues()
+    {
+        var text = Emit(TypedConstantsSource);
+
+        Assert.Contains("@\"M.Table\" = constant [3 x i32] [i32 1, i32 2, i32 3], align 4\n", text);
+        Assert.Contains("@\"M.Origin\" = constant %\"M.TPoint\" { i32 5, i32 -6 }, align 4\n", text);
+        Assert.Contains("@\"M.Grid\" = global [2 x [2 x i8]] [[2 x i8] [i8 1, i8 2], [2 x i8] [i8 3, i8 4]], align 1\n", text);
+        Assert.Contains("@\"M.Four\" = internal constant %\"M.TFour\" <{ i8 1, [3 x i8] zeroinitializer, i64 2 }>, align 4\n", text);
+        Assert.Contains("@\"M.Half\" = internal constant %\"M.TPoint\" { i32 9, i32 zeroinitializer }, align 4\n", text);
+        Assert.Contains("@\"M.Flags\" = internal constant [2 x i8] [i8 0, i8 1], align 1\n", text);
+        Assert.Contains("@\"M.Small\" = internal constant i8 -127, align 1\n", text);
+        Assert.Contains("@\"M.Start\" = internal global %\"M.TPoint\" { i32 1, i32 2 }, align 4\n", text);
+        Assert.Contains("@\"M.Pick.Local\" = internal constant [2 x i16] [i16 10, i16 20], align 2\n", text);
+        Assert.Contains("getelementptr inbounds [3 x i32], ptr @\"M.Table\", i64 0, i64 ", text);
+        Assert.Contains("load i64, ptr @\"M.Origin\", align 4\n", text);                  // Start := Origin (8 bytes)
+    }
 
     /// <summary>CMP-308 element addresses; CMP-326 copies; CMP-331 checks only under {$R+} and only where the index can leave the bounds.</summary>
     [Fact]

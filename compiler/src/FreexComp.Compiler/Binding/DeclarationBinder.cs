@@ -143,9 +143,15 @@ internal sealed class DeclarationBinder
             ConstantSymbol symbol;
             if (declaration.Type != null)
             {
-                // LANG-344 typed constants arrive with M2.2
-                _diagnostics.Report(identifier, "E2900", "typed constant");
-                symbol = Constant(identifier, _types.Error, value: null, isTyped: true);
+                // LANG-344: a read-only variable with static storage, initialised statically (LANG-522)
+                var type = BindType(declaration.Type, declared: declared);
+                var value = type.TypeKind == TypeKind.Error || !IsStaticallyInitializable(type, declaration.Type) ? null
+                    : BindTypedConstant(declaration.Value, type);
+                var locations = ImmutableArray.Create(DiagnosticBag.LocationOf(identifier));
+                symbol = new ConstantSymbol(NameOf(identifier), type, value, isTyped: true, _container, locations)
+                {
+                    Storage = new VariableSymbol(NameOf(identifier), type, isGlobal: true, _container, locations, value) { IsReadOnly = true },
+                };
             }
             else
             {
@@ -411,6 +417,84 @@ internal sealed class DeclarationBinder
     }
 
     /// <summary>
+    /// LANG-260/263 record without variant part: fields in declaration order (E2004 at a repeated name), laid out per ABI-060
+    /// with packing 1 for <c>packed record</c>, else the <c>{$ALIGN}</c> value at the <c>record</c> keyword. Managed fields
+    /// (C-065), variant parts (C-108) and non-field members (M2.6) are E2900.
+    /// </summary>
+    private TypeSymbol BindRecord(RecordTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
+    {
+        var fields = new List<(SyntaxToken Identifier, TypeSymbol Type)>();
+        var names = new HashSet<string>(IdentifierComparer.Instance);
+        var failed = false;
+        foreach (var member in syntax.Members)
+        {
+            if (member is not FieldDeclarationSyntax field)
+            {
+                Unsupported(member, "record " + FeatureName(member.Kind));                   // records with methods, M2.6
+                failed = true;
+                continue;
+            }
+
+            var type = BindType(field.Type, declared: declared);
+            if (type.TypeKind == TypeKind.Error)
+            {
+                failed = true;
+                continue;
+            }
+
+            if (type.IsManaged)
+            {
+                Unsupported(field.Type, "record with managed fields");                       // C-065
+                failed = true;
+                continue;
+            }
+
+            if (type.Size < 0 || type is TextTypeSymbol)
+            {
+                Unsupported(field.Type, "record field of type " + type.Name);
+                failed = true;
+                continue;
+            }
+
+            foreach (var identifier in field.Identifiers.Select(i => i.Identifier).Where(i => !i.IsMissing))
+            {
+                if (!names.Add(NameOf(identifier)))
+                {
+                    _diagnostics.Report(identifier, "E2004", NameOf(identifier));
+                    failed = true;
+                    continue;
+                }
+
+                fields.Add((identifier, type));
+            }
+        }
+
+        if (syntax.VariantPart is { } variant)
+        {
+            Unsupported(variant, "variant part");                                            // C-108
+            failed = true;
+        }
+
+        if (failed)
+        {
+            return _types.Error;
+        }
+
+        var packing = syntax.PackedKeyword is not null ? 1 : syntax.RecordKeyword.DirectiveState.Align;
+        var (offsets, size, alignment) = RecordTypeSymbol.Layout(fields.Select(f => f.Type), packing);
+        if (size > int.MaxValue)
+        {
+            _diagnostics.Report(syntax, "E2031");
+            return _types.Error;
+        }
+
+        var record = new RecordTypeSymbol(name, size, alignment, syntax.PackedKeyword is not null, packing, isAnonymous: declaredAt is null,
+            _container, declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : []);
+        record.Fields = [.. fields.Select((f, i) => new FieldSymbol(NameOf(f.Identifier), f.Type, offsets[i], record, [DiagnosticBag.LocationOf(f.Identifier)]))];
+        return record;
+    }
+
+    /// <summary>
     /// LANG-212: the first of ShortInt, Byte, SmallInt, Word, Integer, Cardinal, Int64, UInt64 holding both bounds; with a
     /// non-negative low bound the signed type of each size is skipped.
     /// </summary>
@@ -486,15 +570,103 @@ internal sealed class DeclarationBinder
             return null;
         }
 
-        if (initializer is not ExpressionSyntax expression)
+        return type.TypeKind == TypeKind.Error || !IsStaticallyInitializable(type, declaration.Type) ? null : BindTypedConstant(initializer, type);
+    }
+
+    /// <summary>Managed types (strings, C-060) and <c>Text</c> have no static initialiser yet: E2900 at the type.</summary>
+    private bool IsStaticallyInitializable(TypeSymbol type, TypeSyntax syntax)
+    {
+        if (type.IsManaged || type is TextTypeSymbol)
         {
-            _diagnostics.Report(initializer, "E2900", "structured initializer");   // array/record initialisers, M2.2
+            _diagnostics.Report(syntax, "E2900", "initialised " + type.Name);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// grammar.md <c>typedConst</c> of type <paramref name="type"/> (LANG-344): a constant expression converted to the type
+    /// (LANG-280); for a static array <c>(e1, e2, …)</c> with exactly one value per element (E2035 / E2036 at the
+    /// aggregate; a parenthesised expression is a one-element aggregate); for a record <c>(F1: v1; F2: v2)</c> with the
+    /// fields in declaration order, trailing fields omitted = zero (E2037 at a name that is unknown or out of order). An
+    /// array aggregate for another type is E2017, a record constant for a non-record E2016. The value of an array or record
+    /// is an <see cref="ImmutableArray{T}"/> of element / field values (null = zero).
+    /// </summary>
+    private ConstantValue? BindTypedConstant(SyntaxNode node, TypeSymbol type)
+    {
+        switch (node)
+        {
+            case TypedConstantAggregateSyntax aggregate when aggregate.Elements.Any(e => e is RecordConstantFieldSyntax)
+                || (aggregate.Elements.Count == 0 && type is not ArrayTypeSymbol):
+                return BindRecordConstant(aggregate, type);
+            case TypedConstantAggregateSyntax aggregate:
+                return BindArrayConstant(aggregate, [.. aggregate.Elements], type);
+            case ParenthesizedExpressionSyntax parenthesized when type is ArrayTypeSymbol:
+                return BindArrayConstant(parenthesized, [parenthesized.Expression], type);
+            case ExpressionSyntax expression:
+            {
+                // converted to the declared type (LANG-280), so the value carries that type
+                var value = _folder.Fold(expression);
+                return value is null ? null : _conversions.ConvertConstant(value, type, expression, _diagnostics);
+            }
+
+            default:
+                return NotConstant(node);
+        }
+    }
+
+    private ConstantValue? BindArrayConstant(SyntaxNode syntax, IReadOnlyList<SyntaxNode> elements, TypeSymbol type)
+    {
+        if (type is not ArrayTypeSymbol array)
+        {
+            _diagnostics.Report(syntax, "E2017");
             return null;
         }
 
-        // converted to the variable's type (LANG-280), so the value carries that type
-        var value = _folder.Fold(expression);
-        return value is null || type.TypeKind == TypeKind.Error ? value : _conversions.ConvertConstant(value, type, expression, _diagnostics);
+        if (elements.Count != array.Length)
+        {
+            _diagnostics.Report(syntax, elements.Count < array.Length ? "E2035" : "E2036", array.Length.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                elements.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return null;
+        }
+
+        var values = elements.Select(e => BindTypedConstant(e, array.ElementType)).ToImmutableArray();
+        return values.Any(v => v is null) ? null : new ConstantValue(values, type);
+    }
+
+    private ConstantValue? BindRecordConstant(TypedConstantAggregateSyntax syntax, TypeSymbol type)
+    {
+        if (type is not RecordTypeSymbol record)
+        {
+            _diagnostics.Report(syntax, "E2016");
+            return null;
+        }
+
+        var values = new ConstantValue?[record.Fields.Length];
+        var next = 0;
+        var failed = false;
+        foreach (var element in syntax.Elements)
+        {
+            if (element is not RecordConstantFieldSyntax field)
+            {
+                _diagnostics.Report(element, "E2016");                     // a positional value inside a record constant
+                return null;
+            }
+
+            var name = NameOf(field.Name.Identifier);
+            if (next >= record.Fields.Length || !IdentifierComparer.Instance.Equals(record.Fields[next].Name, name))
+            {
+                _diagnostics.Report(field.Name, "E2037", name);
+                return null;
+            }
+
+            values[next] = BindTypedConstant(field.Value, record.Fields[next].Type);
+            failed |= values[next] is null;
+            next++;
+        }
+
+        return failed ? null : new ConstantValue(values.ToImmutableArray(), type);
     }
 
     // ------------------------------------------------------------------ routines (LANG-400…403, 440, 460…473)
@@ -852,6 +1024,8 @@ internal sealed class DeclarationBinder
                 return BindSet(set, typeName, declaredAt, declared);
             case ArrayTypeSyntax { IndexTypes.Count: > 0, ElementType: not null } array:
                 return BindArray(array, typeName, declaredAt, declared);
+            case RecordTypeSyntax record:
+                return BindRecord(record, typeName, declaredAt, declared);
             case ArrayTypeSyntax array:
                 return Unsupported(type, array.ElementType is null ? "array of const" : "dynamic array type");      // C-064, M2.5
             case NamedTypeSyntax { Name: IdentifierNameSyntax name }:

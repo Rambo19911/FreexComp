@@ -24,6 +24,7 @@ internal enum BoundKind
     IntrinsicCallExpression,
     SetConstructor,
     IndexExpression,
+    FieldAccessExpression,
 
     // statements
     Block,
@@ -286,16 +287,41 @@ internal sealed class BoundIndexExpression : BoundExpression
 
     public ArrayTypeSymbol ArrayType => (ArrayTypeSymbol)Array.Type;
 
-    /// <summary>The variable or parameter an element access chain starts from (the expression itself otherwise).</summary>
+    /// <summary>The variable or parameter an element/field access chain starts from (the expression itself otherwise).</summary>
     public static BoundExpression RootOf(BoundExpression expression)
     {
-        while (expression is BoundIndexExpression index)
+        while (true)
         {
-            expression = index.Array;
+            switch (expression)
+            {
+                case BoundIndexExpression index:
+                    expression = index.Array;
+                    break;
+                case BoundFieldAccessExpression field:
+                    expression = field.Record;
+                    break;
+                default:
+                    return expression;
+            }
         }
-
-        return expression;
     }
+}
+
+/// <summary><c>r.F</c> of a record (LANG-260): a variable when <see cref="Record"/> is one.</summary>
+internal sealed class BoundFieldAccessExpression : BoundExpression
+{
+    public BoundFieldAccessExpression(SyntaxNode syntax, BoundExpression record, FieldSymbol field)
+        : base(syntax, field.Type, constantValue: null)
+    {
+        Record = record;
+        Field = field;
+    }
+
+    public override BoundKind Kind => BoundKind.FieldAccessExpression;
+
+    public BoundExpression Record { get; }
+
+    public FieldSymbol Field { get; }
 }
 
 /// <summary>One element <c>a</c> (<see cref="High"/> null) or range <c>a..b</c> of a set constructor.</summary>

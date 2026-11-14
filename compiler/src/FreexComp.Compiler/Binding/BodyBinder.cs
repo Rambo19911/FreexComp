@@ -94,6 +94,9 @@ internal sealed class BodyBinder
             case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):
                 _diagnostics.Report(assignment.Target, "E2053");                        // LANG-361 rule 6
                 return new BoundAssignmentStatement(assignment, target, value);
+            case BoundVariableExpression { Variable.IsReadOnly: true }:
+                _diagnostics.Report(assignment.Target, "E2053");                        // a typed constant (LANG-344)
+                return new BoundAssignmentStatement(assignment, target, value);
             case BoundVariableExpression:
             case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:
                 break;

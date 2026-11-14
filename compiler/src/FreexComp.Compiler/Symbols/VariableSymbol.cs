@@ -31,6 +31,9 @@ public sealed class VariableSymbol : Symbol
     /// <summary>Folded value of a global initialiser <c>var X: T = c;</c> (LANG-522); null when there is none.</summary>
     internal ConstantValue? Initializer { get; }
 
+    /// <summary>The static storage of a typed constant (LANG-344): assignments and <c>var</c> arguments are rejected.</summary>
+    internal bool IsReadOnly { get; init; }
+
     /// <summary>The <c>public name</c> of a global variable (LANG-470); null otherwise.</summary>
     internal string? ExplicitLinkName { get; set; }
 

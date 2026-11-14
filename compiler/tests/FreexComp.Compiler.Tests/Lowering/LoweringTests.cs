@@ -42,6 +42,16 @@ public sealed class LoweringTests
             MainBody("a: array[1..10] of Integer; m: array[Boolean, 0..9] of Byte; i: Integer; c: Boolean",
                 "a[i] := a[3]; {$R+} m[c, i] := 0"));
 
+    /// <summary>CMP-307: a field access lowers to <see cref="LField"/> of the lowered record; records are assigned as a whole.</summary>
+    [Fact]
+    [Trait("Req", "CMP-307")]
+    public void FieldAccess_LowersToFieldOfTheRecordVariable() =>
+        Assert.Equal(
+            "(:= (. ([] (. @r V) 0:Int64) X) (. (. @r P) Y)) (:= (. @r P) @q)",
+            Lower("type TP = record X, Y: Integer end; TR = record P: TP; V: array[1..2] of TP end; " +
+                  "var r: TR; q: TP; begin r.V[1].X := r.P.Y; r.P := q end.").Bodies.Single().Body.Statements
+                .Select(LoweredDump.Of).Aggregate((a, b) => a + " " + b));
+
     /// <summary>CMP-336: a big-set constructor fills a zeroed temporary; <c>in</c> tests the bit behind an <c>x &lt;u 256</c> guard.</summary>
     [Fact]
     [Trait("Req", "CMP-336")]

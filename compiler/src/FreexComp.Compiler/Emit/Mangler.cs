@@ -30,9 +30,11 @@ internal static class Mangler
         return routine.IsOverload ? name + "$" + Signature(routine.Parameters) : name;
     }
 
-    /// <summary>Global variable or typed constant: <c>U.Name</c>.</summary>
+    /// <summary>Global variable or typed constant: <c>U.Name</c>; a typed constant of a routine: <c>&lt;routine link name&gt;.Name</c>.</summary>
     public static LinkName GlobalVariable(VariableSymbol variable) =>
-        variable.ExplicitLinkName is { } explicitName ? new LinkName(explicitName, AlwaysQuote: false) : new(variable.QualifiedName, AlwaysQuote: true);
+        variable.ExplicitLinkName is { } explicitName ? new LinkName(explicitName, AlwaysQuote: false)
+        : variable.ContainingSymbol is RoutineSymbol routine ? new(RoutineText(routine) + "." + variable.Name, AlwaysQuote: true)
+        : new(variable.QualifiedName, AlwaysQuote: true);
 
     public static LinkName UnitInit(UnitSymbol unit) => new(unit.Name + ".$init", AlwaysQuote: true);
 
@@ -40,6 +42,13 @@ internal static class Mangler
 
     /// <summary>Name of the frame record struct type of <paramref name="routine"/> (CMP-345).</summary>
     public static LinkName FrameType(RoutineSymbol routine) => new(RoutineText(routine) + ".$frame", AlwaysQuote: true);
+
+    /// <summary>
+    /// Struct type of a declared record (CMP-306): <c>U.TRec</c>; a record declared in a routine is qualified by the routine's
+    /// link name (<c>U.Proc.TRec</c>).
+    /// </summary>
+    public static LinkName RecordType(RecordTypeSymbol record) => new(
+        record.ContainingSymbol is RoutineSymbol routine ? RoutineText(routine) + "." + record.Name : record.QualifiedName, AlwaysQuote: true);
 
     /// <summary>A runtime helper of unit System (rtl-abi.md §9): <c>System._Name</c>.</summary>
     public static LinkName RuntimeHelper(string name) => new("System." + name, AlwaysQuote: true);

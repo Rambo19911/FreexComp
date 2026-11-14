@@ -29,6 +29,12 @@ public sealed class ConstantSymbol : Symbol
 
     public bool IsTyped { get; }
 
+    /// <summary>
+    /// A typed constant's static storage (LANG-344): a read-only global variable with the same name, type and value that
+    /// references to the constant bind to. Null for true constants.
+    /// </summary>
+    internal VariableSymbol? Storage { get; init; }
+
     /// <summary><c>const Name = value</c> or <c>const Name: Type = …</c> (CMP-731).</summary>
     public override string ToDisplayString() =>
         IsTyped ? $"const {Name}: {Type.Name} = …" : $"const {Name} = {Value?.ToDisplayString() ?? "?"}";

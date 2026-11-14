@@ -16,6 +16,7 @@ internal sealed class LlvmTextWriter : IIrWriter
 
     private readonly List<string> _moduleAsm = [];
     private readonly List<string> _structs = [];
+    private readonly HashSet<string> _declaredStructs = new(StringComparer.Ordinal);
     private readonly List<string> _globals = [];
     private readonly SortedDictionary<string, string> _declarations = new(StringComparer.Ordinal);
     private readonly List<string> _functions = [];
@@ -40,6 +41,7 @@ internal sealed class LlvmTextWriter : IIrWriter
     public NamedStructIrType DeclareStruct(LinkName name, StructIrType body)
     {
         RequireModuleLevel();
+        _declaredStructs.Add("%" + Name(name));
         _structs.Add($"%{Name(name)} = type {Type(body)}");
         return new NamedStructIrType(name);
     }
@@ -373,7 +375,7 @@ internal sealed class LlvmTextWriter : IIrWriter
 
     private static string Int(long value) => value.ToString(CultureInfo.InvariantCulture);
 
-    internal static string Type(IrType type) => type switch
+    internal string Type(IrType type) => type switch
     {
         IntegerIrType i => "i" + Int(i.Bits),
         FloatingIrType { Kind: FloatingKind.Float } => "float",
@@ -382,22 +384,39 @@ internal sealed class LlvmTextWriter : IIrWriter
         VoidIrType => "void",
         ArrayIrType a => $"[{Int(a.Length)} x {Type(a.Element)}]",
         StructIrType s => Braces(s.IsPacked, s.Fields.Select(Type)),
-        NamedStructIrType n => "%" + Name(n.Name),
+        NamedStructIrType n => NamedStruct(n),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 
-    private static string Braces(bool packed, IEnumerable<string> items)
+    /// <summary>
+    /// <c>%"Name"</c>; a struct carrying its body (record types, CMP-306) is declared on first use, so every module declares
+    /// exactly the record types it mentions, in first-use order (CMP-301: the struct section comes first).
+    /// </summary>
+    private string NamedStruct(NamedStructIrType type)
+    {
+        var name = "%" + Name(type.Name);
+        if (type.Body is { } body && _declaredStructs.Add(name))
+        {
+            var slot = _structs.Count;
+            _structs.Add("");
+            _structs[slot] = $"{name} = type {Type(body)}";
+        }
+
+        return name;
+    }
+
+    private string Braces(bool packed, IEnumerable<string> items)
     {
         var list = string.Join(", ", items);
         var inner = list.Length == 0 ? "{}" : "{ " + list + " }";
         return packed ? "<" + inner + ">" : inner;
     }
 
-    private static string Typed(IrValue value) => value is IrAlignedPointer aligned
+    private string Typed(IrValue value) => value is IrAlignedPointer aligned
         ? "ptr align " + Int(aligned.Alignment) + " " + Value(aligned.Pointer)
         : Type(value.Type) + " " + Value(value);
 
-    private static string Value(IrValue value) => value switch
+    private string Value(IrValue value) => value switch
     {
         IrLocal local => "%" + LocalName(local.Name),
         IrGlobal global => "@" + Name(global.Name),

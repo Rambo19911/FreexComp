@@ -98,11 +98,11 @@ internal sealed class ExpressionBinder
                 return Error(syntax);
             case MemberAccessExpressionSyntax memberAccess:
             {
-                // TEnum.Element (LANG-210); other qualifications arrive with records, units and classes
+                // TEnum.Element (LANG-210), record fields (LANG-260); unit and class qualifications arrive later
                 var member = _folder.LookupEnumMember(memberAccess, out var isEnumAccess);
                 return member is not null ? new BoundLiteral(memberAccess, member.Value)
                     : isEnumAccess ? Error(syntax)
-                    : Unsupported(syntax, DeclarationBinder.FeatureName(syntax.Kind));
+                    : BindMemberAccess(memberAccess);
             }
             default:
                 return Unsupported(syntax, DeclarationBinder.FeatureName(syntax.Kind));
@@ -192,6 +192,8 @@ internal sealed class ExpressionBinder
                 return CallExpression(name, name, argumentList: null);             // LANG-312: parameterless call
             case ConstantSymbol { IsTyped: false, Value: { } value } constant:
                 return new BoundConstantExpression(name, constant, value);
+            case ConstantSymbol { IsTyped: true, Storage: { } storage }:
+                return new BoundVariableExpression(name, storage);             // LANG-344: a read-only variable
             case ConstantSymbol:
                 return Error(name);                                     // its declaration already reported the error
             case EnumMemberSymbol member:
@@ -285,6 +287,40 @@ internal sealed class ExpressionBinder
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// LANG-260 <c>r.F</c>: E2005 (record type, field name) at the name when the record has no such field, E2006 (the
+    /// qualifier's source text) at the qualifier when it is no record. Unit-qualified names arrive with units (LANG-311).
+    /// </summary>
+    private BoundExpression BindMemberAccess(MemberAccessExpressionSyntax syntax)
+    {
+        if (syntax.Expression is IdentifierNameSyntax { Identifier: { IsMissing: false } token }
+            && _scope.Lookup(token.Value as string ?? token.Text) is UnitSymbol)
+        {
+            return Unsupported(syntax, DeclarationBinder.FeatureName(syntax.Kind));
+        }
+
+        var record = BindExpression(syntax.Expression);
+        if (record.HasErrors || syntax.Name.Identifier.IsMissing)
+        {
+            return Error(syntax, record);
+        }
+
+        if (record.Type is not RecordTypeSymbol recordType || syntax.Name is not IdentifierNameSyntax)
+        {
+            _diagnostics.Report(syntax.Expression, "E2006", syntax.Expression.ToString().Trim());
+            return Error(syntax, record);
+        }
+
+        var name = syntax.Name.Identifier.Value as string ?? syntax.Name.Identifier.Text;
+        if (recordType.GetMembers(name).FirstOrDefault() is not FieldSymbol field)
+        {
+            _diagnostics.Report(syntax.Name, "E2005", recordType.Name, name);
+            return Error(syntax, record);
+        }
+
+        return new BoundFieldAccessExpression(syntax, record, field);
     }
 
     /// <summary>An ordinal as written in source: <c>'a'</c>, <c>True</c>, <c>1</c>, an enumeration element by name (<c>Red</c>).</summary>
@@ -614,6 +650,9 @@ internal sealed class ExpressionBinder
             case BoundVariableExpression { Variable: var v } when ForVariables.Contains(v):
             case BoundParameterExpression { Parameter: var p } when ForVariables.Contains(p):
                 _diagnostics.Report(syntax, "E2053");                   // LANG-361 rule 6
+                return false;
+            case BoundVariableExpression { Variable.IsReadOnly: true }:
+                _diagnostics.Report(syntax, "E2112");                   // a typed constant (LANG-344)
                 return false;
             case BoundVariableExpression:
             case BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }:

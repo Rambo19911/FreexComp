@@ -65,5 +65,8 @@ internal sealed record StructIrType(ImmutableArray<IrType> Fields, bool IsPacked
     }
 }
 
-/// <summary>A reference to a named struct type <c>%"Name"</c> declared with <see cref="IIrWriter.DeclareStruct"/>.</summary>
-internal sealed record NamedStructIrType(LinkName Name) : IrType;
+/// <summary>
+/// A reference to a named struct type <c>%"Name"</c>: declared with <see cref="IIrWriter.DeclareStruct"/>, or — when it
+/// carries its <see cref="Body"/> (record types, CMP-306) — declared by the writer on first use.
+/// </summary>
+internal sealed record NamedStructIrType(LinkName Name, StructIrType? Body = null) : IrType;

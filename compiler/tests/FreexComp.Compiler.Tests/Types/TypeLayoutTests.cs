@@ -108,14 +108,96 @@ public sealed class TypeLayoutTests
     [Fact]
     public void Scalars_ErrorTypeHasNoLayout() => Assert.Throws<InvalidOperationException>(() => TypeLayout.Of(Types.Error));
 
+    /// <summary>
+    /// C-053, ABI-060…064 (hand-computed Win64 C layouts): field offsets, size, alignment and the CMP-306 storage type — a
+    /// named struct, plain when LLVM's natural layout gives the ABI offsets, else packed with explicit <c>[N x i8]</c> padding.
+    /// The directive in front of <c>record</c> sets the packing.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "ABI-060")]
+    [Trait("Req", "ABI-063")]
+    [Trait("Req", "ABI-064")]
+    [Trait("Req", "CMP-306")]
+    [InlineData("record a: Byte; b: Integer; c: Word end", "0 4 8", 12, 4, "%test.T = { i8, i32, i16 }")]
+    [InlineData("record a: Byte; d: Double; c: Char end", "0 8 16", 24, 8, "%test.T = { i8, double, i16 }")]
+    [InlineData("record a, b: Byte; c: Int64; d: Byte end", "0 1 8 16", 24, 8, "%test.T = { i8, i8, i64, i8 }")]
+    [InlineData("record p: Pointer; s: set of 0..9; c: AnsiChar end", "0 8 10", 16, 8, "%test.T = { ptr, i16, i8 }")]
+    [InlineData("record a: Byte; v: array[0..2] of Word end", "0 2", 8, 2, "%test.T = { i8, [3 x i16] }")]
+    [InlineData("record end", "", 0, 1, "%test.T = {}")]
+    [InlineData("packed record a: Byte; b: Integer; c: Word end", "0 1 5", 7, 1, "%test.T = <{ i8, i32, i16 }>")]
+    [InlineData("{$A1} record a: Byte; b: Integer end", "0 1", 5, 1, "%test.T = <{ i8, i32 }>")]
+    [InlineData("{$A-} record a: Byte; b: Integer end", "0 1", 5, 1, "%test.T = <{ i8, i32 }>")]
+    [InlineData("{$A2} record a: Byte; b: Integer; c: Byte end", "0 2 6", 8, 2, "%test.T = <{ i8, [1 x i8], i32, i8, [1 x i8] }>")]
+    [InlineData("{$A4} record a: Byte; b: Int64 end", "0 4", 12, 4, "%test.T = <{ i8, [3 x i8], i64 }>")]
+    [InlineData("{$ALIGN 4} record a: Integer; b: Int64; c: Word end", "0 4 12", 16, 4, "%test.T = <{ i32, i64, i16, [2 x i8] }>")]
+    [InlineData("{$A4} record a: Byte; b: Word end", "0 2", 4, 2, "%test.T = { i8, i16 }")]
+    public void Records_FollowTheWin64CLayout(string definition, string offsets, long size, int alignment, string llvm)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind($"type T = {definition}; begin end.");
+        Assert.Empty(result.Diagnostics);
+        var record = Assert.IsType<RecordTypeSymbol>(result.Declarations.Scope.Lookup("T"));
+        var layout = TypeLayout.Of(record);
+
+        Assert.Equal((offsets, size, alignment, llvm),
+            (string.Join(" ", record.Fields.Select(f => f.Offset)), layout.Size, layout.Alignment, Describe(layout.StorageType, body: true)));
+        Assert.Equal((record.Size, record.Alignment), (layout.Size, layout.Alignment));
+    }
+
+    /// <summary>
+    /// Nested records keep their own alignment (ABI-064); a packed record places them at any byte; a record whose LLVM form is
+    /// packed (alignment 1 in LLVM) but has ABI alignment 4 is placed at offset 4 through explicit padding.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "ABI-060")]
+    [Trait("Req", "ABI-064")]
+    [Trait("Req", "CMP-306")]
+    [InlineData("record b: Byte; a: TA; c: Char end", "0 4 16", 20, 4, "%test.T = { i8, %test.TA, i16 }")]
+    [InlineData("packed record b: Byte; a: TA end", "0 1", 13, 1, "%test.T = <{ i8, %test.TA }>")]
+    [InlineData("record c: Byte; i: T4 end", "0 4", 16, 4, "%test.T = <{ i8, [3 x i8], %test.T4 }>")]
+    [InlineData("record x: array[1..2] of TA; y: Byte end", "0 24", 28, 4, "%test.T = { [2 x %test.TA], i8 }")]
+    public void Records_NestedRecordsKeepTheirAlignment(string definition, string offsets, long size, int alignment, string llvm)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind($$"""
+            type
+              TA = record b: Byte; i: Integer; w: Word end;
+            {$A4}
+              T4 = record b: Byte; d: Int64 end;
+            {$A8}
+              T = {{definition}};
+            begin end.
+            """);
+        Assert.Empty(result.Diagnostics);
+        var record = Assert.IsType<RecordTypeSymbol>(result.Declarations.Scope.Lookup("T"));
+        var layout = TypeLayout.Of(record);
+
+        Assert.Equal((offsets, size, alignment, llvm),
+            (string.Join(" ", record.Fields.Select(f => f.Offset)), layout.Size, layout.Alignment, Describe(layout.StorageType, body: true)));
+    }
+
+    /// <summary>An anonymous record (no type declaration) gets a literal struct type (CMP-306 names declared records only).</summary>
+    [Fact]
+    [Trait("Req", "CMP-306")]
+    public void Records_AnonymousRecordIsALiteralStruct()
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind("var R: record a: Byte; b: Int64 end; begin end.");
+        Assert.Empty(result.Diagnostics);
+        var variable = Assert.IsType<FreexComp.Compiler.Symbols.VariableSymbol>(result.Declarations.Scope.Lookup("R"));
+
+        Assert.Equal("{ i8, i64 }", Describe(TypeLayout.Of(variable.Type).StorageType));
+    }
+
     /// <summary>Structural description of the storage type, independent of the text writer.</summary>
-    private static string Describe(IrType type) => type switch
+    private static string Describe(IrType type, bool body = false) => type switch
     {
         IntegerIrType i => "i" + i.Bits,
         FloatingIrType { Kind: FloatingKind.Float } => "float",
         FloatingIrType { Kind: FloatingKind.Double } => "double",
         PointerIrType => "ptr",
         ArrayIrType a => $"[{a.Length} x {Describe(a.Element)}]",
+        StructIrType { Fields.IsEmpty: true, IsPacked: false } => "{}",
+        StructIrType s => (s.IsPacked ? "<{ " : "{ ") + string.Join(", ", s.Fields.Select(f => Describe(f))) + (s.IsPacked ? " }>" : " }"),
+        NamedStructIrType n when body => $"%{n.Name.Text} = {Describe(n.Body!)}",
+        NamedStructIrType n => "%" + n.Name.Text,
         _ => throw new InvalidOperationException(type.ToString()),
     };
 }
