@@ -38,9 +38,14 @@ public static class StartupSequence
             await services.Session.RestoreAsync(services.Settings.Get(SettingsCatalog.EnvironmentRestoreOpenFiles)); // the loose-file session
     }
 
-    /// <summary>IDE-P1-010: the first project opens as the project, groups are refused, other files open as documents.</summary>
-    private static async Task OpenPathsAsync(IdeServices services, IReadOnlyList<string> paths)
+    /// <summary>
+    /// IDE-P1-010 (command line) and IDE-P1-031 (files dropped onto the main window): the first project opens as the
+    /// project, groups are refused, other files open as documents, in the given order; problems are reported per path.
+    /// </summary>
+    public static async Task OpenPathsAsync(IdeServices services, IReadOnlyList<string> paths)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(paths);
         var projectSeen = false;
         foreach (var path in paths)
         {
@@ -57,7 +62,7 @@ public static class StartupSequence
             {
                 if (projectSeen)
                 {
-                    services.Log.Warning(LogCategory, $"{path}: only the first project on the command line is opened; ignored");
+                    services.Log.Warning(LogCategory, $"{path}: only the first project of the list is opened; ignored");
                     continue;
                 }
 

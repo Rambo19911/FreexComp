@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Input.Raw;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Composition;
@@ -86,6 +87,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
     private readonly List<string> _unhandled = [];
     private MainWindow? _window;
     private bool _errorExpected;
+    private bool _unhandledExpected;
     private bool _disposed;
 
     private HeadlessHarness(HarnessOptions options)
@@ -302,6 +304,27 @@ public sealed class HeadlessHarness : IAsyncDisposable
     }
 
     /// <summary>
+    /// Drags <paramref name="paths"/> from the OS file manager onto the element's centre and drops them (enter, over,
+    /// drop), as the OS file manager does.
+    /// </summary>
+    public async Task DropFilesAsync(string automationId, params string[] paths)
+    {
+        var point = CenterOf(automationId);
+        var data = new DataTransfer();
+        foreach (var path in paths)
+        {
+            var file = await Window.StorageProvider.TryGetFileFromPathAsync(new Uri(path))
+                ?? throw new InvalidOperationException($"No storage item for {path}");
+            data.Add(DataTransferItem.CreateFile(file));
+        }
+
+        Window.DragDrop(point, RawDragEventType.DragEnter, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, RawInputModifiers.None);
+        Window.DragDrop(point, RawDragEventType.DragOver, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, RawInputModifiers.None);
+        Window.DragDrop(point, RawDragEventType.Drop, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, RawInputModifiers.None);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>
     /// Loops { run dispatcher jobs; advance the clock 10 ms; yield } until <paramref name="condition"/> holds, for at
     /// most 5 s of wall time (IDE-TEST-013), or <paramref name="limit"/> when the condition waits for the OS (a real
     /// file watcher).
@@ -339,6 +362,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
     /// <summary>The test expects an Error log line; dispose then does not fail on it.</summary>
     public void ExpectLoggedError() => _errorExpected = true;
 
+    /// <summary>The test raises unhandled dispatcher exceptions on purpose (IDE-ARCH-091); dispose then does not fail on them.</summary>
+    public void ExpectUnhandledException() => _unhandledExpected = true;
+
     /// <summary>Writes a file under <see cref="TempDir"/> as another program would, and raises the watcher event.</summary>
     public void WriteFileExternally(string relativePath, string content)
     {
@@ -367,7 +393,11 @@ public sealed class HeadlessHarness : IAsyncDisposable
         {
             Dispatcher.UIThread.RunJobs();
             failures.AddRange(BindingErrorSink.Instance.Since(_bindingErrorStart).Select(e => "Binding error: " + e));
-            failures.AddRange(_unhandled.Select(e => "Unhandled dispatcher exception: " + e));
+            if (!_unhandledExpected)
+            {
+                failures.AddRange(_unhandled.Select(e => "Unhandled dispatcher exception: " + e));
+            }
+
             failures.AddRange(Window.OwnedWindows.Select(w => $"Dialog still open: {w.Title}"));
             failures.AddRange(Messages.Unanswered.Select(r => $"Unanswered message box: {r.MessageId}"));
             if (!_errorExpected)

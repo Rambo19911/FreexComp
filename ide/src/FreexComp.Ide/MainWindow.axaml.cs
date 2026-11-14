@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.LogicalTree;
+using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Input;
@@ -37,8 +38,17 @@ public sealed partial class MainWindow : Window
             }
         };
         PositionChanged += (_, _) => TrackNormalBounds();
-        Closing += (_, _) =>
+        Closing += (_, e) =>
         {
+            // UI-WIN-072: the user's close (title bar, Alt+F4 from the OS) runs the exit sequence, which ends with a
+            // programmatic Close() once its prompts are answered.
+            if (!e.IsProgrammatic && ViewModel is { } vm && !vm.IsExiting)
+            {
+                e.Cancel = true;
+                vm.RequestExit();
+                return;
+            }
+
             if (!_closed) // Close() on a closed window raises Closing again
             {
                 ViewModel?.SaveUiState(CurrentPlacement());
@@ -55,6 +65,9 @@ public sealed partial class MainWindow : Window
                 RestoreFocus(); // UI-A11Y-002: a closed menu gives focus back to the element that had it
             }
         });
+        DragDrop.SetAllowDrop(this, true); // IDE-P1-031: files from the OS file manager
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
         AddHandler(GotFocusEvent, (_, _) => ReportFocus(), RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(LostFocusEvent, (_, _) => Dispatcher.UIThread.Post(OnFocusMaybeLost), RoutingStrategies.Bubble, handledEventsToo: true);
@@ -130,6 +143,30 @@ public sealed partial class MainWindow : Window
 
     private static bool Contains(Core.Models.WorkArea area, double x, double y) =>
         x >= area.X && x < area.X + area.Width && y >= area.Y && y < area.Y + area.Height;
+
+    private static List<string> DroppedPaths(DragEventArgs e) =>
+        [.. (e.DataTransfer.TryGetFiles() ?? []).Select(f => f.TryGetLocalPath()).OfType<string>()];
+
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = DroppedPaths(e).Count > 0 ? e.DragEffects & DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    /// <summary>IDE-P1-031 / UI-TW-113: the Project Manager adds the files to the project; elsewhere they open.</summary>
+    private void OnDrop(object? sender, DragEventArgs e)
+    {
+        var paths = DroppedPaths(e);
+        if (ViewModel is not { } vm || paths.Count == 0)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var ontoProjectManager = e.Source is Avalonia.Visual source
+            && (source is ProjectManagerView || source.GetVisualAncestors().OfType<ProjectManagerView>().Any());
+        _ = vm.DropFilesAsync(paths, ontoProjectManager);
+    }
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {

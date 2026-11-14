@@ -33,6 +33,12 @@ public interface IRecoveryService
 
     /// <summary>Completes when every copy and deletion queued so far is on disk (tests, exit).</summary>
     Task WhenIdle();
+
+    /// <summary>
+    /// IDE-ARCH-091 fatal errors: writes a copy of every modified document on the calling thread, now, without the queue
+    /// or the timer (the process is about to end). Never throws; I/O failures are logged.
+    /// </summary>
+    void WriteCopiesNow();
 }
 
 /// <summary>A running process: id and start time (UTC ticks), the owner of a recovery folder (IDE-P1-121).</summary>
@@ -171,6 +177,48 @@ public sealed class RecoveryService : IRecoveryService
         }
     }
 
+    public void WriteCopiesNow()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        List<TextDocumentViewModel> modified;
+        try
+        {
+            modified = [.. _documents.Documents.OfType<TextDocumentViewModel>().Where(d => d.IsModified)];
+        }
+        catch (InvalidOperationException ex) // the collection changed under a non-UI thread
+        {
+            _log.Warning(LogCategory, "Cannot list the modified documents for the recovery copies.", ex);
+            return;
+        }
+
+        foreach (var document in modified)
+        {
+            try
+            {
+                var (name, text, metadata) = Snapshot(document);
+                EnsureInstanceDirectory();
+                AtomicFileWriter.Write(_fileSystem, Path.Combine(InstanceDirectory, name + TextExtension), text);
+                AtomicFileWriter.Write(_fileSystem, Path.Combine(InstanceDirectory, name + MetadataExtension), metadata);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                _log.Warning(LogCategory, "Recovery copy I/O failed.", ex);
+            }
+        }
+    }
+
+    /// <summary>The file name, text and metadata of one copy (IDE-P1-121).</summary>
+    private (string Name, byte[] Text, byte[] Metadata) Snapshot(TextDocumentViewModel document)
+    {
+        var name = document.Id.Value.ToString("D");
+        var text = FileEncodings.Encode(document.Buffer.Text, FileEncoding.Utf8Bom);
+        var metadata = JsonSerializer.SerializeToUtf8Bytes(new CopyMetadata(1, document.FilePath, document.Title,
+            FileEncodings.ToId(document.Encoding), LineEndingId(document.LineEnding.Kind), _clock.Now.UtcDateTime,
+            document.FilePath is null ? null : document.DiskStamp?.LastWriteUtc), JsonOptions);
+        return (name, text, metadata);
+    }
+
     private void ScheduleNext()
     {
         _timer?.Dispose();
@@ -201,11 +249,7 @@ public sealed class RecoveryService : IRecoveryService
             if (_copied.TryGetValue(document, out var last) && last == state)
                 continue;
             _copied[document] = state;
-            var name = document.Id.Value.ToString("D");
-            var text = FileEncodings.Encode(document.Buffer.Text, FileEncoding.Utf8Bom);
-            var metadata = JsonSerializer.SerializeToUtf8Bytes(new CopyMetadata(1, document.FilePath, document.Title,
-                FileEncodings.ToId(document.Encoding), LineEndingId(document.LineEnding.Kind), _clock.Now.UtcDateTime,
-                document.FilePath is null ? null : document.DiskStamp?.LastWriteUtc), JsonOptions);
+            var (name, text, metadata) = Snapshot(document);
             Enqueue(() =>
             {
                 EnsureInstanceDirectory();

@@ -121,6 +121,9 @@ public static class ServiceGraph
             await projects.AddNewUnitAsync(); // a failure is reported there; no untitled unit instead
             return true;
         };
+        var application = new ApplicationService(documents, projects, session, recovery, settings, keymap, platform.Dialogs, platform.Clock,
+            platform.Log);
+        application.RegisterCommands(commands);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.
@@ -169,6 +172,7 @@ public static class ServiceGraph
             RecentItems = recent,
             Find = find,
             Navigation = navigation,
+            Application = application,
         };
     }
 }

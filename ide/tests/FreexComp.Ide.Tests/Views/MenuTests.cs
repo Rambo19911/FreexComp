@@ -188,13 +188,11 @@ public sealed partial class MenuTests
         "window.focusEditor", // menus.md says "doc"; UI-A11Y-004 / I-024: Alt+0 focuses the empty document area too
         "help.keyboardShortcuts", "help.licenses", "help.about",
         "view.showWhitespace", // I-055: the setting editor.showWhitespace
+        "file.exit", // I-086: always (disabled only while an accepted exit is closing the window)
     ];
 
     /// <summary>P1 menu commands that still have no handler, with the task that adds it (and its condition here).</summary>
-    private static readonly Dictionary<string, string> Pending = new()
-    {
-        ["file.exit"] = "I-086",
-    };
+    private static readonly Dictionary<string, string> Pending = new();
 
     /// <summary>
     /// I-048 / I-049: enabled in every writable Object Pascal document ("text and writable"; the comment toggles need the

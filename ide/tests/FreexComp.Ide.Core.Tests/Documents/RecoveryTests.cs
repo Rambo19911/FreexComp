@@ -246,4 +246,20 @@ public sealed class RecoveryTests
             baseTimestampUtc = (DateTime?)null,
         }));
     }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ARCH-091")]
+    public async Task FatalErrorWritesCopiesSynchronously()
+    {
+        var dirty = await OpenAsync(@"C:\p\Dirty.pas", "dirty");
+        dirty.Buffer.ApplyEdits([new TextEdit(0, 0, "x")]);
+        await OpenAsync(@"C:\p\Clean.pas", "clean");
+
+        // Before any interval: the copy is on disk when the call returns (no queue, no timer).
+        _services.Application.ReportFatal(new InvalidOperationException("fatal"));
+        Assert.Equal([.. Utf8Bom, .. "xdirty"u8], _disk.ReadAllBytes(CopyPath(dirty, ".txt")));
+        Assert.Equal(@"C:\p\Dirty.pas", Json(_disk, CopyPath(dirty, ".json")).GetProperty("path").GetString());
+        Assert.True(_disk.FileExists(Path.Combine(Recovery.InstanceDirectory, "owner.json")));
+        Assert.Equal(3, _disk.EnumerateFiles(Recovery.InstanceDirectory, "*").Count()); // owner + one copy
+    }
 }

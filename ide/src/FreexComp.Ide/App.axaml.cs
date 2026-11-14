@@ -23,13 +23,10 @@ public sealed class App : Application
             Services = CompositionRoot.Build(options, platform);
             window = CompositionRoot.CreateMainWindow(Services);
             var services = Services;
+            CompositionRoot.AttachProcessErrorHandlers(services); // IDE-ARCH-091
             window.Opened += (_, _) => _ = StartupSequence.RunAsync(services); // step 9: recovery, then the start-up content
-            desktop.Exit += (_, _) =>
-            {
-                // IDE-P1-122: a normal exit leaves no recovery folder (the queue runs on the thread pool, so this cannot deadlock).
-                services.Recovery.DeleteInstanceDirectoryAsync().GetAwaiter().GetResult();
-                (platform.Log as IDisposable)?.Dispose();
-            };
+            // The exit sequence (UI-WIN-072, IApplicationService) has written the state and deleted the recovery folder.
+            desktop.Exit += (_, _) => (platform.Log as IDisposable)?.Dispose();
             desktop.MainWindow = window;
         }
 

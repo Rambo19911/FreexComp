@@ -1,5 +1,7 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
@@ -53,6 +55,37 @@ public static class CompositionRoot
     public static MainWindow CreateMainWindow(IdeServices services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        return new MainWindow { DataContext = new MainWindowViewModel(services) };
+        var window = new MainWindow { DataContext = new MainWindowViewModel(services) };
+        var application = services.Application;
+        application.Shutdown = window.Close; // UI-WIN-072 (4): a programmatic close, not intercepted by the exit sequence
+
+        // IDE-ARCH-091: an exception that reached the dispatcher is reported and the IDE keeps running (for this window's
+        // lifetime, so the services of a closed shell never answer for a later one).
+        void OnUnhandled(object? sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            e.Handled = true;
+            _ = application.ReportUnhandledAsync(e.Exception);
+        }
+
+        Dispatcher.UIThread.UnhandledException += OnUnhandled;
+        window.Closed += (_, _) => Dispatcher.UIThread.UnhandledException -= OnUnhandled;
+        return window;
+    }
+
+    /// <summary>
+    /// IDE-ARCH-091 process-wide hooks (production only): unobserved task exceptions are logged; a fatal error writes the
+    /// recovery copies synchronously before the runtime ends the process.
+    /// </summary>
+    public static void AttachProcessErrorHandlers(IdeServices services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        var application = services.Application;
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            application.ReportUnobserved(e.Exception);
+            e.SetObserved();
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            application.ReportFatal(e.ExceptionObject as Exception ?? new InvalidOperationException(Convert.ToString(e.ExceptionObject, CultureInfo.InvariantCulture)));
     }
 }

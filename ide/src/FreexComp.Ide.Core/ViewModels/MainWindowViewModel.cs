@@ -110,6 +110,35 @@ public sealed class MainWindowViewModel : ObservableObject
     /// <summary>IDE-P1-110 (b): the main window was activated; every open file is re-checked for external changes.</summary>
     public void OnActivated() => _services.FileChanges.CheckAll();
 
+    /// <summary>
+    /// IDE-P1-031 / UI-TW-113: files dropped from the OS. Onto the Project Manager with a project open they are added to
+    /// it (<c>project.addExistingFile</c>); anywhere else they open like command-line paths (a <c>.pproj</c> opens the
+    /// project). Folders are ignored.
+    /// </summary>
+    public async Task DropFilesAsync(IReadOnlyList<string> paths, bool ontoProjectManager)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var files = paths.Where(p => !_services.FileSystem.DirectoryExists(p)).ToList();
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        if (ontoProjectManager && _services.Projects.Project is not null)
+        {
+            await _services.Projects.AddExistingFilesAsync(files);
+            return;
+        }
+
+        await Composition.StartupSequence.OpenPathsAsync(_services, files);
+    }
+
+    /// <summary>True once the exit sequence was accepted; the window then closes without asking again.</summary>
+    public bool IsExiting => _services.Application.IsExiting;
+
+    /// <summary>UI-WIN-072: the user closes the main window; the same as <c>file.exit</c>.</summary>
+    public void RequestExit() => _ = _services.Commands.ExecuteAsync("file.exit");
+
     /// <summary>UI-WIN-052/053: where the window opens, given the work areas of the current monitors (DIP).</summary>
     public WindowPlacement RestorePlacement(IReadOnlyList<WorkArea> workAreas, WorkArea primary) =>
         WindowPlacementRules.Restore(_services.Layout.WindowPlacement, workAreas, primary);
