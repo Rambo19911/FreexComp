@@ -1,0 +1,6 @@
+0:
+7: int=42 int=200 int=7 int=-3 bool=TRUE char=c achar=d
+9: real=1.250 real=2.500 int64=5000000000 int64=5000000000 ustr=uni ustr=lit ustr=xyz astr=ansi sstr=short
+6: ptr=TRUE ptr=FALSE pachar=p pchar=w obj=TRUE class=TRUE
+2: int=1 ustr=two
+1: int=1

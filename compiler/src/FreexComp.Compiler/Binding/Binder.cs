@@ -40,7 +40,9 @@ internal sealed record BindingResult(
     public ImmutableArray<Symbol> GetCapturedVariables(RoutineSymbol routine)
     {
         var captured = Routines.SelectMany(r => r.CapturedVariables).Where(s => ReferenceEquals(s.ContainingSymbol, routine)).ToHashSet();
-        return captured.Count == 0 ? [] : [.. Routines.First(r => ReferenceEquals(r.Routine, routine)).Scope.Symbols.Where(captured.Contains)];
+        // an open array parameter is followed by its High companion, which is in no scope (C-106)
+        return captured.Count == 0 ? [] : [.. Routines.First(r => ReferenceEquals(r.Routine, routine)).Scope.Symbols.Where(captured.Contains)
+            .SelectMany(s => s is ParameterSymbol { HighParameter: { } high } && captured.Contains(high) ? [s, high] : new[] { s })];
     }
 }
 

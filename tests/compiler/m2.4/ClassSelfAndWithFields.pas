@@ -1,4 +1,4 @@
-// covers: LANG-621, LANG-604
+// covers: LANG-621, LANG-604, LANG-375
 program ClassSelfAndWithFields;
 
 type
@@ -68,6 +68,14 @@ begin
   Q.Bump;
   Q.Show;
   Writeln(Q.Sum, ' ', Q.Same(P), ' ', P.Same(Q));
+  with Q do
+  begin
+    X := 10;
+    Move(5, 1);
+    Writeln(Sum, ' ', Z, ' ', Same(Q));
+  end;
+  with P, Q do
+    Writeln(X, ' ', Y);
   P.Free;
   P := Q;
   P.Show;

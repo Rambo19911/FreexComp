@@ -355,6 +355,12 @@ internal sealed class FlowAnalyzer
             case BoundExpressionStatement expression:
                 return Eval(expression.Expression, state);
 
+            case BoundWithStatement with:
+                return Visit(with.Body, Eval(with.Value, state));          // the hidden $with variable is assigned once (C-109)
+
+            case BoundLocalsStatement locals:
+                return Visit(locals.Body, state);                           // hidden for…in locals (C-111)
+
             case BoundErrorStatement:
                 return state;
 

@@ -44,6 +44,9 @@ internal enum IntrinsicKind
 
     // M2.2 text-file functions (intrinsics.md, LANG-946, C-066; never constant)
     Eof, Eoln,
+
+    // M2.5 open arrays (LANG-431, C-106; only as an open-array argument)
+    Slice,
 }
 
 /// <summary>A compiler-magic routine predeclared in the outermost scope (LANG-900); user symbols may hide it.</summary>
@@ -68,7 +71,7 @@ public sealed class IntrinsicSymbol : Symbol
     internal bool IsStringFunction => Intrinsic is >= IntrinsicKind.Copy and <= IntrinsicKind.UpCase;
 
     /// <summary>A function-like intrinsic that is never a constant expression (not in the LANG-340 list).</summary>
-    internal bool IsNeverConstant => IsAtomic || IsStringFunction || Intrinsic is IntrinsicKind.Eof or IntrinsicKind.Eoln;
+    internal bool IsNeverConstant => IsAtomic || IsStringFunction || Intrinsic is IntrinsicKind.Eof or IntrinsicKind.Eoln or IntrinsicKind.Slice;
 
     /// <summary>Signature-help form, e.g. <c>Halt[(ExitCode: Integer)]</c>.</summary>
     public string Signature { get; }

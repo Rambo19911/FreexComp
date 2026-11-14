@@ -11,6 +11,11 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
 {
     public static TypeLayout Of(TypeSymbol type)
     {
+        if (type is OpenArrayTypeSymbol)
+        {
+            return new TypeLayout(8, 8, IrType.Ptr);                        // ABI-080: the data pointer (C-106)
+        }
+
         IrType storage = type switch
         {
             IntegerTypeSymbol integer => IrType.Int(integer.Bits),
@@ -25,6 +30,7 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
             SetTypeSymbol { IsSmall: true } => IrType.Int(checked((int)type.Size * 8)),
             SetTypeSymbol => new ArrayIrType(type.Size, IrType.I8),          // big set (rtl-abi.md §5, CMP-336)
             ArrayTypeSymbol array => new ArrayIrType(array.Length, Of(array.ElementType).StorageType),   // CMP-308, ABI-062
+            RecordTypeSymbol { HasVariantPart: true } => new ArrayIrType(type.Size, IrType.I8),     // CMP-306: byte storage (C-108)
             RecordTypeSymbol record => record.IsAnonymous ? Record(record).Body : new NamedStructIrType(Mangler.RecordType(record), Record(record).Body),
             ErrorTypeSymbol => throw new InvalidOperationException("The error type has no layout."),
             _ => throw new NotSupportedException($"No layout for type kind {type.TypeKind} yet."),

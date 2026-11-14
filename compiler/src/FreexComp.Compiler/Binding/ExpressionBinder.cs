@@ -63,6 +63,10 @@ internal sealed partial class ExpressionBinder
             && symbol.ContainingSymbol is RoutineSymbol owner && !ReferenceEquals(owner, _routine) && !CapturedVariables.Contains(symbol))
         {
             CapturedVariables.Add(symbol);
+            if (symbol is ParameterSymbol { HighParameter: { } high })
+            {
+                CapturedVariables.Add(high);                    // an open array is captured with its High companion (C-106)
+            }
         }
     }
 
@@ -75,7 +79,9 @@ internal sealed partial class ExpressionBinder
             ? expected switch
             {
                 SetTypeSymbol { ElementType: not null } set => BindSetConstructor(constructor, set),
-                DynamicArrayTypeSymbol array when constructor.Elements.All(e => e.UpperBound is null) => BindArrayConstructor(constructor, array),
+                DynamicArrayTypeSymbol array when constructor.Elements.All(e => e.UpperBound is null) => BindArrayConstructor(constructor, array, array.ElementType),
+                OpenArrayTypeSymbol { IsArrayOfConst: true } array when constructor.Elements.All(e => e.UpperBound is null) => BindVarRecConstructor(constructor, array),
+                OpenArrayTypeSymbol array when constructor.Elements.All(e => e.UpperBound is null) => BindArrayConstructor(constructor, array, array.ElementType),
                 _ => BindExpression(syntax),
             }
             : expected is ProceduralTypeSymbol procedural
@@ -209,13 +215,36 @@ internal sealed partial class ExpressionBinder
     /// LANG-259 / LANG-280 rule 12 (C-067): <c>[e1, …]</c> in a dynamic-array context; every element is bound in the context of
     /// the element type (so nested constructors work) and converted to it. A range element keeps the set meaning (E2010 later).
     /// </summary>
-    private BoundExpression BindArrayConstructor(SetConstructorSyntax syntax, DynamicArrayTypeSymbol array)
+    private BoundExpression BindArrayConstructor(SetConstructorSyntax syntax, TypeSymbol array, TypeSymbol elementType)
     {
         var elements = ImmutableArray.CreateBuilder<BoundExpression>(syntax.Elements.Count);
         foreach (var element in syntax.Elements)
         {
-            var value = BindExpression(element.Expression, array.ElementType);
-            elements.Add(value.HasErrors ? value : ConvertForAssignment(value, array.ElementType, element.Expression));
+            var value = BindExpression(element.Expression, elementType);
+            elements.Add(value.HasErrors ? value : ConvertForAssignment(value, elementType, element.Expression));
+        }
+
+        var built = elements.MoveToImmutable();
+        return built.Any(e => e.HasErrors) ? Error(syntax, [.. built]) : new BoundArrayConstructor(syntax, built, array);
+    }
+
+    /// <summary>
+    /// LANG-433 (C-107): <c>[e1, …]</c> for an <c>array of const</c> parameter — each element a value of a kind rtl-abi.md §9.10 maps
+    /// to a <c>VType</c> (E2010 against <c>array of const</c> otherwise), kept in its own type for the lowering.
+    /// </summary>
+    private BoundExpression BindVarRecConstructor(SetConstructorSyntax syntax, OpenArrayTypeSymbol array)
+    {
+        var elements = ImmutableArray.CreateBuilder<BoundExpression>(syntax.Elements.Count);
+        foreach (var element in syntax.Elements)
+        {
+            var value = BindExpression(element.Expression);
+            if (!value.HasErrors && VarRecs.VTypeOf(value.Type, value.ConstantValue) is null)
+            {
+                _diagnostics.Report(element.Expression, "E2010", value.Type.Name, array.Name);
+                value = Error(element.Expression, value);
+            }
+
+            elements.Add(value);
         }
 
         var built = elements.MoveToImmutable();
@@ -365,7 +394,13 @@ internal sealed partial class ExpressionBinder
 
     private BoundExpression BindName(IdentifierNameSyntax name)
     {
-        switch (LookupName(name))
+        var found = LookupName(name);
+        if (found is not null && _withs.Count > 0 && WithOf(name.Identifier.Value as string ?? name.Identifier.Text, found) is { } with)
+        {
+            return WithMember(name, with, found);                                   // LANG-375 (C-109)
+        }
+
+        switch (found)
         {
             case null:
                 return Error(name);
@@ -607,9 +642,10 @@ internal sealed partial class ExpressionBinder
                 continue;
             }
 
-            if (result.Type is DynamicArrayTypeSymbol dynamic)
+            if (result.Type is DynamicArrayTypeSymbol or OpenArrayTypeSymbol)
             {
-                // LANG-257: a[i] is an element variable, 0-based; the index is an integer (E2010 at it), C-064
+                // LANG-257 / LANG-431: a[i] is an element variable, 0-based; the index is an integer (E2010 at it), C-064, C-106
+                var elementType = OpenArrayTypeSymbol.ElementOf(result.Type)!;
                 first = false;
                 var position = BindExpression(indexSyntax);
                 if (position.HasErrors)
@@ -623,7 +659,7 @@ internal sealed partial class ExpressionBinder
                     return Error(syntax, result, position);
                 }
 
-                result = new BoundIndexExpression(syntax, result, position, dynamic.ElementType);
+                result = new BoundIndexExpression(syntax, result, position, elementType);
                 continue;
             }
 
@@ -778,7 +814,12 @@ internal sealed partial class ExpressionBinder
 
         if (symbol is MethodSymbol)
         {
-            return ImplicitMethodCall(invocation, name, invocation.ArgumentList);
+            return ImplicitMethodCall(invocation, name, invocation.ArgumentList);          // also a with designator's method (C-109)
+        }
+
+        if (symbol is FieldSymbol && _withs.Count > 0)
+        {
+            return CallThrough(invocation, BindOperand(invocation.Expression));            // a procedural field of a with designator
         }
 
         if (symbol is VariableSymbol or ParameterSymbol or ConstantSymbol or PropertySymbol)
@@ -852,6 +893,11 @@ internal sealed partial class ExpressionBinder
             return BindTextFunction(invocation, intrinsic);
         }
 
+        if (intrinsic.Intrinsic == IntrinsicKind.Slice)
+        {
+            return BindSlice(invocation, intrinsic);
+        }
+
         if (!_folder.CheckSingleArgument(invocation, intrinsic))
         {
             return Error(invocation);
@@ -871,7 +917,7 @@ internal sealed partial class ExpressionBinder
             }
 
             var value = _folder.FoldTypeIntrinsic(invocation, intrinsic, type, argument?.ConstantValue, argument is null, out var needsRuntime);
-            if (needsRuntime && type is StringTypeSymbol or DynamicArrayTypeSymbol)
+            if (needsRuntime && type is StringTypeSymbol or DynamicArrayTypeSymbol or OpenArrayTypeSymbol)
             {
                 // Length/High of a string value: its length at run time (ABI-023, C-060; byte strings in bytes, C-063); the
                 // operand is evaluated
@@ -909,6 +955,48 @@ internal sealed partial class ExpressionBinder
         }
 
         return new BoundIntrinsicCallExpression(invocation, intrinsic, [operand], resultType, constantValue: null);
+    }
+
+    /// <summary>
+    /// LANG-431 (C-106): <c>Slice(A, N)</c> = the first <c>N</c> elements of a static, dynamic or open array <c>A</c>, a value of the
+    /// open array type over its element type — so it is accepted only by an open array parameter (E2010 elsewhere). E2017 when
+    /// <c>A</c> is no array; <c>N</c> converts to <c>Integer</c>. <c>N</c> is not checked against the length.
+    /// </summary>
+    private BoundExpression BindSlice(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count != 2)
+        {
+            if (arguments.Count < 2)
+            {
+                _diagnostics.Report(invocation, "E2110", intrinsic.Name);
+            }
+            else
+            {
+                _diagnostics.Report(arguments[2], "E2111", intrinsic.Name);
+            }
+
+            return Error(invocation);
+        }
+
+        var array = BindExpression(arguments[0].Expression);
+        var count = BindExpression(arguments[1].Expression);
+        if (array.HasErrors || count.HasErrors)
+        {
+            return Error(invocation, array, count);
+        }
+
+        if (OpenArrayTypeSymbol.ElementOf(array.Type) is not { } element)
+        {
+            _diagnostics.Report(arguments[0].Expression, "E2017");
+            return Error(invocation, array, count);
+        }
+
+        count = ConvertForAssignment(count, _types.Integer, arguments[1].Expression);
+        var type = array.Type is OpenArrayTypeSymbol { IsArrayOfConst: true } ofConst ? ofConst : _types.OpenArrayOf(element);   // C-107
+        return count.HasErrors
+            ? Error(invocation, array, count)
+            : new BoundIntrinsicCallExpression(invocation, intrinsic, [array, count], type, constantValue: null);
     }
 
     /// <summary>
@@ -1448,7 +1536,7 @@ internal sealed partial class ExpressionBinder
             // procedural one makes a routine name its address (LANG-480)
             var expected = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol
                 ? candidates[0].Parameters[i].Type
-                : null;
+                : OpenArrayContext(candidates, i);
             var bound = byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression, expected);
             hasErrors |= bound.HasErrors;
             builder.Add(bound);
@@ -1482,6 +1570,17 @@ internal sealed partial class ExpressionBinder
         }
 
         return CheckArguments(call, routine, syntaxes, arguments);
+    }
+
+    /// <summary>
+    /// LANG-430/259 (C-106): the open array type that gives an argument <c>[…]</c> at position <paramref name="index"/> its meaning —
+    /// when every candidate with such a parameter has a value/<c>const</c> open array parameter there of one open array type (so
+    /// <c>Format('%d', [x])</c> works for an overload set); null otherwise.
+    /// </summary>
+    private static OpenArrayTypeSymbol? OpenArrayContext(ImmutableArray<RoutineSymbol> candidates, int index)
+    {
+        var types = candidates.Where(c => index < c.Parameters.Length).Select(c => c.Parameters[index]).ToList();
+        return types.Count > 0 && types.All(p => !p.IsByReference && ReferenceEquals(p.Type, types[0].Type)) ? types[0].Type as OpenArrayTypeSymbol : null;
     }
 
     /// <summary>LANG-420/421: count, then each argument against its parameter.</summary>
@@ -1537,7 +1636,7 @@ internal sealed partial class ExpressionBinder
             return false;
         }
 
-        if (!Pointers.SameType(argument.Type, parameter.Type))
+        if (parameter.Type is OpenArrayTypeSymbol ? !_conversions.Classify(argument.Type, parameter.Type).Exists : !Pointers.SameType(argument.Type, parameter.Type))
         {
             _diagnostics.Report(syntax, "E2010", argument.Type.Name, parameter.Type.Name);
             return false;

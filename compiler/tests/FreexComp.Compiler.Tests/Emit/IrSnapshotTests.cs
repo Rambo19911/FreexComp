@@ -1261,6 +1261,39 @@ public sealed class IrSnapshotTests
     /// managed elements by <c>_UStrAsg</c>; <c>[]</c> clears), <c>Assigned</c> of a dynamic array, <c>Pointer(a)</c> /
     /// <c>NativeInt(a)</c> of a dynamic array (no reference counting) and a <c>^string</c> pointer.
     /// </summary>
+    internal const string OpenArraysSource = """
+        unit M;
+        interface
+        function Sum(const a: array of Integer): Integer;
+        procedure Bump(s: array of string);
+        procedure Caller;
+        implementation
+        function Sum(const a: array of Integer): Integer;
+        var
+          i: Integer;
+        begin
+          Result := 0;
+          for i := 0 to High(a) do
+            Result := Result + a[i];
+        end;
+        procedure Bump(s: array of string);
+        begin
+          {$R+}
+          s[0] := s[0] + '!';
+          {$R-}
+        end;
+        procedure Caller;
+        var
+          f: array[1..3] of Integer;
+          d: array of Integer;
+          n: Integer;
+        begin
+          n := Sum(f) + Sum(d) + Sum([1, n]) + Sum(Slice(f, 2)) + Sum([]);
+          Bump(['x']);
+        end;
+        end.
+        """;
+
     internal const string ArrayConstructorsSource = """
         unit M;
         interface
@@ -1524,6 +1557,7 @@ public sealed class IrSnapshotTests
         ["ProcValue"] = ProcValueSource,
         ["Atomic"] = AtomicSource,
         ["ArrayConstructors"] = ArrayConstructorsSource,
+        ["OpenArrays"] = OpenArraysSource,
         ["ReadText"] = ReadTextSource,
         ["ManagedRecords"] = ManagedRecordsSource,
         ["ByteStrings"] = ByteStringsSource,
@@ -2137,6 +2171,29 @@ public sealed class IrSnapshotTests
     [Trait("Req", "LANG-290")]
     [Trait("Req", "CMP-330")]
     public void ArrayConstructors() => Snapshot.Verify("ArrayConstructors", Emit(ArrayConstructorsSource));
+
+    /// <summary>C-106: open arrays (ABI-080 pair, CMP-331 check against High + 1, LANG-432 prologue copy and its release).</summary>
+    [Fact]
+    [Trait("Req", "ABI-080")]
+    [Trait("Req", "LANG-432")]
+    public void OpenArrays() => Snapshot.Verify("OpenArrays", Emit(OpenArraysSource));
+
+    /// <summary>ABI-080/082: an open array is two IR parameters, <c>ptr</c> then <c>i64</c> High; callers pass both (C-106).</summary>
+    [Fact]
+    [Trait("Req", "ABI-080")]
+    public void OpenArrays_PassDataAndHigh()
+    {
+        var text = Emit(OpenArraysSource);
+
+        Assert.Matches(@"define i32 @""M\.Sum""\(ptr %a, i64 %""?a\$high""?\)", text);
+        Assert.Matches(@"invoke i32 @""M\.Sum""\(ptr %f\.addr, i64 2\)", text);                  // the static array f: High = 2
+        Assert.Matches(@"invoke i32 @""M\.Sum""\(ptr %t\d+, i64 %t\d+\)", text);                 // d: High = Length − 1
+        Assert.Matches(@"invoke i32 @""M\.Sum""\(ptr null, i64 -1\)", text);                   // []
+        Assert.Contains("invoke void @\"M.Bump\"(ptr %$tmp2.addr, i64 0)", text);             // ['x'] in a temporary
+        Assert.Contains("invoke ptr @\"System._GetMem\"(i64 ", text);                        // LANG-432: a heap copy beyond 4096 bytes
+        Assert.Contains("@\"System._AddRefArray\"(ptr ", text);
+        Assert.Contains("@\"System._FinalizeArray\"(ptr ", text);
+    }
 
     /// <summary>C-066: the rtl-abi.md §9.9 input helpers as declared and called (CMP-411).</summary>
     [Fact]

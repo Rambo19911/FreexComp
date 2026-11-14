@@ -69,7 +69,12 @@ internal static class Mangler
     /// <c>a</c> (<c>a:</c>, <c>ca:</c>, <c>va:</c>, <c>oa:</c>).
     /// </summary>
     public static string Signature(ImmutableArray<ParameterSymbol> parameters) =>
-        string.Join(",", parameters.Select(p => ModePrefix(p.Mode, p.IsOpenArray) + TypeName(p.Type)));
+        string.Join(",", parameters.Select(p => ModePrefix(p.Mode, p.IsOpenArray) + p.Type switch
+        {
+            OpenArrayTypeSymbol { IsArrayOfConst: true } => "const",                    // C-107: ca:const
+            OpenArrayTypeSymbol open => TypeName(open.ElementType),                     // CMP-346: va:Byte
+            var type => TypeName(type),
+        }));
 
     /// <summary>
     /// CMP-361: built-ins by canonical name (aliases are the same symbol, so its own name is canonical); declared types as

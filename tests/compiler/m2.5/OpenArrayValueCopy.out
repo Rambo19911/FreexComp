@@ -1,0 +1,10 @@
+inside 101 103
+outside 1 3
+inside 105 105
+inside x! y 2
+outside x y
+leaked: 0
+big inside 0 -1
+big outside 0 999
+leaked: 0
+empty 0

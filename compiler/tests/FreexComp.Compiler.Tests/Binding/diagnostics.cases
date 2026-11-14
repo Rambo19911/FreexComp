@@ -160,8 +160,8 @@ begin P('x') end.
 procedure P; begin Result := 1 end; begin end.
 === E2207 1,31
 procedure P; var i: Integer = 1; begin end; begin end.
-=== E2900 1,16
-procedure P(X: array of Integer); begin end; begin end.
+=== E2900 1,8
+var X: array of const; begin end.
 === E2911 1,28
 var i: Integer; begin i := High(Double) end.
 === E2915 1,33
@@ -354,3 +354,11 @@ procedure P(var a: Integer = 1); begin end; begin end.
 type R = record x: Integer end; procedure P(a: R = 1); begin end; begin end.
 === E2121 1,57
 procedure P(a: Integer); overload; begin end; procedure P(a: Integer; b: Integer = 0); overload; begin end; begin end.
+=== E2116 1,68
+procedure P(const a: array of Integer); var i: Integer; begin i := SizeOf(a) end; begin end.
+=== E2160 1,37
+type T = record case Byte of 0: (s: string) end; begin end.
+=== E2068 1,28
+var i: Integer; begin with i do Inc(i) end.
+=== E2069 1,32
+var i: Integer; begin for i in i do Inc(i) end.

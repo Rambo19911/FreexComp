@@ -206,9 +206,12 @@ internal static class IrEmitter
                 IsConstant: variable.IsReadOnly, initializer, layout.Alignment));
         }
 
-        foreach (var (_, name) in unit.BodyGlobals)
+        foreach (var (variable, name) in unit.BodyGlobals)
         {
-            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Internal, IsConstant: false, new IrNullConstant(), Alignment: 8));
+            // handler variables (ptr) and the hidden with / for…in locals of unit-level bodies (any storage, C-109, C-111)
+            var layout = TypeLayout.Allocated(variable.Type);
+            IrConstant zero = layout.StorageType is PointerIrType ? new IrNullConstant() : new IrZeroConstant(layout.StorageType);
+            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Internal, IsConstant: false, zero, Alignment: layout.Alignment));
         }
 
         if (!unit.ThreadVars.IsEmpty)
@@ -377,7 +380,11 @@ internal static class IrEmitter
         [.. (routine.IsNested ? [IrType.Ptr] : Array.Empty<IrType>()),
          .. routine.ImplicitParameters.Select(ParameterType),
          .. (HasHiddenResult(routine) ? [IrType.Ptr] : Array.Empty<IrType>()),
-         .. routine.Parameters.Select(ParameterType)];
+         .. WithHighCompanions(routine.Parameters).Select(ParameterType)];
+
+    /// <summary>ABI-080/082: the declared parameters as the IR passes them — each open array followed by its <c>i64</c> High (C-106).</summary>
+    internal static IEnumerable<ParameterSymbol> WithHighCompanions(IEnumerable<ParameterSymbol> parameters) =>
+        parameters.SelectMany(p => p.HighParameter is { } high ? [p, high] : new[] { p });
 
     /// <summary>The IR type of one declared parameter (ABI-080).</summary>
     internal static IrType ParameterType(ParameterSymbol parameter) => IsPassedByAddress(parameter) ? IrType.Ptr : ScalarStorage(parameter.Type);
@@ -393,8 +400,9 @@ internal static class IrEmitter
     /// ABI-080: the parameter arrives as a <c>ptr</c> — <c>var</c>/<c>out</c>, and value/<c>const</c> aggregates of other sizes
     /// (value: the caller's copy, which the callee owns; <c>const</c>: the original).
     /// </summary>
+    /// <remarks>An open array (any mode) arrives as its data pointer value, spilled like a scalar (C-106).</remarks>
     internal static bool IsPassedByAddress(ParameterSymbol parameter) =>
-        parameter.IsByReference || Lowerer.IsAggregate(parameter.Type) && !IsPassedAsInteger(parameter.Type);
+        parameter.Type is not OpenArrayTypeSymbol && (parameter.IsByReference || Lowerer.IsAggregate(parameter.Type) && !IsPassedAsInteger(parameter.Type));
 
     /// <summary>
     /// ABI-081: the result is an aggregate not of size 1, 2, 4 or 8, or of a managed type (ABI-032), written through a hidden
@@ -980,7 +988,7 @@ internal sealed class FunctionEmitter
         _body = body;
         _routine = body.Routine;
         _implicitCount = _routine?.ImplicitParameters.Length ?? 0;
-        _parameters = _routine is null ? [] : [.. _routine.ImplicitParameters, .. _routine.Parameters];
+        _parameters = _routine is null ? [] : [.. _routine.ImplicitParameters, .. IrEmitter.WithHighCompanions(_routine.Parameters)];
         _name = name ?? Mangler.Routine(_routine ?? throw new ArgumentException("A body without routine needs a name.", nameof(name)));
         _linkage = linkage;
         _returnTarget = body.Cleanup is null ? Exit : CleanupBlock;
@@ -1620,6 +1628,12 @@ internal sealed class FunctionEmitter
                 // CMP-307: getelementptr inbounds %"U.TRec", ptr %r, i32 0, i32 <fieldIndex>
                 var record = (RecordTypeSymbol)field.Record.Type;
                 var address = Address(field.Record);
+                if (record.HasVariantPart)
+                {
+                    // CMP-307 byte form for a record with a variant part (C-108): getelementptr inbounds i8, ptr %r, i64 <offset>
+                    return field.Field.Offset == 0 ? address : _w.GetElementPtr(NewTemp(), IrType.I8, address, [IrIntConstant.I64(field.Field.Offset)]);
+                }
+
                 var position = TypeLayout.FieldIndexes(record)[record.Fields.IndexOf(field.Field)];
                 return _w.GetElementPtr(NewTemp(), TypeLayout.Of(record).StorageType, address, [IrIntConstant.I32(0), IrIntConstant.I32(position)]);
             }
@@ -1676,7 +1690,7 @@ internal sealed class FunctionEmitter
         var index = Value(element.Index);
         if (element.IsChecked)
         {
-            var length = ArrayLength(array);
+            var length = element.Length is { } count ? Value(count) : ArrayLength(array);         // an open array: High + 1 (C-106)
             var inRange = _w.ICmp(NewTemp(), IrIntPredicate.Ult, index, length);
             var id = NewConstruct();
             IrBlock error = Block("range.error", id), ok = Block("range.ok", id);
@@ -1900,6 +1914,23 @@ internal sealed class FunctionEmitter
         for (var i = 0; i < arguments.Length; i++)
         {
             var parameter = routine.Parameters[i];
+            if (arguments[i] is LOpenArray open)
+            {
+                // ABI-080 (C-106): ptr to element 0, then i64 High (a dynamic array's from its length)
+                var data = Value(open.Data);
+                values.Add(data);
+                if (open.High is { } high)
+                {
+                    values.Add(Value(high));
+                }
+                else
+                {
+                    var length = ArrayLength(data);
+                    values.Add(_w.Binary(NewTemp(), IrBinaryOperator.Sub, length, IrIntConstant.I64(1)));
+                }
+                continue;
+            }
+
             if (!IrEmitter.IsPassedByAddress(parameter) && IrEmitter.IsPassedAsInteger(parameter.Type))
             {
                 var address = Address(arguments[i]);

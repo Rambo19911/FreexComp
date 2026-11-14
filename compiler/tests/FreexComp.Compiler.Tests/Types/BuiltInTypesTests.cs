@@ -80,6 +80,7 @@ public sealed class BuiltInTypesTests
             "AtomicIncrement", "AtomicDecrement", "AtomicExchange", "AtomicCmpExchange",                     // M2.2 (C-168)
             "SetLength", "Delete", "Insert", "Str", "Val", "Copy", "Pos", "Concat", "UpCase",                // M2.2 (C-062)
             "Read", "Readln", "Eof", "Eoln",                                                                // M2.2 (C-066)
+            "Slice",                                                                                        // M2.5 (C-106)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

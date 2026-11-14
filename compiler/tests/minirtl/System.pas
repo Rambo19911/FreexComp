@@ -47,6 +47,50 @@ type
     class function InstanceSize: Integer;
   end;
 
+{ the element of an "array of const" argument (rtl-abi.md 9.10, C-107): VType at 0, payload at 8, 16 bytes }
+const
+  vtInteger = 0;
+  vtBoolean = 1;
+  vtChar = 2;
+  vtExtended = 3;
+  vtString = 4;
+  vtPointer = 5;
+  vtPChar = 6;
+  vtObject = 7;
+  vtClass = 8;
+  vtWideChar = 9;
+  vtPWideChar = 10;
+  vtAnsiString = 11;
+  vtCurrency = 12;
+  vtVariant = 13;
+  vtInterface = 14;
+  vtWideString = 15;
+  vtInt64 = 16;
+  vtUnicodeString = 17;
+
+type
+  PShortString = ^ShortString;
+  PDouble = ^Double;
+  PInt64 = ^Int64;
+  TVarRec = record
+    case VType: Byte of
+      vtInteger: (VInteger: Integer);
+      vtBoolean: (VBoolean: Boolean);
+      vtChar: (VChar: AnsiChar);
+      vtExtended: (VExtended: PDouble);
+      vtPointer: (VPointer: Pointer);
+      vtPChar: (VPChar: PAnsiChar);
+      vtObject: (VObject: TObject);
+      vtClass: (VClass: TClass);
+      vtWideChar: (VWideChar: WideChar);
+      vtPWideChar: (VPWideChar: PWideChar);
+      vtAnsiString: (VAnsiString: Pointer);
+      vtInterface: (VInterface: Pointer);
+      vtInt64: (VInt64: PInt64);
+      vtUnicodeString: (VUnicodeString: Pointer);
+      vtString: (VString: PShortString);
+  end;
+
 procedure _Startup(UnitTable: Pointer; UnitCount: NativeInt);
 procedure _InitUnits;
 procedure _Halt(Code: Integer); noreturn;
@@ -168,6 +212,8 @@ procedure _DynArrayCopy(var Dest: Pointer; Src: Pointer; TI: Pointer; Index, Cou
 procedure _Finalize(P: Pointer; TI: Pointer);
 procedure _AddRef(P: Pointer; TI: Pointer);
 procedure _CopyRecord(Dest, Src: Pointer; TI: Pointer);
+procedure _FinalizeArray(P: Pointer; TI: Pointer; Count: NativeInt);
+procedure _AddRefArray(P: Pointer; TI: Pointer; Count: NativeInt);
 
 procedure _StrInt(var Dest: Pointer; V: Int64; Width: Integer);
 procedure _StrUInt(var Dest: Pointer; V: UInt64; Width: Integer);
@@ -2503,6 +2549,17 @@ begin
         AddRefValues(P, Pointer(TIField(TI, 32)), Count);
       end;
   end;
+end;
+
+{ rtl-abi.md 9.5 (C-106): Count consecutive values of type TI at P (a value open array's copy) }
+procedure _FinalizeArray(P: Pointer; TI: Pointer; Count: NativeInt);
+begin
+  FinalizeValues(P, TI, Count);
+end;
+
+procedure _AddRefArray(P: Pointer; TI: Pointer; Count: NativeInt);
+begin
+  AddRefValues(P, TI, Count);
 end;
 
 { Dest := Src for a managed record or static array: Src's references are added first (Src may share blocks with Dest),

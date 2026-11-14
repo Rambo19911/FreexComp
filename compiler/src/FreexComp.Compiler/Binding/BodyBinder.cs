@@ -83,6 +83,10 @@ internal sealed class BodyBinder
                 return BindTryExcept(tryExcept);
             case TryFinallyStatementSyntax tryFinally:
                 return BindTryFinally(tryFinally);
+            case WithStatementSyntax with:
+                return BindWith(with, 0);
+            case ForInStatementSyntax forIn:
+                return BindForIn(forIn);
             default:
                 if (!statement.ContainsDiagnostics)
                 {
@@ -125,6 +129,12 @@ internal sealed class BodyBinder
             default:
                 _diagnostics.Report(assignment.Target, "E2053");
                 return new BoundAssignmentStatement(assignment, target, value);
+        }
+
+        if (target.Type is OpenArrayTypeSymbol && !value.HasErrors)
+        {
+            _diagnostics.Report(assignment.Value, "E2010", value.Type.Name, target.Type.Name);  // LANG-431: never assigned as a whole (C-106)
+            return new BoundAssignmentStatement(assignment, target, value);
         }
 
         return new BoundAssignmentStatement(assignment, target, _expressions.ConvertForAssignment(value, target.Type, assignment.Value));
@@ -276,13 +286,143 @@ internal sealed class BodyBinder
         return new BoundForStatement(syntax, variable, start, finish, syntax.DirectionKeyword.Kind == SyntaxKind.DownToKeyword, body);
     }
 
+    private int _hiddenCount;
+
     /// <summary>
-    /// Rule 1: ordinal; a local (or value parameter) of this routine, or a global variable in a unit-level body; null
-    /// when <paramref name="variable"/> is not one.
+    /// LANG-362 (C-111): <c>for x in e do s</c> over a static, dynamic or open array (element order), a string (code units) or a
+    /// set (ascending ordinals) as an ordinary counting loop: <c>e</c> is evaluated once into a hidden local (an addressable static
+    /// array by address; a dynamic array or string as a counted reference held for the loop; an open array parameter is used
+    /// directly), then <c>for $i := lo to hi do begin x := e[$i]; s end</c> (sets: <c>if $i in $c then …</c>). <c>x</c> is a simple
+    /// local/global like a <c>for</c> control variable (E2065) but of any type assignment-compatible with the element (E2010) and
+    /// read-only in <c>s</c> (E2053); E2069 for a collection of another type.
     /// </summary>
-    private Symbol? ControlVariable(BoundExpression variable) => variable switch
+    private BoundStatement BindForIn(ForInStatementSyntax syntax)
     {
-        _ when !variable.Type.IsOrdinal => null,
+        if (syntax.VarKeyword is { } varKeyword)
+        {
+            _diagnostics.Report(varKeyword, "E2900", "inline variable");               // LANG-386, M2.6
+            return new BoundErrorStatement(syntax);
+        }
+
+        var variable = _expressions.BindExpression(syntax.Variable);
+        var collection = _expressions.BindExpression(syntax.Collection);
+        if (variable.HasErrors || collection.HasErrors)
+        {
+            return new BoundErrorStatement(syntax);
+        }
+
+        if (ControlVariable(variable, ordinal: false) is not { } control)
+        {
+            _diagnostics.Report(syntax.Variable, "E2065");
+            return new BoundErrorStatement(syntax);
+        }
+
+        if (ForVariables.Contains(control))
+        {
+            _diagnostics.Report(syntax.Variable, "E2053");
+        }
+
+        var at = syntax.Collection;
+        TypeSymbol? elementType = collection.Type switch
+        {
+            ArrayTypeSymbol array => array.ElementType,
+            DynamicArrayTypeSymbol dynamic => dynamic.ElementType,
+            OpenArrayTypeSymbol open => open.ElementType,
+            StringTypeSymbol text => text.Variant == StringVariant.Unicode ? _types.Char : _types.AnsiChar,
+            SetTypeSymbol { ElementType: { } member } => member,
+            _ => null,
+        };
+        if (elementType is null)
+        {
+            _diagnostics.Report(at, "E2069", collection.Type.Name);
+            return new BoundErrorStatement(syntax);
+        }
+
+        var locals = ImmutableArray.CreateBuilder<VariableSymbol>();
+        VariableSymbol Hidden(string kind, TypeSymbol type)
+        {
+            var hidden = new VariableSymbol("$" + kind + ++_hiddenCount, type, isGlobal: false, _routine, []);
+            locals.Add(hidden);
+            return hidden;
+        }
+
+        BoundExpression Ref(VariableSymbol hidden) => new BoundVariableExpression(at, hidden);
+        var prologue = new List<BoundStatement>();
+        BoundExpression source;
+        if (collection.Type is OpenArrayTypeSymbol)
+        {
+            source = collection;
+        }
+        else if (collection.Type is ArrayTypeSymbol staticArray && ExpressionBinder.IsAddressable(collection))
+        {
+            var pointer = new PointerTypeSymbol("^" + staticArray.Name, staticArray, allowsPointerMath: false);
+            var reference = Hidden("in", pointer);
+            prologue.Add(new BoundAssignmentStatement(at, Ref(reference), new BoundAddressOfExpression(at, collection, routine: null, pointer)));
+            source = new BoundDereferenceExpression(at, Ref(reference), staticArray);
+            if (BoundIndexExpression.RootOf(collection) is BoundVariableExpression { Variable: var root })
+            {
+                _expressions.AddressTakenVariables.Add(root);
+            }
+        }
+        else
+        {
+            var copy = Hidden("in", collection.Type);
+            prologue.Add(new BoundAssignmentStatement(at, Ref(copy), collection));
+            source = Ref(copy);
+        }
+
+        // the index range: a static array's index type, a set's element range within its capacity, else 0..High / 1..Length
+        var (indexType, low, high) = collection.Type switch
+        {
+            ArrayTypeSymbol array => (array.IndexType, (BoundExpression)Ordinal(at, array.Low, array.IndexType), (BoundExpression)Ordinal(at, array.High, array.IndexType)),
+            SetTypeSymbol set => (elementType, Ordinal(at, BigInteger.Max(Ordinals.Bounds(elementType)!.Value.Low, 0), elementType),
+                Ordinal(at, BigInteger.Min(Ordinals.Bounds(elementType)!.Value.High, set.Capacity - 1), elementType)),
+            StringTypeSymbol => (_types.Integer, Ordinal(at, BigInteger.One, _types.Integer), Intrinsic(at, "Length", source)),
+            _ => (_types.Integer, Ordinal(at, BigInteger.Zero, _types.Integer), Intrinsic(at, "High", source)),
+        };
+        var index = Hidden("i", indexType);
+        var element = collection.Type is SetTypeSymbol ? Ref(index) : new BoundIndexExpression(at, source, Ref(index), elementType);
+        var store = new BoundAssignmentStatement(syntax.Variable, variable, _expressions.ConvertForAssignment(element, variable.Type, at));
+        if (store.Value.HasErrors)
+        {
+            return new BoundErrorStatement(syntax);
+        }
+
+        var added = ForVariables.Add(control);
+        _loopDepth++;
+        var body = BindStatement(syntax.Statement);
+        _loopDepth--;
+        if (added)
+        {
+            ForVariables.Remove(control);
+        }
+
+        BoundStatement step = new BoundBlock(syntax, [store, body]);
+        if (collection.Type is SetTypeSymbol setType)
+        {
+            var member = new BoundBinaryExpression(at, BoundBinaryOperatorKind.In, Ref(index), source, setType, _types.Boolean, constantValue: null);
+            step = new BoundIfStatement(syntax, member, step, @else: null);
+        }
+
+        var loop = new BoundForStatement(syntax, Ref(index), low, high, isDownTo: false, step);
+        return new BoundLocalsStatement(syntax, locals.ToImmutable(), new BoundBlock(syntax, [.. prologue, loop]));
+    }
+
+    /// <summary>The ordinal <paramref name="value"/> of <paramref name="type"/> as a literal (Booleans as True/False).</summary>
+    private static BoundLiteral Ordinal(SyntaxNode syntax, BigInteger value, TypeSymbol type) =>
+        new(syntax, type is BooleanTypeSymbol ? new ConstantValue(!value.IsZero, type) : new ConstantValue(value, type));
+
+    /// <summary><c>Length(e)</c> / <c>High(e)</c> of a string or array value at run time (an <c>Integer</c>).</summary>
+    private BoundExpression Intrinsic(SyntaxNode syntax, string name, BoundExpression operand) =>
+        new BoundIntrinsicCallExpression(syntax, (IntrinsicSymbol)_types.Scope.LookupLocal(name)!, [operand], _types.Integer, constantValue: null);
+
+    /// <summary>
+    /// Rule 1: ordinal (<paramref name="ordinal"/>); a local (or value parameter) of this routine, or a global variable in a
+    /// unit-level body; null when <paramref name="variable"/> is not one.
+    /// </summary>
+    private Symbol? ControlVariable(BoundExpression variable, bool ordinal = true) => variable switch
+    {
+        _ when ordinal && !variable.Type.IsOrdinal => null,
         BoundVariableExpression { Variable: var v } when (_routine is null ? v.IsGlobal : !v.IsGlobal && ReferenceEquals(v.ContainingSymbol, _routine)) => v,
         BoundParameterExpression { Parameter: { Mode: ParameterMode.Value } p } when ReferenceEquals(p.ContainingSymbol, _routine) => p,
         _ => null,
@@ -479,6 +619,88 @@ internal sealed class BodyBinder
 
         _diagnostics.Report(syntax, "E2802");
         return null;
+    }
+
+    private int _withCount;
+
+    /// <summary>
+    /// LANG-375 (C-109): <c>with d1, d2 do s</c> = <c>with d1 do with d2 do s</c>. Each designator (record, class: E2068 otherwise) is
+    /// evaluated once into a hidden local <c>$withN</c> — the address of an addressable record (so changes reach the original),
+    /// else the value — and a scope of its members (an object's inherited ones too, nearest first) is innermost while binding
+    /// the rest.
+    /// </summary>
+    private BoundStatement BindWith(WithStatementSyntax syntax, int index)
+    {
+        if (index == syntax.Expressions.Count)
+        {
+            return BindStatement(syntax.Statement);
+        }
+
+        var designatorSyntax = syntax.Expressions[index];
+        var designator = _expressions.BindExpression(designatorSyntax);
+        if (designator.HasErrors)
+        {
+            return new BoundErrorStatement(syntax);
+        }
+
+        var scope = new Scope(ScopeKind.With, _scope, _routine);
+        var name = "$with" + ++_withCount;
+        VariableSymbol variable;
+        BoundExpression value;
+        switch (designator.Type)
+        {
+            case RecordTypeSymbol record when ExpressionBinder.IsAddressable(designator):
+            {
+                var pointer = new PointerTypeSymbol("^" + record.Name, record, allowsPointerMath: false);
+                variable = new VariableSymbol(name, pointer, isGlobal: false, _routine, []);
+                value = new BoundAddressOfExpression(designatorSyntax, designator, routine: null, pointer);
+                if (BoundIndexExpression.RootOf(designator) is BoundVariableExpression { Variable: var root })
+                {
+                    _expressions.AddressTakenVariables.Add(root);          // CMP-325 rule 4: the body may write it through $with
+                }
+
+                foreach (var field in record.Fields)
+                {
+                    scope.TryDeclare(field, out _);
+                }
+
+                break;
+            }
+
+            case RecordTypeSymbol record:
+                variable = new VariableSymbol(name, record, isGlobal: false, _routine, []);
+                value = designator;
+                foreach (var field in record.Fields)
+                {
+                    scope.TryDeclare(field, out _);
+                }
+
+                break;
+            case ClassTypeSymbol type:
+                variable = new VariableSymbol(name, type, isGlobal: false, _routine, []);
+                value = designator;
+                foreach (var member in type.SelfAndAncestors().SelectMany(t => t.Members))
+                {
+                    scope.TryDeclare(member, out _);                            // the nearest declaration of a name wins
+                }
+
+                break;
+            default:
+                _diagnostics.Report(designatorSyntax, "E2068");
+                return new BoundErrorStatement(syntax);
+        }
+
+        var with = new ExpressionBinder.WithContext(scope, variable, designator.Type);
+        var outer = _scope;
+        _scope = scope;
+        try
+        {
+            return new BoundWithStatement(syntax, variable, value, _expressions.InWith(with, () => BindWith(syntax, index + 1)));
+        }
+        finally
+        {
+            _scope = outer;
+        }
     }
 
     private T InScope<T>(Scope scope, Func<T> bind)

@@ -175,17 +175,23 @@ internal static class PcuReader
         }
 
         private ImmutableArray<ParameterSymbol> Parameters(JsonNode owner, RoutineSymbol routine) =>
-            [.. Array(owner, "params").Select((p, i) => new ParameterSymbol(Text(p, "name"), Type(p!, "type"), Text(p, "mode") switch
+            [.. Array(owner, "params").Select((p, i) => new ParameterSymbol(Text(p, "name"), ParameterType(p!), Text(p, "mode") switch
             {
                 "const" => ParameterMode.Const,
                 "var" => ParameterMode.Var,
                 "out" => ParameterMode.Out,
                 "value" => ParameterMode.Value,
                 var other => throw new PcuFormatException($"unknown parameter mode '{other}'"),
-            }, i, routine, [])
+            }, i, routine, [], types.Int64)
             {
                 DefaultValue = p is JsonObject o && o.TryGetPropertyValue("default", out var value) ? Value(value, Type(p, "type")) : null,
             })];
+
+        /// <summary>A parameter's type: an open array (C-106) records its element type with <c>"openArray": true</c>.</summary>
+        private TypeSymbol ParameterType(JsonNode parameter) =>
+            parameter["openArray"] is JsonValue open && open.GetValue<bool>()
+                ? types.OpenArrayOf(Type(parameter, "type"), parameter["arrayOfConst"] is JsonValue c && c.GetValue<bool>())
+                : Type(parameter, "type");
 
         /// <summary>The recorded link name when it is not the one derived from the declaration (an import name, a <c>public name</c>).</summary>
         private static string? Explicit(string recorded, string derived) => recorded == derived ? null : recorded;
@@ -313,7 +319,10 @@ internal static class PcuReader
                 case "record":
                 {
                     var record = new RecordTypeSymbol(name, entry["size"]!.GetValue<long>(), entry["align"]!.GetValue<int>(), entry["packed"]!.GetValue<bool>(),
-                        entry["packing"]!.GetValue<int>(), entry["anonymous"]!.GetValue<bool>(), _unit, []);
+                        entry["packing"]!.GetValue<int>(), entry["anonymous"]!.GetValue<bool>(), _unit, [])
+                    {
+                        HasVariantPart = entry["variant"] is JsonValue variant && variant.GetValue<bool>(),
+                    };
                     _byId[id] = record;
                     record.Fields = [.. Array(entry, "fields").Select(f => new FieldSymbol(Text(f, "name"), Type(f!, "type"), f!["offset"]!.GetValue<long>(), record, []))];
                     return record;

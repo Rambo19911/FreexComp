@@ -328,6 +328,12 @@ public sealed class RecordTypeSymbol : TypeSymbol
 
     public bool IsAnonymous { get; }
 
+    /// <summary>
+    /// Has a variant part (LANG-261, ABI-061; C-108): fields may overlap; the storage is <c>[Size x i8]</c> addressed with byte
+    /// GEPs (CMP-306, 307).
+    /// </summary>
+    public bool HasVariantPart { get; internal init; }
+
     public override ImmutableArray<Symbol> Members => [.. Fields];
 
     /// <summary>A record with any managed field is managed (CMP-325, C-065; its <c>tkRecord</c> block lists those fields).</summary>
@@ -480,6 +486,67 @@ public sealed class DynamicArrayTypeSymbol : TypeSymbol
 
     /// <summary>The number of nested dynamic-array levels (1 for <c>array of Integer</c>, 2 for <c>array of array of Integer</c>).</summary>
     public int Depth => ElementType is DynamicArrayTypeSymbol inner ? inner.Depth + 1 : 1;
+}
+
+/// <summary>
+/// The type of an open array parameter <c>array of ElementType</c> (LANG-430…432, ABI-080): a pointer to element 0 that travels
+/// with a hidden <c>High</c> companion parameter (<see cref="Symbols.ParameterSymbol.HighParameter"/>). One instance per element type
+/// and compilation (<see cref="BuiltInTypes.OpenArrayOf"/>), so identical parameter types are the same symbol. Never managed itself
+/// (the caller's storage, or the callee's private copy for a value parameter); no fixed size (<c>SizeOf</c> is E2116).
+/// <see cref="IsArrayOfConst"/>: <c>array of const</c>, whose elements are <c>TVarRec</c>s (LANG-433).
+/// </summary>
+public sealed class OpenArrayTypeSymbol : TypeSymbol
+{
+    internal OpenArrayTypeSymbol(TypeSymbol elementType, bool isArrayOfConst)
+        : base(TypeKind.OpenArray, isArrayOfConst ? "array of const" : "array of " + elementType.Name, size: -1, alignment: 8)
+    {
+        ElementType = elementType;
+        IsArrayOfConst = isArrayOfConst;
+    }
+
+    public TypeSymbol ElementType { get; }
+
+    public bool IsArrayOfConst { get; }
+
+    /// <summary>The element type of an array that may be passed to an open array parameter (LANG-430); null for other types.</summary>
+    internal static TypeSymbol? ElementOf(TypeSymbol type) => type switch
+    {
+        ArrayTypeSymbol array => array.ElementType,
+        DynamicArrayTypeSymbol dynamic => dynamic.ElementType,
+        OpenArrayTypeSymbol open => open.ElementType,
+        _ => null,
+    };
+}
+
+/// <summary>rtl-abi.md §9.10 (LANG-433, C-107): the <c>TVarRec.VType</c> an <c>array of const</c> element of a type gets.</summary>
+internal static class VarRecs
+{
+    public const int VInteger = 0, VBoolean = 1, VChar = 2, VExtended = 3, VString = 4, VPointer = 5, VPChar = 6, VObject = 7,
+        VClass = 8, VWideChar = 9, VPWideChar = 10, VAnsiString = 11, VInterface = 14, VInt64 = 16, VUnicodeString = 17;
+
+    /// <summary>
+    /// The <c>VType</c> of an element of type <paramref name="type"/> (<paramref name="constant"/>: its value when constant, so an
+    /// integer constant that fits <c>Integer</c> is a <c>vtInteger</c>); null for types an <c>array of const</c> does not take.
+    /// </summary>
+    public static int? VTypeOf(TypeSymbol type, ConstantValue? constant) => type switch
+    {
+        IntegerTypeSymbol when constant?.Value is System.Numerics.BigInteger value => value >= int.MinValue && value <= int.MaxValue ? VInteger : VInt64,
+        IntegerTypeSymbol { Bits: <= 32 } or EnumTypeSymbol => VInteger,
+        IntegerTypeSymbol => VInt64,
+        BooleanTypeSymbol => VBoolean,
+        CharTypeSymbol { IsWide: true } => VWideChar,
+        CharTypeSymbol => VChar,
+        RealTypeSymbol { RealKind: not RealKind.Currency } => VExtended,
+        StringTypeSymbol { Variant: StringVariant.Unicode } => VUnicodeString,
+        StringTypeSymbol { Variant: StringVariant.Ansi } => VAnsiString,
+        StringTypeSymbol => VString,
+        PointerTypeSymbol when Strings.IsCharPointer(type, wide: true) => VPWideChar,
+        PointerTypeSymbol when Strings.IsCharPointer(type, wide: false) => VPChar,
+        PointerTypeSymbol => VPointer,
+        ClassTypeSymbol => VObject,
+        ClassRefTypeSymbol => VClass,
+        _ => null,
+    };
 }
 
 /// <summary>String kinds and their compile-time text (LANG-245, ABI-027, CMP-320; C-063).</summary>

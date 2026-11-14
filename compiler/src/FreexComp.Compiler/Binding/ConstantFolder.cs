@@ -870,6 +870,14 @@ internal sealed class ConstantFolder
         var high = intrinsic.Intrinsic == IntrinsicKind.High;
         switch (intrinsic.Intrinsic, type)
         {
+            case (IntrinsicKind.SizeOf, OpenArrayTypeSymbol):
+                _diagnostics.Report(call, "E2116");                             // LANG-431 (C-106)
+                return null;
+            case (IntrinsicKind.Length or IntrinsicKind.High, OpenArrayTypeSymbol):
+                needsRuntime = true;                                            // the High companion (C-106)
+                return null;
+            case (IntrinsicKind.Low, OpenArrayTypeSymbol):
+                return new ConstantValue(BigInteger.Zero, _types.Integer);
             case (IntrinsicKind.SizeOf, _) when type.Size >= 0:
                 return new ConstantValue(new BigInteger(type.Size), _types.Integer);
             case (IntrinsicKind.SizeOf, _):

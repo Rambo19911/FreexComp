@@ -177,6 +177,7 @@ internal sealed class LoweringContext
     public IReadOnlyList<Symbol> OuterReferences => _outer;
 
     private readonly List<Symbol> _outer = [];
+    private readonly List<VariableSymbol> _managedBodyGlobals = [];
     private readonly List<Symbol> _finCaptured = [];
     private int _finCount;
 
@@ -236,7 +237,14 @@ internal sealed class LoweringContext
         var block = Routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } method && body is not null
             ? Protocol(method, body)
             : body is null ? new LBlock([]) : (LBlock)Lower(body);
-        var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], block));
+        var (copies, releases) = OpenArrayCopies();
+        var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], copies.IsEmpty ? block : new LBlock([.. copies, .. block.Statements])));
+        releases = [.. releases, .. _managedBodyGlobals.Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)))];
+        if (!releases.IsEmpty)
+        {
+            lowered = lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. releases]) };
+        }
+
         if (finalisedGlobals.IsDefaultOrEmpty)
         {
             return lowered;
@@ -245,6 +253,49 @@ internal sealed class LoweringContext
         // CMP-325 rule 7: after the body's own temporaries, the globals in reverse declaration order (CMP-350)
         var clears = finalisedGlobals.Reverse().Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)));
         return lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. clears]) };
+    }
+
+    /// <summary>The largest value open array copied onto the stack (LANG-432); larger ones go to the heap.</summary>
+    private const int OpenArrayStackLimit = 4096;
+
+    /// <summary>
+    /// LANG-432 (C-106): each value open array parameter is copied in the prologue — into a 4096-byte stack buffer when its
+    /// <c>(High + 1) × SizeOf(T)</c> bytes fit, else into <c>_GetMem</c> storage — and the parameter then points at the copy;
+    /// managed elements get <c>_AddRefArray</c>. The cleanup scope releases them (<c>_FinalizeArray</c>, <c>_FreeMem</c> of a heap copy).
+    /// </summary>
+    private (ImmutableArray<LStatement> Prologue, ImmutableArray<LStatement> Cleanup) OpenArrayCopies()
+    {
+        var prologue = new List<LStatement>();
+        var cleanup = new List<LStatement>();
+        foreach (var parameter in Routine?.Parameters.Where(p => p is { Mode: ParameterMode.Value, Type: OpenArrayTypeSymbol }) ?? [])
+        {
+            var type = (OpenArrayTypeSymbol)parameter.Type;
+            var data = new LParamRef(parameter);
+            LExpression Count() => new LBinary(LBinaryOperator.Add, new LParamRef(parameter.HighParameter!), Constant(BigInteger.One, Types.Int64));
+            var bytes = new LLocalRef(NewTemp(Types.Int64));
+            var source = new LLocalRef(NewTemp(type));
+            var byteIndex = new IntegerTypeSymbol($"0..{OpenArrayStackLimit - 1}", (IntegerTypeSymbol)Types.Integer, BigInteger.Zero, OpenArrayStackLimit - 1, containingSymbol: null, []);
+            var buffer = new LLocalRef(NewTemp(new ArrayTypeSymbol($"array[0..{OpenArrayStackLimit - 1}] of Byte", byteIndex, Types.Byte, containingSymbol: null, [])));
+            var fits = Compare(LCompareOperator.LessOrEqual, bytes, Constant(OpenArrayStackLimit, Types.Int64));
+            var getMem = new LCall(new LHelperCallee(new RuntimeHelper("_GetMem", [Types.NativeInt], type, IsNoReturn: false)), [bytes]);
+            prologue.Add(new LAssign(bytes, new LBinary(LBinaryOperator.Multiply, Count(), Constant(type.ElementType.Size, Types.Int64))));
+            prologue.Add(new LAssign(source, data));
+            prologue.Add(new LIf(fits, new LAssign(data, new LAddrOf(buffer, type)), new LAssign(data, getMem)));
+            prologue.Add(new LMemMove(new LDeref(source, Types.Byte), new LDeref(data, Types.Byte), bytes));
+            if (type.ElementType.IsManaged)
+            {
+                var info = new LTypeInfo(type.ElementType, Types.Pointer);
+                prologue.Add(new LCallStatement(new LHelperCallee(new RuntimeHelper("_AddRefArray", [Types.Pointer, Types.Pointer, Types.NativeInt], ReturnType: null, IsNoReturn: false)),
+                    [data, info, Count()]));
+                cleanup.Add(new LCallStatement(new LHelperCallee(new RuntimeHelper("_FinalizeArray", [Types.Pointer, Types.Pointer, Types.NativeInt], ReturnType: null, IsNoReturn: false)),
+                    [data, info, Count()]));
+            }
+
+            var freeMem = new LCallStatement(new LHelperCallee(new RuntimeHelper("_FreeMem", [Types.Pointer], ReturnType: null, IsNoReturn: false)), [data]);
+            cleanup.Add(new LIf(Compare(LCompareOperator.Greater, bytes, Constant(OpenArrayStackLimit, Types.Int64)), freeMem, @else: null));
+        }
+
+        return ([.. prologue], [.. cleanup]);
     }
 
     /// <summary><c>procedure _ReRaise</c>, noreturn (ABI-122).</summary>
@@ -423,6 +474,22 @@ internal sealed class LoweringContext
                 return TryExcept(tryExcept);
             case BoundTryFinallyStatement tryFinally:
                 return TryFinally(tryFinally);
+            case BoundWithStatement with:
+            {
+                // LANG-375 (C-109): the designator once into its hidden variable, then the body
+                var storage = HandlerVariable(with.Variable);
+                var store = with.Variable.Type.IsManaged ? ManagedRewriter.Assign(this, storage, with.Value) : new LAssign(storage, Lower(with.Value));
+                return new LBlock([store, Lower(with.Body)]);
+            }
+
+            case BoundLocalsStatement locals:
+                foreach (var local in locals.Locals)
+                {
+                    HandlerVariable(local);                                     // C-111: declared before the body uses them
+                }
+
+                return Lower(locals.Body);
+
             default:
                 throw new InvalidOperationException($"Cannot lower {statement.Kind}.");
         }
@@ -464,6 +531,11 @@ internal sealed class LoweringContext
         }
 
         BodyGlobals.Add((variable, new LinkName($"{Unit!.Name}.{BodyName}.{variable.Name}.{BodyGlobals.Count + 1}", AlwaysQuote: true)));
+        if (variable.Type.IsManaged)
+        {
+            _managedBodyGlobals.Add(variable);                              // a hidden for…in / with local: released with the body (C-111)
+        }
+
         return new LGlobalRef(variable);
     }
 
@@ -545,6 +617,10 @@ internal sealed class LoweringContext
                 return ManagedRewriter.Value(this, constructor);                        // LANG-259: a new array in a temporary
             case BoundIndexExpression { IsStringElement: true } element:
                 return StringElement(element);
+            case BoundIndexExpression { Array.Type: OpenArrayTypeSymbol } element:
+                // LANG-431 / CMP-331 (C-106): element i of the data, checked unsigned against High + 1 under {$R+}
+                return new LArrayElement(Lower(element.Array), Convert(Lower(element.Index), Types.Int64), CheckRewriter.StateOf(element).RangeChecks, element.Type,
+                    new LBinary(LBinaryOperator.Add, OpenArrayHigh(element.Array), Constant(BigInteger.One, Types.Int64)));
             case BoundIndexExpression { Array.Type: DynamicArrayTypeSymbol } element:
                 // ABI-042 / CMP-330/331: element i of the block (no copy-on-write), checked unsigned against the length under {$R+}
                 return new LArrayElement(Lower(element.Array), Convert(Lower(element.Index), Types.Int64), CheckRewriter.StateOf(element).RangeChecks, element.Type);
@@ -746,7 +822,113 @@ internal sealed class LoweringContext
     /// (<paramref name="writeBacks"/>), since the callee accesses it with the type's alignment (CMP-309).
     /// </summary>
     private ImmutableArray<LExpression> Arguments(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, List<LStatement> writeBacks) =>
-        [.. arguments.Select((argument, i) => Argument(routine.Parameters[i], Lower(argument), writeBacks))];
+        [.. arguments.Select((argument, i) => routine.Parameters[i].Type is OpenArrayTypeSymbol open
+            ? OpenArrayArgument(argument, open)
+            : Argument(routine.Parameters[i], Lower(argument), writeBacks))];
+
+    /// <summary>
+    /// LANG-433 / rtl-abi.md §9.10 (C-107): <c>[e1, …]</c> for an <c>array of const</c> — a zeroed temporary <c>array[0..n-1] of
+    /// TVarRec</c>; element k gets its <c>VType</c> byte at offset 0 and its payload at offset 8: the value (integers as
+    /// <c>Integer</c>, Booleans normalised, characters, pointers, string and object references, not counted), or for reals and
+    /// 64-bit integers the address of a <c>Double</c>/<c>Int64</c> temporary, for a <c>ShortString</c> its address.
+    /// </summary>
+    private LOpenArray VarRecArgument(BoundArrayConstructor constructor, OpenArrayTypeSymbol type)
+    {
+        var n = constructor.Elements.Length;
+        var index = new IntegerTypeSymbol($"0..{n - 1}", (IntegerTypeSymbol)Types.Integer, BigInteger.Zero, n - 1, containingSymbol: null, []);
+        var built = new LLocalRef(NewTemp(new ArrayTypeSymbol($"array[0..{n - 1}] of {type.ElementType.Name}", index, type.ElementType, containingSymbol: null, [])));
+        var statements = new List<LStatement> { new LZero(new LAddrOf(built, Types.Pointer), built.Type) };
+        for (var k = 0; k < n; k++)
+        {
+            var value = constructor.Elements[k];
+            var vType = VarRecs.VTypeOf(value.Type, value.ConstantValue)!.Value;
+            var element = new LAddrOf(new LIndex(built, Constant(k, Types.Int64), type.ElementType), Types.Pointer);
+            LExpression Slot(TypeSymbol slotType) => new LDeref(new LPointerOffset(element, Constant(8, Types.Int64), Types.Byte, Types.Pointer), slotType);
+            statements.Add(new LAssign(new LDeref(element, Types.Byte), Constant(vType, Types.Byte)));
+            switch (vType)
+            {
+                case VarRecs.VInteger:
+                    statements.Add(new LAssign(Slot(Types.Integer), Convert(Lower(value), Types.Integer)));
+                    break;
+                case VarRecs.VBoolean:
+                    statements.Add(new LAssign(Slot(Types.Boolean), Convert(Lower(value), Types.Boolean)));
+                    break;
+                case VarRecs.VChar or VarRecs.VWideChar:
+                    statements.Add(new LAssign(Slot(value.Type), Lower(value)));
+                    break;
+                case VarRecs.VExtended or VarRecs.VInt64:
+                {
+                    var holder = new LLocalRef(NewTemp(vType == VarRecs.VExtended ? Types.Double : Types.Int64));
+                    statements.Add(new LAssign(holder, Convert(Lower(value), holder.Type)));
+                    statements.Add(new LAssign(Slot(Types.Pointer), new LAddrOf(holder, Types.Pointer)));
+                    break;
+                }
+
+                case VarRecs.VString:
+                    statements.Add(new LAssign(Slot(Types.Pointer), new LAddrOf(Lower(value), Types.Pointer)));
+                    break;
+                default:                                                            // references and pointers (ptr)
+                    statements.Add(new LAssign(Slot(Types.Pointer), Lower(value)));
+                    break;
+            }
+        }
+
+        return new LOpenArray(new LSequence(new LBlock([.. statements]), new LAddrOf(built, Types.Pointer)), Constant(n - 1, Types.Int64), type);
+    }
+
+    /// <summary>The <c>Int64</c> High companion of an open array parameter expression (C-106; outer when a nested routine reads it).</summary>
+    public LExpression OpenArrayHigh(BoundExpression openArray) => openArray is BoundParameterExpression { Parameter.HighParameter: { } high } parameter
+        ? Lower(new BoundParameterExpression(parameter.Syntax, high))
+        : throw new InvalidOperationException($"{openArray.Kind} is no open array parameter.");
+
+    /// <summary>
+    /// ABI-080 / LANG-430 (C-106): the data pointer and High of an open array argument — a static array's address and its constant
+    /// High, a dynamic array's reference (High from its length), an open array parameter passed on, <c>Slice(a, n)</c> (a's data,
+    /// High n − 1), or a constructor built into a temporary static array (managed elements counted, released at function exit).
+    /// </summary>
+    private LOpenArray OpenArrayArgument(BoundExpression argument, OpenArrayTypeSymbol type)
+    {
+        while (argument is BoundConversionExpression { Type: OpenArrayTypeSymbol } conversion)
+        {
+            argument = conversion.Operand;
+        }
+
+        switch (argument)
+        {
+            case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Slice, Arguments: [var array, var count] }:
+            {
+                var high = new LBinary(LBinaryOperator.Subtract, Convert(Lower(count), Types.Int64), Constant(BigInteger.One, Types.Int64));
+                return new LOpenArray(OpenArrayArgument(array, type).Data, high, type);
+            }
+
+            case BoundArrayConstructor { Elements.IsEmpty: true }:
+                return new LOpenArray(new LConst(new ConstantValue(null, Types.Pointer), Types.Pointer), Constant(BigInteger.MinusOne, Types.Int64), type);
+            case BoundArrayConstructor { Type: OpenArrayTypeSymbol { IsArrayOfConst: true } } constructor:
+                return VarRecArgument(constructor, type);
+            case BoundArrayConstructor constructor:
+            {
+                var elementType = type.ElementType;
+                var n = constructor.Elements.Length;
+                var index = new IntegerTypeSymbol($"0..{n - 1}", (IntegerTypeSymbol)Types.Integer, BigInteger.Zero, n - 1, containingSymbol: null, []);
+                var built = new LLocalRef(NewTemp(new ArrayTypeSymbol($"array[0..{n - 1}] of {elementType.Name}", index, elementType, containingSymbol: null, [])));
+                var stores = constructor.Elements.Select((value, k) =>
+                {
+                    var element = new LIndex(built, Constant(k, Types.Int64), elementType);
+                    return elementType.IsManaged ? ManagedRewriter.Assign(this, element, value)
+                        : Strings.IsShort(elementType) ? ManagedRewriter.AssignShort(this, element, value)
+                        : new LAssign(element, Lower(value));
+                });
+                return new LOpenArray(new LSequence(new LBlock([.. stores]), new LAddrOf(built, Types.Pointer)), Constant(n - 1, Types.Int64), type);
+            }
+
+            case { Type: OpenArrayTypeSymbol }:
+                return new LOpenArray(Lower(argument), OpenArrayHigh(argument), type);
+            case { Type: ArrayTypeSymbol array }:
+                return new LOpenArray(new LAddrOf(Lower(argument), Types.Pointer), Constant(array.Length - 1, Types.Int64), type);
+            default:
+                return new LOpenArray(Lower(argument), high: null, type);          // a dynamic array
+        }
+    }
 
     private LExpression Argument(ParameterSymbol parameter, LExpression argument, List<LStatement> writeBacks)
     {

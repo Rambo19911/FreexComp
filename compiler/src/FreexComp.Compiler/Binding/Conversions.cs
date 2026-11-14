@@ -46,6 +46,9 @@ internal sealed class Conversions
             (PointerTypeSymbol, StringTypeSymbol) when Strings.IsCharPointer(source, wide: true) && Strings.IsUnicode(destination) => String,
             (PointerTypeSymbol, StringTypeSymbol { Variant: not StringVariant.Short }) when Strings.IsCharPointer(source, wide: false) => String,
             (ArrayTypeSymbol, StringTypeSymbol) when Strings.IsCharArray(source) && Strings.IsUnicode(destination) => String,
+            // LANG-430 / LANG-281: any array with the identical element type (C-106)
+            (_, OpenArrayTypeSymbol open) when OpenArrayTypeSymbol.ElementOf(source) is { } element && Pointers.SameType(element, open.ElementType)
+                => Pointer,
             _ => NoConversion,
         };
     }

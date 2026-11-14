@@ -483,14 +483,30 @@ internal sealed class LArrayLength(LExpression array, TypeSymbol integer) : LExp
 /// <summary>
 /// ABI-042 / CMP-330: element <see cref="Index"/> (zero-based, <c>Int64</c>) of the dynamic array value <see cref="Array"/>, a variable
 /// reference of the element type (no copy-on-write). <see cref="IsChecked"/>: <c>{$R+}</c> test <c>Index &lt;u Length</c> (CMP-331).
+/// An open array's element (C-106): <see cref="Array"/> is its data pointer and <see cref="Length"/> (<c>Int64</c>, High + 1) the
+/// count the check uses.
 /// </summary>
-internal sealed class LArrayElement(LExpression array, LExpression index, bool isChecked, TypeSymbol elementType) : LExpression(elementType)
+internal sealed class LArrayElement(LExpression array, LExpression index, bool isChecked, TypeSymbol elementType, LExpression? length = null) : LExpression(elementType)
 {
     public LExpression Array { get; } = array;
 
     public LExpression Index { get; } = index;
 
     public bool IsChecked { get; } = isChecked;
+
+    public LExpression? Length { get; } = length;
+}
+
+/// <summary>
+/// ABI-080 (C-106): the argument of an open array parameter — two IR arguments, the <c>ptr</c> <see cref="Data"/> (element 0, or
+/// null) then the <c>i64</c> <see cref="High"/>. A null <see cref="High"/> means a dynamic array value: its length − 1, read from
+/// <see cref="Data"/> (evaluated once).
+/// </summary>
+internal sealed class LOpenArray(LExpression data, LExpression? high, TypeSymbol type) : LExpression(type)
+{
+    public LExpression Data { get; } = data;
+
+    public LExpression? High { get; } = high;
 }
 
 /// <summary>CMP-407: the address of the RTTI block of <see cref="Described"/> (rtl-abi.md §10), a <c>Pointer</c>.</summary>

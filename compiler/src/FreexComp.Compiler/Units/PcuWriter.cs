@@ -378,10 +378,14 @@ internal sealed class PcuWriter(PcuContext context)
                 var parameter = new JsonObject
                 {
                     ["name"] = p.Name,
-                    ["type"] = TypeId(p.Type),
+                    ["type"] = TypeId(p.Type is OpenArrayTypeSymbol open ? open.ElementType : p.Type),     // an open array: its element type (C-106)
                     ["mode"] = p.Mode switch { ParameterMode.Const => "const", ParameterMode.Var => "var", ParameterMode.Out => "out", _ => "value" },
                     ["openArray"] = p.IsOpenArray,
                 };
+                if (p.Type is OpenArrayTypeSymbol { IsArrayOfConst: true })
+                {
+                    parameter["arrayOfConst"] = true;                           // C-107: element TVarRec
+                }
                 if (p.DefaultValue is { } defaultValue)
                 {
                     parameter["default"] = Value(defaultValue, p.Type);         // present only with a default (nil = null)
@@ -563,6 +567,11 @@ internal sealed class PcuWriter(PcuContext context)
                     entry["methods"] = new JsonArray();
                     entry["properties"] = new JsonArray();
                     entry["managed"] = record.IsManaged;
+                    if (record.HasVariantPart)
+                    {
+                        entry["variant"] = true;                                // C-108: overlapping fields, byte storage
+                    }
+
                     return;
                 case ProceduralTypeSymbol procedural:
                     entry["kind"] = "procedural";

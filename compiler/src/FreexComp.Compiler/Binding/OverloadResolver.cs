@@ -84,7 +84,13 @@ internal sealed class OverloadResolver(Conversions conversions)
         var (source, destination) = (argument.Type, parameter.Type);
         if (parameter.IsByReference)
         {
-            return isVariable(argument) && Pointers.SameType(source, destination) ? 0 : null;
+            var matches = destination is OpenArrayTypeSymbol ? conversions.Classify(source, destination).Exists : Pointers.SameType(source, destination);
+            return isVariable(argument) && matches ? 0 : null;
+        }
+
+        if (argument is BoundArrayConstructor && destination is OpenArrayTypeSymbol)
+        {
+            return conversions.Classify(source, destination).Exists ? 3 : null;    // LANG-442: array constructor → open array
         }
 
         var constant = argument.ConstantValue;

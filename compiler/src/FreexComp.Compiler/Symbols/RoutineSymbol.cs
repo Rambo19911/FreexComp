@@ -10,20 +10,31 @@ public enum ParameterMode { Value, Const, Var, Out }
 /// <summary>A formal parameter of a routine (routines.md §3).</summary>
 public sealed class ParameterSymbol : Symbol
 {
-    internal ParameterSymbol(string name, TypeSymbol type, ParameterMode mode, int ordinal, Symbol containingSymbol, ImmutableArray<Location> locations)
+    /// <param name="highType">The built-in <c>Int64</c>: required for an open array parameter (its High companion).</param>
+    internal ParameterSymbol(string name, TypeSymbol type, ParameterMode mode, int ordinal, Symbol containingSymbol, ImmutableArray<Location> locations,
+        TypeSymbol? highType = null)
         : base(SymbolKind.Parameter, name, containingSymbol, locations)
     {
         Type = type;
         Mode = mode;
         Ordinal = ordinal;
+        if (type is OpenArrayTypeSymbol)
+        {
+            // ABI-080: the High companion travels right after the data pointer (C-106); debug name "A$high" (DBG-138)
+            HighParameter = new ParameterSymbol(name + "$high", highType ?? throw new ArgumentNullException(nameof(highType)),
+                ParameterMode.Value, ordinal, containingSymbol, []);
+        }
     }
 
     public TypeSymbol Type { get; }
 
     public ParameterMode Mode { get; }
 
-    /// <summary>Open array parameters arrive with M2.5.</summary>
-    public bool IsOpenArray => false;
+    /// <summary>An open array parameter (LANG-430, C-106).</summary>
+    public bool IsOpenArray => Type is OpenArrayTypeSymbol;
+
+    /// <summary>The hidden <c>Int64</c> High companion of an open array parameter (ABI-080); null for other parameters.</summary>
+    internal ParameterSymbol? HighParameter { get; }
 
     /// <summary>LANG-422: the default value, converted to <see cref="Type"/>; null when the parameter has none (C-105).</summary>
     public ConstantValue? DefaultValue { get; internal set; }

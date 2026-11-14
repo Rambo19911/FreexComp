@@ -174,6 +174,31 @@ public sealed class TypeLayoutTests
             (string.Join(" ", record.Fields.Select(f => f.Offset)), layout.Size, layout.Alignment, Describe(layout.StorageType, body: true)));
     }
 
+    /// <summary>
+    /// C-108, ABI-061 (hand-computed): every variant starts at the end of the fixed part (tag included when named), aligned to the
+    /// largest alignment of all variant fields (nested ones too); the variant part is as large as its largest variant; the
+    /// storage is <c>[Size x i8]</c> (CMP-306). Fields listed in declaration order (fixed, tag, then each variant's).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "ABI-061")]
+    [Trait("Req", "CMP-306")]
+    [InlineData("record case VType: Byte of 0: (VInteger: Integer); 1: (VPointer: Pointer) end", "0 8 8", 16, 8)]
+    [InlineData("record case Byte of 0: (a: Byte); 1: (b: Word) end", "0 0", 2, 2)]
+    [InlineData("record x: Byte; case Integer of 0: (a, b: Byte); 1: (c: Integer; d: Byte) end", "0 4 5 4 8", 12, 4)]
+    [InlineData("record x: Word; case t: Boolean of True: (d: Double); False: (s: array[0..2] of Byte) end", "0 2 8 8", 16, 8)]
+    [InlineData("packed record x: Byte; case Byte of 0: (a: Integer); 1: (b: Int64) end", "0 1 1", 9, 1)]
+    [InlineData("record case Byte of 0: (a: Byte; case k: Byte of 1: (b: Int64); 2: (c: Word)); 3: (d: Byte) end", "0 1 8 8 0", 16, 8)]
+    public void Variants_OverlayAtTheAlignedEndOfTheFixedPart(string definition, string offsets, long size, int alignment)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind($"type T = {definition}; begin end.");
+        Assert.Empty(result.Diagnostics);
+        var record = Assert.IsType<RecordTypeSymbol>(result.Declarations.Scope.Lookup("T"));
+        var layout = TypeLayout.Of(record);
+
+        Assert.Equal((offsets, size, alignment, $"[{size} x i8]", true),
+            (string.Join(" ", record.Fields.Select(f => f.Offset)), layout.Size, layout.Alignment, Describe(layout.StorageType), record.HasVariantPart));
+    }
+
     /// <summary>An anonymous record (no type declaration) gets a literal struct type (CMP-306 names declared records only).</summary>
     [Fact]
     [Trait("Req", "CMP-306")]

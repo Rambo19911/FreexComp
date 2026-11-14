@@ -32,6 +32,14 @@ internal static class IntrinsicRewriter
         }
 
         var argument = call.Arguments[0];
+        if (argument.Type is OpenArrayTypeSymbol && call.Intrinsic.Intrinsic is IntrinsicKind.High or IntrinsicKind.Length)
+        {
+            // LANG-431 (C-106): the High companion (Length = High + 1), as an Integer
+            var high = context.OpenArrayHigh(argument);
+            return context.Convert(call.Intrinsic.Intrinsic == IntrinsicKind.High ? high
+                : new LBinary(LBinaryOperator.Add, high, context.Constant(BigInteger.One, context.Types.Int64)), context.Types.Integer);
+        }
+
         var operand = context.Lower(argument);
         var state = CheckRewriter.StateOf(call);
         switch (call.Intrinsic.Intrinsic)

@@ -119,6 +119,7 @@ public sealed class BuiltInTypes
         Intrinsic("Readln", IntrinsicKind.Readln, "Readln([var F: Text;] var V1, ...)");
         Intrinsic("Eof", IntrinsicKind.Eof, "Eof[(var F: Text)]: Boolean");
         Intrinsic("Eoln", IntrinsicKind.Eoln, "Eoln[(var F: Text)]: Boolean");
+        Intrinsic("Slice", IntrinsicKind.Slice, "Slice(const A: array; Count: Integer): array");
     }
 
     /// <summary>
@@ -169,6 +170,22 @@ public sealed class BuiltInTypes
     public TypeSymbol? TObject { get; internal set; }
 
     public TypeSymbol? IInterface { get; internal set; }
+
+    private readonly Dictionary<(TypeSymbol, bool), OpenArrayTypeSymbol> _openArrays = new();
+
+    /// <summary>The open array type over <paramref name="element"/> (one per element type in this compilation, LANG-430; C-106).</summary>
+    internal OpenArrayTypeSymbol OpenArrayOf(TypeSymbol element, bool isArrayOfConst = false)
+    {
+        lock (_openArrays)
+        {
+            if (!_openArrays.TryGetValue((element, isArrayOfConst), out var type))
+            {
+                _openArrays[(element, isArrayOfConst)] = type = new OpenArrayTypeSymbol(element, isArrayOfConst);
+            }
+
+            return type;
+        }
+    }
 
     private T Declare<T>(T type) where T : TypeSymbol
     {

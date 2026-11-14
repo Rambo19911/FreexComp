@@ -568,6 +568,46 @@ public sealed class PcuTests
         Assert.Equal(pcus["U"], again["U"]);
     }
 
+    /// <summary>
+    /// C-106…C-108: open array and <c>array of const</c> parameters (element type + <c>openArray</c>, <c>arrayOfConst</c>) and a
+    /// variant record (<c>variant</c>, overlapping offsets) survive write → import → write byte for byte.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-160")]
+    [Trait("Req", "LANG-430")]
+    [Trait("Req", "ABI-061")]
+    public void RoundTrip_OpenArraysAndVariantRecords()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            uses V;
+            type
+              TOverlay = record case Byte of 0: (A: Integer); 1: (B: Int64) end;
+            function Sum(const A: array of Integer; var B: array of Byte): Integer; overload;
+            procedure Show(const Args: array of const); overload;
+            implementation
+            function Sum(const A: array of Integer; var B: array of Byte): Integer; begin Result := High(A) end;
+            procedure Show(const Args: array of const); begin end;
+            end.
+            """;
+        const string Empty = "program P;\nuses U;\nbegin\nend.\n";
+        var pcus = Pcus(Files(u: Unit, program: Empty));
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", Empty)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
+            .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
+
+        var again = Compilation.Create(Options() with { SearchPaths = [@"C:\lib"] }, [], fs).PcuTexts().ToDictionary(t => t.Unit, t => t.Text);
+
+        Assert.Contains("\"linkName\":\"U.Sum$ca:Integer,va:Byte\"", pcus["U"], StringComparison.Ordinal);
+        Assert.Contains("\"linkName\":\"U.Show$ca:const\"", pcus["U"], StringComparison.Ordinal);
+        Assert.Contains("\"openArray\":true,\"arrayOfConst\":true", pcus["U"], StringComparison.Ordinal);
+        Assert.Contains("\"variant\":true", pcus["U"], StringComparison.Ordinal);
+        Assert.Equal(pcus["U"], again["U"]);
+    }
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

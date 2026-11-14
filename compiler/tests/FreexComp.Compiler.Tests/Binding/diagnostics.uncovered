@@ -13,16 +13,12 @@
 # A code with a case must not be listed; M2.1 is never a valid status.
 
 E2008  reserved  LANG-516 makes this unused
-E2068  M2.5  with statement (LANG-375)
-E2069  M2.5  for-in (LANG-362)
 E2070  M2.5  goto/labels (LANG-380)
 E2071  M2.5  goto/labels (LANG-380)
 E2072  M2.5  goto/labels (LANG-380)
 E2073  M2.5  goto/labels (LANG-380)
 E2075  M2.6  inline variable type inference (LANG-385)
-E2116  M2.5  open arrays (LANG-430)
 E2131  M2.5  overloaded routine as procedural value
-E2160  M2.5  variant records (LANG-261)
 E2200  elsewhere UnitBindingTests  needs a unit file (uses entry with in)
 E2201  elsewhere UnitBindingTests  needs a unit file whose heading differs from its file name
 E2202  elsewhere UnitBindingTests  unit resolution over the file system (also EmitTests: System not found)

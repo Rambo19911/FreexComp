@@ -623,10 +623,17 @@ internal sealed partial class DeclarationBinder
             }
         }
 
-        if (syntax.VariantPart is { } variant)
+        var packing = syntax.PackedKeyword is not null ? 1 : syntax.RecordKeyword.DirectiveState.Align;
+        var (offsets, size, alignment) = RecordTypeSymbol.Layout(fields.Select(f => f.Type), packing);
+        var placed = fields.Select((f, i) => (f.Identifier, f.Type, Offset: offsets[i])).ToList();
+        if (syntax.VariantPart is { } variantPart && !failed)
         {
-            Unsupported(variant, "variant part");                                            // C-108
-            failed = true;
+            // ABI-061 (C-108): the variant part continues after the fixed part's last field
+            var end = fields.Count == 0 ? 0 : offsets[^1] + fields[^1].Type.Size;
+            var types = new Dictionary<FieldDeclarationSyntax, TypeSymbol>();
+            failed = !BindVariantFields(variantPart, types, declared)
+                || !PlaceVariantPart(variantPart, types, names, packing, placed, ref end, ref alignment);
+            size = (end + alignment - 1) / alignment * alignment;
         }
 
         if (failed)
@@ -634,8 +641,6 @@ internal sealed partial class DeclarationBinder
             return _types.Error;
         }
 
-        var packing = syntax.PackedKeyword is not null ? 1 : syntax.RecordKeyword.DirectiveState.Align;
-        var (offsets, size, alignment) = RecordTypeSymbol.Layout(fields.Select(f => f.Type), packing);
         if (size > int.MaxValue)
         {
             _diagnostics.Report(syntax, "E2031");
@@ -643,9 +648,144 @@ internal sealed partial class DeclarationBinder
         }
 
         var record = new RecordTypeSymbol(name, size, alignment, syntax.PackedKeyword is not null, packing, isAnonymous: declaredAt is null,
-            _container, declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : []);
-        record.Fields = [.. fields.Select((f, i) => new FieldSymbol(NameOf(f.Identifier), f.Type, offsets[i], record, [DiagnosticBag.LocationOf(f.Identifier)]))];
+            _container, declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [])
+        {
+            HasVariantPart = syntax.VariantPart is not null,
+        };
+        record.Fields = [.. placed.Select(f => new FieldSymbol(NameOf(f.Identifier), f.Type, f.Offset, record, [DiagnosticBag.LocationOf(f.Identifier)]))];
         return record;
+    }
+
+    /// <summary>
+    /// LANG-261 / ABI-061 (C-108): binds the types of every field in <paramref name="part"/> (nested parts too) into
+    /// <paramref name="types"/>; E2160 for a managed type, E2900 for a type without fixed size. False after any error.
+    /// </summary>
+    private bool BindVariantFields(VariantPartSyntax part, Dictionary<FieldDeclarationSyntax, TypeSymbol> types, ImmutableArray<Symbol>.Builder? declared)
+    {
+        var ok = true;
+        foreach (var variant in part.Variants)
+        {
+            foreach (var field in variant.Fields)
+            {
+                var type = BindType(field.Type, declared: declared);
+                if (type.TypeKind == TypeKind.Error)
+                {
+                    ok = false;
+                }
+                else if (type.IsManaged)
+                {
+                    _diagnostics.Report(field.Type, "E2160", type.Name);
+                    ok = false;
+                }
+                else if (type.Size < 0 || type is TextTypeSymbol)
+                {
+                    Unsupported(field.Type, "record field of type " + type.Name);
+                    ok = false;
+                }
+                else
+                {
+                    types[field] = type;
+                }
+            }
+
+            if (variant.VariantPart is { } nested)
+            {
+                ok &= BindVariantFields(nested, types, declared);
+            }
+        }
+
+        return ok;
+    }
+
+    /// <summary>The largest field alignment (capped by <paramref name="packing"/>) in <paramref name="part"/>, nested parts included.</summary>
+    private static int VariantAlignment(VariantPartSyntax part, Dictionary<FieldDeclarationSyntax, TypeSymbol> types, int packing) =>
+        part.Variants.Select(v => Math.Max(
+                v.Fields.Select(f => Math.Min(types[f].Alignment, packing)).DefaultIfEmpty(1).Max(),
+                v.VariantPart is { } nested ? VariantAlignment(nested, types, packing) : 1))
+            .DefaultIfEmpty(1).Max();
+
+    /// <summary>
+    /// ABI-061 (C-108): the tag field (when named) at the next aligned offset after <paramref name="end"/>; every variant then
+    /// starts at one offset aligned to the largest alignment of all variant fields, its fields (and nested part) following in
+    /// order; <paramref name="end"/> becomes the end of the largest variant. Labels are constants of the tag type (E2010,
+    /// E2012); the tag type is ordinal (E2013); all names share the record's name space (E2004).
+    /// </summary>
+    private bool PlaceVariantPart(VariantPartSyntax part, Dictionary<FieldDeclarationSyntax, TypeSymbol> types, HashSet<string> names, int packing,
+        List<(SyntaxToken Identifier, TypeSymbol Type, long Offset)> placed, ref long end, ref int alignment)
+    {
+        var ok = true;
+        var tagType = BindType(part.TagType);
+        if (tagType.TypeKind == TypeKind.Error)
+        {
+            return false;
+        }
+
+        if (!tagType.IsOrdinal)
+        {
+            _diagnostics.Report(part.TagType, "E2013");
+            return false;
+        }
+
+        if (part.TagIdentifier is { IsMissing: false } tag)
+        {
+            if (!names.Add(NameOf(tag)))
+            {
+                _diagnostics.Report(tag, "E2004", NameOf(tag));
+                ok = false;
+            }
+
+            var tagAlignment = Math.Min(tagType.Alignment, packing);
+            var offset = (end + tagAlignment - 1) / tagAlignment * tagAlignment;
+            placed.Add((tag, tagType, offset));
+            end = offset + tagType.Size;
+            alignment = Math.Max(alignment, tagAlignment);
+        }
+
+        var partAlignment = VariantAlignment(part, types, packing);
+        alignment = Math.Max(alignment, partAlignment);
+        var start = (end + partAlignment - 1) / partAlignment * partAlignment;
+        var partEnd = start;
+        var conversions = new Conversions();
+        foreach (var variant in part.Variants)
+        {
+            foreach (var label in variant.Labels)
+            {
+                if (_folder.Fold(label) is not { } value || conversions.ConvertConstant(value, tagType, label, _diagnostics) is null)
+                {
+                    ok = false;
+                }
+            }
+
+            var cursor = start;
+            foreach (var field in variant.Fields)
+            {
+                var type = types[field];
+                var fieldAlignment = Math.Min(type.Alignment, packing);
+                foreach (var identifier in field.Identifiers.Select(i => i.Identifier).Where(i => !i.IsMissing))
+                {
+                    if (!names.Add(NameOf(identifier)))
+                    {
+                        _diagnostics.Report(identifier, "E2004", NameOf(identifier));
+                        ok = false;
+                        continue;
+                    }
+
+                    var offset = (cursor + fieldAlignment - 1) / fieldAlignment * fieldAlignment;
+                    placed.Add((identifier, type, offset));
+                    cursor = offset + type.Size;
+                }
+            }
+
+            if (variant.VariantPart is { } nested)
+            {
+                ok &= PlaceVariantPart(nested, types, names, packing, placed, ref cursor, ref alignment);
+            }
+
+            partEnd = Math.Max(partEnd, cursor);
+        }
+
+        end = partEnd;
+        return ok;
     }
 
     /// <summary>
@@ -861,6 +1001,12 @@ internal sealed partial class DeclarationBinder
         if (type is not RecordTypeSymbol record)
         {
             _diagnostics.Report(syntax, "E2016");
+            return null;
+        }
+
+        if (record.HasVariantPart)
+        {
+            Unsupported(syntax, "typed constant of a variant record");     // C-108 decision (no case needs it yet)
             return null;
         }
 
@@ -1201,7 +1347,7 @@ internal sealed partial class DeclarationBinder
                     _diagnostics.Report(token, "E2118", NameOf(token));
                 }
 
-                var symbol = new ParameterSymbol(NameOf(token), type, mode, parameters.Count, routine, [DiagnosticBag.LocationOf(token)])
+                var symbol = new ParameterSymbol(NameOf(token), type, mode, parameters.Count, routine, [DiagnosticBag.LocationOf(token)], _types.Int64)
                 {
                     DefaultValue = defaultConstant,
                 };
@@ -1379,10 +1525,19 @@ internal sealed partial class DeclarationBinder
                         _diagnostics.Report(classRef.ClassType, "E2603");
                         return _types.Error;
                 }
+            case ArrayTypeSyntax { ElementType: null } when parameter:
+                // LANG-433 (C-107): an open array of the TVarRec record in scope (System's)
+                if (_scope.Lookup("TVarRec") is RecordTypeSymbol varRec)
+                {
+                    return _types.OpenArrayOf(varRec, isArrayOfConst: true);
+                }
+
+                _diagnostics.ReportUndeclared(type, "TVarRec");
+                return _types.Error;
             case ArrayTypeSyntax { ElementType: null }:
-                return Unsupported(type, "array of const");                     // M2.5
-            case ArrayTypeSyntax when parameter:
-                return Unsupported(type, "open array parameter");               // LANG-430, M2.5
+                return Unsupported(type, "array of const");                     // only as a parameter type
+            case ArrayTypeSyntax { ElementType: { } element } when parameter:
+                return BindType(element) is { TypeKind: not TypeKind.Error } elementType ? _types.OpenArrayOf(elementType) : _types.Error;   // LANG-430 (C-106)
             case ArrayTypeSyntax array:
                 return BindDynamicArray(array, typeName, declaredAt, declared);
             case NamedTypeSyntax { Name: IdentifierNameSyntax name }:

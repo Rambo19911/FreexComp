@@ -54,6 +54,8 @@ internal enum BoundKind
     RaiseStatement,
     TryExceptStatement,
     TryFinallyStatement,
+    WithStatement,
+    LocalsStatement,
 }
 
 /// <summary>A node of the bound tree: immutable, typed, symbols resolved.</summary>
@@ -283,12 +285,13 @@ internal sealed class BoundSetConstructor : BoundExpression
 /// <summary>
 /// LANG-259 (C-067): <c>[e1, e2, …]</c> assigned to a dynamic array (variable, value/<c>const</c> parameter, <c>Result</c>):
 /// a new array of <see cref="BoundExpression.Type"/> holding the elements, each converted to the element type. <c>[]</c> is
-/// the constant <c>nil</c>.
+/// the constant <c>nil</c>. As an argument for a value/<c>const</c> open array parameter (C-106) its type is the
+/// <see cref="OpenArrayTypeSymbol"/>: the elements in a caller temporary (never a constant, also when empty).
 /// </summary>
 internal sealed class BoundArrayConstructor : BoundExpression
 {
-    public BoundArrayConstructor(SyntaxNode syntax, ImmutableArray<BoundExpression> elements, DynamicArrayTypeSymbol type)
-        : base(syntax, type, elements.IsEmpty ? new ConstantValue(null, type) : null)
+    public BoundArrayConstructor(SyntaxNode syntax, ImmutableArray<BoundExpression> elements, TypeSymbol type)
+        : base(syntax, type, elements.IsEmpty && type is DynamicArrayTypeSymbol ? new ConstantValue(null, type) : null)
     {
         Elements = elements;
     }
@@ -834,6 +837,50 @@ internal sealed class BoundTryFinallyStatement : BoundStatement
     public BoundBlock Body { get; }
 
     public BoundBlock Finally { get; }
+}
+
+/// <summary>
+/// LANG-375 (C-109): one designator of <c>with d do s</c>. <see cref="Value"/> (the address of an addressable record, else the
+/// record value or the object reference) is stored once in the hidden local <see cref="Variable"/> (<c>$withN</c>); the members
+/// named in <see cref="Body"/> are bound through it.
+/// </summary>
+internal sealed class BoundWithStatement : BoundStatement
+{
+    public BoundWithStatement(SyntaxNode syntax, VariableSymbol variable, BoundExpression value, BoundStatement body)
+        : base(syntax)
+    {
+        Variable = variable;
+        Value = value;
+        Body = body;
+    }
+
+    public override BoundKind Kind => BoundKind.WithStatement;
+
+    public VariableSymbol Variable { get; }
+
+    public BoundExpression Value { get; }
+
+    public BoundStatement Body { get; }
+}
+
+/// <summary>
+/// Compiler-declared hidden locals (<see cref="Locals"/>, in no scope) used by <see cref="Body"/>: the collection and index of a
+/// <c>for…in</c> loop (LANG-362, C-111).
+/// </summary>
+internal sealed class BoundLocalsStatement : BoundStatement
+{
+    public BoundLocalsStatement(SyntaxNode syntax, ImmutableArray<VariableSymbol> locals, BoundStatement body)
+        : base(syntax)
+    {
+        Locals = locals;
+        Body = body;
+    }
+
+    public override BoundKind Kind => BoundKind.LocalsStatement;
+
+    public ImmutableArray<VariableSymbol> Locals { get; }
+
+    public BoundStatement Body { get; }
 }
 
 /// <summary><c>Halt</c> / <c>Halt(ExitCode)</c>: ends the program after the finalization sections (LANG-364).</summary>

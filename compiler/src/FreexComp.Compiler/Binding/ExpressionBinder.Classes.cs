@@ -373,10 +373,85 @@ internal sealed partial class ExpressionBinder
         return new BoundCallExpression(call, method.Method, method.Arguments, type: type) { Receiver = method.Receiver };
     }
 
-    /// <summary>A method named without qualifier inside a method: <c>Self.M(args)</c>.</summary>
+    /// <summary>A method named without qualifier inside a method: <c>Self.M(args)</c>; inside <c>with o do</c> one of <c>o</c>'s (C-109).</summary>
     private BoundExpression ImplicitMethodCall(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList) =>
-        MethodCallExpression(call, BindMethodCall(call, _scope.For(name).LookupCandidates(name.Identifier.Value as string ?? name.Identifier.Text),
-            ReceiverKind.Implicit, null, null, argumentList));
+        MethodCallExpression(call, ImplicitMethod(call, name, argumentList));
+
+    private MethodCall ImplicitMethod(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList)
+    {
+        var text = name.Identifier.Value as string ?? name.Identifier.Text;
+        if (_scope.For(name).Lookup(text) is { } symbol && WithOf(text, symbol) is { Type: ClassTypeSymbol type } with)
+        {
+            return BindMethodCall(call, MemberCandidates(type, text), ReceiverKind.Instance, WithReceiver(name, with), null, argumentList);
+        }
+
+        return BindMethodCall(call, _scope.For(name).LookupCandidates(text), ReceiverKind.Implicit, null, null, argumentList);
+    }
+
+    // ------------------------------------------------------------------ with (LANG-375, C-109)
+
+    /// <summary>The active <c>with</c> designators, outermost first: their member scope, hidden variable and designator type.</summary>
+    private readonly List<WithContext> _withs = [];
+
+    internal readonly record struct WithContext(Scope Scope, VariableSymbol Variable, TypeSymbol Type);
+
+    /// <summary>Binds <paramref name="bind"/> with the members of a <c>with</c> designator in scope (the scope is entered by the caller).</summary>
+    public T InWith<T>(WithContext with, Func<T> bind)
+    {
+        _withs.Add(with);
+        try
+        {
+            return InScope(with.Scope, bind);
+        }
+        finally
+        {
+            _withs.RemoveAt(_withs.Count - 1);
+        }
+    }
+
+    /// <summary>The innermost active <c>with</c> whose member scope declares <paramref name="symbol"/> as <paramref name="name"/>.</summary>
+    private WithContext? WithOf(string name, Symbol symbol)
+    {
+        for (var i = _withs.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(_withs[i].Scope.LookupLocal(name), symbol))
+            {
+                return _withs[i];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The designator as bound through its hidden variable: <c>$with^</c> for a record held by address, else <c>$with</c>.</summary>
+    private static BoundExpression WithReceiver(SyntaxNode syntax, WithContext with) =>
+        with.Variable.Type is PointerTypeSymbol && with.Type is RecordTypeSymbol record
+            ? new BoundDereferenceExpression(syntax, new BoundVariableExpression(syntax, with.Variable), record)
+            : new BoundVariableExpression(syntax, with.Variable);
+
+    /// <summary>
+    /// LANG-375: <paramref name="member"/> named inside <c>with d do</c> = <c>d.Member</c> — a record field, an object's field, class var,
+    /// property or (parameterless) method call, with the visibility checks of an explicit member access.
+    /// </summary>
+    private BoundExpression WithMember(IdentifierNameSyntax name, WithContext with, Symbol member)
+    {
+        var receiver = WithReceiver(name, with);
+        switch (member)
+        {
+            case FieldSymbol field when with.Type is ClassTypeSymbol type:
+                return field.ContainingSymbol is ClassTypeSymbol owner && !CheckAccess(name, field, owner, type) ? Error(name) : new BoundFieldAccessExpression(name, receiver, field);
+            case FieldSymbol field:
+                return new BoundFieldAccessExpression(name, receiver, field);
+            case VariableSymbol classVar:
+                return ClassVariable(name, name, classVar, with.Type);
+            case PropertySymbol property:
+                return CheckAccess(name, property, property.ContainingType, with.Type) ? PropertyAccess(name, property, property.IsClassProperty ? null : receiver) : Error(name);
+            case MethodSymbol:
+                return ImplicitMethodCall(name, name, argumentList: null);
+            default:
+                return Error(name);
+        }
+    }
 
     /// <summary>
     /// <c>x.Name</c> where <c>x</c> is a class name (constructors, CMP-367 <c>TFoo.Create</c>), an object reference (fields and methods,
@@ -549,7 +624,7 @@ internal sealed partial class ExpressionBinder
                     return null;
                 }
 
-                call = BindMethodCall(expression, _scope.For(name).LookupCandidates(token.Value as string ?? token.Text), ReceiverKind.Implicit, null, null, argumentList);
+                call = ImplicitMethod(expression, name, argumentList);
                 break;
             case MemberAccessExpressionSyntax member:
             {

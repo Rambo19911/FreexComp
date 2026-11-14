@@ -103,9 +103,45 @@ public sealed class RecordBindingTests
         Assert.True(Managed("TD"));
     }
 
-    /// <summary>Features of later tasks report E2900: variant parts (C-108), record methods (M2.6).</summary>
+    /// <summary>Features of later tasks report E2900: record methods (M2.6); typed constants of variant records (C-108 decision).</summary>
     [Theory]
-    [InlineData("type T = record a: Integer; case b: Byte of 0: (c: Byte) end; begin end.", "E2900(1,29): Feature not supported: variant part")]
+    [InlineData("type T = record a: Integer; case b: Byte of 0: (c: Byte) end; const K: T = (a: 1); begin end.", "E2900(1,76): Feature not supported: typed constant of a variant record")]
     [InlineData("type T = record f: Text end; begin end.", "E2900(1,20): Feature not supported: record field of type Text")]
     public void LaterFeatures_AreE2900(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
+
+    /// <summary>C-108, LANG-261: the tag (when named) and every variant's fields are ordinary fields, all in one name space.</summary>
+    [Fact]
+    [Trait("Req", "LANG-261")]
+    public void VariantFields_AreOrdinaryFields()
+    {
+        var (result, _) = Bind("""
+            type T = record x: Integer; case Tag: Byte of 0, 1: (a: Integer); 2: (b: Double; c: Char) end;
+            var r: T; d: Double;
+            begin r.Tag := 2; r.b := 1.5; d := r.b; r.a := r.x end.
+            """);
+        Assert.Empty(Format(result.Diagnostics));
+        var record = Assert.IsType<RecordTypeSymbol>(result.Declarations.Scope.Lookup("T"));
+        Assert.Equal(["x:Integer@0", "Tag:Byte@4", "a:Integer@8", "b:Double@8", "c:Char@16"], record.Fields.Select(f => $"{f.Name}:{f.Type.Name}@{f.Offset}"));
+        Assert.Equal((24L, 8, false), (record.Size, record.Alignment, record.IsManaged));
+    }
+
+    /// <summary>
+    /// C-108, LANG-261 / ABI-061 errors: managed variant fields (E2160), labels of another type (E2010) or out of the tag's range
+    /// (E2012), a non-ordinal tag type (E2013), a repeated field name (E2004). A managed fixed part is allowed.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-261")]
+    [Trait("Req", "ABI-061")]
+    [InlineData("type T = record case Byte of 0: (s: string) end; begin end.", "E2160(1,37): Managed type 'string' is not allowed in a variant part")]
+    [InlineData("type T = record case Byte of 'x': (i: Integer) end; begin end.", "E2010(1,30): Incompatible types: 'Char' and 'Byte'")]
+    [InlineData("type T = record case Byte of 300: (i: Integer) end; begin end.", "E2012(1,30): Constant value 300 is out of range for type 'Byte'")]
+    [InlineData("type T = record case Double of 0: (i: Integer) end; begin end.", "E2013(1,22): Ordinal type required")]
+    [InlineData("type T = record i: Byte; case Byte of 0: (i: Integer) end; begin end.", "E2004(1,43): Identifier redeclared: 'i'")]
+    [InlineData("type T = record case Byte of 0: (a: Byte; case Byte of 1: (a: Word)) end; begin end.", "E2004(1,60): Identifier redeclared: 'a'")]
+    public void VariantPart_Errors(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
+
+    [Fact]
+    [Trait("Req", "LANG-261")]
+    public void VariantPart_ManagedFixedPartIsAllowed() =>
+        Assert.Empty(BindDiagnostics("type T = record s: string; case Byte of 0: (i: Integer) end; begin end."));
 }
