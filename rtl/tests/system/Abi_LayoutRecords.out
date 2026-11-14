@@ -2,3 +2,7 @@ Text 624 TTextRec 624
 TStrRec 16: 0 4 8 10 12
 TDynArrayRec 16: 0 4 8
 TTextRec: 0 8 16 17 18 20 24 28 30 32 520
+TDynArrayTypeInfo 40: 0 8 16 24 32
+TRecordTypeInfo 40: 0 8 16 24 32
+TManagedField 16: 0 8
+TArrayTypeInfo 40: 0 8 16 24 32

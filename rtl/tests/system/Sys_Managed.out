@@ -1,0 +1,31 @@
+start: 1 2 1 1
+V: 2 3 2 2
+addref: 3 4 3 3
+finalize: 2 3 2 2
+42 TRUE TRUE TRUE TRUE TRUE
+copy: 3 4 3 3
+42 TRUE TRUE TRUE TRUE
+self: 3 4 3 3
+over: 2 5 2 2
+7 TRUE TRUE TRUE
+cleared: 2 3 2 2
+two: 4 5 4 4
+copyarray: 6 7 6 6
+finarray: 4 5 4 4
+addrefarray: 6 7 6 6
+static: 6 7 6 6
+released: 2 3 2 2
+3 -1
+4 TRUE TRUE
+2 TRUE TRUE
+pair: 2 2 2 2
+0 TRUE TRUE
+elements: 4 2 4 4
+shared: 5 2 5 5
+unshared: 3 2 3 3
+42 TRUE
+dcopy: 4 2 4 4
+shrunk: 2 2 2 2
+end: 1 2 1 1
+42
+leaks 0

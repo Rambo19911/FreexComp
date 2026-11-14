@@ -21,6 +21,44 @@ type
   end;
   PDynArrayRec = ^TDynArrayRec;
 
+  { rtl-abi.md section 10: the type-info blocks read by the managed-value helpers (common header: Kind, 7 zero bytes,
+    Name); the compiler emits them as anonymous structs with natural alignment (C-064) }
+  TDynArrayTypeInfo = record           { tkDynArray }
+    Kind: Byte;                        { 0 }
+    Pad: array[0..6] of Byte;          { 1 }
+    Name: Pointer;                     { 8 }
+    ElSize: NativeInt;                 { 16 }
+    ElType: Pointer;                   { 24: null for element kinds without a block }
+    ManagedElType: Pointer;            { 32: null when the elements are not managed }
+  end;
+  PDynArrayTypeInfo = ^TDynArrayTypeInfo;
+
+  TRecordTypeInfo = record             { tkRecord }
+    Kind: Byte;
+    Pad: array[0..6] of Byte;
+    Name: Pointer;
+    Size: NativeInt;                   { 16 }
+    ManagedCount: NativeInt;           { 24 }
+    ManagedFields: Pointer;            { 32: ManagedCount x TManagedField }
+  end;
+  PRecordTypeInfo = ^TRecordTypeInfo;
+
+  TManagedField = record
+    TypeInfo: Pointer;                 { 0 }
+    Offset: NativeInt;                 { 8 }
+  end;
+  PManagedField = ^TManagedField;
+
+  TArrayTypeInfo = record              { tkArray (static arrays) }
+    Kind: Byte;
+    Pad: array[0..6] of Byte;
+    Name: Pointer;
+    Size: NativeInt;                   { 16 }
+    ElCount: NativeInt;                { 24: all dimensions }
+    ElType: Pointer;                   { 32: the innermost element type }
+  end;
+  PArrayTypeInfo = ^TArrayTypeInfo;
+
   { system.md RTL-127: a Text variable, 624 bytes (rtl-abi.md section 2) }
   TTextMode = (tmClosed, tmInput, tmOutput);
   TTextKind = (skConsole, skBytes, skAbsent);   { stream kind (RTL-090); "tk" is taken by TTypeKind }
