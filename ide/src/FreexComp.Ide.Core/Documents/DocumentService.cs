@@ -63,6 +63,9 @@ public sealed class DocumentService : IDocumentService
 
     public DocumentViewModel? ActiveDocument { get; private set; }
 
+    /// <summary>UI-DLG-053: opens a <c>.pproj</c> picked in <c>file.open</c> as the project (set by the service graph).</summary>
+    public Func<string, Task>? ProjectOpener { get; set; }
+
     public event EventHandler<DocumentEventArgs>? DocumentOpened;
 
     public event EventHandler<DocumentClosingEventArgs>? DocumentClosing;
@@ -238,7 +241,8 @@ public sealed class DocumentService : IDocumentService
     public async Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents)
     {
         ArgumentNullException.ThrowIfNull(documents);
-        var modified = _documents.Where(d => d.IsModified && documents.Contains(d)).ToList(); // tab order
+        // The caller's order: tab order, the project file first (UI-DLG-063).
+        var modified = documents.Distinct().Where(d => d.IsModified && _documents.Contains(d)).ToList();
         IReadOnlyList<DocumentViewModel>? toSave;
         switch (modified.Count)
         {
@@ -324,7 +328,7 @@ public sealed class DocumentService : IDocumentService
             }
         }
 
-        // The project file joins with the project service (I-065).
+        // A modified project model (IDE-PM-004) is written last once project.setConfiguration exists (P3).
         _status.ShowMessage(written == 0
             ? Strings.Msg_File_NothingToSave
             : string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_SavedAll, written), StatusMessageDuration);
@@ -379,9 +383,13 @@ public sealed class DocumentService : IDocumentService
     /// </summary>
     private async Task OpenPickedFilesAsync()
     {
-        // UI-DLG-053 (a picked .pproj opens as the project) joins with the project service (I-065); until then it
-        // opens as a JSON document.
-        foreach (var path in await _prompts.OpenFileAsync(ActiveDocument?.FilePath))
+        // UI-DLG-053: a picked .pproj opens as the project first, the remaining files open as documents afterwards.
+        var picked = await _prompts.OpenFileAsync(ActiveDocument?.FilePath);
+        var project = ProjectOpener is null ? null
+            : picked.FirstOrDefault(p => string.Equals(Path.GetExtension(p), ".pproj", StringComparison.OrdinalIgnoreCase));
+        if (project is not null)
+            await ProjectOpener!(project);
+        foreach (var path in picked.Where(p => !ReferenceEquals(p, project)))
         {
             var result = await OpenAsync(path);
             if (!result.Success)

@@ -36,6 +36,7 @@ public sealed class MainWindowViewModel : ObservableObject
         ToolBarContextMenu = ToolBarRowModel.BuildContextMenu(services.Commands);
 
         services.Documents.ActiveDocumentChanged += (_, _) => FollowTitleSource(services.Documents.ActiveDocument);
+        services.Projects.ProjectChanged += (_, _) => OnPropertyChanged(nameof(Title));
         services.Settings.Changed += (_, e) =>
         {
             if (e.Key == SettingsCatalog.AppearanceShowFullPathInTitle.Name)
@@ -72,15 +73,18 @@ public sealed class MainWindowViewModel : ObservableObject
     public IReadOnlyList<MenuItemModel> MainMenu { get; }
 
     /// <summary>
-    /// UI-WIN-030 (main-window.md §4). Until the project service (I-065) and the IDE state (Phase 3) exist, the
-    /// subject is the active document (its full path with <c>appearance.showFullPathInTitle</c>) and the state Idle.
+    /// UI-WIN-030/031 (main-window.md §4): the subject is the open project's name (the <c>.pproj</c> path with
+    /// <c>appearance.showFullPathInTitle</c>), else the active document (its full path with that setting). The state
+    /// is Idle until the IDE state exists (Phase 3).
     /// </summary>
     public string Title
     {
         get
         {
-            var subject = _titleSource is null ? null
-                : _services.Settings.Get(SettingsCatalog.AppearanceShowFullPathInTitle) ? _titleSource.FilePath ?? _titleSource.Title
+            var fullPath = _services.Settings.Get(SettingsCatalog.AppearanceShowFullPathInTitle);
+            var subject = _services.Projects.Project is { } project ? (fullPath ? project.FilePath : project.Name)
+                : _titleSource is null ? null
+                : fullPath ? _titleSource.FilePath ?? _titleSource.Title
                 : _titleSource.Title;
             return WindowTitle.Format(subject, IdeState.Idle);
         }

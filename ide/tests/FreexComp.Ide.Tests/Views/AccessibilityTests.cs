@@ -99,10 +99,10 @@ public sealed class AccessibilityTests
         await h.ExecuteAsync("view.toolbar.standard"); // the Standard toolbar back for the next part
 
         // Toolbar row (UI-TB-008): Alt, then Ctrl+Tab → first button; Right → next; Enter runs; Escape → the document.
-        // Disabled buttons cannot take focus (accepted deviation), so two Phase 1 commands get handlers here.
+        // Disabled buttons cannot take focus (accepted deviation), so file.newFile gets a handler here
+        // (file.openProject has its own since I-065).
         var newFile = new Recorder();
         h.Services.Commands.RegisterHandler("file.newFile", newFile);
-        h.Services.Commands.RegisterHandler("file.openProject", new Recorder());
         h.Services.Commands.InvalidateCanExecute();
         Dispatcher.UIThread.RunJobs();
         PressAltAlone(h);

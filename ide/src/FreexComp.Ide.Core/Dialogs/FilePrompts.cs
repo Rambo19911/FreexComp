@@ -23,11 +23,14 @@ public sealed class FilePrompts
     private readonly ISettingsService _settings;
     private readonly IUserPaths _paths;
     private readonly Func<string?> _projectDirectory;
+    private readonly Func<string?, bool> _isProjectMember;
 
     /// <param name="projectDirectory">The open project's directory, null without a project (rule 3).</param>
+    /// <param name="isProjectMember">True for a file of the open project (Save As is "Save Copy As", IDE-PM-080).</param>
     public FilePrompts(IFileDialogService pickers, IFileSystem fileSystem, ILayoutService layout, ISettingsService settings,
-        IUserPaths paths, Func<string?> projectDirectory)
+        IUserPaths paths, Func<string?> projectDirectory, Func<string?, bool> isProjectMember)
     {
+        _isProjectMember = isProjectMember;
         _pickers = pickers;
         _fileSystem = fileSystem;
         _layout = layout;
@@ -60,6 +63,7 @@ public sealed class FilePrompts
     /// <summary>
     /// <c>file.saveAs</c> and the first save of an untitled document: filters by document type (default extension =
     /// first pattern), suggested name = title, stated folder = the document's folder (untitled: project directory).
+    /// For a project member the title is "Save Copy As" (IDE-PM-080, UI-DLG-055).
     /// </summary>
     public async Task<string?> SaveAsAsync(TextDocumentViewModel document)
     {
@@ -71,7 +75,8 @@ public sealed class FilePrompts
             _ => [AllFiles],
         };
         var first = filters[0].Patterns[0];
-        var request = new FilePickerRequest("saveAs", Strings.FilePrompt_Title_saveAs, filters,
+        var title = _isProjectMember(document.FilePath) ? Strings.Picker_SaveCopyAs : Strings.FilePrompt_Title_saveAs;
+        var request = new FilePickerRequest("saveAs", title, filters,
             InitialFolder("saveAs", document.FilePath is { } path ? Path.GetDirectoryName(path) : _projectDirectory()),
             SuggestedName: document.Title,
             DefaultExtension: first == "*.*" ? null : first[2..]);

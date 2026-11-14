@@ -4,6 +4,7 @@ using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
+using FreexComp.Ide.Core.Projects;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Text;
@@ -45,4 +46,5 @@ public sealed record IdeServices
     public required ILanguageRegistry Languages { get; init; }
     public required FilePrompts FilePrompts { get; init; }
     public required IDocumentService Documents { get; init; }
+    public required IProjectService Projects { get; init; }
 }

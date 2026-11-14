@@ -78,8 +78,8 @@ public interface IDocumentService
     Task<bool> CloseAllAsync(DocumentViewModel? except = null);
 
     /// <summary>
-    /// The once-per-operation question for the modified ones among <paramref name="documents"/> (IDE-P1-036,
-    /// UI-DLG-060…063): none → true; one → <c>Msg.File.SaveChangesOne</c>; several → the Unsaved Changes dialog. True
+    /// The once-per-operation question for the modified ones among <paramref name="documents"/>, listed in the given
+    /// order (IDE-P1-036, UI-DLG-060…063): none → true; one → <c>Msg.File.SaveChangesOne</c>; several → the Unsaved Changes dialog. True
     /// when the operation may go on (chosen documents saved, the rest discarded); false on Cancel, a failed save or a
     /// canceled Save As picker — documents saved until then stay saved.
     /// </summary>

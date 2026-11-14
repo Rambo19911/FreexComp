@@ -3,6 +3,7 @@ using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Menus;
+using FreexComp.Ide.Core.Projects;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ToolWindows;
@@ -46,10 +47,14 @@ public static class ServiceGraph
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
         var languages = new LanguageRegistry();
+        ProjectService? projects = null; // created after the documents it uses; the prompts ask it lazily
         var prompts = new FilePrompts(platform.FileDialogs, platform.FileSystem, layout, settings, platform.UserPaths,
-            projectDirectory: () => null); // the project service supplies it (I-065)
+            projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.RegisterCommands(commands);
+        projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts);
+        projects.RegisterCommands(commands);
+        documents.ProjectOpener = path => projects.OpenAsync(path);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         return new IdeServices
@@ -78,6 +83,7 @@ public static class ServiceGraph
             Languages = languages,
             FilePrompts = prompts,
             Documents = documents,
+            Projects = projects,
         };
     }
 }
