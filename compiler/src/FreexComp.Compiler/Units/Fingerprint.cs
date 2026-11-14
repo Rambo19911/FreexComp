@@ -23,6 +23,7 @@ internal static class Fingerprint
         text.Append("R=").Append(options.RangeChecks).Append(";Q=").Append(options.OverflowChecks).Append(";C=").Append(options.Assertions).Append('\n');
         text.Append("target=").Append(TargetTriple).Append('\n');
         text.Append("aliases=").Append(aliasTableHash).Append('\n');
+        text.Append("rtti=").Append(options.Rtti).Append('\n');                              // C-169: the default RTTI scope (CMP-150)
         return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
     }
 }

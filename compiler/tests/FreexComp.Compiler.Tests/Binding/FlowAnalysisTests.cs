@@ -70,6 +70,20 @@ public sealed class FlowAnalysisTests
         Assert.Equal([At("W1041", text, "Writeln(|x)")], Flow(text));
     }
 
+    /// <summary>
+    /// C-211 (LANG-390): a variable passed as <c>out</c> on the right of a short-circuit <c>and</c>/<c>or</c> counts as assigned after
+    /// the whole expression (as if the right side always ran), so a read guarded by the result is no W1041 (a <c>var</c> argument
+    /// keeps the warning, see <see cref="W1041_ShortCircuitRightOperandMayNotRun"/>).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-390")]
+    [InlineData("r := b and Fill(x); if r then Writeln(x)")]
+    [InlineData("r := b or Fill(x); if not r then Writeln(x)")]
+    [InlineData("r := b; if r and Fill(x) then Writeln(x); Writeln(x)")]
+    [InlineData("r := b and (Fill(x) or b); if r then Writeln(x)")]
+    public void OutArgumentInShortCircuitAnd_IsAssigned(string body) =>
+        Assert.Empty(Flow(Proc("var x: Integer; r: Boolean; function Fill(out v: Integer): Boolean; begin v := 1; Result := True end;", body)));
+
     [Fact]
     [Trait("Req", "LANG-390")]
     public void W1041_VarAndOutArgumentsCountAsAssignment()

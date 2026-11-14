@@ -52,14 +52,16 @@ type
     function ToString: string; virtual;
     function Equals(Obj: TObject): Boolean; virtual;
     function GetHashCode: Integer; virtual;
-    procedure Dispatch(var Message: Pointer); virtual;
-    procedure DefaultHandler(var Message: Pointer); virtual;
+    procedure Dispatch(var Message); virtual;
+    procedure DefaultHandler(var Message); virtual;
     function ClassType: TClass;
     class function ClassName: string;
     class function ClassParent: TClass;
     class function InheritsFrom(AClass: TClass): Boolean;
     class function InstanceSize: Integer;
     function GetInterface(const IID: TGUID; out Obj): Boolean;
+    class function MethodAddress(const Name: string): Pointer;
+    class function MethodName(Address: Pointer): string;
   end;
 
   { ABI-094 / ABI-097 (C-099; untyped out Obj since C-202) }
@@ -89,6 +91,9 @@ procedure _IntfAsg(var Dest: Pointer; Src: Pointer);
 procedure _IntfCast(var Dest: Pointer; Src: Pointer; IID: Pointer);
 procedure _ObjToIntf(var Dest: Pointer; Obj: Pointer; IID: Pointer);
 function _ObjSupports(Obj: Pointer; IID: Pointer): Boolean;
+
+{ message methods (ABI section 9.6, C-113) }
+procedure _Dispatch(Obj: Pointer; var Msg);
 
 { the element of an "array of const" argument (rtl-abi.md 9.10, C-107): VType at 0, payload at 8, 16 bytes }
 const
@@ -3181,14 +3186,122 @@ begin
   Result := Integer(NativeInt(Self));
 end;
 
-procedure TObject.Dispatch(var Message: Pointer);
+procedure TObject.Dispatch(var Message);
+begin
+  _Dispatch(Pointer(Self), Message);
+end;
+
+procedure TObject.DefaultHandler(var Message);
 begin
 end;
 
-procedure TObject.DefaultHandler(var Message: Pointer);
+{ ABI section 7.2 MsgTable at VMT+40: Count, then Count x (MsgId, Code) sorted by MsgId (binary search per class) }
+type
+  TMessageHandler = procedure(Self: Pointer; Msg: Pointer);
+  PMessageId = ^Cardinal;
+
+procedure _Dispatch(Obj: Pointer; var Msg);
+var
+  Vmt, Table: PByte;
+  Id, Lo, Hi, Mid, Found: NativeInt;
 begin
+  Id := PMessageId(@Msg)^;
+  Vmt := PPointer(Obj)^;
+  while Vmt <> nil do
+  begin
+    Table := PPointer(Vmt + 40)^;
+    if Table <> nil then
+    begin
+      Lo := 0;
+      Hi := PNativeInt(Table)^ - 1;
+      while Lo <= Hi do
+      begin
+        Mid := (Lo + Hi) div 2;
+        Found := PNativeInt(Table + 8 + Mid * 16)^;
+        if Found = Id then
+        begin
+          TMessageHandler(PPointer(Table + 16 + Mid * 16)^)(Obj, @Msg);
+          Exit;
+        end;
+        if Found < Id then
+          Lo := Mid + 1
+        else
+          Hi := Mid - 1;
+      end;
+    end;
+    Vmt := PPointer(Vmt)^;
+  end;
+  TObject(Obj).DefaultHandler(Msg);
 end;
 
+{ ---- published methods (ABI-144, C-112): the TMethodInfo tables (class RTTI +56 count, +64 entries of 24 bytes) of the
+  class and its ancestors (ParentInfo at +24); only Visibility 3 counts; names compared ASCII case-insensitively }
+
+function SameMethodName(P: PChar; const S: string): Boolean;
+var
+  I: Integer;
+  A, B: Char;
+begin
+  for I := 1 to Length(S) do
+  begin
+    A := P[I - 1];
+    B := S[I];
+    if (A >= 'a') and (A <= 'z') then
+      A := Chr(Ord(A) - 32);
+    if (B >= 'a') and (B <= 'z') then
+      B := Chr(Ord(B) - 32);
+    if A <> B then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+  Result := P[Length(S)] = #0;
+end;
+
+class function TObject.MethodAddress(const Name: string): Pointer;
+var
+  TI, Entry: PByte;
+  I: NativeInt;
+begin
+  TI := PPointer(PByte(Pointer(Self)) + 24)^;
+  while TI <> nil do
+  begin
+    for I := 0 to PNativeInt(TI + 56)^ - 1 do
+    begin
+      Entry := PByte(PPointer(TI + 64)^) + I * 24;
+      if (Entry[16] = 3) and SameMethodName(PPointer(Entry)^, Name) then
+      begin
+        Result := PPointer(Entry + 8)^;
+        Exit;
+      end;
+    end;
+    TI := PPointer(TI + 24)^;
+  end;
+  Result := nil;
+end;
+
+class function TObject.MethodName(Address: Pointer): string;
+var
+  TI, Entry: PByte;
+  I: NativeInt;
+begin
+  TI := PPointer(PByte(Pointer(Self)) + 24)^;
+  while TI <> nil do
+  begin
+    for I := 0 to PNativeInt(TI + 56)^ - 1 do
+    begin
+      Entry := PByte(PPointer(TI + 64)^) + I * 24;
+      if (Entry[16] = 3) and (PPointer(Entry + 8)^ = Address) then
+      begin
+        Result := PChar(PPointer(Entry)^);
+        Exit;
+      end;
+    end;
+    TI := PPointer(TI + 24)^;
+  end;
+  Result := '';
+end;
 { ---- class references (LANG-652, ABI §7.2: Parent at VMT+0, InstanceSize at +8, ClassName at +16; Self is the VMT) }
 
 function TObject.ClassType: TClass;

@@ -1,0 +1,13 @@
+TBase.DefaultHandler id=7 tag=1
+TChild.OnFive 2
+TBase.DefaultHandler id=5 tag=2
+TGrand.OnFiveAgain 3
+TChild.OnFive 3
+TGrand.DefaultHandler
+TBase.DefaultHandler id=5 tag=3
+TGrand.OnSix 4
+TGrand.DefaultHandler
+TBase.DefaultHandler id=6 tag=400
+TGrand.DefaultHandler
+TBase.DefaultHandler id=9 tag=5
+done

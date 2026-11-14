@@ -69,6 +69,43 @@ public sealed class ProcTypeBindingTests
         AssertDiagnostics("type TE = procedure(X: Integer) of object; TC = class procedure M(X: Integer); class procedure K(X: Integer); procedure N; end; " +
             "procedure TC.M(X: Integer); begin end; class procedure TC.K(X: Integer); begin end; " + (body.StartsWith("procedure TC.N") ? "" : "procedure TC.N; begin end; ") + body, expected);
 
+    /// <summary>
+    /// C-207 / LANG-481: <c>=</c>/<c>&lt;&gt;</c> between two method pointers of compatible types bind (operand type the method pointer,
+    /// lowered to Code and Data compares); other operators and incompatible types are E2011.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-481")]
+    [InlineData("var C: TC; E, G: TE; H: TH; B: Boolean; begin E := C.M; G := E; B := E = G; B := (E <> G) or (E = H); end.", null)]
+    [InlineData("var E: TE; F: TF2; B: Boolean; begin B := E = F; end.", "E2011: Operator '=' not applicable to operand type(s) 'TE' and 'TF2'")]
+    [InlineData("var E, G: TE; B: Boolean; begin B := E < G; end.", "E2011: Operator '<' not applicable to operand type(s) 'TE' and 'TE'")]
+    public void MethodPointerEquality(string body, string? expected) =>
+        AssertDiagnostics("type TE = procedure(X: Integer) of object; TH = procedure(Y: Integer) of object; TF2 = procedure(S: string) of object; " +
+            "TC = class procedure M(X: Integer); end; procedure TC.M(X: Integer); begin end; " + body, expected);
+
+    /// <summary>C-207 / LANG-481: a method pointer bound to <c>E = G</c> keeps both operands; <c>Intf.M</c> is a method pointer whose Data is the interface.</summary>
+    [Fact]
+    [Trait("Req", "LANG-481")]
+    public void MethodPointerEquality_BoundTree()
+    {
+        var (result, _) = Bind(Header + "type TE = procedure(X: Integer) of object; var E, G: TE; B: Boolean; begin B := E = G end.");
+        Assert.Empty(Format(result.Diagnostics));
+        Assert.Equal("(block (:= B:Boolean (Equal:Boolean E:TE G:TE)))", BoundDump.Of(result.Bodies[^1]));
+    }
+
+    /// <summary>
+    /// C-207: <c>Intf.M</c> (also with <c>@</c>, also an inherited interface method) where a method pointer is expected; a signature
+    /// mismatch is E2010, an overloaded name without a match E2131.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-481")]
+    [Trait("Req", "LANG-664")]
+    [InlineData("var I: IFoo; E: TE; begin E := I.Bar; E := @I.Bar; E := I.Baz; E(1) end.", null)]
+    [InlineData("var I: IFoo; E: TE; begin E := I.Qux; end.", "E2010: Incompatible types: 'function: Integer of object' and 'TE'")]
+    [InlineData("var I: IFoo; E: TE; begin E := I.Ov; end.", "E2131: No overload of 'Ov' matches procedural type 'TE'")]
+    public void InterfaceMethodPointer(string body, string? expected) =>
+        AssertDiagnostics("type TE = procedure(X: Integer) of object; IBase = interface procedure Baz(X: Integer); end; " +
+            "IFoo = interface(IBase) procedure Bar(X: Integer); function Qux: Integer; procedure Ov(S: string); overload; procedure Ov(B: Byte); overload; end; " + body, expected);
+
     private static void AssertDiagnostics(string body, string? expected)
     {
         var diagnostics = BindDiagnostics(Header + body).Select(d => System.Text.RegularExpressions.Regex.Replace(d, @"\(\d+,\d+\)", ""));

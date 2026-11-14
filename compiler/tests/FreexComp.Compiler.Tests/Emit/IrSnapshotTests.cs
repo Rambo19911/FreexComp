@@ -1644,6 +1644,27 @@ public sealed class IrSnapshotTests
         Assert.Matches(@"call i8 @""System._ObjSupports""\(ptr %\w+, ptr @""M.IBar.\$guid""\)", text);
     }
 
+    /// <summary>C-209 (LANG-266): <c>nil</c> as a dynamic-array (and string) argument is a null pointer, by value and as <c>const</c>.</summary>
+    [Fact]
+    [Trait("Req", "LANG-266")]
+    public void NilDynamicArrayArgument_IsANullPointer()
+    {
+        var text = Emit("""
+            unit M;
+            interface
+            type TBytes = array of Byte;
+            function Len(const B: TBytes): Integer;
+            function Run: Integer;
+            implementation
+            function Len(const B: TBytes): Integer; begin Result := Length(B) end;
+            function Value(B: TBytes): Integer; begin Result := Length(B) end;
+            function Run: Integer; begin Result := Len(nil) + Value(nil) end;
+            end.
+            """);
+        Assert.Contains("call i32 @\"M.Len\"(ptr null)", text);
+        Assert.Contains("call i32 @\"M.Value\"(ptr null)", text);
+    }
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["Thunk"] = ThunkSource,

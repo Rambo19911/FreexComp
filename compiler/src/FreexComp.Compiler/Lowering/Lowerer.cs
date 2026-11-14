@@ -808,6 +808,11 @@ internal sealed class LoweringContext
             return ManagedRewriter.Compare(this, binary);                               // LANG-244 (CMP-324)
         }
 
+        if (binary.OperandType is MethodPointerTypeSymbol)
+        {
+            return MethodPointerCompare(binary);
+        }
+
         var left = Lower(binary.Left);
         var right = Lower(binary.Right);
         LCompareOperator? comparison = binary.OperatorKind switch
@@ -1022,6 +1027,33 @@ internal sealed class LoweringContext
         return new(routine, target is null ? null : Lower(target), receiver?.Self is { } self ? Lower(self) : null, receiver?.Flag, receiver?.IsVirtual ?? false);
     }
 
+    /// <summary>
+    /// C-207 (LANG-481): <c>a = b</c> between method pointers is <c>(a.Code = b.Code) and (a.Data = b.Data)</c>, <c>&lt;&gt;</c> its
+    /// negation; each operand is evaluated once, left first (a temporary unless it is a plain location).
+    /// </summary>
+    private LExpression MethodPointerCompare(BoundBinaryExpression binary)
+    {
+        (LExpression First, LExpression Second) Once(BoundExpression operand)
+        {
+            var value = Lower(operand);
+            if (value is LLocalRef or LGlobalRef or LParamRef or LOuterRef or LDeref or LField or LIndex or LArrayElement)
+            {
+                return (value, value);
+            }
+
+            var copy = new LLocalRef(NewTemp(operand.Type));
+            return (new LSequence(new LAssign(copy, value), copy), copy);
+        }
+
+        LExpression Part(LExpression value, int index) => new LField(new LView(value, MethodParts), MethodParts.Fields[index]);
+        var (leftFirst, leftSecond) = Once(binary.Left);
+        var (rightFirst, rightSecond) = Once(binary.Right);
+        var equal = binary.OperatorKind == BoundBinaryOperatorKind.Equal;
+        var op = equal ? LCompareOperator.Equal : LCompareOperator.NotEqual;
+        return new LBinary(equal ? LBinaryOperator.And : LBinaryOperator.Or,
+            Compare(op, Part(leftFirst, 0), Part(rightFirst, 0)), Compare(op, Part(leftSecond, 1), Part(rightSecond, 1)));
+    }
+
     private RecordTypeSymbol? _methodParts;
 
     /// <summary>A method pointer's storage as <c>record Code, Data: Pointer end</c> (C-103).</summary>
@@ -1037,7 +1069,12 @@ internal sealed class LoweringContext
         var data = new LField(new LView(temporary, MethodParts), MethodParts.Fields[1]);
         var code = new LField(new LView(temporary, MethodParts), MethodParts.Fields[0]);
         LExpression address = new LRoutineAddress(value.Method, Types.Pointer);
-        if (value.IsVirtual)
+        if (value.Method.ContainingInterface is not null)
+        {
+            // C-207: an interface method — Code is the IMT slot (ABI-093: slot k at offset 8k of the IMT the reference points to)
+            address = new LDeref(new LPointerOffset(new LDeref(data, Types.Pointer), Constant(8 * value.Method.VmtSlot, Types.Int64), Types.Byte, Types.Pointer), Types.Pointer);
+        }
+        else if (value.IsVirtual)
         {
             var vmt = value.Method.IsClassMethod ? (LExpression)data : new LDeref(data, Types.Pointer);
             address = new LDeref(new LPointerOffset(vmt, Constant(64 + 8 * value.Method.VmtSlot, Types.Int64), Types.Byte, Types.Pointer), Types.Pointer);

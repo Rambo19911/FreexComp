@@ -103,9 +103,9 @@ public sealed class RecordBindingTests
         Assert.True(Managed("TD"));
     }
 
-    /// <summary>Features of later tasks report E2900: record methods (M2.6); typed constants of variant records (C-108 decision).</summary>
+    /// <summary>Features of later tasks report E2900: record methods (M2.6); typed constants of variant records with fields without a byte image (C-198).</summary>
     [Theory]
-    [InlineData("type T = record a: Integer; case b: Byte of 0: (c: Byte) end; const K: T = (a: 1); begin end.", "E2900(1,76): Feature not supported: typed constant of a variant record")]
+    [InlineData("type T = record a: Pointer; case b: Byte of 0: (c: Byte) end; const K: T = (a: nil); begin end.", "E2900(1,76): Feature not supported: typed constant of a variant record with a field of type Pointer")]
     [InlineData("type T = record f: Text end; begin end.", "E2900(1,20): Feature not supported: record field of type Text")]
     public void LaterFeatures_AreE2900(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
 
@@ -139,6 +139,33 @@ public sealed class RecordBindingTests
     [InlineData("type T = record i: Byte; case Byte of 0: (i: Integer) end; begin end.", "E2004(1,43): Identifier redeclared: 'i'")]
     [InlineData("type T = record case Byte of 0: (a: Byte; case Byte of 1: (a: Word)) end; begin end.", "E2004(1,60): Identifier redeclared: 'a'")]
     public void VariantPart_Errors(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
+
+    /// <summary>
+    /// C-198 (b): a typed constant of a variant record lists fields in declaration order and may skip fields (the other variants);
+    /// a field overlapping one given before is E2037; a field that has no byte image (string, pointer) stays E2900.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-261")]
+    [Trait("Req", "LANG-344")]
+    [InlineData("const K: T = (x: 1; Tag: 2; b: 1.5; c: 'z');", null)]
+    [InlineData("const K: T = (x: 1; a: 7);", null)]
+    [InlineData("const K: T = (a: 7; b: 1.5);", "E2037(2,21): Unknown record field 'b' in constant")]
+    [InlineData("const K: T = (b: 1.5; x: 1);", "E2037(2,23): Unknown record field 'x' in constant")]
+    [InlineData("const K: TS = (s: 'a');", "E2900(2,15): Feature not supported: typed constant of a variant record with a field of type string")]
+    public void VariantTypedConstant(string constant, string? expected)
+    {
+        var text = "type T = record x: Integer; case Tag: Byte of 0, 1: (a: Integer); 2: (b: Double; c: Char) end; " +
+                   "TS = record s: string; case Byte of 0: (i: Integer) end;\n" + constant + "\nbegin end.";
+        Assert.Equal(expected is null ? [] : [expected], BindDiagnostics(text));
+    }
+
+    /// <summary>C-198 (c): a label repeated in one variant part is E2004 at the second label (nested parts have their own labels).</summary>
+    [Theory]
+    [Trait("Req", "LANG-261")]
+    [InlineData("type T = record case Byte of 0: (a: Byte); 1, 0: (b: Word) end; begin end.", "E2004(1,47): Identifier redeclared: '0'")]
+    [InlineData("type T = record case Byte of 0: (a: Byte; case Byte of 0: (c: Word)); 1: (b: Word) end; begin end.", null)]
+    public void DuplicateVariantLabel(string text, string? expected) =>
+        Assert.Equal(expected is null ? [] : [expected], BindDiagnostics(text));
 
     [Fact]
     [Trait("Req", "LANG-261")]

@@ -119,7 +119,8 @@ internal sealed class BodyBinder
                 _diagnostics.Report(assignment.Target, "E2053");                        // LANG-361 rule 6
                 return new BoundAssignmentStatement(assignment, target, value);
             case BoundVariableExpression { Variable.IsReadOnly: true }:
-                _diagnostics.Report(assignment.Target, "E2053");                        // a typed constant (LANG-344)
+            case BoundDereferenceExpression { Pointer: BoundVariableExpression { Variable: var with } } when _expressions.ReadOnlyWith.Contains(with):
+                _diagnostics.Report(assignment.Target, "E2053");                        // a typed constant (LANG-344), a const record via with (C-198)
                 return new BoundAssignmentStatement(assignment, target, value);
             case BoundVariableExpression:
             case BoundDereferenceExpression:
@@ -654,9 +655,14 @@ internal sealed class BodyBinder
                 var pointer = new PointerTypeSymbol("^" + record.Name, record, allowsPointerMath: false);
                 variable = new VariableSymbol(name, pointer, isGlobal: false, _routine, []);
                 value = new BoundAddressOfExpression(designatorSyntax, designator, routine: null, pointer);
-                if (BoundIndexExpression.RootOf(designator) is BoundVariableExpression { Variable: var root })
+                switch (BoundIndexExpression.RootOf(designator))
                 {
-                    _expressions.AddressTakenVariables.Add(root);          // CMP-325 rule 4: the body may write it through $with
+                    case BoundVariableExpression { Variable.IsReadOnly: true } or BoundParameterExpression { Parameter.Mode: ParameterMode.Const }:
+                        _expressions.ReadOnlyWith.Add(variable);           // C-198: a const record stays read-only through $with
+                        break;
+                    case BoundVariableExpression { Variable: var root }:
+                        _expressions.AddressTakenVariables.Add(root);      // CMP-325 rule 4: the body may write it through $with
+                        break;
                 }
 
                 foreach (var field in record.Fields)

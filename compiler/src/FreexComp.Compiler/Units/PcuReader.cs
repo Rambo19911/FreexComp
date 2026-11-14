@@ -491,6 +491,7 @@ internal static class PcuReader
             method.IsInline = flags.Contains("inline");
             method.IsNoReturn = flags.Contains("noreturn");
             method.VmtSlot = entry["slot"]!.GetValue<int>();
+            method.MessageId = entry["msgId"]?.GetValue<int>();                       // C-113
             var inherited = method.VmtSlot >= 0 && method.VmtSlot < parentSlots.Length;   // the slot of an ancestor's method
             method.IsAbstract = binding == "abstract";
             method.IsFinal = binding == "final";

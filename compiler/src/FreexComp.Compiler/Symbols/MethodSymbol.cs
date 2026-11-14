@@ -49,6 +49,9 @@ public sealed class MethodSymbol : RoutineSymbol
     /// <summary>The ancestor method an <c>override</c> replaces.</summary>
     public MethodSymbol? OverriddenMethod { get; internal set; }
 
+    /// <summary>The id of a <c>message N</c> handler (LANG-622, ABI §7.2 <c>MsgTable</c>, C-113); null for other methods.</summary>
+    public int? MessageId { get; internal set; }
+
     /// <summary>Calls dispatch through the VMT (LANG-622).</summary>
     public bool IsDispatched => VmtSlot >= 0;
 

@@ -69,6 +69,9 @@ internal static class Mangler
     public static LinkName Thunk(ClassTypeSymbol type, InterfaceTypeSymbol intf, MethodSymbol method) =>
         new(type.QualifiedName + ".$thunk." + intf.QualifiedName + "." + method.Name + (method.IsOverload ? "$" + Signature(method.Parameters) : ""), AlwaysQuote: true);
 
+    /// <summary>The <c>MsgTable</c> of a class (ABI §7.2, VMT+40, C-113): <c>U.TFoo.$msgtable</c>.</summary>
+    public static LinkName MsgTable(ClassTypeSymbol type) => new(type.QualifiedName + ".$msgtable", AlwaysQuote: true);
+
     /// <summary>The <c>IntfTable</c> of a class (ABI-095, VMT+32): <c>U.TFoo.$intftable</c>.</summary>
     public static LinkName IntfTable(ClassTypeSymbol type) => new(type.QualifiedName + ".$intftable", AlwaysQuote: true);
 

@@ -1,0 +1,17 @@
+TBase.HandleOne 5
+id 1 result 50
+TBase.HandleTwo 6
+id 2 result 0
+id 3 result 0
+TDerived.DerivedOne 8
+TBase.HandleOne 8
+id 1 result 81
+TBase.HandleTwo 9
+id 2 result 0
+TDerived.HandleThree 4
+id 3 result -3
+TDerived.Handle300 1
+id 300 result 300
+id 299 result 0
+TDerived.HandleThree 11
+direct -3

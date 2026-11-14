@@ -300,6 +300,8 @@ type TA = class procedure P; virtual; final; end; TB = class(TA) procedure P; ov
 type TA = class procedure P; virtual; override; end; procedure TA.P; begin end; begin end.
 === E2626 1,119
 type TA = class procedure P; virtual; abstract; end; TB = class(TA) procedure P; override; end; procedure TB.P; begin inherited P end; begin end.
+=== E2627 1,27
+type TA = class procedure P(X: Integer); message 1; end; procedure TA.P(X: Integer); begin end; begin end.
 === E2640 1,69
 type I = interface end; TA = class(I) end; var A: TA; begin if A is I then end.
 === E2641 1,58

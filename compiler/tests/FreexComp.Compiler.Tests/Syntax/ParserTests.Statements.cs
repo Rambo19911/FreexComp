@@ -38,6 +38,17 @@ public sealed partial class ParserTests
             DumpBody("x := 1; a.b[i]^ := f(x); Foo; Foo(1, 2); Obj.Method; TFoo(o).P := y"));
     }
 
+    /// <summary>C-206: a statement starting with the keyword type name <c>string</c> in a type cast is an assignment target (LANG-361).</summary>
+    [Fact]
+    public void KeywordTypeCastAsAssignmentTarget()
+    {
+        Assert.Equal(
+            "(AssignmentStatement (StringCastExpression string ( (IdentifierName S) )) := (IdentifierName T)) ; "
+            + "(AssignmentStatement (ElementAccessExpression (StringCastExpression string ( (IdentifierName P) )) [ (LiteralExpression 1) ]) "
+            + ":= (LiteralExpression 'x'))",
+            DumpBody("string(S) := T; string(P)[1] := 'x'"));
+    }
+
     [Fact]
     public void Statements_Inherited()
     {

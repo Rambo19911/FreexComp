@@ -630,6 +630,7 @@ internal sealed class PcuWriter(PcuContext context)
                         ["visibility"] = VisibilityName(m.Visibility),
                         ["binding"] = Binding(m),
                         ["slot"] = m.VmtSlot,
+                        ["msgId"] = m.MessageId,                                       // C-113
                     })]);
                     entry["properties"] = new JsonArray([.. @class.Properties.Select(p => (JsonNode?)new JsonObject
                     {
@@ -708,6 +709,7 @@ internal sealed class PcuWriter(PcuContext context)
             { IsOverride: true } => "override",
             { IsVirtual: true } => "virtual",
             { MethodKind: MethodKind.ClassMethod } => "class",
+            { MessageId: not null } => "message",
             _ => "static",
         };
 

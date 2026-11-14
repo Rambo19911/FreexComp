@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Numerics;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Types;
@@ -67,6 +69,14 @@ internal sealed partial class DeclarationBinder
         var listed = new List<(InterfaceTypeSymbol Interface, TypeSyntax Syntax)>();
         var resolutions = new List<MethodResolutionSyntax>();
         type.Parent = BindParent(type, syntax.Heritage, listed);
+        var state = syntax.ClassKeyword.DirectiveState;
+        type.IsTypeInfo = state.TypeInfo || type.Parent?.IsTypeInfo == true;                 // LANG-611, ABI-142
+        type.RttiScope = state.Rtti switch                                                  // LANG-882 (C-169)
+        {
+            "broad" => RttiScope.Broad,
+            "published" => RttiScope.Published,
+            _ => _types.DefaultRttiScope,
+        };
 
         var fields = ImmutableArray.CreateBuilder<FieldSymbol>();
         var methods = ImmutableArray.CreateBuilder<MethodSymbol>();
@@ -74,7 +84,7 @@ internal sealed partial class DeclarationBinder
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
         var end = type.Parent?.InstanceSize ?? 8;                              // offset 0: the VMT pointer (ABI §7.1)
-        foreach (var (member, visibility) in Members(syntax.Members, Visibility.Public))
+        foreach (var (member, visibility) in Members(syntax.Members, type.IsTypeInfo ? Visibility.Published : Visibility.Public))
         {
             switch (member)
             {
@@ -328,7 +338,37 @@ internal sealed partial class DeclarationBinder
             method.FlagParameter = new ParameterSymbol(kind == MethodKind.Constructor ? "Alloc" : "Dealloc", _types.Byte, ParameterMode.Value, -1, method, []);
         }
 
+        if (method.MessageId is not null
+            && (kind != MethodKind.Ordinary || method.ReturnType is not null || method.Parameters is not [{ Mode: ParameterMode.Var }]))
+        {
+            _diagnostics.Report(identifier, "E2627", method.Name);                                         // LANG-622
+            method.MessageId = null;
+        }
+
         return method;
+    }
+
+    /// <summary>LANG-622: the id of <c>message N</c>, an integer constant 1..65535 (E2014 not an integer, E2012 out of range).</summary>
+    private int? BindMessageId(ExpressionSyntax value)
+    {
+        if (_folder.Fold(value) is not { } constant)
+        {
+            return null;
+        }
+
+        if (constant.Value is not BigInteger number)
+        {
+            _diagnostics.Report(value, "E2014", "Integer");
+            return null;
+        }
+
+        if (number < 1 || number > 65535)
+        {
+            _diagnostics.Report(value, "E2012", number.ToString(CultureInfo.InvariantCulture), "1..65535");
+            return null;
+        }
+
+        return (int)number;
     }
 
     /// <summary>LANG-622/623 binding directives; calling conventions and hints are accepted, <c>message</c> is M2.5.</summary>
@@ -361,8 +401,8 @@ internal sealed partial class DeclarationBinder
                     break;
                 case SyntaxKind.StaticKeyword when isClass:
                     break;
-                case SyntaxKind.MessageKeyword:
-                    _diagnostics.Report(directive.Keyword, "E2900", "message method");                       // LANG-622, M2.5
+                case SyntaxKind.MessageKeyword when directive.Value is { } id:
+                    method.MessageId = BindMessageId(id);                                                    // LANG-622 (C-113)
                     break;
                 case SyntaxKind.ForwardKeyword or SyntaxKind.ExternalKeyword or SyntaxKind.PublicKeyword or SyntaxKind.StaticKeyword:
                     _diagnostics.Report(directive.Keyword, "E1114", directive.Keyword.Text);

@@ -8,6 +8,9 @@ namespace FreexComp.Compiler.Types;
 /// </summary>
 public sealed class BuiltInTypes
 {
+    /// <summary>The compilation's RTTI scope (<c>--rtti</c>, LANG-648) for classes without a <c>{$RTTI}</c> directive (C-169).</summary>
+    internal RttiScope DefaultRttiScope { get; init; } = RttiScope.Broad;
+
     internal BuiltInTypes()
     {
         Scope = new Scope(ScopeKind.BuiltIn, parent: null);

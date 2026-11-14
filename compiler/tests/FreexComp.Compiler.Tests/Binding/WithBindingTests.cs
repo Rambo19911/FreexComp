@@ -56,4 +56,24 @@ public sealed class WithBindingTests
     [InlineData("with i do a := 1", "E2068(8,12): 'with' requires a record, class or interface expression")]
     [InlineData("with r do z := 1", "E2003(8,17): Undeclared identifier 'z'")]
     public void Errors(string statement, string expected) => Assert.Equal([expected], Diagnostics(statement));
+
+    /// <summary>
+    /// C-198 (a): the fields of a <c>const</c> record parameter (or a typed constant) reached through <c>with</c> are read-only like
+    /// <c>p.a</c> (E2053 on assignment, E2112 as a <c>var</c> argument); an object's fields stay writable through a <c>const</c> object.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-375")]
+    [Trait("Req", "LANG-421")]
+    [InlineData("procedure P(const p: TR); begin with p do a := 1 end;", "E2053(1,43): Left side cannot be assigned to")]
+    [InlineData("procedure P(const p: TR); begin with p do Inc(a) end;", "E2112(1,47): Constant object cannot be passed as var parameter")]
+    [InlineData("const K: TR = (a: 1; b: 2); procedure P; begin with K do b := a end;", "E2053(1,58): Left side cannot be assigned to")]
+    [InlineData("procedure P(const p: TR); var j: Integer; begin with p do j := a + b end;", null)]
+    [InlineData("procedure P(var p: TR); begin with p do a := 1 end;", null)]
+    [InlineData("procedure P(const o: TC); begin with o do x := 1 end;", null)]
+    public void ConstRecordIsReadOnly(string routine, string? expected)
+    {
+        var text = Prelude.Replace("var r: TR;", routine + "\nvar r: TR;", StringComparison.Ordinal) + "begin end.";
+        var at = Prelude.Split('\n').TakeWhile(l => !l.StartsWith("var r: TR;", StringComparison.Ordinal)).Count();
+        Assert.Equal(expected is null ? [] : [expected.Replace("(1,", "(" + (at + 1) + ",", StringComparison.Ordinal)], BindDiagnostics(text));
+    }
 }

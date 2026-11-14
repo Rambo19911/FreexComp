@@ -141,6 +141,60 @@ public sealed class PcuImportTests
     }
 
     /// <summary>
+    /// C-113: a descendant of a <c>.pcu</c>-only class with a <c>message</c> handler — bare <c>inherited</c> in the program's handler
+    /// for the same id calls the imported handler statically (the <c>msgId</c> survives the round trip), and for an id without an
+    /// imported handler calls virtual <c>DefaultHandler</c>; the IR equals the one against the unit's source.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-622")]
+    [Trait("Req", "CMP-370")]
+    public void MessageHandlerFromPcu()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TMsg = record Id: Cardinal; end;
+              TBase = class
+                procedure OnOne(var M: TMsg); message 1;
+              end;
+            implementation
+            procedure TBase.OnOne(var M: TMsg); begin Writeln('base') end;
+            end.
+            """;
+        const string Program = """
+            program P;
+            uses U;
+            type
+              TMine = class(TBase)
+                procedure One(var M: TMsg); message 1;
+                procedure Two(var M: TMsg); message 2;
+              end;
+            procedure TMine.One(var M: TMsg); begin inherited end;
+            procedure TMine.Two(var M: TMsg); begin inherited end;
+            begin
+            end.
+            """;
+        var sources = PcuTests.Files(u: Unit, program: Program);
+        var reference = Emit(sources, PcuTests.Options(), EmitStage.Ll);
+        Assert.True(reference.Success, string.Join("\n", reference.Diagnostics.Select(d => d.ToText())));
+        var pcus = PcuTests.Pcus(PcuTests.Files(u: Unit, program: Program));
+        Assert.Contains("\"msgId\":1", pcus["U"], StringComparison.Ordinal);
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", Program)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+        fs.Add(Path.Combine(Lib, "U.pcu"), pcus["U"]).Add(Path.Combine(Lib, "U.obj"), "");
+
+        var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        var ir = fs.ReadAllText(@"C:\p\obj\P.ll");
+        Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), ir);
+        Assert.Contains("call void @\"U.TBase.OnOne\"(", ir, StringComparison.Ordinal);
+        Assert.Contains("@\"P.TMine.$msgtable\" = private unnamed_addr constant { i64, [2 x { i64, ptr }] } { i64 2, [2 x { i64, ptr }] [{ i64, ptr } { i64 1, ptr @\"P.TMine.One\" }, { i64, ptr } { i64 2, ptr @\"P.TMine.Two\" }] }", ir, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// C-205: a program using the interfaces of a <c>.pcu</c>-only unit — calls through the IMT, an interface property and default
     /// array property, overloads, class → interface conversion of an imported class, <c>is</c>/<c>as</c> with an imported GUID, a
     /// descendant class listing an imported interface — binds and gives the same IR as against the unit's source.

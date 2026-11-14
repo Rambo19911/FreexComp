@@ -1702,6 +1702,7 @@ internal sealed class Parser
                 var colon = Take();
                 return new LabeledStatementSyntax(label, colon, ParseStatement());
             case SyntaxKind.IdentifierToken or SyntaxKind.OpenParenToken or SyntaxKind.InheritedKeyword:
+            case SyntaxKind.StringKeyword when Peek(1).Kind == SyntaxKind.OpenParenToken:      // C-206: string(S) := …
                 return ParseSimpleStatement();
             case SyntaxKind.BeginKeyword:
                 return ParseCompoundStatement();

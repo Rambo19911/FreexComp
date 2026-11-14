@@ -96,4 +96,14 @@ public sealed class OpenArrayBindingTests
     [InlineData("c[0] := 1", "E2053(2,87): Left side cannot be assigned to")]
     public void InsideTheCallee_Errors(string statement, string expected) =>
         Assert.Equal([expected], BindDiagnostics("program T;\nprocedure P(a, b: array of Integer; const c: array of Integer); var i: Integer; begin " + statement + " end; begin end."));
+
+    /// <summary>C-198 (d): <c>Slice(a, n)</c> of a static array with a constant <c>n</c> outside <c>0..Length(a)</c> is E2032 at <c>n</c>.</summary>
+    [Theory]
+    [Trait("Req", "LANG-431")]
+    [InlineData("C(Slice(f, 6))", "E2032(9,18): Constant index 6 is out of bounds (0..5)")]
+    [InlineData("C(Slice(f, -1))", "E2032(9,18): Constant index -1 is out of bounds (0..5)")]
+    [InlineData("C(Slice(f, 5))", null)]
+    [InlineData("C(Slice(d, 6))", null)]
+    public void SliceConstantTooLong(string statement, string? expected) =>
+        Assert.Equal(expected is null ? [] : [expected], Diagnostics(statement));
 }

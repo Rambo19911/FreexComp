@@ -39,6 +39,33 @@ public sealed class ClassBindingTests
         Assert.Equal(["E2015(1,6): Unsatisfied forward declaration of type 'TB'"], BindDiagnostics("type TB = class; begin end."));
     }
 
+    /// <summary>
+    /// C-210 (LANG-441): inside a method, a bare call of an overloaded name binds like <c>Self.Name</c> — the ancestor method an
+    /// <c>override</c> replaces is not a second candidate (no E2122), whether the name is called with or without parentheses.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-441")]
+    public void ImplicitCall_OverriddenOverload_IsNotAmbiguous()
+    {
+        var (result, _) = Bind("""
+            type
+              TA = class function ToString: string; virtual; end;
+              TB = class(TA)
+                function ToString: string; overload; override;
+                function ToString(N: Integer): string; reintroduce; overload;
+                function Twice: string;
+              end;
+            function TA.ToString: string; begin Result := 'a' end;
+            function TB.ToString: string; begin Result := 'b' end;
+            function TB.ToString(N: Integer): string; begin Result := 'n' end;
+            function TB.Twice: string; begin Result := ToString + ToString() + ToString(1) + Self.ToString end;
+            begin end.
+            """);
+        Assert.Empty(Format(result.Diagnostics));
+        var twice = BoundDump.Of(result.Routines.Single(r => r.Routine.Name == "Twice").Body);
+        Assert.DoesNotContain("TA.", twice);
+    }
+
     [Fact]
     [Trait("Req", "LANG-601")]
     public void Classes_ForwardCompletedInAnotherSection_IsE2015AndE2004()

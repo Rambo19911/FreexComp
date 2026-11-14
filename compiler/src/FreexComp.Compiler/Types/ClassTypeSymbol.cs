@@ -4,6 +4,9 @@ using FreexComp.Compiler.Text;
 
 namespace FreexComp.Compiler.Types;
 
+/// <summary>ABI-143: <c>Broad</c> lists every field and the public and published methods and properties; <c>Published</c> only the published ones.</summary>
+public enum RttiScope { Broad, Published }
+
 /// <summary>
 /// A class type (LANG-600…604, rtl-abi.md §7). A value is a reference: 8 bytes, the address of the instance (ABI-071), so
 /// <see cref="TypeSymbol.Size"/> is 8. The instance has the VMT pointer at offset 0 and the fields of the root-most ancestor
@@ -26,6 +29,12 @@ public sealed class ClassTypeSymbol : TypeSymbol
     public bool IsAbstract { get; internal set; }
 
     public bool IsSealed { get; internal set; }
+
+    /// <summary>Declared under <c>{$M+}</c> or descending from such a class (LANG-611, ABI-142; <c>.pcu</c> flag <c>typeinfo</c>).</summary>
+    public bool IsTypeInfo { get; internal set; }
+
+    /// <summary>The RTTI scope of the class's member tables (LANG-648/882, ABI-143, C-169), fixed when its declaration is bound.</summary>
+    public RttiScope RttiScope { get; internal set; } = RttiScope.Broad;
 
     /// <summary>The class's own instance fields in declaration order (offsets per ABI §7.1).</summary>
     public ImmutableArray<FieldSymbol> Fields { get; internal set; } = [];

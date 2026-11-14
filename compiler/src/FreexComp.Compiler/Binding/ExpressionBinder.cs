@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Numerics;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
@@ -49,6 +50,9 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>Control variables (variables or value parameters) of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>
     public HashSet<Symbol> ForVariables { get; } = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>The hidden <c>with</c> pointers to a <c>const</c> record parameter or typed constant: read-only targets (C-198).</summary>
+    public HashSet<Symbol> ReadOnlyWith { get; } = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>Variables, parameters and <c>Result</c> of enclosing routines referenced here, in first-reference order (CMP-345).</summary>
     public List<Symbol> CapturedVariables { get; } = [];
@@ -136,6 +140,11 @@ internal sealed partial class ExpressionBinder
                         return Error(syntax, receiver);
                     }
 
+                    if (receiver.Type is InterfaceTypeSymbol intf && InterfaceCandidates(intf, memberText) is { IsEmpty: false } methods)
+                    {
+                        return BindInterfaceMethodPointer(syntax, methods, receiver, type);
+                    }
+
                     (owner, self) = receiver.Type switch
                     {
                         ClassTypeSymbol c => (c, receiver),
@@ -196,6 +205,28 @@ internal sealed partial class ExpressionBinder
         }
 
         return new BoundMethodPointerExpression(syntax, method, self, method.IsDispatched, type);
+    }
+
+    /// <summary>
+    /// C-207: <c>Intf.M</c> where a method pointer is expected — Data = the interface reference (not counted), Code = its IMT slot,
+    /// the thunk that adjusts <c>Self</c> (CMP-372), so a call <c>Code(Data, args)</c> reaches the implementing method.
+    /// </summary>
+    private BoundExpression BindInterfaceMethodPointer(ExpressionSyntax syntax, ImmutableArray<RoutineSymbol> candidates, BoundExpression receiver,
+        MethodPointerTypeSymbol type)
+    {
+        if (candidates.Cast<MethodSymbol>().FirstOrDefault(m => Signatures.Compatible(m, type.Signature)) is { } method)
+        {
+            return new BoundMethodPointerExpression(syntax, method, receiver, isVirtual: true, type);
+        }
+
+        if (candidates is [{ ReturnType: { } result, Parameters.IsEmpty: true }] && _conversions.Classify(result, type).Exists)
+        {
+            return BindOperand(syntax);                                             // a call yielding the method pointer
+        }
+
+        _diagnostics.Report(syntax, candidates.Length > 1 ? "E2131" : "E2010",
+            candidates.Length > 1 ? candidates[0].Name : Signatures.Display(candidates[0]) + " of object", type.Name);
+        return Error(syntax, receiver);
     }
 
     // ------------------------------------------------------------------ procedural values (LANG-480…484, C-161)
@@ -1158,6 +1189,13 @@ internal sealed partial class ExpressionBinder
         }
 
         count = ConvertForAssignment(count, _types.Integer, arguments[1].Expression);
+        if (array.Type is ArrayTypeSymbol @static && count.ConstantValue?.Value is BigInteger n && (n < 0 || n > @static.Length))
+        {
+            // C-198: a constant count outside 0..Length of a static array
+            _diagnostics.Report(arguments[1].Expression, "E2032", n.ToString(CultureInfo.InvariantCulture), "0", @static.Length.ToString(CultureInfo.InvariantCulture));
+            return Error(invocation, array, count);
+        }
+
         var type = array.Type is OpenArrayTypeSymbol { IsArrayOfConst: true } ofConst ? ofConst : _types.OpenArrayOf(element);   // C-107
         return count.HasErrors
             ? Error(invocation, array, count)
@@ -1856,7 +1894,8 @@ internal sealed partial class ExpressionBinder
                 _diagnostics.Report(syntax, "E2053");                   // LANG-361 rule 6
                 return false;
             case BoundVariableExpression { Variable.IsReadOnly: true }:
-                _diagnostics.Report(syntax, "E2112");                   // a typed constant (LANG-344)
+            case BoundDereferenceExpression { Pointer: BoundVariableExpression { Variable: var with } } when ReadOnlyWith.Contains(with):
+                _diagnostics.Report(syntax, "E2112");                   // a typed constant (LANG-344), a const record via with (C-198)
                 return false;
             case BoundVariableExpression:
             case BoundDereferenceExpression:
@@ -2237,6 +2276,13 @@ internal sealed partial class ExpressionBinder
                 return new BoundBinaryExpression(binary, kind, Code(left), Code(right), _types.Pointer, boolean, constantValue: null);
             }
 
+            // C-207: two method pointers of compatible types compare Code and Data
+            if (lt is MethodPointerTypeSymbol l && rt is MethodPointerTypeSymbol r && Signatures.Compatible(l.Signature, r.Signature)
+                && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
+            {
+                return new BoundBinaryExpression(binary, kind, left, right, lt, boolean, constantValue: null);
+            }
+
             return Inapplicable(binary, left, right);
         }
 
@@ -2558,11 +2604,12 @@ internal sealed partial class ExpressionBinder
     {
         var lt = ComputationType((IntegerTypeSymbol)left.Type);
         var rt = ComputationType((IntegerTypeSymbol)right.Type);
-        if (left.ConstantValue?.Value is BigInteger l && Fits(l, rt))
+        // C-208: never narrowed from 64 to 32 bits — a constant typed Int64/UInt64 (Int64(86400000)) keeps its width
+        if (left.ConstantValue?.Value is BigInteger l && Fits(l, rt) && rt.Size >= lt.Size)
         {
             lt = rt;
         }
-        else if (right.ConstantValue?.Value is BigInteger r && Fits(r, lt))
+        else if (right.ConstantValue?.Value is BigInteger r && Fits(r, lt) && lt.Size >= rt.Size)
         {
             rt = lt;
         }

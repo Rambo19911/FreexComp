@@ -356,7 +356,8 @@ public sealed class Compilation
         }
 
         var optionsFingerprint = Fingerprint.Options(Options, aliases.Hash);
-        var unitBinder = new UnitBinder(new BuiltInTypes(), resolver, Parse, path => ReadPcu(path, optionsFingerprint));
+        var types = new BuiltInTypes { DefaultRttiScope = Options.Rtti == "published" ? RttiScope.Published : RttiScope.Broad };   // C-169
+        var unitBinder = new UnitBinder(types, resolver, Parse, path => ReadPcu(path, optionsFingerprint));
         unitBinder.BindAll(systemPath, mainPath, MaxParallelism);
         var initOrder = unitBinder.InitializationOrder();
         CheckPrecompiledDependencies(new FrontEnd(unitBinder, initOrder, systemPath));

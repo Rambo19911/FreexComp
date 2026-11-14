@@ -1,0 +1,11 @@
+same TRUE FALSE
+other object FALSE TRUE
+other method FALSE TRUE
+nil FALSE TRUE
+result TRUE FALSE 2
+a.Hit 2
+calls 2
+hello 1
+HELLO 2
+intf FALSE TRUE
+intf same TRUE

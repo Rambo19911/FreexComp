@@ -423,7 +423,30 @@ internal sealed partial class ExpressionBinder
             return BindMethodCall(call, MemberCandidates(type, text), ReceiverKind.Instance, WithReceiver(name, with), null, argumentList);
         }
 
-        return BindMethodCall(call, _scope.For(name).LookupCandidates(text), ReceiverKind.Implicit, null, null, argumentList);
+        return BindMethodCall(call, WithoutReplaced(_scope.For(name).LookupCandidates(text)), ReceiverKind.Implicit, null, null, argumentList);
+    }
+
+    /// <summary>
+    /// C-210 (LANG-441): as in <see cref="MemberCandidates"/>, an ancestor's method that a nearer candidate overrides or hides with
+    /// the same parameters is not a second candidate (the scope lists the nearest class's methods first).
+    /// </summary>
+    private static ImmutableArray<RoutineSymbol> WithoutReplaced(ImmutableArray<RoutineSymbol> candidates)
+    {
+        var kept = ImmutableArray.CreateBuilder<RoutineSymbol>();
+        foreach (var candidate in candidates)
+        {
+            if (candidate is MethodSymbol { ContainingInterface: null } method
+                && kept.Any(k => k is MethodSymbol { ContainingInterface: null } nearer && !ReferenceEquals(nearer.ContainingType, method.ContainingType)
+                    && nearer.ContainingType.SelfAndAncestors().Contains(method.ContainingType)
+                    && SameParameters(nearer, method)))
+            {
+                continue;
+            }
+
+            kept.Add(candidate);
+        }
+
+        return kept.ToImmutable();
     }
 
     // ------------------------------------------------------------------ with (LANG-375, C-109)
@@ -625,6 +648,11 @@ internal sealed partial class ExpressionBinder
             return new MethodCall(null, [], null);
         }
 
+        if (bare && current.MessageId is { } id)
+        {
+            return InheritedMessage(call, current, id);
+        }
+
         var name = inherited.Name is { Identifier: var token } ? token.Value as string ?? token.Text : current.Name;
         var candidates = current.ContainingType.Parent is { } parent ? MemberCandidates(parent, name) : [];
         if (bare)
@@ -653,6 +681,32 @@ internal sealed partial class ExpressionBinder
         }
 
         return BindMethodCall(call, candidates, ReceiverKind.Inherited, null, null, argumentList);
+    }
+
+    /// <summary>
+    /// LANG-622 / CMP-370 (C-113): bare <c>inherited</c> in a <c>message</c> handler calls the nearest ancestor handler for the same id
+    /// statically, else virtual <c>DefaultHandler</c> (ABI-073 slot 9), passing the handler's own message parameter.
+    /// </summary>
+    private MethodCall InheritedMessage(SyntaxNode call, MethodSymbol current, int id)
+    {
+        var message = current.Parameters[0];
+        NoteReference(message);
+        ImmutableArray<BoundExpression> arguments = [new BoundParameterExpression(call, message)];
+        for (var type = current.ContainingType.Parent; type is not null; type = type.Parent)
+        {
+            if (type.Methods.FirstOrDefault(m => m.MessageId == id) is { } handler)
+            {
+                return new MethodCall(handler, arguments, Receiver(call, handler, ReceiverKind.Inherited, null, null));
+            }
+        }
+
+        var fallback = current.ContainingType.VirtualSlots.Length > 9 ? current.ContainingType.VirtualSlots[9] : null;
+        if (fallback is null || !IdentifierComparer.Instance.Equals(fallback.Name, "DefaultHandler"))
+        {
+            return new MethodCall(null, [], null, IsNothing: true);                     // no TObject.DefaultHandler (stripped System)
+        }
+
+        return new MethodCall(fallback, arguments, Receiver(call, fallback, ReceiverKind.Implicit, null, null));
     }
 
     /// <summary>

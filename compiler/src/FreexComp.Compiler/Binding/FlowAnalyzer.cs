@@ -690,6 +690,7 @@ internal sealed class FlowAnalyzer
             {
                 var (leftTrue, leftFalse) = Condition(and.Left, state);
                 var (rightTrue, rightFalse) = Condition(and.Right, leftTrue);
+                AssignArgumentTargets(and.Right, leftFalse);                    // C-211: as if the right side always ran
                 return (rightTrue, Join(leftFalse, rightFalse));
             }
 
@@ -697,6 +698,7 @@ internal sealed class FlowAnalyzer
             {
                 var (leftTrue, leftFalse) = Condition(or.Left, state);
                 var (rightTrue, rightFalse) = Condition(or.Right, leftFalse);
+                AssignArgumentTargets(or.Right, leftTrue);                      // C-211
                 return (Join(leftTrue, rightTrue), rightFalse);
             }
 
@@ -709,6 +711,48 @@ internal sealed class FlowAnalyzer
             default:
                 state = Eval(condition, state);
                 return (state, Clone(state));
+        }
+    }
+
+    /// <summary>
+    /// C-211: the variables passed as <c>out</c> arguments anywhere in <paramref name="expression"/> (the skipped right operand of a
+    /// short-circuit operator) count as assigned in <paramref name="state"/>, so no W1041 follows from the skip; a <c>var</c>
+    /// argument there still may not have run (<c>W1041_ShortCircuitRightOperandMayNotRun</c>).
+    /// </summary>
+    private void AssignArgumentTargets(BoundExpression expression, State? state)
+    {
+        if (state is null)
+        {
+            return;
+        }
+
+        switch (expression)
+        {
+            case BoundCallExpression call:
+                for (var i = 0; i < call.Arguments.Length; i++)
+                {
+                    if (i < call.Routine.Parameters.Length && call.Routine.Parameters[i].Mode == ParameterMode.Out
+                        && call.Arguments[i] is BoundVariableExpression reference)
+                    {
+                        Assign(reference.Variable, state, null);
+                    }
+                    else
+                    {
+                        AssignArgumentTargets(call.Arguments[i], state);
+                    }
+                }
+
+                break;
+            case BoundBinaryExpression binary:
+                AssignArgumentTargets(binary.Left, state);
+                AssignArgumentTargets(binary.Right, state);
+                break;
+            case BoundUnaryExpression unary:
+                AssignArgumentTargets(unary.Operand, state);
+                break;
+            case BoundConversionExpression conversion:
+                AssignArgumentTargets(conversion.Operand, state);
+                break;
         }
     }
 

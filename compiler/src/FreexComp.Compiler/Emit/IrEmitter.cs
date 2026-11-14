@@ -382,6 +382,19 @@ internal static class IrEmitter
             intfTable = new IrGlobal(Mangler.IntfTable(type));
         }
 
+        IrConstant msgTable = new IrNullConstant();
+        var handlers = type.Methods.Where(m => m.MessageId is not null).OrderBy(m => m.MessageId).ToImmutableArray();
+        if (!handlers.IsEmpty)
+        {
+            // ABI §7.2 / CMP-370 (C-113): { i64 Count, [Count x { i64 MsgId, ptr Code }] } sorted by MsgId
+            var entry = new StructIrType([IrType.I64, IrType.Ptr]);
+            var entries = new ArrayIrType(handlers.Length, entry);
+            var table = new IrStructConstant(new StructIrType([IrType.I64, entries]), [IrIntConstant.I64(handlers.Length),
+                new IrArrayConstant(entries, [.. handlers.Select(m => (IrConstant)new IrStructConstant(entry, [IrIntConstant.I64(m.MessageId!.Value), module.Routine(m)]))])]);
+            module.AggregateConstants.Add((Mangler.MsgTable(type), table, 8));
+            msgTable = new IrGlobal(Mangler.MsgTable(type));
+        }
+
         var slots = new ArrayIrType(type.VirtualSlots.Length, IrType.Ptr);
         IrConstant Slot(MethodSymbol method) => method.IsAbstract ? module.NoReturnHelper("_AbstractError") : module.Routine(method);
         var vmtType = new StructIrType([IrType.Ptr, IrType.I64, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, IrType.Ptr, slots]);
@@ -392,7 +405,7 @@ internal static class IrEmitter
             module.StringLiteral(type.Name),
             new IrNullConstant(),
             intfTable,
-            new IrNullConstant(),
+            msgTable,
             initTable,
             new IrNullConstant(),
             type.VirtualSlots.IsEmpty ? new IrZeroConstant(slots) : new IrArrayConstant(slots, [.. type.VirtualSlots.Select(Slot)]),
@@ -532,7 +545,7 @@ internal static class IrEmitter
         (BooleanTypeSymbol, BigInteger i) => IrIntConstant.I1(!i.IsZero),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, BigInteger i) => new IrFloatConstant((FloatingIrType)ValueType(type), (double)i),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, double d) => new IrFloatConstant((FloatingIrType)ValueType(type), d),
-        (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or InterfaceTypeSymbol, null) => new IrNullConstant(),
+        (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or InterfaceTypeSymbol or DynamicArrayTypeSymbol, null) => new IrNullConstant(),   // C-209: nil dynamic array
         (PointerTypeSymbol, BigInteger address) => new IrIntToPtrConstant(address),                                         // C-185
         (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
         (SetTypeSymbol { IsSmall: true }, BigInteger mask) => new IrIntConstant((IntegerIrType)ValueType(type), mask),       // CMP-335
@@ -574,6 +587,15 @@ internal static class IrEmitter
                 return module.StringLiteral(text);
             case (ArrayTypeSymbol array, ImmutableArray<ConstantValue?> elements):
                 return new IrArrayConstant((ArrayIrType)TypeLayout.Of(array).StorageType, [.. elements.Select(e => Element(e, array.ElementType))]);
+            case (RecordTypeSymbol { HasVariantPart: true } variant, ImmutableArray<ConstantValue?>):
+            {
+                // C-198: CMP-306 byte storage, the image of the given fields
+                var bytes = ConstantBytes.Of(constant, variant) ?? throw new InvalidOperationException("A variant record constant without a byte image.");
+                var storage = (ArrayIrType)TypeLayout.Of(variant).StorageType;
+                return bytes.All(b => b == 0)
+                    ? new IrZeroConstant(storage)
+                    : new IrArrayConstant(storage, [.. bytes.Select(b => (IrConstant)new IrIntConstant(IrType.I8, (sbyte)b))]);
+            }
             case (RecordTypeSymbol record, ImmutableArray<ConstantValue?> fields):
             {
                 var storage = TypeLayout.Of(record).StorageType;

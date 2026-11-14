@@ -758,12 +758,18 @@ internal sealed partial class DeclarationBinder
         var start = (end + partAlignment - 1) / partAlignment * partAlignment;
         var partEnd = start;
         var conversions = new Conversions();
+        var labels = new HashSet<object>();
         foreach (var variant in part.Variants)
         {
             foreach (var label in variant.Labels)
             {
-                if (_folder.Fold(label) is not { } value || conversions.ConvertConstant(value, tagType, label, _diagnostics) is null)
+                if (_folder.Fold(label) is not { } value || conversions.ConvertConstant(value, tagType, label, _diagnostics) is not { } converted)
                 {
+                    ok = false;
+                }
+                else if (converted.Value is { } ordinal && !labels.Add(ordinal))
+                {
+                    _diagnostics.Report(label, "E2004", converted.ToDisplayString());                   // C-198: a repeated variant label
                     ok = false;
                 }
             }
@@ -1027,12 +1033,6 @@ internal sealed partial class DeclarationBinder
             return null;
         }
 
-        if (record.HasVariantPart)
-        {
-            Unsupported(syntax, "typed constant of a variant record");     // C-108 decision (no case needs it yet)
-            return null;
-        }
-
         var values = new ConstantValue?[record.Fields.Length];
         var next = 0;
         var failed = false;
@@ -1045,6 +1045,23 @@ internal sealed partial class DeclarationBinder
             }
 
             var name = NameOf(field.Name.Identifier);
+            if (record.HasVariantPart)
+            {
+                // C-198: in declaration order, skipping fields (the other variants); never overlapping a field given before
+                var found = next;
+                while (found < record.Fields.Length && !IdentifierComparer.Instance.Equals(record.Fields[found].Name, name))
+                {
+                    found++;
+                }
+
+                if (found < record.Fields.Length && Enumerable.Range(0, found).Any(i => values[i] is not null && Overlap(record.Fields[i], record.Fields[found])))
+                {
+                    found = record.Fields.Length;
+                }
+
+                next = found;
+            }
+
             if (next >= record.Fields.Length || !IdentifierComparer.Instance.Equals(record.Fields[next].Name, name))
             {
                 _diagnostics.Report(field.Name, "E2037", name);
@@ -1056,7 +1073,21 @@ internal sealed partial class DeclarationBinder
             next++;
         }
 
-        return failed ? null : new ConstantValue(values.ToImmutableArray(), type);
+        if (failed)
+        {
+            return null;
+        }
+
+        var constant = new ConstantValue(values.ToImmutableArray(), type);
+        if (record.HasVariantPart && Emit.ConstantBytes.Unencodable(constant, record) is { } unencodable)
+        {
+            Unsupported(syntax, "typed constant of a variant record with a field of type " + unencodable.Name);   // C-198: byte storage
+            return null;
+        }
+
+        return constant;
+
+        static bool Overlap(FieldSymbol a, FieldSymbol b) => a.Offset < b.Offset + b.Type.Size && b.Offset < a.Offset + a.Type.Size;
     }
 
     // ------------------------------------------------------------------ routines (LANG-400…403, 440, 460…473)

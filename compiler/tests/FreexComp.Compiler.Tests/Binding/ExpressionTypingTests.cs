@@ -32,6 +32,44 @@ public sealed class ExpressionTypingTests
         return (BoundDump.Of(bound), Format(diagnostics.ToImmutable()));
     }
 
+    /// <summary>
+    /// C-208 (LANG-221): a constant declared as a typecast to a 64-bit or unsigned type keeps that type, so <c>Integer op C</c>
+    /// is computed in the wider type (<c>N * Int64(86400000)</c> is an Int64 product, not a 32-bit one): the LANG-222 adaptation of a constant to the other operand's computation type never narrows a 64-bit constant to 32 bits.
+    /// </summary>
+    [Theory]
+    [InlineData("i * C64", "Int64")]
+    [InlineData("i + C64", "Int64")]
+    [InlineData("i - C64", "Int64")]
+    [InlineData("i div C64", "Int64")]
+    [InlineData("C64 * i", "Int64")]
+    [InlineData("c * CU64", "UInt64")]
+    [InlineData("w + CU32", "Integer")]       // a 32-bit constant that fits still adapts (LANG-222)
+    public void TypecastConstant_KeepsItsType(string expression, string type)
+    {
+        var dump = TypedWithConstants(expression);
+        Assert.StartsWith("(", dump);
+        Assert.Contains(":" + type, dump[..dump.IndexOf(' ', StringComparison.Ordinal)]);
+    }
+
+    [Fact]
+    public void TypecastConstant_SizeOfIsTheTypesSize() =>
+        Assert.Equal("8:Integer", TypedWithConstants("SizeOf(C64)"));
+
+    private static string TypedWithConstants(string expression)
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(TestPath,
+            $"program P; const C64 = Int64(86400000); CU64 = UInt64(3); CU32 = Cardinal(7); {Variables} begin\nX := {expression};\nend."));
+        Assert.Empty(tree.Diagnostics);
+        var types = new BuiltInTypes();
+        var declarations = DeclarationBinder.BindCompilationUnit(tree, types);
+        Assert.Empty(declarations.Diagnostics);
+        var assignment = tree.Root.DescendantNodes().OfType<AssignmentStatementSyntax>().First();
+        var diagnostics = new DiagnosticBag();
+        var bound = new ExpressionBinder(types, declarations.Scope, diagnostics).BindExpression(assignment.Value);
+        Assert.Empty(Format(diagnostics.ToImmutable()));
+        return BoundDump.Of(bound);
+    }
+
     private static string Typed(string expression, string prefix = "")
     {
         var (dump, diagnostics) = BindExpression(expression, prefix);

@@ -40,6 +40,10 @@ begin
   end;
 end;
 
+const
+  KO: TOverlay = (W0: $0201; W1: $0403);
+  KN: TNested = (Tag: 2; A: 300; Inner: 1; Y: 7);
+
 var
   V: TValue;
   O: TOverlay;
@@ -79,4 +83,5 @@ begin
   P^.I := 5;
   Show(P^);
   Dispose(P);
+  Writeln(KO.L, ' ', KO.B3, ' ', KN.Tag, ' ', KN.A, ' ', KN.Inner, ' ', KN.X);
 end.
