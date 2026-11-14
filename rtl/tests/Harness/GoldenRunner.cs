@@ -28,13 +28,10 @@ public sealed record RtlSetup(string OpcPath, string RtlDirectory, string Toolch
 
     public static string TestsDirectory => Path.Combine(RepositoryRoot, "rtl", "tests");
 
-    /// <summary>
-    /// Until R-003 delivers <c>rtl/src/System.pas</c> the programs are compiled against the compiler's mini RTL
-    /// (lead decision for R-001); R-003 switches this to <c>rtl/src</c>.
-    /// </summary>
+    /// <summary>The programs are compiled against this area's RTL, <c>rtl/src</c> (RTL-008).</summary>
     public static RtlSetup Default { get; } = new(
         Path.Combine(AppContext.BaseDirectory, "opc.exe"),
-        Path.Combine(RepositoryRoot, "compiler", "tests", "minirtl"),
+        Path.Combine(RepositoryRoot, "rtl", "src"),
         Path.Combine(RepositoryRoot, "third_party", "llvm", "bin"),
         TestsDirectory);
 

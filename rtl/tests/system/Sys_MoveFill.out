@@ -1,0 +1,13 @@
+move up:    0 1 2 3 0 1 2 3 4 5 6 7 12 13 14 15
+move down:  4 5 6 7 8 9 10 11 8 9 10 11 12 13 14 15
+fill 255:   0 1 255 255 255 255 255 7 8 9 10 11 12 13 14 15
+fill chars: 65 65 2 3 4 5 6 7 8 9 10 11 12 13 1 1
+counts <=0: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+memset 7:   7 7 7 3 4 5 6 7 8 9 10 11 12 13 14 15
+memcmp equal TRUE
+memcmp order TRUE TRUE
+memcmp bytes are unsigned TRUE
+memcmp empty 0
+memmove returns Dest TRUE
+strlen 3 0
+wcslen 1 0

@@ -1,0 +1,14 @@
+GetMem 0 is nil TRUE
+FreeMem nil is a no-op
+AllocMem 0 is nil TRUE
+AllocMem -1 is nil TRUE
+grown bad bytes 0
+shrunk bad bytes 0
+live blocks +1 1
+ReallocMem 0 frees TRUE 0
+ReallocMem nil allocates TRUE 1
+AllocMem nonzero bytes 0
+New is zeroed TRUE
+live blocks +100 100
+misaligned blocks 0
+live blocks back to baseline 0
