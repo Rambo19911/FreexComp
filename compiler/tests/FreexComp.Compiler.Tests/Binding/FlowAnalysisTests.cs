@@ -199,6 +199,34 @@ public sealed class FlowAnalysisTests
         Assert.Empty(Flow(Proc("var x: Integer; procedure Q; begin Writeln(x) end;", "x := 1; Q")));
     }
 
+    private static string WithClass(string body) => $"program T; type EX = class constructor Create; end; constructor EX.Create; begin end; procedure P(b: Boolean); var x: Integer; begin {body} end; begin P(True) end.";
+
+    /// <summary>
+    /// C-194 (from R-063): a handler may start at any point of the try part, so a value stored before or inside the try part
+    /// and read only after the try statement is used: no H2002 — also when the try part always raises and every handler
+    /// overwrites the variable (the defensive initialisation before a try statement).
+    /// </summary>
+
+    [Fact]
+    [Trait("Req", "LANG-390")]
+    [Trait("Req", "LANG-821")]
+    public void AssignedInTryReadAfterExcept_NoHint()
+    {
+        Assert.Empty(Flow(Proc("var x: Integer;", "x := 0; try x := 1; Get(x); x := 2 except Writeln('e') end; Writeln(x)")));
+        Assert.Empty(Flow(Proc("var x: Integer;", "x := 0; try Writeln('a'); x := 1 except Writeln('e') end; Writeln(x)")));
+        Assert.Empty(Flow(WithClass("x := 0; try Writeln('a'); x := 1 except on E: EX do Writeln('e') end; Writeln(x)")));
+        Assert.Empty(Flow(WithClass("x := 0; try Writeln('a'); x := 1 except on E: EX do Writeln('e') else Writeln('f') end; Writeln(x)")));
+        Assert.Empty(Flow(WithClass("x := 0; try Writeln('a'); x := 1 except on EX do Writeln('e') end; Writeln(x)")));
+        Assert.Empty(Flow(Proc("var x: Integer;", "try x := 1; Writeln('a') except x := 2 end; Writeln(x)")));
+        Assert.Empty(Flow(Proc("var x: Integer;", "x := 1; try Writeln('a') finally Writeln('f') end; Writeln(x)")));
+        Assert.Empty(Flow(WithClass("x := 0; try raise EX.Create except on E: EX do x := 1 end; Writeln(x)")));
+        Assert.Empty(Flow(WithClass("x := 0; try raise EX.Create except x := 1 end; Writeln(x)")));
+        Assert.Empty(Flow(WithClass("x := 0; try try raise EX.Create except raise end except on EX do x := 1 end; Writeln(x)")));
+        // a store after the try statement is still a dead store
+        var text = Proc("var x: Integer;", "try Writeln('a') except Writeln('e') end; x := 3");
+        Assert.Equal([At("H2002", text, "|x := 3")], Flow(text));
+    }
+
     /// <summary>
     /// C-177: taking the address of a local counts as a use for H2002 — stores before and after <c>@x</c> may be read
     /// through the pointer, so none of them is reported. Unrelated locals keep their H2002.

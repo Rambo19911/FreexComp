@@ -50,8 +50,20 @@ internal static class IrEmitter
     /// </summary>
     public const int FinallyGroup = 3;
 
+    /// <summary>
+    /// <c>attributes #4 = { noinline … }</c>: ABI-125 — every routine of unit <c>System</c> whose name starts with <c>_</c> (the
+    /// compiler helpers; <c>_Raise</c> is the debugger's raise hook) is never inlined (C-193).
+    /// </summary>
+    public const int SystemHelperGroup = 4;
+
     internal static int AttributeGroupOf(RoutineSymbol routine) =>
-        IsOutlinedFinally(routine) ? FinallyGroup : MemoryRoutineNames.Contains(Mangler.Routine(routine).Text) ? NoBuiltinsGroup : RoutineGroup;
+        IsOutlinedFinally(routine) ? FinallyGroup
+        : MemoryRoutineNames.Contains(Mangler.Routine(routine).Text) ? NoBuiltinsGroup
+        : IsSystemHelper(routine) ? SystemHelperGroup
+        : RoutineGroup;
+
+    private static bool IsSystemHelper(RoutineSymbol routine) =>
+        routine.Name.StartsWith('_') && routine.ContainingSymbol is UnitSymbol { Name: var unit } && string.Equals(unit, "System", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A <c>$fin</c> routine of the Lowerer (CMP-392): the only routines whose name holds a <c>$</c>.</summary>
     internal static bool IsOutlinedFinally(RoutineSymbol routine) => routine.Name.Contains('$', StringComparison.Ordinal);
@@ -221,6 +233,11 @@ internal static class IrEmitter
                 [IrAttribute.Enum("noinline"), IrAttribute.Enum("optnone"), IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
         }
 
+        if (unit.Routines.Any(r => AttributeGroupOf(r.Routine!) == SystemHelperGroup))
+        {
+            writer.DefineAttributeGroup(SystemHelperGroup, [IrAttribute.Enum("noinline"), IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
+        }
+
         writer.EndModule();
     }
 
@@ -241,19 +258,34 @@ internal static class IrEmitter
     }
 
     /// <summary>
-    /// CMP-355 without the EH part (until C-079+): <c>_Startup($units, n)</c>, <c>$main()</c>, <c>_Halt0()</c>. The PE entry
-    /// point (<c>/entry:_start</c>), called by the OS like an ordinary function.
+    /// CMP-355: <c>_Startup($units, n)</c>, <c>invoke $main()</c>, <c>_Halt0()</c>; the top-level handler (LANG-832/833, C-095)
+    /// catches every exception escaping the unit initializations or the main block with the one filter, makes it current
+    /// (<c>_BeginCatch</c>) and ends in <c>_UnhandledException</c> (ABI-124: report, exit code 217). The PE entry point
+    /// (<c>/entry:_start</c>), called by the OS like an ordinary function.
     /// </summary>
     private static void EmitStart(ModuleState module, int unitCount)
     {
         var w = module.Writer;
         var startup = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_Startup"), IrType.Void, [IrType.Ptr, IrType.I64]));
         var halt0 = module.NoReturnHelper("_Halt0");
+        var filter = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_SehFilter"), IrType.I32, [IrType.Ptr, IrType.Ptr]));
+        var beginCatch = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_BeginCatch"), IrType.Ptr, []));
+        var unhandled = module.NoReturnHelper("_UnhandledException");
+        IrBlock done = new("done"), dispatch = new("catch.dispatch"), @catch = new("catch"), unhandledBlock = new("unhandled");
         w.BeginFunction(new IrFunctionDefinition(StartName, IrLinkage.External, IrType.Void, [], RoutineGroup));
         w.AppendBlock(new IrBlock("entry"));
         w.Call(null, IrType.Void, startup, [new IrGlobal(UnitsName), IrIntConstant.I64(unitCount)]);
-        w.Call(null, IrType.Void, new IrGlobal(MainName), []);
+        w.Invoke(null, IrType.Void, new IrGlobal(MainName), [], done, dispatch);
+        w.AppendBlock(done);
         w.Call(null, IrType.Void, halt0, [], NoReturnGroup);
+        w.Unreachable();
+        w.AppendBlock(dispatch);
+        var catchSwitch = w.CatchSwitch("cs", @catch, unwind: null);
+        w.AppendBlock(@catch);
+        w.CatchRet(w.CatchPad("cp", catchSwitch, [filter]), unhandledBlock);
+        w.AppendBlock(unhandledBlock);
+        w.Call("t1", IrType.Ptr, beginCatch, []);
+        w.Call(null, IrType.Void, unhandled, [], NoReturnGroup);
         w.Unreachable();
         w.EndFunction();
         module.DeclarePending();

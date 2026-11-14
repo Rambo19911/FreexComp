@@ -321,10 +321,179 @@ internal static class PcuReader
                     return procedural;
                 }
 
+                case "class":
+                    return Class(id, entry, name);
+                case "classRef":
+                {
+                    var target = Type(entry, "target") as ClassTypeSymbol ?? throw new PcuFormatException($"'{name}' does not refer to a class");
+                    return _byId[id] = name == target.Reference.Name ? target.Reference : new ClassRefTypeSymbol(name, target, _unit, []);
+                }
+
                 default:
                     throw new PcuFormatException($"unknown type kind '{kind}'");
             }
         }
+
+        /// <summary>
+        /// C-189: a class of architecture.md §6 — parent, layout, fields, class vars, methods (with <c>Self</c> and the
+        /// constructor/destructor flag as the binder creates them), VMT slots and properties.
+        /// </summary>
+        private ClassTypeSymbol Class(int id, JsonObject entry, string name)
+        {
+            var type = new ClassTypeSymbol(name, _unit, []) { IsForward = false };
+            _byId[id] = type;                                                   // before the members: they may name the class
+            if (string.Equals(_unit.Name, "System", StringComparison.OrdinalIgnoreCase) && string.Equals(name, "TObject", StringComparison.OrdinalIgnoreCase))
+            {
+                types.TObject = type;                                           // the root class (LANG-600)
+            }
+
+            type.Parent = entry["parent"] is null ? null
+                : Type(entry, "parent") as ClassTypeSymbol ?? throw new PcuFormatException($"the parent of '{name}' is not a class");
+            var flags = Array(entry, "flags").Select(f => f!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
+            type.IsAbstract = flags.Contains("abstract");
+            type.IsSealed = flags.Contains("sealed");
+            type.InstanceSize = entry["instanceSize"]!.GetValue<long>();
+            var fields = new List<FieldSymbol>();
+            var classVariables = new List<VariableSymbol>();
+            foreach (var field in Array(entry, "fields"))
+            {
+                var fieldName = Text(field, "name");
+                var visibility = VisibilityOf(Text(field, "visibility"));
+                if (field!["classVar"]?.GetValue<bool>() == true)
+                {
+                    var variable = new VariableSymbol(fieldName, Type(field, "type"), isGlobal: true, type, [], visibility: visibility);
+                    variable.ExplicitLinkName = Explicit(Text(field, "linkName"), Emit.Mangler.GlobalVariable(variable).Text);
+                    classVariables.Add(variable);
+                }
+                else
+                {
+                    fields.Add(new FieldSymbol(fieldName, Type(field, "type"), field["offset"]!.GetValue<long>(), type, [], visibility));
+                }
+            }
+
+            type.Fields = [.. fields];
+            type.ClassVariables = [.. classVariables];
+            var parentSlots = type.Parent?.VirtualSlots ?? [];
+            var methods = Array(entry, "methods").Select(m => Method(type, m!, parentSlots)).ToImmutableArray();
+            type.Methods = methods;
+            var slots = new MethodSymbol?[entry["vmtSlotCount"]!.GetValue<int>()];
+            parentSlots.CopyTo(slots!);
+            foreach (var method in methods.Where(m => m.VmtSlot >= 0))
+            {
+                slots[method.VmtSlot] = method;
+            }
+
+            type.VirtualSlots = [.. slots.Select(s => s ?? throw new PcuFormatException($"VMT slot of '{name}' without a method"))];
+            if (Text(entry, "vmtLinkName") != Emit.Mangler.Vmt(type).Text)
+            {
+                throw new PcuFormatException($"VMT link name of '{name}'");
+            }
+
+            type.Properties = [.. Array(entry, "properties").Select(p => Property(type, p!))];
+            return type;
+        }
+
+        private MethodSymbol Method(ClassTypeSymbol type, JsonNode entry, ImmutableArray<MethodSymbol> parentSlots)
+        {
+            var flags = Array(entry, "flags").Select(f => f!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
+            var binding = Text(entry, "binding");
+            var isClass = flags.Contains("class") || binding is "class" or "classStatic";
+            var kind = binding switch
+            {
+                "constructor" => MethodKind.Constructor,
+                "destructor" => MethodKind.Destructor,
+                "classStatic" => MethodKind.ClassStatic,
+                _ => isClass ? MethodKind.ClassMethod : MethodKind.Ordinary,
+            };
+            var method = new MethodSymbol(Text(entry, "name"), type, [], declaration: null!, kind, VisibilityOf(Text(entry, "visibility")));
+            method.Parameters = Parameters(entry, method);
+            method.ReturnType = kind == MethodKind.Constructor ? type : entry["result"] is null ? null : Type(entry, "result");
+            method.IsOverload = flags.Contains("overload");
+            method.IsInline = flags.Contains("inline");
+            method.IsNoReturn = flags.Contains("noreturn");
+            method.VmtSlot = entry["slot"]!.GetValue<int>();
+            var inherited = method.VmtSlot >= 0 && method.VmtSlot < parentSlots.Length;   // the slot of an ancestor's method
+            method.IsAbstract = binding == "abstract";
+            method.IsFinal = binding == "final";
+            method.IsOverride = inherited && binding is "override" or "final" or "abstract" or "constructor" or "destructor";
+            method.IsVirtual = method.VmtSlot >= 0 && !method.IsOverride;
+            method.OverriddenMethod = method.IsOverride ? parentSlots[method.VmtSlot] : null;
+            if (kind != MethodKind.ClassStatic)
+            {
+                method.SelfParameter = new ParameterSymbol("Self", isClass ? type.Reference : type, ParameterMode.Value, -1, method, []);
+            }
+
+            if (kind is MethodKind.Constructor or MethodKind.Destructor)
+            {
+                method.FlagParameter = new ParameterSymbol(kind == MethodKind.Constructor ? "Alloc" : "Dealloc", BuiltIn("Byte"), ParameterMode.Value, -1, method, []);
+            }
+
+            if (Text(entry, "linkName") != method.LinkName)
+            {
+                throw new PcuFormatException($"link name of method '{type.Name}.{method.Name}'");
+            }
+
+            return method;
+        }
+
+        /// <summary>A property; its accessors are a method's link name or a field path from the class (LANG-641).</summary>
+        private PropertySymbol Property(ClassTypeSymbol type, JsonNode entry)
+        {
+            var property = new PropertySymbol(Text(entry, "name"), type, [], VisibilityOf(Text(entry, "visibility")))
+            {
+                Type = Type(entry, "type"),
+                Index = entry["index"] is JsonValue index ? index.GetValue<int>() : null,
+                IsDefault = entry["isDefault"]!.GetValue<bool>(),
+            };
+            property.Parameters = [.. Array(entry, "params").Select((p, i) => new ParameterSymbol(Text(p, "name"), Type(p!, "type"), ParameterMode.Value, i, property, []))];
+            (property.ReadPath, property.ReadMethod) = Accessor(type, entry["read"]);
+            (property.WritePath, property.WriteMethod) = Accessor(type, entry["write"]);
+            property.IsClassProperty = property.ReadMethod?.IsClassMethod ?? property.WriteMethod?.IsClassMethod
+                ?? (property.ReadPath.IsEmpty ? property.WritePath : property.ReadPath).FirstOrDefault() is VariableSymbol;
+            return property;
+        }
+
+        private static (ImmutableArray<Symbol> Path, MethodSymbol? Method) Accessor(ClassTypeSymbol type, JsonNode? accessor)
+        {
+            if (accessor is not JsonValue value)
+            {
+                return ([], null);
+            }
+
+            var text = value.GetValue<string>();
+            if (type.SelfAndAncestors().SelectMany(c => c.Methods).FirstOrDefault(m => m.LinkName == text) is { } method)
+            {
+                return ([], method);
+            }
+
+            var path = new List<Symbol>();
+            TypeSymbol? current = type;
+            foreach (var part in text.Split('.'))
+            {
+                Symbol? member = current switch
+                {
+                    ClassTypeSymbol c => c.SelfAndAncestors().SelectMany(a => a.Fields.Cast<Symbol>().Concat(a.ClassVariables))
+                        .FirstOrDefault(f => string.Equals(f.Name, part, StringComparison.OrdinalIgnoreCase)),
+                    RecordTypeSymbol r => r.Fields.FirstOrDefault(f => string.Equals(f.Name, part, StringComparison.OrdinalIgnoreCase)),
+                    _ => null,
+                };
+                path.Add(member ?? throw new PcuFormatException($"property accessor '{text}' of '{type.Name}'"));
+                current = member switch { FieldSymbol f => f.Type, VariableSymbol v => v.Type, _ => null };
+            }
+
+            return ([.. path], null);
+        }
+
+        private static Visibility VisibilityOf(string text) => text switch
+        {
+            "strict private" => Visibility.StrictPrivate,
+            "private" => Visibility.Private,
+            "strict protected" => Visibility.StrictProtected,
+            "protected" => Visibility.Protected,
+            "published" => Visibility.Published,
+            "public" => Visibility.Public,
+            _ => throw new PcuFormatException($"unknown visibility '{text}'"),
+        };
 
         private TypeSymbol BuiltIn(string name) => name switch
         {

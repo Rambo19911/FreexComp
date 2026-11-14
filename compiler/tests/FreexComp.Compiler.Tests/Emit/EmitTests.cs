@@ -73,15 +73,29 @@ public sealed class EmitTests
             "exit:\n" +
             "  ret void\n" +
             "}\n", text);
+        // CMP-355 with the top-level handler (C-095, LANG-832/833)
         Assert.Contains(
-            "define void @_start() #0 {\n" +
+            "define void @_start() #0 personality ptr @__C_specific_handler {\n" +
             "entry:\n" +
             "  call void @\"System._Startup\"(ptr @\"$units\", i64 1)\n" +
-            "  call void @\"$main\"()\n" +
+            "  invoke void @\"$main\"()\n" +
+            "          to label %done unwind label %catch.dispatch\n" +
+            "done:\n" +
             "  call void @\"System._Halt0\"() #1\n" +
+            "  unreachable\n" +
+            "catch.dispatch:\n" +
+            "  %cs = catchswitch within none [label %catch] unwind to caller\n" +
+            "catch:\n" +
+            "  %cp = catchpad within %cs [ptr @\"System._SehFilter\"]\n" +
+            "  catchret from %cp to label %unhandled\n" +
+            "unhandled:\n" +
+            "  %t1 = call ptr @\"System._BeginCatch\"()\n" +
+            "  call void @\"System._UnhandledException\"() #1\n" +
             "  unreachable\n" +
             "}\n", text);
         Assert.Contains("declare void @\"System._Halt0\"() #1\n", text);
+        Assert.Contains("declare void @\"System._UnhandledException\"() #1\n", text);
+        Assert.Contains("declare i32 @__C_specific_handler(...)\n", text);
         Assert.DoesNotContain("$init", text);
     }
 

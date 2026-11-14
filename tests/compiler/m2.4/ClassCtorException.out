@@ -1,0 +1,29 @@
+-- derived, fail at 0
+TBase.Create
+TDerived.Create
+AfterConstruction
+created
+BeforeDestruction
+TDerived.Destroy extra=extra
+TBase.Destroy name=base
+-- derived, fail at 1
+TBase.Create
+TDerived.Destroy extra=
+TBase.Destroy name=base
+caught base
+-- derived, fail at 2
+TBase.Create
+TDerived.Create
+TDerived.Destroy extra=extra
+TBase.Destroy name=base
+caught derived
+-- class reference, fail at 1
+TBase.Create
+TDerived.Destroy extra=
+TBase.Destroy name=base
+caught base
+-- class reference, fail at 1
+TBase.Create
+TBase.Destroy name=base
+caught base
+leaked: 0

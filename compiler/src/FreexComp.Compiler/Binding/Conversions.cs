@@ -41,8 +41,6 @@ internal sealed class Conversions
             (ClassTypeSymbol s, ClassTypeSymbol d) when s.InheritsFrom(d) => Pointer,                              // descendant → ancestor
             (PointerTypeSymbol { Name: "nil" }, ClassRefTypeSymbol) => Pointer,                                    // LANG-266 (C-086)
             (ClassRefTypeSymbol s, ClassRefTypeSymbol d) when s.Class.InheritsFrom(d.Class) => Pointer,            // LANG-280 rule 10
-            // C-086 decision (spec gap): a class reference converts to the untyped Pointer (the VMT address), as the RTL needs
-            (ClassRefTypeSymbol, PointerTypeSymbol { PointedType: null, Name: not "nil" }) => Pointer,
             (CharTypeSymbol, StringTypeSymbol) => String,                                                         // LANG-245: a 1-char string
             (StringTypeSymbol, StringTypeSymbol) => String,                                                       // LANG-245 (C-063)
             (PointerTypeSymbol, StringTypeSymbol) when Strings.IsCharPointer(source, wide: true) && Strings.IsUnicode(destination) => String,

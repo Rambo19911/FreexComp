@@ -581,7 +581,8 @@ internal sealed class PcuWriter(PcuContext context)
                         ["linkName"] = m.LinkName,
                         ["params"] = Parameters(m),
                         ["result"] = m.ReturnType is { } result && m.MethodKind != MethodKind.Constructor ? TypeId(result) : null,
-                        ["flags"] = Strings(Flags(m)),
+                        // C-189: "class" marks a class method whose binding names its dispatch (virtual, override…)
+                        ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>()]),
                         ["visibility"] = VisibilityName(m.Visibility),
                         ["binding"] = Binding(m),
                         ["slot"] = m.VmtSlot,

@@ -225,6 +225,24 @@ public sealed class ConversionTests
         Assert.Equal(expected.Length == 0 ? [] : [expected], BindDiagnostics(source));
     }
 
+    /// <summary>
+    /// C-192: LANG-280 has no implicit class reference → <c>Pointer</c> conversion (types.md lead note); the explicit
+    /// <c>Pointer(C)</c> typecast (LANG-290) and nil stay allowed.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-280")]
+    [Trait("Req", "LANG-290")]
+    public void ClassRefToPointer_IsE2010()
+    {
+        const string Types = "type TA = class end; TAClass = class of TA;\nprocedure Take(P: Pointer); begin end;\n";
+
+        Assert.Equal(["E2010(3,49): Incompatible types: 'TAClass' and 'Pointer'"],
+            BindDiagnostics(Types + "var C: TAClass; P: Pointer; begin C := TA; P := C; end."));
+        Assert.Equal(["E2010(3,40): Incompatible types: 'TAClass' and 'Pointer'"],
+            BindDiagnostics(Types + "var C: TAClass; P: Pointer; begin Take(C); end."));
+        Assert.Empty(BindDiagnostics(Types + "var C: TAClass; P: Pointer; begin C := nil; P := Pointer(C); Take(Pointer(TA)); end."));
+    }
+
     // ------------------------------------------------------------------ typecasts (LANG-290)
 
     private const string CastTypes = """

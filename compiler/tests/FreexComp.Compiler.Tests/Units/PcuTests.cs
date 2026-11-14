@@ -478,6 +478,91 @@ public sealed class PcuTests
         Assert.Equal(pcus["U"], again["U"]);
     }
 
+    /// <summary>C-189: classes of every member kind (architecture.md §6 <c>class</c>, <c>classRef</c>).</summary>
+    internal const string ClassUnit = """
+        unit U;
+        interface
+        uses V;
+        type
+          TNode = class;
+          TPair = record
+            A, B: Integer;
+          end;
+          TBase = class
+          private
+            FCount: Integer;
+            FItems: array[0..3] of Integer;
+            FPair: TPair;
+            function GetItem(I: Integer): Integer;
+            function GetFlag(Index: Integer): Boolean;
+          protected
+            procedure Changed; virtual;
+          public
+            Name: string;
+            Next: TNode;
+            class var Instances: Integer;
+            constructor Create(const AName: string); virtual;
+            destructor Destroy; override;
+            procedure Run; virtual; abstract;
+            class function Kind: string; virtual;
+            class procedure Reset; static;
+            function Twice(X: Integer): Integer; overload;
+            function Twice(X: string): string; overload;
+            property Count: Integer read FCount write FCount;
+            property First: Integer read FPair.A;
+            property Items[I: Integer]: Integer read GetItem; default;
+            property Flag: Boolean index 3 read GetFlag;
+            class property Total: Integer read Instances;
+          end;
+          TNode = class(TBase)
+            procedure Run; override;
+            procedure Changed; override; final;
+            class function Kind: string; override;
+          end;
+          TBaseClass = class of TBase;
+          TSealed = class sealed(TNode)
+          end;
+          TAbstract = class abstract
+          end;
+        var
+          Kinds: TBaseClass;
+        function Make(C: TBaseClass): TBase;
+        implementation
+        function TBase.GetItem(I: Integer): Integer; begin Result := FItems[I]; end;
+        function TBase.GetFlag(Index: Integer): Boolean; begin Result := Index > 0; end;
+        procedure TBase.Changed; begin end;
+        constructor TBase.Create(const AName: string); begin Name := AName; end;
+        destructor TBase.Destroy; begin inherited; end;
+        class function TBase.Kind: string; begin Result := 'base'; end;
+        class procedure TBase.Reset; begin Instances := 0; end;
+        function TBase.Twice(X: Integer): Integer; begin Result := X * 2; end;
+        function TBase.Twice(X: string): string; begin Result := X + X; end;
+        procedure TNode.Run; begin end;
+        procedure TNode.Changed; begin end;
+        class function TNode.Kind: string; begin Result := 'node'; end;
+        function Make(C: TBaseClass): TBase; begin Result := C.Create('made'); end;
+        end.
+        """;
+
+    [Fact]
+    [Trait("Req", "CMP-160")]
+    [Trait("Req", "CMP-161")]
+    public void RoundTrip_Classes()
+    {
+        const string Empty = "program P;\nuses U;\nbegin\nend.\n";
+        var pcus = Pcus(Files(u: ClassUnit, program: Empty));
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", Empty)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
+            .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
+
+        var again = Compilation.Create(Options() with { SearchPaths = [@"C:\lib"] }, [], fs).PcuTexts().ToDictionary(t => t.Unit, t => t.Text);
+
+        Assert.Contains("\"kind\":\"class\"", pcus["U"], StringComparison.Ordinal);
+        Assert.Equal(pcus["U"], again["U"]);
+    }
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

@@ -239,14 +239,17 @@ internal sealed class LoweringContext
         return lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. clears]) };
     }
 
+    /// <summary><c>procedure _ReRaise</c>, noreturn (ABI-122).</summary>
+    private static readonly RuntimeHelper ReRaise = new("_ReRaise", [], ReturnType: null, IsNoReturn: true);
+
     /// <summary>The label <c>Exit</c> leaves in a constructor/destructor body, so that the epilogue still runs (CMP-368/369).</summary>
     private LLoopLabel? _bodyLabel;
 
     /// <summary>
-    /// CMP-368 without the exception path (C-082):
-    /// <c>if Alloc &lt;&gt; 0 then Self := NewInstance(Self)</c> (slot 3 of the class reference); body; <c>if Alloc &lt;&gt; 0 then
-    /// Self.AfterConstruction</c> (slot 1); the emitter returns <c>Self</c>. CMP-369: <c>if (Dealloc and 3) = 1 then
-    /// Self.BeforeDestruction</c> (slot 2); body; <c>if (Dealloc and 1) &lt;&gt; 0 then Self.FreeInstance</c> (slot 4). The body is a
+    /// CMP-368: <c>if Alloc &lt;&gt; 0 then Self := NewInstance(Self)</c> (slot 3 of the class reference); <c>try</c> body; <c>if Alloc
+    /// &lt;&gt; 0 then Self.AfterConstruction</c> (slot 1) <c>except if Alloc &lt;&gt; 0 then Self.Destroy(3)</c> (slot 0); <c>raise end</c>;
+    /// the emitter returns <c>Self</c>. The wrapper is always emitted: <c>AfterConstruction</c> is a call inside it (C-094).
+    /// CMP-369: <c>if (Dealloc and 3) = 1 then Self.BeforeDestruction</c> (slot 2); body; <c>if (Dealloc and 1) &lt;&gt; 0 then Self.FreeInstance</c> (slot 4). The body is a
     /// one-pass loop so that <c>Exit</c> reaches the epilogue. Without the <c>TObject</c> slots (no System) only the body runs.
     /// </summary>
     private LBlock Protocol(MethodSymbol method, BoundBlock body)
@@ -266,9 +269,14 @@ internal sealed class LoweringContext
         LStatement Virtual(int slot) => new LCallStatement(new LRoutineCallee(slots[slot], Self: self, IsVirtual: true), []);
         if (method.MethodKind == MethodKind.Constructor)
         {
-            var allocating = Compare(LCompareOperator.NotEqual, flag, zero);
+            LCompare Allocating() => Compare(LCompareOperator.NotEqual, flag, zero);
             var allocate = new LAssign(self, new LCall(new LRoutineCallee(slots[3], Self: self, IsVirtual: true), []));
-            return new LBlock([new LIf(allocating, allocate, @else: null), user, new LIf(allocating, Virtual(1), @else: null)]);
+            // C-094 / ABI-075 / ABI-076: an exception out of the body or AfterConstruction destroys the new instance through its
+            // virtual Destroy with Dealloc = 3 (FreeInstance, no BeforeDestruction), then propagates
+            var destroy = new LCallStatement(new LRoutineCallee(slots[0], Self: self, Flag: 3, IsVirtual: true), []);
+            var handler = new LBlock([new LIf(Allocating(), destroy, @else: null), CallNoReturn(ReRaise)]);
+            var guarded = new LTryExcept(new LBlock([user, new LIf(Allocating(), Virtual(1), @else: null)]), NewTemp(Types.Pointer), handler);
+            return new LBlock([new LIf(Allocating(), allocate, @else: null), guarded]);
         }
 
         var outermost = Compare(LCompareOperator.Equal, new LBinary(LBinaryOperator.And, flag, Constant(3, Types.Byte)), Constant(BigInteger.One, Types.Byte));
@@ -398,7 +406,7 @@ internal sealed class LoweringContext
             case BoundWriteStatement write:
                 return WriteRewriter.Rewrite(this, write);
             case BoundRaiseStatement { IsReraise: true }:
-                return CallNoReturn(new RuntimeHelper("_ReRaise", [], ReturnType: null, IsNoReturn: true));          // LANG-807
+                return CallNoReturn(ReRaise);                                                                         // LANG-807
             case BoundRaiseStatement raise:
                 // CMP-395: _Raise(Obj, Addr), Addr = nil for 'raise E' (ABI-123)
                 return CallNoReturn(new RuntimeHelper("_Raise", [Types.Pointer, Types.Pointer], ReturnType: null, IsNoReturn: true),
@@ -422,7 +430,7 @@ internal sealed class LoweringContext
         var exception = NewTemp(Types.Pointer);
         LStatement handler = statement.Else is { } otherwise
             ? Lower(otherwise)
-            : CallNoReturn(new RuntimeHelper("_ReRaise", [], ReturnType: null, IsNoReturn: true));
+            : CallNoReturn(ReRaise);
         foreach (var on in statement.Handlers.Reverse())
         {
             var isClass = new LCall(new LHelperCallee(new RuntimeHelper("_IsClass", [Types.Pointer, Types.Pointer], Types.Boolean, IsNoReturn: false)),

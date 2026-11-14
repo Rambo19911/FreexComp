@@ -410,6 +410,16 @@ internal sealed class FlowAnalyzer
                 var before = Clone(state);                                     // the visit updates the state in place
                 var bodyEnd = Protected(tryExcept.Body, state);
                 var entry = Join(before, bodyEnd);
+                if (entry != null)
+                {
+                    // C-194: the exception paths are not analysed precisely (a handler may not match, may raise, the body may
+                    // fail anywhere), so a store that reaches the handler entry counts as read
+                    foreach (var stores in entry.Pending.Values)
+                    {
+                        _readStores.UnionWith(stores);
+                    }
+                }
+
                 var ends = tryExcept.Handlers.Select(h => Visit(h.Body, Clone(entry))).ToList();
                 return Join(bodyEnd, tryExcept.Else is null ? ends : ends.Append(Visit(tryExcept.Else, Clone(entry))));
             }

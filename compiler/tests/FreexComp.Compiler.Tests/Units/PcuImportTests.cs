@@ -83,6 +83,63 @@ public sealed class PcuImportTests
         Assert.False(fs.FileExists(@"C:\p\obj\U.ll"));
     }
 
+    /// <summary>
+    /// C-189: a program using the classes of a <c>.pcu</c>-only unit — construction through the class and a class reference,
+    /// virtual and static calls, class methods, class vars, properties of every accessor kind, a descendant class with its own
+    /// VMT — binds and gives the same IR as against the unit's source.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-510")]
+    [Trait("Req", "CMP-160")]
+    public void ClassFromPcu()
+    {
+        const string Program = """
+            program P;
+            uses U;
+            type
+              TMine = class(TNode)
+                procedure Run; override;
+                class function Kind: string; override;
+              end;
+            procedure TMine.Run; begin Writeln(Count, First, Items[1], Flag, Total) end;
+            class function TMine.Kind: string; begin Result := 'mine'; end;
+            var
+              B: TBase;
+              C: TBaseClass;
+            begin
+              B := TNode.Create('n');
+              B.Run;
+              B.Count := 2;
+              Writeln(B[0], B.Twice(3), B.Twice('x'), B.Name, TBase.Kind, B.Kind, TBase.Instances);
+              TBase.Reset;
+              B.Free;
+              C := TMine;
+              Kinds := C;
+              B := Make(C);
+              B.Run;
+              Writeln(B is TNode, C.Kind, B.ClassName);
+              (B as TMine).Free;
+            end.
+            """;
+        var sources = PcuTests.Files(u: PcuTests.ClassUnit, program: Program);
+        var reference = Emit(sources, PcuTests.Options(), EmitStage.Ll);
+        Assert.True(reference.Success, string.Join("\n", reference.Diagnostics.Select(d => d.ToText())));
+        var pcus = PcuTests.Pcus(PcuTests.Files(u: PcuTests.ClassUnit, program: Program));
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", Program)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+        foreach (var unit in new[] { "U", "V" })
+        {
+            fs.Add(Path.Combine(Lib, unit + ".pcu"), pcus[unit]).Add(Path.Combine(Lib, unit + ".obj"), "");
+        }
+
+        var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(["P", "System"], result.CompiledUnits);
+        Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), fs.ReadAllText(@"C:\p\obj\P.ll"));
+    }
+
     [Fact]
     [Trait("Req", "LANG-510")]
     public void ProgramAgainstPcuOnlyUnits_GivesTheSameProgramIrAsAgainstTheirSources()

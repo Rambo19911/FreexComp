@@ -1588,6 +1588,30 @@ public sealed class IrSnapshotTests
     }
 
     /// <summary>
+    /// C-193 / ABI-125: every routine of unit System whose name starts with <c>_</c> is defined with the <c>noinline</c> group
+    /// <c>#4</c> (<c>_Raise</c> stays the debugger's raise hook at every optimisation level); other System routines keep theirs.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "ABI-125")]
+    public void SystemHelpersAreNoInline()
+    {
+        var text = MiniRtlCompilesTests.EmitSystem();
+
+        var helpers = text.Split('\n').Where(l => l.StartsWith("define ", StringComparison.Ordinal) && l.Contains(" @\"System._", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(helpers);
+        Assert.All(helpers, l => Assert.EndsWith(" #4 {", l.Replace(" personality ptr @__C_specific_handler", "", StringComparison.Ordinal)));
+        Assert.Contains(helpers, l => l.StartsWith("define void @\"System._Raise\"(ptr %Obj, ptr %Addr) #4 ", StringComparison.Ordinal));
+        Assert.Contains("define void @\"System.TObject.Free\"(ptr %Self) #0 ", text);
+        Assert.Contains("define i32 @memcmp(", text);
+        Assert.DoesNotContain(text.Split('\n'), l => l.StartsWith("define i32 @memcmp(", StringComparison.Ordinal) && !l.Contains(" #2 ", StringComparison.Ordinal));
+        Assert.Contains("attributes #4 = { noinline uwtable \"frame-pointer\"=\"all\" }\n", text);
+
+        var unit = Emit("unit M; interface procedure _Own; implementation procedure _Own; begin end; end.");
+        Assert.Contains("define void @\"M._Own\"() #0 {", unit);                                  // only unit System
+        Assert.DoesNotContain("attributes #4", unit);
+    }
+
+    /// <summary>
     /// C-093: a routine's managed cleanup scope (CMP-325 rule 2) is its outermost EH scope (CMP-393): raising calls are invokes
     /// unwinding to <c>cleanup.pad</c> (CMP-394), a try statement's dispatch and cleanup unwind there, and the funclet finalises
     /// the locals; a routine whose body has no raising call keeps a plain function.

@@ -2979,7 +2979,7 @@ var
   P: PPointer;
 begin
   P := _AllocZero(PNativeInt(PByte(Self) + 8)^);
-  P^ := Self;
+  P^ := Pointer(Self);
   Result := TObject(P);
 end;
 
