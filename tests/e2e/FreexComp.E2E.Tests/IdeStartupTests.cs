@@ -36,7 +36,9 @@ public sealed class IdeStartupTests
         try
         {
             var ct = TestContext.Current.CancellationToken;
-            var deadline = DateTime.UtcNow.AddSeconds(30);
+            // Generous deadline (L-001): under the full parallel suite (golden tests compile and run hundreds of
+            // programs) start-up can take far longer than on an idle machine; the loop still ends as soon as the window exists.
+            var deadline = DateTime.UtcNow.AddSeconds(120);
             while (p.MainWindowHandle == IntPtr.Zero && !p.HasExited && DateTime.UtcNow < deadline)
             {
                 await Task.Delay(100, ct); // polling a condition with a deadline, not a blind sleep
@@ -49,7 +51,7 @@ public sealed class IdeStartupTests
 
             Assert.True(p.CloseMainWindow(), "close message not delivered");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            timeout.CancelAfter(TimeSpan.FromSeconds(60));
             await p.WaitForExitAsync(timeout.Token);
             Assert.Equal(0, p.ExitCode);
         }
