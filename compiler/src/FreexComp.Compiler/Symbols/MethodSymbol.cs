@@ -32,6 +32,21 @@ public sealed class MethodSymbol : RoutineSymbol
     /// <summary>The declaring interface of an interface method (LANG-660); null for class methods.</summary>
     public InterfaceTypeSymbol? ContainingInterface => ContainingSymbol as InterfaceTypeSymbol;
 
+    /// <summary>The declaring record of a record method (LANG-730, C-122); null for class and interface methods.</summary>
+    public RecordTypeSymbol? ContainingRecord => ContainingSymbol as RecordTypeSymbol;
+
+    /// <summary>The declaring class, record or interface.</summary>
+    public TypeSymbol Owner => (TypeSymbol)ContainingSymbol!;
+
+    /// <summary>
+    /// A record constructor (LANG-730, C-122): bound as a static method returning the record; its <c>Result</c> is zero-filled
+    /// before the body runs and is <c>Self</c> inside it. <see cref="MethodKind"/> is <see cref="MethodKind.ClassStatic"/>.
+    /// </summary>
+    public bool IsRecordConstructor { get; internal set; }
+
+    /// <summary>The LANG-731 operator name of a <c>class operator</c> (<c>Add</c>, <c>Implicit</c>…, C-123); null for other methods.</summary>
+    public string? OperatorName { get; internal set; }
+
     /// <summary>Introduces a VMT slot (<c>virtual</c> or <c>dynamic</c>, ABI-074).</summary>
     public bool IsVirtual { get; internal set; }
 
@@ -75,12 +90,14 @@ public sealed class MethodSymbol : RoutineSymbol
     {
         var keyword = MethodKind switch
         {
+            _ when IsRecordConstructor => "constructor",
+            _ when OperatorName is not null => "class operator",
             MethodKind.Constructor => "constructor",
             MethodKind.Destructor => "destructor",
             _ => (IsClassMethod ? "class " : "") + (ReturnType is null ? "procedure" : "function"),
         };
         var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(p => $"{ParameterSymbol.Prefix(p.Mode)}{p.Name}: {p.Type.Name}")) + ")";
-        var result = ReturnType is not null && MethodKind is not MethodKind.Constructor ? ": " + ReturnType.Name : "";
+        var result = ReturnType is not null && MethodKind is not MethodKind.Constructor && !IsRecordConstructor ? ": " + ReturnType.Name : "";
         return $"{keyword} {ContainingSymbol!.Name}.{Name}{parameters}{result}";
     }
 }

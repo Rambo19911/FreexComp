@@ -11,6 +11,9 @@ public sealed class BuiltInTypes
     /// <summary>The compilation's RTTI scope (<c>--rtti</c>, LANG-648) for classes without a <c>{$RTTI}</c> directive (C-169).</summary>
     internal RttiScope DefaultRttiScope { get; init; } = RttiScope.Broad;
 
+    /// <summary>Some unit of the compilation declares a helper (C-124): member lookups then look for active helpers (LANG-752).</summary>
+    internal bool HasHelpers { get; set; }
+
     internal BuiltInTypes()
     {
         Scope = new Scope(ScopeKind.BuiltIn, parent: null);

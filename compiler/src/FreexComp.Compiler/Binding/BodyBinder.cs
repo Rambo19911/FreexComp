@@ -10,7 +10,7 @@ namespace FreexComp.Compiler.Binding;
 /// Binds the statements of one body (CMP-114: a program block, an initialization/finalization section, later a
 /// routine body) against its scope.
 /// </summary>
-internal sealed class BodyBinder
+internal sealed partial class BodyBinder
 {
     private readonly BuiltInTypes _types;
     private Scope _scope;
@@ -39,18 +39,34 @@ internal sealed class BodyBinder
     /// <summary>Control variables of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>
     private HashSet<Symbol> ForVariables => _expressions.ForVariables;
 
-    public BoundBlock BindBlock(SyntaxNode syntax, SeparatedSyntaxList<StatementSyntax> statements)
+    public BoundBlock BindBlock(SyntaxNode syntax, SeparatedSyntaxList<StatementSyntax> statements) => new(syntax, BindStatements(statements, 0));
+
+    /// <summary>
+    /// The statements from <paramref name="start"/> on; an inline <c>var</c>/<c>const</c> (LANG-385, C-125) opens a block scope for the
+    /// rest of the list, which becomes the body of its <see cref="BoundLocalsStatement"/>.
+    /// </summary>
+    private ImmutableArray<BoundStatement> BindStatements(SeparatedSyntaxList<StatementSyntax> statements, int start)
     {
         var bound = ImmutableArray.CreateBuilder<BoundStatement>();
-        foreach (var statement in statements)
+        for (var i = start; i < statements.Count; i++)
         {
+            var statement = statements[i];
+            if (statement is InlineVarStatementSyntax or InlineConstStatementSyntax)
+            {
+                var (locals, initialization, scope) = BindInlineDeclaration(statement);
+                var next = i + 1;
+                var rest = InScope(scope, () => BindStatements(statements, next));
+                bound.Add(new BoundLocalsStatement(statement, locals, new BoundBlock(statement, [.. initialization, .. rest])));
+                break;
+            }
+
             if (statement is not EmptyStatementSyntax)
             {
                 bound.Add(BindStatement(statement));
             }
         }
 
-        return new BoundBlock(syntax, bound.ToImmutable());
+        return bound.ToImmutable();
     }
 
     public BoundStatement BindStatement(StatementSyntax statement)
@@ -245,15 +261,19 @@ internal sealed class BodyBinder
 
     private BoundStatement BindFor(ForStatementSyntax syntax)
     {
-        if (syntax.VarKeyword is { } varKeyword)
+        if (syntax.VarKeyword is not null)
         {
-            _diagnostics.Report(varKeyword, "E2900", "inline variable");               // LANG-386, M2.6
-            return new BoundErrorStatement(syntax);
+            return BindInlineFor(syntax);                                               // LANG-386 (C-125)
         }
 
         var variable = _expressions.BindExpression(syntax.Variable);
         var start = _expressions.BindExpression(syntax.Start);
         var finish = _expressions.BindExpression(syntax.Finish);
+        return BindForLoop(syntax, variable, start, finish);
+    }
+
+    private BoundStatement BindForLoop(ForStatementSyntax syntax, BoundExpression variable, BoundExpression start, BoundExpression finish)
+    {
         Symbol? control = null;
         if (!variable.HasErrors)
         {
@@ -299,14 +319,17 @@ internal sealed class BodyBinder
     /// </summary>
     private BoundStatement BindForIn(ForInStatementSyntax syntax)
     {
-        if (syntax.VarKeyword is { } varKeyword)
+        if (syntax.VarKeyword is not null)
         {
-            _diagnostics.Report(varKeyword, "E2900", "inline variable");               // LANG-386, M2.6
-            return new BoundErrorStatement(syntax);
+            return BindInlineForIn(syntax, _expressions.BindExpression(syntax.Collection));     // LANG-386 (C-125)
         }
 
         var variable = _expressions.BindExpression(syntax.Variable);
-        var collection = _expressions.BindExpression(syntax.Collection);
+        return BindForInLoop(syntax, variable, _expressions.BindExpression(syntax.Collection));
+    }
+
+    private BoundStatement BindForInLoop(ForInStatementSyntax syntax, BoundExpression variable, BoundExpression collection)
+    {
         if (variable.HasErrors || collection.HasErrors)
         {
             return new BoundErrorStatement(syntax);
@@ -321,6 +344,11 @@ internal sealed class BodyBinder
         if (ForVariables.Contains(control))
         {
             _diagnostics.Report(syntax.Variable, "E2053");
+        }
+
+        if (collection.Type is ClassTypeSymbol or RecordTypeSymbol or InterfaceTypeSymbol)
+        {
+            return BindEnumeratorLoop(syntax, variable, control, collection);           // LANG-362 enumerator pattern (C-125)
         }
 
         var at = syntax.Collection;
@@ -424,6 +452,7 @@ internal sealed class BodyBinder
     private Symbol? ControlVariable(BoundExpression variable, bool ordinal = true) => variable switch
     {
         _ when ordinal && !variable.Type.IsOrdinal => null,
+        BoundVariableExpression { Variable: var v } when _inlineVariables.Contains(v) => v,                       // C-125
         BoundVariableExpression { Variable: var v } when (_routine is null ? v.IsGlobal : !v.IsGlobal && ReferenceEquals(v.ContainingSymbol, _routine)) => v,
         BoundParameterExpression { Parameter: { Mode: ParameterMode.Value } p } when ReferenceEquals(p.ContainingSymbol, _routine) => p,
         _ => null,
@@ -665,9 +694,9 @@ internal sealed class BodyBinder
                         break;
                 }
 
-                foreach (var field in record.Fields)
+                foreach (var member in record.Members)                          // C-122: methods, properties, nested names too
                 {
-                    scope.TryDeclare(field, out _);
+                    scope.TryDeclare(member, out _);
                 }
 
                 break;
@@ -676,9 +705,9 @@ internal sealed class BodyBinder
             case RecordTypeSymbol record:
                 variable = new VariableSymbol(name, record, isGlobal: false, _routine, []);
                 value = designator;
-                foreach (var field in record.Fields)
+                foreach (var member in record.Members)                          // C-122: methods, properties, nested names too
                 {
-                    scope.TryDeclare(field, out _);
+                    scope.TryDeclare(member, out _);
                 }
 
                 break;
@@ -1206,6 +1235,12 @@ internal sealed class BodyBinder
         if (target.HasErrors || step?.HasErrors == true || !_expressions.CheckVariableReference(target, syntax))
         {
             return new BoundErrorStatement(statement);
+        }
+
+        if (target.Type is RecordTypeSymbol && step is null
+            && _expressions.UserIncDec(syntax, target, intrinsic.Intrinsic == IntrinsicKind.Inc ? "Inc" : "Dec") is { } stepped)
+        {
+            return new BoundAssignmentStatement(statement, target, stepped);          // LANG-731 (C-123): a := TRec.Inc(a)
         }
 
         // intrinsics.md: a typed pointer moves by n elements; the untyped Pointer by n bytes under {$POINTERMATH ON} (LANG-247)

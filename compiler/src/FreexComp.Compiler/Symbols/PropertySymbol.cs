@@ -23,6 +23,9 @@ public sealed class PropertySymbol : Symbol
     /// <summary>The declaring interface of an interface property (LANG-660, C-101): its accessors are interface methods.</summary>
     public InterfaceTypeSymbol? ContainingInterface => ContainingSymbol as InterfaceTypeSymbol;
 
+    /// <summary>The declaring class, record (C-122) or interface.</summary>
+    public TypeSymbol Owner => (TypeSymbol)ContainingSymbol!;
+
     public TypeSymbol Type { get; internal set; } = null!;
 
     /// <summary>The index parameters of an array property (LANG-642); empty otherwise.</summary>
@@ -48,6 +51,18 @@ public sealed class PropertySymbol : Symbol
     public ImmutableArray<Symbol> WritePath { get; internal set; } = [];
 
     public MethodSymbol? WriteMethod { get; internal set; }
+
+    /// <summary>LANG-644 <c>stored True|False</c> (C-217); true without the specifier. Ignored when <see cref="StoredField"/> or <see cref="StoredMethod"/> is set.</summary>
+    public bool StoredConstant { get; internal set; } = true;
+
+    /// <summary>LANG-644 <c>stored F</c> with a Boolean instance field (ABI §10.1 StoredKind 1).</summary>
+    public FieldSymbol? StoredField { get; internal set; }
+
+    /// <summary>LANG-644 <c>stored M</c> with a parameterless Boolean function (StoredKind 2 static, 3 virtual).</summary>
+    public MethodSymbol? StoredMethod { get; internal set; }
+
+    /// <summary>LANG-644 <c>default C</c>: the ordinal value or set bits; null without it or with <c>nodefault</c> (C-217).</summary>
+    public long? DefaultValue { get; internal set; }
 
     public bool IsReadable => ReadMethod is not null || !ReadPath.IsEmpty;
 

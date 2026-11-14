@@ -33,10 +33,20 @@ internal sealed partial class ExpressionBinder
     /// <summary><c>Self</c> of the current method (captured when referenced from a nested routine, CMP-345).</summary>
     private BoundExpression SelfOf(MethodSymbol method, SyntaxNode syntax)
     {
+        if (method is { IsRecordConstructor: true, ResultVariable: { } constructed })
+        {
+            NoteReference(constructed);
+            return new BoundVariableExpression(syntax, constructed);              // LANG-730: Self is the constructed result
+        }
+
         var self = method.SelfParameter!;
         NoteReference(self);
         return new BoundParameterExpression(syntax, self);
     }
+
+    /// <summary>The method has an instance <c>Self</c>: an instance method, or a record constructor (LANG-730).</summary>
+    private static bool HasInstanceSelf(MethodSymbol method) =>
+        method is { SelfParameter: not null, IsClassMethod: false } or { IsRecordConstructor: true, ResultVariable: not null };
 
     /// <summary>The unit whose code is being bound (the owner of the nearest unit scope).</summary>
     private UnitSymbol? CurrentUnit
@@ -61,7 +71,7 @@ internal sealed partial class ExpressionBinder
     /// <c>protected</c> are unit-wide; <c>strict private</c> needs a method of the class itself; (strict) protected also opens
     /// to methods of a descendant D when the receiver is D or a descendant of D.
     /// </summary>
-    private bool CheckAccess(SyntaxNode at, Symbol member, ClassTypeSymbol owner, TypeSymbol? receiver)
+    private bool CheckAccess(SyntaxNode at, Symbol member, TypeSymbol owner, TypeSymbol? receiver)
     {
         var visibility = member.Visibility;
         if (visibility is Visibility.Public or Visibility.Published)
@@ -70,11 +80,11 @@ internal sealed partial class ExpressionBinder
         }
 
         member.IsReferenced = true;                                                     // H2003 (C-096)
-        var current = CurrentMethod?.ContainingType;
-        var sameUnit = owner.ContainingSymbol is UnitSymbol unit && ReferenceEquals(unit, CurrentUnit);
+        var current = CurrentMethod?.Owner;
+        var sameUnit = TypeMembers.Outermost(owner).ContainingSymbol is UnitSymbol unit && ReferenceEquals(unit, CurrentUnit);
         var own = ReferenceEquals(current, owner);
-        var descendant = current is not null && !own && current.SelfAndAncestors().Contains(owner)
-            && receiver is ClassTypeSymbol r && r.SelfAndAncestors().Contains(current);
+        var descendant = current is ClassTypeSymbol currentClass && !own && currentClass.SelfAndAncestors().Contains(owner)
+            && receiver is ClassTypeSymbol r && r.SelfAndAncestors().Contains(currentClass);
         var allowed = visibility switch
         {
             Visibility.Private => sameUnit,
@@ -99,18 +109,18 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>A <c>class var</c> (LANG-615, CMP-370): the class's global, after the visibility check against <paramref name="receiver"/>.</summary>
     private BoundExpression ClassVariable(SyntaxNode syntax, SyntaxNode at, VariableSymbol classVar, TypeSymbol? receiver) =>
-        CheckAccess(at, classVar, (ClassTypeSymbol)classVar.ContainingSymbol!, receiver) ? new BoundVariableExpression(syntax, classVar) : Error(syntax);
+        CheckAccess(at, classVar, (TypeSymbol)classVar.ContainingSymbol!, receiver) ? new BoundVariableExpression(syntax, classVar) : Error(syntax);
 
     /// <summary>A field named inside a method (LANG-621): <c>Self.F</c>.</summary>
     private BoundExpression ImplicitField(IdentifierNameSyntax name, FieldSymbol field)
     {
-        if (CurrentMethod is not { SelfParameter: not null, IsClassMethod: false } method)
+        if (CurrentMethod is not { } method || !HasInstanceSelf(method))
         {
             _diagnostics.Report(name, "E2608", field.Name);
             return Error(name);
         }
 
-        if (field.ContainingSymbol is ClassTypeSymbol owner && !CheckAccess(name, field, owner, method.ContainingType))
+        if (field.ContainingSymbol is TypeSymbol owner && !CheckAccess(name, field, owner, method.Owner))
         {
             return Error(name);
         }
@@ -179,9 +189,9 @@ internal sealed partial class ExpressionBinder
         {
             ReceiverKind.Instance => instance!.Type is ClassRefTypeSymbol reference ? reference.Class : instance.Type,
             ReceiverKind.ClassName => className,
-            _ => CurrentMethod?.ContainingType,
+            _ => CurrentMethod?.Owner,
         };
-        if (method.ContainingInterface is null && !CheckAccess(call, method, method.ContainingType, receiverType))
+        if (method.ContainingInterface is null && !CheckAccess(call, method, method.Owner, receiverType))
         {
             return new MethodCall(null, arguments, null);
         }
@@ -360,7 +370,7 @@ internal sealed partial class ExpressionBinder
         }
 
         var current = CurrentMethod;
-        if (current is not { SelfParameter: not null, IsClassMethod: false })
+        if (current is null || !HasInstanceSelf(current))
         {
             _diagnostics.Report(call, "E2608", method.Name);
             return null;
@@ -423,6 +433,13 @@ internal sealed partial class ExpressionBinder
             return BindMethodCall(call, MemberCandidates(type, text), ReceiverKind.Instance, WithReceiver(name, with), null, argumentList);
         }
 
+        if (_scope.For(name).Lookup(text) is MethodSymbol { ContainingRecord: not null } recordMethod && WithOf(text, recordMethod) is { Type: RecordTypeSymbol record } recordWith)
+        {
+            // C-122: a record method named inside 'with r do' is r.M (LANG-375, 730)
+            ImmutableArray<RoutineSymbol> methods = [.. record.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, text))];
+            return BindMethodCall(call, methods, ReceiverKind.Instance, WithReceiver(name, recordWith), null, argumentList);
+        }
+
         return BindMethodCall(call, WithoutReplaced(_scope.For(name).LookupCandidates(text)), ReceiverKind.Implicit, null, null, argumentList);
     }
 
@@ -435,8 +452,8 @@ internal sealed partial class ExpressionBinder
         var kept = ImmutableArray.CreateBuilder<RoutineSymbol>();
         foreach (var candidate in candidates)
         {
-            if (candidate is MethodSymbol { ContainingInterface: null } method
-                && kept.Any(k => k is MethodSymbol { ContainingInterface: null } nearer && !ReferenceEquals(nearer.ContainingType, method.ContainingType)
+            if (candidate is MethodSymbol { ContainingSymbol: ClassTypeSymbol } method
+                && kept.Any(k => k is MethodSymbol { ContainingSymbol: ClassTypeSymbol } nearer && !ReferenceEquals(nearer.ContainingType, method.ContainingType)
                     && nearer.ContainingType.SelfAndAncestors().Contains(method.ContainingType)
                     && SameParameters(nearer, method)))
             {
@@ -500,15 +517,17 @@ internal sealed partial class ExpressionBinder
         switch (member)
         {
             case FieldSymbol field when with.Type is ClassTypeSymbol type:
-                return field.ContainingSymbol is ClassTypeSymbol owner && !CheckAccess(name, field, owner, type) ? Error(name) : new BoundFieldAccessExpression(name, receiver, field);
+                return field.ContainingSymbol is TypeSymbol owner && !CheckAccess(name, field, owner, type) ? Error(name) : new BoundFieldAccessExpression(name, receiver, field);
             case FieldSymbol field:
                 return new BoundFieldAccessExpression(name, receiver, field);
             case VariableSymbol classVar:
                 return ClassVariable(name, name, classVar, with.Type);
             case PropertySymbol property:
-                return CheckAccess(name, property, property.ContainingType, with.Type) ? PropertyAccess(name, property, property.IsClassProperty ? null : receiver) : Error(name);
+                return CheckAccess(name, property, property.Owner, with.Type) ? PropertyAccess(name, property, property.IsClassProperty ? null : receiver) : Error(name);
             case MethodSymbol:
                 return ImplicitMethodCall(name, name, argumentList: null);
+            case var nested when NestedValue(name, nested) is { } value:
+                return value;
             default:
                 return Error(name);
         }
@@ -528,16 +547,28 @@ internal sealed partial class ExpressionBinder
         }
 
         var name = syntax.Name.Identifier.Value as string ?? syntax.Name.Identifier.Text;
-        if (_scope.Unqualified(Unparenthesized(syntax.Expression)) is IdentifierNameSyntax { Identifier: { IsMissing: false } qualifier } qualifierName
-            && _scope.For(qualifierName).Lookup(qualifier.Value as string ?? qualifier.Text) is ClassTypeSymbol className)
+        var qualifierType = TypeNamedBy(syntax.Expression);
+        if (qualifierType is not null and not HelperTypeSymbol && HelperFor(qualifierType, name) is { } typeHelper)
+        {
+            return HelperMember(syntax, call, argumentList, typeHelper, instance: null, name, out methodCall);   // C-124: Integer.Parse
+        }
+
+        if (qualifierType is RecordTypeSymbol recordName)
+        {
+            return StaticRecordMember(syntax, call, argumentList, recordName, name, out methodCall);     // C-122 (LANG-730)
+        }
+
+        if (qualifierType is ClassTypeSymbol className)
         {
             var candidates = MemberCandidates(className, name);
             switch (className.GetMembers(name).FirstOrDefault())
             {
                 case PropertySymbol { IsClassProperty: true } property:                 // LANG-647
-                    return CheckAccess(syntax.Name, property, property.ContainingType, className) ? PropertyAccess(syntax, property, self: null) : Error(syntax);
+                    return CheckAccess(syntax.Name, property, property.Owner, className) ? PropertyAccess(syntax, property, self: null) : Error(syntax);
                 case VariableSymbol classVar:                                           // LANG-615
                     return ClassVariable(syntax, syntax.Name, classVar, className);
+                case var nested when nested is not null && NestedValue(syntax, nested) is { } value:
+                    return value;                                                       // LANG-770: TOuter.Limit
             }
 
             if (candidates.IsEmpty)
@@ -556,6 +587,11 @@ internal sealed partial class ExpressionBinder
             return Error(syntax, receiver);
         }
 
+        if (HelperFor(receiver.Type, name) is { } helper)
+        {
+            return HelperMember(syntax, call, argumentList, helper, receiver, name, out methodCall);         // LANG-752 (C-124)
+        }
+
         if (receiver.Type is ClassTypeSymbol type)
         {
             var candidates = MemberCandidates(type, name);
@@ -568,7 +604,7 @@ internal sealed partial class ExpressionBinder
             switch (type.GetMembers(name).FirstOrDefault())
             {
                 case FieldSymbol field:
-                    if (field.ContainingSymbol is ClassTypeSymbol owner && !CheckAccess(syntax.Name, field, owner, type))
+                    if (field.ContainingSymbol is TypeSymbol owner && !CheckAccess(syntax.Name, field, owner, type))
                     {
                         return Error(syntax, receiver);
                     }
@@ -577,7 +613,7 @@ internal sealed partial class ExpressionBinder
                 case VariableSymbol classVar:
                     return ClassVariable(syntax, syntax.Name, classVar, type);
                 case PropertySymbol property:
-                    if (!CheckAccess(syntax.Name, property, property.ContainingType, type))
+                    if (!CheckAccess(syntax.Name, property, property.Owner, type))
                     {
                         return Error(syntax, receiver);
                     }
@@ -616,7 +652,7 @@ internal sealed partial class ExpressionBinder
             switch (target.GetMembers(name).FirstOrDefault())
             {
                 case PropertySymbol { IsClassProperty: true } property:
-                    return CheckAccess(syntax.Name, property, property.ContainingType, target) ? PropertyAccess(syntax, property, self: null) : Error(syntax, receiver);
+                    return CheckAccess(syntax.Name, property, property.Owner, target) ? PropertyAccess(syntax, property, self: null) : Error(syntax, receiver);
                 case VariableSymbol classVar:
                     return ClassVariable(syntax, syntax.Name, classVar, target);
             }
@@ -632,7 +668,94 @@ internal sealed partial class ExpressionBinder
             return null;
         }
 
+        var record = receiver.Type is PointerTypeSymbol { PointedType: RecordTypeSymbol pointed }
+            ? new BoundDereferenceExpression(syntax.Expression, receiver, pointed) : receiver;        // p.M = p^.M (extended syntax)
+        if (record.Type is RecordTypeSymbol { Methods.IsEmpty: false } or RecordTypeSymbol { Properties.IsEmpty: false }
+            or RecordTypeSymbol { ClassVariables.IsEmpty: false } or RecordTypeSymbol { NestedMembers.IsEmpty: false })
+        {
+            return RecordInstanceMember(syntax, call, argumentList, record, name, out methodCall);   // C-122 (LANG-730)
+        }
+
         return RecordMember(syntax, receiver);
+    }
+
+    private TypeSymbol? TypeNamedBy(ExpressionSyntax expression) => NestedNames.TypeNamedBy(_scope, expression);
+
+    /// <summary>A nested constant or enumeration element used as a value (LANG-770); null for other members.</summary>
+    private static BoundExpression? NestedValue(SyntaxNode syntax, Symbol member) => member switch
+    {
+        ConstantSymbol { IsTyped: false, Value: { } value } constant => new BoundConstantExpression(syntax, constant, value),
+        EnumMemberSymbol element => new BoundLiteral(syntax, element.Value),
+        _ => null,
+    };
+
+    /// <summary>
+    /// <c>TRec.Name</c> (LANG-730): a constructor or static method (sets <paramref name="methodCall"/>), a class var, a class property
+    /// or a nested constant; E2607 for an instance member, E2005 for no member.
+    /// </summary>
+    private BoundExpression? StaticRecordMember(MemberAccessExpressionSyntax syntax, SyntaxNode call, ArgumentListSyntax? argumentList,
+        RecordTypeSymbol record, string name, out MethodCall? methodCall)
+    {
+        methodCall = null;
+        ImmutableArray<RoutineSymbol> candidates = [.. record.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name))];
+        if (!candidates.IsEmpty)
+        {
+            methodCall = BindMethodCall(call, candidates, ReceiverKind.ClassName, null, null, argumentList);
+            return null;
+        }
+
+        switch (record.GetMembers(name).FirstOrDefault())
+        {
+            case PropertySymbol { IsClassProperty: true } property:
+                return CheckAccess(syntax.Name, property, record, record) ? PropertyAccess(syntax, property, self: null) : Error(syntax);
+            case VariableSymbol classVar:
+                return ClassVariable(syntax, syntax.Name, classVar, record);
+            case { } nested when NestedValue(syntax, nested) is { } value:
+                return value;
+            case { } instanceMember:
+                if (instanceMember is TypeSymbol nestedType)
+                {
+                    _diagnostics.Report(syntax, "E2009", nestedType.Name);
+                }
+                else
+                {
+                    _diagnostics.Report(syntax.Name, "E2607");
+                }
+                return Error(syntax);
+            default:
+                _diagnostics.Report(syntax.Name, "E2005", record.Name, name);
+                return Error(syntax);
+        }
+    }
+
+    /// <summary><c>r.Name</c> on a record with members (LANG-730): a method (sets <paramref name="methodCall"/>), property, field or class var.</summary>
+    private BoundExpression? RecordInstanceMember(MemberAccessExpressionSyntax syntax, SyntaxNode call, ArgumentListSyntax? argumentList,
+        BoundExpression record, string name, out MethodCall? methodCall)
+    {
+        methodCall = null;
+        var type = (RecordTypeSymbol)record.Type;
+        ImmutableArray<RoutineSymbol> candidates = [.. type.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name))];
+        if (!candidates.IsEmpty)
+        {
+            methodCall = BindMethodCall(call, candidates, ReceiverKind.Instance, record, null, argumentList);
+            return null;
+        }
+
+        switch (type.GetMembers(name).FirstOrDefault())
+        {
+            case FieldSymbol field:
+                return CheckAccess(syntax.Name, field, type, type) ? new BoundFieldAccessExpression(syntax, record, field) : Error(syntax, record);
+            case PropertySymbol property:
+                return CheckAccess(syntax.Name, property, type, type)
+                    ? PropertyAccess(syntax, property, property.IsClassProperty ? null : record) : Error(syntax, record);
+            case VariableSymbol classVar:
+                return ClassVariable(syntax, syntax.Name, classVar, type);
+            case { } nested when NestedValue(syntax, nested) is { } value:
+                return value;
+            default:
+                _diagnostics.Report(syntax.Name, "E2005", type.Name, name);
+                return Error(syntax, record);
+        }
     }
 
     /// <summary>
@@ -654,7 +777,7 @@ internal sealed partial class ExpressionBinder
         }
 
         var name = inherited.Name is { Identifier: var token } ? token.Value as string ?? token.Text : current.Name;
-        var candidates = current.ContainingType.Parent is { } parent ? MemberCandidates(parent, name) : [];
+        var candidates = (current.Owner as ClassTypeSymbol)?.Parent is { } parent ? MemberCandidates(parent, name) : [];
         if (bare)
         {
             var match = candidates.OfType<MethodSymbol>().FirstOrDefault(m => m.MethodKind == current.MethodKind

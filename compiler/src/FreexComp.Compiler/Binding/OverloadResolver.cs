@@ -135,6 +135,11 @@ internal sealed class OverloadResolver(Conversions conversions)
             return conversions.Classify(source, destination).Exists ? 3 : null;    // LANG-442: array constructor → open array
         }
 
+        if (!ReferenceEquals(source, destination) && (source is RecordTypeSymbol || destination is RecordTypeSymbol))
+        {
+            return Operators.Conversion(source, destination, conversions) is not null ? 5 : null;     // LANG-740 (C-123): cost 5
+        }
+
         var constant = argument.ConstantValue;
         if (constant is not null
             ? conversions.ConvertConstant(constant, destination, argument.Syntax, new DiagnosticBag()) is null

@@ -906,7 +906,7 @@ internal sealed class Parser
         var helper = TakeContextual();
         var heritage = CurrentKind == SyntaxKind.OpenParenToken ? ParseHeritage() : null;
         var forKeyword = Expect(SyntaxKind.ForKeyword);
-        var extended = ParseNamedType();
+        var extended = CurrentKind == SyntaxKind.StringKeyword ? (TypeSyntax)ParseStringType() : ParseNamedType();     // record helper for string (C-124)
         var members = ParseMemberList(isRecord: false);
         return new HelperTypeSyntax(keyword, helper, heritage, forKeyword, extended, members, Expect(SyntaxKind.EndKeyword));
     }

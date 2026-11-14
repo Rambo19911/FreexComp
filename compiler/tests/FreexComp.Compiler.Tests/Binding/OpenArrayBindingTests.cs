@@ -106,4 +106,20 @@ public sealed class OpenArrayBindingTests
     [InlineData("C(Slice(d, 6))", null)]
     public void SliceConstantTooLong(string statement, string? expected) =>
         Assert.Equal(expected is null ? [] : [expected], Diagnostics(statement));
+
+    /// <summary>C-216 (LANG-442): an array constructor is never applicable to a non-array parameter, so a mixed overload set resolves.</summary>
+    [Fact]
+    [Trait("Req", "LANG-442")]
+    public void ConstructorWithMixedOverloads()
+    {
+        var (result, _) = Bind("""
+            program T;
+            procedure P(X: Integer); overload; begin end;
+            procedure P(const A: array of string); overload; begin end;
+            begin P(['r', 's']); P(7) end.
+            """);
+        Assert.Empty(Format(result.Diagnostics));
+        var calls = result.Bodies[^1].Statements.OfType<FreexComp.Compiler.Binding.BoundCallStatement>().Select(c => c.Routine.Parameters[0].Type.Name).ToList();
+        Assert.Equal(["array of string", "Integer"], calls);
+    }
 }

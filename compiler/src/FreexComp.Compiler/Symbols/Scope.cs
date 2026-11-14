@@ -90,6 +90,32 @@ internal sealed class Scope
 
     private Scope? _qualified;
 
+    /// <summary>
+    /// LANG-753 (C-124): the active helper of <paramref name="type"/> — the last one visibly declared in the innermost scope along
+    /// the parent chain that declares one (used units: the last used first); null when none is in scope.
+    /// </summary>
+    public Types.HelperTypeSymbol? ActiveHelper(Types.TypeSymbol type)
+    {
+        var visible = int.MaxValue;
+        for (var scope = this; scope != null; visible = scope.ParentVisibleCount, scope = scope.Parent)
+        {
+            Types.HelperTypeSymbol? found = null;
+            for (var i = 0; i < scope._ordered.Count && i < visible; i++)
+            {
+                if (scope._ordered[i].Symbol is Types.HelperTypeSymbol helper && ReferenceEquals(helper.ExtendedType, type))
+                {
+                    found = helper;
+                }
+            }
+
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
     /// <summary>The innermost scope along the parent chain that declares <paramref name="name"/> visibly; null when none does.</summary>
     public Scope? DeclaringScope(string name)
     {

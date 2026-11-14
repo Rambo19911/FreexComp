@@ -17,7 +17,6 @@ E2070  M2.5  goto/labels (LANG-380)
 E2071  M2.5  goto/labels (LANG-380)
 E2072  M2.5  goto/labels (LANG-380)
 E2073  M2.5  goto/labels (LANG-380)
-E2075  M2.6  inline variable type inference (LANG-385)
 E2200  elsewhere UnitBindingTests  needs a unit file (uses entry with in)
 E2201  elsewhere UnitBindingTests  needs a unit file whose heading differs from its file name
 E2202  elsewhere UnitBindingTests  unit resolution over the file system (also EmitTests: System not found)
@@ -37,12 +36,6 @@ E2710  M2.6  generics
 E2711  M2.6  generics
 E2712  M2.6  generics
 E2720  M2.6  anonymous methods
-E2730  M2.6  records with methods
-E2731  M2.6  operators
-E2732  M2.6  operators
-E2733  M2.6  operators
-E2750  M2.6  helpers
-E2751  M2.6  helpers
 W1003  M2.3  {$APPTYPE} in a unit
 W1011  M2.2  comparison always true/false (no language rule names it yet)
 W1012  M2.2  subranges

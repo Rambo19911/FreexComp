@@ -63,6 +63,18 @@ internal sealed partial class DeclarationBinder
     /// <summary>Parent, modifiers, fields (ABI §7.1 layout), methods and the VMT slots of one class.</summary>
     private void BindClassBody(ClassTypeSymbol type, ClassTypeSyntax syntax)
     {
+        if (_scope.Kind != ScopeKind.TypeMember && Members(syntax.Members, Visibility.Public).Any(m => m.Member is ConstSectionSyntax or TypeSectionSyntax))
+        {
+            // LANG-770 (C-122): nested types and constants live in a member scope that the whole body is bound in
+            var inner = new DeclarationBinder(_types, new Scope(ScopeKind.TypeMember, _scope, type), type, _diagnostics)
+            {
+                _sectionTypeNames = _sectionTypeNames,
+                _forwardPointers = _forwardPointers,
+            };
+            inner.BindClassBody(type, syntax);
+            return;
+        }
+
         type.IsForward = false;
         type.IsAbstract = syntax.Modifier?.ContextualKind == SyntaxKind.AbstractKeyword;
         type.IsSealed = syntax.Modifier?.ContextualKind == SyntaxKind.SealedKeyword;
@@ -83,6 +95,7 @@ internal sealed partial class DeclarationBinder
         var names = new Dictionary<string, Symbol>(IdentifierComparer.Instance);
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
+        var nested = ImmutableArray.CreateBuilder<Symbol>();
         var end = type.Parent?.InstanceSize ?? 8;                              // offset 0: the VMT pointer (ABI §7.1)
         foreach (var (member, visibility) in Members(syntax.Members, type.IsTypeInfo ? Visibility.Published : Visibility.Public))
         {
@@ -128,6 +141,9 @@ internal sealed partial class DeclarationBinder
                 case MethodResolutionSyntax resolution:
                     resolutions.Add(resolution);                                // LANG-661, bound with the listed interfaces
                     break;
+                case ConstSectionSyntax or TypeSectionSyntax:
+                    nested.AddRange(BindNestedSection(member));                 // LANG-770 (C-122)
+                    break;
                 default:
                     Unsupported(member, "class " + FeatureName(member.Kind));
                     break;
@@ -136,6 +152,7 @@ internal sealed partial class DeclarationBinder
 
         type.Fields = fields.ToImmutable();
         type.ClassVariables = classVariables.ToImmutable();
+        type.NestedMembers = nested.ToImmutable();
         type.Methods = methods.ToImmutable();
         type.VirtualSlots = AssignSlots(type);
         end = BindImplementedInterfaces(type, listed, resolutions, end);       // ABI §7.1: the hidden IMT pointers follow the fields
@@ -227,7 +244,7 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary><c>class var</c> fields (LANG-615): global variables owned by the class (link name <c>U.TClass.Name</c>, CMP-370).</summary>
-    private void BindClassVariables(ClassTypeSymbol type, ClassVarSectionSyntax section, Visibility visibility,
+    private void BindClassVariables(TypeSymbol type, ClassVarSectionSyntax section, Visibility visibility,
         ImmutableArray<VariableSymbol>.Builder classVariables, Dictionary<string, Symbol> names)
     {
         foreach (var field in section.Fields)
@@ -514,25 +531,22 @@ internal sealed partial class DeclarationBinder
     private void BindMethodImplementation(RoutineDeclarationSyntax declaration)
     {
         var heading = declaration.Heading;
-        if (heading.Name is not QualifiedNameSyntax { Left: IdentifierNameSyntax { Identifier.IsMissing: false } className, Right: IdentifierNameSyntax { Identifier: { IsMissing: false } identifier } }
-            || declaration.Block is null || !IsGlobalLevel)
+        if (heading.Name is not QualifiedNameSyntax { Left: { } className, Right: IdentifierNameSyntax { Identifier: { IsMissing: false } identifier } }
+            || className.ContainsDiagnostics || declaration.Block is null || !IsGlobalLevel)
         {
             _diagnostics.Report(heading.Name, "E2900", "method implementation");
             return;
         }
 
-        switch (_scope.For(className).Lookup(NameOf(className.Identifier)))
+        switch (ResolveTypeQualifier(className))
         {
             case null:
-                _diagnostics.ReportUndeclared(className, NameOf(className.Identifier));
                 return;
-            case ClassTypeSymbol type when ReferenceEquals(type.ContainingSymbol, _container):
-                DefineMethod(type, declaration, identifier);
+            case (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol) and var type when ReferenceEquals(TypeMembers.Outermost(type).ContainingSymbol, _container):
+                DefineMethod(type, declaration, identifier);                    // C-122: records and nested types (LANG-730, 770)
                 return;
-            case ClassTypeSymbol type:
+            case (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol) and var type:
                 _diagnostics.Report(identifier, "E2606", NameOf(identifier), type.Name);
-                return;
-            case ErrorTypeSymbol:
                 return;
             default:
                 _diagnostics.Report(className, "E2603");
@@ -540,11 +554,11 @@ internal sealed partial class DeclarationBinder
         }
     }
 
-    private void DefineMethod(ClassTypeSymbol type, RoutineDeclarationSyntax declaration, SyntaxToken identifier)
+    private void DefineMethod(TypeSymbol type, RoutineDeclarationSyntax declaration, SyntaxToken identifier)
     {
         var heading = declaration.Heading;
         var name = NameOf(identifier);
-        var candidates = type.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name)).ToList();
+        var candidates = TypeMembers.Methods(type).Where(m => IdentifierComparer.Instance.Equals(m.Name, name)).ToList();
         MethodSymbol? method = null;
         if (heading.ParameterList is null && candidates.Count == 1)
         {
@@ -553,8 +567,8 @@ internal sealed partial class DeclarationBinder
         else if (candidates.Count > 0)
         {
             var probe = new RoutineSymbol(name, _container, [], declaration);
-            BindSignature(probe, heading, identifier, report: false);
-            method = candidates.FirstOrDefault(m => SameParameterTypes(m, probe));
+            NestedNamesBinder(type).BindSignature(probe, heading, identifier, report: false);
+            method = candidates.FirstOrDefault(m => SameParameterTypes(m, probe) && (m.OperatorName is null || ReferenceEquals(m.ReturnType, probe.ReturnType)));
             if (method is not null && !method.Parameters.Select(p => p.Name).SequenceEqual(probe.Parameters.Select(p => p.Name), IdentifierComparer.Instance))
             {
                 _diagnostics.Report(identifier, "E2101", name);
@@ -593,9 +607,9 @@ internal sealed partial class DeclarationBinder
     /// <summary>E2605 at the declaration of every non-abstract method of the unit's classes without implementation.</summary>
     private static void ReportUnimplementedMethods(UnitSymbol unit, DiagnosticBag diagnostics)
     {
-        foreach (var method in ClassesOf(unit).SelectMany(c => c.Methods).Where(m => m is { IsAbstract: false, Definition: null }))
+        foreach (var method in MethodsOf(unit).Where(m => m is { IsAbstract: false, Definition: null }))
         {
-            diagnostics.Report(method.MethodDeclaration.Heading.Name, "E2605", method.ContainingType.Name + "." + method.Name);
+            diagnostics.Report(method.MethodDeclaration.Heading.Name, "E2605", method.Owner.Name + "." + method.Name);
         }
     }
 }

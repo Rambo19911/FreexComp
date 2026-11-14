@@ -1,0 +1,2 @@
+ErrOperatorDecl.pas(7,20): error E2731: Operator 'Add' must have a parameter or result of type 'TVec'
+ErrOperatorDecl.pas(8,20): error E2733: Operator 'Negative' must have 1 parameter(s)

@@ -1754,9 +1754,43 @@ public sealed class IrSnapshotTests
     [Trait("Req", "LANG-882")]
     public void RttiClassPublished() => Snapshot.Verify("RttiClassPublished", Emit("unit M;\ninterface\ntype\n{$RTTI PUBLISHED}\n" + RttiScopeClass));
 
+    internal const string RttiStoredDefaultSource = """
+        unit M;
+        interface
+        type
+          TK = (K0, K1, K2);
+          {$M+}
+          TA = class
+          private
+            FA: Integer;
+            FFlag: Boolean;
+            FK: TK;
+            function IsStatic: Boolean;
+            function IsVirt: Boolean; virtual;
+          published
+            property A: Integer read FA write FA default 7;
+            property B: Integer read FA stored False;
+            property C: Integer read FA stored FFlag nodefault;
+            property D: Integer read FA stored IsStatic;
+            property E: Integer read FA stored IsVirt;
+            property K: TK read FK write FK default K2;
+          end;
+          {$M-}
+        implementation
+        function TA.IsStatic: Boolean; begin Result := FFlag end;
+        function TA.IsVirt: Boolean; begin Result := True end;
+        end.
+        """;
+
+    /// <summary>C-217 / LANG-644, ABI §10.1: StoredKind 0 (Stored 0/1), 1 (field offset), 2 (code address), 3 (VMT offset); Default value or $8000000000000000.</summary>
+    [Fact]
+    [Trait("Req", "LANG-644")]
+    public void RttiStoredDefault() => Snapshot.Verify("RttiStoredDefault", Emit(RttiStoredDefaultSource));
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["RttiEnum"] = RttiEnumSource,
+        ["RttiStoredDefault"] = RttiStoredDefaultSource,
         ["RttiClass"] = RttiClassSource,
         ["Thunk"] = ThunkSource,
         ["ThreadVar"] = ThreadVarSource,

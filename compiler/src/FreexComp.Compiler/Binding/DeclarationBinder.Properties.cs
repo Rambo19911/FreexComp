@@ -13,7 +13,7 @@ internal sealed partial class DeclarationBinder
     /// The properties of a class body, bound after its fields and methods so that accessors may be declared anywhere in the
     /// class. A property without type redeclares the nearest inherited one (LANG-613, 646; E2637 when there is none).
     /// </summary>
-    private ImmutableArray<PropertySymbol> BindProperties(ClassTypeSymbol type, List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)> properties,
+    private ImmutableArray<PropertySymbol> BindProperties(TypeSymbol type, List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)> properties,
         Dictionary<string, Symbol> names)
     {
         var bound = ImmutableArray.CreateBuilder<PropertySymbol>();
@@ -51,11 +51,11 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>Type, index parameters and specifiers of one property; false after an error that leaves no usable property.</summary>
-    private bool BindProperty(ClassTypeSymbol type, PropertySymbol property, PropertyDeclarationSyntax syntax)
+    private bool BindProperty(TypeSymbol type, PropertySymbol property, PropertyDeclarationSyntax syntax)
     {
         if (syntax.Type is null)
         {
-            if (type.Parent?.GetMembers(property.Name).FirstOrDefault() is not PropertySymbol inherited)
+            if ((type as ClassTypeSymbol)?.Parent?.GetMembers(property.Name).FirstOrDefault() is not PropertySymbol inherited)
             {
                 _diagnostics.Report(syntax.Identifier, "E2637", property.Name);                            // LANG-646
                 return false;
@@ -69,6 +69,10 @@ internal sealed partial class DeclarationBinder
             property.ReadMethod = inherited.ReadMethod;
             property.WritePath = inherited.WritePath;
             property.WriteMethod = inherited.WriteMethod;
+            property.StoredConstant = inherited.StoredConstant;
+            property.StoredField = inherited.StoredField;
+            property.StoredMethod = inherited.StoredMethod;
+            property.DefaultValue = inherited.DefaultValue;
         }
         else
         {
@@ -127,6 +131,15 @@ internal sealed partial class DeclarationBinder
                     property.WriteMethod = null;
                     ok &= BindAccessor(type, property, value, write: true);
                     break;
+                case SyntaxKind.StoredKeyword when specifier.Value is { } stored:
+                    ok &= BindStored(type, property, stored);                                       // LANG-644 (C-217)
+                    break;
+                case SyntaxKind.DefaultKeyword when specifier.Value is { } defaultValue:
+                    ok &= BindDefault(property, defaultValue);
+                    break;
+                case SyntaxKind.NoDefaultKeyword:
+                    property.DefaultValue = null;
+                    break;
                 case SyntaxKind.ImplementsKeyword:
                     Unsupported(specifier.Keyword, "implements");                                          // LANG-661, M2.5
                     ok = false;
@@ -142,6 +155,81 @@ internal sealed partial class DeclarationBinder
         }
 
         return ok;
+    }
+
+    /// <summary>
+    /// LANG-644 <c>stored X</c> (C-217): a Boolean instance field, a parameterless Boolean instance function of the class, or a Boolean
+    /// constant; E2636 otherwise.
+    /// </summary>
+    private bool BindStored(TypeSymbol type, PropertySymbol property, ExpressionSyntax value)
+    {
+        if (value is IdentifierNameSyntax { Identifier: { IsMissing: false } token })
+        {
+            var text = NameOf(token);
+            foreach (var owner in TypeMembers.SelfAndAncestors(type))
+            {
+                if (TypeMembers.Fields(owner).FirstOrDefault(f => IdentifierComparer.Instance.Equals(f.Name, text)) is { } field)
+                {
+                    if (field.Type is not BooleanTypeSymbol)
+                    {
+                        _diagnostics.Report(value, "E2636", text, _types.Boolean.Name);
+                        return false;
+                    }
+
+                    field.IsReferenced = true;
+                    property.StoredField = field;
+                    return true;
+                }
+
+                if (TypeMembers.Methods(owner).Where(m => IdentifierComparer.Instance.Equals(m.Name, text)).ToList() is { Count: > 0 } methods)
+                {
+                    if (methods.FirstOrDefault(m => m is { MethodKind: MethodKind.Ordinary, Parameters.IsEmpty: true, ReturnType: BooleanTypeSymbol }) is not { } method)
+                    {
+                        _diagnostics.Report(value, "E2636", text, _types.Boolean.Name);
+                        return false;
+                    }
+
+                    method.IsReferenced = true;
+                    property.StoredMethod = method;
+                    return true;
+                }
+            }
+        }
+
+        switch (_folder.Fold(value))
+        {
+            case null:
+                return false;
+            case { Value: bool flag }:
+                property.StoredConstant = flag;
+                return true;
+            case var other:
+                _diagnostics.Report(value, "E2010", other.Type.Name, _types.Boolean.Name);
+                return false;
+        }
+    }
+
+    /// <summary>LANG-644 <c>default C</c> (C-217): an ordinal or small-set constant of the property's type (E2900 for other property types).</summary>
+    private bool BindDefault(PropertySymbol property, ExpressionSyntax value)
+    {
+        if (!property.Type.IsOrdinal && property.Type is not SetTypeSymbol { IsSmall: true })
+        {
+            _diagnostics.Report(value, "E2900", "default value of a property of type " + property.Type.Name);
+            return false;
+        }
+
+        if (_folder.Fold(value) is not { } constant || _conversions.ConvertConstant(constant, property.Type, value, _diagnostics) is not { } converted)
+        {
+            return false;
+        }
+
+        property.DefaultValue = converted.Value switch
+        {
+            bool flag => flag ? 1 : 0,
+            BigInteger number => (long)(ulong)(number & ulong.MaxValue),
+            _ => null,
+        };
+        return true;
     }
 
     /// <summary>LANG-640: the types a published property may have.</summary>
@@ -171,7 +259,7 @@ internal sealed partial class DeclarationBinder
     /// (E2634) — or a method with the index parameters, then <c>Index</c>, then (setter) the value; E2636 when it does not fit.
     /// Instance properties take instance fields and methods, class properties <c>class var</c>s and static class methods.
     /// </summary>
-    private bool BindAccessor(ClassTypeSymbol type, PropertySymbol property, ExpressionSyntax value, bool write)
+    private bool BindAccessor(TypeSymbol type, PropertySymbol property, ExpressionSyntax value, bool write)
     {
         var text = value.ToString().Trim();
         var path = ImmutableArray.CreateBuilder<Symbol>();
@@ -254,7 +342,7 @@ internal sealed partial class DeclarationBinder
     /// The member an accessor names: the methods of that name (nearest declaring class, overloads over the chain) or, with an
     /// empty result, the field path added to <paramref name="path"/>. Null after a reported error.
     /// </summary>
-    private List<MethodSymbol>? ResolveAccessor(ClassTypeSymbol type, ExpressionSyntax value, ImmutableArray<Symbol>.Builder path, string propertyType)
+    private List<MethodSymbol>? ResolveAccessor(TypeSymbol type, ExpressionSyntax value, ImmutableArray<Symbol>.Builder path, string propertyType)
     {
         switch (value)
         {
@@ -262,9 +350,9 @@ internal sealed partial class DeclarationBinder
             {
                 var text = NameOf(token);
                 var methods = new List<MethodSymbol>();
-                foreach (var owner in type.SelfAndAncestors())
+                foreach (var owner in TypeMembers.SelfAndAncestors(type))
                 {
-                    if (owner.Fields.FirstOrDefault(f => IdentifierComparer.Instance.Equals(f.Name, text)) is { } field)
+                    if (TypeMembers.Fields(owner).FirstOrDefault(f => IdentifierComparer.Instance.Equals(f.Name, text)) is { } field)
                     {
                         if (methods.Count > 0)
                         {
@@ -275,7 +363,7 @@ internal sealed partial class DeclarationBinder
                         return methods;
                     }
 
-                    if (owner.ClassVariables.FirstOrDefault(v => IdentifierComparer.Instance.Equals(v.Name, text)) is { } classVar)
+                    if (TypeMembers.ClassVariables(owner).FirstOrDefault(v => IdentifierComparer.Instance.Equals(v.Name, text)) is { } classVar)
                     {
                         if (methods.Count > 0)
                         {
@@ -286,7 +374,7 @@ internal sealed partial class DeclarationBinder
                         return methods;
                     }
 
-                    var own = owner.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, text)).ToList();
+                    var own = TypeMembers.Methods(owner).Where(m => IdentifierComparer.Instance.Equals(m.Name, text)).ToList();
                     methods.AddRange(own);
                     if (own.Count > 0 && own.Any(m => !m.IsOverload))
                     {

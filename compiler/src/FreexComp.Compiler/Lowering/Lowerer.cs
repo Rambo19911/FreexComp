@@ -59,14 +59,14 @@ internal static class Lowerer
     /// <summary>The unit's (or program's) global variables of managed types in declaration order (interface first; LANG-523).</summary>
     public static ImmutableArray<VariableSymbol> ManagedGlobals(UnitSymbol unit) =>
         [.. unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<VariableSymbol>()
-            .Concat(DeclarationBinder.ClassesOf(unit).SelectMany(c => c.ClassVariables))                   // then class vars (LANG-615)
+            .Concat(DeclarationBinder.ClassVariablesOf(unit))                                              // then class vars (LANG-615, 730)
             .Where(v => v is { IsGlobal: true, IsReadOnly: false, Type.IsManaged: true })];
 
     /// <param name="outlined">Receives the <c>$fin</c> routines outlined from the body (CMP-392).</param>
     public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body, List<LoweredBody> outlined)
     {
         var captured = result.GetCapturedVariables(body.Routine);
-        var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>())
+        var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>().Distinct())
         {
             Unit = result.Unit,
             Output = OutputOf(result),
@@ -241,6 +241,17 @@ internal sealed class LoweringContext
         var block = Routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } method && body is not null
             ? Protocol(method, body)
             : body is null ? new LBlock([]) : (LBlock)Lower(body);
+        if (Routine is MethodSymbol { IsRecordConstructor: true, ResultVariable: { } constructed })
+        {
+            // LANG-730 (C-122): the result is zero-filled before the body runs (a managed one released first: it may hold the
+            // caller's old value, CMP-325 rule 4)
+            var result = new LLocalRef(_variables[constructed]);
+            LStatement[] zero = constructed.Type.IsManaged
+                ? [ManagedRewriter.Clear(this, result), new LZero(new LAddrOf(result, Types.Pointer), constructed.Type)]
+                : [new LZero(new LAddrOf(result, Types.Pointer), constructed.Type)];
+            block = new LBlock([.. zero, .. block.Statements]);
+        }
+
         var (copies, releases) = OpenArrayCopies();
         var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], copies.IsEmpty ? block : new LBlock([.. copies, .. block.Statements])));
         releases = [.. releases, .. _managedBodyGlobals.Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)))];
@@ -1045,7 +1056,23 @@ internal sealed class LoweringContext
                 new LField(new LView(second, MethodParts), MethodParts.Fields[1]));
         }
 
-        return new(routine, target is null ? null : Lower(target), receiver?.Self is { } self ? Lower(self) : null, receiver?.Flag, receiver?.IsVirtual ?? false);
+        // ABI-084 (C-122): a record method takes the address of its receiver (a temporary for a non-variable, LANG-751)
+        var self = receiver?.Self is { } selfValue
+            ? routine is MethodSymbol { SelfParameter: { IsByReference: true } selfParameter } ? SelfAddress(Lower(selfValue), selfParameter.Type) : Lower(selfValue)
+            : null;
+        return new(routine, target is null ? null : Lower(target), self, receiver?.Flag, receiver?.IsVirtual ?? false);
+    }
+
+    /// <summary>The address of a record method's or record helper's receiver: the variable itself, else a temporary copy (LANG-751).</summary>
+    private LExpression SelfAddress(LExpression value, TypeSymbol type)
+    {
+        if (value is LLocalRef or LGlobalRef or LParamRef or LOuterRef or LDeref or LField or LIndex or LArrayElement or LView or LSequence)
+        {
+            return new LAddrOf(value, Types.Pointer);
+        }
+
+        var temporary = new LLocalRef(NewTemp(type));
+        return new LSequence(Copy(temporary, value), new LAddrOf(temporary, Types.Pointer));
     }
 
     /// <summary>

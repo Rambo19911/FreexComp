@@ -95,7 +95,7 @@ internal static class IrEmitter
         // typed constants are read-only globals (LANG-344); those of routines follow the unit's own
         var variables = unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers)
             .Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).OfType<VariableSymbol>().Concat(unit.Statics)
-            .Concat(classes.SelectMany(c => c.ClassVariables))                                       // CMP-370: class vars are globals
+            .Concat(Binding.DeclarationBinder.ClassVariablesOf(unit.Unit))                             // CMP-370: class vars are globals
             .Where(v => !v.IsThreadVar).ToImmutableArray();                                            // threadvars: ABI-180/181
         foreach (var variable in variables)
         {
@@ -123,7 +123,7 @@ internal static class IrEmitter
         {
             var routine = body.Routine!;
             var linkage = routine.ExplicitLinkName is not null || (!routine.IsNested && interfaceMembers.Contains(routine))
-                || routine is MethodSymbol method && interfaceMembers.Contains(method.ContainingType)
+                || routine is MethodSymbol method && interfaceMembers.Contains(TypeMembers.Outermost(method.Owner))
                 ? IrLinkage.External
                 : IrLinkage.Internal;
             new FunctionEmitter(module, body, linkage).Emit();
@@ -244,7 +244,7 @@ internal static class IrEmitter
             var layout = TypeLayout.Allocated(variable.Type);
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
                 interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null
-                || variable.ContainingSymbol is ClassTypeSymbol owner && interfaceMembers.Contains(owner) ? IrLinkage.External : IrLinkage.Internal,
+                || variable.ContainingSymbol is (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol) and TypeSymbol owner && interfaceMembers.Contains(TypeMembers.Outermost(owner)) ? IrLinkage.External : IrLinkage.Internal,
                 IsConstant: variable.IsReadOnly, initializer, layout.Alignment));
         }
 
@@ -1045,11 +1045,15 @@ internal sealed class ModuleState(IIrWriter writer)
             : (2, new IrPtrToIntConstant(Routine(method)));
         var (getKind, getter) = Accessor(property.ReadPath, property.ReadMethod);
         var (setKind, setter) = Accessor(property.WritePath, property.WriteMethod);
+        // C-217 (LANG-644): StoredKind 0 constant, 1 field, 2 static method, 3 virtual method
+        var (storedKind, stored) = property.StoredField is { } storedField ? (1, IrIntConstant.I64(storedField.Offset))
+            : property.StoredMethod is { } storedMethod ? Accessor([], storedMethod)
+            : (0, IrIntConstant.I64(property.StoredConstant ? 1 : 0));
         return new IrStructConstant(PropInfoType,
         [
             StringLiteral(property.Name), TypeInfo(property.Type), new IrIntConstant(IrType.I8, getKind), new IrIntConstant(IrType.I8, setKind),
-            new IrIntConstant(IrType.I8, 0), VisibilityByte(property), new IrZeroConstant(new ArrayIrType(4, IrType.I8)), getter, setter, IrIntConstant.I64(1),
-            IrIntConstant.I32(property.Index ?? int.MinValue), IrIntConstant.I32(0), IrIntConstant.I64(long.MinValue),
+            new IrIntConstant(IrType.I8, storedKind), VisibilityByte(property), new IrZeroConstant(new ArrayIrType(4, IrType.I8)), getter, setter, stored,
+            IrIntConstant.I32(property.Index ?? int.MinValue), IrIntConstant.I32(0), IrIntConstant.I64(property.DefaultValue ?? long.MinValue),
         ]);
     }
 

@@ -384,3 +384,23 @@ type T = record case Byte of 0: (s: string) end; begin end.
 var i: Integer; begin with i do Inc(i) end.
 === E2069 1,32
 var i: Integer; begin for i in i do Inc(i) end.
+=== E2730 1,17
+type R = record destructor Done; end; begin end.
+=== E2730 1,30
+type R = record procedure P; virtual; end; begin end.
+=== E2730 1,29
+type R = record constructor Create; end; begin end.
+=== E2731 1,44
+type R = record X: Integer; class operator Add(A, B: Integer): Integer; end; begin end.
+=== E2732 1,44
+type R = record X: Integer; class operator Foo(const A: R): R; end; begin end.
+=== E2733 1,44
+type R = record X: Integer; class operator Negative(const A, B: R): R; end; begin end.
+=== E2750 1,36
+type H = record helper for Integer F: Integer; end; begin end.
+=== E2750 1,49
+type H = record helper for Integer procedure P; virtual; end; begin end.
+=== E2751 1,48
+type H = record helper for Integer end; var V: H; begin end.
+=== E2075 1,11
+begin var X := nil; end.

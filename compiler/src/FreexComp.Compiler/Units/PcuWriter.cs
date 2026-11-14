@@ -565,14 +565,60 @@ internal sealed class PcuWriter(PcuContext context)
                         ["offset"] = f.Offset,
                         ["visibility"] = "public",
                     })]);
-                    entry["methods"] = new JsonArray();
-                    entry["properties"] = new JsonArray();
+                    // C-122 (LANG-730): written so that the interface hash covers them; the reader does not import them yet
+                    entry["methods"] = new JsonArray([.. record.Methods.Select(m => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = m.Name,
+                        ["linkName"] = m.LinkName,
+                        ["params"] = Parameters(m),
+                        ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
+                        ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>(),
+                            .. m.IsRecordConstructor ? ["constructor"] : Array.Empty<string>()]),
+                        ["visibility"] = VisibilityName(m.Visibility),
+                    })]);
+                    entry["properties"] = new JsonArray([.. record.Properties.Select(p => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = p.Name,
+                        ["type"] = TypeId(p.Type),
+                        ["visibility"] = VisibilityName(p.Visibility),
+                        ["read"] = Accessor(p.ReadPath, p.ReadMethod),
+                        ["write"] = Accessor(p.WritePath, p.WriteMethod),
+                        ["index"] = p.Index,
+                        ["params"] = new JsonArray([.. p.Parameters.Select(q => (JsonNode?)new JsonObject { ["name"] = q.Name, ["type"] = TypeId(q.Type) })]),
+                        ["isDefault"] = p.IsDefault,
+                    })]);
+                    if (!record.ClassVariables.IsEmpty)
+                    {
+                        entry["classVars"] = new JsonArray([.. record.ClassVariables.Select(v => (JsonNode?)new JsonObject
+                        {
+                            ["name"] = v.Name,
+                            ["type"] = TypeId(v.Type),
+                            ["linkName"] = Emit.Mangler.GlobalVariable(v).Text,
+                        })]);
+                    }
                     entry["managed"] = record.IsManaged;
                     if (record.HasVariantPart)
                     {
                         entry["variant"] = true;                                // C-108: overlapping fields, byte storage
                     }
 
+                    return;
+                case HelperTypeSymbol helper:
+                    // C-124 (LANG-750): written so that the interface hash covers it; the reader does not import helpers yet
+                    entry["kind"] = "helper";
+                    entry["name"] = helper.Name;
+                    entry["classHelper"] = helper.IsClassHelper;
+                    entry["extends"] = TypeId(helper.ExtendedType);
+                    entry["parent"] = helper.Parent is { } parentHelper ? TypeId(parentHelper) : null;
+                    entry["methods"] = new JsonArray([.. helper.Methods.Select(m => (JsonNode?)new JsonObject
+                    {
+                        ["name"] = m.Name,
+                        ["linkName"] = m.LinkName,
+                        ["params"] = Parameters(m),
+                        ["result"] = m.ReturnType is { } helperResult ? TypeId(helperResult) : null,
+                        ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>()]),
+                        ["visibility"] = VisibilityName(m.Visibility),
+                    })]);
                     return;
                 case ProceduralTypeSymbol procedural:
                     entry["kind"] = "procedural";

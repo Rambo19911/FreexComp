@@ -27,7 +27,9 @@ internal static class Mangler
 
         var prefix = routine.ContainingSymbol is RoutineSymbol outer ? RoutineText(outer) : routine.ContainingSymbol?.QualifiedName;
         var name = prefix is null ? routine.Name : prefix + "." + routine.Name;
-        return routine.IsOverload ? name + "$" + Signature(routine.Parameters) : name;
+        // C-123: conversion operators may differ in their result only (Implicit to Integer and to Double), so operators add it
+        return routine is MethodSymbol { OperatorName: not null, ReturnType: { } result } ? name + "$" + Signature(routine.Parameters) + "$" + TypeName(result)
+            : routine.IsOverload ? name + "$" + Signature(routine.Parameters) : name;
     }
 
     /// <summary>Global variable or typed constant: <c>U.Name</c>; a typed constant of a routine: <c>&lt;routine link name&gt;.Name</c>.</summary>

@@ -79,7 +79,10 @@ public sealed class ClassTypeSymbol : TypeSymbol
     /// <summary>The nearest default array property of the class or an ancestor (LANG-642); null when there is none.</summary>
     public PropertySymbol? DefaultProperty => SelfAndAncestors().SelectMany(c => c.Properties).FirstOrDefault(p => p.IsDefault);
 
-    public override ImmutableArray<Symbol> Members => [.. Fields, .. ClassVariables, .. Methods, .. Properties];
+    /// <summary>Nested constants, types and enumeration elements of the class's <c>const</c>/<c>type</c> sections (LANG-770, C-122).</summary>
+    public ImmutableArray<Symbol> NestedMembers { get; internal set; } = [];
+
+    public override ImmutableArray<Symbol> Members => [.. Fields, .. ClassVariables, .. Methods, .. Properties, .. NestedMembers];
 
     public override TypeSymbol? BaseType => Parent;
 

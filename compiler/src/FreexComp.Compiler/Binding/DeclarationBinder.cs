@@ -227,6 +227,12 @@ internal sealed partial class DeclarationBinder
                 continue;
             }
 
+            if (declaration.Type is HelperTypeSyntax helperSyntax && declaration.TypeParameterList is null && declaration.TypeKeyword is null)
+            {
+                BindHelperDeclaration(identifier, helperSyntax, declared);                                       // C-124
+                continue;
+            }
+
             if (declaration.Type is InterfaceTypeSyntax interfaceSyntax && declaration.TypeParameterList is null && declaration.TypeKeyword is null)
             {
                 BindInterfaceDeclaration(identifier, interfaceSyntax, declared, forwardInterfaces);                // C-098
@@ -595,6 +601,11 @@ internal sealed partial class DeclarationBinder
     /// </summary>
     private TypeSymbol BindRecord(RecordTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
     {
+        if (syntax.Members.Any(m => m is not FieldDeclarationSyntax))
+        {
+            return BindRecordWithMembers(syntax, name, declaredAt, declared);              // LANG-730, 770 (C-122)
+        }
+
         var fields = new List<(SyntaxToken Identifier, TypeSymbol Type)>();
         var names = new HashSet<string>(IdentifierComparer.Instance);
         var failed = false;
@@ -1254,7 +1265,7 @@ internal sealed partial class DeclarationBinder
     /// <summary>Parameters (LANG-420 table) and result type of a new routine; also creates <c>Result</c> (LANG-410).</summary>
     private void BindSignature(RoutineSymbol routine, RoutineHeadingSyntax heading, SyntaxToken identifier, bool report)
     {
-        if (heading.Keyword.Kind == SyntaxKind.FunctionKeyword)
+        if (heading.Keyword.Kind == SyntaxKind.FunctionKeyword || heading.Keyword.ContextualKind == SyntaxKind.OperatorKeyword)       // C-123: operators are functions
         {
             if (heading.ResultType is { } resultType)
             {
@@ -1604,6 +1615,8 @@ internal sealed partial class DeclarationBinder
             case NamedTypeSyntax { Name: QualifiedNameSyntax { Right: IdentifierNameSyntax right } qualified }
                 when UnitQualifiers.Qualifier(_scope, qualified.Left) is not null:
                 return BindTypeName(right);                             // U.TName (LANG-311, 538)
+            case NamedTypeSyntax { Name: QualifiedNameSyntax qualified } when LeftmostNamesType(qualified):
+                return ResolveTypeQualifier(qualified) ?? _types.Error;                  // TOuter.TInner (LANG-770, C-122)
             case NamedTypeSyntax { Name: QualifiedNameSyntax qualified }:
                 _diagnostics.ReportUndeclared(qualified.Left, NameOf(qualified.Left));    // no used unit of that name
                 return _types.Error;
@@ -1659,6 +1672,9 @@ internal sealed partial class DeclarationBinder
             case null:
                 _diagnostics.ReportUndeclared(name, text);
                 return _types.Error;
+            case HelperTypeSymbol helper:
+                _diagnostics.Report(name, "E2751", helper.Name);                // LANG-754 (C-124)
+                return _types.Error;
             case TypeSymbol type when ReferenceEquals(type, _types.Currency):
                 return Unsupported(name, "Currency");                   // LANG-200, Phase 8+
             case TypeSymbol type:
@@ -1668,6 +1684,9 @@ internal sealed partial class DeclarationBinder
                 return _types.Error;
         }
     }
+
+    /// <summary>The type of an inline variable or constant (LANG-385, C-125), bound in a body's scope.</summary>
+    internal TypeSymbol BindLocalType(TypeSyntax type) => BindType(type);
 
     private TypeSymbol Unsupported(SyntaxNode node, string feature)
     {

@@ -41,7 +41,7 @@ internal sealed record BindingResult(
     {
         var captured = Routines.SelectMany(r => r.CapturedVariables).Where(s => ReferenceEquals(s.ContainingSymbol, routine)).ToHashSet();
         // an open array parameter is followed by its High companion, which is in no scope (C-106)
-        return captured.Count == 0 ? [] : [.. Routines.First(r => ReferenceEquals(r.Routine, routine)).Scope.Symbols.Where(captured.Contains)
+        return captured.Count == 0 ? [] : [.. Routines.First(r => ReferenceEquals(r.Routine, routine)).Scope.Symbols.Distinct().Where(captured.Contains)
             .SelectMany(s => s is ParameterSymbol { HighParameter: { } high } && captured.Contains(high) ? [s, high] : new[] { s })];
     }
 }
@@ -103,7 +103,7 @@ internal static class Binder
         // methods of the unit's classes (C-081) are bound with the routines, in definition order
         var pending = new Queue<RoutineSymbol>(declarations.Unit.InterfaceMembers.Concat(declarations.Unit.ImplementationMembers)
             .OfType<RoutineSymbol>()
-            .Concat(DeclarationBinder.ClassesOf(declarations.Unit).SelectMany(c => c.Methods))
+            .Concat(DeclarationBinder.MethodsOf(declarations.Unit))
             .Where(r => r.Definition != null)
             .OrderBy(r => r.Definition!.Span.Start));
         while (pending.Count > 0)
@@ -160,9 +160,14 @@ internal static class Binder
         {
             // LANG-621: the members of the class and its ancestors are in scope (one scope per class, the class innermost); the
             // limit of LANG-402 applies to the definition scope. Self comes first; parameters and locals hide members.
+            // C-122: the members of enclosing types of a nested type are visible too (LANG-770), outermost first
             var members = outer;
             int? visible = routine.DefinitionScopeVisibleCount;
-            foreach (var type in method.ContainingType.SelfAndAncestors().Reverse())
+            // C-124 (LANG-751): a helper method sees the helped type's members, then the helper's (innermost)
+            var chain = method.Owner is HelperTypeSymbol helper
+                ? TypeMembers.SelfAndAncestors(helper.ExtendedType).Reverse().Concat(TypeMembers.SelfAndAncestors(helper).Reverse())
+                : TypeMembers.EnclosingTypes(method.Owner).Reverse().Concat(TypeMembers.SelfAndAncestors(method.Owner).Reverse());
+            foreach (var type in chain)
             {
                 members = MemberScope(type, members, visible);
                 visible = null;
@@ -172,6 +177,10 @@ internal static class Binder
             if (method.SelfParameter is { } self)
             {
                 scope.TryDeclare(self, out _);
+            }
+            else if (method is { IsRecordConstructor: true, ResultVariable: { } constructed })
+            {
+                scope.TryDeclare("Self", constructed, out _);                   // LANG-730: Self is the zero-filled result
             }
         }
         else
@@ -209,7 +218,7 @@ internal static class Binder
     }
 
     /// <summary>A fresh scope with the own members of <paramref name="type"/> (overloaded methods as one overload set).</summary>
-    private static Scope MemberScope(ClassTypeSymbol type, Scope parent, int? parentVisibleCount)
+    private static Scope MemberScope(TypeSymbol type, Scope parent, int? parentVisibleCount)
     {
         var scope = new Scope(ScopeKind.TypeMember, parent, type, parentVisibleCount);
         foreach (var member in type.Members)

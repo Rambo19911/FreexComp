@@ -53,6 +53,13 @@ internal sealed class ConstantFolder
                 return FoldInvocation(invocation);
             case MemberAccessExpressionSyntax memberAccess when _scope.Unqualified(memberAccess) is IdentifierNameSyntax qualified:
                 return FoldName(qualified);                                     // U.Name (LANG-311, 538)
+            case MemberAccessExpressionSyntax memberAccess when NestedNames.NestedMember(_scope, memberAccess) is { } nested:
+                return nested switch                                            // LANG-770 (C-122): TOuter.Limit
+                {
+                    ConstantSymbol { IsTyped: false } constant => constant.Value,
+                    EnumMemberSymbol element => element.Value,
+                    _ => NotConstant(memberAccess),
+                };
             case MemberAccessExpressionSyntax memberAccess:
             {
                 var member = LookupEnumMember(memberAccess, out var isEnumAccess);
@@ -693,6 +700,10 @@ internal sealed class ConstantFolder
             if (argument is PredefinedTypeExpressionSyntax)
             {
                 (type, isTypeName) = (_types.String, true);
+            }
+            else if (argument is MemberAccessExpressionSyntax && NestedNames.TypeNamedBy(_scope, argument) is { } nestedType)
+            {
+                (type, isTypeName) = (nestedType, true);                        // LANG-770: SizeOf(TOuter.TInner)
             }
             else if (_scope.Unqualified(argument) is IdentifierNameSyntax name && LookupName(name) is (TypeSymbol or VariableSymbol or ParameterSymbol) and var symbol)
             {

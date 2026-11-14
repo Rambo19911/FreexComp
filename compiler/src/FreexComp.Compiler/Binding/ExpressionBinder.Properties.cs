@@ -71,7 +71,7 @@ internal sealed partial class ExpressionBinder
     private BoundExpression ImplicitProperty(IdentifierNameSyntax name, PropertySymbol property)
     {
         var current = CurrentMethod;
-        if (!CheckAccess(name, property, property.ContainingType, current?.ContainingType))
+        if (!CheckAccess(name, property, property.Owner, current?.Owner))
         {
             return Error(name);
         }
@@ -79,7 +79,7 @@ internal sealed partial class ExpressionBinder
         BoundExpression? self = null;
         if (!property.IsClassProperty)
         {
-            if (current is not { SelfParameter: not null, IsClassMethod: false })
+            if (current is null || !HasInstanceSelf(current))
             {
                 _diagnostics.Report(name, "E2608", property.Name);
                 return Error(name);
@@ -139,7 +139,7 @@ internal sealed partial class ExpressionBinder
     private BoundExpression DefaultPropertyAccess(ElementAccessExpressionSyntax element, int start, PropertySymbol property, BoundExpression self)
     {
         var count = property.Parameters.Length;
-        if (property.ContainingInterface is null && !CheckAccess(element, property, property.ContainingType, self.Type))
+        if (property.ContainingInterface is null && !CheckAccess(element, property, property.Owner, self.Type))
         {
             return Error(element, self);
         }

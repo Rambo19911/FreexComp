@@ -8,7 +8,7 @@ namespace FreexComp.Compiler.Types;
 
 public enum TypeKind { Error, Integer, Boolean, Char, Real, Enum, Subrange, Set, String, ShortString, Pointer,
                        Array, DynamicArray, OpenArray, Record, Class, ClassRef, Interface, Procedural,
-                       MethodPointer, Reference, TypeParameter, Text, Untyped, Nil }
+                       MethodPointer, Reference, TypeParameter, Text, Untyped, Nil, Helper }
 
 /// <summary>A type (api.md §5). Sizes follow rtl-abi.md §2; -1 where a type has no fixed size.</summary>
 public abstract class TypeSymbol : Symbol
@@ -30,9 +30,9 @@ public abstract class TypeSymbol : Symbol
 
     public TypeKind TypeKind { get; }
 
-    public long Size { get; }
+    public long Size { get; private protected set; }
 
-    public int Alignment { get; }
+    public int Alignment { get; private protected set; }
 
     public virtual bool IsManaged => false;
 
@@ -335,9 +335,28 @@ public sealed class RecordTypeSymbol : TypeSymbol
     /// Has a variant part (LANG-261, ABI-061; C-108): fields may overlap; the storage is <c>[Size x i8]</c> addressed with byte
     /// GEPs (CMP-306, 307).
     /// </summary>
-    public bool HasVariantPart { get; internal init; }
+    public bool HasVariantPart { get; internal set; }
 
-    public override ImmutableArray<Symbol> Members => [.. Fields];
+    /// <summary>The record's methods in declaration order (LANG-730, C-122): instance methods take <c>Self</c> as a <c>var</c> parameter.</summary>
+    public ImmutableArray<MethodSymbol> Methods { get; internal set; } = [];
+
+    /// <summary>The record's <c>class var</c> fields (LANG-730): globals named <c>U.TRec.Name</c> like a class's (CMP-370).</summary>
+    public ImmutableArray<VariableSymbol> ClassVariables { get; internal set; } = [];
+
+    /// <summary>The record's properties in declaration order (LANG-730).</summary>
+    public ImmutableArray<PropertySymbol> Properties { get; internal set; } = [];
+
+    /// <summary>Nested constants, types and enumeration elements of the record's <c>const</c>/<c>type</c> sections (LANG-770).</summary>
+    public ImmutableArray<Symbol> NestedMembers { get; internal set; } = [];
+
+    public override ImmutableArray<Symbol> Members => [.. Fields, .. ClassVariables, .. Methods, .. Properties, .. NestedMembers];
+
+    /// <summary>Completes the layout of a record whose symbol was created before its fields were bound (records with methods, C-122).</summary>
+    internal void SetLayout(long size, int alignment)
+    {
+        Size = size;
+        Alignment = alignment;
+    }
 
     /// <summary>A record with any managed field is managed (CMP-325, C-065; its <c>tkRecord</c> block lists those fields).</summary>
     public override bool IsManaged => Fields.Any(f => f.Type.IsManaged);

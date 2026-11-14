@@ -118,7 +118,7 @@ internal sealed partial class ExpressionBinder
                 return Error(syntax);
             case IdentifierNameSyntax { Identifier: { IsMissing: false } token } identifier
                 when _scope.For(identifier).LookupCandidates(token.Value as string ?? token.Text) is [MethodSymbol { ContainingInterface: null }, ..] methods
-                    && CurrentMethod is { SelfParameter: not null } current:
+                    && CurrentMethod is { SelfParameter: not null, ContainingSymbol: ClassTypeSymbol } current:
                 (candidates, name, owner) = (methods, identifier, current.ContainingType);
                 self = SelfOf(current, identifier);
                 break;
@@ -551,6 +551,10 @@ internal sealed partial class ExpressionBinder
         {
             return value;
         }
+        if ((value.Type is RecordTypeSymbol || destination is RecordTypeSymbol) && Operators.Conversion(value.Type, destination, _conversions) is { } implicitOperator)
+        {
+            return ConversionCall(at, value, implicitOperator);                 // LANG-740 (C-123), LANG-280 rule 13
+        }
 
         if (value.ConstantValue is { } constant)
         {
@@ -600,8 +604,8 @@ internal sealed partial class ExpressionBinder
         {
             case null:
                 return Error(name);
-            case VariableSymbol { ContainingSymbol: ClassTypeSymbol } classVar:
-                return ClassVariable(name, name, classVar, CurrentMethod?.ContainingType);      // LANG-615 inside a method
+            case VariableSymbol { ContainingSymbol: ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol } classVar:
+                return ClassVariable(name, name, classVar, CurrentMethod?.Owner);      // LANG-615 inside a method
             case VariableSymbol variable:
                 NoteReference(variable);
                 return new BoundVariableExpression(name, variable);
@@ -1576,6 +1580,11 @@ internal sealed partial class ExpressionBinder
             return (type, null);
         }
 
+        if (syntax is MemberAccessExpressionSyntax && NestedNames.TypeNamedBy(_scope, syntax) is { } nested)
+        {
+            return (nested, null);                                              // LANG-770: SizeOf(TOuter.TInner)
+        }
+
         var argument = BindExpression(syntax);
         return (argument.Type, argument);
     }
@@ -1591,6 +1600,12 @@ internal sealed partial class ExpressionBinder
     private BoundExpression BindTypecast(InvocationExpressionSyntax node, TypeSymbol target, BoundExpression operand, bool variableContext)
     {
         var source = operand.Type;
+        if (!ReferenceEquals(source, target) && (source is RecordTypeSymbol || target is RecordTypeSymbol) && !variableContext
+            && (Operators.Conversion(source, target, _conversions, "Explicit") ?? Operators.Conversion(source, target, _conversions)) is { } conversion)
+        {
+            return ConversionCall(node, operand, conversion);                   // LANG-731 Explicit, else Implicit (C-123)
+        }
+
         if ((source is StringTypeSymbol || target is StringTypeSymbol) && !(variableContext && IsAddressable(operand)))
         {
             return StringTypecast(node, target, operand);
@@ -1774,7 +1789,7 @@ internal sealed partial class ExpressionBinder
             // procedural one makes a routine name its address (LANG-480)
             var expected = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol
                 ? candidates[0].Parameters[i].Type
-                : OpenArrayContext(candidates, i);
+                : OpenArrayContext(candidates, i, constructor: Unparenthesized(argument.Expression) is SetConstructorSyntax);
             // an untyped parameter (C-202) also takes p^ of an untyped pointer (a byte variable, as for Move)
             var untyped = byReference && candidates[0].Parameters[i].IsUntyped && Unparenthesized(argument.Expression) is DereferenceExpressionSyntax;
             var bound = untyped ? BindDereference((DereferenceExpressionSyntax)Unparenthesized(argument.Expression), untyped: true)
@@ -1818,9 +1833,11 @@ internal sealed partial class ExpressionBinder
     /// when every candidate with such a parameter has a value/<c>const</c> open array parameter there of one open array type (so
     /// <c>Format('%d', [x])</c> works for an overload set); null otherwise.
     /// </summary>
-    private static OpenArrayTypeSymbol? OpenArrayContext(ImmutableArray<RoutineSymbol> candidates, int index)
+    private static OpenArrayTypeSymbol? OpenArrayContext(ImmutableArray<RoutineSymbol> candidates, int index, bool constructor)
     {
-        var types = candidates.Where(c => index < c.Parameters.Length).Select(c => c.Parameters[index]).ToList();
+        // C-216: a constructor argument is never applicable to a parameter that is no array or set, so those candidates do not count
+        var types = candidates.Where(c => index < c.Parameters.Length).Select(c => c.Parameters[index])
+            .Where(p => !constructor || p.Type is OpenArrayTypeSymbol or SetTypeSymbol or DynamicArrayTypeSymbol or ArrayTypeSymbol).ToList();
         return types.Count > 0 && types.All(p => !p.IsByReference && ReferenceEquals(p.Type, types[0].Type)) ? types[0].Type as OpenArrayTypeSymbol : null;
     }
 
@@ -1964,6 +1981,10 @@ internal sealed partial class ExpressionBinder
             SyntaxKind.PlusToken => BoundUnaryOperatorKind.Identity,
             _ => BoundUnaryOperatorKind.Not,
         };
+        if (operand.Type is RecordTypeSymbol && UserUnary(unary, kind, operand) is { } user)
+        {
+            return user;                                                        // LANG-731 (C-123)
+        }
 
         if (operand.ConstantValue is { } value)
         {
@@ -2047,6 +2068,18 @@ internal sealed partial class ExpressionBinder
             return Error(binary, left, right);
         }
 
+        if ((left.Type is RecordTypeSymbol || right.Type is RecordTypeSymbol) && UserBinary(binary, left, right) is { } user)
+        {
+            return user;                                                        // LANG-732 (C-123)
+        }
+
+        return BindBinaryOperation(binary, left, right);
+    }
+
+    /// <summary>The built-in binary operator on bound operands (LANG-221…226, 301…305).</summary>
+    private BoundExpression BindBinaryOperation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
+    {
+        var op = binary.OperatorToken;
         if (left.ConstantValue is { } l && right.ConstantValue is { } r)
         {
             return _folder.FoldBinary(op, l, r) is { } folded
