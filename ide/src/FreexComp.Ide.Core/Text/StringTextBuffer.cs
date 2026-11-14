@@ -37,7 +37,8 @@ public sealed class StringTextBuffer : ITextBuffer
     public LineEndingKind LineEnding => TextBufferRules.DominantLineEnding(_text, _defaultLineEnding);
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
-    public bool IsAtSavePoint => _savePoint == _undo.Count;
+    /// <summary>A change still in an open undo group (not yet on the undo stack) has already left the save point.</summary>
+    public bool IsAtSavePoint => _savePoint == _undo.Count && _group is not { Count: > 0 };
 
     public event EventHandler<TextChangedEventArgs>? Changed;
 

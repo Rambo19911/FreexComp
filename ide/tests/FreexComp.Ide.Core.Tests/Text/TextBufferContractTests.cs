@@ -217,6 +217,12 @@ public abstract class TextBufferContractTests
         seen.Clear();
         b.Redo();
         Assert.Equal([false, false], seen);
+
+        // A new edit made at the save point has already left it inside Changed (the change tracker reads it, I-046).
+        b.Undo();
+        seen.Clear();
+        b.ApplyEdits([new TextEdit(0, 0, "z")]);
+        Assert.Equal([false], seen);
     }
 
     [Fact(Timeout = 30000)]
