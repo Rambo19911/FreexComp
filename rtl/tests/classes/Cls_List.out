@@ -1,0 +1,47 @@
+# basic members
+ok Add returns index
+ok Insert at 0 and Count
+ok IndexOf
+ok IndexOf absent
+ok Exchange and Move
+ok Remove returns index
+ok Remove absent
+ok Extract
+ok Extract absent
+ok First
+ok Last
+ok Pack removes nils
+ok Delete
+ok Clear count
+ok Clear capacity
+# errors (RTL-415, RTL-417)
+ok read past the end
+ok negative
+ok Insert at Count
+ok Insert past Count
+ok Delete
+ok Capacity below Count
+ok negative Count
+ok First of an empty list
+# growth (RTL-416)
+ok capacity steps
+ok Count growth fills nil
+# notifications (RTL-417, RTL-419)
+ok log
+# stable sort (RTL-418)
+ok equal keys keep their order
+ok 37 items sorted
+# Assign
+ok laCopy
+ok laAnd
+ok laOr
+ok laXor
+ok laSrcUnique
+ok laDestUnique
+ok ListB copies ListB after ListA
+# TThreadList
+ok dupIgnore by default
+ok dupAccept
+ok dupError
+ok worker added under the lock
+# passed 39 failed 0

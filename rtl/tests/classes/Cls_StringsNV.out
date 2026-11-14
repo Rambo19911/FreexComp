@@ -1,0 +1,36 @@
+# names and values
+ok Names
+ok Names without separator
+ok empty name
+ok Values case-insensitive, first separator
+ok line without separator is not a name
+ok missing
+ok IndexOfName
+ok IndexOfName without separator
+ok ValueFromIndex
+ok ValueFromIndex without separator
+ok Values replaces
+ok Values appends
+ok Values '' deletes
+ok deleting a missing name does nothing
+ok ValueFromIndex set
+ok ValueFromIndex '' deletes
+ok custom separator
+ok default separator no longer used
+# DelimitedText get
+ok quoting
+ok CommaText
+ok strict: blanks unquoted
+ok custom delimiter and quote
+ok CommaText ignores the properties
+ok empty list
+# DelimitedText set
+ok blanks split, quotes, empty item
+ok leading blanks skipped
+ok trailing delimiter
+ok empty
+ok strict: only the delimiter splits
+ok CommaText set ignores the properties
+ok properties restored
+ok StrictDelimiter restored
+# passed 32 failed 0

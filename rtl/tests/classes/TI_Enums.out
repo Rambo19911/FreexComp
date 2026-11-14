@@ -1,0 +1,60 @@
+# header and data
+ok enum name
+ok enum kind
+ok Kind field
+ok MinValue
+ok MaxValue
+ok OrdType of a small enum
+ok a base enum is its own base
+ok name count
+ok subrange kind
+ok subrange min
+ok subrange max
+ok Integer is otSLong
+ok Word is otUWord
+ok Int64 info
+ok Int64 kind
+ok Double
+ok Single
+ok string kind
+ok string code page
+# enum names
+ok first
+ok last
+ok above range
+ok below range
+ok value
+ok value case-insensitive
+ok unknown
+ok empty
+ok Boolean False
+ok Boolean True
+ok Boolean value
+# subrange of an enum
+ok kind
+ok min
+ok base type
+ok name from the base
+ok value in range
+ok value outside the subrange
+# sets
+ok set kind
+ok CompType
+ok set size
+ok names
+ok brackets
+ok empty
+ok empty brackets
+ok parse
+ok parse brackets and blanks
+ok parse empty
+ok parse empty string
+ok unknown element raises
+# class data
+ok class kind
+ok class name
+ok ClassType
+ok ParentInfo
+ok UnitName
+ok TObject has no parent
+# passed 54 failed 0

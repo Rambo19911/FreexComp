@@ -29,7 +29,10 @@ type
   TProcedure = procedure;
   TThreadFunc = function(Parameter: Pointer): Integer;    { BeginThread (system.md section 5.1) }
 
-  // TODO(C-112, RTTI): ClassInfo, MethodAddress, MethodName, FieldAddress, UnitName.
+  { system.md section 1.3: ordinals = the Kind byte of the RTTI blocks (rtl-abi.md section 10) }
+  TTypeKind = (tkUnknown, tkInteger, tkChar, tkEnumeration, tkFloat, tkSet, tkClass, tkMethod, tkWChar,
+    tkUString, tkAString, tkSString, tkRecord, tkArray, tkDynArray, tkInterface, tkInt64,
+    tkPointer, tkClassRef, tkProcedure);
 
   { ABI-096: 16 bytes }
   TGUID = packed record
@@ -68,8 +71,13 @@ type
     class function ClassParent: TClass;
     class function InstanceSize: Integer;
     class function InheritsFrom(AClass: TClass): Boolean;
+    class function ClassInfo: Pointer;
+    class function MethodAddress(const Name: string): Pointer;
+    class function MethodName(Address: Pointer): string;
+    function FieldAddress(const Name: string): Pointer;
     function GetInterface(const IID: TGUID; out Obj): Boolean;
     class function GetInterfaceEntry(const IID: TGUID): Pointer;
+    class function UnitName: string;
   end;
 
   { ABI-094, RTL-154: the root of every interface }
@@ -105,6 +113,10 @@ type
   end;
 
 const
+  { customary aliases of TTypeKind (system.md section 1.3) }
+  tkString = tkSString;
+  tkLString = tkAString;
+
   { TVarRec.VType values (rtl-abi.md section 9.10, RTL-013); vtCurrency, vtVariant and vtWideString are reserved and
     never produced by the compiler }
   vtInteger = 0;
@@ -157,6 +169,7 @@ type
   TMethod = record
     Code, Data: Pointer;
   end;
+  PMethod = ^TMethod;
   TBytes = array of Byte;
   TTextLineBreakStyle = (tlbsLF, tlbsCRLF);
 
@@ -244,6 +257,11 @@ function _ObjSupports(Obj: Pointer; IID: Pointer): Boolean;
 { RTL-153: the message method for the id in the first 4 bytes of Msg (MsgTable of the class, then of each ancestor),
   else the virtual DefaultHandler }
 procedure _Dispatch(Obj: Pointer; var Msg);
+{ embedded resources (ABI-150/151): Table is Count entries of (ptr Name, ptr Data, i64 Size), Name a static
+  UnicodeString payload; kept by reference, never copied or freed. A lookup matches ASCII case-insensitively and
+  the first registration of a name wins; absent gives False, nil, 0. }
+procedure _RegisterResources(Table: Pointer; Count: NativeInt);
+function FindResourceData(const Name: string; out Data: Pointer; out Size: NativeInt): Boolean;
 procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;   { Msg/FileName: UnicodeString refs, Msg may be nil }
 procedure _IOCheck;
 
@@ -5501,6 +5519,212 @@ end;
 class function TObject.InheritsFrom(AClass: TClass): Boolean;
 begin
   Result := _ClassInherits(Pointer(Self), Pointer(AClass));
+end;
+
+{ ---------------------------------------------------------------- published members (system.md section 13, ABI 10.1)
+  The class RTTI block (VMT+24) holds MethodCount at +56 / Methods at +64 (24-byte TMethodInfo) and FieldCount at +72 /
+  Fields at +80 (32-byte TFieldInfo), declaration order, members of this class only. ABI-144: only Visibility 3. }
+
+const
+  VisPublished = 3;
+
+{ the static UnicodeString payload P equals S with ASCII letters compared case-insensitively }
+function SameAsciiName(P: PWideChar; const S: string): Boolean;
+var
+  I, Len: Integer;
+  A, B: Word;
+begin
+  Result := False;
+  if P = nil then
+    Exit;
+  Len := PStrRec(PByte(P) - SizeOf(TStrRec))^.Length;
+  if Len <> Length(S) then
+    Exit;
+  for I := 0 to Len - 1 do
+  begin
+    A := Ord(P[I]);
+    B := Ord(S[I + 1]);
+    if (A >= Ord('a')) and (A <= Ord('z')) then
+      A := A - 32;
+    if (B >= Ord('a')) and (B <= Ord('z')) then
+      B := B - 32;
+    if A <> B then
+      Exit;
+  end;
+  Result := True;
+end;
+
+{ the class RTTI of VMT, nil for a nil VMT }
+function ClassRtti(VMT: PVmtHeader): PByte;
+begin
+  if VMT = nil then
+    Result := nil
+  else
+    Result := VMT^.TypeInfo;
+end;
+
+class function TObject.ClassInfo: Pointer;
+begin
+  Result := PVmtHeader(Pointer(Self))^.TypeInfo;
+end;
+
+class function TObject.MethodAddress(const Name: string): Pointer;
+var
+  VMT: PVmtHeader;
+  TI, E: PByte;
+  I, Count: NativeInt;
+begin
+  VMT := PVmtHeader(Pointer(Self));
+  while VMT <> nil do
+  begin
+    TI := ClassRtti(VMT);
+    Count := PNativeInt(TI + 56)^;
+    for I := 0 to Count - 1 do
+    begin
+      E := PByte(PPointer(TI + 64)^) + I * 24;
+      if (E[16] = VisPublished) and SameAsciiName(PPointer(E)^, Name) then
+      begin
+        Result := PPointer(E + 8)^;
+        Exit;
+      end;
+    end;
+    VMT := VMT^.Parent;
+  end;
+  Result := nil;
+end;
+
+class function TObject.MethodName(Address: Pointer): string;
+var
+  VMT: PVmtHeader;
+  TI, E: PByte;
+  I, Count: NativeInt;
+begin
+  Result := '';
+  if Address = nil then
+    Exit;
+  VMT := PVmtHeader(Pointer(Self));
+  while VMT <> nil do
+  begin
+    TI := ClassRtti(VMT);
+    Count := PNativeInt(TI + 56)^;
+    for I := 0 to Count - 1 do
+    begin
+      E := PByte(PPointer(TI + 64)^) + I * 24;
+      if (E[16] = VisPublished) and (PPointer(E + 8)^ = Address) then
+      begin
+        _UStrAsg(PPointer(@Result)^, PPointer(E)^);
+        Exit;
+      end;
+    end;
+    VMT := VMT^.Parent;
+  end;
+end;
+
+function TObject.FieldAddress(const Name: string): Pointer;
+var
+  VMT: PVmtHeader;
+  TI, E: PByte;
+  I, Count: NativeInt;
+begin
+  VMT := PPointer(Self)^;
+  while VMT <> nil do
+  begin
+    TI := ClassRtti(VMT);
+    Count := PNativeInt(TI + 72)^;
+    for I := 0 to Count - 1 do
+    begin
+      E := PByte(PPointer(TI + 80)^) + I * 32;
+      if (E[24] = VisPublished) and SameAsciiName(PPointer(E)^, Name) then
+      begin
+        Result := PByte(Pointer(Self)) + PNativeInt(E + 8)^;
+        Exit;
+      end;
+    end;
+    VMT := VMT^.Parent;
+  end;
+  Result := nil;
+end;
+
+{ ---------------------------------------------------------------- embedded resources (ABI-150/151) }
+{ The registered (Table, Count) pairs in registration order: a static first chunk, further chunks from _GetMem (one
+  registration per unit with FORM directives, so these are rare; they live until the process ends). }
+
+const
+  ResChunkPairs = 64;
+
+type
+  TResEntry = record
+    Name: Pointer;
+    Data: Pointer;
+    Size: NativeInt;
+  end;
+  PResEntry = ^TResEntry;
+  TResPair = record
+    Table: PResEntry;
+    Count: NativeInt;
+  end;
+  PResChunk = ^TResChunk;
+  TResChunk = record
+    Next: PResChunk;
+    Used: NativeInt;
+    Pairs: array[0..ResChunkPairs - 1] of TResPair;
+  end;
+
+var
+  ResFirst: TResChunk;
+  ResLast: PResChunk;
+
+procedure _RegisterResources(Table: Pointer; Count: NativeInt);
+var
+  Chunk: PResChunk;
+begin
+  if (Table = nil) or (Count <= 0) then
+    Exit;
+  if ResLast = nil then
+    ResLast := @ResFirst;
+  if ResLast^.Used = ResChunkPairs then
+  begin
+    Chunk := _AllocZero(SizeOf(TResChunk));
+    ResLast^.Next := Chunk;
+    ResLast := Chunk;
+  end;
+  ResLast^.Pairs[ResLast^.Used].Table := Table;
+  ResLast^.Pairs[ResLast^.Used].Count := Count;
+  ResLast^.Used := ResLast^.Used + 1;
+end;
+
+function FindResourceData(const Name: string; out Data: Pointer; out Size: NativeInt): Boolean;
+var
+  Chunk: PResChunk;
+  P, I: NativeInt;
+  E: PResEntry;
+begin
+  Chunk := @ResFirst;
+  while Chunk <> nil do
+  begin
+    for P := 0 to Chunk^.Used - 1 do
+      for I := 0 to Chunk^.Pairs[P].Count - 1 do
+      begin
+        E := Chunk^.Pairs[P].Table + I;
+        if SameAsciiName(E^.Name, Name) then
+        begin
+          Data := E^.Data;
+          Size := E^.Size;
+          Result := True;
+          Exit;
+        end;
+      end;
+    Chunk := Chunk^.Next;
+  end;
+  Data := nil;
+  Size := 0;
+  Result := False;
+end;
+
+{ the unit that declares the class: class RTTI +32 }
+class function TObject.UnitName: string;
+begin
+  _UStrAsg(PPointer(@Result)^, PPointer(PByte(PVmtHeader(Pointer(Self))^.TypeInfo) + 32)^);
 end;
 
 { ---------------------------------------------------------------- interfaces (system.md RTL-154/155, ABI 7.3, 9.6) }

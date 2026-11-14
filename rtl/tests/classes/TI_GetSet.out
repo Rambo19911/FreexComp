@@ -1,0 +1,65 @@
+# ordinals
+ok Byte
+ok ShortInt sign-extended
+ok SmallInt through a static setter
+ok SmallInt through a static getter
+ok Word
+ok Integer
+ok Cardinal not sign-extended
+ok Int64
+ok Char
+ok Char read
+ok Boolean
+ok class through SetOrdProp
+# enums and sets
+ok enum by name, virtual getter
+ok virtual getter of the descendant
+ok set by names
+ok set names
+ok set names with brackets
+ok set bits
+ok Boolean name
+# index specifiers
+ok index 1
+ok index 2
+ok string setter with index
+ok string getter with index
+# floats
+ok Double, virtual accessors
+ok overrides run
+ok Single through methods
+ok Single field
+# strings
+ok UnicodeString field
+ok AnsiString through methods
+ok AnsiString field
+ok string[7] (8 bytes in a register) truncated
+ok string[20] through methods
+ok string[7] field
+# objects and events
+ok object
+ok MinClass mismatch gives nil
+ok MinClass match
+ok declared class
+ok event set through a const TMethod setter
+ok event read
+ok event code
+ok event field
+ok setters ran
+# errors (RTL-403)
+ok wrong type
+ok string as ordinal
+ok integer as float
+ok read-only
+ok write-only
+ok unknown
+ok unknown enum name
+# stored
+ok constant False
+ok constant True
+ok field
+ok static method false
+ok static method true
+ok virtual method of the base
+ok virtual method of the descendant
+# passed 56 failed 0

@@ -1,0 +1,23 @@
+# Assign
+ok handled in Assign
+ok handled in the source's AssignTo
+ok nil source
+ok base AssignTo
+ok unknown pair
+# GetNamePath
+ok no owner
+ok with owner
+ok other
+# published by default (M+)
+ok default section of a TPersistent descendant
+ok published section
+ok public section
+# exception classes
+ok EStringListError
+ok EReadError
+ok EFilerError
+ok EClassNotFound
+ok EFOpenError
+ok EOutOfResources
+ok EComponentError
+# passed 18 failed 0

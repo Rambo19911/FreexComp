@@ -1,0 +1,14 @@
+# raw tables (scope dependent)
+field FItem mvPublished offset 24 type TItem
+method Clicked mvPublished kind 0
+property Size mvPublished
+# published results (identical in both scopes)
+ok one published property
+ok its name
+ok public property not found
+ok published method found
+ok public method not found
+ok published field found
+ok private field not found
+ok public field not found
+# passed 8 failed 0

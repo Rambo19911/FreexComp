@@ -1,0 +1,30 @@
+# write and read
+ok position after write
+ok size
+ok Size keeps the position
+ok FileName
+ok read at position 4
+ok third byte
+ok position after read
+ok Read returns fewer at the end
+ok Read at the end
+ok seek from the end
+ok seek from current
+ok ReadBuffer past the end
+# size and copy
+ok SetSize truncates
+ok CopyFrom count
+ok source advanced
+ok CopyFrom 0 copies everything
+ok copied bytes
+ok first byte of the full copy
+ok second byte of the full copy
+# errors
+ok base Read
+ok base Write
+ok open failure
+ok create failure
+# THandleStream
+ok size through the handle
+ok handle still open after Free
+# passed 25 failed 0

@@ -1,0 +1,48 @@
+# sorted mode
+ok setting Sorted sorts (case-insensitive)
+ok Add returns the sorted position
+ok inserted in order
+ok Insert
+ok Put
+ok Exchange
+ok Move
+# duplicates
+ok dupIgnore returns the existing index
+ok nothing added
+ok dupError
+ok nothing added on error
+ok dupAccept inserts after equal items
+ok object of the accepted duplicate
+# Find and IndexOf (RTL-426)
+ok found
+ok lowest matching index
+ok absent
+ok insertion position
+ok past the end
+ok insertion at Count
+ok IndexOf sorted
+ok IndexOf sorted absent
+# case sensitivity
+ok changing CaseSensitive re-sorts
+ok case-sensitive IndexOf
+# stable sorts (RTL-418)
+ok Sort
+ok CustomSort keeps equal lengths in order
+# events
+ok one pair per modification
+ok OnChanging at the outermost BeginUpdate
+ok OnChange once at the outermost EndUpdate
+ok Text set is one change
+# OwnsObjects
+ok constructor flag
+ok Delete frees
+ok overwrite frees the old object
+ok Clear frees
+ok destruction frees
+ok not owned: only the explicit Free
+# constructor with options
+ok Sorted
+ok CaseSensitive
+ok Duplicates
+ok behaves accordingly
+# passed 39 failed 0

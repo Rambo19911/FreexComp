@@ -67,6 +67,7 @@ resourcestring
   SListCountError = 'List count out of bounds (%d)';
   SSortedListError = 'Operation not allowed on sorted list';
   SDuplicateString = 'String list does not allow duplicates';
+  SDuplicateItem = 'List does not allow duplicates ($0%x)';
   SAssignError = 'Cannot assign a %s to a %s';
   SAssignNil = 'Cannot assign nil to a %s';
   SReadError = 'Stream read error';
@@ -84,6 +85,7 @@ resourcestring
   SUnknownProperty = 'Property "%s" does not exist';
   SPropertyWrongType = 'Property "%s" is of the wrong type';
   SReadOnlyProperty = 'Property "%s" is read-only';
+  SWriteOnlyProperty = 'Property "%s" is write-only';
   SInvalidPropertyValue = 'Invalid property value';
   SThreadAlreadyStarted = 'Thread already started';
   SCheckSynchronizeError = 'CheckSynchronize called from thread $%x, which is NOT the main thread';

@@ -1,12 +1,14 @@
 {
   "aliases": {
     "System.Character": "Character",
+    "System.Classes": "Classes",
     "System.DateUtils": "DateUtils",
     "System.Math": "Math",
     "System.RTLConsts": "RTLConsts",
     "System.StrUtils": "StrUtils",
     "System.SyncObjs": "SyncObjs",
     "System.SysUtils": "SysUtils",
+    "System.TypInfo": "TypInfo",
     "System.Types": "Types",
     "Winapi.CommCtrl": "CommCtrl",
     "Winapi.CommDlg": "CommDlg",

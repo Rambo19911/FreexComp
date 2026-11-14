@@ -1,0 +1,35 @@
+# MethodAddress
+ok base Click
+ok case-insensitive
+ok inherited from ancestor
+ok override found in class first
+ok descendant method not in ancestor
+ok public method not found
+ok empty name
+ok prefix is not a match
+ok longer name is not a match
+ok through an instance
+ok calls through TMethod
+# MethodName
+ok declared casing, ancestor
+ok override
+ok base
+ok not in ancestor
+ok nil address
+# FieldAddress
+ok ancestor field
+ok case-insensitive
+ok own field
+ok class-typed field
+ok descendant field not in ancestor
+ok private field not found
+ok public field not found
+ok missing
+# ClassInfo
+ok class
+ok instance
+ok TObject
+ok name in header
+ok UnitName
+ok UnitName of TObject
+# passed 30 failed 0

@@ -1,0 +1,20 @@
+# raw tables (scope dependent)
+field FSecret mvPrivate offset 8 type Integer
+field FCount mvPrivate offset 12 type Integer
+field FGuarded mvProtected offset 16 type Integer
+field FOpen mvPublic offset 20 type Integer
+field FItem mvPublished offset 24 type TItem
+method Shown mvPublic kind 0
+method Clicked mvPublished kind 0
+property Count mvPublic
+property Size mvPublished
+# published results (identical in both scopes)
+ok one published property
+ok its name
+ok public property not found
+ok published method found
+ok public method not found
+ok published field found
+ok private field not found
+ok public field not found
+# passed 8 failed 0

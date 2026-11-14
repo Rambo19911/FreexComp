@@ -1,0 +1,43 @@
+# Text get (RTL-420)
+ok empty
+ok trailing break
+ok no trailing break
+ok custom LineBreak
+# Text set (RTL-421)
+ok CR LF, LF, CR
+ok final break adds no line
+ok LF CR is two breaks
+ok empty text
+ok a lone break
+ok custom LineBreak is the only separator
+# update counting
+ok outermost only
+ok Text set inside one update
+ok AddStrings inside one update
+ok AddStrings array
+# core members
+ok Add index
+ok insert and append
+ok AddObject
+ok IndexOfObject
+ok IndexOf is case-insensitive
+ok IndexOf absent
+ok Exchange
+ok object travels with Exchange
+ok Move
+ok object travels with Move
+ok Put keeps the object
+ok Assign copies lines
+ok Assign copies objects
+ok Assign copies Delimiter
+ok Equals
+ok Equals is ordinal
+ok Equals counts
+ok capacity grows in the steps of RTL-416
+# index errors (RTL-425)
+ok read
+ok Delete
+ok Insert past Count
+ok Insert at Count
+ok Objects
+# passed 37 failed 0

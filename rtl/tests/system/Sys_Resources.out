@@ -1,0 +1,20 @@
+# empty and absent
+ok absent before registration
+ok absent gives nil
+ok absent gives size 0
+# lookup
+ok found
+ok data of the first registration
+ok size of the first registration
+ok case-insensitive
+ok first registration wins over a later table
+ok size
+ok prefix is not a match
+ok longer name is not a match
+ok empty name
+ok nil after a miss
+ok size 0 after a miss
+# tables are not copied
+ok still found
+ok reads the registered table in place
+# passed 16 failed 0

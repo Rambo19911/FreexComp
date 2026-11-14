@@ -1,0 +1,44 @@
+# TMemoryStream
+ok first capacity is one block
+ok next multiple of 8192
+ok size
+ok grows to cover the write
+ok SetSize
+ok SetSize rounds the capacity
+ok read past the end returns fewer bytes
+ok read at the end
+ok negative seek gives 0
+ok Seek returns the new position
+ok Clear size
+ok Clear capacity
+ok Clear frees the memory
+ok write after a gap
+ok gap zero-filled
+ok written byte
+# load, save, copy
+ok LoadFromStream reads from position 0
+ok position after load
+ok SaveToStream appends all
+ok file round trip
+ok file content
+ok CopyFrom count
+ok CopyFrom 0
+ok copied size
+# TBytesStream
+ok size of the bytes
+ok reads the bytes
+ok grows
+ok Bytes holds the written byte
+ok Bytes covers the size
+# TStringStream
+ok UTF-8 by default
+ok DataString
+ok WriteString appends
+ok ReadString
+ok ReadString to the end
+ok ReadString at the end
+ok UTF-16
+ok UTF-16 DataString
+ok Encoding
+ok empty
+# passed 39 failed 0

@@ -1,0 +1,40 @@
+# GetPropInfo
+ok found by class
+ok declared casing
+ok case-insensitive
+ok by type info
+ok inherited
+ok redeclared: the descendant entry first
+ok public property not found
+ok missing
+ok kind filter accepts
+ok kind filter rejects
+ok by instance
+ok IsPublishedProp
+ok IsPublishedProp public
+ok IsPublishedProp descendant
+ok PropType
+ok PropIsType
+ok FindPropInfo raises
+# per-property information (RTL-401)
+ok type
+ok field getter
+ok static setter
+ok no index
+ok static getter
+ok read-only
+ok no default
+ok index
+ok stored by default
+# GetPropList (RTL-402)
+ok declaration order
+ok ancestors first
+ok redeclared keeps position, descendant info
+ok not the ancestor info
+ok by instance
+ok TObject has none
+ok no list allocated
+ok filtered count
+ok filtered sorted
+ok filtered unsorted
+# passed 36 failed 0
