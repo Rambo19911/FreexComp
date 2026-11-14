@@ -92,7 +92,14 @@ public sealed class Compilation
             new(success && !diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), output, diagnostics.ToImmutable(), compiled, [], clock.Elapsed);
 
         // front end: System first (it has no implicit System), then the main file and every unit it reaches (LANG-310, 511, C-069)
-        var resolver = Resolver(mainPath);
+        var aliases = UnitAliasTable.Load(FileSystem, RtlDirectory(), out var aliasError);
+        if (aliasError is not null)
+        {
+            diagnostics.Add(aliasError);                                // LANG-534: compilation stops
+            return Done(false, null, []);
+        }
+
+        var resolver = Resolver(mainPath, aliases);
         var systemPath = resolver.Resolve(SystemUnitName);
         if (systemPath is null)
         {
@@ -346,9 +353,15 @@ public sealed class Compilation
         }
     }
 
-    /// <summary>LANG-510 (C-068): open files are units already part of the compilation (ordinal path order).</summary>
-    private UnitResolver Resolver(string mainPath) =>
-        new(FileSystem, mainPath, Options.SearchPaths, RtlDirectory(), _openFiles.Keys.Order(StringComparer.Ordinal));
+    /// <summary>
+    /// CMP-150 rule 3 (C-164): the options fingerprint, including the content hash of <c>&lt;rtl&gt;\unit-aliases.json</c> (LANG-533;
+    /// an invalid table hashes as none). Reads the table: not part of <see cref="Create"/>'s no-I/O contract.
+    /// </summary>
+    internal string OptionsFingerprint() => Fingerprint.Options(Options, UnitAliasTable.Load(FileSystem, RtlDirectory(), out _).Hash);
+
+    /// <summary>LANG-510 (C-068): open files are units already part of the compilation (ordinal path order); LANG-535 (C-164).</summary>
+    private UnitResolver Resolver(string mainPath, UnitAliasTable aliases) =>
+        new(FileSystem, mainPath, Options.SearchPaths, RtlDirectory(), _openFiles.Keys.Order(StringComparer.Ordinal), aliases, Options.UnitScopeNames);
 
     /// <summary><c>--rtl</c>; "" → <c>%FREEXCOMP_HOME%\rtl\src</c>, else <c>rtl\src</c> next to the running executable (compiler-cli.md §1).</summary>
     private string RtlDirectory()

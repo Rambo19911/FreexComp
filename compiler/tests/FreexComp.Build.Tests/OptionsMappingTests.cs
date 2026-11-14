@@ -84,6 +84,16 @@ public sealed class OptionsMappingTests
         Assert.Equal(@"C:\p\Hello\out\App.exe", ProjectOptions.GetOutputPath(p, "Fast"));
     }
 
+    /// <summary>C-164: project <c>unitScopeNames</c> → <see cref="CompilationOptions.UnitScopeNames"/>, in order (LANG-535).</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void UnitScopeNames_AreMappedInOrder()
+    {
+        var p = ProjectSerializer.CreateDefault("A", "A.pas", "console") with { FilePath = ProjectPath, UnitScopeNames = ["Winapi", "System", "Lib.Sub"] };
+
+        Assert.Equal(["Winapi", "System", "Lib.Sub"], ProjectOptions.ToCompilationOptions(p, "Debug").UnitScopeNames);
+    }
+
     [Fact]
     public void AbsoluteOutputDir_IsUsedAsIs()
     {

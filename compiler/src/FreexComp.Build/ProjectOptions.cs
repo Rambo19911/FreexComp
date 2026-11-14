@@ -55,6 +55,7 @@ public static class ProjectOptions
                 _ => throw new ArgumentException($"Unsupported application type '{project.AppType}'", nameof(project)),
             },
             ObjectDirectory = PathUtil.Normalize(dir + @"\obj\" + configuration),
+            UnitScopeNames = project.UnitScopeNames,
         };
     }
 

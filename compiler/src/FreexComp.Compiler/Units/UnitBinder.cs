@@ -155,8 +155,9 @@ internal sealed class UnitBinder : IUsesScopes
         {
             var written = NameOf(entry.Name);
             if (IdentifierComparer.Instance.Equals(written, SystemName)
-                || _resolver.Resolve(written, entry.Path?.Value as string) is not { } path
+                || _resolver.Find(written, entry.Path?.Value as string) is not { } path
                 || Load(path) is not { } used
+                || ReferenceEquals(used, SystemUnit)
                 || !EnsureInterface(used)
                 || used.IsProgram)
             {
@@ -275,13 +276,18 @@ internal sealed class UnitBinder : IUsesScopes
                 continue;                                               // LANG-511: no effect
             }
 
-            if (_resolver.Resolve(written, inPath) is not { } path)
+            if (_resolver.Find(written, inPath) is not { } path)
             {
-                unit.Bag.Report(entry.Name, "E2202", written);             // LANG-510
+                unit.Bag.Report(entry.Name, "E2202", written);             // LANG-510, 535
                 continue;
             }
 
             var used = Load(path);
+            if (ReferenceEquals(used, SystemUnit) && SystemUnit is not null && inPath is null)
+            {
+                continue;                                               // LANG-537: System under an alias has no effect
+            }
+
             if (ReferenceEquals(used, unit))
             {
                 unit.Bag.Report(entry.Name, "E2204", written);
@@ -322,7 +328,7 @@ internal sealed class UnitBinder : IUsesScopes
 
             if (inPath is not null && !IdentifierComparer.Instance.Equals(used.Name, written))
             {
-                unit.Bag.Report(entry.Name, "E2201", used.Name, global::System.IO.Path.GetFileNameWithoutExtension(path));    // LANG-535 step 1
+                unit.Bag.Report(entry.Name, "E2201", used.Name, written);    // LANG-535 step 1: the heading must equal the written name
             }
 
             if (unit.UsedAs.TryGetValue(used, out var previous))

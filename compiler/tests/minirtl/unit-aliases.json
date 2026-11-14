@@ -1,0 +1,7 @@
+{
+  "aliases": {
+    "System.RTLConsts": "RTLConsts",
+    "System.Types": "Types",
+    "Winapi.Windows": "Windows"
+  }
+}

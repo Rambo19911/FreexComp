@@ -25,16 +25,32 @@ public sealed class UnitBindingTests
         return fs;
     }
 
-    private static EmitResult Run(InMemoryFileSystem fs, EmitStage stage = EmitStage.Check)
+    private static EmitResult Run(InMemoryFileSystem fs, EmitStage stage = EmitStage.Check, string[]? unitScopeNames = null)
     {
-        var options = new CompilationOptions { MainFile = Path.Combine(Dir, "P.pas"), RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
+        var options = new CompilationOptions
+        {
+            MainFile = Path.Combine(Dir, "P.pas"), RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj", UnitScopeNames = [.. unitScopeNames ?? []],
+        };
         return Compilation.Create(options, [], fs).Emit(new EmitOptions { Stage = stage }, TestContext.Current.CancellationToken);
     }
 
     /// <summary>"File(line,col): CODE message" of every error and warning (hints left out).</summary>
-    private static string[] Check(string program, params (string Name, string Source)[] units) =>
-        [.. Run(Files(program, units)).Diagnostics.Where(d => d.Severity != DiagnosticSeverity.Hint)
+    private static string[] Check(string program, params (string Name, string Source)[] units) => Diagnostics(Run(Files(program, units)));
+
+    private static string[] Diagnostics(EmitResult result) =>
+        [.. result.Diagnostics.Where(d => d.Severity != DiagnosticSeverity.Hint)
             .Select(d => $"{Path.GetFileName(d.Location.Path)}({d.Location.LineSpan.Start.Line + 1},{d.Location.LineSpan.Start.Column + 1}): {d.Code} {d.Message}")];
+
+    private const string AliasTable = """{ "aliases": { "System.SysUtils": "SysUtils", "Old.SysUtils": "SysUtils", "Winapi.Msgs": "Messages", "Sys.Core": "System" } }""";
+
+    private const string SysUtils = "unit SysUtils; interface function Trim(I: Integer): Integer; var Count: Integer; implementation function Trim(I: Integer): Integer; begin Result := I end; initialization Inc(Count); end.";
+
+    /// <summary>C-164: <see cref="Check"/> with the alias table <see cref="AliasTable"/> in the RTL root and the given unit scope names.</summary>
+    private static string[] CheckAliased(string[] scopes, string program, params (string Name, string Source)[] units)
+    {
+        var fs = Files(program, units).Add(@"C:\rtl\unit-aliases.json", AliasTable);
+        return Diagnostics(Run(fs, unitScopeNames: scopes));
+    }
 
     private const string UnitA = """
         unit A;
@@ -257,6 +273,118 @@ public sealed class UnitBindingTests
             """,
             ("Foo.pas", "unit Foo; interface const Value = 'foo'; var Bar: Integer; implementation end."),
             ("Foo.Bar.Baz.pas", "unit Foo.Bar.Baz; interface const Value = 3; implementation end.")));
+
+    /// <summary>LANG-536: <c>SysUtils</c> and its alias <c>System.SysUtils</c> are one unit, compiled and emitted once.</summary>
+    [Fact]
+    [Trait("Req", "LANG-536")]
+    public void Alias_AndCanonicalName_ShareOneUnit()
+    {
+        var fs = Files("program P; uses A, SysUtils; begin Writeln(Count, A.Twice) end.",
+            ("A.pas", "unit A; interface uses System.SysUtils; function Twice: Integer; implementation function Twice: Integer; begin Result := Trim(2) * Count end; end."),
+            ("SysUtils.pas", SysUtils)).Add(@"C:\rtl\unit-aliases.json", AliasTable);
+        var result = Run(fs, EmitStage.Ll);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(["P", "System", "SysUtils", "A"], result.CompiledUnits);
+    }
+
+    /// <summary>LANG-538: after <c>uses System.SysUtils</c> both the written and the canonical name qualify; System still qualifies.</summary>
+    [Fact]
+    [Trait("Req", "LANG-538")]
+    public void Alias_WrittenAndCanonicalNamesQualify() =>
+        Assert.Empty(CheckAliased([], """
+            program P;
+            uses System.SysUtils;
+            var I: Integer;
+            begin I := System.SysUtils.Trim(1) + SysUtils.Trim(2) + Trim(3) + System.SysUtils.Count + System.MaxInt end.
+            """, ("SysUtils.pas", SysUtils)));
+
+    /// <summary>LANG-538: an alias that was not written is not a qualifier.</summary>
+    [Fact]
+    [Trait("Req", "LANG-538")]
+    public void Alias_NotWritten_IsNotAQualifier() =>
+        Assert.Equal(["P.pas(3,15): E2003 Undeclared identifier 'Old'"], CheckAliased([], """
+            program P;
+            uses System.SysUtils;
+            begin Writeln(Old.SysUtils.Count) end.
+            """, ("SysUtils.pas", SysUtils)));
+
+    /// <summary>LANG-537: two entries reaching one unit under different written names, also across the two clauses of a unit.</summary>
+    [Fact]
+    [Trait("Req", "LANG-537")]
+    public void Alias_DuplicateUnderDifferentNames_IsE2208() =>
+        Assert.Equal(
+            ["U.pas(1,54): E2208 Unit 'Old.SysUtils' is already used as 'SysUtils'", "P.pas(2,19): E2208 Unit 'System.SysUtils' is already used as 'SysUtils'"],
+            CheckAliased([], """
+                program P;
+                uses U, SysUtils, System.SysUtils;
+                begin end.
+                """, ("SysUtils.pas", SysUtils), ("U.pas", "unit U; interface uses SysUtils; implementation uses Old.SysUtils; end.")));
+
+    /// <summary>LANG-537, 511: naming the implicit System under an alias has no effect.</summary>
+    [Fact]
+    [Trait("Req", "LANG-537")]
+    public void Alias_OfSystem_HasNoEffect() =>
+        Assert.Empty(CheckAliased([], "program P; uses Sys.Core, System; begin Writeln(System.MaxInt) end."));
+
+    /// <summary>LANG-512: a unit cannot use itself through an alias either.</summary>
+    [Fact]
+    [Trait("Req", "LANG-512")]
+    public void Alias_UnitUsingItself_IsE2204() =>
+        Assert.Equal(["SysUtils.pas(1,31): E2204 Unit 'System.SysUtils' cannot use itself"], CheckAliased([], "program P; uses SysUtils; begin end.",
+            ("SysUtils.pas", "unit SysUtils; interface uses System.SysUtils; implementation end.")));
+
+    [Fact]
+    [Trait("Req", "LANG-510")]
+    public void Alias_CanonicalUnitMissing_IsE2202WithTheWrittenName() =>
+        Assert.Equal(["P.pas(1,17): E2202 Unit 'System.SysUtils' not found"], CheckAliased([], "program P; uses System.SysUtils; begin end."));
+
+    /// <summary>LANG-535 step 4, 538: <c>uses Tools</c> finds <c>Lib.Tools</c>; <c>Tools</c> and <c>Lib.Tools</c> qualify.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void ScopeNames_FindTheScopedUnit() =>
+        Assert.Empty(CheckAliased(["Lib"], """
+            program P;
+            uses Tools;
+            var I: Integer;
+            begin I := Tools.V + Lib.Tools.V + V end.
+            """, ("Lib.Tools.pas", "unit Lib.Tools; interface const V = 1; implementation end.")));
+
+    /// <summary>LANG-535 step 4: <c>S.N</c> as an alias; the scoped alias itself was not written, so it does not qualify.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void ScopeNames_ScopedAlias() =>
+        Assert.Equal(["P.pas(4,34): E2003 Undeclared identifier 'Winapi'"], CheckAliased(["Winapi"], """
+            program P;
+            uses Msgs;
+            var I: Integer;
+            begin I := Msgs.M + Messages.M + Winapi.Msgs.M end.
+            """, ("Messages.pas", "unit Messages; interface const M = 2; implementation end.")));
+
+    /// <summary>LANG-536: <c>uses Lib.Tools</c> and <c>uses Tools</c> through the scope name reach one unit (E2208 within one unit).</summary>
+    [Fact]
+    [Trait("Req", "LANG-536")]
+    public void ScopeNames_ReachTheSameUnit_IsE2208() =>
+        Assert.Equal(["P.pas(1,28): E2208 Unit 'Tools' is already used as 'Lib.Tools'"], CheckAliased(["Lib"], "program P; uses Lib.Tools, Tools; begin end.",
+            ("Lib.Tools.pas", "unit Lib.Tools; interface implementation end.")));
+
+    /// <summary>LANG-535 step 1: the heading of an <c>in</c> file must equal the written name N; E2201 names N.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void InClause_HeadingDiffersFromTheWrittenName_IsE2201NamingIt() =>
+        Assert.Equal(["P.pas(2,6): E2201 Unit name 'X' does not match file name 'Q'"], Check("""
+            program P;
+            uses Q in 'X.pas';
+            begin end.
+            """, ("X.pas", "unit X; interface implementation end.")));
+
+    /// <summary>C-164: diagnostics in a used unit carry the file's on-disk spelling, not the uses-clause spelling.</summary>
+    [Fact]
+    public void DiagnosticPath_HasTheOnDiskCasing()
+    {
+        var result = Run(Files("program P; uses HELPER; begin end.", ("Helper.pas", "unit Helper; interface var X: Missing; implementation end.")));
+        var diagnostic = Assert.Single(result.Diagnostics, d => d.Code == "E2003");
+        Assert.Equal(@"C:\p\Helper.pas", diagnostic.Location.Path);
+    }
 
     [Fact]
     [Trait("Req", "LANG-862")]

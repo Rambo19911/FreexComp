@@ -61,6 +61,20 @@ public sealed class UnitResolverTests
     public void RtlSubDirectories_OnlyImmediateOnesAreSearched() =>
         Assert.Null(Resolver(Files(@"C:\rtl\sub\deeper\A.pas")).Resolve("A"));
 
+    /// <summary>
+    /// C-184: <c>&lt;rtl root&gt;\..\winapi\src</c> (the Win32 binding units, like the CMP-620 <c>.def</c> lookup) is searched after
+    /// the RTL root and its immediate sub-directories, so <c>uses Windows</c> resolves without <c>-U</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-620")]
+    public void WinapiSourceFolderIsSearched()
+    {
+        Assert.Equal(@"C:\winapi\src\Windows.pas", Resolver(Files(@"C:\winapi\src\Windows.pas")).Resolve("Windows"));
+        Assert.Equal(@"C:\rtl\sub\Windows.pas", Resolver(Files(@"C:\winapi\src\Windows.pas", @"C:\rtl\sub\Windows.pas")).Resolve("Windows"));
+        Assert.Equal(@"C:\lib\Windows.pas", Resolver(Files(@"C:\winapi\src\Windows.pas", @"C:\lib\Windows.pas"), [@"C:\lib"]).Resolve("Windows"));
+        Assert.Null(Resolver(Files(@"C:\winapi\src\Windows.pas"), rtl: "").Resolve("Windows"));
+    }
+
     [Fact]
     public void NoRtlRoot_OnlyTheOtherDirectoriesAreSearched() =>
         Assert.Null(Resolver(Files(@"C:\rtl\A.pas"), rtl: "").Resolve("A"));
@@ -131,6 +145,89 @@ public sealed class UnitResolverTests
     [Fact]
     public void Paths_AreNormalised() =>
         Assert.Equal(@"C:\lib\A.pas", Resolver(Files(@"C:\lib\A.pas"), [@"c:/lib/"]).Resolve("A"));
+
+    /// <summary>C-164: a found file is reported with its on-disk spelling, not the spelling written in the uses clause.</summary>
+    [Fact]
+    public void FoundFile_HasItsOnDiskCasing()
+    {
+        Assert.Equal(@"C:\app\Utils.Text.pas", Resolver(Files(@"C:\app\Utils.Text.pas")).Resolve("UTILS.text"));
+        Assert.Equal(@"C:\lib\Utils.pas", Resolver(Files(@"C:\lib\Utils.pas"), [@"C:\lib"]).Resolve("utils"));
+        Assert.Equal(@"C:\app\SUB\Utils.pas", Resolver(Files(@"C:\app\sub\Utils.pas")).Resolve("Utils", @"SUB\utils.PAS"));     // file name only
+        Assert.Equal(@"C:\lib\new.pas", Resolver(Files(), [@"C:\lib"], compilationFiles: [@"C:\lib\new.pas"]).Resolve("NEW"));       // as given
+    }
+
+    private static UnitResolver Lang535(InMemoryFileSystem fs, string aliases = "{\"aliases\":{}}", string[]? scopes = null)
+    {
+        fs.Add(@"C:\rtl\unit-aliases.json", aliases);
+        var table = UnitAliasTable.Load(fs, Rtl, out var error);
+        Assert.Null(error);
+        return new UnitResolver(fs, Main, [], Rtl, [], table, [.. scopes ?? []]);
+    }
+
+    private const string StandardAliases = """{ "aliases": { "System.SysUtils": "SysUtils", "Winapi.Windows": "Windows", "Winapi.Msgs": "Messages" } }""";
+
+    /// <summary>LANG-535 step 3: an alias key resolves to its canonical name's file.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void Alias_ResolvesToTheCanonicalUnit() =>
+        Assert.Equal(@"C:\rtl\SysUtils.pas", Lang535(Files(@"C:\rtl\SysUtils.pas"), StandardAliases).Find("system.SYSUTILS"));
+
+    /// <summary>Step 2 before step 3: a user unit of the alias's spelling wins over the alias.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void Alias_ExactUnitOfTheSameSpellingWins() =>
+        Assert.Equal(@"C:\app\System.SysUtils.pas", Lang535(Files(@"C:\rtl\SysUtils.pas", @"C:\app\System.SysUtils.pas"), StandardAliases).Find("System.SysUtils"));
+
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void Alias_CanonicalNotFound_IsNotFound() =>
+        Assert.Null(Lang535(Files(@"C:\rtl\Other.pas"), StandardAliases).Find("System.SysUtils"));
+
+    /// <summary>Step 1: an <c>in</c> entry names its file only; a missing file does not fall through to the alias.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void Alias_IsNotUsedForAnInPathEntry() =>
+        Assert.Null(Lang535(Files(@"C:\rtl\SysUtils.pas"), StandardAliases).Find("System.SysUtils", "missing.pas"));
+
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void Alias_MissingTable_MeansNoAliases()
+    {
+        var fs = Files(@"C:\rtl\SysUtils.pas");
+        Assert.Null(new UnitResolver(fs, Main, [], Rtl, [], UnitAliasTable.Load(fs, Rtl, out _), []).Find("System.SysUtils"));
+    }
+
+    /// <summary>Step 4: each scope name in order, <c>S.N</c> exactly.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void ScopeNames_AreTriedInOrder() =>
+        Assert.Equal(@"C:\app\Lib.Tools.pas", Lang535(Files(@"C:\app\Lib.Tools.pas", @"C:\app\Other.Tools.pas"), scopes: ["None", "Lib", "Other"]).Find("Tools"));
+
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void ScopeNames_ExactNameWins() =>
+        Assert.Equal(@"C:\app\Tools.pas", Lang535(Files(@"C:\app\Lib.Tools.pas", @"C:\app\Tools.pas"), scopes: ["Lib"]).Find("Tools"));
+
+    /// <summary>Step 3 before step 4: an alias of the written name beats a scope-name candidate.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void ScopeNames_AliasOfTheWrittenNameWins() =>
+        Assert.Equal(@"C:\rtl\SysUtils.pas", Lang535(Files(@"C:\rtl\SysUtils.pas", @"C:\app\X.System.SysUtils.pas"), StandardAliases, ["X"]).Find("System.SysUtils"));
+
+    /// <summary>Step 4: <c>S.N</c> exactly, then <c>S.N</c> as an alias, before the next scope name.</summary>
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void ScopeNames_ScopedAlias_IsTriedBeforeTheNextScope()
+    {
+        var fs = Files(@"C:\rtl\Messages.pas", @"C:\app\Later.Msgs.pas");
+        Assert.Equal(@"C:\rtl\Messages.pas", Lang535(fs, StandardAliases, ["Winapi", "Later"]).Find("Msgs"));
+        Assert.Equal(@"C:\app\Later.Msgs.pas", Lang535(fs, StandardAliases, ["Later", "Winapi"]).Find("Msgs"));
+    }
+
+    [Fact]
+    [Trait("Req", "LANG-535")]
+    public void ScopeNames_NothingFound_IsNull() =>
+        Assert.Null(Lang535(Files(@"C:\app\Lib.Other.pas"), StandardAliases, ["Lib", "Winapi"]).Find("Tools"));
 
     private static bool PathUtilEquals(string expected, string? actual) => actual is not null && Compiler.Text.PathUtil.AreEqual(expected, actual);
 }
