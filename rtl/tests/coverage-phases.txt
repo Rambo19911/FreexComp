@@ -1,0 +1,2 @@
+# RTL phases whose requirements must all be covered by a test (RTL-906, Req_Coverage).
+# Add a line "**Phase N complete**" when the phase gate passes.

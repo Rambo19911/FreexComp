@@ -39,13 +39,21 @@ public sealed partial class RequirementCoverageTests
 
     public static string ExemptPath => Path.Combine(RtlSetup.TestsDirectory, "coverage-exempt.txt");
 
+    /// <summary>Tracked list of complete phases (the plans, <c>docs/</c> and <c>STATUS.md</c>, are not in the repository).</summary>
+    public static string PhasesPath => Path.Combine(RtlSetup.TestsDirectory, "coverage-phases.txt");
+
     [Fact]
-    [Trait("Category", "Integration")]
+    [Trait("Category", "Spec")]
     [Trait("Req", "RTL-906")]
     public void Req_Coverage()
     {
-        Assert.True(Directory.Exists(SpecDirectory), SpecDirectory + " does not exist");
-        var statusPath = Path.Combine(RtlSetup.RepositoryRoot, "STATUS.md");
+        // docs/ is git-ignored working material: without it this check cannot run (TESTING.md, Category=Spec).
+        if (!Directory.Exists(SpecDirectory))
+        {
+            Assert.Skip(SpecDirectory + " is not present (plans are not part of the repository)");
+        }
+
+        var statusPath = PhasesPath;
         Assert.True(File.Exists(statusPath), statusPath + " does not exist");
 
         var requirements = new Dictionary<string, int>(StringComparer.Ordinal);
