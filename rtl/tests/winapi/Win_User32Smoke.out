@@ -1,0 +1,217 @@
+# classes
+ok LoadCursorW
+ok LoadCursor alias, shared cursor
+ok LoadIconW
+ok RegisterClassExW
+ok GetClassInfoExW
+ok GetClassInfoExW style
+ok GetClassInfoExW lpfnWndProc
+# windows
+ok CreateWindowExW
+ok WM_NCCREATE
+ok WM_GETMINMAXINFO TMinMaxInfo
+ok WM_CREATE TCreateStructW.lpCreateParams
+ok CreateWindowEx alias, child
+ok IsWindow
+ok IsWindowVisible
+ok IsWindowEnabled
+ok IsIconic
+ok IsZoomed
+ok IsChild
+ok GetParent
+ok GetAncestor
+ok GetWindow GW_CHILD
+ok GetDesktopWindow
+ok top-level parent is the desktop
+ok SetParent returns the old parent
+ok GetWindowThreadProcessId thread
+ok GetWindowThreadProcessId process
+ok GetClassNameW length
+ok GetClassNameW
+ok GetDlgCtrlID
+# window text and data
+ok SetWindowTextW
+ok GetWindowTextLengthW
+ok GetWindowTextW length
+ok GetWindowTextW
+ok FindWindowW
+ok FindWindowExW
+ok GetWindowLongPtrW GWL_STYLE
+ok SetWindowLongPtrW previous
+ok GetWindowLongPtr alias
+ok GetClassLongPtrW
+ok SetClassLongPtrW
+ok SetPropW
+ok GetPropW
+ok RemovePropW
+ok property removed
+# geometry
+ok GetClientRect
+ok client Left
+ok client Right
+ok client Bottom
+ok GetWindowRect
+ok ScreenToClient
+ok ScreenToClient X
+ok ScreenToClient Y
+ok ClientToScreen
+ok ClientToScreen X
+ok MapWindowPoints X
+ok MapWindowPoints Y
+ok SetWindowPos
+ok WM_WINDOWPOSCHANGED TWindowPos.cx
+ok MoveWindow
+ok MoveWindow cx
+ok BeginDeferWindowPos
+ok DeferWindowPos
+ok EndDeferWindowPos
+ok EndDeferWindowPos cx
+ok ChildWindowFromPointEx
+ok AdjustWindowRectEx
+ok AdjustWindowRectEx grows
+ok AdjustWindowRectExForDpi
+ok AdjustWindowRectExForDpi grows
+ok GetWindowPlacement
+ok GetWindowPlacement length
+ok SetWindowPlacement
+ok still hidden
+# state
+ok EnableWindow was enabled
+ok disabled
+ok EnableWindow was disabled
+ok ShowWindow was hidden
+ok UpdateWindow
+ok BringWindowToTop
+ok EnumChildWindows
+ok EnumThreadWindows
+ok EnumThreadWindows found Main
+# sent messages
+ok RegisterWindowMessageW
+ok RegisterWindowMessage alias, same id
+ok SendMessageW
+ok SendMessage alias
+ok CallWindowProcW
+ok DefWindowProcW
+ok SendMessageTimeoutW
+ok SendMessageTimeoutW result
+# accelerators and keys
+ok CreateAcceleratorTableW
+ok TranslateAcceleratorW
+ok accelerator WM_COMMAND
+ok DestroyAcceleratorTable
+ok TranslateMessage
+ok IsDialogMessageW of a foreign message
+# posted messages
+ok PostMessageW
+ok WaitMessage
+ok PostMessage alias
+ok PostThreadMessageW
+ok MsgWaitForMultipleObjects
+ok GetQueueStatus
+ok DispatchMessageW
+ok thread message
+ok GetMessageW WM_QUIT
+ok PostQuitMessage exit code
+# timers
+ok SetTimer
+ok KillTimer
+# input
+ok GetKeyboardState
+ok MapVirtualKeyW
+ok GetKeyNameTextW
+ok ShowCursor
+ok GetDoubleClickTime
+# painting
+ok GetDC
+ok FillRect
+ok FrameRect
+ok InvertRect
+ok DrawFocusRect
+ok DrawEdge
+ok DrawFrameControl
+ok DrawIconEx
+ok DrawTextW
+ok DrawTextW DT_CALCRECT width
+ok ReleaseDC
+ok GetWindowDC
+ok ReleaseDC window DC
+ok GetSysColorBrush
+ok InvalidateRect
+ok ValidateRect
+ok RedrawWindow
+ok BeginPaint
+ok TPaintStruct.hdc
+ok EndPaint
+# scroll bars
+ok SetScrollInfo
+ok GetScrollInfo
+ok GetScrollInfo nMax
+ok GetScrollInfo nPage
+ok GetScrollInfo nPos
+ok ShowScrollBar
+ok EnableScrollBar disable
+ok EnableScrollBar enable
+# menus
+ok CreateMenu
+ok CreatePopupMenu
+ok InsertMenuItemW
+ok InsertMenuItem alias
+ok GetMenuItemCount
+ok InsertMenuItemW submenu
+ok GetSubMenu
+ok SetMenuItemInfoW
+ok GetMenuItemInfoW
+ok GetMenuItemInfoW text
+ok GetMenuItemInfoW cch
+ok EnableMenuItem previous state
+ok CheckMenuItem previous state
+ok CheckMenuRadioItem
+ok SetMenu
+ok GetMenu
+ok DrawMenuBar
+ok TrackPopupMenuEx of no menu
+ok GetSystemMenu
+ok RemoveMenu
+ok RemoveMenu count
+ok DeleteMenu
+ok DeleteMenu count
+ok SetMenu none
+ok DestroyMenu
+# icons
+ok LoadImageW
+ok GetIconInfo
+ok GetIconInfo fIcon
+ok GetIconInfo hbmMask
+ok CreateIconIndirect icon
+ok DestroyIcon
+ok CreateIconIndirect cursor
+ok DestroyCursor
+# system, DPI, monitors
+ok GetSystemMetrics
+ok GetSystemMetricsForDpi
+ok SystemParametersInfoW
+ok TNonClientMetricsW.lfMessageFont
+ok SystemParametersInfoForDpi
+ok GetDpiForWindow
+ok GetDpiForSystem
+ok GetThreadDpiAwarenessContext
+ok AreDpiAwarenessContextsEqual
+ok MonitorFromWindow
+ok GetMonitorInfoW
+ok TMonitorInfo.rcMonitor
+ok MonitorFromPoint
+ok MonitorFromRect
+ok EnumDisplayMonitors
+ok EnumDisplayMonitors count
+# text helpers
+ok CharUpperBuffW count
+ok CharUpperBuffW
+ok CharLowerBuffW count
+ok CharLowerBuffW
+# cleanup
+ok DestroyWindow
+ok WM_DESTROY
+ok window destroyed
+ok child destroyed with its parent
+ok UnregisterClassW
+# passed 199 failed 0

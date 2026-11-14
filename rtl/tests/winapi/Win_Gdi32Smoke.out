@@ -1,0 +1,115 @@
+# DC and DIB section
+ok CreateCompatibleDC
+ok CreateDIBSection
+ok SelectObject bitmap
+ok GetCurrentObject
+ok GetObjectW
+ok TBitmapRec.bmWidth
+ok TBitmapRec.bmBitsPixel
+ok GetObject alias
+ok PatBlt WHITENESS
+ok GetPixel white
+ok DIB bits white
+ok SetPixel
+ok GetPixel after SetPixel
+ok GetDeviceCaps BITSPIXEL
+ok GetDeviceCaps LOGPIXELSX
+# state
+ok SaveDC
+ok SetTextColor previous
+ok GetTextColor
+ok SetBkColor previous
+ok GetBkColor
+ok SetBkMode default OPAQUE
+ok SetTextAlign default
+ok SetROP2 default
+ok SetStretchBltMode default
+ok SetBrushOrgEx
+ok SetBrushOrgEx previous
+ok RestoreDC
+ok RestoreDC text colour
+ok RestoreDC ROP2
+# pens and brushes
+ok CreateSolidBrush
+ok PatBlt PATCOPY
+ok solid brush pixel
+ok CreateBrushIndirect
+ok PatBlt blue
+ok CreateBrushIndirect pixel
+ok CreateBitmap
+ok CreatePatternBrush
+ok GetStockObject
+ok CreatePen
+ok MoveToEx
+ok LineTo
+ok LineTo pixel
+ok below the line
+ok Rectangle
+ok Rectangle border
+ok Rectangle interior (white brush)
+ok RoundRect
+ok Ellipse
+ok Arc
+ok Pie
+ok Chord
+ok Polygon
+ok Polyline
+ok DeleteObject pen
+ok DeleteObject brush
+ok DeleteObject indirect brush
+ok DeleteObject pattern brush
+ok DeleteObject bitmap
+# fonts and text
+ok CreateFontIndirectW
+ok GetTextMetricsW
+ok TTextMetricW.tmHeight
+ok GetTextExtentPoint32W
+ok GetTextExtentPoint32W size
+ok TextOutW
+ok ExtTextOutW
+ok EnumFontFamiliesExW stopped by the callback
+ok EnumFontFamiliesExW callback
+ok DeleteObject font
+# clipping and viewport
+ok CreateRectRgn
+ok SelectClipRgn
+ok GetClipBox
+ok GetClipBox Right
+ok IntersectClipRect
+ok GetClipBox after IntersectClipRect
+ok IntersectClipRect box Right
+ok ExcludeClipRect
+ok SelectClipRgn none
+ok DeleteObject region
+ok SetViewportOrgEx
+ok SetViewportOrgEx previous
+ok OffsetViewportOrgEx
+ok GetViewportOrgEx
+ok viewport X
+ok viewport Y
+# blits and DIB bits
+ok PatBlt BLACKNESS
+ok CreateCompatibleDC of a DC
+ok BitBlt
+ok BitBlt pixel
+ok BitBlt black pixel
+ok StretchBlt
+ok StretchBlt pixel
+ok GdiFlush
+ok GetDIBits
+ok GetDIBits pixel
+ok GetDIBits last pixel
+ok SetDIBits
+ok SetDIBits pixel
+ok CreateCompatibleBitmap
+ok DeleteObject compatible bitmap
+ok DeleteDC second
+ok DeleteObject second DIB
+# icon bitmaps
+ok GetIconInfo
+ok DeleteObject icon mask
+ok DeleteObject icon colour
+# cleanup
+ok DeleteDC
+ok DeleteObject DIB
+# passed 106 failed 0

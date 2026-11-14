@@ -1,5 +1,4 @@
 // covers: RTL-820, RTL-821, RTL-860
-// opc: -U ../../winapi/src
 // opc-run: tempdir
 program Win_Kernel32Files;
 { Windows unit, kernel32 file functions (winapi.md §5.1 "Files") inside the fresh folder ParamStr(1) (RTL-903). }

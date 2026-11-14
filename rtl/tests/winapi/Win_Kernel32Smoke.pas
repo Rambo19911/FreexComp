@@ -1,5 +1,4 @@
 // covers: RTL-820, RTL-821, RTL-823, RTL-825, RTL-860, RTL-862
-// opc: -U ../../winapi/src
 program Win_Kernel32Smoke;
 { Windows unit, kernel32 + ntdll part (winapi.md §3, §5.1, §5.2): base type widths, the macros of RTL-825, and
   a call of the process, heap, error, console, time, text and thread functions with results that do not depend
