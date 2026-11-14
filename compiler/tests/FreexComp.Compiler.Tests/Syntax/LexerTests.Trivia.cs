@@ -378,11 +378,45 @@ public sealed partial class LexerTests
         }
 
         var source = SourceText.From(Path, sb.ToString());
-        var stopwatch = Stopwatch.StartNew();
-        var tokens = Lexer.Tokenize(source);
-        stopwatch.Stop();
+        var tokens = Lexer.Tokenize(source); // warm-up
+
+        // TESTING.md performance rule: calling-thread CPU time, median of 5 after a warm-up;
+        // budget x3 for an unoptimized assembly under test, x3 again with CI_SLOW=1.
+        var samples = new List<TimeSpan>();
+        for (var run = 0; run < 5; run++)
+        {
+            var before = ThreadCpuTime();
+            tokens = Lexer.Tokenize(source);
+            samples.Add(ThreadCpuTime() - before);
+        }
+
+        samples.Sort();
+        var median = samples[2];
+        var debuggable = typeof(Lexer).Assembly.GetCustomAttributes(typeof(DebuggableAttribute), false)
+            .OfType<DebuggableAttribute>().FirstOrDefault();
+        var unoptimized = debuggable is { IsJITOptimizerDisabled: true };
+        var factor = (unoptimized ? 3 : 1) * (Environment.GetEnvironmentVariable("CI_SLOW") == "1" ? 3 : 1);
+        var budget = TimeSpan.FromSeconds(2) * factor;
 
         Assert.Equal((10_000 * 11) + 1, tokens.Length); // if Value > $FF then Result := '…'#13#10 + Name ; per line
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"took {stopwatch.Elapsed}");
+        Assert.True(median < budget, $"median CPU time {median}, budget {budget} (factor {factor}, {(unoptimized ? "unoptimized" : "optimized")} build)");
     }
+
+    private static TimeSpan ThreadCpuTime()
+    {
+        // ProcessThread.TotalProcessorTime for the current OS thread.
+        var id = GetCurrentThreadId();
+        foreach (ProcessThread thread in Process.GetCurrentProcess().Threads)
+        {
+            if (thread.Id == id)
+            {
+                return thread.TotalProcessorTime;
+            }
+        }
+
+        throw new InvalidOperationException("current thread not found");
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern int GetCurrentThreadId();
 }
