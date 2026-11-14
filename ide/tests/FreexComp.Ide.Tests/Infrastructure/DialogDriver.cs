@@ -21,6 +21,9 @@ public sealed class DialogDriver(DialogWindow window, string dialogName)
 
     public string Name { get; } = dialogName;
 
+    /// <summary>Test hook (I-183): runs after the driver found the dialog still open, just before it sends a release.</summary>
+    internal Action? BeforeRelease { get; set; }
+
     /// <summary>Nearest ancestor-or-self of the dialog's focused element that has an AutomationId.</summary>
     public string? FocusedAutomationId
     {
@@ -79,11 +82,7 @@ public sealed class DialogDriver(DialogWindow window, string dialogName)
             : null;
         Window.KeyPress(key, raw, PhysicalKey.None, symbol);
         Dispatcher.UIThread.RunJobs();
-        if (Window.IsVisible)
-        {
-            Window.KeyRelease(key, raw, PhysicalKey.None, symbol); // the key may have closed the dialog
-        }
-
+        Release(() => Window.KeyRelease(key, raw, PhysicalKey.None, symbol));
         Dispatcher.UIThread.RunJobs();
     }
 
@@ -95,17 +94,36 @@ public sealed class DialogDriver(DialogWindow window, string dialogName)
             ?? throw new InvalidOperationException($"'{id}' is not in dialog {Name}.");
         Window.MouseDown(point, MouseButton.Left);
         Dispatcher.UIThread.RunJobs();
-        if (Window.IsVisible)
-        {
-            Window.MouseUp(point, MouseButton.Left);
-        }
-
+        Release(() => Window.MouseUp(point, MouseButton.Left));
         Dispatcher.UIThread.RunJobs();
     }
 
     /// <summary>The validation message under a field (UI-DLG-006), or null.</summary>
     public string? ErrorText(string fieldId) =>
         TryFind<TextBlock>(AutomationIds.DialogField(Name, "Error." + fieldId)) is { IsEffectivelyVisible: true } error ? error.Text : null;
+
+    /// <summary>
+    /// Sends the key or button release unless the press closed the dialog. The press may also close it later, from a
+    /// continuation that arrives from the thread pool (an awaited create, I-183): the headless release runs pending work
+    /// before it needs the window, so the window can close inside the release call. There is then nothing to release.
+    /// </summary>
+    private void Release(Action release)
+    {
+        if (!Window.IsVisible)
+        {
+            return;
+        }
+
+        BeforeRelease?.Invoke();
+        try
+        {
+            release();
+        }
+        catch (ObjectDisposedException) when (Window.PlatformImpl is null)
+        {
+            // Closed by the work the release ran first; the release itself never reached the window.
+        }
+    }
 
     private IEnumerable<Control> All() =>
         new Visual[] { Window }.Concat(Window.GetVisualDescendants()).OfType<Control>().Where(c => !string.IsNullOrEmpty(AutomationIds.Get(c)));

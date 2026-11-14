@@ -204,4 +204,32 @@ public sealed class HarnessTests
 
         Assert.Equal(AutomationIds.StatusBar, h.FocusedAutomationId);
     }
+
+    /// <summary>
+    /// I-183: a key or click whose action closes the dialog later (an awaited create whose continuation arrives from the
+    /// thread pool) can close it after the driver checked that it is still open: the headless release first runs the
+    /// pending work, then needs the window. The driver then has nothing left to deliver and does not fail.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-TEST-016")]
+    public async Task DialogDriverPressAndClickSurviveACloseDuringTheRelease()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+
+        var running = h.Services.Commands.ExecuteAsync("file.newFile");
+        var dlg = await h.WaitForDialogAsync("NewFile");
+        var first = dlg.Window;
+        dlg.BeforeRelease = () => Dispatcher.UIThread.Post(first.Close); // the continuation lands just before the release
+        dlg.Press("F12");
+        Assert.False(first.IsVisible);
+        await running;
+
+        running = h.Services.Commands.ExecuteAsync("file.newFile");
+        dlg = await h.WaitForDialogAsync("NewFile");
+        var second = dlg.Window;
+        dlg.BeforeRelease = () => Dispatcher.UIThread.Post(second.Close);
+        dlg.Click("Name");
+        Assert.False(second.IsVisible);
+        await running;
+    }
 }
