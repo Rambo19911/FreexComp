@@ -546,6 +546,44 @@ public sealed class PointerTypeSymbol : TypeSymbol
     public bool AllowsPointerMath { get; }
 }
 
+/// <summary>
+/// A plain procedural type <c>procedure(…)</c> / <c>function(…): T</c> (LANG-480): the code address of a global routine, 8 bytes,
+/// <c>nil</c> allowed. <see cref="Signature"/> is a routine symbol declared nowhere that carries the parameters and result type,
+/// so calls through the value bind and lower like direct calls (CMP-378). Calling-convention directives are ignored (LANG-462).
+/// </summary>
+public sealed class ProceduralTypeSymbol : TypeSymbol
+{
+    internal ProceduralTypeSymbol(string name, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.Procedural, name, size: 8, alignment: 8, containingSymbol, locations)
+    {
+        Signature = new RoutineSymbol(name, this);
+    }
+
+    /// <summary>Parameters and result type (set by the declaration binder).</summary>
+    public RoutineSymbol Signature { get; }
+}
+
+/// <summary>LANG-483 signature compatibility of routines and procedural types.</summary>
+internal static class Signatures
+{
+    /// <summary>
+    /// Same kind (procedure/function), parameter count, identical parameter types and modes, identical result type; names,
+    /// defaults and calling conventions do not matter.
+    /// </summary>
+    public static bool Compatible(RoutineSymbol a, RoutineSymbol b) =>
+        (a.ReturnType is null) == (b.ReturnType is null)
+        && (a.ReturnType is null || Pointers.SameType(a.ReturnType, b.ReturnType!))
+        && a.Parameters.Length == b.Parameters.Length
+        && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && Pointers.SameType(p.First.Type, p.Second.Type));
+
+    /// <summary>A routine as an E2010 operand: <c>procedure(var Integer)</c>, <c>function(Integer): Integer</c>.</summary>
+    public static string Display(RoutineSymbol routine)
+    {
+        var parameters = routine.Parameters.IsEmpty ? "" : "(" + string.Join(", ", routine.Parameters.Select(p => ParameterSymbol.Prefix(p.Mode) + p.Type.Name)) + ")";
+        return routine.ReturnType is null ? "procedure" + parameters : $"function{parameters}: {routine.ReturnType.Name}";
+    }
+}
+
 /// <summary><c>Text</c>: an RTL-owned record the compiler treats as opaque bytes (rtl-abi.md §2).</summary>
 public sealed class TextTypeSymbol : TypeSymbol
 {

@@ -384,7 +384,7 @@ internal sealed class FlowAnalyzer
                 return null;
 
             case BoundCallStatement call:
-                state = Call(call.Routine, call.Arguments, state);
+                state = Call(call.Routine, call.Arguments, Eval(call.Target, state));
                 return call.Routine.IsNoReturn ? null : state;
 
             case BoundIntrinsicCallStatement intrinsic:
@@ -656,7 +656,7 @@ internal sealed class FlowAnalyzer
                 return Eval(binary.Right, Eval(binary.Left, state));
 
             case BoundCallExpression call:
-                return Call(call.Routine, call.Arguments, state);
+                return Call(call.Routine, call.Arguments, Eval(call.Target, state));
 
             case BoundIntrinsicCallExpression intrinsic:
                 if (intrinsic.Intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)

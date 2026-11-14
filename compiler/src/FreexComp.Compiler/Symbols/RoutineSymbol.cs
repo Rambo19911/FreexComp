@@ -57,6 +57,13 @@ public class RoutineSymbol : Symbol
         Declaration = declaration;
     }
 
+    /// <summary>The signature of a procedural type (LANG-480): declared in no scope, without declaration or body.</summary>
+    internal RoutineSymbol(string name, ProceduralTypeSymbol type)
+        : base(SymbolKind.Routine, name, type, type.Locations)
+    {
+        Declaration = null!;
+    }
+
     public ImmutableArray<ParameterSymbol> Parameters { get; internal set; } = [];
 
     /// <summary>Null for procedures.</summary>

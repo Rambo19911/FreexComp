@@ -93,7 +93,8 @@ internal abstract record LCallee
     public abstract bool IsNoReturn { get; }
 }
 
-internal sealed record LRoutineCallee(RoutineSymbol Routine) : LCallee
+/// <summary>A routine; with <paramref name="Target"/> a call through that procedural value whose signature is <paramref name="Routine"/> (CMP-378).</summary>
+internal sealed record LRoutineCallee(RoutineSymbol Routine, LExpression? Target = null) : LCallee
 {
     public override TypeSymbol? ReturnType => Routine.ReturnType;
 

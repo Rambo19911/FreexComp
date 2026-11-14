@@ -726,28 +726,34 @@ internal sealed class BoundParameterExpression : BoundExpression
 /// </summary>
 internal sealed class BoundCallExpression : BoundExpression
 {
-    public BoundCallExpression(SyntaxNode syntax, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+    public BoundCallExpression(SyntaxNode syntax, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null)
         : base(syntax, routine.ReturnType!, constantValue: null)
     {
         Routine = routine;
         Arguments = arguments;
+        Target = target;
     }
 
     public override BoundKind Kind => BoundKind.CallExpression;
 
+    /// <summary>The callee; for a call through a procedural value the <see cref="ProceduralTypeSymbol.Signature"/> of its type.</summary>
     public RoutineSymbol Routine { get; }
 
     public ImmutableArray<BoundExpression> Arguments { get; }
+
+    /// <summary>The procedural value called (LANG-484, evaluated before the arguments); null for a direct call.</summary>
+    public BoundExpression? Target { get; }
 }
 
 /// <summary>A procedure call, or a function call whose result is discarded (LANG-307, 352); arguments as in <see cref="BoundCallExpression"/>.</summary>
 internal sealed class BoundCallStatement : BoundStatement
 {
-    public BoundCallStatement(SyntaxNode syntax, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+    public BoundCallStatement(SyntaxNode syntax, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null)
         : base(syntax)
     {
         Routine = routine;
         Arguments = arguments;
+        Target = target;
     }
 
     public override BoundKind Kind => BoundKind.CallStatement;
@@ -755,6 +761,9 @@ internal sealed class BoundCallStatement : BoundStatement
     public RoutineSymbol Routine { get; }
 
     public ImmutableArray<BoundExpression> Arguments { get; }
+
+    /// <summary>As <see cref="BoundCallExpression.Target"/>.</summary>
+    public BoundExpression? Target { get; }
 }
 
 /// <summary>

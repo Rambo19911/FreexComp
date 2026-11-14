@@ -144,6 +144,11 @@ type
   PPointer = ^Pointer;
   PUInt64 = ^UInt64;
   PWord = ^Word;
+  TUnitProc = procedure;                     { ABI-100: a unit's $init / $final }
+  PUnitEntry = ^TUnitEntry;
+  TUnitEntry = record
+    Init, Final: TUnitProc;
+  end;
 
 const
   kernel32 = 'kernel32.dll';
@@ -168,8 +173,9 @@ var
   Heap: NativeInt;
   LiveBlocks: NativeInt;                     { _LiveAllocCount (CMP-912) }
   Scratch: PByte;
-  Units: PPointer;
+  Units: PUnitEntry;
   UnitEntries: NativeInt;
+  InitCount: NativeInt;                      { entries whose Init completed (ABI-100, ABI-104 step 2) }
   Limbs: array[0..MaxLimbs - 1] of UInt64;   { least significant first, each < LimbBase }
   LimbCount: Integer;
   Digits: array[0..MaxDigits - 1] of Byte;   { exact decimal digits, most significant first, no leading zero }
@@ -249,19 +255,34 @@ begin
   ExitCode := 0;
 end;
 
-{ ABI-100: each entry is (Init, Final). Calling them needs procedural types (task C-161); the unit table holds only
-  System, which has neither, so a non-null entry is reported as runtime error 204. }
+{ ABI-100: each entry is (Init, Final), either may be nil; Init runs in table order. InitCount counts the entries whose
+  Init returned, so a unit whose initialization halts is not finalised. }
 procedure _InitUnits;
-var
-  I: NativeInt;
 begin
-  for I := 0 to 2 * UnitEntries - 1 do
-    if Units[I] <> nil then
-      _RunError(204);
+  InitCount := 0;
+  while InitCount < UnitEntries do
+  begin
+    if Assigned(Units[InitCount].Init) then
+      Units[InitCount].Init;
+    InitCount := InitCount + 1;
+  end;
+end;
+
+{ ABI-104 step 2: Final of the initialised entries in reverse order, each at most once (the count drops before the call,
+  so a Halt inside a finalization continues with the next unit). The ExitProc chain and leak report are not in the mini RTL. }
+procedure FinalizeUnits;
+begin
+  while InitCount > 0 do
+  begin
+    InitCount := InitCount - 1;
+    if Assigned(Units[InitCount].Final) then
+      Units[InitCount].Final;
+  end;
 end;
 
 procedure _Halt0;
 begin
+  FinalizeUnits;
   ExitProcess(ExitCode);
 end;
 

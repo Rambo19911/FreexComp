@@ -289,11 +289,12 @@ public sealed class Compilation
     }
 
     /// <summary>
-    /// CMP-355 entry of one unit. The RTL's <c>_InitUnits</c> rejects non-null entries (runtime error 204) until procedural types
-    /// exist (C-161), so only a unit with an initialization or finalization section gets its <c>$init</c>/<c>$final</c> (System never).
+    /// CMP-355 entry of one unit: a unit with an initialization or finalization section or with managed globals (released by
+    /// its <c>$final</c>, C-071) — System included — gets its <c>$init</c>/<c>$final</c>, which the RTL's <c>_InitUnits</c> /
+    /// shutdown call through procedural types (ABI-100, C-161); other units have two nulls.
     /// </summary>
     private static UnitTableEntry UnitTableEntryOf(BindingResult unit) =>
-        new(unit.Unit, HasInitFinal: !ReferenceEquals(unit.System, unit.Unit) && !unit.Bodies.IsEmpty);
+        new(unit.Unit, HasInitFinal: !unit.Bodies.IsEmpty || !Lowering.Lowerer.ManagedGlobals(unit.Unit).IsEmpty);
 
     /// <summary>Lowers and emits one unit; the program gets the unit table.</summary>
     private static string? EmitIr(BindingResult unit, ImmutableArray<UnitTableEntry> unitTable, Location location, ImmutableArray<Diagnostic>.Builder diagnostics)

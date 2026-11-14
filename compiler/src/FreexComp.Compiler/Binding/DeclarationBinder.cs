@@ -1025,8 +1025,48 @@ internal sealed class DeclarationBinder
             names.TryDeclare(result, out _);
         }
 
+        routine.Parameters = BindParameters(heading.ParameterList, routine, names, report);
+    }
+
+    /// <summary>
+    /// LANG-480: <c>procedure(…)</c> / <c>function(…): T</c> with any calling-convention directive (ignored, LANG-462); method
+    /// pointers (<c>of object</c>, M2.5) and anonymous-method types (<c>reference to</c>, M2.6) are E2900.
+    /// </summary>
+    private TypeSymbol BindProcedural(ProceduralTypeSyntax syntax, string typeName, SyntaxToken? declaredAt)
+    {
+        if (syntax.ReferenceKeyword is not null)
+        {
+            return Unsupported(syntax, "anonymous method type");                // LANG-720, M2.6
+        }
+
+        if (syntax.ObjectKeyword is not null)
+        {
+            return Unsupported(syntax, "method pointer");                       // LANG-481, M2.5
+        }
+
+        var type = new ProceduralTypeSymbol(typeName, _container, declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : []);
+        if (syntax.Keyword.Kind == SyntaxKind.FunctionKeyword)
+        {
+            var result = syntax.ResultType is { IsMissing: false } resultType ? BindType(resultType) : _types.Error;
+            if (result is TextTypeSymbol)
+            {
+                _diagnostics.Report(syntax.ResultType!, "E2023", result.Name);          // LANG-412
+                result = _types.Error;
+            }
+
+            type.Signature.ReturnType = result;
+        }
+
+        type.Signature.Parameters = BindParameters(syntax.ParameterList, type.Signature, new Scope(ScopeKind.Routine, parent: null, type.Signature), report: true);
+        return type;
+    }
+
+    /// <summary>The formal parameters of <paramref name="owner"/> (LANG-420 table); E2004 for duplicate names in <paramref name="names"/>.</summary>
+    private ImmutableArray<ParameterSymbol> BindParameters(ParameterListSyntax? list, RoutineSymbol owner, Scope names, bool report)
+    {
+        var routine = owner;
         var parameters = ImmutableArray.CreateBuilder<ParameterSymbol>();
-        foreach (var parameter in heading.ParameterList?.Parameters ?? default)
+        foreach (var parameter in list?.Parameters ?? default)
         {
             var mode = parameter.Modifier?.ContextualKind switch
             {
@@ -1069,7 +1109,7 @@ internal sealed class DeclarationBinder
             }
         }
 
-        routine.Parameters = parameters.ToImmutable();
+        return parameters.ToImmutable();
     }
 
     /// <summary>
@@ -1201,6 +1241,8 @@ internal sealed class DeclarationBinder
                 return BindRecord(record, typeName, declaredAt, declared);
             case PointerTypeSyntax pointer:
                 return BindPointer(pointer, typeName, declared);
+            case ProceduralTypeSyntax procedural:
+                return BindProcedural(procedural, typeName, declaredAt);
             case ArrayTypeSyntax { ElementType: null }:
                 return Unsupported(type, "array of const");                     // M2.5
             case ArrayTypeSyntax when parameter:

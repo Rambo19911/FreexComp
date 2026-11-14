@@ -1,0 +1,6 @@
+init Logger
+init Stopper
+main
+stopping
+final Stopper: halted with code
+final Logger

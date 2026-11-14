@@ -19,7 +19,7 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
             RealTypeSymbol { RealKind: RealKind.Double } => IrType.Double,
             RealTypeSymbol { RealKind: RealKind.Currency } => IrType.I64,
             StringTypeSymbol { Variant: StringVariant.Short } => new ArrayIrType(type.Size, IrType.I8),
-            StringTypeSymbol or PointerTypeSymbol or DynamicArrayTypeSymbol => IrType.Ptr,
+            StringTypeSymbol or PointerTypeSymbol or DynamicArrayTypeSymbol or ProceduralTypeSymbol => IrType.Ptr,     // CMP-378: a code address
             TextTypeSymbol => new ArrayIrType(type.Size, IrType.I8),
             SetTypeSymbol { IsSmall: true } => IrType.Int(checked((int)type.Size * 8)),
             SetTypeSymbol => new ArrayIrType(type.Size, IrType.I8),          // big set (rtl-abi.md §5, CMP-336)

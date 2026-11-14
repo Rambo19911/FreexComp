@@ -20,14 +20,28 @@ internal static class Lowerer
 {
     public static LoweredUnit Lower(BindingResult result)
     {
-        var bodies = result.Bodies.Select(b => (b.Syntax, Lowered: LowerBody(result, b))).ToImmutableArray();
+        // CMP-325 rule 7 / LANG-523: a unit's managed globals are released at the end of its $final (after the finalization
+        // statements), a program's at the end of its main block
+        var managed = ManagedGlobals(result.Unit);
+        var bodies = result.Bodies.Select(b => (b.Syntax, Lowered: LowerBody(result, b,
+            result.Unit.IsProgram || b.Syntax is FinalizationSectionSyntax ? managed : []))).ToImmutableArray();
+        var finalization = bodies.FirstOrDefault(b => b.Syntax is FinalizationSectionSyntax).Lowered;
+        if (finalization is null && !result.Unit.IsProgram && !managed.IsEmpty)
+        {
+            finalization = LowerBody(result, block: null, managed);
+        }
+
         return new(result.Unit, [.. result.Routines.Select(r => LowerRoutine(result, r))], [.. bodies.Select(b => b.Lowered)])
         {
             Initialization = bodies.FirstOrDefault(b => b.Syntax is InitializationSectionSyntax).Lowered,
-            Finalization = bodies.FirstOrDefault(b => b.Syntax is FinalizationSectionSyntax).Lowered,
+            Finalization = finalization,
             Statics = [.. result.Routines.SelectMany(r => r.Scope.Symbols.OfType<ConstantSymbol>()).Select(c => c.Storage).OfType<VariableSymbol>()],
         };
     }
+
+    /// <summary>The unit's (or program's) global variables of managed types in declaration order (interface first; LANG-523).</summary>
+    public static ImmutableArray<VariableSymbol> ManagedGlobals(UnitSymbol unit) =>
+        [.. unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<VariableSymbol>().Where(v => v is { IsGlobal: true, IsReadOnly: false, Type.IsManaged: true })];
 
     public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body)
     {
@@ -47,13 +61,16 @@ internal static class Lowerer
         return needsFrame ? lowered with { Frame = new LoweredFrame(captured) } : lowered;
     }
 
-    /// <summary>The program block or a unit initialization/finalization section (globals only, no locals).</summary>
-    public static LoweredBody LowerBody(BindingResult result, BoundBlock block) =>
+    /// <summary>
+    /// The program block or a unit initialization/finalization section (globals only, no locals); <paramref name="finalised"/>
+    /// globals are released, in reverse order, in its cleanup scope (so also after <c>Exit</c>). A null block is an empty one.
+    /// </summary>
+    public static LoweredBody LowerBody(BindingResult result, BoundBlock? block, ImmutableArray<VariableSymbol> finalised = default) =>
         new LoweringContext(result.Types, routine: null, locals: []) {
             Output = OutputOf(result),
             Input = SystemVariable(result, "Input"),
             CheckedSystem = CheckedSystemOf(result),
-        }.Finish(block);
+        }.Finish(block, finalised);
 
     /// <summary>Types held in memory as <c>[N x T]</c> or structs (big sets, static arrays, records): never SSA values (see the aggregate nodes).</summary>
     public static bool IsAggregate(TypeSymbol type) =>
@@ -124,10 +141,18 @@ internal sealed class LoweringContext
     /// <summary><c>procedure _Halt(Code: Integer)</c>, noreturn (CMP-356).</summary>
     public RuntimeHelper Halt { get; }
 
-    public LoweredBody Finish(BoundBlock body)
+    public LoweredBody Finish(BoundBlock? body, ImmutableArray<VariableSymbol> finalisedGlobals = default)
     {
-        var block = (LBlock)Lower(body);
-        return ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], block));
+        var block = body is null ? new LBlock([]) : (LBlock)Lower(body);
+        var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], block));
+        if (finalisedGlobals.IsDefaultOrEmpty)
+        {
+            return lowered;
+        }
+
+        // CMP-325 rule 7: after the body's own temporaries, the globals in reverse declaration order (CMP-350)
+        var clears = finalisedGlobals.Reverse().Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)));
+        return lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. clears]) };
     }
 
     // ------------------------------------------------------------------ helpers for the rewriters
@@ -242,9 +267,9 @@ internal sealed class LoweringContext
             case BoundHaltStatement halt:
                 return CallNoReturn(Halt, halt.ExitCode is null ? Constant(BigInteger.Zero, Types.Integer) : Lower(halt.ExitCode));
             case BoundCallStatement call:
-                return IOChecked(call.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments));
+                return IOChecked(call.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments, call.Target));
             case BoundExpressionStatement { Expression: BoundCallExpression call } expression:
-                return IOChecked(expression.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments));
+                return IOChecked(expression.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments, call.Target));
             case BoundExpressionStatement { Expression: BoundIntrinsicCallExpression { Intrinsic.IsAtomic: true } atomic }:
                 return new LAssign(new LLocalRef(NewTemp(atomic.Type)), Lower(atomic));     // C-168: a discarded result
             case BoundIntrinsicCallStatement intrinsic:
@@ -315,7 +340,7 @@ internal sealed class LoweringContext
             case BoundBinaryExpression binary:
                 return Binary(binary);
             case BoundCallExpression call:
-                return Call(call.Routine, call.Arguments);
+                return Call(call.Routine, call.Arguments, call.Target);
             case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
                 return ManagedRewriter.Value(this, copy);                               // C-062: a string value in a temporary
             case BoundIntrinsicCallExpression intrinsic:
@@ -523,10 +548,13 @@ internal sealed class LoweringContext
     /// the hidden <c>Result</c> or stores the returned <c>iN</c>), which is the value; so is any result when arguments are
     /// written back after the call.
     /// </summary>
-    private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+    /// <summary>The routine, or a call through the procedural value <paramref name="target"/> (CMP-378).</summary>
+    private LRoutineCallee Callee(RoutineSymbol routine, BoundExpression? target) => new(routine, target is null ? null : Lower(target));
+
+    private LExpression Call(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target = null)
     {
         var writeBacks = new List<LStatement>();
-        var call = new LCall(new LRoutineCallee(routine), Arguments(routine, arguments, writeBacks));
+        var call = new LCall(Callee(routine, target), Arguments(routine, arguments, writeBacks));
         if (!Lowerer.IsAggregate(call.Type) && !call.Type.IsManaged && writeBacks.Count == 0)
         {
             return call;
@@ -541,10 +569,10 @@ internal sealed class LoweringContext
     /// CMP-325 rule 4: <c>target := F(args)</c> for a managed result. The target's address is the hidden <c>Result</c> only when
     /// <see cref="ReceivesResultDirectly"/>; otherwise a temporary receives it and is assigned with <c>_UStrAsg</c>.
     /// </summary>
-    public LStatement CallInto(LExpression target, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+    public LStatement CallInto(LExpression target, RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? procedural = null)
     {
         var writeBacks = new List<LStatement>();
-        var call = new LCall(new LRoutineCallee(routine), Arguments(routine, arguments, writeBacks));
+        var call = new LCall(Callee(routine, procedural), Arguments(routine, arguments, writeBacks));
         if (ReceivesResultDirectly(target, call))
         {
             return new LBlock([new LAssign(target, call), .. writeBacks]);
@@ -576,15 +604,15 @@ internal sealed class LoweringContext
             : call;
 
     /// <summary>A call statement; a discarded aggregate or managed result still needs storage (ABI-081).</summary>
-    private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)
+    private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments, BoundExpression? target)
     {
         if (routine.ReturnType is { } type && (Lowerer.IsAggregate(type) || type.IsManaged))
         {
-            return ((LSequence)Call(routine, arguments)).First;
+            return ((LSequence)Call(routine, arguments, target)).First;
         }
 
         var writeBacks = new List<LStatement>();
-        var call = new LCallStatement(new LRoutineCallee(routine), Arguments(routine, arguments, writeBacks));
+        var call = new LCallStatement(Callee(routine, target), Arguments(routine, arguments, writeBacks));
         return writeBacks.Count == 0 ? call : new LBlock([call, .. writeBacks]);
     }
 }

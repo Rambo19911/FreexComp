@@ -35,7 +35,8 @@ internal sealed class Conversions
             (BooleanTypeSymbol, BooleanTypeSymbol) => Numeric,
             (SetTypeSymbol s, SetTypeSymbol d) when d.ElementType != null && Sets.Compatible(s, d) => Numeric,     // rule 8
             (PointerTypeSymbol s, PointerTypeSymbol d) when Pointers.Compatible(s, d) => Pointer,                  // rule 9
-            (PointerTypeSymbol { Name: "nil" }, DynamicArrayTypeSymbol) => Pointer,                                // LANG-266 (C-064)
+            (PointerTypeSymbol { Name: "nil" }, DynamicArrayTypeSymbol or ProceduralTypeSymbol) => Pointer,         // LANG-266 (C-064, C-161)
+            (ProceduralTypeSymbol s, ProceduralTypeSymbol d) when Signatures.Compatible(s.Signature, d.Signature) => Pointer,    // LANG-483
             (CharTypeSymbol, StringTypeSymbol) => String,                                                         // LANG-245: a 1-char string
             (StringTypeSymbol, StringTypeSymbol) => String,                                                       // LANG-245 (C-063)
             (PointerTypeSymbol, StringTypeSymbol) when Strings.IsCharPointer(source, wide: true) && Strings.IsUnicode(destination) => String,

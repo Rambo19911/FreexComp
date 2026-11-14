@@ -145,6 +145,9 @@ exit:
 
 define void @"M.$final"() #0 {
 entry:
+  br label %cleanup
+cleanup:
+  call void @"System._UStrClr"(ptr @"M.G")
   br label %exit
 exit:
   ret void

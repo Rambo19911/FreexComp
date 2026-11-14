@@ -280,16 +280,20 @@ public sealed class LoweringTests
             @"\(if \(Not:Boolean @f\) \(block \(call _Assert \(seq \(call _UStrFromWChar \(addr \$tmp1\) @c\) \$tmp1\) '[^']+' 1:Integer\) \(unreachable\)\)\)$",
             MainBody("f: Boolean; s: string; c: Char", "Assert(f, s); Assert(f, c)"));
 
-    /// <summary>The program block's temporaries are zeroed and finalised like a routine's; globals are not (rule 7: the unit's $final, C-071).</summary>
+    /// <summary>
+    /// The program block's temporaries are zeroed and finalised like a routine's; then the program's managed globals are released
+    /// (C-071: CMP-325 rule 7, LANG-523 — before this task the cleanup held the temporaries only).
+    /// </summary>
     [Fact]
     [Trait("Req", "CMP-325")]
-    public void ProgramBlock_FinalisesItsTemporariesOnly()
+    [Trait("Req", "LANG-523")]
+    public void ProgramBlock_FinalisesItsTemporariesThenItsManagedGlobals()
     {
         var body = Assert.Single(Lower("program T; function G: string; begin Result := 'g' end; var s: string; begin s := G; Writeln(G) end.").Bodies);
 
         Assert.StartsWith("(zero (addr $tmp1)) (zero (addr $tmp2)) (block (:= $tmp1 (call G:string)) (call _UStrAsg (addr @s) $tmp1))",
             string.Join(" ", body.Body.Statements.Select(LoweredDump.Of)));
-        Assert.Equal("(block (call _UStrClr (addr $tmp1)) (call _UStrClr (addr $tmp2)))", Cleanup(body));
+        Assert.Equal("(block (call _UStrClr (addr $tmp1)) (call _UStrClr (addr $tmp2)) (call _UStrClr (addr @s)))", Cleanup(body));
     }
 
     // ------------------------------------------------------------------ static arrays (CMP-308, CMP-331) and big sets (CMP-336)

@@ -62,7 +62,132 @@ internal sealed class ExpressionBinder
                 DynamicArrayTypeSymbol array when constructor.Elements.All(e => e.UpperBound is null) => BindArrayConstructor(constructor, array),
                 _ => BindExpression(syntax),
             }
-            : BindExpression(syntax);
+            : expected is ProceduralTypeSymbol procedural
+                ? BindProceduralValue(syntax, procedural)
+                : BindExpression(syntax);
+
+    // ------------------------------------------------------------------ procedural values (LANG-480…484, C-161)
+
+    /// <summary>
+    /// <paramref name="syntax"/> where a value of the procedural type <paramref name="type"/> is expected: <c>Routine</c> or
+    /// <c>@Routine</c> is the routine's address (LANG-480; a parameterless function whose result fits the target is called
+    /// instead), anything else is bound without the implicit call (LANG-482: <c>p1 := p2</c> copies).
+    /// </summary>
+    private BoundExpression BindProceduralValue(ExpressionSyntax syntax, ProceduralTypeSymbol type)
+    {
+        var inner = Unparenthesized(syntax);
+        var addressOf = inner is AddressOfExpressionSyntax at ? at : null;
+        if (_scope.Unqualified(addressOf is null ? inner : Unparenthesized(addressOf.Operand)) is IdentifierNameSyntax { Identifier: { IsMissing: false } token } name
+            && _scope.For(name).LookupCandidates(token.Value as string ?? token.Text) is [var routine, ..] candidates)
+        {
+            var called = addressOf is null && candidates.Length == 1 && routine is { ReturnType: { } result, Parameters.IsEmpty: true }
+                && !Signatures.Compatible(routine, type.Signature) && _conversions.Classify(result, type).Exists;
+            if (!called)
+            {
+                return RoutineValue(syntax, name, candidates, type);
+            }
+        }
+
+        return BindOperand(syntax);
+    }
+
+    /// <summary>The address of a global routine as a value of <paramref name="type"/> (LANG-480, 483; E2130 for a nested routine, LANG-451).</summary>
+    private BoundExpression RoutineValue(ExpressionSyntax syntax, IdentifierNameSyntax name, ImmutableArray<RoutineSymbol> candidates, ProceduralTypeSymbol type)
+    {
+        var routine = candidates[0];
+        if (candidates.Length > 1)
+        {
+            return Unsupported(syntax, "overloaded routine as procedural value");              // LANG-483, M2.5
+        }
+
+        if (routine.IsNested)
+        {
+            _diagnostics.Report(name, "E2130", routine.Name);
+            return Error(syntax);
+        }
+
+        if (!Signatures.Compatible(routine, type.Signature))
+        {
+            _diagnostics.Report(syntax, "E2010", Signatures.Display(routine), type.Name);
+            return Error(syntax);
+        }
+
+        return new BoundAddressOfExpression(syntax, operand: null, routine, type);
+    }
+
+    /// <summary>
+    /// LANG-482: a procedural variable (or field, element…) of a parameterless function type in a value position is called;
+    /// routine values and call results are left alone.
+    /// </summary>
+    private static BoundExpression Called(BoundExpression value) =>
+        value is not (BoundAddressOfExpression or BoundCallExpression or BoundErrorExpression)
+        && value.Type is ProceduralTypeSymbol { Signature: { ReturnType: not null, Parameters.IsEmpty: true } signature }
+            ? new BoundCallExpression(value.Syntax, signature, [], value)
+            : value;
+
+    /// <summary><c>target(args)</c>: a call through a procedural value, else E2900 "routine call".</summary>
+    private BoundExpression CallThrough(InvocationExpressionSyntax invocation, BoundExpression target) =>
+        target.HasErrors ? Error(invocation, target)
+        : target.Type is ProceduralTypeSymbol type ? IndirectCall(invocation, target, type, invocation.ArgumentList)
+        : Unsupported(invocation, "routine call");
+
+    /// <summary>
+    /// LANG-484 <c>target(args)</c> through a procedural value (arguments checked like a direct call; E2034 for a procedure type
+    /// in an expression).
+    /// </summary>
+    private BoundExpression IndirectCall(SyntaxNode call, BoundExpression target, ProceduralTypeSymbol type, ArgumentListSyntax? argumentList)
+    {
+        var (signature, arguments) = BindCall(call, [type.Signature], argumentList);
+        if (signature is null)
+        {
+            return Error(call, [target, .. arguments]);
+        }
+
+        if (signature.ReturnType is null)
+        {
+            _diagnostics.Report(call, "E2034");
+            return Error(call, [target, .. arguments]);
+        }
+
+        return new BoundCallExpression(call, signature, arguments, target);
+    }
+
+    /// <summary>
+    /// LANG-484 as a statement: <c>p</c>, <c>p(args)</c>, <c>r.F(args)</c>, <c>A[i](args)</c>, <c>F(x)(args)</c> when the callee is
+    /// a procedural value. Null when the statement does not start with a value (routine, intrinsic, type or unknown names:
+    /// the caller binds those); E2060 / E2900 "routine call" when the callee is a value of another type.
+    /// </summary>
+    public BoundStatement? BindIndirectCallStatement(ExpressionStatementSyntax statement)
+    {
+        var invocation = statement.Expression as InvocationExpressionSyntax;
+        var callee = invocation?.Expression ?? statement.Expression;
+        if (_scope.Unqualified(callee) is IdentifierNameSyntax { Identifier: var token } name
+            && (token.IsMissing || _scope.For(name).Lookup(token.Value as string ?? token.Text) is null or RoutineSymbol or IntrinsicSymbol or TypeSymbol))
+        {
+            return null;
+        }
+
+        var target = BindOperand(callee);
+        if (target.HasErrors)
+        {
+            return new BoundErrorStatement(statement);
+        }
+
+        if (target.Type is ProceduralTypeSymbol type)
+        {
+            var (signature, arguments) = BindCall(statement.Expression, [type.Signature], invocation?.ArgumentList);
+            return signature is null ? new BoundErrorStatement(statement) : new BoundCallStatement(statement, signature, arguments, target);
+        }
+
+        if (invocation is not null)
+        {
+            Unsupported(invocation, "routine call");
+            return new BoundErrorStatement(statement);
+        }
+
+        _diagnostics.Report(statement.Expression, "E2060", target.Type.Name);                 // LANG-352
+        return new BoundExpressionStatement(statement, target);
+    }
 
     /// <summary>
     /// LANG-259 / LANG-280 rule 12 (C-067): <c>[e1, …]</c> in a dynamic-array context; every element is bound in the context of
@@ -91,7 +216,14 @@ internal sealed class ExpressionBinder
         return syntax;
     }
 
-    public BoundExpression BindExpression(ExpressionSyntax syntax)
+    /// <summary><paramref name="syntax"/> as a value (a parameterless function-typed procedural variable is called, LANG-482).</summary>
+    public BoundExpression BindExpression(ExpressionSyntax syntax) => Called(BindOperand(syntax));
+
+    /// <summary>
+    /// <paramref name="syntax"/> without the implicit call of a procedural value (LANG-482): assignment targets, <c>@</c>,
+    /// <c>Assigned</c>, comparisons with <c>nil</c>, typecast operands and callees.
+    /// </summary>
+    public BoundExpression BindOperand(ExpressionSyntax syntax)
     {
         if (syntax.IsMissing)
         {
@@ -107,7 +239,7 @@ internal sealed class ExpressionBinder
             case IdentifierNameSyntax name:
                 return BindName(name);
             case ParenthesizedExpressionSyntax parenthesized:
-                return BindExpression(parenthesized.Expression);
+                return BindOperand(parenthesized.Expression);
             case UnaryExpressionSyntax unary:
                 return BindUnary(unary);
             case BinaryExpressionSyntax binary:
@@ -280,7 +412,7 @@ internal sealed class ExpressionBinder
             return Error(syntax);
         }
 
-        var operand = BindExpression(operandSyntax);
+        var operand = BindOperand(operandSyntax);                    // @p of a procedural variable: its address (LANG-482)
         if (operand.HasErrors)
         {
             return Error(syntax, operand);
@@ -555,20 +687,25 @@ internal sealed class ExpressionBinder
     /// a value cast would apply (LANG-290 last row; E2041 for managed types and different sizes).
     /// </summary>
     public BoundExpression BindVariable(ExpressionSyntax syntax) =>
-        Unparenthesized(syntax) is InvocationExpressionSyntax invocation ? BindInvocation(invocation, variableContext: true) : BindExpression(syntax);
+        Unparenthesized(syntax) is InvocationExpressionSyntax invocation ? BindInvocation(invocation, variableContext: true) : BindOperand(syntax);
 
     /// <summary>A typecast <c>T(x)</c> or a function call; intrinsics are bound from C-029 on.</summary>
     private BoundExpression BindInvocation(InvocationExpressionSyntax invocation, bool variableContext = false)
     {
         if (_scope.Unqualified(invocation.Expression) is not IdentifierNameSyntax name)
         {
-            return Unsupported(invocation, "routine call");
+            return CallThrough(invocation, BindOperand(invocation.Expression));        // r.F(x), A[i](x), F(x)(y) (LANG-484)
         }
 
         var symbol = LookupName(name);
         if (symbol is null)
         {
             return Error(invocation);
+        }
+
+        if (symbol is VariableSymbol or ParameterSymbol or ConstantSymbol)
+        {
+            return CallThrough(invocation, BindOperand(invocation.Expression));        // p(x) (LANG-484)
         }
 
         var arguments = invocation.ArgumentList.Arguments;
@@ -604,7 +741,10 @@ internal sealed class ExpressionBinder
             return Error(invocation);
         }
 
-        var operand = BindExpression(arguments[0].Expression);
+        // the operand of a cast to a non-procedural type is a value (LANG-482); Pointer(p) / NativeInt(p) cast the procedural value itself
+        var operand = target is ProceduralTypeSymbol or PointerTypeSymbol || target is IntegerTypeSymbol { Bits: 64 }
+            ? BindOperand(arguments[0].Expression)
+            : BindExpression(arguments[0].Expression);
         return operand.HasErrors || target.TypeKind == TypeKind.Error ? Error(invocation, operand) : BindTypecast(invocation, target, operand, variableContext);
     }
 
@@ -748,7 +888,7 @@ internal sealed class ExpressionBinder
             return AddressOf(invocation, syntax);
         }
 
-        var operand = BindExpression(syntax);
+        var operand = intrinsic.Intrinsic == IntrinsicKind.Assigned ? BindOperand(syntax) : BindExpression(syntax);     // Assigned(p) never calls (LANG-482)
         if (operand.HasErrors)
         {
             return Error(invocation, operand);
@@ -756,7 +896,7 @@ internal sealed class ExpressionBinder
 
         if (intrinsic.Intrinsic == IntrinsicKind.Assigned)
         {
-            if (operand.Type is DynamicArrayTypeSymbol)
+            if (operand.Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol)
             {
                 // intrinsics.md §1 (C-067): a dynamic array is assigned when its block reference is not nil (LANG-257)
                 var reference = new BoundConversionExpression(syntax, operand, _types.Pointer, ConversionKind.Explicit, isExplicit: true, constantValue: null);
@@ -1076,6 +1216,8 @@ internal sealed class ExpressionBinder
             (PointerTypeSymbol, IntegerTypeSymbol { Bits: 64 }) => true,
             (PointerTypeSymbol, PointerTypeSymbol) => true,
             (DynamicArrayTypeSymbol, IntegerTypeSymbol { Bits: 64 } or PointerTypeSymbol) => true,     // C-178: the block reference, no reference counting
+            (ProceduralTypeSymbol, IntegerTypeSymbol { Bits: 64 } or PointerTypeSymbol or ProceduralTypeSymbol) => true,  // LANG-290: the code address
+            (PointerTypeSymbol, ProceduralTypeSymbol) => true,
             (IntegerTypeSymbol or RealTypeSymbol, RealTypeSymbol) => true,
             _ => false,
         };
@@ -1101,7 +1243,7 @@ internal sealed class ExpressionBinder
                     return Error(node, operand);
                 }
             }
-            else if (source is PointerTypeSymbol && target is PointerTypeSymbol && value.Value is null)
+            else if (source is PointerTypeSymbol && target is PointerTypeSymbol or ProceduralTypeSymbol && value.Value is null)
             {
                 constant = new ConstantValue(null, target);             // nil of the target pointer type
             }
@@ -1199,7 +1341,12 @@ internal sealed class ExpressionBinder
     public (RoutineSymbol? Routine, ImmutableArray<BoundExpression> Arguments) BindCall(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList)
     {
         var token = name.Identifier;
-        var candidates = _scope.For(name).LookupCandidates(token.Value as string ?? token.Text);
+        return BindCall(call, _scope.For(name).LookupCandidates(token.Value as string ?? token.Text), argumentList);
+    }
+
+    /// <summary>As above for the given candidates (one procedural type's signature for a call through a value).</summary>
+    private (RoutineSymbol? Routine, ImmutableArray<BoundExpression> Arguments) BindCall(SyntaxNode call, ImmutableArray<RoutineSymbol> candidates, ArgumentListSyntax? argumentList)
+    {
         var syntaxes = argumentList?.Arguments ?? default;
         var builder = ImmutableArray.CreateBuilder<BoundExpression>(syntaxes.Count);
         var hasErrors = false;
@@ -1214,11 +1361,12 @@ internal sealed class ExpressionBinder
 
             // a var/out parameter of the only candidate is a variable context (variable typecasts, LANG-290)
             var byReference = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].IsByReference;
-            // a dynamic-array value parameter of the only candidate gives an array constructor its type (LANG-259)
-            var dynamicArray = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol
+            // a dynamic-array value parameter of the only candidate gives an array constructor its type (LANG-259), a
+            // procedural one makes a routine name its address (LANG-480)
+            var expected = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol
                 ? candidates[0].Parameters[i].Type
                 : null;
-            var bound = byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression, dynamicArray);
+            var bound = byReference ? BindVariable(argument.Expression) : BindExpression(argument.Expression, expected);
             hasErrors |= bound.HasErrors;
             builder.Add(bound);
         }
@@ -1443,6 +1591,17 @@ internal sealed class ExpressionBinder
         {
             right = BindExpression(binary.Right);
             left = BindExpression(binary.Left, right.Type);
+        }
+        else if (op.Kind is SyntaxKind.EqualsToken or SyntaxKind.LessThanGreaterThanToken)
+        {
+            // LANG-482: p = nil, p <> q compare the procedural values; anything else compares the results of calling them
+            left = BindOperand(binary.Left);
+            right = BindOperand(binary.Right);
+            if (!IsProceduralComparison(left.Type, right.Type))
+            {
+                left = Called(left);
+                right = Called(right);
+            }
         }
         else
         {
@@ -1700,6 +1859,17 @@ internal sealed class ExpressionBinder
             return Inapplicable(binary, left, right);
         }
 
+        if (lt is ProceduralTypeSymbol || rt is ProceduralTypeSymbol)
+        {
+            // LANG-480 (C-161): = and <> compare code addresses of compatible procedural values, or with nil
+            if (IsProceduralComparison(lt, rt) && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
+            {
+                return new BoundBinaryExpression(binary, kind, left, right, lt is ProceduralTypeSymbol ? lt : rt, boolean, constantValue: null);
+            }
+
+            return Inapplicable(binary, left, right);
+        }
+
         if (lt is IntegerTypeSymbol && rt is IntegerTypeSymbol)
         {
             var (l, r) = AdaptedComputationTypes(left, right);
@@ -1764,6 +1934,15 @@ internal sealed class ExpressionBinder
 
         return Inapplicable(binary, left, right);
     }
+
+    /// <summary>Two compatible procedural types (LANG-483), or one procedural type and <c>nil</c>.</summary>
+    private bool IsProceduralComparison(TypeSymbol left, TypeSymbol right) => (left, right) switch
+    {
+        (ProceduralTypeSymbol l, ProceduralTypeSymbol r) => Signatures.Compatible(l.Signature, r.Signature),
+        (ProceduralTypeSymbol, _) => right == _types.Nil,
+        (_, ProceduralTypeSymbol) => left == _types.Nil,
+        _ => false,
+    };
 
     private TypeSymbol Signed64(TypeSymbol computationType) =>
         ((IntegerTypeSymbol)computationType).IsSigned ? _types.Int64 : _types.UInt64;

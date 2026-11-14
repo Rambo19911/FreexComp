@@ -158,6 +158,11 @@ internal sealed class BodyBinder
             return routine is null ? new BoundErrorStatement(statement) : new BoundCallStatement(statement, routine, arguments);
         }
 
+        if (_expressions.BindIndirectCallStatement(statement) is { } indirect)
+        {
+            return indirect;                                                    // p; p(x); r.F(x) (LANG-484)
+        }
+
         var expression = _expressions.BindExpression(statement.Expression);
         if (symbol is IntrinsicSymbol { IsAtomic: true } && statement.Expression is InvocationExpressionSyntax)
         {

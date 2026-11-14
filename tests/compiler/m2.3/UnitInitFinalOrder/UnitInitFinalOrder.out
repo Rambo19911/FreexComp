@@ -1,0 +1,7 @@
+init C
+init A
+init B
+main
+final B
+final A
+final C

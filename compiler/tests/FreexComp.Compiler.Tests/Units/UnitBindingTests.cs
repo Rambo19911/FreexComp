@@ -289,6 +289,65 @@ public sealed class UnitBindingTests
         Assert.Contains("define void @\"C.$init\"() #0 {", fs.ReadAllText(@"C:\p\obj\C.ll"));
     }
 
+    /// <summary>
+    /// C-161 (CMP-355, ABI-100): every unit with an initialization or finalization section — System included — has its
+    /// <c>$init</c>/<c>$final</c> in <c>$units</c>; a unit without sections has two nulls.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-355")]
+    [Trait("Req", "ABI-100")]
+    public void UnitTable_HoldsInitAndFinal_OfEveryUnitWithSections()
+    {
+        var fs = Files("program P; uses A, B; begin end.",
+            ("A.pas", "unit A; interface implementation initialization finalization end."),
+            ("B.pas", "unit B; interface implementation end."));
+        var system = File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas"));
+        fs.Add(@"C:\rtl\System.pas", system[..system.LastIndexOf("end.", StringComparison.Ordinal)] + "initialization\nend.\n");
+        var result = Run(fs, EmitStage.Ll);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Contains("@\"$units\" = internal constant [3 x { ptr, ptr }] [" +
+            "{ ptr, ptr } { ptr @\"System.$init\", ptr @\"System.$final\" }, " +
+            "{ ptr, ptr } { ptr @\"A.$init\", ptr @\"A.$final\" }, " +
+            "{ ptr, ptr } { ptr null, ptr null }], align 8", fs.ReadAllText(@"C:\p\obj\P.ll"));
+    }
+
+    /// <summary>
+    /// C-071 (CMP-325 rule 7, CMP-350, LANG-523): a unit's managed globals are released in its <c>$final</c> after the finalization
+    /// statements, in reverse declaration order; a program's at the end of <c>$main</c>; a unit whose only reason for a
+    /// <c>$final</c> is a managed global still gets a unit table entry.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "CMP-350")]
+    [Trait("Req", "LANG-523")]
+    public void ManagedGlobals_AreReleasedAtTheEndOfFinalAndOfMain()
+    {
+        var fs = Files("program P; uses A, B; var S: string; begin S := T + V end.",
+            ("A.pas", "unit A; interface var T: string; D: array of Integer; implementation var U: string; initialization finalization Writeln(U); end."),
+            ("B.pas", "unit B; interface var V: string; implementation end."));
+        var result = Run(fs, EmitStage.Ll);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+
+        var unit = fs.ReadAllText(@"C:\p\obj\A.ll");
+        var final = unit[unit.IndexOf("define void @\"A.$final\"() #0 {", StringComparison.Ordinal)..];
+        Assert.Matches("""
+            (?s)call void @"System._WriteEnd"\(ptr @"System.Output"\).*
+            cleanup:
+              call void @"System._UStrClr"\(ptr @"A.U"\)
+              call void @"System._DynArrayClr"\(ptr @"A.D", ptr @[^)]+\)
+              call void @"System._UStrClr"\(ptr @"A.T"\)
+              br label %exit
+            """.Replace("\r\n", "\n"), final);
+        Assert.Contains("define void @\"A.$init\"() #0 {\nentry:\n  br label %exit\n", unit);
+
+        var other = fs.ReadAllText(@"C:\p\obj\B.ll");
+        Assert.Contains("define void @\"B.$final\"() #0 {\nentry:\n  br label %cleanup\ncleanup:\n  call void @\"System._UStrClr\"(ptr @\"B.V\")\n  br label %exit\n", other);
+
+        var program = fs.ReadAllText(@"C:\p\obj\P.ll");
+        Assert.Matches("(?s)define internal void @\"\\$main\"\\(\\) #0 \\{.*\ncleanup:\n(  call void @\"System._UStrClr\"\\(ptr %\\$tmp\\d+\\)\n)*  call void @\"System._UStrClr\"\\(ptr @\"P.S\"\\)\n  br label %exit\n", program);
+        Assert.Contains("{ ptr, ptr } { ptr @\"A.$init\", ptr @\"A.$final\" }, { ptr, ptr } { ptr @\"B.$init\", ptr @\"B.$final\" }]", program);
+    }
+
     /// <summary>A unit's interface routine and variable are referenced from the program module as external declarations.</summary>
     [Fact]
     [Trait("Req", "CMP-301")]

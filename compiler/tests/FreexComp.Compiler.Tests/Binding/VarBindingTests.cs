@@ -94,7 +94,8 @@ public sealed class VarBindingTests
     [Theory]
     [InlineData("threadvar T: Integer; begin end.", "E2900(1,1): Feature not supported: threadvar")]
     [InlineData("procedure P(X: array of Integer); begin end; begin end.", "E2900(1,16): Feature not supported: open array parameter")]
-    [InlineData("var X: procedure; begin end.", "E2900(1,8): Feature not supported: procedural type")]
+    [InlineData("var X: procedure of object; begin end.", "E2900(1,8): Feature not supported: method pointer")]     // C-161: plain ones bind
+    [InlineData("var X: reference to procedure; begin end.", "E2900(1,8): Feature not supported: anonymous method type")]
     [InlineData("var X: Currency; begin end.", "E2900(1,8): Feature not supported: Currency")]
     public void LaterMilestoneConstructs_AreE2900(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));
 

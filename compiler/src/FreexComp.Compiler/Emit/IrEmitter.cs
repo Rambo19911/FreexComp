@@ -291,7 +291,7 @@ internal static class IrEmitter
         (BooleanTypeSymbol, BigInteger i) => IrIntConstant.I1(!i.IsZero),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, BigInteger i) => new IrFloatConstant((FloatingIrType)ValueType(type), (double)i),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, double d) => new IrFloatConstant((FloatingIrType)ValueType(type), d),
-        (PointerTypeSymbol, null) => new IrNullConstant(),
+        (PointerTypeSymbol or ProceduralTypeSymbol, null) => new IrNullConstant(),
         (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
         (SetTypeSymbol { IsSmall: true }, BigInteger mask) => new IrIntConstant((IntegerIrType)ValueType(type), mask),       // CMP-335
         (SetTypeSymbol, BigInteger mask) => BigSetConstant(mask, type.Size),                                                  // CMP-336
@@ -917,11 +917,11 @@ internal sealed class FunctionEmitter
                 var target = Address(assign.Target);
                 if (IrEmitter.HasHiddenResult(callee.Routine))
                 {
-                    Call(named: false, callee.Routine, call.Arguments, target);
+                    Call(named: false, callee, call.Arguments, target);
                 }
                 else
                 {
-                    _w.Store(Call(named: true, callee.Routine, call.Arguments)!, target, AccessAlignment(assign.Target));
+                    _w.Store(Call(named: true, callee, call.Arguments)!, target, AccessAlignment(assign.Target));
                 }
 
                 break;
@@ -1025,7 +1025,7 @@ internal sealed class FunctionEmitter
             }
 
             case LCallStatement { Callee: LRoutineCallee callee } call:
-                Call(named: false, callee.Routine, call.Arguments);
+                Call(named: false, callee, call.Arguments);
                 break;
             default:
                 throw new InvalidOperationException($"Cannot emit {statement.GetType().Name}.");
@@ -1459,8 +1459,10 @@ internal sealed class FunctionEmitter
     /// ABI-080/081: <paramref name="resultAddress"/> is the hidden <c>Result</c> argument; a small aggregate argument is loaded as
     /// <c>iN</c> from its storage; a by-address aggregate argument is already an address (<see cref="LAddrOf"/>, from the lowering).
     /// </remarks>
-    private IrLocal? Call(bool named, RoutineSymbol routine, ImmutableArray<LExpression> arguments, IrValue? resultAddress = null)
+    private IrLocal? Call(bool named, LRoutineCallee callee, ImmutableArray<LExpression> arguments, IrValue? resultAddress = null)
     {
+        var routine = callee.Routine;
+        var function = callee.Target is { } target ? Value(target) : null;          // CMP-378: the procedural value first
         var values = ImmutableArray.CreateBuilder<IrValue>();
         if (routine.IsNested)
         {
@@ -1486,7 +1488,7 @@ internal sealed class FunctionEmitter
             values.Add(IrEmitter.IsPassedByAddress(parameter) ? value : ToStorage(value, parameter.Type));
         }
 
-        return _w.Call(named ? NewTemp() : null, IrEmitter.ReturnType(routine), _module.Routine(routine), values.ToImmutable());
+        return _w.Call(named ? NewTemp() : null, IrEmitter.ReturnType(routine), function ?? _module.Routine(routine), values.ToImmutable());
     }
 
     /// <summary>Loads a value in SSA form: Booleans are compared <c>ne 0</c> after the load (CMP-305).</summary>
@@ -1598,7 +1600,7 @@ internal sealed class FunctionEmitter
 
             case LCall { Callee: LRoutineCallee callee } call:
             {
-                var result = Call(named: true, callee.Routine, call.Arguments)!;
+                var result = Call(named: true, callee, call.Arguments)!;
                 return call.Type is BooleanTypeSymbol
                     ? _w.ICmp(NewTemp(), IrIntPredicate.Ne, result, new IrIntConstant((IntegerIrType)result.Type, 0))
                     : result;

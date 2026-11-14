@@ -96,7 +96,7 @@ internal static class ManagedRewriter
         switch (value)
         {
             case BoundCallExpression call:
-                return context.CallInto(target, call.Routine, call.Arguments);
+                return context.CallInto(target, call.Routine, call.Arguments, call.Target);
             case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: StringTypeSymbol } concatenation:
                 return Concatenate(context, target, concatenation);
             case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
@@ -330,7 +330,7 @@ internal static class ManagedRewriter
         LConvert c => References(c.Operand, local),
         LRangeCheck r => References(r.Value, local),
         LSelect s => References(s.Condition, local) || References(s.WhenTrue, local) || References(s.WhenFalse, local),
-        LCall c => c.Arguments.Any(a => References(a, local)),
+        LCall c => c.Callee is LRoutineCallee { Target: { } t } && References(t, local) || c.Arguments.Any(a => References(a, local)),
         LTemp t => References(t.Value, local) || References(t.Body, local),
         LSequence s => References(s.First, local) || References(s.Value, local),
         LView v => References(v.Aggregate, local),
@@ -347,7 +347,7 @@ internal static class ManagedRewriter
         LAtomic a => References(a.Target, local) || References(a.Value, local) || (a.Comparand is { } c && References(c, local)),
         LBlock b => b.Statements.Any(s => References(s, local)),
         LAssign a => References(a.Target, local) || References(a.Value, local),
-        LCallStatement c => c.Arguments.Any(a => References(a, local)),
+        LCallStatement c => c.Callee is LRoutineCallee { Target: { } t } && References(t, local) || c.Arguments.Any(a => References(a, local)),
         LIf i => References(i.Condition, local) || References(i.Then, local) || (i.Else is { } e && References(e, local)),
         LLoop l => References(l.Body, local) || (l.Step is { } s && References(s, local)),
         LSwitch s => References(s.Selector, local) || s.Sections.Any(c => References(c.Body, local)) || (s.Default is { } d && References(d, local)),

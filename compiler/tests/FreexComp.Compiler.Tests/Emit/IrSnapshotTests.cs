@@ -1320,8 +1320,55 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    internal const string ProcValueSource = """
+        unit M;
+        interface
+        type
+          TBinary = function(a, b: Integer): Integer;
+          TNotify = procedure(code: Integer); stdcall;
+          TCell = record
+            Op: TBinary;
+          end;
+        function Add(a, b: Integer): Integer;
+        function Apply(f: TBinary; x: Integer): Integer;
+        function Pick(i: Integer): TBinary;
+        procedure Run(var cell: TCell; n: TNotify);
+        implementation
+        var
+          Table: array[0..1] of TBinary;
+        function Add(a, b: Integer): Integer;
+        begin
+          Result := a + b;
+        end;
+        function Apply(f: TBinary; x: Integer): Integer;
+        begin
+          if Assigned(f) then
+            Result := f(x, x)
+          else
+            Result := 0;
+        end;
+        function Pick(i: Integer): TBinary;
+        begin
+          Result := Table[i];
+        end;
+        procedure Run(var cell: TCell; n: TNotify);
+        var
+          p: TBinary;
+        begin
+          p := Add;
+          cell.Op := @Add;
+          Table[0] := p;
+          Table[1] := nil;
+          if p <> nil then
+            n(Apply(cell.Op, 2) + Table[0](1, 2));
+          n(Pick(0)(3, 4));
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["ProcValue"] = ProcValueSource,
         ["Atomic"] = AtomicSource,
         ["ArrayConstructors"] = ArrayConstructorsSource,
         ["ReadText"] = ReadTextSource,
@@ -1631,6 +1678,30 @@ public sealed class IrSnapshotTests
         Assert.Contains("getelementptr inbounds i8, ptr ", text);
         Assert.Contains("@\"M.Vowels\" = global [32 x i8] [i8 0, ", text);
         Assert.Contains("= private unnamed_addr constant [32 x i8] ", text);
+    }
+
+    [Fact]
+    [Trait("Req", "LANG-480")]
+    [Trait("Req", "LANG-484")]
+    [Trait("Req", "CMP-378")]
+    [Trait("Req", "CMP-433")]
+    public void ProcValue() => Snapshot.Verify("ProcValue", Emit(ProcValueSource));
+
+    /// <summary>CMP-378: a procedural value is the function address; a call loads it and calls through it with the signature's types.</summary>
+    [Fact]
+    [Trait("Req", "CMP-378")]
+    [Trait("Req", "CMP-433")]
+    public void ProcValue_StoresAddressesAndCallsThroughThem()
+    {
+        var text = Emit(ProcValueSource);
+
+        Assert.Contains("  store ptr @\"M.Add\", ptr %p.addr, align 8\n", text);
+        Assert.Contains("@\"M.Table\" = internal global [2 x ptr] zeroinitializer, align 8\n", text);
+        Assert.Matches(@"  %t\d+ = load ptr, ptr %f\.addr, align 8\n", text);
+        Assert.Matches(@"  %t\d+ = call i32 %t\d+\(i32 %t\d+, i32 %t\d+\)\n", text);
+        Assert.Matches(@"  call void %t\d+\(i32 %t\d+\)\n", text);
+        Assert.DoesNotContain("stdcall", text);
+        Assert.DoesNotContain("x86_stdcallcc", text);
     }
 
     [Fact]
