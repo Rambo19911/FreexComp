@@ -91,6 +91,7 @@ var
   ShowErrorProc: procedure(const Text: string);                                          { RTL-132, IsConsole = False }
   IsConsole: Boolean;
   IsLibrary: Boolean;
+  ReportMemoryLeaksOnShutdown: Boolean;  { RTL-064, ABI-104 step 3 }
   HInstance: THandle;
   MainThreadID: Cardinal;
   CmdLine: PChar;
@@ -2311,6 +2312,7 @@ end;
   like an unhandled exception and the sequence goes on with exit code 217. }
 
 procedure ReportUnhandled; forward;
+procedure ReportLeaks; forward;
 
 procedure _Halt0;
 var
@@ -2341,7 +2343,11 @@ begin
       end;
   end;
   if ShutdownStep < 3 then
-    ShutdownStep := 3;                 { leak report: R-077 }
+  begin
+    ShutdownStep := 3;
+    if ReportMemoryLeaksOnShutdown then
+      ReportLeaks;
+  end;
   if ShutdownStep < 4 then
   begin
     ShutdownStep := 4;
@@ -2442,6 +2448,66 @@ begin
       PutUnit(R^, Ord(P[I]));
     Writeln(ErrOutput);
   end;
+end;
+
+{ RTL-064, ABI-104 step 3: 'Memory leak detected: <n> block(s) not freed' when the counters differ; the text is built
+  in a stack buffer and goes the RTL-132 way (ShowErrorProc in a GUI program, else ErrOutput and a line break). The
+  buffers of Input, Output and ErrOutput are still in use (step 4 flushes them) and are not leaks: each one that is
+  allocated is subtracted. }
+function StdBufferCount: NativeInt;
+begin
+  Result := 0;
+  if TextRec(Input)^.Buffer <> nil then
+    Result := Result + 1;
+  if TextRec(Output)^.Buffer <> nil then
+    Result := Result + 1;
+  if TextRec(ErrOutput)^.Buffer <> nil then
+    Result := Result + 1;
+end;
+
+procedure ReportLeaks;
+const
+  Prefix = 'Memory leak detected: ';
+  Suffix = ' block(s) not freed';
+var
+  Buf: array[0..63] of WideChar;
+  Digits: array[0..19] of WideChar;
+  N, Count, I: Integer;
+  Value: NativeInt;
+begin
+  Value := _LiveAllocCount - StdBufferCount;
+  if Value = 0 then
+    Exit;
+  N := 0;
+  for I := 1 to Length(Prefix) do
+  begin
+    Buf[N] := Prefix[I];
+    N := N + 1;
+  end;
+  if Value < 0 then
+  begin
+    Buf[N] := '-';
+    N := N + 1;
+    Value := -Value;
+  end;
+  Count := 0;
+  repeat
+    Digits[Count] := WideChar(48 + Value mod 10);
+    Count := Count + 1;
+    Value := Value div 10;
+  until Value = 0;
+  while Count > 0 do
+  begin
+    Count := Count - 1;
+    Buf[N] := Digits[Count];
+    N := N + 1;
+  end;
+  for I := 1 to Length(Suffix) do
+  begin
+    Buf[N] := Suffix[I];
+    N := N + 1;
+  end;
+  ShowFatalText(@Buf[0], N);
 end;
 
 { RTL-132: the fatal path of a runtime error at ErrorAddr (also taken by OS exceptions without ExceptObjProc) }

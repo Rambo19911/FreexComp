@@ -3,9 +3,8 @@ program Obj_Lifecycle;
 { The construction and destruction protocol (ABI-075/076) against System's virtuals, as an order log: NewInstance,
   constructor bodies (inherited Create runs the body only), AfterConstruction, BeforeDestruction, destructor chain,
   FreeInstance; a constructor called on an instance (body only); a class whose NewInstance and FreeInstance are
-  overridden. Leak checks through the RTL-064 counter.
-  TODO(compiler): RTL-151 step 4, a constructor that raises (Destroy with Dealloc = 3, then re-raise, ABI-075), is
-  compiler-emitted and not generated yet; its cases join this test when it is. }
+  overridden; a constructor that raises (RTL-151 step 4: Destroy with Dealloc = 3, then re-raise, ABI-075). Leak
+  checks through the RTL-064 counter; Log is cleared before each counter read so the log string is not counted. }
 uses TestKit;
 
 type
@@ -138,8 +137,65 @@ begin
   CheckEqI(0, _LiveAllocCount - Before, 'leaked');
 end;
 
+procedure FailCase(FailAt: Integer; const Expected, Where: string);
+var
+  C: TChild;
+  Before: NativeInt;
+  Caught: string;
+begin
+  Log := '';
+  Caught := '';
+  Before := _LiveAllocCount;
+  try
+    C := TChild.Create('c', FailAt);
+    C.Free;
+  except
+    on E: EFail do
+      Caught := E.Where;
+  end;
+  CheckEqS(Expected, Log, 'failed constructor: Destroy with Dealloc = 3 (no BeforeDestruction), then FreeInstance');
+  CheckEqS(Where, Caught, 'the exception propagates out of the constructor');
+  Log := '';
+  Caught := '';
+  CheckEqI(0, _LiveAllocCount - Before, 'leaked');
+end;
+
+procedure FailBaseDirect;
+var
+  B: TBase;
+  Before: NativeInt;
+  Caught: string;
+begin
+  Log := '';
+  Caught := '';
+  Before := _LiveAllocCount;
+  try
+    B := TBase.Create('b', 1);
+    B.Free;
+  except
+    on E: EFail do
+      Caught := E.Where;
+  end;
+  CheckEqS('Nc(base)d(base)F', Log, 'failed base constructor called on the class');
+  CheckEqS('base', Caught, 'propagates');
+  Log := '';
+  Caught := '';
+  CheckEqI(0, _LiveAllocCount - Before, 'leaked');
+end;
+
+procedure TestRaising;
+begin
+  Section('constructor that raises in the base body');
+  FailCase(1, 'Nc(base)d(child)d(base)F', 'base');
+  Section('constructor that raises in the child body');
+  FailCase(2, 'Nc(base)c(child)d(child)d(base)F', 'child');
+  Section('base constructor that raises');
+  FailBaseDirect;
+end;
+
 begin
   TestNormal;
   TestOnInstance;
+  TestRaising;
   Done;
 end.

@@ -8,4 +8,16 @@ ok leaked
 ok body only: no NewInstance, no AfterConstruction
 ok fields set by the second body
 ok leaked
-# passed 8 failed 0
+# constructor that raises in the base body
+ok failed constructor: Destroy with Dealloc = 3 (no BeforeDestruction), then FreeInstance
+ok the exception propagates out of the constructor
+ok leaked
+# constructor that raises in the child body
+ok failed constructor: Destroy with Dealloc = 3 (no BeforeDestruction), then FreeInstance
+ok the exception propagates out of the constructor
+ok leaked
+# base constructor that raises
+ok failed base constructor called on the class
+ok propagates
+ok leaked
+# passed 17 failed 0
