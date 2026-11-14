@@ -13,10 +13,48 @@ internal sealed class DiagnosticBag
     public int Count => _diagnostics.Count;
 
     public void Report(SyntaxToken token, string code, params object[] args) =>
-        _diagnostics.Add(Diagnostic.Create(code, LocationOf(token), args));
+        Add(token.DirectiveState, Diagnostic.Create(code, LocationOf(token), args));
 
     public void Report(SyntaxNode node, string code, params object[] args) =>
-        _diagnostics.Add(Diagnostic.Create(code, LocationOf(node), args));
+        Add(node.FirstToken().DirectiveState, Diagnostic.Create(code, LocationOf(node), args));
+
+    /// <summary>A diagnostic with related locations (CMP-508), e.g. the tied candidates of E2122.</summary>
+    public void Report(SyntaxNode node, string code, ImmutableArray<RelatedLocation> related, params object[] args) =>
+        Add(node.FirstToken().DirectiveState, Diagnostic.Create(code, LocationOf(node), args) with { Related = related });
+
+    private void Add(DirectiveState state, Diagnostic diagnostic)
+    {
+        if (ApplyWarningControl(diagnostic, state) is { } kept)
+        {
+            _diagnostics.Add(kept);
+        }
+    }
+
+    /// <summary>
+    /// CMP-505 (C-196): <c>{$WARN code …}</c>, then <c>{$WARNINGS}</c>/<c>{$HINTS}</c>, in force at the diagnostic's first
+    /// token; null = suppressed. Errors pass unchanged.
+    /// </summary>
+    public static Diagnostic? ApplyWarningControl(Diagnostic diagnostic, DirectiveState state)
+    {
+        if (diagnostic.Severity == DiagnosticSeverity.Error)
+        {
+            return diagnostic;
+        }
+
+        if (state.WarnOverrides.TryGetValue(diagnostic.Code, out var setting))
+        {
+            return setting switch
+            {
+                WarnSetting.Off => null,
+                WarnSetting.Error => diagnostic with { Severity = DiagnosticSeverity.Error },
+                _ => diagnostic,
+            };
+        }
+
+        return (diagnostic.Severity == DiagnosticSeverity.Warning && !state.WarningsOn) || (diagnostic.Severity == DiagnosticSeverity.Hint && !state.HintsOn)
+            ? null
+            : diagnostic;
+    }
 
     /// <summary>E2003, at most once per distinct name (CMP-507; the unit level counts as one routine).</summary>
     public void ReportUndeclared(SyntaxNode node, string name)

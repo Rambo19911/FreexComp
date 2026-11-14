@@ -339,4 +339,15 @@ public sealed class ConstantFolderTests
     {
         Assert.Equal(["E2004(1,14): Identifier redeclared: 'a'"], BindDiagnostics("const A = 1; a = 2; begin end."));
     }
+
+    /// <summary>C-185 (LANG-340): an integer → pointer typecast is a constant (<c>IDC_ARROW = PWideChar(32512)</c>); 0 is nil.</summary>
+    [Theory]
+    [Trait("Req", "LANG-340")]
+    [InlineData("PWideChar(32512)", "PChar 32512")]          // PWideChar is an alias of PChar
+    [InlineData("PChar($7F00)", "PChar 32512")]
+    [InlineData("Pointer(1)", "Pointer 1")]
+    [InlineData("Pointer(0)", "Pointer nil")]
+    [InlineData("PAnsiChar(-1)", "PAnsiChar 18446744073709551615")]
+    [InlineData("Pointer(5000000000)", "Pointer 5000000000")]
+    public void IntegerToPointerCast(string expression, string expected) => Assert.Equal(expected, Fold(expression));
 }

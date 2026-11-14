@@ -373,12 +373,21 @@ internal sealed class PcuWriter(PcuContext context)
         }
 
         private JsonArray Parameters(RoutineSymbol routine) =>
-            new([.. routine.Parameters.Select(p => (JsonNode?)new JsonObject
+            new([.. routine.Parameters.Select(p =>
             {
-                ["name"] = p.Name,
-                ["type"] = TypeId(p.Type),
-                ["mode"] = p.Mode switch { ParameterMode.Const => "const", ParameterMode.Var => "var", ParameterMode.Out => "out", _ => "value" },
-                ["openArray"] = p.IsOpenArray,
+                var parameter = new JsonObject
+                {
+                    ["name"] = p.Name,
+                    ["type"] = TypeId(p.Type),
+                    ["mode"] = p.Mode switch { ParameterMode.Const => "const", ParameterMode.Var => "var", ParameterMode.Out => "out", _ => "value" },
+                    ["openArray"] = p.IsOpenArray,
+                };
+                if (p.DefaultValue is { } defaultValue)
+                {
+                    parameter["default"] = Value(defaultValue, p.Type);         // present only with a default (nil = null)
+                }
+
+                return (JsonNode?)parameter;
             })]);
 
         /// <summary>Ordinals and chars as numbers, sets as ascending element ordinals, reals as round-trip strings, nil as null.</summary>

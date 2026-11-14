@@ -20,11 +20,7 @@ E2071  M2.5  goto/labels (LANG-380)
 E2072  M2.5  goto/labels (LANG-380)
 E2073  M2.5  goto/labels (LANG-380)
 E2075  M2.6  inline variable type inference (LANG-385)
-E2114  M2.5  default parameters (LANG-422)
-E2115  M2.5  default parameters (LANG-422)
 E2116  M2.5  open arrays (LANG-430)
-E2117  M2.5  default parameters (LANG-422)
-E2122  M2.5  overload resolution (LANG-442)
 E2131  M2.5  overloaded routine as procedural value
 E2160  M2.5  variant records (LANG-261)
 E2200  elsewhere UnitBindingTests  needs a unit file (uses entry with in)
@@ -36,7 +32,7 @@ E2205  elsewhere UnitGraphTests  needs unit files (location and path: LANG-513, 
 E2206  elsewhere UnitBindingTests  needs a second program file
 E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  M2.3  unit alias table
-E2604  unemitted  lead decision 2026-11-14 (C-096): no case needs it; unrelated classes are E2641, invalid inherited is E2626
+E2604  reserved  lead decision 2026-11-14 (C-096): no case needs it; unrelated classes are E2641, invalid inherited is E2626
 E2611  M2.5  published fields (RTTI)
 E2627  M2.5  message methods (LANG-622)
 E2630  M2.5  published properties
@@ -70,7 +66,7 @@ W1050  M2.3  hint directives used outside their unit (LANG-472)
 W1051  M2.3  hint directives used outside their unit (LANG-472)
 W1052  M2.3  hint directives used outside their unit (LANG-472)
 W1070  M2.6  attributes
-W1081  unemitted  lead decision 2026-11-14 (C-096): LANG-808 gives no diagnostic for code after raise
+W1081  reserved  lead decision 2026-11-14 (C-096): LANG-808 gives no diagnostic for code after raise
 W4002  elsewhere ToolchainTests  toolchain version check
 W4003  Phase4  application manifest (C-167)
 H1002  elsewhere EmitTests  the driver compares the program heading with the file name

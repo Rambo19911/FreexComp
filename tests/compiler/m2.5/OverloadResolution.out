@@ -1,0 +1,24 @@
+P Integer 1
+P Int64 5000000000
+P Double
+P string ab
+P Integer 10
+P Int64 20
+P Int64 30
+P Double
+Q Int64 1
+Q Int64 10
+Q Double
+R Byte 1
+R Double
+R Byte 200
+C Char a
+C Char z
+C string ab
+C string uni
+S string uni
+S string lit
+S RawByteString bytes
+Two Int64 Int64
+V Integer 11
+V Int64 22

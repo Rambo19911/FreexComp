@@ -243,6 +243,13 @@ internal sealed class ConstantFolder
     /// <summary>An ordinal typecast of a constant (LANG-290 row 1); E2040 at <paramref name="node"/> otherwise.</summary>
     internal ConstantValue? FoldTypecast(SyntaxNode node, TypeSymbol target, ConstantValue operand)
     {
+        if (target is PointerTypeSymbol { Name: not "nil" } && operand.Type is IntegerTypeSymbol && operand.Value is BigInteger address)
+        {
+            // C-185 (LANG-340): integer → pointer is a constant address (64-bit unsigned); 0 is nil
+            var wrapped = Wrap(address, 64, isSigned: false);
+            return new ConstantValue(wrapped.IsZero ? null : wrapped, target);
+        }
+
         if (OrdinalOf(operand) is not { } ordinal || !target.IsOrdinal)
         {
             _diagnostics.Report(node, "E2040", operand.Type.Name, target.Name);

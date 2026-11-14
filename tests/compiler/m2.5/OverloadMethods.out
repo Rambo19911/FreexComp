@@ -1,0 +1,14 @@
+TBase.Put Integer 1
+TDerived.Put Double
+TBase.Put string x
+TDerived.Show Integer 5
+TBase.Show Integer 6
+TBase.Show string y
+TBase.Put Integer 2
+TDerived.Show Integer 7
+TBase.Show Integer 8
+TDerived.Show Integer 1
+TBase.Show Integer 2
+TBase.Show string run
+TBase.Show Integer 1
+TBase.Show string run

@@ -1124,6 +1124,39 @@ internal sealed partial class DeclarationBinder
         return type;
     }
 
+    /// <summary>
+    /// LANG-422 (C-105): the default value of a value or <c>const</c> parameter of a simple type, folded in the declaring scope
+    /// and converted to the parameter type. E2115 for a parameter group, E2117 for <c>var</c>/<c>out</c> or another type;
+    /// procedural types and properties keep E2900 (LANG-484: defaults are not available through procedural types).
+    /// </summary>
+    private ConstantValue? BindDefaultValue(ParameterSyntax parameter, ExpressionSyntax value, ParameterMode mode, TypeSymbol type, Symbol owner, bool report)
+    {
+        var diagnostics = report ? _diagnostics : new DiagnosticBag();
+        if (owner is not RoutineSymbol || owner.ContainingSymbol is ProceduralTypeSymbol)
+        {
+            diagnostics.Report(value, "E2900", "default parameter value outside a routine declaration");
+            return null;
+        }
+
+        if (parameter.Identifiers.Count > 1)
+        {
+            diagnostics.Report(value, "E2115");
+            return null;
+        }
+
+        if (mode is ParameterMode.Var or ParameterMode.Out
+            || type is not (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol or BooleanTypeSymbol or RealTypeSymbol or StringTypeSymbol
+                or PointerTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or SetTypeSymbol or ProceduralTypeSymbol or ErrorTypeSymbol))
+        {
+            diagnostics.Report(value, "E2117");
+            return null;
+        }
+
+        return new ConstantFolder(_types, _scope, diagnostics).Fold(value) is { } constant
+            ? _conversions.ConvertConstant(constant, type, value, diagnostics)
+            : null;
+    }
+
     /// <summary>The formal parameters of <paramref name="owner"/> (LANG-420 table); E2004 for duplicate names in <paramref name="names"/>.</summary>
     private ImmutableArray<ParameterSymbol> BindParameters(ParameterListSyntax? list, Symbol owner, Scope names, bool report) =>
         BindParameters(list?.Parameters ?? default, owner, names, report);
@@ -1133,6 +1166,7 @@ internal sealed partial class DeclarationBinder
     {
         var routine = owner;
         var parameters = ImmutableArray.CreateBuilder<ParameterSymbol>();
+        var defaulted = false;
         foreach (var parameter in list)
         {
             var mode = parameter.Modifier?.ContextualKind switch
@@ -1148,9 +1182,10 @@ internal sealed partial class DeclarationBinder
                 _diagnostics.Report(parameter, "E2900", "untyped parameter");                  // M2.2
             }
 
-            if (parameter.DefaultValue is { } defaultValue && report)
+            var defaultConstant = parameter.DefaultValue is { } defaultValue ? BindDefaultValue(parameter, defaultValue, mode, type, owner, report) : null;
+            if (parameter.DefaultValue is not null)
             {
-                _diagnostics.Report(defaultValue, "E2900", "default parameter value");         // LANG-422, M2.5
+                defaulted = true;
             }
 
             foreach (var name in parameter.Identifiers)
@@ -1166,7 +1201,15 @@ internal sealed partial class DeclarationBinder
                     _diagnostics.Report(token, "E2118", NameOf(token));
                 }
 
-                var symbol = new ParameterSymbol(NameOf(token), type, mode, parameters.Count, routine, [DiagnosticBag.LocationOf(token)]);
+                var symbol = new ParameterSymbol(NameOf(token), type, mode, parameters.Count, routine, [DiagnosticBag.LocationOf(token)])
+                {
+                    DefaultValue = defaultConstant,
+                };
+                if (defaulted && parameter.DefaultValue is null && report)
+                {
+                    _diagnostics.Report(token, "E2114", NameOf(token));                        // LANG-422
+                }
+
                 if (!names.TryDeclare(symbol, out var previous) && report)
                 {
                     _diagnostics.ReportRedeclared(token, NameOf(token), previous!);
@@ -1228,6 +1271,18 @@ internal sealed partial class DeclarationBinder
         return match;
     }
 
+    /// <summary>LANG-440: both have defaults and the same parameters before their first defaulted one (a call could match both).</summary>
+    private static bool SameRequiredParameters(RoutineSymbol a, RoutineSymbol b)
+    {
+        if (!a.Parameters.Any(p => p.DefaultValue is not null) && !b.Parameters.Any(p => p.DefaultValue is not null))
+        {
+            return false;
+        }
+
+        var (ra, rb) = (a.Parameters.TakeWhile(p => p.DefaultValue is null).ToList(), b.Parameters.TakeWhile(p => p.DefaultValue is null).ToList());
+        return ra.Count == rb.Count && ra.Zip(rb).All(p => p.First.Mode == p.Second.Mode && ReferenceEquals(p.First.Type, p.Second.Type));
+    }
+
     private static bool SameParameterTypes(RoutineSymbol a, RoutineSymbol b) =>
         a.Parameters.Length == b.Parameters.Length
         && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && ReferenceEquals(p.First.Type, p.Second.Type));
@@ -1254,7 +1309,7 @@ internal sealed partial class DeclarationBinder
             return false;
         }
 
-        if (existing.Any(r => SameParameterTypes(r, routine)))
+        if (existing.Any(r => SameParameterTypes(r, routine) || SameRequiredParameters(r, routine)))
         {
             _diagnostics.Report(identifier, "E2121", name);
             return false;

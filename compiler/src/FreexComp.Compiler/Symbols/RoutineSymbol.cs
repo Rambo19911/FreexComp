@@ -25,8 +25,8 @@ public sealed class ParameterSymbol : Symbol
     /// <summary>Open array parameters arrive with M2.5.</summary>
     public bool IsOpenArray => false;
 
-    /// <summary>Default values arrive with M2.5 (LANG-422).</summary>
-    public ConstantValue? DefaultValue => null;
+    /// <summary>LANG-422: the default value, converted to <see cref="Type"/>; null when the parameter has none (C-105).</summary>
+    public ConstantValue? DefaultValue { get; internal set; }
 
     /// <summary>0-based position in the parameter list.</summary>
     public int Ordinal { get; }

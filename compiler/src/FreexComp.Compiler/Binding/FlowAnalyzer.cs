@@ -192,26 +192,10 @@ internal sealed class FlowAnalyzer
     /// <summary>CMP-505: <c>{$WARN code …}</c>, then <c>{$WARNINGS}</c>/<c>{$HINTS}</c>, in force at <paramref name="token"/>.</summary>
     private void Report(SyntaxToken token, Location location, string code, params object[] args)
     {
-        var diagnostic = Diagnostic.Create(code, location, args);
-        var state = token.DirectiveState;
-        if (state.WarnOverrides.TryGetValue(code, out var setting))
+        if (DiagnosticBag.ApplyWarningControl(Diagnostic.Create(code, location, args), token.DirectiveState) is { } diagnostic)
         {
-            if (setting == WarnSetting.Off)
-            {
-                return;
-            }
-
-            if (setting == WarnSetting.Error)
-            {
-                diagnostic = diagnostic with { Severity = DiagnosticSeverity.Error };
-            }
+            _diagnostics.Add(diagnostic);
         }
-        else if ((diagnostic.Severity == DiagnosticSeverity.Warning && !state.WarningsOn) || (diagnostic.Severity == DiagnosticSeverity.Hint && !state.HintsOn))
-        {
-            return;
-        }
-
-        _diagnostics.Add(diagnostic);
     }
 
     // ------------------------------------------------------------------ state

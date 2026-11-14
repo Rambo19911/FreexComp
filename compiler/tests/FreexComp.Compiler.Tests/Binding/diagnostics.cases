@@ -342,3 +342,15 @@ type TA = class; TA = record X: Integer end; begin end.
 type TA = class; TB = (B1); TA = (A1, A2); begin end.
 === H2003 1,25
 type TA = class private F: Integer; end; var A: TA; begin A := nil; Writeln(A = nil) end.
+=== E2122 1,121
+procedure X(a: Integer; b: Double); overload; begin end; procedure X(a: Double; b: Integer); overload; begin end; begin X(1, 1) end.
+=== E2114 1,29
+procedure P(a: Integer = 1; b: Integer); begin end; begin end.
+=== E2115 1,29
+procedure P(a, b: Integer = 1); begin end; begin end.
+=== E2117 1,30
+procedure P(var a: Integer = 1); begin end; begin end.
+=== E2117 1,52
+type R = record x: Integer end; procedure P(a: R = 1); begin end; begin end.
+=== E2121 1,57
+procedure P(a: Integer); overload; begin end; procedure P(a: Integer; b: Integer = 0); overload; begin end; begin end.

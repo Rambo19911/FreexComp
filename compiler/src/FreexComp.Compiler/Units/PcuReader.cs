@@ -182,7 +182,10 @@ internal static class PcuReader
                 "out" => ParameterMode.Out,
                 "value" => ParameterMode.Value,
                 var other => throw new PcuFormatException($"unknown parameter mode '{other}'"),
-            }, i, routine, []))];
+            }, i, routine, [])
+            {
+                DefaultValue = p is JsonObject o && o.TryGetPropertyValue("default", out var value) ? Value(value, Type(p, "type")) : null,
+            })];
 
         /// <summary>The recorded link name when it is not the one derived from the declaration (an import name, a <c>public name</c>).</summary>
         private static string? Explicit(string recorded, string derived) => recorded == derived ? null : recorded;

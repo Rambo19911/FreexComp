@@ -374,6 +374,14 @@ internal sealed partial class DeclarationBinder
         {
             var at = method.MethodDeclaration.Heading.Name;
             var inherited = slots.LastOrDefault(s => IdentifierComparer.Instance.Equals(s.Name, method.Name) && !ReferenceEquals(s.ContainingType, type));
+            if (method.IsOverload && inherited is not null)
+            {
+                // LANG-441 (C-104): an overload overrides or hides only the inherited virtual method with its own parameters
+                var same = slots.LastOrDefault(s => IdentifierComparer.Instance.Equals(s.Name, method.Name) && !ReferenceEquals(s.ContainingType, type)
+                    && SameSignature(s, method));
+                inherited = same ?? (method.IsOverride ? inherited : null);
+            }
+
             if (method.IsOverride)
             {
                 if (inherited is null)

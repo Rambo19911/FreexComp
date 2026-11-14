@@ -1,0 +1,4 @@
+ErrOverloadAmbiguous.pas(24,11): error E2120: Previous declaration of 'Plain' was not marked with the 'overload' directive
+ErrOverloadAmbiguous.pas(32,3): error E2122: Ambiguous overloaded call to 'Mix'
+ErrOverloadAmbiguous.pas(33,3): error E2122: Ambiguous overloaded call to 'Narrow'
+ErrOverloadAmbiguous.pas(34,3): error E2123: There is no overloaded version of 'Narrow' that can be called with these arguments

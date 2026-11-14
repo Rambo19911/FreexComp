@@ -461,7 +461,9 @@ public sealed class PcuTests
               Callback: TFunc;
             procedure Stop; noreturn;
             function Twice(X: Integer): Integer; inline;
+            procedure Defaults(A: Integer = -1; const S: string = 'x'; P: PNode = nil; C: TThings = []; R: Double = 1.5; F: TFlag = True);
             implementation
+            procedure Defaults(A: Integer; const S: string; P: PNode; C: TThings; R: Double; F: TFlag); begin end;
             procedure Stop; begin Halt(1); end;
             function Twice(X: Integer): Integer; begin Result := X * 2; end;
             end.
@@ -476,6 +478,8 @@ public sealed class PcuTests
 
         var again = Compilation.Create(Options() with { SearchPaths = [@"C:\lib"] }, [], fs).PcuTexts().ToDictionary(t => t.Unit, t => t.Text);
 
+        Assert.Contains("\"default\":-1", pcus["U"], StringComparison.Ordinal);       // C-105: default values (nil = null)
+        Assert.Contains("\"default\":null", pcus["U"], StringComparison.Ordinal);
         Assert.Equal(pcus["U"], again["U"]);
     }
 

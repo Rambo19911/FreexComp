@@ -133,7 +133,8 @@ internal sealed partial class ExpressionBinder
             }
 
             var methods = owner.Methods.Where(m => IdentifierComparer.Instance.Equals(m.Name, name)).ToList();
-            candidates.AddRange(methods);
+            // an ancestor's method that a nearer one overrides or hides with the same parameters is not a second candidate
+            candidates.AddRange(methods.Where(m => !candidates.Any(c => SameParameters(c, m))));
             if (methods.Count > 0 && methods.Any(m => !m.IsOverload))
             {
                 break;
@@ -142,6 +143,10 @@ internal sealed partial class ExpressionBinder
 
         return candidates.ToImmutable();
     }
+
+    private static bool SameParameters(RoutineSymbol a, RoutineSymbol b) =>
+        a.Parameters.Length == b.Parameters.Length
+        && a.Parameters.Zip(b.Parameters).All(p => p.First.Mode == p.Second.Mode && ReferenceEquals(p.First.Type, p.Second.Type));
 
     /// <summary>Binds the arguments, picks the method and determines its receiver (CMP-367 table).</summary>
     private MethodCall BindMethodCall(SyntaxNode call, ImmutableArray<RoutineSymbol> candidates, ReceiverKind kind, BoundExpression? instance,

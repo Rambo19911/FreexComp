@@ -108,7 +108,7 @@ public sealed class RoutineBindingTests
     [InlineData("function F(Result: Integer): Integer; begin end; begin end.", "E2004(1,23): Identifier redeclared: 'Result'")]
     [InlineData("function F; begin end; begin end.", "E2102(1,21): Function needs a result type")]
     [InlineData("procedure P(var a); begin end; begin end.", "E2900(1,24): Feature not supported: untyped parameter")]
-    [InlineData("procedure P(a: Integer = 1); begin end; begin end.", "E2900(1,37): Feature not supported: default parameter value")]
+    [InlineData("procedure P(a, b: Integer = 1); begin end; begin end.", "E2115(1,40): Default value not allowed for a parameter group")]   // C-105
     [InlineData("procedure P; virtual; begin end; begin end.", "E1114(1,25): Directive 'virtual' is not allowed here")]
     [InlineData("procedure P(x: Integer); begin end; procedure Q; begin P end; begin end.",
         "E2110(1,67): Not enough actual parameters for 'P'")]

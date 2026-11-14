@@ -1463,22 +1463,22 @@ internal sealed partial class ExpressionBinder
         var routine = candidates[0];
         if (candidates.Length > 1)
         {
-            var applicable = candidates.Where(c => IsApplicable(c, arguments)).ToList();
-            if (applicable.Count != 1)
+            var resolution = new OverloadResolver(_conversions).Resolve(candidates, arguments, IsVariableArgument);
+            if (resolution.Routine is null)
             {
-                if (applicable.Count == 0)
+                if (resolution.Tied.IsEmpty)
                 {
                     _diagnostics.Report(call, "E2123", routine.Name);
                 }
                 else
                 {
-                    _diagnostics.Report(call, "E2900", "overload resolution between compatible candidates");   // LANG-442, M2.5
+                    _diagnostics.Report(call, "E2122", [.. resolution.Tied.Where(c => !c.Locations.IsEmpty).Select(c => new RelatedLocation(c.Locations[0], "candidate"))], routine.Name);
                 }
 
                 return (null, arguments);
             }
 
-            routine = applicable[0];
+            routine = resolution.Routine;
         }
 
         return CheckArguments(call, routine, syntaxes, arguments);
@@ -1489,7 +1489,7 @@ internal sealed partial class ExpressionBinder
         SeparatedSyntaxList<ArgumentSyntax> syntaxes, ImmutableArray<BoundExpression> arguments)
     {
         var parameters = routine.Parameters;
-        if (arguments.Length < parameters.Length)
+        if (arguments.Length < parameters.Length && parameters.Skip(arguments.Length).Any(p => p.DefaultValue is null))
         {
             _diagnostics.Report(call, "E2110", routine.Name);
             return (null, arguments);
@@ -1519,6 +1519,8 @@ internal sealed partial class ExpressionBinder
             }
         }
 
+        // LANG-422 (C-105): omitted trailing arguments take the defaults, already converted to the parameter types
+        converted.AddRange(parameters.Skip(arguments.Length).Select(p => (BoundExpression)new BoundLiteral(call, p.DefaultValue!)));
         return (ok ? routine : null, converted.ToImmutable());
     }
 
@@ -1582,33 +1584,10 @@ internal sealed partial class ExpressionBinder
         return true;
     }
 
-    /// <summary>Count fits and every argument is compatible with its parameter (LANG-280/281), without diagnostics.</summary>
-    private bool IsApplicable(RoutineSymbol candidate, ImmutableArray<BoundExpression> arguments)
-    {
-        if (candidate.Parameters.Length != arguments.Length)
-        {
-            return false;
-        }
-
-        for (var i = 0; i < arguments.Length; i++)
-        {
-            var (parameter, argument) = (candidate.Parameters[i], arguments[i]);
-            var compatible = parameter.IsByReference
-                ? !IsPropertyRead(argument)
-                  && BoundIndexExpression.RootOf(argument) is BoundVariableExpression or BoundDereferenceExpression or BoundFieldAccessExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const }
-                  && Pointers.SameType(argument.Type, parameter.Type)
-                : ReferenceEquals(argument.Type, parameter.Type)
-                  || (argument.ConstantValue is { } constant
-                      ? _conversions.ConvertConstant(constant, parameter.Type, argument.Syntax, new DiagnosticBag()) != null
-                      : _conversions.Classify(argument.Type, parameter.Type).Exists);
-            if (!compatible)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    /// <summary>An argument a <c>var</c>/<c>out</c> parameter accepts (LANG-421), without diagnostics (overload resolution).</summary>
+    private bool IsVariableArgument(BoundExpression argument) =>
+        !IsPropertyRead(argument)
+        && BoundIndexExpression.RootOf(argument) is BoundVariableExpression or BoundDereferenceExpression or BoundFieldAccessExpression or BoundParameterExpression { Parameter.Mode: not ParameterMode.Const };
 
     // ------------------------------------------------------------------ unary operators (LANG-227)
 

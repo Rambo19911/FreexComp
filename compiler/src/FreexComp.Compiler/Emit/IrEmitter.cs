@@ -438,6 +438,7 @@ internal static class IrEmitter
         (RealTypeSymbol { RealKind: not RealKind.Currency }, BigInteger i) => new IrFloatConstant((FloatingIrType)ValueType(type), (double)i),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, double d) => new IrFloatConstant((FloatingIrType)ValueType(type), d),
         (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol, null) => new IrNullConstant(),
+        (PointerTypeSymbol, BigInteger address) => new IrIntToPtrConstant(address),                                         // C-185
         (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol, BigInteger i) => new IrIntConstant((IntegerIrType)ValueType(type), i),
         (SetTypeSymbol { IsSmall: true }, BigInteger mask) => new IrIntConstant((IntegerIrType)ValueType(type), mask),       // CMP-335
         (SetTypeSymbol, BigInteger mask) => BigSetConstant(mask, type.Size),                                                  // CMP-336

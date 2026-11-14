@@ -48,6 +48,9 @@ internal sealed record IrStructConstant(StructIrType StructType, ImmutableArray<
 /// </summary>
 internal sealed record IrGepConstant(IrType SourceType, IrGlobal Base, ImmutableArray<IrIntConstant> Indices) : IrConstant(IrType.Ptr);
 
+/// <summary>A constant address from an integer: <c>inttoptr (i64 N to ptr)</c> (C-185, LANG-340 pointer constants).</summary>
+internal sealed record IrIntToPtrConstant(System.Numerics.BigInteger Address) : IrConstant(IrType.Ptr);
+
 /// <summary>A pointer call argument with the <c>align N</c> parameter attribute: <c>ptr align N %p</c> (CMP-326 memcpy operands).</summary>
 internal sealed record IrAlignedPointer(IrValue Pointer, int Alignment) : IrValue(IrType.Ptr);
 

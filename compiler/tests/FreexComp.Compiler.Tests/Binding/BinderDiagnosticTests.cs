@@ -145,13 +145,15 @@ public sealed class BinderDiagnosticTests
 
     /// <summary>
     /// C-096: codes reserved by a lead decision (E2604, W1081) are never reported: no compiler source outside the catalogue
-    /// names them.
+    /// names them. C-197: their status is <c>reserved</c> (matching the "(reserved, not emitted)" marker of their rows).
     /// </summary>
     [Fact]
     [Trait("Req", "CMP-500")]
     public void UnemittedCodes_AreNamedOnlyByTheCatalogue()
     {
-        var unemitted = ReadUncovered().Where(u => u.Status == "unemitted").Select(u => u.Code).ToList();
+        var unemitted = ReadUncovered()
+            .Where(u => u.Status == "unemitted" || (u.Status == "reserved" && u.Reason.StartsWith("lead decision", StringComparison.Ordinal)))
+            .Select(u => u.Code).ToList();
         Assert.Equal(["E2604", "W1081"], unemitted.Order(StringComparer.Ordinal));
         var sources = Directory.EnumerateFiles(System.IO.Path.Combine(RepoPaths.Root, "compiler", "src"), "*.cs", SearchOption.AllDirectories)
             .Where(p => !p.Contains($"{System.IO.Path.DirectorySeparatorChar}obj{System.IO.Path.DirectorySeparatorChar}", StringComparison.Ordinal)
@@ -245,6 +247,10 @@ public sealed class BinderDiagnosticTests
     [InlineData("E2635")]
     [InlineData("E2636")]
     [InlineData("E2637")]
+    [InlineData("E2122")]
+    [InlineData("E2114")]
+    [InlineData("E2115")]
+    [InlineData("E2117")]
     public void CodeHasACase(string code) => Assert.Contains(ReadCases(), c => c.Code == code);
 
     [Fact]
@@ -271,4 +277,25 @@ public sealed class BinderDiagnosticTests
             ["E2003(1,8): Undeclared identifier 'Foo'", "E2003(1,24): Undeclared identifier 'Bar'"],
             BindDiagnostics("var A: Foo; B: foo; C: Bar; const D = FOO; begin end."));
     }
+
+    private const string W1060Snippet =
+        "type TA = class procedure P; virtual; end; TB = class(TA) procedure P; end; procedure TA.P; begin end; procedure TB.P; begin end; begin end.";
+
+    private const string W1020Snippet = "var s: string; a: AnsiString; begin a := s end.";
+
+    /// <summary>C-196 (CMP-505): binder warnings honour <c>{$WARNINGS}</c>, <c>{$WARN}</c> at their location.</summary>
+    [Theory]
+    [Trait("Req", "CMP-505")]
+    [InlineData("{$WARNINGS OFF}" + W1060Snippet, "")]
+    [InlineData("{$WARN W1060 OFF}" + W1060Snippet, "")]
+    [InlineData("{$WARN HIDING_MEMBER OFF}" + W1060Snippet, "")]
+    [InlineData("{$WARNINGS OFF}{$WARN W1060 ON}" + W1060Snippet, "W1060 Warning")]
+    [InlineData("{$WARN W1060 ERROR}" + W1060Snippet, "W1060 Error")]
+    [InlineData("{$WARN W1061 OFF}" + W1060Snippet, "W1060 Warning")]
+    [InlineData("{$WARNINGS OFF}" + W1020Snippet, "")]
+    [InlineData("var s: string; a: AnsiString; begin {$WARNINGS OFF} a := s {$WARNINGS ON} end.", "")]
+    [InlineData("{$WARNINGS OFF} var s: string; a: AnsiString; begin {$WARNINGS ON} a := s end.", "W1020 Warning")]
+    [InlineData("{$HINTS OFF}" + W1020Snippet, "W1020 Warning")]
+    public void WarningsOff_SilencesBinderWarnings(string snippet, string expected) =>
+        Assert.Equal(expected, string.Join("; ", Diagnose(snippet).Select(d => $"{d.Code} {d.Severity}")));
 }
