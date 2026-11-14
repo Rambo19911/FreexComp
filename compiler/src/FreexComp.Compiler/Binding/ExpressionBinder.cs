@@ -98,6 +98,13 @@ internal sealed class ExpressionBinder
                 return BindDereference(dereference, untyped: false);
             case ElementAccessExpressionSyntax elementAccess:
                 return BindElementAccess(elementAccess);
+            case StringCastExpressionSyntax cast:
+            {
+                // string(x) (LANG-290 row 7, C-063)
+                var operand = BindExpression(cast.Expression);
+                return operand.HasErrors ? Error(cast, operand) : StringTypecast(cast, _types.String, operand);
+            }
+
             case PredefinedTypeExpressionSyntax predefined:
                 _diagnostics.Report(predefined, "E2009", predefined.Keyword.Text);
                 return Error(syntax);
@@ -164,6 +171,11 @@ internal sealed class ExpressionBinder
         {
             _conversions.ReportIncompatible(value.Type, destination, at, _diagnostics);
             return Error(at, value);
+        }
+
+        if (Conversions.IsNarrowing(value.Type, destination))
+        {
+            _diagnostics.Report(at, "W1020", value.Type.Name, destination.Name);     // LANG-245 (not for constants)
         }
 
         return new BoundConversionExpression(value.Syntax, value, destination, conversion.Kind, isExplicit: false, constantValue: null);
@@ -355,9 +367,10 @@ internal sealed class ExpressionBinder
                 continue;
             }
 
-            if (first && result.Type is StringTypeSymbol { Variant: StringVariant.Unicode })
+            if (first && result.Type is StringTypeSymbol indexed)
             {
-                // LANG-241: s[i] is a Char variable when s is one, 1-based; the index is an integer (E2010 at it)
+                // LANG-241: s[i] is a Char variable when s is one, 1-based; the index is an integer (E2010 at it). Byte strings
+                // give AnsiChar; a ShortString is indexed 0..capacity, s[0] being its length byte (C-063)
                 first = false;
                 var position = BindExpression(indexSyntax);
                 if (position.HasErrors)
@@ -371,7 +384,27 @@ internal sealed class ExpressionBinder
                     return Error(syntax, result, position);
                 }
 
-                result = new BoundIndexExpression(syntax, result, position, _types.Char);
+                result = new BoundIndexExpression(syntax, result, position, indexed.Variant == StringVariant.Unicode ? _types.Char : _types.AnsiChar);
+                continue;
+            }
+
+            if (result.Type is DynamicArrayTypeSymbol dynamic)
+            {
+                // LANG-257: a[i] is an element variable, 0-based; the index is an integer (E2010 at it), C-064
+                first = false;
+                var position = BindExpression(indexSyntax);
+                if (position.HasErrors)
+                {
+                    return Error(syntax, result, position);
+                }
+
+                if (position.Type is not IntegerTypeSymbol)
+                {
+                    _conversions.ReportIncompatible(position.Type, _types.Integer, indexSyntax, _diagnostics);
+                    return Error(syntax, result, position);
+                }
+
+                result = new BoundIndexExpression(syntax, result, position, dynamic.ElementType);
                 continue;
             }
 
@@ -380,10 +413,6 @@ internal sealed class ExpressionBinder
                 if (!first)
                 {
                     _diagnostics.Report(indexSyntax, "E2019", syntax.Expression.ToString().Trim());
-                }
-                else if (result.Type is StringTypeSymbol)
-                {
-                    return Unsupported(syntax, "string indexing");                  // AnsiString / ShortString: C-063
                 }
                 else
                 {
@@ -592,16 +621,12 @@ internal sealed class ExpressionBinder
             }
 
             var value = _folder.FoldTypeIntrinsic(invocation, intrinsic, type, argument?.ConstantValue, argument is null, out var needsRuntime);
-            if (needsRuntime && type is StringTypeSymbol { Variant: StringVariant.Unicode })
+            if (needsRuntime && type is StringTypeSymbol or DynamicArrayTypeSymbol)
             {
-                // Length/High of a UnicodeString value: its length at run time (ABI-023, C-060); the operand is evaluated
+                // Length/High of a string value: its length at run time (ABI-023, C-060; byte strings in bytes, C-063); the
+                // operand is evaluated
                 CapturedVariables.AddRange(operandCaptures.Where(v => !CapturedVariables.Contains(v)));
                 return new BoundIntrinsicCallExpression(invocation, intrinsic, [argument!], _types.Integer, constantValue: null);
-            }
-
-            if (needsRuntime)
-            {
-                return Unsupported(invocation, intrinsic.Name + " of a string variable");    // other string kinds: C-063
             }
 
             return value is null
@@ -772,7 +797,8 @@ internal sealed class ExpressionBinder
         var arguments = invocation.ArgumentList.Arguments;
         var (min, max) = intrinsic.Intrinsic switch
         {
-            IntrinsicKind.Copy or IntrinsicKind.Pos => (2, 3),
+            IntrinsicKind.Copy => (1, 3),
+            IntrinsicKind.Pos => (2, 3),
             IntrinsicKind.Concat => (1, int.MaxValue),
             _ => (1, 1),
         };
@@ -798,6 +824,39 @@ internal sealed class ExpressionBinder
         }
 
         var operands = ImmutableArray.CreateBuilder<BoundExpression>(arguments.Count);
+        if (intrinsic.Intrinsic == IntrinsicKind.Copy)
+        {
+            var source = BindExpression(arguments[0].Expression);
+            if (source.HasErrors)
+            {
+                return Error(invocation, source);
+            }
+
+            if (source.Type is DynamicArrayTypeSymbol)
+            {
+                // intrinsics.md: Copy(a[, index[, count]]) of a dynamic array is a unique copy of the same type (C-064)
+                operands.Add(source);
+                for (var k = 1; k < arguments.Count; k++)
+                {
+                    var count = ConvertForAssignment(BindExpression(arguments[k].Expression), _types.NativeInt, arguments[k].Expression);
+                    if (count.HasErrors)
+                    {
+                        return Error(invocation, [.. operands, count]);
+                    }
+
+                    operands.Add(count);
+                }
+
+                return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), source.Type, constantValue: null);
+            }
+
+            if (arguments.Count < 2)
+            {
+                _diagnostics.Report(invocation, "E2110", intrinsic.Name);
+                return Error(invocation, source);
+            }
+        }
+
         for (var k = 0; k < arguments.Count; k++)
         {
             var syntax = arguments[k].Expression;
@@ -810,6 +869,7 @@ internal sealed class ExpressionBinder
             };
             var value = BindExpression(syntax);
             value = value.HasErrors ? value
+                : intrinsic.Intrinsic == IntrinsicKind.Copy && k == 0 && Strings.IsAnsi(value.Type) ? value     // _AStrCopy (C-063)
                 : stringOperand ? StringOperand(value, syntax, intrinsic.Name)
                 : intrinsic.Intrinsic == IntrinsicKind.UpCase ? CharOperand(value, syntax)
                 : ConvertForAssignment(value, _types.Integer, syntax);
@@ -833,7 +893,8 @@ internal sealed class ExpressionBinder
 
                 return result;
             case IntrinsicKind.Copy:
-                return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), _types.String, constantValue: null);
+                return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), Strings.IsAnsi(operands[0].Type) ? operands[0].Type : _types.String,
+                    constantValue: null);
             case IntrinsicKind.Pos:
                 return new BoundIntrinsicCallExpression(invocation, intrinsic, operands.ToImmutable(), _types.Integer, constantValue: null);
             default:
@@ -847,14 +908,9 @@ internal sealed class ExpressionBinder
     /// </summary>
     internal BoundExpression StringOperand(BoundExpression value, ExpressionSyntax syntax, string intrinsic)
     {
-        if (IsUnicodeOperand(value.Type))
+        if (IsStringOperand(value.Type))
         {
-            return AsString(value);
-        }
-
-        if (value.Type is StringTypeSymbol)
-        {
-            return Unsupported(syntax, intrinsic + " of a " + value.Type.Name);
+            return AsString(value);                                     // other string kinds and PChar convert (C-063)
         }
 
         _diagnostics.Report(syntax, "E2010", value.Type.Name, _types.String.Name);
@@ -901,13 +957,9 @@ internal sealed class ExpressionBinder
     private BoundExpression BindTypecast(InvocationExpressionSyntax node, TypeSymbol target, BoundExpression operand, bool variableContext)
     {
         var source = operand.Type;
-        if (source is StringTypeSymbol || target is StringTypeSymbol)
+        if ((source is StringTypeSymbol || target is StringTypeSymbol) && !(variableContext && IsAddressable(operand)))
         {
-            if (!IsAddressable(operand) || (source is StringTypeSymbol && target is StringTypeSymbol or PointerTypeSymbol)
-                || (target is StringTypeSymbol && source is StringTypeSymbol or PointerTypeSymbol or CharTypeSymbol))
-            {
-                return Unsupported(node, "string typecast");            // LANG-245/290 rows 7 and 8 (C-060…C-062)
-            }
+            return StringTypecast(node, target, operand);
         }
 
         if (variableContext && IsAddressable(operand))
@@ -961,8 +1013,57 @@ internal sealed class ExpressionBinder
         return new BoundConversionExpression(node, operand, target, ConversionKind.Explicit, isExplicit: true, constant);
     }
 
+    /// <summary>
+    /// LANG-290 rows 3, 4, 7 and 8 (C-063): <c>T(x)</c> to a string type converts like the implicit LANG-245 conversions (also from
+    /// <c>PChar</c>, without W1020); <c>PChar(s)</c> / <c>PAnsiChar(a)</c> / <c>Pointer(s)</c> of a long string point to its data
+    /// (a literal: the static literal); a long string to a 64-bit integer reinterprets the reference. Anything else is a
+    /// variable typecast of a variable (E2041 for managed types) or E2040.
+    /// </summary>
+    private BoundExpression StringTypecast(SyntaxNode node, TypeSymbol target, BoundExpression operand)
+    {
+        var source = operand.Type;
+        if (target is StringTypeSymbol && (source is StringTypeSymbol or CharTypeSymbol || _conversions.Classify(source, target).Exists))
+        {
+            if (operand.ConstantValue is { } constant)
+            {
+                return _conversions.ConvertConstant(constant, target, node, _diagnostics) is { } converted
+                    ? new BoundConversionExpression(node, operand, target, ConversionKind.ImplicitString, isExplicit: true, converted)
+                    : Error(node, operand);
+            }
+
+            return ReferenceEquals(source, target)
+                ? operand
+                : new BoundConversionExpression(node, operand, target, ConversionKind.ImplicitString, isExplicit: true, constantValue: null);
+        }
+
+        var toData = source is StringTypeSymbol { Variant: not StringVariant.Short } && target is PointerTypeSymbol pointer
+            && (pointer.PointedType is null && pointer != _types.Nil
+                || Strings.IsCharPointer(target, wide: true) && Strings.IsUnicode(source)
+                || Strings.IsCharPointer(target, wide: false) && Strings.IsAnsi(source));
+        var toInteger = source is StringTypeSymbol { Variant: not StringVariant.Short } && target is IntegerTypeSymbol { Bits: 64 };
+        if ((toData || toInteger) && operand.ConstantValue is { } literal)
+        {
+            if (toData && target != _types.Pointer && _conversions.ConvertConstant(literal, target, node, _diagnostics) is { } data)
+            {
+                return new BoundConversionExpression(node, operand, target, ConversionKind.Explicit, isExplicit: true, data);
+            }
+        }
+        else if (toData || toInteger)
+        {
+            return new BoundConversionExpression(node, operand, target, ConversionKind.Explicit, isExplicit: true, constantValue: null);
+        }
+
+        if (IsAddressable(operand))
+        {
+            return VariableTypecast(node, target, operand);
+        }
+
+        _diagnostics.Report(node, "E2040", source.Name, target.Name);
+        return Error(node, operand);
+    }
+
     /// <summary>LANG-290 last row: same size, neither type managed (E2041 at the cast otherwise).</summary>
-    private BoundExpression VariableTypecast(InvocationExpressionSyntax node, TypeSymbol target, BoundExpression operand)
+    private BoundExpression VariableTypecast(SyntaxNode node, TypeSymbol target, BoundExpression operand)
     {
         if (operand.Type.IsManaged || target.IsManaged || operand.Type.Size != target.Size || target.Size < 0)
         {
@@ -1276,10 +1377,7 @@ internal sealed class ExpressionBinder
             case SyntaxKind.PlusToken or SyntaxKind.MinusToken or SyntaxKind.AsteriskToken:
                 if (op.Kind == SyntaxKind.PlusToken && (lt is StringTypeSymbol || rt is StringTypeSymbol || (lt is CharTypeSymbol && rt is CharTypeSymbol)))
                 {
-                    // LANG-243: UnicodeString and character operands concatenate to a UnicodeString (C-061)
-                    return IsUnicodeOperand(lt) && IsUnicodeOperand(rt)
-                        ? new BoundBinaryExpression(binary, BoundBinaryOperatorKind.Add, AsString(left), AsString(right), _types.String, _types.String, constantValue: null)
-                        : Unsupported(op, binary, "string expression");      // AnsiString, ShortString, PChar operands: C-063
+                    return Concatenation(binary, left, right);
                 }
 
                 if (lt is IntegerTypeSymbol && rt is IntegerTypeSymbol)
@@ -1373,6 +1471,68 @@ internal sealed class ExpressionBinder
     /// <summary>An operand of a UnicodeString operation (LANG-243/244): a UnicodeString or a character.</summary>
     private static bool IsUnicodeOperand(TypeSymbol type) => type is StringTypeSymbol { Variant: StringVariant.Unicode } or CharTypeSymbol;
 
+    /// <summary>LANG-243: an operand beside a string: any string kind, a character, <c>PChar</c> or <c>PAnsiChar</c>.</summary>
+    private static bool IsStringOperand(TypeSymbol type) =>
+        type is StringTypeSymbol or CharTypeSymbol || Strings.IsCharPointer(type, wide: true) || Strings.IsCharPointer(type, wide: false);
+
+    /// <summary>
+    /// LANG-243/244 (C-063): the string kind two operands are combined in — <c>Ansi</c> when both are of the AnsiString family,
+    /// <c>Short</c> when both are short strings, else <c>Unicode</c>. A string or character constant takes the other operand's kind.
+    /// </summary>
+    private static StringVariant StringOperandKind(BoundExpression left, BoundExpression right)
+    {
+        static StringVariant? Kind(BoundExpression e) =>
+            e.ConstantValue is not null && e.Type is StringTypeSymbol or CharTypeSymbol ? null
+            : e.Type is StringTypeSymbol s ? s.Variant
+            : StringVariant.Unicode;
+
+        var (l, r) = (Kind(left), Kind(right));
+        return (l ?? r ?? StringVariant.Unicode) == (r ?? l ?? StringVariant.Unicode) ? l ?? r ?? StringVariant.Unicode : StringVariant.Unicode;
+    }
+
+    /// <summary>The AnsiString-family type of a byte-string operation: the left operand's when it is one, else the right one's.</summary>
+    private static TypeSymbol AnsiTypeOf(BoundExpression left, BoundExpression right) =>
+        Strings.IsAnsi(left.Type) && left.ConstantValue is null ? left.Type : right.Type;
+
+    /// <summary>The short-string operand type a constant converts to (the other operand's).</summary>
+    private static TypeSymbol ShortTypeOf(BoundExpression left, BoundExpression right) =>
+        Strings.IsShort(left.Type) && left.ConstantValue is null ? left.Type : right.Type;
+
+    /// <summary>A constant converted to <paramref name="type"/>; a short-string variable stays as it is (no copy for a comparison).</summary>
+    private BoundExpression AsType(BoundExpression operand, TypeSymbol type) =>
+        operand.ConstantValue is null ? operand : ConvertForAssignment(operand, type, operand.Syntax);
+
+    /// <summary>
+    /// LANG-243 <c>+</c> with a string operand (C-061/C-063): two AnsiString-family operands give the left one's type
+    /// (<c>_AStrCat</c>); two short strings a <c>ShortString</c> (built as a UnicodeString concatenation converted back, which
+    /// truncates at 255 bytes); anything else a UnicodeString of the operands converted to it. E2011 for other operand types.
+    /// </summary>
+    private BoundExpression Concatenation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
+    {
+        if (!IsStringOperand(left.Type) || !IsStringOperand(right.Type))
+        {
+            return Inapplicable(binary, left, right);
+        }
+
+        switch (StringOperandKind(left, right))
+        {
+            case StringVariant.Ansi:
+            {
+                var type = AnsiTypeOf(left, right);
+                return new BoundBinaryExpression(binary, BoundBinaryOperatorKind.Add, AsType(left, type), AsType(right, type), type, type, constantValue: null);
+            }
+
+            case StringVariant.Short:
+            {
+                var unicode = new BoundBinaryExpression(binary, BoundBinaryOperatorKind.Add, AsString(left), AsString(right), _types.String, _types.String, constantValue: null);
+                return new BoundConversionExpression(binary, unicode, _types.ShortString, ConversionKind.ImplicitString, isExplicit: false, constantValue: null);
+            }
+
+            default:
+                return new BoundBinaryExpression(binary, BoundBinaryOperatorKind.Add, AsString(left), AsString(right), _types.String, _types.String, constantValue: null);
+        }
+    }
+
     /// <summary>A UnicodeString or character operand as a UnicodeString (LANG-245; a constant character folds to a string constant).</summary>
     private BoundExpression AsString(BoundExpression operand) => ConvertForAssignment(operand, _types.String, operand.Syntax);
 
@@ -1410,10 +1570,33 @@ internal sealed class ExpressionBinder
         var (lt, rt) = (left.Type, right.Type);
         if (lt is StringTypeSymbol || rt is StringTypeSymbol)
         {
-            // LANG-244: ordinal comparison as UnicodeStrings; a character operand becomes a 1-char string (C-061)
-            return IsUnicodeOperand(lt) && IsUnicodeOperand(rt)
-                ? new BoundBinaryExpression(binary, kind, AsString(left), AsString(right), _types.String, boolean, constantValue: null)
-                : Unsupported(binary.OperatorToken, binary, "string expression");    // other string kinds: C-063
+            // LANG-244: ordinal comparison; two byte strings of one kind compare as such (_AStrCmp / _SStrCmp), everything else as
+            // UnicodeStrings (a character operand becomes a 1-char string, C-061/C-063)
+            if (!IsStringOperand(lt) || !IsStringOperand(rt))
+            {
+                return Inapplicable(binary, left, right);
+            }
+
+            return StringOperandKind(left, right) switch
+            {
+                StringVariant.Ansi => new BoundBinaryExpression(binary, kind, AsType(left, AnsiTypeOf(left, right)), AsType(right, AnsiTypeOf(left, right)),
+                    AnsiTypeOf(left, right), boolean, constantValue: null),
+                StringVariant.Short => new BoundBinaryExpression(binary, kind, AsType(left, ShortTypeOf(left, right)), AsType(right, ShortTypeOf(left, right)),
+                    _types.ShortString, boolean, constantValue: null),
+                _ => new BoundBinaryExpression(binary, kind, AsString(left), AsString(right), _types.String, boolean, constantValue: null),
+            };
+        }
+
+        if (lt is DynamicArrayTypeSymbol || rt is DynamicArrayTypeSymbol)
+        {
+            // LANG-257: = and <> compare references; the same type, or nil (C-064)
+            var sameOrNil = ReferenceEquals(lt, rt) || lt is DynamicArrayTypeSymbol && right.Type == _types.Nil || rt is DynamicArrayTypeSymbol && left.Type == _types.Nil;
+            if (sameOrNil && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
+            {
+                return new BoundBinaryExpression(binary, kind, left, right, lt is DynamicArrayTypeSymbol ? lt : rt, boolean, constantValue: null);
+            }
+
+            return Inapplicable(binary, left, right);
         }
 
         if (lt is IntegerTypeSymbol && rt is IntegerTypeSymbol)

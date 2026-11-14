@@ -63,8 +63,6 @@ public sealed class WriteBindingTests
     [InlineData("Write(i:^1.5)", "E2010: Incompatible types: 'Double' and 'Integer'")]
     [InlineData("Write(d:1:^'x')", "E2010: Incompatible types: 'Char' and 'Integer'")]
     [InlineData("Write(q:1^:2)", "E2912: Decimals specifier ':d' is only allowed for real values")]
-    [InlineData("Write(^sa)", "E2900: Feature not supported: Write of a string variable")]
-    [InlineData("Write(^pc)", "E2900: Feature not supported: Write of a PChar")]
     [InlineData("Write(^x)", "E2003: Undeclared identifier 'x'")]
     [InlineData("i := ^Writeln", "E2034: Expression has no value (procedure call used as a value)")]
     public void Errors_AreReportedOnce(string statement, string expected)

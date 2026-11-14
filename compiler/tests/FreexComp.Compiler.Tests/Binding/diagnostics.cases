@@ -64,6 +64,15 @@ var b: Boolean; begin b := b + 1 end.
 var u: UInt64; i: Integer; begin u := u + i end.
 === W1021 1,19
 var a: AnsiChar = #200; begin end.
+=== W1020 1,42
+var s: string; a: AnsiString; begin a := s end.
+=== W1020 2,12
+var s: string; h: string[5];
+begin h := 'x' + s end.
+=== E2054 1,22
+const C: string[2] = 'abc'; begin end.
+=== E2012 1,15
+var X: string[256]; begin end.
 === E2061 1,29
 var i: Integer; begin while i do ; end.
 === E2061 2,6
@@ -151,8 +160,8 @@ begin P('x') end.
 procedure P; begin Result := 1 end; begin end.
 === E2207 1,31
 procedure P; var i: Integer = 1; begin end; begin end.
-=== E2900 1,8
-var p: array of Integer; begin end.
+=== E2900 1,16
+procedure P(X: array of Integer); begin end; begin end.
 === E2911 1,28
 var i: Integer; begin i := High(Double) end.
 === E2915 1,33

@@ -16,7 +16,6 @@ E2007  M2.2  incomplete type (pointer forward, records)
 E2008  reserved  LANG-516 makes this unused
 E2022  M2.2  circular type definition
 E2023  M2.2  result type restrictions (LANG-412)
-E2054  M2.2  string constant too long (short strings)
 E2067  M2.4  leaving a finally part (LANG-363)
 E2068  M2.5  with statement (LANG-375)
 E2069  M2.5  for-in (LANG-362)
@@ -100,7 +99,6 @@ E2914  M2.2  Read/Readln
 W1003  M2.3  {$APPTYPE} in a unit
 W1011  M2.2  comparison always true/false (no language rule names it yet)
 W1012  M2.2  subranges
-W1020  M2.2  string narrowing
 W1030  Phase8  LANG-462 accepts 'safecall' silently (C-160 ExternalDecl snapshot); no rule reports W1030 yet
 W1050  M2.3  hint directives used outside their unit (LANG-472)
 W1051  M2.3  hint directives used outside their unit (LANG-472)

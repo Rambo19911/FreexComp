@@ -1116,9 +1116,105 @@ public sealed class IrSnapshotTests
         end.
         """;
 
+    /// <summary>
+    /// C-063: byte strings and PChar (LANG-243…247, CMP-320/324): AnsiString literals with code page and ElemSize 1, the
+    /// <c>_AStr*</c> helpers (assign, concatenation into a temporary, bytewise compare, unique before a byte store), the
+    /// conversions, short strings as <c>[N+1 x i8]</c> (constant copy, <c>_SStrAsg</c>, <c>_SStrCmp</c>, the length byte),
+    /// <c>PChar(s)</c> as a select of <c>@.str.empty</c>, and the <c>Write</c> helpers.
+    /// </summary>
+    internal const string ByteStringsSource = """
+        unit M;
+        interface
+        type
+          TName = string[7];
+        function Ansi(var a: AnsiString; const s: string; c: AnsiChar): Boolean;
+        function Short(var n: TName; const h: ShortString; i: Integer): Integer;
+        function Data(const s: string; const a: AnsiString; p: PChar; pa: PAnsiChar): PChar;
+        implementation
+        function Ansi(var a: AnsiString; const s: string; c: AnsiChar): Boolean;
+        var
+          u: UTF8String;
+        begin
+          a := 'grün';
+          u := UTF8String(s);
+          a := a + u + 'x';
+          a[1] := c;
+          Result := (a < u) or (a = '');
+          Writeln(a, s);
+        end;
+        function Short(var n: TName; const h: ShortString; i: Integer): Integer;
+        begin
+          n := 'abcdefghij';
+          n := h;
+          n[i] := 'q';
+          Result := Length(n) + Ord(h[0]);
+          if n < h then
+            Writeln(n);
+        end;
+        function Data(const s: string; const a: AnsiString; p: PChar; pa: PAnsiChar): PChar;
+        var
+          t: string;
+        begin
+          t := p;
+          t := pa;
+          Writeln(p, pa);
+          Result := PChar(s);
+          if Pointer(a) = nil then
+            Result := '';
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-064: dynamic arrays (CMP-330/331, ABI-040…044) and their RTTI blocks (CMP-405, rtl-abi.md §10): <c>_DynArraySetLen</c> with a
+    /// dims array, <c>_DynArrayAsg</c>/<c>_DynArrayClr</c>/<c>_DynArrayCopy</c> with <c>linkonce_odr</c> type info, inline Length and
+    /// element GEPs (checked under <c>{$R+}</c>), a hidden dynamic-array Result, and <c>tkDynArray</c> blocks over <c>tkUString</c>,
+    /// <c>tkAString</c>, <c>tkRecord</c> and <c>tkArray</c> element blocks (anonymous types named per CMP-362).
+    /// </summary>
+    internal const string DynArraysSource = """
+        unit M;
+        interface
+        type
+          TPoint = record X, Y: Integer end;
+          TInts = array of Integer;
+          TGrid = array of TInts;
+          TNames = array of string;
+          TPoints = array of TPoint;
+          TPairs = array of array[0..1] of Byte;
+          TAnsis = array of AnsiString;
+        function Build(n: Integer; const names: TNames): TInts;
+        procedure Kinds(var p: TPoints; var t: TPairs; var a: TAnsis);
+        implementation
+        function Build(n: Integer; const names: TNames): TInts;
+        var
+          g: TGrid;
+          rest: array of string;
+        begin
+          SetLength(Result, n);
+          SetLength(g, n, 2);
+          g[0] := Result;
+          {$R+}
+          Result[n - 1] := Length(names[0]);
+          {$R-}
+          rest := nil;
+          if Copy(names, 1) <> nil then
+            g := nil;
+        end;
+        procedure Kinds(var p: TPoints; var t: TPairs; var a: TAnsis);
+        begin
+          SetLength(p, 1);
+          SetLength(t, 1);
+          SetLength(a, 1);
+          p[0].Y := t[0][1];
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["Atomic"] = AtomicSource,
+        ["ByteStrings"] = ByteStringsSource,
+        ["DynArrays"] = DynArraysSource,
         ["StringFunctions"] = StringFunctionsSource,
         ["Strings"] = StringsSource,
         ["StringOperators"] = StringOperatorsSource,
@@ -1458,6 +1554,20 @@ public sealed class IrSnapshotTests
     [Trait("Req", "LANG-243")]
     [Trait("Req", "LANG-244")]
     public void StringOperators() => Snapshot.Verify("StringOperators", Emit(StringOperatorsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-320")]
+    [Trait("Req", "CMP-324")]
+    [Trait("Req", "LANG-245")]
+    [Trait("Req", "LANG-246")]
+    public void ByteStrings() => Snapshot.Verify("ByteStrings", Emit(ByteStringsSource));
+
+    [Fact]
+    [Trait("Req", "CMP-330")]
+    [Trait("Req", "CMP-331")]
+    [Trait("Req", "CMP-405")]
+    [Trait("Req", "ABI-044")]
+    public void DynArrays() => Snapshot.Verify("DynArrays", Emit(DynArraysSource));
 
     /// <summary>C-061: the CMP-324 operator rows as emitted (helpers, the parts array, nil tests, unique before a character store).</summary>
     [Fact]

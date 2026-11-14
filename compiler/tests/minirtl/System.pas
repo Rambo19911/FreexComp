@@ -56,6 +56,34 @@ procedure _UStrCopy(var Dest: Pointer; S: Pointer; Index, Count: Integer);
 procedure _UStrDelete(var S: Pointer; Index, Count: Integer);
 procedure _UStrInsert(Src: Pointer; var Dest: Pointer; Index: Integer);
 function _UStrPos(SubStr, S: Pointer; Offset: Integer): Integer;
+procedure _UStrFromPWCharLen(var Dest: Pointer; P: PWideChar; Len: Integer);
+procedure _UStrFromPWChar(var Dest: Pointer; P: PWideChar);
+
+procedure _AStrClr(var S: Pointer);
+procedure _AStrAddRef(S: Pointer);
+procedure _AStrAsg(var Dest: Pointer; Src: Pointer);
+procedure _AStrFromPCharLen(var Dest: Pointer; P: PAnsiChar; Len: Integer; CodePage: Word);
+procedure _AStrCat(var Dest: Pointer; A, B: Pointer);
+function _AStrCmp(A, B: Pointer): Integer;
+procedure _AStrUnique(var S: Pointer);
+procedure _AStrSetLen(var S: Pointer; NewLen: Integer; CodePage: Word);
+procedure _AStrCopy(var Dest: Pointer; S: Pointer; Index, Count: Integer);
+procedure _UStrFromAStr(var Dest: Pointer; Src: Pointer);
+procedure _AStrFromUStr(var Dest: Pointer; Src: Pointer; CodePage: Word);
+procedure _UStrFromSStr(var Dest: Pointer; Src: Pointer);
+procedure _SStrFromUStr(Dest: Pointer; MaxLen: Integer; Src: Pointer);
+procedure _SStrAsg(Dest: Pointer; MaxLen: Integer; Src: Pointer);
+function _SStrCmp(A, B: Pointer): Integer;
+procedure _WriteAStr(var T: Text; S: Pointer; Width: Integer);
+procedure _WriteSStr(var T: Text; S: Pointer; Width: Integer);
+procedure _WritePWChar(var T: Text; P: PWideChar; Width: Integer);
+procedure _StrUStr(var Dest: Pointer; S: Pointer; Width: Integer);
+
+procedure _DynArrayClr(var A: Pointer; TI: Pointer);
+procedure _DynArrayAddRef(A: Pointer);
+procedure _DynArrayAsg(var Dest: Pointer; Src: Pointer; TI: Pointer);
+procedure _DynArraySetLen(var A: Pointer; TI: Pointer; DimCount: NativeInt; Dims: Pointer);
+procedure _DynArrayCopy(var Dest: Pointer; Src: Pointer; TI: Pointer; Index, Count: NativeInt);
 
 procedure _StrInt(var Dest: Pointer; V: Int64; Width: Integer);
 procedure _StrUInt(var Dest: Pointer; V: UInt64; Width: Integer);
@@ -1605,6 +1633,702 @@ begin
   Result := 0;
   while S[Result] <> #0 do
     Result := Result + 1;
+end;
+
+{ ------------------------------------------------------------------ AnsiString family, ShortString, PChar (rtl-abi.md 3, 9.3, 9.4; C-063)
+  AnsiString blocks have the UnicodeString header with ElemSize 1 and the code page at S - 8 (65001 or $FFFF, ABI-027); the
+  reference counting is shared with UnicodeString (ReleaseUStr, _UStrAddRef). ShortString: byte 0 = length, then UTF-8 bytes.
+  UTF-8 is decoded by hand: an invalid byte becomes U+FFFD and is skipped alone; a lone surrogate is encoded as '?'. }
+
+procedure _UStrFromPWCharLen(var Dest: Pointer; P: PWideChar; Len: Integer);
+var
+  R: Pointer;
+begin
+  if Len <= 0 then
+  begin
+    _UStrClr(Dest);
+    Exit;
+  end;
+  R := NewUStr(Len);
+  CopyChars(R, P, Len);
+  SetUStr(Dest, R);
+end;
+
+procedure _UStrFromPWChar(var Dest: Pointer; P: PWideChar);
+var
+  Len: Integer;
+begin
+  Len := 0;
+  if P <> nil then
+    while P[Len] <> #0 do
+      Len := Len + 1;
+  _UStrFromPWCharLen(Dest, P, Len);
+end;
+
+{ a heap block for Len > 0 bytes, RefCount 1, terminator set }
+function NewAStr(Len: Integer; CodePage: Word): Pointer;
+var
+  Block: PByte;
+  Header: PInteger;
+  Words: PWord;
+begin
+  if Len > MaxUStrLength then
+    _RunError(203);
+  Block := _GetMem(16 + NativeInt(Len) + 1);
+  Header := PInteger(Block);
+  Header[0] := 1;
+  Header[1] := Len;
+  Words := PWord(Block + 8);
+  if CodePage = 0 then
+    CodePage := CP_UTF8;
+  Words[0] := CodePage;
+  Words[1] := 1;
+  Header[3] := 0;
+  Result := Block + 16;
+  Block[16 + Len] := 0;
+end;
+
+function AStrCodePage(S: Pointer): Word;
+var
+  Words: PWord;
+begin
+  Result := CP_UTF8;
+  if S <> nil then
+  begin
+    Words := S - 8;
+    Result := Words^;
+  end;
+end;
+
+procedure CopyBytes(Dest, Src: PByte; Count: Integer);
+var
+  I: Integer;
+begin
+  for I := 0 to Count - 1 do
+    Dest[I] := Src[I];
+end;
+
+procedure _AStrClr(var S: Pointer);
+begin
+  _UStrClr(S);
+end;
+
+procedure _AStrAddRef(S: Pointer);
+begin
+  _UStrAddRef(S);
+end;
+
+procedure _AStrAsg(var Dest: Pointer; Src: Pointer);
+begin
+  _UStrAsg(Dest, Src);
+end;
+
+procedure _AStrFromPCharLen(var Dest: Pointer; P: PAnsiChar; Len: Integer; CodePage: Word);
+var
+  R: Pointer;
+begin
+  if Len <= 0 then
+  begin
+    _UStrClr(Dest);
+    Exit;
+  end;
+  R := NewAStr(Len, CodePage);
+  CopyBytes(R, PByte(P), Len);
+  SetUStr(Dest, R);
+end;
+
+procedure _AStrCat(var Dest: Pointer; A, B: Pointer);
+var
+  LA, LB: Integer;
+  P: Pointer;
+  Bytes: PByte;
+begin
+  LA := UStrLength(A);
+  LB := UStrLength(B);
+  if LA = 0 then
+    _UStrAsg(Dest, B)
+  else if LB = 0 then
+    _UStrAsg(Dest, A)
+  else
+  begin
+    if LA > MaxUStrLength - LB then
+      _RunError(203);
+    P := NewAStr(LA + LB, AStrCodePage(A));
+    Bytes := P;
+    CopyBytes(Bytes, A, LA);
+    CopyBytes(Bytes + LA, B, LB);
+    SetUStr(Dest, P);
+  end;
+end;
+
+{ bytewise (unsigned); on a common prefix the shorter string is smaller }
+function _AStrCmp(A, B: Pointer): Integer;
+var
+  LA, LB, N, I: Integer;
+  X, Y: PByte;
+begin
+  LA := UStrLength(A);
+  LB := UStrLength(B);
+  N := LA;
+  if LB < N then
+    N := LB;
+  X := A;
+  Y := B;
+  for I := 0 to N - 1 do
+    if X[I] <> Y[I] then
+      Exit(Integer(X[I]) - Integer(Y[I]));
+  Result := LA - LB;
+end;
+
+procedure _AStrUnique(var S: Pointer);
+var
+  Count: PInteger;
+  Len: Integer;
+  P: Pointer;
+begin
+  if S <> nil then
+  begin
+    Count := S - 16;
+    if Count^ <> 1 then
+    begin
+      Len := UStrLength(S);
+      P := NewAStr(Len, AStrCodePage(S));
+      CopyBytes(P, S, Len);
+      SetUStr(S, P);
+    end;
+  end;
+end;
+
+{ keeps min(old, new) bytes; always a new unique block (new bytes are zero) }
+procedure _AStrSetLen(var S: Pointer; NewLen: Integer; CodePage: Word);
+var
+  Keep, I: Integer;
+  P: Pointer;
+  Bytes: PByte;
+begin
+  if NewLen <= 0 then
+  begin
+    _UStrClr(S);
+    Exit;
+  end;
+  Keep := UStrLength(S);
+  if Keep > NewLen then
+    Keep := NewLen;
+  P := NewAStr(NewLen, CodePage);
+  Bytes := P;
+  CopyBytes(Bytes, S, Keep);
+  for I := Keep to NewLen - 1 do
+    Bytes[I] := 0;
+  SetUStr(S, P);
+end;
+
+{ 1-based bytes; clamps like _UStrCopy }
+procedure _AStrCopy(var Dest: Pointer; S: Pointer; Index, Count: Integer);
+var
+  Len: Integer;
+  P: Pointer;
+  Bytes: PByte;
+begin
+  Len := UStrLength(S);
+  if Index < 1 then
+    Index := 1;
+  if (Index > Len) or (Count <= 0) then
+  begin
+    _UStrClr(Dest);
+    Exit;
+  end;
+  if Count > Len - Index + 1 then
+    Count := Len - Index + 1;
+  if Count = Len then
+    _UStrAsg(Dest, S)
+  else
+  begin
+    P := NewAStr(Count, AStrCodePage(S));
+    Bytes := S;
+    CopyBytes(P, Bytes + Index - 1, Count);
+    SetUStr(Dest, P);
+  end;
+end;
+
+{ UTF-8 → UTF-16: the number of code units for Len bytes at Src; written to Dest unless it is nil }
+function DecodeUtf8(Src: PByte; Len: Integer; Dest: PWord): Integer;
+var
+  I, Need, K: Integer;
+  B: Integer;
+  CodePoint: Integer;
+  Ok: Boolean;
+begin
+  Result := 0;
+  I := 0;
+  while I < Len do
+  begin
+    B := Src[I];
+    Need := 0;
+    CodePoint := B;
+    if B >= $F0 then
+    begin
+      Need := 3;
+      CodePoint := B and 7;
+    end
+    else if B >= $E0 then
+    begin
+      Need := 2;
+      CodePoint := B and 15;
+    end
+    else if B >= $C2 then
+    begin
+      Need := 1;
+      CodePoint := B and 31;
+    end;
+    Ok := (B < $80) or ((Need > 0) and (B <= $F4) and (I + Need < Len + 1));
+    if Ok and (Need > 0) then
+      for K := 1 to Need do
+        if Ok and (I + K < Len) and ((Src[I + K] and $C0) = $80) then
+          CodePoint := (CodePoint shl 6) or (Src[I + K] and 63)
+        else
+          Ok := False;
+    if Ok and (((Need = 2) and ((CodePoint < $800) or ((CodePoint >= $D800) and (CodePoint <= $DFFF))))
+      or ((Need = 3) and ((CodePoint < $10000) or (CodePoint > $10FFFF)))) then
+      Ok := False;
+    if not Ok then
+    begin
+      CodePoint := $FFFD;
+      Need := 0;
+    end;
+    I := I + Need + 1;
+    if CodePoint >= $10000 then
+    begin
+      if Dest <> nil then
+      begin
+        Dest[Result] := $D800 + ((CodePoint - $10000) shr 10);
+        Dest[Result + 1] := $DC00 + ((CodePoint - $10000) and $3FF);
+      end;
+      Result := Result + 2;
+    end
+    else
+    begin
+      if Dest <> nil then
+        Dest[Result] := CodePoint;
+      Result := Result + 1;
+    end;
+  end;
+end;
+
+{ UTF-16 → UTF-8: the number of bytes for Len code units at Src; written to Dest unless it is nil; a lone surrogate gives '?' }
+function EncodeUtf8(Src: PWord; Len: Integer; Dest: PByte): Integer;
+var
+  I, CodePoint, Size: Integer;
+begin
+  Result := 0;
+  I := 0;
+  while I < Len do
+  begin
+    CodePoint := Src[I];
+    I := I + 1;
+    if (CodePoint >= $D800) and (CodePoint <= $DBFF) and (I < Len) and (Src[I] >= $DC00) and (Src[I] <= $DFFF) then
+    begin
+      CodePoint := $10000 + ((CodePoint - $D800) shl 10) + (Src[I] - $DC00);
+      I := I + 1;
+    end
+    else if (CodePoint >= $D800) and (CodePoint <= $DFFF) then
+      CodePoint := 63;
+    if CodePoint < $80 then
+      Size := 1
+    else if CodePoint < $800 then
+      Size := 2
+    else if CodePoint < $10000 then
+      Size := 3
+    else
+      Size := 4;
+    if Dest <> nil then
+    begin
+      if Size = 1 then
+        Dest[Result] := CodePoint
+      else if Size = 2 then
+      begin
+        Dest[Result] := $C0 or (CodePoint shr 6);
+        Dest[Result + 1] := $80 or (CodePoint and 63);
+      end
+      else if Size = 3 then
+      begin
+        Dest[Result] := $E0 or (CodePoint shr 12);
+        Dest[Result + 1] := $80 or ((CodePoint shr 6) and 63);
+        Dest[Result + 2] := $80 or (CodePoint and 63);
+      end
+      else
+      begin
+        Dest[Result] := $F0 or (CodePoint shr 18);
+        Dest[Result + 1] := $80 or ((CodePoint shr 12) and 63);
+        Dest[Result + 2] := $80 or ((CodePoint shr 6) and 63);
+        Dest[Result + 3] := $80 or (CodePoint and 63);
+      end;
+    end;
+    Result := Result + Size;
+  end;
+end;
+
+{ Dest := the UnicodeString decoded from Len UTF-8 bytes }
+procedure SetDecoded(var Dest: Pointer; Src: PByte; Len: Integer);
+var
+  Units: Integer;
+  P: Pointer;
+begin
+  Units := DecodeUtf8(Src, Len, nil);
+  if Units = 0 then
+  begin
+    _UStrClr(Dest);
+    Exit;
+  end;
+  P := NewUStr(Units);
+  DecodeUtf8(Src, Len, P);
+  SetUStr(Dest, P);
+end;
+
+procedure _UStrFromAStr(var Dest: Pointer; Src: Pointer);
+begin
+  SetDecoded(Dest, Src, UStrLength(Src));
+end;
+
+procedure _AStrFromUStr(var Dest: Pointer; Src: Pointer; CodePage: Word);
+var
+  Size: Integer;
+  P: Pointer;
+begin
+  Size := EncodeUtf8(Src, UStrLength(Src), nil);
+  if Size = 0 then
+  begin
+    _UStrClr(Dest);
+    Exit;
+  end;
+  P := NewAStr(Size, CodePage);
+  EncodeUtf8(Src, UStrLength(Src), P);
+  SetUStr(Dest, P);
+end;
+
+procedure _UStrFromSStr(var Dest: Pointer; Src: Pointer);
+var
+  Bytes: PByte;
+begin
+  Bytes := Src;
+  SetDecoded(Dest, Bytes + 1, Bytes[0]);
+end;
+
+{ UTF-8, cut at MaxLen bytes without splitting a sequence }
+procedure _SStrFromUStr(Dest: Pointer; MaxLen: Integer; Src: Pointer);
+var
+  Size: Integer;
+  Buffer, Bytes: PByte;
+begin
+  Bytes := Dest;
+  Size := EncodeUtf8(Src, UStrLength(Src), nil);
+  if Size = 0 then
+  begin
+    Bytes[0] := 0;
+    Exit;
+  end;
+  Buffer := _GetMem(Size + 1);
+  EncodeUtf8(Src, UStrLength(Src), Buffer);
+  if Size > MaxLen then
+  begin
+    Size := MaxLen;
+    while (Size > 0) and ((Buffer[Size] and $C0) = $80) do
+      Size := Size - 1;
+  end;
+  CopyBytes(Bytes + 1, Buffer, Size);
+  Bytes[0] := Size;
+  _FreeMem(Buffer);
+end;
+
+procedure _SStrAsg(Dest: Pointer; MaxLen: Integer; Src: Pointer);
+var
+  Len: Integer;
+  D, S: PByte;
+begin
+  D := Dest;
+  S := Src;
+  Len := S[0];
+  if Len > MaxLen then
+    Len := MaxLen;
+  CopyBytes(D + 1, S + 1, Len);
+  D[0] := Len;
+end;
+
+function _SStrCmp(A, B: Pointer): Integer;
+var
+  LA, LB, N, I: Integer;
+  X, Y: PByte;
+begin
+  X := A;
+  Y := B;
+  LA := X[0];
+  LB := Y[0];
+  N := LA;
+  if LB < N then
+    N := LB;
+  for I := 1 to N do
+    if X[I] <> Y[I] then
+      Exit(Integer(X[I]) - Integer(Y[I]));
+  Result := LA - LB;
+end;
+
+{ Len UTF-8 bytes, padded per LANG-915 by their number of UTF-16 code units }
+procedure WriteUtf8(var T: Text; Bytes: PByte; Len, Width: Integer);
+begin
+  WritePadding(T, Width, DecodeUtf8(Bytes, Len, nil));
+  WriteBytes(T, Bytes, Len);
+end;
+
+procedure _WriteAStr(var T: Text; S: Pointer; Width: Integer);
+begin
+  WriteUtf8(T, S, UStrLength(S), Width);
+end;
+
+procedure _WriteSStr(var T: Text; S: Pointer; Width: Integer);
+var
+  Bytes: PByte;
+begin
+  Bytes := S;
+  WriteUtf8(T, Bytes + 1, Bytes[0], Width);
+end;
+
+procedure _WritePWChar(var T: Text; P: PWideChar; Width: Integer);
+var
+  Len, Size: Integer;
+  Buffer: Pointer;
+begin
+  Len := 0;
+  if P <> nil then
+    while P[Len] <> #0 do
+      Len := Len + 1;
+  WritePadding(T, Width, Len);
+  if Len > 0 then
+  begin
+    Buffer := _GetMem(3 * Len);
+    Size := EncodeUtf8(PWord(P), Len, Buffer);
+    WriteBytes(T, Buffer, Size);
+    _FreeMem(Buffer);
+  end;
+end;
+
+{ LANG-951 for strings and Booleans (C-063): S padded to Width with leading spaces }
+procedure _StrUStr(var Dest: Pointer; S: Pointer; Width: Integer);
+var
+  Len, Pad, I: Integer;
+  P: Pointer;
+  Chars: PChar;
+begin
+  Len := UStrLength(S);
+  Pad := Width - Len;
+  if Pad <= 0 then
+  begin
+    _UStrAsg(Dest, S);
+    Exit;
+  end;
+  P := NewUStr(Pad + Len);
+  Chars := P;
+  for I := 0 to Pad - 1 do
+    Chars[I] := ' ';
+  CopyChars(Chars + Pad, S, Len);
+  SetUStr(Dest, P);
+end;
+
+{ ------------------------------------------------------------------ dynamic arrays (rtl-abi.md 4, 9.5, 10; C-064)
+  A points at element 0: RefCount (Int32) at A - 16, Length (NativeInt) at A - 8; nil is empty. TI is the tkDynArray block:
+  Kind at 0, ElSize at 16, ElType at 24, ManagedElType at 32 (nil when the elements are not managed). Managed elements are
+  strings (tkUString 9 / tkAString 10) or dynamic arrays (tkDynArray 14); managed records arrive with C-065. }
+
+function DynLength(A: Pointer): NativeInt;
+var
+  Len: PNativeInt;
+begin
+  Result := 0;
+  if A <> nil then
+  begin
+    Len := A - 8;
+    Result := Len^;
+  end;
+end;
+
+function TIField(TI: Pointer; Offset: Integer): NativeInt;
+var
+  P: PNativeInt;
+begin
+  P := TI + Offset;
+  Result := P^;
+end;
+
+{ +1 / release on each of Count managed values of type ElTI stored at P }
+procedure AddRefValues(P: Pointer; ElTI: Pointer; Count: NativeInt);
+var
+  I: NativeInt;
+  Kind: PByte;
+  Slots: PPointer;
+begin
+  Kind := ElTI;
+  Slots := P;
+  for I := 0 to Count - 1 do
+    if Kind^ = 14 then
+      _DynArrayAddRef(Slots[I])
+    else
+      _UStrAddRef(Slots[I]);
+end;
+
+procedure FinalizeValues(P: Pointer; ElTI: Pointer; Count: NativeInt);
+var
+  I: NativeInt;
+  Kind: PByte;
+  Slots: PPointer;
+begin
+  Kind := ElTI;
+  Slots := P;
+  for I := 0 to Count - 1 do
+    if Kind^ = 14 then
+      _DynArrayClr(Slots[I], ElTI)
+    else
+      _UStrClr(Slots[I]);
+end;
+
+{ a zero-filled block of Len > 0 elements of ElSize bytes, RefCount 1 }
+function NewDynArray(Len, ElSize: NativeInt): Pointer;
+var
+  Block: PByte;
+  Header: PInteger;
+  LenField: PNativeInt;
+begin
+  Block := _AllocZero(16 + Len * ElSize);
+  Header := PInteger(Block);
+  Header[0] := 1;
+  LenField := PNativeInt(Block + 8);
+  LenField^ := Len;
+  Result := Block + 16;
+end;
+
+procedure ReleaseDynArray(A: Pointer; TI: Pointer);
+var
+  Count: PInteger;
+  ElTI: Pointer;
+begin
+  if A = nil then
+    Exit;
+  Count := A - 16;
+  Count^ := Count^ - 1;
+  if Count^ = 0 then
+  begin
+    ElTI := Pointer(TIField(TI, 32));
+    if ElTI <> nil then
+      FinalizeValues(A, ElTI, DynLength(A));
+    _FreeMem(A - 16);
+  end;
+end;
+
+procedure _DynArrayClr(var A: Pointer; TI: Pointer);
+var
+  Old: Pointer;
+begin
+  Old := A;
+  A := nil;
+  ReleaseDynArray(Old, TI);
+end;
+
+procedure _DynArrayAddRef(A: Pointer);
+var
+  Count: PInteger;
+begin
+  if A <> nil then
+  begin
+    Count := A - 16;
+    Count^ := Count^ + 1;
+  end;
+end;
+
+procedure _DynArrayAsg(var Dest: Pointer; Src: Pointer; TI: Pointer);
+var
+  Old: Pointer;
+begin
+  _DynArrayAddRef(Src);
+  Old := Dest;
+  Dest := Src;
+  ReleaseDynArray(Old, TI);
+end;
+
+{ Dims (PNativeInt in rtl-abi.md; Pointer here as for _UStrCatN): Dims[0] = new length of A (always a new unique block; kept elements moved when A was unique, copied with +1 when shared,
+  new ones zero); the remaining dimensions are applied to every element (ABI-043) }
+procedure _DynArraySetLen(var A: Pointer; TI: Pointer; DimCount: NativeInt; Dims: Pointer);
+var
+  NewLen, OldLen, Keep, ElSize, I: NativeInt;
+  ElTI, P: Pointer;
+  Count: PInteger;
+  Slots: PPointer;
+  Lengths: PNativeInt;
+begin
+  Lengths := Dims;
+  NewLen := Lengths[0];
+  if NewLen < 0 then
+    _RangeError;
+  if NewLen = 0 then
+    _DynArrayClr(A, TI)
+  else
+  begin
+    ElSize := TIField(TI, 16);
+    ElTI := Pointer(TIField(TI, 32));
+    OldLen := DynLength(A);
+    Keep := OldLen;
+    if Keep > NewLen then
+      Keep := NewLen;
+    P := NewDynArray(NewLen, ElSize);
+    if A <> nil then
+    begin
+      CopyBytes(P, A, Keep * ElSize);
+      Count := A - 16;
+      if Count^ = 1 then
+      begin
+        { unique: the kept elements moved; finalise the dropped ones and free the block alone }
+        if ElTI <> nil then
+          FinalizeValues(A + Keep * ElSize, ElTI, OldLen - Keep);
+        _FreeMem(A - 16);
+      end
+      else
+      begin
+        if ElTI <> nil then
+          AddRefValues(P, ElTI, Keep);
+        Count^ := Count^ - 1;
+      end;
+    end;
+    A := P;
+  end;
+  if (DimCount > 1) and (A <> nil) then
+  begin
+    Slots := A;
+    for I := 0 to DynLength(A) - 1 do
+      _DynArraySetLen(Slots[I], Pointer(TIField(TI, 32)), DimCount - 1, Lengths + 1);
+  end;
+end;
+
+{ 0-based; Index < 0 counts from 0, Count is clamped to the end, nothing left gives nil; always a new block }
+procedure _DynArrayCopy(var Dest: Pointer; Src: Pointer; TI: Pointer; Index, Count: NativeInt);
+var
+  Len, ElSize: NativeInt;
+  ElTI, P, Old: Pointer;
+begin
+  Len := DynLength(Src);
+  if Index < 0 then
+    Index := 0;
+  if (Index >= Len) or (Count <= 0) then
+  begin
+    _DynArrayClr(Dest, TI);
+    Exit;
+  end;
+  if Count > Len - Index then
+    Count := Len - Index;
+  ElSize := TIField(TI, 16);
+  ElTI := Pointer(TIField(TI, 32));
+  P := NewDynArray(Count, ElSize);
+  CopyBytes(P, Src + Index * ElSize, Count * ElSize);
+  if ElTI <> nil then
+    AddRefValues(P, ElTI, Count);
+  Old := Dest;
+  Dest := P;
+  ReleaseDynArray(Old, TI);
 end;
 
 end.

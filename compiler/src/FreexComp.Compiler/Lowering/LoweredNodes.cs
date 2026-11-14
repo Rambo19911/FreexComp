@@ -444,6 +444,31 @@ internal sealed class LStringLength(LExpression @string, TypeSymbol integer) : L
     public LExpression String { get; } = @string;
 }
 
+/// <summary>ABI-041 / CMP-330: <c>Length</c> of the dynamic array value <see cref="Array"/> (nil → 0, else the Int64 at A − 8), as an <c>Integer</c>.</summary>
+internal sealed class LArrayLength(LExpression array, TypeSymbol integer) : LExpression(integer)
+{
+    public LExpression Array { get; } = array;
+}
+
+/// <summary>
+/// ABI-042 / CMP-330: element <see cref="Index"/> (zero-based, <c>Int64</c>) of the dynamic array value <see cref="Array"/>, a variable
+/// reference of the element type (no copy-on-write). <see cref="IsChecked"/>: <c>{$R+}</c> test <c>Index &lt;u Length</c> (CMP-331).
+/// </summary>
+internal sealed class LArrayElement(LExpression array, LExpression index, bool isChecked, TypeSymbol elementType) : LExpression(elementType)
+{
+    public LExpression Array { get; } = array;
+
+    public LExpression Index { get; } = index;
+
+    public bool IsChecked { get; } = isChecked;
+}
+
+/// <summary>CMP-407: the address of the RTTI block of <see cref="Described"/> (rtl-abi.md §10), a <c>Pointer</c>.</summary>
+internal sealed class LTypeInfo(TypeSymbol described, TypeSymbol pointer) : LExpression(pointer)
+{
+    public TypeSymbol Described { get; } = described;
+}
+
 /// <summary>
 /// ABI-024 / CMP-324: character <see cref="Index"/> (zero-based, <c>Int64</c>: i − 1) of the string <see cref="String"/>, a
 /// variable reference of type <c>Char</c>. Read: the string value plus <c>2·Index</c>. Written (assignment target, address taken):

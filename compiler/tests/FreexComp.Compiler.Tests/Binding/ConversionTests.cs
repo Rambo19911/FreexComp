@@ -293,8 +293,8 @@ public sealed class ConversionTests
     [InlineData("Integer(d)", "E2040: Invalid typecast from 'Double' to 'Integer'")]
     [InlineData("Int64(d)", "E2040: Invalid typecast from 'Double' to 'Int64'")]
     [InlineData("TRec8(d)", "E2040: Invalid typecast from 'Double' to 'TRec8'")]
-    // strings (rows 7, 8): with the string tasks
-    [InlineData("PChar(str)", "E2900: Feature not supported: string typecast")]
+    // strings (rows 7, 8, C-063): pointer to the data
+    [InlineData("PChar(str)", "(cast PChar str:string)")]
     // variable typecasts (row 9): same size, not managed
     [InlineData("TRec4(i)", "(vcast TRec4 i:Integer)")]
     [InlineData("Integer(r4)", "(vcast Integer r4:TRec4)")]

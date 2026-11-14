@@ -321,12 +321,18 @@ public sealed class ExpressionTypingTests
     [InlineData("str = 'a'", "(Equal:Boolean str:string 'a':string)")]
     public void StringOperators_AreTyped(string expression, string expected) => Assert.Equal(expected, Typed(expression));
 
-    /// <summary>String operators with another string kind still wait for C-063 (E2900 at the operator).</summary>
+    /// <summary>
+    /// LANG-243/244 (C-063): byte strings of one kind stay byte strings (a constant takes their kind), mixed kinds go through
+    /// UnicodeString; a non-string operand is E2011.
+    /// </summary>
     [Theory]
-    [InlineData("str + ansi", "E2900(2,10): Feature not supported: string expression")]
-    [InlineData("ansi = str", "E2900(2,11): Feature not supported: string expression")]
-    public void StringOperators_OfOtherStringKinds_WaitForC063(string expression, string expected) =>
-        Assert.Equal([expected], BindExpressionWithAnsi(expression));
+    [Trait("Req", "LANG-243")]
+    [Trait("Req", "LANG-244")]
+    [InlineData("str + ansi", "")]
+    [InlineData("ansi = str", "")]
+    [InlineData("ansi + 1", "E2011(2,11): Operator '+' not applicable to operand type(s) 'AnsiString' and 'Integer'")]
+    public void StringOperators_OfOtherStringKinds(string expression, string expected) =>
+        Assert.Equal(expected.Length == 0 ? [] : [expected], BindExpressionWithAnsi(expression));
 
     private static string[] BindExpressionWithAnsi(string expression)
     {

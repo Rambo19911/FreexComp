@@ -50,7 +50,8 @@ internal static class Lowerer
         new LoweringContext(result.Types, routine: null, locals: []) { Output = OutputOf(result) }.Finish(block);
 
     /// <summary>Types held in memory as <c>[N x T]</c> or structs (big sets, static arrays, records): never SSA values (see the aggregate nodes).</summary>
-    public static bool IsAggregate(TypeSymbol type) => type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol or RecordTypeSymbol;
+    public static bool IsAggregate(TypeSymbol type) =>
+        type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol or RecordTypeSymbol or StringTypeSymbol { Variant: StringVariant.Short };
 
     /// <summary>The variable <c>Output</c> of the bound <c>System</c> (default file of <c>Write</c>, LANG-910), or null without one.</summary>
     private static VariableSymbol? OutputOf(BindingResult result) =>
@@ -180,6 +181,8 @@ internal sealed class LoweringContext
                 return new LBlock([.. block.Statements.Select(Lower)]);
             case BoundAssignmentStatement { Target.Type.IsManaged: true } assignment:
                 return ManagedRewriter.Assign(this, Lower(assignment.Target), assignment.Value);
+            case BoundAssignmentStatement { Target.Type: StringTypeSymbol { Variant: StringVariant.Short } } assignment:
+                return ManagedRewriter.AssignShort(this, Lower(assignment.Target), assignment.Value);        // LANG-246 (C-063)
             case BoundAssignmentStatement assignment:
                 return new LAssign(Lower(assignment.Target), Lower(assignment.Value));
             case BoundIfStatement ifStatement:
@@ -210,6 +213,8 @@ internal sealed class LoweringContext
                 return new LReturn();
             case BoundExitStatement { Value.Type.IsManaged: true } exit:
                 return new LBlock([ManagedRewriter.Assign(this, new LLocalRef(_variables[Routine!.ResultVariable!]), exit.Value!), new LReturn()]);
+            case BoundExitStatement { Value.Type: StringTypeSymbol { Variant: StringVariant.Short } } exit:
+                return new LBlock([ManagedRewriter.AssignShort(this, new LLocalRef(_variables[Routine!.ResultVariable!]), exit.Value!), new LReturn()]);
             case BoundExitStatement exit:
                 return new LBlock([new LAssign(new LLocalRef(_variables[Routine!.ResultVariable!]), Lower(exit.Value)), new LReturn()]);
             case BoundHaltStatement halt:
@@ -255,12 +260,17 @@ internal sealed class LoweringContext
                 return ReferenceEquals(parameter.Parameter.ContainingSymbol, Routine)
                     ? new LParamRef(parameter.Parameter)
                     : new LOuterRef(parameter.Parameter, parameter.Parameter.Type);
-            case BoundConversionExpression { Type: StringTypeSymbol, Operand.Type: CharTypeSymbol } conversion:
-                return ManagedRewriter.Value(this, conversion);                         // LANG-245: a 1-char string (CMP-324)
+            case BoundConversionExpression { Type: StringTypeSymbol } conversion when !ReferenceEquals(conversion.Type, conversion.Operand.Type):
+                return ManagedRewriter.Value(this, conversion);                         // LANG-245 (CMP-324, C-063)
+            case BoundConversionExpression { IsExplicit: true, Type: PointerTypeSymbol { PointedType: not null } pointer, Operand.Type: StringTypeSymbol } conversion:
+                return StringConversions.DataPointer(this, Lower(conversion.Operand), pointer);    // LANG-290: PChar(s)
             case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: StringTypeSymbol } concatenation:
                 return ManagedRewriter.Value(this, concatenation);                      // LANG-243 (CMP-324)
             case BoundIndexExpression { IsStringElement: true } element:
                 return StringElement(element);
+            case BoundIndexExpression { Array.Type: DynamicArrayTypeSymbol } element:
+                // ABI-042 / CMP-330/331: element i of the block (no copy-on-write), checked unsigned against the length under {$R+}
+                return new LArrayElement(Lower(element.Array), Convert(Lower(element.Index), Types.Int64), CheckRewriter.StateOf(element).RangeChecks, element.Type);
             case BoundConversionExpression { Type: SetTypeSymbol target, Operand.Type: SetTypeSymbol } conversion:
                 return SetRewriter.Convert(this, Lower(conversion.Operand), target);
             case BoundConversionExpression { IsExplicit: true, Type: PointerTypeSymbol, Operand.Type: { IsOrdinal: true, Size: < 8 } source } conversion:
@@ -340,10 +350,28 @@ internal sealed class LoweringContext
     {
         var target = Lower(element.Array);
         var index = Lower(element.Index);
+        if (element.Array.Type is StringTypeSymbol { Variant: StringVariant.Short } shortString)
+        {
+            // C-063: byte i of the storage (0 = the length byte); under {$R+} checked against 0..capacity like a static array
+            var bytes = StringConversions.ShortBytes(this, target, shortString);
+            if (index is LConst { Value.Value: BigInteger position })
+            {
+                return new LIndex(bytes, Constant(position, Types.Int64), Types.AnsiChar);
+            }
+
+            if (CheckRewriter.StateOf(element).RangeChecks)
+            {
+                var computation = ComputationType(index.Type);
+                index = new LRangeCheck(Convert(index, computation), BigInteger.Zero, shortString.MaxLength);
+            }
+
+            return new LIndex(bytes, Convert(index, Types.Int64), Types.AnsiChar);
+        }
+
         LExpression zeroBased = index is LConst { Value.Value: BigInteger constant }
             ? Constant(constant - 1, Types.Int64)
             : new LBinary(LBinaryOperator.Subtract, Convert(index, Types.Int64), Constant(BigInteger.One, Types.Int64));
-        return new LStringIndex(target, zeroBased, CheckRewriter.StateOf(element).RangeChecks, Types.Char);
+        return new LStringIndex(target, zeroBased, CheckRewriter.StateOf(element).RangeChecks, element.Type);
     }
 
     /// <summary>

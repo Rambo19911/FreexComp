@@ -239,8 +239,8 @@ public sealed class IntrinsicBindingTests
 
     [Fact]
     [Trait("Req", "LANG-902")]
-    public void High_OfAnAnsiStringVariable_WaitsForC063() =>
-        Assert.Equal(["E2900(1,147): Feature not supported: High of a string variable"], BindDiagnostics("program T; " + Vars + "a: AnsiString; begin i := High(a) end."));
+    public void High_OfAnAnsiStringVariable_IsItsLength() =>
+        Assert.Empty(BindDiagnostics("program T; " + Vars + "a: AnsiString; h: string[4]; begin i := High(a); i := Length(h) end."));
 
     // ------------------------------------------------------------------ Lo, Hi, Swap
 

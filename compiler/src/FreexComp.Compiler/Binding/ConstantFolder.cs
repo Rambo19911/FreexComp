@@ -867,10 +867,15 @@ internal sealed class ConstantFolder
             case (IntrinsicKind.Length, ArrayTypeSymbol array):
                 return new ConstantValue(new BigInteger(array.Length), _types.Integer);
             case (IntrinsicKind.Length, StringTypeSymbol) when !isTypeName && value?.Value is string text:
-                return new ConstantValue(new BigInteger(text.Length), _types.Integer);
+                return new ConstantValue(new BigInteger(Strings.ConstantLength(text, value.Type)), _types.Integer);
             case (IntrinsicKind.Length, StringTypeSymbol) when !isTypeName:
                 needsRuntime = true;
                 return null;
+            case (IntrinsicKind.Length or IntrinsicKind.High, DynamicArrayTypeSymbol) when !isTypeName:
+                needsRuntime = true;                                            // ABI-041 (C-064)
+                return null;
+            case (IntrinsicKind.Low, DynamicArrayTypeSymbol) when !isTypeName:
+                return new ConstantValue(BigInteger.Zero, _types.Integer);
             case (IntrinsicKind.Length, _):
                 break;
             case (_, ArrayTypeSymbol array):
@@ -890,7 +895,7 @@ internal sealed class ConstantFolder
             case (_, StringTypeSymbol) when !isTypeName && !high:
                 return new ConstantValue(BigInteger.One, _types.Integer);
             case (_, StringTypeSymbol) when !isTypeName && value?.Value is string text:
-                return new ConstantValue(new BigInteger(text.Length), _types.Integer);
+                return new ConstantValue(new BigInteger(Strings.ConstantLength(text, value.Type)), _types.Integer);
             case (_, StringTypeSymbol) when !isTypeName:
                 needsRuntime = true;
                 return null;

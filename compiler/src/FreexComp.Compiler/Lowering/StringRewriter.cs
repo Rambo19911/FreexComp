@@ -26,6 +26,11 @@ internal static class StringRewriter
         var arguments = call.Arguments;
         switch (call.Intrinsic.Intrinsic)
         {
+            case IntrinsicKind.SetLength when arguments[0].Type is DynamicArrayTypeSymbol array:
+                return DynArraySetLength(context, array, arguments);
+            case IntrinsicKind.SetLength when arguments[0].Type is StringTypeSymbol { Variant: StringVariant.Ansi } ansi:
+                return new LCallStatement(new LHelperCallee(Helper("_AStrSetLen", null, types.Pointer, types.Integer, types.Word)),
+                    [AddressOf(context, context.Lower(arguments[0])), context.Lower(arguments[1]), context.Constant(ansi.CodePage, types.Word)]);
             case IntrinsicKind.SetLength:
                 return new LCallStatement(new LHelperCallee(Helper("_UStrSetLen", null, types.Pointer, types.Integer)),
                     [AddressOf(context, context.Lower(arguments[0])), context.Lower(arguments[1])]);
@@ -65,12 +70,44 @@ internal static class StringRewriter
         return new LTemp(value, character, new LSelect(isLower, upper, V()));
     }
 
+    /// <summary>
+    /// CMP-330 / intrinsics.md: <c>%dims = [k x i64]</c> holding the lengths (outermost first, converted to <c>NativeInt</c>), then
+    /// <c>_DynArraySetLen(@a, TypeInfo(a), k, @dims)</c>.
+    /// </summary>
+    private static LStatement DynArraySetLength(LoweringContext context, DynamicArrayTypeSymbol array, ImmutableArray<BoundExpression> arguments)
+    {
+        var types = context.Types;
+        var count = arguments.Length - 1;
+        var index = new IntegerTypeSymbol($"0..{count - 1}", (IntegerTypeSymbol)types.Integer, BigInteger.Zero, count - 1, containingSymbol: null, []);
+        var dims = new LLocalRef(context.NewTemp(new ArrayTypeSymbol($"array[0..{count - 1}] of NativeInt", index, types.NativeInt, containingSymbol: null, [])));
+        var statements = new List<LStatement>();
+        var target = AddressOf(context, context.Lower(arguments[0]));
+        for (var k = 0; k < count; k++)
+        {
+            statements.Add(new LAssign(new LIndex(dims, context.Constant(k, types.Int64), types.NativeInt), context.Convert(context.Lower(arguments[k + 1]), types.NativeInt)));
+        }
+
+        statements.Add(new LCallStatement(new LHelperCallee(Helper("_DynArraySetLen", null, types.Pointer, types.Pointer, types.NativeInt, types.Pointer)),
+            [target, new LTypeInfo(array, types.Pointer), context.Constant(count, types.NativeInt), AddressOf(context, dims)]));
+        return new LBlock([.. statements]);
+    }
+
     /// <summary><c>_UStrCopy(destination, s, index, count)</c>; an omitted <c>count</c> is <c>MaxInt</c> (to the end).</summary>
     public static LStatement CopyInto(LoweringContext context, LExpression destination, BoundIntrinsicCallExpression copy)
     {
         var types = context.Types;
+        if (copy.Type is DynamicArrayTypeSymbol array)
+        {
+            // CMP-330: _DynArrayCopy(@dst, a, TI, index, count); Copy(a) = index 0, count High(NativeInt) (rtl-abi.md §9.5)
+            var start = copy.Arguments.Length > 1 ? context.Lower(copy.Arguments[1]) : context.Constant(BigInteger.Zero, types.NativeInt);
+            var length = copy.Arguments.Length > 2 ? context.Lower(copy.Arguments[2]) : context.Constant(long.MaxValue, types.NativeInt);
+            return new LCallStatement(new LHelperCallee(Helper("_DynArrayCopy", null, types.Pointer, types.Pointer, types.Pointer, types.NativeInt, types.NativeInt)),
+                [destination, context.Lower(copy.Arguments[0]), new LTypeInfo(array, types.Pointer), start, length]);
+        }
+
         var count = copy.Arguments.Length == 3 ? context.Lower(copy.Arguments[2]) : context.Constant(int.MaxValue, types.Integer);
-        return new LCallStatement(new LHelperCallee(Helper("_UStrCopy", null, types.Pointer, types.Pointer, types.Integer, types.Integer)),
+        var name = Strings.IsAnsi(copy.Type) ? "_AStrCopy" : "_UStrCopy";                    // C-063
+        return new LCallStatement(new LHelperCallee(Helper(name, null, types.Pointer, types.Pointer, types.Integer, types.Integer)),
             [destination, context.Lower(copy.Arguments[0]), context.Lower(copy.Arguments[1]), count]);
     }
 
@@ -86,6 +123,16 @@ internal static class StringRewriter
         var target = AddressOf(context, context.Lower(arguments[1]));
         var value = context.Lower(arguments[0]);
         var width = arguments.Length > 2 ? context.Lower(arguments[2]) : null;
+        if (arguments[0].Type is BooleanTypeSymbol or StringTypeSymbol)
+        {
+            // LANG-951 / C-063: the text Write would produce (TRUE/FALSE, the string) padded by _StrUStr(@s, text, w)
+            var text = arguments[0].Type is BooleanTypeSymbol
+                ? new LSelect(value, new LStringLiteral("TRUE", types.String), new LStringLiteral("FALSE", types.String))
+                : value;
+            return new LCallStatement(new LHelperCallee(Helper("_StrUStr", null, types.Pointer, types.Pointer, types.Integer)),
+                [target, text, width ?? context.Constant(BigInteger.Zero, types.Integer)]);
+        }
+
         if (arguments[0].Type is RealTypeSymbol)
         {
             var decimals = arguments.Length > 3 ? context.Lower(arguments[3]) : context.Constant(BigInteger.MinusOne, types.Integer);

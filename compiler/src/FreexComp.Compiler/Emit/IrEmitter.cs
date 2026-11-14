@@ -60,7 +60,7 @@ internal static class IrEmitter
         }
 
         var interfaceMembers = unit.Unit.InterfaceMembers.Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).ToHashSet();
-        var module = new ModuleState(writer);
+        var module = new ModuleState(writer) { UnitName = unit.Unit.Name };
         foreach (var body in unit.Routines)
         {
             module.DefinedRoutines.Add(Mangler.Routine(body.Routine!).Text);
@@ -117,9 +117,21 @@ internal static class IrEmitter
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, literal, Alignment: 16, UnnamedAddr: true));
         }
 
+        if (module.UsesEmptyTerminator)
+        {
+            // CMP-320: the shared empty PChar literal (also PAnsiChar's: two zero bytes)
+            writer.DefineGlobal(new IrGlobalDefinition(ModuleState.EmptyTerminatorName, IrLinkage.Private, IsConstant: true,
+                new IrZeroConstant(new ArrayIrType(1, IrType.I16)), Alignment: 2, UnnamedAddr: true));
+        }
+
         foreach (var (name, constant, alignment) in module.AggregateConstants)
         {
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, constant, alignment, UnnamedAddr: true));
+        }
+
+        foreach (var (name, block) in module.TypeInfos)
+        {
+            writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.LinkOnceOdr, IsConstant: true, block, Alignment: 8));     // CMP-405, CMP-365
         }
 
         if (unit.Unit.IsProgram)
@@ -310,6 +322,10 @@ internal static class IrEmitter
                 return module.Global(variable);                                                   // LANG-265 @X in a typed constant
             case (PointerTypeSymbol, AddressConstant { Target: RoutineSymbol routine }):
                 return module.Routine(routine);
+            case (PointerTypeSymbol pointer, string text):
+                return module.CharPointerLiteral(text, pointer);                                  // LANG-245 (C-063)
+            case (StringTypeSymbol { Variant: StringVariant.Short } shortString, string text):
+                return ModuleState.ShortStringConstant(text, shortString);
             case (ArrayTypeSymbol array, ImmutableArray<ConstantValue?> elements):
                 return new IrArrayConstant((ArrayIrType)TypeLayout.Of(array).StorageType, [.. elements.Select(e => Element(e, array.ElementType))]);
             case (RecordTypeSymbol record, ImmutableArray<ConstantValue?> fields):
@@ -414,6 +430,164 @@ internal sealed class ModuleState(IIrWriter writer)
         return reference;
     }
 
+    /// <summary>
+    /// CMP-320 (C-063): an AnsiString-family literal — <c>{ i32 -1, i32 Length, i16 CodePage, i16 1, i32 0, [Length+1 x i8] }</c>
+    /// with the UTF-8 bytes of <paramref name="text"/> — referenced by a GEP to its payload; <c>''</c> is <c>ptr null</c>.
+    /// </summary>
+    public IrConstant AnsiStringLiteral(string text, int codePage)
+    {
+        if (text.Length == 0)
+        {
+            return new IrNullConstant();
+        }
+
+        var key = "A" + codePage + ":" + text;
+        if (!_literalReferences.TryGetValue(key, out var reference))
+        {
+            var bytes = Strings.Utf8(text);
+            var payloadType = new ArrayIrType(bytes.Length + 1, IrType.I8);
+            var type = new StructIrType([IrType.I32, IrType.I32, IrType.I16, IrType.I16, IrType.I32, payloadType]);
+            var payload = new IrArrayConstant(payloadType, [.. bytes.Select(b => (IrConstant)new IrIntConstant(IrType.I8, (sbyte)b)), new IrIntConstant(IrType.I8, 0)]);
+            var name = Mangler.StringLiteral(StringLiterals.Count);
+            StringLiterals.Add((name, new IrStructConstant(type,
+                [IrIntConstant.I32(-1), IrIntConstant.I32(bytes.Length), new IrIntConstant(IrType.I16, (short)codePage), new IrIntConstant(IrType.I16, 1), IrIntConstant.I32(0), payload])));
+            reference = new IrGepConstant(type, new IrGlobal(name), [IrIntConstant.I32(0), IrIntConstant.I32(5)]);
+            _literalReferences.Add(key, reference);
+        }
+
+        return reference;
+    }
+
+    public static readonly LinkName EmptyTerminatorName = new(".str.empty", AlwaysQuote: false);
+
+    /// <summary>Whether <c>@.str.empty</c> is referenced (CMP-320).</summary>
+    public bool UsesEmptyTerminator { get; private set; }
+
+    /// <summary>
+    /// LANG-245 / CMP-320: a string literal as a <c>PChar</c> (the UnicodeString literal's payload) or <c>PAnsiChar</c> (the AnsiString
+    /// literal's payload); <c>''</c> points to the shared <c>@.str.empty</c>.
+    /// </summary>
+    public IrConstant CharPointerLiteral(string text, TypeSymbol pointerType)
+    {
+        if (text.Length == 0)
+        {
+            UsesEmptyTerminator = true;
+            return new IrGlobal(EmptyTerminatorName);
+        }
+
+        return Strings.IsCharPointer(pointerType, wide: false) ? AnsiStringLiteral(text, 65001) : StringLiteral(text);
+    }
+
+    /// <summary>A short string constant: <c>[capacity+1 x i8]</c> with the length byte, the UTF-8 bytes (cut at a sequence boundary) and zeros.</summary>
+    public static IrConstant ShortStringConstant(string text, StringTypeSymbol type)
+    {
+        var bytes = Strings.ShortBytes(text, type.MaxLength);
+        var storage = new ArrayIrType(type.Size, IrType.I8);
+        return new IrArrayConstant(storage, [new IrIntConstant(IrType.I8, bytes.Length),
+            .. bytes.Select(b => (IrConstant)new IrIntConstant(IrType.I8, (sbyte)b)),
+            .. Enumerable.Repeat<IrConstant>(new IrIntConstant(IrType.I8, 0), (int)type.Size - 1 - bytes.Length)]);
+    }
+
+    /// <summary>The unit this module belongs to (anonymous types' RTTI names, CMP-362).</summary>
+    public string UnitName { get; init; } = "";
+
+    private readonly Dictionary<TypeSymbol, IrGlobal> _typeInfoReferences = [];
+
+    /// <summary>RTTI blocks (rtl-abi.md §10) in first-use order; nested element blocks come before the blocks referencing them.</summary>
+    public List<(LinkName Name, IrStructConstant Block)> TypeInfos { get; } = [];
+
+    private static readonly IrConstant Pad7 = new IrZeroConstant(new ArrayIrType(7, IrType.I8));
+
+    /// <summary>
+    /// CMP-405/407 (C-064): the address of the RTTI block of <paramref name="type"/>, built once per module (<c>linkonce_odr</c>,
+    /// CMP-365) as an anonymous struct per rtl-abi.md §10: <c>tkUString</c>/<c>tkAString</c> (code page), <c>tkDynArray</c>
+    /// (ElSize, ElType, ManagedElType), <c>tkRecord</c> (Size, managed fields), <c>tkArray</c> (Size, total ElCount, ElType). An element
+    /// type gets a block only for these kinds (ElType null otherwise; tkInteger &amp; co. arrive with TypeInfo, M2.5).
+    /// </summary>
+    public IrGlobal TypeInfo(TypeSymbol type)
+    {
+        if (_typeInfoReferences.TryGetValue(type, out var global))
+        {
+            return global;
+        }
+
+        IrConstant Name() => IsDeclared(type) || type is StringTypeSymbol ? StringLiteral(type.Name) : new IrNullConstant();
+        IrConstant Element(TypeSymbol element) => HasTypeInfo(element) ? TypeInfo(element) : new IrNullConstant();
+        var fields = type switch
+        {
+            StringTypeSymbol { Variant: not StringVariant.Short } s => new IrConstant[]
+            {
+                new IrIntConstant(IrType.I8, s.Variant == StringVariant.Unicode ? 9 : 10), Pad7, Name(),
+                new IrIntConstant(IrType.I16, (short)s.CodePage), new IrZeroConstant(new ArrayIrType(6, IrType.I8)),
+            },
+            DynamicArrayTypeSymbol array =>
+            [
+                new IrIntConstant(IrType.I8, 14), Pad7, Name(), IrIntConstant.I64(TypeLayout.Of(array.ElementType).Size), Element(array.ElementType),
+                array.ElementType.IsManaged ? Element(array.ElementType) : new IrNullConstant(),
+            ],
+            RecordTypeSymbol record => RecordFields(record, Name()),
+            ArrayTypeSymbol array =>
+            [
+                new IrIntConstant(IrType.I8, 13), Pad7, Name(), IrIntConstant.I64(array.Size), IrIntConstant.I64(ElementCount(array)), Element(Innermost(array)),
+            ],
+            _ => throw new NotSupportedException($"No type info for '{type.Name}' yet."),
+        };
+        var block = new IrStructConstant(new StructIrType([.. fields.Select(f => f.Type)]), [.. fields]);
+        var name = TypeInfoName(type);
+        global = new IrGlobal(name);
+        _typeInfoReferences.Add(type, global);
+        TypeInfos.Add((name, block));
+        return global;
+    }
+
+    /// <summary><c>tkRecord</c>: Size, ManagedCount and <c>@"…$rtti.fields"</c> (or null) of <c>{ ptr TypeInfo, i64 Offset }</c> entries.</summary>
+    private IrConstant[] RecordFields(RecordTypeSymbol record, IrConstant name)
+    {
+        var managed = record.Fields.Where(f => f.Type.IsManaged).ToImmutableArray();
+        IrConstant table = new IrNullConstant();
+        if (!managed.IsEmpty)
+        {
+            var entry = new StructIrType([IrType.Ptr, IrType.I64]);
+            var tableName = new LinkName(TypeInfoName(record).Text + ".fields", AlwaysQuote: true);
+            AggregateConstants.Add((tableName, new IrArrayConstant(new ArrayIrType(managed.Length, entry),
+                [.. managed.Select(f => (IrConstant)new IrStructConstant(entry, [TypeInfo(f.Type), IrIntConstant.I64(f.Offset)]))]), 8));
+            table = new IrGlobal(tableName);
+        }
+
+        return [new IrIntConstant(IrType.I8, 12), Pad7, name, IrIntConstant.I64(record.Size), IrIntConstant.I64(managed.Length), table];
+    }
+
+    private static bool HasTypeInfo(TypeSymbol type) =>
+        type is StringTypeSymbol { Variant: not StringVariant.Short } or DynamicArrayTypeSymbol or RecordTypeSymbol or ArrayTypeSymbol;
+
+    private static TypeSymbol Innermost(ArrayTypeSymbol array) => array.ElementType is ArrayTypeSymbol inner ? Innermost(inner) : array.ElementType;
+
+    private static long ElementCount(ArrayTypeSymbol array) => array.Length * (array.ElementType is ArrayTypeSymbol inner ? ElementCount(inner) : 1);
+
+    /// <summary>A type declaration (not a built-in, not an anonymous type constructor).</summary>
+    private static bool IsDeclared(TypeSymbol type) =>
+        !type.Locations.IsEmpty && type.ContainingSymbol is not null && type is not RecordTypeSymbol { IsAnonymous: true };
+
+    /// <summary>
+    /// rtl-abi.md §10 / CMP-362: <c>U.T.$rtti</c> for a declared type (a routine's type: its routine's link name first), the
+    /// built-in strings as <c>System.string.$rtti</c>, anonymous types <c>U.$rtti.&lt;type text&gt;</c> of this module's unit.
+    /// </summary>
+    private LinkName TypeInfoName(TypeSymbol type)
+    {
+        if (type is StringTypeSymbol)
+        {
+            return new LinkName("System." + type.Name + ".$rtti", AlwaysQuote: true);
+        }
+
+        if (IsDeclared(type))
+        {
+            var prefix = type.ContainingSymbol is RoutineSymbol routine ? Mangler.Routine(routine).Text + "." + type.Name : type.QualifiedName;
+            return new LinkName(prefix + ".$rtti", AlwaysQuote: true);
+        }
+
+        return new LinkName(UnitName + ".$rtti." + type.Name, AlwaysQuote: true);
+    }
+
     private readonly Dictionary<string, IrGlobal> _aggregateReferences = new(StringComparer.Ordinal);
 
     /// <summary>Constant aggregates used as operands (<c>@.set.N</c>, CMP-336), first-use order, one per distinct value.</summary>
@@ -423,11 +597,11 @@ internal sealed class ModuleState(IIrWriter writer)
     /// The address of a private constant holding <paramref name="value"/> (emitted after the string literals);
     /// <paramref name="key"/> identifies the value.
     /// </summary>
-    public IrGlobal AggregateConstant(string key, IrConstant value, int alignment)
+    public IrGlobal AggregateConstant(string key, IrConstant value, int alignment, string prefix = ".set.")
     {
         if (!_aggregateReferences.TryGetValue(key, out var global))
         {
-            var name = new LinkName(".set." + AggregateConstants.Count, AlwaysQuote: false);
+            var name = new LinkName(prefix + AggregateConstants.Count, AlwaysQuote: false);
             AggregateConstants.Add((name, value, alignment));
             global = new IrGlobal(name);
             _aggregateReferences.Add(key, global);
@@ -1019,6 +1193,8 @@ internal sealed class FunctionEmitter
                 return _parameterAddresses[parameter.Parameter];
             case LOuterRef outer:
                 return OuterAddress(outer);
+            case LStringLiteral { Type: StringTypeSymbol { Variant: StringVariant.Short } type } literal:
+                return _module.AggregateConstant("s" + type.Size + ":" + literal.Value, ModuleState.ShortStringConstant(literal.Value, type), 1, ".sstr.");
             case LConst constant when Lowerer.IsAggregate(constant.Type):
                 return _module.AggregateConstant(constant.Type.Size + ":" + constant.Value.Value, IrEmitter.ValueConstant(constant.Value, constant.Type),
                     TypeLayout.Of(constant.Type).Alignment);
@@ -1040,6 +1216,9 @@ internal sealed class FunctionEmitter
 
             case LStringIndex element:
                 return StringElement(element, Value(element.String));               // ABI-024: read access
+
+            case LArrayElement element:
+                return ArrayElement(element);
 
             case LField field:
             {
@@ -1067,7 +1246,8 @@ internal sealed class FunctionEmitter
         }
 
         var stringAddress = Address(element.String);
-        var unique = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_UStrUnique"), IrType.Void, [IrType.Ptr]));
+        var helper = Strings.IsAnsi(element.String.Type) ? "_AStrUnique" : "_UStrUnique";
+        var unique = _module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper(helper), IrType.Void, [IrType.Ptr]));
         _w.Call(null, IrType.Void, unique, [stringAddress]);
         return StringElement(element, _w.Load(NewTemp(), IrType.Ptr, stringAddress, 8));
     }
@@ -1088,7 +1268,45 @@ internal sealed class FunctionEmitter
             Start(ok);
         }
 
-        return _w.GetElementPtr(NewTemp(), IrType.I16, text, [index]);
+        return _w.GetElementPtr(NewTemp(), TypeLayout.Of(element.Type).StorageType, text, [index]);
+    }
+
+    /// <summary>
+    /// ABI-042 / CMP-330: <c>getelementptr inbounds T, ptr %a, i64 %i</c>; under <c>{$R+}</c> after <c>%i &lt;u Length</c> (CMP-331, the
+    /// length of <c>nil</c> being 0).
+    /// </summary>
+    private IrValue ArrayElement(LArrayElement element)
+    {
+        var array = Value(element.Array);
+        var index = Value(element.Index);
+        if (element.IsChecked)
+        {
+            var length = ArrayLength(array);
+            var inRange = _w.ICmp(NewTemp(), IrIntPredicate.Ult, index, length);
+            var id = NewConstruct();
+            IrBlock error = Block("range.error", id), ok = Block("range.ok", id);
+            _w.CondBr(inRange, ok, error);
+            ErrorBlock(error, "_RangeError");
+            Start(ok);
+        }
+
+        return _w.GetElementPtr(NewTemp(), TypeLayout.Of(element.Type).StorageType, array, [index]);
+    }
+
+    /// <summary>ABI-041: the <c>i64</c> length of a dynamic array value (<c>nil</c> → 0 through a branch, like <see cref="StringLength"/>).</summary>
+    private IrValue ArrayLength(IrValue array)
+    {
+        var isNil = _w.ICmp(NewTemp(), IrIntPredicate.Eq, array, new IrNullConstant());
+        var from = _current;
+        var id = NewConstruct();
+        IrBlock load = Block("len.load", id), end = Block("len.end", id);
+        _w.CondBr(isNil, end, load);
+        Start(load);
+        var field = _w.GetElementPtr(NewTemp(), IrType.I8, array, [IrIntConstant.I64(-8)]);
+        var length = _w.Load(NewTemp(), IrType.I64, field, 8);
+        _w.Br(end);
+        Start(end);
+        return _w.Phi(NewTemp(), IrType.I64, [(IrIntConstant.I64(0), from), (length, load)]);
     }
 
     /// <summary>
@@ -1313,11 +1531,11 @@ internal sealed class FunctionEmitter
         {
             case LConst constant:
                 return IrEmitter.ValueConstant(constant.Value, constant.Type);
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex or LField or LDeref when Lowerer.IsAggregate(expression.Type):
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LView or LIndex or LField or LDeref or LArrayElement when Lowerer.IsAggregate(expression.Type):
                 throw new InvalidOperationException("An aggregate has no SSA value; use its address.");
             case LView view:
                 return Load(Address(view), view.Type, AlignmentOf(view));
-            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField or LDeref or LStringIndex:
+            case LLocalRef or LGlobalRef or LParamRef or LOuterRef or LRuntimeVariableRef or LIndex or LField or LDeref or LStringIndex or LArrayElement:
                 return Load(Address(expression), expression.Type, AccessAlignment(expression));
             case LPointerOffset offset:
             {
@@ -1350,10 +1568,18 @@ internal sealed class FunctionEmitter
             }
             case LStringLiteral { Type: StringTypeSymbol { Variant: StringVariant.Unicode } } literal:
                 return _module.StringLiteral(literal.Value);
+            case LStringLiteral { Type: StringTypeSymbol { Variant: StringVariant.Ansi } ansi } literal:
+                return _module.AnsiStringLiteral(literal.Value, ansi.CodePage);
+            case LStringLiteral { Type: PointerTypeSymbol } literal:
+                return _module.CharPointerLiteral(literal.Value, literal.Type);
             case LAddrOf addressOf:
                 return WrittenAddress(addressOf.Variable);                         // a var argument or @x may be written through
             case LStringLength length:
                 return StringLength(Value(length.String));
+            case LArrayLength length:
+                return _w.Cast(NewTemp(), IrCastOperator.Trunc, ArrayLength(Value(length.Array)), IrType.I32);    // ABI-041: as Integer
+            case LTypeInfo typeInfo:
+                return _module.TypeInfo(typeInfo.Described);
             case LAtomic atomic:
                 return Atomic(atomic);
             case LTemp temp:

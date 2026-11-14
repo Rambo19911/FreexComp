@@ -377,7 +377,8 @@ internal sealed class BodyBinder
             IntrinsicKind.GetMem or IntrinsicKind.ReallocMem => (2, 2),
             IntrinsicKind.FillChar or IntrinsicKind.Move => (3, 3),
             IntrinsicKind.Assert => (1, 2),
-            IntrinsicKind.SetLength or IntrinsicKind.Str => (2, 2),
+            IntrinsicKind.SetLength => (2, int.MaxValue),
+            IntrinsicKind.Str => (2, 2),
             IntrinsicKind.Delete or IntrinsicKind.Insert or IntrinsicKind.Val => (3, 3),
             _ => (0, 0),
         };
@@ -512,6 +513,13 @@ internal sealed class BodyBinder
             }
 
             bound.Add(value);
+            // SetLength: one length for a string, up to one per nesting level for a dynamic array (intrinsics.md, C-064)
+            var maxLengths = intrinsic.Intrinsic != IntrinsicKind.SetLength ? int.MaxValue : bound[0].Type is DynamicArrayTypeSymbol d ? d.Depth : 1;
+            if (k == 0 && arguments.Count - 1 > maxLengths)
+            {
+                _diagnostics.Report(arguments[maxLengths + 1], "E2111", intrinsic.Name);
+                return new BoundErrorStatement(statement);
+            }
         }
 
         return new BoundIntrinsicCallStatement(statement, intrinsic, bound.ToImmutable());
@@ -542,6 +550,8 @@ internal sealed class BodyBinder
         switch (target.Type)
         {
             case StringTypeSymbol { Variant: StringVariant.Unicode }:
+            case StringTypeSymbol { Variant: StringVariant.Ansi } when intrinsic.Intrinsic == IntrinsicKind.SetLength:     // _AStrSetLen (C-063)
+            case DynamicArrayTypeSymbol when intrinsic.Intrinsic == IntrinsicKind.SetLength:                               // _DynArraySetLen (C-064)
                 return target;
             case StringTypeSymbol:
                 _diagnostics.Report(syntax, "E2900", intrinsic.Name + " of a " + target.Type.Name);   // C-063
@@ -565,10 +575,20 @@ internal sealed class BodyBinder
             return new BoundErrorStatement(statement);
         }
 
-        if (value.Type is not (IntegerTypeSymbol or RealTypeSymbol { RealKind: not RealKind.Currency }))
+        if (value.Type is not (IntegerTypeSymbol or RealTypeSymbol { RealKind: not RealKind.Currency } or BooleanTypeSymbol or CharTypeSymbol
+            or StringTypeSymbol) && !Strings.IsCharPointer(value.Type, wide: true) && !Strings.IsCharPointer(value.Type, wide: false))
         {
             _diagnostics.Report(argument.Expression, "E2010", value.Type.Name, _types.Integer.Name);
             return new BoundErrorStatement(statement);
+        }
+
+        if (value.Type is StringTypeSymbol or CharTypeSymbol or PointerTypeSymbol)
+        {
+            value = _expressions.StringOperand(value, argument.Expression, intrinsic.Name);   // LANG-951 like Write: as a string (C-063)
+        }
+        else if (value.Type is BooleanTypeSymbol)
+        {
+            value = _expressions.ConvertForAssignment(value, _types.Boolean, argument.Expression);
         }
 
         if (argument.DecimalsColonToken is { } decimalsColon && value.Type is not RealTypeSymbol)
@@ -701,12 +721,10 @@ internal sealed class BodyBinder
     private static string? WriteTypeError(BoundExpression value) => value.Type switch
     {
         IntegerTypeSymbol or BooleanTypeSymbol or CharTypeSymbol => null,
-        StringTypeSymbol when value.ConstantValue != null => null,
-        StringTypeSymbol { Variant: StringVariant.Unicode } => null,                 // C-060
-        StringTypeSymbol => "Write of a string variable",
+        StringTypeSymbol => null,                                                    // C-060, C-063
         RealTypeSymbol { RealKind: RealKind.Currency } => "Write of a Currency value",
         RealTypeSymbol => null,
-        PointerTypeSymbol { AllowsPointerMath: true } => "Write of a PChar",
+        var type when Strings.IsCharPointer(type, wide: true) || Strings.IsCharPointer(type, wide: false) || Strings.IsCharArray(type) => null,
         _ => "",
     };
 

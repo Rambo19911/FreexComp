@@ -51,6 +51,42 @@ public sealed class LoweringTests
         Assert.Equal("s:string", Locals(body));
     }
 
+    /// <summary>C-063: AnsiStrings use the <c>_AStr*</c> family for the same rules; a short string is no managed storage.</summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "ABI-031")]
+    public void ManagedLifetimes_AnsiStringsUseTheAStrFamily()
+    {
+        var body = Routine(Lower("program T; procedure F(a: AnsiString; out d: AnsiString; h: ShortString); var s: AnsiString; begin s := a; d := s end; begin end."), "F");
+
+        Assert.Equal("(zero (addr s)) (call _AStrAddRef a) (call _AStrClr (addr d)) (call _AStrAsg (addr s) a) (call _AStrAsg (addr d) s)",
+            string.Join(" ", body.Body.Statements.Select(LoweredDump.Of)));
+        Assert.Equal("(block (call _AStrClr (addr a)) (call _AStrClr (addr s)))", Cleanup(body));
+    }
+
+    /// <summary>
+    /// C-064 (CMP-325, CMP-330): dynamic arrays reuse the lifetime rules with the <c>_DynArray*</c> family and their type info;
+    /// <c>SetLength</c> fills a dims array; <c>a := nil</c> clears; elements are <c>elem</c> nodes, checked under <c>{$R+}</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-325")]
+    [Trait("Req", "CMP-330")]
+    [Trait("Req", "CMP-331")]
+    public void DynamicArrays_UseTheDynArrayFamily()
+    {
+        var body = Routine(Lower("program T; type TA = array of Integer; TG = array of TA; procedure F(a: TA; const c: TA); var g: TG; " +
+            "begin SetLength(g, 2, 3); g[1] := a; a := nil; {$R+} a[0] := Length(c) end; begin end."), "F");
+
+        Assert.Equal(
+            "(zero (addr g)) (call _DynArrayAddRef a) " +
+            "(block (:= ([] $tmp1 0:Int64) (conv NativeInt 2:Integer)) (:= ([] $tmp1 1:Int64) (conv NativeInt 3:Integer)) " +
+            "(call _DynArraySetLen (addr g) (typeinfo TG) 2:NativeInt (addr $tmp1))) " +
+            "(call _DynArrayAsg (addr (elem g (conv Int64 1:Integer))) a (typeinfo TA)) (call _DynArrayClr (addr a) (typeinfo TA)) " +
+            "(:= (elem! a (conv Int64 0:Integer)) (arraylength c))",
+            string.Join(" ", body.Body.Statements.Select(LoweredDump.Of)));
+        Assert.Equal("(block (call _DynArrayClr (addr a) (typeinfo TA)) (call _DynArrayClr (addr g) (typeinfo TG)))", Cleanup(body));
+    }
+
     /// <summary>A routine without managed parameters, locals or temporaries gets no cleanup scope; neither does a <c>const</c>-only one.</summary>
     [Fact]
     [Trait("Req", "CMP-325")]

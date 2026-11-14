@@ -1,0 +1,4 @@
+WarnStringNarrowing.pas(18,8): warning W1020: Implicit string conversion with potential data loss from 'string' to 'AnsiString'
+WarnStringNarrowing.pas(19,8): warning W1020: Implicit string conversion with potential data loss from 'string' to 'ShortString'
+WarnStringNarrowing.pas(20,8): warning W1020: Implicit string conversion with potential data loss from 'string' to 'UTF8String'
+WarnStringNarrowing.pas(21,12): warning W1020: Implicit string conversion with potential data loss from 'string' to 'AnsiString'

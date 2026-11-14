@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Numerics;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Types;
@@ -439,6 +440,31 @@ internal sealed class DeclarationBinder
     /// types are named by their constructor (<c>array[I2] of T</c>). <c>packed</c> changes nothing (elements are not padded).
     /// Arrays of managed types arrive with C-065.
     /// </summary>
+    /// <summary>
+    /// LANG-257 <c>array of T</c> (C-064): a new dynamic array type (LANG-206); any element type with a size, managed ones included.
+    /// </summary>
+    private TypeSymbol BindDynamicArray(ArrayTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
+    {
+        var element = BindType(syntax.ElementType!, declared: declared);
+        if (element.TypeKind == TypeKind.Error)
+        {
+            return _types.Error;
+        }
+
+        if (element.Size < 0 || element is TextTypeSymbol)
+        {
+            return Unsupported(syntax.ElementType!, "array of " + element.Name);
+        }
+
+        if (element is RecordTypeSymbol or ArrayTypeSymbol && element.IsManaged)
+        {
+            return Unsupported(syntax.ElementType!, "array of a managed record or array");     // C-065
+        }
+
+        ImmutableArray<Text.Location> locations = declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [];
+        return new DynamicArrayTypeSymbol(name, element, declaredAt is null ? null : _container, locations);
+    }
+
     private TypeSymbol BindArray(ArrayTypeSyntax syntax, string name, SyntaxToken? declaredAt, ImmutableArray<Symbol>.Builder? declared)
     {
         var indexTypes = new List<TypeSymbol>();
@@ -695,6 +721,13 @@ internal sealed class DeclarationBinder
             {
                 // converted to the declared type (LANG-280), so the value carries that type
                 var value = _folder.Fold(expression);
+                if (type is StringTypeSymbol { Variant: StringVariant.Short } shortString && value?.Value is string text
+                    && Strings.Utf8(text).Length > shortString.MaxLength)
+                {
+                    _diagnostics.Report(expression, "E2054", type.Name);            // a constant is not truncated (C-063)
+                    return null;
+                }
+
                 return value is null ? null : _conversions.ConvertConstant(value, type, expression, _diagnostics);
             }
 
@@ -973,7 +1006,7 @@ internal sealed class DeclarationBinder
                 SyntaxKind.OutKeyword => ParameterMode.Out,
                 _ => ParameterMode.Value,
             };
-            var type = parameter.Type is { } typeSyntax ? BindType(typeSyntax) : _types.Error;
+            var type = parameter.Type is { } typeSyntax ? BindType(typeSyntax, parameter: true) : _types.Error;
             if (parameter.Type is null && mode != ParameterMode.Value && report)
             {
                 _diagnostics.Report(parameter, "E2900", "untyped parameter");                  // M2.2
@@ -1117,7 +1150,7 @@ internal sealed class DeclarationBinder
     /// creates a new type named after <paramref name="declaredAt"/> (a type declaration) or after its own text (an
     /// anonymous type); enumeration elements go into <paramref name="declared"/>.
     /// </summary>
-    private TypeSymbol BindType(TypeSyntax type, SyntaxToken? declaredAt = null, ImmutableArray<Symbol>.Builder? declared = null)
+    private TypeSymbol BindType(TypeSyntax type, SyntaxToken? declaredAt = null, ImmutableArray<Symbol>.Builder? declared = null, bool parameter = false)
     {
         if (type.IsMissing)
         {
@@ -1139,8 +1172,12 @@ internal sealed class DeclarationBinder
                 return BindRecord(record, typeName, declaredAt, declared);
             case PointerTypeSyntax pointer:
                 return BindPointer(pointer, typeName, declared);
+            case ArrayTypeSyntax { ElementType: null }:
+                return Unsupported(type, "array of const");                     // M2.5
+            case ArrayTypeSyntax when parameter:
+                return Unsupported(type, "open array parameter");               // LANG-430, M2.5
             case ArrayTypeSyntax array:
-                return Unsupported(type, array.ElementType is null ? "array of const" : "dynamic array type");      // C-064, M2.5
+                return BindDynamicArray(array, typeName, declaredAt, declared);
             case NamedTypeSyntax { Name: IdentifierNameSyntax name }:
                 return BindTypeName(name);
             case NamedTypeSyntax { Name: QualifiedNameSyntax }:
@@ -1149,10 +1186,31 @@ internal sealed class DeclarationBinder
                 return Unsupported(type, "generic type");
             case StringTypeSyntax { Length: null }:
                 return _types.String;
-            case StringTypeSyntax:
-                return Unsupported(type, "short string type");          // M2.2
+            case StringTypeSyntax { Length: { } length }:
+                return BindShortString(length, typeName);
             default:
                 return Unsupported(type, FeatureName(type.Kind));        // type constructors arrive with M2.2+
+        }
+    }
+
+    /// <summary>
+    /// LANG-200 <c>string[N]</c>: a short string of capacity N, an integer constant in 1..255 (E2012 otherwise, C-063 decision:
+    /// the range is shown as the type <c>1..255</c>). Every occurrence is a new type (LANG-206).
+    /// </summary>
+    private TypeSymbol BindShortString(ExpressionSyntax length, string typeName)
+    {
+        switch (_folder.Fold(length))
+        {
+            case null:
+                return _types.Error;
+            case { Value: BigInteger n } when n >= 1 && n <= 255:
+                return new StringTypeSymbol(typeName, StringVariant.Short, codePage: 65001, maxLength: (int)n);
+            case { Value: BigInteger } value:
+                _diagnostics.Report(length, "E2012", value.ToDisplayString(), "1..255");
+                return _types.Error;
+            case var value:
+                _diagnostics.Report(length, "E2010", value.Type.Name, _types.Integer.Name);
+                return _types.Error;
         }
     }
 

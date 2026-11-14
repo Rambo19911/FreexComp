@@ -26,9 +26,21 @@ internal static class ManagedRewriter
 
     private static LAddrOf AddressOf(LoweringContext context, LExpression variable) => new(variable, context.Types.Pointer);
 
-    /// <summary><c>_UStrClr(var S)</c>: release, <c>S := nil</c>.</summary>
+    /// <summary>The helper family of a managed type (rtl-abi.md §9.3/§9.4): <c>UStr</c> or <c>AStr</c>.</summary>
+    private static string Family(TypeSymbol type) => Strings.IsAnsi(type) ? "AStr" : "UStr";
+
+    /// <summary>The type info argument of the <c>_DynArray*</c> helpers (ABI-044).</summary>
+    private static LTypeInfo TypeInfo(LoweringContext context, TypeSymbol type) => new(type, context.Types.Pointer);
+
+    /// <summary><c>_UStrClr(var S)</c> / <c>_AStrClr(var S)</c> / <c>_DynArrayClr(var A, TI)</c>: release, <c>S := nil</c>.</summary>
     public static LStatement Clear(LoweringContext context, LExpression variable) =>
-        Call(Helper("_UStrClr", context.Types.Pointer), AddressOf(context, variable));
+        variable.Type is DynamicArrayTypeSymbol
+            ? Call(Helper("_DynArrayClr", context.Types.Pointer, context.Types.Pointer), AddressOf(context, variable), TypeInfo(context, variable.Type))
+            : Call(Helper("_" + Family(variable.Type) + "Clr", context.Types.Pointer), AddressOf(context, variable));
+
+    /// <summary><c>_UStrAddRef(S)</c> / <c>_AStrAddRef(S)</c> / <c>_DynArrayAddRef(A)</c> (ABI-031).</summary>
+    private static LStatement AddRef(LoweringContext context, LExpression value) =>
+        Call(Helper(value.Type is DynamicArrayTypeSymbol ? "_DynArrayAddRef" : "_" + Family(value.Type) + "AddRef", context.Types.Pointer), value);
 
     // ------------------------------------------------------------------ assignments (CMP-324, CMP-325 rule 4)
 
@@ -36,62 +48,104 @@ internal static class ManagedRewriter
     /// <c>target := value</c> for a managed <paramref name="target"/> (a lowered variable reference): a call returning the
     /// string writes into the target directly when <see cref="LoweringContext.ReceivesResultDirectly"/> allows it, else into a
     /// temporary assigned with <c>_UStrAsg</c>; a concatenation is built into the target (<c>_UStrCat(@s, a, b)</c>, CMP-324),
-    /// a character converted by <c>_UStrFromWChar</c>; any other value is assigned with <c>_UStrAsg(@s, value)</c>.
+    /// a conversion by its helper (LANG-245, C-063); any other value is assigned with <c>_UStrAsg</c>/<c>_AStrAsg(@s, value)</c>.
     /// </summary>
     public static LStatement Assign(LoweringContext context, LExpression target, BoundExpression value)
     {
-        if (value.ConstantValue is null)
+        if (value.ConstantValue is null && Fill(context, target, value) is { } fill)
         {
-            switch (value)
-            {
-                case BoundCallExpression call:
-                    return context.CallInto(target, call.Routine, call.Arguments);
-                case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: StringTypeSymbol } concatenation:
-                    return Concatenate(context, AddressOf(context, target), concatenation);
-                case BoundConversionExpression { Type: StringTypeSymbol, Operand.Type: CharTypeSymbol } conversion:
-                    return FromChar(context, AddressOf(context, target), context.Lower(conversion.Operand));
-                case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
-                    return StringRewriter.CopyInto(context, AddressOf(context, target), copy);     // C-062: Dest may be the source
-            }
+            return fill;
+        }
+
+        if (target.Type is DynamicArrayTypeSymbol && value.ConstantValue is { Value: null })
+        {
+            return Clear(context, target);                                  // CMP-330: a := nil
         }
 
         return Assign(context, target, context.Lower(value));
     }
 
-    /// <summary><c>_UStrAsg(@target, value)</c>: add a reference to the value, release the old one.</summary>
+    /// <summary>
+    /// <c>_UStrAsg(@target, value)</c> / <c>_AStrAsg</c> / <c>_DynArrayAsg(@target, value, TI)</c>: add a reference to the value,
+    /// release the old one.
+    /// </summary>
     public static LStatement Assign(LoweringContext context, LExpression target, LExpression value) =>
-        Call(Helper("_UStrAsg", context.Types.Pointer, context.Types.Pointer), AddressOf(context, target), value);
+        target.Type is DynamicArrayTypeSymbol
+            ? Call(Helper("_DynArrayAsg", context.Types.Pointer, context.Types.Pointer, context.Types.Pointer), AddressOf(context, target), value, TypeInfo(context, target.Type))
+            : Call(Helper("_" + Family(target.Type) + "Asg", context.Types.Pointer, context.Types.Pointer), AddressOf(context, target), value);
+
+    /// <summary>The value written into <paramref name="target"/> by a helper, or null when it is an ordinary value to assign.</summary>
+    private static LStatement? Fill(LoweringContext context, LExpression target, BoundExpression value)
+    {
+        switch (value)
+        {
+            case BoundCallExpression call:
+                return context.CallInto(target, call.Routine, call.Arguments);
+            case BoundBinaryExpression { OperatorKind: BoundBinaryOperatorKind.Add, Type: StringTypeSymbol } concatenation:
+                return Concatenate(context, target, concatenation);
+            case BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy:
+                return StringRewriter.CopyInto(context, AddressOf(context, target), copy);     // C-062: Dest may be the source
+            case BoundConversionExpression { Type: StringTypeSymbol } conversion when !ReferenceEquals(conversion.Operand.Type, conversion.Type):
+                return StringConversions.Convert(context, target, conversion);
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// <c>target := value</c> for a short-string <paramref name="target"/> (LANG-246, C-063): the same type (or a constant, which
+    /// carries the target's type) is a plain copy, another short string <c>_SStrAsg(@t, max, @s)</c>, anything else a conversion.
+    /// </summary>
+    public static LStatement AssignShort(LoweringContext context, LExpression target, BoundExpression value) =>
+        value is BoundConversionExpression { ConstantValue: null } conversion && !ReferenceEquals(conversion.Operand.Type, conversion.Type)
+            ? StringConversions.Convert(context, target, conversion)
+            : ReferenceEquals(value.Type, target.Type) || value.ConstantValue is not null
+                ? new LAssign(target, context.Lower(value))
+                : StringConversions.ShortFromShort(context, target, context.Lower(value));
 
     // ------------------------------------------------------------------ values in temporaries (CMP-325 rule 5)
 
-    /// <summary>A string-valued expression that needs storage, evaluated into a fresh managed temporary (the temporary is the value).</summary>
+    /// <summary>A string-valued expression that needs storage, evaluated into a fresh temporary (the temporary is the value).</summary>
     public static LExpression Value(LoweringContext context, BoundExpression value)
     {
         var temporary = new LLocalRef(context.NewTemp(value.Type));
-        var fill = value switch
-        {
-            BoundBinaryExpression concatenation => Concatenate(context, AddressOf(context, temporary), concatenation),
-            BoundConversionExpression conversion => FromChar(context, AddressOf(context, temporary), context.Lower(conversion.Operand)),
-            BoundIntrinsicCallExpression { Intrinsic.Intrinsic: IntrinsicKind.Copy } copy => StringRewriter.CopyInto(context, AddressOf(context, temporary), copy),
-            _ => throw new InvalidOperationException($"{value.Kind} needs no managed temporary."),
-        };
+        var fill = Strings.IsShort(value.Type) ? AssignShort(context, temporary, value)
+            : Fill(context, temporary, value) ?? throw new InvalidOperationException($"{value.Kind} needs no managed temporary.");
         return new LSequence(fill, temporary);
     }
 
     /// <summary>CMP-324: <c>_UStrFromWChar(@dest, c)</c>; an <c>AnsiChar</c> is zero-extended first (LANG-245).</summary>
-    private static LStatement FromChar(LoweringContext context, LExpression destination, LExpression character) =>
+    internal static LStatement FromChar(LoweringContext context, LExpression destination, LExpression character) =>
         Call(Helper("_UStrFromWChar", context.Types.Pointer, context.Types.Char), destination, context.Convert(character, context.Types.Char));
 
     /// <summary>
     /// CMP-324: the operands of a chain of <c>+</c> (left to right, each a string value: literal, variable, or temporary) →
     /// <c>_UStrCat(@dest, a, b)</c> for two, else a stack array <c>[n x ptr]</c> of the parts and <c>_UStrCatN(@dest, @parts, n)</c>.
+    /// AnsiStrings (no <c>CatN</c> helper, rtl-abi.md §9.4): <c>_AStrCat(@dest, a, b)</c>; for more operands
+    /// <c>_AStrCat(@tmp, a, b)</c>, <c>_AStrCat(@tmp, tmp, c)</c>, … into a temporary, then <c>_AStrAsg(@dest, tmp)</c>.
     /// </summary>
-    private static LStatement Concatenate(LoweringContext context, LExpression destination, BoundBinaryExpression concatenation)
+    private static LStatement Concatenate(LoweringContext context, LExpression target, BoundBinaryExpression concatenation)
     {
         var types = context.Types;
         var parts = new List<BoundExpression>();
         Flatten(concatenation, parts);
         var values = parts.Select(context.Lower).ToImmutableArray();
+        if (Strings.IsAnsi(concatenation.Type))
+        {
+            var cat = Helper("_AStrCat", types.Pointer, types.Pointer, types.Pointer);
+            if (values.Length == 2)
+            {
+                return Call(cat, AddressOf(context, target), values[0], values[1]);
+            }
+
+            var built = new LLocalRef(context.NewTemp(concatenation.Type));
+            var steps = new List<LStatement> { Call(cat, AddressOf(context, built), values[0], values[1]) };
+            steps.AddRange(values.Skip(2).Select(v => (LStatement)Call(cat, AddressOf(context, built), built, v)));
+            steps.Add(Assign(context, target, built));
+            return new LBlock([.. steps]);
+        }
+
+        var destination = AddressOf(context, target);
         if (values.Length == 2)
         {
             return Call(Helper("_UStrCat", types.Pointer, types.Pointer, types.Pointer), destination, values[0], values[1]);
@@ -129,6 +183,7 @@ internal static class ManagedRewriter
         var types = context.Types;
         var left = context.Lower(comparison.Left);
         var right = context.Lower(comparison.Right);
+        var kind = comparison.OperandType is StringTypeSymbol { Variant: var variant } ? variant : StringVariant.Unicode;
         var op = comparison.OperatorKind switch
         {
             BoundBinaryOperatorKind.Equal => LCompareOperator.Equal,
@@ -139,6 +194,26 @@ internal static class ManagedRewriter
             BoundBinaryOperatorKind.GreaterOrEqual => LCompareOperator.GreaterOrEqual,
             _ => throw new InvalidOperationException($"{comparison.OperatorKind} is no string comparison."),
         };
+
+        if (kind == StringVariant.Short)
+        {
+            // C-063: _SStrCmp(@a, @b) of two short strings
+            var shortOrder = new LCall(new LHelperCallee(new RuntimeHelper("_SStrCmp", [types.Pointer, types.Pointer], types.Integer, IsNoReturn: false)),
+                [AddressOf(context, left), AddressOf(context, right)]);
+            return context.Compare(op, shortOrder, context.Constant(BigInteger.Zero, types.Integer));
+        }
+
+        if (op is LCompareOperator.Equal or LCompareOperator.NotEqual && kind == StringVariant.Ansi && (IsEmpty(left) || IsEmpty(right)))
+        {
+            return context.Compare(op, IsEmpty(left) ? right : left, new LStringLiteral("", types.String));       // ABI-021
+        }
+
+        if (kind == StringVariant.Ansi)
+        {
+            // C-063: _AStrCmp (bytewise) for every operator; there is no _AStrEq (rtl-abi.md §9.4)
+            var bytewise = new LCall(new LHelperCallee(new RuntimeHelper("_AStrCmp", [types.Pointer, types.Pointer], types.Integer, IsNoReturn: false)), [left, right]);
+            return context.Compare(op, bytewise, context.Constant(BigInteger.Zero, types.Integer));
+        }
 
         if (op is LCompareOperator.Equal or LCompareOperator.NotEqual)
         {
@@ -179,7 +254,7 @@ internal static class ManagedRewriter
 
         var prologue = new List<LStatement>();
         prologue.AddRange(locals.Select(l => new LZero(AddressOf(context, new LLocalRef(l)), l.Type)));
-        prologue.AddRange(valueParameters.Select(p => Call(Helper("_UStrAddRef", context.Types.Pointer), new LParamRef(p))));
+        prologue.AddRange(valueParameters.Select(p => AddRef(context, new LParamRef(p))));
         prologue.AddRange(parameters.Where(p => p.Mode == ParameterMode.Out).Select(p => Clear(context, new LParamRef(p))));
         var finalised = valueParameters.Select(p => (LExpression)new LParamRef(p)).Concat(locals.Select(l => new LLocalRef(l))).ToImmutableArray();
         return body with
@@ -214,6 +289,9 @@ internal static class ManagedRewriter
         LDeref d => References(d.Pointer, local),
         LPointerOffset p => References(p.Pointer, local) || References(p.Index, local),
         LStringLength l => References(l.String, local),
+        LArrayLength l => References(l.Array, local),
+        LArrayElement e => References(e.Array, local) || References(e.Index, local),
+        LTypeInfo => false,
         LStringIndex i => References(i.String, local) || References(i.Index, local),
         LAtomic a => References(a.Target, local) || References(a.Value, local) || (a.Comparand is { } c && References(c, local)),
         LBlock b => b.Statements.Any(s => References(s, local)),

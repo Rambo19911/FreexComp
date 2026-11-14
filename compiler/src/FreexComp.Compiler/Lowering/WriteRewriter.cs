@@ -37,7 +37,15 @@ internal static class WriteRewriter
             }
 
             var width = argument.Width is { } w ? context.Lower(w) : context.Constant(BigInteger.Zero, types.Integer);
-            var (name, parameterType) = argument.Value.Type switch
+            if (Strings.IsCharPointer(argument.Value.Type, wide: false) || Strings.IsCharArray(argument.Value.Type))
+            {
+                // C-063: a PAnsiChar through an AnsiString, a char array through a UnicodeString (up to its first #0, LANG-911)
+                var target = Strings.IsCharArray(argument.Value.Type) ? types.String : types.AnsiString;
+                value = ManagedRewriter.Value(context, new BoundConversionExpression(argument.Value.Syntax, argument.Value, target, ConversionKind.ImplicitString,
+                    isExplicit: false, constantValue: null));
+            }
+
+            var (name, parameterType) = value.Type switch
             {
                 IntegerTypeSymbol { IsSigned: true } => ("_WriteInt", types.Int64),
                 IntegerTypeSymbol => ("_WriteUInt", types.UInt64),
@@ -45,9 +53,13 @@ internal static class WriteRewriter
                 CharTypeSymbol { IsWide: true } => ("_WriteWChar", types.Char),
                 CharTypeSymbol => ("_WriteAChar", types.AnsiChar),
                 StringTypeSymbol { Variant: StringVariant.Unicode } => ("_WriteUStr", types.Pointer),
+                StringTypeSymbol { Variant: StringVariant.Ansi } => ("_WriteAStr", types.Pointer),
+                StringTypeSymbol { Variant: StringVariant.Short } => ("_WriteSStr", types.Pointer),
+                PointerTypeSymbol => ("_WritePWChar", types.Pointer),
                 var other => throw new NotSupportedException($"Write of '{other.Name}' is not lowered yet."),
             };
-            var converted = parameterType == types.Pointer ? value : context.Convert(value, parameterType);
+            var converted = Strings.IsShort(value.Type) ? new LAddrOf(value, types.Pointer)
+                : parameterType == types.Pointer ? value : context.Convert(value, parameterType);
             statements.Add(Call(name, [types.Pointer, parameterType, types.Integer], [file, converted, width]));
         }
 

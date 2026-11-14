@@ -456,6 +456,73 @@ public sealed class StringTypeSymbol : TypeSymbol
     public override bool IsManaged => Variant != StringVariant.Short;
 }
 
+/// <summary>
+/// A dynamic array <c>array of ElementType</c> (LANG-257, rtl-abi.md §4): a managed reference (8 bytes, <c>nil</c> when empty) to
+/// element 0 of a counted block; 0-based. <c>array of array of T</c> is an array of arrays (ABI-043).
+/// </summary>
+public sealed class DynamicArrayTypeSymbol : TypeSymbol
+{
+    internal DynamicArrayTypeSymbol(string name, TypeSymbol elementType, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.DynamicArray, name, size: 8, alignment: 8, containingSymbol, locations)
+    {
+        ElementType = elementType;
+    }
+
+    public TypeSymbol ElementType { get; }
+
+    public override bool IsManaged => true;
+
+    /// <summary>The number of nested dynamic-array levels (1 for <c>array of Integer</c>, 2 for <c>array of array of Integer</c>).</summary>
+    public int Depth => ElementType is DynamicArrayTypeSymbol inner ? inner.Depth + 1 : 1;
+}
+
+/// <summary>String kinds and their compile-time text (LANG-245, ABI-027, CMP-320; C-063).</summary>
+internal static class Strings
+{
+    public static bool IsUnicode(TypeSymbol type) => type is StringTypeSymbol { Variant: StringVariant.Unicode };
+
+    public static bool IsAnsi(TypeSymbol type) => type is StringTypeSymbol { Variant: StringVariant.Ansi };
+
+    public static bool IsShort(TypeSymbol type) => type is StringTypeSymbol { Variant: StringVariant.Short };
+
+    /// <summary><c>PChar</c> (wide) or <c>PAnsiChar</c>: a pointer to a character type with pointer arithmetic.</summary>
+    public static bool IsCharPointer(TypeSymbol type, bool wide) =>
+        type is PointerTypeSymbol { AllowsPointerMath: true, PointedType: CharTypeSymbol { TypeKind: TypeKind.Char } c } && c.IsWide == wide;
+
+    /// <summary>LANG-245 last row: <c>array[0..N] of Char</c>.</summary>
+    public static bool IsCharArray(TypeSymbol type) =>
+        type is ArrayTypeSymbol { ElementType: CharTypeSymbol { IsWide: true, TypeKind: TypeKind.Char } } array && array.Low.IsZero;
+
+    /// <summary>The literal's bytes (ABI-027: UTF-8; a lone surrogate becomes U+FFFD).</summary>
+    public static byte[] Utf8(string text) => System.Text.Encoding.UTF8.GetBytes(text);
+
+    /// <summary>The UTF-8 bytes of <paramref name="text"/>, cut to at most <paramref name="max"/> at a sequence boundary (ABI §9.4 <c>_SStrFromUStr</c>).</summary>
+    public static byte[] ShortBytes(string text, int max)
+    {
+        var bytes = Utf8(text);
+        if (bytes.Length <= max)
+        {
+            return bytes;
+        }
+
+        var end = max;
+        while (end > 0 && (bytes[end] & 0xC0) == 0x80)
+        {
+            end--;
+        }
+
+        return bytes[..end];
+    }
+
+    /// <summary>The length of a constant of string type <paramref name="type"/>: UTF-16 units, or bytes for the byte strings.</summary>
+    public static int ConstantLength(string text, TypeSymbol type) => type switch
+    {
+        StringTypeSymbol { Variant: StringVariant.Ansi } => Utf8(text).Length,
+        StringTypeSymbol { Variant: StringVariant.Short } s => ShortBytes(text, s.MaxLength).Length,
+        _ => text.Length,
+    };
+}
+
 /// <summary>Untyped <c>Pointer</c> (<see cref="PointedType"/> null) and typed pointers.</summary>
 public sealed class PointerTypeSymbol : TypeSymbol
 {

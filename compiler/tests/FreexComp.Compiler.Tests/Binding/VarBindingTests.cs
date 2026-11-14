@@ -93,9 +93,8 @@ public sealed class VarBindingTests
 
     [Theory]
     [InlineData("threadvar T: Integer; begin end.", "E2900(1,1): Feature not supported: threadvar")]
-    [InlineData("var X: array of Integer; begin end.", "E2900(1,8): Feature not supported: dynamic array type")]
+    [InlineData("procedure P(X: array of Integer); begin end; begin end.", "E2900(1,16): Feature not supported: open array parameter")]
     [InlineData("var X: procedure; begin end.", "E2900(1,8): Feature not supported: procedural type")]
-    [InlineData("var X: string[10]; begin end.", "E2900(1,8): Feature not supported: short string type")]
     [InlineData("var X: Currency; begin end.", "E2900(1,8): Feature not supported: Currency")]
     [InlineData("var X: System.Integer; begin end.", "E2900(1,8): Feature not supported: unit-qualified name")]
     public void LaterMilestoneConstructs_AreE2900(string text, string expected) => Assert.Equal([expected], BindDiagnostics(text));

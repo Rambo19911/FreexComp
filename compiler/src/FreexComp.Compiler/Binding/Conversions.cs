@@ -35,7 +35,12 @@ internal sealed class Conversions
             (BooleanTypeSymbol, BooleanTypeSymbol) => Numeric,
             (SetTypeSymbol s, SetTypeSymbol d) when d.ElementType != null && Sets.Compatible(s, d) => Numeric,     // rule 8
             (PointerTypeSymbol s, PointerTypeSymbol d) when Pointers.Compatible(s, d) => Pointer,                  // rule 9
-            (CharTypeSymbol, StringTypeSymbol { Variant: StringVariant.Unicode }) => String,                      // LANG-245: a 1-char string
+            (PointerTypeSymbol { Name: "nil" }, DynamicArrayTypeSymbol) => Pointer,                                // LANG-266 (C-064)
+            (CharTypeSymbol, StringTypeSymbol) => String,                                                         // LANG-245: a 1-char string
+            (StringTypeSymbol, StringTypeSymbol) => String,                                                       // LANG-245 (C-063)
+            (PointerTypeSymbol, StringTypeSymbol) when Strings.IsCharPointer(source, wide: true) && Strings.IsUnicode(destination) => String,
+            (PointerTypeSymbol, StringTypeSymbol { Variant: not StringVariant.Short }) when Strings.IsCharPointer(source, wide: false) => String,
+            (ArrayTypeSymbol, StringTypeSymbol) when Strings.IsCharArray(source) && Strings.IsUnicode(destination) => String,
             _ => NoConversion,
         };
     }
@@ -48,6 +53,13 @@ internal sealed class Conversions
     public ConstantValue? ConvertConstant(ConstantValue value, TypeSymbol destination, SyntaxNode at, DiagnosticBag diagnostics)
     {
         var source = value.Type;
+        if (destination is PointerTypeSymbol && (Strings.IsCharPointer(destination, wide: true) || Strings.IsCharPointer(destination, wide: false))
+            && (value.Value is string || source is CharTypeSymbol && value.Value is BigInteger))
+        {
+            // LANG-245: a string (or character) literal → PChar / PAnsiChar: the static literal data (C-063)
+            return new ConstantValue(value.Value as string ?? ((char)(int)(BigInteger)value.Value!).ToString(), destination);
+        }
+
         if (source is CharTypeSymbol { IsWide: true } && destination is CharTypeSymbol { IsWide: false } && value.Value is BigInteger code)
         {
             if (code > 255)
@@ -102,22 +114,13 @@ internal sealed class Conversions
         };
     }
 
-    /// <summary>E2010; E2900 for string conversions and <c>PChar</c> ↔ string, which arrive with M2.2 (LANG-245).</summary>
-    public void ReportIncompatible(TypeSymbol source, TypeSymbol destination, SyntaxNode at, DiagnosticBag diagnostics)
-    {
-        var later = (source is PointerTypeSymbol { AllowsPointerMath: true } && destination is StringTypeSymbol)
-            || (destination is PointerTypeSymbol { AllowsPointerMath: true } && source is StringTypeSymbol)
-            || (destination is StringTypeSymbol && source is StringTypeSymbol or CharTypeSymbol)
-            || (source is StringTypeSymbol && destination is StringTypeSymbol or CharTypeSymbol);
-        if (later)
-        {
-            diagnostics.Report(at, "E2900", $"conversion from '{source.Name}' to '{destination.Name}'");
-        }
-        else
-        {
-            diagnostics.Report(at, "E2010", source.Name, destination.Name);
-        }
-    }
+    /// <summary>E2010.</summary>
+    public void ReportIncompatible(TypeSymbol source, TypeSymbol destination, SyntaxNode at, DiagnosticBag diagnostics) =>
+        diagnostics.Report(at, "E2010", source.Name, destination.Name);
+
+    /// <summary>LANG-245: <c>UnicodeString</c> → <c>AnsiString</c>/<c>UTF8String</c>/<c>RawByteString</c>/<c>ShortString</c> may lose data (W1020).</summary>
+    public static bool IsNarrowing(TypeSymbol source, TypeSymbol destination) =>
+        Strings.IsUnicode(source) && destination is StringTypeSymbol { Variant: not StringVariant.Unicode };
 
     private static bool IsReal(TypeSymbol type) => type is RealTypeSymbol { RealKind: not RealKind.Currency };
 

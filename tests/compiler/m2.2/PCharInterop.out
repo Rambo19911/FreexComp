@@ -1,0 +1,12 @@
+pr 7
+pointer TRUE
+TRUE 0 []
+literal 7
+literal!?
+[]0
+abc 3
+ABCDEFGH 8
+ABCDEFGH|ABCDEFGH
+bs
+bytes5 bytes5 bytes
+x TRUE

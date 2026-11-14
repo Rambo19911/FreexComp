@@ -33,6 +33,12 @@ public sealed class StringIntrinsicBindingTests
     /// <summary>LANG-951: <c>Str(x[:w[:d]], s)</c> keeps the value unconverted, then the string, then width and decimals as Integer.</summary>
     [Fact]
     [Trait("Req", "LANG-951")]
+    public void Str_OfBooleansStringsAndCharacters_AsStrings() =>
+        Assert.Equal("(block (Str bo:Boolean s:string) (Str t:string s:string 3:Integer) (Str (conv string c:Char) s:string) (Str (conv string a:AnsiChar) s:string))",
+            Body("Str(bo, s); Str(t:3, s); Str(c, s); Str(a, s)"));
+
+    [Fact]
+    [Trait("Req", "LANG-951")]
     public void Str_ValueStringWidthDecimals() =>
         Assert.Equal(
             "(block (Str i:Integer s:string) (Str q:Int64 s:string 5:Integer) (Str u:UInt64 s:string) (Str d:Double s:string 8:Integer 2:Integer) " +
@@ -75,8 +81,7 @@ public sealed class StringIntrinsicBindingTests
     [InlineData("Delete(s + t, 1, 1)", "E2113")]
     [InlineData("Insert(i, s, 1)", "E2010")]
     [InlineData("Insert(s, t + s, 1)", "E2113")]
-    [InlineData("Str(s, t)", "E2010")]
-    [InlineData("Str(bo, s)", "E2010")]
+    [InlineData("Str(p, s)", "E2010")]
     [InlineData("Str(i:2:1, s)", "E2912")]
     [InlineData("Str(i, d)", "E2010")]
     [InlineData("Str(i, s:2)", "E2915")]

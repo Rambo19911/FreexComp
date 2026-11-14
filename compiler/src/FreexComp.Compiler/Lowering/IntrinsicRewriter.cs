@@ -64,6 +64,12 @@ internal static class IntrinsicRewriter
                 return context.Convert(swapped, call.Type);
             }
 
+            case IntrinsicKind.Length when argument.Type is DynamicArrayTypeSymbol:
+                return new LArrayLength(operand, context.Types.Integer);                         // ABI-041 (C-064)
+            case IntrinsicKind.High when argument.Type is DynamicArrayTypeSymbol:
+                return new LBinary(LBinaryOperator.Subtract, new LArrayLength(operand, context.Types.Integer), context.Constant(BigInteger.One, context.Types.Integer));
+            case IntrinsicKind.Length or IntrinsicKind.High when argument.Type is StringTypeSymbol { Variant: StringVariant.Short }:
+                return StringConversions.ShortLength(context, operand);                         // C-063: the length byte
             case IntrinsicKind.Length or IntrinsicKind.High when argument.Type is StringTypeSymbol:
                 return new LStringLength(operand, context.Types.Integer);                       // ABI-023 (High = Length, intrinsics.md §1)
             case IntrinsicKind.Assigned:
