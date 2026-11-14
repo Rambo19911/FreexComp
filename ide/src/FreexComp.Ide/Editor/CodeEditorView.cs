@@ -42,6 +42,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private const string CutCommandId = "edit.cut";
     private const string CopyCommandId = "edit.copy";
     private const string PasteCommandId = "edit.paste";
+    private const string DeleteCommandId = "edit.delete";
     private const string SelectAllCommandId = "edit.selectAll";
 
     /// <summary>UI-ED-032: the pointer counts as near the gutter up to this far into the text area.</summary>
@@ -145,8 +146,13 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             return false;
         return commandId switch
         {
-            CutCommandId or CopyCommandId => !_editor.TextArea.Selection.IsEmpty,
-            PasteCommandId or SelectAllCommandId => true,
+            // menus.md: Cut = selection and writable; Paste = writable (the clipboard cannot be read synchronously,
+            // UI-MENU-006, so an empty clipboard makes Paste a no-op instead of disabling it).
+            CopyCommandId => !_editor.TextArea.Selection.IsEmpty,
+            CutCommandId => !_editor.TextArea.Selection.IsEmpty && !_document.IsReadOnly,
+            PasteCommandId => !_document.IsReadOnly,
+            // menus.md "text target": on a read-only document the edit is refused with Msg.Editor.ReadOnlyEdit.
+            DeleteCommandId or SelectAllCommandId => true,
             _ => ((ICommandTarget)_document).CanExecute(commandId, argument),
         };
     }
@@ -170,6 +176,9 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
                 if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard && await clipboard.TryGetTextAsync() is { Length: > 0 } text
                     && _document == document)
                     InsertAtSelection(document, text);
+                return true;
+            case DeleteCommandId:
+                DeleteForward(document);
                 return true;
             case SelectAllCommandId:
                 area.Selection = Selection.Create(area, 0, area.Document.TextLength);
@@ -662,6 +671,25 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         area.ClearSelection();
         area.Caret.Offset = offset + document.Buffer.Length - before + length;
         return true;
+    }
+
+    /// <summary><c>edit.delete</c>: the selection, else the character after the caret (a CRLF pair or a surrogate pair as one).</summary>
+    private void DeleteForward(TextDocumentViewModel document)
+    {
+        var area = _editor.TextArea;
+        if (!area.Selection.IsEmpty)
+        {
+            InsertAtSelection(document, "");
+            return;
+        }
+
+        var offset = area.Caret.Offset;
+        var next = area.Document.GetText(offset, Math.Min(2, area.Document.TextLength - offset));
+        if (next.Length == 0)
+            return;
+        var length = next is "\r\n" || (next.Length == 2 && char.IsSurrogatePair(next[0], next[1])) ? 2 : 1;
+        if (document.TryInsertText(offset, length, ""))
+            area.Caret.Offset = offset;
     }
 
     private async Task SetClipboardAsync(string text)

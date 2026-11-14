@@ -56,9 +56,11 @@ public static class ServiceGraph
             projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
         OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, ImplementedPhase);
         AboutViewModel.RegisterCommands(commands, platform.Dialogs, platform.UserPaths, platform.Clipboard, layout);
+        ShellCommands.RegisterCommands(commands, platform.Shell, platform.FileSystem, platform.UserPaths, platform.Log);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.Layout = layout;
         documents.RegisterCommands(commands);
+        KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
         projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
             ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock, platform.Shell);
         projects.RegisterCommands(commands);

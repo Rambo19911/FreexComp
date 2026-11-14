@@ -56,6 +56,8 @@ public sealed class LayoutService : ILayoutService
         commands.RegisterHandler("window.previousPane", new ActionHandler(() => Layout.CyclePanes(-1)));
         commands.RegisterHandler("window.focusEditor", new ActionHandler(() => Layout.FocusPane(Pane.Documents))); // UI-A11Y-004
         commands.RegisterHandler("window.resetLayout", new ActionHandler(Layout.ResetProfile)); // UI-WIN-015, no confirmation
+        // menus.md "not session (exclusive)": Edit is the only profile before I-130, so choosing it changes nothing.
+        commands.RegisterHandler("window.layout.edit", new ActionHandler(() => { }, () => Layout.ActiveProfile == LayoutProfiles.Edit));
     }
 
     public LayoutViewModel Layout { get; }
@@ -291,9 +293,11 @@ public sealed class LayoutService : ILayoutService
         _saveTimer = _clock.Schedule(SaveDelay, Save);
     }
 
-    private sealed class ActionHandler(Action action) : ICommandHandler
+    private sealed class ActionHandler(Action action, Func<bool>? isChecked = null) : ICommandHandler
     {
         public bool CanExecute(string? argument) => true;
+
+        public bool IsChecked(string? argument) => isChecked?.Invoke() ?? false;
 
         public Task ExecuteAsync(string? argument)
         {

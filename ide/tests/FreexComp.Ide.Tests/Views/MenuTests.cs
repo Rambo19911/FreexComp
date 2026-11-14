@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Commands;
@@ -174,6 +175,207 @@ public sealed partial class MenuTests
         Assert.True(Item(h, AutomationIds.Menu("file.openRecentFile", @"C:\w\f1.pas")).IsEffectivelyEnabled);
         openRecent.Close();
         file.Close();
+    }
+
+    /// <summary>P1 menu commands whose "Enabled when" is "always" (P1 has no IDE state other than Idle, so "idle" too).</summary>
+    private static readonly string[] AlwaysEnabled =
+    [
+        "file.newProject", "file.newFile", "file.newUnit", "file.open", "file.openProject",
+        "view.projectManager", "view.welcomePage", "view.toolbar.standard", "view.statusBar",
+        "view.theme.light", "view.theme.dark", "view.theme.system",
+        "tools.options", "tools.keyMappings", "tools.openLogFolder", "tools.openSettingsFolder",
+        "window.nextPane", "window.previousPane", "window.layout.edit", "window.resetLayout",
+        "window.focusEditor", // menus.md says "doc"; UI-A11Y-004 / I-024: Alt+0 focuses the empty document area too
+        "help.keyboardShortcuts", "help.licenses", "help.about",
+    ];
+
+    /// <summary>P1 menu commands that still have no handler, with the task that adds it (and its condition here).</summary>
+    private static readonly Dictionary<string, string> Pending = new()
+    {
+        ["file.exit"] = "I-086",
+        ["edit.duplicateLine"] = "I-048", ["edit.deleteLine"] = "I-048",
+        ["edit.moveLineUp"] = "I-048", ["edit.moveLineDown"] = "I-048", ["edit.indent"] = "I-049", ["edit.outdent"] = "I-049",
+        ["edit.trimTrailingWhitespace"] = "I-048", ["edit.toggleLineComment"] = "I-048", ["edit.toggleBlockComment"] = "I-048",
+        ["edit.upperCase"] = "I-048", ["edit.lowerCase"] = "I-048",
+        ["search.find"] = "I-058", ["search.replace"] = "I-058", ["search.findNext"] = "I-058", ["search.findPrevious"] = "I-058",
+        ["search.findSelectionNext"] = "I-058", ["search.goToLine"] = "I-059", ["search.goToMatchingBracket"] = "I-052",
+        ["search.navigateBack"] = "I-060", ["search.navigateForward"] = "I-060",
+        ["view.wordWrap"] = "I-055", ["view.showWhitespace"] = "I-055", ["view.zoomIn"] = "I-055", ["view.zoomOut"] = "I-055",
+        ["view.zoomReset"] = "I-055",
+    };
+
+    /// <summary>P1 menu commands with a document / project / focus condition: the scenarios below list when they are enabled.</summary>
+    private static readonly string[] Conditional =
+    [
+        "file.clearRecent", "file.save", "file.saveAs", "file.saveAll", "file.revert", "file.close", "file.closeAll",
+        "file.closeProject", "edit.undo", "edit.redo", "edit.cut", "edit.copy", "edit.paste", "edit.delete", "edit.selectAll",
+        "edit.convertLineEndings:crlf", "edit.convertLineEndings:lf", "edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll",
+        "project.addNewUnit", "project.addExistingFile", "project.removeFile", "project.viewSource",
+        "window.nextDocument", "window.previousDocument", "window.documents", "window.closeToolWindow",
+    ];
+
+    private static readonly string[] FoldCommands = ["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll"];
+
+    /// <summary>Every P1 item of the main menu as <c>id</c> or <c>id:argument</c> (dynamic lists excluded).</summary>
+    private static IEnumerable<string> P1MenuCommands(IEnumerable<Core.Menus.MenuNode> nodes) =>
+        nodes.SelectMany(n => n switch
+        {
+            Core.Menus.SubmenuNode s => P1MenuCommands(s.Children),
+            Core.Menus.CommandMenuNode c when CommandCatalog.All.Single(d => d.Id == c.CommandId).Phase == 1 =>
+                [c.Argument is null ? c.CommandId : c.CommandId + ":" + c.Argument],
+            _ => [],
+        });
+
+    private static bool CanExecute(HeadlessHarness h, string key)
+    {
+        var colon = key.IndexOf(':', StringComparison.Ordinal);
+        return colon < 0 ? h.Services.Commands.CanExecute(key) : h.Services.Commands.CanExecute(key[..colon], key[(colon + 1)..]);
+    }
+
+    /// <summary>Exactly <paramref name="enabled"/> of the conditional commands are enabled (<paramref name="ignore"/> unchecked); "always" ones are.</summary>
+    private static void AssertEnabled(HeadlessHarness h, string scenario, string[] enabled, params string[] ignore)
+    {
+        Dispatcher.UIThread.RunJobs();
+        var actual = Conditional.Except(ignore).Where(k => CanExecute(h, k)).Order(StringComparer.Ordinal);
+        Assert.Equal(scenario + ": " + string.Join(" ", enabled.Except(ignore).Order(StringComparer.Ordinal)), scenario + ": " + string.Join(" ", actual));
+        Assert.All(AlwaysEnabled, k => Assert.True(CanExecute(h, k), scenario + ": " + k));
+    }
+
+    private static AvaloniaEdit.TextEditor FocusEditor(HeadlessHarness h, string fileName)
+    {
+        var editor = h.Find<AvaloniaEdit.TextEditor>("Editor." + fileName);
+        editor.TextArea.Focus();
+        Dispatcher.UIThread.RunJobs();
+        return editor;
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-MENU-010")]
+    [Trait("Req", "UI-MENU-006")]
+    public async Task EnabledStateFollowsConditions()
+    {
+        // Every P1 menu command is classified; pending ones really have no handler yet (their task must add a row here).
+        var all = P1MenuCommands(Core.Menus.MainMenuDefinition.TopLevel).Distinct().Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(all, AlwaysEnabled.Concat(Pending.Keys).Concat(Conditional).Order(StringComparer.Ordinal));
+
+        const string unit = "unit A;\r\n\r\ninterface\r\n\r\nimplementation\r\n\r\nprocedure P;\r\nbegin\r\nend;\r\n\r\nend.\r\n";
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["A.pas"] = unit;
+            o.InitialFiles["B.txt"] = "read only\r\n";
+        });
+        Assert.All(Pending, p => Assert.False(h.Services.Commands.IsHandled(p.Key), $"{p.Key} has a handler now ({p.Value}): classify it"));
+
+        // No document, no project.
+        AssertEnabled(h, "empty", []);
+
+        // A clean file document with the caret inside the routine P.
+        Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "A.pas"))).Success);
+        var a = FocusEditor(h, "A.pas");
+        a.TextArea.Caret.Line = 8;
+        string[] cleanA = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "edit.paste", "edit.delete", "edit.selectAll",
+            "edit.convertLineEndings:lf", "edit.fold", "edit.foldAll", "window.documents"];
+        AssertEnabled(h, "clean", cleanA);
+
+        // A selection enables Cut and Copy.
+        a.Select(0, 4);
+        AssertEnabled(h, "selection", [.. cleanA, "edit.cut", "edit.copy"], FoldCommands); // the caret left the routine
+
+        // Modified: Save, Save All, Revert, Undo.
+        h.Type("x");
+        string[] modifiedA = [.. cleanA, "file.save", "file.saveAll", "file.revert", "edit.undo"];
+        AssertEnabled(h, "modified", modifiedA, FoldCommands);
+        await h.ExecuteAsync("edit.undo");
+        a.TextArea.ClearSelection(); // undo selects the restored text
+        AssertEnabled(h, "undone", [.. cleanA, "edit.redo"], FoldCommands);
+
+        // Delete removes the selection, else the character after the caret.
+        a.Select(0, 4);
+        await h.ExecuteAsync("edit.delete");
+        Assert.StartsWith(" A;\r\n", a.Text, StringComparison.Ordinal);
+        await h.ExecuteAsync("edit.delete");
+        Assert.StartsWith("A;\r\n", a.Text, StringComparison.Ordinal);
+        h.Type("x");
+
+        // A read-only document: nothing that writes (Cut, Paste, Convert, Undo), Copy and Save As still work.
+        var bPath = Path.Combine(h.TempDir, "B.txt");
+        File.SetAttributes(bPath, FileAttributes.ReadOnly);
+        try
+        {
+            Assert.True((await h.Services.Documents.OpenAsync(bPath)).Success);
+            var b = FocusEditor(h, "B.txt");
+            await h.ExecuteAsync("edit.delete"); // refused: the document is read-only
+            Assert.Equal(("read only\r\n", Core.Resources.Strings.Msg_Editor_ReadOnlyEdit), (b.Text, h.Status.Message));
+            b.Select(0, 4);
+            AssertEnabled(h, "read-only",
+            [
+                "file.clearRecent", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.copy", "edit.delete", "edit.selectAll",
+                "window.nextDocument", "window.previousDocument", "window.documents",
+            ]);
+        }
+        finally
+        {
+            File.SetAttributes(bPath, FileAttributes.Normal);
+        }
+
+        // An untitled unit can be saved (never saved) but not reverted.
+        await h.ExecuteAsync("file.newUnit");
+        FocusEditor(h, "Unit1.pas");
+        AssertEnabled(h, "untitled",
+        [
+            "file.clearRecent", "file.save", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.paste",
+            "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "window.nextDocument", "window.previousDocument", "window.documents",
+        ], FoldCommands);
+
+        // A generated document is no file: no Save / Save As / Revert / text commands; Select All and Copy work.
+        await h.ExecuteAsync("help.keyboardShortcuts");
+        var shortcuts = h.Find<AvaloniaEdit.TextEditor>("Document.KeyboardShortcuts");
+        shortcuts.TextArea.Focus();
+        string[] generated = ["file.clearRecent", "file.saveAll", "file.close", "file.closeAll", "edit.selectAll",
+            "window.nextDocument", "window.previousDocument", "window.documents"];
+        AssertEnabled(h, "generated", generated);
+        shortcuts.Select(0, 8);
+        AssertEnabled(h, "generated selection", [.. generated, "edit.copy"]);
+        await h.ExecuteAsync("edit.copy");
+        Assert.Equal(shortcuts.Text[..8], await TopLevel.GetTopLevel(h.Window)!.Clipboard!.TryGetTextAsync());
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-MENU-010")]
+    public async Task EnabledStateFollowsProjectConditions()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles[@"P\P.pproj"] = """{ "formatVersion": 1, "name": "P", "mainSource": "P.pas", "files": [ { "path": "P.pas" }, { "path": "U.pas" } ] }""";
+            o.InitialFiles[@"P\P.pas"] = "program P;\r\nuses U;\r\nbegin\r\nend.\r\n";
+            o.InitialFiles[@"P\U.pas"] = "unit U;\r\ninterface\r\nimplementation\r\nend.\r\n";
+        });
+        Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(h.TempDir, "P", "P.pproj")));
+        FocusEditor(h, "P.pas");
+        string[] project = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "file.closeProject", "edit.paste",
+            "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "project.addNewUnit", "project.addExistingFile", "project.viewSource",
+            "window.documents"];
+
+        // The main source cannot be removed from the project; another member can.
+        AssertEnabled(h, "main source", project, FoldCommands);
+        Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "P", "U.pas"))).Success);
+        FocusEditor(h, "U.pas");
+        AssertEnabled(h, "member", [.. project, "project.removeFile", "window.nextDocument", "window.previousDocument"], FoldCommands);
+
+        // Hide Active Tool Window needs a tool window that had the focus.
+        Assert.False(h.Services.Commands.CanExecute("window.closeToolWindow"));
+        h.Press("Alt+1"); // view.projectManager focuses its tree
+        Dispatcher.UIThread.RunJobs();
+        Assert.StartsWith("Tool.ProjectManager", h.FocusedAutomationId, StringComparison.Ordinal);
+        Assert.True(h.Services.Commands.CanExecute("window.closeToolWindow"));
+
+        // Opening the folders: IDE-SET-093.
+        await h.ExecuteAsync("tools.openLogFolder");
+        await h.ExecuteAsync("tools.openSettingsFolder");
+        var shell = (FreexComp.Ide.TestSupport.FakeShellService)h.Services.Shell;
+        Assert.Equal(["OpenFolder " + h.Services.UserPaths.LogDirectory, "OpenFolder " + h.Services.UserPaths.RoamingDirectory], shell.Calls);
+        Assert.True(Directory.Exists(h.Services.UserPaths.LogDirectory));
+        Assert.True(h.Services.Commands.Get("window.layout.edit").IsChecked);
     }
 
     private static CommandDefinition? Definition(MenuItem item) =>

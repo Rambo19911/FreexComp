@@ -57,6 +57,12 @@ public interface IDocumentService
     /// </summary>
     WelcomeDocumentViewModel ShowWelcomePage();
 
+    /// <summary>
+    /// Shows a read-only generated document (UI-MENU-030): the open one of the same <paramref name="kind"/> gets the new
+    /// <paramref name="text"/> and is activated, else a new tab opens. Never part of a session.
+    /// </summary>
+    GeneratedTextDocumentViewModel ShowGenerated(string kind, string title, string text);
+
     void Activate(DocumentViewModel document);
 
     /// <summary>

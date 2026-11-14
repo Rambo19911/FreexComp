@@ -3820,4 +3820,16 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Components</value>
     <comment>dialogs.md §16 list automation name</comment>
   </data>
+  <data name="KeyboardShortcuts_Column_Category" xml:space="preserve">
+    <value>Category</value>
+    <comment>menus.md UI-MENU-030 column</comment>
+  </data>
+  <data name="KeyboardShortcuts_Column_Command" xml:space="preserve">
+    <value>Command</value>
+    <comment>menus.md UI-MENU-030 column</comment>
+  </data>
+  <data name="KeyboardShortcuts_Column_Shortcut" xml:space="preserve">
+    <value>Shortcut</value>
+    <comment>menus.md UI-MENU-030 column</comment>
+  </data>
 </root>

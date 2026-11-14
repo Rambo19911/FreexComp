@@ -197,6 +197,20 @@ public sealed class DocumentService : IDocumentService
         return page;
     }
 
+    public GeneratedTextDocumentViewModel ShowGenerated(string kind, string title, string text)
+    {
+        if (_documents.OfType<GeneratedTextDocumentViewModel>().FirstOrDefault(d => d.Kind == kind) is { } open)
+        {
+            open.Text = text;
+            Activate(open);
+            return open;
+        }
+
+        var document = new GeneratedTextDocumentViewModel(kind, title, text);
+        Add(document);
+        return document;
+    }
+
     public void Activate(DocumentViewModel document)
     {
         ArgumentNullException.ThrowIfNull(document);
