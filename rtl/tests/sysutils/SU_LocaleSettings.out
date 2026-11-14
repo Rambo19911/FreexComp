@@ -1,0 +1,33 @@
+# user locale
+ok CurrencyString
+ok DecimalSeparator
+ok DateSeparator
+ok TimeSeparator
+ok ListSeparator
+ok CurrencyDecimals
+ok ShortDateFormat translated
+ok LongDateFormat translated
+ok ShortTimeFormat translated
+ok LongTimeFormat translated
+ok LongTimeFormat minutes are n
+ok ShortDateFormat has a year
+ok month and day names
+ok TwoDigitYearCenturyWindow
+ok usable by FormatDateTime
+# named locale
+ok en-US LongMonthNames[1]
+ok en-US LongMonthNames[12]
+ok en-US ShortMonthNames[12]
+ok en-US LongDayNames[1] is Sunday
+ok en-US LongDayNames[2]
+ok en-US LongDayNames[7]
+ok en-US ShortDayNames[1]
+ok en-US ShortDayNames[7]
+ok de-DE LongMonthNames[1]
+ok de-DE LongDayNames[1]
+# invariant
+ok CreateFormatSettings('') = invariant
+ok an invalid name keeps every invariant value
+ok FormatSettings unaffected
+ok InvariantFormatSettings unaffected
+# passed 29 failed 0

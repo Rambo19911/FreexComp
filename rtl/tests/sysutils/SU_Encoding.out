@@ -1,0 +1,71 @@
+# singletons and names
+ok UTF8 is a singleton
+ok Default = UTF8
+ok ANSI = UTF8
+ok Unicode is a singleton
+ok Unicode <> BigEndianUnicode
+ok ASCII is a singleton
+ok UTF8 name
+ok Unicode name
+ok BigEndianUnicode name
+ok ASCII name
+ok UTF8 preamble
+ok Unicode preamble
+ok BigEndianUnicode preamble
+ok ASCII preamble
+# GetBytes
+ok UTF8
+ok Unicode
+ok BigEndianUnicode
+ok ASCII: each code unit above 127 is ?
+ok UTF8: lone surrogate
+ok UTF8 of empty
+ok UTF8 GetByteCount
+ok Unicode GetByteCount
+ok ASCII GetByteCount
+# GetString
+ok UTF8
+ok UTF8: invalid bytes
+ok Unicode
+ok Unicode: odd trailing byte
+ok Unicode: lone high surrogate
+ok Unicode: lone low surrogate
+ok BigEndianUnicode
+ok ASCII: bytes above 127
+ok UTF8 of nil
+ok ASCII range
+ok UTF8 range
+ok Unicode range
+ok empty range at the end
+ok UTF8 GetCharCount
+ok Unicode GetCharCount
+# GetString ranges
+ok negative index
+ok negative count
+ok past the end
+ok index past the end
+# GetBufferEncoding
+ok UTF8 BOM length
+ok UTF8 BOM detected
+ok UTF-16LE BOM length
+ok UTF-16LE BOM detected
+ok UTF-16BE BOM length
+ok UTF-16BE BOM detected
+ok no BOM
+ok no BOM gives Default
+ok no BOM with a default
+ok no BOM gives ADefault
+ok empty buffer
+ok empty buffer gives Default
+ok truncated UTF8 BOM
+ok given encoding, matching preamble
+ok given encoding kept
+ok given encoding, other preamble
+ok given encoding kept without its preamble
+ok given encoding without a preamble
+# BytesOf, StringOf
+ok BytesOf
+ok StringOf
+ok BytesOf of empty
+ok StringOf of nil
+# passed 64 failed 0

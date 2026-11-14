@@ -1,0 +1,2 @@
+# RTL-906: requirement ids without a covering test, one per line: RTL-nnn <reason>.
+# Only documentation-only rules belong here; an id leaves the list once a test covers it.

@@ -37,6 +37,10 @@ var
   FormatSettings: TFormatSettings;
 
 function InvariantFormatSettings: TFormatSettings;
+{ RTL-207: the user locale / a named locale through GetLocaleInfoEx; a failing query keeps the invariant value;
+  '' gives the invariant record }
+function CreateFormatSettings: TFormatSettings; overload;
+function CreateFormatSettings(const LocaleName: string): TFormatSettings; overload;
 
 { ------------------------------------------------------------------------- integer and Boolean conversions (3) }
 function IntToStr(Value: Integer): string; overload;
@@ -407,6 +411,80 @@ type
   EFileNotFoundException = class(Exception);
   EDirectoryNotFoundException = class(Exception);
 
+{ ---------------------------------------------------------------------------------- bytes and encodings (7.5) }
+type
+  { RTL-258: the standard encodings are singletons freed at finalization (callers never free them); decoding never
+    raises for bad input (U+FFFD), only for a range outside the buffer (EEncodingError) }
+  TEncoding = class
+  public
+    class function Default: TEncoding;
+    class function ANSI: TEncoding;
+    class function ASCII: TEncoding;
+    class function UTF8: TEncoding;
+    class function Unicode: TEncoding;
+    class function BigEndianUnicode: TEncoding;
+    { AEncoding nil: detects a UTF-8 / UTF-16LE / UTF-16BE BOM, else ADefault (or Default) and 0; AEncoding given:
+      its preamble length when the buffer starts with it, else 0 }
+    class function GetBufferEncoding(const Buffer: TBytes; var AEncoding: TEncoding;
+      ADefault: TEncoding = nil): Integer;
+    function GetPreamble: TBytes; virtual; abstract;
+    function GetBytes(const S: string): TBytes; virtual; abstract;
+    function GetString(const Bytes: TBytes): string; overload;
+    function GetString(const Bytes: TBytes; Index, Count: Integer): string; overload; virtual; abstract;
+    function GetByteCount(const S: string): Integer; virtual;
+    function GetCharCount(const Bytes: TBytes): Integer; virtual;
+    function EncodingName: string; virtual; abstract;
+  end;
+
+{ UTF-8 bytes / UTF-8 decoding }
+function BytesOf(const S: string): TBytes;
+function StringOf(const Bytes: TBytes): string;
+
+{ ------------------------------------------------------------------------------------------- TStringBuilder (9) }
+type
+  { RTL-270: indexes are 0-based; a bad index or length raises EArgumentOutOfRangeException 'Index out of range (n)'
+    naming the offending argument. RTL-271: growth to max(needed, Capacity * 2) }
+  TStringBuilder = class
+  private
+    FData: string;                     { Length(FData) is the capacity }
+    FLength: Integer;
+    function GetCapacity: Integer;
+    procedure SetCapacity(Value: Integer);
+    procedure SetLen(Value: Integer);
+    function GetChars(Index: Integer): Char;
+    procedure SetChars(Index: Integer; Value: Char);
+    procedure Grow(Needed: Integer);
+    function GetMaxCapacity: Integer;
+  public
+    constructor Create; overload;
+    constructor Create(ACapacity: Integer); overload;
+    constructor Create(const Value: string); overload;
+    function Append(const Value: string): TStringBuilder; overload;
+    function Append(Value: Char): TStringBuilder; overload;
+    function Append(Value: Char; RepeatCount: Integer): TStringBuilder; overload;
+    function Append(Value: Integer): TStringBuilder; overload;
+    function Append(Value: Int64): TStringBuilder; overload;
+    function Append(Value: Boolean): TStringBuilder; overload;
+    function Append(Value: Double): TStringBuilder; overload;
+    function Append(Value: TObject): TStringBuilder; overload;
+    function AppendFormat(const Fmt: string; const Args: array of const): TStringBuilder;
+    function AppendLine: TStringBuilder; overload;
+    function AppendLine(const Value: string): TStringBuilder; overload;
+    function Insert(Index: Integer; const Value: string): TStringBuilder;
+    function Remove(StartIndex, RemLength: Integer): TStringBuilder;
+    { all occurrences, ordinal; an empty OldValue changes nothing }
+    function Replace(const OldValue, NewValue: string): TStringBuilder; overload;
+    function Replace(OldChar, NewChar: Char): TStringBuilder; overload;
+    procedure Clear;
+    function EnsureCapacity(ACapacity: Integer): Integer;
+    function ToString: string; overload; override;
+    function ToString(StartIndex, StrLength: Integer): string; reintroduce; overload;
+    property Length: Integer read FLength write SetLen;
+    property Capacity: Integer read GetCapacity write SetCapacity;
+    property MaxCapacity: Integer read GetMaxCapacity;
+    property Chars[Index: Integer]: Char read GetChars write SetChars; default;
+  end;
+
 { ------------------------------------------------------------------------------------- helper routines (2.4, 10) }
 procedure Abort;
 procedure RaiseLastOSError; overload;
@@ -476,6 +554,136 @@ begin
   SplitWords('Sun Mon Tue Wed Thu Fri Sat', Result.ShortDayNames);
   SplitWords('Sunday Monday Tuesday Wednesday Thursday Friday Saturday', Result.LongDayNames);
   Result.TwoDigitYearCenturyWindow := 50;
+end;
+
+{ GetLocaleInfoEx text of LCType for Locale (nil = user default); False when the query fails or gives '' }
+function LocaleText(Locale: PChar; LCType: LCTYPE; var S: string): Boolean;
+var
+  Buffer: array[0..255] of Char;
+  N: Integer;
+begin
+  N := GetLocaleInfoEx(Locale, LCType, @Buffer[0], Length(Buffer));
+  Result := N > 1;
+  if Result then
+    S := Copy(StrPas(@Buffer[0]), 1, N - 1);
+end;
+
+procedure LocaleString(Locale: PChar; LCType: LCTYPE; var S: string);
+var
+  T: string;
+begin
+  if LocaleText(Locale, LCType, T) then
+    S := T;
+end;
+
+{ the first character of the separator string }
+procedure LocaleChar(Locale: PChar; LCType: LCTYPE; var C: Char);
+var
+  T: string;
+begin
+  if LocaleText(Locale, LCType, T) then
+    C := T[1];
+end;
+
+procedure LocaleByte(Locale: PChar; LCType: LCTYPE; var B: Byte);
+var
+  T: string;
+  V: Integer;
+begin
+  if LocaleText(Locale, LCType, T) and TryStrToInt(T, V) and (V >= 0) and (V <= 255) then
+    B := V;
+end;
+
+{ OS picture -> RTL-243 picture: M -> m (month), m -> n (minutes; OS pictures write months upper case), H -> h,
+  a run of t -> ampm; quoted text is copied unchanged }
+function TranslatePicture(const Pic: string): string;
+var
+  I: Integer;
+  Quoted: Boolean;
+  C: Char;
+begin
+  Result := '';
+  Quoted := False;
+  I := 1;
+  while I <= Length(Pic) do
+  begin
+    C := Pic[I];
+    if C = '''' then
+      Quoted := not Quoted;
+    if Quoted or (C = '''') then
+      Result := Result + C
+    else if C = 'M' then
+      Result := Result + 'm'
+    else if C = 'm' then
+      Result := Result + 'n'
+    else if C = 'H' then
+      Result := Result + 'h'
+    else if C = 't' then
+    begin
+      while (I < Length(Pic)) and (Pic[I + 1] = 't') do
+        I := I + 1;
+      Result := Result + 'ampm';
+    end
+    else
+      Result := Result + C;
+    I := I + 1;
+  end;
+end;
+
+procedure LocalePicture(Locale: PChar; LCType: LCTYPE; var S: string);
+var
+  T: string;
+begin
+  if LocaleText(Locale, LCType, T) then
+    S := TranslatePicture(T);
+end;
+
+function LocaleSettings(Locale: PChar): TFormatSettings;
+var
+  I: Integer;
+begin
+  Result := InvariantFormatSettings;
+  LocaleChar(Locale, LOCALE_SDECIMAL, Result.DecimalSeparator);
+  LocaleChar(Locale, LOCALE_STHOUSAND, Result.ThousandSeparator);
+  LocaleChar(Locale, LOCALE_SDATE, Result.DateSeparator);
+  LocaleChar(Locale, LOCALE_STIME, Result.TimeSeparator);
+  LocaleChar(Locale, LOCALE_SLIST, Result.ListSeparator);
+  LocaleString(Locale, LOCALE_SCURRENCY, Result.CurrencyString);
+  LocaleByte(Locale, LOCALE_ICURRDIGITS, Result.CurrencyDecimals);
+  LocaleByte(Locale, LOCALE_ICURRENCY, Result.CurrencyFormat);
+  LocaleByte(Locale, LOCALE_INEGCURR, Result.NegCurrFormat);
+  LocalePicture(Locale, LOCALE_SSHORTDATE, Result.ShortDateFormat);
+  LocalePicture(Locale, LOCALE_SLONGDATE, Result.LongDateFormat);
+  LocalePicture(Locale, LOCALE_SSHORTTIME, Result.ShortTimeFormat);
+  LocalePicture(Locale, LOCALE_STIMEFORMAT, Result.LongTimeFormat);
+  LocaleString(Locale, LOCALE_S1159, Result.TimeAMString);
+  LocaleString(Locale, LOCALE_S2359, Result.TimePMString);
+  for I := 1 to 12 do
+  begin
+    LocaleString(Locale, LOCALE_SABBREVMONTHNAME1 + I - 1, Result.ShortMonthNames[I]);
+    LocaleString(Locale, LOCALE_SMONTHNAME1 + I - 1, Result.LongMonthNames[I]);
+  end;
+  { the OS numbers days from Monday (DAYNAME1) to Sunday (DAYNAME7); index 1 here is Sunday }
+  LocaleString(Locale, LOCALE_SABBREVDAYNAME7, Result.ShortDayNames[1]);
+  LocaleString(Locale, LOCALE_SDAYNAME7, Result.LongDayNames[1]);
+  for I := 2 to 7 do
+  begin
+    LocaleString(Locale, LOCALE_SABBREVDAYNAME1 + I - 2, Result.ShortDayNames[I]);
+    LocaleString(Locale, LOCALE_SDAYNAME1 + I - 2, Result.LongDayNames[I]);
+  end;
+end;
+
+function CreateFormatSettings: TFormatSettings;
+begin
+  Result := LocaleSettings(nil);
+end;
+
+function CreateFormatSettings(const LocaleName: string): TFormatSettings;
+begin
+  if LocaleName = '' then
+    Result := InvariantFormatSettings
+  else
+    Result := LocaleSettings(PChar(LocaleName));
 end;
 
 { ------------------------------------------------------------------------- integer and Boolean conversions (3) }
@@ -3510,6 +3718,633 @@ begin
   Result := Pointer(E);
 end;
 
+{ ---------------------------------------------------------------------------------- bytes and encodings (7.5) }
+
+type
+  TUTF8Encoding = class(TEncoding)
+  public
+    function GetPreamble: TBytes; override;
+    function GetBytes(const S: string): TBytes; override;
+    function GetString(const Bytes: TBytes; Index, Count: Integer): string; overload; override;
+    function EncodingName: string; override;
+  end;
+
+  TUnicodeEncoding = class(TEncoding)
+  public
+    function GetPreamble: TBytes; override;
+    function GetBytes(const S: string): TBytes; override;
+    function GetString(const Bytes: TBytes; Index, Count: Integer): string; overload; override;
+    function EncodingName: string; override;
+  end;
+
+  TBigEndianUnicodeEncoding = class(TEncoding)
+  public
+    function GetPreamble: TBytes; override;
+    function GetBytes(const S: string): TBytes; override;
+    function GetString(const Bytes: TBytes; Index, Count: Integer): string; overload; override;
+    function EncodingName: string; override;
+  end;
+
+  TASCIIEncoding = class(TEncoding)
+  public
+    function GetPreamble: TBytes; override;
+    function GetBytes(const S: string): TBytes; override;
+    function GetString(const Bytes: TBytes; Index, Count: Integer): string; overload; override;
+    function EncodingName: string; override;
+  end;
+
+const
+  EncUTF8 = 0;
+  EncUnicode = 1;
+  EncBigEndian = 2;
+  EncASCII = 3;
+
+var
+  StdEncodings: array[EncUTF8..EncASCII] of Pointer;
+
+{ RTL-258: created on first use; a thread that loses the compare-exchange frees its own instance }
+function StdEncoding(Kind: Integer): TEncoding;
+var
+  E: TEncoding;
+begin
+  Result := TEncoding(StdEncodings[Kind]);
+  if Result <> nil then
+    Exit;
+  case Kind of
+    EncUTF8: E := TUTF8Encoding.Create;
+    EncUnicode: E := TUnicodeEncoding.Create;
+    EncBigEndian: E := TBigEndianUnicodeEncoding.Create;
+  else
+    E := TASCIIEncoding.Create;
+  end;
+  if AtomicCmpExchange(StdEncodings[Kind], Pointer(E), nil) <> nil then
+    E.Free;
+  Result := TEncoding(StdEncodings[Kind]);
+end;
+
+procedure FreeStdEncodings;
+var
+  I: Integer;
+begin
+  for I := EncUTF8 to EncASCII do
+  begin
+    TEncoding(StdEncodings[I]).Free;
+    StdEncodings[I] := nil;
+  end;
+end;
+
+procedure CheckBufferRange(const Bytes: TBytes; Index, Count: Integer);
+begin
+  if (Index < 0) or (Count < 0) or (Index > Length(Bytes) - Count) then
+    raise EEncodingError.Create(SInvalidBufferRange);
+end;
+
+function MakeBytes(B0, B1, B2: Integer; Count: Integer): TBytes;
+begin
+  SetLength(Result, Count);
+  if Count > 0 then
+    Result[0] := B0;
+  if Count > 1 then
+    Result[1] := B1;
+  if Count > 2 then
+    Result[2] := B2;
+end;
+
+{ UTF-16 code units from Count bytes at Bytes[Index]; BigEndian selects the byte order. An odd trailing byte and
+  unpaired surrogates become U+FFFD }
+function Utf16Decode(const Bytes: TBytes; Index, Count: Integer; BigEndian: Boolean): string;
+var
+  I, N, Pairs: Integer;
+  U, V: Word;
+
+  function UnitAt(K: Integer): Word;
+  begin
+    if BigEndian then
+      Result := Word(Bytes[Index + 2 * K]) shl 8 or Bytes[Index + 2 * K + 1]
+    else
+      Result := Word(Bytes[Index + 2 * K + 1]) shl 8 or Bytes[Index + 2 * K];
+  end;
+
+begin
+  Pairs := Count div 2;
+  SetLength(Result, Pairs + Count mod 2);
+  N := 0;
+  I := 0;
+  while I < Pairs do
+  begin
+    U := UnitAt(I);
+    I := I + 1;
+    if (U >= $D800) and (U <= $DBFF) then
+    begin
+      if I < Pairs then
+        V := UnitAt(I)
+      else
+        V := 0;
+      if (V >= $DC00) and (V <= $DFFF) then
+      begin
+        N := N + 1;
+        Result[N] := Char(U);
+        U := V;
+        I := I + 1;
+      end
+      else
+        U := $FFFD;
+    end
+    else if (U >= $DC00) and (U <= $DFFF) then
+      U := $FFFD;
+    N := N + 1;
+    Result[N] := Char(U);
+  end;
+  if Count mod 2 <> 0 then
+  begin
+    N := N + 1;
+    Result[N] := #$FFFD;
+  end;
+  SetLength(Result, N);
+end;
+
+function Utf16Encode(const S: string; BigEndian: Boolean): TBytes;
+var
+  I: Integer;
+  U: Word;
+begin
+  SetLength(Result, 2 * Length(S));
+  for I := 1 to Length(S) do
+  begin
+    U := Ord(S[I]);
+    if BigEndian then
+    begin
+      Result[2 * I - 2] := U shr 8;
+      Result[2 * I - 1] := U and $FF;
+    end
+    else
+    begin
+      Result[2 * I - 2] := U and $FF;
+      Result[2 * I - 1] := U shr 8;
+    end;
+  end;
+end;
+
+class function TEncoding.Default: TEncoding;
+begin
+  Result := StdEncoding(EncUTF8);
+end;
+
+class function TEncoding.ANSI: TEncoding;
+begin
+  Result := StdEncoding(EncUTF8);
+end;
+
+class function TEncoding.ASCII: TEncoding;
+begin
+  Result := StdEncoding(EncASCII);
+end;
+
+class function TEncoding.UTF8: TEncoding;
+begin
+  Result := StdEncoding(EncUTF8);
+end;
+
+class function TEncoding.Unicode: TEncoding;
+begin
+  Result := StdEncoding(EncUnicode);
+end;
+
+class function TEncoding.BigEndianUnicode: TEncoding;
+begin
+  Result := StdEncoding(EncBigEndian);
+end;
+
+{ the length of E's preamble when Buffer starts with it, else 0 (also for an empty preamble) }
+function PreambleMatch(E: TEncoding; const Buffer: TBytes): Integer;
+var
+  P: TBytes;
+  I: Integer;
+begin
+  P := E.GetPreamble;
+  Result := 0;
+  if (Length(P) = 0) or (Length(P) > Length(Buffer)) then
+    Exit;
+  for I := 0 to Length(P) - 1 do
+    if P[I] <> Buffer[I] then
+      Exit;
+  Result := Length(P);
+end;
+
+class function TEncoding.GetBufferEncoding(const Buffer: TBytes; var AEncoding: TEncoding;
+  ADefault: TEncoding): Integer;
+var
+  K: Integer;
+begin
+  if AEncoding <> nil then
+  begin
+    Result := PreambleMatch(AEncoding, Buffer);
+    Exit;
+  end;
+  for K := EncUTF8 to EncBigEndian do
+  begin
+    Result := PreambleMatch(StdEncoding(K), Buffer);
+    if Result > 0 then
+    begin
+      AEncoding := StdEncoding(K);
+      Exit;
+    end;
+  end;
+  if ADefault <> nil then
+    AEncoding := ADefault
+  else
+    AEncoding := StdEncoding(EncUTF8);
+  Result := 0;
+end;
+
+function TEncoding.GetString(const Bytes: TBytes): string;
+begin
+  Result := GetString(Bytes, 0, Length(Bytes));
+end;
+
+function TEncoding.GetByteCount(const S: string): Integer;
+begin
+  Result := Length(GetBytes(S));
+end;
+
+function TEncoding.GetCharCount(const Bytes: TBytes): Integer;
+begin
+  Result := Length(GetString(Bytes));
+end;
+
+function TUTF8Encoding.GetPreamble: TBytes;
+begin
+  Result := MakeBytes($EF, $BB, $BF, 3);
+end;
+
+function TUTF8Encoding.GetBytes(const S: string): TBytes;
+var
+  R: RawByteString;
+begin
+  R := UTF8Encode(S);
+  SetLength(Result, Length(R));
+  if Length(R) > 0 then
+    Move(Pointer(R)^, Result[0], Length(R));
+end;
+
+function TUTF8Encoding.GetString(const Bytes: TBytes; Index, Count: Integer): string;
+var
+  R: RawByteString;
+begin
+  CheckBufferRange(Bytes, Index, Count);
+  Result := '';
+  if Count = 0 then
+    Exit;
+  SetLength(R, Count);
+  Move(Bytes[Index], Pointer(R)^, Count);
+  Result := UTF8ToString(R);
+end;
+
+function TUTF8Encoding.EncodingName: string;
+begin
+  Result := 'UTF-8';
+end;
+
+function TUnicodeEncoding.GetPreamble: TBytes;
+begin
+  Result := MakeBytes($FF, $FE, 0, 2);
+end;
+
+function TUnicodeEncoding.GetBytes(const S: string): TBytes;
+begin
+  Result := Utf16Encode(S, False);
+end;
+
+function TUnicodeEncoding.GetString(const Bytes: TBytes; Index, Count: Integer): string;
+begin
+  CheckBufferRange(Bytes, Index, Count);
+  Result := Utf16Decode(Bytes, Index, Count, False);
+end;
+
+function TUnicodeEncoding.EncodingName: string;
+begin
+  Result := 'UTF-16LE';
+end;
+
+function TBigEndianUnicodeEncoding.GetPreamble: TBytes;
+begin
+  Result := MakeBytes($FE, $FF, 0, 2);
+end;
+
+function TBigEndianUnicodeEncoding.GetBytes(const S: string): TBytes;
+begin
+  Result := Utf16Encode(S, True);
+end;
+
+function TBigEndianUnicodeEncoding.GetString(const Bytes: TBytes; Index, Count: Integer): string;
+begin
+  CheckBufferRange(Bytes, Index, Count);
+  Result := Utf16Decode(Bytes, Index, Count, True);
+end;
+
+function TBigEndianUnicodeEncoding.EncodingName: string;
+begin
+  Result := 'UTF-16BE';
+end;
+
+function TASCIIEncoding.GetPreamble: TBytes;
+begin
+  Result := nil;
+end;
+
+{ every UTF-16 code unit above 127 (each half of a surrogate pair too) becomes '?' }
+function TASCIIEncoding.GetBytes(const S: string): TBytes;
+var
+  I: Integer;
+begin
+  SetLength(Result, Length(S));
+  for I := 1 to Length(S) do
+    if Ord(S[I]) < 128 then
+      Result[I - 1] := Ord(S[I])
+    else
+      Result[I - 1] := Ord('?');
+end;
+
+function TASCIIEncoding.GetString(const Bytes: TBytes; Index, Count: Integer): string;
+var
+  I: Integer;
+begin
+  CheckBufferRange(Bytes, Index, Count);
+  SetLength(Result, Count);
+  for I := 1 to Count do
+    if Bytes[Index + I - 1] < 128 then
+      Result[I] := Char(Bytes[Index + I - 1])
+    else
+      Result[I] := #$FFFD;
+end;
+
+function TASCIIEncoding.EncodingName: string;
+begin
+  Result := 'US-ASCII';
+end;
+
+function BytesOf(const S: string): TBytes;
+begin
+  Result := StdEncoding(EncUTF8).GetBytes(S);
+end;
+
+function StringOf(const Bytes: TBytes): string;
+begin
+  Result := StdEncoding(EncUTF8).GetString(Bytes);
+end;
+
+{ ------------------------------------------------------------------------------------------- TStringBuilder (9) }
+
+procedure RangeError(Value: Integer);
+begin
+  raise EArgumentOutOfRangeException.CreateFmt(SIndexOutOfRange, [Value]);
+end;
+
+constructor TStringBuilder.Create;
+begin
+  inherited Create;
+  System.SetLength(FData, 16);
+end;
+
+constructor TStringBuilder.Create(ACapacity: Integer);
+begin
+  inherited Create;
+  if ACapacity < 0 then
+    RangeError(ACapacity);
+  System.SetLength(FData, ACapacity);
+end;
+
+constructor TStringBuilder.Create(const Value: string);
+begin
+  inherited Create;
+  if System.Length(Value) > 16 then
+    System.SetLength(FData, System.Length(Value))
+  else
+    System.SetLength(FData, 16);
+  Append(Value);
+end;
+
+function TStringBuilder.GetCapacity: Integer;
+begin
+  Result := System.Length(FData);
+end;
+
+function TStringBuilder.GetMaxCapacity: Integer;
+begin
+  Result := MaxInt;
+end;
+
+procedure TStringBuilder.SetCapacity(Value: Integer);
+begin
+  if Value < FLength then
+    raise EArgumentOutOfRangeException.Create(SCapacityLessThanLength);
+  System.SetLength(FData, Value);
+end;
+
+{ RTL-271 }
+procedure TStringBuilder.Grow(Needed: Integer);
+var
+  C: Integer;
+begin
+  if Needed <= System.Length(FData) then
+    Exit;
+  C := System.Length(FData) * 2;
+  if C < Needed then
+    C := Needed;
+  System.SetLength(FData, C);
+end;
+
+procedure TStringBuilder.SetLen(Value: Integer);
+var
+  I: Integer;
+begin
+  if Value < 0 then
+    RangeError(Value);
+  Grow(Value);
+  for I := FLength + 1 to Value do
+    FData[I] := #0;
+  FLength := Value;
+end;
+
+function TStringBuilder.GetChars(Index: Integer): Char;
+begin
+  if (Index < 0) or (Index >= FLength) then
+    RangeError(Index);
+  Result := FData[Index + 1];
+end;
+
+procedure TStringBuilder.SetChars(Index: Integer; Value: Char);
+begin
+  if (Index < 0) or (Index >= FLength) then
+    RangeError(Index);
+  FData[Index + 1] := Value;
+end;
+
+function TStringBuilder.Append(const Value: string): TStringBuilder;
+var
+  N: Integer;
+begin
+  N := System.Length(Value);
+  if N > 0 then
+  begin
+    Grow(FLength + N);
+    Move(Pointer(Value)^, FData[FLength + 1], N * SizeOf(Char));
+    FLength := FLength + N;
+  end;
+  Result := Self;
+end;
+
+function TStringBuilder.Append(Value: Char): TStringBuilder;
+begin
+  Grow(FLength + 1);
+  FLength := FLength + 1;
+  FData[FLength] := Value;
+  Result := Self;
+end;
+
+function TStringBuilder.Append(Value: Char; RepeatCount: Integer): TStringBuilder;
+var
+  I: Integer;
+begin
+  if RepeatCount < 0 then
+    RangeError(RepeatCount);
+  Grow(FLength + RepeatCount);
+  for I := 1 to RepeatCount do
+    FData[FLength + I] := Value;
+  FLength := FLength + RepeatCount;
+  Result := Self;
+end;
+
+function TStringBuilder.Append(Value: Integer): TStringBuilder;
+begin
+  Result := Append(IntToStr(Value));
+end;
+
+function TStringBuilder.Append(Value: Int64): TStringBuilder;
+begin
+  Result := Append(IntToStr(Value));
+end;
+
+function TStringBuilder.Append(Value: Boolean): TStringBuilder;
+begin
+  if Value then
+    Result := Append('True')
+  else
+    Result := Append('False');
+end;
+
+function TStringBuilder.Append(Value: Double): TStringBuilder;
+begin
+  Result := Append(FloatToStr(Value));
+end;
+
+function TStringBuilder.Append(Value: TObject): TStringBuilder;
+begin
+  if Value <> nil then
+    Append(Value.ToString);
+  Result := Self;
+end;
+
+function TStringBuilder.AppendFormat(const Fmt: string; const Args: array of const): TStringBuilder;
+begin
+  Result := Append(Format(Fmt, Args));
+end;
+
+function TStringBuilder.AppendLine: TStringBuilder;
+begin
+  Result := Append(sLineBreak);
+end;
+
+function TStringBuilder.AppendLine(const Value: string): TStringBuilder;
+begin
+  Append(Value);
+  Result := Append(sLineBreak);
+end;
+
+function TStringBuilder.Insert(Index: Integer; const Value: string): TStringBuilder;
+var
+  N: Integer;
+begin
+  if (Index < 0) or (Index > FLength) then
+    RangeError(Index);
+  N := System.Length(Value);
+  if N > 0 then
+  begin
+    Grow(FLength + N);
+    if Index < FLength then
+      Move(FData[Index + 1], FData[Index + N + 1], (FLength - Index) * SizeOf(Char));
+    Move(Pointer(Value)^, FData[Index + 1], N * SizeOf(Char));
+    FLength := FLength + N;
+  end;
+  Result := Self;
+end;
+
+function TStringBuilder.Remove(StartIndex, RemLength: Integer): TStringBuilder;
+begin
+  if (StartIndex < 0) or (StartIndex > FLength) then
+    RangeError(StartIndex);
+  if (RemLength < 0) or (RemLength > FLength - StartIndex) then
+    RangeError(RemLength);
+  if RemLength > 0 then
+  begin
+    if StartIndex + RemLength < FLength then
+      Move(FData[StartIndex + RemLength + 1], FData[StartIndex + 1],
+        (FLength - StartIndex - RemLength) * SizeOf(Char));
+    FLength := FLength - RemLength;
+  end;
+  Result := Self;
+end;
+
+function TStringBuilder.Replace(const OldValue, NewValue: string): TStringBuilder;
+var
+  S: string;
+begin
+  Result := Self;
+  if (OldValue = '') or (FLength = 0) then
+    Exit;
+  S := StringReplace(Copy(FData, 1, FLength), OldValue, NewValue, [rfReplaceAll]);
+  FLength := 0;
+  Append(S);
+end;
+
+function TStringBuilder.Replace(OldChar, NewChar: Char): TStringBuilder;
+var
+  I: Integer;
+begin
+  for I := 1 to FLength do
+    if FData[I] = OldChar then
+      FData[I] := NewChar;
+  Result := Self;
+end;
+
+procedure TStringBuilder.Clear;
+begin
+  FLength := 0;
+end;
+
+function TStringBuilder.EnsureCapacity(ACapacity: Integer): Integer;
+begin
+  if ACapacity < 0 then
+    RangeError(ACapacity);
+  if ACapacity > System.Length(FData) then
+    System.SetLength(FData, ACapacity);
+  Result := System.Length(FData);
+end;
+
+function TStringBuilder.ToString: string;
+begin
+  Result := Copy(FData, 1, FLength);
+end;
+
+function TStringBuilder.ToString(StartIndex, StrLength: Integer): string;
+begin
+  if (StartIndex < 0) or (StartIndex > FLength) then
+    RangeError(StartIndex);
+  if (StrLength < 0) or (StrLength > FLength - StartIndex) then
+    RangeError(StrLength);
+  Result := Copy(FData, StartIndex + 1, StrLength);
+end;
+
 { ---------------------------------------------------------------------------------- helper routines (2.4, 10) }
 
 procedure Abort;
@@ -3697,4 +4532,5 @@ finalization
   InvalidPointerInstance.Free;
   StackOverflowInstance.AllowFree := True;
   StackOverflowInstance.Free;
+  FreeStdEncodings;
 end.

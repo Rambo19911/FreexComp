@@ -1,0 +1,97 @@
+# differences
+ok MonthsBetween one short of 2
+ok MonthsBetween exactly 2
+ok MonthsBetween reversed
+ok MonthsBetween Jan 31 - Feb 29
+ok MonthsBetween same instant
+ok YearsBetween Feb 29 - Feb 28
+ok YearsBetween short
+ok YearsBetween reversed
+ok DaysBetween truncated
+ok WeeksBetween
+ok WeeksBetween truncated
+ok HoursBetween
+ok MinutesBetween reversed
+ok SecondsBetween
+ok MilliSecondsBetween
+ok MilliSecondsBetween 1
+ok HoursBetween across 1899-12-30 (instants, not raw values)
+ok DaysBetween across 1899-12-30
+# spans
+ok DaySpan
+ok DaySpan reversed
+ok HourSpan
+ok MinuteSpan
+ok SecondSpan
+ok YearSpan: 365.25 days
+ok MonthSpan: 30.4375 days
+ok DaySpan across 1899-12-30
+# comparison
+ok CompareDateTime less
+ok CompareDateTime greater
+ok CompareDateTime below a millisecond
+ok CompareDate same day
+ok CompareDate earlier day
+ok CompareTime ignores the date
+ok CompareTime equal
+ok SameDateTime
+ok SameDateTime 1 ms apart
+ok SameDate
+ok SameTime
+ok IsSameDay
+ok IsSameDay next day
+ok IsSameDay negative values
+ok Today has no time
+ok Today sanity bound
+ok Yesterday
+ok Tomorrow
+ok IsToday(Today)
+ok IsToday two days ago
+# Unix time
+ok epoch
+ok 1E9 seconds
+ok one second before
+ok half a second after: whole seconds down
+ok half a second before: whole seconds down
+ok TDateTime 0
+ok UnixToDateTime
+ok UnixToDateTime negative
+ok local offset is whole minutes
+ok local round trip
+ok UTC round trip
+# ISO 8601
+ok DateToISO8601 UTC
+ok DateToISO8601 year 1
+ok DateToISO8601 local: length
+ok DateToISO8601 local: the clock is unchanged
+ok DateToISO8601 local: offset sign
+ok DateToISO8601 local: offset colon
+ok local text back to local time
+ok UTC round trip
+ok date only
+ok hours and minutes
+ok seconds
+ok milliseconds and Z
+ok one fraction digit
+ok +hh:mm to UTC
+ok -hhmm to UTC
+ok offset crosses midnight
+ok TryISO8601ToDate
+ok TryISO8601ToDate value
+ok rejects '2024-02-30'
+ok TryISO8601ToDate rejects '2024-02-30'
+ok rejects '2024-2-29'
+ok TryISO8601ToDate rejects '2024-2-29'
+ok rejects '2024-02-29T25:00'
+ok TryISO8601ToDate rejects '2024-02-29T25:00'
+ok rejects '2024-02-29T13'
+ok TryISO8601ToDate rejects '2024-02-29T13'
+ok rejects '2024-02-29T13:45:30.250X'
+ok TryISO8601ToDate rejects '2024-02-29T13:45:30.250X'
+ok rejects '2024-02-29T13:45:30.1234'
+ok TryISO8601ToDate rejects '2024-02-29T13:45:30.1234'
+ok rejects '2024-02-29T13:45+2'
+ok TryISO8601ToDate rejects '2024-02-29T13:45+2'
+ok rejects ''
+ok TryISO8601ToDate rejects ''
+# passed 91 failed 0

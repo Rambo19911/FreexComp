@@ -1,0 +1,108 @@
+# categories
+ok Lu
+ok Ll
+ok Lt
+ok Lm
+ok Lo
+ok Mn
+ok Mc
+ok Me
+ok Nd
+ok Nl
+ok No
+ok Pc
+ok Pd
+ok Ps
+ok Pe
+ok Pi
+ok Pf
+ok Po
+ok Sm
+ok Sc
+ok Sk
+ok So
+ok Zs
+ok Zl
+ok Zp
+ok Cc
+ok Cf
+ok Cs
+ok Co
+ok Cn
+ok U+FFFF
+# classes
+ok IsLetter e acute
+ok IsLetter CJK
+ok IsLetter digit
+ok IsLetter high surrogate
+ok IsDigit Arabic-Indic three
+ok IsDigit one half
+ok IsNumber one half
+ok IsNumber Roman numeral
+ok IsLetterOrDigit letter
+ok IsLetterOrDigit digit
+ok IsLetterOrDigit underscore
+ok IsWhiteSpace space
+ok IsWhiteSpace tab
+ok IsWhiteSpace CR
+ok IsWhiteSpace NEL
+ok IsWhiteSpace no-break space
+ok IsWhiteSpace paragraph separator
+ok IsWhiteSpace zero width space (Cf)
+ok IsWhiteSpace letter
+ok IsUpper
+ok IsUpper titlecase
+ok IsLower sharp s
+ok IsControl
+ok IsControl format character
+ok IsPunctuation inverted question mark
+ok IsPunctuation plus
+ok IsSymbol plus
+ok IsSymbol euro
+ok IsSeparator ideographic space
+ok IsSeparator tab
+# surrogates
+ok IsHighSurrogate D800
+ok IsHighSurrogate DBFF
+ok IsHighSurrogate DC00
+ok IsLowSurrogate DC00
+ok IsLowSurrogate DFFF
+ok IsLowSurrogate E000
+ok IsSurrogate
+ok IsSurrogate D7FF
+ok IsSurrogatePair
+ok IsSurrogatePair reversed
+# case mapping
+ok ToUpper a
+ok ToUpper e acute
+ok ToUpper y diaeresis
+ok ToUpper sharp s: no simple mapping
+ok ToUpper final sigma
+ok ToUpper titlecase
+ok ToLower titlecase
+ok ToLower Z
+ok ToLower Cyrillic
+ok ToUpper digit
+ok ToUpper surrogate unchanged
+ok ToUpper string
+ok ToLower string
+ok ToUpper empty string
+# UTF-32
+ok ConvertFromUtf32 ASCII
+ok ConvertFromUtf32 BMP
+ok ConvertFromUtf32 supplementary
+ok ConvertFromUtf32 last
+ok ConvertToUtf32 ASCII
+ok ConvertToUtf32 pair
+ok ConvertToUtf32 after the pair
+ok ConvertFromUtf32 beyond U+10FFFF
+ok ConvertFromUtf32 surrogate
+ok ConvertToUtf32 at a low surrogate
+ok ConvertToUtf32 unpaired high surrogate
+ok ConvertToUtf32 index past the end
+ok ConvertToUtf32 index 0
+# whole table
+ok GetUnicodeCategory checksum
+ok ToUpper checksum
+ok ToLower checksum
+# passed 101 failed 0

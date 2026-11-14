@@ -1,0 +1,91 @@
+# LeftStr, RightStr, MidStr
+ok LeftStr
+ok LeftStr longer than S
+ok LeftStr 0
+ok LeftStr negative
+ok RightStr
+ok RightStr = Length
+ok RightStr longer than S
+ok RightStr 0
+ok RightStr negative
+ok MidStr
+ok MidStr clipped
+ok MidStr count 0
+ok MidStr past the end
+ok MidStr start 0 (Copy semantics)
+# Starts, Ends, Contains
+ok StartsStr
+ok StartsStr case-sensitive
+ok StartsStr empty
+ok StartsStr longer
+ok EndsStr
+ok EndsStr case-sensitive
+ok EndsStr empty
+ok ContainsStr
+ok ContainsStr case-sensitive
+ok ContainsStr empty is False
+ok StartsText
+ok StartsText empty
+ok EndsText
+ok EndsText longer
+ok ContainsText
+ok ContainsText empty is False
+ok StartsText: non-ASCII letters are not folded
+ok PosEx with offset
+ok PosEx default offset
+ok PosEx past the end
+ok PosEx offset below 1
+# Replace, Reverse, Dupe, Stuff, IfThen
+ok ReplaceStr all
+ok ReplaceStr case-sensitive
+ok ReplaceText case-insensitive
+ok ReverseString
+ok ReverseString empty
+ok ReverseString keeps a surrogate pair in order
+ok ReverseString: lone surrogates are single units
+ok DupeString
+ok DupeString 0
+ok DupeString negative
+ok StuffString replace
+ok StuffString insert
+ok StuffString delete
+ok StuffString at the end
+ok IfThen True
+ok IfThen False
+ok IfThen default
+# IndexStr, IndexText, MatchStr, MatchText
+ok IndexStr first match
+ok IndexStr case-sensitive
+ok IndexStr empty list
+ok IndexText
+ok MatchStr
+ok MatchStr case-sensitive
+ok MatchText
+ok MatchText no match
+# SplitString
+ok each delimiter character
+ok adjacent delimiters
+ok only a delimiter
+ok trailing delimiter
+ok no delimiter
+ok no delimiter characters
+ok empty string
+# Ansi aliases
+ok AnsiLeftStr
+ok AnsiRightStr
+ok AnsiMidStr
+ok AnsiStartsStr
+ok AnsiEndsStr
+ok AnsiContainsStr
+ok AnsiStartsText
+ok AnsiEndsText
+ok AnsiContainsText
+ok AnsiContainsText is ordinal (no OS collation)
+ok AnsiReplaceStr
+ok AnsiReplaceText
+ok AnsiIndexStr
+ok AnsiIndexText
+ok AnsiMatchStr
+ok AnsiMatchText
+ok AnsiReverseString
+# passed 84 failed 0

@@ -1,0 +1,56 @@
+# constructors, capacity
+ok Create: capacity 16
+ok Create: empty
+ok Create: ToString
+ok MaxCapacity
+ok Create(100)
+ok Create(Value)
+ok Create(Value) length
+ok Create(Value) capacity holds the value
+# Append
+ok string, Char, repeat, Integer, Int64, Boolean
+ok Double, TObject, nil
+ok AppendFormat
+ok AppendLine
+ok repeat count 0
+# Insert, Remove, Replace, Chars
+ok Insert at start, end, middle
+ok Remove
+ok Remove 0 characters
+ok Replace(Char, Char)
+ok Replace(string, string): all, growing
+ok Replace: shrinking to empty
+ok Replace: empty OldValue changes nothing
+ok Replace: no occurrence
+ok Chars[0]
+ok default property, last
+ok Chars write
+ok ToString(StartIndex, StrLength)
+ok ToString empty at the end
+# Length, Capacity, growth
+ok growing Length fills #0
+ok shrinking Length
+ok fits
+ok growth: Capacity * 2
+ok growth: Capacity * 2 again
+ok growth: needed when larger
+ok length after growth
+ok Clear: length 0
+ok Clear keeps the capacity
+ok EnsureCapacity smaller
+ok EnsureCapacity larger
+ok Capacity := Length
+ok content kept
+# range errors
+ok Chars write past the end
+ok ToString negative start
+ok ToString past the end
+ok Insert past the end
+ok Remove negative length
+ok Remove past the end
+ok negative Length
+ok negative repeat count
+ok Capacity < Length
+ok unchanged after the errors
+ok Create negative capacity
+# passed 50 failed 0

@@ -1,0 +1,126 @@
+# Min, Max
+ok Min Integer
+ok Max Integer
+ok Min Int64
+ok Max Int64
+ok Min UInt64 (unsigned order)
+ok Max UInt64 (unsigned order)
+ok Min Double
+ok Max Double
+ok Min(NaN, 4)
+ok Min(4, NaN)
+ok Max(NaN, 4)
+ok Max(4, NaN)
+ok MinIntValue
+ok MaxIntValue
+ok MinValue
+ok MaxValue
+ok MinIntValue of empty
+ok MaxIntValue of empty
+ok MinValue of empty
+ok MaxValue of empty
+# EnsureRange, InRange
+ok EnsureRange below
+ok EnsureRange above
+ok EnsureRange inside
+ok EnsureRange AMin > AMax: AMin wins
+ok EnsureRange Int64
+ok EnsureRange Double
+ok InRange at AMin
+ok InRange at AMax
+ok InRange above
+ok InRange Int64
+ok InRange Double
+# Sign
+ok Sign(-7)
+ok Sign(0)
+ok Sign(7)
+ok Sign Int64
+ok Sign(-0.5)
+ok Sign(-0.0)
+ok Sign(Infinity)
+ok Sign(NaN)
+# Floor, Ceil
+ok Floor(2.7)
+ok Floor(-2.2)
+ok Floor(-2.0)
+ok Ceil(2.2)
+ok Ceil(-2.7)
+ok Ceil(-0.5)
+ok Floor at Low(Integer)
+ok Ceil to High(Integer)
+ok Floor64
+ok Ceil64
+ok Floor64 negative
+ok Floor out of range
+ok Ceil out of range
+ok Floor(NaN)
+ok Floor64 out of range
+ok Ceil64(Infinity)
+# RoundTo, SimpleRoundTo
+ok RoundTo(1234567, 3)
+ok RoundTo(2500, 3): half to even
+ok RoundTo(3500, 3): half to even
+ok RoundTo(2.5, 0)
+ok RoundTo(1.2345, -2)
+ok RoundTo(0.125, -2): half to even
+ok RoundTo(-0.375, -2): half to even
+ok RoundTo of a large value
+ok SimpleRoundTo(0.125)
+ok SimpleRoundTo(-0.125)
+ok SimpleRoundTo(2.5, 0)
+ok SimpleRoundTo(-2.5, 0)
+ok SimpleRoundTo(1250, 2)
+ok SimpleRoundTo(0, 1)
+ok RoundTo Digit 38
+ok SimpleRoundTo Digit -38
+# float tests, constants
+ok IsNan(NaN)
+ok IsNan(Infinity)
+ok IsInfinite(Infinity)
+ok IsInfinite(NegInfinity)
+ok IsInfinite(NaN)
+ok IsInfinite(MaxDouble)
+ok Infinity > MaxDouble
+ok NegInfinity < -MaxDouble
+ok MinDouble
+ok MaxDouble
+ok MinSingle
+ok MaxSingle
+ok SameValue default epsilon
+ok SameValue default epsilon, apart
+ok SameValue relative epsilon
+ok SameValue explicit epsilon
+ok SameValue explicit epsilon, apart
+ok SameValue(Infinity, Infinity)
+ok SameValue(NaN, NaN)
+ok IsZero(1E-13)
+ok IsZero(1E-11)
+ok IsZero explicit epsilon
+ok CompareValue less
+ok CompareValue greater
+ok CompareValue same
+ok CompareValue explicit epsilon
+ok CompareValue explicit epsilon, apart
+# DivMod, IfThen, RandomRange
+ok DivMod result
+ok DivMod remainder
+ok DivMod by zero
+ok IfThen Integer True
+ok IfThen Integer False
+ok IfThen default 0
+ok IfThen Int64
+ok IfThen Double
+ok RandomRange = Random(Abs(AFrom - ATo)) + Min(AFrom, ATo)
+ok RandomRange in either order
+ok RandomRange of an empty range
+ok RandomRange(3, 3) leaves RandSeed
+# Sum, SumInt, Mean
+ok Sum
+ok Sum of empty
+ok SumInt in Int64
+ok SumInt of empty
+ok Mean
+ok Mean of empty
+ok EInvalidArgument is an EMathError
+# passed 117 failed 0

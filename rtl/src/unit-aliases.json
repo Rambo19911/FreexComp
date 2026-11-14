@@ -1,6 +1,10 @@
 {
   "aliases": {
+    "System.Character": "Character",
+    "System.DateUtils": "DateUtils",
+    "System.Math": "Math",
     "System.RTLConsts": "RTLConsts",
+    "System.StrUtils": "StrUtils",
     "System.SysUtils": "SysUtils",
     "System.Types": "Types",
     "Winapi.CommCtrl": "CommCtrl",

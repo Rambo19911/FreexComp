@@ -1,0 +1,102 @@
+# parts
+ok YearOf
+ok MonthOf
+ok DayOf
+ok HourOf
+ok MinuteOf
+ok SecondOf
+ok MilliSecondOf
+ok DateOf
+ok TimeOf
+ok DateOf(-1.25)
+ok TimeOf(-1.25)
+ok HourOf(-1.25)
+# validity
+ok IsValidDate leap day
+ok IsValidDate no leap day
+ok IsValidDate year 0
+ok IsValidDate 9999-12-31
+ok IsValidDate month 13
+ok IsValidTime last millisecond
+ok IsValidTime hour 24
+ok IsValidTime minute 60
+ok IsValidTime ms 1000
+ok IsValidDateTime
+ok IsValidDateTime bad date
+ok IsValidDateTime bad time
+ok IsInLeapYear
+ok IsInLeapYear 1900
+ok DaysInMonth
+ok DaysInAMonth(2023, 2)
+ok DaysInAMonth(2000, 2)
+ok DaysInAMonth(1900, 2)
+ok DaysInAMonth(2023, 12)
+ok DaysInAMonth(2023, 4)
+ok DaysInYear
+ok DaysInAYear(2023)
+# construction
+ok EncodeDateTime
+ok EncodeDateTime before 1899-12-30
+ok EncodeDateTime on 1899-12-30
+ok EncodeDateTime bad date
+ok EncodeDateTime bad time
+ok TryEncodeDateTime valid
+ok TryEncodeDateTime value
+ok TryEncodeDateTime invalid
+ok DecodeDateTime
+ok DecodeDateTime(-1.25)
+# recode
+ok RecodeYear
+ok RecodeMonth
+ok RecodeDay
+ok RecodeHour
+ok RecodeMinute
+ok RecodeSecond
+ok RecodeMilliSecond
+ok RecodeDate keeps the time
+ok RecodeTime keeps the date
+ok RecodeDateTime
+ok RecodeYear to a year without Feb 29
+ok RecodeHour(24)
+# boundaries
+ok StartOfTheYear
+ok EndOfTheYear
+ok StartOfTheMonth
+ok EndOfTheMonth
+ok StartOfTheWeek: Monday
+ok EndOfTheWeek: Sunday
+ok StartOfTheWeek of a Sunday
+ok EndOfTheWeek of a Sunday
+ok StartOfTheDay
+ok EndOfTheDay
+ok StartOfTheDay(-1.25)
+ok EndOfTheDay(-1.25)
+# week
+ok DayOfTheWeek Thursday
+ok DayOfTheWeek Monday
+ok DayOfTheWeek Sunday
+ok DayOfTheWeek 1899-12-29 (Friday)
+ok DayOfTheYear
+ok DayOfTheYear 2023-12-31
+ok DayOfTheYear Jan 1
+ok WeekOfTheYear
+ok WeekOfTheYear 2021-01-01 (week 53 of 2020)
+ok WeekOfTheYear 2020-12-31
+ok WeekOfTheYear 2024-12-30 (week 1 of 2025)
+ok WeekOfTheYear 2026-01-01
+ok WeekOfTheYear 2023-01-01 (week 52 of 2022)
+# increments
+ok IncYear clips Feb 29
+ok IncYear(4)
+ok IncYear(-1)
+ok IncWeek
+ok IncDay(-60)
+ok IncHour(11)
+ok IncMinute(-46)
+ok IncSecond(30)
+ok IncMilliSecond(750)
+ok IncMilliSecond with an Int64 count
+ok IncHour across 1899-12-30
+ok IncHour back across 1899-12-30
+ok IncDay on a negative value
+# passed 94 failed 0

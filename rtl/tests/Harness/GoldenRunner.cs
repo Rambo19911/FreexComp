@@ -52,7 +52,7 @@ public sealed record RtlSetup(string OpcPath, string RtlDirectory, string Toolch
 /// <summary>Discovery (RTL-900), header markers and theory rows (RTL-908).</summary>
 public static class RtlCorpus
 {
-    private static readonly string[] NotGroups = ["bin", "obj", "Harness", "TestResults"];
+    private static readonly string[] NotGroups = ["bin", "obj", "Harness", "TestResults", "perf"];   // perf: PerfGuardTests (RTL-920)
 
     /// <summary>Every <c>.pas</c> in a group folder directly under <paramref name="root"/>, ordered by id. Files in <paramref name="root"/> itself are shared units.</summary>
     public static ImmutableArray<RtlCase> Discover(string root)
@@ -164,7 +164,8 @@ public static class GoldenRunner
 
     private static readonly string[] RequiredTools = ["clang.exe", "lld-link.exe", "llvm-dlltool.exe"];
 
-    public static async Task<string?> RunAsync(RtlCase @case, RtlSetup setup, CancellationToken ct)
+    /// <summary>Compiles and runs <paramref name="case"/>; null on success. <paramref name="runTime"/> receives the wall time of each program run (not of opc).</summary>
+    public static async Task<string?> RunAsync(RtlCase @case, RtlSetup setup, CancellationToken ct, Action<TimeSpan>? runTime = null)
     {
         // RTL-909: a missing toolchain fails the test, it never skips it
         var missing = RequiredTools.Select(t => Path.Combine(setup.ToolchainDirectory, t)).Append(setup.OpcPath)
@@ -176,7 +177,7 @@ public static class GoldenRunner
 
         var header = RtlCorpus.ReadHeader(@case);
         var work = NewTempDirectory();
-        var failure = await RunInAsync(@case, header, setup, work, ct).ConfigureAwait(false);
+        var failure = await RunInAsync(@case, header, setup, work, runTime, ct).ConfigureAwait(false);
         if (failure is null)
         {
             TryDelete(work);                                                        // kept on failure for inspection (TESTING.md rule 3)
@@ -222,7 +223,7 @@ public static class GoldenRunner
         }
     }
 
-    private static async Task<string?> RunInAsync(RtlCase @case, RtlHeader header, RtlSetup setup, string work, CancellationToken ct)
+    private static async Task<string?> RunInAsync(RtlCase @case, RtlHeader header, RtlSetup setup, string work, Action<TimeSpan>? runTime, CancellationToken ct)
     {
         var exe = Path.Combine(work, @case.Name + ".exe");
         List<string> args =
@@ -245,12 +246,12 @@ public static class GoldenRunner
 
         if (header.Variants.IsEmpty)
         {
-            return await RunOnceAsync(@case, header, exe, work, null, ct).ConfigureAwait(false);
+            return await RunOnceAsync(@case, header, exe, work, null, runTime, ct).ConfigureAwait(false);
         }
 
         foreach (var variant in header.Variants)
         {
-            if (await RunOnceAsync(@case, header, exe, work, variant, ct).ConfigureAwait(false) is { } failure)
+            if (await RunOnceAsync(@case, header, exe, work, variant, runTime, ct).ConfigureAwait(false) is { } failure)
             {
                 return $"variant {variant}: {failure}";
             }
@@ -260,7 +261,7 @@ public static class GoldenRunner
     }
 
     /// <summary>One run: argument list = [temp dir] [variant] then raw arguments; expectation files <c>.&lt;variant&gt;.*</c> first, else unsuffixed.</summary>
-    private static async Task<string?> RunOnceAsync(RtlCase @case, RtlHeader header, string exe, string work, string? variant, CancellationToken ct)
+    private static async Task<string?> RunOnceAsync(RtlCase @case, RtlHeader header, string exe, string work, string? variant, Action<TimeSpan>? runTime, CancellationToken ct)
     {
         string? Expect(string suffix) => (variant is null ? null : @case.File("." + variant + suffix)) ?? @case.File(suffix);
 
@@ -283,7 +284,9 @@ public static class GoldenRunner
         }
 
         var input = Expect(".in") is { } inPath ? System.IO.File.ReadAllBytes(inPath) : [];
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         var run = await RunProcessAsync(exe, CommandLine(programArgs, header.RawArgs), work, input, ct).ConfigureAwait(false);
+        runTime?.Invoke(clock.Elapsed);
         var failure = Check(run);
         if (tempDir is not null && failure is null)
         {

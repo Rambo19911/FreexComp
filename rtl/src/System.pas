@@ -3957,6 +3957,7 @@ begin
   Result := X - _Int(X);
 end;
 
+{$I FloatKernels.inc}                  { constants, bit helpers, ReducePiO2, KernelSin, KernelCos }
 {$I FloatMath.inc}                     { Sin, Cos, ArcTan, Exp, Ln }
 
 { ---------------------------------------------------------------- Random (RTL-040) }
