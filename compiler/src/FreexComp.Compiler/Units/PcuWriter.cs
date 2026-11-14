@@ -91,10 +91,24 @@ internal sealed class PcuWriter(PcuContext context)
         {
             root["unitOrder"] = Strings(context.InitOrder.Select(u => u.Name));          // CMP-163
             root["appType"] = context.AppType == AppType.Gui ? "gui" : "console";
+            root["unitTable"] = UnitTable();
         }
 
         return root;
     }
+
+    /// <summary>
+    /// C-075: a program's CMP-355 unit table as compiled — per unit in init order its name and whether its <c>$init</c>/<c>$final</c>
+    /// are referenced. The program's code depends on it, but the units' interface hashes do not cover it (an implementation-only
+    /// edit can add an initialization section or a unit in an implementation uses clause), so it is part of the program's
+    /// up-to-date check.
+    /// </summary>
+    public JsonArray UnitTable() =>
+        new([.. context.InitOrder.Select(u =>
+        {
+            var (hasInit, hasFinal) = context.Sections(u);
+            return (JsonNode?)new JsonObject { ["unit"] = u.Name, ["hasInit"] = hasInit, ["hasFinal"] = hasFinal };
+        })]);
 
     // ------------------------------------------------------------------ header parts
 

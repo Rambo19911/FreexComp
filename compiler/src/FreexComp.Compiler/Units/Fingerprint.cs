@@ -15,7 +15,9 @@ internal static class Fingerprint
     public static string Options(CompilationOptions options, string aliasTableHash)
     {
         var text = new StringBuilder();
-        text.Append("defines=").AppendJoin(',', options.Defines.Select(d => d.ToUpperInvariant()).Distinct().Order(StringComparer.Ordinal)).Append('\n');
+        // the define set the units are parsed with: a console application also defines CONSOLE (C-075)
+        var defines = options.AppType == AppType.Console ? options.Defines.Add("CONSOLE") : options.Defines;
+        text.Append("defines=").AppendJoin(',', defines.Select(d => d.ToUpperInvariant()).Distinct().Order(StringComparer.Ordinal)).Append('\n');
         text.Append("O=").Append(options.Optimization).Append('\n');
         text.Append("g=").Append(options.DebugInfo).Append('\n');
         text.Append("R=").Append(options.RangeChecks).Append(";Q=").Append(options.OverflowChecks).Append(";C=").Append(options.Assertions).Append('\n');

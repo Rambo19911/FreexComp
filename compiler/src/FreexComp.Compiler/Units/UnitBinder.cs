@@ -28,6 +28,9 @@ internal sealed class LoadedUnit(string path)
     /// <summary>Innermost scope of the interface-uses chain (a program's uses chain).</summary>
     public Scope? InterfaceUsesScope { get; set; }
 
+    /// <summary>Innermost scope of the implementation-uses chain (on top of <see cref="InterfaceUsesScope"/>).</summary>
+    public Scope? ImplementationUsesScope { get; set; }
+
     /// <summary>The units of the interface uses clause (a program's uses clause), as written, <c>System</c> left out.</summary>
     public List<LoadedUnit> InterfaceUses { get; } = [];
 
@@ -66,7 +69,7 @@ internal sealed class LoadedUnit(string path)
     };
 }
 
-internal enum UnitPhase { New, Parsing, BindingInterface, InterfaceBound, Completing, Complete, Failed }
+internal enum UnitPhase { New, Parsing, BindingInterface, InterfaceBound, ImplementationUsesBound, Completing, Complete, Failed }
 
 /// <summary>
 /// C-069: the units of one compilation. Starting from the main file it locates (LANG-510 via <see cref="UnitResolver"/>),
@@ -113,8 +116,13 @@ internal sealed class UnitBinder : IUsesScopes
 
     public Scope Root => SystemUnit?.Interface?.InterfaceScope is { } system ? Scope.Uses(system, Types.Scope, [SystemName]) : Types.Scope;
 
-    /// <summary>Binds <c>System</c> (<paramref name="systemPath"/>), then the main file and every unit reachable from it.</summary>
-    public void BindAll(string systemPath, string mainPath)
+    /// <summary>
+    /// Binds <c>System</c> (<paramref name="systemPath"/>), then the main file and every unit reachable from it. Interfaces and
+    /// uses clauses bind on this thread in load order (they load further units); then every interface any body can see is bound,
+    /// so the implementation parts, bodies and flow analysis of all units run on up to <paramref name="maxParallelism"/> threads
+    /// (CMP-156). Each unit's diagnostics stay in its own list, so the result does not depend on the thread count.
+    /// </summary>
+    public void BindAll(string systemPath, string mainPath, int maxParallelism = 1)
     {
         SystemUnit = Load(systemPath);
         EnsureInterface(SystemUnit);
@@ -122,8 +130,17 @@ internal sealed class UnitBinder : IUsesScopes
         EnsureInterface(Main);
         for (var i = 0; i < _units.Count; i++)
         {
-            Complete(_units[i]);
+            BindImplementationUses(_units[i]);
         }
+
+        var ready = _units.Where(u => u.Phase == UnitPhase.ImplementationUsesBound).ToList();
+        if (maxParallelism <= 1 || ready.Count <= 1)
+        {
+            ready.ForEach(Complete);
+            return;
+        }
+
+        Parallel.ForEach(ready, new ParallelOptions { MaxDegreeOfParallelism = maxParallelism }, Complete);
     }
 
     /// <summary>
@@ -205,7 +222,7 @@ internal sealed class UnitBinder : IUsesScopes
     {
         switch (unit.Phase)
         {
-            case UnitPhase.InterfaceBound or UnitPhase.Completing or UnitPhase.Complete:
+            case UnitPhase.InterfaceBound or UnitPhase.ImplementationUsesBound or UnitPhase.Completing or UnitPhase.Complete:
                 return true;
             case UnitPhase.Parsing or UnitPhase.BindingInterface or UnitPhase.Failed:
                 return false;
@@ -294,19 +311,28 @@ internal sealed class UnitBinder : IUsesScopes
         return false;
     }
 
-    /// <summary>The implementation part, routine and unit-level bodies, then flow analysis (CMP-115).</summary>
-    private void Complete(LoadedUnit unit)
+    /// <summary>The implementation uses clause (it may load and bind the interfaces of further units).</summary>
+    private void BindImplementationUses(LoadedUnit unit)
     {
         if (unit.Phase != UnitPhase.InterfaceBound && !(unit.Phase == UnitPhase.New && EnsureInterface(unit)))
         {
             return;
         }
 
-        unit.Phase = UnitPhase.Completing;
         var clause = (unit.Tree!.Root as UnitSyntax)?.ImplementationSection.UsesClause;
-        var implementationUses = BindUses(unit, clause, unit.InterfaceUsesScope!, unit.ImplementationUses);
+        unit.ImplementationUsesScope = BindUses(unit, clause, unit.InterfaceUsesScope!, unit.ImplementationUses);
+        unit.Phase = UnitPhase.ImplementationUsesBound;
+    }
+
+    /// <summary>
+    /// The implementation part, routine and unit-level bodies, then flow analysis (CMP-115). Reads only bound interfaces of other
+    /// units and writes only this unit's symbols, scopes and bag: safe to run for several units at once.
+    /// </summary>
+    private void Complete(LoadedUnit unit)
+    {
+        unit.Phase = UnitPhase.Completing;
         var system = ReferenceEquals(unit, SystemUnit) ? null : SystemUnit?.Symbol;
-        unit.Result = Binder.Complete(unit.Tree, unit.Interface!, Types, unit.Bag, implementationUses, system);
+        unit.Result = Binder.Complete(unit.Tree!, unit.Interface!, Types, unit.Bag, unit.ImplementationUsesScope!, system);
         unit.Diagnostics.AddRange(unit.Result.Diagnostics);
         unit.Diagnostics.AddRange(FlowAnalyzer.Analyze(unit.Result));
         unit.Phase = UnitPhase.Complete;

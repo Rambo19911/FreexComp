@@ -1,0 +1,2 @@
+Dup.pas(9,3): error E2004: Identifier redeclared: 'Limit'
+Dup.pas(21,3): error E2004: Identifier redeclared: 'Twice'

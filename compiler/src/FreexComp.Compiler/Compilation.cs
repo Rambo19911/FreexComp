@@ -103,29 +103,47 @@ public sealed class Compilation
         // link order (CMP-625): the main file, System, then every other unit in init order (LANG-520); each emitted once
         var linkUnits = initOrder.Where(u => u != unitBinder.Main).Prepend(unitBinder.Main!).ToImmutableArray();
         var sourceUnits = linkUnits.Where(u => !u.IsPrecompiled).ToImmutableArray();          // precompiled units link as they are (C-074)
-        var units = sourceUnits.Select(u => u.Result!).ToImmutableArray();
         var unitTable = UnitTable(main, initOrder);
+        var pcus = PcuWriterFor(front);
+
+        // CMP-150…153 (C-075): at the obj/exe stages a unit whose .pcu and .obj in the object directory are up to date is not
+        // recompiled; --emit ll always writes every unit's .ll
+        var cached = options.Stage is EmitStage.Obj or EmitStage.Exe && !options.ForceRebuild && Options.UsePcuCache
+            ? UpToDate(front, pcus, sourceUnits, objectDirectory)
+            : [];
+        var stale = sourceUnits.Where(u => !cached.Contains(u)).ToImmutableArray();
+        ImmutableArray<string> upToDate = [.. sourceUnits.Where(cached.Contains).Select(u => u.Name)];
+        EmitResult Finish(bool success, string? output, ImmutableArray<string> compiled) => Done(success, output, compiled) with { UpToDateUnits = upToDate };
+
+        // CMP-156: units lower and emit on up to MaxParallelism threads (each reads only bound symbols and writes its own module);
+        // results and failures are then taken in link order, as a sequential run would
+        var texts = new (string? Text, Diagnostic? Failure)[stale.Length];
+        Parallel.For(0, stale.Length, new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism, CancellationToken = ct },
+            i => texts[i] = EmitIr(stale[i].Result!, unitTable, location));
         var llPaths = ImmutableArray.CreateBuilder<string>();
-        foreach (var unit in units)
+        for (var i = 0; i < stale.Length; i++)
         {
-            if (EmitIr(unit, unitTable, location, diagnostics) is not { } text)
+            var loaded = stale[i];
+            if (texts[i] is not { Text: { } text })
             {
-                return Done(false, null, []);
+                diagnostics.Add(texts[i].Failure!);
+                return Finish(false, null, []);
             }
 
-            var path = Path.Combine(objectDirectory, unit.Unit.Name + ".ll");
+            var path = Path.Combine(objectDirectory, loaded.Name + ".ll");
+            FileSystem.Delete(Path.ChangeExtension(path, ".pcu"));        // CMP-141: no .pcu may vouch for an .obj being replaced
             if (!Write(path, text, location, diagnostics))
             {
-                return Done(false, null, []);
+                return Finish(false, null, []);
             }
 
             llPaths.Add(path);
         }
 
-        ImmutableArray<string> compiled = [.. units.Select(u => u.Unit.Name)];
+        ImmutableArray<string> compiled = [.. stale.Select(u => u.Name)];
         if (options.Stage == EmitStage.Ll)
         {
-            return Done(true, null, compiled);
+            return Finish(true, null, compiled);
         }
 
         // back end (CMP-600…627)
@@ -133,17 +151,30 @@ public sealed class Compilation
         if (toolchain is null)
         {
             diagnostics.Add(missing!);
-            return Done(false, null, compiled);
+            return Finish(false, null, compiled);
         }
 
         var processRunner = new ProcessRunner();
-        if (await ToolchainVersionCheck.Shared.CheckAsync(processRunner, toolchain.Clang, location, ct).ConfigureAwait(false) is { } version)
+        var versionChecked = false;
+        async Task<bool> VersionAsync()
         {
-            diagnostics.Add(version);
-            if (version.Severity == DiagnosticSeverity.Error)
+            // the first tool process of this Emit; a run where everything is up to date starts none (build-engine.md §5)
+            if (!versionChecked && await ToolchainVersionCheck.Shared.CheckAsync(processRunner, toolchain.Clang, location, ct).ConfigureAwait(false) is { } version)
             {
-                return Done(false, null, compiled);
+                diagnostics.Add(version);
+                if (version.Severity == DiagnosticSeverity.Error)
+                {
+                    return false;
+                }
             }
+
+            versionChecked = true;
+            return true;
+        }
+
+        if (!stale.IsEmpty && !await VersionAsync().ConfigureAwait(false))
+        {
+            return Finish(false, null, compiled);
         }
 
         var runner = new ToolRunner(processRunner, new ToolRunOptions(location)
@@ -153,26 +184,36 @@ public sealed class Compilation
         });
         var clang = new ClangInvoker(runner, toolchain.Clang);
         var objects = llPaths.Select(ll => Path.ChangeExtension(ll, ".obj")).ToImmutableArray();
-        var results = await Task.WhenAll(llPaths.Select((ll, i) => clang.CompileAsync(ll, objects[i], Options.Optimization, Options.DebugInfo, ct)))
-            .ConfigureAwait(false);                                                 // CMP-606: units in parallel
+        using var slots = new SemaphoreSlim(MaxParallelism);                       // CMP-156: up to MaxParallelism clang processes
+        var results = await Task.WhenAll(llPaths.Select(async (ll, i) =>
+        {
+            await slots.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                return await clang.CompileAsync(ll, objects[i], Options.Optimization, Options.DebugInfo, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                slots.Release();
+            }
+        })).ConfigureAwait(false);                                                  // CMP-606: units in parallel
         foreach (var failure in results.Select(r => r.Failure).OfType<Diagnostic>())
         {
             diagnostics.Add(failure);
         }
 
         // CMP-141: each unit's .pcu last, after its .obj succeeded (C-073)
-        var pcus = PcuWriterFor(front);
-        for (var i = 0; i < sourceUnits.Length; i++)
+        for (var i = 0; i < stale.Length; i++)
         {
-            if (results[i].Failure is null && !Write(Path.Combine(objectDirectory, sourceUnits[i].Name + ".pcu"), pcus.Write(sourceUnits[i]), location, diagnostics))
+            if (results[i].Failure is null && !Write(Path.Combine(objectDirectory, stale[i].Name + ".pcu"), pcus.Write(stale[i]), location, diagnostics))
             {
-                return Done(false, null, compiled);
+                return Finish(false, null, compiled);
             }
         }
 
         if (options.Stage == EmitStage.Obj || !main.Unit.IsProgram || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {
-            return Done(true, null, compiled);
+            return Finish(true, null, compiled);
         }
 
         // import libraries (CMP-620…622) and the link (CMP-625…627)
@@ -188,9 +229,11 @@ public sealed class Compilation
             RtlDirectory(),
             location);
         diagnostics.AddRange(notFound);
+        var regenerated = false;
         foreach (var (dll, definition) in planned)
         {
             var library = await dllTool.BuildAsync(dll, definition, objectDirectory, ct).ConfigureAwait(false);
+            regenerated |= library.Regenerated;
             if (library.Failure is { } failure)
             {
                 diagnostics.Add(failure);
@@ -206,27 +249,85 @@ public sealed class Compilation
 
         if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {
-            return Done(false, null, compiled);
+            return Finish(false, null, compiled);
         }
 
         var output = string.IsNullOrEmpty(options.OutputPath)
             ? PathUtil.Normalize(Path.Combine(Path.GetDirectoryName(mainPath)!, Path.GetFileNameWithoutExtension(mainPath) + ".exe"))
             : PathUtil.Normalize(options.OutputPath);
-        var linked = await new LinkInvoker(runner, toolchain.LldLink, FileSystem).LinkAsync(
-            new LinkRequest(output, objectDirectory, [.. linkUnits.Select(u => u.IsPrecompiled ? u.ObjectPath : objects[sourceUnits.IndexOf(u)])])
-            {
-                AppType = Options.AppType,
-                DebugInfo = Options.DebugInfo,
-                DebugFormat = Options.DebugFormat,
-                ManifestPath = Options.Manifest is "" or "default" or "none" ? null : PathUtil.Normalize(Options.Manifest),   // default manifest: C-167
-                ExtraObjects = [.. linkUnits.SelectMany(u => u.LinkInputs.Objects).Distinct(PathUtil.Comparer)],
-                ImportLibraries = libraries.ToImmutable(),
-                ImportDefinitions = definitions.ToImmutableDictionary(StringComparer.Ordinal),
-            },
-            ct).ConfigureAwait(false);
+        var request = new LinkRequest(output, objectDirectory,
+            [.. linkUnits.Select(u => u.IsPrecompiled ? u.ObjectPath : Path.Combine(objectDirectory, u.Name + ".obj"))])
+        {
+            AppType = Options.AppType,
+            DebugInfo = Options.DebugInfo,
+            DebugFormat = Options.DebugFormat,
+            ManifestPath = Options.Manifest is "" or "default" or "none" ? null : PathUtil.Normalize(Options.Manifest),   // default manifest: C-167
+            ExtraObjects = [.. linkUnits.SelectMany(u => u.LinkInputs.Objects).Distinct(PathUtil.Comparer)],
+            ImportLibraries = libraries.ToImmutable(),
+            ImportDefinitions = definitions.ToImmutableDictionary(StringComparer.Ordinal),
+        };
+        if (compiled.IsEmpty && !regenerated && !options.ForceRebuild && LinkIsUpToDate(request))
+        {
+            return Finish(true, output, compiled);                                  // CMP-155
+        }
+
+        if (!await VersionAsync().ConfigureAwait(false))
+        {
+            return Finish(false, null, compiled);
+        }
+
+        var linked = await new LinkInvoker(runner, toolchain.LldLink, FileSystem).LinkAsync(request, ct).ConfigureAwait(false);
         diagnostics.AddRange(linked.Diagnostics);
-        return Done(linked.Success, linked.Success ? output : null, compiled);
+        return Finish(linked.Success, linked.Success ? output : null, compiled);
     }
+
+    /// <summary>
+    /// CMP-155: the link is skipped when (and only when) the <c>link.rsp</c> it would write is byte-identical to the one in the object
+    /// directory, no unit was recompiled (checked by the caller) and the output exe exists. Timestamps are not consulted.
+    /// </summary>
+    private bool LinkIsUpToDate(LinkRequest request)
+    {
+        var rsp = Path.Combine(request.ObjectDirectory, "link.rsp");
+        try
+        {
+            return FileSystem.FileExists(request.OutputPath) && FileSystem.FileExists(rsp)
+                && FileSystem.ReadAllBytes(rsp).AsSpan().SequenceEqual(
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(LinkInvoker.RenderResponseFile(LinkInvoker.BuildArguments(request))));
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// CMP-150…153 (C-075): the source units whose <c>.pcu</c> and <c>.obj</c> in the object directory are up to date — rules 1–5 of
+    /// <see cref="UnitCache"/> against the units as bound now (a dependency's current interface hash, so an interface edit reaches
+    /// every unit that recorded the old hash and an implementation-only edit reaches none) — plus, for the program, the unit table
+    /// it was compiled with (<see cref="PcuWriter.UnitTable"/>).
+    /// </summary>
+    private HashSet<LoadedUnit> UpToDate(FrontEnd front, PcuWriter pcus, ImmutableArray<LoadedUnit> sourceUnits, string objectDirectory)
+    {
+        var cache = new UnitCache(FileSystem, PcuWriter.CompilerFingerprint, OptionsFingerprint(), path => _openFiles.TryGetValue(path, out var open) ? open.Text : null);
+        var upToDate = new HashSet<LoadedUnit>();
+        foreach (var unit in sourceUnits)
+        {
+            var pcuPath = Path.Combine(objectDirectory, unit.Name + ".pcu");
+            if (cache.Check(pcuPath, Path.ChangeExtension(pcuPath, ".obj"), name => Dependency(front, pcus, name), out var pcu) is null
+                && (!unit.IsProgram || pcu!["unitTable"]?.ToJsonString() == pcus.UnitTable().ToJsonString()))
+            {
+                upToDate.Add(unit);
+            }
+        }
+
+        return upToDate;
+    }
+
+    /// <summary>CMP-150 rule 5: the unit of this compilation with that canonical name, its file and current interface hash.</summary>
+    private static UnitCacheDependency? Dependency(FrontEnd front, PcuWriter pcus, string name) =>
+        front.Binder.Units.FirstOrDefault(u => u.Interface is not null && !u.IsProgram && IdentifierComparer.Instance.Equals(u.Name, name)) is { } unit
+            ? new UnitCacheDependency(unit.Path, pcus.InterfaceHash(unit))
+            : null;
 
     /// <summary>The bound units of one front-end run.</summary>
     private sealed record FrontEnd(UnitBinder Binder, ImmutableArray<LoadedUnit> InitOrder, string SystemPath);
@@ -254,9 +355,11 @@ public sealed class Compilation
             return null;
         }
 
-        var unitBinder = new UnitBinder(new BuiltInTypes(), resolver, Parse, ReadPcu);
-        unitBinder.BindAll(systemPath, mainPath);
+        var optionsFingerprint = Fingerprint.Options(Options, aliases.Hash);
+        var unitBinder = new UnitBinder(new BuiltInTypes(), resolver, Parse, path => ReadPcu(path, optionsFingerprint));
+        unitBinder.BindAll(systemPath, mainPath, MaxParallelism);
         var initOrder = unitBinder.InitializationOrder();
+        CheckPrecompiledDependencies(new FrontEnd(unitBinder, initOrder, systemPath));
         foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null))
         {
             loaded.LinkInputs = UnitLinkInputs.Collect(loaded.Result!.Unit, loaded.Tree!, FileSystem, loaded.Diagnostics);
@@ -313,18 +416,44 @@ public sealed class Compilation
     }
 
     /// <summary>
-    /// C-074: a precompiled unit's <c>.pcu</c>, or null when it is unreadable, of another format version (CMP-160) or written by
-    /// another compiler or ABI (CMP-150 rule 2). The options fingerprint is not compared: such a unit cannot be recompiled here.
+    /// C-074, C-075: a precompiled unit's <c>.pcu</c>, or null (E2202 at the file) when it is unreadable, of another format version
+    /// (CMP-160), written by another compiler or ABI (CMP-150 rule 2) or compiled with other code-affecting options (rule 3).
     /// </summary>
-    private System.Text.Json.Nodes.JsonObject? ReadPcu(string path)
+    private System.Text.Json.Nodes.JsonObject? ReadPcu(string path, string optionsFingerprint)
     {
         try
         {
-            return PcuReader.Parse(FileSystem.ReadAllText(path)) is { } pcu && PcuReader.HasFingerprints(pcu, PcuWriter.CompilerFingerprint) ? pcu : null;
+            return PcuReader.Parse(FileSystem.ReadAllText(path)) is { } pcu && PcuReader.HasFingerprints(pcu, PcuWriter.CompilerFingerprint, optionsFingerprint)
+                ? pcu
+                : null;
         }
         catch (IOException)
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// C-075, CMP-150 rule 5 for precompiled units: every recorded dependency must still have the recorded interface hash (a
+    /// precompiled unit cannot be recompiled here, so a stale one is E2202 at its <c>.pcu</c> until a dedicated code exists).
+    /// Checked only when the front end is otherwise free of errors (interface hashes need bound interfaces).
+    /// </summary>
+    private void CheckPrecompiledDependencies(FrontEnd front)
+    {
+        var units = front.Binder.Units;
+        if (front.Binder.Main?.Result is null || !units.Any(u => u.IsPrecompiled)
+            || units.Any(u => u.Diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error) || u.Phase == UnitPhase.Failed))
+        {
+            return;
+        }
+
+        var pcus = PcuWriterFor(front);
+        foreach (var unit in units.Where(u => u.IsPrecompiled))
+        {
+            if (UnitCache.Dependencies(unit.Pcu!, name => Dependency(front, pcus, name), comparePaths: false) is not null)
+            {
+                unit.Diagnostics.Add(Diagnostic.Create("E2202", Location.ForFile(unit.Path), unit.Name));
+            }
         }
     }
 
@@ -412,23 +541,25 @@ public sealed class Compilation
         return Lowerer.ManagedGlobals(main.Unit).IsEmpty ? [.. table] : [.. table, new UnitTableEntry(main.Unit, HasInit: false, HasFinal: true)];
     }
 
-    /// <summary>Lowers and emits one unit; the program gets the unit table.</summary>
-    private static string? EmitIr(BindingResult unit, ImmutableArray<UnitTableEntry> unitTable, Location location, ImmutableArray<Diagnostic>.Builder diagnostics)
+    /// <summary>Lowers and emits one unit; the program gets the unit table. Thread-safe (CMP-156).</summary>
+    private static (string? Text, Diagnostic? Failure) EmitIr(BindingResult unit, ImmutableArray<UnitTableEntry> unitTable, Location location)
     {
         try
         {
             var writer = new LlvmTextWriter();
             ImmutableArray<UnitTableEntry> table = unit.Unit.IsProgram ? unitTable : [];
             IrEmitter.EmitUnit(Lowerer.Lower(unit), writer, table);
-            return writer.GetText();
+            return (writer.GetText(), null);
         }
         catch (NotSupportedException e)
         {
             // constructs the binder accepts but the back end does not handle yet
-            diagnostics.Add(Diagnostic.Create("E2900", location, e.Message));
-            return null;
+            return (null, Diagnostic.Create("E2900", location, e.Message));
         }
     }
+
+    /// <summary>CMP-156: <see cref="CompilationOptions.MaxParallelism"/>, 0 → the processor count.</summary>
+    private int MaxParallelism => Options.MaxParallelism > 0 ? Options.MaxParallelism : Environment.ProcessorCount;
 
     private bool Write(string path, string text, Location location, ImmutableArray<Diagnostic>.Builder diagnostics)
     {

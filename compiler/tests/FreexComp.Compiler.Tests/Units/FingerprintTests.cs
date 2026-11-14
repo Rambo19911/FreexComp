@@ -41,6 +41,14 @@ public sealed class FingerprintTests
         Assert.NotEqual(a, Fingerprint.Options(Base with { Assertions = false }, ""));
     }
 
+    /// <summary>C-075: a console application is parsed with <c>CONSOLE</c> defined, so the application type is part of the define set.</summary>
+    [Fact]
+    public void AppType_IsPartOfTheFingerprint()
+    {
+        Assert.NotEqual(Fingerprint.Options(Base, ""), Fingerprint.Options(Base with { AppType = AppType.Gui }, ""));
+        Assert.Equal(Fingerprint.Options(Base with { Defines = ["A", "B", "CONSOLE"] }, ""), Fingerprint.Options(Base, ""));
+    }
+
     /// <summary>The compilation reads <c>&lt;rtl&gt;\unit-aliases.json</c> for its fingerprint: editing the table changes it.</summary>
     [Fact]
     [Trait("Req", "LANG-533")]

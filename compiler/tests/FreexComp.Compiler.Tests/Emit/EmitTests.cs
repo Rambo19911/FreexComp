@@ -306,6 +306,144 @@ public sealed class EmitTests
         Assert.True(exists);
     }
 
+    // ------------------------------------------------------------------ incremental builds (C-075, CMP-150…155)
+
+    /// <summary>P uses U and W; U's implementation uses V. Prints <c>UValue WValue</c> = <c>VValue + 1</c> and a constant.</summary>
+    private sealed class IncrementalProject : IDisposable
+    {
+        private readonly string _dir = PathUtil.Normalize(Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N")));
+
+        public IncrementalProject()
+        {
+            Assert.True(File.Exists(Clang.Path), $"Pinned toolchain missing: {Clang.Path} (run scripts/bootstrap.ps1).");
+            Put("P", "program P;\nuses U, W;\nbegin\n  Writeln(UValue, ' ', WValue);\nend.\n");
+            Put("U", "unit U;\ninterface\nfunction UValue: Integer;\nimplementation\nuses V;\nfunction UValue: Integer;\nbegin\n  Result := VValue + 1;\nend;\nend.\n");
+            Put("V", "unit V;\ninterface\nfunction VValue: Integer;\nimplementation\nfunction VValue: Integer;\nbegin\n  Result := 10;\nend;\nend.\n");
+            Put("W", "unit W;\ninterface\nconst WValue = 5;\nimplementation\nend.\n");
+        }
+
+        public string Exe => Path.Combine(_dir, "P.exe");
+
+        public List<string> Commands { get; } = [];
+
+        public void Put(string unit, string text) => PhysicalFileSystem.Instance.WriteAllBytes(Path.Combine(_dir, unit + ".pas"), Encoding.UTF8.GetBytes(text));
+
+        public void Edit(string unit, string from, string to)
+        {
+            var path = Path.Combine(_dir, unit + ".pas");
+            var text = File.ReadAllText(path);
+            Assert.Contains(from, text, StringComparison.Ordinal);
+            Put(unit, text.Replace(from, to, StringComparison.Ordinal));
+        }
+
+        public EmitResult Build()
+        {
+            Commands.Clear();
+            var options = new CompilationOptions
+            {
+                MainFile = Path.Combine(_dir, "P.pas"),
+                RtlDirectory = MiniRtl,
+                ToolchainDirectory = Path.GetDirectoryName(Clang.Path)!,
+                ObjectDirectory = Path.Combine(_dir, "obj"),
+            };
+            var result = Compilation.Create(options, [], PhysicalFileSystem.Instance)
+                .Emit(new EmitOptions { OutputPath = Exe, CommandLineSink = Commands.Add }, TestContext.Current.CancellationToken);
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+            Assert.Equal(Exe, result.OutputPath);
+            return result;
+        }
+
+        public bool Linked => Commands.Any(c => c.Contains("lld-link", StringComparison.OrdinalIgnoreCase));
+
+        public async Task<string> RunAsync()
+        {
+            var stdout = new List<string>();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            Assert.Equal(0, await new ProcessRunner().RunAsync(Exe, [], _dir, stdout.Add, _ => { }, timeout.Token));
+            return string.Join("\n", stdout);
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(_dir, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    /// <summary>
+    /// CMP-153, CMP-155: a second build with nothing changed starts no process and keeps the exe; an implementation edit recompiles
+    /// only that unit and relinks; a deleted exe is relinked without recompiling anything.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Toolchain")]
+    [Trait("Req", "CMP-150")]
+    [Trait("Req", "CMP-153")]
+    [Trait("Req", "CMP-155")]
+    public async Task IncrementalBodyChange()
+    {
+        using var project = new IncrementalProject();
+        var first = project.Build();
+        Assert.Equal(["P", "System", "V", "U", "W"], first.CompiledUnits);
+        Assert.Empty(first.UpToDateUnits);
+        Assert.Equal("11 5", await project.RunAsync());
+        var linkedAt = File.GetLastWriteTimeUtc(project.Exe);
+
+        var unchanged = project.Build();
+        Assert.Empty(unchanged.CompiledUnits);
+        Assert.Equal(["P", "System", "V", "U", "W"], unchanged.UpToDateUnits);
+        Assert.Empty(project.Commands);
+        Assert.Equal(linkedAt, File.GetLastWriteTimeUtc(project.Exe));
+
+        project.Edit("U", "Result := VValue + 1;", "Result := VValue + 22;");
+        var body = project.Build();
+        Assert.Equal(["U"], body.CompiledUnits);
+        Assert.Equal(["P", "System", "V", "W"], body.UpToDateUnits);
+        Assert.True(project.Linked);
+        Assert.Equal("32 5", await project.RunAsync());
+
+        File.Delete(project.Exe);
+        var relink = project.Build();
+        Assert.Empty(relink.CompiledUnits);
+        Assert.True(project.Linked);
+        Assert.Equal("32 5", await project.RunAsync());
+    }
+
+    /// <summary>
+    /// build-engine.md §5: an interface edit recompiles the unit and every unit that recorded its old interface hash, transitively
+    /// only while their own interface hash changes — V's interface reaches U (implementation uses) but not P, whose recorded hash of
+    /// U is unchanged; W's interface reaches P.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Toolchain")]
+    [Trait("Req", "CMP-150")]
+    [Trait("Req", "CMP-151")]
+    [Trait("Req", "CMP-152")]
+    public async Task IncrementalInterfaceChange()
+    {
+        using var project = new IncrementalProject();
+        project.Build();
+
+        project.Edit("V", "function VValue: Integer;\nimplementation", "function VValue: Integer;\nconst VExtra = 1;\nimplementation");
+        var throughImplementationUses = project.Build();
+        Assert.Equal(["V", "U"], throughImplementationUses.CompiledUnits);
+        Assert.Equal(["P", "System", "W"], throughImplementationUses.UpToDateUnits);
+        Assert.Equal("11 5", await project.RunAsync());
+
+        project.Edit("W", "WValue = 5;", "WValue = 66;");
+        var throughInterfaceUses = project.Build();
+        Assert.Equal(["P", "W"], throughInterfaceUses.CompiledUnits);
+        Assert.Equal("11 66", await project.RunAsync());
+    }
+
     internal static async Task<(int ExitCode, List<string> StdOut, List<string> StdErr)> BuildAndRun(
         string name, string source, OptimizationLevel optimization)
     {
