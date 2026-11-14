@@ -56,9 +56,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private bool _applying;
     private bool _scrollPending;
     private SyntaxColorizer? _colorizer;
+    private readonly FindPanelView _findPanel;
+    private FindSession? _find;
 
     public CodeEditorView()
     {
+        _findPanel = new FindPanelView(FocusText);
         CommandRouting.SetScope(this, CommandScope.Editor);
         var area = _editor.TextArea;
         var textView = area.TextView;
@@ -94,6 +97,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         textView.BackgroundRenderers.Add(_currentLine);
         textView.BackgroundRenderers.Add(_lineStates);
         textView.BackgroundRenderers.Add(new IndentGuideRenderer(this, CurrentGuides));
+        textView.BackgroundRenderers.Add(new FindMatchRenderer(this, () => _find));
         textView.BackgroundRenderers.Add(new OccurrenceRenderer(this, () => _document?.WordHighlights.Highlights ?? []));
         textView.BackgroundRenderers.Add(new BracketMatchRenderer(this, CurrentBracketMatch));
         ApplyOptions(EditorOptions.Default);
@@ -119,7 +123,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         textView.PointerMoved += (_, e) => ShowFoldTooltip(e.GetPosition(textView));
         textView.PointerExited += (_, _) => ShowFoldTooltip(null);
         textView.ScrollOffsetChanged += (_, _) => MirrorScroll();
-        Child = _editor;
+        Child = new Panel { Children = { _editor, _findPanel } }; // UI-ED-102: the find panel floats over the text
+        _findPanel.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == IsVisibleProperty && _findPanel.IsVisible)
+                PlaceFindPanel();
+        };
         // UI-ED-003: the brushes bound above follow the theme by themselves; syntax colours need a redraw (the
         // margins and renderers look their brushes up on every draw).
         ActualThemeVariantChanged += (_, _) =>
@@ -205,11 +214,13 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             old.Decorations.Changed -= OnDecorationsChanged;
             old.Folding.Changed -= OnFoldingChanged;
             old.RevealCaretRequested -= OnRevealCaretRequested;
+            old.RevealCaretAtThirdRequested -= OnRevealCaretAtThirdRequested;
         }
 
         SetColorizer(null);
         SetDecorations(null);
         SetTokens(null);
+        SetFind(null);
         UninstallFoldings();
 
         _document = null; // nothing is mirrored while the editor switches documents
@@ -235,6 +246,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         document.Decorations.Changed += OnDecorationsChanged;
         document.Folding.Changed += OnFoldingChanged;
         document.RevealCaretRequested += OnRevealCaretRequested;
+        document.RevealCaretAtThirdRequested += OnRevealCaretAtThirdRequested;
+        SetFind(document.Find);
         ApplyZoomAndWrap();
         SyncFoldings();
 
@@ -278,6 +291,27 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     {
         AutomationProperties.SetAutomationId(_editor, AutomationIds.Editor(document.Title));
         AutomationProperties.SetAutomationId(_glyphMargin, AutomationIds.Editor(document.Title) + ".Gutter");
+        _findPanel.SetAutomationIds(AutomationIds.Editor(document.Title));
+    }
+
+    /// <summary>The document's find session drives the panel and the match highlights (UI-ED-055); null detaches it.</summary>
+    private void SetFind(FindSession? find)
+    {
+        _find?.Changed -= OnFindChanged;
+        _find = find;
+        _find?.Changed += OnFindChanged;
+        _findPanel.Session = find;
+        InvalidateBackground();
+    }
+
+    private void OnFindChanged(object? sender, EventArgs e) => InvalidateBackground();
+
+    /// <summary>UI-ED-100: 8 px left of the vertical scrollbar, flush with the top.</summary>
+    private void PlaceFindPanel()
+    {
+        var bar = _editor.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ScrollBar>()
+            .FirstOrDefault(b => b.Orientation == Avalonia.Layout.Orientation.Vertical && b.IsVisible);
+        _findPanel.Margin = new Thickness(0, 0, 8 + (bar?.Bounds.Width ?? 0), 0);
     }
 
     private void OnDocumentPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -611,6 +645,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.OccurrenceHighlights =>
         _document is null ? [] : [.. _document.WordHighlights.Highlights.Select(t => (t.Offset, t.Length))];
 
+    IReadOnlyList<(int Offset, int Length)> IEditorTestProbe.FindHighlights =>
+        _find is { IsOpen: true } find ? [.. find.Matches.Select(m => (m.Offset, m.Length))] : [];
+
+    (int Offset, int Length)? IEditorTestProbe.CurrentFindHighlight =>
+        _find is { IsOpen: true, CurrentIndex: > 0 } find ? (find.Matches[find.CurrentIndex - 1].Offset, find.Matches[find.CurrentIndex - 1].Length) : null;
+
     double IEditorTestProbe.GutterWidth =>
         _editor.TextArea.LeftMargins.OfType<GutterMargin>().Where(m => m.IsVisible).Sum(m => m.MarginWidth);
 
@@ -654,6 +694,18 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     /// </summary>
     private void OnRevealCaretRequested(object? sender, EventArgs e) => ScrollCaretIntoView();
 
+    /// <summary>UI-DLG-120: the caret line at one third of the viewport (as far as the document allows).</summary>
+    private void OnRevealCaretAtThirdRequested(object? sender, EventArgs e)
+    {
+        if (_scrollPending || _editor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is not { } scroller)
+            return;
+        var textView = _editor.TextArea.TextView;
+        textView.EnsureVisualLines(); // an unfold just changed the line heights
+        var top = textView.GetVisualTopByDocumentLine(_editor.TextArea.Caret.Line);
+        var y = Math.Clamp(top - scroller.Viewport.Height / 3, 0, Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height));
+        scroller.Offset = new Vector(scroller.Offset.X, y);
+    }
+
     private void ScrollCaretIntoView()
     {
         if (_scrollPending || _editor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is not { } scroller)
@@ -666,8 +718,30 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             y = top;
         else if (bottom > y + scroller.Viewport.Height)
             y = bottom - scroller.Viewport.Height;
+        if (FindPanelCovers(top - y))
+            y = Math.Max(0, top - scroller.Viewport.Height / 3); // UI-ED-101
         if (y != scroller.Offset.Y)
             scroller.Offset = new Vector(scroller.Offset.X, Math.Max(0, y));
+    }
+
+    /// <summary>
+    /// UI-ED-101: the selection's line would be within the top 80 px of the viewport (<paramref name="lineTop"/> =
+    /// its top there) and its x-range intersects the open find panel.
+    /// </summary>
+    private bool FindPanelCovers(double lineTop)
+    {
+        if (!_findPanel.IsVisible || lineTop < 0 || lineTop >= 80)
+            return false;
+        var area = _editor.TextArea;
+        var textView = area.TextView;
+        if (_findPanel.TranslatePoint(default, textView) is not { } panel)
+            return false;
+        var selection = area.Selection;
+        var start = selection.IsEmpty ? area.Caret.Position : selection.StartPosition;
+        var end = selection.IsEmpty ? area.Caret.Position : selection.EndPosition;
+        double x1 = textView.GetVisualPosition(start, VisualYPosition.LineTop).X - textView.HorizontalOffset;
+        double x2 = textView.GetVisualPosition(end, VisualYPosition.LineTop).X - textView.HorizontalOffset;
+        return Math.Max(x1, x2) >= panel.X && Math.Min(x1, x2) <= panel.X + _findPanel.Bounds.Width;
     }
 
     private void ApplySelection(TextDocumentViewModel document)
@@ -754,8 +828,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     /// </summary>
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_document is not { } document)
-            return;
+        if (_document is not { } document || e.Source is not Visual source || !_editor.TextArea.IsVisualAncestorOf(source) && source != _editor.TextArea)
+            return; // keys of the find panel are its own
         var key = e.Key switch
         {
             Key.Tab => "Tab",

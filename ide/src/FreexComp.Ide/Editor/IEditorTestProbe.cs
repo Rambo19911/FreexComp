@@ -27,6 +27,12 @@ public interface IEditorTestProbe
 
     IReadOnlyList<(int Offset, int Length)> OccurrenceHighlights { get; }
 
+    /// <summary>The find matches drawn while the find panel is open (UI-ED-055); empty when it is closed.</summary>
+    IReadOnlyList<(int Offset, int Length)> FindHighlights { get; }
+
+    /// <summary>The match drawn as current (<c>editor.findMatch.current.bg</c> + outline), or null.</summary>
+    (int Offset, int Length)? CurrentFindHighlight { get; }
+
     /// <summary>Width of the visible gutter margins in DIP (glyph margin, line numbers, fold margin, change bar).</summary>
     double GutterWidth { get; }
 }

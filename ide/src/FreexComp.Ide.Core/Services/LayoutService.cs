@@ -24,6 +24,9 @@ public sealed class LayoutService : ILayoutService
 {
     public const int SupportedFormatVersion = 1;
     public const double MinColumnWidth = 32;
+
+    /// <summary>UI-DLG-009: entries kept per text-field history.</summary>
+    public const int MaxHistory = 20;
     private const string Category = "uistate";
     private const string FileName = "uistate.json";
     private static readonly TimeSpan SaveDelay = TimeSpan.FromSeconds(2);
@@ -177,6 +180,31 @@ public sealed class LayoutService : ILayoutService
         }
 
         Child(Child(_root, "dialogs"), dialogName)[key] = value;
+        ScheduleSave();
+    }
+
+    public IReadOnlyList<string> GetDialogHistory(string dialogName, string field) =>
+        _root["dialogs"] is JsonObject dialogs && dialogs[dialogName] is JsonObject dialog
+            && dialog["history"] is JsonObject history && history[field] is JsonArray entries
+            ? [.. entries.OfType<JsonValue>().Select(v => v.TryGetValue(out string? s) ? s : null).OfType<string>().Take(MaxHistory)]
+            : [];
+
+    public void AddDialogHistory(string dialogName, string field, string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var old = GetDialogHistory(dialogName, field);
+        if (old.Count > 0 && old[0] == text)
+        {
+            return;
+        }
+
+        var entries = new JsonArray();
+        foreach (var entry in new[] { text }.Concat(old.Where(e => e != text)).Take(MaxHistory))
+        {
+            entries.Add(entry);
+        }
+
+        Child(Child(Child(_root, "dialogs"), dialogName), "history")[field] = entries;
         ScheduleSave();
     }
 

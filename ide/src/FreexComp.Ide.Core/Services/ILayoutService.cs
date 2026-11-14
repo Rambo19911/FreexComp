@@ -35,6 +35,15 @@ public interface ILayoutService
     /// <summary>Stores <c>dialogs.&lt;Name&gt;.&lt;key&gt;</c>; saved with the rest of the UI state.</summary>
     void SetDialogValue(string dialogName, string key, string value);
 
+    /// <summary>
+    /// UI-DLG-009: the history of a text field, <c>dialogs.&lt;Name&gt;.history.&lt;Field&gt;</c>, most recent first
+    /// (at most <see cref="LayoutService.MaxHistory"/> entries); empty when unset.
+    /// </summary>
+    IReadOnlyList<string> GetDialogHistory(string dialogName, string field);
+
+    /// <summary>Puts <paramref name="text"/> first in a field's history (case-sensitive de-duplication, at most 20 entries).</summary>
+    void AddDialogHistory(string dialogName, string field, string text);
+
     /// <summary>A Boolean of the UI state, <c>&lt;section&gt;.&lt;key&gt;</c> (e.g. <c>find.matchCase</c>, UI-DLG-102); null when unset.</summary>
     bool? GetUiFlag(string section, string key);
 

@@ -3832,4 +3832,76 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Shortcut</value>
     <comment>menus.md UI-MENU-030 column</comment>
   </data>
+  <data name="FindPanel_Name" xml:space="preserve">
+    <value>Find and Replace</value>
+    <comment>dialogs.md §10: automation name of the find panel</comment>
+  </data>
+  <data name="FindPanel_SearchText" xml:space="preserve">
+    <value>Find</value>
+    <comment>dialogs.md §10: automation name of the search field</comment>
+  </data>
+  <data name="FindPanel_ReplaceText" xml:space="preserve">
+    <value>Replace with</value>
+    <comment>dialogs.md §10: automation name of the replace field</comment>
+  </data>
+  <data name="FindPanel_ToggleReplace" xml:space="preserve">
+    <value>Toggle Replace (Ctrl+H)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_MatchCase" xml:space="preserve">
+    <value>Match Case (Alt+C)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_WholeWord" xml:space="preserve">
+    <value>Whole Word (Alt+W)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_Regex" xml:space="preserve">
+    <value>Regular Expression (Alt+R)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_InSelection" xml:space="preserve">
+    <value>Find in Selection (Alt+L)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_Previous" xml:space="preserve">
+    <value>Previous Match (Shift+F3)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_Next" xml:space="preserve">
+    <value>Next Match (F3)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_Close" xml:space="preserve">
+    <value>Close (Escape)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_Replace" xml:space="preserve">
+    <value>Replace</value>
+    <comment>dialogs.md §10 button label</comment>
+  </data>
+  <data name="FindPanel_ReplaceTip" xml:space="preserve">
+    <value>Replace (Enter in the replace field)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
+  <data name="FindPanel_ReplaceAll" xml:space="preserve">
+    <value>Replace All</value>
+    <comment>dialogs.md §10 button label</comment>
+  </data>
+  <data name="GoToLine_Title" xml:space="preserve">
+    <value>Go to Line</value>
+    <comment>dialogs.md §12 title</comment>
+  </data>
+  <data name="GoToLine_Line" xml:space="preserve">
+    <value>_Line (1–{0}):</value>
+    <comment>dialogs.md §12 label; 0 = line count</comment>
+  </data>
+  <data name="GoToLine_Go" xml:space="preserve">
+    <value>Go</value>
+    <comment>dialogs.md §12 default button</comment>
+  </data>
+  <data name="FindPanel_ReplaceAllTip" xml:space="preserve">
+    <value>Replace All (Alt+A)</value>
+    <comment>dialogs.md §10 tooltip</comment>
+  </data>
 </root>

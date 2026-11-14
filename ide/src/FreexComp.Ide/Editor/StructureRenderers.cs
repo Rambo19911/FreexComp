@@ -37,6 +37,70 @@ public sealed class BracketMatchRenderer(Control themeSource, Func<BracketMatch?
     }
 }
 
+/// <summary>
+/// Find matches (UI-ED-055, editor.md §6 row 7): while the panel is open, <c>editor.findMatch.bg</c> behind each match in
+/// the visible lines, <c>editor.findMatch.current.bg</c> plus a 1 px <c>border.strong</c> outline for the selected one;
+/// an active In-selection range is drawn first with <c>editor.selection.inactive.bg</c> (dialogs.md §10).
+/// </summary>
+public sealed class FindMatchRenderer(Control themeSource, Func<FindSession?> session) : IBackgroundRenderer
+{
+    public KnownLayer Layer => KnownLayer.Selection;
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (session() is not { IsOpen: true } s || !textView.VisualLinesValid || textView.VisualLines.Count == 0)
+            return;
+        int first = textView.VisualLines[0].FirstDocumentLine.Offset, last = textView.VisualLines[^1].LastDocumentLine.EndOffset;
+        if (s.InSelection && s.SelectionRange is { } range && ThemeBrushes.Find(themeSource, "editor.selection.inactive.bg") is { } rangeBrush)
+            Fill(new TextMatch(Math.Max(range.Offset, first), Math.Max(0, Math.Min(range.End, last) - Math.Max(range.Offset, first))), rangeBrush, null);
+        var matches = s.Matches;
+        if (matches.Count == 0)
+            return;
+        var current = s.CurrentIndex;
+        var brush = ThemeBrushes.Find(themeSource, "editor.findMatch.bg");
+        var currentBrush = ThemeBrushes.Find(themeSource, "editor.findMatch.current.bg");
+        var outline = ThemeBrushes.Find(themeSource, "border.strong") is { } b ? new Pen(b, 1) : null;
+        for (int i = LowerBound(matches, first); i < matches.Count && matches[i].Offset <= last; i++)
+        {
+            if (i + 1 == current)
+                Fill(matches[i], currentBrush, outline);
+            else
+                Fill(matches[i], brush, null);
+        }
+
+        void Fill(TextMatch match, IBrush? fill, Pen? pen)
+        {
+            foreach (var rect in BackgroundGeometryBuilder.GetRectsForSegment(textView, new TextSegment { StartOffset = match.Offset, Length = match.Length }))
+            {
+                if (pen is null)
+                {
+                    if (fill is not null)
+                        drawingContext.FillRectangle(fill, rect);
+                }
+                else // pixel-snapped so the 1 px outline covers whole pixels
+                    drawingContext.DrawRectangle(fill, pen, new Rect(Math.Round(rect.X) + 0.5, Math.Round(rect.Y) + 0.5,
+                        Math.Max(1, Math.Round(rect.Width) - 1), Math.Max(1, Math.Round(rect.Height) - 1)));
+            }
+        }
+    }
+
+    /// <summary>The first match ending at or after <paramref name="offset"/>.</summary>
+    private static int LowerBound(IReadOnlyList<TextMatch> matches, int offset)
+    {
+        int low = 0, high = matches.Count;
+        while (low < high)
+        {
+            var mid = (low + high) / 2;
+            if (matches[mid].End < offset)
+                low = mid + 1;
+            else
+                high = mid;
+        }
+
+        return low;
+    }
+}
+
 /// <summary>Word-occurrence highlight (UI-ED-054): <c>editor.wordHighlight.bg</c> behind each occurrence in the visible lines.</summary>
 public sealed class OccurrenceRenderer(Control themeSource, Func<IReadOnlyList<CodeToken>> occurrences) : IBackgroundRenderer
 {

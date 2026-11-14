@@ -36,6 +36,12 @@ public interface IFindService
 
     /// <summary>The find state of <paramref name="document"/> (created on first use, dropped when it closes).</summary>
     FindSession For(TextDocumentViewModel document);
+
+    /// <summary>UI-DLG-009: search texts used for a navigation or replace, most recent first (<c>dialogs.Find.history.SearchText</c>).</summary>
+    IReadOnlyList<string> SearchHistory { get; }
+
+    /// <summary>Replacements used, most recent first (<c>dialogs.Find.history.ReplaceText</c>).</summary>
+    IReadOnlyList<string> ReplaceHistory { get; }
 }
 
 /// <inheritdoc cref="IFindService"/>
@@ -54,12 +60,46 @@ public sealed class FindService : IFindService
         Status = status ?? throw new ArgumentNullException(nameof(status));
         Clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _documents = documents ?? throw new ArgumentNullException(nameof(documents));
+        documents.DocumentOpened += (_, e) =>
+        {
+            if (TextOf(e.Document) is { } text)
+                text.FindSource = For; // the editor view binds its panel through For(doc)
+        };
         documents.DocumentClosed += (_, e) =>
         {
-            if (e.Document is TextDocumentViewModel text && _sessions.Remove(text, out var session))
+            if (TextOf(e.Document) is { } text && _sessions.Remove(text, out var session))
                 session.Detach();
         };
     }
+
+    private const string HistoryDialog = "Find";
+
+    public IReadOnlyList<string> SearchHistory => _layout.GetDialogHistory(HistoryDialog, "SearchText");
+
+    public IReadOnlyList<string> ReplaceHistory => _layout.GetDialogHistory(HistoryDialog, "ReplaceText");
+
+    /// <summary>IDE-P1-108: a navigation was performed with the search text.</summary>
+    internal void RecordSearch()
+    {
+        if (_searchText.Length > 0)
+            _layout.AddDialogHistory(HistoryDialog, "SearchText", _searchText);
+    }
+
+    /// <summary>A replace was performed: the search text and the replacement (an empty replacement is not recorded).</summary>
+    internal void RecordReplace()
+    {
+        RecordSearch();
+        if (_replaceText.Length > 0)
+            _layout.AddDialogHistory(HistoryDialog, "ReplaceText", _replaceText);
+    }
+
+    /// <summary>The text document behind a document tab: a text file, or the content of a generated document.</summary>
+    private static TextDocumentViewModel? TextOf(DocumentViewModel? document) => document switch
+    {
+        TextDocumentViewModel text => text,
+        GeneratedTextDocumentViewModel generated => generated.Content,
+        _ => null,
+    };
 
     public event EventHandler? QueryChanged;
 
@@ -110,16 +150,46 @@ public sealed class FindService : IFindService
     public void RegisterCommands(ICommandService commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        // menus.md: "text and a search text exists"; Find Next Occurrence of Selection: "text".
-        commands.RegisterHandler("search.findNext", new Handler(
-            () => Active is not null && _searchText.Length > 0, () => For(Active!).FindNextAsync(forward: true)));
-        commands.RegisterHandler("search.findPrevious", new Handler(
-            () => Active is not null && _searchText.Length > 0, () => For(Active!).FindNextAsync(forward: false)));
+        // menus.md "text" (Replace: "text and writable"). UI-DLG-104 (lead decision for I-058): Find Next / Previous
+        // without a search text open the panel, so they are enabled in every text document.
+        commands.RegisterHandler("search.find", new Handler(() => Active is not null, () => OpenPanel(replace: false)));
+        commands.RegisterHandler("search.replace", new Handler(() => Active is { IsReadOnly: false }, () => OpenPanel(replace: true)));
+        commands.RegisterHandler("search.findNext", new Handler(() => Active is not null, () => FindNextAsync(forward: true)));
+        commands.RegisterHandler("search.findPrevious", new Handler(() => Active is not null, () => FindNextAsync(forward: false)));
         commands.RegisterHandler("search.findSelectionNext", new Handler(
             () => Active is not null, () => For(Active!).FindSelectionNextAsync()));
     }
 
-    private TextDocumentViewModel? Active => _documents.ActiveDocument as TextDocumentViewModel;
+    private TextDocumentViewModel? Active => TextOf(_documents.ActiveDocument);
+
+    /// <summary>
+    /// UI-DLG-100: opens the panel (seeded from the selection) in find or replace mode; <c>search.replace</c> in an
+    /// already open panel toggles the replace row.
+    /// </summary>
+    private Task<bool> OpenPanel(bool replace)
+    {
+        var session = For(Active!);
+        if (replace && session.IsOpen)
+        {
+            session.SetReplaceMode(!session.IsReplaceMode);
+            session.RequestFocus();
+        }
+        else
+        {
+            session.Open(replace);
+        }
+
+        return Task.FromResult(true);
+    }
+
+    private Task<bool> FindNextAsync(bool forward)
+    {
+        var session = For(Active!);
+        if (_searchText.Length > 0)
+            return session.FindNextAsync(forward);
+        session.Open(replace: false); // UI-DLG-104: no previous search
+        return Task.FromResult(true);
+    }
 
     private void SetQueryPart(ref string field, string value)
     {

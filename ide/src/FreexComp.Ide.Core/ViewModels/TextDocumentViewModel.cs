@@ -46,7 +46,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _lineChanges = _lineChangeTracker = new LineChangeTracker(buffer);
         Folding = new FoldingModel(buffer, ViewState, language.CreateFoldingProvider());
         Tokens = new CodeTokenIndex(buffer, language);
-        WordHighlights = new WordHighlighter(buffer, ViewState, Tokens, () => Clock, () => Options.HighlightWordOccurrences);
+        WordHighlights = new WordHighlighter(buffer, ViewState, Tokens, () => Clock, () => Options.HighlightWordOccurrences && !_showsFindMatches);
         InitTyping();
 
         buffer.Changed += (_, _) => OnPropertyChanged(nameof(IsModified));
@@ -92,6 +92,42 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
     /// <summary>Other occurrences of the identifier at the caret (IDE-ED-074); the view calls <see cref="WordHighlighter.OptionChanged"/>.</summary>
     public WordHighlighter WordHighlights { get; }
+
+    private bool _showsFindMatches;
+
+    /// <summary>The find state of this document (its panel, matches), from <c>IFindService.For</c>; null outside the IDE.</summary>
+    public FindSession? Find => FindSource?.Invoke(this);
+
+    /// <summary>Set by the find service when the document opens.</summary>
+    internal Func<TextDocumentViewModel, FindSession>? FindSource { get; set; }
+
+    /// <summary>UI-ED-054: no word-occurrence highlight while the find panel shows matches.</summary>
+    internal bool ShowsFindMatches
+    {
+        get => _showsFindMatches;
+        set
+        {
+            if (_showsFindMatches == value)
+                return;
+            _showsFindMatches = value;
+            WordHighlights.OptionChanged();
+        }
+    }
+
+    /// <summary>
+    /// Asks the view to scroll the caret into view (a find navigation), or (<paramref name="third"/>, Go to Line,
+    /// UI-DLG-120) to put the caret line at one third of the viewport.
+    /// </summary>
+    internal void RevealCaret(bool third = false)
+    {
+        if (third)
+            RevealCaretAtThirdRequested?.Invoke(this, EventArgs.Empty);
+        else
+            RevealCaretRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The view should scroll the caret line to one third of the viewport (UI-DLG-120).</summary>
+    public event EventHandler? RevealCaretAtThirdRequested;
 
     /// <summary>The name of an untitled document (<c>Unit1.pas</c>); null once it has a path.</summary>
     public string? UntitledName => _filePath is null ? _untitledName : null;

@@ -184,7 +184,11 @@ public sealed class FindServiceTests
     {
         var (services, doc, clock) = await OpenAsync("one two one\r\n");
         var commands = services.Commands;
-        Assert.False(commands.CanExecute("search.findNext")); // menus.md: a search text must exist
+        // UI-DLG-104 (I-058 lead decision, replacing I-057's "disabled"): without a search text F3 opens the panel.
+        Assert.True(commands.CanExecute("search.findNext"));
+        await commands.ExecuteAsync("search.findNext");
+        Assert.True(services.Find.For(doc).IsOpen);
+        services.Find.For(doc).Close();
         services.Find.SearchText = "one";
         Assert.True(commands.CanExecute("search.findNext"));
         Assert.True(commands.CanExecute("search.findPrevious"));

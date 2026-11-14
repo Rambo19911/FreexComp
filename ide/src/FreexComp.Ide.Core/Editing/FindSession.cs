@@ -46,9 +46,27 @@ public sealed class FindSession
     /// <summary>Matches, counter, error or panel state changed.</summary>
     public event EventHandler? Changed;
 
+    /// <summary><c>search.find</c> / <c>search.replace</c>: the panel's search field takes the focus and selects its text.</summary>
+    public event EventHandler? FocusRequested;
+
+    /// <summary>The search text, replacement and options shared by all editors.</summary>
+    public IFindService Service => _service;
+
     public bool IsOpen { get; private set; }
 
     public bool IsReplaceMode { get; private set; }
+
+    /// <summary>Shows or hides the replace row of an open panel (the chevron, Ctrl+H in an open panel).</summary>
+    public void SetReplaceMode(bool replace)
+    {
+        if (IsReplaceMode == replace)
+            return;
+        IsReplaceMode = replace;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The panel's search field takes the focus (<see cref="FocusRequested"/>).</summary>
+    public void RequestFocus() => FocusRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>The panel was opened with a selection spanning more than one line (IDE-P1-102).</summary>
     public bool CanUseInSelection { get; private set; }
@@ -135,6 +153,7 @@ public sealed class FindSession
 
         Schedule(reselect: true);
         Changed?.Invoke(this, EventArgs.Empty);
+        RequestFocus();
     }
 
     /// <summary>Closes the panel (IDE-P1-108): the matches go, the selection stays.</summary>
@@ -151,6 +170,7 @@ public sealed class FindSession
         IsCapped = false;
         Error = null;
         _resultText = "";
+        _document.ShowsFindMatches = false;
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -183,6 +203,7 @@ public sealed class FindSession
         var query = _service.Query;
         if (!CanReplace || query.Text.Length == 0)
             return false;
+        _service.RecordReplace();
         var selection = _document.Selection;
         var buffer = _document.Buffer;
         var (rangeStart, rangeEnd) = SearchRange();
@@ -212,6 +233,7 @@ public sealed class FindSession
         var query = _service.Query;
         if (!CanReplace || query.Text.Length == 0)
             return 0;
+        _service.RecordReplace();
         var buffer = _document.Buffer;
         var (start, end) = SearchRange();
         var text = buffer.Text;
@@ -264,6 +286,7 @@ public sealed class FindSession
         var query = _service.Query;
         if (query.Text.Length == 0)
             return false;
+        _service.RecordSearch(); // IDE-P1-108: a navigation records the text
         var buffer = _document.Buffer;
         var selection = _document.Selection;
         var position = from ?? (forward ? selection.End : selection.Start);
@@ -283,6 +306,7 @@ public sealed class FindSession
         }
 
         _document.Selection = new TextSelection(result.Match.Offset, result.Match.End);
+        _document.RevealCaret();
         if (result.Wrapped)
             _service.Status.ShowMessage(forward ? Strings.Msg_Find_WrappedForward : Strings.Msg_Find_WrappedBackward, StatusDuration);
         if (IsOpen)
@@ -357,6 +381,7 @@ public sealed class FindSession
                 var origin = _origin is { IsDeleted: false } anchor ? anchor.Offset : _document.Selection.Caret;
                 var match = result.Matches.FirstOrDefault(m => m.Offset >= origin, result.Matches[0]);
                 _document.Selection = new TextSelection(match.Offset, match.End);
+                _document.RevealCaret();
             }
 
             SetResult(result.Matches, result.IsCapped, result.Error, query.Text);
@@ -369,6 +394,7 @@ public sealed class FindSession
         IsCapped = capped;
         Error = error;
         _resultText = text;
+        _document.ShowsFindMatches = IsOpen && matches.Count > 0;
         Changed?.Invoke(this, EventArgs.Empty);
     }
 

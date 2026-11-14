@@ -194,29 +194,31 @@ public sealed partial class MenuTests
     private static readonly Dictionary<string, string> Pending = new()
     {
         ["file.exit"] = "I-086",
-        ["search.find"] = "I-058", ["search.replace"] = "I-058", ["search.goToLine"] = "I-059",
         ["search.navigateBack"] = "I-060", ["search.navigateForward"] = "I-060",
     };
 
     /// <summary>
     /// I-048 / I-049: enabled in every writable Object Pascal document ("text and writable"; the comment toggles need the
-    /// language's comments; edit.indent without a multi-line selection inserts indentation like Tab).
+    /// language's comments; edit.indent without a multi-line selection inserts indentation like Tab). I-058: Replace
+    /// ("text and writable").
     /// </summary>
     private static readonly string[] PascalTextCommands =
     [
         "edit.duplicateLine", "edit.deleteLine", "edit.trimTrailingWhitespace", "edit.toggleLineComment", "edit.toggleBlockComment",
-        "edit.indent", "edit.outdent",
+        "edit.indent", "edit.outdent", "search.replace",
     ];
+
+    /// <summary>I-057 / I-058: find works in every text document, the read-only generated ones too (UI-DLG-105).</summary>
+    private static readonly string[] FindCommands = ["search.find", "search.findNext", "search.findPrevious", "search.findSelectionNext"];
 
     /// <summary>
     /// I-052, I-055: enabled in every text document, read-only too ("text"); zoom in/out while the font size is within
-    /// 6…72 (Reset Zoom needs a zoom, see <see cref="Conditional"/>). I-057: Find Next Occurrence of Selection ("text").
+    /// 6…72 (Reset Zoom needs a zoom, see <see cref="Conditional"/>). I-057 / I-058: the find commands ("text"; Find Next /
+    /// Previous without a search text open the find panel, UI-DLG-104). I-059: Go to Line ("text"; files and untitled
+    /// documents, not the generated ones).
     /// </summary>
     private static readonly string[] TextCommands =
-        ["search.goToMatchingBracket", "view.wordWrap", "view.zoomIn", "view.zoomOut", "search.findSelectionNext"];
-
-    /// <summary>I-057: Find Next / Previous need a text document and a search text (menus.md).</summary>
-    private static readonly string[] SearchTextCommands = ["search.findNext", "search.findPrevious"];
+        ["search.goToMatchingBracket", "view.wordWrap", "view.zoomIn", "view.zoomOut", "search.goToLine", .. FindCommands];
 
     /// <summary>I-048: these also depend on the caret (first / last touched line, a selection or a word under the caret).</summary>
     private static readonly string[] CaretCommands = ["edit.moveLineUp", "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"];
@@ -229,7 +231,7 @@ public sealed partial class MenuTests
         "edit.convertLineEndings:crlf", "edit.convertLineEndings:lf", "edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll",
         "project.addNewUnit", "project.addExistingFile", "project.removeFile", "project.viewSource",
         "window.nextDocument", "window.previousDocument", "window.documents", "window.closeToolWindow", "view.zoomReset",
-        .. PascalTextCommands, .. CaretCommands, .. TextCommands, .. SearchTextCommands,
+        .. PascalTextCommands, .. CaretCommands, .. TextCommands,
     ];
 
     private static readonly string[] FoldCommands = ["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll"];
@@ -304,9 +306,9 @@ public sealed partial class MenuTests
         AssertEnabled(h, "zoomed", [.. cleanA, .. CaretCommands, "view.zoomReset"]);
         await h.ExecuteAsync("view.zoomReset");
 
-        // I-057: with a search text Find Next / Previous are enabled.
+        // I-058: Find Next / Previous do not depend on a search text (without one they open the panel).
         h.Services.Find.SearchText = "begin";
-        AssertEnabled(h, "search text", [.. cleanA, .. CaretCommands, .. SearchTextCommands]);
+        AssertEnabled(h, "search text", [.. cleanA, .. CaretCommands]);
         h.Services.Find.SearchText = "";
 
         a.Select(0, 4);
@@ -365,7 +367,7 @@ public sealed partial class MenuTests
         var shortcuts = h.Find<AvaloniaEdit.TextEditor>("Document.KeyboardShortcuts");
         shortcuts.TextArea.Focus();
         string[] generated = ["file.clearRecent", "file.saveAll", "file.close", "file.closeAll", "edit.selectAll",
-            "window.nextDocument", "window.previousDocument", "window.documents"];
+            "window.nextDocument", "window.previousDocument", "window.documents", .. FindCommands];
         AssertEnabled(h, "generated", generated);
         shortcuts.Select(0, 8);
         AssertEnabled(h, "generated selection", [.. generated, "edit.copy"]);

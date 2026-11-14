@@ -24,12 +24,12 @@ public sealed class KeyRoutingTests
     public async Task InnermostScopeWins()
     {
         await using var h = await HeadlessHarness.StartAsync();
-        var duplicate = new Recorder();
         var global = new Recorder();
-        // An Editor-scope command without a handler yet (I-059), moved onto Ctrl+D (edit.duplicateLine has a handler).
-        h.Services.Commands.RegisterHandler("search.goToLine", duplicate);
+        // Every P1 Editor-scope command has a handler since I-059: an always-enabled one whose effect is visible
+        // (view.showWhitespace toggles editor.showWhitespace) is moved onto Ctrl+D (edit.duplicateLine's gesture).
         h.Services.Keymap.SetGestures("edit.duplicateLine", []);
-        h.Services.Keymap.SetGestures("search.goToLine", [CoreGesture.Parse("Ctrl+D")]);
+        h.Services.Keymap.SetGestures("view.showWhitespace", [CoreGesture.Parse("Ctrl+D")]);
+        var whitespace = h.Services.Settings.Get(Core.Settings.SettingsCatalog.EditorShowWhitespace);
         h.Services.Commands.RegisterHandler("file.showInExplorer", global); // Global, not yet handled
         h.Services.Keymap.SetGestures("file.showInExplorer", [CoreGesture.Parse("Ctrl+D")]);
         var editor = AddFocusable(h, "StatusBar.TestEditor");
@@ -43,7 +43,7 @@ public sealed class KeyRoutingTests
         Assert.Equal(CommandScope.Global, h.Services.FocusTracker.Current.Scope);
         h.Press("Ctrl+D");
 
-        Assert.Equal(1, duplicate.Calls);
+        Assert.Equal(!whitespace, h.Services.Settings.Get(Core.Settings.SettingsCatalog.EditorShowWhitespace)); // toggled once
         Assert.Equal(1, global.Calls);
     }
 

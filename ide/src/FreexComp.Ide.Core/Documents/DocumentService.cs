@@ -228,7 +228,7 @@ public sealed class DocumentService : IDocumentService
             return open;
         }
 
-        var document = new GeneratedTextDocumentViewModel(kind, title, text);
+        var document = new GeneratedTextDocumentViewModel(kind, title, text, _buffers);
         Add(document);
         return document;
     }

@@ -50,4 +50,5 @@ public sealed record IdeServices
     public required ISessionService Session { get; init; }
     public required IRecentItemsService RecentItems { get; init; }
     public required IFindService Find { get; init; }
+    public required INavigationService Navigation { get; init; }
 }

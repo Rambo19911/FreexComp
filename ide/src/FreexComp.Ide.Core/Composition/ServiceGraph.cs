@@ -65,7 +65,9 @@ public static class ServiceGraph
         KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
         var find = new FindService(layout, status, platform.Clock, documents);
         find.RegisterCommands(commands);
-        projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
+        var navigation = new NavigationService(documents, platform.Dialogs);
+        navigation.RegisterCommands(commands);
+        projects =new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
             ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock, platform.Shell);
         projects.RegisterCommands(commands);
         documents.ProjectOpener = path => projects.OpenAsync(path);
@@ -146,6 +148,7 @@ public static class ServiceGraph
             Session = session,
             RecentItems = recent,
             Find = find,
+            Navigation = navigation,
         };
     }
 }
