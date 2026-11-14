@@ -305,8 +305,10 @@ public sealed class FindSession
             return false;
         }
 
+        var departure = _document.ViewState.Caret;
         _document.Selection = new TextSelection(result.Match.Offset, result.Match.End);
         _document.RevealCaret();
+        _document.OnJumped(departure, always: result.Wrapped); // IDE-ED-100: wrap-around or more than 10 lines
         if (result.Wrapped)
             _service.Status.ShowMessage(forward ? Strings.Msg_Find_WrappedForward : Strings.Msg_Find_WrappedBackward, StatusDuration);
         if (IsOpen)

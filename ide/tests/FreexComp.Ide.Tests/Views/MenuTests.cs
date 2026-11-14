@@ -194,7 +194,6 @@ public sealed partial class MenuTests
     private static readonly Dictionary<string, string> Pending = new()
     {
         ["file.exit"] = "I-086",
-        ["search.navigateBack"] = "I-060", ["search.navigateForward"] = "I-060",
     };
 
     /// <summary>
@@ -231,6 +230,7 @@ public sealed partial class MenuTests
         "edit.convertLineEndings:crlf", "edit.convertLineEndings:lf", "edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll",
         "project.addNewUnit", "project.addExistingFile", "project.removeFile", "project.viewSource",
         "window.nextDocument", "window.previousDocument", "window.documents", "window.closeToolWindow", "view.zoomReset",
+        "search.navigateBack", "search.navigateForward", // I-060: an earlier / a later navigation-history entry
         .. PascalTextCommands, .. CaretCommands, .. TextCommands,
     ];
 
@@ -345,6 +345,7 @@ public sealed partial class MenuTests
             [
                 "file.clearRecent", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.copy", "edit.delete", "edit.selectAll",
                 "window.nextDocument", "window.previousDocument", "window.documents", .. TextCommands,
+                "search.navigateBack", // I-060: opening B.txt left A.pas behind in the navigation history
             ]);
         }
         finally
@@ -359,7 +360,7 @@ public sealed partial class MenuTests
         [
             "file.clearRecent", "file.save", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.cut", "edit.copy",
             "edit.paste", "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "window.nextDocument", "window.previousDocument", "window.documents",
-            .. PascalTextCommands, .. TextCommands,
+            "search.navigateBack", .. PascalTextCommands, .. TextCommands,
         ], FoldAndCaretCommands);
 
         // A generated document is no file: no Save / Save As / Revert / text commands; Select All and Copy work.
@@ -367,7 +368,7 @@ public sealed partial class MenuTests
         var shortcuts = h.Find<AvaloniaEdit.TextEditor>("Document.KeyboardShortcuts");
         shortcuts.TextArea.Focus();
         string[] generated = ["file.clearRecent", "file.saveAll", "file.close", "file.closeAll", "edit.selectAll",
-            "window.nextDocument", "window.previousDocument", "window.documents", .. FindCommands];
+            "window.nextDocument", "window.previousDocument", "window.documents", "search.navigateBack", .. FindCommands];
         AssertEnabled(h, "generated", generated);
         shortcuts.Select(0, 8);
         AssertEnabled(h, "generated selection", [.. generated, "edit.copy"]);
@@ -396,7 +397,8 @@ public sealed partial class MenuTests
         AssertEnabled(h, "main source", project, FoldAndCaretCommands);
         Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "P", "U.pas"))).Success);
         FocusEditor(h, "U.pas");
-        AssertEnabled(h, "member", [.. project, "project.removeFile", "window.nextDocument", "window.previousDocument"], FoldAndCaretCommands);
+        AssertEnabled(h, "member", [.. project, "project.removeFile", "window.nextDocument", "window.previousDocument", "search.navigateBack"],
+            FoldAndCaretCommands); // I-060: opening U left P.pas behind in the navigation history
 
         // Hide Active Tool Window needs a tool window that had the focus.
         Assert.False(h.Services.Commands.CanExecute("window.closeToolWindow"));

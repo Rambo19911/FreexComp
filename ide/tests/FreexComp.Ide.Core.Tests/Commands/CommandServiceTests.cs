@@ -227,8 +227,11 @@ public sealed class CommandServiceTests
     public void LocalKeysOfTheFocusedControlAreNotRouted()
     {
         var services = TestComposition.Build();
-        var options = new TestHandler(); // search.navigateBack: a Global command with a gesture and no handler yet
-        services.Commands.RegisterHandler("search.navigateBack", options);
+        // file.showInExplorer: a Global command without a handler yet, given Alt+Left (search.navigateBack's gesture, I-060).
+        var options = new TestHandler();
+        services.Commands.RegisterHandler("file.showInExplorer", options);
+        services.Keymap.SetGestures("search.navigateBack", []);
+        services.Keymap.SetGestures("file.showInExplorer", [KeyGesture.Parse("Alt+Left")]);
 
         services.FocusTracker.SetLocalKeys([KeyGesture.Parse("Alt+Left")]);
         Assert.False(services.Commands.HandleKey(KeyGesture.Parse("Alt+Left")));

@@ -54,9 +54,12 @@ public sealed class KeyRoutingTests
     {
         await using var h = await HeadlessHarness.StartAsync();
         var copy = new Recorder();
-        var options = new Recorder(); // search.navigateBack: a Global command with a gesture and no handler yet
+        // file.showInExplorer: a Global command without a handler yet, given Alt+Left (search.navigateBack's gesture, I-060).
+        var options = new Recorder();
         var target = new Target();
-        h.Services.Commands.RegisterHandler("search.navigateBack", options);
+        h.Services.Commands.RegisterHandler("file.showInExplorer", options);
+        h.Services.Keymap.SetGestures("search.navigateBack", []);
+        h.Services.Keymap.SetGestures("file.showInExplorer", [CoreGesture.Parse("Alt+Left")]);
         var host = AddFocusable(h, "StatusBar.TestTool");
         CommandRouting.SetScope(host, CommandScope.ToolList);
         CommandRouting.SetToolWindow(host, "Messages");

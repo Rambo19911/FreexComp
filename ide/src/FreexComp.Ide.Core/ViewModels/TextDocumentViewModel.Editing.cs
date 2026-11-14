@@ -37,9 +37,11 @@ public partial class TextDocumentViewModel
             return true;
         }
 
+        var from = ViewState.Caret;
         Folding.Reveal(target);
         Selection = TextSelection.At(target);
         RevealCaretRequested?.Invoke(this, EventArgs.Empty);
+        OnJumped(from); // IDE-ED-072: more than 10 lines → navigation history
         return true;
     }
 

@@ -507,7 +507,7 @@ public sealed class DocumentService : IDocumentService
         foreach (var path in picked.Where(p => !ReferenceEquals(p, project)))
         {
             var result = await OpenAsync(path);
-            if (!result.Success)
+            if (result.NeedsMessage)
                 await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args));
         }
     }
@@ -536,7 +536,7 @@ public sealed class DocumentService : IDocumentService
         }
 
         // Recording the file timestamp/size (I-062) and deleting the recovery copy (I-063) join with their services.
-        document.MarkSaved(fullPath, _languages.ForPath(fullPath));
+        document.MarkSaved(fullPath, document.IsLargeFile ? _languages.PlainText : _languages.ForPath(fullPath)); // IDE-P1-054
         document.SetReadOnly(false); // a read-only document saved under a new name now has a file we just wrote
         UpdateTitleSuffixes();
         if (document == _statusSource)
@@ -595,9 +595,20 @@ public sealed class DocumentService : IDocumentService
     {
         EncodingDetection detection;
         bool writable;
+        var large = false;
         try
         {
-            // IDE-ARCH-081: file I/O off the UI thread. IDE-P1-040: the open-for-write probe.
+            // IDE-P1-054: above files.largeFileThresholdMb the file opens only after Msg.File.TooLarge is confirmed.
+            var length = await Task.Run(() => _fileSystem.GetLength(fullPath)); // IDE-ARCH-081: file I/O off the UI thread
+            if (length > _settings.Get(SettingsCatalog.FilesLargeFileThresholdMb) * 1024L * 1024L)
+            {
+                var size = (length / (1024.0 * 1024.0)).ToString("0.0", CultureInfo.CurrentCulture);
+                if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.TooLarge", [size])) != "Open")
+                    return OperationResult<DocumentViewModel>.Canceled();
+                large = true;
+            }
+
+            // IDE-P1-040: the open-for-write probe.
             (detection, writable) = await Task.Run(() =>
                 (EncodingDetector.Detect(_fileSystem.ReadAllBytes(fullPath)), _fileSystem.CanOpenForWrite(fullPath)));
         }
@@ -614,8 +625,9 @@ public sealed class DocumentService : IDocumentService
             return OperationResult<DocumentViewModel>.Fail("Msg.File.Binary", fullPath);
 
         var lineEnding = DefaultLineEnding;
+        // IDE-P1-054: a large file is Plain Text (no highlighting, folding or bracket matching), word wrap off.
         var document = new TextDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, null,
-            _languages.ForPath(fullPath), detection.Encoding, lineEnding);
+            large ? _languages.PlainText : _languages.ForPath(fullPath), detection.Encoding, lineEnding) { IsLargeFile = large };
         document.ReopenWithEncodingHandler = () => ReopenWithEncodingAsync(document);
         document.ShowLoadInfoBars(detection.IsFallback);
         if (!writable)

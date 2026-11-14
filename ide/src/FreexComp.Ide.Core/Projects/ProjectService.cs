@@ -205,7 +205,7 @@ public sealed class ProjectService : IProjectService
         var opened = await _documents.OpenAsync(path);
         if (opened.Value is TextDocumentViewModel document)
             document.ViewState.Caret = new TextPosition(6, 1); // IDE-PM-041: the empty line after implementation
-        else if (!opened.Success)
+        else if (opened.NeedsMessage)
             await _dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
         return true;
     }
@@ -279,7 +279,7 @@ public sealed class ProjectService : IProjectService
         var opened = await _documents.OpenAsync(path);
         if (opened.Value is TextDocumentViewModel document && isUnit)
             document.ViewState.Caret = new TextPosition(6, 1); // the empty line after implementation (IDE-PM-041)
-        else if (!opened.Success)
+        else if (opened.NeedsMessage)
             await _dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
         return true;
     }
@@ -1024,7 +1024,7 @@ public sealed class ProjectService : IProjectService
     private async Task<bool> OpenDocumentAsync(string path)
     {
         var result = await _documents.OpenAsync(path);
-        if (!result.Success)
+        if (result.NeedsMessage)
             await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args));
         return result.Success;
     }

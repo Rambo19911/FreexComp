@@ -45,6 +45,9 @@ public interface IDocumentService
     /// <summary>
     /// Opens <paramref name="path"/> and activates it; a file that is already open is only activated (IDE-ARCH-020).
     /// Failures: <c>Msg.File.NotFound</c> [path], <c>Msg.File.Binary</c> [path], <c>Msg.File.OpenFailed</c> [path, reason].
+    /// A file above <c>files.largeFileThresholdMb</c> asks <c>Msg.File.TooLarge</c> first (IDE-P1-054): <c>Cancel</c> →
+    /// <see cref="Models.OperationResult.IsCanceled"/> (nothing to show); <c>Open</c> → a Plain Text document with
+    /// <see cref="TextDocumentViewModel.IsLargeFile"/>.
     /// </summary>
     Task<OperationResult<DocumentViewModel>> OpenAsync(string path);
 

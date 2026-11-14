@@ -129,6 +129,22 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>The view should scroll the caret line to one third of the viewport (UI-DLG-120).</summary>
     public event EventHandler? RevealCaretAtThirdRequested;
 
+    /// <summary>
+    /// IDE-ED-100 / IDE-ED-072: the caret jumped away from the given position far enough for the navigation history (a
+    /// bracket or find jump of more than <see cref="FarJumpLines"/> lines, a find wrap-around). The navigation service records it.
+    /// </summary>
+    public event EventHandler<TextPosition>? Jumped;
+
+    /// <summary>A jump of more lines than this is a navigation-history entry (IDE-ED-072, IDE-ED-100).</summary>
+    public const int FarJumpLines = 10;
+
+    /// <summary>Raises <see cref="Jumped"/> when the caret moved more than <see cref="FarJumpLines"/> lines from <paramref name="from"/>, or always.</summary>
+    internal void OnJumped(TextPosition from, bool always = false)
+    {
+        if (always || Math.Abs(ViewState.Caret.Line - from.Line) > FarJumpLines)
+            Jumped?.Invoke(this, from);
+    }
+
     /// <summary>The name of an untitled document (<c>Unit1.pas</c>); null once it has a path.</summary>
     public string? UntitledName => _filePath is null ? _untitledName : null;
 

@@ -65,7 +65,7 @@ public static class ServiceGraph
         KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
         var find = new FindService(layout, status, platform.Clock, documents);
         find.RegisterCommands(commands);
-        var navigation = new NavigationService(documents, platform.Dialogs);
+        var navigation = new NavigationService(documents, platform.Dialogs, status, platform.FileSystem);
         navigation.RegisterCommands(commands);
         projects =new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
             ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock, platform.Shell);
@@ -92,7 +92,7 @@ public static class ServiceGraph
         recent.RegisterCommands(commands, platform.Dialogs, path => projects.OpenAsync(path), async path =>
         {
             var opened = await documents.OpenAsync(path);
-            if (!opened.Success)
+            if (opened.NeedsMessage)
                 await platform.Dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
         });
         documents.WelcomeFactory = () => new ViewModels.WelcomeDocumentViewModel(recent, commands, settings, platform.FileSystem, platform.Clock);

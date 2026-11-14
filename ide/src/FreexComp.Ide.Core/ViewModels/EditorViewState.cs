@@ -88,10 +88,24 @@ public sealed class EditorViewState : ObservableObject
     public bool WordWrap
     {
         get => _wordWrap;
-        set => SetProperty(ref _wordWrap, value);
+        set => SetProperty(ref _wordWrap, value && WordWrapAllowed);
     }
 
     private bool _wordWrap;
+
+    /// <summary>False for a large file (IDE-P1-054): <see cref="WordWrap"/> then stays off.</summary>
+    public bool WordWrapAllowed
+    {
+        get => _wordWrapAllowed;
+        set
+        {
+            _wordWrapAllowed = value;
+            if (!value)
+                WordWrap = false;
+        }
+    }
+
+    private bool _wordWrapAllowed = true;
 
     /// <summary>
     /// 1-based start lines of the folded regions, ascending (architecture.md §8.2 <c>folds</c>). Kept current by the

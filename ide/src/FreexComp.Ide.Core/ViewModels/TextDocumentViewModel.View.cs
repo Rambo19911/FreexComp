@@ -27,12 +27,22 @@ public partial class TextDocumentViewModel
     public void SetZoomPercent(int percent) =>
         SetFontSize((int)Math.Round(Options.FontSize * percent / 100.0, MidpointRounding.AwayFromZero));
 
+    /// <summary>
+    /// IDE-P1-054: a file above <c>files.largeFileThresholdMb</c> opened after <c>Msg.File.TooLarge</c>: Plain Text, word
+    /// wrap forced off (<see cref="EditorViewState.WordWrapAllowed"/>, so neither the setting nor a session turns it on).
+    /// </summary>
+    public bool IsLargeFile
+    {
+        get => !ViewState.WordWrapAllowed;
+        init => ViewState.WordWrapAllowed = !value;
+    }
+
     private bool CanExecuteView(string commandId) => commandId switch
     {
         ZoomInCommandId => EffectiveFontSize < MaxFontSize,
         ZoomOutCommandId => EffectiveFontSize > MinFontSize,
         ZoomResetCommandId => EffectiveFontSize != Options.FontSize,
-        _ => true,
+        _ => !IsLargeFile, // view.wordWrap
     };
 
     private bool ExecuteView(string commandId)

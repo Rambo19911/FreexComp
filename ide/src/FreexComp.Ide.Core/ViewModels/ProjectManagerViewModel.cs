@@ -317,7 +317,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel
             var result = await _documents.OpenAsync(node.FullPath);
             if (result.Success)
                 opened = true;
-            else
+            else if (result.NeedsMessage)
                 await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args));
         }
 
