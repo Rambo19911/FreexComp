@@ -20,17 +20,9 @@ var
   P, Q: PByte;
   R: PPair;
   Blocks: array[0..99] of PByte;
-  Bits: PNativeUInt;
   Cmd: PChar;
   I, Bad, Misaligned: Integer;
   Baseline: NativeInt;
-
-{ the address bits of P (no typecasts before C-057) }
-function Address(var P: PByte): NativeUInt;
-begin
-  Bits := @P;
-  Result := Bits^;
-end;
 
 procedure CheckPattern(Count: Integer);
 var
@@ -96,7 +88,7 @@ begin
   for I := 0 to 99 do
   begin
     GetMem(Blocks[I], 1 + I * 7);
-    if Address(Blocks[I]) mod 16 <> 0 then
+    if NativeUInt(Blocks[I]) mod 16 <> 0 then
       Misaligned := Misaligned + 1;
   end;
   Writeln('live blocks +100 ', _LiveAllocCount - Baseline);

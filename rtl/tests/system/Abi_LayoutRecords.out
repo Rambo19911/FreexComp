@@ -1,0 +1,4 @@
+Text 624 TTextRec 624
+TStrRec 16: 0 4 8 10 12
+TDynArrayRec 16: 0 4 8
+TTextRec: 0 8 16 17 18 20 24 28 30 32 520
