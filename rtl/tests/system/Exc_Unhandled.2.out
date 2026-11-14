@@ -1,0 +1,4 @@
+start 2
+top-level handler
+ExceptProc: EBoom, address TRUE
+exit procedure ran

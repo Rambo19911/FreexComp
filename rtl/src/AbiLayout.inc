@@ -1,7 +1,7 @@
 { The private records through which System reads the layouts shared with the compiler (RTL-029). This file is the
   only declaration: System includes it in its implementation and the test Abi_LayoutRecords includes it to assert
-  sizes and field offsets against rtl-abi.md. TVmtHeader (classes, R-059) and TVarRec (variant records, M2.5) are
-  added with the tasks that need them. }
+  sizes and field offsets against rtl-abi.md. TVarRec (variant records, M2.5) is added with the task that needs
+  it. }
 type
   { rtl-abi.md section 3.1: in front of the first element of a long string }
   TStrRec = record
@@ -59,6 +59,21 @@ type
   end;
   PArrayTypeInfo = ^TArrayTypeInfo;
 
+  { rtl-abi.md section 7.2: the fixed part of a VMT; a class reference (TClass) is its address. InitTable, when not
+    nil, is a NativeInt Count followed by Count TManagedField entries (the managed fields the class itself declares);
+    virtual slot k follows at VmtFirstSlot + 8 * k }
+  TVmtHeader = record
+    Parent: Pointer;                   { 0: the parent VMT, nil for TObject }
+    InstanceSize: NativeInt;           { 8 }
+    ClassName: Pointer;                { 16: static UnicodeString payload }
+    TypeInfo: Pointer;                 { 24 }
+    IntfTable: Pointer;                { 32 }
+    MsgTable: Pointer;                 { 40 }
+    InitTable: Pointer;                { 48 }
+    Reserved: Pointer;                 { 56 }
+  end;
+  PVmtHeader = ^TVmtHeader;
+
   { system.md RTL-127: a Text variable, 624 bytes (rtl-abi.md section 2) }
   TTextMode = (tmClosed, tmInput, tmOutput);
   TTextKind = (skConsole, skBytes, skAbsent);   { stream kind (RTL-090); "tk" is taken by TTypeKind }
@@ -88,3 +103,4 @@ type
 const
   TextBufSize = 8192;
   TextMagic = $54584654;               { 'TFXT' }
+  VmtFirstSlot = 64;                   { offset of virtual slot 0 in a VMT }

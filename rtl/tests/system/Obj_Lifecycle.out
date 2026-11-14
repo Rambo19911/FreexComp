@@ -1,0 +1,11 @@
+# normal construction and destruction
+ok NewInstance, bodies, AfterConstruction once
+ok BeforeDestruction once, destructors, FreeInstance
+ok base class
+ok Destroy through TObject
+ok leaked
+# constructor on an instance
+ok body only: no NewInstance, no AfterConstruction
+ok fields set by the second body
+ok leaked
+# passed 8 failed 0

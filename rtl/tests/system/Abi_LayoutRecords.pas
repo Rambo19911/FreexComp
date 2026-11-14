@@ -1,7 +1,9 @@
-// covers: RTL-029, RTL-127
+// covers: RTL-029, RTL-127, ABI-073
 program Abi_LayoutRecords;
 { Sizes and field offsets of System's private layout records (the same declarations, included from rtl/src)
-  against the numbers of rtl-abi.md section 2, 3.1, 4, 10 and system.md RTL-127. }
+  against the numbers of rtl-abi.md section 2, 3.1, 4, 7.2, 10 and system.md RTL-127; TVmtHeader also read on the
+  compiler's VMT of TObject and of a class with a managed field. }
+{$POINTERMATH ON}
 {$I ..\..\src\AbiLayout.inc}
 
 var
@@ -12,6 +14,13 @@ var
   RI: TRecordTypeInfo;
   MF: TManagedField;
   AI: TArrayTypeInfo;
+  V: TVmtHeader;
+  H: PVmtHeader;
+
+type
+  TWithField = class
+    S: string;
+  end;
 
 function Offset(Base, Field: Pointer): NativeInt;
 begin
@@ -37,4 +46,12 @@ begin
   Writeln('TManagedField ', SizeOf(TManagedField), ': ', Offset(@MF, @MF.TypeInfo), ' ', Offset(@MF, @MF.Offset));
   Writeln('TArrayTypeInfo ', SizeOf(TArrayTypeInfo), ': ', Offset(@AI, @AI.Kind), ' ', Offset(@AI, @AI.Name), ' ',
     Offset(@AI, @AI.Size), ' ', Offset(@AI, @AI.ElCount), ' ', Offset(@AI, @AI.ElType));
+  Writeln('TVmtHeader ', SizeOf(TVmtHeader), ': ', Offset(@V, @V.Parent), ' ', Offset(@V, @V.InstanceSize), ' ',
+    Offset(@V, @V.ClassName), ' ', Offset(@V, @V.TypeInfo), ' ', Offset(@V, @V.IntfTable), ' ', Offset(@V, @V.MsgTable), ' ',
+    Offset(@V, @V.InitTable), ' ', Offset(@V, @V.Reserved), ' slots ', VmtFirstSlot);
+  H := PVmtHeader(TObject);
+  Writeln('TObject VMT: parent nil ', H^.Parent = nil, ', size ', H^.InstanceSize, ', init table nil ', H^.InitTable = nil);
+  H := PVmtHeader(TWithField);
+  Writeln('TWithField VMT: parent TObject ', H^.Parent = Pointer(TObject), ', size ', H^.InstanceSize, ', init count ',
+    PNativeInt(H^.InitTable)^, ', field offset ', PManagedField(PByte(H^.InitTable) + 8)^.Offset);
 end.

@@ -1,0 +1,5 @@
+start 4
+ExceptObjProc: error 216
+caught EBoom 216, ExceptAddr = fault address TRUE, OS code $C0000005 TRUE
+end
+exit procedure ran

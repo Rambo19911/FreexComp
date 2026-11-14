@@ -1,0 +1,3 @@
+start 5
+ExceptObjProc: error 216
+exit procedure ran

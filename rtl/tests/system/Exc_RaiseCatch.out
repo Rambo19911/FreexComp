@@ -1,0 +1,51 @@
+# handler selection
+ok first matching on wins (leaf before middle)
+ok unrelated class falls to the base handler
+ok middle
+ok created
+ok each destroyed once at the handler end
+ok leaked
+# re-raise
+ok not destroyed by the inner handler
+ok outer handler gets the same object
+ok destroyed once after the outer handler
+ok leaked
+# raise E of the handled object
+ok still alive in the outer handler
+ok outer handler
+ok destroyed once
+ok leaked
+# ExceptObject, ExceptAddr, RaiseList
+ok ExceptObject nil outside a handler
+ok ExceptAddr nil outside a handler
+ok RaiseList nil outside a handler
+ok _CurrentExcept nil outside a handler
+ok ExceptObject = the handled object
+ok _CurrentExcept = ExceptObject
+ok raise at Addr gives ExceptAddr
+ok RaiseList inside a handler
+ok nested handler has its own entry
+ok outer ExceptAddr again after the nested handler
+ok nested handler sees the nested object
+ok nested ExceptAddr
+ok outer object current again after the nested handler
+ok nil again after the handlers
+ok RaiseList nil again
+# AcquireExceptionObject
+ok nil outside a handler
+ok acquired object survives its handler
+ok still usable
+ok freed by its owner
+ok released object is destroyed by the handler end
+ok leaked
+# raise nil
+ok raise nil is runtime error 204
+# _Raise called directly
+ok Addr argument is ExceptAddr
+ok caught
+ok leaked
+# many exceptions
+ok all caught
+ok all destroyed
+ok leaked
+# passed 42 failed 0

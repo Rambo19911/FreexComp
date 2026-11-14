@@ -1906,6 +1906,10 @@ function VirtualAlloc(lpAddress: Pointer; dwSize: SIZE_T; flAllocationType, flPr
   external kernel32 name 'VirtualAlloc';
 function VirtualFree(lpAddress: Pointer; dwSize: SIZE_T; dwFreeType: DWORD): BOOL; stdcall;
   external kernel32 name 'VirtualFree';
+function VirtualProtect(lpAddress: Pointer; dwSize: SIZE_T; flNewProtect: DWORD; var lpflOldProtect: DWORD): BOOL; stdcall;
+  external kernel32 name 'VirtualProtect';
+function FlushInstructionCache(hProcess: THandle; lpBaseAddress: Pointer; dwSize: SIZE_T): BOOL; stdcall;
+  external kernel32 name 'FlushInstructionCache';
 function LocalFree(hMem: HLOCAL): HLOCAL; stdcall; external kernel32 name 'LocalFree';
 function GlobalAlloc(uFlags: UINT; dwBytes: SIZE_T): HGLOBAL; stdcall; external kernel32 name 'GlobalAlloc';
 function GlobalLock(hMem: HGLOBAL): Pointer; stdcall; external kernel32 name 'GlobalLock';
@@ -1921,6 +1925,11 @@ function FormatMessage(dwFlags: DWORD; lpSource: Pointer; dwMessageId, dwLanguag
   nSize: DWORD; Arguments: Pointer): DWORD; stdcall; external kernel32 name 'FormatMessageW';
 procedure RaiseException(dwExceptionCode, dwExceptionFlags, nNumberOfArguments: DWORD; lpArguments: PULONG_PTR); stdcall;
   external kernel32 name 'RaiseException';
+{ Handler: function(ExceptionInfo: Pointer): LONG; stdcall - ExceptionInfo is the EXCEPTION_POINTERS pair }
+function AddVectoredExceptionHandler(First: ULONG; Handler: Pointer): Pointer; stdcall;
+  external kernel32 name 'AddVectoredExceptionHandler';
+function RemoveVectoredExceptionHandler(Handle: Pointer): ULONG; stdcall;
+  external kernel32 name 'RemoveVectoredExceptionHandler';
 
 { ---------------------------------------------------------------- kernel32: console / std handles }
 function GetStdHandle(nStdHandle: DWORD): THandle; stdcall; external kernel32 name 'GetStdHandle';

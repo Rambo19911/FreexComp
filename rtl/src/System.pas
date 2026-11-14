@@ -30,7 +30,7 @@ type
 
   // TODO(M2.5): Dispatch / DefaultHandler take an untyped var parameter (typed Pointer until the compiler has untyped
   // parameters: the same IR, ptr), _Dispatch, GetInterface, GetInterfaceEntry. TODO(M2.5, RTTI): ClassInfo,
-  // ClassNameIs, MethodAddress, MethodName, FieldAddress, UnitName.
+  // MethodAddress, MethodName, FieldAddress, UnitName.
 
   TObject = class;
   TClass = class of TObject;           { the VMT address (ABI-071) }
@@ -56,6 +56,7 @@ type
     procedure CleanupInstance;
     function ClassType: TClass;
     class function ClassName: string;
+    class function ClassNameIs(const Name: string): Boolean;
     class function ClassParent: TClass;
     class function InstanceSize: Integer;
     class function InheritsFrom(AClass: TClass): Boolean;
@@ -106,6 +107,27 @@ procedure _OverflowError; noreturn;
 procedure _DivZeroError; noreturn;
 procedure _InvalidCast; noreturn;
 procedure _AbstractError; noreturn;                                  { IR void(): the code of abstract VMT slots }
+
+{ exceptions (rtl-abi.md section 9.7, ABI-120 ... 125; system.md section 14). _Raise is the debugger's raise hook. }
+const
+  _PascalExceptionCode = $E0504153;
+
+var
+  ExceptProc: procedure(Obj: TObject; Addr: Pointer);                                    { ABI-124 }
+  ExceptObjProc: function(ErrorCode: Integer; ExceptionRecord: Pointer): Pointer;         { ABI-121 }
+
+procedure _Raise(Obj: Pointer; Addr: Pointer); noreturn;
+procedure _ReRaise; noreturn;
+function _SehFilter(Info: Pointer; Frame: Pointer): Integer;
+function _BeginCatch: Pointer;
+procedure _EndCatch;
+function _CurrentExcept: Pointer;
+procedure _UnhandledException; noreturn;
+function ExceptObject: TObject;
+function ExceptAddr: Pointer;
+function AcquireExceptionObject: Pointer;
+procedure ReleaseExceptionObject;
+function RaiseList: Pointer;
 
 { class tests (rtl-abi.md section 9.6): `is`, `as`, and `is` on a class reference }
 function _IsClass(Obj: Pointer; VMT: Pointer): Boolean;
@@ -1922,15 +1944,36 @@ const
   blocks go through the memory manager, so they are not counted by RTL-064. A thread whose block cannot be had (slot
   or heap exhausted) uses FallbackBlock, shared by all such threads. Both Tls calls change the thread's last error;
   ThreadBlock restores it, so callers may read GetLastError after touching InOutRes.
-  The exception stacks and the threadvar block pointer of ABI-120 join this record with R-061 / ABI-181; blocks are
-  freed by EndThread / at the end of a BeginThread routine once those exist (main thread: never). }
+  The threadvar block pointer of ABI-120 joins this record with ABI-181; blocks are freed by EndThread / at the end
+  of a BeginThread routine once those exist (main thread: never). }
 
 const
   TLS_OUT_OF_INDEXES = $FFFFFFFF;
+  ExceptStackDepth = 64;               { entries of each exception stack; one more is fatal error 202 }
 
 type
+  { ABI-120: an exception between its filter (_SehFilter) and its handler (_BeginCatch) }
+  TInFlightExcept = record
+    Obj: Pointer;
+    Addr: Pointer;
+    RaiseSP: NativeUInt;               { CONTEXT.Rsp at the raise }
+  end;
+
+  { ABI-120: an exception whose handler runs (_BeginCatch ... _EndCatch); RaiseList points at the top one }
+  THandledExcept = record
+    Obj: Pointer;
+    Addr: Pointer;
+    Reraised: Boolean;
+    Acquired: Boolean;
+  end;
+  PHandledExcept = ^THandledExcept;
+
   TThreadBlock = record
     InOutRes: Integer;                 { ABI-132 }
+    InFlightCount: Integer;
+    HandledCount: Integer;
+    InFlight: array[0..ExceptStackDepth - 1] of TInFlightExcept;
+    Handled: array[0..ExceptStackDepth - 1] of THandledExcept;
   end;
   PThreadBlock = ^TThreadBlock;
 
@@ -2264,7 +2307,10 @@ end;
 { ---------------------------------------------------------------- shutdown (ABI-104) }
 { Steps 1 and 2 take each exit procedure off the chain and each unit off the count before calling it, so a
   re-entrant _Halt from inside them goes on with the next exit procedure / the next unit and nothing runs twice.
-  Steps 3 and 4 run at most once (ShutdownStep). }
+  Steps 3 and 4 run at most once (ShutdownStep). An exception escaping an exit procedure or a finalization is reported
+  like an unhandled exception and the sequence goes on with exit code 217. }
+
+procedure ReportUnhandled; forward;
 
 procedure _Halt0;
 var
@@ -2276,13 +2322,23 @@ begin
     P := ExitProc;
     ExitProc := nil;
     Proc := TProcedure(P);
-    Proc;
+    try
+      Proc;
+    except
+      ReportUnhandled;
+      ExitCode := 217;
+    end;
   end;
   while InitCount > 0 do
   begin
     InitCount := InitCount - 1;
     if Assigned(Units[InitCount].Final) then
-      Units[InitCount].Final;
+      try
+        Units[InitCount].Final;
+      except
+        ReportUnhandled;
+        ExitCode := 217;
+      end;
   end;
   if ShutdownStep < 3 then
     ShutdownStep := 3;                 { leak report: R-077 }
@@ -2306,16 +2362,31 @@ type
 
 { 'Runtime error <Code> at $<16 upper-case hex digits of ErrorAddr>' into Buf without allocating (the fatal path
   must work while the memory manager fails); returns the number of characters }
+{ 16 upper-case hex digits of V at P }
+procedure PutHex16(V: NativeUInt; P: PWideChar);
+var
+  I: Integer;
+  Digit: Cardinal;
+begin
+  for I := 15 downto 0 do
+  begin
+    Digit := Cardinal(V and $F);
+    if Digit < 10 then
+      P[I] := WideChar(48 + Digit)
+    else
+      P[I] := WideChar(55 + Digit);    { 'A' - 10 }
+    V := V shr 4;
+  end;
+end;
+
 function ErrorText(Code: Integer; var Buf: TErrorText): Integer;
 const
   Prefix = 'Runtime error ';
   Middle = ' at $';
 var
-  N, Count, Shift, I: Integer;
+  N, Count, I: Integer;
   Value: Int64;
   Digits: array[0..11] of WideChar;
-  Address: NativeUInt;
-  Digit: Cardinal;
 begin
   N := 0;
   for I := 1 to Length(Prefix) do
@@ -2347,49 +2418,53 @@ begin
     Buf[N] := Middle[I];
     N := N + 1;
   end;
-  Address := NativeUInt(ErrorAddr);
-  Shift := 60;
-  while Shift >= 0 do
-  begin
-    Digit := (Address shr Shift) and $F;
-    if Digit < 10 then
-      Buf[N] := WideChar(48 + Digit)
-    else
-      Buf[N] := WideChar(55 + Digit);  { 'A' - 10 }
-    N := N + 1;
-    Shift := Shift - 4;
-  end;
-  Result := N;
+  PutHex16(NativeUInt(ErrorAddr), @Buf[N]);
+  Result := N + 16;
 end;
 
-{ RTL-131/132, ABI-101 }
-procedure _RunError(Code: Integer);
+{ RTL-132: a fatal message (Len code units at P, no line break) to ShowErrorProc in a GUI program when the hook is
+  set, otherwise to ErrOutput followed by a line break }
+procedure ShowFatalText(P: PWideChar; Len: Integer);
 var
-  Buf: TErrorText;
-  Len, I: Integer;
+  I: Integer;
   R: PTextRec;
   S: string;
 begin
-  // TODO(C-173): ErrorAddr := _ReturnAddress (the caller's address); it stays nil until the intrinsic exists
-  ErrorAddr := nil;
-  if Assigned(ErrorProc) then
-    ErrorProc(Code, ErrorAddr);        { normally raises and does not return }
-  ExitCode := Code;
-  FinishText(Output);
-  Len := ErrorText(Code, Buf);
   if not IsConsole and Assigned(ShowErrorProc) then
   begin
-    _UStrFromPWCharLen(PPointer(@S)^, @Buf[0], Len);
+    _UStrFromPWCharLen(PPointer(@S)^, P, Len);
     ShowErrorProc(S);
   end
   else
   begin
     R := TextRec(ErrOutput);
     for I := 0 to Len - 1 do
-      PutUnit(R^, Ord(Buf[I]));
+      PutUnit(R^, Ord(P[I]));
     Writeln(ErrOutput);
   end;
+end;
+
+{ RTL-132: the fatal path of a runtime error at ErrorAddr (also taken by OS exceptions without ExceptObjProc) }
+procedure FatalRunError(Code: Integer);
+var
+  Buf: TErrorText;
+  Len: Integer;
+begin
+  ExitCode := Code;
+  FinishText(Output);
+  Len := ErrorText(Code, Buf);
+  ShowFatalText(@Buf[0], Len);
   _Halt(Code);
+end;
+
+{ RTL-131/132, ABI-101 }
+procedure _RunError(Code: Integer);
+begin
+  // TODO(C-173): ErrorAddr := _ReturnAddress (the caller's address); it stays nil until the intrinsic exists
+  ErrorAddr := nil;
+  if Assigned(ErrorProc) then
+    ErrorProc(Code, ErrorAddr);        { normally raises and does not return }
+  FatalRunError(Code);
 end;
 
 { error paths of the inline checks the compiler emits (RTL-143, ABI-102) }
@@ -2454,6 +2529,309 @@ begin
     _RunError(Code);
 end;
 
+{ ---------------------------------------------------------------- exceptions (rtl-abi.md 9.7, system.md section 14) }
+{ Windows SEH: _Raise calls RaiseException with code _PascalExceptionCode and ExceptionInformation[0..1] = Obj,
+  Addr. EXCEPTION_POINTERS = (ExceptionRecord, ContextRecord); in the EXCEPTION_RECORD the code is at 0, the address
+  at 16, ExceptionInformation[0..1] at 32 / 40; CONTEXT.Rsp is at 152. The two stacks of ABI-120 live in the calling
+  thread's block. }
+
+const
+  EXCEPTION_NONCONTINUABLE = 1;
+  ExcRecCode = 0;
+  ExcRecAddress = 16;
+  ExcRecInfo = 32;
+  ContextRsp = 152;
+  EXCEPTION_EXECUTE_HANDLER = 1;
+  EXCEPTION_CONTINUE_SEARCH = 0;
+
+procedure RaiseException(dwExceptionCode, dwExceptionFlags, nNumberOfArguments: Cardinal; lpArguments: Pointer);
+  stdcall; external kernel32 name 'RaiseException';
+
+var
+  { the stack-overflow message of ABI-121 step 2 is built here: the faulting thread has almost no stack left }
+  OverflowText: TErrorText;
+  OverflowBytes: array[0..47] of Byte;
+
+{ ABI-121 step 2 for error 202 (and an exception stack that is full): the message from static buffers straight to
+  the standard error handle, then ExitProcess(202) without exit procedures, finalization or leak report }
+procedure StackOverflowExit;
+var
+  Len, I: Integer;
+  Written: Cardinal;
+begin
+  ExitCode := 202;
+  Len := ErrorText(202, OverflowText);
+  for I := 0 to Len - 1 do
+    OverflowBytes[I] := Byte(Ord(OverflowText[I]));
+  OverflowBytes[Len] := 13;
+  OverflowBytes[Len + 1] := 10;
+  FinishText(Output);
+  FinishText(ErrOutput);
+  WriteFile(GetStdHandle(STD_ERROR_HANDLE), @OverflowBytes[0], Cardinal(Len + 2), Written, nil);
+  ExitProcess(202);
+end;
+
+procedure RaiseWith(Obj, Addr: Pointer);
+var
+  Args: array[0..1] of Pointer;
+begin
+  Args[0] := Obj;
+  Args[1] := Addr;
+  RaiseException(_PascalExceptionCode, EXCEPTION_NONCONTINUABLE, 2, @Args[0]);
+end;
+
+{ ABI-123, ABI-125: the debugger's raise hook. raise nil is runtime error 204. Raising the object of a running
+  handler again (raise E inside "on E do") hands it over like raise; so that the handler's end does not destroy it. }
+procedure _Raise(Obj: Pointer; Addr: Pointer);
+var
+  B: PThreadBlock;
+  I: Integer;
+begin
+  if Obj = nil then
+    _RunError(204);
+  // TODO(C-173): Addr = nil (plain raise E) becomes the return address of _Raise (_ReturnAddress); nil until then
+  B := ThreadBlock;
+  for I := 0 to B^.HandledCount - 1 do
+    if B^.Handled[I].Obj = Obj then
+      B^.Handled[I].Reraised := True;
+  RaiseWith(Obj, Addr);
+  ExitProcess(217);                    { not reached: the exception is noncontinuable }
+end;
+
+{ ABI-122: the object of the innermost running handler again, marked so that its _EndCatch keeps it. The compiler
+  allows raise; only inside a handler; called outside one it is runtime error 217. }
+procedure _ReRaise;
+var
+  B: PThreadBlock;
+  H: PHandledExcept;
+begin
+  B := ThreadBlock;
+  if B^.HandledCount = 0 then
+    _RunError(217);
+  H := @B^.Handled[B^.HandledCount - 1];
+  H^.Reraised := True;
+  RaiseWith(H^.Obj, H^.Addr);
+  ExitProcess(217);
+end;
+
+{ ABI-121 step 2: the runtime error number of a caught OS exception code, 0 for codes Pascal handlers do not catch }
+function OsErrorNumber(Code: Cardinal): Integer;
+begin
+  case Code of
+    $C0000005: Result := 216;
+    $C0000094: Result := 200;
+    $C0000095: Result := 215;
+    $C000008C: Result := 201;
+    $C000008E: Result := 208;
+    $C0000090: Result := 207;
+    $C0000091: Result := 205;
+    $C0000093: Result := 206;
+    $C00000FD: Result := 202;
+    $C000001D, $C0000096: Result := 218;
+  else
+    Result := 0;
+  end;
+end;
+
+{ ABI-121: the one filter of every try..except (the handler itself tests the class) }
+function _SehFilter(Info: Pointer; Frame: Pointer): Integer;
+var
+  Rec, Ctx: PByte;
+  Code: Cardinal;
+  Error: Integer;
+  Obj, Addr, Stale: Pointer;
+  B: PThreadBlock;
+begin
+  Result := EXCEPTION_CONTINUE_SEARCH;
+  Rec := PPointer(Info)^;
+  Code := PCardinal(Rec + ExcRecCode)^;
+  if Code = _PascalExceptionCode then
+  begin
+    Obj := PPointer(Rec + ExcRecInfo)^;
+    Addr := PPointer(Rec + ExcRecInfo + 8)^;
+  end
+  else
+  begin
+    Error := OsErrorNumber(Code);
+    if Error = 0 then
+      Exit;                            { step 3 }
+    Obj := nil;
+    if Assigned(ExceptObjProc) then
+      Obj := ExceptObjProc(Error, Rec);
+    Addr := PPointer(Rec + ExcRecAddress)^;
+    if Obj = nil then
+    begin
+      ErrorAddr := Addr;
+      if Error = 202 then
+        StackOverflowExit;
+      FatalRunError(Error);
+    end;
+  end;
+
+  B := ThreadBlock;
+  { step 4: entries whose unwind was abandoned (a newer exception escaped a finally part) lie below this frame; each
+    is taken off before it is destroyed, since its destructor may raise }
+  while (B^.InFlightCount > 0) and (B^.InFlight[B^.InFlightCount - 1].RaiseSP < NativeUInt(Frame)) do
+  begin
+    B^.InFlightCount := B^.InFlightCount - 1;
+    Stale := B^.InFlight[B^.InFlightCount].Obj;
+    TObject(Stale).Free;
+  end;
+
+  { step 5 }
+  if B^.InFlightCount = ExceptStackDepth then
+    StackOverflowExit;
+  Ctx := PPointer(PByte(Info) + 8)^;
+  B^.InFlight[B^.InFlightCount].Obj := Obj;
+  B^.InFlight[B^.InFlightCount].Addr := Addr;
+  B^.InFlight[B^.InFlightCount].RaiseSP := PNativeUInt(Ctx + ContextRsp)^;
+  B^.InFlightCount := B^.InFlightCount + 1;
+  Result := EXCEPTION_EXECUTE_HANDLER;
+end;
+
+{ ABI-122: the in-flight exception becomes the handled one of the handler that starts now }
+function _BeginCatch: Pointer;
+var
+  B: PThreadBlock;
+  H: PHandledExcept;
+begin
+  B := ThreadBlock;
+  if B^.HandledCount = ExceptStackDepth then
+    StackOverflowExit;
+  H := @B^.Handled[B^.HandledCount];
+  H^.Obj := nil;
+  H^.Addr := nil;
+  if B^.InFlightCount > 0 then
+  begin
+    B^.InFlightCount := B^.InFlightCount - 1;
+    H^.Obj := B^.InFlight[B^.InFlightCount].Obj;
+    H^.Addr := B^.InFlight[B^.InFlightCount].Addr;
+  end;
+  H^.Reraised := False;
+  H^.Acquired := False;
+  B^.HandledCount := B^.HandledCount + 1;
+  Result := H^.Obj;
+end;
+
+{ ABI-122: the entry is taken off before the object is destroyed (its destructor may raise) }
+procedure _EndCatch;
+var
+  B: PThreadBlock;
+  H: PHandledExcept;
+begin
+  B := ThreadBlock;
+  if B^.HandledCount = 0 then
+    Exit;
+  B^.HandledCount := B^.HandledCount - 1;
+  H := @B^.Handled[B^.HandledCount];
+  if not H^.Reraised and not H^.Acquired then
+    TObject(H^.Obj).Free;
+end;
+
+{ the top Handled entry of the calling thread, nil outside every handler }
+function TopHandled: PHandledExcept;
+var
+  B: PThreadBlock;
+begin
+  B := ThreadBlock;
+  if B^.HandledCount = 0 then
+    Result := nil
+  else
+    Result := @B^.Handled[B^.HandledCount - 1];
+end;
+
+function _CurrentExcept: Pointer;
+var
+  H: PHandledExcept;
+begin
+  H := TopHandled;
+  if H = nil then
+    Result := nil
+  else
+    Result := H^.Obj;
+end;
+
+function ExceptObject: TObject;
+begin
+  Result := TObject(_CurrentExcept);
+end;
+
+function ExceptAddr: Pointer;
+var
+  H: PHandledExcept;
+begin
+  H := TopHandled;
+  if H = nil then
+    Result := nil
+  else
+    Result := H^.Addr;
+end;
+
+function AcquireExceptionObject: Pointer;
+var
+  H: PHandledExcept;
+begin
+  H := TopHandled;
+  if H = nil then
+    Result := nil
+  else
+  begin
+    H^.Acquired := True;
+    Result := H^.Obj;
+  end;
+end;
+
+procedure ReleaseExceptionObject;
+var
+  H: PHandledExcept;
+begin
+  H := TopHandled;
+  if H <> nil then
+    H^.Acquired := False;
+end;
+
+function RaiseList: Pointer;
+begin
+  Result := TopHandled;
+end;
+
+{ ABI-124, RTL-136: the report of the exception of the innermost running handler. ExceptProc (SysUtils) writes its
+  own message; without it 'Unhandled exception <ClassName> at $<16 hex digits>'. }
+procedure ReportUnhandled;
+const
+  Prefix = 'Unhandled exception ';
+  Middle = ' at $';
+var
+  Obj: TObject;
+  Addr: Pointer;
+  S, Name: string;
+  N: Integer;
+begin
+  Obj := ExceptObject;
+  Addr := ExceptAddr;
+  if Assigned(ExceptProc) then
+    ExceptProc(Obj, Addr)
+  else
+  begin
+    FinishText(Output);
+    if Obj = nil then
+      Name := 'nil'
+    else
+      Name := Obj.ClassName;
+    S := Prefix + Name + Middle + '0123456789ABCDEF';
+    N := Length(S);
+    UniqueString(S);
+    PutHex16(NativeUInt(Addr), @PWideChar(Pointer(S))[N - 16]);
+    ShowFatalText(PWideChar(Pointer(S)), N);
+  end;
+end;
+
+{ ABI-124: called by the top-level handler of _start after _BeginCatch; the report, then exit code 217 }
+procedure _UnhandledException;
+begin
+  ReportUnhandled;
+  _Halt(217);
+end;
 { ---------------------------------------------------------------- big sets (rtl-abi.md section 9.8) }
 { Dest may be the same block as A or B: every byte is read before the same byte of Dest is written. }
 
@@ -4573,15 +4951,7 @@ begin
 end;
 
 { ---------------------------------------------------------------- TObject (system.md section 13, ABI-070 ... 077) }
-{ VMT fields read here (rtl-abi.md 7.2): Parent at +0, InstanceSize at +8, ClassName (a static UnicodeString) at +16,
-  InitTable at +48 = Count, then Count (TypeInfo, Offset) pairs of the managed fields the class itself declares.
-  Inside class methods Self is the VMT pointer. }
-
-const
-  VmtParent = 0;
-  VmtInstanceSize = 8;
-  VmtClassName = 16;
-  VmtInitTable = 48;
+{ The VMT is read through TVmtHeader (AbiLayout.inc, rtl-abi.md 7.2). Inside class methods Self is the VMT pointer. }
 
 constructor TObject.Create;
 begin
@@ -4631,20 +5001,25 @@ end;
 { the managed fields of the class and of every ancestor, most-derived first }
 procedure TObject.CleanupInstance;
 var
-  VMT, Table: PByte;
+  VMT: PVmtHeader;
+  Table: PByte;
+  Field: PManagedField;
   Count, I: NativeInt;
 begin
   VMT := PPointer(Self)^;
   while VMT <> nil do
   begin
-    Table := PPointer(VMT + VmtInitTable)^;
+    Table := VMT^.InitTable;
     if Table <> nil then
     begin
       Count := PNativeInt(Table)^;
       for I := 0 to Count - 1 do
-        _Finalize(PByte(Self) + PNativeInt(Table + 16 + I * 16)^, PPointer(Table + 8 + I * 16)^);
+      begin
+        Field := PManagedField(Table + SizeOf(NativeInt) + I * SizeOf(TManagedField));
+        _Finalize(PByte(Pointer(Self)) + Field^.Offset, Field^.TypeInfo);
+      end;
     end;
-    VMT := PPointer(VMT + VmtParent)^;
+    VMT := VMT^.Parent;
   end;
 end;
 
@@ -4682,18 +5057,42 @@ end;
 
 class function TObject.ClassName: string;
 begin
-  _UStrAsg(PPointer(@Result)^, PPointer(PByte(Pointer(Self)) + VmtClassName)^);
+  _UStrAsg(PPointer(@Result)^, PVmtHeader(Pointer(Self))^.ClassName);
+end;
+
+{ ASCII letters compare case-insensitively, every other code unit exactly }
+class function TObject.ClassNameIs(const Name: string): Boolean;
+var
+  Own: PWideChar;
+  I, Len: Integer;
+  A, B: Word;
+begin
+  Own := PWideChar(PVmtHeader(Pointer(Self))^.ClassName);
+  Len := PStrRec(PByte(Own) - SizeOf(TStrRec))^.Length;
+  Result := Length(Name) = Len;
+  I := 0;
+  while Result and (I < Len) do
+  begin
+    A := Ord(Own[I]);
+    B := Ord(Name[I + 1]);
+    if (A >= Ord('a')) and (A <= Ord('z')) then
+      A := A - 32;
+    if (B >= Ord('a')) and (B <= Ord('z')) then
+      B := B - 32;
+    Result := A = B;
+    I := I + 1;
+  end;
 end;
 
 { nil for TObject }
 class function TObject.ClassParent: TClass;
 begin
-  Result := TClass(PPointer(PByte(Pointer(Self)) + VmtParent)^);
+  Result := TClass(PVmtHeader(Pointer(Self))^.Parent);
 end;
 
 class function TObject.InstanceSize: Integer;
 begin
-  Result := Integer(PNativeInt(PByte(Pointer(Self)) + VmtInstanceSize)^);
+  Result := Integer(PVmtHeader(Pointer(Self))^.InstanceSize);
 end;
 
 { Self or an ancestor is AClass; False for a nil AClass }
@@ -4707,7 +5106,7 @@ end;
 function _ClassInherits(VMT, AncestorVMT: Pointer): Boolean;
 begin
   while (VMT <> nil) and (VMT <> AncestorVMT) do
-    VMT := PPointer(PByte(VMT) + VmtParent)^;
+    VMT := PVmtHeader(VMT)^.Parent;
   Result := VMT <> nil;
 end;
 

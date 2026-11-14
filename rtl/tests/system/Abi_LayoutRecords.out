@@ -7,3 +7,6 @@ TDynArrayTypeInfo 40: 0 8 16 24 32
 TRecordTypeInfo 40: 0 8 16 24 32
 TManagedField 16: 0 8
 TArrayTypeInfo 40: 0 8 16 24 32
+TVmtHeader 64: 0 8 16 24 32 40 48 56 slots 64
+TObject VMT: parent nil TRUE, size 8, init table nil TRUE
+TWithField VMT: parent TObject TRUE, size 16, init count 1, field offset 8

@@ -1,0 +1,16 @@
+# set-up
+ok code byte writable
+ok vectored handler installed
+# raise in the main program
+ok breakpoint at _Raise hit once
+ok RCX = the raised object
+ok RDX = the raise address
+# raise in a nested call
+ok hit by the nested raise
+ok the nested exception was caught
+ok RCX = the raised object
+# re-raise
+ok re-raised exception caught
+ok raise; does not enter _Raise
+ok breakpoint still armed after raise;
+# passed 11 failed 0

@@ -1,0 +1,46 @@
+# ClassName, ClassNameIs
+ok TObject.ClassName
+ok declared casing
+ok ClassNameIs exact
+ok ClassNameIs lower case
+ok ClassNameIs upper case
+ok ClassNameIs prefix
+ok ClassNameIs longer
+ok ClassNameIs ancestor name
+ok ClassNameIs empty
+ok ClassNameIs through TClass
+ok ClassName through class of TAnimal
+# ClassParent, InheritsFrom, InstanceSize
+ok TPuppy parent
+ok TDog parent
+ok TAnimal parent
+ok TObject parent nil
+ok depth of TPuppy
+ok TPuppy inherits TAnimal
+ok TPuppy inherits TObject
+ok TAnimal not from TDog
+ok TObject 8
+ok TAnimal 16
+ok TDog 32
+ok TPuppy 40
+# instances
+ok ClassType
+ok ClassType.ClassParent
+ok ClassName on an instance
+ok ClassNameIs on an instance
+ok InstanceSize on an instance
+ok InheritsFrom on an instance
+ok leaked
+# NewInstance, FreeInstance
+ok one block
+ok VMT pointer
+ok fields zero
+ok fields own blocks
+ok leaked after FreeInstance
+# CleanupInstance
+ok only the instance block remains
+ok leaked
+# Free
+ok Free on nil does nothing
+ok Free releases block and fields
+# passed 39 failed 0

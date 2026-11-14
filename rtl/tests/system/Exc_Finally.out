@@ -1,0 +1,23 @@
+# finally order during unwind
+ok innermost first, handler, then destroy
+ok live
+ok no handled exception left
+ok leaked
+# exception caught inside a finally part during unwind
+ok the propagating exception is kept
+ok live
+# exception escaping a finally part
+ok abandoned exception destroyed at the new filter
+ok live
+ok live after many (no stale entries pile up)
+# Exit, Break, Continue through finally
+ok Exit keeps Result
+ok finally ran on Exit
+ok Continue and Break run the finally part
+ok no exception state
+# re-raise through finally
+ok destroyed once at the last handler
+ok live
+ok no handled entry left
+ok leaked
+# passed 17 failed 0

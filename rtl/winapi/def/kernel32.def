@@ -2,6 +2,7 @@
 ; Content: the private kernel32 imports of System (RTL-801) and the kernel32 part of the Windows unit (winapi.md 5.1).
 LIBRARY kernel32.dll
 EXPORTS
+AddVectoredExceptionHandler
 CloseHandle
 CompareStringEx
 CopyFileW
@@ -22,6 +23,7 @@ FindClose
 FindFirstFileW
 FindNextFileW
 FlushFileBuffers
+FlushInstructionCache
 FormatMessageW
 GetCommandLineW
 GetConsoleMode
@@ -77,6 +79,7 @@ ReadFile
 ReleaseMutex
 ReleaseSemaphore
 RemoveDirectoryW
+RemoveVectoredExceptionHandler
 ResetEvent
 ResumeThread
 SetCurrentDirectoryW
@@ -96,6 +99,7 @@ TlsSetValue
 TryEnterCriticalSection
 VirtualAlloc
 VirtualFree
+VirtualProtect
 WaitForMultipleObjects
 WaitForSingleObject
 WideCharToMultiByte
