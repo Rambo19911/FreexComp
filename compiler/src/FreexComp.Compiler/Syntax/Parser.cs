@@ -327,8 +327,9 @@ internal sealed class Parser
         var parameters = CurrentKind == SyntaxKind.OpenParenToken ? ParseParameterList() : null;
         SyntaxToken? colon = null;
         TypeSyntax? result = null;
-        if (CurrentKind == SyntaxKind.ColonToken && keyword.Kind != SyntaxKind.ProcedureKeyword)
+        if (CurrentKind == SyntaxKind.ColonToken)
         {
+            // also after 'procedure': the binder reports E2103 instead of a syntax error
             colon = Take();
             result = ParseType();
         }

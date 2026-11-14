@@ -1,0 +1,138 @@
+# Diagnostic codes without a case in diagnostics.cases (testing.md §3, BinderDiagnosticTests.EveryDiagnosticIsCovered).
+# Scope: every E2xxx, W1xxx, W4xxx and Hxxxx code of DiagnosticCatalog (the codes opc itself reports outside the
+# lexer, parser and driver error ranges). Each such code has a case or exactly one line here:
+#   CODE  STATUS  reason
+# STATUS is one of
+#   reserved | retired        must match the "(reserved…)"/"(retired…)" note of its row in diagnostics.md
+#   M2.2 … M2.6 | Phase3 | Phase4 | Phase8
+#                             not reachable yet: the milestone/phase whose feature reports it; the task that makes it
+#                             reachable moves it to diagnostics.cases (C-127 empties the M2.x part)
+#   elsewhere <TestClass>     reported only by the driver or the toolchain, not by a source snippet; <TestClass> is a
+#                             test class of FreexComp.Compiler.Tests that covers it
+# A code with a case must not be listed; M2.1 is never a valid status.
+
+E2001  M2.4  declaration mismatch of a forward class / method
+E2005  M2.2  member access on records
+E2006  M2.2  qualification of a non-record/unit name
+E2007  M2.2  incomplete type (pointer forward, records)
+E2008  reserved  LANG-516 makes this unused
+E2014  M2.2  typed expression contexts of M2.2 types
+E2015  M2.2  ^T forward reference (LANG-208)
+E2016  M2.2  record/class/interface required (with, member access)
+E2017  M2.2  array type required (indexing)
+E2018  M2.2  pointer type required (dereference)
+E2019  M2.2  too many indexes
+E2020  M2.2  subrange bounds (LANG-211)
+E2021  M2.2  enumeration values (LANG-210)
+E2022  M2.2  circular type definition
+E2023  M2.2  result type restrictions (LANG-412)
+E2030  M2.2  set base range (LANG-250)
+E2031  M2.2  data structure too large
+E2032  M2.2  constant array index
+E2033  M2.2  address-of (@ on expressions)
+E2035  M2.2  typed constant arrays
+E2036  M2.2  typed constant arrays
+E2037  M2.2  record constants
+E2041  M2.2  variable typecasts
+E2054  M2.2  string constant too long (short strings)
+E2067  M2.4  leaving a finally part (LANG-363)
+E2068  M2.5  with statement (LANG-375)
+E2069  M2.5  for-in (LANG-362)
+E2070  M2.5  goto/labels (LANG-380)
+E2071  M2.5  goto/labels (LANG-380)
+E2072  M2.5  goto/labels (LANG-380)
+E2073  M2.5  goto/labels (LANG-380)
+E2075  M2.6  inline variable type inference (LANG-385)
+E2114  M2.5  default parameters (LANG-422)
+E2115  M2.5  default parameters (LANG-422)
+E2116  M2.5  open arrays (LANG-430)
+E2117  M2.5  default parameters (LANG-422)
+E2122  M2.5  overload resolution (LANG-442)
+E2131  M2.5  overloaded routine as procedural value
+E2133  M2.4  inherited (classes)
+E2134  M2.4  Self (classes)
+E2160  M2.5  variant records (LANG-261)
+E2200  M2.3  uses ... in (units)
+E2201  M2.3  unit name vs file name
+E2202  elsewhere EmitTests  only the driver reports it in M2.1 (System not found); unit resolution is M2.3
+E2203  M2.3  uses clause
+E2204  M2.3  uses clause
+E2205  M2.3  unit cycles
+E2206  M2.3  uses clause
+E2208  M2.3  unit aliases
+E2209  M2.3  unit alias table
+E2600  M2.4  classes
+E2601  M2.4  classes
+E2602  M2.4  classes
+E2603  M2.4  classes
+E2604  M2.4  classes
+E2605  M2.4  classes
+E2606  M2.4  classes
+E2607  M2.4  classes
+E2608  M2.4  classes
+E2610  M2.4  visibility
+E2611  M2.5  published fields (RTTI)
+E2620  M2.4  virtual methods
+E2621  M2.4  virtual methods
+E2622  M2.4  virtual methods
+E2623  M2.4  virtual methods
+E2624  M2.4  virtual methods
+E2625  M2.4  method directives
+E2626  M2.4  inherited abstract call
+E2627  M2.5  message methods (LANG-622)
+E2630  M2.5  published properties
+E2631  M2.4  properties
+E2632  M2.4  properties
+E2633  M2.4  properties
+E2634  M2.4  properties
+E2635  M2.4  properties
+E2636  M2.4  properties
+E2637  M2.4  properties
+E2640  M2.5  interfaces
+E2641  M2.5  interfaces
+E2650  M2.5  interfaces
+E2651  M2.5  interfaces
+E2652  M2.5  interfaces
+E2653  M2.5  interfaces
+E2654  M2.5  interfaces
+E2700  M2.6  generics
+E2701  M2.6  generics
+E2702  M2.6  generics
+E2703  M2.6  generics
+E2704  M2.6  generics
+E2710  M2.6  generics
+E2711  M2.6  generics
+E2712  M2.6  generics
+E2720  M2.6  anonymous methods
+E2730  M2.6  records with methods
+E2731  M2.6  operators
+E2732  M2.6  operators
+E2733  M2.6  operators
+E2750  M2.6  helpers
+E2751  M2.6  helpers
+E2800  M2.4  exceptions
+E2801  M2.4  exceptions
+E2802  M2.4  exceptions
+E2910  M2.2  procedural types
+E2914  M2.2  Read/Readln
+W1003  M2.3  {$APPTYPE} in a unit
+W1011  M2.2  comparison always true/false (no language rule names it yet)
+W1012  M2.2  subranges
+W1020  M2.2  string narrowing
+W1030  Phase8  LANG-462 accepts 'safecall' silently (C-160 ExternalDecl snapshot); no rule reports W1030 yet
+W1050  M2.3  hint directives used outside their unit (LANG-472)
+W1051  M2.3  hint directives used outside their unit (LANG-472)
+W1052  M2.3  hint directives used outside their unit (LANG-472)
+W1060  M2.4  classes
+W1061  M2.4  classes
+W1062  M2.4  classes
+W1070  M2.6  attributes
+W1080  M2.4  exceptions
+W1081  M2.4  unreachable code waits for exceptions (C-031)
+W4002  elsewhere ToolchainTests  toolchain version check
+W4003  Phase4  application manifest (C-167)
+H1002  elsewhere EmitTests  the driver compares the program heading with the file name
+H2003  M2.4  private class members
+H2004  Phase3  language service only
+H2005  Phase8  off by default; no milestone implements it yet
+H2010  M2.6  attributes

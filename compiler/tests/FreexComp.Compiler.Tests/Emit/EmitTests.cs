@@ -120,6 +120,21 @@ public sealed class EmitTests
         Assert.Equal([@"C:\p\P.pas(3,5): hint H2001: Variable 'X' is declared but never used"], result.Diagnostics.Select(d => d.ToText()));
     }
 
+    [Theory]
+    [Trait("Req", "LANG-500")]
+    [InlineData("program Other;\nbegin end.", new[] { @"C:\p\Main.pas(1,9): hint H1002: Program name 'Other' differs from file name 'Main'" })]
+    [InlineData("program MAIN;\nbegin end.", new string[0])]
+    [InlineData("begin end.", new string[0])]
+    public void Check_ProgramNameDiffersFromFileName_IsH1002(string source, string[] expected)
+    {
+        var (compilation, _) = InMemory("Main", source);
+
+        var result = compilation.Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success);
+        Assert.Equal(expected, result.Diagnostics.Select(d => d.ToText()));
+    }
+
     [Fact]
     [Trait("Req", "CMP-115")]
     public void Check_EmptyProgram_ReportsNothing()

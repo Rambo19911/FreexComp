@@ -244,6 +244,17 @@ public sealed class Compilation
             new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)] }, system);
         var tree = SyntaxTree.Parse(text, parseOptions, FileSystem);
         diagnostics.AddRange(tree.Diagnostics);
+        if (tree.Root is ProgramSyntax { Name: { IsMissing: false } heading })
+        {
+            // LANG-500: the heading name need not match the file name, but a mismatch is a hint
+            var name = string.Join(".", heading.DescendantTokens().Where(t => t.Kind == SyntaxKind.IdentifierToken).Select(t => t.Value as string ?? t.Text));
+            var fileName = Path.GetFileNameWithoutExtension(path);
+            if (!IdentifierComparer.Instance.Equals(name, fileName))
+            {
+                diagnostics.Add(Diagnostic.Create("H1002", DiagnosticBag.LocationOf(heading), name, fileName));
+            }
+        }
+
         var result = Binder.BindCompilationUnit(tree, types, system);
         diagnostics.AddRange(result.Diagnostics);
         diagnostics.AddRange(FlowAnalyzer.Analyze(result));                    // CMP-115: a separate pass after binding (C-031)

@@ -253,6 +253,12 @@ internal sealed class DeclarationBinder
             return;
         }
 
+        if (declaration.Block != null && existing.Any(r => r.IsExternal))
+        {
+            _diagnostics.Report(identifier, "E2104", name);                    // LANG-463: an external routine has no body
+            return;
+        }
+
         var routine = new RoutineSymbol(name, _container, [DiagnosticBag.LocationOf(identifier)], declaration)
         {
             IsOverload = directives.IsOverload,
@@ -392,6 +398,10 @@ internal sealed class DeclarationBinder
             }
 
             routine.ResultVariable = new VariableSymbol("Result", routine.ReturnType, isGlobal: false, routine, []);
+        }
+        else if (heading.ResultType is { } procedureResult && report)
+        {
+            _diagnostics.Report(procedureResult, "E2103");
         }
 
         var names = new Scope(ScopeKind.Routine, parent: null, routine);

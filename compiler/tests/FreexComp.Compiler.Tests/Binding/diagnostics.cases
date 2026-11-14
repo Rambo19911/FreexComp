@@ -1,7 +1,8 @@
 # Binder diagnostic cases (testing.md §3, BinderDiagnosticTests).
 # A case starts with "=== CODE line,col" (1-based position of the expected diagnostic); the snippet is every
 # following line up to the next "===" line or the end of the file. The snippet must parse without syntax errors and
-# give exactly this one diagnostic. Lines starting with "#" before the first case are comments.
+# give exactly this one diagnostic, counting preprocessor/parser warnings and hints, binder and flow-analysis results.
+# Codes without a case are listed with their reason in diagnostics.uncovered (EveryDiagnosticIsCovered). Lines starting with "#" before the first case are comments.
 
 === E2002 1,21
 const C = 1; var X: C; begin end.
@@ -116,3 +117,65 @@ var i: Integer; begin Write(i:2:1) end.
 === E2913 2,18
 var p: Pointer;
 begin Writeln(1, p) end.
+=== E2013 1,32
+var i: Integer; begin i := Ord(1.5) end.
+=== E2034 1,52
+procedure P; begin end; var i: Integer; begin i := P end.
+=== E2040 1,28
+var b: Boolean; begin b := Boolean(1.5) end.
+=== E2050 1,27
+var i: Integer; const C = i; begin end.
+=== E2051 1,31
+const C = 9223372036854775807 * 4; begin end.
+=== E2052 1,13
+const C = 1 div 0; begin end.
+=== E2102 1,10
+function F; begin end; begin end.
+=== E2103 1,14
+procedure P: Integer; begin end; begin end.
+=== E2104 1,40
+procedure P; external 'k32'; procedure P; begin end; begin end.
+=== E2118 1,13
+procedure P(a); begin end; begin end.
+=== E2120 1,35
+procedure P; begin end; procedure P(a: Integer); begin end; begin end.
+=== E2121 1,57
+procedure P(a: Integer); overload; begin end; procedure P(b: Integer); overload; begin end; begin end.
+=== E2123 3,7
+procedure P(a: Integer); overload; begin end;
+procedure P(a: Boolean); overload; begin end;
+begin P('x') end.
+=== E2132 1,20
+procedure P; begin Result := 1 end; begin end.
+=== E2207 1,31
+procedure P; var i: Integer = 1; begin end; begin end.
+=== E2900 1,8
+var p: ^Integer; begin end.
+=== E2911 1,28
+var i: Integer; begin i := High(Double) end.
+=== E2915 1,33
+var i: Integer; begin i := Abs(1:2) end.
+=== W1001 1,1
+{$FOOBAR}begin end.
+=== W1002 1,1
+{$WRITEABLECONST ON}begin end.
+=== W1004 1,1
+{$ENDREGION}begin end.
+=== W1040 1,65
+procedure P; var i: Integer; begin for i := 1 to 2 do ; Writeln(i) end; begin P end.
+=== W1041 1,44
+procedure P; var i: Integer; begin Writeln(i) end; begin P end.
+=== W1042 1,28
+function F: Integer; begin end; begin F end.
+=== W1100 1,1
+{$MESSAGE WARN 'careful'}begin end.
+=== H1001 1,12
+begin end. trailing
+=== H1010 1,1
+{$R app.res}begin end.
+=== H1100 1,1
+{$MESSAGE 'note'}begin end.
+=== H2001 1,18
+procedure P; var i: Integer; begin end; begin P end.
+=== H2002 1,36
+procedure P; var i: Integer; begin i := 1; i := 2; Writeln(i) end; begin P end.

@@ -1,4 +1,7 @@
 using System.Globalization;
+using FreexComp.Compiler.Binding;
+using FreexComp.Compiler.Syntax;
+using FreexComp.Compiler.Types;
 using static FreexComp.Compiler.Tests.Binding.BinderTestHelper;
 
 namespace FreexComp.Compiler.Tests.Binding;
@@ -53,11 +56,91 @@ public sealed class BinderDiagnosticTests
     [MemberData(nameof(Cases))]
     public void Case(string code, int line, int column, string snippet, int number)
     {
-        var diagnostic = Assert.Single(Bind(snippet).Result.Diagnostics);
+        var diagnostics = Diagnose(snippet);
+        Assert.True(diagnostics.Length == 1, $"case {number} ({code}): {string.Join("; ", Format(diagnostics))}");
+        var diagnostic = diagnostics[0];
 
         Assert.Equal(
             (number, code, line, column),
             (number, diagnostic.Code, diagnostic.Location.LineSpan.Start.Line + 1, diagnostic.Location.LineSpan.Start.Column + 1));
+    }
+
+    /// <summary>
+    /// Every diagnostic a source snippet gets from the front end, as <c>opc --check</c> collects them for one unit:
+    /// the tree's (no syntax errors allowed: warnings/hints of the preprocessor and parser), the binder's, then flow
+    /// analysis (C-031).
+    /// </summary>
+    private static Diagnostic[] Diagnose(string snippet)
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(TestPath, snippet));
+        Assert.DoesNotContain(tree.Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        var result = Binder.BindCompilationUnit(tree, new BuiltInTypes());
+        return [.. tree.Diagnostics, .. result.Diagnostics, .. FlowAnalyzer.Analyze(result)];
+    }
+
+    // ---- coverage of the catalogue (testing.md §3, CMP-905) ----
+
+    private static readonly string UncoveredPath =
+        System.IO.Path.Combine(RepoPaths.Root, "compiler", "tests", "FreexComp.Compiler.Tests", "Binding", "diagnostics.uncovered");
+
+    private static readonly string[] Statuses = ["reserved", "retired", "M2.2", "M2.3", "M2.4", "M2.5", "M2.6", "Phase3", "Phase4", "Phase8", "elsewhere"];
+
+    /// <summary>The codes this suite answers for: E2xxx, W1xxx, W4xxx and Hxxxx (E0/E1/E4 have their own suites, W9 is the build engine's).</summary>
+    private static IEnumerable<string> CodesInScope() =>
+        DiagnosticCatalog.All.Select(d => d.Code).Where(c => c.StartsWith("E2", StringComparison.Ordinal)
+            || c.StartsWith("W1", StringComparison.Ordinal) || c.StartsWith("W4", StringComparison.Ordinal) || c[0] == 'H');
+
+    /// <summary>(code, status, reason) of every line of <c>diagnostics.uncovered</c>.</summary>
+    private static List<(string Code, string Status, string Reason)> ReadUncovered() =>
+        [.. File.ReadAllLines(UncoveredPath)
+            .Where(l => l.Length > 0 && l[0] != '#')
+            .Select(l => l.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries))
+            .Select(p => (p[0], p.Length > 1 ? p[1] : "", p.Length > 2 ? p[2].Trim() : ""))];
+
+    [Fact]
+    [Trait("Req", "CMP-905")]
+    public void EveryDiagnosticIsCovered()
+    {
+        var covered = ReadCases().Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
+        var uncovered = ReadUncovered();
+        var listed = uncovered.Select(u => u.Code).ToList();
+        var scope = CodesInScope().ToList();
+
+        var problems = new List<string>();
+        problems.AddRange(scope.Where(c => !covered.Contains(c) && !listed.Contains(c)).Select(c => $"{c}: no case and not listed in diagnostics.uncovered"));
+        problems.AddRange(listed.Where(covered.Contains).Select(c => $"{c}: has a case, remove it from diagnostics.uncovered"));
+        problems.AddRange(listed.GroupBy(c => c).Where(g => g.Count() > 1).Select(g => $"{g.Key}: listed {g.Count()} times"));
+        problems.AddRange(listed.Concat(covered).Where(c => !scope.Contains(c)).Distinct().Select(c => $"{c}: not a catalogue code in scope"));
+        problems.AddRange(uncovered.Where(u => !Statuses.Contains(u.Status)).Select(u => $"{u.Code}: unknown status '{u.Status}'"));
+        problems.AddRange(uncovered.Where(u => u.Status != "elsewhere" && u.Reason.Length == 0).Select(u => $"{u.Code}: reason missing"));
+        foreach (var (code, _, reason) in uncovered.Where(u => u.Status == "elsewhere"))
+        {
+            var testClass = reason.Split(' ')[0];
+            if (!typeof(BinderDiagnosticTests).Assembly.GetTypes().Any(t => t.Name == testClass))
+            {
+                problems.Add($"{code}: 'elsewhere' names no test class of this project ('{testClass}')");
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
+    [Trait("Category", "Spec")]
+    [Trait("Req", "CMP-500")]
+    public void UncoveredReservedAndRetired_MatchTheSpecNotes()
+    {
+        var spec = File.ReadAllLines(System.IO.Path.Combine(RepoPaths.RequireDocs(), "spec", "compiler", "diagnostics.md"));
+        var scope = CodesInScope().ToHashSet(StringComparer.Ordinal);
+        var marked = spec
+            .Select(l => l.Split('|').Select(c => c.Trim()).ToArray())
+            .Where(c => c.Length > 2 && scope.Contains(c[1]) && (Row(c).Contains("(reserved", StringComparison.Ordinal) || Row(c).Contains("(retired", StringComparison.Ordinal)))
+            .Select(c => c[1])
+            .Order(StringComparer.Ordinal);
+
+        Assert.Equal(marked, ReadUncovered().Where(u => u.Status is "reserved" or "retired").Select(u => u.Code).Order(StringComparer.Ordinal));
+
+        static string Row(string[] cells) => string.Join("|", cells);
     }
 
     [Theory]
