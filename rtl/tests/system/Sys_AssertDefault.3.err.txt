@@ -1,0 +1,2 @@
+^from a variable \(Sys_AssertDefault\.pas, line 27\)$
+^Runtime error 227 at \$[0-9A-F]{16}$

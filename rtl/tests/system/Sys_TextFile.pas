@@ -36,36 +36,6 @@ var
   Written: Cardinal;
   H: THandle;
 
-{ the runner passes the directory as the first command-line argument (ParamStr arrives with R-011) }
-function FirstArgument: string;
-var
-  P: PChar;
-  I: Integer;
-  Quoted: Boolean;
-begin
-  Result := '';
-  P := CmdLine;
-  I := 0;
-  Quoted := False;
-  while (P[I] <> #0) and (Quoted or (P[I] <> ' ')) do
-  begin
-    if P[I] = '"' then
-      Quoted := not Quoted;
-    I := I + 1;
-  end;
-  while P[I] = ' ' do
-    I := I + 1;
-  Quoted := False;
-  while (P[I] <> #0) and (Quoted or (P[I] <> ' ')) do
-  begin
-    if P[I] = '"' then
-      Quoted := not Quoted
-    else
-      Result := Result + P[I];
-    I := I + 1;
-  end;
-end;
-
 procedure WriteHex(B: Integer);
 const
   Digits = '0123456789ABCDEF';
@@ -98,7 +68,7 @@ begin
 end;
 
 begin
-  Dir := FirstArgument;
+  Dir := ParamStr(1);                     { the runner passes the directory as the first argument }
 
   AssignFile(F, Dir + '\a.txt');
   Rewrite(F);

@@ -1,0 +1,13 @@
+count 10
+1 [one]
+2 [two words]
+3 [back\slash]
+4 [a\"b]
+5 [c\d e]
+6 [fgh]
+7 [x"y]
+8 []
+9 [äöü]
+10 [trailing\\]
+module TRUE TRUE
+outside [] []

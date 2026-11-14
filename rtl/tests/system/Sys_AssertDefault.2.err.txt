@@ -1,0 +1,2 @@
+^Assertion failed \(Sys_AssertDefault\.pas, line 25\)$
+^Runtime error 227 at \$[0-9A-F]{16}$

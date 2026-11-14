@@ -41,6 +41,7 @@ procedure _RangeError; noreturn;
 procedure _OverflowError; noreturn;
 procedure _DivZeroError; noreturn;
 procedure _InvalidCast; noreturn;
+procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;   { Msg/FileName: UnicodeString refs, Msg may be nil }
 procedure _IOCheck;
 
 { memory (rtl-abi.md section 9.2, system.md section 7) }
@@ -129,6 +130,10 @@ function StringElementSize(const S: string): Word;
 function UTF8Encode(const S: string): RawByteString;            { code page 65001 }
 function UTF8ToString(const S: RawByteString): string;
 function UTF8Decode(const S: RawByteString): string;
+
+{ command-line arguments (RTL-034): ParamStr(0) is the module path, 1..ParamCount the parsed arguments, others '' }
+function ParamCount: Integer;
+function ParamStr(Index: Integer): string;
 
 { big sets: 32-byte operands, bit k = bit k mod 8 of byte k div 8 (rtl-abi.md ABI-050, section 9.8) }
 procedure _SetUnion(Dest, A, B: Pointer);
@@ -317,6 +322,8 @@ function CreateThread(lpThreadAttributes: Pointer; dwStackSize: NativeUInt; lpSt
 function WaitForSingleObject(hHandle: THandle; dwMilliseconds: Cardinal): Cardinal; stdcall;
   external kernel32 name 'WaitForSingleObject';
 function GetCurrentProcessId: Cardinal; stdcall; external kernel32 name 'GetCurrentProcessId';
+function GetModuleFileNameW(hModule: THandle; lpFilename: PWideChar; nSize: Cardinal): Cardinal; stdcall;
+  external kernel32 name 'GetModuleFileNameW';
 
 var
   _fltused: Integer = $9875; public name '_fltused';   { referenced by objects that use floating point }
@@ -1608,6 +1615,161 @@ begin
   _UStrFromAStr(PPointer(@Result)^, PPointer(@S)^);
 end;
 
+{ ---------------------------------------------------------------- command line (RTL-034) }
+{ The command line is re-scanned on every call instead of being cached: it never changes, so the result is the same,
+  and no shared state is needed between threads. }
+
+function IsBlank(C: WideChar): Boolean;
+begin
+  Result := (C = ' ') or (C = #9);
+end;
+
+{ P at the start of the command line: moves P past the program name (argument 0, no escape processing) }
+procedure SkipProgramName(var P: PWideChar);
+begin
+  if P^ = '"' then
+  begin
+    Inc(P);
+    while (P^ <> #0) and (P^ <> '"') do
+      Inc(P);
+    if P^ = '"' then
+      Inc(P);
+  end
+  else
+    while (P^ <> #0) and not IsBlank(P^) do
+      Inc(P);
+end;
+
+{ Skips blanks; False at the end of the command line, else P is at the start of the next argument }
+function AtArgument(var P: PWideChar): Boolean;
+begin
+  while IsBlank(P^) do
+    Inc(P);
+  Result := P^ <> #0;
+end;
+
+{ Scans one argument from P (moved past it) and returns its length; its characters are stored at Dest unless nil }
+function ScanArgument(var P: PWideChar; Dest: PWideChar): Integer;
+var
+  InQuotes, Quote: Boolean;
+  Backslashes, K: Integer;
+begin
+  Result := 0;
+  InQuotes := False;
+  while (P^ <> #0) and (InQuotes or not IsBlank(P^)) do
+    if P^ = '\' then
+    begin
+      Backslashes := 0;
+      while P^ = '\' do
+      begin
+        Inc(Backslashes);
+        Inc(P);
+      end;
+      Quote := P^ = '"';
+      if Quote then
+        K := Backslashes div 2         { 2n (+1) backslashes before a quote: n backslashes }
+      else
+        K := Backslashes;              { not before a quote: literal }
+      while K > 0 do
+      begin
+        if Dest <> nil then
+          Dest[Result] := '\';
+        Inc(Result);
+        Dec(K);
+      end;
+      if Quote and Odd(Backslashes) then
+      begin
+        if Dest <> nil then
+          Dest[Result] := '"';         { 2n+1: a literal quote; 2n: the quote is handled next as a toggle }
+        Inc(Result);
+        Inc(P);
+      end;
+    end
+    else if P^ = '"' then
+    begin
+      Inc(P);
+      if InQuotes and (P^ = '"') then
+      begin
+        if Dest <> nil then
+          Dest[Result] := '"';         { "" inside quotes: one quote, quoting goes on }
+        Inc(Result);
+        Inc(P);
+      end
+      else
+        InQuotes := not InQuotes;
+    end
+    else
+    begin
+      if Dest <> nil then
+        Dest[Result] := P^;
+      Inc(Result);
+      Inc(P);
+    end;
+end;
+
+function ParamCount: Integer;
+var
+  P: PWideChar;
+begin
+  Result := 0;
+  P := GetCommandLineW;
+  SkipProgramName(P);
+  while AtArgument(P) do
+  begin
+    ScanArgument(P, nil);
+    Inc(Result);
+  end;
+end;
+
+function ModuleFileName: string;
+var
+  Size, N: Cardinal;
+begin
+  Size := 260;
+  repeat
+    _UStrSetLen(PPointer(@Result)^, Size);
+    N := GetModuleFileNameW(0, PWideChar(PPointer(@Result)^), Size);
+    if N < Size then
+    begin
+      _UStrSetLen(PPointer(@Result)^, N);
+      Exit;
+    end;
+    Size := Size * 2;
+  until Size > 65536;
+  _UStrSetLen(PPointer(@Result)^, 0);
+end;
+
+function ParamStr(Index: Integer): string;
+var
+  P, Start: PWideChar;
+  Len: Integer;
+begin
+  _UStrClr(PPointer(@Result)^);
+  if Index = 0 then
+  begin
+    Result := ModuleFileName;
+    Exit;
+  end;
+  if Index < 0 then
+    Exit;
+  P := GetCommandLineW;
+  SkipProgramName(P);
+  while AtArgument(P) do
+  begin
+    Dec(Index);
+    if Index = 0 then
+    begin
+      Start := P;
+      Len := ScanArgument(P, nil);
+      _UStrSetLen(PPointer(@Result)^, Len);
+      if Len > 0 then
+        ScanArgument(Start, PWideChar(PPointer(@Result)^));
+      Exit;
+    end;
+    ScanArgument(P, nil);
+  end;
+end;
+
 { ---------------------------------------------------------------- text files: buffer and encoder (RTL-090 ... 093) }
 { Console kind: the buffer holds UTF-16 code units, written with WriteConsoleW. Byte-stream kind: the buffer holds
   UTF-8, written with WriteFile. Absent kind: output is discarded. Code page 1200 (disk files): UTF-16LE units,
@@ -2055,6 +2217,21 @@ end;
 procedure _InvalidCast;
 begin
   _RunError(219);
+end;
+
+{ ABI-103, RTL-137: '<Msg> (<FileName>, line <Line>)' + CR LF on ErrOutput ('Assertion failed' when Msg is nil),
+  then runtime error 227.
+  TODO(R-067): call AssertErrorProc first when assigned (needs procedural types, C-161) }
+procedure _Assert(Msg, FileName: Pointer; Line: Integer);
+begin
+  if Msg = nil then
+    Write(ErrOutput, 'Assertion failed')
+  else
+    _WriteUStr(ErrOutput, Msg, 0);
+  Write(ErrOutput, ' (');
+  _WriteUStr(ErrOutput, FileName, 0);
+  Writeln(ErrOutput, ', line ', Line, ')');
+  _RunError(227);
 end;
 
 { ABI-132: the compiler calls this after every text-I/O statement in $I+ state }
