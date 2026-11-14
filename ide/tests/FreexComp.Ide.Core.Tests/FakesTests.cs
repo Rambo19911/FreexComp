@@ -30,6 +30,11 @@ public sealed class FakesTests
         Assert.Throws<DirectoryNotFoundException>(() => fs.WriteAllBytes(a, [1]));
 
         fs.CreateDirectory(Path.Combine(sub, "deep"));
+        Assert.Throws<IOException>(() => fs.DeleteDirectory(sub)); // not empty
+        fs.DeleteDirectory(Path.Combine(sub, "deep"));
+        Assert.False(fs.DirectoryExists(Path.Combine(sub, "deep")));
+        fs.DeleteDirectory(Path.Combine(sub, "deep")); // missing: no-op
+        fs.CreateDirectory(Path.Combine(sub, "deep"));
         fs.CreateDirectory(sub); // existing: no-op
         Assert.True(fs.DirectoryExists(sub));
         Assert.False(fs.FileExists(sub));

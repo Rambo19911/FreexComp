@@ -52,7 +52,8 @@ public static class ServiceGraph
             projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.RegisterCommands(commands);
-        projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts);
+        projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
+            ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock);
         projects.RegisterCommands(commands);
         documents.ProjectOpener = path => projects.OpenAsync(path);
         commands.RegisterLaterPhaseStubs(ImplementedPhase);

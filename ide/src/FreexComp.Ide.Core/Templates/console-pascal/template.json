@@ -1,0 +1,4 @@
+{ "id": "console-pascal", "name": "Console Application", "description": "A program that reads and writes text in a console window.",
+  "language": "pascal", "appType": "console",
+  "files": [ { "source": "Program.pas.txt", "target": "$(ProjectName).pas" },
+             { "source": "Project.pproj.txt", "target": "$(ProjectName).pproj" } ] }

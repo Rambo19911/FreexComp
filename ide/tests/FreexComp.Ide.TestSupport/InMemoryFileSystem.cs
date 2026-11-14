@@ -92,6 +92,25 @@ public sealed class InMemoryFileSystem : IFileSystem
         }
     }
 
+    public void DeleteDirectory(string path)
+    {
+        lock (_gate)
+        {
+            var d = Normalize(path);
+            if (!_directories.Contains(d))
+            {
+                return;
+            }
+
+            if (_files.Keys.Any(f => IsChild(d, f)) || _directories.Any(x => IsChild(d, x)))
+            {
+                throw new IOException($"The directory is not empty. : '{d}'");
+            }
+
+            _directories.Remove(d);
+        }
+    }
+
     public void MoveFile(string sourcePath, string destinationPath, bool overwrite)
     {
         lock (_gate)

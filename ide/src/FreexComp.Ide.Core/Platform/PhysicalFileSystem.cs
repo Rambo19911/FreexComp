@@ -22,6 +22,12 @@ public sealed class PhysicalFileSystem : IFileSystem
 
     public void DeleteFile(string path) => File.Delete(path);
 
+    public void DeleteDirectory(string path)
+    {
+        if (Directory.Exists(path))
+            Directory.Delete(path, recursive: false);
+    }
+
     public void MoveFile(string sourcePath, string destinationPath, bool overwrite) =>
         File.Move(sourcePath, destinationPath, overwrite);
 

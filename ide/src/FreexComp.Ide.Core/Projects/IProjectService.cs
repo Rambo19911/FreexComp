@@ -35,4 +35,15 @@ public interface IProjectService
 
     /// <summary><c>project.viewSource</c> (IDE-PM-015): opens and activates the main source. False on failure (reported).</summary>
     Task<bool> ViewSourceAsync();
+
+    /// <summary>The new-project templates enumerated at start-up (IDE-PM-020), <c>console-pascal</c> first.</summary>
+    IReadOnlyList<ProjectTemplate> Templates { get; }
+
+    /// <summary>
+    /// UI-DLG-031 / IDE-PM-023: closes the current project (unsaved prompt; canceled → <see cref="NewProjectOutcome.Canceled"/>),
+    /// re-validates, creates <c>&lt;Location&gt;\&lt;Name&gt;\</c> from the template, then opens the project with the main
+    /// source active and the caret on the first line after <c>begin</c>. Any failure removes everything this call created
+    /// and shows <c>Msg.Project.CreateFailed</c>.
+    /// </summary>
+    Task<NewProjectOutcome> CreateProjectAsync(NewProjectRequest request);
 }

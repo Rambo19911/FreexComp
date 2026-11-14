@@ -33,6 +33,10 @@ public interface IFileSystem
     /// <summary>No-op when the file does not exist.</summary>
     void DeleteFile(string path);
 
+    /// <summary>Deletes an empty directory; no-op when it does not exist.</summary>
+    /// <exception cref="IOException">The directory is not empty.</exception>
+    void DeleteDirectory(string path);
+
     /// <exception cref="FileNotFoundException">The source does not exist.</exception>
     /// <exception cref="IOException">The destination exists and <paramref name="overwrite"/> is false.</exception>
     void MoveFile(string sourcePath, string destinationPath, bool overwrite);

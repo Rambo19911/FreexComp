@@ -29,5 +29,10 @@
     <Style Selector="TextBox">
       <Setter Property="ClearSelectionOnLostFocus" Value="False" />
     </Style>
+    <!-- design-tokens.md §9 Invalid state (UI-DLG-006): 1 px status.error border, also when hovered or focused. -->
+    <Style Selector="TextBox.invalid /template/ Border#PART_BorderElement, TextBox.invalid:pointerover /template/ Border#PART_BorderElement, TextBox.invalid:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{DynamicResource FxcStatusErrorBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
   </Application.Styles>
 </Application>

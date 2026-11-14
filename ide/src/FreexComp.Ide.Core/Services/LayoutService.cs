@@ -161,6 +161,23 @@ public sealed class LayoutService : ILayoutService
         ScheduleSave();
     }
 
+    public string? GetDialogValue(string dialogName, string key) =>
+        _root["dialogs"] is JsonObject dialogs && dialogs[dialogName] is JsonObject dialog
+            && dialog[key] is JsonValue value && value.TryGetValue(out string? text)
+            ? text
+            : null;
+
+    public void SetDialogValue(string dialogName, string key, string value)
+    {
+        if (GetDialogValue(dialogName, key) == value)
+        {
+            return;
+        }
+
+        Child(Child(_root, "dialogs"), dialogName)[key] = value;
+        ScheduleSave();
+    }
+
     public void AttachToolWindows(Func<string, ToolWindowViewModel?> resolve)
     {
         _resolve = resolve;

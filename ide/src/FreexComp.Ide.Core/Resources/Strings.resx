@@ -2833,4 +2833,36 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Form file</value>
     <comment>dialogs.md §5</comment>
   </data>
+  <data name="NewProject_Title" xml:space="preserve">
+    <value>New Project</value>
+    <comment>dialogs.md §3: window title</comment>
+  </data>
+  <data name="NewProject_Template" xml:space="preserve">
+    <value>_Template</value>
+    <comment>dialogs.md §3: Templates label (&amp;Template)</comment>
+  </data>
+  <data name="NewProject_Name" xml:space="preserve">
+    <value>_Name:</value>
+    <comment>dialogs.md §3: Name label</comment>
+  </data>
+  <data name="NewProject_Location" xml:space="preserve">
+    <value>_Location:</value>
+    <comment>dialogs.md §3: Location label</comment>
+  </data>
+  <data name="NewProject_TargetPath" xml:space="preserve">
+    <value>Will be created in:</value>
+    <comment>dialogs.md §3: TargetPath label</comment>
+  </data>
+  <data name="NewProject_Language" xml:space="preserve">
+    <value>Language: {0}</value>
+    <comment>dialogs.md §3: description pane; 0 = language display name</comment>
+  </data>
+  <data name="NewProject_Create" xml:space="preserve">
+    <value>Create</value>
+    <comment>dialogs.md §3: default button</comment>
+  </data>
+  <data name="NewProject_Browse" xml:space="preserve">
+    <value>Browse</value>
+    <comment>UI-DLG-011: automation name of the … button</comment>
+  </data>
 </root>

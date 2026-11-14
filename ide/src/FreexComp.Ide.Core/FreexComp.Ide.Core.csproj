@@ -26,4 +26,8 @@
       <LogicalName>FreexComp.Ide.Core.Resources.Strings.resources</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
+  <ItemGroup>
+    <!-- IDE-PM-020: new-project templates, resource names Templates/<id>/<file> (separators normalized at run time). -->
+    <EmbeddedResource Include="Templates\**\*" LogicalName="Templates/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

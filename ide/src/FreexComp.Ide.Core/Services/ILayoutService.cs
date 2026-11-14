@@ -29,6 +29,12 @@ public interface ILayoutService
     /// <summary>Stores the last folder of a picker prompt; saved with the rest of the UI state.</summary>
     void SetLastFolder(string promptId, string folder);
 
+    /// <summary>A string value of a dialog's UI state, <c>dialogs.&lt;Name&gt;.&lt;key&gt;</c> (dialogs.md §24.3); null when unset.</summary>
+    string? GetDialogValue(string dialogName, string key);
+
+    /// <summary>Stores <c>dialogs.&lt;Name&gt;.&lt;key&gt;</c>; saved with the rest of the UI state.</summary>
+    void SetDialogValue(string dialogName, string key, string value);
+
     /// <summary>Gives the layout the tool-window registry: names → view-models (null = not registered).</summary>
     void AttachToolWindows(Func<string, ToolWindowViewModel?> resolve);
 

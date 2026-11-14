@@ -115,6 +115,25 @@ public sealed class ProjectServiceTests
         Assert.True(_services.Commands.CanExecute("project.viewSource"));
     }
 
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-012")]
+    public async Task EmptyFilePathIsIgnoredAndKept()
+    {
+        var text = """
+            { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
+              "files": [ { "path": "Hello.pas" }, { "path": "" }, { "path": "Unit1.pas" } ] }
+            """;
+        File(ProjectPath, text);
+        File(Dir + @"\Hello.pas", "program Hello;\nbegin\nend.\n");
+
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+
+        Assert.Equal(["Hello.pas", "Unit1.pas"], Projects.Project!.Files.Select(f => f.Path));
+        Assert.False(Projects.IsMember(Dir));
+        Assert.Contains(_log.Lines, l => l.Contains("WARN", StringComparison.Ordinal) && l.Contains("empty", StringComparison.Ordinal));
+        Assert.Equal(text, Encoding.UTF8.GetString(_fs.ReadAllBytes(ProjectPath))); // the entry stays in the file
+    }
+
     [Theory(Timeout = 30000)]
     [InlineData("""{ "formatVersion": 1, "name": "1Bad", "mainSource": "Hello.pas" }""", "Msg.Project.OpenFailed", "NameInvalid")]
     [InlineData("""{ "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas", "configurations": {} }""", "Msg.Project.OpenFailed", "NoConfigurations")]

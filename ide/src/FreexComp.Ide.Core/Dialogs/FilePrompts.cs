@@ -96,16 +96,21 @@ public sealed class FilePrompts
         return chosen;
     }
 
+    /// <summary><c>environment.defaultProjectsDir</c>; empty = <c>Documents\FreexComp Projects</c>.</summary>
+    public string DefaultProjectsDirectory =>
+        _settings.Get(SettingsCatalog.EnvironmentDefaultProjectsDir) is { Length: > 0 } configured
+            ? configured
+            : Path.Combine(_paths.DocumentsDirectory, "FreexComp Projects");
+
     /// <summary>UI-DLG-051: the first existing candidate folder, or null (the OS default).</summary>
     public string? InitialFolder(string promptId, string? stated)
     {
-        var configured = _settings.Get(SettingsCatalog.EnvironmentDefaultProjectsDir);
         string?[] candidates =
         [
             stated,
             _layout.GetLastFolder(promptId),
             _projectDirectory(),
-            string.IsNullOrEmpty(configured) ? Path.Combine(_paths.DocumentsDirectory, "FreexComp Projects") : configured,
+            DefaultProjectsDirectory,
             _paths.DocumentsDirectory,
         ];
         return candidates.FirstOrDefault(c => !string.IsNullOrEmpty(c) && Path.IsPathFullyQualified(c) && _fileSystem.DirectoryExists(c));
