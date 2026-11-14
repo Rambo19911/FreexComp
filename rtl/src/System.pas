@@ -29,6 +29,7 @@ var
   HInstance: THandle;
   MainThreadID: Cardinal;
   CmdLine: PChar;
+  RandSeed: Cardinal;                  { state of Random (RTL-040); 0 at start-up }
 
 { compiler support face (rtl-abi.md section 9.1) }
 procedure _Startup(UnitTable: Pointer; UnitCount: NativeInt);
@@ -64,6 +65,18 @@ function _Trunc(X: Double): Int64;
 function _Round(X: Double): Int64;
 function _Int(X: Double): Double;
 function _Frac(X: Double): Double;
+
+{ transcendental functions (system.md section 5.2, RTL-041); Ln(X <= 0) is runtime error 207 }
+function Sin(X: Double): Double;
+function Cos(X: Double): Double;
+function ArcTan(X: Double): Double;
+function Exp(X: Double): Double;
+function Ln(X: Double): Double;
+
+{ pseudo-random numbers (system.md section 5.2, RTL-040): RandSeed := RandSeed * 134775813 + 1 (mod 2^32) per draw }
+function Random: Double; overload;                     { new RandSeed * 2^-32, in [0, 1) }
+function Random(Range: Integer): Integer; overload;    { in [0, Range); 0 without a draw when Range <= 0 }
+procedure Randomize;                                   { RandSeed from the tick count and the performance counter }
 
 { exact decimal digits of a binary float (system.md RTL-100); used by the float Write/Str helpers and SysUtils }
 const
@@ -141,6 +154,9 @@ function WriteConsoleW(hConsoleOutput: THandle; lpBuffer: Pointer; nNumberOfChar
   var lpNumberOfCharsWritten: Cardinal; lpReserved: Pointer): LongBool; stdcall; external kernel32 name 'WriteConsoleW';
 function GetConsoleMode(hConsoleHandle: THandle; var lpMode: Cardinal): LongBool; stdcall;
   external kernel32 name 'GetConsoleMode';
+function GetTickCount: Cardinal; stdcall; external kernel32 name 'GetTickCount';
+function QueryPerformanceCounter(var lpPerformanceCount: Int64): LongBool; stdcall;
+  external kernel32 name 'QueryPerformanceCounter';
 function GetProcessHeap: THandle; stdcall; external kernel32 name 'GetProcessHeap';
 function HeapAlloc(hHeap: THandle; dwFlags: Cardinal; dwBytes: NativeUInt): Pointer; stdcall; external kernel32 name 'HeapAlloc';
 function HeapFree(hHeap: THandle; dwFlags: Cardinal; lpMem: Pointer): LongBool; stdcall; external kernel32 name 'HeapFree';
@@ -1220,6 +1236,38 @@ end;
 function _Frac(X: Double): Double;
 begin
   Result := X - _Int(X);
+end;
+
+{$I FloatMath.inc}                     { Sin, Cos, ArcTan, Exp, Ln }
+
+{ ---------------------------------------------------------------- Random (RTL-040) }
+
+function NextSeed: Cardinal;
+begin
+  RandSeed := Cardinal((UInt64(RandSeed) * 134775813 + 1) and $FFFFFFFF);
+  Result := RandSeed;
+end;
+
+function Random: Double;
+begin
+  Result := NextSeed * 2.3283064365386963e-10;       { 2^-32, exact }
+end;
+
+function Random(Range: Integer): Integer;
+begin
+  if Range <= 0 then
+    Result := 0
+  else
+    Result := Integer((UInt64(NextSeed) * UInt64(Range)) shr 32);
+end;
+
+procedure Randomize;
+var
+  Counter: Int64;
+begin
+  Counter := 0;
+  QueryPerformanceCounter(Counter);
+  RandSeed := GetTickCount xor Cardinal(Counter and $FFFFFFFF);
 end;
 
 { ---------------------------------------------------------------- float text (LANG-930 ... 933) }
