@@ -36,6 +36,7 @@ internal static class Lowerer
         {
             Output = OutputOf(result),
             Input = SystemVariable(result, "Input"),
+            CheckedSystem = CheckedSystemOf(result),
             Captured = [.. captured],
             AddressTaken = body.AddressTaken,
         };
@@ -48,11 +49,18 @@ internal static class Lowerer
 
     /// <summary>The program block or a unit initialization/finalization section (globals only, no locals).</summary>
     public static LoweredBody LowerBody(BindingResult result, BoundBlock block) =>
-        new LoweringContext(result.Types, routine: null, locals: []) { Output = OutputOf(result), Input = SystemVariable(result, "Input") }.Finish(block);
+        new LoweringContext(result.Types, routine: null, locals: []) {
+            Output = OutputOf(result),
+            Input = SystemVariable(result, "Input"),
+            CheckedSystem = CheckedSystemOf(result),
+        }.Finish(block);
 
     /// <summary>Types held in memory as <c>[N x T]</c> or structs (big sets, static arrays, records): never SSA values (see the aggregate nodes).</summary>
     public static bool IsAggregate(TypeSymbol type) =>
         type is SetTypeSymbol { IsSmall: false } or ArrayTypeSymbol or RecordTypeSymbol or StringTypeSymbol { Variant: StringVariant.Short };
+
+    /// <summary>The bound <c>System</c> whose text-file routines get <c>_IOCheck</c> (ABI-132); null while lowering System itself.</summary>
+    private static UnitSymbol? CheckedSystemOf(BindingResult result) => ReferenceEquals(result.System, result.Unit) ? null : result.System;
 
     /// <summary>The variable <c>Output</c> of the bound <c>System</c> (default file of <c>Write</c>, LANG-910), or null without one.</summary>
     private static VariableSymbol? OutputOf(BindingResult result) => SystemVariable(result, "Output");
@@ -96,6 +104,13 @@ internal sealed class LoweringContext
 
     /// <summary><c>System.Input</c> as bound (default file of <c>Read</c>/<c>Eof</c>, LANG-940); null without <c>System</c>.</summary>
     public VariableSymbol? Input { get; init; }
+
+    /// <summary>
+    /// The unit <c>System</c> when lowering another unit: a call statement of one of its routines whose first parameter is
+    /// <c>var … : Text</c> is followed by <c>_IOCheck</c> in <c>{$I+}</c> state (ABI-132, C-182). Null inside System, which
+    /// handles <c>InOutRes</c> itself.
+    /// </summary>
+    public UnitSymbol? CheckedSystem { get; init; }
 
     /// <summary>This routine's variables, parameters and <c>Result</c> that nested routines reference (they live in the frame record).</summary>
     public ImmutableHashSet<Symbol> Captured { get; init; } = [];
@@ -227,9 +242,9 @@ internal sealed class LoweringContext
             case BoundHaltStatement halt:
                 return CallNoReturn(Halt, halt.ExitCode is null ? Constant(BigInteger.Zero, Types.Integer) : Lower(halt.ExitCode));
             case BoundCallStatement call:
-                return CallStatement(call.Routine, call.Arguments);
-            case BoundExpressionStatement { Expression: BoundCallExpression call }:
-                return CallStatement(call.Routine, call.Arguments);
+                return IOChecked(call.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments));
+            case BoundExpressionStatement { Expression: BoundCallExpression call } expression:
+                return IOChecked(expression.Syntax, call.Routine, CallStatement(call.Routine, call.Arguments));
             case BoundExpressionStatement { Expression: BoundIntrinsicCallExpression { Intrinsic.IsAtomic: true } atomic }:
                 return new LAssign(new LLocalRef(NewTemp(atomic.Type)), Lower(atomic));     // C-168: a discarded result
             case BoundIntrinsicCallStatement intrinsic:
@@ -550,6 +565,15 @@ internal sealed class LoweringContext
         && !Captured.Contains(variable)
         && !AddressTaken.Contains(variable)
         && !call.Arguments.Any(a => ManagedRewriter.References(a, local));
+
+    /// <summary>ABI-132: <paramref name="call"/> then <c>_IOCheck</c> when the callee is a System text-file routine under <c>{$I+}</c>.</summary>
+    private LStatement IOChecked(SyntaxNode syntax, RoutineSymbol routine, LStatement call) =>
+        CheckedSystem is not null
+        && ReferenceEquals(routine.ContainingSymbol, CheckedSystem)
+        && routine.Parameters is [{ Mode: ParameterMode.Var, Type: TextTypeSymbol }, ..]
+        && syntax.FirstToken().DirectiveState.IoChecks
+            ? new LBlock([call, new LCallStatement(new LHelperCallee(new RuntimeHelper("_IOCheck", [], ReturnType: null, IsNoReturn: false)), [])])
+            : call;
 
     /// <summary>A call statement; a discarded aggregate or managed result still needs storage (ABI-081).</summary>
     private LStatement CallStatement(RoutineSymbol routine, ImmutableArray<BoundExpression> arguments)

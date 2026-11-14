@@ -1,9 +1,11 @@
 LIBRARY kernel32.dll
 EXPORTS
 CloseHandle
+CreateFileW
 CreateThread
 ExitProcess
 GetCurrentProcessId
+GetLastError
 GetProcessHeap
 GetStdHandle
 HeapAlloc

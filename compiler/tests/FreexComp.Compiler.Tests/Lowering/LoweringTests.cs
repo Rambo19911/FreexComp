@@ -444,6 +444,45 @@ public sealed class LoweringTests
             "(:= @f (call _Eof:Boolean (addr @System.Input))) (:= @f (call _Eoln:Boolean (addr @t)))",
             MainBody("f: Boolean; t: Text", "f := Eof; f := Eoln(t)"));
 
+    /// <summary>
+    /// C-182 / ABI-132: in <c>{$I+}</c> state a call statement whose callee is a <c>System</c> routine with a first parameter
+    /// <c>var … : Text</c> is followed by <c>_IOCheck</c> (procedures and discarded function results alike); not under
+    /// <c>{$I-}</c>, not for a <c>Text</c> parameter in another position and not for the program's own routines.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "ABI-132")]
+    public void TextRoutineCall_IsFollowedByIOCheck()
+    {
+        var types = new FreexComp.Compiler.Types.BuiltInTypes();
+        var system = Compiler.Binding.Binder.BindCompilationUnit(Compiler.Syntax.SyntaxTree.Parse(SourceText.From(@"C:\p\System.pas", """
+            unit System;
+            interface
+            var Input, Output: Text;
+            procedure Reset(var F: Text);
+            function Probe(var F: Text): Integer;
+            procedure Other(I: Integer; var F: Text);
+            implementation
+            procedure Reset(var F: Text); begin end;
+            function Probe(var F: Text): Integer; begin Result := 0 end;
+            procedure Other(I: Integer; var F: Text); begin end;
+            end.
+            """)), types);
+        Assert.Empty(Format(system.Diagnostics));
+        var tree = Compiler.Syntax.SyntaxTree.Parse(SourceText.From(TestPath, """
+            program T;
+            var F: Text;
+            procedure Own(var F: Text); begin end;
+            begin Reset(F); Probe(F); Other(1, F); Own(F); {$I-} Reset(F) end.
+            """));
+        var result = Compiler.Binding.Binder.BindCompilationUnit(tree, types, system);
+        Assert.Empty(Format(result.Diagnostics));
+        var body = Assert.Single(Lowerer.Lower(result).Bodies);
+        Assert.Equal(
+            "(block (call Reset (addr @F)) (call _IOCheck)) (block (call Probe (addr @F)) (call _IOCheck)) (call Other 1:Integer (addr @F)) " +
+            "(call Own (addr @F)) (call Reset (addr @F))",
+            string.Join(" ", body.Body.Statements.Select(LoweredDump.Of)));
+    }
+
     // ------------------------------------------------------------------ Write/Writeln (CMP-410; C-040)
 
     [Fact]

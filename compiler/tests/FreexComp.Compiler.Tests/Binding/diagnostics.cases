@@ -268,5 +268,5 @@ function F: Text; begin end; begin end.
 var P: Pointer; begin P := @Writeln end.
 === E2910 1,33
 var P: Pointer; begin P := Addr(Inc) end.
-=== E2041 1,82
+=== E2042 1,82
 type R = packed record B: Byte; I: Integer; end; var X: R; begin AtomicIncrement(X.I) end.

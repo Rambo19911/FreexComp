@@ -95,6 +95,7 @@ public static class DiagnosticCatalog
         new("E2037", null, DiagnosticSeverity.Error, "Unknown record field '%s' in constant"),
         new("E2040", null, DiagnosticSeverity.Error, "Invalid typecast from '%s' to '%s'"),
         new("E2041", null, DiagnosticSeverity.Error, "Variable typecast not allowed for managed types or types of different size"),
+        new("E2042", null, DiagnosticSeverity.Error, "Atomic operation needs a naturally aligned variable"),
         new("E2050", null, DiagnosticSeverity.Error, "Constant expression expected"),
         new("E2051", null, DiagnosticSeverity.Error, "Constant expression overflow"),
         new("E2052", null, DiagnosticSeverity.Error, "Division by zero in constant expression"),

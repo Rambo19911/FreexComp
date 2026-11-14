@@ -837,7 +837,7 @@ internal sealed class ExpressionBinder
 
         if (AccessAlignment(target) < target.Type.Alignment)
         {
-            _diagnostics.Report(syntax, "E2041");                       // C-067 lead decision: no lock-free access (CMP-612)
+            _diagnostics.Report(syntax, "E2042");                       // C-067/C-181: no lock-free access (CMP-612)
             return Error(invocation, target);
         }
 

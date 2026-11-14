@@ -177,7 +177,7 @@ internal sealed class DeclarationBinder
     private void BindTypeSection(TypeSectionSyntax section, ImmutableArray<Symbol>.Builder declared)
     {
         // LANG-208: ^T may name a type declared later in this section; such pointers are completed after the section
-        _sectionTypeNames = [.. section.Declarations.Where(d => !d.Identifier.IsMissing).Select(d => NameOf(d.Identifier))];
+        _sectionTypeNames = new(section.Declarations.Where(d => !d.Identifier.IsMissing).Select(d => NameOf(d.Identifier)), IdentifierComparer.Instance);
         _forwardPointers = [];
         foreach (var declaration in section.Declarations)
         {

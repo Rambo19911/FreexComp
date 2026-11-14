@@ -8,6 +8,7 @@ using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Toolchain;
 using FreexComp.Compiler.Types;
+using FreexComp.Compiler.Units;
 
 namespace FreexComp.Compiler;
 
@@ -318,41 +319,9 @@ public sealed class Compilation
         }
     }
 
-    /// <summary>LANG-510 for one unit name: main file's directory, <c>-U</c> paths, the RTL root and its immediate sub-directories.</summary>
-    private string? FindUnit(string name, string mainPath)
-    {
-        var directories = new List<string> { Path.GetDirectoryName(mainPath)! };
-        directories.AddRange(Options.SearchPaths.Select(PathUtil.Normalize));
-        var rtl = RtlDirectory();
-        if (rtl.Length > 0)
-        {
-            directories.Add(rtl);
-            directories.AddRange(SubDirectories(rtl));
-        }
-
-        foreach (var directory in directories)
-        {
-            var path = PathUtil.Normalize(Path.Combine(directory, name + ".pas"));
-            if (!PathUtil.AreEqual(path, mainPath) && (_openFiles.ContainsKey(path) || FileSystem.FileExists(path)))
-            {
-                return path;
-            }
-        }
-
-        return null;
-    }
-
-    private IEnumerable<string> SubDirectories(string directory)
-    {
-        try
-        {
-            return [.. FileSystem.EnumerateDirectories(directory).Order(StringComparer.Ordinal)];
-        }
-        catch (IOException)
-        {
-            return [];
-        }
-    }
+    /// <summary>LANG-510 for one unit name (C-068): open files are units already part of the compilation (ordinal path order).</summary>
+    private string? FindUnit(string name, string mainPath) =>
+        new UnitResolver(FileSystem, mainPath, Options.SearchPaths, RtlDirectory(), _openFiles.Keys.Order(StringComparer.Ordinal)).Resolve(name);
 
     /// <summary><c>--rtl</c>; "" → <c>%FREEXCOMP_HOME%\rtl\src</c>, else <c>rtl\src</c> next to the running executable (compiler-cli.md §1).</summary>
     private string RtlDirectory()

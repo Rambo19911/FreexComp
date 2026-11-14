@@ -16,6 +16,7 @@ var
   Output: Text;
   ErrOutput: Text;
   ExitCode: Integer;
+  InOutRes: Integer;                         { ABI-132; one global here (the mini RTL starts no threads), per thread in the RTL }
 
 procedure _Startup(UnitTable: Pointer; UnitCount: NativeInt);
 procedure _InitUnits;
@@ -27,6 +28,11 @@ procedure _OverflowError; noreturn;
 procedure _DivZeroError; noreturn;
 procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;
 procedure _IOCheck;
+
+{ text files (ABI-132, C-182): errors go to InOutRes, never raised here; the compiler calls _IOCheck after them under $I+ }
+function IOResult: Integer;
+procedure AssignFile(var F: Text; const Name: string);
+procedure Reset(var F: Text);
 
 function _GetMem(Size: NativeInt): Pointer;
 procedure _FreeMem(P: Pointer);
@@ -183,6 +189,9 @@ function ReadFile(H: NativeInt; Buffer: Pointer; Count: Integer; var Done: Integ
 function WideCharToMultiByte(CodePage, Flags: Cardinal; Src: Pointer; SrcLen: Integer; Dest: Pointer; DestSize: Integer;
   DefaultChar, UsedDefault: NativeInt): Integer; external kernel32;
 procedure ExitProcess(Code: Integer); external kernel32;
+function CreateFileW(Name: Pointer; Access, Share: Cardinal; Security: NativeInt; Disposition, Flags: Cardinal;
+  Template: NativeInt): NativeInt; external kernel32;
+function GetLastError: Cardinal; external kernel32;
 
 
 { the OS handle in the first 8 bytes of a Text variable }
@@ -297,9 +306,76 @@ begin
   _RunError(227);
 end;
 
-{ InOutRes arrives with task C-166; no helper records an I/O error yet }
+{ ABI-132: nothing while InOutRes = 0; otherwise reset it and raise its old value as a runtime error }
 procedure _IOCheck;
+var
+  Code: Integer;
 begin
+  if InOutRes <> 0 then
+  begin
+    Code := InOutRes;
+    InOutRes := 0;
+    _RunError(Code);
+  end;
+end;
+
+function IOResult: Integer;
+begin
+  Result := InOutRes;
+  InOutRes := 0;
+end;
+
+{ ------------------------------------------------------------------ text files (C-182; minimal: AssignFile + Reset for reading)
+  The file name is kept as a #0-terminated UTF-16 copy on the process heap, its address at offset 24 of the Text variable
+  (between the input fields at 8..23 and the input buffer from 32). The copy is not counted by _LiveAllocCount and is not
+  freed (no CloseFile yet, C-166). A failed CreateFileW stores GetLastError in InOutRes (2 = file not found). }
+
+const
+  GENERIC_READ = $80000000;
+  FILE_SHARE_READ = 1;
+  OPEN_EXISTING = 3;
+  FILE_ATTRIBUTE_NORMAL = $80;
+  INVALID_HANDLE_VALUE = -1;
+
+procedure AssignFile(var F: Text; const Name: string);
+var
+  State: PByte;
+  NameCopy: PWord;
+  Source: PWord;
+  Len, I: Integer;
+begin
+  State := @F;
+  for I := 0 to 31 do
+    State[I] := 0;
+  SetHandle(F, INVALID_HANDLE_VALUE);
+  Len := Length(Name);
+  NameCopy := HeapAlloc(Heap, 0, (Len + 1) * 2);
+  if NameCopy = nil then
+    _RunError(203);
+  Source := PWord(PChar(Name));
+  for I := 0 to Len - 1 do
+    NameCopy[I] := Source[I];
+  NameCopy[Len] := 0;
+  PPointer(State + 24)^ := NameCopy;
+end;
+
+procedure Reset(var F: Text);
+var
+  State: PByte;
+  H: NativeInt;
+begin
+  State := @F;
+  H := CreateFileW(PPointer(State + 24)^, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  if H = INVALID_HANDLE_VALUE then
+  begin
+    InOutRes := Integer(GetLastError);
+    Exit;
+  end;
+  SetHandle(F, H);
+  PInteger(State + 8)^ := 0;
+  PInteger(State + 12)^ := 0;
+  PInteger(State + 16)^ := 0;
+  PInteger(State + 20)^ := 0;
 end;
 
 { rtl-abi.md section 9.2: Size <= 0 gives nil; an exhausted heap is runtime error 203 }
