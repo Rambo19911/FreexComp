@@ -51,6 +51,10 @@ GetTempPathW
 GetTickCount
 GetTickCount64
 GetTimeZoneInformation
+GlobalAlloc
+GlobalFree
+GlobalLock
+GlobalUnlock
 HeapAlloc
 HeapFree
 HeapReAlloc

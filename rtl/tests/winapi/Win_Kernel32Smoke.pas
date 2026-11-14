@@ -117,6 +117,7 @@ var
   Heap: THandle;
   P: PByte;
   Text: PWideChar;
+  G: HGLOBAL;
 begin
   Section('memory and errors');
   Heap := GetProcessHeap;
@@ -139,6 +140,17 @@ begin
     nil, ERROR_FILE_NOT_FOUND, 0, PWideChar(@Text), 0, nil) > 0, 'FormatMessageW');
   Check(Text <> nil, 'FormatMessageW allocated');
   Check(LocalFree(HLOCAL(Text)) = 0, 'LocalFree');
+  G := GlobalAlloc(GMEM_MOVEABLE or GMEM_ZEROINIT, 64);
+  Check(G <> 0, 'GlobalAlloc');
+  P := GlobalLock(G);
+  Check((P <> nil) and (P[63] = 0), 'GlobalLock zeroed');
+  P[0] := 5;
+  Check(not GlobalUnlock(G), 'GlobalUnlock (lock count 0)');
+  CheckEqI(0, GetLastError, 'GlobalUnlock NO_ERROR');
+  P := GlobalLock(G);
+  Check((P <> nil) and (P[0] = 5), 'GlobalLock keeps content');
+  GlobalUnlock(G);
+  Check(GlobalFree(G) = 0, 'GlobalFree');
 end;
 
 procedure Console;

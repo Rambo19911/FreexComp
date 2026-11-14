@@ -4,7 +4,8 @@
   - Windows Data Types; LOWORD/HIWORD/MAKELONG/MAKEWPARAM/MAKELPARAM/MAKELRESULT/RGB/GetRValue/GetGValue/GetBValue/
     MAKEINTRESOURCEW/SUCCEEDED/FAILED/GET_X_LPARAM/GET_Y_LPARAM/GET_WHEEL_DELTA_WPARAM macro pages;
   - the reference page of every function declared below (processthreadsapi.h, libloaderapi.h, processenv.h,
-    sysinfoapi.h, heapapi.h, memoryapi.h, winbase.h, errhandlingapi.h, debugapi.h, consoleapi.h, fileapi.h,
+    sysinfoapi.h, heapapi.h, memoryapi.h, winbase.h (including GlobalAlloc, GlobalLock, GlobalUnlock, GlobalFree),
+    errhandlingapi.h, debugapi.h, consoleapi.h, fileapi.h,
     handleapi.h, timezoneapi.h, profileapi.h, synchapi.h, stringapiset.h, winnls.h, wdm.h RtlGetVersion);
   - the structure pages SYSTEMTIME, FILETIME, WIN32_FIND_DATAW, WIN32_FILE_ATTRIBUTE_DATA, RTL_CRITICAL_SECTION,
     EXCEPTION_RECORD, TIME_ZONE_INFORMATION, SECURITY_ATTRIBUTES, OVERLAPPED, SYSTEM_INFO, OSVERSIONINFOW,
@@ -770,6 +771,11 @@ const
   HEAP_NO_SERIALIZE = $00000001;
   HEAP_GENERATE_EXCEPTIONS = $00000004;
   HEAP_ZERO_MEMORY = $00000008;
+  GMEM_FIXED = $0000;
+  GMEM_MOVEABLE = $0002;
+  GMEM_ZEROINIT = $0040;
+  GHND = GMEM_MOVEABLE or GMEM_ZEROINIT;
+  GPTR = GMEM_FIXED or GMEM_ZEROINIT;
   HEAP_REALLOC_IN_PLACE_ONLY = $00000010;
 
   { FormatMessageW }
@@ -1901,6 +1907,10 @@ function VirtualAlloc(lpAddress: Pointer; dwSize: SIZE_T; flAllocationType, flPr
 function VirtualFree(lpAddress: Pointer; dwSize: SIZE_T; dwFreeType: DWORD): BOOL; stdcall;
   external kernel32 name 'VirtualFree';
 function LocalFree(hMem: HLOCAL): HLOCAL; stdcall; external kernel32 name 'LocalFree';
+function GlobalAlloc(uFlags: UINT; dwBytes: SIZE_T): HGLOBAL; stdcall; external kernel32 name 'GlobalAlloc';
+function GlobalLock(hMem: HGLOBAL): Pointer; stdcall; external kernel32 name 'GlobalLock';
+function GlobalUnlock(hMem: HGLOBAL): BOOL; stdcall; external kernel32 name 'GlobalUnlock';
+function GlobalFree(hMem: HGLOBAL): HGLOBAL; stdcall; external kernel32 name 'GlobalFree';
 
 { ---------------------------------------------------------------- kernel32: errors / exceptions }
 function GetLastError: DWORD; stdcall; external kernel32 name 'GetLastError';

@@ -49,6 +49,11 @@ public sealed class MessageRecordSizesTests
         Cracked("TWMGetDlgCode", ("MsgPtr", 16)),
         Cracked("TWMSetText", ("Text", 16)),
         Cracked("TWMSetFont", ("Font", 8), ("Redraw", 16)),
+
+        // the shared records behind the aliases (TWMClose = TWMNoParams, TWMWindowPosChanged = TWMWindowPosMsg, TWMHScroll = TWMScroll)
+        Cracked("TWMNoParams", ("Unused", 8)),
+        Cracked("TWMWindowPosMsg", ("WindowPos", 16)),
+        Cracked("TWMScroll", ("ScrollCode", 8), ("Pos", 10), ("ScrollBar", 16)),
     ];
 
     [Fact]

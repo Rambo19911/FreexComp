@@ -60,7 +60,7 @@ public sealed partial class DefFileTests
     {
         var exports = new Dictionary<string, List<string>>(StringComparer.Ordinal)
         {
-            ["kernel32"] = ["Declared", "Listed", "Twice"],
+            ["kernel32"] = ["Declared", "FromUsed", "Listed", "Twice"],
             ["ntdll"] = ["__C_specific_handler"],
         };
         var a = SourceText.From(@"C:\u\A.pas", """
@@ -90,7 +90,25 @@ public sealed partial class DefFileTests
             end.
             """);
 
-        var problems = MatchDeclarations(exports, [a, b], new InMemoryFileSystem());
+        // the DLL-name constant may come from the interface of a used unit (CommCtrl uses Windows' comctl32), not from another unit
+        var c = SourceText.From(@"C:\u\C.pas", """
+            unit C;
+            interface
+            uses A;
+            function FromUsed: Integer; stdcall; external kernel32 name 'FromUsed';
+            implementation
+            end.
+            """);
+        var d = SourceText.From(@"C:\u\D.pas", """
+            unit D;
+            interface
+            uses B;
+            function NotVisible: Integer; stdcall; external kernel32 name 'NotVisible';
+            implementation
+            end.
+            """);
+
+        var problems = MatchDeclarations(exports, [a, b, c, d], new InMemoryFileSystem());
 
         Assert.Equal(
         [
@@ -99,6 +117,7 @@ public sealed partial class DefFileTests
             "A.pas: NoConv: not declared stdcall (RTL-820)",
             "A.pas: NoDef: no other.def for library 'other.dll'",
             "A.pas: NoName: no \"name '<ExportName>'\" (RTL-820)",
+            "D.pas: NotVisible: library 'kernel32' is not a string constant of this unit or of a unit it uses",
             "kernel32.def: 'Listed' has no external declaration in a shipped unit",
             "kernel32.def: 'Twice' is declared by more than one binding unit (A.pas, B.pas; RTL-802)",
         ], problems);
@@ -109,14 +128,25 @@ public sealed partial class DefFileTests
     {
         var problems = new List<string>();
         var declaredBy = new Dictionary<(string Def, string Name), SortedSet<string>>();
-        foreach (var unit in units)
-        {
-            var tree = SyntaxTree.Parse(unit, null, fs);
-            var file = Path.GetFileName(unit.Path);
-            var dllConstants = tree.Root.DescendantNodes().OfType<ConstDeclarationSyntax>()
+        var parsed = units.Select(u => (Unit: u, Tree: SyntaxTree.Parse(u, null, fs))).ToList();
+
+        // string constants: all of a unit's own, and the interface ones of each unit it names in a uses clause
+        static IEnumerable<(string Name, string Value)> StringConstants(SyntaxNode node) =>
+            node.DescendantNodes().OfType<ConstDeclarationSyntax>()
                 .Where(c => c.Type is null && c.Value is LiteralExpressionSyntax { Token.Value: string })
-                .GroupBy(c => (string)c.Identifier.Value!, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => (string)((LiteralExpressionSyntax)g.First().Value).Token.Value!, StringComparer.OrdinalIgnoreCase);
+                .Select(c => ((string)c.Identifier.Value!, (string)((LiteralExpressionSyntax)c.Value).Token.Value!));
+        var exported = parsed.Where(p => p.Tree.Root is UnitSyntax)
+            .ToDictionary(p => Path.GetFileNameWithoutExtension(p.Unit.Path), p => StringConstants(((UnitSyntax)p.Tree.Root).InterfaceSection).ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (unit, tree) in parsed)
+        {
+            var file = Path.GetFileName(unit.Path);
+            var used = tree.Root.DescendantNodes().OfType<UsedUnitSyntax>().Select(u => u.Name.ToString().Trim())
+                .SelectMany(n => exported.TryGetValue(n, out var list) ? list : []);
+            var dllConstants = StringConstants(tree.Root).Concat(used)
+                .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Value, StringComparer.OrdinalIgnoreCase);
 
             foreach (var routine in tree.Root.DescendantNodes().OfType<RoutineDeclarationSyntax>())
             {
@@ -145,7 +175,7 @@ public sealed partial class DefFileTests
                         Problem("the library must be a DLL-name constant, not a literal (RTL-820)");
                         break;
                     default:
-                        Problem($"library '{external.Value}' is not a string constant of this unit");
+                        Problem($"library '{external.Value}' is not a string constant of this unit or of a unit it uses");
                         break;
                 }
 

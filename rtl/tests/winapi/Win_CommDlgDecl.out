@@ -1,0 +1,32 @@
+# comdlg32 declarations
+ok GetOpenFileNameW
+ok GetOpenFileName alias
+ok GetSaveFileNameW
+ok GetSaveFileName alias
+ok ChooseColorW
+ok ChooseColor alias
+ok ChooseFontW
+ok ChooseFont alias
+ok CommDlgExtendedError before any dialog
+ok SizeOf(TOpenFilenameW)
+ok SizeOf(TChooseColorW)
+ok SizeOf(TChooseFontW)
+# shell32 declarations
+ok ShellExecuteW
+ok ShellExecute alias
+ok SizeOf(TDropFiles)
+# drag and drop
+ok RegisterClassExW
+ok hidden window
+ok DragAcceptFiles True
+ok DragAcceptFiles False
+ok HDROP block
+ok DragQueryFileW count
+ok DragQueryFileW length
+ok DragQueryFileW copied
+ok DragQueryFileW first
+ok DragQueryFile alias
+ok DragQueryFile second
+ok DestroyWindow
+ok UnregisterClassW
+# passed 28 failed 0

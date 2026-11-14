@@ -1,4 +1,7 @@
 using System.Text;
+using FreexComp.Compiler;
+using FreexComp.Compiler.Syntax;
+using FreexComp.Compiler.Text;
 
 namespace FreexComp.Rtl.Tests.Harness;
 
@@ -17,11 +20,13 @@ public sealed class StructSizesTests
     public sealed record Row(string Name, int Size, params (string Field, int Offset)[] Offsets);
 
     /// <summary>The units the generated program uses (besides TestKit).</summary>
-    public static readonly string[] Units = ["Types", "Windows"];
+    public static readonly string[] Units = ["Types", "Windows", "CommCtrl", "CommDlg", "ShellAPI"];
 
     /// <summary>
-    /// winapi.md §4 table: the Types rows (RTL-600, R-038), the kernel32 rows, the user32 rows (R-109) and the gdi32 rows (R-110), plus the kernel32
-    /// records of the Windows unit that the table does not list yet.
+    /// winapi.md §4 table: the Types rows (RTL-600, R-038), the kernel32 rows, the user32 rows (R-109), the gdi32 rows (R-110), the comctl32 rows
+    /// (R-112) and the comdlg32 / shell32 rows (R-113), plus every other record of the binding units (R-114, enforced by
+    /// <see cref="StructSizes_CoversEveryBindingRecord"/>). Offsets of procedural-type fields are not listed: <c>@R.Proc</c> is the
+    /// field's value, not its address.
     /// </summary>
     public static readonly Row[] Rows =
     [
@@ -70,6 +75,55 @@ public sealed class StructSizesTests
         new("TBitmapRec", 32, ("bmPlanes", 16), ("bmBits", 24)),
         new("TBitmapFileHeader", 14, ("bfSize", 2), ("bfReserved1", 6), ("bfOffBits", 10)),
         new("TLogBrush", 16, ("lbHatch", 8)),
+
+        // comctl32 rows (R-112)
+        new("TInitCommonControlsEx", 8, ("dwICC", 4)),
+        new("TNMCustomDraw", 80, ("dwDrawStage", 24), ("hdc", 32), ("rc", 40), ("dwItemSpec", 56), ("uItemState", 64), ("lItemlParam", 72)),
+        new("TTCItemW", 40, ("pszText", 16), ("cchTextMax", 24), ("iImage", 28), ("lParam", 32)),
+        new("TTCHitTestInfo", 12, ("flags", 8)),
+        new("TTBButton", 32, ("fsState", 8), ("fsStyle", 9), ("bReserved", 10), ("dwData", 16), ("iString", 24)),
+        new("TTBAddBitmap", 16, ("nID", 8)),
+        new("TTBButtonInfoW", 48, ("fsState", 16), ("cx", 18), ("lParam", 24), ("pszText", 32), ("cchText", 40)),
+        new("TNMToolBarW", 96, ("iItem", 24), ("tbButton", 32), ("cchText", 64), ("pszText", 72), ("rcButton", 80)),
+        new("TPBRange", 8, ("iHigh", 4)),
+        new("TUDAccel", 8, ("nInc", 4)),
+        new("TNMUpDown", 32, ("iPos", 24), ("iDelta", 28)),
+        new("TToolInfoW", 72, ("hwnd", 8), ("uId", 16), ("rect", 24), ("hinst", 40), ("lpszText", 48), ("lParam", 56), ("lpReserved", 64)),
+        new("TNMTTDispInfoW", 216, ("lpszText", 24), ("szText", 32), ("hinst", 192), ("uFlags", 200), ("lParam", 208)),
+        new("THDItemW", 72, ("pszText", 8), ("hbm", 16), ("cchTextMax", 24), ("fmt", 28), ("lParam", 32), ("iImage", 40), ("iOrder", 44),
+            ("&type", 48), ("pvFilter", 56), ("state", 64)),
+        new("THDLayout", 16, ("pwpos", 8)),
+        new("THDHitTestInfo", 16, ("flags", 8), ("iItem", 12)),
+        new("TNMHeaderW", 40, ("iItem", 24), ("iButton", 28), ("pitem", 32)),
+        new("TLVItemW", 88, ("iSubItem", 8), ("state", 12), ("stateMask", 16), ("pszText", 24), ("cchTextMax", 32), ("iImage", 36),
+            ("lParam", 40), ("iIndent", 48), ("iGroupId", 52), ("cColumns", 56), ("puColumns", 64), ("piColFmt", 72), ("iGroup", 80)),
+        new("TLVColumnW", 56, ("pszText", 16), ("cchTextMax", 24), ("iSubItem", 28), ("iOrder", 36), ("cxIdeal", 48)),
+        new("TNMListView", 64, ("iItem", 24), ("uNewState", 32), ("uChanged", 40), ("ptAction", 44), ("lParam", 56)),
+        new("TNMItemActivate", 72, ("ptAction", 44), ("lParam", 56), ("uKeyFlags", 64)),
+        new("TLVDispInfoW", 112, ("item", 24)),
+        new("TLVHitTestInfo", 24, ("flags", 8), ("iItem", 12), ("iSubItem", 16), ("iGroup", 20)),
+        new("TLVFindInfoW", 40, ("psz", 8), ("lParam", 16), ("pt", 24), ("vkDirection", 32)),
+        new("TNMLVCustomDraw", 136, ("clrText", 80), ("iSubItem", 88), ("dwItemType", 92), ("clrFace", 96), ("iStateId", 112), ("rcText", 116),
+            ("uAlign", 132)),
+        new("TTVItemW", 56, ("hItem", 8), ("state", 16), ("stateMask", 20), ("pszText", 24), ("cchTextMax", 32), ("iImage", 36),
+            ("iSelectedImage", 40), ("cChildren", 44), ("lParam", 48)),
+        new("TTVItemExW", 80, ("iIntegral", 56), ("uStateEx", 60), ("hwnd", 64), ("iExpandedImage", 72), ("iReserved", 76)),
+        new("TTVInsertStructW", 96, ("hInsertAfter", 8), ("item", 16), ("itemexPadding", 72)),
+        new("TNMTreeViewW", 152, ("action", 24), ("itemOld", 32), ("itemNew", 88), ("ptDrag", 144)),
+        new("TTVDispInfoW", 80, ("item", 24)),
+        new("TTVHitTestInfo", 24, ("flags", 8), ("hItem", 16)),
+        new("TTVSortCB", 24, ("lParam", 16)),
+        new("TNMTVCustomDraw", 96, ("clrText", 80), ("clrTextBk", 84), ("iLevel", 88)),
+
+        // comdlg32 and shell32 rows (R-113)
+        new("TOpenFilenameW", 152, ("hwndOwner", 8), ("hInstance", 16), ("lpstrFilter", 24), ("nMaxCustFilter", 40), ("nFilterIndex", 44),
+            ("lpstrFile", 48), ("nMaxFile", 56), ("lpstrFileTitle", 64), ("nMaxFileTitle", 72), ("lpstrInitialDir", 80), ("lpstrTitle", 88),
+            ("Flags", 96), ("nFileOffset", 100), ("nFileExtension", 102), ("lpstrDefExt", 104), ("lCustData", 112), ("lpTemplateName", 128),
+            ("pvReserved", 136), ("dwReserved", 144), ("FlagsEx", 148)),
+        new("TChooseColorW", 72, ("rgbResult", 24), ("lpCustColors", 32), ("Flags", 40), ("lCustData", 48), ("lpTemplateName", 64)),
+        new("TChooseFontW", 104, ("hDC", 16), ("lpLogFont", 24), ("iPointSize", 32), ("Flags", 36), ("rgbColors", 40), ("lCustData", 48),
+            ("lpTemplateName", 64), ("hInstance", 72), ("lpszStyle", 80), ("nFontType", 88), ("nSizeMin", 92), ("nSizeMax", 96)),
+        new("TDropFiles", 20, ("pt", 4), ("fNC", 12), ("fWide", 16)),
     ];
 
     [Fact]
@@ -77,6 +131,33 @@ public sealed class StructSizesTests
     [Trait("Req", "RTL-830")]
     [Trait("Req", "RTL-833")]
     public Task StructSizes() => RunAsync("StructSizes", Units, Rows);
+
+    /// <summary>
+    /// RTL-835 completeness (R-114): every record type declared in the interface of a binding unit
+    /// (<c>rtl/winapi/src</c>) has a row here or in <see cref="MessageRecordSizesTests.Rows"/>, so a new record cannot
+    /// ship without its size check. Pointer and alias declarations (<c>PFoo = ^TFoo</c>, <c>FOO = TFoo</c>) are not records.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Integration")]
+    [Trait("Req", "RTL-835")]
+    public void StructSizes_CoversEveryBindingRecord()
+    {
+        var dir = Path.Combine(RtlSetup.RepositoryRoot, "rtl", "winapi", "src");
+        var covered = Rows.Concat(MessageRecordSizesTests.Rows).Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missing = new List<string>();
+        foreach (var path in Directory.GetFiles(dir, "*.pas").OrderBy(f => f, StringComparer.Ordinal))
+        {
+            var tree = SyntaxTree.Parse(SourceText.From(path, File.ReadAllText(path)), null, PhysicalFileSystem.Instance);
+            var root = Assert.IsType<UnitSyntax>(tree.Root);
+            missing.AddRange(root.InterfaceSection.DescendantNodes().OfType<TypeDeclarationSyntax>()
+                .Where(t => t.Type is RecordTypeSyntax)
+                .Select(t => (string)t.Identifier.Value!)
+                .Where(name => !covered.Contains(name))
+                .Select(name => $"{Path.GetFileName(path)}: {name}"));
+        }
+
+        Assert.True(missing.Count == 0, "records without a StructSizes row:\n" + string.Join("\n", missing));
+    }
 
     /// <summary>Generates the program of <paramref name="rows"/> as <c>winapi/&lt;name&gt;</c> and runs it through the golden runner.</summary>
     internal static async Task RunAsync(string name, string[] units, Row[] rows)

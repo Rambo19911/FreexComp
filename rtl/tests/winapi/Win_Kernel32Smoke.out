@@ -67,6 +67,12 @@ ok SetLastError/GetLastError
 ok FormatMessageW
 ok FormatMessageW allocated
 ok LocalFree
+ok GlobalAlloc
+ok GlobalLock zeroed
+ok GlobalUnlock (lock count 0)
+ok GlobalUnlock NO_ERROR
+ok GlobalLock keeps content
+ok GlobalFree
 # std handles
 ok GetStdHandle
 ok GetFileType pipe
@@ -118,4 +124,4 @@ ok event reset
 ok CreateMutexW/ReleaseMutex
 ok ReleaseMutex not owned
 ok CreateSemaphoreW/ReleaseSemaphore
-# passed 112 failed 0
+# passed 118 failed 0

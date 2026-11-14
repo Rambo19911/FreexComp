@@ -2,7 +2,10 @@
   "aliases": {
     "System.RTLConsts": "RTLConsts",
     "System.Types": "Types",
+    "Winapi.CommCtrl": "CommCtrl",
+    "Winapi.CommDlg": "CommDlg",
     "Winapi.Messages": "Messages",
+    "Winapi.ShellAPI": "ShellAPI",
     "Winapi.Windows": "Windows"
   }
 }
