@@ -126,11 +126,17 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         FoldAllCommandId => Folding.CanFoldAll,
         UnfoldAllCommandId => Folding.CanUnfoldAll,
         _ when IsEditingCommand(commandId) => CanExecuteEditing(commandId),
+        _ when IsClipboardCommand(commandId) => CanExecuteClipboard(commandId),
+        _ when ViewCommandIds.Contains(commandId) => CanExecuteView(commandId),
         _ => LineEnding.CanExecute(commandId, argument),
     };
 
     Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
     {
+        if (IsClipboardCommand(commandId))
+            return ExecuteClipboardAsync(commandId);
+        if (ViewCommandIds.Contains(commandId))
+            return Task.FromResult(CanExecuteView(commandId) && ExecuteView(commandId));
         if (commandId == GoToMatchingBracketCommandId)
             return GoToMatchingBracketAsync();
         if (IsEditingCommand(commandId))

@@ -27,6 +27,10 @@ public sealed class EditorOptions : INotifyPropertyChanged
         [SettingsCatalog.EditorHighlightMatchingBrackets.Name] = nameof(HighlightMatchingBrackets),
         [SettingsCatalog.EditorHighlightWordOccurrences.Name] = nameof(HighlightWordOccurrences),
         [SettingsCatalog.EditorShowIndentGuides.Name] = nameof(ShowIndentGuides),
+        [SettingsCatalog.EditorFontSize.Name] = nameof(FontSize),
+        [SettingsCatalog.EditorFontFamily.Name] = nameof(FontFamily),
+        [SettingsCatalog.EditorWordWrap.Name] = nameof(WordWrap),
+        [SettingsCatalog.EditorMouseWheelZoom.Name] = nameof(MouseWheelZoom),
     };
 
     private readonly ISettingsService? _settings;
@@ -88,6 +92,18 @@ public sealed class EditorOptions : INotifyPropertyChanged
 
     /// <summary>UI-ED-056: <c>editor.showIndentGuides</c>.</summary>
     public bool ShowIndentGuides => Get(SettingsCatalog.EditorShowIndentGuides);
+
+    /// <summary>IDE-ED-039: <c>editor.fontSize</c>, the unzoomed font size of every editor (6 to 72).</summary>
+    public int FontSize => Get(SettingsCatalog.EditorFontSize);
+
+    /// <summary><c>editor.fontFamily</c>; empty = the theme's monospace font (<c>font.mono</c>).</summary>
+    public string FontFamily => Get(SettingsCatalog.EditorFontFamily);
+
+    /// <summary>IDE-ED-040: <c>editor.wordWrap</c>, the word wrap of newly opened documents.</summary>
+    public bool WordWrap => Get(SettingsCatalog.EditorWordWrap);
+
+    /// <summary>UI-ED-061: <c>editor.mouseWheelZoom</c>, Ctrl+wheel zooms.</summary>
+    public bool MouseWheelZoom => Get(SettingsCatalog.EditorMouseWheelZoom);
 
     /// <summary>
     /// The style of a syntax token in a theme: <c>colors.&lt;theme&gt;.&lt;token&gt;.style</c> (<c>regular</c>,

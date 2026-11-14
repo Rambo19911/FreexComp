@@ -60,6 +60,7 @@ public static class ServiceGraph
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.Layout = layout;
         documents.Clock = platform.Clock;
+        documents.Clipboard = platform.Clipboard;
         documents.RegisterCommands(commands);
         KeyboardShortcutsDocument.RegisterCommands(commands, documents, keymap);
         projects = new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,

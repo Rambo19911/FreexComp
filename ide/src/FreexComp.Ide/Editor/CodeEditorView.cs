@@ -34,17 +34,10 @@ namespace FreexComp.Ide.Editor;
 /// the view is bound, so a document survives its view (IDE-ARCH-111). The document area shows only the active
 /// document, so only its view exists (IDE-ARCH-112).</item>
 /// </list>
-/// The <c>Editor</c> command scope; the view is the command target for the commands that need the selection
-/// (clipboard, select all) and passes the rest to the document.
+/// The <c>Editor</c> command scope; the view is the command target and passes every command to the document.
 /// </summary>
 public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 {
-    private const string CutCommandId = "edit.cut";
-    private const string CopyCommandId = "edit.copy";
-    private const string PasteCommandId = "edit.paste";
-    private const string DeleteCommandId = "edit.delete";
-    private const string SelectAllCommandId = "edit.selectAll";
-
     /// <summary>UI-ED-032: the pointer counts as near the gutter up to this far into the text area.</summary>
     private const double FoldMarkerHoverZone = 24;
 
@@ -72,8 +65,6 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         _editor.ShowLineNumbers = false; // our own margins replace AvaloniaEdit's (editor.md §2)
         Bind(_editor, TextEditor.BackgroundProperty, "FxcBgEditorBrush");
         Bind(_editor, TextEditor.ForegroundProperty, "FxcSyntaxTextBrush");
-        Bind(_editor, TextEditor.FontFamilyProperty, "FxcFontMono");
-        Bind(_editor, TextEditor.FontSizeProperty, "FxcTypeCodeSize");
         Bind(area, TextArea.CaretBrushProperty, "FxcEditorCaretBrush");
         Bind(area, TextArea.SelectionBrushProperty, "FxcEditorSelectionBgBrush");
         Bind(textView, TextView.NonPrintableCharacterBrushProperty, "FxcEditorWhitespaceBrush"); // UI-ED-058
@@ -97,6 +88,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         options.ShowTabsGlyph = "→";
         options.EnableHyperlinks = false;
         options.EnableEmailHyperlinks = false;
+        options.InheritWordWrapIndentation = true; // IDE-ED-040: continuation lines keep the line's indentation
         _currentLine = new CurrentLineRenderer(area, this);
         _lineStates = new LineStateBackgroundRenderer(this);
         textView.BackgroundRenderers.Add(_currentLine);
@@ -108,6 +100,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
         area.TextEntering += OnTextEntering;
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(PointerWheelChangedEvent, OnPointerWheel, RoutingStrategies.Tunnel);
         area.Caret.PositionChanged += (_, _) =>
         {
             MirrorSelection();
@@ -145,54 +138,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     /// <summary>The hosted editor (tests and later editor tasks).</summary>
     public TextEditor Editor => _editor;
 
-    public bool CanExecute(string commandId, string? argument)
-    {
-        if (_document is null)
-            return false;
-        return commandId switch
-        {
-            // menus.md: Cut = selection and writable; Paste = writable (the clipboard cannot be read synchronously,
-            // UI-MENU-006, so an empty clipboard makes Paste a no-op instead of disabling it).
-            CopyCommandId => !_editor.TextArea.Selection.IsEmpty,
-            CutCommandId => !_editor.TextArea.Selection.IsEmpty && !_document.IsReadOnly,
-            PasteCommandId => !_document.IsReadOnly,
-            // menus.md "text target": on a read-only document the edit is refused with Msg.Editor.ReadOnlyEdit.
-            DeleteCommandId or SelectAllCommandId => true,
-            _ => ((ICommandTarget)_document).CanExecute(commandId, argument),
-        };
-    }
+    /// <summary>Everything, the clipboard commands included (IDE-ED-038), is the document's: the view state holds the selection.</summary>
+    public bool CanExecute(string commandId, string? argument) =>
+        _document is ICommandTarget document && document.CanExecute(commandId, argument);
 
-    public async Task<bool> ExecuteAsync(string commandId, string? argument)
-    {
-        if (_document is not { } document || !CanExecute(commandId, argument))
-            return false;
-        var area = _editor.TextArea;
-        switch (commandId)
-        {
-            case CopyCommandId:
-                await SetClipboardAsync(document.CopySelection());
-                return true;
-            case CutCommandId:
-                var cut = document.CopySelection();
-                if (document.DeleteSelection())
-                    await SetClipboardAsync(cut);
-                return true;
-            case PasteCommandId:
-                if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard && await clipboard.TryGetTextAsync() is { Length: > 0 } text
-                    && _document == document)
-                    document.Paste(text);
-                return true;
-            case DeleteCommandId:
-                document.DeleteForward();
-                return true;
-            case SelectAllCommandId:
-                area.Selection = Selection.Create(area, 0, area.Document.TextLength);
-                area.Caret.Offset = area.Document.TextLength;
-                return true;
-            default:
-                return await ((ICommandTarget)document).ExecuteAsync(commandId, argument);
-        }
-    }
+    public Task<bool> ExecuteAsync(string commandId, string? argument) =>
+        _document is ICommandTarget document ? document.ExecuteAsync(commandId, argument) : Task.FromResult(false);
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -218,12 +169,14 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
     /// <summary>
     /// AvaloniaEdit's undo/redo would bypass the buffer's save-point tracking (IDE-ARCH-030); its paste would insert
-    /// the current line's break and skip the read-only refusal. <c>edit.undo/redo/paste</c> replace them.
+    /// the current line's break and skip the read-only refusal; its cut/copy would use the OS clipboard directly
+    /// (IDE-ED-038). <c>edit.undo/redo/cut/copy/paste</c> replace them.
     /// </summary>
     private static void RemoveBuiltInBindings(TextArea area)
     {
         static bool IsReplaced(object? command) =>
-            command == ApplicationCommands.Undo || command == ApplicationCommands.Redo || command == ApplicationCommands.Paste;
+            command == ApplicationCommands.Undo || command == ApplicationCommands.Redo || command == ApplicationCommands.Paste
+            || command == ApplicationCommands.Cut || command == ApplicationCommands.Copy;
 
         var handler = area.DefaultInputHandler;
         foreach (var h in new[] { handler, handler.Editing, handler.CaretNavigation })
@@ -282,6 +235,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         document.Decorations.Changed += OnDecorationsChanged;
         document.Folding.Changed += OnFoldingChanged;
         document.RevealCaretRequested += OnRevealCaretRequested;
+        ApplyZoomAndWrap();
         SyncFoldings();
 
         // The scroll offsets can be applied once the editor has measured its text.
@@ -539,7 +493,49 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         editorOptions.ShowTabs = options.ShowWhitespace;
         editorOptions.EnableRectangularSelection = options.RectangularSelection; // IDE-ED-026
         editorOptions.IndentationSize = Math.Max(1, options.TabWidth);
+        ApplyFontFamily(options.FontFamily);
+        ApplyZoomAndWrap();
+    }
+
+    private IDisposable? _monoFont;
+    private string? _fontFamily;
+
+    /// <summary><c>editor.fontFamily</c>; empty follows the theme's monospace font resource.</summary>
+    private void ApplyFontFamily(string family)
+    {
+        if (family == _fontFamily)
+            return;
+        _fontFamily = family;
+        _monoFont?.Dispose();
+        _monoFont = null;
+        if (family.Length == 0)
+            _monoFont = _editor.Bind(TextEditor.FontFamilyProperty, _editor.GetResourceObservable("FxcFontMono"));
+        else
+            _editor.FontFamily = new FontFamily(family);
+    }
+
+    /// <summary>
+    /// IDE-ED-039/040: the document's zoomed font size (else <c>editor.fontSize</c>; the margins inherit it, so the
+    /// line numbers' <c>charWidth</c> follows, UI-ED-010) and its word wrap.
+    /// </summary>
+    private void ApplyZoomAndWrap()
+    {
+        _editor.FontSize = _document?.EffectiveFontSize ?? (_document?.Options ?? EditorOptions.Default).FontSize;
+        _editor.WordWrap = _document?.ViewState.WordWrap ?? false;
         InvalidateBackground();
+    }
+
+    /// <summary>UI-ED-061: Ctrl+wheel zooms the document when <c>editor.mouseWheelZoom</c> is on.</summary>
+    private void OnPointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (_document is not { Options.MouseWheelZoom: true } document || e.Delta.Y == 0
+            || !e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control))
+            return;
+        e.Handled = true;
+        var target = (ICommandTarget)document;
+        var id = e.Delta.Y > 0 ? TextDocumentViewModel.ZoomInCommandId : TextDocumentViewModel.ZoomOutCommandId;
+        if (target.CanExecute(id, null))
+            _ = target.ExecuteAsync(id, null);
     }
 
     private void OnDecorationsChanged(object? sender, EventArgs e) => InvalidateBackground();
@@ -648,6 +644,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             ApplySelection(document);
         else if (e.PropertyName == nameof(EditorViewState.Overwrite))
             _editor.TextArea.OverstrikeMode = document.ViewState.Overwrite; // UI-ED-052: block caret
+        else if (e.PropertyName is nameof(EditorViewState.FontSize) or nameof(EditorViewState.WordWrap))
+            ApplyZoomAndWrap();
     }
 
     /// <summary>
@@ -769,11 +767,5 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         if (key is null || (e.KeyModifiers != Avalonia.Input.KeyModifiers.None && e.KeyModifiers != Avalonia.Input.KeyModifiers.Shift))
             return;
         e.Handled = document.HandleKey(e.KeyModifiers == Avalonia.Input.KeyModifiers.Shift ? "Shift+" + key : key);
-    }
-
-    private async Task SetClipboardAsync(string text)
-    {
-        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
-            await clipboard.SetTextAsync(text);
     }
 }

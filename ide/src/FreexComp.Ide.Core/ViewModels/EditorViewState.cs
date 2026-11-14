@@ -6,8 +6,8 @@ namespace FreexComp.Ide.Core.ViewModels;
 /// <summary>
 /// View state of a text document that survives its view (architecture.md §5, IDE-ARCH-111/112): caret, selection
 /// anchor (null = no selection), overwrite mode and scroll offsets (DIP). The code editor view mirrors its state into
-/// here and restores it when it is created. Folded regions are <see cref="FoldedLines"/>; zoom and word wrap join with
-/// their tasks.
+/// here and restores it when it is created. Folded regions are <see cref="FoldedLines"/>; zoom is <see cref="FontSize"/>,
+/// word wrap <see cref="WordWrap"/>.
 /// </summary>
 public sealed class EditorViewState : ObservableObject
 {
@@ -71,6 +71,27 @@ public sealed class EditorViewState : ObservableObject
     }
 
     private bool _rectangularSelection;
+
+    /// <summary>
+    /// IDE-ED-039: the zoomed font size of this document (6…72); null follows <c>editor.fontSize</c>. Stored in the
+    /// session as <c>zoom</c>, a percentage of <c>editor.fontSize</c>.
+    /// </summary>
+    public int? FontSize
+    {
+        get => _fontSize;
+        set => SetProperty(ref _fontSize, value);
+    }
+
+    private int? _fontSize;
+
+    /// <summary>IDE-ED-040: word wrap of this document (initially <c>editor.wordWrap</c>); stored in the session.</summary>
+    public bool WordWrap
+    {
+        get => _wordWrap;
+        set => SetProperty(ref _wordWrap, value);
+    }
+
+    private bool _wordWrap;
 
     /// <summary>
     /// 1-based start lines of the folded regions, ascending (architecture.md §8.2 <c>folds</c>). Kept current by the

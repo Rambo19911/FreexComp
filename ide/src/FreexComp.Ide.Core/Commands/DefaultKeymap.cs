@@ -157,6 +157,9 @@ public static class DefaultKeymap
         new(KeyGesture.Parse("Delete"), Focus, null, "edit.delete"),
         new(KeyGesture.Parse("Delete"), ProjectManager, null, "project.removeFile"),
         new(KeyGesture.Parse("Shift+Delete"), ProjectManager, null, "project.deleteFile"),
+        new(KeyGesture.Parse("Shift+Delete"), Focus, null, "edit.cut"), // I-054: the classic clipboard keys
+        new(KeyGesture.Parse("Ctrl+Insert"), Focus, null, "edit.copy"),
+        new(KeyGesture.Parse("Shift+Insert"), Focus, null, "edit.paste"),
         new(KeyGesture.Parse("Delete"), ToolList, "Breakpoints", "breakpoints.delete"),
         new(KeyGesture.Parse("Delete"), ToolList, "Watches", "watches.delete"),
         new(KeyGesture.Parse("Ctrl+Delete"), ToolList, "ObjectInspector", "objectInspector.resetToDefault"),

@@ -235,6 +235,12 @@ public sealed class SessionService : ISessionService
         // Fold lines that no longer start a region are dropped by the folding model.
         if (entry["folds"] is JsonArray folds)
             state.FoldedLines = [.. folds.Select(LayoutStateJson.Int).OfType<int>().Distinct().Order()];
+
+        // IDE-ED-039/040: zoom as a percentage of editor.fontSize, word wrap per document.
+        if (LayoutStateJson.Int(entry["zoom"]) is > 0 and var zoom)
+            document.SetZoomPercent(zoom);
+        if (entry["wordWrap"] is JsonValue wrap && wrap.TryGetValue(out bool wordWrap))
+            state.WordWrap = wordWrap;
     }
 
     private static TextPosition? Position(ITextBuffer buffer, JsonNode? node)
@@ -258,6 +264,8 @@ public sealed class SessionService : ISessionService
             : null;
         json["scroll"] = new JsonObject { ["line"] = state.TopLine, ["x"] = state.HorizontalOffset };
         json["folds"] = new JsonArray([.. state.FoldedLines.Select(l => (JsonNode)l)]);
+        json["zoom"] = text.ZoomPercent;
+        json["wordWrap"] = state.WordWrap;
         return json;
     }
 

@@ -187,6 +187,7 @@ public sealed partial class MenuTests
         "window.nextPane", "window.previousPane", "window.layout.edit", "window.resetLayout",
         "window.focusEditor", // menus.md says "doc"; UI-A11Y-004 / I-024: Alt+0 focuses the empty document area too
         "help.keyboardShortcuts", "help.licenses", "help.about",
+        "view.showWhitespace", // I-055: the setting editor.showWhitespace
     ];
 
     /// <summary>P1 menu commands that still have no handler, with the task that adds it (and its condition here).</summary>
@@ -196,8 +197,6 @@ public sealed partial class MenuTests
         ["search.find"] = "I-058", ["search.replace"] = "I-058", ["search.findNext"] = "I-058", ["search.findPrevious"] = "I-058",
         ["search.findSelectionNext"] = "I-058", ["search.goToLine"] = "I-059",
         ["search.navigateBack"] = "I-060", ["search.navigateForward"] = "I-060",
-        ["view.wordWrap"] = "I-055", ["view.showWhitespace"] = "I-055", ["view.zoomIn"] = "I-055", ["view.zoomOut"] = "I-055",
-        ["view.zoomReset"] = "I-055",
     };
 
     /// <summary>
@@ -210,8 +209,11 @@ public sealed partial class MenuTests
         "edit.indent", "edit.outdent",
     ];
 
-    /// <summary>I-052: enabled in every text document, read-only too ("text").</summary>
-    private static readonly string[] TextCommands = ["search.goToMatchingBracket"];
+    /// <summary>
+    /// I-052, I-055: enabled in every text document, read-only too ("text"); zoom in/out while the font size is within
+    /// 6…72 (Reset Zoom needs a zoom, see <see cref="Conditional"/>).
+    /// </summary>
+    private static readonly string[] TextCommands = ["search.goToMatchingBracket", "view.wordWrap", "view.zoomIn", "view.zoomOut"];
 
     /// <summary>I-048: these also depend on the caret (first / last touched line, a selection or a word under the caret).</summary>
     private static readonly string[] CaretCommands = ["edit.moveLineUp", "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"];
@@ -223,7 +225,7 @@ public sealed partial class MenuTests
         "file.closeProject", "edit.undo", "edit.redo", "edit.cut", "edit.copy", "edit.paste", "edit.delete", "edit.selectAll",
         "edit.convertLineEndings:crlf", "edit.convertLineEndings:lf", "edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll",
         "project.addNewUnit", "project.addExistingFile", "project.removeFile", "project.viewSource",
-        "window.nextDocument", "window.previousDocument", "window.documents", "window.closeToolWindow",
+        "window.nextDocument", "window.previousDocument", "window.documents", "window.closeToolWindow", "view.zoomReset",
         .. PascalTextCommands, .. CaretCommands, .. TextCommands,
     ];
 
@@ -288,13 +290,19 @@ public sealed partial class MenuTests
         Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "A.pas"))).Success);
         var a = FocusEditor(h, "A.pas");
         a.TextArea.Caret.Line = 8;
-        string[] cleanA = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "edit.paste", "edit.delete", "edit.selectAll",
-            "edit.convertLineEndings:lf", "edit.fold", "edit.foldAll", "window.documents", .. PascalTextCommands, .. TextCommands];
+        // IDE-ED-038 (I-054): Cut and Copy without a selection take the caret line.
+        string[] cleanA = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "edit.cut", "edit.copy", "edit.paste",
+            "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "edit.fold", "edit.foldAll", "window.documents",
+            .. PascalTextCommands, .. TextCommands];
         AssertEnabled(h, "clean", [.. cleanA, .. CaretCommands]); // the caret is on "begin" of line 8
 
-        // A selection enables Cut and Copy.
+        // I-055: a zoomed document can reset its zoom.
+        await h.ExecuteAsync("view.zoomIn");
+        AssertEnabled(h, "zoomed", [.. cleanA, .. CaretCommands, "view.zoomReset"]);
+        await h.ExecuteAsync("view.zoomReset");
+
         a.Select(0, 4);
-        AssertEnabled(h, "selection", [.. cleanA, "edit.cut", "edit.copy", "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"],
+        AssertEnabled(h, "selection", [.. cleanA, "edit.moveLineDown", "edit.upperCase", "edit.lowerCase"],
             FoldCommands); // the caret left the routine; line 1 cannot move up
 
         // Modified: Save, Save All, Revert, Undo.
@@ -339,8 +347,8 @@ public sealed partial class MenuTests
         FocusEditor(h, "Unit1.pas");
         AssertEnabled(h, "untitled",
         [
-            "file.clearRecent", "file.save", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.paste",
-            "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "window.nextDocument", "window.previousDocument", "window.documents",
+            "file.clearRecent", "file.save", "file.saveAs", "file.saveAll", "file.close", "file.closeAll", "edit.cut", "edit.copy",
+            "edit.paste", "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "window.nextDocument", "window.previousDocument", "window.documents",
             .. PascalTextCommands, .. TextCommands,
         ], FoldAndCaretCommands);
 
@@ -369,7 +377,8 @@ public sealed partial class MenuTests
         });
         Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(h.TempDir, "P", "P.pproj")));
         FocusEditor(h, "P.pas");
-        string[] project = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "file.closeProject", "edit.paste",
+        string[] project = ["file.clearRecent", "file.saveAs", "file.close", "file.closeAll", "file.closeProject", "edit.cut", "edit.copy",
+            "edit.paste",
             "edit.delete", "edit.selectAll", "edit.convertLineEndings:lf", "project.addNewUnit", "project.addExistingFile", "project.viewSource",
             "window.documents", .. PascalTextCommands, .. TextCommands];
 

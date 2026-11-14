@@ -71,7 +71,7 @@ public sealed class TypingAidViewTests
         Assert.Equal(new TextPosition(1, 2), doc.ViewState.SelectionAnchor);
 
         await h.ExecuteAsync("edit.copy");
-        Assert.Equal("bc\r\nbc", await TopLevel.GetTopLevel(h.Window)!.Clipboard!.TryGetTextAsync());
+        Assert.Equal("bc\r\nbc", await h.Services.Clipboard.GetTextAsync());
 
         h.Type("Z");
         Assert.Equal("aZd\r\naZd\r\n", doc.Buffer.Text);

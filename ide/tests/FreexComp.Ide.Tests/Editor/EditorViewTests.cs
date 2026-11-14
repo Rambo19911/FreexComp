@@ -7,6 +7,7 @@ using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.Editing;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Editor;
@@ -187,7 +188,7 @@ public sealed class EditorViewTests
         await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = "a\r\n");
         var doc = await OpenAsync(h, "A.pas");
         FocusEditor(h, "A.pas");
-        await TopLevel.GetTopLevel(h.Window)!.Clipboard!.SetTextAsync("x\ny\r\nz");
+        await h.Services.Clipboard.SetTextAsync("x\ny\r\nz");
 
         h.Press("Ctrl+V");
         await h.WaitForAsync(() => doc.Buffer.Text != "a\r\n", "paste applied");
@@ -195,6 +196,119 @@ public sealed class EditorViewTests
         Assert.Equal(new TextPosition(3, 2), doc.ViewState.Caret);
         doc.Buffer.Undo();
         Assert.Equal("a\r\n", doc.Buffer.Text); // one undo step
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-039")]
+    [Trait("Req", "IDE-ED-040")]
+    [Trait("Req", "UI-ED-010")]
+    [Trait("Req", "UI-ED-058")]
+    public async Task ZoomWrapWhitespaceToggles()
+    {
+        var longLine = "  begin " + string.Concat(Enumerable.Repeat("Writeln(1); ", 60)) + "end;";
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["A.pas"] = "unit A;\r\n" + longLine + "\r\n";
+            o.InitialFiles["B.pas"] = "unit B;\r\n";
+        });
+        var settings = h.Services.Settings;
+        var commands = h.Services.Commands;
+        var doc = await OpenAsync(h, "A.pas");
+        var editor = FocusEditor(h, "A.pas");
+        IEditorTestProbe Probe() => h.Find<TextEditor>("Editor.A.pas").FindAncestorOfType<CodeEditorView>()!;
+
+        // The editor follows editor.fontSize and editor.fontFamily (empty = the mono font resource).
+        Assert.Equal(13, editor.FontSize);
+        settings.Set(SettingsCatalog.EditorFontSize, 15);
+        settings.Set(SettingsCatalog.EditorFontFamily, "Courier New");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal((15d, "Courier New"), (editor.FontSize, editor.FontFamily.Name));
+
+        // IDE-ED-039: ±1 pt per document; the line-number margin's charWidth follows (UI-ED-010).
+        var gutter = Probe().GutterWidth;
+        Assert.False(commands.CanExecute("view.zoomReset"));
+        h.Press("Ctrl+=");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal((16d, 16), (editor.FontSize, doc.ViewState.FontSize));
+        Assert.True(Probe().GutterWidth > gutter);
+        Assert.True(commands.CanExecute("view.zoomReset"));
+        h.Press("Ctrl+-");
+        h.Press("Ctrl+-");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(14d, editor.FontSize);
+        await h.ExecuteAsync("view.zoomReset");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal((15d, (int?)null), (editor.FontSize, doc.ViewState.FontSize));
+
+        // Limits 6…72.
+        settings.Set(SettingsCatalog.EditorFontSize, 72);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(commands.CanExecute("view.zoomIn"));
+        Assert.True(commands.CanExecute("view.zoomOut"));
+        settings.Set(SettingsCatalog.EditorFontSize, 6);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(commands.CanExecute("view.zoomIn"));
+        Assert.False(commands.CanExecute("view.zoomOut"));
+        settings.Set(SettingsCatalog.EditorFontSize, 13);
+        await h.ExecuteAsync("view.zoomIn");
+        await h.ExecuteAsync("view.zoomIn");
+
+        // IDE-ED-040: word wrap per document, checked in the menu, continuation lines keep the indentation.
+        Assert.False(editor.WordWrap);
+        h.Press("Alt+Z");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(editor.WordWrap);
+        Assert.True(doc.ViewState.WordWrap);
+        Assert.True(commands.Get("view.wordWrap").IsChecked);
+        Assert.True(editor.Options.InheritWordWrapIndentation);
+
+        // UI-ED-058: Show Whitespace toggles editor.showWhitespace for every editor.
+        Assert.False(editor.Options.ShowSpaces);
+        await h.ExecuteAsync("view.showWhitespace");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(settings.Get(SettingsCatalog.EditorShowWhitespace));
+        Assert.True(commands.Get("view.showWhitespace").IsChecked);
+        Assert.True(editor.Options.ShowSpaces && editor.Options.ShowTabs);
+
+        // Another document: its own zoom and wrap; a new one starts from editor.wordWrap.
+        settings.Set(SettingsCatalog.EditorWordWrap, true);
+        await OpenAsync(h, "B.pas");
+        var b = h.Find<TextEditor>("Editor.B.pas");
+        Assert.Equal((13d, true), (b.FontSize, b.WordWrap));
+        Assert.False(commands.CanExecute("view.zoomReset"));
+        Assert.True(commands.CanExecute("view.wordWrap"));
+        Assert.True(commands.Get("view.wordWrap").IsChecked);
+        Assert.True(b.Options.ShowSpaces);
+
+        // Zoom (percent of editor.fontSize) and word wrap go into the session and come back.
+        h.Services.Session.Save();
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(h.Services.Session.SessionPath))!;
+        var entry = json["documents"]!.AsArray().Single(d => ((string)d!["path"]!).EndsWith("A.pas", StringComparison.Ordinal))!;
+        Assert.Equal((115, true), ((int)entry["zoom"]!, (bool)entry["wordWrap"]!));
+        await h.Services.Documents.CloseAllAsync();
+        settings.Set(SettingsCatalog.EditorWordWrap, false);
+        await h.Services.Session.RestoreAsync();
+        var restored = Assert.IsType<TextDocumentViewModel>(h.Services.Documents.Documents.Single(d => d.Title == "A.pas"));
+        Assert.Equal((15, true), (restored.ViewState.FontSize, restored.ViewState.WordWrap));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-038")]
+    public async Task ClassicClipboardKeysCopyAndPasteLines()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = "one\r\ntwo\r\n");
+        var doc = await OpenAsync(h, "A.pas");
+        var editor = FocusEditor(h, "A.pas");
+        editor.TextArea.Caret.Offset = doc.Buffer.GetOffset(2, 2);
+        Dispatcher.UIThread.RunJobs();
+
+        h.Press("Ctrl+Insert"); // edit.copy without a selection: the caret line, through IClipboardService
+        await h.WaitForAsync(() => ((FreexComp.Ide.TestSupport.FakeClipboard)h.Services.Clipboard).Text == "two\r\n", "line copied");
+        h.Press("Shift+Insert"); // edit.paste: the line goes in above the caret line
+        await h.WaitForAsync(() => doc.Buffer.Text == "one\r\ntwo\r\ntwo\r\n", "line pasted");
+        Assert.Equal(new TextPosition(3, 2), doc.ViewState.Caret);
+        h.Press("Shift+Delete"); // edit.cut without a selection: the caret line
+        await h.WaitForAsync(() => doc.Buffer.Text == "one\r\ntwo\r\n", "line cut");
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -222,7 +336,7 @@ public sealed class EditorViewTests
         Assert.Equal(new TextPosition(2, 3), doc.ViewState.Caret);
 
         // IDE-ED-010: pasted lines are inserted verbatim, without re-indentation.
-        await TopLevel.GetTopLevel(h.Window)!.Clipboard!.SetTextAsync("a\r\nb");
+        await h.Services.Clipboard.SetTextAsync("a\r\nb");
         h.Press("Ctrl+V");
         await h.WaitForAsync(() => doc.Buffer.Text.Contains('b', StringComparison.Ordinal), "paste applied");
         Assert.Equal("  begin\r\n  a\r\nbend\r\n", doc.Buffer.Text);

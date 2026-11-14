@@ -79,6 +79,9 @@ public sealed class DocumentService : IDocumentService
     /// <summary>Typing pauses for undo grouping (IDE-P1-091; set by the service graph).</summary>
     public IClock? Clock { get; set; }
 
+    /// <summary>The OS clipboard of the documents' clipboard commands (IDE-ED-038; set by the service graph).</summary>
+    public IClipboardService? Clipboard { get; set; }
+
     /// <summary>Creates the Welcome page (welcome-page.md; set by the service graph).</summary>
     public Func<WelcomeDocumentViewModel>? WelcomeFactory { get; set; }
 
@@ -143,12 +146,25 @@ public sealed class DocumentService : IDocumentService
         // edit.convertLineEndings (status-bar R6, Edit menu) and the editor operations (editor-features.md §2, §4),
         // until the generic Editor-scope route (I-158).
         foreach (var id in (string[])["edit.fold", "edit.unfold", "edit.foldAll", "edit.unfoldAll", LineEndingModel.ConvertCommandId,
-                     .. TextDocumentViewModel.EditingCommandIds])
+                     .. TextDocumentViewModel.EditingCommandIds, .. TextDocumentViewModel.ViewCommandIds])
         {
             commands.RegisterHandler(id, new AsyncHandler(
                 arg => ActiveDocument?.CommandTarget is { } target && target.CanExecute(id, arg) && !IsCurrentLineEnding(id, arg),
-                arg => ActiveDocument!.CommandTarget!.ExecuteAsync(id, arg)));
+                arg => ActiveDocument!.CommandTarget!.ExecuteAsync(id, arg),
+                // IDE-ED-040: the check mark of Word Wrap is the active document's.
+                id == TextDocumentViewModel.WordWrapCommandId ? () => ActiveDocument is TextDocumentViewModel { ViewState.WordWrap: true } : null));
         }
+
+        // UI-ED-058: Show Whitespace is the setting, for every editor.
+        commands.RegisterHandler("view.showWhitespace", new Handler(_ => true,
+            _ => _settings.Set(SettingsCatalog.EditorShowWhitespace, !_settings.Get(SettingsCatalog.EditorShowWhitespace)),
+            () => _settings.Get(SettingsCatalog.EditorShowWhitespace)));
+        _settings.Changed += (_, e) =>
+        {
+            // The check mark of Show Whitespace; zoom limits and Reset Zoom follow editor.fontSize.
+            if (e.Key == SettingsCatalog.EditorShowWhitespace.Name || e.Key == SettingsCatalog.EditorFontSize.Name)
+                commands.InvalidateCanExecute();
+        };
     }
 
     public async Task<OperationResult<DocumentViewModel>> OpenAsync(string path)
@@ -640,6 +656,14 @@ public sealed class DocumentService : IDocumentService
             textDocument.Options = _editorOptions;
             textDocument.BlockClipboard = _blockClipboard;
             textDocument.Clock = Clock;
+            textDocument.Clipboard = Clipboard;
+            textDocument.ViewState.WordWrap = _editorOptions.WordWrap; // IDE-ED-040; a restored session replaces it
+            textDocument.ViewState.PropertyChanged += (_, e) =>
+            {
+                // Zoom limits, Reset Zoom and the Word Wrap check mark follow the view state.
+                if (e.PropertyName is nameof(EditorViewState.FontSize) or nameof(EditorViewState.WordWrap))
+                    _commands?.InvalidateCanExecute();
+            };
         }
         var index = ActiveDocument is null ? _documents.Count : _documents.IndexOf(ActiveDocument) + 1;
         _documents.Insert(index, document);
@@ -775,9 +799,11 @@ public sealed class DocumentService : IDocumentService
     private static string UnitSkeleton(string unitName, string newLine) =>
         string.Join(newLine, $"unit {unitName};", "", "interface", "", "implementation", "", "end.", "");
 
-    private sealed class Handler(Func<string?, bool> canExecute, Action<string?> execute) : ICommandHandler
+    private sealed class Handler(Func<string?, bool> canExecute, Action<string?> execute, Func<bool>? isChecked = null) : ICommandHandler
     {
         public bool CanExecute(string? argument) => canExecute(argument);
+
+        public bool IsChecked(string? argument) => isChecked?.Invoke() ?? false;
 
         public Task ExecuteAsync(string? argument)
         {
@@ -786,9 +812,11 @@ public sealed class DocumentService : IDocumentService
         }
     }
 
-    private sealed class AsyncHandler(Func<string?, bool> canExecute, Func<string?, Task> execute) : ICommandHandler
+    private sealed class AsyncHandler(Func<string?, bool> canExecute, Func<string?, Task> execute, Func<bool>? isChecked = null) : ICommandHandler
     {
         public bool CanExecute(string? argument) => canExecute(argument);
+
+        public bool IsChecked(string? argument) => isChecked?.Invoke() ?? false;
 
         public Task ExecuteAsync(string? argument) => execute(argument);
     }
