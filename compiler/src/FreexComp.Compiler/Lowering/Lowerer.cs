@@ -17,12 +17,19 @@ namespace FreexComp.Compiler.Lowering;
 /// </summary>
 internal static class Lowerer
 {
-    public static LoweredUnit Lower(BindingResult result) =>
-        new(result.Unit, [.. result.Routines.Select(r => LowerRoutine(result, r))], [.. result.Bodies.Select(b => LowerBody(result, b))]);
+    public static LoweredUnit Lower(BindingResult result)
+    {
+        var bodies = result.Bodies.Select(b => (b.Syntax, Lowered: LowerBody(result, b))).ToImmutableArray();
+        return new(result.Unit, [.. result.Routines.Select(r => LowerRoutine(result, r))], [.. bodies.Select(b => b.Lowered)])
+        {
+            Initialization = bodies.FirstOrDefault(b => b.Syntax is InitializationSectionSyntax).Lowered,
+            Finalization = bodies.FirstOrDefault(b => b.Syntax is FinalizationSectionSyntax).Lowered,
+        };
+    }
 
     public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body)
     {
-        var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>());
+        var context = new LoweringContext(result.Types, body.Routine, body.Scope.Symbols.OfType<VariableSymbol>()) { Output = OutputOf(result) };
         var lowered = context.Finish(body.Body);
         // CMP-345: a frame when nested routines capture something of this routine, and for a nested routine with nested
         // routines of its own (field 0 continues the static link chain they walk)
@@ -33,7 +40,11 @@ internal static class Lowerer
 
     /// <summary>The program block or a unit initialization/finalization section (globals only, no locals).</summary>
     public static LoweredBody LowerBody(BindingResult result, BoundBlock block) =>
-        new LoweringContext(result.Types, routine: null, locals: []).Finish(block);
+        new LoweringContext(result.Types, routine: null, locals: []) { Output = OutputOf(result) }.Finish(block);
+
+    /// <summary>The variable <c>Output</c> of the bound <c>System</c> (default file of <c>Write</c>, LANG-910), or null without one.</summary>
+    private static VariableSymbol? OutputOf(BindingResult result) =>
+        result.System?.InterfaceMembers.OfType<VariableSymbol>().FirstOrDefault(v => IdentifierComparer.Instance.Equals(v.Name, "Output"));
 }
 
 /// <summary>Per-body lowering state (locals, temporaries, loop labels) and the translation of plain nodes.</summary>
@@ -64,6 +75,9 @@ internal sealed class LoweringContext
     public BuiltInTypes Types { get; }
 
     public RoutineSymbol? Routine { get; }
+
+    /// <summary><c>System.Output</c> as bound (LANG-910); null when the unit was bound without <c>System</c> (white-box tests).</summary>
+    public VariableSymbol? Output { get; init; }
 
     /// <summary><c>procedure _RunError(Code: Integer)</c>, noreturn (rtl-abi.md §9.1).</summary>
     public RuntimeHelper RunError { get; }

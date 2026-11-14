@@ -68,4 +68,18 @@ exit:
   ret i32 %t9
 }
 
+define void @"M.$init"() #0 {
+entry:
+  br label %exit
+exit:
+  ret void
+}
+
+define void @"M.$final"() #0 {
+entry:
+  br label %exit
+exit:
+  ret void
+}
+
 attributes #0 = { uwtable "frame-pointer"="all" }

@@ -17,7 +17,10 @@ internal static class WriteRewriter
     public static LStatement Rewrite(LoweringContext context, BoundWriteStatement write)
     {
         var types = context.Types;
-        var file = new LAddrOf(write.File is { } variable ? context.Lower(variable) : new LRuntimeVariableRef(new RuntimeVariable("Output", types.Text)), types.Pointer);
+        // the default file is the bound System.Output (LANG-910, 511); units bound without System (white-box tests) use the
+        // same link name through a runtime-variable reference
+        LExpression output = context.Output is { } bound ? new LGlobalRef(bound) : new LRuntimeVariableRef(new RuntimeVariable("Output", types.Text));
+        var file = new LAddrOf(write.File is { } variable ? context.Lower(variable) : output, types.Pointer);
         var statements = ImmutableArray.CreateBuilder<LStatement>();
         foreach (var argument in write.Arguments)
         {

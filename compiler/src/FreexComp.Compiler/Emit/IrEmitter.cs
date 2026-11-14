@@ -12,8 +12,8 @@ namespace FreexComp.Compiler.Emit;
 /// expressions (CMP-312, 315…317), conversions (CMP-305, 313), the always-on division tests of CMP-312, the overflow and
 /// range checks the <see cref="CheckRewriter"/> marked (CMP-312 <c>{$Q+}</c>, CMP-314), control flow
 /// (CMP-318…322), calls (ABI-080…082), nested routines with frame records and static links (CMP-345), UnicodeString
-/// literals (CMP-320) and external System variables (<c>System.Output</c>, CMP-410). Not yet:
-/// program and unit bodies with <c>$init</c>/<c>$final</c>/<c>$main</c> (C-044; they are ignored).
+/// literals (CMP-320), variables of other units (<c>System.Output</c>, CMP-410), unit <c>$init</c>/<c>$final</c> (CMP-350) and
+/// the program's <c>$units</c>, <c>$main</c> and <c>_start</c> (CMP-355; plain calls until the EH milestone adds the handler).
 /// </summary>
 internal static class IrEmitter
 {
@@ -40,7 +40,10 @@ internal static class IrEmitter
     internal static int AttributeGroupOf(RoutineSymbol routine) =>
         MemoryRoutineNames.Contains(Mangler.Routine(routine).Text) ? NoBuiltinsGroup : RoutineGroup;
 
-    public static void EmitUnit(LoweredUnit unit, IIrWriter writer)
+    /// <param name="unitTable">
+    /// Program only: the <c>$units</c> entries in initialisation order (CMP-355); default = empty table.
+    /// </param>
+    public static void EmitUnit(LoweredUnit unit, IIrWriter writer, ImmutableArray<UnitTableEntry> unitTable = default)
     {
         var path = unit.Unit.Locations.IsEmpty ? unit.Unit.Name + ".pas" : unit.Unit.Locations[0].Path;
         writer.BeginModule(unit.Unit.Name, Path.GetFileName(path));
@@ -88,9 +91,29 @@ internal static class IrEmitter
             module.DeclarePending();
         }
 
+        var units = unitTable.IsDefault ? [] : unitTable;
+        if (unit.Unit.IsProgram)
+        {
+            EmitMain(module, unit);
+            EmitStart(module, units.Length);
+        }
+        else
+        {
+            // CMP-350: every unit defines both, possibly empty
+            new FunctionEmitter(module, unit.Initialization ?? EmptyBody(), IrLinkage.External, Mangler.UnitInit(unit.Unit)).Emit();
+            module.DeclarePending();
+            new FunctionEmitter(module, unit.Finalization ?? EmptyBody(), IrLinkage.External, Mangler.UnitFinal(unit.Unit)).Emit();
+            module.DeclarePending();
+        }
+
         foreach (var (name, literal) in module.StringLiterals)
         {
             writer.DefineGlobal(new IrGlobalDefinition(name, IrLinkage.Private, IsConstant: true, literal, Alignment: 16, UnnamedAddr: true));
+        }
+
+        if (unit.Unit.IsProgram)
+        {
+            DefineUnitTable(module, units);
         }
 
         foreach (var variable in variables)
@@ -102,10 +125,10 @@ internal static class IrEmitter
                 IsConstant: false, initializer, layout.Alignment));
         }
 
-        foreach (var external in module.ExternalVariables)
+        foreach (var (name, type) in module.ExternalVariables)
         {
-            var layout = TypeLayout.Of(external.Type);
-            writer.DeclareGlobal(external.LinkName, layout.StorageType, layout.Alignment);
+            var layout = TypeLayout.Of(type);
+            writer.DeclareGlobal(name, layout.StorageType, layout.Alignment);
         }
 
         writer.DefineAttributeGroup(RoutineGroup, [IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
@@ -120,6 +143,53 @@ internal static class IrEmitter
         }
 
         writer.EndModule();
+    }
+
+    private static readonly LinkName UnitsName = new("$units", AlwaysQuote: true);
+    private static readonly LinkName MainName = new("$main", AlwaysQuote: true);
+    private static readonly LinkName StartName = new("_start", AlwaysQuote: false);
+    private static readonly StructIrType UnitEntryType = new([IrType.Ptr, IrType.Ptr]);
+
+    private static LoweredBody EmptyBody() => new(null, [], new LBlock([]));
+
+    /// <summary>CMP-355: <c>internal void $main()</c> = <c>_InitUnits</c>, then the main block.</summary>
+    private static void EmitMain(ModuleState module, LoweredUnit unit)
+    {
+        var main = unit.Bodies.IsEmpty ? EmptyBody() : unit.Bodies[0];
+        var initUnits = new LCallStatement(new LHelperCallee(new RuntimeHelper("_InitUnits", [], ReturnType: null, IsNoReturn: false)), []);
+        new FunctionEmitter(module, main with { Body = new LBlock([initUnits, main.Body]) }, IrLinkage.Internal, MainName).Emit();
+        module.DeclarePending();
+    }
+
+    /// <summary>
+    /// CMP-355 without the EH part (until C-079+): <c>_Startup($units, n)</c>, <c>$main()</c>, <c>_Halt0()</c>. The PE entry
+    /// point (<c>/entry:_start</c>), called by the OS like an ordinary function.
+    /// </summary>
+    private static void EmitStart(ModuleState module, int unitCount)
+    {
+        var w = module.Writer;
+        var startup = module.Function(new IrFunctionDeclaration(Mangler.RuntimeHelper("_Startup"), IrType.Void, [IrType.Ptr, IrType.I64]));
+        var halt0 = module.NoReturnHelper("_Halt0");
+        w.BeginFunction(new IrFunctionDefinition(StartName, IrLinkage.External, IrType.Void, [], RoutineGroup));
+        w.AppendBlock(new IrBlock("entry"));
+        w.Call(null, IrType.Void, startup, [new IrGlobal(UnitsName), IrIntConstant.I64(unitCount)]);
+        w.Call(null, IrType.Void, new IrGlobal(MainName), []);
+        w.Call(null, IrType.Void, halt0, [], NoReturnGroup);
+        w.Unreachable();
+        w.EndFunction();
+        module.DeclarePending();
+    }
+
+    /// <summary>CMP-355: <c>@"$units" = internal constant [n x { ptr, ptr }]</c> of <c>{ $init, $final }</c> (or nulls), align 8.</summary>
+    private static void DefineUnitTable(ModuleState module, ImmutableArray<UnitTableEntry> units)
+    {
+        var entries = units.Select(u => (IrConstant)new IrStructConstant(UnitEntryType, u.HasInitFinal
+            ? [module.Function(new IrFunctionDeclaration(Mangler.UnitInit(u.Unit), IrType.Void, [])),
+               module.Function(new IrFunctionDeclaration(Mangler.UnitFinal(u.Unit), IrType.Void, []))]
+            : [new IrNullConstant(), new IrNullConstant()])).ToImmutableArray();
+        module.DeclarePending();
+        module.Writer.DefineGlobal(new IrGlobalDefinition(UnitsName, IrLinkage.Internal, IsConstant: true,
+            new IrArrayConstant(new ArrayIrType(units.Length, UnitEntryType), entries), Alignment: 8));
     }
 
     private static IEnumerable<LoweredBody> InEmissionOrder(ImmutableArray<LoweredBody> routines)
@@ -171,6 +241,9 @@ internal static class IrEmitter
     }
 }
 
+/// <summary>One <c>$units</c> entry (CMP-355): the unit's <c>$init</c>/<c>$final</c>, or two nulls when <paramref name="HasInitFinal"/> is false.</summary>
+internal sealed record UnitTableEntry(UnitSymbol Unit, bool HasInitFinal);
+
 /// <summary>A routine's frame record type and its captured variables (field <c>i + 1</c> holds <c>Variables[i]</c>, CMP-345).</summary>
 internal sealed record FrameRecord(NamedStructIrType Type, ImmutableArray<Symbol> Variables)
 {
@@ -201,13 +274,13 @@ internal sealed class ModuleState(IIrWriter writer)
     public bool UsesNoReturn { get; private set; }
 
     private readonly Dictionary<string, IrConstant> _literalReferences = new(StringComparer.Ordinal);
-    private readonly SortedDictionary<string, RuntimeVariable> _externals = new(StringComparer.Ordinal);
+    private readonly SortedDictionary<string, (LinkName Name, TypeSymbol Type)> _externals = new(StringComparer.Ordinal);
 
     /// <summary>The literal blocks <c>@.str.N</c> in first-use order (CMP-301, 320).</summary>
     public List<(LinkName Name, IrStructConstant Block)> StringLiterals { get; } = [];
 
-    /// <summary>System variables used but not defined in this unit, sorted by link name.</summary>
-    public IEnumerable<RuntimeVariable> ExternalVariables => _externals.Values;
+    /// <summary>Variables of other units (System) used but not defined in this unit, sorted by link name.</summary>
+    public IEnumerable<(LinkName Name, TypeSymbol Type)> ExternalVariables => _externals.Values;
 
     /// <summary>
     /// CMP-320: the reference to the UnicodeString literal <paramref name="text"/> — a GEP to the payload of its
@@ -244,8 +317,17 @@ internal sealed class ModuleState(IIrWriter writer)
             return own;
         }
 
-        _externals.TryAdd(variable.LinkName.Text, variable);
-        return new IrGlobal(variable.LinkName);
+        return External(variable.LinkName, variable.Type);
+    }
+
+    /// <summary>The address of a global variable: this unit's own, or one of another unit declared <c>external</c> (CMP-301).</summary>
+    public IrGlobal Global(VariableSymbol variable) =>
+        Globals.TryGetValue(variable, out var own) ? own : External(Mangler.GlobalVariable(variable), variable.Type);
+
+    private IrGlobal External(LinkName name, TypeSymbol type)
+    {
+        _externals.TryAdd(name.Text, (name, type));
+        return new IrGlobal(name);
     }
 
     /// <summary>Declarations requested inside functions; the writer takes them at module level (<see cref="DeclarePending"/>).</summary>
@@ -281,6 +363,9 @@ internal sealed class ModuleState(IIrWriter writer)
         _pending.Clear();
     }
 
+    /// <summary>A function of another module (<c>System._Startup</c>, <c>U.$init</c>), declared at module level.</summary>
+    public IrGlobal Function(IrFunctionDeclaration declaration) => Declare(declaration);
+
     private IrGlobal Declare(IrFunctionDeclaration declaration)
     {
         if (DefinedRoutines.Contains(declaration.Name.Text))
@@ -302,7 +387,9 @@ internal sealed class FunctionEmitter
     private readonly ModuleState _module;
     private readonly IIrWriter _w;
     private readonly LoweredBody _body;
-    private readonly RoutineSymbol _routine;
+    private readonly RoutineSymbol? _routine;
+    private readonly ImmutableArray<ParameterSymbol> _parameters;
+    private readonly LinkName _name;
     private readonly IrLinkage _linkage;
     private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase) { Entry.Name, Exit.Name };
     private readonly Dictionary<LLocal, IrValue> _locals = [];
@@ -317,12 +404,18 @@ internal sealed class FunctionEmitter
     private FrameRecord? _frame;
     private IrValue? _frameAddress;
 
-    public FunctionEmitter(ModuleState module, LoweredBody body, IrLinkage linkage)
+    /// <param name="name">
+    /// The function's name for a body without routine (<c>$main</c>, <c>U.$init</c>, <c>U.$final</c>: <c>void()</c>, CMP-350,
+    /// 355); null for a routine body (its mangled name).
+    /// </param>
+    public FunctionEmitter(ModuleState module, LoweredBody body, IrLinkage linkage, LinkName? name = null)
     {
         _module = module;
         _w = module.Writer;
         _body = body;
-        _routine = body.Routine!;
+        _routine = body.Routine;
+        _parameters = _routine?.Parameters ?? [];
+        _name = name ?? Mangler.Routine(_routine ?? throw new ArgumentException("A body without routine needs a name.", nameof(name)));
         _linkage = linkage;
     }
 
@@ -334,12 +427,12 @@ internal sealed class FunctionEmitter
     /// </summary>
     public void Emit()
     {
-        var link = _routine.IsNested ? new IrParameter(IrType.Ptr, Unique("$link")) : null;
-        var parameters = _routine.Parameters
+        var link = _routine is { IsNested: true } ? new IrParameter(IrType.Ptr, Unique("$link")) : null;
+        var parameters = _parameters
             .Select(p => new IrParameter(p.IsByReference ? IrType.Ptr : TypeLayout.Of(p.Type).StorageType, Unique(p.Name)))
             .ToImmutableArray();
-        var values = _w.BeginFunction(new IrFunctionDefinition(Mangler.Routine(_routine), _linkage, IrEmitter.ReturnType(_routine),
-            link is null ? parameters : parameters.Insert(0, link), IrEmitter.AttributeGroupOf(_routine)));
+        var values = _w.BeginFunction(new IrFunctionDefinition(_name, _linkage, _routine is null ? IrType.Void : IrEmitter.ReturnType(_routine),
+            link is null ? parameters : parameters.Insert(0, link), _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine)));
         if (link is not null)
         {
             _link = values[0];
@@ -347,16 +440,19 @@ internal sealed class FunctionEmitter
         }
 
         _w.AppendBlock(Entry);
-        _module.Frames.TryGetValue(_routine, out _frame);
+        if (_routine is not null)
+        {
+            _module.Frames.TryGetValue(_routine, out _frame);
+        }
         if (_frame is not null)
         {
             _frameAddress = _w.Alloca(Unique("$frame"), _frame.Type, 8);
         }
 
         var spills = new List<(IrValue Value, IrValue Address, int Alignment)>();
-        for (var i = 0; i < _routine.Parameters.Length; i++)
+        for (var i = 0; i < _parameters.Length; i++)
         {
-            var parameter = _routine.Parameters[i];
+            var parameter = _parameters[i];
             if (parameter.IsByReference)
             {
                 _parameterAddresses[parameter] = values[i];
@@ -398,9 +494,9 @@ internal sealed class FunctionEmitter
             }
         }
 
-        for (var i = 0; i < _routine.Parameters.Length; i++)
+        for (var i = 0; i < _parameters.Length; i++)
         {
-            var parameter = _routine.Parameters[i];
+            var parameter = _parameters[i];
             if (!parameter.IsByReference)
             {
                 spills.Add((values[i], _parameterAddresses[parameter], TypeLayout.Of(parameter.Type).Alignment));
@@ -416,7 +512,7 @@ internal sealed class FunctionEmitter
         FallThrough(Exit);
 
         Start(Exit);
-        if (_routine.ResultVariable is { } result)
+        if (_routine?.ResultVariable is { } result)
         {
             var local = _body.Locals.Single(l => ReferenceEquals(l.Variable, result));
             var layout = TypeLayout.Of(local.Type);
@@ -674,7 +770,7 @@ internal sealed class FunctionEmitter
     private IrValue Address(LExpression variable) => variable switch
     {
         LLocalRef local => _locals[local.Local],
-        LGlobalRef global => _module.Globals[global.Variable],
+        LGlobalRef global => _module.Global(global.Variable),
         LRuntimeVariableRef runtime => _module.RuntimeVariable(runtime.Variable),
         LParamRef parameter => _parameterAddresses[parameter.Parameter],
         LOuterRef outer => OuterAddress(outer),
@@ -703,8 +799,8 @@ internal sealed class FunctionEmitter
             return _frameAddress ?? new IrNullConstant();
         }
 
-        var frame = _link ?? throw new InvalidOperationException($"'{_routine.Name}' is not nested in '{routine.Name}'.");
-        for (var level = (RoutineSymbol)_routine.ContainingSymbol!; !ReferenceEquals(level, routine); level = (RoutineSymbol)level.ContainingSymbol!)
+        var frame = _link ?? throw new InvalidOperationException($"'{_routine?.Name ?? _name.Text}' is not nested in '{routine.Name}'.");
+        for (var level = (RoutineSymbol)_routine!.ContainingSymbol!; !ReferenceEquals(level, routine); level = (RoutineSymbol)level.ContainingSymbol!)
         {
             frame = _w.Load(NewTemp(), IrType.Ptr, frame, 8);
         }

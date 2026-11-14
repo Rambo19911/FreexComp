@@ -57,14 +57,19 @@ internal sealed class DeclarationBinder
         BindCompilationUnit(tree, types, new DiagnosticBag());
 
     /// <param name="diagnostics">Shared with the bodies of the unit level (one E2003 set, CMP-507).</param>
-    public static DeclarationBindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types, DiagnosticBag diagnostics)
+    /// <param name="usesScope">
+    /// The scope between the built-ins and the unit's own scope (LANG-310): the interface scope of the implicitly used
+    /// <c>System</c> (LANG-511); null = the built-ins directly (unit <c>System</c> itself, white-box tests).
+    /// </param>
+    public static DeclarationBindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types, DiagnosticBag diagnostics, Scope? usesScope = null)
     {
+        var outer = usesScope ?? types.Scope;
         switch (tree.Root)
         {
             case UnitSyntax unit:
             {
                 var symbol = new UnitSymbol(NameOf(unit.Name), isProgram: false, [DiagnosticBag.LocationOf(unit.Name)]);
-                var interfaceScope = new Scope(ScopeKind.Unit, types.Scope, symbol);
+                var interfaceScope = new Scope(ScopeKind.Unit, outer, symbol);
                 var implementationScope = new Scope(ScopeKind.Unit, interfaceScope, symbol);
                 symbol.InterfaceMembers = new DeclarationBinder(types, interfaceScope, symbol, diagnostics) { IsInterfaceSection = true }
                     .BindDeclarations(unit.InterfaceSection.Declarations);
@@ -83,7 +88,7 @@ internal sealed class DeclarationBinder
                 var symbol = program.Name is { IsMissing: false } name
                     ? new UnitSymbol(NameOf(name), isProgram: true, [DiagnosticBag.LocationOf(name)])
                     : new UnitSymbol(Path.GetFileNameWithoutExtension(tree.Text.Path), isProgram: true, []);
-                var scope = new Scope(ScopeKind.Unit, types.Scope, symbol);
+                var scope = new Scope(ScopeKind.Unit, outer, symbol);
                 symbol.ImplementationMembers = new DeclarationBinder(types, scope, symbol, diagnostics)
                     .BindDeclarations(program.Block.Declarations);
                 return new DeclarationBindingResult(symbol, null, scope, diagnostics.ToImmutable());
@@ -92,7 +97,7 @@ internal sealed class DeclarationBinder
             default:
             {
                 var symbol = new UnitSymbol(Path.GetFileNameWithoutExtension(tree.Text.Path), isProgram: false, []);
-                return new DeclarationBindingResult(symbol, null, new Scope(ScopeKind.Unit, types.Scope, symbol), diagnostics.ToImmutable());
+                return new DeclarationBindingResult(symbol, null, new Scope(ScopeKind.Unit, outer, symbol), diagnostics.ToImmutable());
             }
         }
     }

@@ -23,8 +23,17 @@ internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal
 /// </summary>
 internal sealed record LoweredFrame(ImmutableArray<Symbol> Variables);
 
-/// <summary>The lowered bodies of one unit: <see cref="Routines"/> in binding order, then <see cref="Bodies"/>.</summary>
-internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> Routines, ImmutableArray<LoweredBody> Bodies);
+/// <summary>
+/// The lowered bodies of one unit: <see cref="Routines"/> in binding order, then <see cref="Bodies"/> (the program block, or
+/// a unit's initialization then finalization section, those present). <see cref="Initialization"/> and
+/// <see cref="Finalization"/> name a unit's sections among <see cref="Bodies"/> (CMP-350).
+/// </summary>
+internal sealed record LoweredUnit(UnitSymbol Unit, ImmutableArray<LoweredBody> Routines, ImmutableArray<LoweredBody> Bodies)
+{
+    public LoweredBody? Initialization { get; init; }
+
+    public LoweredBody? Finalization { get; init; }
+}
 
 /// <summary>
 /// A local storage slot (an <c>alloca</c>): a declared local or <c>Result</c> (<see cref="Variable"/> set) or a

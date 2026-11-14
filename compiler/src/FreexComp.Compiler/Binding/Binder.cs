@@ -20,6 +20,12 @@ internal sealed record BindingResult(
 {
     public UnitSymbol Unit => Declarations.Unit;
 
+    /// <summary>
+    /// The unit <c>System</c> this unit was bound against (LANG-511): the implicitly used one, the unit itself when it is
+    /// <c>System</c>, or null when it was bound without one (white-box tests).
+    /// </summary>
+    public UnitSymbol? System { get; init; }
+
     public Scope? InterfaceScope => Declarations.InterfaceScope;
 
     public Scope Scope => Declarations.Scope;
@@ -52,10 +58,14 @@ internal sealed record BoundRoutineBody(
 /// <summary>Binds a compilation unit: declarations (CMP-113), then the routine and unit-level bodies (CMP-114).</summary>
 internal static class Binder
 {
-    public static BindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types)
+    /// <param name="system">
+    /// The bound unit <c>System</c> (same <paramref name="types"/>), used implicitly (LANG-511): its interface scope sits
+    /// between the built-ins and this unit's scope (LANG-310). Null for <c>System</c> itself and for white-box tests.
+    /// </param>
+    public static BindingResult BindCompilationUnit(SyntaxTree tree, BuiltInTypes types, BindingResult? system = null)
     {
         var diagnostics = new DiagnosticBag();
-        var declarations = DeclarationBinder.BindCompilationUnit(tree, types, diagnostics);
+        var declarations = DeclarationBinder.BindCompilationUnit(tree, types, diagnostics, system?.InterfaceScope);
 
         // routine bodies, each with its own E2003 set (CMP-507); nested routines after their enclosing routine
         var routines = ImmutableArray.CreateBuilder<BoundRoutineBody>();
@@ -96,7 +106,9 @@ internal static class Binder
         var all = diagnostics.ToImmutable().Concat(routines.SelectMany(r => r.Diagnostics))
             .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase)
             .ThenBy(d => d.Location.Span.Start);
-        return new BindingResult(types, declarations, bodies.ToImmutable(), routines.ToImmutable(), [.. all]);
+        var systemUnit = system?.Unit
+            ?? (declarations.Unit is { IsProgram: false } own && string.Equals(own.Name, "System", StringComparison.OrdinalIgnoreCase) ? own : null);
+        return new BindingResult(types, declarations, bodies.ToImmutable(), routines.ToImmutable(), [.. all]) { System = systemUnit };
     }
 
     /// <summary>Binds one routine body on its own (CMP-114), e.g. for the language service.</summary>
