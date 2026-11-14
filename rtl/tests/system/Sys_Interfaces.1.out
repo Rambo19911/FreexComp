@@ -77,6 +77,40 @@ ok _ObjSupports nil
 ok _ObjSupports does not count
 ok freed by _IntfClr
 ok leaked
+# untyped out Obj
+ok GetInterface into an interface variable
+ok the variable is usable
+ok GetInterface counted the variable
+ok QueryInterface into an interface variable
+ok QueryInterface result is usable
+ok QueryInterface counted the variable
+ok QueryInterface failure
+ok failure leaves nil
+ok releases by nil
+ok freed
+ok leaked
+# as / is / = nil
+ok object as interface
+ok object as counts
+ok interface as interface
+ok interface as counts
+ok interface as IInterface
+ok object is own interface
+ok object is ancestor interface
+ok object is unknown interface
+ok is does not count
+ok nil = nil
+ok reference = nil
+ok reference <> nil
+ok nil <> nil
+ok same reference
+ok two interfaces of one object are different references (LANG-666)
+ok nil object as interface gives nil
+ok nil interface as interface gives nil
+ok nil object is nothing
+ok one reference left
+ok freed
+ok leaked
 # managed interface parts (kind 15)
 ok parameter copy
 ok record field holds a reference
@@ -97,4 +131,4 @@ ok leaked
 ok class to interface without a GUID
 ok counted
 ok freed
-# passed 91 failed 0
+# passed 123 failed 0

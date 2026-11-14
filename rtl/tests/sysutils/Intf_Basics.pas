@@ -2,8 +2,8 @@
 program Intf_Basics;
 { The SysUtils face of interface support (R-079; the System runtime is Sys_Interfaces): GUIDToString, StringToGUID
   (upper- or lower-case hex, EConvertError for bad text), IsEqualGUID, and Supports for an interface, an object and a
-  class without the out parameter (nil instance -> False; no reference left behind).
-  TODO(C-202): the Supports overloads with "out Intf" need untyped parameters. }
+  class without the out parameter (nil instance -> False; no reference left behind), and with the untyped out parameter
+  (an interface variable receives a counted reference; nil on failure). }
 uses
   SysUtils, TestKit;
 
@@ -122,9 +122,51 @@ begin
   U := nil;
 end;
 
+procedure TestSupportsOut;
+var
+  Sq: TSquare;
+  S: IShape;
+  U: IInterface;
+  X: IOther;
+  O: TObject;
+  N: IInterface;
+  P: Pointer;
+  IShapeId, IOtherId: TGUID;
+begin
+  Section('Supports with out');
+  IShapeId := StringToGUID('{6F1D2A10-3B4C-4D5E-8F90-A1B2C3D4E5F6}');
+  IOtherId := StringToGUID('{00112233-4455-6677-8899-AABBCCDDEEFF}');
+  Sq := TSquare.Create;
+  U := Sq;
+  CheckEqB(True, Supports(U, IShapeId, S), 'interface supports IShape');
+  CheckEqI(4, S.Area, 'the out reference is usable');
+  CheckEqI(2, Sq.RefCount, 'the out reference is counted');
+  S := nil;
+  O := Sq;
+  CheckEqB(True, Supports(O, IShapeId, S), 'object supports IShape');
+  CheckEqI(4, S.Area, 'object: the out reference is usable');
+  CheckEqI(2, Sq.RefCount, 'object: the out reference is counted');
+  S := nil;
+  CheckEqB(False, Supports(U, IOtherId, X), 'interface does not support IOther');
+  Check(X = nil, 'interface: out is nil on failure');
+  CheckEqB(False, Supports(O, IOtherId, X), 'object does not support IOther');
+  Check(X = nil, 'object: out is nil on failure');
+  CheckEqI(1, Sq.RefCount, 'no reference left by failures');
+  P := Pointer(1);
+  N := nil;
+  CheckEqB(False, Supports(N, IShapeId, P), 'nil interface');
+  Check(P = nil, 'nil interface: out is nil');
+  P := Pointer(1);
+  O := nil;
+  CheckEqB(False, Supports(O, IShapeId, P), 'nil object');
+  Check(P = nil, 'nil object: out is nil');
+  U := nil;
+end;
+
 begin
   TestText;
   TestBadText;
   TestSupports;
+  TestSupportsOut;
   Done;
 end.

@@ -5,6 +5,7 @@
     "System.Math": "Math",
     "System.RTLConsts": "RTLConsts",
     "System.StrUtils": "StrUtils",
+    "System.SyncObjs": "SyncObjs",
     "System.SysUtils": "SysUtils",
     "System.Types": "Types",
     "Winapi.CommCtrl": "CommCtrl",

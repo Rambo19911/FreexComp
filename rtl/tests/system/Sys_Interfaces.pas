@@ -1,10 +1,15 @@
 // covers: ABI-072, ABI-090, ABI-094, ABI-095, ABI-096, ABI-097, RTL-151, RTL-154, RTL-155, LANG-662, LANG-663
+// opc-run: variants 1 2 3 4
 program Sys_Interfaces;
 { The interface runtime of rtl/src/System.pas: TGUID, IInterface/IUnknown, TInterfacedObject (count 0 after
   construction, construction guard, frees itself at 0), the hidden interface fields filled by NewInstance/InitInstance
-  for the class and its ancestors, TObject.GetInterface/GetInterfaceEntry, QueryInterface, the helpers _IntfClr,
-  _IntfAddRef, _IntfAsg, _IntfCast, _ObjToIntf, _ObjSupports (ABI 9.6), and interface references as managed parts of
-  records, static and dynamic arrays and class fields (_Finalize, _AddRef, _CopyRecord with kind 15). }
+  for the class and its ancestors, TObject.GetInterface/GetInterfaceEntry and QueryInterface (untyped "out Obj": a
+  Pointer or an interface variable), the helpers _IntfClr, _IntfAddRef, _IntfAsg, _IntfCast, _ObjToIntf, _ObjSupports
+  (ABI 9.6) and the language "as"/"is"/"= nil" that reach them, and interface references as managed parts of
+  records, static and dynamic arrays and class fields (_Finalize, _AddRef, _CopyRecord with kind 15).
+  The variant is ParamStr(1). Variant 1: all of the above. Variant 2: freeing a TInterfacedObject that still has a
+  reference is runtime error 204 in BeforeDestruction (RTL-154). Variant 3: object "as" an interface the class does
+  not implement is runtime error 228. Variant 4: interface "as" an unsupported interface is runtime error 228. }
 {$POINTERMATH ON}
 uses TestKit;
 
@@ -26,6 +31,12 @@ type
 
   INoGuid = interface
     function NoGuid: Integer;
+  end;
+
+  { implemented by no class here (GuidOther) }
+  IOtherIntf = interface
+    ['{D4D4D4D4-0001-0002-0304-050607080910}']
+    procedure Other;
   end;
 
   { implements IBeta (and so IAlpha) and INoGuid }
@@ -442,14 +453,148 @@ begin
   Log := '';
 end;
 
+{ Body leaves no block behind; counted after Body has returned, so its string temporaries are finalized too }
+procedure CheckNoLeak(Body: TProcedure);
+var
+  Before: NativeInt;
+begin
+  Before := _LiveAllocCount;
+  Body;
+  CheckEqI(0, _LiveAllocCount - Before, 'leaked');
+end;
+
+{ GetInterface / QueryInterface fill an interface variable through the untyped out parameter }
+procedure TestUntypedOut;
+var
+  L: TLeaf;
+  U: IInterface;
+  G: IGamma;
+  B: IBeta;
+begin
+  Section('untyped out Obj');
+  L := TLeaf.Create('u');
+  U := L;
+  CheckEqB(True, L.GetInterface(GuidGamma, G), 'GetInterface into an interface variable');
+  CheckEqS('gamma u', G.Gamma, 'the variable is usable');
+  CheckEqI(2, L.RefCount, 'GetInterface counted the variable');
+  CheckEqI(S_OK, U.QueryInterface(GuidBeta, B), 'QueryInterface into an interface variable');
+  CheckEqI(2, B.Beta, 'QueryInterface result is usable');
+  CheckEqI(3, L.RefCount, 'QueryInterface counted the variable');
+  B := nil;
+  CheckEqI(E_NOINTERFACE, U.QueryInterface(GuidOther, B), 'QueryInterface failure');
+  Check(B = nil, 'failure leaves nil');
+  G := nil;
+  CheckEqI(1, L.RefCount, 'releases by nil');
+  Log := '';
+  U := nil;
+  CheckEqS('D(u)', Log, 'freed');
+  Log := '';
+end;
+
+{ the language forms: o as I (_ObjToIntf), i as I (_IntfCast), o is I (_ObjSupports), i = nil, i <> nil, i = j }
+procedure TestLanguage;
+var
+  L: TLeaf;
+  O: TObject;
+  U: IInterface;
+  G: IGamma;
+  B: IBeta;
+  A: IAlpha;
+  N: IGamma;
+begin
+  Section('as / is / = nil');
+  L := TLeaf.Create('l');
+  O := L;
+  G := O as IGamma;
+  CheckEqS('gamma l', G.Gamma, 'object as interface');
+  CheckEqI(1, L.RefCount, 'object as counts');
+  B := G as IBeta;
+  CheckEqI(2, B.Beta, 'interface as interface');
+  CheckEqI(2, L.RefCount, 'interface as counts');
+  A := B;
+  U := A as IInterface;
+  CheckEqI(4, L.RefCount, 'interface as IInterface');
+  CheckEqB(True, O is IGamma, 'object is own interface');
+  CheckEqB(True, O is IAlpha, 'object is ancestor interface');
+  CheckEqB(False, O is IOtherIntf, 'object is unknown interface');
+  CheckEqI(4, L.RefCount, 'is does not count');
+  N := nil;
+  CheckEqB(True, N = nil, 'nil = nil');
+  CheckEqB(False, G = nil, 'reference = nil');
+  CheckEqB(True, G <> nil, 'reference <> nil');
+  CheckEqB(False, N <> nil, 'nil <> nil');
+  N := G;
+  CheckEqB(True, N = G, 'same reference');
+  CheckEqB(False, B = G, 'two interfaces of one object are different references (LANG-666)');
+  O := nil;
+  N := O as IGamma;
+  Check(N = nil, 'nil object as interface gives nil');
+  U := nil;
+  N := U as IGamma;
+  Check(N = nil, 'nil interface as interface gives nil');
+  CheckEqB(False, O is IGamma, 'nil object is nothing');
+  A := nil;
+  B := nil;
+  CheckEqI(1, L.RefCount, 'one reference left');
+  Log := '';
+  G := nil;
+  CheckEqS('D(l)', Log, 'freed');
+  Log := '';
+end;
+
+{ variant 2: the object still has a reference when it is freed }
+procedure FreeReferenced;
+var
+  B: TBase;
+  A: IBeta;
+begin
+  B := TBase.Create('r');
+  A := B;
+  Writeln('freeing with count ', B.RefCount);
+  B.Free;
+  Writeln('not reached');
+end;
+
+{ variant 3: object as an interface it does not implement }
+procedure ObjAsFails;
+var
+  O: TObject;
+  X: IOtherIntf;
+begin
+  O := TBase.Create('x');
+  Writeln('object as');
+  X := O as IOtherIntf;
+  Writeln('not reached');
+end;
+
+{ variant 4: interface as an interface it does not support }
+procedure IntfAsFails;
+var
+  A: IBeta;
+  X: IOtherIntf;
+begin
+  A := TBase.Create('y');
+  Writeln('interface as');
+  X := A as IOtherIntf;
+  Writeln('not reached');
+end;
+
 begin
   InitGuids;
+  if ParamStr(1) = '2' then
+    FreeReferenced
+  else if ParamStr(1) = '3' then
+    ObjAsFails
+  else if ParamStr(1) = '4' then
+    IntfAsFails;
   TestGuidLayout;
   TestRefCounting;
   TestConstructionGuard;
   TestHiddenFields;
   TestQueryInterface;
   TestHelpers;
+  CheckNoLeak(TestUntypedOut);
+  CheckNoLeak(TestLanguage);
   TestManaged;
   TestNoGuid;
   Done;

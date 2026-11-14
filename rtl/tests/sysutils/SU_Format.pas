@@ -1,6 +1,7 @@
 // covers: RTL-220, RTL-221, RTL-222, RTL-223, RTL-202
 program SU_Format;
-{ sysutils.md section 4: every normative example row, more conversions, and every error path (EConvertError). }
+{ sysutils.md section 4: every normative example row, more conversions (and the PChar / untyped-buffer forms StrFmt,
+  StrLFmt, FormatBuf), and every error path (EConvertError). }
 uses
   SysUtils, TestKit;
 
@@ -39,6 +40,7 @@ var
   PW: PChar;
   PA: PAnsiChar;
   Buf: array[0..63] of Char;
+  Fb: string;
 begin
   Section('more conversions');
   CheckEqS('-5', Format('%d', [-5]), 'd negative');
@@ -100,6 +102,22 @@ begin
   FormatSettings.DecimalSeparator := '.';
   CheckEqS('n=5', string(StrFmt(@Buf[0], 'n=%d', [5])), 'StrFmt');
   CheckEqS('abc', string(StrLFmt(@Buf[0], 3, '%s', ['abcdef'])), 'StrLFmt truncates');
+  { FormatBuf: untyped buffers of Char, lengths in characters, no terminator written }
+  Fb := 'n=%d;rest';
+  FillChar(Buf, SizeOf(Buf), 0);
+  Buf[4] := 'Z';
+  CheckEqI(4, FormatBuf(Buf, 20, Fb[1], 4, [42]), 'FormatBuf count (format length 4 of 9)');
+  CheckEqS('n=42Z', string(PChar(@Buf[0])), 'FormatBuf text, nothing written after it');
+  CheckEqI(3, FormatBuf(Buf, 3, Fb[1], 4, [12345]), 'FormatBuf truncates to BufLen');
+  CheckEqS('n=1', Copy(string(PChar(@Buf[0])), 1, 3), 'FormatBuf truncated text');
+  FormatSettings.DecimalSeparator := ',';
+  Fb := '%.1f';
+  CheckEqI(3, FormatBuf(Buf, 20, Fb[1], 4, [2.5], InvariantFormatSettings), 'FormatBuf settings overload');
+  CheckEqS('2.5', Copy(string(PChar(@Buf[0])), 1, 3), 'FormatBuf uses the given settings');
+  CheckEqI(3, FormatBuf(Buf, 20, Fb[1], 4, [2.5]), 'FormatBuf default settings');
+  CheckEqS('2,5', Copy(string(PChar(@Buf[0])), 1, 3), 'FormatBuf uses FormatSettings');
+  FormatSettings.DecimalSeparator := '.';
+  CheckEqI(0, FormatBuf(Buf, 20, Fb[1], 0, []), 'FormatBuf empty format');
 end;
 
 begin

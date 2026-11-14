@@ -3,8 +3,8 @@
 program SU_FileHandles;
 { sysutils.md section 8.1: FileCreate (exclusive by default, or the given share mode), FileOpen (access from Mode and 3,
   share from Mode and $F0, share 0 = deny none per RTL-260), FileSeek (all three origins, -1 on error), FileClose, the
-  fm*/fa*/fs* constants. The program runs in a fresh temporary directory.
-  TODO(C-202): FileRead / FileWrite take untyped Buffer parameters; the bytes are moved with ReadFile / WriteFile here. }
+  fm*/fa*/fs* constants, FileRead / FileWrite (untyped buffers; counts, -1 on error). The program runs in a fresh
+  temporary directory. }
 uses
   Windows, SysUtils, TestKit;
 
@@ -12,19 +12,49 @@ const
   Name = 'handles.bin';
 
 procedure Put(H: THandle; const Bytes: AnsiString);
-var
-  Done_: DWORD;
 begin
-  WriteFile(H, PAnsiChar(Bytes), Length(Bytes), Done_, nil);
+  CheckEqI(Length(Bytes), FileWrite(H, PAnsiChar(Bytes)^, Length(Bytes)), 'FileWrite count ' + string(Bytes));
 end;
 
 function Get(H: THandle; Count: Integer): AnsiString;
 var
-  Done_: DWORD;
+  Got: Integer;
 begin
   SetLength(Result, Count);
-  ReadFile(H, PAnsiChar(Result), Count, Done_, nil);
-  SetLength(Result, Done_);
+  Got := FileRead(H, Result[1], Count);
+  if Got < 0 then
+    Got := 0;
+  SetLength(Result, Got);
+end;
+
+procedure TestReadWrite;
+var
+  H: THandle;
+  N: Integer;
+  W: Word;
+  Buf: array[0..3] of Byte;
+begin
+  Section('FileRead, FileWrite');
+  H := FileCreate('rw.bin');
+  N := $04030201;
+  CheckEqI(4, FileWrite(H, N, SizeOf(N)), 'FileWrite of an Integer variable');
+  W := $0605;
+  CheckEqI(2, FileWrite(H, W, SizeOf(W)), 'FileWrite of a Word variable');
+  CheckEqI(0, FileWrite(H, N, 0), 'FileWrite of 0 bytes');
+  FileSeek(H, 0, fsFromBeginning);
+  CheckEqI(4, FileRead(H, Buf, SizeOf(Buf)), 'FileRead into an array');
+  CheckEqI(1, Buf[0], 'byte 0');
+  CheckEqI(4, Buf[3], 'byte 3');
+  W := 0;
+  CheckEqI(2, FileRead(H, W, 4), 'FileRead stops at the end');
+  CheckEqI($0605, W, 'the Word read back');
+  CheckEqI(0, FileRead(H, W, 2), 'FileRead at the end gives 0');
+  FileClose(H);
+  CheckEqI(-1, FileRead(INVALID_HANDLE_VALUE, Buf, 4), 'FileRead on an invalid handle');
+  CheckEqI(-1, FileWrite(INVALID_HANDLE_VALUE, Buf, 4), 'FileWrite on an invalid handle');
+  H := FileOpen('rw.bin', fmOpenRead);
+  CheckEqI(-1, FileWrite(H, Buf, 4), 'FileWrite on a read-only handle');
+  FileClose(H);
 end;
 
 procedure TestConstants;
@@ -105,5 +135,6 @@ begin
   TestConstants;
   TestCreateSeek;
   TestOpen;
+  TestReadWrite;
   Done;
 end.

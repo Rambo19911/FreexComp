@@ -1,0 +1,53 @@
+# TCriticalSection
+ok re-entrant TryEnter by the owner
+ok TryEnter from another thread fails while held
+ok TryEnter from another thread succeeds when free
+ok mutual exclusion of four threads
+# TEvent
+ok handle
+ok default: not signaled
+ok signaled
+ok default: manual reset stays signaled
+ok ResetEvent
+ok auto reset, initially signaled
+ok auto reset consumed the signal
+ok Acquire waits for the event
+ok a named event is shared
+ok TSimpleEvent is TEvent
+# TMutex, TSemaphore
+ok free mutex
+ok owner waits again (recursive)
+ok owner thread ended without Release
+ok initial owner
+ok semaphore count 2 -> 1
+ok semaphore count 1 -> 0
+ok semaphore count 0
+ok Release adds one
+# errors
+ok WaitFor on a closed handle
+ok LastError = GetLastError
+ok a name of another object kind raises EOSError
+ok no object
+# TSynchroObject
+ok WaitFor of the base class
+# TInterlocked
+ok Increment Integer returns the new value
+ok Decrement Integer
+ok Add Integer
+ok Exchange Integer returns the old value
+ok exchanged
+ok CompareExchange mismatch returns the old value
+ok unchanged on mismatch
+ok CompareExchange match
+ok changed on match
+ok Increment Int64
+ok Decrement Int64
+ok Add Int64
+ok Exchange Int64
+ok CompareExchange Int64
+ok Int64 changed
+ok Exchange Pointer
+ok Pointer exchanged
+ok CompareExchange Pointer
+ok Pointer changed
+# passed 46 failed 0

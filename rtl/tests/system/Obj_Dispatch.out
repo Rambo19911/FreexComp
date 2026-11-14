@@ -1,0 +1,21 @@
+# MsgTable lookup
+ok handler gets the message address (3)
+ok first entry of the class
+ok handler gets the message address (5)
+ok middle entry: the class wins over the ancestor
+ok handler gets the message address (9)
+ok last entry of the class
+ok handler gets the message address (7)
+ok ancestor entry
+ok handler gets Self
+ok unknown id between entries: DefaultHandler
+ok below every entry
+ok above every entry
+ok order of calls
+ok real VMT without MsgTables: DefaultHandler
+ok override of DefaultHandler reached through Dispatch
+# TObject
+ok TObject.DefaultHandler does nothing
+ok called directly
+ok _Dispatch falls back to the virtual DefaultHandler
+# passed 18 failed 0

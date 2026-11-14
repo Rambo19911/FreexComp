@@ -35,4 +35,20 @@ ok class without interfaces
 ok plain object
 ok nil object
 ok nil interface
-# passed 34 failed 0
+# Supports with out
+ok interface supports IShape
+ok the out reference is usable
+ok the out reference is counted
+ok object supports IShape
+ok object: the out reference is usable
+ok object: the out reference is counted
+ok interface does not support IOther
+ok interface: out is nil on failure
+ok object does not support IOther
+ok object: out is nil on failure
+ok no reference left by failures
+ok nil interface
+ok nil interface: out is nil
+ok nil object
+ok nil object: out is nil
+# passed 49 failed 0

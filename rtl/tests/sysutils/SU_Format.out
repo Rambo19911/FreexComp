@@ -55,6 +55,15 @@ ok uses FormatSettings
 ok explicit settings overload
 ok StrFmt
 ok StrLFmt truncates
+ok FormatBuf count (format length 4 of 9)
+ok FormatBuf text, nothing written after it
+ok FormatBuf truncates to BufLen
+ok FormatBuf truncated text
+ok FormatBuf settings overload
+ok FormatBuf uses the given settings
+ok FormatBuf default settings
+ok FormatBuf uses FormatSettings
+ok FormatBuf empty format
 # error paths
 ok lone % at the end
 ok width without type
@@ -76,4 +85,4 @@ ok missing argument
 ok index beyond arguments
 ok * consumes the last argument
 ok no arguments
-# passed 75 failed 0
+# passed 84 failed 0

@@ -29,8 +29,6 @@ type
   TProcedure = procedure;
   TThreadFunc = function(Parameter: Pointer): Integer;    { BeginThread (system.md section 5.1) }
 
-  // TODO(C-202): Dispatch / DefaultHandler take an untyped var parameter, GetInterface / QueryInterface an untyped out
-  // parameter (typed Pointer until the compiler has untyped parameters: the same IR, ptr). TODO(C-113): _Dispatch.
   // TODO(C-112, RTTI): ClassInfo, MethodAddress, MethodName, FieldAddress, UnitName.
 
   { ABI-096: 16 bytes }
@@ -58,8 +56,8 @@ type
     function ToString: string; virtual;
     function Equals(Obj: TObject): Boolean; virtual;
     function GetHashCode: Integer; virtual;
-    procedure Dispatch(var Message: Pointer); virtual;
-    procedure DefaultHandler(var Message: Pointer); virtual;
+    procedure Dispatch(var Message); virtual;
+    procedure DefaultHandler(var Message); virtual;
     constructor Create;
     procedure Free;
     class function InitInstance(Instance: Pointer): TObject;
@@ -70,14 +68,14 @@ type
     class function ClassParent: TClass;
     class function InstanceSize: Integer;
     class function InheritsFrom(AClass: TClass): Boolean;
-    function GetInterface(const IID: TGUID; out Obj: Pointer): Boolean;
+    function GetInterface(const IID: TGUID; out Obj): Boolean;
     class function GetInterfaceEntry(const IID: TGUID): Pointer;
   end;
 
-  { ABI-094, RTL-154: the root of every interface. TODO(C-202): QueryInterface's "out Obj" is untyped in the spec. }
+  { ABI-094, RTL-154: the root of every interface }
   IInterface = interface
     ['{00000000-0000-0000-C000-000000000046}']
-    function QueryInterface(const IID: TGUID; out Obj: Pointer): HResult; stdcall;
+    function QueryInterface(const IID: TGUID; out Obj): HResult; stdcall;
     function _AddRef: Integer; stdcall;
     function _Release: Integer; stdcall;
   end;
@@ -88,7 +86,7 @@ type
   TInterfacedObject = class(TObject, IInterface)
   protected
     FRefCount: Integer;
-    function QueryInterface(const IID: TGUID; out Obj: Pointer): HResult; stdcall;
+    function QueryInterface(const IID: TGUID; out Obj): HResult; stdcall;
     function _AddRef: Integer; stdcall;
     function _Release: Integer; stdcall;
   public
@@ -243,6 +241,9 @@ procedure _IntfAsg(var Dest: Pointer; Src: Pointer);
 procedure _IntfCast(var Dest: Pointer; Src: Pointer; IID: Pointer);
 procedure _ObjToIntf(var Dest: Pointer; Obj: Pointer; IID: Pointer);
 function _ObjSupports(Obj: Pointer; IID: Pointer): Boolean;
+{ RTL-153: the message method for the id in the first 4 bytes of Msg (MsgTable of the class, then of each ancestor),
+  else the virtual DefaultHandler }
+procedure _Dispatch(Obj: Pointer; var Msg);
 procedure _Assert(Msg, FileName: Pointer; Line: Integer); noreturn;   { Msg/FileName: UnicodeString refs, Msg may be nil }
 procedure _IOCheck;
 
@@ -5396,14 +5397,58 @@ begin
   Result := Integer(NativeUInt(Self) shr 4);
 end;
 
-procedure TObject.Dispatch(var Message: Pointer);
+procedure TObject.Dispatch(var Message);
 begin
-  // TODO(M2.5): _Dispatch(Self, Message) searching the MsgTables (RTL-153) once the compiler has message methods
-  DefaultHandler(Message);
+  _Dispatch(Pointer(Self), Message);
 end;
 
-procedure TObject.DefaultHandler(var Message: Pointer);
+procedure TObject.DefaultHandler(var Message);
 begin
+end;
+
+type
+  { a message method: void (ptr Self, ptr Message) }
+  TMsgHandler = procedure(Instance: Pointer; Msg: Pointer);
+  { ABI 7.2: MsgTable, when not nil, is a NativeInt Count followed by Count of these, sorted by MsgId }
+  TMsgEntry = record
+    MsgId: Int64;
+    Code: Pointer;
+  end;
+  PMsgEntry = ^TMsgEntry;
+
+procedure _Dispatch(Obj: Pointer; var Msg);
+var
+  VMT: PVmtHeader;
+  Entries: PMsgEntry;
+  Id: Int64;
+  Lo, Hi, Mid: NativeInt;
+begin
+  Id := PCardinal(@Msg)^;
+  VMT := PPointer(Obj)^;
+  while VMT <> nil do
+  begin
+    if VMT^.MsgTable <> nil then
+    begin
+      Entries := PMsgEntry(PByte(VMT^.MsgTable) + SizeOf(NativeInt));
+      Lo := 0;
+      Hi := PNativeInt(VMT^.MsgTable)^ - 1;
+      while Lo <= Hi do
+      begin
+        Mid := (Lo + Hi) shr 1;
+        if Entries[Mid].MsgId = Id then
+        begin
+          TMsgHandler(Entries[Mid].Code)(Obj, @Msg);
+          Exit;
+        end;
+        if Entries[Mid].MsgId < Id then
+          Lo := Mid + 1
+        else
+          Hi := Mid - 1;
+      end;
+    end;
+    VMT := VMT^.Parent;
+  end;
+  TObject(Obj).DefaultHandler(Msg);
 end;
 
 { the run-time class: the VMT pointer at offset 0 }
@@ -5589,7 +5634,7 @@ begin
 end;
 
 { Obj := the counted reference for IID, or nil (False) }
-function TObject.GetInterface(const IID: TGUID; out Obj: Pointer): Boolean;
+function TObject.GetInterface(const IID: TGUID; out Obj): Boolean;
 var
   Entry: PIntfEntry;
 begin
@@ -5597,11 +5642,11 @@ begin
   Result := Entry <> nil;
   if Result then
   begin
-    Obj := PByte(Pointer(Self)) + Entry^.Offset;
-    _IntfAddRef(Obj);
+    Pointer(Obj) := PByte(Pointer(Self)) + Entry^.Offset;
+    _IntfAddRef(Pointer(Obj));
   end
   else
-    Obj := nil;
+    Pointer(Obj) := nil;
 end;
 
 { the IntfTable entry (TIntfEntry, ABI-095) for IID, searching ancestors; nil when the class does not implement it }
@@ -5610,7 +5655,7 @@ begin
   Result := FindIntfEntry(Pointer(Self), @IID);
 end;
 
-function TInterfacedObject.QueryInterface(const IID: TGUID; out Obj: Pointer): HResult;
+function TInterfacedObject.QueryInterface(const IID: TGUID; out Obj): HResult;
 begin
   if GetInterface(IID, Obj) then
     Result := S_OK

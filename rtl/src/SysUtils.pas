@@ -117,8 +117,10 @@ function CharInSet(C: Char; const CharSet: TSysCharSet): Boolean;
 function StringToGUID(const S: string): TGUID;
 function GUIDToString(const Guid: TGUID): string;
 function IsEqualGUID(const Guid1, Guid2: TGUID): Boolean;
-{ section 2.4: a nil instance supports nothing; no reference is left behind.
-  TODO(C-202): the overloads with an untyped "out Intf" parameter. }
+{ section 2.4: a nil instance supports nothing; no reference is left behind by the forms without Intf. The out forms
+  store a counted reference in Intf (an interface variable or a Pointer), nil when the result is False. }
+function Supports(const Instance: IInterface; const IID: TGUID; out Intf): Boolean; overload;
+function Supports(const Instance: TObject; const IID: TGUID; out Intf): Boolean; overload;
 function Supports(const Instance: IInterface; const IID: TGUID): Boolean; overload;
 function Supports(const Instance: TObject; const IID: TGUID): Boolean; overload;
 function Supports(const AClass: TClass; const IID: TGUID): Boolean; overload;
@@ -207,10 +209,12 @@ type
   end;
 
 { RTL-260: access from Mode and 3, share from Mode and $F0 (0 = deny none); INVALID_HANDLE_VALUE on failure.
-  TODO(C-202): FileRead / FileWrite take untyped Buffer parameters. }
+  FileRead / FileWrite: the number of bytes moved, -1 on error. }
 function FileOpen(const FileName: string; Mode: Cardinal): THandle;
 function FileCreate(const FileName: string): THandle; overload;
 function FileCreate(const FileName: string; Mode: Cardinal): THandle; overload;
+function FileRead(Handle: THandle; var Buffer; Count: Cardinal): Integer;
+function FileWrite(Handle: THandle; const Buffer; Count: Cardinal): Integer;
 function FileSeek(Handle: THandle; const Offset: Int64; Origin: Integer): Int64;
 procedure FileClose(Handle: THandle);
 function FileExists(const FileName: string): Boolean;
@@ -329,6 +333,12 @@ procedure FmtStr(var Result: string; const Fmt: string; const Args: array of con
 { PChar forms: Buffer must hold the whole result and its terminator (StrLFmt: at most MaxBufLen characters) }
 function StrFmt(Buffer, Fmt: PChar; const Args: array of const): PChar;
 function StrLFmt(Buffer: PChar; MaxBufLen: Cardinal; Fmt: PChar; const Args: array of const): PChar;
+{ Fmt is FmtLen characters (no terminator needed); at most BufLen characters are written to Buffer, no terminator;
+  the result is the number of characters written }
+function FormatBuf(var Buffer; BufLen: Cardinal; const Fmt; FmtLen: Cardinal;
+  const Args: array of const): Cardinal; overload;
+function FormatBuf(var Buffer; BufLen: Cardinal; const Fmt; FmtLen: Cardinal; const Args: array of const;
+  const FS: TFormatSettings): Cardinal; overload;
 
 { -------------------------------------------------------------------------------------------- exceptions (2) }
 type
@@ -499,6 +509,8 @@ function ExceptionErrorMessage(ExceptObject: TObject; ExceptAddr: Pointer; Buffe
 procedure ShowException(ExceptObject: TObject; ExceptAddr: Pointer);
 { Proc runs at program end, the last added first (one System.ExitProc hook runs the list) }
 procedure AddExitProc(Proc: TProcedure);
+{ Obj (an object reference variable) is set to nil, then the object it held is freed }
+procedure FreeAndNil(var Obj);
 function GetLastError: Cardinal;
 function CheckWin32Version(Major: Integer; Minor: Integer = 0): Boolean;
 
@@ -1423,15 +1435,23 @@ begin
       Result := False;
 end;
 
+function Supports(const Instance: IInterface; const IID: TGUID; out Intf): Boolean;
+begin
+  Pointer(Intf) := nil;
+  Result := (Instance <> nil) and (Instance.QueryInterface(IID, Intf) = S_OK);
+end;
+
+function Supports(const Instance: TObject; const IID: TGUID; out Intf): Boolean;
+begin
+  Pointer(Intf) := nil;
+  Result := (Instance <> nil) and Instance.GetInterface(IID, Intf);
+end;
+
 function Supports(const Instance: IInterface; const IID: TGUID): Boolean;
 var
   P: Pointer;
 begin
-  Result := False;
-  { TODO(compiler): "Instance = nil" on an interface is E2011 today }
-  if Pointer(Instance) = nil then
-    Exit;
-  Result := Instance.QueryInterface(IID, P) = S_OK;
+  Result := Supports(Instance, IID, P);
   _IntfClr(P);
 end;
 
@@ -1924,6 +1944,26 @@ end;
 function FileCreate(const FileName: string): THandle;
 begin
   Result := FileCreate(FileName, fmShareExclusive);
+end;
+
+function FileRead(Handle: THandle; var Buffer; Count: Cardinal): Integer;
+var
+  Done: DWORD;
+begin
+  if Windows.ReadFile(Handle, @Buffer, Count, Done, nil) then
+    Result := Integer(Done)
+  else
+    Result := -1;
+end;
+
+function FileWrite(Handle: THandle; const Buffer; Count: Cardinal): Integer;
+var
+  Done: DWORD;
+begin
+  if Windows.WriteFile(Handle, @Buffer, Count, Done, nil) then
+    Result := Integer(Done)
+  else
+    Result := -1;
 end;
 
 function FileSeek(Handle: THandle; const Offset: Int64; Origin: Integer): Int64;
@@ -3563,6 +3603,30 @@ begin
   Result := StrLFmt(Buffer, MaxInt, Fmt, Args);
 end;
 
+function FormatBuf(var Buffer; BufLen: Cardinal; const Fmt; FmtLen: Cardinal; const Args: array of const;
+  const FS: TFormatSettings): Cardinal;
+var
+  F, S: string;
+  I, N: Integer;
+begin
+  SetLength(F, FmtLen);
+  for I := 1 to Integer(FmtLen) do
+    F[I] := PChar(@Fmt)[I - 1];
+  S := Format(F, Args, FS);
+  N := Length(S);
+  if Cardinal(N) > BufLen then
+    N := Integer(BufLen);
+  for I := 0 to N - 1 do
+    PChar(@Buffer)[I] := S[I + 1];
+  Result := Cardinal(N);
+end;
+
+function FormatBuf(var Buffer; BufLen: Cardinal; const Fmt; FmtLen: Cardinal;
+  const Args: array of const): Cardinal;
+begin
+  Result := FormatBuf(Buffer, BufLen, Fmt, FmtLen, Args, FormatSettings);
+end;
+
 { -------------------------------------------------------------------------------------------- exceptions (2) }
 
 constructor Exception.Create(const Msg: string);
@@ -4445,6 +4509,15 @@ begin
     P;
   end;
   ExitProc := SavedExitProc;
+end;
+
+procedure FreeAndNil(var Obj);
+var
+  Temp: TObject;
+begin
+  Temp := TObject(Obj);
+  Pointer(Obj) := nil;
+  Temp.Free;
 end;
 
 procedure AddExitProc(Proc: TProcedure);

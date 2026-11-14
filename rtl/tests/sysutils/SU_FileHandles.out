@@ -11,6 +11,7 @@ ok faAnyFile
 ok fsFromEnd
 # FileCreate, FileSeek, FileClose
 ok FileCreate
+ok FileWrite count hello world
 ok position after writing
 ok fsFromEnd
 ok fsFromBeginning
@@ -23,6 +24,7 @@ ok FileCreate with a share mode truncates
 ok empty after FileCreate
 ok deny write allows another reader
 ok deny write refuses another writer
+ok FileWrite count abc
 # FileOpen
 ok missing file
 ok fmOpenRead
@@ -31,6 +33,20 @@ ok share 0 means deny none (RTL-260)
 ok exclusive open
 ok exclusive refuses a second open
 ok fmOpenReadWrite
+ok FileWrite count def
 ok read and write
 ok fmOpenWrite cannot read
-# passed 32 failed 0
+# FileRead, FileWrite
+ok FileWrite of an Integer variable
+ok FileWrite of a Word variable
+ok FileWrite of 0 bytes
+ok FileRead into an array
+ok byte 0
+ok byte 3
+ok FileRead stops at the end
+ok the Word read back
+ok FileRead at the end gives 0
+ok FileRead on an invalid handle
+ok FileWrite on an invalid handle
+ok FileWrite on a read-only handle
+# passed 47 failed 0

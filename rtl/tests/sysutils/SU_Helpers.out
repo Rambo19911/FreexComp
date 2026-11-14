@@ -32,6 +32,12 @@ ok CheckWin32Version(6, 1)
 ok CheckWin32Version(own)
 ok CheckWin32Version(next major)
 ok CheckWin32Version(next minor)
-# passed 29 failed 0
+# FreeAndNil
+ok variable is nil
+ok nil before the destructor runs
+ok nil stays nil
+ok TObject variable
+ok freed
+# passed 34 failed 0
 exit proc B
 exit proc A

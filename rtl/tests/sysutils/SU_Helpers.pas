@@ -3,8 +3,8 @@ program SU_Helpers;
 { sysutils.md section 2.4 and 10: Abort, RaiseLastOSError (with and without a code, code 0), SysErrorMessage (OS text:
   only its shape is asserted), Win32Check, OutOfMemoryError, ExceptionErrorMessage, ShowException (captured through
   ShowErrorProc with IsConsole off), GetLastError, the Win32*Version variables, CheckWin32Version, and AddExitProc
-  (LIFO, run at program end: the last lines of the expected output).
-  TODO(C-202): FreeAndNil(var Obj) needs an untyped var parameter. }
+  (LIFO, run at program end: the last lines of the expected output), FreeAndNil (the variable is nil before the
+  destructor runs; nil is a no-op). }
 uses
   Windows, SysUtils, TestKit;
 
@@ -165,6 +165,45 @@ begin
   E.Free;
 end;
 
+type
+  { its destructor looks at the variable FreeAndNil is clearing }
+  TWatched = class
+    destructor Destroy; override;
+  end;
+
+var
+  Watched: TWatched;
+  SeenInDestroy: string;
+
+destructor TWatched.Destroy;
+begin
+  if Watched = nil then
+    SeenInDestroy := 'nil'
+  else
+    SeenInDestroy := 'set';
+  inherited Destroy;
+end;
+
+procedure TestFreeAndNil;
+var
+  O: TObject;
+  Before: NativeInt;
+begin
+  Section('FreeAndNil');
+  Before := _LiveAllocCount;
+  Watched := TWatched.Create;
+  FreeAndNil(Watched);
+  Check(Watched = nil, 'variable is nil');
+  CheckEqS('nil', SeenInDestroy, 'nil before the destructor runs');
+  O := nil;
+  FreeAndNil(O);
+  Check(O = nil, 'nil stays nil');
+  O := TObject.Create;
+  FreeAndNil(O);
+  Check(O = nil, 'TObject variable');
+  CheckEqI(0, _LiveAllocCount - Before, 'freed');
+end;
+
 procedure TestVersion;
 begin
   Section('version');
@@ -185,5 +224,6 @@ begin
   TestOutOfMemory;
   TestErrorMessage;
   TestVersion;
+  TestFreeAndNil;
   Done;
 end.
