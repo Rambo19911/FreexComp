@@ -1,0 +1,5 @@
+; ntdll.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
+; __C_specific_handler is the SEH personality routine (ABI-161). __chkstk is never listed: the compiler emits it (RTL-065).
+LIBRARY ntdll.dll
+EXPORTS
+__C_specific_handler

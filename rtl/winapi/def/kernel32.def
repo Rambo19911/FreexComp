@@ -1,0 +1,37 @@
+; kernel32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
+; Content: the private kernel32 imports of System (RTL-801); extended by the Windows unit (R-034).
+LIBRARY kernel32.dll
+EXPORTS
+CloseHandle
+CreateFileW
+CreateThread
+DeleteFileW
+ExitProcess
+ExitThread
+FlushFileBuffers
+GetCommandLineW
+GetConsoleMode
+GetCurrentThreadId
+GetLastError
+GetModuleFileNameW
+GetModuleHandleW
+GetProcessHeap
+GetStdHandle
+GetTickCount
+HeapAlloc
+HeapFree
+HeapReAlloc
+MoveFileW
+MultiByteToWideChar
+QueryPerformanceCounter
+RaiseException
+ReadConsoleW
+ReadFile
+SetFilePointerEx
+SetLastError
+TlsAlloc
+TlsGetValue
+TlsSetValue
+WideCharToMultiByte
+WriteConsoleW
+WriteFile
