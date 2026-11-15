@@ -29,9 +29,12 @@ public sealed class HelpService(
     IDialogService dialogs, IUserPaths paths, IClipboardService clipboard, ILayoutService layout, IDocumentService documents,
     IKeymapService keymap) : IHelpService
 {
+    /// <summary>The About dialog's Toolchain value (dialogs.md §15); null = <c>Msg.About.ToolchainNotFound</c>.</summary>
+    public Func<string?> ToolchainText { get; set; } = () => null;
+
     public async Task ShowAboutAsync()
     {
-        if (await dialogs.ShowAsync(new AboutViewModel(paths, clipboard)) == AboutResult.ShowLicenses)
+        if (await dialogs.ShowAsync(new AboutViewModel(paths, clipboard, ToolchainText())) == AboutResult.ShowLicenses)
             await ShowLicensesAsync();
     }
 

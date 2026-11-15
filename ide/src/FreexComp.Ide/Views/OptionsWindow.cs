@@ -220,6 +220,12 @@ public sealed class OptionsWindow : DialogWindow
                 AddRow(CreateError(field), 1, 2);
                 row++;
             }
+
+            if (field.FolderCheck is not null)
+            {
+                AddRow(CreateStatus(field), 1, 2);
+                row++;
+            }
         }
 
         if (page.Id == OptionsViewModel.EditorDisplayPage)
@@ -441,6 +447,34 @@ public sealed class OptionsWindow : DialogWindow
                 Show();
         };
         return message;
+    }
+
+    /// <summary>
+    /// A toolchain folder's status line (<c>&lt;Field&gt;.Status</c>, dialogs.md §9.9): tick + found files in
+    /// <c>status.success</c>, or the warning glyph + <c>Msg.Options.ToolchainAutoNotFound</c> in <c>status.warning</c>.
+    /// </summary>
+    private static TextBlock CreateStatus(OptionField field)
+    {
+        var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
+        status.Classes.Add("caption");
+        AutomationProperties.SetAutomationId(status, Id(field.Id + ".Status"));
+        IDisposable? brush = null;
+        void Show()
+        {
+            status.Text = field.Status is null ? null : (field.StatusIsWarning ? "⚠ " : "✔ ") + field.Status;
+            status.IsVisible = field.Status is not null;
+            brush?.Dispose();
+            brush = status.Bind(TextBlock.ForegroundProperty,
+                status.GetResourceObservable(field.StatusIsWarning ? "FxcStatusWarningBrush" : "FxcStatusSuccessBrush"));
+        }
+
+        Show();
+        field.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(OptionField.Status) or nameof(OptionField.StatusIsWarning))
+                Show();
+        };
+        return status;
     }
 
     /// <summary>Editor › Display preview (§9.2): the first 6 sample lines, reflecting this page's pending values.</summary>

@@ -3969,4 +3969,28 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Editor_Gutter_ChangeBar" xml:space="preserve">
     <value>&amp;Change Bar</value>
   </data>
+  <data name="Options_Field_LlvmBinDir" xml:space="preserve">
+    <value>_LLVM tools folder:</value>
+    <comment>dialogs.md §9.9</comment>
+  </data>
+  <data name="Options_Field_RtlDir" xml:space="preserve">
+    <value>_Runtime library folder:</value>
+    <comment>dialogs.md §9.9</comment>
+  </data>
+  <data name="Options_Field_FrameworkDir" xml:space="preserve">
+    <value>_UI framework folder:</value>
+    <comment>dialogs.md §9.9</comment>
+  </data>
+  <data name="Options_Toolchain_Intro" xml:space="preserve">
+    <value>Leave a field empty to let FreexComp find the folder automatically.</value>
+    <comment>dialogs.md §9.9</comment>
+  </data>
+  <data name="Options_Toolchain_Automatic" xml:space="preserve">
+    <value>(automatic: {0})</value>
+    <comment>dialogs.md §9.9</comment>
+  </data>
+  <data name="Options_Toolchain_NotFound" xml:space="preserve">
+    <value>not found</value>
+    <comment>dialogs.md §9.9</comment>
+  </data>
 </root>

@@ -1,4 +1,5 @@
 using System.Globalization;
+using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
@@ -52,6 +53,25 @@ public sealed class CommandService : ICommandService
     public event EventHandler<CommandExecutedEventArgs>? Executed;
 
     public IReadOnlyList<CommandDefinition> Definitions { get; }
+
+    /// <summary>
+    /// IDE-P3-003: the IDE state that rules commands out on top of their handlers (<see cref="IdeCommandAvailability"/>);
+    /// null = no state gate. A state change re-queries every command.
+    /// </summary>
+    public IIdeState? IdeState
+    {
+        get => _ideState;
+        init
+        {
+            _ideState = value;
+            _ideState?.Changed += (_, _) => InvalidateCanExecute();
+        }
+    }
+
+    private readonly IIdeState? _ideState;
+
+    private bool IsBlockedByState(string commandId) =>
+        _ideState is { } state && !IdeCommandAvailability.IsAvailable(commandId, state.Current.State);
 
     public void RegisterHandler(string commandId, ICommandHandler handler)
     {
@@ -113,7 +133,7 @@ public sealed class CommandService : ICommandService
             return false;
         }
 
-        return handler.CanExecute(argument);
+        return !IsBlockedByState(commandId) && handler.CanExecute(argument);
     }
 
     public async Task ExecuteAsync(string commandId, string? argument = null)
@@ -192,7 +212,7 @@ public sealed class CommandService : ICommandService
             return false; // UI-KEY-007 exceptions
         }
 
-        if (handler.IsBlockedByIdeState(binding.Argument))
+        if (IsBlockedByState(commandId) || handler.IsBlockedByIdeState(binding.Argument))
         {
             var title = handler.TitleOverride ?? TitleOf(_definitions[commandId]);
             _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Status_CommandUnavailable, title), UnavailableStatusDuration);

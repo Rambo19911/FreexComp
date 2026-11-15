@@ -30,8 +30,13 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
     private bool _isCheckingMissing;
     private int _missingCheck;
 
-    public WelcomeDocumentViewModel(IRecentItemsService recent, ICommandService commands, ISettingsService settings, IFileSystem fileSystem, IClock clock)
+    private readonly Build.IIdeState? _state;
+
+    public WelcomeDocumentViewModel(IRecentItemsService recent, ICommandService commands, ISettingsService settings, IFileSystem fileSystem, IClock clock,
+        Build.IIdeState? state = null)
     {
+        _state = state;
+        state?.Changed += (_, _) => OnPropertyChanged(nameof(RowsEnabled));
         _recent = recent;
         _commands = commands;
         _settings = settings;
@@ -107,8 +112,11 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
     public Task OpenAsync(RecentProjectRow row)
     {
         ArgumentNullException.ThrowIfNull(row);
-        return _commands.ExecuteAsync("file.openRecentProject", row.Path);
+        return RowsEnabled ? _commands.ExecuteAsync("file.openRecentProject", row.Path) : Task.CompletedTask;
     }
+
+    /// <summary>IDE-WEL-005: the recent-project rows are disabled while the IDE is not Idle.</summary>
+    public bool RowsEnabled => _state?.Current.State is null or Models.IdeState.Idle;
 
     /// <summary>IDE-WEL-006: toggles the pin; returns the row to focus (the same entry, re-sorted).</summary>
     public RecentProjectRow? TogglePin(RecentProjectRow row)

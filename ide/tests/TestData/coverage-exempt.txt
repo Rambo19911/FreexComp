@@ -13,11 +13,9 @@ IDE-ARCH-087 later phase: the rule text names a later phase or a later-phase ele
 IDE-ARCH-090 superseded: log format is IDE-SET-090 (lead decision 2026-11-13)
 IDE-P1-002 structural: project scope/dependency statement
 IDE-PM-002 structural: project scope/dependency statement
-IDE-PM-032 later phase: the rule text names a later phase or a later-phase element
 IDE-PM-090 later phase: the rule text names a later phase or a later-phase element
 IDE-PM-091 later phase: the rule text names a later phase or a later-phase element
 IDE-PM-102 structural: project scope/dependency statement
-IDE-SET-050 later phase: the rule text names a later phase or a later-phase element
 IDE-SET-100 superseded: recovery layout is IDE-P1-121 (lead decision I-063)
 IDE-TEST-001 process: rule for writing tests, checked by review
 IDE-TEST-002 process: rule for writing tests, checked by review

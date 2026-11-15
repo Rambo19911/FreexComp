@@ -130,7 +130,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// <param name="implementedPhase">Pages and fields of later phases are shown disabled.</param>
     /// <param name="actualTheme">The theme in effect: the Colors page edits its set first.</param>
     public OptionsViewModel(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
-        ThemeKind actualTheme, string? pageId, int implementedPhase)
+        ThemeKind actualTheme, string? pageId, int implementedPhase, Build.IToolchainLocator? toolchain = null, Platform.IFileSystem? fileSystem = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(keymap);
@@ -212,14 +212,23 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Integer("LargeFile", SettingsCatalog.FilesLargeFileThresholdMb, 1, () => Strings.Msg_Options_LargeFileRange),
         ]);
         var designer = Page("Designer", 5, []);
-        var toolchain = Page(ToolchainPathsPage, 3, []); // its keys are Phase 3 (settings.md §4); fields and validation: I-093
-        Pages = [general, display, templates, colors, keys, environmentGeneral, environmentFiles, designer, toolchain];
+        // dialogs.md §9.9 (I-093): the effective folder of each field is checked; the placeholder names the automatic one.
+        var automatic = toolchain?.ResolveAutomatic();
+        var toolchainPage = Page(ToolchainPathsPage, 3,
+        [
+            ToolchainFolder("LlvmBinDir", SettingsCatalog.ToolchainLlvmBinDir, 3, automatic?.LlvmBinDir, Build.ToolchainLocator.LlvmFiles, fileSystem,
+                Strings.Options_Toolchain_Intro),
+            ToolchainFolder("RtlDir", SettingsCatalog.ToolchainRtlDir, 3, automatic?.RtlDir, Build.ToolchainLocator.RtlFiles, fileSystem),
+            ToolchainFolder("FrameworkDir", SettingsCatalog.ToolchainFrameworkDir, 5, automatic?.FrameworkDir, Build.ToolchainLocator.FrameworkFiles,
+                fileSystem),
+        ]);
+        Pages = [general, display, templates, colors, keys, environmentGeneral, environmentFiles, designer, toolchainPage];
         foreach (var page in Pages)
         {
             page.IsLaterPhase = page.Phase > implementedPhase;
         }
 
-        Rows = BuildRows([("Editor", [general, display, templates]), (null, [colors, keys]), ("Environment", [environmentGeneral, environmentFiles]), (null, [designer, toolchain])]);
+        Rows = BuildRows([("Editor", [general, display, templates]), (null, [colors, keys]), ("Environment", [environmentGeneral, environmentFiles]), (null, [designer, toolchainPage])]);
         Colors.PendingChanged += (_, _) => Update();
         KeyMappings.PendingChanged += (_, _) => Update();
         Colors.PropertyChanged += (_, e) =>
@@ -340,11 +349,12 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// <c>tools.keyMappings</c> (opens the Key Mappings page, UI-DLG-092).
     /// </summary>
     public static void RegisterCommands(ICommandService commands, ISettingsService settings, IKeymapService keymap, ILayoutService layout,
-        IDialogService dialogs, FilePrompts prompts, IThemeService theme, int implementedPhase)
+        IDialogService dialogs, FilePrompts prompts, IThemeService theme, int implementedPhase, Build.IToolchainLocator? toolchain = null,
+        Platform.IFileSystem? fileSystem = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("tools.options", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, null));
-        commands.RegisterHandler("tools.keyMappings", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, KeyMappingsPage));
+        commands.RegisterHandler("tools.options", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, null, toolchain, fileSystem));
+        commands.RegisterHandler("tools.keyMappings", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, KeyMappingsPage, toolchain, fileSystem));
     }
 
     /// <summary>A row was selected: a group selects its first visible page (UI-DLG-090).</summary>
@@ -524,6 +534,22 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     }
 
     /// <summary>A folder field: empty or an absolute valid path (else <c>Msg.Project.LocationInvalid</c>), with Browse.</summary>
+    /// <summary>
+    /// A toolchain folder (dialogs.md §9.9): placeholder "(automatic: &lt;path or not found&gt;)"; an explicit folder must hold
+    /// <paramref name="files"/>; an empty one reports the automatic result. Without a file system nothing is checked.
+    /// </summary>
+    private OptionField ToolchainFolder(string id, SettingKey<string> key, int phase, string? automatic, IReadOnlyList<string> files,
+        Platform.IFileSystem? fileSystem, string? heading = null) =>
+        new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Path, _settings.Get(key), phase, () => Strings.Msg_Options_PathNotFound)
+        {
+            GroupHeading = heading,
+            Placeholder = string.Format(CultureInfo.CurrentCulture, Strings.Options_Toolchain_Automatic, automatic ?? Strings.Options_Toolchain_NotFound),
+            FolderCheck = fileSystem is null ? null
+                : text => text.Length > 0 ? Build.ToolchainLocator.ValidateFolder(fileSystem, text, files)
+                : automatic is null ? null
+                : Build.ToolchainLocator.ValidateFolder(fileSystem, automatic, files),
+        };
+
     private OptionField FolderPath(string id, SettingKey<string> key, int phase, string placeholder) =>
         new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Path, _settings.Get(key), phase, () => Strings.Msg_Project_LocationInvalid)
         {
@@ -550,11 +576,12 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         Strings.ResourceManager.GetString(name, CultureInfo.CurrentCulture) ?? throw new InvalidOperationException($"Missing resource {name}.");
 
     private sealed class OpenHandler(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
-        IThemeService theme, int implementedPhase, string? fixedPage) : ICommandHandler
+        IThemeService theme, int implementedPhase, string? fixedPage, Build.IToolchainLocator? toolchain, Platform.IFileSystem? fileSystem) : ICommandHandler
     {
         public bool CanExecute(string? argument) => true;
 
         public Task ExecuteAsync(string? argument) =>
-            dialogs.ShowAsync(new OptionsViewModel(settings, keymap, layout, dialogs, prompts, theme.ActualTheme, fixedPage ?? argument, implementedPhase));
+            dialogs.ShowAsync(new OptionsViewModel(settings, keymap, layout, dialogs, prompts, theme.ActualTheme, fixedPage ?? argument, implementedPhase,
+                toolchain, fileSystem));
     }
 }

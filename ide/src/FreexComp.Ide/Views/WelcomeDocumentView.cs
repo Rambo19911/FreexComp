@@ -59,6 +59,7 @@ public sealed class WelcomeDocumentView : UserControl
         AutomationProperties.SetAutomationId(_list, "Welcome.Recent.List");
         _list.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(WelcomeDocumentViewModel.Projects)));
         _list.Bind(IsVisibleProperty, new Binding(nameof(WelcomeDocumentViewModel.HasRows)));
+        _list.Bind(IsEnabledProperty, new Binding(nameof(WelcomeDocumentViewModel.RowsEnabled))); // IDE-WEL-005
         _list.ContainerPrepared += (_, e) =>
         {
             if (e.Container is ListBoxItem item && item.DataContext is RecentProjectRow row)

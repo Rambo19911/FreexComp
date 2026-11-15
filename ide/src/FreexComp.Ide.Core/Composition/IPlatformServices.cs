@@ -38,6 +38,9 @@ public interface IPlatformServices
 
     /// <summary>Creates document buffers (IDE-ARCH-031).</summary>
     ITextBufferFactory TextBuffers { get; }
+
+    /// <summary>Where the automatic toolchain search looks (IDE-SET-050); tests pass an empty one.</summary>
+    Build.ToolchainEnvironment ToolchainEnvironment => Build.ToolchainEnvironment.FromProcess();
 }
 
 /// <summary>Plain holder of the platform inputs.</summary>
@@ -53,4 +56,7 @@ public sealed record PlatformServices(
     IDialogService Dialogs,
     IFileDialogService FileDialogs,
     IThemeHost ThemeHost,
-    ITextBufferFactory TextBuffers) : IPlatformServices;
+    ITextBufferFactory TextBuffers) : IPlatformServices
+{
+    public Build.ToolchainEnvironment ToolchainEnvironment { get; init; } = Build.ToolchainEnvironment.FromProcess();
+}

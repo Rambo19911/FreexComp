@@ -34,12 +34,14 @@ public sealed class StatusBarView : DockPanel
     private readonly List<Button> _buttons = [];
     private readonly List<Control> _editorFields = [];
     private StatusBarViewModel? _model;
+    private StatusBarState _stateKind;
+    private IDisposable? _backgroundBinding; // statusbar.<state>.bg follows the IDE state (states-and-messages.md §9)
 
     public StatusBarView()
     {
         AutomationProperties.SetAutomationId(this, AutomationIds.StatusBar);
         Height = Metric("FxcMetricStatusBarHeight");
-        Bind(BackgroundProperty, this.GetResourceObservable("FxcStatusbarIdleBgBrush"));
+        _backgroundBinding = Bind(BackgroundProperty, this.GetResourceObservable("FxcStatusbarIdleBgBrush"));
         LastChildFill = true;
 
         _state = FieldButton("State", m => m.StateCommand);
@@ -117,6 +119,13 @@ public sealed class StatusBarView : DockPanel
         }
 
         IsVisible = m.IsVisible;
+        if (m.StateKind != _stateKind || _backgroundBinding is null)
+        {
+            _stateKind = m.StateKind;
+            _backgroundBinding?.Dispose();
+            _backgroundBinding = Bind(BackgroundProperty, this.GetResourceObservable($"FxcStatusbar{_stateKind}BgBrush"));
+        }
+
         SetText(_state, m.StateText);
         _message.Text = m.Message;
         foreach (var cell in _editorFields)

@@ -76,6 +76,63 @@ public sealed class OptionField : ObservableObject
     /// <summary>Placeholder of a <see cref="OptionFieldKind.Path"/> field (shown while it is empty).</summary>
     public string? Placeholder { get; init; }
 
+    /// <summary>
+    /// A toolchain folder field (dialogs.md §9.9): checks the effective folder of a text (explicit, or the automatic one for
+    /// an empty text; null = not found). An invalid explicit folder is an <see cref="Error"/> (blocks OK); a valid one or a
+    /// failing automatic one is the <see cref="Status"/> line.
+    /// </summary>
+    public Func<string, Build.FolderCheck?>? FolderCheck
+    {
+        get => _folderCheck;
+        init
+        {
+            _folderCheck = value;
+            _error = CheckFolder(_text) ? null : _folderError;
+        }
+    }
+
+    private readonly Func<string, Build.FolderCheck?>? _folderCheck;
+    private string? _status;
+    private bool _statusIsWarning;
+
+    /// <summary>The status line under a toolchain folder field (<c>&lt;Field&gt;.Status</c>), or null.</summary>
+    public string? Status
+    {
+        get => _status;
+        private set => SetProperty(ref _status, value);
+    }
+
+    /// <summary>The status is the warning <c>Msg.Options.ToolchainAutoNotFound</c> (else a success).</summary>
+    public bool StatusIsWarning
+    {
+        get => _statusIsWarning;
+        private set => SetProperty(ref _statusIsWarning, value);
+    }
+
+    /// <summary>Applies <see cref="FolderCheck"/> to <paramref name="text"/>: true when the text is acceptable.</summary>
+    private bool CheckFolder(string text)
+    {
+        _folderError = null;
+        if (_folderCheck is null)
+            return true;
+        var check = _folderCheck(text.Trim());
+        string Message(Build.FolderCheck c) =>
+            string.Format(CultureInfo.CurrentCulture, Strings.ResourceManager.GetString(c.MessageId.Replace('.', '_'), CultureInfo.CurrentCulture) ?? c.MessageId,
+                [.. c.Args]);
+        if (text.Trim().Length > 0 && check is { Valid: false })
+        {
+            Status = null;
+            _folderError = Message(check);
+            return false;
+        }
+
+        StatusIsWarning = check is null or { Valid: false };
+        Status = StatusIsWarning ? Strings.Msg_Options_ToolchainAutoNotFound : Message(check!);
+        return true;
+    }
+
+    private string? _folderError;
+
     /// <summary>The combo entries of a <see cref="OptionFieldKind.Choice"/> field.</summary>
     public System.Collections.ObjectModel.ObservableCollection<OptionChoice> Choices { get; } = [];
 
@@ -93,7 +150,7 @@ public sealed class OptionField : ObservableObject
             if (Kind == OptionFieldKind.Choice && value is string choice && Choices.All(c => c.Value != choice))
                 Choices.Add(new OptionChoice(choice, choice.Length == 0 ? Strings.Options_DefaultChoice : choice));
             SetProperty(ref _text, Format(value), nameof(Text));
-            Error = null;
+            Error = CheckFolder(_text) ? null : _folderError;
             if (changed)
             {
                 OnPropertyChanged();
@@ -115,7 +172,7 @@ public sealed class OptionField : ObservableObject
             {
                 OptionFieldKind.Integer when int.TryParse(value.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number)
                     && Key.IsValid(number) => number,
-                OptionFieldKind.Path when TextValidator?.Invoke(value) != false => value,
+                OptionFieldKind.Path when TextValidator?.Invoke(value) != false && CheckFolder(value) => value,
                 _ => null,
             };
             if (parsed is not null)
@@ -128,7 +185,7 @@ public sealed class OptionField : ObservableObject
             }
             else
             {
-                Error = _rangeMessage?.Invoke() ?? "";
+                Error = _folderError ?? _rangeMessage?.Invoke() ?? "";
             }
 
             OnPropertyChanged(nameof(CanReset));

@@ -1,3 +1,4 @@
+using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
@@ -49,7 +50,8 @@ public static class ServiceGraph
 
         var status = new StatusService(platform.Clock);
         var focus = new FocusTracker();
-        var commands = new CommandService(keymap, platform.Dispatcher, platform.Clock, platform.Log, platform.Dialogs, status, focus);
+        var state = new IdeStateMachine(platform.Log); // IDE-P3-001, phase3-build-run.md §2
+        var commands = new CommandService(keymap, platform.Dispatcher, platform.Clock, platform.Log, platform.Dialogs, status, focus) { IdeState = state };
         foreach (var definition in commands.Definitions.Where(d => d.Scope == CommandScope.Focus))
         {
             commands.RegisterHandler(definition.Id, new FocusCommandHandler(definition.Id, focus)); // commands.md §3
@@ -68,7 +70,8 @@ public static class ServiceGraph
         ProjectService? projects = null; // created after the documents it uses; the prompts ask it lazily
         var prompts = new FilePrompts(platform.FileDialogs, platform.FileSystem, layout, settings, platform.UserPaths,
             projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
-        OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, ImplementedPhase);
+        var toolchain = new ToolchainLocator(settings, platform.FileSystem, platform.ToolchainEnvironment); // IDE-P3-010
+        OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, ImplementedPhase, toolchain, platform.FileSystem);
         ShellCommands.RegisterCommands(commands, platform.Shell, platform.FileSystem, platform.UserPaths, platform.Log);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.Layout = layout;
@@ -78,6 +81,10 @@ public static class ServiceGraph
         documents.RegisterCommands(commands);
         var help = new HelpService(platform.Dialogs, platform.UserPaths, platform.Clipboard, layout, documents, keymap);
         help.RegisterCommands(commands);
+        help.ToolchainText = () => toolchain.Resolve().LlvmBinDir is { } llvm
+            && ToolchainLocator.ValidateFolder(platform.FileSystem, llvm, ToolchainLocator.LlvmFiles).Valid
+            ? "LLVM — " + llvm // the cached clang version joins with the process launcher (I-104)
+            : null;
         var fileChanges = new FileChangeService(documents, platform.FileSystem, platform.FileWatchers, platform.Clock, platform.Dispatcher,
             settings, status, platform.Log, commands);
         documents.WriteGuard = fileChanges.BeginOwnWrite;
@@ -120,7 +127,7 @@ public static class ServiceGraph
             if (opened.NeedsMessage)
                 await platform.Dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
         });
-        documents.WelcomeFactory = () => new ViewModels.WelcomeDocumentViewModel(recent, commands, settings, platform.FileSystem, platform.Clock);
+        documents.WelcomeFactory = () => new ViewModels.WelcomeDocumentViewModel(recent, commands, settings, platform.FileSystem, platform.Clock, state);
         documents.ProjectNewUnit = async () =>
         {
             if (projects.Project is null)
@@ -182,6 +189,9 @@ public static class ServiceGraph
             Navigation = navigation,
             Application = application,
             Help = help,
+            State = state,
+            Toolchain = toolchain,
+            Output = new OutputService(platform.Clock, settings),
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;

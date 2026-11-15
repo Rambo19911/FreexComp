@@ -22,7 +22,8 @@ public sealed class MainWindowViewModel : ObservableObject
         DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap, services.Documents);
         Layout = services.Layout.Layout;
         Layout.DocumentArea = DocumentArea;
-        StatusBar = new StatusBarViewModel(services.Status, services.Commands, services.Settings, services.Documents);
+        StatusBar = new StatusBarViewModel(services.Status, services.Commands, services.Settings, services.Documents, services.State, services.Projects);
+        services.State.Changed += (_, _) => OnPropertyChanged(nameof(Title)); // UI-WIN-033
         Layout.IsStatusBarShown = StatusBar.IsVisible;
         StatusBar.PropertyChanged += (_, e) =>
         {
@@ -77,8 +78,8 @@ public sealed class MainWindowViewModel : ObservableObject
 
     /// <summary>
     /// UI-WIN-030/031 (main-window.md §4): the subject is the open project's name (the <c>.pproj</c> path with
-    /// <c>appearance.showFullPathInTitle</c>), else the active document (its full path with that setting). The state
-    /// is Idle until the IDE state exists (Phase 3).
+    /// <c>appearance.showFullPathInTitle</c>), else the active document (its full path with that setting), followed by
+    /// the IDE state when it is not Idle (UI-WIN-033).
     /// </summary>
     public string Title
     {
@@ -89,7 +90,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 : _titleSource is null or WelcomeDocumentViewModel ? null // the Welcome page is no file (main-window.md §4)
                 : fullPath ? _titleSource.FilePath ?? _titleSource.Title
                 : _titleSource.Title;
-            return WindowTitle.Format(subject, IdeState.Idle);
+            return WindowTitle.Format(subject, _services.State.Current.State);
         }
     }
 

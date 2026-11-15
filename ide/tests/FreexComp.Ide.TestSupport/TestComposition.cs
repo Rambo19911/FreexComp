@@ -33,6 +33,12 @@ public sealed class TestCompositionOptions
     public string UserDir { get; set; } =
         Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"), "user");
 
+    /// <summary>
+    /// The automatic toolchain search (IDE-SET-050): by default no <c>FREEXCOMP_HOME</c>, no <c>PATH</c> and an IDE directory
+    /// under the user directory, so a test never finds the real toolchain by accident (IDE-P1-001).
+    /// </summary>
+    public Core.Build.ToolchainEnvironment? ToolchainEnvironment { get; set; }
+
     /// <summary>Command-line arguments other than <c>--user-dir</c>.</summary>
     public List<string> Arguments { get; } = [];
 
@@ -70,7 +76,10 @@ public static class TestComposition
             o.Dialogs,
             o.FileDialogs,
             o.ThemeHost,
-            o.TextBuffers);
+            o.TextBuffers)
+        {
+            ToolchainEnvironment = o.ToolchainEnvironment ?? new Core.Build.ToolchainEnvironment(null, Path.Combine(o.UserDir, "ide"), []),
+        };
 
         return ServiceGraph.Build(options, platform, o.ToolWindows);
     }

@@ -1,13 +1,25 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Documents;
+using FreexComp.Ide.Core.Models;
+using FreexComp.Ide.Core.Projects;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Text;
 
 namespace FreexComp.Ide.Core.ViewModels;
+
+/// <summary>The status bar's background kind (one <c>statusbar.*.bg</c> token each).</summary>
+public enum StatusBarState
+{
+    Idle,
+    Building,
+    Running,
+    Debugging,
+}
 
 /// <summary>
 /// Region 8, the status bar (main-window.md §5): state (L1), message (L3) and the active text editor's fields R2–R8.
@@ -19,9 +31,19 @@ public sealed class StatusBarViewModel : ObservableObject
     private readonly IStatusService _status;
     private readonly ISettingsService _settings;
     private readonly IDocumentService? _documents;
+    private readonly IIdeState? _state;
+    private readonly IProjectService? _projects;
 
-    public StatusBarViewModel(IStatusService status, ICommandService commands, ISettingsService settings, IDocumentService? documents = null)
+    public StatusBarViewModel(IStatusService status, ICommandService commands, ISettingsService settings, IDocumentService? documents = null,
+        IIdeState? state = null, IProjectService? projects = null)
     {
+        _state = state;
+        _projects = projects;
+        state?.Changed += (_, _) =>
+        {
+            OnPropertyChanged(nameof(StateText));
+            OnPropertyChanged(nameof(StateKind));
+        };
         ArgumentNullException.ThrowIfNull(status);
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(settings);
@@ -47,8 +69,29 @@ public sealed class StatusBarViewModel : ObservableObject
     /// <summary>UI-WIN-044 (<c>appearance.showStatusBar</c>).</summary>
     public bool IsVisible => _settings.Get(SettingsCatalog.AppearanceShowStatusBar);
 
-    /// <summary>L1: the IDE state; Idle until the build/run state machine exists (P3).</summary>
-    public string StateText => Strings.Msg_State_Idle;
+    /// <summary>L1: the IDE state text (states-and-messages.md §9); Idle without a state machine.</summary>
+    public string StateText => _state?.Current switch
+    {
+        null or { State: IdeState.Idle } => Strings.Msg_State_Idle,
+        { State: IdeState.Building, CancelRequested: true } => Strings.Msg_State_Canceling,
+        { State: IdeState.Building, BuildKind: BuildKind.Clean } => Format(Strings.Msg_State_Cleaning, ProjectName),
+        { State: IdeState.Building, BuildKind: BuildKind.CheckSyntax } => Strings.Msg_State_Checking,
+        { State: IdeState.Building } => Format(Strings.Msg_State_Building, ProjectName, _projects?.Project?.ActiveConfiguration ?? ""),
+        { State: IdeState.Running } s => Format(Strings.Msg_State_Running, Path.GetFileName(s.ProgramPath ?? "")),
+        { State: IdeState.DebugRunning } s => Format(Strings.Msg_State_Debugging, Path.GetFileName(s.ProgramPath ?? "")),
+        _ => Strings.Msg_State_PausedNoSource, // the paused location arrives with the debugger (P6)
+    };
+
+    /// <summary>L1 background: <c>statusbar.&lt;kind&gt;.bg</c> (states-and-messages.md §9, design-tokens.md §2.5).</summary>
+    public StatusBarState StateKind => _state?.Current.State switch
+    {
+        IdeState.Building => StatusBarState.Building,
+        IdeState.Running => StatusBarState.Running,
+        IdeState.DebugRunning or IdeState.Paused => StatusBarState.Debugging,
+        _ => StatusBarState.Idle,
+    };
+
+    private string ProjectName => _projects?.Project?.Name ?? "";
 
     /// <summary>L3: the transient or sticky message, empty when there is none.</summary>
     public string Message => _status.Message ?? "";

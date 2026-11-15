@@ -57,4 +57,13 @@ public sealed record IdeServices
     public required INavigationService Navigation { get; init; }
     public required IApplicationService Application { get; init; }
     public required IHelpService Help { get; init; }
+
+    /// <summary>The IDE state (phase3-build-run.md §2); its read side is <see cref="Build.IIdeState"/>.</summary>
+    public required Build.IdeStateMachine State { get; init; }
+
+    /// <summary>The toolchain directories (IDE-P3-010, IDE-SET-050).</summary>
+    public required Build.IToolchainLocator Toolchain { get; init; }
+
+    /// <summary>The Output channels (IDE-P3-070).</summary>
+    public required Build.IOutputService Output { get; init; }
 }
