@@ -6,8 +6,7 @@ using FreexComp.Compiler.Text;
 namespace FreexComp.LanguageService.Tests;
 
 /// <summary>language-service.md §2, CMP-710…714 (lexical classifier, Phase 1).</summary>
-[Trait("Phase", "1")]
-public sealed class ClassifierTests
+public sealed partial class ClassifierTests
 {
     private const string Path = @"C:\p\test.pas";
 
@@ -27,6 +26,7 @@ public sealed class ClassifierTests
     // ------------------------------------------------------------------ token kinds (CMP-710)
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     public void Lexical_EveryTokenClass()
     {
@@ -51,6 +51,7 @@ public sealed class ClassifierTests
     }
 
     [Theory]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     [InlineData("%1010", ClassificationKind.NumberLiteral)]
     [InlineData("&17", ClassificationKind.NumberLiteral)]
@@ -68,6 +69,7 @@ public sealed class ClassifierTests
     }
 
     [Theory]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     [InlineData("+ - * / = <> < > <= >= := @ ^ ..", ClassificationKind.Operator)]
     [InlineData(". , ; : ( ) [ ] (. .)", ClassificationKind.Punctuation)]
@@ -78,6 +80,7 @@ public sealed class ClassifierTests
     }
 
     [Theory]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     [InlineData("'a'", ClassificationKind.CharLiteral)]          // one-char literal
     [InlineData("''''", ClassificationKind.CharLiteral)]         // one apostrophe
@@ -92,6 +95,7 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     public void Lexical_StringLiteralParts_AreSplit()
     {
@@ -104,6 +108,7 @@ public sealed class ClassifierTests
     // ------------------------------------------------------------------ Invalid
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     public void Lexical_UnterminatedString_IsInvalid()
     {
@@ -113,6 +118,7 @@ public sealed class ClassifierTests
 
     /// <summary>C-171: a part ending in an escaped <c>''</c> at the end of the line is unterminated (E1020), not a char literal.</summary>
     [Theory]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     [InlineData("S = '''\nx", "'''")]
     [InlineData("S = 'ab''\nx", "'ab''")]
@@ -127,6 +133,7 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     public void Lexical_IllegalCharacter_IsInvalid()
     {
@@ -135,12 +142,14 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     public void Lexical_CharCodeOutOfRange_IsInvalid()
     {
         Assert.Equal([("'a'", ClassificationKind.StringLiteral), ("#70000", ClassificationKind.Invalid)], Pieces("'a'#70000"));
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     public void Lexical_LoneSymbolTokens_AreOperators()
     {
         Assert.Equal([("#", ClassificationKind.Operator), ("$", ClassificationKind.Operator), ("&", ClassificationKind.Operator)], Pieces("# $ &"));
@@ -149,6 +158,7 @@ public sealed class ClassifierTests
     // ------------------------------------------------------------------ ContextualKeyword (CMP-713)
 
     [Theory]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-713")]
     [InlineData("procedure Foo; virtual; abstract;", "virtual", ClassificationKind.ContextualKeyword)]
     [InlineData("procedure Foo; virtual; abstract;", "abstract", ClassificationKind.ContextualKeyword)]
@@ -179,6 +189,7 @@ public sealed class ClassifierTests
     // ------------------------------------------------------------------ AsmText (CMP-714)
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-714")]
     public void Lexical_AsmBlock_IsOneAsmTextSpanPerLine()
     {
@@ -193,6 +204,7 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-714")]
     public void Lexical_AsmBlock_CommentSplitsALine()
     {
@@ -205,6 +217,7 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-714")]
     public void Lexical_AsmWithoutEnd_RunsToTheEndOfFile()
     {
@@ -212,6 +225,7 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     public void Lexical_AsmAsAnIdentifierInExpressions_IsStillPaired()
     {
         // Lexical approximation: any 'asm' identifier token starts an asm block.
@@ -221,6 +235,7 @@ public sealed class ClassifierTests
     // ------------------------------------------------------------------ directives and disabled text
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-710")]
     public void Lexical_DisabledText_IsOneSpanAndDirectivesStayDirectives()
     {
@@ -241,6 +256,7 @@ public sealed class ClassifierTests
     // ------------------------------------------------------------------ ranges and coverage (CMP-711)
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-711")]
     public void Lexical_Range_ReturnsOnlyIntersectingSpansClippedToTheRange()
     {
@@ -254,6 +270,7 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Req", "CMP-711")]
     public void Lexical_SpansCoverEveryNonWhitespaceCharacterExactlyOnce()
     {
@@ -306,6 +323,7 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     public void MalformedInputNeverThrows()
     {
         var random = new Random(131);
@@ -334,6 +352,7 @@ public sealed class ClassifierTests
     // ------------------------------------------------------------------ colour tokens (CMP-710 ↔ design-tokens.md §3.1)
 
     [Theory]
+    [Trait("Phase", "1")]
     [InlineData(ClassificationKind.Keyword, "syntax.keyword")]
     [InlineData(ClassificationKind.ContextualKeyword, "syntax.keyword")]
     [InlineData(ClassificationKind.Identifier, "syntax.text")]
@@ -347,6 +366,7 @@ public sealed class ClassifierTests
     }
 
     [Fact]
+    [Trait("Phase", "1")]
     [Trait("Category", "Spec")]
     [Trait("Req", "CMP-710")]
     public void ColorTokensMatchDesignTokens()

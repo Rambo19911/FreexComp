@@ -251,6 +251,31 @@ internal sealed class Scope
         return null;
     }
 
+    /// <summary>
+    /// Every visible symbol along the parent chain, innermost scope first (declaration order within a scope); a name declared
+    /// in an inner scope hides the outer ones, an overload set stays whole (C-129, CMP-232).
+    /// </summary>
+    public IEnumerable<Symbol> VisibleSymbols()
+    {
+        var hidden = new HashSet<string>(IdentifierComparer.Instance);
+        var visible = int.MaxValue;
+        for (var scope = this; scope != null; visible = scope.ParentVisibleCount, scope = scope.Parent)
+        {
+            var declaredHere = new List<string>();
+            for (var i = 0; i < scope._ordered.Count && i < visible; i++)
+            {
+                var (name, symbol) = scope._ordered[i];
+                if (!hidden.Contains(name))
+                {
+                    declaredHere.Add(name);
+                    yield return symbol;
+                }
+            }
+
+            hidden.UnionWith(declaredHere);
+        }
+    }
+
     private bool TryGetVisible(string name, int visible, out Symbol? symbol)
     {
         if (_symbols.TryGetValue(name, out var entry) && entry.Index < visible)

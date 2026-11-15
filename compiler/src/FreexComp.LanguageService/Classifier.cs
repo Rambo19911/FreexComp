@@ -65,6 +65,109 @@ public static class Classifier
             return [];
         }
 
+        return Classify(tokens, range, IsContextualKeywordHere);
+    }
+
+    /// <summary>
+    /// The same kinds as <see cref="GetLexicalClassifications"/>, decided with the parse tree (CMP-712): an identifier is a
+    /// <see cref="ClassificationKind.ContextualKeyword"/> exactly when the parser used it as one
+    /// (<see cref="SyntaxToken.ContextualKind"/>). Tokens read from include files and missing tokens are not part of the
+    /// tree's own text and are skipped. Never throws.
+    /// </summary>
+    public static ImmutableArray<ClassifiedSpan> GetSyntacticClassifications(SyntaxTree tree, TextSpan range)
+    {
+        ArgumentNullException.ThrowIfNull(tree);
+        if (range.Length == 0)
+        {
+            return [];
+        }
+
+        ImmutableArray<SyntaxToken> tokens = [.. tree.Root.OwnTokens().Where(t => !t.IsMissing)];
+        return Classify(tokens, range, static (list, i) =>
+            list[i].ContextualKind != list[i].Kind && SyntaxFacts.IsContextualKeyword(list[i].ContextualKind));
+    }
+
+    /// <summary>
+    /// The semantic overlay (CMP-710 "semantic" rows, CMP-711): one span per identifier token in <paramref name="range"/> that names a
+    /// symbol, classified by what it binds to; <see cref="ClassificationKind.UnresolvedIdentifier"/> for a name reported as E2003;
+    /// an additional <see cref="ClassificationKind.DeprecatedSymbol"/> span for a deprecated symbol. Identifiers used as
+    /// directives and names in attribute lists (<see cref="ClassificationKind.Attribute"/>) are handled syntactically.
+    /// </summary>
+    public static ImmutableArray<ClassifiedSpan> GetSemanticClassifications(Document doc, TextSpan range, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(doc);
+        var model = doc.SemanticModel;
+        var unresolved = model.GetDiagnostics(range, ct).Where(d => d.Code == "E2003").Select(d => d.Location.Span.Start).ToHashSet();
+        var spans = ImmutableArray.CreateBuilder<ClassifiedSpan>();
+        foreach (var token in model.SyntaxTree.Root.OwnTokens())
+        {
+            if (token.Span.End <= range.Start)
+            {
+                continue;
+            }
+
+            if (token.Span.Start >= range.End)
+            {
+                break;
+            }
+
+            ct.ThrowIfCancellationRequested();
+            if (token.Kind != SyntaxKind.IdentifierToken || token.IsMissing || token.ContextualKind != token.Kind || SyntaxFacts.IsReservedWord(token.Text))
+            {
+                continue;
+            }
+
+            if (token.Parent?.FirstAncestorOrSelf<Compiler.Syntax.AttributeSyntax>() is { } attribute && attribute.Name.Span.Contains(token.Span.Start))
+            {
+                spans.Add(new ClassifiedSpan(token.Span, ClassificationKind.Attribute));
+                continue;
+            }
+
+            if (unresolved.Contains(token.Span.Start))
+            {
+                spans.Add(new ClassifiedSpan(token.Span, ClassificationKind.UnresolvedIdentifier));
+                continue;
+            }
+
+            var symbol = model.GetDeclaredSymbol(token, ct) ?? (token.Parent is { } parent ? model.GetSymbolInfo(parent, ct).Symbol : null);
+            if (symbol is not null && KindOf(symbol) is { } kind)
+            {
+                spans.Add(new ClassifiedSpan(token.Span, kind));
+                if (symbol.IsDeprecated)
+                {
+                    spans.Add(new ClassifiedSpan(token.Span, ClassificationKind.DeprecatedSymbol));
+                }
+            }
+        }
+
+        return spans.ToImmutable();
+    }
+
+    private static ClassificationKind? KindOf(Compiler.Symbols.Symbol symbol) => symbol switch
+    {
+        Compiler.Symbols.UnitSymbol => ClassificationKind.UnitName,
+        Compiler.Types.ClassTypeSymbol => ClassificationKind.ClassName,
+        Compiler.Types.InterfaceTypeSymbol => ClassificationKind.InterfaceName,
+        Compiler.Types.EnumTypeSymbol => ClassificationKind.EnumName,
+        Compiler.Symbols.TypeParameterSymbol or Compiler.Types.TypeSymbol { TypeKind: Compiler.Types.TypeKind.TypeParameter } => ClassificationKind.TypeParameter,
+        Compiler.Types.TypeSymbol => ClassificationKind.TypeName,
+        Compiler.Symbols.EnumMemberSymbol => ClassificationKind.EnumMember,
+        Compiler.Symbols.ConstantSymbol => ClassificationKind.Constant,
+        Compiler.Symbols.VariableSymbol { IsGlobal: true } => ClassificationKind.GlobalVariable,
+        Compiler.Symbols.VariableSymbol => ClassificationKind.LocalVariable,
+        Compiler.Symbols.ParameterSymbol => ClassificationKind.Parameter,
+        Compiler.Symbols.FieldSymbol { IsClassVar: true } => ClassificationKind.GlobalVariable,
+        Compiler.Symbols.FieldSymbol => ClassificationKind.Field,
+        Compiler.Symbols.PropertySymbol => ClassificationKind.Property,
+        Compiler.Symbols.MethodSymbol => ClassificationKind.Method,
+        Compiler.Symbols.RoutineSymbol or Compiler.Symbols.IntrinsicSymbol => ClassificationKind.Routine,
+        { Kind: Compiler.Symbols.SymbolKind.Label } => ClassificationKind.Label,
+        _ => null,
+    };
+
+    private static ImmutableArray<ClassifiedSpan> Classify(ImmutableArray<SyntaxToken> tokens, TextSpan range,
+                                                          Func<ImmutableArray<SyntaxToken>, int, bool> isContextualKeyword)
+    {
         var builder = new SpanBuilder(range);
         var inAsm = false;
         for (var i = 0; i < tokens.Length; i++)
@@ -94,7 +197,7 @@ public static class Classifier
                 }
                 else
                 {
-                    ClassifyToken(builder, tokens, i);
+                    ClassifyToken(builder, tokens, i, isContextualKeyword);
                 }
             }
 
@@ -127,15 +230,19 @@ public static class Classifier
         _ => "syntax.text",
     };
 
-    private static void ClassifyToken(SpanBuilder builder, ImmutableArray<SyntaxToken> tokens, int index)
+    private static void ClassifyToken(SpanBuilder builder, ImmutableArray<SyntaxToken> tokens, int index,
+                                      Func<ImmutableArray<SyntaxToken>, int, bool> isContextualKeyword)
     {
         var token = tokens[index];
         switch (token.Kind)
         {
             case SyntaxKind.EndOfFileToken:
                 return;
+            case SyntaxKind.IdentifierToken when SyntaxFacts.IsReservedWord(token.Text):
+                builder.Add(token.Span, ClassificationKind.Keyword);   // a reserved word the parser took as a name (operator In)
+                return;
             case SyntaxKind.IdentifierToken:
-                builder.Add(token.Span, IsContextualKeywordHere(tokens, index) ? ClassificationKind.ContextualKeyword : ClassificationKind.Identifier);
+                builder.Add(token.Span, isContextualKeyword(tokens, index) ? ClassificationKind.ContextualKeyword : ClassificationKind.Identifier);
                 return;
             case SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken:
                 builder.Add(token.Span, ClassificationKind.NumberLiteral);

@@ -4,6 +4,7 @@ using System.Text;
 using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Emit;
 using FreexComp.Compiler.Lowering;
+using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Toolchain;
@@ -72,6 +73,228 @@ public sealed class Compilation
         Options = options;
         _openFiles = openFiles;
         FileSystem = fs;
+        _analysis = new Lazy<Analysis>(Analyze, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    // ------------------------------------------------------------------------------------------------ language service (C-129)
+
+    /// <summary>One front-end run of this snapshot for the language service (errors kept), shared by every semantic model.</summary>
+    private sealed record Analysis(FrontEnd? Front, ImmutableArray<Diagnostic> Diagnostics);
+
+    private readonly Lazy<Analysis> _analysis;
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SemanticModel>> _models = new(PathUtil.Comparer);
+
+    private Analysis Analyze()
+    {
+        var baseline = _previous?._analysis.Value;
+        var changed = _changed;
+        _previous = null;                                                   // the chain of snapshots is not kept alive
+        var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
+        var front = RunFrontEnd(diagnostics, baseline is null ? null : ReuseFrom(baseline, changed));
+        return new Analysis(front, diagnostics.ToImmutable());
+    }
+
+    // ------------------------------------------------------------------------------------------------ snapshots (C-130, CMP-130)
+
+    /// <summary>A unit-level reuse plan: the built-in types of the earlier run and its units that may be taken over.</summary>
+    private sealed record Reuse(BuiltInTypes Types, Func<string, LoadedUnit?> Unit);
+
+    /// <summary>The snapshot whose analysis this one may build on (its analysis exists), and the files changed since.</summary>
+    private Compilation? _previous;
+
+    private readonly ImmutableHashSet<string> _changed = ImmutableHashSet.Create<string>(PathUtil.Comparer);
+
+    private Compilation(CompilationOptions options, ImmutableDictionary<string, SourceText> openFiles, IFileSystem fs,
+                        Compilation? previous, ImmutableHashSet<string> changed)
+        : this(options, openFiles, fs)
+    {
+        _previous = previous;
+        _changed = changed;
+    }
+
+    /// <summary>CMP-130: adds or replaces an open file; the new snapshot rebinds only what the change can affect.</summary>
+    public Compilation WithSourceText(SourceText text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var path = PathUtil.Normalize(text.Path);
+        var source = path == text.Path ? text : SourceText.From(path, text.Text);
+        return Changed(_openFiles.SetItem(path, source), path);
+    }
+
+    /// <summary>The file is closed: it is read from the file system again.</summary>
+    public Compilation WithoutSourceText(string path)
+    {
+        var normalized = PathUtil.Normalize(path);
+        return Changed(_openFiles.Remove(normalized), normalized);
+    }
+
+    /// <summary>Other options: nothing of this snapshot is reused.</summary>
+    public Compilation WithOptions(CompilationOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return new Compilation(options, _openFiles, FileSystem);
+    }
+
+    /// <summary>The file changed on disk (language-service.md §1 <c>NotifyFileChangedOnDisk</c>): its trees and binding are not reused.</summary>
+    public Compilation WithFileChangedOnDisk(string path) => Changed(_openFiles, PathUtil.Normalize(path));
+
+    private Compilation Changed(ImmutableDictionary<string, SourceText> openFiles, string path)
+    {
+        var previous = _previous;
+        var (baseline, changed) = _analysis.IsValueCreated ? (this, _changed.Clear()) : (previous, _changed);
+        return new Compilation(Options, openFiles, FileSystem, baseline, changed.Add(path));
+    }
+
+    /// <summary>
+    /// CMP-130: the units of <paramref name="baseline"/> this snapshot can take over. A changed file whose interface part (the text up
+    /// to the <c>implementation</c> keyword) is unchanged is bound anew, but the units using it are not; a unit is taken over when its
+    /// file is unchanged and no unit it uses (transitively) changed its interface. A changed file the earlier run did not load (a
+    /// new file, a file that may now resolve a uses entry) disables reuse.
+    /// </summary>
+    private Reuse? ReuseFrom(Analysis baseline, ImmutableHashSet<string> changed)
+    {
+        if (baseline.Front is not { } front)
+        {
+            return null;
+        }
+
+        var units = front.Binder.Units.ToDictionary(u => u.Path, PathUtil.Comparer);
+        var interfaceChanged = new HashSet<string>(PathUtil.Comparer);
+        foreach (var path in changed)
+        {
+            if (!units.TryGetValue(path, out var old))
+            {
+                return null;
+            }
+
+            if (!SameInterface(old, path))
+            {
+                interfaceChanged.Add(path);
+            }
+        }
+
+        var reusable = new Dictionary<LoadedUnit, bool>();
+        bool Reusable(LoadedUnit unit)
+        {
+            if (reusable.TryGetValue(unit, out var known))
+            {
+                return known;
+            }
+
+            reusable[unit] = true;                                           // a cycle through implementation uses: decided by its other edges
+            var ok = unit.Phase == UnitPhase.Complete && unit.Result is not null && !unit.IsPrecompiled && !changed.Contains(unit.Path)
+                     && unit.InterfaceUses.Concat(unit.ImplementationUses).All(u => !interfaceChanged.Contains(u.Path) && (changed.Contains(u.Path) || Reusable(u)));
+            reusable[unit] = ok;
+            return ok;
+        }
+
+        return new Reuse(front.Binder.Types, path => units.TryGetValue(path, out var unit) && Reusable(unit) ? unit : null);
+    }
+
+    /// <summary>True when the current text of <paramref name="path"/> keeps the earlier unit's interface part character for character.</summary>
+    private bool SameInterface(LoadedUnit old, string path)
+    {
+        if (old.Tree?.Root is ProgramSyntax)
+        {
+            return true;                                                    // no unit uses a program
+        }
+
+        if (old.Tree?.Root is not UnitSyntax { ImplementationSection.ImplementationKeyword: { IsMissing: false } keyword }
+            || Read(path, []) is not { } current)
+        {
+            return false;
+        }
+
+        var prefix = old.Tree.Text.Text.AsSpan(0, keyword.Span.Start);
+        var text = current.Text.AsSpan();
+        return text.StartsWith(prefix, StringComparison.Ordinal)
+               && text[prefix.Length..].StartsWith(keyword.Text, StringComparison.OrdinalIgnoreCase)
+               && (text.Length == prefix.Length + keyword.Text.Length || !char.IsAsciiLetterOrDigit(text[prefix.Length + keyword.Text.Length]) && text[prefix.Length + keyword.Text.Length] != '_');
+    }
+
+    /// <summary>C-130 instrumentation: the units this snapshot's analysis bound itself (load order), the others were taken over.</summary>
+    internal ImmutableArray<string> BoundUnits =>
+        _analysis.Value.Front is { } front ? [.. front.Binder.Units.Where(u => !front.Binder.Reused.Contains(u)).Select(u => u.Name)] : [];
+
+    /// <summary>
+    /// api.md §1: <c>null</c> → every diagnostic of the program (parse + bind of every unit, as <c>opc --check</c> reports them);
+    /// a path → that file's (syntax + semantic).
+    /// </summary>
+    public ImmutableArray<Diagnostic> GetDiagnostics(string? path = null, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return path is null ? _analysis.Value.Diagnostics : GetSemanticModel(path).GetDiagnostics(ct: ct);
+    }
+
+    /// <summary>The lexical, syntax and directive diagnostics of one file.</summary>
+    public ImmutableArray<Diagnostic> GetSyntaxDiagnostics(string path) => GetSyntaxTree(path).Diagnostics;
+
+    /// <summary>
+    /// api.md §6: the semantic model of <paramref name="path"/> (cached per snapshot). A file not reachable from
+    /// <see cref="CompilationOptions.MainFile"/> is analysed as an additional root (CMP-201). Never throws for malformed code.
+    /// </summary>
+    public SemanticModel GetSemanticModel(string path)
+    {
+        var normalized = PathUtil.Normalize(path);
+        return _models.GetOrAdd(normalized, p => new Lazy<SemanticModel>(() => CreateModel(p), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+    }
+
+    private SemanticModel CreateModel(string path)
+    {
+        var analysis = _analysis.Value;
+        if (Bound(analysis, path) is { } loaded)
+        {
+            return Model(analysis, loaded, this);
+        }
+
+        if (!PathUtil.AreEqual(path, PathUtil.Normalize(Options.MainFile)))
+        {
+            var root = new Compilation(Options with { MainFile = path }, _openFiles, FileSystem);
+            var rootAnalysis = root._analysis.Value;
+            if (Bound(rootAnalysis, path) is { } rootUnit)
+            {
+                return Model(rootAnalysis, rootUnit, this);
+            }
+        }
+
+        // no front end (no System, invalid alias table, unreadable file): the file bound on its own against the built-ins
+        var tree = GetSyntaxTree(path);
+        var result = Binder.BindCompilationUnit(tree, new BuiltInTypes());
+        ImmutableArray<Diagnostic> diagnostics = [.. analysis.Diagnostics.Where(d => PathUtil.AreEqual(d.Location.Path, path))];
+        return new SemanticModel(this, tree, result, diagnostics.IsEmpty ? [.. tree.Diagnostics, .. result.Diagnostics] : diagnostics, _ => null);
+    }
+
+    private static LoadedUnit? Bound(Analysis analysis, string path) =>
+        analysis.Front?.Binder.Units.FirstOrDefault(u => PathUtil.AreEqual(u.Path, path) && u.Result is not null && u.Tree is not null);
+
+    private static SemanticModel Model(Analysis analysis, LoadedUnit loaded, Compilation compilation)
+    {
+        var units = analysis.Front!.Binder.Units;
+        UnitSymbol? FindUnit(string name) =>
+            loaded.UsedAs.FirstOrDefault(e => IdentifierComparer.Instance.Equals(e.Value, name)).Key?.Symbol
+            ?? units.FirstOrDefault(u => u.Symbol is not null && IdentifierComparer.Instance.Equals(u.Name, name))?.Symbol;
+        ImmutableArray<Diagnostic> diagnostics = [.. analysis.Diagnostics.Where(d => PathUtil.AreEqual(d.Location.Path, loaded.Path))];
+        return new SemanticModel(compilation, loaded.Tree!, loaded.Result!, diagnostics, FindUnit);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SyntaxTree?>> _trees = new(PathUtil.Comparer);
+
+    /// <summary>
+    /// api.md §1: the parse tree of any file (an open file wins over the file system), parsed on demand without binding and
+    /// cached per snapshot; an unreadable file gives an empty tree. <c>{$IF}</c> conditions naming declared constants are
+    /// evaluated by the semantic model's own parse (its <see cref="SemanticModel.SyntaxTree"/>).
+    /// </summary>
+    public SyntaxTree GetSyntaxTree(string path) =>
+        TryGetSyntaxTree(path, out var tree) ? tree : SyntaxTree.Parse(SourceText.From(PathUtil.Normalize(path), ""));
+
+    /// <summary>False when the file cannot be read.</summary>
+    public bool TryGetSyntaxTree(string path, out SyntaxTree tree)
+    {
+        var normalized = PathUtil.Normalize(path);
+        var parsed = _trees.GetOrAdd(normalized, p => new Lazy<SyntaxTree?>(() => Parse(p, null, []), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+        tree = parsed!;
+        return parsed is not null;
     }
 
     public CompilationOptions Options { get; }
@@ -357,6 +580,16 @@ public sealed class Compilation
     /// </summary>
     private FrontEnd? Bind(ImmutableArray<Diagnostic>.Builder diagnostics)
     {
+        var front = RunFrontEnd(diagnostics);
+        return front is null || front.Binder.Main!.Result is null || front.Binder.SystemUnit!.Result is null && !front.Binder.SystemUnit.IsPrecompiled
+               || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)
+            ? null
+            : front;
+    }
+
+    /// <summary>The front end whatever its errors; null only when it could not start (alias table invalid, no <c>System</c>).</summary>
+    private FrontEnd? RunFrontEnd(ImmutableArray<Diagnostic>.Builder diagnostics, Reuse? reuse = null)
+    {
         var mainPath = PathUtil.Normalize(Options.MainFile);
         var aliases = UnitAliasTable.Load(FileSystem, RtlDirectory(), out var aliasError);
         if (aliasError is not null)
@@ -374,12 +607,12 @@ public sealed class Compilation
         }
 
         var optionsFingerprint = Fingerprint.Options(Options, aliases.Hash);
-        var types = new BuiltInTypes { DefaultRttiScope = Options.Rtti == "published" ? RttiScope.Published : RttiScope.Broad };   // C-169
-        var unitBinder = new UnitBinder(types, resolver, Parse, path => ReadPcu(path, optionsFingerprint));
+        var types = reuse?.Types ?? new BuiltInTypes { DefaultRttiScope = Options.Rtti == "published" ? RttiScope.Published : RttiScope.Broad };   // C-169
+        var unitBinder = new UnitBinder(types, resolver, Parse, path => ReadPcu(path, optionsFingerprint), reuse?.Unit);
         unitBinder.BindAll(systemPath, mainPath, MaxParallelism);
         var initOrder = unitBinder.InitializationOrder();
         CheckPrecompiledDependencies(new FrontEnd(unitBinder, initOrder, systemPath));
-        foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null))
+        foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null && !unitBinder.Reused.Contains(u)))
         {
             loaded.LinkInputs = UnitLinkInputs.Collect(loaded.Result!.Unit, loaded.Tree!, FileSystem, loaded.Diagnostics);
             loaded.Forms = Forms.FormEmbedding.Collect(loaded.Result!, loaded.Tree!, FileSystem, loaded.Diagnostics);    // C-114
@@ -391,15 +624,14 @@ public sealed class Compilation
         }
 
         // CMP-156: diagnostics in unit init order (the main file last), then by position
-        foreach (var loaded in initOrder.Append(unitBinder.Main!).Concat(unitBinder.Units.Except(initOrder).Where(u => u != unitBinder.Main)))
+        // (a unit taken over from an earlier run may still list the earlier instance of a unit bound anew: only this run's count)
+        foreach (var loaded in initOrder.Append(unitBinder.Main!).Concat(unitBinder.Units.Except(initOrder).Where(u => u != unitBinder.Main))
+                     .Where(unitBinder.Units.Contains).Distinct())
         {
             diagnostics.AddRange(loaded.Diagnostics);
         }
 
-        return unitBinder.Main!.Result is null || unitBinder.SystemUnit!.Result is null && !unitBinder.SystemUnit.IsPrecompiled
-               || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)
-            ? null
-            : new FrontEnd(unitBinder, initOrder, systemPath);
+        return new FrontEnd(unitBinder, initOrder, systemPath);
     }
 
     /// <summary>The <c>.pcu</c> writer of one front-end run (C-073): fingerprints, source bytes (open files win), sections.</summary>

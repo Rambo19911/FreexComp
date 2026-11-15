@@ -5,6 +5,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="FreexComp.Compiler.Tests" />
     <InternalsVisibleTo Include="FreexComp.LanguageService" />
+    <InternalsVisibleTo Include="FreexComp.LanguageService.Tests" />
     <InternalsVisibleTo Include="FreexComp.Build" />
   </ItemGroup>
 </Project>

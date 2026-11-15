@@ -99,16 +99,26 @@ internal sealed class UnitBinder : IUsesScopes
 
     /// <param name="parse">Reads and parses a file with the given <c>{$IF}</c> chain provider; null (with E0002/E0003) when unreadable.</param>
     /// <param name="readPcu">Reads a precompiled unit's <c>.pcu</c>; null when it is unreadable or unusable (C-074).</param>
+    /// <param name="reuse">
+    /// C-130 (CMP-130): a completely bound unit of an earlier run (same <paramref name="types"/>) to take over as it is instead of
+    /// loading the file again; null to load it.
+    /// </param>
     public UnitBinder(BuiltInTypes types, UnitResolver resolver, Func<string, IUsesScopes?, List<Diagnostic>, SyntaxTree?> parse,
-        Func<string, System.Text.Json.Nodes.JsonObject?>? readPcu = null)
+        Func<string, System.Text.Json.Nodes.JsonObject?>? readPcu = null, Func<string, LoadedUnit?>? reuse = null)
     {
         Types = types;
         _resolver = resolver;
         _parse = parse;
         _readPcu = readPcu ?? (_ => null);
+        _reuse = reuse;
     }
 
+    private readonly Func<string, LoadedUnit?>? _reuse;
+
     public BuiltInTypes Types { get; }
+
+    /// <summary>The units taken over from an earlier run (C-130); the others were loaded and bound by this one.</summary>
+    public HashSet<LoadedUnit> Reused { get; } = [];
 
     public LoadedUnit? SystemUnit { get; private set; }
 
@@ -221,9 +231,26 @@ internal sealed class UnitBinder : IUsesScopes
     {
         if (!_byPath.TryGetValue(path, out var unit))
         {
-            unit = new LoadedUnit(path);
+            if (_reuse?.Invoke(path) is { Phase: UnitPhase.Complete } reused)
+            {
+                unit = reused;
+                Reused.Add(unit);
+            }
+            else
+            {
+                unit = new LoadedUnit(path);
+            }
+
             _byPath.Add(path, unit);
             _units.Add(unit);
+            if (Reused.Contains(unit))
+            {
+                // the units a taken-over unit uses are part of this run too (taken over as well, or bound anew by BindAll)
+                foreach (var used in unit.InterfaceUses.Concat(unit.ImplementationUses).ToList())
+                {
+                    Load(used.Path);
+                }
+            }
         }
 
         return unit;
