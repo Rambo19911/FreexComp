@@ -136,6 +136,32 @@ public sealed class GoldenRunnerEndToEndTests
         GoldenRunner.TryDelete(dir);
     }
 
+    /// <summary>
+    /// R-205: the directories of <see cref="RtlSetup.ExtraUnitDirectories"/> are passed to opc as further <c>-U</c>
+    /// options, so a caller (the UI framework harness) puts its sources on the unit path without a <c>// opc:</c> marker.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-901")]
+    public async Task Run_ExtraUnitDirectories_AreOnTheUnitPath()
+    {
+        var dir = NewDir();
+        var units = Path.Combine(dir, "units");
+        Directory.CreateDirectory(units);
+        File.WriteAllText(Path.Combine(units, "SynthExtra.pas"),
+            "unit SynthExtra;\ninterface\nfunction Answer: Integer;\nimplementation\nfunction Answer: Integer;\nbegin\n  Result := 42;\nend;\nend.\n");
+        var @case = Write(dir, "program Synth;\nuses SynthExtra;\nbegin\n  Writeln(Answer);\nend.\n", (".out", "42\n"));
+
+        var without = await GoldenRunner.RunAsync(@case, RtlSetup.Default, TestContext.Current.CancellationToken);
+        var with = await GoldenRunner.RunAsync(@case, RtlSetup.Default with { ExtraUnitDirectories = [units] },
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(without);
+        Assert.Contains("SynthExtra", without, StringComparison.Ordinal);
+        Assert.Null(with);
+        Assert.Empty(RtlSetup.Default.ExtraUnitDirectories);
+        GoldenRunner.TryDelete(dir);
+    }
+
     /// <summary>Longer test programs from before RTL-905 was checked; each may not grow (to be split, R-200 report).</summary>
     public static readonly Dictionary<string, int> OversizedPrograms = new(StringComparer.Ordinal)
     {

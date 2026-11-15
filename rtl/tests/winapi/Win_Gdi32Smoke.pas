@@ -65,6 +65,9 @@ begin
   OldBmp := HBITMAP(SelectObject(DC, Dib));
   Check(OldBmp <> 0, 'SelectObject bitmap');
   CheckEqI(Int64(Dib), Int64(GetCurrentObject(DC, OBJ_BITMAP)), 'GetCurrentObject');
+  CheckEqI(OBJ_MEMDC, GetObjectType(DC), 'GetObjectType memory DC');
+  CheckEqI(OBJ_BITMAP, GetObjectType(Dib), 'GetObjectType bitmap');
+  CheckEqI(0, GetObjectType(0), 'GetObjectType of no object');
   CheckEqI(SizeOf(BM), GetObjectW(Dib, SizeOf(BM), @BM), 'GetObjectW');
   CheckEqI(16, BM.bmWidth, 'TBitmapRec.bmWidth');
   CheckEqI(32, BM.bmBitsPixel, 'TBitmapRec.bmBitsPixel');
@@ -87,8 +90,10 @@ begin
   CheckEqI(White, SetBkColor(DC, RGB(40, 50, 60)), 'SetBkColor previous');
   CheckEqI(RGB(40, 50, 60), GetBkColor(DC), 'GetBkColor');
   CheckEqI(OPAQUE, SetBkMode(DC, TRANSPARENT), 'SetBkMode default OPAQUE');
+  CheckEqI(TRANSPARENT, GetBkMode(DC), 'GetBkMode');
   CheckEqI(TA_LEFT or TA_TOP, SetTextAlign(DC, TA_CENTER), 'SetTextAlign default');
   CheckEqI(R2_COPYPEN, SetROP2(DC, R2_XORPEN), 'SetROP2 default');
+  CheckEqI(R2_XORPEN, GetROP2(DC), 'GetROP2');
   CheckEqI(BLACKONWHITE, SetStretchBltMode(DC, COLORONCOLOR), 'SetStretchBltMode default');
   Check(SetBrushOrgEx(DC, 1, 1, @P), 'SetBrushOrgEx');
   CheckEqI(0, P.X, 'SetBrushOrgEx previous');
@@ -124,6 +129,9 @@ begin
   Check(MoveToEx(DC, 0, 8, @P), 'MoveToEx');
   Check(LineTo(DC, 16, 8), 'LineTo');
   CheckEqI(0, GetPixel(DC, 9, 8), 'LineTo pixel');
+  Check(GetCurrentPositionEx(DC, @P), 'GetCurrentPositionEx');
+  CheckEqI(16, P.X, 'GetCurrentPositionEx X after LineTo');
+  CheckEqI(8, P.Y, 'GetCurrentPositionEx Y after LineTo');
   CheckEqI(White, GetPixel(DC, 9, 9), 'below the line');
   Check(Rectangle(DC, 8, 10, 16, 16), 'Rectangle');
   CheckEqI(0, GetPixel(DC, 8, 12), 'Rectangle border');

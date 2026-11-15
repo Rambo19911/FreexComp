@@ -4,7 +4,8 @@
   - Windows Data Types; LOWORD/HIWORD/MAKELONG/MAKEWPARAM/MAKELPARAM/MAKELRESULT/RGB/GetRValue/GetGValue/GetBValue/
     MAKEINTRESOURCEW/SUCCEEDED/FAILED/GET_X_LPARAM/GET_Y_LPARAM/GET_WHEEL_DELTA_WPARAM macro pages;
   - the reference page of every function declared below (processthreadsapi.h, libloaderapi.h, processenv.h,
-    sysinfoapi.h, heapapi.h, memoryapi.h, winbase.h (including GlobalAlloc, GlobalLock, GlobalUnlock, GlobalFree),
+    sysinfoapi.h, heapapi.h, memoryapi.h, winbase.h (including GlobalAlloc, GlobalLock, GlobalUnlock, GlobalFree,
+    GlobalAddAtomW, GlobalDeleteAtom),
     errhandlingapi.h, debugapi.h, consoleapi.h, fileapi.h,
     handleapi.h, timezoneapi.h, profileapi.h, synchapi.h, stringapiset.h, winnls.h, wdm.h RtlGetVersion);
   - the structure pages SYSTEMTIME, FILETIME, WIN32_FIND_DATAW, WIN32_FILE_ATTRIBUTE_DATA, RTL_CRITICAL_SECTION,
@@ -15,7 +16,7 @@
   - user32 (winuser.h): the reference page of every user32 function declared below; the structure pages MSG,
     WNDCLASSEXW, CREATESTRUCTW, PAINTSTRUCT, WINDOWPOS, MINMAXINFO, NMHDR, SCROLLINFO, MENUITEMINFOW,
     NONCLIENTMETRICSW, LOGFONTW, DRAWITEMSTRUCT, MEASUREITEMSTRUCT, WINDOWPLACEMENT, MONITORINFO, TRACKMOUSEEVENT, ICONINFO, ACCEL;
-    Window Styles, Extended Window Styles, Window Class Styles, Virtual-Key Codes, GetSystemMetrics,
+    Window Styles, Extended Window Styles, Window Class Styles, Edit Control Styles, Virtual-Key Codes, GetSystemMetrics,
     SystemParametersInfoW, GetSysColor, LoadCursorW/LoadIconW, MessageBox, DPI_AWARENESS_CONTEXT handle pages;
   - gdi32 (wingdi.h): the reference page of every gdi32 function declared below; the structure pages TEXTMETRICW,
     LOGBRUSH, BITMAPINFOHEADER, RGBQUAD, BITMAPINFO, BITMAP, BITMAPFILEHEADER; Ternary Raster Operations, Binary
@@ -997,6 +998,9 @@ const
   WS_EX_OVERLAPPEDWINDOW = WS_EX_WINDOWEDGE or WS_EX_CLIENTEDGE;
   WS_EX_PALETTEWINDOW = WS_EX_WINDOWEDGE or WS_EX_TOOLWINDOW or WS_EX_TOPMOST;
 
+  { edit control styles (only those the UI framework needs so far) }
+  ES_AUTOHSCROLL = $0080;
+
   { class styles }
   CS_VREDRAW = $0001;
   CS_HREDRAW = $0002;
@@ -1908,6 +1912,11 @@ function GetCommandLineW: LPWSTR; stdcall; external kernel32 name 'GetCommandLin
 function GetCommandLine: LPWSTR; stdcall; external kernel32 name 'GetCommandLineW';
 function GetModuleHandleW(lpModuleName: LPCWSTR): HMODULE; stdcall; external kernel32 name 'GetModuleHandleW';
 function GetModuleHandle(lpModuleName: LPCWSTR): HMODULE; stdcall; external kernel32 name 'GetModuleHandleW';
+function LoadLibraryW(lpLibFileName: LPCWSTR): HMODULE; stdcall; external kernel32 name 'LoadLibraryW';
+function LoadLibrary(lpLibFileName: LPCWSTR): HMODULE; stdcall; external kernel32 name 'LoadLibraryW';
+function FreeLibrary(hLibModule: HMODULE): BOOL; stdcall; external kernel32 name 'FreeLibrary';
+{ ANSI only by nature (RTL-821); the FARPROC result is an untyped code pointer }
+function GetProcAddress(hModule: HMODULE; lpProcName: LPCSTR): Pointer; stdcall; external kernel32 name 'GetProcAddress';
 function GetModuleFileNameW(hModule: HMODULE; lpFilename: LPWSTR; nSize: DWORD): DWORD; stdcall;
   external kernel32 name 'GetModuleFileNameW';
 function GetModuleFileName(hModule: HMODULE; lpFilename: LPWSTR; nSize: DWORD): DWORD; stdcall;
@@ -1950,6 +1959,9 @@ function GlobalAlloc(uFlags: UINT; dwBytes: SIZE_T): HGLOBAL; stdcall; external 
 function GlobalLock(hMem: HGLOBAL): Pointer; stdcall; external kernel32 name 'GlobalLock';
 function GlobalUnlock(hMem: HGLOBAL): BOOL; stdcall; external kernel32 name 'GlobalUnlock';
 function GlobalFree(hMem: HGLOBAL): HGLOBAL; stdcall; external kernel32 name 'GlobalFree';
+function GlobalAddAtomW(lpString: LPCWSTR): ATOM; stdcall; external kernel32 name 'GlobalAddAtomW';
+function GlobalAddAtom(lpString: LPCWSTR): ATOM; stdcall; external kernel32 name 'GlobalAddAtomW';
+function GlobalDeleteAtom(nAtom: ATOM): ATOM; stdcall; external kernel32 name 'GlobalDeleteAtom';
 
 { ---------------------------------------------------------------- kernel32: errors / exceptions }
 function GetLastError: DWORD; stdcall; external kernel32 name 'GetLastError';
@@ -2344,6 +2356,7 @@ function GetUpdateRect(hWnd: HWND; lpRect: PRect; bErase: BOOL): BOOL; stdcall; 
 function FillRect(hDC: HDC; const lprc: TRect; hbr: HBRUSH): Integer; stdcall; external user32 name 'FillRect';
 function FrameRect(hDC: HDC; const lprc: TRect; hbr: HBRUSH): Integer; stdcall; external user32 name 'FrameRect';
 function InvertRect(hDC: HDC; const lprc: TRect): BOOL; stdcall; external user32 name 'InvertRect';
+function PtInRect(const lprc: TRect; pt: TPoint): BOOL; stdcall; external user32 name 'PtInRect';
 function DrawTextW(hdc: HDC; lpchText: LPCWSTR; cchText: Integer; var lprc: TRect; format: UINT): Integer; stdcall;
   external user32 name 'DrawTextW';
 function DrawText(hdc: HDC; lpchText: LPCWSTR; cchText: Integer; var lprc: TRect; format: UINT): Integer; stdcall;
@@ -2418,6 +2431,7 @@ function LoadImageW(hInst: HINST; name: LPCWSTR; uType: UINT; cx, cy: Integer; f
 function LoadImage(hInst: HINST; name: LPCWSTR; uType: UINT; cx, cy: Integer; fuLoad: UINT): THandle; stdcall;
   external user32 name 'LoadImageW';
 function DestroyIcon(hIcon: HICON): BOOL; stdcall; external user32 name 'DestroyIcon';
+function CopyIcon(hIcon: HICON): HICON; stdcall; external user32 name 'CopyIcon';
 function CreateIconIndirect(const piconinfo: TIconInfo): HICON; stdcall; external user32 name 'CreateIconIndirect';
 function GetIconInfo(hIcon: HICON; var piconinfo: TIconInfo): BOOL; stdcall; external user32 name 'GetIconInfo';
 function DestroyCursor(hCursor: HCURSOR): BOOL; stdcall; external user32 name 'DestroyCursor';
@@ -2466,6 +2480,7 @@ function DeleteObject(ho: HGDIOBJ): BOOL; stdcall; external gdi32 name 'DeleteOb
 function GetObjectW(h: THandle; c: Integer; pv: Pointer): Integer; stdcall; external gdi32 name 'GetObjectW';
 function GetObject(h: THandle; c: Integer; pv: Pointer): Integer; stdcall; external gdi32 name 'GetObjectW';
 function GetCurrentObject(hdc: HDC; uType: UINT): HGDIOBJ; stdcall; external gdi32 name 'GetCurrentObject';
+function GetObjectType(h: HGDIOBJ): DWORD; stdcall; external gdi32 name 'GetObjectType';
 
 { ---------------------------------------------------------------- gdi32: device contexts and bitmaps }
 function CreateCompatibleDC(hdc: HDC): HDC; stdcall; external gdi32 name 'CreateCompatibleDC';
@@ -2497,8 +2512,10 @@ function GetTextColor(hdc: HDC): COLORREF; stdcall; external gdi32 name 'GetText
 function SetBkColor(hdc: HDC; color: COLORREF): COLORREF; stdcall; external gdi32 name 'SetBkColor';
 function GetBkColor(hdc: HDC): COLORREF; stdcall; external gdi32 name 'GetBkColor';
 function SetBkMode(hdc: HDC; mode: Integer): Integer; stdcall; external gdi32 name 'SetBkMode';
+function GetBkMode(hdc: HDC): Integer; stdcall; external gdi32 name 'GetBkMode';
 function SetTextAlign(hdc: HDC; align: UINT): UINT; stdcall; external gdi32 name 'SetTextAlign';
 function SetROP2(hdc: HDC; rop2: Integer): Integer; stdcall; external gdi32 name 'SetROP2';
+function GetROP2(hdc: HDC): Integer; stdcall; external gdi32 name 'GetROP2';
 function TextOutW(hdc: HDC; x, y: Integer; lpString: LPCWSTR; c: Integer): BOOL; stdcall; external gdi32 name 'TextOutW';
 function TextOut(hdc: HDC; x, y: Integer; lpString: LPCWSTR; c: Integer): BOOL; stdcall; external gdi32 name 'TextOutW';
 function ExtTextOutW(hdc: HDC; x, y: Integer; options: UINT; lprect: PRect; lpString: LPCWSTR; c: UINT; lpDx: PInteger): BOOL;
@@ -2519,6 +2536,7 @@ function EnumFontFamiliesEx(hdc: HDC; var lpLogfont: TLogFontW; lpProc: TFNFontE
 { ---------------------------------------------------------------- gdi32: lines and shapes }
 function MoveToEx(hdc: HDC; x, y: Integer; lppt: PPoint): BOOL; stdcall; external gdi32 name 'MoveToEx';
 function LineTo(hdc: HDC; x, y: Integer): BOOL; stdcall; external gdi32 name 'LineTo';
+function GetCurrentPositionEx(hdc: HDC; lppt: PPoint): BOOL; stdcall; external gdi32 name 'GetCurrentPositionEx';
 function Rectangle(hdc: HDC; left, top, right, bottom: Integer): BOOL; stdcall; external gdi32 name 'Rectangle';
 function RoundRect(hdc: HDC; left, top, right, bottom, width, height: Integer): BOOL; stdcall; external gdi32 name 'RoundRect';
 function Ellipse(hdc: HDC; left, top, right, bottom: Integer): BOOL; stdcall; external gdi32 name 'Ellipse';

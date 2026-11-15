@@ -2,7 +2,8 @@
   message records (rtl/winapi.md section 6, RTL-850/851; task R-111). Uses only Windows (RTL dependency graph).
   Written by hand from the Win32 reference on learn.microsoft.com (RTL-800): the "Window Notifications",
   "Keyboard Input Notifications", "Mouse Input Notifications", "Menu Notifications", "Dialog Box Notifications",
-  "Clipboard Messages", "Painting and Drawing Messages", High DPI and "Window Messages" pages of each WM_* message,
+  "Clipboard Messages", "Painting and Drawing Messages" (including the WM_PRINT PRF_* options), High DPI and
+  "Window Messages" pages of each WM_* message,
   and the Edit, Button, List Box, Combo Box, Static and Scroll Bar control reference (messages and notifications),
   including EM_SETCUEBANNER, EM_GETCUEBANNER, CB_SETMINVISIBLE, CB_GETMINVISIBLE, CB_SETCUEBANNER, CB_GETCUEBANNER.
   The common-control messages (TCM_, LVM_, TVM_, TB_, SB_SETTEXT..., PBM_, TBM_) are in CommCtrl.
@@ -292,6 +293,14 @@ const
   DLGC_WANTCHARS = $0080;
   DLGC_STATIC = $0100;
   DLGC_BUTTON = $2000;
+
+  { WM_PRINT / WM_PRINTCLIENT drawing options (lParam) }
+  PRF_CHECKVISIBLE = $00000001;
+  PRF_NONCLIENT = $00000002;
+  PRF_CLIENT = $00000004;
+  PRF_ERASEBKGND = $00000008;
+  PRF_CHILDREN = $00000010;
+  PRF_OWNED = $00000020;
 
   { edit control }
   EM_GETSEL = $00B0;

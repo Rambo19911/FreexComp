@@ -79,6 +79,7 @@ var
   Version: TOSVersionInfoExW;
   Buffer: array[0..MAX_PATH] of WideChar;
   N: DWORD;
+  Lib: HMODULE;
 begin
   Section('process');
   Check(GetCurrentProcessId <> 0, 'GetCurrentProcessId');
@@ -104,6 +105,12 @@ begin
   CheckEqI(65536, Info.dwAllocationGranularity, 'GetSystemInfo granularity');
   CheckEqI(8, MulDiv(10, 3, 4), 'MulDiv rounds');
   CheckEqI(-1, MulDiv(1, 1, 0), 'MulDiv by zero');
+  Lib := LoadLibraryW('kernel32.dll');
+  CheckEqI(Int64(GetModuleHandleW('kernel32.dll')), Int64(Lib), 'LoadLibraryW of a loaded module');
+  Check(LoadLibrary('kernel32.dll') = Lib, 'LoadLibrary alias');
+  Check(GetProcAddress(Lib, 'GetTickCount') <> nil, 'GetProcAddress');
+  Check(GetProcAddress(Lib, 'FreexCompNoSuchExport') = nil, 'GetProcAddress unknown name');
+  Check(FreeLibrary(Lib) and FreeLibrary(Lib), 'FreeLibrary (both references)');
   FillChar(Version, SizeOf(Version), 0);
   Version.dwOSVersionInfoSize := SizeOf(Version);
   CheckEqI(STATUS_SUCCESS, RtlGetVersion(POSVersionInfoW(@Version)), 'RtlGetVersion');
@@ -118,6 +125,8 @@ var
   P: PByte;
   Text: PWideChar;
   G: HGLOBAL;
+  A: ATOM;
+  Restricted: Boolean;
 begin
   Section('memory and errors');
   Heap := GetProcessHeap;
@@ -151,6 +160,15 @@ begin
   Check((P <> nil) and (P[0] = 5), 'GlobalLock keeps content');
   GlobalUnlock(G);
   Check(GlobalFree(G) = 0, 'GlobalFree');
+  { a global atom is reference counted: the second add returns the same atom, two deletes release it. A process in
+    a job that limits global atoms gets ERROR_ACCESS_DENIED instead (seen on agent hosts); then both adds give 0
+    and the deletes are only called, so the printed lines are the same either way }
+  A := GlobalAddAtomW('FreexComp.Kernel32Smoke.Atom');
+  Restricted := (A = 0) and (GetLastError = ERROR_ACCESS_DENIED);
+  Check((A <> 0) or Restricted, 'GlobalAddAtomW');
+  CheckEqI(A, GlobalAddAtom('FreexComp.Kernel32Smoke.Atom'), 'GlobalAddAtom alias finds the same atom');
+  Check((GlobalDeleteAtom(A) = 0) or Restricted, 'GlobalDeleteAtom');
+  Check((GlobalDeleteAtom(A) = 0) or Restricted, 'GlobalDeleteAtom second reference');
 end;
 
 procedure Console;

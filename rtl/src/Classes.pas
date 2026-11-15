@@ -644,6 +644,7 @@ type
     FFixups: TList;
     FPropName: string;
     FPropLine, FPropCol: Integer;
+    FValueLine, FValueCol: Integer;
     FMatchName: string;
     FMatched: Boolean;
     FRootCreated: Boolean;
@@ -676,7 +677,7 @@ type
     procedure ReadBinaryBlock(Stream: TStream);
     { errors }
     procedure Error(const Code, Text: string; Line, Col: Integer);
-    procedure PropValueError;
+    procedure TokenValueError;
     { parser }
     procedure ReadProperty(Instance: TPersistent);
     procedure ReadPropValue(Instance: TPersistent; const Path: string);
@@ -712,6 +713,7 @@ type
     function EndOfList: Boolean;
     procedure ReadCollection(Collection: TCollection);
     procedure SkipValue;
+    procedure PropValueError;
     property Owner: TComponent read FOwner write FOwner;
     property Parent: TComponent read FParent write FParent;
     property SourceName: string read FSourceName write FSourceName;
@@ -3819,11 +3821,19 @@ begin
 end;
 
 { F0103 at the current token; a missing value at the end of the file is a syntax error }
-procedure TReader.PropValueError;
+procedure TReader.TokenValueError;
 begin
   if FLex.Tok = ftEOF then
     SyntaxError('unexpected end of file');
   Error('F0103', Format(SFormInvalidPropertyValue, [FPropName]), FLex.TokLine, FLex.TokCol);
+end;
+
+{ R-203: F0103 for the property being read, at the first token of its value - for the read procs of defined
+  properties, also after they consumed the value (a binary property's stream proc reaches the reader through the
+  Filer passed to DefineProperties). OnError may handle it: the property line is then skipped. }
+procedure TReader.PropValueError;
+begin
+  Error('F0103', Format(SFormInvalidPropertyValue, [FPropName]), FValueLine, FValueCol);
 end;
 
 { ---- lexer (RTL-485 ... RTL-491) }
@@ -4330,9 +4340,9 @@ end;
 function TReader.ReadInteger: Integer;
 begin
   if FLex.Tok <> ftInteger then
-    PropValueError;
+    TokenValueError;
   if not FLex.TokHex32 and ((FLex.TokInt < -2147483647 - 1) or (FLex.TokInt > 2147483647)) then
-    PropValueError;
+    TokenValueError;
   Result := Integer(FLex.TokInt);
   NextToken;
 end;
@@ -4341,7 +4351,7 @@ end;
 function TReader.ReadInt64: Int64;
 begin
   if FLex.Tok <> ftInteger then
-    PropValueError;
+    TokenValueError;
   Result := FLex.TokInt;
   if FLex.TokHex32 then
     Result := Result and $FFFFFFFF;
@@ -4356,7 +4366,7 @@ begin
     Result := FLex.TokInt
   else
   begin
-    PropValueError;
+    TokenValueError;
     Result := 0;
   end;
   NextToken;
@@ -4365,7 +4375,7 @@ end;
 function TReader.ReadString: string;
 begin
   if FLex.Tok <> ftString then
-    PropValueError;
+    TokenValueError;
   Result := FLex.TokStr;
   NextToken;
 end;
@@ -4378,7 +4388,7 @@ begin
     Result := False
   else
   begin
-    PropValueError;
+    TokenValueError;
     Result := False;
   end;
   NextToken;
@@ -4387,14 +4397,14 @@ end;
 function TReader.ReadIdent: string;
 begin
   if FLex.Tok <> ftIdent then
-    PropValueError;
+    TokenValueError;
   Result := ReadQualIdent;
 end;
 
 function TReader.ReadChar: Char;
 begin
   if (FLex.Tok <> ftString) or (Length(FLex.TokStr) <> 1) then
-    PropValueError;
+    TokenValueError;
   Result := FLex.TokStr[1];
   NextToken;
 end;
@@ -4406,14 +4416,14 @@ var
   Names: string;
 begin
   if not IsSymbol('[') then
-    PropValueError;
+    TokenValueError;
   CompType := GetTypeData(PTypeInfo(SetType))^.CompType;
   NextToken;
   Names := '';
   while not IsSymbol(']') do
   begin
     if (FLex.Tok <> ftIdent) or (GetEnumValue(CompType, FLex.TokText) < 0) then
-      PropValueError;
+      TokenValueError;
     if Names <> '' then
       Names := Names + ',';
     Names := Names + FLex.TokText;
@@ -4430,7 +4440,7 @@ end;
 procedure TReader.ReadListBegin;
 begin
   if not IsSymbol('(') then
-    PropValueError;
+    TokenValueError;
   NextToken;
   SkipLineEnds;
 end;
@@ -4524,7 +4534,7 @@ begin
   begin
     FMatched := True;
     if not IsSymbol('{') then
-      PropValueError;
+      TokenValueError;
     M := TMemoryStream.Create;
     try
       ReadBinaryBlock(M);
@@ -4549,7 +4559,7 @@ begin
     while not IsSymbol(')') do
     begin
       if FLex.Tok <> ftString then
-        PropValueError;
+        TokenValueError;
       Strings.Add(FLex.TokStr);
       NextToken;
       SkipLineEnds;
@@ -4566,7 +4576,7 @@ var
   Item: TCollectionItem;
 begin
   if not IsSymbol('<') then
-    PropValueError;
+    TokenValueError;
   NextToken;
   SkipLineEnds;
   Collection.BeginUpdate;
@@ -4695,13 +4705,13 @@ begin
     ToInt := FindIdentToInt(PropInfo^.PropType);
     I32 := 0;
     if not Assigned(ToInt) or not ToInt(FLex.TokText, I32) then
-      PropValueError;
+      TokenValueError;
     Result := I32;
   end
   else
-    PropValueError;
+    TokenValueError;
   if (Result < TD^.MinValue) or (Result > TD^.MaxValue) then
-    PropValueError;
+    TokenValueError;
   NextToken;
 end;
 
@@ -4728,10 +4738,10 @@ begin
     tkEnumeration:
       begin
         if FLex.Tok <> ftIdent then
-          PropValueError;
+          TokenValueError;
         V := GetEnumValue(TI, FLex.TokText);
         if V < 0 then
-          PropValueError;
+          TokenValueError;
         SetOrdProp(Instance, PropInfo, V);
         NextToken;
       end;
@@ -4754,24 +4764,24 @@ begin
       begin
         Sub := GetObjectProp(Instance, PropInfo);
         if not (Sub is TStrings) then
-          PropValueError;
+          TokenValueError;
         ReadStringsValue(TStrings(Sub));
       end
       else if IsSymbol('<') then
       begin
         Sub := GetObjectProp(Instance, PropInfo);
         if not (Sub is TCollection) then
-          PropValueError;
+          TokenValueError;
         ReadCollection(TCollection(Sub));
       end
       else if FLex.Tok = ftIdent then
         ReadReference(Instance, PropInfo)
       else
-        PropValueError;
+        TokenValueError;
     tkMethod:
       begin
         if FLex.Tok <> ftIdent then
-          PropValueError;
+          TokenValueError;
         Name := FLex.TokText;
         Addr := FRoot.MethodAddress(Name);
         Err := Addr = nil;
@@ -4785,7 +4795,7 @@ begin
         NextToken;
       end;
   else
-    PropValueError;
+    TokenValueError;
   end;
 end;
 
@@ -4849,6 +4859,8 @@ begin
   FPropName := Path;
   FPropLine := PathLine;
   FPropCol := PathCol;
+  FValueLine := FLex.TokLine;
+  FValueCol := FLex.TokCol;
   Saved := FLex;
   try
     ReadPropValue(Instance, Path);

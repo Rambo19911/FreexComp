@@ -1,0 +1,13 @@
+# accepted values
+ok Small read
+ok Lines read
+# F0103 at the value position
+ok after the value was consumed
+ok before the value is consumed
+ok a list value: its opening parenthesis
+ok a binary value: its opening brace
+# OnError skips the property line
+ok both errors reported to OnError
+ok the rejected value is not stored
+ok reading continues after the skipped lines
+# passed 9 failed 0

@@ -23,12 +23,16 @@ ExcludeClipRect
 ExtTextOutW
 GdiFlush
 GetBkColor
+GetBkMode
 GetClipBox
 GetCurrentObject
+GetCurrentPositionEx
 GetDIBits
 GetDeviceCaps
+GetObjectType
 GetObjectW
 GetPixel
+GetROP2
 GetStockObject
 GetTextColor
 GetTextExtentPoint32W

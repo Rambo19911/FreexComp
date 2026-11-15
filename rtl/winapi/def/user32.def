@@ -15,6 +15,7 @@ CheckMenuItem
 CheckMenuRadioItem
 ChildWindowFromPointEx
 ClientToScreen
+CopyIcon
 CreateAcceleratorTableW
 CreateIconIndirect
 CreateMenu
@@ -124,6 +125,7 @@ PeekMessageW
 PostMessageW
 PostQuitMessage
 PostThreadMessageW
+PtInRect
 RedrawWindow
 RegisterClassExW
 RegisterWindowMessageW

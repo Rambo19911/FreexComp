@@ -3,6 +3,9 @@ ok CreateCompatibleDC
 ok CreateDIBSection
 ok SelectObject bitmap
 ok GetCurrentObject
+ok GetObjectType memory DC
+ok GetObjectType bitmap
+ok GetObjectType of no object
 ok GetObjectW
 ok TBitmapRec.bmWidth
 ok TBitmapRec.bmBitsPixel
@@ -21,8 +24,10 @@ ok GetTextColor
 ok SetBkColor previous
 ok GetBkColor
 ok SetBkMode default OPAQUE
+ok GetBkMode
 ok SetTextAlign default
 ok SetROP2 default
+ok GetROP2
 ok SetStretchBltMode default
 ok SetBrushOrgEx
 ok SetBrushOrgEx previous
@@ -43,6 +48,9 @@ ok CreatePen
 ok MoveToEx
 ok LineTo
 ok LineTo pixel
+ok GetCurrentPositionEx
+ok GetCurrentPositionEx X after LineTo
+ok GetCurrentPositionEx Y after LineTo
 ok below the line
 ok Rectangle
 ok Rectangle border
@@ -112,4 +120,4 @@ ok DeleteObject icon colour
 # cleanup
 ok DeleteDC
 ok DeleteObject DIB
-# passed 106 failed 0
+# passed 114 failed 0

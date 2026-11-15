@@ -1,0 +1,17 @@
+# PtInRect
+ok PtInRect inside
+ok PtInRect top left included
+ok PtInRect right edge excluded
+ok PtInRect bottom edge excluded
+ok PtInRect above
+ok agrees with Types.PtInRect
+# CopyIcon
+ok LoadIconW
+ok CopyIcon
+ok DestroyIcon of the copy
+# edit styles
+ok ES_AUTOHSCROLL value
+ok CreateWindowExW EDIT
+ok EDIT keeps ES_AUTOHSCROLL
+ok DestroyWindow EDIT
+# passed 13 failed 0

@@ -27,6 +27,7 @@ FindNextFileW
 FlushFileBuffers
 FlushInstructionCache
 FormatMessageW
+FreeLibrary
 GetCommandLineW
 GetConsoleMode
 GetCurrentDirectoryW
@@ -46,6 +47,7 @@ GetLocalTime
 GetLocaleInfoEx
 GetModuleFileNameW
 GetModuleHandleW
+GetProcAddress
 GetProcessHeap
 GetStdHandle
 GetSystemDirectoryW
@@ -56,7 +58,9 @@ GetTempPathW
 GetTickCount
 GetTickCount64
 GetTimeZoneInformation
+GlobalAddAtomW
 GlobalAlloc
+GlobalDeleteAtom
 GlobalFree
 GlobalLock
 GlobalUnlock
@@ -68,6 +72,7 @@ InitializeCriticalSectionAndSpinCount
 IsDebuggerPresent
 LCMapStringEx
 LeaveCriticalSection
+LoadLibraryW
 LocalFileTimeToFileTime
 LocalFree
 MoveFileExW

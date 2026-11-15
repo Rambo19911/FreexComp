@@ -21,9 +21,15 @@ public sealed record RtlCase(string Id, string SourcePath)
 /// </summary>
 public sealed record RtlHeader(int Phase, ImmutableArray<string> Covers, ImmutableArray<string> OpcOptions, bool TempDir, ImmutableArray<string> Variants, string? RawArgs);
 
-/// <summary>Where the runner finds opc, the RTL, the pinned toolchain and the shared test units (<c>-U rtl/tests</c>).</summary>
+/// <summary>
+/// Where the runner finds opc, the RTL, the pinned toolchain and the shared test units (<c>-U rtl/tests</c>).
+/// <see cref="ExtraUnitDirectories"/> are passed as further <c>-U</c> options after <see cref="UnitDirectory"/> and
+/// before a program's own <c>// opc:</c> options (R-205; e.g. the UI framework harness adds <c>ui-framework/src</c>).
+/// </summary>
 public sealed record RtlSetup(string OpcPath, string RtlDirectory, string ToolchainDirectory, string UnitDirectory)
 {
+    public ImmutableArray<string> ExtraUnitDirectories { get; init; } = [];
+
     public static string RepositoryRoot { get; } = FindRoot();
 
     public static string TestsDirectory => Path.Combine(RepositoryRoot, "rtl", "tests");
@@ -228,7 +234,8 @@ public static class GoldenRunner
         var exe = Path.Combine(work, @case.Name + ".exe");
         List<string> args =
         [
-            @case.SourcePath, "-U", setup.UnitDirectory, "-o", exe, "--obj-dir", Path.Combine(work, "obj"),
+            @case.SourcePath, "-U", setup.UnitDirectory, .. setup.ExtraUnitDirectories.SelectMany(d => new[] { "-U", d }),
+            "-o", exe, "--obj-dir", Path.Combine(work, "obj"),
             "--rtl", setup.RtlDirectory, "--toolchain", setup.ToolchainDirectory, .. header.OpcOptions,
         ];
 

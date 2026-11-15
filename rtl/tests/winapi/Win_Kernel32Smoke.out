@@ -51,6 +51,11 @@ ok GetSystemInfo processors
 ok GetSystemInfo granularity
 ok MulDiv rounds
 ok MulDiv by zero
+ok LoadLibraryW of a loaded module
+ok LoadLibrary alias
+ok GetProcAddress
+ok GetProcAddress unknown name
+ok FreeLibrary (both references)
 ok RtlGetVersion
 ok RtlGetVersion major
 ok RtlGetVersion build >= 1809
@@ -73,6 +78,10 @@ ok GlobalUnlock (lock count 0)
 ok GlobalUnlock NO_ERROR
 ok GlobalLock keeps content
 ok GlobalFree
+ok GlobalAddAtomW
+ok GlobalAddAtom alias finds the same atom
+ok GlobalDeleteAtom
+ok GlobalDeleteAtom second reference
 # std handles
 ok GetStdHandle
 ok GetFileType pipe
@@ -124,4 +133,4 @@ ok event reset
 ok CreateMutexW/ReleaseMutex
 ok ReleaseMutex not owned
 ok CreateSemaphoreW/ReleaseSemaphore
-# passed 118 failed 0
+# passed 127 failed 0
