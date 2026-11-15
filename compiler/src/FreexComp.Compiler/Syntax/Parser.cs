@@ -306,7 +306,7 @@ internal sealed class Parser
     private SyntaxList<SyntaxNode> ParseDeclarations(SectionKind section)
     {
         var declarations = ImmutableArray.CreateBuilder<SyntaxNode>();
-        while (!EndsDeclarations(CurrentKind, section))
+        while (!EndsDeclarations(CurrentKind, section) || IsStrayEnd(section))
         {
             switch (CurrentKind)
             {
@@ -342,7 +342,7 @@ internal sealed class Parser
                     {
                         SkipToken();
                     }
-                    while (!EndsDeclarations(CurrentKind, section) && !StartsSection(CurrentKind) && !StartsRoutine()
+                    while ((!EndsDeclarations(CurrentKind, section) || IsStrayEnd(section)) && !StartsSection(CurrentKind) && !StartsRoutine()
                            && CurrentKind != SyntaxKind.OpenBracketToken);
 
                     break;
@@ -351,6 +351,16 @@ internal sealed class Parser
 
         return new SyntaxList<SyntaxNode>(declarations.ToImmutable());
     }
+
+    /// <summary>
+    /// C-250 (LANG-183): in an interface or implementation section, <c>end ;</c> with more input after it cannot end the
+    /// unit (that is <c>end .</c>) — it is the leftover end of a routine body closed too early by a half-typed line, so it
+    /// is skipped like other garbage and the section goes on at the next declaration, instead of ending the unit there and
+    /// skipping the rest of the file after the missing <c>.</c>.
+    /// </summary>
+    private bool IsStrayEnd(SectionKind section) =>
+        section != SectionKind.Block && CurrentKind == SyntaxKind.EndKeyword
+        && Peek(1).Kind == SyntaxKind.SemicolonToken && Peek(2).Kind != SyntaxKind.EndOfFileToken;
 
     private static bool StartsSection(SyntaxKind kind) => kind is SyntaxKind.LabelKeyword or SyntaxKind.ConstKeyword
         or SyntaxKind.ResourceStringKeyword or SyntaxKind.TypeKeyword or SyntaxKind.VarKeyword or SyntaxKind.ThreadVarKeyword;

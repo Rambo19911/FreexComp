@@ -123,6 +123,56 @@ public sealed class PerformanceTests(ITestOutputHelper output)
         Check("syntax classification (60 lines)", median, TimeSpan.FromMilliseconds(5));
     }
 
+    /// <summary>
+    /// C-250: the 5 000-line unit with half-typed lines in nine routines (a stray <c>end</c>, an unfinished expression):
+    /// classifying a visible range after the last edit, against 20 ms (the parse time is reported too). Before C-250 the
+    /// parser skipped the rest of the file after the first stray <c>end</c>, so the range was one run of skipped tokens.
+    /// </summary>
+    [Fact]
+    public void SyntaxClassification_OfTheHalfTypedFixture_AgainstTwentyMilliseconds()
+    {
+        var text = HalfTyped(BigUnit.Value);
+        var source = SourceText.From(TestFiles.PathOf("Big.pas"), text);
+        var tree = FreexComp.Compiler.Syntax.SyntaxTree.Parse(source);
+        Assert.Contains(tree.Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        var firstLine = tree.Text.Lines.LineCount * 9 / 10;
+        var range = TextSpan.FromBounds(tree.Text.Lines.GetLineSpan(firstLine).Start, tree.Text.Lines.GetLineSpan(firstLine + 59).End);
+        Assert.NotEmpty(Classifier.GetSyntacticClassifications(tree, range));     // warm-up
+
+        // one call is near the CPU-clock resolution (15.6 ms): each sample is the mean of 10 calls
+        var classification = Median(() => ThreadCpuTime(() =>
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                Classifier.GetSyntacticClassifications(tree, range);
+            }
+        }) / 10);
+        var parse = Median(() => ThreadCpuTime(() =>
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                FreexComp.Compiler.Syntax.SyntaxTree.Parse(source);
+            }
+        }) / 10);
+
+        Check("syntax classification (60 lines) of the half-typed fixture", classification, TimeSpan.FromMilliseconds(20));
+        output.WriteLine($"C-250 parse of the half-typed fixture (no budget, for the report): median {parse.TotalMilliseconds:F2} ms");
+    }
+
+    /// <summary><paramref name="unit"/> with a stray <c>end</c> or an unfinished expression before <c>T := S + 'x';</c> of every 25th routine.</summary>
+    private static string HalfTyped(string unit)
+    {
+        var parts = unit.Split("  T := S + 'x';\n");
+        var sb = new StringBuilder(parts[0]);
+        for (var i = 1; i < parts.Length; i++)
+        {
+            var routine = i - 1;
+            sb.Append(routine % 25 == 12 ? (routine % 50 == 12 ? "  end\n" : "  Sum := Sum +\n") : "").Append("  T := S + 'x';\n").Append(parts[i]);
+        }
+
+        return sb.ToString();
+    }
+
     [Fact]
     public void Completion_AfterASingleCharacterEdit_AgainstOneHundredMilliseconds()
     {

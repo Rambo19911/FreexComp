@@ -409,9 +409,7 @@ public sealed class EmitTests
         public async Task<string> RunAsync()
         {
             var stdout = new List<string>();
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(20));
-            Assert.Equal(0, await new ProcessRunner().RunAsync(Exe, [], _dir, stdout.Add, _ => { }, timeout.Token));
+            Assert.Equal(0, await NativeRun.RunAsync(Exe, _dir, stdout.Add, _ => { }));        // C-249
             return string.Join("\n", stdout);
         }
 
@@ -500,6 +498,17 @@ public sealed class EmitTests
     internal static async Task<(int ExitCode, List<string> StdOut, List<string> StdErr)> BuildAndRun(
         string name, string source, OptimizationLevel optimization)
     {
+        var (exe, dir) = Build(name, source, optimization);
+        var stdout = new List<string>();
+        var stderr = new List<string>();
+        var exitCode = await NativeRun.RunAsync(exe, dir, stdout.Add, stderr.Add);           // C-249: CPU limit, wall cap
+        TestDirectories.Delete(dir);
+        return (exitCode, stdout, stderr);
+    }
+
+    /// <summary>Compiles and links <paramref name="source"/> as <c>name.exe</c> in a new per-test directory.</summary>
+    internal static (string Exe, string Dir) Build(string name, string source, OptimizationLevel optimization)
+    {
         var toolchain = Path.GetDirectoryName(Clang.Path)!;
         Assert.True(File.Exists(Clang.Path), $"Pinned toolchain missing: {Clang.Path} (run scripts/bootstrap.ps1).");
         var dir = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
@@ -524,12 +533,6 @@ public sealed class EmitTests
         Assert.Equal(PathUtil.Normalize(exe), result.OutputPath);
         Assert.Contains(commands, c => c.Contains("lld-link", StringComparison.OrdinalIgnoreCase));
         Assert.True(File.Exists(Path.Combine(dir, "obj", "imports", "kernel32.lib")));
-        var stdout = new List<string>();
-        var stderr = new List<string>();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(20));
-        var exitCode = await new ProcessRunner().RunAsync(exe, [], dir, stdout.Add, stderr.Add, timeout.Token);
-        TestDirectories.Delete(dir);
-        return (exitCode, stdout, stderr);
+        return (exe, dir);
     }
 }

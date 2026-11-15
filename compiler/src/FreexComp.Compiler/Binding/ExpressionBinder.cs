@@ -2519,6 +2519,13 @@ internal sealed partial class ExpressionBinder
             return Inapplicable(binary, left, right);
         }
 
+        if ((lt is ClassTypeSymbol or ClassRefTypeSymbol && Conversions.IsUntypedPointer(rt) || rt is ClassTypeSymbol or ClassRefTypeSymbol && Conversions.IsUntypedPointer(lt))
+            && kind is BoundBinaryOperatorKind.Equal or BoundBinaryOperatorKind.NotEqual)
+        {
+            // C-251 (Q-LANG-10.1): a class instance or class reference compared with a Pointer compares the addresses
+            return new BoundBinaryExpression(binary, kind, Convert(left, _types.Pointer), Convert(right, _types.Pointer), _types.Pointer, boolean, constantValue: null);
+        }
+
         if (lt is ClassTypeSymbol || rt is ClassTypeSymbol)
         {
             // LANG-600: = and <> compare references of related classes, or with nil (C-080)

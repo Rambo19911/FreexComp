@@ -225,22 +225,63 @@ public sealed class ConversionTests
         Assert.Equal(expected.Length == 0 ? [] : [expected], BindDiagnostics(source));
     }
 
+    private const string PointerTypes =
+        "type TA = class end; TB = class(TA) end; TAClass = class of TA; PInteger = ^Integer;\n" +
+        "procedure Take(P: Pointer); begin end; procedure TakeConst(const P: Pointer); begin end; procedure TakeVar(var P: Pointer); begin end;\n";
+
     /// <summary>
-    /// C-192: LANG-280 has no implicit class reference → <c>Pointer</c> conversion (types.md lead note); the explicit
-    /// <c>Pointer(C)</c> typecast (LANG-290) and nil stay allowed.
+    /// C-251 (Q-LANG-10.1, supersedes C-192): a class instance and a class reference convert implicitly to the untyped
+    /// <c>Pointer</c> — assignment, value/<c>const</c> parameters, initialisers — and compare with a <c>Pointer</c> by
+    /// <c>=</c>/<c>&lt;&gt;</c>; the explicit typecast and nil stay allowed.
     /// </summary>
-    [Fact]
+    [Theory]
     [Trait("Req", "LANG-280")]
     [Trait("Req", "LANG-290")]
-    public void ClassRefToPointer_IsE2010()
+    [InlineData("P := A; P := B; P := C; P := TA; P := TB;")]
+    [InlineData("Take(A); Take(B); TakeConst(A); Take(C); TakeConst(TA); Take(D);")]
+    [InlineData("F := (A = P) or (P <> A) or (C = P) or (P = TB) or (A = nil);")]
+    [InlineData("C := nil; P := Pointer(C); Take(Pointer(TA)); P := Pointer(A);")]
+    public void ClassInstanceToPointer_IsImplicit(string statements)
     {
-        const string Types = "type TA = class end; TAClass = class of TA;\nprocedure Take(P: Pointer); begin end;\n";
+        var text = PointerTypes + $"var A: TA; B: TB; C: TAClass; P: Pointer; F: Boolean; D: TB; begin {statements} end.";
 
-        Assert.Equal(["E2010(3,49): Incompatible types: 'TAClass' and 'Pointer'"],
-            BindDiagnostics(Types + "var C: TAClass; P: Pointer; begin C := TA; P := C; end."));
-        Assert.Equal(["E2010(3,40): Incompatible types: 'TAClass' and 'Pointer'"],
-            BindDiagnostics(Types + "var C: TAClass; P: Pointer; begin Take(C); end."));
-        Assert.Empty(BindDiagnostics(Types + "var C: TAClass; P: Pointer; begin C := nil; P := Pointer(C); Take(Pointer(TA)); end."));
+        Assert.Empty(BindDiagnostics(text));
+    }
+
+    [Theory]
+    [Trait("Req", "LANG-280")]
+    [InlineData("TA", "Pointer", ConversionKind.ImplicitReference)]
+    [InlineData("TB", "Pointer", ConversionKind.ImplicitReference)]
+    [InlineData("TAClass", "Pointer", ConversionKind.ImplicitReference)]
+    [InlineData("Pointer", "TA", ConversionKind.None)]           // the reverse stays an explicit typecast
+    [InlineData("Pointer", "TAClass", ConversionKind.None)]
+    [InlineData("TA", "PInteger", ConversionKind.None)]          // typed pointers stay incompatible
+    [InlineData("TAClass", "PInteger", ConversionKind.None)]
+    public void ClassInstanceToPointer_Classification(string from, string to, ConversionKind expected)
+    {
+        var (result, _) = Bind(PointerTypes + "begin end.");
+        Assert.Empty(result.Diagnostics);
+
+        var conversion = new Conversions().Classify(Declared(result, from), Declared(result, to));
+
+        Assert.Equal((expected, expected != ConversionKind.None), (conversion.Kind, conversion.Exists));
+    }
+
+    /// <summary>C-251: what stays an error — Pointer → class, a typed pointer, a <c>var</c> parameter (identical types, LANG-281), ordering.</summary>
+    [Theory]
+    [Trait("Req", "LANG-280")]
+    [Trait("Req", "LANG-281")]
+    [InlineData("A := P;", "E2010(3,72): Incompatible types: 'Pointer' and 'TA'")]
+    [InlineData("C := P;", "E2010(3,72): Incompatible types: 'Pointer' and 'TAClass'")]
+    [InlineData("Q := A;", "E2010(3,72): Incompatible types: 'TA' and 'PInteger'")]
+    [InlineData("TakeVar(A);", "E2010(3,75): Incompatible types: 'TA' and 'Pointer'")]
+    [InlineData("F := A < P;", "E2011(3,74): Operator '<' not applicable to operand type(s) 'TA' and 'Pointer'")]
+    [InlineData("F := A = Q;", "E2011(3,74): Operator '=' not applicable to operand type(s) 'TA' and 'PInteger'")]
+    public void ClassInstanceToPointer_StaysAnError(string statement, string expected)
+    {
+        var text = PointerTypes + $"var A: TA; C: TAClass; P: Pointer; Q: PInteger; F: Boolean; begin {statement} end.";
+
+        Assert.Equal(expected, Assert.Single(BindDiagnostics(text)));
     }
 
     // ------------------------------------------------------------------ typecasts (LANG-290)

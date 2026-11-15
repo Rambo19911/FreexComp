@@ -48,6 +48,7 @@ internal sealed class Conversions
                 when Signatures.Compatible(s.Invoke, d.Invoke) => Pointer,                                         // LANG-723: same IMT layout
             (ClassTypeSymbol s, InterfaceTypeSymbol d) when s.FindInterface(d) is not null => Pointer,             // LANG-665: + hidden field offset
             (ClassRefTypeSymbol s, ClassRefTypeSymbol d) when s.Class.InheritsFrom(d.Class) => Pointer,            // LANG-280 rule 10
+            (ClassTypeSymbol or ClassRefTypeSymbol, PointerTypeSymbol d) when IsUntypedPointer(d) => Pointer,      // C-251 (Q-LANG-10.1)
             (CharTypeSymbol, StringTypeSymbol) => String,                                                         // LANG-245: a 1-char string
             (StringTypeSymbol, StringTypeSymbol) => String,                                                       // LANG-245 (C-063)
             (PointerTypeSymbol, StringTypeSymbol) when Strings.IsCharPointer(source, wide: true) && Strings.IsUnicode(destination) => String,
@@ -169,6 +170,9 @@ internal sealed class Conversions
         Strings.IsUnicode(source) && destination is StringTypeSymbol { Variant: not StringVariant.Unicode };
 
     private static bool IsReal(TypeSymbol type) => type is RealTypeSymbol;
+
+    /// <summary>The untyped <c>Pointer</c> (or a distinct/alias of it), not <c>nil</c> and not a typed pointer.</summary>
+    public static bool IsUntypedPointer(TypeSymbol type) => type is PointerTypeSymbol { PointedType: null, Name: not "nil" };
 
     /// <summary>C-218: a real rounded to the four decimals Currency holds (ties to even, like the run-time conversion).</summary>
     public static double CurrencyValue(double value) => Math.Round(value * 10000, MidpointRounding.ToEven) / 10000;
