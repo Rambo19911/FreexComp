@@ -94,7 +94,7 @@ internal static class WriteRewriter
 
     /// <summary>
     /// CMP-411 / LANG-940…945: per variable, left to right, <c>_ReadInt</c> (Int64; a variable of a narrower range is checked
-    /// against its type's bounds — outside is runtime error 106 — then stored truncated), <c>_ReadUInt</c> for a range beyond
+    /// against its type's bounds — outside, <c>SetInOutRes(106)</c> records I/O error 106 (C-233) — then stored truncated), <c>_ReadUInt</c> for a range beyond
     /// Int64 (<c>UInt64</c>), <c>_ReadFloat</c> (converted to the variable's real type), <c>_ReadWChar</c>,
     /// <c>_ReadUStr(T, @s)</c>; then <c>_ReadLn(T)</c> for <c>Readln</c>, <c>_ReadEnd(T)</c> and, in <c>{$I+}</c> state,
     /// <c>_IOCheck</c> (ABI-132). The file is the leading <c>Text</c> argument or <c>System.Input</c>.
@@ -122,13 +122,14 @@ internal static class WriteRewriter
                         break;
                     }
 
-                    // LANG-942: a value outside the variable's range is runtime error 106
+                    // LANG-942: a value outside the variable's range is I/O error 106, recorded in InOutRes (C-233, ABI-132):
+                    // {$I-} code sees it through IOResult, under {$I+} the _IOCheck below raises it
                     var read64 = new LLocalRef(context.NewTemp(types.Int64));
                     var outside = new LBinary(LBinaryOperator.ConditionalOr,
                         context.Compare(LCompareOperator.Less, read64, context.Constant(low, types.Int64)),
                         context.Compare(LCompareOperator.Greater, read64, context.Constant(high, types.Int64)));
                     statements.Add(new LAssign(read64, value));
-                    statements.Add(new LIf(outside, context.CallNoReturn(context.RunError, context.Constant(106, types.Integer)), @else: null));
+                    statements.Add(new LIf(outside, Call("SetInOutRes", [types.Integer], [context.Constant(106, types.Integer)]), @else: null));
                     statements.Add(new LAssign(context.Lower(variable), context.Convert(read64, variable.Type)));
                     break;
                 }

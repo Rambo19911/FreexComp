@@ -4,10 +4,10 @@ target triple = "x86_64-pc-windows-msvc"
 
 declare i32 @"System.IOResult"()
 declare void @"System.Reset"(ptr)
+declare void @"System.SetInOutRes"(i32)
 declare void @"System._IOCheck"()
 declare void @"System._ReadEnd"(ptr)
 declare i64 @"System._ReadInt"(ptr)
-declare void @"System._RunError"(i32) #1
 declare void @"System._WriteEnd"(ptr)
 declare void @"System._WriteInt"(ptr, i64, i32)
 declare void @"System._WriteLn"(ptr)
@@ -30,8 +30,8 @@ or.end.1:
   %t6 = phi i1 [ true, %entry ], [ %t5, %or.rhs.1 ]
   br i1 %t6, label %if.then.2, label %if.end.2
 if.then.2:
-  call void @"System._RunError"(i32 106) #1
-  unreachable
+  call void @"System.SetInOutRes"(i32 106)
+  br label %if.end.2
 if.end.2:
   %t7 = load i64, ptr %$tmp1.addr, align 8
   %t8 = trunc i64 %t7 to i32
@@ -67,8 +67,8 @@ or.end.1:
   %t6 = phi i1 [ true, %entry ], [ %t5, %or.rhs.1 ]
   br i1 %t6, label %if.then.2, label %if.end.2
 if.then.2:
-  call void @"System._RunError"(i32 106) #1
-  unreachable
+  call void @"System.SetInOutRes"(i32 106)
+  br label %if.end.2
 if.end.2:
   %t7 = load i64, ptr %$tmp1.addr, align 8
   %t8 = trunc i64 %t7 to i32
@@ -102,4 +102,3 @@ exit:
 }
 
 attributes #0 = { uwtable "frame-pointer"="all" }
-attributes #1 = { noreturn uwtable }

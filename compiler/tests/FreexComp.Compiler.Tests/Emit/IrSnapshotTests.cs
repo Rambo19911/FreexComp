@@ -2625,7 +2625,8 @@ public sealed class IrSnapshotTests
                      "@\"System.Input\" = external global [624 x i8], align 8\n",
                      " = invoke i64 @\"System._ReadInt\"(ptr @\"System.Input\")\n",           // the routine has a string local (CMP-394)
                      " = invoke i8 @\"System._Eof\"(ptr @\"System.Input\")\n",
-                     "  invoke void @\"System._RunError\"(i32 106) #1\n",
+                     "declare void @\"System.SetInOutRes\"(i32)\n",
+                     "  invoke void @\"System.SetInOutRes\"(i32 106)\n",
                      " = fptrunc double ",
                      "  invoke void @\"System._ReadUStr\"(ptr @\"System.Input\", ptr %s.addr)\n",
                  ])
@@ -2634,7 +2635,8 @@ public sealed class IrSnapshotTests
         }
 
         Assert.Equal(1, text.Split("invoke void @\"System._IOCheck\"()").Length - 1);            // {$I-} for Read(t, s)
-        Assert.Equal(2, text.Split("invoke void @\"System._RunError\"(i32 106)").Length - 1);     // Integer and Word; UInt64 needs no check
+        Assert.Equal(2, text.Split("invoke void @\"System.SetInOutRes\"(i32 106)").Length - 1);   // Integer and Word; UInt64 needs no check
+        Assert.DoesNotContain("_RunError", text);                                                  // C-233: 106 goes to InOutRes
     }
 
     /// <summary>C-065: the rtl-abi.md §9.5 helpers at the CMP-325 rule 1–3 and 6 points.</summary>

@@ -424,8 +424,8 @@ public sealed class LoweringTests
     // ------------------------------------------------------------------ Read/Readln, Eof/Eoln (CMP-411; C-066)
 
     /// <summary>
-    /// CMP-411: one helper per variable — <c>_ReadInt</c> stored directly for Int64, through a checked temporary (runtime error
-    /// 106 outside the variable's range) for narrower types, <c>_ReadUInt</c> for UInt64, <c>_ReadFloat</c> converted for
+    /// CMP-411: one helper per variable — <c>_ReadInt</c> stored directly for Int64, through a checked temporary (error 106
+    /// recorded in <c>InOutRes</c> outside the variable's range, C-233) for narrower types, <c>_ReadUInt</c> for UInt64, <c>_ReadFloat</c> converted for
     /// Single, <c>_ReadWChar</c>, <c>_ReadUStr(T, @s)</c> — then <c>_ReadLn</c>, <c>_ReadEnd</c> and <c>_IOCheck</c> under
     /// <c>{$I+}</c>; the file is <c>Input</c> or the given <c>Text</c> variable.
     /// </summary>
@@ -436,7 +436,7 @@ public sealed class LoweringTests
         Assert.Equal(
             "(block (:= @q (call _ReadInt:Int64 (addr @System.Input))) " +
             "(:= $tmp1 (call _ReadInt:Int64 (addr @System.Input))) " +
-            "(if (ConditionalOr:Boolean (Less $tmp1 0:Int64) (Greater $tmp1 255:Int64)) (block (call _RunError 106:Integer) (unreachable))) " +
+            "(if (ConditionalOr:Boolean (Less $tmp1 0:Int64) (Greater $tmp1 255:Int64)) (call SetInOutRes 106:Integer)) " +
             "(:= @b (conv Byte $tmp1)) " +
             "(:= @u (call _ReadUInt:UInt64 (addr @System.Input))) (:= @g (conv Single (call _ReadFloat:Double (addr @System.Input)))) " +
             "(:= @c (call _ReadWChar:Char (addr @System.Input))) (call _ReadUStr (addr @System.Input) (addr @s)) " +

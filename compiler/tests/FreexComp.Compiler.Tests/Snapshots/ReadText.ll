@@ -4,6 +4,7 @@ target triple = "x86_64-pc-windows-msvc"
 
 @"System.Input" = external global [624 x i8], align 8
 
+declare void @"System.SetInOutRes"(i32)
 declare i8 @"System._Eof"(ptr)
 declare i8 @"System._Eoln"(ptr)
 declare void @"System._IOCheck"()
@@ -14,7 +15,6 @@ declare void @"System._ReadLn"(ptr)
 declare i64 @"System._ReadUInt"(ptr)
 declare void @"System._ReadUStr"(ptr, ptr)
 declare i16 @"System._ReadWChar"(ptr)
-declare void @"System._RunError"(i32) #1
 declare void @"System._UStrClr"(ptr)
 declare i32 @__C_specific_handler(...)
 
@@ -53,10 +53,10 @@ or.end.2:
   %t9 = phi i1 [ true, %cont.2 ], [ %t8, %or.rhs.2 ]
   br i1 %t9, label %if.then.3, label %if.end.3
 if.then.3:
-  invoke void @"System._RunError"(i32 106) #1
+  invoke void @"System.SetInOutRes"(i32 106)
           to label %cont.3 unwind label %cleanup.pad
 cont.3:
-  unreachable
+  br label %if.end.3
 if.end.3:
   %t10 = load i64, ptr %$tmp1.addr, align 8
   %t11 = trunc i64 %t10 to i32
@@ -76,10 +76,10 @@ or.end.4:
   %t17 = phi i1 [ true, %cont.4 ], [ %t16, %or.rhs.4 ]
   br i1 %t17, label %if.then.5, label %if.end.5
 if.then.5:
-  invoke void @"System._RunError"(i32 106) #1
+  invoke void @"System.SetInOutRes"(i32 106)
           to label %cont.5 unwind label %cleanup.pad
 cont.5:
-  unreachable
+  br label %if.end.5
 if.end.5:
   %t18 = load i64, ptr %$tmp2.addr, align 8
   %t19 = trunc i64 %t18 to i16
@@ -152,4 +152,3 @@ exit:
 }
 
 attributes #0 = { uwtable "frame-pointer"="all" }
-attributes #1 = { noreturn uwtable }
