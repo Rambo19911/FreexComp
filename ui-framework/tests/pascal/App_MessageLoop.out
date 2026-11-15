@@ -1,0 +1,24 @@
+# initialize (UIF-402)
+ok Application exists
+ok Handle is a window
+ok window class
+ok message-only window
+ok hidden
+ok Initialize is idempotent
+ok common controls 6 active (a version-6-only button message works)
+# ProcessMessages and OnMessage (UIF-411)
+ok all queued messages, OnMessage first, no idle
+ok OnMessage swallows
+ok thread message: OnMessage only
+# HandleMessage and Idle (UIF-412)
+ok a queued message: no idle
+ok empty queue: OnIdle
+ok Done: WaitMessage returns on a new message
+ok the waking message is processed next
+# Terminate (UIF-410)
+ok not terminated
+ok Terminated after WM_QUIT
+ok WM_QUIT does not reach OnMessage
+ok loop ended on the next message
+ok Run without a main form returns
+# passed 19 failed 0

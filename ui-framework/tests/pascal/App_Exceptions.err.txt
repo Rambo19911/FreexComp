@@ -1,0 +1,4 @@
+^App_Exceptions: Exception: boom$
+^App_Exceptions: EInvalidOperation: second$
+^App_Exceptions: Exception: TStringList$
+^fatal text$

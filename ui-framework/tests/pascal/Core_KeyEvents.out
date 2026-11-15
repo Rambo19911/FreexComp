@@ -1,0 +1,33 @@
+# events (UIF-085)
+ok WM_KEYDOWN fires OnKeyDown
+ok WM_KEYUP fires OnKeyUp
+ok WM_CHAR fires OnKeyPress
+ok WM_SYSKEYDOWN, ssAlt from bit 29
+ok WM_SYSKEYUP
+# character handling
+ok plain character
+ok typed by the native control
+ok #0 consumes
+ok nothing typed
+ok changed character
+ok replacement typed
+# Key := 0 swallows the next WM_CHAR
+ok key consumed
+ok following WM_CHAR swallowed: no OnKeyPress
+ok nothing typed
+ok only one character swallowed
+ok next character typed
+ok consumed again
+ok a key that is not consumed
+ok clears the pending swallow
+ok key up consumed too
+# preview by the top of the chain
+ok preview first
+ok characters too
+ok key up too
+ok the top itself: once
+ok consumed by the preview
+ok its character swallowed
+ok character consumed by the preview
+ok no preview when the hook says no
+# passed 28 failed 0

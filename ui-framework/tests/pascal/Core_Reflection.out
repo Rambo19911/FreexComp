@@ -1,0 +1,31 @@
+# control ids
+ok child window id non-zero
+ok sibling ids differ
+# WM_COMMAND (UIF-070)
+ok reflected to the child of LParam
+ok child result returned
+ok LParam 0: not reflected
+ok foreign window: default processing
+ok native BN_CLICKED arrives as CN_COMMAND
+# scroll
+ok WM_HSCROLL reflected
+ok WM_HSCROLL result
+ok WM_VSCROLL reflected
+ok WM_VSCROLL result
+ok LParam 0: own WMHScroll
+ok LParam 0: own WMVScroll
+# WM_NOTIFY
+ok reflected to hwndFrom
+ok WM_NOTIFY result
+ok foreign sender: default
+# owner draw
+ok WM_DRAWITEM reflected to hwndItem
+ok WM_DRAWITEM result
+ok WParam 0 (menu): not reflected
+ok WM_MEASUREITEM reflected by control id
+ok child filled the structure
+ok WM_MEASUREITEM result
+# WM_CTLCOLOR* (UIF-071)
+ok child brush returned
+ok background colour set
+# passed 24 failed 0

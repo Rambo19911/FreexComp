@@ -1,0 +1,17 @@
+# hooks (UIF-400, UIF-471)
+ok ShowErrorProc installed
+ok ApplicationHandleException installed
+ok non-interactive from FXC_UI_NONINTERACTIVE
+ok Title: executable name without extension
+# OnException (UIF-460, UIF-463)
+ok EAbort is silent
+ok OnException receives, Sender = the control
+ok OnIdle is a guarded site
+ok exception inside OnException swallowed (UIF-465)
+ok ExitCode untouched so far
+# default reporting (UIF-461, UIF-462)
+ok reported to stderr, the message loop continues
+ok ExitCode set to 1
+ok non-Exception object reported by class name
+ok ShowErrorProc writes a stderr line
+# passed 13 failed 0

@@ -1,0 +1,24 @@
+# enter and leave (UIF-068)
+ok first move: OnMouseEnter before OnMouseMove
+ok same control: no enter
+ok onto a graphic child
+ok onto another window
+ok WM_MOUSELEAVE of another window: nothing
+ok WM_MOUSELEAVE of its window
+ok nothing tracked: nothing
+ok graphic child again
+ok WM_MOUSELEAVE of the parent window leaves the graphic child
+ok onto a temporary child
+ok destroyed control: reference cleared
+# wheel (UIF-075)
+ok bubbles until handled
+ok OnMouseWheelDown handles
+ok unhandled: up to the top window
+# context popup (UIF-077)
+ok OnContextPopup at the client position
+ok handled: result 1
+ok keyboard origin: the client centre
+ok unhandled: bubbles to the parent
+ok graphic child first
+ok graphic child declines: the window
+# passed 20 failed 0

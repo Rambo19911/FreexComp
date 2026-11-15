@@ -279,6 +279,7 @@ type
     procedure ShowHintChanged;
     procedure MouseMessage(var Message: TMessage);
     procedure ClearMouseState;
+    procedure TrackMouseControl;
   protected
     procedure SetParent(AParent: TWinControl); virtual;
     function GetShowing: Boolean; virtual;
@@ -290,6 +291,12 @@ type
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual;
     procedure MouseMove(Shift: TShiftState; X, Y: Integer); virtual;
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual;
+    { core.md 7.6: True = handled (OnMouseWheel, then OnMouseWheelUp/OnMouseWheelDown) }
+    function DoMouseWheel(Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint): Boolean; virtual;
+    function DoMouseWheelDown(Shift: TShiftState; MousePos: TPoint): Boolean; virtual;
+    function DoMouseWheelUp(Shift: TShiftState; MousePos: TPoint): Boolean; virtual;
+    { core.md 7.7: fires OnContextPopup at a client position }
+    procedure DoContextPopup(MousePos: TPoint; var Handled: Boolean); virtual;
     procedure Resize; virtual;
     procedure AdjustSize; virtual;
     function CanAutoSize(var NewWidth, NewHeight: Integer): Boolean; virtual;
@@ -308,6 +315,10 @@ type
     procedure CMParentColorChanged(var Message: TMessage); virtual;
     procedure CMParentFontChanged(var Message: TMessage); virtual;
     procedure CMParentShowHintChanged(var Message: TMessage); virtual;
+    procedure CMMouseEnter(var Message: TMessage); virtual;
+    procedure CMMouseLeave(var Message: TMessage); virtual;
+    procedure WMMouseWheel(var Message: TMessage); virtual;
+    procedure WMContextMenu(var Message: TMessage); virtual;
     procedure Loaded; override;
     procedure SetParentComponent(Value: TComponent); override;
     property Caption: TCaption read GetCaption write SetCaption;
@@ -402,6 +413,8 @@ type
     FOwnClass: Boolean;                                      { the window is of our own class, not a system class }
     FDoubleBuffered: Boolean;
     FPadding: TPadding;
+    FCtlID: Cardinal;                                        { control id of the child window (0 = not yet assigned) }
+    FSwallowChar: Boolean;                                   { UIF-085 step 2: drop the next WM_CHAR }
     FOnEnter: TNotifyEvent;
     FOnExit: TNotifyEvent;
     FOnKeyDown: TKeyEvent;
@@ -419,6 +432,8 @@ type
     function GetHandle: HWND;
     function WindowAbove: HWND;
     function RouteMouse(var Message: TMessage): Boolean;
+    function Reflect(C: TWinControl; var Message: TMessage): Boolean;
+    function ChildByCtlID(ID: Cardinal): TWinControl;
   protected
     { core.md section 4 }
     procedure CreateParams(var Params: TCreateParams); virtual;
@@ -433,6 +448,18 @@ type
     procedure WMNCDestroy(var Message: TWMNoParams); virtual;
     procedure WMWindowPosChanged(var Message: TWMWindowPosMsg); virtual;
     procedure WMEnable(var Message: TMessage); virtual;
+    procedure WMMouseLeave(var Message: TMessage); virtual;
+    procedure WMContextMenu(var Message: TMessage); override;
+    { core.md 7.10: scroll messages of the window's own scroll bars (LParam = 0) }
+    procedure WMHScroll(var Message: TWMScroll); virtual;
+    procedure WMVScroll(var Message: TWMScroll); virtual;
+    { core.md 7.9 }
+    procedure WMKeyDown(var Message: TWMKey); virtual;
+    procedure WMKeyUp(var Message: TWMKey); virtual;
+    procedure WMChar(var Message: TWMKey); virtual;
+    { UIF-085 step 1: True when this control, as the top of a parent chain, sees its descendants' keys first
+      (forms: KeyPreview); base False }
+    function PreviewKeys: Boolean; virtual;
     procedure CMEnabledChanged(var Message: TMessage); override;
     procedure CMVisibleChanged(var Message: TMessage); override;
     procedure CMColorChanged(var Message: TMessage); override;
@@ -570,6 +597,7 @@ implementation
 
 var
   CaptureControl: TControl;                                  { set by SetCaptureControl (core.md 13) }
+  MouseControl: TControl;                                    { the control under the mouse (UIF-068) }
 
 const
   WM_MOUSEBUTTONLAST = WM_MBUTTONDBLCLK;                    { client-coordinate mouse messages: WM_MOUSEFIRST..this }
@@ -819,6 +847,8 @@ destructor TControl.Destroy;
 begin
   if CaptureControl = Self then
     SetCaptureControl(nil);
+  if MouseControl = Self then
+    MouseControl := nil;
   SetParent(nil);
   FConstraints.Free;
   FMargins.Free;
@@ -1316,6 +1346,8 @@ end;
 { core.md UIF-060: framework handlers by case; everything else through Dispatch }
 procedure TControl.WndProc(var Message: TMessage);
 begin
+  if Message.Msg = WM_MOUSEMOVE then
+    TrackMouseControl;
   if (Message.Msg >= WM_MOUSEFIRST) and (Message.Msg <= WM_MOUSEBUTTONLAST)
     and not (csNoStdEvents in FControlStyle) then
   begin
@@ -1323,6 +1355,14 @@ begin
     Exit;
   end;
   case Message.Msg of
+    WM_MOUSEWHEEL:
+      WMMouseWheel(Message);
+    WM_CONTEXTMENU:
+      WMContextMenu(Message);
+    CM_MOUSEENTER:
+      CMMouseEnter(Message);
+    CM_MOUSELEAVE:
+      CMMouseLeave(Message);
     WM_CANCELMODE, WM_CAPTURECHANGED:
       begin
         ClearMouseState;
@@ -1489,6 +1529,123 @@ begin
   if (CaptureControl = Self) or ((CaptureControl <> nil) and (CaptureControl.FParent = Self)
     and not (CaptureControl is TWinControl)) then
     CaptureControl := nil;
+end;
+
+{ UIF-068: a WM_MOUSEMOVE reached Self (after graphic routing) }
+procedure TControl.TrackMouseControl;
+var
+  Old: TControl;
+  Track: TTrackMouseEvent;
+  H: HWND;
+begin
+  if MouseControl = Self then
+    Exit;
+  Old := MouseControl;
+  if Old <> nil then
+    Old.Perform(CM_MOUSELEAVE, 0, 0);
+  MouseControl := Self;
+  Perform(CM_MOUSEENTER, 0, 0);
+  H := 0;
+  if Self is TWinControl then
+    H := TWinControl(Self).FHandle
+  else if FParent <> nil then
+    H := FParent.FHandle;
+  if H <> 0 then
+  begin
+    Track.cbSize := SizeOf(Track);
+    Track.dwFlags := TME_LEAVE;
+    Track.hwndTrack := H;
+    Track.dwHoverTime := 0;
+    TrackMouseEvent(Track);
+  end;
+end;
+
+procedure TControl.CMMouseEnter(var Message: TMessage);
+begin
+  if Assigned(FOnMouseEnter) then
+    FOnMouseEnter(Self);
+end;
+
+procedure TControl.CMMouseLeave(var Message: TMessage);
+begin
+  if Assigned(FOnMouseLeave) then
+    FOnMouseLeave(Self);
+end;
+
+function TControl.DoMouseWheel(Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint): Boolean;
+begin
+  Result := False;
+  if Assigned(FOnMouseWheel) then
+    FOnMouseWheel(Self, Shift, WheelDelta, MousePos, Result);
+  if not Result then
+    if WheelDelta > 0 then
+      Result := DoMouseWheelUp(Shift, MousePos)
+    else if WheelDelta < 0 then
+      Result := DoMouseWheelDown(Shift, MousePos);
+end;
+
+function TControl.DoMouseWheelDown(Shift: TShiftState; MousePos: TPoint): Boolean;
+begin
+  Result := False;
+  if Assigned(FOnMouseWheelDown) then
+    FOnMouseWheelDown(Self, Shift, MousePos, Result);
+end;
+
+function TControl.DoMouseWheelUp(Shift: TShiftState; MousePos: TPoint): Boolean;
+begin
+  Result := False;
+  if Assigned(FOnMouseWheelUp) then
+    FOnMouseWheelUp(Self, Shift, MousePos, Result);
+end;
+
+{ UIF-075: unhandled, default processing (DefWindowProc passes it to the parent window) }
+procedure TControl.WMMouseWheel(var Message: TMessage);
+var
+  P: TPoint;
+begin
+  P := Point(SmallInt(LoWord(Message.LParam)), SmallInt(HiWord(Message.LParam)));
+  if DoMouseWheel(KeysToShift(LoWord(Message.WParam)), SmallInt(HiWord(Message.WParam)), P) then
+    Message.Result := 0
+  else
+    Dispatch(Message);
+end;
+
+procedure TControl.DoContextPopup(MousePos: TPoint; var Handled: Boolean);
+begin
+  if Assigned(FOnContextPopup) then
+    FOnContextPopup(Self, MousePos, Handled);
+end;
+
+{ UIF-077: screen position (-1, -1 = keyboard: the client centre) to client; handled = result 1, else default
+  processing (DefWindowProc passes it to the parent window) }
+procedure TControl.WMContextMenu(var Message: TMessage);
+var
+  P: TPoint;
+  H: HWND;
+  Handled: Boolean;
+begin
+  P := Point(SmallInt(LoWord(Message.LParam)), SmallInt(HiWord(Message.LParam)));
+  if (P.X = -1) and (P.Y = -1) then
+    P := Point(ClientWidth div 2, ClientHeight div 2)
+  else
+  begin
+    H := 0;
+    if Self is TWinControl then
+      H := TWinControl(Self).FHandle
+    else if FParent <> nil then
+    begin
+      H := FParent.FHandle;
+      P := Point(P.X - FLeft, P.Y - FTop);                  { screen offset of the parent's client origin below }
+    end;
+    if H <> 0 then
+      ScreenToClient(H, P);
+  end;
+  Handled := False;
+  DoContextPopup(P, Handled);
+  if Handled then
+    Message.Result := 1
+  else
+    Dispatch(Message);
 end;
 
 { UIF-130 (graphic part) }
@@ -1690,6 +1847,7 @@ end;
 
 var
   ControlAtom: string;                                       { window property naming the control (UIF-035) }
+  NextCtlID: Cardinal;                                       { next child-window control id, 1..$FFFF cyclic }
 
 function FindControl(Handle: HWND): TWinControl;
 var
@@ -1856,13 +2014,28 @@ procedure TWinControl.CreateWindowHandle(const Params: TCreateParams);
 var
   ClassName: PChar;
   H: HWND;
+  Menu: HMENU;
 begin
   if Params.SubclassOf <> nil then
     ClassName := Params.SubclassOf
   else
     ClassName := @Params.WinClassName[0];
+  { UIF-070: child windows carry a non-zero control id (WM_MEASUREITEM names the control by it) }
+  Menu := 0;
+  if (Params.Style and WS_CHILD) <> 0 then
+  begin
+    if FCtlID = 0 then
+    begin
+      FCtlID := NextCtlID;
+      if NextCtlID >= $FFFF then
+        NextCtlID := 1
+      else
+        Inc(NextCtlID);
+    end;
+    Menu := HMENU(FCtlID);
+  end;
   H := CreateWindowExW(Params.ExStyle, ClassName, Params.Caption, Params.Style, Params.X, Params.Y, Params.Width,
-    Params.Height, Params.WndParent, 0, HINST(HInstance), Pointer(Self));
+    Params.Height, Params.WndParent, Menu, HINST(HInstance), Pointer(Self));
   if H = 0 then
     Exit;
   if Params.SubclassOf <> nil then
@@ -2015,6 +2188,38 @@ begin
       WMWindowPosChanged(TWMWindowPosMsg(Message));
     WM_ENABLE:
       WMEnable(Message);
+    WM_MOUSELEAVE:
+      WMMouseLeave(Message);
+    WM_KEYDOWN, WM_SYSKEYDOWN:
+      WMKeyDown(TWMKey(Message));
+    WM_KEYUP, WM_SYSKEYUP:
+      WMKeyUp(TWMKey(Message));
+    WM_CHAR:
+      WMChar(TWMKey(Message));
+    { UIF-070: reflection to the child object; without a target, default processing }
+    WM_COMMAND:
+      if (Message.LParam = 0) or not Reflect(FindControl(HWND(Message.LParam)), Message) then
+        inherited WndProc(Message);
+    WM_HSCROLL:
+      if Message.LParam = 0 then
+        WMHScroll(TWMScroll(Message))
+      else if not Reflect(FindControl(HWND(Message.LParam)), Message) then
+        inherited WndProc(Message);
+    WM_VSCROLL:
+      if Message.LParam = 0 then
+        WMVScroll(TWMScroll(Message))
+      else if not Reflect(FindControl(HWND(Message.LParam)), Message) then
+        inherited WndProc(Message);
+    WM_NOTIFY:
+      if (Message.LParam = 0) or not Reflect(FindControl(PNMHdr(Message.LParam)^.hwndFrom), Message) then
+        inherited WndProc(Message);
+    WM_DRAWITEM:
+      if (Message.WParam = 0)
+        or not Reflect(FindControl(PDrawItemStruct(Message.LParam)^.hwndItem), Message) then
+        inherited WndProc(Message);
+    WM_MEASUREITEM:
+      if (Message.WParam = 0) or not Reflect(ChildByCtlID(Cardinal(Message.WParam)), Message) then
+        inherited WndProc(Message);
     WM_CTLCOLORMSGBOX..WM_CTLCOLORSTATIC:
       begin
         { UIF-070: answered by the child control of HWND LParam; default processing when it has none or declines }
@@ -2053,6 +2258,82 @@ begin
   Result := C <> nil;
   if Result then
     Message.Result := C.Perform(Message.Msg, Message.WParam, MakeLParam(Word(X - C.FLeft), Word(Y - C.FTop)));
+end;
+
+{ UIF-070: CN_BASE + Msg to the target object, whose result is the answer; False = no target }
+function TWinControl.Reflect(C: TWinControl; var Message: TMessage): Boolean;
+begin
+  Result := (C <> nil) and (C <> Self);
+  if Result then
+    Message.Result := C.Perform(CN_BASE + Message.Msg, Message.WParam, Message.LParam);
+end;
+
+{ the windowed child with this control id (assigned before its window exists, so it works during creation) }
+function TWinControl.ChildByCtlID(ID: Cardinal): TWinControl;
+var
+  I: Integer;
+  C: TControl;
+begin
+  for I := 0 to FControls.Count - 1 do
+  begin
+    C := TControl(FControls[I]);
+    if (C is TWinControl) and (TWinControl(C).FCtlID = ID) then
+    begin
+      Result := TWinControl(C);
+      Exit;
+    end;
+  end;
+  Result := nil;
+end;
+
+procedure TWinControl.WMHScroll(var Message: TWMScroll);
+begin
+  Dispatch(Message);
+end;
+
+procedure TWinControl.WMVScroll(var Message: TWMScroll);
+begin
+  Dispatch(Message);
+end;
+
+{ UIF-068: leaves only when the tracked control is Self or one of its graphic children }
+procedure TWinControl.WMMouseLeave(var Message: TMessage);
+var
+  Old: TControl;
+begin
+  Old := MouseControl;
+  if (Old <> nil) and ((Old = Self) or (not (Old is TWinControl) and (Old.FParent = Self))) then
+  begin
+    MouseControl := nil;
+    Old.Perform(CM_MOUSELEAVE, 0, 0);
+  end;
+  Dispatch(Message);
+end;
+
+{ UIF-077: the graphic child under the point gets the first chance }
+procedure TWinControl.WMContextMenu(var Message: TMessage);
+var
+  P: TPoint;
+  C: TControl;
+  Handled: Boolean;
+begin
+  P := Point(SmallInt(LoWord(Message.LParam)), SmallInt(HiWord(Message.LParam)));
+  if ((P.X <> -1) or (P.Y <> -1)) and (FHandle <> 0) then
+  begin
+    ScreenToClient(FHandle, P);
+    C := ControlAtPos(P, False);
+    if C <> nil then
+    begin
+      Handled := False;
+      C.DoContextPopup(Point(P.X - C.FLeft, P.Y - C.FTop), Handled);
+      if Handled then
+      begin
+        Message.Result := 1;
+        Exit;
+      end;
+    end;
+  end;
+  inherited WMContextMenu(Message);
 end;
 
 { UIF-071 }
@@ -2620,6 +2901,100 @@ begin
     FOnKeyPress(Self, Key);
 end;
 
+function TWinControl.PreviewKeys: Boolean;
+begin
+  Result := False;
+end;
+
+{ core.md 7.9: ssShift, ssCtrl from GetKeyState; ssAlt from bit 29 of the key data }
+function KeyDataToShift(KeyData: LPARAM): TShiftState;
+begin
+  Result := [];
+  if GetKeyState(VK_SHIFT) < 0 then
+    Include(Result, ssShift);
+  if GetKeyState(VK_CONTROL) < 0 then
+    Include(Result, ssCtrl);
+  if (KeyData and $20000000) <> 0 then
+    Include(Result, ssAlt);
+end;
+
+{ UIF-085 step 1: the top of the parent chain when it previews keys and is not Self }
+function KeyPreviewer(C: TWinControl): TWinControl;
+begin
+  Result := C;
+  while Result.FParent <> nil do
+    Result := Result.FParent;
+  if (Result = C) or not Result.PreviewKeys then
+    Result := nil;
+end;
+
+{ UIF-085 steps 1, 2, 4: Key = 0 consumes the key and the WM_CHAR translated from it }
+procedure TWinControl.WMKeyDown(var Message: TWMKey);
+var
+  Key: Word;
+  Shift: TShiftState;
+  P: TWinControl;
+begin
+  Key := Message.CharCode;
+  Shift := KeyDataToShift(Message.KeyData);
+  P := KeyPreviewer(Self);
+  if P <> nil then
+    P.KeyDown(Key, Shift);
+  if Key <> 0 then
+    KeyDown(Key, Shift);
+  FSwallowChar := Key = 0;
+  if Key = 0 then
+    Message.Result := 0
+  else
+    Dispatch(Message);
+end;
+
+procedure TWinControl.WMKeyUp(var Message: TWMKey);
+var
+  Key: Word;
+  Shift: TShiftState;
+  P: TWinControl;
+begin
+  Key := Message.CharCode;
+  Shift := KeyDataToShift(Message.KeyData);
+  P := KeyPreviewer(Self);
+  if P <> nil then
+    P.KeyUp(Key, Shift);
+  if Key <> 0 then
+    KeyUp(Key, Shift);
+  if Key = 0 then
+    Message.Result := 0
+  else
+    Dispatch(Message);
+end;
+
+{ UIF-085 step 3: #0 consumes; a changed character replaces WParam before default processing }
+procedure TWinControl.WMChar(var Message: TWMKey);
+var
+  Key: Char;
+  P: TWinControl;
+begin
+  if FSwallowChar then
+  begin
+    FSwallowChar := False;
+    Message.Result := 0;
+    Exit;
+  end;
+  Key := Char(Message.CharCode);
+  P := KeyPreviewer(Self);
+  if P <> nil then
+    P.KeyPress(Key);
+  if Key <> #0 then
+    KeyPress(Key);
+  if Key = #0 then
+    Message.Result := 0
+  else
+  begin
+    Message.CharCode := Word(Key);
+    Dispatch(Message);
+  end;
+end;
+
 { ---------------------------------------------------------------- painting (core.md 7.8) }
 
 const
@@ -2878,5 +3253,6 @@ end;
 
 initialization
   ControlAtom :='PN.Control.' + IntToHex(GetCurrentProcessId, 1);
+  NextCtlID := 1;
   RegisterIntegerConsts(TypeInfo(TCursor), IdentToCursor, CursorToIdent);
 end.
