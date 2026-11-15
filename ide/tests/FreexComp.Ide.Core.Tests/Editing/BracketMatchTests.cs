@@ -1,5 +1,6 @@
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 
 namespace FreexComp.Ide.Core.Tests.Editing;
@@ -9,8 +10,6 @@ namespace FreexComp.Ide.Core.Tests.Editing;
 [Trait("Kind", "Unit")]
 public sealed class BracketMatchTests
 {
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(10);
-
     /// <summary>The highlighted tokens at the caret <c>|</c> of <paramref name="marked"/> as <c>text@offset</c>, partner last.</summary>
     private static string Match(ILanguageDefinition language, string marked)
     {
@@ -95,13 +94,14 @@ public sealed class BracketMatchTests
 
         // Not scanned on the calling thread: nothing until Changed.
         Assert.Null(index.Current);
-        await arrived.Task.WaitAsync(Limit, TestContext.Current.CancellationToken);
+        var deadline = CurrentTest.Deadline;
+        await deadline.WaitAsync(arrived.Task, "the first background scan");
         Assert.Equal(12, index.Current!.MatchAt(0)!.Value.Partner!.Value.Offset); // "begin" … "end"
 
         // An edit outdates the tokens; GetAsync waits for the current version without blocking.
         buffer.ApplyEdits([new TextEdit(0, 0, "x")]);
         Assert.Null(index.Current);
-        var fresh = await index.GetAsync().WaitAsync(Limit, TestContext.Current.CancellationToken);
+        var fresh = await deadline.WaitAsync(index.GetAsync(), "the scan of the edited version");
         Assert.Equal(buffer.Version, fresh.Version);
         Assert.Null(fresh.MatchAt(0)); // "xbegin" is an identifier
     }

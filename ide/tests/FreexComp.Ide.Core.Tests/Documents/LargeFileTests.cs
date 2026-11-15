@@ -3,6 +3,7 @@ using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
@@ -15,12 +16,6 @@ namespace FreexComp.Ide.Core.Tests.Documents;
 public sealed class LargeFileTests
 {
     private const string Path = @"C:\t\Big.pas";
-
-    /// <summary>
-    /// I-202: how long a background folding run of 1 MB that is known to be running may take. Under heavy load (several
-    /// test runs at once) it exceeded 20 s. The test timeout leaves room for it.
-    /// </summary>
-    private static readonly TimeSpan BackgroundRunBound = TimeSpan.FromSeconds(90);
 
     [Fact(Timeout = 120000)]
     [Trait("Req", "IDE-P1-054")]
@@ -82,13 +77,15 @@ public sealed class LargeFileTests
         Assert.Equal(3, dialogs.Requests.Count);
         Assert.Equal(("pascal", false, true), (normal.Language.Id, normal.IsLargeFile, normal.ViewState.WordWrap));
         // Above 200 KB its regions are computed in the background (I-159). I-202: a lost run (no regions and nothing
-        // computing) fails at once; a run that is still computing may take longer on a loaded machine, up to the bound.
+        // computing) fails at once; a run that is still computing may take longer on a loaded machine (under heavy load more
+        // than 20 s).
         var folded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         normal.Folding.Changed += (_, _) => folded.TrySetResult();
+        // I-205: it is bounded only by the test's own timeout (120 s), which leaves room for it.
         if (normal.Folding.Regions.Count == 0)
         {
             Assert.True(normal.Folding.IsComputing, "no regions and no background run: the run was lost");
-            await folded.Task.WaitAsync(BackgroundRunBound, TestContext.Current.CancellationToken);
+            await CurrentTest.Deadline.WaitAsync(folded.Task, "the background folding run of the 1 MB unit");
         }
 
         Assert.NotEmpty(normal.Folding.Regions);

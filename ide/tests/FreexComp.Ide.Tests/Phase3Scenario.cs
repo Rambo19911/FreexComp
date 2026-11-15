@@ -32,9 +32,6 @@ public static class Phase3Scenario
 
     public const string WaitFlag = "wait.flag";
 
-    /// <summary>How long one step may wait on the real compiler, linker or program (the fakes keep the harness's 5 s).</summary>
-    public static readonly TimeSpan RealLimit = TimeSpan.FromSeconds(100);
-
     public static string ProjectPath(HeadlessHarness h) => Path.Combine(h.TempDir, @"HelloErr\HelloErr.pproj");
 
     public static string UnitPath(HeadlessHarness h) => Path.Combine(h.TempDir, @"HelloErr\Unit1.pas");
@@ -85,7 +82,7 @@ public static class Phase3Scenario
     {
         Assert.Equal(3, ServiceGraph.ImplementedPhase); // the product is at Phase 3: no test override of the implemented phase
         var real = h.RealBuild;
-        TimeSpan? limit = real ? RealLimit : null;
+        // I-205: every wait, on the real compiler, linker and program too, is bounded by the test's own timeout.
         if (real)
         {
             var toolchain = h.Services.Toolchain.Resolve();
@@ -102,7 +99,7 @@ public static class Phase3Scenario
         var states = new List<IdeState>();
         h.Services.State.Changed += (_, _) => states.Add(h.Services.State.Current.State);
         h.Press("Ctrl+Shift+B");
-        await h.WaitForAsync(() => states.Contains(IdeState.Building) && h.Services.State.Current.State == IdeState.Idle, "build finished", limit);
+        await h.WaitForAsync(() => states.Contains(IdeState.Building) && h.Services.State.Current.State == IdeState.Idle, "build finished");
         Dispatcher.UIThread.RunJobs();
         Assert.True(h.Services.Messages.ErrorCount == 1, "Messages: " + string.Join(" | ", h.Services.Messages.Items.Select(i => $"{i.Code} {i.Text}")));
         Assert.Equal(Strings.Msg_Build_FailedOne, h.Status.State);
@@ -137,10 +134,10 @@ public static class Phase3Scenario
             await h.WaitForAsync(() => states.Skip(mark).Contains(IdeState.Building)
                     && (OutputText(h).Contains("Program exited with code", StringComparison.Ordinal)
                         || (h.Services.State.Current.State == IdeState.Idle && h.Services.Messages.ErrorCount > 0)),
-                "build and run finished", limit);
+                "build and run finished");
             Assert.True(h.Services.Messages.ErrorCount == 0, "Build errors: " + string.Join(" | ", h.Services.Messages.Items.Select(i => $"{i.Code} {i.Text}")));
             Assert.Contains("    Count := 1;", File.ReadAllText(unitPath), StringComparison.Ordinal);
-            await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "exited", limit);
+            await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "exited");
             Assert.Contains("Program started", OutputText(h), StringComparison.Ordinal);
             Assert.Contains("Hello", OutputLines(h));
             Assert.Contains("Program exited with code 0 after ", OutputText(h), StringComparison.Ordinal);
@@ -164,14 +161,14 @@ public static class Phase3Scenario
         h.Press("Ctrl+F5");
         if (real)
             await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Running && OutputLines(h).Contains("Hello")
-                && !OutputText(h).Contains(Strings.Msg_Run_Terminated, StringComparison.Ordinal), "running again (waiting at the flag)", limit);
+                && !OutputText(h).Contains(Strings.Msg_Run_Terminated, StringComparison.Ordinal), "running again (waiting at the flag)");
         else
             await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Running && h.Processes.Started.Count == 2, "running again");
         h.Press("Shift+F5");
-        await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "stopped", limit);
+        await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "stopped");
         if (!real)
             Assert.Equal(1, h.Processes.Last.KillCount);
-        await h.WaitForAsync(() => OutputText(h).Contains(Strings.Msg_Run_Terminated, StringComparison.Ordinal), "stopped line", limit);
+        await h.WaitForAsync(() => OutputText(h).Contains(Strings.Msg_Run_Terminated, StringComparison.Ordinal), "stopped line");
     }
 
     /// <summary>The text of the Output window (a run shows it with the program channel, UI-TW-501).</summary>

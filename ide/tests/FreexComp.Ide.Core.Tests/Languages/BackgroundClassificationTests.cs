@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Languages;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 
 namespace FreexComp.Ide.Core.Tests.Languages;
@@ -8,9 +9,7 @@ namespace FreexComp.Ide.Core.Tests.Languages;
 [Trait("Kind", "Unit")]
 public sealed class BackgroundClassificationTests
 {
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(10);
-
-    [Fact]
+    [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-053")]
     [Trait("Req", "IDE-P1-056")]
     public async Task LargeBufferIsClassifiedInTheBackground()
@@ -29,7 +28,8 @@ public sealed class BackgroundClassificationTests
 
         // Not lexed on the calling thread: no colours yet, they arrive with ClassificationChanged.
         Assert.Empty(classifier.Classify(buffer, new LineRange(1, 1)));
-        await updated.Task.WaitAsync(Limit, TestContext.Current.CancellationToken);
+        var deadline = CurrentTest.Deadline;
+        await deadline.WaitAsync(updated.Task, "the first background classification");
         Assert.Contains(new TokenClassSpan(0, 5, "syntax.keyword"), classifier.Classify(buffer, new LineRange(1, 1)));
 
         // An edit: until the new result arrives, the old spans follow the text; the edited token is plain text.
@@ -38,7 +38,7 @@ public sealed class BackgroundClassificationTests
         var interim = classifier.Classify(buffer, new LineRange(1, 2));
         Assert.DoesNotContain(interim, s => s.Offset == 0);
         Assert.Contains(new TokenClassSpan(13, 5, "syntax.keyword"), interim); // line 2 "begin", shifted by one
-        await updated.Task.WaitAsync(Limit, TestContext.Current.CancellationToken);
+        await deadline.WaitAsync(updated.Task, "the classification of the edited version");
         var fresh = classifier.Classify(buffer, new LineRange(1, 1));
         Assert.DoesNotContain(fresh, s => s.TokenClass == "syntax.keyword" && s.Offset <= 1); // "xbegin" is an identifier
         Assert.Contains(fresh, s => s.TokenClass == "syntax.keyword" && s.Offset == 7);        // "end"

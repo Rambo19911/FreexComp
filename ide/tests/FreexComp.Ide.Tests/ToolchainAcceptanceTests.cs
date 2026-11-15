@@ -16,8 +16,6 @@ namespace FreexComp.Ide.Tests;
 [Trait("Category", "Toolchain")]
 public sealed class ToolchainAcceptanceTests
 {
-    private static readonly TimeSpan ToolchainLimit = TimeSpan.FromSeconds(100);
-
     [AvaloniaFact(Timeout = 120000)]
     [Trait("Req", "IDE-P3-080")]
     [Trait("Req", "IDE-P3-084")]
@@ -35,11 +33,11 @@ public sealed class ToolchainAcceptanceTests
         string Output() => h.TryFind<TextEditor>("Tool.Output.Text")?.Document.Text ?? "";
         // The exit line of Output (the status message lasts 5 s of the manual clock, which runs fast while the program runs).
         await h.WaitForAsync(() => Output().Contains("Program exited with code", StringComparison.Ordinal) || h.Services.Messages.ErrorCount > 0,
-            "build and run finished", ToolchainLimit);
+            "build and run finished"); // I-205: bounded by the test's own timeout (120 s)
         Assert.True(h.Services.Messages.ErrorCount == 0,
             "Build errors: " + string.Join(" | ", h.Services.Messages.Items.Select(i => $"{i.Code} {i.Text}"))
             + " Log: " + string.Join(" | ", h.Log.Lines.Where(l => l.StartsWith("ERROR ", StringComparison.Ordinal))));
-        await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "idle after the run", ToolchainLimit);
+        await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "idle after the run");
         Assert.Contains("Program exited with code 0 after ", Output(), StringComparison.Ordinal);
         Assert.Contains("Hello, world", Output(), StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(h.TempDir, "Hello", "bin", "Debug", "Hello.exe")));

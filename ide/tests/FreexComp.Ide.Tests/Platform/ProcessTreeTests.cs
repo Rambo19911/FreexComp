@@ -5,6 +5,7 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Platform.Windows;
 using FreexComp.Ide.TestHelper;
 using FreexComp.Ide.Tests.Fixtures;
+using FreexComp.Ide.Tests.Infrastructure;
 using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Tests.Platform;
@@ -15,8 +16,6 @@ namespace FreexComp.Ide.Tests.Platform;
 [Trait("Category", "Integration")]
 public sealed class ProcessTreeTests
 {
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(20);
-
     private static ProcessStartRequest Request(string mode)
     {
         var (file, arguments) = ProcessHelper.Command(mode);
@@ -42,6 +41,7 @@ public sealed class ProcessTreeTests
     [Trait("Req", "IDE-P3-094")]
     public async Task KillTreeTerminatesGrandchildren()
     {
+        var deadline = CurrentTest.Deadline;
         var childLine = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var launcher = new WindowsProcessLauncher(new ManualClock());
         using var process = launcher.Start(Request(HelperProgram.SpawnChild), line =>
@@ -49,18 +49,18 @@ public sealed class ProcessTreeTests
             if (line.Text.StartsWith("child ", StringComparison.Ordinal))
                 childLine.TrySetResult(line.Text);
         });
-        var grandchild = int.Parse((await childLine.Task.WaitAsync(Limit, TestContext.Current.CancellationToken))["child ".Length..], CultureInfo.InvariantCulture);
+        var grandchild = int.Parse((await deadline.WaitAsync(childLine.Task, "the helper's child line"))["child ".Length..], CultureInfo.InvariantCulture);
         Assert.False(IsGone(process.ProcessId));
         using var grandchildProcess = Process.GetProcessById(grandchild);
         Assert.False(grandchildProcess.HasExited);
 
         var watch = Stopwatch.StartNew();
         Assert.True(await process.KillTreeAsync());
-        await grandchildProcess.WaitForExitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+        await deadline.WaitAsync(grandchildProcess.WaitForExitAsync(TestContext.Current.CancellationToken), "the grandchild's exit");
 
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(3), $"tree gone after {watch.Elapsed}");
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(3), $"tree gone after {watch.Elapsed}"); // a measured budget, not a wait
         Assert.True(IsGone(process.ProcessId));
-        Assert.Equal(1, await process.Exited.WaitAsync(Limit, TestContext.Current.CancellationToken)); // TerminateJobObject exit code
+        Assert.Equal(1, await deadline.WaitAsync(process.Exited, "the exit report")); // TerminateJobObject exit code
     }
 
     [Fact(Timeout = 30000)]
@@ -73,7 +73,7 @@ public sealed class ProcessTreeTests
         var launcher = new WindowsProcessLauncher(new ManualClock());
         using var process = launcher.Start(Request(HelperProgram.WriteBoth), lines.Enqueue);
 
-        Assert.Equal(3, await process.Exited.WaitAsync(Limit, TestContext.Current.CancellationToken));
+        Assert.Equal(3, await CurrentTest.Deadline.WaitAsync(process.Exited, "the helper's exit"));
 
         // Each pipe keeps its own order; the interleaving of the two is not asserted (IDE-P3-074).
         Assert.Equal(["out 1", "grün", "cr", "Name: "], lines.Where(l => !l.IsError).Select(l => l.Text));
@@ -95,7 +95,7 @@ public sealed class ProcessTreeTests
         var lines = new ConcurrentQueue<ProcessOutputLine>();
         var launcher = new WindowsProcessLauncher(new ManualClock());
         using (var process = launcher.Start(Request(HelperProgram.PeekHandle + " " + readEnd.ToString(CultureInfo.InvariantCulture)), lines.Enqueue))
-            Assert.Equal(0, await process.Exited.WaitAsync(Limit, TestContext.Current.CancellationToken));
+            Assert.Equal(0, await CurrentTest.Deadline.WaitAsync(process.Exited, "the helper's exit"));
 
         // The child still got its own pipe ends: its answer arrived on the captured stdout.
         Assert.Equal([HelperProgram.NotInherited], lines.Where(l => !l.IsError).Select(l => l.Text));

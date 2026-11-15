@@ -1,6 +1,8 @@
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Editing;
 
@@ -9,8 +11,6 @@ namespace FreexComp.Ide.Core.Tests.Editing;
 [Trait("Kind", "Unit")]
 public sealed class CodeTokenIndexTests
 {
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(10);
-
     /// <summary>
     /// I-182: when a scan ends for an outdated version, the <see cref="CodeTokenIndex.Changed"/> handler's request for the
     /// tokens starts a new scan at once (the ended scan no longer counts as running), and its result arrives without any
@@ -21,11 +21,11 @@ public sealed class CodeTokenIndexTests
     [Trait("Req", "IDE-ARCH-084")]
     public async Task StaleScanRestarts()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var deadline = CurrentTest.Deadline;
         var text = string.Concat(Enumerable.Repeat("begin F(x); end;\r\n", 12_000)); // 216 000 chars
         Assert.True(text.Length > WholeTextClassifier.BackgroundThreshold);
         var buffer = new StringTextBuffer(text);
-        using var language = new GatedLanguage();
+        using var language = new GatedLanguage(deadline);
         var index = new CodeTokenIndex(buffer, language);
         var fresh = new TaskCompletionSource<CodeTokens>(TaskCreationOptions.RunContinuationsAsynchronously);
         index.Changed += (_, _) =>
@@ -37,19 +37,19 @@ public sealed class CodeTokenIndexTests
 
         // Scan 1 starts for version v1 and is held; an edit makes it stale.
         Assert.Null(index.Current);
-        Assert.True(await language.Entered.WaitAsync(Limit, ct));
+        await deadline.WaitAsync(language.Entered, "scan 1 started");
         buffer.ApplyEdits([new TextEdit(0, 0, "x")]);
         Assert.Null(index.Current); // scan 1 still runs: no second scan yet
         Assert.Equal(1, language.Scans);
 
         // Scan 1 ends stale: the handler's request starts scan 2 for the current version.
         language.Release.Release();
-        Assert.True(await language.Entered.WaitAsync(Limit, ct));
+        await deadline.WaitAsync(language.Entered, "scan 2 started by the Changed handler");
         Assert.Equal(2, language.Scans);
 
         // Scan 2 ends: the tokens of the current version arrive through Changed, with no other request.
         language.Release.Release();
-        var tokens = await fresh.Task.WaitAsync(Limit, ct);
+        var tokens = await deadline.WaitAsync(fresh.Task, "the tokens of scan 2 through Changed");
         Assert.Equal(buffer.Version, tokens.Version);
         Assert.Null(tokens.MatchAt(0)); // "xbegin" is an identifier
         Assert.Same(tokens, index.Current);
@@ -57,7 +57,7 @@ public sealed class CodeTokenIndexTests
     }
 
     /// <summary>Pascal tokens, but each scan waits for <see cref="Release"/> after signalling <see cref="Entered"/>.</summary>
-    private sealed class GatedLanguage : ILanguageDefinition, IDisposable
+    private sealed class GatedLanguage(TestDeadline deadline) : ILanguageDefinition, IDisposable
     {
         private readonly PascalLanguage _pascal = new();
         private int _scans;
@@ -88,7 +88,7 @@ public sealed class CodeTokenIndexTests
         {
             Interlocked.Increment(ref _scans);
             Entered.Release();
-            Release.Wait(Limit);
+            deadline.Wait(Release, "the test releasing the held scan");
             return ((ILanguageDefinition)_pascal).ScanCodeTokens(text);
         }
 

@@ -5,6 +5,7 @@ using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Platform.Windows;
 using FreexComp.Ide.TestHelper;
 using FreexComp.Ide.Tests.Fixtures;
+using FreexComp.Ide.Tests.Infrastructure;
 using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Tests.Platform;
@@ -16,28 +17,28 @@ namespace FreexComp.Ide.Tests.Platform;
 public sealed class ConsoleHostTests
 {
     /// <summary>
-    /// The whole test's budget, shared by its three waits (IDE-TEST-006: 30 s per test). Each wait starts up to two .NET
-    /// processes and a console (≈ 250 ms alone); under a loaded full-solution run one cold start can take seconds (I-194),
-    /// so no single wait gets a fixed slice of it.
+    /// The part of the test's time kept for the failure snapshot. Each wait starts up to two .NET processes and a console
+    /// (≈ 250 ms alone); under a loaded full-solution run one cold start can take seconds (I-194), so no wait gets a fixed
+    /// slice: I-205, each is bounded by the test's own timeout less this reserve.
     /// </summary>
-    private static readonly TimeSpan Budget = TimeSpan.FromSeconds(20); // + up to 5 s for the failure snapshot
+    private static readonly TimeSpan SnapshotReserve = TimeSpan.FromSeconds(5);
 
-    /// <summary>Awaits <paramref name="task"/> until <see cref="Budget"/> since <paramref name="since"/> is spent; a timeout names the step.</summary>
-    private static async Task<T> Step<T>(Task<T> task, string step, Stopwatch since, CancellationToken token)
+    /// <summary>Awaits <paramref name="task"/> until the test's time less <see cref="SnapshotReserve"/> is spent; a timeout names the step.</summary>
+    private static async Task<T> Step<T>(Task<T> task, string step, TestDeadline deadline)
     {
-        var left = Budget - since.Elapsed;
+        var left = deadline.Remaining - SnapshotReserve;
         try
         {
-            return await task.WaitAsync(left > TimeSpan.Zero ? left : TimeSpan.Zero, token);
+            return await task.WaitAsync(left > TimeSpan.Zero ? left : TimeSpan.Zero, deadline.Token);
         }
-        catch (TimeoutException e)
+        catch (TimeoutException e) when (!task.IsCompleted)
         {
-            throw new TimeoutException($"step '{step}' still pending {since.Elapsed} after the start", e);
+            throw new TimeoutException($"step '{step}' still pending {deadline.Elapsed} after the start", e);
         }
     }
 
-    private static async Task Step(Task task, string step, Stopwatch since, CancellationToken token) =>
-        await Step(Completed(task), step, since, token);
+    private static async Task Step(Task task, string step, TestDeadline deadline) =>
+        await Step(Completed(task), step, deadline);
 
     private static async Task<bool> Completed(Task task)
     {
@@ -46,8 +47,9 @@ public sealed class ConsoleHostTests
     }
 
     /// <summary>What the host is doing when a wait fails (I-194): alive or not, its children, the text of its console.</summary>
-    private static async Task<string> SnapshotAsync(Process host, CancellationToken token)
+    private static async Task<string> SnapshotAsync(Process host, TestDeadline deadline)
     {
+        var token = deadline.Token;
         var text = new System.Text.StringBuilder();
         text.Append(CultureInfo.InvariantCulture, $"host {host.Id} exited: {host.HasExited}; children: ");
         text.AppendJoin(", ", ProcessSnapshot.Children(host.Id).Select(c => $"{c.Name} {c.Id}"));
@@ -58,7 +60,7 @@ public sealed class ConsoleHostTests
         {
             var (helper, arguments) = ProcessHelper.Command(string.Create(CultureInfo.InvariantCulture, $"{HelperProgram.ConsoleKey} {host.Id} \"{screen}\""));
             using var key = Process.Start(new ProcessStartInfo(helper, arguments) { UseShellExecute = false, CreateNoWindow = true })!;
-            await key.WaitForExitAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token);
+            await deadline.WaitAsync(key.WaitForExitAsync(token), "the console snapshot helper");
             text.Append("; console: ").AppendJoin(" | ", File.Exists(screen) ? await File.ReadAllLinesAsync(screen, token) : ["(no screen file)"]);
         }
         catch (TimeoutException)
@@ -81,8 +83,8 @@ public sealed class ConsoleHostTests
     [Trait("Req", "IDE-P3-088")]
     public async Task RunsChildReportsExitCodeAndWaitsForKey()
     {
-        var token = TestContext.Current.CancellationToken;
-        var since = Stopwatch.StartNew();
+        var deadline = CurrentTest.Deadline;
+        var token = deadline.Token;
         var (file, arguments) = ProcessHelper.Command(HelperProgram.ExitWith + " 3");
         var launcher = new WindowsProcessLauncher(new ManualClock(), IdeExecutable);
         using var process = launcher.Start(new ProcessStartRequest(file, arguments, Path.GetTempPath()) { Capture = false, ConsoleHost = true },
@@ -94,11 +96,11 @@ public sealed class ConsoleHostTests
         int exitCode;
         try
         {
-            exitCode = await Step(process.Exited, "exited report", since, token);
+            exitCode = await Step(process.Exited, "exited report", deadline);
         }
         catch (TimeoutException e)
         {
-            throw new TimeoutException(e.Message + "; " + await SnapshotAsync(host, token), e);
+            throw new TimeoutException(e.Message + "; " + await SnapshotAsync(host, deadline), e);
         }
 
         Assert.Equal(3, exitCode);
@@ -116,11 +118,11 @@ public sealed class ConsoleHostTests
                    })!)
             {
                 var errors = key.StandardError.ReadToEndAsync(token);
-                await Step(key.WaitForExitAsync(token), "key helper", since, token);
+                await Step(key.WaitForExitAsync(token), "key helper", deadline);
                 Assert.True(key.ExitCode == 0, $"key helper exit code {key.ExitCode}: {await errors}");
             }
 
-            await Step(host.WaitForExitAsync(token), "host exit after key", since, token);
+            await Step(host.WaitForExitAsync(token), "host exit after key", deadline);
             Assert.Equal(3, host.ExitCode);
 
             var lines = await File.ReadAllLinesAsync(screen, token);

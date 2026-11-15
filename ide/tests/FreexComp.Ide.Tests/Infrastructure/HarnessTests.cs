@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Tests.Infrastructure;
 
@@ -92,6 +93,20 @@ public sealed class HarnessTests
         await h.WaitForAsync(() => fired, "timer fired");
 
         Assert.True(fired);
+    }
+
+    /// <summary>I-205: the harness's waits are bounded by the headless test's own timeout, registered before it ran.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-TEST-013")]
+    public async Task WaitsAreBoundedByTheTestsOwnTimeout()
+    {
+        var registered = CurrentTest.Deadline;
+        await using var h = await HeadlessHarness.StartAsync();
+
+        Assert.Same(registered, h.Deadline);
+        Assert.Equal(TimeSpan.FromSeconds(30), h.Deadline.Timeout);
+        Assert.Equal(TestContext.Current.CancellationToken, h.Deadline.Token);
+        Assert.InRange(h.Deadline.Remaining, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30) - TestDeadline.Margin);
     }
 
     [AvaloniaFact(Timeout = 30000)]

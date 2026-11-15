@@ -4,6 +4,7 @@ using FreexComp.Ide.Core.Composition;
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
@@ -160,7 +161,7 @@ public sealed class FindServiceTests
         };
         large.Find.SearchText = "Bar";
         largeClock.Advance(FindSession.Delay);
-        await arrived.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await CurrentTest.Deadline.WaitAsync(arrived.Task, "the background search of the large buffer");
         Assert.Equal(10_000, largeSession.Matches.Count); // capped
         Assert.Equal(new TextSelection(7, 10), largeDoc.Selection);
     }

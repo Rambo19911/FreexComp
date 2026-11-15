@@ -88,17 +88,10 @@ public sealed class HarnessAssertionException(string message) : Exception(messag
 /// </summary>
 public sealed class HeadlessHarness : IAsyncDisposable
 {
-    private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(5);
-
-    /// <summary>
-    /// I-195: the start-up sequence does real disk work (settings, session, project, toolchain search) and is not driven by the
-    /// manual clock, so under parallel load it can take several seconds of wall time. It gets the most a non-toolchain test
-    /// has (30 s, IDE-TEST-006) minus a margin, so a real hang still fails here with this message before the test timeout.
-    /// </summary>
-    private static readonly TimeSpan StartupLimit = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan WaitStep = TimeSpan.FromMilliseconds(10);
 
     private readonly int _bindingErrorStart;
+    private readonly TestDeadline _deadline = CurrentTest.Deadline;
     private readonly RecordingLog _log;
     private readonly ManualFileWatcherFactory _watchers;
     private readonly bool _realWatchers;
@@ -226,6 +219,12 @@ public sealed class HeadlessHarness : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// I-205: the wall time the test has left before its own timeout; every harness wait is bounded by it and by nothing
+    /// else, so a loaded machine slows a wait down instead of failing it.
+    /// </summary>
+    public TestDeadline Deadline => _deadline;
+
     /// <summary>IDE-ARCH-015 step 9 (recovery, start-up content), started after the window is shown as in production.</summary>
     public Task Startup { get; private set; } = Task.CompletedTask;
 
@@ -239,12 +238,12 @@ public sealed class HeadlessHarness : IAsyncDisposable
         configure?.Invoke(options);
         var h = new HeadlessHarness(options);
         h.Startup = StartupSequence.RunAsync(h.Services);
-        var watch = Stopwatch.StartNew();
+        // I-195: real disk work (settings, session, project, toolchain search), not driven by the manual clock.
         while (!h.Startup.IsCompleted && !h.Window.OwnedWindows.Any(w => w.IsVisible))
         {
-            if (watch.Elapsed > StartupLimit)
+            if (h._deadline.IsExpired)
             {
-                throw new HarnessAssertionException($"Timed out waiting for the start-up sequence ({watch.Elapsed.TotalSeconds:0.0} s)");
+                throw new HarnessAssertionException(h._deadline.Expired("the start-up sequence").Message);
             }
 
             Dispatcher.UIThread.RunJobs();
@@ -378,13 +377,13 @@ public sealed class HeadlessHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Loops { run dispatcher jobs; advance the clock 10 ms; yield } until <paramref name="condition"/> holds, for at
-    /// most 5 s of wall time (IDE-TEST-013), or <paramref name="limit"/> when the condition waits for the OS (a real
-    /// file watcher).
+    /// Loops { run dispatcher jobs; advance the clock 10 ms; yield } until <paramref name="condition"/> holds (IDE-TEST-013).
+    /// I-205: bounded only by the test's own timeout (<see cref="Deadline"/>), not by a fixed wall-clock time: a
+    /// condition that waits for real work (the OS, a background scan, the real toolchain) is slowed down by a loaded
+    /// machine, not failed; a condition that never holds fails with <paramref name="description"/> before the timeout.
     /// </summary>
-    public async Task WaitForAsync(Func<bool> condition, string description, TimeSpan? limit = null)
+    public async Task WaitForAsync(Func<bool> condition, string description)
     {
-        var watch = Stopwatch.StartNew();
         while (true)
         {
             Dispatcher.UIThread.RunJobs();
@@ -393,9 +392,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
                 return;
             }
 
-            if (watch.Elapsed > (limit ?? WaitLimit))
+            if (_deadline.IsExpired)
             {
-                throw new HarnessAssertionException($"Timed out waiting for: {description}");
+                throw new HarnessAssertionException(_deadline.Expired(description).Message);
             }
 
             Clock.Advance(WaitStep);

@@ -1,6 +1,8 @@
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
+using FreexComp.Ide.TestSupport;
 using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Core.Tests.Editing;
@@ -150,7 +152,7 @@ public sealed class FoldingTests
     }
 
     /// <summary>Pascal regions; for a buffer other than <see cref="Document"/> (a background snapshot) it first waits for <see cref="Gate"/>.</summary>
-    private sealed class GatedProvider : IFoldingProvider
+    private sealed class GatedProvider(TestDeadline deadline) : IFoldingProvider
     {
         private readonly PascalFoldingProvider _inner = new();
 
@@ -168,7 +170,7 @@ public sealed class FoldingTests
             var onDocument = ReferenceEquals(buffer, Document);
             Calls.Enqueue((onDocument, InsideCaller.Value, buffer.Text));
             if (!onDocument)
-                Gate.Wait(TimeSpan.FromSeconds(20));
+                deadline.Wait(Gate, "the test opening the folding gate");
             return _inner.GetRegions(buffer);
         }
     }
@@ -182,7 +184,8 @@ public sealed class FoldingTests
     {
         // A small buffer: computed at once, on the calling thread, from the document buffer itself.
         var small = new StringTextBuffer("procedure A;\r\nbegin\r\nend;\r\n");
-        var smallProvider = new GatedProvider { Document = small };
+        var deadline = CurrentTest.Deadline;
+        var smallProvider = new GatedProvider(deadline) { Document = small };
         smallProvider.InsideCaller.Value = true;
         var smallModel = new FoldingModel(small, new EditorViewState(), smallProvider);
         smallProvider.InsideCaller.Value = false;
@@ -193,7 +196,7 @@ public sealed class FoldingTests
         var filler = string.Concat(Enumerable.Repeat("// " + new string('x', 97) + "\r\n", WholeTextClassifier.BackgroundThreshold / 100 + 10));
         var buffer = new StringTextBuffer("procedure A;\r\nbegin\r\nend;\r\n" + filler);
         Assert.True(buffer.Length > WholeTextClassifier.BackgroundThreshold);
-        var provider = new GatedProvider { Document = buffer };
+        var provider = new GatedProvider(deadline) { Document = buffer };
         var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         provider.InsideCaller.Value = true;
         var model = new FoldingModel(buffer, new EditorViewState(), provider);
@@ -210,7 +213,7 @@ public sealed class FoldingTests
         Assert.Empty(model.Regions);
         provider.InsideCaller.Value = false;
         provider.Gate.Set();
-        await changed.Task.WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+        await deadline.WaitAsync(changed.Task, "the regions of the latest text");
 
         // B, A, the filler comments and Z of the latest text.
         Assert.Equal(Format(new PascalFoldingProvider().GetRegions(new StringTextBuffer(buffer.Text))), Format(model.Regions));

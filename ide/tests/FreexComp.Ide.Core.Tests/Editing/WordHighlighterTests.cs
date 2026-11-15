@@ -1,5 +1,6 @@
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
@@ -11,8 +12,6 @@ namespace FreexComp.Ide.Core.Tests.Editing;
 [Trait("Kind", "Unit")]
 public sealed class WordHighlighterTests
 {
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(10);
-
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-074")]
     [Trait("Req", "IDE-ARCH-081")]
@@ -35,7 +34,7 @@ public sealed class WordHighlighterTests
         state.Caret = new TextPosition(1, 2);
         clock.Advance(WordHighlighter.Delay);
         Assert.Empty(highlighter.Highlights); // the tokens are scanned in the background, not on this thread
-        await arrived.Task.WaitAsync(Limit, TestContext.Current.CancellationToken);
+        await CurrentTest.Deadline.WaitAsync(arrived.Task, "the highlights from the background token scan");
         Assert.Equal(19_999, highlighter.Highlights.Count);
         Assert.Equal(13, highlighter.Highlights[0].Offset);
 

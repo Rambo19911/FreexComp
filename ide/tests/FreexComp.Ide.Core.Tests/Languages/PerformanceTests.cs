@@ -76,10 +76,12 @@ public sealed class PerformanceTests
     /// <summary>
     /// IDE-ARCH-082 / UI-CMD-013: an edit command on the UI thread completes within 50 ms even in a 1 MB unit — typing a
     /// character, the undo and redo commands, and reading the classification of the changed line. Work proportional
-    /// to the document (whole-text lexing, folding, brackets) runs off the calling thread, so the median CPU time of
-    /// the calling thread stays within the budget. The test runs under a UI-like synchronization context and, before
-    /// it ends, drains the background lexing, folding and token scans it started, so they cannot overlap the next
-    /// performance test (I-179).
+    /// to the document (whole-text lexing, folding, brackets) runs off the calling thread, so the CPU time of the calling
+    /// thread stays within the budget. The test runs under a UI-like synchronization context and, before it ends, drains
+    /// the background lexing, folding and token scans it started, so they cannot overlap the next performance test
+    /// (I-179). I-205: measured like <see cref="TokenizeLargeUnitWithinBudget"/> (fastest CPU time of the calling thread,
+    /// stopping after the time limit), so the background scans of a loaded machine cannot run it into its timeout; the
+    /// drain waits for them up to the test's own timeout.
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-082")]
@@ -87,8 +89,9 @@ public sealed class PerformanceTests
     public void EditCommandsOnLargeUnitStayWithinUiThreadBudget()
     {
         var text = LargeUnit();
+        var deadline = CurrentTest.Deadline;
         var ui = new QueueSynchronizationContext();
-        var median = TimeSpan.Zero;
+        var fastest = TimeSpan.Zero;
         var grew = false;
 
         // Everything that may start background work runs under the context, so every result is posted to it.
@@ -103,7 +106,7 @@ public sealed class PerformanceTests
                 var target = doc.CommandTarget!;
                 var line = doc.Buffer.LineCount / 2;
                 doc.ViewState.Caret = new FreexComp.Ide.Core.Text.TextPosition(line, 1);
-                median = PerformanceBudget.MedianThreadCpu(() =>
+                fastest = PerformanceBudget.MinThreadCpu(() =>
                 {
                     Assert.True(doc.TypeText("x"));
                     Assert.True(target.ExecuteAsync("edit.undo", null).GetAwaiter().GetResult());
@@ -114,12 +117,13 @@ public sealed class PerformanceTests
             }
             finally
             {
-                ui.RunUntil(() => !classifier.IsLexing && !doc.Folding.IsComputing && !doc.Tokens.IsScanning);
+                ui.RunUntil(() => !classifier.IsLexing && !doc.Folding.IsComputing && !doc.Tokens.IsScanning, deadline,
+                    "the background lexing, folding and token scans to drain");
             }
         });
 
         Assert.True(grew, "the typed characters are in the buffer");
         var budget = PerformanceBudget.Of(50, typeof(PascalClassifier).Assembly, typeof(FreexComp.Compiler.Syntax.Lexer).Assembly);
-        Assert.True(budget.IsMetBy(median), budget.Describe("median UI-thread CPU time of type + undo + redo + classify", median));
+        Assert.True(budget.IsMetBy(fastest), budget.Describe("fastest UI-thread CPU time of type + undo + redo + classify", fastest));
     }
 }

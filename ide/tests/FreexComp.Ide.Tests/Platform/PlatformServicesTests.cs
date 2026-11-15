@@ -6,6 +6,7 @@ using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Platform;
+using FreexComp.Ide.Tests.Infrastructure;
 using FreexComp.Ide.Text;
 
 namespace FreexComp.Ide.Tests.Platform;
@@ -14,8 +15,6 @@ namespace FreexComp.Ide.Tests.Platform;
 [Trait("Kind", "Ui")]
 public sealed class PlatformServicesTests
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
-
     [AvaloniaFact]
     [Trait("Req", "IDE-ARCH-012")]
     public void DispatcherPostsAndRuns()
@@ -33,7 +32,7 @@ public sealed class PlatformServicesTests
         Assert.Equal(["normal", "background"], order);
     }
 
-    [AvaloniaFact]
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-012")]
     [Trait("Req", "IDE-ARCH-080")]
     public async Task DispatcherAcceptsPostsFromOtherThreads()
@@ -48,17 +47,17 @@ public sealed class PlatformServicesTests
         });
 
         Assert.False(access);
-        Assert.True(await ran.Task.WaitAsync(Timeout, TestContext.Current.CancellationToken));
+        Assert.True(await CurrentTest.Deadline.WaitAsync(ran.Task, "the posted callback"));
     }
 
-    [AvaloniaFact]
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-085")]
     public void ClockScheduleFiresAndDisposeCancels()
     {
         IClock clock = new DispatcherClock();
         var fired = new List<string>();
         var frame = new DispatcherFrame();
-        using var safety = DispatcherTimer.RunOnce(() => frame.Continue = false, Timeout);
+        using var safety = StopAtTheDeadline(frame);
 
         var before = DateTimeOffset.Now;
         Assert.InRange(clock.Now, before.AddMinutes(-1), before.AddMinutes(1));
@@ -90,7 +89,7 @@ public sealed class PlatformServicesTests
         IClock clock = new DispatcherClock();
         var fired = new List<(string Name, bool OnUiThread)>();
         var frame = new DispatcherFrame();
-        using var safety = DispatcherTimer.RunOnce(() => frame.Continue = false, Timeout);
+        using var safety = StopAtTheDeadline(frame);
         IDisposable? started = null;
 
         OnOtherThread(() =>
@@ -111,6 +110,13 @@ public sealed class PlatformServicesTests
 
         Assert.Equal([("due", true)], fired);
     }
+
+    /// <summary>
+    /// I-205: ends <paramref name="frame"/> when the test's time is up (its assertion then names what did not fire), so a
+    /// timer that never fires cannot hold the UI thread past the test timeout; a loaded machine only makes it later.
+    /// </summary>
+    private static IDisposable StopAtTheDeadline(DispatcherFrame frame) =>
+        DispatcherTimer.RunOnce(() => frame.Continue = false, CurrentTest.Deadline.Remaining);
 
     /// <summary>Runs <paramref name="action"/> on a new thread and blocks the calling (UI) thread until it ends.</summary>
     private static void OnOtherThread(Action action)
@@ -208,7 +214,7 @@ public sealed class PlatformServicesTests
                 Assert.Equal(dir, watcher.Directory);
                 File.WriteAllBytes(target, [1]);
 
-                var change = await created.Task.WaitAsync(Timeout, TestContext.Current.CancellationToken);
+                var change = await CurrentTest.Deadline.WaitAsync(created.Task, "the watcher's Created event");
                 Assert.Equal(target, change.Path, ignoreCase: true);
             }
         }

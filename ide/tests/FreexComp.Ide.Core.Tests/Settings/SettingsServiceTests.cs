@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using System.Text;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Settings;
@@ -23,14 +23,15 @@ public sealed class SettingsServiceTests
     private SettingsService Create(RecordingFileSystem fs) =>
         new(UserPaths.Create(UserDir, _ => null, _ => throw new InvalidOperationException()), fs, _clock, _log, [Size]);
 
-    /// <summary>Advances the clock in 10 ms steps until <paramref name="task"/> completes; returns the clock time used.</summary>
+    /// <summary>Advances the clock in 10 ms steps until <paramref name="task"/> completes (bounded by the test's timeout, I-205); returns the clock time used.</summary>
     private async Task<TimeSpan> AdvanceUntilAsync(Task task)
     {
         var start = _clock.Now;
-        var watch = Stopwatch.StartNew();
+        var deadline = CurrentTest.Deadline;
         while (!task.IsCompleted)
         {
-            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), "save did not finish");
+            if (deadline.IsExpired)
+                throw deadline.Expired("the save to finish");
             _clock.Advance(TimeSpan.FromMilliseconds(10));
             await Task.Yield();
         }

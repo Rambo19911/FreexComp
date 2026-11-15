@@ -81,6 +81,7 @@ public sealed class FindInFilesDialogTests
         // I-203: hold the search's first file read, as a loaded machine would delay it.
         using var held = new SemaphoreSlim(0);
         using var release = new SemaphoreSlim(0);
+        var deadline = h.Deadline;
         var holding = 1;
         var projectFolder = Path.GetDirectoryName(BuildScenario.ProjectPath(h))!;
         h.FileSystem.BeforeRead = path =>
@@ -89,13 +90,13 @@ public sealed class FindInFilesDialogTests
                 && Interlocked.Exchange(ref holding, 0) == 1)
             {
                 held.Release();
-                release.Wait(TimeSpan.FromSeconds(20));
+                deadline.Wait(release, "the test releasing the held read");
             }
         };
         dlg.Click("Find");
         await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
         await opening;
-        Assert.True(await held.WaitAsync(TimeSpan.FromSeconds(10)), "the search reads a project file");
+        await deadline.WaitAsync(held, "the search reading a project file");
         // While the search runs the header already names the options: waiting for them is not waiting for the result.
         await h.WaitForAsync(() => h.TryFind<TextBlock>("Tool.SearchResults.Header")?.Text?.Contains("(match case)", StringComparison.Ordinal) == true,
             "search results shown");
