@@ -192,6 +192,13 @@ begin
   Check(Pointer(AfterInner) = Outer, 'outer object current again after the nested handler');
   Check(ExceptObject = nil, 'nil again after the handlers');
   Check(RaiseList = nil, 'RaiseList nil again');
+  InnerAddr := nil;
+  try
+    raise EBase.Create(3);
+  except
+    InnerAddr := ExceptAddr;
+  end;
+  Check(InnerAddr <> nil, 'raise E without at gives a non-nil ExceptAddr (ABI-123)');
 end;
 
 procedure TestAcquire;

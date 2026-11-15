@@ -2,7 +2,7 @@
 // opc-run: variants 1 2
 program Sys_RunError;
 { Variant 1: RunError(201). Variant 2: RunError without a code is error 0. Output written before the error is
-  flushed first; the address is 16 upper-case hex digits (zero until the compiler provides it, C-173). }
+  flushed first; the address is 16 upper-case hex digits and not zero (the return address of _RunError, C-173). }
 var
   P: PChar;
 begin

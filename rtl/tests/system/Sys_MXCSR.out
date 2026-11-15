@@ -1,0 +1,4 @@
+start-up MXCSR 8064 = $1F80 TRUE
+changed MXCSR 32512 = $7F00 TRUE
+thread MXCSR 8064 = $1F80 TRUE
+main MXCSR again 8064 = $1F80 TRUE

@@ -31,6 +31,7 @@ ok nested ExceptAddr
 ok outer object current again after the nested handler
 ok nil again after the handlers
 ok RaiseList nil again
+ok raise E without at gives a non-nil ExceptAddr (ABI-123)
 # AcquireExceptionObject
 ok nil outside a handler
 ok acquired object survives its handler
@@ -48,4 +49,4 @@ ok leaked
 ok all caught
 ok all destroyed
 ok leaked
-# passed 42 failed 0
+# passed 43 failed 0

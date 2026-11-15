@@ -2292,7 +2292,7 @@ begin
   Func := Start^.Func;
   Param := Start^.Param;
   SysFreeMem(Start);
-  // TODO(C-174): RTL-042 sets MXCSR = $1F80 here (the Win64 default of a new thread, so nothing changes until then)
+  _SetMXCSR($1F80);                    { RTL-042 }
   Result := 0;
   try
     Result := Cardinal(Func(Param));
@@ -2578,7 +2578,7 @@ begin
   MainThreadID := GetCurrentThreadId;
   CmdLine := GetCommandLineW;
   IsConsole := ImageIsConsole;
-  // TODO(C-174): ABI-105 sets MXCSR = $1F80 (the Win64 default at process start, so nothing changes until then)
+  _SetMXCSR($1F80);                    { ABI-105, RTL-042 }
   OpenStandard(Input, STD_INPUT_HANDLE, tmInput);
   OpenStandard(Output, STD_OUTPUT_HANDLE, tmOutput);
   OpenStandard(ErrOutput, STD_ERROR_HANDLE, tmOutput);
@@ -2822,8 +2822,7 @@ end;
 { RTL-131/132, ABI-101 }
 procedure _RunError(Code: Integer);
 begin
-  // TODO(C-173): ErrorAddr := _ReturnAddress (the caller's address); it stays nil until the intrinsic exists
-  ErrorAddr := nil;
+  ErrorAddr := _ReturnAddress;         { the caller's address }
   if Assigned(ErrorProc) then
     ErrorProc(Code, ErrorAddr);        { normally raises and does not return }
   FatalRunError(Code);
@@ -2868,8 +2867,7 @@ begin
   begin
     _UStrAsg(PPointer(@M)^, Msg);
     _UStrAsg(PPointer(@F)^, FileName);
-    // TODO(C-173): Addr = the caller's address (_ReturnAddress); nil until the intrinsic exists
-    AssertErrorProc(M, F, Line, nil);
+    AssertErrorProc(M, F, Line, _ReturnAddress);
   end;
   if Msg = nil then
     Write(ErrOutput, 'Assertion failed')
@@ -2951,7 +2949,8 @@ var
 begin
   if Obj = nil then
     _RunError(204);
-  // TODO(C-173): Addr = nil (plain raise E) becomes the return address of _Raise (_ReturnAddress); nil until then
+  if Addr = nil then
+    Addr := _ReturnAddress;            { plain raise E: the address after the call of _Raise }
   B := ThreadBlock;
   for I := 0 to B^.HandledCount - 1 do
     if B^.Handled[I].Obj = Obj then
