@@ -170,7 +170,13 @@ public sealed class CompletionSession
     /// <summary>Asks the language service for the whole context set at an offset; null = not available here.</summary>
     public delegate Task<CompletionList?> Fetch(int offset, CompletionTrigger trigger, CancellationToken ct);
 
+    /// <summary>Asks the language service for an item's declaration and doc comment (UI-ED-117); null = none.</summary>
+    public delegate Task<CompletionDescription?> Describe(CompletionItem item, CancellationToken ct);
+
     private static readonly TimeSpan ComputingStatusAfter = TimeSpan.FromMilliseconds(300); // IDE-ED-087
+
+    /// <summary>UI-ED-117: the documentation side panel appears this long after a row is selected.</summary>
+    public static readonly TimeSpan DescriptionDelay = TimeSpan.FromMilliseconds(300);
 
     private readonly TextDocumentViewModel _document;
     private readonly Fetch _fetch;
@@ -178,14 +184,19 @@ public sealed class CompletionSession
     private readonly Func<bool> _autoTrigger;
     private readonly Func<TimeSpan> _delay;
     private readonly Action<string> _status;
+    private readonly Describe? _describe;
     private CompletionList? _list;
     private int _start;
     private IDisposable? _timer;
     private CancellationTokenSource? _request;
     private bool _committing;
     private bool _templateMode;
+    private IDisposable? _descriptionTimer;
+    private CancellationTokenSource? _descriptionRequest;
+    private CompletionItem? _describedItem;
 
-    public CompletionSession(TextDocumentViewModel document, Fetch fetch, IClock clock, Func<bool> autoTrigger, Func<TimeSpan> delay, Action<string> status)
+    public CompletionSession(TextDocumentViewModel document, Fetch fetch, IClock clock, Func<bool> autoTrigger, Func<TimeSpan> delay, Action<string> status,
+        Describe? describe = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         _document = document;
@@ -194,6 +205,7 @@ public sealed class CompletionSession
         _autoTrigger = autoTrigger;
         _delay = delay;
         _status = status;
+        _describe = describe;
         document.ViewState.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(EditorViewState.Caret) && IsOpen && !_committing)
@@ -215,6 +227,18 @@ public sealed class CompletionSession
 
     /// <summary>The running or last request; completes when its result is applied (tests await it).</summary>
     public Task Pending { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// UI-ED-117: the selected item's declaration and doc comment, set <see cref="DescriptionDelay"/> after the row was
+    /// selected; null while waiting, without a declaration, or closed.
+    /// </summary>
+    public CompletionDescription? Description { get; private set; }
+
+    /// <summary><see cref="Description"/> changed.</summary>
+    public event EventHandler? DescriptionChanged;
+
+    /// <summary>The running or last description request (tests await it).</summary>
+    public Task DescriptionPending { get; private set; } = Task.CompletedTask;
 
     /// <summary>The text from the completion's start to the caret.</summary>
     public string TypedText
@@ -327,7 +351,7 @@ public sealed class CompletionSession
         if (!IsOpen || Items.Count == 0)
             return;
         SelectedIndex = Math.Clamp(index, 0, Items.Count - 1);
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -395,7 +419,7 @@ public sealed class CompletionSession
         IsOpen = false;
         Items = [];
         _list = null;
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     private async Task RequestAsync(CompletionTrigger trigger, bool explicitly)
@@ -452,7 +476,7 @@ public sealed class CompletionSession
         IsOpen = true;
         Items = matches;
         SelectedIndex = 0;
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>IDE-ED-082/086: the typed text changed or the caret moved.</summary>
@@ -481,7 +505,7 @@ public sealed class CompletionSession
 
         Items = matches;
         SelectedIndex = 0;
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -511,7 +535,7 @@ public sealed class CompletionSession
         IsOpen = true;
         Items = matches;
         SelectedIndex = 0;
-        Changed?.Invoke(this, EventArgs.Empty);
+        RaiseChanged();
     }
 
     /// <summary>The document language's code templates as completion items (detail = the description, UI-ED-113).</summary>
@@ -524,6 +548,58 @@ public sealed class CompletionSession
     {
         _timer?.Dispose();
         _timer = null;
+    }
+
+    private void RaiseChanged()
+    {
+        UpdateDescription();
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>UI-ED-117: a newly selected item hides the panel and asks for its description after the delay.</summary>
+    private void UpdateDescription()
+    {
+        var item = SelectedItem;
+        if (ReferenceEquals(item, _describedItem))
+            return;
+        _describedItem = item;
+        _descriptionTimer?.Dispose();
+        _descriptionTimer = null;
+        _descriptionRequest?.Cancel();
+        _descriptionRequest = null;
+        if (Description is not null)
+        {
+            Description = null;
+            DescriptionChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        if (item is not { SymbolId: not null } || _describe is null)
+            return; // only symbols have declaration text
+        _descriptionTimer = _clock.Schedule(DescriptionDelay, () =>
+        {
+            _descriptionTimer = null;
+            DescriptionPending = DescribeAsync(item);
+        });
+    }
+
+    private async Task DescribeAsync(CompletionItem item)
+    {
+        var request = _descriptionRequest = new CancellationTokenSource();
+        CompletionDescription? description;
+        try
+        {
+            description = await _describe!(item, request.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (request.IsCancellationRequested || !ReferenceEquals(item, _describedItem) || description is not { Signature.Length: > 0 })
+            return;
+        _descriptionRequest = null;
+        Description = description;
+        DescriptionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private string? ClassAt(int offset) => CompletionRules.ClassAt(_document, offset);
@@ -581,17 +657,22 @@ public sealed class CompletionController
     {
         if (document is not TextDocumentViewModel { FilePath: not null } text || text.Language.Id != "pascal" || text.Completion is not null)
             return;
-        text.Completion = new CompletionSession(text, (offset, trigger, ct) => FetchAsync(text, offset, trigger, ct), _clock,
+        LanguageService.Document? source = null; // the snapshot the items came from: their descriptions are looked up there
+        text.Completion = new CompletionSession(text, (offset, trigger, ct) => FetchAsync(text, offset, trigger, s => source = s, ct), _clock,
             () => _settings.Get(SettingsCatalog.EditorCompletionAutoTrigger),
             () => TimeSpan.FromMilliseconds(_settings.Get(SettingsCatalog.EditorCompletionDelayMs)),
-            message => _status.ShowMessage(message, StatusDuration));
+            message => _status.ShowMessage(message, StatusDuration),
+            (item, ct) => source is { } s
+                ? _codeModel.Worker.RunAsync<CompletionDescription?>("completionDescription", token => LanguageService.CompletionService.GetDescription(s, item, token), ct)
+                : Task.FromResult<CompletionDescription?>(null));
     }
 
-    private Task<CompletionList?> FetchAsync(TextDocumentViewModel document, int offset, CompletionTrigger trigger, CancellationToken ct)
+    private Task<CompletionList?> FetchAsync(TextDocumentViewModel document, int offset, CompletionTrigger trigger, Action<LanguageService.Document> fetchedFrom, CancellationToken ct)
     {
         if (document.FilePath is not { } path || _codeModel.Synchronize() is null)
             return Task.FromResult<CompletionList?>(null);
         var source = _codeModel.Workspace.GetDocument(path);
+        fetchedFrom(source);
         return _codeModel.Worker.RunAsync<CompletionList?>("completion", token => LanguageService.CompletionService.GetCompletions(source, offset, trigger, token), ct);
     }
 

@@ -27,7 +27,7 @@ public sealed class CompletionViewTests
         Dispatcher.UIThread.RunJobs();
         var editor = h.Find<TextEditor>("Editor.Unit1.pas");
         Assert.True(editor.TextArea.Focus());
-        var popup = editor.FindAncestorOfType<CodeEditorView>()!.GetVisualDescendants().OfType<CompletionListView>().Single();
+        var popup = editor.FindAncestorOfType<CodeEditorView>()!.CompletionList;
         var session = doc.Completion!;
         var foo = doc.Buffer.Text.IndexOf("Foo :=", StringComparison.Ordinal);
 
@@ -92,7 +92,7 @@ public sealed class CompletionViewTests
         var editor = h.Find<TextEditor>("Editor.Unit1.pas");
         Assert.True(editor.TextArea.Focus());
         var view = editor.FindAncestorOfType<CodeEditorView>()!;
-        var popup = view.GetVisualDescendants().OfType<CompletionListView>().Single();
+        var popup = view.CompletionList;
         var session = doc.Completion!;
         var foo = doc.Buffer.Text.IndexOf("Foo :=", StringComparison.Ordinal);
         var line = doc.Buffer.GetPosition(foo).Line;
@@ -111,10 +111,129 @@ public sealed class CompletionViewTests
         Assert.True(popup.IsVisible);
         var lineTop = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(line, 1), AvaloniaEdit.Rendering.VisualYPosition.LineTop).Y
             - textView.ScrollOffset.Y;
-        var lineTopInView = textView.TranslatePoint(new Avalonia.Point(0, lineTop), view)!.Value.Y;
+        var lineTopOnScreen = textView.PointToScreen(new Avalonia.Point(0, lineTop)).Y;
         var height = popup.Bounds.Height;
         Assert.True(height > 0);
-        Assert.Equal(lineTopInView - 2 - height, popup.Margin.Top, 0.5); // directly above the line, gap 2
-        Assert.True(popup.Margin.Top >= 0);
+        var popupTop = popup.PointToScreen(default).Y;
+        Assert.Equal(lineTopOnScreen - 2 - height, popupTop, 1.0); // directly above the line, gap 2
+        Assert.True(popupTop >= view.PointToScreen(default).Y);
+    }
+
+    /// <summary>
+    /// UI-ED-117 (I-198): 300 ms after a row is selected the documentation side panel shows the declaration and the doc
+    /// comment to the right of the list, as high as the list (min 110), width 300; UI-ED-113: every row starts with its
+    /// symbol icon (16); UI-ED-115: the matched characters are highlighted.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-113")]
+    [Trait("Req", "UI-ED-115")]
+    [Trait("Req", "UI-ED-117")]
+    public async Task DocumentationPanelIconsAndHighlight()
+    {
+        await using var h = await BuildScenario.StartAsync(LiveDiagnosticsTests.AddRealRtl);
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Value);
+        var var = doc.Buffer.Text.IndexOf("var Foo1", StringComparison.Ordinal);
+        doc.Buffer.ApplyEdits([new TextEdit(var + 4, 0, "\r\n  /// Counts the runs.\r\n  ")]);
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextEditor>("Editor.Unit1.pas");
+        Assert.True(editor.TextArea.Focus());
+        var view = editor.FindAncestorOfType<CodeEditorView>()!;
+        var list = view.CompletionList;
+        var session = doc.Completion!;
+        var foo = doc.Buffer.Text.IndexOf("Foo :=", StringComparison.Ordinal);
+        doc.Selection = TextSelection.At(foo + 2);
+        h.Press("Ctrl+Space");
+        await session.Pending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(list.IsVisible);
+        Assert.Equal("Foo1", session.SelectedItem!.Label);
+
+        // UI-ED-113: icon (16) · name (highlighted, UI-ED-115) · detail.
+        var row = h.Find<Avalonia.Controls.Border>("Editor.Completion.Item.Foo1");
+        var cells = ((Avalonia.Controls.DockPanel)row.Child!).Children;
+        var icon = Assert.IsType<SymbolKindIcon>(cells[0]);
+        Assert.Equal(FreexComp.LanguageService.CompletionItemKind.Variable, icon.Kind);
+        Assert.Equal(16, icon.Bounds.Width);
+        Assert.False(string.IsNullOrEmpty(icon.Glyph));
+        var name = cells.OfType<Avalonia.Controls.TextBlock>().First();
+        var runs = name.Inlines!.OfType<Avalonia.Controls.Documents.Run>().ToList();
+        Assert.Equal("Fo", string.Concat(runs.Where(r => r.Classes.Contains(CompletionListView.MatchClass)).Select(r => r.Text)));
+        Assert.All(h.FindAll("Editor.Completion.Item."), r =>
+            Assert.Single(((Avalonia.Controls.DockPanel)((Avalonia.Controls.Border)r).Child!).Children.OfType<SymbolKindIcon>()));
+
+        // UI-ED-117: nothing before 300 ms; then the declaration and the doc comment, right of the list.
+        var panel = view.CompletionDoc;
+        h.Clock.Advance(TimeSpan.FromMilliseconds(299));
+        await session.DescriptionPending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(panel.IsVisible);
+        h.Clock.Advance(TimeSpan.FromMilliseconds(1));
+        await session.DescriptionPending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(panel.IsVisible);
+        Assert.Same(panel, h.Find<CompletionDocView>("Editor.Completion.Doc"));
+        Assert.Contains("Foo1", panel.Declaration, StringComparison.Ordinal);
+        Assert.Contains("Integer", panel.Declaration, StringComparison.Ordinal);
+        Assert.Equal("Counts the runs.", panel.Documentation);
+        Assert.Equal(300, panel.Bounds.Width);
+        Assert.Equal(Math.Max(110, list.Bounds.Height), panel.Bounds.Height, 0.5);
+        Assert.Equal(list.PointToScreen(new Avalonia.Point(list.Bounds.Width, 0)), panel.PointToScreen(default));
+        Assert.True(editor.TextArea.IsKeyboardFocusWithin);
+
+        // Another row: the panel goes at once; back on Foo1 it returns 300 ms later.
+        h.Press("Down");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(panel.IsVisible);
+        h.Press("Up");
+        h.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await session.DescriptionPending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(panel.IsVisible);
+
+        // Escape closes both.
+        h.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(list.IsVisible);
+        Assert.False(panel.IsVisible);
+    }
+
+    /// <summary>UI-ED-110 (I-198): the popup is a real popup: in a short editor the full list extends past the editor's bottom edge.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-110")]
+    [Trait("Req", "UI-ED-112")]
+    public async Task ExtendsBeyondTheEditor()
+    {
+        await using var h = await BuildScenario.StartAsync(LiveDiagnosticsTests.AddRealRtl);
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Value);
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextEditor>("Editor.Unit1.pas");
+        var view = editor.FindAncestorOfType<CodeEditorView>()!;
+        view.Height = 140; // room for the code, not for a list of 10 rows below or above the caret line
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(editor.TextArea.Focus());
+        var list = view.CompletionList;
+        var session = doc.Completion!;
+        var foo = doc.Buffer.Text.IndexOf("Foo :=", StringComparison.Ordinal);
+        doc.Selection = TextSelection.At(foo); // nothing typed: the whole context set
+        h.Press("Ctrl+Space");
+        await session.Pending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(list.IsVisible);
+        // A popup host, not the editor (headless: the window's overlay layer; on Windows a popup window).
+        Assert.Null(list.FindAncestorOfType<CodeEditorView>());
+        Assert.Contains(list.GetVisualAncestors(), a => a is Avalonia.Controls.Primitives.OverlayPopupHost or Avalonia.Controls.Primitives.PopupRoot);
+        Assert.True(session.Items.Count >= CompletionListView.VisibleRows);
+        Assert.Equal(CompletionListView.RowHeight * CompletionListView.VisibleRows + 2, list.Bounds.Height, 0.5); // not squeezed
+        var textView = editor.TextArea.TextView;
+        var line = doc.Buffer.GetPosition(foo).Line;
+        var lineBottom = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(line, 1), AvaloniaEdit.Rendering.VisualYPosition.LineBottom).Y
+            - textView.ScrollOffset.Y;
+        var top = list.PointToScreen(default);
+        Assert.Equal(textView.PointToScreen(new Avalonia.Point(0, lineBottom)).Y + 2, top.Y, 1.0); // below the line (no room above either)
+        Assert.True(top.Y + list.Bounds.Height > view.PointToScreen(new Avalonia.Point(0, view.Bounds.Height)).Y); // past the editor
+        Assert.True(editor.TextArea.IsKeyboardFocusWithin);
+        h.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(list.IsVisible);
     }
 }

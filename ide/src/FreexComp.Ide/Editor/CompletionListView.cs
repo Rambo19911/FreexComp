@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using FreexComp.Ide.Core.CodeModel;
+using FreexComp.LanguageService;
 
 namespace FreexComp.Ide.Editor;
 
@@ -83,12 +84,14 @@ public sealed class CompletionListView : Border
                 TextTrimming = TextTrimming.CharacterEllipsis, Classes = { "codeSmall" },
             };
             detail.Bind(TextBlock.ForegroundProperty, detail.GetResourceObservable("FxcTextSecondaryBrush"));
+            var icon = new SymbolKindIcon { Kind = item.Kind, Margin = new Thickness(0, 0, 6, 0) }; // UI-ED-113: icon · space.3
             var row = new Border
             {
                 Height = RowHeight,
                 Padding = new Thickness(8, 0),
-                Child = new DockPanel { Children = { name, detail } },
+                Child = new DockPanel { Children = { icon, name, detail } },
             };
+            DockPanel.SetDock(icon, Dock.Left);
             DockPanel.SetDock(name, Dock.Left);
             if (i == session.SelectedIndex)
                 row.Bind(BackgroundProperty, row.GetResourceObservable("FxcBgSelectedBrush"));
@@ -159,5 +162,141 @@ public sealed class CompletionListView : Border
     {
         base.OnPointerPressed(e);
         e.Handled = true; // the editor keeps focus and the caret
+    }
+}
+
+/// <summary>
+/// UI-ED-113: the 16 × 16 symbol icon of a completion row — a letter for the item's kind in the syntax colour of that
+/// kind (the icon set of toolbars.md §4 has no symbol icons).
+/// </summary>
+public sealed class SymbolKindIcon : Border
+{
+    private readonly TextBlock _glyph = new()
+    {
+        HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.SemiBold,
+        Classes = { "caption" },
+    };
+
+    private CompletionItemKind _kind;
+
+    public SymbolKindIcon()
+    {
+        Width = Height = 16;
+        Focusable = false;
+        VerticalAlignment = VerticalAlignment.Center;
+        Child = _glyph;
+        Kind = CompletionItemKind.Keyword;
+    }
+
+    public CompletionItemKind Kind
+    {
+        get => _kind;
+        set
+        {
+            _kind = value;
+            var (glyph, brush) = Look(value);
+            _glyph.Text = glyph;
+            _glyph.Bind(TextBlock.ForegroundProperty, _glyph.GetResourceObservable(brush));
+        }
+    }
+
+    /// <summary>The drawn letter (tests).</summary>
+    public string Glyph => _glyph.Text ?? "";
+
+    private static (string Glyph, string Brush) Look(CompletionItemKind kind) => kind switch
+    {
+        CompletionItemKind.Keyword => ("K", "FxcSyntaxKeywordBrush"),
+        CompletionItemKind.Directive => ("D", "FxcSyntaxDirectiveBrush"),
+        CompletionItemKind.Unit => ("U", "FxcTextSecondaryBrush"),
+        CompletionItemKind.Type => ("T", "FxcSyntaxTypeBrush"),
+        CompletionItemKind.Class => ("C", "FxcSyntaxTypeBrush"),
+        CompletionItemKind.Interface => ("I", "FxcSyntaxTypeBrush"),
+        CompletionItemKind.Enum => ("E", "FxcSyntaxTypeBrush"),
+        CompletionItemKind.EnumMember or CompletionItemKind.Constant => ("#", "FxcSyntaxConstantBrush"),
+        CompletionItemKind.Method => ("M", "FxcSyntaxRoutineBrush"),
+        CompletionItemKind.Routine => ("R", "FxcSyntaxRoutineBrush"),
+        CompletionItemKind.Property => ("P", "FxcSyntaxTextBrush"),
+        CompletionItemKind.Field => ("F", "FxcSyntaxTextBrush"),
+        CompletionItemKind.Parameter => ("A", "FxcSyntaxTextBrush"),
+        CompletionItemKind.Variable => ("V", "FxcSyntaxTextBrush"),
+        CompletionItemKind.Label => ("L", "FxcSyntaxLabelBrush"),
+        CompletionItemKind.Snippet => ("S", "FxcTextSecondaryBrush"),
+        _ => ("?", "FxcTextSecondaryBrush"),
+    };
+}
+
+/// <summary>
+/// UI-ED-117: the documentation side panel of the completion popup (AutomationId <c>Editor.Completion.Doc</c>): width 300,
+/// as high as the list (min 110), the declaration in <c>type.codeSmall</c> (wrapped), then the doc comment in
+/// <c>type.body</c>. Shown while the session has a <see cref="CompletionSession.Description"/>.
+/// </summary>
+public sealed class CompletionDocView : Border
+{
+    public const double PanelWidth = 300;
+    public const double MinPanelHeight = 110;
+
+    private readonly StackPanel _content = new() { Spacing = 4 };
+    private CompletionSession? _session;
+
+    public CompletionDocView()
+    {
+        Focusable = false;
+        IsVisible = false;
+        Width = PanelWidth;
+        MinHeight = MinPanelHeight;
+        VerticalAlignment = VerticalAlignment.Stretch;
+        Padding = new Thickness(6, 4);
+        BorderThickness = new Thickness(1);
+        CornerRadius = new CornerRadius(4);
+        Bind(BackgroundProperty, this.GetResourceObservable("FxcBgRaisedBrush"));
+        Bind(BorderBrushProperty, this.GetResourceObservable("FxcBorderDefaultBrush"));
+        AutomationProperties.SetAutomationId(this, "Editor.Completion.Doc");
+        Child = new ScrollViewer
+        {
+            Content = _content, Focusable = false, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+        };
+    }
+
+    public CompletionSession? Session
+    {
+        get => _session;
+        set
+        {
+            if (ReferenceEquals(value, _session))
+                return;
+            _session?.DescriptionChanged -= OnChanged;
+            _session = value;
+            _session?.DescriptionChanged += OnChanged;
+            Sync();
+        }
+    }
+
+    public string? Declaration { get; private set; }
+
+    public string? Documentation { get; private set; }
+
+    /// <summary>Shown or hidden (the owner places the popup again).</summary>
+    public event EventHandler? VisibilityChanged;
+
+    private void OnChanged(object? sender, EventArgs e) => Sync();
+
+    private void Sync()
+    {
+        _content.Children.Clear();
+        var description = _session is { IsOpen: true } session ? session.Description : null;
+        Declaration = description?.Signature;
+        Documentation = description?.Documentation;
+        if (description is not null)
+        {
+            _content.Children.Add(new TextBlock { Text = description.Signature, Classes = { "codeSmall" }, TextWrapping = TextWrapping.Wrap });
+            if (description.Documentation is { Length: > 0 } documentation)
+                _content.Children.Add(new TextBlock { Text = documentation, Classes = { "body" }, TextWrapping = TextWrapping.Wrap });
+        }
+
+        var visible = description is not null;
+        if (visible == IsVisible)
+            return;
+        IsVisible = visible;
+        VisibilityChanged?.Invoke(this, EventArgs.Empty);
     }
 }

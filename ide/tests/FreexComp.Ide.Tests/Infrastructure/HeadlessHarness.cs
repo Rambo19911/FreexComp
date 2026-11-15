@@ -489,6 +489,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
     private IEnumerable<Control> AllWithId() =>
         new[] { Window }.Concat(Window.OwnedWindows)
             .SelectMany(w => new Visual[] { w }.Concat(w.GetVisualDescendants()))
+            .SelectMany(v => v is Avalonia.Controls.Primitives.Popup { IsOpen: true, Child: { } child } // the content lives in its own root
+                ? new Visual[] { v, child }.Concat(child.GetVisualDescendants())
+                : [v])
             .OfType<Control>()
             .Where(c => !string.IsNullOrEmpty(AutomationIds.Get(c)));
 

@@ -61,6 +61,9 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private SyntaxColorizer? _colorizer;
     private readonly FindPanelView _findPanel;
     private readonly CompletionListView _completion = new(); // I-115
+    private readonly CompletionDocView _completionDoc = new(); // I-198
+    private readonly StackPanel _completionContent = new() { Orientation = Avalonia.Layout.Orientation.Horizontal };
+    private readonly Popup _completionPopup; // UI-ED-110 (I-198): may extend past the editor
     private readonly SignatureHelpView _signatureHelp = new(); // I-116
     private readonly HoverView _hover = new(); // I-116
     private FindSession? _find;
@@ -151,9 +154,27 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             _document?.Hover?.Close(); // UI-ED-130: scrolling closes the hover
             PlaceSignatureHelp();
         };
-        // UI-ED-102: the find panel floats over the text; so do the code-insight popups.
-        Child = new Panel { Children = { _editor, _findPanel, _signatureHelp, _completion, _hover } };
+        // UI-ED-102: the find panel floats over the text; so do parameter info and hover. The completion list and its
+        // documentation panel are a real popup (UI-ED-110) that never takes focus: the editor passes it the keys.
+        _completionContent.Children.AddRange([_completion, _completionDoc]);
+        _completionPopup = new Popup
+        {
+            PlacementTarget = this,
+            Placement = PlacementMode.AnchorAndGravity,
+            PlacementAnchor = Avalonia.Controls.Primitives.PopupPositioning.PopupAnchor.TopLeft,
+            PlacementGravity = Avalonia.Controls.Primitives.PopupPositioning.PopupGravity.BottomRight,
+            IsLightDismissEnabled = false,
+            Focusable = false,
+            Child = _completionContent,
+        };
+        Child = new Panel { Children = { _editor, _findPanel, _signatureHelp, _hover, _completionPopup } };
         _completion.PlacementRequested += (_, _) => PlaceCompletion();
+        _completionDoc.VisibilityChanged += (_, _) => PlaceCompletion();
+        _completion.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == IsVisibleProperty && !_completion.IsVisible)
+                _completionPopup.IsOpen = false;
+        };
         _signatureHelp.PlacementRequested += (_, _) => PlaceSignatureHelp();
         _hover.PlacementRequested += (_, _) => PlaceHover();
         area.LostFocus += (_, _) =>
@@ -182,6 +203,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             textView.Redraw();
         };
     }
+
+    /// <summary>The completion list (tests).</summary>
+    public CompletionListView CompletionList => _completion;
+
+    /// <summary>The completion popup's documentation side panel (tests).</summary>
+    public CompletionDocView CompletionDoc => _completionDoc;
 
     /// <summary>The hosted editor (tests and later editor tasks).</summary>
     public TextEditor Editor => _editor;
@@ -279,6 +306,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
 
         _completion.Session?.Close();
         _completion.Session = null; // IDE-ED-086: switching documents closes the popup
+        _completionDoc.Session = null;
         _signatureHelp.Session?.Close();
         _signatureHelp.Session = null;
         _hover.Session?.Close();
@@ -302,6 +330,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         ApplySelection(document);
         SetColorizer(document);
         _completion.Session = document.Completion;
+        _completionDoc.Session = document.Completion;
         _signatureHelp.Session = document.ParameterInfo;
         _hover.Session = document.Hover;
         SetDecorations(document);
@@ -995,11 +1024,32 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         if (textView.TranslatePoint(new Point(bottom.X, bottom.Y + 2), this) is not { } below
             || textView.TranslatePoint(new Point(top.X, top.Y - 2), this) is not { } above)
             return;
-        // UI-ED-111: below the caret line (gap 2); above it when the list does not fit below and does above. The list
-        // stays inside the editor view (an overlay; it cannot extend past the editor, see I-198).
+        // UI-ED-111: below the caret line (gap 2); above it when the popup does not fit below in the editor and does
+        // above. Otherwise it stays below and extends past the editor (UI-ED-110: a popup, not an overlay).
         var height = Math.Min(session.Items.Count, CompletionListView.VisibleRows) * CompletionListView.RowHeight + 2;
-        var y = below.Y + height > Bounds.Height && above.Y - height >= 0 ? above.Y - height : below.Y;
-        _completion.Margin = new Thickness(Math.Max(0, below.X), Math.Max(0, y), 0, 0);
+        var withDoc = _completionDoc.IsVisible;
+        var docHeight = Math.Max(CompletionDocView.MinPanelHeight, height);
+        _completionDoc.Height = docHeight; // UI-ED-117: as high as the list, min 110
+        var total = withDoc ? Math.Max(height, docHeight) : height;
+        var flip = below.Y + total > Bounds.Height && above.Y - total >= 0;
+        var y = flip ? above.Y - total : below.Y;
+        var alignment = flip ? Avalonia.Layout.VerticalAlignment.Bottom : Avalonia.Layout.VerticalAlignment.Top;
+        _completion.VerticalAlignment = _completionDoc.VerticalAlignment = alignment;
+
+        // UI-ED-117: the documentation panel right of the list, left of it when the window has no room on the right.
+        var x = Math.Max(0, below.X);
+        var docLeft = false;
+        if (withDoc && TopLevel.GetTopLevel(this) is { } window && this.TranslatePoint(new Point(x, 0), window) is { } inWindow)
+            docLeft = inWindow.X + _completion.Width + CompletionDocView.PanelWidth > window.Bounds.Width && inWindow.X - CompletionDocView.PanelWidth >= 0;
+        if (docLeft != (_completionContent.Children[0] == _completionDoc))
+        {
+            _completionContent.Children.Clear();
+            _completionContent.Children.AddRange(docLeft ? [_completionDoc, _completion] : [_completion, _completionDoc]);
+        }
+
+        _completionPopup.HorizontalOffset = docLeft ? x - CompletionDocView.PanelWidth : x;
+        _completionPopup.VerticalOffset = y;
+        _completionPopup.IsOpen = true;
     }
 
     /// <summary>
