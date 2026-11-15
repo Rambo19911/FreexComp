@@ -132,6 +132,26 @@ public sealed class IncludeFileSyntax : CompilationUnitSyntax
     public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitIncludeFile(this);
 }
 
+/// <summary>
+/// The root of a tree made by <c>SyntaxFactory.ParseNode&lt;T&gt;</c>: one fragment node (expression, statement, type,
+/// member or declaration) and the EndOfFileToken, which carries any surplus input as skipped trivia.
+/// </summary>
+public sealed class FragmentSyntax : CompilationUnitSyntax
+{
+    internal FragmentSyntax(SyntaxNode node, SyntaxToken endOfFileToken)
+        : base(SyntaxKind.Fragment)
+    {
+        Node = Add(node);
+        EndOfFileToken = Add(endOfFileToken);
+    }
+
+    public SyntaxNode Node { get; }
+
+    public SyntaxToken EndOfFileToken { get; }
+
+    public override TResult Accept<TResult>(SyntaxVisitor<TResult> visitor) => visitor.VisitFragment(this);
+}
+
 /// <summary><c>uses usedUnit { , usedUnit } ;</c></summary>
 public sealed class UsesClauseSyntax : SyntaxNode
 {

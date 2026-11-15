@@ -1,0 +1,338 @@
+enum FreexComp.LanguageService.ClassificationKind
+  AsmText = 12
+  Attribute = 30
+  CharLiteral = 5
+  ClassName = 16
+  Comment = 8
+  Constant = 21
+  ContextualKeyword = 1
+  DeprecatedSymbol = 31
+  Directive = 10
+  DisabledText = 11
+  DocComment = 9
+  EnumMember = 19
+  EnumName = 18
+  Field = 25
+  GlobalVariable = 22
+  Identifier = 2
+  InterfaceName = 17
+  Invalid = 13
+  Keyword = 0
+  Label = 29
+  LocalVariable = 23
+  Method = 28
+  NumberLiteral = 3
+  Operator = 6
+  Parameter = 24
+  Property = 26
+  Punctuation = 7
+  Routine = 27
+  StringLiteral = 4
+  TypeName = 15
+  TypeParameter = 20
+  UnitName = 14
+  UnresolvedIdentifier = 32
+readonly record struct FreexComp.LanguageService.ClassifiedSpan : System.IEquatable<FreexComp.LanguageService.ClassifiedSpan>
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public FreexComp.LanguageService.ClassificationKind Kind { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.ClassifiedSpan other)
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.TextSpan Span, out FreexComp.LanguageService.ClassificationKind Kind)
+  public ctor(FreexComp.Compiler.Text.TextSpan Span, FreexComp.LanguageService.ClassificationKind Kind)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.ClassifiedSpan left, FreexComp.LanguageService.ClassifiedSpan right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.ClassifiedSpan left, FreexComp.LanguageService.ClassifiedSpan right)
+static class FreexComp.LanguageService.Classifier
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.ClassifiedSpan> GetLexicalClassifications(System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.SyntaxToken> tokens, FreexComp.Compiler.Text.TextSpan range)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.ClassifiedSpan> GetSemanticClassifications(FreexComp.LanguageService.Document doc, FreexComp.Compiler.Text.TextSpan range, System.Threading.CancellationToken ct)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.ClassifiedSpan> GetSyntacticClassifications(FreexComp.Compiler.Syntax.SyntaxTree tree, FreexComp.Compiler.Text.TextSpan range)
+  public static System.String GetColorToken(FreexComp.LanguageService.ClassificationKind kind)
+sealed record FreexComp.LanguageService.CodeAction : System.IEquatable<FreexComp.LanguageService.CodeAction>
+  public FreexComp.LanguageService.CodeAction <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.CodeAction other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits { get; init; }
+  public System.String Id { get; init; }
+  public System.String Title { get; init; }
+  public System.Void Deconstruct(out System.String Id, out System.String Title, out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits)
+  public ctor(System.String Id, System.String Title, System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentEdit> Edits)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.CodeAction left, FreexComp.LanguageService.CodeAction right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.CodeAction left, FreexComp.LanguageService.CodeAction right)
+static class FreexComp.LanguageService.CodeActionService
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.CodeAction> GetCodeActions(FreexComp.LanguageService.Document doc, FreexComp.Compiler.Text.TextSpan range, System.Threading.CancellationToken ct)
+sealed record FreexComp.LanguageService.CompletionDescription : System.IEquatable<FreexComp.LanguageService.CompletionDescription>
+  public FreexComp.LanguageService.CompletionDescription <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.CompletionDescription other)
+  public System.String Documentation { get; init; }
+  public System.String Signature { get; init; }
+  public System.Void Deconstruct(out System.String Signature, out System.String Documentation)
+  public ctor(System.String Signature, System.String Documentation)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.CompletionDescription left, FreexComp.LanguageService.CompletionDescription right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.CompletionDescription left, FreexComp.LanguageService.CompletionDescription right)
+sealed record FreexComp.LanguageService.CompletionItem : System.IEquatable<FreexComp.LanguageService.CompletionItem>
+  public FreexComp.LanguageService.CompletionItem <Clone>$()
+  public FreexComp.LanguageService.CompletionItemKind Kind { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.CompletionItem other)
+  public System.Boolean IsDeprecated { get; init; }
+  public System.String Detail { get; init; }
+  public System.String InsertText { get; init; }
+  public System.String Label { get; init; }
+  public System.String SortText { get; init; }
+  public System.String SymbolId { get; init; }
+  public System.Void Deconstruct(out System.String Label, out FreexComp.LanguageService.CompletionItemKind Kind, out System.String InsertText, out System.String SortText, out System.String Detail, out System.Boolean IsDeprecated, out System.String SymbolId)
+  public ctor(System.String Label, FreexComp.LanguageService.CompletionItemKind Kind, System.String InsertText, System.String SortText, System.String Detail, System.Boolean IsDeprecated, System.String SymbolId)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.CompletionItem left, FreexComp.LanguageService.CompletionItem right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.CompletionItem left, FreexComp.LanguageService.CompletionItem right)
+enum FreexComp.LanguageService.CompletionItemKind
+  Class = 3
+  Constant = 7
+  Directive = 15
+  Enum = 5
+  EnumMember = 6
+  Field = 10
+  Interface = 4
+  Keyword = 0
+  Label = 16
+  Method = 12
+  Parameter = 9
+  Property = 11
+  Routine = 13
+  Snippet = 14
+  Type = 2
+  Unit = 1
+  Variable = 8
+sealed record FreexComp.LanguageService.CompletionList : System.IEquatable<FreexComp.LanguageService.CompletionList>
+  public FreexComp.Compiler.Text.TextSpan ReplacementSpan { get; init; }
+  public FreexComp.LanguageService.CompletionList <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.CompletionList other)
+  public System.Boolean IsIncomplete { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.CompletionItem> Items { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.TextSpan ReplacementSpan, out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.CompletionItem> Items, out System.Boolean IsIncomplete)
+  public ctor(FreexComp.Compiler.Text.TextSpan ReplacementSpan, System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.CompletionItem> Items, System.Boolean IsIncomplete)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.CompletionList left, FreexComp.LanguageService.CompletionList right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.CompletionList left, FreexComp.LanguageService.CompletionList right)
+static class FreexComp.LanguageService.CompletionService
+  public static FreexComp.LanguageService.CompletionDescription GetDescription(FreexComp.LanguageService.Document doc, FreexComp.LanguageService.CompletionItem item, System.Threading.CancellationToken ct)
+  public static FreexComp.LanguageService.CompletionList GetCompletions(FreexComp.LanguageService.Document doc, System.Int32 position, FreexComp.LanguageService.CompletionTrigger trigger, System.Threading.CancellationToken ct)
+readonly record struct FreexComp.LanguageService.CompletionTrigger : System.IEquatable<FreexComp.LanguageService.CompletionTrigger>
+  public FreexComp.LanguageService.CompletionTriggerKind Kind { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.CompletionTrigger other)
+  public System.Char Character { get; init; }
+  public System.Void Deconstruct(out FreexComp.LanguageService.CompletionTriggerKind Kind, out System.Char Character)
+  public ctor(FreexComp.LanguageService.CompletionTriggerKind Kind, System.Char Character)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.CompletionTrigger left, FreexComp.LanguageService.CompletionTrigger right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.CompletionTrigger left, FreexComp.LanguageService.CompletionTrigger right)
+enum FreexComp.LanguageService.CompletionTriggerKind
+  Character = 1
+  Invoked = 0
+static class FreexComp.LanguageService.DiagnosticService
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetSemanticDiagnostics(FreexComp.LanguageService.Document doc, System.Threading.CancellationToken ct)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetSyntaxDiagnostics(FreexComp.LanguageService.Document doc)
+sealed class FreexComp.LanguageService.Document
+  public FreexComp.Compiler.Binding.SemanticModel SemanticModel { get; }
+  public FreexComp.Compiler.Compilation Compilation { get; }
+  public FreexComp.Compiler.SourceText Text { get; }
+  public FreexComp.Compiler.Syntax.SyntaxTree SyntaxTree { get; }
+  public System.String Path { get; }
+sealed record FreexComp.LanguageService.DocumentEdit : System.IEquatable<FreexComp.LanguageService.DocumentEdit>
+  public FreexComp.LanguageService.DocumentEdit <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.DocumentEdit other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> Changes { get; init; }
+  public System.String Path { get; init; }
+  public System.Void Deconstruct(out System.String Path, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> Changes)
+  public ctor(System.String Path, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> Changes)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.DocumentEdit left, FreexComp.LanguageService.DocumentEdit right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.DocumentEdit left, FreexComp.LanguageService.DocumentEdit right)
+readonly record struct FreexComp.LanguageService.DocumentHighlight : System.IEquatable<FreexComp.LanguageService.DocumentHighlight>
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public FreexComp.LanguageService.ReferenceKind Kind { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.DocumentHighlight other)
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.TextSpan Span, out FreexComp.LanguageService.ReferenceKind Kind)
+  public ctor(FreexComp.Compiler.Text.TextSpan Span, FreexComp.LanguageService.ReferenceKind Kind)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.DocumentHighlight left, FreexComp.LanguageService.DocumentHighlight right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.DocumentHighlight left, FreexComp.LanguageService.DocumentHighlight right)
+sealed record FreexComp.LanguageService.DocumentSymbol : System.IEquatable<FreexComp.LanguageService.DocumentSymbol>
+  public FreexComp.Compiler.Text.TextSpan SelectionSpan { get; init; }
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public FreexComp.LanguageService.CompletionItemKind Kind { get; init; }
+  public FreexComp.LanguageService.DocumentSymbol <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.DocumentSymbol other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentSymbol> Children { get; init; }
+  public System.String Detail { get; init; }
+  public System.String Name { get; init; }
+  public System.Void Deconstruct(out System.String Name, out System.String Detail, out FreexComp.LanguageService.CompletionItemKind Kind, out FreexComp.Compiler.Text.TextSpan Span, out FreexComp.Compiler.Text.TextSpan SelectionSpan, out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentSymbol> Children)
+  public ctor(System.String Name, System.String Detail, FreexComp.LanguageService.CompletionItemKind Kind, FreexComp.Compiler.Text.TextSpan Span, FreexComp.Compiler.Text.TextSpan SelectionSpan, System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentSymbol> Children)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.DocumentSymbol left, FreexComp.LanguageService.DocumentSymbol right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.DocumentSymbol left, FreexComp.LanguageService.DocumentSymbol right)
+enum FreexComp.LanguageService.FoldingKind
+  Block = 5
+  Comment = 7
+  Declarations = 2
+  Disabled = 8
+  Region = 6
+  Routine = 4
+  Section = 0
+  Type = 3
+  Uses = 1
+readonly record struct FreexComp.LanguageService.FoldingRange : System.IEquatable<FreexComp.LanguageService.FoldingRange>
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public FreexComp.LanguageService.FoldingKind Kind { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.FoldingRange other)
+  public System.String CollapsedText { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.TextSpan Span, out FreexComp.LanguageService.FoldingKind Kind, out System.String CollapsedText)
+  public ctor(FreexComp.Compiler.Text.TextSpan Span, FreexComp.LanguageService.FoldingKind Kind, System.String CollapsedText)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.FoldingRange left, FreexComp.LanguageService.FoldingRange right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.FoldingRange left, FreexComp.LanguageService.FoldingRange right)
+static class FreexComp.LanguageService.FoldingService
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.FoldingRange> GetFoldingRanges(FreexComp.Compiler.Syntax.SyntaxTree tree)
+static class FreexComp.LanguageService.IndentationService
+  public static System.Int32 GetDesiredIndentation(FreexComp.Compiler.Syntax.SyntaxTree tree, System.Int32 lineNumber, System.Int32 indentSize)
+  public static System.Nullable<FreexComp.Compiler.Text.TextSpan> GetMatchingBracket(FreexComp.Compiler.Syntax.SyntaxTree tree, System.Int32 position)
+static class FreexComp.LanguageService.NavigationService
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Text.Location> GoToDefinition(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Text.Location> GoToImplementation(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentHighlight> GetDocumentHighlights(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentSymbol> GetDocumentSymbols(FreexComp.Compiler.Syntax.SyntaxTree tree)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.DocumentSymbol> GetDocumentSymbols(FreexComp.LanguageService.Document doc)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.ReferenceLocation> FindReferences(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.WorkspaceSymbol> FindSymbols(FreexComp.LanguageService.Workspace ws, System.String query, System.Int32 limit, System.Threading.CancellationToken ct)
+sealed record FreexComp.LanguageService.ParameterInfo : System.IEquatable<FreexComp.LanguageService.ParameterInfo>
+  public FreexComp.Compiler.Text.TextSpan LabelSpanInSignature { get; init; }
+  public FreexComp.LanguageService.ParameterInfo <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.ParameterInfo other)
+  public System.String Documentation { get; init; }
+  public System.String Label { get; init; }
+  public System.Void Deconstruct(out System.String Label, out FreexComp.Compiler.Text.TextSpan LabelSpanInSignature, out System.String Documentation)
+  public ctor(System.String Label, FreexComp.Compiler.Text.TextSpan LabelSpanInSignature, System.String Documentation)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.ParameterInfo left, FreexComp.LanguageService.ParameterInfo right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.ParameterInfo left, FreexComp.LanguageService.ParameterInfo right)
+sealed record FreexComp.LanguageService.QuickInfo : System.IEquatable<FreexComp.LanguageService.QuickInfo>
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public FreexComp.LanguageService.QuickInfo <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.QuickInfo other)
+  public System.String ConstantValue { get; init; }
+  public System.String DeclaredIn { get; init; }
+  public System.String Documentation { get; init; }
+  public System.String Signature { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.TextSpan Span, out System.String Signature, out System.String Documentation, out System.String DeclaredIn, out System.String ConstantValue)
+  public ctor(FreexComp.Compiler.Text.TextSpan Span, System.String Signature, System.String Documentation, System.String DeclaredIn, System.String ConstantValue)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.QuickInfo left, FreexComp.LanguageService.QuickInfo right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.QuickInfo left, FreexComp.LanguageService.QuickInfo right)
+static class FreexComp.LanguageService.QuickInfoService
+  public static FreexComp.LanguageService.QuickInfo GetQuickInfo(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
+enum FreexComp.LanguageService.ReferenceKind
+  Call = 3
+  Declaration = 0
+  Implementation = 5
+  Read = 1
+  TypeReference = 4
+  Write = 2
+readonly record struct FreexComp.LanguageService.ReferenceLocation : System.IEquatable<FreexComp.LanguageService.ReferenceLocation>
+  public FreexComp.Compiler.Text.Location Location { get; init; }
+  public FreexComp.LanguageService.ReferenceKind Kind { get; init; }
+  public System.Boolean Equals(FreexComp.LanguageService.ReferenceLocation other)
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.Location Location, out FreexComp.LanguageService.ReferenceKind Kind)
+  public ctor(FreexComp.Compiler.Text.Location Location, FreexComp.LanguageService.ReferenceKind Kind)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.ReferenceLocation left, FreexComp.LanguageService.ReferenceLocation right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.ReferenceLocation left, FreexComp.LanguageService.ReferenceLocation right)
+sealed record FreexComp.LanguageService.SignatureHelp : System.IEquatable<FreexComp.LanguageService.SignatureHelp>
+  public FreexComp.Compiler.Text.TextSpan ApplicableSpan { get; init; }
+  public FreexComp.LanguageService.SignatureHelp <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.SignatureHelp other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.SignatureInfo> Signatures { get; init; }
+  public System.Int32 ActiveParameter { get; init; }
+  public System.Int32 ActiveSignature { get; init; }
+  public System.Void Deconstruct(out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.SignatureInfo> Signatures, out System.Int32 ActiveSignature, out System.Int32 ActiveParameter, out FreexComp.Compiler.Text.TextSpan ApplicableSpan)
+  public ctor(System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.SignatureInfo> Signatures, System.Int32 ActiveSignature, System.Int32 ActiveParameter, FreexComp.Compiler.Text.TextSpan ApplicableSpan)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.SignatureHelp left, FreexComp.LanguageService.SignatureHelp right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.SignatureHelp left, FreexComp.LanguageService.SignatureHelp right)
+static class FreexComp.LanguageService.SignatureHelpService
+  public static FreexComp.LanguageService.SignatureHelp GetSignatureHelp(FreexComp.LanguageService.Document doc, System.Int32 position, System.Threading.CancellationToken ct)
+sealed record FreexComp.LanguageService.SignatureInfo : System.IEquatable<FreexComp.LanguageService.SignatureInfo>
+  public FreexComp.LanguageService.SignatureInfo <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.SignatureInfo other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.ParameterInfo> Parameters { get; init; }
+  public System.String Documentation { get; init; }
+  public System.String Label { get; init; }
+  public System.Void Deconstruct(out System.String Label, out System.String Documentation, out System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.ParameterInfo> Parameters)
+  public ctor(System.String Label, System.String Documentation, System.Collections.Immutable.ImmutableArray<FreexComp.LanguageService.ParameterInfo> Parameters)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.SignatureInfo left, FreexComp.LanguageService.SignatureInfo right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.SignatureInfo left, FreexComp.LanguageService.SignatureInfo right)
+sealed class FreexComp.LanguageService.Workspace
+  public FreexComp.Compiler.Compilation CurrentCompilation { get; }
+  public FreexComp.LanguageService.Document GetDocument(System.String path)
+  public System.Void CloseDocument(System.String path)
+  public System.Void NotifyFileChangedOnDisk(System.String path)
+  public System.Void OpenDocument(System.String path, System.String text)
+  public System.Void SetProject(FreexComp.Compiler.CompilationOptions options)
+  public System.Void UpdateDocument(System.String path, System.Collections.Generic.IReadOnlyList<FreexComp.Compiler.Syntax.TextChange> changes)
+  public System.Void UpdateDocument(System.String path, System.String text)
+  public ctor(FreexComp.Compiler.IFileSystem fs)
+  public event System.EventHandler<FreexComp.LanguageService.WorkspaceChangedEventArgs> Changed
+enum FreexComp.LanguageService.WorkspaceChangeKind
+  DocumentChanged = 2
+  DocumentClosed = 3
+  DocumentOpened = 1
+  FileChangedOnDisk = 4
+  ProjectChanged = 0
+sealed class FreexComp.LanguageService.WorkspaceChangedEventArgs : System.EventArgs
+  public FreexComp.Compiler.Compilation Compilation { get; }
+  public FreexComp.LanguageService.WorkspaceChangeKind Kind { get; }
+  public System.String Path { get; }
+  public ctor(FreexComp.LanguageService.WorkspaceChangeKind kind, System.String path, FreexComp.Compiler.Compilation compilation)
+sealed record FreexComp.LanguageService.WorkspaceSymbol : System.IEquatable<FreexComp.LanguageService.WorkspaceSymbol>
+  public FreexComp.Compiler.Text.Location Location { get; init; }
+  public FreexComp.LanguageService.CompletionItemKind Kind { get; init; }
+  public FreexComp.LanguageService.WorkspaceSymbol <Clone>$()
+  public System.Boolean Equals(FreexComp.LanguageService.WorkspaceSymbol other)
+  public System.String ContainerName { get; init; }
+  public System.String Name { get; init; }
+  public System.Void Deconstruct(out System.String Name, out System.String ContainerName, out FreexComp.LanguageService.CompletionItemKind Kind, out FreexComp.Compiler.Text.Location Location)
+  public ctor(System.String Name, System.String ContainerName, FreexComp.LanguageService.CompletionItemKind Kind, FreexComp.Compiler.Text.Location Location)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.LanguageService.WorkspaceSymbol left, FreexComp.LanguageService.WorkspaceSymbol right)
+  public static System.Boolean op_Inequality(FreexComp.LanguageService.WorkspaceSymbol left, FreexComp.LanguageService.WorkspaceSymbol right)

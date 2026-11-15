@@ -3,6 +3,7 @@
     <RootNamespace>FreexComp.Build.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Shared\PublicApiListing.cs" Link="Shared\PublicApiListing.cs" />
     <ProjectReference Include="..\..\src\FreexComp.Build\FreexComp.Build.csproj" />
     <ProjectReference Include="..\..\src\opc\opc.csproj" />
     <ProjectReference Include="..\..\src\pbuild\pbuild.csproj" />

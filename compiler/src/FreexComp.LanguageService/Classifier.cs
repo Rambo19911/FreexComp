@@ -82,9 +82,52 @@ public static class Classifier
             return [];
         }
 
-        ImmutableArray<SyntaxToken> tokens = [.. tree.Root.OwnTokens().Where(t => !t.IsMissing)];
-        return Classify(tokens, range, static (list, i) =>
+        return Classify(TokensAround(tree, range), range, static (list, i) =>
             list[i].ContextualKind != list[i].Kind && SyntaxFacts.IsContextualKeyword(list[i].ContextualKind));
+    }
+
+    /// <summary>
+    /// The tree's own, non-missing tokens from the last <c>end</c> keyword before <paramref name="range"/> (or the file start)
+    /// up to the first token starting at or after its end. <see cref="Classify"/> leaves an asm block at every <c>end</c>, so
+    /// starting there gives the state a scan from the file start would have (CMP-702: the cost follows the range, not the file).
+    /// </summary>
+    private static ImmutableArray<SyntaxToken> TokensAround(SyntaxTree tree, TextSpan range)
+    {
+        var file = tree.Text;
+        bool Usable(SyntaxToken t) => !t.IsMissing && SyntaxNode.IsOwn(t, file);
+
+        var first = tree.FindToken(range.Start);
+        var start = first;
+        for (var previous = first.GetPreviousToken(); previous.Kind != SyntaxKind.None; previous = previous.GetPreviousToken())
+        {
+            if (!Usable(previous))
+            {
+                continue;
+            }
+
+            start = previous;
+            if (previous.Kind == SyntaxKind.EndKeyword)
+            {
+                break;
+            }
+        }
+
+        var tokens = ImmutableArray.CreateBuilder<SyntaxToken>();
+        for (var token = start; token.Kind != SyntaxKind.None; token = token.GetNextToken())
+        {
+            if (!Usable(token))
+            {
+                continue;
+            }
+
+            tokens.Add(token);
+            if (token.FullSpan.Start >= range.End)
+            {
+                break;
+            }
+        }
+
+        return tokens.ToImmutable();
     }
 
     /// <summary>

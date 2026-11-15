@@ -23,6 +23,8 @@ public abstract class SyntaxVisitor<TResult>
 
     public virtual TResult VisitIncludeFile(IncludeFileSyntax node) => DefaultVisit(node);
 
+    public virtual TResult VisitFragment(FragmentSyntax node) => DefaultVisit(node);
+
     public virtual TResult VisitUsesClause(UsesClauseSyntax node) => DefaultVisit(node);
 
     public virtual TResult VisitUsedUnit(UsedUnitSyntax node) => DefaultVisit(node);

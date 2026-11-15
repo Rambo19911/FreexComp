@@ -1,0 +1,293 @@
+sealed class FreexComp.Build.BuildEngine : FreexComp.Build.IBuildEngine
+  public System.Threading.Tasks.Task<FreexComp.Build.BuildResult> RunAsync(FreexComp.Build.BuildRequest request, System.IProgress<FreexComp.Build.BuildEvent> progress, System.Threading.CancellationToken ct)
+  public ctor(FreexComp.Compiler.IFileSystem fs, FreexComp.Compiler.Toolchain.IProcessRunner processRunner = null)
+abstract record FreexComp.Build.BuildEvent : System.IEquatable<FreexComp.Build.BuildEvent>
+  protected ctor(FreexComp.Build.BuildEvent original)
+  protected ctor(System.DateTime TimestampUtc)
+  protected virtual System.Boolean PrintMembers(System.Text.StringBuilder builder)
+  protected virtual System.Type EqualityContract { get; }
+  public System.DateTime TimestampUtc { get; init; }
+  public System.Void Deconstruct(out System.DateTime TimestampUtc)
+  public abstract FreexComp.Build.BuildEvent <Clone>$()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.BuildEvent left, FreexComp.Build.BuildEvent right)
+  public static System.Boolean op_Inequality(FreexComp.Build.BuildEvent left, FreexComp.Build.BuildEvent right)
+  public virtual System.Boolean Equals(FreexComp.Build.BuildEvent other)
+sealed record FreexComp.Build.BuildEvent.CommandLine : FreexComp.Build.BuildEvent, System.IEquatable<FreexComp.Build.BuildEvent.CommandLine>, System.IEquatable<FreexComp.Build.BuildEvent>
+  protected override System.Boolean PrintMembers(System.Text.StringBuilder builder)
+  protected override System.Type EqualityContract { get; }
+  public System.Boolean Equals(FreexComp.Build.BuildEvent.CommandLine other)
+  public System.DateTime T { get; init; }
+  public System.String ProjectPath { get; init; }
+  public System.String Text { get; init; }
+  public System.Void Deconstruct(out System.DateTime T, out System.String ProjectPath, out System.String Text)
+  public ctor(System.DateTime T, System.String ProjectPath, System.String Text)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public sealed override System.Boolean Equals(FreexComp.Build.BuildEvent other)
+  public static System.Boolean op_Equality(FreexComp.Build.BuildEvent.CommandLine left, FreexComp.Build.BuildEvent.CommandLine right)
+  public static System.Boolean op_Inequality(FreexComp.Build.BuildEvent.CommandLine left, FreexComp.Build.BuildEvent.CommandLine right)
+  public virtual FreexComp.Build.BuildEvent.CommandLine <Clone>$()
+sealed record FreexComp.Build.BuildEvent.Diagnostic : FreexComp.Build.BuildEvent, System.IEquatable<FreexComp.Build.BuildEvent.Diagnostic>, System.IEquatable<FreexComp.Build.BuildEvent>
+  protected override System.Boolean PrintMembers(System.Text.StringBuilder builder)
+  protected override System.Type EqualityContract { get; }
+  public FreexComp.Compiler.Diagnostic Value { get; init; }
+  public System.Boolean Equals(FreexComp.Build.BuildEvent.Diagnostic other)
+  public System.DateTime T { get; init; }
+  public System.String ProjectPath { get; init; }
+  public System.Void Deconstruct(out System.DateTime T, out System.String ProjectPath, out FreexComp.Compiler.Diagnostic Value)
+  public ctor(System.DateTime T, System.String ProjectPath, FreexComp.Compiler.Diagnostic Value)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public sealed override System.Boolean Equals(FreexComp.Build.BuildEvent other)
+  public static System.Boolean op_Equality(FreexComp.Build.BuildEvent.Diagnostic left, FreexComp.Build.BuildEvent.Diagnostic right)
+  public static System.Boolean op_Inequality(FreexComp.Build.BuildEvent.Diagnostic left, FreexComp.Build.BuildEvent.Diagnostic right)
+  public virtual FreexComp.Build.BuildEvent.Diagnostic <Clone>$()
+sealed record FreexComp.Build.BuildEvent.Finished : FreexComp.Build.BuildEvent, System.IEquatable<FreexComp.Build.BuildEvent.Finished>, System.IEquatable<FreexComp.Build.BuildEvent>
+  protected override System.Boolean PrintMembers(System.Text.StringBuilder builder)
+  protected override System.Type EqualityContract { get; }
+  public System.Boolean Equals(FreexComp.Build.BuildEvent.Finished other)
+  public System.Boolean Success { get; init; }
+  public System.Boolean UpToDate { get; init; }
+  public System.DateTime T { get; init; }
+  public System.Int32 Errors { get; init; }
+  public System.Int32 Hints { get; init; }
+  public System.Int32 Warnings { get; init; }
+  public System.String ProjectPath { get; init; }
+  public System.TimeSpan Elapsed { get; init; }
+  public System.Void Deconstruct(out System.DateTime T, out System.String ProjectPath, out System.Boolean Success, out System.Boolean UpToDate, out System.Int32 Errors, out System.Int32 Warnings, out System.Int32 Hints, out System.TimeSpan Elapsed)
+  public ctor(System.DateTime T, System.String ProjectPath, System.Boolean Success, System.Boolean UpToDate, System.Int32 Errors, System.Int32 Warnings, System.Int32 Hints, System.TimeSpan Elapsed)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public sealed override System.Boolean Equals(FreexComp.Build.BuildEvent other)
+  public static System.Boolean op_Equality(FreexComp.Build.BuildEvent.Finished left, FreexComp.Build.BuildEvent.Finished right)
+  public static System.Boolean op_Inequality(FreexComp.Build.BuildEvent.Finished left, FreexComp.Build.BuildEvent.Finished right)
+  public virtual FreexComp.Build.BuildEvent.Finished <Clone>$()
+sealed record FreexComp.Build.BuildEvent.OutputLine : FreexComp.Build.BuildEvent, System.IEquatable<FreexComp.Build.BuildEvent.OutputLine>, System.IEquatable<FreexComp.Build.BuildEvent>
+  protected override System.Boolean PrintMembers(System.Text.StringBuilder builder)
+  protected override System.Type EqualityContract { get; }
+  public FreexComp.Build.OutputSource Source { get; init; }
+  public System.Boolean Equals(FreexComp.Build.BuildEvent.OutputLine other)
+  public System.DateTime T { get; init; }
+  public System.String ProjectPath { get; init; }
+  public System.String Text { get; init; }
+  public System.Void Deconstruct(out System.DateTime T, out System.String ProjectPath, out FreexComp.Build.OutputSource Source, out System.String Text)
+  public ctor(System.DateTime T, System.String ProjectPath, FreexComp.Build.OutputSource Source, System.String Text)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public sealed override System.Boolean Equals(FreexComp.Build.BuildEvent other)
+  public static System.Boolean op_Equality(FreexComp.Build.BuildEvent.OutputLine left, FreexComp.Build.BuildEvent.OutputLine right)
+  public static System.Boolean op_Inequality(FreexComp.Build.BuildEvent.OutputLine left, FreexComp.Build.BuildEvent.OutputLine right)
+  public virtual FreexComp.Build.BuildEvent.OutputLine <Clone>$()
+sealed record FreexComp.Build.BuildEvent.Started : FreexComp.Build.BuildEvent, System.IEquatable<FreexComp.Build.BuildEvent.Started>, System.IEquatable<FreexComp.Build.BuildEvent>
+  protected override System.Boolean PrintMembers(System.Text.StringBuilder builder)
+  protected override System.Type EqualityContract { get; }
+  public FreexComp.Build.BuildTarget Target { get; init; }
+  public System.Boolean Equals(FreexComp.Build.BuildEvent.Started other)
+  public System.DateTime T { get; init; }
+  public System.String Configuration { get; init; }
+  public System.String Platform { get; init; }
+  public System.String ProjectPath { get; init; }
+  public System.Void Deconstruct(out System.DateTime T, out System.String ProjectPath, out System.String Configuration, out System.String Platform, out FreexComp.Build.BuildTarget Target)
+  public ctor(System.DateTime T, System.String ProjectPath, System.String Configuration, System.String Platform, FreexComp.Build.BuildTarget Target)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public sealed override System.Boolean Equals(FreexComp.Build.BuildEvent other)
+  public static System.Boolean op_Equality(FreexComp.Build.BuildEvent.Started left, FreexComp.Build.BuildEvent.Started right)
+  public static System.Boolean op_Inequality(FreexComp.Build.BuildEvent.Started left, FreexComp.Build.BuildEvent.Started right)
+  public virtual FreexComp.Build.BuildEvent.Started <Clone>$()
+sealed record FreexComp.Build.BuildRequest : System.IEquatable<FreexComp.Build.BuildRequest>
+  public FreexComp.Build.BuildRequest <Clone>$()
+  public FreexComp.Build.BuildTarget Target { get; init; }
+  public System.Boolean Equals(FreexComp.Build.BuildRequest other)
+  public System.Boolean RedirectRunOutput { get; init; }
+  public System.Boolean Verbose { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.SourceText> OpenFiles { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> ExtraSearchPaths { get; init; }
+  public System.String Configuration { get; init; }
+  public System.String Platform { get; init; }
+  public System.String ProjectInGroup { get; init; }
+  public System.String ProjectPath { get; init; }
+  public System.String RtlDirectory { get; init; }
+  public System.String RunArguments { get; init; }
+  public System.String ToolchainDirectory { get; init; }
+  public ctor()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.BuildRequest left, FreexComp.Build.BuildRequest right)
+  public static System.Boolean op_Inequality(FreexComp.Build.BuildRequest left, FreexComp.Build.BuildRequest right)
+sealed record FreexComp.Build.BuildResult : System.IEquatable<FreexComp.Build.BuildResult>
+  public FreexComp.Build.BuildResult <Clone>$()
+  public System.Boolean Canceled { get; init; }
+  public System.Boolean Equals(FreexComp.Build.BuildResult other)
+  public System.Boolean Success { get; init; }
+  public System.Boolean UpToDate { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Build.ProjectBuildResult> Projects { get; init; }
+  public System.Int32 Errors { get; init; }
+  public System.Int32 Hints { get; init; }
+  public System.Int32 Warnings { get; init; }
+  public System.Nullable<System.Int32> RunExitCode { get; init; }
+  public System.String OutputPath { get; }
+  public System.TimeSpan Elapsed { get; init; }
+  public System.Void Deconstruct(out System.Boolean Success, out System.Boolean Canceled, out System.Int32 Errors, out System.Int32 Warnings, out System.Int32 Hints, out System.Collections.Immutable.ImmutableArray<FreexComp.Build.ProjectBuildResult> Projects, out System.Nullable<System.Int32> RunExitCode, out System.TimeSpan Elapsed)
+  public ctor(System.Boolean Success, System.Boolean Canceled, System.Int32 Errors, System.Int32 Warnings, System.Int32 Hints, System.Collections.Immutable.ImmutableArray<FreexComp.Build.ProjectBuildResult> Projects, System.Nullable<System.Int32> RunExitCode, System.TimeSpan Elapsed)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.BuildResult left, FreexComp.Build.BuildResult right)
+  public static System.Boolean op_Inequality(FreexComp.Build.BuildResult left, FreexComp.Build.BuildResult right)
+enum FreexComp.Build.BuildTarget
+  Build = 0
+  Clean = 2
+  Rebuild = 1
+  Run = 3
+interface FreexComp.Build.IBuildEngine
+  public System.Threading.Tasks.Task<FreexComp.Build.BuildResult> RunAsync(FreexComp.Build.BuildRequest request, System.IProgress<FreexComp.Build.BuildEvent> progress, System.Threading.CancellationToken ct)
+sealed record FreexComp.Build.LoadResult<T> : System.IEquatable<FreexComp.Build.LoadResult<T>>
+  public FreexComp.Build.LoadResult<T> <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.LoadResult<T> other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics { get; init; }
+  public System.Void Deconstruct(out T Value, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics)
+  public T Value { get; init; }
+  public ctor(T Value, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.LoadResult<T> left, FreexComp.Build.LoadResult<T> right)
+  public static System.Boolean op_Inequality(FreexComp.Build.LoadResult<T> left, FreexComp.Build.LoadResult<T> right)
+enum FreexComp.Build.OutputSource
+  Info = 3
+  ProgramStdErr = 2
+  ProgramStdOut = 1
+  Tool = 0
+sealed record FreexComp.Build.Project : System.IEquatable<FreexComp.Build.Project>
+  public FreexComp.Build.Project <Clone>$()
+  public FreexComp.Build.ProjectEvents Events { get; init; }
+  public FreexComp.Build.RunSettings Run { get; init; }
+  public System.Boolean Equals(FreexComp.Build.Project other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Build.ProjectFile> Files { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> ConfigurationNames { get; }
+  public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> Dependencies { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> Platforms { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> UnitScopeNames { get; init; }
+  public System.Collections.Immutable.ImmutableDictionary<System.String, FreexComp.Build.ProjectConfiguration> Configurations { get; init; }
+  public System.Int32 FormatVersion { get; init; }
+  public System.String ActiveConfiguration { get; init; }
+  public System.String AppType { get; init; }
+  public System.String Directory { get; }
+  public System.String FilePath { get; init; }
+  public System.String Language { get; init; }
+  public System.String MainSource { get; init; }
+  public System.String Manifest { get; init; }
+  public System.String Name { get; init; }
+  public System.String Rtti { get; init; }
+  public ctor()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.Project left, FreexComp.Build.Project right)
+  public static System.Boolean op_Inequality(FreexComp.Build.Project left, FreexComp.Build.Project right)
+sealed record FreexComp.Build.ProjectBuildResult : System.IEquatable<FreexComp.Build.ProjectBuildResult>
+  public FreexComp.Build.ProjectBuildResult <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.ProjectBuildResult other)
+  public System.Boolean Success { get; init; }
+  public System.Boolean UpToDate { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics { get; init; }
+  public System.String Configuration { get; init; }
+  public System.String OutputPath { get; init; }
+  public System.String ProjectPath { get; init; }
+  public System.Void Deconstruct(out System.String ProjectPath, out System.String Configuration, out System.Boolean Success, out System.Boolean UpToDate, out System.String OutputPath, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics)
+  public ctor(System.String ProjectPath, System.String Configuration, System.Boolean Success, System.Boolean UpToDate, System.String OutputPath, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.ProjectBuildResult left, FreexComp.Build.ProjectBuildResult right)
+  public static System.Boolean op_Inequality(FreexComp.Build.ProjectBuildResult left, FreexComp.Build.ProjectBuildResult right)
+sealed record FreexComp.Build.ProjectConfiguration : System.IEquatable<FreexComp.Build.ProjectConfiguration>
+  public FreexComp.Build.ProjectConfiguration <Clone>$()
+  public System.Boolean DebugInfo { get; init; }
+  public System.Boolean Equals(FreexComp.Build.ProjectConfiguration other)
+  public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
+  public System.Int32 Optimization { get; init; }
+  public System.String OutputDir { get; init; }
+  public System.String Rtti { get; init; }
+  public System.Void Deconstruct(out System.Int32 Optimization, out System.Boolean DebugInfo, out System.Collections.Immutable.ImmutableArray<System.String> Defines, out System.String OutputDir, out System.String Rtti)
+  public ctor(System.Int32 Optimization, System.Boolean DebugInfo, System.Collections.Immutable.ImmutableArray<System.String> Defines, System.String OutputDir, System.String Rtti = null)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.ProjectConfiguration left, FreexComp.Build.ProjectConfiguration right)
+  public static System.Boolean op_Inequality(FreexComp.Build.ProjectConfiguration left, FreexComp.Build.ProjectConfiguration right)
+sealed record FreexComp.Build.ProjectEvents : System.IEquatable<FreexComp.Build.ProjectEvents>
+  public FreexComp.Build.ProjectEvents <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.ProjectEvents other)
+  public System.Collections.Immutable.ImmutableArray<System.String> PostBuild { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> PreBuild { get; init; }
+  public System.Void Deconstruct(out System.Collections.Immutable.ImmutableArray<System.String> PreBuild, out System.Collections.Immutable.ImmutableArray<System.String> PostBuild)
+  public ctor(System.Collections.Immutable.ImmutableArray<System.String> PreBuild, System.Collections.Immutable.ImmutableArray<System.String> PostBuild)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.ProjectEvents left, FreexComp.Build.ProjectEvents right)
+  public static System.Boolean op_Inequality(FreexComp.Build.ProjectEvents left, FreexComp.Build.ProjectEvents right)
+sealed record FreexComp.Build.ProjectFile : System.IEquatable<FreexComp.Build.ProjectFile>
+  public FreexComp.Build.ProjectFile <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.ProjectFile other)
+  public System.String EffectiveKind { get; }
+  public System.String Form { get; init; }
+  public System.String Kind { get; init; }
+  public System.String Path { get; init; }
+  public System.Void Deconstruct(out System.String Path, out System.String Form, out System.String Kind)
+  public ctor(System.String Path, System.String Form, System.String Kind)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.ProjectFile left, FreexComp.Build.ProjectFile right)
+  public static System.Boolean op_Inequality(FreexComp.Build.ProjectFile left, FreexComp.Build.ProjectFile right)
+sealed record FreexComp.Build.ProjectGroup : System.IEquatable<FreexComp.Build.ProjectGroup>
+  public FreexComp.Build.ProjectGroup <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.ProjectGroup other)
+  public System.Collections.Immutable.ImmutableArray<System.String> Projects { get; init; }
+  public System.Int32 FormatVersion { get; init; }
+  public System.String ActiveProject { get; init; }
+  public System.String FilePath { get; init; }
+  public System.Void Deconstruct(out System.Int32 FormatVersion, out System.Collections.Immutable.ImmutableArray<System.String> Projects, out System.String ActiveProject, out System.String FilePath)
+  public ctor(System.Int32 FormatVersion, System.Collections.Immutable.ImmutableArray<System.String> Projects, System.String ActiveProject, System.String FilePath)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.ProjectGroup left, FreexComp.Build.ProjectGroup right)
+  public static System.Boolean op_Inequality(FreexComp.Build.ProjectGroup left, FreexComp.Build.ProjectGroup right)
+static class FreexComp.Build.ProjectOptions
+  public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration)
+  public static System.String GetOutputPath(FreexComp.Build.Project project, System.String configuration)
+static class FreexComp.Build.ProjectSerializer
+  public const System.Int32 SupportedFormatVersion = 1
+  public static FreexComp.Build.LoadResult<FreexComp.Build.Project> LoadProject(System.String path, FreexComp.Compiler.IFileSystem fs)
+  public static FreexComp.Build.LoadResult<FreexComp.Build.Project> ParseProject(System.String path, System.String text)
+  public static FreexComp.Build.LoadResult<FreexComp.Build.ProjectGroup> LoadGroup(System.String path, FreexComp.Compiler.IFileSystem fs)
+  public static FreexComp.Build.Project CreateDefault(System.String name, System.String mainSource, System.String appType)
+  public static System.String Save(FreexComp.Build.Project project)
+  public static System.String Save(FreexComp.Build.ProjectGroup group)
+sealed record FreexComp.Build.RunSettings : System.IEquatable<FreexComp.Build.RunSettings>
+  public FreexComp.Build.RunSettings <Clone>$()
+  public System.Boolean Equals(FreexComp.Build.RunSettings other)
+  public System.String Arguments { get; init; }
+  public System.String WorkingDir { get; init; }
+  public System.Void Deconstruct(out System.String Arguments, out System.String WorkingDir)
+  public ctor(System.String Arguments, System.String WorkingDir)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Build.RunSettings left, FreexComp.Build.RunSettings right)
+  public static System.Boolean op_Inequality(FreexComp.Build.RunSettings left, FreexComp.Build.RunSettings right)

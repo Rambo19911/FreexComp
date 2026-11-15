@@ -53,6 +53,70 @@ internal sealed class Parser
         return ParseProgram();
     }
 
+    /// <summary>
+    /// A fragment for <c>SyntaxFactory.ParseNode&lt;T&gt;</c> (api.md §4.1): the production chosen by
+    /// <paramref name="category"/>, then the end of the text; surplus input is skipped with one E1100 on its first token.
+    /// </summary>
+    public FragmentSyntax ParseFragment(Type category)
+    {
+        SyntaxNode node;
+        if (category.IsAssignableTo(typeof(ExpressionSyntax)))
+        {
+            node = ParseExpression();
+        }
+        else if (category.IsAssignableTo(typeof(StatementSyntax)))
+        {
+            node = ParseStatement();
+        }
+        else if (category.IsAssignableTo(typeof(TypeSyntax)))
+        {
+            node = ParseType();
+        }
+        else if (category.IsAssignableTo(typeof(MemberDeclarationSyntax)))
+        {
+            var attributes = CurrentKind == SyntaxKind.OpenBracketToken ? ParseAttributeLists() : default;
+            node = ParseMember(attributes) ?? ParseFieldDeclaration(attributes);
+        }
+        else if (category == typeof(RoutineDeclarationSyntax))
+        {
+            node = ParseRoutineDeclaration(hasBody: true, CurrentKind == SyntaxKind.OpenBracketToken ? ParseAttributeLists() : default);
+        }
+        else if (category == typeof(TypeDeclarationSyntax))
+        {
+            node = ParseTypeDeclaration();
+        }
+        else if (category == typeof(VarDeclarationSyntax))
+        {
+            node = ParseVarDeclaration();
+        }
+        else if (category == typeof(ConstDeclarationSyntax))
+        {
+            node = ParseConstDeclaration();
+        }
+        else if (category == typeof(UsesClauseSyntax))
+        {
+            node = CurrentKind == SyntaxKind.UsesKeyword
+                ? ParseUsesClause()
+                : new UsesClauseSyntax(Expect(SyntaxKind.UsesKeyword), ParseSeparated(ParseUsedUnit, SyntaxKind.CommaToken),
+                    Expect(SyntaxKind.SemicolonToken));
+        }
+        else
+        {
+            throw new ArgumentException($"'{category.Name}' is not a fragment that ParseNode can parse.", nameof(category));
+        }
+
+        if (CurrentKind != SyntaxKind.EndOfFileToken)
+        {
+            ReportAt(Current, "E1100", Current.Text);
+            while (CurrentKind != SyntaxKind.EndOfFileToken)
+            {
+                SkipToken(report: false);
+            }
+        }
+
+        return new FragmentSyntax(node, Take());
+    }
+
     private ProgramSyntax ParseProgram()
     {
         SyntaxToken? keyword = null;

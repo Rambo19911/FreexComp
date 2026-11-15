@@ -1,0 +1,1964 @@
+static class FreexComp.Compiler.AbiInfo
+  public const System.Int32 Version = 1
+enum FreexComp.Compiler.AppType
+  Console = 0
+  Gui = 1
+enum FreexComp.Compiler.Binding.CandidateReason
+  Ambiguous = 2
+  Inaccessible = 3
+  None = 0
+  NotAType = 6
+  NotAValue = 5
+  NotFound = 1
+  OverloadResolutionFailure = 4
+readonly record struct FreexComp.Compiler.Binding.Conversion : System.IEquatable<FreexComp.Compiler.Binding.Conversion>
+  public FreexComp.Compiler.Binding.ConversionKind Kind { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Binding.Conversion other)
+  public System.Boolean Exists { get; init; }
+  public System.Boolean IsImplicit { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Binding.ConversionKind Kind, out System.Boolean IsImplicit, out System.Boolean Exists)
+  public ctor(FreexComp.Compiler.Binding.ConversionKind Kind, System.Boolean IsImplicit, System.Boolean Exists)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Binding.Conversion left, FreexComp.Compiler.Binding.Conversion right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Binding.Conversion left, FreexComp.Compiler.Binding.Conversion right)
+enum FreexComp.Compiler.Binding.ConversionKind
+  ArrayConstructor = 9
+  Explicit = 6
+  Identity = 1
+  ImplicitNumeric = 2
+  ImplicitReference = 4
+  ImplicitString = 3
+  ImplicitUserDefined = 5
+  MethodGroup = 7
+  NilLiteral = 8
+  None = 0
+sealed class FreexComp.Compiler.Binding.SemanticModel
+  public FreexComp.Compiler.Binding.SymbolInfo GetSymbolInfo(FreexComp.Compiler.Syntax.SyntaxNode node, System.Threading.CancellationToken ct = default)
+  public FreexComp.Compiler.Binding.TypeInfo GetTypeInfo(FreexComp.Compiler.Syntax.SyntaxNode expression, System.Threading.CancellationToken ct = default)
+  public FreexComp.Compiler.Compilation Compilation { get; }
+  public FreexComp.Compiler.Symbols.Symbol GetDeclaredSymbol(FreexComp.Compiler.Syntax.SyntaxNode declaration, System.Threading.CancellationToken ct = default)
+  public FreexComp.Compiler.Symbols.Symbol GetDeclaredSymbol(FreexComp.Compiler.Syntax.SyntaxToken identifier, System.Threading.CancellationToken ct = default)
+  public FreexComp.Compiler.Symbols.Symbol GetEnclosingSymbol(System.Int32 position)
+  public FreexComp.Compiler.Symbols.UnitSymbol Unit { get; }
+  public FreexComp.Compiler.Syntax.DirectiveState GetDirectiveState(System.Int32 position)
+  public FreexComp.Compiler.Syntax.SyntaxTree SyntaxTree { get; }
+  public FreexComp.Compiler.Types.ConstantValue GetConstantValue(FreexComp.Compiler.Syntax.SyntaxNode expression, System.Threading.CancellationToken ct = default)
+  public System.Boolean IsAccessible(System.Int32 position, FreexComp.Compiler.Symbols.Symbol symbol)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetDiagnostics(System.Nullable<FreexComp.Compiler.Text.TextSpan> span = null, System.Threading.CancellationToken ct = default)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.RoutineSymbol> GetOverloadCandidates(FreexComp.Compiler.Syntax.InvocationExpressionSyntax call)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> LookupSymbols(System.Int32 position, System.String name = null, FreexComp.Compiler.Types.TypeSymbol container = null)
+readonly record struct FreexComp.Compiler.Binding.SymbolInfo : System.IEquatable<FreexComp.Compiler.Binding.SymbolInfo>
+  public FreexComp.Compiler.Binding.CandidateReason Reason { get; init; }
+  public FreexComp.Compiler.Symbols.Symbol Symbol { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Binding.SymbolInfo other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> CandidateSymbols { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Symbols.Symbol Symbol, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> CandidateSymbols, out FreexComp.Compiler.Binding.CandidateReason Reason)
+  public ctor(FreexComp.Compiler.Symbols.Symbol Symbol, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> CandidateSymbols, FreexComp.Compiler.Binding.CandidateReason Reason)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Binding.SymbolInfo left, FreexComp.Compiler.Binding.SymbolInfo right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Binding.SymbolInfo left, FreexComp.Compiler.Binding.SymbolInfo right)
+readonly record struct FreexComp.Compiler.Binding.TypeInfo : System.IEquatable<FreexComp.Compiler.Binding.TypeInfo>
+  public FreexComp.Compiler.Binding.Conversion Conversion { get; init; }
+  public FreexComp.Compiler.Types.TypeSymbol ConvertedType { get; init; }
+  public FreexComp.Compiler.Types.TypeSymbol Type { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Binding.TypeInfo other)
+  public System.Void Deconstruct(out FreexComp.Compiler.Types.TypeSymbol Type, out FreexComp.Compiler.Types.TypeSymbol ConvertedType, out FreexComp.Compiler.Binding.Conversion Conversion)
+  public ctor(FreexComp.Compiler.Types.TypeSymbol Type, FreexComp.Compiler.Types.TypeSymbol ConvertedType, FreexComp.Compiler.Binding.Conversion Conversion)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Binding.TypeInfo left, FreexComp.Compiler.Binding.TypeInfo right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Binding.TypeInfo left, FreexComp.Compiler.Binding.TypeInfo right)
+sealed class FreexComp.Compiler.Compilation
+  public FreexComp.Compiler.Binding.SemanticModel GetSemanticModel(System.String path)
+  public FreexComp.Compiler.Compilation WithFileChangedOnDisk(System.String path)
+  public FreexComp.Compiler.Compilation WithOptions(FreexComp.Compiler.CompilationOptions options)
+  public FreexComp.Compiler.Compilation WithSourceText(FreexComp.Compiler.SourceText text)
+  public FreexComp.Compiler.Compilation WithoutSourceText(System.String path)
+  public FreexComp.Compiler.CompilationOptions Options { get; }
+  public FreexComp.Compiler.EmitResult Emit(FreexComp.Compiler.EmitOptions options, System.Threading.CancellationToken ct)
+  public FreexComp.Compiler.IFileSystem FileSystem { get; }
+  public FreexComp.Compiler.Syntax.SyntaxTree GetSyntaxTree(System.String path)
+  public System.Boolean TryGetSyntaxTree(System.String path, out FreexComp.Compiler.Syntax.SyntaxTree tree)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetDiagnostics(System.String path = null, System.Threading.CancellationToken ct = default)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetSyntaxDiagnostics(System.String path)
+  public static FreexComp.Compiler.Compilation Create(FreexComp.Compiler.CompilationOptions options, System.Collections.Generic.IEnumerable<FreexComp.Compiler.SourceText> openFiles, FreexComp.Compiler.IFileSystem fs)
+sealed record FreexComp.Compiler.CompilationOptions : System.IEquatable<FreexComp.Compiler.CompilationOptions>
+  public FreexComp.Compiler.AppType AppType { get; init; }
+  public FreexComp.Compiler.CompilationOptions <Clone>$()
+  public FreexComp.Compiler.DebugFormat DebugFormat { get; init; }
+  public FreexComp.Compiler.OptimizationLevel Optimization { get; init; }
+  public System.Boolean Assertions { get; init; }
+  public System.Boolean DebugInfo { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.CompilationOptions other)
+  public System.Boolean OverflowChecks { get; init; }
+  public System.Boolean RangeChecks { get; init; }
+  public System.Boolean UsePcuCache { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> UnitScopeNames { get; init; }
+  public System.Int32 MaxParallelism { get; init; }
+  public System.String MainFile { get; init; }
+  public System.String Manifest { get; init; }
+  public System.String ObjectDirectory { get; init; }
+  public System.String RtlDirectory { get; init; }
+  public System.String Rtti { get; init; }
+  public System.String ToolchainDirectory { get; init; }
+  public ctor()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.CompilationOptions left, FreexComp.Compiler.CompilationOptions right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.CompilationOptions left, FreexComp.Compiler.CompilationOptions right)
+static class FreexComp.Compiler.CompilerInfo
+  public const System.String LlvmPin = "23.1.5"
+  public const System.String Version = "0.1.0"
+enum FreexComp.Compiler.DebugFormat
+  CodeView = 0
+  Dwarf = 1
+sealed record FreexComp.Compiler.Diagnostic : System.IEquatable<FreexComp.Compiler.Diagnostic>
+  public FreexComp.Compiler.Diagnostic <Clone>$()
+  public FreexComp.Compiler.DiagnosticSeverity Severity { get; init; }
+  public FreexComp.Compiler.Text.Location Location { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Diagnostic other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.RelatedLocation> Related { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.Object> Arguments { get; init; }
+  public System.String Code { get; init; }
+  public System.String Message { get; init; }
+  public System.String ToJson()
+  public System.String ToText()
+  public System.Void Deconstruct(out System.String Code, out FreexComp.Compiler.DiagnosticSeverity Severity, out System.String Message, out FreexComp.Compiler.Text.Location Location, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.RelatedLocation> Related)
+  public ctor(System.String Code, FreexComp.Compiler.DiagnosticSeverity Severity, System.String Message, FreexComp.Compiler.Text.Location Location, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.RelatedLocation> Related)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.Compiler.Diagnostic Create(System.String code, FreexComp.Compiler.Text.Location location, params System.Object[] args)
+  public static System.Boolean op_Equality(FreexComp.Compiler.Diagnostic left, FreexComp.Compiler.Diagnostic right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Diagnostic left, FreexComp.Compiler.Diagnostic right)
+static class FreexComp.Compiler.DiagnosticCatalog
+  public static FreexComp.Compiler.DiagnosticDescriptor Get(System.String code)
+  public static System.Collections.Generic.IReadOnlyList<FreexComp.Compiler.DiagnosticDescriptor> All { get; }
+sealed record FreexComp.Compiler.DiagnosticDescriptor : System.IEquatable<FreexComp.Compiler.DiagnosticDescriptor>
+  public FreexComp.Compiler.DiagnosticDescriptor <Clone>$()
+  public FreexComp.Compiler.DiagnosticSeverity DefaultSeverity { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.DiagnosticDescriptor other)
+  public System.String Code { get; init; }
+  public System.String Format(params System.Object[] args)
+  public System.String Name { get; init; }
+  public System.String Template { get; init; }
+  public System.Void Deconstruct(out System.String Code, out System.String Name, out FreexComp.Compiler.DiagnosticSeverity DefaultSeverity, out System.String Template)
+  public ctor(System.String Code, System.String Name, FreexComp.Compiler.DiagnosticSeverity DefaultSeverity, System.String Template)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.DiagnosticDescriptor left, FreexComp.Compiler.DiagnosticDescriptor right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.DiagnosticDescriptor left, FreexComp.Compiler.DiagnosticDescriptor right)
+enum FreexComp.Compiler.DiagnosticSeverity
+  Error = 2
+  Hint = 0
+  Warning = 1
+sealed record FreexComp.Compiler.EmitOptions : System.IEquatable<FreexComp.Compiler.EmitOptions>
+  public FreexComp.Compiler.EmitOptions <Clone>$()
+  public FreexComp.Compiler.EmitStage Stage { get; init; }
+  public System.Action<System.String> CommandLineSink { get; init; }
+  public System.Action<System.String> ToolOutputSink { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.EmitOptions other)
+  public System.Boolean ForceRebuild { get; init; }
+  public System.Boolean Verbose { get; init; }
+  public System.String OutputPath { get; init; }
+  public ctor()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.EmitOptions left, FreexComp.Compiler.EmitOptions right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.EmitOptions left, FreexComp.Compiler.EmitOptions right)
+sealed record FreexComp.Compiler.EmitResult : System.IEquatable<FreexComp.Compiler.EmitResult>
+  public FreexComp.Compiler.EmitResult <Clone>$()
+  public System.Boolean Equals(FreexComp.Compiler.EmitResult other)
+  public System.Boolean Success { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> CompiledUnits { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> UpToDateUnits { get; init; }
+  public System.String OutputPath { get; init; }
+  public System.TimeSpan Elapsed { get; init; }
+  public System.Void Deconstruct(out System.Boolean Success, out System.String OutputPath, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics, out System.Collections.Immutable.ImmutableArray<System.String> CompiledUnits, out System.Collections.Immutable.ImmutableArray<System.String> UpToDateUnits, out System.TimeSpan Elapsed)
+  public ctor(System.Boolean Success, System.String OutputPath, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics, System.Collections.Immutable.ImmutableArray<System.String> CompiledUnits, System.Collections.Immutable.ImmutableArray<System.String> UpToDateUnits, System.TimeSpan Elapsed)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.EmitResult left, FreexComp.Compiler.EmitResult right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.EmitResult left, FreexComp.Compiler.EmitResult right)
+enum FreexComp.Compiler.EmitStage
+  Check = 0
+  Exe = 3
+  Ll = 1
+  Obj = 2
+sealed record FreexComp.Compiler.Forms.FormEvent : System.IEquatable<FreexComp.Compiler.Forms.FormEvent>
+  public FreexComp.Compiler.Forms.FormEvent <Clone>$()
+  public System.Boolean Equals(FreexComp.Compiler.Forms.FormEvent other)
+  public System.Int32 Column { get; init; }
+  public System.Int32 Line { get; init; }
+  public System.String Handler { get; init; }
+  public System.String Property { get; init; }
+  public System.Void Deconstruct(out System.String Property, out System.String Handler, out System.Int32 Line, out System.Int32 Column)
+  public ctor(System.String Property, System.String Handler, System.Int32 Line, System.Int32 Column)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Forms.FormEvent left, FreexComp.Compiler.Forms.FormEvent right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Forms.FormEvent left, FreexComp.Compiler.Forms.FormEvent right)
+static class FreexComp.Compiler.Forms.FormFileScanner
+  public static FreexComp.Compiler.Forms.FormScanResult Scan(System.String path, System.String text)
+  public static System.String Decode(System.Byte[] bytes)
+sealed record FreexComp.Compiler.Forms.FormObject : System.IEquatable<FreexComp.Compiler.Forms.FormObject>
+  public FreexComp.Compiler.Forms.FormObject <Clone>$()
+  public System.Boolean Equals(FreexComp.Compiler.Forms.FormObject other)
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Forms.FormObject> Descendants()
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormEvent> Events { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormObject> Children { get; init; }
+  public System.Int32 Column { get; init; }
+  public System.Int32 Line { get; init; }
+  public System.String ClassName { get; init; }
+  public System.String Keyword { get; init; }
+  public System.String Name { get; init; }
+  public System.Void Deconstruct(out System.String Keyword, out System.String Name, out System.String ClassName, out System.Int32 Line, out System.Int32 Column, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormEvent> Events, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormObject> Children)
+  public ctor(System.String Keyword, System.String Name, System.String ClassName, System.Int32 Line, System.Int32 Column, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormEvent> Events, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Forms.FormObject> Children)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Forms.FormObject left, FreexComp.Compiler.Forms.FormObject right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Forms.FormObject left, FreexComp.Compiler.Forms.FormObject right)
+sealed record FreexComp.Compiler.Forms.FormScanResult : System.IEquatable<FreexComp.Compiler.Forms.FormScanResult>
+  public FreexComp.Compiler.Forms.FormObject Root { get; init; }
+  public FreexComp.Compiler.Forms.FormScanResult <Clone>$()
+  public System.Boolean Equals(FreexComp.Compiler.Forms.FormScanResult other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Forms.FormObject Root, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics)
+  public ctor(FreexComp.Compiler.Forms.FormObject Root, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Forms.FormScanResult left, FreexComp.Compiler.Forms.FormScanResult right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Forms.FormScanResult left, FreexComp.Compiler.Forms.FormScanResult right)
+interface FreexComp.Compiler.IFileSystem
+  public System.Boolean FileExists(System.String path)
+  public System.Byte[] ReadAllBytes(System.String path)
+  public System.Collections.Generic.IEnumerable<System.String> EnumerateDirectories(System.String directory)
+  public System.Collections.Generic.IEnumerable<System.String> EnumerateFiles(System.String directory, System.String searchPattern)
+  public System.DateTime GetLastWriteTimeUtc(System.String path)
+  public System.Int64 GetLength(System.String path)
+  public System.String ReadAllText(System.String path)
+  public System.Void CreateDirectory(System.String path)
+  public System.Void Delete(System.String path)
+  public System.Void WriteAllBytes(System.String path, System.Byte[] data)
+  public default System.Void DeleteDirectory(System.String path)
+sealed class FreexComp.Compiler.InMemoryFileSystem : FreexComp.Compiler.IFileSystem
+  public FreexComp.Compiler.InMemoryFileSystem Add(System.String path, System.String text)
+  public System.Boolean FileExists(System.String path)
+  public System.Byte[] ReadAllBytes(System.String path)
+  public System.Collections.Generic.IEnumerable<System.String> EnumerateDirectories(System.String directory)
+  public System.Collections.Generic.IEnumerable<System.String> EnumerateFiles(System.String directory, System.String searchPattern)
+  public System.DateTime GetLastWriteTimeUtc(System.String path)
+  public System.Int64 GetLength(System.String path)
+  public System.String ReadAllText(System.String path)
+  public System.Void CreateDirectory(System.String path)
+  public System.Void Delete(System.String path)
+  public System.Void WriteAllBytes(System.String path, System.Byte[] data)
+  public ctor()
+enum FreexComp.Compiler.OptimizationLevel
+  O0 = 0
+  O1 = 1
+  O2 = 2
+sealed class FreexComp.Compiler.PhysicalFileSystem : FreexComp.Compiler.IFileSystem
+  public System.Boolean FileExists(System.String path)
+  public System.Byte[] ReadAllBytes(System.String path)
+  public System.Collections.Generic.IEnumerable<System.String> EnumerateDirectories(System.String directory)
+  public System.Collections.Generic.IEnumerable<System.String> EnumerateFiles(System.String directory, System.String searchPattern)
+  public System.DateTime GetLastWriteTimeUtc(System.String path)
+  public System.Int64 GetLength(System.String path)
+  public System.String ReadAllText(System.String path)
+  public System.Void CreateDirectory(System.String path)
+  public System.Void Delete(System.String path)
+  public System.Void DeleteDirectory(System.String path)
+  public System.Void WriteAllBytes(System.String path, System.Byte[] data)
+  public static FreexComp.Compiler.PhysicalFileSystem Instance { get; }
+sealed record FreexComp.Compiler.RelatedLocation : System.IEquatable<FreexComp.Compiler.RelatedLocation>
+  public FreexComp.Compiler.RelatedLocation <Clone>$()
+  public FreexComp.Compiler.Text.Location Location { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.RelatedLocation other)
+  public System.String Message { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.Location Location, out System.String Message)
+  public ctor(FreexComp.Compiler.Text.Location Location, System.String Message)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.RelatedLocation left, FreexComp.Compiler.RelatedLocation right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.RelatedLocation left, FreexComp.Compiler.RelatedLocation right)
+sealed record FreexComp.Compiler.SourceText : System.IEquatable<FreexComp.Compiler.SourceText>
+  public FreexComp.Compiler.SourceText <Clone>$()
+  public FreexComp.Compiler.Text.LineMap Lines { get; }
+  public System.Boolean Equals(FreexComp.Compiler.SourceText other)
+  public System.String Path { get; init; }
+  public System.String Text { get; init; }
+  public System.Void Deconstruct(out System.String Path, out System.String Text)
+  public ctor(System.String Path, System.String Text)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.Compiler.SourceText From(System.String path, System.String text)
+  public static System.Boolean op_Equality(FreexComp.Compiler.SourceText left, FreexComp.Compiler.SourceText right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.SourceText left, FreexComp.Compiler.SourceText right)
+sealed class FreexComp.Compiler.Symbols.ConstantSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Types.ConstantValue Value { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Type { get; }
+  public System.Boolean IsTyped { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Symbols.EnumMemberSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Types.TypeSymbol Type { get; }
+  public System.Int64 Ordinal { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Symbols.FieldSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Types.TypeSymbol Type { get; }
+  public System.Boolean IsClassVar { get; }
+  public System.Int64 Offset { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Symbols.GenericMethodSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Types.TypeSymbol Owner { get; }
+  public System.Collections.Immutable.ImmutableArray<System.String> ParameterNames { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Symbols.IntrinsicSymbol : FreexComp.Compiler.Symbols.Symbol
+  public System.String Signature { get; }
+  public override System.String ToDisplayString()
+enum FreexComp.Compiler.Symbols.MethodKind
+  ClassMethod = 3
+  ClassStatic = 4
+  Constructor = 1
+  Destructor = 2
+  Ordinary = 0
+sealed class FreexComp.Compiler.Symbols.MethodSymbol : FreexComp.Compiler.Symbols.RoutineSymbol
+  public FreexComp.Compiler.Symbols.GenericMethodSymbol GenericMethodDefinition { get; }
+  public FreexComp.Compiler.Symbols.MethodKind MethodKind { get; }
+  public FreexComp.Compiler.Symbols.MethodSymbol OverriddenMethod { get; }
+  public FreexComp.Compiler.Symbols.ParameterSymbol SelfParameter { get; }
+  public FreexComp.Compiler.Symbols.RoutineSymbol AnonymousParent { get; }
+  public FreexComp.Compiler.Types.ClassTypeSymbol ContainingType { get; }
+  public FreexComp.Compiler.Types.InterfaceTypeSymbol ContainingInterface { get; }
+  public FreexComp.Compiler.Types.RecordTypeSymbol ContainingRecord { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Owner { get; }
+  public System.Boolean IsAbstract { get; }
+  public System.Boolean IsAnonymous { get; }
+  public System.Boolean IsClassMethod { get; }
+  public System.Boolean IsDispatched { get; }
+  public System.Boolean IsFinal { get; }
+  public System.Boolean IsOverride { get; }
+  public System.Boolean IsRecordConstructor { get; }
+  public System.Boolean IsReintroduce { get; }
+  public System.Boolean IsVirtual { get; }
+  public System.Int32 VmtSlot { get; }
+  public System.Nullable<System.Int32> MessageId { get; }
+  public System.String OperatorName { get; }
+  public override System.String ToDisplayString()
+enum FreexComp.Compiler.Symbols.ParameterMode
+  Const = 1
+  Out = 3
+  Value = 0
+  Var = 2
+sealed class FreexComp.Compiler.Symbols.ParameterSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Symbols.ParameterMode Mode { get; }
+  public FreexComp.Compiler.Types.ConstantValue DefaultValue { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Type { get; }
+  public System.Boolean IsOpenArray { get; }
+  public System.Boolean IsUntyped { get; }
+  public System.Int32 Ordinal { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Symbols.PropertySymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Symbols.FieldSymbol StoredField { get; }
+  public FreexComp.Compiler.Symbols.MethodSymbol ReadMethod { get; }
+  public FreexComp.Compiler.Symbols.MethodSymbol StoredMethod { get; }
+  public FreexComp.Compiler.Symbols.MethodSymbol WriteMethod { get; }
+  public FreexComp.Compiler.Types.ClassTypeSymbol ContainingType { get; }
+  public FreexComp.Compiler.Types.InterfaceTypeSymbol ContainingInterface { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Owner { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Type { get; }
+  public System.Boolean IsArrayProperty { get; }
+  public System.Boolean IsClassProperty { get; }
+  public System.Boolean IsDefault { get; }
+  public System.Boolean IsReadable { get; }
+  public System.Boolean IsWritable { get; }
+  public System.Boolean StoredConstant { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.ParameterSymbol> Parameters { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> ReadPath { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> WritePath { get; }
+  public System.Nullable<System.Int32> Index { get; }
+  public System.Nullable<System.Int64> DefaultValue { get; }
+  public override System.String ToDisplayString()
+class FreexComp.Compiler.Symbols.RoutineSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Types.TypeSymbol ReturnType { get; }
+  public System.Boolean IsExternal { get; }
+  public System.Boolean IsInline { get; }
+  public System.Boolean IsNested { get; }
+  public System.Boolean IsOverload { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.ParameterSymbol> Parameters { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.TypeParameterSymbol> TypeParameters { get; }
+  public System.String LibraryName { get; }
+  public System.String LinkName { get; }
+  public override System.String ToDisplayString()
+abstract class FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Symbols.Symbol ContainingSymbol { get; }
+  public FreexComp.Compiler.Symbols.SymbolKind Kind { get; }
+  public FreexComp.Compiler.Symbols.UnitSymbol ContainingUnit { get; }
+  public FreexComp.Compiler.Symbols.Visibility Visibility { get; }
+  public System.Boolean IsDeprecated { get; init; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Text.Location> Locations { get; }
+  public System.String Documentation { get; }
+  public System.String Name { get; }
+  public System.String QualifiedName { get; }
+  public override System.String ToString()
+  public virtual System.String ToDisplayString()
+readonly struct FreexComp.Compiler.Symbols.SymbolKey : System.IEquatable<FreexComp.Compiler.Symbols.SymbolKey>
+  public FreexComp.Compiler.Symbols.SymbolKind Kind { get; }
+  public System.Boolean Equals(FreexComp.Compiler.Symbols.SymbolKey other)
+  public System.Int32 Position { get; }
+  public System.String Path { get; }
+  public System.String QualifiedName { get; }
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.Compiler.Symbols.SymbolKey Create(FreexComp.Compiler.Symbols.Symbol symbol)
+  public static System.Boolean AreSame(FreexComp.Compiler.Symbols.Symbol a, FreexComp.Compiler.Symbols.Symbol b)
+  public static System.Boolean op_Equality(FreexComp.Compiler.Symbols.SymbolKey left, FreexComp.Compiler.Symbols.SymbolKey right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Symbols.SymbolKey left, FreexComp.Compiler.Symbols.SymbolKey right)
+enum FreexComp.Compiler.Symbols.SymbolKind
+  Constant = 1
+  EnumMember = 9
+  Field = 4
+  Intrinsic = 13
+  Label = 11
+  Local = 12
+  Method = 7
+  Parameter = 3
+  Property = 5
+  Routine = 6
+  Type = 8
+  TypeParameter = 10
+  Unit = 0
+  Variable = 2
+sealed class FreexComp.Compiler.Symbols.TypeParameterSymbol : FreexComp.Compiler.Symbols.Symbol
+sealed class FreexComp.Compiler.Symbols.UnitSymbol : FreexComp.Compiler.Symbols.Symbol
+  public System.Boolean IsProgram { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> ImplementationMembers { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> InterfaceMembers { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Symbols.VariableSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Types.TypeSymbol Type { get; }
+  public System.Boolean IsGlobal { get; }
+  public System.Boolean IsThreadVar { get; }
+  public override System.String ToDisplayString()
+enum FreexComp.Compiler.Symbols.Visibility
+  Private = 1
+  Protected = 3
+  Public = 4
+  Published = 5
+  StrictPrivate = 0
+  StrictProtected = 2
+sealed class FreexComp.Compiler.Syntax.AddressOfExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Operand { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken AtToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.AnonymousMethodExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.BlockSyntax Block { get; }
+  public FreexComp.Compiler.Syntax.ParameterListSyntax ParameterList { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax ResultType { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ArgumentListSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ArgumentSyntax> Arguments { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ArgumentSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Decimals { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Width { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> DecimalsColonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> WidthColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ArrayTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.TypeSyntax> IndexTypes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ArrayKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OfKeyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax ElementType { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> CloseBracketToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ConstKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> OpenBracketToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> PackedKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.AssignmentStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Target { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ColonEqualsToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.AttributeListSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.AttributeSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseBracketToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenBracketToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.AttributeSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ArgumentListSyntax ArgumentList { get; }
+  public FreexComp.Compiler.Syntax.NameSyntax Name { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.BinaryExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Left { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Right { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OperatorToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.BlockSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.CompoundStatementSyntax Body { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Declarations { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.CallingConventionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.CaseArmSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.CaseLabelSyntax> Labels { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax Statement { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.CaseLabelSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax UpperBound { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> DotDotToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.CaseStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Selector { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.CaseArmSyntax> Arms { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> ElseStatements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CaseKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OfKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ElseKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ClassRefTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.SyntaxToken ClassKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OfKeyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax ClassType { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ClassTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.HeritageSyntax Heritage { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Members { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ClassKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> EndKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> Modifier { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ClassVarSectionSyntax : FreexComp.Compiler.Syntax.MemberDeclarationSyntax
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.FieldDeclarationSyntax> Fields { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken VarKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ClassKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+abstract class FreexComp.Compiler.Syntax.CompilationUnitSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+sealed class FreexComp.Compiler.Syntax.CompoundStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> Statements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken BeginKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ConstDeclarationSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.HintDirectiveSyntax> HintDirectives { get; }
+  public FreexComp.Compiler.Syntax.SyntaxNode Value { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EqualsToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Identifier { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ConstSectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.ConstDeclarationSyntax> Declarations { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.DereferenceExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CaretToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed record FreexComp.Compiler.Syntax.DirectiveState : System.IEquatable<FreexComp.Compiler.Syntax.DirectiveState>
+  public FreexComp.Compiler.Syntax.DirectiveState <Clone>$()
+  public System.Boolean Assertions { get; init; }
+  public System.Boolean BoolEval { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Syntax.DirectiveState other)
+  public System.Boolean HintsOn { get; init; }
+  public System.Boolean IoChecks { get; init; }
+  public System.Boolean OverflowChecks { get; init; }
+  public System.Boolean PointerMath { get; init; }
+  public System.Boolean RangeChecks { get; init; }
+  public System.Boolean ScopedEnums { get; init; }
+  public System.Boolean TypeInfo { get; init; }
+  public System.Boolean WarningsOn { get; init; }
+  public System.Collections.Immutable.ImmutableDictionary<System.String, FreexComp.Compiler.Syntax.WarnSetting> WarnOverrides { get; init; }
+  public System.Int32 Align { get; init; }
+  public System.Int32 MinEnumSize { get; init; }
+  public System.String Rtti { get; init; }
+  public System.Void Deconstruct(out System.Boolean RangeChecks, out System.Boolean OverflowChecks, out System.Boolean BoolEval, out System.Boolean Assertions, out System.Boolean IoChecks, out System.Boolean TypeInfo, out System.Int32 Align, out System.Int32 MinEnumSize, out System.Boolean PointerMath, out System.Boolean ScopedEnums, out System.Boolean WarningsOn, out System.Boolean HintsOn)
+  public ctor(System.Boolean RangeChecks, System.Boolean OverflowChecks, System.Boolean BoolEval, System.Boolean Assertions, System.Boolean IoChecks, System.Boolean TypeInfo, System.Int32 Align, System.Int32 MinEnumSize, System.Boolean PointerMath, System.Boolean ScopedEnums, System.Boolean WarningsOn, System.Boolean HintsOn)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.Compiler.Syntax.DirectiveState Default { get; }
+  public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.DirectiveState left, FreexComp.Compiler.Syntax.DirectiveState right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.DirectiveState left, FreexComp.Compiler.Syntax.DirectiveState right)
+sealed class FreexComp.Compiler.Syntax.DirectiveSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax NameValue { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> DelayedKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> NameKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed record FreexComp.Compiler.Syntax.DirectiveTriviaInfo : System.IEquatable<FreexComp.Compiler.Syntax.DirectiveTriviaInfo>
+  public FreexComp.Compiler.Syntax.DirectiveTriviaInfo <Clone>$()
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Syntax.DirectiveTriviaInfo other)
+  public System.Boolean IsActive { get; init; }
+  public System.String Argument { get; init; }
+  public System.String Name { get; init; }
+  public System.Void Deconstruct(out System.String Name, out System.String Argument, out FreexComp.Compiler.Text.TextSpan Span, out System.Boolean IsActive)
+  public ctor(System.String Name, System.String Argument, FreexComp.Compiler.Text.TextSpan Span, System.Boolean IsActive)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.DirectiveTriviaInfo left, FreexComp.Compiler.Syntax.DirectiveTriviaInfo right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.DirectiveTriviaInfo left, FreexComp.Compiler.Syntax.DirectiveTriviaInfo right)
+sealed record FreexComp.Compiler.Syntax.EditOptions : System.IEquatable<FreexComp.Compiler.Syntax.EditOptions>
+  public FreexComp.Compiler.Syntax.EditOptions <Clone>$()
+  public System.Boolean Equals(FreexComp.Compiler.Syntax.EditOptions other)
+  public System.Int32 RightMargin { get; init; }
+  public System.String IndentUnit { get; init; }
+  public System.String LineEnding { get; init; }
+  public System.Void Deconstruct(out System.String LineEnding, out System.String IndentUnit, out System.Int32 RightMargin)
+  public ctor(System.String LineEnding = "\r\n", System.String IndentUnit = "  ", System.Int32 RightMargin = 0)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.EditOptions left, FreexComp.Compiler.Syntax.EditOptions right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.EditOptions left, FreexComp.Compiler.Syntax.EditOptions right)
+sealed class FreexComp.Compiler.Syntax.ElementAccessExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ExpressionSyntax> Indexes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseBracketToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenBracketToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.EmptyStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.EnumMemberSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Identifier { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> EqualsToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.EnumTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.EnumMemberSyntax> Members { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ExceptionHandlerSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.NamedTypeSyntax Type { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax Statement { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DoKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OnKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> Identifier { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ExpressionStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+abstract class FreexComp.Compiler.Syntax.ExpressionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+sealed class FreexComp.Compiler.Syntax.FieldDeclarationSyntax : FreexComp.Compiler.Syntax.MemberDeclarationSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.IdentifierNameSyntax> Identifiers { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.HintDirectiveSyntax> HintDirectives { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ColonToken { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.FileTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.SyntaxToken FileKeyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax ElementType { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> OfKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> PackedKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.FinalizationSectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> Statements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken FinalizationKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ForInStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Collection { get; }
+  public FreexComp.Compiler.Syntax.IdentifierNameSyntax Variable { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax Statement { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DoKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ForKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken InKeyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> VarKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ForStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Finish { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Start { get; }
+  public FreexComp.Compiler.Syntax.IdentifierNameSyntax Variable { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax Statement { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ColonEqualsToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DirectionKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DoKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ForKeyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> VarKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.FragmentSyntax : FreexComp.Compiler.Syntax.CompilationUnitSyntax
+  public FreexComp.Compiler.Syntax.SyntaxNode Node { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndOfFileToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.GenericNameSyntax : FreexComp.Compiler.Syntax.SimpleNameSyntax
+  public FreexComp.Compiler.Syntax.TypeArgumentListSyntax TypeArgumentList { get; }
+  public override FreexComp.Compiler.Syntax.SyntaxToken Identifier { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.GotoStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Label { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken GotoKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.GuidSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseBracketToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenBracketToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.HelperTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.HeritageSyntax Heritage { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Members { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ForKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken HelperKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax ExtendedType { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.HeritageSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.TypeSyntax> Types { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.HintDirectiveSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> Message { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.IdentifierNameSyntax : FreexComp.Compiler.Syntax.SimpleNameSyntax
+  public override FreexComp.Compiler.Syntax.SyntaxToken Identifier { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.IfStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Condition { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax ElseStatement { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax Statement { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken IfKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ThenKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ElseKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ImplementationSectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Declarations { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ImplementationKeyword { get; }
+  public FreexComp.Compiler.Syntax.UsesClauseSyntax UsesClause { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.IncludeFileSyntax : FreexComp.Compiler.Syntax.CompilationUnitSyntax
+  public FreexComp.Compiler.Syntax.SyntaxToken EndOfFileToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.InheritedExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.IdentifierNameSyntax Name { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken InheritedKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.InheritedStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.InitializationSectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> Statements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.InlineConstStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ConstKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EqualsToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Identifier { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.InlineVarStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Initializer { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.IdentifierNameSyntax> Identifiers { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken VarKeyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonEqualsToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.InterfaceSectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Declarations { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken InterfaceKeyword { get; }
+  public FreexComp.Compiler.Syntax.UsesClauseSyntax UsesClause { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.InterfaceTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.GuidSyntax Guid { get; }
+  public FreexComp.Compiler.Syntax.HeritageSyntax Heritage { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Members { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken InterfaceKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> EndKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.InvocationExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ArgumentListSyntax ArgumentList { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.KeywordConstraintSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.LabelSectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ExpressionSyntax> Labels { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken LabelKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.LabeledStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Label { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax Statement { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+static class FreexComp.Compiler.Syntax.Lexer
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetDiagnostics(FreexComp.Compiler.SourceText text, FreexComp.Compiler.Syntax.ParseOptions options = null)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.SyntaxToken> Tokenize(FreexComp.Compiler.SourceText text, FreexComp.Compiler.Syntax.ParseOptions options = null)
+sealed class FreexComp.Compiler.Syntax.LiteralExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.SyntaxToken Token { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.MemberAccessExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public FreexComp.Compiler.Syntax.SimpleNameSyntax Name { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DotToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+abstract class FreexComp.Compiler.Syntax.MemberDeclarationSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+sealed class FreexComp.Compiler.Syntax.MethodDeclarationSyntax : FreexComp.Compiler.Syntax.MemberDeclarationSyntax
+  public FreexComp.Compiler.Syntax.RoutineHeadingSyntax Heading { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.DirectiveSyntax> Directives { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.MethodResolutionSyntax : FreexComp.Compiler.Syntax.MemberDeclarationSyntax
+  public FreexComp.Compiler.Syntax.IdentifierNameSyntax Target { get; }
+  public FreexComp.Compiler.Syntax.NameSyntax InterfaceMethod { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EqualsToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+abstract class FreexComp.Compiler.Syntax.NameSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+sealed class FreexComp.Compiler.Syntax.NamedTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.NameSyntax Name { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ParameterListSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ParameterSyntax> Parameters { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ParameterSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax DefaultValue { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.IdentifierNameSyntax> Identifiers { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> EqualsToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> Modifier { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ParenthesizedExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed record FreexComp.Compiler.Syntax.ParseOptions : System.IEquatable<FreexComp.Compiler.Syntax.ParseOptions>
+  public FreexComp.Compiler.Syntax.ParseOptions <Clone>$()
+  public System.Boolean Equals(FreexComp.Compiler.Syntax.ParseOptions other)
+  public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
+  public System.Void Deconstruct(out System.Collections.Immutable.ImmutableArray<System.String> Defines)
+  public ctor(System.Collections.Immutable.ImmutableArray<System.String> Defines)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.ParseOptions left, FreexComp.Compiler.Syntax.ParseOptions right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.ParseOptions left, FreexComp.Compiler.Syntax.ParseOptions right)
+sealed class FreexComp.Compiler.Syntax.PointerTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.SyntaxToken CaretToken { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax PointedType { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.PredefinedTypeExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ProceduralTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.ParameterListSyntax ParameterList { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.CallingConventionSyntax> CallingConventions { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax ResultType { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ObjectKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> OfKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ReferenceKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ToKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ProgramParameterListSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.IdentifierNameSyntax> Parameters { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.ProgramSyntax : FreexComp.Compiler.Syntax.CompilationUnitSyntax
+  public FreexComp.Compiler.Syntax.BlockSyntax Block { get; }
+  public FreexComp.Compiler.Syntax.IdentifierNameSyntax Name { get; }
+  public FreexComp.Compiler.Syntax.ProgramParameterListSyntax ParameterList { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DotToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndOfFileToken { get; }
+  public FreexComp.Compiler.Syntax.UsesClauseSyntax UsesClause { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ProgramKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.PropertyDeclarationSyntax : FreexComp.Compiler.Syntax.MemberDeclarationSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ParameterSyntax> Parameters { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.PropertySpecifierSyntax> Specifiers { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Identifier { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken PropertyKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ClassKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> CloseBracketToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> DefaultKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> DefaultSemicolonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> OpenBracketToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.PropertySpecifierSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Value { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ExpressionSyntax> Values { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.QualifiedNameSyntax : FreexComp.Compiler.Syntax.NameSyntax
+  public FreexComp.Compiler.Syntax.NameSyntax Left { get; }
+  public FreexComp.Compiler.Syntax.SimpleNameSyntax Right { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DotToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.RaiseStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Address { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Exception { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken RaiseKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> AtKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.RecordConstantFieldSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.IdentifierNameSyntax Name { get; }
+  public FreexComp.Compiler.Syntax.SyntaxNode Value { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.RecordTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Members { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken RecordKeyword { get; }
+  public FreexComp.Compiler.Syntax.VariantPartSyntax VariantPart { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> PackedKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.RepeatStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Condition { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> Statements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken RepeatKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken UntilKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.RoutineDeclarationSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.BlockSyntax Block { get; }
+  public FreexComp.Compiler.Syntax.RoutineHeadingSyntax Heading { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.DirectiveSyntax> Directives { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> BodySemicolonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> SemicolonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.RoutineHeadingSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.NameSyntax Name { get; }
+  public FreexComp.Compiler.Syntax.ParameterListSyntax ParameterList { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public FreexComp.Compiler.Syntax.TypeParameterListSyntax TypeParameterList { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax ResultType { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ClassKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+readonly struct FreexComp.Compiler.Syntax.SeparatedSyntaxList<T> : System.Collections.Generic.IEnumerable<T>, System.Collections.Generic.IReadOnlyCollection<T>, System.Collections.Generic.IReadOnlyList<T>, System.Collections.IEnumerable
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Syntax.SyntaxToken> Separators { get; }
+  public System.Collections.Generic.IEnumerator<T> GetEnumerator()
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.SyntaxNodeOrToken> GetWithSeparators()
+  public System.Int32 Count { get; }
+  public T this[System.Int32 index] { get; }
+sealed class FreexComp.Compiler.Syntax.SetConstructorSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.SetElementSyntax> Elements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseBracketToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenBracketToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.SetElementSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax UpperBound { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> DotDotToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.SetTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.SyntaxToken OfKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SetKeyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax ElementType { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> PackedKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+abstract class FreexComp.Compiler.Syntax.SimpleNameSyntax : FreexComp.Compiler.Syntax.NameSyntax
+  public abstract FreexComp.Compiler.Syntax.SyntaxToken Identifier { get; }
+abstract class FreexComp.Compiler.Syntax.StatementSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+sealed class FreexComp.Compiler.Syntax.StringCastExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Expression { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken StringKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.StringTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Length { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken StringKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> CloseBracketToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> OpenBracketToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.SubrangeTypeSyntax : FreexComp.Compiler.Syntax.TypeSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax High { get; }
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Low { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DotDotToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+static class FreexComp.Compiler.Syntax.SyntaxEdits
+  public static FreexComp.Compiler.Syntax.TextChange AddUsesEntry(FreexComp.Compiler.Syntax.CompilationUnitSyntax root, System.String unitName, System.Boolean interfaceSection, FreexComp.Compiler.Syntax.EditOptions options = null)
+  public static FreexComp.Compiler.Syntax.TextChange InsertMember(FreexComp.Compiler.Syntax.TypeDeclarationSyntax type, System.String memberText, FreexComp.Compiler.Symbols.Visibility section)
+  public static FreexComp.Compiler.Syntax.TextChange InsertMethodImplementation(FreexComp.Compiler.Syntax.UnitSyntax unit, System.String className, System.String methodText)
+  public static FreexComp.Compiler.Syntax.TextChange RemoveMember(FreexComp.Compiler.Syntax.SyntaxNode member)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> RenameMethod(FreexComp.Compiler.Syntax.UnitSyntax unit, System.String className, System.String oldName, System.String newName)
+static class FreexComp.Compiler.Syntax.SyntaxFactory
+  public const System.String FragmentPath = "C:\\fragment.pas"
+  public static T ParseNode<T>(System.String text)
+static class FreexComp.Compiler.Syntax.SyntaxFacts
+  public static FreexComp.Compiler.Syntax.SyntaxKind GetKeywordKind(System.String text)
+  public static System.Boolean IsComment(FreexComp.Compiler.Syntax.SyntaxKind kind)
+  public static System.Boolean IsContextualKeyword(FreexComp.Compiler.Syntax.SyntaxKind kind)
+  public static System.Boolean IsContextualKeyword(System.String text)
+  public static System.Boolean IsKeyword(FreexComp.Compiler.Syntax.SyntaxKind kind)
+  public static System.Boolean IsLiteral(FreexComp.Compiler.Syntax.SyntaxKind kind)
+  public static System.Boolean IsOperator(FreexComp.Compiler.Syntax.SyntaxKind kind)
+  public static System.Boolean IsPunctuation(FreexComp.Compiler.Syntax.SyntaxKind kind)
+  public static System.Boolean IsReservedWord(System.String text)
+  public static System.Boolean IsTrivia(FreexComp.Compiler.Syntax.SyntaxKind kind)
+  public static System.Boolean IsValidIdentifier(System.String text)
+  public static System.Collections.Immutable.ImmutableArray<System.String> ContextualKeywords { get; }
+  public static System.Collections.Immutable.ImmutableArray<System.String> DirectiveNames { get; }
+  public static System.Collections.Immutable.ImmutableArray<System.String> ReservedWords { get; }
+  public static System.Int32 GetBinaryPrecedence(FreexComp.Compiler.Syntax.SyntaxKind operatorKind)
+  public static System.String GetText(FreexComp.Compiler.Syntax.SyntaxKind kind)
+enum FreexComp.Compiler.Syntax.SyntaxKind
+  AbsoluteKeyword = 93
+  AbstractKeyword = 94
+  AddressOfExpression = 216
+  AmpersandToken = 30
+  AndKeyword = 31
+  AnonymousMethodExpression = 260
+  Argument = 215
+  ArgumentList = 214
+  ArrayKeyword = 32
+  ArrayType = 195
+  AsKeyword = 33
+  AssemblerKeyword = 95
+  AssignmentStatement = 222
+  AsteriskToken = 8
+  AtKeyword = 96
+  AtToken = 27
+  Attribute = 259
+  AttributeList = 258
+  AutomatedKeyword = 97
+  BeginKeyword = 34
+  BinaryExpression = 188
+  Block = 173
+  BlockCommentTrivia = 154
+  CallingConvention = 203
+  CaretToken = 26
+  CaseArm = 230
+  CaseKeyword = 35
+  CaseLabel = 231
+  CaseStatement = 229
+  CdeclKeyword = 98
+  ClassKeyword = 36
+  ClassRefType = 204
+  ClassType = 242
+  ClassVarSection = 252
+  CloseBracketToken = 25
+  CloseParenToken = 23
+  ColonEqualsToken = 16
+  ColonToken = 21
+  CommaToken = 19
+  CompoundStatement = 174
+  ConstDeclaration = 178
+  ConstKeyword = 37
+  ConstSection = 177
+  ConstructorKeyword = 38
+  ContainsKeyword = 99
+  DefaultKeyword = 100
+  DelayedKeyword = 101
+  DeprecatedKeyword = 102
+  DereferenceExpression = 212
+  DestructorKeyword = 39
+  Directive = 209
+  DirectiveTrivia = 156
+  DisabledTextTrivia = 158
+  DispIdKeyword = 103
+  DivKeyword = 40
+  DoKeyword = 41
+  DocCommentTrivia = 155
+  DollarToken = 29
+  DotDotToken = 18
+  DotToken = 17
+  DownToKeyword = 42
+  DynamicKeyword = 104
+  ElementAccessExpression = 211
+  ElseKeyword = 43
+  EmptyStatement = 175
+  EndKeyword = 44
+  EndOfFileToken = 1
+  EndOfLineTrivia = 152
+  EnumMember = 192
+  EnumType = 191
+  EqualsToken = 10
+  ExceptKeyword = 45
+  ExceptionHandler = 239
+  ExperimentalKeyword = 105
+  ExportKeyword = 106
+  ExportsKeyword = 46
+  ExpressionStatement = 223
+  ExternalKeyword = 107
+  FarKeyword = 108
+  FieldDeclaration = 199
+  FileKeyword = 47
+  FileType = 197
+  FinalKeyword = 109
+  FinalizationKeyword = 48
+  FinalizationSection = 171
+  FinallyKeyword = 49
+  ForInStatement = 235
+  ForKeyword = 50
+  ForStatement = 234
+  ForwardKeyword = 110
+  Fragment = 261
+  FunctionKeyword = 51
+  GenericName = 253
+  GotoKeyword = 52
+  GotoStatement = 225
+  GreaterThanEqualsToken = 15
+  GreaterThanToken = 13
+  Guid = 245
+  HashToken = 28
+  HelperKeyword = 111
+  HelperType = 246
+  Heritage = 243
+  HintDirective = 172
+  IdentifierName = 160
+  IdentifierToken = 2
+  IfKeyword = 53
+  IfStatement = 228
+  ImplementationKeyword = 54
+  ImplementationSection = 169
+  ImplementsKeyword = 112
+  InKeyword = 55
+  IncludeDirectiveTrivia = 157
+  IncludeFile = 165
+  IndexKeyword = 113
+  InheritedExpression = 219
+  InheritedKeyword = 56
+  InheritedStatement = 224
+  InitializationKeyword = 57
+  InitializationSection = 170
+  InlineConstStatement = 241
+  InlineKeyword = 58
+  InlineVarStatement = 240
+  IntegerLiteralToken = 3
+  InterfaceKeyword = 59
+  InterfaceSection = 168
+  InterfaceType = 244
+  InvocationExpression = 213
+  IsKeyword = 60
+  KeywordConstraint = 257
+  LabelKeyword = 61
+  LabelSection = 176
+  LabeledStatement = 226
+  LessThanEqualsToken = 14
+  LessThanGreaterThanToken = 11
+  LessThanToken = 12
+  LibraryKeyword = 62
+  LineCommentTrivia = 153
+  LiteralExpression = 187
+  LocalKeyword = 114
+  MemberAccessExpression = 210
+  MessageKeyword = 115
+  MethodDeclaration = 248
+  MethodResolution = 249
+  MinusToken = 7
+  ModKeyword = 63
+  NameKeyword = 116
+  NamedType = 185
+  NearKeyword = 117
+  NilKeyword = 64
+  NoDefaultKeyword = 118
+  NoReturnKeyword = 119
+  None = 0
+  NotKeyword = 65
+  ObjectKeyword = 66
+  OfKeyword = 67
+  OnKeyword = 120
+  OpenBracketToken = 24
+  OpenParenToken = 22
+  OperatorKeyword = 121
+  OrKeyword = 68
+  OutKeyword = 122
+  OverloadKeyword = 123
+  OverrideKeyword = 124
+  PackageKeyword = 125
+  PackedKeyword = 69
+  Parameter = 206
+  ParameterList = 205
+  ParenthesizedExpression = 190
+  PascalKeyword = 126
+  PlatformKeyword = 127
+  PlusToken = 6
+  PointerType = 194
+  PredefinedTypeExpression = 221
+  PrivateKeyword = 128
+  ProceduralType = 202
+  ProcedureKeyword = 70
+  Program = 162
+  ProgramKeyword = 71
+  ProgramParameterList = 163
+  PropertyDeclaration = 250
+  PropertyKeyword = 72
+  PropertySpecifier = 251
+  ProtectedKeyword = 129
+  PublicKeyword = 130
+  PublishedKeyword = 131
+  QualifiedName = 161
+  RaiseKeyword = 73
+  RaiseStatement = 227
+  ReadKeyword = 132
+  ReadOnlyKeyword = 133
+  RealLiteralToken = 4
+  RecordConstantField = 180
+  RecordKeyword = 74
+  RecordType = 198
+  ReferenceKeyword = 134
+  RegisterKeyword = 135
+  ReintroduceKeyword = 136
+  RepeatKeyword = 75
+  RepeatStatement = 232
+  RequiresKeyword = 137
+  ResidentKeyword = 138
+  ResourceStringKeyword = 76
+  RoutineDeclaration = 207
+  RoutineHeading = 208
+  SafeCallKeyword = 139
+  SealedKeyword = 140
+  SemicolonToken = 20
+  SetConstructor = 217
+  SetElement = 218
+  SetKeyword = 77
+  SetType = 196
+  ShlKeyword = 78
+  ShrKeyword = 79
+  SkippedTokensTrivia = 159
+  SlashToken = 9
+  StaticKeyword = 141
+  StdCallKeyword = 142
+  StoredKeyword = 143
+  StrictKeyword = 144
+  StringCastExpression = 220
+  StringKeyword = 80
+  StringLiteralToken = 5
+  StringType = 186
+  SubrangeType = 193
+  ThenKeyword = 81
+  ThreadVarKeyword = 82
+  ToKeyword = 83
+  TryExceptStatement = 238
+  TryFinallyStatement = 237
+  TryKeyword = 84
+  TypeArgumentList = 254
+  TypeDeclaration = 182
+  TypeKeyword = 85
+  TypeParameter = 256
+  TypeParameterList = 255
+  TypeSection = 181
+  TypedConstantAggregate = 179
+  UnaryExpression = 189
+  Unit = 164
+  UnitKeyword = 86
+  UnsafeKeyword = 145
+  UntilKeyword = 87
+  UsedUnit = 167
+  UsesClause = 166
+  UsesKeyword = 88
+  VarArgsKeyword = 146
+  VarDeclaration = 184
+  VarKeyword = 89
+  VarSection = 183
+  Variant = 201
+  VariantPart = 200
+  VirtualKeyword = 147
+  VisibilitySection = 247
+  WhileKeyword = 90
+  WhileStatement = 233
+  WhitespaceTrivia = 151
+  WinApiKeyword = 148
+  WithKeyword = 91
+  WithStatement = 236
+  WriteKeyword = 149
+  WriteOnlyKeyword = 150
+  XorKeyword = 92
+readonly struct FreexComp.Compiler.Syntax.SyntaxList<T> : System.Collections.Generic.IEnumerable<T>, System.Collections.Generic.IReadOnlyCollection<T>, System.Collections.Generic.IReadOnlyList<T>, System.Collections.IEnumerable
+  public System.Collections.Generic.IEnumerator<T> GetEnumerator()
+  public System.Int32 Count { get; }
+  public T this[System.Int32 index] { get; }
+abstract class FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxKind Kind { get; }
+  public FreexComp.Compiler.Syntax.SyntaxNode Parent { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken FirstToken()
+  public FreexComp.Compiler.Syntax.SyntaxToken LastToken()
+  public FreexComp.Compiler.Syntax.SyntaxTree SyntaxTree { get; }
+  public FreexComp.Compiler.Text.TextSpan FullSpan { get; }
+  public FreexComp.Compiler.Text.TextSpan Span { get; }
+  public System.Boolean ContainsDiagnostics { get; }
+  public System.Boolean IsMissing { get; }
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Syntax.SyntaxNode> AncestorsAndSelf()
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Syntax.SyntaxNode> ChildNodes()
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Syntax.SyntaxNode> DescendantNodes(System.Func<FreexComp.Compiler.Syntax.SyntaxNode, System.Boolean> descendInto = null)
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Syntax.SyntaxNodeOrToken> ChildNodesAndTokens()
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Syntax.SyntaxToken> DescendantTokens()
+  public System.String ToFullString()
+  public T FirstAncestorOrSelf<T>()
+  public abstract TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+  public override System.String ToString()
+readonly struct FreexComp.Compiler.Syntax.SyntaxNodeOrToken : System.IEquatable<FreexComp.Compiler.Syntax.SyntaxNodeOrToken>
+  public FreexComp.Compiler.Syntax.SyntaxKind Kind { get; }
+  public FreexComp.Compiler.Syntax.SyntaxNode AsNode()
+  public FreexComp.Compiler.Syntax.SyntaxNode Parent { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken AsToken()
+  public FreexComp.Compiler.Text.TextSpan FullSpan { get; }
+  public FreexComp.Compiler.Text.TextSpan Span { get; }
+  public System.Boolean Equals(FreexComp.Compiler.Syntax.SyntaxNodeOrToken other)
+  public System.Boolean IsNode { get; }
+  public System.Boolean IsToken { get; }
+  public ctor(FreexComp.Compiler.Syntax.SyntaxNode node)
+  public ctor(FreexComp.Compiler.Syntax.SyntaxToken token)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.Compiler.Syntax.SyntaxNodeOrToken op_Implicit(FreexComp.Compiler.Syntax.SyntaxNode node)
+  public static FreexComp.Compiler.Syntax.SyntaxNodeOrToken op_Implicit(FreexComp.Compiler.Syntax.SyntaxToken token)
+  public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.SyntaxNodeOrToken left, FreexComp.Compiler.Syntax.SyntaxNodeOrToken right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.SyntaxNodeOrToken left, FreexComp.Compiler.Syntax.SyntaxNodeOrToken right)
+readonly struct FreexComp.Compiler.Syntax.SyntaxToken : System.IEquatable<FreexComp.Compiler.Syntax.SyntaxToken>
+  public FreexComp.Compiler.Syntax.SyntaxKind ContextualKind { get; }
+  public FreexComp.Compiler.Syntax.SyntaxKind Kind { get; }
+  public FreexComp.Compiler.Syntax.SyntaxNode Parent { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken GetNextToken()
+  public FreexComp.Compiler.Syntax.SyntaxToken GetPreviousToken()
+  public FreexComp.Compiler.Text.TextSpan FullSpan { get; }
+  public FreexComp.Compiler.Text.TextSpan Span { get; }
+  public System.Boolean Equals(FreexComp.Compiler.Syntax.SyntaxToken other)
+  public System.Boolean IsMissing { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.SyntaxTrivia> LeadingTrivia { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.SyntaxTrivia> TrailingTrivia { get; }
+  public System.Object Value { get; }
+  public System.String Text { get; }
+  public System.String ToFullString()
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.SyntaxToken left, FreexComp.Compiler.Syntax.SyntaxToken right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.SyntaxToken left, FreexComp.Compiler.Syntax.SyntaxToken right)
+sealed class FreexComp.Compiler.Syntax.SyntaxTree
+  public FreexComp.Compiler.SourceText Text { get; }
+  public FreexComp.Compiler.Syntax.CompilationUnitSyntax Root { get; }
+  public FreexComp.Compiler.Syntax.SyntaxNode FindNode(FreexComp.Compiler.Text.TextSpan span)
+  public FreexComp.Compiler.Syntax.SyntaxToken FindToken(System.Int32 position)
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Syntax.DirectiveTriviaInfo> Directives { get; }
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Syntax.SyntaxTrivia> DescendantTrivia()
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Text.TextSpan> DisabledRegions { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> Diagnostics { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.SyntaxTree> IncludedTrees { get; }
+  public static FreexComp.Compiler.Syntax.SyntaxTree Parse(FreexComp.Compiler.SourceText text, FreexComp.Compiler.Syntax.ParseOptions options = null, FreexComp.Compiler.IFileSystem fs = null)
+readonly struct FreexComp.Compiler.Syntax.SyntaxTrivia : System.IEquatable<FreexComp.Compiler.Syntax.SyntaxTrivia>
+  public FreexComp.Compiler.Syntax.DirectiveTriviaInfo Directive { get; }
+  public FreexComp.Compiler.Syntax.SyntaxKind Kind { get; }
+  public FreexComp.Compiler.Text.TextSpan Span { get; }
+  public System.Boolean Equals(FreexComp.Compiler.Syntax.SyntaxTrivia other)
+  public System.String Text { get; }
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.SyntaxTrivia left, FreexComp.Compiler.Syntax.SyntaxTrivia right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.SyntaxTrivia left, FreexComp.Compiler.Syntax.SyntaxTrivia right)
+abstract class FreexComp.Compiler.Syntax.SyntaxVisitor<TResult>
+  protected ctor()
+  public virtual TResult DefaultVisit(FreexComp.Compiler.Syntax.SyntaxNode node)
+  public virtual TResult Visit(FreexComp.Compiler.Syntax.SyntaxNode node)
+  public virtual TResult VisitAddressOfExpression(FreexComp.Compiler.Syntax.AddressOfExpressionSyntax node)
+  public virtual TResult VisitAnonymousMethodExpression(FreexComp.Compiler.Syntax.AnonymousMethodExpressionSyntax node)
+  public virtual TResult VisitArgument(FreexComp.Compiler.Syntax.ArgumentSyntax node)
+  public virtual TResult VisitArgumentList(FreexComp.Compiler.Syntax.ArgumentListSyntax node)
+  public virtual TResult VisitArrayType(FreexComp.Compiler.Syntax.ArrayTypeSyntax node)
+  public virtual TResult VisitAssignmentStatement(FreexComp.Compiler.Syntax.AssignmentStatementSyntax node)
+  public virtual TResult VisitAttribute(FreexComp.Compiler.Syntax.AttributeSyntax node)
+  public virtual TResult VisitAttributeList(FreexComp.Compiler.Syntax.AttributeListSyntax node)
+  public virtual TResult VisitBinaryExpression(FreexComp.Compiler.Syntax.BinaryExpressionSyntax node)
+  public virtual TResult VisitBlock(FreexComp.Compiler.Syntax.BlockSyntax node)
+  public virtual TResult VisitCallingConvention(FreexComp.Compiler.Syntax.CallingConventionSyntax node)
+  public virtual TResult VisitCaseArm(FreexComp.Compiler.Syntax.CaseArmSyntax node)
+  public virtual TResult VisitCaseLabel(FreexComp.Compiler.Syntax.CaseLabelSyntax node)
+  public virtual TResult VisitCaseStatement(FreexComp.Compiler.Syntax.CaseStatementSyntax node)
+  public virtual TResult VisitClassRefType(FreexComp.Compiler.Syntax.ClassRefTypeSyntax node)
+  public virtual TResult VisitClassType(FreexComp.Compiler.Syntax.ClassTypeSyntax node)
+  public virtual TResult VisitClassVarSection(FreexComp.Compiler.Syntax.ClassVarSectionSyntax node)
+  public virtual TResult VisitCompoundStatement(FreexComp.Compiler.Syntax.CompoundStatementSyntax node)
+  public virtual TResult VisitConstDeclaration(FreexComp.Compiler.Syntax.ConstDeclarationSyntax node)
+  public virtual TResult VisitConstSection(FreexComp.Compiler.Syntax.ConstSectionSyntax node)
+  public virtual TResult VisitDereferenceExpression(FreexComp.Compiler.Syntax.DereferenceExpressionSyntax node)
+  public virtual TResult VisitDirective(FreexComp.Compiler.Syntax.DirectiveSyntax node)
+  public virtual TResult VisitElementAccessExpression(FreexComp.Compiler.Syntax.ElementAccessExpressionSyntax node)
+  public virtual TResult VisitEmptyStatement(FreexComp.Compiler.Syntax.EmptyStatementSyntax node)
+  public virtual TResult VisitEnumMember(FreexComp.Compiler.Syntax.EnumMemberSyntax node)
+  public virtual TResult VisitEnumType(FreexComp.Compiler.Syntax.EnumTypeSyntax node)
+  public virtual TResult VisitExceptionHandler(FreexComp.Compiler.Syntax.ExceptionHandlerSyntax node)
+  public virtual TResult VisitExpressionStatement(FreexComp.Compiler.Syntax.ExpressionStatementSyntax node)
+  public virtual TResult VisitFieldDeclaration(FreexComp.Compiler.Syntax.FieldDeclarationSyntax node)
+  public virtual TResult VisitFileType(FreexComp.Compiler.Syntax.FileTypeSyntax node)
+  public virtual TResult VisitFinalizationSection(FreexComp.Compiler.Syntax.FinalizationSectionSyntax node)
+  public virtual TResult VisitForInStatement(FreexComp.Compiler.Syntax.ForInStatementSyntax node)
+  public virtual TResult VisitForStatement(FreexComp.Compiler.Syntax.ForStatementSyntax node)
+  public virtual TResult VisitFragment(FreexComp.Compiler.Syntax.FragmentSyntax node)
+  public virtual TResult VisitGenericName(FreexComp.Compiler.Syntax.GenericNameSyntax node)
+  public virtual TResult VisitGotoStatement(FreexComp.Compiler.Syntax.GotoStatementSyntax node)
+  public virtual TResult VisitGuid(FreexComp.Compiler.Syntax.GuidSyntax node)
+  public virtual TResult VisitHelperType(FreexComp.Compiler.Syntax.HelperTypeSyntax node)
+  public virtual TResult VisitHeritage(FreexComp.Compiler.Syntax.HeritageSyntax node)
+  public virtual TResult VisitHintDirective(FreexComp.Compiler.Syntax.HintDirectiveSyntax node)
+  public virtual TResult VisitIdentifierName(FreexComp.Compiler.Syntax.IdentifierNameSyntax node)
+  public virtual TResult VisitIfStatement(FreexComp.Compiler.Syntax.IfStatementSyntax node)
+  public virtual TResult VisitImplementationSection(FreexComp.Compiler.Syntax.ImplementationSectionSyntax node)
+  public virtual TResult VisitIncludeFile(FreexComp.Compiler.Syntax.IncludeFileSyntax node)
+  public virtual TResult VisitInheritedExpression(FreexComp.Compiler.Syntax.InheritedExpressionSyntax node)
+  public virtual TResult VisitInheritedStatement(FreexComp.Compiler.Syntax.InheritedStatementSyntax node)
+  public virtual TResult VisitInitializationSection(FreexComp.Compiler.Syntax.InitializationSectionSyntax node)
+  public virtual TResult VisitInlineConstStatement(FreexComp.Compiler.Syntax.InlineConstStatementSyntax node)
+  public virtual TResult VisitInlineVarStatement(FreexComp.Compiler.Syntax.InlineVarStatementSyntax node)
+  public virtual TResult VisitInterfaceSection(FreexComp.Compiler.Syntax.InterfaceSectionSyntax node)
+  public virtual TResult VisitInterfaceType(FreexComp.Compiler.Syntax.InterfaceTypeSyntax node)
+  public virtual TResult VisitInvocationExpression(FreexComp.Compiler.Syntax.InvocationExpressionSyntax node)
+  public virtual TResult VisitKeywordConstraint(FreexComp.Compiler.Syntax.KeywordConstraintSyntax node)
+  public virtual TResult VisitLabelSection(FreexComp.Compiler.Syntax.LabelSectionSyntax node)
+  public virtual TResult VisitLabeledStatement(FreexComp.Compiler.Syntax.LabeledStatementSyntax node)
+  public virtual TResult VisitLiteralExpression(FreexComp.Compiler.Syntax.LiteralExpressionSyntax node)
+  public virtual TResult VisitMemberAccessExpression(FreexComp.Compiler.Syntax.MemberAccessExpressionSyntax node)
+  public virtual TResult VisitMethodDeclaration(FreexComp.Compiler.Syntax.MethodDeclarationSyntax node)
+  public virtual TResult VisitMethodResolution(FreexComp.Compiler.Syntax.MethodResolutionSyntax node)
+  public virtual TResult VisitNamedType(FreexComp.Compiler.Syntax.NamedTypeSyntax node)
+  public virtual TResult VisitParameter(FreexComp.Compiler.Syntax.ParameterSyntax node)
+  public virtual TResult VisitParameterList(FreexComp.Compiler.Syntax.ParameterListSyntax node)
+  public virtual TResult VisitParenthesizedExpression(FreexComp.Compiler.Syntax.ParenthesizedExpressionSyntax node)
+  public virtual TResult VisitPointerType(FreexComp.Compiler.Syntax.PointerTypeSyntax node)
+  public virtual TResult VisitPredefinedTypeExpression(FreexComp.Compiler.Syntax.PredefinedTypeExpressionSyntax node)
+  public virtual TResult VisitProceduralType(FreexComp.Compiler.Syntax.ProceduralTypeSyntax node)
+  public virtual TResult VisitProgram(FreexComp.Compiler.Syntax.ProgramSyntax node)
+  public virtual TResult VisitProgramParameterList(FreexComp.Compiler.Syntax.ProgramParameterListSyntax node)
+  public virtual TResult VisitPropertyDeclaration(FreexComp.Compiler.Syntax.PropertyDeclarationSyntax node)
+  public virtual TResult VisitPropertySpecifier(FreexComp.Compiler.Syntax.PropertySpecifierSyntax node)
+  public virtual TResult VisitQualifiedName(FreexComp.Compiler.Syntax.QualifiedNameSyntax node)
+  public virtual TResult VisitRaiseStatement(FreexComp.Compiler.Syntax.RaiseStatementSyntax node)
+  public virtual TResult VisitRecordConstantField(FreexComp.Compiler.Syntax.RecordConstantFieldSyntax node)
+  public virtual TResult VisitRecordType(FreexComp.Compiler.Syntax.RecordTypeSyntax node)
+  public virtual TResult VisitRepeatStatement(FreexComp.Compiler.Syntax.RepeatStatementSyntax node)
+  public virtual TResult VisitRoutineDeclaration(FreexComp.Compiler.Syntax.RoutineDeclarationSyntax node)
+  public virtual TResult VisitRoutineHeading(FreexComp.Compiler.Syntax.RoutineHeadingSyntax node)
+  public virtual TResult VisitSetConstructor(FreexComp.Compiler.Syntax.SetConstructorSyntax node)
+  public virtual TResult VisitSetElement(FreexComp.Compiler.Syntax.SetElementSyntax node)
+  public virtual TResult VisitSetType(FreexComp.Compiler.Syntax.SetTypeSyntax node)
+  public virtual TResult VisitStringCastExpression(FreexComp.Compiler.Syntax.StringCastExpressionSyntax node)
+  public virtual TResult VisitStringType(FreexComp.Compiler.Syntax.StringTypeSyntax node)
+  public virtual TResult VisitSubrangeType(FreexComp.Compiler.Syntax.SubrangeTypeSyntax node)
+  public virtual TResult VisitTryExceptStatement(FreexComp.Compiler.Syntax.TryExceptStatementSyntax node)
+  public virtual TResult VisitTryFinallyStatement(FreexComp.Compiler.Syntax.TryFinallyStatementSyntax node)
+  public virtual TResult VisitTypeArgumentList(FreexComp.Compiler.Syntax.TypeArgumentListSyntax node)
+  public virtual TResult VisitTypeDeclaration(FreexComp.Compiler.Syntax.TypeDeclarationSyntax node)
+  public virtual TResult VisitTypeParameter(FreexComp.Compiler.Syntax.TypeParameterSyntax node)
+  public virtual TResult VisitTypeParameterList(FreexComp.Compiler.Syntax.TypeParameterListSyntax node)
+  public virtual TResult VisitTypeSection(FreexComp.Compiler.Syntax.TypeSectionSyntax node)
+  public virtual TResult VisitTypedConstantAggregate(FreexComp.Compiler.Syntax.TypedConstantAggregateSyntax node)
+  public virtual TResult VisitUnaryExpression(FreexComp.Compiler.Syntax.UnaryExpressionSyntax node)
+  public virtual TResult VisitUnit(FreexComp.Compiler.Syntax.UnitSyntax node)
+  public virtual TResult VisitUsedUnit(FreexComp.Compiler.Syntax.UsedUnitSyntax node)
+  public virtual TResult VisitUsesClause(FreexComp.Compiler.Syntax.UsesClauseSyntax node)
+  public virtual TResult VisitVarDeclaration(FreexComp.Compiler.Syntax.VarDeclarationSyntax node)
+  public virtual TResult VisitVarSection(FreexComp.Compiler.Syntax.VarSectionSyntax node)
+  public virtual TResult VisitVariant(FreexComp.Compiler.Syntax.VariantSyntax node)
+  public virtual TResult VisitVariantPart(FreexComp.Compiler.Syntax.VariantPartSyntax node)
+  public virtual TResult VisitVisibilitySection(FreexComp.Compiler.Syntax.VisibilitySectionSyntax node)
+  public virtual TResult VisitWhileStatement(FreexComp.Compiler.Syntax.WhileStatementSyntax node)
+  public virtual TResult VisitWithStatement(FreexComp.Compiler.Syntax.WithStatementSyntax node)
+abstract class FreexComp.Compiler.Syntax.SyntaxWalker : FreexComp.Compiler.Syntax.SyntaxVisitor<System.Object>
+  protected ctor()
+  public override System.Object DefaultVisit(FreexComp.Compiler.Syntax.SyntaxNode node)
+  public virtual System.Void VisitToken(FreexComp.Compiler.Syntax.SyntaxToken token)
+  public virtual System.Void VisitTrivia(FreexComp.Compiler.Syntax.SyntaxTrivia trivia)
+readonly record struct FreexComp.Compiler.Syntax.TextChange : System.IEquatable<FreexComp.Compiler.Syntax.TextChange>
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Syntax.TextChange other)
+  public System.Boolean IsEmpty { get; }
+  public System.String NewText { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.TextSpan Span, out System.String NewText)
+  public ctor(FreexComp.Compiler.Text.TextSpan Span, System.String NewText)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Syntax.TextChange left, FreexComp.Compiler.Syntax.TextChange right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Syntax.TextChange left, FreexComp.Compiler.Syntax.TextChange right)
+sealed class FreexComp.Compiler.Syntax.TryExceptStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ExceptionHandlerSyntax> Handlers { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> ExceptStatements { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> Statements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ExceptKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken TryKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ElseKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.TryFinallyStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> FinallyStatements { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.StatementSyntax> Statements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken FinallyKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken TryKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.TypeArgumentListSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.TypeSyntax> Arguments { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken GreaterThanToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken LessThanToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.TypeDeclarationSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.HintDirectiveSyntax> HintDirectives { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EqualsToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Identifier { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public FreexComp.Compiler.Syntax.TypeParameterListSyntax TypeParameterList { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> TypeKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.TypeParameterListSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.TypeParameterSyntax> Parameters { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken GreaterThanToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken LessThanToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.TypeParameterSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.IdentifierNameSyntax> Identifiers { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Constraints { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.TypeSectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.TypeDeclarationSyntax> Declarations { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken TypeKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+abstract class FreexComp.Compiler.Syntax.TypeSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+sealed class FreexComp.Compiler.Syntax.TypedConstantAggregateSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Elements { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.UnaryExpressionSyntax : FreexComp.Compiler.Syntax.ExpressionSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Operand { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OperatorToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.UnitSyntax : FreexComp.Compiler.Syntax.CompilationUnitSyntax
+  public FreexComp.Compiler.Syntax.FinalizationSectionSyntax FinalizationSection { get; }
+  public FreexComp.Compiler.Syntax.ImplementationSectionSyntax ImplementationSection { get; }
+  public FreexComp.Compiler.Syntax.InitializationSectionSyntax InitializationSection { get; }
+  public FreexComp.Compiler.Syntax.InterfaceSectionSyntax InterfaceSection { get; }
+  public FreexComp.Compiler.Syntax.NameSyntax Name { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.HintDirectiveSyntax> HintDirectives { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DotToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken EndOfFileToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken UnitKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.UsedUnitSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.NameSyntax Name { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> InKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> Path { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.UsesClauseSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.UsedUnitSyntax> Units { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken UsesKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.VarDeclarationSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.DirectiveSyntax PublicDirective { get; }
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.IdentifierNameSyntax> Identifiers { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.AttributeListSyntax> Attributes { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.HintDirectiveSyntax> HintDirectives { get; }
+  public FreexComp.Compiler.Syntax.SyntaxNode Initializer { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ColonToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken SemicolonToken { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax Type { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> EqualsToken { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.VarSectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.VarDeclarationSyntax> Declarations { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken Keyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.VariantPartSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.VariantSyntax> Variants { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CaseKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OfKeyword { get; }
+  public FreexComp.Compiler.Syntax.TypeSyntax TagType { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> ColonToken { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> TagIdentifier { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.VariantSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ExpressionSyntax> Labels { get; }
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.FieldDeclarationSyntax> Fields { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken CloseParenToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken ColonToken { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken OpenParenToken { get; }
+  public FreexComp.Compiler.Syntax.VariantPartSyntax VariantPart { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.VisibilitySectionSyntax : FreexComp.Compiler.Syntax.SyntaxNode
+  public FreexComp.Compiler.Syntax.SyntaxList<FreexComp.Compiler.Syntax.SyntaxNode> Members { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken VisibilityKeyword { get; }
+  public System.Nullable<FreexComp.Compiler.Syntax.SyntaxToken> StrictKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+enum FreexComp.Compiler.Syntax.WarnSetting
+  Error = 2
+  Off = 1
+  On = 0
+sealed class FreexComp.Compiler.Syntax.WhileStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.ExpressionSyntax Condition { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax Statement { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DoKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken WhileKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Syntax.WithStatementSyntax : FreexComp.Compiler.Syntax.StatementSyntax
+  public FreexComp.Compiler.Syntax.SeparatedSyntaxList<FreexComp.Compiler.Syntax.ExpressionSyntax> Expressions { get; }
+  public FreexComp.Compiler.Syntax.StatementSyntax Statement { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken DoKeyword { get; }
+  public FreexComp.Compiler.Syntax.SyntaxToken WithKeyword { get; }
+  public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
+sealed class FreexComp.Compiler.Text.LineMap
+  public FreexComp.Compiler.Text.LinePosition GetLinePosition(System.Int32 offset)
+  public FreexComp.Compiler.Text.TextSpan GetLineSpan(System.Int32 line)
+  public System.Int32 GetOffset(FreexComp.Compiler.Text.LinePosition position)
+  public System.Int32 LineCount { get; }
+readonly record struct FreexComp.Compiler.Text.LinePosition : System.IEquatable<FreexComp.Compiler.Text.LinePosition>
+  public System.Boolean Equals(FreexComp.Compiler.Text.LinePosition other)
+  public System.Int32 Column { get; init; }
+  public System.Int32 Line { get; init; }
+  public System.Void Deconstruct(out System.Int32 Line, out System.Int32 Column)
+  public ctor(System.Int32 Line, System.Int32 Column)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Text.LinePosition left, FreexComp.Compiler.Text.LinePosition right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Text.LinePosition left, FreexComp.Compiler.Text.LinePosition right)
+readonly record struct FreexComp.Compiler.Text.LinePositionSpan : System.IEquatable<FreexComp.Compiler.Text.LinePositionSpan>
+  public FreexComp.Compiler.Text.LinePosition End { get; init; }
+  public FreexComp.Compiler.Text.LinePosition Start { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Text.LinePositionSpan other)
+  public System.Void Deconstruct(out FreexComp.Compiler.Text.LinePosition Start, out FreexComp.Compiler.Text.LinePosition End)
+  public ctor(FreexComp.Compiler.Text.LinePosition Start, FreexComp.Compiler.Text.LinePosition End)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Text.LinePositionSpan left, FreexComp.Compiler.Text.LinePositionSpan right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Text.LinePositionSpan left, FreexComp.Compiler.Text.LinePositionSpan right)
+readonly record struct FreexComp.Compiler.Text.Location : System.IEquatable<FreexComp.Compiler.Text.Location>
+  public FreexComp.Compiler.Text.LinePositionSpan LineSpan { get; init; }
+  public FreexComp.Compiler.Text.TextSpan Span { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Text.Location other)
+  public System.Boolean HasPosition { get; }
+  public System.String Path { get; init; }
+  public System.Void Deconstruct(out System.String Path, out FreexComp.Compiler.Text.TextSpan Span, out FreexComp.Compiler.Text.LinePositionSpan LineSpan)
+  public ctor(System.String Path, FreexComp.Compiler.Text.TextSpan Span, FreexComp.Compiler.Text.LinePositionSpan LineSpan)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.Compiler.Text.Location ForFile(System.String path)
+  public static System.Boolean op_Equality(FreexComp.Compiler.Text.Location left, FreexComp.Compiler.Text.Location right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Text.Location left, FreexComp.Compiler.Text.Location right)
+static class FreexComp.Compiler.Text.PathUtil
+  public static System.Boolean AreEqual(System.String a, System.String b)
+  public static System.String Normalize(System.String path)
+  public static System.StringComparer Comparer { get; }
+readonly record struct FreexComp.Compiler.Text.TextSpan : System.IEquatable<FreexComp.Compiler.Text.TextSpan>
+  public System.Boolean Contains(System.Int32 position)
+  public System.Boolean Equals(FreexComp.Compiler.Text.TextSpan other)
+  public System.Boolean IntersectsWith(FreexComp.Compiler.Text.TextSpan other)
+  public System.Int32 End { get; }
+  public System.Int32 Length { get; }
+  public System.Int32 Start { get; }
+  public System.Void Deconstruct(out System.Int32 Start, out System.Int32 Length)
+  public ctor(System.Int32 Start, System.Int32 Length)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static FreexComp.Compiler.Text.TextSpan FromBounds(System.Int32 start, System.Int32 end)
+  public static System.Boolean op_Equality(FreexComp.Compiler.Text.TextSpan left, FreexComp.Compiler.Text.TextSpan right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Text.TextSpan left, FreexComp.Compiler.Text.TextSpan right)
+interface FreexComp.Compiler.Toolchain.IProcessRunner
+  public System.Threading.Tasks.Task<System.Int32> RunAsync(System.String fileName, System.Collections.Generic.IReadOnlyList<System.String> arguments, System.String workingDirectory, System.Action<System.String> onStdOut, System.Action<System.String> onStdErr, System.Threading.CancellationToken ct)
+sealed class FreexComp.Compiler.Toolchain.ProcessRunner : FreexComp.Compiler.Toolchain.IProcessRunner
+  public System.Threading.Tasks.Task<System.Int32> RunAsync(System.String fileName, System.Collections.Generic.IReadOnlyList<System.String> arguments, System.String workingDirectory, System.Action<System.String> onStdOut, System.Action<System.String> onStdErr, System.Threading.CancellationToken ct)
+  public ctor()
+  public static FreexComp.Compiler.Toolchain.ProcessRunner Instance { get; }
+sealed class FreexComp.Compiler.Types.ArrayTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.TypeSymbol ElementType { get; }
+  public FreexComp.Compiler.Types.TypeSymbol IndexType { get; }
+  public System.Int64 Length { get; }
+  public System.Numerics.BigInteger High { get; }
+  public System.Numerics.BigInteger Low { get; }
+  public override System.Boolean IsManaged { get; }
+sealed class FreexComp.Compiler.Types.BooleanTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public System.Boolean IsCStyle { get; }
+  public override System.Boolean IsOrdinal { get; }
+sealed class FreexComp.Compiler.Types.BuiltInTypes
+  public FreexComp.Compiler.Types.PointerTypeSymbol Nil { get; }
+  public FreexComp.Compiler.Types.SetTypeSymbol EmptySet { get; }
+  public FreexComp.Compiler.Types.TypeSymbol AnsiChar { get; }
+  public FreexComp.Compiler.Types.TypeSymbol AnsiString { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Boolean { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Byte { get; }
+  public FreexComp.Compiler.Types.TypeSymbol ByteBool { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Cardinal { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Char { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Currency { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Double { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Error { get; }
+  public FreexComp.Compiler.Types.TypeSymbol IInterface { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Int64 { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Integer { get; }
+  public FreexComp.Compiler.Types.TypeSymbol LongBool { get; }
+  public FreexComp.Compiler.Types.TypeSymbol NativeInt { get; }
+  public FreexComp.Compiler.Types.TypeSymbol NativeUInt { get; }
+  public FreexComp.Compiler.Types.TypeSymbol PAnsiChar { get; }
+  public FreexComp.Compiler.Types.TypeSymbol PChar { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Pointer { get; }
+  public FreexComp.Compiler.Types.TypeSymbol RawByteString { get; }
+  public FreexComp.Compiler.Types.TypeSymbol ShortInt { get; }
+  public FreexComp.Compiler.Types.TypeSymbol ShortString { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Single { get; }
+  public FreexComp.Compiler.Types.TypeSymbol SmallInt { get; }
+  public FreexComp.Compiler.Types.TypeSymbol String { get; }
+  public FreexComp.Compiler.Types.TypeSymbol TInterfacedObject { get; }
+  public FreexComp.Compiler.Types.TypeSymbol TObject { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Text { get; }
+  public FreexComp.Compiler.Types.TypeSymbol UInt64 { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Untyped { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Utf8String { get; }
+  public FreexComp.Compiler.Types.TypeSymbol Word { get; }
+  public FreexComp.Compiler.Types.TypeSymbol WordBool { get; }
+sealed class FreexComp.Compiler.Types.CharTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public System.Boolean IsWide { get; }
+  public System.Int32 MaxValue { get; }
+  public System.Int32 MinValue { get; }
+  public override FreexComp.Compiler.Types.TypeSymbol BaseType { get; }
+  public override System.Boolean IsOrdinal { get; }
+sealed class FreexComp.Compiler.Types.ClassRefTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.ClassTypeSymbol Class { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Types.ClassTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Symbols.PropertySymbol DefaultProperty { get; }
+  public FreexComp.Compiler.Types.ClassRefTypeSymbol Reference { get; }
+  public FreexComp.Compiler.Types.ClassTypeSymbol Parent { get; }
+  public FreexComp.Compiler.Types.ImplementedInterface FindInterface(FreexComp.Compiler.Types.InterfaceTypeSymbol target)
+  public FreexComp.Compiler.Types.RttiScope RttiScope { get; }
+  public System.Boolean IsAbstract { get; }
+  public System.Boolean IsForward { get; }
+  public System.Boolean IsSealed { get; }
+  public System.Boolean IsTypeInfo { get; }
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Symbols.FieldSymbol> ManagedFields { get; }
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Types.ClassTypeSymbol> SelfAndAncestors()
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.FieldSymbol> Fields { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.GenericMethodSymbol> GenericMethods { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> Methods { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> VirtualSlots { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.PropertySymbol> Properties { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> NestedMembers { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.VariableSymbol> ClassVariables { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Types.ImplementedInterface> Interfaces { get; }
+  public System.Int32 VmtSlotCount { get; }
+  public System.Int64 InstanceSize { get; }
+  public override FreexComp.Compiler.Types.TypeSymbol BaseType { get; }
+  public override System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> Members { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Types.ConstantValue
+  public FreexComp.Compiler.Types.TypeSymbol Type { get; }
+  public System.Object Value { get; }
+  public System.String ToDisplayString()
+  public override System.String ToString()
+sealed class FreexComp.Compiler.Types.DynamicArrayTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.TypeSymbol ElementType { get; }
+  public System.Int32 Depth { get; }
+  public override System.Boolean IsManaged { get; }
+sealed class FreexComp.Compiler.Types.EnumTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public System.Boolean IsScoped { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.EnumMemberSymbol> EnumMembers { get; }
+  public System.Numerics.BigInteger High { get; }
+  public System.Numerics.BigInteger Low { get; }
+  public override FreexComp.Compiler.Types.TypeSymbol BaseType { get; }
+  public override System.Boolean IsOrdinal { get; }
+  public override System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> Members { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Types.ErrorTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+sealed class FreexComp.Compiler.Types.GenericTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public System.Collections.Immutable.ImmutableArray<System.String> ParameterNames { get; }
+  public override System.Boolean IsGenericDefinition { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Types.HelperTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.HelperTypeSymbol Parent { get; }
+  public FreexComp.Compiler.Types.TypeSymbol ExtendedType { get; }
+  public System.Boolean IsClassHelper { get; }
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Types.HelperTypeSymbol> SelfAndAncestors()
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> Methods { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.PropertySymbol> Properties { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> NestedMembers { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.VariableSymbol> ClassVariables { get; }
+  public override FreexComp.Compiler.Types.TypeSymbol BaseType { get; }
+  public override System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> Members { get; }
+  public override System.String ToDisplayString()
+sealed record FreexComp.Compiler.Types.ImplementedInterface : System.IEquatable<FreexComp.Compiler.Types.ImplementedInterface>
+  public FreexComp.Compiler.Types.ImplementedInterface <Clone>$()
+  public FreexComp.Compiler.Types.InterfaceTypeSymbol Interface { get; init; }
+  public System.Boolean Equals(FreexComp.Compiler.Types.ImplementedInterface other)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> Implementations { get; init; }
+  public System.Int64 Offset { get; init; }
+  public System.Void Deconstruct(out FreexComp.Compiler.Types.InterfaceTypeSymbol Interface, out System.Int64 Offset, out System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> Implementations)
+  public ctor(FreexComp.Compiler.Types.InterfaceTypeSymbol Interface, System.Int64 Offset, System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> Implementations)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.Types.ImplementedInterface left, FreexComp.Compiler.Types.ImplementedInterface right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.Types.ImplementedInterface left, FreexComp.Compiler.Types.ImplementedInterface right)
+sealed class FreexComp.Compiler.Types.IntegerTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public System.Boolean IsSigned { get; }
+  public System.Int32 Bits { get; }
+  public System.Numerics.BigInteger Max { get; }
+  public System.Numerics.BigInteger Min { get; }
+  public override FreexComp.Compiler.Types.TypeSymbol BaseType { get; }
+  public override System.Boolean IsOrdinal { get; }
+sealed class FreexComp.Compiler.Types.InterfaceTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Symbols.MethodSymbol Invoke { get; }
+  public FreexComp.Compiler.Symbols.PropertySymbol DefaultProperty { get; }
+  public FreexComp.Compiler.Types.InterfaceTypeSymbol Parent { get; }
+  public System.Boolean IsAnonymousMethod { get; }
+  public System.Boolean IsForward { get; }
+  public System.Boolean IsMethodReference { get; }
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Types.InterfaceTypeSymbol> SelfAndAncestors()
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> AllMethods { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> Methods { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.PropertySymbol> Properties { get; }
+  public System.Nullable<System.Collections.Immutable.ImmutableArray<System.Byte>> Guid { get; }
+  public override FreexComp.Compiler.Types.TypeSymbol BaseType { get; }
+  public override System.Boolean IsManaged { get; }
+  public override System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> Members { get; }
+  public override System.String ToDisplayString()
+sealed class FreexComp.Compiler.Types.MethodPointerTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Symbols.RoutineSymbol Signature { get; }
+sealed class FreexComp.Compiler.Types.OpenArrayTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.TypeSymbol ElementType { get; }
+  public System.Boolean IsArrayOfConst { get; }
+sealed class FreexComp.Compiler.Types.PointerTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.TypeSymbol PointedType { get; }
+  public System.Boolean AllowsPointerMath { get; }
+sealed class FreexComp.Compiler.Types.ProceduralTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Symbols.RoutineSymbol Signature { get; }
+enum FreexComp.Compiler.Types.RealKind
+  Currency = 2
+  Double = 1
+  Single = 0
+sealed class FreexComp.Compiler.Types.RealTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.RealKind RealKind { get; }
+sealed class FreexComp.Compiler.Types.RecordTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public System.Boolean HasVariantPart { get; }
+  public System.Boolean IsAnonymous { get; }
+  public System.Boolean IsPacked { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.FieldSymbol> Fields { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.GenericMethodSymbol> GenericMethods { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.MethodSymbol> Methods { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.PropertySymbol> Properties { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> NestedMembers { get; }
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.VariableSymbol> ClassVariables { get; }
+  public System.Int32 Packing { get; }
+  public override System.Boolean IsManaged { get; }
+  public override System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> Members { get; }
+  public override System.String ToDisplayString()
+enum FreexComp.Compiler.Types.RttiScope
+  Broad = 0
+  Published = 1
+sealed class FreexComp.Compiler.Types.SetTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.TypeSymbol ElementType { get; }
+  public System.Boolean IsSmall { get; }
+  public System.Int32 Capacity { get; }
+sealed class FreexComp.Compiler.Types.StringTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+  public FreexComp.Compiler.Types.StringVariant Variant { get; }
+  public System.Int32 CodePage { get; }
+  public System.Int32 MaxLength { get; }
+  public override System.Boolean IsManaged { get; }
+enum FreexComp.Compiler.Types.StringVariant
+  Ansi = 1
+  Short = 2
+  Unicode = 0
+sealed class FreexComp.Compiler.Types.TextTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+enum FreexComp.Compiler.Types.TypeKind
+  Array = 11
+  Boolean = 2
+  Char = 3
+  Class = 15
+  ClassRef = 16
+  DynamicArray = 12
+  Enum = 5
+  Error = 0
+  GenericDefinition = 26
+  Helper = 25
+  Integer = 1
+  Interface = 17
+  MethodPointer = 19
+  Nil = 24
+  OpenArray = 13
+  Pointer = 10
+  Procedural = 18
+  Real = 4
+  Record = 14
+  Reference = 20
+  Set = 7
+  ShortString = 9
+  String = 8
+  Subrange = 6
+  Text = 22
+  TypeParameter = 21
+  Untyped = 23
+abstract class FreexComp.Compiler.Types.TypeSymbol : FreexComp.Compiler.Symbols.Symbol
+  public FreexComp.Compiler.Types.TypeKind TypeKind { get; }
+  public FreexComp.Compiler.Types.TypeSymbol GenericDefinition { get; }
+  public System.Boolean InheritsFrom(FreexComp.Compiler.Types.TypeSymbol other)
+  public System.Boolean IsGenericInstance { get; }
+  public System.Collections.Generic.IEnumerable<FreexComp.Compiler.Symbols.Symbol> GetMembers(System.String name, System.Boolean includeInherited = true)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Types.TypeSymbol> TypeArguments { get; }
+  public System.Int32 Alignment { get; }
+  public System.Int64 Size { get; }
+  public override System.String ToDisplayString()
+  public virtual FreexComp.Compiler.Types.TypeSymbol BaseType { get; }
+  public virtual System.Boolean IsGenericDefinition { get; }
+  public virtual System.Boolean IsManaged { get; }
+  public virtual System.Boolean IsOrdinal { get; }
+  public virtual System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> Members { get; }
+sealed class FreexComp.Compiler.Types.UntypedTypeSymbol : FreexComp.Compiler.Types.TypeSymbol

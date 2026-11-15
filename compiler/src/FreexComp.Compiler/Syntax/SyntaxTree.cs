@@ -54,6 +54,27 @@ public sealed class SyntaxTree
         return new SyntaxTree(text, root, diagnostics, included);
     }
 
+    /// <summary>A tree whose root is a <see cref="FragmentSyntax"/> (<c>SyntaxFactory.ParseNode&lt;T&gt;</c>); includes are not read.</summary>
+    internal static SyntaxTree ParseFragment(SourceText text, Type category)
+    {
+        var preprocessor = new Preprocessor(text, null, null);
+        var tokens = ImmutableArray.CreateBuilder<SyntaxToken>();
+        SyntaxToken token;
+        do
+        {
+            token = preprocessor.Lex();
+            tokens.Add(token);
+        }
+        while (token.Kind != SyntaxKind.EndOfFileToken);
+
+        var parser = new Parser(text, tokens.ToImmutable());
+        var root = parser.ParseFragment(category);
+        var diagnostics = preprocessor.Diagnostics.Concat(parser.Diagnostics)
+            .OrderBy(d => d.Location.Span.Start)
+            .ToImmutableArray();
+        return new SyntaxTree(text, root, diagnostics, []);
+    }
+
     public SourceText Text { get; }
 
     public CompilationUnitSyntax Root { get; }

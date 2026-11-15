@@ -3,6 +3,7 @@
     <RootNamespace>FreexComp.Compiler.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Shared\PublicApiListing.cs" Link="Shared\PublicApiListing.cs" />
     <ProjectReference Include="..\..\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
     <!-- DeterminismTests run opc.exe in separate processes (own hash seeds) -->
     <ProjectReference Include="..\..\src\opc\opc.csproj" />

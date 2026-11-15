@@ -279,4 +279,5 @@ public enum SyntaxKind
     AttributeList,
     Attribute,
     AnonymousMethodExpression,
+    Fragment,
 }
