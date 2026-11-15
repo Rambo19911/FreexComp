@@ -4083,4 +4083,252 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>{0}, {1}</value>
     <comment>tool-windows.md §6 (I-100)</comment>
   </data>
+  <data name="RunParameters_Title" xml:space="preserve">
+    <value>Run Parameters — {0}</value>
+    <comment>dialogs.md §22: window title, 0 = project name (I-108)</comment>
+  </data>
+  <data name="RunParameters_Arguments" xml:space="preserve">
+    <value>_Arguments:</value>
+    <comment>dialogs.md §22: Arguments label</comment>
+  </data>
+  <data name="RunParameters_WorkingDir" xml:space="preserve">
+    <value>_Working folder:</value>
+    <comment>dialogs.md §22: WorkingDir label</comment>
+  </data>
+  <data name="RunParameters_CommandLine" xml:space="preserve">
+    <value>Command line:</value>
+    <comment>dialogs.md §22: CommandLine label</comment>
+  </data>
+  <data name="RunParameters_WorkingDirPicker" xml:space="preserve">
+    <value>Choose the Working Folder</value>
+    <comment>dialogs.md §22: folder picker title</comment>
+  </data>
+  <data name="ProjectOptions_Title" xml:space="preserve">
+    <value>Project Options — {0}</value>
+    <comment>dialogs.md §8: window title, 0 = project name (I-107)</comment>
+  </data>
+  <data name="ProjectOptions_Configuration" xml:space="preserve">
+    <value>_Configuration:</value>
+    <comment>dialogs.md §8: configuration combo label</comment>
+  </data>
+  <data name="ProjectOptions_ActiveSuffix" xml:space="preserve">
+    <value>{0} (active)</value>
+    <comment>dialogs.md §8: active configuration in the combo</comment>
+  </data>
+  <data name="ProjectOptions_AllConfigurations" xml:space="preserve">
+    <value>All configurations</value>
+    <comment>dialogs.md §8: combo text on project-wide pages</comment>
+  </data>
+  <data name="ProjectOptions_NewConfiguration" xml:space="preserve">
+    <value>Ne_w…</value>
+    <comment>dialogs.md §8: NewConfiguration button</comment>
+  </data>
+  <data name="ProjectOptions_DeleteConfiguration" xml:space="preserve">
+    <value>_Delete</value>
+    <comment>dialogs.md §8: DeleteConfiguration button</comment>
+  </data>
+  <data name="ProjectOptions_Page_Application" xml:space="preserve">
+    <value>Application</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_Page_Compiler" xml:space="preserve">
+    <value>Compiler</value>
+    <comment>dialogs.md §8.2</comment>
+  </data>
+  <data name="ProjectOptions_Page_SearchPaths" xml:space="preserve">
+    <value>Search Paths</value>
+    <comment>dialogs.md §8.3</comment>
+  </data>
+  <data name="ProjectOptions_Page_ConditionalDefines" xml:space="preserve">
+    <value>Conditional Defines</value>
+    <comment>dialogs.md §8.4</comment>
+  </data>
+  <data name="ProjectOptions_Page_Output" xml:space="preserve">
+    <value>Output</value>
+    <comment>dialogs.md §8.5</comment>
+  </data>
+  <data name="ProjectOptions_Page_Run" xml:space="preserve">
+    <value>Run</value>
+    <comment>dialogs.md §8.6</comment>
+  </data>
+  <data name="ProjectOptions_Page_BuildEvents" xml:space="preserve">
+    <value>Build Events</value>
+    <comment>dialogs.md §8.7</comment>
+  </data>
+  <data name="ProjectOptions_Name" xml:space="preserve">
+    <value>Project _name:</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_AppType" xml:space="preserve">
+    <value>Application _type:</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_AppType_Console" xml:space="preserve">
+    <value>Console application</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_AppType_Gui" xml:space="preserve">
+    <value>Windows application</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_AppType_Library" xml:space="preserve">
+    <value>Library</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_AppType_Package" xml:space="preserve">
+    <value>Package</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_MainSource" xml:space="preserve">
+    <value>_Main source file:</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_Language" xml:space="preserve">
+    <value>Language:</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_LanguagePascal" xml:space="preserve">
+    <value>Object Pascal</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_Platforms" xml:space="preserve">
+    <value>Target platform:</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_PlatformWin64" xml:space="preserve">
+    <value>Windows 64-bit</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_ProjectFile" xml:space="preserve">
+    <value>Project file:</value>
+    <comment>dialogs.md §8.1</comment>
+  </data>
+  <data name="ProjectOptions_Optimization" xml:space="preserve">
+    <value>_Optimization:</value>
+    <comment>dialogs.md §8.2</comment>
+  </data>
+  <data name="ProjectOptions_Optimization0" xml:space="preserve">
+    <value>None (-O0)</value>
+    <comment>dialogs.md §8.2</comment>
+  </data>
+  <data name="ProjectOptions_Optimization1" xml:space="preserve">
+    <value>Basic (-O1)</value>
+    <comment>dialogs.md §8.2</comment>
+  </data>
+  <data name="ProjectOptions_Optimization2" xml:space="preserve">
+    <value>Full (-O2)</value>
+    <comment>dialogs.md §8.2</comment>
+  </data>
+  <data name="ProjectOptions_DebugInfo" xml:space="preserve">
+    <value>_Generate debug information</value>
+    <comment>dialogs.md §8.2</comment>
+  </data>
+  <data name="ProjectOptions_SearchPaths" xml:space="preserve">
+    <value>Unit _search paths</value>
+    <comment>dialogs.md §8.3</comment>
+  </data>
+  <data name="ProjectOptions_SearchPathsNote" xml:space="preserve">
+    <value>Searched in this order, after the main file's folder</value>
+    <comment>dialogs.md §8.3 wireframe</comment>
+  </data>
+  <data name="ProjectOptions_SearchPathPicker" xml:space="preserve">
+    <value>Add a Unit Search Path</value>
+    <comment>dialogs.md §8.3: folder picker title</comment>
+  </data>
+  <data name="ProjectOptions_Add" xml:space="preserve">
+    <value>_Add…</value>
+    <comment>dialogs.md §8.3</comment>
+  </data>
+  <data name="ProjectOptions_Edit" xml:space="preserve">
+    <value>_Edit</value>
+    <comment>dialogs.md §8.3</comment>
+  </data>
+  <data name="ProjectOptions_Remove" xml:space="preserve">
+    <value>_Remove</value>
+    <comment>dialogs.md §8.3</comment>
+  </data>
+  <data name="ProjectOptions_MoveUp" xml:space="preserve">
+    <value>Move _Up</value>
+    <comment>dialogs.md §8.3</comment>
+  </data>
+  <data name="ProjectOptions_MoveDown" xml:space="preserve">
+    <value>Move _Down</value>
+    <comment>dialogs.md §8.3</comment>
+  </data>
+  <data name="ProjectOptions_ProjectDefines" xml:space="preserve">
+    <value>Defines for _all configurations:</value>
+    <comment>dialogs.md §8.4</comment>
+  </data>
+  <data name="ProjectOptions_ConfigDefines" xml:space="preserve">
+    <value>Defines for this _configuration:</value>
+    <comment>dialogs.md §8.4</comment>
+  </data>
+  <data name="ProjectOptions_Effective" xml:space="preserve">
+    <value>Effective defines:</value>
+    <comment>dialogs.md §8.4</comment>
+  </data>
+  <data name="ProjectOptions_OutputDir" xml:space="preserve">
+    <value>_Output folder:</value>
+    <comment>dialogs.md §8.5</comment>
+  </data>
+  <data name="ProjectOptions_OutputDirPicker" xml:space="preserve">
+    <value>Choose the Output Folder</value>
+    <comment>dialogs.md §8.5: folder picker title</comment>
+  </data>
+  <data name="ProjectOptions_OutputFile" xml:space="preserve">
+    <value>Executable:</value>
+    <comment>dialogs.md §8.5</comment>
+  </data>
+  <data name="ProjectOptions_ObjDir" xml:space="preserve">
+    <value>Intermediate files:</value>
+    <comment>dialogs.md §8.5</comment>
+  </data>
+  <data name="ProjectOptions_PreBuild" xml:space="preserve">
+    <value>_Before build (one command per line):</value>
+    <comment>dialogs.md §8.7</comment>
+  </data>
+  <data name="ProjectOptions_PostBuild" xml:space="preserve">
+    <value>_After build (one command per line):</value>
+    <comment>dialogs.md §8.7</comment>
+  </data>
+  <data name="NewConfiguration_Title" xml:space="preserve">
+    <value>New Configuration</value>
+    <comment>dialogs.md §8 UI-DLG-083</comment>
+  </data>
+  <data name="NewConfiguration_Name" xml:space="preserve">
+    <value>_Name:</value>
+    <comment>UI-DLG-083</comment>
+  </data>
+  <data name="NewConfiguration_CopyFrom" xml:space="preserve">
+    <value>_Copy settings from:</value>
+    <comment>UI-DLG-083</comment>
+  </data>
+  <data name="NewConfiguration_Create" xml:space="preserve">
+    <value>Create</value>
+    <comment>UI-DLG-083: default button</comment>
+  </data>
+  <data name="Structure_Group_Errors" xml:space="preserve">
+    <value>Errors ({0})</value>
+    <comment>tool-windows.md §3 UI-TW-201: group row, 0 = count (I-124)</comment>
+  </data>
+  <data name="Structure_Group_Uses" xml:space="preserve">
+    <value>Uses</value>
+    <comment>tool-windows.md §3 UI-TW-201</comment>
+  </data>
+  <data name="Structure_Group_Types" xml:space="preserve">
+    <value>Types</value>
+    <comment>tool-windows.md §3 UI-TW-201</comment>
+  </data>
+  <data name="Structure_Group_Constants" xml:space="preserve">
+    <value>Constants</value>
+    <comment>tool-windows.md §3 UI-TW-201</comment>
+  </data>
+  <data name="Structure_Group_Variables" xml:space="preserve">
+    <value>Variables</value>
+    <comment>tool-windows.md §3 UI-TW-201</comment>
+  </data>
+  <data name="Structure_Group_Routines" xml:space="preserve">
+    <value>Routines</value>
+    <comment>tool-windows.md §3 UI-TW-201</comment>
+  </data>
 </root>

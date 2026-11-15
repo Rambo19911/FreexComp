@@ -14,6 +14,13 @@ public interface IProjectService
     /// <summary>The open project as read by <c>FreexComp.Build</c> (run settings, configurations); null without one.</summary>
     FreexComp.Build.Project? Definition { get; }
 
+    /// <summary>
+    /// UI-DLG-081 <c>IProjectService.ApplyOptions</c>: replaces the open project's definition with
+    /// <paramref name="workingCopy"/> (edited from <see cref="Definition"/> with <c>with</c>, so keys the dialogs do not
+    /// show survive) and saves the <c>.pproj</c> (IDE-PM-004). False when the save failed (reported) or no project is open.
+    /// </summary>
+    Task<bool> ApplyOptionsAsync(FreexComp.Build.Project workingCopy);
+
     /// <summary>A project was opened or closed, or the open one changed.</summary>
     event EventHandler? ProjectChanged;
 

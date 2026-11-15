@@ -68,6 +68,33 @@ public static class PerformanceBudget
         return Median(samples);
     }
 
+    /// <summary>
+    /// I-192: the smallest CPU time of the calling thread over <paramref name="runs"/> runs, after two unmeasured warm-up
+    /// runs, with a full garbage collection before each run so that collecting earlier garbage is not charged to it.
+    /// Load from other processes only ever adds time to a run (cache and memory-bandwidth contention, frequency drops),
+    /// so the fastest run is the measure least affected by it; the budget itself stays unchanged.
+    /// </summary>
+    public static TimeSpan MinThreadCpu(Action action, int runs = 7)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        action();
+        action();
+        var best = TimeSpan.MaxValue;
+        for (int i = 0; i < runs; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            var before = CurrentThreadCpu();
+            action();
+            var sample = CurrentThreadCpu() - before;
+            if (sample < best)
+                best = sample;
+        }
+
+        return best;
+    }
+
     /// <summary>Median of <paramref name="samples"/> (for wall-clock samples of work that spans threads and awaits).</summary>
     public static TimeSpan Median(IEnumerable<TimeSpan> samples)
     {

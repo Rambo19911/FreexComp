@@ -151,7 +151,11 @@ public static class ServiceGraph
         {
             OpenToolchainOptions = () => commands.ExecuteAsync("tools.options", OptionsViewModel.ToolchainPathsPage),
         };
+        var codeModel = new CodeModel.CodeModelService(projects, documents, toolchain, platform.FileSystem); // I-110
+        build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
         build.RegisterCommands(commands);
+        var structureView = new ViewModels.StructureViewModel(documents, platform.Clock, platform.Dispatcher, codeModel.Worker, layout, navigation); // I-124
+        structureView.RegisterCommands(commands);
         var messagesView = new ViewModels.MessagesViewModel(messages, settings, platform.Clipboard);
         messagesView.RegisterCommands(commands);
         build.ShowMessages = () => toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false); // UI-TW-409
@@ -169,6 +173,7 @@ public static class ServiceGraph
             OpenRunParameters = () => commands.ExecuteAsync("run.parameters"),
         };
         run.RegisterCommands(commands);
+        ProjectDialogCommands.Register(commands, projects, platform.Dialogs, platform.FileDialogs, platform.FileSystem, layout); // I-107, I-108
         projects.BeforeClose = () => run.ConfirmStopAsync(exiting: false); // IDE-P3-093
         projects.ProjectChanged += (_, _) =>
         {
@@ -184,7 +189,7 @@ public static class ServiceGraph
 
         // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.
         var extras = toolWindows ?? [];
-        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition, messagesView.Definition, outputView.Definition])
+        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition, structureView.Definition, messagesView.Definition, outputView.Definition])
         {
             if (!extras.Any(e => e.Name == definition.Name))
                 toolWindowService.Register(definition);

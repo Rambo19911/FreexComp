@@ -95,6 +95,23 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("project.deleteFile", new Handler(_ => CanOperateOnFiles(), _ => DeleteFilesAsync(FileTargets())));
         commands.RegisterHandler("project.renameFile", new Handler(_ => RenameTarget() is not null, _ => RenameCommandAsync()));
         commands.RegisterHandler("project.setConfiguration", new Handler(_ => Project is not null, SetActiveConfigurationAsync));
+        // menus.md: enabled while a project is open and the active configuration's output folder exists (I-191).
+        commands.RegisterHandler("project.openOutputFolder", new Handler(
+            _ => OutputFolder() is { } dir && _fileSystem.DirectoryExists(dir),
+            _ =>
+            {
+                if (OutputFolder() is { } dir && _fileSystem.DirectoryExists(dir) && !_shell.OpenFolder(dir))
+                    _log.Warning(LogCategory, $"The shell could not open '{dir}'.");
+                return Task.CompletedTask;
+            }));
+    }
+
+    /// <summary><c>&lt;project dir&gt;\&lt;outputDir&gt;</c> of the active configuration, or null without a project.</summary>
+    public string? OutputFolder()
+    {
+        if (_project is null || Project is null || !_project.Configurations.TryGetValue(_project.ActiveConfiguration, out var configuration))
+            return null;
+        return Path.GetFullPath(Path.Combine(Project.Directory, configuration.OutputDir.Replace('/', '\\')));
     }
 
     /// <summary>
@@ -112,6 +129,18 @@ public sealed class ProjectService : IProjectService
         }
 
         return await SaveChangedProjectAsync(_project with { ActiveConfiguration = name });
+    }
+
+    public async Task<bool> ApplyOptionsAsync(Project workingCopy)
+    {
+        ArgumentNullException.ThrowIfNull(workingCopy);
+        if (_project is null)
+            return false;
+        // The file path is the open project's; the active configuration falls back to the first one (UI-DLG-084).
+        var copy = workingCopy with { FilePath = _project.FilePath };
+        if (!copy.Configurations.ContainsKey(copy.ActiveConfiguration) && copy.ConfigurationNames.Length > 0)
+            copy = copy with { ActiveConfiguration = copy.ConfigurationNames[0] };
+        return copy == _project || await SaveChangedProjectAsync(copy);
     }
 
     /// <summary><c>project.addExistingFile</c> (IDE-PM-050): the multi-select picker, then <see cref="AddExistingFilesAsync"/>.</summary>

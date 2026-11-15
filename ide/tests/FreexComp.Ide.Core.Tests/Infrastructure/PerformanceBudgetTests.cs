@@ -72,6 +72,25 @@ public sealed class PerformanceBudgetTests
         Assert.Contains("unoptimized", message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// I-192: the fastest of the measured runs is reported, so one run slowed down (here: made five times longer, as by
+    /// load from another process) does not count, and the warm-up runs are not measured; nothing is under-counted.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Category", "Performance")]
+    public void MinThreadCpuIgnoresASlowRun()
+    {
+        var calls = 0;
+        var fastest = PerformanceBudget.MinThreadCpu(() =>
+        {
+            calls++;
+            SpinThreadCpu(TimeSpan.FromMilliseconds(calls is 1 or 5 ? 100 : 20));
+        }, runs: 3);
+
+        Assert.Equal(5, calls); // two warm-ups, three measured
+        Assert.InRange(fastest.TotalMilliseconds, 20, 99);
+    }
+
     /// <summary>Burns CPU on the calling thread until it has used <paramref name="cpu"/> (thread CPU, not wall clock).</summary>
     private static void SpinThreadCpu(TimeSpan cpu)
     {

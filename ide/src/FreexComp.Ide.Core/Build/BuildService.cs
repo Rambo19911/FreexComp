@@ -136,11 +136,84 @@ public sealed class BuildService : IBuildService
         commands.RegisterHandler("project.build", new Handler(() => _projects.Project is not null, () => BuildAsync(BuildKind.Build)));
         commands.RegisterHandler("project.rebuild", new Handler(() => _projects.Project is not null, () => BuildAsync(BuildKind.Rebuild)));
         commands.RegisterHandler("project.clean", new Handler(() => _projects.Project is not null, () => BuildAsync(BuildKind.Clean)));
+        commands.RegisterHandler("project.checkSyntax", new Handler(() => _projects.Project is not null && CheckSyntax is not null, CheckSyntaxAsync));
         commands.RegisterHandler("project.cancelBuild", new Handler(() => _cts is not null && !_state.Current.CancelRequested, () =>
         {
             Cancel();
             return Task.CompletedTask;
         }));
+    }
+
+    /// <summary>The project diagnostics with the open buffers (<c>CodeModelService</c>, I-110; set by the service graph).</summary>
+    public Func<CancellationToken, Task<System.Collections.Immutable.ImmutableArray<Diagnostic>>>? CheckSyntax { get; set; }
+
+    /// <summary>
+    /// IDE-P3-055 <c>project.checkSyntax</c>: state Building (kind CheckSyntax), the program's diagnostics from the
+    /// language service with the unsaved buffers, reported to Messages and Output like a build's; nothing is saved or
+    /// written and no toolchain check is made. Cancellable with <c>project.cancelBuild</c>.
+    /// </summary>
+    public async Task CheckSyntaxAsync()
+    {
+        if (_projects.Project is null || CheckSyntax is not { } check || _state.Current.State != IdeState.Idle)
+            return;
+        if (!_state.TryTransition(new IdeStateInfo(IdeState.Building, BuildKind.CheckSyntax, false, null, null)))
+            return;
+        try
+        {
+            if (_settings.Get(SettingsCatalog.OutputClearOnBuild))
+                _output.Clear(OutputChannels.Build);
+            _messages.BeginBuild();
+            ShowBuildOutput?.Invoke();
+            using var cts = new CancellationTokenSource();
+            _cts = cts;
+            _forced = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics;
+            try
+            {
+                var work = check(cts.Token);
+                if (await Task.WhenAny(work, _forced.Task) != work)
+                    throw new OperationCanceledException();
+                diagnostics = await work;
+            }
+            catch (OperationCanceledException)
+            {
+                Finish(Strings.Msg_Build_Canceled, success: false);
+                return;
+            }
+            catch (Exception e)
+            {
+                _log.Error(Category, "Check Syntax failed.", e);
+                _output.Append(OutputChannels.Build, e.ToString(), OutputKind.Error);
+                _messages.AddError(Strings.Msg_Build_InternalError);
+                Finish(Strings.Msg_Build_InternalError, success: false);
+                ShowMessages?.Invoke();
+                return;
+            }
+            finally
+            {
+                _cancelTimer?.Dispose();
+                _cancelTimer = null;
+                _cts = null;
+            }
+
+            foreach (var d in diagnostics)
+                _output.Append(OutputChannels.Build, d.ToText(), d.Severity == DiagnosticSeverity.Error ? OutputKind.Error : OutputKind.Normal);
+            _messages.AddDiagnostics([.. diagnostics]);
+            var errors = diagnostics.Count(d => d.Severity == DiagnosticSeverity.Error);
+            Finish(errors switch
+            {
+                0 => Strings.Msg_Build_SyntaxOk,
+                1 => Strings.Msg_Build_FailedOne,
+                _ => Format(Strings.Msg_Build_FailedMany, errors),
+            }, success: errors == 0);
+            if (errors > 0 && _settings.Get(SettingsCatalog.MessagesAutoShowOnError))
+                ShowMessages?.Invoke();
+        }
+        finally
+        {
+            if (_state.Current.State == IdeState.Building)
+                _state.TryTransition(IdeStateInfo.Idle);
+        }
     }
 
     /// <summary>Opens Options › Toolchain Paths (the <c>Open Options</c> button of <c>Msg.Build.ToolchainMissing</c>).</summary>

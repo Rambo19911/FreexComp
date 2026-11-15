@@ -24,14 +24,17 @@ public sealed partial class ProjectManagerViewTests
         Assert.Contains("project.openOutputFolder", ids);
         Assert.True(menu[0].Command!.CanExecute(null)); // project.build works on the open project
 
-        // Enter on the root row runs project.options (still a stub until the dialog, I-107) instead of toggling the row.
+        // Enter on the root row opens Project Options (I-107) instead of toggling the row.
         var executed = new List<string>();
         h.Services.Commands.Executed += (_, e) => executed.Add(e.CommandId);
         Assert.True(h.Services.ToolWindows.Show(ProjectManagerViewModel.ToolName, focus: true));
         Dispatcher.UIThread.RunJobs();
         var expanded = pm.Find("$project")!.IsExpanded;
         h.Press("Enter");
-        await h.WaitForAsync(() => executed.Contains("projectManager.open"), "projectManager.open executed");
+        var options = await h.WaitForDialogAsync("ProjectOptions");
         Assert.Equal(expanded, pm.Find("$project")!.IsExpanded);
+        options.Press("Escape");
+        await h.WaitForAsync(() => !options.Window.IsVisible, "Project Options closed");
+        await h.WaitForAsync(() => executed.Contains("projectManager.open"), "projectManager.open executed");
     }
 }

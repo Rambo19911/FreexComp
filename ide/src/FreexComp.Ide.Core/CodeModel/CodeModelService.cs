@@ -1,0 +1,97 @@
+using System.Collections.Immutable;
+using FreexComp.Build;
+using FreexComp.Compiler;
+using FreexComp.Ide.Core.Build;
+using FreexComp.Ide.Core.Documents;
+using FreexComp.Ide.Core.Projects;
+using FreexComp.Ide.Core.ViewModels;
+using FreexComp.LanguageService;
+
+namespace FreexComp.Ide.Core.CodeModel;
+
+/// <summary>
+/// The project <c>Compilation</c> (I-110, IDE-ARCH-087): a language-service <see cref="Workspace"/> over the IDE's file
+/// system with the open project's options (active configuration, toolchain RTL, no unit cache) and every open Pascal
+/// buffer as a <c>SourceText</c> override. The overrides are taken on the UI thread when a request is made; the work
+/// runs on the <see cref="CodeModelWorker"/>. Nothing is ever written.
+/// </summary>
+public sealed class CodeModelService
+{
+    private readonly IProjectService _projects;
+    private readonly IDocumentService _documents;
+    private readonly IToolchainLocator _toolchain;
+    private readonly Dictionary<string, long> _overrides = new(StringComparer.OrdinalIgnoreCase);
+    private (Project? Definition, string? Rtl, string? Framework) _projectKey;
+
+    public CodeModelService(IProjectService projects, IDocumentService documents, IToolchainLocator toolchain,
+        Platform.IFileSystem fileSystem)
+    {
+        _projects = projects;
+        _documents = documents;
+        _toolchain = toolchain;
+        Workspace = new Workspace(new CompilerFileSystemAdapter(fileSystem));
+    }
+
+    public Workspace Workspace { get; }
+
+    public CodeModelWorker Worker { get; } = new();
+
+    /// <summary>
+    /// The current compilation after bringing the project options and the open buffers up to date (UI thread).
+    /// Null without a project.
+    /// </summary>
+    public Compilation? Synchronize()
+    {
+        if (_projects.Definition is not { } definition || _projects.Project is not { } project)
+            return null;
+        var paths = _toolchain.Resolve();
+        var key = (definition, paths.RtlDir, paths.FrameworkDir);
+        if (key != _projectKey)
+        {
+            _projectKey = key;
+            var options = ProjectOptions.ToCompilationOptions(definition, project.ActiveConfiguration) with
+            {
+                RtlDirectory = paths.RtlDir ?? "",
+                UsePcuCache = false, // Check Syntax reads sources only and writes nothing (IDE-P3-055)
+            };
+            if (paths.FrameworkDir is { } framework)
+                options = options with { SearchPaths = options.SearchPaths.Add(Path.Combine(framework, "src")) };
+            Workspace.SetProject(options);
+        }
+
+        var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var document in _documents.Documents.OfType<TextDocumentViewModel>())
+        {
+            if (document.FilePath is not { } path || !IsPascal(path))
+                continue;
+            open.Add(path);
+            var version = document.Buffer.Version;
+            if (_overrides.TryGetValue(path, out var known) && known == version)
+                continue;
+            if (_overrides.ContainsKey(path))
+                Workspace.UpdateDocument(path, document.Buffer.Text);
+            else
+                Workspace.OpenDocument(path, document.Buffer.Text);
+            _overrides[path] = version;
+        }
+
+        foreach (var closed in _overrides.Keys.Where(p => !open.Contains(p)).ToList())
+        {
+            Workspace.CloseDocument(closed);
+            _overrides.Remove(closed);
+        }
+
+        return Workspace.CurrentCompilation;
+    }
+
+    /// <summary>IDE-P3-055: the whole program's diagnostics (parse + bind every unit) with the unsaved buffers; empty without a project.</summary>
+    public Task<ImmutableArray<Diagnostic>> GetProjectDiagnosticsAsync(CancellationToken ct)
+    {
+        if (Synchronize() is not { } compilation)
+            return Task.FromResult(ImmutableArray<Diagnostic>.Empty);
+        return Worker.RunAsync("projectDiagnostics", token => compilation.GetDiagnostics(null, token), ct);
+    }
+
+    private static bool IsPascal(string path) =>
+        Path.GetExtension(path) is var ext && (ext.Equals(".pas", StringComparison.OrdinalIgnoreCase) || ext.Equals(".inc", StringComparison.OrdinalIgnoreCase));
+}
