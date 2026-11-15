@@ -44,6 +44,9 @@ internal sealed class LoadedUnit(string path)
 
     public BindingResult? Result { get; set; }
 
+    /// <summary>C-244: bound with only some bodies (<see cref="UnitBinder.PartialBodies"/>); never taken over by a later run.</summary>
+    public bool IsPartial { get; set; }
+
     /// <summary>The unit's <c>.pcu</c> <c>linkInputs</c> (C-077); set by the compilation after binding.</summary>
     public UnitLinkInputs LinkInputs { get; set; } = UnitLinkInputs.Empty;
 
@@ -120,6 +123,12 @@ internal sealed class UnitBinder : IUsesScopes
     /// <summary>The units taken over from an earlier run (C-130); the others were loaded and bound by this one.</summary>
     public HashSet<LoadedUnit> Reused { get; } = [];
 
+    /// <summary>
+    /// C-244: the file whose bodies are bound only where the filter accepts them (no flow analysis, no generic instance bodies), for a
+    /// language-service model of one position; null binds everything.
+    /// </summary>
+    public (string Path, Func<SyntaxNode, bool> Filter)? PartialBodies { get; init; }
+
     public LoadedUnit? SystemUnit { get; private set; }
 
     public LoadedUnit? Main { get; private set; }
@@ -157,7 +166,7 @@ internal sealed class UnitBinder : IUsesScopes
         }
 
         // C-116 (CMP-385): generic instance bodies once all implementation parts are bound; in unit order (deterministic)
-        foreach (var unit in ready.Where(u => u.Result is not null))
+        foreach (var unit in ready.Where(u => u.Result is not null && !u.IsPartial))
         {
             var before = unit.Result!.Diagnostics.ToHashSet();
             unit.Result = Binder.BindInstances(unit.Result);
@@ -371,9 +380,15 @@ internal sealed class UnitBinder : IUsesScopes
     {
         unit.Phase = UnitPhase.Completing;
         var system = ReferenceEquals(unit, SystemUnit) ? null : SystemUnit?.Symbol;
-        unit.Result = Binder.Complete(unit.Tree!, unit.Interface!, Types, unit.Bag, unit.ImplementationUsesScope!, system);
+        var partial = PartialBodies is { } p && Text.PathUtil.AreEqual(p.Path, unit.Path) ? p.Filter : null;
+        unit.IsPartial = partial is not null;
+        unit.Result = Binder.Complete(unit.Tree!, unit.Interface!, Types, unit.Bag, unit.ImplementationUsesScope!, system, partial);
         unit.Diagnostics.AddRange(unit.Result.Diagnostics);
-        unit.Diagnostics.AddRange(FlowAnalyzer.Analyze(unit.Result));
+        if (!unit.IsPartial)
+        {
+            unit.Diagnostics.AddRange(FlowAnalyzer.Analyze(unit.Result));
+        }
+
         unit.Phase = UnitPhase.Complete;
     }
 

@@ -153,5 +153,11 @@ public sealed class Document
     /// <summary>Bound on first use.</summary>
     public SemanticModel SemanticModel => _model.Value;
 
+    /// <summary>
+    /// C-244: <see cref="SemanticModel"/> once it exists, else a model that binds only the body around <paramref name="position"/>
+    /// (no diagnostics): for queries about that position (completion).
+    /// </summary>
+    internal SemanticModel ModelAt(int position) => _model.IsValueCreated ? _model.Value : Compilation.GetSemanticModel(Path, position);
+
     public Compilation Compilation { get; }
 }

@@ -87,15 +87,27 @@ internal sealed class PascalLexer
         var state = _directives.State;
         var (kind, value) = ScanToken();
         var text = _text[start.._pos];
-        if (_context.Options?.ConditionEvaluator != null)
+        var recording = _context.Options?.ConditionEvaluator != null;
+        var copying = recording && _context.LexerRecords;
+        if (recording)
         {
-            // the scope of later {$IF}s (LANG-862), before the trailing trivia that may hold one
-            _context.Emitted.Add(new SyntaxToken(kind, text, value, start, leading, [], state, _source));
+            // the scope of later {$IF}s (LANG-862), already for the trailing trivia that may hold one
+            _context.Pending = (kind, text, value, start, leading, state, _source);
         }
 
         _trivia.Clear();
         ScanTrivia(trailing: true);
-        return new SyntaxToken(kind, text, value, start, leading, ToArray(), state, _source);
+        var token = new SyntaxToken(kind, text, value, start, leading, ToArray(), state, _source);
+        if (recording)
+        {
+            _context.Pending = null;
+            if (copying)
+            {
+                _context.Emitted.Add(token);
+            }
+        }
+
+        return token;
     }
 
     /// <summary>Reports a diagnostic at <paramref name="span"/> of this lexer's file, with warning control applied.</summary>
@@ -554,12 +566,12 @@ internal sealed class PascalLexer
                     _pos++;
                 }
 
-                _trivia.Add(new SyntaxTrivia(SyntaxKind.WhitespaceTrivia, _text[start.._pos], start));
+                _trivia.Add(new SyntaxTrivia(SyntaxKind.WhitespaceTrivia, Spaces(start, _pos), start));
             }
             else if (c is '\r' or '\n')
             {
                 _pos += c == '\r' && next == '\n' ? 2 : 1;
-                _trivia.Add(new SyntaxTrivia(SyntaxKind.EndOfLineTrivia, _text[start.._pos], start));
+                _trivia.Add(new SyntaxTrivia(SyntaxKind.EndOfLineTrivia, _pos - start == 2 ? "\r\n" : c == '\n' ? "\n" : "\r", start));
                 if (trailing)
                 {
                     break;
@@ -736,6 +748,19 @@ internal sealed class PascalLexer
         _pos += width;
         _trivia.Add(new SyntaxTrivia(SyntaxKind.SkippedTokensTrivia, _text[start.._pos], start));
         Report("E1002", start, width, shown, codePoint.ToString("X4", CultureInfo.InvariantCulture));
+    }
+
+    private static readonly string[] SpaceRuns = [.. Enumerable.Range(0, 33).Select(n => new string(' ', n))];
+
+    /// <summary>C-244: the text of a whitespace run, shared for runs of up to 32 spaces (most trivia), else a new string.</summary>
+    private string Spaces(int start, int end)
+    {
+        if (end - start < SpaceRuns.Length && _text.AsSpan(start, end - start).IndexOfAnyExcept(' ') < 0)
+        {
+            return SpaceRuns[end - start];
+        }
+
+        return _text[start..end];
     }
 
     private static bool IsWhitespace(char c) => c is ' ' or '\t' or '\f' or '\u00A0' or '\uFEFF';

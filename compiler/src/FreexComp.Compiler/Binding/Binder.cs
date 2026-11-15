@@ -225,9 +225,14 @@ internal static class Binder
     /// the implementation declarations in the chain <paramref name="implementationUses"/>, then the routine bodies and the
     /// unit-level bodies. <paramref name="diagnostics"/> is the bag of the interface phase (one E2003 set per unit level).
     /// </summary>
+    /// <param name="bindBody">
+    /// C-244: null binds every body; otherwise only the routine and unit-level bodies whose syntax it accepts (with what they nest
+    /// and accepts), for a language-service model that needs one body — the result then lacks the other bodies and their diagnostics.
+    /// </param>
     public static BindingResult Complete(SyntaxTree tree, DeclarationBindingResult interfacePart, BuiltInTypes types, DiagnosticBag diagnostics,
-        Scope implementationUses, UnitSymbol? system)
+        Scope implementationUses, UnitSymbol? system, Func<SyntaxNode, bool>? bindBody = null)
     {
+        bool Wanted(SyntaxNode syntax) => bindBody is null || bindBody(syntax);
         var declarations = DeclarationBinder.BindImplementation(tree, interfacePart, types, diagnostics, implementationUses);
         var attributeThunks = AttributeBinder.Bind(tree, declarations.Unit, declarations.Scope, types, diagnostics);     // LANG-760…763 (C-126)
 
@@ -237,7 +242,7 @@ internal static class Binder
         var pending = new Queue<RoutineSymbol>(declarations.Unit.InterfaceMembers.Concat(declarations.Unit.ImplementationMembers)
             .OfType<RoutineSymbol>()
             .Concat(DeclarationBinder.MethodsOf(declarations.Unit))
-            .Where(r => r.Definition != null)
+            .Where(r => r.Definition != null && Wanted(r.Definition))
             .OrderBy(r => r.Definition!.Span.Start));
         void Drain()
         {
@@ -246,7 +251,7 @@ internal static class Binder
                 var routine = BindRoutineBody(types, pending.Dequeue());
                 routines.Add(routine);
                 routines.AddRange(routine.AnonymousBodies);
-                foreach (var nested in routine.AnonymousBodies.Prepend(routine).SelectMany(b => b.NestedRoutines).Where(r => r.Definition != null))
+                foreach (var nested in routine.AnonymousBodies.Prepend(routine).SelectMany(b => b.NestedRoutines).Where(r => r.Definition != null && Wanted(r.Definition)))
                 {
                     pending.Enqueue(nested);
                 }
@@ -266,16 +271,16 @@ internal static class Binder
 
         switch (tree.Root)
         {
-            case ProgramSyntax program:
+            case ProgramSyntax program when Wanted(program.Block.Body):
                 bodies.Add(BindUnitBody(program.Block.Body, program.Block.Body.Statements));
                 break;
             case UnitSyntax unit:
-                if (unit.InitializationSection is { } initialization)
+                if (unit.InitializationSection is { } initialization && Wanted(initialization))
                 {
                     bodies.Add(BindUnitBody(initialization, initialization.Statements));
                 }
 
-                if (unit.FinalizationSection is { } finalization)
+                if (unit.FinalizationSection is { } finalization && Wanted(finalization))
                 {
                     bodies.Add(BindUnitBody(finalization, finalization.Statements));
                 }
@@ -285,7 +290,7 @@ internal static class Binder
 
         // C-120: the anonymous methods of the unit-level bodies, then what they nest
         routines.AddRange(body.Expressions.AnonymousBodies);
-        foreach (var nested in body.Expressions.AnonymousBodies.SelectMany(b => b.NestedRoutines).Where(r => r.Definition != null))
+        foreach (var nested in body.Expressions.AnonymousBodies.SelectMany(b => b.NestedRoutines).Where(r => r.Definition != null && Wanted(r.Definition)))
         {
             pending.Enqueue(nested);
         }

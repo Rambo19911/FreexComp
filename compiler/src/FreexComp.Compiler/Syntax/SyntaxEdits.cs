@@ -121,12 +121,50 @@ public static class SyntaxEdits
     /// <c>uses</c> clause; else after the <c>implementation</c> line. The blank lines around the insertion become
     /// exactly one before and one after.
     /// </summary>
-    public static TextChange InsertMethodImplementation(UnitSyntax unit, string className, string methodText)
+    /// <remarks>
+    /// C-245: in a program the anchor is the last routine implementation qualified with <paramref name="className"/>, else the
+    /// program block's last declaration (so the bodies see every global), else the heading or <c>uses</c> clause, before the main
+    /// <c>begin</c> in every case.
+    /// </remarks>
+    public static TextChange InsertMethodImplementation(CompilationUnitSyntax root, string className, string methodText)
     {
-        ArgumentNullException.ThrowIfNull(unit);
+        ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(className);
         ArgumentNullException.ThrowIfNull(methodText);
-        var text = unit.SyntaxTree.Text;
+        var text = root.SyntaxTree.Text;
+        int anchor;
+        if (root is ProgramSyntax program)
+        {
+            var declarations = program.Block.Declarations;
+            if (declarations.OfType<RoutineDeclarationSyntax>().LastOrDefault(r => IsQualifiedWith(r.Heading.Name, className)) is { } own)
+            {
+                anchor = own.Span.End;
+            }
+            else if (declarations.Count > 0)
+            {
+                anchor = declarations[declarations.Count - 1].Span.End;
+            }
+            else if (program.UsesClause is { } uses)
+            {
+                anchor = uses.Span.End;
+            }
+            else if (program.SemicolonToken is { IsMissing: false } semicolon)
+            {
+                anchor = semicolon.Span.End;
+            }
+            else
+            {
+                return default;
+            }
+
+            return InsertAfterLine(text, anchor, methodText);
+        }
+
+        if (root is not UnitSyntax unit)
+        {
+            return default;
+        }
+
         var implementation = unit.ImplementationSection;
         if (implementation.ImplementationKeyword.IsMissing)
         {
@@ -135,7 +173,6 @@ public static class SyntaxEdits
 
         var lastMethod = implementation.Declarations.OfType<RoutineDeclarationSyntax>()
             .LastOrDefault(r => IsQualifiedWith(r.Heading.Name, className));
-        int anchor;
         if (lastMethod is not null)
         {
             anchor = lastMethod.Span.End;
@@ -153,6 +190,12 @@ public static class SyntaxEdits
             anchor = implementation.ImplementationKeyword.Span.End;
         }
 
+        return InsertAfterLine(text, anchor, methodText);
+    }
+
+    /// <summary>The CMP-254 insertion at the start of the line after <paramref name="anchor"/>'s, blank lines normalised.</summary>
+    private static TextChange InsertAfterLine(SourceText text, int anchor, string methodText)
+    {
         var lineEnding = DetectLineEnding(text.Text);
         var line = text.Lines.GetLinePosition(anchor).Line;
         var insertAt = NextLineStart(text, line);

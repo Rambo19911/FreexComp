@@ -58,14 +58,23 @@ public sealed class DeterminismTests : IDisposable
         var programs = Programs();
         Assert.True(programs.Length >= 50, $"only {programs.Length} M2.1 programs found in {Corpus}");
 
-        var first = programs.ToDictionary(p => p, p => EmitInProcess(LoadSources(), p), StringComparer.Ordinal);
+        // C-237 (CMP-911): each pass compiles the programs on several threads (every compilation is still independent, with its own
+        // file system); the second pass runs in reverse order on other threads, after shifting allocation order and hash codes
+        var first = EmitAll(programs);
 
         _ = Enumerable.Range(0, 10_000).Select(i => new object()).ToList();       // shift allocation order and object hash codes
-        var second = await Task.Run(() => programs.Reverse().ToDictionary(p => p, p => EmitInProcess(LoadSources(), p), StringComparer.Ordinal),
-            TestContext.Current.CancellationToken);
+        var second = await Task.Run(() => EmitAll([.. programs.Reverse()]), TestContext.Current.CancellationToken);
 
         var differing = programs.Where(p => first[p] != second[p]).ToList();
         Assert.True(differing.Count == 0, "non-deterministic .ll: " + string.Join(", ", differing));
+    }
+
+    private static Dictionary<string, (string Program, string System)> EmitAll(string[] programs)
+    {
+        var results = new System.Collections.Concurrent.ConcurrentDictionary<string, (string Program, string System)>(StringComparer.Ordinal);
+        Parallel.ForEach(programs, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(2, Environment.ProcessorCount / 2) },
+            p => results[p] = EmitInProcess(LoadSources(), p));
+        return new Dictionary<string, (string Program, string System)>(results, StringComparer.Ordinal);
     }
 
     /// <summary>Programs that together use every M2.1 construct family: nesting/frames, case tables, constants, Write, externals, includes, conditionals, checks.</summary>

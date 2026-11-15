@@ -1031,7 +1031,7 @@ sealed class FreexComp.Compiler.Syntax.SubrangeTypeSyntax : FreexComp.Compiler.S
 static class FreexComp.Compiler.Syntax.SyntaxEdits
   public static FreexComp.Compiler.Syntax.TextChange AddUsesEntry(FreexComp.Compiler.Syntax.CompilationUnitSyntax root, System.String unitName, System.Boolean interfaceSection, FreexComp.Compiler.Syntax.EditOptions options = null)
   public static FreexComp.Compiler.Syntax.TextChange InsertMember(FreexComp.Compiler.Syntax.TypeDeclarationSyntax type, System.String memberText, FreexComp.Compiler.Symbols.Visibility section)
-  public static FreexComp.Compiler.Syntax.TextChange InsertMethodImplementation(FreexComp.Compiler.Syntax.UnitSyntax unit, System.String className, System.String methodText)
+  public static FreexComp.Compiler.Syntax.TextChange InsertMethodImplementation(FreexComp.Compiler.Syntax.CompilationUnitSyntax root, System.String className, System.String methodText)
   public static FreexComp.Compiler.Syntax.TextChange RemoveMember(FreexComp.Compiler.Syntax.SyntaxNode member)
   public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> RenameMethod(FreexComp.Compiler.Syntax.UnitSyntax unit, System.String className, System.String oldName, System.String newName)
 static class FreexComp.Compiler.Syntax.SyntaxFactory

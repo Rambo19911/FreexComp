@@ -25,6 +25,9 @@ internal sealed class Preprocessor
     public Preprocessor(SourceText main, ParseOptions? options, IFileSystem? fileSystem)
     {
         _context = new PreprocessorContext(options);
+        Tokens = ImmutableArray.CreateBuilder<SyntaxToken>(main.Text.Length / 2 + 16);
+        _context.Emitted = Tokens;                              // the {$IF} scope reads the stream itself (C-244)
+        _context.LexerRecords = false;
         _fileSystem = fileSystem;
         _lexers.Add(new PascalLexer(main, _context, expandIncludes: fileSystem is not null));
         _entries.Add(null);
@@ -33,8 +36,14 @@ internal sealed class Preprocessor
     /// <summary>Every include occurrence in the order opened, with all its own tokens incl. its end-of-file token.</summary>
     public List<IncludedFile> Includes { get; } = [];
 
+    /// <summary>Every token <see cref="Lex"/> returned, in order (C-244: also the scope of later <c>{$IF}</c> conditions).</summary>
+    public ImmutableArray<SyntaxToken>.Builder Tokens { get; }
+
     /// <summary>Lexical and directive diagnostics of the main file and every include, in the order reported.</summary>
     public ImmutableArray<Diagnostic> Diagnostics => [.. _context.Diagnostics];
+
+    /// <summary>C-244: see <see cref="PreprocessorContext.EvaluatedCondition"/>.</summary>
+    public bool EvaluatedCondition => _context.EvaluatedCondition;
 
     public SyntaxToken Lex()
     {
@@ -62,6 +71,7 @@ internal sealed class Preprocessor
                 continue;
             }
 
+            Tokens.Add(token);
             return token;
         }
     }

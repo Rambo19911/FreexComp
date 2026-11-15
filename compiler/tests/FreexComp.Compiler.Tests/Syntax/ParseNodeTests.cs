@@ -35,6 +35,23 @@ public sealed class ParseNodeTests
         Assert.Same(node.SyntaxTree.Root, node.Parent);
     }
 
+    /// <summary>C-245: an empty fragment names what the fragment lacks (the category's existing code), not E1108 'end.' expected.</summary>
+    [Fact]
+    public void EmptyText_HasFragmentMessage()
+    {
+        var expression = SyntaxFactory.ParseNode<ExpressionSyntax>("  ").SyntaxTree.Diagnostics;
+        var statement = SyntaxFactory.ParseNode<StatementSyntax>("").SyntaxTree.Diagnostics;
+        var type = SyntaxFactory.ParseNode<TypeSyntax>("").SyntaxTree.Diagnostics;
+        var member = SyntaxFactory.ParseNode<RoutineDeclarationSyntax>("").SyntaxTree.Diagnostics;
+
+        Assert.Equal("E1103", Assert.Single(expression).Code);
+        Assert.Equal("Expression expected but 'end of file' found", expression[0].Message);
+        Assert.Equal("E1104", Assert.Single(statement).Code);
+        Assert.Equal("E1106", Assert.Single(type).Code);
+        Assert.Equal("E1107", Assert.Single(member).Code);
+        Assert.Equal(2, expression[0].Location.Span.Start);
+    }
+
     [Fact]
     public void StandAloneExpression_PrecedenceIsTheLanguages()
     {

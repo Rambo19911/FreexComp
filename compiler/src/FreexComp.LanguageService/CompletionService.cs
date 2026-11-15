@@ -42,7 +42,8 @@ public static class CompletionService
         ArgumentNullException.ThrowIfNull(doc);
         var text = doc.Text.Text;
         position = Math.Clamp(position, 0, text.Length);
-        var tree = doc.SemanticModel.SyntaxTree;                            // nodes handed to the model must be its own
+        var model = doc.ModelAt(position);                                  // C-244: only the body around the caret is bound
+        var tree = model.SyntaxTree;                                        // nodes handed to the model must be its own
         var replacement = WordSpan(text, position);
         var empty = new CompletionList(replacement, [], false);
         if (replacement.Start >= 2 && text[replacement.Start - 1] == '$' && text[replacement.Start - 2] == '{')
@@ -61,7 +62,7 @@ public static class CompletionService
             return empty;
         }
 
-        var builder = new ItemBuilder(doc, position);
+        var builder = new ItemBuilder(doc, model, position);
         var previous = PreviousToken(tree, replacement.Start);
         var parent = previous.Parent;
         ct.ThrowIfCancellationRequested();
@@ -76,15 +77,15 @@ public static class CompletionService
         }
         else if (previous.Kind is SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword && InClassBody(parent))
         {
-            Overrides(builder, doc, parent!);
+            Overrides(builder, parent!);
         }
         else if (previous.Kind == SyntaxKind.InheritedKeyword)
         {
-            Inherited(builder, doc);
+            Inherited(builder);
         }
         else if (previous.Kind == SyntaxKind.RaiseKeyword || previous.Kind == SyntaxKind.ColonToken && parent is ExceptionHandlerSyntax)
         {
-            ExceptionTypes(builder, doc);
+            ExceptionTypes(builder);
         }
         else if (IsTypePosition(previous))
         {
@@ -215,9 +216,9 @@ public static class CompletionService
         }
     }
 
-    private static void Overrides(ItemBuilder builder, Document doc, SyntaxNode parent)
+    private static void Overrides(ItemBuilder builder, SyntaxNode parent)
     {
-        var model = doc.SemanticModel;
+        var model = builder.Model;
         if (parent.FirstAncestorOrSelf<TypeDeclarationSyntax>() is not { } declaration || model.GetDeclaredSymbol(declaration) is not ClassTypeSymbol type
             || type.Parent is not { } ancestor)
         {
@@ -236,18 +237,18 @@ public static class CompletionService
         }
     }
 
-    private static void Inherited(ItemBuilder builder, Document doc)
+    private static void Inherited(ItemBuilder builder)
     {
-        var model = doc.SemanticModel;
+        var model = builder.Model;
         if (model.GetEnclosingSymbol(builder.Position) is MethodSymbol { ContainingType: ClassTypeSymbol { Parent: { } ancestor } })
         {
             builder.AddSymbols(model.LookupSymbols(builder.Position, container: ancestor).OfType<MethodSymbol>());
         }
     }
 
-    private static void ExceptionTypes(ItemBuilder builder, Document doc)
+    private static void ExceptionTypes(ItemBuilder builder)
     {
-        var classes = doc.SemanticModel.LookupSymbols(builder.Position).OfType<ClassTypeSymbol>().ToList();
+        var classes = builder.Model.LookupSymbols(builder.Position).OfType<ClassTypeSymbol>().ToList();
         var exception = classes.FirstOrDefault(c => string.Equals(c.Name, "Exception", StringComparison.OrdinalIgnoreCase));
         foreach (var @class in classes)
         {
@@ -294,21 +295,15 @@ public static class CompletionService
     /// <summary>The last non-missing token of the tree's own text ending at or before <paramref name="position"/>.</summary>
     private static SyntaxToken PreviousToken(SyntaxTree tree, int position)
     {
-        var previous = default(SyntaxToken);
-        foreach (var token in tree.Root.OwnTokens())
+        // C-244: from the token at the position backwards instead of a scan from the start of the file
+        var token = tree.FindToken(position);
+        while (token.Kind != SyntaxKind.None
+               && (token.Span.End > position || token.IsMissing || token.Kind == SyntaxKind.EndOfFileToken || token.File is { } file && !ReferenceEquals(file, tree.Text)))
         {
-            if (token.Span.End > position || token.Kind == SyntaxKind.EndOfFileToken)
-            {
-                break;
-            }
-
-            if (!token.IsMissing)
-            {
-                previous = token;
-            }
+            token = token.GetPreviousToken();
         }
 
-        return previous;
+        return token;
     }
 
     private static bool InClassBody(SyntaxNode? node) =>
@@ -358,13 +353,13 @@ public static class CompletionService
     // ------------------------------------------------------------------------------------------------ items
 
     /// <summary>Collects items once per label and kind, with the CMP-723 sort groups.</summary>
-    private sealed class ItemBuilder(Document doc, int position)
+    private sealed class ItemBuilder(Document doc, SemanticModel model, int position)
     {
         private readonly List<CompletionItem> _items = [];
         private readonly HashSet<(string, CompletionItemKind)> _seen = [];
-        private readonly Symbol? _enclosing = doc.SemanticModel.GetEnclosingSymbol(position);
+        private readonly Symbol? _enclosing = model.GetEnclosingSymbol(position);
 
-        public SemanticModel Model { get; } = doc.SemanticModel;
+        public SemanticModel Model { get; } = model;
 
         public int Position { get; } = position;
 

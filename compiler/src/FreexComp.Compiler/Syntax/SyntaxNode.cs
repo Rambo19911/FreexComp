@@ -171,22 +171,34 @@ public abstract class SyntaxNode
     /// <summary>All descendant nodes in pre-order (not this node); <paramref name="descendInto"/> false stops below a node.</summary>
     public IEnumerable<SyntaxNode> DescendantNodes(Func<SyntaxNode, bool>? descendInto = null)
     {
-        var stack = new Stack<IEnumerator<SyntaxNode>>();
-        stack.Push(ChildNodes().GetEnumerator());
-        while (stack.Count > 0)
+        // an explicit stack of child positions, no enumerator per node (C-244)
+        var stack = new Stack<(SyntaxNode Node, int Index)>();
+        var parent = this;
+        var index = 0;
+        while (true)
         {
-            var enumerator = stack.Peek();
-            if (!enumerator.MoveNext())
+            if (index < parent._children.Count)
             {
-                stack.Pop();
-                continue;
-            }
+                if (parent._children[index++].AsNode() is not { } node)
+                {
+                    continue;
+                }
 
-            var node = enumerator.Current;
-            yield return node;
-            if (descendInto is null || descendInto(node))
+                yield return node;
+                if (descendInto is null || descendInto(node))
+                {
+                    stack.Push((parent, index));
+                    parent = node;
+                    index = 0;
+                }
+            }
+            else if (stack.Count > 0)
             {
-                stack.Push(node.ChildNodes().GetEnumerator());
+                (parent, index) = stack.Pop();
+            }
+            else
+            {
+                yield break;
             }
         }
     }
@@ -194,18 +206,33 @@ public abstract class SyntaxNode
     /// <summary>All tokens of the node in source order, missing tokens included.</summary>
     public IEnumerable<SyntaxToken> DescendantTokens()
     {
-        foreach (var child in _children)
+        // an explicit stack: nested iterators would cost O(depth) per token (C-244)
+        var stack = new Stack<(SyntaxNode Node, int Index)>();
+        var node = this;
+        var index = 0;
+        while (true)
         {
-            if (child.AsNode() is { } node)
+            if (index < node._children.Count)
             {
-                foreach (var token in node.DescendantTokens())
+                var child = node._children[index++];
+                if (child.AsNode() is { } inner)
                 {
-                    yield return token;
+                    stack.Push((node, index));
+                    node = inner;
+                    index = 0;
                 }
+                else
+                {
+                    yield return child.AsToken();
+                }
+            }
+            else if (stack.Count > 0)
+            {
+                (node, index) = stack.Pop();
             }
             else
             {
-                yield return child.AsToken();
+                yield break;
             }
         }
     }

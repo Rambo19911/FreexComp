@@ -36,7 +36,29 @@ internal sealed class PreprocessorContext
     public List<Diagnostic> Diagnostics { get; } = [];
 
     /// <summary>Active tokens produced so far by every lexer of this context (only kept for a condition evaluator).</summary>
-    public List<SyntaxToken> Emitted { get; } = [];
+    public IList<SyntaxToken> Emitted { get; set; } = new List<SyntaxToken>();
+
+    /// <summary>C-244: false when a <see cref="Preprocessor"/> fills <see cref="Emitted"/> with its own output (no second copy).</summary>
+    public bool LexerRecords { get; set; } = true;
+
+    /// <summary>The token being lexed while its trailing trivia is scanned (C-244: made a token only when a condition needs it).</summary>
+    public (SyntaxKind Kind, string Text, object? Value, int Start, System.Collections.Immutable.ImmutableArray<SyntaxTrivia> Leading, DirectiveState State, SourceText File)? Pending { get; set; }
+
+    /// <summary>The active tokens produced so far (the pending one included, without its trailing trivia).</summary>
+    public List<SyntaxToken> PrecedingTokens()
+    {
+        var tokens = new List<SyntaxToken>(Emitted.Count + 1);
+        tokens.AddRange(Emitted.Where(t => t.Kind != SyntaxKind.EndOfFileToken));
+        if (Pending is { } p)
+        {
+            tokens.Add(new SyntaxToken(p.Kind, p.Text, p.Value, p.Start, p.Leading, [], p.State, p.File));
+        }
+
+        return tokens;
+    }
+
+    /// <summary>C-244: a <c>{$IF}</c>/<c>{$ELSEIF}</c> condition went to the condition evaluator (the tree depends on its scope).</summary>
+    public bool EvaluatedCondition { get; set; }
 }
 
 /// <summary>
@@ -291,6 +313,7 @@ internal sealed class DirectiveProcessor
             return true;
         }
 
+        _context.EvaluatedCondition = true;
         if (directive.Argument.Length == 0)
         {
             Report("E1206", directive.Span, directive.Argument);
@@ -328,7 +351,7 @@ internal sealed class DirectiveProcessor
             return false;
         }
 
-        return evaluator.Evaluate(new ConditionRequest(condition, [.. _context.Emitted], IsDefined, _context.Diagnostics.Add));
+        return evaluator.Evaluate(new ConditionRequest(condition, _context.PrecedingTokens(), IsDefined, _context.Diagnostics.Add));
     }
 
     /// <summary>LANG-881: <c>R Q B C I M H J T X A</c>; H, J, T and X cannot change (unsupported settings).</summary>

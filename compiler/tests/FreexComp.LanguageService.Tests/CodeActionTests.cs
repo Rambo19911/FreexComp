@@ -265,6 +265,76 @@ public sealed class CodeActionTests
     }
 
     [Fact]
+    [Trait("Req", "CMP-254")]
+    public void CompleteClassInProgram()
+    {
+        var (workspace, _, actions) = Actions("P.pas", """
+            program P;
+
+            type
+              TFoo = class
+              public
+                procedure [|Run|];
+                function Twice(A: Integer): Integer;
+              end;
+
+            var
+              F: TFoo;
+
+            begin
+              F := TFoo.Create;
+              F.Run;
+            end.
+            """);
+
+        var action = Assert.Single(actions, a => a.Id == "complete-class");
+        var text = Apply(workspace, action, "P.pas");
+        Assert.EndsWith("""
+            var
+              F: TFoo;
+
+            procedure TFoo.Run;
+            begin
+            end;
+
+            function TFoo.Twice(A: Integer): Integer;
+            begin
+            end;
+
+            begin
+              F := TFoo.Create;
+              F.Run;
+            end.
+            """.ReplaceLineEndings("\n"), text, StringComparison.Ordinal);
+        Assert.Empty(Errors(workspace, "P.pas"));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-254")]
+    public void ImplementInterfaceInProgram()
+    {
+        var (workspace, _, actions) = Actions("P.pas", """
+            program P;
+
+            type
+              IRun = interface
+                procedure Run;
+              end;
+
+              TFoo = class(TInterfacedObject, [|IRun|])
+              end;
+
+            begin
+            end.
+            """);
+
+        var action = Assert.Single(actions, a => a.Id == "implement-interface");
+        var text = Apply(workspace, action, "P.pas");
+        Assert.Contains("procedure TFoo.Run;\nbegin\nend;\n\nbegin\nend.", text, StringComparison.Ordinal);
+        Assert.Empty(Errors(workspace, "P.pas"));
+    }
+
+    [Fact]
     public void CompleteClass_AfterTheExistingImplementations()
     {
         var (workspace, _, actions) = Actions("U1.pas", """

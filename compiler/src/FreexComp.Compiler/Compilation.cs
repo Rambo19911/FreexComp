@@ -87,8 +87,7 @@ public sealed class Compilation
 
     private Analysis Analyze()
     {
-        var baseline = _previous?._analysis.Value;
-        var changed = _changed;
+        var (baseline, changed) = Baseline();
         _previous = null;                                                   // the chain of snapshots is not kept alive
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         var front = RunFrontEnd(diagnostics, baseline is null ? null : ReuseFrom(baseline, changed));
@@ -142,7 +141,7 @@ public sealed class Compilation
     private Compilation Changed(ImmutableDictionary<string, SourceText> openFiles, string path)
     {
         var previous = _previous;
-        var (baseline, changed) = _analysis.IsValueCreated ? (this, _changed.Clear()) : (previous, _changed);
+        var (baseline, changed) = _analysis.IsValueCreated || Volatile.Read(ref _partialFront) is not null ? (this, _changed.Clear()) : (previous, _changed);
         return new Compilation(Options, openFiles, FileSystem, baseline, changed.Add(path));
     }
 
@@ -152,9 +151,9 @@ public sealed class Compilation
     /// file is unchanged and no unit it uses (transitively) changed its interface. A changed file the earlier run did not load (a
     /// new file, a file that may now resolve a uses entry) disables reuse.
     /// </summary>
-    private Reuse? ReuseFrom(Analysis baseline, ImmutableHashSet<string> changed)
+    private Reuse? ReuseFrom(FrontEnd? front, ImmutableHashSet<string> changed)
     {
-        if (baseline.Front is not { } front)
+        if (front is null)
         {
             return null;
         }
@@ -183,13 +182,84 @@ public sealed class Compilation
             }
 
             reusable[unit] = true;                                           // a cycle through implementation uses: decided by its other edges
-            var ok = unit.Phase == UnitPhase.Complete && unit.Result is not null && !unit.IsPrecompiled && !changed.Contains(unit.Path)
-                     && unit.InterfaceUses.Concat(unit.ImplementationUses).All(u => !interfaceChanged.Contains(u.Path) && (changed.Contains(u.Path) || Reusable(u)));
+            var ok = unit.Phase == UnitPhase.Complete && unit.Result is not null && !unit.IsPrecompiled && !unit.IsPartial && !changed.Contains(unit.Path)
+                     && unit.InterfaceUses.Concat(unit.ImplementationUses).All(u => !interfaceChanged.Contains(u.Path) && (changed.Contains(u.Path) || u.IsPartial || Reusable(u)));
             reusable[unit] = ok;
             return ok;
         }
 
         return new Reuse(front.Binder.Types, path => units.TryGetValue(path, out var unit) && Reusable(unit) ? unit : null);
+    }
+
+    // ------------------------------------------------------------------------------------------------ position models (C-244)
+
+    /// <summary>The latest front end of a position model of this snapshot: a baseline for later snapshots (its complete units).</summary>
+    private FrontEnd? _partialFront;
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(string Path, TextSpan Body), Lazy<SemanticModel>> _positionModels = new();
+
+    /// <summary>The front end later snapshots may take units over from: the analysis when it exists, else the latest position model's.</summary>
+    /// <summary>What this snapshot's runs build on: its own latest position-model front end (nothing changed since), else the earlier snapshot's.</summary>
+    private (FrontEnd? Front, ImmutableHashSet<string> Changed) Baseline() =>
+        Volatile.Read(ref _partialFront) is { } own ? (own, _changed.Clear()) : (_previous?.BaselineFront(), _changed);
+
+    private FrontEnd? BaselineFront() => _analysis.IsValueCreated ? _analysis.Value.Front : Volatile.Read(ref _partialFront);
+
+    /// <summary>
+    /// C-244 (CMP-702): a semantic model of <paramref name="path"/> for queries at <paramref name="position"/> (completion): the declarations
+    /// of every unit, but of this file's bodies only the outermost routine or unit-level body containing the position (with what it
+    /// nests); no flow analysis and no diagnostics. Symbols, scopes, types and references inside that body are those of the full model.
+    /// The full model is returned when it exists already or the file is not reached from the main file.
+    /// </summary>
+    internal SemanticModel GetSemanticModel(string path, int position)
+    {
+        var normalized = PathUtil.Normalize(path);
+        if (_analysis.IsValueCreated || _models.ContainsKey(normalized))
+        {
+            return GetSemanticModel(normalized);
+        }
+
+        var body = OutermostBody(GetSyntaxTree(normalized), position);
+        return _positionModels.GetOrAdd((normalized, body), key => new Lazy<SemanticModel>(
+            () => CreatePositionModel(key.Path, key.Body), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+    }
+
+    /// <summary>The span of the outermost routine declaration or unit-level body containing <paramref name="position"/>; else empty at it.</summary>
+    private static TextSpan OutermostBody(SyntaxTree tree, int position)
+    {
+        bool Contains(SyntaxNode node) => node.Span.Start <= position && position <= node.Span.End;
+        var token = tree.FindToken(position);
+        SyntaxNode? found = null;
+        for (var node = token.Parent; node is not null; node = node.Parent)
+        {
+            if (node is RoutineDeclarationSyntax { Block: not null } or InitializationSectionSyntax or FinalizationSectionSyntax
+                || node is CompoundStatementSyntax { Parent: BlockSyntax { Parent: ProgramSyntax } })
+            {
+                found = Contains(node) ? node : found;
+            }
+        }
+
+        return found?.Span ?? new TextSpan(position, 0);
+    }
+
+    private SemanticModel CreatePositionModel(string path, TextSpan body)
+    {
+        var (baseline, changed) = Baseline();
+        if (baseline is null || !PathUtil.AreEqual(path, PathUtil.Normalize(Options.MainFile)) && !baseline.Binder.Units.Any(u => PathUtil.AreEqual(u.Path, path)))
+        {
+            return GetSemanticModel(path);                                  // nothing to build on, or an additional root (CMP-201)
+        }
+
+        bool Overlaps(SyntaxNode syntax) => syntax.Span.Start <= body.End && body.Start <= syntax.Span.End;
+        var front = RunFrontEnd(ImmutableArray.CreateBuilder<Diagnostic>(), ReuseFrom(baseline, changed), (path, Overlaps));
+        if (front is null || Bound(front, path) is not { IsPartial: true } loaded)
+        {
+            return GetSemanticModel(path);
+        }
+
+        Volatile.Write(ref _partialFront, front);
+        _previous = null;                                                   // later runs build on this front end; the chain is not kept alive
+        return Model(front, loaded, this, []);
     }
 
     /// <summary>True when the current text of <paramref name="path"/> keeps the earlier unit's interface part character for character.</summary>
@@ -251,18 +321,18 @@ public sealed class Compilation
     private SemanticModel CreateModel(string path)
     {
         var analysis = _analysis.Value;
-        if (Bound(analysis, path) is { } loaded)
+        if (Bound(analysis.Front, path) is { } loaded)
         {
-            return Model(analysis, loaded, this);
+            return Model(analysis.Front!, loaded, this, DiagnosticsOf(analysis, loaded.Path));
         }
 
         if (!PathUtil.AreEqual(path, PathUtil.Normalize(Options.MainFile)))
         {
             var root = new Compilation(Options with { MainFile = path }, _openFiles, FileSystem);
             var rootAnalysis = root._analysis.Value;
-            if (Bound(rootAnalysis, path) is { } rootUnit)
+            if (Bound(rootAnalysis.Front, path) is { } rootUnit)
             {
-                return Model(rootAnalysis, rootUnit, this);
+                return Model(rootAnalysis.Front!, rootUnit, this, DiagnosticsOf(rootAnalysis, rootUnit.Path));
             }
         }
 
@@ -273,16 +343,18 @@ public sealed class Compilation
         return new SemanticModel(this, tree, result, diagnostics.IsEmpty ? [.. tree.Diagnostics, .. result.Diagnostics] : diagnostics, _ => null);
     }
 
-    private static LoadedUnit? Bound(Analysis analysis, string path) =>
-        analysis.Front?.Binder.Units.FirstOrDefault(u => PathUtil.AreEqual(u.Path, path) && u.Result is not null && u.Tree is not null);
+    private static LoadedUnit? Bound(FrontEnd? front, string path) =>
+        front?.Binder.Units.FirstOrDefault(u => PathUtil.AreEqual(u.Path, path) && u.Result is not null && u.Tree is not null);
 
-    private static SemanticModel Model(Analysis analysis, LoadedUnit loaded, Compilation compilation)
+    private static ImmutableArray<Diagnostic> DiagnosticsOf(Analysis analysis, string path) =>
+        [.. analysis.Diagnostics.Where(d => PathUtil.AreEqual(d.Location.Path, path))];
+
+    private static SemanticModel Model(FrontEnd front, LoadedUnit loaded, Compilation compilation, ImmutableArray<Diagnostic> diagnostics)
     {
-        var units = analysis.Front!.Binder.Units;
+        var units = front.Binder.Units;
         UnitSymbol? FindUnit(string name) =>
             loaded.UsedAs.FirstOrDefault(e => IdentifierComparer.Instance.Equals(e.Value, name)).Key?.Symbol
             ?? units.FirstOrDefault(u => u.Symbol is not null && IdentifierComparer.Instance.Equals(u.Name, name))?.Symbol;
-        ImmutableArray<Diagnostic> diagnostics = [.. analysis.Diagnostics.Where(d => PathUtil.AreEqual(d.Location.Path, loaded.Path))];
         return new SemanticModel(compilation, loaded.Tree!, loaded.Result!, diagnostics, FindUnit);
     }
 
@@ -596,7 +668,7 @@ public sealed class Compilation
     }
 
     /// <summary>The front end whatever its errors; null only when it could not start (alias table invalid, no <c>System</c>).</summary>
-    private FrontEnd? RunFrontEnd(ImmutableArray<Diagnostic>.Builder diagnostics, Reuse? reuse = null)
+    private FrontEnd? RunFrontEnd(ImmutableArray<Diagnostic>.Builder diagnostics, Reuse? reuse = null, (string Path, Func<SyntaxNode, bool> Filter)? partial = null)
     {
         var mainPath = PathUtil.Normalize(Options.MainFile);
         var aliases = UnitAliasTable.Load(FileSystem, RtlDirectory(), out var aliasError);
@@ -616,11 +688,11 @@ public sealed class Compilation
 
         var optionsFingerprint = Fingerprint.Options(Options, aliases.Hash);
         var types = reuse?.Types ?? new BuiltInTypes { DefaultRttiScope = Options.Rtti == "published" ? RttiScope.Published : RttiScope.Broad };   // C-169
-        var unitBinder = new UnitBinder(types, resolver, Parse, path => ReadPcu(path, optionsFingerprint), reuse?.Unit);
+        var unitBinder = new UnitBinder(types, resolver, Parse, path => ReadPcu(path, optionsFingerprint), reuse?.Unit) { PartialBodies = partial };
         unitBinder.BindAll(systemPath, mainPath, MaxParallelism);
         var initOrder = unitBinder.InitializationOrder();
         CheckPrecompiledDependencies(new FrontEnd(unitBinder, initOrder, systemPath));
-        foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null && !unitBinder.Reused.Contains(u)))
+        foreach (var loaded in unitBinder.Units.Where(u => u.Result is not null && !u.IsPartial && !unitBinder.Reused.Contains(u)))
         {
             loaded.LinkInputs = UnitLinkInputs.Collect(loaded.Result!.Unit, loaded.Tree!, FileSystem, loaded.Diagnostics);
             loaded.Forms = Forms.FormEmbedding.Collect(loaded.Result!, loaded.Tree!, FileSystem, loaded.Diagnostics);    // C-114
@@ -720,16 +792,29 @@ public sealed class Compilation
     /// <summary>Parses one file; null (with E0002/E0003) when it cannot be read.</summary>
     private SyntaxTree? Parse(string path, IUsesScopes? uses, List<Diagnostic> diagnostics)
     {
-        if (Read(path, diagnostics) is not { } text)
+        SyntaxTree tree;
+        if (_trees.TryGetValue(path, out var cached) && cached.IsValueCreated && cached.Value is { DependsOnConditionScope: false } shared)
         {
-            return null;
+            tree = shared;                                                  // C-244: no {$IF} saw a scope, so the binding parse is the same tree
+        }
+        else
+        {
+            if (Read(path, diagnostics) is not { } text)
+            {
+                return null;
+            }
+
+            var defines = Options.AppType == AppType.Console ? Options.Defines.Add("CONSOLE") : Options.Defines;
+            // {$IF} conditions are evaluated by the binder in the unit's uses chain (LANG-862, C-032/C-046/C-069)
+            var parseOptions = DirectiveConditionEvaluator.WithBinder(
+                new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)] }, uses);
+            tree = SyntaxTree.Parse(text, parseOptions, FileSystem);
+            if (!tree.DependsOnConditionScope)
+            {
+                _trees.TryAdd(path, new Lazy<SyntaxTree?>(tree));            // GetSyntaxTree gives the same tree (C-244)
+            }
         }
 
-        var defines = Options.AppType == AppType.Console ? Options.Defines.Add("CONSOLE") : Options.Defines;
-        // {$IF} conditions are evaluated by the binder in the unit's uses chain (LANG-862, C-032/C-046/C-069)
-        var parseOptions = DirectiveConditionEvaluator.WithBinder(
-            new ParseOptions(defines) { SearchPaths = [.. Options.SearchPaths.Select(PathUtil.Normalize)] }, uses);
-        var tree = SyntaxTree.Parse(text, parseOptions, FileSystem);
         diagnostics.AddRange(tree.Diagnostics);
         if (tree.Root is ProgramSyntax { Name: { IsMissing: false } heading })
         {

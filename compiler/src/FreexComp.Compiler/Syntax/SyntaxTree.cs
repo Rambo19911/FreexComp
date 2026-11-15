@@ -27,14 +27,11 @@ public sealed class SyntaxTree
     {
         ArgumentNullException.ThrowIfNull(text);
         var preprocessor = new Preprocessor(text, options, fs);
-        var tokens = ImmutableArray.CreateBuilder<SyntaxToken>();
-        SyntaxToken token;
-        do
+        while (preprocessor.Lex().Kind != SyntaxKind.EndOfFileToken)
         {
-            token = preprocessor.Lex();
-            tokens.Add(token);
         }
-        while (token.Kind != SyntaxKind.EndOfFileToken);     // include files' end-of-file tokens are not in the stream
+
+        var tokens = preprocessor.Tokens;     // include files' end-of-file tokens are not in the stream
 
         var parser = new Parser(text, tokens.ToImmutable());
         var root = parser.ParseCompilationUnit();
@@ -51,21 +48,24 @@ public sealed class SyntaxTree
                 [.. lexical.Where(d => PathUtil.AreEqual(d.Location.Path, i.Text.Path))],
                 []))
             .ToImmutableArray();
-        return new SyntaxTree(text, root, diagnostics, included);
+        return new SyntaxTree(text, root, diagnostics, included) { DependsOnConditionScope = preprocessor.EvaluatedCondition };
     }
+
+    /// <summary>
+    /// C-244: a <c>{$IF}</c>/<c>{$ELSEIF}</c> condition was evaluated by the parse options' condition evaluator, so a parse with
+    /// another evaluator (another scope) may differ; false means any parse of the same text, options and files gives this tree.
+    /// </summary>
+    internal bool DependsOnConditionScope { get; init; }
 
     /// <summary>A tree whose root is a <see cref="FragmentSyntax"/> (<c>SyntaxFactory.ParseNode&lt;T&gt;</c>); includes are not read.</summary>
     internal static SyntaxTree ParseFragment(SourceText text, Type category)
     {
         var preprocessor = new Preprocessor(text, null, null);
-        var tokens = ImmutableArray.CreateBuilder<SyntaxToken>();
-        SyntaxToken token;
-        do
+        while (preprocessor.Lex().Kind != SyntaxKind.EndOfFileToken)
         {
-            token = preprocessor.Lex();
-            tokens.Add(token);
         }
-        while (token.Kind != SyntaxKind.EndOfFileToken);
+
+        var tokens = preprocessor.Tokens;
 
         var parser = new Parser(text, tokens.ToImmutable());
         var root = parser.ParseFragment(category);
@@ -111,7 +111,9 @@ public sealed class SyntaxTree
 
     /// <summary>The active directives (each its own trivia piece) in source order, include directives included.</summary>
     public IEnumerable<DirectiveTriviaInfo> Directives =>
-        DescendantTrivia().Where(t => t.Directive is not null).Select(t => t.Directive!);
+        (_directives ??= DescendantTrivia().Where(t => t.Directive is not null).Select(t => t.Directive!).ToArray()).AsReadOnly();
+
+    private DirectiveTriviaInfo[]? _directives;     // computed once (the tree is immutable; a racing second computation is equal)
 
     /// <summary>Spans of the text of inactive conditional branches.</summary>
     public IEnumerable<TextSpan> DisabledRegions =>

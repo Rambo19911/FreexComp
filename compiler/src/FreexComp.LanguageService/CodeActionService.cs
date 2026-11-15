@@ -226,7 +226,7 @@ public static class CodeActionService
 
     private static CodeAction? CompleteClass(SemanticModel model, Diagnostic diagnostic, ImmutableArray<Diagnostic> all)
     {
-        if (model.SyntaxTree.Root is not UnitSyntax unit
+        if (model.SyntaxTree.Root is not { } root
             || model.SyntaxTree.FindToken(diagnostic.Location.Span.Start).Parent?.FirstAncestorOrSelf<TypeDeclarationSyntax>() is not { } type)
         {
             return null;
@@ -246,7 +246,7 @@ public static class CodeActionService
         var className = type.Identifier.Text;
         var lineEnding = SyntaxEdits.DetectLineEnding(model.SyntaxTree.Text.Text);
         var bodies = missing.Select(m => Implementation(m.Heading, className, lineEnding));
-        var change = SyntaxEdits.InsertMethodImplementation(unit, className, string.Join(lineEnding + lineEnding, bodies));
+        var change = SyntaxEdits.InsertMethodImplementation(root, className, string.Join(lineEnding + lineEnding, bodies));
         return Action("complete-class", $"Complete class '{className}'", model, change);
     }
 
@@ -264,7 +264,8 @@ public static class CodeActionService
     private static CodeAction? ImplementInterface(SemanticModel model, Diagnostic diagnostic, CancellationToken ct)
     {
         var token = model.SyntaxTree.FindToken(diagnostic.Location.Span.Start);
-        if (model.SyntaxTree.Root is not UnitSyntax unit || token.Parent?.FirstAncestorOrSelf<TypeDeclarationSyntax>() is not { } type
+        var root = model.SyntaxTree.Root;
+        if (token.Parent?.FirstAncestorOrSelf<TypeDeclarationSyntax>() is not { } type
             || model.GetDeclaredSymbol(type, ct) is not ClassTypeSymbol cls)
         {
             return null;
@@ -297,6 +298,6 @@ public static class CodeActionService
         var bodies = missing.Select(m => Implementation(m.MethodDeclaration.Heading, className, lineEnding));
         return Action("implement-interface", $"Implement interface '{implemented.Interface.Name}'", model,
             SyntaxEdits.InsertMembers(type, declarations, Visibility.Public),
-            SyntaxEdits.InsertMethodImplementation(unit, className, string.Join(lineEnding + lineEnding, bodies)));
+            SyntaxEdits.InsertMethodImplementation(root, className, string.Join(lineEnding + lineEnding, bodies)));
     }
 }

@@ -59,6 +59,24 @@ internal sealed class Parser
     /// </summary>
     public FragmentSyntax ParseFragment(Type category)
     {
+        if (CurrentKind == SyntaxKind.EndOfFileToken)
+        {
+            // C-245: an empty fragment says what it lacks (the category's own code), not E1108 'end.' expected; the parser's
+            // further reports at the same position are cascades and stay silent
+            const string endOfFile = "end of file";
+            if (category == typeof(UsesClauseSyntax))
+            {
+                ReportAt(Current, "E1101", SyntaxFacts.GetText(SyntaxKind.UsesKeyword), endOfFile);
+            }
+            else
+            {
+                ReportAt(Current, category.IsAssignableTo(typeof(ExpressionSyntax)) ? "E1103"
+                    : category.IsAssignableTo(typeof(StatementSyntax)) ? "E1104"
+                    : category.IsAssignableTo(typeof(TypeSyntax)) ? "E1106"
+                    : "E1107", endOfFile);
+            }
+        }
+
         SyntaxNode node;
         if (category.IsAssignableTo(typeof(ExpressionSyntax)))
         {
