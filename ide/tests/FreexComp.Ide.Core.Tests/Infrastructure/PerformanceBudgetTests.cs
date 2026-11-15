@@ -91,6 +91,29 @@ public sealed class PerformanceBudgetTests
         Assert.InRange(fastest.TotalMilliseconds, 20, 99);
     }
 
+    /// <summary>
+    /// I-202: on a slow (loaded) machine the measured runs stop once the time limit has passed, so the test ends well
+    /// inside its timeout; at least one run is always measured, and fewer runs can only make the fastest one slower.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Category", "Performance")]
+    public void MinThreadCpuStopsAtTheTimeLimit()
+    {
+        var calls = 0;
+        var elapsed = () => TimeSpan.FromSeconds(10 * calls); // each call "takes" 10 s of wall time
+        PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.FromSeconds(25), elapsed: elapsed);
+        Assert.Equal(3, calls); // two warm-ups (20 s), one measured run (30 s), then the limit
+
+        calls = 0;
+        var fastest = PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.Zero, elapsed: elapsed);
+        Assert.Equal(3, calls); // the limit already passed: still one measured run
+        Assert.NotEqual(TimeSpan.MaxValue, fastest);
+
+        calls = 0;
+        PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.FromSeconds(1000), elapsed: elapsed);
+        Assert.Equal(9, calls); // a fast machine: all seven runs
+    }
+
     /// <summary>Burns CPU on the calling thread until it has used <paramref name="cpu"/> (thread CPU, not wall clock).</summary>
     private static void SpinThreadCpu(TimeSpan cpu)
     {

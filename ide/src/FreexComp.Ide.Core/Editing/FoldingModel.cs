@@ -74,7 +74,7 @@ public sealed class FoldingModel
             return false;
         if (keep.Count == 0)
             return true;
-        if (_running is null or { IsCompleted: true })
+        if (!_computing)
         {
             if (Refold(keep))
                 Publish();
@@ -224,34 +224,44 @@ public sealed class FoldingModel
             Apply(_provider?.GetRegions(_buffer).ToList() ?? []);
     }
 
-    private Task? _running;
+    private volatile bool _computing;
+
+    /// <summary>Starts a background computation (the thread pool; tests replace it to decide when a run ends, I-204).</summary>
+    internal Func<Func<List<FoldRegion>>, Task<List<FoldRegion>>> RunInBackground { get; set; } = work => Task.Run(work);
 
     /// <summary>A background run is in progress or its result has not been applied yet (tests drain it, I-179).</summary>
-    internal bool IsComputing => _running is { IsCompleted: false };
+    internal bool IsComputing => _computing;
 
     /// <summary>
     /// One run at a time over a <see cref="StringTextBuffer"/> snapshot; a result for an outdated version (or another
     /// provider) is dropped and the current text is folded again (IDE-ARCH-083). The result is applied on the
-    /// synchronization context that started the run (the UI thread).
+    /// synchronization context that started the run (the UI thread). I-204: the run counts as running from before it
+    /// starts until its continuation begins, so a run that ends at once cannot let a second one start beside the next.
     /// </summary>
     private void StartBackground(IFoldingProvider provider)
     {
-        if (_running is { IsCompleted: false })
+        if (_computing)
             return; // the running result will be outdated: it re-runs when it ends
+        _computing = true;
         var version = _buffer.Version;
         var text = _buffer.Text;
         var context = SynchronizationContext.Current;
-        _running = Task.Run(() => provider.GetRegions(new StringTextBuffer(text)).ToList()).ContinueWith(
+        _ = RunInBackground(() => provider.GetRegions(new StringTextBuffer(text)).ToList()).ContinueWith(
             t =>
             {
-                _running = null;
                 if (version == _buffer.Version && ReferenceEquals(provider, _provider))
-                    Apply(t.Result);
+                {
+                    Apply(t.Status == TaskStatus.RanToCompletion ? t.Result : []); // a provider must never throw
+                    _computing = false; // after the regions: "not computing" never precedes them
+                }
                 else
+                {
+                    _computing = false;
                     Recompute();
+                }
             },
             CancellationToken.None,
-            TaskContinuationOptions.OnlyOnRanToCompletion,
+            TaskContinuationOptions.None,
             context is null ? TaskScheduler.Default : TaskScheduler.FromCurrentSynchronizationContext());
     }
 

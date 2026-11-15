@@ -70,17 +70,41 @@ public sealed class FindInFilesDialogTests
         await opening;
         Assert.Null(h.TryFind<Control>("Tool.SearchResults.List"));
 
-        // Find: closes, shows Search Results and remembers the options.
+        // Find: closes, shows Search Results and remembers the options. The unit is closed first so that the search
+        // reads it from disk (I-203: the read is held below; the result is the same).
+        Assert.True(h.Services.Documents.Close(h.Services.Documents.Documents.Single(d => d.FilePath == BuildScenario.UnitPath(h))));
         opening = h.Services.Commands.ExecuteAsync("search.findInFiles");
         dlg = await h.WaitForDialogAsync("FindInFiles");
         Assert.False(dlg.Find<CheckBox>("MatchCase").IsChecked);
         dlg.Find<CheckBox>("MatchCase").IsChecked = true;
+        dlg.Find<TextBox>("SearchText").Text = "Foo1"; // the caret is now in another document
+        // I-203: hold the search's first file read, as a loaded machine would delay it.
+        using var held = new SemaphoreSlim(0);
+        using var release = new SemaphoreSlim(0);
+        var holding = 1;
+        var projectFolder = Path.GetDirectoryName(BuildScenario.ProjectPath(h))!;
+        h.FileSystem.BeforeRead = path =>
+        {
+            if (path.StartsWith(projectFolder, StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".pproj", StringComparison.OrdinalIgnoreCase)
+                && Interlocked.Exchange(ref holding, 0) == 1)
+            {
+                held.Release();
+                release.Wait(TimeSpan.FromSeconds(20));
+            }
+        };
         dlg.Click("Find");
         await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
         await opening;
+        Assert.True(await held.WaitAsync(TimeSpan.FromSeconds(10)), "the search reads a project file");
+        // While the search runs the header already names the options: waiting for them is not waiting for the result.
         await h.WaitForAsync(() => h.TryFind<TextBlock>("Tool.SearchResults.Header")?.Text?.Contains("(match case)", StringComparison.Ordinal) == true,
             "search results shown");
-        Assert.Contains("— 1 match in 1 file", h.Find<TextBlock>("Tool.SearchResults.Header").Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("— 1 match in 1 file", h.Find<TextBlock>("Tool.SearchResults.Header").Text, StringComparison.Ordinal);
+        release.Release();
+        h.FileSystem.BeforeRead = null;
+        await h.WaitForAsync(() => h.TryFind<TextBlock>("Tool.SearchResults.Header")?.Text?.Contains("— 1 match in 1 file", StringComparison.Ordinal) == true,
+            "search finished");
+        Assert.Contains("(match case)", h.Find<TextBlock>("Tool.SearchResults.Header").Text, StringComparison.Ordinal);
         opening = h.Services.Commands.ExecuteAsync("search.findInFiles");
         dlg = await h.WaitForDialogAsync("FindInFiles");
         Assert.True(dlg.Find<CheckBox>("MatchCase").IsChecked);

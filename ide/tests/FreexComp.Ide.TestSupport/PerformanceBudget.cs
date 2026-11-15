@@ -19,6 +19,9 @@ public static class PerformanceBudget
     /// <summary>Factor applied per condition (unoptimized build, <c>CI_SLOW=1</c>).</summary>
     public const double SlowFactor = 3;
 
+    /// <summary>I-202: wall time after which <see cref="MinThreadCpu"/> starts no further measured run (half a 30 s test timeout).</summary>
+    public static readonly TimeSpan DefaultTimeLimit = TimeSpan.FromSeconds(15);
+
     /// <summary>The budget of <paramref name="milliseconds"/> for work done by <paramref name="underTest"/> in this process.</summary>
     public static Budget Of(double milliseconds, params Assembly[] underTest)
     {
@@ -73,15 +76,28 @@ public static class PerformanceBudget
     /// runs, with a full garbage collection before each run so that collecting earlier garbage is not charged to it.
     /// Load from other processes only ever adds time to a run (cache and memory-bandwidth contention, frequency drops),
     /// so the fastest run is the measure least affected by it; the budget itself stays unchanged.
+    /// I-202: no measured run starts once <paramref name="timeLimit"/> (default <see cref="DefaultTimeLimit"/>) of wall time
+    /// has passed since the start, warm-ups included, but at least one is always measured. A loaded machine thus
+    /// measures fewer runs instead of running into the test timeout; fewer runs can only make the fastest one slower,
+    /// never hide a run over budget. <paramref name="elapsed"/> replaces the wall clock (self-tests).
     /// </summary>
-    public static TimeSpan MinThreadCpu(Action action, int runs = 7)
+    public static TimeSpan MinThreadCpu(Action action, int runs = 7, TimeSpan? timeLimit = null, Func<TimeSpan>? elapsed = null)
     {
         ArgumentNullException.ThrowIfNull(action);
+        var limit = timeLimit ?? DefaultTimeLimit;
+        if (elapsed is null)
+        {
+            var watch = Stopwatch.StartNew();
+            elapsed = () => watch.Elapsed;
+        }
+
         action();
         action();
         var best = TimeSpan.MaxValue;
         for (int i = 0; i < runs; i++)
         {
+            if (i > 0 && elapsed() >= limit)
+                break;
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();

@@ -32,7 +32,14 @@ public sealed class RecordingFileSystem(IFileSystem inner) : IFileSystem
 
     public bool DirectoryExists(string path) => Run($"DirectoryExists {path}", () => inner.DirectoryExists(path));
 
-    public byte[] ReadAllBytes(string path) => Run($"ReadAllBytes {path}", () => inner.ReadAllBytes(path));
+    /// <summary>Runs before each <see cref="ReadAllBytes"/> with its path, on the reading thread (tests hold a read with it).</summary>
+    public Action<string>? BeforeRead { get; set; }
+
+    public byte[] ReadAllBytes(string path) => Run($"ReadAllBytes {path}", () =>
+    {
+        BeforeRead?.Invoke(path);
+        return inner.ReadAllBytes(path);
+    });
 
     public void WriteAllBytes(string path, byte[] data) => Run($"WriteAllBytes {path}", () => inner.WriteAllBytes(path, data));
 
