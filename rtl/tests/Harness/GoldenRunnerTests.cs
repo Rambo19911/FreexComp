@@ -58,6 +58,21 @@ public sealed class GoldenRunnerTests
         Assert.Equal("C:\\t\\x 1 a \"b c\"", GoldenRunner.CommandLine(["C:\\t\\x", "1"], "a \"b c\""));
     }
 
+    /// <summary>R-209: the CPU limit wins over load; the next check is the earliest moment either limit can be reached.</summary>
+    [Fact]
+    [Trait("Req", "RTL-901")]
+    public void Decide_StopsOnCpuOrWallLimitAndReArmsForTheEarliest()
+    {
+        var limits = new RunLimits(TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(120));
+        static TimeSpan S(double s) => TimeSpan.FromSeconds(s);
+
+        Assert.Equal(((string?)null, S(19)), GoldenRunner.Decide(S(1), S(30), limits));        // 30 s wall at 1 s CPU: keeps running
+        Assert.Equal(((string?)null, S(10)), GoldenRunner.Decide(S(1), S(110), limits));       // the wall cap is nearer
+        Assert.Equal("CPU limit 20.0 s reached", GoldenRunner.Decide(S(20), S(25), limits).StopReason);
+        Assert.Equal("wall-clock limit 120.0 s reached", GoldenRunner.Decide(S(2), S(120), limits).StopReason);
+        Assert.Equal(TimeSpan.FromMilliseconds(50), GoldenRunner.Decide(S(19.99), S(30), limits).NextCheck);
+    }
+
     [Fact]
     [Trait("Category", "Integration")]
     [Trait("Req", "RTL-900")]
@@ -159,6 +174,60 @@ public sealed class GoldenRunnerEndToEndTests
         Assert.Contains("SynthExtra", without, StringComparison.Ordinal);
         Assert.Null(with);
         Assert.Empty(RtlSetup.Default.ExtraUnitDirectories);
+        GoldenRunner.TryDelete(dir);
+    }
+
+    /// <summary>Sleeps or spins (busy, using CPU) for the milliseconds of its second argument, then writes <c>done</c>.</summary>
+    private const string Waiter = "program Synth;\nuses SysUtils;\nvar\n  Ms: Integer;\n  Start: UInt64;\nbegin\n"
+        + "  Ms := StrToInt(ParamStr(2));\n  if ParamStr(1) = 'sleep' then\n    Sleep(Ms)\n  else\n  begin\n"
+        + "    Start := GetTickCount64;\n    while GetTickCount64 - Start < UInt64(Ms) do\n      ;\n  end;\n  Writeln('done');\nend.\n";
+
+    /// <summary>
+    /// R-209 (TESTING.md rule 4, C-249): a program is stopped by its own CPU time, not by the wall clock, so one that
+    /// waits 25 s with almost no CPU (as a loaded full-solution run makes a program wait) passes under the default limits.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-901")]
+    public async Task SlowWallTimeDoesNotStopAProgram()
+    {
+        var dir = NewDir();
+        var @case = Write(dir, "// opc-run: rawargs sleep 25000\n" + Waiter, (".out", "done\n"));
+
+        var failure = await GoldenRunner.RunAsync(@case, RtlSetup.Default, TestContext.Current.CancellationToken);
+
+        Assert.True(failure is null, failure);
+        GoldenRunner.TryDelete(dir);
+    }
+
+    /// <summary>R-209: a busy program is stopped by the CPU limit, and the failure reports wall time, CPU time and the process state.</summary>
+    [Fact]
+    [Trait("Req", "RTL-901")]
+    public async Task SpinningProgramIsStoppedByTheCpuLimit()
+    {
+        var dir = NewDir();
+        var @case = Write(dir, "// opc-run: rawargs spin 100000\n" + Waiter, (".out", "done\n"));
+
+        var failure = await GoldenRunner.RunAsync(@case, RtlSetup.Default, TestContext.Current.CancellationToken,
+            limits: new RunLimits(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(120)));
+
+        Assert.NotNull(failure);
+        Assert.Matches(@"program CPU limit 2\.0 s reached: Synth\.exe stopped after \d+\.\d s wall, \d+\.\d s CPU, still running, threads \[.+\]", failure);
+        GoldenRunner.TryDelete(dir);
+    }
+
+    /// <summary>R-209: a program blocked without using CPU is stopped by the wall-clock cap.</summary>
+    [Fact]
+    [Trait("Req", "RTL-901")]
+    public async Task BlockedProgramIsStoppedByTheWallClockCap()
+    {
+        var dir = NewDir();
+        var @case = Write(dir, "// opc-run: rawargs sleep 100000\n" + Waiter, (".out", "done\n"));
+
+        var failure = await GoldenRunner.RunAsync(@case, RtlSetup.Default, TestContext.Current.CancellationToken,
+            limits: new RunLimits(TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(3)));
+
+        Assert.NotNull(failure);
+        Assert.Matches(@"program wall-clock limit 3\.0 s reached: Synth\.exe stopped after \d+\.\d s wall, \d+\.\d s CPU, still running, threads \[.*wait:.+\]", failure);
         GoldenRunner.TryDelete(dir);
     }
 

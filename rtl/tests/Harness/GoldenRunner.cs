@@ -162,17 +162,30 @@ public static class RtlCorpus
     private static string[] Words(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 }
 
+/// <summary>
+/// R-209 (TESTING.md rule 4, C-249): the limits of one process (opc and each program run). <see cref="Cpu"/> bounds the
+/// process's own CPU time, so the load of a parallel full-solution run never stops it; <see cref="Wall"/> caps the wall
+/// clock for a process blocked without using CPU.
+/// </summary>
+public sealed record RunLimits(TimeSpan Cpu, TimeSpan Wall)
+{
+    public static RunLimits Default { get; } = new(TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(120));
+}
+
 /// <summary>Compiles and runs one program per the golden contract (RTL-901, 902, 903); returns null or what failed.</summary>
 public static class GoldenRunner
 {
-    /// <summary>compiler-cli.md §5: per process (opc and each program run).</summary>
-    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
-
     private static readonly string[] RequiredTools = ["clang.exe", "lld-link.exe", "llvm-dlltool.exe"];
 
-    /// <summary>Compiles and runs <paramref name="case"/>; null on success. <paramref name="runTime"/> receives the wall time of each program run (not of opc).</summary>
-    public static async Task<string?> RunAsync(RtlCase @case, RtlSetup setup, CancellationToken ct, Action<TimeSpan>? runTime = null)
+    private static readonly TimeSpan MinimumCheck = TimeSpan.FromMilliseconds(50);
+
+    /// <summary>
+    /// Compiles and runs <paramref name="case"/>; null on success. <paramref name="runTime"/> receives the wall time of each
+    /// program run (not of opc). <paramref name="limits"/> (default <see cref="RunLimits.Default"/>) bound each program run; opc always runs under <see cref="RunLimits.Default"/>.
+    /// </summary>
+    public static async Task<string?> RunAsync(RtlCase @case, RtlSetup setup, CancellationToken ct, Action<TimeSpan>? runTime = null, RunLimits? limits = null)
     {
+        limits ??= RunLimits.Default;
         // RTL-909: a missing toolchain fails the test, it never skips it
         var missing = RequiredTools.Select(t => Path.Combine(setup.ToolchainDirectory, t)).Append(setup.OpcPath)
             .Where(p => !System.IO.File.Exists(p)).ToList();
@@ -183,7 +196,7 @@ public static class GoldenRunner
 
         var header = RtlCorpus.ReadHeader(@case);
         var work = NewTempDirectory();
-        var failure = await RunInAsync(@case, header, setup, work, runTime, ct).ConfigureAwait(false);
+        var failure = await RunInAsync(@case, header, setup, work, runTime, limits, ct).ConfigureAwait(false);
         if (failure is null)
         {
             TryDelete(work);                                                        // kept on failure for inspection (TESTING.md rule 3)
@@ -229,7 +242,28 @@ public static class GoldenRunner
         }
     }
 
-    private static async Task<string?> RunInAsync(RtlCase @case, RtlHeader header, RtlSetup setup, string work, Action<TimeSpan>? runTime, CancellationToken ct)
+    /// <summary>
+    /// The limit decision at one check: a reason to stop the process, or the delay until the next check — the earliest
+    /// wall-clock moment at which the CPU limit (CPU time grows at most as fast as the wall clock per thread) or the wall
+    /// limit can be reached.
+    /// </summary>
+    public static (string? StopReason, TimeSpan NextCheck) Decide(TimeSpan cpu, TimeSpan wall, RunLimits limits)
+    {
+        if (cpu >= limits.Cpu)
+        {
+            return ($"CPU limit {Seconds(limits.Cpu)} reached", TimeSpan.Zero);
+        }
+
+        if (wall >= limits.Wall)
+        {
+            return ($"wall-clock limit {Seconds(limits.Wall)} reached", TimeSpan.Zero);
+        }
+
+        var next = limits.Cpu - cpu < limits.Wall - wall ? limits.Cpu - cpu : limits.Wall - wall;
+        return (null, next < MinimumCheck ? MinimumCheck : next);
+    }
+
+    private static async Task<string?> RunInAsync(RtlCase @case, RtlHeader header, RtlSetup setup, string work, Action<TimeSpan>? runTime, RunLimits limits, CancellationToken ct)
     {
         var exe = Path.Combine(work, @case.Name + ".exe");
         List<string> args =
@@ -240,25 +274,26 @@ public static class GoldenRunner
         ];
 
         // the source folder is the current directory, so relative paths in "// opc:" options resolve against it
-        var opc = await RunProcessAsync(setup.OpcPath, CommandLine(args, null), Path.GetDirectoryName(@case.SourcePath)!, [], ct).ConfigureAwait(false);
-        if (opc is null)
+        // opc's own CPU time is bounded; clang and lld-link run as its children and are covered by the wall cap
+        var opc = await RunProcessAsync(setup.OpcPath, CommandLine(args, null), Path.GetDirectoryName(@case.SourcePath)!, [], RunLimits.Default, ct).ConfigureAwait(false);
+        if (opc.Stopped is { } stopped)
         {
-            return $"opc timed out after {Timeout.TotalSeconds} s";
+            return "opc " + stopped;
         }
 
-        if (opc.Value.ExitCode != 0)
+        if (opc.ExitCode != 0)
         {
-            return $"opc exit code {opc.Value.ExitCode}, expected 0\n{Normalize(opc.Value.StdOut)}{opc.Value.StdErr}";
+            return $"opc exit code {opc.ExitCode}, expected 0\n{Normalize(opc.StdOut)}{opc.StdErr}";
         }
 
         if (header.Variants.IsEmpty)
         {
-            return await RunOnceAsync(@case, header, exe, work, null, runTime, ct).ConfigureAwait(false);
+            return await RunOnceAsync(@case, header, exe, work, null, runTime, limits, ct).ConfigureAwait(false);
         }
 
         foreach (var variant in header.Variants)
         {
-            if (await RunOnceAsync(@case, header, exe, work, variant, runTime, ct).ConfigureAwait(false) is { } failure)
+            if (await RunOnceAsync(@case, header, exe, work, variant, runTime, limits, ct).ConfigureAwait(false) is { } failure)
             {
                 return $"variant {variant}: {failure}";
             }
@@ -268,7 +303,7 @@ public static class GoldenRunner
     }
 
     /// <summary>One run: argument list = [temp dir] [variant] then raw arguments; expectation files <c>.&lt;variant&gt;.*</c> first, else unsuffixed.</summary>
-    private static async Task<string?> RunOnceAsync(RtlCase @case, RtlHeader header, string exe, string work, string? variant, Action<TimeSpan>? runTime, CancellationToken ct)
+    private static async Task<string?> RunOnceAsync(RtlCase @case, RtlHeader header, string exe, string work, string? variant, Action<TimeSpan>? runTime, RunLimits limits, CancellationToken ct)
     {
         string? Expect(string suffix) => (variant is null ? null : @case.File("." + variant + suffix)) ?? @case.File(suffix);
 
@@ -292,7 +327,7 @@ public static class GoldenRunner
 
         var input = Expect(".in") is { } inPath ? System.IO.File.ReadAllBytes(inPath) : [];
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        var run = await RunProcessAsync(exe, CommandLine(programArgs, header.RawArgs), work, input, ct).ConfigureAwait(false);
+        var run = await RunProcessAsync(exe, CommandLine(programArgs, header.RawArgs), work, input, limits, ct).ConfigureAwait(false);
         runTime?.Invoke(clock.Elapsed);
         var failure = Check(run);
         if (tempDir is not null && failure is null)
@@ -302,11 +337,11 @@ public static class GoldenRunner
 
         return failure;
 
-        string? Check((int ExitCode, string StdOut, string StdErr)? result)
+        string? Check(ProcessResult r)
         {
-            if (result is not { } r)
+            if (r.Stopped is { } stopped)
             {
-                return $"program timed out after {Timeout.TotalSeconds} s";
+                return "program " + stopped;
             }
 
             var expectedExit = Expect(".exit") is { } exitPath
@@ -364,8 +399,16 @@ public static class GoldenRunner
         return sb.Append('\\', backslashes * 2).Append('"').ToString();
     }
 
-    /// <summary>Runs a process with <paramref name="stdin"/> as its whole input; null after the timeout. The process tree is killed in <c>finally</c>.</summary>
-    private static async Task<(int ExitCode, string StdOut, string StdErr)?> RunProcessAsync(string file, string arguments, string workingDirectory, byte[] stdin, CancellationToken ct)
+    /// <summary>The outcome of one process; <see cref="Stopped"/> is the report when a limit or the test's token stopped it.</summary>
+    private readonly record struct ProcessResult(int ExitCode, string StdOut, string StdErr, string? Stopped);
+
+    /// <summary>
+    /// Runs a process with <paramref name="stdin"/> as its whole input under <paramref name="limits"/> and the test's
+    /// token. No polling: one timer is re-armed for the earliest moment a limit can be reached. A stop reports the
+    /// elapsed wall time, the CPU time and the process state, captured before the kill. The process tree is killed in
+    /// <c>finally</c>.
+    /// </summary>
+    private static async Task<ProcessResult> RunProcessAsync(string file, string arguments, string workingDirectory, byte[] stdin, RunLimits limits, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(file, arguments)
         {
@@ -377,39 +420,115 @@ public static class GoldenRunner
             CreateNoWindow = true,
         };
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(Timeout);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var gate = new object();
+        string? report = null;
+        var watch = Stopwatch.StartNew();
         using var process = Process.Start(psi)!;
-        try
+        Timer? timer = null;
+
+        void Stop(string reason)
         {
-            var stdout = new MemoryStream();
-            var stderr = new MemoryStream();
-            var copyOut = process.StandardOutput.BaseStream.CopyToAsync(stdout, timeout.Token);
-            var copyErr = process.StandardError.BaseStream.CopyToAsync(stderr, timeout.Token);
-            try
+            lock (gate)
             {
-                await process.StandardInput.BaseStream.WriteAsync(stdin, timeout.Token).ConfigureAwait(false);
-                process.StandardInput.Close();
-            }
-            catch (IOException)
-            {
-                // the program exited without reading its input
+                report ??= $"{reason}: {Path.GetFileName(file)} stopped after {Seconds(watch.Elapsed)} wall, {State(process)}";
             }
 
-            await Task.WhenAll(copyOut, copyErr).ConfigureAwait(false);
-            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
-            return (process.ExitCode, Encoding.UTF8.GetString(stdout.ToArray()), Encoding.UTF8.GetString(stderr.ToArray()));
+            stop.Cancel();
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+
+        void Check()
         {
-            return null;
+            var (reason, next) = Decide(Cpu(process), watch.Elapsed, limits);
+            if (reason is not null)
+            {
+                Stop(reason);
+                return;
+            }
+
+            try
+            {
+                timer?.Change(next, System.Threading.Timeout.InfiniteTimeSpan);
+            }
+            catch (ObjectDisposedException)
+            {
+                // the run ended
+            }
+        }
+
+        try
+        {
+            using (timer = new Timer(_ => Check()))
+            using (ct.Register(() => Stop("test cancelled")))
+            {
+                timer.Change(Decide(TimeSpan.Zero, watch.Elapsed, limits).NextCheck, System.Threading.Timeout.InfiniteTimeSpan);
+                var stdout = new MemoryStream();
+                var stderr = new MemoryStream();
+                var copyOut = process.StandardOutput.BaseStream.CopyToAsync(stdout, stop.Token);
+                var copyErr = process.StandardError.BaseStream.CopyToAsync(stderr, stop.Token);
+                try
+                {
+                    await process.StandardInput.BaseStream.WriteAsync(stdin, stop.Token).ConfigureAwait(false);
+                    process.StandardInput.Close();
+                }
+                catch (IOException)
+                {
+                    // the program exited without reading its input
+                }
+
+                await Task.WhenAll(copyOut, copyErr).ConfigureAwait(false);
+                await process.WaitForExitAsync(stop.Token).ConfigureAwait(false);
+                return new(process.ExitCode, Encoding.UTF8.GetString(stdout.ToArray()), Encoding.UTF8.GetString(stderr.ToArray()), null);
+            }
+        }
+        catch (OperationCanceledException) when (report is not null)
+        {
+            return new(-1, "", "", report);
         }
         finally
         {
-            if (!process.HasExited)
+            lock (gate)
             {
-                process.Kill(entireProcessTree: true);
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
             }
         }
     }
+
+    private static TimeSpan Cpu(Process process)
+    {
+        try
+        {
+            return process.TotalProcessorTime;
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return TimeSpan.Zero;                                       // exited meanwhile
+        }
+    }
+
+    /// <summary>CPU time, whether the process still runs, and each thread's state (and wait reason).</summary>
+    private static string State(Process process)
+    {
+        try
+        {
+            process.Refresh();
+            if (process.HasExited)
+            {
+                return $"process exited with code {process.ExitCode}";
+            }
+
+            var threads = process.Threads.Cast<ProcessThread>()
+                .Select(t => t.ThreadState == System.Diagnostics.ThreadState.Wait ? $"wait:{t.WaitReason}" : t.ThreadState.ToString());
+            return $"{Seconds(process.TotalProcessorTime)} CPU, still running, threads [{string.Join(", ", threads)}]";
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            return $"state unavailable ({e.GetType().Name})";
+        }
+    }
+
+    private static string Seconds(TimeSpan time) => time.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture) + " s";
 }
