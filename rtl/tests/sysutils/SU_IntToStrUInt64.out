@@ -1,0 +1,17 @@
+# UInt64 overload
+ok IntToStr High(UInt64)
+ok IntToStr 2^63
+ok IntToStr UInt64 0
+ok IntToStr WPARAM all bits
+ok IntToStr NativeUInt
+# other argument types unchanged
+ok Integer
+ok Int64
+ok Cardinal
+ok Byte
+ok Word
+ok ShortInt
+ok literal -1
+ok Int64 literal
+ok Integer expression
+# passed 14 failed 0

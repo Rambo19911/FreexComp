@@ -162,15 +162,11 @@ public sealed class GoldenRunnerEndToEndTests
         GoldenRunner.TryDelete(dir);
     }
 
-    /// <summary>Longer test programs from before RTL-905 was checked; each may not grow (to be split, R-200 report).</summary>
-    public static readonly Dictionary<string, int> OversizedPrograms = new(StringComparer.Ordinal)
-    {
-        ["system/Sys_Interfaces"] = 601,
-        ["winapi/Win_User32Smoke"] = 539,
-        ["system/Sys_ValFloat"] = 527,
-        ["winapi/Win_CommCtrlSmoke"] = 366,
-        ["system/Sys_Threads"] = 363,
-    };
+    /// <summary>
+    /// Longer test programs from before RTL-905 was checked, each with the line count it may not exceed. Empty since
+    /// R-201 split the last of them; a program is never added here, it is split instead.
+    /// </summary>
+    public static readonly Dictionary<string, int> OversizedPrograms = new(StringComparer.Ordinal);
 
     /// <summary>"At most ~300 lines": the bound the size check applies (300 plus a tolerance of 20 lines for the "~").</summary>
     public const int MaxProgramLines = 320;

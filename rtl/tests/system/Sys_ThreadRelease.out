@@ -1,0 +1,28 @@
+# release of the per-thread blocks
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok a running thread holds its per-thread block and its threadvar block
+ok hold thread result
+ok both freed when the thread function returns
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok EndThread exit code
+ok both freed by EndThread
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok BeginThread returns a handle
+ok BeginThread returns a thread id
+ok busy thread 0 returned
+ok busy thread 0 caught
+ok busy thread 1 ended by EndThread
+ok busy thread 1 caught
+ok busy thread 2 returned
+ok busy thread 2 caught
+ok busy thread 3 ended by EndThread
+ok busy thread 3 caught
+ok no leaks after threads ending both ways
+# passed 26 failed 0

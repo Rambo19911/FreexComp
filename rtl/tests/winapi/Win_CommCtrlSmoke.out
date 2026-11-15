@@ -84,62 +84,8 @@ ok HDM_GETITEMCOUNT
 ok HDM_GETITEMW
 ok THDItemW.cxy
 ok THDItemW.lParam
-# list view
-ok WC_LISTVIEW
-ok LVM_INSERTCOLUMNW
-ok LVM_GETCOLUMNWIDTH
-ok LVM_INSERTCOLUMN alias
-ok LVM_GETCOLUMNW
-ok TLVColumnW.cx
-ok TLVColumnW.iSubItem
-ok LVM_INSERTITEMW
-ok LVN_INSERTITEM sent to the parent
-ok LVN_INSERTITEM hwndFrom
-ok TNMListView.iItem
-ok LVM_INSERTITEM alias
-ok LVM_GETITEMCOUNT
-ok LVM_SETITEMTEXTW
-ok LVM_GETITEMTEXTW length
-ok LVM_GETITEMTEXTW
-ok LVM_GETITEMW
-ok TLVItemW.pszText
-ok TLVItemW.lParam
-ok LVM_SETITEMSTATE
-ok LVN_ITEMCHANGED sent to the parent
-ok LVM_GETSELECTEDCOUNT
-ok LVM_GETNEXTITEM selected
-ok LVM_GETEXTENDEDLISTVIEWSTYLE
-ok LVM_SETBKCOLOR
-ok LVM_GETBKCOLOR
-ok LVM_GETITEMRECT
-ok LVM_GETITEMRECT width
-ok LVM_DELETEITEM
-ok LVN_DELETEITEM sent to the parent
-ok LVM_GETITEMCOUNT after delete
-# tree view
-ok WC_TREEVIEW
-ok TVM_INSERTITEMW
-ok TVM_INSERTITEM alias
-ok TVM_GETCOUNT
-ok TVM_GETNEXTITEM TVGN_ROOT
-ok TVM_GETNEXTITEM TVGN_CHILD
-ok TVM_GETNEXTITEM TVGN_PARENT
-ok TVM_GETITEMW
-ok TTVItemW.pszText
-ok TTVItemW.lParam
-ok TVM_EXPAND
-ok TVM_GETITEMSTATE expanded
-ok TVM_SELECTITEM
-ok TVN_SELCHANGEDW sent to the parent with itemNew
-ok TVM_GETNEXTITEM TVGN_CARET
-ok TVM_DELETEITEM
-ok TVM_GETCOUNT after delete
-# macros
-ok IndexToStateImageMask
-ok IndexToOverlayMask
-ok LPSTR_TEXTCALLBACKW
 # cleanup
 ok DestroyWindow tooltip
 ok DestroyWindow parent
 ok UnregisterClassW
-# passed 129 failed 0
+# passed 78 failed 0

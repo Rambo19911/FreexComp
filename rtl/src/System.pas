@@ -2819,42 +2819,50 @@ begin
   _Halt(Code);
 end;
 
-{ RTL-131/132, ABI-101 }
-procedure _RunError(Code: Integer);
+{ RTL-131/132, ABI-101: runtime error Code at Addr, the user's call site }
+procedure RunErrorAt(Code: Integer; Addr: Pointer); noreturn;
 begin
-  ErrorAddr := _ReturnAddress;         { the caller's address }
+  ErrorAddr := Addr;
   if Assigned(ErrorProc) then
     ErrorProc(Code, ErrorAddr);        { normally raises and does not return }
   FatalRunError(Code);
 end;
 
-{ error paths of the inline checks the compiler emits (RTL-143, ABI-102) }
+procedure _RunError(Code: Integer);
+begin
+  RunErrorAt(Code, _ReturnAddress);    { the caller's address }
+end;
+
+{ error paths of the inline checks the compiler emits (RTL-143, ABI-102); each reports its own caller (R-199) }
 procedure _RangeError;
 begin
-  _RunError(201);
+  RunErrorAt(201, _ReturnAddress);
 end;
 
 procedure _OverflowError;
 begin
-  _RunError(215);
+  RunErrorAt(215, _ReturnAddress);
 end;
 
 procedure _DivZeroError;
 begin
-  _RunError(200);
+  RunErrorAt(200, _ReturnAddress);
 end;
 
 procedure _InvalidCast;
 begin
-  _RunError(219);
+  RunErrorAt(219, _ReturnAddress);
 end;
 
 { ABI-103: the code of every abstract VMT slot; AbstractErrorProc first when assigned, then runtime error 211 }
 procedure _AbstractError;
+var
+  Addr: Pointer;
 begin
+  Addr := _ReturnAddress;
   if Assigned(AbstractErrorProc) then
     AbstractErrorProc();
-  _RunError(211);
+  RunErrorAt(211, Addr);
 end;
 
 { ABI-103, RTL-137: AssertErrorProc first when assigned (Msg nil arrives as ''); if it is nil or returns,
@@ -2876,7 +2884,7 @@ begin
   Write(ErrOutput, ' (');
   _WriteUStr(ErrOutput, FileName, 0);
   Writeln(ErrOutput, ', line ', Line, ')');
-  _RunError(227);
+  RunErrorAt(227, _ReturnAddress);
 end;
 
 { ABI-132: the compiler calls this after every text-I/O statement in $I+ state }
@@ -2886,7 +2894,7 @@ var
 begin
   Code := IOResult;
   if Code <> 0 then
-    _RunError(Code);
+    RunErrorAt(Code, _ReturnAddress);
 end;
 
 { ---------------------------------------------------------------- exceptions (rtl-abi.md 9.7, system.md section 14) }

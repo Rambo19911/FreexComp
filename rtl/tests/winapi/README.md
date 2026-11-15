@@ -2,9 +2,10 @@
 
 `Win_Kernel32Smoke` and `Win_Kernel32Files` call every function the `Windows` unit declares for kernel32 and
 ntdll (RTL-860), except the activation-context functions GetSystemDirectoryW, CreateActCtxW and ActivateActCtx,
-which `Win_ActCtx` calls. `Win_User32Smoke` and `Win_User32Helpers` call every function it declares for user32 (the second one
-holds the helpers added after `Win_User32Smoke` reached its size limit), `Win_Gdi32Smoke` every function it
-declares for gdi32. `Win_CommCtrlSmoke` calls every function the `CommCtrl` unit declares for comctl32;
+which `Win_ActCtx` calls. `Win_User32Smoke`, `Win_User32Input` and `Win_User32Helpers` call every function it
+declares for user32 (one program grew too long and was split; the helpers were added later), `Win_Gdi32Smoke` every
+function it declares for gdi32. `Win_CommCtrlSmoke` and `Win_CommCtrlViews` call every function the `CommCtrl` unit
+declares for comctl32;
 `Win_CommDlgDecl` calls the functions of `CommDlg` (comdlg32) and `ShellAPI` (shell32) that run unattended.
 Exceptions:
 

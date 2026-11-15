@@ -49,6 +49,7 @@ function CreateFormatSettings(const LocaleName: string): TFormatSettings; overlo
 { ------------------------------------------------------------------------- integer and Boolean conversions (3) }
 function IntToStr(Value: Integer): string; overload;
 function IntToStr(Value: Int64): string; overload;
+function IntToStr(Value: UInt64): string; overload;
 function UIntToStr(Value: Cardinal): string; overload;
 function UIntToStr(Value: UInt64): string; overload;
 { upper-case hex of the bit pattern in the value's own width, left-padded with 0 to at least Digits }
@@ -725,6 +726,11 @@ begin
 end;
 
 function IntToStr(Value: Int64): string;
+begin
+  Str(Value, Result);
+end;
+
+function IntToStr(Value: UInt64): string;
 begin
   Str(Value, Result);
 end;

@@ -115,103 +115,10 @@ ok PostQuitMessage exit code
 # timers
 ok SetTimer
 ok KillTimer
-# input
-ok GetKeyboardState
-ok MapVirtualKeyW
-ok GetKeyNameTextW
-ok ShowCursor
-ok GetDoubleClickTime
-# painting
-ok GetDC
-ok FillRect
-ok FrameRect
-ok InvertRect
-ok DrawFocusRect
-ok DrawEdge
-ok DrawFrameControl
-ok DrawIconEx
-ok DrawTextW
-ok DrawTextW DT_CALCRECT width
-ok ReleaseDC
-ok GetWindowDC
-ok ReleaseDC window DC
-ok GetSysColorBrush
-ok InvalidateRect
-ok ValidateRect
-ok RedrawWindow
-ok BeginPaint
-ok TPaintStruct.hdc
-ok EndPaint
-# scroll bars
-ok SetScrollInfo
-ok GetScrollInfo
-ok GetScrollInfo nMax
-ok GetScrollInfo nPage
-ok GetScrollInfo nPos
-ok ShowScrollBar
-ok EnableScrollBar disable
-ok EnableScrollBar enable
-# menus
-ok CreateMenu
-ok CreatePopupMenu
-ok InsertMenuItemW
-ok InsertMenuItem alias
-ok GetMenuItemCount
-ok InsertMenuItemW submenu
-ok GetSubMenu
-ok SetMenuItemInfoW
-ok GetMenuItemInfoW
-ok GetMenuItemInfoW text
-ok GetMenuItemInfoW cch
-ok EnableMenuItem previous state
-ok CheckMenuItem previous state
-ok CheckMenuRadioItem
-ok SetMenu
-ok GetMenu
-ok DrawMenuBar
-ok TrackPopupMenuEx of no menu
-ok GetSystemMenu
-ok RemoveMenu
-ok RemoveMenu count
-ok DeleteMenu
-ok DeleteMenu count
-ok SetMenu none
-ok DestroyMenu
-# icons
-ok LoadImageW
-ok GetIconInfo
-ok GetIconInfo fIcon
-ok GetIconInfo hbmMask
-ok CreateIconIndirect icon
-ok DestroyIcon
-ok CreateIconIndirect cursor
-ok DestroyCursor
-# system, DPI, monitors
-ok GetSystemMetrics
-ok GetSystemMetricsForDpi
-ok SystemParametersInfoW
-ok TNonClientMetricsW.lfMessageFont
-ok SystemParametersInfoForDpi
-ok GetDpiForWindow
-ok GetDpiForSystem
-ok GetThreadDpiAwarenessContext
-ok AreDpiAwarenessContextsEqual
-ok MonitorFromWindow
-ok GetMonitorInfoW
-ok TMonitorInfo.rcMonitor
-ok MonitorFromPoint
-ok MonitorFromRect
-ok EnumDisplayMonitors
-ok EnumDisplayMonitors count
-# text helpers
-ok CharUpperBuffW count
-ok CharUpperBuffW
-ok CharLowerBuffW count
-ok CharLowerBuffW
 # cleanup
 ok DestroyWindow
 ok WM_DESTROY
 ok window destroyed
 ok child destroyed with its parent
 ok UnregisterClassW
-# passed 199 failed 0
+# passed 113 failed 0
