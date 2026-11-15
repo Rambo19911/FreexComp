@@ -101,6 +101,60 @@ public sealed partial class ClassifierTests
         Assert.All(spans, s => Assert.True(s.Span.Length > 0));
     }
 
+    /// <summary>
+    /// CMP-710 (C-248): only lexer error tokens are <c>Invalid</c>; tokens the parser skips while recovering keep their
+    /// lexical class (half-typed code must not turn red). The spans equal the lexical classifier's, kinds too except for
+    /// the CMP-713 approximation.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "3")]
+    [Trait("Req", "CMP-710")]
+    [InlineData("program P; begin x := ; ! 'open\nend")]
+    [InlineData("program P; begin x := 1 + ) ; y := 'abc'#13 ) 2.5 ) $FF ) foo begin end.")]
+    [InlineData("program P;\nvar x: Integer\nbegin\n  if x then x := 3 3 ;\n  writeln('a' 'b'; ) ]\nend.")]
+    [InlineData("unit U; interface procedure F; overload overload 12 'x' #9 #99999 := ; implementation end.")]
+    [InlineData("program P; begin ) ) , . ^ @ <> .. [ end.")]
+    public void Syntactic_SkippedTokensKeepLexicalClass(string text)
+    {
+        var lexical = Classify(text);
+        var syntactic = ClassifySyntactic(text);
+        Assert.Contains(SyntaxTree.Parse(SourceText.From(Path, text)).Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+
+        Assert.Equal(lexical.Select(s => s.Span), syntactic.Select(s => s.Span));
+        for (var i = 0; i < lexical.Length; i++)
+        {
+            var approximation = lexical[i].Kind is ClassificationKind.ContextualKeyword or ClassificationKind.Identifier
+                                && syntactic[i].Kind is ClassificationKind.ContextualKeyword or ClassificationKind.Identifier;
+            Assert.True(lexical[i].Kind == syntactic[i].Kind || approximation,
+                $"'{text.Substring(lexical[i].Span.Start, lexical[i].Span.Length)}' at {lexical[i].Span.Start}: {lexical[i].Kind} vs {syntactic[i].Kind}");
+        }
+    }
+
+    /// <summary>The syntactic classifier on random and half-typed text (C-248): never throws, spans stay in the range.</summary>
+    [Fact]
+    [Trait("Phase", "3")]
+    public void Syntactic_MalformedInputNeverThrows()
+    {
+        var random = new Random(248);
+        const string pieces = "{}()*/'#$%&._1eE\r\n asmend;:=[]";
+        for (var i = 0; i < 300; i++)
+        {
+            var chars = new char[random.Next(0, 150)];
+            for (var j = 0; j < chars.Length; j++)
+            {
+                chars[j] = random.Next(3) == 0 ? pieces[random.Next(pieces.Length)] : (char)random.Next(0, 0x10000);
+            }
+
+            var text = (random.Next(2) == 0 ? "program P; begin " : "") + new string(chars);
+            var start = random.Next(0, text.Length + 1);
+            var range = new TextSpan(start, random.Next(0, text.Length - start + 1));
+
+            var spans = ClassifySyntactic(text, range);
+
+            Assert.All(spans, s => Assert.True(s.Span.Start >= range.Start && s.Span.End <= range.End && s.Span.Length > 0));
+        }
+    }
+
     [Fact]
     [Trait("Phase", "3")]
     public void Syntactic_DisabledText()

@@ -53,6 +53,9 @@ public static class Classifier
     /// <summary>CMP-713 (b): directives recognised after <c>property</c> within the same declaration.</summary>
     private static readonly string[] PropertySpecifiers = ["read", "write", "default", "stored", "index", "nodefault", "implements"];
 
+    /// <summary>The (never read) file name of a skipped token lexed again on its own.</summary>
+    private const string SkippedPath = @"C:\skipped.pas";
+
     /// <summary>
     /// Classifies <paramref name="tokens"/> (from <see cref="Lexer.Tokenize"/>) without a parser (CMP-712). Spans are
     /// sorted, do not overlap, cover every non-whitespace character once (CMP-711) and are clipped to
@@ -273,39 +276,71 @@ public static class Classifier
         _ => "syntax.text",
     };
 
+    /// <param name="offset">Added to the token's positions: non-zero for a token re-lexed from skipped trivia.</param>
     private static void ClassifyToken(SpanBuilder builder, ImmutableArray<SyntaxToken> tokens, int index,
-                                      Func<ImmutableArray<SyntaxToken>, int, bool> isContextualKeyword)
+                                      Func<ImmutableArray<SyntaxToken>, int, bool> isContextualKeyword, int offset = 0)
     {
         var token = tokens[index];
+        var span = new TextSpan(token.Span.Start + offset, token.Span.Length);
         switch (token.Kind)
         {
             case SyntaxKind.EndOfFileToken:
                 return;
             case SyntaxKind.IdentifierToken when SyntaxFacts.IsReservedWord(token.Text):
-                builder.Add(token.Span, ClassificationKind.Keyword);   // a reserved word the parser took as a name (operator In)
+                builder.Add(span, ClassificationKind.Keyword);   // a reserved word the parser took as a name (operator In)
                 return;
             case SyntaxKind.IdentifierToken:
-                builder.Add(token.Span, isContextualKeyword(tokens, index) ? ClassificationKind.ContextualKeyword : ClassificationKind.Identifier);
+                builder.Add(span, isContextualKeyword(tokens, index) ? ClassificationKind.ContextualKeyword : ClassificationKind.Identifier);
                 return;
             case SyntaxKind.IntegerLiteralToken or SyntaxKind.RealLiteralToken:
-                builder.Add(token.Span, ClassificationKind.NumberLiteral);
+                builder.Add(span, ClassificationKind.NumberLiteral);
                 return;
             case SyntaxKind.StringLiteralToken:
-                ClassifyString(builder, token);
+                ClassifyString(builder, token, span.Start);
                 return;
         }
 
         if (SyntaxFacts.IsKeyword(token.Kind))
         {
-            builder.Add(token.Span, ClassificationKind.Keyword);
+            builder.Add(span, ClassificationKind.Keyword);
         }
         else if (SyntaxFacts.IsPunctuation(token.Kind))
         {
-            builder.Add(token.Span, ClassificationKind.Punctuation);
+            builder.Add(span, ClassificationKind.Punctuation);
         }
         else
         {
-            builder.Add(token.Span, ClassificationKind.Operator);   // operators and the lone symbols # $ &
+            builder.Add(span, ClassificationKind.Operator);   // operators and the lone symbols # $ &
+        }
+    }
+
+    /// <summary>
+    /// A <c>SkippedTokensTrivia</c> piece (C-248, CMP-710): the lexer's illegal characters, or a whole token the parser skipped
+    /// while recovering. The text is lexed again on its own: what the lexer rejects (illegal characters, unterminated
+    /// quoted parts) is <see cref="ClassificationKind.Invalid"/>, a skipped token keeps its lexical class (no contextual
+    /// keyword: the parser did not use it as one).
+    /// </summary>
+    private static void ClassifySkipped(SpanBuilder builder, SyntaxTrivia piece)
+    {
+        var tokens = Lexer.Tokenize(Compiler.SourceText.From(SkippedPath, piece.Text));
+        var offset = piece.Span.Start;
+        for (var i = 0; i < tokens.Length; i++)
+        {
+            AddRelexedTrivia(builder, tokens[i].LeadingTrivia, offset);
+            ClassifyToken(builder, tokens, i, static (_, _) => false, offset);
+            AddRelexedTrivia(builder, tokens[i].TrailingTrivia, offset);
+        }
+    }
+
+    /// <summary>Trivia of a re-lexed skipped token: only illegal characters (Invalid) can occur besides whitespace.</summary>
+    private static void AddRelexedTrivia(SpanBuilder builder, ImmutableArray<SyntaxTrivia> trivia, int offset)
+    {
+        foreach (var piece in trivia)
+        {
+            if (piece.Kind is not (SyntaxKind.WhitespaceTrivia or SyntaxKind.EndOfLineTrivia))
+            {
+                builder.Add(new TextSpan(piece.Span.Start + offset, piece.Span.Length), ClassificationKind.Invalid);
+            }
         }
     }
 
@@ -354,10 +389,9 @@ public static class Classifier
     /// unit is CharLiteral; an unterminated quoted part or a code above $FFFF is Invalid. Adjacent parts of the same
     /// kind form one span.
     /// </summary>
-    private static void ClassifyString(SpanBuilder builder, SyntaxToken token)
+    private static void ClassifyString(SpanBuilder builder, SyntaxToken token, int start)
     {
         var text = token.Text;
-        var start = token.Span.Start;
         var singleChar = token.Value is string { Length: 1 } && text[0] == '\'' && QuotedPartEnd(text, 0, out _) == text.Length;
         var i = 0;
         while (i < text.Length)
@@ -455,15 +489,17 @@ public static class Classifier
                     kind = ClassificationKind.DisabledText;
                     break;
                 default:
-                    // SkippedTokensTrivia (illegal characters): part of the asm text inside an asm block.
+                    // SkippedTokensTrivia: part of the asm text inside an asm block, else re-lexed (C-248).
                     if (inAsm)
                     {
                         builder.AddAsm(piece.Span);
-                        continue;
+                    }
+                    else
+                    {
+                        ClassifySkipped(builder, piece);
                     }
 
-                    kind = ClassificationKind.Invalid;
-                    break;
+                    continue;
             }
 
             builder.Add(piece.Span, kind);
