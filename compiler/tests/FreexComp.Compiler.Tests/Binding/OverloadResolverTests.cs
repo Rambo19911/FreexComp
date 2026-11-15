@@ -164,6 +164,43 @@ public sealed class OverloadResolverTests
     }
 
     /// <summary>
+    /// C-210 (LANG-441, LANG-310): inside a method a bare call of an overloaded name binds like <c>Self.Name</c>; the ancestor
+    /// method that the parameterless <c>overload; override</c> replaces is not a second candidate (no E2122), and the call stays
+    /// virtual. The overload with a parameter (<c>reintroduce; overload</c>) is still found.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-441")]
+    [Trait("Req", "LANG-310")]
+    [InlineData("ToString", "T.TB.ToString$", true)]
+    [InlineData("ToString()", "T.TB.ToString$", true)]
+    [InlineData("Self.ToString", "T.TB.ToString$", true)]
+    [InlineData("ToString(1)", "T.TB.ToString$Integer", false)]
+    public void ImplicitSelfOverloadOverride(string call, string linkName, bool isVirtual)
+    {
+        var (result, _) = Bind($$"""
+            program T;
+            type
+              TA = class function ToString: string; virtual; end;
+              TB = class(TA)
+                function ToString: string; overload; override;
+                function ToString(N: Integer): string; reintroduce; overload;
+                function Twice: string;
+              end;
+            function TA.ToString: string; begin Result := 'a' end;
+            function TB.ToString: string; begin Result := 'b' end;
+            function TB.ToString(N: Integer): string; begin Result := 'n' end;
+            function TB.Twice: string; begin Result := {{call}} end;
+            begin end.
+            """);
+
+        Assert.Empty(Format(result.Diagnostics));
+        var body = result.Routines.Single(r => r.Routine.Name == "Twice").Body;
+        var assignment = Assert.IsType<BoundAssignmentStatement>(Assert.Single(body.Statements));
+        var bound = Assert.IsType<BoundCallExpression>(assignment.Value);
+        Assert.Equal((linkName, isVirtual), (bound.Routine.LinkName, bound.Receiver?.IsVirtual ?? false));
+    }
+
+    /// <summary>
     /// C-224 (LANG-442, lead decision 2026-11-15): among candidates tied on cost, the one declared in the more derived class wins
     /// before the fewest-defaults rule — <c>Create(ACapacity: Integer = 0)</c> beats the inherited parameterless <c>Create</c>.
     /// </summary>

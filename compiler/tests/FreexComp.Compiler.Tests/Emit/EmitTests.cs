@@ -321,6 +321,7 @@ public sealed class EmitTests
 
     [Theory]
     [MemberData(nameof(Programs))]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-355")]
     [Trait("Req", "CMP-620")]
@@ -336,6 +337,7 @@ public sealed class EmitTests
     }
 
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-627")]
     public void DefaultOutputPath_IsTheMainFileNameNextToTheMainFile()
@@ -433,6 +435,7 @@ public sealed class EmitTests
     /// only that unit and relinks; a deleted exe is relinked without recompiling anything.
     /// </summary>
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-150")]
     [Trait("Req", "CMP-153")]
@@ -472,6 +475,7 @@ public sealed class EmitTests
     /// U is unchanged; W's interface reaches P.
     /// </summary>
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-150")]
     [Trait("Req", "CMP-151")]

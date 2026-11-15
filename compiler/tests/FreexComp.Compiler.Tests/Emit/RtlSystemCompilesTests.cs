@@ -132,6 +132,7 @@ public sealed class RtlSystemCompilesTests
 
     [Theory]
     [MemberData(nameof(Optimisations))]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-630")]
     public void System_AssemblesWithPinnedClang(string optimisation)
@@ -346,6 +347,7 @@ public sealed class RtlSystemCompilesTests
 
     [Theory]
     [MemberData(nameof(Optimisations))]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "ABI-121")]
     [Trait("Req", "ABI-122")]
@@ -368,6 +370,7 @@ public sealed class RtlSystemCompilesTests
 
     [Theory]
     [MemberData(nameof(Optimisations))]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-630")]
     [Trait("Req", "LANG-915")]
@@ -383,6 +386,7 @@ public sealed class RtlSystemCompilesTests
     }
 
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-630")]
     public async Task System_RuntimeError_WritesTheMessageToStderrAndExitsWithTheCode()

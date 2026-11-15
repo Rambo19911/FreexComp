@@ -1,3 +1,4 @@
+using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Types;
 using Xunit;
 using static FreexComp.Compiler.Tests.Binding.BinderTestHelper;
@@ -105,6 +106,48 @@ public sealed class ProcTypeBindingTests
     public void InterfaceMethodPointer(string body, string? expected) =>
         AssertDiagnostics("type TE = procedure(X: Integer) of object; IBase = interface procedure Baz(X: Integer); end; " +
             "IFoo = interface(IBase) procedure Bar(X: Integer); function Qux: Integer; procedure Ov(S: string); overload; procedure Ov(B: Byte); overload; end; " + body, expected);
+
+    /// <summary>
+    /// C-221 (LANG-312, LANG-442, LANG-481): a parameterless method passed for a <c>procedure of object</c> parameter of an
+    /// <b>overloaded</b> method is a method-pointer value, as for a method that is not overloaded — not a call (E2034). Each
+    /// call picks the overload with the matching parameter count and passes a method pointer to <c>Run</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-481")]
+    [Trait("Req", "LANG-442")]
+    public void MethodArgumentToOverload()
+    {
+        var (result, _) = Bind("""
+            program T;
+            type
+              TM = procedure of object;
+              TC = class
+                procedure Run;
+                procedure One(M: TM);
+                procedure Two(M: TM); overload;
+                procedure Two(A: TC; M: TM); overload;
+              end;
+            procedure TC.Run; begin end;
+            procedure TC.One(M: TM); begin M end;
+            procedure TC.Two(M: TM); begin M end;
+            procedure TC.Two(A: TC; M: TM); begin M end;
+            var C: TC;
+            begin
+              C.One(C.Run);
+              C.Two(C.Run);
+              C.Two(nil, C.Run);
+            end.
+            """);
+
+        Assert.Empty(Format(result.Diagnostics));
+        var calls = result.Bodies[^1].Statements.Cast<BoundCallStatement>().ToList();
+        Assert.Equal([("One", 1), ("Two", 1), ("Two", 2)], calls.Select(c => (c.Routine.Name, c.Arguments.Length)));
+        Assert.All(calls, c =>
+        {
+            var pointer = Assert.IsType<BoundMethodPointerExpression>(c.Arguments[^1]);
+            Assert.Equal("Run", pointer.Method.Name);
+        });
+    }
 
     private static void AssertDiagnostics(string body, string? expected)
     {
