@@ -96,11 +96,12 @@ public sealed class PlatformServicesTests
         OnOtherThread(() =>
         {
             clock.Schedule(TimeSpan.FromMilliseconds(1), () => fired.Add(("cancelled", Dispatcher.UIThread.CheckAccess()))).Dispose();
-            started = clock.Schedule(TimeSpan.FromHours(1), () => fired.Add(("started", Dispatcher.UIThread.CheckAccess())));
+            started = clock.Schedule(TimeSpan.FromMilliseconds(5), () => fired.Add(("started", Dispatcher.UIThread.CheckAccess())));
         });
         Dispatcher.UIThread.RunJobs(); // the posted starts run: the disposed one stays off, the other timer starts
         OnOtherThread(() => started!.Dispose()); // disposing a started timer from another thread cancels it too
-        OnOtherThread(() => clock.Schedule(TimeSpan.FromMilliseconds(20), () =>
+        // I-185: "due" falls due well after "started" would have, so a no-op Dispose lets "started" fire first.
+        OnOtherThread(() => clock.Schedule(TimeSpan.FromMilliseconds(50), () =>
         {
             fired.Add(("due", Dispatcher.UIThread.CheckAccess()));
             frame.Continue = false;
