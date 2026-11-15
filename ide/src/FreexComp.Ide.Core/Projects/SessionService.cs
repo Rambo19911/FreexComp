@@ -91,6 +91,24 @@ public sealed class SessionService : ISessionService
         projectManager.SelectionChanged += (_, _) => ScheduleSave();
     }
 
+    /// <summary>IDE-ED-114 (P3): the bookmarks stored in and restored from the session's <c>bookmarks</c> member.</summary>
+    public Editing.BookmarkService? Bookmarks
+    {
+        get => _bookmarks;
+        set
+        {
+            if (_bookmarks is not null)
+                _bookmarks.Changed -= OnBookmarksChanged;
+            _bookmarks = value;
+            if (value is not null)
+                value.Changed += OnBookmarksChanged;
+        }
+    }
+
+    private Editing.BookmarkService? _bookmarks;
+
+    private void OnBookmarksChanged(object? sender, EventArgs e) => ScheduleSave();
+
     public string SessionPath => _projects.Project is { } project
         ? Path.Combine(project.Directory, StateFolderName, "session.json")
         : Path.Combine(_paths.LocalDirectory, "session-noproject.json");
@@ -107,6 +125,15 @@ public sealed class SessionService : ISessionService
             if (expanded is not null)
                 _projectManager.RestoreSessionState(expanded, LayoutStateJson.Str(tree["selected"]));
         }
+
+        // IDE-ED-114: before the documents open, so they anchor the bookmarks as they come.
+        _bookmarks?.Load(root["bookmarks"] is JsonArray marks
+            ? marks.OfType<JsonObject>()
+                .Select(m => (Path: Resolve(LayoutStateJson.Str(m["path"])), Line: LayoutStateJson.Int(m["line"]), Number: LayoutStateJson.Int(m["number"])))
+                .Where(m => m.Path is not null && m.Line is not null)
+                .Select(m => new Editing.BookmarkInfo(m.Path!, m.Line!.Value, m.Number))
+                .ToList()
+            : []);
 
         if (!restoreDocuments || root["documents"] is not JsonArray entries)
             return 0;
@@ -156,6 +183,15 @@ public sealed class SessionService : ISessionService
         Put(root, "activeProfile", _layout.Layout.State.ActiveProfile);
         Put(root, "documents", new JsonArray([.. stored.Select(Write)]));
         Put(root, "activeDocument", _documents.ActiveDocument is { } active && stored.Contains(active) ? ToSessionPath(active.FilePath!) : null);
+        if (_bookmarks is not null && (_bookmarks.All.Count > 0 || root.ContainsKey("bookmarks")))
+        {
+            Put(root, "bookmarks", new JsonArray([.. _bookmarks.All.Select(b => (JsonNode)new JsonObject
+            {
+                ["path"] = ToSessionPath(b.Path),
+                ["line"] = b.Line,
+                ["number"] = b.Number,
+            })]));
+        }
         if (project is not null)
         {
             Put(root, "projectManager", new JsonObject

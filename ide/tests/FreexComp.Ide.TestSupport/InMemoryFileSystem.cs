@@ -36,8 +36,15 @@ public sealed class InMemoryFileSystem : IFileSystem
         }
     }
 
+    /// <summary>
+    /// Runs on the reading thread before every <see cref="ReadAllBytes"/>, outside the lock: a deterministic gate for
+    /// tests of background readers (I-189), e.g. advancing a <see cref="ManualClock"/> per file read.
+    /// </summary>
+    public Action<string>? BeforeRead { get; set; }
+
     public byte[] ReadAllBytes(string path)
     {
+        BeforeRead?.Invoke(path);
         lock (_gate)
         {
             return [.. GetFile(Normalize(path)).Data];

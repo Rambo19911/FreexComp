@@ -58,6 +58,9 @@ public sealed record IdeServices
     public required IRecentItemsService RecentItems { get; init; }
     public required IFindService Find { get; init; }
     public required INavigationService Navigation { get; init; }
+
+    /// <summary>Bookmarks (I-121, IDE-ED-110…114).</summary>
+    public required BookmarkService Bookmarks { get; init; }
     public required IApplicationService Application { get; init; }
     public required IHelpService Help { get; init; }
 

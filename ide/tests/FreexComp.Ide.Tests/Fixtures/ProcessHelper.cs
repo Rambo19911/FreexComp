@@ -12,6 +12,10 @@ namespace FreexComp.Ide.Tests.Fixtures;
 /// <item><c>--wait</c>: waits until it is killed.</item>
 /// <item><c>--write-both</c>: writes to stdout and stderr (UTF-8, ANSI colour codes, CR / LF / CRLF breaks, a final
 /// partial line), reads stdin to its end, exits with code 3.</item>
+/// <item><c>--exit-with &lt;code&gt;</c>: prints <see cref="ChildGreeting"/> to its console and exits with that code.</item>
+/// <item><c>--console-key &lt;pid&gt; &lt;file&gt;</c>: attaches to the console of process <c>pid</c>, writes its title and the
+/// text of its screen buffer to <c>file</c> (UTF-8), then injects one key press (space) with <c>WriteConsoleInputW</c>
+/// (I-138, <c>ConsoleHostTests</c>).</item>
 /// </list>
 /// </summary>
 internal static class ProcessHelper
@@ -19,6 +23,9 @@ internal static class ProcessHelper
     public const string SpawnChild = "--spawn-child";
     public const string Wait = "--wait";
     public const string WriteBoth = "--write-both";
+    public const string ExitWith = "--exit-with";
+    public const string ConsoleKey = "--console-key";
+    public const string ChildGreeting = "child says hello";
 
     /// <summary>How to start the helper: the dotnet host and the test assembly (falls back to the apphost exe).</summary>
     public static (string FileName, string Arguments) Command(string mode)
@@ -34,16 +41,22 @@ internal static class ProcessHelper
     internal static void Run()
     {
         var args = Environment.GetCommandLineArgs();
-        var mode = args.FirstOrDefault(a => a is SpawnChild or Wait or WriteBoth);
-        if (mode is null)
+        var index = Array.FindIndex(args, a => a is SpawnChild or Wait or WriteBoth or ExitWith or ConsoleKey);
+        if (index < 0)
             return;
-        Environment.Exit(RunMode(mode));
+        Environment.Exit(RunMode(args[index], args[(index + 1)..]));
     }
 
-    private static int RunMode(string mode)
+    private static int RunMode(string mode, string[] rest)
     {
         switch (mode)
         {
+            case ExitWith:
+                Console.Out.WriteLine(ChildGreeting);
+                Console.Out.Flush();
+                return int.Parse(rest[0], System.Globalization.CultureInfo.InvariantCulture);
+            case ConsoleKey:
+                return ConsoleKeyHelper.Run(int.Parse(rest[0], System.Globalization.CultureInfo.InvariantCulture), rest[1]);
             case SpawnChild:
                 var (file, arguments) = Command(Wait);
                 using (var child = Process.Start(new ProcessStartInfo(file, arguments) { UseShellExecute = false })!)

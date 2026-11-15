@@ -13,7 +13,13 @@ public sealed record ProcessStartRequest(string FileName, string Arguments, stri
     /// </summary>
     public bool Capture { get; init; } = true;
 
-    /// <summary>The process is the IDE's console host (IDE-P3-087/088, I-138); it is started like an external console.</summary>
+    /// <summary>
+    /// The program runs inside the IDE's console host (IDE-P3-087/088, I-138): the launcher starts the IDE executable with
+    /// <c>--console-host</c> in the job, nothing is redirected. <see cref="IRunningProcess.ProcessId"/> is the host's,
+    /// <see cref="IRunningProcess.Exited"/> completes with the program's exit code when the host reports <c>exited</c>
+    /// (the host then still waits at its key prompt until it is disposed) and is canceled when the host ends or its pipe
+    /// breaks before that.
+    /// </summary>
     public bool ConsoleHost { get; init; }
 }
 

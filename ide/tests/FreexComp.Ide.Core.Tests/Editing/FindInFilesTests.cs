@@ -27,7 +27,8 @@ public sealed class FindInFilesTests
         });
     }
 
-    private FindInFilesService Service() => new(_services.Documents, _services.Projects, _fs, _services.Settings, _clock);
+    private FindInFilesService Service(int maxParallelism = 0) =>
+        new(_services.Documents, _services.Projects, _fs, _services.Settings, _clock, maxParallelism);
 
     private void File(string path, string text) => Bytes(path, Encoding.UTF8.GetBytes(text));
 
@@ -119,20 +120,27 @@ public sealed class FindInFilesTests
             File(Path.Combine(Dir, name), string.Concat(Enumerable.Repeat("x needle\n", 200)));
         var expectedOrder = names.Order(StringComparer.OrdinalIgnoreCase).Select(n => Path.Combine(Dir, n)).ToList();
 
-        var batches = new List<IReadOnlyList<FileMatch>>();
-        var search = Service().SearchAsync(Request("needle", FindInFilesScope.Folder, Dir), new SyncProgress(batches.Add), CancellationToken.None);
-        while (!search.IsCompleted)
-        {
-            _clock.Advance(TimeSpan.FromMilliseconds(100)); // IDE-ED-123: batches every 100 ms
-            await Task.Yield();
-        }
-
-        var result = await search;
+        // Parallel workers, no time passes: the result is in file order and capped; one final batch holds it all.
+        var all = new List<IReadOnlyList<FileMatch>>();
+        var result = await Service().SearchAsync(Request("needle", FindInFilesScope.Folder, Dir), new SyncProgress(all.Add), CancellationToken.None);
         Assert.True(result.IsCapped);
+        Assert.False(result.IsCanceled);
         Assert.Equal(FindInFilesService.MatchCap, result.Matches.Count);
         Assert.Equal(expectedOrder.Take(25), result.Matches.Select(m => m.Path).Distinct());
         Assert.Equal(Enumerable.Range(1, 200), result.Matches.Take(200).Select(m => m.Line));
-        Assert.Equal(result.Matches, batches.SelectMany(b => b)); // streamed in order, nothing twice
+        Assert.Equal(result.Matches, all.SelectMany(b => b));
+
+        // I-189: one worker and 100 ms pass on every file read (the gate), so each batch is exactly the file finished
+        // before it (IDE-ED-123: batches every 100 ms) — streamed in order, nothing twice, the last one at the end.
+        _fs.BeforeRead = _ => _clock.Advance(TimeSpan.FromMilliseconds(100));
+        var batches = new List<IReadOnlyList<FileMatch>>();
+        var streamed = await Service(maxParallelism: 1).SearchAsync(Request("needle", FindInFilesScope.Folder, Dir), new SyncProgress(batches.Add),
+            CancellationToken.None);
+        Assert.True(streamed.IsCapped);
+        Assert.Equal(result.Matches, streamed.Matches);
+        Assert.Equal(Enumerable.Repeat(200, 25), batches.Select(b => b.Count));
+        Assert.Equal(expectedOrder.Take(25), batches.Select(b => b[0].Path));
+        Assert.Equal(result.Matches, batches.SelectMany(b => b));
 
         // Canceled before it starts: no matches, reported as canceled.
         using var canceled = new CancellationTokenSource();
@@ -141,23 +149,20 @@ public sealed class FindInFilesTests
         Assert.True(none.IsCanceled);
         Assert.Empty(none.Matches);
 
-        // Canceled while running: the batches stop and the result says so.
+        // Canceled while running (from the first batch, reported when the second file is read): the batches stop and
+        // the result holds exactly what was reported.
         using var stop = new CancellationTokenSource();
-        var seen = 0;
-        var running = Service().SearchAsync(Request("needle", FindInFilesScope.Folder, Dir), new SyncProgress(b =>
+        var reports = new List<IReadOnlyList<FileMatch>>();
+        var partial = await Service(maxParallelism: 1).SearchAsync(Request("needle", FindInFilesScope.Folder, Dir), new SyncProgress(b =>
         {
-            seen += b.Count;
+            reports.Add(b);
             stop.Cancel();
         }), stop.Token);
-        while (!running.IsCompleted)
-        {
-            _clock.Advance(TimeSpan.FromMilliseconds(100));
-            await Task.Yield();
-        }
-
-        var partial = await running;
         Assert.True(partial.IsCanceled);
-        Assert.Equal(seen, partial.Matches.Count);
+        Assert.False(partial.IsCapped);
+        Assert.Single(reports);
+        Assert.Equal(result.Matches.Take(200), partial.Matches);
+        Assert.Equal(reports[0], partial.Matches);
     }
 
     /// <summary>An <see cref="IProgress{T}"/> that reports on the calling thread (no synchronization context).</summary>

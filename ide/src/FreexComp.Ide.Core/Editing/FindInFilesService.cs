@@ -39,10 +39,11 @@ public sealed record FindInFilesResult(IReadOnlyList<FileMatch> Matches, int Fil
 /// from disk with the open-file encoding detection; matching is the in-editor find, line by line (IDE-ED-122). Files are
 /// searched on up to min(4, processors) background threads; results are reported in file order (IDE-ED-124) in batches
 /// every 100 ms of <see cref="IClock"/> time (and at the end), capped at <see cref="MatchCap"/> (IDE-ED-123). Start it on
-/// the UI thread (the buffers are read there); batches arrive from the clock callback.
+/// the UI thread (the buffers are read there); batches arrive from the clock callback or, the last one, from a worker,
+/// never concurrently and always in order. <paramref name="maxParallelism"/> &gt; 0 overrides the worker count (tests).
 /// </summary>
 public sealed class FindInFilesService(IDocumentService documents, IProjectService projects, IFileSystem fileSystem,
-    ISettingsService settings, IClock clock)
+    ISettingsService settings, IClock clock, int maxParallelism = 0)
 {
     /// <summary>IDE-ED-123: the search stops at this many matches.</summary>
     public const int MatchCap = 5000;
@@ -80,11 +81,16 @@ public sealed class FindInFilesService(IDocumentService documents, IProjectServi
 
         var collector = new Collector(files.Count, batches);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        var stopped = false;
         var timer = clock.Schedule(BatchInterval, Tick);
         try
         {
             await Parallel.ForEachAsync(Enumerable.Range(0, files.Count),
-                new ParallelOptions { MaxDegreeOfParallelism = Math.Min(4, Environment.ProcessorCount), CancellationToken = linked.Token },
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = maxParallelism > 0 ? maxParallelism : Math.Min(4, Environment.ProcessorCount),
+                    CancellationToken = linked.Token,
+                },
                 (index, ct) =>
                 {
                     var path = files[index];
@@ -102,7 +108,10 @@ public sealed class FindInFilesService(IDocumentService documents, IProjectServi
         finally
         {
             lock (collector)
+            {
+                stopped = true; // a Tick running now does not reschedule
                 timer.Dispose();
+            }
         }
 
         var canceled = cancellation.IsCancellationRequested;
@@ -117,7 +126,7 @@ public sealed class FindInFilesService(IDocumentService documents, IProjectServi
             collector.Flush(final: false);
             lock (collector)
             {
-                if (!collector.IsDone)
+                if (!stopped && !collector.IsDone)
                     timer = clock.Schedule(BatchInterval, Tick);
             }
         }
@@ -242,7 +251,10 @@ public sealed class FindInFilesService(IDocumentService documents, IProjectServi
                 return [.. _reported];
         }
 
-        /// <summary>Reports the newly finished prefix; with <paramref name="final"/> everything (all files finished or capped).</summary>
+        /// <summary>
+        /// Reports the newly finished prefix; with <paramref name="final"/> everything (all files finished or capped).
+        /// The report is made under the lock so a clock tick and the final flush never report out of order (I-189).
+        /// </summary>
         public IReadOnlyList<FileMatch> Flush(bool final)
         {
             List<FileMatch> batch = [];
@@ -259,11 +271,10 @@ public sealed class FindInFilesService(IDocumentService documents, IProjectServi
                 _reported.AddRange(batch);
                 if (final)
                     _next = count;
+                if (batch.Count > 0)
+                    progress?.Report(batch);
+                return [.. _reported];
             }
-
-            if (batch.Count > 0)
-                progress?.Report(batch);
-            return Reported();
         }
     }
 }

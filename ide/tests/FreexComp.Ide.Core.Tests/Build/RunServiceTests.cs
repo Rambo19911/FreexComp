@@ -174,6 +174,88 @@ public sealed class RunServiceTests
     }
 
     /// <summary>
+    /// IDE-P3-088 (I-138): in external mode the host's <c>exited</c> message ends the run (Msg.Run.Exited, Idle) while the
+    /// window stays open at its key prompt (the job is not closed); a host that ends before <c>exited</c> is Terminated.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-088")]
+    public async Task ExternalConsoleReportsExitWhileWindowStaysOpen()
+    {
+        var bed = await StartAsync();
+        bed.Services.Settings.Set(SettingsCatalog.RunConsoleMode, "external");
+        Assert.True(await bed.Services.Run.StartAsync());
+        var host = bed.Processes.Last;
+        Assert.True(host.Request.ConsoleHost);
+        var ended = Ended(bed);
+        host.Exit(3); // the pipe message "exited 3"
+        await ended;
+
+        Assert.StartsWith(F(Strings.Msg_Run_Exited, "3", "#").Split('#')[0], bed.OutputText(OutputChannels.Program)[^1], StringComparison.Ordinal);
+        Assert.Equal(3, bed.Services.Run.LastExitCode);
+        Assert.Equal(IdeState.Idle, bed.Services.State.Current.State);
+        Assert.Null(bed.Services.Run.Process);
+        Assert.False(host.IsDisposed); // the window still shows its output and waits for a key
+        Assert.Equal(0, host.KillCount);
+        Assert.False(bed.Services.Commands.CanExecute("run.stop"));
+
+        // The window is closed while the program runs: the host ends before "exited" → Program stopped.
+        Assert.True(await bed.Services.Run.StartAsync());
+        var closed = bed.Processes.Last;
+        ended = Ended(bed);
+        closed.HostEnded();
+        await ended;
+        Assert.Equal(Strings.Msg_Run_Terminated, bed.OutputText(OutputChannels.Program)[^1]);
+        Assert.Equal(IdeState.Idle, bed.Services.State.Current.State);
+        Assert.Equal(3, bed.Services.Run.LastExitCode); // unchanged: no exit code was reported
+        Assert.True(closed.IsDisposed);
+    }
+
+    /// <summary>
+    /// IDE-P3-089 (I-138): at most one waiting console window — the next run, project close and IDE exit close it (its
+    /// job is closed) without asking.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-089")]
+    public async Task NextRunClosesWaitingConsoleWindow()
+    {
+        var bed = await StartAsync();
+        bed.Services.Settings.Set(SettingsCatalog.RunConsoleMode, "external");
+        Assert.True(await bed.Services.Run.StartAsync());
+        var first = bed.Processes.Last;
+        var ended = Ended(bed);
+        first.Exit(0);
+        await ended;
+        Assert.False(first.IsDisposed);
+
+        // The next run closes the waiting window before the new program starts.
+        bed.Processes.Starting += _ => Assert.True(first.IsDisposed);
+        Assert.True(await bed.Services.Run.StartAsync());
+        Assert.True(first.IsDisposed);
+        var second = bed.Processes.Last;
+        Assert.NotSame(first, second);
+
+        // Project close: the waiting window is closed, nothing is asked.
+        ended = Ended(bed);
+        second.Exit(0);
+        await ended;
+        var asked = bed.Dialogs.Requests.Count;
+        Assert.True(await bed.Services.Projects.CloseAsync());
+        Assert.True(second.IsDisposed);
+        Assert.Equal(asked, bed.Dialogs.Requests.Count);
+
+        // IDE exit: the same.
+        await bed.Services.Projects.OpenAsync(BuildTestBed.ProjectPath);
+        Assert.True(await bed.Services.Run.StartAsync());
+        var third = bed.Processes.Last;
+        ended = Ended(bed);
+        third.Exit(0);
+        await ended;
+        Assert.True(await bed.Services.Application.ExitAsync());
+        Assert.True(third.IsDisposed);
+        Assert.Equal(0, third.KillCount);
+    }
+
+    /// <summary>
     /// IDE-P3-080/081: a missing working folder is reported; a launch failure is reported. (<c>Msg.Run.NotRunnable</c> for
     /// library/package projects cannot be reached yet: the project reader refuses those application types, E9008.)
     /// </summary>

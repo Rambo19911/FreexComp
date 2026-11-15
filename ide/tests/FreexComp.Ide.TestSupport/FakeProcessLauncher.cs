@@ -20,10 +20,14 @@ public sealed class FakeProcessLauncher : IProcessLauncher
     /// <summary>Win32 error code the next <see cref="Start"/> fails with (2 = file not found); null = it succeeds.</summary>
     public int? NextStartFails { get; set; }
 
+    /// <summary>Raised at the beginning of every <see cref="Start"/> (to check what happened before a launch).</summary>
+    public event Action<ProcessStartRequest>? Starting;
+
     public IRunningProcess Start(ProcessStartRequest request, Action<ProcessOutputLine> onOutput)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(onOutput);
+        Starting?.Invoke(request);
         if (NextStartFails is { } error)
         {
             NextStartFails = null;
@@ -61,8 +65,19 @@ public sealed class FakeRunningProcess(ProcessStartRequest request, Action<Proce
 
     public void WriteStdErr(string line) => Write(line, isError: true);
 
-    /// <summary>The program ends by itself with <paramref name="exitCode"/>.</summary>
+    /// <summary>
+    /// The program ends by itself with <paramref name="exitCode"/>; for a console host this is its <c>exited</c> pipe message
+    /// (the host keeps waiting at its key prompt until disposed).
+    /// </summary>
     public void Exit(int exitCode) => _exited.TrySetResult(exitCode);
+
+    /// <summary>A console host ends (its window was closed) or its pipe breaks before it reported <c>exited</c> (IDE-P3-088).</summary>
+    public void HostEnded()
+    {
+        if (!Request.ConsoleHost)
+            throw new InvalidOperationException("The process is not a console host.");
+        _exited.TrySetCanceled();
+    }
 
     public Task<bool> KillTreeAsync()
     {

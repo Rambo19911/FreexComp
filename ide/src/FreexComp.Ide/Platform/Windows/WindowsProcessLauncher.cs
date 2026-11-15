@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Globalization;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
 using FreexComp.Ide.Core.Build;
@@ -12,20 +14,44 @@ namespace FreexComp.Ide.Platform.Windows;
 /// created suspended, assigned to the job, then resumed, so each process it starts belongs to the job too and dies with
 /// it — on <see cref="IRunningProcess.KillTreeAsync"/>, when the job handle is closed, and when the IDE itself ends.
 /// Captured pipes are read on their own background tasks in chunks of up to 4 096 chars (IDE-P3-073).
+/// <para>
+/// <see cref="ProcessStartRequest.ConsoleHost"/> (IDE-P3-087/088): the job's root is the IDE executable
+/// (<paramref name="consoleHostPath"/>, default: this process's executable) in <see cref="ConsoleHost"/> mode, reporting over
+/// a local named pipe <c>FreexComp.Run.&lt;IDE pid&gt;.&lt;counter&gt;</c> (current user only).
+/// </para>
 /// </summary>
-public sealed class WindowsProcessLauncher(IClock clock) : IProcessLauncher
+public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath = null) : IProcessLauncher
 {
     /// <summary>Pipe ends are inheritable only between their creation and CreateProcess; one start at a time.</summary>
     private static readonly Lock CreateGate = new();
+
+    private static int _pipeCounter;
 
     public IRunningProcess Start(ProcessStartRequest request, Action<ProcessOutputLine> onOutput)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(onOutput);
         var capture = request.Capture && !request.ConsoleHost;
+        var applicationName = request.FileName;
+        var commandText = "\"" + request.FileName + "\"" + (request.Arguments.Length > 0 ? " " + request.Arguments : "");
+        NamedPipeServerStream? hostPipe = null;
+        if (request.ConsoleHost)
+        {
+            var (host, prefix) = HostCommand(consoleHostPath);
+            var name = string.Create(CultureInfo.InvariantCulture, $"FreexComp.Run.{Environment.ProcessId}.{Interlocked.Increment(ref _pipeCounter)}");
+            hostPipe = new NamedPipeServerStream(name, PipeDirection.In, 1, PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+            applicationName = host;
+            commandText = ConsoleHost.CommandLine(host, prefix, name, request.WorkingDirectory, request.FileName, request.Arguments);
+        }
+
         var job = Native.CreateJobObjectW(IntPtr.Zero, null);
         if (job.IsInvalid)
+        {
+            hostPipe?.Dispose();
             throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
         try
         {
             SetKillOnClose(job);
@@ -55,8 +81,8 @@ public sealed class WindowsProcessLauncher(IClock clock) : IProcessLauncher
                         flags |= Native.CREATE_NEW_CONSOLE; // its own console window (external console, console host)
                     }
 
-                    var commandLine = new StringBuilder("\"" + request.FileName + "\"" + (request.Arguments.Length > 0 ? " " + request.Arguments : ""));
-                    if (!Native.CreateProcessW(request.FileName, commandLine, IntPtr.Zero, IntPtr.Zero, capture, flags, IntPtr.Zero,
+                    var commandLine = new StringBuilder(commandText);
+                    if (!Native.CreateProcessW(applicationName, commandLine, IntPtr.Zero, IntPtr.Zero, capture, flags, IntPtr.Zero,
                             request.WorkingDirectory, ref startup, out info))
                         throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
@@ -98,12 +124,54 @@ public sealed class WindowsProcessLauncher(IClock clock) : IProcessLauncher
                 throw new Win32Exception(error);
             }
 
-            return new RunningProcess(clock, job, processHandle, info.dwProcessId, stdoutRead, stderrRead, onOutput);
+            return new RunningProcess(clock, job, processHandle, info.dwProcessId, stdoutRead, stderrRead, onOutput, hostPipe);
         }
         catch
         {
             job.Dispose();
+            hostPipe?.Dispose();
             throw;
+        }
+    }
+
+    /// <summary>The host executable and what precedes its options (the IDE assembly when this process is the <c>dotnet</c> host).</summary>
+    private static (string Host, string Prefix) HostCommand(string? configured)
+    {
+        if (configured is not null)
+            return (configured, "");
+        var self = Environment.ProcessPath ?? throw new InvalidOperationException("The IDE executable is unknown.");
+        return string.Equals(Path.GetFileNameWithoutExtension(self), "dotnet", StringComparison.OrdinalIgnoreCase)
+            ? (self, ConsoleHost.Quote(typeof(ConsoleHost).Assembly.Location))
+            : (self, "");
+    }
+
+    /// <summary>
+    /// IDE-P3-087: waits for the host on <paramref name="pipe"/> and returns the exit code of its <c>exited</c> message, or null
+    /// when the host ended or the pipe broke before (<paramref name="hostGone"/> stops a wait for a host that never connected).
+    /// </summary>
+    private static async Task<int?> ReadHostReportAsync(NamedPipeServerStream pipe, CancellationToken hostGone)
+    {
+        using (pipe)
+        {
+            try
+            {
+                await pipe.WaitForConnectionAsync(hostGone).ConfigureAwait(false);
+                using var reader = new StreamReader(pipe, new UTF8Encoding(false), detectEncodingFromByteOrderMarks: false);
+                while (await reader.ReadLineAsync(CancellationToken.None).ConfigureAwait(false) is { } line)
+                {
+                    if (line.StartsWith("exited ", StringComparison.Ordinal)
+                        && int.TryParse(line.AsSpan(7), NumberStyles.Integer, CultureInfo.InvariantCulture, out var code))
+                        return code;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+
+            return null;
         }
     }
 
@@ -145,13 +213,26 @@ public sealed class WindowsProcessLauncher(IClock clock) : IProcessLauncher
         private readonly Task[] _readers;
         private readonly ManualResetEvent _wait;
         private readonly RegisteredWaitHandle _registration;
+        private readonly CancellationTokenSource _hostGone = new();
+        private readonly Task<int?>? _hostReport; // console host: the program's exit code from the pipe
 
         public RunningProcess(IClock clock, SafeJobHandle job, SafeProcessHandle process, int processId, SafeFileHandle? stdout,
-            SafeFileHandle? stderr, Action<ProcessOutputLine> onOutput)
+            SafeFileHandle? stderr, Action<ProcessOutputLine> onOutput, NamedPipeServerStream? hostPipe)
         {
             _job = job;
             _process = process;
             ProcessId = processId;
+            if (hostPipe is not null)
+            {
+                // IDE-P3-088: the run ends at "exited", while the host still waits at its key prompt.
+                _hostReport = ReadHostReportAsync(hostPipe, _hostGone.Token);
+                _ = _hostReport.ContinueWith(t =>
+                {
+                    if (t.Result is { } code)
+                        _exited.TrySetResult(code);
+                }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+            }
+
             _readers =
             [
                 .. new[] { (stdout, false), (stderr, true) }
@@ -195,6 +276,8 @@ public sealed class WindowsProcessLauncher(IClock clock) : IProcessLauncher
             _job.Dispose(); // KILL_ON_JOB_CLOSE: anything still running ends now
             _wait.Dispose();
             _process.Dispose();
+            _hostGone.Cancel();
+            _hostGone.Dispose();
         }
 
         private static Task ReadAsync(IClock clock, SafeFileHandle handle, bool isError, Action<ProcessOutputLine> onOutput) =>
@@ -236,7 +319,16 @@ public sealed class WindowsProcessLauncher(IClock clock) : IProcessLauncher
             _rootExited.TrySetResult();
             try
             {
-                await Task.WhenAll(_readers).WaitAsync(DrainLimit).ConfigureAwait(false);
+                if (_hostReport is not null)
+                    await _hostGone.CancelAsync().ConfigureAwait(false); // a host that never connected will not
+            }
+            catch (ObjectDisposedException)
+            {
+                // Disposed meanwhile: the pipe reader was stopped by Dispose.
+            }
+            try
+            {
+                await Task.WhenAll([.. _readers, _hostReport ?? Task.CompletedTask]).WaitAsync(DrainLimit).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
@@ -244,7 +336,12 @@ public sealed class WindowsProcessLauncher(IClock clock) : IProcessLauncher
             }
 
             _job.Dispose(); // IDE-P3-084: descendants still alive end with the job
-            _exited.TrySetResult(code);
+            if (_hostReport is null)
+                _exited.TrySetResult(code);
+            else if (_hostReport is { IsCompletedSuccessfully: true, Result: { } reported })
+                _exited.TrySetResult(reported);
+            else
+                _exited.TrySetCanceled(); // IDE-P3-088: the host ended before "exited" (window closed)
         }
     }
 

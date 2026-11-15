@@ -11,6 +11,10 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // IDE-P3-087: console-host mode runs before any UI or service is created.
+        if (args.Length > 0 && args[0] == Platform.Windows.ConsoleHost.Option)
+            return Platform.Windows.ConsoleHost.Run(args);
+
         // IDE-P1-013: --version, --help and unknown options are answered before any window exists.
         var options = StartupOptions.Parse(args);
         if (options.UnknownOption is not null || options.ShowHelp || options.ShowVersion)

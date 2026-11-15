@@ -54,6 +54,7 @@ public sealed class RunService : IRunService
     private readonly IStatusService _status;
     private readonly ILog _log;
     private Session? _session;
+    private IRunningProcess? _waitingHost; // IDE-P3-089: a console host whose program ended, still at its key prompt
     private bool _lastWithDebugger;
 
     public RunService(BuildService build, IProjectService projects, ISettingsService settings, IdeStateMachine state, IToolchainLocator toolchain,
@@ -189,14 +190,24 @@ public sealed class RunService : IRunService
 
     public async Task<bool> ConfirmStopAsync(bool exiting)
     {
-        if (_session is not { } session)
-            return true;
-        var id = exiting ? "Msg.Run.StopOnExit" : "Msg.Run.StopOnClose";
-        var answer = await _dialogs.ShowMessageAsync(new MessageRequest(id, [Path.GetFileName(session.ExePath)]));
-        if (answer != (exiting ? "StopAndExit" : "StopAndClose"))
-            return false;
-        await StopAsync();
+        if (_session is { } session)
+        {
+            var id = exiting ? "Msg.Run.StopOnExit" : "Msg.Run.StopOnClose";
+            var answer = await _dialogs.ShowMessageAsync(new MessageRequest(id, [Path.GetFileName(session.ExePath)]));
+            if (answer != (exiting ? "StopAndExit" : "StopAndClose"))
+                return false;
+            await StopAsync();
+        }
+
+        CloseWaitingHost(); // IDE-P3-089: project close / IDE exit, without asking
         return true;
+    }
+
+    /// <summary>IDE-P3-089: closes the job of a console host still waiting at its key prompt (its window closes).</summary>
+    private void CloseWaitingHost()
+    {
+        _waitingHost?.Dispose();
+        _waitingHost = null;
     }
 
     /// <summary><c>&lt;project dir&gt;\&lt;outputDir&gt;\&lt;name&gt;.exe</c> of the active configuration (IDE-P3-081 fallback).</summary>
@@ -248,7 +259,8 @@ public sealed class RunService : IRunService
         if (_settings.Get(SettingsCatalog.OutputClearOnRun))
             _output.Clear(OutputChannels.Program);
 
-        var session = new Session(exe, _clock.Now);
+        CloseWaitingHost(); // IDE-P3-089: at most one waiting console window
+        var session = new Session(exe, _clock.Now) { ConsoleHost = external };
         IRunningProcess process;
         try
         {
@@ -283,6 +295,17 @@ public sealed class RunService : IRunService
         if (_session != session || session.Stopping)
             return; // stopped: StopAsync reports it
         _session = null;
+        if (session.ConsoleHost && !exited.IsCompletedSuccessfully)
+        {
+            // IDE-P3-088: the host ended (window closed) or its pipe broke before "exited".
+            session.Process.Dispose();
+            _output.Append(OutputChannels.Program, Strings.Msg_Run_Terminated, OutputKind.Ide);
+            _status.ShowMessage(Strings.Msg_Run_Terminated, StatusDuration);
+            _log.Info(Category, Strings.Msg_Run_Terminated);
+            Leave();
+            return;
+        }
+
         var code = exited.IsCompletedSuccessfully ? exited.Result : -1;
         LastExitCode = code;
         var seconds = (_clock.Now - session.StartedAt).TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture);
@@ -290,7 +313,10 @@ public sealed class RunService : IRunService
         _output.Append(OutputChannels.Program, text, OutputKind.Ide);
         _status.ShowMessage(text, StatusDuration);
         _log.Info(Category, text);
-        session.Process?.Dispose(); // IDE-P3-084: closing the job ends any descendant still alive
+        if (session.ConsoleHost)
+            _waitingHost = session.Process; // IDE-P3-088: the window stays open at its key prompt
+        else
+            session.Process?.Dispose(); // IDE-P3-084: closing the job ends any descendant still alive
         Leave();
     }
 
@@ -310,6 +336,9 @@ public sealed class RunService : IRunService
         public IRunningProcess Process { get; set; } = null!;
 
         public bool Stopping { get; set; }
+
+        /// <summary>Started through the console host (IDE-P3-087): <c>Exited</c> = its <c>exited</c> message.</summary>
+        public bool ConsoleHost { get; init; }
     }
 
     private sealed class Handler(Func<bool> canExecute, Func<Task> execute) : ICommandHandler

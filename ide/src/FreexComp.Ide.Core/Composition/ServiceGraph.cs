@@ -117,6 +117,9 @@ public static class ServiceGraph
         var session = new SessionService(platform.FileSystem, documents, projects, projectManager, layout, platform.UserPaths,
             platform.Clock, platform.Log, safe);
         projects.Session = session;
+        var bookmarks = new BookmarkService(documents, navigation, status); // I-121
+        bookmarks.RegisterCommands(commands);
+        session.Bookmarks = bookmarks;
         projects.RecentItems = recent;
         // IDE-P1-130: a file document that is not a member of the open project joins the recent files.
         documents.DocumentOpened += (_, e) =>
@@ -226,6 +229,7 @@ public static class ServiceGraph
             RecentItems = recent,
             Find = find,
             Navigation = navigation,
+            Bookmarks = bookmarks,
             Application = application,
             Help = help,
             State = state,
