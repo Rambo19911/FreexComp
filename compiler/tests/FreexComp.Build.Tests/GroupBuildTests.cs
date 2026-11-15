@@ -222,6 +222,36 @@ public sealed class GroupBuildTests
     }
 
     [Fact]
+    [Trait("Req", "CMP-807")]
+    public async Task SingleProjectBuildsItsDependenciesFirst()
+    {
+        var w = new BuildWorkspace();
+        AddProject(w, "App", ["../LibA/LibA.pproj", "../LibB/LibB.pproj"]);
+        AddProject(w, "LibA", ["../Base/Base.pproj"]);
+        AddProject(w, "LibB");
+        AddProject(w, "Base");
+        AddProject(w, "Unrelated");
+
+        var (result, log) = await w.RunAsync(w.Request(path: @"C:\g\App\App.pproj"));
+
+        Assert.True(result.Success, string.Join("\n", log.Lines));
+        Assert.Equal(["Base", "LibA", "LibB", "App"], BuiltOrder(log));
+        Assert.Equal(@"C:\g\App\bin\Debug\App.exe", result.OutputPath);
+        Assert.True(w.Fs.FileExists(@"C:\g\Base\bin\Debug\Base.exe"));
+        Assert.False(w.Fs.FileExists(@"C:\g\Unrelated\bin\Debug\Unrelated.exe"));
+
+        // Run: the dependencies are built, only the requested project runs
+        w.Tools.Program = (exe, _, _) => ([Path.GetFileName(exe)], [], 3);
+        var (run, runLog) = await w.RunAsync(w.Request(BuildTarget.Run, @"C:\g\App\App.pproj"));
+
+        Assert.Equal(
+            ["started Base.pproj Debug win64 Build", "started LibA.pproj Debug win64 Build", "started LibB.pproj Debug win64 Build", "started App.pproj Debug win64 Run"],
+            runLog.Lines.Where(l => l.StartsWith("started", StringComparison.Ordinal)));
+        Assert.Equal(@"C:\g\App\bin\Debug\App.exe", Assert.Single(w.Tools.Programs).FileName);
+        Assert.Equal(3, run.RunExitCode);
+    }
+
+    [Fact]
     [Trait("Req", "CMP-804")]
     public async Task Group_MissingGroupFile_IsE9003_InABracketOfTheGroupFile()
     {

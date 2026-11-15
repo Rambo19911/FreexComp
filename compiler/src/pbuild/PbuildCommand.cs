@@ -32,10 +32,12 @@ public static class PbuildCommand
 {
     public const string HelpText = """
         pbuild <project.pproj | group.pgroup> [--config Debug|Release] [--target build|rebuild|clean|run]
-               [--diagnostics text|json] [--verbose]
+               [--diagnostics text|json] [--rtl <dir>] [--toolchain <dir>] [--verbose]
           --config <name>       configuration (default: the project's active configuration; matched case-insensitively)
           --target <target>     build (default), rebuild, clean or run (build, then run the program)
           --diagnostics text|json   output form (default text)
+          --rtl <dir>           RTL root (default: $FREEXCOMP_HOME/rtl/src, else relative to pbuild.exe)
+          --toolchain <dir>     LLVM bin dir (default: third_party/llvm/bin, else PATH)
           --verbose             echo external commands
           --version | --help
         """;
@@ -51,11 +53,26 @@ public static class PbuildCommand
         var cwd = PathUtil.Normalize(env.CurrentDirectory);
         string Full(string path) => PathUtil.Normalize(Path.IsPathFullyQualified(path) ? path : Path.Combine(cwd, path));
 
-        string? project = null, configuration = null;
+        string? project = null, configuration = null, rtl = null, toolchain = null;
         var target = BuildTarget.Build;
         bool json = false, verbose = false, help = false, version = false;
         var invalid = new List<string>();
         var errors = new List<Diagnostic>();
+
+        // C-239: a folder that does not exist is a bad option value (E0005 with option and value); the file system has no
+        // directory test, so a folder exists when it holds a file or a folder
+        string? Folder(string option, string value)
+        {
+            var full = Full(value);
+            if (env.FileSystem.EnumerateFiles(full, "*").Any() || env.FileSystem.EnumerateDirectories(full).Any())
+            {
+                return full;
+            }
+
+            invalid.Add(option + " " + value);
+            return null;
+        }
+
         for (var i = 0; i < args.Count; i++)
         {
             var arg = args[i];
@@ -76,6 +93,8 @@ public static class PbuildCommand
                 case "--version": version = true; break;
                 case "--verbose": verbose = true; break;
                 case "--config": configuration = Value() ?? configuration; break;
+                case "--rtl": if (Value() is { } rtlDir) { rtl = Folder(arg, rtlDir); } break;          // C-239: as opc §1
+                case "--toolchain": if (Value() is { } bin) { toolchain = Folder(arg, bin); } break;
                 case "--target":
                     switch (Value())
                     {
@@ -134,6 +153,10 @@ public static class PbuildCommand
         {
             errors.Add(Diagnostic.Create("E0007", location));
         }
+        else if (errors.Count == 0 && rtl is not null && !env.FileSystem.FileExists(Path.Combine(rtl, "System.pas")))
+        {
+            errors.Add(Diagnostic.Create("E0009", location, rtl));                       // as opc: only for an explicit --rtl
+        }
 
         var writer = new EventWriter(env.Out, json);
         if (errors.Count > 0)
@@ -153,8 +176,8 @@ public static class PbuildCommand
             Configuration = configuration,
             Target = target,
             Verbose = verbose,
-            ToolchainDirectory = env.ToolchainDirectory,
-            RtlDirectory = env.RtlDirectory,
+            ToolchainDirectory = toolchain ?? env.ToolchainDirectory,
+            RtlDirectory = rtl ?? env.RtlDirectory,
             RedirectRunOutput = false,                                                  // CMP-833: the program shares pbuild's console
         };
         BuildResult result;

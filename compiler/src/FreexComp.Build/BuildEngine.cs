@@ -33,7 +33,7 @@ public sealed class BuildEngine : IBuildEngine
         var path = PathUtil.Normalize(request.ProjectPath);
         ImmutableArray<ProjectOutcome> outcomes = path.EndsWith(".pgroup", StringComparison.OrdinalIgnoreCase)
             ? await BuildGroupAsync(path, request, progress, ct).ConfigureAwait(false)
-            : [await BuildProjectAsync(path, ProjectSerializer.LoadProject(path, _fs), request.Target, request, progress, ct).ConfigureAwait(false)];
+            : await BuildGraphAsync(path, [path], [], path, request, progress, ct).ConfigureAwait(false);   // C-238: dependencies first
         return Aggregate(outcomes, clock.Elapsed);
     }
 
@@ -57,7 +57,17 @@ public sealed class BuildEngine : IBuildEngine
             : request.Target == BuildTarget.Run ? Resolve(directory, group.ActiveProject)
             : null;
         var last = requested ?? Resolve(directory, group.ActiveProject);
+        return await BuildGraphAsync(path, requested is null ? listed : [requested], listed, last, request, progress, ct).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// <paramref name="roots"/> and every project they depend on, in topological order; ties by <paramref name="listed"/>, then
+    /// discovery order, <paramref name="last"/> last. For <c>Run</c> only <paramref name="last"/> runs, the others are built. A cycle is
+    /// E9006 reported in a bracket of <paramref name="path"/> (the group file, or the single requested project).
+    /// </summary>
+    private async Task<ImmutableArray<ProjectOutcome>> BuildGraphAsync(
+        string path, List<string> roots, List<string> listed, string last, BuildRequest request, IProgress<BuildEvent> progress, CancellationToken ct)
+    {
         var loads = new Dictionary<string, LoadResult<Project>>(PathUtil.Comparer);
         var dependencies = new Dictionary<string, List<string>>(PathUtil.Comparer);
         var discovered = new List<string>();
@@ -81,7 +91,7 @@ public sealed class BuildEngine : IBuildEngine
             }
         }
 
-        foreach (var root in requested is null ? listed : [requested])
+        foreach (var root in roots)
         {
             Visit(root);
         }

@@ -213,6 +213,64 @@ public sealed class PbuildCliTests
         Assert.Equal("Compiling Hello", output[0]);
     }
 
+    /// <summary>C-239: <c>--rtl</c> / <c>--toolchain</c> override the default look-ups (relative to the current directory); a missing folder is E0005.</summary>
+    [Fact]
+    [Trait("Req", "CMP-840")]
+    public void RtlAndToolchainOptions()
+    {
+        var w = new BuildWorkspace();
+        foreach (var file in w.Fs.EnumerateFiles(BuildWorkspace.Rtl, "*").ToList())
+        {
+            w.Fs.Add(Path.Combine(@"C:\alt\rtl\src", Path.GetFileName(file)), w.Fs.ReadAllText(file));
+        }
+
+        foreach (var file in w.Fs.EnumerateFiles(@"C:\rtl\winapi\def", "*").ToList())
+        {
+            w.Fs.Add(Path.Combine(@"C:\alt\rtl\winapi\def", Path.GetFileName(file)), w.Fs.ReadAllText(file));   // located from the RTL root
+        }
+
+        foreach (var file in w.Fs.EnumerateFiles(BuildWorkspace.Llvm, "*").ToList())
+        {
+            w.Fs.Add(Path.Combine(@"C:\alt\llvm", Path.GetFileName(file)), "");
+        }
+
+        w.Fs.Add(@"C:\alt\empty\readme.txt", "");
+        (int Code, string[] Out) Pbuild(params string[] args)
+        {
+            var stdout = new StringWriter { NewLine = "\n" };
+            var env = new PbuildEnvironment(@"C:\p", stdout, new StringWriter(), w.Fs)
+            {
+                ProcessRunner = w.Tools,
+                ToolchainDirectory = @"C:\none\llvm",                                    // the defaults would fail
+                RtlDirectory = @"C:\none\rtl",
+            };
+            var code = PbuildCommand.Run(args, env, TestContext.Current.CancellationToken);
+            return (code, stdout.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        var (code, output) = Pbuild("Hello.pproj", "--rtl", @"..\alt\rtl\src", "--toolchain", @"C:\alt\llvm", "--verbose");
+
+        Assert.True(code == 0, string.Join("\n", output));
+        Assert.Contains(output, l => l.StartsWith(@"> C:\alt\llvm\clang.exe ", StringComparison.Ordinal));
+        Assert.Contains(output, l => l.StartsWith(@"> C:\alt\llvm\lld-link.exe ", StringComparison.Ordinal));
+        Assert.True(w.Fs.FileExists(BuildWorkspace.Exe));
+        var calls = w.Tools.Calls.Length;
+
+        var (missingRtl, rtlOut) = Pbuild("Hello.pproj", "--rtl", @"C:\missing", "--toolchain", @"C:\alt\llvm");
+        var (missingBin, binOut) = Pbuild("Hello.pproj", "--rtl", @"C:\alt\rtl\src", "--toolchain", "nope");
+        var (noSystem, noSystemOut) = Pbuild("Hello.pproj", "--rtl", @"C:\alt\empty", "--toolchain", @"C:\alt\llvm");
+
+        Assert.Equal(1, missingRtl);
+        Assert.Equal(@"C:\p\Hello.pproj(0,0): error E0005: Invalid command-line option '--rtl C:\missing'", rtlOut[0]);
+        Assert.Equal(1, missingBin);
+        Assert.Equal(@"C:\p\Hello.pproj(0,0): error E0005: Invalid command-line option '--toolchain nope'", binOut[0]);
+        Assert.Equal(1, noSystem);
+        Assert.Equal(@"C:\p\Hello.pproj(0,0): error E0009: RTL not found: 'C:\alt\empty' does not contain System.pas", noSystemOut[0]);
+        Assert.Equal(calls, w.Tools.Calls.Length);                                    // nothing was built
+        Assert.Contains("--rtl <dir>", PbuildCommand.HelpText, StringComparison.Ordinal);
+        Assert.Contains("--toolchain <dir>", PbuildCommand.HelpText, StringComparison.Ordinal);
+    }
+
     [Fact]
     [Trait("Req", "CMP-841")]
     public void InternalError_IsE0001_OnStderr_ExitTwo()

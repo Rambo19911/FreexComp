@@ -94,6 +94,42 @@ public sealed class OptionsMappingTests
         Assert.Equal(["Winapi", "System", "Lib.Sub"], ProjectOptions.ToCompilationOptions(p, "Debug").UnitScopeNames);
     }
 
+    /// <summary>
+    /// C-240: <c>rtti</c> (per configuration, else project, else <c>broad</c>) and <c>manifest</c> (<c>default</c> / <c>none</c> as is,
+    /// a path resolved against the project directory, absent → "" = the compiler's default per app type).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-648")]
+    [Trait("Req", "CMP-628")]
+    public void RttiAndManifest_AreMapped()
+    {
+        var p = Load("""
+            {
+              "formatVersion": 1, "name": "App", "mainSource": "App.pas", "appType": "gui",
+              "rtti": "published", "manifest": "res/app.manifest",
+              "configurations": {
+                "Debug": { "optimization": 0, "outputDir": "bin/Debug" },
+                "Broad": { "optimization": 0, "outputDir": "bin/Broad", "rtti": "broad" }
+              }
+            }
+            """);
+
+        var debug = ProjectOptions.ToCompilationOptions(p, "Debug");
+        var broad = ProjectOptions.ToCompilationOptions(p, "Broad");
+
+        Assert.Equal("published", debug.Rtti);
+        Assert.Equal("broad", broad.Rtti);
+        Assert.Equal(@"C:\p\Hello\res\app.manifest", debug.Manifest);
+        Assert.Equal("none", ProjectOptions.ToCompilationOptions(p with { Manifest = "none" }, "Debug").Manifest);
+        Assert.Equal("default", ProjectOptions.ToCompilationOptions(p with { Manifest = "default" }, "Debug").Manifest);
+        Assert.Equal(@"C:\m\x.manifest", ProjectOptions.ToCompilationOptions(p with { Manifest = "C:/m/x.manifest" }, "Debug").Manifest);
+
+        var plain = ProjectSerializer.CreateDefault("A", "A.pas", "gui") with { FilePath = ProjectPath };
+        var plainOptions = ProjectOptions.ToCompilationOptions(plain, "Debug");
+        Assert.Equal("broad", plainOptions.Rtti);
+        Assert.Equal("", plainOptions.Manifest);
+    }
+
     [Fact]
     public void AbsoluteOutputDir_IsUsedAsIs()
     {

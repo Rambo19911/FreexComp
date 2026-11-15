@@ -56,6 +56,13 @@ public static class ProjectOptions
             },
             ObjectDirectory = PathUtil.Normalize(dir + @"\obj\" + configuration),
             UnitScopeNames = project.UnitScopeNames,
+            Rtti = config.Rtti ?? project.Rtti ?? "broad",                                      // C-240: configuration wins over project
+            Manifest = project.Manifest switch                                                  // C-240: absent → "" = default per appType
+            {
+                null => "",
+                "default" or "none" => project.Manifest,
+                var path => Resolve(dir, path),
+            },
         };
     }
 

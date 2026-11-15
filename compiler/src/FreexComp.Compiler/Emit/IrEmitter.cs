@@ -335,13 +335,19 @@ internal static class IrEmitter
 
     private static LoweredBody EmptyBody() => new(null, [], new LBlock([]));
 
-    /// <summary>CMP-355: <c>internal void $main()</c> = <c>_InitUnits</c>, then the main block.</summary>
+    /// <summary>
+    /// CMP-355: <c>internal void $main()</c> = <c>_InitUnits</c>, then the main block. The main block's managed slots are
+    /// zeroed (CMP-325 rule 1) before <c>_InitUnits</c>: an exception escaping a unit initialization runs <c>$main</c>'s
+    /// cleanup, which must see <c>nil</c> slots (C-241).
+    /// </summary>
     private static void EmitMain(ModuleState module, LoweredUnit unit)
     {
         var main = unit.Bodies.IsEmpty ? EmptyBody() : unit.Bodies[0];
+        var zeroed = main.Body.Statements.TakeWhile(s => s is LZero).ToArray();
+        var rest = new LBlock([.. main.Body.Statements.Skip(zeroed.Length)]);
         var initUnits = new LCallStatement(new LHelperCallee(new RuntimeHelper("_InitUnits", [], ReturnType: null, IsNoReturn: false)), []);
-        LStatement[] statements = [initUnits, .. unit.TlsRegistration is { } register ? [register] : Array.Empty<LStatement>(),   // ABI-180
-            .. unit.FormRegistration is { } forms ? [forms] : Array.Empty<LStatement>(), main.Body];                           // ABI-150 (C-114)
+        LStatement[] statements = [.. zeroed, initUnits, .. unit.TlsRegistration is { } register ? [register] : Array.Empty<LStatement>(),   // ABI-180
+            .. unit.FormRegistration is { } forms ? [forms] : Array.Empty<LStatement>(), rest];                                // ABI-150 (C-114)
         new FunctionEmitter(module, main with { Body = new LBlock([.. statements]) }, IrLinkage.Internal, MainName).Emit();
         module.DeclarePending();
     }
