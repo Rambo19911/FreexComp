@@ -490,6 +490,11 @@ internal static class PcuReader
                 types.TObject = type;                                           // the root class (LANG-600)
             }
 
+            if (string.Equals(_unit.Name, "System", StringComparison.OrdinalIgnoreCase) && string.Equals(name, "TInterfacedObject", StringComparison.OrdinalIgnoreCase))
+            {
+                types.TInterfacedObject = type;                                 // closure ancestor (CMP-380)
+            }
+
             type.Parent = entry["parent"] is null ? null
                 : Type(entry, "parent") as ClassTypeSymbol ?? throw new PcuFormatException($"the parent of '{name}' is not a class");
             var flags = Array(entry, "flags").Select(f => f!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
@@ -552,6 +557,7 @@ internal static class PcuReader
                 types.IInterface = type;                                        // the root interface (ABI-094)
             }
 
+            type.IsMethodReference = entry["methodReference"]?.GetValue<bool>() == true;      // LANG-720 (C-120)
             type.Parent = entry["parent"] is null ? null
                 : Type(entry, "parent") as InterfaceTypeSymbol ?? throw new PcuFormatException($"the parent of '{name}' is not an interface");
             if (entry["guid"] is JsonValue guid)

@@ -82,6 +82,12 @@ public sealed class ClassTypeSymbol : TypeSymbol
     /// <summary>The nearest default array property of the class or an ancestor (LANG-642); null when there is none.</summary>
     public PropertySymbol? DefaultProperty => SelfAndAncestors().SelectMany(c => c.Properties).FirstOrDefault(p => p.IsDefault);
 
+    /// <summary>
+    /// LANG-762 (C-126): the custom attributes of the class in declaration order: the attribute class and the thunk function that
+    /// creates the instance (ABI §10.1 <c>Attrs</c>).
+    /// </summary>
+    internal ImmutableArray<(ClassTypeSymbol Type, RoutineSymbol Thunk)> Attributes { get; set; } = [];
+
     /// <summary>Nested constants, types and enumeration elements of the class's <c>const</c>/<c>type</c> sections (LANG-770, C-122).</summary>
     public ImmutableArray<Symbol> NestedMembers { get; internal set; } = [];
 

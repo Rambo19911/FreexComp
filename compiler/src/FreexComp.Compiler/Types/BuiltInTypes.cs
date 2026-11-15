@@ -191,6 +191,9 @@ public sealed class BuiltInTypes
 
     public TypeSymbol? IInterface { get; internal set; }
 
+    /// <summary><c>System.TInterfacedObject</c>: the ancestor of the closure classes of anonymous methods (ABI-097, CMP-380).</summary>
+    public TypeSymbol? TInterfacedObject { get; internal set; }
+
     private readonly Dictionary<(TypeSymbol, bool), OpenArrayTypeSymbol> _openArrays = new();
 
     /// <summary>The open array type over <paramref name="element"/> (one per element type in this compilation, LANG-430; C-106).</summary>

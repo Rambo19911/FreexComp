@@ -92,7 +92,9 @@ internal sealed partial class ExpressionBinder
                 ? BindProceduralValue(syntax, procedural)
                 : expected is MethodPointerTypeSymbol methodPointer
                     ? BindMethodPointerValue(syntax, methodPointer)
-                    : BindExpression(syntax);
+                    : expected is InterfaceTypeSymbol { IsMethodReference: true } reference
+                        ? BindReferenceValue(syntax, reference)
+                        : BindExpression(syntax);
 
     /// <summary>
     /// LANG-481 (C-103): <paramref name="syntax"/> where a method pointer of <paramref name="type"/> is expected — <c>Obj.Method</c>,
@@ -116,6 +118,13 @@ internal sealed partial class ExpressionBinder
                         && _conversions.Classify(plainResult, type).Exists):
                 _diagnostics.Report(syntax, "E2010", Signatures.Display(routine), type.Name);       // a global routine has no Data
                 return Error(syntax);
+            case IdentifierNameSyntax { Identifier: { IsMissing: false } withToken } withName
+                when _withs.Count > 0
+                    && _scope.For(withName).LookupCandidates(withToken.Value as string ?? withToken.Text) is [MethodSymbol { ContainingInterface: null } first, ..] withMethods
+                    && WithOf(withToken.Value as string ?? withToken.Text, first) is { Type: ClassTypeSymbol withClass } with:
+                (candidates, name, owner) = (withMethods, withName, withClass);           // C-223: a method of a with receiver
+                self = WithReceiver(withName, with);
+                break;
             case IdentifierNameSyntax { Identifier: { IsMissing: false } token } identifier
                 when _scope.For(identifier).LookupCandidates(token.Value as string ?? token.Text) is [MethodSymbol { ContainingInterface: null }, ..] methods
                     && CurrentMethod is { SelfParameter: not null, ContainingSymbol: ClassTypeSymbol } current:
@@ -340,6 +349,7 @@ internal sealed partial class ExpressionBinder
     {
         ProceduralTypeSymbol procedural => procedural.Signature,
         MethodPointerTypeSymbol method => method.Signature,
+        InterfaceTypeSymbol { IsMethodReference: true } reference => reference.Invoke,     // LANG-724 (C-120)
         _ => null,
     };
 
@@ -499,6 +509,8 @@ internal sealed partial class ExpressionBinder
                 return BindBinary(binary);
             case InvocationExpressionSyntax invocation:
                 return BindInvocation(invocation);
+            case AnonymousMethodExpressionSyntax anonymous:
+                return BindAnonymousMethod(anonymous);                          // LANG-720 (C-120)
             case AddressOfExpressionSyntax addressOf:
                 return BindAddressOf(addressOf);
             case DereferenceExpressionSyntax dereference:
@@ -620,11 +632,13 @@ internal sealed partial class ExpressionBinder
                 return ClassVariable(name, name, classVar, CurrentMethod?.Owner);      // LANG-615 inside a method
             case VariableSymbol variable:
                 NoteReference(variable);
+                CheckCapture(variable, name);
                 return new BoundVariableExpression(name, variable);
             case PropertySymbol property:
                 return ImplicitProperty(name, property);                            // LANG-641 inside a method
             case ParameterSymbol parameter:
                 NoteReference(parameter);
+                CheckCapture(parameter, name);
                 return new BoundParameterExpression(name, parameter);
             case FieldSymbol field:
                 return ImplicitField(name, field);                                  // a member of Self (LANG-621)
@@ -1297,8 +1311,9 @@ internal sealed partial class ExpressionBinder
 
         if (intrinsic.Intrinsic == IntrinsicKind.Assigned)
         {
-            if (operand.Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol)
+            if (operand.Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol or InterfaceTypeSymbol)
             {
+                // C-120: an interface (a method reference, LANG-724) is assigned when it is not nil
                 // a method pointer is assigned when its Code is not nil (LANG-481, C-103)
                 // intrinsics.md §1 (C-067): a dynamic array is assigned when its block reference is not nil (LANG-257)
                 var reference = new BoundConversionExpression(syntax, operand, _types.Pointer, ConversionKind.Explicit, isExplicit: true, constantValue: null);
@@ -1850,6 +1865,7 @@ internal sealed partial class ExpressionBinder
             // a dynamic-array value parameter of the only candidate gives an array constructor its type (LANG-259), a
             // procedural one makes a routine name its address (LANG-480)
             var expected = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol
+                    or InterfaceTypeSymbol { IsMethodReference: true }
                 ? candidates[0].Parameters[i].Type
                 : OpenArrayContext(candidates, i, constructor: Unparenthesized(argument.Expression) is SetConstructorSyntax)
                     ?? ProceduralContext(candidates, i, argument.Expression);
@@ -1912,16 +1928,16 @@ internal sealed partial class ExpressionBinder
     /// </summary>
     private TypeSymbol? ProceduralContext(ImmutableArray<RoutineSymbol> candidates, int index, ExpressionSyntax argument)
     {
-        if (candidates.Length < 2)
+        if (candidates.Length < 2 || Unparenthesized(argument) is AnonymousMethodExpressionSyntax)
         {
-            return null;
+            return null;                                                        // an anonymous method is bound once (it makes symbols)
         }
 
         foreach (var type in candidates.Where(c => index < c.Parameters.Length && !c.Parameters[index].IsByReference)
                      .Select(c => c.Parameters[index].Type).Where(t => t is ProceduralTypeSymbol or MethodPointerTypeSymbol).Distinct())
         {
             var probe = new DiagnosticBag();
-            var bound = new ExpressionBinder(_types, _scope, probe, _routine).BindExpression(argument, type);
+            var bound = ProbeBinder(probe).BindExpression(argument, type);
             if (!bound.HasErrors && probe.Count == 0 && _conversions.Classify(bound.Type, type).Exists)
             {
                 return type;
@@ -1929,6 +1945,14 @@ internal sealed partial class ExpressionBinder
         }
 
         return null;
+    }
+
+    /// <summary>A scratch binder for probing (C-221) that sees the same <c>with</c> receivers (C-223).</summary>
+    private ExpressionBinder ProbeBinder(DiagnosticBag diagnostics)
+    {
+        var probe = new ExpressionBinder(_types, _scope, diagnostics, _routine);
+        probe._withs.AddRange(_withs);
+        return probe;
     }
 
     /// <summary>LANG-420/421: count, then each argument against its parameter.</summary>

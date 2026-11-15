@@ -1,0 +1,2 @@
+AttributesUnknown.pas(5,4): warning W1070: Unsupported language feature: custom attribute 'Serializable'
+AttributesUnknown.pas(7,6): hint H2010: Attribute 'Weak' has no effect yet

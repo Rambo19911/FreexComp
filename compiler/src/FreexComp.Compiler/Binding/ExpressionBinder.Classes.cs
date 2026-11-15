@@ -18,9 +18,10 @@ internal sealed partial class ExpressionBinder
     {
         get
         {
-            for (var routine = _routine; routine != null; routine = routine.ContainingSymbol as RoutineSymbol)
+            // an anonymous method sees the method its body is written in (LANG-721: Self is captured)
+            for (var routine = _routine; routine != null; routine = ClosureInfo.LexicalParent(routine))
             {
-                if (routine is MethodSymbol method)
+                if (routine is MethodSymbol { IsAnonymous: false } method)
                 {
                     return method;
                 }
@@ -41,6 +42,7 @@ internal sealed partial class ExpressionBinder
 
         var self = method.SelfParameter!;
         NoteReference(self);
+        CheckCapture(self, syntax);
         return new BoundParameterExpression(syntax, self);
     }
 

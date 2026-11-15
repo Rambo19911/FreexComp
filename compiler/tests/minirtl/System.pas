@@ -84,6 +84,10 @@ type
     property RefCount: Integer read FRefCount;
   end;
 
+  { LANG-760 (C-126): the ancestor of custom attribute classes }
+  TCustomAttribute = class(TObject)
+  end;
+
 { interfaces (ABI section 9.6, C-098...C-100) }
 procedure _IntfClr(var I: Pointer);
 procedure _IntfAddRef(I: Pointer);

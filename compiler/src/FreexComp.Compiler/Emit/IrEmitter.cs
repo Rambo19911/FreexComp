@@ -1020,15 +1020,19 @@ internal sealed class ModuleState(IIrWriter writer)
              new IrZeroConstant(new ArrayIrType(6, IrType.I8))])));
         var fieldTable = Table(name, ".fields", FieldInfoType, fields.Select(f => (IrConstant)new IrStructConstant(FieldInfoType,
             [StringLiteral(f.Name), IrIntConstant.I64(f.Offset), TypeInfo(f.Type), VisibilityByte(f), Pad7])));
+        var attributeTable = Table(name, ".attrs", AttrInfoType, type.Attributes.Select(a => (IrConstant)new IrStructConstant(AttrInfoType,
+            [Vmt(a.Type), Routine(a.Thunk)])));                                                                    // C-126 (ABI §10.1)
         IrConstant[] block =
         [
             new IrIntConstant(IrType.I8, 6), Pad7, StringLiteral(type.Name), Vmt(type), type.Parent is { } parent ? TypeInfo(parent) : new IrNullConstant(),
             StringLiteral(UnitOf(type)), IrIntConstant.I64(properties.Length), props, IrIntConstant.I64(methods.Length), methodTable,
-            IrIntConstant.I64(fields.Length), fieldTable, IrIntConstant.I64(0), new IrNullConstant(),
+            IrIntConstant.I64(fields.Length), fieldTable, IrIntConstant.I64(type.Attributes.Length), attributeTable,
         ];
         ClassInfos.Add((type, name, new IrStructConstant(new StructIrType([.. block.Select(f => f.Type)]), [.. block])));
         return global;
     }
+
+    private static readonly StructIrType AttrInfoType = new([IrType.Ptr, IrType.Ptr]);
 
     private static readonly StructIrType FieldInfoType = new([IrType.Ptr, IrType.I64, IrType.Ptr, IrType.I8, new ArrayIrType(7, IrType.I8)]);
 

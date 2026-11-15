@@ -144,7 +144,7 @@ internal static class Lowerer
 }
 
 /// <summary>Per-body lowering state (locals, temporaries, loop labels) and the translation of plain nodes.</summary>
-internal sealed class LoweringContext
+internal sealed partial class LoweringContext
 {
     private readonly Dictionary<VariableSymbol, LLocal> _variables = [];
     private readonly List<LLocal> _locals = [];
@@ -251,9 +251,16 @@ internal sealed class LoweringContext
 
     public LoweredBody Finish(BoundBlock? body, ImmutableArray<VariableSymbol> finalisedGlobals = default)
     {
+        // CMP-380 (C-120): a body with anonymous methods first creates its closure
+        var closure = Routine is null ? body?.Closure : Routine.Closure;
+        ImmutableArray<LStatement> prologue = closure is null ? [] : ClosurePrologue(closure);
         var block = Routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } method && body is not null
             ? Protocol(method, body)
             : body is null ? new LBlock([]) : (LBlock)Lower(body);
+        if (!prologue.IsEmpty)
+        {
+            block = new LBlock([.. prologue, .. block.Statements]);
+        }
         if (Routine is MethodSymbol { IsRecordConstructor: true, ResultVariable: { } constructed })
         {
             // LANG-730 (C-122): the result is zero-filled before the body runs (a managed one released first: it may hold the
@@ -664,10 +671,14 @@ internal sealed class LoweringContext
                 return new LGlobalRef(global);
             case BoundVariableExpression variable when BodyGlobals?.Exists(g => ReferenceEquals(g.Variable, variable.Variable)) == true:
                 return new LGlobalRef(variable.Variable);                       // a unit-level handler variable (C-091)
+            case BoundVariableExpression variable when ClosureAccess(variable.Variable) is { } field:
+                return field;                                                   // CMP-380: a variable in a closure (C-120)
             case BoundVariableExpression variable:
-                return _variables.TryGetValue(variable.Variable, out var local)
-                    ? new LLocalRef(local)
+                return _variables.TryGetValue(variable.Variable, out var local) ? new LLocalRef(local)
+                    : variable.Variable.ContainingSymbol is not RoutineSymbol ? new LGlobalRef(variable.Variable)  // a unit-level body's local, from an anonymous method
                     : Outer(variable.Variable, variable.Variable.Type);
+            case BoundParameterExpression parameter when ClosureAccess(parameter.Parameter) is { } field:
+                return field;
             case BoundParameterExpression parameter:
                 return ReferenceEquals(parameter.Parameter.ContainingSymbol, Routine)
                     ? new LParamRef(parameter.Parameter)
@@ -1056,6 +1067,11 @@ internal sealed class LoweringContext
     /// <summary>The routine, or a call through the procedural value <paramref name="target"/> (CMP-378).</summary>
     private LRoutineCallee Callee(RoutineSymbol routine, BoundExpression? target, BoundReceiver? receiver)
     {
+        if (target is { Type: InterfaceTypeSymbol { IsMethodReference: true } })
+        {
+            return new(routine, null, Lower(target), null, true);              // ABI-097: an interface call of Invoke (IMT slot 3)
+        }
+
         if (target is { Type: MethodPointerTypeSymbol })
         {
             // CMP-378 (C-103): call Code(Data, args) — the method pointer is evaluated once (Code is read first)

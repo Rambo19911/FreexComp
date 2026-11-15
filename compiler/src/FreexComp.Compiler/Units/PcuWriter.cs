@@ -718,6 +718,11 @@ internal sealed class PcuWriter(PcuContext context)
                     entry["name"] = intf.Name;
                     entry["parent"] = intf.Parent is { } parentInterface ? TypeId(parentInterface) : null;
                     entry["guid"] = intf.Guid is { } guid ? new System.Guid([.. guid]).ToString("B").ToUpperInvariant() : null;
+                    if (intf.IsMethodReference)
+                    {
+                        entry["methodReference"] = true;                        // LANG-720 (C-120)
+                    }
+
                     entry["methods"] = new JsonArray([.. intf.Methods.Select(m => (JsonNode?)new JsonObject
                     {
                         ["name"] = m.Name,

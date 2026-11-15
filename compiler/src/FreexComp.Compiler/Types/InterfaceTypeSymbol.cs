@@ -25,6 +25,21 @@ public sealed class InterfaceTypeSymbol : TypeSymbol
     /// <summary>The GUID in <c>TGUID</c> memory order (ABI-096), 16 bytes; null when the declaration has none.</summary>
     public ImmutableArray<byte>? Guid { get; internal set; }
 
+    /// <summary>
+    /// A <c>reference to procedure/function</c> type (LANG-720, ABI-097): a compiler-made interface whose only own method is
+    /// <see cref="Invoke"/>; values are called with call syntax (LANG-724).
+    /// </summary>
+    public bool IsMethodReference { get; internal set; }
+
+    /// <summary>
+    /// The interface of one anonymous method expression (CMP-380): its value converts to every method reference type with a
+    /// compatible signature (LANG-723).
+    /// </summary>
+    public bool IsAnonymousMethod { get; internal set; }
+
+    /// <summary>The <c>Invoke</c> method of a method reference type (IMT slot 3, ABI-097).</summary>
+    public MethodSymbol Invoke => Methods[0];
+
     /// <summary>The interface's own methods in declaration order.</summary>
     public ImmutableArray<MethodSymbol> Methods { get; internal set; } = [];
 

@@ -420,3 +420,9 @@ type TFoo<T> = class(T) end; begin end.
 type TFoo<T: class> = record X: T; end; var V: TFoo<Integer>; begin end.
 === E2710 1,142
 type TS<T> = record class function L(const A, B: T): Boolean; static; end; class function TS<T>.L(const A, B: T): Boolean; begin Result := A < B; end; type TR = record X: Integer; end; var R: TR; begin TS<TR>.L(R, R); end.
+=== E2720 1,108
+type TProc = reference to procedure; procedure P(var X: Integer); var F: TProc; begin F := procedure begin X := 1 end; F end; begin end.
+=== W1070 1,7
+type [Foo] TA = class end; begin end.
+=== H2010 1,18
+type TA = class [Weak] F: Pointer; end; begin end.

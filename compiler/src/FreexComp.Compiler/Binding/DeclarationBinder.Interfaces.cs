@@ -339,7 +339,7 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>The nearest instance method named <paramref name="name"/> of the class or an ancestor with the signature of <paramref name="method"/>.</summary>
-    private static MethodSymbol? FindImplementation(ClassTypeSymbol type, string name, MethodSymbol method) =>
+    internal static MethodSymbol? FindImplementation(ClassTypeSymbol type, string name, MethodSymbol method) =>
         type.SelfAndAncestors().SelectMany(c => c.Methods)
             .FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && IdentifierComparer.Instance.Equals(m.Name, name) && SameParameterTypes(m, method)
                 && ReferenceEquals(m.ReturnType, method.ReturnType));

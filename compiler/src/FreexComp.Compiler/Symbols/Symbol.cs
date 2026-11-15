@@ -110,5 +110,11 @@ public sealed class UnitSymbol : Symbol
     /// <summary>C-222 (CMP-508): where this unit first used each of <see cref="UsedInstances"/> ("instantiated from here"); same lock.</summary>
     internal Dictionary<Symbol, Location> InstanceSites { get; } = [];
 
+    /// <summary>CMP-380 (C-120): the closure classes of the anonymous methods bound for this unit, in creation order; own lock.</summary>
+    internal List<Types.ClassTypeSymbol> Closures { get; } = [];
+
+    /// <summary>C-121: the forwarder makers of this unit by method reference type and "of object" (guarded by the lock of <see cref="Closures"/>).</summary>
+    internal Dictionary<(Types.TypeSymbol Type, bool OfObject), RoutineSymbol> Forwarders { get; } = [];
+
     public override string ToDisplayString() => (IsProgram ? "program " : "unit ") + Name;
 }

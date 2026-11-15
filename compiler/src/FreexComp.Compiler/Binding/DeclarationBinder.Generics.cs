@@ -646,7 +646,8 @@ internal static class GenericUses
     /// </summary>
     public static void Note(Symbol? type, UnitSymbol? unit, SyntaxNode? at = null)
     {
-        if (type is not (TypeSymbol { IsGenericInstance: true } or MethodSymbol { GenericMethodDefinition: not null }) || unit is null)
+        if (type is not (TypeSymbol { IsGenericInstance: true } or MethodSymbol { GenericMethodDefinition: not null }) || unit is null
+            || !ArgumentsVisibleIn(type, unit))
         {
             return;
         }
@@ -663,6 +664,37 @@ internal static class GenericUses
                 unit.InstanceSites[type] = DiagnosticBag.LocationOf(at);
             }
         }
+    }
+
+    /// <summary>
+    /// C-228 (codegen.md decision): an instance is used (and so defined) only by units in which every type argument is visible — a
+    /// type of the program or of a unit's implementation part is visible in that compilation unit only. Another unit reaching the
+    /// instance (e.g. through a generic's signature bound for an instance made elsewhere) does not record it.
+    /// </summary>
+    private static bool ArgumentsVisibleIn(Symbol instance, UnitSymbol unit)
+    {
+        IEnumerable<TypeSymbol> ArgumentsOf(Symbol symbol) => symbol switch
+        {
+            MethodSymbol { GenericMethodDefinition: { } generic } method =>
+                generic.Instances.Where(p => ReferenceEquals(p.Value, method)).SelectMany(p => p.Key).Concat(ArgumentsOf(method.Owner)),
+            TypeSymbol type => type.TypeArguments.Concat(type.ContainingSymbol is TypeSymbol outer ? ArgumentsOf(outer) : []),
+            _ => [],
+        };
+
+        bool Visible(TypeSymbol type)
+        {
+            var outermost = TypeMembers.Outermost(type);
+            if (outermost.IsGenericInstance)
+            {
+                return ArgumentsOf(outermost).All(Visible);                     // an instance is as visible as its arguments
+            }
+
+            // a type declared in another program or unit implementation part (anonymous and built-in types are visible)
+            return outermost.ContainingSymbol is not UnitSymbol owner || ReferenceEquals(owner, unit) || owner.InterfaceMembers.Contains(outermost)
+                || !owner.ImplementationMembers.Contains(outermost);
+        }
+
+        return ArgumentsOf(instance).All(Visible);
     }
 
     /// <summary>The first instantiation site of <paramref name="instance"/> in <paramref name="unit"/> (C-222), if known.</summary>

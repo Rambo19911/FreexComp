@@ -49,6 +49,11 @@ internal sealed partial class DeclarationBinder
             {
                 _types.TObject = type;                                          // the root class (LANG-600)
             }
+            else if (_container is UnitSymbol { IsProgram: false } system && IdentifierComparer.Instance.Equals(system.Name, "System")
+                && IdentifierComparer.Instance.Equals(name, "TInterfacedObject"))
+            {
+                _types.TInterfacedObject = type;                                // the closure ancestor (CMP-380)
+            }
 
             if (isForward)
             {
@@ -619,7 +624,7 @@ internal sealed partial class DeclarationBinder
     /// <summary>The classes a unit declares (its own, each once), in declaration order.</summary>
     internal static IEnumerable<ClassTypeSymbol> ClassesOf(UnitSymbol unit) =>
         unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<ClassTypeSymbol>()
-            .Where(c => ReferenceEquals(c.ContainingSymbol, unit)).Distinct();
+            .Where(c => ReferenceEquals(c.ContainingSymbol, unit)).Distinct().Concat(ClosureInfo.Of(unit));
 
     /// <summary>E2605 at the declaration of every non-abstract method of the unit's classes without implementation.</summary>
     private static void ReportUnimplementedMethods(UnitSymbol unit, DiagnosticBag diagnostics)

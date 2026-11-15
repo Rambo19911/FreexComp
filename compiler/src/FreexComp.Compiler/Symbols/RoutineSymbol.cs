@@ -142,6 +142,12 @@ public class RoutineSymbol : Symbol
     /// <summary>The implicit <c>Result</c> variable of a function (LANG-410); null for procedures.</summary>
     internal VariableSymbol? ResultVariable { get; set; }
 
+    /// <summary>
+    /// CMP-380 (C-120): the heap frame of a routine containing anonymous methods — its closure class, hidden locals and the fields
+    /// of the variables they capture; null for routines without anonymous methods.
+    /// </summary>
+    internal Binding.ClosureInfo? Closure { get; set; }
+
     /// <summary>Declared without a body (<c>forward</c> or in an interface section) and not yet defined (E2100).</summary>
     internal bool AwaitsDefinition => Definition is null && !IsExternal;
 

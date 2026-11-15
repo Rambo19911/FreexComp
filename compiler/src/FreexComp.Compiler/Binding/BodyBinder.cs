@@ -36,6 +36,9 @@ internal sealed partial class BodyBinder
         _expressions = new ExpressionBinder(types, scope, diagnostics, routine);
     }
 
+    /// <summary>The expression binder of this body (its anonymous methods and closure, C-120).</summary>
+    public ExpressionBinder Expressions => _expressions;
+
     /// <summary>Control variables of the enclosing <c>for</c> loops (LANG-361 rule 6).</summary>
     private HashSet<Symbol> ForVariables => _expressions.ForVariables;
 

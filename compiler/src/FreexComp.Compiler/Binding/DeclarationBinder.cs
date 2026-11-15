@@ -1315,12 +1315,15 @@ internal sealed partial class DeclarationBinder
     /// </summary>
     private TypeSymbol BindProcedural(ProceduralTypeSyntax syntax, string typeName, SyntaxToken? declaredAt)
     {
+        ImmutableArray<Text.Location> locations = declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [];
         if (syntax.ReferenceKeyword is not null)
         {
-            return Unsupported(syntax, "anonymous method type");                // LANG-720, M2.6
+            // LANG-720 / ABI-097 (C-120): a compiler-made interface with the one method Invoke (IMT slot 3)
+            var reference = NewMethodReference(typeName, _container, locations);
+            BindAnonymousSignature(reference.Invoke, syntax.Keyword, syntax.ParameterList, syntax.ResultType, declaresResult: false);
+            return reference;
         }
 
-        ImmutableArray<Text.Location> locations = declaredAt is { } at ? [DiagnosticBag.LocationOf(at)] : [];
         TypeSymbol type;
         RoutineSymbol signature;
         if (syntax.ObjectKeyword is not null)
@@ -1351,6 +1354,47 @@ internal sealed partial class DeclarationBinder
     }
 
     /// <summary>
+    /// A method reference interface (LANG-720, ABI-097): parent <c>IInterface</c>, one method <c>Invoke</c> without parameters yet.
+    /// </summary>
+    internal InterfaceTypeSymbol NewMethodReference(string name, Symbol? container, ImmutableArray<Text.Location> locations)
+    {
+        var type = new InterfaceTypeSymbol(name, container, locations) { IsForward = false, IsMethodReference = true };
+        type.Parent = _types.IInterface as InterfaceTypeSymbol;
+        var invoke = new MethodSymbol("Invoke", type, locations, declaration: null!, MethodKind.Ordinary, Visibility.Public)
+        {
+            VmtSlot = type.Parent?.AllMethods.Length ?? 0,
+        };
+        invoke.SelfParameter = new ParameterSymbol("Self", type, ParameterMode.Value, -1, invoke, []);
+        type.Methods = [invoke];
+        return type;
+    }
+
+    /// <summary>
+    /// The parameters and result of a <c>reference to</c> type's <c>Invoke</c> or of an anonymous method (LANG-720); with
+    /// <paramref name="declaresResult"/> the routine gets its <c>Result</c> variable.
+    /// </summary>
+    internal void BindAnonymousSignature(RoutineSymbol routine, SyntaxToken keyword, ParameterListSyntax? parameters, TypeSyntax? resultType, bool declaresResult)
+    {
+        if (keyword.Kind == SyntaxKind.FunctionKeyword)
+        {
+            var result = resultType is { IsMissing: false } ? BindType(resultType) : _types.Error;
+            if (result is TextTypeSymbol)
+            {
+                _diagnostics.Report(resultType!, "E2023", result.Name);                  // LANG-412
+                result = _types.Error;
+            }
+
+            routine.ReturnType = result;
+            if (declaresResult)
+            {
+                routine.ResultVariable = new VariableSymbol("Result", result, isGlobal: false, routine, []);
+            }
+        }
+
+        routine.Parameters = BindParameters(parameters, routine, new Scope(ScopeKind.Routine, parent: null, routine), report: true);
+    }
+
+    /// <summary>
     /// LANG-422 (C-105): the default value of a value or <c>const</c> parameter of a simple type, folded in the declaring scope
     /// and converted to the parameter type. E2115 for a parameter group, E2117 for <c>var</c>/<c>out</c> or another type;
     /// procedural types and properties keep E2900 (LANG-484: defaults are not available through procedural types).
@@ -1358,7 +1402,7 @@ internal sealed partial class DeclarationBinder
     private ConstantValue? BindDefaultValue(ParameterSyntax parameter, ExpressionSyntax value, ParameterMode mode, TypeSymbol type, Symbol owner, bool report)
     {
         var diagnostics = report ? _diagnostics : new DiagnosticBag();
-        if (owner is not RoutineSymbol || owner.ContainingSymbol is ProceduralTypeSymbol or MethodPointerTypeSymbol)
+        if (owner is not RoutineSymbol || owner.ContainingSymbol is ProceduralTypeSymbol or MethodPointerTypeSymbol or InterfaceTypeSymbol { IsMethodReference: true })
         {
             diagnostics.Report(value, "E2900", "default parameter value outside a routine declaration");
             return null;
@@ -1372,7 +1416,7 @@ internal sealed partial class DeclarationBinder
 
         if (mode is ParameterMode.Var or ParameterMode.Out
             || type is not (IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol or BooleanTypeSymbol or RealTypeSymbol or StringTypeSymbol
-                or PointerTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or SetTypeSymbol or ProceduralTypeSymbol or ErrorTypeSymbol))
+                or PointerTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or SetTypeSymbol or ProceduralTypeSymbol or InterfaceTypeSymbol or ErrorTypeSymbol))     // C-120: nil for an interface (IComparer<T> = nil)
         {
             diagnostics.Report(value, "E2117");
             return null;

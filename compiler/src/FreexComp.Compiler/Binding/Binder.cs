@@ -39,10 +39,43 @@ internal sealed record BindingResult(
     /// </summary>
     public ImmutableArray<Symbol> GetCapturedVariables(RoutineSymbol routine)
     {
-        var captured = Routines.SelectMany(r => r.CapturedVariables).Where(s => ReferenceEquals(s.ContainingSymbol, routine)).ToHashSet();
+        // C-120: anonymous methods capture into closures, not frames; a nested routine reaches a closure field through the owner's
+        // hidden closure local (or through the Self of the anonymous method it is nested in)
+        var captured = Routines.Where(r => r.Routine is not MethodSymbol { IsAnonymous: true })
+            .SelectMany(r => r.CapturedVariables.Select(s => FrameSymbol(r.Routine, s)))
+            .Where(s => ReferenceEquals(s.ContainingSymbol, routine)).ToHashSet();
+        if (captured.Count == 0)
+        {
+            return [];
+        }
+
         // an open array parameter is followed by its High companion, which is in no scope (C-106)
-        return captured.Count == 0 ? [] : [.. Routines.First(r => ReferenceEquals(r.Routine, routine)).Scope.Symbols.Distinct().Where(captured.Contains)
-            .SelectMany(s => s is ParameterSymbol { HighParameter: { } high } && captured.Contains(high) ? [s, high] : new[] { s })];
+        var inScope = Routines.First(r => ReferenceEquals(r.Routine, routine)).Scope.Symbols.Distinct().Where(captured.Contains)
+            .SelectMany(s => s is ParameterSymbol { HighParameter: { } high } && captured.Contains(high) ? [s, high] : new[] { s }).ToList();
+        return [.. inScope, .. captured.Where(s => !inScope.Contains(s)).OrderBy(s => s.Name, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// The symbol a nested routine <paramref name="reader"/> keeps in an enclosing frame to reach <paramref name="symbol"/>: the symbol
+    /// itself, or — when it lives in a closure (C-120) — the hidden closure local of its owner, or the <c>Self</c> of the nearest
+    /// enclosing anonymous method.
+    /// </summary>
+    internal static Symbol FrameSymbol(RoutineSymbol reader, Symbol symbol)
+    {
+        if (symbol.ContainingSymbol is not RoutineSymbol { Closure: { } closure } owner || !closure.Fields.ContainsKey(symbol))
+        {
+            return symbol;
+        }
+
+        for (var routine = ClosureInfo.LexicalParent(reader); routine is not null && !ReferenceEquals(routine, owner); routine = ClosureInfo.LexicalParent(routine))
+        {
+            if (routine is MethodSymbol { IsAnonymous: true, SelfParameter: { } self })
+            {
+                return self;
+            }
+        }
+
+        return closure.Local;
     }
 }
 
@@ -62,6 +95,9 @@ internal sealed record BoundRoutineBody(
 {
     /// <summary>Variables of this body whose address is taken (<c>@x</c>, <c>Addr(x)</c>, also of a part of <c>x</c>).</summary>
     public ImmutableHashSet<Symbol> AddressTaken { get; init; } = [];
+
+    /// <summary>The bodies of the anonymous methods inside this one (inner ones included), bound with it (C-120).</summary>
+    public ImmutableArray<BoundRoutineBody> AnonymousBodies { get; init; } = [];
 }
 
 /// <summary>Binds a compilation unit: declarations (CMP-113), then the routine and unit-level bodies (CMP-114).</summary>
@@ -118,7 +154,8 @@ internal static class Binder
                 {
                     var body = BindRoutineBody(result.Types, pending.Dequeue());
                     routines.Add(body);
-                    foreach (var nested in body.NestedRoutines.Where(r => r.Definition != null))
+                    routines.AddRange(body.AnonymousBodies);
+                    foreach (var nested in body.AnonymousBodies.Prepend(body).SelectMany(b => b.NestedRoutines).Where(r => r.Definition != null))
                     {
                         pending.Enqueue(nested);
                     }
@@ -188,6 +225,7 @@ internal static class Binder
         Scope implementationUses, UnitSymbol? system)
     {
         var declarations = DeclarationBinder.BindImplementation(tree, interfacePart, types, diagnostics, implementationUses);
+        var attributeThunks = AttributeBinder.Bind(tree, declarations.Unit, declarations.Scope, types, diagnostics);     // LANG-760…763 (C-126)
 
         // routine bodies, each with its own E2003 set (CMP-507); nested routines after their enclosing routine
         var routines = ImmutableArray.CreateBuilder<BoundRoutineBody>();
@@ -197,36 +235,58 @@ internal static class Binder
             .Concat(DeclarationBinder.MethodsOf(declarations.Unit))
             .Where(r => r.Definition != null)
             .OrderBy(r => r.Definition!.Span.Start));
-        while (pending.Count > 0)
+        void Drain()
         {
-            var routine = BindRoutineBody(types, pending.Dequeue());
-            routines.Add(routine);
-            foreach (var nested in routine.NestedRoutines.Where(r => r.Definition != null))
+            while (pending.Count > 0)
             {
-                pending.Enqueue(nested);
+                var routine = BindRoutineBody(types, pending.Dequeue());
+                routines.Add(routine);
+                routines.AddRange(routine.AnonymousBodies);
+                foreach (var nested in routine.AnonymousBodies.Prepend(routine).SelectMany(b => b.NestedRoutines).Where(r => r.Definition != null))
+                {
+                    pending.Enqueue(nested);
+                }
             }
         }
 
+        Drain();
+        routines.AddRange(attributeThunks);
         var body = new BodyBinder(types, declarations.Scope, diagnostics);
         var bodies = ImmutableArray.CreateBuilder<BoundBlock>();
+        BoundBlock BindUnitBody(SyntaxNode syntax, SeparatedSyntaxList<StatementSyntax> statements)
+        {
+            var block = body.BindBlock(syntax, statements);
+            body.Expressions.CompleteClosure();
+            return body.Expressions.TakeUnitClosure() is { } closure ? new BoundBlock(block.Syntax, block.Statements) { Closure = closure } : block;
+        }
+
         switch (tree.Root)
         {
             case ProgramSyntax program:
-                bodies.Add(body.BindBlock(program.Block.Body, program.Block.Body.Statements));
+                bodies.Add(BindUnitBody(program.Block.Body, program.Block.Body.Statements));
                 break;
             case UnitSyntax unit:
                 if (unit.InitializationSection is { } initialization)
                 {
-                    bodies.Add(body.BindBlock(initialization, initialization.Statements));
+                    bodies.Add(BindUnitBody(initialization, initialization.Statements));
                 }
 
                 if (unit.FinalizationSection is { } finalization)
                 {
-                    bodies.Add(body.BindBlock(finalization, finalization.Statements));
+                    bodies.Add(BindUnitBody(finalization, finalization.Statements));
                 }
 
                 break;
         }
+
+        // C-120: the anonymous methods of the unit-level bodies, then what they nest
+        routines.AddRange(body.Expressions.AnonymousBodies);
+        foreach (var nested in body.Expressions.AnonymousBodies.SelectMany(b => b.NestedRoutines).Where(r => r.Definition != null))
+        {
+            pending.Enqueue(nested);
+        }
+
+        Drain();
 
         var all = diagnostics.ToImmutable().Concat(routines.SelectMany(r => r.Diagnostics))
             .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase)
@@ -294,6 +354,7 @@ internal static class Binder
         var binder = new BodyBinder(types, scope, diagnostics, routine);
         binder.AddReadOnlyVariables(EnclosingForVariables(outer));
         var body = binder.BindBlock(block.Body, block.Body.Statements);
+        binder.Expressions.CompleteClosure();                                   // CMP-380 (C-120)
         if (routine is MethodSymbol { MethodKind: MethodKind.Destructor, ContainingType.Parent: not null } destructor
             && IdentifierComparer.Instance.Equals(destructor.Name, "Destroy")
             && !block.Body.DescendantTokens().Any(t => t.Kind == SyntaxKind.InheritedKeyword))
@@ -305,6 +366,7 @@ internal static class Binder
         return new BoundRoutineBody(routine, scope, body, [.. locals.OfType<RoutineSymbol>()], [.. binder.CapturedVariables], diagnostics.ToImmutable())
         {
             AddressTaken = [.. binder.AddressTakenVariables],
+            AnonymousBodies = [.. binder.Expressions.AnonymousBodies],
         };
     }
 

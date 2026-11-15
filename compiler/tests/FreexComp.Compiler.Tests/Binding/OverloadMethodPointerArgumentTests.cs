@@ -45,4 +45,12 @@ public sealed class OverloadMethodPointerArgumentTests
     [InlineData("Call(1);")]
     public void MethodOrRoutineName_IsAValue_ForAProceduralParameter(string statement) =>
         Assert.Empty(BindDiagnostics(Declarations + statement + "\nend."));
+
+    /// <summary>C-223: the probe sees the receivers of enclosing <c>with</c> statements (a method named through <c>with C do</c>).</summary>
+    [Theory]
+    [InlineData("with C do Two(Run);")]
+    [InlineData("with C do Two(Get, Run);")]
+    [InlineData("with C do C.Two(Get);")]
+    public void InsideWith(string statement) =>
+        Assert.Empty(BindDiagnostics(Declarations + statement + "\nend."));
 }

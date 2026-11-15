@@ -64,6 +64,7 @@ internal sealed class FlowAnalyzer
 
         var analyzer = new FlowAnalyzer(body.Routine);
         var captured = unit.GetCapturedVariables(body.Routine).ToHashSet();
+        captured.UnionWith(body.Routine.Closure?.Fields.Keys ?? Enumerable.Empty<Symbol>());          // C-120: read and written by anonymous methods too
         var locals = body.Scope.Symbols.OfType<VariableSymbol>().Distinct()
             .Where(v => ReferenceEquals(v.ContainingSymbol, body.Routine) && !ReferenceEquals(v, body.Routine.ResultVariable)).ToList();
         foreach (var local in locals.Where(v => IsSimple(v.Type) && !captured.Contains(v)))
@@ -77,8 +78,7 @@ internal sealed class FlowAnalyzer
             analyzer._tracked.Add(result);
         }
 
-        var definition = body.Routine.Definition!;
-        var diagnostics = analyzer.Run(body.Body, locals.Where(v => !captured.Contains(v)), definition.Block!.Body.LastToken());
+        var diagnostics = analyzer.Run(body.Body, locals.Where(v => !captured.Contains(v)), body.Body.Syntax.LastToken());     // the body's 'end' (also of an anonymous method)
         return [.. diagnostics.OrderBy(d => d.Location.Span.Start)];
     }
 

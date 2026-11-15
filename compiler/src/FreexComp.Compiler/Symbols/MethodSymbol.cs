@@ -47,6 +47,15 @@ public sealed class MethodSymbol : RoutineSymbol
     /// <summary>The LANG-731 operator name of a <c>class operator</c> (<c>Add</c>, <c>Implicit</c>…, C-123); null for other methods.</summary>
     public string? OperatorName { get; internal set; }
 
+    /// <summary>
+    /// An anonymous method (LANG-720, CMP-380): the method <c>$anon&lt;n&gt;</c> of a closure class; <c>Self</c> is the closure of
+    /// <see cref="AnonymousParent"/>.
+    /// </summary>
+    public bool IsAnonymous { get; internal set; }
+
+    /// <summary>The routine (or anonymous method) whose body contains this anonymous method; null for a unit-level body.</summary>
+    public RoutineSymbol? AnonymousParent { get; internal set; }
+
     /// <summary>The generic method this method is an instance of (LANG-701, C-117); null otherwise.</summary>
     public GenericMethodSymbol? GenericMethodDefinition { get; internal set; }
 

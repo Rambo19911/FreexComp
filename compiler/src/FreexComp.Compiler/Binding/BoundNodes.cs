@@ -535,6 +535,9 @@ internal sealed class BoundBlock : BoundStatement
     public override BoundKind Kind => BoundKind.Block;
 
     public ImmutableArray<BoundStatement> Statements { get; }
+
+    /// <summary>The closure of a unit-level body with anonymous methods (CMP-380, C-120); null otherwise.</summary>
+    public ClosureInfo? Closure { get; init; }
 }
 
 /// <summary>
