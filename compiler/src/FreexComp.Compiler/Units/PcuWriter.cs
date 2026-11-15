@@ -565,36 +565,12 @@ internal sealed class PcuWriter(PcuContext context)
                         ["offset"] = f.Offset,
                         ["visibility"] = "public",
                     })]);
-                    // C-122 (LANG-730): written so that the interface hash covers them; the reader does not import them yet
-                    entry["methods"] = new JsonArray([.. record.Methods.Select(m => (JsonNode?)new JsonObject
-                    {
-                        ["name"] = m.Name,
-                        ["linkName"] = m.LinkName,
-                        ["params"] = Parameters(m),
-                        ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
-                        ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>(),
-                            .. m.IsRecordConstructor ? ["constructor"] : Array.Empty<string>()]),
-                        ["visibility"] = VisibilityName(m.Visibility),
-                    })]);
-                    entry["properties"] = new JsonArray([.. record.Properties.Select(p => (JsonNode?)new JsonObject
-                    {
-                        ["name"] = p.Name,
-                        ["type"] = TypeId(p.Type),
-                        ["visibility"] = VisibilityName(p.Visibility),
-                        ["read"] = Accessor(p.ReadPath, p.ReadMethod),
-                        ["write"] = Accessor(p.WritePath, p.WriteMethod),
-                        ["index"] = p.Index,
-                        ["params"] = new JsonArray([.. p.Parameters.Select(q => (JsonNode?)new JsonObject { ["name"] = q.Name, ["type"] = TypeId(q.Type) })]),
-                        ["isDefault"] = p.IsDefault,
-                    })]);
+                    // C-122 (LANG-730), imported since C-219
+                    entry["methods"] = StaticMethods(record.Methods);
+                    entry["properties"] = MemberProperties(record.Properties);
                     if (!record.ClassVariables.IsEmpty)
                     {
-                        entry["classVars"] = new JsonArray([.. record.ClassVariables.Select(v => (JsonNode?)new JsonObject
-                        {
-                            ["name"] = v.Name,
-                            ["type"] = TypeId(v.Type),
-                            ["linkName"] = Emit.Mangler.GlobalVariable(v).Text,
-                        })]);
+                        entry["classVars"] = ClassVars(record.ClassVariables);
                     }
                     entry["managed"] = record.IsManaged;
                     if (record.HasVariantPart)
@@ -604,21 +580,19 @@ internal sealed class PcuWriter(PcuContext context)
 
                     return;
                 case HelperTypeSymbol helper:
-                    // C-124 (LANG-750): written so that the interface hash covers it; the reader does not import helpers yet
+                    // C-124 (LANG-750), imported since C-219
                     entry["kind"] = "helper";
                     entry["name"] = helper.Name;
                     entry["classHelper"] = helper.IsClassHelper;
                     entry["extends"] = TypeId(helper.ExtendedType);
                     entry["parent"] = helper.Parent is { } parentHelper ? TypeId(parentHelper) : null;
-                    entry["methods"] = new JsonArray([.. helper.Methods.Select(m => (JsonNode?)new JsonObject
+                    entry["methods"] = StaticMethods(helper.Methods);
+                    entry["properties"] = MemberProperties(helper.Properties);
+                    if (!helper.ClassVariables.IsEmpty)
                     {
-                        ["name"] = m.Name,
-                        ["linkName"] = m.LinkName,
-                        ["params"] = Parameters(m),
-                        ["result"] = m.ReturnType is { } helperResult ? TypeId(helperResult) : null,
-                        ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>()]),
-                        ["visibility"] = VisibilityName(m.Visibility),
-                    })]);
+                        entry["classVars"] = ClassVars(helper.ClassVariables);
+                    }
+
                     return;
                 case ProceduralTypeSymbol procedural:
                     entry["kind"] = "procedural";
@@ -720,6 +694,13 @@ internal sealed class PcuWriter(PcuContext context)
                         ["isDefault"] = p.IsDefault,
                     })]);
                     return;
+                case GenericTypeSymbol generic:
+                    // architecture.md §6 `generic` (C-116); the body text (CMP-162 genericBodies) arrives with C-119
+                    entry["kind"] = "generic";
+                    entry["name"] = generic.Name;
+                    entry["typeParams"] = new JsonArray([.. generic.ParameterNames.Select(n => (JsonNode?)new JsonObject { ["name"] = n, ["constraints"] = new JsonArray() })]);
+                    entry["body"] = null;
+                    return;
                 case ClassRefTypeSymbol reference:
                     entry["kind"] = "classRef";                                     // C-086
                     entry["name"] = reference.Name;
@@ -729,6 +710,44 @@ internal sealed class PcuWriter(PcuContext context)
                     throw new NotSupportedException($".pcu description of type '{type.Name}' ({type.TypeKind})");
             }
         }
+
+        /// <summary>
+        /// C-122/C-124/C-219: record and helper methods (never virtual): flags add <c>class</c> (static), <c>constructor</c> (a record
+        /// constructor) and <c>operator</c> (a LANG-731 <c>class operator</c>, named by its operator name).
+        /// </summary>
+        private JsonArray StaticMethods(ImmutableArray<MethodSymbol> methods) =>
+            new([.. methods.Select(m => (JsonNode?)new JsonObject
+            {
+                ["name"] = m.Name,
+                ["linkName"] = m.LinkName,
+                ["params"] = Parameters(m),
+                ["result"] = m.ReturnType is { } result ? TypeId(result) : null,
+                ["flags"] = Strings([.. Flags(m), .. m.IsClassMethod ? ["class"] : Array.Empty<string>(),
+                    .. m.IsRecordConstructor ? ["constructor"] : Array.Empty<string>(), .. m.OperatorName is not null ? ["operator"] : Array.Empty<string>()]),
+                ["visibility"] = VisibilityName(m.Visibility),
+            })]);
+
+        private JsonArray MemberProperties(ImmutableArray<PropertySymbol> properties) =>
+            new([.. properties.Select(p => (JsonNode?)new JsonObject
+            {
+                ["name"] = p.Name,
+                ["type"] = TypeId(p.Type),
+                ["visibility"] = VisibilityName(p.Visibility),
+                ["read"] = Accessor(p.ReadPath, p.ReadMethod),
+                ["write"] = Accessor(p.WritePath, p.WriteMethod),
+                ["index"] = p.Index,
+                ["params"] = new JsonArray([.. p.Parameters.Select(q => (JsonNode?)new JsonObject { ["name"] = q.Name, ["type"] = TypeId(q.Type) })]),
+                ["isDefault"] = p.IsDefault,
+            })]);
+
+        private JsonArray ClassVars(ImmutableArray<VariableSymbol> variables) =>
+            new([.. variables.Select(v => (JsonNode?)new JsonObject
+            {
+                ["name"] = v.Name,
+                ["type"] = TypeId(v.Type),
+                ["visibility"] = VisibilityName(v.Visibility),
+                ["linkName"] = Emit.Mangler.GlobalVariable(v).Text,
+            })]);
 
         /// <summary>A property accessor: the field path (<c>FRect.Left</c>) or the method's link name; null without one.</summary>
         private static string? Accessor(ImmutableArray<Symbol> path, MethodSymbol? method) =>

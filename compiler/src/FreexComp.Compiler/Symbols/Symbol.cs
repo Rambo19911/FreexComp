@@ -69,7 +69,10 @@ public abstract class Symbol
     public bool IsDeprecated { get; init; }
 
     /// <summary>"Unit1.TFoo.Bar"; the bare name for symbols without a container.</summary>
-    public string QualifiedName => ContainingSymbol is null ? Name : ContainingSymbol.QualifiedName + "." + Name;
+    public string QualifiedName => QualifiedNameOverride ?? (ContainingSymbol is null ? Name : ContainingSymbol.QualifiedName + "." + Name);
+
+    /// <summary>C-116 (CMP-360): a generic instance is qualified with its canonical argument names (<c>U.TList&lt;Integer&gt;</c>).</summary>
+    internal string? QualifiedNameOverride { get; set; }
 
     /// <summary>Quick-info form of CMP-731.</summary>
     public virtual string ToDisplayString() => Name;
@@ -97,6 +100,12 @@ public sealed class UnitSymbol : Symbol
     /// from the <c>.pcu</c>); the descriptor's <c>Size</c> is this rounded up to 16.
     /// </summary>
     internal long ThreadVarSize { get; set; }
+
+    /// <summary>
+    /// C-116 (CMP-385): the generic instances this unit uses, in first-use order; the unit binds their method bodies and emits
+    /// them (<c>linkonce_odr</c>). Guarded by its own lock (instances are made while units are bound in parallel).
+    /// </summary>
+    internal List<Symbol> UsedInstances { get; } = [];
 
     public override string ToDisplayString() => (IsProgram ? "program " : "unit ") + Name;
 }

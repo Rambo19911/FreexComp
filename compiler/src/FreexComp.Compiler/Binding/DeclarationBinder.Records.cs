@@ -24,6 +24,8 @@ internal sealed partial class DeclarationBinder
         var packing = syntax.PackedKeyword is not null ? 1 : syntax.RecordKeyword.DirectiveState.Align;
         var record = new RecordTypeSymbol(name, 0, 1, syntax.PackedKeyword is not null, packing, isAnonymous: false, _container,
             [DiagnosticBag.LocationOf(at)]);
+        _onTypeCreated?.Invoke(record);                                                // C-116: a generic instance registers itself first
+        _onTypeCreated = null;
         var memberScope = new Scope(ScopeKind.TypeMember, _scope, record);
         memberScope.TryDeclare(name, record, out _);                                  // the record names itself inside (LANG-730)
         var inner = new DeclarationBinder(_types, memberScope, record, _diagnostics)
@@ -36,6 +38,7 @@ internal sealed partial class DeclarationBinder
         var fields = new List<(SyntaxToken Identifier, TypeSymbol Type, Visibility Visibility)>();
         var names = new Dictionary<string, Symbol>(IdentifierComparer.Instance);
         var methods = new List<(MethodDeclarationSyntax Syntax, Visibility Visibility)>();
+        var genericMethods = new List<(MethodDeclarationSyntax Syntax, Visibility Visibility)>();
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVarSections = new List<(ClassVarSectionSyntax Syntax, Visibility Visibility)>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
@@ -56,6 +59,9 @@ internal sealed partial class DeclarationBinder
                     break;
                 case ClassVarSectionSyntax section:
                     classVarSections.Add((section, visibility));
+                    break;
+                case MethodDeclarationSyntax { Heading.TypeParameterList: not null } genericMethod:
+                    genericMethods.Add((genericMethod, visibility));                    // C-117 (LANG-701)
                     break;
                 case MethodDeclarationSyntax method:
                     methods.Add((method, visibility));
@@ -138,6 +144,7 @@ internal sealed partial class DeclarationBinder
         }
 
         record.Methods = boundMethods.ToImmutable();
+        record.GenericMethods = [.. genericMethods.Select(g => inner.BindGenericMethodDeclaration(record, g.Syntax, g.Visibility))];
         record.Properties = inner.BindProperties(record, properties, names);
         return record;
     }
@@ -225,7 +232,7 @@ internal sealed partial class DeclarationBinder
             SyntaxKind.ConstructorKeyword when isClass => "class constructor",
             SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword or SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword => null,
             _ => heading.Keyword.Text.ToLowerInvariant(),
-        } ?? (heading.TypeParameterList is not null ? "generic method" : null);
+        } ?? (heading.TypeParameterList is not null && !_genericMethodInstance ? "generic method" : null);
         if (unsupported is not null)
         {
             _diagnostics.Report(heading, "E2900", unsupported);

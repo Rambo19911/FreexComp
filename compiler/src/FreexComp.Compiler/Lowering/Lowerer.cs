@@ -630,8 +630,10 @@ internal sealed class LoweringContext
             throw new InvalidOperationException("Cannot lower an erroneous expression.");
         }
 
-        if (expression.ConstantValue is not null && expression.Type is MethodPointerTypeSymbol)
+        if (expression.ConstantValue is not null && expression.Type is MethodPointerTypeSymbol
+            || expression.ConstantValue?.Value is ImmutableArray<ConstantValue?> { IsEmpty: true } && expression.Type.IsManaged)
         {
+            // C-116: Default(T) of a managed record or array is a zeroed temporary too (it holds no references to release)
             var empty = new LLocalRef(NewTemp(expression.Type));                    // nil method pointer: a zeroed temporary (C-103)
             return new LSequence(new LZero(new LAddrOf(empty, Types.Pointer), expression.Type), empty);
         }

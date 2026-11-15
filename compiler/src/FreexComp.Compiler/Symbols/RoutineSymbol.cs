@@ -106,6 +106,9 @@ public class RoutineSymbol : Symbol
 
     public bool IsOverload { get; internal set; }
 
+    /// <summary>C-117 (CMP-360): the type arguments of a generic method instance in its link name (<c>&lt;Integer&gt;</c>); else empty.</summary>
+    internal string GenericSuffix { get; set; } = "";
+
     public bool IsExternal { get; internal set; }
 
     public bool IsInline { get; internal set; }

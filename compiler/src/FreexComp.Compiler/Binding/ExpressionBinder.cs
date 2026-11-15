@@ -479,6 +479,18 @@ internal sealed partial class ExpressionBinder
                 return BindLiteral(literal);
             case IdentifierNameSyntax name:
                 return BindName(name);
+            case GenericNameSyntax generic:
+                switch (GenericType(generic))
+                {
+                    case ClassTypeSymbol classType:
+                        return new BoundClassReferenceExpression(generic, classType, classType.Reference);     // LANG-652 (C-116)
+                    case ErrorTypeSymbol:
+                        return Error(generic);
+                    case var type:
+                        _diagnostics.Report(generic, "E2009", type.Name);
+                        return Error(generic);
+                }
+
             case ParenthesizedExpressionSyntax parenthesized:
                 return BindOperand(parenthesized.Expression);
             case UnaryExpressionSyntax unary:
@@ -1109,6 +1121,11 @@ internal sealed partial class ExpressionBinder
             return BindTypeInfo(invocation, intrinsic, syntax);
         }
 
+        if (intrinsic.Intrinsic == IntrinsicKind.Default)
+        {
+            return BindDefault(invocation, syntax);
+        }
+
         if (intrinsic.Intrinsic is IntrinsicKind.Low or IntrinsicKind.High or IntrinsicKind.SizeOf or IntrinsicKind.Length)
         {
             // the operand is never evaluated (LANG-903), so it captures nothing (lead decision C-029)
@@ -1566,6 +1583,40 @@ internal sealed partial class ExpressionBinder
         return new BoundIntrinsicCallExpression(invocation, intrinsic, [], _types.Pointer, constantValue: null, typeOperand: type);
     }
 
+    /// <summary>
+    /// LANG-713 (C-116): <c>Default(T)</c> — the zero value of the type <c>T</c> (0, False, 0.0, <c>nil</c>, <c>''</c>, the empty set, a
+    /// zeroed record or static array), as a constant of that type; an operand that is not a type name is E2002.
+    /// </summary>
+    private BoundExpression BindDefault(InvocationExpressionSyntax invocation, ExpressionSyntax syntax)
+    {
+        var captured = CapturedVariables.Count;
+        var (type, argument) = BindTypeOrValue(syntax);
+        CapturedVariables.RemoveRange(captured, CapturedVariables.Count - captured);
+        if (type.TypeKind == TypeKind.Error || argument is { HasErrors: true })
+        {
+            return Error(invocation);
+        }
+
+        if (argument is not null)
+        {
+            _diagnostics.Report(syntax, "E2002", syntax.ToString().Trim());
+            return Error(invocation);
+        }
+
+        object? zero = type switch
+        {
+            BooleanTypeSymbol => false,
+            IntegerTypeSymbol or CharTypeSymbol or EnumTypeSymbol or SetTypeSymbol => BigInteger.Zero,
+            RealTypeSymbol => 0.0,
+            StringTypeSymbol => "",
+            PointerTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or InterfaceTypeSymbol or DynamicArrayTypeSymbol or ProceduralTypeSymbol
+                or MethodPointerTypeSymbol => null,
+            RecordTypeSymbol or ArrayTypeSymbol => ImmutableArray<ConstantValue?>.Empty,
+            _ => type,                                                              // no zero constant (method pointers…)
+        };
+        return ReferenceEquals(zero, type) ? Unsupported(invocation, "Default of " + type.Name) : new BoundLiteral(invocation, new ConstantValue(zero, type));
+    }
+
     /// <summary>The argument of <c>Low</c>/<c>High</c>/<c>SizeOf</c>: a type name (bound argument null) or an expression.</summary>
     private (TypeSymbol Type, BoundExpression? Argument) BindTypeOrValue(ExpressionSyntax syntax)
     {
@@ -1578,6 +1629,11 @@ internal sealed partial class ExpressionBinder
             && _scope.For(name).Lookup(token.Value as string ?? token.Text) is TypeSymbol type)
         {
             return (type, null);
+        }
+
+        if (syntax is GenericNameSyntax generic)
+        {
+            return (GenericType(generic), null);                                    // C-116: SizeOf(TPair<K, V>), Default(TList<T>)
         }
 
         if (syntax is MemberAccessExpressionSyntax && NestedNames.TypeNamedBy(_scope, syntax) is { } nested)
@@ -1789,7 +1845,8 @@ internal sealed partial class ExpressionBinder
             // procedural one makes a routine name its address (LANG-480)
             var expected = candidates.Length == 1 && i < candidates[0].Parameters.Length && candidates[0].Parameters[i].Type is DynamicArrayTypeSymbol or ProceduralTypeSymbol or MethodPointerTypeSymbol
                 ? candidates[0].Parameters[i].Type
-                : OpenArrayContext(candidates, i, constructor: Unparenthesized(argument.Expression) is SetConstructorSyntax);
+                : OpenArrayContext(candidates, i, constructor: Unparenthesized(argument.Expression) is SetConstructorSyntax)
+                    ?? ProceduralContext(candidates, i, argument.Expression);
             // an untyped parameter (C-202) also takes p^ of an untyped pointer (a byte variable, as for Move)
             var untyped = byReference && candidates[0].Parameters[i].IsUntyped && Unparenthesized(argument.Expression) is DereferenceExpressionSyntax;
             var bound = untyped ? BindDereference((DereferenceExpressionSyntax)Unparenthesized(argument.Expression), untyped: true)
@@ -1839,6 +1896,33 @@ internal sealed partial class ExpressionBinder
         var types = candidates.Where(c => index < c.Parameters.Length).Select(c => c.Parameters[index])
             .Where(p => !constructor || p.Type is OpenArrayTypeSymbol or SetTypeSymbol or DynamicArrayTypeSymbol or ArrayTypeSymbol).ToList();
         return types.Count > 0 && types.All(p => !p.IsByReference && ReferenceEquals(p.Type, types[0].Type)) ? types[0].Type as OpenArrayTypeSymbol : null;
+    }
+
+    /// <summary>
+    /// C-221 (LANG-442, 480, 481): for an overload set, the procedural or method-pointer parameter type at <paramref name="index"/> of a
+    /// candidate under which the argument binds as a value of that type (a routine or method name taken as its address, as for a single
+    /// candidate); tried in candidate order on a scratch binder. Null when no candidate has such a parameter there, or none takes the
+    /// argument (it then binds as usual, e.g. a parameterless function call for another overload).
+    /// </summary>
+    private TypeSymbol? ProceduralContext(ImmutableArray<RoutineSymbol> candidates, int index, ExpressionSyntax argument)
+    {
+        if (candidates.Length < 2)
+        {
+            return null;
+        }
+
+        foreach (var type in candidates.Where(c => index < c.Parameters.Length && !c.Parameters[index].IsByReference)
+                     .Select(c => c.Parameters[index].Type).Where(t => t is ProceduralTypeSymbol or MethodPointerTypeSymbol).Distinct())
+        {
+            var probe = new DiagnosticBag();
+            var bound = new ExpressionBinder(_types, _scope, probe, _routine).BindExpression(argument, type);
+            if (!bound.HasErrors && probe.Count == 0 && _conversions.Classify(bound.Type, type).Exists)
+            {
+                return type;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>LANG-420/421: count, then each argument against its parameter.</summary>
@@ -2265,7 +2349,7 @@ internal sealed partial class ExpressionBinder
     /// <summary>LANG-226/230: Single when both are Single (or a Single and an integer constant exact in Single), else Double.</summary>
     private BoundBinaryExpression RealOperation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
     {
-        var type = RealOperandType(left, right);
+        var type = RealOperandType(left, right, binary.OperatorToken.Kind);
         return new BoundBinaryExpression(binary, OperatorKind(binary.OperatorToken), Convert(left, type), Convert(right, type), type, type, constantValue: null);
     }
 
@@ -2419,7 +2503,7 @@ internal sealed partial class ExpressionBinder
 
         if (IsNumeric(lt) && IsNumeric(rt))
         {
-            var type = RealOperandType(left, right);
+            var type = RealOperandType(left, right, binary.OperatorToken.Kind);
             return new BoundBinaryExpression(binary, kind, Convert(left, type), Convert(right, type), type, boolean, constantValue: null);
         }
 
@@ -2697,8 +2781,23 @@ internal sealed partial class ExpressionBinder
         return _types.Int64;                                            // Integer x Cardinal, or one side Int64
     }
 
-    private TypeSymbol RealOperandType(BoundExpression left, BoundExpression right) =>
-        IsSingleOperand(left, right) && IsSingleOperand(right, left) ? _types.Single : _types.Double;
+    /// <summary>
+    /// LANG-226/230; C-218: <c>+</c>, <c>-</c> and comparisons of Currency with Currency or integer operands compute in Currency
+    /// (exact scaled Int64), every other operation with a Currency operand in Double.
+    /// </summary>
+    private TypeSymbol RealOperandType(BoundExpression left, BoundExpression right, SyntaxKind op)
+    {
+        static bool IsCurrency(TypeSymbol type) => type is RealTypeSymbol { RealKind: RealKind.Currency };
+        if (IsCurrency(left.Type) || IsCurrency(right.Type))
+        {
+            var exact = op is not (SyntaxKind.AsteriskToken or SyntaxKind.SlashToken)
+                && left.Type is IntegerTypeSymbol or RealTypeSymbol { RealKind: RealKind.Currency }
+                && right.Type is IntegerTypeSymbol or RealTypeSymbol { RealKind: RealKind.Currency };
+            return exact ? _types.Currency : _types.Double;
+        }
+
+        return IsSingleOperand(left, right) && IsSingleOperand(right, left) ? _types.Single : _types.Double;
+    }
 
     /// <summary>Single, or an integer constant exactly representable in Single beside a Single operand (LANG-230).</summary>
     private static bool IsSingleOperand(BoundExpression operand, BoundExpression other) => operand.Type switch
@@ -2709,7 +2808,7 @@ internal sealed partial class ExpressionBinder
         _ => false,
     };
 
-    private static bool IsNumeric(TypeSymbol type) => type is IntegerTypeSymbol or RealTypeSymbol { RealKind: not RealKind.Currency };
+    private static bool IsNumeric(TypeSymbol type) => type is IntegerTypeSymbol or RealTypeSymbol;
 
     private static bool Fits(BigInteger value, TypeSymbol type) =>
         type is IntegerTypeSymbol integer && value >= integer.Min && value <= integer.Max;
@@ -2731,6 +2830,7 @@ internal sealed partial class ExpressionBinder
     private static ConstantValue ConvertConstant(ConstantValue value, TypeSymbol type) => type switch
     {
         RealTypeSymbol { RealKind: RealKind.Single } => new ConstantValue((double)(float)RealValue(value), type),
+        RealTypeSymbol { RealKind: RealKind.Currency } => new ConstantValue(Conversions.CurrencyValue(RealValue(value)), type),
         RealTypeSymbol => new ConstantValue(RealValue(value), type),
         _ => new ConstantValue(value.Value, type),
     };

@@ -12,6 +12,18 @@ internal sealed class DiagnosticBag
 
     public int Count => _diagnostics.Count;
 
+    /// <summary>Adds an already made diagnostic (warning control was applied where it was reported).</summary>
+    public void Add(Diagnostic diagnostic) => _diagnostics.Add(diagnostic);
+
+    /// <summary>
+    /// LANG-711 (C-118): an error found while instantiating <paramref name="instance"/> becomes E2710 at the same place; E2710 (of a
+    /// nested instance) and E2712 pass unchanged. Warnings and hints of instances are dropped (the declaration reports nothing itself).
+    /// </summary>
+    public static Diagnostic? InInstance(Diagnostic diagnostic, string instance) =>
+        diagnostic.Severity != DiagnosticSeverity.Error ? null
+        : diagnostic.Code is "E2710" or "E2712" ? diagnostic
+        : Diagnostic.Create("E2710", diagnostic.Location, instance, diagnostic.Message) with { Related = diagnostic.Related };
+
     public void Report(SyntaxToken token, string code, params object[] args) =>
         Add(token.DirectiveState, Diagnostic.Create(code, LocationOf(token), args));
 

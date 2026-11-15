@@ -96,6 +96,7 @@ internal sealed partial class DeclarationBinder
         var properties = new List<(PropertyDeclarationSyntax Syntax, Visibility Visibility)>();
         var classVariables = ImmutableArray.CreateBuilder<VariableSymbol>();
         var nested = ImmutableArray.CreateBuilder<Symbol>();
+        var genericMethods = ImmutableArray.CreateBuilder<GenericMethodSymbol>();
         var end = type.Parent?.InstanceSize ?? 8;                              // offset 0: the VMT pointer (ABI §7.1)
         foreach (var (member, visibility) in Members(syntax.Members, type.IsTypeInfo ? Visibility.Published : Visibility.Public))
         {
@@ -113,6 +114,9 @@ internal sealed partial class DeclarationBinder
                     break;
                 case ClassVarSectionSyntax section:
                     BindClassVariables(type, section, visibility, classVariables, names);              // LANG-615, CMP-370
+                    break;
+                case MethodDeclarationSyntax { Heading.TypeParameterList: not null } genericMethod:
+                    genericMethods.Add(BindGenericMethodDeclaration(type, genericMethod, visibility));          // C-117 (LANG-701)
                     break;
                 case MethodDeclarationSyntax method when BindMethodDeclaration(type, method, visibility) is { } symbol:
                     if (names.TryGetValue(symbol.Name, out var existing)
@@ -154,6 +158,7 @@ internal sealed partial class DeclarationBinder
         type.ClassVariables = classVariables.ToImmutable();
         type.NestedMembers = nested.ToImmutable();
         type.Methods = methods.ToImmutable();
+        type.GenericMethods = genericMethods.ToImmutable();
         type.VirtualSlots = AssignSlots(type);
         end = BindImplementedInterfaces(type, listed, resolutions, end);       // ABI §7.1: the hidden IMT pointers follow the fields
         type.InstanceSize = (end + 7) / 8 * 8;                                   // ABI-070
@@ -334,7 +339,7 @@ internal sealed partial class DeclarationBinder
             SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword when isClass => "class " + heading.Keyword.Text.ToLowerInvariant(),   // LANG-636
             SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword or SyntaxKind.ConstructorKeyword or SyntaxKind.DestructorKeyword => null,
             _ => heading.Keyword.Text.ToLowerInvariant(),
-        } ?? (heading.TypeParameterList is not null ? "generic method" : null);
+        } ?? (heading.TypeParameterList is not null && !_genericMethodInstance ? "generic method" : null);
         if (unsupported is not null)
         {
             _diagnostics.Report(heading, "E2900", unsupported);
@@ -538,6 +543,12 @@ internal sealed partial class DeclarationBinder
             return;
         }
 
+        if (className is GenericNameSyntax generic)
+        {
+            BindGenericMethodImplementation(declaration, generic, identifier);          // C-116 (LANG-704)
+            return;
+        }
+
         switch (ResolveTypeQualifier(className))
         {
             case null:
@@ -558,6 +569,12 @@ internal sealed partial class DeclarationBinder
     {
         var heading = declaration.Heading;
         var name = NameOf(identifier);
+        if (heading.TypeParameterList is { } typeParameters)
+        {
+            DefineGenericMethod(type, declaration, identifier, typeParameters);         // C-117 (LANG-704)
+            return;
+        }
+
         var candidates = TypeMembers.Methods(type).Where(m => IdentifierComparer.Instance.Equals(m.Name, name)).ToList();
         MethodSymbol? method = null;
         if (heading.ParameterList is null && candidates.Count == 1)

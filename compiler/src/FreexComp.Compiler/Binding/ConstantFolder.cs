@@ -766,9 +766,12 @@ internal sealed class ConstantFolder
             case IntrinsicKind.Abs or IntrinsicKind.Sqr when operand is RealTypeSymbol { RealKind: not RealKind.Currency }:
                 return operand;
 
+            case IntrinsicKind.Abs when operand is RealTypeSymbol { RealKind: RealKind.Currency }:
+                return operand;                                                 // C-218: exact, on the scaled Int64
+
             // intrinsics.md: (X: Double) — integer and real operands convert to Double (LANG-231)
             case IntrinsicKind.Trunc or IntrinsicKind.Round or IntrinsicKind.Int or IntrinsicKind.Frac or IntrinsicKind.Sqrt:
-                if (operand is not (IntegerTypeSymbol or RealTypeSymbol { RealKind: not RealKind.Currency }))
+                if (operand is not (IntegerTypeSymbol or RealTypeSymbol))
                 {
                     _diagnostics.Report(at, "E2010", operand.Name, _types.Double.Name);
                     return null;

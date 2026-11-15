@@ -8,7 +8,7 @@ namespace FreexComp.Compiler.Types;
 
 public enum TypeKind { Error, Integer, Boolean, Char, Real, Enum, Subrange, Set, String, ShortString, Pointer,
                        Array, DynamicArray, OpenArray, Record, Class, ClassRef, Interface, Procedural,
-                       MethodPointer, Reference, TypeParameter, Text, Untyped, Nil, Helper }
+                       MethodPointer, Reference, TypeParameter, Text, Untyped, Nil, Helper, GenericDefinition }
 
 /// <summary>A type (api.md §5). Sizes follow rtl-abi.md §2; -1 where a type has no fixed size.</summary>
 public abstract class TypeSymbol : Symbol
@@ -63,9 +63,14 @@ public abstract class TypeSymbol : Symbol
 
     public virtual bool IsGenericDefinition => false;
 
-    public virtual ImmutableArray<TypeSymbol> TypeArguments => [];
+    /// <summary>The type arguments of a generic instance (LANG-710, C-116); empty otherwise.</summary>
+    public ImmutableArray<TypeSymbol> TypeArguments { get; internal set; } = [];
 
-    public virtual TypeSymbol? GenericDefinition => null;
+    /// <summary>The generic definition a generic instance was made from (LANG-710, C-116); null otherwise.</summary>
+    public TypeSymbol? GenericDefinition { get; internal set; }
+
+    /// <summary>An instance of a generic type (CMP-385: its code and data are emitted <c>linkonce_odr</c> by every unit using it).</summary>
+    public bool IsGenericInstance => GenericDefinition is not null;
 
     /// <summary>True for the type itself and its ancestors (classes and interfaces).</summary>
     public bool InheritsFrom(TypeSymbol other)
@@ -339,6 +344,9 @@ public sealed class RecordTypeSymbol : TypeSymbol
 
     /// <summary>The record's methods in declaration order (LANG-730, C-122): instance methods take <c>Self</c> as a <c>var</c> parameter.</summary>
     public ImmutableArray<MethodSymbol> Methods { get; internal set; } = [];
+
+    /// <summary>Generic methods (LANG-701, C-117); their instances are not in <see cref="Methods"/>.</summary>
+    public ImmutableArray<GenericMethodSymbol> GenericMethods { get; internal set; } = [];
 
     /// <summary>The record's <c>class var</c> fields (LANG-730): globals named <c>U.TRec.Name</c> like a class's (CMP-370).</summary>
     public ImmutableArray<VariableSymbol> ClassVariables { get; internal set; } = [];

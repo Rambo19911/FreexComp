@@ -140,10 +140,19 @@ internal sealed class UnitBinder : IUsesScopes
         if (maxParallelism <= 1 || ready.Count <= 1)
         {
             ready.ForEach(Complete);
-            return;
+        }
+        else
+        {
+            Parallel.ForEach(ready, new ParallelOptions { MaxDegreeOfParallelism = maxParallelism }, Complete);
         }
 
-        Parallel.ForEach(ready, new ParallelOptions { MaxDegreeOfParallelism = maxParallelism }, Complete);
+        // C-116 (CMP-385): generic instance bodies once all implementation parts are bound; in unit order (deterministic)
+        foreach (var unit in ready.Where(u => u.Result is not null))
+        {
+            var before = unit.Result!.Diagnostics.ToHashSet();
+            unit.Result = Binder.BindInstances(unit.Result);
+            unit.Diagnostics.AddRange(unit.Result.Diagnostics.Where(d => !before.Contains(d)));
+        }
     }
 
     /// <summary>

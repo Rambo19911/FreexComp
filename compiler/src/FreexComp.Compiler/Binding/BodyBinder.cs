@@ -996,7 +996,7 @@ internal sealed partial class BodyBinder
             return new BoundErrorStatement(statement);
         }
 
-        if (value.Type is not (IntegerTypeSymbol or RealTypeSymbol { RealKind: not RealKind.Currency } or BooleanTypeSymbol or CharTypeSymbol
+        if (value.Type is not (IntegerTypeSymbol or RealTypeSymbol or BooleanTypeSymbol or CharTypeSymbol
             or StringTypeSymbol) && !Strings.IsCharPointer(value.Type, wide: true) && !Strings.IsCharPointer(value.Type, wide: false))
         {
             _diagnostics.Report(argument.Expression, "E2010", value.Type.Name, _types.Integer.Name);
@@ -1191,7 +1191,6 @@ internal sealed partial class BodyBinder
     {
         IntegerTypeSymbol or BooleanTypeSymbol or CharTypeSymbol => null,
         StringTypeSymbol => null,                                                    // C-060, C-063
-        RealTypeSymbol { RealKind: RealKind.Currency } => "Write of a Currency value",
         RealTypeSymbol => null,
         var type when Strings.IsCharPointer(type, wide: true) || Strings.IsCharPointer(type, wide: false) || Strings.IsCharArray(type) => null,
         _ => "",

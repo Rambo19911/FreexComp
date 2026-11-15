@@ -127,6 +127,7 @@ internal sealed class Conversions
             // a set keeps the elements its capacity holds (like the run-time truncation)
             SetTypeSymbol set => new ConstantValue((BigInteger)value.Value! & ((BigInteger.One << set.Capacity) - 1), destination),
             RealTypeSymbol { RealKind: RealKind.Single } => new ConstantValue((double)(float)RealValue(value), destination),
+            RealTypeSymbol { RealKind: RealKind.Currency } => new ConstantValue(CurrencyValue(RealValue(value)), destination),     // C-218
             RealTypeSymbol => new ConstantValue(RealValue(value), destination),
             _ => new ConstantValue(value.Value, destination),
         };
@@ -165,7 +166,10 @@ internal sealed class Conversions
     public static bool IsNarrowing(TypeSymbol source, TypeSymbol destination) =>
         Strings.IsUnicode(source) && destination is StringTypeSymbol { Variant: not StringVariant.Unicode };
 
-    private static bool IsReal(TypeSymbol type) => type is RealTypeSymbol { RealKind: not RealKind.Currency };
+    private static bool IsReal(TypeSymbol type) => type is RealTypeSymbol;
+
+    /// <summary>C-218: a real rounded to the four decimals Currency holds (ties to even, like the run-time conversion).</summary>
+    public static double CurrencyValue(double value) => Math.Round(value * 10000, MidpointRounding.ToEven) / 10000;
 
     private static double RealValue(ConstantValue value) => value.Value is BigInteger i ? (double)i : (double)value.Value!;
 }

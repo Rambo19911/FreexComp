@@ -1,0 +1,93 @@
+using System.Collections.Immutable;
+using FreexComp.Compiler.Symbols;
+using FreexComp.Compiler.Syntax;
+using FreexComp.Compiler.Text;
+
+namespace FreexComp.Compiler.Types;
+
+/// <summary>
+/// A generic type definition <c>TList&lt;T&gt; = class … end</c> (LANG-700, C-116). It is no usable type itself: every use names
+/// type arguments and gets the instance for them (<see cref="Instances"/>, one per distinct argument list, LANG-710). Instances are
+/// made by binding <see cref="Declaration"/> again in <see cref="DeclaringScope"/> with the type parameters declared as the
+/// arguments (template model, LANG-711: names not depending on a type parameter resolve in the declaring unit's scope).
+/// It is declared in its scope under <see cref="ScopeName"/> (name and arity), so that <c>TFoo</c>, <c>TFoo&lt;T&gt;</c> and
+/// <c>TFoo&lt;A, B&gt;</c> coexist (LANG-703).
+/// </summary>
+public sealed class GenericTypeSymbol : TypeSymbol
+{
+    internal GenericTypeSymbol(string name, ImmutableArray<string> parameterNames, TypeDeclarationSyntax? declaration, Scope? declaringScope,
+        int visibleCount, Symbol? containingSymbol, ImmutableArray<Location> locations)
+        : base(TypeKind.GenericDefinition, name, size: -1, alignment: 1, containingSymbol, locations)
+    {
+        ParameterNames = parameterNames;
+        Declaration = declaration;
+        DeclaringScope = declaringScope;
+        VisibleCount = visibleCount;
+    }
+
+    /// <summary>The type parameter names in declaration order.</summary>
+    public ImmutableArray<string> ParameterNames { get; }
+
+    /// <summary>LANG-702 (C-118): the constraints of each type parameter (bound with the declaration).</summary>
+    internal ImmutableArray<TypeParameterConstraints> Constraints { get; set; } = [];
+
+    /// <summary>The declaration (null for a definition imported from a <c>.pcu</c> without its body text, C-119).</summary>
+    internal TypeDeclarationSyntax? Declaration { get; }
+
+    /// <summary>The scope the generic is declared in; instances are bound below it.</summary>
+    internal Scope? DeclaringScope { get; }
+
+    /// <summary>The symbols of <see cref="DeclaringScope"/> visible to the declaration (LANG-402 declare-before-use).</summary>
+    internal int VisibleCount { get; set; }
+
+    /// <summary>The instances made so far, by argument list (identity of the argument types).</summary>
+    internal Dictionary<ImmutableArray<TypeSymbol>, TypeSymbol> Instances { get; } = new(ArgumentsComparer.Instance);
+
+    /// <summary>Method implementations <c>procedure TList&lt;T&gt;.Add(…)</c> found so far, applied to every instance.</summary>
+    internal List<GenericMethodImplementation> Implementations { get; } = [];
+
+    public override bool IsGenericDefinition => true;
+
+    /// <summary>The name the definition is declared under: <c>TList`1</c>.</summary>
+    internal string ScopeName => KeyOf(Name, ParameterNames.Length);
+
+    internal static string KeyOf(string name, int arity) => name + "`" + arity;
+
+    /// <summary><c>type TList&lt;T&gt; = …</c> (CMP-731).</summary>
+    public override string ToDisplayString() => $"type {Name}<{string.Join(", ", ParameterNames)}>";
+
+    internal sealed class ArgumentsComparer : IEqualityComparer<ImmutableArray<TypeSymbol>>
+    {
+        public static readonly ArgumentsComparer Instance = new();
+
+        public bool Equals(ImmutableArray<TypeSymbol> x, ImmutableArray<TypeSymbol> y) =>
+            x.Length == y.Length && x.Zip(y).All(p => ReferenceEquals(p.First, p.Second));
+
+        public int GetHashCode(ImmutableArray<TypeSymbol> arguments)
+        {
+            var hash = new HashCode();
+            foreach (var argument in arguments)
+            {
+                hash.Add(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(argument));
+            }
+
+            return hash.ToHashCode();
+        }
+    }
+}
+
+/// <summary>
+/// One method implementation of a generic type: its declaration, the type parameter names its heading uses (LANG-704), and the
+/// scope (with its visible count) it was found in.
+/// </summary>
+/// <summary>
+/// LANG-702: <c>class</c>, <c>record</c>, <c>constructor</c> and class or interface types a type argument must satisfy; <see cref="Texts"/>
+/// names each as written (keywords first) for E2704.
+/// </summary>
+internal sealed record TypeParameterConstraints(bool Class, bool Record, bool Constructor, ImmutableArray<TypeSymbol> Types, ImmutableArray<string> TypeTexts)
+{
+    public static readonly TypeParameterConstraints None = new(false, false, false, [], []);
+}
+
+internal sealed record GenericMethodImplementation(RoutineDeclarationSyntax Declaration, SyntaxToken Identifier, ImmutableArray<string> ParameterNames,
+    Scope Scope, int VisibleCount, Symbol Container);

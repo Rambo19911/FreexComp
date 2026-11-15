@@ -42,6 +42,9 @@ public sealed class ClassTypeSymbol : TypeSymbol
     /// <summary>The class's own methods in declaration order.</summary>
     public ImmutableArray<MethodSymbol> Methods { get; internal set; } = [];
 
+    /// <summary>Generic methods (LANG-701, C-117); their instances are not in <see cref="Methods"/>.</summary>
+    public ImmutableArray<GenericMethodSymbol> GenericMethods { get; internal set; } = [];
+
     /// <summary>ABI-070: end of the last field rounded up to 8; 8 for a class without fields (the VMT pointer).</summary>
     public long InstanceSize { get; internal set; } = 8;
 

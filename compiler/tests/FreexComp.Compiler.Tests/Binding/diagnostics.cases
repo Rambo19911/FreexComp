@@ -404,3 +404,19 @@ type H = record helper for Integer procedure P; virtual; end; begin end.
 type H = record helper for Integer end; var V: H; begin end.
 === E2075 1,11
 begin var X := nil; end.
+=== E2700 1,11
+procedure P<T>(X: T); begin end; begin end.
+=== E2703 1,41
+type TFoo<T> = record X: T; end; var V: TFoo<Byte, Word>; begin end.
+=== E2711 1,122
+type U = class class function F<T>(X: Integer): T; static; end; class function U.F<T>(X: Integer): T; begin end; begin U.F(1); end.
+=== E2712 1,23
+type TR<T> = class X: TR<TR<T>>; end; var V: TR<Integer>; begin end.
+=== E2701 1,21
+type TFoo<T: class, record> = class end; begin end.
+=== E2702 1,22
+type TFoo<T> = class(T) end; begin end.
+=== E2704 1,53
+type TFoo<T: class> = record X: T; end; var V: TFoo<Integer>; begin end.
+=== E2710 1,142
+type TS<T> = record class function L(const A, B: T): Boolean; static; end; class function TS<T>.L(const A, B: T): Boolean; begin Result := A < B; end; type TR = record X: Integer; end; var R: TR; begin TS<TR>.L(R, R); end.

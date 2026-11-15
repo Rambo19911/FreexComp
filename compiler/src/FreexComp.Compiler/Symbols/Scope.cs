@@ -148,6 +148,9 @@ internal sealed class Scope
 
     public ScopeKind Kind { get; }
 
+    /// <summary>C-116: the scope declares the type parameters of a generic instance (each another name of its argument).</summary>
+    internal bool DeclaresTypeParameters { get; init; }
+
     public Scope? Parent { get; }
 
     /// <summary>Unit, type or routine the scope belongs to; null for the built-in scope and plain blocks.</summary>

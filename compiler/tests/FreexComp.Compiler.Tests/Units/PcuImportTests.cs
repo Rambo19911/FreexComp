@@ -302,6 +302,149 @@ public sealed class PcuImportTests
         Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), fs.ReadAllText(@"C:\p\obj\P.ll"));
     }
 
+    /// <summary>
+    /// C-219: a program using a <c>.pcu</c>-only unit's record with methods — instance and static methods, a constructor,
+    /// operators (incl. two <c>Implicit</c>s differing only in their result), properties reading a field and writing through a
+    /// method, a class var — binds and gives the same IR as against the unit's source.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-730")]
+    [Trait("Req", "LANG-731")]
+    public void RecordMethodsFromPcu()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TMoney = record
+              private
+                FCents: Integer;
+                procedure SetCents(V: Integer);
+              public
+                class var Created: Integer;
+                constructor Create(ACents: Integer);
+                function Euros: Integer;
+                procedure Add(N: Integer); overload;
+                procedure Add(const M: TMoney); overload;
+                class function Zero: TMoney; static;
+                class operator Add(const A, B: TMoney): TMoney;
+                class operator Equal(const A, B: TMoney): Boolean;
+                class operator Implicit(N: Integer): TMoney;
+                class operator Implicit(const M: TMoney): Integer;
+                property Cents: Integer read FCents write SetCents;
+              end;
+            implementation
+            constructor TMoney.Create(ACents: Integer); begin FCents := ACents; Inc(Created) end;
+            procedure TMoney.SetCents(V: Integer); begin FCents := V end;
+            function TMoney.Euros: Integer; begin Result := FCents div 100 end;
+            procedure TMoney.Add(N: Integer); begin Inc(FCents, N) end;
+            procedure TMoney.Add(const M: TMoney); begin Inc(FCents, M.FCents) end;
+            class function TMoney.Zero: TMoney; begin Result.FCents := 0 end;
+            class operator TMoney.Add(const A, B: TMoney): TMoney; begin Result.FCents := A.FCents + B.FCents end;
+            class operator TMoney.Equal(const A, B: TMoney): Boolean; begin Result := A.FCents = B.FCents end;
+            class operator TMoney.Implicit(N: Integer): TMoney; begin Result.FCents := N end;
+            class operator TMoney.Implicit(const M: TMoney): Integer; begin Result := M.FCents end;
+            end.
+            """;
+        const string Program = """
+            program P;
+            uses U;
+            var
+              A, B: TMoney;
+              I: Integer;
+            begin
+              A := TMoney.Create(250);
+              B := 120;
+              A.Add(5);
+              A.Add(B);
+              B := A + TMoney.Zero;
+              I := B;
+              B.Cents := 7;
+              Writeln(A.Euros, ' ', I, ' ', B.Cents, ' ', A = B, ' ', TMoney.Created);
+            end.
+            """;
+
+        AssertSameIrAgainstPcu(Unit, Program);
+    }
+
+    /// <summary>
+    /// C-219: a <c>.pcu</c>-only unit's record helper for a predeclared type and class helper for its class (methods, a property,
+    /// a class var, a class method) are active in the program (LANG-753) and give the same IR as against the unit's source.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-750")]
+    [Trait("Req", "LANG-753")]
+    public void HelperFromPcu()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            type
+              TIntHelper = record helper for Integer
+                function Twice: Integer;
+                procedure Bump;
+              end;
+              TThing = class
+                FSize: Integer;
+              end;
+              TThingHelper = class helper for TThing
+              private
+                function GetDouble: Integer;
+              public
+                class var Grown: Integer;
+                procedure Grow(N: Integer);
+                class function Kind: string;
+                property Double: Integer read GetDouble;
+              end;
+            implementation
+            function TIntHelper.Twice: Integer; begin Result := Self * 2 end;
+            procedure TIntHelper.Bump; begin Inc(Self) end;
+            function TThingHelper.GetDouble: Integer; begin Result := FSize * 2 end;
+            procedure TThingHelper.Grow(N: Integer); begin Inc(FSize, N); Inc(Grown) end;
+            class function TThingHelper.Kind: string; begin Result := 'thing' end;
+            end.
+            """;
+        const string Program = """
+            program P;
+            uses U;
+            var
+              I: Integer;
+              T: TThing;
+            begin
+              I := 4;
+              I.Bump;
+              T := TThing.Create;
+              T.Grow(I.Twice);
+              Writeln(I, ' ', T.Double, ' ', TThing.Kind, ' ', TThing.Grown);
+              T.Free;
+            end.
+            """;
+
+        AssertSameIrAgainstPcu(Unit, Program);
+    }
+
+    /// <summary>The program compiled against <c>.pcu</c>-only U and V gives the IR it gets against their sources.</summary>
+    private static void AssertSameIrAgainstPcu(string unit, string program)
+    {
+        var sources = PcuTests.Files(u: unit, program: program);
+        var reference = Emit(sources, PcuTests.Options(), EmitStage.Ll);
+        Assert.True(reference.Success, string.Join("\n", reference.Diagnostics.Select(d => d.ToText())));
+        var pcus = PcuTests.Pcus(PcuTests.Files(u: unit, program: program));
+        var fs = new InMemoryFileSystem()
+            .Add(@"C:\p\P.pas", program)
+            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+        foreach (var name in new[] { "U", "V" }.Where(pcus.ContainsKey))
+        {
+            fs.Add(Path.Combine(Lib, name + ".pcu"), pcus[name]).Add(Path.Combine(Lib, name + ".obj"), "");
+        }
+
+        var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
+
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        Assert.Equal(["P", "System"], result.CompiledUnits);
+        Assert.Equal(sources.ReadAllText(@"C:\p\obj\P.ll"), fs.ReadAllText(@"C:\p\obj\P.ll"));
+    }
+
     [Fact]
     [Trait("Req", "LANG-510")]
     public void ProgramAgainstPcuOnlyUnits_GivesTheSameProgramIrAsAgainstTheirSources()

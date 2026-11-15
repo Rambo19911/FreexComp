@@ -84,7 +84,16 @@ internal static class IrEmitter
         }
 
         var interfaceMembers = unit.Unit.InterfaceMembers.Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).ToHashSet();
-        var classes = Binding.DeclarationBinder.ClassesOf(unit.Unit).ToImmutableArray();
+        // C-116 (CMP-385): the generic instances the unit uses are emitted here too, linkonce_odr
+        ImmutableArray<TypeSymbol> instances;
+        lock (unit.Unit.UsedInstances)
+        {
+            instances = [.. unit.Unit.UsedInstances.OfType<TypeSymbol>()];
+        }
+
+        IrLinkage LinkageOf(TypeSymbol type) => type.IsGenericInstance ? IrLinkage.LinkOnceOdr
+            : interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal;
+        var classes = Binding.DeclarationBinder.ClassesOf(unit.Unit).Concat(instances.OfType<ClassTypeSymbol>()).Distinct().ToImmutableArray();
         var module = new ModuleState(writer) { UnitName = unit.Unit.Name, OwnClasses = [.. classes] };
         foreach (var body in unit.Routines)
         {
@@ -96,6 +105,7 @@ internal static class IrEmitter
         var variables = unit.Unit.InterfaceMembers.Concat(unit.Unit.ImplementationMembers)
             .Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).OfType<VariableSymbol>().Concat(unit.Statics)
             .Concat(Binding.DeclarationBinder.ClassVariablesOf(unit.Unit))                             // CMP-370: class vars are globals
+            .Concat(instances.SelectMany(i => i switch { ClassTypeSymbol c => c.ClassVariables, RecordTypeSymbol r => r.ClassVariables, _ => [] }))
             .Where(v => !v.IsThreadVar).ToImmutableArray();                                            // threadvars: ABI-180/181
         foreach (var variable in variables)
         {
@@ -122,7 +132,9 @@ internal static class IrEmitter
         foreach (var body in InEmissionOrder(unit.Routines))
         {
             var routine = body.Routine!;
-            var linkage = routine.ExplicitLinkName is not null || (!routine.IsNested && interfaceMembers.Contains(routine))
+            var linkage = routine is MethodSymbol { Owner: var owner } genericCandidate
+                && (TypeMembers.Outermost(owner).IsGenericInstance || genericCandidate.GenericMethodDefinition is not null) ? IrLinkage.LinkOnceOdr
+                : routine.ExplicitLinkName is not null || (!routine.IsNested && interfaceMembers.Contains(routine))
                 || routine is MethodSymbol method && interfaceMembers.Contains(TypeMembers.Outermost(method.Owner))
                 ? IrLinkage.External
                 : IrLinkage.Internal;
@@ -215,7 +227,7 @@ internal static class IrEmitter
         foreach (var (type, name, block) in module.ClassInfos)
         {
             // codegen.md C-112 decision: defined only by the class's unit, with the VMT's linkage
-            writer.DefineGlobal(new IrGlobalDefinition(name, interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal, IsConstant: true, block, Alignment: 8));
+            writer.DefineGlobal(new IrGlobalDefinition(name, LinkageOf(type), IsConstant: true, block, Alignment: 8));
         }
 
         foreach (var intf in module.Guids)
@@ -225,13 +237,12 @@ internal static class IrEmitter
 
         foreach (var (type, constant) in vmts)
         {
-            writer.DefineGlobal(new IrGlobalDefinition(Mangler.Vmt(type), interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal,
-                IsConstant: true, constant, Alignment: 8));
+            writer.DefineGlobal(new IrGlobalDefinition(Mangler.Vmt(type), LinkageOf(type), IsConstant: true, constant, Alignment: 8));
         }
 
         foreach (var type in classes)
         {
-            EmitInterfaceTables(module, type, interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal);    // C-098: IMTs after the VMTs
+            EmitInterfaceTables(module, type, LinkageOf(type));    // C-098: IMTs after the VMTs
         }
 
         if (unit.Unit.IsProgram)
@@ -243,7 +254,8 @@ internal static class IrEmitter
         {
             var layout = TypeLayout.Allocated(variable.Type);
             writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
-                interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null
+                variable.ContainingSymbol is TypeSymbol { IsGenericInstance: true } ? IrLinkage.LinkOnceOdr
+                : interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null
                 || variable.ContainingSymbol is (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol) and TypeSymbol owner && interfaceMembers.Contains(TypeMembers.Outermost(owner)) ? IrLinkage.External : IrLinkage.Internal,
                 IsConstant: variable.IsReadOnly, initializer, layout.Alignment));
         }
@@ -578,6 +590,8 @@ internal static class IrEmitter
     {
         (BooleanTypeSymbol, bool b) => IrIntConstant.I1(b),
         (BooleanTypeSymbol, BigInteger i) => IrIntConstant.I1(!i.IsZero),
+        (RealTypeSymbol { RealKind: RealKind.Currency }, BigInteger i) => new IrIntConstant(IrType.I64, i * 10000),             // C-218: scaled
+        (RealTypeSymbol { RealKind: RealKind.Currency }, double d) => new IrIntConstant(IrType.I64, CurrencyScaled(d)),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, BigInteger i) => new IrFloatConstant((FloatingIrType)ValueType(type), (double)i),
         (RealTypeSymbol { RealKind: not RealKind.Currency }, double d) => new IrFloatConstant((FloatingIrType)ValueType(type), d),
         (PointerTypeSymbol or ProceduralTypeSymbol or ClassTypeSymbol or ClassRefTypeSymbol or InterfaceTypeSymbol or DynamicArrayTypeSymbol, null) => new IrNullConstant(),   // C-209: nil dynamic array
@@ -587,6 +601,9 @@ internal static class IrEmitter
         (SetTypeSymbol, BigInteger mask) => BigSetConstant(mask, type.Size),                                                  // CMP-336
         _ => throw new NotSupportedException($"Constant {constant} of type '{type.Name}' is not emitted yet."),
     };
+
+    /// <summary>C-218 (ABI §2): a Currency value as its Int64 representation, value × 10000 rounded to nearest (ties to even).</summary>
+    internal static BigInteger CurrencyScaled(double value) => new(Math.Round(value * 10000, MidpointRounding.ToEven));
 
     /// <summary>ABI-050: bit <c>k</c> is bit <c>k mod 8</c> of byte <c>k div 8</c>; all zero → <c>zeroinitializer</c>.</summary>
     private static IrConstant BigSetConstant(BigInteger mask, long size)
@@ -2727,7 +2744,49 @@ internal sealed class FunctionEmitter
         return _w.Binary(NewTemp(), IrBinaryOperator.And, nonNegative, unsigned);
     }
 
-    private static bool IsSigned(TypeSymbol type) => type is IntegerTypeSymbol { IsSigned: true };
+    private static bool IsSigned(TypeSymbol type) => type is IntegerTypeSymbol { IsSigned: true } or RealTypeSymbol { RealKind: RealKind.Currency };
+
+    private static bool IsCurrency(TypeSymbol type) => type is RealTypeSymbol { RealKind: RealKind.Currency };
+
+    /// <summary>
+    /// C-218: conversions to and from Currency (an <c>i64</c> holding value × 10000): an integer is extended to <c>i64</c> and
+    /// multiplied by 10000; a real is multiplied by 10000.0 (as Double) and rounded by <c>llvm.llrint</c> (current rounding mode,
+    /// nearest-even by default); Currency → real is <c>sitofp</c> divided by 10000.0.
+    /// </summary>
+    private IrValue CurrencyConvert(IrValue value, TypeSymbol from, TypeSymbol to)
+    {
+        var scale = new IrFloatConstant(IrType.Double, 10000);
+        if (IsCurrency(to))
+        {
+            switch (value)
+            {
+                case IrIntConstant constant:
+                    return new IrIntConstant(IrType.I64, constant.Value * 10000);
+                case { Type: IntegerIrType source }:
+                {
+                    var wide = source.Bits < 64 ? _w.Cast(NewTemp(), IsSigned(from) ? IrCastOperator.SExt : IrCastOperator.ZExt, value, IrType.I64) : value;
+                    return _w.Binary(NewTemp(), IrBinaryOperator.Mul, wide, new IrIntConstant(IrType.I64, 10000));
+                }
+
+                case { Type: FloatingIrType floating }:
+                {
+                    var real = floating.Kind == FloatingKind.Float ? _w.Cast(NewTemp(), IrCastOperator.FPExt, value, IrType.Double) : value;
+                    var scaled = _w.Binary(NewTemp(), IrBinaryOperator.FMul, real, scale);
+                    var llrint = _module.Intrinsic("llvm.llrint.i64.f64", IrType.I64, [IrType.Double]);
+                    return _w.Call(NewTemp(), IrType.I64, llrint, [scaled])!;
+                }
+            }
+        }
+        else if (IrEmitter.ValueType(to) is FloatingIrType target)
+        {
+            IrValue real = value is IrIntConstant constant
+                ? new IrFloatConstant(IrType.Double, (double)constant.Value / 10000)
+                : _w.Binary(NewTemp(), IrBinaryOperator.FDiv, _w.Cast(NewTemp(), IrCastOperator.SIToFP, value, IrType.Double), scale);
+            return target.Kind == FloatingKind.Float ? _w.Cast(NewTemp(), IrCastOperator.FPTrunc, real, target) : real;
+        }
+
+        throw new NotSupportedException($"Conversion from '{from.Name}' to '{to.Name}' is not emitted yet.");
+    }
 
     private static LCompareOperator Mirror(LCompareOperator op) => op switch
     {
@@ -2755,6 +2814,11 @@ internal sealed class FunctionEmitter
     /// </summary>
     private IrValue Convert(IrValue value, TypeSymbol from, TypeSymbol to)
     {
+        if (IsCurrency(from) != IsCurrency(to))
+        {
+            return CurrencyConvert(value, from, to);
+        }
+
         var target = IrEmitter.ValueType(to);
         if (value.Type == target && (from is BooleanTypeSymbol) == (to is BooleanTypeSymbol))
         {

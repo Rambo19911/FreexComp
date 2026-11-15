@@ -116,6 +116,12 @@ internal sealed class LlvmTextWriter : IIrWriter
         _function = new StringBuilder()
             .Append("define ").Append(Linkage(function.Linkage)).Append(Type(function.ReturnType)).Append(" @").Append(Name(function.Name))
             .Append('(').AppendJoin(", ", parameters.Select(Typed)).Append(')').Append(Group(function.AttributeGroup));
+        if (function.Linkage == IrLinkage.LinkOnceOdr)
+        {
+            // C-116 (C-199 rule): a linkonce_odr function needs its COFF comdat too
+            _globals.Add($"${Name(function.Name)} = comdat any");
+            _function.Append(" comdat");
+        }
         _headerEnd = _function.Length;
         _function.Append(" {\n");
         _inBlock = false;

@@ -62,6 +62,8 @@ internal static class ConstantBytes
             case (RealTypeSymbol { RealKind: RealKind.Single }, BigInteger or double):
                 BinaryPrimitives.WriteSingleLittleEndian(buffer.AsSpan((int)offset), (float)Real(constant.Value));
                 return true;
+            case (RealTypeSymbol { RealKind: RealKind.Currency }, BigInteger or double):                 // C-218
+                return Integer(IrEmitter.CurrencyScaled(Real(constant.Value)), 8, buffer, offset);
             case (RealTypeSymbol { RealKind: RealKind.Double }, BigInteger or double):
                 BinaryPrimitives.WriteDoubleLittleEndian(buffer.AsSpan((int)offset), Real(constant.Value));
                 return true;

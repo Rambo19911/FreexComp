@@ -60,7 +60,7 @@ internal static class IntrinsicRewriter
             case IntrinsicKind.Odd:
                 return context.Compare(LCompareOperator.NotEqual,
                     new LBinary(LBinaryOperator.And, operand, context.Constant(BigInteger.One, argument.Type)), context.Constant(BigInteger.Zero, argument.Type));
-            case IntrinsicKind.Abs when argument.Type is RealTypeSymbol:
+            case IntrinsicKind.Abs when argument.Type is RealTypeSymbol { RealKind: not RealKind.Currency }:
                 return new LUnary(LUnaryOperator.Abs, operand);
             case IntrinsicKind.Abs:
                 return Once(context, operand, v => new LSelect(
@@ -95,12 +95,12 @@ internal static class IntrinsicRewriter
             case IntrinsicKind.Ptr:
                 return new LConvert(operand, call.Type);                                     // inttoptr (CMP-313)
             case IntrinsicKind.Sqrt:
-                return new LUnary(LUnaryOperator.Sqrt, operand);                             // llvm.sqrt.f64 (CMP-412)
+                return new LUnary(LUnaryOperator.Sqrt, context.Convert(operand, context.Types.Double));                             // llvm.sqrt.f64 (CMP-412)
             case IntrinsicKind.Trunc or IntrinsicKind.Round or IntrinsicKind.Int or IntrinsicKind.Frac:
             {
                 // CMP-412: RTL helpers _Trunc/_Round (→ Int64) and _Int/_Frac (→ Double), rtl-abi.md §9.10; the operand is a Double
                 var helper = new RuntimeHelper("_" + call.Intrinsic.Intrinsic, [context.Types.Double], call.Type, IsNoReturn: false);
-                return new LCall(new LHelperCallee(helper), [operand]);
+                return new LCall(new LHelperCallee(helper), [context.Convert(operand, context.Types.Double)]);
             }
 
             default:

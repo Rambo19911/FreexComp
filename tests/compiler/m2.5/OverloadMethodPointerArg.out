@@ -1,0 +1,7 @@
+run c
+two: run c
+two(TRUE): run c
+two(FALSE): run c
+two s
+plain
+int 3

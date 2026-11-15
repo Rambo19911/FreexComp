@@ -14,6 +14,9 @@ public sealed class BuiltInTypes
     /// <summary>Some unit of the compilation declares a helper (C-124): member lookups then look for active helpers (LANG-752).</summary>
     internal bool HasHelpers { get; set; }
 
+    /// <summary>C-116: generic instances are made under this lock (units are bound in parallel; LANG-710 identity across units).</summary>
+    internal object GenericGate { get; } = new();
+
     internal BuiltInTypes()
     {
         Scope = new Scope(ScopeKind.BuiltIn, parent: null);
@@ -127,6 +130,7 @@ public sealed class BuiltInTypes
         Intrinsic("Eoln", IntrinsicKind.Eoln, "Eoln[(var F: Text)]: Boolean");
         Intrinsic("Slice", IntrinsicKind.Slice, "Slice(const A: array; Count: Integer): array");
         Intrinsic("TypeInfo", IntrinsicKind.TypeInfo, "TypeInfo(T: Type): Pointer");
+        Intrinsic("Default", IntrinsicKind.Default, "Default(T: Type): T");                    // LANG-713 (C-116)
     }
 
     /// <summary>

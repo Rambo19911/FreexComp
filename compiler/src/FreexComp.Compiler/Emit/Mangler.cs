@@ -26,7 +26,7 @@ internal static class Mangler
         }
 
         var prefix = routine.ContainingSymbol is RoutineSymbol outer ? RoutineText(outer) : routine.ContainingSymbol?.QualifiedName;
-        var name = prefix is null ? routine.Name : prefix + "." + routine.Name;
+        var name = (prefix is null ? routine.Name : prefix + "." + routine.Name) + routine.GenericSuffix;
         // C-123: conversion operators may differ in their result only (Implicit to Integer and to Double), so operators add it
         return routine is MethodSymbol { OperatorName: not null, ReturnType: { } result } ? name + "$" + Signature(routine.Parameters) + "$" + TypeName(result)
             : routine.IsOverload ? name + "$" + Signature(routine.Parameters) : name;

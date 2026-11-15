@@ -78,7 +78,79 @@ internal static class Binder
         var diagnostics = new DiagnosticBag();
         var outer = SystemScope(types, system);
         var interfacePart = DeclarationBinder.BindInterface(tree, types, diagnostics, outer);
-        return Complete(tree, interfacePart, types, diagnostics, outer, system?.Unit);
+        return BindInstances(Complete(tree, interfacePart, types, diagnostics, outer, system?.Unit));
+    }
+
+    /// <summary>
+    /// C-116 (CMP-385, LANG-711): the method bodies of the generic instances the unit uses — also those that only these bodies use —
+    /// bound for this unit (it emits them <c>linkonce_odr</c>) and appended to its routines and diagnostics. Run once every unit of
+    /// the compilation has bound its implementation part (the generic's method implementations are known then).
+    /// </summary>
+    public static BindingResult BindInstances(BindingResult result)
+    {
+        var unit = result.Unit;
+        var bound = result.Routines.Select(r => r.Routine).ToHashSet();
+        var routines = ImmutableArray.CreateBuilder<BoundRoutineBody>();
+        using (GenericUses.For(unit))
+        {
+            for (var i = 0; ; i++)
+            {
+                Symbol instance;
+                lock (unit.UsedInstances)
+                {
+                    if (i >= unit.UsedInstances.Count)
+                    {
+                        break;
+                    }
+
+                    instance = unit.UsedInstances[i];
+                }
+
+                ImmutableArray<MethodSymbol> methods = instance switch
+                {
+                    ClassTypeSymbol c => c.Methods,
+                    RecordTypeSymbol r => r.Methods,
+                    MethodSymbol genericMethod => [genericMethod],                   // C-117: a generic method instance
+                    _ => [],
+                };
+                var pending = new Queue<RoutineSymbol>(methods.Where(m => m.Definition != null && bound.Add(m)));
+                while (pending.Count > 0)
+                {
+                    var body = BindRoutineBody(result.Types, pending.Dequeue());
+                    routines.Add(body);
+                    foreach (var nested in body.NestedRoutines.Where(r => r.Definition != null))
+                    {
+                        pending.Enqueue(nested);
+                    }
+                }
+            }
+        }
+
+        // LANG-711 (C-118): errors in an instance body are E2710 naming the instance; all diagnostics stay in file and position order
+        var instanceDiagnostics = routines.SelectMany(r => r.Diagnostics.Select(d => DiagnosticBag.InInstance(d, InstanceName(r.Routine)))).OfType<Diagnostic>();
+        return routines.Count == 0 ? result : result with
+        {
+            Routines = result.Routines.AddRange(routines),
+            Diagnostics = [.. result.Diagnostics.Concat(instanceDiagnostics)
+                .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase).ThenBy(d => d.Location.Span.Start)],
+        };
+    }
+
+    /// <summary>The generic instance a routine belongs to, for E2710: <c>TList&lt;TRec&gt;</c>, <c>TUtil.Max&lt;TRec&gt;</c>.</summary>
+    private static string InstanceName(RoutineSymbol routine)
+    {
+        for (var symbol = (Symbol?)routine; symbol is not null; symbol = symbol.ContainingSymbol)
+        {
+            switch (symbol)
+            {
+                case MethodSymbol { GenericMethodDefinition: not null } method:
+                    return method.Owner.Name + "." + method.Name + "<" + string.Join(", ", method.GenericMethodDefinition.Instances.First(p => ReferenceEquals(p.Value, method)).Key.Select(a => a.Name)) + ">";
+                case TypeSymbol { IsGenericInstance: true } type:
+                    return type.Name;
+            }
+        }
+
+        return routine.Name;
     }
 
     /// <summary>

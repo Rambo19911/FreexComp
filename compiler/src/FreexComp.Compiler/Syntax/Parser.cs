@@ -322,6 +322,11 @@ internal sealed class Parser
     {
         var classKeyword = CurrentKind == SyntaxKind.ClassKeyword ? Take() : (SyntaxToken?)null;
         var keyword = IsRoutineKeyword(CurrentKind) ? Take() : TakeContextual();
+        if (classKeyword is not null && IsContextual(keyword, SyntaxKind.OperatorKeyword))
+        {
+            OperatorNameAsIdentifier();
+        }
+
         var name = ParseRoutineName();
         var typeParameters = CurrentKind == SyntaxKind.LessThanToken ? ParseTypeParameterList() : null;
         var parameters = CurrentKind == SyntaxKind.OpenParenToken ? ParseParameterList() : null;
@@ -335,6 +340,25 @@ internal sealed class Parser
         }
 
         return new RoutineHeadingSyntax(classKeyword, keyword, name, typeParameters, parameters, colon, result);
+    }
+
+    /// <summary>
+    /// C-220 (LANG-731): after <c>class operator</c> the reserved word <c>in</c> names the <c>In</c> operator — as the routine name
+    /// or as the last segment of <c>TFoo.In</c> — so it is re-tokenised as an identifier with the same text and trivia.
+    /// </summary>
+    private void OperatorNameAsIdentifier()
+    {
+        var offset = 0;
+        while (Peek(offset).Kind == SyntaxKind.IdentifierToken && Peek(offset + 1).Kind == SyntaxKind.DotToken)
+        {
+            offset += 2;
+        }
+
+        if (Peek(offset) is { Kind: SyntaxKind.InKeyword } token)
+        {
+            _tokens = _tokens.SetItem(_position + offset, new SyntaxToken(SyntaxKind.IdentifierToken, token.Text, token.Text, token.Span.Start,
+                token.LeadingTrivia, token.TrailingTrivia, token.DirectiveState, token.File));
+        }
     }
 
     private static readonly FrozenSet<SyntaxKind> DirectiveKinds = new[]

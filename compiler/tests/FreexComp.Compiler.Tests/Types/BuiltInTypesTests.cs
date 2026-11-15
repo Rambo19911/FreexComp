@@ -82,6 +82,7 @@ public sealed class BuiltInTypesTests
             "Read", "Readln", "Eof", "Eoln",                                                                // M2.2 (C-066)
             "Slice",                                                                                        // M2.5 (C-106)
             "TypeInfo",                                                                                     // M2.5 (C-112)
+            "Default",                                                                                      // M2.6 (C-116)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

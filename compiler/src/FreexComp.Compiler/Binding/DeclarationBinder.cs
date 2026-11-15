@@ -221,6 +221,12 @@ internal sealed partial class DeclarationBinder
                 continue;
             }
 
+            if (declaration.TypeParameterList is { } genericParameters)
+            {
+                BindGenericDeclaration(declaration, genericParameters, declared);                               // C-116 (LANG-700)
+                continue;
+            }
+
             if (declaration.Type is ClassTypeSyntax classSyntax && declaration.TypeParameterList is null && declaration.TypeKeyword is null)
             {
                 BindClassDeclaration(identifier, classSyntax, declared, forwardClasses);
@@ -249,11 +255,7 @@ internal sealed partial class DeclarationBinder
 
             TypeSymbol type;
             _declaringType = (NameOf(identifier), declaration.Type);
-            if (declaration.TypeParameterList is { } typeParameters)
-            {
-                type = Unsupported(typeParameters, "generic type");           // M2.6
-            }
-            else if (declaration.TypeKeyword is not null)
+            if (declaration.TypeKeyword is not null)
             {
                 type = BindDistinctType(declaration.Type, identifier, declared);
             }
@@ -328,7 +330,7 @@ internal sealed partial class DeclarationBinder
                 return new EnumTypeSymbol(name, (EnumTypeSymbol)Ordinals.Host(e), e.Low, e.High, _container, locations);
             case BooleanTypeSymbol boolean:
                 return new BooleanTypeSymbol(name, (int)boolean.Size, boolean.IsCStyle);
-            case RealTypeSymbol { RealKind: not RealKind.Currency } real:
+            case RealTypeSymbol real:
                 return new RealTypeSymbol(name, real.RealKind);
             case PointerTypeSymbol { PointedType: var pointed } pointer when !ReferenceEquals(pointer, _types.Nil):
                 return new PointerTypeSymbol(name, pointed, pointer.AllowsPointerMath);
@@ -1184,11 +1186,16 @@ internal sealed partial class DeclarationBinder
         identifier = token;
         var unsupported = heading.ClassKeyword != null ? "class routine"
             : heading.Keyword.Kind is not (SyntaxKind.ProcedureKeyword or SyntaxKind.FunctionKeyword) ? heading.Keyword.Text.ToLowerInvariant()
-            : heading.TypeParameterList != null ? "generic routine"
             : null;
         if (unsupported != null)
         {
             _diagnostics.Report(heading, "E2900", unsupported);
+            return false;
+        }
+
+        if (heading.TypeParameterList != null)
+        {
+            _diagnostics.Report(identifier, "E2700");                          // LANG-701 (C-117): only methods may be generic
             return false;
         }
 
@@ -1564,7 +1571,7 @@ internal sealed partial class DeclarationBinder
             return _types.Error;
         }
 
-        var typeName = declaredAt is { } identifier ? NameOf(identifier) : type.ToString().Trim();
+        var typeName = TakeInstanceName() ?? (declaredAt is { } identifier ? NameOf(identifier) : AnonymousName(type));
         switch (type)
         {
             case EnumTypeSyntax enumType:
@@ -1620,8 +1627,10 @@ internal sealed partial class DeclarationBinder
             case NamedTypeSyntax { Name: QualifiedNameSyntax qualified }:
                 _diagnostics.ReportUndeclared(qualified.Left, NameOf(qualified.Left));    // no used unit of that name
                 return _types.Error;
+            case NamedTypeSyntax { Name: GenericNameSyntax generic }:
+                return BindGenericName(generic);                                            // C-116 (LANG-710)
             case NamedTypeSyntax:
-                return Unsupported(type, "generic type");
+                return Unsupported(type, "qualified generic type");
             case StringTypeSyntax { Length: null }:
                 return _types.String;
             case StringTypeSyntax { Length: { } length }:
@@ -1675,8 +1684,6 @@ internal sealed partial class DeclarationBinder
             case HelperTypeSymbol helper:
                 _diagnostics.Report(name, "E2751", helper.Name);                // LANG-754 (C-124)
                 return _types.Error;
-            case TypeSymbol type when ReferenceEquals(type, _types.Currency):
-                return Unsupported(name, "Currency");                   // LANG-200, Phase 8+
             case TypeSymbol type:
                 return type;
             default:

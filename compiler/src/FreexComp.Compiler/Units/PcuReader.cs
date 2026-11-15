@@ -325,7 +325,23 @@ internal static class PcuReader
                     };
                     _byId[id] = record;
                     record.Fields = [.. Array(entry, "fields").Select(f => new FieldSymbol(Text(f, "name"), Type(f!, "type"), f!["offset"]!.GetValue<long>(), record, []))];
+                    record.ClassVariables = ClassVars(record, entry);                                       // C-219
+                    record.Methods = [.. (entry["methods"] as JsonArray ?? []).Select(m => StaticMethod(record, m!))];
+                    record.Properties = [.. (entry["properties"] as JsonArray ?? []).Select(p => Property(record, p!))];
                     return record;
+                }
+
+                case "helper":
+                {
+                    var helper = new HelperTypeSymbol(name, entry["classHelper"]!.GetValue<bool>(), Type(entry, "extends"), _unit, []);   // C-219
+                    _byId[id] = helper;
+                    helper.Parent = entry["parent"] is null ? null
+                        : Type(entry, "parent") as HelperTypeSymbol ?? throw new PcuFormatException($"the ancestor of '{name}' is not a helper");
+                    helper.ClassVariables = ClassVars(helper, entry);
+                    helper.Methods = [.. Array(entry, "methods").Select(m => StaticMethod(helper, m!))];
+                    helper.Properties = [.. (entry["properties"] as JsonArray ?? []).Select(p => Property(helper, p!))];
+                    types.HasHelpers = true;
+                    return helper;
                 }
 
                 case "procedural" when entry["ofObject"] is JsonValue ofObject && ofObject.GetValue<bool>():
@@ -350,6 +366,9 @@ internal static class PcuReader
                     return Class(id, entry, name);
                 case "interface":
                     return Interface(id, entry, name);
+                case "generic":
+                    // C-116: without its body text (C-119) an imported generic cannot be instantiated (E2900 at the use)
+                    return _byId[id] = new GenericTypeSymbol(name, [.. Array(entry, "typeParams").Select(p => Text(p, "name"))], null, null, 0, _unit, []);
                 case "classRef":
                 {
                     var target = Type(entry, "target") as ClassTypeSymbol ?? throw new PcuFormatException($"'{name}' does not refer to a class");
@@ -517,8 +536,61 @@ internal static class PcuReader
             return method;
         }
 
-        /// <summary>A property; its accessors are a method's link name or a field path from the class (LANG-641).</summary>
-        private PropertySymbol Property(ClassTypeSymbol type, JsonNode entry)
+        /// <summary>The class vars of a record or helper (C-219); a file written before C-219 has no visibility (public).</summary>
+        private ImmutableArray<VariableSymbol> ClassVars(TypeSymbol owner, JsonNode entry) =>
+            [.. (entry["classVars"] as JsonArray ?? []).Select(v =>
+            {
+                var visibility = v!["visibility"] is JsonValue text ? VisibilityOf(text.GetValue<string>()) : Visibility.Public;
+                var variable = new VariableSymbol(Text(v, "name"), Type(v, "type"), isGlobal: true, owner, [], visibility: visibility);
+                variable.ExplicitLinkName = Explicit(Text(v, "linkName"), Emit.Mangler.GlobalVariable(variable).Text);
+                return variable;
+            })];
+
+        /// <summary>
+        /// C-219: a record or helper method as the binder creates it (C-122…C-124): class methods, record constructors and operators are
+        /// static; a record constructor returns the record through its <c>Result</c>; an instance method's <c>Self</c> is a <c>var</c>
+        /// parameter of the record (or the helped value), the object itself for a class helper.
+        /// </summary>
+        private MethodSymbol StaticMethod(TypeSymbol owner, JsonNode entry)
+        {
+            var flags = Array(entry, "flags").Select(f => f!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
+            var name = Text(entry, "name");
+            var isConstructor = flags.Contains("constructor");
+            var isStatic = flags.Contains("class") || isConstructor;
+            var method = new MethodSymbol(name, owner, [], declaration: null!, isStatic ? MethodKind.ClassStatic : MethodKind.Ordinary,
+                VisibilityOf(Text(entry, "visibility")))
+            {
+                IsRecordConstructor = isConstructor,
+                OperatorName = flags.Contains("operator")
+                    ? Binding.Operators.Arity.Keys.FirstOrDefault(k => Syntax.IdentifierComparer.Instance.Equals(k, name)) ?? throw new PcuFormatException($"unknown operator '{name}'")
+                    : null,
+            };
+            method.Parameters = Parameters(entry, method);
+            method.ReturnType = entry["result"] is null ? null : Type(entry, "result");
+            method.IsOverload = flags.Contains("overload");
+            method.IsInline = flags.Contains("inline");
+            method.IsNoReturn = flags.Contains("noreturn");
+            if (isConstructor)
+            {
+                method.ResultVariable = new VariableSymbol("Result", owner, isGlobal: false, method, []);
+            }
+            else if (!isStatic)
+            {
+                var helper = owner as HelperTypeSymbol;
+                method.SelfParameter = new ParameterSymbol("Self", helper?.ExtendedType ?? owner,
+                    helper is { IsClassHelper: true } ? ParameterMode.Value : ParameterMode.Var, -1, method, []);
+            }
+
+            if (Text(entry, "linkName") != method.LinkName)
+            {
+                throw new PcuFormatException($"link name of method '{owner.Name}.{name}'");
+            }
+
+            return method;
+        }
+
+        /// <summary>A property; its accessors are a method's link name or a field path from the class, record or helper (LANG-641).</summary>
+        private PropertySymbol Property(TypeSymbol type, JsonNode entry)
         {
             var property = new PropertySymbol(Text(entry, "name"), type, [], VisibilityOf(Text(entry, "visibility")))
             {
@@ -534,15 +606,33 @@ internal static class PcuReader
             return property;
         }
 
-        private static (ImmutableArray<Symbol> Path, MethodSymbol? Method) Accessor(ClassTypeSymbol type, JsonNode? accessor)
+        private static (ImmutableArray<Symbol> Path, MethodSymbol? Method) Accessor(TypeSymbol type, JsonNode? accessor)
         {
             if (accessor is not JsonValue value)
             {
                 return ([], null);
             }
 
+            static IEnumerable<MethodSymbol> MethodsOf(TypeSymbol? t) => t switch
+            {
+                ClassTypeSymbol c => c.SelfAndAncestors().SelectMany(a => a.Methods),
+                RecordTypeSymbol r => r.Methods,
+                HelperTypeSymbol h => h.SelfAndAncestors().SelectMany(a => a.Methods).Concat(MethodsOf(h.ExtendedType)),
+                _ => [],
+            };
+
+            static Symbol? Member(TypeSymbol? t, string part) => t switch
+            {
+                ClassTypeSymbol c => c.SelfAndAncestors().SelectMany(a => a.Fields.Cast<Symbol>().Concat(a.ClassVariables))
+                    .FirstOrDefault(f => string.Equals(f.Name, part, StringComparison.OrdinalIgnoreCase)),
+                RecordTypeSymbol r => r.Fields.Cast<Symbol>().Concat(r.ClassVariables).FirstOrDefault(f => string.Equals(f.Name, part, StringComparison.OrdinalIgnoreCase)),
+                HelperTypeSymbol h => h.SelfAndAncestors().SelectMany(a => a.ClassVariables).FirstOrDefault(f => string.Equals(f.Name, part, StringComparison.OrdinalIgnoreCase))
+                    ?? Member(h.ExtendedType, part),
+                _ => null,
+            };
+
             var text = value.GetValue<string>();
-            if (type.SelfAndAncestors().SelectMany(c => c.Methods).FirstOrDefault(m => m.LinkName == text) is { } method)
+            if (MethodsOf(type).FirstOrDefault(m => m.LinkName == text) is { } method)
             {
                 return ([], method);
             }
@@ -551,13 +641,7 @@ internal static class PcuReader
             TypeSymbol? current = type;
             foreach (var part in text.Split('.'))
             {
-                Symbol? member = current switch
-                {
-                    ClassTypeSymbol c => c.SelfAndAncestors().SelectMany(a => a.Fields.Cast<Symbol>().Concat(a.ClassVariables))
-                        .FirstOrDefault(f => string.Equals(f.Name, part, StringComparison.OrdinalIgnoreCase)),
-                    RecordTypeSymbol r => r.Fields.FirstOrDefault(f => string.Equals(f.Name, part, StringComparison.OrdinalIgnoreCase)),
-                    _ => null,
-                };
+                var member = Member(current, part);
                 path.Add(member ?? throw new PcuFormatException($"property accessor '{text}' of '{type.Name}'"));
                 current = member switch { FieldSymbol f => f.Type, VariableSymbol v => v.Type, _ => null };
             }

@@ -47,6 +47,9 @@ public sealed class MethodSymbol : RoutineSymbol
     /// <summary>The LANG-731 operator name of a <c>class operator</c> (<c>Add</c>, <c>Implicit</c>…, C-123); null for other methods.</summary>
     public string? OperatorName { get; internal set; }
 
+    /// <summary>The generic method this method is an instance of (LANG-701, C-117); null otherwise.</summary>
+    public GenericMethodSymbol? GenericMethodDefinition { get; internal set; }
+
     /// <summary>Introduces a VMT slot (<c>virtual</c> or <c>dynamic</c>, ABI-074).</summary>
     public bool IsVirtual { get; internal set; }
 

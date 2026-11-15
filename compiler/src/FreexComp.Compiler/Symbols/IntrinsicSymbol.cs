@@ -50,6 +50,9 @@ internal enum IntrinsicKind
 
     // M2.5 RTTI (CMP-407, C-112; the address of the operand type's RTTI block, never constant)
     TypeInfo,
+
+    // M2.6 generics (LANG-713, C-116; the zero value of the operand type)
+    Default,
 }
 
 /// <summary>A compiler-magic routine predeclared in the outermost scope (LANG-900); user symbols may hide it.</summary>

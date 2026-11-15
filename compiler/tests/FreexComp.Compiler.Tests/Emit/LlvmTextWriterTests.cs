@@ -182,7 +182,9 @@ public sealed class LlvmTextWriterTests
         });
 
         Assert.Contains("define internal void @\"M.Hidden\"() #0 {", text);
-        Assert.Contains("define linkonce_odr void @\"M.Inst\"() #0 {", text);
+        // C-116 (C-199 rule for COFF): a linkonce_odr function carries its comdat
+        Assert.Contains("define linkonce_odr void @\"M.Inst\"() #0 comdat {", text);
+        Assert.Contains("$\"M.Inst\" = comdat any", text);
         Assert.Contains("define private void @\"M.Priv\"() #0 {", text);
     }
 

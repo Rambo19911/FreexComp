@@ -382,4 +382,66 @@ public sealed class ExpressionTypingTests
         new ExpressionBinder(types, declarations.Scope, diagnostics).BindExpression(assignment.Value);
         return Format(diagnostics.ToImmutable());
     }
+
+    // ------------------------------------------------------------------ C-218: Currency
+
+    /// <summary>
+    /// C-218: <c>+</c>, <c>-</c>, comparisons and negation of Currency with Currency or integer operands compute in Currency
+    /// (exact scaled Int64); <c>*</c>, <c>/</c> and any real operand compute in Double.
+    /// </summary>
+    [Theory]
+    [InlineData("cu + cu", "Currency")]
+    [InlineData("cu - i", "Currency")]
+    [InlineData("i + cu", "Currency")]
+    [InlineData("-cu", "Currency")]
+    [InlineData("cu * i", "Double")]
+    [InlineData("cu * cu", "Double")]
+    [InlineData("cu / 2", "Double")]
+    [InlineData("cu + d", "Double")]
+    [InlineData("cu + s", "Double")]
+    public void Currency_ComputationType(string expression, string expected)
+    {
+        var (dump, diagnostics) = BindCurrency(expression);
+        Assert.Empty(diagnostics);
+        Assert.Equal(expected, dump[(dump.IndexOf(':', StringComparison.Ordinal) + 1)..dump.IndexOf(' ', StringComparison.Ordinal)]);
+    }
+
+    [Theory]
+    [InlineData("cu < i", "(Less:Boolean cu:Currency (conv Currency i:Integer))")]
+    [InlineData("cu = d", "(Equal:Boolean (conv Double cu:Currency) d:Double)")]
+    public void Currency_Comparisons(string expression, string expected)
+    {
+        var (dump, diagnostics) = BindCurrency(expression);
+        Assert.Empty(diagnostics);
+        Assert.Equal(expected, dump);
+    }
+
+    /// <summary>C-218: integers and reals convert to Currency implicitly; Currency converts to reals but never to integers.</summary>
+    [Theory]
+    [InlineData("cu := i", "")]
+    [InlineData("cu := d", "")]
+    [InlineData("d := cu", "")]
+    [InlineData("s := cu", "")]
+    [InlineData("cu := 1.25", "")]
+    [InlineData("i := cu", "E2010(2,6): Incompatible types: 'Currency' and 'Integer'")]
+    public void Currency_Assignments(string statement, string expected)
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(TestPath, $"program P; {Variables} var cu: Currency; begin\n{statement};\nend."));
+        Assert.Empty(tree.Diagnostics);
+        var result = Binder.BindCompilationUnit(tree, new BuiltInTypes());
+        Assert.Equal(expected.Length == 0 ? [] : [expected], Format(result.Diagnostics.Where(d => d.Code != "H2002" && d.Code != "W1041")));
+    }
+
+    private static (string Dump, string[] Diagnostics) BindCurrency(string expression)
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(TestPath, $"program P; {Variables} var cu: Currency; begin\nX := {expression};\nend."));
+        Assert.Empty(tree.Diagnostics);
+        var types = new BuiltInTypes();
+        var declarations = DeclarationBinder.BindCompilationUnit(tree, types);
+        Assert.Empty(Format(declarations.Diagnostics));
+        var assignment = tree.Root.DescendantNodes().OfType<AssignmentStatementSyntax>().First();
+        var diagnostics = new DiagnosticBag();
+        var bound = new ExpressionBinder(types, declarations.Scope, diagnostics).BindExpression(assignment.Value);
+        return (BoundDump.Of(bound), Format(diagnostics.ToImmutable()));
+    }
 }

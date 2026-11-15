@@ -1,0 +1,4 @@
+ErrGenericConstraint.pas(30,15): error E2704: Type argument 'Integer' does not satisfy constraint 'class' of 'T'
+ErrGenericConstraint.pas(31,13): error E2704: Type argument 'TBase' does not satisfy constraint 'record' of 'T'
+ErrGenericConstraint.pas(32,6): error E2703: 'TObjList' requires 1 type argument(s)
+ErrGenericConstraint.pas(26,15): error E2710: In instantiation 'TSorter<TRec>': Operator '<' not applicable to operand type(s) 'TRec' and 'TRec'
