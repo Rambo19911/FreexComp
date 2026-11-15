@@ -1,0 +1,39 @@
+# construction (RTL-450)
+ok class reference creates the class
+ok the overriding constructor ran
+ok ComponentStyle
+ok ComponentState
+ok no owner
+ok no components
+ok ComponentIndex without owner
+ok Create(AOwner) inserts
+ok owner validates and is notified on insert
+# insert (RTL-451)
+ok the owner validates, then owner and owned are notified
+ok Components and ComponentIndex
+ok moved from the old owner
+ok new owner
+ok old owner list
+ok the owner's ValidateInsert can refuse
+ok refused component not inserted
+ok csDesigning propagated on insert
+ok SetDesigning reaches owned components
+ok SetDesigning False
+# remove (RTL-452)
+ok RemoveComponent notifies before removing
+ok owner cleared
+ok removed from the list
+# ComponentIndex (RTL-460)
+ok before
+ok moved to 0
+ok clamped high
+ok clamped low
+ok Components index error
+ok Components of a component without children
+# loading (RTL-461)
+ok Loading sets csLoading
+ok Loaded clears csLoading
+# destruction (RTL-453)
+ok Destroying reaches the whole tree
+ok last to first, removed before destroyed
+# passed 32 failed 0

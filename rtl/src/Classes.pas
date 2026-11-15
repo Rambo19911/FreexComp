@@ -42,8 +42,9 @@ type
   EFilerError = class(EStreamError);
   EReadError = class(EFilerError);
   EWriteError = class(EFilerError);
-  EClassNotFound = class(EFilerError);
-  EMethodNotFound = class(EFilerError);
+  { form-format.md section 5: every reader exception descends from EReadError }
+  EClassNotFound = class(EReadError);
+  EMethodNotFound = class(EReadError);
   EInvalidImage = class(EFilerError);
   EResNotFound = class(Exception);
   EComponentError = class(Exception);
@@ -53,6 +54,7 @@ type
   EBitsError = class(Exception);
 
   TFiler = class;
+  TStream = class;
 
   { section 3 }
   {$M+}
@@ -183,6 +185,14 @@ type
     procedure Insert(Index: Integer; const S: string); virtual; abstract;
     procedure InsertObject(Index: Integer; const S: string; AObject: TObject); virtual;
     procedure Move(CurIndex, NewIndex: Integer); virtual;
+    procedure LoadFromFile(const FileName: string); overload; virtual;
+    procedure LoadFromFile(const FileName: string; Encoding: TEncoding); overload; virtual;
+    procedure LoadFromStream(Stream: TStream); overload; virtual;
+    procedure LoadFromStream(Stream: TStream; Encoding: TEncoding); overload; virtual;
+    procedure SaveToFile(const FileName: string); overload; virtual;
+    procedure SaveToFile(const FileName: string; Encoding: TEncoding); overload; virtual;
+    procedure SaveToStream(Stream: TStream); overload; virtual;
+    procedure SaveToStream(Stream: TStream; Encoding: TEncoding); overload; virtual;
     property Capacity: Integer read GetCapacity write SetCapacity;
     property Count: Integer read GetCount;
     property Strings[Index: Integer]: string read Get write Put; default;
@@ -265,6 +275,75 @@ type
     property OwnsObjects: Boolean read FOwnsObjects write FOwnsObjects;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
     property OnChanging: TNotifyEvent read FOnChanging write FOnChanging;
+  end;
+
+  { section 7 }
+  TCollection = class;
+  TCollectionNotification = (cnAdded, cnExtracting, cnDeleting);
+
+  TCollectionItem = class(TPersistent)
+  private
+    FCollection: TCollection;
+    FID: Integer;
+    function GetIndex: Integer;
+  protected
+    procedure Changed(AllItems: Boolean);
+    function GetOwner: TPersistent; override;
+    function GetDisplayName: string; virtual;
+    procedure SetCollection(Value: TCollection); virtual;
+    procedure SetIndex(Value: Integer); virtual;
+    procedure SetDisplayName(const Value: string); virtual;
+  public
+    constructor Create(Collection: TCollection); virtual;
+    destructor Destroy; override;
+    function GetNamePath: string; override;
+    property Collection: TCollection read FCollection write SetCollection;
+    property ID: Integer read FID;
+    property Index: Integer read GetIndex write SetIndex;
+    property DisplayName: string read GetDisplayName write SetDisplayName;
+  end;
+  TCollectionItemClass = class of TCollectionItem;
+
+  TCollection = class(TPersistent)
+  private
+    FItemClass: TCollectionItemClass;
+    FItems: TList;
+    FUpdateCount: Integer;
+    FNextID: Integer;
+    function GetCount: Integer;
+    procedure InsertItem(Item: TCollectionItem);
+    procedure RemoveItem(Item: TCollectionItem);
+  protected
+    procedure Changed;
+    function GetItem(Index: Integer): TCollectionItem;
+    procedure SetItem(Index: Integer; Value: TCollectionItem);
+    procedure Update(Item: TCollectionItem); virtual;
+    procedure Notify(Item: TCollectionItem; Action: TCollectionNotification); virtual;
+    property UpdateCount: Integer read FUpdateCount;
+  public
+    constructor Create(ItemClass: TCollectionItemClass);
+    destructor Destroy; override;
+    function Owner: TPersistent;
+    function Add: TCollectionItem;
+    function Insert(Index: Integer): TCollectionItem;
+    procedure Delete(Index: Integer);
+    procedure Clear;
+    procedure Assign(Source: TPersistent); override;
+    procedure BeginUpdate; virtual;
+    procedure EndUpdate; virtual;
+    function FindItemID(ID: Integer): TCollectionItem;
+    property Count: Integer read GetCount;
+    property ItemClass: TCollectionItemClass read FItemClass;
+    property Items[Index: Integer]: TCollectionItem read GetItem write SetItem;
+  end;
+
+  TOwnedCollection = class(TCollection)
+  private
+    FOwner: TPersistent;
+  protected
+    function GetOwner: TPersistent; override;
+  public
+    constructor Create(AOwner: TPersistent; ItemClass: TCollectionItemClass);
   end;
 
   { section 6.1 }
@@ -362,8 +441,337 @@ type
     property Encoding: TEncoding read FEncoding;
   end;
 
-  { section 10.3 (completed by the reader tasks) }
+  { section 8 }
+  TReader = class;
+  TWriter = class;
+  TComponent = class;
+  TBasicAction = class;
+  TBasicActionLink = class;
+
+  TComponentStateItem = (csLoading, csReading, csWriting, csDestroying, csDesigning, csAncestor, csUpdating, csFixups,
+    csFreeNotification, csInline, csDesignInstance);
+  TComponentState = set of TComponentStateItem;
+  TComponentStyleItem = (csInheritable, csCheckPropAvail, csSubComponent, csTransient);
+  TComponentStyle = set of TComponentStyleItem;
+  TGetChildProc = procedure(Child: TComponent) of object;
+
+  TComponent = class(TPersistent)
+  private
+    FOwner: TComponent;
+    FName: TComponentName;
+    FTag: NativeInt;
+    FComponents: TList;
+    FFreeNotifies: TList;
+    FDesignInfo: Integer;
+    FComponentState: TComponentState;
+    FComponentStyle: TComponentStyle;
+    function GetComponent(Index: Integer): TComponent;
+    function GetComponentCount: Integer;
+    function GetComponentIndex: Integer;
+    procedure SetComponentIndex(Value: Integer);
+    procedure Insert(AComponent: TComponent);
+    procedure Remove(AComponent: TComponent);
+    procedure RemoveNotification(AComponent: TComponent);
+    procedure BindField(const AName: string; Bind: Boolean);
+    procedure ReadDesignLeft(Reader: TReader);
+    procedure ReadDesignTop(Reader: TReader);
+    procedure WriteDesignLeft(Writer: TWriter);
+    procedure WriteDesignTop(Writer: TWriter);
+  protected
+    procedure Loaded; virtual;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); virtual;
+    procedure ReadState(Reader: TReader); virtual;
+    procedure WriteState(Writer: TWriter); virtual;
+    procedure SetName(const NewName: TComponentName); virtual;
+    procedure ValidateRename(AComponent: TComponent; const CurName, NewName: string); virtual;
+    procedure ValidateContainer(AComponent: TComponent); virtual;
+    procedure ValidateInsert(AComponent: TComponent); virtual;
+    procedure GetChildren(Proc: TGetChildProc; Root: TComponent); virtual;
+    function GetChildOwner: TComponent; virtual;
+    function GetChildParent: TComponent; virtual;
+    procedure SetParentComponent(Value: TComponent); virtual;
+    procedure DefineProperties(Filer: TFiler); override;
+    procedure SetDesigning(Value: Boolean; SetChildren: Boolean = True);
+    procedure SetAncestor(Value: Boolean);
+    procedure Loading;
+    procedure Updating;
+    procedure Updated;
+  public
+    constructor Create(AOwner: TComponent); virtual;
+    destructor Destroy; override;
+    procedure BeforeDestruction; override;
+    procedure DestroyComponents;
+    procedure Destroying;
+    function FindComponent(const AName: string): TComponent;
+    procedure FreeNotification(AComponent: TComponent);
+    procedure RemoveFreeNotification(AComponent: TComponent);
+    function GetParentComponent: TComponent; virtual;
+    function HasParent: Boolean; virtual;
+    procedure InsertComponent(AComponent: TComponent);
+    procedure RemoveComponent(AComponent: TComponent);
+    procedure SetSubComponent(IsSubComponent: Boolean);
+    function ExecuteAction(Action: TBasicAction): Boolean; virtual;
+    function UpdateAction(Action: TBasicAction): Boolean; virtual;
+    function GetNamePath: string; override;
+    property Components[Index: Integer]: TComponent read GetComponent;
+    property ComponentCount: Integer read GetComponentCount;
+    property ComponentIndex: Integer read GetComponentIndex write SetComponentIndex;
+    property ComponentState: TComponentState read FComponentState;
+    property ComponentStyle: TComponentStyle read FComponentStyle;
+    property DesignInfo: Integer read FDesignInfo write FDesignInfo;
+    property Owner: TComponent read FOwner;
+  published
+    property Name: TComponentName read FName write SetName stored False;
+    property Tag: NativeInt read FTag write FTag default 0;
+  end;
+  TComponentClass = class of TComponent;
+
+  { section 8.2 }
+  TBasicAction = class(TComponent)
+  private
+    FOnExecute: TNotifyEvent;
+    FOnUpdate: TNotifyEvent;
+    FOnChange: TNotifyEvent;
+    FClients: TList;
+    FActionComponent: TComponent;
+    procedure SetActionComponent(Value: TComponent);
+  protected
+    procedure Change; virtual;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    function HandlesTarget(Target: TObject): Boolean; virtual;
+    procedure UpdateTarget(Target: TObject); virtual;
+    procedure ExecuteTarget(Target: TObject); virtual;
+    function Execute: Boolean; virtual;
+    function Update: Boolean; virtual;
+    procedure RegisterChanges(Value: TBasicActionLink);
+    procedure UnRegisterChanges(Value: TBasicActionLink);
+    property ActionComponent: TComponent read FActionComponent write SetActionComponent;
+    property OnExecute: TNotifyEvent read FOnExecute write FOnExecute;
+    property OnUpdate: TNotifyEvent read FOnUpdate write FOnUpdate;
+  end;
+  TBasicActionClass = class of TBasicAction;
+
+  TBasicActionLink = class(TObject)
+  private
+    FAction: TBasicAction;
+    FOnChange: TNotifyEvent;
+  protected
+    procedure AssignClient(AClient: TObject); virtual;
+    procedure Change; virtual;
+    function IsOnExecuteLinked: Boolean; virtual;
+    procedure SetAction(Value: TBasicAction); virtual;
+    procedure SetOnExecute(Value: TNotifyEvent); virtual;
+  public
+    constructor Create(AClient: TObject); virtual;
+    destructor Destroy; override;
+    function Execute(AComponent: TComponent = nil): Boolean; virtual;
+    function Update: Boolean; virtual;
+    property Action: TBasicAction read FAction write SetAction;
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
+  end;
+  TBasicActionLinkClass = class of TBasicActionLink;
+
+  { section 9 }
+  TIdentToInt = function(const Ident: string; var Int: Integer): Boolean;
+  TIntToIdent = function(Int: Integer; var Ident: string): Boolean;
+  TIdentMapEntry = record
+    Value: Integer;
+    Name: string;
+  end;
+
+  { section 10.3 }
+  TValueType = (vaNull, vaList, vaInt8, vaInt16, vaInt32, vaExtended, vaString, vaIdent, vaFalse, vaTrue,
+    vaBinary, vaSet, vaLString, vaNil, vaCollection, vaSingle, vaCurrency, vaDate, vaWString,
+    vaInt64, vaUTF8String, vaDouble);
+  TReaderProc = procedure(Reader: TReader) of object;
+  TWriterProc = procedure(Writer: TWriter) of object;
+  TStreamProc = procedure(Stream: TStream) of object;
+  TFindMethodEvent = procedure(Reader: TReader; const MethodName: string; var Address: Pointer;
+    var Error: Boolean) of object;
+  TSetNameEvent = procedure(Reader: TReader; Component: TComponent; var Name: string) of object;
+  TReaderError = procedure(Reader: TReader; const Message: string; var Handled: Boolean) of object;
+  TFindComponentClassEvent = procedure(Reader: TReader; const ClassName: string;
+    var ComponentClass: TComponentClass) of object;
+  TCreateComponentEvent = procedure(Reader: TReader; ComponentClass: TComponentClass;
+    var Component: TComponent) of object;
+  TReferenceNameEvent = procedure(Reader: TReader; var Name: string) of object;
+
   TFiler = class(TObject)
+  private
+    FStream: TStream;
+    FRoot: TComponent;
+    FLookupRoot: TComponent;
+    FAncestor: TPersistent;
+  public
+    constructor Create(Stream: TStream; BufSize: Integer);
+    procedure DefineProperty(const Name: string; ReadData: TReaderProc; WriteData: TWriterProc;
+      HasData: Boolean); virtual; abstract;
+    procedure DefineBinaryProperty(const Name: string; ReadData, WriteData: TStreamProc;
+      HasData: Boolean); virtual; abstract;
+    property Root: TComponent read FRoot write FRoot;
+    property LookupRoot: TComponent read FLookupRoot;
+    property Ancestor: TPersistent read FAncestor write FAncestor;
+  end;
+
+  { the token kinds of the form text lexer (RTL-485 ... RTL-491) }
+  TFormToken = (ftEOF, ftLineEnd, ftIdent, ftInteger, ftFloat, ftString, ftSymbol);
+  TFormLexState = record
+    Pos, Line, Col: Integer;
+    Tok: TFormToken;
+    TokText: string;
+    TokStr: string;
+    TokInt: Int64;
+    TokHex32: Boolean;
+    TokFloat: Double;
+    TokLine, TokCol, TokPos: Integer;
+  end;
+
+  TReader = class(TFiler)
+  private
+    FText: string;
+    FBytes: TBytes;
+    FLex: TFormLexState;
+    FOwner: TComponent;
+    FParent: TComponent;
+    FSourceName: string;
+    FLoaded: TList;
+    FCreated: TList;
+    FFixups: TList;
+    FPropName: string;
+    FPropLine, FPropCol: Integer;
+    FMatchName: string;
+    FMatched: Boolean;
+    FRootCreated: Boolean;
+    FOnFindMethod: TFindMethodEvent;
+    FOnSetName: TSetNameEvent;
+    FOnError: TReaderError;
+    FOnFindComponentClass: TFindComponentClassEvent;
+    FOnCreateComponent: TCreateComponentEvent;
+    FOnReferenceName: TReferenceNameEvent;
+    function GetLine: Integer;
+    function GetColumn: Integer;
+    { lexer }
+    procedure DecodeText;
+    function Peek(Offset: Integer): Char;
+    procedure Advance;
+    procedure NextToken;
+    procedure ScanNumber;
+    procedure ScanString;
+    function TokenDesc: string;
+    procedure SyntaxError(const Detail: string);
+    procedure LexError(const Detail: string);
+    procedure Unexpected(const What: string);
+    procedure Expect(const Symbol: string);
+    procedure ExpectLineEnd;
+    procedure SkipLineEnds;
+    function IsSymbol(const Symbol: string): Boolean;
+    function IsKeyword(const Keyword: string): Boolean;
+    function ReadIdentToken: string;
+    function ReadQualIdent: string;
+    procedure ReadBinaryBlock(Stream: TStream);
+    { errors }
+    procedure Error(const Code, Text: string; Line, Col: Integer);
+    procedure PropValueError;
+    { parser }
+    procedure ReadProperty(Instance: TPersistent);
+    procedure ReadPropValue(Instance: TPersistent; const Path: string);
+    procedure ApplyValue(Instance: TPersistent; PropInfo: PPropInfo; const Path: string);
+    function ReadOrdinalValue(PropInfo: PPropInfo): Int64;
+    procedure ReadReference(Instance: TPersistent; PropInfo: PPropInfo);
+    function ResolveReference(const Name: string): TComponent;
+    procedure ResolveFixups;
+    procedure ReadStringsValue(Strings: TStrings);
+    procedure ReadComponentObject;
+    procedure ReadItemProperties(Item: TPersistent);
+    procedure Cleanup;
+  public
+    constructor Create(Stream: TStream; BufSize: Integer);
+    destructor Destroy; override;
+    procedure DefineProperty(const Name: string; ReadData: TReaderProc; WriteData: TWriterProc;
+      HasData: Boolean); override;
+    procedure DefineBinaryProperty(const Name: string; ReadData, WriteData: TStreamProc;
+      HasData: Boolean); override;
+    function ReadRootComponent(Root: TComponent): TComponent;
+    procedure ReadData(Instance: TComponent);
+    function NextValue: TValueType;
+    function ReadInteger: Integer;
+    function ReadInt64: Int64;
+    function ReadFloat: Double;
+    function ReadString: string;
+    function ReadBoolean: Boolean;
+    function ReadIdent: string;
+    function ReadChar: Char;
+    function ReadSet(SetType: Pointer): Integer;
+    procedure ReadListBegin;
+    procedure ReadListEnd;
+    function EndOfList: Boolean;
+    procedure ReadCollection(Collection: TCollection);
+    procedure SkipValue;
+    property Owner: TComponent read FOwner write FOwner;
+    property Parent: TComponent read FParent write FParent;
+    property SourceName: string read FSourceName write FSourceName;
+    property Line: Integer read GetLine;
+    property Column: Integer read GetColumn;
+    property OnFindMethod: TFindMethodEvent read FOnFindMethod write FOnFindMethod;
+    property OnSetName: TSetNameEvent read FOnSetName write FOnSetName;
+    property OnError: TReaderError read FOnError write FOnError;
+    property OnFindComponentClass: TFindComponentClassEvent read FOnFindComponentClass write FOnFindComponentClass;
+    property OnCreateComponent: TCreateComponentEvent read FOnCreateComponent write FOnCreateComponent;
+    property OnReferenceName: TReferenceNameEvent read FOnReferenceName write FOnReferenceName;
+  end;
+
+  { section 11 }
+  TThreadMethod = procedure of object;
+
+  TThread = class(TObject)
+  private
+    FHandle: THandle;
+    FThreadID: Cardinal;
+    FCreateSuspended: Boolean;
+    FStarted: Boolean;
+    FTerminated: Boolean;
+    FFinished: Boolean;
+    FFreeOnTerminate: Boolean;
+    FReturnValue: Integer;
+    FFatalException: TObject;
+    FOnTerminate: TNotifyEvent;
+    procedure CallOnTerminate;
+  protected
+    procedure Execute; virtual; abstract;
+    property Terminated: Boolean read FTerminated;
+    property ReturnValue: Integer read FReturnValue write FReturnValue;
+  public
+    constructor Create(CreateSuspended: Boolean = False);
+    destructor Destroy; override;
+    procedure AfterConstruction; override;
+    procedure Start;
+    procedure Terminate;
+    function WaitFor: Cardinal;
+    class procedure Synchronize(AThread: TThread; AMethod: TThreadMethod); overload;
+    procedure Synchronize(AMethod: TThreadMethod); overload;
+    class procedure Queue(AThread: TThread; AMethod: TThreadMethod);
+    class function CurrentThread: TThread;
+    class procedure Sleep(Milliseconds: Integer);
+    property FreeOnTerminate: Boolean read FFreeOnTerminate write FFreeOnTerminate;
+    property Handle: THandle read FHandle;
+    property ThreadID: Cardinal read FThreadID;
+    property Finished: Boolean read FFinished;
+    property FatalException: TObject read FFatalException;
+    property OnTerminate: TNotifyEvent read FOnTerminate write FOnTerminate;
+  end;
+
+  { RTL-481: the run-time writer is Phase 8+; declared so that component code compiles }
+  TWriter = class(TFiler)
+  public
+    procedure DefineProperty(const Name: string; ReadData: TReaderProc; WriteData: TWriterProc;
+      HasData: Boolean); override;
+    procedure DefineBinaryProperty(const Name: string; ReadData, WriteData: TStreamProc;
+      HasData: Boolean); override;
+    procedure WriteRootComponent(Root: TComponent);
   end;
 
 const
@@ -373,6 +781,36 @@ function Point(X, Y: Integer): TPoint;
 function Rect(Left, Top, Right, Bottom: Integer): TRect;
 function Bounds(Left, Top, Width, Height: Integer): TRect;
 function SmallPoint(X, Y: SmallInt): TSmallPoint;
+
+{ section 9: class registry and identifier maps }
+procedure RegisterClass(AClass: TPersistentClass);
+procedure RegisterClasses(const AClasses: array of TPersistentClass);
+procedure RegisterClassAlias(AClass: TPersistentClass; const Alias: string);
+procedure UnRegisterClass(AClass: TPersistentClass);
+procedure UnRegisterClasses(const AClasses: array of TPersistentClass);
+function GetClass(const AClassName: string): TPersistentClass;
+function FindClass(const ClassName: string): TPersistentClass;
+procedure RegisterIntegerConsts(AIntegerType: Pointer; IdentToIntFn: TIdentToInt; IntToIdentFn: TIntToIdent);
+function FindIdentToInt(AIntegerType: Pointer): TIdentToInt;
+function FindIntToIdent(AIntegerType: Pointer): TIntToIdent;
+function IdentToInt(const Ident: string; var Int: Integer; const Map: array of TIdentMapEntry): Boolean;
+function IntToIdent(Int: Integer; var Ident: string; const Map: array of TIdentMapEntry): Boolean;
+
+{ section 10.2: embedded forms }
+function InitInheritedComponent(Instance: TComponent; RootAncestor: TClass): Boolean;
+function InitComponentRes(const ResName: string; Instance: TComponent): Boolean;
+function ReadComponentFromText(const Text: string; Instance: TComponent; const SourceName: string = ''): TComponent;
+
+{ section 11: the main thread's side of Synchronize / Queue (RTL-513) }
+function CheckSynchronize(Timeout: Integer = 0): Boolean;
+
+var
+  { RTL-498: set by Forms to find forms and data modules by name for qualified references }
+  FindGlobalComponent: function(const Name: string): TComponent;
+  { RTL-511: called by Synchronize / Queue after an entry was added (Forms posts a message to wake its loop) }
+  WakeMainThread: TNotifyEvent;
+  { RTL-512: receives exceptions of queued methods (set by Forms) }
+  ApplicationHandleException: procedure(Sender: TObject) of object;
 
 implementation
 
@@ -1097,6 +1535,89 @@ begin
   end;
 end;
 
+{ RTL-422: the rest of the stream from its position; no encoding: a BOM decides, else DefaultEncoding; an explicit
+  encoding skips its own preamble when present }
+procedure TStrings.LoadFromStream(Stream: TStream);
+begin
+  LoadFromStream(Stream, nil);
+end;
+
+procedure TStrings.LoadFromStream(Stream: TStream; Encoding: TEncoding);
+var
+  Buffer: TBytes;
+  N: Int64;
+  Skip: Integer;
+begin
+  N := Stream.Size - Stream.Position;
+  if N < 0 then
+    N := 0;
+  SetLength(Buffer, Integer(N));
+  if N > 0 then
+    Stream.ReadBuffer(Buffer[0], Integer(N));
+  Skip := TEncoding.GetBufferEncoding(Buffer, Encoding, FDefaultEncoding);
+  FEncoding := Encoding;
+  SetTextStr(Encoding.GetString(Buffer, Skip, Length(Buffer) - Skip));
+end;
+
+procedure TStrings.LoadFromFile(const FileName: string);
+begin
+  LoadFromFile(FileName, nil);
+end;
+
+procedure TStrings.LoadFromFile(const FileName: string; Encoding: TEncoding);
+var
+  S: TFileStream;
+begin
+  S := TFileStream.Create(FileName, fmOpenRead or fmShareDenyWrite);
+  try
+    LoadFromStream(S, Encoding);
+  finally
+    S.Free;
+  end;
+end;
+
+{ RTL-423: the parameter, else the encoding of the last load, else DefaultEncoding; the preamble only with WriteBOM }
+procedure TStrings.SaveToStream(Stream: TStream);
+begin
+  SaveToStream(Stream, nil);
+end;
+
+procedure TStrings.SaveToStream(Stream: TStream; Encoding: TEncoding);
+var
+  Bytes: TBytes;
+begin
+  if Encoding = nil then
+    Encoding := FEncoding;
+  if Encoding = nil then
+    Encoding := FDefaultEncoding;
+  if FWriteBOM then
+  begin
+    Bytes := Encoding.GetPreamble;
+    if Length(Bytes) > 0 then
+      Stream.WriteBuffer(Bytes[0], Length(Bytes));
+  end;
+  Bytes := Encoding.GetBytes(GetTextStr);
+  if Length(Bytes) > 0 then
+    Stream.WriteBuffer(Bytes[0], Length(Bytes));
+end;
+
+procedure TStrings.SaveToFile(const FileName: string);
+begin
+  SaveToFile(FileName, nil);
+end;
+
+procedure TStrings.SaveToFile(const FileName: string; Encoding: TEncoding);
+var
+  S: TFileStream;
+begin
+  S := TFileStream.Create(FileName, fmCreate);
+  try
+    SaveToStream(S, Encoding);
+  finally
+    S.Free;
+  end;
+end;
+
 function TStrings.GetName(Index: Integer): string;
 var
   P: Integer;
@@ -1757,6 +2278,248 @@ begin
   end;
 end;
 
+{ ---------------------------------------------------------------- TCollectionItem, TCollection (section 7) }
+
+constructor TCollectionItem.Create(Collection: TCollection);
+begin
+  inherited Create;
+  SetCollection(Collection);
+end;
+
+destructor TCollectionItem.Destroy;
+begin
+  SetCollection(nil);
+  inherited Destroy;
+end;
+
+procedure TCollectionItem.SetCollection(Value: TCollection);
+begin
+  if Value <> FCollection then
+  begin
+    if FCollection <> nil then
+      FCollection.RemoveItem(Self);
+    if Value <> nil then
+      Value.InsertItem(Self);
+  end;
+end;
+
+{ RTL-440: an item change reaches Update(Self), a structural one Update(nil); nothing while an update is pending }
+procedure TCollectionItem.Changed(AllItems: Boolean);
+begin
+  if (FCollection <> nil) and (FCollection.FUpdateCount = 0) then
+    if AllItems then
+      FCollection.Update(nil)
+    else
+      FCollection.Update(Self);
+end;
+
+function TCollectionItem.GetOwner: TPersistent;
+begin
+  Result := FCollection;
+end;
+
+function TCollectionItem.GetIndex: Integer;
+begin
+  if FCollection <> nil then
+    Result := FCollection.FItems.IndexOf(Pointer(Self))
+  else
+    Result := -1;
+end;
+
+procedure TCollectionItem.SetIndex(Value: Integer);
+var
+  Cur: Integer;
+begin
+  Cur := GetIndex;
+  if (Cur >= 0) and (Cur <> Value) then
+  begin
+    FCollection.FItems.Move(Cur, Value);
+    Changed(True);
+  end;
+end;
+
+function TCollectionItem.GetDisplayName: string;
+begin
+  Result := ClassName;
+end;
+
+procedure TCollectionItem.SetDisplayName(const Value: string);
+begin
+  Changed(False);
+end;
+
+{ RTL-411: <collection path>[<Index>] }
+function TCollectionItem.GetNamePath: string;
+begin
+  if FCollection <> nil then
+    Result := FCollection.GetNamePath + '[' + IntToStr(GetIndex) + ']'
+  else
+    Result := ClassName;
+end;
+
+constructor TCollection.Create(ItemClass: TCollectionItemClass);
+begin
+  inherited Create;
+  FItemClass := ItemClass;
+  FItems := TList.Create;
+end;
+
+destructor TCollection.Destroy;
+begin
+  FUpdateCount := 1;
+  if FItems <> nil then
+    Clear;
+  FItems.Free;
+  inherited Destroy;
+end;
+
+function TCollection.Owner: TPersistent;
+begin
+  Result := GetOwner;
+end;
+
+function TCollection.GetCount: Integer;
+begin
+  Result := FItems.Count;
+end;
+
+procedure TCollection.InsertItem(Item: TCollectionItem);
+begin
+  FItems.Add(Pointer(Item));
+  Item.FCollection := Self;
+  Item.FID := FNextID;
+  FNextID := FNextID + 1;
+  Notify(Item, cnAdded);
+  Changed;
+end;
+
+procedure TCollection.RemoveItem(Item: TCollectionItem);
+begin
+  Notify(Item, cnExtracting);
+  FItems.Remove(Pointer(Item));
+  Item.FCollection := nil;
+  Changed;
+end;
+
+procedure TCollection.Changed;
+begin
+  if FUpdateCount = 0 then
+    Update(nil);
+end;
+
+function TCollection.GetItem(Index: Integer): TCollectionItem;
+begin
+  Result := TCollectionItem(FItems[Index]);
+end;
+
+procedure TCollection.SetItem(Index: Integer; Value: TCollectionItem);
+begin
+  TCollectionItem(FItems[Index]).Assign(Value);
+end;
+
+procedure TCollection.Update(Item: TCollectionItem);
+begin
+end;
+
+procedure TCollection.Notify(Item: TCollectionItem; Action: TCollectionNotification);
+begin
+end;
+
+function TCollection.Add: TCollectionItem;
+begin
+  Result := FItemClass.Create(Self);
+end;
+
+function TCollection.Insert(Index: Integer): TCollectionItem;
+begin
+  if (Index < 0) or (Index > FItems.Count) then
+    raise EListError.CreateFmt(SListIndexError, [Index]);
+  Result := Add;
+  Result.Index := Index;
+end;
+
+procedure TCollection.Delete(Index: Integer);
+var
+  Item: TCollectionItem;
+begin
+  Item := TCollectionItem(FItems[Index]);
+  Notify(Item, cnDeleting);
+  Item.Free;
+end;
+
+{ frees the items last to first inside one update }
+procedure TCollection.Clear;
+var
+  I: Integer;
+begin
+  if FItems.Count = 0 then
+    Exit;
+  BeginUpdate;
+  try
+    for I := FItems.Count - 1 downto 0 do
+      Delete(I);
+  finally
+    EndUpdate;
+  end;
+end;
+
+procedure TCollection.Assign(Source: TPersistent);
+var
+  I: Integer;
+  S: TCollection;
+begin
+  if Source is TCollection then
+  begin
+    S := TCollection(Source);
+    BeginUpdate;
+    try
+      Clear;
+      for I := 0 to S.Count - 1 do
+        Add.Assign(S.Items[I]);
+    finally
+      EndUpdate;
+    end;
+  end
+  else
+    inherited Assign(Source);
+end;
+
+procedure TCollection.BeginUpdate;
+begin
+  FUpdateCount := FUpdateCount + 1;
+end;
+
+{ RTL-440: the outermost EndUpdate reports one structural change }
+procedure TCollection.EndUpdate;
+begin
+  FUpdateCount := FUpdateCount - 1;
+  Changed;
+end;
+
+function TCollection.FindItemID(ID: Integer): TCollectionItem;
+var
+  I: Integer;
+begin
+  for I := 0 to FItems.Count - 1 do
+  begin
+    Result := TCollectionItem(FItems[I]);
+    if Result.FID = ID then
+      Exit;
+  end;
+  Result := nil;
+end;
+
+constructor TOwnedCollection.Create(AOwner: TPersistent; ItemClass: TCollectionItemClass);
+begin
+  FOwner := AOwner;
+  inherited Create(ItemClass);
+end;
+
+function TOwnedCollection.GetOwner: TPersistent;
+begin
+  Result := FOwner;
+end;
+
 { ---------------------------------------------------------------- TStream (section 6.1) }
 
 function TStream.GetPosition: Int64;
@@ -2139,5 +2902,2486 @@ begin
   if Length(B) > 0 then
     WriteBuffer(B[0], Length(B));
 end;
+
+{ ---------------------------------------------------------------- TComponent (section 8) }
+
+type
+  PComponent = ^TComponent;
+
+{ RTL-450 }
+constructor TComponent.Create(AOwner: TComponent);
+begin
+  inherited Create;
+  FComponentStyle := [csInheritable];
+  if AOwner <> nil then
+    AOwner.InsertComponent(Self);
+end;
+
+{ RTL-453 }
+destructor TComponent.Destroy;
+var
+  Other: TComponent;
+begin
+  Destroying;
+  if FFreeNotifies <> nil then
+  begin
+    while FFreeNotifies.Count > 0 do
+    begin
+      Other := TComponent(FFreeNotifies[0]);
+      FFreeNotifies.Delete(0);
+      Other.RemoveNotification(Self);
+      Other.Notification(Self, opRemove);
+    end;
+    FFreeNotifies.Free;
+    FFreeNotifies := nil;
+  end;
+  DestroyComponents;
+  if FOwner <> nil then
+    FOwner.RemoveComponent(Self);
+  FComponents.Free;
+  FComponents := nil;
+  inherited Destroy;
+end;
+
+procedure TComponent.BeforeDestruction;
+begin
+  if not (csDestroying in FComponentState) then
+    Destroying;
+end;
+
+procedure TComponent.Destroying;
+var
+  I: Integer;
+begin
+  if csDestroying in FComponentState then
+    Exit;
+  Include(FComponentState, csDestroying);
+  if FComponents <> nil then
+    for I := 0 to FComponents.Count - 1 do
+      TComponent(FComponents[I]).Destroying;
+end;
+
+{ the last owned component first: removed, then destroyed }
+procedure TComponent.DestroyComponents;
+var
+  C: TComponent;
+begin
+  while (FComponents <> nil) and (FComponents.Count > 0) do
+  begin
+    C := TComponent(FComponents.Last);
+    RemoveComponent(C);
+    C.Destroy;
+  end;
+end;
+
+function TComponent.GetComponent(Index: Integer): TComponent;
+begin
+  if FComponents = nil then
+    raise EListError.CreateFmt(SListIndexError, [Index]);
+  Result := TComponent(FComponents[Index]);
+end;
+
+function TComponent.GetComponentCount: Integer;
+begin
+  if FComponents = nil then
+    Result := 0
+  else
+    Result := FComponents.Count;
+end;
+
+function TComponent.GetComponentIndex: Integer;
+begin
+  if (FOwner <> nil) and (FOwner.FComponents <> nil) then
+    Result := FOwner.FComponents.IndexOf(Pointer(Self))
+  else
+    Result := -1;
+end;
+
+{ RTL-460: clamped to 0..Count-1 }
+procedure TComponent.SetComponentIndex(Value: Integer);
+var
+  Cur, N: Integer;
+begin
+  if FOwner = nil then
+    Exit;
+  Cur := GetComponentIndex;
+  if Cur < 0 then
+    Exit;
+  N := FOwner.FComponents.Count;
+  if Value < 0 then
+    Value := 0;
+  if Value >= N then
+    Value := N - 1;
+  if Value <> Cur then
+    FOwner.FComponents.Move(Cur, Value);
+end;
+
+procedure TComponent.Insert(AComponent: TComponent);
+begin
+  if FComponents = nil then
+    FComponents := TList.Create;
+  FComponents.Add(Pointer(AComponent));
+  AComponent.FOwner := Self;
+end;
+
+procedure TComponent.Remove(AComponent: TComponent);
+begin
+  FComponents.Remove(Pointer(AComponent));
+  AComponent.FOwner := nil;
+end;
+
+{ RTL-451 }
+procedure TComponent.InsertComponent(AComponent: TComponent);
+begin
+  AComponent.ValidateContainer(Self);
+  if AComponent.FOwner <> nil then
+    AComponent.FOwner.RemoveComponent(AComponent);
+  ValidateRename(AComponent, '', AComponent.FName);
+  Insert(AComponent);
+  if csDesigning in FComponentState then
+    AComponent.SetDesigning(True);
+  Notification(AComponent, opInsert);
+end;
+
+{ RTL-452 }
+procedure TComponent.RemoveComponent(AComponent: TComponent);
+var
+  P: PComponent;
+begin
+  ValidateRename(AComponent, AComponent.FName, '');
+  Notification(AComponent, opRemove);
+  Remove(AComponent);
+  if AComponent.FName <> '' then
+  begin
+    P := PComponent(FieldAddress(AComponent.FName));
+    if (P <> nil) and (P^ = AComponent) then
+      P^ := nil;
+  end;
+end;
+
+procedure TComponent.ValidateContainer(AComponent: TComponent);
+begin
+  AComponent.ValidateInsert(Self);
+end;
+
+procedure TComponent.ValidateInsert(AComponent: TComponent);
+begin
+end;
+
+{ RTL-455: another owned component with the same name (ASCII case-insensitive) }
+procedure TComponent.ValidateRename(AComponent: TComponent; const CurName, NewName: string);
+var
+  Found: TComponent;
+begin
+  if (NewName <> '') and (CompareText(CurName, NewName) <> 0) then
+  begin
+    Found := FindComponent(NewName);
+    if (Found <> nil) and (Found <> AComponent) then
+      raise EComponentError.CreateFmt(SDuplicateName, [NewName]);
+  end;
+end;
+
+{ RTL-456: the owner's published field named AName receives (Bind) or loses Self }
+procedure TComponent.BindField(const AName: string; Bind: Boolean);
+var
+  P: PComponent;
+begin
+  if (FOwner = nil) or (AName = '') then
+    Exit;
+  P := PComponent(FOwner.FieldAddress(AName));
+  if P = nil then
+    Exit;
+  if Bind then
+    P^ := Self
+  else if P^ = Self then
+    P^ := nil;
+end;
+
+{ RTL-455 }
+procedure TComponent.SetName(const NewName: TComponentName);
+begin
+  if FName = NewName then
+    Exit;
+  if (NewName <> '') and not IsValidIdent(NewName) then
+    raise EComponentError.CreateFmt(SInvalidName, [NewName]);
+  if FOwner <> nil then
+    FOwner.ValidateRename(Self, FName, NewName)
+  else
+    ValidateRename(nil, FName, NewName);
+  BindField(FName, False);
+  BindField(NewName, True);
+  FName := NewName;
+end;
+
+{ RTL-459 }
+function TComponent.FindComponent(const AName: string): TComponent;
+var
+  I: Integer;
+begin
+  if (AName <> '') and (FComponents <> nil) then
+    for I := 0 to FComponents.Count - 1 do
+    begin
+      Result := TComponent(FComponents[I]);
+      if CompareText(Result.FName, AName) = 0 then
+        Exit;
+    end;
+  Result := nil;
+end;
+
+{ RTL-458 }
+procedure TComponent.FreeNotification(AComponent: TComponent);
+begin
+  if (AComponent = nil) or (AComponent = Self) then
+    Exit;
+  if (FOwner = nil) or (AComponent.FOwner <> FOwner) then
+  begin
+    if FFreeNotifies = nil then
+      FFreeNotifies := TList.Create;
+    if FFreeNotifies.IndexOf(Pointer(AComponent)) < 0 then
+      FFreeNotifies.Add(Pointer(AComponent));
+    if AComponent.FFreeNotifies = nil then
+      AComponent.FFreeNotifies := TList.Create;
+    if AComponent.FFreeNotifies.IndexOf(Pointer(Self)) < 0 then
+      AComponent.FFreeNotifies.Add(Pointer(Self));
+    Include(FComponentState, csFreeNotification);
+    Include(AComponent.FComponentState, csFreeNotification);
+  end;
+end;
+
+procedure TComponent.RemoveNotification(AComponent: TComponent);
+begin
+  if FFreeNotifies <> nil then
+    FFreeNotifies.Remove(Pointer(AComponent));
+end;
+
+procedure TComponent.RemoveFreeNotification(AComponent: TComponent);
+begin
+  RemoveNotification(AComponent);
+  if AComponent <> nil then
+    AComponent.RemoveNotification(Self);
+end;
+
+{ RTL-454 }
+procedure TComponent.Notification(AComponent: TComponent; Operation: TOperation);
+var
+  I: Integer;
+begin
+  if Operation = opRemove then
+    RemoveNotification(AComponent);
+  if FComponents <> nil then
+  begin
+    I := 0;
+    while I < FComponents.Count do
+    begin
+      TComponent(FComponents[I]).Notification(AComponent, Operation);
+      I := I + 1;
+    end;
+  end;
+end;
+
+{ RTL-461 }
+procedure TComponent.Loaded;
+begin
+  Exclude(FComponentState, csLoading);
+end;
+
+procedure TComponent.ReadState(Reader: TReader);
+begin
+  Reader.ReadData(Self);
+end;
+
+procedure TComponent.WriteState(Writer: TWriter);
+begin
+end;
+
+procedure TComponent.GetChildren(Proc: TGetChildProc; Root: TComponent);
+begin
+end;
+
+function TComponent.GetChildOwner: TComponent;
+begin
+  Result := nil;
+end;
+
+function TComponent.GetChildParent: TComponent;
+begin
+  Result := Self;
+end;
+
+procedure TComponent.SetParentComponent(Value: TComponent);
+begin
+end;
+
+function TComponent.GetParentComponent: TComponent;
+begin
+  Result := nil;
+end;
+
+function TComponent.HasParent: Boolean;
+begin
+  Result := False;
+end;
+
+{ RTL-457: DesignInfo low word = left, high word = top }
+procedure TComponent.ReadDesignLeft(Reader: TReader);
+begin
+  FDesignInfo := Integer((Cardinal(FDesignInfo) and $FFFF0000) or (Cardinal(Reader.ReadInteger) and $FFFF));
+end;
+
+procedure TComponent.ReadDesignTop(Reader: TReader);
+begin
+  FDesignInfo := Integer((Cardinal(FDesignInfo) and $FFFF) or ((Cardinal(Reader.ReadInteger) and $FFFF) shl 16));
+end;
+
+procedure TComponent.WriteDesignLeft(Writer: TWriter);
+begin
+end;
+
+procedure TComponent.WriteDesignTop(Writer: TWriter);
+begin
+end;
+
+procedure TComponent.DefineProperties(Filer: TFiler);
+begin
+  inherited DefineProperties(Filer);
+  Filer.DefineProperty('DesignLeft', ReadDesignLeft, WriteDesignLeft, (FDesignInfo and $FFFF) <> 0);
+  Filer.DefineProperty('DesignTop', ReadDesignTop, WriteDesignTop, (FDesignInfo shr 16) <> 0);
+end;
+
+procedure TComponent.SetDesigning(Value: Boolean; SetChildren: Boolean);
+var
+  I: Integer;
+begin
+  if Value then
+    Include(FComponentState, csDesigning)
+  else
+    Exclude(FComponentState, csDesigning);
+  if SetChildren and (FComponents <> nil) then
+    for I := 0 to FComponents.Count - 1 do
+      TComponent(FComponents[I]).SetDesigning(Value, True);
+end;
+
+procedure TComponent.SetAncestor(Value: Boolean);
+var
+  I: Integer;
+begin
+  if Value then
+    Include(FComponentState, csAncestor)
+  else
+    Exclude(FComponentState, csAncestor);
+  if FComponents <> nil then
+    for I := 0 to FComponents.Count - 1 do
+      TComponent(FComponents[I]).SetAncestor(Value);
+end;
+
+procedure TComponent.Loading;
+begin
+  Include(FComponentState, csLoading);
+end;
+
+procedure TComponent.Updating;
+begin
+  Include(FComponentState, csUpdating);
+end;
+
+procedure TComponent.Updated;
+begin
+  Exclude(FComponentState, csUpdating);
+end;
+
+procedure TComponent.SetSubComponent(IsSubComponent: Boolean);
+begin
+  if IsSubComponent then
+    Include(FComponentStyle, csSubComponent)
+  else
+    Exclude(FComponentStyle, csSubComponent);
+end;
+
+{ RTL-462 }
+function TComponent.ExecuteAction(Action: TBasicAction): Boolean;
+begin
+  Result := Action.HandlesTarget(Self);
+  if Result then
+    Action.ExecuteTarget(Self);
+end;
+
+function TComponent.UpdateAction(Action: TBasicAction): Boolean;
+begin
+  Result := Action.HandlesTarget(Self);
+  if Result then
+    Action.UpdateTarget(Self);
+end;
+
+function TComponent.GetNamePath: string;
+begin
+  Result := FName;
+end;
+
+{ ---------------------------------------------------------------- TBasicAction, TBasicActionLink (section 8.2) }
+
+constructor TBasicAction.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FClients := TList.Create;
+end;
+
+destructor TBasicAction.Destroy;
+begin
+  while FClients.Count > 0 do
+    UnRegisterChanges(TBasicActionLink(FClients.Last));
+  FClients.Free;
+  FClients := nil;
+  inherited Destroy;
+end;
+
+function TBasicAction.HandlesTarget(Target: TObject): Boolean;
+begin
+  Result := False;
+end;
+
+procedure TBasicAction.UpdateTarget(Target: TObject);
+begin
+end;
+
+procedure TBasicAction.ExecuteTarget(Target: TObject);
+begin
+end;
+
+function TBasicAction.Execute: Boolean;
+begin
+  Result := Assigned(FOnExecute);
+  if Result then
+    FOnExecute(Self);
+end;
+
+function TBasicAction.Update: Boolean;
+begin
+  Result := Assigned(FOnUpdate);
+  if Result then
+    FOnUpdate(Self);
+end;
+
+procedure TBasicAction.RegisterChanges(Value: TBasicActionLink);
+begin
+  Value.FAction := Self;
+  FClients.Add(Pointer(Value));
+end;
+
+procedure TBasicAction.UnRegisterChanges(Value: TBasicActionLink);
+begin
+  if FClients.Remove(Pointer(Value)) >= 0 then
+    Value.FAction := nil;
+end;
+
+procedure TBasicAction.Change;
+var
+  I: Integer;
+begin
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+  for I := 0 to FClients.Count - 1 do
+    TBasicActionLink(FClients[I]).Change;
+end;
+
+procedure TBasicAction.SetActionComponent(Value: TComponent);
+begin
+  if Value <> FActionComponent then
+  begin
+    if FActionComponent <> nil then
+      FActionComponent.RemoveFreeNotification(Self);
+    FActionComponent := Value;
+    if Value <> nil then
+      Value.FreeNotification(Self);
+  end;
+end;
+
+procedure TBasicAction.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (Operation = opRemove) and (AComponent = FActionComponent) then
+    FActionComponent := nil;
+end;
+
+constructor TBasicActionLink.Create(AClient: TObject);
+begin
+  inherited Create;
+  AssignClient(AClient);
+end;
+
+destructor TBasicActionLink.Destroy;
+begin
+  if FAction <> nil then
+    FAction.UnRegisterChanges(Self);
+  inherited Destroy;
+end;
+
+procedure TBasicActionLink.AssignClient(AClient: TObject);
+begin
+end;
+
+procedure TBasicActionLink.Change;
+begin
+  if Assigned(FOnChange) then
+    FOnChange(FAction);
+end;
+
+function TBasicActionLink.IsOnExecuteLinked: Boolean;
+begin
+  Result := True;
+end;
+
+procedure TBasicActionLink.SetOnExecute(Value: TNotifyEvent);
+begin
+end;
+
+procedure TBasicActionLink.SetAction(Value: TBasicAction);
+begin
+  if Value <> FAction then
+  begin
+    if FAction <> nil then
+      FAction.UnRegisterChanges(Self);
+    if Value <> nil then
+      Value.RegisterChanges(Self);
+  end;
+end;
+
+{ the action runs with ActionComponent = AComponent; False without an action }
+function TBasicActionLink.Execute(AComponent: TComponent): Boolean;
+var
+  A: TBasicAction;
+begin
+  A := FAction;
+  Result := False;
+  if A = nil then
+    Exit;
+  A.ActionComponent := AComponent;
+  try
+    Result := A.Execute;
+  finally
+    if FAction = A then
+      A.ActionComponent := nil;
+  end;
+end;
+
+function TBasicActionLink.Update: Boolean;
+begin
+  Result := (FAction <> nil) and FAction.Update;
+end;
+
+{ ---------------------------------------------------------------- class registry (section 9) }
+
+type
+  TClassEntry = record
+    Name: string;
+    AClass: TPersistentClass;
+  end;
+  TIntConstEntry = record
+    TypeInfo: Pointer;
+    ToInt: TIdentToInt;
+    ToIdent: TIntToIdent;
+  end;
+
+var
+  RegistryLock: SyncObjs.TCriticalSection;
+  ClassTable: array of TClassEntry;
+  ClassCount: Integer;
+  IntConstTable: array of TIntConstEntry;
+  IntConstCount: Integer;
+
+function FindClassEntry(const AName: string): Integer;
+begin
+  for Result := 0 to ClassCount - 1 do
+    if CompareText(ClassTable[Result].Name, AName) = 0 then
+      Exit;
+  Result := -1;
+end;
+
+{ the same class twice is a no-op; another class under the name raises EFilerError }
+procedure AddClassEntry(AClass: TPersistentClass; const AName: string);
+var
+  I: Integer;
+begin
+  RegistryLock.Enter;
+  try
+    I := FindClassEntry(AName);
+    if I >= 0 then
+    begin
+      if ClassTable[I].AClass <> AClass then
+        raise EFilerError.CreateFmt(SDuplicateClass, [AName]);
+      Exit;
+    end;
+    if ClassCount = Length(ClassTable) then
+      SetLength(ClassTable, ClassCount * 2 + 16);
+    ClassTable[ClassCount].Name := AName;
+    ClassTable[ClassCount].AClass := AClass;
+    ClassCount := ClassCount + 1;
+  finally
+    RegistryLock.Leave;
+  end;
+end;
+
+procedure RegisterClass(AClass: TPersistentClass);
+begin
+  AddClassEntry(AClass, AClass.ClassName);
+end;
+
+procedure RegisterClasses(const AClasses: array of TPersistentClass);
+var
+  I: Integer;
+begin
+  for I := 0 to High(AClasses) do
+    RegisterClass(AClasses[I]);
+end;
+
+procedure RegisterClassAlias(AClass: TPersistentClass; const Alias: string);
+begin
+  AddClassEntry(AClass, Alias);
+end;
+
+{ removes the class under every name it is registered with }
+procedure UnRegisterClass(AClass: TPersistentClass);
+var
+  I, K: Integer;
+begin
+  RegistryLock.Enter;
+  try
+    K := 0;
+    for I := 0 to ClassCount - 1 do
+      if ClassTable[I].AClass <> AClass then
+      begin
+        if K <> I then
+          ClassTable[K] := ClassTable[I];
+        K := K + 1;
+      end;
+    for I := K to ClassCount - 1 do
+      ClassTable[I].Name := '';
+    ClassCount := K;
+  finally
+    RegistryLock.Leave;
+  end;
+end;
+
+procedure UnRegisterClasses(const AClasses: array of TPersistentClass);
+var
+  I: Integer;
+begin
+  for I := 0 to High(AClasses) do
+    UnRegisterClass(AClasses[I]);
+end;
+
+function GetClass(const AClassName: string): TPersistentClass;
+var
+  I: Integer;
+begin
+  RegistryLock.Enter;
+  try
+    I := FindClassEntry(AClassName);
+    if I >= 0 then
+      Result := ClassTable[I].AClass
+    else
+      Result := nil;
+  finally
+    RegistryLock.Leave;
+  end;
+end;
+
+function FindClass(const ClassName: string): TPersistentClass;
+begin
+  Result := GetClass(ClassName);
+  if Result = nil then
+    raise EClassNotFound.CreateFmt(SClassNotFound, [ClassName]);
+end;
+
+procedure RegisterIntegerConsts(AIntegerType: Pointer; IdentToIntFn: TIdentToInt; IntToIdentFn: TIntToIdent);
+begin
+  RegistryLock.Enter;
+  try
+    if IntConstCount = Length(IntConstTable) then
+      SetLength(IntConstTable, IntConstCount * 2 + 8);
+    IntConstTable[IntConstCount].TypeInfo := AIntegerType;
+    IntConstTable[IntConstCount].ToInt := IdentToIntFn;
+    IntConstTable[IntConstCount].ToIdent := IntToIdentFn;
+    IntConstCount := IntConstCount + 1;
+  finally
+    RegistryLock.Leave;
+  end;
+end;
+
+{ the latest registration for the type wins }
+function FindIntConstEntry(AIntegerType: Pointer): Integer;
+begin
+  for Result := IntConstCount - 1 downto 0 do
+    if IntConstTable[Result].TypeInfo = AIntegerType then
+      Exit;
+  Result := -1;
+end;
+
+function FindIdentToInt(AIntegerType: Pointer): TIdentToInt;
+var
+  I: Integer;
+begin
+  Result := nil;
+  RegistryLock.Enter;
+  try
+    I := FindIntConstEntry(AIntegerType);
+    if I >= 0 then
+      Result := IntConstTable[I].ToInt;
+  finally
+    RegistryLock.Leave;
+  end;
+end;
+
+function FindIntToIdent(AIntegerType: Pointer): TIntToIdent;
+var
+  I: Integer;
+begin
+  Result := nil;
+  RegistryLock.Enter;
+  try
+    I := FindIntConstEntry(AIntegerType);
+    if I >= 0 then
+      Result := IntConstTable[I].ToIdent;
+  finally
+    RegistryLock.Leave;
+  end;
+end;
+
+function IdentToInt(const Ident: string; var Int: Integer; const Map: array of TIdentMapEntry): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Map) do
+    if CompareText(Map[I].Name, Ident) = 0 then
+    begin
+      Int := Map[I].Value;
+      Result := True;
+      Exit;
+    end;
+  Result := False;
+end;
+
+function IntToIdent(Int: Integer; var Ident: string; const Map: array of TIdentMapEntry): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Map) do
+    if Map[I].Value = Int then
+    begin
+      Ident := Map[I].Name;
+      Result := True;
+      Exit;
+    end;
+  Result := False;
+end;
+
+{ ---------------------------------------------------------------- TFiler, TReader, TWriter (section 10) }
+
+type
+  { a recorded component reference resolved after the root's end (RTL-498) }
+  TFixup = class
+  public
+    Instance: TObject;
+    PropInfo: PPropInfo;
+    Name: string;
+    Path: string;
+    Line, Col: Integer;
+  end;
+
+  { raised after OnError handled a reader error: the property line is skipped (RTL-500) }
+  ESkipProperty = class(Exception);
+
+  { a read-only stream over the bytes of an embedded form }
+  TPointerStream = class(TCustomMemoryStream)
+  public
+    constructor Create(P: Pointer; ASize: NativeInt);
+  end;
+
+constructor TPointerStream.Create(P: Pointer; ASize: NativeInt);
+begin
+  inherited Create;
+  SetPointer(P, ASize);
+end;
+
+constructor TFiler.Create(Stream: TStream; BufSize: Integer);
+begin
+  inherited Create;
+  FStream := Stream;
+end;
+
+{ BufSize is ignored: the rest of the stream is loaded at once }
+constructor TReader.Create(Stream: TStream; BufSize: Integer);
+var
+  N: Int64;
+begin
+  inherited Create(Stream, BufSize);
+  N := Stream.Size - Stream.Position;
+  if N < 0 then
+    N := 0;
+  SetLength(FBytes, Integer(N));
+  if N > 0 then
+    Stream.ReadBuffer(FBytes[0], Integer(N));
+  FLoaded := TList.Create;
+  FCreated := TList.Create;
+  FFixups := TList.Create;
+  FLex.Line := 1;
+  FLex.Col := 1;
+  FLex.Pos := 1;
+  FLex.TokLine := 1;
+  FLex.TokCol := 1;
+end;
+
+destructor TReader.Destroy;
+var
+  I: Integer;
+begin
+  if FFixups <> nil then
+    for I := 0 to FFixups.Count - 1 do
+      TFixup(FFixups[I]).Free;
+  FFixups.Free;
+  FCreated.Free;
+  FLoaded.Free;
+  inherited Destroy;
+end;
+
+function TReader.GetLine: Integer;
+begin
+  Result := FLex.TokLine;
+end;
+
+function TReader.GetColumn: Integer;
+begin
+  Result := FLex.TokCol;
+end;
+
+{ ---- errors (RTL-500) }
+
+procedure TReader.Error(const Code, Text: string; Line, Col: Integer);
+var
+  Msg: string;
+  Handled: Boolean;
+begin
+  Msg := FSourceName + '(' + IntToStr(Line) + ',' + IntToStr(Col) + '): error ' + Code + ': ' + Text;
+  if (Code <> 'F0001') and (Code <> 'F0101') and (Code <> 'F0106') and (Code <> 'F0107') and Assigned(FOnError) then
+  begin
+    Handled := False;
+    FOnError(Self, Msg, Handled);
+    if Handled then
+      raise ESkipProperty.Create(Msg);
+  end;
+  if Code = 'F0101' then
+    raise EClassNotFound.Create(Msg);
+  if Code = 'F0104' then
+    raise EMethodNotFound.Create(Msg);
+  raise EReadError.Create(Msg);
+end;
+
+procedure TReader.SyntaxError(const Detail: string);
+begin
+  Error('F0001', Format(SFormSyntaxError, [Detail]), FLex.TokLine, FLex.TokCol);
+end;
+
+{ a lexical error at the current character }
+procedure TReader.LexError(const Detail: string);
+begin
+  FLex.TokLine := FLex.Line;
+  FLex.TokCol := FLex.Col;
+  SyntaxError(Detail);
+end;
+
+function TReader.TokenDesc: string;
+begin
+  case FLex.Tok of
+    ftEOF:
+      Result := 'end of file';
+    ftLineEnd:
+      Result := 'end of line';
+  else
+    Result := '"' + Copy(FText, FLex.TokPos, FLex.Pos - FLex.TokPos) + '"';
+  end;
+end;
+
+procedure TReader.Unexpected(const What: string);
+begin
+  if FLex.Tok = ftEOF then
+    SyntaxError('unexpected end of file')
+  else
+    SyntaxError('expected ' + What + ' but found ' + TokenDesc);
+end;
+
+{ F0103 at the current token; a missing value at the end of the file is a syntax error }
+procedure TReader.PropValueError;
+begin
+  if FLex.Tok = ftEOF then
+    SyntaxError('unexpected end of file');
+  Error('F0103', Format(SFormInvalidPropertyValue, [FPropName]), FLex.TokLine, FLex.TokCol);
+end;
+
+{ ---- lexer (RTL-485 ... RTL-491) }
+
+{ RTL-485: UTF-8 with an optional BOM; invalid sequences, overlong forms and surrogate code points are F0001 }
+procedure TReader.DecodeText;
+var
+  I, N, K, J, Len, Line, Col: Integer;
+  B, C: Byte;
+  CP, MinCP: Cardinal;
+  S: string;
+  Bad: Boolean;
+begin
+  N := Length(FBytes);
+  I := 0;
+  if (N >= 3) and (FBytes[0] = $EF) and (FBytes[1] = $BB) and (FBytes[2] = $BF) then
+    I := 3;
+  SetLength(S, N);
+  K := 0;
+  Line := 1;
+  Col := 1;
+  while I < N do
+  begin
+    B := FBytes[I];
+    Bad := False;
+    Len := 1;
+    MinCP := 0;
+    if B < $80 then
+      CP := B
+    else if (B and $E0) = $C0 then
+    begin
+      CP := B and $1F;
+      Len := 2;
+      MinCP := $80;
+    end
+    else if (B and $F0) = $E0 then
+    begin
+      CP := B and $0F;
+      Len := 3;
+      MinCP := $800;
+    end
+    else if (B and $F8) = $F0 then
+    begin
+      CP := B and $07;
+      Len := 4;
+      MinCP := $10000;
+    end
+    else
+    begin
+      CP := 0;
+      Bad := True;
+    end;
+    if not Bad and (I + Len > N) then
+      Bad := True;
+    J := 1;
+    while not Bad and (J < Len) do
+    begin
+      C := FBytes[I + J];
+      if (C and $C0) <> $80 then
+        Bad := True
+      else
+        CP := (CP shl 6) or (C and $3F);
+      J := J + 1;
+    end;
+    if not Bad and (Len > 1) and ((CP < MinCP) or (CP > $10FFFF) or ((CP >= $D800) and (CP <= $DFFF))) then
+      Bad := True;
+    if Bad then
+    begin
+      FLex.TokLine := Line;
+      FLex.TokCol := Col;
+      SyntaxError('invalid UTF-8');
+    end;
+    if CP < $10000 then
+    begin
+      K := K + 1;
+      S[K] := Char(CP);
+      Col := Col + 1;
+    end
+    else
+    begin
+      CP := CP - $10000;
+      S[K + 1] := Char($D800 + (CP shr 10));
+      S[K + 2] := Char($DC00 + (CP and $3FF));
+      K := K + 2;
+      Col := Col + 2;
+    end;
+    if CP = 10 then
+    begin
+      Line := Line + 1;
+      Col := 1;
+    end;
+    I := I + Len;
+  end;
+  SetLength(S, K);
+  FText := S;
+end;
+
+function TReader.Peek(Offset: Integer): Char;
+begin
+  if FLex.Pos + Offset <= Length(FText) then
+    Result := FText[FLex.Pos + Offset]
+  else
+    Result := #0;
+end;
+
+procedure TReader.Advance;
+begin
+  if FText[FLex.Pos] = #10 then
+  begin
+    FLex.Line := FLex.Line + 1;
+    FLex.Col := 1;
+  end
+  else
+    FLex.Col := FLex.Col + 1;
+  FLex.Pos := FLex.Pos + 1;
+end;
+
+function IsFormDigit(C: Char): Boolean;
+begin
+  Result := (C >= '0') and (C <= '9');
+end;
+
+function IsFormLetter(C: Char): Boolean;
+begin
+  Result := ((C >= 'A') and (C <= 'Z')) or ((C >= 'a') and (C <= 'z')) or (C = '_');
+end;
+
+function HexValue(C: Char): Integer;
+begin
+  if (C >= '0') and (C <= '9') then
+    Result := Ord(C) - Ord('0')
+  else if (C >= 'A') and (C <= 'F') then
+    Result := Ord(C) - Ord('A') + 10
+  else if (C >= 'a') and (C <= 'f') then
+    Result := Ord(C) - Ord('a') + 10
+  else
+    Result := -1;
+end;
+
+function IsBlankChar(C: Char): Boolean;
+begin
+  Result := (C = ' ') or (C = #9);
+end;
+
+procedure TReader.NextToken;
+var
+  C: Char;
+begin
+  while IsBlankChar(Peek(0)) do
+    Advance;
+  FLex.TokLine := FLex.Line;
+  FLex.TokCol := FLex.Col;
+  FLex.TokPos := FLex.Pos;
+  FLex.TokText := '';
+  if FLex.Pos > Length(FText) then
+  begin
+    FLex.Tok := ftEOF;
+    Exit;
+  end;
+  C := Peek(0);
+  if (C = #10) or ((C = #13) and (Peek(1) = #10)) then   { RTL-486 }
+  begin
+    FLex.Tok := ftLineEnd;
+    if C = #13 then
+      Advance;
+    Advance;
+  end
+  else if IsFormLetter(C) then
+  begin
+    while IsFormLetter(Peek(0)) or IsFormDigit(Peek(0)) do
+      Advance;
+    FLex.Tok := ftIdent;
+    FLex.TokText := Copy(FText, FLex.TokPos, FLex.Pos - FLex.TokPos);
+  end
+  else if IsFormDigit(C) or (C = '$') or ((C = '-') and IsFormDigit(Peek(1))) then
+    ScanNumber
+  else if (C = '''') or (C = '#') then
+    ScanString
+  else if (C = '=') or (C = ':') or (C = '.') or (C = ',') or (C = '[') or (C = ']') or (C = '(') or (C = ')')
+    or (C = '{') or (C = '}') or (C = '<') or (C = '>') then
+  begin
+    FLex.Tok := ftSymbol;
+    FLex.TokText := C;
+    Advance;
+  end
+  else
+    LexError('invalid character');   { RTL-491 }
+end;
+
+{ RTL-490: decimal within Int64; $ with 1-16 hex digits, up to 8 digits a 32-bit pattern; floats contain "." }
+procedure TReader.ScanNumber;
+var
+  Neg, Overflow: Boolean;
+  U: UInt64;
+  Digits, D: Integer;
+  F: Double;
+begin
+  FLex.TokHex32 := False;
+  if Peek(0) = '$' then
+  begin
+    Advance;
+    U := 0;
+    Digits := 0;
+    while HexValue(Peek(0)) >= 0 do
+    begin
+      if Digits = 16 then
+        SyntaxError('integer out of range');
+      U := (U shl 4) or UInt64(HexValue(Peek(0)));
+      Digits := Digits + 1;
+      Advance;
+    end;
+    if Digits = 0 then
+      LexError('invalid character');
+    FLex.Tok := ftInteger;
+    if Digits <= 8 then
+    begin
+      FLex.TokHex32 := True;
+      FLex.TokInt := Integer(Cardinal(U));
+    end
+    else
+      FLex.TokInt := Int64(U);
+    Exit;
+  end;
+  Neg := Peek(0) = '-';
+  if Neg then
+    Advance;
+  U := 0;
+  Overflow := False;
+  while IsFormDigit(Peek(0)) do
+  begin
+    D := Ord(Peek(0)) - Ord('0');
+    if U > 922337203685477580 then
+      Overflow := True
+    else
+      U := U * 10 + UInt64(D);
+    Advance;
+  end;
+  if (Peek(0) = '.') and IsFormDigit(Peek(1)) then
+  begin
+    Advance;
+    while IsFormDigit(Peek(0)) do
+      Advance;
+    if ((Peek(0) = 'e') or (Peek(0) = 'E')) and (IsFormDigit(Peek(1))
+      or (((Peek(1) = '+') or (Peek(1) = '-')) and IsFormDigit(Peek(2)))) then
+    begin
+      Advance;
+      if (Peek(0) = '+') or (Peek(0) = '-') then
+        Advance;
+      while IsFormDigit(Peek(0)) do
+        Advance;
+    end;
+    if not TryStrToFloat(Copy(FText, FLex.TokPos, FLex.Pos - FLex.TokPos), F, InvariantFormatSettings) then
+      SyntaxError('float out of range');
+    FLex.Tok := ftFloat;
+    FLex.TokFloat := F;
+    Exit;
+  end;
+  if Overflow or (((U shr 63) <> 0) and not (Neg and (U = UInt64(1) shl 63))) then
+    SyntaxError('integer out of range');
+  FLex.Tok := ftInteger;
+  if Neg then
+    FLex.TokInt := Int64(UInt64(0) - U)
+  else
+    FLex.TokInt := Int64(U);
+end;
+
+{ RTL-489: quoted parts, #n / #$h code units, "+" at the end of a line continues on the next line }
+procedure TReader.ScanString;
+var
+  S: string;
+  V, Digits, H, PlusLine, PlusCol: Integer;
+  More: Boolean;
+begin
+  S := '';
+  repeat
+    while (Peek(0) = '''') or (Peek(0) = '#') do
+      if Peek(0) = '''' then
+      begin
+        Advance;
+        while True do
+        begin
+          if (FLex.Pos > Length(FText)) or (Peek(0) = #10) or ((Peek(0) = #13) and (Peek(1) = #10)) then
+            SyntaxError('unterminated string');
+          if Peek(0) = '''' then
+          begin
+            Advance;
+            if Peek(0) <> '''' then
+              Break;
+            S := S + '''';
+            Advance;
+          end
+          else
+          begin
+            S := S + Peek(0);
+            Advance;
+          end;
+        end;
+      end
+      else
+      begin
+        Advance;
+        V := 0;
+        Digits := 0;
+        if Peek(0) = '$' then
+        begin
+          Advance;
+          H := HexValue(Peek(0));
+          while H >= 0 do
+          begin
+            if V <= $FFFF then
+              V := V * 16 + H;
+            Digits := Digits + 1;
+            Advance;
+            H := HexValue(Peek(0));
+          end;
+        end
+        else
+          while IsFormDigit(Peek(0)) do
+          begin
+            if V <= $FFFF then
+              V := V * 10 + Ord(Peek(0)) - Ord('0');
+            Digits := Digits + 1;
+            Advance;
+          end;
+        if Digits = 0 then
+          LexError('invalid character');
+        if V > $FFFF then
+          SyntaxError('integer out of range');
+        S := S + Char(V);
+      end;
+    More := False;
+    while IsBlankChar(Peek(0)) do
+      Advance;
+    if Peek(0) = '+' then
+    begin
+      PlusLine := FLex.Line;
+      PlusCol := FLex.Col;
+      Advance;
+      while IsBlankChar(Peek(0)) do
+        Advance;
+      if not ((Peek(0) = #10) or ((Peek(0) = #13) and (Peek(1) = #10))) then
+      begin
+        FLex.TokLine := PlusLine;
+        FLex.TokCol := PlusCol;
+        SyntaxError('invalid character');
+      end;
+      while IsBlankChar(Peek(0)) or (Peek(0) = #10) or ((Peek(0) = #13) and (Peek(1) = #10)) do
+        Advance;
+      if (Peek(0) <> '''') and (Peek(0) <> '#') then
+      begin
+        if FLex.Pos > Length(FText) then
+          LexError('unexpected end of file')
+        else
+          LexError('expected string but found "' + Peek(0) + '"');
+      end;
+      More := True;
+    end;
+  until not More;
+  FLex.Tok := ftString;
+  FLex.TokStr := S;
+end;
+
+function TReader.IsSymbol(const Symbol: string): Boolean;
+begin
+  Result := (FLex.Tok = ftSymbol) and (FLex.TokText = Symbol);
+end;
+
+{ RTL-488: keywords are ASCII case-insensitive }
+function TReader.IsKeyword(const Keyword: string): Boolean;
+begin
+  Result := (FLex.Tok = ftIdent) and (CompareText(FLex.TokText, Keyword) = 0);
+end;
+
+procedure TReader.Expect(const Symbol: string);
+begin
+  if not IsSymbol(Symbol) then
+    Unexpected('"' + Symbol + '"');
+  NextToken;
+end;
+
+{ one or more line ends; the end of the file also ends a line }
+procedure TReader.ExpectLineEnd;
+begin
+  if FLex.Tok = ftLineEnd then
+    SkipLineEnds
+  else if FLex.Tok <> ftEOF then
+    Unexpected('end of line');
+end;
+
+procedure TReader.SkipLineEnds;
+begin
+  while FLex.Tok = ftLineEnd do
+    NextToken;
+end;
+
+function TReader.ReadIdentToken: string;
+begin
+  if FLex.Tok <> ftIdent then
+    Unexpected('identifier');
+  Result := FLex.TokText;
+  NextToken;
+end;
+
+function TReader.ReadQualIdent: string;
+begin
+  Result := ReadIdentToken;
+  while IsSymbol('.') do
+  begin
+    NextToken;
+    Result := Result + '.' + ReadIdentToken;
+  end;
+end;
+
+(* RTL-505: hex digits in any case and any line structure up to the closing brace; the current token is the opening one *)
+procedure TReader.ReadBinaryBlock(Stream: TStream);
+var
+  Bytes: TBytes;
+  Count, Hi, H: Integer;
+  C: Char;
+begin
+  SetLength(Bytes, 0);
+  Count := 0;
+  Hi := -1;
+  while True do
+  begin
+    if FLex.Pos > Length(FText) then
+      LexError('unexpected end of file');
+    C := Peek(0);
+    if C = '}' then
+      Break;
+    if IsBlankChar(C) or (C = #10) or ((C = #13) and (Peek(1) = #10)) then
+      Advance
+    else
+    begin
+      H := HexValue(C);
+      if H < 0 then
+        LexError('invalid character');
+      if Hi < 0 then
+        Hi := H
+      else
+      begin
+        if Count = Length(Bytes) then
+          SetLength(Bytes, Count * 2 + 64);
+        Bytes[Count] := Byte(Hi * 16 + H);
+        Count := Count + 1;
+        Hi := -1;
+      end;
+      Advance;
+    end;
+  end;
+  if Hi >= 0 then
+    LexError('invalid character');
+  Advance;
+  if (Stream <> nil) and (Count > 0) then
+    Stream.WriteBuffer(Bytes[0], Count);
+  NextToken;
+end;
+
+{ ---- value access for DefineProperty read procs (RTL-505) }
+
+function TReader.NextValue: TValueType;
+begin
+  case FLex.Tok of
+    ftInteger:
+      if FLex.TokHex32 then
+        Result := vaInt32
+      else if (FLex.TokInt >= -128) and (FLex.TokInt <= 127) then
+        Result := vaInt8
+      else if (FLex.TokInt >= -32768) and (FLex.TokInt <= 32767) then
+        Result := vaInt16
+      else if (FLex.TokInt >= -2147483647 - 1) and (FLex.TokInt <= 2147483647) then
+        Result := vaInt32
+      else
+        Result := vaInt64;
+    ftFloat:
+      Result := vaExtended;
+    ftString:
+      Result := vaString;
+    ftIdent:
+      if IsKeyword('True') then
+        Result := vaTrue
+      else if IsKeyword('False') then
+        Result := vaFalse
+      else if IsKeyword('nil') then
+        Result := vaNil
+      else
+        Result := vaIdent;
+    ftSymbol:
+      if IsSymbol('[') then
+        Result := vaSet
+      else if IsSymbol('(') then
+        Result := vaList
+      else if IsSymbol('{') then
+        Result := vaBinary
+      else if IsSymbol('<') then
+        Result := vaCollection
+      else
+        Result := vaNull;
+  else
+    Result := vaNull;
+  end;
+end;
+
+function TReader.ReadInteger: Integer;
+begin
+  if FLex.Tok <> ftInteger then
+    PropValueError;
+  if not FLex.TokHex32 and ((FLex.TokInt < -2147483647 - 1) or (FLex.TokInt > 2147483647)) then
+    PropValueError;
+  Result := Integer(FLex.TokInt);
+  NextToken;
+end;
+
+{ a $ literal of up to 8 digits is an unsigned 32-bit value here }
+function TReader.ReadInt64: Int64;
+begin
+  if FLex.Tok <> ftInteger then
+    PropValueError;
+  Result := FLex.TokInt;
+  if FLex.TokHex32 then
+    Result := Result and $FFFFFFFF;
+  NextToken;
+end;
+
+function TReader.ReadFloat: Double;
+begin
+  if FLex.Tok = ftFloat then
+    Result := FLex.TokFloat
+  else if FLex.Tok = ftInteger then
+    Result := FLex.TokInt
+  else
+  begin
+    PropValueError;
+    Result := 0;
+  end;
+  NextToken;
+end;
+
+function TReader.ReadString: string;
+begin
+  if FLex.Tok <> ftString then
+    PropValueError;
+  Result := FLex.TokStr;
+  NextToken;
+end;
+
+function TReader.ReadBoolean: Boolean;
+begin
+  if IsKeyword('True') then
+    Result := True
+  else if IsKeyword('False') then
+    Result := False
+  else
+  begin
+    PropValueError;
+    Result := False;
+  end;
+  NextToken;
+end;
+
+function TReader.ReadIdent: string;
+begin
+  if FLex.Tok <> ftIdent then
+    PropValueError;
+  Result := ReadQualIdent;
+end;
+
+function TReader.ReadChar: Char;
+begin
+  if (FLex.Tok <> ftString) or (Length(FLex.TokStr) <> 1) then
+    PropValueError;
+  Result := FLex.TokStr[1];
+  NextToken;
+end;
+
+(* "[" ident { "," ident } "]" over the element type of the set type SetType *)
+function TReader.ReadSet(SetType: Pointer): Integer;
+var
+  CompType: PTypeInfo;
+  Names: string;
+begin
+  if not IsSymbol('[') then
+    PropValueError;
+  CompType := GetTypeData(PTypeInfo(SetType))^.CompType;
+  NextToken;
+  Names := '';
+  while not IsSymbol(']') do
+  begin
+    if (FLex.Tok <> ftIdent) or (GetEnumValue(CompType, FLex.TokText) < 0) then
+      PropValueError;
+    if Names <> '' then
+      Names := Names + ',';
+    Names := Names + FLex.TokText;
+    NextToken;
+    if IsSymbol(',') then
+      NextToken
+    else if not IsSymbol(']') then
+      Unexpected('"]"');
+  end;
+  NextToken;
+  Result := StringToSet(PTypeInfo(SetType), Names);
+end;
+
+procedure TReader.ReadListBegin;
+begin
+  if not IsSymbol('(') then
+    PropValueError;
+  NextToken;
+  SkipLineEnds;
+end;
+
+function TReader.EndOfList: Boolean;
+begin
+  SkipLineEnds;
+  Result := IsSymbol(')');
+end;
+
+procedure TReader.ReadListEnd;
+begin
+  SkipLineEnds;
+  if not IsSymbol(')') then
+    Unexpected('")"');
+  NextToken;
+end;
+
+procedure TReader.SkipValue;
+var
+  Depth: Integer;
+begin
+  case FLex.Tok of
+    ftInteger, ftFloat, ftString:
+      NextToken;
+    ftIdent:
+      ReadQualIdent;
+    ftSymbol:
+      if IsSymbol('[') or IsSymbol('(') then
+      begin
+        if IsSymbol('[') then
+          Depth := 1
+        else
+          Depth := 2;
+        NextToken;
+        while not ((Depth = 1) and IsSymbol(']')) and not ((Depth = 2) and IsSymbol(')')) do
+        begin
+          if FLex.Tok = ftEOF then
+            SyntaxError('unexpected end of file');
+          NextToken;
+        end;
+        NextToken;
+      end
+      else if IsSymbol('{') then
+        ReadBinaryBlock(nil)
+      else if IsSymbol('<') then
+      begin
+        Depth := 1;
+        NextToken;
+        while Depth > 0 do
+        begin
+          if FLex.Tok = ftEOF then
+            SyntaxError('unexpected end of file');
+          if IsSymbol('{') then
+            ReadBinaryBlock(nil)
+          else
+          begin
+            if IsSymbol('<') then
+              Depth := Depth + 1
+            else if IsSymbol('>') then
+              Depth := Depth - 1;
+            NextToken;
+          end;
+        end;
+      end
+      else
+        Unexpected('value');
+  else
+    Unexpected('value');
+  end;
+end;
+
+procedure TReader.DefineProperty(const Name: string; ReadData: TReaderProc; WriteData: TWriterProc;
+  HasData: Boolean);
+begin
+  if (FMatchName <> '') and not FMatched and (CompareText(Name, FMatchName) = 0) then
+  begin
+    FMatched := True;
+    if Assigned(ReadData) then
+      ReadData(Self)
+    else
+      SkipValue;
+  end;
+end;
+
+procedure TReader.DefineBinaryProperty(const Name: string; ReadData, WriteData: TStreamProc; HasData: Boolean);
+var
+  M: TMemoryStream;
+begin
+  if (FMatchName <> '') and not FMatched and (CompareText(Name, FMatchName) = 0) then
+  begin
+    FMatched := True;
+    if not IsSymbol('{') then
+      PropValueError;
+    M := TMemoryStream.Create;
+    try
+      ReadBinaryBlock(M);
+      M.Position := 0;
+      if Assigned(ReadData) then
+        ReadData(M);
+    finally
+      M.Free;
+    end;
+  end;
+end;
+
+{ ---- parser (RTL-495 ... RTL-499) }
+
+procedure TReader.ReadStringsValue(Strings: TStrings);
+begin
+  NextToken;
+  SkipLineEnds;
+  Strings.BeginUpdate;
+  try
+    Strings.Clear;
+    while not IsSymbol(')') do
+    begin
+      if FLex.Tok <> ftString then
+        PropValueError;
+      Strings.Add(FLex.TokStr);
+      NextToken;
+      SkipLineEnds;
+    end;
+    NextToken;
+  finally
+    Strings.EndUpdate;
+  end;
+end;
+
+(* "<" { "item" NL { property } "end" NL } ">": the collection is cleared, then one Add per item *)
+procedure TReader.ReadCollection(Collection: TCollection);
+var
+  Item: TCollectionItem;
+begin
+  if not IsSymbol('<') then
+    PropValueError;
+  NextToken;
+  SkipLineEnds;
+  Collection.BeginUpdate;
+  try
+    Collection.Clear;
+    while IsKeyword('item') do
+    begin
+      NextToken;
+      ExpectLineEnd;
+      Item := Collection.Add;
+      ReadItemProperties(Item);
+    end;
+    if not IsSymbol('>') then
+      Unexpected('"item" or ">"');
+    NextToken;
+  finally
+    Collection.EndUpdate;
+  end;
+end;
+
+procedure TReader.ReadItemProperties(Item: TPersistent);
+begin
+  while not IsKeyword('end') do
+    ReadProperty(Item);
+  NextToken;
+  ExpectLineEnd;
+end;
+
+function TReader.ResolveReference(const Name: string): TComponent;
+var
+  P: Integer;
+  Container: TComponent;
+begin
+  Result := nil;
+  P := Pos('.', Name);
+  if P = 0 then
+  begin
+    if FLookupRoot = nil then
+      Exit;
+    if CompareText(FLookupRoot.Name, Name) = 0 then
+      Result := FLookupRoot
+    else
+      Result := FLookupRoot.FindComponent(Name);
+  end
+  else if Assigned(FindGlobalComponent) then
+  begin
+    Container := FindGlobalComponent(Copy(Name, 1, P - 1));
+    if Container <> nil then
+      Result := Container.FindComponent(Copy(Name, P + 1, MaxInt));
+  end;
+end;
+
+{ RTL-496 component reference: now if possible, else a fix-up resolved after the root's end }
+procedure TReader.ReadReference(Instance: TPersistent; PropInfo: PPropInfo);
+var
+  RefLine, RefCol: Integer;
+  Name: string;
+  C: TComponent;
+  F: TFixup;
+begin
+  RefLine := FLex.TokLine;
+  RefCol := FLex.TokCol;
+  Name := ReadQualIdent;
+  if Assigned(FOnReferenceName) then
+    FOnReferenceName(Self, Name);
+  C := ResolveReference(Name);
+  if C = nil then
+  begin
+    F := TFixup.Create;
+    F.Instance := Instance;
+    F.PropInfo := PropInfo;
+    F.Name := Name;
+    F.Path := FPropName;
+    F.Line := RefLine;
+    F.Col := RefCol;
+    FFixups.Add(Pointer(F));
+  end
+  else if not C.InheritsFrom(GetObjectPropClass(PropInfo)) then
+    Error('F0103', Format(SFormInvalidPropertyValue, [FPropName]), RefLine, RefCol)
+  else
+    SetObjectProp(Instance, PropInfo, C);
+end;
+
+{ RTL-498 }
+procedure TReader.ResolveFixups;
+var
+  I: Integer;
+  F: TFixup;
+  C: TComponent;
+begin
+  for I := 0 to FFixups.Count - 1 do
+  begin
+    F := TFixup(FFixups[I]);
+    try
+      C := ResolveReference(F.Name);
+      if C = nil then
+        Error('F0105', Format(SFormComponentNotFound, [F.Name]), F.Line, F.Col)
+      else if not C.InheritsFrom(GetObjectPropClass(F.PropInfo)) then
+        Error('F0103', Format(SFormInvalidPropertyValue, [F.Path]), F.Line, F.Col)
+      else
+        SetObjectProp(F.Instance, F.PropInfo, C);
+    except
+      on E: ESkipProperty do
+        ;
+    end;
+  end;
+end;
+
+{ RTL-496 step 2 for an integer property: a number or an identifier of the type's RegisterIntegerConsts map }
+function TReader.ReadOrdinalValue(PropInfo: PPropInfo): Int64;
+var
+  TD: PTypeData;
+  ToInt: TIdentToInt;
+  I32: Integer;
+begin
+  TD := GetTypeData(PropInfo^.PropType);
+  Result := 0;
+  if FLex.Tok = ftInteger then
+  begin
+    Result := FLex.TokInt;
+    if FLex.TokHex32 and (TD^.OrdType = otULong) then
+      Result := Result and $FFFFFFFF;
+  end
+  else if FLex.Tok = ftIdent then
+  begin
+    ToInt := FindIdentToInt(PropInfo^.PropType);
+    I32 := 0;
+    if not Assigned(ToInt) or not ToInt(FLex.TokText, I32) then
+      PropValueError;
+    Result := I32;
+  end
+  else
+    PropValueError;
+  if (Result < TD^.MinValue) or (Result > TD^.MaxValue) then
+    PropValueError;
+  NextToken;
+end;
+
+{ RTL-496 step 3 }
+procedure TReader.ApplyValue(Instance: TPersistent; PropInfo: PPropInfo; const Path: string);
+var
+  TI: PTypeInfo;
+  V: Integer;
+  F: Double;
+  Sub: TObject;
+  Name: string;
+  Addr: Pointer;
+  Err: Boolean;
+  M: TMethod;
+begin
+  TI := PropInfo^.PropType;
+  case TI^.Kind of
+    tkInteger:
+      SetOrdProp(Instance, PropInfo, ReadOrdinalValue(PropInfo));
+    tkInt64:
+      SetInt64Prop(Instance, PropInfo, ReadInt64);
+    tkChar, tkWChar:
+      SetOrdProp(Instance, PropInfo, Ord(ReadChar));
+    tkEnumeration:
+      begin
+        if FLex.Tok <> ftIdent then
+          PropValueError;
+        V := GetEnumValue(TI, FLex.TokText);
+        if V < 0 then
+          PropValueError;
+        SetOrdProp(Instance, PropInfo, V);
+        NextToken;
+      end;
+    tkFloat:
+      begin
+        F := ReadFloat;
+        SetFloatProp(Instance, PropInfo, F);
+      end;
+    tkUString, tkAString, tkSString:
+      SetStrProp(Instance, PropInfo, ReadString);
+    tkSet:
+      SetOrdProp(Instance, PropInfo, ReadSet(TI));
+    tkClass:
+      if IsKeyword('nil') then
+      begin
+        SetObjectProp(Instance, PropInfo, nil);
+        NextToken;
+      end
+      else if IsSymbol('(') then
+      begin
+        Sub := GetObjectProp(Instance, PropInfo);
+        if not (Sub is TStrings) then
+          PropValueError;
+        ReadStringsValue(TStrings(Sub));
+      end
+      else if IsSymbol('<') then
+      begin
+        Sub := GetObjectProp(Instance, PropInfo);
+        if not (Sub is TCollection) then
+          PropValueError;
+        ReadCollection(TCollection(Sub));
+      end
+      else if FLex.Tok = ftIdent then
+        ReadReference(Instance, PropInfo)
+      else
+        PropValueError;
+    tkMethod:
+      begin
+        if FLex.Tok <> ftIdent then
+          PropValueError;
+        Name := FLex.TokText;
+        Addr := FRoot.MethodAddress(Name);
+        Err := Addr = nil;
+        if Assigned(FOnFindMethod) then
+          FOnFindMethod(Self, Name, Addr, Err);
+        if Addr = nil then
+          Error('F0104', Format(SFormMethodNotFound, [Name, FRoot.ClassName]), FLex.TokLine, FLex.TokCol);
+        M.Code := Addr;
+        M.Data := Pointer(FRoot);
+        SetMethodProp(Instance, PropInfo, M);
+        NextToken;
+      end;
+  else
+    PropValueError;
+  end;
+end;
+
+{ RTL-496 steps 1 and 2: the path into sub-objects, then a published property or a defined one }
+procedure TReader.ReadPropValue(Instance: TPersistent; const Path: string);
+var
+  Obj, Sub: TObject;
+  Rest, Part: string;
+  P: Integer;
+  Info: PPropInfo;
+begin
+  Obj := Instance;
+  Rest := Path;
+  P := Pos('.', Rest);
+  while P > 0 do
+  begin
+    Part := Copy(Rest, 1, P - 1);
+    Rest := Copy(Rest, P + 1, MaxInt);
+    Info := GetPropInfo(Obj, Part);
+    Sub := nil;
+    if (Info <> nil) and (Info^.PropType^.Kind = tkClass) then
+      Sub := GetObjectProp(Obj, Info);
+    if Sub = nil then
+      Error('F0102', Format(SFormPropertyNotFound, [Path, Instance.ClassName]), FPropLine, FPropCol);
+    Obj := Sub;
+    P := Pos('.', Rest);
+  end;
+  Info := GetPropInfo(Obj, Rest);
+  if Info = nil then
+  begin
+    if Obj is TPersistent then
+    begin
+      FMatchName := Rest;
+      FMatched := False;
+      try
+        TPersistent(Obj).DefineProperties(Self);
+      finally
+        FMatchName := '';
+      end;
+      if FMatched then
+        Exit;
+    end;
+    Error('F0102', Format(SFormPropertyNotFound, [Path, Instance.ClassName]), FPropLine, FPropCol);
+  end;
+  ApplyValue(TPersistent(Obj), Info, Path);
+end;
+
+{ qualIdent "=" value NL; an error handled by OnError skips the value }
+procedure TReader.ReadProperty(Instance: TPersistent);
+var
+  PathLine, PathCol: Integer;
+  Path: string;
+  Saved: TFormLexState;
+begin
+  PathLine := FLex.TokLine;
+  PathCol := FLex.TokCol;
+  Path := ReadQualIdent;
+  Expect('=');
+  if (FLex.Tok = ftLineEnd) or (FLex.Tok = ftEOF) then
+    Unexpected('value');
+  FPropName := Path;
+  FPropLine := PathLine;
+  FPropCol := PathCol;
+  Saved := FLex;
+  try
+    ReadPropValue(Instance, Path);
+  except
+    on E: ESkipProperty do
+    begin
+      FLex := Saved;
+      SkipValue;
+    end;
+  end;
+  ExpectLineEnd;
+end;
+
+{ property lines, then nested objects with Parent = Instance, then "end" (RTL-499) }
+procedure TReader.ReadData(Instance: TComponent);
+var
+  OldParent: TComponent;
+begin
+  while not (IsKeyword('object') or IsKeyword('inherited') or IsKeyword('inline') or IsKeyword('end')) do
+    ReadProperty(Instance);
+  OldParent := FParent;
+  FParent := Instance;
+  try
+    while IsKeyword('object') or IsKeyword('inherited') or IsKeyword('inline') do
+      ReadComponentObject;
+  finally
+    FParent := OldParent;
+  end;
+  if not IsKeyword('end') then
+    Unexpected('"end"');
+  NextToken;
+  ExpectLineEnd;
+end;
+
+{ RTL-497 }
+procedure TReader.ReadComponentObject;
+var
+  NameLine, NameCol, TypeLine, TypeCol: Integer;
+  Name, TypeName, Msg: string;
+  Cls: TPersistentClass;
+  CompClass: TComponentClass;
+  C: TComponent;
+begin
+  if IsKeyword('inherited') or IsKeyword('inline') then
+    Error('F0107', Format(SFormObjectsNotSupported, [LowerCase(FLex.TokText)]), FLex.TokLine, FLex.TokCol);
+  NextToken;
+  NameLine := FLex.TokLine;
+  NameCol := FLex.TokCol;
+  Name := ReadIdentToken;
+  Expect(':');
+  TypeLine := FLex.TokLine;
+  TypeCol := FLex.TokCol;
+  TypeName := ReadIdentToken;
+  ExpectLineEnd;
+  Cls := GetClass(TypeName);
+  CompClass := nil;
+  if (Cls <> nil) and Cls.InheritsFrom(TComponent) then
+    CompClass := TComponentClass(Cls);
+  if Assigned(FOnFindComponentClass) then
+    FOnFindComponentClass(Self, TypeName, CompClass);
+  if CompClass = nil then
+    Error('F0101', Format(SFormClassNotFound, [TypeName]), TypeLine, TypeCol);
+  C := nil;
+  if Assigned(FOnCreateComponent) then
+    FOnCreateComponent(Self, CompClass, C);
+  if C = nil then
+    C := CompClass.Create(FOwner);
+  FCreated.Add(Pointer(C));
+  Include(C.FComponentState, csLoading);
+  Include(C.FComponentState, csReading);
+  FLoaded.Add(Pointer(C));
+  C.SetParentComponent(FParent);
+  if Assigned(FOnSetName) then
+    FOnSetName(Self, C, Name);
+  Msg := '';
+  try
+    C.Name := Name;
+  except
+    on E: EComponentError do
+      Msg := E.Message;
+  end;
+  if Msg <> '' then
+    Error('F0106', Msg, NameLine, NameCol);
+  C.ReadState(Self);
+end;
+
+{ RTL-495 step 7 }
+procedure TReader.Cleanup;
+var
+  I: Integer;
+begin
+  for I := FCreated.Count - 1 downto 0 do
+    TComponent(FCreated[I]).Free;
+  FCreated.Clear;
+  FLoaded.Clear;
+  if FRoot <> nil then
+  begin
+    Exclude(FRoot.FComponentState, csLoading);
+    Exclude(FRoot.FComponentState, csReading);
+    if FRootCreated then
+    begin
+      FRoot.Free;
+      FRoot := nil;
+    end;
+  end;
+end;
+
+{ RTL-495; a nil Root is created from the header's class (GetClass) }
+function TReader.ReadRootComponent(Root: TComponent): TComponent;
+var
+  NameLine, NameCol, TypeLine, TypeCol, I: Integer;
+  Name, TypeName, Msg: string;
+  Cls: TPersistentClass;
+begin
+  try
+    DecodeText;
+    NextToken;
+    SkipLineEnds;
+    if IsKeyword('inline') then
+      Error('F0107', Format(SFormObjectsNotSupported, ['inline']), FLex.TokLine, FLex.TokCol);
+    if not (IsKeyword('object') or IsKeyword('inherited')) then
+      Unexpected('"object"');
+    NextToken;
+    NameLine := FLex.TokLine;
+    NameCol := FLex.TokCol;
+    Name := ReadIdentToken;
+    Expect(':');
+    TypeLine := FLex.TokLine;
+    TypeCol := FLex.TokCol;
+    TypeName := ReadIdentToken;
+    ExpectLineEnd;
+    if Root = nil then
+    begin
+      Cls := GetClass(TypeName);
+      if (Cls = nil) or not Cls.InheritsFrom(TComponent) then
+        Error('F0101', Format(SFormClassNotFound, [TypeName]), TypeLine, TypeCol);
+      Root := TComponentClass(Cls).Create(nil);
+      FRootCreated := True;
+    end;
+    FRoot := Root;
+    FLookupRoot := Root;
+    FOwner := Root;
+    FParent := nil;
+    Include(Root.FComponentState, csLoading);
+    Include(Root.FComponentState, csReading);
+    FLoaded.Add(Pointer(Root));
+    if Assigned(FOnSetName) then
+      FOnSetName(Self, Root, Name);
+    if Name <> '' then
+    begin
+      Msg := '';
+      try
+        Root.Name := Name;
+      except
+        on E: EComponentError do
+          Msg := E.Message;
+      end;
+      if Msg <> '' then
+        Error('F0106', Msg, NameLine, NameCol);
+    end;
+    Root.ReadState(Self);
+    SkipLineEnds;
+    if FLex.Tok <> ftEOF then
+      Unexpected('end of file');
+    ResolveFixups;
+    for I := FLoaded.Count - 1 downto 0 do
+      Exclude(TComponent(FLoaded[I]).FComponentState, csReading);
+    for I := FLoaded.Count - 1 downto 0 do
+      TComponent(FLoaded[I]).Loaded;
+    FLoaded.Clear;
+    FCreated.Clear;
+  except
+    Cleanup;
+    raise;
+  end;
+  Result := Root;
+end;
+
+procedure TWriter.DefineProperty(const Name: string; ReadData: TReaderProc; WriteData: TWriterProc;
+  HasData: Boolean);
+begin
+end;
+
+procedure TWriter.DefineBinaryProperty(const Name: string; ReadData, WriteData: TStreamProc; HasData: Boolean);
+begin
+end;
+
+{ RTL-481 }
+procedure TWriter.WriteRootComponent(Root: TComponent);
+begin
+  raise ENotImplemented.Create('TWriter.WriteRootComponent is not implemented');
+end;
+
+{ ---------------------------------------------------------------- embedded forms (section 10.2) }
+
+function ReadFormData(Data: Pointer; Size: NativeInt; Instance: TComponent; const SourceName: string): TComponent;
+var
+  S: TPointerStream;
+  R: TReader;
+begin
+  S := TPointerStream.Create(Data, Size);
+  try
+    R := TReader.Create(S, 4096);
+    try
+      R.SourceName := SourceName;
+      Result := R.ReadRootComponent(Instance);
+    finally
+      R.Free;
+    end;
+  finally
+    S.Free;
+  end;
+end;
+
+function ReadComponentFromText(const Text: string; Instance: TComponent; const SourceName: string): TComponent;
+var
+  S: TBytesStream;
+  R: TReader;
+begin
+  S := TBytesStream.Create(TEncoding.UTF8.GetBytes(Text));
+  try
+    R := TReader.Create(S, 4096);
+    try
+      R.SourceName := SourceName;
+      Result := R.ReadRootComponent(Instance);
+    finally
+      R.Free;
+    end;
+  finally
+    S.Free;
+  end;
+end;
+
+{ RTL-483: from the base-most class below RootAncestor to the most derived one }
+function InitInheritedComponent(Instance: TComponent; RootAncestor: TClass): Boolean;
+var
+  Chain: array of TClass;
+  N, I: Integer;
+  C: TClass;
+  Data: Pointer;
+  Size: NativeInt;
+begin
+  Result := False;
+  N := 0;
+  C := Instance.ClassType;
+  while (C <> nil) and (C <> RootAncestor) do
+  begin
+    SetLength(Chain, N + 1);
+    Chain[N] := C;
+    N := N + 1;
+    C := C.ClassParent;
+  end;
+  for I := N - 1 downto 0 do
+    if FindResourceData(Chain[I].ClassName, Data, Size) then
+    begin
+      ReadFormData(Data, Size, Instance, Chain[I].ClassName + '.form');
+      Result := True;
+    end;
+end;
+
+function InitComponentRes(const ResName: string; Instance: TComponent): Boolean;
+var
+  Data: Pointer;
+  Size: NativeInt;
+begin
+  Result := FindResourceData(ResName, Data, Size);
+  if Result then
+    ReadFormData(Data, Size, Instance, ResName + '.form');
+end;
+
+{ ---------------------------------------------------------------- TThread (section 11) }
+
+type
+  { one Synchronize / Queue request; Done is nil for a queued one }
+  TSyncEntry = class
+  public
+    Thread: TThread;
+    Method: TThreadMethod;
+    Done: SyncObjs.TEvent;
+    Failure: TObject;
+  end;
+
+var
+  SyncLock: SyncObjs.TCriticalSection;
+  SyncEvent: SyncObjs.TEvent;
+  SyncList: TList;
+
+threadvar
+  CurrentThreadVar: TThread;
+
+procedure AddSyncEntry(Entry: TSyncEntry);
+begin
+  SyncLock.Enter;
+  try
+    SyncList.Add(Pointer(Entry));
+  finally
+    SyncLock.Leave;
+  end;
+  SyncEvent.SetEvent;
+  if Assigned(WakeMainThread) then
+    WakeMainThread(Entry.Thread);
+end;
+
+{ RTL-510 }
+function ThreadProc(Parameter: Pointer): Integer;
+var
+  T: TThread;
+  FreeIt: Boolean;
+  Method: TThreadMethod;
+begin
+  T := TThread(Parameter);
+  CurrentThreadVar := T;
+  try
+    if not T.FTerminated then
+      try
+        T.Execute;
+      except
+        T.FFatalException := TObject(AcquireExceptionObject);
+      end;
+  finally
+    Result := T.FReturnValue;
+    FreeIt := T.FFreeOnTerminate;
+    T.FFinished := True;
+    if Assigned(T.FOnTerminate) then
+    begin
+      { TODO(compiler bug, reported): a method passed straight to the overloaded Synchronize is called (E2034) }
+      Method := T.CallOnTerminate;
+      TThread.Synchronize(T, Method);
+    end;
+    if FreeIt then
+      T.Free;
+    CurrentThreadVar := nil;
+  end;
+end;
+
+{ the thread is made suspended; AfterConstruction starts it unless CreateSuspended }
+constructor TThread.Create(CreateSuspended: Boolean);
+begin
+  inherited Create;
+  FCreateSuspended := CreateSuspended;
+  FHandle := BeginThread(nil, 0, ThreadProc, Pointer(Self), CREATE_SUSPENDED, FThreadID);
+  if FHandle = 0 then
+    raise EThread.Create(SysErrorMessage(GetLastError));
+end;
+
+procedure TThread.AfterConstruction;
+begin
+  inherited AfterConstruction;
+  if not FCreateSuspended then
+    Start;
+end;
+
+{ a running thread is terminated and waited for; a never started one runs to its end without Execute }
+destructor TThread.Destroy;
+begin
+  if (FHandle <> 0) and not FFinished and (FThreadID <> GetCurrentThreadId) then
+  begin
+    FTerminated := True;
+    if not FStarted then
+    begin
+      FStarted := True;
+      ResumeThread(FHandle);
+    end;
+    WaitFor;
+  end;
+  if FHandle <> 0 then
+    CloseHandle(FHandle);
+  FHandle := 0;
+  FFatalException.Free;
+  FFatalException := nil;
+  inherited Destroy;
+end;
+
+procedure TThread.CallOnTerminate;
+begin
+  if Assigned(FOnTerminate) then
+    FOnTerminate(Self);
+end;
+
+procedure TThread.Start;
+begin
+  if FStarted then
+    raise EThread.Create(SThreadAlreadyStarted);
+  FStarted := True;
+  ResumeThread(FHandle);
+end;
+
+procedure TThread.Terminate;
+begin
+  FTerminated := True;
+end;
+
+{ on the main thread pending Synchronize / Queue entries run while waiting }
+function TThread.WaitFor: Cardinal;
+var
+  Handles: array[0..1] of THandle;
+  R: Cardinal;
+begin
+  if GetCurrentThreadId = MainThreadID then
+  begin
+    Handles[0] := FHandle;
+    Handles[1] := SyncEvent.Handle;
+    repeat
+      R := WaitForMultipleObjects(2, @Handles[0], False, INFINITE);
+      if R = WAIT_OBJECT_0 + 1 then
+        CheckSynchronize(0);
+    until R <> WAIT_OBJECT_0 + 1;
+  end
+  else
+    WaitForSingleObject(FHandle, INFINITE);
+  Result := Cardinal(FReturnValue);
+end;
+
+{ RTL-511 }
+class procedure TThread.Synchronize(AThread: TThread; AMethod: TThreadMethod);
+var
+  Entry: TSyncEntry;
+  Failure: TObject;
+begin
+  if GetCurrentThreadId = MainThreadID then
+  begin
+    AMethod;
+    Exit;
+  end;
+  Entry := TSyncEntry.Create;
+  Entry.Thread := AThread;
+  Entry.Method := AMethod;
+  Entry.Done := SyncObjs.TEvent.Create(nil, True, False, '');
+  try
+    AddSyncEntry(Entry);
+    Entry.Done.WaitFor(INFINITE);
+    Failure := Entry.Failure;
+  finally
+    Entry.Done.Free;
+    Entry.Free;
+  end;
+  if Failure <> nil then
+    raise Failure;
+end;
+
+procedure TThread.Synchronize(AMethod: TThreadMethod);
+begin
+  Synchronize(Self, AMethod);
+end;
+
+{ RTL-512 }
+class procedure TThread.Queue(AThread: TThread; AMethod: TThreadMethod);
+var
+  Entry: TSyncEntry;
+begin
+  Entry := TSyncEntry.Create;
+  Entry.Thread := AThread;
+  Entry.Method := AMethod;
+  AddSyncEntry(Entry);
+end;
+
+class function TThread.CurrentThread: TThread;
+begin
+  Result := CurrentThreadVar;
+end;
+
+class procedure TThread.Sleep(Milliseconds: Integer);
+begin
+  Windows.Sleep(Cardinal(Milliseconds));
+end;
+
+{ RTL-513: waits up to Timeout ms when nothing is pending, then runs every pending entry in FIFO order }
+function CheckSynchronize(Timeout: Integer): Boolean;
+var
+  Pending: TList;
+  Entry: TSyncEntry;
+  I: Integer;
+  Empty: Boolean;
+begin
+  if GetCurrentThreadId <> MainThreadID then
+    raise EThread.CreateFmt(SCheckSynchronizeError, [GetCurrentThreadId]);
+  SyncLock.Enter;
+  try
+    Empty := SyncList.Count = 0;
+  finally
+    SyncLock.Leave;
+  end;
+  if Empty and (Timeout > 0) then
+    SyncEvent.WaitFor(Cardinal(Timeout));
+  Result := False;
+  Pending := TList.Create;
+  try
+    SyncLock.Enter;
+    try
+      for I := 0 to SyncList.Count - 1 do
+        Pending.Add(SyncList[I]);
+      SyncList.Clear;
+    finally
+      SyncLock.Leave;
+    end;
+    for I := 0 to Pending.Count - 1 do
+    begin
+      Entry := TSyncEntry(Pending[I]);
+      Result := True;
+      if Entry.Done <> nil then
+      begin
+        try
+          Entry.Method;
+        except
+          Entry.Failure := TObject(AcquireExceptionObject);
+        end;
+        Entry.Done.SetEvent;
+      end
+      else
+      begin
+        try
+          try
+            Entry.Method;
+          except
+            if Assigned(ApplicationHandleException) then
+              ApplicationHandleException(Entry.Thread)
+            else
+              ShowException(ExceptObject, ExceptAddr);
+          end;
+        finally
+          Entry.Free;
+        end;
+      end;
+    end;
+  finally
+    Pending.Free;
+  end;
+end;
+
+initialization
+  SyncLock := SyncObjs.TCriticalSection.Create;
+  SyncEvent := SyncObjs.TEvent.Create(nil, False, False, '');
+  SyncList := TList.Create;
+  RegistryLock := SyncObjs.TCriticalSection.Create;
+
+finalization
+  SyncList.Free;
+  SyncList := nil;
+  SyncEvent.Free;
+  SyncEvent := nil;
+  SyncLock.Free;
+  SyncLock := nil;
+  RegistryLock.Free;
+  RegistryLock := nil;
 
 end.

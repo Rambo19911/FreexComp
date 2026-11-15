@@ -1,0 +1,27 @@
+# Execute and Update
+ok Execute without handler
+ok Update without handler
+ok Execute with handler
+ok Update with handler
+ok handlers fired
+# links
+ok AssignClient from the constructor
+ok Action
+ok Change reaches every link; link OnChange gets the action
+ok link Execute
+ok ActionComponent during the call
+ok ActionComponent reset afterwards
+ok link Update
+ok freed ActionComponent is cleared
+ok a freed link is unregistered
+ok Action := nil unregisters
+ok freeing the action clears the link
+ok link Execute without action
+ok link Update without action
+# ExecuteAction and UpdateAction (RTL-462)
+ok ExecuteAction handled
+ok UpdateAction handled
+ok ExecuteAction not handled
+ok UpdateAction not handled
+ok targets
+# passed 23 failed 0

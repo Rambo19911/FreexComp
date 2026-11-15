@@ -1,0 +1,27 @@
+# registration (RTL-482)
+ok base form registered
+ok derived form registered, case-insensitive
+ok no form for TEmbedNone
+# InitInheritedComponent (RTL-483)
+ok base: found
+ok root name
+ok root property
+ok child bound to its field
+ok child property
+ok derived: found
+ok the derived file is read last
+ok the base file is read first
+ok children of both files
+ok child properties of both files
+ok two children
+ok RootAncestor excludes the base file
+ok derived file read
+ok base file not read
+ok no base child
+ok no file at all
+ok errors name the class file
+# InitComponentRes
+ok named resource read
+ok its properties
+ok unknown resource
+# passed 23 failed 0

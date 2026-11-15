@@ -1,0 +1,18 @@
+# FreeNotification (RTL-458)
+ok flag on the caller's argument
+ok flag on the receiver
+ok the list in order, once each, then the owner
+ok reference cleared in another owner
+ok reference cleared without owner
+ok RemoveFreeNotification stops it
+# both directions
+ok the other direction notifies too
+ok the freed partner is no longer in the list
+# same owner (RTL-454)
+ok no list entry for a shared owner
+ok the owner forwards to every owned component
+ok reference cleared through forwarding
+ok forwarding while being destroyed
+# no owner at all
+ok two ownerless components
+# passed 13 failed 0

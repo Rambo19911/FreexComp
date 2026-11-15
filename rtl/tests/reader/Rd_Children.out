@@ -1,0 +1,18 @@
+# order (RTL-495, RTL-497, RTL-499)
+ok creation, properties and Loaded order
+ok every child is owned by the root, in file order
+ok nested parent
+ok parent of a direct child
+ok published field A bound
+ok published field B bound
+ok flags cleared on children
+ok flags cleared on the root
+# hooks
+ok OnFindComponentClass, OnCreateComponent, OnSetName
+ok class from OnFindComponentClass
+ok component from OnCreateComponent
+ok the supplied component is not created twice
+ok Owner is the root
+ok Root
+ok LookupRoot
+# passed 15 failed 0

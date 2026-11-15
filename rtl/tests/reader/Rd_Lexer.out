@@ -1,0 +1,58 @@
+# tolerances (RTL-485 ... RTL-488)
+ok BOM, CRLF, leading blank lines, keyword case
+ok tabs, indentation, trailing whitespace
+ok no blanks around "="
+ok inherited root, root type not validated, no final line end
+ok csLoading cleared by Loaded
+# strings (RTL-489)
+ok doubled quote
+ok control codes between parts
+ok decimal and hex code units
+ok empty string
+ok non-ASCII literally
+ok "+" continues on the next line
+# numbers (RTL-490)
+ok negative
+ok hex, lower case
+ok 32-bit pattern into Integer
+ok lowest Integer pattern
+ok 32-bit pattern into Cardinal
+ok decimal Cardinal
+ok highest Int64
+ok lowest Int64
+ok 16 hex digits
+ok short hex into Int64 is unsigned
+ok float
+ok exponent
+ok small exponent
+ok integer into a float
+# syntax errors (RTL-491, RTL-500)
+ok invalid character
+ok unterminated string
+ok missing "="
+ok missing value
+ok missing end
+ok decimal out of range
+ok negative out of range
+ok 17 hex digits
+ok code unit out of range
+ok "#" without digits
+ok "+" not at the end of a line
+ok a lone "+"
+ok a lone CR
+ok junk after the value
+ok columns count UTF-16 units
+ok CRLF line counting
+ok header
+ok first keyword
+ok text after the root
+ok csLoading cleared after an error
+ok csReading cleared after an error
+ok empty text
+# invalid UTF-8 (RTL-485)
+ok truncated sequence
+ok overlong form
+ok encoded surrogate
+ok invalid lead byte
+ok BOM skipped
+# passed 52 failed 0

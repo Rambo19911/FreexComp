@@ -4,7 +4,7 @@ program Aliases_ScopedUsesCompiles;
   symbol of each. The unit list grows with every task that ships a unit (task R-123). }
 uses System.Types, System.RTLConsts, System.SysUtils, Winapi.Windows, Winapi.Messages, System.Math,
   System.StrUtils, System.DateUtils, System.Character, System.TypInfo,
-  System.Classes;
+  System.Classes, System.IniFiles;
 
 begin
   Writeln(RectWidth(Rect(1, 2, 11, 5)));
@@ -19,4 +19,5 @@ begin
   Writeln(IsLetter('x'));
   Writeln(GetEnumName(TypeInfo(Boolean), 1));
   Writeln(SizeOf(TNotifyEvent));
+  Writeln(TMemIniFile.ClassName);
 end.

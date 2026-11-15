@@ -1,0 +1,31 @@
+# run and wait (RTL-510)
+ok CurrentThread is nil on the main thread
+ok WaitFor returns ReturnValue
+ok Finished
+ok CurrentThread inside Execute
+ok own thread id
+ok Handle
+ok FatalException
+ok FatalException message
+# Synchronize (RTL-511)
+ok runs on the main thread while WaitFor waits
+ok WakeMainThread called
+ok exception re-raised in the calling thread
+ok on the main thread the method runs at once
+# Queue and CheckSynchronize (RTL-512, RTL-513)
+ok nothing pending
+ok FIFO; the exception goes to ApplicationHandleException
+ok Queue does not run at once
+ok something ran
+ok queued method ran
+ok CheckSynchronize off the main thread
+# OnTerminate and FreeOnTerminate (RTL-510)
+ok OnTerminate on the main thread after Finished
+ok the thread freed itself
+# start, terminate, destroy
+ok second Start
+ok Terminated seen by Execute
+ok Destroy of a running thread terminates and waits
+ok Destroy of a never started thread
+ok Create(False) starts after construction
+# passed 25 failed 0

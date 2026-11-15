@@ -1,0 +1,39 @@
+# codes (RTL-500)
+ok F0001
+ok F0101 unknown class
+ok F0101 registered class that is not a component
+ok F0102
+ok F0103
+ok F0104
+ok F0105
+ok F0106 duplicate
+ok F0106 against an existing component
+ok F0107 inherited
+ok F0107 inline
+ok EClassNotFound is an EReadError
+ok EMethodNotFound is an EReadError
+# inline root
+ok F0107 inline root
+# cleanup (RTL-495 step 7)
+ok root and kept component before
+ok failure in the third component
+ok every created component destroyed
+ok the existing component stays
+ok it is the kept one
+ok csLoading cleared
+ok csReading cleared
+ok unknown class after a child
+ok cleaned up after F0101
+# OnError
+ok every handled error is skipped
+ok messages in order
+ok line after a skipped list applied
+ok line after skipped values applied
+ok unresolved reference left alone
+ok F0101 is not skippable
+ok F0001 is not skippable
+ok F0106 is not skippable
+ok F0107 is not skippable
+ok OnError not consulted for them
+ok nothing leaked
+# passed 34 failed 0

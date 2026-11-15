@@ -1,0 +1,33 @@
+# save (RTL-423)
+ok default UTF-8 without BOM
+ok WriteBOM writes the preamble
+ok explicit UTF-16LE
+ok explicit UTF-16BE without BOM
+ok saving does not set Encoding
+ok DefaultEncoding
+ok DefaultEncoding nil resets to UTF-8
+# load (RTL-422)
+ok UTF-16LE BOM detected
+ok Encoding remembers UTF-16LE
+ok save uses the loaded encoding
+ok UTF-8 BOM detected and skipped
+ok Encoding remembers UTF-8
+ok UTF-16BE BOM detected
+ok Encoding remembers UTF-16BE
+ok no BOM: DefaultEncoding UTF-8
+ok Encoding is the default
+ok no BOM: DefaultEncoding UTF-16LE
+ok explicit encoding skips its preamble
+ok explicit encoding without BOM
+ok explicit encoding does not detect another BOM
+ok explicit encoding is remembered
+ok empty file
+# streams
+ok SaveToStream
+ok LoadFromStream reads from the current position
+ok LoadFromStream with an encoding
+ok SaveToStream writes at the position
+# errors
+ok open failure
+ok create failure
+# passed 28 failed 0

@@ -1,0 +1,35 @@
+# SetName (RTL-455)
+ok Name
+ok GetNamePath is the Name
+ok invalid identifier
+ok blank inside
+ok unchanged after an error
+ok duplicate, case-insensitive
+ok case-only rename of itself
+ok renamed
+ok valid name
+ok empty name
+ok the freed name is available
+ok ValidateRename on insert, rename (not for an equal name), remove
+# field binding (RTL-456)
+ok SetName binds the published field
+ok the old field is cleared
+ok the new field is bound
+ok second component bound
+ok RemoveComponent clears the field
+ok name kept
+ok binding overwrites
+ok clearing the name clears the field
+ok a field holding the component is cleared
+ok a field holding another component is left alone
+# duplicates on insert
+ok InsertComponent checks the name
+ok not inserted
+# FindComponent (RTL-459)
+ok case-insensitive
+ok second
+ok empty name
+ok absent
+ok not recursive
+ok owned component
+# passed 30 failed 0

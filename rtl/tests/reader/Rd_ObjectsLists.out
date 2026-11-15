@@ -1,0 +1,27 @@
+# paths, lists, collections
+ok Font.Height
+ok Font.Name
+ok two levels deep
+ok list cleared and filled
+ok list items
+ok one change notification for the whole list
+ok collection cleared and filled
+ok item 1 caption
+ok item 1 width
+ok path inside an item
+ok item 2 caption
+ok item 2 width untouched
+ok property after the collection
+# empty list and collection
+ok empty list
+ok empty collection
+# errors
+ok path through nil
+ok path through a non-class property
+ok unknown sub-property
+ok unknown item property
+ok list for a non-TStrings object
+ok collection for a non-collection object
+ok number in a string list
+ok junk in a collection
+# passed 23 failed 0

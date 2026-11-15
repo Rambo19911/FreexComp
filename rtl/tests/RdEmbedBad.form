@@ -1,0 +1,3 @@
+object Bad1: TEmbedBad
+  Nope = 1
+end

@@ -1,0 +1,21 @@
+# events and references
+ok events bound to the root's methods
+ok event data is the root
+ok forward reference fixed up
+ok backward reference
+ok the lookup root by name
+ok qualified reference through FindGlobalComponent
+ok nil clears a reference
+# hooks
+ok OnFindMethod and OnReferenceName
+ok address supplied by OnFindMethod
+ok renamed reference
+# errors
+ok missing method
+ok wrong class now
+ok wrong class at fix-up time
+ok unresolved reference
+ok unresolved qualified reference
+ok qualified reference without the hook
+ok string for an event
+# passed 17 failed 0

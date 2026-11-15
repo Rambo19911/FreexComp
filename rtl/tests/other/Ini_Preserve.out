@@ -1,0 +1,14 @@
+# syntax (RTL-682, RTL-683)
+ok lines before the first section belong to section ''
+ok trimmed section and key, first duplicate wins
+ok duplicate sections are merged
+ok name between the first "[" and the last "]"
+ok lines without "=" are ignored
+ok comments are ignored
+ok merged sections keep the first position
+ok identifiers of the merged section, duplicates once
+# rewrite (RTL-684)
+ok comments, blank lines and order preserved
+# erase and delete keep the rest
+ok EraseSection removes every occurrence, DeleteKey one line
+# passed 10 failed 0

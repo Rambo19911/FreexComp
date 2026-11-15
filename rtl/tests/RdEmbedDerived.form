@@ -1,0 +1,6 @@
+inherited EmbedForm: TEmbedDerived
+  Caption = 'derived'
+  object B: TEmbedPart
+    Caption = 'part b'
+  end
+end

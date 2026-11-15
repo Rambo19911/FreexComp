@@ -1,0 +1,43 @@
+# add and update (RTL-440)
+ok empty
+ok ItemClass
+ok Add notifies and updates
+ok item collection
+ok Changed(False) updates the item
+ok values and IDs
+ok Index
+# update coalescing
+ok nothing while updating
+ok one Update(nil) at the outermost EndUpdate
+# delete, insert, move
+ok Delete
+ok after Delete
+ok Insert; IDs are never reused
+ok Index moves
+ok a move updates
+ok FindItemID
+ok FindItemID of a deleted item
+# collection change
+ok moved to another collection
+ok source count
+ok target count
+ok new ID in the target
+ok Free removes the item
+# names
+ok base DisplayName
+ok GetNamePath without owner
+ok Owner
+ok overridden DisplayName
+ok GetNamePath with owner
+ok no owner
+# assign
+ok Assign copies through Add.Assign
+ok Assign clears first
+# index errors (RTL-441)
+ok Items
+ok Delete
+ok Insert
+# clear and destroy
+ok Clear frees last to first in one update
+ok Destroy frees last to first
+# passed 34 failed 0

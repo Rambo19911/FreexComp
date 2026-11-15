@@ -1,0 +1,48 @@
+# header and values (RTL-495, RTL-496)
+ok ReadComponentFromText returns the instance
+ok root name from the header
+ok Byte
+ok subrange
+ok ShortInt
+ok RegisterIntegerConsts identifier
+ok Char
+ok AnsiChar
+ok enumeration
+ok set
+ok Boolean
+ok Single
+ok TDateTime
+ok AnsiString
+ok ShortString
+ok Int64
+ok class property set to nil
+ok index and setter methods, in file order
+ok inherited published property
+ok csLoading and csReading cleared
+# more values
+ok colour as hex
+ok empty set
+ok Boolean is case-insensitive
+ok integer into Single
+ok enumeration is case-insensitive
+# a nil instance
+ok created from the header class
+ok named
+ok properties read
+# invalid values (F0103)
+ok Byte out of range
+ok subrange out of range
+ok string for an integer
+ok unknown identifier
+ok identifier without a map
+ok two code units for a Char
+ok unknown enumeration value
+ok number for an enumeration
+ok unknown set element
+ok set without brackets
+ok unknown Boolean
+ok string for a float
+ok number for a string
+ok float for an Int64
+ok number for an object
+# passed 43 failed 0

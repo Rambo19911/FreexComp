@@ -1,0 +1,59 @@
+# missing file and typed values
+ok FileName
+ok missing file is empty
+ok no section
+ok TMemIniFile writes nothing before UpdateFile
+ok file text, invariant floats and ISO dates
+ok CRLF line ends
+ok UTF-8 without BOM
+# reading
+ok trimmed, case-insensitive
+ok $hex integer
+ok invalid integer gives the default
+ok missing integer gives the default
+ok Int64
+ok non-zero is True
+ok zero is False
+ok missing Bool gives the default
+ok invariant float with a comma decimal separator set
+ok invalid float gives the default
+ok double quotes removed
+ok single quotes removed
+ok an unpaired quote stays
+ok ReadDate
+ok ReadTime
+ok ReadDateTime
+ok invalid date gives the default
+# sections and keys
+ok SectionExists
+ok ValueExists
+ok ValueExists absent
+ok ReadSections
+ok ReadSection
+ok ReadSectionValues first
+ok ReadSectionValues dequoted
+ok DeleteKey
+ok EraseSection
+ok a write updates the existing line, keeping its identifier
+# CaseSensitive
+ok identifier case matters
+ok section case matters
+ok exact match
+# TIniFile, AutoSave, strings
+ok TIniFile writes at once
+ok DeleteKey writes at once
+ok AutoSave at Destroy
+ok GetStrings
+ok SetStrings
+ok Clear
+ok Rename
+ok Rename with Reload
+# write failure (RTL-680)
+ok EIniFileException
+# encodings (RTL-681)
+ok UTF-8 BOM detected
+ok UTF-8 BOM preserved
+ok UTF-16 BOM detected
+ok UTF-16 BOM preserved
+ok UTF-8 without BOM by default
+# passed 51 failed 0

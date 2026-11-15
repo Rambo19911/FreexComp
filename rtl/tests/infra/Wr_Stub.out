@@ -1,0 +1,3 @@
+ok DefineProperties against a writer writes nothing
+ok WriteRootComponent
+# passed 2 failed 0

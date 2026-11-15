@@ -1,0 +1,38 @@
+# register and look up
+ok unknown before registration
+ok GetClass
+ok case-insensitive
+ok registering twice is a no-op
+ok RegisterClasses first
+ok RegisterClasses second
+ok alias
+# errors
+ok FindClass of an unknown name
+ok another class under a registered name
+ok the first registration stays
+# unregister
+ok class removed
+ok alias removed too
+ok others stay
+ok UnRegisterClasses first
+ok UnRegisterClasses second
+ok the name is free again
+# identifier maps
+ok IdentToInt found
+ok IdentToInt value
+ok IdentToInt unknown
+ok value untouched
+ok IntToIdent found
+ok IntToIdent name
+ok IntToIdent unknown
+# RegisterIntegerConsts
+ok nothing registered
+ok nothing registered (IntToIdent)
+ok FindIdentToInt
+ok registered IdentToInt works
+ok clRed
+ok registered IntToIdent works
+ok clLime
+ok per type
+ok the latest registration wins
+# passed 32 failed 0

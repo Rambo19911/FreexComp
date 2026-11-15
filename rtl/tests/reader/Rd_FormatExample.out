@@ -1,0 +1,33 @@
+# form
+ok Name
+ok Left
+ok Top
+ok Caption
+ok ClientWidth
+ok ClientHeight
+ok PixelsPerInch
+ok two children
+# NameEdit
+ok field bound
+ok owned by the form
+ok first child
+ok Left
+ok Top
+ok Width
+ok Height
+ok TabOrder
+ok Text absent (default)
+ok no OnClick
+# GreetButton
+ok field bound
+ok second child
+ok Left
+ok Top
+ok Width
+ok Height
+ok Caption
+ok TabOrder
+# events and order
+ok Loaded children first, root last
+ok events bound to the form's methods
+# passed 28 failed 0

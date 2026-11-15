@@ -1,0 +1,18 @@
+# NextValue kinds (section 10.3)
+ok every token kind, SkipValue over each
+# Read* methods (RTL-505)
+ok list, integers, every Read* kind
+ok binary decoded across lines and in any case
+ok the stream is at position 0
+ok a defined property of a sub-object
+ok DesignLeft in the low word (RTL-457)
+ok DesignTop in the high word
+# errors
+ok string for ReadInteger
+ok ReadInteger out of range
+ok number for a binary property
+ok bad hex digit
+ok odd number of hex digits
+ok unmatched name
+ok unmatched name on a sub-object
+# passed 14 failed 0

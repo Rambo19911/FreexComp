@@ -1,0 +1,7 @@
+object EmbedForm: TEmbedBase
+  Caption = 'base'
+  Width = 10
+  object A: TEmbedPart
+    Caption = 'part a'
+  end
+end

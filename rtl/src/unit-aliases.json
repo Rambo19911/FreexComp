@@ -3,6 +3,7 @@
     "System.Character": "Character",
     "System.Classes": "Classes",
     "System.DateUtils": "DateUtils",
+    "System.IniFiles": "IniFiles",
     "System.Math": "Math",
     "System.RTLConsts": "RTLConsts",
     "System.StrUtils": "StrUtils",

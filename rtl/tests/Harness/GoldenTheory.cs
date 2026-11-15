@@ -24,6 +24,13 @@ public sealed class GoldenTheory
     [MemberData(nameof(Phase4))]
     public Task Golden_Phase4(string id) => RunAsync(id);
 
+    public static IEnumerable<TheoryDataRow<string>> Phase7() => RtlCorpus.Rows(RtlCorpus.Discover(RtlSetup.TestsDirectory), 7);
+
+    [Theory]
+    [Trait("Phase", "7")]
+    [MemberData(nameof(Phase7))]
+    public Task Golden_Phase7(string id) => RunAsync(id);
+
     private static async Task RunAsync(string id)
     {
         var @case = RtlCorpus.Discover(RtlSetup.TestsDirectory).Single(c => c.Id == id);
