@@ -3,7 +3,7 @@
 program Rd_Children;
 { Nested objects (classes.md section 10.5): classes found through the registry (RTL-470) or OnFindComponentClass,
   created with the reader's Owner (the root) or supplied by OnCreateComponent; csLoading/csReading set,
-  SetParentComponent before any property, OnSetName before the name, ReadState reads the body (RTL-497); every
+  OnSetName and the name, then SetParentComponent (R-210) before any property, ReadState reads the body (RTL-497); every
   property line of a component before its children, children in file order (RTL-499); the root's name before its
   properties; after the root's end csReading is cleared on all, then Loaded runs children before parents and the
   root last (RTL-495); published fields of the root are bound by name. }
@@ -138,9 +138,9 @@ begin
   Root := TRootNode.Create(nil);
   ReadComponentFromText(Form, Root, 'Root.form');
   CheckEqS('readstate Root1;caption Root1=r LR;' +
-    'parent Root1>;readstate A;caption A=a LR;' +
-    'parent A>;readstate A1;caption A1=a1 LR;' +
-    'parent Root1>;readstate B;caption B=b LR;' +
+    'parent Root1>A;readstate A;caption A=a LR;' +
+    'parent A>A1;readstate A1;caption A1=a1 LR;' +
+    'parent Root1>B;readstate B;caption B=b LR;' +
     'loaded B L;loaded A1 L;loaded A L;loaded Root1 L;', Log, 'creation, properties and Loaded order');
   Names := '';
   for I := 0 to Root.ComponentCount - 1 do
@@ -171,8 +171,8 @@ begin
   Log := '';
   R.ReadRootComponent(Root);
   CheckEqS('setname Root1;readstate Root1;' +
-    'find TAlias;create TNode;parent Root1>;setname A;readstate A;' +
-    'find TSpecial;create TSpecial;parent Root1>;setname Bee;readstate B;' +
+    'find TAlias;create TNode;setname A;parent Root1>A;readstate A;' +
+    'find TSpecial;create TSpecial;setname Bee;parent Root1>B;readstate B;' +
     'loaded B L;loaded A L;loaded Root1 L;', Log, 'OnFindComponentClass, OnCreateComponent, OnSetName');
   Check(Root.A.ClassType = TNode, 'class from OnFindComponentClass');
   Check(Root.B is TSpecial, 'component from OnCreateComponent');

@@ -647,54 +647,78 @@ begin
     or (MemMgr.ReallocMem <> DefaultMemMgr.ReallocMem) or (MemMgr.AllocMem <> DefaultMemMgr.AllocMem);
 end;
 
-function _GetMem(Size: NativeInt): Pointer;
+procedure RunErrorAt(Code: Integer; Addr: Pointer); forward;
+
+{ R-208: the routines below take the address an error is reported at - the user's call site, captured by the entry
+  point the compiled code calls (_GetMem, _AllocZero, AllocMem, _FreeMem, _ReallocMem, _DynArraySetLen, ...) }
+function GetMemAt(Size: NativeInt; Addr: Pointer): Pointer;
 begin
   Result := nil;
   if Size <= 0 then
     Exit;
   Result := MemMgr.GetMem(Size);
   if Result = nil then
-    _RunError(203);
+    RunErrorAt(203, Addr);
 end;
 
-function _AllocZero(Size: NativeInt): Pointer;
+function AllocZeroAt(Size: NativeInt; Addr: Pointer): Pointer;
 begin
   Result := nil;
   if Size <= 0 then
     Exit;
   Result := MemMgr.AllocMem(Size);
   if Result = nil then
-    _RunError(203);
+    RunErrorAt(203, Addr);
 end;
 
-function AllocMem(Size: NativeInt): Pointer;
-begin
-  Result := _AllocZero(Size);
-end;
-
-procedure _FreeMem(P: Pointer);
+procedure FreeMemAt(P: Pointer; Addr: Pointer);
 begin
   if P = nil then
     Exit;
   if MemMgr.FreeMem(P) <> 0 then
-    _RunError(204);
+    RunErrorAt(204, Addr);
 end;
 
-function _ReallocMem(P: Pointer; Size: NativeInt): Pointer;
+function ReallocMemAt(P: Pointer; Size: NativeInt; Addr: Pointer): Pointer;
 begin
   if P = nil then
-    Result := _GetMem(Size)
+    Result := GetMemAt(Size, Addr)
   else if Size <= 0 then
   begin
-    _FreeMem(P);
+    FreeMemAt(P, Addr);
     Result := nil;
   end
   else
   begin
     Result := MemMgr.ReallocMem(P, Size);
     if Result = nil then
-      _RunError(203);                  { the block stays where it was; the process ends }
+      RunErrorAt(203, Addr);           { the block stays where it was; the process ends }
   end;
+end;
+
+function _GetMem(Size: NativeInt): Pointer;
+begin
+  Result := GetMemAt(Size, _ReturnAddress);
+end;
+
+function _AllocZero(Size: NativeInt): Pointer;
+begin
+  Result := AllocZeroAt(Size, _ReturnAddress);
+end;
+
+function AllocMem(Size: NativeInt): Pointer;
+begin
+  Result := AllocZeroAt(Size, _ReturnAddress);
+end;
+
+procedure _FreeMem(P: Pointer);
+begin
+  FreeMemAt(P, _ReturnAddress);
+end;
+
+function _ReallocMem(P: Pointer; Size: NativeInt): Pointer;
+begin
+  Result := ReallocMemAt(P, Size, _ReturnAddress);
 end;
 
 function _LiveAllocCount: NativeInt;
@@ -1595,24 +1619,24 @@ begin
 end;
 
 { the payload size of Len elements; more than a block can hold is runtime error 203 }
-function DynPayload(Len, ElSize: NativeInt): NativeInt;
+function DynPayload(Len, ElSize: NativeInt; Addr: Pointer): NativeInt;
 begin
   if (ElSize > 0) and (Len > (High(NativeInt) - SizeOf(TDynArrayRec)) div ElSize) then
-    _RunError(203);
+    RunErrorAt(203, Addr);
   Result := Len * ElSize;
 end;
 
 { a new block of Len (> 0) elements, RefCount 1; zero-filled when Zero }
-function NewDynArray(Len, ElSize: NativeInt; Zero: Boolean): Pointer;
+function NewDynArray(Len, ElSize: NativeInt; Zero: Boolean; Addr: Pointer): Pointer;
 var
   R: PDynArrayRec;
   Size: NativeInt;
 begin
-  Size := SizeOf(TDynArrayRec) + DynPayload(Len, ElSize);
+  Size := SizeOf(TDynArrayRec) + DynPayload(Len, ElSize, Addr);
   if Zero then
-    R := _AllocZero(Size)
+    R := AllocZeroAt(Size, Addr)
   else
-    R := _GetMem(Size);
+    R := GetMemAt(Size, Addr);
   R^.RefCount := 1;
   R^.Reserved := 0;
   R^.Length := Len;
@@ -1621,7 +1645,7 @@ end;
 
 { RTL-081 for one dimension (NewLen >= 0): a unique block is resized in place (dropped elements finalised, new ones
   zeroed), a shared one is copied (kept managed elements gain a reference) and released; the result is unique }
-procedure SetDynLength(var A: Pointer; TI: Pointer; NewLen: NativeInt);
+procedure SetDynLength(var A: Pointer; TI: Pointer; NewLen: NativeInt; Addr: Pointer);
 var
   Info: PDynArrayTypeInfo;
   R: PDynArrayRec;
@@ -1641,7 +1665,7 @@ begin
       Exit;
     if (NewLen < OldLen) and (Info^.ManagedElType <> nil) then
       _FinalizeArray(PByte(A) + NewLen * Info^.ElSize, Info^.ManagedElType, OldLen - NewLen);
-    R := _ReallocMem(DynRec(A), SizeOf(TDynArrayRec) + DynPayload(NewLen, Info^.ElSize));
+    R := ReallocMemAt(DynRec(A), SizeOf(TDynArrayRec) + DynPayload(NewLen, Info^.ElSize, Addr), Addr);
     R^.Length := NewLen;
     A := PByte(R) + SizeOf(TDynArrayRec);
     if NewLen > OldLen then
@@ -1649,7 +1673,7 @@ begin
   end
   else
   begin
-    N := NewDynArray(NewLen, Info^.ElSize, True);
+    N := NewDynArray(NewLen, Info^.ElSize, True, Addr);
     Keep := OldLen;
     if Keep > NewLen then
       Keep := NewLen;
@@ -1667,7 +1691,7 @@ end;
 
 { every length is checked before anything changes; inner dimensions are set on every element, so the result is
   rectangular and every inner array unique (RTL-081) }
-procedure _DynArraySetLen(var A: Pointer; TI: Pointer; DimCount: NativeInt; Dims: PNativeInt);
+procedure DynArraySetLenAt(var A: Pointer; TI: Pointer; DimCount: NativeInt; Dims: PNativeInt; Addr: Pointer);
 var
   I: NativeInt;
   Inner: Pointer;
@@ -1676,14 +1700,19 @@ begin
     Exit;
   for I := 0 to DimCount - 1 do
     if Dims[I] < 0 then
-      _RunError(201);
-  SetDynLength(A, TI, Dims[0]);
+      RunErrorAt(201, Addr);
+  SetDynLength(A, TI, Dims[0], Addr);
   if DimCount > 1 then
   begin
     Inner := PDynArrayTypeInfo(TI)^.ManagedElType;
     for I := 0 to Dims[0] - 1 do
-      _DynArraySetLen(PPointer(A)[I], Inner, DimCount - 1, Dims + 1);
+      DynArraySetLenAt(PPointer(A)[I], Inner, DimCount - 1, Dims + 1, Addr);
   end;
+end;
+
+procedure _DynArraySetLen(var A: Pointer; TI: Pointer; DimCount: NativeInt; Dims: PNativeInt);
+begin
+  DynArraySetLenAt(A, TI, DimCount, Dims, _ReturnAddress);
 end;
 
 { RTL-082 with the clamping of Copy for strings, 0-based: Index < 0 counts from 0 with Count unchanged; nothing at or
@@ -1703,7 +1732,7 @@ begin
   begin
     if Count > Len - Index then
       Count := Len - Index;
-    N := NewDynArray(Count, Info^.ElSize, False);
+    N := NewDynArray(Count, Info^.ElSize, False, _ReturnAddress);
     Move(PByte(Src)[Index * Info^.ElSize], N^, Count * Info^.ElSize);
     if Info^.ManagedElType <> nil then
       _AddRefArray(N, Info^.ManagedElType, Count);
@@ -5844,7 +5873,7 @@ begin
   end;
   P := nil;
   if PPImtHead(Src)^^.QueryInterface(Src, IID, @P) <> S_OK then
-    _RunError(228);
+    RunErrorAt(228, _ReturnAddress);
   ReplaceIntf(Dest, P);
 end;
 
@@ -5859,7 +5888,7 @@ begin
     Exit;
   end;
   if not TObject(Obj).GetInterface(PGUID(IID)^, P) then
-    _RunError(228);
+    RunErrorAt(228, _ReturnAddress);
   ReplaceIntf(Dest, P);
 end;
 
@@ -5923,11 +5952,12 @@ begin
   AtomicDecrement(FRefCount);
 end;
 
-{ freeing an object that still has references is runtime error 204 (RTL-154) }
+{ freeing an object that still has references is runtime error 204 (RTL-154), reported at the destructor whose
+  prologue calls BeforeDestruction (R-208) }
 procedure TInterfacedObject.BeforeDestruction;
 begin
   if FRefCount <> 0 then
-    _RunError(204);
+    RunErrorAt(204, _ReturnAddress);
 end;
 
 { ---------------------------------------------------------------- class tests (rtl-abi.md section 9.6) }

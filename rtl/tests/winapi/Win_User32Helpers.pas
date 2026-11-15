@@ -3,13 +3,15 @@
 program Win_User32Helpers;
 { Windows unit, user32 part (winapi.md section 5.3): the helpers added for the UI framework (task R-204) that
   Win_User32Smoke does not call, kept apart because that program may not grow (RTL-905): PtInRect (a TPoint
-  passed by value), CopyIcon, and the edit style ES_AUTOHSCROLL as an EDIT control keeps it. }
+  passed by value), CopyIcon, the edit style ES_AUTOHSCROLL as an EDIT control keeps it, and SetKeyboardState (task
+  R-211): the thread's key state it sets is what GetKeyState and GetKeyboardState read back, then it is restored. }
 uses Types, Windows, TestKit;
 
 var
   R: TRect;
   Icon, Copy: HICON;
   Edit: HWND;
+  Saved, Keys: TKeyboardState;
 
 begin
   Section('PtInRect');
@@ -35,5 +37,20 @@ begin
   Check(Edit <> 0, 'CreateWindowExW EDIT');
   Check((GetWindowLongPtrW(Edit, GWL_STYLE) and ES_AUTOHSCROLL) <> 0, 'EDIT keeps ES_AUTOHSCROLL');
   Check(DestroyWindow(Edit), 'DestroyWindow EDIT');
+
+  Section('SetKeyboardState');
+  Check(GetKeyboardState(Saved), 'GetKeyboardState');
+  Keys := Saved;
+  Keys[VK_SHIFT] := $80;
+  Keys[VK_CONTROL] := $80;
+  Check(SetKeyboardState(Keys), 'SetKeyboardState Shift and Ctrl down');
+  Check(GetKeyState(VK_SHIFT) < 0, 'GetKeyState sees Shift down');
+  Check(GetKeyState(VK_CONTROL) < 0, 'GetKeyState sees Ctrl down');
+  Keys[VK_SHIFT] := 0;
+  Keys[VK_CONTROL] := 0;
+  Check(SetKeyboardState(Keys), 'SetKeyboardState Shift and Ctrl up');
+  Check(GetKeyState(VK_SHIFT) >= 0, 'GetKeyState sees Shift up');
+  Check(GetKeyboardState(Keys) and (Keys[VK_CONTROL] and $80 = 0), 'GetKeyboardState sees Ctrl up');
+  Check(SetKeyboardState(Saved), 'state restored');
   Done;
 end.

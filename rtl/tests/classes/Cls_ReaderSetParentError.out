@@ -1,0 +1,14 @@
+# accepted parent
+ok child created
+ok name set before SetParentComponent
+ok parent set
+ok properties read
+# refused parent is F0103
+ok message names the component
+# OnError handles it
+ok both reported
+ok component kept
+ok without a parent
+ok its properties are read
+ok reading continues
+# passed 10 failed 0

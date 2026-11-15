@@ -14,4 +14,13 @@ ok ES_AUTOHSCROLL value
 ok CreateWindowExW EDIT
 ok EDIT keeps ES_AUTOHSCROLL
 ok DestroyWindow EDIT
-# passed 13 failed 0
+# SetKeyboardState
+ok GetKeyboardState
+ok SetKeyboardState Shift and Ctrl down
+ok GetKeyState sees Shift down
+ok GetKeyState sees Ctrl down
+ok SetKeyboardState Shift and Ctrl up
+ok GetKeyState sees Shift up
+ok GetKeyboardState sees Ctrl up
+ok state restored
+# passed 21 failed 0

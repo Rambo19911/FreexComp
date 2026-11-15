@@ -4932,7 +4932,7 @@ begin
   Include(C.FComponentState, csLoading);
   Include(C.FComponentState, csReading);
   FLoaded.Add(Pointer(C));
-  C.SetParentComponent(FParent);
+  { R-210: the name is set before SetParentComponent, so a refused parent can name the component }
   if Assigned(FOnSetName) then
     FOnSetName(Self, C, Name);
   Msg := '';
@@ -4944,6 +4944,22 @@ begin
   end;
   if Msg <> '' then
     Error('F0106', Msg, NameLine, NameCol);
+  { an EInvalidOperation from SetParentComponent is F0103 at the object's name; when OnError handles it the
+    component stays without a parent and reading continues }
+  Msg := '';
+  try
+    C.SetParentComponent(FParent);
+  except
+    on E: EInvalidOperation do
+      Msg := E.Message;
+  end;
+  if Msg <> '' then
+  try
+    Error('F0103', Msg, NameLine, NameCol);
+  except
+    on E: ESkipProperty do
+      ;
+  end;
   C.ReadState(Self);
 end;
 

@@ -2328,6 +2328,7 @@ function GetCapture: HWND; stdcall; external user32 name 'GetCapture';
 function GetKeyState(nVirtKey: Integer): SHORT; stdcall; external user32 name 'GetKeyState';
 function GetAsyncKeyState(vKey: Integer): SHORT; stdcall; external user32 name 'GetAsyncKeyState';
 function GetKeyboardState(var lpKeyState: TKeyboardState): BOOL; stdcall; external user32 name 'GetKeyboardState';
+function SetKeyboardState(var lpKeyState: TKeyboardState): BOOL; stdcall; external user32 name 'SetKeyboardState';
 function MapVirtualKeyW(uCode, uMapType: UINT): UINT; stdcall; external user32 name 'MapVirtualKeyW';
 function MapVirtualKey(uCode, uMapType: UINT): UINT; stdcall; external user32 name 'MapVirtualKeyW';
 function GetKeyNameTextW(lParam: LONG; lpString: LPWSTR; cchSize: Integer): Integer; stdcall; external user32 name 'GetKeyNameTextW';
