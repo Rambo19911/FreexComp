@@ -1,0 +1,46 @@
+# globals (UIF-400)
+ok Screen exists
+ok Application exists
+# metrics
+ok Width
+ok Height
+ok DesktopRect: virtual screen
+ok WorkAreaRect: primary work area
+ok PixelsPerInch: system DPI
+# monitors
+ok MonitorCount
+ok primary BoundsRect
+ok primary WorkareaRect
+ok primary PixelsPerInch (no form on it)
+ok exactly one primary monitor
+ok Handle
+# fonts
+ok Fonts not empty
+ok sorted
+ok de-duplicated
+ok contains Segoe UI
+ok ResetFonts rebuilds the same list
+# system fonts
+ok MessageFont name
+ok MessageFont height
+ok MenuFont name
+ok HintFont name (status font)
+ok IconFont name
+ok IconFont height
+# form lists
+ok no forms yet
+ok no active form
+ok no active custom form
+ok no active control
+ok FormCount: TForm descendants
+ok CustomFormCount: all forms
+ok creation order
+ok CustomForms: creation order
+ok FindGlobalComponent by Name
+ok FindGlobalComponent ignores case
+ok FindGlobalComponent: unknown name
+ok destroyed form removed
+ok order kept
+ok removed from CustomForms
+ok all removed
+# passed 39 failed 0

@@ -1,0 +1,32 @@
+# maximised at the first show
+ok the handle is not created maximised
+ok shown maximised
+ok WindowState
+ok the live client size is adopted
+ok maximised: client size of the window
+ok OnResize once during the first show
+# changes on a visible form
+ok restored
+ok restored client width
+ok restored client height
+ok minimised
+ok minimised: the restored client width stays
+ok minimised: the restored client height stays
+ok restored from minimised
+ok restored size back
+ok restored: client size of the window
+# changes made by the system
+ok SW_MAXIMIZE read back
+ok system maximise: client size of the window
+ok SW_MINIMIZE read back
+ok SW_RESTORE of a minimised maximised window: maximised
+ok SW_RESTORE read back
+ok restored client width after the system changes
+# hidden form
+ok a hidden form stays hidden
+ok the next show applies the state
+# minimised at the first show
+ok shown minimised
+ok client width: the restored size
+ok client height: the restored size
+# passed 26 failed 0

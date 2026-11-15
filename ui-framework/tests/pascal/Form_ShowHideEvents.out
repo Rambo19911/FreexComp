@@ -1,0 +1,23 @@
+# start-up order (UIF-432)
+ok OnCreate; no OnResize before the first show
+ok OnShow, OnActivate (if activated), OnResize (once), OnPaint
+ok Screen.ActiveForm follows the activation
+ok fsVisible
+ok Showing
+# OnResize after the first show (UIF-431)
+ok a client size change: once
+ok no size change: none
+ok width and height at once: once
+# a second form
+ok first show of a second form
+ok hide: OnDeactivate (if it was active) before OnHide
+ok fsVisible cleared
+ok a hidden form is not active
+ok later show: no OnResize (UIF-433)
+ok Free of a visible form: OnHide, then OnDestroy last (UIF-442)
+ok Screen.ActiveForm follows the activation
+# main form
+ok hiding the main form: OnDeactivate (if active) before OnHide
+ok not active
+ok hidden form: OnDestroy only
+# passed 18 failed 0

@@ -1,0 +1,33 @@
+# without a handle (UIF-273)
+ok a sizeable form has a frame
+ok ClientWidth
+ok ClientHeight
+ok Width = client + frame
+ok Height = client + frame
+ok Width := V sets ClientWidth := V - frame
+ok Height := V sets ClientHeight := V - frame
+ok ClientWidth := V: Width follows
+ok BorderStyle change keeps ClientWidth
+ok BorderStyle change keeps ClientHeight
+ok bsNone: no frame
+ok bsDialog frame
+ok bsDialog frame height
+# the window (UIF-272)
+ok alClient child: client width
+ok PixelsPerInch: the window DPI
+ok window client width = ClientWidth
+ok window client height = ClientHeight
+ok window width = Width
+ok window height = Height
+ok ClientWidth with a handle resizes the window
+ok layout follows
+# real client size adopted
+ok external resize: real client width
+ok external resize: real client height
+ok layout pass: child width
+ok layout pass: child height
+ok outer width follows the window
+ok tiny form: ClientWidth is the real client width
+ok tiny form: ClientHeight is the real client height
+ok tiny form: Width is the real width
+# passed 29 failed 0

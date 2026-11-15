@@ -1,0 +1,82 @@
+# CreateNew defaults
+ok Visible False
+ok Color clBtnFace
+ok ClientWidth 320
+ok ClientHeight 240
+ok Left 0
+ok Top 0
+ok BorderStyle bsSizeable
+ok BorderIcons
+ok FormStyle fsNormal
+ok Position poDesigned
+ok WindowState wsNormal
+ok Scaled True
+ok KeyPreview False
+ok PixelsPerInch: current DPI
+ok ActiveControl nil
+ok Caption empty
+ok no handle during construction
+ok ModalResult mrNone
+# published properties
+ok properties of the table
+ok events
+ok Width not stored
+ok Height not stored
+ok ClientWidth stored
+ok ClientHeight stored
+ok PixelsPerInch stored
+# window
+ok window class PN.TForm
+ok Caption is the window title
+ok created hidden
+ok no main form: no owner
+ok Caption change updates the title
+ok BorderStyle change recreates the window
+# style table (UIF-425)
+ok bsNone: Style
+ok bsNone: ExStyle
+ok bsSingle: Style
+ok bsSingle: ExStyle
+ok bsSizeable: Style
+ok bsSizeable: ExStyle
+ok bsDialog: Style
+ok bsDialog: ExStyle
+ok bsToolWindow: Style
+ok bsToolWindow: ExStyle
+ok bsSizeToolWin: Style
+ok bsSizeToolWin: ExStyle
+# BorderIcons
+ok none: Style
+ok none: ExStyle
+ok boxes need biSystemMenu: Style
+ok boxes need biSystemMenu: ExStyle
+ok minimise box only: Style
+ok minimise box only: ExStyle
+ok biHelp with a box: no help button: Style
+ok biHelp with a box: no help button: ExStyle
+ok biHelp without boxes: Style
+ok biHelp without boxes: ExStyle
+ok bsDialog: no boxes, help button: Style
+ok bsDialog: no boxes, help button: ExStyle
+ok bsNone ignores BorderIcons: Style
+ok bsNone ignores BorderIcons: ExStyle
+# FormStyle
+ok fsStayOnTop: WS_EX_TOPMOST
+ok never maximised or visible at creation
+ok FormStyle without a handle: nothing created
+ok fsMDIForm raises at handle creation
+# CreateForm and the main form (UIF-405)
+ok no main form yet
+ok OnCreate fired
+ok the reference is set during OnCreate
+ok first form is the main form
+ok owned by Application
+ok main form window created lazily
+ok main form without handle: no owner
+ok main form: WS_EX_APPWINDOW
+ok main form: no owner
+ok other form: no WS_EX_APPWINDOW
+ok other form: owned by the main form
+ok OnDestroy fired
+ok destroyed main form: MainForm nil
+# passed 74 failed 0

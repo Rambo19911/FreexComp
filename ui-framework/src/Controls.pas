@@ -16,7 +16,10 @@ type
   TCursor = -32768..32767;
   TModalResult = Low(Integer)..High(Integer);
   TCaption = type string;
-  TBorderStyle = (bsNone, bsSingle);
+  { the form border styles live here so that bsNone/bsSingle name one enumeration in units using Controls and Forms;
+    TBorderStyle is its subrange }
+  TFormBorderStyle = (bsNone, bsSingle, bsSizeable, bsDialog, bsToolWindow, bsSizeToolWin);
+  TBorderStyle = bsNone..bsSingle;
   TBevelCut = (bvNone, bvLowered, bvRaised, bvSpace);
   TControlStyle = set of (csAcceptsControls, csCaptureMouse, csClickEvents, csSetCaption, csOpaque,
     csDoubleClicks, csFixedWidth, csFixedHeight, csNoStdEvents, csReflector, csActionClient, csMenuEvents,
@@ -315,6 +318,8 @@ type
     procedure CMParentColorChanged(var Message: TMessage); virtual;
     procedure CMParentFontChanged(var Message: TMessage); virtual;
     procedure CMParentShowHintChanged(var Message: TMessage); virtual;
+    { core.md 1.1: the control under the mouse (or one of its descendants is) shows the new cursor at once }
+    procedure CMCursorChanged(var Message: TMessage); virtual;
     procedure CMMouseEnter(var Message: TMessage); virtual;
     procedure CMMouseLeave(var Message: TMessage); virtual;
     procedure WMMouseWheel(var Message: TMessage); virtual;
@@ -449,6 +454,8 @@ type
     procedure WMWindowPosChanged(var Message: TWMWindowPosMsg); virtual;
     procedure WMEnable(var Message: TMessage); virtual;
     procedure WMMouseLeave(var Message: TMessage); virtual;
+    { core.md 7.10: client area: the effective cursor of the control under the mouse }
+    procedure WMSetCursor(var Message: TMessage); virtual;
     procedure WMContextMenu(var Message: TMessage); override;
     { core.md 7.10: scroll messages of the window's own scroll bars (LParam = 0) }
     procedure WMHScroll(var Message: TWMScroll); virtual;
@@ -590,6 +597,12 @@ function CursorToIdent(Cursor: Longint; var Ident: string): Boolean;
 function IdentToCursor(const Ident: string; var Cursor: Longint): Boolean;
 function CursorToString(Cursor: TCursor): string;
 function StringToCursor(const S: string): TCursor;
+{ UIF-021: the stock cursor of a value (0 for crNone; unknown values: the arrow) }
+function CursorHandle(Cursor: TCursor): HCURSOR;
+
+var
+  { application-forms.md 3: the Screen.Cursor override, written by Forms (Controls cannot use Forms); crDefault = none }
+  ScreenCursor: TCursor;
 
 implementation
 
@@ -692,6 +705,47 @@ begin
     Result := V
   else
     Result := StrToInt(S);
+end;
+
+function CursorHandle(Cursor: TCursor): HCURSOR;
+var
+  Id: PWideChar;
+begin
+  case Cursor of
+    crNone:
+      begin
+        Result := 0;
+        Exit;
+      end;
+    crCross: Id := IDC_CROSS;
+    crIBeam: Id := IDC_IBEAM;
+    crSizeNESW: Id := IDC_SIZENESW;
+    crSizeNS, crHSplit: Id := IDC_SIZENS;
+    crSizeNWSE: Id := IDC_SIZENWSE;
+    crSizeWE, crVSplit: Id := IDC_SIZEWE;
+    crSizeAll: Id := IDC_SIZEALL;
+    crUpArrow: Id := IDC_UPARROW;
+    crHourGlass: Id := IDC_WAIT;
+    crAppStart: Id := IDC_APPSTARTING;
+    crHelp: Id := IDC_HELP;
+    crHandPoint: Id := IDC_HAND;
+    crNo, crNoDrop: Id := IDC_NO;
+  else
+    Id := IDC_ARROW;
+  end;
+  Result := LoadCursorW(0, Id);
+end;
+
+{ core.md WM_SETCURSOR: a non-default Screen.Cursor wins; else up the parent chain while crDefault }
+function EffectiveCursor(C: TControl): TCursor;
+begin
+  Result := ScreenCursor;
+  if Result <> crDefault then
+    Exit;
+  while (C <> nil) and (C.Cursor = crDefault) do
+    C := C.Parent;
+  if C <> nil then
+    Result := C.Cursor;
 end;
 
 { ---------------------------------------------------------------- TSizeConstraints }
@@ -1382,9 +1436,22 @@ begin
       CMParentFontChanged(Message);
     CM_PARENTSHOWHINTCHANGED:
       CMParentShowHintChanged(Message);
+    CM_CURSORCHANGED:
+      CMCursorChanged(Message);
   else
     Dispatch(Message);
   end;
+end;
+
+procedure TControl.CMCursorChanged(var Message: TMessage);
+var
+  C: TControl;
+begin
+  C := MouseControl;
+  while (C <> nil) and (C <> Self) do
+    C := C.FParent;
+  if C <> nil then
+    Windows.SetCursor(CursorHandle(EffectiveCursor(MouseControl)));
 end;
 
 procedure TControl.CMColorChanged(var Message: TMessage);
@@ -2190,6 +2257,8 @@ begin
       WMEnable(Message);
     WM_MOUSELEAVE:
       WMMouseLeave(Message);
+    WM_SETCURSOR:
+      WMSetCursor(Message);
     WM_KEYDOWN, WM_SYSKEYDOWN:
       WMKeyDown(TWMKey(Message));
     WM_KEYUP, WM_SYSKEYUP:
@@ -2308,6 +2377,25 @@ begin
     Old.Perform(CM_MOUSELEAVE, 0, 0);
   end;
   Dispatch(Message);
+end;
+
+procedure TWinControl.WMSetCursor(var Message: TMessage);
+var
+  P: TPoint;
+  C: TControl;
+begin
+  if (LoWord(Message.LParam) <> HTCLIENT) or (FHandle = 0) then
+  begin
+    Dispatch(Message);
+    Exit;
+  end;
+  GetCursorPos(P);
+  ScreenToClient(FHandle, P);
+  C := ControlAtPos(P, False);
+  if C = nil then
+    C := Self;
+  Windows.SetCursor(CursorHandle(EffectiveCursor(C)));
+  Message.Result := 1;
 end;
 
 { UIF-077: the graphic child under the point gets the first chance }

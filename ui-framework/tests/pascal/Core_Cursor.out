@@ -1,0 +1,26 @@
+# WM_SETCURSOR in the client area
+ok handled: result 1
+ok graphic child under the mouse: its cursor
+ok no child under the mouse: the window control's cursor
+ok crDefault child: the parent's cursor
+ok disabled graphic child: not under the mouse
+ok crDefault up the whole chain: arrow
+ok crNone: no cursor
+# UIF-021 mapping
+ok crIBeam
+ok crHourGlass
+ok crHSplit
+ok crNoDrop
+ok crDrag
+# non-client hit codes
+ok HTCAPTION: default processing
+# Screen.Cursor
+ok default crDefault
+ok applied at once
+ok wins over the control's cursor
+ok reset: the control's cursor again
+# CM_CURSORCHANGED
+ok the control under the mouse: applied at once
+ok another control: nothing happens
+ok back to crDefault: the inherited cursor
+# passed 20 failed 0

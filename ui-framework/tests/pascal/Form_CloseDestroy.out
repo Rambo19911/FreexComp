@@ -1,0 +1,35 @@
+# Close of a form (UIF-440)
+ok CloseQuery False: nothing else
+ok still visible
+ok CloseQuery function
+ok default action caHide
+ok hidden
+ok not freed
+ok caNone: nothing
+ok caNone: still visible
+ok caMinimize: WindowState
+ok caMinimize: minimised
+# WM_CLOSE
+ok WM_CLOSE calls Close
+ok the window is not destroyed
+ok SC_CLOSE calls Close
+# WM_QUERYENDSESSION (UIF-441)
+ok CloseQuery False: 0
+ok CloseQuery True: not 0
+ok the form stays
+# caFree and Release
+ok Release: not freed yet
+ok still listed
+ok CM_RELEASE frees: OnHide, OnDestroy
+ok removed from Screen
+ok window destroyed
+ok Release without a handle creates none
+ok released through Application.Handle
+ok G removed
+# closing the main form
+ok main form: default caFree
+ok alive until the release
+ok OnCloseQuery, OnClose, OnHide, OnDestroy
+ok MainForm nil
+ok the application terminates
+# passed 29 failed 0

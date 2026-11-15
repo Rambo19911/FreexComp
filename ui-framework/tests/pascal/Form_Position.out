@@ -1,0 +1,42 @@
+# poDesigned
+ok Left kept
+ok Top kept
+ok poDesigned: the window has the bounds
+ok off screen: moved into the primary work area (left)
+ok off screen: moved into the primary work area (top)
+ok never resized
+ok 40 x 40 px visible: kept (left)
+ok 40 x 40 px visible: kept (top)
+# centred
+ok poScreenCenter: Left
+ok poScreenCenter: Top
+ok poScreenCenter: the window has the bounds
+ok poDesktopCenter: Left
+ok poDesktopCenter: Top
+ok poMainFormCenter, no main form window: screen
+ok poMainFormCenter: Left
+ok poMainFormCenter: Top
+ok poOwnerFormCenter: Left
+ok poOwnerFormCenter: Top
+ok poOwnerFormCenter without owner: main form
+ok poMainFormCenter: then MakeFullyVisible
+# applied once
+ok second show: Left is free
+# chosen by Windows
+ok poDefaultPosOnly: size as designed
+ok poDefaultPosOnly: the window has the bounds
+ok poDefaultSizeOnly: Left as designed
+ok poDefaultSizeOnly: Top as designed
+ok poDefaultSizeOnly: the window has the bounds
+ok poDefaultSizeOnly: client size from the window
+ok poDefault: the window has the bounds
+ok poDefault: client width from the window
+ok poDefault: client height from the window
+# MakeFullyVisible
+ok moved left into the work area
+ok moved up into the work area
+ok not resized
+ok not resized (height)
+ok MakeFullyVisible: the window has the bounds
+ok nil: inside the form's monitor
+# passed 36 failed 0
