@@ -22,7 +22,8 @@ public sealed class MainWindowViewModel : ObservableObject
         DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap, services.Documents);
         Layout = services.Layout.Layout;
         Layout.DocumentArea = DocumentArea;
-        StatusBar = new StatusBarViewModel(services.Status, services.Commands, services.Settings, services.Documents, services.State, services.Projects);
+        StatusBar = new StatusBarViewModel(services.Status, services.Commands, services.Settings, services.Documents, services.State, services.Projects,
+            services.Build, services.Messages);
         services.State.Changed += (_, _) => OnPropertyChanged(nameof(Title)); // UI-WIN-033
         Layout.IsStatusBarShown = StatusBar.IsVisible;
         StatusBar.PropertyChanged += (_, e) =>
@@ -33,7 +34,8 @@ public sealed class MainWindowViewModel : ObservableObject
             }
         };
         MainMenu = MainMenuModel.Build(services.Commands, new RecentMenuSource(services.RecentItems));
-        ToolBars = ToolBarRowModel.Build(services.Commands, services.Settings, ServiceGraph.ImplementedPhase);
+        ToolBars = ToolBarRowModel.Build(services.Commands, services.Settings, services.ImplementedPhase);
+        ProjectCombos.Attach(ToolBars, services.Projects, services.State, services.Commands);
         ToolBarContextMenu = ToolBarRowModel.BuildContextMenu(services.Commands);
 
         services.Documents.ActiveDocumentChanged += (_, _) => FollowTitleSource(services.Documents.ActiveDocument);

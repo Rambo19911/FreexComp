@@ -22,6 +22,9 @@ public sealed record IdeServices
 {
     public required StartupOptions Options { get; init; }
 
+    /// <summary>Toolbars and tool windows of phases up to this one are shown (<see cref="ServiceGraph.ImplementedPhase"/>; tests may raise it).</summary>
+    public required int ImplementedPhase { get; init; }
+
     // Platform inputs (IDE-ARCH-012).
     public required IUserPaths UserPaths { get; init; }
     public required ILog Log { get; init; }
@@ -69,4 +72,16 @@ public sealed record IdeServices
 
     /// <summary>Starts programs for Run (IDE-P3-083).</summary>
     public required IProcessLauncher Processes { get; init; }
+
+    /// <summary>The build engine (IDE-P3-030).</summary>
+    public required FreexComp.Build.IBuildEngine BuildEngine { get; init; }
+
+    /// <summary>The Messages model (IDE-P3-060…068).</summary>
+    public required Build.MessagesService Messages { get; init; }
+
+    /// <summary>Build, rebuild, clean (phase3-build-run.md §5).</summary>
+    public required Build.BuildService Build { get; init; }
+
+    /// <summary>Run, stop, restart (phase3-build-run.md §8–§9).</summary>
+    public required Build.RunService Run { get; init; }
 }

@@ -27,6 +27,9 @@ public sealed class TestCompositionOptions
     public IThemeHost ThemeHost { get; set; } = new FakeThemeHost();
     public IProcessLauncher Processes { get; set; } = new FakeProcessLauncher();
 
+    /// <summary>The build engine (IDE-P3-031): the scripted fake by default.</summary>
+    public FreexComp.Build.IBuildEngine BuildEngine { get; set; } = new FakeBuildEngine();
+
     /// <summary>Core buffers by default; the headless harness uses the AvaloniaEdit factory like production.</summary>
     public ITextBufferFactory TextBuffers { get; set; } = new StringTextBufferFactory();
 
@@ -84,6 +87,7 @@ public static class TestComposition
         {
             ToolchainEnvironment = o.ToolchainEnvironment ?? new Core.Build.ToolchainEnvironment(null, Path.Combine(o.UserDir, "ide"), []),
             Processes = o.Processes,
+            BuildEngine = o.BuildEngine,
         };
 
         return ServiceGraph.Build(options, platform, o.ToolWindows, o.ImplementedPhase);

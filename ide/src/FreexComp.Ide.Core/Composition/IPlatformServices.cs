@@ -44,6 +44,9 @@ public interface IPlatformServices
 
     /// <summary>Starts programs for Run (IDE-P3-083); tests pass a fake.</summary>
     IProcessLauncher Processes { get; }
+
+    /// <summary>The build engine, called in-process (IDE-P3-030); tests pass <c>FakeBuildEngine</c>.</summary>
+    FreexComp.Build.IBuildEngine BuildEngine => new FreexComp.Build.BuildEngine(new Projects.CompilerFileSystemAdapter(FileSystem));
 }
 
 /// <summary>Plain holder of the platform inputs.</summary>
@@ -64,4 +67,7 @@ public sealed record PlatformServices(
     public Build.ToolchainEnvironment ToolchainEnvironment { get; init; } = Build.ToolchainEnvironment.FromProcess();
 
     public required IProcessLauncher Processes { get; init; }
+
+    public FreexComp.Build.IBuildEngine BuildEngine { get; init; } =
+        new FreexComp.Build.BuildEngine(new Projects.CompilerFileSystemAdapter(FileSystem));
 }

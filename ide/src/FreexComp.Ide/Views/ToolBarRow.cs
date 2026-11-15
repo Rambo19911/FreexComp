@@ -251,8 +251,26 @@ public sealed class ToolBarRow : DockPanel
 
     private Control CreateCombo(string toolbar, ToolBarComboModel model)
     {
-        var combo = new ComboBox { Width = model.Width, Height = Metric("FxcMetricToolbarComboHeight"), IsEnabled = false, VerticalAlignment = VerticalAlignment.Center };
+        var combo = new ComboBox { Width = model.Width, Height = Metric("FxcMetricToolbarComboHeight"), VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(combo, $"ToolBar.{toolbar}.{model.Name}");
+        AutomationProperties.SetName(combo, model.Name);
+        var updating = false;
+        void Sync()
+        {
+            updating = true;
+            combo.ItemsSource = model.Items;
+            combo.SelectedItem = model.Selected;
+            combo.IsEnabled = model.IsEnabled;
+            updating = false;
+        }
+
+        model.PropertyChanged += (_, _) => Sync();
+        combo.SelectionChanged += (_, _) =>
+        {
+            if (!updating && combo.SelectedItem is string item && item != model.Selected)
+                model.Choose?.Invoke(item);
+        };
+        Sync();
         return combo;
     }
 

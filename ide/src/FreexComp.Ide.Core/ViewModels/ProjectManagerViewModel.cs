@@ -335,6 +335,13 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// </summary>
     public async Task OpenSelectionAsync()
     {
+        // IDE-PM-102 / I-109: from P3 Enter on the root row opens Project Options.
+        if (_selection is [{ Kind: ProjectNodeKind.Project }] && _implementedPhase >= 3)
+        {
+            await _commands.ExecuteAsync("project.options");
+            return;
+        }
+
         if (_selection is [{ IsFile: false } container])
         {
             container.IsExpanded = !container.IsExpanded;

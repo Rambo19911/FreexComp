@@ -3999,4 +3999,88 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>not found</value>
     <comment>dialogs.md §9.9</comment>
   </data>
+  <data name="MessagesView_Column_Severity" xml:space="preserve">
+    <value>Severity</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Column_Code" xml:space="preserve">
+    <value>Code</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Column_Description" xml:space="preserve">
+    <value>Description</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Column_File" xml:space="preserve">
+    <value>File</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Column_Line" xml:space="preserve">
+    <value>Line</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Column_Col" xml:space="preserve">
+    <value>Col</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_ErrorsOne" xml:space="preserve">
+    <value>{0} Error</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_ErrorsMany" xml:space="preserve">
+    <value>{0} Errors</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_WarningsOne" xml:space="preserve">
+    <value>{0} Warning</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_WarningsMany" xml:space="preserve">
+    <value>{0} Warnings</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_HintsOne" xml:space="preserve">
+    <value>{0} Hint</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_HintsMany" xml:space="preserve">
+    <value>{0} Hints</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Severity_Error" xml:space="preserve">
+    <value>Error</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Severity_Warning" xml:space="preserve">
+    <value>Warning</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Severity_Hint" xml:space="preserve">
+    <value>Hint</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_Severity_Info" xml:space="preserve">
+    <value>Information</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_ClearFilter" xml:space="preserve">
+    <value>Clear Filter</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_TitleCounts" xml:space="preserve">
+    <value>{0} ({1})</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_TitleErrors" xml:space="preserve">
+    <value>{0} ⊘</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_TitleWarnings" xml:space="preserve">
+    <value>{0} ⚠</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
+  <data name="MessagesView_AutomationCounts" xml:space="preserve">
+    <value>{0}, {1}</value>
+    <comment>tool-windows.md §6 (I-100)</comment>
+  </data>
 </root>

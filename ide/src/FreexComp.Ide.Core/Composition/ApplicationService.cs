@@ -80,10 +80,15 @@ public sealed class ApplicationService : IApplicationService
         commands.RegisterHandler("file.exit", new Handler(_ => !IsExiting, _ => ExitAsync()));
     }
 
+    /// <summary>Asked first on exit (IDE-P3-093: stop a running program); false cancels the exit.</summary>
+    public Func<Task<bool>>? BeforeExit { get; set; }
+
     public async Task<bool> ExitAsync()
     {
         if (IsExiting || _prompting)
             return false;
+        if (BeforeExit is { } beforeExit && !await beforeExit())
+            return false; // IDE-P3-093: a running program was not stopped
 
         // (2) One prompt for every modified document: the project file first, then the others in tab order (UI-DLG-063).
         // The project is not closed (ProjectService.CloseAsync would clear its reopen flag, IDE-P1-016).

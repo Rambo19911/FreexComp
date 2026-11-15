@@ -11,6 +11,9 @@ public interface IProjectService
     /// <summary>The open project; null without one.</summary>
     ProjectModel? Project { get; }
 
+    /// <summary>The open project as read by <c>FreexComp.Build</c> (run settings, configurations); null without one.</summary>
+    FreexComp.Build.Project? Definition { get; }
+
     /// <summary>A project was opened or closed, or the open one changed.</summary>
     event EventHandler? ProjectChanged;
 

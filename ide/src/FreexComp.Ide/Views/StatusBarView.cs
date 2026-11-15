@@ -23,6 +23,10 @@ namespace FreexComp.Ide.Views;
 public sealed class StatusBarView : DockPanel
 {
     private readonly Button _state;
+    private readonly Button _diagnostics;
+    private readonly Button _configuration;
+    private readonly Border _diagnosticsCell;
+    private readonly Border _configurationCell;
     private readonly TextBlock _message = Text(AutomationIds.StatusBarField("Message"));
     private readonly Button _caret;
     private readonly TextBlock _selection = Text(AutomationIds.StatusBarField("Selection"));
@@ -53,6 +57,8 @@ public sealed class StatusBarView : DockPanel
         _lineEnding = FieldButton("LineEnding", m => m.LineEndingCommand, OpenLineEndingMenu);
         _lineEnding.MinWidth = 44;
         _encoding = FieldButton("Encoding", m => m.EncodingCommand, OpenEncodingMenu);
+        _diagnostics = FieldButton("Diagnostics", m => m.StateCommand);
+        _configuration = FieldButton("Configuration", m => m.ConfigurationCommand, OpenConfigurationMenu);
         ((TextBlock)_state.Content!).MaxWidth = 360;
 
         var left = new StackPanel { Orientation = Orientation.Horizontal };
@@ -60,6 +66,8 @@ public sealed class StatusBarView : DockPanel
         SetDock(left, Avalonia.Controls.Dock.Left);
 
         var right = new StackPanel { Orientation = Orientation.Horizontal };
+        _diagnosticsCell = Field(_diagnostics, lineBefore: true);
+        right.Children.Add(_diagnosticsCell);
         foreach (var field in new Control[] { _caret, _selection, _insertMode, _indent, _lineEnding, _encoding, _language })
         {
             var cell = Field(field, lineBefore: true);
@@ -67,6 +75,8 @@ public sealed class StatusBarView : DockPanel
             right.Children.Add(cell);
         }
 
+        _configurationCell = Field(_configuration, lineBefore: true);
+        right.Children.Add(_configurationCell);
         SetDock(right, Avalonia.Controls.Dock.Right);
         var message = Field(_message, lineBefore: true);
         Children.Add(left);
@@ -141,6 +151,11 @@ public sealed class StatusBarView : DockPanel
         SetText(_lineEnding, m.LineEndingText);
         SetText(_encoding, m.EncodingText);
         _language.Text = m.LanguageText;
+        SetText(_diagnostics, m.DiagnosticsText);
+        _diagnosticsCell.IsVisible = m.HasDiagnostics;
+        SetText(_configuration, m.ConfigurationText);
+        AutomationProperties.SetName(_configuration, m.ConfigurationText.Length > 0 ? m.ConfigurationText : m.ConfigurationCommand.Title);
+        _configurationCell.IsVisible = m.HasProject;
         foreach (var button in _buttons)
         {
             ToolTip.SetTip(button, CommandOf(button)?.Title);
@@ -177,6 +192,24 @@ public sealed class StatusBarView : DockPanel
     }
 
     /// <summary>R6 (main-window.md section 5): <c>edit.convertLineEndings:crlf</c> / <c>:lf</c>.</summary>
+    /// <summary>R9: the configurations of the project, a bullet on the active one (IDE-PM-090).</summary>
+    private void OpenConfigurationMenu(Button button)
+    {
+        if (_model is not { } m)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu();
+        var active = m.ConfigurationText.Split(" | ")[0];
+        foreach (var name in m.Configurations)
+        {
+            menu.Items.Add(CommandItem(m.ConfigurationCommand, name, name, isChecked: name == active));
+        }
+
+        ShowMenu(button, menu);
+    }
+
     private void OpenLineEndingMenu(Button button)
     {
         if (_model is not { } m)

@@ -33,17 +33,39 @@ public sealed class StatusBarViewModel : ObservableObject
     private readonly IDocumentService? _documents;
     private readonly IIdeState? _state;
     private readonly IProjectService? _projects;
+    private readonly IMessagesService? _messages;
+    private string? _result;
 
     public StatusBarViewModel(IStatusService status, ICommandService commands, ISettingsService settings, IDocumentService? documents = null,
-        IIdeState? state = null, IProjectService? projects = null)
+        IIdeState? state = null, IProjectService? projects = null, IBuildService? build = null, IMessagesService? messages = null)
     {
         _state = state;
         _projects = projects;
+        _messages = messages;
         state?.Changed += (_, _) =>
         {
+            // IDE-P3-005: a build result stays in L1 until the next state change (the build's own return to Idle keeps it).
+            if (state.Current.State != IdeState.Idle)
+                _result = null;
             OnPropertyChanged(nameof(StateText));
             OnPropertyChanged(nameof(StateKind));
         };
+        build?.BuildFinished += (_, _) =>
+        {
+            _result = build.ResultText;
+            OnPropertyChanged(nameof(StateText));
+        };
+        messages?.Changed += (_, _) =>
+        {
+            OnPropertyChanged(nameof(DiagnosticsText));
+            OnPropertyChanged(nameof(HasDiagnostics));
+        };
+        projects?.ProjectChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(ConfigurationText));
+            OnPropertyChanged(nameof(HasProject));
+        };
+        ConfigurationCommand = commands.Get("project.setConfiguration");
         ArgumentNullException.ThrowIfNull(status);
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(settings);
@@ -72,6 +94,7 @@ public sealed class StatusBarViewModel : ObservableObject
     /// <summary>L1: the IDE state text (states-and-messages.md §9); Idle without a state machine.</summary>
     public string StateText => _state?.Current switch
     {
+        { State: IdeState.Idle } when _result is not null => _result,
         null or { State: IdeState.Idle } => Strings.Msg_State_Idle,
         { State: IdeState.Building, CancelRequested: true } => Strings.Msg_State_Canceling,
         { State: IdeState.Building, BuildKind: BuildKind.Clean } => Format(Strings.Msg_State_Cleaning, ProjectName),
@@ -134,6 +157,25 @@ public sealed class StatusBarViewModel : ObservableObject
 
     /// <summary>L1 click: <c>view.messages</c>.</summary>
     public IdeCommand StateCommand { get; }
+
+    /// <summary>R1 (main-window.md §5): <c>⊗ &lt;errors&gt; ⚠ &lt;warnings&gt;</c> of the Messages model.</summary>
+    public string DiagnosticsText => _messages is null ? "" : Format("⊗ {0} ⚠ {1}", _messages.ErrorCount, _messages.WarningCount);
+
+    /// <summary>R1 is hidden when both counts are 0.</summary>
+    public bool HasDiagnostics => _messages is { } m && (m.ErrorCount > 0 || m.WarningCount > 0);
+
+    /// <summary>R9: <c>&lt;configuration&gt; | &lt;platform&gt;</c>; hidden without a project.</summary>
+    public string ConfigurationText => _projects?.Project is { } p
+        ? p.ActiveConfiguration + " | " + Menus.ProjectCombos.PlatformLabel(p.Platforms.Count > 0 ? p.Platforms[0] : "win64")
+        : "";
+
+    public bool HasProject => _projects?.Project is not null;
+
+    /// <summary>R9 click: a menu of the configurations (<c>project.setConfiguration</c>).</summary>
+    public IdeCommand ConfigurationCommand { get; }
+
+    /// <summary>The configurations of the open project (the R9 menu).</summary>
+    public IReadOnlyList<string> Configurations => _projects?.Project?.Configurations ?? [];
 
     /// <summary>R2 click: <c>search.goToLine</c>.</summary>
     public IdeCommand CaretCommand { get; }

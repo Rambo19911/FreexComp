@@ -104,7 +104,7 @@ public static class ServiceGraph
         projects.WriteGuard = fileChanges.BeginOwnWrite;
         documents.ProjectOpener = path => projects.OpenAsync(path);
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
-            platform.Log, ImplementedPhase);
+            platform.Log, toolWindowPhase ?? ImplementedPhase);
         projectManager.RegisterCommands();
         projects.SelectedFolder = () => projectManager.SelectedFolderPath;
         projects.SelectedFiles = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
@@ -141,15 +141,47 @@ public static class ServiceGraph
         var output = new OutputService(platform.Clock, settings);
         var outputView = new ViewModels.OutputViewModel(output, settings, platform.Clipboard, documents, navigation, status, platform.FileSystem);
         outputView.RegisterCommands(commands);
+        var messages = new MessagesService(documents, navigation, platform.FileSystem, status, layout);
+        var engine = platform.BuildEngine;
+        var build = new BuildService(engine, projects, documents, settings, state, toolchain, output, messages, platform.Clock,
+            platform.Dispatcher, platform.Dialogs, status, platform.Log)
+        {
+            OpenToolchainOptions = () => commands.ExecuteAsync("tools.options", OptionsViewModel.ToolchainPathsPage),
+        };
+        build.RegisterCommands(commands);
+        var messagesView = new ViewModels.MessagesViewModel(messages, settings, platform.Clipboard);
+        messagesView.RegisterCommands(commands);
+        build.ShowMessages = () => toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false); // UI-TW-409
+        build.ShowBuildOutput = () => outputView.SelectChannel(OutputChannels.Build); // UI-TW-501
+        // UI-TW-405: F8 / Shift+F8 from anywhere; the Messages tab is selected without taking focus.
+        foreach (var (id, forward) in (ReadOnlySpan<(string, bool)>)[("search.nextMessage", true), ("search.previousMessage", false)])
+        {
+            commands.RegisterHandler(id, new MessageStepHandler(messages, forward,
+                () => toolWindowService.IsRegistered(ViewModels.MessagesViewModel.ToolName)
+                    && toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false)));
+        }
+        var run = new RunService(build, projects, settings, state, toolchain, output, platform.Processes, platform.FileSystem, platform.Clock,
+            platform.Dispatcher, platform.Dialogs, status, platform.Log)
+        {
+            OpenRunParameters = () => commands.ExecuteAsync("run.parameters"),
+        };
+        run.RegisterCommands(commands);
+        projects.BeforeClose = () => run.ConfirmStopAsync(exiting: false); // IDE-P3-093
+        projects.ProjectChanged += (_, _) =>
+        {
+            if (projects.Project is null)
+                messages.Clear(); // IDE-P3-067
+        };
         var application = new ApplicationService(documents, projects, session, recovery, settings, keymap, platform.Dialogs, platform.Clock,
             platform.Log);
         application.RegisterCommands(commands);
+        application.BeforeExit = () => run.ConfirmStopAsync(exiting: true); // IDE-P3-093
         EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.
         var extras = toolWindows ?? [];
-        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition, outputView.Definition])
+        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition, messagesView.Definition, outputView.Definition])
         {
             if (!extras.Any(e => e.Name == definition.Name))
                 toolWindowService.Register(definition);
@@ -163,6 +195,7 @@ public static class ServiceGraph
         var services = new IdeServices
         {
             Options = options,
+            ImplementedPhase = toolWindowPhase ?? ImplementedPhase,
             UserPaths = platform.UserPaths,
             Log = platform.Log,
             FileSystem = platform.FileSystem,
@@ -199,6 +232,10 @@ public static class ServiceGraph
             Toolchain = toolchain,
             Output = output,
             Processes = platform.Processes,
+            BuildEngine = engine,
+            Messages = messages,
+            Build = build,
+            Run = run,
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;
@@ -224,5 +261,17 @@ public static class ServiceGraph
         }
 
         log.Info("commands", $"All {commands.Definitions.Count} catalog commands have a handler.");
+    }
+
+    /// <summary><c>search.nextMessage</c> / <c>search.previousMessage</c> over the Messages rows (IDE-P3-066).</summary>
+    private sealed class MessageStepHandler(MessagesService messages, bool forward, Func<bool> showTab) : ICommandHandler
+    {
+        public bool CanExecute(string? argument) => messages.Items.Any(i => i.IsNavigable && !i.IsSummary);
+
+        public async Task ExecuteAsync(string? argument)
+        {
+            showTab();
+            await messages.NavigateNextAsync(forward);
+        }
     }
 }

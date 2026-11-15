@@ -142,7 +142,8 @@ public sealed class ToolGroupView : DockPanel
     private static Button CreateTab(ToolGroupViewModel model, ToolWindowViewModel window, bool active)
     {
         var tool = window.Name;
-        var text = new TextBlock { Text = window.Title, Classes = { "caption" }, VerticalAlignment = VerticalAlignment.Center };
+        var text = new TextBlock { Classes = { "caption" }, VerticalAlignment = VerticalAlignment.Center };
+        text.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(nameof(ToolWindowViewModel.Title)) { Source = window, Mode = Avalonia.Data.BindingMode.OneWay });
         text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(active ? "FxcTextPrimaryBrush" : "FxcTextSecondaryBrush"));
         var tab = new Button
         {
@@ -156,7 +157,8 @@ public sealed class ToolGroupView : DockPanel
         tab.Bind(Button.BackgroundProperty, tab.GetResourceObservable(active ? "FxcBgPanelBrush" : "FxcBgSunkenBrush"));
         tab.Bind(Button.BorderBrushProperty, tab.GetResourceObservable("FxcAccentDefaultBrush"));
         AutomationProperties.SetAutomationId(tab, AutomationIds.ToolTab(tool));
-        AutomationProperties.SetName(tab, window.Title);
+        tab.Bind(AutomationProperties.NameProperty,
+            new Avalonia.Data.Binding(nameof(ToolWindowViewModel.TabAutomationName)) { Source = window, Mode = Avalonia.Data.BindingMode.OneWay });
         tab.Click += (_, _) => model.Activate(tool);
         return tab;
     }

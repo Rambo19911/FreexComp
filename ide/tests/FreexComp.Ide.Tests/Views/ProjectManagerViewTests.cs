@@ -17,7 +17,7 @@ namespace FreexComp.Ide.Tests.Views;
 /// <summary>The Project Manager tool window (tool-windows.md §2, project-manager.md §6).</summary>
 [Trait("Phase", "1")]
 [Trait("Kind", "Ui")]
-public sealed class ProjectManagerViewTests
+public sealed partial class ProjectManagerViewTests
 {
     private const string Row = "Tool.ProjectManager.Row.";
 

@@ -136,6 +136,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.ToolWindows.AddRange(options.ToolWindows);
             o.ImplementedPhase = options.ImplementedPhase;
             o.Processes = Processes;
+            o.BuildEngine = Build;
         });
 
         Status = new StatusBarDriver(this);
@@ -168,6 +169,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
     public ManualClock Clock { get; }
 
     public MessageScript Messages { get; }
+
+    /// <summary>The scripted build engine (IDE-P3-031).</summary>
+    public FakeBuildEngine Build { get; } = new();
 
     /// <summary>The scripted process launcher (IDE-P3-094).</summary>
     public FakeProcessLauncher Processes { get; } = new();

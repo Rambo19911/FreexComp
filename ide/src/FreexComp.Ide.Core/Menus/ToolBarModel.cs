@@ -36,8 +36,86 @@ public sealed class ToolBarButtonModel : ObservableObject
     }
 }
 
-/// <summary>A toolbar combo box; disabled until its provider exists (P3).</summary>
-public sealed record ToolBarComboModel(string Name, double Width);
+/// <summary>
+/// A toolbar combo box (UI-TB-020/021): its items, the selected one and whether it is enabled come from its provider;
+/// without one it stays empty and disabled. Choosing an item calls <see cref="Choose"/>.
+/// </summary>
+public sealed class ToolBarComboModel(string name, double width) : ObservableObject
+{
+    private IReadOnlyList<string> _items = [];
+    private string? _selected;
+    private bool _isEnabled;
+
+    public string Name { get; } = name;
+
+    public double Width { get; } = width;
+
+    public IReadOnlyList<string> Items
+    {
+        get => _items;
+        set => SetProperty(ref _items, value);
+    }
+
+    public string? Selected
+    {
+        get => _selected;
+        set => SetProperty(ref _selected, value);
+    }
+
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        set => SetProperty(ref _isEnabled, value);
+    }
+
+    /// <summary>The user picked <c>item</c>; null = the combo has no action.</summary>
+    public Action<string>? Choose { get; set; }
+}
+
+/// <summary>
+/// UI-TB-020/021, IDE-PM-090: the Build toolbar's Configuration and Platform combos follow the open project and are
+/// enabled only with a project while Idle; picking a configuration runs <c>project.setConfiguration</c>.
+/// </summary>
+public static class ProjectCombos
+{
+    public static void Attach(IReadOnlyList<ToolBarModel> toolBars, Projects.IProjectService projects, Build.IIdeState state, ICommandService commands)
+    {
+        ArgumentNullException.ThrowIfNull(toolBars);
+        ArgumentNullException.ThrowIfNull(projects);
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(commands);
+        var combos = toolBars.SelectMany(t => t.Items.OfType<ToolBarComboModel>()).ToList();
+        var configuration = combos.FirstOrDefault(c => c.Name == "Configuration");
+        var platform = combos.FirstOrDefault(c => c.Name == "Platform");
+        configuration?.Choose = name => _ = commands.ExecuteAsync("project.setConfiguration", name);
+        void Update()
+        {
+            var project = projects.Project;
+            var enabled = project is not null && state.Current.State == Models.IdeState.Idle;
+            if (configuration is not null)
+            {
+                configuration.Items = project?.Configurations ?? [];
+                configuration.Selected = project?.ActiveConfiguration;
+                configuration.IsEnabled = enabled;
+            }
+
+            if (platform is not null)
+            {
+                platform.Items = project is null ? [] : [.. project.Platforms.Select(PlatformLabel)];
+                platform.Selected = project is { Platforms.Count: > 0 } ? PlatformLabel(project.Platforms[0]) : null;
+                platform.IsEnabled = enabled;
+            }
+        }
+
+        projects.ProjectChanged += (_, _) => Update();
+        state.Changed += (_, _) => Update();
+        Update();
+    }
+
+    /// <summary><c>win64</c> → <c>Win64</c> (main-window.md R9).</summary>
+    public static string PlatformLabel(string platform) =>
+        string.IsNullOrEmpty(platform) ? platform : char.ToUpperInvariant(platform[0]) + platform[1..];
+}
 
 /// <summary>A separator inside a toolbar.</summary>
 public sealed record ToolBarSeparatorModel

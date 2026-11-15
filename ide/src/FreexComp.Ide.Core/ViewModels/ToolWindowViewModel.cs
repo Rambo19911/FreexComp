@@ -36,6 +36,20 @@ public abstract class ToolWindowViewModel : ObservableObject
     /// <summary>UI-TW-002: the caption shows the title upper-case.</summary>
     public string Caption => Title.ToUpper(CultureInfo.CurrentCulture);
 
+    /// <summary>Automation name of the tab (UI-TW-410: Messages adds its counts in words).</summary>
+    public virtual string TabAutomationName => Title;
+
+    /// <summary>The tab title changes with the content (Messages counts, UI-TW-410).</summary>
+    protected void SetTitle(string title)
+    {
+        if (Title == title)
+            return;
+        Title = title;
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(Caption));
+        OnPropertyChanged(nameof(TabAutomationName));
+    }
+
     public CommandScope Scope { get; private set; } = CommandScope.ToolList;
 
     /// <summary>The tool window contains keyboard focus (UI-TW-002 caption state).</summary>

@@ -10,7 +10,7 @@ namespace FreexComp.Ide.Tests.Views;
 
 [Trait("Phase", "1")]
 [Trait("Kind", "Ui")]
-public sealed class StatusBarTests
+public sealed partial class StatusBarTests
 {
     private static readonly string[] EditorFields = ["CaretPosition", "Selection", "InsertMode", "Indent", "LineEnding", "Encoding", "Language"];
 

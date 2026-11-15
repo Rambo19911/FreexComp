@@ -62,6 +62,8 @@ public sealed class ProjectService : IProjectService
 
     public ProjectModel? Project { get; private set; }
 
+    public Project? Definition => _project;
+
     /// <summary>Restores the session at open step 4 and writes it on close (IDE-PM-011, -014; set by the service graph).</summary>
     public ISessionService? Session { get; set; }
 
@@ -92,6 +94,24 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("project.removeFile", new Handler(_ => CanOperateOnFiles(), _ => RemoveFilesAsync(FileTargets())));
         commands.RegisterHandler("project.deleteFile", new Handler(_ => CanOperateOnFiles(), _ => DeleteFilesAsync(FileTargets())));
         commands.RegisterHandler("project.renameFile", new Handler(_ => RenameTarget() is not null, _ => RenameCommandAsync()));
+        commands.RegisterHandler("project.setConfiguration", new Handler(_ => Project is not null, SetActiveConfigurationAsync));
+    }
+
+    /// <summary>
+    /// IDE-PM-090 <c>project.setConfiguration:&lt;name&gt;</c>: sets <c>activeConfiguration</c> and saves the project
+    /// (IDE-PM-004). An unknown name is a no-op with a log warning. True when changed and saved.
+    /// </summary>
+    public async Task<bool> SetActiveConfigurationAsync(string? name)
+    {
+        if (_project is null || name is null || name == _project.ActiveConfiguration)
+            return false;
+        if (!_project.Configurations.ContainsKey(name))
+        {
+            _log.Warning(LogCategory, $"Unknown configuration '{name}'.");
+            return false;
+        }
+
+        return await SaveChangedProjectAsync(_project with { ActiveConfiguration = name });
     }
 
     /// <summary><c>project.addExistingFile</c> (IDE-PM-050): the multi-select picker, then <see cref="AddExistingFilesAsync"/>.</summary>
@@ -149,10 +169,15 @@ public sealed class ProjectService : IProjectService
         return true;
     }
 
+    /// <summary>Asked first when the project closes (IDE-P3-093: stop a running program); false cancels the close.</summary>
+    public Func<Task<bool>>? BeforeClose { get; set; }
+
     public async Task<bool> CloseAsync()
     {
         if (_project is null)
             return true;
+        if (BeforeClose is { } beforeClose && !await beforeClose())
+            return false;
 
         // UI-DLG-063: the project file first, then the member documents in tab order.
         var members = _documents.Documents.Where(d => IsMember(d.FilePath)).ToList();

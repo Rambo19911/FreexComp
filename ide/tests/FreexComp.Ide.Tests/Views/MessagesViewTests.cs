@@ -1,0 +1,231 @@
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
+using FreexComp.Compiler;
+using FreexComp.Ide.Core.Build;
+using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Text;
+using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Tests.Infrastructure;
+using FreexComp.Ide.TestSupport;
+
+namespace FreexComp.Ide.Tests.Views;
+
+/// <summary>The Messages tool window (I-100, I-101; tool-windows.md §6, phase3-build-run.md §7.1).</summary>
+[Trait("Phase", "3")]
+[Trait("Kind", "Ui")]
+public sealed class MessagesViewTests
+{
+    private static Diagnostic Diag(HeadlessHarness h, string code, DiagnosticSeverity severity, string message, int line, int column, int length = 0) =>
+        FakeBuildEngine.Diag(code, severity, message, BuildScenario.UnitPath(h), line, column, length);
+
+    /// <summary>2 errors (the first with a related location), 1 warning, 1 hint; builds and waits for Idle.</summary>
+    private static async Task BuildWithMessagesAsync(HeadlessHarness h)
+    {
+        var related = new RelatedLocation(new FreexComp.Compiler.Text.Location(BuildScenario.UnitPath(h), default,
+            new FreexComp.Compiler.Text.LinePositionSpan(new(3, 4), new(3, 8))), "Declared here");
+        h.Build.Enqueue(FakeBuildEngine.Failure(BuildScenario.ProjectPath(h),
+            Diag(h, "E2003", DiagnosticSeverity.Error, "Undeclared identifier 'Foo'", 6, 3, 3) with { Related = [related] },
+            Diag(h, "E2010", DiagnosticSeverity.Error, "Incompatible types: 'Integer' and 'string'", 4, 5, 4),
+            Diag(h, "W1002", DiagnosticSeverity.Warning, "Variable 'Foo1' is declared but never used", 4, 5),
+            Diag(h, "H2077", DiagnosticSeverity.Hint, "Value assigned to 'Foo' never used", 6, 3)));
+        h.Press("Ctrl+Shift+B");
+        await h.WaitForAsync(() => h.Services.State.Current.State == Core.Models.IdeState.Idle && h.Services.Build.ResultText is not null,
+            "build finished");
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static string Name(HeadlessHarness h, string id) => AutomationProperties.GetName(h.Find<Control>(id)) ?? "";
+
+    /// <summary>Scrolls the row into view (the list is virtualized) and returns the cell or row control.</summary>
+    private static T Row<T>(HeadlessHarness h, string key, string? cell = null) where T : Control
+    {
+        var list = h.Find<ListBox>("Tool.Messages.List");
+        if (BuildScenario.Messages(h).Rows.FirstOrDefault(r => r.Key == key) is { } row)
+            list.ScrollIntoView(row);
+        Dispatcher.UIThread.RunJobs();
+        return h.Find<T>("Tool.Messages.Row." + key + (cell is null ? "" : "." + cell));
+    }
+
+    private static bool HasRow(HeadlessHarness h, string key) => BuildScenario.Messages(h).Rows.Any(r => r.Key == key);
+
+    /// <summary>UI-TW-406, -407, -410, -403: toggles with counts, filter, filtered-empty state, tab counts, related rows.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-406")]
+    [Trait("Req", "UI-TW-407")]
+    [Trait("Req", "UI-TW-410")]
+    [Trait("Req", "UI-TW-403")]
+    [Trait("Req", "UI-TW-409")]
+    [Trait("Req", "UI-TW-411")]
+    public async Task SeverityTogglesAndFilter()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        await BuildWithMessagesAsync(h);
+
+        // UI-TW-409: the tab was activated after a build with errors.
+        Assert.Equal(MessagesViewModel.ToolName, h.Services.Layout.Layout.Bottom.ActiveTool);
+        foreach (var key in (string[])["0", "1", "2", "3", "summary"])
+            Assert.NotNull(Row<Control>(h, key));
+        Assert.Equal("E2003", Row<TextBlock>(h, "0", "Code").Text);
+        Assert.Equal("Unit1.pas", h.Find<TextBlock>("Tool.Messages.Row.0.File").Text);
+        Assert.Equal(("6", "3"), (h.Find<TextBlock>("Tool.Messages.Row.0.Line").Text, h.Find<TextBlock>("Tool.Messages.Row.0.Col").Text));
+        Assert.Equal(Strings.MessagesView_Severity_Error, Name(h, "Tool.Messages.Row.0.Severity"));
+        Assert.Equal(Strings.Msg_Build_FailedMany.Replace("{0}", "2", StringComparison.Ordinal), Row<TextBlock>(h, "summary", "Description").Text);
+        Assert.Equal(["2 Errors", "1 Warning", "1 Hint"],
+            ((string[])["toggleErrors", "toggleWarnings", "toggleHints"]).Select(t => Name(h, "Tool.Messages.ToolBar.messages." + t)));
+        Assert.Equal("Messages (2 ⊘, 1 ⚠)", BuildScenario.Messages(h).Title);
+        Assert.Equal("Messages, 2 errors, 1 warning", Name(h, "ToolTab.Messages"));
+
+        // A released toggle hides its rows; the summary stays; counts do not change.
+        h.Click("Tool.Messages.ToolBar.messages.toggleWarnings");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Services.Settings.Get(SettingsCatalog.MessagesShowWarnings));
+        Assert.False(HasRow(h, "2"));
+        Assert.NotNull(Row<Control>(h, "summary"));
+        Assert.Equal("1 Warning", Name(h, "Tool.Messages.ToolBar.messages.toggleWarnings"));
+        Assert.False(h.Find<ToggleButton>("Tool.Messages.ToolBar.messages.toggleWarnings").IsChecked);
+
+        // The filter matches code, description and file.
+        h.Find<TextBox>("Tool.Messages.Filter").Text = "E2010";
+        h.Clock.Advance(ToolWindowViewModel.FilterDelay);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(HasRow(h, "0"));
+        Assert.NotNull(Row<Control>(h, "1"));
+        Assert.False(h.Find<Control>("Tool.Messages.FilteredEmpty").IsVisible);
+
+        // Everything hidden: the filtered-empty block; Clear Filter clears the box and presses every toggle.
+        h.Find<TextBox>("Tool.Messages.Filter").Text = "zzz";
+        h.Clock.Advance(ToolWindowViewModel.FilterDelay);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Control>("Tool.Messages.FilteredEmpty").IsVisible);
+        h.Click("Tool.Messages.FilteredEmpty.ClearFilter");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("", h.Find<TextBox>("Tool.Messages.Filter").Text);
+        Assert.True(h.Services.Settings.Get(SettingsCatalog.MessagesShowWarnings));
+        Assert.NotNull(Row<Control>(h, "2"));
+        Assert.False(h.Find<Control>("Tool.Messages.FilteredEmpty").IsVisible);
+
+        // Related rows: collapsed by default, Right expands, Left collapses.
+        Assert.True(h.Services.ToolWindows.Show(MessagesViewModel.ToolName, focus: true));
+        Dispatcher.UIThread.RunJobs();
+        var list = h.Find<ListBox>("Tool.Messages.List");
+        list.SelectedIndex = 0;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(HasRow(h, "0.r0"));
+        h.Press("Right");
+        Assert.Equal("↳ Declared here", Row<TextBlock>(h, "0.r0", "Description").Text);
+        h.Press("Left");
+        Assert.False(HasRow(h, "0.r0"));
+
+        // messages.clear: the empty state, counts gone.
+        await h.ExecuteAsync("messages.clear");
+        Assert.True(h.Find<Control>("Tool.Messages.Empty").IsVisible);
+        Assert.Equal("Messages", BuildScenario.Messages(h).Title);
+    }
+
+    /// <summary>UI-TW-408: Ctrl+C copies the selected rows in the text diagnostic format; Copy All copies every row.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-408")]
+    public async Task CopyUsesDiagnosticFormat()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        await BuildWithMessagesAsync(h);
+        var unit = BuildScenario.UnitPath(h);
+        Assert.True(h.Services.ToolWindows.Show(MessagesViewModel.ToolName, focus: true));
+        Dispatcher.UIThread.RunJobs();
+        var list = h.Find<ListBox>("Tool.Messages.List");
+        list.SelectedItems!.Add(BuildScenario.Messages(h).Rows[0]);
+        list.SelectedItems!.Add(BuildScenario.Messages(h).Rows[2]);
+        Dispatcher.UIThread.RunJobs();
+
+        h.Press("Ctrl+C");
+        var clipboard = (FakeClipboard)h.Services.Clipboard;
+        await h.WaitForAsync(() => clipboard.Text is not null, "copied");
+        Assert.Equal($"{unit}(6,3): error E2003: Undeclared identifier 'Foo'\r\n{unit}(4,5): warning W1002: Variable 'Foo1' is declared but never used",
+            clipboard.Text);
+
+        await h.ExecuteAsync("messages.copyAll");
+        var lines = clipboard.Text!.Split("\r\n");
+        Assert.Equal(6, lines.Length); // 4 diagnostics, the related location, the summary
+        Assert.Equal($"{unit}(4,5): info : Declared here".Replace(" : ", ": ", StringComparison.Ordinal), lines[1]);
+        Assert.Equal(Strings.Msg_Build_FailedMany.Replace("{0}", "2", StringComparison.Ordinal), lines[^1]);
+    }
+
+    /// <summary>UI-TW-405: F8 / Shift+F8 visit the visible rows with a file, wrap, and keep the focus in the editor.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-405")]
+    [Trait("Req", "IDE-P3-066")]
+    public async Task F8CyclesVisibleRows()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        await BuildWithMessagesAsync(h);
+        await h.ExecuteAsync("messages.toggleHints"); // the hint row is hidden: F8 skips it
+
+        h.Press("F8");
+        await h.WaitForAsync(() => h.Services.Messages.Current?.Code == "E2003" && h.Services.Commands.CanExecute("search.nextMessage"), "first row");
+        h.Press("F8");
+        await h.WaitForAsync(() => h.Services.Messages.Current?.Code == "E2010" && h.Services.Commands.CanExecute("search.nextMessage"), "second row");
+        h.Press("F8");
+        await h.WaitForAsync(() => h.Services.Messages.Current?.Code == "W1002" && h.Services.Commands.CanExecute("search.nextMessage"), "third row");
+        h.Press("F8");
+        await h.WaitForAsync(() => h.Services.Messages.Current?.Code == "E2003" && h.Services.Commands.CanExecute("search.nextMessage"), "wrapped to the first row");
+        h.Press("Shift+F8");
+        await h.WaitForAsync(() => h.Services.Messages.Current?.Code == "W1002" && h.Services.Commands.CanExecute("search.nextMessage"), "wrapped back to the last visible row");
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.Unit1.pas", "editor focused");
+        Assert.Same(BuildScenario.Messages(h).Rows[2], h.Find<ListBox>("Tool.Messages.List").SelectedItem);
+    }
+
+    /// <summary>Phase 3 "error navigation tested": double-click opens the file, caret at line:col, span selected, editor focused.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-404")]
+    [Trait("Req", "IDE-P3-065")]
+    public async Task DoubleClickNavigatesToErrorPosition()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        await BuildWithMessagesAsync(h);
+
+        Row<Control>(h, "0");
+        h.DoubleClick("Tool.Messages.Row.0.Description");
+        await h.WaitForAsync(() => h.Services.Documents.ActiveDocument is TextDocumentViewModel { Title: "Unit1.pas" }, "Unit1.pas active");
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.Unit1.pas", "editor focused");
+        var doc = (TextDocumentViewModel)h.Services.Documents.ActiveDocument!;
+        Assert.Equal(new TextPosition(6, 6), doc.ViewState.Caret);
+        Assert.Equal("Foo", doc.Buffer.GetText(doc.Selection.Start, doc.Selection.End - doc.Selection.Start));
+
+        // The summary row has no file: nothing happens.
+        Row<Control>(h, "summary");
+        h.DoubleClick("Tool.Messages.Row.summary.Description");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(new TextPosition(6, 6), doc.ViewState.Caret);
+    }
+
+    /// <summary>Keyboard navigation of errors: Enter on the selected row (messages.goToSource), then F8.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-404")]
+    [Trait("Req", "UI-TW-405")]
+    public async Task EnterAndF8NavigateByKeyboard()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        await BuildWithMessagesAsync(h);
+        Assert.True(h.Services.ToolWindows.Show(MessagesViewModel.ToolName, focus: true));
+        Dispatcher.UIThread.RunJobs();
+        var list = h.Find<ListBox>("Tool.Messages.List");
+        await h.WaitForAsync(() => h.FocusedAutomationId?.StartsWith("Tool.Messages", StringComparison.Ordinal) == true, "list focused");
+        list.SelectedIndex = 1;
+        Dispatcher.UIThread.RunJobs();
+
+        h.Press("Enter");
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.Unit1.pas", "editor focused");
+        var doc = (TextDocumentViewModel)h.Services.Documents.ActiveDocument!;
+        Assert.Equal(new TextPosition(4, 9), doc.ViewState.Caret); // E2010 at 4:5, span of 4 selected
+
+        h.Press("F8");
+        await h.WaitForAsync(() => h.Services.Messages.Current?.Code == "W1002" && h.Services.Commands.CanExecute("search.nextMessage"), "next row");
+        Assert.Equal(4, doc.ViewState.Caret.Line);
+        Assert.Equal("Editor.Unit1.pas", h.FocusedAutomationId);
+        Assert.Equal(MessagesViewModel.ToolName, h.Services.Layout.Layout.Bottom.ActiveTool);
+    }
+}
