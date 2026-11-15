@@ -3,7 +3,9 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Symbols;
+using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Types;
 
@@ -71,9 +73,19 @@ internal static class PcuReader
         private readonly ImmutableArray<string> _sources = [.. Array(pcu, "sources").Select(s => Text(s, "path"))];
         private readonly Dictionary<int, TypeSymbol> _byId = [];
 
+        /// <summary>The interface scope being rebuilt (generic declarations bind below it, C-119).</summary>
+        private Scope _scope = null!;
+
+        /// <summary>C-119: the <c>genericSupport</c> symbols, below the interface scope; generic method implementations bind in it.</summary>
+        private Scope _support = null!;
+
+        private readonly List<(GenericTypeSymbol Generic, ImmutableArray<RoutineDeclarationSyntax> Implementations)> _generics = [];
+
         public PcuInterface Run(Scope parent)
         {
             var scope = new Scope(ScopeKind.Unit, parent, _unit);
+            _scope = scope;
+            _support = new Scope(ScopeKind.Unit, scope, _unit);
             var members = new List<Symbol>();
             foreach (var entry in Array(Node(pcu, "interface"), "symbols"))
             {
@@ -95,7 +107,86 @@ internal static class PcuReader
             }
 
             _unit.InterfaceMembers = [.. members];
+            ImportGenericSupport();
             return new PcuInterface(_unit, scope);
+        }
+
+        /// <summary>
+        /// C-119 (CMP-162): the implementation-only symbols the generic bodies name, then the generics' method implementations (bound
+        /// in that scope, so they apply to the instances made so far and later).
+        /// </summary>
+        private void ImportGenericSupport()
+        {
+            var support = new List<Symbol>();
+            if (Node(pcu, "interface")["genericSupport"] is JsonArray entries)
+            {
+                foreach (var entry in entries)
+                {
+                    var name = Text(entry, "name");
+                    var symbol = Symbol(entry!, name);
+                    if (symbol is RoutineSymbol routine && _support.LookupLocal(name) is RoutineSymbol)
+                    {
+                        _support.AddOverload(routine);
+                    }
+                    else if (!_support.TryDeclare(name, symbol, out _))
+                    {
+                        throw new PcuFormatException($"'{name}' is declared twice");
+                    }
+
+                    support.Add(symbol);
+                }
+            }
+
+            _unit.ImplementationMembers = [.. support];
+            foreach (var (_, implementations) in _generics)
+            {
+                DeclarationBinder.ImportGenericImplementations(types, _support, _unit, implementations);
+            }
+        }
+
+        /// <summary>C-119: a generic with its body re-parsed from the pieces at their original lines and columns (CMP-162).</summary>
+        private GenericTypeSymbol Generic(int id, JsonObject entry, string name)
+        {
+            var parameters = Array(entry, "typeParams").Select(p => Text(p, "name")).ToImmutableArray();
+            if (entry["body"] is not JsonValue index || !index.TryGetValue<int>(out var body))
+            {
+                var empty = new GenericTypeSymbol(name, parameters, null, null, 0, _unit, []);       // E2900 at the use
+                _byId[id] = empty;
+                return empty;
+            }
+
+            var bodies = Array(pcu, "genericBodies");
+            if (body < 0 || body >= bodies.Count)
+            {
+                throw new PcuFormatException($"generic body {body} is out of range");
+            }
+
+            var text = Text(bodies[body], "text");
+            var pieces = new List<GenericBodyText.Piece>();
+            var at = 0;
+            foreach (var piece in Array(bodies[body], "pieces"))
+            {
+                var length = (int)piece!["length"]!;
+                if (at + length > text.Length)
+                {
+                    throw new PcuFormatException($"generic body {body} pieces exceed its text");
+                }
+
+                pieces.Add(new GenericBodyText.Piece((int)piece["line"]!, (int)piece["col"]!, text.Substring(at, length)));
+                at += length;
+            }
+
+            var (declaration, implementations) = GenericBodyText.Parse(_sources.Length > 0 ? _sources[0] : _unit.Name + ".pas", GenericBodyText.Reconstruct(pieces));
+            if (declaration?.TypeParameterList is not { } typeParameters)
+            {
+                throw new PcuFormatException($"generic body {body} does not parse");
+            }
+
+            var generic = new GenericTypeSymbol(name, parameters, declaration, _scope, int.MaxValue, _unit, Declaration(entry));
+            _byId[id] = generic;
+            generic.Constraints = DeclarationBinder.ImportConstraints(types, _scope, _unit, typeParameters);
+            _generics.Add((generic, implementations));
+            return generic;
         }
 
         private Symbol Symbol(JsonNode entry, string name)
@@ -367,8 +458,14 @@ internal static class PcuReader
                 case "interface":
                     return Interface(id, entry, name);
                 case "generic":
-                    // C-116: without its body text (C-119) an imported generic cannot be instantiated (E2900 at the use)
-                    return _byId[id] = new GenericTypeSymbol(name, [.. Array(entry, "typeParams").Select(p => Text(p, "name"))], null, null, 0, _unit, []);
+                    return Generic(id, entry, name);
+                case "instance":
+                {
+                    // C-119: the instance of the (imported or other unit's) generic for the arguments (LANG-710 identity)
+                    var generic = Type(entry, "generic") as GenericTypeSymbol ?? throw new PcuFormatException("'generic' is not a generic type");
+                    var arguments = Array(entry, "arguments").Select(a => TypeById((int)a!)).ToImmutableArray();
+                    return _byId[id] = DeclarationBinder.ImportInstance(types, _scope, _unit, generic, arguments);
+                }
                 case "classRef":
                 {
                     var target = Type(entry, "target") as ClassTypeSymbol ?? throw new PcuFormatException($"'{name}' does not refer to a class");

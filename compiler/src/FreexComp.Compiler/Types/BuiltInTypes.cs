@@ -17,6 +17,12 @@ public sealed class BuiltInTypes
     /// <summary>C-116: generic instances are made under this lock (units are bound in parallel; LANG-710 identity across units).</summary>
     internal object GenericGate { get; } = new();
 
+    /// <summary>
+    /// C-222: (code, location) of the warnings and hints already reported from generic instances — each is reported once per
+    /// compilation, however many instances or units hit it. Guarded by itself.
+    /// </summary>
+    internal HashSet<(string Code, Text.Location Location)> ReportedInstanceWarnings { get; } = [];
+
     internal BuiltInTypes()
     {
         Scope = new Scope(ScopeKind.BuiltIn, parent: null);

@@ -41,6 +41,14 @@ internal sealed class OverloadResolver(Conversions conversions)
 
         var minimum = applicable.Min(a => a.Costs.Sum());
         var tied = applicable.Where(a => a.Costs.Sum() == minimum).ToList();
+        if (tied.Count > 1 && tied.All(a => a.Routine is MethodSymbol { ContainingSymbol: ClassTypeSymbol }))
+        {
+            // C-224 (LANG-442): the method of the more derived class wins first
+            static int Depth(RoutineSymbol routine) => ((ClassTypeSymbol)routine.ContainingSymbol!).SelfAndAncestors().Count();
+            var deepest = tied.Max(a => Depth(a.Routine));
+            tied = [.. tied.Where(a => Depth(a.Routine) == deepest)];
+        }
+
         if (tied.Count > 1)
         {
             var fewest = tied.Min(a => a.Defaults);

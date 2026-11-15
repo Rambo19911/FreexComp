@@ -84,6 +84,8 @@ internal static class IrEmitter
         }
 
         var interfaceMembers = unit.Unit.InterfaceMembers.Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).ToHashSet();
+        // C-119: what the unit's generic bodies name is reached from instances in other modules (external, like the interface)
+        interfaceMembers.UnionWith(Binding.GenericSupport.Of(unit.Unit).Select(Binding.GenericSupport.Linked).OfType<Symbol>());
         // C-116 (CMP-385): the generic instances the unit uses are emitted here too, linkonce_odr
         ImmutableArray<TypeSymbol> instances;
         lock (unit.Unit.UsedInstances)
@@ -106,7 +108,8 @@ internal static class IrEmitter
             .Select(m => m is ConstantSymbol { Storage: { } storage } ? storage : m).OfType<VariableSymbol>().Concat(unit.Statics)
             .Concat(Binding.DeclarationBinder.ClassVariablesOf(unit.Unit))                             // CMP-370: class vars are globals
             .Concat(instances.SelectMany(i => i switch { ClassTypeSymbol c => c.ClassVariables, RecordTypeSymbol r => r.ClassVariables, _ => [] }))
-            .Where(v => !v.IsThreadVar).ToImmutableArray();                                            // threadvars: ABI-180/181
+            .Concat(Lowerer.InstanceClassVariables(unit.Unit))                                        // C-222: the owner finalises them
+            .Where(v => !v.IsThreadVar).Distinct().ToImmutableArray();                                            // threadvars: ABI-180/181
         foreach (var variable in variables)
         {
             module.Globals[variable] = new IrGlobal(Mangler.GlobalVariable(variable));

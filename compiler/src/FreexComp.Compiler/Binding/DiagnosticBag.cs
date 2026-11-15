@@ -16,13 +16,25 @@ internal sealed class DiagnosticBag
     public void Add(Diagnostic diagnostic) => _diagnostics.Add(diagnostic);
 
     /// <summary>
-    /// LANG-711 (C-118): an error found while instantiating <paramref name="instance"/> becomes E2710 at the same place; E2710 (of a
-    /// nested instance) and E2712 pass unchanged. Warnings and hints of instances are dropped (the declaration reports nothing itself).
+    /// LANG-711 (C-118, C-222): an error found while instantiating <paramref name="instance"/> becomes E2710 at the same place with
+    /// <paramref name="site"/> as related location "instantiated from here" (CMP-508); E2710 (of a nested instance) and E2712 pass
+    /// unchanged. A warning or hint keeps its code and gets the same related location, but only the first one per (code, location)
+    /// in <paramref name="reported"/> (the declaration itself is never checked, so it reports nothing; null = dropped).
     /// </summary>
-    public static Diagnostic? InInstance(Diagnostic diagnostic, string instance) =>
-        diagnostic.Severity != DiagnosticSeverity.Error ? null
-        : diagnostic.Code is "E2710" or "E2712" ? diagnostic
-        : Diagnostic.Create("E2710", diagnostic.Location, instance, diagnostic.Message) with { Related = diagnostic.Related };
+    public static Diagnostic? InInstance(Diagnostic diagnostic, string instance, Location? site, HashSet<(string Code, Location Location)> reported)
+    {
+        ImmutableArray<RelatedLocation> related = site is { } at ? diagnostic.Related.Add(new RelatedLocation(at, "instantiated from here")) : diagnostic.Related;
+        if (diagnostic.Severity != DiagnosticSeverity.Error)
+        {
+            lock (reported)
+            {
+                return reported.Add((diagnostic.Code, diagnostic.Location)) ? diagnostic with { Related = related } : null;
+            }
+        }
+
+        return diagnostic.Code is "E2710" or "E2712" ? diagnostic
+            : Diagnostic.Create("E2710", diagnostic.Location, instance, diagnostic.Message) with { Related = related };
+    }
 
     public void Report(SyntaxToken token, string code, params object[] args) =>
         Add(token.DirectiveState, Diagnostic.Create(code, LocationOf(token), args));

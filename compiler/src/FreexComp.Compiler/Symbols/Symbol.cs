@@ -107,5 +107,8 @@ public sealed class UnitSymbol : Symbol
     /// </summary>
     internal List<Symbol> UsedInstances { get; } = [];
 
+    /// <summary>C-222 (CMP-508): where this unit first used each of <see cref="UsedInstances"/> ("instantiated from here"); same lock.</summary>
+    internal Dictionary<Symbol, Location> InstanceSites { get; } = [];
+
     public override string ToDisplayString() => (IsProgram ? "program " : "unit ") + Name;
 }

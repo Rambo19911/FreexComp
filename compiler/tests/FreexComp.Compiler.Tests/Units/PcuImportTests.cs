@@ -424,7 +424,7 @@ public sealed class PcuImportTests
     }
 
     /// <summary>The program compiled against <c>.pcu</c>-only U and V gives the IR it gets against their sources.</summary>
-    private static void AssertSameIrAgainstPcu(string unit, string program)
+    internal static void AssertSameIrAgainstPcu(string unit, string program)
     {
         var sources = PcuTests.Files(u: unit, program: program);
         var reference = Emit(sources, PcuTests.Options(), EmitStage.Ll);

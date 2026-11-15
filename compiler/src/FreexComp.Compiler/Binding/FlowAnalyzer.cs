@@ -41,7 +41,7 @@ internal sealed class FlowAnalyzer
             }
         }
 
-        foreach (var body in unit.Routines)
+        foreach (var body in unit.Routines.Where(r => GenericUses.InstanceOf(r.Routine) is null))      // instance bodies: Binder.BindInstances
         {
             all.AddRange(Analyze(unit, body));
         }

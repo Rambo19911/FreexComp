@@ -999,6 +999,11 @@ internal sealed partial class ExpressionBinder
     /// <summary>A typecast <c>T(x)</c> or a function call; intrinsics are bound from C-029 on.</summary>
     private BoundExpression BindInvocation(InvocationExpressionSyntax invocation, bool variableContext = false)
     {
+        if (ImplicitGenericMethod(invocation, invocation.Expression, invocation.ArgumentList) is { } genericCall)
+        {
+            return MethodCallExpression(invocation, genericCall);                          // C-222: Max<Integer>(…) inside the class
+        }
+
         if (_scope.Unqualified(invocation.Expression) is not IdentifierNameSyntax name)
         {
             switch (Unparenthesized(invocation.Expression))
@@ -1029,9 +1034,10 @@ internal sealed partial class ExpressionBinder
             return ImplicitMethodCall(invocation, name, invocation.ArgumentList);          // also a with designator's method (C-109)
         }
 
-        if (symbol is FieldSymbol && _withs.Count > 0)
+        if (symbol is FieldSymbol)
         {
-            return CallThrough(invocation, BindOperand(invocation.Expression));            // a procedural field of a with designator
+            // a procedural field of a with designator, or of Self inside a method (C-225)
+            return CallThrough(invocation, BindOperand(invocation.Expression));
         }
 
         if (symbol is VariableSymbol or ParameterSymbol or ConstantSymbol or PropertySymbol)

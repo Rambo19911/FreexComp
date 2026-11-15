@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
+using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Types;
 
 namespace FreexComp.Compiler.Binding;
@@ -256,11 +257,12 @@ internal sealed partial class DeclarationBinder
                         instance = new DeclarationBinder(_types, _scope, _container, bag).CreateInstance(generic, arguments);
                     }
 
+                    var site = DiagnosticBag.LocationOf(at);
                     foreach (var diagnostic in bag.ToImmutable())
                     {
-                        if (DiagnosticBag.InInstance(diagnostic, instance.Name) is { } wrapped)
+                        if (DiagnosticBag.InInstance(diagnostic, instance.Name, site, _types.ReportedInstanceWarnings) is { } wrapped)
                         {
-                            _diagnostics.Add(wrapped);                                    // LANG-711 (C-118)
+                            _diagnostics.Add(wrapped);                                    // LANG-711 (C-118, C-222)
                         }
                     }
                 }
@@ -270,7 +272,7 @@ internal sealed partial class DeclarationBinder
                 }
             }
 
-            GenericUses.Note(instance, unit);
+            GenericUses.Note(instance, unit, at);
             return instance;
         }
     }
@@ -308,6 +310,16 @@ internal sealed partial class DeclarationBinder
                 var type = new ClassTypeSymbol(display, generic.ContainingSymbol, generic.Locations);
                 Register(type);                                                 // before the body: members may name the instance
                 binder.BindClassBody(type, classSyntax);
+                instance = type;
+                break;
+            }
+
+            case InterfaceTypeSyntax { EndKeyword: not null } interfaceSyntax when declaration.TypeKeyword is null:
+            {
+                // C-222: a generic interface (LANG-700); every instance has the declared GUID, if any
+                var type = new InterfaceTypeSymbol(display, generic.ContainingSymbol, generic.Locations);
+                Register(type);
+                binder.BindInterfaceBody(type, interfaceSyntax);
                 instance = type;
                 break;
             }
@@ -408,8 +420,13 @@ internal sealed partial class DeclarationBinder
     {
         var name = NameOf(identifier);
         var names = typeParameters.Parameters.SelectMany(p => p.Identifiers).Select(i => NameOf(i.Identifier)).ToImmutableArray();
-        var generic = TypeMembers.SelfAndAncestors(type).Take(1).SelectMany(t => (IEnumerable<GenericMethodSymbol>)GenericMethodsOf(t))
-            .FirstOrDefault(g => IdentifierComparer.Instance.Equals(g.Name, name) && g.ParameterNames.Length == names.Length);
+        // C-226: overloads of the name and arity are told apart by the written parameter list (type parameters by position)
+        var fitting = TypeMembers.SelfAndAncestors(type).Take(1).SelectMany(t => (IEnumerable<GenericMethodSymbol>)GenericMethodsOf(t))
+            .Where(g => IdentifierComparer.Instance.Equals(g.Name, name) && g.ParameterNames.Length == names.Length).ToList();
+        var key = HeadingKey(declaration.Heading, names);
+        var generic = fitting.Count <= 1 ? fitting.FirstOrDefault()
+            : fitting.FirstOrDefault(g => g.Implementation is null && HeadingKey(g.Declaration.Heading, g.ParameterNames) == key)
+              ?? fitting.FirstOrDefault(g => HeadingKey(g.Declaration.Heading, g.ParameterNames) == key) ?? fitting[0];
         if (generic is null)
         {
             _diagnostics.Report(identifier, "E2606", name, type.Name);
@@ -430,6 +447,31 @@ internal sealed partial class DeclarationBinder
                 DefineGenericMethodInstance(pair.Value, generic.Implementation, pair.Key);
             }
         }
+    }
+
+    /// <summary>
+    /// C-226: the parameter list of a heading as text — modes, one type per parameter (whitespace dropped, ASCII case folded, the
+    /// method's type parameters replaced by their position) and the result type, so a declaration and its implementation compare equal.
+    /// </summary>
+    private static string HeadingKey(RoutineHeadingSyntax heading, ImmutableArray<string> typeParameters)
+    {
+        string Text(SyntaxNode? node) => node is null ? "" : string.Join(" ", node.DescendantTokens().Select(t =>
+        {
+            var text = t.Value as string ?? t.Text;
+            var index = typeParameters.IndexOf(text, IdentifierComparer.Instance);
+            return index >= 0 ? "$" + index : text.ToUpperInvariant();
+        }));
+
+        var parts = new List<string>();
+        foreach (var parameter in heading.ParameterList?.Parameters ?? default)
+        {
+            foreach (var _ in parameter.Identifiers)
+            {
+                parts.Add((parameter.Modifier?.Text.ToUpperInvariant() ?? "") + ":" + Text(parameter.Type));
+            }
+        }
+
+        return string.Join(";", parts) + "->" + Text(heading.ResultType);
     }
 
     internal static ImmutableArray<GenericMethodSymbol> GenericMethodsOf(TypeSymbol type) => type switch
@@ -493,7 +535,7 @@ internal sealed partial class DeclarationBinder
                 }
             }
 
-            GenericUses.Note(instance, unit);
+            GenericUses.Note(instance, unit, at);
             return instance;
         }
     }
@@ -511,6 +553,26 @@ internal sealed partial class DeclarationBinder
         instance.DefinitionScopeVisibleCount = scope.Count;
         instance.AddLocation(DiagnosticBag.LocationOf(implementation.Identifier));
     }
+
+    /// <summary>C-119: the constraints of a generic re-parsed from a <c>.pcu</c>, bound in its unit's interface scope.</summary>
+    internal static ImmutableArray<TypeParameterConstraints> ImportConstraints(BuiltInTypes types, Scope scope, Symbol unit, TypeParameterListSyntax typeParameters) =>
+        new DeclarationBinder(types, scope, unit, new DiagnosticBag()).BindConstraints(typeParameters);
+
+    /// <summary>C-119: the method implementations of a generic re-parsed from a <c>.pcu</c> (bound in its support scope).</summary>
+    internal static void ImportGenericImplementations(BuiltInTypes types, Scope scope, Symbol unit, IEnumerable<RoutineDeclarationSyntax> implementations)
+    {
+        var binder = new DeclarationBinder(types, scope, unit, new DiagnosticBag());
+        foreach (var implementation in implementations)
+        {
+            binder.BindMethodImplementation(implementation);
+        }
+    }
+
+    /// <summary>C-119: an instance a <c>.pcu</c> interface names (made, or found, as for a use in source).</summary>
+    internal static TypeSymbol ImportInstance(BuiltInTypes types, Scope scope, Symbol unit, GenericTypeSymbol generic, ImmutableArray<TypeSymbol> arguments) =>
+        generic.Declaration is null
+            ? throw new Units.PcuFormatException($"generic '{generic.Name}' has no body")
+            : new DeclarationBinder(types, scope, unit, new DiagnosticBag()).Instantiate(generic, arguments, generic.Declaration);
 
     /// <summary>A type argument written in an expression (<c>TUtil.Max&lt;Integer&gt;</c>), bound in this binder's scope.</summary>
     internal TypeSymbol BindTypeArgument(TypeSyntax syntax) => BindType(syntax);
@@ -578,8 +640,11 @@ internal static class GenericUses
         return null;
     }
 
-    /// <summary>Records <paramref name="type"/> (when it is a generic instance) as used by <paramref name="unit"/>.</summary>
-    public static void Note(Symbol? type, UnitSymbol? unit)
+    /// <summary>
+    /// Records <paramref name="type"/> (when it is a generic instance) as used by <paramref name="unit"/>, and <paramref name="at"/> as
+    /// its first instantiation site in that unit (C-222).
+    /// </summary>
+    public static void Note(Symbol? type, UnitSymbol? unit, SyntaxNode? at = null)
     {
         if (type is not (TypeSymbol { IsGenericInstance: true } or MethodSymbol { GenericMethodDefinition: not null }) || unit is null)
         {
@@ -592,7 +657,49 @@ internal static class GenericUses
             {
                 unit.UsedInstances.Add(type);
             }
+
+            if (at is not null && !unit.InstanceSites.ContainsKey(type))
+            {
+                unit.InstanceSites[type] = DiagnosticBag.LocationOf(at);
+            }
         }
+    }
+
+    /// <summary>The first instantiation site of <paramref name="instance"/> in <paramref name="unit"/> (C-222), if known.</summary>
+    public static Location? SiteOf(Symbol instance, UnitSymbol unit)
+    {
+        lock (unit.UsedInstances)
+        {
+            for (var symbol = (Symbol?)instance; symbol is not null; symbol = symbol.ContainingSymbol)    // a nested type: its outermost
+            {
+                if (unit.InstanceSites.TryGetValue(symbol, out var site))
+                {
+                    return site;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The generic instance a routine belongs to (its own generic method instance, or the generic instance type that contains it),
+    /// or null (C-222).
+    /// </summary>
+    public static Symbol? InstanceOf(Symbol routine)
+    {
+        for (var symbol = (Symbol?)routine; symbol is not null; symbol = symbol.ContainingSymbol)
+        {
+            switch (symbol)
+            {
+                case MethodSymbol { GenericMethodDefinition: not null } method:
+                    return method;
+                case TypeSymbol { IsGenericInstance: true } type:
+                    return type;
+            }
+        }
+
+        return null;
     }
 
     public static Restore For(UnitSymbol? unit)

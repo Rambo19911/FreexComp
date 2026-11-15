@@ -705,6 +705,126 @@ public sealed class PcuTests
         Assert.Equal(pcus["U"], again["U"]);
     }
 
+    // ------------------------------------------------------------------ generics (C-119, CMP-162)
+
+    internal const string GenericUnit = """
+        unit U;
+        interface
+        type
+          TBase = class
+          end;
+          TBox<T: class> = class
+          private
+            FItem: T;
+          public
+            class var Made: Integer;
+            constructor Create(const AItem: T);
+            function Item: T;
+            function Describe: string;
+          end;
+          TPair<K, V> = record
+            Key: K;
+            Value: V;
+          end;
+        function Pair(const S: string; N: Integer): TPair<string, Integer>;
+        implementation
+        const
+          Prefix = 'box#';
+        var
+          Counter: Integer;
+        function Next: Integer;
+        begin
+          Inc(Counter);
+          Result := Counter;
+        end;
+        constructor TBox<T>.Create(const AItem: T);
+        begin
+          inherited Create;
+          FItem := AItem;
+          Inc(Made);
+        end;
+        function TBox<T>.Item: T;
+        begin
+          Result := FItem;
+        end;
+        function TBox<T>.Describe: string;
+        begin
+          if Next > 1 then
+            Result := Prefix + 'again'
+          else
+            Result := Prefix + 'first';
+        end;
+        function Pair(const S: string; N: Integer): TPair<string, Integer>;
+        begin
+          Result.Key := S;
+          Result.Value := N;
+        end;
+        end.
+        """;
+
+    internal const string GenericProgram = """
+        program P;
+        uses U;
+        var
+          B: TBox<TBase>;
+          Q: TPair<string, Integer>;
+        begin
+          B := TBox<TBase>.Create(TBase.Create);
+          Writeln(B.Describe, B.Describe, TBox<TBase>.Made);
+          Q := Pair('a', 1);
+          Writeln(Q.Key, Q.Value);
+        end.
+        """;
+
+    /// <summary>
+    /// CMP-162 (C-119): each generic's declaration and method implementations are written as source pieces at their original
+    /// positions, and the implementation-only routines, variables and constants they name are written as <c>genericSupport</c>
+    /// symbols (with their link names: instances in other modules call them).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-162")]
+    public void GenericBodies_AreWrittenWithTheSymbolsTheyNeed()
+    {
+        var pcu = Pcu("U", Files(u: GenericUnit, program: GenericProgram));
+
+        var bodies = pcu["genericBodies"]!.AsArray();
+        Assert.Equal(2, bodies.Count);
+        var box = bodies[0]!;
+        Assert.Equal("TBox", (string)pcu["interface"]!["types"]![(int)box["symbol"]!]!["name"]!);
+        var text = (string)box["text"]!;
+        Assert.StartsWith("unit U;", text, StringComparison.Ordinal);
+        Assert.Contains("TBox<T: class> = class", text, StringComparison.Ordinal);
+        Assert.Contains("implementation", text, StringComparison.Ordinal);
+        Assert.Contains("function TBox<T>.Describe: string;", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Next", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("function Pair", text, StringComparison.Ordinal);
+        Assert.Equal("sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))), (string)box["sha256"]!);
+        var pieces = box["pieces"]!.AsArray();
+        Assert.Equal((1, 1), ((int)pieces[0]!["line"]!, (int)pieces[0]!["col"]!));              // 'unit U;' where it was
+        Assert.Equal(text.Length, pieces.Sum(p => (int)p!["length"]!));
+        var support = pcu["interface"]!["genericSupport"]!.AsArray().Select(s => $"{s!["kind"]} {s["name"]}").ToArray();
+        Assert.Equal(["const Prefix", "routine Next"], support);
+    }
+
+    /// <summary>CMP-162 (C-119): dependents compile the bodies into their instances, so a body edit changes the interface hash.</summary>
+    [Fact]
+    [Trait("Req", "CMP-152")]
+    [Trait("Req", "CMP-162")]
+    public void GenericBody_Edit_ChangesTheInterfaceHash_OtherBodiesDoNot()
+    {
+        var before = Hash("U", Files(u: GenericUnit, program: GenericProgram));
+
+        Assert.NotEqual(before, Hash("U", Files(u: ReplaceOnce(GenericUnit, "Result := FItem;", "Result := nil;"), program: GenericProgram)));
+        Assert.Equal(before, Hash("U", Files(u: ReplaceOnce(GenericUnit, "Result.Value := N;", "Result.Value := N + 1;"), program: GenericProgram)));
+    }
+
+    /// <summary>CMP-162 (C-119): a program instantiating the generics of a <c>.pcu</c>-only unit gives the same IR as against its source.</summary>
+    [Fact]
+    [Trait("Req", "CMP-162")]
+    [Trait("Req", "LANG-710")]
+    public void GenericFromPcu_GivesTheSameIrAsAgainstTheSource() =>
+        PcuImportTests.AssertSameIrAgainstPcu(GenericUnit, GenericProgram);
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

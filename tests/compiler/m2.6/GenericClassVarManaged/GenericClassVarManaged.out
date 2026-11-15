@@ -1,0 +1,5 @@
+strings 2 user main
+integers 1 7
+2
+user final 2
+after finalization leaked: 0

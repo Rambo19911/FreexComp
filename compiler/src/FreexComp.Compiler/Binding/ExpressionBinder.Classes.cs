@@ -187,7 +187,7 @@ internal sealed partial class ExpressionBinder
 
         if (TypeMembers.Outermost(method.Owner) is { IsGenericInstance: true } genericOwner)
         {
-            GenericUses.Note(genericOwner, GenericUses.Current ?? GenericUses.UnitOf(_scope));      // C-116: the caller's unit emits it (CMP-385)
+            GenericUses.Note(genericOwner, GenericUses.Current ?? GenericUses.UnitOf(_scope), call);      // C-116: the caller's unit emits it (CMP-385)
         }
 
         var receiverType = kind switch
@@ -429,6 +429,35 @@ internal sealed partial class ExpressionBinder
     /// <summary>A method named without qualifier inside a method: <c>Self.M(args)</c>; inside <c>with o do</c> one of <c>o</c>'s (C-109).</summary>
     private BoundExpression ImplicitMethodCall(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList) =>
         MethodCallExpression(call, ImplicitMethod(call, name, argumentList));
+
+    /// <summary>
+    /// C-222 (LANG-701): <c>Max&lt;Integer&gt;(…)</c> or <c>Max(…)</c> inside a method of a type (or descendant) declaring the generic
+    /// method <c>Max</c> — called as <c>Self.Max</c> (class and static methods as through the class). A bare name only when no local,
+    /// parameter or member of that name hides it. Null when this is no such call.
+    /// </summary>
+    private MethodCall? ImplicitGenericMethod(SyntaxNode call, ExpressionSyntax callee, ArgumentListSyntax? argumentList)
+    {
+        if (callee is not SimpleNameSyntax { Identifier.IsMissing: false } name || CurrentMethod is not { } current)
+        {
+            return null;
+        }
+
+        var text = name.Identifier.Value as string ?? name.Identifier.Text;
+        if (name is IdentifierNameSyntax && (_withs.Count > 0
+            || _scope.DeclaringScope(text) is { Kind: not (ScopeKind.BuiltIn or ScopeKind.Unit or ScopeKind.Uses) }))
+        {
+            return null;
+        }
+
+        var owner = current.Owner;
+        if (!TypeMembers.SelfAndAncestors(owner).Any(t => DeclarationBinder.GenericMethodsOf(t).Any(g => IdentifierComparer.Instance.Equals(g.Name, text))))
+        {
+            return null;
+        }
+
+        var candidates = GenericMethodCandidates(owner, name, name, argumentList)!.Value;
+        return candidates.IsEmpty ? new MethodCall(null, [], null) : BindMethodCall(call, candidates, ReceiverKind.Implicit, null, null, argumentList);
+    }
 
     private MethodCall ImplicitMethod(SyntaxNode call, IdentifierNameSyntax name, ArgumentListSyntax? argumentList)
     {
@@ -711,9 +740,14 @@ internal sealed partial class ExpressionBinder
     /// (natural types, LANG-222; E2711 when a parameter stays open or two arguments disagree). Null when the type has no generic
     /// method of that name; empty after an error.
     /// </summary>
-    private ImmutableArray<RoutineSymbol>? GenericMethodCandidates(TypeSymbol type, MemberAccessExpressionSyntax syntax, ArgumentListSyntax? argumentList)
+    private ImmutableArray<RoutineSymbol>? GenericMethodCandidates(TypeSymbol type, MemberAccessExpressionSyntax syntax, ArgumentListSyntax? argumentList) =>
+        GenericMethodCandidates(type, syntax.Name, syntax, argumentList);
+
+    /// <param name="nameSyntax">The method name as written (<c>Max</c> or <c>Max&lt;Integer&gt;</c>).</param>
+    /// <param name="at">The member access <c>TUtil.Max</c>, or the name itself for an unqualified call (C-222).</param>
+    private ImmutableArray<RoutineSymbol>? GenericMethodCandidates(TypeSymbol type, SimpleNameSyntax nameSyntax, ExpressionSyntax at, ArgumentListSyntax? argumentList)
     {
-        var name = syntax.Name.Identifier.Value as string ?? syntax.Name.Identifier.Text;
+        var name = nameSyntax.Identifier.Value as string ?? nameSyntax.Identifier.Text;
         var definitions = TypeMembers.SelfAndAncestors(type).SelectMany(t => (IEnumerable<GenericMethodSymbol>)DeclarationBinder.GenericMethodsOf(t))
             .Where(g => IdentifierComparer.Instance.Equals(g.Name, name)).ToList();
         if (definitions.Count == 0 || (_scope.Owner ?? GenericUses.UnitOf(_scope)) is not { } container)
@@ -722,37 +756,49 @@ internal sealed partial class ExpressionBinder
         }
 
         var declarations = new DeclarationBinder(_types, _scope, container, _diagnostics);
-        GenericMethodSymbol? generic;
-        ImmutableArray<TypeSymbol> arguments;
-        if (syntax.Name is GenericNameSyntax written)
+        // C-226: every generic method of the name that fits (the written arity, or inferable) is a candidate (LANG-440)
+        var instances = ImmutableArray.CreateBuilder<RoutineSymbol>();
+        if (nameSyntax is GenericNameSyntax written)
         {
             var count = written.TypeArgumentList.Arguments.Count;
-            generic = definitions.FirstOrDefault(d => d.ParameterNames.Length == count);
-            if (generic is null)
+            var fitting = definitions.Where(d => d.ParameterNames.Length == count).ToList();
+            if (fitting.Count == 0)
             {
-                _diagnostics.Report(syntax.Name, "E2703", name, definitions[0].ParameterNames.Length);
+                _diagnostics.Report(nameSyntax, "E2703", name, definitions[0].ParameterNames.Length);
                 return [];
             }
 
-            arguments = [.. written.TypeArgumentList.Arguments.Select(declarations.BindTypeArgument)];
+            ImmutableArray<TypeSymbol> arguments = [.. written.TypeArgumentList.Arguments.Select(declarations.BindTypeArgument)];
             if (arguments.Any(a => a.TypeKind == TypeKind.Error))
             {
                 return [];
             }
-        }
-        else
-        {
-            generic = definitions[0];
-            if (InferTypeArguments(generic, argumentList) is not { } inferred)
+
+            foreach (var generic in fitting)
             {
-                _diagnostics.Report(syntax.Name, "E2711", name);
-                return [];
+                if (declarations.InstantiateMethod(generic, arguments, at) is { } instance)
+                {
+                    instances.Add(instance);
+                }
             }
 
-            arguments = inferred;
+            return instances.Count == fitting.Count ? instances.ToImmutable() : [];
         }
 
-        return declarations.InstantiateMethod(generic, arguments, syntax) is { } instance ? [instance] : [];
+        foreach (var generic in definitions)
+        {
+            if (InferTypeArguments(generic, argumentList) is { } inferred && declarations.InstantiateMethod(generic, inferred, at) is { } instance)
+            {
+                instances.Add(instance);
+            }
+        }
+
+        if (instances.Count == 0)
+        {
+            _diagnostics.Report(nameSyntax, "E2711", name);
+        }
+
+        return instances.ToImmutable();
     }
 
     private ImmutableArray<TypeSymbol>? InferTypeArguments(GenericMethodSymbol generic, ArgumentListSyntax? argumentList)
@@ -994,6 +1040,9 @@ internal sealed partial class ExpressionBinder
         MethodCall? call;
         switch (callee)
         {
+            case SimpleNameSyntax when ImplicitGenericMethod(expression, callee, argumentList) is { } genericCall:
+                call = genericCall;                                                         // C-222
+                break;
             case InheritedExpressionSyntax inherited:
                 call = BindInherited(expression, inherited, argumentList, bare: inherited.Name is null && invocation is null);
                 if (call.Value.IsNothing)

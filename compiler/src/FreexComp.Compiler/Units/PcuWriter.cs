@@ -45,7 +45,7 @@ internal sealed class PcuWriter(PcuContext context)
 
     private static readonly JsonSerializerOptions Compact = new() { WriteIndented = false, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    private readonly Dictionary<LoadedUnit, (JsonObject Interface, string Hash)> _interfaces = [];
+    private readonly Dictionary<LoadedUnit, (JsonObject Interface, string Hash, JsonArray Bodies)> _interfaces = [];
 
     /// <summary>The complete <c>.pcu</c> text of <paramref name="unit"/> (bound without errors).</summary>
     public string Write(LoadedUnit unit) => Serialize(Build(unit));
@@ -67,6 +67,7 @@ internal sealed class PcuWriter(PcuContext context)
             var copy = (JsonObject)recorded.DeepClone();
             copy["interfaceHash"] = InterfaceHash(unit);
             copy["interface"] = WithDeclarations(unit, paths);
+            copy["genericBodies"] = Interface(unit).Bodies.DeepClone();             // C-119: as reconstructed
             return copy;
         }
 
@@ -92,7 +93,7 @@ internal sealed class PcuWriter(PcuContext context)
             },
             ["resources"] = new JsonArray(),
             ["interface"] = WithDeclarations(unit, sources.Select(s => s.Path).ToImmutableArray()),
-            ["genericBodies"] = new JsonArray(),
+            ["genericBodies"] = Interface(unit).Bodies.DeepClone(),                   // CMP-162 (C-119)
         };
         if (unit.IsProgram)
         {
@@ -188,7 +189,7 @@ internal sealed class PcuWriter(PcuContext context)
 
     // ------------------------------------------------------------------ interface (CMP-152)
 
-    private (JsonObject Interface, string Hash) Interface(LoadedUnit unit)
+    private (JsonObject Interface, string Hash, JsonArray Bodies) Interface(LoadedUnit unit)
     {
         if (_interfaces.TryGetValue(unit, out var known))
         {
@@ -206,9 +207,12 @@ internal sealed class PcuWriter(PcuContext context)
             ["symbols"] = builder.Symbols(),
             ["types"] = builder.Types,
         };
-        var hash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(node.ToJsonString(Compact))));
-        _interfaces[unit] = (node, hash);
-        return (node, hash);
+        builder.AddGenericSupport(node);
+        // C-119: dependents compile the generic bodies into their instances, so the hash covers them too
+        var hashed = builder.Bodies.Count == 0 ? node.ToJsonString(Compact) : node.ToJsonString(Compact) + builder.Bodies.ToJsonString(Compact);
+        var hash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(hashed)));
+        _interfaces[unit] = (node, hash, builder.Bodies);
+        return (node, hash, builder.Bodies);
     }
 
     /// <summary>The written interface: the hashed one with <c>decl</c> spans (indexes into <paramref name="sources"/>).</summary>
@@ -216,12 +220,14 @@ internal sealed class PcuWriter(PcuContext context)
     {
         var builder = new InterfaceBuilder(unit, Closure(unit), sources, context.Types);
         var hashed = Interface(unit).Interface;
-        return new JsonObject
+        var node = new JsonObject
         {
             ["uses"] = hashed["uses"]!.DeepClone(),
             ["symbols"] = builder.Symbols(),
             ["types"] = builder.Types,
         };
+        builder.AddGenericSupport(node);
+        return node;
     }
 
     /// <summary>
@@ -255,6 +261,35 @@ internal sealed class PcuWriter(PcuContext context)
         private Dictionary<TypeSymbol, (string Unit, string Name)>? _owners;
 
         public JsonArray Types { get; } = [];
+
+        /// <summary>CMP-162 (C-119): one entry per generic described, in type id order (<c>generic.body</c> indexes it).</summary>
+        public JsonArray Bodies { get; } = [];
+
+        /// <summary>
+        /// C-119: <c>genericSupport</c> — the implementation-only symbols the generic bodies name (<see cref="Binding.GenericSupport"/>),
+        /// as symbol entries; only when there are any (older files and units without generics keep their exact form).
+        /// </summary>
+        public void AddGenericSupport(JsonObject node)
+        {
+            if (unit.Symbol is not { } symbol)
+            {
+                return;
+            }
+
+            var support = new JsonArray();
+            foreach (var member in FreexComp.Compiler.Binding.GenericSupport.Of(symbol))
+            {
+                if (Symbol(support.Count, member.Name, member) is { } entry)
+                {
+                    support.Add(entry);
+                }
+            }
+
+            if (support.Count > 0)
+            {
+                node["genericSupport"] = support;
+            }
+        }
 
         public JsonArray Symbols()
         {
@@ -492,6 +527,15 @@ internal sealed class PcuWriter(PcuContext context)
 
         private void Describe(JsonObject entry, TypeSymbol type)
         {
+            if (type is { GenericDefinition: GenericTypeSymbol definition })
+            {
+                // C-119: an instance is its generic and arguments; the reader instantiates it (LANG-710: the same type everywhere)
+                entry["kind"] = "instance";
+                entry["generic"] = TypeId(definition);
+                entry["arguments"] = new JsonArray([.. type.TypeArguments.Select(a => (JsonNode?)TypeId(a))]);
+                return;
+            }
+
             switch (type)
             {
                 case EnumTypeSymbol { TypeKind: TypeKind.Enum } e:
@@ -695,12 +739,29 @@ internal sealed class PcuWriter(PcuContext context)
                     })]);
                     return;
                 case GenericTypeSymbol generic:
-                    // architecture.md §6 `generic` (C-116); the body text (CMP-162 genericBodies) arrives with C-119
+                {
+                    // architecture.md §6 `generic` (C-116); CMP-162 genericBodies (C-119): the pieces, re-parsed by the reader
                     entry["kind"] = "generic";
                     entry["name"] = generic.Name;
                     entry["typeParams"] = new JsonArray([.. generic.ParameterNames.Select(n => (JsonNode?)new JsonObject { ["name"] = n, ["constraints"] = new JsonArray() })]);
-                    entry["body"] = null;
+                    var pieces = GenericBodyText.Pieces(generic);
+                    if (pieces.IsEmpty)
+                    {
+                        entry["body"] = null;
+                        return;
+                    }
+
+                    var text = string.Concat(pieces.Select(p => p.Text));
+                    entry["body"] = Bodies.Count;
+                    Bodies.Add(new JsonObject
+                    {
+                        ["symbol"] = (int)entry["id"]!,
+                        ["text"] = text,
+                        ["sha256"] = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))),
+                        ["pieces"] = new JsonArray([.. pieces.Select(p => (JsonNode?)new JsonObject { ["line"] = p.Line, ["col"] = p.Col, ["length"] = p.Text.Length })]),
+                    });
                     return;
+                }
                 case ClassRefTypeSymbol reference:
                     entry["kind"] = "classRef";                                     // C-086
                     entry["name"] = reference.Name;

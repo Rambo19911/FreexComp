@@ -126,11 +126,30 @@ internal static class Binder
             }
         }
 
-        // LANG-711 (C-118): errors in an instance body are E2710 naming the instance; all diagnostics stay in file and position order
-        var instanceDiagnostics = routines.SelectMany(r => r.Diagnostics.Select(d => DiagnosticBag.InInstance(d, InstanceName(r.Routine)))).OfType<Diagnostic>();
-        return routines.Count == 0 ? result : result with
+        if (routines.Count == 0)
         {
-            Routines = result.Routines.AddRange(routines),
+            return result;
+        }
+
+        // LANG-711 (C-118): errors in an instance body are E2710 naming the instance; C-222: with the instantiation site, and the
+        // instance bodies' warnings and hints (binder and flow analysis) once each; all diagnostics stay in file and position order
+        var extended = result with { Routines = result.Routines.AddRange(routines) };
+        var instanceDiagnostics = new List<Diagnostic>();
+        foreach (var body in routines)
+        {
+            var instance = GenericUses.InstanceOf(body.Routine);
+            var site = instance is null ? null : GenericUses.SiteOf(instance, unit);
+            foreach (var diagnostic in body.Diagnostics.Concat(FlowAnalyzer.Analyze(extended, body)))
+            {
+                if (DiagnosticBag.InInstance(diagnostic, InstanceName(body.Routine), site, result.Types.ReportedInstanceWarnings) is { } kept)
+                {
+                    instanceDiagnostics.Add(kept);
+                }
+            }
+        }
+
+        return extended with
+        {
             Diagnostics = [.. result.Diagnostics.Concat(instanceDiagnostics)
                 .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase).ThenBy(d => d.Location.Span.Start)],
         };

@@ -60,7 +60,20 @@ internal static class Lowerer
     public static ImmutableArray<VariableSymbol> ManagedGlobals(UnitSymbol unit) =>
         [.. unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<VariableSymbol>()
             .Concat(DeclarationBinder.ClassVariablesOf(unit))                                              // then class vars (LANG-615, 730)
+            .Concat(InstanceClassVariables(unit))
             .Where(v => v is { IsGlobal: true, IsReadOnly: false, Type.IsManaged: true })];
+
+    /// <summary>
+    /// C-222: the class vars of every instance (made anywhere in the compilation) of the generic types the unit declares, by instance
+    /// link name. The declaring unit owns them: it is initialised before and finalised after every unit using an instance, so it
+    /// releases their managed ones once (the other modules only define the <c>linkonce_odr</c> storage).
+    /// </summary>
+    public static IEnumerable<VariableSymbol> InstanceClassVariables(UnitSymbol unit) =>
+        unit.InterfaceMembers.Concat(unit.ImplementationMembers).OfType<GenericTypeSymbol>().Distinct()
+            .SelectMany(g => g.Instances.Values)
+            .Where(i => i.TypeKind != TypeKind.Error).Distinct()
+            .OrderBy(i => i.QualifiedName, StringComparer.Ordinal)
+            .SelectMany(i => i switch { ClassTypeSymbol c => c.ClassVariables, RecordTypeSymbol r => r.ClassVariables, _ => [] });
 
     /// <param name="outlined">Receives the <c>$fin</c> routines outlined from the body (CMP-392).</param>
     public static LoweredBody LowerRoutine(BindingResult result, BoundRoutineBody body, List<LoweredBody> outlined)

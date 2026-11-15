@@ -79,6 +79,83 @@ public sealed class GenericBindingTests
         Assert.Equal(4, TypeOf(result, "G").Size);                                 // Byte + Word
     }
 
+    /// <summary>LANG-711, CMP-508 (C-222): an error in an instance body is E2710 with the instantiation site as related location.</summary>
+    [Fact]
+    [Trait("Req", "LANG-711")]
+    public void InstantiatedFromHere()
+    {
+        var (result, _) = Bind("""
+            program P;
+            type
+              TRec = record X: Integer; end;
+              TSorter<T> = class
+                class function Less(const A, B: T): Boolean;
+              end;
+            class function TSorter<T>.Less(const A, B: T): Boolean;
+            begin
+              Result := A < B;
+            end;
+            var R: TRec; D: Boolean;
+            begin
+              D := TSorter<Integer>.Less(1, 2);
+              D := TSorter<TRec>.Less(R, R);
+            end.
+            """);
+
+        var diagnostic = Assert.Single(result.Diagnostics);
+        Assert.Equal("E2710(9,15): In instantiation 'TSorter<TRec>': Operator '<' not applicable to operand type(s) 'TRec' and 'TRec'",
+            Format([diagnostic])[0]);
+        var related = Assert.Single(diagnostic.Related);
+        Assert.Equal("instantiated from here", related.Message);
+        Assert.Equal((14, 8), (related.Location.LineSpan.Start.Line + 1, related.Location.LineSpan.Start.Column + 1));
+    }
+
+    /// <summary>
+    /// C-222: warnings and hints of instance bodies (binder and flow) are reported unwrapped, once per position however many
+    /// instances have them, with the first instantiation site as related location.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-711")]
+    public void InstanceWarnings()
+    {
+        var (result, _) = Bind("""
+            program P;
+            type
+              TBase = class
+                destructor Destroy; virtual;
+              end;
+              TBox<T> = class(TBase)
+                destructor Destroy; override;
+                function Get: Integer;
+              end;
+            destructor TBase.Destroy;
+            begin
+            end;
+            destructor TBox<T>.Destroy;
+            begin
+            end;
+            function TBox<T>.Get: Integer;
+            var
+              Unused: T;
+            begin
+            end;
+            var A: TBox<Integer>; B: TBox<string>;
+            begin
+              A := nil;
+              B := nil;
+            end.
+            """);
+
+        Assert.Equal(
+            [
+                "W1062(13,12): Destructor 'TBox<Integer>.Destroy' does not call inherited",
+                "H2001(18,3): Variable 'Unused' is declared but never used",
+                "W1042(20,1): Return value of function 'Get' might be undefined",
+            ],
+            Format(result.Diagnostics));
+        Assert.All(result.Diagnostics, d => Assert.Equal((21, 8), (d.Related.Single().Location.LineSpan.Start.Line + 1, d.Related.Single().Location.LineSpan.Start.Column + 1)));
+    }
+
     /// <summary>LANG-713: Default(T) is a constant zero of T; an operand that is not a type is E2002.</summary>
     [Theory]
     [Trait("Req", "LANG-713")]

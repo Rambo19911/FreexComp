@@ -162,4 +162,23 @@ public sealed class OverloadResolverTests
         Assert.Equal(["T.TB.Put$Integer", "T.TA.Put$c:string"],
             result.Bodies[0].Statements.Cast<BoundCallStatement>().Select(c => c.Routine.LinkName));
     }
+
+    /// <summary>
+    /// C-224 (LANG-442, lead decision 2026-11-15): among candidates tied on cost, the one declared in the more derived class wins
+    /// before the fewest-defaults rule — <c>Create(ACapacity: Integer = 0)</c> beats the inherited parameterless <c>Create</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-442")]
+    public void NearerClassBeatsFewerDefaults()
+    {
+        var (result, _) = Bind("program T; type TA = class procedure Make; overload; end; " +
+            "TB = class(TA) procedure Make(N: Integer = 0); overload; end; " +
+            "TC = class(TB) end; " +
+            "procedure TA.Make; begin end; procedure TB.Make(N: Integer); begin end; " +
+            "var a: TA; c: TC; begin c.Make; a.Make end.");
+
+        Assert.Empty(Format(result.Diagnostics));
+        Assert.Equal(["T.TB.Make$Integer", "T.TA.Make$"],
+            result.Bodies[0].Statements.Cast<BoundCallStatement>().Select(c => c.Routine.LinkName));
+    }
 }
