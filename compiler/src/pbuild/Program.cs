@@ -1,15 +1,13 @@
-using System.Reflection;
+using FreexComp.Compiler;
+using FreexComp.PBuild;
 
-// pbuild command line (docs/interfaces/compiler-cli.md §4). Only --version is implemented so far (C-001).
-if (args is ["--version"])
+// pbuild command line (compiler-cli.md §4): all logic lives in PbuildCommand so tests run it in-process.
+Console.OutputEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+using var cancel = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) =>
 {
-    var version = typeof(Program).Assembly
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
-    Console.WriteLine($"pbuild {version}");
-    return 0;
-}
+    e.Cancel = true;
+    cancel.Cancel();                                                                    // CMP-803: the engine reports E9010 and returns
+};
 
-Console.WriteLine("usage: pbuild <project.pproj | group.pgroup> [--config Debug|Release] [--target build|rebuild|clean|run]");
-Console.WriteLine("              [--diagnostics text|json] [--verbose]");
-Console.WriteLine("       pbuild --version | --help");
-return 1;
+return PbuildCommand.Run(args, new PbuildEnvironment(Environment.CurrentDirectory, Console.Out, Console.Error, PhysicalFileSystem.Instance), cancel.Token);

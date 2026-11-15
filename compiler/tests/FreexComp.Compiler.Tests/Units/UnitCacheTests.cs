@@ -52,6 +52,19 @@ public sealed class UnitCacheTests
         Assert.All(new[] { "P", "System", "V" }, unit => Assert.Null(cache.Check(Path.Combine(Obj, unit + ".pcu"), Path.Combine(Obj, unit + ".obj"), Current(pcus), out _)));
     }
 
+    [Fact]
+    public void Rule4_UnitNowResolvesToAnotherFile_IsNotUpToDate()
+    {
+        var (fs, pcus, cache) = Cached();
+        var recorded = (string)pcus["U"]["sources"]![0]!["path"]!;
+
+        var same = cache.Check(Path.Combine(Obj, "U.pcu"), Path.Combine(Obj, "U.obj"), Current(pcus), out _, recorded);
+        var moved = cache.Check(Path.Combine(Obj, "U.pcu"), Path.Combine(Obj, "U.obj"), Current(pcus), out _, @"C:\other\U.pas");
+
+        Assert.Null(same);
+        Assert.Equal(@"CMP-150 rule 4: the unit now resolves to C:\other\U.pas", moved);
+    }
+
     [Theory]
     [InlineData("U.pcu")]
     [InlineData("U.obj")]

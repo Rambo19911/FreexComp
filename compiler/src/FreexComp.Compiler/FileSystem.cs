@@ -30,6 +30,23 @@ public interface IFileSystem
 
     /// <summary>Creates the directory and its parents if missing (toolchain outputs, CMP-627).</summary>
     void CreateDirectory(string path);
+
+    /// <summary>
+    /// Deletes the directory and everything below it; a missing directory is not an error (build-engine.md CMP-832, C-144).
+    /// The default deletes every file below it through <see cref="Delete"/>.
+    /// </summary>
+    void DeleteDirectory(string path)
+    {
+        foreach (var directory in EnumerateDirectories(path).ToList())
+        {
+            DeleteDirectory(directory);
+        }
+
+        foreach (var file in EnumerateFiles(path, "*").ToList())
+        {
+            Delete(file);
+        }
+    }
 }
 
 public sealed class PhysicalFileSystem : IFileSystem
@@ -79,6 +96,14 @@ public sealed class PhysicalFileSystem : IFileSystem
     }
 
     public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+
+    public void DeleteDirectory(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+    }
 }
 
 /// <summary>For tests: mutable, thread-safe. Paths are normalised (CMP-205) and compared case-insensitively.</summary>

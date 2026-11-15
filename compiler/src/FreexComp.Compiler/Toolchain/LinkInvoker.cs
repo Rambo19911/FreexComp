@@ -102,8 +102,9 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
     /// error line, or a failure without any error line, → one E4004 carrying the whole output, reported first.
     /// </summary>
     public static ImmutableArray<Diagnostic> MapErrors(
-        IReadOnlyList<string> output, int exitCode, Location location, ImmutableDictionary<string, string> importDefinitions)
+        IReadOnlyList<string> output, int exitCode, Location location, ImmutableDictionary<string, string> importDefinitions, string? outputPath = null)
     {
+        // CMP-806 (C-154): an error line naming outputPath with a sharing-violation / access-denied reason → E4008
         var mapped = ImmutableArray.CreateBuilder<Diagnostic>();
         var unmapped = false;
         foreach (var line in output)
@@ -114,7 +115,14 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
             }
 
             var message = line[ErrorPrefix.Length..];
-            if (message.StartsWith(Undefined, StringComparison.Ordinal))
+            if (outputPath is not null && message.Contains(outputPath, StringComparison.OrdinalIgnoreCase) && OutputInUse(message))
+            {
+                if (!mapped.Any(d => d.Code == "E4008"))
+                {
+                    mapped.Add(Diagnostic.Create("E4008", location, outputPath));
+                }
+            }
+            else if (message.StartsWith(Undefined, StringComparison.Ordinal))
             {
                 var symbol = message[Undefined.Length..].Trim();
                 var import = symbol.StartsWith(DllImport, StringComparison.Ordinal) ? symbol[DllImport.Length..] : null;
@@ -149,18 +157,45 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
         var rsp = Path.Combine(request.ObjectDirectory, "link.rsp");
         fs.WriteAllBytes(rsp, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(RenderResponseFile(BuildArguments(request))));
         fs.CreateDirectory(Path.GetDirectoryName(request.OutputPath)!);
+        if (!TryDelete(request.OutputPath))
+        {
+            // CMP-806: the old exe is held by another process (a running program): the link would fail the same way
+            return new LinkResult(false, [Diagnostic.Create("E4008", runner.Options.DiagnosticLocation, request.OutputPath)]);
+        }
+
         var result = await runner.RunAsync(lldLinkPath, ["@" + rsp], request.ObjectDirectory, ct).ConfigureAwait(false);
         var diagnostics = result.Failure?.Code == "E4003"
             ? [result.Failure]
-            : MapErrors(result.Output, result.ExitCode, runner.Options.DiagnosticLocation, request.ImportDefinitions);
+            : MapErrors(result.Output, result.ExitCode, runner.Options.DiagnosticLocation, request.ImportDefinitions, request.OutputPath);
         var success = result.ExitCode == 0 && diagnostics.IsEmpty;
         if (!success)
         {
-            fs.Delete(request.OutputPath);
+            TryDelete(request.OutputPath);
         }
 
         return new LinkResult(success, diagnostics);
     }
+
+    /// <summary>Deletes the file if present; false when another process holds it (sharing violation, access denied).</summary>
+    private bool TryDelete(string path)
+    {
+        try
+        {
+            fs.Delete(path);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The reasons lld-link and Windows give for an output file another process holds.</summary>
+    private static bool OutputInUse(string message) =>
+        message.Contains("permission denied", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("access is denied", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("being used by another process", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("device or resource busy", StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<string> SortedByName(ImmutableArray<string> paths) =>
         paths.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ThenBy(p => p, StringComparer.OrdinalIgnoreCase);

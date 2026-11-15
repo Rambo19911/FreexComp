@@ -23,7 +23,9 @@ internal sealed class UnitCache(IFileSystem fs, string compilerFingerprint, stri
 
     /// <summary>Rules 1–5 for the <c>.pcu</c> of a source unit in the object directory. <paramref name="pcu"/> receives the parsed file when up to date.</summary>
     /// <param name="dependency">The current state of a dependency by canonical unit name; null when the compilation has no such unit.</param>
-    public string? Check(string pcuPath, string objPath, Func<string, UnitCacheDependency?> dependency, out JsonObject? pcu)
+    /// <param name="sourcePath">The file the unit resolves to now; the <c>.pcu</c>'s first source must be that file (C-148: a search-path
+    /// change that makes the unit resolve to another file recompiles it, build-engine.md §5). Null: not compared.</param>
+    public string? Check(string pcuPath, string objPath, Func<string, UnitCacheDependency?> dependency, out JsonObject? pcu, string? sourcePath = null)
     {
         pcu = null;
         if (!fs.FileExists(pcuPath) || !fs.FileExists(objPath))
@@ -46,7 +48,7 @@ internal sealed class UnitCache(IFileSystem fs, string compilerFingerprint, stri
             return "CMP-150 rule 1: the .pcu does not parse with the current format";
         }
 
-        var reason = Fingerprints(parsed) ?? Sources(parsed) ?? Dependencies(parsed, dependency, comparePaths: true);
+        var reason = Fingerprints(parsed) ?? SameSource(parsed, sourcePath) ?? Sources(parsed) ?? Dependencies(parsed, dependency, comparePaths: true);
         pcu = reason is null ? parsed : null;
         return reason;
     }
@@ -68,6 +70,12 @@ internal sealed class UnitCache(IFileSystem fs, string compilerFingerprint, stri
 
         return Text(pcu, "optionsFingerprint") != optionsFingerprint ? "CMP-150 rule 3: another options fingerprint" : null;
     }
+
+    /// <summary>Rule 4 for the unit's own file: the <c>.pcu</c> was compiled from <paramref name="sourcePath"/> (null → not compared).</summary>
+    private static string? SameSource(JsonObject pcu, string? sourcePath) =>
+        sourcePath is null || (pcu["sources"] is JsonArray { Count: > 0 } sources && Text(sources[0], "path") is { } recorded && PathUtil.AreEqual(recorded, sourcePath))
+            ? null
+            : "CMP-150 rule 4: the unit now resolves to " + sourcePath;
 
     /// <summary>Rule 4.</summary>
     public string? Sources(JsonObject pcu)

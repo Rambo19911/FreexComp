@@ -30,6 +30,18 @@ public sealed record EmitOptions
 
     /// <summary>Raw tool stdout/stderr lines.</summary>
     public Action<string>? ToolOutputSink { get; init; }
+
+    /// <summary>
+    /// The build engine's process runner (compiler-cli.md §4: <c>BuildEngine(fs, processRunner)</c>, injectable for tests); null →
+    /// real processes. Internal: the public <see cref="EmitOptions"/> surface stays that of api.md §1.
+    /// </summary>
+    internal IProcessRunner? ProcessRunner { get; init; }
+
+    /// <summary>
+    /// Progress lines of build-engine.md CMP-802 as they occur: <c>Compiling &lt;Unit&gt;</c> before each recompiled unit (link
+    /// order) and <c>Linking &lt;exe name&gt;</c> before the link (C-144).
+    /// </summary>
+    internal Action<string>? InfoSink { get; init; }
 }
 
 /// <param name="OutputPath">The exe, or null.</param>
@@ -118,6 +130,11 @@ public sealed class Compilation
         // CMP-156: units lower and emit on up to MaxParallelism threads (each reads only bound symbols and writes its own module);
         // results and failures are then taken in link order, as a sequential run would
         var texts = new (string? Text, Diagnostic? Failure)[stale.Length];
+        foreach (var unit in stale)
+        {
+            options.InfoSink?.Invoke("Compiling " + unit.Name);
+        }
+
         Parallel.For(0, stale.Length, new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism, CancellationToken = ct },
             i => texts[i] = EmitIr(stale[i].Result!, stale[i].Forms, unitTable, location));
         var llPaths = ImmutableArray.CreateBuilder<string>();
@@ -154,7 +171,7 @@ public sealed class Compilation
             return Finish(false, null, compiled);
         }
 
-        var processRunner = new ProcessRunner();
+        var processRunner = options.ProcessRunner ?? new ProcessRunner();
         var versionChecked = false;
         async Task<bool> VersionAsync()
         {
@@ -276,6 +293,7 @@ public sealed class Compilation
             return Finish(false, null, compiled);
         }
 
+        options.InfoSink?.Invoke("Linking " + Path.GetFileName(output));
         var linked = await new LinkInvoker(runner, toolchain.LldLink, FileSystem).LinkAsync(request, ct).ConfigureAwait(false);
         diagnostics.AddRange(linked.Diagnostics);
         return Finish(linked.Success, linked.Success ? output : null, compiled);
@@ -313,7 +331,7 @@ public sealed class Compilation
         foreach (var unit in sourceUnits)
         {
             var pcuPath = Path.Combine(objectDirectory, unit.Name + ".pcu");
-            if (cache.Check(pcuPath, Path.ChangeExtension(pcuPath, ".obj"), name => Dependency(front, pcus, name), out var pcu) is null
+            if (cache.Check(pcuPath, Path.ChangeExtension(pcuPath, ".obj"), name => Dependency(front, pcus, name), out var pcu, unit.Path) is null
                 && (!unit.IsProgram || pcu!["unitTable"]?.ToJsonString() == pcus.UnitTable().ToJsonString()))
             {
                 upToDate.Add(unit);
