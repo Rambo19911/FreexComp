@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.GoldenTests;
 
@@ -32,17 +33,21 @@ public sealed class StackProbeImportTests
             psi.ArgumentList.Add(argument);
         }
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        timeout.CancelAfter(GoldenRunner.Timeout);
+        using var limit = new RunLimit("opc.exe", NativeRun.CpuLimit, NativeRun.WallLimit, TestContext.Current.CancellationToken);   // C-258
         using var process = Process.Start(psi)!;
+        limit.Attach(process.Id);
         try
         {
-            var stdout = await process.StandardOutput.ReadToEndAsync(timeout.Token);
-            await process.WaitForExitAsync(timeout.Token);
+            var stdout = await process.StandardOutput.ReadToEndAsync(limit.Token);
+            await process.WaitForExitAsync(limit.Token);
             Assert.True(process.ExitCode == 0, stdout);
 
-            var image = Encoding.Latin1.GetString(await File.ReadAllBytesAsync(exe, timeout.Token));
+            var image = Encoding.Latin1.GetString(await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken));
             Assert.DoesNotContain("__chkstk", image, StringComparison.Ordinal);
+        }
+        catch (OperationCanceledException) when (limit.Report is { } report)
+        {
+            Assert.Fail(report);
         }
         finally
         {

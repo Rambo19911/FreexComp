@@ -5,6 +5,7 @@ using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Tests.Binding;
 using FreexComp.Compiler.Text;
 using FreexComp.Compiler.Toolchain;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.Tests.Emit;
 

@@ -1,3 +1,5 @@
+using FreexComp.Tests.Shared;
+
 namespace FreexComp.Compiler.Tests.Emit;
 
 /// <summary>

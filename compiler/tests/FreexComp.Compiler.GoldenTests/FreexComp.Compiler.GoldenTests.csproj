@@ -3,6 +3,7 @@
     <RootNamespace>FreexComp.Compiler.GoldenTests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Shared\NativeRun.cs" Link="Shared\NativeRun.cs" />
     <ProjectReference Include="..\..\src\opc\opc.csproj" />
   </ItemGroup>
 </Project>

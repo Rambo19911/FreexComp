@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.GoldenTests;
 
@@ -6,8 +7,6 @@ namespace FreexComp.Compiler.GoldenTests;
 [Trait("Phase", "2")]
 public sealed class OpcProcessTests
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
-
     [Fact]
     public async Task VersionPrintsNameAndExitsZero()
     {
@@ -18,16 +17,20 @@ public sealed class OpcProcessTests
             UseShellExecute = false,
         };
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        timeout.CancelAfter(Timeout);
+        using var limit = new RunLimit("opc.exe", NativeRun.CpuLimit, NativeRun.WallLimit, TestContext.Current.CancellationToken);   // C-258
         using var process = Process.Start(psi)!;
+        limit.Attach(process.Id);
         try
         {
-            var stdout = await process.StandardOutput.ReadToEndAsync(timeout.Token);
-            await process.WaitForExitAsync(timeout.Token);
+            var stdout = await process.StandardOutput.ReadToEndAsync(limit.Token);
+            await process.WaitForExitAsync(limit.Token);
 
             Assert.Equal(0, process.ExitCode);
             Assert.StartsWith("opc ", stdout, StringComparison.Ordinal);
+        }
+        catch (OperationCanceledException) when (limit.Report is { } report)
+        {
+            Assert.Fail(report);
         }
         finally
         {

@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using FreexComp.Compiler;
 using FreexComp.Compiler.Toolchain;
 using FreexComp.Opc;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Build.Tests;
 
@@ -312,9 +313,7 @@ public sealed partial class OpcCliTests
         var exe = Path.Combine(dir, "Hello.exe");
         Assert.True(File.Exists(exe));
         var output = new List<string>();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(20));
-        var exit = await new ProcessRunner().RunAsync(exe, [], dir, output.Add, _ => { }, timeout.Token);
+        var exit = await NativeRun.RunAsync(exe, dir, output.Add, _ => { });                  // C-258: CPU limit, wall cap
         Directory.Delete(dir, recursive: true);
         Assert.Equal(0, exit);
         Assert.Equal(["Hello, world!"], output);

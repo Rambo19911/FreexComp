@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.GoldenTests;
 
@@ -152,9 +153,6 @@ public sealed record GoldenSetup(string OpcPath, string RtlDirectory, string Too
 /// <summary>Runs one golden case (CMP-901, 902): <c>opc</c> as a process, then the program; returns null or what failed.</summary>
 public static class GoldenRunner
 {
-    /// <summary>compiler-cli.md §5: per process (opc and the program).</summary>
-    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
-
     private static readonly string[] RequiredTools = ["clang.exe", "lld-link.exe", "llvm-dlltool.exe"];
 
     /// <summary>Null when the case has a valid set of expectation files.</summary>
@@ -171,7 +169,14 @@ public static class GoldenRunner
         };
     }
 
-    public static async Task<string?> RunAsync(GoldenCase @case, bool o2, GoldenSetup setup, CancellationToken ct)
+    /// <summary>
+    /// compiler-cli.md §5's per-process limit, by the C-249 rule (C-258): opc and the program are each stopped at 20 s of
+    /// their own CPU time (<see cref="NativeRun.CpuLimit"/>), at the wall-clock cap <see cref="NativeRun.WallLimit"/>, or
+    /// when the test is cancelled; the failure then reports elapsed wall time, CPU time and process state. The program's
+    /// limits can be lowered for the harness's own tests.
+    /// </summary>
+    public static async Task<string?> RunAsync(GoldenCase @case, bool o2, GoldenSetup setup, CancellationToken ct,
+        TimeSpan? programCpuLimit = null, TimeSpan? programWallLimit = null)
     {
         if (CheckExpectations(@case) is { } invalid)
         {
@@ -188,7 +193,8 @@ public static class GoldenRunner
 
         var temp = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
-        var failure = await RunInAsync(@case, o2, setup, temp, ct).ConfigureAwait(false);
+        var programLimits = (programCpuLimit ?? NativeRun.CpuLimit, programWallLimit ?? NativeRun.WallLimit);
+        var failure = await RunInAsync(@case, o2, setup, temp, programLimits, ct).ConfigureAwait(false);
         if (failure is null)
         {
             TryDelete(temp);                                                        // kept on failure for inspection (TESTING.md rule 3)
@@ -213,7 +219,7 @@ public static class GoldenRunner
         }
     }
 
-    private static async Task<string?> RunInAsync(GoldenCase @case, bool o2, GoldenSetup setup, string temp, CancellationToken ct)
+    private static async Task<string?> RunInAsync(GoldenCase @case, bool o2, GoldenSetup setup, string temp, (TimeSpan Cpu, TimeSpan Wall) programLimits, CancellationToken ct)
     {
         var exe = Path.Combine(temp, @case.Name + ".exe");
         List<string> args =
@@ -224,10 +230,10 @@ public static class GoldenRunner
         ];
 
         // the source folder is the current directory, so relative paths in "// opc:" options resolve against it
-        var opc = await RunProcessAsync(setup.OpcPath, args, Path.GetDirectoryName(@case.SourcePath)!, [], ct).ConfigureAwait(false);
-        if (opc.ExitCode is null)
+        var opc = await RunProcessAsync(setup.OpcPath, args, Path.GetDirectoryName(@case.SourcePath)!, [], (NativeRun.CpuLimit, NativeRun.WallLimit), ct).ConfigureAwait(false);
+        if (opc.Stopped is { } opcStopped)
         {
-            return $"opc timed out after {Timeout.TotalSeconds} s";
+            return "opc stopped: " + opcStopped;
         }
 
         var diagnostics = GoldenText.ReducePaths(GoldenText.Normalize(opc.StdOut));
@@ -252,10 +258,10 @@ public static class GoldenRunner
         }
 
         var input = @case.File(".in") is { } inPath ? System.IO.File.ReadAllBytes(inPath) : [];
-        var run = await RunProcessAsync(exe, [], temp, input, ct).ConfigureAwait(false);
-        if (run.ExitCode is null)
+        var run = await RunProcessAsync(exe, [], temp, input, programLimits, ct).ConfigureAwait(false);
+        if (run.Stopped is { } programStopped)
         {
-            return $"program timed out after {Timeout.TotalSeconds} s";
+            return "program stopped: " + programStopped;
         }
 
         var expectedExit = @case.File(".exit") is { } exitPath ? int.Parse(System.IO.File.ReadAllText(exitPath).Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture) : 0;
@@ -276,8 +282,13 @@ public static class GoldenRunner
     /// <summary>Makes line ends and trailing whitespace visible in failure messages.</summary>
     private static string Visible(string text) => text.Replace("\t", "\\t", StringComparison.Ordinal).Replace(" \n", "·\n", StringComparison.Ordinal).Replace("\n", "\\n\n", StringComparison.Ordinal);
 
-    /// <summary>Runs a process with <paramref name="stdin"/> as its whole input; ExitCode is null after the timeout. The process tree is killed in <c>finally</c>.</summary>
-    private static async Task<(int? ExitCode, string StdOut)> RunProcessAsync(string file, IReadOnlyList<string> args, string workingDirectory, byte[] stdin, CancellationToken ct)
+    /// <summary>
+    /// Runs a process with <paramref name="stdin"/> as its whole input under the C-249 limits (<see cref="RunLimit"/>);
+    /// Stopped is the limit's report when a limit or the test's cancellation stopped it. The process tree is killed in
+    /// <c>finally</c>, after the report has captured its state.
+    /// </summary>
+    private static async Task<(int? ExitCode, string StdOut, string? Stopped)> RunProcessAsync(string file, IReadOnlyList<string> args, string workingDirectory, byte[] stdin,
+        (TimeSpan Cpu, TimeSpan Wall) limits, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(file)
         {
@@ -293,17 +304,17 @@ public static class GoldenRunner
             psi.ArgumentList.Add(arg);
         }
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(Timeout);
+        using var limit = new RunLimit(Path.GetFileName(file), limits.Cpu, limits.Wall, ct);
         using var process = Process.Start(psi)!;
+        limit.Attach(process.Id);
         try
         {
             var stdout = new MemoryStream();
-            var copyOut = process.StandardOutput.BaseStream.CopyToAsync(stdout, timeout.Token);
-            var drainErr = process.StandardError.BaseStream.CopyToAsync(Stream.Null, timeout.Token);   // stderr is ignored (CMP-901)
+            var copyOut = process.StandardOutput.BaseStream.CopyToAsync(stdout, limit.Token);
+            var drainErr = process.StandardError.BaseStream.CopyToAsync(Stream.Null, limit.Token);   // stderr is ignored (CMP-901)
             try
             {
-                await process.StandardInput.BaseStream.WriteAsync(stdin, timeout.Token).ConfigureAwait(false);
+                await process.StandardInput.BaseStream.WriteAsync(stdin, limit.Token).ConfigureAwait(false);
                 process.StandardInput.Close();
             }
             catch (IOException)
@@ -312,12 +323,12 @@ public static class GoldenRunner
             }
 
             await Task.WhenAll(copyOut, drainErr).ConfigureAwait(false);
-            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
-            return (process.ExitCode, Encoding.UTF8.GetString(stdout.ToArray()));
+            await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);
+            return (process.ExitCode, Encoding.UTF8.GetString(stdout.ToArray()), null);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (limit.Report is { } report)
         {
-            return (null, "");
+            return (null, "", report);
         }
         finally
         {
