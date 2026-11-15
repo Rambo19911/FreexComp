@@ -39,7 +39,7 @@ public sealed class PascalFoldingProvider : IFoldingProvider
     }
 
     /// <summary>(f) comments, (g) <c>{$REGION}</c> pairs, (h) conditional blocks.</summary>
-    private static void AddTriviaRegions(ITextBuffer buffer, string text, ImmutableArray<SyntaxToken> tokens, List<FoldRegion> regions, Func<int, int> line)
+    internal static void AddTriviaRegions(ITextBuffer buffer, string text, ImmutableArray<SyntaxToken> tokens, List<FoldRegion> regions, Func<int, int> line)
     {
         var regionStack = new Stack<(int Line, string Title)>();
         var conditionalStack = new Stack<int>();

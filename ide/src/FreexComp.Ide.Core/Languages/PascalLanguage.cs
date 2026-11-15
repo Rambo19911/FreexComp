@@ -19,7 +19,7 @@ public sealed class PascalLanguage : ILanguageDefinition
     public (string Start, string End)? BlockComment => ("{", "}");
     public IReadOnlyList<(char Open, char Close)> Brackets { get; } = [('(', ')'), ('[', ']')];
     public ITokenClassifier CreateClassifier() => new PascalClassifier();
-    public Editing.IFoldingProvider CreateFoldingProvider() => new PascalFoldingProvider();
+    public Editing.IFoldingProvider CreateFoldingProvider() => new PascalTreeFoldingProvider(); // P3: from the syntax tree (I-113)
 
     public IIndentRules IndentRules { get; } = new PascalIndentRules();
 
@@ -28,8 +28,10 @@ public sealed class PascalLanguage : ILanguageDefinition
 
 /// <summary>
 /// IDE-P1-056: whole-text <see cref="Lexer.Tokenize"/> + <see cref="Classifier.GetLexicalClassifications"/>, cached per
-/// buffer version (<see cref="WholeTextClassifier"/>). Spans whose colour token is "" are dropped. Defines are empty
-/// until the project service passes the active configuration's (later task).
+/// buffer version (<see cref="WholeTextClassifier"/>): the immediate layer drawn while typing. Spans whose colour token is
+/// "" are dropped. Defines are empty here. I-113: the tree-based <c>GetSyntacticClassifications</c> (with the active
+/// configuration's defines) arrives for project files through the document's <see cref="Editing.SemanticLayer"/>; it is not
+/// used here because it marks every token the parser skipped as <c>Invalid</c>, which would turn half-typed code red.
 /// </summary>
 public sealed class PascalClassifier : WholeTextClassifier
 {

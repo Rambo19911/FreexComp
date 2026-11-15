@@ -60,6 +60,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private bool _scrollPending;
     private SyntaxColorizer? _colorizer;
     private readonly FindPanelView _findPanel;
+    private readonly CompletionListView _completion = new(); // I-115
     private FindSession? _find;
 
     public CodeEditorView()
@@ -141,7 +142,9 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         textView.PointerMoved += (_, e) => ShowTextTooltip(e.GetPosition(textView));
         textView.PointerExited += (_, _) => ShowTextTooltip(null);
         textView.ScrollOffsetChanged += (_, _) => MirrorScroll();
-        Child = new Panel { Children = { _editor, _findPanel } }; // UI-ED-102: the find panel floats over the text
+        Child = new Panel { Children = { _editor, _findPanel, _completion } }; // UI-ED-102: the find panel floats over the text; so does completion
+        _completion.PlacementRequested += (_, _) => PlaceCompletion();
+        area.LostFocus += (_, _) => _document?.Completion?.Close(); // IDE-ED-086
         _findPanel.PropertyChanged += (_, e) =>
         {
             if (e.Property == IsVisibleProperty && _findPanel.IsVisible)
@@ -255,6 +258,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             old.RevealCaretAtThirdRequested -= OnRevealCaretAtThirdRequested;
         }
 
+        _completion.Session?.Close();
+        _completion.Session = null; // IDE-ED-086: switching documents closes the popup
         SetColorizer(null);
         SetDecorations(null);
         SetTokens(null);
@@ -273,6 +278,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         SetAutomationIds(document);
         ApplySelection(document);
         SetColorizer(document);
+        _completion.Session = document.Completion;
         SetDecorations(document);
         SetTokens(document);
         InstallFoldings();
@@ -921,12 +927,39 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         if (document is null)
             return;
         var options = document.Options;
-        _colorizer = new SyntaxColorizer(document.Buffer, document.Language.CreateClassifier(), this, options.TokenStyle);
+        _colorizer = new SyntaxColorizer(document.Buffer, document.CreateClassifier(), this, options.TokenStyle); // lexical + P3 layer (I-112)
         _colorizer.Classifier.ClassificationChanged += OnClassificationChanged;
         transformers.Add(_colorizer);
     }
 
     private void OnClassificationChanged(object? sender, EventArgs e) => _editor.TextArea.TextView.Redraw();
+
+    /// <summary>UI-ED-118: the keys an open completion popup takes.</summary>
+    private static string? CompletionKey(KeyEventArgs e) => (e.Key, e.KeyModifiers) switch
+    {
+        (Key.Up, Avalonia.Input.KeyModifiers.None) => "Up",
+        (Key.Down, Avalonia.Input.KeyModifiers.None) => "Down",
+        (Key.PageUp, Avalonia.Input.KeyModifiers.None) => "PageUp",
+        (Key.PageDown, Avalonia.Input.KeyModifiers.None) => "PageDown",
+        (Key.Enter, Avalonia.Input.KeyModifiers.None) => "Enter",
+        (Key.Tab, Avalonia.Input.KeyModifiers.None) => "Tab",
+        (Key.Enter, Avalonia.Input.KeyModifiers.Control) => "Ctrl+Enter",
+        (Key.Escape, Avalonia.Input.KeyModifiers.None) => "Escape",
+        _ => null,
+    };
+
+    /// <summary>UI-ED-111: left edge at the start of the word being completed, 2 px below the caret line.</summary>
+    private void PlaceCompletion()
+    {
+        if (_document is not { Completion: { IsOpen: true } session } document)
+            return;
+        var textView = _editor.TextArea.TextView;
+        var caret = document.ViewState.Caret;
+        var start = new TextViewPosition(caret.Line, Math.Max(1, caret.Column - session.TypedText.Length));
+        var bottom = textView.GetVisualPosition(start, VisualYPosition.LineBottom) - textView.ScrollOffset;
+        if (textView.TranslatePoint(new Point(bottom.X, bottom.Y + 2), this) is { } at)
+            _completion.Margin = new Thickness(Math.Max(0, at.X), Math.Max(0, at.Y), 0, 0);
+    }
 
     /// <summary>Core changed the caret or selection (revert, save trimming): the editor follows.</summary>
     private void OnViewStatePropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1087,6 +1120,12 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             || e.Key == Key.F10 && e.KeyModifiers == Avalonia.Input.KeyModifiers.Shift)
         {
             e.Handled = OpenTextMenu(null); // UI-MENU-043: at the caret
+            return;
+        }
+
+        if (document.Completion is { IsOpen: true } completion && CompletionKey(e) is { } gesture)
+        {
+            e.Handled = completion.HandleKey(gesture); // UI-ED-118: the popup never has focus; its keys come from here
             return;
         }
 

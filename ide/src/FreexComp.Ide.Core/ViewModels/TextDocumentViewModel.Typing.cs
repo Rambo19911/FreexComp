@@ -75,6 +75,7 @@ public partial class TextDocumentViewModel
         ArgumentNullException.ThrowIfNull(text);
         if (text.Length == 0)
             return false;
+        Completion?.BeforeTyped(text); // IDE-ED-084: a commit character commits first
         var selection = Selection;
         var block = Block;
         // IDE-P1-091: consecutive typed characters at the caret join one undo step.
@@ -97,6 +98,8 @@ public partial class TextDocumentViewModel
             return InsertTyped(selection, text);
         });
         EndEdit(done ? kind : EditKind.None, char.IsWhiteSpace(text[^1]));
+        if (done)
+            Completion?.AfterTyped(text); // IDE-ED-080/082
         return done;
     }
 

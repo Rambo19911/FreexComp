@@ -169,6 +169,8 @@ public partial class TextDocumentViewModel
     public bool HandleKey(string gesture)
     {
         ArgumentNullException.ThrowIfNull(gesture);
+        if (Completion?.HandleKey(gesture) == true)
+            return true; // the open completion popup takes its keys first (IDE-ED-084)
         var selection = Selection;
         var options = IndentOptions;
         switch (gesture)

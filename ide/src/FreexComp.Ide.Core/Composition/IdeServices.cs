@@ -94,6 +94,9 @@ public sealed record IdeServices
     /// <summary>The project <c>Compilation</c> and the language-service worker (I-110).</summary>
     public required CodeModel.CodeModelService CodeModel { get; init; }
 
+    /// <summary>The P3 classification layer of the open Pascal documents (I-112).</summary>
+    public required CodeModel.SemanticHighlightService SemanticHighlights { get; init; }
+
     /// <summary>The Search Results tool window and Find in Files runner (I-123).</summary>
     public required ViewModels.SearchResultsViewModel SearchResults { get; init; }
 }

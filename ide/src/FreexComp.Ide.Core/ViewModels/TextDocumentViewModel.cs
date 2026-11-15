@@ -50,6 +50,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         _lineChanges = _lineChangeTracker = new LineChangeTracker(buffer);
         Folding = new FoldingModel(buffer, ViewState, language.CreateFoldingProvider());
         Tokens = new CodeTokenIndex(buffer, language);
+        Semantic = new SemanticLayer(buffer);
         Decorations.Add(new LexerErrorMarkers(buffer, () => _language)); // UI-ED-068
         WordHighlights = new WordHighlighter(buffer, ViewState, Tokens, () => Clock, () => Options.HighlightWordOccurrences && !_showsFindMatches);
         InitTyping();
@@ -67,6 +68,15 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     public ITextBuffer Buffer { get; }
 
     public ILanguageDefinition Language => _language;
+
+    /// <summary>The P3 tree-based and semantic classes over the lexical colours (I-112/I-113); filled by the code model.</summary>
+    public SemanticLayer Semantic { get; }
+
+    /// <summary>The classifier the editor view draws with: the language's lexical classifier with <see cref="Semantic"/> applied.</summary>
+    public ITokenClassifier CreateClassifier() => new LayeredClassifier(_language.CreateClassifier(), Semantic);
+
+    /// <summary>Code completion of this document (I-114); null when the code model does not complete it.</summary>
+    public CodeModel.CompletionSession? Completion { get; internal set; }
 
     /// <summary>The encoding of the next save (IDE-P1-074).</summary>
     public FileEncoding Encoding => _encoding;

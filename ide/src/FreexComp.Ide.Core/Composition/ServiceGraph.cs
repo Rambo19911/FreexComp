@@ -154,7 +154,9 @@ public static class ServiceGraph
         var codeModel = new CodeModel.CodeModelService(projects, documents, toolchain, platform.FileSystem); // I-110
         build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
         _ = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
+        var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112
         new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status, toolchain).RegisterCommands(commands); // I-117
+        new CodeModel.CompletionController(documents, projects, codeModel, settings, platform.Clock, status).RegisterCommands(commands); // I-114
         build.RegisterCommands(commands);
         var structureView = new ViewModels.StructureViewModel(documents, platform.Clock, platform.Dispatcher, codeModel.Worker, layout, navigation); // I-124
         structureView.RegisterCommands(commands);
@@ -215,9 +217,9 @@ public static class ServiceGraph
             quickPick.Show(new Popups.GoToFileViewModel(documents, projects, navigation, layout, platform.Dialogs))));
         commands.RegisterHandler("search.commandPalette", new DelegateHandler(() => popupsAvailable, () =>
             quickPick.Show(new Popups.CommandPaletteViewModel(commands, layout, focus.Current, toolWindowPhase ?? ImplementedPhase))));
-        // Phase 3 editor commands whose tasks are still open (I-114 completion, I-116 parameter info, I-118 templates) stay
-        // unavailable, as their later-phase stubs were, until those tasks register real handlers.
-        foreach (var pending in (string[])["edit.completeCode", "edit.parameterInfo", "edit.insertTemplate"])
+        // Phase 3 editor commands whose tasks are still open (I-116 parameter info, I-118 templates) stay unavailable, as
+        // their later-phase stubs were, until those tasks register real handlers.
+        foreach (var pending in (string[])["edit.parameterInfo", "edit.insertTemplate"])
         {
             if (!commands.IsHandled(pending))
                 commands.RegisterHandler(pending, new DelegateHandler(() => false, () => { }));
@@ -287,6 +289,7 @@ public static class ServiceGraph
             QuickPick = quickPick,
             SearchResults = searchResults,
             CodeModel = codeModel,
+            SemanticHighlights = semanticHighlights,
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;

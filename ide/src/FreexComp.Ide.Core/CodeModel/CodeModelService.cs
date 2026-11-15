@@ -84,6 +84,9 @@ public sealed class CodeModelService
         return Workspace.CurrentCompilation;
     }
 
+    /// <summary>A file of the open project (not a loose file, IDE-ED-094).</summary>
+    public bool IsProjectFile(string path) => _projects.IsMember(path);
+
     /// <summary>IDE-P3-055: the whole program's diagnostics (parse + bind every unit) with the unsaved buffers; empty without a project.</summary>
     public Task<ImmutableArray<Diagnostic>> GetProjectDiagnosticsAsync(CancellationToken ct)
     {

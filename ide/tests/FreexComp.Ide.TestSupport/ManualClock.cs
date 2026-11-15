@@ -9,13 +9,17 @@ namespace FreexComp.Ide.TestSupport;
 /// <para>
 /// I-173: <see cref="Schedule"/>, <see cref="Now"/> and timer disposal may be called from any thread while the test
 /// thread advances (Core code awaits off the UI thread in tests, e.g. <c>SharingRetry</c> on the thread pool); the
-/// timer list is guarded, callbacks run outside the lock.
+/// timer set is guarded, callbacks run outside the lock.
+/// </para>
+/// <para>
+/// I-197: pending timers are kept in a set ordered by (due, sequence), so scheduling, disposal and taking the next
+/// due timer are O(log n), and a disposed timer leaves the set at once (<see cref="PendingCount"/>).
 /// </para>
 /// </summary>
 public sealed class ManualClock : IClock
 {
     private readonly Lock _gate = new();
-    private readonly List<Timer> _timers = [];
+    private readonly SortedSet<Timer> _timers = new(TimerOrder.Instance);
     private long _sequence;
     private DateTimeOffset _now;
 
@@ -31,6 +35,18 @@ public sealed class ManualClock : IClock
             lock (_gate)
             {
                 return _now;
+            }
+        }
+    }
+
+    /// <summary>Timers scheduled and neither fired nor disposed.</summary>
+    public int PendingCount
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _timers.Count;
             }
         }
     }
@@ -55,16 +71,16 @@ public sealed class ManualClock : IClock
 
         while (true)
         {
-            Timer? next;
+            Timer next;
             lock (_gate)
             {
-                next = _timers.Where(t => t.Due <= end).OrderBy(t => t.Due).ThenBy(t => t.Sequence).FirstOrDefault();
-                if (next is null)
+                if (_timers.Count == 0 || _timers.Min!.Due > end)
                 {
                     _now = end;
                     return;
                 }
 
+                next = _timers.Min!;
                 _timers.Remove(next);
                 _now = next.Due;
             }
@@ -81,8 +97,25 @@ public sealed class ManualClock : IClock
         }
     }
 
-    private sealed record Timer(ManualClock Owner, DateTimeOffset Due, long Sequence, Action Callback) : IDisposable
+    private sealed class Timer(ManualClock owner, DateTimeOffset due, long sequence, Action callback) : IDisposable
     {
-        public void Dispose() => Owner.Remove(this);
+        public DateTimeOffset Due { get; } = due;
+
+        public long Sequence { get; } = sequence;
+
+        public Action Callback { get; } = callback;
+
+        public void Dispose() => owner.Remove(this);
+    }
+
+    private sealed class TimerOrder : IComparer<Timer>
+    {
+        public static readonly TimerOrder Instance = new();
+
+        public int Compare(Timer? x, Timer? y)
+        {
+            int byDue = x!.Due.CompareTo(y!.Due);
+            return byDue != 0 ? byDue : x.Sequence.CompareTo(y.Sequence);
+        }
     }
 }

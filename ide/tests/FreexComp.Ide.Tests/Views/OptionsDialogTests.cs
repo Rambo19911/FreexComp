@@ -30,8 +30,8 @@ public sealed class OptionsDialogTests
         ("RectangularSelection", "_Column selection with Alt", SettingsCatalog.EditorRectangularSelection, true),
         ("ScrollPastEnd", "Scroll _past the last line", SettingsCatalog.EditorScrollPastEnd, true),
         ("MouseWheelZoom", "_Zoom with Ctrl+mouse wheel", SettingsCatalog.EditorMouseWheelZoom, true),
-        ("CompletionAuto", "Show c_ompletions while typing", SettingsCatalog.EditorCompletionAutoTrigger, false),
-        ("CompletionDelay", "_Delay (ms):", SettingsCatalog.EditorCompletionDelayMs, false),
+        ("CompletionAuto", "Show c_ompletions while typing", SettingsCatalog.EditorCompletionAutoTrigger, true), // I-114
+        ("CompletionDelay", "_Delay (ms):", SettingsCatalog.EditorCompletionDelayMs, true),
         ("ParameterInfoAuto", "Show parameter in_fo after (", SettingsCatalog.EditorParameterInfoAutoTrigger, false),
         ("HoverEnabled", "Show symbol information on ho_ver", SettingsCatalog.EditorHoverEnabled, false),
         ("HoverDelay", "Hover dela_y (ms):", SettingsCatalog.EditorHoverDelayMs, false),
