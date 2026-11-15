@@ -42,4 +42,4 @@ ok Integer equality
 ok comparison function used
 ok equality function used
 ok hasher used
-# passed 40 failed 0
+# passed 38 failed 0

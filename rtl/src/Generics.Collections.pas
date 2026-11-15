@@ -39,15 +39,20 @@ type
     function ToArray: TArray<T>; virtual;
   end;
 
-  { generic methods cannot be overloaded yet (compiler), so the optional arguments are default parameters:
-    Comparer nil = TComparer<T>.Default, Count -1 = up to the end of Values }
+  { without Comparer (or with nil) TComparer<T>.Default is used; without Index/Count the whole array }
   TArray = class
   public
-    class procedure Sort<T>(var Values: array of T; const Comparer: IComparer<T> = nil; Index: Integer = 0;
-      Count: Integer = -1); static;
+    class procedure Sort<T>(var Values: array of T); overload; static;
+    class procedure Sort<T>(var Values: array of T; const Comparer: IComparer<T>); overload; static;
+    class procedure Sort<T>(var Values: array of T; const Comparer: IComparer<T>; Index, Count: Integer); overload;
+      static;
     { True when found; FoundIndex = the first index whose item is not less than Item (the insertion point) }
+    class function BinarySearch<T>(const Values: array of T; const Item: T; out FoundIndex: Integer): Boolean;
+      overload; static;
     class function BinarySearch<T>(const Values: array of T; const Item: T; out FoundIndex: Integer;
-      const Comparer: IComparer<T> = nil; Index: Integer = 0; Count: Integer = -1): Boolean; static;
+      const Comparer: IComparer<T>): Boolean; overload; static;
+    class function BinarySearch<T>(const Values: array of T; const Item: T; out FoundIndex: Integer;
+      const Comparer: IComparer<T>; Index, Count: Integer): Boolean; overload; static;
     class procedure Copy<T>(const Source: array of T; var Destination: array of T;
       SourceIndex, DestIndex, Count: Integer); static;
   end;
@@ -121,8 +126,7 @@ type
   protected
     procedure Notify(const Item: T; Action: TCollectionNotification); override;
   public
-    constructor Create; overload;
-    constructor Create(AOwnsObjects: Boolean); overload;
+    constructor Create(AOwnsObjects: Boolean = True); overload;
     constructor Create(const AComparer: IComparer<T>; AOwnsObjects: Boolean = True); overload;
     property OwnsObjects: Boolean read FOwnsObjects write FOwnsObjects;
   end;
@@ -202,10 +206,8 @@ type
     procedure KeyNotify(const Key: K; Action: TCollectionNotification); virtual;
     procedure ValueNotify(const Value: V; Action: TCollectionNotification); virtual;
   public
-    constructor Create; overload;
-    constructor Create(ACapacity: Integer); overload;
+    constructor Create(ACapacity: Integer = 0); overload;
     constructor Create(const AComparer: IEqualityComparer<K>); overload;
-    constructor Create(ACapacity: Integer; const AComparer: IEqualityComparer<K>); overload;
     destructor Destroy; override;
     procedure Add(const Key: K; const Value: V);
     procedure Remove(const Key: K);
@@ -395,6 +397,16 @@ end;
 
 { ------------------------------------------------------------------------------------------------- TArray }
 
+class procedure TArray.Sort<T>(var Values: array of T);
+begin
+  Sort<T>(Values, nil, 0, Length(Values));
+end;
+
+class procedure TArray.Sort<T>(var Values: array of T; const Comparer: IComparer<T>);
+begin
+  Sort<T>(Values, Comparer, 0, Length(Values));
+end;
+
 { stable bottom-up merge sort (RTL-418 rule): on equal items the left run wins }
 class procedure TArray.Sort<T>(var Values: array of T; const Comparer: IComparer<T>; Index, Count: Integer);
 var
@@ -402,8 +414,6 @@ var
   Width, Lo, Mid, Hi, I, J, N: Integer;
   C: IComparer<T>;
 begin
-  if Count = -1 then
-    Count := Length(Values) - Index;
   C := Comparer;
   if C = nil then
     C := TComparer<T>.Default;
@@ -461,14 +471,23 @@ begin
   end;
 end;
 
+class function TArray.BinarySearch<T>(const Values: array of T; const Item: T; out FoundIndex: Integer): Boolean;
+begin
+  Result := BinarySearch<T>(Values, Item, FoundIndex, nil, 0, Length(Values));
+end;
+
+class function TArray.BinarySearch<T>(const Values: array of T; const Item: T; out FoundIndex: Integer;
+  const Comparer: IComparer<T>): Boolean;
+begin
+  Result := BinarySearch<T>(Values, Item, FoundIndex, Comparer, 0, Length(Values));
+end;
+
 class function TArray.BinarySearch<T>(const Values: array of T; const Item: T; out FoundIndex: Integer;
   const Comparer: IComparer<T>; Index, Count: Integer): Boolean;
 var
   Lo, Hi, Mid: Integer;
   C: IComparer<T>;
 begin
-  if Count = -1 then
-    Count := Length(Values) - Index;
   C := Comparer;
   if C = nil then
     C := TComparer<T>.Default;
@@ -862,12 +881,6 @@ begin
   Result := FIndex < FList.FCount;
 end;
 
-constructor TObjectList<T>.Create;
-begin
-  inherited Create;
-  FOwnsObjects := True;
-end;
-
 constructor TObjectList<T>.Create(AOwnsObjects: Boolean);
 begin
   inherited Create;
@@ -957,12 +970,6 @@ end;
 
 { -------------------------------------------------------------------------------------------- TDictionary }
 
-constructor TDictionary<K, V>.Create;
-begin
-  inherited Create;
-  Init(0, nil);
-end;
-
 constructor TDictionary<K, V>.Create(ACapacity: Integer);
 begin
   inherited Create;
@@ -973,12 +980,6 @@ constructor TDictionary<K, V>.Create(const AComparer: IEqualityComparer<K>);
 begin
   inherited Create;
   Init(0, AComparer);
-end;
-
-constructor TDictionary<K, V>.Create(ACapacity: Integer; const AComparer: IEqualityComparer<K>);
-begin
-  inherited Create;
-  Init(ACapacity, AComparer);
 end;
 
 procedure TDictionary<K, V>.Init(ACapacity: Integer; const AComparer: IEqualityComparer<K>);

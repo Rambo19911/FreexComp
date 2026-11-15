@@ -59,6 +59,7 @@ var
   C: TCounting;
   O1, O2: TObject;
   Arr: array of string;
+  Strs: TArray<string>;
 begin
   L := TStringList.Create;
 
@@ -143,6 +144,15 @@ begin
   M.Delete(0);
   CheckEqB(False, M.Equals(L), 'Equals counts');
   CheckEqI(8, L.Capacity, 'capacity grows in the steps of RTL-416');
+
+  Section('ToStringArray');
+  Strs := L.ToStringArray;
+  CheckEqI(5, Length(Strs), 'one item per line');
+  CheckEqS('y|b|a|d|c', Strs[0] + '|' + Strs[1] + '|' + Strs[2] + '|' + Strs[3] + '|' + Strs[4], 'lines in order');
+  Strs[0] := 'changed';
+  CheckEqS('y', L[0], 'a copy, not a view');
+  M.Clear;
+  CheckEqI(0, Length(M.ToStringArray), 'empty list gives an empty array');
 
   Section('index errors (RTL-425)');
   CheckEqS('List index out of bounds (5)', IndexError(L, 0, 5), 'read');

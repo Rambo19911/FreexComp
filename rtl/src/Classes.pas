@@ -193,6 +193,7 @@ type
     procedure SaveToFile(const FileName: string; Encoding: TEncoding); overload; virtual;
     procedure SaveToStream(Stream: TStream); overload; virtual;
     procedure SaveToStream(Stream: TStream; Encoding: TEncoding); overload; virtual;
+    function ToStringArray: TArray<string>;
     property Capacity: Integer read GetCapacity write SetCapacity;
     property Count: Integer read GetCount;
     property Strings[Index: Integer]: string read Get write Put; default;
@@ -1485,6 +1486,15 @@ begin
     Result := Copy(S, 1, P - 1)
   else
     Result := '';
+end;
+
+function TStrings.ToStringArray: TArray<string>;
+var
+  I: Integer;
+begin
+  SetLength(Result, Count);
+  for I := 0 to Count - 1 do
+    Result[I] := Get(I);
 end;
 
 function TStrings.IndexOfName(const Name: string): Integer;

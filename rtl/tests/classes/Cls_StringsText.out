@@ -34,10 +34,15 @@ ok Equals
 ok Equals is ordinal
 ok Equals counts
 ok capacity grows in the steps of RTL-416
+# ToStringArray
+ok one item per line
+ok lines in order
+ok a copy, not a view
+ok empty list gives an empty array
 # index errors (RTL-425)
 ok read
 ok Delete
 ok Insert past Count
 ok Insert at Count
 ok Objects
-# passed 37 failed 0
+# passed 41 failed 0
