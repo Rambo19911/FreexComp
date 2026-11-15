@@ -1,0 +1,46 @@
+# defaults
+ok Width 34
+ok Height 15
+ok AutoSize
+ok Alignment
+ok Layout
+ok ShowAccelChar
+ok Transparent
+ok WordWrap
+ok ParentColor
+ok ParentFont
+ok FocusControl
+ok transparent: not opaque
+ok Caption empty
+ok registered
+ok not transparent: opaque
+# Paint (UIF-610)
+ok text drawn in the font colour
+ok nothing above the label
+ok transparent: background of the parent
+ok opaque: filled with Color
+ok outside unchanged
+ok right-justified: left half empty
+ok right-justified: text in the right half
+ok centred: left quarter empty
+ok centred: right quarter empty
+ok tlBottom: upper half empty
+ok tlBottom: text at the bottom
+ok tlCenter: top empty
+ok tlCenter: bottom empty
+ok no WordWrap: one line
+ok WordWrap: second line
+ok ShowAccelChar False: the ampersand is drawn
+ok disabled: no text in the font colour
+ok disabled: clGrayText
+# accelerator (UIF-611, UIF-612)
+ok no FocusControl: not consumed
+ok other character: not consumed
+ok ShowAccelChar False: not consumed
+ok disabled: not consumed
+ok focus unchanged so far
+ok accelerator consumed
+ok FocusControl focused
+ok Alt+N through the form focuses FocusControl
+ok freed FocusControl cleared
+# passed 42 failed 0

@@ -17,6 +17,7 @@
     "Vcl.Forms": "Forms",
     "Vcl.Graphics": "Graphics",
     "Vcl.ImgList": "ImgList",
+    "Vcl.StdCtrls": "StdCtrls",
     "Vcl.UIConsts": "UIConsts",
     "Winapi.CommCtrl": "CommCtrl",
     "Winapi.CommDlg": "CommDlg",

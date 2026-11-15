@@ -1,0 +1,129 @@
+ok no form: empty forms list on one line
+# escaping (UIF-320)
+ok empty string
+ok quote and backslash
+ok control characters as \u00XX
+ok non-ASCII and slash literally
+# fixture form (UIF-321 ... 323)
+ok LF only
+ok ends with LF
+# dump of MainForm follows
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TMainForm",
+      "name": "MainForm",
+      "clientWidth": 400,
+      "clientHeight": 240,
+      "controls": [
+        {
+          "class": "TBox",
+          "name": "NameEdit",
+          "left": 16,
+          "top": 16,
+          "width": 200,
+          "height": 23,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TBox",
+          "name": "Panel",
+          "left": -5,
+          "top": 50,
+          "width": 300,
+          "height": 100,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TDot",
+              "name": "Dot",
+              "left": 2,
+              "top": 3,
+              "width": 10,
+              "height": 10,
+              "visible": false,
+              "controls": []
+            }
+          ]
+        },
+        {
+          "class": "TDot",
+          "name": "Last",
+          "left": 0,
+          "top": 230,
+          "width": 400,
+          "height": 10,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}
+# every form of Screen in creation order (UIF-315)
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TMainForm",
+      "name": "MainForm",
+      "clientWidth": 400,
+      "clientHeight": 240,
+      "controls": [
+        {
+          "class": "TBox",
+          "name": "NameEdit",
+          "left": 16,
+          "top": 16,
+          "width": 200,
+          "height": 23,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TBox",
+          "name": "Panel",
+          "left": -5,
+          "top": 50,
+          "width": 300,
+          "height": 100,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TDot",
+              "name": "Dot",
+              "left": 2,
+              "top": 3,
+              "width": 10,
+              "height": 10,
+              "visible": false,
+              "controls": []
+            }
+          ]
+        },
+        {
+          "class": "TDot",
+          "name": "Last",
+          "left": 0,
+          "top": 230,
+          "width": 400,
+          "height": 10,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    },
+    {
+      "class": "TForm",
+      "name": "Second",
+      "clientWidth": 10,
+      "clientHeight": 20,
+      "controls": []
+    }
+  ]
+}
+# passed 7 failed 0

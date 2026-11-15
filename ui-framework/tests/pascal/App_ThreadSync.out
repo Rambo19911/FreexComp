@@ -1,0 +1,10 @@
+ok WakeMainThread installed
+# Synchronize and Queue through the message loop
+ok Synchronize ran
+ok Synchronize in the main thread
+ok Queue in the main thread
+ok order
+# Synchronize during ProcessMessages
+ok ProcessMessages: Synchronize in the main thread
+ok ProcessMessages: Queue in the main thread
+# passed 7 failed 0

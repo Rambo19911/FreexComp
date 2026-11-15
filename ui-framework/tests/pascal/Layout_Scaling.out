@@ -1,0 +1,59 @@
+# E30: 96 -> 120
+ok client width 500
+ok client height 300
+ok Btn (13, 13, 93, 31)
+ok form font height -15
+ok ParentFont child keeps ParentFont
+ok ParentFont child follows
+ok form Left not scaled
+ok form Top not scaled
+# E31: 96 -> 144, adjacent controls stay adjacent
+ok A (0, 0, 50, 30)
+ok B (50, 0, 49, 30)
+ok A back within 1 px
+ok B back within 1 px
+ok still adjacent after the inverse
+ok client back within 1 px
+# constraints, margins, padding, own font
+ok MinWidth 25
+ok zero constraint stays 0
+ok MaxHeight 250
+ok margins scaled
+ok padding scaled
+ok own font scaled
+ok own font stays own
+ok grandchild scaled
+ok child scaled
+ok M = D: no change
+ok M = D: constraints unchanged
+# UIF-283: baselines re-captured, realign
+ok anchored child scaled by edges
+ok alTop child: scaled height, realigned width
+ok anchor follows from the scaled baseline
+ok alTop follows
+# load-time scaling (UIF-282)
+ok no OnResize while loading and scaling
+ok client width scaled from 192
+ok client height scaled from 192
+ok Box left
+ok Box width by edges
+ok Corner left
+ok Corner height by edges
+ok form font scaled
+ok Corner baseline from the scaled bounds (x)
+ok Corner baseline from the scaled bounds (y)
+ok Scaled = False: client as stored
+ok Scaled = False: bounds as stored
+# WM_DPICHANGED (UIF-285)
+ok PixelsPerInch takes the new DPI
+ok child scaled
+ok font scaled
+ok suggested rectangle
+ok real client width adopted
+ok real client height adopted
+ok CM_DPICHANGED broadcast
+ok OnAfterMonitorDpiChanged
+# WM_DPICHANGED with Scaled = False
+ok child not scaled
+ok repositioned to the suggested rectangle
+# passed 51 failed 0

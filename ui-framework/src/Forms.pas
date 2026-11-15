@@ -86,7 +86,17 @@ type
     procedure WMActivate(var Message: TMessage);
     procedure WMSize(var Message: TMessage);
     procedure EndResizeLock;
+    { UIF-445 step 5: CloseQuery/OnClose; a veto resets ModalResult to mrNone }
+    procedure CloseModal(var FreeAfter: Boolean);
+    { layout.md UIF-285 }
+    procedure WMDpiChanged(var Message: TMessage);
   protected
+    { layout.md UIF-280 step 1 for forms: Left/Top unscaled, the client size scaled }
+    procedure ScaleBounds(M, D: Integer); override;
+    { layout.md UIF-300 step 2: the stored design DPI scaled to the form's DPI (Scaled = True) }
+    procedure Loaded; override;
+    { layout.md UIF-245: a form's own constraints are ignored in dump mode }
+    procedure ConstrainedResize(var MinWidth, MinHeight, MaxWidth, MaxHeight: Integer); override;
     { core.md UIF-115 step 3: the form's navigation keys }
     procedure CMDialogKey(var Message: TMessage); virtual;
     { UIF-431: once per client size change, never before the first show }
@@ -146,6 +156,10 @@ type
     function CloseQuery: Boolean; virtual;
     { posts CM_RELEASE; the receiver frees the form (safe inside the form's own event handlers) }
     procedure Release;
+    { UIF-445 ... 447 }
+    function ShowModal: Integer; virtual;
+    { layout.md UIF-282: a form built in code (logical pixels) scaled from 96 DPI to PixelsPerInch }
+    procedure ScaleForCurrentDpi;
     { core.md section 8 }
     procedure SetFocus; override;
     function SetFocusedControl(Control: TWinControl): Boolean; override;
@@ -305,10 +319,16 @@ type
     FShowMainForm: Boolean;
     FTitle: string;
     FNonInteractive: Boolean;
+    FModalLevel: Integer;
+    FDumpLayoutFile: string;
+    { layout.md UIF-312: writes the dump of every form; False (and the reason on stderr) when writing fails }
+    function WriteLayoutDump: Boolean;
     FOnException: TExceptionEvent;
     FOnIdle: TIdleEvent;
     FOnMessage: TMessageEvent;
     function GetExeName: string;
+    { UIF-412: the Classes.WakeMainThread hook; the loop wakes and runs CheckSynchronize }
+    procedure WakeMainThread(Sender: TObject);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -336,11 +356,15 @@ type
     { a window of this application is the foreground window }
     property Active: Boolean read FActive;
     property Terminated: Boolean read FTerminated;
+    { UIF-445: nesting depth of ShowModal }
+    property ModalLevel: Integer read FModalLevel;
     property ShowMainForm: Boolean read FShowMainForm write FShowMainForm;
     property Title: string read FTitle write FTitle;
     property ExeName: string read GetExeName;
     { UIF-013: FXC_UI_NONINTERACTIVE = 1 at start-up }
     property NonInteractive: Boolean read FNonInteractive;
+    { layout.md UIF-310: the path after --dump-layout; '' = not in dump mode }
+    property DumpLayoutFile: string read FDumpLayoutFile;
     property OnException: TExceptionEvent read FOnException write FOnException;
     property OnIdle: TIdleEvent read FOnIdle write FOnIdle;
     property OnMessage: TMessageEvent read FOnMessage write FOnMessage;
@@ -356,6 +380,10 @@ function GetParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
 function ValidParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
 { core.md UIF-120: Str has the accelerator '&<VK>' (AnsiUpperCase comparison, '&&' is a literal ampersand) }
 function IsAccel(VK: Word; const Str: string): Boolean;
+{ layout.md UIF-320: the canonical dump text of AForm, or of every form of Screen (creation order) for nil }
+function LayoutDumpText(AForm: TCustomForm = nil): string;
+{ UIF-320: S as a JSON string: quotes, '\', control characters as \u00XX (upper-case hex), all else literal }
+function LayoutDumpString(const S: string): string;
 
 implementation
 
@@ -458,7 +486,9 @@ const
 function AppWndProc(Wnd: HWND; Msg: UINT; WParam: WPARAM; LParam: LPARAM): LRESULT; stdcall;
 begin
   Result := 0;
-  if Msg = CM_RELEASE then
+  if Msg = WM_NULL then
+    CheckSynchronize(0)                                      { UIF-412: WakeMainThread }
+  else if Msg = CM_RELEASE then
     try
       TObject(Pointer(LParam)).Free;
     except
@@ -543,7 +573,10 @@ begin
   FBorderIcons := [biSystemMenu, biMinimize, biMaximize];
   FBorderStyle := bsSizeable;
   FScaled := True;
-  FPixelsPerInch := GetDpiForSystem;
+  if LayoutDumpMode then
+    FPixelsPerInch := 96                                     { UIF-311 }
+  else
+    FPixelsPerInch := GetDpiForSystem;
   FDesignPixelsPerInch := 96;
   FClientWidth := 320;
   FClientHeight := 240;
@@ -658,6 +691,91 @@ begin
     PostMessageW(Handle, CM_RELEASE, 0, LPARAM(Pointer(Self)))
   else
     PostMessageW(Application.Handle, CM_RELEASE, 0, LPARAM(Pointer(Self)));
+end;
+
+type
+  TTaskWindows = record
+    Skip: HWND;
+    List: TList;
+  end;
+  PTaskWindows = ^TTaskWindows;
+
+{ UIF-445 step 3: every visible and enabled top-level window of the thread except the modal form's own }
+function DisableTaskWindow(Wnd: HWND; Data: LPARAM): BOOL; stdcall;
+var
+  P: PTaskWindows;
+begin
+  P := PTaskWindows(Pointer(Data));
+  if (Wnd <> P^.Skip) and IsWindowVisible(Wnd) and IsWindowEnabled(Wnd) then
+  begin
+    P^.List.Add(Pointer(Wnd));
+    EnableWindow(Wnd, False);
+  end;
+  Result := True;
+end;
+
+procedure TCustomForm.CloseModal(var FreeAfter: Boolean);
+var
+  Action: TCloseAction;
+begin
+  Action := caHide;
+  if CloseQuery then
+  begin
+    if Assigned(FOnClose) then
+      FOnClose(Self, Action);
+  end
+  else
+    Action := caNone;
+  if Action = caNone then
+    FModalResult := mrNone
+  else if Action = caFree then
+    FreeAfter := True;
+end;
+
+function TCustomForm.ShowModal: Integer;
+var
+  Task: TTaskWindows;
+  ActiveWindow: HWND;
+  FreeAfter: Boolean;
+  I: Integer;
+begin
+  if Visible or (fsModal in FFormState) then
+    raise EInvalidOperation.Create(SVisibleModal);
+  if not Enabled then
+    raise EInvalidOperation.Create(SDisabledModal);
+  ReleaseCapture;
+  Inc(Application.FModalLevel);
+  ActiveWindow := GetActiveWindow;
+  Include(FFormState, fsModal);
+  FModalResult := mrNone;
+  FreeAfter := False;
+  Task.List := TList.Create;
+  try
+    HandleNeeded;
+    Task.Skip := Handle;
+    EnumThreadWindows(MainThreadID, DisableTaskWindow, LPARAM(@Task));
+    Show;
+    repeat
+      Application.HandleMessage;
+      if Application.Terminated then
+        FModalResult := mrCancel
+      else if FModalResult <> mrNone then
+        CloseModal(FreeAfter);
+    until FModalResult <> mrNone;
+    Result := FModalResult;
+  finally
+    for I := 0 to Task.List.Count - 1 do
+      if IsWindow(HWND(Task.List[I])) then
+        EnableWindow(HWND(Task.List[I]), True);
+    Task.List.Free;
+    Hide;
+    if (ActiveWindow <> 0) and IsWindow(ActiveWindow) then
+      SetActiveWindow(ActiveWindow);
+    Exclude(FFormState, fsModal);
+    Dec(Application.FModalLevel);
+  end;
+  if FreeAfter then
+    Release;
 end;
 
 procedure TCustomForm.MakeFullyVisible(AMonitor: TMonitor);
@@ -879,7 +997,7 @@ procedure TCustomForm.AdoptClientSize;
 var
   R: TRect;
 begin
-  if not HandleAllocated or IsIconic(Handle) then
+  if not HandleAllocated or IsIconic(Handle) or LayoutDumpMode then
     Exit;
   Windows.GetClientRect(Handle, R);
   if (R.Right <> FClientWidth) or (R.Bottom <> FClientHeight) then
@@ -945,6 +1063,8 @@ var
   FW, FH, DPI: Integer;
 begin
   inherited CreateWnd;
+  if LayoutDumpMode then
+    Exit;                                                    { UIF-313: bounds stay formula-defined }
   DPI := GetDpiForWindow(Handle);
   if (DPI > 0) and (DPI <> FPixelsPerInch) then
   begin
@@ -1140,6 +1260,8 @@ begin
       WMActivate(Message);
     WM_SIZE:
       WMSize(Message);
+    WM_DPICHANGED:
+      WMDpiChanged(Message);
     WM_CLOSE:
       Close;                                                 { UIF-440: default processing never destroys }
     WM_QUERYENDSESSION:
@@ -1393,6 +1515,82 @@ procedure TCustomForm.SetPixelsPerInch(Value: Integer);
 begin
   if csLoading in ComponentState then
     FDesignPixelsPerInch := Value;
+end;
+
+procedure TCustomForm.ScaleBounds(M, D: Integer);
+var
+  FW, FH: Integer;
+begin
+  GetFrame(FW, FH);
+  SetBounds(Left, Top, LayoutMulDiv(FClientWidth, M, D) + FW, LayoutMulDiv(FClientHeight, M, D) + FH);
+end;
+
+{ the children's Loaded (children first) captured their baselines before this scaling: they re-capture }
+procedure TCustomForm.Loaded;
+begin
+  if FScaled and not LayoutDumpMode and (FPixelsPerInch <> FDesignPixelsPerInch) then
+  begin
+    ChangeScale(FPixelsPerInch, FDesignPixelsPerInch);
+    CaptureBaselines;
+  end;
+  inherited Loaded;
+end;
+
+procedure TCustomForm.ConstrainedResize(var MinWidth, MinHeight, MaxWidth, MaxHeight: Integer);
+begin
+  if LayoutDumpMode then
+  begin
+    MinWidth := 0;
+    MinHeight := 0;
+    MaxWidth := 0;
+    MaxHeight := 0;
+  end
+  else
+    inherited ConstrainedResize(MinWidth, MinHeight, MaxWidth, MaxHeight);
+end;
+
+procedure TCustomForm.ScaleForCurrentDpi;
+begin
+  ScaleBy(FPixelsPerInch, 96);
+end;
+
+{ CM_DPICHANGED (WParam new DPI, LParam old DPI) to every control of the tree, depth-first in z-order }
+procedure SendDpiChanged(Parent: TWinControl; OldDPI, NewDPI: Integer);
+var
+  I: Integer;
+  C: TControl;
+begin
+  for I := 0 to Parent.ControlCount - 1 do
+  begin
+    C := Parent.Controls[I];
+    C.Perform(CM_DPICHANGED, WPARAM(NewDPI), LPARAM(OldDPI));
+    if C is TWinControl then
+      SendDpiChanged(TWinControl(C), OldDPI, NewDPI);
+  end;
+end;
+
+{ UIF-285: the scaling and its UIF-283 run before the window takes the suggested rectangle, so the real client size
+  is adopted like any later resize (anchors follow it) }
+procedure TCustomForm.WMDpiChanged(var Message: TMessage);
+var
+  OldDPI, NewDPI: Integer;
+  R: TRect;
+begin
+  Message.Result := 0;
+  if LayoutDumpMode then
+    Exit;                                                    { UIF-311 }
+  OldDPI := FPixelsPerInch;
+  NewDPI := HiWord(Message.WParam);
+  R := PRect(Pointer(Message.LParam))^;
+  if FScaled then
+    ScaleBy(NewDPI, OldDPI);
+  FPixelsPerInch := NewDPI;
+  SetBounds(R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top);
+  if FScaled then
+    SendDpiChanged(Self, OldDPI, NewDPI);
+  if Assigned(FOnAfterMonitorDpiChanged) then
+    FOnAfterMonitorDpiChanged(Self, OldDPI, NewDPI);
+  Message.Result := 0;
 end;
 
 { layout.md UIF-275: a visible form takes the new state at once; a hidden one at its next show }
@@ -1739,6 +1937,117 @@ begin
   Result := nil;
 end;
 
+{ ---------------------------------------------------------------- layout dump (layout.md section 13) }
+
+function LayoutDumpString(const S: string): string;
+const
+  Hex = '0123456789ABCDEF';
+var
+  I: Integer;
+  C: Char;
+begin
+  Result := '"';
+  for I := 1 to Length(S) do
+  begin
+    C := S[I];
+    if C = '"' then
+      Result := Result + '\"'
+    else if C = '\' then
+      Result := Result + '\\'
+    else if Ord(C) < 32 then
+      Result := Result + '\u00' + Hex[Ord(C) div 16 + 1] + Hex[Ord(C) mod 16 + 1]
+    else
+      Result := Result + C;
+  end;
+  Result := Result + '"';
+end;
+
+function DumpBool(B: Boolean): string;
+begin
+  if B then
+    Result := 'true'
+  else
+    Result := 'false';
+end;
+
+{ UIF-322: the named controls of Parent, recursively; Indent = the indentation of the "controls" key }
+procedure DumpControls(var S: string; Parent: TWinControl; const Indent: string);
+var
+  I, N: Integer;
+  C: TControl;
+  Pad: string;
+begin
+  N := 0;
+  for I := 0 to Parent.ControlCount - 1 do
+    if Parent.Controls[I].Name <> '' then
+      Inc(N);
+  if N = 0 then
+  begin
+    S := S + Indent + '"controls": []' + #10;
+    Exit;
+  end;
+  S := S + Indent + '"controls": [' + #10;
+  Pad := Indent + '    ';
+  for I := 0 to Parent.ControlCount - 1 do
+  begin
+    C := Parent.Controls[I];
+    if C.Name = '' then
+      Continue;
+    S := S + Indent + '  {' + #10
+      + Pad + '"class": ' + LayoutDumpString(C.ClassName) + ',' + #10
+      + Pad + '"name": ' + LayoutDumpString(C.Name) + ',' + #10
+      + Pad + '"left": ' + IntToStr(C.Left) + ',' + #10
+      + Pad + '"top": ' + IntToStr(C.Top) + ',' + #10
+      + Pad + '"width": ' + IntToStr(C.Width) + ',' + #10
+      + Pad + '"height": ' + IntToStr(C.Height) + ',' + #10
+      + Pad + '"visible": ' + DumpBool(C.Visible) + ',' + #10;
+    if C is TWinControl then
+      DumpControls(S, TWinControl(C), Pad)
+    else
+      S := S + Pad + '"controls": []' + #10;
+    Dec(N);
+    if N > 0 then
+      S := S + Indent + '  },' + #10
+    else
+      S := S + Indent + '  }' + #10;
+  end;
+  S := S + Indent + ']' + #10;
+end;
+
+procedure DumpForm(var S: string; F: TCustomForm; Last: Boolean);
+begin
+  S := S + '    {' + #10
+    + '      "class": ' + LayoutDumpString(F.ClassName) + ',' + #10
+    + '      "name": ' + LayoutDumpString(F.Name) + ',' + #10
+    + '      "clientWidth": ' + IntToStr(F.ClientWidth) + ',' + #10
+    + '      "clientHeight": ' + IntToStr(F.ClientHeight) + ',' + #10;
+  DumpControls(S, F, '      ');
+  if Last then
+    S := S + '    }' + #10
+  else
+    S := S + '    },' + #10;
+end;
+
+function LayoutDumpText(AForm: TCustomForm): string;
+var
+  I: Integer;
+begin
+  Result := '{' + #10 + '  "formatVersion": 1,' + #10 + '  "dpi": 96,' + #10;
+  if (AForm = nil) and (Screen.CustomFormCount = 0) then
+    Result := Result + '  "forms": []' + #10
+  else
+  begin
+    Result := Result + '  "forms": [' + #10;
+    if AForm <> nil then
+      DumpForm(Result, AForm, True)
+    else
+      for I := 0 to Screen.CustomFormCount - 1 do
+        DumpForm(Result, Screen.CustomForms[I], I = Screen.CustomFormCount - 1);
+    Result := Result + '  ]' + #10;
+  end;
+  Result := Result + '}' + #10;
+end;
+
 { ---------------------------------------------------------------- TApplication }
 
 { UIF-405 }
@@ -1762,11 +2071,25 @@ begin
 end;
 
 constructor TApplication.Create(AOwner: TComponent);
+var
+  I: Integer;
 begin
   inherited Create(AOwner);
   FShowMainForm := True;
   FTitle := ChangeFileExt(ExtractFileName(ParamStr(0)), '');
   FNonInteractive := GetEnvironmentVariable('FXC_UI_NONINTERACTIVE') = '1';
+  { layout.md UIF-310 }
+  for I := 1 to ParamCount - 1 do
+    if ParamStr(I) = '--dump-layout' then
+    begin
+      FDumpLayoutFile := ParamStr(I + 1);
+      Break;
+    end;
+  if FDumpLayoutFile <> '' then
+  begin
+    LayoutDumpMode := True;
+    FNonInteractive := True;                                 { UIF-314 }
+  end;
 end;
 
 function TApplication.GetExeName: string;
@@ -1880,9 +2203,41 @@ begin
     raise EOutOfResources.CreateFmt(SWindowCreate, [SysErrorMessage(GetLastError)]);
 end;
 
+function TApplication.WriteLayoutDump: Boolean;
+var
+  Stream: TFileStream;
+  Bytes: TBytes;
+begin
+  Result := True;
+  try
+    Bytes := BytesOf(LayoutDumpText(nil));
+    Stream := TFileStream.Create(FDumpLayoutFile, fmCreate);
+    try
+      if Length(Bytes) > 0 then
+        Stream.WriteBuffer(Bytes[0], Length(Bytes));
+    finally
+      Stream.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      WriteErrorLine(Format(SLayoutDumpError, [E.Message]));
+      Result := False;
+    end;
+  end;
+end;
+
 procedure TApplication.Run;
 begin
   Initialize;
+  { UIF-312: no form is shown, no loop runs }
+  if FDumpLayoutFile <> '' then
+  begin
+    if WriteLayoutDump then
+      Halt(0)
+    else
+      Halt(2);
+  end;
   if FMainForm = nil then
     Exit;
   if FShowMainForm then
@@ -2012,8 +2367,17 @@ begin
     except
       HandleException(Self);                                 { UIF-463 }
     end;
+  { step 4 }
+  if CheckSynchronize(0) then
+    Done := False;
   if Done then
     WaitMessage;
+end;
+
+procedure TApplication.WakeMainThread(Sender: TObject);
+begin
+  if FHandle <> 0 then
+    PostMessageW(FHandle, WM_NULL, 0, 0);
 end;
 
 { UIF-400: the remaining forms in reverse creation order, then Screen, then Application }
@@ -2022,6 +2386,7 @@ var
   I: Integer;
 begin
   FindGlobalComponent := nil;
+  Classes.WakeMainThread := nil;
   for I := Screen.CustomFormCount - 1 downto 0 do
     if I < Screen.CustomFormCount then
       Screen.CustomForms[I].Free;
@@ -2039,6 +2404,7 @@ initialization
   ShowErrorProc := FormsShowError;
   ApplicationHandleException := Application.HandleException;
   FindGlobalComponent := FormsFindGlobalComponent;
+  Classes.WakeMainThread := Application.WakeMainThread;
   FocusRootClass := TCustomForm;
   RegisterClasses([TForm]);
 

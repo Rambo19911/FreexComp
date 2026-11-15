@@ -326,6 +326,10 @@ type
     procedure WMContextMenu(var Message: TMessage); virtual;
     procedure Loaded; override;
     procedure SetParentComponent(Value: TComponent); override;
+    { layout.md UIF-280: constraints, margins, own font, then the bounds (ScaleBounds); M = D is a no-op }
+    procedure ChangeScale(M, D: Integer); virtual;
+    { UIF-280 steps 1 and 5: the bounds by edges, applied flagged "from scaling" (forms: the client size) }
+    procedure ScaleBounds(M, D: Integer); virtual;
     property Caption: TCaption read GetCaption write SetCaption;
     property Text: TCaption read GetCaption write SetCaption;
     property Color: TColor read FColor write SetColor stored IsColorStored default clWindow;
@@ -352,6 +356,8 @@ type
     procedure SetBounds(ALeft, ATop, AWidth, AHeight: Integer); virtual;
     { layout.md UIF-240 }
     procedure ConstrainSize(var AWidth, AHeight: Integer);
+    { layout.md UIF-282: ChangeScale + UIF-283 (baselines re-captured top-down, then the realign) }
+    procedure ScaleBy(M, D: Integer);
     procedure BringToFront;
     procedure SendToBack;
     procedure Show;
@@ -494,6 +500,10 @@ type
     { layout.md UIF-222: one layout pass over Rect (the align rect) }
     procedure AlignControls(AControl: TControl; var Rect: TRect); virtual;
     procedure Loaded; override;
+    { UIF-280: Padding, then the inherited steps, then the children in Controls[] order }
+    procedure ChangeScale(M, D: Integer); override;
+    { UIF-283 first half: this control and every descendant re-capture their anchor baselines, top-down }
+    procedure CaptureBaselines;
     procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     procedure DoEnter; virtual;
     procedure DoExit; virtual;
@@ -624,6 +634,8 @@ var
   ScreenCursor: TCursor;
   { core.md 8.1: the class that ends a focus chain (TCustomForm, registered by Forms); nil = nothing can focus }
   FocusRootClass: TClass;
+  { layout.md UIF-310: dump mode (set by Forms); window bounds never follow or feed back the fields (UIF-211, UIF-213) }
+  LayoutDumpMode: Boolean;
 
 implementation
 
@@ -933,6 +945,56 @@ end;
 
 var
   LoadLayoutLevel: Integer;                                  { > 0: the load-time layout pass runs (UIF-300 step 6) }
+  ScalingLevel: Integer;                                     { > 0: ChangeScale runs; layout passes are deferred }
+
+procedure TControl.ChangeScale(M, D: Integer);
+begin
+  if (M = D) or (M <= 0) or (D <= 0) then
+    Exit;
+  Inc(ScalingLevel);
+  try
+    { step 2 }
+    FConstraints.MinWidth := LayoutMulDiv(FConstraints.MinWidth, M, D);
+    FConstraints.MinHeight := LayoutMulDiv(FConstraints.MinHeight, M, D);
+    FConstraints.MaxWidth := LayoutMulDiv(FConstraints.MaxWidth, M, D);
+    FConstraints.MaxHeight := LayoutMulDiv(FConstraints.MaxHeight, M, D);
+    FMargins.SetBounds(LayoutMulDiv(FMargins.Left, M, D), LayoutMulDiv(FMargins.Top, M, D),
+      LayoutMulDiv(FMargins.Right, M, D), LayoutMulDiv(FMargins.Bottom, M, D));
+    { step 3 }
+    if not FParentFont then
+      FFont.Height := LayoutMulDiv(FFont.Height, M, D);
+    { steps 1, 5 }
+    ScaleBounds(M, D);
+  finally
+    Dec(ScalingLevel);
+  end;
+end;
+
+procedure TControl.ScaleBounds(M, D: Integer);
+var
+  NL, NT: Integer;
+begin
+  NL := LayoutMulDiv(FLeft, M, D);
+  NT := LayoutMulDiv(FTop, M, D);
+  FLayoutCall := True;
+  SetBounds(NL, NT, LayoutMulDiv(FLeft + FWidth, M, D) - NL, LayoutMulDiv(FTop + FHeight, M, D) - NT);
+  FLayoutCall := False;
+end;
+
+procedure TControl.ScaleBy(M, D: Integer);
+begin
+  if (M = D) or (M <= 0) or (D <= 0) then
+    Exit;
+  ChangeScale(M, D);
+  if Self is TWinControl then
+    TWinControl(Self).CaptureBaselines
+  else
+    CaptureBaseline;
+  if FParent <> nil then
+    FParent.Realign;
+  if Self is TWinControl then
+    TWinControl(Self).RealignTree;
+end;
 
 procedure TControl.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
 var
@@ -967,8 +1029,8 @@ begin
   { step 7 }
   if SizeChanged and (Self is TWinControl) then
     TWinControl(Self).Realign;
-  { step 8 }
-  if SizeChanged and not Loading and (LoadLayoutLevel = 0) then
+  { step 8 (scaling itself fires no OnResize; the UIF-283 realign does for what it resizes) }
+  if SizeChanged and not Loading and (LoadLayoutLevel = 0) and (ScalingLevel = 0) then
     Resize;
   { step 9 }
   if Explicit and not Loading then
@@ -1128,7 +1190,8 @@ end;
 { UIF-241: re-applied as an explicit change }
 procedure TControl.ConstraintsChanged(Sender: TObject);
 begin
-  SetBounds(FLeft, FTop, FWidth, FHeight);
+  if ScalingLevel = 0 then                                   { scaling applies the new bounds itself (UIF-280) }
+    SetBounds(FLeft, FTop, FWidth, FHeight);
 end;
 
 procedure TControl.ConstrainSize(var AWidth, AHeight: Integer);
@@ -1967,6 +2030,36 @@ begin
       TWinControl(FControls[I]).RealignTree;
 end;
 
+procedure TWinControl.ChangeScale(M, D: Integer);
+var
+  I: Integer;
+begin
+  if (M = D) or (M <= 0) or (D <= 0) then
+    Exit;
+  Inc(ScalingLevel);
+  try
+    FPadding.SetBounds(LayoutMulDiv(FPadding.Left, M, D), LayoutMulDiv(FPadding.Top, M, D),
+      LayoutMulDiv(FPadding.Right, M, D), LayoutMulDiv(FPadding.Bottom, M, D));
+    inherited ChangeScale(M, D);
+    for I := 0 to FControls.Count - 1 do
+      TControl(FControls[I]).ChangeScale(M, D);
+  finally
+    Dec(ScalingLevel);
+  end;
+end;
+
+procedure TWinControl.CaptureBaselines;
+var
+  I: Integer;
+begin
+  CaptureBaseline;
+  for I := 0 to FControls.Count - 1 do
+    if TObject(FControls[I]) is TWinControl then
+      TWinControl(FControls[I]).CaptureBaselines
+    else
+      TControl(FControls[I]).CaptureBaseline;
+end;
+
 { UIF-227 last row, UIF-300: Loaded runs children first, so the root of the loaded tree (no parent still loading)
   runs the layout of the whole tree after every baseline is captured; OnResize stays silent meanwhile (step 6) }
 procedure TWinControl.Loaded;
@@ -2540,7 +2633,7 @@ end;
 { layout.md UIF-211: the window follows the fields; the feedback of this very call is suppressed }
 procedure TWinControl.BoundsChanged(const OldBounds: TRect);
 begin
-  if FHandle = 0 then
+  if (FHandle = 0) or LayoutDumpMode then
     Exit;
   FSettingBounds := True;
   try
@@ -2570,7 +2663,7 @@ end;
 procedure TWinControl.WMWindowPosChanged(var Message: TWMWindowPosMsg);
 begin
   DefaultHandler(Message);
-  if (FHandle <> 0) and not FSettingBounds then
+  if (FHandle <> 0) and not FSettingBounds and not LayoutDumpMode then
     UpdateBoundsFromOS(WindowBounds);
 end;
 
@@ -2700,7 +2793,7 @@ procedure TWinControl.AlignControl(AControl: TControl);
 var
   R: TRect;
 begin
-  if (FAlignLevel > 0) or (csLoading in ComponentState) or (csDestroying in ComponentState) then
+  if (FAlignLevel > 0) or (ScalingLevel > 0) or (csLoading in ComponentState) or (csDestroying in ComponentState) then
   begin
     Include(FControlState, csAlignmentNeeded);
     Exit;

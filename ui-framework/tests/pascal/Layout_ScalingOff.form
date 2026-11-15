@@ -1,0 +1,12 @@
+object FixedForm: TFixedForm
+  ClientWidth = 400
+  ClientHeight = 240
+  PixelsPerInch = 192
+  Scaled = False
+  object Box: TBox
+    Left = 10
+    Top = 10
+    Width = 75
+    Height = 25
+  end
+end

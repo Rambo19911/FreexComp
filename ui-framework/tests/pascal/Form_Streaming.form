@@ -2,6 +2,7 @@ object StreamForm: TStreamForm
   Caption = 'Streamed'
   ClientWidth = 300
   ClientHeight = 200
+  Scaled = False
   OnCreate = FormCreate
   OnResize = FormResize
   object Header: TBox

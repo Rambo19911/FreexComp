@@ -1,0 +1,57 @@
+ok ModalLevel 0 outside
+# preconditions (UIF-445 step 1)
+ok visible: raises
+ok disabled: raises
+ok no level left behind
+# loop and result (UIF-445 steps 2-7)
+ok result mrOk
+ok ModalResult kept
+ok main form disabled during
+ok other form disabled during
+ok modal form enabled
+ok fsModal during
+ok ModalLevel 1 during
+ok main form enabled after
+ok other form enabled after
+ok fsModal cleared
+ok ModalLevel 0 after
+ok hidden after
+ok event order
+# a window disabled before stays disabled
+ok not in the list: still disabled
+ok main re-enabled
+# CloseQuery and OnClose veto (CloseModal)
+ok vetoed once, then mrYes
+ok CloseQuery False: no OnClose
+ok caNone vetoes once
+ok caNone: loop continues
+# Close of a modal form (UIF-440, UIF-446)
+ok Close gives mrCancel
+ok Close only sets the result
+ok ModalResult on a non-modal form: no effect
+# exception escaping the sequence
+ok OnShow exception escapes
+ok main re-enabled after the exception
+ok other re-enabled after the exception
+ok ModalLevel restored
+ok fsModal cleared after the exception
+# nesting (UIF-447)
+ok outer result
+ok inner result
+ok inner level: main and outer disabled
+ok ModalLevel 2 inside
+ok after the inner loop: main still disabled
+ok after the inner loop: outer re-enabled
+ok ModalLevel back to 1
+ok main enabled at the end
+# caFree releases after the loop
+ok caFree: result
+ok not freed yet
+ok freed by the release
+ok removed from Screen
+ok window destroyed
+# Terminate ends the loop
+ok terminated: mrCancel
+ok terminated
+ok main re-enabled
+# passed 47 failed 0

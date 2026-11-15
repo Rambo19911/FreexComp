@@ -1,0 +1,21 @@
+object MainForm: TMainForm
+  ClientWidth = 300
+  ClientHeight = 200
+  PixelsPerInch = 192
+  OnCreate = FormCreate
+  OnShow = FormShow
+  OnActivate = FormShow
+  object Box: TBox
+    Left = 10
+    Top = 20
+    Width = 75
+    Height = 25
+  end
+  object Right: TBox
+    Left = 200
+    Top = 20
+    Width = 90
+    Height = 25
+    Anchors = [akTop, akRight]
+  end
+end
