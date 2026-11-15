@@ -9,7 +9,7 @@
     <ProjectReference Include="..\..\rtl\tests\FreexComp.Rtl.Tests.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- the Pascal programs are data read from the source tree, never compiled by MSBuild -->
+    <!-- the Pascal programs are data read from the source tree, never compiled by the .NET SDK build -->
     <None Remove="pascal\**" />
   </ItemGroup>
 </Project>
