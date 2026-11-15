@@ -661,6 +661,8 @@ internal sealed partial class ExpressionBinder
                 return Error(name);
             case IntrinsicSymbol { Intrinsic: IntrinsicKind.Eof or IntrinsicKind.Eoln } textFunction:
                 return new BoundIntrinsicCallExpression(name, textFunction, [], _types.Boolean, constantValue: null);    // of Input (C-066)
+            case IntrinsicSymbol { IsMachineFunction: true } machine:
+                return MachineFunction(name, machine);
             case IntrinsicSymbol { IsFunction: true } function:
                 _diagnostics.Report(name, "E2110", function.Name);
                 return Error(name);
@@ -1158,6 +1160,17 @@ internal sealed partial class ExpressionBinder
             return BindSlice(invocation, intrinsic);
         }
 
+        if (intrinsic.IsMachineFunction)
+        {
+            if (invocation.ArgumentList.Arguments.Count > 0)
+            {
+                _diagnostics.Report(invocation.ArgumentList.Arguments[0], "E2111", intrinsic.Name);
+                return Error(invocation);
+            }
+
+            return MachineFunction(invocation, intrinsic);
+        }
+
         if (!_folder.CheckSingleArgument(invocation, intrinsic))
         {
             return Error(invocation);
@@ -1280,6 +1293,10 @@ internal sealed partial class ExpressionBinder
     /// LANG-946 (C-066): <c>Eof</c>/<c>Eoln[(var F: Text)]: Boolean</c> — no argument means <c>Input</c>; the argument is an
     /// assignable <c>Text</c> variable (E2111 for more arguments, E2010 for another type).
     /// </summary>
+    /// <summary>C-173 / C-174: <c>_ReturnAddress: Pointer</c> (ABI-172) and <c>_GetMXCSR: Cardinal</c> (ABI-105), never constant.</summary>
+    private BoundIntrinsicCallExpression MachineFunction(SyntaxNode syntax, IntrinsicSymbol intrinsic) =>
+        new(syntax, intrinsic, [], intrinsic.Intrinsic == IntrinsicKind.ReturnAddress ? _types.Pointer : _types.Cardinal, constantValue: null);
+
     private BoundExpression BindTextFunction(InvocationExpressionSyntax invocation, IntrinsicSymbol intrinsic)
     {
         var arguments = invocation.ArgumentList.Arguments;

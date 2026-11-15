@@ -36,6 +36,21 @@ internal static class IntrinsicRewriter
             return WriteRewriter.TextFunction(context, call);                               // C-066
         }
 
+        if (call.Intrinsic.Intrinsic == IntrinsicKind.ReturnAddress)
+        {
+            // ABI-172 (C-173): the return address of the routine containing the call
+            var returnAddress = new LIntrinsicCallee("llvm.returnaddress", [context.Types.Integer], context.Types.Pointer);
+            return new LCall(returnAddress, [context.Constant(BigInteger.Zero, context.Types.Integer)]);
+        }
+
+        if (call.Intrinsic.Intrinsic == IntrinsicKind.GetMxcsr)
+        {
+            // ABI-105 (C-174): stmxcsr stores the register into a temporary, which is the value
+            var saved = context.NewTemp(context.Types.Cardinal);
+            var store = new LIntrinsicCallee("llvm.x86.sse.stmxcsr", [context.Types.Pointer], ReturnType: null);
+            return new LSequence(new LCallStatement(store, [new LAddrOf(new LLocalRef(saved), context.Types.Pointer)]), new LLocalRef(saved));
+        }
+
         var argument = call.Arguments[0];
         if (argument.Type is OpenArrayTypeSymbol && call.Intrinsic.Intrinsic is IntrinsicKind.High or IntrinsicKind.Length)
         {
@@ -264,6 +279,17 @@ internal static class IntrinsicRewriter
                     call.Arguments.IsEmpty ? context.Constant(BigInteger.Zero, context.Types.Integer) : context.Lower(call.Arguments[0]));
             case IntrinsicKind.Assert:
                 return Assert(context, call);
+            case IntrinsicKind.SetMxcsr:
+            {
+                // ABI-105 (C-174): ldmxcsr loads the register from a temporary holding the value
+                var value = context.NewTemp(context.Types.Cardinal);
+                var load = new LIntrinsicCallee("llvm.x86.sse.ldmxcsr", [context.Types.Pointer], ReturnType: null);
+                return new LBlock([
+                    new LAssign(new LLocalRef(value), context.Lower(call.Arguments[0])),
+                    new LCallStatement(load, [new LAddrOf(new LLocalRef(value), context.Types.Pointer)]),
+                ]);
+            }
+
             case IntrinsicKind.SetLength or IntrinsicKind.Delete or IntrinsicKind.Insert or IntrinsicKind.Str or IntrinsicKind.Val:
                 return StringRewriter.Statement(context, call);
             default:

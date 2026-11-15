@@ -128,6 +128,17 @@ internal sealed record LHelperCallee(RuntimeHelper Helper) : LCallee
     public override bool IsNoReturn => Helper.IsNoReturn;
 }
 
+/// <summary>
+/// An LLVM intrinsic of the CMP-413 list (<c>llvm.returnaddress</c>, C-173; <c>llvm.x86.sse.ldmxcsr</c>/<c>stmxcsr</c>, C-174):
+/// always a plain <c>call</c> (it never raises), declared under its own unquoted name.
+/// </summary>
+internal sealed record LIntrinsicCallee(string Name, ImmutableArray<TypeSymbol> ParameterTypes, TypeSymbol? ReturnType) : LCallee
+{
+    public override TypeSymbol? ReturnType { get; } = ReturnType;
+
+    public override bool IsNoReturn => false;
+}
+
 internal abstract class LNode;
 
 // ---------------------------------------------------------------------- statements

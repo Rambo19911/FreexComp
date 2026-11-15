@@ -90,7 +90,7 @@ public sealed class SehSpikeTests
         var dllTool = new DllToolInvoker(runner, Path.Combine(bin, "llvm-dlltool.exe"), fs);
         foreach (var dll in new[] { "kernel32.dll", "ntdll.dll" })
         {
-            var lib = await dllTool.BuildAsync(dll, Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, Path.ChangeExtension(dll, ".def")), dir, ct);
+            var lib = await dllTool.BuildAsync(dll, Path.Combine(TestRtl.DefinitionDirectory, Path.ChangeExtension(dll, ".def")), dir, ct);
             Assert.Null(lib.Failure);
             libs.Add(lib.LibraryPath);
         }

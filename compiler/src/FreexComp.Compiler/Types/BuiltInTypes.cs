@@ -137,6 +137,9 @@ public sealed class BuiltInTypes
         Intrinsic("Slice", IntrinsicKind.Slice, "Slice(const A: array; Count: Integer): array");
         Intrinsic("TypeInfo", IntrinsicKind.TypeInfo, "TypeInfo(T: Type): Pointer");
         Intrinsic("Default", IntrinsicKind.Default, "Default(T: Type): T");                    // LANG-713 (C-116)
+        Intrinsic("_ReturnAddress", IntrinsicKind.ReturnAddress, "_ReturnAddress: Pointer");    // ABI-172 (C-173)
+        Intrinsic("_GetMXCSR", IntrinsicKind.GetMxcsr, "_GetMXCSR: Cardinal");                  // ABI-105 (C-174)
+        Intrinsic("_SetMXCSR", IntrinsicKind.SetMxcsr, "_SetMXCSR(Value: Cardinal)");           // ABI-105 (C-174)
     }
 
     /// <summary>

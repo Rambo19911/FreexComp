@@ -199,6 +199,99 @@ public sealed class TypeLayoutTests
             (string.Join(" ", record.Fields.Select(f => f.Offset)), layout.Size, layout.Alignment, Describe(layout.StorageType), record.HasVariantPart));
     }
 
+    /// <summary>
+    /// C-163 (LANG-263, ABI-060…064): records mirroring Win32 structures and C structures under <c>#pragma pack(1/2/4/8)</c>
+    /// get exactly the Win64 C layout. Every row was computed by hand from the C rules (scalar alignment = min(size, pack),
+    /// nested aggregates keep their own alignment capped by the pack, size rounded up to the struct alignment) and
+    /// cross-checked once against the pinned clang (<c>--target=x86_64-pc-windows-msvc</c>, <c>_Static_assert</c> on
+    /// <c>offsetof</c>/<c>sizeof</c>/<c>_Alignof</c>). Offsets list every field in declaration order.
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-263")]
+    [Trait("Req", "ABI-060")]
+    [Trait("Req", "ABI-062")]
+    [Trait("Req", "ABI-063")]
+    [Trait("Req", "ABI-064")]
+    // POINT
+    [InlineData("record X, Y: Integer end", "0 4", 8, 4)]
+    // MSG
+    [InlineData("record hwnd: Pointer; message: Cardinal; wParam: NativeUInt; lParam: NativeInt; time: Cardinal; pt: TPoint; lPrivate: Cardinal end",
+        "0 8 16 24 32 36 44", 48, 8)]
+    // WNDCLASSEXW
+    [InlineData("record cbSize, style: Cardinal; lpfnWndProc: Pointer; cbClsExtra, cbWndExtra: Integer; hInstance, hIcon, hCursor, hbrBackground: Pointer; lpszMenuName, lpszClassName: PWideChar; hIconSm: Pointer end",
+        "0 4 8 16 20 24 32 40 48 56 64 72", 80, 8)]
+    // SYSTEMTIME
+    [InlineData("record wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, wMilliseconds: Word end", "0 2 4 6 8 10 12 14", 16, 2)]
+    // LOGFONTW
+    [InlineData("record lfHeight, lfWidth, lfEscapement, lfOrientation, lfWeight: Integer; lfItalic, lfUnderline, lfStrikeOut, lfCharSet, lfOutPrecision, lfClipPrecision, lfQuality, lfPitchAndFamily: Byte; lfFaceName: array[0..31] of WideChar end",
+        "0 4 8 12 16 20 21 22 23 24 25 26 27 28", 92, 4)]
+    // struct { char c; short s; char d; double x; char e; }
+    [InlineData("record c: AnsiChar; s: SmallInt; d: AnsiChar; x: Double; e: AnsiChar end", "0 2 4 8 16", 24, 8)]
+    // nested struct { char a; int b; } keeps alignment 4
+    [InlineData("record c: AnsiChar; i: TIn4; d: AnsiChar end", "0 4 12", 16, 4)]
+    // array of a nested struct
+    [InlineData("record w: Word; r: array[0..1] of TRect; b: Byte end", "0 4 36", 40, 4)]
+    // WCHAR name[3] then a pointer
+    [InlineData("record name: array[0..2] of WideChar; p: Pointer end", "0 8", 16, 8)]
+    // #pragma pack(1)
+    [InlineData("packed record c: AnsiChar; i: Integer; s: SmallInt; d: Double end", "0 1 5 7", 15, 1)]
+    [InlineData("{$ALIGN 1} record c: AnsiChar; i: Integer; s: SmallInt; d: Double end", "0 1 5 7", 15, 1)]
+    [InlineData("packed record c: AnsiChar; i: TIn4 end", "0 1", 9, 1)]
+    // a pack(1) struct nested in a default-packed one
+    [InlineData("record c: AnsiChar; p: TPk; x: Integer end", "0 1 8", 12, 4)]
+    // #pragma pack(2)
+    [InlineData("{$ALIGN 2} record c: AnsiChar; i: Integer; d: AnsiChar; x: Double end", "0 2 6 8", 16, 2)]
+    // #pragma pack(4), also capping a nested 8-aligned struct
+    [InlineData("{$ALIGN 4} record c: AnsiChar; x: Double; s: SmallInt end", "0 4 12", 16, 4)]
+    [InlineData("{$ALIGN 4} record c: AnsiChar; i: TIn8 end", "0 4", 20, 4)]
+    // #pragma pack(8) = the default
+    [InlineData("{$ALIGN 8} record c: AnsiChar; x: Double; y: Int64; s: SmallInt end", "0 8 16 24", 32, 8)]
+    public void Win64CLayout_MatchesHandComputedCStructures(string definition, string offsets, long size, int alignment)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind($$"""
+            type
+              TPoint = record X, Y: Integer end;
+              TRect = record L, T, R, B: Integer end;
+              TIn4 = record A: AnsiChar; B: Integer end;
+              TIn8 = record C: AnsiChar; D: Double end;
+              TPk = packed record C: AnsiChar; I: Integer end;
+              T = {{definition}};
+            begin end.
+            """);
+        Assert.Empty(result.Diagnostics);
+        var record = Assert.IsType<RecordTypeSymbol>(result.Declarations.Scope.Lookup("T"));
+        var layout = TypeLayout.Of(record);
+
+        Assert.Equal((offsets, size, alignment),
+            (string.Join(" ", record.Fields.Select(f => f.Offset)), layout.Size, layout.Alignment));
+        Assert.Equal((record.Size, record.Alignment), (layout.Size, layout.Alignment));
+    }
+
+    /// <summary>C-163: the helper structures of <see cref="Win64CLayout_MatchesHandComputedCStructures"/> themselves.</summary>
+    [Theory]
+    [Trait("Req", "ABI-064")]
+    [InlineData("TPoint", 8, 4)]
+    [InlineData("TRect", 16, 4)]
+    [InlineData("TIn4", 8, 4)]
+    [InlineData("TIn8", 16, 8)]
+    [InlineData("TPk", 5, 1)]
+    public void Win64CLayout_NestedHelperStructures(string name, long size, int alignment)
+    {
+        var (result, _) = Binding.BinderTestHelper.Bind("""
+            type
+              TPoint = record X, Y: Integer end;
+              TRect = record L, T, R, B: Integer end;
+              TIn4 = record A: AnsiChar; B: Integer end;
+              TIn8 = record C: AnsiChar; D: Double end;
+              TPk = packed record C: AnsiChar; I: Integer end;
+            begin end.
+            """);
+        Assert.Empty(result.Diagnostics);
+        var layout = TypeLayout.Of(Assert.IsType<RecordTypeSymbol>(result.Declarations.Scope.Lookup(name)));
+
+        Assert.Equal((size, alignment), (layout.Size, layout.Alignment));
+    }
+
     /// <summary>An anonymous record (no type declaration) gets a literal struct type (CMP-306 names declared records only).</summary>
     [Fact]
     [Trait("Req", "CMP-306")]

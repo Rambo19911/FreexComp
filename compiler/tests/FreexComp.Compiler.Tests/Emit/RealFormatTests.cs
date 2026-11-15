@@ -6,9 +6,9 @@ namespace FreexComp.Compiler.Tests.Emit;
 
 /// <summary>
 /// C-059: the exact real formatting of intrinsics.md LANG-930…933 and the real helpers of rtl-abi.md §9.10. A reference
-/// formatter written here with exact rational arithmetic (independent of the mini RTL's digit generator) is checked against
+/// formatter written here with exact rational arithmetic (independent of the RTL's digit generator) is checked against
 /// the spec's example table; then (<c>Category=Toolchain</c>) a generated program writes several hundred values through the
-/// mini RTL's <c>_WriteFloat</c>, <c>_Trunc</c>, <c>_Round</c>, <c>_Int</c>, <c>_Frac</c> and its output must equal the reference.
+/// RTL's (rtl/src, C-149) <c>_WriteFloat</c>, <c>_Trunc</c>, <c>_Round</c>, <c>_Int</c>, <c>_Frac</c> and its output must equal the reference.
 /// </summary>
 [Trait("Phase", "2")]
 public sealed class RealFormatTests
@@ -139,7 +139,7 @@ public sealed class RealFormatTests
     public void Reference_MatchesTheSpecExamples(double value, int width, int decimals, string expected) =>
         Assert.Equal(expected, Format(value, width, decimals));
 
-    // ------------------------------------------------------------------ the mini RTL against the reference
+    // ------------------------------------------------------------------ the RTL against the reference
 
     private static readonly (int Width, int Decimals)[] Formats =
         [(23, -1), (10, -1), (30, -1), (0, -1), (0, 0), (0, 2), (12, 5), (0, 17), (0, 40)];
@@ -214,7 +214,7 @@ public sealed class RealFormatTests
     [Trait("Req", "LANG-931")]
     [Trait("Req", "LANG-932")]
     [Trait("Req", "LANG-933")]
-    public async Task MiniRtl_WritesEveryValueLikeTheReference(OptimizationLevel optimization)
+    public async Task Rtl_WritesEveryValueLikeTheReference(OptimizationLevel optimization)
     {
         var values = Values();
 
@@ -236,7 +236,7 @@ public sealed class RealFormatTests
     [InlineData("Round", "-1e19")]
     [InlineData("Trunc", "Z / Z")]
     [Trait("Category", "Toolchain")]
-    public async Task MiniRtl_TruncRoundOutOfRange_IsRuntimeError207(string function, string value)
+    public async Task Rtl_TruncRoundOutOfRange_IsRuntimeError207(string function, string value)
     {
         var source = $"program R; var Z, D: Double; begin Z := 0; D := {value}; Writeln({function}(D)) end.";
 
@@ -244,6 +244,6 @@ public sealed class RealFormatTests
 
         Assert.Equal(207, exitCode);
         Assert.Empty(stdout);
-        Assert.Equal(["Runtime error 207 at $0000000000000000"], stderr);
+        Assert.Matches(@"^Runtime error 207 at \$[0-9A-F]{16}$", Assert.Single(stderr));          // the address: ABI-101, C-173
     }
 }

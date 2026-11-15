@@ -111,7 +111,7 @@ public sealed class LinkDirectiveTests
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", "program P; uses U; begin end.")
             .Add(@"C:\p\U.pas", "unit U;\n{$L lost.def}\ninterface\nimplementation\nend.")
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         var options = new CompilationOptions { MainFile = @"C:\p\P.pas", RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
 
         var result = Compilation.Create(options, [], fs).Emit(new EmitOptions { Stage = EmitStage.Check }, TestContext.Current.CancellationToken);

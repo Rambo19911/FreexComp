@@ -35,12 +35,12 @@ public sealed class EmitTests
 
     private const string Dir = @"C:\p";
 
-    private static string MiniRtl => MiniRtlCompilesTests.MiniRtlDirectory;
+    private static string Rtl => TestRtl.Directory;
 
     private static (Compilation Compilation, InMemoryFileSystem Fs) InMemory(string name, string source)
     {
         var fs = new InMemoryFileSystem().Add(Path.Combine(Dir, name + ".pas"), source)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtl, "System.pas")));
+            .AddSystem();
         var options = new CompilationOptions { MainFile = Path.Combine(Dir, name + ".pas"), RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
         return (Compilation.Create(options, [], fs), fs);
     }
@@ -299,7 +299,7 @@ public sealed class EmitTests
     public void OpenFiles_WinOverTheFileSystem()
     {
         var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", "program P; begin Foo end.")
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtl, "System.pas")));
+            .AddSystem();
         var compilation = Compilation.Create(new CompilationOptions { MainFile = @"C:\p\P.pas", RtlDirectory = @"C:\rtl" },
             [SourceText.From(@"C:\p\P.pas", "program P; begin end.")], fs);
 
@@ -344,7 +344,7 @@ public sealed class EmitTests
         var dir = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
         var main = PathUtil.Normalize(Path.Combine(dir, "EmptyProgram.pas"));
         PhysicalFileSystem.Instance.WriteAllBytes(main, Encoding.UTF8.GetBytes(EmptyProgramSource));
-        var options = new CompilationOptions { MainFile = main, RtlDirectory = MiniRtl, ToolchainDirectory = Path.GetDirectoryName(Clang.Path)! };
+        var options = new CompilationOptions { MainFile = main, RtlDirectory = Rtl, ToolchainDirectory = Path.GetDirectoryName(Clang.Path)! };
 
         var result = Compilation.Create(options, [], PhysicalFileSystem.Instance).Emit(new EmitOptions(), TestContext.Current.CancellationToken);
 
@@ -391,7 +391,7 @@ public sealed class EmitTests
             var options = new CompilationOptions
             {
                 MainFile = Path.Combine(_dir, "P.pas"),
-                RtlDirectory = MiniRtl,
+                RtlDirectory = Rtl,
                 ToolchainDirectory = Path.GetDirectoryName(Clang.Path)!,
                 ObjectDirectory = Path.Combine(_dir, "obj"),
             };
@@ -506,7 +506,7 @@ public sealed class EmitTests
         var options = new CompilationOptions
         {
             MainFile = PathUtil.Normalize(main),
-            RtlDirectory = MiniRtl,
+            RtlDirectory = Rtl,
             ToolchainDirectory = toolchain,
             ObjectDirectory = Path.Combine(dir, "obj"),
             Optimization = optimization,

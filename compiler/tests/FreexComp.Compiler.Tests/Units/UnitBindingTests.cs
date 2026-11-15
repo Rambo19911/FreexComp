@@ -3,7 +3,7 @@ using FreexComp.Compiler.Tests.Emit;
 namespace FreexComp.Compiler.Tests.Units;
 
 /// <summary>
-/// C-069: unit binding through <see cref="Compilation"/> (in memory, mini RTL <c>System</c>): uses scopes and their order
+/// C-069: unit binding through <see cref="Compilation"/> (in memory, the RTL's <c>System</c>, C-149): uses scopes and their order
 /// (LANG-310, 515, 516), privacy of implementation symbols, no transitive import (LANG-517), unit-qualified names incl.
 /// dotted unit names and the longest prefix (LANG-311, 505, 538), implementation-uses cycles (LANG-513), the uses-entry
 /// errors E2200…E2206/E2208, the unit graph's init and link order (LANG-520, CMP-625) and the uses chain of <c>{$IF}</c>.
@@ -16,7 +16,7 @@ public sealed class UnitBindingTests
     private static InMemoryFileSystem Files(string program, params (string Name, string Source)[] units)
     {
         var fs = new InMemoryFileSystem().Add(Path.Combine(Dir, "P.pas"), program)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         foreach (var (name, source) in units)
         {
             fs.Add(Path.Combine(Dir, name), source);
@@ -492,7 +492,7 @@ public sealed class UnitBindingTests
         var fs = Files("program P; uses A, B; begin end.",
             ("A.pas", "unit A; interface implementation initialization finalization end."),
             ("B.pas", "unit B; interface implementation end."));
-        var system = File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas"));
+        var system = TestRtl.SystemSource;
         fs.Add(@"C:\rtl\System.pas", system[..system.LastIndexOf("end.", StringComparison.Ordinal)] + "initialization\nend.\n");
         var result = Run(fs, EmitStage.Ll);
         Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
@@ -574,7 +574,7 @@ public sealed class UnitBindingTests
               br label %exit
             """.Replace("\r\n", "\n"), program);
         Assert.Contains("@\"$units\" = internal constant [3 x { ptr, ptr }] [" +
-            "{ ptr, ptr } { ptr null, ptr null }, " +                                        // the mini RTL's System has no sections
+            "{ ptr, ptr } { ptr null, ptr null }, " +                                        // the RTL's System has no sections
             "{ ptr, ptr } { ptr @\"B.$init\", ptr @\"B.$final\" }, " +
             "{ ptr, ptr } { ptr null, ptr @\"P.$final\" }], align 8", program);
         Assert.Contains("call void @\"System._Startup\"(ptr @\"$units\", i64 3)", program);

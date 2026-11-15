@@ -25,7 +25,7 @@ public sealed class ParallelEmitTests
     /// </summary>
     private static InMemoryFileSystem Project(params int[] errorUnits)
     {
-        var fs = new InMemoryFileSystem().Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+        var fs = new InMemoryFileSystem().AddSystem();
         for (var i = 1; i <= UnitCount; i++)
         {
             var text = new StringBuilder();

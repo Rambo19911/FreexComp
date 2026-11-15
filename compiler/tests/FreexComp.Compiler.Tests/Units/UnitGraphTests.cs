@@ -3,7 +3,7 @@ using FreexComp.Compiler.Tests.Emit;
 namespace FreexComp.Compiler.Tests.Units;
 
 /// <summary>
-/// C-070: the unit graph of a compilation (in memory, mini RTL <c>System</c>) — the initialisation order of LANG-520 (seen as
+/// C-070: the unit graph of a compilation (in memory, the RTL's <c>System</c>, C-149) — the initialisation order of LANG-520 (seen as
 /// the link order of <see cref="EmitResult.CompiledUnits"/>: the program, then the units in init order, CMP-625) for the
 /// LANG-520 example and further shapes, and interface-uses cycle detection (LANG-513): <c>E2205</c> with the path in
 /// canonical names from the cycle's unit first reached from the program, reported in that unit at its uses entry that
@@ -17,7 +17,7 @@ public sealed class UnitGraphTests
     private static InMemoryFileSystem Files(string program, params (string Name, string Source)[] units)
     {
         var fs = new InMemoryFileSystem().Add(Path.Combine(Dir, "P.pas"), program)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         foreach (var (name, source) in units)
         {
             fs.Add(Path.Combine(Dir, name), source);

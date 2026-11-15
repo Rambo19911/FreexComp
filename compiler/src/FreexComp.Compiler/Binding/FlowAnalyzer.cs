@@ -561,7 +561,7 @@ internal sealed class FlowAnalyzer
             case IntrinsicKind.Val:
                 return AssignOrEval(statement.Arguments[2], AssignOrEval(statement.Arguments[1], Eval(statement.Arguments[0], state)));
 
-            case IntrinsicKind.Dispose or IntrinsicKind.FreeMem or IntrinsicKind.ReallocMem:
+            case IntrinsicKind.Dispose or IntrinsicKind.FreeMem or IntrinsicKind.ReallocMem or IntrinsicKind.SetMxcsr:
                 foreach (var argument in statement.Arguments)
                 {
                     state = Eval(argument, state);

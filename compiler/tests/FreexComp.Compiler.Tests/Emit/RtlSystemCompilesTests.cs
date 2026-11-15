@@ -12,25 +12,24 @@ using static FreexComp.Compiler.Tests.Binding.BinderTestHelper;
 namespace FreexComp.Compiler.Tests.Emit;
 
 /// <summary>
-/// C-043: the mini RTL <c>compiler/tests/minirtl/System.pas</c> (CMP-630, 631) binds without diagnostics, emits
-/// the System-only parts of the module (CMP-610, 611, <c>System.Output</c>) and assembles with the pinned clang.
+/// C-043, moved to the real RTL by C-149: <c>rtl/src/System.pas</c> (with its include files) compiles without diagnostics,
+/// emits the System-only parts of the module (CMP-610, 611, <c>System.Output</c>), assembles with the pinned clang and, with
+/// a hand-written <c>_start</c>, links and runs (the helpers of rtl-abi.md §9 called directly).
 /// </summary>
 [Trait("Phase", "2")]
-public sealed class MiniRtlCompilesTests
+public sealed class RtlSystemCompilesTests
 {
-    internal static string MiniRtlDirectory => Path.Combine(RepoPaths.Root, "compiler", "tests", "minirtl");
-
-    internal static string EmitSystem()
+    private static readonly Lazy<string> SystemModule = new(() =>
     {
-        var path = PathUtil.Normalize(Path.Combine(MiniRtlDirectory, "System.pas"));
-        var tree = SyntaxTree.Parse(SourceText.From(path, File.ReadAllText(path)));
-        Assert.Empty(Format(tree.Diagnostics));
-        var result = Binder.BindCompilationUnit(tree, new BuiltInTypes());
-        Assert.Empty(Format(result.Diagnostics));
-        var writer = new LlvmTextWriter();
-        IrEmitter.EmitUnit(Lowerer.Lower(result), writer);
-        return writer.GetText();
-    }
+        var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", "program P; begin end.").AddSystem();
+        var options = new CompilationOptions { MainFile = @"C:\p\P.pas", RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
+        var result = Compilation.Create(options, [], fs).Emit(new EmitOptions { Stage = EmitStage.Ll }, CancellationToken.None);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        return fs.ReadAllText(@"C:\p\obj\System.ll");
+    });
+
+    /// <summary>The module of <c>rtl/src/System.pas</c> (emitted once per test run).</summary>
+    internal static string EmitSystem() => SystemModule.Value;
 
     [Fact]
     [Trait("Req", "CMP-611")]
@@ -79,7 +78,13 @@ public sealed class MiniRtlCompilesTests
         }
 
         Assert.Contains("attributes #2 = { uwtable \"no-builtins\" }\n", text);
-        Assert.DoesNotContain("@llvm.mem", text);
+        // C-149: other System routines may copy aggregates through llvm.memcpy (CMP-413); the four routines never do
+        foreach (var name in new[] { "memcpy", "memmove", "memset", "memcmp" })
+        {
+            var start = text.IndexOf($"\ndefine {(name == "memcmp" ? "i32" : "ptr")} @{name}(", StringComparison.Ordinal);
+            var body = text[start..text.IndexOf("\n}\n", start, StringComparison.Ordinal)];
+            Assert.DoesNotContain("@llvm.mem", body);
+        }
         Assert.DoesNotContain(" #2 ", IrSnapshotTests.Emit(IrSnapshotTests.AddSource));
     }
 
@@ -94,7 +99,7 @@ public sealed class MiniRtlCompilesTests
         Assert.Contains("@_fltused = global i32 39029, align 4\n", text);
         Assert.DoesNotContain("external global", text);
         Assert.DoesNotContain("declare void @\"System.", text);
-        Assert.Contains("call void @\"System._WriteUStr\"(ptr @\"System.ErrOutput\", ", text);
+        Assert.Matches("\n  (%t\\d+ = )?call [^\n]*@\"System\\._[A-Za-z]+\"\\(", text);              // its own helpers, called directly
         // C-056: memory is accessed through pointers, no longer through ntdll's RtlMoveMemory/RtlFillMemory
         Assert.DoesNotContain("@RtlMoveMemory", text);
         Assert.DoesNotContain("@RtlFillMemory", text);
@@ -103,10 +108,10 @@ public sealed class MiniRtlCompilesTests
 
     [Fact]
     [Trait("Req", "CMP-631")]
-    public void MiniRtl_HasTheDefinitionFilesItImports()
+    public void System_ImportsOnlyFromTheRtlDefinitionFiles()
     {
-        var kernel32 = File.ReadAllLines(Path.Combine(MiniRtlDirectory, "kernel32.def"));
-        var ntdll = File.ReadAllLines(Path.Combine(MiniRtlDirectory, "ntdll.def"));
+        var kernel32 = DefLines("kernel32.def");
+        var ntdll = DefLines("ntdll.def");
 
         Assert.Equal(["LIBRARY kernel32.dll", "EXPORTS"], kernel32[..2]);
         Assert.Equal(["LIBRARY ntdll.dll", "EXPORTS"], ntdll[..2]);
@@ -117,6 +122,10 @@ public sealed class MiniRtlCompilesTests
             var name = import.Split('@')[1].Split('(')[0];
             Assert.True(kernel32.Contains(name) || ntdll.Contains(name), $"'{name}' is in neither .def file");
         }
+
+        // the lines of a .def file without its comment lines (rtl/winapi/def files start with "; …")
+        static string[] DefLines(string file) =>
+            [.. File.ReadAllLines(Path.Combine(TestRtl.DefinitionDirectory, file)).Where(l => !l.StartsWith(";", StringComparison.Ordinal))];
     }
 
     public static TheoryData<string> Optimisations() => ["-O0", "-O2"];
@@ -125,7 +134,7 @@ public sealed class MiniRtlCompilesTests
     [MemberData(nameof(Optimisations))]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-630")]
-    public void MiniRtl_AssemblesWithPinnedClang(string optimisation)
+    public void System_AssemblesWithPinnedClang(string optimisation)
     {
         var (exitCode, output) = Clang.CompileToObject(EmitSystem(), optimisation);
 
@@ -199,7 +208,7 @@ public sealed class MiniRtlCompilesTests
         """;
 
     /// <summary>
-    /// C-089: the CMP-391 pattern written by hand around the mini RTL's ABI §9.7 helpers. Scenario 1 raises a TObject and
+    /// C-089: the CMP-391 pattern written by hand around the RTL's ABI §9.7 helpers. Scenario 1 raises a TObject and
     /// catches it; scenario 2 re-raises it from an inner handler (ABI-122: kept) to an outer one; scenario 3 raises nil
     /// (ABI-123: error 204, which without ErrorProc ends the program). Each line: object caught = the raised one (1/0), the
     /// live block count inside the handler, the live block count and <c>_CurrentExcept</c> (as 0/1) after <c>_EndCatch</c>.
@@ -341,12 +350,19 @@ public sealed class MiniRtlCompilesTests
     [Trait("Req", "ABI-121")]
     [Trait("Req", "ABI-122")]
     [Trait("Req", "ABI-123")]
-    public async Task MiniRtl_SehHelpers_CatchRethrowAndRaiseNil(string optimisation)
+    public async Task System_SehHelpers_CatchRethrowAndRaiseNil(string optimisation)
     {
         var (exitCode, stdout, stderr) = await BuildAndRun(SehDriverIr, optimisation);
 
-        Assert.Equal(["1 1 0 0", "1 1 0 0"], stdout);
-        Assert.Equal(["Runtime error 204 at $0000000000000000"], stderr);
+        // C-149: the RTL keeps blocks of its own (per-thread block, text buffers), so the counts are compared, not fixed:
+        // inside the handler exactly the exception object is live in addition; _EndCatch frees it
+        Assert.Equal(2, stdout.Count);
+        Assert.All(stdout, line =>
+        {
+            var v = line.Split(' ').Select(int.Parse).ToArray();
+            Assert.Equal((1, 1, 0), (v[0], v[1] - v[2], v[3]));
+        });
+        Assert.Matches(@"^Runtime error 204 at \$[0-9A-F]{16}$", Assert.Single(stderr));          // the address: ABI-101, C-173
         Assert.Equal(204, exitCode);
     }
 
@@ -357,7 +373,7 @@ public sealed class MiniRtlCompilesTests
     [Trait("Req", "LANG-915")]
     [Trait("Req", "LANG-920")]
     [Trait("Req", "LANG-921")]
-    public async Task MiniRtl_LinksAndRunsWithAHandWrittenEntry(string optimisation)
+    public async Task System_LinksAndRunsWithAHandWrittenEntry(string optimisation)
     {
         var (exitCode, stdout, stderr) = await BuildAndRun(DriverIr, optimisation);
 
@@ -369,12 +385,12 @@ public sealed class MiniRtlCompilesTests
     [Fact]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-630")]
-    public async Task MiniRtl_RuntimeError_WritesTheMessageToStderrAndExitsWithTheCode()
+    public async Task System_RuntimeError_WritesTheMessageToStderrAndExitsWithTheCode()
     {
         var (exitCode, stdout, stderr) = await BuildAndRun(RunErrorIr, "-O0");
 
         Assert.Empty(stdout);
-        Assert.Equal(["Runtime error 200 at $0000000000000000"], stderr);
+        Assert.Matches(@"^Runtime error 200 at \$[0-9A-F]{16}$", Assert.Single(stderr));          // the address: ABI-101, C-173
         Assert.Equal(200, exitCode);
     }
 
@@ -400,7 +416,7 @@ public sealed class MiniRtlCompilesTests
         var dllTool = new DllToolInvoker(runner, Path.Combine(bin, "llvm-dlltool.exe"), fs);
         foreach (var dll in new[] { "kernel32.dll", "ntdll.dll" })
         {
-            var lib = await dllTool.BuildAsync(dll, Path.Combine(MiniRtlDirectory, Path.ChangeExtension(dll, ".def")), dir, ct);
+            var lib = await dllTool.BuildAsync(dll, Path.Combine(TestRtl.DefinitionDirectory, Path.ChangeExtension(dll, ".def")), dir, ct);
             Assert.Null(lib.Failure);
             libs.Add(lib.LibraryPath);
         }

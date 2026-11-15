@@ -65,6 +65,7 @@ internal static class LoweredDump
     {
         LRoutineCallee r => r.Routine.Name,
         LHelperCallee h => h.Helper.Name,
+        LIntrinsicCallee i => i.Name,
         _ => throw new ArgumentOutOfRangeException(nameof(callee)),
     };
 

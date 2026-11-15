@@ -1720,6 +1720,9 @@ internal sealed class FunctionEmitter
             case LCallStatement { Callee: LRoutineCallee callee } call:
                 Call(named: false, callee, call.Arguments);
                 break;
+            case LCallStatement { Callee: LIntrinsicCallee intrinsic } call:
+                CallIntrinsic(null, intrinsic, call.Arguments);
+                break;
             default:
                 throw new InvalidOperationException($"Cannot emit {statement.GetType().Name}.");
         }
@@ -2406,6 +2409,8 @@ internal sealed class FunctionEmitter
                 return _w.ICmp(NewTemp(), IrIntPredicate.Ne, one, new IrIntConstant(IrType.I8, 0));
             }
 
+            case LCall { Callee: LIntrinsicCallee intrinsic } call:
+                return CallIntrinsic(NewTemp(), intrinsic, call.Arguments)!;
             case LCall { Callee: LHelperCallee helper } call:
             {
                 var arguments = call.Arguments.Select((a, i) => ToStorage(Value(a), helper.Helper.ParameterTypes[i])).ToImmutableArray();
@@ -2487,6 +2492,15 @@ internal sealed class FunctionEmitter
             _ => IrAtomicOperator.Xchg,
         };
         return _w.AtomicRmw(NewTemp(), op, address, value, alignment);
+    }
+
+    /// <summary>CMP-413 (C-173, C-174): a plain call of an LLVM intrinsic, never an invoke (intrinsics do not raise).</summary>
+    private IrLocal? CallIntrinsic(string? name, LIntrinsicCallee intrinsic, ImmutableArray<LExpression> arguments)
+    {
+        var values = arguments.Select((a, i) => ToStorage(Value(a), intrinsic.ParameterTypes[i])).ToImmutableArray();
+        var returnType = intrinsic.ReturnType is { } type ? TypeLayout.Of(type).StorageType : IrType.Void;
+        var callee = _module.Intrinsic(intrinsic.Name, returnType, [.. intrinsic.ParameterTypes.Select(t => TypeLayout.Of(t).StorageType)]);
+        return _w.Call(name, returnType, callee, values);
     }
 
     private IrValue Unary(LUnary unary)

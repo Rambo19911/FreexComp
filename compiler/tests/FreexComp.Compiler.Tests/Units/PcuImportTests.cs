@@ -53,7 +53,7 @@ public sealed class PcuImportTests
         var pcus = PcuTests.Pcus(PcuTests.Files(program: program));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", program)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         foreach (var unit in new[] { "U", "V" })
         {
             fs.Add(Path.Combine(Lib, unit + ".pcu"), pcus[unit]).Add(Path.Combine(Lib, unit + ".obj"), "");
@@ -127,7 +127,7 @@ public sealed class PcuImportTests
         var pcus = PcuTests.Pcus(PcuTests.Files(u: PcuTests.ClassUnit, program: Program));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Program)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         foreach (var unit in new[] { "U", "V" })
         {
             fs.Add(Path.Combine(Lib, unit + ".pcu"), pcus[unit]).Add(Path.Combine(Lib, unit + ".obj"), "");
@@ -178,7 +178,7 @@ public sealed class PcuImportTests
         Assert.Contains("\"typeinfo\"", pcus["U"], StringComparison.Ordinal);
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Program)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         fs.Add(Path.Combine(Lib, "U.pcu"), pcus["U"]).Add(Path.Combine(Lib, "U.obj"), "");
 
         var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
@@ -232,7 +232,7 @@ public sealed class PcuImportTests
         Assert.Contains("\"msgId\":1", pcus["U"], StringComparison.Ordinal);
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Program)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         fs.Add(Path.Combine(Lib, "U.pcu"), pcus["U"]).Add(Path.Combine(Lib, "U.obj"), "");
 
         var result = Emit(fs, PcuTests.Options() with { SearchPaths = [Lib] }, EmitStage.Ll);
@@ -289,7 +289,7 @@ public sealed class PcuImportTests
         var pcus = PcuTests.Pcus(PcuTests.Files(u: PcuTests.InterfaceUnit, program: Program));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Program)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         foreach (var unit in new[] { "U", "V" })
         {
             fs.Add(Path.Combine(Lib, unit + ".pcu"), pcus[unit]).Add(Path.Combine(Lib, unit + ".obj"), "");
@@ -432,7 +432,7 @@ public sealed class PcuImportTests
         var pcus = PcuTests.Pcus(PcuTests.Files(u: unit, program: program));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", program)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         foreach (var name in new[] { "U", "V" }.Where(pcus.ContainsKey))
         {
             fs.Add(Path.Combine(Lib, name + ".pcu"), pcus[name]).Add(Path.Combine(Lib, name + ".obj"), "");
@@ -552,7 +552,7 @@ public sealed class PcuImportTests
             CompilationOptions Options(string folder) => new()
             {
                 MainFile = Path.Combine(dir, folder, "P.pas"),
-                RtlDirectory = MiniRtlCompilesTests.MiniRtlDirectory,
+                RtlDirectory = TestRtl.Directory,
                 ToolchainDirectory = Path.GetDirectoryName(Clang.Path)!,
                 ObjectDirectory = Path.Combine(dir, folder, "obj"),
             };

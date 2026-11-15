@@ -74,7 +74,7 @@ public sealed class PcuTests
             .Add(Path.Combine(Dir, "P.pas"), program)
             .Add(Path.Combine(Dir, "U.pas"), u)
             .Add(Path.Combine(Dir, "V.pas"), v)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
 
     internal static CompilationOptions Options(params string[] defines) =>
         new() { MainFile = Path.Combine(Dir, "P.pas"), RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj", Defines = [.. defines] };
@@ -472,7 +472,7 @@ public sealed class PcuTests
         var pcus = Pcus(Files(u: Rich, program: Empty));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Empty)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .AddSystem()
             .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
             .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
 
@@ -558,7 +558,7 @@ public sealed class PcuTests
         var pcus = Pcus(Files(u: ClassUnit, program: Empty));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Empty)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .AddSystem()
             .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
             .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
 
@@ -619,7 +619,7 @@ public sealed class PcuTests
         var pcus = Pcus(Files(u: InterfaceUnit, program: Empty));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Empty)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .AddSystem()
             .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
             .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
 
@@ -659,7 +659,7 @@ public sealed class PcuTests
         var pcus = Pcus(Files(u: Unit, program: Empty));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Empty)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .AddSystem()
             .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
             .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
 
@@ -693,7 +693,7 @@ public sealed class PcuTests
         var pcus = Pcus(Files(u: Unit, program: Empty));
         var fs = new InMemoryFileSystem()
             .Add(@"C:\p\P.pas", Empty)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")))
+            .AddSystem()
             .Add(@"C:\lib\U.pcu", pcus["U"]).Add(@"C:\lib\U.obj", "")
             .Add(@"C:\lib\V.pcu", pcus["V"]).Add(@"C:\lib\V.obj", "");
 

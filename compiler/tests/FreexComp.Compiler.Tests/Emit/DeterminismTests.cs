@@ -13,7 +13,7 @@ namespace FreexComp.Compiler.Tests.Emit;
 public sealed class DeterminismTests : IDisposable
 {
     private static readonly string Corpus = Path.Combine(RepoPaths.Root, "tests", "compiler", "m2.1");
-    private static readonly string MiniRtl = Path.Combine(RepoPaths.Root, "compiler", "tests", "minirtl");
+    private static readonly string Rtl = TestRtl.Directory;
     private const string ObjRoot = @"C:\det\obj";
 
     private readonly string _temp = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
@@ -33,7 +33,7 @@ public sealed class DeterminismTests : IDisposable
 
     private static InMemoryFileSystem LoadSources()
     {
-        var fs = new InMemoryFileSystem().Add(Path.Combine(MiniRtl, "System.pas"), File.ReadAllText(Path.Combine(MiniRtl, "System.pas")));
+        var fs = new InMemoryFileSystem().AddSystem(Rtl);
         foreach (var file in Directory.EnumerateFiles(Corpus).Where(f => f.EndsWith(".pas", StringComparison.Ordinal) || f.EndsWith(".inc", StringComparison.Ordinal)))
         {
             fs.Add(file, File.ReadAllText(file));
@@ -46,7 +46,7 @@ public sealed class DeterminismTests : IDisposable
     private static (string Program, string System) EmitInProcess(InMemoryFileSystem fs, string name)
     {
         var obj = Path.Combine(ObjRoot, name);
-        var options = new CompilationOptions { MainFile = Path.Combine(Corpus, name + ".pas"), RtlDirectory = MiniRtl, ObjectDirectory = obj };
+        var options = new CompilationOptions { MainFile = Path.Combine(Corpus, name + ".pas"), RtlDirectory = Rtl, ObjectDirectory = obj };
         var result = Compilation.Create(options, [], fs).Emit(new EmitOptions { Stage = EmitStage.Ll }, TestContext.Current.CancellationToken);
         Assert.True(result.Success, name + ": " + string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
         return (fs.ReadAllText(Path.Combine(obj, name + ".ll")), fs.ReadAllText(Path.Combine(obj, "System.ll")));
@@ -99,7 +99,7 @@ public sealed class DeterminismTests : IDisposable
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
-        foreach (var arg in new[] { Path.Combine(Corpus, name + ".pas"), "--emit", "ll", "--obj-dir", obj, "--rtl", MiniRtl, "-o", Path.Combine(obj, name + ".exe") })
+        foreach (var arg in new[] { Path.Combine(Corpus, name + ".pas"), "--emit", "ll", "--obj-dir", obj, "--rtl", Rtl, "-o", Path.Combine(obj, name + ".exe") })
         {
             psi.ArgumentList.Add(arg);
         }

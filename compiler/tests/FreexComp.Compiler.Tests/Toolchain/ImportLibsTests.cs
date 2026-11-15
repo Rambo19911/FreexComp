@@ -160,7 +160,7 @@ public sealed partial class ToolchainTests
             var options = new CompilationOptions
             {
                 MainFile = Path.Combine(dir, "P.pas"),
-                RtlDirectory = MiniRtlCompilesTests.MiniRtlDirectory,
+                RtlDirectory = TestRtl.Directory,
                 ToolchainDirectory = Path.GetDirectoryName(Clang.Path)!,
                 ObjectDirectory = Path.Combine(dir, "obj"),
             };

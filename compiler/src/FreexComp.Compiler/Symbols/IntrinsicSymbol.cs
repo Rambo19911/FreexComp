@@ -24,6 +24,9 @@ internal enum IntrinsicKind
     // M2.2 text input (intrinsics.md §3, C-066)
     Read, Readln,
 
+    // M2.2 floating-point control (ABI-105, C-174): _SetMXCSR(Value: Cardinal)
+    SetMxcsr,
+
     // M2.1 functions (constant-foldable, LANG-340)
     Succ, Pred, Ord, Chr, Odd, Abs, Sqr, Low, High, SizeOf, Lo, Hi, Swap,
 
@@ -53,6 +56,9 @@ internal enum IntrinsicKind
 
     // M2.6 generics (LANG-713, C-116; the zero value of the operand type)
     Default,
+
+    // M2.2 machine intrinsics without arguments (never constant): _ReturnAddress (ABI-172, C-173), _GetMXCSR (ABI-105, C-174)
+    ReturnAddress, GetMxcsr,
 }
 
 /// <summary>A compiler-magic routine predeclared in the outermost scope (LANG-900); user symbols may hide it.</summary>
@@ -77,7 +83,11 @@ public sealed class IntrinsicSymbol : Symbol
     internal bool IsStringFunction => Intrinsic is >= IntrinsicKind.Copy and <= IntrinsicKind.UpCase;
 
     /// <summary>A function-like intrinsic that is never a constant expression (not in the LANG-340 list).</summary>
-    internal bool IsNeverConstant => IsAtomic || IsStringFunction || Intrinsic is IntrinsicKind.Eof or IntrinsicKind.Eoln or IntrinsicKind.Slice or IntrinsicKind.TypeInfo;
+    internal bool IsNeverConstant => IsAtomic || IsStringFunction || IsMachineFunction
+        || Intrinsic is IntrinsicKind.Eof or IntrinsicKind.Eoln or IntrinsicKind.Slice or IntrinsicKind.TypeInfo;
+
+    /// <summary><c>_ReturnAddress</c> or <c>_GetMXCSR</c>: no arguments, a value read from the machine (C-173, C-174).</summary>
+    internal bool IsMachineFunction => Intrinsic is IntrinsicKind.ReturnAddress or IntrinsicKind.GetMxcsr;
 
     /// <summary>Signature-help form, e.g. <c>Halt[(ExitCode: Integer)]</c>.</summary>
     public string Signature { get; }

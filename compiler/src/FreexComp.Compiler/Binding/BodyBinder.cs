@@ -792,6 +792,7 @@ internal sealed partial class BodyBinder
         var (minArguments, maxArguments) = intrinsic.Intrinsic switch
         {
             IntrinsicKind.Halt or IntrinsicKind.RunError => (0, 1),
+            IntrinsicKind.SetMxcsr => (1, 1),
             IntrinsicKind.Exit when _routine?.ReturnType != null => (0, 1),          // LANG-413
             IntrinsicKind.Inc or IntrinsicKind.Dec => (1, 2),
             IntrinsicKind.Include or IntrinsicKind.Exclude => (2, 2),
@@ -839,6 +840,10 @@ internal sealed partial class BodyBinder
             case IntrinsicKind.RunError:
                 return new BoundIntrinsicCallStatement(statement, intrinsic, count == 0 ? []
                     : [_expressions.ConvertForAssignment(_expressions.BindExpression(arguments[0].Expression), _types.Integer, arguments[0].Expression)]);
+            case IntrinsicKind.SetMxcsr:
+                // C-174 (ABI-105): _SetMXCSR(Value: Cardinal)
+                return new BoundIntrinsicCallStatement(statement, intrinsic,
+                    [_expressions.ConvertForAssignment(_expressions.BindExpression(arguments[0].Expression), _types.Cardinal, arguments[0].Expression)]);
             case IntrinsicKind.Break or IntrinsicKind.Continue when _loopDepth == 0:
                 _diagnostics.Report(statement.Expression, "E2066", intrinsic.Name);
                 return new BoundErrorStatement(statement);

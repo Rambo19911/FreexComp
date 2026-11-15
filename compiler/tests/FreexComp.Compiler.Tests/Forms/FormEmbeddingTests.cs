@@ -9,7 +9,7 @@ public sealed class FormEmbeddingTests
     private static (EmitResult Result, InMemoryFileSystem Fs) Emit(string main, params (string Name, string Text)[] files)
     {
         var fs = new InMemoryFileSystem().Add(@"C:\p\P.pas", main)
-            .Add(@"C:\rtl\System.pas", File.ReadAllText(Path.Combine(MiniRtlCompilesTests.MiniRtlDirectory, "System.pas")));
+            .AddSystem();
         foreach (var (name, text) in files)
         {
             fs.Add(Path.Combine(@"C:\p", name), text);

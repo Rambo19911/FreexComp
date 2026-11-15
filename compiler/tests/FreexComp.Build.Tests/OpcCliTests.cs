@@ -12,10 +12,21 @@ public sealed partial class OpcCliTests
     private const string Cwd = @"C:\work";
     private const string Source = "program P; begin Writeln('hi') end.";
 
-    private static string MiniRtlSystem => File.ReadAllText(Path.Combine(RepoPaths.Root, "compiler", "tests", "minirtl", "System.pas"));
+    /// <summary>C-149: the real RTL's <c>System.pas</c> and the include files it reads.</summary>
+    private static readonly (string Name, string Text)[] RtlSystem =
+        [.. Directory.GetFiles(Path.Combine(RepoPaths.Root, "rtl", "src"), "*.inc").Order(StringComparer.Ordinal)
+            .Prepend(Path.Combine(RepoPaths.Root, "rtl", "src", "System.pas")).Select(p => (Path.GetFileName(p), File.ReadAllText(p)))];
 
-    private static InMemoryFileSystem Fs(string program = Source) =>
-        new InMemoryFileSystem().Add(@"C:\work\P.pas", program).Add(@"C:\rtl\System.pas", MiniRtlSystem);
+    private static InMemoryFileSystem Fs(string program = Source)
+    {
+        var fs = new InMemoryFileSystem().Add(@"C:\work\P.pas", program);
+        foreach (var (name, text) in RtlSystem)
+        {
+            fs.Add(Path.Combine(@"C:\rtl", name), text);
+        }
+
+        return fs;
+    }
 
     private static (int ExitCode, string[] Out, string Err) Run(IFileSystem fs, params string[] args)
     {
@@ -291,7 +302,7 @@ public sealed partial class OpcCliTests
         var ct = TestContext.Current.CancellationToken;
 
         var code = OpcCommand.Run(
-            [@"src\Hello.pas", "--rtl", Path.Combine(RepoPaths.Root, "compiler", "tests", "minirtl"), "--toolchain", bin, "--verbose"],
+            [@"src\Hello.pas", "--rtl", Path.Combine(RepoPaths.Root, "rtl", "src"), "--toolchain", bin, "--verbose"],
             new OpcEnvironment(dir, stdout, stderr, PhysicalFileSystem.Instance), ct);
 
         Assert.True(code == 0, stdout + stderr.ToString());

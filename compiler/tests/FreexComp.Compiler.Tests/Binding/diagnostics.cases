@@ -44,6 +44,14 @@ var i: Integer; begin i := 1.5 end.
 var a: AnsiChar; c: Char; begin a := c end.
 === E2010 1,19
 var a: AnsiChar = #300; begin end.
+=== E2111 1,43
+var p: Pointer; begin p := _ReturnAddress(1) end.
+=== E2110 1,7
+begin _SetMXCSR end.
+=== E2010 1,20
+resourcestring S = 5; begin end.
+=== E2010 1,19
+resourcestring S: string = 'x'; begin end.
 === E2012 1,25
 var b: Byte; begin b := 256 end.
 === E2012 1,15

@@ -83,6 +83,8 @@ public sealed class BuiltInTypesTests
             "Slice",                                                                                        // M2.5 (C-106)
             "TypeInfo",                                                                                     // M2.5 (C-112)
             "Default",                                                                                      // M2.6 (C-116)
+            "_ReturnAddress",                                                                               // ABI-172 (C-173)
+            "_GetMXCSR", "_SetMXCSR",                                                                       // ABI-105 (C-174)
         ];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), Types.Scope.Names.Order(StringComparer.Ordinal));

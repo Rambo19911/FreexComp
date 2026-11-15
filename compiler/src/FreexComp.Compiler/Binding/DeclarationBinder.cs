@@ -176,6 +176,12 @@ internal sealed partial class DeclarationBinder
             ConstantSymbol symbol;
             if (declaration.Type != null)
             {
+                if (isResourceString)
+                {
+                    // LANG-346: true string constants only; the typed constant is still declared (no follow-up errors)
+                    _diagnostics.Report(declaration.Type, "E2010", "typed constant", _types.String.Name);
+                }
+
                 // LANG-344: a read-only variable with static storage, initialised statically (LANG-522)
                 var type = BindType(declaration.Type, declared: declared);
                 var value = type.TypeKind == TypeKind.Error || !IsStaticallyInitializable(type, declaration.Type) ? null

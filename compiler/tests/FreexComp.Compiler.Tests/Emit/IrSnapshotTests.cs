@@ -1787,8 +1787,61 @@ public sealed class IrSnapshotTests
     [Trait("Req", "LANG-644")]
     public void RttiStoredDefault() => Snapshot.Verify("RttiStoredDefault", Emit(RttiStoredDefaultSource));
 
+    /// <summary>
+    /// C-173 / ABI-172, CMP-413: <c>_ReturnAddress</c> (with or without empty parentheses) is <c>call ptr
+    /// @llvm.returnaddress(i32 0)</c>, the return address of the routine that contains it.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "ABI-172")]
+    [Trait("Req", "CMP-413")]
+    public void ReturnAddress() => Snapshot.Verify("ReturnAddress", Emit(ReturnAddressSource));
+
+    internal const string ReturnAddressSource = """
+        unit M;
+        interface
+        function Caller: Pointer;
+        implementation
+        function Caller: Pointer;
+        begin
+          Result := _ReturnAddress;
+          if _ReturnAddress() = nil then
+            Result := nil;
+        end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-174 / ABI-105, CMP-413: <c>_SetMXCSR(V)</c> stores <c>V</c> in a temporary and loads it with
+    /// <c>llvm.x86.sse.ldmxcsr</c>; <c>_GetMXCSR</c> stores the register with <c>llvm.x86.sse.stmxcsr</c> into a temporary
+    /// and reads it.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "ABI-105")]
+    [Trait("Req", "CMP-413")]
+    public void Mxcsr() => Snapshot.Verify("Mxcsr", Emit(MxcsrSource));
+
+    internal const string MxcsrSource = """
+        unit M;
+        interface
+        procedure Setup;
+        function Current: Cardinal;
+        implementation
+        procedure Setup;
+        begin
+          _SetMXCSR($1F80);
+          _SetMXCSR(_GetMXCSR or $0040);
+        end;
+        function Current: Cardinal;
+        begin
+          Result := _GetMXCSR;
+        end;
+        end.
+        """;
+
     internal static readonly IReadOnlyDictionary<string, string> Sources = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
+        ["ReturnAddress"] = ReturnAddressSource,
+        ["Mxcsr"] = MxcsrSource,
         ["RttiEnum"] = RttiEnumSource,
         ["RttiStoredDefault"] = RttiStoredDefaultSource,
         ["RttiClass"] = RttiClassSource,
@@ -1923,7 +1976,7 @@ public sealed class IrSnapshotTests
     [Trait("Req", "ABI-125")]
     public void SystemHelpersAreNoInline()
     {
-        var text = MiniRtlCompilesTests.EmitSystem();
+        var text = RtlSystemCompilesTests.EmitSystem();
 
         var helpers = text.Split('\n').Where(l => l.StartsWith("define ", StringComparison.Ordinal) && l.Contains(" @\"System._", StringComparison.Ordinal)).ToList();
         Assert.NotEmpty(helpers);
@@ -1937,6 +1990,103 @@ public sealed class IrSnapshotTests
         var unit = Emit("unit M; interface procedure _Own; implementation procedure _Own; begin end; end.");
         Assert.Contains("define void @\"M._Own\"() #0 {", unit);                                  // only unit System
         Assert.DoesNotContain("attributes #4", unit);
+    }
+
+    /// <summary>
+    /// C-166 / ABI-125, CMP-302: a fixture unit System (no RTL file): its <c>_…</c> routines get the <c>noinline</c> group
+    /// <c>#4</c>, the others the default group <c>#0</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "ABI-125")]
+    [Trait("Req", "CMP-302")]
+    public void SystemNoInline() => Snapshot.Verify("SystemNoInline", EmitSystemUnit(SystemNoInlineSource));
+
+    internal const string SystemNoInlineSource = """
+        unit System;
+        interface
+        var Input, Output: Text;
+        procedure _Helper(Code: Integer);
+        procedure _Raise(Obj: Pointer; Addr: Pointer);
+        procedure Plain;
+        implementation
+        procedure _Helper(Code: Integer); begin end;
+        procedure _Raise(Obj: Pointer; Addr: Pointer); begin _Helper(1) end;
+        procedure Plain; begin _Helper(2) end;
+        end.
+        """;
+
+    /// <summary>
+    /// C-166 / ABI-132, CMP-410, CMP-411: in <c>{$I+}</c> state <c>_IOCheck</c> follows every text-I/O statement (Write, Read
+    /// and a call of a System routine whose first parameter is <c>var … : Text</c>); in <c>{$I-}</c> state none does and
+    /// <c>IOResult</c> is an ordinary call.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "ABI-132")]
+    [Trait("Req", "CMP-410")]
+    [Trait("Req", "CMP-411")]
+    public void IOCheck() => Snapshot.Verify("IOCheck", EmitAgainst(IOCheckSystemSource, IOCheckSource));
+
+    internal const string IOCheckSystemSource = """
+        unit System;
+        interface
+        var Input, Output: Text;
+        function IOResult: Integer;
+        procedure Reset(var F: Text);
+        implementation
+        function IOResult: Integer; begin Result := 0 end;
+        procedure Reset(var F: Text); begin end;
+        end.
+        """;
+
+    internal const string IOCheckSource = """
+        unit M;
+        interface
+        procedure Checked(var F: Text; var I: Integer);
+        function Unchecked(var F: Text; var I: Integer): Integer;
+        implementation
+        {$I+}
+        procedure Checked(var F: Text; var I: Integer);
+        begin
+          Reset(F);
+          Read(F, I);
+          Writeln(F, I);
+        end;
+        {$I-}
+        function Unchecked(var F: Text; var I: Integer): Integer;
+        begin
+          Reset(F);
+          Read(F, I);
+          Writeln(F, I);
+          Result := IOResult;
+        end;
+        end.
+        """;
+
+    /// <summary>Emits a stand-alone unit System (bound without another System).</summary>
+    internal static string EmitSystemUnit(string source)
+    {
+        var tree = SyntaxTree.Parse(SourceText.From(@"C:\p\System.pas", source));
+        Assert.Empty(tree.Diagnostics);
+        var result = Binder.BindCompilationUnit(tree, new BuiltInTypes());
+        Assert.Empty(Format(result.Diagnostics));
+        var writer = new LlvmTextWriter();
+        IrEmitter.EmitUnit(Lowerer.Lower(result), writer);
+        return writer.GetText();
+    }
+
+    /// <summary>Emits unit <paramref name="source"/> bound against the System unit <paramref name="system"/>.</summary>
+    internal static string EmitAgainst(string system, string source)
+    {
+        var types = new BuiltInTypes();
+        var bound = Binder.BindCompilationUnit(SyntaxTree.Parse(SourceText.From(@"C:\p\System.pas", system)), types);
+        Assert.Empty(Format(bound.Diagnostics));
+        var tree = SyntaxTree.Parse(SourceText.From(@"C:\p\M.pas", source));
+        Assert.Empty(tree.Diagnostics);
+        var result = Binder.BindCompilationUnit(tree, types, bound);
+        Assert.Empty(Format(result.Diagnostics));
+        var writer = new LlvmTextWriter();
+        IrEmitter.EmitUnit(Lowerer.Lower(result), writer);
+        return writer.GetText();
     }
 
     /// <summary>
