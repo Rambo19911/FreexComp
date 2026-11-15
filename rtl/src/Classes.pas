@@ -5039,7 +5039,7 @@ end;
 { RTL-481 }
 procedure TWriter.WriteRootComponent(Root: TComponent);
 begin
-  raise ENotImplemented.Create('TWriter.WriteRootComponent is not implemented');
+  raise ENotImplemented.Create(SWriteRootNotImplemented);
 end;
 
 { ---------------------------------------------------------------- embedded forms (section 10.2) }

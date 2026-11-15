@@ -35,6 +35,7 @@ public sealed partial class DefFileTests
     [Trait("Req", "RTL-812")]
     [Trait("Req", "RTL-820")]
     [Trait("Req", "RTL-802")]
+    [Trait("Req", "RTL-002")]
     public void DefFilesMatchDeclarations()
     {
         var formatProblems = new List<string>();

@@ -45,6 +45,7 @@ public sealed class StructSizesTests
         new("TSystemInfo", 48, ("dwPageSize", 4), ("lpMinimumApplicationAddress", 8), ("dwActiveProcessorMask", 24), ("dwNumberOfProcessors", 32), ("wProcessorLevel", 44)),
         new("TOSVersionInfoW", 276, ("dwPlatformId", 16), ("szCSDVersion", 20)),
         new("TOSVersionInfoExW", 284, ("wServicePackMajor", 276), ("wSuiteMask", 280), ("wProductType", 282), ("wReserved", 283)),
+        new("TActCtxW", 56, ("dwFlags", 4), ("lpSource", 8), ("wProcessorArchitecture", 16), ("wLangId", 18), ("lpAssemblyDirectory", 24), ("lpResourceName", 32), ("lpApplicationName", 40), ("hModule", 48)),
 
         // user32 rows (R-109)
         new("TMsg", 48, ("message", 8), ("wParam", 16), ("lParam", 24), ("time", 32), ("pt", 36), ("lPrivate", 44)),

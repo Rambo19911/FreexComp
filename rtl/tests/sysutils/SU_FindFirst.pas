@@ -1,3 +1,5 @@
+// covers:
+// (none: the FindFirst / FindNext / FindClose rows of sysutils.md section 8.1 carry no RTL id)
 // opc-run: tempdir
 program SU_FindFirst;
 { sysutils.md section 8.1: FindFirst / FindNext / FindClose and TSearchRec (Name, Size, Attr, TimeStamp in local time).

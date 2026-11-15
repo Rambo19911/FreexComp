@@ -112,6 +112,77 @@ public sealed class GoldenRunnerEndToEndTests
         GoldenRunner.TryDelete(dir);
     }
 
+    /// <summary>RTL-909: a missing toolchain or opc fails the run (it is never skipped), and the message names what is missing.</summary>
+    [Fact]
+    [Trait("Req", "RTL-909")]
+    public async Task Run_MissingToolchain_FailsAndNamesWhatIsMissing()
+    {
+        var dir = NewDir();
+        var @case = Write(dir, Program, (".out", "out\n"));
+        var missingLlvm = Path.Combine(dir, "no-llvm");
+        var missingOpc = Path.Combine(dir, "no-opc.exe");
+
+        var noToolchain = await GoldenRunner.RunAsync(@case, RtlSetup.Default with { ToolchainDirectory = missingLlvm },
+            TestContext.Current.CancellationToken);
+        var noOpc = await GoldenRunner.RunAsync(@case, RtlSetup.Default with { OpcPath = missingOpc }, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(noToolchain);
+        Assert.Contains("toolchain missing", noToolchain, StringComparison.Ordinal);
+        Assert.Contains(Path.Combine(missingLlvm, "clang.exe"), noToolchain, StringComparison.Ordinal);
+        Assert.Contains(Path.Combine(missingLlvm, "lld-link.exe"), noToolchain, StringComparison.Ordinal);
+        Assert.Contains(Path.Combine(missingLlvm, "llvm-dlltool.exe"), noToolchain, StringComparison.Ordinal);
+        Assert.NotNull(noOpc);
+        Assert.Contains(missingOpc, noOpc, StringComparison.Ordinal);
+        GoldenRunner.TryDelete(dir);
+    }
+
+    /// <summary>Longer test programs from before RTL-905 was checked; each may not grow (to be split, R-200 report).</summary>
+    public static readonly Dictionary<string, int> OversizedPrograms = new(StringComparer.Ordinal)
+    {
+        ["system/Sys_Interfaces"] = 601,
+        ["winapi/Win_User32Smoke"] = 539,
+        ["system/Sys_ValFloat"] = 527,
+        ["winapi/Win_CommCtrlSmoke"] = 366,
+        ["system/Sys_Threads"] = 363,
+    };
+
+    /// <summary>"At most ~300 lines": the bound the size check applies (300 plus a tolerance of 20 lines for the "~").</summary>
+    public const int MaxProgramLines = 320;
+
+    /// <summary>
+    /// RTL-905: every test program starts with a header comment that has a <c>// covers:</c> line, and is at most ~300
+    /// lines (<see cref="MaxProgramLines"/>; the programs of <see cref="OversizedPrograms"/> may not grow).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "RTL-905")]
+    public void Programs_HaveACoversHeaderAndStaySmall()
+    {
+        var problems = new List<string>();
+        foreach (var @case in RtlCorpus.Discover(RtlSetup.TestsDirectory))
+        {
+            var text = File.ReadAllText(@case.SourcePath);
+            if (!text.TrimStart('﻿').Split('\n').TakeWhile(l => l.TrimStart().StartsWith("//", StringComparison.Ordinal))
+                    .Any(l => l.TrimStart()[2..].TrimStart().StartsWith("covers:", StringComparison.Ordinal)))
+            {
+                problems.Add($"{@case.Id}: no '// covers:' line in the leading comment block");
+            }
+
+            var lines = text.TrimEnd('\n').Split('\n').Length;
+            var limit = OversizedPrograms.TryGetValue(@case.Id, out var old) ? old : MaxProgramLines;
+            if (lines > limit)
+            {
+                problems.Add($"{@case.Id}: {lines} lines (at most {limit})");
+            }
+        }
+
+        foreach (var id in OversizedPrograms.Keys.Where(id => !RtlCorpus.Discover(RtlSetup.TestsDirectory).Any(c => c.Id == id)))
+        {
+            problems.Add($"{id}: listed in OversizedPrograms but not a test program");
+        }
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
     private static string NewDir()
     {
         var dir = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));

@@ -1,0 +1,7 @@
+# passing
+ok StrToInt
+ok raise EDivByZero
+# failing
+FAIL wrong message: expected EConvertError 'other text' got EConvertError '''y'' is not a valid integer value'
+FAIL wrong class: expected EInOutError '''z'' is not a valid integer value' got EConvertError '''z'' is not a valid integer value'
+# passed 2 failed 2

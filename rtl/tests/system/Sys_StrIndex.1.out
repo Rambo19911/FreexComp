@@ -1,0 +1,6 @@
+ok S[1]
+ok S[Length(S)]
+ok S[Length(S)+1] is the terminator
+ok write S[2]
+ok AnsiString A[Length(A)+1] is the terminator
+# passed 5 failed 0

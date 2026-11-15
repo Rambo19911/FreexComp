@@ -1,0 +1,34 @@
+# open arrays: pointer and High
+ok static array 3..7: High
+ok static array 3..7: Low
+ok static array 3..7: Length
+ok static array 3..7: sum through a nested open array
+ok static array 3..7: pointer to the caller's first element
+ok dynamic array: High
+ok dynamic array: Low
+ok dynamic array: Length
+ok dynamic array: sum through a nested open array
+ok dynamic array: pointer to the caller's first element
+ok open array constructor: High
+ok open array constructor: Low
+ok open array constructor: Length
+ok open array constructor: sum through a nested open array
+ok empty dynamic array: High
+ok empty dynamic array: Low
+ok empty dynamic array: Length
+ok empty dynamic array: sum through a nested open array
+ok empty: sum
+ok empty: no element pointer
+# array of const: TVarRec
+ok SizeOf(TVarRec)
+ok payload at offset 8
+ok integers of 32 bits or less and enumerations: vtInteger
+ok Int64: vtInt64; Boolean: vtBoolean
+ok Char: vtWideChar; AnsiChar: vtChar
+ok reals: vtExtended
+ok string, literal: vtUnicodeString; AnsiString; ShortString
+ok PChar: vtPWideChar; PAnsiChar: vtPChar
+ok object, class, pointer, nil
+ok payloads
+ok empty array of const
+# passed 31 failed 0

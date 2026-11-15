@@ -143,7 +143,7 @@ public sealed class ImportTableTests
         return dlls;
     }
 
-    private static async Task<(int ExitCode, string Output)> RunAsync(string file, string arguments, string workingDirectory)
+    internal static async Task<(int ExitCode, string Output)> RunAsync(string file, string arguments, string workingDirectory)
     {
         var info = new ProcessStartInfo(file, arguments)
         {

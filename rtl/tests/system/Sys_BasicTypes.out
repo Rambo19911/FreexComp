@@ -1,0 +1,18 @@
+# Extended = Double
+ok SizeOf(Extended)
+ok Extended variable as large as Double
+ok Extended RTTI kind is tkFloat
+ok Extended RTTI float type equals that of Double
+ok Extended RTTI float type is ftDouble
+ok Extended arithmetic is Double arithmetic
+ok Extended overflows where Double does
+# LongInt and LongWord are 32-bit
+ok SizeOf(LongInt)
+ok SizeOf(LongWord)
+ok Low(LongInt)
+ok High(LongInt)
+ok Low(LongWord)
+ok High(LongWord)
+ok LongInt wraps at 32 bits
+ok LongWord wraps at 32 bits
+# passed 15 failed 0

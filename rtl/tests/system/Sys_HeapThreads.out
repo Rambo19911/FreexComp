@@ -1,0 +1,21 @@
+# four threads and the main thread use the heap at once
+ok thread 0 started
+ok thread 0 ended
+ok thread 1 started
+ok thread 1 ended
+ok thread 2 started
+ok thread 2 ended
+ok thread 3 started
+ok thread 3 ended
+ok job 0: every block kept its content
+ok job 0: its string grew undisturbed
+ok job 1: every block kept its content
+ok job 1: its string grew undisturbed
+ok job 2: every block kept its content
+ok job 2: its string grew undisturbed
+ok job 3: every block kept its content
+ok job 3: its string grew undisturbed
+ok job 4: every block kept its content
+ok job 4: its string grew undisturbed
+ok allocation counters balance after the threads ended
+# passed 19 failed 0

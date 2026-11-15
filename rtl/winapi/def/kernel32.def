@@ -2,10 +2,12 @@
 ; Content: the private kernel32 imports of System (RTL-801) and the kernel32 part of the Windows unit (winapi.md 5.1).
 LIBRARY kernel32.dll
 EXPORTS
+ActivateActCtx
 AddVectoredExceptionHandler
 CloseHandle
 CompareStringEx
 CopyFileW
+CreateActCtxW
 CreateDirectoryW
 CreateEventW
 CreateFileW
@@ -46,6 +48,7 @@ GetModuleFileNameW
 GetModuleHandleW
 GetProcessHeap
 GetStdHandle
+GetSystemDirectoryW
 GetSystemInfo
 GetSystemTime
 GetSystemTimeAsFileTime

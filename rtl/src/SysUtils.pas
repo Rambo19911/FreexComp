@@ -3734,7 +3734,7 @@ begin
     208: Result := EZeroDivide.Create(SZeroDivide);
     211: Result := EAbstractError.Create(SAbstractError);
     215: Result := EIntOverflow.Create(SIntOverflow);
-    216: Result := EAccessViolation.Create('Access violation');
+    216: Result := EAccessViolation.Create(SAccessViolationError);
     218: Result := EPrivilege.Create(SPrivilege);
     219: Result := EInvalidCast.Create(SInvalidCast);
     228: Result := EIntfCastError.Create(SIntfCastError);
@@ -4585,6 +4585,13 @@ begin
   raise EAssertionFailed.CreateFmt(SAssertError, [M, FileName, Line]) at Addr;
 end;
 
+{ System.AbstractErrorProc (ABI-103, RTL-133): EAbstractError, raised at the address in _AbstractError like the
+  runtime error 211 that follows when no hook is set }
+procedure AbstractHandler;
+begin
+  raise EAbstractError.Create(SAbstractError) at _ReturnAddress;
+end;
+
 { System.ExceptProc (ABI-124, RTL-215): the report line; System then halts with 217 }
 procedure UnhandledHandler(Obj: TObject; Addr: Pointer);
 var
@@ -4611,9 +4618,11 @@ initialization
   ExceptObjProc := @MapOSException;
   AssertErrorProc := @AssertHandler;
   ExceptProc := @UnhandledHandler;
+  AbstractErrorProc := @AbstractHandler;
   ReadVersion;
 
 finalization
+  AbstractErrorProc := nil;
   ExceptProc := nil;
   AssertErrorProc := nil;
   ExceptObjProc := nil;

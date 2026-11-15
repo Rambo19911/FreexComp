@@ -3,7 +3,8 @@
   Written by hand from the Win32 reference on learn.microsoft.com (RTL-800): the "Window Notifications",
   "Keyboard Input Notifications", "Mouse Input Notifications", "Menu Notifications", "Dialog Box Notifications",
   "Clipboard Messages", "Painting and Drawing Messages", High DPI and "Window Messages" pages of each WM_* message,
-  and the Edit, Button, List Box, Combo Box, Static and Scroll Bar control reference (messages and notifications).
+  and the Edit, Button, List Box, Combo Box, Static and Scroll Bar control reference (messages and notifications),
+  including EM_SETCUEBANNER, EM_GETCUEBANNER, CB_SETMINVISIBLE, CB_GETMINVISIBLE, CB_SETCUEBANNER, CB_GETCUEBANNER.
   The common-control messages (TCM_, LVM_, TVM_, TB_, SB_SETTEXT..., PBM_, TBM_) are in CommCtrl.
   Cracked records overlay TMessage: Msg at 0, the WParam slot at 8, the LParam slot at 16, Result at 24, size 32.
   They are plain records with explicit filler fields (no variant parts), so the unit needs no variant records. }
@@ -330,6 +331,9 @@ const
   EM_GETLIMITTEXT = $00D5;
   EM_POSFROMCHAR = $00D6;
   EM_CHARFROMPOS = $00D7;
+  ECM_FIRST = $1500;                   { edit messages of comctl32 version 6 (commctrl.h) }
+  EM_SETCUEBANNER = ECM_FIRST + 1;
+  EM_GETCUEBANNER = ECM_FIRST + 2;
   EC_LEFTMARGIN = $0001;
   EC_RIGHTMARGIN = $0002;
   EC_USEFONTINFO = $FFFF;
@@ -459,6 +463,11 @@ const
   CB_SETDROPPEDWIDTH = $0160;
   CB_INITSTORAGE = $0161;
   CB_GETCOMBOBOXINFO = $0164;
+  CBM_FIRST = $1700;                   { combo box messages of comctl32 version 6 (commctrl.h) }
+  CB_SETMINVISIBLE = CBM_FIRST + 1;
+  CB_GETMINVISIBLE = CBM_FIRST + 2;
+  CB_SETCUEBANNER = CBM_FIRST + 3;
+  CB_GETCUEBANNER = CBM_FIRST + 4;
   CBN_ERRSPACE = -1;
   CBN_SELCHANGE = 1;
   CBN_DBLCLK = 2;

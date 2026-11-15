@@ -14,6 +14,10 @@ procedure CheckEqB(Expected, Actual: Boolean; const Name: string);
 { Passes when Expected and Actual are at most MaxUlps units in the last place apart (+0 and -0 are 0 apart);
   a NaN passes only against the identical bit pattern. }
 procedure CheckEqF(Expected, Actual: Double; MaxUlps: Integer; const Name: string);
+{ Exception tests (RTL-911): Expect stores the expected class name and message; inside the handler,
+  CheckRaises(Name, E.ClassName, E.Message) compares the caught exception's with them. Needs no SysUtils. }
+procedure Expect(const ExceptionClass, ExceptionMessage: string);
+procedure CheckRaises(const Name, ActualClass, ActualMessage: string);
 procedure Section(const Title: string);
 procedure Done;
 
@@ -26,6 +30,7 @@ implementation
 
 var
   Passed, Failed: Integer;
+  ExpectedClass, ExpectedMessage: string;
 
 function IntStr(V: Int64): string;
 begin
@@ -190,6 +195,20 @@ begin
     Pass(Name)
   else
     Fail(Name, FloatText(Expected), FloatText(Actual));
+end;
+
+procedure Expect(const ExceptionClass, ExceptionMessage: string);
+begin
+  ExpectedClass := ExceptionClass;
+  ExpectedMessage := ExceptionMessage;
+end;
+
+procedure CheckRaises(const Name, ActualClass, ActualMessage: string);
+begin
+  if (ActualClass = ExpectedClass) and (ActualMessage = ExpectedMessage) then
+    Pass(Name)
+  else
+    Fail(Name, ExpectedClass + ' ' + QuoteStr(ExpectedMessage), ActualClass + ' ' + QuoteStr(ActualMessage));
 end;
 
 procedure Section(const Title: string);

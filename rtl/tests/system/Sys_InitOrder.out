@@ -1,0 +1,9 @@
+init InitOrderC
+init InitOrderD
+init InitOrderB
+init InitOrderA
+main
+final InitOrderA
+final InitOrderB
+final InitOrderD
+final InitOrderC

@@ -1,0 +1,4 @@
+before SysUtils initialization: ErrorProc FALSE, ExceptProc FALSE, ExceptObjProc FALSE, AssertErrorProc FALSE, AbstractErrorProc FALSE
+main block: ErrorProc TRUE, ExceptProc TRUE, ExceptObjProc TRUE, AssertErrorProc TRUE, AbstractErrorProc TRUE
+abstract call: EAbstractError: Abstract method called
+after SysUtils finalization: ErrorProc FALSE, ExceptProc FALSE, ExceptObjProc FALSE, AssertErrorProc FALSE, AbstractErrorProc FALSE

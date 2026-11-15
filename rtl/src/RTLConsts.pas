@@ -29,6 +29,7 @@ resourcestring
   SOutOfMemory = 'Out of memory';
   SInvalidCast = 'Invalid class typecast';
   SAccessViolation = 'Access violation at address %s: %s of address %s';
+  SAccessViolationError = 'Access violation';                { 216, sysutils.md RTL-212 }
   SStackOverflow = 'Stack overflow';
   SPrivilege = 'Privileged instruction';
   SExternalException = 'External exception %x';
@@ -70,6 +71,7 @@ resourcestring
   SDuplicateItem = 'List does not allow duplicates ($0%x)';
   SAssignError = 'Cannot assign a %s to a %s';
   SAssignNil = 'Cannot assign nil to a %s';
+  SWriteRootNotImplemented = 'TWriter.WriteRootComponent is not implemented';   { the TWriter stub, RTL-481 }
   SReadError = 'Stream read error';
   SWriteError = 'Stream write error';
   SStreamSetSize = 'Unable to change stream size';

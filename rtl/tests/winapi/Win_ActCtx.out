@@ -1,0 +1,13 @@
+# GetSystemDirectoryW
+ok length of the system directory
+ok the result is the length without the terminator
+ok no trailing backslash
+ok a too small buffer gives the size needed, with the terminator
+# CreateActCtxW, ActivateActCtx
+ok SizeOf(TActCtxW)
+ok a missing manifest resource fails
+ok with an error code
+ok manifest resource 124 of shell32.dll gives a context
+ok ActivateActCtx succeeds
+ok and returns a cookie
+# passed 10 failed 0

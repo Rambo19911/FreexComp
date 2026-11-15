@@ -95,7 +95,7 @@ public sealed class UnitAliasTests
     }
 
     /// <summary>LANG-534 checks; returns the entries in file order.</summary>
-    private static List<(string Alias, string Canonical)> Validate(byte[] bytes, List<string> problems)
+    internal static List<(string Alias, string Canonical)> Validate(byte[] bytes, List<string> problems)
     {
         var result = new List<(string Alias, string Canonical)>();
         JsonDocument document;

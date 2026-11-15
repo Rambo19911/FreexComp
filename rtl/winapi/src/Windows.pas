@@ -9,7 +9,7 @@
     handleapi.h, timezoneapi.h, profileapi.h, synchapi.h, stringapiset.h, winnls.h, wdm.h RtlGetVersion);
   - the structure pages SYSTEMTIME, FILETIME, WIN32_FIND_DATAW, WIN32_FILE_ATTRIBUTE_DATA, RTL_CRITICAL_SECTION,
     EXCEPTION_RECORD, TIME_ZONE_INFORMATION, SECURITY_ATTRIBUTES, OVERLAPPED, SYSTEM_INFO, OSVERSIONINFOW,
-    OSVERSIONINFOEXW;
+    OSVERSIONINFOEXW, ACTCTXW;
   - System Error Codes (0-499), Generic Access Rights, File Attribute Constants, Locale Information Constants,
     Memory Protection Constants, Code Page Identifiers.
   - user32 (winuser.h): the reference page of every user32 function declared below; the structure pages MSG,
@@ -284,6 +284,34 @@ type
   TOSVersionInfoEx = TOSVersionInfoExW;
   POSVersionInfoEx = POSVersionInfoExW;
 
+  { activation context (winbase.h), for the run-time fallback of RTL-871 }
+  PActCtxW = ^TActCtxW;
+  TActCtxW = record
+    cbSize: ULONG;
+    dwFlags: DWORD;
+    lpSource: LPCWSTR;
+    wProcessorArchitecture: Word;
+    wLangId: LANGID;
+    lpAssemblyDirectory: LPCWSTR;
+    lpResourceName: LPCWSTR;
+    lpApplicationName: LPCWSTR;
+    hModule: THandle;
+  end;
+  ACTCTXW = TActCtxW;
+  TActCtx = TActCtxW;
+  PActCtx = PActCtxW;
+
+const
+  { ACTCTXW.dwFlags }
+  ACTCTX_FLAG_PROCESSOR_ARCHITECTURE_VALID = $00000001;
+  ACTCTX_FLAG_LANGID_VALID = $00000002;
+  ACTCTX_FLAG_ASSEMBLY_DIRECTORY_VALID = $00000004;
+  ACTCTX_FLAG_RESOURCE_NAME_VALID = $00000008;
+  ACTCTX_FLAG_SET_PROCESS_DEFAULT = $00000010;
+  ACTCTX_FLAG_APPLICATION_NAME_VALID = $00000020;
+  ACTCTX_FLAG_HMODULE_VALID = $00000080;
+
+type
   { user32 records (winuser.h) }
   PMsg = ^TMsg;
   TMsg = record
@@ -1897,7 +1925,11 @@ procedure OutputDebugStringW(lpOutputString: LPCWSTR); stdcall; external kernel3
 procedure OutputDebugString(lpOutputString: LPCWSTR); stdcall; external kernel32 name 'OutputDebugStringW';
 procedure GetSystemInfo(var lpSystemInfo: TSystemInfo); stdcall; external kernel32 name 'GetSystemInfo';
 function MulDiv(nNumber, nNumerator, nDenominator: Integer): Integer; stdcall; external kernel32 name 'MulDiv';
-
+function GetSystemDirectoryW(lpBuffer: LPWSTR; uSize: UINT): UINT; stdcall; external kernel32 name 'GetSystemDirectoryW';
+function GetSystemDirectory(lpBuffer: LPWSTR; uSize: UINT): UINT; stdcall; external kernel32 name 'GetSystemDirectoryW';
+function CreateActCtxW(var pActCtx: TActCtxW): THandle; stdcall; external kernel32 name 'CreateActCtxW';
+function CreateActCtx(var pActCtx: TActCtxW): THandle; stdcall; external kernel32 name 'CreateActCtxW';
+function ActivateActCtx(hActCtx: THandle; var lpCookie: ULONG_PTR): BOOL; stdcall; external kernel32 name 'ActivateActCtx';
 { ---------------------------------------------------------------- kernel32: heap / memory }
 function GetProcessHeap: THandle; stdcall; external kernel32 name 'GetProcessHeap';
 function HeapAlloc(hHeap: THandle; dwFlags: DWORD; dwBytes: SIZE_T): Pointer; stdcall; external kernel32 name 'HeapAlloc';
