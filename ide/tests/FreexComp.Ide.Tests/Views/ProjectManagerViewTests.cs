@@ -382,6 +382,43 @@ public sealed partial class ProjectManagerViewTests
     }
 
     /// <summary>
+    /// I-193: the context menus of <see cref="ContextMenusAndSelection"/> at the product's phase 3 (tool-windows.md §Project
+    /// Manager; P5+ items such as <c>project.addNewForm</c> omitted, UI-MENU-042).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-TW-014")]
+    [Trait("Req", "UI-MENU-042")]
+    public async Task ContextMenusAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => HelloProject(o));
+        var pm = Pm(h);
+        await OpenHelloAsync(h);
+        Dispatcher.UIThread.RunJobs();
+        static string[] Ids(IReadOnlyList<Core.Menus.MenuItemModel> menu) => [.. menu.Select(m => m.Command?.Id ?? "-")];
+
+        pm.Select(pm.Find("$project")!);
+        Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", "run.start", "run.startWithoutDebugging", "-",
+            "project.addNewUnit", "project.addExistingFile", "-", "project.viewSource", "file.showInExplorer", "project.openOutputFolder",
+            "file.copyPath", "-", "file.closeProject", "-", "project.options"], Ids(pm.ContextMenu()));
+        pm.Select(pm.Find("lib/")!);
+        Assert.Equal(["project.addNewUnit", "project.addExistingFile", "-", "file.showInExplorer", "file.copyPath"], Ids(pm.ContextMenu()));
+        pm.Select(pm.Find("Unit1.pas")!);
+        Assert.Equal(["projectManager.open", "-", "file.save", "-", "project.renameFile", "project.removeFile", "project.deleteFile", "-",
+            "file.showInExplorer", "file.copyPath"], Ids(pm.ContextMenu()));
+        pm.Select(pm.Find("notes.md")!, ProjectSelectMode.Toggle);
+        Assert.Equal(["projectManager.open", "-", "project.removeFile", "project.deleteFile"], Ids(pm.ContextMenu()));
+        pm.ClearSelection();
+        Assert.Equal(["project.addNewUnit", "project.addExistingFile", "-", "projectManager.collapseAll"], Ids(pm.ContextMenu()));
+
+        h.RightClick(Row + "notes.md");
+        var menu = h.Find<TreeViewItem>(Row + "notes.md").ContextMenu ?? h.Find<TreeView>("Tool.ProjectManager.Tree").ContextMenu;
+        Assert.NotNull(menu);
+        Assert.Contains("Context.projectManager.open", menu!.Items.OfType<MenuItem>().Select(AutomationIds.Get));
+        menu.Close();
+    }
+
+    /// <summary>
     /// IDE-PM-101 with UI-TW-017 (I-180): in a 300-unit project the tree is virtualized, so the active document's row
     /// has no container until it is scrolled to; sync-with-editor brings it into view (scroll by item) and selects it.
     /// </summary>

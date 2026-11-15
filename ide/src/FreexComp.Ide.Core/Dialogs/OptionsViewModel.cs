@@ -439,17 +439,11 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         Close(true);
     }
 
-    /// <summary>
-    /// Implemented-phase settings whose features are still open tasks: shown disabled like later-phase fields until
-    /// those tasks land. Empty since I-116.
-    /// </summary>
-    public static readonly IReadOnlySet<string> PendingFeatureKeys = new HashSet<string>(StringComparer.Ordinal);
-
     private void Update()
     {
         foreach (var field in _fields.Values)
         {
-            field.IsEnabled = field.Phase <= _implementedPhase && !PendingFeatureKeys.Contains(field.Key.Name)
+            field.IsEnabled = field.Phase <= _implementedPhase
                 && (field.EnabledBy is null || _fields[field.EnabledBy].Value is true);
         }
 

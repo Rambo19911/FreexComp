@@ -149,7 +149,7 @@ public sealed class ClassifierTests
         var directory = Path.Combine(AppContext.BaseDirectory, "TestData", "files", "highlight");
         var sources = Directory.GetFiles(directory).Where(f => !f.EndsWith(".classes", StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToList();
 
-        string[] pascalCases = ["asm", "chars", "comments", "contextual", "directives", "keywords", "multiline-string", "numbers", "strings", "unterminated"];
+        string[] pascalCases = ["asm", "chars", "comments", "contextual", "directives", "keywords", "multiline-string", "numbers", "strings", "syntactic", "unterminated"];
         Assert.Equal(pascalCases, sources.Where(f => f.EndsWith(".pas", StringComparison.Ordinal)).Select(Path.GetFileNameWithoutExtension));
         Assert.Contains(sources, f => Path.GetFileName(f) == "sample.form");
         Assert.Contains(sources, f => Path.GetFileName(f) == "sample.pproj");

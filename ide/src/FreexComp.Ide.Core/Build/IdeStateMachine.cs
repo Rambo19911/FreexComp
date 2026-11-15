@@ -112,8 +112,9 @@ public static class IdeCommandAvailability
         ["project.setConfiguration"] = IdleOnly,
         ["run.parameters"] = IdleOnly,
         ["project.cancelBuild"] = [IdeState.Building],
-        ["run.start"] = [IdeState.Idle, IdeState.Paused],
-        ["run.startWithoutDebugging"] = IdleOnly,
+        // IDE-P3-004: available while Running too, where they ask Msg.Run.AlreadyRunning (Restart = run.restart).
+        ["run.start"] = [IdeState.Idle, IdeState.Running, IdeState.Paused],
+        ["run.startWithoutDebugging"] = [IdeState.Idle, IdeState.Running],
         ["run.stop"] = [IdeState.Running, IdeState.DebugRunning, IdeState.Paused],
         ["run.restart"] = [IdeState.Running, IdeState.DebugRunning, IdeState.Paused],
         // File operations on the project (IDE-PM-032); opening/closing a project asks to stop a running program first.

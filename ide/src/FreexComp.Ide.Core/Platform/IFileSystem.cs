@@ -74,6 +74,13 @@ public interface IFileSystem
     /// <summary>True when the file exists and carries the read-only attribute.</summary>
     bool IsReadOnly(string path);
 
+    /// <summary>
+    /// The attributes of an existing file (Find in Files skips hidden and system files, IDE-ED-120). The default knows only
+    /// the read-only flag; the physical file system returns the real attributes.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The file does not exist (physical file system).</exception>
+    FileAttributes GetAttributes(string path) => IsReadOnly(path) ? FileAttributes.ReadOnly : FileAttributes.Normal;
+
     /// <summary>Sets or clears the read-only attribute of an existing file.</summary>
     /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     /// <exception cref="UnauthorizedAccessException">The attributes may not be changed.</exception>

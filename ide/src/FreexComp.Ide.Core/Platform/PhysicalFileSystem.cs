@@ -55,6 +55,8 @@ public sealed class PhysicalFileSystem : IFileSystem
 
     public long GetLength(string path) => new FileInfo(path).Length;
 
+    public FileAttributes GetAttributes(string path) => File.GetAttributes(path);
+
     public bool IsReadOnly(string path) =>
         File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly);
 

@@ -109,6 +109,47 @@ public sealed class FindInFilesTests
         Assert.Empty(bad.Matches);
     }
 
+    /// <summary>IDE-ED-120 (I-187): files with the hidden or system attribute are not read from disk in any scope.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-120")]
+    public async Task HiddenAndSystemFilesAreSkipped()
+    {
+        File(Dir + @"\Hello.pproj", """
+            { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas", "files": [ { "path": "Hidden.pas" }, { "path": "System.pas" } ] }
+            """);
+        File(Dir + @"\Hello.pas", "program Hello;\nbegin\n  Needle;\nend.\n");
+        File(Dir + @"\Hidden.pas", "needle hidden\n");
+        File(Dir + @"\System.pas", "needle system\n");
+        File(Dir + @"\sub\Deep.pas", "needle hidden too\n");
+        _fs.SetAttributes(Dir + @"\Hidden.pas", FileAttributes.Hidden);
+        _fs.SetAttributes(Dir + @"\System.pas", FileAttributes.System | FileAttributes.ReadOnly);
+        _fs.SetAttributes(Dir + @"\sub\Deep.pas", FileAttributes.Hidden | FileAttributes.Archive);
+        Assert.Equal(FileAttributes.Normal, _fs.GetAttributes(Dir + @"\Hello.pas"));
+        Assert.True(await _services.Projects.OpenAsync(Dir + @"\Hello.pproj"));
+
+        var project = await Service().SearchAsync(Request("needle", FindInFilesScope.Project), null, CancellationToken.None);
+        Assert.Equal([Dir + @"\Hello.pas"], project.Matches.Select(m => m.Path));
+        var folder = await Service().SearchAsync(Request("needle", FindInFilesScope.Folder, Dir), null, CancellationToken.None);
+        Assert.Equal([Dir + @"\Hello.pas"], folder.Matches.Select(m => m.Path));
+        Assert.Equal(1, folder.FileCount);
+
+        // The physical file system reports the real attributes.
+        var temp = Path.Combine(Path.GetTempPath(), "fxc-i187-" + Guid.NewGuid().ToString("N") + ".pas");
+        System.IO.File.WriteAllText(temp, "x");
+        try
+        {
+            var physical = new Core.Platform.PhysicalFileSystem();
+            Assert.False(physical.GetAttributes(temp).HasFlag(FileAttributes.Hidden));
+            System.IO.File.SetAttributes(temp, FileAttributes.Hidden);
+            Assert.True(physical.GetAttributes(temp).HasFlag(FileAttributes.Hidden));
+        }
+        finally
+        {
+            System.IO.File.SetAttributes(temp, FileAttributes.Normal);
+            System.IO.File.Delete(temp);
+        }
+    }
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-123")]
     [Trait("Req", "IDE-ED-124")]

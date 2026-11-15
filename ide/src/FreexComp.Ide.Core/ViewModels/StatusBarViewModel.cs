@@ -55,6 +55,22 @@ public sealed class StatusBarViewModel : ObservableObject
             _result = build.ResultText;
             OnPropertyChanged(nameof(StateText));
         };
+        if (documents is not null)
+        {
+            // IDE-P3-005: ... or until the next edit of any document.
+            foreach (var document in documents.Documents.OfType<TextDocumentViewModel>())
+                document.Buffer.Changed += OnDocumentEdited;
+            documents.DocumentOpened += (_, e) =>
+            {
+                if (e.Document is TextDocumentViewModel text)
+                    text.Buffer.Changed += OnDocumentEdited;
+            };
+            documents.DocumentClosed += (_, e) =>
+            {
+                if (e.Document is TextDocumentViewModel text)
+                    text.Buffer.Changed -= OnDocumentEdited;
+            };
+        }
         messages?.Changed += (_, _) =>
         {
             OnPropertyChanged(nameof(DiagnosticsText));
@@ -86,6 +102,14 @@ public sealed class StatusBarViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsVisible));
             }
         };
+    }
+
+    private void OnDocumentEdited(object? sender, TextChangedEventArgs e)
+    {
+        if (_result is null)
+            return;
+        _result = null;
+        OnPropertyChanged(nameof(StateText));
     }
 
     /// <summary>UI-WIN-044 (<c>appearance.showStatusBar</c>).</summary>

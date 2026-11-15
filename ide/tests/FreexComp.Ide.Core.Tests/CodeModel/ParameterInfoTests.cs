@@ -104,10 +104,5 @@ public sealed class ParameterInfoTests
         Type(doc, ";\n  Add(");
         await info.Pending;
         Assert.False(info.IsOpen);
-
-        // The parameter-info and hover settings are no longer shown disabled as pending features.
-        Assert.DoesNotContain(SettingsCatalog.EditorParameterInfoAutoTrigger.Name, OptionsViewModel.PendingFeatureKeys);
-        Assert.DoesNotContain(SettingsCatalog.EditorHoverEnabled.Name, OptionsViewModel.PendingFeatureKeys);
-        Assert.DoesNotContain(SettingsCatalog.EditorHoverDelayMs.Name, OptionsViewModel.PendingFeatureKeys);
     }
 }

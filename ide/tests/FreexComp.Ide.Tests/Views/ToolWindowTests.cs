@@ -142,6 +142,95 @@ public sealed class ToolWindowTests
         }
     }
 
+    /// <summary>I-193: <see cref="ShowCommandFocusesPrimaryControl"/> with the product's Messages and the rest of the bottom dock.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-TW-007")]
+    [Trait("Req", "UI-TW-002")]
+    public async Task ShowCommandFocusesPrimaryControlAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var tools = h.Services.ToolWindows;
+        foreach (var name in new[] { "Messages", "Output", "SearchResults" })
+            Assert.True(tools.Hide(name));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+
+        h.Press("Alt+5"); // view.messages
+
+        Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+        Assert.Equal("Messages", h.Services.Layout.Layout.Bottom.ActiveTool);
+        Assert.Equal("Tool.Messages", h.FocusedAutomationId); // no messages: the list is hidden (UI-TW-013), the window takes the focus
+        Assert.Equal("Messages", h.Services.FocusTracker.Current.ToolWindowName);
+        Assert.True(tools.Get("Messages")!.IsActive);
+        Assert.Equal("MESSAGES", h.Find<TextBlock>("Tool.Messages.Caption").Text);
+        Assert.Equal("Messages", AutomationProperties.GetName(h.Find<Button>("ToolTab.Messages")));
+
+        h.Press("Shift+Escape"); // window.closeToolWindow hides the active tool window
+        Assert.False(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+    }
+
+    /// <summary>I-193: <see cref="ProgrammaticActivationKeepsFocus"/> with the product's Messages and Output.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-TW-007")]
+    [Trait("Req", "UI-WIN-016")]
+    public async Task ProgrammaticActivationKeepsFocusAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var tools = h.Services.ToolWindows;
+        var plain = new Border { Focusable = true, Width = 20, Height = 10 };
+        AutomationProperties.SetAutomationId(plain, "StatusBar.TestPlain");
+        h.Find<Panel>(AutomationIds.StatusBar).Children.Add(plain);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(plain.Focus());
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Messages", h.Services.Layout.Layout.Bottom.ActiveTool);
+
+        Assert.True(tools.Show("Output", focus: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Output", h.Services.Layout.Layout.Bottom.ActiveTool);
+        Assert.Equal("StatusBar.TestPlain", h.FocusedAutomationId);
+
+        foreach (var name in new[] { "Messages", "Output", "SearchResults" })
+            tools.Hide(name);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+
+        Assert.True(tools.Show("Messages", focus: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+        Assert.Equal("Messages", h.Services.Layout.Layout.Bottom.ActiveTool);
+        Assert.Equal("StatusBar.TestPlain", h.FocusedAutomationId);
+        Assert.False(tools.Get("Messages")!.IsActive);
+    }
+
+    /// <summary>I-193: UI-TW-006 at the product's phase 3: the P3 windows are registered, the P5+ ones are not.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-TW-006")]
+    [Trait("Req", "UI-WIN-011")]
+    public async Task LaterPhaseWindowsAreNotRegisteredAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var tools = h.Services.ToolWindows;
+
+        foreach (var name in new[] { "ProjectManager", "Structure", "Messages", "Output", "SearchResults" })
+            Assert.True(tools.IsRegistered(name), name);
+        foreach (var name in new[] { "ObjectInspector", "ToolPalette", "CallStack", "Locals", "Watches", "Breakpoints", "DataExplorer" })
+        {
+            Assert.False(tools.IsRegistered(name), name);
+            Assert.False(tools.Show(name, focus: true), name);
+        }
+
+        Assert.True(h.Services.Commands.CanExecute("view.structure"));
+        Assert.False(h.Services.Commands.CanExecute("view.objectInspector"));
+        var view = h.Find<Menu>(AutomationIds.MenuBar).Items.Cast<MenuItem>().Single(m => AutomationIds.Get(m) == AutomationIds.TopMenu("View"));
+        var inspector = view.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == AutomationIds.Menu("view.objectInspector"));
+        Assert.True(inspector.IsVisible);
+        Assert.False(inspector.IsEnabled && inspector.Command!.CanExecute(null)); // visible and disabled (UI-MENU-004)
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TW-006")]
     [Trait("Req", "UI-WIN-011")]

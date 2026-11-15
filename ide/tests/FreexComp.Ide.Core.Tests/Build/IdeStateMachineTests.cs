@@ -80,13 +80,14 @@ public sealed class IdeStateMachineTests
         string[] idleOnly =
         [
             "project.build", "project.rebuild", "project.clean", "project.checkSyntax", "project.options",
-            "project.setConfiguration", "run.parameters", "run.startWithoutDebugging", "file.newProject",
+            "project.setConfiguration", "run.parameters", "file.newProject",
             "project.addNewUnit", "project.addNewForm", "project.addExistingFile", "project.removeFile", "project.renameFile",
             "project.deleteFile",
         ];
         Expect(idleOnly, IdeState.Idle);
         Expect(["project.cancelBuild"], IdeState.Building);
-        Expect(["run.start"], IdeState.Idle, IdeState.Paused);
+        Expect(["run.start"], IdeState.Idle, IdeState.Running, IdeState.Paused); // Running: asks Msg.Run.AlreadyRunning (IDE-P3-004)
+        Expect(["run.startWithoutDebugging"], IdeState.Idle, IdeState.Running);
         Expect(["run.stop", "run.restart"], IdeState.Running, IdeState.DebugRunning, IdeState.Paused);
         Expect(["file.openProject", "file.openRecentProject", "file.closeProject"], IdeState.Idle, IdeState.Running, IdeState.DebugRunning, IdeState.Paused);
         Expect(["file.exit", "file.save", "file.saveAll", "file.open", "file.close", "edit.undo", "search.find", "search.goToLine"],

@@ -145,6 +145,51 @@ public sealed class AccessibilityTests
         Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
     }
 
+    /// <summary>
+    /// I-193: the pane cycle and Escape with the product's Phase 3 tool windows (Project Manager and Structure left,
+    /// Messages, Output, Search Results bottom, right dock empty).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-A11Y-003")]
+    [Trait("Req", "UI-A11Y-004")]
+    public async Task PaneCycleAndEscapeAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+
+        h.Press("F6");
+        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        h.Press("F6"); // no project: the tree is replaced by the empty state, whose first link takes the focus
+        Assert.Equal(ProjectManagerEmpty, h.FocusedAutomationId);
+        h.Press("F6"); // no messages: the list is hidden (UI-TW-013), the tool window itself takes the focus
+        Assert.Equal(MessagesEmpty, h.FocusedAutomationId);
+        h.Press("F6"); // the right dock is collapsed: straight to the status bar
+        Assert.Equal("StatusBar.State", h.FocusedAutomationId);
+        h.Press("F6");
+        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        h.Press("Shift+F6");
+        Assert.Equal("StatusBar.State", h.FocusedAutomationId);
+        h.Press("Shift+F6");
+        Assert.Equal(MessagesEmpty, h.FocusedAutomationId);
+
+        h.Press("Escape");
+        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        h.Press("Alt+5");
+        h.Press("Alt+5"); // the same shortcut again: back to the document, the window stays
+        Assert.Equal(AutomationIds.DocumentArea, h.FocusedAutomationId);
+        Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+
+        h.Services.ToolWindows.Hide("Messages"); // the bottom dock keeps Output and Search Results
+        Dispatcher.UIThread.RunJobs();
+        h.Press("Alt+1");
+        Assert.Equal(ProjectManagerEmpty, h.FocusedAutomationId);
+        h.Press("F6");
+        Assert.StartsWith("Tool.Output", h.FocusedAutomationId, StringComparison.Ordinal);
+    }
+
+    private const string ProjectManagerEmpty = "Tool.ProjectManager.Empty.Link.file.newProject";
+    private const string MessagesEmpty = "Tool.Messages";
+
     /// <summary>Project Manager (left), Messages (bottom) and a sample tool window shown in the right upper group.</summary>
     private static async Task<HeadlessHarness> StartWithThreeDocks()
     {

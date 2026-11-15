@@ -23,7 +23,8 @@ public static class CodeTemplatesPageView
     {
         // The grid (Abbreviation 120, Description *) and the buttons at its right.
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*"), Margin = new Thickness(8, 0, 0, 4) };
-        header.Children.Add(Text(Strings.Options_Templates_ColumnAbbreviation, "bodyStrong"));
+        var sortHeader = HeaderButton(Strings.Options_Templates_ColumnAbbreviation, "Templates.Column.Abbreviation"); // sortable (dialogs.md §9.3)
+        header.Children.Add(sortHeader);
         var descriptionHeader = Text(Strings.Options_Templates_ColumnDescription, "bodyStrong");
         Grid.SetColumn(descriptionHeader, 1);
         header.Children.Add(descriptionHeader);
@@ -134,6 +135,11 @@ public static class CodeTemplatesPageView
             abbreviationBox.Focus(); // dialogs.md §9.3: focuses Abbreviation
         };
         delete.Click += (_, _) => model.DeleteTemplate();
+        sortHeader.Click += (_, _) =>
+        {
+            model.SortByAbbreviation();
+            list.SelectedItem = model.Selected; // the moved rows keep the selection
+        };
         reset.Click += (_, _) =>
         {
             model.ResetTemplate();
@@ -189,6 +195,24 @@ public static class CodeTemplatesPageView
         block.Classes.Add(textClass);
         block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable("FxcTextPrimaryBrush"));
         return block;
+    }
+
+    /// <summary>A flat column header button (as the Key Mappings grid's) that sorts by its column.</summary>
+    private static Button HeaderButton(string text, string field)
+    {
+        var button = new Button
+        {
+            Content = Text(text, "bodyStrong"),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            MinHeight = 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+        };
+        AutomationProperties.SetAutomationId(button, Id(field));
+        AutomationProperties.SetName(button, text);
+        return button;
     }
 
     private static Button CreateButton(string field, string label)

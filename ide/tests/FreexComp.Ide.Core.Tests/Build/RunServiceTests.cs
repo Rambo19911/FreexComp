@@ -325,6 +325,35 @@ public sealed class RunServiceTests
         Assert.Equal(new IdeStateInfo(IdeState.Running, null, false, Exe, bed.Processes.Last.ProcessId), bed.Services.State.Current);
     }
 
+    /// <summary>
+    /// IDE-P3-004 (I-190): <c>run.start</c> / <c>run.startWithoutDebugging</c> stay available while Running and ask
+    /// <c>Msg.Run.AlreadyRunning</c>; Cancel leaves the program running, Restart is <c>run.restart</c>.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-004")]
+    public async Task RunWhileRunningOffersRestart()
+    {
+        var bed = await StartAsync();
+        Assert.True(await bed.Services.Run.StartAsync());
+        var first = bed.Processes.Last;
+        Assert.Equal(IdeState.Running, bed.Services.State.Current.State);
+        Assert.True(bed.Services.Commands.CanExecute("run.start"));
+        Assert.True(bed.Services.Commands.CanExecute("run.startWithoutDebugging"));
+
+        bed.Dialogs.Answer("Msg.Run.AlreadyRunning", "Cancel");
+        await bed.Services.Commands.ExecuteAsync("run.startWithoutDebugging");
+        Assert.Equal(["Hello.exe"], bed.Dialogs.Requests.Single(r => r.MessageId == "Msg.Run.AlreadyRunning").Args);
+        Assert.Equal(0, first.KillCount);
+        Assert.Single(bed.Processes.Started);
+        Assert.Equal(IdeState.Running, bed.Services.State.Current.State);
+
+        bed.Dialogs.Answer("Msg.Run.AlreadyRunning", "Restart");
+        await bed.Services.Commands.ExecuteAsync("run.start");
+        Assert.Equal(1, first.KillCount);
+        Assert.Equal(2, bed.Processes.Started.Count);
+        Assert.Equal(new IdeStateInfo(IdeState.Running, null, false, Exe, bed.Processes.Last.ProcessId), bed.Services.State.Current);
+    }
+
     /// <summary>IDE-P3-093: exit and project close while a program runs ask first and stop it on confirmation.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-093")]

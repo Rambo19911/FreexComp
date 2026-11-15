@@ -45,6 +45,60 @@ public sealed class ToolBarTests
         Assert.Equal(32, standard.FindAncestorOfType<ToolBarRow>()!.Bounds.Height);
     }
 
+    /// <summary>I-193: UI-TB-005 at the product's phase 3: Standard and Build are shown, Debug (P6) and Designer (P5) are not.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Category", "Spec")]
+    [Trait("Req", "UI-TB-002")]
+    [Trait("Req", "UI-TB-005")]
+    public async Task StandardAndBuildToolbarsMatchSpecAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var rows = SpecTables.Read(SpecTables.DocPath("spec/ui/toolbars.md"), "2.1 Standard");
+        var expected = rows.Select(r => r["Element"] == "Separator" ? "---" : $"ToolBar.{r["Command id"]}|{r["Icon name"].Split(' ')[0]}").ToList();
+        var actual = h.Find<Panel>("ToolBar.Standard").Children.Select(c => c is Button b
+            ? $"{AutomationIds.Get(b)}|{Assert.IsType<IdeIcon>(b.Content).IconName}"
+            : "---").ToList();
+        Assert.Equal(expected, actual);
+
+        // Build and Run (toolbars.md §2.2, P3): the buttons in table order (the combo boxes are tested in BuildToolbarTests).
+        Assert.Equal(["project.build", "project.cancelBuild", "run.start", "run.startWithoutDebugging", "run.stop", "run.restart"],
+            h.Find<Panel>("ToolBar.Build").Children.OfType<Button>().Select(b => AutomationIds.Get(b)!["ToolBar.".Length..]));
+
+        var row = h.Find<Panel>("ToolBar.Standard").FindAncestorOfType<ToolBarRow>()!;
+        Assert.Equal(["ToolBar.Standard", "ToolBar.Build"], row.InRow.Select(c => AutomationIds.Get(c)));
+        Assert.True(h.Find<Button>(AutomationIds.ToolBarButton("search.findInFiles")).IsEffectivelyEnabled); // P3 button: enabled now
+        Assert.Null(h.TryFind<Control>("ToolBar.Debug"));
+        Assert.Null(h.TryFind<Control>("ToolBar.Designer"));
+        Assert.Equal(32, row.Bounds.Height);
+    }
+
+    /// <summary>I-193: <see cref="ToggleCommandHidesToolbarAndCollapsesRow"/> with the product's Standard and Build toolbars.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-TB-004")]
+    [Trait("Req", "IDE-P1-022")]
+    public async Task ToggleCommandHidesToolbarAndCollapsesRowAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var row = h.Find<Panel>("ToolBar.Standard").FindAncestorOfType<ToolBarRow>()!;
+
+        await h.ExecuteAsync("view.toolbar.standard");
+        Assert.Null(h.TryFind<Control>("ToolBar.Standard"));
+        Assert.NotNull(h.TryFind<Control>("ToolBar.Build"));
+        Assert.True(row.IsVisible); // Build is still shown
+
+        await h.ExecuteAsync("view.toolbar.build");
+        Assert.False(h.Services.Commands.Get("view.toolbar.build").IsChecked);
+        Assert.Null(h.TryFind<Control>("ToolBar.Build"));
+        Assert.False(row.IsVisible); // all hidden: the row takes no space
+
+        await h.ExecuteAsync("view.toolbar.build");
+        await h.ExecuteAsync("view.toolbar.standard");
+        Assert.Equal(["ToolBar.Standard", "ToolBar.Build"], row.InRow.Select(c => AutomationIds.Get(c)));
+        Assert.True(row.IsVisible);
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TB-003")]
     [Trait("Req", "UI-KEY-005")]

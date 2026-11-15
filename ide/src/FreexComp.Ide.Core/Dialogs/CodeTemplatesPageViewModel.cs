@@ -99,6 +99,29 @@ public sealed class CodeTemplatesPageViewModel : ObservableObject
         }
     }
 
+    /// <summary>The Abbreviation column sorts Z…A (false = the natural alphabetical order).</summary>
+    public bool SortDescending { get; private set; }
+
+    /// <summary>
+    /// The Abbreviation header was clicked (dialogs.md §9.3 "sortable"): the order reverses and every row, added ones
+    /// included, is sorted by abbreviation (case-insensitive); the selection stays on its row. No pending change.
+    /// </summary>
+    public void SortByAbbreviation()
+    {
+        SortDescending = !SortDescending;
+        var ordered = Rows.OrderBy(r => r.Abbreviation, StringComparer.OrdinalIgnoreCase).ToList();
+        if (SortDescending)
+            ordered.Reverse();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var from = Rows.IndexOf(ordered[i]);
+            if (from != i)
+                Rows.Move(from, i);
+        }
+
+        OnPropertyChanged(nameof(SortDescending));
+    }
+
     /// <summary><c>Templates.Add</c>: appends <c>new1</c> (…<c>new&lt;n&gt;</c>) and selects it.</summary>
     public void AddTemplate()
     {

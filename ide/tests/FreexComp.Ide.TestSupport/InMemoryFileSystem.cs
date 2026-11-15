@@ -228,6 +228,27 @@ public sealed class InMemoryFileSystem : IFileSystem
         }
     }
 
+    /// <summary><see cref="FileAttributes.Normal"/>, or the read-only flag and those set by <see cref="SetAttributes"/>.</summary>
+    public FileAttributes GetAttributes(string path)
+    {
+        lock (_gate)
+        {
+            var entry = GetFile(Normalize(path));
+            var attributes = entry.Other | (entry.ReadOnly ? FileAttributes.ReadOnly : 0);
+            return attributes == 0 ? FileAttributes.Normal : attributes;
+        }
+    }
+
+    /// <summary>Test helper: sets the attributes of an existing file (read-only included).</summary>
+    public void SetAttributes(string path, FileAttributes attributes)
+    {
+        lock (_gate)
+        {
+            var p = Normalize(path);
+            _files[p] = GetFile(p) with { ReadOnly = attributes.HasFlag(FileAttributes.ReadOnly), Other = attributes & ~(FileAttributes.ReadOnly | FileAttributes.Normal) };
+        }
+    }
+
     public void SetReadOnly(string path, bool readOnly)
     {
         lock (_gate)
@@ -279,7 +300,8 @@ public sealed class InMemoryFileSystem : IFileSystem
             : throw new DirectoryNotFoundException($"Could not find a part of the path '{d}'.");
     }
 
-    private sealed record FileEntry(byte[] Data, DateTime LastWriteUtc, bool ReadOnly);
+    /// <param name="Other">The attributes besides read-only (hidden, system, ...; I-187).</param>
+    private sealed record FileEntry(byte[] Data, DateTime LastWriteUtc, bool ReadOnly, FileAttributes Other = 0);
 
     private static class Wildcard
     {

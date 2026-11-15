@@ -173,6 +173,41 @@ public sealed class ShellLayoutTests
         menu.Close();
     }
 
+    /// <summary>I-193: the tab look and the overflow chevron with the product's Phase 3 left dock (Project Manager, Structure).</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-TW-003")]
+    public async Task ToolTabsAndOverflowChevronAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var active = h.Find<Button>("ToolTab.ProjectManager");
+        var inactive = h.Find<Button>("ToolTab.Structure");
+        Assert.Equal(ColorOf(h, "FxcBgPanelBrush"), ColorOf(active.Background));
+        Assert.Equal(new Thickness(0, 0, 0, 2), active.BorderThickness);
+        Assert.Equal(ColorOf(h, "FxcBgSunkenBrush"), ColorOf(inactive.Background));
+        Assert.Equal(ColorOf(h, "FxcTextSecondaryBrush"), ColorOf(((TextBlock)inactive.Content!).Foreground));
+        Assert.Equal(new Thickness(0), inactive.BorderThickness);
+        Assert.False(h.Find<Button>(AutomationIds.DockBottom + ".TabOverflow").IsVisible); // three tabs fit in the window width
+
+        // Wide enough: no chevron (the headless test font is wider than the product font, so 260 may not hold both).
+        h.Services.Layout.Layout.LeftSize = 600;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Button>(AutomationIds.DockLeft + ".TabOverflow").IsVisible);
+        h.Services.Layout.Layout.LeftSize = 160;
+        Dispatcher.UIThread.RunJobs();
+        var chevron = h.Find<Button>(AutomationIds.DockLeft + ".TabOverflow");
+        Assert.True(chevron.IsEffectivelyVisible);
+        h.Click(AutomationIds.DockLeft + ".TabOverflow");
+        var menu = Assert.IsType<ContextMenu>(chevron.ContextMenu);
+        var items = menu.Items.Cast<MenuItem>().ToList();
+        Assert.Equal([AutomationIds.DockLeft + ".TabOverflow.ProjectManager", AutomationIds.DockLeft + ".TabOverflow.Structure"], items.Select(AutomationIds.Get));
+        Assert.True(items[0].IsChecked);
+        items[1].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Structure", h.Services.Layout.Layout.Left.ActiveTool);
+        menu.Close();
+    }
+
     /// <summary>
     /// UI-ED-070: the document tab strip is 30 high on bg.sunken with a 1 px border.default bottom line; tabs 30 high,
     /// 80…240 wide, padding 10, separated by 1 px border.subtle; the active tab bg.editor, bodyStrong text.primary, 2 px

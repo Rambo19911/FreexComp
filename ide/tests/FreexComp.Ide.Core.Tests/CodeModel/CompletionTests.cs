@@ -117,10 +117,6 @@ public sealed class CompletionTests
         CaretAfter(doc, "// comm");
         await bed.Services.Commands.ExecuteAsync(CompletionController.CommandId);
         Assert.False(session.IsOpen);
-
-        // The completion settings are no longer shown disabled as pending features.
-        Assert.DoesNotContain(SettingsCatalog.EditorCompletionAutoTrigger.Name, OptionsViewModel.PendingFeatureKeys);
-        Assert.DoesNotContain(SettingsCatalog.EditorCompletionDelayMs.Name, OptionsViewModel.PendingFeatureKeys);
     }
 
     [Fact(Timeout = 30000)]

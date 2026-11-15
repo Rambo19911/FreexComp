@@ -514,6 +514,45 @@ public sealed class OptionsDialogTests
         Assert.Equal(50, settings.Get(SettingsCatalog.FilesLargeFileThresholdMb));
     }
 
+    /// <summary>
+    /// dialogs.md §9.3 (I-200): the Abbreviation column is sortable — a header click reverses the alphabetical order, a second
+    /// click restores it; the selection stays on its row and an added row is sorted in on the next click.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "IDE-SET-080")]
+    public async Task CodeTemplatesPageSortsByColumn()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var running = h.Services.Commands.ExecuteAsync("tools.options", OptionsViewModel.CodeTemplatesPage);
+        var dlg = await h.WaitForDialogAsync("Options");
+        var model = ((OptionsViewModel)dlg.Window.Model).CodeTemplates;
+        var ascending = CodeTemplateService.BuiltIns.Select(t => t.Abbreviation).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        Assert.Equal(ascending, model.Rows.Select(r => r.Abbreviation));
+        Assert.False(model.SortDescending);
+        var header = dlg.Find<Button>("Templates.Column.Abbreviation");
+        Assert.Equal("Abbreviation", Avalonia.Automation.AutomationProperties.GetName(header));
+        model.Selected = model.Rows.Single(r => r.Abbreviation == "wl");
+
+        dlg.Click("Templates.Column.Abbreviation");
+        Assert.True(model.SortDescending);
+        Assert.Equal(ascending.AsEnumerable().Reverse(), model.Rows.Select(r => r.Abbreviation));
+        Assert.Equal("wl", model.Selected!.Abbreviation);
+        Assert.Same(model.Selected, dlg.Find<ListBox>("Templates").SelectedItem);
+        Assert.False(dlg.Find<Button>("Apply").IsEnabled); // sorting changes no template
+
+        dlg.Click("Templates.Add"); // appended at the end, then sorted in by the next click
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("new1", model.Rows[^1].Abbreviation);
+        dlg.Click("Templates.Column.Abbreviation");
+        Assert.False(model.SortDescending);
+        Assert.Equal(ascending.Append("new1").Order(StringComparer.OrdinalIgnoreCase), model.Rows.Select(r => r.Abbreviation));
+        Assert.Equal("new1", model.Selected!.Abbreviation);
+
+        dlg.Click("Cancel");
+        await running;
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-080")]
     public async Task CodeTemplatesPageEditsTemplatesJson()

@@ -351,7 +351,7 @@ public sealed class DocumentService : IDocumentService
         return true;
     }
 
-    public async Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents)
+    public async Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents, Action? saveFailed = null)
     {
         ArgumentNullException.ThrowIfNull(documents);
         // The caller's order: tab order, the project file first (UI-DLG-063).
@@ -382,7 +382,10 @@ public sealed class DocumentService : IDocumentService
         foreach (var document in toSave)
         {
             if (!await SaveAsync(document))
+            {
+                saveFailed?.Invoke();
                 return false;
+            }
         }
 
         return true;

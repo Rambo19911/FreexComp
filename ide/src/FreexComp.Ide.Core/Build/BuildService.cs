@@ -244,13 +244,14 @@ public sealed class BuildService : IBuildService
             .ToList();
         if (set.Count == 0)
             return true;
+        void Aborted() => _status.ShowMessage(Strings.Msg_Build_SaveFailedAbort, TimeSpan.FromSeconds(5));
         if (mode == "prompt")
-            return await _documents.PromptSaveChangesAsync(set);
+            return await _documents.PromptSaveChangesAsync(set, Aborted); // the question's Cancel itself shows nothing
         foreach (var document in set)
         {
             if (!await _documents.SaveAsync(document))
             {
-                _status.ShowMessage(Strings.Msg_Build_SaveFailedAbort, TimeSpan.FromSeconds(5));
+                Aborted();
                 return false;
             }
         }

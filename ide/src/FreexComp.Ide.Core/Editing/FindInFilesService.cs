@@ -174,12 +174,12 @@ public sealed class FindInFilesService(IDocumentService documents, IProjectServi
         }
     }
 
-    /// <summary>A file from disk, or null when it is too large, binary or unreadable (IDE-ED-120).</summary>
+    /// <summary>A file from disk, or null when it is hidden or system, too large, binary or unreadable (IDE-ED-120).</summary>
     private string? Read(string path, long limit)
     {
         try
         {
-            if (fileSystem.GetLength(path) > limit)
+            if ((fileSystem.GetAttributes(path) & (FileAttributes.Hidden | FileAttributes.System)) != 0 || fileSystem.GetLength(path) > limit)
                 return null;
             var detection = EncodingDetector.Detect(fileSystem.ReadAllBytes(path));
             return detection.IsBinary ? null : detection.Text;

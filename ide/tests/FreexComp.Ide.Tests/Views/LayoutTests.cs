@@ -207,6 +207,119 @@ public sealed class LayoutTests
         Assert.Contains("\"size\": 260", saved, StringComparison.Ordinal);
     }
 
+    /// <summary>I-193: the Edit profile with the product's Phase 3 tool windows (no override, no samples).</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-WIN-010")]
+    [Trait("Req", "UI-WIN-011")]
+    public async Task EditProfileDefaultArrangementAtDefaultPhase()
+    {
+        var rows = SpecTables.Read(SpecTables.DocPath("spec/ui/main-window.md"), "2. Default layout per profile");
+        var registered = rows.Where(r => r["First phase"] is "P1" or "P3").Select(r => ToolName(r["Tool window"])).ToHashSet();
+        Assert.Equal(["ProjectManager", "Structure", "Messages", "Output", "SearchResults"], registered);
+
+        await using var h = await HeadlessHarness.StartAsync();
+        var layout = h.Services.Layout.Layout;
+        Assert.All(registered, name => Assert.True(h.Services.ToolWindows.IsRegistered(name), name));
+        Assert.Equal(LayoutProfiles.Edit, layout.ActiveProfile);
+        Assert.Equal(registered.Select(name => "ToolTab." + name).Order(StringComparer.Ordinal),
+            h.FindAll("ToolTab.").Select(c => AutomationIds.Get(c)!).Order(StringComparer.Ordinal));
+        Assert.Equal(["ProjectManager", "Structure"], layout.Left.Tools);
+        Assert.Equal("ProjectManager", layout.Left.ActiveTool);
+        Assert.Equal(["Messages", "Output", "SearchResults"], layout.Bottom.Tools);
+        Assert.Equal("Messages", layout.Bottom.ActiveTool);
+        Assert.Equal(260, h.Find<Control>(AutomationIds.DockLeft).Bounds.Width);
+        Assert.Equal(200, h.Find<Control>(AutomationIds.DockBottom).Bounds.Height);
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible); // UI-WIN-010: empty in Edit
+        Assert.Equal(1440 - 260 - Splitter, h.Find<Control>(AutomationIds.DocumentArea).Bounds.Width);
+    }
+
+    /// <summary>I-193: <see cref="EmptyDockCollapses"/> with the product's Phase 3 tool windows.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-WIN-004")]
+    [Trait("Req", "UI-TW-005")]
+    public async Task EmptyDockCollapsesAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var layout = h.Services.Layout.Layout;
+        var tools = h.Services.ToolWindows;
+        var documents = h.Find<Control>(AutomationIds.DocumentArea);
+        var height = documents.Bounds.Height;
+
+        foreach (var name in new[] { "Messages", "Output", "SearchResults" })
+            Assert.True(tools.Hide(name));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
+        Assert.Equal(height + 200 + Splitter, documents.Bounds.Height); // the document area takes the space, splitter included
+
+        layout.LeftSize = 300;
+        Assert.True(tools.Hide("ProjectManager"));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Control>(AutomationIds.DockLeft).IsVisible); // Structure is still in the left dock
+        Assert.Equal("Structure", layout.Left.ActiveTool);
+        Assert.True(tools.Hide("Structure"));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>(AutomationIds.DockLeft).IsVisible);
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible);
+        Assert.Equal(1440, documents.Bounds.Width);
+        Assert.Null(layout.Left.ActiveTool);
+
+        Assert.True(tools.Show("ProjectManager", focus: false));
+        Assert.True(tools.Show("Output", focus: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(300, h.Find<Control>(AutomationIds.DockLeft).Bounds.Width); // restored at its last size
+        Assert.Equal(200, h.Find<Control>(AutomationIds.DockBottom).Bounds.Height);
+        Assert.Equal(1440 - 300 - Splitter, documents.Bounds.Width);
+        Assert.Equal("ProjectManager", layout.Left.ActiveTool);
+        Assert.Equal("Output", layout.Bottom.ActiveTool);
+        Assert.False(tools.Show("ObjectInspector", focus: false)); // P5: not registered (UI-WIN-011)
+    }
+
+    /// <summary>I-193: <see cref="SplitterLimitsAreClamped"/> and <see cref="ResetLayoutRestoresDefaults"/> with the product's Phase 3 tool windows (no right dock).</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "3")]
+    [Trait("Req", "UI-WIN-005")]
+    [Trait("Req", "UI-WIN-015")]
+    public async Task SplitterLimitsAndResetAtDefaultPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var layout = h.Services.Layout.Layout;
+        var view = h.Find<Control>(AutomationIds.DockLeft).GetVisualAncestors().OfType<LayoutView>().Single();
+        var (width, height) = (view.Bounds.Width, view.Bounds.Height);
+        var left = h.Find<Control>(AutomationIds.DockLeft);
+        var bottom = h.Find<Control>(AutomationIds.DockBottom);
+        var documents = h.Find<Control>(AutomationIds.DocumentArea);
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible);
+
+        // Left dock: at most window − 320 (− its splitter; the right dock is collapsed), at least 160.
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockLeft), 2000, 0);
+        Assert.Equal(width - 320 - Splitter, left.Bounds.Width);
+        Assert.Equal(320, documents.Bounds.Width);
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockLeft), -2000, 0);
+        Assert.Equal(160, layout.LeftSize);
+
+        // Bottom dock: 80 … available height − 160.
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, -2000);
+        Assert.Equal(height - 160 - Splitter, bottom.Bounds.Height);
+        Assert.Equal(160, documents.Bounds.Height);
+        h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, 2000);
+        Assert.Equal(80, layout.BottomSize);
+
+        // Reset: the Edit column of main-window.md §2 and the default sizes.
+        Assert.True(h.Services.ToolWindows.Hide("ProjectManager"));
+        Assert.True(h.Services.ToolWindows.Show("SearchResults", focus: false));
+        await h.ExecuteAsync("window.resetLayout");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal((260, 300, 200, 0.5), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
+        Assert.Equal(["ProjectManager", "Structure"], layout.Left.Tools);
+        Assert.Equal("ProjectManager", layout.Left.ActiveTool);
+        Assert.Equal(["Messages", "Output", "SearchResults"], layout.Bottom.Tools);
+        Assert.Equal("Messages", layout.Bottom.ActiveTool);
+        Assert.Equal(260, left.Bounds.Width);
+        Assert.Equal(200, bottom.Bounds.Height);
+    }
+
     private static void AllDocks(HarnessOptions o)
     {
         o.ImplementedPhase = 1; // only the sample tool windows below fill the docks

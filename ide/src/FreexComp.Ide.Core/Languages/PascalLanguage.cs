@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using FreexComp.Compiler;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Text;
@@ -27,11 +28,12 @@ public sealed class PascalLanguage : ILanguageDefinition
 }
 
 /// <summary>
-/// IDE-P1-056: whole-text <see cref="Lexer.Tokenize"/> + <see cref="Classifier.GetLexicalClassifications"/>, cached per
-/// buffer version (<see cref="WholeTextClassifier"/>): the immediate layer drawn while typing. Spans whose colour token is
-/// "" are dropped. Defines are empty here. I-113: the tree-based <c>GetSyntacticClassifications</c> (with the active
-/// configuration's defines) arrives for project files through the document's <see cref="Editing.SemanticLayer"/>; it is not
-/// used here because it marks every token the parser skipped as <c>Invalid</c>, which would turn half-typed code red.
+/// IDE-P1-056, phase1-shell.md §5 (from P3, I-199): whole-text <see cref="SyntaxTree.Parse"/> (no file system, so includes
+/// are not read) + <see cref="Classifier.GetSyntacticClassifications"/> for buffers up to
+/// <see cref="WholeTextClassifier.BackgroundThreshold"/> (larger ones: the lexical classifier), cached per buffer version
+/// (<see cref="WholeTextClassifier"/>): the immediate layer drawn while typing. Parser-skipped tokens keep their lexical
+/// class (C-248), so half-typed code does not turn red. Spans whose colour token is "" are dropped. Defines are empty here;
+/// the active configuration's defines arrive for project files through the document's <see cref="Editing.SemanticLayer"/>.
 /// </summary>
 public sealed class PascalClassifier : WholeTextClassifier
 {
@@ -45,9 +47,25 @@ public sealed class PascalClassifier : WholeTextClassifier
     protected override List<TokenClassSpan> Lex(string text)
     {
         var source = SourceText.From(PlaceholderPath, text);
-        var tokens = Lexer.Tokenize(source);
+        var all = new TextSpan(0, text.Length);
+        ImmutableArray<ClassifiedSpan> classified;
+        if (text.Length > BackgroundThreshold)
+        {
+            // A large buffer (classified in the background) stays lexical: a whole-text parse costs about three lexes and
+            // would break the 1 MB budget of IDE-P1-056; its syntactic classes come from the semantic layer.
+            classified = Classifier.GetLexicalClassifications(Lexer.Tokenize(source), all);
+        }
+        else
+        {
+            var tree = SyntaxTree.Parse(source);
+            classified = Classifier.GetSyntacticClassifications(tree, all);
+            var skipped = SkippedRegions(tree);
+            if (skipped.Count > 0)
+                classified = WithLexicalInside(classified, Classifier.GetLexicalClassifications(Lexer.Tokenize(source), all), skipped);
+        }
+
         var spans = new List<TokenClassSpan>();
-        foreach (var span in Classifier.GetLexicalClassifications(tokens, new TextSpan(0, text.Length)))
+        foreach (var span in classified)
         {
             var token = Classifier.GetColorToken(span.Kind);
             if (token.Length > 0)
@@ -57,6 +75,80 @@ public sealed class PascalClassifier : WholeTextClassifier
         if (spans.Any(s => s.TokenClass == ColorTokens.Invalid))
             AttachDiagnostics(spans, Lexer.GetDiagnostics(source)); // lexed a second time only when there is an error
         return spans;
+    }
+
+    /// <summary>
+    /// The runs of <c>SkippedTokensTrivia</c> (tokens the parser skipped while recovering, and illegal characters) between
+    /// two of the tree's own non-empty tokens, as [start, end) offsets in text order.
+    /// </summary>
+    private static List<(int Start, int End)> SkippedRegions(SyntaxTree tree)
+    {
+        var regions = new List<(int Start, int End)>();
+        int start = -1, end = -1;
+        void Trivia(ImmutableArray<SyntaxTrivia> trivia)
+        {
+            foreach (var piece in trivia)
+            {
+                if (piece.Kind != SyntaxKind.SkippedTokensTrivia)
+                    continue;
+                if (start < 0)
+                    start = piece.Span.Start;
+                end = piece.Span.End;
+            }
+        }
+
+        foreach (var token in tree.Root.DescendantTokens()) // parsed without a file system: every token is the buffer's own
+        {
+            Trivia(token.LeadingTrivia);
+            if (token.Span.Length > 0 && start >= 0)
+            {
+                regions.Add((start, end));
+                start = -1;
+            }
+
+            Trivia(token.TrailingTrivia);
+        }
+
+        if (start >= 0)
+            regions.Add((start, end));
+        return regions;
+    }
+
+    /// <summary>
+    /// CMP-710/714 (C-248): a skipped token keeps its lexical class, and that includes the lexical classifier's asm state
+    /// (the syntactic classifier re-lexes each skipped piece on its own, so a skipped <c>asm</c> block would lose it).
+    /// Inside <paramref name="regions"/> the lexical spans (clipped) replace the syntactic ones.
+    /// </summary>
+    private static ImmutableArray<ClassifiedSpan> WithLexicalInside(
+        ImmutableArray<ClassifiedSpan> syntactic, ImmutableArray<ClassifiedSpan> lexical,
+        List<(int Start, int End)> regions)
+    {
+        // Both span lists and the regions are sorted: one forward pass each (a file full of errors stays linear).
+        var result = ImmutableArray.CreateBuilder<ClassifiedSpan>();
+        int r = 0;
+        foreach (var span in syntactic)
+        {
+            while (r < regions.Count && regions[r].End <= span.Span.Start)
+                r++;
+            if (r == regions.Count || span.Span.End <= regions[r].Start)
+                result.Add(span);
+        }
+
+        r = 0;
+        foreach (var span in lexical)
+        {
+            while (r < regions.Count && regions[r].End <= span.Span.Start)
+                r++;
+            for (int i = r; i < regions.Count && regions[i].Start < span.Span.End; i++)
+            {
+                int s = Math.Max(regions[i].Start, span.Span.Start), e = Math.Min(regions[i].End, span.Span.End);
+                if (s < e)
+                    result.Add(new ClassifiedSpan(TextSpan.FromBounds(s, e), span.Kind));
+            }
+        }
+
+        result.Sort((a, b) => a.Span.Start.CompareTo(b.Span.Start));
+        return result.ToImmutable();
     }
 
     /// <summary>

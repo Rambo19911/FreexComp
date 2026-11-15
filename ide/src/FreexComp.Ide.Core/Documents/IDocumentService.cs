@@ -105,9 +105,10 @@ public interface IDocumentService
     /// The once-per-operation question for the modified ones among <paramref name="documents"/>, listed in the given
     /// order (IDE-P1-036, UI-DLG-060…063): none → true; one → <c>Msg.File.SaveChangesOne</c>; several → the Unsaved Changes dialog. True
     /// when the operation may go on (chosen documents saved, the rest discarded); false on Cancel, a failed save or a
-    /// canceled Save As picker — documents saved until then stay saved.
+    /// canceled Save As picker — documents saved until then stay saved. <paramref name="saveFailed"/> runs when the false
+    /// comes from a chosen document that was not saved (not from the question's Cancel).
     /// </summary>
-    Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents);
+    Task<bool> PromptSaveChangesAsync(IReadOnlyList<DocumentViewModel> documents, Action? saveFailed = null);
 
     /// <summary>
     /// <c>file.save</c> of one document (phase1-shell.md §8): the save pipeline of <see cref="SaveAsAsync"/> plus its
