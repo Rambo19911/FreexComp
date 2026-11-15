@@ -1,0 +1,365 @@
+# constants
+ok clSystemColor
+ok clBlack
+ok clRed
+ok clBlue
+ok clLtGray
+ok clDkGray
+ok clMoneyGreen
+ok clMedGray
+ok clNone
+ok clDefault
+ok clBtnFace
+ok clWindowText
+ok clMenuBar
+ok clHotLight
+ok SizeOf(TColor)
+# table round trip
+ok StringToColor clBlack
+ok ColorToString clBlack
+ok IdentToColor lower clBlack
+ok IdentToColor value clBlack
+ok ColorToIdent clBlack
+ok ColorToIdent name clBlack
+ok StringToColor clMaroon
+ok ColorToString clMaroon
+ok IdentToColor lower clMaroon
+ok IdentToColor value clMaroon
+ok ColorToIdent clMaroon
+ok ColorToIdent name clMaroon
+ok StringToColor clGreen
+ok ColorToString clGreen
+ok IdentToColor lower clGreen
+ok IdentToColor value clGreen
+ok ColorToIdent clGreen
+ok ColorToIdent name clGreen
+ok StringToColor clOlive
+ok ColorToString clOlive
+ok IdentToColor lower clOlive
+ok IdentToColor value clOlive
+ok ColorToIdent clOlive
+ok ColorToIdent name clOlive
+ok StringToColor clNavy
+ok ColorToString clNavy
+ok IdentToColor lower clNavy
+ok IdentToColor value clNavy
+ok ColorToIdent clNavy
+ok ColorToIdent name clNavy
+ok StringToColor clPurple
+ok ColorToString clPurple
+ok IdentToColor lower clPurple
+ok IdentToColor value clPurple
+ok ColorToIdent clPurple
+ok ColorToIdent name clPurple
+ok StringToColor clTeal
+ok ColorToString clTeal
+ok IdentToColor lower clTeal
+ok IdentToColor value clTeal
+ok ColorToIdent clTeal
+ok ColorToIdent name clTeal
+ok StringToColor clWhite
+ok ColorToString clWhite
+ok IdentToColor lower clWhite
+ok IdentToColor value clWhite
+ok ColorToIdent clWhite
+ok ColorToIdent name clWhite
+ok StringToColor clGray
+ok ColorToString clGray
+ok IdentToColor lower clGray
+ok IdentToColor value clGray
+ok ColorToIdent clGray
+ok ColorToIdent name clGray
+ok StringToColor clSilver
+ok ColorToString clSilver
+ok IdentToColor lower clSilver
+ok IdentToColor value clSilver
+ok ColorToIdent clSilver
+ok ColorToIdent name clSilver
+ok StringToColor clRed
+ok ColorToString clRed
+ok IdentToColor lower clRed
+ok IdentToColor value clRed
+ok ColorToIdent clRed
+ok ColorToIdent name clRed
+ok StringToColor clLime
+ok ColorToString clLime
+ok IdentToColor lower clLime
+ok IdentToColor value clLime
+ok ColorToIdent clLime
+ok ColorToIdent name clLime
+ok StringToColor clYellow
+ok ColorToString clYellow
+ok IdentToColor lower clYellow
+ok IdentToColor value clYellow
+ok ColorToIdent clYellow
+ok ColorToIdent name clYellow
+ok StringToColor clBlue
+ok ColorToString clBlue
+ok IdentToColor lower clBlue
+ok IdentToColor value clBlue
+ok ColorToIdent clBlue
+ok ColorToIdent name clBlue
+ok StringToColor clFuchsia
+ok ColorToString clFuchsia
+ok IdentToColor lower clFuchsia
+ok IdentToColor value clFuchsia
+ok ColorToIdent clFuchsia
+ok ColorToIdent name clFuchsia
+ok StringToColor clAqua
+ok ColorToString clAqua
+ok IdentToColor lower clAqua
+ok IdentToColor value clAqua
+ok ColorToIdent clAqua
+ok ColorToIdent name clAqua
+ok StringToColor clMoneyGreen
+ok ColorToString clMoneyGreen
+ok IdentToColor lower clMoneyGreen
+ok IdentToColor value clMoneyGreen
+ok ColorToIdent clMoneyGreen
+ok ColorToIdent name clMoneyGreen
+ok StringToColor clSkyBlue
+ok ColorToString clSkyBlue
+ok IdentToColor lower clSkyBlue
+ok IdentToColor value clSkyBlue
+ok ColorToIdent clSkyBlue
+ok ColorToIdent name clSkyBlue
+ok StringToColor clCream
+ok ColorToString clCream
+ok IdentToColor lower clCream
+ok IdentToColor value clCream
+ok ColorToIdent clCream
+ok ColorToIdent name clCream
+ok StringToColor clMedGray
+ok ColorToString clMedGray
+ok IdentToColor lower clMedGray
+ok IdentToColor value clMedGray
+ok ColorToIdent clMedGray
+ok ColorToIdent name clMedGray
+ok StringToColor clNone
+ok ColorToString clNone
+ok IdentToColor lower clNone
+ok IdentToColor value clNone
+ok ColorToIdent clNone
+ok ColorToIdent name clNone
+ok StringToColor clDefault
+ok ColorToString clDefault
+ok IdentToColor lower clDefault
+ok IdentToColor value clDefault
+ok ColorToIdent clDefault
+ok ColorToIdent name clDefault
+ok StringToColor clScrollBar
+ok ColorToString clScrollBar
+ok IdentToColor lower clScrollBar
+ok IdentToColor value clScrollBar
+ok ColorToIdent clScrollBar
+ok ColorToIdent name clScrollBar
+ok StringToColor clBackground
+ok ColorToString clBackground
+ok IdentToColor lower clBackground
+ok IdentToColor value clBackground
+ok ColorToIdent clBackground
+ok ColorToIdent name clBackground
+ok StringToColor clActiveCaption
+ok ColorToString clActiveCaption
+ok IdentToColor lower clActiveCaption
+ok IdentToColor value clActiveCaption
+ok ColorToIdent clActiveCaption
+ok ColorToIdent name clActiveCaption
+ok StringToColor clInactiveCaption
+ok ColorToString clInactiveCaption
+ok IdentToColor lower clInactiveCaption
+ok IdentToColor value clInactiveCaption
+ok ColorToIdent clInactiveCaption
+ok ColorToIdent name clInactiveCaption
+ok StringToColor clMenu
+ok ColorToString clMenu
+ok IdentToColor lower clMenu
+ok IdentToColor value clMenu
+ok ColorToIdent clMenu
+ok ColorToIdent name clMenu
+ok StringToColor clWindow
+ok ColorToString clWindow
+ok IdentToColor lower clWindow
+ok IdentToColor value clWindow
+ok ColorToIdent clWindow
+ok ColorToIdent name clWindow
+ok StringToColor clWindowFrame
+ok ColorToString clWindowFrame
+ok IdentToColor lower clWindowFrame
+ok IdentToColor value clWindowFrame
+ok ColorToIdent clWindowFrame
+ok ColorToIdent name clWindowFrame
+ok StringToColor clMenuText
+ok ColorToString clMenuText
+ok IdentToColor lower clMenuText
+ok IdentToColor value clMenuText
+ok ColorToIdent clMenuText
+ok ColorToIdent name clMenuText
+ok StringToColor clWindowText
+ok ColorToString clWindowText
+ok IdentToColor lower clWindowText
+ok IdentToColor value clWindowText
+ok ColorToIdent clWindowText
+ok ColorToIdent name clWindowText
+ok StringToColor clCaptionText
+ok ColorToString clCaptionText
+ok IdentToColor lower clCaptionText
+ok IdentToColor value clCaptionText
+ok ColorToIdent clCaptionText
+ok ColorToIdent name clCaptionText
+ok StringToColor clActiveBorder
+ok ColorToString clActiveBorder
+ok IdentToColor lower clActiveBorder
+ok IdentToColor value clActiveBorder
+ok ColorToIdent clActiveBorder
+ok ColorToIdent name clActiveBorder
+ok StringToColor clInactiveBorder
+ok ColorToString clInactiveBorder
+ok IdentToColor lower clInactiveBorder
+ok IdentToColor value clInactiveBorder
+ok ColorToIdent clInactiveBorder
+ok ColorToIdent name clInactiveBorder
+ok StringToColor clAppWorkSpace
+ok ColorToString clAppWorkSpace
+ok IdentToColor lower clAppWorkSpace
+ok IdentToColor value clAppWorkSpace
+ok ColorToIdent clAppWorkSpace
+ok ColorToIdent name clAppWorkSpace
+ok StringToColor clHighlight
+ok ColorToString clHighlight
+ok IdentToColor lower clHighlight
+ok IdentToColor value clHighlight
+ok ColorToIdent clHighlight
+ok ColorToIdent name clHighlight
+ok StringToColor clHighlightText
+ok ColorToString clHighlightText
+ok IdentToColor lower clHighlightText
+ok IdentToColor value clHighlightText
+ok ColorToIdent clHighlightText
+ok ColorToIdent name clHighlightText
+ok StringToColor clBtnFace
+ok ColorToString clBtnFace
+ok IdentToColor lower clBtnFace
+ok IdentToColor value clBtnFace
+ok ColorToIdent clBtnFace
+ok ColorToIdent name clBtnFace
+ok StringToColor clBtnShadow
+ok ColorToString clBtnShadow
+ok IdentToColor lower clBtnShadow
+ok IdentToColor value clBtnShadow
+ok ColorToIdent clBtnShadow
+ok ColorToIdent name clBtnShadow
+ok StringToColor clGrayText
+ok ColorToString clGrayText
+ok IdentToColor lower clGrayText
+ok IdentToColor value clGrayText
+ok ColorToIdent clGrayText
+ok ColorToIdent name clGrayText
+ok StringToColor clBtnText
+ok ColorToString clBtnText
+ok IdentToColor lower clBtnText
+ok IdentToColor value clBtnText
+ok ColorToIdent clBtnText
+ok ColorToIdent name clBtnText
+ok StringToColor clInactiveCaptionText
+ok ColorToString clInactiveCaptionText
+ok IdentToColor lower clInactiveCaptionText
+ok IdentToColor value clInactiveCaptionText
+ok ColorToIdent clInactiveCaptionText
+ok ColorToIdent name clInactiveCaptionText
+ok StringToColor clBtnHighlight
+ok ColorToString clBtnHighlight
+ok IdentToColor lower clBtnHighlight
+ok IdentToColor value clBtnHighlight
+ok ColorToIdent clBtnHighlight
+ok ColorToIdent name clBtnHighlight
+ok StringToColor cl3DDkShadow
+ok ColorToString cl3DDkShadow
+ok IdentToColor lower cl3DDkShadow
+ok IdentToColor value cl3DDkShadow
+ok ColorToIdent cl3DDkShadow
+ok ColorToIdent name cl3DDkShadow
+ok StringToColor cl3DLight
+ok ColorToString cl3DLight
+ok IdentToColor lower cl3DLight
+ok IdentToColor value cl3DLight
+ok ColorToIdent cl3DLight
+ok ColorToIdent name cl3DLight
+ok StringToColor clInfoText
+ok ColorToString clInfoText
+ok IdentToColor lower clInfoText
+ok IdentToColor value clInfoText
+ok ColorToIdent clInfoText
+ok ColorToIdent name clInfoText
+ok StringToColor clInfoBk
+ok ColorToString clInfoBk
+ok IdentToColor lower clInfoBk
+ok IdentToColor value clInfoBk
+ok ColorToIdent clInfoBk
+ok ColorToIdent name clInfoBk
+ok StringToColor clHotLight
+ok ColorToString clHotLight
+ok IdentToColor lower clHotLight
+ok IdentToColor value clHotLight
+ok ColorToIdent clHotLight
+ok ColorToIdent name clHotLight
+ok StringToColor clGradientActiveCaption
+ok ColorToString clGradientActiveCaption
+ok IdentToColor lower clGradientActiveCaption
+ok IdentToColor value clGradientActiveCaption
+ok ColorToIdent clGradientActiveCaption
+ok ColorToIdent name clGradientActiveCaption
+ok StringToColor clGradientInactiveCaption
+ok ColorToString clGradientInactiveCaption
+ok IdentToColor lower clGradientInactiveCaption
+ok IdentToColor value clGradientInactiveCaption
+ok ColorToIdent clGradientInactiveCaption
+ok ColorToIdent name clGradientInactiveCaption
+ok StringToColor clMenuHighlight
+ok ColorToString clMenuHighlight
+ok IdentToColor lower clMenuHighlight
+ok IdentToColor value clMenuHighlight
+ok ColorToIdent clMenuHighlight
+ok ColorToIdent name clMenuHighlight
+ok StringToColor clMenuBar
+ok ColorToString clMenuBar
+ok IdentToColor lower clMenuBar
+ok IdentToColor value clMenuBar
+ok ColorToIdent clMenuBar
+ok ColorToIdent name clMenuBar
+# aliases and numeric text
+ok clLtGray parses
+ok clDkGray parses
+ok clLtGray prints as clSilver
+ok clDkGray prints as clGray
+ok unnamed RGB
+ok unnamed system colour
+ok minus one
+ok hex text
+ok decimal text
+ok negative text
+ok IdentToColor unknown
+ok IdentToColor unknown leaves value
+ok ColorToIdent unknown
+ok StringToColor unknown raises
+# ColorToRGB
+ok explicit RGB unchanged
+ok high byte masked
+ok clBtnFace via GetSysColor
+ok clWindowText via GetSysColor
+ok clNone masked
+ok clDefault masked
+ok RGB from Windows
+# GetColorValues
+ok one name per table entry
+ok first name
+ok last name
+ok alias not listed
+# registration
+ok IdentToInt registered for TColor
+ok IntToIdent registered for TColor
+ok registered IdentToInt works
+ok registered IdentToInt value
+ok registered IntToIdent works
+ok registered IntToIdent name
+# passed 358 failed 0

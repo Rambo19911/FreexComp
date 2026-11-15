@@ -1,0 +1,49 @@
+# byte-exact save (UIF-545)
+ok 2 x 2 at 32 bits, bottom row first
+ok 2 x 2 at 24 bits, padding bytes 0
+# round trip
+ok 32-bit loads as pf32bit
+ok 32-bit width
+ok 32-bit height
+ok 32-bit pixels incl. alpha identical
+ok 24-bit file size with stride 16
+ok 24-bit loads as pf24bit
+ok 24-bit pixels identical
+# 1-bit
+ok palettised input expands to pf24bit
+ok width
+ok height
+ok top-left = index 0 (red)
+ok top-middle = index 1 (blue)
+ok top-right = index 1
+ok bottom-left = index 1
+ok bottom-middle = index 0
+# 4-bit with biClrUsed
+ok pixel 0 = entry 2
+ok pixel 1 = entry 0
+ok pixel 2 = entry 1
+# 8-bit top-down
+ok top-down height is positive
+ok top row first
+ok top row second
+ok bottom row first
+# BI_BITFIELDS 32-bit
+ok bitfields load as pf32bit
+ok standard masks: B G R A bytes
+ok second pixel
+# V5 header
+ok V5 width
+ok V5 extra fields ignored
+# V4 header with bitfields in the header
+ok V4 bitfields pixel
+# errors
+ok empty stream
+ok bad signature
+ok truncated pixel data
+ok truncated info header
+ok RLE8
+ok 16 bits per pixel
+ok OS/2 core header
+ok non-standard bitfield masks
+ok JPEG in BMP
+# passed 39 failed 0

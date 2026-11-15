@@ -1,0 +1,37 @@
+Control "%s" has no parent window
+A control cannot have itself as its parent
+Cannot focus a disabled or invisible window
+Error creating window: %s
+Error registering window class: %s
+Control "%s" cannot be placed on a %s
+Value out of range (%d)
+Out of system resources
+Canvas does not allow drawing
+Unsupported pixel format
+Invalid bitmap size
+Unsupported bitmap format
+Bitmap image is not valid
+Unknown picture file extension (.%s)
+Icon streaming is not supported
+Invalid ImageList Index
+Cannot make a visible window modal
+Cannot make a disabled window modal
+MDI forms are not supported
+Unsupported button combination
+Cannot write layout dump: %s
+Warning
+Error
+Information
+Confirm
+OK
+Cancel
+Scrollbar property out of range
+Progress bar range is invalid
+Track bar range is invalid
+Multi-line tabs are not supported
+Fixed column count must be less than column count
+Fixed row count must be less than row count
+Grid index out of range
+Cannot insert or delete rows
+Common dialog error 0x%.4x
+Common dialog error 0x002A

@@ -1,0 +1,76 @@
+# defaults
+ok Empty
+ok Width
+ok Height
+ok PixelFormat pf32bit
+ok no handle
+ok Modified
+ok Transparent
+# storage (UIF-540, UIF-541)
+ok SetSize fires OnChange once
+ok not empty
+ok DIB created
+ok GetObjectW BITMAP
+ok bmWidth
+ok bmHeight
+ok bmBitsPixel
+ok a DIB section (bits accessible)
+ok new pixels white, alpha 0
+ok last pixel white
+ok 32-bit stride for width 5
+ok same size: no event
+# Canvas (UIF-542)
+ok Canvas drawing marks Modified
+ok each Canvas change fires OnChange
+ok row 0 is the top row, B G R order
+ok pixel (3,1) B G R
+ok Canvas reads the DIB
+# resize keeps the overlap
+ok Width
+ok Height
+ok kept pixel (0,0)
+ok kept pixel (3,1)
+ok new column white
+ok new row white
+ok Canvas works after resize
+ok shrink keeps the top-left
+ok Width setter
+ok Width setter keeps Height
+ok Height setter
+ok Width/Height setters keep pixels
+# empty and invalid sizes
+ok 0 x n is empty
+ok empty has no handle
+ok empty Width
+ok n x 0 is empty
+ok negative size raises
+ok negative Height raises
+# PixelFormat
+ok pf24bit accepted
+ok 24-bit DIB
+ok 24-bit stride for width 5
+ok pixel converted to 24-bit
+ok white converted to 24-bit
+ok 24-bit stride for width 7
+ok 24-bit resize keeps pixels
+ok back to 32-bit, alpha 0
+ok pf8bit raises
+ok format unchanged after the error
+# ScanLine and ReleaseHandle (UIF-543)
+ok ScanLine writes reach the canvas (B G R)
+ok ScanLine out of range raises
+ok ReleaseHandle returns the DIB
+ok empty after ReleaseHandle
+ok no handle after ReleaseHandle
+ok released DIB still valid
+ok released DIB width
+ok released DIB survives the bitmap
+# Assign (UIF-547)
+ok Width copied
+ok Height copied
+ok PixelFormat copied
+ok new DIB
+ok pixels copied
+ok deep copy
+ok Assign(nil) clears
+# passed 67 failed 0

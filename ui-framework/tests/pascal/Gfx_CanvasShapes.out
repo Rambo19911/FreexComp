@@ -1,0 +1,104 @@
+# plain canvas without DC
+ok HandleAllocated
+ok reading Handle raises
+ok drawing raises
+ok attached
+ok Handle is the attached DC
+# FillRect
+ok top-left white
+ok bottom-right white
+ok FillRect inside
+ok FillRect last pixel
+ok FillRect right/bottom excluded
+# Rectangle
+ok border top-left
+ok border bottom-right inside the rectangle
+ok border right
+ok interior
+ok interior next to border
+ok right/bottom edge excluded
+ok outside
+ok TRect overload border
+ok TRect overload interior
+ok TRect overload excluded edge
+# lines
+ok PenPos after MoveTo X
+ok PenPos after MoveTo Y
+ok line start
+ok line last pixel
+ok line end point excluded
+ok PenPos after LineTo X
+ok PenPos after LineTo Y
+ok PenPos assignment moves
+ok vertical end excluded
+ok Polyline corner
+ok Polyline second segment
+ok Polyline end excluded
+# FrameRect and DrawFocusRect
+ok frame top-left
+ok frame bottom-right
+ok frame interior untouched
+ok frame excluded edge
+ok DrawFocusRect inverts the dotted frame
+ok DrawFocusRect interior untouched
+# ellipse, round rect, polygon, pie, chord, arc
+ok ellipse interior
+ok ellipse corner outside
+ok ellipse top border
+ok ellipse TRect overload
+ok round rect interior
+ok round rect top border
+ok round rect corner cut
+ok polygon interior
+ok polygon outside
+ok polygon border
+ok pie interior (first quadrant)
+ok pie outside (third quadrant)
+ok chord interior (upper half)
+ok chord outside (lower half)
+ok arc top
+ok arc not filled
+ok arc lower half not drawn
+# Pixels and ClipRect
+ok Pixels write and read
+ok system colour resolved on write
+ok ClipRect.Left
+ok ClipRect.Top
+ok ClipRect.Right
+ok ClipRect.Bottom
+ok clipped ClipRect.Right
+ok clipped ClipRect.Bottom
+ok outside the clip reads -1
+ok write outside the clip has no effect
+# object state tracking (UIF-530)
+ok pen selected for a line
+ok brush selected by the earlier FillRect
+ok pen change deselects (original selected back)
+ok new pen selected on next drawing
+ok brush change deselects
+ok Pen.Mode applied with SetROP2
+ok pmCopy applied
+ok bsClear: TRANSPARENT background
+ok bsSolid: OPAQUE background
+ok SetBkColor follows the brush
+ok Refresh deselects the pen
+ok Refresh deselects the brush
+ok a line does not select the font
+# OnChanging / OnChange
+ok one pair per modifying call, none for reads
+ok read back
+# Lock, CopyMode
+ok TryLock
+ok LockCount always 0
+ok CopyMode default
+ok cmSrcCopy
+ok cmBlackness
+ok cmWhiteness
+# detach (UIF-531)
+ok detached
+ok original pen back
+ok original brush back
+ok original font back
+ok reattached canvas selects again
+ok freeing the canvas leaves no object selected
+# passed 92 failed 0

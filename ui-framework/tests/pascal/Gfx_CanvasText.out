@@ -1,0 +1,41 @@
+# extents
+ok TextWidth of empty text
+ok tmHeight positive
+ok TextHeight of empty text = tmHeight
+ok TextHeight = tmHeight
+ok TextExtent.cx
+ok TextExtent.cy
+ok TextWidth
+ok longer text is wider
+ok TextExtent empty cx
+ok TextExtent empty cy
+ok font change reselects the font
+# TextOut
+ok glyph pixels in Font.Color
+ok opaque: the whole text cell and nothing else is in the brush colour
+ok outside the cell untouched
+ok PenPos.X advanced to the end of the text
+ok PenPos.Y unchanged
+ok transparent: glyph pixels drawn
+ok transparent: background of the cell untouched
+# TextRect(R, X, Y, Text)
+ok no glyph pixel outside R
+ok no fill outside R
+ok R filled opaque
+ok non-solid brush: R not filled
+ok non-solid brush: glyphs drawn
+ok non-solid brush: clipped
+# TextRect(R, Text, Format)
+ok tfCalcRect keeps Left
+ok tfCalcRect Right = Left + text width
+ok tfCalcRect Bottom = Top + text height
+ok tfCalcRect draws nothing
+ok text unchanged
+ok tfRight: nothing left of the text
+ok tfRight/tfBottom: glyphs at the bottom-right
+ok tfCenter: left margin empty
+ok tfCenter: right margin empty
+ok tfCenter: glyphs drawn
+ok tfLeft: nothing right of the text
+ok tfTop: nothing below the text
+# passed 36 failed 0

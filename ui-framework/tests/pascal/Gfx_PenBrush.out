@@ -1,0 +1,71 @@
+# TPen defaults
+ok Color
+ok Mode
+ok Style
+ok Width
+ok no handle before first read
+# TPen handle (UIF-520)
+ok PS_ value of style 0
+ok PS_ value of style 1
+ok PS_ value of style 2
+ok PS_ value of style 3
+ok PS_ value of style 4
+ok PS_ value of style 5
+ok PS_ value of style 6
+ok lopnStyle
+ok lopnWidth
+ok lopnColor
+ok system colour resolved
+# TPen change order (UIF-505)
+ok unchanged values fire nothing
+ok Mode keeps the handle
+ok Width replaces the handle
+# TPen Assign and external handle
+ok Color copied
+ok Mode copied
+ok Style copied
+ok Width copied
+ok Style read back
+ok Width read back
+ok Color read back
+ok external pen kept
+# TBrush defaults
+ok Color
+ok Style
+ok no handle before first read
+# TBrush handle (UIF-525)
+ok bsSolid is BS_SOLID
+ok solid colour
+ok bsClear is the stock NULL_BRUSH
+ok hatched style 2
+ok HS_ value of style 2
+ok hatch colour 2
+ok hatched style 3
+ok HS_ value of style 3
+ok hatch colour 3
+ok hatched style 4
+ok HS_ value of style 4
+ok hatch colour 4
+ok hatched style 5
+ok HS_ value of style 5
+ok hatch colour 5
+ok hatched style 6
+ok HS_ value of style 6
+ok hatch colour 6
+ok hatched style 7
+ok HS_ value of style 7
+ok hatch colour 7
+# TBrush change order and bsClear rule
+ok one event
+ok Color while bsClear sets bsSolid
+ok stock brush not deleted
+ok new solid brush colour
+ok unchanged values fire nothing
+ok Style replaces the handle
+# TBrush Assign and external handle
+ok Color copied
+ok Style copied
+ok Style read back
+ok Color read back
+ok external brush kept
+# passed 62 failed 0

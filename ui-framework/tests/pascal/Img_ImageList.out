@@ -1,0 +1,65 @@
+# defaults
+ok Width
+ok Height
+ok ColorDepth
+ok Masked
+ok BkColor
+ok DrawingStyle
+ok Count
+ok no handle before use
+ok Handle created on read
+ok HandleAllocated
+# Add, AddMasked, AddIcon, Draw
+ok Add returns the first index
+ok a 48-pixel strip is split into 3 images (UIF-565)
+ok second Add starts at 3
+ok Count after two strips
+ok Clear
+ok AddMasked index
+ok AddMasked leaves the source bitmap unchanged
+ok opaque pixel drawn
+ok masked pixel transparent
+ok outside the image
+ok disabled drawing blends (UIF-566)
+ok disabled drawing keeps the mask
+ok AddIcon index
+ok Count after AddIcon
+ok icon drawn
+# GetBitmap
+ok GetBitmap valid index
+ok GetBitmap width
+ok GetBitmap height
+ok GetBitmap pixels
+ok GetBitmap invalid index
+# Delete
+ok Delete
+ok Delete out of range raises
+ok changing Width clears the list
+ok new Width
+# change links (UIF-567)
+ok Sender set on register
+ok Add notifies links, then OnChange
+ok size change notifies
+ok unchanged size: nothing
+ok Sender cleared on unregister
+ok unregistered link not notified
+ok a freed link unregisters itself
+ok destroying the list clears Sender
+# Bitmap defined property (UIF-568)
+ok empty list: Bitmap not stored
+ok Bitmap stored
+ok one 32 x 16 32-bit BMP
+ok BMP signature
+ok width 32, height 16, 32 bits
+ok opaque pixel: colour, alpha FF
+ok transparent pixel: alpha 0
+ok second image opaque blue
+ok read back: two images
+ok read back image 0 opaque
+ok read back image 0 transparent pixel
+ok read back image 1 opaque
+ok read back image 1 transparent pixel
+ok DesignLeft (UIF-569)
+ok DesignTop (UIF-569)
+ok TImageList registered (UIF-002)
+# passed 58 failed 0

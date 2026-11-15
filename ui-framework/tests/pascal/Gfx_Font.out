@@ -1,0 +1,82 @@
+# defaults
+ok DefFontData.Height
+ok DefFontData.Name
+ok DefFontData.Charset
+ok DefFontData.Style
+ok DefFontData.Pitch
+ok Charset
+ok Color
+ok Height
+ok Name
+ok Orientation
+ok Pitch
+ok Quality
+ok Style
+ok Size
+ok PixelsPerInch
+ok no handle before first read
+# handle creation (UIF-511)
+ok handle created on read
+ok HandleAllocated after read
+ok handle cached
+ok GetObjectW size
+ok lfHeight
+ok lfWeight bold
+ok lfItalic
+ok lfUnderline
+ok lfStrikeOut
+ok lfCharSet
+ok lfQuality CLEARTYPE_QUALITY
+ok lfPitchAndFamily
+ok lfEscapement
+ok lfOrientation
+ok lfFaceName
+ok lfWeight normal
+# change order (UIF-505)
+ok detached, event while the old handle exists
+ok old handle deleted after the event
+ok new handle not created until read
+ok new handle on read
+ok unchanged values fire nothing
+ok unchanged values keep the handle
+ok Color fires OnChange and keeps the handle
+ok handle kept after Color
+ok one event per changed attribute
+ok first handle deleted
+# Assign (UIF-506)
+ok equal font: no event
+ok one event for many attributes
+ok old handle deleted
+ok Name copied
+ok Height copied
+ok Style copied
+ok Color copied
+ok Charset copied
+ok Pitch copied
+ok Quality copied
+ok Orientation copied
+ok handles never shared
+# Handle := external (UIF-507)
+ok one event, old handle alive during it
+ok previous handle deleted
+ok external handle kept
+ok Height read back
+ok Style read back
+ok Name read back
+ok Quality read back
+ok Pitch read back
+ok Orientation read back
+ok owned external handle deleted with the font
+# Size and Height (UIF-512, UIF-513)
+ok Size 12 at 96 PPI
+ok Size read back at 96
+ok PixelsPerInch does not change Height
+ok Height -16 at 144 PPI is 8 pt
+ok Size 9 at 144 PPI
+ok Size read back at 144
+ok Height 0 = default scaled to 144 PPI
+ok Height 0 = default at 96 PPI
+ok positive cell height kept
+ok Size of a positive height
+ok Name at most 31 characters
+# passed 75 failed 0

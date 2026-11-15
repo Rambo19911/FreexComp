@@ -1,0 +1,44 @@
+# Draw and StretchDraw
+ok Draw changes the canvas once
+ok Draw (0,0)
+ok Draw (1,0)
+ok Draw (0,1)
+ok Draw (1,1)
+ok outside the drawn area
+ok before the drawn area
+ok stretched (0,0) top-left
+ok stretched (0,0) bottom-right
+ok stretched (1,0)
+ok stretched (1,1)
+ok stretch right/bottom excluded
+ok nil or empty graphic draws nothing
+ok still white
+# transparency (UIF-546)
+ok TransparentMode default tmAuto
+ok tmAuto: bottom-left pixel
+ok transparent pixel skipped (bottom-left)
+ok transparent pixel skipped (centre)
+ok opaque pixel drawn
+ok opaque blue drawn
+ok opaque corner drawn
+ok outside untouched
+ok assigning TransparentColor selects tmFixed
+ok tmFixed colour
+ok tmFixed: red skipped
+ok tmFixed: fuchsia drawn
+ok tmFixed: blue drawn
+ok stretched: transparent block skipped
+ok stretched: transparent centre skipped
+ok stretched: opaque block drawn
+ok stretched: blue block drawn
+ok not transparent: every pixel drawn
+ok destination brush untouched
+ok destination canvas still draws with its brush
+# CopyRect
+ok source (2,2) copied
+ok source (3,3) copied
+ok outside the destination
+ok stretched copy
+ok stretched copy top-left
+ok CopyMode cmNotSrcCopy inverts blue
+# passed 40 failed 0

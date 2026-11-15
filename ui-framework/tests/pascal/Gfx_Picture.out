@@ -1,0 +1,55 @@
+# TIcon (UIF-550)
+ok empty icon
+ok empty width
+ok not empty
+ok Width from GetIconInfo
+ok Height from GetIconInfo
+ok DrawIconEx draws the icon
+ok icon bottom-right
+ok outside the icon
+ok SaveToStream raises
+ok LoadFromStream raises
+ok replaced icon destroyed
+ok owned icon destroyed with the object
+ok LoadFromFile .ico
+ok loaded icon has a width
+ok loaded icon is square
+# TPicture
+ok empty picture has no graphic
+ok empty Width
+ok empty Height
+ok assigning a graphic fires OnChange
+ok the picture owns a copy
+ok copy of the same class
+ok Width of the graphic
+ok Height of the graphic
+ok copied pixels
+ok Bitmap returns the bitmap graphic
+ok a change of the graphic fires the picture OnChange
+ok Icon replaces the bitmap
+ok with a new empty icon
+ok Bitmap replaces the icon
+ok with a new empty bitmap
+ok Assign(TPicture) copies
+ok Assign(TPicture) pixels
+ok Assign(nil) clears
+ok Assign(TGraphic)
+ok Graphic := nil clears
+# file-format registry
+ok .bmp loads a TBitmap
+ok loaded pixels
+ok extension is case-insensitive
+ok .ico loads a TIcon
+ok saving an icon picture raises
+ok unknown extension raises
+ok later registration wins
+ok SaveToFile writes the graphic
+# Data defined property (UIF-555)
+ok empty picture: Data not stored
+ok non-empty picture: Data stored
+ok N, class name, SaveToStream bytes
+ok Data read back creates the bitmap
+ok read back width
+ok read back pixel
+ok unknown class name raises
+# passed 50 failed 0

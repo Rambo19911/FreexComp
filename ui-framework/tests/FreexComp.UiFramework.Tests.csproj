@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.UiFramework.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- opc.exe is copied next to the test assembly; the golden runner starts it as a process (UIF-1201) -->
+    <ProjectReference Include="..\..\compiler\src\opc\opc.csproj" />
+    <!-- the golden runner of rtl/tests is reused, not copied (UIF-1202) -->
+    <ProjectReference Include="..\..\rtl\tests\FreexComp.Rtl.Tests.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the Pascal programs are data read from the source tree, never compiled by MSBuild -->
+    <None Remove="pascal\**" />
+  </ItemGroup>
+</Project>
