@@ -1,0 +1,13 @@
+TBase.Create 7
+TMid.Create 7
+TLeaf.Create 7
+TRUE 3 TLeaf
+TBase.Create 8
+TMid.Create 8
+2 TMid
+TBase.Create 9
+TMid.Create 9
+2 TMid
+TBase.Create 10
+1 TBase
+leaked: 0

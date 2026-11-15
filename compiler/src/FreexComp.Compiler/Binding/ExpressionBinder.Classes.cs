@@ -393,12 +393,13 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>
-    /// CMP-367: a constructor on an instance runs the body only (Alloc = 0, static); a destructor passes Dealloc = 1 (0 for
-    /// <c>inherited</c>); virtual methods dispatch through the VMT except with <c>inherited</c> (LANG-624).
+    /// CMP-367: a constructor on an instance runs the body only (Alloc = 0); a destructor passes Dealloc = 1 (0 for
+    /// <c>inherited</c>); virtual methods — virtual constructors included (C-256, LANG-630/633) — dispatch through the VMT of
+    /// the instance's class except with <c>inherited</c> (LANG-624).
     /// </summary>
     private static BoundReceiver Dispatched(MethodSymbol method, BoundExpression self, bool inherited) => method.MethodKind switch
     {
-        MethodKind.Constructor => new BoundReceiver(self, IsVirtual: false, Flag: 0),
+        MethodKind.Constructor => new BoundReceiver(self, IsVirtual: !inherited && method.IsDispatched, Flag: 0),
         MethodKind.Destructor => new BoundReceiver(self, IsVirtual: !inherited && method.IsDispatched, Flag: inherited ? 0 : 1),
         _ => new BoundReceiver(self, IsVirtual: !inherited && method.IsDispatched, Flag: null),
     };

@@ -730,9 +730,10 @@ internal sealed partial class ExpressionBinder
     /// <summary>
     /// LANG-265 <c>p^</c>: the variable of the pointed type; E2018 when <c>p</c> is no typed pointer. <paramref name="untyped"/>
     /// (an untyped <c>var</c>/<c>const</c> argument such as <c>FillChar(P^, …)</c>) also accepts the untyped <c>Pointer</c>,
-    /// giving a byte-typed variable.
+    /// giving a byte-typed variable. <paramref name="typecast"/> (the operand of <c>T(p^)</c>, C-257) accepts it as an untyped
+    /// variable, which the cast then reinterprets like an untyped parameter.
     /// </summary>
-    internal BoundExpression BindDereference(DereferenceExpressionSyntax syntax, bool untyped)
+    internal BoundExpression BindDereference(DereferenceExpressionSyntax syntax, bool untyped, bool typecast = false)
     {
         var pointer = BindExpression(syntax.Expression);
         if (pointer.HasErrors)
@@ -744,6 +745,7 @@ internal sealed partial class ExpressionBinder
         {
             PointerTypeSymbol { PointedType: { } target } when pointer.Type != _types.Nil => new BoundDereferenceExpression(syntax, pointer, target),
             PointerTypeSymbol when untyped && pointer.Type != _types.Nil => new BoundDereferenceExpression(syntax, pointer, _types.Byte),
+            PointerTypeSymbol when typecast && pointer.Type != _types.Nil => new BoundDereferenceExpression(syntax, pointer, _types.Untyped),
             _ => ReportPointerRequired(syntax, pointer),
         };
     }
@@ -1123,9 +1125,12 @@ internal sealed partial class ExpressionBinder
         }
 
         // the operand of a cast to a non-procedural type is a value (LANG-482); Pointer(p) / NativeInt(p) cast the procedural value itself
-        var operand = target is ProceduralTypeSymbol or PointerTypeSymbol || target is IntegerTypeSymbol { Bits: 64 }
-            ? BindOperand(arguments[0].Expression)
-            : BindExpression(arguments[0].Expression);
+        // C-257: T(p^) with p an untyped Pointer is an untyped variable at p, cast like an untyped parameter (C-202)
+        var asOperand = target is ProceduralTypeSymbol or PointerTypeSymbol || target is IntegerTypeSymbol { Bits: 64 };
+        var operand = Unparenthesized(arguments[0].Expression) is DereferenceExpressionSyntax dereference
+            ? BindDereference(dereference, untyped: false, typecast: true)
+            : BindOperand(arguments[0].Expression);
+        operand = asOperand ? operand : Called(operand);
         return operand.HasErrors || target.TypeKind == TypeKind.Error ? Error(invocation, operand) : BindTypecast(invocation, target, operand, variableContext);
     }
 
