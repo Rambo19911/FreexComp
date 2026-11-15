@@ -44,6 +44,58 @@ public sealed partial class BuildServiceTests
         Assert.Equal(Strings.Msg_State_Idle, bar.StateText);
     }
 
+    /// <summary>
+    /// IDE-P3-003 (footnote of the availability table): <c>file.exit</c> while Building cancels the build after the
+    /// unsaved-changes prompt and waits at most 5 s for the cancellation before closing.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-003")]
+    public async Task ExitDuringBuildCancelsAndWaits()
+    {
+        var bed = new BuildTestBed();
+        await bed.OpenHelloAsync();
+        var unit = await bed.OpenDocumentAsync(BuildTestBed.UnitPath);
+        bed.Services.Settings.Set(SettingsCatalog.EnvironmentAutoSaveBeforeBuild, "none");
+        BuildTestBed.Type(unit, "{a}");
+        var shutdowns = 0;
+        bed.Services.Application.Shutdown = () => shutdowns++;
+        var held = bed.Engine.Enqueue(new FakeBuild([], FakeBuildEngine.Result(BuildTestBed.ProjectPath, true)).Held());
+        var running = bed.Services.Build.BuildAsync(BuildKind.Build);
+        await held.Reached;
+
+        // Cancel at the unsaved-changes prompt: the build goes on.
+        bed.Dialogs.Enqueue("Msg.File.SaveChangesOne", "Cancel", "DontSave");
+        Assert.False(await bed.Services.Application.ExitAsync());
+        Assert.False(held.Token.IsCancellationRequested);
+        Assert.Equal(IdeState.Building, bed.Services.State.Current.State);
+
+        // Don't Save: the build is canceled, its end awaited, then the IDE closes.
+        Assert.True(await bed.Services.Application.ExitAsync());
+        Assert.True(held.Token.IsCancellationRequested);
+        Assert.NotEqual(IdeState.Building, bed.Services.State.Current.State); // the build ended before the close
+        Assert.True((await running)!.Canceled);
+        Assert.Equal(Strings.Msg_Build_Canceled, bed.Services.Build.ResultText);
+        Assert.Equal(1, shutdowns);
+
+        // A hung engine: the exit waits 5 s, then closes anyway.
+        var bed2 = new BuildTestBed();
+        await bed2.OpenHelloAsync();
+        var closed = 0;
+        bed2.Services.Application.Shutdown = () => closed++;
+        var hung = bed2.Engine.Enqueue(new FakeBuild([], FakeBuildEngine.Result(BuildTestBed.ProjectPath, true)).Held(honorsCancel: false));
+        _ = bed2.Services.Build.BuildAsync(BuildKind.Build);
+        await hung.Reached;
+        var exiting = bed2.Services.Application.ExitAsync();
+        Assert.True(hung.Token.IsCancellationRequested);
+        bed2.Clock.Advance(TimeSpan.FromSeconds(4.9));
+        Assert.False(exiting.IsCompleted);
+        Assert.Equal(0, closed);
+        bed2.Clock.Advance(TimeSpan.FromSeconds(0.1));
+        Assert.True(await exiting);
+        Assert.Equal(1, closed);
+        hung.Release();
+    }
+
     /// <summary>IDE-P3-022 in <c>prompt</c> mode: Save is chosen, the save fails and its error dialog ends with Cancel → no build.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-022")]

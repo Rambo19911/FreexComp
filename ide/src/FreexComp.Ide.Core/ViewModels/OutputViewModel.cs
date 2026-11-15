@@ -9,6 +9,7 @@ using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ToolWindows;
 
 namespace FreexComp.Ide.Core.ViewModels;
@@ -68,6 +69,7 @@ public sealed class OutputViewModel : ToolWindowViewModel
     private readonly ToolWindowToolBarChoice _channel;
     private IReadOnlyList<OutputLine> _lines = [];
     private bool _scrollLock;
+    private int? _fontSize;
     private ICommandService? _commands;
 
     public OutputViewModel(IOutputService output, ISettingsService settings, IClipboardService clipboard, IDocumentService documents,
@@ -93,7 +95,37 @@ public sealed class OutputViewModel : ToolWindowViewModel
             }
         };
         _lines = _output.GetLines(SelectedChannel);
+        var buffer = new StringTextBufferFactory().Create(Join(_lines), LineEndingKind.Lf);
+        buffer.IsReadOnly = true;
+        Content = new TextDocumentViewModel(buffer, null, Strings.Cmd_view_output, new Languages.PlainTextLanguage(), FileEncoding.Utf8,
+            LineEndingKind.Lf);
     }
+
+    /// <summary>
+    /// UI-TW-500: the visible text as a read-only, never-saved text document (lines joined with LF, as the view shows
+    /// them), so the editor's find panel works over the Output (<c>FindService.For(Content)</c>, find mode only). The
+    /// view mirrors its caret and selection into it and follows the selection a find makes.
+    /// </summary>
+    public TextDocumentViewModel Content { get; }
+
+    /// <summary>UI-TW-500 / UI-ED-061: Ctrl+wheel zooms the Output text when <c>editor.mouseWheelZoom</c> is on.</summary>
+    public bool MouseWheelZoom => _settings.Get(SettingsCatalog.EditorMouseWheelZoom);
+
+    /// <summary>The zoomed font size (6…72 pt); null = the code font size. Not persisted (the spec stores no Output zoom).</summary>
+    public int? FontSize
+    {
+        get => _fontSize;
+        private set => SetProperty(ref _fontSize, value);
+    }
+
+    /// <summary>One wheel notch: ±1 pt from <paramref name="baseSize"/> (or the current zoom), clamped to 6…72 pt.</summary>
+    public void Zoom(bool zoomIn, int baseSize)
+    {
+        var size = Math.Clamp((FontSize ?? baseSize) + (zoomIn ? 1 : -1), TextDocumentViewModel.MinFontSize, TextDocumentViewModel.MaxFontSize);
+        FontSize = size == baseSize ? null : size;
+    }
+
+    private static string Join(IEnumerable<OutputLine> lines) => string.Join("\n", lines.Select(l => l.Text));
 
     /// <summary>The registration of the Output window (tool-windows.md §1.2: bottom dock, Phase 3).</summary>
     public ToolWindowDefinition Definition => new(ToolName, "Cmd_view_output", ToolGroupId.Bottom, 3, () => this);
@@ -252,11 +284,36 @@ public sealed class OutputViewModel : ToolWindowViewModel
         var wasEmpty = IsEmpty;
         var added = reset ? lines : lines.Skip(_lines.Count).ToList();
         _lines = lines;
+        SyncContent(reset, added);
         if (reset || added.Count > 0)
             TextChanged?.Invoke(this, new OutputTextChange(reset, added));
         if (wasEmpty != IsEmpty)
             OnPropertyChanged(nameof(IsEmpty));
         _commands?.InvalidateCanExecute();
+    }
+
+    /// <summary>Keeps <see cref="Content"/> equal to the view's text: a reset reloads it, an append inserts at the end.</summary>
+    private void SyncContent(bool reset, IReadOnlyList<OutputLine> added)
+    {
+        if (reset)
+        {
+            Content.Reload(Join(_lines));
+            return;
+        }
+
+        if (added.Count == 0)
+            return;
+        var buffer = Content.Buffer;
+        var text = (buffer.Length > 0 ? "\n" : "") + Join(added);
+        buffer.IsReadOnly = false;
+        try
+        {
+            buffer.ApplyEdits([new TextEdit(buffer.Length, 0, text)]);
+        }
+        finally
+        {
+            buffer.IsReadOnly = true;
+        }
     }
 
     private sealed class Handler(Func<bool> canExecute, Func<string?, Task> execute, Func<bool>? isChecked = null) : ICommandHandler

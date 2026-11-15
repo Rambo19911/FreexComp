@@ -119,6 +119,19 @@ public sealed class CompletionTests
         Assert.False(session.IsOpen);
     }
 
+    /// <summary>UI-ED-115 (I-198): the characters of a label that the typed text matched, for the highlight.</summary>
+    [Fact]
+    [Trait("Req", "UI-ED-115")]
+    public void MatchHighlightIndices()
+    {
+        Assert.Equal([0, 1], CompletionRules.MatchedIndices("Wr", "WriteLn"));
+        Assert.Equal([0, 1, 2], CompletionRules.MatchedIndices("wri", "WriteLn")); // case-insensitive prefix
+        Assert.Equal([0, 5], CompletionRules.MatchedIndices("WL", "WriteLn")); // word starts
+        Assert.Equal([2, 4], CompletionRules.MatchedIndices("ab", "x_a_b")); // after "_"
+        Assert.Empty(CompletionRules.MatchedIndices("", "WriteLn"));
+        Assert.Empty(CompletionRules.MatchedIndices("xq", "WriteLn"));
+    }
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-081")]
     [Trait("Req", "IDE-ED-082")]

@@ -121,6 +121,7 @@ public sealed class MessagesViewModel : ToolWindowViewModel, ICommandTarget
                 Refresh();
         };
         _messages.IsVisible = Shows;
+        _messages.NavigationOrder = () => _rows.Select(r => r.Item);
         _messages.CurrentChanged += (_, _) => OnPropertyChanged(nameof(CurrentRow));
         Refresh();
     }

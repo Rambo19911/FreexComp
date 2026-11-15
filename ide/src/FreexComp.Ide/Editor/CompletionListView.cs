@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -75,7 +76,7 @@ public sealed class CompletionListView : Border
         {
             var item = session.Items[i];
             var index = i;
-            var name = new TextBlock { Text = item.Label, VerticalAlignment = VerticalAlignment.Center, Classes = { "code" } };
+            var name = NameBlock(item.Label, CompletionRules.MatchedIndices(session.TypedText, item.Label));
             var detail = new TextBlock
             {
                 Text = item.Detail ?? "", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0),
@@ -120,6 +121,39 @@ public sealed class CompletionListView : Border
             _scroll.Offset = new Vector(0, top + RowHeight - visible);
         PlacementRequested?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>
+    /// UI-ED-115: the name with the characters the typed text matched in <c>type.bodyStrong</c> weight and <c>text.link</c>
+    /// colour (runs of consecutive matched characters share one <see cref="Run"/>).
+    /// </summary>
+    private static TextBlock NameBlock(string label, IReadOnlyList<int> matched)
+    {
+        var name = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Classes = { "code" } };
+        var inlines = name.Inlines ??= [];
+        var set = matched.ToHashSet();
+        for (var start = 0; start < label.Length;)
+        {
+            var highlighted = set.Contains(start);
+            var end = start;
+            while (end < label.Length && set.Contains(end) == highlighted)
+                end++;
+            var run = new Run(label[start..end]);
+            if (highlighted)
+            {
+                run.FontWeight = FontWeight.SemiBold;
+                run.Bind(TextElement.ForegroundProperty, name.GetResourceObservable("FxcTextLinkBrush"));
+                run.Classes.Add(MatchClass);
+            }
+
+            inlines.Add(run);
+            start = end;
+        }
+
+        return name;
+    }
+
+    /// <summary>The class of the highlighted runs of a row name (tests).</summary>
+    public const string MatchClass = "completionMatch";
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {

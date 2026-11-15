@@ -13,6 +13,8 @@ using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
 using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Editing;
+using FreexComp.Ide.Editor;
 using KeyModifiers = Avalonia.Input.KeyModifiers;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
@@ -45,7 +47,6 @@ public sealed class OutputView : UserControl, ICommandTarget
         Bind(_editor, TextEditor.BackgroundProperty, "FxcBgEditorBrush");
         Bind(_editor, TextEditor.ForegroundProperty, "FxcTextPrimaryBrush");
         Bind(_editor, TextEditor.FontFamilyProperty, "FxcFontMono");
-        Bind(_editor, TextEditor.FontSizeProperty, "FxcTypeCodeSize");
         _editor.TextArea.Bind(TextArea.SelectionBrushProperty, _editor.TextArea.GetResourceObservable("FxcEditorSelectionBgBrush"));
         Bind(_empty, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
         _editor.HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
@@ -61,9 +62,92 @@ public sealed class OutputView : UserControl, ICommandTarget
         _editor.TextArea.TextView.PointerMoved += OnPointerMoved;
         _editor.TextArea.TextView.PointerExited += (_, _) => SetHoverLine(0);
         _editor.ContextRequested += OnContextRequested;
-        Content = new Panel { Children = { _editor, _empty } };
+        // UI-TW-500: the editor's find panel (find only) over Content, its match highlights, Ctrl+wheel zoom.
+        _findPanel = new FindPanelView(() => _editor.TextArea.Focus()) { Margin = new Thickness(0, 0, 8, 0) };
+        _findPanel.SetAutomationIds("Tool.Output.Text");
+        _editor.TextArea.TextView.BackgroundRenderers.Add(new FindMatchRenderer(this, () => _find));
+        _editor.TextArea.Caret.PositionChanged += (_, _) => MirrorSelection();
+        _editor.TextArea.SelectionChanged += (_, _) => MirrorSelection();
+        _editor.AddHandler(PointerWheelChangedEvent, OnPointerWheel, RoutingStrategies.Tunnel);
+        _editor.GetResourceObservable("FxcTypeCodeSize").Subscribe(new Avalonia.Reactive.AnonymousObserver<object?>(v =>
+        {
+            if (v is double size)
+                _baseFontSize = size;
+            ApplyFontSize();
+        }));
+        Content = new Panel { Children = { _editor, _empty, _findPanel } };
         SizeChanged += (_, _) => PlaceEmpty();
     }
+
+    private readonly FindPanelView _findPanel;
+    private FindSession? _find;
+    private bool _applying;
+    private double _baseFontSize = 13;
+
+    private void ApplyFontSize() => _editor.FontSize = _model?.FontSize ?? _baseFontSize;
+
+    /// <summary>UI-TW-500 / UI-ED-061: Ctrl+wheel zooms by 1 pt per notch (when <c>editor.mouseWheelZoom</c> is on).</summary>
+    private void OnPointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (_model is not { MouseWheelZoom: true } model || e.Delta.Y == 0 || !e.KeyModifiers.HasFlag(KeyModifiers.Control)
+            || (e.Source as Visual)?.FindAncestorOfType<FindPanelView>(includeSelf: true) is not null)
+            return;
+        e.Handled = true;
+        model.Zoom(e.Delta.Y > 0, (int)Math.Round(_baseFontSize));
+    }
+
+    /// <summary>The user moved the caret or selection: <see cref="OutputViewModel.Content"/> follows (a find starts there).</summary>
+    private void MirrorSelection()
+    {
+        if (_applying || _model is null)
+            return;
+        var area = _editor.TextArea;
+        var length = _model.Content.Buffer.Length;
+        var segment = area.Selection.SurroundingSegment;
+        var anchor = area.Selection.IsEmpty ? area.Caret.Offset : segment.Offset == area.Caret.Offset ? segment.EndOffset : segment.Offset;
+        _applying = true;
+        try
+        {
+            _model.Content.Selection = new FreexComp.Ide.Core.Text.TextSelection(Math.Min(anchor, length), Math.Min(area.Caret.Offset, length));
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
+
+    /// <summary>A find moved the selection of <see cref="OutputViewModel.Content"/>: the text view follows.</summary>
+    private void ApplySelection()
+    {
+        if (_model is null)
+            return;
+        var selection = _model.Content.Selection;
+        var area = _editor.TextArea;
+        var length = area.Document.TextLength;
+        _applying = true;
+        try
+        {
+            area.Caret.Offset = Math.Min(selection.Caret, length);
+            if (selection.IsEmpty)
+                area.ClearSelection();
+            else
+                area.Selection = Selection.Create(area, Math.Min(selection.Anchor, length), Math.Min(selection.Caret, length));
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
+
+    private void OnContentViewStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!_applying && e.PropertyName is nameof(EditorViewState.Caret) or nameof(EditorViewState.SelectionAnchor))
+            ApplySelection();
+    }
+
+    private void OnRevealCaretRequested(object? sender, EventArgs e) => _editor.TextArea.Caret.BringCaretToView();
+
+    private void OnFindChanged(object? sender, EventArgs e) => _editor.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
 
     /// <summary>The 1-based line whose path part is underlined (pointer over it); 0 = none.</summary>
     internal int HoverLine { get; private set; }
@@ -100,13 +184,24 @@ public sealed class OutputView : UserControl, ICommandTarget
         {
             _model.TextChanged -= OnTextChanged;
             _model.PropertyChanged -= OnModelChanged;
+            _model.Content.ViewState.PropertyChanged -= OnContentViewStateChanged;
+            _model.Content.RevealCaretRequested -= OnRevealCaretRequested;
         }
 
+        _find?.Changed -= OnFindChanged;
+        _find = null;
+        _findPanel.Session = null;
         _model = DataContext as OutputViewModel;
+        ApplyFontSize();
         if (_model is null)
             return;
         _model.TextChanged += OnTextChanged;
         _model.PropertyChanged += OnModelChanged;
+        _model.Content.ViewState.PropertyChanged += OnContentViewStateChanged;
+        _model.Content.RevealCaretRequested += OnRevealCaretRequested;
+        _find = _model.Content.Find;
+        _find?.Changed += OnFindChanged;
+        _findPanel.Session = _find;
         _editor.Document = new TextDocument(Join(_model.Lines));
         _editor.WordWrap = _model.WordWrap;
         _empty.IsVisible = _model.IsEmpty;
@@ -125,6 +220,8 @@ public sealed class OutputView : UserControl, ICommandTarget
             _editor.WordWrap = _model.WordWrap;
         else if (e.PropertyName == nameof(OutputViewModel.IsEmpty))
             _empty.IsVisible = _model.IsEmpty;
+        else if (e.PropertyName == nameof(OutputViewModel.FontSize))
+            ApplyFontSize();
     }
 
     /// <summary>UI-TW-504: appended text keeps the view at the end when it was there, unless Scroll Lock is on.</summary>

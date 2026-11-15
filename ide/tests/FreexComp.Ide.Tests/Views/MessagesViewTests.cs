@@ -228,4 +228,73 @@ public sealed class MessagesViewTests
         Assert.Equal("Editor.Unit1.pas", h.FocusedAutomationId);
         Assert.Equal(MessagesViewModel.ToolName, h.Services.Layout.Layout.Bottom.ActiveTool);
     }
+
+    /// <summary>UI-TW-405 / IDE-P3-066 (I-190): F8 visits the related rows of an expanded diagnostic, in list order.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-405")]
+    [Trait("Req", "IDE-P3-066")]
+    public async Task F8VisitsExpandedRelatedRows()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        await BuildWithMessagesAsync(h);
+        var messages = BuildScenario.Messages(h);
+
+        async Task<string> NextAsync()
+        {
+            var before = h.Services.Messages.Current;
+            await h.WaitForAsync(() => h.Services.Commands.CanExecute("search.nextMessage"), "Next Message available");
+            h.Press("F8");
+            await h.WaitForAsync(() => h.Services.Messages.Current != before, "F8 moved");
+            return h.Services.Messages.Current!.Text;
+        }
+
+        // Collapsed: the related row is skipped.
+        Assert.Equal("Undeclared identifier 'Foo'", await NextAsync());
+        Assert.Equal("Incompatible types: 'Integer' and 'string'", await NextAsync());
+
+        // Expanded: E2003 → its related row (4:5, the span of 4 selected) → E2010.
+        messages.SetExpanded(messages.Rows.Single(r => r.Key == "0"), expanded: true);
+        Assert.Contains(messages.Rows, r => r.Key == "0.r0");
+        await messages.GoToAsync(messages.Rows.Single(r => r.Key == "0"));
+        Assert.Equal("Declared here", await NextAsync());
+        var doc = (TextDocumentViewModel)h.Services.Documents.ActiveDocument!;
+        Assert.Equal(new TextPosition(4, 9), doc.ViewState.Caret);
+        Assert.Equal("0.r0", messages.CurrentRow?.Key); // the list selects the related row
+        Assert.Equal("Incompatible types: 'Integer' and 'string'", await NextAsync());
+    }
+
+    /// <summary>IDE-P3-065 (I-190): a file outside the project opens read-only from Messages; project files stay writable.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-065")]
+    public async Task NonProjectFileOpensReadOnly()
+    {
+        await using var h = await BuildScenario.StartAsync(o =>
+        {
+            o.InitialFiles[@"lib\Lib.pas"] = "unit Lib;\r\ninterface\r\nimplementation\r\nend.\r\n";
+            o.InitialFiles[@"lib\Open.pas"] = "unit Open;\r\ninterface\r\nimplementation\r\nend.\r\n";
+        });
+        var lib = Path.Combine(h.TempDir, @"lib\Lib.pas");
+        var open = Path.Combine(h.TempDir, @"lib\Open.pas");
+        var alreadyOpen = (TextDocumentViewModel)(await h.Services.Documents.OpenAsync(open)).Value!;
+        h.Build.Enqueue(FakeBuildEngine.Failure(BuildScenario.ProjectPath(h),
+            FakeBuildEngine.Diag("E2003", DiagnosticSeverity.Error, "in a library", lib, 2, 1, 9),
+            FakeBuildEngine.Diag("E2003", DiagnosticSeverity.Error, "in the project", BuildScenario.UnitPath(h), 6, 3, 3),
+            FakeBuildEngine.Diag("E2003", DiagnosticSeverity.Error, "in an open file", open, 2, 1, 9)));
+        h.Press("Ctrl+Shift+B");
+        await h.WaitForAsync(() => h.Services.State.Current.State == Core.Models.IdeState.Idle && h.Services.Build.ResultText is not null,
+            "build finished");
+        var items = h.Services.Messages.Items;
+
+        await h.Services.Messages.NavigateToAsync(items[0]);
+        var libDoc = Assert.IsType<TextDocumentViewModel>(h.Services.Documents.ActiveDocument);
+        Assert.Equal(lib, libDoc.FilePath);
+        Assert.True(libDoc.Buffer.IsReadOnly);
+        Assert.Equal(new TextPosition(2, 10), libDoc.ViewState.Caret);
+
+        await h.Services.Messages.NavigateToAsync(items[1]);
+        Assert.False(((TextDocumentViewModel)h.Services.Documents.ActiveDocument!).Buffer.IsReadOnly);
+        await h.Services.Messages.NavigateToAsync(items[2]);
+        Assert.Same(alreadyOpen, h.Services.Documents.ActiveDocument);
+        Assert.False(alreadyOpen.Buffer.IsReadOnly); // a document the user opened keeps its state
+    }
 }

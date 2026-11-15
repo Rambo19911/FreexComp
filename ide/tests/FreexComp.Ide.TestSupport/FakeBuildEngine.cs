@@ -32,6 +32,12 @@ public sealed class FakeBuildEngine : IBuildEngine
     /// <summary>Output path of the default successful build; null = <c>&lt;project dir&gt;\&lt;name&gt;.exe</c>.</summary>
     public string? DefaultOutputPath { get; set; }
 
+    /// <summary>
+    /// Where successful builds write their output files (<see cref="FakeBuild.WritesOutput"/>); the test composition sets its
+    /// file system here when this is null.
+    /// </summary>
+    public FreexComp.Ide.Core.Platform.IFileSystem? FileSystem { get; set; }
+
     /// <summary>Queues the next run.</summary>
     public FakeBuild Enqueue(FakeBuild build)
     {
@@ -84,7 +90,22 @@ public sealed class FakeBuildEngine : IBuildEngine
                 progress.Report(build.FinishedEvent(request));
         }
 
+        WriteOutputs(build);
         return build.Result;
+    }
+
+    /// <summary>A real build leaves its executables on disk; so does a successful fake build (<see cref="FakeBuild.WritesOutput"/>).</summary>
+    private void WriteOutputs(FakeBuild build)
+    {
+        if (FileSystem is not { } fs || !build.WritesOutput || !build.Result.Success)
+            return;
+        foreach (var project in build.Result.Projects)
+        {
+            if (project.OutputPath is not { } path || !Path.IsPathFullyQualified(path) || fs.FileExists(path))
+                continue;
+            fs.CreateDirectory(Path.GetDirectoryName(path)!);
+            fs.WriteAllBytes(path, "MZ"u8.ToArray());
+        }
     }
 
     /// <summary><c>&lt;project dir&gt;\&lt;project name&gt;.exe</c>.</summary>
@@ -134,6 +155,12 @@ public sealed class FakeBuild(IReadOnlyList<BuildEvent> middle, BuildResult resu
 
     /// <summary>False: a held build ignores cancellation (a hung engine, IDE-P3-051).</summary>
     public bool HonorsCancel { get; set; } = true;
+
+    /// <summary>
+    /// True (default): a successful result's output files are written into <see cref="FakeBuildEngine.FileSystem"/>, like a
+    /// real build; false: the result names an executable that does not exist.
+    /// </summary>
+    public bool WritesOutput { get; set; } = true;
 
     /// <summary>False: no Started/Finished bracket around the events.</summary>
     public bool Bracket { get; set; } = true;

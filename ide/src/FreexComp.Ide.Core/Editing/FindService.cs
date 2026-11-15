@@ -162,7 +162,13 @@ public sealed class FindService : IFindService
             () => Active is not null, () => For(Active!).FindSelectionNextAsync()));
     }
 
-    private TextDocumentViewModel? Active => TextOf(_documents.ActiveDocument);
+    private TextDocumentViewModel? Active => FocusedText?.Invoke() ?? TextOf(_documents.ActiveDocument);
+
+    /// <summary>
+    /// UI-TW-500: the text of a focused tool window that has a find panel (the Output); null = the active document's.
+    /// Set by the service graph.
+    /// </summary>
+    public Func<TextDocumentViewModel?>? FocusedText { get; set; }
 
     /// <summary>
     /// UI-DLG-100: opens the panel (seeded from the selection) in find or replace mode; <c>search.replace</c> in an

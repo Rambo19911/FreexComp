@@ -113,6 +113,7 @@ public sealed class BuildService : IBuildService
         if (!_state.TryTransition(new IdeStateInfo(IdeState.Building, kind, false, null, null)))
             return null;
         BuildResult? result = null;
+        var active = BeginActive();
         try
         {
             result = await RunEngineAsync(project, kind);
@@ -123,6 +124,7 @@ public sealed class BuildService : IBuildService
             // IDE-P3-037: Idle in every case, except a finished build that a run continues from (IDE-P3-002).
             if (_state.Current.State == IdeState.Building && (!continueToRun || result is null || result.Canceled))
                 _state.TryTransition(IdeStateInfo.Idle);
+            EndActive(active);
         }
     }
 
@@ -158,6 +160,7 @@ public sealed class BuildService : IBuildService
             return;
         if (!_state.TryTransition(new IdeStateInfo(IdeState.Building, BuildKind.CheckSyntax, false, null, null)))
             return;
+        var active = BeginActive();
         try
         {
             if (_settings.Get(SettingsCatalog.OutputClearOnBuild))
@@ -213,11 +216,42 @@ public sealed class BuildService : IBuildService
         {
             if (_state.Current.State == IdeState.Building)
                 _state.TryTransition(IdeStateInfo.Idle);
+            EndActive(active);
         }
     }
 
     /// <summary>Opens Options › Toolchain Paths (the <c>Open Options</c> button of <c>Msg.Build.ToolchainMissing</c>).</summary>
     public Func<Task>? OpenToolchainOptions { get; set; }
+
+    /// <summary>How long <c>file.exit</c> waits for a canceled build (phase3-build-run.md §2, footnote of the availability table).</summary>
+    public static readonly TimeSpan ExitCancelWait = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// <c>file.exit</c> while Building (after the unsaved-changes prompt): cancels the build and waits for it to end, at
+    /// most <see cref="ExitCancelWait"/>. Returns at once when no build runs.
+    /// </summary>
+    public async Task CancelForExitAsync()
+    {
+        if (_active is not { } active)
+            return;
+        Cancel();
+        var timeout = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (_clock.Schedule(ExitCancelWait, () => timeout.TrySetResult()))
+            await Task.WhenAny(active.Task, timeout.Task);
+    }
+
+    /// <summary>Completes when the build or Check Syntax in progress has ended; null when none runs.</summary>
+    private TaskCompletionSource? _active;
+
+    private TaskCompletionSource BeginActive() =>
+        _active = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private void EndActive(TaskCompletionSource active)
+    {
+        if (_active == active)
+            _active = null;
+        active.TrySetResult();
+    }
 
     public void Cancel()
     {

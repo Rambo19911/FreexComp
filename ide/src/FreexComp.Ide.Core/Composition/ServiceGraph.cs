@@ -145,7 +145,9 @@ public static class ServiceGraph
         var output = new OutputService(platform.Clock, settings);
         var outputView = new ViewModels.OutputViewModel(output, settings, platform.Clipboard, documents, navigation, status, platform.FileSystem);
         outputView.RegisterCommands(commands);
-        var messages = new MessagesService(documents, navigation, platform.FileSystem, status, layout);
+        outputView.Content.FindSource = find.For; // UI-TW-500: Ctrl+F in the Output
+        find.FocusedText = () => focus.Current.ToolWindowName == ViewModels.OutputViewModel.ToolName ? outputView.Content : null;
+        var messages = new MessagesService(documents, navigation, platform.FileSystem, status, layout) { IsProjectFile = projects.IsMember };
         var engine = platform.BuildEngine;
         var build = new BuildService(engine, projects, documents, settings, state, toolchain, output, messages, platform.Clock,
             platform.Dispatcher, platform.Dialogs, status, platform.Log)
@@ -214,6 +216,7 @@ public static class ServiceGraph
             platform.Log);
         application.RegisterCommands(commands);
         application.BeforeExit = () => run.ConfirmStopAsync(exiting: true); // IDE-P3-093
+        application.AfterSavePrompt = build.CancelForExitAsync; // file.exit while Building (phase3-build-run.md §2)
         var quickPick = new Popups.QuickPickHost(); // I-125, I-126 (Phase 3 commands: available from the implemented phase 3)
         var popupsAvailable = (toolWindowPhase ?? ImplementedPhase) >= 3;
         commands.RegisterHandler("search.goToFile", new DelegateHandler(() => popupsAvailable, () =>

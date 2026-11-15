@@ -83,6 +83,9 @@ public sealed class ApplicationService : IApplicationService
     /// <summary>Asked first on exit (IDE-P3-093: stop a running program); false cancels the exit.</summary>
     public Func<Task<bool>>? BeforeExit { get; set; }
 
+    /// <summary>Run after an accepted unsaved-changes prompt (phase3-build-run.md §2: cancel a build and wait for it).</summary>
+    public Func<Task>? AfterSavePrompt { get; set; }
+
     public async Task<bool> ExitAsync()
     {
         if (IsExiting || _prompting)
@@ -106,6 +109,9 @@ public sealed class ApplicationService : IApplicationService
         {
             _prompting = false;
         }
+
+        if (AfterSavePrompt is { } afterSavePrompt)
+            await afterSavePrompt(); // a build in progress is canceled and awaited (max 5 s)
 
         // (3) The session of the open project, else the loose-file session (IDE-ARCH-071 (b), IDE-ARCH-075); the UI state
         // is written by the main window as it closes.

@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -18,6 +19,7 @@ public sealed class CompletionViewTests
     [Trait("Req", "UI-ED-110")]
     [Trait("Req", "UI-ED-116")]
     [Trait("Req", "UI-ED-118")]
+    [Trait("Req", "UI-ED-115")]
     public async Task PopupKeyboardFlow()
     {
         await using var h = await BuildScenario.StartAsync(LiveDiagnosticsTests.AddRealRtl);
@@ -63,9 +65,56 @@ public sealed class CompletionViewTests
         Dispatcher.UIThread.RunJobs();
         Assert.True(popup.IsVisible);
         Assert.Equal("Foo1", session.SelectedItem!.Label);
+
+        // UI-ED-115: the matched characters of the name are highlighted (here the typed prefix).
+        var row = h.Find<Avalonia.Controls.Border>("Editor.Completion.Item.Foo1");
+        var name = ((Avalonia.Controls.DockPanel)row.Child!).Children.OfType<Avalonia.Controls.TextBlock>().First();
+        var runs = name.Inlines!.OfType<Avalonia.Controls.Documents.Run>().ToList();
+        Assert.Equal("Foo1", string.Concat(runs.Select(r => r.Text)));
+        Assert.Equal(session.TypedText, string.Concat(runs.Where(r => r.Classes.Contains(CompletionListView.MatchClass)).Select(r => r.Text)));
+        Assert.All(runs.Where(r => r.Classes.Contains(CompletionListView.MatchClass)), r => Assert.Equal(Avalonia.Media.FontWeight.SemiBold, r.FontWeight));
         h.Press("Enter");
         Dispatcher.UIThread.RunJobs();
         Assert.False(popup.IsVisible);
         Assert.Contains("  Foo1o :=", doc.Buffer.Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>UI-ED-111 (I-198): without room below the caret line the popup opens above it, never covering the line.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-111")]
+    public async Task FlipsAboveNearTheBottom()
+    {
+        await using var h = await BuildScenario.StartAsync(LiveDiagnosticsTests.AddRealRtl);
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Value);
+        var begin = doc.Buffer.Text.IndexOf("begin", StringComparison.Ordinal);
+        doc.Buffer.ApplyEdits([new TextEdit(begin, 0, string.Concat(Enumerable.Repeat("\r\n", 200)))]); // blank lines: the code moves down
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextEditor>("Editor.Unit1.pas");
+        Assert.True(editor.TextArea.Focus());
+        var view = editor.FindAncestorOfType<CodeEditorView>()!;
+        var popup = view.GetVisualDescendants().OfType<CompletionListView>().Single();
+        var session = doc.Completion!;
+        var foo = doc.Buffer.Text.IndexOf("Foo :=", StringComparison.Ordinal);
+        var line = doc.Buffer.GetPosition(foo).Line;
+
+        // Scroll so that the caret line is the last fully visible line of the view.
+        var textView = editor.TextArea.TextView;
+        var scroller = editor.GetVisualDescendants().OfType<Avalonia.Controls.ScrollViewer>().First();
+        var lineHeight = textView.DefaultLineHeight;
+        scroller.Offset = new Avalonia.Vector(0, line * lineHeight - scroller.Viewport.Height);
+        doc.Selection = TextSelection.At(foo + 2);
+        Dispatcher.UIThread.RunJobs();
+
+        h.Press("Ctrl+Space");
+        await session.Pending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(popup.IsVisible);
+        var lineTop = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(line, 1), AvaloniaEdit.Rendering.VisualYPosition.LineTop).Y
+            - textView.ScrollOffset.Y;
+        var lineTopInView = textView.TranslatePoint(new Avalonia.Point(0, lineTop), view)!.Value.Y;
+        var height = popup.Bounds.Height;
+        Assert.True(height > 0);
+        Assert.Equal(lineTopInView - 2 - height, popup.Margin.Top, 0.5); // directly above the line, gap 2
+        Assert.True(popup.Margin.Top >= 0);
     }
 }

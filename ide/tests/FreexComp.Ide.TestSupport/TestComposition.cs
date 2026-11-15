@@ -66,6 +66,8 @@ public static class TestComposition
     {
         var o = new TestCompositionOptions();
         configure?.Invoke(o);
+        if (o.BuildEngine is FakeBuildEngine { FileSystem: null } fakeEngine)
+            fakeEngine.FileSystem = o.FileSystem; // successful fake builds leave their executable (IDE-P3-081)
 
         var options = StartupOptions.Parse([.. o.Arguments, StartupOptions.UserDirOption, o.UserDir], o.WorkingDirectory);
 

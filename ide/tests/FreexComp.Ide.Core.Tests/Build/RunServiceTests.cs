@@ -95,6 +95,29 @@ public sealed class RunServiceTests
         Assert.Equal(IdeState.Running, bed.Services.State.Current.State);
     }
 
+    /// <summary>IDE-P3-081 (I-190): a successful build whose <c>OutputPath</c> does not exist shows <c>Msg.Run.NoExecutable</c>.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-081")]
+    public async Task FreshBuildWithoutTheExecutableShowsNoExecutable()
+    {
+        var bed = await StartAsync();
+        bed.Engine.Enqueue(FakeBuildEngine.Success(BuildTestBed.ProjectPath, Exe)).WritesOutput = false;
+        bed.Dialogs.Answer("Msg.Run.NoExecutable", "OK");
+
+        Assert.False(await bed.Services.Run.StartAsync());
+
+        Assert.False(bed.Fs.FileExists(Exe));
+        Assert.Empty(bed.Processes.Started);
+        var request = Assert.Single(bed.Dialogs.Requests, r => r.MessageId == "Msg.Run.NoExecutable");
+        Assert.Equal([Exe], request.Args);
+        Assert.Equal(IdeState.Idle, bed.Services.State.Current.State);
+
+        // The default fake build writes its executable, so the next run starts.
+        Assert.True(await bed.Services.Run.StartAsync());
+        Assert.True(bed.Fs.FileExists(Exe));
+        Assert.Equal(Exe, bed.Processes.Last.Request.FileName);
+    }
+
     /// <summary>IDE-P3-084: the exit code and run time are reported; the state returns to Idle; the job is closed.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-084")]

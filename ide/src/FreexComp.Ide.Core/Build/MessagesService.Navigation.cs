@@ -42,6 +42,15 @@ public sealed partial class MessagesService
     /// <summary>UI-TW-405: rows hidden by the Messages toggles and filter are skipped by Next/Previous (set by the view-model).</summary>
     public Func<MessageItem, bool>? IsVisible { get; set; }
 
+    /// <summary>
+    /// UI-TW-405: the rows of the Messages list in display order, related rows of expanded diagnostics included (set by
+    /// the view-model); Next/Previous follow it. Null = the visible diagnostics.
+    /// </summary>
+    public Func<IEnumerable<MessageItem>>? NavigationOrder { get; set; }
+
+    /// <summary>IDE-P3-065: whether a file belongs to the open project; other files open read-only from Messages.</summary>
+    public Func<string, bool>? IsProjectFile { get; set; }
+
     /// <summary>The row navigated to last (IDE-P3-066); null after a new build or <see cref="Clear"/>.</summary>
     public MessageItem? Current => _current;
 
@@ -75,9 +84,13 @@ public sealed partial class MessagesService
             return;
         }
 
+        var wasOpen = OpenTextDocuments().Any(d => SamePath(d.FilePath, location.FilePath));
         var opened = await _documents.OpenAsync(location.FilePath!);
         if (opened.Value is not TextDocumentViewModel document)
             return;
+        if (!wasOpen && IsProjectFile is { } isProjectFile && !isProjectFile(location.FilePath!))
+            document.Buffer.IsReadOnly = true; // IDE-P3-065: RTL, framework and other files outside the project
+
         if (item.Anchor is null && item.BufferVersionAtBuild is null)
             TryAnchor(item, document);
 
@@ -112,7 +125,8 @@ public sealed partial class MessagesService
     /// </summary>
     public Task NavigateNextAsync(bool forward)
     {
-        var rows = _items.List.Where(i => i.IsNavigable && !i.IsSummary && (IsVisible?.Invoke(i) ?? true)).ToList();
+        var source = NavigationOrder?.Invoke() ?? _items.List.Where(i => IsVisible?.Invoke(i) ?? true);
+        var rows = source.Where(i => i.IsNavigable && !i.IsSummary).ToList();
         if (rows.Count == 0)
             return Task.CompletedTask;
         var index = _current is null ? -1 : rows.IndexOf(_current);

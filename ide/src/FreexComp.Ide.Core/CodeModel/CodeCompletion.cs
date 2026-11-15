@@ -63,17 +63,40 @@ public static class CompletionRules
             return CompletionMatch.ExactCasePrefix;
         if (label.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
             return CompletionMatch.Prefix;
+        return WordStartIndices(typed, label) is null ? CompletionMatch.None : CompletionMatch.WordStarts;
+    }
+
+    /// <summary>
+    /// UI-ED-115: the indices of the characters of <paramref name="label"/> that <paramref name="typed"/> matched (the
+    /// prefix, or the word starts of IDE-ED-082); empty when nothing is typed or nothing matches.
+    /// </summary>
+    public static IReadOnlyList<int> MatchedIndices(string typed, string label)
+    {
+        ArgumentNullException.ThrowIfNull(typed);
+        ArgumentNullException.ThrowIfNull(label);
+        if (typed.Length == 0)
+            return [];
+        if (label.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+            return [.. Enumerable.Range(0, typed.Length)];
+        return WordStartIndices(typed, label) ?? [];
+    }
+
+    /// <summary>Each typed character at the next word start with that letter (ignoring case); null when one is missing.</summary>
+    private static List<int>? WordStartIndices(string typed, string label)
+    {
+        var indices = new List<int>(typed.Length);
         var at = 0;
         foreach (var c in typed)
         {
             while (at < label.Length && !(char.ToUpperInvariant(label[at]) == char.ToUpperInvariant(c) && IsWordStart(label, at)))
                 at++;
             if (at == label.Length)
-                return CompletionMatch.None;
+                return null;
+            indices.Add(at);
             at++;
         }
 
-        return CompletionMatch.WordStarts;
+        return indices;
     }
 
     /// <summary>

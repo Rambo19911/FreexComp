@@ -991,8 +991,15 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         var caret = document.ViewState.Caret;
         var start = new TextViewPosition(caret.Line, Math.Max(1, caret.Column - session.TypedText.Length));
         var bottom = textView.GetVisualPosition(start, VisualYPosition.LineBottom) - textView.ScrollOffset;
-        if (textView.TranslatePoint(new Point(bottom.X, bottom.Y + 2), this) is { } at)
-            _completion.Margin = new Thickness(Math.Max(0, at.X), Math.Max(0, at.Y), 0, 0);
+        var top = textView.GetVisualPosition(start, VisualYPosition.LineTop) - textView.ScrollOffset;
+        if (textView.TranslatePoint(new Point(bottom.X, bottom.Y + 2), this) is not { } below
+            || textView.TranslatePoint(new Point(top.X, top.Y - 2), this) is not { } above)
+            return;
+        // UI-ED-111: below the caret line (gap 2); above it when the list does not fit below and does above. The list
+        // stays inside the editor view (an overlay; it cannot extend past the editor, see I-198).
+        var height = Math.Min(session.Items.Count, CompletionListView.VisibleRows) * CompletionListView.RowHeight + 2;
+        var y = below.Y + height > Bounds.Height && above.Y - height >= 0 ? above.Y - height : below.Y;
+        _completion.Margin = new Thickness(Math.Max(0, below.X), Math.Max(0, y), 0, 0);
     }
 
     /// <summary>

@@ -119,9 +119,9 @@ public sealed class RunService : IRunService
             if (result.Success)
             {
                 exe = result.OutputPath;
-                if (exe is null)
+                if (exe is null || !_fileSystem.FileExists(exe))
                 {
-                    await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.NoExecutable", [PreviousExecutable(project) ?? ""]));
+                    await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.NoExecutable", [exe ?? PreviousExecutable(project) ?? ""]));
                     return false;
                 }
             }

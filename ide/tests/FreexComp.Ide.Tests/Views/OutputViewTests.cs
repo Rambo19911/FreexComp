@@ -1,5 +1,7 @@
 using System.Globalization;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -103,6 +105,63 @@ public sealed class OutputViewTests
         Assert.True(text.WordWrap);
         Assert.True(h.Find<ToggleButton>("Tool.Output.ToolBar.output.toggleWordWrap").IsChecked);
     }
+
+    /// <summary>UI-TW-500 (I-186): Ctrl+F opens the find panel over the Output text (find only); Ctrl+wheel zooms it.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-500")]
+    public async Task FindPanelAndZoom()
+    {
+        await using var h = await StartAsync();
+        Assert.True(h.Services.ToolWindows.Show("Output", focus: true));
+        Dispatcher.UIThread.RunJobs();
+        var text = Text(h);
+        await AppendAsync(h, OutputChannels.Build, "alpha\nbeta error\ngamma error");
+        text.TextArea.Focus();
+        text.TextArea.Caret.Offset = 0;
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Tool.Output.Text", "Output text focused");
+
+        // Ctrl+F: the panel opens with the search box focused; Enter finds the next match in the Output text.
+        h.Press("Ctrl+F");
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Tool.Output.Text.FindPanel.SearchText", "search box focused");
+        Assert.True(h.Find<Control>("Tool.Output.Text.FindPanel").IsVisible);
+        h.Type("error");
+        h.Press("Enter");
+        await h.WaitForAsync(() => text.SelectedText == "error", "first match selected");
+        Assert.Equal(2, text.TextArea.Caret.Line);
+        h.Press("Enter");
+        await h.WaitForAsync(() => text.TextArea.Caret.Line == 3, "second match");
+        Assert.Equal("error", text.SelectedText);
+        Assert.Contains(Strings.FindPanel_SearchText, AutomationProperties(h, "Tool.Output.Text.FindPanel.SearchText"));
+
+        // Escape closes the panel and returns to the text; the editor's find state is untouched.
+        h.Press("Escape");
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Tool.Output.Text", "back in the text");
+        Assert.False(h.Find<Control>("Tool.Output.Text.FindPanel").IsVisible);
+        Assert.Equal("beta error\ngamma error", text.Text.Split('\n', 2)[1]); // nothing was edited
+
+        // Ctrl+wheel zooms by 1 pt per notch within 6…72; plain wheel scrolls (no zoom).
+        var size = text.FontSize;
+        var point = text.TextArea.TextView.TranslatePoint(new Avalonia.Point(20, 10), h.Window)!.Value;
+        h.Window.MouseWheel(point, new Avalonia.Vector(0, 1), Avalonia.Input.RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(size + 1, text.FontSize);
+        h.Window.MouseWheel(point, new Avalonia.Vector(0, -1), Avalonia.Input.RawInputModifiers.Control);
+        h.Window.MouseWheel(point, new Avalonia.Vector(0, -1), Avalonia.Input.RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(size - 1, text.FontSize);
+        h.Window.MouseWheel(point, new Avalonia.Vector(0, 1));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(size - 1, text.FontSize);
+
+        // editor.mouseWheelZoom off: Ctrl+wheel does not zoom.
+        h.Services.Settings.Set(Core.Settings.SettingsCatalog.EditorMouseWheelZoom, false);
+        h.Window.MouseWheel(point, new Avalonia.Vector(0, 1), Avalonia.Input.RawInputModifiers.Control);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(size - 1, text.FontSize);
+    }
+
+    private static string AutomationProperties(HeadlessHarness h, string id) =>
+        Avalonia.Automation.AutomationProperties.GetName(h.Find<Control>(id)) ?? "";
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TW-504")]
