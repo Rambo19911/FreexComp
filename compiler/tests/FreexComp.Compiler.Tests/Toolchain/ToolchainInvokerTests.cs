@@ -349,6 +349,7 @@ public sealed partial class ToolchainTests
         """;
 
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-605")]
     [Trait("Req", "CMP-622")]
@@ -382,6 +383,7 @@ public sealed partial class ToolchainTests
     }
 
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-626")]
     [Trait("Req", "CMP-627")]

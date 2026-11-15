@@ -957,6 +957,7 @@ public sealed class PcuTests
     }
 
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-141")]
     public void Write_ObjStage_WritesEveryUnitsPcuNextToItsObj()

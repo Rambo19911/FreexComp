@@ -35,7 +35,7 @@ W1051  elsewhere UnitBindingTests  a hint directive is reported outside its own 
 W1052  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
 W1081  reserved  lead decision 2026-11-14 (C-096): LANG-808 gives no diagnostic for code after raise
 W4002  elsewhere ToolchainTests  toolchain version check
-W4003  Phase4  application manifest (C-167)
+W4003  Phase4  CMP-629 variant 3 only; C-167 selected variant 1 (works on the pinned toolchain), so nothing reports it (lead: mark reserved)
 H1002  elsewhere EmitTests  the driver compares the program heading with the file name
 H2004  Phase3  language service only
 H2005  Phase8  off by default; no milestone implements it yet

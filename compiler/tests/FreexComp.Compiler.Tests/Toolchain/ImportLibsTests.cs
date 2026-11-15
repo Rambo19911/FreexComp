@@ -118,6 +118,7 @@ public sealed partial class ToolchainTests
     /// library is built from that file.
     /// </summary>
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-620")]
     [Trait("Req", "CMP-625")]

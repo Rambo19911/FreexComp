@@ -533,6 +533,7 @@ public sealed class PcuImportTests
 
     /// <summary>End to end: compile from sources (writing the .pcu/.obj files), then build the program against only those files and run it.</summary>
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "LANG-510")]
     [Trait("Req", "CMP-141")]

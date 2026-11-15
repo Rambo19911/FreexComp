@@ -209,6 +209,7 @@ public sealed class RealFormatTests
     [Theory]
     [InlineData(OptimizationLevel.O0)]
     [InlineData(OptimizationLevel.O2)]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "LANG-930")]
     [Trait("Req", "LANG-931")]
@@ -235,6 +236,7 @@ public sealed class RealFormatTests
     [InlineData("Trunc", "1e19")]
     [InlineData("Round", "-1e19")]
     [InlineData("Trunc", "Z / Z")]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     public async Task Rtl_TruncRoundOutOfRange_IsRuntimeError207(string function, string value)
     {

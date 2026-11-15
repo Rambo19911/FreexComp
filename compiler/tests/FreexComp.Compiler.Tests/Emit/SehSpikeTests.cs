@@ -12,6 +12,7 @@ namespace FreexComp.Compiler.Tests.Emit;
 /// is built with the pinned clang + lld-link (no C runtime) at <c>-O0</c> and <c>-O2</c> and run.
 /// </summary>
 [Trait("Phase", "2")]
+[Trait("Kind", "Native")]
 [Trait("Category", "Toolchain")]
 public sealed class SehSpikeTests
 {

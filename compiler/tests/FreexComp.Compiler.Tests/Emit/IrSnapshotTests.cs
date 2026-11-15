@@ -2937,6 +2937,7 @@ public sealed class IrSnapshotTests
 
 /// <summary>The modules of <see cref="IrSnapshotTests"/> are accepted by the pinned clang; fails when the toolchain is missing.</summary>
 [Trait("Phase", "2")]
+[Trait("Kind", "Native")]
 [Trait("Category", "Toolchain")]
 public sealed class IrSnapshotToolchainTests
 {

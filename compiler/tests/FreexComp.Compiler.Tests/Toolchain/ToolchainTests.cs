@@ -252,6 +252,7 @@ public sealed partial class ToolchainTests
     }
 
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Integration")]
     [Trait("Req", "CMP-602")]
     public async Task Runner_RealProcess_OnTimeout_KillsTheProcessTree()
@@ -293,6 +294,7 @@ public sealed partial class ToolchainTests
     }
 
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-602")]
     public async Task Runner_RealClang_CapturesOutputAndExitCode()
@@ -366,6 +368,7 @@ public sealed partial class ToolchainTests
     }
 
     [Fact]
+    [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-601")]
     public async Task Runner_VersionCheck_RealClangMatchesThePin()

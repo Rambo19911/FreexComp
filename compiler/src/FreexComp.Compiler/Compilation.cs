@@ -581,7 +581,7 @@ public sealed class Compilation
             AppType = Options.AppType,
             DebugInfo = Options.DebugInfo,
             DebugFormat = Options.DebugFormat,
-            ManifestPath = Options.Manifest is "" or "default" or "none" ? null : PathUtil.Normalize(Options.Manifest),   // default manifest: C-167
+            ManifestPath = ApplicationManifest.Prepare(Options.Manifest, Options.AppType, objectDirectory, FileSystem),   // CMP-628 (C-167)
             ExtraObjects = [.. linkUnits.SelectMany(u => u.LinkInputs.Objects).Distinct(PathUtil.Comparer)],
             ImportLibraries = libraries.ToImmutable(),
             ImportDefinitions = definitions.ToImmutableDictionary(StringComparer.Ordinal),
@@ -599,8 +599,17 @@ public sealed class Compilation
         options.InfoSink?.Invoke("Linking " + Path.GetFileName(output));
         var linked = await new LinkInvoker(runner, toolchain.LldLink, FileSystem).LinkAsync(request, ct).ConfigureAwait(false);
         diagnostics.AddRange(linked.Diagnostics);
+        if (linked.Success && request.ManifestPath is not null)
+        {
+            // CMP-629: the manifest content is part of the CMP-155 check; the copy is what this link embedded
+            Write(Path.Combine(objectDirectory, LinkedManifest), FileSystem.ReadAllText(request.ManifestPath), location, diagnostics);
+        }
+
         return Finish(linked.Success, linked.Success ? output : null, compiled);
     }
+
+    /// <summary>The copy of the manifest the last successful link embedded (CMP-629, CMP-155), in the object directory.</summary>
+    private const string LinkedManifest = "link.manifest";
 
     /// <summary>
     /// CMP-155: the link is skipped when (and only when) the <c>link.rsp</c> it would write is byte-identical to the one in the object
@@ -613,7 +622,9 @@ public sealed class Compilation
         {
             return FileSystem.FileExists(request.OutputPath) && FileSystem.FileExists(rsp)
                 && FileSystem.ReadAllBytes(rsp).AsSpan().SequenceEqual(
-                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(LinkInvoker.RenderResponseFile(LinkInvoker.BuildArguments(request))));
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(LinkInvoker.RenderResponseFile(LinkInvoker.BuildArguments(request))))
+                && (request.ManifestPath is null
+                    || FileSystem.ReadAllText(request.ManifestPath) == FileSystem.ReadAllText(Path.Combine(request.ObjectDirectory, LinkedManifest)));
         }
         catch (IOException)
         {

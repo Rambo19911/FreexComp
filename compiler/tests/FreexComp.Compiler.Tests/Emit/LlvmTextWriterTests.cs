@@ -748,6 +748,7 @@ public sealed class LlvmTextWriterTests
 
 /// <summary>The writer's output is accepted by the pinned clang (scripts/toolchain.json); fails when the toolchain is missing.</summary>
 [Trait("Phase", "2")]
+[Trait("Kind", "Native")]
 [Trait("Category", "Toolchain")]
 public sealed class LlvmTextWriterToolchainTests
 {
