@@ -104,6 +104,10 @@ type
     property RefCount: Integer read FRefCount;
   end;
 
+  { ABI §9.6, LANG-760: the base class of every custom attribute class }
+  TCustomAttribute = class(TObject)
+  end;
+
   { RTL-062: the pluggable memory manager; FreeMem returns 0 on success }
   TMemoryManager = record
     GetMem: function(Size: NativeInt): Pointer;
