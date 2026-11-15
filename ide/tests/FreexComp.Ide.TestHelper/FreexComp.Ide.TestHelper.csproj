@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    I-194: the helper program of the process tests, started as its own apphost exe (no dotnet host, no test framework,
+    no module initializer). FreexComp.Ide.Tests references it, so its exe lands next to the test assembly. Plain Main,
+    no packages.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>FreexComp.Ide.TestHelper</RootNamespace>
+  </PropertyGroup>
+</Project>

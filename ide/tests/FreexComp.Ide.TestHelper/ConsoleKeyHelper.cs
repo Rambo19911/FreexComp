@@ -3,14 +3,14 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
-namespace FreexComp.Ide.Tests.Fixtures;
+namespace FreexComp.Ide.TestHelper;
 
 /// <summary>
-/// The <c>--console-key</c> mode of <see cref="ProcessHelper"/> (I-138): runs in its own helper process so the test
+/// The <c>--console-key</c> mode of <see cref="HelperProgram"/> (I-138): runs in its own helper process so the test
 /// process never changes its console. Attaches to another process's console, records its title and screen text, then
 /// injects one key press.
 /// </summary>
-internal static class ConsoleKeyHelper
+public static class ConsoleKeyHelper
 {
     public const string TitlePrefix = "title: ";
 
@@ -18,14 +18,14 @@ internal static class ConsoleKeyHelper
     {
         Native.FreeConsole();
         if (!Native.AttachConsole(processId))
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            throw Failed("AttachConsole");
         using var input = Open("CONIN$");
         using var output = Open("CONOUT$");
 
         var title = new StringBuilder(1024);
         Native.GetConsoleTitleW(title, title.Capacity);
         if (!Native.GetConsoleScreenBufferInfo(output, out var info))
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            throw Failed("GetConsoleScreenBufferInfo");
         var text = new StringBuilder();
         text.Append(TitlePrefix).Append(title).Append('\n');
         var line = new StringBuilder(info.Width);
@@ -34,7 +34,7 @@ internal static class ConsoleKeyHelper
             line.Clear();
             line.Capacity = Math.Max(line.Capacity, info.Width);
             if (!Native.ReadConsoleOutputCharacterW(output, line, info.Width, row << 16, out var read))
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+                throw Failed("ReadConsoleOutputCharacterW");
             text.Append(line.ToString(0, Math.Min(read, line.Length)).TrimEnd()).Append('\n');
         }
 
@@ -46,9 +46,15 @@ internal static class ConsoleKeyHelper
             new() { EventType = Native.KEY_EVENT, KeyDown = 0, RepeatCount = 1, VirtualKeyCode = 0x20, Char = ' ' },
         ];
         if (!Native.WriteConsoleInputW(input, keys, keys.Length, out _))
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            throw Failed("WriteConsoleInputW");
         Native.FreeConsole();
         return 0;
+    }
+
+    private static Win32Exception Failed(string call)
+    {
+        var error = Marshal.GetLastWin32Error();
+        return new Win32Exception(error, call + " failed: " + new Win32Exception(error).Message);
     }
 
     private static SafeFileHandle Open(string name)
@@ -56,7 +62,7 @@ internal static class ConsoleKeyHelper
         var handle = Native.CreateFileW(name, Native.GENERIC_READ | Native.GENERIC_WRITE, Native.FILE_SHARE_READ | Native.FILE_SHARE_WRITE, IntPtr.Zero,
             Native.OPEN_EXISTING, 0, IntPtr.Zero);
         if (handle.IsInvalid)
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            throw Failed("CreateFileW");
         return handle;
     }
 

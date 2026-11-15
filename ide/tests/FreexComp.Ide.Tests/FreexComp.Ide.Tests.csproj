@@ -7,6 +7,8 @@
     <ProjectReference Include="..\..\src\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />
     <ProjectReference Include="..\..\src\FreexComp.Designer\FreexComp.Designer.csproj" />
     <ProjectReference Include="..\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
+    <!-- I-194: the process tests' helper program; the reference copies its apphost exe next to the tests. -->
+    <ProjectReference Include="..\FreexComp.Ide.TestHelper\FreexComp.Ide.TestHelper.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless.XUnit" />

@@ -3,6 +3,7 @@ using System.Globalization;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Platform.Windows;
+using FreexComp.Ide.TestHelper;
 using FreexComp.Ide.Tests.Fixtures;
 using FreexComp.Ide.TestSupport;
 
@@ -55,7 +56,7 @@ public sealed class ConsoleHostTests
         var screen = Path.Combine(Path.GetTempPath(), "freexcomp-console-" + Guid.NewGuid().ToString("N") + ".txt");
         try
         {
-            var (helper, arguments) = ProcessHelper.Command(string.Create(CultureInfo.InvariantCulture, $"{ProcessHelper.ConsoleKey} {host.Id} \"{screen}\""));
+            var (helper, arguments) = ProcessHelper.Command(string.Create(CultureInfo.InvariantCulture, $"{HelperProgram.ConsoleKey} {host.Id} \"{screen}\""));
             using var key = Process.Start(new ProcessStartInfo(helper, arguments) { UseShellExecute = false, CreateNoWindow = true })!;
             await key.WaitForExitAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token);
             text.Append("; console: ").AppendJoin(" | ", File.Exists(screen) ? await File.ReadAllLinesAsync(screen, token) : ["(no screen file)"]);
@@ -82,7 +83,7 @@ public sealed class ConsoleHostTests
     {
         var token = TestContext.Current.CancellationToken;
         var since = Stopwatch.StartNew();
-        var (file, arguments) = ProcessHelper.Command(ProcessHelper.ExitWith + " 3");
+        var (file, arguments) = ProcessHelper.Command(HelperProgram.ExitWith + " 3");
         var launcher = new WindowsProcessLauncher(new ManualClock(), IdeExecutable);
         using var process = launcher.Start(new ProcessStartRequest(file, arguments, Path.GetTempPath()) { Capture = false, ConsoleHost = true },
             _ => throw new InvalidOperationException("Nothing is captured in host mode."));
@@ -108,11 +109,15 @@ public sealed class ConsoleHostTests
         try
         {
             var (helper, helperArguments) = ProcessHelper.Command(
-                string.Create(CultureInfo.InvariantCulture, $"{ProcessHelper.ConsoleKey} {process.ProcessId} \"{screen}\""));
-            using (var key = Process.Start(new ProcessStartInfo(helper, helperArguments) { UseShellExecute = false, CreateNoWindow = true })!)
+                string.Create(CultureInfo.InvariantCulture, $"{HelperProgram.ConsoleKey} {process.ProcessId} \"{screen}\""));
+            using (var key = Process.Start(new ProcessStartInfo(helper, helperArguments)
+                   {
+                       UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true,
+                   })!)
             {
+                var errors = key.StandardError.ReadToEndAsync(token);
                 await Step(key.WaitForExitAsync(token), "key helper", since, token);
-                Assert.Equal(0, key.ExitCode);
+                Assert.True(key.ExitCode == 0, $"key helper exit code {key.ExitCode}: {await errors}");
             }
 
             await Step(host.WaitForExitAsync(token), "host exit after key", since, token);
@@ -122,7 +127,7 @@ public sealed class ConsoleHostTests
             Assert.Equal(ConsoleKeyHelper.TitlePrefix + Path.GetFileName(file), lines[0]); // the window title = the program's file name
             // The program wrote into the host's console; then an empty line and the host's prompt (the cursor waits after it).
             var prompt = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Run_PressAnyKey, "3");
-            Assert.Equal([ProcessHelper.ChildGreeting, "", prompt], lines[^3..]);
+            Assert.Equal([HelperProgram.ChildGreeting, "", prompt], lines[^3..]);
         }
         finally
         {

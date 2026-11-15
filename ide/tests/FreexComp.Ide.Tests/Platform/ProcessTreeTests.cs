@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Platform.Windows;
+using FreexComp.Ide.TestHelper;
 using FreexComp.Ide.Tests.Fixtures;
 using FreexComp.Ide.TestSupport;
 
@@ -43,7 +44,7 @@ public sealed class ProcessTreeTests
     {
         var childLine = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var launcher = new WindowsProcessLauncher(new ManualClock());
-        using var process = launcher.Start(Request(ProcessHelper.SpawnChild), line =>
+        using var process = launcher.Start(Request(HelperProgram.SpawnChild), line =>
         {
             if (line.Text.StartsWith("child ", StringComparison.Ordinal))
                 childLine.TrySetResult(line.Text);
@@ -70,7 +71,7 @@ public sealed class ProcessTreeTests
     {
         var lines = new ConcurrentQueue<ProcessOutputLine>();
         var launcher = new WindowsProcessLauncher(new ManualClock());
-        using var process = launcher.Start(Request(ProcessHelper.WriteBoth), lines.Enqueue);
+        using var process = launcher.Start(Request(HelperProgram.WriteBoth), lines.Enqueue);
 
         Assert.Equal(3, await process.Exited.WaitAsync(Limit, TestContext.Current.CancellationToken));
 
@@ -86,18 +87,18 @@ public sealed class ProcessTreeTests
     {
         // An inheritable pipe of this process that holds a marker: a child that inherits it can peek the marker.
         using var leak = new System.IO.Pipes.AnonymousPipeServerStream(System.IO.Pipes.PipeDirection.Out, HandleInheritability.Inheritable);
-        var marker = System.Text.Encoding.ASCII.GetBytes(ProcessHelper.PipeMarker);
+        var marker = System.Text.Encoding.ASCII.GetBytes(HelperProgram.PipeMarker);
         leak.Write(marker);
         leak.Flush();
         var readEnd = leak.ClientSafePipeHandle.DangerousGetHandle().ToInt64();
 
         var lines = new ConcurrentQueue<ProcessOutputLine>();
         var launcher = new WindowsProcessLauncher(new ManualClock());
-        using (var process = launcher.Start(Request(ProcessHelper.PeekHandle + " " + readEnd.ToString(CultureInfo.InvariantCulture)), lines.Enqueue))
+        using (var process = launcher.Start(Request(HelperProgram.PeekHandle + " " + readEnd.ToString(CultureInfo.InvariantCulture)), lines.Enqueue))
             Assert.Equal(0, await process.Exited.WaitAsync(Limit, TestContext.Current.CancellationToken));
 
         // The child still got its own pipe ends: its answer arrived on the captured stdout.
-        Assert.Equal([ProcessHelper.NotInherited], lines.Where(l => !l.IsError).Select(l => l.Text));
+        Assert.Equal([HelperProgram.NotInherited], lines.Where(l => !l.IsError).Select(l => l.Text));
         leak.DisposeLocalCopyOfClientHandle();
     }
 
