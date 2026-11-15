@@ -22,15 +22,6 @@ public sealed record CompletionDescription(string Signature, string? Documentati
 /// <summary>Code completion (language-service.md §4, CMP-720…724). Returns the whole context set; the IDE filters (CMP-722).</summary>
 public static class CompletionService
 {
-    /// <summary>directives.md names offered after <c>{$</c>.</summary>
-    private static readonly string[] DirectiveNames =
-    [
-        "ALIGN", "APPTYPE", "ASSERTIONS", "BOOLEVAL", "DEFINE", "ELSE", "ELSEIF", "ENDIF", "ENDREGION", "EXTENDEDSYNTAX", "HINTS", "I", "IF",
-        "IFDEF", "IFEND", "IFNDEF", "IFOPT", "INCLUDE", "IOCHECKS", "L", "LINK", "LONGSTRINGS", "MESSAGE", "MINENUMSIZE", "OVERFLOWCHECKS",
-        "POINTERMATH", "R", "RANGECHECKS", "REGION", "RESOURCE", "RTTI", "SCOPEDENUMS", "TYPEDADDRESS", "TYPEINFO", "UNDEF", "WARN",
-        "WARNINGS", "WRITEABLECONST", "ZEROBASEDSTRINGS",
-    ];
-
     private static readonly string[] TypeKeywords = ["array", "record", "class", "set of", "string", "procedure", "function", "interface", "packed"];
     private static readonly string[] RoutineDirectives =
         ["virtual", "override", "overload", "abstract", "reintroduce", "dynamic", "final", "static", "inline", "stdcall", "cdecl", "register", "external", "forward", "deprecated", "message"];
@@ -56,7 +47,7 @@ public static class CompletionService
         var empty = new CompletionList(replacement, [], false);
         if (replacement.Start >= 2 && text[replacement.Start - 1] == '$' && text[replacement.Start - 2] == '{')
         {
-            return new CompletionList(replacement, [.. DirectiveNames.Select(n => Keyword(n, CompletionItemKind.Directive))], false);
+            return new CompletionList(replacement, [.. SyntaxFacts.DirectiveNames.Select(n => Keyword(n, CompletionItemKind.Directive))], false);
         }
 
         if (InCommentStringOrDisabled(tree, position))
@@ -145,7 +136,7 @@ public static class CompletionService
             {
                 if (symbols.TryGetValue(id, out var symbol))
                 {
-                    return new CompletionDescription(symbol.ToDisplayString(), DocComments.Of(doc.Compilation, symbol));
+                    return new CompletionDescription(symbol.ToDisplayString(), symbol.Documentation);
                 }
             }
         }
@@ -239,7 +230,7 @@ public static class CompletionService
         {
             var heading = method.ToDisplayString();
             heading = heading.Replace(method.ContainingType.Name + ".", "", StringComparison.Ordinal);
-            var cut = heading.IndexOf("; ", StringComparison.Ordinal);
+            var cut = heading.IndexOf("; ", Math.Max(0, heading.LastIndexOf(')')), StringComparison.Ordinal);    // before "; virtual"
             var insert = (cut < 0 ? heading : heading[..cut])[(heading.IndexOf(' ') + 1)..] + "; override;";
             builder.Add(new CompletionItem(method.Name, CompletionItemKind.Method, insert, "1" + method.Name.ToLowerInvariant(), heading, method.IsDeprecated, builder.Id(method)));
         }
@@ -461,22 +452,28 @@ public static class CompletionService
             return ReferenceEquals(unit, Model.Unit) ? "2" : "3";
         }
 
-        private static CompletionItemKind KindOf(Symbol symbol) => symbol switch
-        {
-            UnitSymbol => CompletionItemKind.Unit,
-            ClassTypeSymbol => CompletionItemKind.Class,
-            InterfaceTypeSymbol => CompletionItemKind.Interface,
-            EnumTypeSymbol => CompletionItemKind.Enum,
-            TypeSymbol => CompletionItemKind.Type,
-            EnumMemberSymbol => CompletionItemKind.EnumMember,
-            ConstantSymbol => CompletionItemKind.Constant,
-            ParameterSymbol => CompletionItemKind.Parameter,
-            FieldSymbol => CompletionItemKind.Field,
-            PropertySymbol => CompletionItemKind.Property,
-            MethodSymbol => CompletionItemKind.Method,
-            RoutineSymbol or IntrinsicSymbol => CompletionItemKind.Routine,
-            { Kind: SymbolKind.Label } => CompletionItemKind.Label,
-            _ => CompletionItemKind.Variable,
-        };
+        private static CompletionItemKind KindOf(Symbol symbol) => SymbolKinds.Of(symbol);
     }
+}
+
+/// <summary>The item kind of a symbol (completion, workspace symbols).</summary>
+internal static class SymbolKinds
+{
+    public static CompletionItemKind Of(Symbol symbol) => symbol switch
+    {
+        UnitSymbol => CompletionItemKind.Unit,
+        ClassTypeSymbol => CompletionItemKind.Class,
+        InterfaceTypeSymbol => CompletionItemKind.Interface,
+        EnumTypeSymbol => CompletionItemKind.Enum,
+        TypeSymbol => CompletionItemKind.Type,
+        EnumMemberSymbol => CompletionItemKind.EnumMember,
+        ConstantSymbol => CompletionItemKind.Constant,
+        ParameterSymbol => CompletionItemKind.Parameter,
+        FieldSymbol => CompletionItemKind.Field,
+        PropertySymbol => CompletionItemKind.Property,
+        MethodSymbol => CompletionItemKind.Method,
+        RoutineSymbol or IntrinsicSymbol => CompletionItemKind.Routine,
+        { Kind: SymbolKind.Label } => CompletionItemKind.Label,
+        _ => CompletionItemKind.Variable,
+    };
 }

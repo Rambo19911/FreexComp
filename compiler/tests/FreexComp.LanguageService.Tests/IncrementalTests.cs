@@ -89,6 +89,29 @@ public sealed class IncrementalTests
 
     [Fact]
     [Trait("Req", "CMP-130")]
+    public void SymbolKeyStableAcrossBodyEdit()
+    {
+        var baseline = Baseline();
+        _ = baseline.GetSemanticModel(TestFiles.PathOf("P.pas"));
+        var edited = baseline.WithSourceText(SourceText.From(TestFiles.PathOf("U1.pas"), Unit1.Replace("A * 2", "A * 2 + 0", StringComparison.Ordinal)));
+        Assert.Equal(["U1"], edited.BoundUnits);
+
+        var program = edited.GetSemanticModel(TestFiles.PathOf("P.pas"));
+        var call = program.SyntaxTree.FindToken(Program.IndexOf("Twice", StringComparison.Ordinal)).Parent!;
+        var referenced = Assert.IsAssignableFrom<RoutineSymbol>(program.GetSymbolInfo(call).Symbol);
+        var unit = edited.GetSemanticModel(TestFiles.PathOf("U1.pas"));
+        var declared = Assert.IsAssignableFrom<RoutineSymbol>(unit.GetDeclaredSymbol(unit.SyntaxTree.FindToken(Unit1.IndexOf("Twice", StringComparison.Ordinal))));
+
+        Assert.NotSame(referenced, declared);                                 // P was taken over: it still holds the earlier U1's symbol
+        Assert.Equal(SymbolKey.Create(declared), SymbolKey.Create(referenced));
+        Assert.True(SymbolKey.AreSame(declared, referenced));
+        Assert.Equal(SymbolKey.Create(declared.Parameters[0]), SymbolKey.Create(referenced.Parameters[0]));
+        Assert.NotEqual(SymbolKey.Create(declared), SymbolKey.Create(declared.Parameters[0]));
+        Assert.NotEqual(SymbolKey.Create(declared), SymbolKey.Create(unit.Unit));
+    }
+
+    [Fact]
+    [Trait("Req", "CMP-130")]
     public void ClosingAFile_ReadsTheDiskAgain()
     {
         var path = TestFiles.PathOf("U1.pas");

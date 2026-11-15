@@ -57,6 +57,10 @@ public sealed class ParameterSymbol : Symbol
     /// <summary><c>param [const|var|out] Name: Type</c> (CMP-731).</summary>
     public override string ToDisplayString() => $"param {Prefix(Mode)}{Name}: {Type.Name}";
 
+    /// <summary>The parameter as a heading lists it: <c>const B: string = ''</c> (CMP-731).</summary>
+    internal static string Declaration(ParameterSymbol p) =>
+        Prefix(p.Mode) + p.Name + (p.IsUntyped ? "" : ": " + p.Type.Name) + (p.DefaultValue is { } value ? " = " + value.ToDisplayString() : "");
+
     internal static string Prefix(ParameterMode mode) => mode switch
     {
         ParameterMode.Const => "const ",
@@ -160,7 +164,7 @@ public class RoutineSymbol : Symbol
     /// <summary><c>function U.Name(A: Integer; const B: string): Boolean</c> (CMP-731).</summary>
     public override string ToDisplayString()
     {
-        var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(p => $"{ParameterSymbol.Prefix(p.Mode)}{p.Name}: {p.Type.Name}")) + ")";
+        var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(ParameterSymbol.Declaration)) + ")";
         return ReturnType is null ? $"procedure {QualifiedName}{parameters}" : $"function {QualifiedName}{parameters}: {ReturnType.Name}";
     }
 }

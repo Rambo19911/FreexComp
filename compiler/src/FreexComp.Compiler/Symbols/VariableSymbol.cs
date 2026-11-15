@@ -35,6 +35,9 @@ public sealed class VariableSymbol : Symbol
     /// <summary>The static storage of a typed constant (LANG-344): assignments and <c>var</c> arguments are rejected.</summary>
     internal bool IsReadOnly { get; init; }
 
+    /// <summary>The typed constant whose static storage this is (LANG-344); null for other variables.</summary>
+    internal ConstantSymbol? TypedConstant { get; set; }
+
     /// <summary>The <c>public name</c> of a global variable (LANG-470); null otherwise.</summary>
     internal string? ExplicitLinkName { get; set; }
 

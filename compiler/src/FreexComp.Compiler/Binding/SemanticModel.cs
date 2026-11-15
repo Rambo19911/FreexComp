@@ -449,7 +449,12 @@ public sealed class SemanticModel
         return any;
     }
 
-    private void Reference(SyntaxNode syntax, Symbol? symbol)
+    /// <summary>
+    /// Indexes the name token of <paramref name="syntax"/> as a reference to <paramref name="symbol"/>. A typed constant's storage is
+    /// reported as the constant; an accessor (field or method) reached through a property name on <paramref name="receiver"/> as
+    /// the property.
+    /// </summary>
+    private void Reference(SyntaxNode syntax, Symbol? symbol, TypeSymbol? receiver = null)
     {
         if (symbol is null)
         {
@@ -459,9 +464,23 @@ public sealed class SemanticModel
         var token = NameToken(syntax);
         if (token.Kind == SyntaxKind.IdentifierToken && !token.IsMissing && IsOwn(token))
         {
+            if (symbol is VariableSymbol { TypedConstant: { } constant })
+            {
+                symbol = constant;
+            }
+            else if (symbol is FieldSymbol or MethodSymbol && !IdentifierComparer.Instance.Equals(symbol.Name, NameOf(token))
+                     && (receiver ?? symbol.ContainingSymbol as TypeSymbol) is { } type
+                     && PropertyNamed(type is ClassRefTypeSymbol classRef ? classRef.Class : type, NameOf(token)) is { } property)
+            {
+                symbol = property;
+            }
+
             _references.TryAdd(token.Span.Start, symbol);
         }
     }
+
+    private static PropertySymbol? PropertyNamed(TypeSymbol type, string name) =>
+        type is PointerTypeSymbol { PointedType: { } pointed } ? PropertyNamed(pointed, name) : type.GetMembers(name).OfType<PropertySymbol>().FirstOrDefault();
 
     private void Walk(BoundNode? node)
     {
@@ -484,7 +503,7 @@ public sealed class SemanticModel
                 Reference(constant.Syntax, constant.Constant);
                 break;
             case BoundVariableExpression variable:
-                Reference(variable.Syntax, (Symbol?)variable.Property ?? variable.Variable);
+                Reference(variable.Syntax, (Symbol?)variable.Property ?? variable.Variable, variable.Variable.ContainingSymbol as TypeSymbol);
                 break;
             case BoundParameterExpression parameter:
                 Reference(parameter.Syntax, parameter.Parameter);
@@ -518,7 +537,7 @@ public sealed class SemanticModel
                 Walk(cast.Operand);
                 break;
             case BoundFieldAccessExpression field:
-                Reference(field.Syntax, (Symbol?)field.Property ?? field.Field);
+                Reference(field.Syntax, (Symbol?)field.Property ?? field.Field, field.Record.Type);
                 Walk(field.Record);
                 break;
             case BoundTypeTestExpression test:
@@ -550,13 +569,13 @@ public sealed class SemanticModel
                 Walk(arithmetic.Offset);
                 break;
             case BoundCallExpression call:
-                Reference(call.Syntax, call.Routine);
+                Reference(call.Syntax, call.Routine, call.Receiver?.Self?.Type);
                 Walk(call.Target);
                 Walk(call.Receiver?.Self);
                 WalkAll(call.Arguments);
                 break;
             case BoundCallStatement call:
-                Reference(call.Syntax, call.Routine);
+                Reference(call.Syntax, call.Routine, call.Receiver?.Self?.Type);
                 Walk(call.Target);
                 Walk(call.Receiver?.Self);
                 WalkAll(call.Arguments);

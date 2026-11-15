@@ -63,8 +63,8 @@ public abstract class Symbol
     /// </summary>
     internal bool IsReferenced { get; set; }
 
-    /// <summary>Doc comment text (LANG-142); filled by the declaration binder.</summary>
-    public string? Documentation { get; init; }
+    /// <summary>Doc comment text (LANG-142); filled when the unit is bound (C-243) or read from its <c>.pcu</c>.</summary>
+    public string? Documentation { get; internal set; }
 
     public bool IsDeprecated { get; init; }
 

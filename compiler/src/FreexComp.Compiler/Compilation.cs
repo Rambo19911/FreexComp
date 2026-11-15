@@ -217,6 +217,14 @@ public sealed class Compilation
     internal ImmutableArray<string> BoundUnits =>
         _analysis.Value.Front is { } front ? [.. front.Binder.Units.Where(u => !front.Binder.Reused.Contains(u)).Select(u => u.Name)] : [];
 
+    /// <summary>C-137 (language service): the units of this snapshot's analysis in load order (taken-over units with their earlier symbols).</summary>
+    internal ImmutableArray<UnitSymbol> UnitSymbols =>
+        _analysis.Value.Front is { } front ? [.. front.Binder.Units.Select(u => u.Symbol).OfType<UnitSymbol>()] : [];
+
+    /// <summary>C-138 (CMP-742): the files of the analysed units available as source (units imported from a <c>.pcu</c> are left out).</summary>
+    internal ImmutableArray<string> SourceUnitPaths =>
+        _analysis.Value.Front is { } front ? [.. front.Binder.Units.Where(u => !u.IsPrecompiled && u.Tree is not null && u.Result is not null).Select(u => u.Path)] : [];
+
     /// <summary>
     /// api.md §1: <c>null</c> → every diagnostic of the program (parse + bind of every unit, as <c>opc --check</c> reports them);
     /// a path → that file's (syntax + semantic).

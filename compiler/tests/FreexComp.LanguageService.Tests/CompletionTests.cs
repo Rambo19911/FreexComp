@@ -71,6 +71,17 @@ public sealed class CompletionTests
     }
 
     [Fact]
+    [Trait("Req", "CMP-223")]
+    public void DirectiveNamesComeFromSyntaxFacts()
+    {
+        var items = Complete("program P;\n{$$$}\nbegin end.", '$').List.Items;
+
+        Assert.Equal(Compiler.Syntax.SyntaxFacts.DirectiveNames, items.Select(i => i.Label));
+        Assert.Contains("MINSTACKSIZE", Compiler.Syntax.SyntaxFacts.DirectiveNames);   // directives.md §5, all of its table
+        Assert.Contains("FORM", Compiler.Syntax.SyntaxFacts.DirectiveNames);
+    }
+
+    [Fact]
     [Trait("Req", "CMP-721")]
     public void AfterDot_OnAUnit_TheUnitsInterface()
     {

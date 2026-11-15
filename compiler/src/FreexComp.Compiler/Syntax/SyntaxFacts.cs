@@ -90,6 +90,26 @@ public static partial class SyntaxFacts
     /// <summary>LANG-116, lower-case, sorted ordinally.</summary>
     public static ImmutableArray<string> ContextualKeywords { get; } = [.. ContextualKeywordTable.Select(e => e.Text).Order(StringComparer.Ordinal)];
 
+    /// <summary>
+    /// C-243 (CMP-223): the directive names of directives.md — conditional compilation (§2, LANG-865 <c>MESSAGE</c>), include
+    /// files (§4) and every row of the switches table (§5), short and long forms — upper-case, sorted ordinally.
+    /// </summary>
+    public static ImmutableArray<string> DirectiveNames { get; } =
+    [
+        .. new[]
+        {
+            "DEFINE", "UNDEF", "IFDEF", "IFNDEF", "IF", "ELSEIF", "ELSE", "ENDIF", "IFEND", "IFOPT", "MESSAGE", "I", "INCLUDE",
+            "R", "RANGECHECKS", "Q", "OVERFLOWCHECKS", "B", "BOOLEVAL", "C", "ASSERTIONS", "IOCHECKS", "M", "TYPEINFO", "A", "ALIGN",
+            "Z", "MINENUMSIZE", "POINTERMATH", "SCOPEDENUMS", "H", "LONGSTRINGS", "J", "WRITEABLECONST", "T", "TYPEDADDRESS", "X",
+            "EXTENDEDSYNTAX", "O", "OPTIMIZATION", "D", "L", "Y", "DEBUGINFO", "LOCALSYMBOLS", "REFERENCEINFO", "W", "U", "G", "P", "V",
+            "N", "E", "F", "K", "S", "APPTYPE", "WARNINGS", "HINTS", "WARN", "REGION", "ENDREGION", "FORM", "RTTI", "RESOURCE", "LINK",
+            "MINSTACKSIZE", "MAXSTACKSIZE", "IMAGEBASE", "DESCRIPTION", "LIBPREFIX", "LIBSUFFIX", "LIBVERSION", "WEAKPACKAGEUNIT",
+            "DENYPACKAGEUNIT", "DESIGNONLY", "RUNONLY", "IMPLICITBUILD", "HPPEMIT", "EXTERNALSYM", "NODEFINE", "NOINCLUDE",
+            "OBJTYPENAME", "STACKFRAMES", "SAFEDIVIDE", "VARSTRINGCHECKS", "OPENSTRINGS", "EXTENSION", "INLINE", "ZEROBASEDSTRINGS",
+            "EXCESSPRECISION", "HIGHCHARUNICODE", "TEXTBLOCK", "PUSHOPT", "POPOPT",
+        }.Distinct().Order(StringComparer.Ordinal),
+    ];
+
     /// <summary>Reserved word (LANG-115), compared case-insensitively for ASCII letters only (LANG-110).</summary>
     public static bool IsReservedWord(string text) => GetReservedWordKind(text) != SyntaxKind.None;
 

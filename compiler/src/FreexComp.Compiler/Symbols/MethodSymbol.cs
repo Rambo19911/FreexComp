@@ -97,7 +97,7 @@ public sealed class MethodSymbol : RoutineSymbol
     internal override ImmutableArray<ParameterSymbol> ImplicitParameters =>
         [.. new[] { SelfParameter, FlagParameter }.OfType<ParameterSymbol>()];
 
-    /// <summary><c>procedure TFoo.Bar(A: Integer)</c> (CMP-731).</summary>
+    /// <summary><c>procedure TFoo.Bar(A: Integer); virtual</c> (CMP-731).</summary>
     public override string ToDisplayString()
     {
         var keyword = MethodKind switch
@@ -108,8 +108,9 @@ public sealed class MethodSymbol : RoutineSymbol
             MethodKind.Destructor => "destructor",
             _ => (IsClassMethod ? "class " : "") + (ReturnType is null ? "procedure" : "function"),
         };
-        var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(p => $"{ParameterSymbol.Prefix(p.Mode)}{p.Name}: {p.Type.Name}")) + ")";
+        var parameters = Parameters.IsEmpty ? "" : "(" + string.Join("; ", Parameters.Select(ParameterSymbol.Declaration)) + ")";
         var result = ReturnType is not null && MethodKind is not MethodKind.Constructor && !IsRecordConstructor ? ": " + ReturnType.Name : "";
-        return $"{keyword} {ContainingSymbol!.Name}.{Name}{parameters}{result}";
+        var directives = (IsOverride ? "; override" : IsVirtual ? "; virtual" : "") + (IsAbstract ? "; abstract" : "") + (IsFinal ? "; final" : "");
+        return $"{keyword} {ContainingSymbol!.Name}.{Name}{parameters}{result}{directives}";
     }
 }

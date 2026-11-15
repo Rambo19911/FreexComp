@@ -68,9 +68,9 @@ public sealed class PropertySymbol : Symbol
 
     public bool IsWritable => WriteMethod is not null || !WritePath.IsEmpty;
 
-    /// <summary><c>property Name: Type</c> (CMP-731).</summary>
+    /// <summary><c>property TFoo.Name: Type read write</c>, listing the available accessors (CMP-731).</summary>
     public override string ToDisplayString() =>
-        (IsClassProperty ? "class " : "") + "property " + Name
-        + (Parameters.IsEmpty ? "" : "[" + string.Join("; ", Parameters.Select(p => $"{ParameterSymbol.Prefix(p.Mode)}{p.Name}: {p.Type.Name}")) + "]")
-        + ": " + Type.Name;
+        (IsClassProperty ? "class " : "") + "property " + Owner.Name + "." + Name
+        + (Parameters.IsEmpty ? "" : "[" + string.Join("; ", Parameters.Select(ParameterSymbol.Declaration)) + "]")
+        + ": " + Type.Name + (IsReadable ? " read" : "") + (IsWritable ? " write" : "");
 }

@@ -238,6 +238,20 @@ public sealed class EnumTypeSymbol : TypeSymbol
 
     public override ImmutableArray<Symbol> Members => [.. EnumMembers];
 
+    /// <summary><c>type TColor = (Red, Green, …)</c>, at most 8 elements (CMP-731); a subrange shows its bounds.</summary>
+    public override string ToDisplayString()
+    {
+        if (_base is not null)
+        {
+            var low = EnumMembers.FirstOrDefault(m => m.Ordinal == Low)?.Name ?? Low.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var high = EnumMembers.FirstOrDefault(m => m.Ordinal == High)?.Name ?? High.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return $"type {Name} = {low}..{high}";
+        }
+
+        var names = EnumMembers.Take(8).Select(m => m.Name);
+        return $"type {Name} = ({string.Join(", ", EnumMembers.Length > 8 ? names.Append("…") : names)})";
+    }
+
     public override bool IsOrdinal => true;
 
     public override TypeSymbol? BaseType => _base;
@@ -358,6 +372,9 @@ public sealed class RecordTypeSymbol : TypeSymbol
     public ImmutableArray<Symbol> NestedMembers { get; internal set; } = [];
 
     public override ImmutableArray<Symbol> Members => [.. Fields, .. ClassVariables, .. Methods, .. Properties, .. NestedMembers];
+
+    /// <summary><c>type TRec = record</c> (CMP-731; the size is the quick info's constant value).</summary>
+    public override string ToDisplayString() => $"type {Name} = {(IsPacked ? "packed " : "")}record";
 
     /// <summary>Completes the layout of a record whose symbol was created before its fields were bound (records with methods, C-122).</summary>
     internal void SetLayout(long size, int alignment)

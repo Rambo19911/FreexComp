@@ -25,5 +25,6 @@ public sealed class FieldSymbol : Symbol
     /// <summary>Class variables (<c>class var</c>) are not modelled yet (E2900).</summary>
     public bool IsClassVar => false;
 
-    public override string ToDisplayString() => $"{Name}: {Type.Name}";
+    /// <summary><c>field TFoo.Name: Type</c> (CMP-731).</summary>
+    public override string ToDisplayString() => $"field {ContainingSymbol?.Name}.{Name}: {Type.Name}";
 }

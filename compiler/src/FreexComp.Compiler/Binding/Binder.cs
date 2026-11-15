@@ -298,6 +298,7 @@ internal static class Binder
         var all = diagnostics.ToImmutable().Concat(routines.SelectMany(r => r.Diagnostics))
             .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase)
             .ThenBy(d => d.Location.Span.Start);
+        DocCommentText.Fill(tree, declarations.Unit);                       // C-243: Symbol.Documentation (LANG-142)
         var systemUnit = system
             ?? (declarations.Unit is { IsProgram: false } own && string.Equals(own.Name, "System", StringComparison.OrdinalIgnoreCase) ? own : null);
         return new BindingResult(types, declarations, bodies.ToImmutable(), routines.ToImmutable(), [.. all]) { System = systemUnit, Tree = tree };
