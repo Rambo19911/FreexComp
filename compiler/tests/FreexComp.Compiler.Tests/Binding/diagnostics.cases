@@ -426,3 +426,5 @@ type TProc = reference to procedure; procedure P(var X: Integer); var F: TProc; 
 type [Foo] TA = class end; begin end.
 === H2010 1,18
 type TA = class [Weak] F: Pointer; end; begin end.
+=== W1003 1,9
+unit U; {$APPTYPE GUI} interface implementation end.

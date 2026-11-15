@@ -68,6 +68,15 @@ public abstract class Symbol
 
     public bool IsDeprecated { get; init; }
 
+    /// <summary>LANG-472 (C-127): the text of <c>deprecated 'text'</c>, if any.</summary>
+    internal string? DeprecationMessage { get; init; }
+
+    /// <summary>LANG-472 (C-127): the <c>platform</c> hint directive.</summary>
+    internal bool IsPlatform { get; init; }
+
+    /// <summary>LANG-472 (C-127): the <c>experimental</c> hint directive.</summary>
+    internal bool IsExperimental { get; init; }
+
     /// <summary>"Unit1.TFoo.Bar"; the bare name for symbols without a container.</summary>
     public string QualifiedName => QualifiedNameOverride ?? (ContainingSymbol is null ? Name : ContainingSymbol.QualifiedName + "." + Name);
 

@@ -19,33 +19,74 @@ internal static class GenericBodyText
     internal sealed record Piece(int Line, int Col, string Text);
 
     /// <summary>The pieces of <paramref name="generic"/>, or empty when it has no declaration of a unit's interface (nothing to store).</summary>
-    public static ImmutableArray<Piece> Pieces(GenericTypeSymbol generic)
+    public static ImmutableArray<Piece> Pieces(GenericTypeSymbol generic) =>
+        generic.Declaration is { } declaration ? Pieces(declaration, generic.Implementations.Select(i => i.Declaration)) : [];
+
+    /// <summary>
+    /// The pieces of a type declaration of a unit's interface and the given method implementations (C-227: also a plain class with
+    /// generic methods and their implementations); empty when the declaration is not in a unit's type section.
+    /// </summary>
+    public static ImmutableArray<Piece> Pieces(TypeDeclarationSyntax declaration, IEnumerable<RoutineDeclarationSyntax> implementations)
     {
-        if (generic.Declaration is not { Parent: TypeSectionSyntax section } declaration || declaration.SyntaxTree.Root is not UnitSyntax unit)
+        if (declaration is not { Parent: TypeSectionSyntax section } || declaration.SyntaxTree.Root is not UnitSyntax unit)
         {
             return [];
         }
 
         var pieces = ImmutableArray.CreateBuilder<Piece>();
-        void Add(SyntaxToken first, SyntaxToken last, string? text = null)
+        void Add(SyntaxToken first, SyntaxToken last, string? text = null, SyntaxNode? node = null)
         {
             var file = first.File ?? first.Parent!.SyntaxTree.Text;
             var position = file.Lines.GetLinePosition(first.Span.Start);
-            pieces.Add(new Piece(position.Line + 1, position.Column + 1, text ?? file.Text[first.Span.Start..Math.Max(first.Span.Start, last.Span.End)]));
+            var end = Math.Max(first.Span.Start, last.Span.End);
+            pieces.Add(new Piece(position.Line + 1, position.Column + 1, text ?? (node is null ? file.Text[first.Span.Start..end] : Resolved(file, node, first.Span.Start, end))));
         }
 
         Add(unit.UnitKeyword, unit.SemicolonToken);
         Add(unit.InterfaceSection.InterfaceKeyword, unit.InterfaceSection.InterfaceKeyword);
         Add(section.TypeKeyword, section.TypeKeyword);
-        Add(declaration.FirstToken(), declaration.LastToken());
+        Add(declaration.FirstToken(), declaration.LastToken(), node: declaration);
         Add(unit.ImplementationSection.ImplementationKeyword, unit.ImplementationSection.ImplementationKeyword);
-        foreach (var implementation in generic.Implementations.OrderBy(i => i.Declaration.Span.Start))
+        foreach (var implementation in implementations.OrderBy(i => i.Span.Start))
         {
-            Add(implementation.Declaration.FirstToken(), implementation.Declaration.LastToken());
+            Add(implementation.FirstToken(), implementation.LastToken(), node: implementation);
         }
 
         Add(unit.EndKeyword, unit.EndKeyword, unit.EndKeyword.Text + ".");
         return pieces.ToImmutable();
+    }
+
+    /// <summary>The conditional directives (LANG-140…): resolved when a body is stored.</summary>
+    private static readonly HashSet<string> Conditionals = new(StringComparer.OrdinalIgnoreCase) { "IFDEF", "IFNDEF", "IF", "ELSE", "ELSEIF", "ENDIF", "IFEND", "IFOPT" };
+
+    /// <summary>
+    /// C-227: the text from <paramref name="start"/> to <paramref name="end"/> as the declaring compilation saw it — the text its
+    /// conditionals skipped and the conditional directives themselves blanked (line breaks kept, so positions stay), so an
+    /// instance bound against the <c>.pcu</c> gets the declaring compilation's branches whatever its own defines are.
+    /// </summary>
+    private static string Resolved(SourceText file, SyntaxNode node, int start, int end)
+    {
+        var chars = file.Text[start..end].ToCharArray();
+        foreach (var token in node.DescendantTokens().Where(t => t.File is null || ReferenceEquals(t.File, file)))
+        {
+            foreach (var trivia in token.LeadingTrivia.Concat(token.TrailingTrivia))
+            {
+                if (trivia.Kind != SyntaxKind.DisabledTextTrivia && !(trivia is { Kind: SyntaxKind.DirectiveTrivia, Directive.Name: var name } && Conditionals.Contains(name)))
+                {
+                    continue;
+                }
+
+                for (var i = Math.Max(trivia.Span.Start, start); i < Math.Min(trivia.Span.End, end); i++)
+                {
+                    if (chars[i - start] is not ('\r' or '\n'))
+                    {
+                        chars[i - start] = ' ';
+                    }
+                }
+            }
+        }
+
+        return new string(chars);
     }
 
     /// <summary>The pieces at their lines and columns (newlines, then spaces before each; one space when a piece would overlap).</summary>

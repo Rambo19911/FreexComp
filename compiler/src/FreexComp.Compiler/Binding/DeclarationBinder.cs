@@ -1148,6 +1148,9 @@ internal sealed partial class DeclarationBinder
             IsInline = directives.IsInline,
             IsNoReturn = directives.IsNoReturn,
             IsDeprecated = directives.IsDeprecated,
+            DeprecationMessage = directives.DeprecationMessage,
+            IsPlatform = directives.IsPlatform,
+            IsExperimental = directives.IsExperimental,
             LibraryName = directives.LibraryName,
             ExplicitLinkName = directives.LinkName ?? (directives.IsExternal ? name : null),
         };
@@ -1203,12 +1206,21 @@ internal sealed partial class DeclarationBinder
     }
 
     private sealed record RoutineDirectives(bool IsForward, bool IsOverload, bool IsExternal, bool IsInline, bool IsNoReturn,
-        bool IsDeprecated, string? LibraryName, string? LinkName);
+        bool IsDeprecated, string? LibraryName, string? LinkName)
+    {
+        /// <summary>LANG-472 (C-127): <c>deprecated 'text'</c>, <c>platform</c>, <c>experimental</c>.</summary>
+        public string? DeprecationMessage { get; init; }
+
+        public bool IsPlatform { get; init; }
+
+        public bool IsExperimental { get; init; }
+    }
 
     /// <summary>LANG-460…473: calling conventions, <c>assembler</c> and hints are accepted; method directives are E1114.</summary>
     private RoutineDirectives BindDirectives(SyntaxList<DirectiveSyntax> directives)
     {
-        bool forward = false, overload = false, external = false, inline = false, noReturn = false, deprecated = false;
+        bool forward = false, overload = false, external = false, inline = false, noReturn = false, deprecated = false, platform = false, experimental = false;
+        string? deprecation = null;
         string? library = null, linkName = null;
         foreach (var directive in directives)
         {
@@ -1228,6 +1240,13 @@ internal sealed partial class DeclarationBinder
                     break;
                 case SyntaxKind.DeprecatedKeyword:
                     deprecated = true;
+                    deprecation = directive.Value is { } text ? FoldString(text) : null;
+                    break;
+                case SyntaxKind.PlatformKeyword:
+                    platform = true;
+                    break;
+                case SyntaxKind.ExperimentalKeyword:
+                    experimental = true;
                     break;
                 case SyntaxKind.ExternalKeyword:
                     external = true;
@@ -1249,7 +1268,12 @@ internal sealed partial class DeclarationBinder
             }
         }
 
-        return new RoutineDirectives(forward, overload, external, inline, noReturn, deprecated, library, linkName);
+        return new RoutineDirectives(forward, overload, external, inline, noReturn, deprecated, library, linkName)
+        {
+            DeprecationMessage = deprecation,
+            IsPlatform = platform,
+            IsExperimental = experimental,
+        };
     }
 
     /// <summary>A constant string expression (library and link names); E2010 for another constant.</summary>
@@ -1471,6 +1495,7 @@ internal sealed partial class DeclarationBinder
                 var symbol = new ParameterSymbol(NameOf(token), type, mode, parameters.Count, routine, [DiagnosticBag.LocationOf(token)], _types.Int64)
                 {
                     DefaultValue = defaultConstant,
+                    IsRef = mode == ParameterMode.Const && type is not (OpenArrayTypeSymbol or UntypedTypeSymbol) && HasRefAttribute(parameter),  // C-231
                 };
                 if (defaulted && parameter.DefaultValue is null && report)
                 {
@@ -1488,6 +1513,11 @@ internal sealed partial class DeclarationBinder
 
         return parameters.ToImmutable();
     }
+
+    /// <summary>LANG-763: <c>[Ref]</c> among the parameter's attributes (checked by <see cref="AttributeBinder"/>).</summary>
+    private static bool HasRefAttribute(ParameterSyntax parameter) =>
+        parameter.Attributes.SelectMany(l => l.Attributes)
+            .Any(a => a.Name is IdentifierNameSyntax { Identifier: var token } && IdentifierComparer.Instance.Equals(token.Value as string ?? token.Text, "Ref"));
 
     /// <summary>
     /// LANG-401: the undefined declaration a definition completes. With its parameter list omitted it completes the

@@ -39,16 +39,8 @@ internal sealed partial class ExpressionBinder
         var captured = new List<Symbol>();
         if (_routine is not null)
         {
-            foreach (var symbol in AnonymousBodies.SelectMany(b => b.CapturedVariables).Where(s => ReferenceEquals(s.ContainingSymbol, _routine)).Distinct())
-            {
-                if (ReferenceEquals(symbol, _routine.ResultVariable))
-                {
-                    _diagnostics.Report(closure.Syntax, "E2900", "capture of Result by an anonymous method");
-                    continue;
-                }
-
-                captured.Add(symbol);
-            }
+            // C-230: a captured Result is copied out at exit (LoweringContext.CopyCapturedResult)
+            captured.AddRange(AnonymousBodies.SelectMany(b => b.CapturedVariables).Where(s => ReferenceEquals(s.ContainingSymbol, _routine)).Distinct());
         }
 
         closure.Complete(_types, captured);
@@ -64,12 +56,7 @@ internal sealed partial class ExpressionBinder
         // without System (white-box binding) the method is still bound (its diagnostics come first), then reported as unsupported
         var root = _types.TInterfacedObject as ClassTypeSymbol;
         var reported = _diagnostics.Count;
-        if (_routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor })
-        {
-            return Unsupported(syntax, "anonymous method in a constructor or destructor");
-        }
-
-        var closure = OwnClosure(syntax, root);
+        var closure = OwnClosure(syntax);
         var number = closure.Methods.Count + 1;
         var location = DiagnosticBag.LocationOf(syntax.Keyword);
         var method = new MethodSymbol("Anon" + number, closure.Class, [location], declaration: null!, MethodKind.Ordinary, Visibility.Private)
@@ -118,33 +105,14 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>The closure of the body being bound, made with its first anonymous method (CMP-380).</summary>
-    private ClosureInfo OwnClosure(SyntaxNode syntax, ClassTypeSymbol? root)
+    private ClosureInfo OwnClosure(SyntaxNode syntax)
     {
         if (OwnClosureInfo is { } existing)
         {
             return existing;
         }
 
-        var unit = GenericUses.Current ?? CurrentUnit!;
-        ClassTypeSymbol type;
-        lock (unit.Closures)
-        {
-            type = new ClassTypeSymbol((_routine?.Name ?? "$body") + ".$closure" + (unit.Closures.Count + 1), unit, [])
-            {
-                IsForward = false,
-                Parent = root,
-                VirtualSlots = root?.VirtualSlots ?? [],
-                IsTypeInfo = root?.IsTypeInfo ?? false,
-                InstanceSize = root?.InstanceSize ?? 8,
-                IsReferenced = true,
-            };
-            unit.Closures.Add(type);
-        }
-
-        var owner = (Symbol?)_routine ?? unit;
-        var closure = new ClosureInfo(_routine, type,
-            new VariableSymbol("$closure", type, isGlobal: false, owner, []),
-            new VariableSymbol("$closureRef", _types.IInterface ?? _types.Pointer, isGlobal: false, owner, []), syntax);
+        var closure = ClosureInfo.Create(_routine, GenericUses.Current ?? CurrentUnit!, _types, syntax);
         if (_routine is null)
         {
             _unitClosure = closure;
@@ -159,7 +127,7 @@ internal sealed partial class ExpressionBinder
 
     /// <summary>
     /// LANG-721: a variable or parameter of an enclosing routine referenced from an anonymous method — <c>var</c>/<c>out</c>, open-array
-    /// and untyped parameters cannot be captured (E2720); a capture through both a nested routine and an anonymous method is E2900.
+    /// and untyped parameters cannot be captured (E2720).
     /// </summary>
     private void CheckCapture(Symbol symbol, SyntaxNode at)
     {
@@ -168,33 +136,16 @@ internal sealed partial class ExpressionBinder
             return;
         }
 
-        bool anonymous = false, plain = false, mixed = false;
+        var anonymous = false;
         for (var routine = _routine; routine is not null && !ReferenceEquals(routine, owner); routine = ClosureInfo.LexicalParent(routine))
         {
-            if (routine is MethodSymbol { IsAnonymous: true })
-            {
-                mixed |= plain;
-                anonymous = true;
-            }
-            else
-            {
-                mixed |= anonymous;
-                plain = true;
-            }
+            anonymous |= routine is MethodSymbol { IsAnonymous: true };
         }
 
-        if (!anonymous)
-        {
-            return;
-        }
-
-        if (symbol is ParameterSymbol { Mode: ParameterMode.Var or ParameterMode.Out } or ParameterSymbol { IsOpenArray: true } or ParameterSymbol { IsUntyped: true })
+        // C-230: a capture through nested routines as well is moved to the owner's closure after binding (ClosureInfo.ResolveMixedCaptures)
+        if (anonymous && symbol is ParameterSymbol { Mode: ParameterMode.Var or ParameterMode.Out } or ParameterSymbol { IsOpenArray: true } or ParameterSymbol { IsUntyped: true })
         {
             _diagnostics.Report(at, "E2720", symbol.Name);
-        }
-        else if (mixed)
-        {
-            _diagnostics.Report(at, "E2900", "capture through a nested routine and an anonymous method");
         }
     }
 
@@ -228,7 +179,12 @@ internal sealed partial class ExpressionBinder
             var bound = ProbeBinder(probe).BindExpression(syntax, probeType);
             if (probe.ToImmutable() is [{ Code: "E2130" }])
             {
-                return BindExpression(syntax, probeType);                       // LANG-725: a nested routine (E2130 reported)
+                // C-230: a nested function whose result fits the reference type is called (LANG-482), not converted
+                var called = new DiagnosticBag();
+                var result = ProbeBinder(called).BindOperand(syntax);
+                return called.Count == 0 && !result.HasErrors && _conversions.Classify(result.Type, type).Exists
+                    ? null
+                    : BindExpression(syntax, probeType);                        // LANG-725: a nested routine (E2130 reported)
             }
 
             if (bound.HasErrors || probe.Count != 0 || !ReferenceEquals(bound.Type, probeType))

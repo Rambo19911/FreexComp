@@ -58,11 +58,34 @@ internal sealed partial class LoweringContext
         while (!ReferenceEquals(at, owner))
         {
             var closure = at?.Closure ?? throw new InvalidOperationException($"No closure chain to '{owner.Name}'.");
-            current = FieldOf(current, closure.Outer!);
+            if (closure.Links.TryGetValue(owner, out var link))
+            {
+                return FieldOf(current, link.Plain);                            // C-230: a nested routine's closure links to the owner's
+            }
+
+            current = FieldOf(current, closure.Outer ?? throw new InvalidOperationException($"No closure chain to '{owner.Name}'."));
             at = ((MethodSymbol)at).AnonymousParent;
         }
 
         return current;
+    }
+
+    /// <summary>C-230: <c>Result := closure.Result</c> into the routine's own result storage (a hidden result: the caller's).</summary>
+    private LStatement CopyCapturedResult(VariableSymbol result, SyntaxNode syntax)
+    {
+        LExpression target;
+        _rawClosureAccess = true;
+        try
+        {
+            target = Lower(new BoundVariableExpression(syntax, result));
+        }
+        finally
+        {
+            _rawClosureAccess = false;
+        }
+
+        var value = new BoundVariableExpression(syntax, result);
+        return result.Type.IsManaged ? ManagedRewriter.Assign(this, target, value) : new LAssign(target, Lower(value));
     }
 
     /// <summary>A hidden local or parameter of this body, or of an enclosing one (through the frames, CMP-345).</summary>
@@ -104,6 +127,15 @@ internal sealed partial class LoweringContext
         {
             statements.Add(new LAssign(FieldOf(local, outer), new LParamRef(self)));
             statements.Add(ManagedRewriter.Assign(this, FieldOf(local, closure.OuterRef!), AsInterface(new BoundParameterExpression(syntax, self))));
+        }
+
+        foreach (var (target, (plain, counted)) in closure.Links)
+        {
+            // C-230: the enclosing routine's closure, kept alive by this one
+            var outerClosure = target.Closure!;
+            statements.Add(new LAssign(FieldOf(local, plain), ClosureOf(target)));
+            statements.Add(ManagedRewriter.Assign(this, FieldOf(local, counted),
+                ObjectToInterface(ClosureOf(target), outerClosure.Class.FindInterface(root)!.Offset, root)));
         }
 
         _rawClosureAccess = true;

@@ -1003,6 +1003,34 @@ internal sealed partial class ExpressionBinder
     }
 
     /// <summary>
+    /// LANG-472 (C-127): a call of a routine declared <c>deprecated</c> / <c>platform</c> / <c>experimental</c> outside its own unit is
+    /// W1050 / W1051 / W1052 (the deprecation text follows as <c>: text</c>), at the call.
+    /// </summary>
+    private void CheckHintDirectives(Symbol symbol, SyntaxNode at)
+    {
+        if (symbol is not RoutineSymbol { ContainingSymbol: UnitSymbol owner } routine || ReferenceEquals(owner, CurrentUnit)
+            || !(routine.IsDeprecated || routine.IsPlatform || routine.IsExperimental))
+        {
+            return;
+        }
+
+        if (routine.IsDeprecated)
+        {
+            _diagnostics.Report(at, "W1050", routine.Name, routine.DeprecationMessage is { } text ? ": " + text : "");
+        }
+
+        if (routine.IsPlatform)
+        {
+            _diagnostics.Report(at, "W1051", routine.Name);
+        }
+
+        if (routine.IsExperimental)
+        {
+            _diagnostics.Report(at, "W1052", routine.Name);
+        }
+    }
+
+    /// <summary>
     /// <paramref name="syntax"/> where a variable is required (an assignment target, a <c>var</c> argument, the operand of
     /// <c>Inc</c>/<c>Dec</c>/<c>Include</c>/<c>Exclude</c>): there a cast <c>T(v)</c> of a variable is a variable typecast even when
     /// a value cast would apply (LANG-290 last row; E2041 for managed types and different sizes).
@@ -1904,6 +1932,7 @@ internal sealed partial class ExpressionBinder
             routine = resolution.Routine;
         }
 
+        CheckHintDirectives(routine, call);                                     // LANG-472 (C-127)
         return CheckArguments(call, routine, syntaxes, arguments);
     }
 

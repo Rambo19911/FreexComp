@@ -254,13 +254,25 @@ internal sealed partial class LoweringContext
         // CMP-380 (C-120): a body with anonymous methods first creates its closure
         var closure = Routine is null ? body?.Closure : Routine.Closure;
         ImmutableArray<LStatement> prologue = closure is null ? [] : ClosurePrologue(closure);
-        var block = Routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } method && body is not null
-            ? Protocol(method, body)
-            : body is null ? new LBlock([]) : (LBlock)Lower(body);
-        if (!prologue.IsEmpty)
+        LBlock block;
+        if (Routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } method && body is not null)
         {
-            block = new LBlock([.. prologue, .. block.Statements]);
+            block = Protocol(method, body, prologue);                   // C-230: the closure is made once Self is allocated
         }
+        else
+        {
+            block = body is null ? new LBlock([]) : (LBlock)Lower(body);
+            if (!prologue.IsEmpty)
+            {
+                block = new LBlock([.. prologue, .. block.Statements]);
+            }
+        }
+
+        // C-230: a Result captured by an anonymous method lives in the closure; the cleanup scope copies it out before the
+        // closure is released (so also after Exit)
+        var resultCopy = Routine?.ResultVariable is { } routineResult && closure?.Fields.ContainsKey(routineResult) == true
+            ? CopyCapturedResult(routineResult, closure.Syntax)
+            : null;
         if (Routine is MethodSymbol { IsRecordConstructor: true, ResultVariable: { } constructed })
         {
             // LANG-730 (C-122): the result is zero-filled before the body runs (a managed one released first: it may hold the
@@ -278,6 +290,11 @@ internal sealed partial class LoweringContext
         if (!releases.IsEmpty)
         {
             lowered = lowered with { Cleanup = new LBlock([.. lowered.Cleanup?.Statements ?? [], .. releases]) };
+        }
+
+        if (resultCopy is not null)
+        {
+            lowered = lowered with { Cleanup = new LBlock([resultCopy, .. lowered.Cleanup?.Statements ?? []]) };
         }
 
         if (finalisedGlobals.IsDefaultOrEmpty)
@@ -346,10 +363,10 @@ internal sealed partial class LoweringContext
     /// CMP-369: <c>if (Dealloc and 3) = 1 then Self.BeforeDestruction</c> (slot 2); body; <c>if (Dealloc and 1) &lt;&gt; 0 then Self.FreeInstance</c> (slot 4). The body is a
     /// one-pass loop so that <c>Exit</c> reaches the epilogue. Without the <c>TObject</c> slots (no System) only the body runs.
     /// </summary>
-    private LBlock Protocol(MethodSymbol method, BoundBlock body)
+    private LBlock Protocol(MethodSymbol method, BoundBlock body, ImmutableArray<LStatement> prologue)
     {
         _bodyLabel = NewLoop("body");
-        var user = new LLoop(_bodyLabel, new LBlock([Lower(body), new LBreak(_bodyLabel)]), step: null);
+        var user = new LLoop(_bodyLabel, new LBlock([.. prologue, Lower(body), new LBreak(_bodyLabel)]), step: null);
         _bodyLabel = null;
         var slots = method.ContainingType.VirtualSlots;
         if (slots.Length < 5)
@@ -651,9 +668,10 @@ internal sealed partial class LoweringContext
         }
 
         if (expression.ConstantValue is not null && expression.Type is MethodPointerTypeSymbol
-            || expression.ConstantValue?.Value is ImmutableArray<ConstantValue?> { IsEmpty: true } && expression.Type.IsManaged)
+            || expression.ConstantValue?.Value is ImmutableArray<ConstantValue?> { IsEmpty: true })
         {
-            // C-116: Default(T) of a managed record or array is a zeroed temporary too (it holds no references to release)
+            // C-116: Default(T) of a record or static array is a zeroed temporary too (a managed one holds no references to
+            // release; C-229: an unmanaged one may hold fields, e.g. class references, without a constant byte image)
             var empty = new LLocalRef(NewTemp(expression.Type));                    // nil method pointer: a zeroed temporary (C-103)
             return new LSequence(new LZero(new LAddrOf(empty, Types.Pointer), expression.Type), empty);
         }
@@ -1044,7 +1062,9 @@ internal sealed partial class LoweringContext
             return argument;
         }
 
-        if (parameter.Mode == ParameterMode.Const && aligned)
+        // C-231: a [Ref] const scalar gets the address of a variable argument, else of a temporary holding the value
+        if (parameter.Mode == ParameterMode.Const && aligned && (Lowerer.IsAggregate(parameter.Type) || argument is LLocalRef or LGlobalRef or LParamRef
+            or LOuterRef or LDeref or LField or LIndex or LArrayElement))
         {
             return new LAddrOf(argument, Types.Pointer);
         }

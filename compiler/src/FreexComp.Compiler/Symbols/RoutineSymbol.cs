@@ -45,6 +45,12 @@ public sealed class ParameterSymbol : Symbol
     /// <summary>Passed as the address of the caller's variable: <c>var</c>, <c>out</c>, and untyped <c>const</c> (C-202).</summary>
     internal bool IsByReference => Mode is ParameterMode.Var or ParameterMode.Out || IsUntyped;
 
+    /// <summary>
+    /// LANG-763 (C-231): a <c>[Ref] const</c> parameter — passed as an address like an aggregate <c>const</c> (the caller's variable, or a
+    /// temporary for another argument), whatever its type; the binder still treats it as <c>const</c>.
+    /// </summary>
+    internal bool IsRef { get; init; }
+
     /// <summary>An untyped <c>var</c>/<c>const</c>/<c>out</c> parameter (routines.md §3, C-202).</summary>
     public bool IsUntyped => Type is UntypedTypeSymbol;
 

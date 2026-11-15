@@ -20,6 +20,7 @@ internal sealed class Preprocessor
     private readonly IFileSystem? _fileSystem;
     private readonly List<PascalLexer> _lexers = [];
     private readonly List<IncludedFile?> _entries = [];     // parallel to _lexers; null for the main file
+    private bool _started;
 
     public Preprocessor(SourceText main, ParseOptions? options, IFileSystem? fileSystem)
     {
@@ -48,6 +49,12 @@ internal sealed class Preprocessor
             }
 
             _entries[^1]?.Tokens.Add(token);
+            if (!_started)
+            {
+                _started = true;
+                _context.IsUnitFile = token.Kind == SyntaxKind.UnitKeyword;     // C-127 (W1003); directives before the heading are not checked
+            }
+
             if (token.Kind == SyntaxKind.EndOfFileToken && _lexers.Count > 1)
             {
                 _lexers.RemoveAt(_lexers.Count - 1);

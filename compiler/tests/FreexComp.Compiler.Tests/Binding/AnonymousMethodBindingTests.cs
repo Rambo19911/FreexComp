@@ -146,8 +146,10 @@ public sealed class AnonymousMethodBindingTests
         Assert.Empty(Format(BindWithClosures("program P; procedure Q(const I: IInterface = nil); begin end; begin Q end.").Diagnostics));
 
     [Fact]
-    public void CapturedResult_IsUnsupported()
+    [Trait("Req", "LANG-721")]
+    public void CapturedResult_BecomesAClosureField()
     {
+        // C-230: was E2900 (CapturedResult_IsUnsupported) until Result could be captured
         var result = BindWithClosures("""
             program P;
             type TR = reference to procedure;
@@ -160,6 +162,71 @@ public sealed class AnonymousMethodBindingTests
             begin end.
             """);
 
-        Assert.Equal(["E2900"], Codes(result));
+        Assert.Empty(Codes(result));
+        var f = (RoutineSymbol)result.Scope.Lookup("F")!;
+        Assert.Equal(["Result"], f.Closure!.Fields.Keys.Select(k => k.Name));
+    }
+
+    [Fact]
+    [Trait("Req", "LANG-725")]
+    public void CaptureThroughNestedRoutine_MovesToTheOwnersClosure()
+    {
+        // C-230: an anonymous method inside a nested routine using the outer routine's variable (was E2900)
+        var result = BindWithClosures("""
+            program P;
+            type TF = reference to function: Integer;
+            function Outer: TF;
+            var Base: Integer;
+              function Make(Step: Integer): TF;
+              begin
+                Result := function: Integer begin Result := Base + Step end;
+              end;
+            begin
+              Base := 1;
+              Result := Make(2);
+            end;
+            begin end.
+            """);
+
+        Assert.Empty(Codes(result));
+        var outer = (RoutineSymbol)result.Scope.Lookup("Outer")!;
+        var make = result.Routines.Single(r => r.Routine.Name == "Make");
+        Assert.Equal(["Base"], outer.Closure!.Fields.Keys.Select(k => k.Name));
+        Assert.Empty(outer.Closure.Class.Interfaces);
+        Assert.Equal(["Step"], make.Routine.Closure!.Fields.Keys.Select(k => k.Name));
+        Assert.Same(outer, Assert.Single(make.Routine.Closure.Links.Keys));
+        Assert.Contains(make.CapturedVariables, s => s.Name == "Base");       // the frames carry Outer's closure to Make
+    }
+
+    [Fact]
+    [Trait("Req", "LANG-721")]
+    public void AnonymousMethods_InConstructorAndDestructor_AreAccepted()
+    {
+        // C-230: was E2900
+        var result = BindWithClosures("""
+            program P;
+            type
+              TR = reference to procedure;
+              TC = class
+                F: Integer;
+                constructor Create;
+                destructor Done;
+              end;
+            constructor TC.Create;
+            var V: TR;
+            begin
+              V := procedure begin F := 1 end;
+              V;
+            end;
+            destructor TC.Done;
+            var V: TR;
+            begin
+              V := procedure begin F := 2 end;
+              V;
+            end;
+            begin end.
+            """);
+
+        Assert.Empty(Codes(result));
     }
 }

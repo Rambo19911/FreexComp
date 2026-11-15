@@ -825,6 +825,122 @@ public sealed class PcuTests
     public void GenericFromPcu_GivesTheSameIrAsAgainstTheSource() =>
         PcuImportTests.AssertSameIrAgainstPcu(GenericUnit, GenericProgram);
 
+    /// <summary>C-227: generic methods of a plain class (class, instance) are written to the <c>.pcu</c> and instantiated from it.</summary>
+    [Fact]
+    [Trait("Req", "CMP-162")]
+    [Trait("Req", "LANG-716")]
+    public void GenericMethodOfPlainClassFromPcu() =>
+        PcuImportTests.AssertSameIrAgainstPcu("""
+            unit U;
+            interface
+            type
+              TUtil = class
+                class function Pick<T>(First: Boolean; const A, B: T): T;
+                function Echo<T>(const A: T): T;
+              end;
+            implementation
+            class function TUtil.Pick<T>(First: Boolean; const A, B: T): T;
+            begin
+              if First then
+                Result := A
+              else
+                Result := B;
+            end;
+            function TUtil.Echo<T>(const A: T): T;
+            begin
+              Result := A;
+            end;
+            end.
+            """, """
+            program P;
+            uses U;
+            var
+              Util: TUtil;
+            begin
+              Writeln(TUtil.Pick<Integer>(True, 1, 2));
+              Writeln(TUtil.Pick<string>(False, 'a', 'b'));
+              Util := TUtil.Create;
+              Writeln(Util.Echo<Integer>(5));
+            end.
+            """);
+
+    /// <summary>
+    /// C-227: a generic body naming an implementation-only type and variable and an enumeration of a unit used only by the
+    /// implementation part compiles from the <c>.pcu</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-162")]
+    public void GenericBodyUsesImplementationType() =>
+        PcuImportTests.AssertSameIrAgainstPcu("""
+            unit U;
+            interface
+            type
+              TBag<T> = class
+                function Count(const A: T): Integer;
+              end;
+            implementation
+            uses V;
+            type
+              TTally = record
+                N: Integer;
+              end;
+            var
+              Tally: TTally;
+            function TBag<T>.Count(const A: T): Integer;
+            var
+              Local: TTally;
+            begin
+              Local.N := Ord(Two);
+              Inc(Tally.N, Local.N);
+              Result := Tally.N;
+            end;
+            end.
+            """, """
+            program P;
+            uses U;
+            var
+              B: TBag<Integer>;
+            begin
+              B := TBag<Integer>.Create;
+              Writeln(B.Count(1));
+            end.
+            """);
+
+    /// <summary>
+    /// C-227: a conditional inside a stored generic body is evaluated with the declaring compilation's defines (the stored text
+    /// is the resolved one), not with the instantiating compilation's.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-162")]
+    public void GenericBodyIfdefFrozen()
+    {
+        const string Unit = """
+            unit U;
+            interface
+            {$DEFINE FAST}
+            type
+              TMode<T> = class
+                class function Name: string;
+              end;
+            implementation
+            class function TMode<T>.Name: string;
+            begin
+              {$IFDEF FAST}
+              Result := 'fast';
+              {$ELSE}
+              Result := 'slow';
+              {$ENDIF}
+            end;
+            end.
+            """;
+        const string Program = "program P;\nuses U;\nbegin\n  Writeln(TMode<Integer>.Name);\nend.\n";
+
+        var text = (string)Pcu("U", Files(u: Unit, program: Program))["genericBodies"]![0]!["text"]!;
+        Assert.Contains("'fast'", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("'slow'", text, StringComparison.Ordinal);
+        PcuImportTests.AssertSameIrAgainstPcu(Unit, Program);
+    }
+
     // ------------------------------------------------------------------ Emit writes it (CMP-141, toolchain.md §6)
 
     [Fact]

@@ -291,6 +291,62 @@ internal sealed class PcuWriter(PcuContext context)
             }
         }
 
+        /// <summary>A <c>genericBodies</c> entry for the type <paramref name="symbol"/> (its index).</summary>
+        private int AddBody(int symbol, ImmutableArray<GenericBodyText.Piece> pieces)
+        {
+            var text = string.Concat(pieces.Select(p => p.Text));
+            Bodies.Add(new JsonObject
+            {
+                ["symbol"] = symbol,
+                ["text"] = text,
+                ["sha256"] = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))),
+                ["pieces"] = new JsonArray([.. pieces.Select(p => (JsonNode?)new JsonObject { ["line"] = p.Line, ["col"] = p.Col, ["length"] = p.Text.Length })]),
+            });
+            return Bodies.Count - 1;
+        }
+
+        /// <summary>
+        /// C-227: the generic methods of a plain class — <c>genericMethods</c> (name, visibility, and <c>member</c>: the index of the
+        /// method declaration among those of the stored class declaration) and <c>genericBody</c>, a <c>genericBodies</c> entry with
+        /// the class declaration and the methods' implementations. Only when there are any (other files keep their exact form).
+        /// </summary>
+        private void GenericMethods(JsonObject entry, ImmutableArray<GenericMethodSymbol> methods)
+        {
+            var declaration = methods.IsEmpty ? null : Ancestor<TypeDeclarationSyntax>(methods[0].Declaration);
+            if (declaration is null)
+            {
+                return;
+            }
+
+            var pieces = GenericBodyText.Pieces(declaration, methods.Select(m => m.Implementation?.Declaration).OfType<RoutineDeclarationSyntax>());
+            if (pieces.IsEmpty)
+            {
+                return;
+            }
+
+            var members = declaration.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            entry["genericMethods"] = new JsonArray([.. methods.Select(m => (JsonNode?)new JsonObject
+            {
+                ["name"] = m.Name,
+                ["visibility"] = VisibilityName(m.Visibility),
+                ["member"] = members.IndexOf(m.Declaration),
+            })]);
+            entry["genericBody"] = AddBody((int)entry["id"]!, pieces);
+        }
+
+        private static T? Ancestor<T>(SyntaxNode node) where T : SyntaxNode
+        {
+            for (var parent = node.Parent; parent is not null; parent = parent.Parent)
+            {
+                if (parent is T found)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
         public JsonArray Symbols()
         {
             var symbols = new JsonArray();
@@ -382,6 +438,22 @@ internal sealed class PcuWriter(PcuContext context)
             {
                 entry["deprecated"] = true;
             }
+
+            // LANG-472 (C-127): the other hint directives and the deprecation text, only when present
+            if (symbol.DeprecationMessage is { } deprecation)
+            {
+                entry["deprecatedText"] = deprecation;
+            }
+
+            if (symbol.IsPlatform)
+            {
+                entry["platform"] = true;
+            }
+
+            if (symbol.IsExperimental)
+            {
+                entry["experimental"] = true;
+            }
         }
 
         private static IEnumerable<string> Flags(RoutineSymbol routine)
@@ -420,6 +492,11 @@ internal sealed class PcuWriter(PcuContext context)
                 if (p.Type is OpenArrayTypeSymbol { IsArrayOfConst: true })
                 {
                     parameter["arrayOfConst"] = true;                           // C-107: element TVarRec
+                }
+
+                if (p.IsRef)
+                {
+                    parameter["ref"] = true;                                    // C-231: [Ref] const, passed by address
                 }
                 if (p.DefaultValue is { } defaultValue)
                 {
@@ -696,6 +773,7 @@ internal sealed class PcuWriter(PcuContext context)
                         ["slot"] = m.VmtSlot,
                         ["msgId"] = m.MessageId,                                       // C-113
                     })]);
+                    GenericMethods(entry, @class.GenericMethods);                      // C-227
                     entry["properties"] = new JsonArray([.. @class.Properties.Select(p => (JsonNode?)new JsonObject
                     {
                         ["name"] = p.Name,
@@ -756,15 +834,7 @@ internal sealed class PcuWriter(PcuContext context)
                         return;
                     }
 
-                    var text = string.Concat(pieces.Select(p => p.Text));
-                    entry["body"] = Bodies.Count;
-                    Bodies.Add(new JsonObject
-                    {
-                        ["symbol"] = (int)entry["id"]!,
-                        ["text"] = text,
-                        ["sha256"] = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))),
-                        ["pieces"] = new JsonArray([.. pieces.Select(p => (JsonNode?)new JsonObject { ["line"] = p.Line, ["col"] = p.Col, ["length"] = p.Text.Length })]),
-                    });
+                    entry["body"] = AddBody((int)entry["id"]!, pieces);
                     return;
                 }
                 case ClassRefTypeSymbol reference:

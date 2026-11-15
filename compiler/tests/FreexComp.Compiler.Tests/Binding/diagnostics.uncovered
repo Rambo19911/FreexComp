@@ -13,10 +13,10 @@
 # A code with a case must not be listed; M2.1 is never a valid status.
 
 E2008  reserved  LANG-516 makes this unused
-E2070  M2.5  goto/labels (LANG-380)
-E2071  M2.5  goto/labels (LANG-380)
-E2072  M2.5  goto/labels (LANG-380)
-E2073  M2.5  goto/labels (LANG-380)
+E2070  Phase8  goto/labels (LANG-380), optional per milestones.md M2.5; C-110 deferred after M2.6
+E2071  Phase8  goto/labels (LANG-380), optional per milestones.md M2.5; C-110 deferred after M2.6
+E2072  Phase8  goto/labels (LANG-380), optional per milestones.md M2.5; C-110 deferred after M2.6
+E2073  Phase8  goto/labels (LANG-380), optional per milestones.md M2.5; C-110 deferred after M2.6
 E2200  elsewhere UnitBindingTests  needs a unit file (uses entry with in)
 E2201  elsewhere UnitBindingTests  needs a unit file whose heading differs from its file name
 E2202  elsewhere UnitBindingTests  unit resolution over the file system (also EmitTests: System not found)
@@ -27,13 +27,12 @@ E2206  elsewhere UnitBindingTests  needs a second program file
 E2208  elsewhere UnitBindingTests  needs unit files (two written names of one unit; aliases: C-164)
 E2209  elsewhere AliasTableTests  reported while the alias table file is read (C-164)
 E2604  reserved  lead decision 2026-11-14 (C-096): no case needs it; unrelated classes are E2641, invalid inherited is E2626
-W1003  M2.3  {$APPTYPE} in a unit
 W1011  Phase8  lead note 2026-11-14 (C-067): reserved for Phase 8, no rule defines it yet
-W1012  M2.2  subranges
+W1012  retired  lead note 2026-11-14 (C-067): LANG-280 rule 2 makes an out-of-range subrange constant E2012
 W1030  Phase8  LANG-462 accepts 'safecall' silently (C-160 ExternalDecl snapshot); no rule reports W1030 yet
-W1050  M2.3  hint directives used outside their unit (LANG-472)
-W1051  M2.3  hint directives used outside their unit (LANG-472)
-W1052  M2.3  hint directives used outside their unit (LANG-472)
+W1050  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
+W1051  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
+W1052  elsewhere UnitBindingTests  a hint directive is reported outside its own unit (LANG-472, C-127)
 W1081  reserved  lead decision 2026-11-14 (C-096): LANG-808 gives no diagnostic for code after raise
 W4002  elsewhere ToolchainTests  toolchain version check
 W4003  Phase4  application manifest (C-167)

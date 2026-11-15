@@ -79,13 +79,45 @@ internal static class PcuReader
         /// <summary>C-119: the <c>genericSupport</c> symbols, below the interface scope; generic method implementations bind in it.</summary>
         private Scope _support = null!;
 
-        private readonly List<(GenericTypeSymbol Generic, ImmutableArray<RoutineDeclarationSyntax> Implementations)> _generics = [];
+        /// <summary>C-227: the interface scope seen below the interface uses (the scope generic declarations bind in).</summary>
+        private Scope _declarations = null!;
+
+        /// <summary>The method implementations of the generics and of the plain classes' generic methods (C-119, C-227).</summary>
+        private readonly List<ImmutableArray<RoutineDeclarationSyntax>> _generics = [];
 
         public PcuInterface Run(Scope parent)
         {
             var scope = new Scope(ScopeKind.Unit, parent, _unit);
             _scope = scope;
-            _support = new Scope(ScopeKind.Unit, scope, _unit);
+            // C-227: stored generic bodies see the units the declaring unit used — the interface uses for declarations, the
+            // implementation uses as well for method implementations (each later unit searched first, LANG-310)
+            Scope interfaceUses = parent, allUses;
+            var implementationUses = new List<(string Name, Scope Scope)>();
+            foreach (var (name, section) in Dependencies(pcu))
+            {
+                if (string.Equals(name, "System", StringComparison.OrdinalIgnoreCase) || unitInterface(name) is not { } used)
+                {
+                    continue;
+                }
+
+                if (section == "implementation")
+                {
+                    implementationUses.Add((name, used));
+                }
+                else
+                {
+                    interfaceUses = Scope.Uses(used, interfaceUses, [name]);
+                }
+            }
+
+            allUses = interfaceUses;
+            foreach (var (name, used) in implementationUses)
+            {
+                allUses = Scope.Uses(used, allUses, [name]);
+            }
+
+            _declarations = ReferenceEquals(interfaceUses, parent) ? scope : Scope.Reparented(scope, interfaceUses);
+            _support = new Scope(ScopeKind.Unit, ReferenceEquals(allUses, parent) ? scope : Scope.Reparented(scope, allUses), _unit);
             var members = new List<Symbol>();
             foreach (var entry in Array(Node(pcu, "interface"), "symbols"))
             {
@@ -138,7 +170,7 @@ internal static class PcuReader
             }
 
             _unit.ImplementationMembers = [.. support];
-            foreach (var (_, implementations) in _generics)
+            foreach (var implementations in _generics)
             {
                 DeclarationBinder.ImportGenericImplementations(types, _support, _unit, implementations);
             }
@@ -155,6 +187,22 @@ internal static class PcuReader
                 return empty;
             }
 
+            var (declaration, implementations) = Body(body);
+            if (declaration?.TypeParameterList is not { } typeParameters)
+            {
+                throw new PcuFormatException($"generic body {body} does not parse");
+            }
+
+            var generic = new GenericTypeSymbol(name, parameters, declaration, _declarations, int.MaxValue, _unit, Declaration(entry));
+            _byId[id] = generic;
+            generic.Constraints = DeclarationBinder.ImportConstraints(types, _declarations, _unit, typeParameters);
+            _generics.Add(implementations);
+            return generic;
+        }
+
+        /// <summary>The declaration and method implementations of <c>genericBodies[body]</c>, its pieces put back at their positions.</summary>
+        private (TypeDeclarationSyntax? Declaration, ImmutableArray<RoutineDeclarationSyntax> Implementations) Body(int body)
+        {
             var bodies = Array(pcu, "genericBodies");
             if (body < 0 || body >= bodies.Count)
             {
@@ -176,17 +224,41 @@ internal static class PcuReader
                 at += length;
             }
 
-            var (declaration, implementations) = GenericBodyText.Parse(_sources.Length > 0 ? _sources[0] : _unit.Name + ".pas", GenericBodyText.Reconstruct(pieces));
-            if (declaration?.TypeParameterList is not { } typeParameters)
+            return GenericBodyText.Parse(_sources.Length > 0 ? _sources[0] : _unit.Name + ".pas", GenericBodyText.Reconstruct(pieces));
+        }
+
+        /// <summary>
+        /// C-227: the generic methods of a plain class, their declarations taken from the stored class declaration (bound per instance
+        /// like those of a class in source), their implementations bound with the generics' (<see cref="ImportGenericSupport"/>).
+        /// </summary>
+        private void GenericMethods(ClassTypeSymbol type, JsonObject entry)
+        {
+            if (entry["genericMethods"] is not JsonArray methods || entry["genericBody"] is not JsonValue index || !index.TryGetValue<int>(out var body))
             {
-                throw new PcuFormatException($"generic body {body} does not parse");
+                return;
             }
 
-            var generic = new GenericTypeSymbol(name, parameters, declaration, _scope, int.MaxValue, _unit, Declaration(entry));
-            _byId[id] = generic;
-            generic.Constraints = DeclarationBinder.ImportConstraints(types, _scope, _unit, typeParameters);
-            _generics.Add((generic, implementations));
-            return generic;
+            var (declaration, implementations) = Body(body);
+            var members = declaration?.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList()
+                ?? throw new PcuFormatException($"generic body {body} does not parse");
+            var generics = ImmutableArray.CreateBuilder<GenericMethodSymbol>();
+            foreach (var method in methods)
+            {
+                var member = (int)method!["member"]!;
+                if (member < 0 || member >= members.Count || members[member].Heading.TypeParameterList is not { } typeParameters)
+                {
+                    throw new PcuFormatException($"generic method {member} of '{type.Name}' is not in its body");
+                }
+
+                var names = typeParameters.Parameters.SelectMany(p => p.Identifiers).Select(i => i.Identifier.Value as string ?? i.Identifier.Text).ToImmutableArray();
+                generics.Add(new GenericMethodSymbol(Text(method, "name"), type, members[member], VisibilityOf(Text(method, "visibility")), names, _declarations, _unit, [])
+                {
+                    Constraints = DeclarationBinder.ImportConstraints(types, _declarations, _unit, typeParameters),
+                });
+            }
+
+            type.GenericMethods = generics.ToImmutable();
+            _generics.Add(implementations);
         }
 
         private Symbol Symbol(JsonNode entry, string name)
@@ -252,7 +324,14 @@ internal static class PcuReader
 
         private RoutineSymbol Routine(JsonNode entry, string name, ImmutableArray<Location> locations)
         {
-            var routine = new RoutineSymbol(name, _unit, locations) { Documentation = Doc(entry) };
+            var routine = new RoutineSymbol(name, _unit, locations)
+            {
+                Documentation = Doc(entry),
+                IsDeprecated = entry["deprecated"]?.GetValue<bool>() == true,                // LANG-472 (C-127)
+                DeprecationMessage = entry["deprecatedText"]?.GetValue<string>(),
+                IsPlatform = entry["platform"]?.GetValue<bool>() == true,
+                IsExperimental = entry["experimental"]?.GetValue<bool>() == true,
+            };
             routine.Parameters = Parameters(entry, routine);
             routine.ReturnType = entry["result"] is null ? null : Type(entry, "result");
             var flags = Array(entry, "flags").Select(f => f!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
@@ -276,6 +355,7 @@ internal static class PcuReader
             }, i, routine, [], types.Int64)
             {
                 DefaultValue = p is JsonObject o && o.TryGetPropertyValue("default", out var value) ? Value(value, Type(p, "type")) : null,
+                IsRef = p!["ref"]?.GetValue<bool>() == true,                                  // C-231
             })];
 
         /// <summary>A parameter's type: an open array (C-106) records its element type with <c>"openArray": true</c>.</summary>
@@ -539,6 +619,7 @@ internal static class PcuReader
             }
 
             type.Properties = [.. Array(entry, "properties").Select(p => Property(type, p!))];
+            GenericMethods(type, entry);
             // C-205: the listed interfaces with their hidden field offsets; the implementing methods matter only to the declaring
             // unit (its IMTs and thunks), so an imported class carries none
             type.Interfaces = [.. Array(entry, "interfaces").Select(i => new ImplementedInterface(

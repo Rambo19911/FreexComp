@@ -168,6 +168,10 @@ internal static class Binder
             return result;
         }
 
+        var resolved = ClosureInfo.ResolveMixedCaptures(routines, unit, result.Types);           // C-230
+        routines.Clear();
+        routines.AddRange(resolved);
+
         // LANG-711 (C-118): errors in an instance body are E2710 naming the instance; C-222: with the instantiation site, and the
         // instance bodies' warnings and hints (binder and flow analysis) once each; all diagnostics stay in file and position order
         var extended = result with { Routines = result.Routines.AddRange(routines) };
@@ -287,6 +291,9 @@ internal static class Binder
         }
 
         Drain();
+        var resolved = ClosureInfo.ResolveMixedCaptures(routines, declarations.Unit, types);   // C-230
+        routines.Clear();
+        routines.AddRange(resolved);
 
         var all = diagnostics.ToImmutable().Concat(routines.SelectMany(r => r.Diagnostics))
             .OrderBy(d => d.Location.Path, StringComparer.OrdinalIgnoreCase)

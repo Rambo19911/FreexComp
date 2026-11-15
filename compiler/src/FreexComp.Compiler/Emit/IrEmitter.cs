@@ -552,7 +552,8 @@ internal static class IrEmitter
     /// </summary>
     /// <remarks>An open array (any mode) arrives as its data pointer value, spilled like a scalar (C-106).</remarks>
     internal static bool IsPassedByAddress(ParameterSymbol parameter) =>
-        parameter.Type is not OpenArrayTypeSymbol && (parameter.IsByReference || Lowerer.IsAggregate(parameter.Type) && !IsPassedAsInteger(parameter.Type));
+        parameter.Type is not OpenArrayTypeSymbol
+        && (parameter.IsByReference || parameter.IsRef || Lowerer.IsAggregate(parameter.Type) && !IsPassedAsInteger(parameter.Type));   // C-231 [Ref]
 
     /// <summary>
     /// ABI-081: the result is an aggregate not of size 1, 2, 4 or 8, or of a managed type (ABI-032), written through a hidden

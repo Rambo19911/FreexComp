@@ -87,6 +87,39 @@ public sealed class UnitBindingTests
             end.
             """, ("A.pas", UnitA)));
 
+    /// <summary>
+    /// C-127 (LANG-472): calling a routine declared <c>deprecated ['text']</c>, <c>platform</c> or <c>experimental</c> outside its own unit
+    /// is W1050 / W1051 / W1052 at the call; its own unit calls it silently.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "LANG-472")]
+    public void HintDirectives_OutsideTheirUnit_AreW1050ToW1052() =>
+        Assert.Equal(
+        [
+            "P.pas(3,7): W1050 Symbol 'Old' is deprecated: use New",
+            "P.pas(3,12): W1050 Symbol 'Gone' is deprecated",
+            "P.pas(3,18): W1051 Symbol 'Plat' is specific to a platform",
+            "P.pas(3,29): W1052 Symbol 'Exp' is experimental",
+        ], Check("""
+            program P;
+            uses H;
+            begin Old; Gone; Plat; I := Exp(1) end.
+            """, ("H.pas", """
+            unit H;
+            interface
+            var I: Integer;
+            procedure Old; deprecated 'use New';
+            procedure Gone; deprecated;
+            procedure Plat; platform;
+            function Exp(N: Integer): Integer; experimental;
+            implementation
+            procedure Old; begin end;
+            procedure Gone; begin Old end;
+            procedure Plat; begin end;
+            function Exp(N: Integer): Integer; begin Plat; Result := N end;
+            end.
+            """)));
+
     [Fact]
     [Trait("Req", "LANG-515")]
     public void ImplementationSymbols_ArePrivate() =>
