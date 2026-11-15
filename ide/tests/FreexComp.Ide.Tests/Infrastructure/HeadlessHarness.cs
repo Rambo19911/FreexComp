@@ -89,6 +89,13 @@ public sealed class HarnessAssertionException(string message) : Exception(messag
 public sealed class HeadlessHarness : IAsyncDisposable
 {
     private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// I-195: the start-up sequence does real disk work (settings, session, project, toolchain search) and is not driven by the
+    /// manual clock, so under parallel load it can take several seconds of wall time. It gets the most a non-toolchain test
+    /// has (30 s, IDE-TEST-006) minus a margin, so a real hang still fails here with this message before the test timeout.
+    /// </summary>
+    private static readonly TimeSpan StartupLimit = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan WaitStep = TimeSpan.FromMilliseconds(10);
 
     private readonly int _bindingErrorStart;
@@ -123,6 +130,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
         _log = new RecordingLog();
         _watchers = new ManualFileWatcherFactory();
         _realWatchers = options.RealFileWatchers;
+        RealBuild = options.RealBuild;
         FileDialogs = new FakeFileDialogService();
 
         Dispatcher.UIThread.UnhandledException += OnUnhandledException;
@@ -180,6 +188,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
     public MessageScript Messages { get; }
 
+    /// <summary>Started with <see cref="HarnessOptions.RealBuild"/>: <see cref="Build"/> and <see cref="Processes"/> are unused.</summary>
+    public bool RealBuild { get; }
+
     /// <summary>The scripted build engine (IDE-P3-031).</summary>
     public FakeBuildEngine Build { get; } = new();
 
@@ -231,9 +242,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
         var watch = Stopwatch.StartNew();
         while (!h.Startup.IsCompleted && !h.Window.OwnedWindows.Any(w => w.IsVisible))
         {
-            if (watch.Elapsed > WaitLimit)
+            if (watch.Elapsed > StartupLimit)
             {
-                throw new HarnessAssertionException("Timed out waiting for the start-up sequence");
+                throw new HarnessAssertionException($"Timed out waiting for the start-up sequence ({watch.Elapsed.TotalSeconds:0.0} s)");
             }
 
             Dispatcher.UIThread.RunJobs();

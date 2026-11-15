@@ -188,7 +188,15 @@ public partial class TextDocumentViewModel
                     DeleteKey(EditKind.Backspace, Buffer.GetText(backspace.Edits[0].Offset, backspace.Edits[0].Length), () => Apply(backspace));
                 return true;
             case "Enter" or "Shift+Enter":
-                Command(() => Apply(EditorOperations.Enter(Buffer, selection, options, _language.IndentRules, LineEnding.NewLine)));
+                Command(() =>
+                {
+                    var enter = EditorOperations.Enter(Buffer, selection, options, _language.IndentRules, LineEnding.NewLine);
+                    // IDE-ED-024: the closer goes in with the line break, as one undo step.
+                    var completed = Options.AutoCloseBeginEnd && _language.Id == "pascal"
+                        ? Editing.BlockCompletion.Extend(Buffer, selection, enter, FilePath ?? Title, LineEnding.NewLine)
+                        : null;
+                    return Apply(completed ?? enter);
+                });
                 return true;
             case "Home" or "Shift+Home":
                 Selection = EditorOperations.Home(Buffer, selection, options, extend: gesture == "Shift+Home");

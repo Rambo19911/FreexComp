@@ -17,14 +17,14 @@ namespace FreexComp.Ide.Tests.Views;
 [Trait("Kind", "Ui")]
 public sealed class OptionsDialogTests
 {
-    /// <summary>dialogs.md §9.1: field id, label (mnemonic as <c>_</c>), key, enabled in P1.</summary>
+    /// <summary>dialogs.md §9.1: field id, label (mnemonic as <c>_</c>), key, enabled at the product's phase (pending tasks: disabled).</summary>
     private static readonly (string Field, string Label, ISettingKey Key, bool Enabled)[] GeneralFields =
     [
         ("TabWidth", "_Tab width:", SettingsCatalog.EditorTabWidth, true),
         ("InsertSpaces", "Insert _spaces instead of tabs", SettingsCatalog.EditorInsertSpaces, true),
         ("AutoIndent", "_Automatic indentation", SettingsCatalog.EditorAutoIndent, true),
         ("AutoCloseBrackets", "Close _brackets and quotes automatically", SettingsCatalog.EditorAutoCloseBrackets, true),
-        ("AutoCloseBeginEnd", "Complete begin with _end", SettingsCatalog.EditorAutoCloseBeginEnd, false),
+        ("AutoCloseBeginEnd", "Complete begin with _end", SettingsCatalog.EditorAutoCloseBeginEnd, true),
         ("SmartHome", "_Home key goes to first non-blank character", SettingsCatalog.EditorSmartHome, true),
         ("CaretPastEol", "Allow caret beyond end of _line", SettingsCatalog.EditorCaretPastEndOfLine, true),
         ("RectangularSelection", "_Column selection with Alt", SettingsCatalog.EditorRectangularSelection, true),
@@ -35,8 +35,8 @@ public sealed class OptionsDialogTests
         ("ParameterInfoAuto", "Show parameter in_fo after (", SettingsCatalog.EditorParameterInfoAutoTrigger, false),
         ("HoverEnabled", "Show symbol information on ho_ver", SettingsCatalog.EditorHoverEnabled, false),
         ("HoverDelay", "Hover dela_y (ms):", SettingsCatalog.EditorHoverDelayMs, false),
-        ("LiveDiagnostics", "_Underline errors while typing", SettingsCatalog.EditorLiveDiagnostics, false),
-        ("LiveDiagnosticsDelay", "Error chec_k delay (ms):", SettingsCatalog.EditorLiveDiagnosticsDelayMs, false),
+        ("LiveDiagnostics", "_Underline errors while typing", SettingsCatalog.EditorLiveDiagnostics, true),
+        ("LiveDiagnosticsDelay", "Error chec_k delay (ms):", SettingsCatalog.EditorLiveDiagnosticsDelayMs, true),
     ];
 
     /// <summary>dialogs.md §9.2 (all P1).</summary>
@@ -208,13 +208,16 @@ public sealed class OptionsDialogTests
         Assert.Equal("(Default)", ((OptionChoice)((ComboBox)dlg.Find<Control>("FontFamily")).Items[0]!).Display);
         Assert.IsType<TextEditor>(dlg.Find<Control>("Preview"));
 
-        // Changing every enabled field in the UI and applying writes exactly its own key.
-        foreach (var (field, _, key, enabled) in DisplayFields.Concat(GeneralFields).Where(f => f.Enabled))
+        // Changing every enabled field in the UI and applying writes exactly its own key (check boxes last: one may
+        // disable the field it enables, e.g. LiveDiagnostics → LiveDiagnosticsDelay).
+        foreach (var (field, _, key, enabled) in DisplayFields.Concat(GeneralFields).Where(f => f.Enabled).OrderBy(f => f.Key is SettingKey<bool>))
         {
             dlg.Click(GeneralFields.Any(f => f.Field == field) ? "Page.Editor.General" : "Page.Editor.Display");
             switch (key)
             {
                 case SettingKey<bool>:
+                    dlg.Find<Control>(field).BringIntoView(); // the last rows of the page are below the fold
+                    Dispatcher.UIThread.RunJobs();
                     dlg.Click(field);
                     break;
                 case SettingKey<int> i:

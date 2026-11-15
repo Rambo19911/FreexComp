@@ -22,7 +22,11 @@ namespace FreexComp.Ide.Platform.Windows;
 /// </summary>
 public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath = null) : IProcessLauncher
 {
-    /// <summary>Pipe ends are inheritable only between their creation and CreateProcess; one start at a time.</summary>
+    /// <summary>
+    /// Pipe ends are inheritable only between their creation and CreateProcess; one start at a time. Each captured child
+    /// gets a <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> of its own three pipe ends (I-188), so it never inherits another
+    /// inheritable handle of the IDE (one made by another component, e.g. <c>System.Diagnostics.Process</c>).
+    /// </summary>
     private static readonly Lock CreateGate = new();
 
     private static int _pipeCounter;
@@ -60,21 +64,28 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
             lock (CreateGate)
             {
                 SafeFileHandle? stdinRead = null, stdinWrite = null, stdoutWrite = null, stderrWrite = null;
+                var attributes = IntPtr.Zero;
+                var handleList = IntPtr.Zero;
                 try
                 {
-                    var startup = new Native.STARTUPINFOW { cb = Marshal.SizeOf<Native.STARTUPINFOW>() };
-                    uint flags = Native.CREATE_SUSPENDED | Native.CREATE_UNICODE_ENVIRONMENT;
+                    var startup = new Native.STARTUPINFOEXW { StartupInfo = { cb = Marshal.SizeOf<Native.STARTUPINFOEXW>() } };
+                    uint flags = Native.CREATE_SUSPENDED | Native.CREATE_UNICODE_ENVIRONMENT | Native.EXTENDED_STARTUPINFO_PRESENT;
                     if (capture)
                     {
                         // IDE-P3-082: stdin redirected and closed at once, stdout/stderr captured, no console window.
                         (stdinRead, stdinWrite) = CreatePipe(parentEnd: false);
                         (stdoutRead, stdoutWrite) = CreatePipe(parentEnd: true);
                         (stderrRead, stderrWrite) = CreatePipe(parentEnd: true);
-                        startup.dwFlags = Native.STARTF_USESTDHANDLES;
-                        startup.hStdInput = stdinRead.DangerousGetHandle();
-                        startup.hStdOutput = stdoutWrite.DangerousGetHandle();
-                        startup.hStdError = stderrWrite.DangerousGetHandle();
+                        startup.StartupInfo.dwFlags = Native.STARTF_USESTDHANDLES;
+                        startup.StartupInfo.hStdInput = stdinRead.DangerousGetHandle();
+                        startup.StartupInfo.hStdOutput = stdoutWrite.DangerousGetHandle();
+                        startup.StartupInfo.hStdError = stderrWrite.DangerousGetHandle();
                         flags |= Native.CREATE_NO_WINDOW;
+
+                        // I-188: the child inherits its three pipe ends and nothing else that is inheritable in the IDE.
+                        (attributes, handleList) = HandleListAttribute(
+                            [startup.StartupInfo.hStdInput, startup.StartupInfo.hStdOutput, startup.StartupInfo.hStdError]);
+                        startup.lpAttributeList = attributes;
                     }
                     else
                     {
@@ -94,6 +105,15 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
                 }
                 finally
                 {
+                    if (attributes != IntPtr.Zero)
+                    {
+                        Native.DeleteProcThreadAttributeList(attributes);
+                        Marshal.FreeHGlobal(attributes);
+                    }
+
+                    if (handleList != IntPtr.Zero)
+                        Marshal.FreeHGlobal(handleList);
+
                     // The child holds its own copies; closing the stdin write end gives it end-of-file.
                     stdinRead?.Dispose();
                     stdinWrite?.Dispose();
@@ -181,6 +201,37 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
         limits.BasicLimitInformation.LimitFlags = Native.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         if (!Native.SetInformationJobObject(job, Native.JobObjectExtendedLimitInformation, ref limits, Marshal.SizeOf<Native.JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()))
             throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+
+    /// <summary>
+    /// An initialised attribute list with one <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> naming <paramref name="handles"/>
+    /// (both blocks must stay alive until CreateProcess returns; the caller deletes and frees them).
+    /// </summary>
+    private static (IntPtr Attributes, IntPtr HandleList) HandleListAttribute(IntPtr[] handles)
+    {
+        var size = IntPtr.Zero;
+        Native.InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size); // fails with the size needed
+        var attributes = Marshal.AllocHGlobal(size);
+        if (!Native.InitializeProcThreadAttributeList(attributes, 1, 0, ref size))
+        {
+            var error = Marshal.GetLastWin32Error();
+            Marshal.FreeHGlobal(attributes);
+            throw new Win32Exception(error);
+        }
+
+        var list = Marshal.AllocHGlobal(IntPtr.Size * handles.Length);
+        Marshal.Copy(handles, 0, list, handles.Length);
+        if (!Native.UpdateProcThreadAttribute(attributes, 0, Native.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, list, (IntPtr)(IntPtr.Size * handles.Length),
+                IntPtr.Zero, IntPtr.Zero))
+        {
+            var error = Marshal.GetLastWin32Error();
+            Native.DeleteProcThreadAttributeList(attributes);
+            Marshal.FreeHGlobal(attributes);
+            Marshal.FreeHGlobal(list);
+            throw new Win32Exception(error);
+        }
+
+        return (attributes, list);
     }
 
     /// <summary>An anonymous pipe whose child end is inheritable; <paramref name="parentEnd"/> true = the IDE reads.</summary>
@@ -356,6 +407,8 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
         public const uint CREATE_NEW_CONSOLE = 0x00000010;
         public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
         public const uint CREATE_NO_WINDOW = 0x08000000;
+        public const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
+        public static readonly IntPtr PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002;
         public const int STARTF_USESTDHANDLES = 0x00000100;
         public const uint HANDLE_FLAG_INHERIT = 0x00000001;
         public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
@@ -382,6 +435,13 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
             public IntPtr hStdInput;
             public IntPtr hStdOutput;
             public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct STARTUPINFOEXW
+        {
+            public STARTUPINFOW StartupInfo;
+            public IntPtr lpAttributeList;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -456,7 +516,19 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool CreateProcessW(string? applicationName, StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
             [MarshalAs(UnmanagedType.Bool)] bool inheritHandles, uint creationFlags, IntPtr environment, string? currentDirectory,
-            ref STARTUPINFOW startupInfo, out PROCESS_INFORMATION processInformation);
+            ref STARTUPINFOEXW startupInfo, out PROCESS_INFORMATION processInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref IntPtr size);
+
+        [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool UpdateProcThreadAttribute(IntPtr list, uint flags, IntPtr attribute, IntPtr value, IntPtr size,
+            IntPtr previousValue, IntPtr returnSize);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        public static extern void DeleteProcThreadAttributeList(IntPtr list);
 
         [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
         public static extern uint ResumeThread(SafeProcessHandle thread);

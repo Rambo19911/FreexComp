@@ -318,7 +318,11 @@ public sealed class EditorViewTests
     [Trait("Req", "IDE-ED-004")]
     public async Task EditorKeysUseTheIndentationRules()
     {
-        await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = "  begin\r\n");
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["A.pas"] = "  begin\r\n";
+            o.Settings["editor.autoCloseBeginEnd"] = false; // the indentation rules alone (block completion: BlockCompletionTests)
+        });
         var doc = await OpenAsync(h, "A.pas");
         var editor = FocusEditor(h, "A.pas");
         editor.TextArea.Caret.Offset = doc.Buffer.GetOffset(1, 8);

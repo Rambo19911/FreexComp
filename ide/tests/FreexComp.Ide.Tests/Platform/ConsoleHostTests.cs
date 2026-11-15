@@ -14,7 +14,63 @@ namespace FreexComp.Ide.Tests.Platform;
 [Trait("Category", "Integration")]
 public sealed class ConsoleHostTests
 {
-    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(8);
+    /// <summary>
+    /// The whole test's budget, shared by its three waits (IDE-TEST-006: 30 s per test). Each wait starts up to two .NET
+    /// processes and a console (≈ 250 ms alone); under a loaded full-solution run one cold start can take seconds (I-194),
+    /// so no single wait gets a fixed slice of it.
+    /// </summary>
+    private static readonly TimeSpan Budget = TimeSpan.FromSeconds(20); // + up to 5 s for the failure snapshot
+
+    /// <summary>Awaits <paramref name="task"/> until <see cref="Budget"/> since <paramref name="since"/> is spent; a timeout names the step.</summary>
+    private static async Task<T> Step<T>(Task<T> task, string step, Stopwatch since, CancellationToken token)
+    {
+        var left = Budget - since.Elapsed;
+        try
+        {
+            return await task.WaitAsync(left > TimeSpan.Zero ? left : TimeSpan.Zero, token);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException($"step '{step}' still pending {since.Elapsed} after the start", e);
+        }
+    }
+
+    private static async Task Step(Task task, string step, Stopwatch since, CancellationToken token) =>
+        await Step(Completed(task), step, since, token);
+
+    private static async Task<bool> Completed(Task task)
+    {
+        await task;
+        return true;
+    }
+
+    /// <summary>What the host is doing when a wait fails (I-194): alive or not, its children, the text of its console.</summary>
+    private static async Task<string> SnapshotAsync(Process host, CancellationToken token)
+    {
+        var text = new System.Text.StringBuilder();
+        text.Append(CultureInfo.InvariantCulture, $"host {host.Id} exited: {host.HasExited}; children: ");
+        text.AppendJoin(", ", ProcessSnapshot.Children(host.Id).Select(c => $"{c.Name} {c.Id}"));
+        if (host.HasExited)
+            return text.ToString();
+        var screen = Path.Combine(Path.GetTempPath(), "freexcomp-console-" + Guid.NewGuid().ToString("N") + ".txt");
+        try
+        {
+            var (helper, arguments) = ProcessHelper.Command(string.Create(CultureInfo.InvariantCulture, $"{ProcessHelper.ConsoleKey} {host.Id} \"{screen}\""));
+            using var key = Process.Start(new ProcessStartInfo(helper, arguments) { UseShellExecute = false, CreateNoWindow = true })!;
+            await key.WaitForExitAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token);
+            text.Append("; console: ").AppendJoin(" | ", File.Exists(screen) ? await File.ReadAllLinesAsync(screen, token) : ["(no screen file)"]);
+        }
+        catch (TimeoutException)
+        {
+            text.Append("; console: (helper timed out)");
+        }
+        finally
+        {
+            File.Delete(screen);
+        }
+
+        return text.ToString();
+    }
 
     /// <summary>The IDE executable next to the test assembly (the project reference copies its apphost).</summary>
     private static string IdeExecutable => Path.ChangeExtension(typeof(ConsoleHost).Assembly.Location, ".exe");
@@ -25,6 +81,7 @@ public sealed class ConsoleHostTests
     public async Task RunsChildReportsExitCodeAndWaitsForKey()
     {
         var token = TestContext.Current.CancellationToken;
+        var since = Stopwatch.StartNew();
         var (file, arguments) = ProcessHelper.Command(ProcessHelper.ExitWith + " 3");
         var launcher = new WindowsProcessLauncher(new ManualClock(), IdeExecutable);
         using var process = launcher.Start(new ProcessStartRequest(file, arguments, Path.GetTempPath()) { Capture = false, ConsoleHost = true },
@@ -33,7 +90,17 @@ public sealed class ConsoleHostTests
         _ = host.SafeHandle; // keep a handle so the exit code stays readable
 
         // The program's exit code arrives over the pipe while the host still waits at its prompt.
-        Assert.Equal(3, await process.Exited.WaitAsync(Limit, token));
+        int exitCode;
+        try
+        {
+            exitCode = await Step(process.Exited, "exited report", since, token);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException(e.Message + "; " + await SnapshotAsync(host, token), e);
+        }
+
+        Assert.Equal(3, exitCode);
         Assert.False(host.HasExited);
 
         // A key press in the host's console closes it; the host exits with the program's code.
@@ -44,11 +111,11 @@ public sealed class ConsoleHostTests
                 string.Create(CultureInfo.InvariantCulture, $"{ProcessHelper.ConsoleKey} {process.ProcessId} \"{screen}\""));
             using (var key = Process.Start(new ProcessStartInfo(helper, helperArguments) { UseShellExecute = false, CreateNoWindow = true })!)
             {
-                await key.WaitForExitAsync(token).WaitAsync(Limit, token);
+                await Step(key.WaitForExitAsync(token), "key helper", since, token);
                 Assert.Equal(0, key.ExitCode);
             }
 
-            await host.WaitForExitAsync(token).WaitAsync(Limit, token);
+            await Step(host.WaitForExitAsync(token), "host exit after key", since, token);
             Assert.Equal(3, host.ExitCode);
 
             var lines = await File.ReadAllLinesAsync(screen, token);

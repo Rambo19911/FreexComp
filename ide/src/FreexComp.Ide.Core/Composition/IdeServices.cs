@@ -91,6 +91,9 @@ public sealed record IdeServices
     /// <summary>The open quick-pick popup (Go to File, Command Palette; dialogs.md §13/§14).</summary>
     public required Popups.QuickPickHost QuickPick { get; init; }
 
+    /// <summary>The project <c>Compilation</c> and the language-service worker (I-110).</summary>
+    public required CodeModel.CodeModelService CodeModel { get; init; }
+
     /// <summary>The Search Results tool window and Find in Files runner (I-123).</summary>
     public required ViewModels.SearchResultsViewModel SearchResults { get; init; }
 }

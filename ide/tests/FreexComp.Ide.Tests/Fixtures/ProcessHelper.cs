@@ -16,6 +16,8 @@ namespace FreexComp.Ide.Tests.Fixtures;
 /// <item><c>--console-key &lt;pid&gt; &lt;file&gt;</c>: attaches to the console of process <c>pid</c>, writes its title and the
 /// text of its screen buffer to <c>file</c> (UTF-8), then injects one key press (space) with <c>WriteConsoleInputW</c>
 /// (I-138, <c>ConsoleHostTests</c>).</item>
+/// <item><c>--peek-handle &lt;value&gt;</c>: prints <see cref="Inherited"/> when handle <c>value</c> is a pipe holding
+/// <see cref="PipeMarker"/>, otherwise <see cref="NotInherited"/> (I-188).</item>
 /// </list>
 /// </summary>
 internal static class ProcessHelper
@@ -25,7 +27,11 @@ internal static class ProcessHelper
     public const string WriteBoth = "--write-both";
     public const string ExitWith = "--exit-with";
     public const string ConsoleKey = "--console-key";
+    public const string PeekHandle = "--peek-handle";
     public const string ChildGreeting = "child says hello";
+    public const string PipeMarker = "freexcomp-leak-marker";
+    public const string Inherited = "inherited";
+    public const string NotInherited = "not inherited";
 
     /// <summary>How to start the helper: the dotnet host and the test assembly (falls back to the apphost exe).</summary>
     public static (string FileName, string Arguments) Command(string mode)
@@ -41,7 +47,7 @@ internal static class ProcessHelper
     internal static void Run()
     {
         var args = Environment.GetCommandLineArgs();
-        var index = Array.FindIndex(args, a => a is SpawnChild or Wait or WriteBoth or ExitWith or ConsoleKey);
+        var index = Array.FindIndex(args, a => a is SpawnChild or Wait or WriteBoth or ExitWith or ConsoleKey or PeekHandle);
         if (index < 0)
             return;
         Environment.Exit(RunMode(args[index], args[(index + 1)..]));
@@ -57,6 +63,10 @@ internal static class ProcessHelper
                 return int.Parse(rest[0], System.Globalization.CultureInfo.InvariantCulture);
             case ConsoleKey:
                 return ConsoleKeyHelper.Run(int.Parse(rest[0], System.Globalization.CultureInfo.InvariantCulture), rest[1]);
+            case PeekHandle:
+                Console.Out.WriteLine(PeekMarker(long.Parse(rest[0], System.Globalization.CultureInfo.InvariantCulture)) ? Inherited : NotInherited);
+                Console.Out.Flush();
+                return 0;
             case SpawnChild:
                 var (file, arguments) = Command(Wait);
                 using (var child = Process.Start(new ProcessStartInfo(file, arguments) { UseShellExecute = false })!)
@@ -81,6 +91,18 @@ internal static class ProcessHelper
                 return 3;
         }
     }
+
+    /// <summary>True when <paramref name="value"/> is, in this process, the read end of a pipe holding <see cref="PipeMarker"/>.</summary>
+    private static bool PeekMarker(long value)
+    {
+        var buffer = new byte[PipeMarker.Length];
+        return PeekNamedPipe((IntPtr)value, buffer, buffer.Length, out var read, IntPtr.Zero, IntPtr.Zero)
+            && read == buffer.Length && Encoding.ASCII.GetString(buffer) == PipeMarker;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool PeekNamedPipe(IntPtr pipe, byte[] buffer, int size, out int read, IntPtr available, IntPtr left);
 
     private static void WaitForever()
     {

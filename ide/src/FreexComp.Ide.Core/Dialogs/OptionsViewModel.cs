@@ -424,15 +424,14 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     }
 
     /// <summary>
-    /// Phase 3 settings whose features are still open tasks (I-111 live diagnostics, I-114 completion, I-116 parameter info
-    /// and hover, I-120 block completion): shown disabled like later-phase fields until those tasks land.
+    /// Phase 3 settings whose features are still open tasks (I-114 completion, I-116 parameter info
+    /// and hover): shown disabled like later-phase fields until those tasks land.
     /// </summary>
     public static readonly IReadOnlySet<string> PendingFeatureKeys = new HashSet<string>(StringComparer.Ordinal)
     {
-        Settings.SettingsCatalog.EditorAutoCloseBeginEnd.Name, Settings.SettingsCatalog.EditorCompletionAutoTrigger.Name,
+        Settings.SettingsCatalog.EditorCompletionAutoTrigger.Name,
         Settings.SettingsCatalog.EditorCompletionDelayMs.Name, Settings.SettingsCatalog.EditorParameterInfoAutoTrigger.Name,
         Settings.SettingsCatalog.EditorHoverEnabled.Name, Settings.SettingsCatalog.EditorHoverDelayMs.Name,
-        Settings.SettingsCatalog.EditorLiveDiagnostics.Name, Settings.SettingsCatalog.EditorLiveDiagnosticsDelayMs.Name,
     };
 
     private void Update()

@@ -81,6 +81,9 @@ public sealed class EditorOptions : INotifyPropertyChanged
     /// <summary>IDE-ED-020/023: <c>editor.autoCloseBrackets</c>.</summary>
     public bool AutoCloseBrackets => Get(SettingsCatalog.EditorAutoCloseBrackets);
 
+    /// <summary>IDE-ED-024 block completion on Enter (Pascal).</summary>
+    public bool AutoCloseBeginEnd => Get(SettingsCatalog.EditorAutoCloseBeginEnd);
+
     /// <summary>IDE-ED-026: <c>editor.rectangularSelection</c> (Alt+drag, Alt+Shift+Arrows).</summary>
     public bool RectangularSelection => Get(SettingsCatalog.EditorRectangularSelection);
 

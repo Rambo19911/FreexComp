@@ -126,12 +126,11 @@ public sealed class EditorOperationsTests
     /// <summary>Rules of editor-features.md §2–§4 and §7 whose behaviour arrives with a later task (no case yet).</summary>
     private static readonly Dictionary<string, string> Pending = new(StringComparer.Ordinal)
     {
-        ["IDE-ED-024"] = "I-120",
     };
 
     /// <summary>Rules the case format cannot express; a test elsewhere under <c>ide/tests</c> carries their <c>Req</c> trait.</summary>
     private static readonly string[] CoveredElsewhere =
-        ["IDE-ED-010", "IDE-ED-012", "IDE-ED-026", "IDE-ED-038", "IDE-ED-039", "IDE-ED-040", "IDE-ED-045", "IDE-ED-046", "IDE-ED-070",
+        ["IDE-ED-010", "IDE-ED-012", "IDE-ED-024", "IDE-ED-026", "IDE-ED-038", "IDE-ED-039", "IDE-ED-040", "IDE-ED-045", "IDE-ED-046", "IDE-ED-070",
             "IDE-ED-071", "IDE-ED-073", "IDE-ED-074"];
 
     [Fact(Timeout = 30000)]
@@ -207,6 +206,8 @@ public sealed class EditorOperationsTests
             settings.Set(SettingsCatalog.EditorAutoIndent, bool.Parse(value));
         else if (name == SettingsCatalog.EditorSmartHome.Name)
             settings.Set(SettingsCatalog.EditorSmartHome, bool.Parse(value));
+        else if (name == SettingsCatalog.EditorAutoCloseBeginEnd.Name)
+            settings.Set(SettingsCatalog.EditorAutoCloseBeginEnd, bool.Parse(value));
         else
             throw new InvalidOperationException("Setting not supported by the case runner: " + name);
     }

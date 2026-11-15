@@ -80,6 +80,28 @@ public sealed class ProcessTreeTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-082")]
+    [Trait("Req", "IDE-P3-083")]
+    public async Task OnlyPipeHandlesAreInherited()
+    {
+        // An inheritable pipe of this process that holds a marker: a child that inherits it can peek the marker.
+        using var leak = new System.IO.Pipes.AnonymousPipeServerStream(System.IO.Pipes.PipeDirection.Out, HandleInheritability.Inheritable);
+        var marker = System.Text.Encoding.ASCII.GetBytes(ProcessHelper.PipeMarker);
+        leak.Write(marker);
+        leak.Flush();
+        var readEnd = leak.ClientSafePipeHandle.DangerousGetHandle().ToInt64();
+
+        var lines = new ConcurrentQueue<ProcessOutputLine>();
+        var launcher = new WindowsProcessLauncher(new ManualClock());
+        using (var process = launcher.Start(Request(ProcessHelper.PeekHandle + " " + readEnd.ToString(CultureInfo.InvariantCulture)), lines.Enqueue))
+            Assert.Equal(0, await process.Exited.WaitAsync(Limit, TestContext.Current.CancellationToken));
+
+        // The child still got its own pipe ends: its answer arrived on the captured stdout.
+        Assert.Equal([ProcessHelper.NotInherited], lines.Where(l => !l.IsError).Select(l => l.Text));
+        leak.DisposeLocalCopyOfClientHandle();
+    }
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-081")]
     public void MissingExecutableThrows()
     {

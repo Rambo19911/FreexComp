@@ -196,7 +196,7 @@ key Backspace
 ab|c
 ====
 # name: IDE-ED-005 Enter without autoIndent
-# settings: editor.autoIndent=false
+# settings: editor.autoIndent=false editor.autoCloseBeginEnd=false
 --- before
 ··begin|
 --- action
@@ -274,6 +274,7 @@ key Enter
 ····|
 ====
 # name: IDE-ED-007 begin increases indent
+# settings: editor.autoCloseBeginEnd=false
 --- before
 ··begin|
 --- action
@@ -466,7 +467,7 @@ key Enter
 ····|
 ====
 # name: IDE-ED-007 tab indentation adds a tab
-# settings: editor.insertSpaces=false
+# settings: editor.insertSpaces=false editor.autoCloseBeginEnd=false
 --- before
 →begin|
 --- action
