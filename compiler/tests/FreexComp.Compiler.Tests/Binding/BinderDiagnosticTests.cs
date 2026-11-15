@@ -146,6 +146,7 @@ public sealed class BinderDiagnosticTests
     /// <summary>
     /// C-096: codes reserved by a lead decision (E2604, W1081) are never reported: no compiler source outside the catalogue
     /// names them. C-197: their status is <c>reserved</c> (matching the "(reserved, not emitted)" marker of their rows).
+    /// C-246: W4003 joins them (CMP-629 variant 3 only; C-167 selected variant 1).
     /// </summary>
     [Fact]
     [Trait("Req", "CMP-500")]
@@ -154,7 +155,7 @@ public sealed class BinderDiagnosticTests
         var unemitted = ReadUncovered()
             .Where(u => u.Status == "unemitted" || (u.Status == "reserved" && u.Reason.StartsWith("lead decision", StringComparison.Ordinal)))
             .Select(u => u.Code).ToList();
-        Assert.Equal(["E2604", "W1081"], unemitted.Order(StringComparer.Ordinal));
+        Assert.Equal(["E2604", "W1081", "W4003"], unemitted.Order(StringComparer.Ordinal));
         var sources = Directory.EnumerateFiles(System.IO.Path.Combine(RepoPaths.Root, "compiler", "src"), "*.cs", SearchOption.AllDirectories)
             .Where(p => !p.Contains($"{System.IO.Path.DirectorySeparatorChar}obj{System.IO.Path.DirectorySeparatorChar}", StringComparison.Ordinal)
                 && !string.Equals(System.IO.Path.GetFileName(p), "DiagnosticCatalog.cs", StringComparison.Ordinal));
