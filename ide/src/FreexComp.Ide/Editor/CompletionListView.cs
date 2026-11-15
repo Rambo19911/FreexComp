@@ -85,14 +85,29 @@ public sealed class CompletionListView : Border
             };
             detail.Bind(TextBlock.ForegroundProperty, detail.GetResourceObservable("FxcTextSecondaryBrush"));
             var icon = new SymbolKindIcon { Kind = item.Kind, Margin = new Thickness(0, 0, 6, 0) }; // UI-ED-113: icon · space.3
+            var cells = new DockPanel { Children = { icon, name } };
+            DockPanel.SetDock(icon, Dock.Left);
+            DockPanel.SetDock(name, Dock.Left);
+            if (session.ShownOrigin(item.Origin) is { } unit)
+            {
+                // UI-ED-113: right-aligned origin in type.caption text.tertiary, only for another unit's symbol.
+                var origin = new TextBlock
+                {
+                    Text = unit, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0),
+                    Classes = { "caption", OriginClass },
+                };
+                origin.Bind(TextBlock.ForegroundProperty, origin.GetResourceObservable("FxcTextTertiaryBrush"));
+                DockPanel.SetDock(origin, Dock.Right);
+                cells.Children.Add(origin);
+            }
+
+            cells.Children.Add(detail); // fills the rest, trimmed
             var row = new Border
             {
                 Height = RowHeight,
                 Padding = new Thickness(8, 0),
-                Child = new DockPanel { Children = { icon, name, detail } },
+                Child = cells,
             };
-            DockPanel.SetDock(icon, Dock.Left);
-            DockPanel.SetDock(name, Dock.Left);
             if (i == session.SelectedIndex)
                 row.Bind(BackgroundProperty, row.GetResourceObservable("FxcBgSelectedBrush"));
             else
@@ -157,6 +172,9 @@ public sealed class CompletionListView : Border
 
     /// <summary>The class of the highlighted runs of a row name (tests).</summary>
     public const string MatchClass = "completionMatch";
+
+    /// <summary>The class of a row's origin text (tests).</summary>
+    public const string OriginClass = "completionOrigin";
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -275,6 +293,9 @@ public sealed class CompletionDocView : Border
 
     public string? Documentation { get; private set; }
 
+    /// <summary>The declaring unit line; null when none is shown.</summary>
+    public string? Origin { get; private set; }
+
     /// <summary>Shown or hidden (the owner places the popup again).</summary>
     public event EventHandler? VisibilityChanged;
 
@@ -286,9 +307,18 @@ public sealed class CompletionDocView : Border
         var description = _session is { IsOpen: true } session ? session.Description : null;
         Declaration = description?.Signature;
         Documentation = description?.Documentation;
+        Origin = description is null ? null : _session!.ShownOrigin(description.Origin);
         if (description is not null)
         {
             _content.Children.Add(new TextBlock { Text = description.Signature, Classes = { "codeSmall" }, TextWrapping = TextWrapping.Wrap });
+            if (Origin is { } origin)
+            {
+                // UI-ED-117: the declaring unit in type.caption text.tertiary
+                var line = new TextBlock { Text = origin, Classes = { "caption" } };
+                line.Bind(TextBlock.ForegroundProperty, line.GetResourceObservable("FxcTextTertiaryBrush"));
+                _content.Children.Add(line);
+            }
+
             if (description.Documentation is { Length: > 0 } documentation)
                 _content.Children.Add(new TextBlock { Text = documentation, Classes = { "body" }, TextWrapping = TextWrapping.Wrap });
         }

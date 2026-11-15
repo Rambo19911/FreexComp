@@ -197,6 +197,63 @@ public sealed class CompletionViewTests
         Assert.False(panel.IsVisible);
     }
 
+    /// <summary>
+    /// UI-ED-113/117 (I-198): a row shows its declaring unit right-aligned (<c>type.caption</c> <c>text.tertiary</c>) only
+    /// when the symbol comes from another unit; the documentation panel's unit line likewise.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-113")]
+    [Trait("Req", "UI-ED-117")]
+    public async Task OriginColumnShowsOtherUnits()
+    {
+        await using var h = await BuildScenario.StartAsync(LiveDiagnosticsTests.AddRealRtl);
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Value);
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextEditor>("Editor.Unit1.pas");
+        Assert.True(editor.TextArea.Focus());
+        var view = editor.FindAncestorOfType<CodeEditorView>()!;
+        var session = doc.Completion!;
+        var foo = doc.Buffer.Text.IndexOf("Foo :=", StringComparison.Ordinal);
+        doc.Selection = TextSelection.At(foo); // nothing typed: the whole context set
+        h.Press("Ctrl+Space");
+        await session.Pending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(view.CompletionList.IsVisible);
+
+        static Avalonia.Controls.TextBlock? OriginOf(Avalonia.Controls.Control row) =>
+            ((Avalonia.Controls.DockPanel)((Avalonia.Controls.Border)row).Child!).Children.OfType<Avalonia.Controls.TextBlock>()
+                .SingleOrDefault(t => t.Classes.Contains(CompletionListView.OriginClass));
+
+        // This unit's own symbol: no origin.
+        var own = session.Items.First(i => i.Label == "Foo1");
+        Assert.Equal("Unit1", own.Origin);
+        Assert.Null(OriginOf(h.Find<Avalonia.Controls.Border>("Editor.Completion.Item.Foo1")));
+
+        // A symbol of another unit: its unit name, right-aligned, caption.
+        var other = session.Items.First(i => i.SymbolId is not null && i.Origin.Length > 0 && i.Origin != "Unit1");
+        var origin = OriginOf(h.Find<Avalonia.Controls.Border>("Editor.Completion.Item." + other.Label));
+        Assert.NotNull(origin);
+        Assert.Equal(other.Origin, origin.Text);
+        Assert.Contains("caption", origin.Classes);
+        Assert.Equal(Avalonia.Controls.Dock.Right, Avalonia.Controls.DockPanel.GetDock(origin));
+
+        // The documentation panel: the unit line for the other unit's symbol, none for Foo1.
+        var panel = view.CompletionDoc;
+        session.Select(session.Items.ToList().IndexOf(other));
+        h.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await session.DescriptionPending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(panel.IsVisible);
+        Assert.Equal(other.Origin, panel.Origin);
+        session.Select(session.Items.ToList().IndexOf(own));
+        h.Clock.Advance(TimeSpan.FromMilliseconds(300));
+        await session.DescriptionPending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(panel.IsVisible);
+        Assert.Null(panel.Origin);
+        h.Press("Escape");
+    }
+
     /// <summary>UI-ED-110 (I-198): the popup is a real popup: in a short editor the full list extends past the editor's bottom edge.</summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-ED-110")]

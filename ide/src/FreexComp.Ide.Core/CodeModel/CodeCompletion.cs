@@ -234,6 +234,16 @@ public sealed class CompletionSession
     /// </summary>
     public CompletionDescription? Description { get; private set; }
 
+    /// <summary>
+    /// UI-ED-113/117: the declaring unit to show for <paramref name="origin"/> (an item's or a description's); null when
+    /// it is empty (locals, keywords, templates) or the document's own unit (its file name without extension).
+    /// </summary>
+    public string? ShownOrigin(string? origin) =>
+        string.IsNullOrEmpty(origin)
+        || _document.FilePath is { } path && string.Equals(origin, Path.GetFileNameWithoutExtension(path), StringComparison.OrdinalIgnoreCase)
+            ? null
+            : origin;
+
     /// <summary><see cref="Description"/> changed.</summary>
     public event EventHandler? DescriptionChanged;
 
