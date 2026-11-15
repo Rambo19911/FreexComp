@@ -1,5 +1,4 @@
 // covers: UIF-440, UIF-441, UIF-442, UIF-443
-// opc: -U ..\..\src
 // needs: desktop
 program Form_CloseDestroy;
 { U-041, application-forms.md UIF-440 ... 443: Close asks CloseQuery (OnCloseQuery), then OnClose with the default

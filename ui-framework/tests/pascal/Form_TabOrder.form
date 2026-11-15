@@ -1,0 +1,23 @@
+object TabForm: TTabForm
+  ClientWidth = 300
+  ClientHeight = 200
+  object A: TTabBox
+    TabOrder = 2
+  end
+  object B: TTabBox
+  end
+  object C: TTabBox
+    TabOrder = 0
+  end
+  object D: TTabBox
+    TabOrder = 1
+  end
+  object Panel: TTabBox
+    TabOrder = 1
+    object P1: TTabBox
+    end
+    object P2: TTabBox
+      TabOrder = 0
+    end
+  end
+end

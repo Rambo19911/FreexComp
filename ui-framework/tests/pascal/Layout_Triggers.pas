@@ -1,5 +1,4 @@
 // covers: UIF-210, UIF-225, UIF-226, UIF-227
-// opc: -U ..\..\src
 program Layout_Triggers;
 { U-020, layout.md sections 4.3-4.5: each trigger of the UIF-227 table runs exactly one layout pass of the parent
   (counted by overriding AlignControls), an unchanged value runs none, a pass requested while loading,

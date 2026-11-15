@@ -1,5 +1,4 @@
 // covers: UIF-221, UIF-222, UIF-223, UIF-224, UIF-225
-// opc: -U ..\..\src
 program Layout_Align;
 { U-017, layout.md section 4: the five fixed phases, the sort key of each phase (evaluated on the bounds at the
   start of the pass, ties in Controls[] order), every row of the Place table, constrained sizes anchored at the

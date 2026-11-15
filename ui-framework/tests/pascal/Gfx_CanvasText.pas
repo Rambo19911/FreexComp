@@ -1,5 +1,4 @@
 // covers: UIF-530
-// opc: -U ..\..\src
 program Gfx_CanvasText;
 { U-007, graphics.md section 3: text on a TCanvas over a 32-bit DIB section. TextWidth('') = 0, TextHeight =
   tmHeight of the selected font, TextExtent = GetTextExtentPoint32W; TextOut draws in Font.Color, advances

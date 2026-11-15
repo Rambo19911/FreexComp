@@ -6,6 +6,7 @@ ok message-only window
 ok hidden
 ok Initialize is idempotent
 ok common controls 6 active (a version-6-only button message works)
+ok loading comctl32 now resolves to version 6 (LoadIconMetric exported)
 # ProcessMessages and OnMessage (UIF-411)
 ok all queued messages, OnMessage first, no idle
 ok OnMessage swallows
@@ -21,4 +22,4 @@ ok Terminated after WM_QUIT
 ok WM_QUIT does not reach OnMessage
 ok loop ended on the next message
 ok Run without a main form returns
-# passed 19 failed 0
+# passed 20 failed 0

@@ -1,5 +1,4 @@
 // covers: UIF-021, UIF-022
-// opc: -U ..\..\src
 // needs: desktop
 program Core_Cursor;
 { U-035, core.md 7.10 (WM_SETCURSOR), UIF-021, CM_CURSORCHANGED, application-forms.md 3 (Screen.Cursor):

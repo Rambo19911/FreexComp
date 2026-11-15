@@ -31,9 +31,9 @@ public static class UiCorpus
 
     /// <summary>
     /// UIF-1201: opc, the RTL and the toolchain as for the RTL programs; <c>-U rtl/tests</c> (TestKit) comes from the
-    /// runner, <c>-U ui-framework/src</c> from each program's <c>// opc: -U ..\..\src</c> marker (checked by <see cref="CheckOptions"/>).
+    /// runner, <c>-U ui-framework/src</c> from <see cref="RtlSetup.ExtraUnitDirectories"/> (R-205).
     /// </summary>
-    public static RtlSetup Setup => RtlSetup.Default;
+    public static RtlSetup Setup => RtlSetup.Default with { ExtraUnitDirectories = [SourceDirectory] };
 
     public static ImmutableArray<RtlCase> DiscoverPascal(string directory)
     {
@@ -78,22 +78,6 @@ public static class UiCorpus
 
     public static bool NeedsDesktop(RtlCase @case) => NeedsDesktop(File.ReadAllText(@case.SourcePath));
 
-    /// <summary>Null when the program's <c>// opc:</c> options put <c>ui-framework/src</c> on the unit path, else the failure.</summary>
-    public static string? CheckOptions(RtlCase @case)
-    {
-        var options = RtlCorpus.ReadHeader(@case).OpcOptions;
-        var dir = Path.GetDirectoryName(@case.SourcePath)!;
-        for (var i = 0; i + 1 < options.Length; i++)
-        {
-            if (options[i] == "-U" && string.Equals(Path.GetFullPath(Path.Combine(dir, options[i + 1])).TrimEnd('\\'), SourceDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-        }
-
-        return $"{@case.Id}: the leading comment block lacks '// opc: -U ..\\..\\src' (UIF-1201)";
-    }
-
     /// <summary>UIF-1209: the phase of the <c>// phase: N</c> marker; without one, 4 (the RTL runner's default 2 does not apply here).</summary>
     public static int PhaseOf(RtlCase @case)
     {
@@ -125,11 +109,6 @@ public static class UiCorpus
     public static async Task<string?> RunAsync(string id, CancellationToken ct)
     {
         var @case = DiscoverPascal().Single(c => c.Id == id);
-        if (CheckOptions(@case) is { } bad)
-        {
-            return bad;
-        }
-
         Environment.SetEnvironmentVariable("FXC_UI_NONINTERACTIVE", "1");          // inherited by every program run
         return await GoldenRunner.RunAsync(@case, Setup, ct).ConfigureAwait(false);
     }

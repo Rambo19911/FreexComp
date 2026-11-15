@@ -1,5 +1,4 @@
 // covers: UIF-544, UIF-545
-// opc: -U ..\..\src
 program Gfx_BitmapStreams;
 { U-009, graphics.md UIF-544/545: TBitmap.SaveToStream writes an uncompressed bottom-up BMP with a 40-byte
   info header and zero row padding (byte-exact for 2 x 2 at 24 and 32 bits); LoadFromStream round-trips

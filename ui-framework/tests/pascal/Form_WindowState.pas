@@ -1,5 +1,4 @@
 // covers: UIF-272, UIF-275, UIF-432
-// opc: -U ..\..\src
 // needs: desktop
 program Form_WindowState;
 { U-040, layout.md UIF-275, application-forms.md UIF-432 step 4: WindowState is applied with ShowWindow when the

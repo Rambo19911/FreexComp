@@ -1,0 +1,39 @@
+object StreamForm: TStreamForm
+  Caption = 'Streamed'
+  ClientWidth = 300
+  ClientHeight = 200
+  OnCreate = FormCreate
+  OnResize = FormResize
+  object Header: TBox
+    Left = 5
+    Top = 50
+    Width = 280
+    Height = 40
+    Align = alTop
+    OnClick = HeaderClick
+    OnResize = BoxResize
+    object Inner: TBox
+      Left = 10
+      Top = 5
+      Width = 50
+      Height = 20
+      Anchors = [akLeft, akTop, akRight]
+      OnResize = BoxResize
+    end
+  end
+  object Corner: TBox
+    Left = 250
+    Top = 150
+    Width = 40
+    Height = 30
+    Anchors = [akRight, akBottom]
+  end
+  object Body: TBox
+    Left = 0
+    Top = 0
+    Width = 10
+    Height = 10
+    Align = alClient
+    OnResize = BoxResize
+  end
+end

@@ -1,5 +1,4 @@
 // covers: UIF-540, UIF-541, UIF-542, UIF-543, UIF-547
-// opc: -U ..\..\src
 program Gfx_BitmapBasics;
 { U-008, graphics.md section 4.1: TBitmap storage is a top-down DIB section (pf32bit default, pf24bit
   allowed, other formats raise); SetSize/Width/Height keep the overlapping pixels and fill new ones white

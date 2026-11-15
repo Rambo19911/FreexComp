@@ -1,5 +1,4 @@
 // covers: UIF-271, UIF-272, UIF-273
-// opc: -U ..\..\src
 // needs: desktop
 program Form_ClientSize;
 { U-037, layout.md 10: a form keeps its client size; outer size = client size + the frame of

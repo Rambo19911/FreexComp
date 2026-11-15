@@ -1,5 +1,4 @@
 // covers: UIF-045, UIF-046, UIF-047, UIF-048, UIF-049, UIF-051, UIF-100, UIF-101, UIF-145
-// opc: -U ..\..\src
 program Core_ParentChild;
 { U-015, core.md sections 3 and 5 (handle-less part): Controls[] in creation order (one list for graphic and
   windowed children), tab list of the windowed children, Parent assignment rules and the InsertControl message

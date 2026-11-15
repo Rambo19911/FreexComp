@@ -1,5 +1,4 @@
 // covers: UIF-085
-// opc: -U ..\..\src
 // needs: desktop
 program Core_KeyEvents;
 { U-032, core.md 7.9: WM_KEYDOWN/WM_SYSKEYDOWN fire OnKeyDown, WM_KEYUP/WM_SYSKEYUP OnKeyUp, WM_CHAR OnKeyPress;

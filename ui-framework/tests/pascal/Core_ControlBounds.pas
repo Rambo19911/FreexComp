@@ -1,5 +1,4 @@
 // covers: UIF-024, UIF-200, UIF-210, UIF-212, UIF-217
-// opc: -U ..\..\src
 program Core_ControlBounds;
 { U-014, core.md section 2 and layout.md UIF-210 steps 1-4 and 8: TControl defaults after Create, SetBounds
   clamps negative sizes, an unchanged call has no side effect at all, OnResize fires only when the size changed

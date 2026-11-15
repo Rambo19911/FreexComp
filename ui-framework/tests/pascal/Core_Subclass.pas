@@ -1,5 +1,4 @@
 // covers: UIF-032, UIF-060, UIF-061
-// opc: -U ..\..\src
 // needs: desktop
 program Core_Subclass;
 { U-022, core.md 4.1 step 2c/2f and 7.1: a control with Params.SubclassOf = 'EDIT' is created from the system

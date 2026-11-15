@@ -1,5 +1,4 @@
 // covers: UIF-436
-// opc: -U ..\..\src
 // needs: desktop
 program Form_Position;
 { U-039, application-forms.md UIF-436 and 4.2 MakeFullyVisible: Position is applied once, at the first show:

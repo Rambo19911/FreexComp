@@ -1,5 +1,4 @@
 // covers: UIF-402, UIF-410, UIF-411, UIF-412
-// opc: -U ..\..\src
 // needs: desktop
 program App_MessageLoop;
 { U-034, application-forms.md 2.2 and 2.4: Forms creates the global Application; Initialize (idempotent) creates
@@ -106,6 +105,8 @@ begin
     CheckEqB(True, SendMessageW(Btn, BCM_GETIDEALSIZE, 0, LPARAM(@Ideal)) <> 0,
       'common controls 6 active (a version-6-only button message works)');
     DestroyWindow(Btn);
+    CheckEqB(True, GetProcAddress(LoadLibraryW('comctl32.dll'), 'LoadIconMetric') <> nil,
+      'loading comctl32 now resolves to version 6 (LoadIconMetric exported)');
     W.HandleNeeded;
     Application.OnMessage := Log.Message;
     Application.OnIdle := Log.Idle;

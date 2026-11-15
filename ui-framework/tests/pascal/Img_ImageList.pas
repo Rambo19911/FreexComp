@@ -1,6 +1,5 @@
 // covers: UIF-565, UIF-566, UIF-567, UIF-568, UIF-569
 // needs: desktop
-// opc: -U ..\..\src
 program Img_ImageList;
 { U-012, graphics.md section 5: TImageList defaults and lazy handle; Add splits a wide bitmap (UIF-565);
   AddMasked leaves the source bitmap unchanged; Draw honours the mask, disabled drawing blends (UIF-566);

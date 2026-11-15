@@ -434,6 +434,9 @@ type
     procedure SetPadding(Value: TPadding);
     procedure PaddingChanged(Sender: TObject);
     procedure ApplyAnchors(C: TControl);
+    procedure RealignTree;
+    procedure SortTabList;
+    function FocusRoot: TWinControl;
     function GetHandle: HWND;
     function WindowAbove: HWND;
     function RouteMouse(var Message: TMessage): Boolean;
@@ -494,6 +497,9 @@ type
     procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     procedure DoEnter; virtual;
     procedure DoExit; virtual;
+    { core.md 8.3: CM_ENTER / CM_EXIT fire OnEnter / OnExit }
+    procedure CMEnter(var Message: TMessage); virtual;
+    procedure CMExit(var Message: TMessage); virtual;
     procedure KeyDown(var Key: Word; Shift: TShiftState); virtual;
     procedure KeyUp(var Key: Word; Shift: TShiftState); virtual;
     procedure KeyPress(var Key: Char); virtual;
@@ -535,6 +541,19 @@ type
     property ControlCount: Integer read GetControlCount;
     procedure Invalidate; override;
     procedure Update; override;
+    { core.md 8.1 }
+    function CanFocus: Boolean; virtual;
+    function Focused: Boolean;
+    procedure SetFocus; virtual;
+    { core.md 8.2 }
+    procedure GetTabOrderList(List: TList); virtual;
+    function FindNextControl(CurControl: TWinControl; GoForward, CheckTabStop, CheckParent: Boolean): TWinControl;
+    procedure SelectNext(CurControl: TWinControl; GoForward, CheckTabStop: Boolean);
+    procedure SelectFirst;
+    { core.md 8.1/8.3 entry points of the control at the end of a focus chain (forms override them; Controls cannot
+      use Forms): UIF-110 and UIF-093; the base does nothing }
+    function SetFocusedControl(Control: TWinControl): Boolean; virtual;
+    procedure DefocusControl(Control: TWinControl; Removing: Boolean); virtual;
   end;
 
 { ---------------------------------------------------------------- core.md section 6, section 12 }
@@ -603,6 +622,8 @@ function CursorHandle(Cursor: TCursor): HCURSOR;
 var
   { application-forms.md 3: the Screen.Cursor override, written by Forms (Controls cannot use Forms); crDefault = none }
   ScreenCursor: TCursor;
+  { core.md 8.1: the class that ends a focus chain (TCustomForm, registered by Forms); nil = nothing can focus }
+  FocusRootClass: TClass;
 
 implementation
 
@@ -910,6 +931,9 @@ begin
   inherited Destroy;
 end;
 
+var
+  LoadLayoutLevel: Integer;                                  { > 0: the load-time layout pass runs (UIF-300 step 6) }
+
 procedure TControl.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
 var
   Explicit, SizeChanged, Loading: Boolean;
@@ -944,7 +968,7 @@ begin
   if SizeChanged and (Self is TWinControl) then
     TWinControl(Self).Realign;
   { step 8 }
-  if SizeChanged and not Loading then
+  if SizeChanged and not Loading and (LoadLayoutLevel = 0) then
     Resize;
   { step 9 }
   if Explicit and not Loading then
@@ -973,7 +997,7 @@ begin
     CaptureBaseline;
   if SizeChanged and (Self is TWinControl) then
     TWinControl(Self).Realign;
-  if SizeChanged and not Loading then
+  if SizeChanged and not Loading and (LoadLayoutLevel = 0) then
     Resize;
   if not Loading then
     RequestAlign;
@@ -1888,8 +1912,12 @@ end;
 destructor TWinControl.Destroy;
 var
   I: Integer;
+  R: TWinControl;
 begin
   Destroying;
+  R := FocusRoot;                                            { step 2: the focus goes to the form, silently }
+  if (R <> nil) and (R <> Self) then
+    R.DefocusControl(Self, True);
   SetParent(nil);
   DestroyHandle;
   for I := FControls.Count - 1 downto 0 do
@@ -1901,11 +1929,59 @@ begin
   FControls.Free;
 end;
 
-{ UIF-227 last row: a pass at the end of Loaded }
+{ UIF-102 (layout.md UIF-300 step 4): stable sort by the TabOrder read while loading; unassigned (-1) last }
+procedure TWinControl.SortTabList;
+var
+  I, J: Integer;
+  C: Pointer;
+
+  function Key(P: Pointer): Integer;
+  begin
+    Result := TWinControl(P).FTabOrder;
+    if Result < 0 then
+      Result := MaxInt;
+  end;
+
+begin
+  for I := 1 to FTabList.Count - 1 do
+  begin
+    C := FTabList[I];
+    J := I - 1;
+    while (J >= 0) and (Key(FTabList[J]) > Key(C)) do
+    begin
+      FTabList[J + 1] := FTabList[J];
+      Dec(J);
+    end;
+    FTabList[J + 1] := C;
+  end;
+end;
+
+{ layout.md UIF-300 step 5: one pass on every windowed control of the tree, parents before children }
+procedure TWinControl.RealignTree;
+var
+  I: Integer;
+begin
+  Realign;
+  for I := 0 to FControls.Count - 1 do
+    if TObject(FControls[I]) is TWinControl then
+      TWinControl(FControls[I]).RealignTree;
+end;
+
+{ UIF-227 last row, UIF-300: Loaded runs children first, so the root of the loaded tree (no parent still loading)
+  runs the layout of the whole tree after every baseline is captured; OnResize stays silent meanwhile (step 6) }
 procedure TWinControl.Loaded;
 begin
   inherited Loaded;
-  Realign;
+  SortTabList;
+  if (FParent = nil) or not (csLoading in FParent.ComponentState) then
+  begin
+    Inc(LoadLayoutLevel);
+    try
+      RealignTree;
+    finally
+      Dec(LoadLayoutLevel);
+    end;
+  end;
   if (FParent <> nil) and (FParent.FHandle <> 0) and (FHandle = 0) then
     HandleNeeded;                                            { UIF-030: loading children get their handle here }
 end;
@@ -2249,6 +2325,20 @@ begin
   if (Message.Msg >= WM_MOUSEFIRST) and (Message.Msg <= WM_MOUSEBUTTONLAST) and RouteMouse(Message) then
     Exit;
   case Message.Msg of
+    { core.md 7.2 steps 1-2 }
+    WM_SETFOCUS:
+      begin
+        C := FocusRoot;
+        if (C = nil) or (C = Self) or C.SetFocusedControl(Self) then
+          inherited WndProc(Message);
+      end;
+    WM_KILLFOCUS:
+      if not (csFocusing in FControlState) then
+        inherited WndProc(Message);
+    CM_ENTER:
+      CMEnter(Message);
+    CM_EXIT:
+      CMExit(Message);
     WM_NCDESTROY:
       WMNCDestroy(TWMNoParams(Message));
     WM_WINDOWPOSCHANGED:
@@ -2491,19 +2581,29 @@ begin
   FEnabled := Message.WParam <> 0;
 end;
 
-{ UIF-130 }
+{ UIF-130; UIF-132: the focus leaves first }
 procedure TWinControl.CMEnabledChanged(var Message: TMessage);
+var
+  R: TWinControl;
 begin
+  R := FocusRoot;
+  if not FEnabled and (R <> nil) and (R <> Self) then
+    R.DefocusControl(Self, False);
   if FHandle <> 0 then
     EnableWindow(FHandle, FEnabled);
   inherited CMEnabledChanged(Message);
 end;
 
-{ UIF-136: shown or hidden without activation }
+{ UIF-136: shown or hidden without activation; UIF-137: the focus leaves first }
 procedure TWinControl.CMVisibleChanged(var Message: TMessage);
 const
   Flags: array[Boolean] of Cardinal = (SWP_HIDEWINDOW, SWP_SHOWWINDOW);
+var
+  R: TWinControl;
 begin
+  R := FocusRoot;
+  if not FVisible and (R <> nil) and (R <> Self) then
+    R.DefocusControl(Self, False);
   if FHandle <> 0 then
     SetWindowPos(FHandle, 0, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE
       or Flags[FVisible]);
@@ -2971,6 +3071,141 @@ begin
     FOnExit(Self);
 end;
 
+procedure TWinControl.CMEnter(var Message: TMessage);
+begin
+  DoEnter;
+end;
+
+procedure TWinControl.CMExit(var Message: TMessage);
+begin
+  DoExit;
+end;
+
+{ ---------------------------------------------------------------- focus and tab order (core.md section 8) }
+
+{ the top of the parent chain when it is a form (FocusRootClass), else nil }
+function TWinControl.FocusRoot: TWinControl;
+begin
+  Result := Self;
+  while Result.FParent <> nil do
+    Result := Result.FParent;
+  if (FocusRootClass = nil) or not Result.InheritsFrom(FocusRootClass) then
+    Result := nil;
+end;
+
+{ UIF-090 }
+function TWinControl.CanFocus: Boolean;
+var
+  C: TWinControl;
+begin
+  Result := False;
+  C := Self;
+  while C <> nil do
+  begin
+    if not (C.FVisible and C.FEnabled) then
+      Exit;
+    if C.FParent = nil then
+      Break;
+    C := C.FParent;
+  end;
+  Result := (FocusRootClass <> nil) and C.InheritsFrom(FocusRootClass);
+end;
+
+function TWinControl.Focused: Boolean;
+begin
+  Result := (FHandle <> 0) and (GetFocus = FHandle);
+end;
+
+{ UIF-091 }
+procedure TWinControl.SetFocus;
+var
+  R: TWinControl;
+begin
+  if not CanFocus then
+    raise EInvalidOperation.Create(SCannotFocus);
+  R := FocusRoot;
+  if R.SetFocusedControl(Self) and R.HandleAllocated and (GetActiveWindow = R.Handle) then
+    Windows.SetFocus(Handle);
+end;
+
+{ UIF-103 }
+procedure TWinControl.GetTabOrderList(List: TList);
+var
+  I: Integer;
+  C: TWinControl;
+begin
+  for I := 0 to FTabList.Count - 1 do
+  begin
+    C := TWinControl(FTabList[I]);
+    List.Add(Pointer(C));
+    C.GetTabOrderList(List);
+  end;
+end;
+
+{ UIF-104 }
+function TWinControl.FindNextControl(CurControl: TWinControl; GoForward, CheckTabStop,
+  CheckParent: Boolean): TWinControl;
+var
+  List: TList;
+  N, Start, K, I: Integer;
+  C: TWinControl;
+begin
+  Result := nil;
+  List := TList.Create;
+  try
+    GetTabOrderList(List);
+    N := List.Count;
+    Start := List.IndexOf(Pointer(CurControl));
+    for K := 1 to N do
+    begin
+      if GoForward then
+      begin
+        if Start < 0 then
+          I := K - 1
+        else
+          I := (Start + K) mod N;
+      end
+      else if Start < 0 then
+        I := N - K
+      else
+        I := (Start - K + N) mod N;
+      C := TWinControl(List[I]);
+      if C.CanFocus and (not CheckTabStop or C.FTabStop)
+        and (not CheckParent or ((CurControl <> nil) and (C.FParent = CurControl.FParent))) then
+      begin
+        Result := C;
+        Exit;
+      end;
+    end;
+  finally
+    List.Free;
+  end;
+end;
+
+{ UIF-105 }
+procedure TWinControl.SelectNext(CurControl: TWinControl; GoForward, CheckTabStop: Boolean);
+var
+  C: TWinControl;
+begin
+  C := FindNextControl(CurControl, GoForward, CheckTabStop, False);
+  if C <> nil then
+    C.SetFocus;
+end;
+
+procedure TWinControl.SelectFirst;
+begin
+  SelectNext(nil, True, True);
+end;
+
+function TWinControl.SetFocusedControl(Control: TWinControl): Boolean;
+begin
+  Result := True;
+end;
+
+procedure TWinControl.DefocusControl(Control: TWinControl; Removing: Boolean);
+begin
+end;
+
 procedure TWinControl.KeyDown(var Key: Word; Shift: TShiftState);
 begin
   if Assigned(FOnKeyDown) then
@@ -3084,9 +3319,6 @@ begin
 end;
 
 { ---------------------------------------------------------------- painting (core.md 7.8) }
-
-const
-  PRF_ERASEBKGND = $8;
 
 procedure TWinControl.Invalidate;
 begin

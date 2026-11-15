@@ -1,0 +1,21 @@
+# IsAccel
+ok upper case
+ok lower case character
+ok case-insensitive caption
+ok && is a literal ampersand
+ok accelerator after a literal ampersand
+ok no ampersand
+ok trailing ampersand
+ok AnsiUpperCase
+# CM_DIALOGCHAR (UIF-120)
+ok Alt+character: the control with the accelerator, consumed
+ok nested control found depth-first
+ok WM_CHAR on a control without DLGC_WANTCHARS: offered, consumed
+ok nobody answers: delivered
+ok hidden control skipped
+ok disabled control skipped
+ok child of a disabled parent skipped
+ok DLGC_WANTCHARS: WM_CHAR delivered
+ok WM_SYSCHAR offered regardless
+ok DLGC_WANTALLKEYS: WM_CHAR delivered
+# passed 18 failed 0

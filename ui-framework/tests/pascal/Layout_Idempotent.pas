@@ -1,5 +1,4 @@
 // covers: UIF-226, UIF-227
-// opc: -U ..\..\src
 program Layout_Idempotent;
 { U-020, layout.md UIF-226: running a second layout pass immediately after a pass changes nothing. Applied to
   trees built in code from the worked examples (all five phases, margins, padding, constraints, space running

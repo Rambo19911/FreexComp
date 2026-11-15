@@ -1,0 +1,37 @@
+# tab list and TabOrder (UIF-100, UIF-101)
+ok InsertControl appends windowed children only
+ok X TabOrder 0
+ok Z TabOrder 2
+ok no parent: -1
+ok setter moves
+ok setter clamps to Count - 1
+ok clamped value read back
+ok -1 is ignored
+ok RemoveControl removes
+# FindNextControl and SelectNext (UIF-104, UIF-105)
+ok forward
+ok forward wraps around
+ok backward wraps around
+ok nil: from the start
+ok nil backward: from the end
+ok the only candidate: Cur itself
+ok CheckTabStop False
+ok CanFocus required
+ok nothing qualifies: nil
+ok SelectFirst
+ok SelectNext forward
+ok SelectNext backward
+# loading (UIF-102) and the depth-first list (UIF-103)
+ok explicit values exact, ties and missing values in creation order
+ok C 0
+ok D 1
+ok Panel 2 (tie with D: creation order)
+ok A 3
+ok B 4 (missing: after the explicit ones)
+ok P2 0 inside Panel
+ok P1 1 inside Panel
+ok Self-wide list of Panel
+ok depth-first: Panel then its children
+ok after the last child: the next sibling of Panel
+ok CheckParent: siblings only, wrapping
+# passed 33 failed 0

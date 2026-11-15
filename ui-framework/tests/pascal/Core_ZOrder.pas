@@ -1,5 +1,4 @@
 // covers: UIF-145, UIF-146, UIF-147, UIF-148, UIF-149
-// opc: -U ..\..\src
 // needs: desktop
 program Core_ZOrder;
 { U-033, core.md section 11: BringToFront / SendToBack / SetChildOrder move the control in Controls[] and keep

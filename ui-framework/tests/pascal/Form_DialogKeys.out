@@ -1,0 +1,29 @@
+# Tab (CM_DIALOGKEY)
+ok Tab: next tab stop
+ok consumed: no OnKeyDown
+ok Tab: into the panel (depth-first)
+ok Tab: inside the panel
+ok Tab: wraps around
+# arrows
+ok Right: next sibling
+ok Down: siblings only, wrapping
+ok Left: previous sibling, wrapping
+ok Up: previous sibling
+ok consumed: no OnKeyDown
+# special-key veto
+ok DLGC_WANTTAB: Tab delivered
+ok focus kept
+ok DLGC_WANTTAB does not veto arrows
+ok DLGC_WANTARROWS: arrow delivered
+ok DLGC_WANTARROWS does not veto Tab
+ok DLGC_WANTALLKEYS: Tab delivered
+ok DLGC_WANTALLKEYS: Escape delivered
+ok CM_WANTSPECIALKEY: Return delivered, not offered to the form
+# Return and Escape
+ok Return: a control of the form takes it, consumed
+ok Return: nobody takes it, delivered
+ok Escape: offered to nested controls too
+# other keys and shortcuts
+ok ordinary key delivered
+ok IsShortCut first, consumed
+# passed 23 failed 0

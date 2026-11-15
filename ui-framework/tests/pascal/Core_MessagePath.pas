@@ -1,5 +1,4 @@
 // covers: UIF-014, UIF-060, UIF-061
-// opc: -U ..\..\src
 // needs: desktop
 program Core_MessagePath;
 { U-024, core.md 7.1: a message sent to the window runs StdWndProc -> MainWndProc -> WindowProc -> WndProc ->

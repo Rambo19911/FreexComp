@@ -1,0 +1,46 @@
+# properties, children, fields, events (UIF-430 step 2)
+ok root name from the header
+ok Caption
+ok ClientWidth
+ok ClientHeight
+ok published fields bound
+ok field is the named component
+ok children owned by the form
+ok SetParentComponent: Header on the form
+ok SetParentComponent: Inner on Header
+ok three controls on the form
+ok creation order
+ok Align read
+ok Anchors read
+ok form loaded
+ok children loaded
+ok event bound to the form method
+ok no window handle created
+# load-time sequence (layout.md 12)
+ok the form's Loaded runs
+ok every Loaded before the first layout pass
+ok children loaded before parents
+ok the form is loaded last
+ok root pass first
+ok parents before children
+ok every windowed control runs a pass
+ok no OnResize of a child during loading
+ok no OnResize of the form during loading
+ok OnCreate after the layout
+ok alTop: inconsistent stored bounds are moved (UIF-301)
+ok anchor baseline from the stored bounds, then layout
+ok alClient
+ok anchored control not moved
+ok OnCreate sees the final layout
+ok Corner baseline is the stored form client size
+ok Inner follows its parent
+ok after loading, OnResize fires again
+# errors (UIF-430, application-forms.md 7)
+ok reader error out of the constructor
+ok the failed form is destroyed
+ok reader error out of CreateForm
+ok CreateForm reference nil
+ok no main form
+ok class without form data
+ok no form left registered
+# passed 42 failed 0

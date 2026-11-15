@@ -1,5 +1,4 @@
 // covers: UIF-430, UIF-431, UIF-432, UIF-433, UIF-434, UIF-435
-// opc: -U ..\..\src
 // needs: desktop
 program Form_ShowHideEvents;
 { U-038, application-forms.md 5: the event log of a main form equals the normative start-up order OnCreate, OnShow,

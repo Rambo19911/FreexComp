@@ -1,5 +1,4 @@
 // covers: UIF-130, UIF-131, UIF-135, UIF-136, UIF-139
-// opc: -U ..\..\src
 // needs: desktop
 program Core_VisibleEnabled;
 { U-026, core.md sections 9 and 10: Enabled and Visible changes send CM_ENABLEDCHANGED / CM_VISIBLECHANGED

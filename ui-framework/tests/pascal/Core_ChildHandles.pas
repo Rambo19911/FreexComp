@@ -1,5 +1,4 @@
 // covers: UIF-030, UIF-039, UIF-147
-// opc: -U ..\..\src
 // needs: desktop
 program Core_ChildHandles;
 { U-023, core.md 4.1, 4.5 and UIF-147: the Win32 Z order of windowed siblings (walked with GW_CHILD/GW_HWNDNEXT,

@@ -1,5 +1,4 @@
 // covers: UIF-215, UIF-218, UIF-220, UIF-235, UIF-236, UIF-237
-// opc: -U ..\..\src
 program Layout_MarginsPadding;
 { U-018, layout.md sections 3 and 6: the align rect = client rect (virtual formula) -> AdjustClientRect -> inset
   by Padding; Margins apply only with AlignWithMargins and Align <> alNone; Padding never changes the client size

@@ -1,5 +1,4 @@
 // covers: UIF-070, UIF-071
-// opc: -U ..\..\src
 // needs: desktop
 program Core_Reflection;
 { U-031, core.md 7.5: the parent forwards WM_COMMAND (LParam <> 0), WM_HSCROLL/WM_VSCROLL (LParam <> 0), WM_NOTIFY

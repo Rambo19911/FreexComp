@@ -1,5 +1,4 @@
 // covers: UIF-400
-// opc: -U ..\..\src
 // needs: desktop
 program App_Screen;
 { U-035, application-forms.md 1 and 3: Forms creates Screen after Application; Screen lists the forms in creation

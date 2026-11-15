@@ -1,5 +1,4 @@
 // covers: UIF-460, UIF-461, UIF-462, UIF-463, UIF-465, UIF-471
-// opc: -U ..\..\src
 // needs: desktop
 program App_Exceptions;
 { U-047, application-forms.md 8: an exception in a window message handler or in OnIdle reaches

@@ -1,0 +1,46 @@
+# CanFocus (UIF-090)
+ok hidden form: False
+ok no parent form: False
+ok chain not ending in a form: False
+ok activation focuses the first tab stop: ancestors outermost first
+ok ActiveControl
+ok visible enabled chain: True
+ok invisible control: False
+ok disabled parent: False
+ok disabled form: False
+ok GetParentForm
+# SetFocus (UIF-091)
+ok disabled control raises
+# enter and exit order (UIF-110)
+ok sibling: the common parent neither exits nor enters
+ok Win32 focus when the form is active
+ok across panels
+ok outwards: innermost exits first
+ok CM_FOCUSCHANGED reaches nested controls
+ok CM_FOCUSCHANGED reaches every branch
+ok the same control again: no events
+# OnExit moves the focus
+ok the original change is abandoned
+ok focus where the handler put it
+# WM_SETFOCUS path (core.md 7.2)
+ok WM_SETFOCUS runs SetFocusedControl
+ok ActiveControl follows WM_SETFOCUS
+# focused control disabled or hidden (UIF-093, UIF-132, UIF-137)
+ok disabled: next tab stop
+ok ancestor hidden: next focusable tab stop
+ok ActiveControl moved
+# destroyed (UIF-037)
+ok ActiveControl cleared
+ok silently
+ok no other candidate: to the form
+ok ActiveControl nil
+# activation (UIF-092, UIF-111)
+ok no ActiveControl: the first tab stop
+ok ActiveControl is the first tab stop
+ok hidden form: ActiveControl only recorded
+ok recorded
+ok FocusControl sets ActiveControl (UIF-094)
+ok activation focuses the recorded ActiveControl
+ok deactivation and re-activation: no OnExit/OnEnter
+ok ActiveControl kept
+# passed 37 failed 0

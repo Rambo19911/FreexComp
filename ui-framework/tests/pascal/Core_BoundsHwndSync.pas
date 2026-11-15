@@ -1,5 +1,4 @@
 // covers: UIF-211, UIF-213
-// opc: -U ..\..\src
 // needs: desktop
 program Core_BoundsHwndSync;
 { U-025, layout.md UIF-211 and UIF-213: SetBounds of a windowed control with a handle moves the window

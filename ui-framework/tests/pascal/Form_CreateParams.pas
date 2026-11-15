@@ -1,5 +1,4 @@
 // covers: UIF-405, UIF-425, UIF-430, UIF-442
-// opc: -U ..\..\src
 // needs: desktop
 program Form_CreateParams;
 { U-036, application-forms.md 4: CreateNew defaults; the published properties of TForm (Width/Height not stored,
@@ -31,10 +30,26 @@ type
     constructor Create(AOwner: TComponent); override;
   end;
 
+  { UIF-405 sequence: NewInstance, reference set, constructor body, AfterConstruction }
+  TSeqComp = class(TComponent)
+  public
+    class function NewInstance: TObject; override;
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    procedure AfterConstruction; override;
+  end;
+
+  TFailComp = class(TSeqComp)
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
 var
   Log: TLog;
   MainForm: TMainForm;
   SeenInCreate: Boolean;
+  SeqLog: string;
+  SeqRef: TSeqComp;
 
 procedure TLog.Created(Sender: TObject);
 begin
@@ -53,6 +68,47 @@ begin
   CreateNew(AOwner);
   OnCreate := Log.Created;
   OnDestroy := Log.Destroyed;
+end;
+
+function RefState(Self: TObject): string;
+begin
+  if SeqRef = nil then
+    Result := 'nil'
+  else if SeqRef = Self then
+    Result := 'self'
+  else
+    Result := 'other';
+end;
+
+class function TSeqComp.NewInstance: TObject;
+begin
+  SeqLog := SeqLog + 'NewInstance(ref=' + RefState(nil) + ');';
+  Result := inherited NewInstance;
+end;
+
+constructor TSeqComp.Create(AOwner: TComponent);
+begin
+  SeqLog := SeqLog + 'Create(ref=' + RefState(Self) + ');';
+  inherited Create(AOwner);
+end;
+
+destructor TSeqComp.Destroy;
+begin
+  SeqLog := SeqLog + 'Destroy(ref=' + RefState(Self) + ');';
+  inherited Destroy;
+end;
+
+procedure TSeqComp.AfterConstruction;
+begin
+  SeqLog := SeqLog + 'AfterConstruction(ref=' + RefState(Self) + ');';
+  inherited AfterConstruction;
+end;
+
+constructor TFailComp.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  SeqLog := SeqLog + 'raise;';
+  raise EInvalidOperation.Create('construction failed');
 end;
 
 function StyleOf(F: TCustomForm): Cardinal;
@@ -238,6 +294,29 @@ begin
     MainForm.Free;
     CheckEqS('Destroy;', Log.Text, 'OnDestroy fired');
     CheckEqB(True, Application.MainForm = nil, 'destroyed main form: MainForm nil');
+
+    Section('CreateForm sequence log (UIF-405)');
+    SeqLog := '';
+    Application.CreateForm(TSeqComp, SeqRef);
+    CheckEqS('NewInstance(ref=nil);Create(ref=self);AfterConstruction(ref=self);', SeqLog,
+      'NewInstance, reference, constructor body, AfterConstruction once');
+    CheckEqB(True, SeqRef.Owner = Application, 'component owned by Application');
+    CheckEqB(True, Application.MainForm = nil, 'a non-form never becomes the main form');
+    SeqLog := '';
+    SeqRef.Free;
+    SeqRef := nil;
+    SeqLog := '';
+    Expect('EInvalidOperation', 'construction failed');
+    try
+      Application.CreateForm(TFailComp, SeqRef);
+      CheckRaises('constructor exception re-raised', '', '');
+    except
+      on E: Exception do
+        CheckRaises('constructor exception re-raised', E.ClassName, E.Message);
+    end;
+    CheckEqS('NewInstance(ref=nil);Create(ref=self);raise;Destroy(ref=nil);', SeqLog,
+      'failure: reference cleared, instance freed, no AfterConstruction');
+    CheckEqB(True, SeqRef = nil, 'reference nil after the failure');
   finally
     Log.Free;
   end;

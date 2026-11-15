@@ -1,5 +1,4 @@
 // covers: UIF-546
-// opc: -U ..\..\src
 program Gfx_BitmapDraw;
 { U-010, graphics.md section 3 and UIF-546: TCanvas.Draw / StretchDraw call TBitmap.Draw (BitBlt when the
   size is unchanged, StretchBlt otherwise; nil or empty graphics draw nothing); a transparent bitmap skips

@@ -1,5 +1,4 @@
 // covers: UIF-505, UIF-507, UIF-520, UIF-525
-// opc: -U ..\..\src
 program Gfx_PenBrush;
 { U-005, graphics.md sections 2.2 and 2.3: TPen and TBrush defaults, handles built per UIF-520 / UIF-525
   (read back with GetObjectW), the UIF-505 change order, Mode is not part of the pen handle, bsClear uses the

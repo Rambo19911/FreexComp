@@ -1,0 +1,4 @@
+object BadForm: TBadForm
+  Caption = 'Bad'
+  Bogus = 1
+end

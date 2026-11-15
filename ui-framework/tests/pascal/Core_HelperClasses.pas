@@ -1,5 +1,4 @@
 // covers: UIF-020, UIF-021, UIF-022
-// opc: -U ..\..\src
 program Core_HelperClasses;
 { U-013, core.md sections 1 and 12: the modal result values equal the Win32 ID* button ids, the component
   message numbers, the cursor ident map (CursorToIdent / IdentToCursor / CursorToString / StringToCursor and the

@@ -1,5 +1,4 @@
 // covers: UIF-230, UIF-231, UIF-232
-// opc: -U ..\..\src
 program Layout_Anchors;
 { U-019, layout.md section 5 and the MulDiv definition of section 1: every horizontal and vertical case of
   UIF-231, the centring case with MulDiv rounding half away from zero (also for negative products), the baseline

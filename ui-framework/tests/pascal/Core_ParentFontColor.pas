@@ -1,5 +1,4 @@
 // covers: UIF-022, UIF-071
-// opc: -U ..\..\src
 // needs: desktop
 program Core_ParentFontColor;
 { U-027, core.md 1.1 and 7.5: Color, Font and ShowHint flow from a parent to every descendant whose Parent*

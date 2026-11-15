@@ -1,5 +1,4 @@
 // covers: UIF-002
-// opc: -U ..\..\src
 program UiConsts_Compile;
 { U-002: UIConsts compiles and holds the message texts of the catalogues in core.md section 14, graphics.md
   section 8, application-forms.md section 10 and controls-standard.md section 30, in that order; one

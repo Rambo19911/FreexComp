@@ -1,5 +1,4 @@
 // covers: UIF-030, UIF-031, UIF-032, UIF-033, UIF-034, UIF-035, UIF-036, UIF-038
-// opc: -U ..\..\src
 // needs: desktop
 program Core_HandleLifecycle;
 { U-021, core.md section 4: handles are created lazily and top-down (reading a child's Handle creates the root

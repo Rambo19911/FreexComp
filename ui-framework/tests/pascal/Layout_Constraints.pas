@@ -1,5 +1,4 @@
 // covers: UIF-240, UIF-241, UIF-242
-// opc: -U ..\..\src
 program Layout_Constraints;
 { U-016, layout.md section 7: ConstrainSize inside SetBounds (maximum, minimum, minimum wins over a contradictory
   maximum, 0 = none), the ConstrainedResize hook (OnConstrainedResize may change the limits), constraint changes

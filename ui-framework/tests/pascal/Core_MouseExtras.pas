@@ -1,5 +1,4 @@
 // covers: UIF-068, UIF-075, UIF-077
-// opc: -U ..\..\src
 // needs: desktop
 program Core_MouseExtras;
 { U-030, core.md 7.4, 7.6, 7.7: the control under the mouse is tracked over WM_MOUSEMOVE (after graphic routing):

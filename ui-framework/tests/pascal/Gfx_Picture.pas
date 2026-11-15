@@ -1,5 +1,4 @@
 // covers: UIF-550, UIF-555
-// opc: -U ..\..\src
 // opc-run: tempdir
 program Gfx_Picture;
 { U-011, graphics.md sections 4.2 and 4.3: TIcon (Handle ownership, size from GetIconInfo, DrawIconEx,
@@ -380,7 +379,7 @@ begin
     Check(H.Picture.Graphic is TBitmap, 'Data read back creates the bitmap');
     CheckEqI(1, H.Picture.Width, 'read back width');
     CheckEqI($332211, H.Picture.Bitmap.Canvas.Pixels[0, 0], 'read back pixel');
-    Expect('EReadError', 'Invalid value for property Data');
+    Expect('EReadError', 'H.form(2,18): error F0103: Invalid value for property Picture.Data');   { U-118 }
     try
       ReadComponentFromText('object H: TPicHolder'#10'  Picture.Data = {'#10'    044E6F6E65'#10'  }'#10'end'#10, H, 'H.form');
       Check(False, 'unknown class name raises');

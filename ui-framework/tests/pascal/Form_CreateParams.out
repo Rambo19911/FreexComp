@@ -79,4 +79,11 @@ ok other form: no WS_EX_APPWINDOW
 ok other form: owned by the main form
 ok OnDestroy fired
 ok destroyed main form: MainForm nil
-# passed 74 failed 0
+# CreateForm sequence log (UIF-405)
+ok NewInstance, reference, constructor body, AfterConstruction once
+ok component owned by Application
+ok a non-form never becomes the main form
+ok constructor exception re-raised
+ok failure: reference cleared, instance freed, no AfterConstruction
+ok reference nil after the failure
+# passed 80 failed 0

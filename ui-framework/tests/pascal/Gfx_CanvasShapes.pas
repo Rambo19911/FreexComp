@@ -1,5 +1,4 @@
 // covers: UIF-530, UIF-531, UIF-572
-// opc: -U ..\..\src
 program Gfx_CanvasShapes;
 { U-006, graphics.md section 3: a TCanvas attached to a memory DC holding a 32-bit DIB section. Pixel
   assertions: rectangle border and interior with the right/bottom edge excluded, line end point excluded,

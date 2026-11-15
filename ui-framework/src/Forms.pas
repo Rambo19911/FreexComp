@@ -36,6 +36,9 @@ type
   TCustomForm = class(TScrollingWinControl)
   private
     FActiveControl: TWinControl;
+    FEnteredControl: TWinControl;                            { the control whose OnEnter chain fired (UIF-110 Old) }
+    FFocusSerial: Integer;                                   { counts SetFocusedControl calls: OnExit moved focus }
+    FFocusExiting: Boolean;
     FBorderIcons: TBorderIcons;
     FBorderStyle: TFormBorderStyle;
     FFormStyle: TFormStyle;
@@ -84,6 +87,8 @@ type
     procedure WMSize(var Message: TMessage);
     procedure EndResizeLock;
   protected
+    { core.md UIF-115 step 3: the form's navigation keys }
+    procedure CMDialogKey(var Message: TMessage); virtual;
     { UIF-431: once per client size change, never before the first show }
     procedure Resize; override;
     procedure DoShow; virtual;
@@ -141,6 +146,13 @@ type
     function CloseQuery: Boolean; virtual;
     { posts CM_RELEASE; the receiver frees the form (safe inside the form's own event handlers) }
     procedure Release;
+    { core.md section 8 }
+    procedure SetFocus; override;
+    function SetFocusedControl(Control: TWinControl): Boolean; override;
+    procedure FocusControl(Control: TWinControl);
+    procedure DefocusControl(Control: TWinControl; Removing: Boolean); override;
+    { actions-menus.md UIF-921 (menus and actions come with their units); base: no shortcut }
+    function IsShortCut(var Message: TWMKey): Boolean; virtual;
     property Active: Boolean read GetActive;
     property Monitor: TMonitor read GetMonitor;
     property Canvas: TCanvas read FCanvas;
@@ -289,8 +301,6 @@ type
     FInitialized: Boolean;
     FTerminated: Boolean;
     FMainForm: TForm;
-    FPendingRef: Pointer;                                    { CreateForm: the reference to set before OnCreate }
-    FPendingClass: TClass;
     FActive: Boolean;                                        { WM_ACTIVATEAPP }
     FShowMainForm: Boolean;
     FTitle: string;
@@ -311,6 +321,8 @@ type
     procedure Terminate;
     { UIF-411: False when the queue is empty }
     function ProcessMessage(var Msg: TMsg): Boolean;
+    { UIF-411 IsKeyMsg: core.md UIF-115 (shortcuts, navigation keys); True = consumed }
+    function IsKeyMsg(var Msg: TMsg): Boolean;
     procedure ProcessMessages;
     procedure HandleMessage;
     { UIF-412 }
@@ -338,13 +350,105 @@ var
   Application: TApplication;
   Screen: TScreen;
 
+{ application-forms.md 4.2: the form at the top of the parent chain (TopForm), or the nearest one; nil if none }
+function GetParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
+{ as GetParentForm, raising EInvalidOperation SParentRequired when there is no form }
+function ValidParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
+{ core.md UIF-120: Str has the accelerator '&<VK>' (AnsiUpperCase comparison, '&&' is a literal ampersand) }
+function IsAccel(VK: Word; const Str: string): Boolean;
+
 implementation
 
 uses
   RTLConsts;
 
-type
-  PComponentRef = ^TComponent;
+function GetParentForm(Control: TControl; TopForm: Boolean): TCustomForm;
+begin
+  Result := nil;
+  while Control <> nil do
+  begin
+    if Control is TCustomForm then
+    begin
+      Result := TCustomForm(Control);
+      if not TopForm then
+        Exit;
+    end;
+    Control := Control.Parent;
+  end;
+end;
+
+function ValidParentForm(Control: TControl; TopForm: Boolean): TCustomForm;
+begin
+  Result := GetParentForm(Control, TopForm);
+  if Result = nil then
+    raise EInvalidOperation.CreateFmt(SParentRequired, [Control.Name]);
+end;
+
+function IsAccel(VK: Word; const Str: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  I := 1;
+  while I < Length(Str) do
+  begin
+    if Str[I] = '&' then
+    begin
+      if Str[I + 1] <> '&' then
+      begin
+        Result := AnsiUpperCase(Str[I + 1]) = AnsiUpperCase(Char(VK));
+        if Result then
+          Exit;
+      end;
+      Inc(I, 2);
+    end
+    else
+      Inc(I);
+  end;
+end;
+
+{ UIF-120: CM_DIALOGCHAR to the visible, enabled controls of the tree, depth-first in z-order, until one answers }
+function OfferDialogChar(Parent: TWinControl; var Message: TMessage): Boolean;
+var
+  I: Integer;
+  C: TControl;
+begin
+  Result := False;
+  for I := 0 to Parent.ControlCount - 1 do
+  begin
+    C := Parent.Controls[I];
+    if not (C.Visible and C.Enabled) then
+      Continue;
+    Message.Result := 0;
+    C.WindowProc(Message);
+    if (Message.Result <> 0) or ((C is TWinControl) and OfferDialogChar(TWinControl(C), Message)) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+{ UIF-110 helper: CM_FOCUSCHANGED to every control of the tree, depth-first in z-order }
+procedure SendFocusChanged(Parent: TWinControl; Control: TWinControl);
+var
+  I: Integer;
+  C: TControl;
+begin
+  for I := 0 to Parent.ControlCount - 1 do
+  begin
+    C := Parent.Controls[I];
+    C.Perform(CM_FOCUSCHANGED, 0, LPARAM(Pointer(Control)));
+    if C is TWinControl then
+      SendFocusChanged(TWinControl(C), Control);
+  end;
+end;
+
+{ C is a proper ancestor of Control }
+function IsAncestor(C, Control: TWinControl): Boolean;
+begin
+  Result := (C <> nil) and (Control <> nil) and (C <> Control) and C.ContainsControl(Control);
+end;
 
 const
   AppClassName = 'PN.Application';
@@ -364,23 +468,18 @@ begin
     Result := DefWindowProcW(Wnd, Msg, WParam, LParam);
 end;
 
-{ UIF-402 step 2: the loaded comctl32 comes from the version 6 side-by-side assembly (its folder names the version;
-  both 5.82 and 6.0 live in the side-by-side store). Unknown layout = not active, so the fallback runs. }
+{ UIF-402 step 2: the comctl32 that loading resolves to under the current activation context exports the
+  version-6-only LoadIconMetric }
 function CommonControls6Active: Boolean;
 var
   Module: HMODULE;
-  Buffer: array[0..MAX_PATH] of Char;
-  N: DWORD;
 begin
   Result := False;
-  Module := GetModuleHandleW('comctl32.dll');
+  Module := LoadLibraryW('comctl32.dll');
   if Module = 0 then
     Exit;
-  N := GetModuleFileNameW(Module, @Buffer[0], MAX_PATH);
-  if N = 0 then
-    Exit;
-  Buffer[N] := #0;
-  Result := Pos('.COMMON-CONTROLS_6595B64144CCF1DF_6.', UpperCase(string(PChar(@Buffer[0])))) > 0;
+  Result := GetProcAddress(Module, 'LoadIconMetric') <> nil;
+  FreeLibrary(Module);
 end;
 
 { RTL-871: the common controls 6 manifest of the system shell library, active for the life of the process }
@@ -472,11 +571,6 @@ end;
 procedure TCustomForm.AfterConstruction;
 begin
   inherited AfterConstruction;
-  if (Application.FPendingRef <> nil) and (ClassType = Application.FPendingClass) and (Owner = Application) then
-  begin
-    PComponentRef(Application.FPendingRef)^ := Self;           { UIF-405: the reference is valid during OnCreate }
-    Application.FPendingRef := nil;
-  end;
   Exclude(FFormState, fsCreating);
   FCreateReached := True;
   if Assigned(FOnCreate) then
@@ -878,8 +972,13 @@ end;
 procedure TCustomForm.Notification(AComponent: TComponent; Operation: TOperation);
 begin
   inherited Notification(AComponent, Operation);
-  if (Operation = opRemove) and (AComponent = FActiveControl) then
-    FActiveControl := nil;
+  if Operation = opRemove then
+  begin
+    if AComponent = FActiveControl then
+      FActiveControl := nil;
+    if AComponent = FEnteredControl then
+      FEnteredControl := nil;
+  end;
 end;
 
 { UIF-426: OnPaint with Canvas bound to the paint DC }
@@ -1006,15 +1105,21 @@ begin
     Include(FFormState, fsActivated);
     Screen.SetActiveForm(Self);
     Activate;
-    if (FActiveControl <> nil) and FActiveControl.HandleAllocated and IsWindowVisible(FActiveControl.Handle)
-      and IsWindowEnabled(FActiveControl.Handle) then
-      Windows.SetFocus(FActiveControl.Handle);               { focus restore (full rules: U-043) }
+    { UIF-092: ActiveControl, else the first tab stop, else the form keeps the focus }
+    C := FActiveControl;
+    if (C = nil) or not C.CanFocus then
+      C := FindNextControl(nil, True, True, False);
+    if C <> nil then
+    begin
+      SetFocusedControl(C);
+      Windows.SetFocus(C.Handle);
+    end;
   end
   else
   begin
     C := FindControl(GetFocus);
     if (C <> nil) and (C <> Self) and ContainsControl(C) then
-      ActiveControl := C;
+      FActiveControl := C;                                   { remembered without events (UIF-111) }
     if fsActivated in FFormState then
     begin
       Exclude(FFormState, fsActivated);
@@ -1046,6 +1151,10 @@ begin
         inherited WndProc(Message);
     CM_RELEASE:
       Free;
+    CM_DIALOGKEY:
+      CMDialogKey(Message);
+    CM_DIALOGCHAR:
+      Message.Result := Ord(OfferDialogChar(Self, Message));   { the main-menu fallback comes with menus }
     WM_ACTIVATEAPP:
       begin
         Application.FActive := Message.WParam <> 0;
@@ -1061,13 +1170,194 @@ begin
   Result := FKeyPreview;
 end;
 
+{ UIF-092: an active form focuses the control; otherwise (and while loading) the value is only recorded }
 procedure TCustomForm.SetActiveControl(Value: TWinControl);
 begin
-  if FActiveControl <> Value then
+  if FActiveControl = Value then
+    Exit;
+  if (Value <> nil) and not (csLoading in ComponentState) and Active and Value.CanFocus then
+    Value.SetFocus
+  else
   begin
     FActiveControl := Value;
     if Value <> nil then
       Value.FreeNotification(Self);
+  end;
+end;
+
+{ UIF-091 for the form itself: activates the window }
+procedure TCustomForm.SetFocus;
+begin
+  if not (Visible and Enabled) then
+    raise EInvalidOperation.Create(SCannotFocus);
+  if Application.Active then
+    SetForegroundWindow(Handle)
+  else
+    SetActiveWindow(Handle);
+end;
+
+{ UIF-110 }
+function TCustomForm.SetFocusedControl(Control: TWinControl): Boolean;
+var
+  Old, C: TWinControl;
+  Serial, I: Integer;
+  Enter: TList;
+begin
+  Result := True;
+  if csDestroying in ComponentState then
+    Exit;
+  Old := FEnteredControl;
+  if Old = Control then
+  begin
+    FActiveControl := Control;
+    Exit;
+  end;
+  Inc(FFocusSerial);
+  Serial := FFocusSerial;
+  if not FFocusExiting then
+  begin
+    { exit: Old, then its ancestors that are not ancestors of Control (innermost first); a handler that moves the
+      focus elsewhere abandons this change; the nested change skips this phase }
+    FFocusExiting := True;
+    try
+      C := Old;
+      while (C <> nil) and (C <> Self) do
+      begin
+        if (C = Old) or not IsAncestor(C, Control) then
+        begin
+          C.Perform(CM_EXIT, 0, 0);
+          if FFocusSerial <> Serial then
+          begin
+            Result := False;
+            Exit;
+          end;
+        end;
+        C := C.Parent;
+      end;
+    finally
+      FFocusExiting := False;
+    end;
+  end;
+  FActiveControl := Control;
+  FEnteredControl := Control;
+  if Control <> nil then
+  begin
+    Control.FreeNotification(Self);
+    { enter: Control's ancestors that are not ancestors of Old (outermost first), then Control }
+    Enter := TList.Create;
+    try
+      C := Control.Parent;
+      while (C <> nil) and (C <> Self) do
+      begin
+        if not IsAncestor(C, Old) then
+          Enter.Add(Pointer(C));
+        C := C.Parent;
+      end;
+      for I := Enter.Count - 1 downto 0 do
+        TWinControl(Enter[I]).Perform(CM_ENTER, 0, 0);
+    finally
+      Enter.Free;
+    end;
+    Control.Perform(CM_ENTER, 0, 0);
+  end;
+  SendFocusChanged(Self, Control);
+  if (Screen.FActiveCustomForm = Self) and Assigned(Screen.FOnActiveControlChange) then
+    Screen.FOnActiveControlChange(Screen);
+end;
+
+function TCustomForm.IsShortCut(var Message: TWMKey): Boolean;
+begin
+  Result := False;
+end;
+
+{ UIF-115 step 3, Return/Escape: offered to every control of the tree, depth-first in z-order, until one answers }
+function OfferDialogKey(Parent: TWinControl; var Message: TMessage): Boolean;
+var
+  I: Integer;
+  C: TControl;
+begin
+  Result := False;
+  for I := 0 to Parent.ControlCount - 1 do
+  begin
+    C := Parent.Controls[I];
+    Message.Result := 0;
+    C.WindowProc(Message);
+    if Message.Result <> 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+    if (C is TWinControl) and OfferDialogKey(TWinControl(C), Message) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+{ core.md UIF-115 step 3 table; Result <> 0 = consumed }
+procedure TCustomForm.CMDialogKey(var Message: TMessage);
+var
+  C: TWinControl;
+begin
+  Message.Result := 0;
+  case Message.WParam of
+    VK_TAB:
+      if GetKeyState(VK_CONTROL) >= 0 then
+      begin
+        SelectNext(FActiveControl, GetKeyState(VK_SHIFT) >= 0, True);
+        Message.Result := 1;
+      end;
+    VK_LEFT, VK_UP, VK_RIGHT, VK_DOWN:
+      if (FActiveControl <> nil) and (FActiveControl.Parent <> nil) then
+      begin
+        C := FActiveControl.Parent.FindNextControl(FActiveControl,
+          (Message.WParam = VK_RIGHT) or (Message.WParam = VK_DOWN), False, True);
+        if C <> nil then
+          C.SetFocus;
+        Message.Result := 1;
+      end;
+    VK_RETURN, VK_ESCAPE, VK_CANCEL:
+      if OfferDialogKey(Self, Message) then
+        Message.Result := 1
+      else
+        Message.Result := 0;
+  end;
+end;
+
+{ UIF-094 }
+procedure TCustomForm.FocusControl(Control: TWinControl);
+begin
+  ActiveControl := Control;
+end;
+
+{ UIF-093 (disabled, hidden) and UIF-037 step 2 (Removing: destroyed, silently to the form) }
+procedure TCustomForm.DefocusControl(Control: TWinControl; Removing: Boolean);
+var
+  Next: TWinControl;
+  F: HWND;
+begin
+  if (FActiveControl = nil) or ((Control <> FActiveControl) and not Control.ContainsControl(FActiveControl)) then
+    Exit;
+  if Removing or (csDestroying in ComponentState) then
+  begin
+    F := GetFocus;
+    FActiveControl := nil;
+    if (FEnteredControl <> nil) and ((FEnteredControl = Control) or Control.ContainsControl(FEnteredControl)) then
+      FEnteredControl := nil;
+    if (F <> 0) and Control.HandleAllocated and ((F = Control.Handle) or IsChild(Control.Handle, F))
+      and HandleAllocated and not (csDestroying in ComponentState) then
+      Windows.SetFocus(Handle);
+    Exit;
+  end;
+  Next := FindNextControl(Control, True, True, False);
+  if Next <> nil then
+    Next.SetFocus
+  else
+  begin
+    SetFocusedControl(nil);
+    if Active then
+      Windows.SetFocus(Handle);
   end;
 end;
 
@@ -1451,32 +1741,22 @@ end;
 
 { ---------------------------------------------------------------- TApplication }
 
-{ UIF-405. The specified sequence (NewInstance, Instance.Create, AfterConstruction) needs a constructor call on an
-  instance that dispatches through the VMT; opc binds it statically (reported), so the class reference constructs and
-  a form's AfterConstruction stores the pending reference before OnCreate. Same observable result for forms. }
+{ UIF-405 }
 procedure TApplication.CreateForm(InstanceClass: TComponentClass; var Reference);
 var
   Instance: TComponent;
-  OldRef: Pointer;
-  OldClass: TClass;
 begin
   Initialize;
-  OldRef := FPendingRef;
-  OldClass := FPendingClass;
-  FPendingRef := @Reference;
-  FPendingClass := InstanceClass;
-  try
-    try
-      Instance := InstanceClass.Create(Self);
-    except
-      TComponent(Reference) := nil;
-      raise;
-    end;
-  finally
-    FPendingRef := OldRef;
-    FPendingClass := OldClass;
-  end;
+  Instance := TComponent(InstanceClass.NewInstance);
   TComponent(Reference) := Instance;
+  try
+    Instance.Create(Self);
+    Instance.AfterConstruction;
+  except
+    TComponent(Reference) := nil;
+    Instance.Free;
+    raise;
+  end;
   if (FMainForm = nil) and (Instance is TForm) then
     FMainForm := TForm(Instance);
 end;
@@ -1617,6 +1897,71 @@ begin
   PostQuitMessage(0);
 end;
 
+{ core.md UIF-115: shortcuts and navigation keys of a form's windows; True = consumed }
+function TApplication.IsKeyMsg(var Msg: TMsg): Boolean;
+var
+  W: HWND;
+  C: TWinControl;
+  F: TCustomForm;
+  Key: Word;
+  Code: LRESULT;
+  Message: TWMKey;
+begin
+  Result := False;
+  if (Msg.message <> WM_KEYDOWN) and (Msg.message <> WM_SYSKEYDOWN) and (Msg.message <> WM_CHAR)
+    and (Msg.message <> WM_SYSCHAR) then
+    Exit;
+  W := Msg.hwnd;
+  C := nil;
+  while (W <> 0) and (C = nil) do
+  begin
+    C := FindControl(W);
+    if C = nil then
+      W := GetParent(W);
+  end;
+  if C = nil then
+    Exit;
+  F := GetParentForm(C);
+  if F = nil then
+    Exit;
+  Key := Word(Msg.wParam);
+  { UIF-120: accelerator characters }
+  if (Msg.message = WM_CHAR) or (Msg.message = WM_SYSCHAR) then
+  begin
+    if (Msg.message = WM_SYSCHAR) or ((SendMessageW(Msg.hwnd, WM_GETDLGCODE, Key, LPARAM(@Msg))
+      and (DLGC_WANTCHARS or DLGC_WANTALLKEYS)) = 0) then
+      Result := F.Perform(CM_DIALOGCHAR, Key, Msg.lParam) <> 0;
+    Exit;
+  end;
+  { step 1 }
+  Message.Msg := Msg.message;
+  Message.CharCode := Key;
+  Message.KeyData := Msg.lParam;
+  Message.Result := 0;
+  if F.IsShortCut(Message) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  { step 2 }
+  if ((Key = VK_TAB) or (Key = VK_LEFT) or (Key = VK_RIGHT) or (Key = VK_UP) or (Key = VK_DOWN)
+    or (Key = VK_RETURN) or (Key = VK_ESCAPE) or (Key = VK_CANCEL)) and ((Msg.lParam and $20000000) = 0) then
+  begin
+    if C.Perform(CM_WANTSPECIALKEY, Key, 0) <> 0 then
+      Exit;
+    Code := SendMessageW(Msg.hwnd, WM_GETDLGCODE, Key, LPARAM(@Msg));
+    if (Code and DLGC_WANTALLKEYS) <> 0 then
+      Exit;
+    if (Key = VK_TAB) and ((Code and DLGC_WANTTAB) <> 0) and (GetKeyState(VK_CONTROL) >= 0) then
+      Exit;
+    if ((Key = VK_LEFT) or (Key = VK_RIGHT) or (Key = VK_UP) or (Key = VK_DOWN))
+      and ((Code and DLGC_WANTARROWS) <> 0) then
+      Exit;
+  end;
+  { step 3 }
+  Result := F.Perform(CM_DIALOGKEY, Key, Msg.lParam) <> 0;
+end;
+
 function TApplication.ProcessMessage(var Msg: TMsg): Boolean;
 var
   Handled: Boolean;
@@ -1633,6 +1978,8 @@ begin
   if Assigned(FOnMessage) then
     FOnMessage(Msg, Handled);
   if Handled or (Msg.hwnd = 0) then
+    Exit;
+  if IsKeyMsg(Msg) then
     Exit;
   TranslateMessage(Msg);
   DispatchMessageW(Msg);
@@ -1692,6 +2039,7 @@ initialization
   ShowErrorProc := FormsShowError;
   ApplicationHandleException := Application.HandleException;
   FindGlobalComponent := FormsFindGlobalComponent;
+  FocusRootClass := TCustomForm;
   RegisterClasses([TForm]);
 
 finalization

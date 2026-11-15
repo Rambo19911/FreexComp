@@ -1,5 +1,4 @@
 // covers: UIF-055, UIF-057, UIF-080, UIF-081, UIF-082
-// opc: -U ..\..\src
 // needs: desktop
 program Core_Painting;
 { U-028, core.md 6 and 7.8: WM_PRINTCLIENT into a memory bitmap erases with the brush (only when asked),

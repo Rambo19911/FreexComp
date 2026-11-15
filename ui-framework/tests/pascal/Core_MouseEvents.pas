@@ -1,5 +1,4 @@
 // covers: UIF-064, UIF-065, UIF-066, UIF-067
-// opc: -U ..\..\src
 // needs: desktop
 program Core_MouseEvents;
 { U-029, core.md 7.3: mouse messages become events in the exact order OnMouseDown, OnClick, OnMouseUp; the left

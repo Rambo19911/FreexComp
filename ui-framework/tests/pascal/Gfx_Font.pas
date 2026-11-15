@@ -1,5 +1,4 @@
 // covers: UIF-505, UIF-506, UIF-507, UIF-510, UIF-511, UIF-512, UIF-513
-// opc: -U ..\..\src
 program Gfx_Font;
 { U-004, graphics.md section 2: TGraphicsObject handle rules on TFont - lazy handle, change order (detach,
   OnChange while the old handle still exists, then the old handle is deleted), no event for an unchanged value,

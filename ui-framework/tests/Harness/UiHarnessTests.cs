@@ -68,17 +68,13 @@ public sealed class UiHarnessTests : IDisposable
 
     [Fact]
     [Trait("Req", "UIF-1201")]
-    public void UiHarness_ProgramMustPutFrameworkSourceOnUnitPath()
+    public void UiHarness_SetupPutsFrameworkSourceOnUnitPath()
     {
-        var pascal = Path.Combine(temp, "ui-framework", "tests", "pascal");
-        Directory.CreateDirectory(pascal);
-        var without = new RtlCase("pascal/X", Path.Combine(pascal, "X.pas"));
-        File.WriteAllText(without.SourcePath, "// covers: UIF-1\nprogram X; begin end.");
-
-        Assert.Contains("// opc: -U ..\\..\\src", UiCorpus.CheckOptions(without));
+        // R-205: ui-framework/src comes from the runner setup, not from per-program '// opc: -U' markers.
+        Assert.Equal([UiCorpus.SourceDirectory], UiCorpus.Setup.ExtraUnitDirectories);
         foreach (var real in UiCorpus.DiscoverPascal())
         {
-            Assert.Null(UiCorpus.CheckOptions(real));
+            Assert.DoesNotContain("-U", RtlCorpus.ReadHeader(real).OpcOptions);
         }
     }
 

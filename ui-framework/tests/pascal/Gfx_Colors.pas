@@ -1,5 +1,4 @@
 // covers: UIF-500
-// opc: -U ..\..\src
 program Gfx_Colors;
 { U-003, graphics.md section 1: TColor encoding, the complete constant table (values are normative),
   ColorToRGB (system colours through GetSysColor, special values masked), ColorToString (name or $ + 8 hex

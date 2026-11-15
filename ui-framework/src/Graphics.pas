@@ -393,6 +393,7 @@ type
   private
     FGraphic: TGraphic;
     FOnChange: TNotifyEvent;
+    FReader: TReader;                                        { U-118: the reader while Data is read }
     procedure GraphicChanged(Sender: TObject);
     procedure ReplaceGraphic(Value: TGraphic);
     procedure SetGraphic(Value: TGraphic);
@@ -2377,7 +2378,14 @@ end;
 procedure TPicture.DefineProperties(Filer: TFiler);
 begin
   inherited DefineProperties(Filer);
-  Filer.DefineBinaryProperty('Data', ReadData, WriteData, (FGraphic <> nil) and not FGraphic.Empty);
+  FReader := nil;
+  if Filer is TReader then
+    FReader := TReader(Filer);
+  try
+    Filer.DefineBinaryProperty('Data', ReadData, WriteData, (FGraphic <> nil) and not FGraphic.Empty);
+  finally
+    FReader := nil;
+  end;
 end;
 
 procedure TPicture.ReadData(Stream: TStream);
@@ -2399,7 +2407,11 @@ begin
   if Name <> '' then
     ClassRef := GetClass(string(Name));
   if (ClassRef = nil) or not ClassRef.InheritsFrom(TGraphic) then
+  begin
+    if FReader <> nil then
+      FReader.PropValueError;                                { U-118: F0103 at the value, through OnError }
     raise EReadError.CreateFmt(SFormInvalidPropertyValue, ['Data']);
+  end;
   G := TGraphicClass(ClassRef).Create;
   try
     G.LoadFromStream(Stream);
