@@ -15,9 +15,9 @@ public readonly record struct CompletionTrigger(CompletionTriggerKind Kind, char
 public sealed record CompletionList(TextSpan ReplacementSpan, ImmutableArray<CompletionItem> Items, bool IsIncomplete);
 
 public sealed record CompletionItem(string Label, CompletionItemKind Kind, string InsertText, string SortText, string? Detail, bool IsDeprecated,
-                                    string? SymbolId);
+                                    string? SymbolId, string Origin = "");
 
-public sealed record CompletionDescription(string Signature, string? Documentation);
+public sealed record CompletionDescription(string Signature, string? Documentation, string Origin = "");
 
 /// <summary>Code completion (language-service.md §4, CMP-720…724). Returns the whole context set; the IDE filters (CMP-722).</summary>
 public static class CompletionService
@@ -137,12 +137,12 @@ public static class CompletionService
             {
                 if (symbols.TryGetValue(id, out var symbol))
                 {
-                    return new CompletionDescription(symbol.ToDisplayString(), symbol.Documentation);
+                    return new CompletionDescription(symbol.ToDisplayString(), symbol.Documentation, OriginOf(symbol));
                 }
             }
         }
 
-        return new CompletionDescription(item.Detail ?? item.Label, null);
+        return new CompletionDescription(item.Detail ?? item.Label, null, item.Origin);
     }
 
     // ------------------------------------------------------------------------------------------------ contexts
@@ -233,7 +233,7 @@ public static class CompletionService
             heading = heading.Replace(method.ContainingType.Name + ".", "", StringComparison.Ordinal);
             var cut = heading.IndexOf("; ", Math.Max(0, heading.LastIndexOf(')')), StringComparison.Ordinal);    // before "; virtual"
             var insert = (cut < 0 ? heading : heading[..cut])[(heading.IndexOf(' ') + 1)..] + "; override;";
-            builder.Add(new CompletionItem(method.Name, CompletionItemKind.Method, insert, "1" + method.Name.ToLowerInvariant(), heading, method.IsDeprecated, builder.Id(method)));
+            builder.Add(new CompletionItem(method.Name, CompletionItemKind.Method, insert, "1" + method.Name.ToLowerInvariant(), heading, method.IsDeprecated, builder.Id(method), OriginOf(method)));
         }
     }
 
@@ -347,6 +347,13 @@ public static class CompletionService
             or TryExceptStatementSyntax or InitializationSectionSyntax or FinalizationSectionSyntax or CaseStatementSyntax
         || previous.Kind == SyntaxKind.ColonToken && previous.Parent is CaseArmSyntax;
 
+    private static bool IsLocal(Symbol symbol) =>
+        symbol is ParameterSymbol || symbol is VariableSymbol { IsGlobal: false } && symbol.ContainingSymbol is RoutineSymbol;
+
+    /// <summary>C-255 (UI-ED-113): the declaring unit's name; empty for locals and units. Built-ins without a unit belong to System.</summary>
+    private static string OriginOf(Symbol symbol) =>
+        IsLocal(symbol) || symbol is UnitSymbol ? "" : symbol.ContainingUnit?.Name ?? "System";
+
     private static CompletionItem Keyword(string word, CompletionItemKind kind = CompletionItemKind.Keyword) =>
         new(word, kind, word, "5" + word.ToLowerInvariant(), null, false, null);
 
@@ -408,7 +415,7 @@ public static class CompletionService
             }
 
             Add(new CompletionItem(symbol.Name, KindOf(symbol), symbol.Name, (prefix ?? "") + Group(symbol) + symbol.Name.ToLowerInvariant(),
-                                   symbol.ToDisplayString(), symbol.IsDeprecated, Id(symbol)));
+                                   symbol.ToDisplayString(), symbol.IsDeprecated, Id(symbol), OriginOf(symbol)));
         }
 
         public string Id(Symbol symbol)
@@ -427,7 +434,7 @@ public static class CompletionService
         /// <summary>CMP-723 group digit.</summary>
         private string Group(Symbol symbol)
         {
-            if (symbol is ParameterSymbol || symbol is VariableSymbol { IsGlobal: false } && symbol.ContainingSymbol is RoutineSymbol)
+            if (IsLocal(symbol))
             {
                 return "0";
             }

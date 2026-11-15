@@ -224,7 +224,7 @@ public static class Classifier
                 break;
             }
 
-            AddTrivia(builder, token.LeadingTrivia, inAsm);
+            AddTrivia(builder, token.LeadingTrivia, ref inAsm);
             if (inAsm && token.Kind is not (SyntaxKind.EndKeyword or SyntaxKind.EndOfFileToken))
             {
                 builder.AddAsm(token.Span);   // CMP-714: everything between asm and end, one span per line
@@ -247,7 +247,7 @@ public static class Classifier
                 }
             }
 
-            AddTrivia(builder, token.TrailingTrivia, inAsm);
+            AddTrivia(builder, token.TrailingTrivia, ref inAsm);
         }
 
         return builder.ToImmutable();
@@ -320,26 +320,62 @@ public static class Classifier
     /// quoted parts) is <see cref="ClassificationKind.Invalid"/>, a skipped token keeps its lexical class (no contextual
     /// keyword: the parser did not use it as one).
     /// </summary>
-    private static void ClassifySkipped(SpanBuilder builder, SyntaxTrivia piece)
+    private static void ClassifySkipped(SpanBuilder builder, SyntaxTrivia piece, ref bool inAsm)
     {
         var tokens = Lexer.Tokenize(Compiler.SourceText.From(SkippedPath, piece.Text));
         var offset = piece.Span.Start;
         for (var i = 0; i < tokens.Length; i++)
         {
-            AddRelexedTrivia(builder, tokens[i].LeadingTrivia, offset);
-            ClassifyToken(builder, tokens, i, static (_, _) => false, offset);
-            AddRelexedTrivia(builder, tokens[i].TrailingTrivia, offset);
+            var token = tokens[i];
+            AddRelexedTrivia(builder, token.LeadingTrivia, offset, inAsm);
+            var span = new TextSpan(token.Span.Start + offset, token.Span.Length);
+            if (token.Kind == SyntaxKind.EndOfFileToken)
+            {
+                // nothing of its own
+            }
+            else if (inAsm && token.Kind != SyntaxKind.EndKeyword)
+            {
+                builder.AddAsm(span);           // CMP-714 inside a skipped asm block (C-253)
+            }
+            else if (IsAsm(token))
+            {
+                inAsm = true;
+                builder.Add(span, ClassificationKind.Keyword);
+            }
+            else
+            {
+                inAsm = false;                  // not in asm, or its closing end
+                ClassifyToken(builder, tokens, i, static (_, _) => false, offset);
+            }
+
+            AddRelexedTrivia(builder, token.TrailingTrivia, offset, inAsm);
         }
     }
 
-    /// <summary>Trivia of a re-lexed skipped token: only illegal characters (Invalid) can occur besides whitespace.</summary>
-    private static void AddRelexedTrivia(SpanBuilder builder, ImmutableArray<SyntaxTrivia> trivia, int offset)
+    /// <summary>
+    /// Trivia of a re-lexed skipped token: only illegal characters (Invalid; asm text inside an asm block) can occur
+    /// besides whitespace.
+    /// </summary>
+    private static void AddRelexedTrivia(SpanBuilder builder, ImmutableArray<SyntaxTrivia> trivia, int offset, bool inAsm)
     {
         foreach (var piece in trivia)
         {
-            if (piece.Kind is not (SyntaxKind.WhitespaceTrivia or SyntaxKind.EndOfLineTrivia))
+            var span = new TextSpan(piece.Span.Start + offset, piece.Span.Length);
+            if (piece.Kind == SyntaxKind.EndOfLineTrivia)
             {
-                builder.Add(new TextSpan(piece.Span.Start + offset, piece.Span.Length), ClassificationKind.Invalid);
+                builder.EndAsmLine();
+            }
+            else if (piece.Kind == SyntaxKind.WhitespaceTrivia)
+            {
+                // uncovered
+            }
+            else if (inAsm)
+            {
+                builder.AddAsm(span);
+            }
+            else
+            {
+                builder.Add(span, ClassificationKind.Invalid);
             }
         }
     }
@@ -464,7 +500,7 @@ public static class Classifier
         token.Kind == SyntaxKind.IdentifierToken && token.Text.Length == 3
         && (token.Text[0] | 0x20) == 'a' && (token.Text[1] | 0x20) == 's' && (token.Text[2] | 0x20) == 'm';
 
-    private static void AddTrivia(SpanBuilder builder, ImmutableArray<SyntaxTrivia> trivia, bool inAsm)
+    private static void AddTrivia(SpanBuilder builder, ImmutableArray<SyntaxTrivia> trivia, ref bool inAsm)
     {
         foreach (var piece in trivia)
         {
@@ -489,16 +525,8 @@ public static class Classifier
                     kind = ClassificationKind.DisabledText;
                     break;
                 default:
-                    // SkippedTokensTrivia: part of the asm text inside an asm block, else re-lexed (C-248).
-                    if (inAsm)
-                    {
-                        builder.AddAsm(piece.Span);
-                    }
-                    else
-                    {
-                        ClassifySkipped(builder, piece);
-                    }
-
+                    // SkippedTokensTrivia: re-lexed (C-248), with the asm state (C-253)
+                    ClassifySkipped(builder, piece, ref inAsm);
                     continue;
             }
 

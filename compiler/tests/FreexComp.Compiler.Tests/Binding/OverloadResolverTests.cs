@@ -74,6 +74,31 @@ public sealed class OverloadResolverTests
     [InlineData("H(vw, 8)", "T.H$Int64,Integer")]
     public void IntegerWideningPrefersNarrowerThenSigned(string call, string expected) => Assert.Equal(expected, ChosenCall(IntToStrLike, call));
 
+    /// <summary>
+    /// C-254 decision (LANG-442 and the types.md widening tie-break): a 64-bit unsigned argument (<c>NativeUInt</c> on x64,
+    /// <c>WPARAM</c>) against an <c>Integer</c>/<c>Int64</c> pair costs 2 on both (narrowing and signedness change; neither is
+    /// a widening that fits the source range), so the call is E2122. A <c>UInt64</c> overload is the exact match (cost 0).
+    /// </summary>
+    [Theory]
+    [Trait("Req", "LANG-442")]
+    [InlineData(false, "E2122: Ambiguous overloaded call to 'S'")]
+    [InlineData(true, "T.S$UInt64")]
+    public void NativeUIntArgument(bool withUInt64Overload, string expected)
+    {
+        var declarations = "type WPARAM = NativeUInt; " +
+            "function S(V: Integer): string; overload; begin Result := '' end; function S(V: Int64): string; overload; begin Result := '' end; " +
+            (withUInt64Overload ? "function S(V: UInt64): string; overload; begin Result := '' end; " : "");
+        var (result, _) = Bind("program T; " + declarations + " var W: WPARAM; text: string; begin text := S(W) end.");
+        if (!result.Diagnostics.IsEmpty)
+        {
+            Assert.Equal(expected, string.Join("; ", result.Diagnostics.Select(d => $"{d.Code}: {d.Message}")));
+            return;
+        }
+
+        var assignment = Assert.IsType<BoundAssignmentStatement>(Assert.Single(result.Bodies[0].Statements));
+        Assert.Equal(expected, Assert.IsType<BoundCallExpression>(assignment.Value).Routine.LinkName);
+    }
+
     /// <summary>The function <c>text := call</c> picks, or the diagnostics.</summary>
     private static string ChosenCall(string declarations, string call)
     {

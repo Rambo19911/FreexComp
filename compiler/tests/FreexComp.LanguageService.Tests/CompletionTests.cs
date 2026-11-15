@@ -278,6 +278,38 @@ public sealed class CompletionTests
     }
 
     [Fact]
+    [Trait("Req", "UI-ED-113")]
+    public void ItemsCarryTheirDeclaringUnit()
+    {
+        var markup = "program P;\nuses U1;\nvar G: Integer;\nprocedure Q(A: Integer);\nvar L: Integer;\nbegin\n  $$\nend;\nbegin end.";
+        var caret = markup.IndexOf("$$", StringComparison.Ordinal);
+        var text = markup.Remove(caret, 2);
+        var workspace = new Workspace(TestFiles.Files(("P.pas", text), ("U1.pas", Unit1.ReplaceLineEndings("\n"))));
+        workspace.SetProject(TestFiles.Options());
+        var document = workspace.GetDocument(TestFiles.PathOf("P.pas"));
+        var items = CompletionService.GetCompletions(document, caret, default, TestContext.Current.CancellationToken).Items;
+
+        string OriginOf(string label) => items.First(i => i.Label == label).Origin;
+        Assert.Equal("U1", OriginOf("Exported"));
+        Assert.Equal("U1", OriginOf("TBase"));
+        Assert.Equal("System", OriginOf("Writeln"), StringComparer.OrdinalIgnoreCase);
+        Assert.Equal("P", OriginOf("G"));
+        Assert.Equal("", OriginOf("L"));                                   // locals and parameters
+        Assert.Equal("", OriginOf("A"));
+        Assert.Equal("", OriginOf("while"));                               // keywords
+        Assert.All(items.Where(i => i.Kind == CompletionItemKind.Snippet), i => Assert.Equal("", i.Origin));
+
+        var exported = items.First(i => i.Label == "Exported");
+        Assert.Equal("U1", CompletionService.GetDescription(document, exported, TestContext.Current.CancellationToken).Origin);
+        var keyword = items.First(i => i.Label == "while");
+        Assert.Equal("", CompletionService.GetDescription(document, keyword, TestContext.Current.CancellationToken).Origin);
+
+        var memberItems = Complete("program P;\nuses U1;\nvar B: TBase;\nbegin\n  B.$$\nend.", '.').List.Items;
+        Assert.Equal("U1", memberItems.First(i => i.Label == "Shown").Origin);
+        Assert.Equal("System", memberItems.First(i => i.Label == "Free").Origin, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void GetDescription_GivesTheSignatureAndDocumentation()
     {
         var markup = "program P;\n/// Adds one.\nfunction Next(A: Integer): Integer; begin Result := A + 1 end;\nbegin\n  $$\nend.";

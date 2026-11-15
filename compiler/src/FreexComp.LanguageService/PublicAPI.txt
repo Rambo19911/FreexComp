@@ -67,9 +67,10 @@ sealed record FreexComp.LanguageService.CompletionDescription : System.IEquatabl
   public FreexComp.LanguageService.CompletionDescription <Clone>$()
   public System.Boolean Equals(FreexComp.LanguageService.CompletionDescription other)
   public System.String Documentation { get; init; }
+  public System.String Origin { get; init; }
   public System.String Signature { get; init; }
-  public System.Void Deconstruct(out System.String Signature, out System.String Documentation)
-  public ctor(System.String Signature, System.String Documentation)
+  public System.Void Deconstruct(out System.String Signature, out System.String Documentation, out System.String Origin)
+  public ctor(System.String Signature, System.String Documentation, System.String Origin = "")
   public override System.Boolean Equals(System.Object obj)
   public override System.Int32 GetHashCode()
   public override System.String ToString()
@@ -83,10 +84,11 @@ sealed record FreexComp.LanguageService.CompletionItem : System.IEquatable<Freex
   public System.String Detail { get; init; }
   public System.String InsertText { get; init; }
   public System.String Label { get; init; }
+  public System.String Origin { get; init; }
   public System.String SortText { get; init; }
   public System.String SymbolId { get; init; }
-  public System.Void Deconstruct(out System.String Label, out FreexComp.LanguageService.CompletionItemKind Kind, out System.String InsertText, out System.String SortText, out System.String Detail, out System.Boolean IsDeprecated, out System.String SymbolId)
-  public ctor(System.String Label, FreexComp.LanguageService.CompletionItemKind Kind, System.String InsertText, System.String SortText, System.String Detail, System.Boolean IsDeprecated, System.String SymbolId)
+  public System.Void Deconstruct(out System.String Label, out FreexComp.LanguageService.CompletionItemKind Kind, out System.String InsertText, out System.String SortText, out System.String Detail, out System.Boolean IsDeprecated, out System.String SymbolId, out System.String Origin)
+  public ctor(System.String Label, FreexComp.LanguageService.CompletionItemKind Kind, System.String InsertText, System.String SortText, System.String Detail, System.Boolean IsDeprecated, System.String SymbolId, System.String Origin = "")
   public override System.Boolean Equals(System.Object obj)
   public override System.Int32 GetHashCode()
   public override System.String ToString()

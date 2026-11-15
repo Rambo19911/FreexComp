@@ -130,6 +130,27 @@ public sealed partial class ClassifierTests
         }
     }
 
+    /// <summary>
+    /// CMP-714 with C-248 (C-253): an <c>asm</c> block the parser skips (a fragment without a program header) keeps its
+    /// lexical classes: the <c>asm</c> keyword, one AsmText span per line and the closing <c>end</c> keyword.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "3")]
+    [Trait("Req", "CMP-714")]
+    [InlineData("asm\n  mov eax, [ebx+4] // load\n  ret\nend;")]
+    [InlineData("x := 1;\nasm\n  mov eax, [ebx+4]\nend;\ny := 2;")]
+    [InlineData("procedure P;\nasm\n  mov eax, [ebx+4]\nend;\nbegin end")]
+    public void Syntactic_SkippedAsmBlockKeepsAsmClasses(string text)
+    {
+        var lexical = Classify(text);
+        var syntactic = ClassifySyntactic(text);
+        Assert.Contains(SyntaxTree.Parse(SourceText.From(Path, text)).Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+
+        Assert.Contains(syntactic, s => s.Kind == ClassificationKind.AsmText && text.Substring(s.Span.Start, s.Span.Length) == "mov eax, [ebx+4]");
+        Assert.Contains(syntactic, s => s.Kind == ClassificationKind.Keyword && text.Substring(s.Span.Start, s.Span.Length) == "asm");
+        Assert.Equal(lexical.Select(s => (s.Span, s.Kind)), syntactic.Select(s => (s.Span, s.Kind)));
+    }
+
     /// <summary>The syntactic classifier on random and half-typed text (C-248): never throws, spans stay in the range.</summary>
     [Fact]
     [Trait("Phase", "3")]
