@@ -1,0 +1,39 @@
+# TQueue (RTL-670)
+ok Count
+ok Peek
+ok Dequeue first in
+ok ToArray in queue order after wrap-around
+ok enumerator in queue order
+ok TrimExcess keeps the items
+ok Clear
+ok Dequeue of an empty queue
+ok Peek of an empty queue
+ok managed items
+ok Extract
+# TStack
+ok Peek is the top
+ok Pop last in
+ok Count
+ok ToArray bottom to top
+ok enumerator bottom to top
+ok Pop of an empty stack
+ok Peek of an empty stack
+# object variants
+ok TObjectQueue owns by default
+ok TObjectQueue.Dequeue frees
+ok Extract hands the object over
+ok Destroy frees the rest
+ok TObjectStack.Pop frees the top
+ok OwnsObjects False
+# TArray
+ok Sort default
+ok Sort is stable
+ok Sort of a range
+ok BinarySearch found
+ok BinarySearch first match
+ok BinarySearch missing
+ok BinarySearch insertion point
+ok BinarySearch past the end
+ok insertion point at the end
+ok Copy
+# passed 34 failed 0

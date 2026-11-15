@@ -45,6 +45,8 @@ begin
   Check(PTypeInfo(TypeInfo(Int64))^.Kind = tkInt64, 'Int64 kind');
   Check(GetTypeData(TypeInfo(Double))^.FloatType = ftDouble, 'Double');
   Check(GetTypeData(TypeInfo(Single))^.FloatType = ftSingle, 'Single');
+  Check(GetTypeData(TypeInfo(Currency))^.FloatType = ftCurr, 'Currency');
+  CheckEqI(2, Ord(GetTypeData(TypeInfo(Currency))^.FloatType), 'Currency FloatType 2');
   Check(PTypeInfo(TypeInfo(string))^.Kind = tkUString, 'string kind');
   CheckEqI(1200, GetTypeData(TypeInfo(string))^.CodePage, 'string code page');
 

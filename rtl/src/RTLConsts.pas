@@ -106,6 +106,7 @@ resourcestring
   SGenericItemNotFound = 'Item not found';
   SGenericDuplicateItem = 'Duplicates not allowed';
   SUnbalancedOperation = 'Unbalanced stack or queue operation';
+  SNoDefaultComparer = 'No default comparer for type %s';    { RTL-671 }
   SIniFileWriteError = 'Unable to write to %s';
   SLockNotOwned = 'Lock is not owned by the calling thread';
   SWaitFailed = 'Wait failed: %s';

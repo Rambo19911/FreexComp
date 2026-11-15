@@ -31,6 +31,10 @@ type
     ShortDayNames: array[1..7] of string;          { 1 = Sunday }
     LongDayNames: array[1..7] of string;
     TwoDigitYearCenturyWindow: Word;
+    { RTL-203 (R-124): member forms forwarding to the unit-level functions below }
+    class function Invariant: TFormatSettings; static;
+    class function Create: TFormatSettings; overload; static;
+    class function Create(const LocaleName: string): TFormatSettings; overload; static;
   end;
 
 var
@@ -541,6 +545,21 @@ begin
       end;
       Start := I + 1;
     end;
+end;
+
+class function TFormatSettings.Invariant: TFormatSettings;
+begin
+  Result := InvariantFormatSettings;
+end;
+
+class function TFormatSettings.Create: TFormatSettings;
+begin
+  Result := CreateFormatSettings;
+end;
+
+class function TFormatSettings.Create(const LocaleName: string): TFormatSettings;
+begin
+  Result := CreateFormatSettings(LocaleName);
 end;
 
 function InvariantFormatSettings: TFormatSettings;

@@ -97,22 +97,16 @@ begin
 end;
 
 procedure TWorker.Execute;
-var
-  Method: TThreadMethod;
 begin
   Ran := True;
   Me := TThread.CurrentThread;
   case Kind of
     0: ReturnValue := 42;
     1:
-      begin
-        Method := OnMain;   { a method passed straight to the overloaded Synchronize hits a compiler bug (reported) }
-        Synchronize(Method);
-      end;
+      Synchronize(OnMain);
     2:
       try
-        Method := Boom;
-        Synchronize(Method);
+        Synchronize(Boom);
       except
         on E: Exception do
           Msg := 'caught ' + E.Message;
@@ -157,7 +151,6 @@ var
   T: TWorker;
   P: Integer;
   S: string;
-  Method: TThreadMethod;
 begin
   M := TMain.Create;
 
@@ -191,8 +184,7 @@ begin
   CheckEqS('caught boom', T.Msg, 'exception re-raised in the calling thread');
   T.Free;
   Log := '';
-  Method := M.Bump;
-  TThread.Synchronize(nil, Method);
+  TThread.Synchronize(nil, M.Bump);
   CheckEqI(2, Wakes, 'on the main thread the method runs at once');
 
   Section('Queue and CheckSynchronize (RTL-512, RTL-513)');

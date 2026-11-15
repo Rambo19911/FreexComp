@@ -5147,7 +5147,6 @@ function ThreadProc(Parameter: Pointer): Integer;
 var
   T: TThread;
   FreeIt: Boolean;
-  Method: TThreadMethod;
 begin
   T := TThread(Parameter);
   CurrentThreadVar := T;
@@ -5163,11 +5162,7 @@ begin
     FreeIt := T.FFreeOnTerminate;
     T.FFinished := True;
     if Assigned(T.FOnTerminate) then
-    begin
-      { TODO(compiler bug, reported): a method passed straight to the overloaded Synchronize is called (E2034) }
-      Method := T.CallOnTerminate;
-      TThread.Synchronize(T, Method);
-    end;
+    TThread.Synchronize(T, T.CallOnTerminate);
     if FreeIt then
       T.Free;
     CurrentThreadVar := nil;

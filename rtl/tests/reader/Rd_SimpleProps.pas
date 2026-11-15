@@ -4,11 +4,11 @@ program Rd_SimpleProps;
 { TReader skeleton (classes.md section 10.3/10.5): ReadComponentFromText reads the root header (name applied, type
   name not validated) and the simple property kinds of RTL-496 through RTTI: integer types with range checks and
   RegisterIntegerConsts identifiers, Int64, Char/AnsiChar from a one-unit string, enumerations, Boolean, sets,
-  Single/Double/TDateTime from float or integer, string/AnsiString/ShortString, a class property set to nil;
+  Single/Double/TDateTime/Currency from float or integer, string/AnsiString/ShortString, a class property set to nil;
   index and setter-method properties; inherited published properties (Tag); a nil instance is created from the
   header class (GetClass); out-of-range and wrong-kind values are F0103 at the value. }
 uses
-  SysUtils, Classes, TestKit;
+  SysUtils, Classes, TypInfo, TestKit;
 
 type
   TColorX = -$7FFFFFFF - 1..$7FFFFFFF;
@@ -36,9 +36,13 @@ type
     FObj: TPersistent;
     FParts: array[0..2] of Integer;
     FVal: Integer;
+    FPrice: Currency;
+    FPriceM: Currency;
     function GetPart(Index: Integer): Integer;
     procedure SetPart(Index: Integer; V: Integer);
     procedure SetVal(V: Integer);
+    function GetPriceM: Currency;
+    procedure SetPriceM(V: Currency);
   public
     Log: string;
     constructor Create(AOwner: TComponent); override;
@@ -62,6 +66,8 @@ type
     property Part0: Integer index 0 read GetPart write SetPart;
     property Part2: Integer index 2 read GetPart write SetPart;
     property Val: Integer read FVal write SetVal;
+    property Price: Currency read FPrice write FPrice;
+    property PriceM: Currency read GetPriceM write SetPriceM;
   end;
 
 const
@@ -104,6 +110,22 @@ procedure TProps.SetVal(V: Integer);
 begin
   FVal := V;
   Log := Log + 'val=' + IntToStr(V) + ';';
+end;
+
+function TProps.GetPriceM: Currency;
+begin
+  Result := FPriceM;
+end;
+
+procedure TProps.SetPriceM(V: Currency);
+begin
+  FPriceM := V;
+  Log := Log + 'pricem;';
+end;
+
+function Raw(const C: Currency): string;
+begin
+  Result := IntToStr(PInt64(@C)^);
 end;
 
 var
@@ -189,6 +211,19 @@ begin
   CheckEqB(False, P.Bool, 'Boolean is case-insensitive');
   CheckEqF(3, P.Si, 0, 'integer into Single');
   Check(P.Fr = frBanana, 'enumeration is case-insensitive');
+
+  Section('Currency (FloatType 2, C-218)');
+  P.Log := '';
+  ReadComponentFromText('object Props1: TProps'#10'  Price = 12.3456'#10'  PriceM = 1'#10'end'#10, P, 'P.form');
+  CheckEqS('123456', Raw(P.FPrice), 'Currency field reads exactly');
+  CheckEqS('10000', Raw(P.FPriceM), 'integer into a Currency setter');
+  CheckEqS('pricem;', P.Log, 'Currency setter method called');
+  ReadComponentFromText('object Props1: TProps'#10'  Price = 1'#10'  PriceM = -0.0001'#10'end'#10, P, 'P.form');
+  CheckEqS('10000', Raw(P.FPrice), 'integer into a Currency field');
+  CheckEqS('-1', Raw(P.FPriceM), 'smallest negative Currency');
+  CheckEqF(12.5, GetFloatProp(P, 'Price') + 11.5, 0, 'GetFloatProp of a Currency field');
+  CheckEqF(-0.0001, GetFloatProp(P, 'PriceM'), 0, 'GetFloatProp of a Currency getter');
+  CheckEqS(Bad(11, 'Price'), Err('Price = ''x'''), 'string for a Currency');
 
   Section('a nil instance');
   RegisterClass(TProps);

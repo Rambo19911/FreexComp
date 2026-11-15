@@ -3,6 +3,8 @@
     "System.Character": "Character",
     "System.Classes": "Classes",
     "System.DateUtils": "DateUtils",
+    "System.Generics.Collections": "Generics.Collections",
+    "System.Generics.Defaults": "Generics.Defaults",
     "System.IniFiles": "IniFiles",
     "System.Math": "Math",
     "System.RTLConsts": "RTLConsts",

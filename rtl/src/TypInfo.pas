@@ -12,7 +12,7 @@ uses
 
 type
   TOrdType = (otSByte, otUByte, otSWord, otUWord, otSLong, otULong, otSInt64, otUInt64);   { ABI section 10 OrdType }
-  TFloatType = (ftSingle, ftDouble);                                                        { ABI section 10 FloatType }
+  TFloatType = (ftSingle, ftDouble, ftCurr);                                                { ABI section 10 FloatType; ftCurr = 2 (C-218) }
   TMemberVisibility = (mvPrivate, mvProtected, mvPublic, mvPublished);
   TTypeKinds = set of TTypeKind;
 
@@ -595,6 +595,9 @@ type
   TGetSingleI = function(Index: Integer): Single of object;
   TGetDouble = function: Double of object;
   TGetDoubleI = function(Index: Integer): Double of object;
+  PCurr = ^Currency;
+  TGetCurr = function: Currency of object;
+  TGetCurrI = function(Index: Integer): Currency of object;
   TGetUStr = function: UnicodeString of object;
   TGetUStrI = function(Index: Integer): UnicodeString of object;
   TGetAStr = function: AnsiString of object;
@@ -617,6 +620,8 @@ type
   TSetSingleI = procedure(Index: Integer; Value: Single) of object;
   TSetDouble = procedure(Value: Double) of object;
   TSetDoubleI = procedure(Index: Integer; Value: Double) of object;
+  TSetCurr = procedure(Value: Currency) of object;
+  TSetCurrI = procedure(Index: Integer; Value: Currency) of object;
   TSetUStr = procedure(const Value: UnicodeString) of object;
   TSetUStrI = procedure(Index: Integer; const Value: UnicodeString) of object;
   TSetAStr = procedure(const Value: AnsiString) of object;
@@ -1049,22 +1054,33 @@ var
   M: TMethod;
   Idx: Integer;
   P: PByte;
+  FT: TFloatType;
 begin
   if PropInfo^.PropType^.Kind <> tkFloat then
     raise WrongType(PropInfo);
   CheckReadable(PropInfo);
   Idx := PropInfo^.Index;
+  FT := GetTypeData(PropInfo^.PropType)^.FloatType;
   if PropInfo^.GetKind = AccField then
   begin
     P := PByte(Pointer(Instance)) + PropInfo^.GetProc;
-    if GetTypeData(PropInfo^.PropType)^.FloatType = ftSingle then
+    if FT = ftSingle then
       Result := PSingle(P)^
+    else if FT = ftCurr then
+      Result := PCurr(P)^
     else
       Result := PDouble(P)^;
     Exit;
   end;
   M := AccessorMethod(Instance, PropInfo^.GetKind, PropInfo^.GetProc);
-  if GetTypeData(PropInfo^.PropType)^.FloatType = ftSingle then
+  if FT = ftCurr then
+  begin
+    if Idx <> NoIndex then
+      Result := TGetCurrI(M)(Idx)
+    else
+      Result := TGetCurr(M)();
+  end
+  else if FT = ftSingle then
   begin
     if Idx <> NoIndex then
       Result := TGetSingleI(M)(Idx)
@@ -1088,23 +1104,36 @@ var
   Idx: Integer;
   P: PByte;
   S: Single;
+  C: Currency;
+  FT: TFloatType;
 begin
   if PropInfo^.PropType^.Kind <> tkFloat then
     raise WrongType(PropInfo);
   CheckWritable(PropInfo);
   Idx := PropInfo^.Index;
+  FT := GetTypeData(PropInfo^.PropType)^.FloatType;
   S := Value;
+  C := Value;                                    { real -> Currency rounds to nearest (LANG-200, C-218) }
   if PropInfo^.SetKind = AccField then
   begin
     P := PByte(Pointer(Instance)) + PropInfo^.SetProc;
-    if GetTypeData(PropInfo^.PropType)^.FloatType = ftSingle then
+    if FT = ftSingle then
       PSingle(P)^ := S
+    else if FT = ftCurr then
+      PCurr(P)^ := C
     else
       PDouble(P)^ := Value;
     Exit;
   end;
   M := AccessorMethod(Instance, PropInfo^.SetKind, PropInfo^.SetProc);
-  if GetTypeData(PropInfo^.PropType)^.FloatType = ftSingle then
+  if FT = ftCurr then
+  begin
+    if Idx <> NoIndex then
+      TSetCurrI(M)(Idx, C)
+    else
+      TSetCurr(M)(C);
+  end
+  else if FT = ftSingle then
   begin
     if Idx <> NoIndex then
       TSetSingleI(M)(Idx, S)

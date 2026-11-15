@@ -1,0 +1,7 @@
+# TArray<T> (RTL-010)
+ok Length
+ok passed as TArray<Integer>
+ok reference semantics
+ok managed elements
+ok nil
+# passed 5 failed 0

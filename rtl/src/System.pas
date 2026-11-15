@@ -170,6 +170,7 @@ type
     Code, Data: Pointer;
   end;
   PMethod = ^TMethod;
+  TArray<T> = array of T;                { system.md section 1, M2.6 }
   TBytes = array of Byte;
   TTextLineBreakStyle = (tlbsLF, tlbsCRLF);
 

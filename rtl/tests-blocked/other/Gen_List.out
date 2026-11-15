@@ -1,0 +1,64 @@
+# add, insert, delete (RTL-670)
+ok empty capacity
+ok Add returns the index
+ok growth starts at 4
+ok growth x2
+ok AddRange array
+ok Insert, InsertRange
+ok Delete, DeleteRange
+ok Remove returns the index
+ok Remove of a missing value
+ok Extract returns the item
+ok after Remove and Extract
+ok Exchange
+ok Move forward
+ok Move back
+ok First
+ok Last
+ok Items write
+# search, order
+ok Contains
+ok IndexOf
+ok LastIndexOf
+ok IndexOf missing
+ok Reverse
+ok Sort default
+ok BinarySearch found
+ok BinarySearch first of equal items
+ok BinarySearch missing
+ok BinarySearch insertion point
+ok Sort with a comparer
+ok ToArray length
+ok ToArray item
+ok Count truncates
+ok Count extends with default values
+ok TrimExcess
+ok for-in
+ok enumerator MoveNext
+ok enumerator Current
+ok Create(Collection)
+ok AddRange enumerable
+# stable sort of records
+ok equal keys keep their order
+# Construct
+ok list comparer from Construct
+ok IndexOf uses the comparer
+# errors
+ok read past the end
+ok Delete(-1)
+ok Insert past Count
+ok DeleteRange past the end
+ok Clear
+ok First on an empty list
+ok Last on an empty list
+# OnNotify
+ok notifications in order
+# TObjectList
+ok OwnsObjects default True
+ok Delete frees
+ok Remove frees
+ok overwrite frees the old item
+ok Extract does not free (freed by the caller)
+ok Clear frees
+ok OwnsObjects False frees nothing
+# passed 56 failed 0

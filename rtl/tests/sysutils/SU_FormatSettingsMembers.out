@@ -1,0 +1,10 @@
+# static record functions (RTL-203)
+ok Invariant = InvariantFormatSettings
+ok Invariant ShortDateFormat
+ok Create = CreateFormatSettings
+ok Create(LocaleName) = CreateFormatSettings(LocaleName)
+ok Create('de-DE') LongMonthNames[1]
+ok Create('') = invariant
+ok FormatSettings unaffected
+ok field of a call result
+# passed 8 failed 0

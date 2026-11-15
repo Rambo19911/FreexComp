@@ -1,0 +1,45 @@
+# ordinals (RTL-671)
+ok Integer less
+ok Integer greater
+ok Integer equal
+ok Integer extremes
+ok Cardinal unsigned
+ok UInt64 unsigned
+ok enumeration by ordinal
+# floats
+ok Double less
+ok NaN sorts first
+ok NaN sorts first (right)
+ok NaN compares equal to NaN
+ok NaN = NaN for equality
+ok -0 = 0
+ok -0 hashes like 0
+ok hash of 0.0 = FNV-1a of its 8 bytes
+# strings
+ok ordinal (B before a)
+ok prefix first
+ok equal
+ok hash of '' = $811C9DC5
+ok hash over the UTF-16 bytes
+ok hash of abc
+ok case-sensitive
+# classes, records, dynamic arrays
+ok objects by address
+ok same object
+ok equal records by bytes
+ok different records
+ok record equality
+ok record with a managed field (comparer)
+ok record with a managed field (equality comparer)
+ok dynamic arrays by length first
+ok then by bytes
+ok equal contents
+# hashes
+ok Integer 0
+ok Integer 1
+ok Integer equality
+# Construct
+ok comparison function used
+ok equality function used
+ok hasher used
+# passed 40 failed 0

@@ -16,6 +16,8 @@ ok Int64 info
 ok Int64 kind
 ok Double
 ok Single
+ok Currency
+ok Currency FloatType 2
 ok string kind
 ok string code page
 # enum names
@@ -57,4 +59,4 @@ ok ClassType
 ok ParentInfo
 ok UnitName
 ok TObject has no parent
-# passed 54 failed 0
+# passed 56 failed 0

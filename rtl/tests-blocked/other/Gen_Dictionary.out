@@ -1,0 +1,47 @@
+# add, read, remove (RTL-670)
+ok Count
+ok Items read
+ok Items write
+ok TryGetValue found
+ok TryGetValue value
+ok TryGetValue missing
+ok TryGetValue missing gives the default
+ok ContainsKey
+ok keys are case-sensitive by default
+ok ContainsValue
+ok ContainsValue after overwrite
+ok AddOrSetValue; insertion order (RTL-672)
+ok Remove keeps the order of the rest
+ok re-added key goes last
+ok ExtractPair
+ok Count after ExtractPair
+# Keys, Values, ToArray
+ok Keys in order
+ok pair enumeration
+ok Values in order
+ok ToArray length
+ok ToArray order
+ok Keys.ToArray
+ok Keys order
+# errors
+ok Add of an existing key
+ok read of a missing key
+ok write of a missing key
+ok Clear
+ok empty after Clear
+# growth and removals
+ok Count after removals
+ok every remaining key found
+ok insertion order after growth and removals
+ok TrimExcess keeps the entries
+ok lookup after TrimExcess
+# comparer, notifications
+ok custom equality comparer
+ok notifications
+ok TPair.Create
+# TObjectDictionary
+ok Remove frees key and value
+ok ExtractPair frees nothing
+ok extracted key still alive
+ok only values owned
+# passed 40 failed 0

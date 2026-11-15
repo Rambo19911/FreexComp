@@ -25,6 +25,15 @@ ok empty set
 ok Boolean is case-insensitive
 ok integer into Single
 ok enumeration is case-insensitive
+# Currency (FloatType 2, C-218)
+ok Currency field reads exactly
+ok integer into a Currency setter
+ok Currency setter method called
+ok integer into a Currency field
+ok smallest negative Currency
+ok GetFloatProp of a Currency field
+ok GetFloatProp of a Currency getter
+ok string for a Currency
 # a nil instance
 ok created from the header class
 ok named
@@ -45,4 +54,4 @@ ok string for a float
 ok number for a string
 ok float for an Int64
 ok number for an object
-# passed 43 failed 0
+# passed 51 failed 0
