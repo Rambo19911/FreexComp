@@ -79,29 +79,58 @@ public sealed class PlatformServicesTests
     /// <summary>
     /// I-173: Core schedules from the thread pool too (<c>SharingRetry</c> after an awaited settings/keymap save); the
     /// callback still runs on the UI thread, and disposing from the pool cancels.
+    /// I-184: the UI thread stays blocked (<see cref="OnOtherThread"/> joins) while the other thread schedules and
+    /// disposes, so it cannot start or fire the 1 ms timer first; an awaited <c>Task.Run</c> left it free to do both
+    /// when the pool thread was preempted between <c>Schedule</c> and <c>Dispose</c>.
     /// </summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-085")]
-    public async Task ClockAcceptsSchedulesFromOtherThreads()
+    public void ClockAcceptsSchedulesFromOtherThreads()
     {
         IClock clock = new DispatcherClock();
         var fired = new List<(string Name, bool OnUiThread)>();
         var frame = new DispatcherFrame();
         using var safety = DispatcherTimer.RunOnce(() => frame.Continue = false, Timeout);
+        IDisposable? started = null;
 
-        await Task.Run(() =>
+        OnOtherThread(() =>
         {
             clock.Schedule(TimeSpan.FromMilliseconds(1), () => fired.Add(("cancelled", Dispatcher.UIThread.CheckAccess()))).Dispose();
-            clock.Schedule(TimeSpan.FromMilliseconds(20), () =>
-            {
-                fired.Add(("due", Dispatcher.UIThread.CheckAccess()));
-                frame.Continue = false;
-            });
-        }, TestContext.Current.CancellationToken);
+            started = clock.Schedule(TimeSpan.FromHours(1), () => fired.Add(("started", Dispatcher.UIThread.CheckAccess())));
+        });
+        Dispatcher.UIThread.RunJobs(); // the posted starts run: the disposed one stays off, the other timer starts
+        OnOtherThread(() => started!.Dispose()); // disposing a started timer from another thread cancels it too
+        OnOtherThread(() => clock.Schedule(TimeSpan.FromMilliseconds(20), () =>
+        {
+            fired.Add(("due", Dispatcher.UIThread.CheckAccess()));
+            frame.Continue = false;
+        }));
 
         Dispatcher.UIThread.PushFrame(frame);
 
         Assert.Equal([("due", true)], fired);
+    }
+
+    /// <summary>Runs <paramref name="action"/> on a new thread and blocks the calling (UI) thread until it ends.</summary>
+    private static void OnOtherThread(Action action)
+    {
+        Exception? error = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                Assert.False(Dispatcher.UIThread.CheckAccess());
+                action();
+            }
+            catch (Exception e)
+            {
+                error = e;
+            }
+        });
+        thread.Start();
+        thread.Join();
+        if (error is not null)
+            throw new InvalidOperationException("Other-thread action failed.", error);
     }
 
     [AvaloniaFact]
