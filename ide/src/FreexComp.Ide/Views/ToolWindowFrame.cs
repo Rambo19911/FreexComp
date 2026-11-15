@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Data;
 using Avalonia.Input;
@@ -43,7 +44,7 @@ public sealed class ToolWindowFrame : DockPanel
         CommandRouting.SetToolWindow(this, model.Name);
 
         Add(CreateCaption(), Avalonia.Controls.Dock.Top);
-        if (model.ToolBar.Count > 0 || model.HasFilter)
+        if (model.ToolBar.Count > 0 || model.HasFilter || model.ToolBarChoice is not null)
         {
             Add(CreateToolBar(), Avalonia.Controls.Dock.Top);
         }
@@ -132,10 +133,21 @@ public sealed class ToolWindowFrame : DockPanel
         var row = new DockPanel { LastChildFill = false }; // UI-A11Y-006: buttons first in tab order, the filter at the right
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        if (_model.ToolBarChoice is { } choice)
+        {
+            AddChoice(buttons, choice);
+        }
+
         foreach (var item in _model.ToolBar)
         {
-            var button = FlatButton($"{AutomationIds.Tool(_model.Name)}.ToolBar.{item.Command.Id}", item.IconName, 24);
+            var button = FlatButton($"{AutomationIds.Tool(_model.Name)}.ToolBar.{item.Command.Id}", item.IconName, 24, item.IsToggle);
             button.Command = item.Command;
+            if (button is ToggleButton toggle)
+            {
+                // The Selected state (design-tokens.md §9) follows the command; a click runs the command only.
+                toggle.Bind(ToggleButton.IsCheckedProperty, new Binding(nameof(item.Command.IsChecked)) { Source = item.Command, Mode = BindingMode.OneWay });
+            }
+
             button.Focusable = true; // UI-A11Y-006: the tool bar is one tab stop, arrows move between its buttons
             button.Bind(AutomationProperties.NameProperty, new Binding(nameof(item.Title)) { Source = item, Mode = BindingMode.OneWay });
             button.Bind(ToolTip.TipProperty, new Binding(nameof(item.Tooltip)) { Source = item, Mode = BindingMode.OneWay });
@@ -156,6 +168,27 @@ public sealed class ToolWindowFrame : DockPanel
         bar.Bind(Border.BackgroundProperty, bar.GetResourceObservable("FxcBgPanelBrush"));
         bar.Bind(Border.BorderBrushProperty, bar.GetResourceObservable("FxcBorderSubtleBrush"));
         return bar;
+    }
+
+    /// <summary>The label and combo box of <see cref="ToolWindowViewModel.ToolBarChoice"/> (UI-TW-501), left of the buttons.</summary>
+    private void AddChoice(StackPanel row, Core.ToolWindows.ToolWindowToolBarChoice choice)
+    {
+        var label = new TextBlock { Text = choice.Label, VerticalAlignment = VerticalAlignment.Center };
+        label.Bind(MarginProperty, label.GetResourceObservable("FxcSpace2Horizontal"));
+        var combo = new ComboBox
+        {
+            Width = choice.Width,
+            Height = 24,
+            MinHeight = 24,
+            VerticalAlignment = VerticalAlignment.Center,
+            ItemsSource = choice.Items,
+            Margin = new Thickness(0, 0, 4, 0),
+        };
+        AutomationProperties.SetAutomationId(combo, $"{AutomationIds.Tool(_model.Name)}.{choice.Name}");
+        AutomationProperties.SetLabeledBy(combo, label);
+        combo.Bind(SelectingItemsControl.SelectedIndexProperty, new Binding(nameof(choice.SelectedIndex)) { Source = choice, Mode = BindingMode.TwoWay });
+        row.Children.Add(label);
+        row.Children.Add(combo);
     }
 
     /// <summary>UI-A11Y-006: Left / Right move focus between the enabled tool-bar buttons.</summary>
@@ -221,20 +254,18 @@ public sealed class ToolWindowFrame : DockPanel
         e.Handled = true;
     }
 
-    private static Button FlatButton(string automationId, string icon, double size)
+    private static Button FlatButton(string automationId, string icon, double size, bool toggle = false)
     {
-        var button = new Button
-        {
-            Width = size,
-            Height = size,
-            Padding = new Thickness(0),
-            Focusable = false,
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Content = new IdeIcon { IconName = icon, Width = 16, Height = 16 },
-        };
+        var button = toggle ? new ToggleButton() : new Button();
+        button.Width = size;
+        button.Height = size;
+        button.Padding = new Thickness(0);
+        button.Focusable = false;
+        button.Background = Brushes.Transparent;
+        button.BorderThickness = new Thickness(0);
+        button.HorizontalContentAlignment = HorizontalAlignment.Center;
+        button.VerticalContentAlignment = VerticalAlignment.Center;
+        button.Content = new IdeIcon { IconName = icon, Width = 16, Height = 16 };
         AutomationProperties.SetAutomationId(button, automationId);
         return button;
     }

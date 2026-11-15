@@ -25,6 +25,7 @@ public sealed class TestCompositionOptions
     public IFileDialogService FileDialogs { get; set; } = new FakeFileDialogService();
     public ILog Log { get; set; } = new RecordingLog();
     public IThemeHost ThemeHost { get; set; } = new FakeThemeHost();
+    public IProcessLauncher Processes { get; set; } = new FakeProcessLauncher();
 
     /// <summary>Core buffers by default; the headless harness uses the AvaloniaEdit factory like production.</summary>
     public ITextBufferFactory TextBuffers { get; set; } = new StringTextBufferFactory();
@@ -50,6 +51,9 @@ public sealed class TestCompositionOptions
     /// tool window (a sample <c>ProjectManager</c>) is registered instead of it.
     /// </summary>
     public List<ToolWindowDefinition> ToolWindows { get; } = [];
+
+    /// <summary>Tool windows up to this phase register (testing.md §2.1 "ImplementedPhase override"); null = the product's phase.</summary>
+    public int? ImplementedPhase { get; set; }
 }
 
 /// <summary>Builds the production service graph from fakes (IDE-ARCH-013, IDE-TEST-020).</summary>
@@ -79,8 +83,9 @@ public static class TestComposition
             o.TextBuffers)
         {
             ToolchainEnvironment = o.ToolchainEnvironment ?? new Core.Build.ToolchainEnvironment(null, Path.Combine(o.UserDir, "ide"), []),
+            Processes = o.Processes,
         };
 
-        return ServiceGraph.Build(options, platform, o.ToolWindows);
+        return ServiceGraph.Build(options, platform, o.ToolWindows, o.ImplementedPhase);
     }
 }

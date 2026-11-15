@@ -41,6 +41,9 @@ public interface IPlatformServices
 
     /// <summary>Where the automatic toolchain search looks (IDE-SET-050); tests pass an empty one.</summary>
     Build.ToolchainEnvironment ToolchainEnvironment => Build.ToolchainEnvironment.FromProcess();
+
+    /// <summary>Starts programs for Run (IDE-P3-083); tests pass a fake.</summary>
+    IProcessLauncher Processes { get; }
 }
 
 /// <summary>Plain holder of the platform inputs.</summary>
@@ -59,4 +62,6 @@ public sealed record PlatformServices(
     ITextBufferFactory TextBuffers) : IPlatformServices
 {
     public Build.ToolchainEnvironment ToolchainEnvironment { get; init; } = Build.ToolchainEnvironment.FromProcess();
+
+    public required IProcessLauncher Processes { get; init; }
 }

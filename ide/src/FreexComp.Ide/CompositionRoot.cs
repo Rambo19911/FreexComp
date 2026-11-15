@@ -30,11 +30,12 @@ public static class CompositionRoot
         var paths = UserPaths.FromProcess(options.UserDir);
         var log = new FileLog(paths.LogDirectory, () => DateTime.Now, FileLog.MinimumLevelFrom(Environment.GetEnvironmentVariable(FileLog.LevelVariable)));
         var clipboard = new AvaloniaClipboard(mainWindow);
+        var clock = new DispatcherClock();
         return new PlatformServices(
             paths,
             log,
             new PhysicalFileSystem(),
-            new DispatcherClock(),
+            clock,
             new AvaloniaUiDispatcher(),
             clipboard,
             new WindowsShellService(),
@@ -42,7 +43,10 @@ public static class CompositionRoot
             new WindowDialogService(() => mainWindow() as Window, clipboard),
             new AvaloniaFileDialogService(mainWindow),
             new AvaloniaThemeHost(Application.Current ?? throw new InvalidOperationException("No Avalonia application.")),
-            new AvaloniaEditTextBufferFactory());
+            new AvaloniaEditTextBufferFactory())
+        {
+            Processes = new Platform.Windows.WindowsProcessLauncher(clock), // IDE-P3-083
+        };
     }
 
     /// <summary>Step 6 of start-up.</summary>

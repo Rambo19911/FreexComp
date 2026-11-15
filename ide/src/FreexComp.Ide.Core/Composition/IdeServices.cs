@@ -66,4 +66,7 @@ public sealed record IdeServices
 
     /// <summary>The Output channels (IDE-P3-070).</summary>
     public required Build.IOutputService Output { get; init; }
+
+    /// <summary>Starts programs for Run (IDE-P3-083).</summary>
+    public required IProcessLauncher Processes { get; init; }
 }

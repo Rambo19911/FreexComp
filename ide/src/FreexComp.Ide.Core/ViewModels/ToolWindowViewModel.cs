@@ -48,6 +48,9 @@ public abstract class ToolWindowViewModel : ObservableObject
     /// <summary>Commands of the tool bar, left to right; none = no tool bar (UI-TW-001).</summary>
     public virtual IReadOnlyList<ToolWindowToolBarItem> ToolBarCommands => [];
 
+    /// <summary>An optional labelled combo box drawn before the tool-bar buttons (UI-TW-501).</summary>
+    public virtual ToolWindowToolBarChoice? ToolBarChoice => null;
+
     /// <summary>The tool-bar buttons, built from <see cref="ToolBarCommands"/>.</summary>
     public IReadOnlyList<ToolBarButtonModel> ToolBar { get; private set; } = [];
 

@@ -60,6 +60,9 @@ public sealed class HarnessOptions
 
     public double Scale { get; set; } = 1.0;
 
+    /// <summary>Tool windows up to this phase register (testing.md §2.1); null = the product's implemented phase.</summary>
+    public int? ImplementedPhase { get; set; }
+
     /// <summary>
     /// Watch with the real <c>FileSystemWatcher</c> (<see cref="FileSystemWatcherFactory"/>) instead of the manual one;
     /// <see cref="HeadlessHarness.WriteFileExternally"/> then raises nothing itself.
@@ -131,6 +134,8 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.Arguments.AddRange(options.CommandLineArgs);
             o.WorkingDirectory = TempDir;
             o.ToolWindows.AddRange(options.ToolWindows);
+            o.ImplementedPhase = options.ImplementedPhase;
+            o.Processes = Processes;
         });
 
         Status = new StatusBarDriver(this);
@@ -163,6 +168,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
     public ManualClock Clock { get; }
 
     public MessageScript Messages { get; }
+
+    /// <summary>The scripted process launcher (IDE-P3-094).</summary>
+    public FakeProcessLauncher Processes { get; } = new();
 
     /// <summary>The scripted OS pickers (IDE-TEST-015); an unscripted picker request fails the test.</summary>
     public FakeFileDialogService FileDialogs { get; }

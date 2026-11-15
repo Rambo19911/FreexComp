@@ -26,7 +26,10 @@ public static class ServiceGraph
 
     /// <param name="toolWindows">Tool windows registered after the production ones (tests, IDE-ARCH-100); one named like a
     /// production tool window is registered instead of it.</param>
-    public static IdeServices Build(StartupOptions options, IPlatformServices platform, IReadOnlyList<ToolWindowDefinition>? toolWindows = null)
+    /// <param name="toolWindowPhase">Tool windows up to this phase register (default <see cref="ImplementedPhase"/>); tests
+    /// use it to drive the Phase 3 tool windows before the implemented phase switches (I-127).</param>
+    public static IdeServices Build(StartupOptions options, IPlatformServices platform, IReadOnlyList<ToolWindowDefinition>? toolWindows = null,
+        int? toolWindowPhase = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(platform);
@@ -62,7 +65,7 @@ public static class ServiceGraph
             layout.LoadSafeMode();
         else
             layout.Load(); // step 7: UI state (small file, synchronous)
-        var toolWindowService = new ToolWindowService(commands, focus, platform.Clock, layout, ImplementedPhase); // tool windows register here (IDE-ARCH-100)
+        var toolWindowService = new ToolWindowService(commands, focus, platform.Clock, layout, toolWindowPhase ?? ImplementedPhase); // tool windows register here (IDE-ARCH-100)
         theme.RegisterCommands(commands);
         ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
         ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
@@ -135,6 +138,9 @@ public static class ServiceGraph
             await projects.AddNewUnitAsync(); // a failure is reported there; no untitled unit instead
             return true;
         };
+        var output = new OutputService(platform.Clock, settings);
+        var outputView = new ViewModels.OutputViewModel(output, settings, platform.Clipboard, documents, navigation, status, platform.FileSystem);
+        outputView.RegisterCommands(commands);
         var application = new ApplicationService(documents, projects, session, recovery, settings, keymap, platform.Dialogs, platform.Clock,
             platform.Log);
         application.RegisterCommands(commands);
@@ -143,7 +149,7 @@ public static class ServiceGraph
 
         // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.
         var extras = toolWindows ?? [];
-        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition])
+        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition, outputView.Definition])
         {
             if (!extras.Any(e => e.Name == definition.Name))
                 toolWindowService.Register(definition);
@@ -191,7 +197,8 @@ public static class ServiceGraph
             Help = help,
             State = state,
             Toolchain = toolchain,
-            Output = new OutputService(platform.Clock, settings),
+            Output = output,
+            Processes = platform.Processes,
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;

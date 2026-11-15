@@ -714,6 +714,12 @@ The form change was undone.</value>
   <data name="Msg_Output_ChannelLabel" xml:space="preserve">
     <value>Show output from:</value>
   </data>
+  <data name="Output_Channel_build" xml:space="preserve">
+    <value>Build</value>
+  </data>
+  <data name="Output_Channel_program" xml:space="preserve">
+    <value>Program</value>
+  </data>
   <data name="Msg_Editor_NoDocuments" xml:space="preserve">
     <value>No open documents</value>
   </data>
