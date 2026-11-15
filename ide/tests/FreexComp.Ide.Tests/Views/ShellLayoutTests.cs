@@ -125,6 +125,7 @@ public sealed class ShellLayoutTests
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
         {
+            o.ImplementedPhase = 1; // only the sample tool windows fill the left dock
             o.ToolWindows.Add(SampleToolViewModel.Definition("ProjectManager", ToolGroupId.Left, titleKey: "Cmd_view_projectManager"));
             o.ToolWindows.Add(SampleToolViewModel.Definition("Sample", ToolGroupId.Left, titleKey: "Cmd_view_searchResults"));
             o.ToolWindows.Add(SampleToolViewModel.Definition("Other", ToolGroupId.Left, titleKey: "Cmd_view_output"));

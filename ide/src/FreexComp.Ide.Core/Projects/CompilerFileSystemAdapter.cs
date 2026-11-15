@@ -56,7 +56,12 @@ public sealed class CompilerFileSystemAdapter(IdeFileSystem fileSystem) : FreexC
         AtomicFileWriter.Write(fileSystem, path, data);
     }
 
-    public void Delete(string path) => fileSystem.DeleteFile(path);
+    /// <summary>A missing file (or folder) is not an error, as in the compiler's physical file system.</summary>
+    public void Delete(string path)
+    {
+        if (fileSystem.FileExists(path))
+            fileSystem.DeleteFile(path);
+    }
 
     public void CreateDirectory(string path) => fileSystem.CreateDirectory(path);
 }

@@ -24,7 +24,7 @@ public sealed class ToolBarTests
     [Trait("Req", "UI-TB-005")]
     public async Task StandardToolbarMatchesSpec()
     {
-        await using var h = await HeadlessHarness.StartAsync();
+        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 1); // UI-TB-005 at the implemented phase 1
         var rows = SpecTables.Read(SpecTables.DocPath("spec/ui/toolbars.md"), "2.1 Standard");
         var expected = rows.Select(r => r["Element"] == "Separator" ? "---" : $"ToolBar.{r["Command id"]}|{r["Icon name"].Split(' ')[0]}").ToList();
 
@@ -102,7 +102,7 @@ public sealed class ToolBarTests
     [Trait("Req", "IDE-P1-022")]
     public async Task ToggleCommandHidesToolbarAndCollapsesRow()
     {
-        await using var h = await HeadlessHarness.StartAsync();
+        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 1); // the Standard toolbar is the only one
         var row = h.Find<Panel>("ToolBar.Standard").FindAncestorOfType<ToolBarRow>()!;
         Assert.True(h.Services.Commands.Get("view.toolbar.standard").IsChecked);
 

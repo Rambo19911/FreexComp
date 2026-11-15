@@ -4331,4 +4331,84 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Routines</value>
     <comment>tool-windows.md §3 UI-TW-201</comment>
   </data>
+  <data name="FindInFiles_Title" xml:space="preserve">
+    <value>Find in Files</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_SearchText" xml:space="preserve">
+    <value>Fi_nd:</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_MatchCase" xml:space="preserve">
+    <value>Match _case</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_WholeWord" xml:space="preserve">
+    <value>_Whole word</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_Regex" xml:space="preserve">
+    <value>_Regular expression</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_LookIn" xml:space="preserve">
+    <value>Look in</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_ScopeProject" xml:space="preserve">
+    <value>Files of the _project</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_ScopeOpenFiles" xml:space="preserve">
+    <value>_Open files</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_ScopeFolder" xml:space="preserve">
+    <value>Fol_der:</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_Subfolders" xml:space="preserve">
+    <value>Include _subfolders</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_FileTypes" xml:space="preserve">
+    <value>File _types:</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="FindInFiles_FolderPicker" xml:space="preserve">
+    <value>Choose the Folder to Search</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="Button_Find" xml:space="preserve">
+    <value>Find</value>
+    <comment>dialogs.md §11</comment>
+  </data>
+  <data name="SearchResults_Header" xml:space="preserve">
+    <value>Find "{0}" in {1} — {2}</value>
+    <comment>tool-windows.md §8 UI-TW-600: 0 = text, 1 = scope, 2 = counts</comment>
+  </data>
+  <data name="SearchResults_Searching" xml:space="preserve">
+    <value>searching…</value>
+    <comment>tool-windows.md §8 UI-TW-600</comment>
+  </data>
+  <data name="SearchResults_ScopeProject" xml:space="preserve">
+    <value>project</value>
+    <comment>tool-windows.md §8 UI-TW-600</comment>
+  </data>
+  <data name="SearchResults_ScopeOpenFiles" xml:space="preserve">
+    <value>open files</value>
+    <comment>tool-windows.md §8 UI-TW-600</comment>
+  </data>
+  <data name="SearchResults_OptionMatchCase" xml:space="preserve">
+    <value>match case</value>
+    <comment>tool-windows.md §8 UI-TW-600</comment>
+  </data>
+  <data name="SearchResults_OptionWholeWord" xml:space="preserve">
+    <value>whole word</value>
+    <comment>tool-windows.md §8 UI-TW-600</comment>
+  </data>
+  <data name="SearchResults_OptionRegex" xml:space="preserve">
+    <value>regular expression</value>
+    <comment>tool-windows.md §8 UI-TW-600</comment>
+  </data>
 </root>

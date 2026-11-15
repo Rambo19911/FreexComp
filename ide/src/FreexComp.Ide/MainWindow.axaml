@@ -20,6 +20,8 @@
     <views:ToolBarRow x:Name="ToolBars" Grid.Row="1" />
     <!-- (4)-(7) Docks around the document area, through the ViewLocator (LayoutView). -->
     <ContentControl Grid.Row="2" Content="{Binding Layout}" />
+    <!-- Go to File / Command Palette popup, 8 px below the tool bar area (UI-DLG-130). -->
+    <views:QuickPickView x:Name="QuickPick" Grid.Row="2" />
     <!-- (8) Status bar (main-window.md §5). -->
     <views:StatusBarView x:Name="StatusBar" Grid.Row="3" DataContext="{Binding StatusBar}" />
   </Grid>

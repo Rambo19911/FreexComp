@@ -150,6 +150,7 @@ public sealed class AccessibilityTests
     {
         var h = await HeadlessHarness.StartAsync(o =>
         {
+            o.ImplementedPhase = 1; // only the sample tool windows fill the docks
             o.ToolWindows.Add(SampleToolViewModel.Definition("ProjectManager", ToolGroupId.Left, titleKey: "Cmd_view_projectManager"));
             o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom));
             o.ToolWindows.Add(SampleToolViewModel.Definition("Sample", ToolGroupId.RightUpper));

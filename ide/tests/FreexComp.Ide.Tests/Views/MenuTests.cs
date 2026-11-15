@@ -49,7 +49,7 @@ public sealed partial class MenuTests
     {
         await using var h = await HeadlessHarness.StartAsync();
         var items = AllItems(h).ToList();
-        var later = items.Where(i => Definition(i)?.Phase > 1).ToList();
+        var later = items.Where(i => Definition(i)?.Phase > Core.Composition.ServiceGraph.ImplementedPhase).ToList(); // UI-CMD-004
 
         Assert.NotEmpty(later);
         Assert.All(later, i =>

@@ -17,7 +17,11 @@ public sealed class ToolWindowTests
     [Trait("Req", "UI-TW-002")]
     public async Task ShowCommandFocusesPrimaryControl()
     {
-        await using var h = await HeadlessHarness.StartAsync(o => o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom)));
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.ImplementedPhase = 1; // the sample Messages is the only bottom window
+            o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom));
+        });
         var tools = h.Services.ToolWindows;
         Assert.True(h.Find<Control>(AutomationIds.DockBottom).IsVisible); // Messages is in the Edit profile
         Assert.True(tools.Hide("Messages"));
@@ -45,6 +49,7 @@ public sealed class ToolWindowTests
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
         {
+            o.ImplementedPhase = 1; // the samples are the only bottom windows
             o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom));
             o.ToolWindows.Add(SampleToolViewModel.Definition("Output", ToolGroupId.Bottom, titleKey: "Cmd_view_output"));
         });
@@ -144,6 +149,7 @@ public sealed class ToolWindowTests
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
         {
+            o.ImplementedPhase = 1; // UI-TW-006 at the implemented phase 1
             o.ToolWindows.Add(SampleToolViewModel.Definition("ProjectManager", ToolGroupId.Left, phase: 1, titleKey: "Cmd_view_projectManager"));
             o.ToolWindows.Add(SampleToolViewModel.Definition("Structure", ToolGroupId.Left, phase: 3, titleKey: "Cmd_view_structure"));
         });

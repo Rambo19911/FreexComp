@@ -484,10 +484,10 @@ public sealed class OptionsDialogTests
         dlg.Click("TrimTrailing");
         dlg.Click("FinalNewline");
 
-        // Toolchain Paths: Phase 3 page, shown with the later-version note.
+        // Toolchain Paths: a Phase 3 page, editable since the implemented phase is 3 (no later-version note).
         dlg.Click("Page.ToolchainPaths");
         Assert.Equal("Toolchain Paths", PageTitle(dlg));
-        Assert.True(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
+        Assert.False(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
 
         // OK writes every changed key; the theme then applies.
         dlg.Click("Ok");

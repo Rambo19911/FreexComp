@@ -308,7 +308,11 @@ public sealed partial class ProjectManagerViewTests
     [Trait("Req", "IDE-PM-101")]
     public async Task ContextMenusAndSelection()
     {
-        await using var h = await HeadlessHarness.StartAsync(o => HelloProject(o));
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.ImplementedPhase = 1; // the Phase 1 menus (the Phase 3 root menu: RootContextMenuHasBuildAndRun)
+            HelloProject(o);
+        });
         var pm = Pm(h);
         Dispatcher.UIThread.RunJobs();
 

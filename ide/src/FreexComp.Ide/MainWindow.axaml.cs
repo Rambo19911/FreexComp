@@ -34,6 +34,7 @@ public sealed partial class MainWindow : Window
                 MenuBarBuilder.Populate(MenuBar, vm.MainMenu); // UI-MENU-002: generated, not written in XAML
                 ToolBars.Populate(vm.ToolBars); // UI-TB-002
                 ToolBars.ContextMenu = MenuBarBuilder.CreateContextMenu(vm.ToolBarContextMenu); // UI-TB-004
+                QuickPick.Attach(vm.QuickPick); // UI-DLG-130
                 RestorePlacement(vm);
             }
         };
@@ -69,6 +70,7 @@ public sealed partial class MainWindow : Window
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent, (_, e) => QuickPick.OnPointerPressedOutside(e.Source), RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(GotFocusEvent, (_, _) => ReportFocus(), RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(LostFocusEvent, (_, _) => Dispatcher.UIThread.Post(OnFocusMaybeLost), RoutingStrategies.Bubble, handledEventsToo: true);
     }
@@ -173,6 +175,11 @@ public sealed partial class MainWindow : Window
         if (ViewModel is not { } vm || KeyMapping.FromKeyEvent(e.Key, e.KeyModifiers, e.KeySymbol) is not { } gesture)
         {
             return;
+        }
+
+        if (QuickPick.IsOpen && QuickPick.IsKeyboardFocusWithin)
+        {
+            return; // the popup handles its own keys (UI-DLG-132)
         }
 
         if (gesture.Modifiers == Core.Commands.KeyModifiers.None && FocusManager?.GetFocusedElement() is MenuItem item

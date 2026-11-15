@@ -68,6 +68,14 @@ public sealed class HarnessOptions
     /// <see cref="HeadlessHarness.WriteFileExternally"/> then raises nothing itself.
     /// </summary>
     public bool RealFileWatchers { get; set; }
+
+    /// <summary>
+    /// Build with the real engine (<c>FreexComp.Build.BuildEngine</c> over the harness file system) and start real processes
+    /// (<see cref="FreexComp.Ide.Platform.Windows.WindowsProcessLauncher"/>) instead of <see cref="HeadlessHarness.Build"/> and
+    /// <see cref="HeadlessHarness.Processes"/> (testing.md category <c>Toolchain</c>); the toolchain is then searched like the
+    /// product does from its own folder (the test assembly's folder inside the checkout, IDE-SET-050).
+    /// </summary>
+    public bool RealBuild { get; set; }
 }
 
 /// <summary>Thrown by <see cref="HeadlessHarness.DisposeAsync"/> when a test left a failure behind (IDE-TEST-014).</summary>
@@ -135,8 +143,10 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.WorkingDirectory = TempDir;
             o.ToolWindows.AddRange(options.ToolWindows);
             o.ImplementedPhase = options.ImplementedPhase;
-            o.Processes = Processes;
-            o.BuildEngine = Build;
+            o.Processes = options.RealBuild ? new FreexComp.Ide.Platform.Windows.WindowsProcessLauncher(Clock) : Processes;
+            if (options.RealBuild)
+                o.ToolchainEnvironment = new Core.Build.ToolchainEnvironment(null, AppContext.BaseDirectory, []);
+            o.BuildEngine = options.RealBuild ? new FreexComp.Build.BuildEngine(new Core.Projects.CompilerFileSystemAdapter(FileSystem)) : Build;
         });
 
         Status = new StatusBarDriver(this);

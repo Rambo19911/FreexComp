@@ -22,7 +22,7 @@ namespace FreexComp.Ide.Core.Composition;
 public static class ServiceGraph
 {
     /// <summary>Commands of later phases get <c>CanExecute = false</c> stubs (UI-CMD-004).</summary>
-    public const int ImplementedPhase = 1;
+    public const int ImplementedPhase = 3;
 
     /// <param name="toolWindows">Tool windows registered after the production ones (tests, IDE-ARCH-100); one named like a
     /// production tool window is registered instead of it.</param>
@@ -158,19 +158,42 @@ public static class ServiceGraph
         structureView.RegisterCommands(commands);
         var messagesView = new ViewModels.MessagesViewModel(messages, settings, platform.Clipboard);
         messagesView.RegisterCommands(commands);
-        build.ShowMessages = () => toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false); // UI-TW-409
+        var findInFiles = new FindInFilesService(documents, projects, platform.FileSystem, settings, platform.Clock); // I-122
+        var searchResults = new ViewModels.SearchResultsViewModel(findInFiles, documents, projects, navigation, platform.Dialogs, platform.FileDialogs,
+            platform.FileSystem, layout, status, platform.Clipboard, platform.Dispatcher); // I-123
+        searchResults.RegisterCommands(commands, toolWindowService);
+        // UI-TW-603: F8 steps through Search Results while it is the more recently activated of the two windows.
+        var stepSearchResults = false;
+        build.ShowMessages = () =>
+        {
+            stepSearchResults = false;
+            toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false); // UI-TW-409
+        };
+        focus.Changed += (_, _) =>
+        {
+            if (focus.Current.ToolWindowName == ViewModels.SearchResultsViewModel.ToolName)
+                stepSearchResults = true;
+            else if (focus.Current.ToolWindowName == ViewModels.MessagesViewModel.ToolName)
+                stepSearchResults = false;
+        };
         build.ShowBuildOutput = () => outputView.SelectChannel(OutputChannels.Build); // UI-TW-501
         // UI-TW-405: F8 / Shift+F8 from anywhere; the Messages tab is selected without taking focus.
         foreach (var (id, forward) in (ReadOnlySpan<(string, bool)>)[("search.nextMessage", true), ("search.previousMessage", false)])
         {
             commands.RegisterHandler(id, new MessageStepHandler(messages, forward,
                 () => toolWindowService.IsRegistered(ViewModels.MessagesViewModel.ToolName)
-                    && toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false)));
+                    && toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false),
+                () => stepSearchResults && searchResults.HasMatches ? searchResults : null));
         }
         var run = new RunService(build, projects, settings, state, toolchain, output, platform.Processes, platform.FileSystem, platform.Clock,
             platform.Dispatcher, platform.Dialogs, status, platform.Log)
         {
             OpenRunParameters = () => commands.ExecuteAsync("run.parameters"),
+        };
+        run.ShowProgramOutput = () =>
+        {
+            outputView.SelectChannel(OutputChannels.Program); // UI-TW-501 with output.autoShowOnRun
+            toolWindowService.Show(ViewModels.OutputViewModel.ToolName, focus: false);
         };
         run.RegisterCommands(commands);
         ProjectDialogCommands.Register(commands, projects, platform.Dialogs, platform.FileDialogs, platform.FileSystem, layout); // I-107, I-108
@@ -184,12 +207,26 @@ public static class ServiceGraph
             platform.Log);
         application.RegisterCommands(commands);
         application.BeforeExit = () => run.ConfirmStopAsync(exiting: true); // IDE-P3-093
+        var quickPick = new Popups.QuickPickHost(); // I-125, I-126 (Phase 3 commands: available from the implemented phase 3)
+        var popupsAvailable = (toolWindowPhase ?? ImplementedPhase) >= 3;
+        commands.RegisterHandler("search.goToFile", new DelegateHandler(() => popupsAvailable, () =>
+            quickPick.Show(new Popups.GoToFileViewModel(documents, projects, navigation, layout, platform.Dialogs))));
+        commands.RegisterHandler("search.commandPalette", new DelegateHandler(() => popupsAvailable, () =>
+            quickPick.Show(new Popups.CommandPaletteViewModel(commands, layout, focus.Current, toolWindowPhase ?? ImplementedPhase))));
+        // Phase 3 editor commands whose tasks are still open (I-114 completion, I-116 parameter info, I-117 go to declaration,
+        // I-118 templates) stay unavailable, as their later-phase stubs were, until those tasks register real handlers.
+        foreach (var pending in (string[])["edit.completeCode", "edit.parameterInfo", "edit.insertTemplate", "search.goToDeclaration"])
+        {
+            if (!commands.IsHandled(pending))
+                commands.RegisterHandler(pending, new DelegateHandler(() => false, () => { }));
+        }
+
         EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
         // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.
         var extras = toolWindows ?? [];
-        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition, structureView.Definition, messagesView.Definition, outputView.Definition])
+        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition, structureView.Definition, messagesView.Definition, outputView.Definition, searchResults.Definition])
         {
             if (!extras.Any(e => e.Name == definition.Name))
                 toolWindowService.Register(definition);
@@ -245,6 +282,8 @@ public static class ServiceGraph
             Messages = messages,
             Build = build,
             Run = run,
+            QuickPick = quickPick,
+            SearchResults = searchResults,
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;
@@ -272,13 +311,31 @@ public static class ServiceGraph
         log.Info("commands", $"All {commands.Definitions.Count} catalog commands have a handler.");
     }
 
-    /// <summary><c>search.nextMessage</c> / <c>search.previousMessage</c> over the Messages rows (IDE-P3-066).</summary>
-    private sealed class MessageStepHandler(MessagesService messages, bool forward, Func<bool> showTab) : ICommandHandler
+    private sealed class DelegateHandler(Func<bool> canExecute, Action execute) : ICommandHandler
     {
-        public bool CanExecute(string? argument) => messages.Items.Any(i => i.IsNavigable && !i.IsSummary);
+        public bool CanExecute(string? argument) => canExecute();
+
+        public Task ExecuteAsync(string? argument)
+        {
+            execute();
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary><c>search.nextMessage</c> / <c>search.previousMessage</c> over the Messages rows (IDE-P3-066).</summary>
+    private sealed class MessageStepHandler(MessagesService messages, bool forward, Func<bool> showTab,
+        Func<ViewModels.SearchResultsViewModel?> searchResults) : ICommandHandler
+    {
+        public bool CanExecute(string? argument) => searchResults() is not null || messages.Items.Any(i => i.IsNavigable && !i.IsSummary);
 
         public async Task ExecuteAsync(string? argument)
         {
+            if (searchResults() is { } results)
+            {
+                await results.NavigateNextAsync(forward);
+                return;
+            }
+
             showTab();
             await messages.NavigateNextAsync(forward);
         }

@@ -85,10 +85,10 @@ public sealed class EditorContextMenuTests
         Assert.True(menu.IsOpen);
         var items = menu.Items.OfType<MenuItem>().ToList();
         Assert.Equal(
-            ["Context.edit.cut", "Context.edit.copy", "Context.edit.paste", "Context.edit.selectAll", "Context.edit.toggleLineComment",
-             "Context.file.showInExplorer", "Context.file.copyPath"],
+            ["Context.edit.cut", "Context.edit.copy", "Context.edit.paste", "Context.edit.selectAll", "Context.search.goToDeclaration",
+             "Context.edit.toggleLineComment", "Context.edit.insertTemplate", "Context.file.showInExplorer", "Context.file.copyPath"], // Phase 3 items (UI-MENU-042)
             items.Select(AutomationIds.Get));
-        Assert.Equal(2, menu.Items.OfType<Separator>().Count()); // the separators of the omitted groups collapse
+        Assert.Equal(3, menu.Items.OfType<Separator>().Count()); // the separators of the omitted groups collapse
         var snapshot = items.Select(i => (Id: AutomationIds.Get(i)!, Header: i.Header, Gesture: i.InputGesture?.ToString(), Enabled: i.Command?.CanExecute(i.CommandParameter))).ToList();
         menu.Close();
         Dispatcher.UIThread.RunJobs();

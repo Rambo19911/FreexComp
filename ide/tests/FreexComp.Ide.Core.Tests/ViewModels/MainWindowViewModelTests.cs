@@ -46,13 +46,16 @@ public sealed class MainWindowViewModelTests
         var changed = new List<string?>();
         area.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        Assert.Equal("New File (Ctrl+N) · Open File (Ctrl+O)", area.EmptyHints); // search.goToFile is not functional (P3)
+        Assert.Equal("New File (Ctrl+N) · Open File (Ctrl+O) · Go to File (Ctrl+P)", area.EmptyHints); // search.goToFile is functional since P3
 
         services.Keymap.SetGestures("file.newFile", []); // a part whose command has no gesture is omitted
-        Assert.Equal("Open File (Ctrl+O)", area.EmptyHints);
+        Assert.Equal("Open File (Ctrl+O) · Go to File (Ctrl+P)", area.EmptyHints);
         Assert.Contains(nameof(area.EmptyHints), changed);
 
         services.Keymap.SetGestures("file.open", [KeyGesture.Parse("Ctrl+Shift+O")]);
+        Assert.Equal("Open File (Ctrl+Shift+O) · Go to File (Ctrl+P)", area.EmptyHints);
+
+        services.Keymap.SetGestures("search.goToFile", []);
         Assert.Equal("Open File (Ctrl+Shift+O)", area.EmptyHints);
     }
 }

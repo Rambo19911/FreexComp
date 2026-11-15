@@ -66,7 +66,7 @@ public sealed class LayoutTests
     public async Task EmptyDockCollapses()
     {
         // Phase 1 registers only the Project Manager (I-068): with it hidden, every dock is empty and collapsed.
-        await using (var h = await HeadlessHarness.StartAsync())
+        await using (var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 1)) // the Phase 1 set: the bottom dock is empty
         {
             Assert.True(h.Find<Control>("Dock.Left").IsVisible);
             Assert.True(h.Services.ToolWindows.Hide("ProjectManager"));
@@ -209,6 +209,7 @@ public sealed class LayoutTests
 
     private static void AllDocks(HarnessOptions o)
     {
+        o.ImplementedPhase = 1; // only the sample tool windows below fill the docks
         o.ToolWindows.Add(SampleToolViewModel.Definition("ProjectManager", ToolGroupId.Left, titleKey: "Cmd_view_projectManager"));
         o.ToolWindows.Add(SampleToolViewModel.Definition("Messages", ToolGroupId.Bottom));
         o.ToolWindows.Add(SampleToolViewModel.Definition("Output", ToolGroupId.Bottom, titleKey: "Cmd_view_output"));
@@ -227,8 +228,11 @@ public sealed class LayoutTests
     /// <summary>The layout of a composition where exactly <paramref name="registered"/> tool windows exist (in their Edit-profile docks).</summary>
     private static (Window Window, LayoutView View, LayoutViewModel Layout) Show(IReadOnlySet<string> registered)
     {
-        var services = TestComposition.Build(o => o.ToolWindows.AddRange(
-            registered.Select(name => SampleToolViewModel.Definition(name, name == "ProjectManager" ? ToolGroupId.Left : ToolGroupId.Bottom))));
+        var services = TestComposition.Build(o =>
+        {
+            o.ImplementedPhase = 1; // the Phase 1 registration: only the given windows
+            o.ToolWindows.AddRange(registered.Select(name => SampleToolViewModel.Definition(name, name == "ProjectManager" ? ToolGroupId.Left : ToolGroupId.Bottom)));
+        });
         var layout = services.Layout.Layout;
         layout.DocumentArea = new DocumentAreaViewModel(services.Commands, services.Keymap, services.Documents);
         var view = new LayoutView { DataContext = layout };

@@ -247,4 +247,18 @@ public sealed class ProjectFileTests
         compilerFs.Delete(@"C:\a\x.txt");
         Assert.False(compilerFs.FileExists(@"C:\a\x.txt"));
     }
+
+    /// <summary>The compiler deletes a stale unit file before its first build, when its output folder does not exist yet (I-128).</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Category", "Integration")]
+    [Trait("Req", "IDE-PM-001")]
+    public void CompilerAdapterDeleteInMissingFolderIsNoOp()
+    {
+        using var temp = new TempDirectory();
+        var compilerFs = new CompilerFileSystemAdapter(new Core.Platform.PhysicalFileSystem());
+
+        compilerFs.Delete(temp.Combine(@"obj\Debug\Hello.pcu"));
+
+        Assert.False(Directory.Exists(temp.Combine("obj")));
+    }
 }

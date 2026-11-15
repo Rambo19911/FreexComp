@@ -10,14 +10,15 @@ public static class BuildScenario
 {
     public const string UnitText = "unit Unit1;\r\ninterface\r\nimplementation\r\nvar Foo1: Integer;\r\nbegin\r\n  Foo := 1;\r\nend.\r\n";
 
-    public static async Task<HeadlessHarness> StartAsync(Action<HarnessOptions>? configure = null, string projectExtra = "")
+    /// <param name="implementedPhase">The tool-window phase override; null = the product's implemented phase.</param>
+    public static async Task<HeadlessHarness> StartAsync(Action<HarnessOptions>? configure = null, string projectExtra = "", int? implementedPhase = 3)
     {
         var root = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
         var work = Path.Combine(root, "work");
         var h = await HeadlessHarness.StartAsync(o =>
         {
             o.Root = root;
-            o.ImplementedPhase = 3;
+            o.ImplementedPhase = implementedPhase;
             foreach (var tool in (string[])[@"tc\llvm\clang.exe", @"tc\llvm\lld-link.exe", @"tc\llvm\llvm-dlltool.exe", @"tc\rtl\System.pas"])
                 o.InitialFiles[tool] = "";
             o.Settings["toolchain.llvmBinDir"] = Path.Combine(work, @"tc\llvm");

@@ -48,6 +48,9 @@ public sealed class MainWindowViewModel : ObservableObject
         FollowTitleSource(services.Documents.ActiveDocument);
     }
 
+    /// <summary>The quick-pick popup of the main window (Go to File, Command Palette).</summary>
+    public Popups.QuickPickHost QuickPick => _services.QuickPick;
+
     /// <summary>The services' clock, for view behaviours that time user input (list type-ahead, UI-A11Y-007).</summary>
     public Platform.IClock Clock => _services.Clock;
 

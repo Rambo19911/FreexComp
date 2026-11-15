@@ -247,8 +247,8 @@ public sealed class DialogLayoutTests
             .Where(v => System.Text.RegularExpressions.Regex.Replace(v, @"\{\d+(:[^}]*)?}", "") is var literal
                 && v.Contains('{', StringComparison.Ordinal) && !literal.Any(char.IsLetter) && literal.Trim().Length > 0)
             .Distinct(StringComparer.Ordinal)
-            .Select(v => new System.Text.RegularExpressions.Regex(
-                "^" + System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Escape(v), @"\\\{\d+(:[^}]*)?}", "(.+?)") + "$"))];
+            .SelectMany(v => new[] { "(.+?)", "(.+)" }.Select(group => new System.Text.RegularExpressions.Regex( // lazy and greedy splits
+                "^" + System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Escape(v), @"\\\{\d+(:[^}]*)?}", group) + "$")))];
     }
 
     /// <summary>The user-visible texts of a window: text blocks, string content and headers, tooltips, the title.</summary>

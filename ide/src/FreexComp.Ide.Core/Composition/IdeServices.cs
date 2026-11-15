@@ -87,4 +87,10 @@ public sealed record IdeServices
 
     /// <summary>Run, stop, restart (phase3-build-run.md §8–§9).</summary>
     public required Build.RunService Run { get; init; }
+
+    /// <summary>The open quick-pick popup (Go to File, Command Palette; dialogs.md §13/§14).</summary>
+    public required Popups.QuickPickHost QuickPick { get; init; }
+
+    /// <summary>The Search Results tool window and Find in Files runner (I-123).</summary>
+    public required ViewModels.SearchResultsViewModel SearchResults { get; init; }
 }
