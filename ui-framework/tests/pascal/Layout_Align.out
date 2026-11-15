@@ -1,0 +1,70 @@
+# E01
+ok A
+# E02 alTop key = Top
+ok B
+ok A
+# E03 tie keeps creation order
+ok A
+ok B
+# E04 alBottom key = largest bottom edge first
+ok B
+ok A
+# E05 all five phases
+ok T
+ok B
+ok L
+ok R
+ok C
+# E06 phase order independent of creation order
+ok T
+ok B
+ok L
+ok R
+ok C
+# E11 invisible aligned child consumes no space
+ok T2
+ok T1 keeps its bounds
+# E12 alClient with maximum constraints
+ok C anchored top-left
+# E13 alTop with minimum height
+ok A
+ok B
+# E14 alRight with maximum height
+ok R anchored top-right
+ok C
+# E15 alBottom with maximum width
+ok B anchored bottom-left
+# E35 space runs out
+ok A
+ok B outside the client area
+ok C clamps at 0
+# inverted rectangle used as written (UIF-223)
+ok second alTop ends below the client area (R.Top 60)
+ok first alTop
+ok alBottom against R.Bottom 40
+ok alLeft at R.Top 60, height 0
+ok alRight
+ok alClient
+# alLeft and alRight keys
+ok smaller Left first
+ok then A
+ok largest right edge first
+ok then R
+# several alClient overlap; alNone untouched; Anchors kept (UIF-224)
+ok A
+ok B overlaps A
+ok alNone child
+ok Anchors of an aligned control unchanged
+ok changing Align does not touch Anchors
+# E40 explicit change re-sorts
+ok A before
+ok B before
+ok B after
+ok A after
+# DisableAlign defers (UIF-225)
+ok enabled
+ok disabled
+ok no pass while disabled
+ok still disabled at level 1
+ok pending pass runs at level 0
+# passed 52 failed 0

@@ -13,6 +13,7 @@
     "System.SysUtils": "SysUtils",
     "System.TypInfo": "TypInfo",
     "System.Types": "Types",
+    "Vcl.Controls": "Controls",
     "Vcl.Graphics": "Graphics",
     "Vcl.ImgList": "ImgList",
     "Vcl.UIConsts": "UIConsts",

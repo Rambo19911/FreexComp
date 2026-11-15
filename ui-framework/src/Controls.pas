@@ -1,0 +1,2050 @@
+{ Controls - the control object model (core.md) and the run-time layout engine (layout.md). }
+unit Controls;
+
+interface
+
+uses
+  Windows, Messages, Types, SysUtils, Classes, Graphics, UIConsts;
+
+{ ---------------------------------------------------------------- core.md section 1: types and constants }
+
+type
+  TAlign = (alNone, alTop, alBottom, alLeft, alRight, alClient);
+  TAnchorKind = (akLeft, akTop, akRight, akBottom);
+  TAnchors = set of TAnchorKind;
+  TMouseButton = (mbLeft, mbRight, mbMiddle);
+  TCursor = -32768..32767;
+  TModalResult = Low(Integer)..High(Integer);
+  TCaption = type string;
+  TBorderStyle = (bsNone, bsSingle);
+  TBevelCut = (bvNone, bvLowered, bvRaised, bvSpace);
+  TControlStyle = set of (csAcceptsControls, csCaptureMouse, csClickEvents, csSetCaption, csOpaque,
+    csDoubleClicks, csFixedWidth, csFixedHeight, csNoStdEvents, csReflector, csActionClient, csMenuEvents,
+    csParentBackground);
+  TControlState = set of (csLButtonDown, csClicked, csReadingState, csAlignmentNeeded, csFocusing, csCreating,
+    csCustomPaint, csDestroyingHandle);
+  TMouseEvent = procedure(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer) of object;
+  TMouseMoveEvent = procedure(Sender: TObject; Shift: TShiftState; X, Y: Integer) of object;
+  TMouseWheelEvent = procedure(Sender: TObject; Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint;
+    var Handled: Boolean) of object;
+  TMouseWheelUpDownEvent = procedure(Sender: TObject; Shift: TShiftState; MousePos: TPoint;
+    var Handled: Boolean) of object;
+  TKeyEvent = procedure(Sender: TObject; var Key: Word; Shift: TShiftState) of object;
+  TKeyPressEvent = procedure(Sender: TObject; var Key: Char) of object;
+  TContextPopupEvent = procedure(Sender: TObject; MousePos: TPoint; var Handled: Boolean) of object;
+  TConstrainedResizeEvent = procedure(Sender: TObject; var MinWidth, MinHeight, MaxWidth, MaxHeight: Integer)
+    of object;
+  TWndMethod = procedure(var Message: TMessage) of object;
+  TCreateParams = record
+    Caption: PChar;
+    Style: Cardinal;
+    ExStyle: Cardinal;
+    X, Y, Width, Height: Integer;
+    WndParent: HWND;
+    Param: Pointer;
+    WindowClass: TWndClassExW;
+    WinClassName: array[0..63] of Char;
+    SubclassOf: PChar;                                       { nil = our own window class }
+  end;
+
+const
+  mrNone = 0;
+  mrOk = 1;
+  mrCancel = 2;
+  mrAbort = 3;
+  mrRetry = 4;
+  mrIgnore = 5;
+  mrYes = 6;
+  mrNo = 7;
+  mrClose = 8;
+  mrHelp = 9;
+  mrTryAgain = 10;
+  mrContinue = 11;
+  mrAll = 12;
+  mrNoToAll = 13;
+  mrYesToAll = 14;
+
+  crDefault = TCursor(0);
+  crNone = TCursor(-1);
+  crArrow = TCursor(-2);
+  crCross = TCursor(-3);
+  crIBeam = TCursor(-4);
+  crSizeNESW = TCursor(-6);
+  crSizeNS = TCursor(-7);
+  crSizeNWSE = TCursor(-8);
+  crSizeWE = TCursor(-9);
+  crUpArrow = TCursor(-10);
+  crHourGlass = TCursor(-11);
+  crDrag = TCursor(-12);
+  crNoDrop = TCursor(-13);
+  crHSplit = TCursor(-14);
+  crVSplit = TCursor(-15);
+  crNo = TCursor(-18);
+  crAppStart = TCursor(-19);
+  crHelp = TCursor(-20);
+  crHandPoint = TCursor(-21);
+  crSizeAll = TCursor(-22);
+
+  { UIF-022: component messages (Perform only) and reflected notifications }
+  CM_BASE = $B000;
+  CN_BASE = $B800;
+  CM_ENABLEDCHANGED = CM_BASE + 1;
+  CM_VISIBLECHANGED = CM_BASE + 2;
+  CM_COLORCHANGED = CM_BASE + 3;
+  CM_FONTCHANGED = CM_BASE + 4;
+  CM_TEXTCHANGED = CM_BASE + 5;
+  CM_PARENTCOLORCHANGED = CM_BASE + 6;
+  CM_PARENTFONTCHANGED = CM_BASE + 7;
+  CM_PARENTSHOWHINTCHANGED = CM_BASE + 8;
+  CM_CURSORCHANGED = CM_BASE + 9;
+  CM_MOUSEENTER = CM_BASE + 10;
+  CM_MOUSELEAVE = CM_BASE + 11;
+  CM_ENTER = CM_BASE + 12;
+  CM_EXIT = CM_BASE + 13;
+  CM_DIALOGKEY = CM_BASE + 14;
+  CM_DIALOGCHAR = CM_BASE + 15;
+  CM_WANTSPECIALKEY = CM_BASE + 16;
+  CM_SHOWINGCHANGED = CM_BASE + 17;
+  CM_RELEASE = CM_BASE + 18;
+  CM_CANCELMODE = CM_BASE + 19;
+  CM_HINTSHOW = CM_BASE + 20;
+  CM_CHANGED = CM_BASE + 21;
+  CM_BORDERCHANGED = CM_BASE + 22;
+  CM_FOCUSCHANGED = CM_BASE + 23;
+  CM_GETDATALINK = CM_BASE + 24;
+  CM_ACTIONUPDATE = CM_BASE + 25;
+  CM_ACTIONEXECUTE = CM_BASE + 26;
+  CM_DPICHANGED = CM_BASE + 27;
+
+  CN_COMMAND = CN_BASE + WM_COMMAND;
+  CN_NOTIFY = CN_BASE + WM_NOTIFY;
+  CN_HSCROLL = CN_BASE + WM_HSCROLL;
+  CN_VSCROLL = CN_BASE + WM_VSCROLL;
+  CN_DRAWITEM = CN_BASE + WM_DRAWITEM;
+  CN_MEASUREITEM = CN_BASE + WM_MEASUREITEM;
+  CN_CTLCOLORBTN = CN_BASE + WM_CTLCOLORBTN;
+  CN_CTLCOLOREDIT = CN_BASE + WM_CTLCOLOREDIT;
+  CN_CTLCOLORLISTBOX = CN_BASE + WM_CTLCOLORLISTBOX;
+  CN_CTLCOLORSTATIC = CN_BASE + WM_CTLCOLORSTATIC;
+  CN_CTLCOLORSCROLLBAR = CN_BASE + WM_CTLCOLORSCROLLBAR;
+
+{ ---------------------------------------------------------------- core.md section 12: helper classes }
+
+type
+  { 0 = no constraint; each value 0..32767 }
+  TSizeConstraints = class(TPersistent)
+  private
+    FMaxHeight: Integer;
+    FMaxWidth: Integer;
+    FMinHeight: Integer;
+    FMinWidth: Integer;
+    FOnChange: TNotifyEvent;
+    procedure SetValue(var Field: Integer; Value: Integer);
+    procedure SetMaxHeight(Value: Integer);
+    procedure SetMaxWidth(Value: Integer);
+    procedure SetMinHeight(Value: Integer);
+    procedure SetMinWidth(Value: Integer);
+  protected
+    procedure Change; virtual;
+    procedure AssignTo(Dest: TPersistent); override;
+  public
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
+  published
+    property MaxHeight: Integer read FMaxHeight write SetMaxHeight default 0;
+    property MaxWidth: Integer read FMaxWidth write SetMaxWidth default 0;
+    property MinHeight: Integer read FMinHeight write SetMinHeight default 0;
+    property MinWidth: Integer read FMinWidth write SetMinWidth default 0;
+  end;
+
+  TMargins = class(TPersistent)
+  private
+    FLeft: Integer;
+    FTop: Integer;
+    FRight: Integer;
+    FBottom: Integer;
+    FOnChange: TNotifyEvent;
+    procedure SetLeft(Value: Integer);
+    procedure SetTop(Value: Integer);
+    procedure SetRight(Value: Integer);
+    procedure SetBottom(Value: Integer);
+  protected
+    procedure Change; virtual;
+    procedure AssignTo(Dest: TPersistent); override;
+    class function DefaultValue: Integer; virtual;
+  public
+    constructor Create; virtual;
+    procedure SetBounds(ALeft, ATop, ARight, ABottom: Integer);
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
+  published
+    property Left: Integer read FLeft write SetLeft default 3;
+    property Top: Integer read FTop write SetTop default 3;
+    property Right: Integer read FRight write SetRight default 3;
+    property Bottom: Integer read FBottom write SetBottom default 3;
+  end;
+
+  TPadding = class(TMargins)
+  protected
+    class function DefaultValue: Integer; override;
+  published
+    property Left default 0;
+    property Top default 0;
+    property Right default 0;
+    property Bottom default 0;
+  end;
+
+{ ---------------------------------------------------------------- core.md section 2: TControl }
+
+  TWinControl = class;
+
+  TControl = class(TComponent)
+  private
+    FParent: TWinControl;
+    FLeft: Integer;
+    FTop: Integer;
+    FWidth: Integer;
+    FHeight: Integer;
+    FAlign: TAlign;
+    FAnchors: TAnchors;
+    FAlignWithMargins: Boolean;
+    FMargins: TMargins;
+    FConstraints: TSizeConstraints;
+    FCursor: TCursor;
+    FEnabled: Boolean;
+    FVisible: Boolean;
+    FHint: string;
+    FShowHint: Boolean;
+    FParentShowHint: Boolean;
+    FText: string;
+    FColor: TColor;
+    FFont: TFont;
+    FParentColor: Boolean;
+    FParentFont: Boolean;
+    FAutoSize: Boolean;
+    FControlStyle: TControlStyle;
+    FControlState: TControlState;
+    FWindowProc: TWndMethod;
+    FLayoutCall: Boolean;                                    { next SetBounds comes from a layout pass or scaling }
+    FBaseBounds: TRect;                                      { anchor baseline (BL, BT, BW, BH) as Left, Top, Right, Bottom }
+    FBaseParentWidth: Integer;                               { (BPW, BPH), layout.md UIF-230 }
+    FBaseParentHeight: Integer;
+    FOnClick: TNotifyEvent;
+    FOnDblClick: TNotifyEvent;
+    FOnMouseDown: TMouseEvent;
+    FOnMouseUp: TMouseEvent;
+    FOnMouseMove: TMouseMoveEvent;
+    FOnMouseEnter: TNotifyEvent;
+    FOnMouseLeave: TNotifyEvent;
+    FOnMouseWheel: TMouseWheelEvent;
+    FOnMouseWheelDown: TMouseWheelUpDownEvent;
+    FOnMouseWheelUp: TMouseWheelUpDownEvent;
+    FOnContextPopup: TContextPopupEvent;
+    FOnResize: TNotifyEvent;
+    FOnConstrainedResize: TConstrainedResizeEvent;
+    procedure SetLeft(Value: Integer);
+    procedure SetTop(Value: Integer);
+    procedure SetWidth(Value: Integer);
+    procedure SetHeight(Value: Integer);
+    function GetBoundsRect: TRect;
+    procedure SetBoundsRect(const Value: TRect);
+    function GetClientWidth: Integer;
+    function GetClientHeight: Integer;
+    procedure SetClientWidth(Value: Integer);
+    procedure SetClientHeight(Value: Integer);
+    procedure SetAlign(Value: TAlign);
+    procedure SetAnchors(Value: TAnchors);
+    procedure SetAlignWithMargins(Value: Boolean);
+    procedure SetMargins(Value: TMargins);
+    procedure SetConstraints(Value: TSizeConstraints);
+    procedure SetCursor(Value: TCursor);
+    procedure SetEnabled(Value: Boolean);
+    procedure SetVisible(Value: Boolean);
+    procedure SetShowHint(Value: Boolean);
+    procedure SetParentShowHint(Value: Boolean);
+    function IsShowHintStored: Boolean;
+    function GetCaption: TCaption;
+    procedure SetCaption(const Value: TCaption);
+    procedure SetColor(Value: TColor);
+    function IsColorStored: Boolean;
+    procedure SetFont(Value: TFont);
+    function IsFontStored: Boolean;
+    procedure SetParentColor(Value: Boolean);
+    procedure SetParentFont(Value: Boolean);
+    procedure SetAutoSize(Value: Boolean);
+    procedure FontChanged(Sender: TObject);
+    procedure MarginsChanged(Sender: TObject);
+    procedure ConstraintsChanged(Sender: TObject);
+    procedure CaptureBaseline;
+  protected
+    procedure SetParent(AParent: TWinControl); virtual;
+    function GetShowing: Boolean; virtual;
+    function GetClientRect: TRect; virtual;
+    function GetText: TCaption; virtual;
+    procedure SetText(const Value: TCaption); virtual;
+    procedure Click; virtual;
+    procedure DblClick; virtual;
+    procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual;
+    procedure MouseMove(Shift: TShiftState; X, Y: Integer); virtual;
+    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual;
+    procedure Resize; virtual;
+    procedure AdjustSize; virtual;
+    function CanAutoSize(var NewWidth, NewHeight: Integer): Boolean; virtual;
+    function CanResize(var NewWidth, NewHeight: Integer): Boolean; virtual;
+    procedure ConstrainedResize(var MinWidth, MinHeight, MaxWidth, MaxHeight: Integer); virtual;
+    { layout.md UIF-250: intrinsic rules I1-I4 of the class (ConstrainSize step 1); base: none }
+    procedure IntrinsicSize(var AWidth, AHeight: Integer); virtual;
+    procedure RequestAlign; virtual;
+    { UIF-210 step 6: the visual update after the fields changed (graphic controls invalidate; windowed: UIF-211) }
+    procedure BoundsChanged(const OldBounds: TRect); virtual;
+    procedure WndProc(var Message: TMessage); virtual;
+    procedure Loaded; override;
+    procedure SetParentComponent(Value: TComponent); override;
+    property Caption: TCaption read GetCaption write SetCaption;
+    property Text: TCaption read GetCaption write SetCaption;
+    property Color: TColor read FColor write SetColor stored IsColorStored default clWindow;
+    property Font: TFont read FFont write SetFont stored IsFontStored;
+    property ParentColor: Boolean read FParentColor write SetParentColor default True;
+    property ParentFont: Boolean read FParentFont write SetParentFont default True;
+    property AutoSize: Boolean read FAutoSize write SetAutoSize default False;
+    property OnClick: TNotifyEvent read FOnClick write FOnClick;
+    property OnDblClick: TNotifyEvent read FOnDblClick write FOnDblClick;
+    property OnMouseDown: TMouseEvent read FOnMouseDown write FOnMouseDown;
+    property OnMouseUp: TMouseEvent read FOnMouseUp write FOnMouseUp;
+    property OnMouseMove: TMouseMoveEvent read FOnMouseMove write FOnMouseMove;
+    property OnMouseEnter: TNotifyEvent read FOnMouseEnter write FOnMouseEnter;
+    property OnMouseLeave: TNotifyEvent read FOnMouseLeave write FOnMouseLeave;
+    property OnMouseWheel: TMouseWheelEvent read FOnMouseWheel write FOnMouseWheel;
+    property OnMouseWheelDown: TMouseWheelUpDownEvent read FOnMouseWheelDown write FOnMouseWheelDown;
+    property OnMouseWheelUp: TMouseWheelUpDownEvent read FOnMouseWheelUp write FOnMouseWheelUp;
+    property OnContextPopup: TContextPopupEvent read FOnContextPopup write FOnContextPopup;
+    property OnResize: TNotifyEvent read FOnResize write FOnResize;
+    property OnConstrainedResize: TConstrainedResizeEvent read FOnConstrainedResize write FOnConstrainedResize;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    procedure SetBounds(ALeft, ATop, AWidth, AHeight: Integer); virtual;
+    { layout.md UIF-240 }
+    procedure ConstrainSize(var AWidth, AHeight: Integer);
+    procedure BringToFront;
+    procedure SendToBack;
+    procedure Show;
+    procedure Hide;
+    procedure Invalidate; virtual;
+    procedure Repaint; virtual;
+    procedure Update; virtual;
+    procedure Refresh;
+    procedure Changed;
+    function Perform(Msg: Cardinal; WParam: WPARAM; LParam: LPARAM): LRESULT;
+    procedure DefaultHandler(var Message); override;
+    function ClientToParent(const Point: TPoint; AParent: TWinControl = nil): TPoint;
+    function ParentToClient(const Point: TPoint; AParent: TWinControl = nil): TPoint;
+    function GetTextLen: Integer;
+    function GetTextBuf(Buffer: PChar; BufSize: Integer): Integer;
+    procedure SetTextBuf(Buffer: PChar);
+    function HasParent: Boolean; override;
+    function GetParentComponent: TComponent; override;
+    property Parent: TWinControl read FParent write SetParent;
+    property BoundsRect: TRect read GetBoundsRect write SetBoundsRect;
+    property ClientRect: TRect read GetClientRect;
+    property ClientWidth: Integer read GetClientWidth write SetClientWidth stored False;
+    property ClientHeight: Integer read GetClientHeight write SetClientHeight stored False;
+    property ControlStyle: TControlStyle read FControlStyle write FControlStyle;
+    property ControlState: TControlState read FControlState write FControlState;
+    property Showing: Boolean read GetShowing;
+    property WindowProc: TWndMethod read FWindowProc write FWindowProc;
+  published
+    property Left: Integer read FLeft write SetLeft;
+    property Top: Integer read FTop write SetTop;
+    property Width: Integer read FWidth write SetWidth;
+    property Height: Integer read FHeight write SetHeight;
+    property Align: TAlign read FAlign write SetAlign default alNone;
+    property Anchors: TAnchors read FAnchors write SetAnchors default [akLeft, akTop];
+    property AlignWithMargins: Boolean read FAlignWithMargins write SetAlignWithMargins default False;
+    property Margins: TMargins read FMargins write SetMargins;
+    property Constraints: TSizeConstraints read FConstraints write SetConstraints;
+    property Cursor: TCursor read FCursor write SetCursor default crDefault;
+    property Enabled: Boolean read FEnabled write SetEnabled default True;
+    property Hint: string read FHint write FHint;
+    property ParentShowHint: Boolean read FParentShowHint write SetParentShowHint default True;
+    property ShowHint: Boolean read FShowHint write SetShowHint stored IsShowHintStored default False;
+    property Visible: Boolean read FVisible write SetVisible default True;
+  end;
+
+  TControlClass = class of TControl;
+
+{ ---------------------------------------------------------------- core.md section 3: TWinControl }
+
+  TTabOrder = -1..32767;
+
+  TWinControl = class(TControl)
+  private
+    FHandle: HWND;
+    FDefWndProc: Pointer;                                    { default window procedure (own class or system class) }
+    FControls: TList;                                        { all children, z-order back (0) to front (UIF-145) }
+    FTabList: TList;                                         { windowed children in tab order (UIF-100) }
+    FTabOrder: Integer;
+    FTabStop: Boolean;
+    FAlignLevel: Integer;
+    FAligning: Boolean;
+    FPadding: TPadding;
+    FOnEnter: TNotifyEvent;
+    FOnExit: TNotifyEvent;
+    FOnKeyDown: TKeyEvent;
+    FOnKeyUp: TKeyEvent;
+    FOnKeyPress: TKeyPressEvent;
+    function GetControl(Index: Integer): TControl;
+    function GetControlCount: Integer;
+    function GetTabOrder: TTabOrder;
+    procedure SetTabOrder(Value: TTabOrder);
+    procedure SetTabStop(Value: Boolean);
+    procedure MoveChild(AControl: TControl; NewIndex: Integer);
+    procedure SetPadding(Value: TPadding);
+    procedure PaddingChanged(Sender: TObject);
+    procedure ApplyAnchors(C: TControl);
+    function GetHandle: HWND;
+  protected
+    { core.md section 4 }
+    procedure CreateParams(var Params: TCreateParams); virtual;
+    procedure CreateWnd; virtual;
+    procedure CreateWindowHandle(const Params: TCreateParams); virtual;
+    procedure CreateHandle; virtual;
+    procedure DestroyWnd; virtual;
+    procedure DestroyWindowHandle; virtual;
+    procedure WndProc(var Message: TMessage); override;
+    property DefWndProc: Pointer read FDefWndProc write FDefWndProc;
+    procedure SetChildOrder(Child: TComponent; Order: Integer); virtual;
+    { layout.md UIF-222: one layout pass over Rect (the align rect) }
+    procedure AlignControls(AControl: TControl; var Rect: TRect); virtual;
+    procedure Loaded; override;
+    procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
+    procedure DoEnter; virtual;
+    procedure DoExit; virtual;
+    procedure KeyDown(var Key: Word; Shift: TShiftState); virtual;
+    procedure KeyUp(var Key: Word; Shift: TShiftState); virtual;
+    procedure KeyPress(var Key: Char); virtual;
+    property Padding: TPadding read FPadding write SetPadding;
+    property TabOrder: TTabOrder read GetTabOrder write SetTabOrder default -1;
+    property TabStop: Boolean read FTabStop write SetTabStop default False;
+    property OnEnter: TNotifyEvent read FOnEnter write FOnEnter;
+    property OnExit: TNotifyEvent read FOnExit write FOnExit;
+    property OnKeyDown: TKeyEvent read FOnKeyDown write FOnKeyDown;
+    property OnKeyUp: TKeyEvent read FOnKeyUp write FOnKeyUp;
+    property OnKeyPress: TKeyPressEvent read FOnKeyPress write FOnKeyPress;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    function HandleAllocated: Boolean;
+    procedure HandleNeeded;
+    procedure DestroyHandle;
+    { UIF-060: entry from StdWndProc; exceptions never unwind into the system }
+    procedure MainWndProc(var Message: TMessage);
+    procedure DefaultHandler(var Message); override;
+    property Handle: HWND read GetHandle;
+    procedure InsertControl(AControl: TControl);
+    procedure RemoveControl(AControl: TControl);
+    procedure AlignControl(AControl: TControl);
+    procedure DisableAlign;
+    procedure EnableAlign;
+    procedure Realign;
+    function AlignDisabled: Boolean;
+    { layout.md UIF-218: shrinks the client rectangle to the area of aligned children; base: no change }
+    procedure AdjustClientRect(var Rect: TRect); virtual;
+    function ControlAtPos(const Pos: TPoint; AllowDisabled: Boolean; AllowWinControls: Boolean = False): TControl;
+    function FindChildControl(const ControlName: string): TControl;
+    function ContainsControl(Control: TControl): Boolean;
+    procedure Broadcast(var Message);
+    procedure NotifyControls(Msg: Word);
+    property Controls[Index: Integer]: TControl read GetControl;
+    property ControlCount: Integer read GetControlCount;
+  end;
+
+{ ---------------------------------------------------------------- core.md section 13: global helpers }
+
+{ core.md section 13: the control of a window of this process, nil otherwise }
+function FindControl(Handle: HWND): TWinControl;
+
+{ layout.md section 1: (a*b + c div 2) div c, rounding half away from zero, 64-bit intermediate; c > 0 }
+function LayoutMulDiv(A, B, C: Integer): Integer;
+function IsPositiveResult(const AModalResult: TModalResult): Boolean;
+function CursorToIdent(Cursor: Longint; var Ident: string): Boolean;
+function IdentToCursor(const Ident: string; var Cursor: Longint): Boolean;
+function CursorToString(Cursor: TCursor): string;
+function StringToCursor(const S: string): TCursor;
+
+implementation
+
+{ ---------------------------------------------------------------- helpers }
+
+procedure CheckRange(Value: Integer);
+begin
+  if (Value < 0) or (Value > 32767) then
+    raise EInvalidOperation.CreateFmt(SValueOutOfRange, [Value]);
+end;
+
+function LayoutMulDiv(A, B, C: Integer): Integer;
+var
+  P: Int64;
+begin
+  P := Int64(A) * B;
+  if P >= 0 then
+    Result := Integer((P + C div 2) div C)
+  else
+    Result := Integer((P - C div 2) div C);
+end;
+
+function IsPositiveResult(const AModalResult: TModalResult): Boolean;
+begin
+  Result := (AModalResult = mrOk) or (AModalResult = mrYes) or (AModalResult = mrAll)
+    or (AModalResult = mrYesToAll) or (AModalResult = mrContinue);
+end;
+
+{ ---------------------------------------------------------------- cursor idents (UIF-021) }
+
+const
+  CursorCount = 20;
+  Cursors: array[0..CursorCount - 1] of TIdentMapEntry = (
+    (Value: crDefault; Name: 'crDefault'),
+    (Value: crNone; Name: 'crNone'),
+    (Value: crArrow; Name: 'crArrow'),
+    (Value: crCross; Name: 'crCross'),
+    (Value: crIBeam; Name: 'crIBeam'),
+    (Value: crSizeNESW; Name: 'crSizeNESW'),
+    (Value: crSizeNS; Name: 'crSizeNS'),
+    (Value: crSizeNWSE; Name: 'crSizeNWSE'),
+    (Value: crSizeWE; Name: 'crSizeWE'),
+    (Value: crUpArrow; Name: 'crUpArrow'),
+    (Value: crHourGlass; Name: 'crHourGlass'),
+    (Value: crDrag; Name: 'crDrag'),
+    (Value: crNoDrop; Name: 'crNoDrop'),
+    (Value: crHSplit; Name: 'crHSplit'),
+    (Value: crVSplit; Name: 'crVSplit'),
+    (Value: crNo; Name: 'crNo'),
+    (Value: crAppStart; Name: 'crAppStart'),
+    (Value: crHelp; Name: 'crHelp'),
+    (Value: crHandPoint; Name: 'crHandPoint'),
+    (Value: crSizeAll; Name: 'crSizeAll'));
+
+function CursorToIdent(Cursor: Longint; var Ident: string): Boolean;
+begin
+  Result := IntToIdent(Cursor, Ident, Cursors);
+end;
+
+function IdentToCursor(const Ident: string; var Cursor: Longint): Boolean;
+begin
+  Result := IdentToInt(Ident, Cursor, Cursors);
+end;
+
+function CursorToString(Cursor: TCursor): string;
+begin
+  if not CursorToIdent(Cursor, Result) then
+    Result := IntToStr(Cursor);
+end;
+
+function StringToCursor(const S: string): TCursor;
+var
+  V: Longint;
+begin
+  if IdentToCursor(S, V) then
+    Result := V
+  else
+    Result := StrToInt(S);
+end;
+
+{ ---------------------------------------------------------------- TSizeConstraints }
+
+procedure TSizeConstraints.SetValue(var Field: Integer; Value: Integer);
+begin
+  CheckRange(Value);
+  if Field <> Value then
+  begin
+    Field := Value;
+    Change;
+  end;
+end;
+
+procedure TSizeConstraints.SetMaxHeight(Value: Integer);
+begin
+  SetValue(FMaxHeight, Value);
+end;
+
+procedure TSizeConstraints.SetMaxWidth(Value: Integer);
+begin
+  SetValue(FMaxWidth, Value);
+end;
+
+procedure TSizeConstraints.SetMinHeight(Value: Integer);
+begin
+  SetValue(FMinHeight, Value);
+end;
+
+procedure TSizeConstraints.SetMinWidth(Value: Integer);
+begin
+  SetValue(FMinWidth, Value);
+end;
+
+procedure TSizeConstraints.Change;
+begin
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+end;
+
+procedure TSizeConstraints.AssignTo(Dest: TPersistent);
+var
+  D: TSizeConstraints;
+begin
+  if Dest is TSizeConstraints then
+  begin
+    D := TSizeConstraints(Dest);
+    D.FMaxHeight := FMaxHeight;
+    D.FMaxWidth := FMaxWidth;
+    D.FMinHeight := FMinHeight;
+    D.FMinWidth := FMinWidth;
+    D.Change;
+  end
+  else
+    inherited AssignTo(Dest);
+end;
+
+{ ---------------------------------------------------------------- TMargins, TPadding }
+
+constructor TMargins.Create;
+begin
+  inherited Create;
+  FLeft := DefaultValue;
+  FTop := DefaultValue;
+  FRight := DefaultValue;
+  FBottom := DefaultValue;
+end;
+
+class function TMargins.DefaultValue: Integer;
+begin
+  Result := 3;
+end;
+
+class function TPadding.DefaultValue: Integer;
+begin
+  Result := 0;
+end;
+
+procedure TMargins.SetBounds(ALeft, ATop, ARight, ABottom: Integer);
+begin
+  CheckRange(ALeft);
+  CheckRange(ATop);
+  CheckRange(ARight);
+  CheckRange(ABottom);
+  if (ALeft <> FLeft) or (ATop <> FTop) or (ARight <> FRight) or (ABottom <> FBottom) then
+  begin
+    FLeft := ALeft;
+    FTop := ATop;
+    FRight := ARight;
+    FBottom := ABottom;
+    Change;
+  end;
+end;
+
+procedure TMargins.SetLeft(Value: Integer);
+begin
+  SetBounds(Value, FTop, FRight, FBottom);
+end;
+
+procedure TMargins.SetTop(Value: Integer);
+begin
+  SetBounds(FLeft, Value, FRight, FBottom);
+end;
+
+procedure TMargins.SetRight(Value: Integer);
+begin
+  SetBounds(FLeft, FTop, Value, FBottom);
+end;
+
+procedure TMargins.SetBottom(Value: Integer);
+begin
+  SetBounds(FLeft, FTop, FRight, Value);
+end;
+
+procedure TMargins.Change;
+begin
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+end;
+
+procedure TMargins.AssignTo(Dest: TPersistent);
+begin
+  if Dest is TMargins then
+    TMargins(Dest).SetBounds(FLeft, FTop, FRight, FBottom)
+  else
+    inherited AssignTo(Dest);
+end;
+
+{ ---------------------------------------------------------------- TControl }
+
+constructor TControl.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FWindowProc := WndProc;
+  FAnchors := [akLeft, akTop];
+  FCursor := crDefault;
+  FEnabled := True;
+  FVisible := True;
+  FParentShowHint := True;
+  FColor := clWindow;
+  FParentColor := True;
+  FParentFont := True;
+  FControlStyle := [csCaptureMouse, csClickEvents, csSetCaption, csDoubleClicks];
+  FFont := TFont.Create;
+  FFont.OnChange := FontChanged;
+  FMargins := TMargins.Create;
+  FMargins.OnChange := MarginsChanged;
+  FConstraints := TSizeConstraints.Create;
+  FConstraints.OnChange := ConstraintsChanged;
+end;
+
+destructor TControl.Destroy;
+begin
+  SetParent(nil);
+  FConstraints.Free;
+  FMargins.Free;
+  FFont.Free;
+  inherited Destroy;
+end;
+
+procedure TControl.SetBounds(ALeft, ATop, AWidth, AHeight: Integer);
+var
+  Explicit, SizeChanged, Loading: Boolean;
+  Old: TRect;
+begin
+  Explicit := not FLayoutCall;
+  FLayoutCall := False;
+  { step 1 }
+  if AWidth < 0 then
+    AWidth := 0;
+  if AHeight < 0 then
+    AHeight := 0;
+  { step 2 }
+  ConstrainSize(AWidth, AHeight);
+  { step 3 }
+  if (ALeft = FLeft) and (ATop = FTop) and (AWidth = FWidth) and (AHeight = FHeight) then
+    Exit;
+  { step 4 }
+  Old := BoundsRect;
+  SizeChanged := (AWidth <> FWidth) or (AHeight <> FHeight);
+  FLeft := ALeft;
+  FTop := ATop;
+  FWidth := AWidth;
+  FHeight := AHeight;
+  Loading := csLoading in ComponentState;
+  { step 5 }
+  if Explicit and not Loading then
+    CaptureBaseline;
+  { step 6 }
+  BoundsChanged(Old);
+  { step 7 }
+  if SizeChanged and (Self is TWinControl) then
+    TWinControl(Self).Realign;
+  { step 8 }
+  if SizeChanged and not Loading then
+    Resize;
+  { step 9 }
+  if Explicit and not Loading then
+    RequestAlign;
+end;
+
+procedure TControl.BoundsChanged(const OldBounds: TRect);
+begin
+end;
+
+procedure TControl.SetLeft(Value: Integer);
+begin
+  SetBounds(Value, FTop, FWidth, FHeight);
+end;
+
+procedure TControl.SetTop(Value: Integer);
+begin
+  SetBounds(FLeft, Value, FWidth, FHeight);
+end;
+
+procedure TControl.SetWidth(Value: Integer);
+begin
+  SetBounds(FLeft, FTop, Value, FHeight);
+end;
+
+procedure TControl.SetHeight(Value: Integer);
+begin
+  SetBounds(FLeft, FTop, FWidth, Value);
+end;
+
+function TControl.GetBoundsRect: TRect;
+begin
+  Result := Rect(FLeft, FTop, FLeft + FWidth, FTop + FHeight);
+end;
+
+procedure TControl.SetBoundsRect(const Value: TRect);
+begin
+  SetBounds(Value.Left, Value.Top, Value.Right - Value.Left, Value.Bottom - Value.Top);
+end;
+
+function TControl.GetClientRect: TRect;
+begin
+  Result := Rect(0, 0, FWidth, FHeight);
+end;
+
+function TControl.GetClientWidth: Integer;
+var
+  R: TRect;
+begin
+  R := GetClientRect;
+  Result := R.Right - R.Left;
+end;
+
+function TControl.GetClientHeight: Integer;
+var
+  R: TRect;
+begin
+  R := GetClientRect;
+  Result := R.Bottom - R.Top;
+end;
+
+procedure TControl.SetClientWidth(Value: Integer);
+begin
+  SetWidth(FWidth + (Value - GetClientWidth));
+end;
+
+procedure TControl.SetClientHeight(Value: Integer);
+begin
+  SetHeight(FHeight + (Value - GetClientHeight));
+end;
+
+procedure TControl.SetAlign(Value: TAlign);
+begin
+  if FAlign <> Value then
+  begin
+    FAlign := Value;
+    if not (csLoading in ComponentState) then
+      CaptureBaseline;
+    RequestAlign;
+  end;
+end;
+
+procedure TControl.SetAnchors(Value: TAnchors);
+begin
+  if FAnchors <> Value then
+  begin
+    FAnchors := Value;
+    if not (csLoading in ComponentState) then
+      CaptureBaseline;
+  end;
+end;
+
+{ UIF-232: (BL, BT, BW, BH) := bounds, (BPW, BPH) := parent's client size, (0, 0) without a parent (UIF-233) }
+procedure TControl.CaptureBaseline;
+begin
+  FBaseBounds := Rect(FLeft, FTop, FWidth, FHeight);
+  if FParent <> nil then
+  begin
+    FBaseParentWidth := FParent.ClientWidth;
+    FBaseParentHeight := FParent.ClientHeight;
+  end
+  else
+  begin
+    FBaseParentWidth := 0;
+    FBaseParentHeight := 0;
+  end;
+end;
+
+procedure TControl.SetAlignWithMargins(Value: Boolean);
+begin
+  if FAlignWithMargins <> Value then
+  begin
+    FAlignWithMargins := Value;
+    RequestAlign;
+  end;
+end;
+
+procedure TControl.SetMargins(Value: TMargins);
+begin
+  FMargins.Assign(Value);
+end;
+
+procedure TControl.SetConstraints(Value: TSizeConstraints);
+begin
+  FConstraints.Assign(Value);
+end;
+
+procedure TControl.MarginsChanged(Sender: TObject);
+begin
+  RequestAlign;
+end;
+
+{ UIF-241: re-applied as an explicit change }
+procedure TControl.ConstraintsChanged(Sender: TObject);
+begin
+  SetBounds(FLeft, FTop, FWidth, FHeight);
+end;
+
+procedure TControl.ConstrainSize(var AWidth, AHeight: Integer);
+var
+  MinW, MinH, MaxW, MaxH: Integer;
+begin
+  IntrinsicSize(AWidth, AHeight);
+  MinW := FConstraints.MinWidth;
+  MinH := FConstraints.MinHeight;
+  MaxW := FConstraints.MaxWidth;
+  MaxH := FConstraints.MaxHeight;
+  ConstrainedResize(MinW, MinH, MaxW, MaxH);
+  if (MaxW > 0) and (AWidth > MaxW) then
+    AWidth := MaxW;
+  if (MinW > 0) and (AWidth < MinW) then
+    AWidth := MinW;
+  if (MaxH > 0) and (AHeight > MaxH) then
+    AHeight := MaxH;
+  if (MinH > 0) and (AHeight < MinH) then
+    AHeight := MinH;
+end;
+
+procedure TControl.IntrinsicSize(var AWidth, AHeight: Integer);
+begin
+end;
+
+procedure TControl.SetCursor(Value: TCursor);
+begin
+  if FCursor <> Value then
+  begin
+    FCursor := Value;
+    Perform(CM_CURSORCHANGED, 0, 0);
+  end;
+end;
+
+procedure TControl.SetEnabled(Value: Boolean);
+begin
+  if FEnabled <> Value then
+  begin
+    FEnabled := Value;
+    Perform(CM_ENABLEDCHANGED, 0, 0);
+  end;
+end;
+
+procedure TControl.SetVisible(Value: Boolean);
+begin
+  if FVisible <> Value then
+  begin
+    FVisible := Value;
+    if not (csLoading in ComponentState) then
+    begin
+      Perform(CM_VISIBLECHANGED, WPARAM(Ord(Value)), 0);
+      RequestAlign;
+    end;
+  end;
+end;
+
+procedure TControl.SetShowHint(Value: Boolean);
+begin
+  FParentShowHint := False;
+  FShowHint := Value;
+end;
+
+procedure TControl.SetParentShowHint(Value: Boolean);
+begin
+  if FParentShowHint <> Value then
+  begin
+    FParentShowHint := Value;
+    if Value then
+      Perform(CM_PARENTSHOWHINTCHANGED, 0, 0);
+  end;
+end;
+
+function TControl.IsShowHintStored: Boolean;
+begin
+  Result := not FParentShowHint;
+end;
+
+function TControl.GetCaption: TCaption;
+begin
+  Result := GetText;
+end;
+
+procedure TControl.SetCaption(const Value: TCaption);
+begin
+  SetText(Value);
+end;
+
+function TControl.GetText: TCaption;
+var
+  Len: Integer;
+  S: string;
+begin
+  Len := GetTextLen;
+  SetLength(S, Len);
+  if Len > 0 then
+    GetTextBuf(PChar(S), Len + 1);
+  Result := S;
+end;
+
+procedure TControl.SetText(const Value: TCaption);
+begin
+  if GetText <> Value then
+  begin
+    SetTextBuf(PChar(string(Value)));
+    Perform(CM_TEXTCHANGED, 0, 0);
+  end;
+end;
+
+function TControl.GetTextLen: Integer;
+begin
+  Result := Integer(Perform(WM_GETTEXTLENGTH, 0, 0));
+end;
+
+function TControl.GetTextBuf(Buffer: PChar; BufSize: Integer): Integer;
+begin
+  Result := Integer(Perform(WM_GETTEXT, WPARAM(BufSize), LPARAM(Buffer)));
+end;
+
+procedure TControl.SetTextBuf(Buffer: PChar);
+begin
+  Perform(WM_SETTEXT, 0, LPARAM(Buffer));
+end;
+
+procedure TControl.SetColor(Value: TColor);
+begin
+  FParentColor := False;
+  if FColor <> Value then
+  begin
+    FColor := Value;
+    Perform(CM_COLORCHANGED, 0, 0);
+  end;
+end;
+
+function TControl.IsColorStored: Boolean;
+begin
+  Result := not FParentColor;
+end;
+
+procedure TControl.SetFont(Value: TFont);
+begin
+  FFont.Assign(Value);
+end;
+
+function TControl.IsFontStored: Boolean;
+begin
+  Result := not FParentFont;
+end;
+
+procedure TControl.FontChanged(Sender: TObject);
+begin
+  FParentFont := False;
+  Perform(CM_FONTCHANGED, 0, 0);
+end;
+
+procedure TControl.SetParentColor(Value: Boolean);
+begin
+  if FParentColor <> Value then
+  begin
+    FParentColor := Value;
+    if Value then
+      Perform(CM_PARENTCOLORCHANGED, 0, 0);
+  end;
+end;
+
+procedure TControl.SetParentFont(Value: Boolean);
+begin
+  if FParentFont <> Value then
+  begin
+    FParentFont := Value;
+    if Value then
+      Perform(CM_PARENTFONTCHANGED, 0, 0);
+  end;
+end;
+
+procedure TControl.SetAutoSize(Value: Boolean);
+begin
+  if FAutoSize <> Value then
+  begin
+    FAutoSize := Value;
+    if Value then
+      AdjustSize;
+  end;
+end;
+
+{ UIF-046, UIF-047 }
+procedure TControl.SetParent(AParent: TWinControl);
+begin
+  if FParent = AParent then
+    Exit;
+  if (AParent <> nil) and (Self is TWinControl) and TWinControl(Self).ContainsControl(AParent) then
+    raise EInvalidOperation.Create(SControlParentSelf);
+  if FParent <> nil then
+    FParent.RemoveControl(Self);
+  if AParent <> nil then
+    AParent.InsertControl(Self);
+end;
+
+{ UIF-146, UIF-148 (list part) }
+procedure TControl.BringToFront;
+begin
+  if FParent <> nil then
+    FParent.MoveChild(Self, FParent.FControls.Count - 1);
+end;
+
+procedure TControl.SendToBack;
+begin
+  if FParent <> nil then
+    FParent.MoveChild(Self, 0);
+end;
+
+function TControl.GetShowing: Boolean;
+begin
+  Result := FVisible and (FParent <> nil) and FParent.Showing;
+end;
+
+procedure TControl.Click;
+begin
+  if Assigned(FOnClick) then
+    FOnClick(Self);
+end;
+
+procedure TControl.DblClick;
+begin
+  if Assigned(FOnDblClick) then
+    FOnDblClick(Self);
+end;
+
+procedure TControl.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+begin
+  if Assigned(FOnMouseDown) then
+    FOnMouseDown(Self, Button, Shift, X, Y);
+end;
+
+procedure TControl.MouseMove(Shift: TShiftState; X, Y: Integer);
+begin
+  if Assigned(FOnMouseMove) then
+    FOnMouseMove(Self, Shift, X, Y);
+end;
+
+procedure TControl.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+begin
+  if Assigned(FOnMouseUp) then
+    FOnMouseUp(Self, Button, Shift, X, Y);
+end;
+
+procedure TControl.Resize;
+begin
+  if Assigned(FOnResize) then
+    FOnResize(Self);
+end;
+
+procedure TControl.AdjustSize;
+var
+  W, H: Integer;
+begin
+  if FAutoSize and not (csLoading in ComponentState) then
+  begin
+    W := FWidth;
+    H := FHeight;
+    if CanAutoSize(W, H) then
+      SetBounds(FLeft, FTop, W, H);
+  end;
+end;
+
+function TControl.CanAutoSize(var NewWidth, NewHeight: Integer): Boolean;
+begin
+  Result := True;
+end;
+
+function TControl.CanResize(var NewWidth, NewHeight: Integer): Boolean;
+begin
+  Result := True;
+end;
+
+procedure TControl.ConstrainedResize(var MinWidth, MinHeight, MaxWidth, MaxHeight: Integer);
+begin
+  if Assigned(FOnConstrainedResize) then
+    FOnConstrainedResize(Self, MinWidth, MinHeight, MaxWidth, MaxHeight);
+end;
+
+procedure TControl.RequestAlign;
+begin
+  if FParent <> nil then
+    FParent.AlignControl(Self);
+end;
+
+procedure TControl.WndProc(var Message: TMessage);
+begin
+  Dispatch(Message);
+end;
+
+procedure TControl.DefaultHandler(var Message);
+var
+  M: PMessage;
+  N: Integer;
+  Buffer: PChar;
+begin
+  M := @Message;
+  case M^.Msg of
+    WM_GETTEXTLENGTH:
+      M^.Result := Length(FText);
+    WM_GETTEXT:
+      begin
+        N := 0;
+        if M^.WParam > 0 then
+        begin
+          N := Length(FText);
+          if N > Integer(M^.WParam) - 1 then
+            N := Integer(M^.WParam) - 1;
+          Buffer := PChar(M^.LParam);
+          if N > 0 then
+            Move(PChar(FText)^, Buffer^, N * SizeOf(Char));
+          Buffer[N] := #0;
+        end;
+        M^.Result := N;
+      end;
+    WM_SETTEXT:
+      begin
+        FText := string(PChar(M^.LParam));
+        M^.Result := 1;
+      end;
+  end;
+end;
+
+function TControl.Perform(Msg: Cardinal; WParam: WPARAM; LParam: LPARAM): LRESULT;
+var
+  Message: TMessage;
+begin
+  Message.Msg := Msg;
+  Message.WParam := WParam;
+  Message.LParam := LParam;
+  Message.Result := 0;
+  FWindowProc(Message);
+  Result := Message.Result;
+end;
+
+procedure TControl.Loaded;
+begin
+  inherited Loaded;
+  CaptureBaseline;                                           { UIF-232 case 4 }
+end;
+
+procedure TControl.Changed;
+begin
+  Perform(CM_CHANGED, 0, LPARAM(Self));
+end;
+
+procedure TControl.Show;
+begin
+  SetVisible(True);
+end;
+
+procedure TControl.Hide;
+begin
+  SetVisible(False);
+end;
+
+procedure TControl.Invalidate;
+begin
+end;
+
+procedure TControl.Repaint;
+begin
+  Invalidate;
+  Update;
+end;
+
+procedure TControl.Update;
+begin
+end;
+
+procedure TControl.Refresh;
+begin
+  Repaint;
+end;
+
+function TControl.ClientToParent(const Point: TPoint; AParent: TWinControl): TPoint;
+var
+  C: TControl;
+begin
+  if AParent = nil then
+    AParent := FParent;
+  if AParent = nil then
+    raise EInvalidOperation.CreateFmt(SParentRequired, [Name]);
+  Result := Point;
+  C := Self;
+  while C <> AParent do
+  begin
+    if C.FParent = nil then
+      raise EInvalidOperation.CreateFmt(SParentRequired, [Name]);
+    Result.X := Result.X + C.FLeft;
+    Result.Y := Result.Y + C.FTop;
+    C := C.FParent;
+  end;
+end;
+
+function TControl.ParentToClient(const Point: TPoint; AParent: TWinControl): TPoint;
+var
+  Origin: TPoint;
+begin
+  Origin := ClientToParent(Types.Point(0, 0), AParent);
+  Result.X := Point.X - Origin.X;
+  Result.Y := Point.Y - Origin.Y;
+end;
+
+function TControl.HasParent: Boolean;
+begin
+  Result := FParent <> nil;
+end;
+
+function TControl.GetParentComponent: TComponent;
+begin
+  Result := FParent;
+end;
+
+procedure TControl.SetParentComponent(Value: TComponent);
+begin
+  if Value is TWinControl then
+    SetParent(TWinControl(Value))
+  else if Value <> nil then
+    raise EInvalidOperation.CreateFmt(SInvalidParentClass, [Name, Value.ClassName]);
+end;
+
+{ ---------------------------------------------------------------- TWinControl }
+
+constructor TWinControl.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FControls := TList.Create;
+  FTabList := TList.Create;
+  FTabOrder := -1;
+  FPadding := TPadding.Create;
+  FPadding.OnChange := PaddingChanged;
+end;
+
+{ UIF-037 (handle-less part) }
+destructor TWinControl.Destroy;
+var
+  I: Integer;
+begin
+  Destroying;
+  SetParent(nil);
+  DestroyHandle;
+  for I := FControls.Count - 1 downto 0 do
+    TControl(FControls[I]).Free;
+  inherited Destroy;
+  FPadding.Free;
+  FTabList.Free;
+  FControls.Free;
+end;
+
+{ UIF-227 last row: a pass at the end of Loaded }
+procedure TWinControl.Loaded;
+begin
+  inherited Loaded;
+  Realign;
+  if (FParent <> nil) and (FParent.FHandle <> 0) and (FHandle = 0) then
+    HandleNeeded;                                            { UIF-030: loading children get their handle here }
+end;
+
+{ ---------------------------------------------------------------- window handles (core.md section 4) }
+
+var
+  ControlAtom: string;                                       { window property naming the control (UIF-035) }
+
+function FindControl(Handle: HWND): TWinControl;
+var
+  Pid: DWORD;
+begin
+  Result := nil;
+  if Handle = 0 then
+    Exit;
+  Pid := 0;
+  GetWindowThreadProcessId(Handle, @Pid);
+  if Pid = GetCurrentProcessId then
+    Result := TWinControl(Pointer(GetPropW(Handle, PChar(ControlAtom))));
+end;
+
+{ UIF-035 }
+function StdWndProc(Wnd: HWND; Msg: UINT; WParam: WPARAM; LParam: LPARAM): LRESULT; stdcall;
+var
+  C: TWinControl;
+  M: TMessage;
+begin
+  C := TWinControl(Pointer(GetPropW(Wnd, PChar(ControlAtom))));
+  if (C = nil) and (Msg = WM_NCCREATE) then
+  begin
+    C := TWinControl(PCreateStructW(LParam)^.lpCreateParams);
+    if C <> nil then
+    begin
+      SetPropW(Wnd, PChar(ControlAtom), THandle(Pointer(C)));
+      C.FHandle := Wnd;
+    end;
+  end;
+  if C = nil then
+  begin
+    Result := DefWindowProcW(Wnd, Msg, WParam, LParam);
+    Exit;
+  end;
+  M.Msg := Msg;
+  M.WParam := WParam;
+  M.LParam := LParam;
+  M.Result := 0;
+  C.MainWndProc(M);
+  Result := M.Result;
+end;
+
+function TWinControl.GetHandle: HWND;
+begin
+  HandleNeeded;
+  Result := FHandle;
+end;
+
+{ UIF-031 }
+procedure TWinControl.HandleNeeded;
+begin
+  if FHandle = 0 then
+  begin
+    if FParent <> nil then
+      FParent.HandleNeeded;
+    if FHandle = 0 then
+      CreateHandle;
+  end;
+end;
+
+{ core.md section 4.2 }
+procedure TWinControl.CreateParams(var Params: TCreateParams);
+var
+  S: string;
+  I, N: Integer;
+begin
+  FillChar(Params, SizeOf(Params), 0);
+  Params.Caption := PChar(FText);
+  Params.Style := WS_CHILD or WS_CLIPSIBLINGS;
+  Params.ExStyle := 0;
+  if csAcceptsControls in FControlStyle then
+  begin
+    Params.Style := Params.Style or WS_CLIPCHILDREN;
+    Params.ExStyle := WS_EX_CONTROLPARENT;
+  end;
+  if FVisible then
+    Params.Style := Params.Style or WS_VISIBLE;
+  if not FEnabled then
+    Params.Style := Params.Style or WS_DISABLED;
+  if FTabStop then
+    Params.Style := Params.Style or WS_TABSTOP;
+  Params.X := FLeft;
+  Params.Y := FTop;
+  Params.Width := FWidth;
+  Params.Height := FHeight;
+  if FParent <> nil then
+    Params.WndParent := FParent.FHandle
+  else
+    Params.WndParent := 0;
+  Params.WindowClass.style := CS_DBLCLKS;
+  Params.WindowClass.hCursor := 0;
+  Params.WindowClass.hbrBackground := 0;
+  Params.WindowClass.hInstance := HINST(HInstance);
+  S := 'PN.' + ClassName;
+  N := Length(S);
+  if N > 63 then
+    N := 63;
+  for I := 0 to N - 1 do
+    Params.WinClassName[I] := S[I + 1];
+  Params.WinClassName[N] := #0;
+  Params.SubclassOf := nil;
+end;
+
+{ UIF-032 step 2 }
+procedure TWinControl.CreateWnd;
+var
+  Params: TCreateParams;
+  Info: TWndClassExW;
+begin
+  CreateParams(Params);
+  if ((Params.Style and WS_CHILD) <> 0) and (Params.WndParent = 0) then
+    raise EInvalidOperation.CreateFmt(SParentRequired, [Name]);
+  if Params.SubclassOf = nil then
+  begin
+    FillChar(Info, SizeOf(Info), 0);
+    Info.cbSize := SizeOf(Info);
+    if not GetClassInfoExW(HINST(HInstance), @Params.WinClassName[0], Info) then
+    begin
+      Params.WindowClass.cbSize := SizeOf(TWndClassExW);
+      Params.WindowClass.lpfnWndProc := @StdWndProc;
+      Params.WindowClass.lpszClassName := @Params.WinClassName[0];
+      if RegisterClassExW(Params.WindowClass) = 0 then
+        raise EOutOfResources.CreateFmt(SWindowClass, [SysErrorMessage(GetLastError)]);
+    end;
+    FDefWndProc := @DefWindowProcW;
+  end;
+  CreateWindowHandle(Params);
+  if FHandle = 0 then
+    raise EOutOfResources.CreateFmt(SWindowCreate, [SysErrorMessage(GetLastError)]);
+  { UIF-147: Win32 links a new child window at the bottom of its siblings; ours goes on top (list order) }
+  if (Params.Style and WS_CHILD) <> 0 then
+    SetWindowPos(FHandle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+  SendMessageW(FHandle, WM_SETFONT, WPARAM(FFont.Handle), 0);
+end;
+
+{ UIF-032 step 2c-2e }
+procedure TWinControl.CreateWindowHandle(const Params: TCreateParams);
+var
+  ClassName: PChar;
+  H: HWND;
+begin
+  if Params.SubclassOf <> nil then
+    ClassName := Params.SubclassOf
+  else
+    ClassName := @Params.WinClassName[0];
+  H := CreateWindowExW(Params.ExStyle, ClassName, Params.Caption, Params.Style, Params.X, Params.Y, Params.Width,
+    Params.Height, Params.WndParent, 0, HINST(HInstance), Pointer(Self));
+  if H = 0 then
+    Exit;
+  if Params.SubclassOf <> nil then
+  begin
+    SetPropW(H, PChar(ControlAtom), THandle(Pointer(Self)));
+    FHandle := H;
+    FDefWndProc := Pointer(SetWindowLongPtrW(H, GWLP_WNDPROC, LONG_PTR(@StdWndProc)));
+  end
+  else
+    FHandle := H;
+end;
+
+{ UIF-032 }
+procedure TWinControl.CreateHandle;
+var
+  I: Integer;
+  C: TControl;
+begin
+  if FHandle <> 0 then
+    Exit;
+  Include(FControlState, csCreating);
+  try
+    CreateWnd;
+    for I := 0 to FControls.Count - 1 do
+    begin
+      C := TControl(FControls[I]);
+      if (C is TWinControl) and (TWinControl(C).FHandle = 0) then
+        TWinControl(C).CreateHandle;
+    end;
+  finally
+    Exclude(FControlState, csCreating);
+  end;
+end;
+
+{ UIF-036 }
+procedure TWinControl.DestroyHandle;
+var
+  I: Integer;
+  C: TControl;
+begin
+  if FHandle = 0 then
+    Exit;
+  Include(FControlState, csDestroyingHandle);
+  try
+    { children first, so that each DestroyWnd can save its native state (UIF-034) }
+    for I := FControls.Count - 1 downto 0 do
+    begin
+      C := TControl(FControls[I]);
+      if C is TWinControl then
+        TWinControl(C).DestroyHandle;
+    end;
+    DestroyWnd;
+  finally
+    Exclude(FControlState, csDestroyingHandle);
+  end;
+end;
+
+{ UIF-034: native state is saved into the fields before the window goes }
+procedure TWinControl.DestroyWnd;
+var
+  S: string;
+begin
+  S := GetText;
+  FText := S;
+  DestroyWindowHandle;
+end;
+
+procedure TWinControl.DestroyWindowHandle;
+begin
+  if FHandle <> 0 then
+    DestroyWindow(FHandle);
+  FHandle := 0;
+end;
+
+procedure TWinControl.MainWndProc(var Message: TMessage);
+begin
+  try
+    FWindowProc(Message);
+  except
+    if Assigned(ApplicationHandleException) then
+      ApplicationHandleException(Self);
+  end;
+end;
+
+procedure TWinControl.WndProc(var Message: TMessage);
+begin
+  if Message.Msg = WM_NCDESTROY then
+  begin
+    inherited WndProc(Message);
+    if FHandle <> 0 then
+      RemovePropW(FHandle, PChar(ControlAtom));
+    FHandle := 0;
+    Exit;
+  end;
+  inherited WndProc(Message);
+end;
+
+procedure TWinControl.DefaultHandler(var Message);
+var
+  M: PMessage;
+begin
+  M := @Message;
+  if FHandle <> 0 then
+    M^.Result := CallWindowProcW(TFNWndProc(FDefWndProc), FHandle, M^.Msg, M^.WParam, M^.LParam)
+  else
+    inherited DefaultHandler(Message);
+end;
+
+procedure TWinControl.SetPadding(Value: TPadding);
+begin
+  FPadding.Assign(Value);
+end;
+
+procedure TWinControl.PaddingChanged(Sender: TObject);
+begin
+  Realign;
+end;
+
+procedure TWinControl.AdjustClientRect(var Rect: TRect);
+begin
+end;
+
+function TWinControl.HandleAllocated: Boolean;
+begin
+  Result := FHandle <> 0;
+end;
+
+function TWinControl.GetControl(Index: Integer): TControl;
+begin
+  Result := TControl(FControls[Index]);
+end;
+
+function TWinControl.GetControlCount: Integer;
+begin
+  Result := FControls.Count;
+end;
+
+{ UIF-047 step 3 }
+procedure TWinControl.InsertControl(AControl: TControl);
+begin
+  FControls.Add(Pointer(AControl));
+  if AControl is TWinControl then
+    FTabList.Add(Pointer(AControl));
+  AControl.FParent := Self;
+  AControl.Perform(CM_PARENTFONTCHANGED, 0, 0);
+  AControl.Perform(CM_PARENTCOLORCHANGED, 0, 0);
+  AControl.Perform(CM_PARENTSHOWHINTCHANGED, 0, 0);
+  AControl.CaptureBaseline;                                  { UIF-232 case 2 }
+  if (AControl is TWinControl) and (FHandle <> 0) and not (csLoading in AControl.ComponentState) then
+    TWinControl(AControl).HandleNeeded;                      { UIF-030 third bullet }
+  AlignControl(AControl);
+end;
+
+{ UIF-047 step 1 }
+procedure TWinControl.RemoveControl(AControl: TControl);
+begin
+  if AControl is TWinControl then
+    TWinControl(AControl).DestroyHandle;
+  FTabList.Remove(Pointer(AControl));
+  FControls.Remove(Pointer(AControl));
+  AControl.FParent := nil;
+  AlignControl(nil);
+end;
+
+{ UIF-225, UIF-226: a pass requested while loading, destroying or align-disabled only sets the flag; a request
+  during the running pass of the same parent is ignored }
+procedure TWinControl.AlignControl(AControl: TControl);
+var
+  R: TRect;
+begin
+  if (FAlignLevel > 0) or (csLoading in ComponentState) or (csDestroying in ComponentState) then
+  begin
+    Include(FControlState, csAlignmentNeeded);
+    Exit;
+  end;
+  if FAligning then
+    Exit;
+  FAligning := True;
+  try
+    Exclude(FControlState, csAlignmentNeeded);
+    { UIF-220: the align rect }
+    R := GetClientRect;
+    AdjustClientRect(R);
+    R.Left := R.Left + FPadding.Left;
+    R.Top := R.Top + FPadding.Top;
+    R.Right := R.Right - FPadding.Right;
+    R.Bottom := R.Bottom - FPadding.Bottom;
+    AlignControls(AControl, R);
+  finally
+    FAligning := False;
+  end;
+end;
+
+procedure TWinControl.DisableAlign;
+begin
+  Inc(FAlignLevel);
+end;
+
+procedure TWinControl.EnableAlign;
+begin
+  Dec(FAlignLevel);
+  if (FAlignLevel = 0) and (csAlignmentNeeded in FControlState) then
+    Realign;
+end;
+
+procedure TWinControl.Realign;
+begin
+  AlignControl(nil);
+end;
+
+function TWinControl.AlignDisabled: Boolean;
+begin
+  Result := FAlignLevel > 0;
+end;
+
+{ UIF-222: Place(C, Phase, R) }
+procedure PlaceControl(C: TControl; Phase: TAlign; var R: TRect);
+var
+  ml, mt, mr, mb, AW, AH, W, H: Integer;
+begin
+  if C.FAlignWithMargins then
+  begin
+    ml := C.FMargins.Left;
+    mt := C.FMargins.Top;
+    mr := C.FMargins.Right;
+    mb := C.FMargins.Bottom;
+  end
+  else
+  begin
+    ml := 0;
+    mt := 0;
+    mr := 0;
+    mb := 0;
+  end;
+  AW := R.Right - R.Left - ml - mr;
+  if AW < 0 then
+    AW := 0;
+  AH := R.Bottom - R.Top - mt - mb;
+  if AH < 0 then
+    AH := 0;
+  case Phase of
+    alTop, alBottom:
+      begin
+        W := AW;
+        H := C.FHeight;
+      end;
+    alLeft, alRight:
+      begin
+        W := C.FWidth;
+        H := AH;
+      end;
+  else
+    W := AW;
+    H := AH;
+  end;
+  C.ConstrainSize(W, H);
+  C.FLayoutCall := True;
+  case Phase of
+    alTop:
+      begin
+        C.SetBounds(R.Left + ml, R.Top + mt, W, H);
+        R.Top := R.Top + H + mt + mb;
+      end;
+    alBottom:
+      begin
+        C.SetBounds(R.Left + ml, R.Bottom - mb - H, W, H);
+        R.Bottom := R.Bottom - (H + mt + mb);
+      end;
+    alLeft:
+      begin
+        C.SetBounds(R.Left + ml, R.Top + mt, W, H);
+        R.Left := R.Left + W + ml + mr;
+      end;
+    alRight:
+      begin
+        C.SetBounds(R.Right - mr - W, R.Top + mt, W, H);
+        R.Right := R.Right - (W + ml + mr);
+      end;
+  else
+    C.SetBounds(R.Left + ml, R.Top + mt, W, H);
+  end;
+  C.FLayoutCall := False;
+end;
+
+function AlignKey(C: TControl; Phase: TAlign): Integer;
+begin
+  case Phase of
+    alTop: Result := C.FTop;
+    alBottom: Result := -(C.FTop + C.FHeight);
+    alLeft: Result := C.FLeft;
+    alRight: Result := -(C.FLeft + C.FWidth);
+  else
+    Result := 0;
+  end;
+end;
+
+procedure TWinControl.AlignControls(AControl: TControl; var Rect: TRect);
+var
+  Phase: TAlign;
+  Count, I, J, K: Integer;
+  Keys: array of Integer;
+  List: array of TControl;
+  C: TControl;
+begin
+  { keys of every phase are evaluated on the bounds the children have when the pass starts }
+  Count := FControls.Count;
+  SetLength(Keys, Count);
+  SetLength(List, Count);
+  for Phase := alTop to alClient do
+  begin
+    K := 0;
+    for I := 0 to Count - 1 do
+    begin
+      C := TControl(FControls[I]);
+      if (C.FAlign = Phase) and C.FVisible then
+      begin
+        { stable insertion by key; equal keys keep Controls[] order }
+        J := K;
+        while (J > 0) and (Keys[J - 1] > AlignKey(C, Phase)) do
+        begin
+          Keys[J] := Keys[J - 1];
+          List[J] := List[J - 1];
+          Dec(J);
+        end;
+        Keys[J] := AlignKey(C, Phase);
+        List[J] := C;
+        Inc(K);
+      end;
+    end;
+    for I := 0 to K - 1 do
+      PlaceControl(List[I], Phase, Rect);
+  end;
+  for I := 0 to FControls.Count - 1 do
+  begin
+    C := TControl(FControls[I]);
+    if C.FAlign = alNone then
+      ApplyAnchors(C);
+  end;
+end;
+
+{ UIF-231 }
+procedure TWinControl.ApplyAnchors(C: TControl);
+var
+  PW, PH, BL, BT, BW, BH, L, T, W, H: Integer;
+begin
+  PW := ClientWidth;
+  PH := ClientHeight;
+  BL := C.FBaseBounds.Left;
+  BT := C.FBaseBounds.Top;
+  BW := C.FBaseBounds.Right;
+  BH := C.FBaseBounds.Bottom;
+  W := BW;
+  H := BH;
+  if akLeft in C.FAnchors then
+  begin
+    L := BL;
+    if akRight in C.FAnchors then
+    begin
+      W := BW + PW - C.FBaseParentWidth;
+      if W < 0 then
+        W := 0;
+    end;
+  end
+  else if akRight in C.FAnchors then
+    L := BL + PW - C.FBaseParentWidth
+  else if C.FBaseParentWidth > 0 then
+    L := LayoutMulDiv(BL + BW div 2, PW, C.FBaseParentWidth) - BW div 2
+  else
+    L := BL;
+  if akTop in C.FAnchors then
+  begin
+    T := BT;
+    if akBottom in C.FAnchors then
+    begin
+      H := BH + PH - C.FBaseParentHeight;
+      if H < 0 then
+        H := 0;
+    end;
+  end
+  else if akBottom in C.FAnchors then
+    T := BT + PH - C.FBaseParentHeight
+  else if C.FBaseParentHeight > 0 then
+    T := LayoutMulDiv(BT + BH div 2, PH, C.FBaseParentHeight) - BH div 2
+  else
+    T := BT;
+  C.ConstrainSize(W, H);
+  C.FLayoutCall := True;
+  C.SetBounds(L, T, W, H);
+  C.FLayoutCall := False;
+end;
+
+procedure TWinControl.MoveChild(AControl: TControl; NewIndex: Integer);
+var
+  I: Integer;
+begin
+  I := FControls.IndexOf(Pointer(AControl));
+  if (I >= 0) and (I <> NewIndex) then
+  begin
+    FControls.Move(I, NewIndex);
+    AlignControl(nil);
+  end;
+end;
+
+{ UIF-149 }
+procedure TWinControl.SetChildOrder(Child: TComponent; Order: Integer);
+begin
+  if (Child is TControl) and (TControl(Child).FParent = Self) then
+  begin
+    if Order < 0 then
+      Order := 0;
+    if Order > FControls.Count - 1 then
+      Order := FControls.Count - 1;
+    MoveChild(TControl(Child), Order);
+  end;
+end;
+
+{ UIF-051 }
+procedure TWinControl.GetChildren(Proc: TGetChildProc; Root: TComponent);
+var
+  I: Integer;
+  C: TControl;
+begin
+  for I := 0 to FControls.Count - 1 do
+  begin
+    C := TControl(FControls[I]);
+    if C.Owner = Root then
+      Proc(C);
+  end;
+end;
+
+{ UIF-101 (outside loading) }
+function TWinControl.GetTabOrder: TTabOrder;
+begin
+  if FParent <> nil then
+    Result := FParent.FTabList.IndexOf(Pointer(Self))
+  else
+    Result := -1;
+end;
+
+procedure TWinControl.SetTabOrder(Value: TTabOrder);
+var
+  Cur: Integer;
+begin
+  if csLoading in ComponentState then
+  begin
+    FTabOrder := Value;
+    Exit;
+  end;
+  if (FParent = nil) or (Value < 0) then
+    Exit;
+  Cur := FParent.FTabList.IndexOf(Pointer(Self));
+  if Value > FParent.FTabList.Count - 1 then
+    Value := FParent.FTabList.Count - 1;
+  if (Cur >= 0) and (Cur <> Value) then
+    FParent.FTabList.Move(Cur, Value);
+end;
+
+procedure TWinControl.SetTabStop(Value: Boolean);
+begin
+  FTabStop := Value;
+end;
+
+function TWinControl.ControlAtPos(const Pos: TPoint; AllowDisabled: Boolean; AllowWinControls: Boolean): TControl;
+var
+  I: Integer;
+  C: TControl;
+begin
+  for I := FControls.Count - 1 downto 0 do
+  begin
+    C := TControl(FControls[I]);
+    if C.FVisible and (C.FEnabled or AllowDisabled) and (AllowWinControls or not (C is TWinControl))
+      and (Pos.X >= C.FLeft) and (Pos.X < C.FLeft + C.FWidth) and (Pos.Y >= C.FTop) and (Pos.Y < C.FTop + C.FHeight) then
+    begin
+      Result := C;
+      Exit;
+    end;
+  end;
+  Result := nil;
+end;
+
+function TWinControl.FindChildControl(const ControlName: string): TControl;
+var
+  I: Integer;
+begin
+  for I := 0 to FControls.Count - 1 do
+    if SameText(TControl(FControls[I]).Name, ControlName) then
+    begin
+      Result := TControl(FControls[I]);
+      Exit;
+    end;
+  Result := nil;
+end;
+
+function TWinControl.ContainsControl(Control: TControl): Boolean;
+begin
+  while (Control <> nil) and (Control <> Self) do
+    Control := Control.FParent;
+  Result := Control <> nil;
+end;
+
+procedure TWinControl.Broadcast(var Message);
+var
+  I: Integer;
+begin
+  for I := 0 to FControls.Count - 1 do
+  begin
+    TControl(FControls[I]).WindowProc(TMessage(Message));
+    if TMessage(Message).Result <> 0 then
+      Exit;
+  end;
+end;
+
+procedure TWinControl.NotifyControls(Msg: Word);
+var
+  Message: TMessage;
+begin
+  Message.Msg := Msg;
+  Message.WParam := 0;
+  Message.LParam := 0;
+  Message.Result := 0;
+  Broadcast(Message);
+end;
+
+procedure TWinControl.DoEnter;
+begin
+  if Assigned(FOnEnter) then
+    FOnEnter(Self);
+end;
+
+procedure TWinControl.DoExit;
+begin
+  if Assigned(FOnExit) then
+    FOnExit(Self);
+end;
+
+procedure TWinControl.KeyDown(var Key: Word; Shift: TShiftState);
+begin
+  if Assigned(FOnKeyDown) then
+    FOnKeyDown(Self, Key, Shift);
+end;
+
+procedure TWinControl.KeyUp(var Key: Word; Shift: TShiftState);
+begin
+  if Assigned(FOnKeyUp) then
+    FOnKeyUp(Self, Key, Shift);
+end;
+
+procedure TWinControl.KeyPress(var Key: Char);
+begin
+  if Assigned(FOnKeyPress) then
+    FOnKeyPress(Self, Key);
+end;
+
+initialization
+  ControlAtom := 'PN.Control.' + IntToHex(GetCurrentProcessId, 1);
+  RegisterIntegerConsts(TypeInfo(TCursor), IdentToCursor, CursorToIdent);
+end.

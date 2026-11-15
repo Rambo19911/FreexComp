@@ -1,0 +1,52 @@
+# lazy creation (UIF-030, UIF-031)
+ok no handle before first use
+ok reading a grandchild handle
+ok root and every child created
+ok three windowed descendants, no window for the graphic child
+ok A parented by the root window
+ok Inner parented by A
+ok later sibling is on top (Z order = list order)
+# window class and styles (UIF-032, core.md 4.2)
+ok own class name
+ok class per ClassName
+ok WS_CHILD
+ok WS_CLIPSIBLINGS
+ok WS_CLIPCHILDREN for a container
+ok WS_VISIBLE when Visible
+ok enabled
+ok no WS_TABSTOP
+ok WS_EX_CONTROLPARENT
+ok hidden child created without WS_VISIBLE
+ok WS_DISABLED
+ok WS_TABSTOP
+ok class has a window procedure
+ok CS_DBLCLKS
+# object attached (UIF-035)
+ok FindControl
+ok FindControl(0)
+ok foreign window
+ok WM_SETFONT with Font.Handle reached the control at creation
+# text (UIF-033, UIF-034)
+ok field text used at creation
+ok text set natively
+ok text read from the window
+# DestroyHandle (UIF-036)
+ok subtree has no handles
+ok windows destroyed
+ok native text saved into the field
+ok objects keep their tree
+ok handle re-created on demand
+ok state rebuilt from fields
+# external destruction (UIF-038)
+ok HandleAllocated False
+ok object alive and still parented
+ok new handle on demand
+# insertion and removal (UIF-030, UIF-047)
+ok inserted under a parent with a handle: created at once
+ok removal destroys the handle
+ok loading: not created on insertion
+ok created at the end of its Loaded
+# no parent chain
+ok orphan Handle raises
+ok freeing the root destroys its windows
+# passed 43 failed 0

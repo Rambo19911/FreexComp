@@ -1,0 +1,9 @@
+# second pass changes nothing (UIF-226)
+ok E06 five phases
+ok E08 margins
+ok E10 padding
+ok E13 E14 E15 constraints
+ok E35 space runs out, inverted rectangle
+ok anchors after a resize
+ok E24 E28 nested containers
+# passed 7 failed 0

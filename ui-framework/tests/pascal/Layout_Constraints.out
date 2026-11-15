@@ -1,0 +1,24 @@
+# ConstrainSize (UIF-240)
+ok constraint change re-applies the bounds (UIF-241)
+ok maximum width
+ok minimum height
+ok minimum wins over a contradictory maximum
+ok no maximum height = none
+ok ConstrainSize as a function
+ok 0 means none
+# re-application is an explicit change (UIF-241, UIF-242)
+ok no change, no event
+ok OnResize fires
+ok Left unchanged
+ok Top unchanged
+ok relaxing a constraint does not restore the old size
+# ConstrainedResize hook
+ok handler receives the property values
+ok limits changed by the handler apply
+ok property not changed by the handler
+# intrinsic rules run first (UIF-240 step 1)
+ok constraint applied after the intrinsic height
+ok intrinsic height
+# loading
+ok constraints apply while loading
+# passed 18 failed 0

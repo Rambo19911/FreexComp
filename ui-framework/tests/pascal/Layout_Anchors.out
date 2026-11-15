@@ -1,0 +1,45 @@
+# MulDiv (layout.md section 1)
+ok exact
+ok 176.67 rounds to 177
+ok half rounds up for a positive product
+ok half rounds away from zero for a negative product
+ok negative numerator
+ok -1.75 rounds to -2
+ok -1.25 truncates to -1
+ok agrees with Win32 MulDiv
+ok 64-bit intermediate
+# E16 right and bottom
+ok Btn
+# E17 left, top, right stretches
+ok Edit
+# E18 all four anchors shrink
+ok Memo
+# E19 horizontal centring
+ok C
+# E20 centring both ways
+ok C
+# E21 no drift
+ok clamped at 0
+ok restored exactly
+# E22 constraint after anchoring
+ok X
+# right anchor with constraint keeps Left (UIF-231)
+ok moved by dx
+# E23 explicit change re-captures the baseline
+ok after step 1
+ok after step 2
+ok after step 3
+# E38 vertical centring rounding
+ok A
+# Anchors change re-captures (UIF-232 case 3)
+ok left anchored stays
+ok baseline taken at parent 500
+# Parent assigned captures (UIF-232 case 2)
+ok not moved on insertion
+ok baseline taken at insertion
+# centring is stable at an unchanged parent size
+ok centring with a baseline from insertion
+# loading (UIF-232 case 4)
+ok loading change does not capture
+ok Loaded captures the stored bounds
+# passed 29 failed 0

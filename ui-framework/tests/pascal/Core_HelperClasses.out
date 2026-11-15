@@ -1,0 +1,77 @@
+# modal results (UIF-020)
+ok mrOk
+ok mrCancel
+ok mrAbort
+ok mrRetry
+ok mrIgnore
+ok mrYes
+ok mrNo
+ok mrClose
+ok mrHelp
+ok mrTryAgain
+ok mrContinue
+ok mrAll
+ok mrNoToAll
+ok mrYesToAll
+ok positive results
+ok other results
+# component messages (UIF-022)
+ok CM_BASE
+ok CN_BASE
+ok inside the WM_APP range
+ok CM_ENABLEDCHANGED
+ok CM_TEXTCHANGED
+ok CM_MOUSEENTER
+ok CM_MOUSELEAVE
+ok CM_WANTSPECIALKEY
+ok CM_CHANGED
+ok CM_DPICHANGED
+ok CN_COMMAND
+ok CN_NOTIFY
+ok CN_CTLCOLORSTATIC
+# cursor idents (UIF-021)
+ok crDefault
+ok crHandPoint
+ok crSizeAll
+ok CursorToString crDefault
+ok CursorToString crHandPoint
+ok CursorToString crNo
+ok unnamed cursor as number
+ok StringToCursor is case-insensitive
+ok StringToCursor number
+ok CursorToIdent
+ok IdentToCursor
+ok unknown ident
+ok TCursor registered
+ok registered IntToIdent
+# TSizeConstraints
+ok MaxHeight
+ok MaxWidth
+ok MinHeight
+ok MinWidth
+ok one OnChange per real change
+ok MaxWidth 32768 raises
+ok MinHeight -1 raises
+ok rejected values fire nothing
+ok Assign MinWidth
+ok Assign MaxHeight
+# TMargins
+ok Left
+ok Top
+ok Right
+ok Bottom
+ok unchanged value fires nothing
+ok Left fires OnChange
+ok SetBounds fires once
+ok SetBounds values
+ok SetBounds unchanged fires nothing
+ok Bottom 40000 raises
+ok Assign
+# TPadding
+ok TPadding is a TMargins
+ok defaults
+ok Top
+ok TMargins.Left RTTI default 3
+ok TPadding.Left RTTI default 0
+ok TPadding.Bottom RTTI default 0
+# passed 70 failed 0

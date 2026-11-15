@@ -1,0 +1,60 @@
+# Controls[] and tab list (UIF-100, UIF-145)
+ok empty
+ok creation order, one list
+ok Parent
+ok W1 first in the tab list
+ok W2 second in the tab list
+ok no parent: TabOrder -1
+ok TabOrder setter moves
+ok other control shifts
+ok tab order does not change Controls[]
+ok clamped to Count - 1
+ok -1 ignored
+# Parent rules (UIF-046, UIF-047)
+ok same parent is a no-op
+ok no reorder
+ok InsertControl sends the parent messages in order
+ok removed from the old parent
+ok appended to the new parent
+ok tab list of the old parent updated
+ok appended to the new tab list
+ok self as parent raises
+ok descendant as parent raises
+ok rejected parent leaves Parent unchanged
+ok parent without csAcceptsControls is allowed at run time
+ok Parent := nil
+ok removed
+ok no parent: not showing (UIF-048)
+# SetParentComponent and lookups
+ok SetParentComponent with a TWinControl
+ok SetParentComponent with a non-control raises
+ok FindChildControl is case-insensitive
+ok FindChildControl: direct children only
+ok ContainsControl
+ok GetParentComponent
+ok HasParent
+# ControlAtPos
+ok graphic child; windowed skipped
+ok highest index first
+ok BringToFront moves to the end
+ok windowed child when allowed
+ok disabled skipped
+ok disabled allowed
+ok invisible skipped
+ok right/bottom edge excluded
+ok SendToBack moves to index 0
+# Broadcast
+ok index order
+ok stops at the first non-zero result
+ok Broadcast result
+# destruction (UIF-037, UIF-049)
+# GetChildren (UIF-051)
+ok only children owned by Root, direct only
+ok B2 owned by Owner2
+ok children destroyed highest index first, depth first
+ok owned children left their owner
+ok owned children left their owner (2)
+# owner destroys a control parented elsewhere
+ok owner frees X
+ok X removed itself from its parent
+# passed 51 failed 0

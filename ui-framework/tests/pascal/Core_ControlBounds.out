@@ -1,0 +1,76 @@
+# defaults (core.md 2.1)
+ok bounds
+ok Align
+ok Anchors
+ok AlignWithMargins
+ok Margins
+ok Constraints
+ok Cursor
+ok Enabled
+ok Hint
+ok ParentShowHint
+ok ShowHint
+ok Visible
+ok Parent
+ok ControlStyle
+ok ControlState
+ok Caption
+ok Color
+ok ParentColor
+ok ParentFont
+ok Font.Height
+ok Font.Name
+ok AutoSize
+ok not Showing without a parent
+# stored rules (UIF-024)
+ok bounds are stored
+ok Width has no default
+ok ShowHint not stored while ParentShowHint
+ok ShowHint clears ParentShowHint
+ok ShowHint stored
+ok Color not stored while ParentColor
+ok Color clears ParentColor
+ok Color stored
+ok Font not stored while ParentFont
+ok Font change clears ParentFont
+ok Font stored
+# SetBounds (UIF-210)
+ok stored
+ok size change fires OnResize
+ok unchanged call fires nothing
+ok moved
+ok a move does not fire OnResize
+ok negative size clamped, negative position kept
+ok clamped size change
+ok clamping to the current size is unchanged
+# setters (UIF-212, UIF-217)
+ok Left/Top/Width/Height
+ok Width never negative
+ok BoundsRect setter
+ok BoundsRect getter
+ok ClientRect
+ok ClientWidth/ClientHeight adjust the size
+# loading (UIF-210 step 8)
+ok csLoading set
+ok stored while loading
+ok no OnResize while loading
+ok csLoading cleared
+ok OnResize after loading
+# text storage
+ok CM_TEXTCHANGED on change
+ok Text and Caption are one value
+ok unchanged text sends nothing
+ok GetTextLen
+ok WM_GETTEXTLENGTH
+ok GetTextBuf truncates to BufSize - 1
+ok truncated text is terminated
+ok SetTextBuf
+ok WM_SETTEXT result
+ok WM_SETTEXT stores
+ok empty
+# Perform and WindowProc (core.md 2.2)
+ok WindowProc assigned
+ok Perform returns the result
+ok replaced WindowProc sees the message
+ok other messages pass through
+# passed 68 failed 0

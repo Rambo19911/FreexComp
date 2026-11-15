@@ -1,0 +1,32 @@
+# defaults
+ok Padding 0
+# E07 AlignWithMargins
+ok A
+ok C
+# E08 individual margins
+ok A
+ok C
+# E09 Padding
+ok C
+ok Padding does not change the client size (UIF-236)
+# E10 Padding ignores alNone
+ok T
+ok N unchanged
+# E36 margins on bottom and right
+ok B
+ok R
+ok C
+# margins never affect alNone (UIF-235)
+ok alNone with AlignWithMargins
+# E25 AdjustClientRect inset
+ok a: inset 1
+ok b: inset 5
+# client rect formula (UIF-215) feeds the align rect
+ok ClientWidth by formula
+ok alClient fills the formula client rect
+# changes trigger a pass
+ok before
+ok Padding change
+ok AlignWithMargins change
+ok Margins change
+# passed 21 failed 0
