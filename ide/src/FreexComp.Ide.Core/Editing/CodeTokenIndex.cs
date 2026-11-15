@@ -15,6 +15,7 @@ public sealed class CodeTokenIndex
     private ILanguageDefinition _language;
     private CodeTokens? _tokens;
     private Task<CodeTokens>? _running;
+    private bool _scanning;
 
     public CodeTokenIndex(ITextBuffer buffer, ILanguageDefinition language)
     {
@@ -61,25 +62,35 @@ public sealed class CodeTokenIndex
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>One scan at a time; an outdated result is dropped and the next <see cref="Current"/> scans again (IDE-ARCH-083).</summary>
+    /// <summary>
+    /// One scan at a time; an outdated result is dropped and the next <see cref="Current"/> scans again (IDE-ARCH-083).
+    /// The scan stops counting as running before <see cref="Changed"/> is raised, so a handler's <see cref="Current"/>
+    /// starts the next scan at once (I-182).
+    /// </summary>
     private void StartBackground()
     {
-        if (_running is { IsCompleted: false })
+        if (_scanning)
             return;
+        _scanning = true;
         var version = _buffer.Version;
         var text = _buffer.Text;
         var language = _language;
         var context = SynchronizationContext.Current;
-        _running = Task.Run(() => language.ScanCodeTokens(text).WithVersion(version)).ContinueWith(
+        var scan = new Task<CodeTokens>(() => language.ScanCodeTokens(text).WithVersion(version));
+        // Assigned before the scan starts: a quick scan's continuation (and the next scan it may start) comes after it.
+        _running = scan.ContinueWith(
             t =>
             {
+                _scanning = false;
+                var tokens = t.Status == TaskStatus.RanToCompletion ? t.Result : CodeTokens.Empty.WithVersion(version);
                 if (version == _buffer.Version && language == _language)
-                    _tokens = t.Result;
-                Changed?.Invoke(this, EventArgs.Empty); // an outdated result: the next Current scans the new text
-                return t.Result;
+                    _tokens = tokens;
+                Changed?.Invoke(this, EventArgs.Empty); // an outdated result: the handler's Current scans the new text
+                return tokens;
             },
             CancellationToken.None,
-            TaskContinuationOptions.OnlyOnRanToCompletion,
+            TaskContinuationOptions.None,
             context is null ? TaskScheduler.Default : TaskScheduler.FromCurrentSynchronizationContext());
+        scan.Start(TaskScheduler.Default);
     }
 }
