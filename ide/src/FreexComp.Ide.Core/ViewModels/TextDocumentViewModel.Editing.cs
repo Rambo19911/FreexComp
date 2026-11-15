@@ -171,10 +171,16 @@ public partial class TextDocumentViewModel
         ArgumentNullException.ThrowIfNull(gesture);
         if (Completion?.HandleKey(gesture) == true)
             return true; // the open completion popup takes its keys first (IDE-ED-084)
+        if (ParameterInfo?.HandleKey(gesture) == true)
+            return true; // then parameter info: Up/Down overloads, Escape (IDE-ED-090)
+        if (HandleFieldKey(gesture))
+            return true; // then template field mode (IDE-ED-065)
         var selection = Selection;
         var options = IndentOptions;
         switch (gesture)
         {
+            case "Tab" when TryTabExpand(selection): // IDE-ED-064
+                return true;
             case "Tab":
                 Command(() => Apply(EditorOperations.Tab(Buffer, selection, options)));
                 return true;

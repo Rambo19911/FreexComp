@@ -118,7 +118,23 @@ public static class CompletionRules
         return CompletionAutoTrigger.None;
     }
 
-    private static bool Suppressed(string? tokenClass) => tokenClass is not null && Suppressing.Contains(tokenClass);
+    internal static bool Suppressed(string? tokenClass) => tokenClass is not null && Suppressing.Contains(tokenClass);
+
+    /// <summary>The lexical colour token of <paramref name="document"/> at <paramref name="offset"/> (null = none).</summary>
+    internal static string? ClassAt(TextDocumentViewModel document, int offset)
+    {
+        var buffer = document.Buffer;
+        if (offset < 0 || offset >= buffer.Length)
+            return null;
+        var line = buffer.GetPosition(offset).Line;
+        foreach (var span in document.Language.CreateClassifier().Classify(buffer, new LineRange(line, line)))
+        {
+            if (span.Offset <= offset && offset < span.Offset + span.Length)
+                return span.TokenClass;
+        }
+
+        return null;
+    }
 }
 
 /// <summary>
@@ -144,6 +160,7 @@ public sealed class CompletionSession
     private IDisposable? _timer;
     private CancellationTokenSource? _request;
     private bool _committing;
+    private bool _templateMode;
 
     public CompletionSession(TextDocumentViewModel document, Fetch fetch, IClock clock, Func<bool> autoTrigger, Func<TimeSpan> delay, Action<string> status)
     {
@@ -302,6 +319,25 @@ public sealed class CompletionSession
             return;
         }
 
+        if (item.Kind == CompletionItemKind.Snippet && _document.Templates?.Find(item.Label, _document.Language.Id) is { } template)
+        {
+            // IDE-ED-062/063: a template item expands in place of the typed abbreviation.
+            var start = _start;
+            var length = Caret - _start;
+            Close();
+            _committing = true;
+            try
+            {
+                _document.ExpandTemplate(template, start, length);
+            }
+            finally
+            {
+                _committing = false;
+            }
+
+            return;
+        }
+
         var caret = Caret;
         var end = caret;
         var text = _document.Buffer.Text;
@@ -330,6 +366,7 @@ public sealed class CompletionSession
         CancelTimer();
         _request?.Cancel();
         _request = null;
+        _templateMode = false;
         if (!IsOpen)
             return;
         IsOpen = false;
@@ -358,7 +395,9 @@ public sealed class CompletionSession
         if (request.IsCancellationRequested || !ReferenceEquals(request, _request) || _document.Buffer.Version != version || list is null)
             return; // superseded, or a stale buffer version (IDE-ED-087)
         _request = null;
-        var items = list.Items.Where(i => i.Kind != CompletionItemKind.Snippet).ToList(); // templates join with I-118 (IDE-ED-063)
+        var items = list.Items.Where(i => i.Kind != CompletionItemKind.Snippet).ToList();
+        if (list.Items.Any(i => i.Kind == CompletionItemKind.Snippet))
+            items.AddRange(TemplateItems()); // IDE-ED-063: at statement positions the code templates take the snippets' place
         if (items.Count == 0)
         {
             if (explicitly)
@@ -409,7 +448,11 @@ public sealed class CompletionSession
         var matches = CompletionRules.FilterAndRank(_list.Items, TypedText);
         if (matches.Count == 0)
         {
+            var typed = TypedText;
+            var templates = _templateMode;
             Close();
+            if (templates)
+                _status(string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Msg_Editor_TemplateNotFound, typed)); // IDE-ED-066
             return;
         }
 
@@ -418,26 +461,49 @@ public sealed class CompletionSession
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// IDE-ED-062 (<c>edit.insertTemplate</c>, Ctrl+J): the popup lists only the code templates, filtered by the identifier
+    /// left of the caret; an unknown abbreviation shows <c>Msg.Editor.TemplateNotFound</c> (IDE-ED-066).
+    /// </summary>
+    public void ShowTemplates()
+    {
+        Close();
+        var caret = Caret;
+        var text = _document.Buffer.Text;
+        var start = caret;
+        while (start > 0 && CompletionRules.IsIdentifierChar(text[start - 1]))
+            start--;
+        var items = TemplateItems();
+        _list = new CompletionList(new FreexComp.Compiler.Text.TextSpan(start, caret - start), [.. items], false);
+        _start = start;
+        var matches = CompletionRules.FilterAndRank(items, TypedText);
+        if (matches.Count == 0)
+        {
+            _list = null;
+            _status(string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Msg_Editor_TemplateNotFound, TypedText));
+            return;
+        }
+
+        _templateMode = true;
+        IsOpen = true;
+        Items = matches;
+        SelectedIndex = 0;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The document language's code templates as completion items (detail = the description, UI-ED-113).</summary>
+    private List<CompletionItem> TemplateItems() =>
+        _document.Templates is not { } templates ? []
+            : [.. templates.Templates.Where(t => t.Language == _document.Language.Id)
+                .Select(t => new CompletionItem(t.Abbreviation, CompletionItemKind.Snippet, t.Abbreviation, "6" + t.Abbreviation, t.Description, false, null))];
+
     private void CancelTimer()
     {
         _timer?.Dispose();
         _timer = null;
     }
 
-    private string? ClassAt(int offset)
-    {
-        var buffer = _document.Buffer;
-        if (offset < 0 || offset >= buffer.Length)
-            return null;
-        var line = buffer.GetPosition(offset).Line;
-        foreach (var span in _document.Language.CreateClassifier().Classify(buffer, new LineRange(line, line)))
-        {
-            if (span.Offset <= offset && offset < span.Offset + span.Length)
-                return span.TokenClass;
-        }
-
-        return null;
-    }
+    private string? ClassAt(int offset) => CompletionRules.ClassAt(_document, offset);
 
     /// <summary>IDE-ED-080 (a): Ctrl+Space does nothing inside comments and string literals.</summary>
     private bool InSuppressedText(int caret)

@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "templates": [
+    { "abbreviation": "begin", "description": "begin … end block", "language": "pascal", "body": "begin\n\t$end$\nend;" },
+    { "abbreviation": "if", "description": "if statement", "language": "pascal", "body": "if $condition$ then\n\t$end$" },
+    { "abbreviation": "ife", "description": "if … else statement", "language": "pascal", "body": "if $condition$ then\n\t$end$\nelse\n\t" },
+    { "abbreviation": "ifb", "description": "if statement with begin … end", "language": "pascal", "body": "if $condition$ then\nbegin\n\t$end$\nend;" },
+    { "abbreviation": "for", "description": "for loop", "language": "pascal", "body": "for $i:I$ := $from:0$ to $to$ do\n\t$end$" },
+    { "abbreviation": "forb", "description": "for loop with begin … end", "language": "pascal", "body": "for $i:I$ := $from:0$ to $to$ do\nbegin\n\t$end$\nend;" },
+    { "abbreviation": "forin", "description": "for … in loop", "language": "pascal", "body": "for $item$ in $collection$ do\n\t$end$" },
+    { "abbreviation": "while", "description": "while loop", "language": "pascal", "body": "while $condition$ do\nbegin\n\t$end$\nend;" },
+    { "abbreviation": "repeat", "description": "repeat … until loop", "language": "pascal", "body": "repeat\n\t$end$\nuntil $condition$;" },
+    { "abbreviation": "case", "description": "case statement", "language": "pascal", "body": "case $expression$ of\n\t$value$: $end$;\nelse\nend;" },
+    { "abbreviation": "try", "description": "try … finally", "language": "pascal", "body": "try\n\t$end$\nfinally\n\t$cleanup$;\nend;" },
+    { "abbreviation": "trye", "description": "try … except", "language": "pascal", "body": "try\n\t$end$\nexcept\n\ton E: $class:Exception$ do\n\t\t;\nend;" },
+    { "abbreviation": "proc", "description": "procedure", "language": "pascal", "body": "procedure $name$($params$);\nbegin\n\t$end$\nend;" },
+    { "abbreviation": "func", "description": "function", "language": "pascal", "body": "function $name$($params$): $type$;\nbegin\n\t$end$\nend;" },
+    { "abbreviation": "class", "description": "class declaration", "language": "pascal", "body": "$name:TMyClass$ = class($ancestor:TObject$)\nprivate\n\t$end$\npublic\nend;" },
+    { "abbreviation": "wl", "description": "WriteLn call", "language": "pascal", "body": "WriteLn($end$);" }
+  ]
+}

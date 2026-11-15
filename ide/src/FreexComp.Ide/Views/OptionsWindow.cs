@@ -178,6 +178,8 @@ public sealed class OptionsWindow : DialogWindow
     private static Control CreatePage(OptionsViewModel model, OptionsPage page)
     {
         var panel = new StackPanel { Margin = new Thickness(0, 0, 16, 0) }; // clear of the overlay scroll bar
+        if (page.Id == OptionsViewModel.CodeTemplatesPage)
+            panel.Children.Add(CodeTemplatesPageView.Create(model.CodeTemplates)); // dialogs.md §9.3: the grid above the check box
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         panel.Children.Add(grid);
         var row = 0;

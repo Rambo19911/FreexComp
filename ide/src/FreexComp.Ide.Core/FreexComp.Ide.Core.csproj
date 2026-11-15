@@ -33,5 +33,7 @@
   <ItemGroup>
     <!-- UI-DLG-161: the Third-Party Licenses content, checked against THIRD-PARTY-NOTICES.md by LicensesTests. -->
     <EmbeddedResource Include="Resources\ThirdPartyNotices.json" LogicalName="ThirdPartyNotices.json" />
+    <!-- IDE-SET-080: the built-in code templates, in the templates.json schema. -->
+    <EmbeddedResource Include="Resources\BuiltInTemplates.json" LogicalName="BuiltInTemplates.json" />
   </ItemGroup>
 </Project>

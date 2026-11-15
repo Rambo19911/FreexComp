@@ -4411,4 +4411,34 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>regular expression</value>
     <comment>tool-windows.md §8 UI-TW-600</comment>
   </data>
+  <data name="Options_Field_ExpandOnTab" xml:space="preserve">
+    <value>_Expand abbreviation with Tab</value>
+  </data>
+  <data name="Options_Templates_Templates" xml:space="preserve">
+    <value>_Templates</value>
+  </data>
+  <data name="Options_Templates_ColumnAbbreviation" xml:space="preserve">
+    <value>Abbreviation</value>
+  </data>
+  <data name="Options_Templates_ColumnDescription" xml:space="preserve">
+    <value>Description</value>
+  </data>
+  <data name="Options_Templates_Abbreviation" xml:space="preserve">
+    <value>A_bbreviation:</value>
+  </data>
+  <data name="Options_Templates_Description" xml:space="preserve">
+    <value>De_scription:</value>
+  </data>
+  <data name="Options_Templates_Body" xml:space="preserve">
+    <value>B_ody</value>
+  </data>
+  <data name="Options_Templates_Add" xml:space="preserve">
+    <value>_Add</value>
+  </data>
+  <data name="Options_Templates_Delete" xml:space="preserve">
+    <value>_Delete</value>
+  </data>
+  <data name="Options_Templates_Reset" xml:space="preserve">
+    <value>_Reset</value>
+  </data>
 </root>

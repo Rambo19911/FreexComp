@@ -61,6 +61,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     private SyntaxColorizer? _colorizer;
     private readonly FindPanelView _findPanel;
     private readonly CompletionListView _completion = new(); // I-115
+    private readonly SignatureHelpView _signatureHelp = new(); // I-116
+    private readonly HoverView _hover = new(); // I-116
     private FindSession? _find;
 
     public CodeEditorView()
@@ -116,6 +118,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         textView.BackgroundRenderers.Add(new FindMatchRenderer(this, () => _find));
         textView.BackgroundRenderers.Add(new OccurrenceRenderer(this, () => _document?.WordHighlights.Highlights ?? []));
         textView.BackgroundRenderers.Add(new BracketMatchRenderer(this, CurrentBracketMatch));
+        textView.BackgroundRenderers.Add(new TemplateFieldRenderer(this, () => _document?.TemplateFieldRanges ?? [])); // IDE-ED-065
         _markers = new TextMarkerRenderer(this); // editor.md §6 row 12
         textView.BackgroundRenderers.Add(_markers);
         ApplyOptions(EditorOptions.Default);
@@ -124,6 +127,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
         AddHandler(PointerWheelChangedEvent, OnPointerWheel, RoutingStrategies.Tunnel);
         area.AddHandler(ContextRequestedEvent, OnTextContextRequested, RoutingStrategies.Tunnel);
+        area.AddHandler(PointerPressedEvent, OnTextPointerPressed, RoutingStrategies.Tunnel);
         area.Caret.PositionChanged += (_, _) =>
         {
             MirrorSelection();
@@ -141,10 +145,24 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         area.PointerExited += (_, _) => _foldMargin.IsPointerNear = false;
         textView.PointerMoved += (_, e) => ShowTextTooltip(e.GetPosition(textView));
         textView.PointerExited += (_, _) => ShowTextTooltip(null);
-        textView.ScrollOffsetChanged += (_, _) => MirrorScroll();
-        Child = new Panel { Children = { _editor, _findPanel, _completion } }; // UI-ED-102: the find panel floats over the text; so does completion
+        textView.ScrollOffsetChanged += (_, _) =>
+        {
+            MirrorScroll();
+            _document?.Hover?.Close(); // UI-ED-130: scrolling closes the hover
+            PlaceSignatureHelp();
+        };
+        // UI-ED-102: the find panel floats over the text; so do the code-insight popups.
+        Child = new Panel { Children = { _editor, _findPanel, _signatureHelp, _completion, _hover } };
         _completion.PlacementRequested += (_, _) => PlaceCompletion();
-        area.LostFocus += (_, _) => _document?.Completion?.Close(); // IDE-ED-086
+        _signatureHelp.PlacementRequested += (_, _) => PlaceSignatureHelp();
+        _hover.PlacementRequested += (_, _) => PlaceHover();
+        area.LostFocus += (_, _) =>
+        {
+            _document?.Completion?.Close(); // IDE-ED-086
+            _document?.ParameterInfo?.Close(); // IDE-ED-090
+            if (_document?.Hover is { Current.AtCaret: true } hover)
+                hover.Close();
+        };
         _findPanel.PropertyChanged += (_, e) =>
         {
             if (e.Property == IsVisibleProperty && _findPanel.IsVisible)
@@ -256,10 +274,15 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             old.Folding.Changed -= OnFoldingChanged;
             old.RevealCaretRequested -= OnRevealCaretRequested;
             old.RevealCaretAtThirdRequested -= OnRevealCaretAtThirdRequested;
+            old.TemplateFieldsChanged -= OnDecorationsChanged;
         }
 
         _completion.Session?.Close();
         _completion.Session = null; // IDE-ED-086: switching documents closes the popup
+        _signatureHelp.Session?.Close();
+        _signatureHelp.Session = null;
+        _hover.Session?.Close();
+        _hover.Session = null;
         SetColorizer(null);
         SetDecorations(null);
         SetTokens(null);
@@ -279,6 +302,8 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         ApplySelection(document);
         SetColorizer(document);
         _completion.Session = document.Completion;
+        _signatureHelp.Session = document.ParameterInfo;
+        _hover.Session = document.Hover;
         SetDecorations(document);
         SetTokens(document);
         InstallFoldings();
@@ -291,6 +316,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         document.Folding.Changed += OnFoldingChanged;
         document.RevealCaretRequested += OnRevealCaretRequested;
         document.RevealCaretAtThirdRequested += OnRevealCaretAtThirdRequested;
+        document.TemplateFieldsChanged += OnDecorationsChanged;
         SetFind(document.Find);
         ApplyZoomAndWrap();
         SyncFoldings();
@@ -579,6 +605,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         var textView = _editor.TextArea.TextView;
         FoldingSection? section = null;
         IReadOnlyList<TextMarker> markers = [];
+        int? hovered = null;
         if (position is { } p && textView.VisualLinesValid)
         {
             var visual = new Point(p.X + textView.HorizontalOffset, p.Y + textView.VerticalOffset);
@@ -588,9 +615,16 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
                 if (_foldBoxes is not null)
                     section = FoldBoxGenerator.BoxAt(line, column);
                 if (section is null && _document is { } document)
-                    markers = document.Decorations.MarkersAt(line.FirstDocumentLine.Offset + line.GetRelativeOffset(column)); // UI-ED-131
+                {
+                    hovered = line.FirstDocumentLine.Offset + line.GetRelativeOffset(column);
+                    markers = document.Decorations.MarkersAt(hovered.Value); // UI-ED-131
+                }
             }
         }
+
+        _document?.Hover?.PointerAt(hovered); // UI-ED-130
+        if (_hover.IsVisible)
+            markers = []; // UI-ED-131: the hover popup shows the error rows itself
 
         if (section == _tooltipFolding && markers.SequenceEqual(_tooltipMarkers))
             return;
@@ -609,7 +643,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
     /// UI-ED-131 (AutomationId <c>Editor.ErrorTip</c>): one row per marker, most severe first — severity icon (16), code
     /// in <c>type.codeSmall</c> <c>text.secondary</c>, message in <c>type.body</c>.
     /// </summary>
-    private static StackPanel BuildErrorTooltip(IReadOnlyList<TextMarker> markers)
+    internal static StackPanel BuildErrorTooltip(IReadOnlyList<TextMarker> markers)
     {
         var rows = new StackPanel { Spacing = 4 };
         AutomationProperties.SetAutomationId(rows, "Editor.ErrorTip");
@@ -961,6 +995,62 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             _completion.Margin = new Thickness(Math.Max(0, at.X), Math.Max(0, at.Y), 0, 0);
     }
 
+    /// <summary>
+    /// IDE-ED-101 (I-196): Ctrl+click on the text puts the caret at the clicked character and runs the global
+    /// <c>search.goToDeclaration</c> there (instead of AvaloniaEdit's word selection).
+    /// </summary>
+    private void OnTextPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        var textView = _editor.TextArea.TextView;
+        if (_document is not { ExecuteCommand: { } execute } || e.KeyModifiers != Avalonia.Input.KeyModifiers.Control
+            || !e.GetCurrentPoint(textView).Properties.IsLeftButtonPressed)
+            return;
+        var point = e.GetPosition(textView);
+        if (point.X < 0 || point.Y < 0 || textView.GetPosition(point + textView.ScrollOffset) is not { } position)
+            return;
+        e.Handled = true;
+        var area = _editor.TextArea;
+        area.ClearSelection();
+        area.Caret.Position = position;
+        area.Focus();
+        _ = execute(Core.CodeModel.GoToDeclarationService.CommandId);
+    }
+
+    /// <summary>UI-ED-121: above the caret line, left edge at the opening parenthesis; below the line when there is no room above.</summary>
+    private void PlaceSignatureHelp()
+    {
+        if (_document is not { ParameterInfo: { IsOpen: true, Help: { } help } } document || !_signatureHelp.IsVisible)
+            return;
+        var textView = _editor.TextArea.TextView;
+        var caret = document.ViewState.Caret;
+        var open = document.Buffer.GetPosition(Math.Max(0, help.ApplicableSpan.Start - 1));
+        var anchor = new TextViewPosition(caret.Line, open.Line == caret.Line ? open.Column : 1);
+        var top = textView.GetVisualPosition(anchor, VisualYPosition.LineTop) - textView.ScrollOffset;
+        var bottom = textView.GetVisualPosition(anchor, VisualYPosition.LineBottom) - textView.ScrollOffset;
+        _signatureHelp.Measure(Size.Infinity);
+        var height = _signatureHelp.DesiredSize.Height;
+        var y = top.Y - height - 2 >= 0 && !_completion.IsVisible ? top.Y - height - 2 : bottom.Y + 2;
+        if (textView.TranslatePoint(new Point(top.X, y), this) is { } at)
+            _signatureHelp.Margin = new Thickness(Math.Max(0, at.X), Math.Max(0, at.Y), 0, 0);
+    }
+
+    /// <summary>UI-ED-130: below the hovered word (above it when there is no room below).</summary>
+    private void PlaceHover()
+    {
+        if (_document is not { Hover.Current: { } info } document || !_hover.IsVisible)
+            return;
+        var textView = _editor.TextArea.TextView;
+        var start = document.Buffer.GetPosition(Math.Min(info.Offset, document.Buffer.Length));
+        var position = new TextViewPosition(start.Line, start.Column);
+        var top = textView.GetVisualPosition(position, VisualYPosition.LineTop) - textView.ScrollOffset;
+        var bottom = textView.GetVisualPosition(position, VisualYPosition.LineBottom) - textView.ScrollOffset;
+        _hover.Measure(Size.Infinity);
+        var height = _hover.DesiredSize.Height;
+        var y = bottom.Y + 2 + height <= textView.Bounds.Height || top.Y - height - 2 < 0 ? bottom.Y + 2 : top.Y - height - 2;
+        if (textView.TranslatePoint(new Point(bottom.X, y), this) is { } at)
+            _hover.Margin = new Thickness(Math.Max(0, at.X), Math.Max(0, at.Y), 0, 0);
+    }
+
     /// <summary>Core changed the caret or selection (revert, save trimming): the editor follows.</summary>
     private void OnViewStatePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -1123,9 +1213,24 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
             return;
         }
 
+        document.Hover?.Close(); // UI-ED-130: any key press closes the hover
         if (document.Completion is { IsOpen: true } completion && CompletionKey(e) is { } gesture)
         {
             e.Handled = completion.HandleKey(gesture); // UI-ED-118: the popup never has focus; its keys come from here
+            return;
+        }
+
+        if (e.Key == Key.Escape && e.KeyModifiers == Avalonia.Input.KeyModifiers.None && document.InTemplateFieldMode && document.ParameterInfo is not { IsOpen: true })
+        {
+            e.Handled = document.HandleKey("Escape"); // IDE-ED-065: Escape ends field mode
+            return;
+        }
+
+        // UI-ED-122/123: Up/Down switch overloads, Escape closes parameter info.
+        if (document.ParameterInfo is { IsOpen: true } info && e.KeyModifiers == Avalonia.Input.KeyModifiers.None
+            && e.Key is Key.Up or Key.Down or Key.Escape && info.HandleKey(e.Key.ToString()))
+        {
+            e.Handled = true;
             return;
         }
 

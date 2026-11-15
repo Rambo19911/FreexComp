@@ -74,7 +74,8 @@ public static class ServiceGraph
         var prompts = new FilePrompts(platform.FileDialogs, platform.FileSystem, layout, settings, platform.UserPaths,
             projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
         var toolchain = new ToolchainLocator(settings, platform.FileSystem, platform.ToolchainEnvironment); // IDE-P3-010
-        OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, ImplementedPhase, toolchain, platform.FileSystem);
+        var templates = new Editing.CodeTemplateService(platform.UserPaths, platform.FileSystem); // I-118
+        OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, ImplementedPhase, toolchain, platform.FileSystem, templates);
         ShellCommands.RegisterCommands(commands, platform.Shell, platform.FileSystem, platform.UserPaths, platform.Log);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.Layout = layout;
@@ -157,6 +158,8 @@ public static class ServiceGraph
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112
         new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status, toolchain).RegisterCommands(commands); // I-117
         new CodeModel.CompletionController(documents, projects, codeModel, settings, platform.Clock, status).RegisterCommands(commands); // I-114
+        new CodeModel.ParameterInfoController(documents, projects, codeModel, settings, platform.Clock).RegisterCommands(commands); // I-116
+        new CodeModel.CodeTemplateController(documents, templates, settings).RegisterCommands(commands);
         build.RegisterCommands(commands);
         var structureView = new ViewModels.StructureViewModel(documents, platform.Clock, platform.Dispatcher, codeModel.Worker, layout, navigation); // I-124
         structureView.RegisterCommands(commands);
@@ -217,14 +220,6 @@ public static class ServiceGraph
             quickPick.Show(new Popups.GoToFileViewModel(documents, projects, navigation, layout, platform.Dialogs))));
         commands.RegisterHandler("search.commandPalette", new DelegateHandler(() => popupsAvailable, () =>
             quickPick.Show(new Popups.CommandPaletteViewModel(commands, layout, focus.Current, toolWindowPhase ?? ImplementedPhase))));
-        // Phase 3 editor commands whose tasks are still open (I-116 parameter info, I-118 templates) stay unavailable, as
-        // their later-phase stubs were, until those tasks register real handlers.
-        foreach (var pending in (string[])["edit.parameterInfo", "edit.insertTemplate"])
-        {
-            if (!commands.IsHandled(pending))
-                commands.RegisterHandler(pending, new DelegateHandler(() => false, () => { }));
-        }
-
         EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 

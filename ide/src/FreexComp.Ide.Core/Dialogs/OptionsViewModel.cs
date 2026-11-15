@@ -40,7 +40,7 @@ public sealed class OptionsPage : ObservableObject
     public IReadOnlyList<OptionField> Fields { get; }
 
     /// <summary>Labels of fields that are not <see cref="OptionField"/>s (Colors page), matched by the filter.</summary>
-    public IReadOnlyList<string> OtherLabels { get; init; } = [];
+    public IReadOnlyList<string> OtherLabels { get; internal set; } = [];
 
     /// <summary>False while the filter hides the page (UI-DLG-091).</summary>
     public bool IsVisible
@@ -96,6 +96,8 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     public const string EditorGeneralPage = "Editor.General";
     public const string EditorDisplayPage = "Editor.Display";
     public const string ColorsPage = "Colors";
+
+    public const string CodeTemplatesPage = "Editor.CodeTemplates";
     public const string KeyMappingsPage = "KeyMappings";
     public const string EnvironmentGeneralPage = "Environment.General";
     public const string EnvironmentFilesPage = "Environment.Files";
@@ -130,7 +132,8 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// <param name="implementedPhase">Pages and fields of later phases are shown disabled.</param>
     /// <param name="actualTheme">The theme in effect: the Colors page edits its set first.</param>
     public OptionsViewModel(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
-        ThemeKind actualTheme, string? pageId, int implementedPhase, Build.IToolchainLocator? toolchain = null, Platform.IFileSystem? fileSystem = null)
+        ThemeKind actualTheme, string? pageId, int implementedPhase, Build.IToolchainLocator? toolchain = null, Platform.IFileSystem? fileSystem = null,
+        Editing.CodeTemplateService? templates = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(keymap);
@@ -179,7 +182,9 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Check("CaretBlink", SettingsCatalog.EditorCaretBlink, 1),
             Integer("RightMargin", SettingsCatalog.EditorRightMargin, 1, () => Strings.Msg_Options_RightMarginRange),
         ]);
-        var templates = Page("Editor.CodeTemplates", 3, []);
+        CodeTemplates = new CodeTemplatesPageViewModel(templates); // dialogs.md §9.3 (I-119)
+        var templatesPage = Page(CodeTemplatesPage, 3, [Check("ExpandOnTab", SettingsCatalog.EditorTemplatesExpandOnTab, 3)]);
+        templatesPage.OtherLabels = CodeTemplatesFieldLabels;
         Colors = new ColorsPageViewModel(settings, dialogs, actualTheme);
         var colors = new OptionsPage(ColorsPage, Strings.Options_Page_Colors, Strings.Options_Tree_Colors, 1, []) { OtherLabels = ColorsPageViewModel.FieldLabels };
         KeyMappings = new KeyMappingsPageViewModel(keymap, dialogs, implementedPhase);
@@ -222,15 +227,16 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             ToolchainFolder("FrameworkDir", SettingsCatalog.ToolchainFrameworkDir, 5, automatic?.FrameworkDir, Build.ToolchainLocator.FrameworkFiles,
                 fileSystem),
         ]);
-        Pages = [general, display, templates, colors, keys, environmentGeneral, environmentFiles, designer, toolchainPage];
+        Pages = [general, display, templatesPage, colors, keys, environmentGeneral, environmentFiles, designer, toolchainPage];
         foreach (var page in Pages)
         {
             page.IsLaterPhase = page.Phase > implementedPhase;
         }
 
-        Rows = BuildRows([("Editor", [general, display, templates]), (null, [colors, keys]), ("Environment", [environmentGeneral, environmentFiles]), (null, [designer, toolchainPage])]);
+        Rows = BuildRows([("Editor", [general, display, templatesPage]), (null, [colors, keys]), ("Environment", [environmentGeneral, environmentFiles]), (null, [designer, toolchainPage])]);
         Colors.PendingChanged += (_, _) => Update();
         KeyMappings.PendingChanged += (_, _) => Update();
+        CodeTemplates.PendingChanged += (_, _) => Update();
         Colors.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ColorsPageViewModel.ColorError))
@@ -303,6 +309,15 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// <summary>The Key Mappings page (dialogs.md §9.5).</summary>
     public KeyMappingsPageViewModel KeyMappings { get; }
 
+    /// <summary>The Code Templates page (dialogs.md §9.3).</summary>
+    public CodeTemplatesPageViewModel CodeTemplates { get; }
+
+    private static IReadOnlyList<string> CodeTemplatesFieldLabels =>
+    [
+        Strings.Options_Templates_Templates, Strings.Options_Templates_Abbreviation, Strings.Options_Templates_Description, Strings.Options_Templates_Body,
+        Strings.Options_Templates_Add, Strings.Options_Templates_Delete, Strings.Options_Templates_Reset,
+    ];
+
     /// <summary>The page tree in display order: group rows followed by their pages.</summary>
     public IReadOnlyList<OptionsTreeRow> Rows { get; }
 
@@ -337,9 +352,9 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     }
 
     /// <summary>True while a pending value differs from its setting.</summary>
-    public bool HasChanges => Colors.HasChanges || KeyMappings.HasChanges || _fields.Values.Any(f => !SettingValues.AreEqual(f.Value, Read(f.Key)));
+    public bool HasChanges => Colors.HasChanges || KeyMappings.HasChanges || CodeTemplates.HasChanges || _fields.Values.Any(f => !SettingValues.AreEqual(f.Value, Read(f.Key)));
 
-    public bool HasErrors => Colors.HasErrors || _fields.Values.Any(f => f.Error is not null);
+    public bool HasErrors => Colors.HasErrors || CodeTemplates.HasErrors || _fields.Values.Any(f => f.Error is not null);
 
     /// <exception cref="KeyNotFoundException">Unknown field id.</exception>
     public OptionField Field(string id) => _fields[id];
@@ -350,11 +365,11 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     /// </summary>
     public static void RegisterCommands(ICommandService commands, ISettingsService settings, IKeymapService keymap, ILayoutService layout,
         IDialogService dialogs, FilePrompts prompts, IThemeService theme, int implementedPhase, Build.IToolchainLocator? toolchain = null,
-        Platform.IFileSystem? fileSystem = null)
+        Platform.IFileSystem? fileSystem = null, Editing.CodeTemplateService? templates = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("tools.options", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, null, toolchain, fileSystem));
-        commands.RegisterHandler("tools.keyMappings", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, KeyMappingsPage, toolchain, fileSystem));
+        commands.RegisterHandler("tools.options", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, null, toolchain, fileSystem, templates));
+        commands.RegisterHandler("tools.keyMappings", new OpenHandler(settings, keymap, layout, dialogs, prompts, theme, implementedPhase, KeyMappingsPage, toolchain, fileSystem, templates));
     }
 
     /// <summary>A row was selected: a group selects its first visible page (UI-DLG-090).</summary>
@@ -397,7 +412,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         if (HasErrors)
             return;
         var changed = _fields.Values.Where(f => !SettingValues.AreEqual(f.Value, Read(f.Key))).ToList();
-        if (changed.Count == 0 && !Colors.HasChanges && !KeyMappings.HasChanges)
+        if (changed.Count == 0 && !Colors.HasChanges && !KeyMappings.HasChanges && !CodeTemplates.HasChanges)
             return;
         using (_settings.BeginBatch())
         {
@@ -410,6 +425,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         }
 
         KeyMappings.Apply(); // key-map changes go through IKeymapService (UI-DLG-093)
+        CodeTemplates.Apply(); // templates.json (IDE-SET-080)
         Update();
         await _settings.FlushAsync();
         await _keymap.FlushAsync();
@@ -424,14 +440,10 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     }
 
     /// <summary>
-    /// Phase 3 settings whose features are still open tasks (I-116 parameter info and hover): shown disabled like
-    /// later-phase fields until those tasks land.
+    /// Implemented-phase settings whose features are still open tasks: shown disabled like later-phase fields until
+    /// those tasks land. Empty since I-116.
     /// </summary>
-    public static readonly IReadOnlySet<string> PendingFeatureKeys = new HashSet<string>(StringComparer.Ordinal)
-    {
-        Settings.SettingsCatalog.EditorParameterInfoAutoTrigger.Name,
-        Settings.SettingsCatalog.EditorHoverEnabled.Name, Settings.SettingsCatalog.EditorHoverDelayMs.Name,
-    };
+    public static readonly IReadOnlySet<string> PendingFeatureKeys = new HashSet<string>(StringComparer.Ordinal);
 
     private void Update()
     {
@@ -587,12 +599,12 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         Strings.ResourceManager.GetString(name, CultureInfo.CurrentCulture) ?? throw new InvalidOperationException($"Missing resource {name}.");
 
     private sealed class OpenHandler(ISettingsService settings, IKeymapService keymap, ILayoutService layout, IDialogService dialogs, FilePrompts prompts,
-        IThemeService theme, int implementedPhase, string? fixedPage, Build.IToolchainLocator? toolchain, Platform.IFileSystem? fileSystem) : ICommandHandler
+        IThemeService theme, int implementedPhase, string? fixedPage, Build.IToolchainLocator? toolchain, Platform.IFileSystem? fileSystem, Editing.CodeTemplateService? templates) : ICommandHandler
     {
         public bool CanExecute(string? argument) => true;
 
         public Task ExecuteAsync(string? argument) =>
             dialogs.ShowAsync(new OptionsViewModel(settings, keymap, layout, dialogs, prompts, theme.ActualTheme, fixedPage ?? argument, implementedPhase,
-                toolchain, fileSystem));
+                toolchain, fileSystem, templates));
     }
 }

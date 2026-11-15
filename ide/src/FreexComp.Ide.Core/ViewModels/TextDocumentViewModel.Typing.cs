@@ -99,7 +99,10 @@ public partial class TextDocumentViewModel
         });
         EndEdit(done ? kind : EditKind.None, char.IsWhiteSpace(text[^1]));
         if (done)
+        {
             Completion?.AfterTyped(text); // IDE-ED-080/082
+            ParameterInfo?.AfterTyped(text); // IDE-ED-090
+        }
         return done;
     }
 

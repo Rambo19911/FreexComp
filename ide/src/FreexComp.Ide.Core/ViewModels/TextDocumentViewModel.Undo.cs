@@ -62,7 +62,10 @@ public partial class TextDocumentViewModel
         try
         {
             using (continues ? Buffer.OpenContinuedUndoGroup() : Buffer.OpenUndoGroup())
+            {
                 result = action();
+                SyncTemplateMirrors(); // IDE-ED-065: mirrors follow in the same step
+            }
         }
         finally
         {
@@ -94,7 +97,8 @@ public partial class TextDocumentViewModel
 
     /// <summary>IDE-P1-091: whether an edit of <paramref name="kind"/> at <paramref name="caret"/> joins the current step.</summary>
     private bool ContinuesGroup(EditKind kind, int caret, bool whitespace) =>
-        _lastKind == kind && Buffer.Version == _lastVersion && caret == _lastCaret && !Buffer.IsAtSavePoint
+        ContinuesFieldEdits // IDE-ED-065: field edits until field mode ends are one step
+        || _lastKind == kind && Buffer.Version == _lastVersion && caret == _lastCaret && !Buffer.IsAtSavePoint
         && (Clock is null || Clock.Now - _lastTime < TypingPause)
         && (_lastWhitespace || !whitespace); // a space after a word starts the next step
 

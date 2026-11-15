@@ -729,6 +729,7 @@ public sealed class DocumentService : IDocumentService
             textDocument.Clock = Clock;
             textDocument.Clipboard = Clipboard;
             textDocument.GutterMenu = line => _commands is null ? [] : Menus.GutterMenu.Build(textDocument.Decorations.GlyphsAt(line), _commands, _settings);
+            textDocument.ExecuteCommand = id => _commands is { } commands && commands.CanExecute(id) ? commands.ExecuteAsync(id) : Task.CompletedTask;
             textDocument.TextAreaMenu = () => _commands is null ? [] : Menus.EditorContextMenu.Build(_commands, Composition.ServiceGraph.ImplementedPhase, hasForm: false);
             textDocument.ViewState.WordWrap = _editorOptions.WordWrap; // IDE-ED-040; a restored session replaces it
             textDocument.ViewState.PropertyChanged += (_, e) =>

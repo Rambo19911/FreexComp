@@ -54,6 +54,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
         Decorations.Add(new LexerErrorMarkers(buffer, () => _language)); // UI-ED-068
         WordHighlights = new WordHighlighter(buffer, ViewState, Tokens, () => Clock, () => Options.HighlightWordOccurrences && !_showsFindMatches);
         InitTyping();
+        InitTemplates();
 
         buffer.Changed += (_, _) => OnPropertyChanged(nameof(IsModified));
         LineEnding.KindChanged += (_, _) =>
@@ -78,6 +79,12 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>Code completion of this document (I-114); null when the code model does not complete it.</summary>
     public CodeModel.CompletionSession? Completion { get; internal set; }
 
+    /// <summary>Parameter info of this document (I-116); null when the code model does not provide it.</summary>
+    public CodeModel.ParameterInfoSession? ParameterInfo { get; internal set; }
+
+    /// <summary>The hover tooltip of this document (I-116); null when the code model does not provide it.</summary>
+    public CodeModel.HoverSession? Hover { get; internal set; }
+
     /// <summary>The encoding of the next save (IDE-P1-074).</summary>
     public FileEncoding Encoding => _encoding;
 
@@ -94,6 +101,9 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
 
     /// <summary>UI-ED-022: the gutter context menu for a 1-based line (set by the document service); null = none.</summary>
     public Func<int, IReadOnlyList<Menus.MenuItemModel>>? GutterMenu { get; internal set; }
+
+    /// <summary>Runs a global command (set by the document service): the view's Ctrl+click goes to <c>search.goToDeclaration</c> (I-196).</summary>
+    public Func<string, Task>? ExecuteCommand { get; internal set; }
 
     /// <summary>The text-area context menu (menus.md §12), built when it opens; null without a command service.</summary>
     public Func<IReadOnlyList<Menus.MenuItemModel>>? TextAreaMenu { get; internal set; }

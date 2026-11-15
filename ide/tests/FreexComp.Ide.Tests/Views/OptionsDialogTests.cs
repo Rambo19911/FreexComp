@@ -1,3 +1,4 @@
+using FreexComp.Ide.Core.Editing;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
@@ -5,6 +6,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
 using FreexComp.Ide.Core.Dialogs;
+using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Editor;
 using FreexComp.Ide.Tests.Infrastructure;
@@ -32,9 +34,9 @@ public sealed class OptionsDialogTests
         ("MouseWheelZoom", "_Zoom with Ctrl+mouse wheel", SettingsCatalog.EditorMouseWheelZoom, true),
         ("CompletionAuto", "Show c_ompletions while typing", SettingsCatalog.EditorCompletionAutoTrigger, true), // I-114
         ("CompletionDelay", "_Delay (ms):", SettingsCatalog.EditorCompletionDelayMs, true),
-        ("ParameterInfoAuto", "Show parameter in_fo after (", SettingsCatalog.EditorParameterInfoAutoTrigger, false),
-        ("HoverEnabled", "Show symbol information on ho_ver", SettingsCatalog.EditorHoverEnabled, false),
-        ("HoverDelay", "Hover dela_y (ms):", SettingsCatalog.EditorHoverDelayMs, false),
+        ("ParameterInfoAuto", "Show parameter in_fo after (", SettingsCatalog.EditorParameterInfoAutoTrigger, true), // I-116
+        ("HoverEnabled", "Show symbol information on ho_ver", SettingsCatalog.EditorHoverEnabled, true),
+        ("HoverDelay", "Hover dela_y (ms):", SettingsCatalog.EditorHoverDelayMs, true),
         ("LiveDiagnostics", "_Underline errors while typing", SettingsCatalog.EditorLiveDiagnostics, true),
         ("LiveDiagnosticsDelay", "Error chec_k delay (ms):", SettingsCatalog.EditorLiveDiagnosticsDelayMs, true),
     ];
@@ -510,5 +512,81 @@ public sealed class OptionsDialogTests
         Assert.False(settings.Get(SettingsCatalog.EnvironmentAutoReloadUnmodified));
         Assert.Equal(0, settings.Get(SettingsCatalog.EnvironmentRecoveryIntervalSeconds));
         Assert.Equal(50, settings.Get(SettingsCatalog.FilesLargeFileThresholdMb));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-SET-080")]
+    public async Task CodeTemplatesPageEditsTemplatesJson()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var running = h.Services.Commands.ExecuteAsync("tools.options", OptionsViewModel.CodeTemplatesPage);
+        var dlg = await h.WaitForDialogAsync("Options");
+        var model = ((OptionsViewModel)dlg.Window.Model).CodeTemplates;
+        Assert.Equal("Editor › Code Templates", PageTitle(dlg));
+
+        // The grid: the built-ins in alphabetical order; selecting a row fills the fields.
+        var list = dlg.Find<ListBox>("Templates");
+        Assert.Equal([.. CodeTemplateService.BuiltIns.Select(t => t.Abbreviation).Order(StringComparer.OrdinalIgnoreCase)], model.Rows.Select(r => r.Abbreviation));
+        model.Selected = model.Rows.Single(r => r.Abbreviation == "wl");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("wl", dlg.Find<TextBox>("Abbreviation").Text);
+        Assert.Equal("WriteLn($end$);", dlg.Find<TextBox>("Body").Text);
+        Assert.False(dlg.Find<Button>("Templates.Reset").IsEnabled); // an unmodified built-in
+
+        // Editing a built-in enables Reset; Reset restores it.
+        dlg.Find<TextBox>("Body").Text = "WriteLn('$end$');";
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(dlg.Find<Button>("Templates.Reset").IsEnabled);
+        Assert.True(dlg.Find<Button>("Apply").IsEnabled);
+        dlg.Click("Templates.Reset");
+        Assert.Equal("WriteLn($end$);", dlg.Find<TextBox>("Body").Text);
+        dlg.Find<TextBox>("Body").Text = "WriteLn('$end$');";
+
+        // Add appends new1 and selects it; invalid or duplicate abbreviations and an empty body are errors.
+        dlg.Click("Templates.Add");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("new1", model.Selected!.Abbreviation);
+        Assert.Same(model.Selected, list.SelectedItem);
+        var abbreviation = dlg.Find<TextBox>("Abbreviation");
+        abbreviation.Text = "9x";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Strings.Msg_Options_TemplateAbbrevInvalid, dlg.Find<TextBlock>("Error.Abbreviation").Text);
+        Assert.False(dlg.Find<Button>("Ok").IsEnabled);
+        abbreviation.Text = "WL";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Strings.Msg_Options_TemplateAbbrevExists, dlg.Find<TextBlock>("Error.Abbreviation").Text);
+        abbreviation.Text = "hello";
+        dlg.Find<TextBox>("Description").Text = "greeting";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Strings.Msg_Options_TemplateBodyEmpty, dlg.Find<TextBlock>("Error.Body").Text);
+        dlg.Find<TextBox>("Body").Text = "WriteLn('Hello');";
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(string.IsNullOrEmpty(dlg.Find<TextBlock>("Error.Abbreviation").Text));
+        Assert.True(dlg.Find<Button>("Ok").IsEnabled);
+
+        // Delete removes a built-in without confirmation.
+        model.Selected = model.Rows.Single(r => r.Abbreviation == "trye");
+        dlg.Click("Templates.Delete");
+        Assert.DoesNotContain(model.Rows, r => r.Abbreviation == "trye");
+
+        // OK writes the differences: the added template, the modified built-in, a tombstone.
+        dlg.Click("Ok");
+        await running;
+        var path = Path.Combine(h.Services.UserPaths.RoamingDirectory, "templates.json");
+        using var json = System.Text.Json.JsonDocument.Parse(h.Services.FileSystem.ReadAllBytes(path));
+        var entries = json.RootElement.GetProperty("templates").EnumerateArray()
+            .Select(e => (e.GetProperty("abbreviation").GetString(), e.GetProperty("body").GetString(), e.GetProperty("deleted").GetBoolean())).ToList();
+        Assert.Equal([("wl", "WriteLn('$end$');", false), ("hello", "WriteLn('Hello');", false), ("trye", "", true)], entries);
+        Assert.Equal(1, json.RootElement.GetProperty("formatVersion").GetInt32());
+
+        // The page shows the saved state next time.
+        running = h.Services.Commands.ExecuteAsync("tools.options", OptionsViewModel.CodeTemplatesPage);
+        dlg = await h.WaitForDialogAsync("Options");
+        model = ((OptionsViewModel)dlg.Window.Model).CodeTemplates;
+        Assert.Contains(model.Rows, r => r.Abbreviation == "hello" && r.Description == "greeting");
+        Assert.DoesNotContain(model.Rows, r => r.Abbreviation == "trye");
+        Assert.True(dlg.Find<CheckBox>("ExpandOnTab").IsChecked);
+        dlg.Press("Escape");
+        await running;
     }
 }

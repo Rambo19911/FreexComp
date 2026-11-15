@@ -41,7 +41,6 @@ UI-ED-032 not checkable headless: drawing geometry, cursors, animation or timing
 UI-ED-033 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-051 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-ED-059 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
-UI-ED-130 later phase: the rule text names a later phase or a later-phase element
 UI-KEY-006 absence: states that a feature does not exist in Phases 1-7
 UI-MENU-020 later phase: the rule text names a later phase or a later-phase element
 UI-MENU-021 later phase: the rule text names a later phase or a later-phase element

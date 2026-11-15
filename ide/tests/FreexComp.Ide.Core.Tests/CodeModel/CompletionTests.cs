@@ -229,6 +229,17 @@ public sealed class CompletionTests
         }
 
         Assert.EndsWith("\n  Run\nend;\nend.\n", doc.Buffer.Text, StringComparison.Ordinal);
+
+        // IDE-ED-063: at a statement position the code templates are listed (after the exact-prefix symbols); committing expands.
+        Type(doc, ";\n  wh");
+        await bed.Services.Commands.ExecuteAsync(CompletionController.CommandId);
+        Assert.True(session.IsOpen);
+        var template = Assert.Single(session.Items, i => i.Kind == CompletionItemKind.Snippet);
+        Assert.Equal(("while", "while loop"), (template.Label, template.Detail));
+        session.Select(session.Items.ToList().IndexOf(template));
+        session.Commit(wholeIdentifier: false);
+        Assert.EndsWith("\n  Run;\n  while  do\n  begin\n    \n  end;\nend;\nend.\n", doc.Buffer.Text.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.True(doc.InTemplateFieldMode);
     }
 
 }
