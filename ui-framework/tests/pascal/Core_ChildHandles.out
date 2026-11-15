@@ -1,0 +1,27 @@
+# created with the parent (UIF-030, UIF-147)
+ok top first = reverse list order
+# inserted later
+ok new sibling on top
+# re-created on demand in the middle
+ok window gone
+ok back at its list position, not on top
+# RecreateWnd (UIF-039)
+ok handle exists again
+ok old window destroyed
+ok order kept
+ok native text kept
+ok left kept
+ok top kept
+ok width kept
+ok height kept
+ok Width field unchanged
+ok bottom sibling stays at the bottom
+ok child window destroyed with it
+ok child re-created inside
+# focus kept
+ok B focused before
+ok new window of B focused
+ok focused descendant refocused
+# without a handle
+ok nothing created
+# passed 20 failed 0

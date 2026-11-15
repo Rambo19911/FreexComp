@@ -1,0 +1,39 @@
+# colour (CM_COLORCHANGED, CM_PARENTCOLORCHANGED)
+ok descendants follow
+ok flags stay True
+ok assignment cleared the flag
+ok assigning clears ParentColor
+ok grandchildren follow the new colour
+ok chain broken
+ok below the break too
+ok ParentColor := True copies now
+ok brush follows Color
+ok brush follows an assignment
+# font (CM_FONTCHANGED, CM_PARENTFONTCHANGED)
+ok child font follows
+ok grandchild font follows
+ok graphic child font follows
+ok flags stay True
+ok changing a sub-property clears ParentFont
+ok grandchild follows the child
+ok chain broken
+ok ParentFont := True copies now
+ok whole font copied
+ok and passes it on
+ok inserted child takes the parent font
+# font pushed to the window
+ok edit follows
+ok WM_SETFONT with the new handle
+# ShowHint (CM_PARENTSHOWHINTCHANGED)
+ok descendants follow
+ok assigning clears ParentShowHint
+ok grandchild follows the child
+ok chain broken
+ok ParentShowHint := True copies now
+# WM_CTLCOLOR* reflection (UIF-071)
+ok result is the child brush
+ok text colour from Font.Color
+ok background from Brush.Color
+ok every WM_CTLCOLOR* id
+ok foreign window: default processing
+# passed 33 failed 0

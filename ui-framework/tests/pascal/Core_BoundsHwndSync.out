@@ -1,0 +1,24 @@
+# created with the field bounds
+ok window rect at creation
+ok aligned child
+# SetBounds moves the window (UIF-211)
+ok window follows
+ok fields as set, no feedback change
+ok one OnResize
+ok child realigned and moved
+ok Left setter
+ok move only: no OnResize
+# OS feedback (UIF-213)
+ok fields from the real window rectangle
+ok OnResize once
+ok children realigned
+ok child window follows
+ok pure move updates the fields
+ok pure move: no OnResize
+ok Z-order-only change keeps the fields
+# baseline re-captured (UIF-213 step 5)
+ok anchored width grows from the OS-given baseline
+# parent pass (UIF-213 step 9)
+ok aligned control put back, height from the OS
+ok its window follows
+# passed 18 failed 0

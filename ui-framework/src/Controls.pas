@@ -224,6 +224,7 @@ type
     FControlState: TControlState;
     FWindowProc: TWndMethod;
     FLayoutCall: Boolean;                                    { next SetBounds comes from a layout pass or scaling }
+    FFontFromParent: Boolean;                                { Font.Assign(Parent.Font) in progress: ParentFont stays }
     FBaseBounds: TRect;                                      { anchor baseline (BL, BT, BW, BH) as Left, Top, Right, Bottom }
     FBaseParentWidth: Integer;                               { (BPW, BPH), layout.md UIF-230 }
     FBaseParentHeight: Integer;
@@ -274,6 +275,10 @@ type
     procedure MarginsChanged(Sender: TObject);
     procedure ConstraintsChanged(Sender: TObject);
     procedure CaptureBaseline;
+    procedure UpdateBoundsFromOS(const R: TRect);
+    procedure ShowHintChanged;
+    procedure MouseMessage(var Message: TMessage);
+    procedure ClearMouseState;
   protected
     procedure SetParent(AParent: TWinControl); virtual;
     function GetShowing: Boolean; virtual;
@@ -296,6 +301,13 @@ type
     { UIF-210 step 6: the visual update after the fields changed (graphic controls invalidate; windowed: UIF-211) }
     procedure BoundsChanged(const OldBounds: TRect); virtual;
     procedure WndProc(var Message: TMessage); virtual;
+    procedure CMEnabledChanged(var Message: TMessage); virtual;
+    procedure CMVisibleChanged(var Message: TMessage); virtual;
+    procedure CMColorChanged(var Message: TMessage); virtual;
+    procedure CMFontChanged(var Message: TMessage); virtual;
+    procedure CMParentColorChanged(var Message: TMessage); virtual;
+    procedure CMParentFontChanged(var Message: TMessage); virtual;
+    procedure CMParentShowHintChanged(var Message: TMessage); virtual;
     procedure Loaded; override;
     procedure SetParentComponent(Value: TComponent); override;
     property Caption: TCaption read GetCaption write SetCaption;
@@ -385,6 +397,10 @@ type
     FTabStop: Boolean;
     FAlignLevel: Integer;
     FAligning: Boolean;
+    FSettingBounds: Boolean;                                 { UIF-211 call in progress: no UIF-213 feedback }
+    FBrush: TBrush;
+    FOwnClass: Boolean;                                      { the window is of our own class, not a system class }
+    FDoubleBuffered: Boolean;
     FPadding: TPadding;
     FOnEnter: TNotifyEvent;
     FOnExit: TNotifyEvent;
@@ -401,6 +417,8 @@ type
     procedure PaddingChanged(Sender: TObject);
     procedure ApplyAnchors(C: TControl);
     function GetHandle: HWND;
+    function WindowAbove: HWND;
+    function RouteMouse(var Message: TMessage): Boolean;
   protected
     { core.md section 4 }
     procedure CreateParams(var Params: TCreateParams); virtual;
@@ -409,7 +427,31 @@ type
     procedure CreateHandle; virtual;
     procedure DestroyWnd; virtual;
     procedure DestroyWindowHandle; virtual;
+    { UIF-039 }
+    procedure RecreateWnd;
     procedure WndProc(var Message: TMessage); override;
+    procedure WMNCDestroy(var Message: TWMNoParams); virtual;
+    procedure WMWindowPosChanged(var Message: TWMWindowPosMsg); virtual;
+    procedure WMEnable(var Message: TMessage); virtual;
+    procedure CMEnabledChanged(var Message: TMessage); override;
+    procedure CMVisibleChanged(var Message: TMessage); override;
+    procedure CMColorChanged(var Message: TMessage); override;
+    procedure CMFontChanged(var Message: TMessage); override;
+    { UIF-071 }
+    procedure CNCtlColor(var Message: TMessage); virtual;
+    function GetShowing: Boolean; override;
+    { core.md 7.8 }
+    procedure WMEraseBkgnd(var Message: TWMEraseBkgnd); virtual;
+    procedure WMPaint(var Message: TWMPaint); virtual;
+    procedure WMPrintClient(var Message: TMessage); virtual;
+    procedure PaintHandler(var Message: TWMPaint);
+    procedure PaintWindow(DC: HDC); virtual;
+    procedure PaintControls(DC: HDC; First: TControl);
+    property DoubleBuffered: Boolean read FDoubleBuffered write FDoubleBuffered default False;
+    { layout.md UIF-211 }
+    procedure BoundsChanged(const OldBounds: TRect); override;
+    { layout.md UIF-213: the window rectangle the OS gave, in the units of the bounds fields }
+    function WindowBounds: TRect; virtual;
     property DefWndProc: Pointer read FDefWndProc write FDefWndProc;
     procedure SetChildOrder(Child: TComponent; Order: Integer); virtual;
     { layout.md UIF-222: one layout pass over Rect (the align rect) }
@@ -439,6 +481,8 @@ type
     procedure MainWndProc(var Message: TMessage);
     procedure DefaultHandler(var Message); override;
     property Handle: HWND read GetHandle;
+    { background brush for WM_ERASEBKGND and WM_CTLCOLOR*; its colour follows Color }
+    property Brush: TBrush read FBrush;
     procedure InsertControl(AControl: TControl);
     procedure RemoveControl(AControl: TControl);
     procedure AlignControl(AControl: TControl);
@@ -455,12 +499,62 @@ type
     procedure NotifyControls(Msg: Word);
     property Controls[Index: Integer]: TControl read GetControl;
     property ControlCount: Integer read GetControlCount;
+    procedure Invalidate; override;
+    procedure Update; override;
+  end;
+
+{ ---------------------------------------------------------------- core.md section 6, section 12 }
+
+  { a canvas bound to a control: a window DC on demand (graphic controls: the parent's, moved to the control and
+    clipped to it), given back in FreeHandle }
+  TControlCanvas = class(TCanvas)
+  private
+    FControl: TControl;
+    FDeviceContext: HDC;
+    FWindowHandle: HWND;
+    procedure SetControl(AControl: TControl);
+  protected
+    procedure CreateHandle; override;
+  public
+    destructor Destroy; override;
+    procedure FreeHandle;
+    property Control: TControl read FControl write SetControl;
+  end;
+
+  TGraphicControl = class(TControl)
+  private
+    FCanvas: TCanvas;
+  protected
+    procedure Paint; virtual;
+    procedure WndProc(var Message: TMessage); override;
+    procedure WMPaint(var Message: TWMPaint); virtual;
+    { valid only inside Paint }
+    property Canvas: TCanvas read FCanvas;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+  end;
+
+  TCustomControl = class(TWinControl)
+  private
+    FCanvas: TCanvas;
+  protected
+    procedure Paint; virtual;
+    procedure PaintWindow(DC: HDC); override;
+    procedure DestroyWnd; override;
+    property Canvas: TCanvas read FCanvas;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
   end;
 
 { ---------------------------------------------------------------- core.md section 13: global helpers }
 
 { core.md section 13: the control of a window of this process, nil otherwise }
 function FindControl(Handle: HWND): TWinControl;
+{ core.md 13: the control that holds the mouse capture (graphic controls capture through their parent's window) }
+function GetCaptureControl: TControl;
+procedure SetCaptureControl(Control: TControl);
 
 { layout.md section 1: (a*b + c div 2) div c, rounding half away from zero, 64-bit intermediate; c > 0 }
 function LayoutMulDiv(A, B, C: Integer): Integer;
@@ -473,6 +567,29 @@ function StringToCursor(const S: string): TCursor;
 implementation
 
 { ---------------------------------------------------------------- helpers }
+
+var
+  CaptureControl: TControl;                                  { set by SetCaptureControl (core.md 13) }
+
+const
+  WM_MOUSEBUTTONLAST = WM_MBUTTONDBLCLK;                    { client-coordinate mouse messages: WM_MOUSEFIRST..this }
+
+function KeysToShift(Keys: WPARAM): TShiftState;
+begin
+  Result := [];
+  if (Keys and MK_SHIFT) <> 0 then
+    Include(Result, ssShift);
+  if (Keys and MK_CONTROL) <> 0 then
+    Include(Result, ssCtrl);
+  if (Keys and MK_LBUTTON) <> 0 then
+    Include(Result, ssLeft);
+  if (Keys and MK_RBUTTON) <> 0 then
+    Include(Result, ssRight);
+  if (Keys and MK_MBUTTON) <> 0 then
+    Include(Result, ssMiddle);
+  if GetKeyState(VK_MENU) < 0 then
+    Include(Result, ssAlt);
+end;
 
 procedure CheckRange(Value: Integer);
 begin
@@ -700,6 +817,8 @@ end;
 
 destructor TControl.Destroy;
 begin
+  if CaptureControl = Self then
+    SetCaptureControl(nil);
   SetParent(nil);
   FConstraints.Free;
   FMargins.Free;
@@ -750,6 +869,30 @@ end;
 
 procedure TControl.BoundsChanged(const OldBounds: TRect);
 begin
+end;
+
+{ layout.md UIF-213: the fields take the rectangle the OS gave (R = left, top, width, height), then steps 5, 7, 8, 9
+  of UIF-210 run as for an explicit change }
+procedure TControl.UpdateBoundsFromOS(const R: TRect);
+var
+  SizeChanged, Loading: Boolean;
+begin
+  if (R.Left = FLeft) and (R.Top = FTop) and (R.Right = FWidth) and (R.Bottom = FHeight) then
+    Exit;
+  SizeChanged := (R.Right <> FWidth) or (R.Bottom <> FHeight);
+  FLeft := R.Left;
+  FTop := R.Top;
+  FWidth := R.Right;
+  FHeight := R.Bottom;
+  Loading := csLoading in ComponentState;
+  if not Loading then
+    CaptureBaseline;
+  if SizeChanged and (Self is TWinControl) then
+    TWinControl(Self).Realign;
+  if SizeChanged and not Loading then
+    Resize;
+  if not Loading then
+    RequestAlign;
 end;
 
 procedure TControl.SetLeft(Value: Integer);
@@ -938,7 +1081,11 @@ end;
 procedure TControl.SetShowHint(Value: Boolean);
 begin
   FParentShowHint := False;
-  FShowHint := Value;
+  if FShowHint <> Value then
+  begin
+    FShowHint := Value;
+    ShowHintChanged;
+  end;
 end;
 
 procedure TControl.SetParentShowHint(Value: Boolean);
@@ -1029,7 +1176,8 @@ end;
 
 procedure TControl.FontChanged(Sender: TObject);
 begin
-  FParentFont := False;
+  if not FFontFromParent then
+    FParentFont := False;
   Perform(CM_FONTCHANGED, 0, 0);
 end;
 
@@ -1165,9 +1313,194 @@ begin
     FParent.AlignControl(Self);
 end;
 
+{ core.md UIF-060: framework handlers by case; everything else through Dispatch }
 procedure TControl.WndProc(var Message: TMessage);
 begin
-  Dispatch(Message);
+  if (Message.Msg >= WM_MOUSEFIRST) and (Message.Msg <= WM_MOUSEBUTTONLAST)
+    and not (csNoStdEvents in FControlStyle) then
+  begin
+    MouseMessage(Message);
+    Exit;
+  end;
+  case Message.Msg of
+    WM_CANCELMODE, WM_CAPTURECHANGED:
+      begin
+        ClearMouseState;
+        Dispatch(Message);
+      end;
+    CM_ENABLEDCHANGED:
+      CMEnabledChanged(Message);
+    CM_VISIBLECHANGED:
+      CMVisibleChanged(Message);
+    CM_COLORCHANGED:
+      CMColorChanged(Message);
+    CM_FONTCHANGED:
+      CMFontChanged(Message);
+    CM_PARENTCOLORCHANGED:
+      CMParentColorChanged(Message);
+    CM_PARENTFONTCHANGED:
+      CMParentFontChanged(Message);
+    CM_PARENTSHOWHINTCHANGED:
+      CMParentShowHintChanged(Message);
+  else
+    Dispatch(Message);
+  end;
+end;
+
+procedure TControl.CMColorChanged(var Message: TMessage);
+begin
+  Invalidate;
+end;
+
+procedure TControl.CMFontChanged(var Message: TMessage);
+begin
+  Invalidate;
+end;
+
+{ core.md 1.1: copy the parent's colour; the flag stays True }
+procedure TControl.CMParentColorChanged(var Message: TMessage);
+begin
+  if FParentColor and (FParent <> nil) and (FColor <> FParent.FColor) then
+  begin
+    FColor := FParent.FColor;
+    Perform(CM_COLORCHANGED, 0, 0);
+  end;
+end;
+
+{ core.md 1.1: Font.Assign(Parent.Font); the flag stays True }
+procedure TControl.CMParentFontChanged(var Message: TMessage);
+begin
+  if FParentFont and (FParent <> nil) then
+  begin
+    FFontFromParent := True;
+    try
+      FFont.Assign(FParent.FFont);
+    finally
+      FFontFromParent := False;
+    end;
+  end;
+end;
+
+procedure TControl.CMParentShowHintChanged(var Message: TMessage);
+begin
+  if FParentShowHint and (FParent <> nil) and (FShowHint <> FParent.FShowHint) then
+  begin
+    FShowHint := FParent.FShowHint;
+    ShowHintChanged;
+  end;
+end;
+
+{ the children of a windowed control copy the new value when their ParentShowHint is True }
+procedure TControl.ShowHintChanged;
+begin
+  if Self is TWinControl then
+    TWinControl(Self).NotifyControls(CM_PARENTSHOWHINTCHANGED);
+end;
+
+{ UIF-065: mouse messages to events, in the order of the table; default processing through Dispatch }
+procedure TControl.MouseMessage(var Message: TMessage);
+var
+  X, Y: Integer;
+  Shift: TShiftState;
+  Clicked: Boolean;
+begin
+  X := SmallInt(LoWord(Message.LParam));
+  Y := SmallInt(HiWord(Message.LParam));
+  Shift := KeysToShift(Message.WParam);
+  case Message.Msg of
+    WM_LBUTTONDOWN, WM_LBUTTONDBLCLK:
+      begin
+        if (Message.Msg = WM_LBUTTONDBLCLK) and (csDoubleClicks in FControlStyle) then
+        begin
+          DblClick;
+          MouseDown(mbLeft, Shift + [ssDouble], X, Y);
+        end
+        else
+        begin
+          if csCaptureMouse in FControlStyle then
+            SetCaptureControl(Self);
+          Include(FControlState, csLButtonDown);
+          if csClickEvents in FControlStyle then
+            Include(FControlState, csClicked);
+          MouseDown(mbLeft, Shift, X, Y);
+        end;
+        Dispatch(Message);
+      end;
+    WM_LBUTTONUP:
+      begin
+        Dispatch(Message);
+        { the flag is read first: releasing the capture sends WM_CAPTURECHANGED, which clears it }
+        Clicked := csClicked in FControlState;
+        if CaptureControl = Self then
+          SetCaptureControl(nil);
+        Exclude(FControlState, csClicked);
+        if Clicked and (X >= 0) and (Y >= 0) and (X < ClientWidth) and (Y < ClientHeight) then
+          Click;
+        Exclude(FControlState, csLButtonDown);
+        MouseUp(mbLeft, Shift, X, Y);
+      end;
+    WM_RBUTTONDOWN:
+      begin
+        MouseDown(mbRight, Shift, X, Y);
+        Dispatch(Message);
+      end;
+    WM_MBUTTONDOWN:
+      begin
+        MouseDown(mbMiddle, Shift, X, Y);
+        Dispatch(Message);
+      end;
+    WM_RBUTTONDBLCLK:
+      begin
+        MouseDown(mbRight, Shift + [ssDouble], X, Y);
+        Dispatch(Message);
+      end;
+    WM_MBUTTONDBLCLK:
+      begin
+        MouseDown(mbMiddle, Shift + [ssDouble], X, Y);
+        Dispatch(Message);
+      end;
+    WM_RBUTTONUP:
+      begin
+        MouseUp(mbRight, Shift, X, Y);
+        Dispatch(Message);
+      end;
+    WM_MBUTTONUP:
+      begin
+        MouseUp(mbMiddle, Shift, X, Y);
+        Dispatch(Message);
+      end;
+    WM_MOUSEMOVE:
+      begin
+        MouseMove(Shift, X, Y);
+        Dispatch(Message);
+      end;
+  else
+    Dispatch(Message);
+  end;
+end;
+
+{ UIF-065 last row; a graphic child capturing through this window loses its state too }
+procedure TControl.ClearMouseState;
+begin
+  FControlState := FControlState - [csLButtonDown, csClicked];
+  if (CaptureControl <> nil) and (CaptureControl <> Self) and not (CaptureControl is TWinControl)
+    and (CaptureControl.FParent = Self) then
+    CaptureControl.FControlState := CaptureControl.FControlState - [csLButtonDown, csClicked];
+  if (CaptureControl = Self) or ((CaptureControl <> nil) and (CaptureControl.FParent = Self)
+    and not (CaptureControl is TWinControl)) then
+    CaptureControl := nil;
+end;
+
+{ UIF-130 (graphic part) }
+procedure TControl.CMEnabledChanged(var Message: TMessage);
+begin
+  Invalidate;
+end;
+
+{ UIF-136 (graphic part) }
+procedure TControl.CMVisibleChanged(var Message: TMessage);
+begin
+  Invalidate;
 end;
 
 procedure TControl.DefaultHandler(var Message);
@@ -1236,8 +1569,16 @@ begin
   SetVisible(False);
 end;
 
+{ core.md 2.2: the control's rectangle in the parent window; never creates a handle }
 procedure TControl.Invalidate;
+var
+  R: TRect;
 begin
+  if (FParent <> nil) and (FParent.FHandle <> 0) then
+  begin
+    R := BoundsRect;
+    InvalidateRect(FParent.FHandle, @R, not (csOpaque in FControlStyle));
+  end;
 end;
 
 procedure TControl.Repaint;
@@ -1246,8 +1587,11 @@ begin
   Update;
 end;
 
+{ core.md 2.2: UpdateWindow of the nearest windowed control with a handle }
 procedure TControl.Update;
 begin
+  if FParent <> nil then
+    FParent.Update;
 end;
 
 procedure TControl.Refresh;
@@ -1312,6 +1656,8 @@ begin
   FTabOrder := -1;
   FPadding := TPadding.Create;
   FPadding.OnChange := PaddingChanged;
+  FBrush := TBrush.Create;
+  FBrush.Color := FColor;
 end;
 
 { UIF-037 (handle-less part) }
@@ -1325,6 +1671,7 @@ begin
   for I := FControls.Count - 1 downto 0 do
     TControl(FControls[I]).Free;
   inherited Destroy;
+  FBrush.Free;
   FPadding.Free;
   FTabList.Free;
   FControls.Free;
@@ -1355,6 +1702,29 @@ begin
   GetWindowThreadProcessId(Handle, @Pid);
   if Pid = GetCurrentProcessId then
     Result := TWinControl(Pointer(GetPropW(Handle, PChar(ControlAtom))));
+end;
+
+function GetCaptureControl: TControl;
+begin
+  Result := CaptureControl;
+  if (Result = nil) or (GetCapture = 0) then
+    Result := FindControl(GetCapture);
+end;
+
+procedure SetCaptureControl(Control: TControl);
+begin
+  CaptureControl := nil;
+  if GetCapture <> 0 then
+    ReleaseCapture;
+  if Control = nil then
+    Exit;
+  if Control is TWinControl then
+    SetCapture(TWinControl(Control).Handle)
+  else if Control.Parent <> nil then
+    SetCapture(Control.Parent.Handle)
+  else
+    Exit;
+  CaptureControl := Control;
 end;
 
 { UIF-035 }
@@ -1470,12 +1840,14 @@ begin
     end;
     FDefWndProc := @DefWindowProcW;
   end;
+  FOwnClass := Params.SubclassOf = nil;
   CreateWindowHandle(Params);
   if FHandle = 0 then
     raise EOutOfResources.CreateFmt(SWindowCreate, [SysErrorMessage(GetLastError)]);
-  { UIF-147: Win32 links a new child window at the bottom of its siblings; ours goes on top (list order) }
+  { UIF-147: Win32 links a new child window at the bottom of its siblings; ours goes directly below the nearest
+    later windowed sibling that has a handle, on top when there is none (list order = Z order) }
   if (Params.Style and WS_CHILD) <> 0 then
-    SetWindowPos(FHandle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+    SetWindowPos(FHandle, WindowAbove, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
   SendMessageW(FHandle, WM_SETFONT, WPARAM(FFont.Handle), 0);
 end;
 
@@ -1565,27 +1937,225 @@ begin
   FHandle := 0;
 end;
 
+{ UIF-147: the window of the nearest later windowed sibling that has a handle; HWND_TOP when none }
+function TWinControl.WindowAbove: HWND;
+var
+  I: Integer;
+  C: TControl;
+begin
+  Result := HWND_TOP;
+  if FParent = nil then
+    Exit;
+  for I := FParent.FControls.IndexOf(Pointer(Self)) + 1 to FParent.FControls.Count - 1 do
+  begin
+    C := TControl(FParent.FControls[I]);
+    if (C is TWinControl) and (TWinControl(C).FHandle <> 0) then
+    begin
+      Result := TWinControl(C).FHandle;
+      Exit;
+    end;
+  end;
+end;
+
+{ UIF-039 }
+procedure TWinControl.RecreateWnd;
+var
+  F, Above: HWND;
+  Focused: TWinControl;
+  IsChildWindow: Boolean;
+begin
+  if FHandle = 0 then
+    Exit;
+  { the control owning the focus window (a native control may focus an inner window of its own) }
+  F := GetFocus;
+  Focused := nil;
+  while (F <> 0) and (Focused = nil) do
+  begin
+    Focused := FindControl(F);
+    if Focused = nil then
+      F := GetParent(F);
+  end;
+  if (Focused <> nil) and not ContainsControl(Focused) then
+    Focused := nil;
+  IsChildWindow := (GetWindowLongPtrW(FHandle, GWL_STYLE) and WS_CHILD) <> 0;
+  Above := GetWindow(FHandle, GW_HWNDPREV);
+  DestroyHandle;
+  CreateHandle;
+  if IsChildWindow then
+    SetWindowPos(FHandle, Above, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+  if Focused <> nil then
+    Windows.SetFocus(Focused.Handle);
+end;
+
+{ UIF-060: the exception never unwinds into the system; without an application hook (no Forms unit) it is
+  reported through SysUtils.ShowException, EAbort excepted }
 procedure TWinControl.MainWndProc(var Message: TMessage);
 begin
   try
     FWindowProc(Message);
   except
     if Assigned(ApplicationHandleException) then
-      ApplicationHandleException(Self);
+      ApplicationHandleException(Self)
+    else if not (ExceptObject is EAbort) then
+      ShowException(ExceptObject, ExceptAddr);
   end;
 end;
 
+{ UIF-060: framework handlers by case; everything else goes to Dispatch (message methods, DefaultHandler) }
 procedure TWinControl.WndProc(var Message: TMessage);
+var
+  C: TWinControl;
 begin
-  if Message.Msg = WM_NCDESTROY then
-  begin
-    inherited WndProc(Message);
-    if FHandle <> 0 then
-      RemovePropW(FHandle, PChar(ControlAtom));
-    FHandle := 0;
+  if (Message.Msg >= WM_MOUSEFIRST) and (Message.Msg <= WM_MOUSEBUTTONLAST) and RouteMouse(Message) then
     Exit;
+  case Message.Msg of
+    WM_NCDESTROY:
+      WMNCDestroy(TWMNoParams(Message));
+    WM_WINDOWPOSCHANGED:
+      WMWindowPosChanged(TWMWindowPosMsg(Message));
+    WM_ENABLE:
+      WMEnable(Message);
+    WM_CTLCOLORMSGBOX..WM_CTLCOLORSTATIC:
+      begin
+        { UIF-070: answered by the child control of HWND LParam; default processing when it has none or declines }
+        C := FindControl(HWND(Message.LParam));
+        if (C <> nil) and (C <> Self) then
+          Message.Result := C.Perform(CN_BASE + Message.Msg, Message.WParam, Message.LParam);
+        if Message.Result = 0 then
+          inherited WndProc(Message);
+      end;
+    CN_BASE + WM_CTLCOLORMSGBOX..CN_BASE + WM_CTLCOLORSTATIC:
+      CNCtlColor(Message);
+    WM_ERASEBKGND:
+      WMEraseBkgnd(TWMEraseBkgnd(Message));
+    WM_PAINT:
+      WMPaint(TWMPaint(Message));
+    WM_PRINTCLIENT:
+      WMPrintClient(Message);
+  else
+    inherited WndProc(Message);
   end;
-  inherited WndProc(Message);
+end;
+
+{ UIF-064: to the graphic child holding the capture, else to the enabled visible graphic child under the point,
+  in its own coordinates }
+function TWinControl.RouteMouse(var Message: TMessage): Boolean;
+var
+  X, Y: Integer;
+  C: TControl;
+begin
+  X := SmallInt(LoWord(Message.LParam));
+  Y := SmallInt(HiWord(Message.LParam));
+  if (CaptureControl <> nil) and not (CaptureControl is TWinControl) and (CaptureControl.FParent = Self) then
+    C := CaptureControl
+  else
+    C := ControlAtPos(Point(X, Y), False);
+  Result := C <> nil;
+  if Result then
+    Message.Result := C.Perform(Message.Msg, Message.WParam, MakeLParam(Word(X - C.FLeft), Word(Y - C.FTop)));
+end;
+
+{ UIF-071 }
+procedure TWinControl.CNCtlColor(var Message: TMessage);
+begin
+  SetTextColor(HDC(Message.WParam), COLORREF(ColorToRGB(FFont.Color)));
+  SetBkColor(HDC(Message.WParam), COLORREF(ColorToRGB(FBrush.Color)));
+  Message.Result := LRESULT(FBrush.Handle);
+end;
+
+procedure TWinControl.CMColorChanged(var Message: TMessage);
+begin
+  FBrush.Color := FColor;
+  inherited CMColorChanged(Message);
+  NotifyControls(CM_PARENTCOLORCHANGED);
+end;
+
+procedure TWinControl.CMFontChanged(var Message: TMessage);
+begin
+  if FHandle <> 0 then
+    SendMessageW(FHandle, WM_SETFONT, WPARAM(FFont.Handle), 1);
+  inherited CMFontChanged(Message);
+  NotifyControls(CM_PARENTFONTCHANGED);
+end;
+
+{ layout.md UIF-211: the window follows the fields; the feedback of this very call is suppressed }
+procedure TWinControl.BoundsChanged(const OldBounds: TRect);
+begin
+  if FHandle = 0 then
+    Exit;
+  FSettingBounds := True;
+  try
+    SetWindowPos(FHandle, 0, FLeft, FTop, FWidth, FHeight, SWP_NOZORDER or SWP_NOACTIVATE);
+  finally
+    FSettingBounds := False;
+  end;
+end;
+
+{ (left, top, width, height) of the window; a child window in its parent's client coordinates }
+function TWinControl.WindowBounds: TRect;
+var
+  R: TRect;
+  P: HWND;
+begin
+  GetWindowRect(FHandle, R);
+  if (GetWindowLongPtrW(FHandle, GWL_STYLE) and WS_CHILD) <> 0 then
+  begin
+    P := GetParent(FHandle);
+    if P <> 0 then
+      MapWindowPoints(0, P, @R, 2);
+  end;
+  Result := Rect(R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top);
+end;
+
+{ layout.md UIF-213 }
+procedure TWinControl.WMWindowPosChanged(var Message: TWMWindowPosMsg);
+begin
+  DefaultHandler(Message);
+  if (FHandle <> 0) and not FSettingBounds then
+    UpdateBoundsFromOS(WindowBounds);
+end;
+
+{ core.md 7.10: an external EnableWindow syncs the field (no CM_ENABLEDCHANGED) }
+procedure TWinControl.WMEnable(var Message: TMessage);
+begin
+  DefaultHandler(Message);
+  FEnabled := Message.WParam <> 0;
+end;
+
+{ UIF-130 }
+procedure TWinControl.CMEnabledChanged(var Message: TMessage);
+begin
+  if FHandle <> 0 then
+    EnableWindow(FHandle, FEnabled);
+  inherited CMEnabledChanged(Message);
+end;
+
+{ UIF-136: shown or hidden without activation }
+procedure TWinControl.CMVisibleChanged(var Message: TMessage);
+const
+  Flags: array[Boolean] of Cardinal = (SWP_HIDEWINDOW, SWP_SHOWWINDOW);
+begin
+  if FHandle <> 0 then
+    SetWindowPos(FHandle, 0, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE
+      or Flags[FVisible]);
+end;
+
+{ core.md 2.1: a top-level window shows while its window is visible (forms refine this, application-forms.md) }
+function TWinControl.GetShowing: Boolean;
+begin
+  if FParent = nil then
+    Result := FVisible and (FHandle <> 0) and IsWindowVisible(FHandle)
+  else
+    Result := inherited GetShowing;
+end;
+
+{ UIF-036: the window is gone; detach the object }
+procedure TWinControl.WMNCDestroy(var Message: TWMNoParams);
+begin
+  DefaultHandler(Message);
+  if FHandle <> 0 then
+    RemovePropW(FHandle, PChar(ControlAtom));
+  FHandle := 0;
 end;
 
 procedure TWinControl.DefaultHandler(var Message);
@@ -1890,7 +2460,13 @@ begin
   if (I >= 0) and (I <> NewIndex) then
   begin
     FControls.Move(I, NewIndex);
-    AlignControl(nil);
+    { UIF-146, UIF-147: the window goes directly below the next windowed sibling with a handle (top if none) }
+    if (AControl is TWinControl) and (TWinControl(AControl).FHandle <> 0) then
+      SetWindowPos(TWinControl(AControl).FHandle, TWinControl(AControl).WindowAbove, 0, 0, 0, 0,
+        SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE)
+    else
+      AControl.Invalidate;
+    AlignControl(nil);                                       { UIF-148 }
   end;
 end;
 
@@ -2044,7 +2620,263 @@ begin
     FOnKeyPress(Self, Key);
 end;
 
+{ ---------------------------------------------------------------- painting (core.md 7.8) }
+
+const
+  PRF_ERASEBKGND = $8;
+
+procedure TWinControl.Invalidate;
+begin
+  if FHandle <> 0 then
+    InvalidateRect(FHandle, nil, True);
+end;
+
+procedure TWinControl.Update;
+begin
+  if FHandle <> 0 then
+    UpdateWindow(FHandle)
+  else
+    inherited Update;
+end;
+
+{ UIF-080 }
+procedure TWinControl.WMEraseBkgnd(var Message: TWMEraseBkgnd);
+begin
+  if not FOwnClass then
+  begin
+    DefaultHandler(Message);
+    Exit;
+  end;
+  if not ((csOpaque in FControlStyle) and FDoubleBuffered and (Self is TCustomControl)) then
+    Windows.FillRect(Message.DC, GetClientRect, FBrush.Handle);
+  Message.Result := 1;
+end;
+
+{ UIF-081: a system class without graphic children paints alone }
+procedure TWinControl.WMPaint(var Message: TWMPaint);
+var
+  I: Integer;
+  Graphic: Boolean;
+begin
+  Graphic := False;
+  for I := 0 to FControls.Count - 1 do
+    if not (TObject(FControls[I]) is TWinControl) then
+      Graphic := True;
+  if FOwnClass or Graphic then
+    PaintHandler(Message)
+  else
+    DefaultHandler(Message);
+end;
+
+{ core.md 7.10: own classes paint the client area into the given DC (erasing first when asked) }
+procedure TWinControl.WMPrintClient(var Message: TMessage);
+begin
+  if not FOwnClass then
+  begin
+    DefaultHandler(Message);
+    Exit;
+  end;
+  if (Message.LParam and PRF_ERASEBKGND) <> 0 then
+    Perform(WM_ERASEBKGND, Message.WParam, 0);
+  PaintWindow(HDC(Message.WParam));
+  PaintControls(HDC(Message.WParam), nil);
+end;
+
+procedure TWinControl.PaintHandler(var Message: TWMPaint);
+var
+  DC: HDC;
+  PS: TPaintStruct;
+begin
+  DC := Message.DC;
+  if DC = 0 then
+    DC := BeginPaint(FHandle, PS);
+  try
+    PaintWindow(DC);
+    PaintControls(DC, nil);
+  finally
+    if Message.DC = 0 then
+      EndPaint(FHandle, PS);
+  end;
+end;
+
+{ own classes: nothing (TCustomControl paints); system classes paint into the DC }
+procedure TWinControl.PaintWindow(DC: HDC);
+begin
+  if not FOwnClass then
+    CallWindowProcW(TFNWndProc(FDefWndProc), FHandle, WM_PAINT, WPARAM(DC), 0);
+end;
+
+{ UIF-081: graphic children from First (all when nil) back to front, origin at their top-left, clipped to them }
+procedure TWinControl.PaintControls(DC: HDC; First: TControl);
+var
+  I, Saved: Integer;
+  C: TControl;
+begin
+  I := 0;
+  if First <> nil then
+  begin
+    I := FControls.IndexOf(Pointer(First));
+    if I < 0 then
+      I := 0;
+  end;
+  while I < FControls.Count do
+  begin
+    C := TControl(FControls[I]);
+    if not (C is TWinControl) and C.FVisible then
+    begin
+      Saved := SaveDC(DC);
+      try
+        OffsetViewportOrgEx(DC, C.FLeft, C.FTop, nil);
+        IntersectClipRect(DC, 0, 0, C.FWidth, C.FHeight);
+        C.Perform(WM_PAINT, WPARAM(DC), 0);
+      finally
+        RestoreDC(DC, Saved);
+      end;
+    end;
+    Inc(I);
+  end;
+end;
+
+{ ---------------------------------------------------------------- TControlCanvas }
+
+destructor TControlCanvas.Destroy;
+begin
+  FreeHandle;
+  inherited Destroy;
+end;
+
+procedure TControlCanvas.SetControl(AControl: TControl);
+begin
+  if FControl <> AControl then
+  begin
+    FreeHandle;
+    FControl := AControl;
+  end;
+end;
+
+procedure TControlCanvas.CreateHandle;
+var
+  W: HWND;
+  DC: HDC;
+begin
+  if FControl = nil then
+  begin
+    inherited CreateHandle;
+    Exit;
+  end;
+  if FDeviceContext = 0 then
+  begin
+    if FControl is TWinControl then
+      W := TWinControl(FControl).Handle
+    else if (FControl.FParent <> nil) and (FControl.FParent.FHandle <> 0) then
+      W := FControl.FParent.FHandle
+    else
+      Exit;
+    DC := GetDC(W);
+    if not (FControl is TWinControl) then
+    begin
+      OffsetViewportOrgEx(DC, FControl.FLeft, FControl.FTop, nil);
+      IntersectClipRect(DC, 0, 0, FControl.FWidth, FControl.FHeight);
+    end;
+    FWindowHandle := W;
+    FDeviceContext := DC;
+  end;
+  Handle := FDeviceContext;
+end;
+
+{ graphics.md UIF-570 }
+procedure TControlCanvas.FreeHandle;
+begin
+  if FDeviceContext <> 0 then
+  begin
+    Handle := 0;
+    ReleaseDC(FWindowHandle, FDeviceContext);
+    FDeviceContext := 0;
+    FWindowHandle := 0;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TGraphicControl }
+
+constructor TGraphicControl.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FCanvas := TControlCanvas.Create;
+  TControlCanvas(FCanvas).Control := Self;
+end;
+
+destructor TGraphicControl.Destroy;
+begin
+  inherited Destroy;
+  FCanvas.Free;
+end;
+
+procedure TGraphicControl.Paint;
+begin
+end;
+
+procedure TGraphicControl.WndProc(var Message: TMessage);
+begin
+  if Message.Msg = WM_PAINT then
+    WMPaint(TWMPaint(Message))
+  else
+    inherited WndProc(Message);
+end;
+
+{ UIF-055: the parent's DC (origin and clip already moved to the control); Font and Color set before Paint }
+procedure TGraphicControl.WMPaint(var Message: TWMPaint);
+begin
+  if Message.DC = 0 then
+    Exit;
+  TControlCanvas(FCanvas).FreeHandle;
+  FCanvas.Handle := Message.DC;
+  try
+    FCanvas.Font := FFont;
+    FCanvas.Brush.Color := FColor;
+    Paint;
+  finally
+    FCanvas.Handle := 0;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TCustomControl }
+
+constructor TCustomControl.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FCanvas := TControlCanvas.Create;
+  TControlCanvas(FCanvas).Control := Self;
+end;
+
+destructor TCustomControl.Destroy;
+begin
+  inherited Destroy;
+  FCanvas.Free;
+end;
+
+procedure TCustomControl.Paint;
+begin
+end;
+
+procedure TCustomControl.PaintWindow(DC: HDC);
+begin
+  TControlCanvas(FCanvas).FreeHandle;
+  FCanvas.Handle := DC;
+  try
+    Paint;
+  finally
+    FCanvas.Handle := 0;
+  end;
+end;
+
+{ the cached window DC goes before the window (graphics.md UIF-570) }
+procedure TCustomControl.DestroyWnd;
+begin
+  TControlCanvas(FCanvas).FreeHandle;
+  inherited DestroyWnd;
+end;
+
 initialization
-  ControlAtom := 'PN.Control.' + IntToHex(GetCurrentProcessId, 1);
+  ControlAtom :='PN.Control.' + IntToHex(GetCurrentProcessId, 1);
   RegisterIntegerConsts(TypeInfo(TCursor), IdentToCursor, CursorToIdent);
 end.

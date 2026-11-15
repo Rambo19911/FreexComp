@@ -1,0 +1,34 @@
+# nothing without a parent handle (UIF-057)
+ok Invalidate creates no handle
+# WM_PRINTCLIENT with erase (UIF-080, UIF-081)
+ok background erased with the brush
+ok graphic child painted at its position
+ok clipped on the left
+ok clipped at the top
+ok right edge inside
+ok clipped on the right
+ok later sibling painted above
+ok hidden child not painted
+ok hidden child Paint not called
+ok windowed child is not painted by the parent (UIF-082)
+# Canvas during Paint (UIF-055)
+ok brush colour = Color
+ok font = Font
+ok no DC outside Paint
+# WM_PRINTCLIENT without erase
+ok background left alone
+ok children painted
+# custom control (core.md 6)
+ok Paint drew through Canvas
+ok nothing outside its client area
+ok paint DC detached afterwards
+ok window DC obtained on demand
+ok window DC given back with the handle
+# Invalidate and Update
+ok nothing pending
+ok exactly the graphic control's rectangle
+ok Update painted through WM_PAINT
+ok update region validated
+ok windowed control: whole client area
+ok painted
+# passed 27 failed 0

@@ -1,0 +1,37 @@
+# press and release (UIF-065)
+ok OnMouseDown
+ok mouse captured
+ok GetCaptureControl
+ok OnClick before OnMouseUp
+ok capture released
+ok no capture control
+ok released outside: no click
+ok OnMouseMove
+ok Shift from the key flags
+# other buttons
+ok right press
+ok right release: no click
+ok middle press
+ok middle release
+ok right double click
+# double click
+ok OnDblClick then OnMouseDown
+ok no second click
+ok without csDoubleClicks: a press
+ok and a click
+# graphic child (UIF-064)
+ok routed in child coordinates
+ok captured through the parent window
+ok GetCaptureControl names the graphic control
+ok captured: moves outside go to it
+ok released outside: no click
+ok capture released
+ok click inside
+ok outside the child: the parent
+# disabled graphic child (UIF-066)
+ok skipped: the parent gets it
+# csNoStdEvents (UIF-067)
+ok no OnMouseDown
+ok no OnClick, no OnMouseUp
+ok no capture
+# passed 30 failed 0

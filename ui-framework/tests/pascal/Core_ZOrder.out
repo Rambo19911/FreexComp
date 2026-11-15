@@ -1,0 +1,21 @@
+ok creation order
+ok Z order top first
+# BringToFront (UIF-146)
+ok moved to the end
+ok window on top
+ok one layout pass of the parent (UIF-148)
+ok tab order unchanged
+# SendToBack (UIF-146)
+ok moved to index 0
+ok window at the bottom
+ok tab order unchanged
+ok graphic control moves in the list
+ok windows untouched
+# SetChildOrder (UIF-149)
+ok to index 0
+ok window follows
+ok clamped to the last index
+ok window on top
+ok middle position
+ok window between
+# passed 17 failed 0

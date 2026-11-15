@@ -1,0 +1,24 @@
+# Dispatch fallback to message methods (UIF-060)
+ok message method called
+ok its result returned to SendMessageW
+ok unhandled id: native default result
+ok message method for a system message
+ok inherited reached the native default
+ok Caption reads the native text
+# WindowProc replacement (UIF-014)
+ok hook saw SendMessageW and Perform
+ok old WindowProc still reached
+ok hook result returned
+ok consumed: handler not reached
+ok restored WindowProc
+# exceptions stop at MainWndProc (UIF-060, UIF-463)
+ok reported with the control as sender
+ok SendMessageW returned normally with the result set so far
+ok later messages work
+ok window still attached
+# text messages without a handle
+ok WM_GETTEXTLENGTH
+ok WM_GETTEXT copies at most BufSize - 1
+ok terminated
+ok copied characters
+# passed 19 failed 0

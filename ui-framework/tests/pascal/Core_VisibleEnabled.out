@@ -1,0 +1,39 @@
+# Enabled (UIF-130)
+ok CM_ENABLEDCHANGED once
+ok window disabled
+ok no message without a change
+ok window enabled again
+ok graphic control gets CM_ENABLEDCHANGED
+# parent disabled (UIF-131)
+ok child property unchanged
+ok child window not disabled
+# external EnableWindow (core.md 7.10 WM_ENABLE)
+ok field synced
+ok field synced back
+# Visible (UIF-135, UIF-136)
+ok CM_VISIBLECHANGED with WParam 0
+ok window hidden
+ok no message without a change
+ok WParam 1
+ok window shown
+ok graphic control gets CM_VISIBLECHANGED
+# hidden aligned control frees its space (UIF-135)
+ok below the bar
+ok space freed
+ok space taken again
+# loading: field only (UIF-135)
+ok no message while loading
+ok field set
+ok handle created at the end of Loaded
+ok created hidden
+# Showing (UIF-139)
+ok top-level window not shown yet
+ok child of a hidden top-level window
+ok top-level window shown
+ok visible chain
+ok hidden control
+ok children of a hidden control
+ok their Visible unchanged
+ok shown again
+ok top-level hidden
+# passed 31 failed 0

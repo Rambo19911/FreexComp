@@ -1,0 +1,31 @@
+# without a handle (UIF-060 DefaultHandler)
+ok text from the field
+ok no handle yet
+ok WM_SETTEXT went through WndProc without a handle
+# system class (UIF-032 step 2c)
+ok handle created
+ok instantiated from the system class
+ok no own class registered
+ok window procedure replaced
+ok system procedure kept as default
+ok object attached
+ok caption given at creation
+# native behaviour kept
+ok EM_SETSEL start
+ok EM_SETSEL end
+ok our WndProc saw EM_SETSEL
+ok Perform reaches the native control
+ok text read from the native control
+ok text written to the native control
+# font push (UIF-032 step 2f)
+ok WM_SETFONT through our WndProc at creation
+ok system control uses Font.Handle
+# consumed without inherited (UIF-061)
+ok native control never saw the message
+# re-creation
+ok window destroyed
+ok native text saved into the field
+ok text rebuilt
+ok system class again
+ok attached again
+# passed 24 failed 0
