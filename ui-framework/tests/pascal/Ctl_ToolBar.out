@@ -1,0 +1,159 @@
+# defaults
+ok Width 300
+ok Height 29
+ok Align alTop
+ok ButtonHeight 22
+ok ButtonWidth 23
+ok Color clBtnFace
+ok Images nil
+ok Indent 0
+ok List
+ok ParentColor
+ok ParentFont
+ok ShowCaptions
+ok TabOrder -1
+ok TabStop False
+ok accepts controls
+ok a TCustomControl
+ok TToolBar registered
+ok TToolButton registered
+ok button Width 23
+ok button Height 22
+ok button Action nil
+ok button Caption
+ok button Down
+ok button Enabled
+ok button Grouped
+ok button Hint
+ok button ImageIndex -1
+ok button Style tbsButton
+ok button Visible
+ok a TGraphicControl
+ok a button does not store Width
+ok Left not stored
+ok Top not stored
+ok Height not stored
+ok a separator is 8 wide
+ok a separator stores Width
+ok separator to divider keeps the width
+ok a divider stores Width
+ok a check button does not store Width
+# flow layout (UIF-800)
+ok first button at (Indent, s(2))
+ok a button always gets ButtonWidth
+ok separator: its own Width 8
+ok divider: its own Width
+ok another control: its own size
+ok an invisible button is skipped
+ok shown again: flowed
+ok the next one moves
+ok hidden again
+ok ButtonWidth re-flows
+ok ButtonHeight re-flows
+ok separator height = ButtonHeight
+ok Indent re-flows
+ok Style change re-flows
+ok Align and Anchors of children are ignored
+ok a button's own bounds are replaced
+ok ButtonWidth scaled
+ok ButtonHeight scaled
+ok Indent scaled
+ok without a form: s(2) at 96 DPI
+# E28: tool bar and status bar (layout.md UIF-261)
+ok ToolBar
+ok StatusBar
+ok Memo
+ok no auto-size from the font
+# window (UIF-804)
+ok own window class
+ok no WS_TABSTOP
+ok the bar is not a tab stop
+# painting (UIF-801)
+ok a plain button: background only
+ok separator: an empty gap
+ok divider: shadow line left of the centre
+ok divider: highlight line at the centre
+ok divider: one etched line, full height
+ok hot: frame top-left
+ok hot: frame bottom-right
+ok hot: highlight tint inside
+ok hot: a 1-px frame
+ok mouse gone: plain again
+ok pressed: sunken frame, shadow top-left
+ok pressed: sunken frame, highlight bottom-right
+ok dragged outside: not pressed
+ok back inside: pressed
+ok Down: sunken frame, shadow top-left
+ok Down: sunken frame, highlight bottom-right
+ok a disabled button is never hot
+# images (UIF-801)
+ok image centred in the button
+ok disabled: blended (UIF-566), not drawn plain
+ok disabled: the image is still drawn
+ok a caption without ShowCaptions is not drawn
+ok a bigger button: image centred
+ok ShowCaptions: image centred horizontally
+ok ShowCaptions: image above the centre
+ok caption text below the image
+ok nothing above the image
+ok List: image at the left margin s(3)
+ok List: image centred vertically
+ok List: caption right of the image
+ok Images nil: no image
+ok Images cleared when the image list is freed
+# clicks (UIF-802)
+ok click on a button
+ok separator: no click
+ok divider: no click
+ok disabled button: no click
+ok released outside: no click
+ok check button: Down toggled before OnClick
+ok check button: released by the next click
+ok grouped: click sets the button down
+ok grouped: another one
+ok grouped: the other one is released
+ok grouped: a down button stays down
+ok still down
+ok Down := True in code releases the group
+ok Down := False in code is allowed
+ok a button that is not grouped is not part of the group
+ok a group ends at a button that is not grouped
+ok G4 grouped again: one group G1 ... G5, G1 released
+ok G5 released
+# actions
+ok Caption from the action
+ok Hint from the action
+ok Checked -> Down
+ok ImageIndex from the action
+ok a later Checked change reaches Down
+ok a later ImageIndex change
+ok Enabled from the action
+ok click executes the action
+ok freed action: link cleared
+ok copied values stay
+# hints (UIF-803)
+ok short hint of a tool button
+ok ParentShowHint: the bar's ShowHint
+# streaming
+ok ButtonWidth
+ok ButtonHeight
+ok Indent
+ok Height
+ok ShowCaptions
+ok List
+ok Caption
+ok ImageIndex
+ok Hint
+ok separator
+ok check
+ok Down
+ok Grouped
+ok flowed: New
+ok flowed: separator with its stored Width
+ok flowed: Opt
+ok flowed: a panel with its own size
+ok OnClick bound
+ok no events while loading
+# leak
+ok GUI objects after 100 bars with handles
+# passed 147 failed 0

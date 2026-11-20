@@ -1,0 +1,45 @@
+object BarsForm: TBarsForm
+  Caption = 'Bars'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Progress: TProgressBar
+    Left = 8
+    Top = 8
+    Width = 17
+    Height = 150
+    Max = 200
+    Min = 20
+    Orientation = pbVertical
+    Position = 150
+    Smooth = True
+    Step = 7
+  end
+  object Odd: TProgressBar
+    Left = 40
+    Top = 8
+    Width = 150
+    Height = 17
+    Max = 5
+    Min = 10
+    Position = 3
+    Style = pbstMarquee
+  end
+  object Track: TTrackBar
+    Left = 40
+    Top = 40
+    Width = 45
+    Height = 150
+    Frequency = 5
+    LineSize = 3
+    Max = 50
+    Min = -10
+    Orientation = trVertical
+    PageSize = 10
+    Position = 25
+    TabStop = False
+    TickMarks = tmBoth
+    TickStyle = tsManual
+    OnChange = TrackChange
+  end
+end

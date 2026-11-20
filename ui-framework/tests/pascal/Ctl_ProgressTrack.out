@@ -1,0 +1,142 @@
+# progress bar: defaults
+ok Width 150
+ok Height 17
+ok Max 100
+ok Min 0
+ok Orientation pbHorizontal
+ok Position 0
+ok Smooth
+ok Step 10
+ok Style pbstNormal
+ok not a tab stop
+ok TProgressBar registered
+# progress bar: handle-less state
+ok window class msctls_progress32
+ok range, position and step pushed
+ok no PBS_SMOOTH
+ok no PBS_VERTICAL
+ok no PBS_MARQUEE
+ok no WS_TABSTOP
+# progress bar: recreating styles
+ok Smooth recreates the window
+ok PBS_SMOOTH
+ok state kept
+ok Orientation recreates the window
+ok PBS_VERTICAL
+ok state kept after Orientation
+ok Style recreates the window
+ok PBS_MARQUEE
+ok pbstNormal: no PBS_MARQUEE
+# progress bar: range and position
+ok Max < Min raises
+ok the message
+ok Max unchanged
+ok Min > Max raises
+ok Min unchanged
+ok clamped to Max
+ok PBM_SETPOS
+ok clamped to Min
+ok a smaller Max clamps the position
+ok pushed
+ok PBM_SETSTEP
+# progress bar: StepIt and StepBy
+ok StepIt adds Step
+ok StepIt up to Max
+ok StepIt beyond Max wraps to Min
+ok pushed
+ok StepBy
+ok StepBy clamped to Max
+ok StepBy clamped to Min
+# progress bar: events
+ok OnClick
+# track bar: defaults
+ok Width 150
+ok Height 45
+ok Frequency 1
+ok LineSize 1
+ok Max 10
+ok Min 0
+ok Orientation trHorizontal
+ok PageSize 2
+ok Position 0
+ok TabOrder -1
+ok TabStop
+ok TickMarks tmBottomRight
+ok TickStyle tsAuto
+ok TTrackBar registered
+# track bar: handle-less state
+ok OnChange without a window: the clamp by Min, then Position
+ok no OnChange while the window is created
+ok window class msctls_trackbar32
+ok range, position, line and page size pushed
+ok Frequency 3 over 2..20: ticks at 2, 5, ..., 20
+ok tsAuto: TBS_AUTOTICKS
+ok horizontal
+ok tmBottomRight: no TBS_TOP
+ok tmBottomRight: no TBS_BOTH
+ok no TBS_NOTICKS
+ok WS_TABSTOP
+# track bar: recreating styles
+ok Orientation recreates the window
+ok TBS_VERT
+ok state kept
+ok recreating fires no OnChange
+ok TickMarks recreates the window
+ok tmTopLeft vertical: TBS_LEFT
+ok tmBoth: TBS_BOTH
+ok TickStyle recreates the window
+ok tsNone: TBS_NOTICKS
+ok tsNone: no TBS_AUTOTICKS
+ok tsManual: no TBS_NOTICKS
+ok tsManual: no TBS_AUTOTICKS
+ok tsManual: only the end ticks
+# track bar: the user scrolls (UIF-810)
+ok vertical: Down moves by LineSize, CN_VSCROLL, one OnChange
+ok Position follows the window
+ok Page Down moves by PageSize
+ok End: Max
+ok no change: no OnChange
+ok horizontal: Home, CN_HSCROLL
+ok horizontal: Right
+# track bar: programmatic changes
+ok Position := fires OnChange
+ok TBM_SETPOS
+ok same value: nothing
+ok clamped to Max
+ok a smaller Max clamps the position and fires OnChange
+ok range pushed
+ok a range change keeping the position: nothing
+ok TBM_SETTICFREQ: ticks at 2, 9, 16, 23, 30
+ok line and page size pushed
+ok Max < Min raises
+ok the message
+ok Max unchanged
+ok Min > Max raises
+# streaming
+ok progress Max
+ok progress Min
+ok progress Position
+ok progress Smooth
+ok progress Step
+ok progress Orientation
+ok progress window state
+ok a stored Max below Min: Min kept
+ok Max becomes Min, no error
+ok position clamped
+ok progress Style
+ok track Frequency
+ok track LineSize
+ok track Max
+ok track Min
+ok track Orientation
+ok track PageSize
+ok track Position
+ok track TickMarks
+ok track TickStyle
+ok track TabStop
+ok track window state
+ok OnChange bound
+ok no events while loading
+# leak
+ok GUI objects after 100 instances of each with handles
+# passed 128 failed 0

@@ -1,0 +1,108 @@
+# defaults
+ok Width 300
+ok Height 19
+ok Align alBottom
+ok Panels empty
+ok ParentFont
+ok SimplePanel
+ok SimpleText
+ok SizeGrip
+ok TabStop False (not published)
+ok does not accept children
+ok TStatusBar registered
+ok Add returns a TStatusPanel
+ok panel Alignment taLeftJustify
+ok panel Bevel pbLowered
+ok panel Text
+ok panel Width 50
+ok Panels[0]
+ok the collection belongs to the status bar
+# handle-less state
+ok window class msctls_statusbar32
+ok parts: cumulative edges, the last one -1 (UIF-780)
+ok text of part 0
+ok text of part 1
+ok text of part 2
+ok pbLowered: no flag
+ok pbNone: SBT_NOBORDERS
+ok pbRaised: SBT_POPOUT
+# window styles (UIF-261)
+ok CCS_NORESIZE
+ok CCS_NOPARENTALIGN
+ok CCS_NODIVIDER
+ok no WS_TABSTOP
+ok sizeable form, alBottom: SBARS_SIZEGRIP
+ok SizeGrip recreates the window
+ok SizeGrip False: no grip
+ok parts kept
+ok texts kept
+ok Align alTop: no grip
+ok Align alBottom again: grip
+ok dialog form: no grip
+ok bsSizeToolWin form: grip
+# geometry (UIF-782, E28)
+ok alBottom on a 640 x 400 form
+ok the native window keeps the stored height
+ok a font change does not resize
+ok native height after the font change
+ok a stored Height of 25
+ok native height 25
+# panel changes (UIF-781)
+ok a width change re-sends the parts
+ok a text change re-sends the text
+ok a bevel change re-sends the flags
+ok taCenter: one tab before the text
+ok taRightJustify: two tabs before the text
+ok taLeftJustify: no prefix
+ok Add: a new last part
+ok its text
+ok Delete: the parts follow
+ok texts follow
+ok nothing sent inside BeginUpdate
+ok sent at EndUpdate
+ok no panels: a single part
+ok the single part is empty
+# simple panel
+ok not simple
+ok SimplePanel: SB_SIMPLE
+ok the simple text
+ok SimpleText change re-sent
+ok recreated
+ok simple mode kept
+ok simple text kept
+ok SimplePanel False: parts again
+ok the panels are back
+ok their texts: part 0
+ok their texts: part 1
+# scaling
+ok panel Width scaled
+ok Height scaled
+ok scaled parts sent
+# events
+ok OnClick
+ok OnResize when the form width changes
+ok still at the bottom
+# streaming
+ok three panels
+ok panel 0 Width
+ok panel 0 Text
+ok panel 1 Alignment
+ok panel 1 Bevel
+ok panel 2 Bevel
+ok panel 2 default Width
+ok SizeGrip False
+ok stored Height 24 at the bottom
+ok native parts
+ok native text of panel 1
+ok no grip
+ok Align alTop
+ok SimplePanel
+ok SimpleText
+ok native simple text
+ok ParentFont False
+ok Font.Height
+ok OnClick bound
+ok no events while loading
+# leak
+ok GUI objects after 100 instances with handles
+# passed 97 failed 0
