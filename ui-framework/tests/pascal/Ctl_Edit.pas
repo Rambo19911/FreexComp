@@ -32,13 +32,8 @@ type
     procedure OtherChange(Sender: TObject);
   end;
 
-  TGetGuiResources = function(hProcess: THandle; uiFlags: DWORD): DWORD; stdcall;
 
 {$FORM Ctl_Edit.form}
-
-const
-  GR_GDIOBJECTS = 0;
-  GR_USEROBJECTS = 1;
 
 var
   Log: TLog;
@@ -126,12 +121,9 @@ begin
   Result := Format('%d,%d,%d,%d', [C.Left, C.Top, C.Width, C.Height]);
 end;
 
-{ GDI + USER objects of the process (GetGuiResources is not imported by Windows: bound at run time) }
+{ GDI + USER objects of the process }
 function GuiObjects: Integer;
-var
-  GetGuiResources: TGetGuiResources;
 begin
-  GetGuiResources := TGetGuiResources(GetProcAddress(GetModuleHandleW('user32.dll'), 'GetGuiResources'));
   Result := Integer(GetGuiResources(GetCurrentProcess, GR_GDIOBJECTS))
     + Integer(GetGuiResources(GetCurrentProcess, GR_USEROBJECTS));
 end;

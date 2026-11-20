@@ -1436,7 +1436,13 @@ begin
         C := FActiveControl.Parent.FindNextControl(FActiveControl,
           (Message.WParam = VK_RIGHT) or (Message.WParam = VK_DOWN), False, True);
         if C <> nil then
+        begin
           C.SetFocus;
+          { a radio button (its window answers DLGC_RADIOBUTTON) that receives focus this way becomes checked }
+          if C.HandleAllocated and (FActiveControl = C)
+            and ((SendMessageW(C.Handle, WM_GETDLGCODE, 0, 0) and DLGC_RADIOBUTTON) <> 0) then
+            SendMessageW(C.Handle, BM_CLICK, 0, 0);
+        end;
         Message.Result := 1;
       end;
     VK_RETURN, VK_ESCAPE, VK_CANCEL:

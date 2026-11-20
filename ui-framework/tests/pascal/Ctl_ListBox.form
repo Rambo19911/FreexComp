@@ -1,0 +1,28 @@
+object ListForm: TListForm
+  Caption = 'List boxes'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Names: TListBox
+    Left = 10
+    Top = 10
+    Width = 150
+    Height = 120
+    BorderStyle = bsNone
+    Color = clYellow
+    Columns = 2
+    ExtendedSelect = False
+    Font.Height = -15
+    Items = (
+      'pear'
+      'Apple'
+      'fig'
+    )
+    MultiSelect = True
+    ParentFont = False
+    Sorted = True
+    TabStop = False
+    OnClick = NamesClick
+    OnDblClick = NamesClick
+  end
+end

@@ -17,8 +17,6 @@ type
     procedure WndProc(var Message: TMessage); override;
   public
     constructor Create(AOwner: TComponent); override;
-  published
-    property TabStop;
   end;
 
   TLog = class
@@ -33,13 +31,10 @@ type
     procedure NotesChange(Sender: TObject);
   end;
 
-  TGetGuiResources = function(hProcess: THandle; uiFlags: DWORD): DWORD; stdcall;
 
 {$FORM Ctl_Memo.form}
 
 const
-  GR_GDIOBJECTS = 0;
-  GR_USEROBJECTS = 1;
   CRLF = #13#10;
 
 var
@@ -105,12 +100,9 @@ begin
   Result := (GetWindowLongPtrW(E.Handle, GWL_STYLE) and Bits) = Bits;
 end;
 
-{ GDI + USER objects of the process (GetGuiResources is not imported by Windows: bound at run time) }
+{ GDI + USER objects of the process }
 function GuiObjects: Integer;
-var
-  GetGuiResources: TGetGuiResources;
 begin
-  GetGuiResources := TGetGuiResources(GetProcAddress(GetModuleHandleW('user32.dll'), 'GetGuiResources'));
   Result := Integer(GetGuiResources(GetCurrentProcess, GR_GDIOBJECTS))
     + Integer(GetGuiResources(GetCurrentProcess, GR_USEROBJECTS));
 end;

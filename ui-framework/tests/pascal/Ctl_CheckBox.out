@@ -1,0 +1,63 @@
+# defaults
+ok Width 97
+ok Height 17
+ok Alignment taRightJustify
+ok AllowGrayed
+ok Caption
+ok Checked
+ok ParentFont
+ok State cbUnchecked
+ok TabOrder
+ok TabStop True
+ok WordWrap
+ok registered
+# handle-less state, window
+ok Checked by code without a handle fires OnClick
+ok system class BUTTON
+ok BS_CHECKBOX (not auto)
+ok taRightJustify: no BS_LEFTTEXT
+ok state pushed
+ok Alignment recreates
+ok taLeftJustify: BS_LEFTTEXT
+ok state kept
+ok AllowGrayed recreates
+ok BS_3STATE (not auto)
+ok cbGrayed: BST_INDETERMINATE
+ok grayed is not Checked
+ok State by code fires OnClick
+ok equal State: no OnClick
+ok Checked False -> cbUnchecked
+ok unchecked pushed
+ok BS_MULTILINE
+# Toggle (UIF-650, UIF-651)
+ok click: unchecked -> checked, OnClick once
+ok AllowGrayed: checked -> grayed
+ok grayed -> unchecked
+ok no AllowGrayed: checked -> unchecked
+ok the native check follows
+ok other character: not consumed
+ok accelerator consumed
+ok accelerator toggles
+ok accelerator focuses
+ok user click goes through Toggle
+ok Toggle override vetoes
+ok vetoed: unchanged
+ok vetoed: native check unchanged
+ok code does not call Toggle
+# streaming (UIF-652)
+ok no OnClick while loading
+ok Checked alone
+ok State alone
+ok AllowGrayed
+ok both
+ok Alignment
+ok Caption
+ok Font.Height
+ok ParentFont False
+ok TabStop False
+ok WordWrap
+ok OnClick bound
+ok OnClick handler of the form
+# leak
+ok GUI objects after 100 instances with handles
+# passed 57 failed 0

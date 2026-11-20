@@ -334,6 +334,102 @@ type
     property OnMouseUp;
   end;
 
+  TCheckBoxState = (cbUnchecked, cbChecked, cbGrayed);
+
+  { controls-standard.md section 5 }
+  TCustomCheckBox = class(TButtonControl)
+  private
+    FAlignment: TLeftRight;
+    FAllowGrayed: Boolean;
+    FState: TCheckBoxState;
+    procedure SetAlignment(Value: TLeftRight);
+    procedure SetAllowGrayed(Value: Boolean);
+    procedure SetState(Value: TCheckBoxState);
+    function GetChecked: Boolean;
+    procedure SetChecked(Value: Boolean);
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    procedure CreateWnd; override;
+    { BN_CLICKED and the accelerator toggle (UIF-650) }
+    procedure WndProc(var Message: TMessage); override;
+    { UIF-650, UIF-883: the single path of user-initiated state changes }
+    procedure Toggle; virtual;
+    property Alignment: TLeftRight read FAlignment write SetAlignment default taRightJustify;
+    property AllowGrayed: Boolean read FAllowGrayed write SetAllowGrayed default False;
+    property Checked: Boolean read GetChecked write SetChecked default False;
+    property State: TCheckBoxState read FState write SetState default cbUnchecked;
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+  TCheckBox = class(TCustomCheckBox)
+  published
+    property Alignment;
+    property AllowGrayed;
+    property Caption;
+    property Checked;
+    property Font;
+    property ParentFont;
+    property State;
+    property TabOrder;
+    property TabStop default True;
+    property WordWrap;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+  end;
+
+  { controls-standard.md section 6 }
+  TRadioButton = class(TButtonControl)
+  private
+    FAlignment: TLeftRight;
+    FChecked: Boolean;
+    procedure SetAlignment(Value: TLeftRight);
+    procedure SetChecked(Value: Boolean);
+    procedure SetCheckedState(Value: Boolean);
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    procedure CreateWnd; override;
+    { BN_CLICKED and the accelerator check the button (UIF-661) }
+    procedure WndProc(var Message: TMessage); override;
+    { UIF-662: the last checked button of a group in creation order stays checked }
+    procedure Loaded; override;
+  public
+    constructor Create(AOwner: TComponent); override;
+  published
+    property Alignment: TLeftRight read FAlignment write SetAlignment default taRightJustify;
+    property Caption;
+    property Checked: Boolean read FChecked write SetChecked default False;
+    property Font;
+    property ParentFont;
+    property TabOrder;
+    property TabStop default False;
+    property WordWrap;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+  end;
+
   { controls-standard.md section 7 }
   TCustomGroupBox = class(TCustomControl)
   private
@@ -372,10 +468,141 @@ type
     property OnResize;
   end;
 
+  TListBoxStyle = (lbStandard, lbOwnerDrawFixed, lbOwnerDrawVariable);
+
+  TCustomListBox = class;
+
+  { UIF-690: the items of a list box (LB_* messages; the list box's saved list without a handle) }
+  TListBoxStrings = class(TStrings)
+  private
+    FListBox: TCustomListBox;
+  protected
+    function Get(Index: Integer): string; override;
+    function GetCount: Integer; override;
+    function GetObject(Index: Integer): TObject; override;
+    procedure Put(Index: Integer; const S: string); override;
+    procedure PutObject(Index: Integer; AObject: TObject); override;
+    { Items.BeginUpdate/EndUpdate -> WM_SETREDRAW }
+    procedure SetUpdateState(Updating: Boolean); override;
+  public
+    { UIF-693: the actual index (sorted lists insert in order) }
+    function Add(const S: string): Integer; override;
+    procedure Clear; override;
+    procedure Delete(Index: Integer); override;
+    { UIF-693: not allowed on a sorted list }
+    procedure Insert(Index: Integer; const S: string); override;
+  end;
+
+  { controls-standard.md section 9 }
+  TCustomListBox = class(TWinControl)
+  private
+    FBorderStyle: TBorderStyle;
+    FColumns: Integer;
+    FExtendedSelect: Boolean;
+    FItemHeight: Integer;
+    FItems: TStrings;
+    FMultiSelect: Boolean;
+    FSorted: Boolean;
+    FStyle: TListBoxStyle;
+    { UIF-690: the state while there is no handle }
+    FSaved: TStringList;                                     { the items and their objects }
+    FSavedSel: string;                                       { one '0'/'1' per item: selected }
+    FSavedCaret: Integer;                                    { multi-select: the focused item }
+    FSavedTop: Integer;
+    procedure SetBorderStyle(Value: TBorderStyle);
+    procedure SetColumns(Value: Integer);
+    procedure SetExtendedSelect(Value: Boolean);
+    function GetItemHeight: Integer;
+    procedure SetItemHeight(Value: Integer);
+    procedure SetItems(Value: TStrings);
+    procedure SetMultiSelect(Value: Boolean);
+    procedure SetSorted(Value: Boolean);
+    procedure SetStyle(Value: TListBoxStyle);
+    function GetCount: Integer;
+    function GetItemIndex: Integer;
+    procedure SetItemIndex(Value: Integer);
+    function GetSelected(Index: Integer): Boolean;
+    procedure SetSelected(Index: Integer; Value: Boolean);
+    function GetSelCount: Integer;
+    function GetTopIndex: Integer;
+    procedure SetTopIndex(Value: Integer);
+    procedure CheckIndex(Index: Integer);
+    procedure SavedInsert(Index: Integer; const S: string; AObject: TObject; Sel: Boolean);
+    function SortedIndex(const S: string): Integer;
+    procedure SortSaved;
+    procedure UpdateColumnWidth;
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    { UIF-690: items, objects, selection, top item pushed after creation }
+    procedure CreateWnd; override;
+    { UIF-690: the same pulled back before the window goes }
+    procedure DestroyWnd; override;
+    { UIF-691: LBN_SELCHANGE -> Click, LBN_DBLCLK -> DblClick; WM_SIZE keeps the column width }
+    procedure WndProc(var Message: TMessage); override;
+    property BorderStyle: TBorderStyle read FBorderStyle write SetBorderStyle default bsSingle;
+    property Columns: Integer read FColumns write SetColumns default 0;
+    property ExtendedSelect: Boolean read FExtendedSelect write SetExtendedSelect default True;
+    property ItemHeight: Integer read GetItemHeight write SetItemHeight stored False;
+    property MultiSelect: Boolean read FMultiSelect write SetMultiSelect default False;
+    property Sorted: Boolean read FSorted write SetSorted default False;
+    property Style: TListBoxStyle read FStyle write SetStyle default lbStandard;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    function ItemAtPos(Pos: TPoint; Existing: Boolean): Integer;
+    function ItemRect(Index: Integer): TRect;
+    procedure AddItem(const Item: string; AObject: TObject);
+    procedure Clear;
+    procedure ClearSelection;
+    procedure DeleteSelected;
+    procedure SelectAll;
+    property Count: Integer read GetCount;
+    property ItemIndex: Integer read GetItemIndex write SetItemIndex;
+    property Items: TStrings read FItems write SetItems;
+    property SelCount: Integer read GetSelCount;
+    property Selected[Index: Integer]: Boolean read GetSelected write SetSelected;
+    property TopIndex: Integer read GetTopIndex write SetTopIndex;
+  end;
+
+  TListBox = class(TCustomListBox)
+  published
+    property BorderStyle;
+    property Color default clWindow;
+    property Columns;
+    property ExtendedSelect;
+    property Font;
+    property ItemHeight;
+    property Items;
+    property MultiSelect;
+    property ParentColor default False;
+    property ParentFont;
+    property Sorted;
+    property Style;
+    property TabOrder;
+    property TabStop default True;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+  end;
+
 implementation
 
 uses
   RTLConsts, Forms;
+
+type
+  { access to the protected PixelsPerInch / ActiveControl of a form }
+  TFormAccess = class(TCustomForm);
 
 { the DPI of a control: its form's current PixelsPerInch, 96 (logical) without a form }
 function ControlDPI(Control: TControl): Integer;
@@ -384,7 +611,7 @@ var
 begin
   F := GetParentForm(Control);
   if F <> nil then
-    Result := TForm(F).PixelsPerInch                         { published in TForm, protected in TCustomForm (C-260) }
+    Result := TFormAccess(F).PixelsPerInch
   else
     Result := 96;
 end;
@@ -1333,14 +1560,14 @@ end;
 
 { ---------------------------------------------------------------- TButton }
 
-{ the focused control of the button's form (ActiveControl is published in TForm, protected in TCustomForm; C-260) }
+{ the focused control of the button's form }
 function FormActiveControl(Control: TControl): TWinControl;
 var
   F: TCustomForm;
 begin
   F := GetParentForm(Control);
   if F <> nil then
-    Result := TForm(F).ActiveControl
+    Result := TFormAccess(F).ActiveControl
   else
     Result := nil;
 end;
@@ -1499,6 +1726,225 @@ begin
   inherited Click;
 end;
 
+{ ---------------------------------------------------------------- TCustomCheckBox }
+
+const
+  CheckStates: array[TCheckBoxState] of WPARAM = (BST_UNCHECKED, BST_CHECKED, BST_INDETERMINATE);
+
+constructor TCustomCheckBox.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FAlignment := taRightJustify;
+  SetBounds(Left, Top, 97, 17);
+end;
+
+{ not the AUTO variants: state changes are ours }
+procedure TCustomCheckBox.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  if FAllowGrayed then
+    Params.Style := Params.Style or BS_3STATE
+  else
+    Params.Style := Params.Style or BS_CHECKBOX;
+  if FAlignment = taLeftJustify then
+    Params.Style := Params.Style or BS_LEFTTEXT;
+end;
+
+procedure TCustomCheckBox.CreateWnd;
+begin
+  inherited CreateWnd;
+  SendMessageW(Handle, BM_SETCHECK, CheckStates[FState], 0);
+end;
+
+procedure TCustomCheckBox.WndProc(var Message: TMessage);
+begin
+  case Message.Msg of
+    CN_COMMAND:
+      if HiWord(Message.WParam) = BN_CLICKED then
+        Toggle
+      else
+        inherited WndProc(Message);
+    CM_DIALOGCHAR:
+      if IsAccel(Word(Message.WParam), Caption) and CanFocus then
+      begin
+        SetFocus;
+        Toggle;
+        Message.Result := 1;
+      end
+      else
+        inherited WndProc(Message);
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+procedure TCustomCheckBox.Toggle;
+begin
+  case FState of
+    cbUnchecked: State := cbChecked;
+    cbChecked:
+      if FAllowGrayed then
+        State := cbGrayed
+      else
+        State := cbUnchecked;
+  else
+    State := cbUnchecked;
+  end;
+end;
+
+{ UIF-651: OnClick on every change, by the user or by code, except while loading }
+procedure TCustomCheckBox.SetState(Value: TCheckBoxState);
+begin
+  if FState <> Value then
+  begin
+    FState := Value;
+    if HandleAllocated then
+      SendMessageW(Handle, BM_SETCHECK, CheckStates[Value], 0);
+    if not (csLoading in ComponentState) then
+      Click;
+  end;
+end;
+
+function TCustomCheckBox.GetChecked: Boolean;
+begin
+  Result := FState = cbChecked;
+end;
+
+procedure TCustomCheckBox.SetChecked(Value: Boolean);
+begin
+  if Value then
+    State := cbChecked
+  else
+    State := cbUnchecked;
+end;
+
+procedure TCustomCheckBox.SetAlignment(Value: TLeftRight);
+begin
+  if FAlignment <> Value then
+  begin
+    FAlignment := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomCheckBox.SetAllowGrayed(Value: Boolean);
+begin
+  if FAllowGrayed <> Value then
+  begin
+    FAllowGrayed := Value;
+    RecreateWnd;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TRadioButton }
+
+constructor TRadioButton.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FAlignment := taRightJustify;
+  TabStop := False;
+  SetBounds(Left, Top, 113, 17);
+end;
+
+procedure TRadioButton.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  Params.Style := Params.Style or BS_RADIOBUTTON;
+  if FAlignment = taLeftJustify then
+    Params.Style := Params.Style or BS_LEFTTEXT;
+end;
+
+procedure TRadioButton.CreateWnd;
+begin
+  inherited CreateWnd;
+  SendMessageW(Handle, BM_SETCHECK, WPARAM(Ord(FChecked)), 0);
+end;
+
+{ the field, the window and TabStop (True while checked); no event }
+procedure TRadioButton.SetCheckedState(Value: Boolean);
+begin
+  FChecked := Value;
+  TabStop := Value;
+  if HandleAllocated then
+    SendMessageW(Handle, BM_SETCHECK, WPARAM(Ord(Value)), 0);
+end;
+
+{ UIF-660: checking unchecks the rest of the group (same Parent) silently, then fires OnClick; unchecking by code
+  fires nothing. While loading the group is resolved in Loaded (UIF-662) }
+procedure TRadioButton.SetChecked(Value: Boolean);
+var
+  I: Integer;
+  C: TControl;
+begin
+  if FChecked = Value then
+    Exit;
+  SetCheckedState(Value);
+  if not Value or (csLoading in ComponentState) then
+    Exit;
+  if Parent <> nil then
+    for I := 0 to Parent.ControlCount - 1 do
+    begin
+      C := Parent.Controls[I];
+      if (C <> Self) and (C is TRadioButton) and TRadioButton(C).FChecked then
+        TRadioButton(C).SetCheckedState(False);
+    end;
+  Click;
+end;
+
+procedure TRadioButton.Loaded;
+var
+  I: Integer;
+  C: TControl;
+  After: Boolean;
+begin
+  inherited Loaded;
+  if not FChecked or (Parent = nil) then
+    Exit;
+  After := False;
+  for I := 0 to Parent.ControlCount - 1 do
+  begin
+    C := Parent.Controls[I];
+    if C = Self then
+      After := True
+    else if After and (C is TRadioButton) and TRadioButton(C).FChecked then
+    begin
+      SetCheckedState(False);
+      Exit;
+    end;
+  end;
+end;
+
+procedure TRadioButton.WndProc(var Message: TMessage);
+begin
+  case Message.Msg of
+    CN_COMMAND:
+      if HiWord(Message.WParam) = BN_CLICKED then
+        Checked := True
+      else
+        inherited WndProc(Message);
+    CM_DIALOGCHAR:
+      if IsAccel(Word(Message.WParam), Caption) and CanFocus then
+      begin
+        SetFocus;
+        Checked := True;
+        Message.Result := 1;
+      end
+      else
+        inherited WndProc(Message);
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+procedure TRadioButton.SetAlignment(Value: TLeftRight);
+begin
+  if FAlignment <> Value then
+  begin
+    FAlignment := Value;
+    RecreateWnd;
+  end;
+end;
+
 { ---------------------------------------------------------------- TCustomGroupBox }
 
 constructor TCustomGroupBox.Create(AOwner: TComponent);
@@ -1594,6 +2040,586 @@ begin
   end;
 end;
 
+{ ---------------------------------------------------------------- TListBoxStrings }
+
+const
+  SListBoxNoSpace = 'Not enough memory for the list box items';
+
+function TListBoxStrings.Get(Index: Integer): string;
+var
+  N: Integer;
+begin
+  if not FListBox.HandleAllocated then
+  begin
+    Result := FListBox.FSaved[Index];
+    Exit;
+  end;
+  N := Integer(SendMessageW(FListBox.Handle, LB_GETTEXTLEN, WPARAM(Index), 0));
+  if N = LB_ERR then
+    Error(SListIndexError, Index);
+  SetLength(Result, N + 1);
+  N := Integer(SendMessageW(FListBox.Handle, LB_GETTEXT, WPARAM(Index), LPARAM(PChar(Result))));
+  if N < 0 then
+    N := 0;
+  SetLength(Result, N);
+end;
+
+function TListBoxStrings.GetCount: Integer;
+begin
+  if FListBox.HandleAllocated then
+    Result := Integer(SendMessageW(FListBox.Handle, LB_GETCOUNT, 0, 0))
+  else
+    Result := FListBox.FSaved.Count;
+end;
+
+function TListBoxStrings.GetObject(Index: Integer): TObject;
+var
+  D: LRESULT;
+begin
+  if not FListBox.HandleAllocated then
+  begin
+    Result := FListBox.FSaved.Objects[Index];
+    Exit;
+  end;
+  D := SendMessageW(FListBox.Handle, LB_GETITEMDATA, WPARAM(Index), 0);
+  if D = LB_ERR then
+    Error(SListIndexError, Index);
+  Result := TObject(Pointer(D));
+end;
+
+procedure TListBoxStrings.PutObject(Index: Integer; AObject: TObject);
+begin
+  if not FListBox.HandleAllocated then
+    FListBox.FSaved.Objects[Index] := AObject
+  else if SendMessageW(FListBox.Handle, LB_SETITEMDATA, WPARAM(Index), LPARAM(Pointer(AObject))) = LB_ERR then
+    Error(SListIndexError, Index);
+end;
+
+{ the object and the selection of the item stay }
+procedure TListBoxStrings.Put(Index: Integer; const S: string);
+var
+  Obj: TObject;
+  Sel: Boolean;
+begin
+  if FListBox.FSorted then
+    raise EStringListError.Create(SSortedListError);
+  Obj := GetObject(Index);
+  Sel := FListBox.Selected[Index];
+  if not FListBox.HandleAllocated then
+  begin
+    FListBox.FSaved[Index] := S;
+    Exit;
+  end;
+  SendMessageW(FListBox.Handle, LB_DELETESTRING, WPARAM(Index), 0);
+  SendMessageW(FListBox.Handle, LB_INSERTSTRING, WPARAM(Index), LPARAM(PChar(S)));
+  SendMessageW(FListBox.Handle, LB_SETITEMDATA, WPARAM(Index), LPARAM(Pointer(Obj)));
+  if Sel then
+    FListBox.Selected[Index] := True;
+end;
+
+procedure TListBoxStrings.SetUpdateState(Updating: Boolean);
+begin
+  if not FListBox.HandleAllocated then
+    Exit;
+  SendMessageW(FListBox.Handle, WM_SETREDRAW, WPARAM(Ord(not Updating)), 0);
+  if not Updating then
+    FListBox.Invalidate;
+end;
+
+function TListBoxStrings.Add(const S: string): Integer;
+begin
+  if not FListBox.HandleAllocated then
+  begin
+    if FListBox.FSorted then
+      Result := FListBox.SortedIndex(S)
+    else
+      Result := FListBox.FSaved.Count;
+    FListBox.SavedInsert(Result, S, nil, False);
+    Exit;
+  end;
+  Result := Integer(SendMessageW(FListBox.Handle, LB_ADDSTRING, 0, LPARAM(PChar(S))));
+  if Result < 0 then
+    raise EOutOfResources.Create(SListBoxNoSpace);
+end;
+
+procedure TListBoxStrings.Insert(Index: Integer; const S: string);
+begin
+  if FListBox.FSorted then
+    raise EStringListError.Create(SSortedListError);
+  if (Index < 0) or (Index > GetCount) then
+    Error(SListIndexError, Index);
+  if not FListBox.HandleAllocated then
+    FListBox.SavedInsert(Index, S, nil, False)
+  else if SendMessageW(FListBox.Handle, LB_INSERTSTRING, WPARAM(Index), LPARAM(PChar(S))) < 0 then
+    raise EOutOfResources.Create(SListBoxNoSpace);
+end;
+
+procedure TListBoxStrings.Delete(Index: Integer);
+begin
+  if not FListBox.HandleAllocated then
+  begin
+    FListBox.FSaved.Delete(Index);
+    System.Delete(FListBox.FSavedSel, Index + 1, 1);
+  end
+  else if SendMessageW(FListBox.Handle, LB_DELETESTRING, WPARAM(Index), 0) = LB_ERR then
+    Error(SListIndexError, Index);
+end;
+
+procedure TListBoxStrings.Clear;
+begin
+  if FListBox.HandleAllocated then
+    SendMessageW(FListBox.Handle, LB_RESETCONTENT, 0, 0)
+  else
+  begin
+    FListBox.FSaved.Clear;
+    FListBox.FSavedSel := '';
+  end;
+end;
+
+{ ---------------------------------------------------------------- TCustomListBox }
+
+constructor TCustomListBox.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  { UIF-691: the native notifications drive OnClick and OnDblClick }
+  ControlStyle := ControlStyle - [csClickEvents, csDoubleClicks, csSetCaption];
+  FSaved := TStringList.Create;
+  FItems := TListBoxStrings.Create;
+  TListBoxStrings(FItems).FListBox := Self;
+  FBorderStyle := bsSingle;
+  FExtendedSelect := True;
+  FItemHeight := 15;
+  FSavedCaret := -1;
+  TabStop := True;
+  Color := clWindow;
+  SetBounds(Left, Top, 121, 97);
+end;
+
+destructor TCustomListBox.Destroy;
+begin
+  inherited Destroy;
+  FItems.Free;
+  FSaved.Free;
+end;
+
+procedure TCustomListBox.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  Params.SubclassOf := 'LISTBOX';
+  Params.Style := Params.Style or LBS_NOTIFY or LBS_HASSTRINGS or LBS_NOINTEGRALHEIGHT or WS_VSCROLL;
+  if FSorted then
+    Params.Style := Params.Style or LBS_SORT;
+  if FMultiSelect then
+    if FExtendedSelect then
+      Params.Style := Params.Style or LBS_EXTENDEDSEL
+    else
+      Params.Style := Params.Style or LBS_MULTIPLESEL;
+  if FColumns > 0 then
+    Params.Style := Params.Style or LBS_MULTICOLUMN or WS_HSCROLL;
+  if FBorderStyle = bsSingle then
+    Params.ExStyle := Params.ExStyle or WS_EX_CLIENTEDGE;
+end;
+
+procedure TCustomListBox.CreateWnd;
+var
+  I, N: Integer;
+  Sel: Integer;
+begin
+  inherited CreateWnd;
+  Sel := -1;
+  SendMessageW(Handle, WM_SETREDRAW, 0, 0);
+  try
+    for I := 0 to FSaved.Count - 1 do
+    begin
+      N := Integer(SendMessageW(Handle, LB_ADDSTRING, 0, LPARAM(PChar(FSaved[I]))));
+      if N < 0 then
+        Continue;
+      SendMessageW(Handle, LB_SETITEMDATA, WPARAM(N), LPARAM(Pointer(FSaved.Objects[I])));
+      if FSavedSel[I + 1] = '1' then
+        if FMultiSelect then
+          SendMessageW(Handle, LB_SETSEL, 1, LPARAM(N))
+        else
+          Sel := N;
+    end;
+    if Sel >= 0 then
+      SendMessageW(Handle, LB_SETCURSEL, WPARAM(Sel), 0);
+    if FMultiSelect and (FSavedCaret >= 0) and (FSavedCaret < FSaved.Count) then
+      SendMessageW(Handle, LB_SETCARETINDEX, WPARAM(FSavedCaret), 0);
+    if FSavedTop > 0 then
+      SendMessageW(Handle, LB_SETTOPINDEX, WPARAM(FSavedTop), 0);
+  finally
+    SendMessageW(Handle, WM_SETREDRAW, 1, 0);
+  end;
+  FSaved.Clear;
+  FSavedSel := '';
+  UpdateColumnWidth;
+end;
+
+procedure TCustomListBox.DestroyWnd;
+var
+  I, N: Integer;
+begin
+  FSaved.Clear;
+  FSavedSel := '';
+  N := Integer(SendMessageW(Handle, LB_GETCOUNT, 0, 0));
+  for I := 0 to N - 1 do
+    SavedInsert(I, FItems[I], FItems.Objects[I], SendMessageW(Handle, LB_GETSEL, WPARAM(I), 0) > 0);
+  if FMultiSelect then
+    FSavedCaret := Integer(SendMessageW(Handle, LB_GETCARETINDEX, 0, 0))
+  else
+    FSavedCaret := -1;
+  FSavedTop := Integer(SendMessageW(Handle, LB_GETTOPINDEX, 0, 0));
+  FItemHeight := Integer(SendMessageW(Handle, LB_GETITEMHEIGHT, 0, 0));
+  inherited DestroyWnd;
+end;
+
+procedure TCustomListBox.WndProc(var Message: TMessage);
+begin
+  case Message.Msg of
+    CN_COMMAND:
+      case HiWord(Message.WParam) of
+        LBN_SELCHANGE: Click;
+        LBN_DBLCLK: DblClick;
+      else
+        inherited WndProc(Message);
+      end;
+    WM_SIZE:
+      begin
+        inherited WndProc(Message);
+        UpdateColumnWidth;
+      end;
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+{ multi-column: the columns share the client width }
+procedure TCustomListBox.UpdateColumnWidth;
+var
+  W: Integer;
+begin
+  if (FColumns > 0) and HandleAllocated then
+  begin
+    W := ClientWidth div FColumns;
+    if W < 1 then
+      W := 1;
+    SendMessageW(Handle, LB_SETCOLUMNWIDTH, WPARAM(W), 0);
+  end;
+end;
+
+procedure TCustomListBox.SavedInsert(Index: Integer; const S: string; AObject: TObject; Sel: Boolean);
+begin
+  FSaved.InsertObject(Index, S, AObject);
+  if Sel then
+    System.Insert('1', FSavedSel, Index + 1)
+  else
+    System.Insert('0', FSavedSel, Index + 1);
+end;
+
+{ the native order: locale-aware, case-insensitive; after equal items }
+function TCustomListBox.SortedIndex(const S: string): Integer;
+begin
+  Result := 0;
+  while (Result < FSaved.Count) and (AnsiCompareText(FSaved[Result], S) <= 0) do
+    Inc(Result);
+end;
+
+{ Sorted became True without a handle: the saved items in the native order }
+procedure TCustomListBox.SortSaved;
+var
+  Items: TStringList;
+  Sel: string;
+  I, N: Integer;
+begin
+  Items := TStringList.Create;
+  try
+    Items.Assign(FSaved);
+    Sel := FSavedSel;
+    FSaved.Clear;
+    FSavedSel := '';
+    for I := 0 to Items.Count - 1 do
+    begin
+      N := SortedIndex(Items[I]);
+      SavedInsert(N, Items[I], Items.Objects[I], Sel[I + 1] = '1');
+    end;
+  finally
+    Items.Free;
+  end;
+end;
+
+procedure TCustomListBox.CheckIndex(Index: Integer);
+begin
+  if (Index < 0) or (Index >= GetCount) then
+    TListBoxStrings(FItems).Error(SListIndexError, Index);
+end;
+
+function TCustomListBox.GetCount: Integer;
+begin
+  Result := FItems.Count;
+end;
+
+{ single selection: the selected item; multi-select: the focused item }
+function TCustomListBox.GetItemIndex: Integer;
+begin
+  if HandleAllocated then
+  begin
+    if GetCount = 0 then
+      Result := -1
+    else if FMultiSelect then
+      Result := Integer(SendMessageW(Handle, LB_GETCARETINDEX, 0, 0))
+    else
+      Result := Integer(SendMessageW(Handle, LB_GETCURSEL, 0, 0));
+  end
+  else if FMultiSelect then
+  begin
+    if FSavedCaret < FSaved.Count then
+      Result := FSavedCaret
+    else
+      Result := -1;
+  end
+  else
+    Result := Pos('1', FSavedSel) - 1;
+end;
+
+{ UIF-692: out of range is ignored; never an event (UIF-691) }
+procedure TCustomListBox.SetItemIndex(Value: Integer);
+var
+  I: Integer;
+begin
+  if (Value < -1) or (Value >= GetCount) then
+    Exit;
+  if HandleAllocated then
+  begin
+    if not FMultiSelect then
+      SendMessageW(Handle, LB_SETCURSEL, WPARAM(Value), 0)
+    else if Value >= 0 then
+      SendMessageW(Handle, LB_SETCARETINDEX, WPARAM(Value), 0);
+  end
+  else if FMultiSelect then
+    FSavedCaret := Value
+  else
+  begin
+    for I := 1 to Length(FSavedSel) do
+      FSavedSel[I] := '0';
+    if Value >= 0 then
+      FSavedSel[Value + 1] := '1';
+  end;
+end;
+
+function TCustomListBox.GetSelected(Index: Integer): Boolean;
+begin
+  CheckIndex(Index);
+  if HandleAllocated then
+    Result := SendMessageW(Handle, LB_GETSEL, WPARAM(Index), 0) > 0
+  else
+    Result := FSavedSel[Index + 1] = '1';
+end;
+
+procedure TCustomListBox.SetSelected(Index: Integer; Value: Boolean);
+begin
+  CheckIndex(Index);
+  if not FMultiSelect then
+  begin
+    if Value then
+      SetItemIndex(Index)
+    else if GetItemIndex = Index then
+      SetItemIndex(-1);
+  end
+  else if HandleAllocated then
+    SendMessageW(Handle, LB_SETSEL, WPARAM(Ord(Value)), LPARAM(Index))
+  else if Value then
+    FSavedSel[Index + 1] := '1'
+  else
+    FSavedSel[Index + 1] := '0';
+end;
+
+function TCustomListBox.GetSelCount: Integer;
+var
+  I: Integer;
+begin
+  if not FMultiSelect then
+    Result := Ord(GetItemIndex >= 0)
+  else if HandleAllocated then
+    Result := Integer(SendMessageW(Handle, LB_GETSELCOUNT, 0, 0))
+  else
+  begin
+    Result := 0;
+    for I := 1 to Length(FSavedSel) do
+      if FSavedSel[I] = '1' then
+        Inc(Result);
+  end;
+end;
+
+function TCustomListBox.GetTopIndex: Integer;
+begin
+  if HandleAllocated then
+    Result := Integer(SendMessageW(Handle, LB_GETTOPINDEX, 0, 0))
+  else
+    Result := FSavedTop;
+end;
+
+procedure TCustomListBox.SetTopIndex(Value: Integer);
+begin
+  if HandleAllocated then
+    SendMessageW(Handle, LB_SETTOPINDEX, WPARAM(Value), 0)
+  else
+    FSavedTop := Value;
+end;
+
+{ lbStandard: the native item height }
+function TCustomListBox.GetItemHeight: Integer;
+begin
+  if HandleAllocated then
+    Result := Integer(SendMessageW(Handle, LB_GETITEMHEIGHT, 0, 0))
+  else
+    Result := FItemHeight;
+end;
+
+{ read-only in effect for lbStandard (owner-draw styles: Phase 8+) }
+procedure TCustomListBox.SetItemHeight(Value: Integer);
+begin
+end;
+
+{ the item at Pos (client coordinates); not on an item: -1 if Existing, else the index of the next new item }
+function TCustomListBox.ItemAtPos(Pos: TPoint; Existing: Boolean): Integer;
+var
+  R: LRESULT;
+  N: Integer;
+begin
+  N := GetCount;
+  R := SendMessageW(Handle, LB_ITEMFROMPOINT, 0, MakeLParam(Word(Pos.X), Word(Pos.Y)));
+  Result := LoWord(R);
+  if (Result < N) and PtInRect(ItemRect(Result), Pos) then
+    Exit;
+  if Existing then
+    Result := -1
+  else if (N = 0) or (Pos.Y >= ItemRect(N - 1).Bottom) then
+    Result := N;
+end;
+
+function TCustomListBox.ItemRect(Index: Integer): TRect;
+begin
+  Result := Rect(0, 0, 0, 0);
+  SendMessageW(Handle, LB_GETITEMRECT, WPARAM(Index), LPARAM(@Result));
+end;
+
+procedure TCustomListBox.AddItem(const Item: string; AObject: TObject);
+begin
+  FItems.AddObject(Item, AObject);
+end;
+
+procedure TCustomListBox.Clear;
+begin
+  FItems.Clear;
+end;
+
+procedure TCustomListBox.ClearSelection;
+var
+  I: Integer;
+begin
+  if not FMultiSelect then
+    SetItemIndex(-1)
+  else if HandleAllocated then
+    SendMessageW(Handle, LB_SETSEL, 0, LPARAM(-1))
+  else
+    for I := 1 to Length(FSavedSel) do
+      FSavedSel[I] := '0';
+end;
+
+{ multi-select only }
+procedure TCustomListBox.SelectAll;
+var
+  I: Integer;
+begin
+  if not FMultiSelect then
+    Exit;
+  if HandleAllocated then
+    SendMessageW(Handle, LB_SETSEL, 1, LPARAM(-1))
+  else
+    for I := 1 to Length(FSavedSel) do
+      FSavedSel[I] := '1';
+end;
+
+procedure TCustomListBox.DeleteSelected;
+var
+  I: Integer;
+begin
+  if not FMultiSelect then
+  begin
+    if GetItemIndex >= 0 then
+      FItems.Delete(GetItemIndex);
+    Exit;
+  end;
+  FItems.BeginUpdate;
+  try
+    for I := GetCount - 1 downto 0 do
+      if GetSelected(I) then
+        FItems.Delete(I);
+  finally
+    FItems.EndUpdate;
+  end;
+end;
+
+procedure TCustomListBox.SetItems(Value: TStrings);
+begin
+  FItems.Assign(Value);
+end;
+
+procedure TCustomListBox.SetBorderStyle(Value: TBorderStyle);
+begin
+  if FBorderStyle <> Value then
+  begin
+    FBorderStyle := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListBox.SetColumns(Value: Integer);
+begin
+  if Value < 0 then
+    Value := 0;
+  if FColumns <> Value then
+  begin
+    FColumns := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListBox.SetExtendedSelect(Value: Boolean);
+begin
+  if FExtendedSelect <> Value then
+  begin
+    FExtendedSelect := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListBox.SetMultiSelect(Value: Boolean);
+begin
+  if FMultiSelect <> Value then
+  begin
+    FMultiSelect := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListBox.SetSorted(Value: Boolean);
+begin
+  if FSorted <> Value then
+  begin
+    FSorted := Value;
+    if Value and not HandleAllocated then
+      SortSaved;
+    RecreateWnd;
+  end;
+end;
+
+{ owner-draw values: Phase 8+ (behave as lbStandard) }
+procedure TCustomListBox.SetStyle(Value: TListBoxStyle);
+begin
+  FStyle := Value;
+end;
+
 initialization
-  RegisterClasses([TLabel, TEdit, TMemo, TButton, TGroupBox]);
+  RegisterClasses([TLabel, TEdit, TMemo, TButton, TCheckBox, TRadioButton, TGroupBox, TListBox]);
 end.

@@ -1,0 +1,125 @@
+# defaults
+ok Width 121
+ok Height 97
+ok BorderStyle bsSingle
+ok Color clWindow
+ok ParentColor False
+ok Columns
+ok ExtendedSelect True
+ok ItemHeight 15
+ok Items empty
+ok Count
+ok MultiSelect
+ok ParentFont
+ok Sorted
+ok Style lbStandard
+ok TabOrder
+ok TabStop True
+ok ItemIndex -1
+ok SelCount
+ok registered
+# handle-less items (UIF-690, UIF-692)
+ok AddObject index
+ok Add index
+ok items
+ok object of one
+ok AddItem object
+ok ItemIndex
+ok ItemIndex = Count ignored
+ok ItemIndex < -1 ignored
+ok Selected follows ItemIndex
+ok deleting before the selection keeps the item selected
+ok Put keeps the selection
+ok deleting the selected item: -1
+ok no OnClick by code
+# window
+ok system class LISTBOX
+ok base styles
+ok no LBS_SORT
+ok no LBS_EXTENDEDSEL
+ok no LBS_MULTICOLUMN
+ok WS_EX_CLIENTEDGE
+ok items pushed
+ok objects pushed (LB_SETITEMDATA)
+ok selection pushed
+ok ItemHeight = LB_GETITEMHEIGHT
+ok Count
+ok with a handle
+ok natively
+ok Objects with a handle
+ok object kept by the insertion
+ok Put keeps the object
+ok out of range ignored with a handle
+ok deleting the selected item: -1 with a handle
+ok BeginUpdate/EndUpdate
+# recreate keeps the state
+ok BorderStyle recreates
+ok bsNone: no WS_EX_CLIENTEDGE
+ok items and selection kept
+ok objects kept
+ok objects kept (last)
+ok Columns recreates
+ok LBS_MULTICOLUMN (WS_HSCROLL shows only when needed)
+ok MultiSelect recreates
+ok MultiSelect + ExtendedSelect: LBS_EXTENDEDSEL
+ok selection kept
+ok ExtendedSelect recreates
+ok MultiSelect only: LBS_MULTIPLESEL
+ok no LBS_EXTENDEDSEL
+# multi-select
+ok Selected[]
+ok SelCount
+ok unselect
+ok ItemIndex = the focused item
+ok ItemIndex does not select
+ok SelectAll
+ok ClearSelection
+ok multiple selection kept over a recreation
+ok DeleteSelected
+ok no OnClick by code
+ok DeleteSelected (single)
+ok Clear
+# sorted (UIF-693)
+ok Sorted recreates
+ok LBS_SORT
+ok sorted
+ok Add returns the actual index (case-insensitive)
+ok Add at the front
+ok order
+ok Insert raises
+ok Put raises
+ok unsorted: Insert allowed
+ok sorted without a handle
+ok Add index without a handle
+ok the native order agrees
+# positions
+ok WS_VSCROLL with more items than fit
+ok TopIndex
+ok ItemRect of the top item
+ok ItemRect height
+ok ItemAtPos
+ok below the items, Existing: -1
+ok below the items: Count
+# user (UIF-691)
+ok keyboard selection change: OnClick
+ok mouse selection change: one OnClick
+ok double click: OnDblClick
+ok ItemIndex/Selected by code: no OnClick
+# streaming
+ok no event while loading
+ok Items sorted
+ok Sorted
+ok MultiSelect
+ok ExtendedSelect
+ok Columns
+ok BorderStyle
+ok Color
+ok Font.Height
+ok TabStop
+ok Width
+ok events bound
+ok pushed to the window
+ok styles
+# leak
+ok GUI objects after 100 instances with handles
+# passed 114 failed 0

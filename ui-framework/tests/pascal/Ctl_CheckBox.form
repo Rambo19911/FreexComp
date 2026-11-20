@@ -1,0 +1,32 @@
+object CheckForm: TCheckForm
+  Caption = 'Check boxes'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object ByChecked: TCheckBox
+    Left = 10
+    Top = 10
+    Caption = 'By Checked'
+    Checked = True
+  end
+  object ByState: TCheckBox
+    Left = 10
+    Top = 40
+    AllowGrayed = True
+    Caption = 'By State'
+    State = cbGrayed
+  end
+  object Both: TCheckBox
+    Left = 10
+    Top = 70
+    Alignment = taLeftJustify
+    Caption = 'Both'
+    Checked = True
+    Font.Height = -15
+    ParentFont = False
+    State = cbChecked
+    TabStop = False
+    WordWrap = True
+    OnClick = BoxClick
+  end
+end

@@ -25,13 +25,8 @@ type
     procedure OkClick(Sender: TObject);
   end;
 
-  TGetGuiResources = function(hProcess: THandle; uiFlags: DWORD): DWORD; stdcall;
 
 {$FORM Ctl_Button.form}
-
-const
-  GR_GDIOBJECTS = 0;
-  GR_USEROBJECTS = 1;
 
 var
   Log: TLog;
@@ -79,12 +74,9 @@ begin
   Result := Integer(GetWindowLongPtrW(B.Handle, GWL_STYLE) and $F);
 end;
 
-{ GDI + USER objects of the process (GetGuiResources is not imported by Windows: bound at run time) }
+{ GDI + USER objects of the process }
 function GuiObjects: Integer;
-var
-  GetGuiResources: TGetGuiResources;
 begin
-  GetGuiResources := TGetGuiResources(GetProcAddress(GetModuleHandleW('user32.dll'), 'GetGuiResources'));
   Result := Integer(GetGuiResources(GetCurrentProcess, GR_GDIOBJECTS))
     + Integer(GetGuiResources(GetCurrentProcess, GR_USEROBJECTS));
 end;

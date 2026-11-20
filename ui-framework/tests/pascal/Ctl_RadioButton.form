@@ -1,0 +1,49 @@
+object RadioForm: TRadioForm
+  Caption = 'Radio buttons'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object First: TRadioButton
+    Left = 10
+    Top = 10
+    Caption = 'First'
+    Checked = True
+    OnClick = RadioClick
+  end
+  object Second: TRadioButton
+    Left = 10
+    Top = 30
+    Caption = 'Second'
+    OnClick = RadioClick
+  end
+  object Third: TRadioButton
+    Left = 10
+    Top = 50
+    Alignment = taLeftJustify
+    Caption = 'Third'
+    Checked = True
+    Font.Height = -15
+    ParentFont = False
+    WordWrap = True
+    OnClick = RadioClick
+  end
+  object Box: TGroupBox
+    Left = 130
+    Top = 10
+    Width = 150
+    Height = 100
+    Caption = 'Box'
+    object Inner1: TRadioButton
+      Left = 10
+      Top = 20
+      Caption = 'Inner 1'
+      Checked = True
+    end
+    object Inner2: TRadioButton
+      Left = 10
+      Top = 40
+      Caption = 'Inner 2'
+      Checked = True
+    end
+  end
+end

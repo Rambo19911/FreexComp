@@ -1,0 +1,82 @@
+# defaults
+ok Width 113
+ok Height 17
+ok Alignment taRightJustify
+ok Caption
+ok Checked
+ok ParentFont
+ok TabOrder
+ok TabStop False
+ok WordWrap
+ok registered
+# window
+ok system class BUTTON
+ok BS_RADIOBUTTON (not auto)
+ok taRightJustify: no BS_LEFTTEXT
+ok Alignment recreates
+ok taLeftJustify: BS_LEFTTEXT
+ok Checked kept over the recreation
+ok BS_MULTILINE
+# group (UIF-660)
+ok none checked
+ok checking fires OnClick of the checked button
+ok B checked
+ok the unchecked sibling fires nothing
+ok C checked, B unchecked
+ok B unchecked natively
+ok C checked natively
+ok equal value: no OnClick
+ok unchecking by code: no OnClick
+ok none checked again
+ok another parent is another group
+ok A checked on the form
+# TabStop follows Checked
+ok checked: TabStop True
+ok unchecked: TabStop False
+ok the setter is honoured
+ok unchecked by the group: TabStop False
+ok unchecked by code: TabStop False
+# user (UIF-661)
+ok native click checks, OnClick once
+ok A unchecked by the click on B
+ok A unchecked natively
+ok click on the checked button: no OnClick
+ok stays checked
+ok other character: not consumed
+ok accelerator consumed
+ok accelerator checks
+ok accelerator focuses
+# arrow navigation (UIF-115)
+ok Down consumed
+ok Down: next sibling focused
+ok Down: the focused button is checked
+ok Down: OnClick
+ok Right: next sibling
+ok Right: checked
+ok Down: siblings only, the group box is next
+ok a non-radio sibling: nothing checked
+ok inside the group box: unchanged
+ok Up: previous sibling
+ok Left: previous sibling
+ok Left: checked
+ok Up from the first: wraps to the last sibling
+ok only child: stays
+ok stays: no OnClick
+# loading (UIF-662)
+ok no OnClick while loading
+ok the last checked in creation order wins
+ok per group
+ok TabStop of the winner
+ok TabStop of the loser
+ok Alignment
+ok Caption
+ok Font.Height
+ok ParentFont False
+ok WordWrap
+ok loser unchecked natively
+ok winner checked natively
+ok OnClick handler of the form
+ok group works after loading
+# leak
+ok GUI objects after 100 instances with handles
+# passed 73 failed 0
