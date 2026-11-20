@@ -1,0 +1,47 @@
+object MainForm: TMainForm
+  Left = 200
+  Top = 120
+  ActiveControl = NameEdit
+  ClientWidth = 400
+  ClientHeight = 240
+  Menu = MissingMenu
+  PixelsPerInch = 96
+  object NameEdit: TEdit
+    Left = 8
+    Top = 8
+    Width = 121
+    Height = 23
+    PopupMenu = Popup1
+    TabOrder = -5
+  end
+  object InfoLabel: TLabel
+    Left = 8
+    Top = 40
+    Width = 50
+    Height = 15
+    PopupMenu = NameEdit
+    FocusControl = OtherForm.NameEdit
+    object InnerButton: TButton
+      Left = 0
+      Top = 0
+      Width = 75
+      Height = 25
+      PopupMenu = NoSuchPopup
+      TabOrder = 0
+    end
+  end
+  object Panel1: TPanel
+    Left = 8
+    Top = 72
+    Width = 185
+    Height = 41
+    BevelWidth = 0
+    Font.Charset = 300
+    ParentFont = False
+    TabOrder = 1
+  end
+  object Popup1: TPopupMenu
+    DesignLeft = 16
+    DesignTop = 8
+  end
+end

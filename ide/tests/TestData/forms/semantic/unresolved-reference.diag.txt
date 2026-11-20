@@ -1,0 +1,7 @@
+unresolved-reference.form(7,10): warning F0105: Component MissingMenu not found
+unresolved-reference.form(15,16): warning F0103: Invalid value for property TabOrder: value out of range -1..32767
+unresolved-reference.form(22,17): warning F0103: Invalid value for property PopupMenu: 'NameEdit' is not a TPopupMenu
+unresolved-reference.form(24,5): warning F0103: Invalid value for property Parent: TButton cannot be a child of TLabel
+unresolved-reference.form(29,19): warning F0105: Component NoSuchPopup not found
+unresolved-reference.form(38,18): warning F0103: Invalid value for property BevelWidth: value out of range 1..32767
+unresolved-reference.form(39,20): warning F0103: Invalid value for property Font.Charset: value out of range 0..255

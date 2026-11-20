@@ -26,6 +26,7 @@ public static class FormParser
         try
         {
             var document = parser.ParseFile();
+            FormValidator.Validate(document, catalog); // DSG-FD-070: validation runs after the parse
             return new FormParseResult(document, [.. document.Diagnostics]);
         }
         catch (SyntaxErrorException error)
@@ -45,11 +46,12 @@ public static class FormParser
 
     private sealed class Parser(string text, string path, ComponentCatalog catalog, string? rootAncestorClass)
     {
-        private readonly List<FormDiagnostic> _diagnostics = [];
+        private readonly List<ParseDiagnostic> _diagnostics = [];
         private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
         private int _pos;
         private string? _lineEnding;
         private string? _currentObject;
+        private SourceLines? _lines;
 
         // Lines of the top-level property value being read (FormProperty.RawLines).
         private List<(int Level, string Text)> _rawLines = [];
@@ -71,8 +73,8 @@ public static class FormParser
                 throw Error("end of file");
             }
 
-            var document = new FormDocument(root, _lineEnding ?? "\n");
-            document.SetDiagnostics(_diagnostics);
+            var document = new FormDocument(root, _lineEnding ?? "\n") { SourcePath = path, Lines = Lines };
+            document.ParseDiagnostics.AddRange(_diagnostics);
             return document;
         }
 
@@ -98,6 +100,7 @@ public static class FormParser
             SkipSpaces();
             var typeStart = _pos;
             var typeName = ReadIdentifier("identifier");
+            var headerEnd = _pos;
             ExpectLineEnd();
 
             var info = catalog.Find(typeName);
@@ -110,13 +113,17 @@ public static class FormParser
 
             var parentObject = _currentObject;
             _currentObject = name;
-            var obj = new FormObject(kind, name, typeName, info, default) { Catalog = catalog };
+            var obj = new FormObject(kind, name, typeName, info, default)
+            {
+                Catalog = catalog,
+                HeaderSpan = new TextSpan(keywordStart, headerEnd - keywordStart),
+            };
 
             // DSG-FD-026: duplicate names (F0106) are checked everywhere, as names are unique across the whole form.
             var preserved = parentPreserved;
             if (!_names.Add(name))
             {
-                Report("F0106", DiagnosticSeverity.Error, $"A component named {name} already exists", nameStart, name.Length, name, null);
+                Report("F0106", DiagnosticSeverity.Error, $"A component named {name} already exists", nameStart, name.Length, obj, null);
                 preserved = true;
             }
 
@@ -126,12 +133,12 @@ public static class FormParser
                 {
                     // F0107 is "info"; the shared diagnostics have no such level, so it is a Hint (lead decision 2026-11-20).
                     Report("F0107", DiagnosticSeverity.Hint, $"\"{keyword.ToLowerInvariant()}\" objects are not supported: shown read-only",
-                        keywordStart, keyword.Length, name, null);
+                        keywordStart, keyword.Length, obj, null);
                     preserved = true;
                 }
                 else if (info is null)
                 {
-                    Report("F0101", DiagnosticSeverity.Warning, $"Class {typeName} not found", typeStart, typeName.Length, name, null);
+                    Report("F0101", DiagnosticSeverity.Warning, $"Class {typeName} not found", typeStart, typeName.Length, obj, null);
                     preserved = true;
                 }
             }
@@ -223,7 +230,10 @@ public static class FormParser
             var raw = text[valueStart..end].Replace("\r\n", "\n", StringComparison.Ordinal);
             ExpectLineEnd();
 
-            var property = new FormProperty(propertyPath, value, info, eventInfo, raw, new TextSpan(start, end - start), [.. _rawLines]);
+            var property = new FormProperty(propertyPath, value, info, eventInfo, raw, new TextSpan(start, end - start), [.. _rawLines])
+            {
+                ValueSpan = new TextSpan(valueStart, end - valueStart),
+            };
             if (obj.IsPreserved || obj.Info is null)
             {
                 return property;
@@ -232,13 +242,13 @@ public static class FormParser
             if (info is null && eventInfo is null)
             {
                 Report("F0102", DiagnosticSeverity.Warning, $"Property {propertyPath} does not exist on {obj.TypeName}",
-                    start, pathLength, obj.Name, propertyPath);
+                    start, pathLength, obj, property);
                 property.IsPreserved = true;
             }
             else if (Mismatch(info, eventInfo, value) is { } detail)
             {
                 Report("F0103", DiagnosticSeverity.Warning, $"Invalid value for property {propertyPath}: {detail}",
-                    valueStart, end - valueStart, obj.Name, propertyPath);
+                    valueStart, end - valueStart, obj, property);
                 property.IsPreserved = true;
                 property.Value = new RawValue(raw);
             }
@@ -298,11 +308,12 @@ public static class FormParser
         private static bool IsMember(TypeInfo? enumType, string name) =>
             enumType is not null && enumType.Values.Contains(name, StringComparer.OrdinalIgnoreCase);
 
-        private void Report(string code, DiagnosticSeverity severity, string message, int start, int length, string? objectName, string? propertyPath)
+        private void Report(string code, DiagnosticSeverity severity, string message, int start, int length, FormObject owner, FormProperty? property)
         {
             var (line, col) = LineCol(start);
             var (endLine, endCol) = LineCol(start + length);
-            _diagnostics.Add(new FormDiagnostic(code, severity, message, path, line, col, endLine, endCol, objectName, propertyPath));
+            _diagnostics.Add(new ParseDiagnostic(
+                new FormDiagnostic(code, severity, message, path, line, col, endLine, endCol, owner.Name, property?.Path), owner, property));
         }
 
         /// <summary>DSG-FD-022: the first character decides the value kind.</summary>
@@ -913,20 +924,8 @@ public static class FormParser
 
         private static string Quote(string s) => "\"" + s + "\"";
 
-        private (int Line, int Col) LineCol(int position)
-        {
-            var line = 1;
-            var lineStart = 0;
-            for (var i = 0; i < position && i < text.Length; i++)
-            {
-                if (text[i] == '\n')
-                {
-                    line++;
-                    lineStart = i + 1;
-                }
-            }
+        private SourceLines Lines => _lines ??= new SourceLines(text);
 
-            return (line, position - lineStart + 1);
-        }
+        private (int Line, int Col) LineCol(int position) => Lines.LineCol(position);
     }
 }

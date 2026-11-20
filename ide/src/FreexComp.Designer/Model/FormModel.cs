@@ -67,7 +67,48 @@ public sealed class FormDocument
         }
     }
 
+    /// <summary>The path the text was parsed from (diagnostics name it).</summary>
+    internal string SourcePath { get; init; } = "";
+
+    /// <summary>Line map of the last parsed text (validation diagnostics point into it, DSG-FD-071).</summary>
+    internal SourceLines Lines { get; init; } = SourceLines.Empty;
+
+    /// <summary>The parser's semantic diagnostics with the items they are about (kept by validation while those exist).</summary>
+    internal List<ParseDiagnostic> ParseDiagnostics { get; } = [];
+
     internal void SetDiagnostics(IEnumerable<FormDiagnostic> diagnostics) => _diagnostics = [.. diagnostics];
+
+    /// <summary>Adds the names of a subtree that joins the tree (an existing owner of a name keeps it).</summary>
+    internal void Register(FormObject subtree)
+    {
+        foreach (var obj in subtree.Subtree())
+        {
+            _byName.TryAdd(obj.Name, obj);
+        }
+    }
+
+    /// <summary>Removes the names a subtree that leaves the tree owns.</summary>
+    internal void Unregister(FormObject subtree)
+    {
+        foreach (var obj in subtree.Subtree())
+        {
+            if (_byName.TryGetValue(obj.Name, out var owner) && ReferenceEquals(owner, obj))
+            {
+                _byName.Remove(obj.Name);
+            }
+        }
+    }
+
+    internal void Rename(FormObject obj, string newName)
+    {
+        if (_byName.TryGetValue(obj.Name, out var owner) && ReferenceEquals(owner, obj))
+        {
+            _byName.Remove(obj.Name);
+        }
+
+        obj.Name = newName;
+        _byName[newName] = obj;
+    }
 
     internal void RaiseChanged(FormChangedEventArgs args)
     {
@@ -119,6 +160,9 @@ public sealed class FormObject
     /// <summary>Span in the text it was parsed from (for diagnostics).</summary>
     public TextSpan SourceSpan { get; internal set; }
 
+    /// <summary>The header from the keyword to the end of the type name (position of parent diagnostics).</summary>
+    internal TextSpan HeaderSpan { get; set; }
+
     /// <summary>The catalog the object was bound with (sub-property and type lookups).</summary>
     internal ComponentCatalog Catalog { get; set; } = ComponentCatalog.Empty;
 
@@ -128,12 +172,47 @@ public sealed class FormObject
 
     internal void AddProperty(FormProperty property) => _properties.Add(property);
 
+    internal void InsertProperty(int index, FormProperty property) => _properties.Insert(Math.Clamp(index, 0, _properties.Count), property);
+
+    internal void RemovePropertyAt(int index) => _properties.RemoveAt(index);
+
     internal void AddChild(FormObject child)
     {
         child.Parent = this;
         _children.Add(child);
     }
+
+    internal void InsertChild(int index, FormObject child)
+    {
+        child.Parent = this;
+        _children.Insert(index, child);
+    }
+
+    /// <summary>Detaches <paramref name="child"/>; returns its former index.</summary>
+    internal int RemoveChild(FormObject child)
+    {
+        var index = _children.IndexOf(child);
+        _children.RemoveAt(index);
+        child.Parent = null;
+        return index;
+    }
+
+    /// <summary>This object and its descendants in pre-order.</summary>
+    internal IEnumerable<FormObject> Subtree()
+    {
+        yield return this;
+        foreach (var child in _children)
+        {
+            foreach (var descendant in child.Subtree())
+            {
+                yield return descendant;
+            }
+        }
+    }
 }
+
+/// <summary>A parser diagnostic about <paramref name="Owner"/> (and <paramref name="Property"/> when about a property line).</summary>
+internal sealed record ParseDiagnostic(FormDiagnostic Diagnostic, FormObject Owner, FormProperty? Property);
 
 /// <summary>One stored property line (form-document.md §1).</summary>
 public sealed class FormProperty
@@ -170,6 +249,9 @@ public sealed class FormProperty
     public string? RawText { get; }
 
     public TextSpan SourceSpan { get; }
+
+    /// <summary>The value text of <see cref="SourceSpan"/> (position of value diagnostics).</summary>
+    internal TextSpan ValueSpan { get; init; }
 
     /// <summary>
     /// The non-blank lines of <see cref="RawText"/>, trimmed, each with its nesting level relative to the property line
