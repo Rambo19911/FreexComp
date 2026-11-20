@@ -1,0 +1,36 @@
+object MainForm: TMainForm
+  Left = 200
+  Top = 120
+  ClientWidth = 400
+  ClientHeight = 240
+  PixelsPerInch = 96
+  object Button1: TButton
+    Left = 8
+    Top = 8
+    Width = 75
+    Height = 25
+    Caption = 'First'
+    TabOrder = 0
+  end
+  object Panel1: TPanel
+    Left = 8
+    Top = 40
+    Width = 185
+    Height = 41
+    TabOrder = 1
+    object button1: TButton
+      Left = 8
+      Top = 8
+      Width = 75
+      Height = 25
+      Caption = 'Second'
+      TabOrder = 0
+      object Inner1: TLabel
+        Left = 0
+        Top = 0
+        Width = 34
+        Height = 15
+      end
+    end
+  end
+end

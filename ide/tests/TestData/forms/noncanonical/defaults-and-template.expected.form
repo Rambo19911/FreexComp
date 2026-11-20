@@ -1,0 +1,26 @@
+object SettingsForm: TSettingsForm
+  Left = 200
+  Top = 120
+  Caption = 'Settings'
+  ClientWidth = 300
+  ClientHeight = 200
+  PixelsPerInch = 96
+  object CloseButton: TButton
+    Left = 112
+    Top = 160
+    Width = 75
+    Height = 25
+    Caption = 'Close'
+    TabOrder = 0
+  end
+  object Hidden: TEdit
+    Left = 8
+    Top = 8
+    Width = 121
+    Height = 23
+  end
+  object Timer1: TTimer
+    DesignLeft = 0
+    DesignTop = 0
+  end
+end

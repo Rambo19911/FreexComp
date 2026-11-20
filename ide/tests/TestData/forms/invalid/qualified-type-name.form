@@ -1,0 +1,2 @@
+object MainForm: Forms.TMainForm
+end

@@ -1,0 +1,25 @@
+OBJECT MainForm: TMainForm
+    OnCreate = FormCreate
+    PixelsPerInch = 96
+    ClientHeight = 240
+  Caption = 'Hello'
+  ClientWidth = 400
+  Top = 120
+  Left = 200
+  Object NameEdit: TEdit
+      TabOrder = 0
+      Height = 23
+      Width = 200
+      Top = 16
+      Left = 16
+  END
+  object GreetButton: TButton
+    OnClick = GreetButtonClick
+    TabOrder = 1
+    Caption = '&Greet'
+    Height = 25
+    Width = 75
+    Top = 15
+    Left = 232
+  eNd
+End

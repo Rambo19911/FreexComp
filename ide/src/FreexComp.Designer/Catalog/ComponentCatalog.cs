@@ -93,6 +93,48 @@ public sealed class ComponentCatalog
         return false;
     }
 
+    /// <summary>
+    /// The tray position of a non-visual component (form-format.md §2.2.2, RTL-457): an integer defined by
+    /// <c>TComponent</c> for non-control classes, not declared in metadata, never shown in the Object Inspector.
+    /// </summary>
+    public static PropertyInfo DesignLeftProperty { get; } = DesignPosition("DesignLeft");
+
+    /// <inheritdoc cref="DesignLeftProperty"/>
+    public static PropertyInfo DesignTopProperty { get; } = DesignPosition("DesignTop");
+
+    /// <summary>
+    /// The metadata of a property path of <paramref name="component"/>: <c>Caption</c>, a dotted sub-property of an
+    /// object property (<c>Font.Height</c>), or <c>DesignLeft</c>/<c>DesignTop</c> of a non-visual component. Null when
+    /// unknown. Events are not properties (<see cref="ComponentInfo.FindEvent"/>).
+    /// </summary>
+    public PropertyInfo? FindPropertyPath(ComponentInfo component, string path)
+    {
+        var parts = path.Split('.');
+        var property = component.FindProperty(parts[0]);
+        if (property is null && parts.Length == 1 && component.Kind == ComponentKind.NonVisual)
+        {
+            property = string.Equals(path, "DesignLeft", StringComparison.OrdinalIgnoreCase) ? DesignLeftProperty
+                : string.Equals(path, "DesignTop", StringComparison.OrdinalIgnoreCase) ? DesignTopProperty : null;
+        }
+
+        for (var i = 1; i < parts.Length && property is not null; i++)
+        {
+            property = property.Kind == PropertyKind.Object
+                ? SubProperties(property).FirstOrDefault(p => string.Equals(p.Name, parts[i], StringComparison.OrdinalIgnoreCase))
+                : null;
+        }
+
+        return property;
+    }
+
+    /// <summary>The flattened sub-properties of an object-kind property (empty for other kinds or undeclared classes).</summary>
+    public ImmutableArray<PropertyInfo> SubProperties(PropertyInfo property) =>
+        property.Kind == PropertyKind.Object && FindType(property.Type) is { Kind: TypeKind.Object } type ? type.Properties : [];
+
+    private static PropertyInfo DesignPosition(string name) =>
+        new(name, "Integer", PropertyKind.Simple, null, false, "Layout", null, false, true, null, null, null, false, null, null,
+            RootClassName, true, false, null);
+
     private static string StripUnit(string name)
     {
         var dot = name.LastIndexOf('.');

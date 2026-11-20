@@ -1,0 +1,1 @@
+integer-out-of-range.form(2,9): error F0001: Syntax error: integer out of range

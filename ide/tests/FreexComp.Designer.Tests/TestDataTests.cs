@@ -156,7 +156,11 @@ public sealed class TestDataTests
             case "component":
                 referenceTypes.Add((file, owner, name, type)); // may be declared by a later file
                 break;
-            case null or "object" or "component":
+            case "collection" when !(property.TryGetProperty("itemClass", out var item) && types.TryGetValue(item.GetString()!, out var itemType)
+                && itemType.Contains("\"object\"", StringComparison.Ordinal)):
+                problem($"{owner}.{name}: collection item class not declared as an object type");
+                break;
+            case null or "object" or "component" or "collection":
                 break;
             default:
                 problem($"{owner}.{name}: invalid kind {kind}");
@@ -165,7 +169,7 @@ public sealed class TestDataTests
 
         if (property.TryGetProperty("category", out var category) && !Categories.Contains(category.GetString()))
             problem($"{owner}.{name}: invalid category");
-        if (kind is "object" or "component" && property.TryGetProperty("default", out _))
+        if (kind is "object" or "component" or "collection" && property.TryGetProperty("default", out _))
             problem($"{owner}.{name}: {kind} properties have no default");
         if (isComponent && name is "Left" or "Top" or "Width" or "Height" or "ClientWidth" or "ClientHeight" or "PixelsPerInch"
             && property.TryGetProperty("default", out _))

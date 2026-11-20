@@ -1,0 +1,1 @@
+value-then-garbage.form(2,13): error F0001: Syntax error: expected end of line but found "2"

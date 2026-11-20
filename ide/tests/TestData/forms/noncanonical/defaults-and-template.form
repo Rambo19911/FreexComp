@@ -1,0 +1,33 @@
+object SettingsForm: TSettingsForm
+  Caption = 'Settings'
+  ClientWidth = 300
+  ClientHeight = 200
+  Color = clBtnFace
+  Scaled = True
+  object CloseButton: TButton
+    Left = 112
+    Top = 160
+    Width = 75
+    Height = 25
+    Visible = True
+    Anchors = [akTop, akLeft]
+    Cancel = False
+    Caption = 'Close'
+    TabOrder = 0
+    TabStop = True
+  end
+  object Hidden: TEdit
+    Left = 8
+    Top = 8
+    Width = 121
+    Height = 23
+    Text = ''
+    TabOrder = -1
+    Font.Height = -12
+    Font.Style = []
+  end
+  object Timer1: TTimer
+    Interval = 1000
+    Enabled = True
+  end
+end

@@ -1,0 +1,1 @@
+collection-without-item.form(4,7): error F0001: Syntax error: expected "item" or ">" but found "Text"

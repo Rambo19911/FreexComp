@@ -1,0 +1,5 @@
+object MainForm: TMainForm
+  Caption = 'x'
+  object B: TButton
+    Left = 1
+  end

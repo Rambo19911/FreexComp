@@ -1,0 +1,2 @@
+inherited-inline.form(7,3): hint F0107: "inline" objects are not supported: shown read-only
+inherited-inline.form(17,3): hint F0107: "inherited" objects are not supported: shown read-only

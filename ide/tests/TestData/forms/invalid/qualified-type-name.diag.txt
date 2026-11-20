@@ -1,0 +1,1 @@
+qualified-type-name.form(1,23): error F0001: Syntax error: expected end of line but found "."

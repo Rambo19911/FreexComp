@@ -1,0 +1,3 @@
+object MainForm: TMainForm
+  Caption = 'a' + 'b'
+end

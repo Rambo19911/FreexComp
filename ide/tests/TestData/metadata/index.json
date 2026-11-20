@@ -1,5 +1,5 @@
 {
   "formatVersion": 1,
   "palettePages": ["Standard", "Additional", "Win32", "System", "Dialogs"],
-  "files": ["Controls.components.json", "Menus.components.json", "Forms.components.json", "StdCtrls.components.json", "ExtCtrls.components.json", "Dialogs.components.json"]
+  "files": ["Controls.components.json", "Menus.components.json", "Forms.components.json", "StdCtrls.components.json", "ExtCtrls.components.json", "Dialogs.components.json", "ComCtrls.components.json"]
 }

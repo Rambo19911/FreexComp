@@ -1,0 +1,24 @@
+object MainForm: TMainForm
+  Left = 200
+  Top = 120
+  ClientWidth = 400
+  ClientHeight = 240
+  PixelsPerInch = 96
+  object Edit1: TEdit
+    Left = 8
+    Top = 8
+    Width = 121
+    Height = 23
+    TabOrder = 0
+    Tag = 1.5
+    Align = alMiddle
+    Anchors = [akLeft, akNowhere]
+    Font = 3
+    Color = 'red'
+    Visible = Yes
+    PopupMenu = 5
+    PasswordChar = 'ab'
+    Text = 5
+    OnChange = 'Edit1Change'
+  end
+end

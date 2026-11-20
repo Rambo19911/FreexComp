@@ -10,13 +10,19 @@ namespace FreexComp.Designer.Text;
 
 /// <summary>
 /// Reads a <c>.form</c> text (grammar: docs/interfaces/form-format.md §1; C# rules: form-document.md §3). The first
-/// syntax error stops parsing with exactly one <c>F0001</c> and no document (DSG-FD-025).
+/// syntax error stops parsing with exactly one <c>F0001</c> and no document (DSG-FD-025); semantic problems produce
+/// diagnostics and preserved items (DSG-FD-026).
 /// </summary>
 public static class FormParser
 {
-    public static FormParseResult Parse(string text, string path, ComponentCatalog catalog)
+    /// <param name="rootAncestorClass">
+    /// The ancestor of the form class declared in the unit (code sync supplies it from <c>class(TForm)</c>). The root
+    /// binds to its own class when the catalog has it, else to this class, else to the first catalog class of kind
+    /// <c>form</c>; a root bound by either fallback never raises <c>F0101</c>.
+    /// </param>
+    public static FormParseResult Parse(string text, string path, ComponentCatalog catalog, string? rootAncestorClass = null)
     {
-        var parser = new Parser(text, path, catalog);
+        var parser = new Parser(text, path, catalog, rootAncestorClass);
         try
         {
             var document = parser.ParseFile();
@@ -37,11 +43,18 @@ public static class FormParser
         public string? ObjectName { get; } = objectName;
     }
 
-    private sealed class Parser(string text, string path, ComponentCatalog catalog)
+    private sealed class Parser(string text, string path, ComponentCatalog catalog, string? rootAncestorClass)
     {
+        private readonly List<FormDiagnostic> _diagnostics = [];
+        private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
         private int _pos;
         private string? _lineEnding;
         private string? _currentObject;
+
+        // Lines of the top-level property value being read (FormProperty.RawLines).
+        private List<(int Level, string Text)> _rawLines = [];
+        private int _rawLineStart;
+        private int _rawLevel;
 
         public FormDocument ParseFile()
         {
@@ -51,14 +64,16 @@ public static class FormParser
             }
 
             SkipBlankLines();
-            var root = ParseObject();
+            var root = ParseObject(parentPreserved: false, isRoot: true);
             SkipBlankLines();
             if (_pos < text.Length)
             {
                 throw Error("end of file");
             }
 
-            return new FormDocument(root, _lineEnding ?? "\n");
+            var document = new FormDocument(root, _lineEnding ?? "\n");
+            document.SetDiagnostics(_diagnostics);
+            return document;
         }
 
         public FormDiagnostic SyntaxDiagnostic(SyntaxErrorException error)
@@ -68,24 +83,60 @@ public static class FormParser
                 line, col, line, col, error.ObjectName, null);
         }
 
-        private FormObject ParseObject()
+        private FormObject ParseObject(bool parentPreserved, bool isRoot)
         {
-            var start = _pos;
+            var lineStart = _pos;
             SkipSpaces();
             var keywordStart = _pos;
             var keyword = ReadIdentifier("object");
             var kind = KeywordKind(keyword) ?? throw ErrorAt(keywordStart, "object", Quote(keyword));
             SkipSpaces();
+            var nameStart = _pos;
             var name = ReadIdentifier("identifier");
             SkipSpaces();
             Expect(':');
             SkipSpaces();
+            var typeStart = _pos;
             var typeName = ReadIdentifier("identifier");
             ExpectLineEnd();
 
+            var info = catalog.Find(typeName);
+            if (info is null && isRoot)
+            {
+                info = rootAncestorClass is not null
+                    ? catalog.Find(rootAncestorClass)
+                    : catalog.All.FirstOrDefault(c => c.Kind == ComponentKind.Form);
+            }
+
             var parentObject = _currentObject;
             _currentObject = name;
-            var obj = new FormObject(kind, name, typeName, catalog.Find(typeName), default);
+            var obj = new FormObject(kind, name, typeName, info, default) { Catalog = catalog };
+
+            // DSG-FD-026: duplicate names (F0106) are checked everywhere, as names are unique across the whole form.
+            var preserved = parentPreserved;
+            if (!_names.Add(name))
+            {
+                Report("F0106", DiagnosticSeverity.Error, $"A component named {name} already exists", nameStart, name.Length, name, null);
+                preserved = true;
+            }
+
+            if (!parentPreserved)
+            {
+                if (kind != FormObjectKind.Object)
+                {
+                    // F0107 is "info"; the shared diagnostics have no such level, so it is a Hint (lead decision 2026-11-20).
+                    Report("F0107", DiagnosticSeverity.Hint, $"\"{keyword.ToLowerInvariant()}\" objects are not supported: shown read-only",
+                        keywordStart, keyword.Length, name, null);
+                    preserved = true;
+                }
+                else if (info is null)
+                {
+                    Report("F0101", DiagnosticSeverity.Warning, $"Class {typeName} not found", typeStart, typeName.Length, name, null);
+                    preserved = true;
+                }
+            }
+
+            obj.IsPreserved = preserved;
             while (PeekWord() is { } word && !IsKeyword(word))
             {
                 obj.AddProperty(ParseProperty(obj));
@@ -93,7 +144,7 @@ public static class FormParser
 
             while (PeekWord() is { } word && KeywordKind(word) is not null && IsKeyword(word))
             {
-                obj.AddChild(ParseObject());
+                obj.AddChild(ParseObject(preserved, isRoot: false));
             }
 
             SkipSpaces();
@@ -105,10 +156,36 @@ public static class FormParser
             }
 
             _pos += end.Length;
+            var endTokenEnd = _pos;
             ExpectLineEnd();
             _currentObject = parentObject;
-            obj.SourceSpan = new TextSpan(start, _pos - start);
+            obj.SourceSpan = new TextSpan(lineStart, _pos - lineStart);
+            if (preserved && !parentPreserved)
+            {
+                obj.PreservedText = PreservedLines(lineStart, keywordStart, endTokenEnd);
+            }
+
             return obj;
+        }
+
+        /// <summary>The source lines of a preserved object, LF, with the header line's indentation removed from each.</summary>
+        private string PreservedLines(int lineStart, int keywordStart, int end)
+        {
+            var indent = text[lineStart..keywordStart];
+            var lines = text[lineStart..end].Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            var result = new StringBuilder();
+            foreach (var line in lines)
+            {
+                var common = 0;
+                while (common < indent.Length && common < line.Length && line[common] == indent[common])
+                {
+                    common++;
+                }
+
+                result.Append(line, common, line.Length - common).Append('\n');
+            }
+
+            return result.ToString();
         }
 
         private FormProperty ParseProperty(FormObject obj)
@@ -123,48 +200,128 @@ public static class FormParser
             }
 
             var propertyPath = string.Join('.', parts);
+            var pathLength = _pos - start;
             SkipSpaces();
             Expect('=');
             SkipSpaces();
 
-            var (info, eventInfo) = Bind(obj.Info, parts);
+            PropertyInfo? info = null;
+            EventInfo? eventInfo = null;
+            if (obj.Info is { } component)
+            {
+                eventInfo = parts.Count == 1 ? component.FindEvent(propertyPath) : null;
+                info = eventInfo is null ? catalog.FindPropertyPath(component, propertyPath) : null;
+            }
+
             var valueStart = _pos;
-            var value = ParseValue(info);
-            var raw = text[valueStart.._pos].Replace("\r\n", "\n", StringComparison.Ordinal);
+            _rawLines = [];
+            _rawLineStart = _pos;
+            _rawLevel = 0;
+            var value = ParseValue(info, 0);
             var end = _pos;
+            _rawLines.Add((_rawLevel, text[_rawLineStart.._pos].Trim(' ', '\t')));
+            var raw = text[valueStart..end].Replace("\r\n", "\n", StringComparison.Ordinal);
             ExpectLineEnd();
-            return new FormProperty(propertyPath, value, info, eventInfo, raw, new TextSpan(start, end - start));
+
+            var property = new FormProperty(propertyPath, value, info, eventInfo, raw, new TextSpan(start, end - start), [.. _rawLines]);
+            if (obj.IsPreserved || obj.Info is null)
+            {
+                return property;
+            }
+
+            if (info is null && eventInfo is null)
+            {
+                Report("F0102", DiagnosticSeverity.Warning, $"Property {propertyPath} does not exist on {obj.TypeName}",
+                    start, pathLength, obj.Name, propertyPath);
+                property.IsPreserved = true;
+            }
+            else if (Mismatch(info, eventInfo, value) is { } detail)
+            {
+                Report("F0103", DiagnosticSeverity.Warning, $"Invalid value for property {propertyPath}: {detail}",
+                    valueStart, end - valueStart, obj.Name, propertyPath);
+                property.IsPreserved = true;
+                property.Value = new RawValue(raw);
+            }
+
+            return property;
         }
 
-        /// <summary>Metadata of a property path: an event, a property, or a sub-property of an object property.</summary>
-        private (PropertyInfo? Property, EventInfo? Event) Bind(ComponentInfo? info, List<string> parts)
+        /// <summary>The F0103 detail when the value kind does not fit the property type (form-document.md §3.1), else null.</summary>
+        private string? Mismatch(PropertyInfo? info, EventInfo? eventInfo, FormValue value)
         {
-            if (info is null)
+            if (eventInfo is not null)
             {
-                return (null, null);
+                return value is IdentValue ? null : $"value kind does not fit type {eventInfo.Signature}";
             }
 
-            if (parts.Count == 1 && info.FindEvent(parts[0]) is { } ev)
+            var type = info!.Type;
+            var kindMismatch = $"value kind does not fit type {type}";
+            switch (info.Kind)
             {
-                return (null, ev);
+                case PropertyKind.Object:
+                    return kindMismatch;
+                case PropertyKind.Component:
+                    return value is IdentValue or QualifiedIdentValue ? null : kindMismatch;
+                case PropertyKind.Collection:
+                    return value is CollectionValue ? null : kindMismatch;
+                case PropertyKind.Enum:
+                    if (value is not IdentValue ident)
+                    {
+                        return kindMismatch;
+                    }
+
+                    return IsMember(catalog.FindType(type), ident.Name) ? null : $"'{ident.Name}' is not a member of {type}";
+                case PropertyKind.Set:
+                    if (value is not SetValue set)
+                    {
+                        return kindMismatch;
+                    }
+
+                    var element = catalog.FindType(type)?.ElementType is { } e ? catalog.FindType(e) : null;
+                    var stranger = set.Elements.FirstOrDefault(m => !IsMember(element, m));
+                    return stranger is null ? null : $"'{stranger}' is not a member of {type}";
             }
 
-            var property = info.FindProperty(parts[0]);
-            for (var i = 1; i < parts.Count && property is not null; i++)
+            var fits = type.ToLowerInvariant() switch
             {
-                property = catalog.FindType(property.Type)?.Properties
-                    .FirstOrDefault(p => string.Equals(p.Name, parts[i], StringComparison.OrdinalIgnoreCase));
-            }
-
-            return (property, null);
+                "integer" or "int64" or "tshortcut" => value is IntegerValue,
+                "double" => value is FloatValue or IntegerValue,
+                "boolean" => value is IdentValue { Name: var b } && (b.Equals("True", StringComparison.OrdinalIgnoreCase) || b.Equals("False", StringComparison.OrdinalIgnoreCase)),
+                "char" => value is StringValue { Value.Length: 1 },
+                "tcolor" or "tcursor" => value is IntegerValue or IdentValue,
+                "tstrings" => value is StringListValue,
+                _ => value is StringValue, // string (and unknown types, which the loader treats as string)
+            };
+            return fits ? null : kindMismatch;
         }
 
-        private FormValue ParseValue(PropertyInfo? info)
+        private static bool IsMember(TypeInfo? enumType, string name) =>
+            enumType is not null && enumType.Values.Contains(name, StringComparer.OrdinalIgnoreCase);
+
+        private void Report(string code, DiagnosticSeverity severity, string message, int start, int length, string? objectName, string? propertyPath)
+        {
+            var (line, col) = LineCol(start);
+            var (endLine, endCol) = LineCol(start + length);
+            _diagnostics.Add(new FormDiagnostic(code, severity, message, path, line, col, endLine, endCol, objectName, propertyPath));
+        }
+
+        /// <summary>DSG-FD-022: the first character decides the value kind.</summary>
+        /// <param name="level">Nesting level of the current line relative to the property line (RawLines).</param>
+        private FormValue ParseValue(PropertyInfo? info, int level)
         {
             var c = Peek();
-            if (c is '\'' or '#')
+            switch (c)
             {
-                return new StringValue(ParseString());
+                case '\'' or '#':
+                    return new StringValue(ParseString(level));
+                case '[':
+                    return ParseSet();
+                case '(':
+                    return ParseStringList(level);
+                case '{':
+                    return ParseBinary(level);
+                case '<':
+                    return ParseCollection(level);
             }
 
             if (c == '$' || char.IsAsciiDigit(c) || (c == '-' && char.IsAsciiDigit(Peek(1))))
@@ -187,8 +344,184 @@ public static class FormParser
             throw Error("value");
         }
 
+        private SetValue ParseSet()
+        {
+            _pos++; // '['
+            SkipSpaces();
+            var elements = new List<string>();
+            if (Peek() == ']')
+            {
+                _pos++;
+                return new SetValue([]);
+            }
+
+            while (true)
+            {
+                elements.Add(ReadIdentifier("identifier"));
+                SkipSpaces();
+                if (Peek() == ']')
+                {
+                    _pos++;
+                    return new SetValue([.. elements]);
+                }
+
+                if (Peek() != ',')
+                {
+                    throw Error("\",\" or \"]\"");
+                }
+
+                _pos++;
+                SkipSpaces();
+            }
+        }
+
+        /// <summary><c>(</c> NL { string NL } <c>)</c>; <c>)</c> may also end the last item line (DSG-FD-055).</summary>
+        private StringListValue ParseStringList(int level)
+        {
+            _pos++; // '('
+            ValueLineEnd();
+            var lines = new List<string>();
+            while (true)
+            {
+                if (Peek() == ')')
+                {
+                    _rawLevel = level;
+                    _pos++;
+                    return new StringListValue([.. lines]);
+                }
+
+                _rawLevel = level + 1;
+                if (Peek() is not ('\'' or '#'))
+                {
+                    throw Error("string or \")\"");
+                }
+
+                lines.Add(ParseString(level + 1));
+                SkipSpaces();
+                if (Peek() == ')')
+                {
+                    _pos++;
+                    return new StringListValue([.. lines]);
+                }
+
+                ValueLineEnd();
+            }
+        }
+
+        /// <summary><c>{</c> NL { hexLine NL } <c>}</c>.</summary>
+        private BinaryValue ParseBinary(int level)
+        {
+            _pos++; // '{'
+            ValueLineEnd();
+            var bytes = new List<byte>();
+            while (Peek() != '}')
+            {
+                _rawLevel = level + 1;
+                if (!char.IsAsciiHexDigit(Peek()))
+                {
+                    throw Error("hexadecimal digit or \"}\"");
+                }
+
+                while (char.IsAsciiHexDigit(Peek()))
+                {
+                    if (!char.IsAsciiHexDigit(Peek(1)))
+                    {
+                        _pos++;
+                        throw Error("hexadecimal digit");
+                    }
+
+                    bytes.Add(byte.Parse(text.AsSpan(_pos, 2), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture));
+                    _pos += 2;
+                }
+
+                ValueLineEnd();
+            }
+
+            _rawLevel = level;
+            _pos++;
+            return new BinaryValue([.. bytes]);
+        }
+
+        /// <summary><c>&lt;</c> NL { <c>item</c> NL { property } <c>end</c> NL } <c>&gt;</c>.</summary>
+        private CollectionValue ParseCollection(int level)
+        {
+            _pos++; // '<'
+            ValueLineEnd();
+            var items = new List<CollectionItem>();
+            while (Peek() != '>')
+            {
+                _rawLevel = level + 1;
+                var itemStart = _pos;
+                var keyword = PeekIdentifier();
+                if (!string.Equals(keyword, "item", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw ErrorAt(itemStart, "\"item\" or \">\"", Found(itemStart));
+                }
+
+                _pos += keyword.Length;
+                ValueLineEnd();
+                var properties = new List<(string, FormValue, string?)>();
+                while (true)
+                {
+                    var word = PeekIdentifier();
+                    if (word.Length > 0 && string.Equals(word, "end", StringComparison.OrdinalIgnoreCase) && IsKeyword(word))
+                    {
+                        _rawLevel = level + 1;
+                        _pos += word.Length;
+                        ValueLineEnd();
+                        break;
+                    }
+
+                    _rawLevel = level + 2;
+                    var parts = new List<string> { ReadIdentifier("identifier or \"end\"") };
+                    while (Peek() == '.')
+                    {
+                        _pos++;
+                        parts.Add(ReadIdentifier("identifier"));
+                    }
+
+                    SkipSpaces();
+                    Expect('=');
+                    SkipSpaces();
+                    var valueStart = _pos;
+                    var value = ParseValue(null, level + 2);
+                    properties.Add((string.Join('.', parts), value, text[valueStart.._pos].Replace("\r\n", "\n", StringComparison.Ordinal)));
+                    ValueLineEnd();
+                }
+
+                items.Add(new CollectionItem([.. properties]));
+            }
+
+            _rawLevel = level;
+            _pos++;
+            return new CollectionValue([.. items]);
+        }
+
+        /// <summary>
+        /// Ends a line inside a multi-line value: trailing spaces, one line end, blank lines, leading spaces of the next
+        /// line. Records the finished line for RawLines; the caller sets the level of the next line.
+        /// </summary>
+        private void ValueLineEnd()
+        {
+            SkipSpaces();
+            if (!AtLineEnd())
+            {
+                throw Error("end of line");
+            }
+
+            _rawLines.Add((_rawLevel, text[_rawLineStart.._pos].Trim(' ', '\t')));
+            if (_pos < text.Length)
+            {
+                ConsumeLineEnd();
+                SkipBlankLines();
+                SkipSpaces();
+            }
+
+            _rawLineStart = _pos;
+        }
+
         /// <summary>DSG-FD-024: adjacent parts concatenate; <c>+</c> at the end of a line continues on the next.</summary>
-        private string ParseString()
+        private string ParseString(int level)
         {
             var result = new StringBuilder();
             while (true)
@@ -218,11 +551,11 @@ public static class FormParser
                     return result.ToString();
                 }
 
-                _pos++;
+                var plus = _pos++;
                 SkipSpaces();
                 if (!AtLineEnd())
                 {
-                    throw Error("end of line");
+                    throw ErrorAt(plus, "end of line", Quote("+")); // a misplaced "+" is reported at the "+"
                 }
 
                 if (_pos >= text.Length)
@@ -230,8 +563,8 @@ public static class FormParser
                     throw Error("string");
                 }
 
-                ConsumeLineEnd();
-                SkipSpaces();
+                ValueLineEnd();
+                _rawLevel = level + 1;
             }
         }
 

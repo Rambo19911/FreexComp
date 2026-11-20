@@ -1,0 +1,1 @@
+inherited-root.form(1,1): hint F0107: "inherited" objects are not supported: shown read-only

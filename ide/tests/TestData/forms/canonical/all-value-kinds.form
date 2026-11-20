@@ -1,0 +1,86 @@
+object ValuesForm: TValuesForm
+  Tag = -9223372036854775808
+  Left = 200
+  Top = 120
+  Hint = 'This hint is long enough that the writer has to split it over se' +
+    'veral lines of the file.'
+  ActiveControl = Memo1
+  BorderIcons = [biSystemMenu, biMinimize]
+  Caption = 'Line 1'#13#10'Line 2'
+  ClientWidth = 640
+  ClientHeight = 480
+  Color = $00C0FFEE
+  Font.Height = -16
+  Font.Name = 'Café ünicode ✓ 漢字 😀'
+  Font.Style = [fsBold, fsItalic]
+  KeyPreview = True
+  Menu = MainMenu1
+  PixelsPerInch = 96
+  Position = poScreenCenter
+  OnCreate = FormCreate
+  object Memo1: TMemo
+    Left = -5
+    Top = 8
+    Width = 185
+    Height = 89
+    PopupMenu = OtherForm.PopupMenu1
+    Lines = (
+      'first line'
+      'it''s the second'
+      #9'tabbed'#0
+      ''
+      'A string list item that is longer than sixty-four characters, so' +
+        ' it is continued.'
+    )
+    TabOrder = 0
+    WordWrap = False
+  end
+  object Edit1: TEdit
+    Left = 8
+    Top = 104
+    Width = 121
+    Height = 23
+    Anchors = [akLeft, akTop, akRight]
+    CharCase = ecUpperCase
+    Color = clInfoBk
+    PasswordChar = '*'
+    TabOrder = 1
+    Text = '''quoted'' and #hash'
+    OnChange = Edit1Change
+  end
+  object StatusBar1: TStatusBar
+    Left = 0
+    Top = 461
+    Width = 640
+    Height = 19
+    Panels = <
+      item
+        Text = 'Ready'
+        Width = 120
+      end
+      item
+        Alignment = taCenter
+        Bevel = pbRaised
+      end
+    >
+  end
+  object Image1: TImage
+    Left = 200
+    Top = 8
+    Width = 105
+    Height = 105
+    Stretch = True
+    Picture.Data = {
+      000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F
+      FFFE
+    }
+    Scale = 1.5
+    Huge = 1.5E+20
+    Tiny = -2.5E-7
+    Ratio = -0.25
+  end
+  object MainMenu1: TMainMenu
+    DesignLeft = 16
+    DesignTop = 8
+  end
+end

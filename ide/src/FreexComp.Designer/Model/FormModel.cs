@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using FreexComp.Compiler.Text;
 using FreexComp.Designer.Catalog;
 using FreexComp.Designer.Text;
@@ -118,6 +119,9 @@ public sealed class FormObject
     /// <summary>Span in the text it was parsed from (for diagnostics).</summary>
     public TextSpan SourceSpan { get; internal set; }
 
+    /// <summary>The catalog the object was bound with (sub-property and type lookups).</summary>
+    internal ComponentCatalog Catalog { get; set; } = ComponentCatalog.Empty;
+
     /// <summary>The stored property with this path (ASCII case-insensitive, e.g. <c>Font.Size</c>), or null.</summary>
     public FormProperty? FindProperty(string path) =>
         _properties.FirstOrDefault(p => string.Equals(p.Path, path, StringComparison.OrdinalIgnoreCase));
@@ -134,8 +138,10 @@ public sealed class FormObject
 /// <summary>One stored property line (form-document.md §1).</summary>
 public sealed class FormProperty
 {
-    internal FormProperty(string path, FormValue value, PropertyInfo? info, EventInfo? eventInfo, string? rawText, TextSpan sourceSpan)
+    internal FormProperty(string path, FormValue value, PropertyInfo? info, EventInfo? eventInfo, string? rawText, TextSpan sourceSpan,
+        ImmutableArray<(int Level, string Text)> rawLines = default)
     {
+        RawLines = rawLines.IsDefault && rawText is not null ? [(0, rawText)] : rawLines;
         Path = path;
         Value = value;
         Info = info;
@@ -147,7 +153,7 @@ public sealed class FormProperty
     /// <summary><c>Caption</c>, <c>Font.Size</c> – declared casing.</summary>
     public string Path { get; }
 
-    public FormValue Value { get; }
+    public FormValue Value { get; internal set; }
 
     /// <summary>The metadata of a non-event property (for a dotted path: the sub-property); null when unknown or an event.</summary>
     public PropertyInfo? Info { get; }
@@ -164,4 +170,11 @@ public sealed class FormProperty
     public string? RawText { get; }
 
     public TextSpan SourceSpan { get; }
+
+    /// <summary>
+    /// The non-blank lines of <see cref="RawText"/>, trimmed, each with its nesting level relative to the property line
+    /// (in units of 2 spaces), so that the writer re-indents an untouched value canonically (DSG-FD-046). Default when
+    /// <see cref="RawText"/> is null.
+    /// </summary>
+    internal ImmutableArray<(int Level, string Text)> RawLines { get; }
 }

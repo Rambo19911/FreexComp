@@ -5,7 +5,7 @@ using FreexComp.Designer.Text;
 
 namespace FreexComp.Designer.Tests.Text;
 
-public sealed class FormParserTests
+public sealed partial class FormParserTests
 {
     private static readonly ComponentCatalog Catalog = TestCatalog.Instance;
 

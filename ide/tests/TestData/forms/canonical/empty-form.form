@@ -1,0 +1,7 @@
+object EmptyForm: TEmptyForm
+  Left = 200
+  Top = 120
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+end

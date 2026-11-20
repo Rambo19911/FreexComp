@@ -1,0 +1,1 @@
+plus-inside-line.form(2,17): error F0001: Syntax error: expected end of line but found "+"

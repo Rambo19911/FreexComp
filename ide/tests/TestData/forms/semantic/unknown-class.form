@@ -1,0 +1,27 @@
+object MainForm: TMainForm
+  Left = 200
+  Top = 120
+  ClientWidth = 400
+  ClientHeight = 240
+  PixelsPerInch = 96
+  object Chart1: TChart
+    Left = 8
+    Top = 8
+    Width = 300
+    Height = 200
+    Title.Text = (
+      'Sales'
+    )
+    object Series1: TBarSeries
+      Marks.Visible = False
+    end
+  end
+  object OkButton: TButton
+    Left = 320
+    Top = 8
+    Width = 75
+    Height = 25
+    Caption = 'OK'
+    TabOrder = 0
+  end
+end

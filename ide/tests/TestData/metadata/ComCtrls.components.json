@@ -1,0 +1,39 @@
+{
+  "formatVersion": 1,
+  "unit": "ComCtrls",
+  "types": {
+    "TStatusPanelBevel": { "kind": "enum", "values": ["pbNone", "pbLowered", "pbRaised"] },
+    "TStatusPanel": { "kind": "object", "properties": [
+      { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify" },
+      { "name": "Bevel", "type": "TStatusPanelBevel", "default": "pbLowered" },
+      { "name": "Text", "type": "string", "default": "" },
+      { "name": "Width", "type": "Integer", "default": 50 }
+    ] }
+  },
+  "components": [
+    {
+      "class": "TStatusBar",
+      "ancestor": "TWinControl",
+      "palette": { "page": "Win32", "order": 70 },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 300, "height": 19 },
+      "namePrefix": "StatusBar",
+      "renderer": "statusbar",
+      "properties": [
+        { "name": "Align", "type": "TAlign", "default": "alBottom", "category": "Layout", "affectsLayout": true },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "Panels", "type": "TStatusPanels", "kind": "collection", "itemClass": "TStatusPanel", "category": "Data", "editor": "collection" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "SimplePanel", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "SimpleText", "type": "string", "default": "", "category": "Appearance" },
+        { "name": "SizeGrip", "type": "Boolean", "default": true, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)"
+  }
+}

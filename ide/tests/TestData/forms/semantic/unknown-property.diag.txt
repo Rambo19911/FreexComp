@@ -1,0 +1,5 @@
+unknown-property.form(7,3): warning F0102: Property Name does not exist on TMainForm
+unknown-property.form(16,5): warning F0102: Property Flat does not exist on TButton
+unknown-property.form(17,5): warning F0102: Property Font.Nope does not exist on TButton
+unknown-property.form(18,5): warning F0102: Property Caption.Size does not exist on TButton
+unknown-property.form(27,5): warning F0102: Property Lines.Strings does not exist on TMemo

@@ -1,0 +1,1 @@
+binary-odd-digits.form(4,10): error F0001: Syntax error: expected hexadecimal digit but found end of line

@@ -1,0 +1,4 @@
+object MainForm: TMainForm
+end
+object Other: TForm
+end

@@ -1,0 +1,1 @@
+unknown-class.form(7,18): warning F0101: Class TChart not found

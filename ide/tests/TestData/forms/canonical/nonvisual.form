@@ -1,0 +1,32 @@
+object TrayForm: TTrayForm
+  Left = 200
+  Top = 120
+  Caption = 'Tray'
+  ClientWidth = 400
+  ClientHeight = 240
+  Menu = MainMenu1
+  PixelsPerInch = 96
+  object Timer1: TTimer
+    Enabled = False
+    Interval = 250
+    DesignLeft = 8
+    DesignTop = 8
+    OnTimer = Timer1Timer
+  end
+  object OpenDialog1: TOpenDialog
+    DefaultExt = 'txt'
+    Filter = 'Text files (*.txt)|*.txt|All files (*.*)|*.*'
+    Options = [ofHideReadOnly, ofFileMustExist, ofEnableSizing]
+    DesignLeft = 88
+    DesignTop = 8
+  end
+  object MainMenu1: TMainMenu
+    DesignLeft = 168
+    DesignTop = 8
+  end
+  object PopupMenu1: TPopupMenu
+    AutoPopup = False
+    DesignLeft = 8
+    DesignTop = 72
+  end
+end

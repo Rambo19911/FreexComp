@@ -1,0 +1,7 @@
+object MainForm: TMainForm
+  object S: TStatusBar
+    Panels = <
+      Text = 'x'
+    >
+  end
+end

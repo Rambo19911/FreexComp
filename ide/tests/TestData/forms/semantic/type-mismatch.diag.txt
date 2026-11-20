@@ -1,0 +1,10 @@
+type-mismatch.form(13,11): warning F0103: Invalid value for property Tag: value kind does not fit type Int64
+type-mismatch.form(14,13): warning F0103: Invalid value for property Align: 'alMiddle' is not a member of TAlign
+type-mismatch.form(15,15): warning F0103: Invalid value for property Anchors: 'akNowhere' is not a member of TAnchors
+type-mismatch.form(16,12): warning F0103: Invalid value for property Font: value kind does not fit type TFont
+type-mismatch.form(17,13): warning F0103: Invalid value for property Color: value kind does not fit type TColor
+type-mismatch.form(18,15): warning F0103: Invalid value for property Visible: value kind does not fit type Boolean
+type-mismatch.form(19,17): warning F0103: Invalid value for property PopupMenu: value kind does not fit type TPopupMenu
+type-mismatch.form(20,20): warning F0103: Invalid value for property PasswordChar: value kind does not fit type Char
+type-mismatch.form(21,12): warning F0103: Invalid value for property Text: value kind does not fit type string
+type-mismatch.form(22,16): warning F0103: Invalid value for property OnChange: value kind does not fit type TNotifyEvent

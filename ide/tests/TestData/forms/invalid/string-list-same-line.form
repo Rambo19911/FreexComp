@@ -1,0 +1,6 @@
+object MainForm: TMainForm
+  object M: TMemo
+    Lines = ('one'
+    )
+  end
+end

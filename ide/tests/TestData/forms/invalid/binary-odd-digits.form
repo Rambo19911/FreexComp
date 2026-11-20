@@ -1,0 +1,7 @@
+object MainForm: TMainForm
+  object I: TImage
+    Picture.Data = {
+      ABC
+    }
+  end
+end
