@@ -4,7 +4,7 @@ unit Forms;
 interface
 
 uses
-  Windows, Messages, Types, SysUtils, Classes, CommCtrl, Graphics, Controls, UIConsts;
+  Windows, Messages, Types, SysUtils, Classes, CommCtrl, Graphics, Menus, Controls, UIConsts;
 
 type
   TIdleEvent = procedure(Sender: TObject; var Done: Boolean) of object;
@@ -169,6 +169,8 @@ type
     FResizePending: Boolean;
     FResizedWidth: Integer;                                  { the client size of the last OnResize }
     FResizedHeight: Integer;
+    FMenu: TMainMenu;
+    FMenuChanging: Integer;                                  { Windows.SetMenu in progress: no client adoption }
     FOnActivate: TNotifyEvent;
     FOnAfterMonitorDpiChanged: TMonitorDpiChangedEvent;
     FOnClose: TCloseEvent;
@@ -185,6 +187,7 @@ type
     procedure SetFormStyle(Value: TFormStyle);
     procedure SetPixelsPerInch(Value: Integer);
     procedure SetWindowState(Value: TWindowState);
+    procedure SetMenu(Value: TMainMenu);
     function GetActive: Boolean;
     function GetMonitor: TMonitor;
     procedure ApplyPosition;
@@ -225,6 +228,7 @@ type
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure PaintWindow(DC: HDC); override;
     procedure DestroyWnd; override;
+    function WindowMenu: HMENU; override;
     procedure CMVisibleChanged(var Message: TMessage); override;
     procedure WndProc(var Message: TMessage); override;
     function PreviewKeys: Boolean; override;
@@ -234,6 +238,8 @@ type
     property BorderStyle: TFormBorderStyle read FBorderStyle write SetBorderStyle default bsSizeable;
     property FormStyle: TFormStyle read FFormStyle write SetFormStyle default fsNormal;
     property KeyPreview: Boolean read FKeyPreview write FKeyPreview default False;
+    { layout.md UIF-274: SetMenu on the window; ClientHeight kept }
+    property Menu: TMainMenu read FMenu write SetMenu;
     { layout.md UIF-270: the design DPI while loading, the current DPI otherwise; always stored }
     property PixelsPerInch: Integer read FPixelsPerInch write SetPixelsPerInch stored True;
     property Position: TPosition read FPosition write FPosition default poDesigned;
@@ -303,6 +309,7 @@ type
     property Font;
     property FormStyle;
     property KeyPreview;
+    property Menu;
     property PixelsPerInch;
     property Position;
     property Scaled;
@@ -1503,7 +1510,7 @@ begin
   FormStyles(Style, ExStyle);
   R := Rect(0, 0, 0, 0);
   if FPixelsPerInch > 0 then
-    AdjustWindowRectExForDpi(R, Style, False, ExStyle, FPixelsPerInch);
+    AdjustWindowRectExForDpi(R, Style, FMenu <> nil, ExStyle, FPixelsPerInch);
   FrameWidth := R.Right - R.Left;
   FrameHeight := R.Bottom - R.Top;
 end;
@@ -1527,7 +1534,8 @@ procedure TCustomForm.AdoptClientSize;
 var
   R: TRect;
 begin
-  if not HandleAllocated or IsIconic(Handle) or LayoutDumpMode then
+  if not HandleAllocated or IsIconic(Handle) or LayoutDumpMode or (FMenuChanging > 0)
+    or (csDestroyingHandle in ControlState) then
     Exit;
   Windows.GetClientRect(Handle, R);
   if (R.Right <> FClientWidth) or (R.Bottom <> FClientHeight) then
@@ -1599,6 +1607,8 @@ begin
   inherited CreateWnd;
   if LayoutDumpMode then
     Exit;                                                    { UIF-313: bounds stay formula-defined }
+  if FMenu <> nil then
+    FMenu.WindowHandle := Handle;
   DPI := GetDpiForWindow(Handle);
   if (DPI > 0) and (DPI <> FPixelsPerInch) then
   begin
@@ -1632,6 +1642,8 @@ begin
       FActiveControl := nil;
     if AComponent = FEnteredControl then
       FEnteredControl := nil;
+    if AComponent = FMenu then
+      Menu := nil;
   end;
 end;
 
@@ -1650,8 +1662,58 @@ end;
 
 procedure TCustomForm.DestroyWnd;
 begin
+  if FMenu <> nil then
+  begin
+    Inc(FMenuChanging);
+    try
+      Windows.SetMenu(Handle, 0);                            { DestroyWindow would destroy the menu bar }
+    finally
+      Dec(FMenuChanging);
+    end;
+    FMenu.WindowHandle := 0;
+  end;
   TControlCanvas(FCanvas).FreeHandle;
   inherited DestroyWnd;
+end;
+
+{ the menu bar is part of the window from its creation, so the first client size already excludes it }
+function TCustomForm.WindowMenu: HMENU;
+begin
+  Result := 0;
+  if (FMenu <> nil) and not LayoutDumpMode then
+    Result := FMenu.Handle;
+end;
+
+{ layout.md UIF-274: the client size is kept, the outer height changes with the frame }
+procedure TCustomForm.SetMenu(Value: TMainMenu);
+var
+  CW, CH, FW, FH: Integer;
+begin
+  if FMenu = Value then
+    Exit;
+  CW := FClientWidth;
+  CH := FClientHeight;
+  if FMenu <> nil then
+  begin
+    FMenu.RemoveFreeNotification(Self);
+    FMenu.WindowHandle := 0;
+  end;
+  FMenu := Value;
+  if FMenu <> nil then
+    FMenu.FreeNotification(Self);
+  if HandleAllocated and not LayoutDumpMode then
+  begin
+    Inc(FMenuChanging);
+    try
+      Windows.SetMenu(Handle, WindowMenu);
+    finally
+      Dec(FMenuChanging);
+    end;
+    if FMenu <> nil then
+      FMenu.WindowHandle := Handle;
+  end;
+  GetFrame(FW, FH);
+  SetBounds(Left, Top, CW + FW, CH + FH);
 end;
 
 { UIF-432 step 4: the ShowWindow command of WindowState; a non-main form of an inactive application does not
@@ -1796,6 +1858,13 @@ begin
       WMSize(Message);
     WM_DPICHANGED:
       WMDpiChanged(Message);
+    WM_COMMAND:
+      if (Message.LParam <> 0) or not (((FMenu <> nil) and FMenu.DispatchCommand(LoWord(Message.WParam)))
+        or DispatchPopupCommand(LoWord(Message.WParam))) then
+        inherited WndProc(Message);                          { UIF-920, UIF-722 }
+    WM_INITMENUPOPUP:
+      if (HiWord(Message.LParam) <> 0) or (FMenu = nil) or not FMenu.DispatchPopup(HMENU(Message.WParam)) then
+        inherited WndProc(Message);                          { UIF-723 }
     WM_CLOSE:
       Close;                                                 { UIF-440: default processing never destroys }
     WM_QUERYENDSESSION:

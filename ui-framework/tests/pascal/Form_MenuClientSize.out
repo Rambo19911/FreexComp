@@ -1,0 +1,44 @@
+# without a window
+ok assigning Menu keeps the client size
+ok outer height grows by the menu bar
+ok removing Menu keeps the client size
+ok outer height back
+# with a window
+ok menu bar attached at creation
+ok WindowHandle
+ok client size kept at creation
+ok native client = stored client
+ok outer height = window height
+ok removed from the window
+ok WindowHandle cleared
+ok removing keeps the client size
+ok native client after removing
+ok outer height shrinks by the menu bar
+ok window shrank
+ok assigned again
+ok assigning keeps the client size
+ok native client after assigning
+ok outer height grows again
+ok replaced by another menu
+ok old menu released
+ok old menu bar still alive
+ok replacing keeps the client size
+# re-creation
+ok attached again after RecreateWnd
+ok client size after RecreateWnd
+ok native client after RecreateWnd
+# freeing the menu
+ok Menu cleared
+ok detached
+ok client size kept
+ok native client kept
+# destroying the window
+ok the menu bar outlives the form window
+ok WindowHandle cleared with the window
+# streaming
+ok Menu reference resolved
+ok stored client size
+ok attached
+ok client size with the window
+ok native client
+# passed 37 failed 0

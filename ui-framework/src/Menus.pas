@@ -5,7 +5,7 @@ unit Menus;
 interface
 
 uses
-  Windows, SysUtils, Classes, Graphics, ImgList, UIConsts;
+  Windows, Messages, SysUtils, Classes, Graphics, ImgList, UIConsts;
 
 type
   { the same type as Classes.TShortCut (actions-menus.md section 3) }
@@ -19,6 +19,7 @@ const
 
 type
   TMenuBreak = (mbNone, mbBreak, mbBarBreak);
+  TFindItemKind = (fkCommand, fkHandle);
 
   TMenu = class;
 
@@ -118,20 +119,63 @@ type
     function CreateMenuHandle: HMENU; virtual;
     procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    { the root's native menu was rebuilt }
+    procedure MenuChanged; virtual;
     property Images: TCustomImageList read FImages write SetImages;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     function HandleAllocated: Boolean;
+    { the item of the tree with this Command id (fkCommand) or sub-menu handle (fkHandle); nil if none }
+    function FindItem(Value: NativeUInt; Kind: TFindItemKind): TMenuItem;
+    { UIF-722: Click on the item with this Command id; False if the menu has none }
+    function DispatchCommand(ACommand: Word): Boolean;
+    { UIF-723: WM_INITMENUPOPUP for one of this menu's sub-menus; False if the handle is not one of them }
+    function DispatchPopup(AHandle: HMENU): Boolean;
     property Items: TMenuItem read FItems;
     property Handle: HMENU read GetHandle;
   end;
 
   TMainMenu = class(TMenu)
+  private
+    FWindowHandle: HWND;
   protected
     function CreateMenuHandle: HMENU; override;
+    { UIF-720: DrawMenuBar on the form window after the bar was rebuilt }
+    procedure MenuChanged; override;
+  public
+    { the form window showing this menu bar (set by the form), 0 if none }
+    property WindowHandle: HWND read FWindowHandle write FWindowHandle;
   published
     property Images;
+  end;
+
+  TPopupAlignment = (paLeft, paRight, paCenter);
+
+  { controls-standard.md section 12, UIF-724 }
+  TPopupMenu = class(TMenu)
+  private
+    FAlignment: TPopupAlignment;
+    FAutoPopup: Boolean;
+    FPopupComponent: TComponent;
+    FPopupPoint: TPoint;
+    FOnPopup: TNotifyEvent;
+    procedure SetPopupComponent(Value: TComponent);
+  protected
+    procedure DoPopup(Sender: TObject); virtual;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    { screen coordinates; returns when the menu closes (a chosen item arrives later as WM_COMMAND) }
+    procedure Popup(X, Y: Integer); virtual;
+    property PopupComponent: TComponent read FPopupComponent write SetPopupComponent;
+    property PopupPoint: TPoint read FPopupPoint;
+  published
+    property Alignment: TPopupAlignment read FAlignment write FAlignment default paLeft;
+    property AutoPopup: Boolean read FAutoPopup write FAutoPopup default True;
+    property Images;
+    property OnPopup: TNotifyEvent read FOnPopup write FOnPopup;
   end;
 
 function ShortCut(Key: Word; Shift: TShiftState): TShortCut;
@@ -141,6 +185,12 @@ function TextToShortCut(const Text: string): TShortCut;
 
 { the caption without accelerator marks: '&' removed, '&&' gives '&' }
 function StripHotkey(const Text: string): string;
+
+{ UIF-724: the hidden owner window of every pop-up menu (class PN.PopupList), created on first use }
+function PopupListWindow: HWND;
+
+{ UIF-722: Click on the item with this Command id of any existing TPopupMenu; False if none has it }
+function DispatchPopupCommand(ACommand: Word): Boolean;
 
 implementation
 
@@ -794,6 +844,8 @@ begin
       InsertNative(Items[I], Position);
       Inc(Position);
     end;
+  if FMenu <> nil then
+    FMenu.MenuChanged;
 end;
 
 { this item's own entry changed: the parent's native menu is rebuilt }
@@ -817,9 +869,9 @@ end;
 destructor TMenu.Destroy;
 begin
   SetImages(nil);
+  inherited Destroy;           { free notifications first: a form detaches the menu bar before it is destroyed }
   FItems.Free;
   FImageChangeLink.Free;
-  inherited Destroy;
 end;
 
 function TMenu.CreateMenuHandle: HMENU;
@@ -840,6 +892,62 @@ end;
 procedure TMenu.GetChildren(Proc: TGetChildProc; Root: TComponent);
 begin
   FItems.GetChildren(Proc, Root);
+end;
+
+procedure TMenu.MenuChanged;
+begin
+end;
+
+function FindIn(Item: TMenuItem; Value: NativeUInt; Kind: TFindItemKind): TMenuItem;
+var
+  I: Integer;
+begin
+  if ((Kind = fkCommand) and (Item.FCommand = Value)) or ((Kind = fkHandle) and (Item.FHandle <> 0)
+    and (NativeUInt(Item.FHandle) = Value)) then
+  begin
+    Result := Item;
+    Exit;
+  end;
+  for I := 0 to Item.Count - 1 do
+  begin
+    Result := FindIn(Item.Items[I], Value, Kind);
+    if Result <> nil then
+      Exit;
+  end;
+  Result := nil;
+end;
+
+function TMenu.FindItem(Value: NativeUInt; Kind: TFindItemKind): TMenuItem;
+begin
+  Result := nil;
+  if (Kind = fkCommand) and (Value = 0) then
+    Exit;
+  Result := FindIn(FItems, Value, Kind);
+end;
+
+function TMenu.DispatchCommand(ACommand: Word): Boolean;
+var
+  Item: TMenuItem;
+begin
+  Item := FindItem(ACommand, fkCommand);
+  Result := (Item <> nil) and (Item <> FItems);
+  if Result then
+    Item.Click;
+end;
+
+{ UIF-723: the owning item's OnClick first (update hook), then the native menu is refreshed; linked actions of
+  the children are updated with the action links (U-077) }
+function TMenu.DispatchPopup(AHandle: HMENU): Boolean;
+var
+  Item: TMenuItem;
+begin
+  Item := FindItem(NativeUInt(AHandle), fkHandle);
+  Result := Item <> nil;
+  if not Result then
+    Exit;
+  if Assigned(Item.FOnClick) then
+    Item.FOnClick(Item);
+  Item.RebuildHandle;
 end;
 
 { every existing native menu of the tree is rebuilt (item bitmaps) }
@@ -895,6 +1003,149 @@ begin
   Result := CreateMenu;
 end;
 
+procedure TMainMenu.MenuChanged;
+begin
+  if FWindowHandle <> 0 then
+    DrawMenuBar(FWindowHandle);
+end;
+
+{ ---------------------------------------------------------------- UIF-724: popup list and owner window }
+
+const
+  PopupListClassName = 'PN.PopupList';
+
+var
+  PopupList: TList;                      { every existing TPopupMenu }
+  PopupWindow: HWND;
+
+function DispatchPopupCommand(ACommand: Word): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  if ACommand = 0 then
+    Exit;
+  for I := 0 to PopupList.Count - 1 do
+    if TPopupMenu(PopupList[I]).DispatchCommand(ACommand) then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+function DispatchPopupInit(AHandle: HMENU): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 0 to PopupList.Count - 1 do
+    if TPopupMenu(PopupList[I]).DispatchPopup(AHandle) then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+{ WM_COMMAND and WM_INITMENUPOPUP go to the menus; WM_MENUSELECT (hints) comes with U-079 }
+function PopupListWndProc(Wnd: HWND; Msg: UINT; WParam: WPARAM; LParam: LPARAM): LRESULT; stdcall;
+begin
+  Result := 0;
+  case Msg of
+    WM_COMMAND:
+      if (LParam = 0) and DispatchPopupCommand(LoWord(WParam)) then
+        Exit;
+    WM_INITMENUPOPUP:
+      if (HiWord(LParam) = 0) and DispatchPopupInit(HMENU(WParam)) then
+        Exit;
+  end;
+  Result := DefWindowProcW(Wnd, Msg, WParam, LParam);
+end;
+
+function PopupListWindow: HWND;
+var
+  Info: TWndClassExW;
+begin
+  if PopupWindow = 0 then
+  begin
+    FillChar(Info, SizeOf(Info), 0);
+    Info.cbSize := SizeOf(Info);
+    if not GetClassInfoExW(HINST(HInstance), PopupListClassName, Info) then
+    begin
+      Info.cbSize := SizeOf(Info);
+      Info.lpfnWndProc := @PopupListWndProc;
+      Info.hInstance := HINST(HInstance);
+      Info.lpszClassName := PopupListClassName;
+      if RegisterClassExW(Info) = 0 then
+        raise EOutOfResources.CreateFmt(SWindowClass, [SysErrorMessage(GetLastError)]);
+    end;
+    PopupWindow := CreateWindowExW(WS_EX_TOOLWINDOW, PopupListClassName, '', WS_POPUP, 0, 0, 0, 0, 0, 0,
+      HINST(HInstance), nil);
+    if PopupWindow = 0 then
+      raise EOutOfResources.CreateFmt(SWindowCreate, [SysErrorMessage(GetLastError)]);
+  end;
+  Result := PopupWindow;
+end;
+
+{ ---------------------------------------------------------------- TPopupMenu }
+
+constructor TPopupMenu.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FAutoPopup := True;
+  PopupList.Add(Pointer(Self));
+end;
+
+destructor TPopupMenu.Destroy;
+begin
+  PopupList.Remove(Pointer(Self));
+  inherited Destroy;
+end;
+
+procedure TPopupMenu.SetPopupComponent(Value: TComponent);
+begin
+  if FPopupComponent = Value then
+    Exit;
+  if FPopupComponent <> nil then
+    FPopupComponent.RemoveFreeNotification(Self);
+  FPopupComponent := Value;
+  if FPopupComponent <> nil then
+    FPopupComponent.FreeNotification(Self);
+end;
+
+procedure TPopupMenu.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (Operation = opRemove) and (AComponent = FPopupComponent) then
+    FPopupComponent := nil;
+end;
+
+procedure TPopupMenu.DoPopup(Sender: TObject);
+begin
+  if Assigned(FOnPopup) then
+    FOnPopup(Sender);
+end;
+
+{ UIF-724 (action updates of UIF-911 come with the action links, U-077) }
+procedure TPopupMenu.Popup(X, Y: Integer);
+const
+  AlignFlags: array[TPopupAlignment] of UINT = (TPM_LEFTALIGN, TPM_RIGHTALIGN, TPM_CENTERALIGN);
+var
+  Owner: HWND;
+begin
+  FPopupPoint := Point(X, Y);
+  DoPopup(Self);
+  Owner := PopupListWindow;
+  SetForegroundWindow(Owner);
+  TrackPopupMenuEx(Items.Handle, AlignFlags[FAlignment] or TPM_RIGHTBUTTON, X, Y, Owner, nil);
+  PostMessageW(Owner, WM_NULL, 0, 0);
+end;
+
 initialization
-  RegisterClasses([TMenuItem, TMainMenu]);
+  PopupList := TList.Create;
+  RegisterClasses([TMenuItem, TMainMenu, TPopupMenu]);
+
+finalization
+  if PopupWindow <> 0 then
+    DestroyWindow(PopupWindow);
+  PopupList.Free;
 end.

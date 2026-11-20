@@ -1,0 +1,44 @@
+# defaults
+ok Alignment paLeft
+ok AutoPopup True
+ok Images nil
+ok PopupComponent nil
+ok TPopupMenu registered
+ok owner window class
+ok owner window hidden
+ok one owner window
+# Popup (UIF-724)
+ok OnPopup, then the native menu opened (WM_INITMENUPOPUP forwarded)
+ok PopupPoint
+ok cancelled: no command
+ok paCenter: shown as well
+# commands (UIF-722)
+ok owner window: item clicked
+ok posted command (as after a selection): clicked in the loop
+ok the form routes ids of popup items too
+ok id 0: none
+ok owner window: WM_INITMENUPOPUP to the root's hook
+# context menu (UIF-077)
+ok PopupMenu shown
+ok result 1
+ok PopupComponent = the control
+ok at the message position
+ok keyboard origin: shown
+ok keyboard origin: at the client centre
+ok child without PopupMenu: bubbles to the parent's
+ok PopupComponent = the parent
+ok AutoPopup False: bubbles on to the form's menu
+ok PopupComponent = the form
+ok OnContextPopup Handled: no popup
+ok handled: result 1
+# graphic control
+ok the label's PopupMenu
+ok PopupComponent = the label
+ok result 1
+# free notifications (UIF-050)
+ok freed popup menu: PopupMenu cleared
+ok PopupComponent still set
+ok PopupComponent = Q
+ok freed PopupComponent cleared
+ok a freed popup menu's items are not routed
+# passed 37 failed 0

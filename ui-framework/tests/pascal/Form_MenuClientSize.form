@@ -1,0 +1,16 @@
+object MenuSizeForm: TMenuSizeForm
+  Left = 60
+  Top = 60
+  Caption = 'Menu client size'
+  ClientWidth = 320
+  ClientHeight = 180
+  Menu = MainMenu1
+  Scaled = False
+  object MainMenu1: TMainMenu
+    DesignLeft = 8
+    DesignTop = 8
+    object FileItem: TMenuItem
+      Caption = '&File'
+    end
+  end
+end

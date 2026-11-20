@@ -1,0 +1,98 @@
+# defaults
+ok AutoCheck False
+ok Caption empty
+ok Category empty
+ok Checked False
+ok Enabled True
+ok GroupIndex 0
+ok Hint empty
+ok ImageIndex -1
+ok ShortCut 0
+ok Visible True
+ok no list
+ok Index -1 without a list
+ok no parent without a list
+ok Images nil
+ok State asNormal
+ok no actions
+ok TAction registered
+ok TActionList registered
+ok no handler: Execute False
+ok no handler: not auto-disabled (UIF-904)
+ok no handler: Update False
+# list and actions (UIF-900)
+ok adding fires OnChange; GetChildren in index order
+ok ActionCount
+ok Actions[]
+ok default property
+ok Index
+ok GetParentComponent = the list
+ok HasParent with a list
+ok SetParentComponent appends
+ok at the end
+ok Index moves
+ok moved to another list: removed
+ok in the other list
+ok a freed action leaves its list
+ok destroying the list clears ActionList
+ok the action still exists
+ok A, C and the second list remain
+# Change (UIF-901)
+ok a change reaches the link; the same value does not
+ok every property change calls Change
+# Execute (UIF-902)
+ok handled: True
+ok Update first, then OnExecute
+ok list did not handle: action handles
+ok list handlers before the action's
+ok list handled: True
+ok handled by the list: action handlers skipped
+ok disabled: False
+ok disabled: Update ran, OnExecute did not
+ok suspended list: False
+ok suspended list: nothing runs
+ok no OnExecute: False
+# AutoCheck and groups
+ok AutoCheck toggles on (before OnExecute)
+ok AutoCheck toggles off
+ok group: checked
+ok group: a checked action stays checked
+ok checking unchecks the others of the group
+ok GroupIndex 0 is not a group
+ok disabled: no AutoCheck
+# Update (UIF-903)
+ok list handler ran: True
+ok list OnUpdate
+ok no handler: False
+ok own handler: True
+ok own OnUpdate
+# asSuspendedEnabled
+ok every action enabled
+ok stays enabled while set
+ok still suspended: Execute False
+ok asNormal: can be disabled again
+# DoHint
+ok OnHint can refuse
+ok OnHint can change the text
+ok without OnHint: True
+# streaming
+ok read
+ok three nested actions
+ok in order
+ok owned by the root
+ok DesignLeft
+ok DesignTop
+ok State
+ok Caption
+ok Category
+ok ShortCut
+ok Hint
+ok ImageIndex
+ok AutoCheck
+ok GroupIndex
+ok stored Checked values win while loading
+ok Enabled
+ok Visible
+ok OnExecute bound
+ok the form method ran
+# passed 88 failed 0

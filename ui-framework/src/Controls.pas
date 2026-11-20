@@ -4,7 +4,7 @@ unit Controls;
 interface
 
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, UIConsts;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Menus, UIConsts;
 
 { ---------------------------------------------------------------- core.md section 1: types and constants }
 
@@ -244,6 +244,7 @@ type
     FOnMouseWheelDown: TMouseWheelUpDownEvent;
     FOnMouseWheelUp: TMouseWheelUpDownEvent;
     FOnContextPopup: TContextPopupEvent;
+    FPopupMenu: TPopupMenu;
     FOnResize: TNotifyEvent;
     FOnConstrainedResize: TConstrainedResizeEvent;
     procedure SetLeft(Value: Integer);
@@ -265,6 +266,7 @@ type
     procedure SetEnabled(Value: Boolean);
     procedure SetVisible(Value: Boolean);
     procedure SetShowHint(Value: Boolean);
+    procedure SetPopupMenu(Value: TPopupMenu);
     procedure SetParentShowHint(Value: Boolean);
     function IsShowHintStored: Boolean;
     function GetCaption: TCaption;
@@ -332,6 +334,10 @@ type
     procedure CMMouseLeave(var Message: TMessage); virtual;
     procedure WMMouseWheel(var Message: TMessage); virtual;
     procedure WMContextMenu(var Message: TMessage); virtual;
+    { core.md UIF-077: PopupMenu (AutoPopup) shown at a screen position for this control; False if none }
+    function ShowPopupMenu(const ScreenPos: TPoint): Boolean;
+    { core.md UIF-050 }
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure Loaded; override;
     procedure SetParentComponent(Value: TComponent); override;
     { layout.md UIF-280: constraints, margins, own font, then the bounds (ScaleBounds); M = D is a no-op }
@@ -409,6 +415,7 @@ type
     property ParentShowHint: Boolean read FParentShowHint write SetParentShowHint default True;
     property ShowHint: Boolean read FShowHint write SetShowHint stored IsShowHintStored default False;
     property Visible: Boolean read FVisible write SetVisible default True;
+    property PopupMenu: TPopupMenu read FPopupMenu write SetPopupMenu;
   end;
 
   TControlClass = class of TControl;
@@ -461,6 +468,8 @@ type
     procedure CreateParams(var Params: TCreateParams); virtual;
     procedure CreateWnd; virtual;
     procedure CreateWindowHandle(const Params: TCreateParams); virtual;
+    { the menu bar handed to CreateWindowExW for a top-level window (forms: application-forms.md Menu); 0 }
+    function WindowMenu: HMENU; virtual;
     procedure CreateHandle; virtual;
     procedure DestroyWnd; virtual;
     procedure DestroyWindowHandle; virtual;
@@ -1816,7 +1825,7 @@ end;
   processing (DefWindowProc passes it to the parent window) }
 procedure TControl.WMContextMenu(var Message: TMessage);
 var
-  P: TPoint;
+  P, S: TPoint;
   H: HWND;
   Handled: Boolean;
 begin
@@ -1839,9 +1848,58 @@ begin
   Handled := False;
   DoContextPopup(P, Handled);
   if Handled then
+  begin
+    Message.Result := 1;
+    Exit;
+  end;
+  { the screen position of the popup: the message's, or the client centre for the keyboard origin }
+  S := Point(SmallInt(LoWord(Message.LParam)), SmallInt(HiWord(Message.LParam)));
+  if (S.X = -1) and (S.Y = -1) then
+  begin
+    S := P;
+    H := 0;
+    if Self is TWinControl then
+      H := TWinControl(Self).FHandle
+    else if FParent <> nil then
+    begin
+      H := FParent.FHandle;
+      S := Point(P.X + FLeft, P.Y + FTop);
+    end;
+    if H <> 0 then
+      Windows.ClientToScreen(H, S);
+  end;
+  if ShowPopupMenu(S) then
     Message.Result := 1
   else
     Dispatch(Message);
+end;
+
+function TControl.ShowPopupMenu(const ScreenPos: TPoint): Boolean;
+begin
+  Result := (FPopupMenu <> nil) and FPopupMenu.AutoPopup;
+  if Result then
+  begin
+    FPopupMenu.PopupComponent := Self;
+    FPopupMenu.Popup(ScreenPos.X, ScreenPos.Y);
+  end;
+end;
+
+procedure TControl.SetPopupMenu(Value: TPopupMenu);
+begin
+  if FPopupMenu = Value then
+    Exit;
+  if FPopupMenu <> nil then
+    FPopupMenu.RemoveFreeNotification(Self);
+  FPopupMenu := Value;
+  if FPopupMenu <> nil then
+    FPopupMenu.FreeNotification(Self);
+end;
+
+procedure TControl.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (Operation = opRemove) and (AComponent = FPopupMenu) then
+    FPopupMenu := nil;
 end;
 
 { UIF-130 (graphic part) }
@@ -2299,7 +2357,6 @@ begin
   else
     ClassName := @Params.WinClassName[0];
   { UIF-070: child windows carry a non-zero control id (WM_MEASUREITEM names the control by it) }
-  Menu := 0;
   if (Params.Style and WS_CHILD) <> 0 then
   begin
     if FCtlID = 0 then
@@ -2311,7 +2368,9 @@ begin
         Inc(NextCtlID);
     end;
     Menu := HMENU(FCtlID);
-  end;
+  end
+  else
+    Menu := WindowMenu;
   H := CreateWindowExW(Params.ExStyle, ClassName, Params.Caption, Params.Style, Params.X, Params.Y, Params.Width,
     Params.Height, Params.WndParent, Menu, HINST(HInstance), Pointer(Self));
   if H = 0 then
@@ -2324,6 +2383,11 @@ begin
   end
   else
     FHandle := H;
+end;
+
+function TWinControl.WindowMenu: HMENU;
+begin
+  Result := 0;
 end;
 
 { UIF-032 }
@@ -2639,7 +2703,7 @@ begin
     begin
       Handled := False;
       C.DoContextPopup(Point(P.X - C.FLeft, P.Y - C.FTop), Handled);
-      if Handled then
+      if Handled or C.ShowPopupMenu(Point(SmallInt(LoWord(Message.LParam)), SmallInt(HiWord(Message.LParam)))) then
       begin
         Message.Result := 1;
         Exit;

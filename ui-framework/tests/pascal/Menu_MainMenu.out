@@ -1,0 +1,27 @@
+# WM_COMMAND routing (UIF-920, UIF-722)
+ok menu code 0: item clicked
+ok accelerator code 1: item clicked
+ok nested item
+ok command entry on the bar (UIF-725)
+ok disabled item: no click
+ok id of an item outside the menu: nothing
+ok LParam <> 0 is not a menu command
+ok FindItem by command
+ok FindItem: id 0 is none
+ok DispatchCommand: unknown id
+# WM_INITMENUPOPUP (UIF-723)
+ok three entries before
+ok owning item's OnClick first
+ok the handler's change is in the native menu
+ok FindItem by handle
+ok nested sub-menu: its item's OnClick
+ok window menu flag: not a menu of ours
+ok pop-up entry clicked by id
+# DrawMenuBar after a rebuild (UIF-720)
+ok bar entry changed: menu bar redrawn
+ok bar item added: menu bar redrawn
+ok bar has the new entry
+ok nested change: no menu bar redraw
+ok detached menu: no redraw of the former form
+ok without Menu the form routes nothing
+# passed 23 failed 0
