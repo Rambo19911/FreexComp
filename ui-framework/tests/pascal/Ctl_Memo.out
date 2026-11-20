@@ -1,0 +1,132 @@
+# defaults
+ok Width 185
+ok Height 89
+ok Alignment
+ok BorderStyle
+ok Color clWindow
+ok HideSelection
+ok Lines empty
+ok MaxLength
+ok ParentColor False
+ok ParentFont
+ok ReadOnly
+ok ScrollBars ssNone
+ok TabOrder
+ok TabStop True
+ok WantReturns
+ok WantTabs
+ok WordWrap
+ok registered
+ok no intrinsic height
+# Lines without a handle (UIF-630)
+ok no handle: empty memo has no lines
+ok no handle: empty Lines.Text
+ok no handle: Add
+ok no handle: Text is the raw text (no trailing break)
+ok no handle: Lines.Text adds the trailing break
+ok no handle: Insert at 0
+ok no handle: Insert at Count
+ok no handle: Delete in the middle
+ok no handle: Delete the last
+ok no handle: Put
+ok no handle: Get
+ok no handle: all deleted
+ok no handle: text empty
+ok no handle: Text assignment splits
+ok no handle: second line
+ok no handle: trailing break in Text: an empty last line
+ok no handle: the empty last line
+ok no handle: Lines.Text removes the trailing break
+ok no handle: two lines
+ok a leading empty line is kept
+# window
+ok system class EDIT
+ok ES_MULTILINE, ES_AUTOVSCROLL
+ok WordWrap: no ES_AUTOHSCROLL
+ok ES_WANTRETURN
+ok WS_EX_CLIENTEDGE
+ok lines pushed as the window text
+ok WordWrap recreates
+ok no WordWrap: ES_AUTOHSCROLL
+ok text kept
+ok ScrollBars recreates
+ok ssBoth: WS_VSCROLL, WS_HSCROLL
+ok ssVertical
+ok WantReturns recreates
+ok WantReturns False: no ES_WANTRETURN
+ok Alignment recreates
+ok ES_CENTER
+ok BorderStyle recreates
+ok bsNone
+ok ReadOnly
+# Lines with a handle (UIF-630)
+ok handle: empty memo has no lines
+ok handle: empty Lines.Text
+ok handle: Add
+ok handle: Text is the raw text (no trailing break)
+ok handle: Lines.Text adds the trailing break
+ok handle: Insert at 0
+ok handle: Insert at Count
+ok handle: Delete in the middle
+ok handle: Delete the last
+ok handle: Put
+ok handle: Get
+ok handle: all deleted
+ok handle: text empty
+ok handle: Text assignment splits
+ok handle: second line
+ok handle: trailing break in Text: an empty last line
+ok handle: the empty last line
+ok handle: Lines.Text removes the trailing break
+ok handle: two lines
+ok the window holds the text
+ok word wrap: several display lines
+ok word wrap: one logical line
+ok lines survive the window
+ok second line after the window went
+ok lines pushed again
+# CaretPos
+ok CaretPos (column, line)
+ok CaretPos at the end of the first line
+ok CaretPos := (2, 1)
+# OnChange
+ok Lines.Add fires OnChange
+ok same text: no OnChange
+# special keys (UIF-632)
+ok WantReturns: wants Return
+ok WantTabs False: Tab not wanted
+ok Escape not wanted
+ok WM_GETDLGCODE without DLGC_WANTALLKEYS
+ok WM_GETDLGCODE without DLGC_WANTTAB
+ok WantTabs: wants Tab
+ok WantTabs: DLGC_WANTTAB
+ok WantReturns False: Return not wanted
+ok WantReturns False: Ctrl+Return wanted
+ok WantReturns False: Return goes to the form
+ok WantTabs False: Tab moves to the next control
+ok no tab inserted
+ok WantReturns: Return stays in the memo
+ok Escape goes to the form
+ok Escape without a cancel button closes nothing
+# streaming
+ok no OnChange while loading
+ok Lines
+ok Lines with an empty line
+ok Alignment
+ok BorderStyle
+ok Color
+ok Font.Height
+ok HideSelection
+ok MaxLength
+ok ReadOnly
+ok ScrollBars
+ok TabStop False
+ok WantReturns
+ok WantTabs
+ok WordWrap
+ok bounds (no intrinsic height)
+ok OnChange bound
+ok OnChange handler of the form
+# leak
+ok GUI objects after 100 instances with handles
+# passed 122 failed 0

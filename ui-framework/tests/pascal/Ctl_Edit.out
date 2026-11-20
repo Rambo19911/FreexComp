@@ -1,0 +1,134 @@
+# defaults
+ok Width 121
+ok Height 23 (rule I2 at 96 DPI, font -12)
+ok Alignment
+ok AutoSelect
+ok AutoSize
+ok BorderStyle bsSingle
+ok CharCase
+ok Color clWindow
+ok HideSelection
+ok MaxLength
+ok NumbersOnly
+ok ParentColor False
+ok ParentFont
+ok PasswordChar #0
+ok ReadOnly
+ok TabOrder
+ok TabStop True
+ok Text
+ok TextHint
+ok registered
+# handle-less state (UIF-621)
+ok SelStart field
+ok SelLength field
+ok SelText from the fields
+ok SelStart clamped to the text length
+ok SelLength clamped to the text length
+ok Modified field
+ok CanUndo without a handle
+ok system class EDIT
+ok text pushed
+ok selection pushed
+ok MaxLength pushed (EM_LIMITTEXT)
+ok TextHint pushed (EM_SETCUEBANNER)
+ok Modified pushed
+# window
+ok ES_AUTOHSCROLL
+ok WS_TABSTOP
+ok ES_LEFT
+ok WS_EX_CLIENTEDGE
+ok no ES_NOHIDESEL
+ok Alignment recreates
+ok ES_CENTER
+ok text kept
+ok selection kept
+ok ES_RIGHT
+ok BorderStyle recreates
+ok bsNone: no WS_EX_CLIENTEDGE
+ok HideSelection recreates
+ok ES_NOHIDESEL
+ok NumbersOnly recreates
+ok ES_NUMBER
+ok no OnChange while re-creating
+ok PasswordChar #0 -> * recreates
+ok ES_PASSWORD
+ok EM_SETPASSWORDCHAR *
+ok PasswordChar * -> # keeps the window
+ok EM_SETPASSWORDCHAR #
+ok PasswordChar #0: no ES_PASSWORD
+ok ReadOnly keeps the window
+ok EM_SETREADONLY
+ok EM_SETREADONLY False
+ok MaxLength with a handle
+ok TextHint with a handle
+ok CharCase recreates
+ok ES_UPPERCASE
+ok CharCase converts the text
+ok ES_LOWERCASE
+ok lower case
+# native -> object
+ok Text reads the window
+ok SelStart from EM_GETSEL
+ok SelLength from EM_GETSEL
+ok SelText
+ok Modified from EM_GETMODIFY
+ok Modified := False
+ok SelText replaces (EM_REPLACESEL)
+ok CanUndo after EM_REPLACESEL
+ok Undo
+ok SelectAll
+ok ClearSelection
+ok text saved when the window goes
+ok SelStart saved
+ok SelLength saved
+ok SelText without a handle
+ok caret after the inserted text
+ok selection pushed again
+# OnChange (UIF-620)
+ok assignment that changes the text
+ok same text: no OnChange
+ok typed character
+ok user edit fires OnChange
+ok Clear
+ok Clear fires OnChange
+ok assignment without a handle
+ok no OnChange in CreateWnd
+# AutoSelect, Enter and Escape (UIF-622)
+ok AutoSelect: all selected on entry
+ok AutoSelect False: selection kept
+ok Enter reaches the form's dialog keys
+ok Escape reaches the form's dialog keys
+# intrinsic height (layout.md UIF-250, E37)
+ok E37: rule I2, 16 + 11
+ok font change re-applies I2
+ok rule I3: 20 + 3
+ok AutoSize False: no intrinsic height
+ok AutoSize True re-applies I3
+ok on a form: s(11) at the form's DPI
+ok on a form: s(3) at the form's DPI
+# streaming
+ok no OnChange while loading
+ok E37 loaded: stored height replaced
+ok Font.Height
+ok ParentFont False
+ok Alignment
+ok AutoSelect
+ok AutoSize False
+ok AutoSize False: stored height kept
+ok BorderStyle
+ok CharCase
+ok Color
+ok HideSelection
+ok MaxLength
+ok NumbersOnly
+ok PasswordChar
+ok ReadOnly
+ok TabStop False
+ok Text
+ok TextHint
+ok OnChange bound
+ok OnChange handler of the form
+# leak
+ok GUI objects after 100 instances with handles
+# passed 124 failed 0

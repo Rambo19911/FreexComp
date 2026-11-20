@@ -1,0 +1,31 @@
+object MemoForm: TMemoForm
+  Caption = 'Memos'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Notes: TMemo
+    Left = 10
+    Top = 10
+    Width = 200
+    Height = 120
+    Alignment = taRightJustify
+    BorderStyle = bsNone
+    Color = clYellow
+    Font.Height = -15
+    HideSelection = False
+    Lines = (
+      'first'
+      ''
+      'third'
+    )
+    MaxLength = 100
+    ParentFont = False
+    ReadOnly = True
+    ScrollBars = ssVertical
+    TabStop = False
+    WantReturns = False
+    WantTabs = True
+    WordWrap = False
+    OnChange = NotesChange
+  end
+end

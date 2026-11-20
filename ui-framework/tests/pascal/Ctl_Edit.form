@@ -1,0 +1,36 @@
+object EditForm: TEditForm
+  Caption = 'Edits'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Auto: TEdit
+    Left = 10
+    Top = 10
+    Width = 121
+    Height = 40
+    Alignment = taRightJustify
+    AutoSelect = False
+    Font.Height = -16
+    ParentFont = False
+    TabOrder = 0
+  end
+  object Other: TEdit
+    Left = 10
+    Top = 60
+    Width = 121
+    Height = 40
+    AutoSize = False
+    BorderStyle = bsNone
+    CharCase = ecLowerCase
+    Color = clYellow
+    HideSelection = False
+    MaxLength = 8
+    NumbersOnly = True
+    PasswordChar = '*'
+    ReadOnly = True
+    TabStop = False
+    Text = 'abc'
+    TextHint = 'hint'
+    OnChange = OtherChange
+  end
+end

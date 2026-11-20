@@ -1,0 +1,67 @@
+# defaults
+ok Width 75
+ok Height 25
+ok Cancel
+ok Caption
+ok Default
+ok ModalResult mrNone
+ok ParentFont
+ok TabOrder
+ok TabStop True
+ok WordWrap
+ok registered
+# handle-less state, window
+ok system class BUTTON
+ok BS_PUSHBUTTON
+ok WS_TABSTOP
+ok no BS_MULTILINE
+ok caption pushed
+ok disabled pushed
+ok WordWrap recreates
+ok BS_MULTILINE
+ok caption kept
+ok Default with no focused button: BS_DEFPUSHBUTTON
+ok Default False: BS_PUSHBUTTON
+ok Default keeps the window
+# native -> object
+ok Caption reads the window
+# click (UIF-640)
+ok BM_CLICK: OnClick once
+ok mouse click: OnClick once
+ok Click from code
+ok ModalResult set before OnClick
+ok form ModalResult
+ok the handler may reset the form's value
+ok mrNone never touches the form
+# Return and Escape (UIF-115, UIF-642, UIF-643)
+ok Return in an edit: the default button
+ok Escape: the cancel button
+ok Return on a focused button: that button
+ok disabled default button: skipped
+ok invisible cancel button: skipped
+ok several defaults: the first in tab order
+# appearance (UIF-641)
+ok focus on an edit: the default button looks default
+ok other button: normal
+ok focused button looks default
+ok default button while another button is focused: normal
+ok focus back on the edit: default again
+ok previously focused button: normal
+# accelerator
+ok accelerator clicks
+ok accelerator focuses the button
+# streaming
+ok Cancel
+ok Caption
+ok Default
+ok Font.Height
+ok ParentFont False
+ok ModalResult
+ok TabStop False
+ok WordWrap
+ok no click while loading
+ok OnClick handler of the form
+ok ModalResult reaches the streamed form
+# leak
+ok GUI objects after 100 instances with handles
+# passed 57 failed 0

@@ -1,0 +1,21 @@
+object ButtonForm: TButtonForm
+  Caption = 'Buttons'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object Ok: TButton
+    Left = 10
+    Top = 10
+    Width = 80
+    Height = 30
+    Cancel = True
+    Caption = 'O&K'
+    Default = True
+    Font.Height = -15
+    ModalResult = 1
+    ParentFont = False
+    TabStop = False
+    WordWrap = True
+    OnClick = OkClick
+  end
+end
