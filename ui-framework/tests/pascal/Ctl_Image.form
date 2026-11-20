@@ -1,0 +1,23 @@
+object ImageForm: TImageForm
+  Caption = 'Images'
+  ClientWidth = 200
+  ClientHeight = 100
+  Color = clWhite
+  Scaled = False
+  object Photo: TImage
+    Left = 10
+    Top = 10
+    Width = 50
+    Height = 40
+    AutoSize = True
+    Center = True
+    Picture.Data = {
+      07544269746D6170424D4E000000000000003600000028000000030000000200
+      0000010020000000000018000000000000000000000000000000000000000000
+      FF000000FF000000FF000000FF000000FF000000FF00
+    }
+    Proportional = True
+    Stretch = True
+    OnClick = PhotoClick
+  end
+end

@@ -303,6 +303,9 @@ type
     procedure Resize; virtual;
     procedure AdjustSize; virtual;
     function CanAutoSize(var NewWidth, NewHeight: Integer): Boolean; virtual;
+    { layout.md UIF-255, UIF-260, UIF-263: measured auto-size may run (AutoSize on; not loading, destroying,
+      scaling or in dump mode) }
+    function MeasuringAllowed: Boolean;
     function CanResize(var NewWidth, NewHeight: Integer): Boolean; virtual;
     procedure ConstrainedResize(var MinWidth, MinHeight, MaxWidth, MaxHeight: Integer); virtual;
     { layout.md UIF-250: intrinsic rules I1-I4 of the class (ConstrainSize step 1); base: none }
@@ -1465,6 +1468,12 @@ end;
 function TControl.CanAutoSize(var NewWidth, NewHeight: Integer): Boolean;
 begin
   Result := True;
+end;
+
+function TControl.MeasuringAllowed: Boolean;
+begin
+  Result := FAutoSize and ([csLoading, csDestroying] * ComponentState = []) and not LayoutDumpMode
+    and (ScalingLevel = 0);
 end;
 
 function TControl.CanResize(var NewWidth, NewHeight: Integer): Boolean;

@@ -1,0 +1,32 @@
+object AutoForm: TAutoForm
+  Caption = 'Auto-size'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object Stored: TLabel
+    Left = 8
+    Top = 8
+    Width = 20
+    Height = 40
+    Caption = 'A caption much wider than twenty pixels'
+    Font.Height = -20
+    ParentFont = False
+  end
+  object Right: TLabel
+    Left = 100
+    Top = 60
+    Width = 50
+    Height = 30
+    Alignment = taRightJustify
+    Caption = 'Right-justified caption'
+    WordWrap = True
+  end
+  object Boxed: TStaticText
+    Left = 8
+    Top = 120
+    Width = 30
+    Height = 50
+    BorderStyle = sbsSingle
+    Caption = 'A static text wider than thirty pixels'
+  end
+end

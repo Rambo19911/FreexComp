@@ -1,0 +1,51 @@
+# defaults
+ok size 105 x 105
+ok AutoSize False
+ok Center False
+ok Proportional False
+ok Stretch False
+ok Transparent False
+ok Picture object exists
+ok Picture empty
+ok registered
+# destination rectangle (UIF-740)
+ok empty picture: nothing drawn
+ok AutoSize False: bounds kept
+ok plain: picture size at the top-left
+ok plain: 20 x 10 pixels
+ok Center: (W - w) div 2, (H - h) div 2
+ok Stretch: the whole control
+ok Stretch + Proportional, wide picture: w = W, h = MulDiv(ph, W, pw)
+ok Stretch + Proportional + Center
+ok tall picture: h = H, w = MulDiv(pw, H, ph), centred
+ok tall picture at the left
+ok Proportional, picture fits: not enlarged
+ok Proportional, picture larger: shrunk to fit
+ok larger picture, no Stretch: clipped to the control
+ok picture removed: nothing drawn
+# Transparent
+ok opaque: both halves drawn
+ok sets the graphic's Transparent
+ok transparent: the bottom-left colour is left out
+ok transparent: the other pixels drawn
+ok a new graphic takes Transparent
+ok Transparent False reaches the graphic
+# AutoSize (UIF-255)
+ok AutoSize True: the picture size
+ok picture size change follows
+ok empty picture: no change
+ok dump mode: no change (UIF-263)
+ok outside dump mode again: the picture size
+# streaming
+ok stored bounds win over AutoSize (UIF-260)
+ok AutoSize
+ok Center
+ok Proportional
+ok Stretch
+ok Transparent
+ok Picture.Data read
+ok picture size
+ok OnClick bound
+ok loaded picture: Stretch + Proportional + Center
+ok a picture change after loading auto-sizes
+# passed 45 failed 0

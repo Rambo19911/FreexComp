@@ -1,4 +1,4 @@
-{ ExtCtrls - extended controls (controls-standard.md section 8). }
+{ ExtCtrls - extended controls (controls-standard.md sections 8, 14, 15, 16). }
 unit ExtCtrls;
 
 interface
@@ -85,6 +85,99 @@ type
     property OnMouseMove;
     property OnMouseUp;
     property OnResize;
+  end;
+
+  { controls-standard.md section 14 }
+  TImage = class(TGraphicControl)
+  private
+    FCenter: Boolean;
+    FPicture: TPicture;
+    FProportional: Boolean;
+    FStretch: Boolean;
+    FTransparent: Boolean;
+    procedure PictureChanged(Sender: TObject);
+    procedure SetCenter(Value: Boolean);
+    procedure SetPicture(Value: TPicture);
+    procedure SetProportional(Value: Boolean);
+    procedure SetStretch(Value: Boolean);
+    procedure SetTransparent(Value: Boolean);
+  protected
+    { UIF-740: StretchDraw into DestRect }
+    procedure Paint; override;
+    { layout.md UIF-255: the picture size (outside loading, scaling and dump mode; no change when empty) }
+    procedure AdjustSize; override;
+    { UIF-740: the destination rectangle of the picture in client coordinates (empty when nothing is drawn) }
+    function DestRect: TRect;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+  published
+    property AutoSize default False;
+    property Center: Boolean read FCenter write SetCenter default False;
+    property Picture: TPicture read FPicture write SetPicture;
+    property Proportional: Boolean read FProportional write SetProportional default False;
+    property Stretch: Boolean read FStretch write SetStretch default False;
+    property Transparent: Boolean read FTransparent write SetTransparent default False;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+  end;
+
+  TShapeType = (stRectangle, stSquare, stRoundRect, stRoundSquare, stEllipse, stCircle);
+
+  { controls-standard.md section 15 }
+  TShape = class(TGraphicControl)
+  private
+    FBrush: TBrush;
+    FPen: TPen;
+    FShape: TShapeType;
+    procedure StyleChanged(Sender: TObject);
+    procedure SetBrush(Value: TBrush);
+    procedure SetPen(Value: TPen);
+    procedure SetShape(Value: TShapeType);
+  protected
+    { UIF-745 }
+    procedure Paint; override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+  published
+    property Brush: TBrush read FBrush write SetBrush;
+    property Pen: TPen read FPen write SetPen;
+    property Shape: TShapeType read FShape write SetShape default stRectangle;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+  end;
+
+  TBevelShape = (bsBox, bsFrame, bsTopLine, bsBottomLine, bsLeftLine, bsRightLine, bsSpacer);
+  TBevelStyle = (bsLowered, bsRaised);
+
+  { controls-standard.md section 16 }
+  TBevel = class(TGraphicControl)
+  private
+    FShape: TBevelShape;
+    FStyle: TBevelStyle;
+    procedure SetShape(Value: TBevelShape);
+    procedure SetStyle(Value: TBevelStyle);
+  protected
+    { UIF-748 }
+    procedure Paint; override;
+  public
+    constructor Create(AOwner: TComponent); override;
+  published
+    property Shape: TBevelShape read FShape write SetShape default bsBox;
+    property Style: TBevelStyle read FStyle write SetStyle default bsLowered;
   end;
 
 implementation
@@ -314,6 +407,318 @@ begin
   end;
 end;
 
+{ ---------------------------------------------------------------- TImage }
+
+constructor TImage.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FPicture := TPicture.Create;
+  FPicture.OnChange := PictureChanged;
+  SetBounds(Left, Top, 105, 105);
+end;
+
+destructor TImage.Destroy;
+begin
+  FPicture.OnChange := nil;
+  inherited Destroy;
+  FPicture.Free;
+end;
+
+{ Picture.OnChange: a new graphic takes the image's Transparent; then AdjustSize (if AutoSize) and Invalidate }
+procedure TImage.PictureChanged(Sender: TObject);
+begin
+  if (FPicture.Graphic <> nil) and (FPicture.Graphic.Transparent <> FTransparent) then
+    FPicture.Graphic.Transparent := FTransparent;              { fires Picture.OnChange again: same result }
+  AdjustSize;
+  Invalidate;
+end;
+
+procedure TImage.AdjustSize;
+begin
+  if not MeasuringAllowed then
+    Exit;
+  if (FPicture.Width > 0) and (FPicture.Height > 0) then
+    SetBounds(Left, Top, FPicture.Width, FPicture.Height);
+end;
+
+function TImage.DestRect: TRect;
+var
+  PW, PH, W, H, DW, DH, X, Y: Integer;
+begin
+  PW := FPicture.Width;
+  PH := FPicture.Height;
+  W := Width;
+  H := Height;
+  if (PW = 0) or (PH = 0) then
+  begin
+    Result := Rect(0, 0, 0, 0);
+    Exit;
+  end;
+  if FStretch and not FProportional then
+  begin
+    DW := W;
+    DH := H;
+  end
+  else if FProportional and (FStretch or (PW > W) or (PH > H)) then
+  begin
+    if Int64(PW) * H > Int64(PH) * W then
+    begin
+      DW := W;
+      DH := MulDiv(PH, W, PW);
+    end
+    else
+    begin
+      DH := H;
+      DW := MulDiv(PW, H, PH);
+    end;
+  end
+  else
+  begin
+    DW := PW;
+    DH := PH;
+  end;
+  if FCenter then
+  begin
+    X := (W - DW) div 2;
+    Y := (H - DH) div 2;
+  end
+  else
+  begin
+    X := 0;
+    Y := 0;
+  end;
+  Result := Bounds(X, Y, DW, DH);
+end;
+
+procedure TImage.Paint;
+var
+  R: TRect;
+begin
+  R := DestRect;
+  if (R.Right > R.Left) and (R.Bottom > R.Top) then
+    Canvas.StretchDraw(R, FPicture.Graphic);
+end;
+
+procedure TImage.SetCenter(Value: Boolean);
+begin
+  if FCenter <> Value then
+  begin
+    FCenter := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TImage.SetPicture(Value: TPicture);
+begin
+  FPicture.Assign(Value);
+end;
+
+procedure TImage.SetProportional(Value: Boolean);
+begin
+  if FProportional <> Value then
+  begin
+    FProportional := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TImage.SetStretch(Value: Boolean);
+begin
+  if FStretch <> Value then
+  begin
+    FStretch := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TImage.SetTransparent(Value: Boolean);
+begin
+  if FTransparent <> Value then
+  begin
+    FTransparent := Value;
+    if FPicture.Graphic <> nil then
+      FPicture.Graphic.Transparent := Value                    { Picture.OnChange invalidates }
+    else
+      Invalidate;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TShape }
+
+constructor TShape.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  SetBounds(Left, Top, 65, 65);
+  FPen := TPen.Create;
+  FPen.OnChange := StyleChanged;
+  FBrush := TBrush.Create;
+  FBrush.OnChange := StyleChanged;
+end;
+
+destructor TShape.Destroy;
+begin
+  inherited Destroy;
+  FPen.Free;
+  FBrush.Free;
+end;
+
+procedure TShape.StyleChanged(Sender: TObject);
+begin
+  Invalidate;
+end;
+
+procedure TShape.SetBrush(Value: TBrush);
+begin
+  FBrush.Assign(Value);
+end;
+
+procedure TShape.SetPen(Value: TPen);
+begin
+  FPen.Assign(Value);
+end;
+
+procedure TShape.SetShape(Value: TShapeType);
+begin
+  if FShape <> Value then
+  begin
+    FShape := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TShape.Paint;
+var
+  X, Y, W, H, S: Integer;
+begin
+  X := FPen.Width div 2;
+  Y := X;
+  W := Width - FPen.Width + 1;
+  H := Height - FPen.Width + 1;
+  if FPen.Width = 0 then
+  begin
+    Dec(W);
+    Dec(H);
+  end;
+  if W < H then
+    S := W
+  else
+    S := H;
+  if FShape in [stSquare, stRoundSquare, stCircle] then
+  begin
+    X := X + (W - S) div 2;
+    Y := Y + (H - S) div 2;
+    W := S;
+    H := S;
+  end;
+  Canvas.Pen := FPen;
+  Canvas.Brush := FBrush;
+  case FShape of
+    stRectangle, stSquare:
+      Canvas.Rectangle(X, Y, X + W, Y + H);
+    stRoundRect, stRoundSquare:
+      Canvas.RoundRect(X, Y, X + W, Y + H, S div 4, S div 4);
+    stEllipse, stCircle:
+      Canvas.Ellipse(X, Y, X + W, Y + H);
+  end;
+end;
+
+{ ---------------------------------------------------------------- TBevel }
+
+constructor TBevel.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  SetBounds(Left, Top, 50, 50);
+end;
+
+procedure TBevel.SetShape(Value: TBevelShape);
+begin
+  if FShape <> Value then
+  begin
+    FShape := Value;
+    Invalidate;
+  end;
+end;
+
+procedure TBevel.SetStyle(Value: TBevelStyle);
+begin
+  if FStyle <> Value then
+  begin
+    FStyle := Value;
+    Invalidate;
+  end;
+end;
+
+{ 1-px lines as filled rectangles; a frame is drawn top, left, bottom, right; the second colour is drawn last }
+procedure TBevel.Paint;
+var
+  C1, C2: TColor;
+  W, H: Integer;
+
+  procedure Line(X1, Y1, X2, Y2: Integer; C: TColor);
+  begin
+    Canvas.Brush.Color := C;
+    Canvas.FillRect(Rect(X1, Y1, X2, Y2));
+  end;
+
+  { the outline of R (right and bottom exclusive) }
+  procedure Frame(const R: TRect; C: TColor);
+  begin
+    Line(R.Left, R.Top, R.Right, R.Top + 1, C);
+    Line(R.Left, R.Top, R.Left + 1, R.Bottom, C);
+    Line(R.Left, R.Bottom - 1, R.Right, R.Bottom, C);
+    Line(R.Right - 1, R.Top, R.Right, R.Bottom, C);
+  end;
+
+begin
+  if FStyle = bsLowered then
+  begin
+    C1 := clBtnShadow;
+    C2 := clBtnHighlight;
+  end
+  else
+  begin
+    C1 := clBtnHighlight;
+    C2 := clBtnShadow;
+  end;
+  W := Width;
+  H := Height;
+  Canvas.Brush.Style := bsSolid;
+  case FShape of
+    bsBox:
+      begin
+        Line(0, 0, W, 1, C1);
+        Line(0, 0, 1, H, C1);
+        Line(0, H - 1, W, H, C2);
+        Line(W - 1, 0, W, H, C2);
+      end;
+    bsFrame:
+      begin
+        Frame(Rect(0, 0, W - 1, H - 1), C1);
+        Frame(Rect(1, 1, W, H), C2);
+      end;
+    bsTopLine:
+      begin
+        Line(0, 0, W, 1, C1);
+        Line(0, 1, W, 2, C2);
+      end;
+    bsBottomLine:
+      begin
+        Line(0, H - 2, W, H - 1, C1);
+        Line(0, H - 1, W, H, C2);
+      end;
+    bsLeftLine:
+      begin
+        Line(0, 0, 1, H, C1);
+        Line(1, 0, 2, H, C2);
+      end;
+    bsRightLine:
+      begin
+        Line(W - 2, 0, W - 1, H, C1);
+        Line(W - 1, 0, W, H, C2);
+      end;
+  end;
+end;
+
 initialization
-  RegisterClasses([TPanel]);
+  RegisterClasses([TPanel, TImage, TShape, TBevel]);
 end.

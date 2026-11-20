@@ -1,0 +1,83 @@
+# TShape defaults
+ok size 65 x 65
+ok Shape stRectangle
+ok Brush white
+ok Brush solid
+ok Pen black
+ok Pen width 1
+ok Pen solid
+ok registered
+# TShape Paint (UIF-745)
+ok stRectangle: the pen on the control edges
+ok stRectangle: brush inside
+ok stRectangle: interior filled
+ok stRectangle: 1-px outline
+ok pen width 0: same rectangle
+ok pen width 3: X = 1, W = Width - 2, outline inside the control
+ok pen width 3: interior
+ok pen width 3: three columns of pen at the left
+ok stSquare: S = min(W, H), centred horizontally
+ok stSquare: centred vertically
+ok stCircle: the square of side S
+ok stCircle: corner of the square left out
+ok stEllipse: the whole control
+ok stEllipse: corner left out
+ok stEllipse: touches the top edge
+ok stEllipse: filled
+ok stRoundRect: the whole control
+ok stRoundRect: rounded corner
+ok stRoundRect: straight edges
+ok stRoundSquare: the square of side S
+ok stRoundSquare: rounded corner
+# TShape pen and brush
+ok Pen.Color change repaints
+ok bsClear: interior not filled
+ok Brush assigned, not shared
+ok Brush.Color copied
+ok assigned brush used
+# TBevel defaults
+ok size 50 x 50
+ok Shape bsBox
+ok Style bsLowered
+ok registered
+# TBevel Paint (UIF-748)
+ok bsBox lowered: top and left in shadow
+ok bsBox lowered: bottom and right in highlight
+ok bsBox: bottom/right drawn over the corners
+ok bsBox: inside not painted
+ok bsBox: 47 shadow pixels
+ok bsBox: 49 highlight pixels
+ok bsRaised: colours swapped
+ok bsRaised: 47 highlight pixels
+ok bsFrame: outer rectangle in shadow
+ok bsFrame: rectangle (1, 1, W, H) in highlight
+ok bsFrame: highlight drawn last
+ok bsFrame: inner corner of the shadow rectangle
+ok bsFrame: inside not painted
+ok bsTopLine: y = 0 in shadow
+ok bsTopLine: y = 1 in highlight
+ok bsTopLine: nothing else
+ok bsBottomLine: y = H - 2 in shadow
+ok bsBottomLine: y = H - 1 in highlight
+ok bsBottomLine: nothing else
+ok bsLeftLine: x = 0 in shadow
+ok bsLeftLine: x = 1 in highlight
+ok bsLeftLine: nothing else
+ok bsRightLine: x = W - 2 in shadow
+ok bsRightLine: x = W - 1 in highlight
+ok bsRightLine: nothing else
+ok bsSpacer: nothing drawn
+ok freed bevel: area repainted with the form colour
+# streaming
+ok shape bounds
+ok Brush.Color
+ok Pen.Color
+ok Pen.Width
+ok Shape stCircle
+ok OnMouseDown bound
+ok bevel Shape
+ok bevel Style
+ok loaded shape painted with its brush
+ok loaded bevel: raised top line
+ok loaded bevel: second line
+# passed 76 failed 0

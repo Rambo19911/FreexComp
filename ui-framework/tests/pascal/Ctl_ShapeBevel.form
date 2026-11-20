@@ -1,0 +1,25 @@
+object ShapeForm: TShapeForm
+  Caption = 'Shapes and bevels'
+  ClientWidth = 200
+  ClientHeight = 100
+  Scaled = False
+  object Disc: TShape
+    Left = 10
+    Top = 10
+    Width = 40
+    Height = 30
+    Brush.Color = clLime
+    Pen.Color = clBlue
+    Pen.Width = 2
+    Shape = stCircle
+    OnMouseDown = DiscMouseDown
+  end
+  object Rule: TBevel
+    Left = 60
+    Top = 10
+    Width = 100
+    Height = 2
+    Shape = bsTopLine
+    Style = bsRaised
+  end
+end

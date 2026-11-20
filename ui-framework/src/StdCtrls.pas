@@ -32,6 +32,8 @@ type
     procedure WndProc(var Message: TMessage); override;
     { UIF-612 }
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    { layout.md UIF-255: measured size of the caption (outside loading, scaling and dump mode) }
+    procedure AdjustSize; override;
     property Alignment: TAlignment read FAlignment write SetAlignment default taLeftJustify;
     property AutoSize default True;
     property FocusControl: TWinControl read FFocusControl write SetFocusControl;
@@ -808,6 +810,8 @@ type
     { CM_DIALOGCHAR as TLabel (UIF-611) }
     procedure WndProc(var Message: TMessage); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    { layout.md UIF-255: measured size of the caption plus the border }
+    procedure AdjustSize; override;
     property Alignment: TAlignment read FAlignment write SetAlignment default taLeftJustify;
     property AutoSize default True;
     property BorderStyle: TStaticBorderStyle read FBorderStyle write SetBorderStyle default sbsNone;
@@ -862,16 +866,63 @@ begin
     Result := 96;
 end;
 
+{ layout.md UIF-255: the caption measured with DrawTextW (DT_CALCRECT) in the control font on a screen DC; with
+  DT_WORDBREAK the width W stays and only H is measured; an empty caption is tmHeight high (and 0 wide) }
+procedure MeasureCaption(AFont: TFont; const Text: string; Flags: UINT; var W, H: Integer);
+var
+  DC: HDC;
+  Old: HGDIOBJ;
+  R: TRect;
+  TM: TTextMetricW;
+begin
+  DC := GetDC(0);
+  try
+    Old := SelectObject(DC, AFont.Handle);
+    if Text = '' then
+    begin
+      GetTextMetricsW(DC, TM);
+      if Flags and DT_WORDBREAK = 0 then
+        W := 0;
+      H := TM.tmHeight;
+    end
+    else
+    begin
+      if Flags and DT_WORDBREAK <> 0 then
+        R := Rect(0, 0, W, 0)
+      else
+        R := Rect(0, 0, 0, 0);
+      DrawTextW(DC, PWideChar(Text), Length(Text), R, Flags or DT_CALCRECT);
+      if Flags and DT_WORDBREAK = 0 then
+        W := R.Right - R.Left;
+      H := R.Bottom - R.Top;
+    end;
+    SelectObject(DC, Old);
+  finally
+    ReleaseDC(0, DC);
+  end;
+end;
+
+{ layout.md UIF-255 position rule: a right-justified control keeps its right edge when the width changes }
+procedure ApplyMeasuredSize(Control: TControl; Alignment: TAlignment; W, H: Integer);
+var
+  L: Integer;
+begin
+  L := Control.Left;
+  if Alignment = taRightJustify then
+    L := L + Control.Width - W;
+  Control.SetBounds(L, Control.Top, W, H);
+end;
+
 { ---------------------------------------------------------------- TCustomLabel }
 
 constructor TCustomLabel.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  SetBounds(Left, Top, 34, 15);
+  FShowAccelChar := True;
+  AutoSize := True;
+  SetBounds(Left, Top, 34, 15);                               { after AutoSize: a new label has the default size }
   Color := clBtnFace;
   ParentColor := True;
-  AutoSize := True;
-  FShowAccelChar := True;
   FTransparent := True;
   ControlStyle := ControlStyle - [csOpaque];
 end;
@@ -934,7 +985,13 @@ begin
       end
       else
         inherited WndProc(Message);
-    CM_TEXTCHANGED, CM_FONTCHANGED, CM_ENABLEDCHANGED:
+    CM_TEXTCHANGED, CM_FONTCHANGED:
+      begin
+        inherited WndProc(Message);
+        AdjustSize;
+        Invalidate;
+      end;
+    CM_ENABLEDCHANGED:
       begin
         inherited WndProc(Message);
         Invalidate;
@@ -951,11 +1008,30 @@ begin
     FFocusControl := nil;
 end;
 
+procedure TCustomLabel.AdjustSize;
+var
+  W, H: Integer;
+  Flags: UINT;
+begin
+  if not MeasuringAllowed then
+    Exit;
+  Flags := DT_EXPANDTABS;
+  if FWordWrap then
+    Flags := Flags or DT_WORDBREAK;
+  if not FShowAccelChar then
+    Flags := Flags or DT_NOPREFIX;
+  W := Width;
+  H := Height;
+  MeasureCaption(Font, Caption, Flags, W, H);
+  ApplyMeasuredSize(Self, FAlignment, W, H);
+end;
+
 procedure TCustomLabel.SetAlignment(Value: TAlignment);
 begin
   if FAlignment <> Value then
   begin
     FAlignment := Value;
+    AdjustSize;
     Invalidate;
   end;
 end;
@@ -984,6 +1060,7 @@ begin
   if FShowAccelChar <> Value then
   begin
     FShowAccelChar := Value;
+    AdjustSize;
     Invalidate;
   end;
 end;
@@ -1006,6 +1083,7 @@ begin
   if FWordWrap <> Value then
   begin
     FWordWrap := Value;
+    AdjustSize;
     Invalidate;
   end;
 end;
@@ -3675,10 +3753,10 @@ constructor TCustomStaticText.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   FShowAccelChar := True;
-  SetBounds(Left, Top, 65, 17);
+  AutoSize := True;
+  SetBounds(Left, Top, 65, 17);                               { after AutoSize: a new control has the default size }
   Color := clBtnFace;
   ParentColor := True;
-  AutoSize := True;
 end;
 
 procedure TCustomStaticText.CreateParams(var Params: TCreateParams);
@@ -3708,6 +3786,11 @@ begin
       end
       else
         inherited WndProc(Message);
+    CM_TEXTCHANGED, CM_FONTCHANGED:
+      begin
+        inherited WndProc(Message);
+        AdjustSize;
+      end;
   else
     inherited WndProc(Message);
   end;
@@ -3718,6 +3801,25 @@ begin
   inherited Notification(AComponent, Operation);
   if (Operation = opRemove) and (AComponent = FFocusControl) then
     FFocusControl := nil;
+end;
+
+{ border allowance per side: 2 px for sbsSingle, 4 px for sbsSunken (logical, not scaled) }
+procedure TCustomStaticText.AdjustSize;
+const
+  Border: array[TStaticBorderStyle] of Integer = (0, 2, 4);
+var
+  W, H: Integer;
+  Flags: UINT;
+begin
+  if not MeasuringAllowed then
+    Exit;
+  Flags := DT_EXPANDTABS;
+  if not FShowAccelChar then
+    Flags := Flags or DT_NOPREFIX;
+  W := Width;
+  H := Height;
+  MeasureCaption(Font, Caption, Flags, W, H);
+  ApplyMeasuredSize(Self, FAlignment, W + 2 * Border[FBorderStyle], H + 2 * Border[FBorderStyle]);
 end;
 
 procedure TCustomStaticText.SetFocusControl(Value: TWinControl);
@@ -3736,6 +3838,7 @@ begin
   begin
     FAlignment := Value;
     RecreateWnd;
+    AdjustSize;
   end;
 end;
 
@@ -3745,6 +3848,7 @@ begin
   begin
     FBorderStyle := Value;
     RecreateWnd;
+    AdjustSize;
   end;
 end;
 
@@ -3754,6 +3858,7 @@ begin
   begin
     FShowAccelChar := Value;
     RecreateWnd;
+    AdjustSize;
   end;
 end;
 

@@ -1,0 +1,72 @@
+# label
+ok a new label keeps the default size
+ok Caption: measured size
+ok left-justified: position stays
+ok line break: several lines
+ok two lines are twice as high
+ok empty caption: 0 x tmHeight
+ok tabs expanded
+ok accelerator prefix processed
+ok ShowAccelChar False: DT_NOPREFIX
+ok ShowAccelChar False: both ampersands measured
+ok Font change: re-measured
+ok larger font: higher
+ok ParentFont: the form font
+ok parent font change: re-measured
+# WordWrap
+ok explicit width accepted
+ok WordWrap: width stays
+ok WordWrap: height at the current width
+ok WordWrap: several lines
+ok WordWrap, empty caption: tmHeight
+# AutoSize
+ok AutoSize False: caption change keeps the bounds
+ok AutoSize False: font change keeps the bounds
+ok AutoSize True: measured
+# position rule
+ok shorter caption: narrower
+ok taRightJustify keeps the right edge
+ok taRightJustify keeps the right edge when growing
+ok taCenter: Left stays
+# aligned label (UIF-256)
+ok alTop: width from the parent
+ok alTop: height measured
+ok alTop after a font change: width from the parent
+ok alTop after a font change: height measured
+# static text
+ok a new static text keeps the default size
+ok sbsNone: measured caption
+ok sbsSingle: +2 px per side
+ok sbsSunken: +4 px per side
+ok caption with a window
+ok ShowAccelChar False
+ok Font change
+ok taRightJustify keeps the right edge
+ok AutoSize False: bounds kept
+ok AutoSize True: measured
+# no measurement while scaling
+ok own font scaled
+ok label: the bounds of the scaling rule, not measured
+ok static text: the bounds of the scaling rule
+# dump mode (UIF-263 b)
+ok dump mode: caption change does not measure
+ok dump mode: font change does not measure
+ok dump mode: AutoSize True does not measure
+ok dump mode: WordWrap does not measure
+ok dump mode: static text does not measure
+ok measuring again afterwards
+# stored bounds win (UIF-260)
+ok label: stored bounds
+ok label: AutoSize True
+ok label: own font loaded
+ok right-justified word-wrapped label: stored bounds
+ok static text: stored bounds
+ok static text: AutoSize True
+ok label: stored bounds with windows
+ok static text: stored bounds with windows
+ok a change after loading measures
+ok word-wrapped: width stays after loading
+ok word-wrapped: right edge
+ok word-wrapped: height measured
+ok static text: a change after loading measures
+# passed 62 failed 0
