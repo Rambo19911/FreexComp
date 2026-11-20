@@ -1,0 +1,67 @@
+# non-interactive (UIF-470)
+ok NonInteractive
+ok InputQuery False
+ok Value unchanged
+ok InputBox returns ADefault
+# OK by Enter (UIF-479)
+# generated form (UIF-479)
+ok Caption = ACaption
+ok BorderStyle bsDialog
+ok Position poScreenCenter
+ok ClientWidth 320 scaled
+ok ClientHeight 97 scaled
+ok four controls
+ok a label
+ok an edit
+ok OK button
+ok Cancel button
+ok label caption = APrompt
+ok label AutoSize
+ok label Left
+ok label Top
+ok edit text = Value
+ok edit Left
+ok edit Top
+ok edit Width
+ok edit Height
+ok edit TabOrder 0
+ok all text selected (start)
+ok all text selected (length)
+ok OK caption
+ok OK Left
+ok OK Top
+ok OK Width
+ok OK Height
+ok OK Default
+ok OK not Cancel
+ok OK ModalResult mrOk
+ok OK TabOrder 1
+ok Cancel caption
+ok Cancel Left
+ok Cancel Top
+ok Cancel Width
+ok Cancel Height
+ok Cancel Cancel
+ok Cancel not Default
+ok Cancel ModalResult mrCancel
+ok Cancel TabOrder 2
+ok not shown yet
+ok one form
+ok shown with the text selected (start)
+ok shown with the text selected (end)
+ok mrOk: True
+ok Value updated
+# Cancel by Escape (UIF-479)
+ok mrCancel: False
+ok Value unchanged
+# InputBox (UIF-479)
+ok OK: the entered text
+ok Cancel: ADefault
+ok OK without typing: the default text
+# results other than mrOk (UIF-479)
+ok mrYes: False
+ok Value unchanged
+ok mrOk: True
+ok unchanged text
+ok the dialog form is freed
+# passed 60 failed 0

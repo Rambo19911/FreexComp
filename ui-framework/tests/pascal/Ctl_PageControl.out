@@ -1,0 +1,174 @@
+# defaults
+ok Width 289
+ok Height 193
+ok ActivePage nil
+ok ActivePageIndex -1
+ok PageCount 0
+ok HotTrack
+ok Images nil
+ok MultiLine
+ok ParentFont
+ok TabHeight 0
+ok TabOrder -1
+ok TabPosition tpTop
+ok TabStop
+ok TabWidth 0
+ok page control accepts controls
+ok a TCustomTabControl
+ok TPageControl registered
+ok TTabSheet registered
+ok sheet Caption empty
+ok sheet Color clBtnFace
+ok sheet ParentColor
+ok sheet ParentFont
+ok sheet Enabled
+ok sheet ImageIndex -1
+ok sheet TabVisible
+ok sheet PageControl nil
+ok sheet PageIndex -1
+ok sheet TabIndex -1
+ok sheet accepts controls
+# not supported in Phase 4
+ok MultiLine True: ENotSupportedException
+ok MultiLine stays False
+ok TabPosition tpBottom: ENotSupportedException
+ok TabPosition stays tpTop
+ok the supported values are accepted
+# page rectangle (UIF-772, layout.md UIF-219, E27)
+ok E27: sheet
+ok E27: alClient child
+ok TabHeight 30
+ok font change: TabH from the font
+ok size change
+ok clamped to 0
+ok a sheet's own bounds are replaced in the layout pass
+ok a sheet's Align is ignored
+ok TabHeight scaled
+ok TabWidth scaled
+ok constants at the form's DPI
+# pages (UIF-770, UIF-771)
+ok PageControl := re-parents
+ok PageControl
+ok PageCount 1
+ok Pages[0]
+ok the first page becomes active
+ok ActivePageIndex 0
+ok the active page is visible
+ok Parent := sets PageControl
+ok PageCount 2
+ok a later page does not become active
+ok other pages invisible
+ok PageIndex
+ok TabIndex
+ok a tab sheet on a panel raises
+ok parent unchanged
+ok PageCount 3
+# window
+ok window class SysTabControl32
+ok WS_CLIPCHILDREN
+ok WS_TABSTOP
+ok single line
+ok tabs, not buttons
+ok no TCS_FIXEDWIDTH
+ok one tab per page
+ok tab texts = captions
+ok selected tab = active page
+ok sheet window class
+ok sheets are children of the tab window
+ok active sheet window visible
+ok other sheet windows hidden
+ok HotTrack recreates the window
+ok TCS_HOTTRACK
+ok tabs kept
+ok selection kept
+ok active page kept
+ok TabWidth > 0: TCS_FIXEDWIDTH
+ok tabs kept after TabWidth
+ok fixed tab width
+ok TCM_SETITEMSIZE: tab height TabH
+ok TabWidth 0: automatic
+# switching in code (UIF-774)
+ok OnHide, OnShow; no OnChanging/OnChange
+ok only the new page visible
+ok tab selected
+ok same page: nothing
+ok ActivePageIndex
+ok S3 active
+ok TabVisible False removes the tab
+ok TabIndex -1
+ok TabIndex among visible tabs
+ok selection follows the active page
+ok a page without tab cannot become active
+ok TabVisible True inserts the tab at its place
+ok selection kept
+ok hiding the last active tab activates the previous visible page
+ok S2 active
+ok hiding an active tab activates the next visible page
+# focus leaves the old page (UIF-773)
+ok focus inside S1
+ok focus moved to the page control
+ok focus outside the page stays
+# user selection (UIF-773)
+ok click on a tab: OnChanging, switch, OnChange
+ok tab selected
+ok vetoed
+ok page unchanged
+ok tab unchanged
+# keys (UIF-775)
+ok Right on the tab strip
+ok Left on the tab strip
+ok Ctrl+Tab inside a page: next page
+ok Ctrl+Tab on the strip wraps to the first page
+ok Ctrl+Shift+Tab: previous page (wrapping)
+ok Ctrl+Tab vetoed
+ok page unchanged
+ok Ctrl+Tab outside the page control: no page change
+ok SelectNextPage fires the events
+ok SelectNextPage skips pages without tab
+# accelerators and tabs in sync (UIF-776)
+ok caption change updates the tab
+ok other character: not consumed
+ok accelerator consumed
+ok accelerator selects the page
+ok TCM_SETIMAGELIST
+ok image -1
+ok ImageIndex updates the tab image
+ok PageIndex moves the page
+ok others follow
+ok tab order follows
+ok selection follows the active page
+ok image moves with its page
+ok Images cleared when the image list is freed
+ok native image list cleared
+# destroying pages (UIF-777)
+ok S4 added
+ok destroying the active page activates the next visible page
+ok its tab is removed
+ok PageCount 3
+ok the next page is shown
+ok destroying the last active page activates the previous one
+ok S2 active
+ok no visible page left: no active page
+ok ActivePageIndex -1
+ok a page that becomes visible is activated
+ok PageControl := nil removes the page
+ok no tabs
+ok no active page
+# streaming
+ok pages
+ok stored ActivePage
+ok only the active page visible
+ok TabHeight
+ok ImageIndex
+ok TabVisible False
+ok page rectangle (TabHeight 24, form DPI)
+ok alClient child of a page
+ok tabs of the visible pages
+ok selected tab
+ok ActivePage not stored: first page with a tab
+ok Book2 visible pages
+ok OnChange bound
+ok no events while loading
+# leak
+ok GUI objects after 50 instances with handles
+# passed 160 failed 0

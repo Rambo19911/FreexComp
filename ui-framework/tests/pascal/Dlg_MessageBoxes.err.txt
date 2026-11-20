@@ -1,0 +1,7 @@
+^\[MessageBox\] Box caption: first line\\nsecond line$
+^\[ShowMessage\] hello world$
+^\[ShowMessage\] 3 items$
+^\[MessageDlg\] plain$
+^\[MessageDlg\] yes no$
+^\[MessageDlg\] help\\ntwo$
+^\[MessageBox\] c: t$

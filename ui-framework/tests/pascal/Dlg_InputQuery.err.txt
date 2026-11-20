@@ -1,0 +1,2 @@
+^\[InputQuery\] Query caption: Query prompt$
+^\[InputQuery\] Box caption: Box\\nprompt$

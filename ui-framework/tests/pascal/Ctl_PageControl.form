@@ -1,0 +1,48 @@
+object PagesForm: TPagesForm
+  Caption = 'Pages'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Book: TPageControl
+    Left = 0
+    Top = 0
+    Width = 289
+    Height = 193
+    ActivePage = Second
+    TabHeight = 24
+    TabOrder = 0
+    OnChange = BookChange
+    object First: TTabSheet
+      Caption = 'First'
+    end
+    object Second: TTabSheet
+      Caption = '&Second'
+      ImageIndex = 2
+      object Inside: TPanel
+        Left = 0
+        Top = 0
+        Width = 10
+        Height = 10
+        Align = alClient
+      end
+    end
+    object Third: TTabSheet
+      Caption = 'Third'
+      TabVisible = False
+    end
+  end
+  object Book2: TPageControl
+    Left = 300
+    Top = 0
+    Width = 90
+    Height = 90
+    TabOrder = 1
+    object Hidden: TTabSheet
+      Caption = 'Hidden'
+      TabVisible = False
+    end
+    object Shown: TTabSheet
+      Caption = 'Shown'
+    end
+  end
+end

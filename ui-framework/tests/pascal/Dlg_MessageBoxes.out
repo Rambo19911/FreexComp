@@ -1,0 +1,70 @@
+# non-interactive default results (UIF-470, UIF-476)
+ok NonInteractive (FXC_UI_NONINTERACTIVE=1)
+ok MB_OK: OK
+ok MB_OKCANCEL: OK
+ok MB_OKCANCEL, 2nd: Cancel
+ok MB_ABORTRETRYIGNORE: Abort
+ok 2nd: Retry
+ok 3rd: Ignore
+ok MB_YESNOCANCEL: Yes
+ok 2nd: No
+ok 3rd: Cancel
+ok MB_YESNO: Yes (icon ignored)
+ok MB_YESNO, 2nd: No
+ok MB_RETRYCANCEL: Retry
+ok 2nd: Cancel
+ok MB_CANCELTRYCONTINUE: Cancel
+ok 2nd: Try Again
+ok 3rd: Continue
+ok default beyond the buttons: first
+# ShowMessage and MessageDlg, non-interactive (UIF-470, UIF-477, UIF-478)
+ok [mbOK]: mrOk
+ok []: mrOk
+ok [mbClose]: mrOk
+ok mbOKCancel: mrOk
+ok mbYesNo: mrYes
+ok mbYesNoCancel: mrYes
+ok [mbRetry, mbCancel]: mrRetry
+ok mbAbortRetryIgnore: mrAbort
+ok mbHelp removed: mrYes
+ok other sets: EInvalidOperation
+ok [mbYes, mbNo, mbAll]: unsupported
+ok constant mbYesNo
+ok constant mbYesNoCancel
+ok constant mbOKCancel
+ok constant mbAbortRetryIgnore
+# Application.MessageBox through the hook (UIF-475)
+ok the box's result
+ok one box
+ok text
+ok caption
+ok no active form
+ok no active form: owner 0
+ok no active form: MB_TASKMODAL added
+ok active form
+ok visible active form: its handle is the owner
+ok flags unchanged
+ok hidden active form: owner 0
+ok hidden active form: MB_TASKMODAL
+# ShowMessage through the hook (UIF-477)
+ok text
+ok caption Application.Title
+ok MB_OK
+ok ShowMessageFmt formats
+# MessageDlg mapping through the hook (UIF-478)
+ok result = Win32 id = mr constant
+ok text
+ok mtWarning: caption Warning
+ok mtWarning, OK/Cancel
+ok mtError: caption Error
+ok mtError, Retry/Cancel
+ok mtInformation: caption Information
+ok mtInformation, OK
+ok mtConfirmation: caption Confirm
+ok mtConfirmation, Yes/No/Cancel
+ok mtCustom: caption Application.Title
+ok mtCustom: no icon; mbHelp removed
+ok Abort/Retry/Ignore
+ok [mbClose]: MB_OK
+ok unsupported set: no box
+# passed 64 failed 0

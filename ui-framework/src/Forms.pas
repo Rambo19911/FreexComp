@@ -529,6 +529,8 @@ type
     procedure HandleException(Sender: TObject);
     { UIF-461, UIF-462 }
     procedure ShowException(E: Exception);
+    { UIF-475; non-interactive: UIF-470 }
+    function MessageBox(const Text, Caption: PChar; Flags: Longint = MB_OK): Integer;
     { actions-menus.md UIF-947 }
     procedure HideHint;
     procedure CancelHint;
@@ -565,6 +567,8 @@ type
 
 type
   TTimerHook = procedure(TimerID: UINT_PTR);
+  { a replacement for the Win32 message box: receives the owner and the final flags (UIF-475) }
+  TMessageBoxHook = function(Wnd: HWND; Text, Caption: PChar; Flags: Longint): Integer;
 
 var
   Application: TApplication;
@@ -573,6 +577,9 @@ var
   TimerHook: TTimerHook;
   { actions-menus.md UIF-948: the class of the application's hint window }
   HintWindowClass: THintWindowClass;
+  { application-forms.md 9: while assigned, every framework message box (Application.MessageBox, ShowMessage,
+    MessageDlg) calls it instead of MessageBoxW, in both modes, and writes no stderr line (tests, tools) }
+  MessageBoxHook: TMessageBoxHook;
 
 { application-forms.md 4.2: the form at the top of the parent chain (TopForm), or the nearest one; nil if none }
 function GetParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
@@ -580,6 +587,15 @@ function GetParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
 function ValidParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
 { core.md UIF-120: Str has the accelerator '&<VK>' (AnsiUpperCase comparison, '&&' is a literal ampersand) }
 function IsAccel(VK: Word; const Str: string): Boolean;
+{ application-forms.md 9: the framework message box. Owner and MB_TASKMODAL per UIF-475; MessageBoxHook when
+  assigned; else non-interactive: the stderr line LogPrefix + ' ' + LogText (line breaks as \n) and the default
+  button's result (UIF-470, UIF-476); else MessageBoxW }
+function FrameworkMessageBox(const Text, Caption: string; Flags: Longint; const LogPrefix, LogText: string): Integer;
+{ UIF-470: writes Prefix + ' ' + Text to stderr, line breaks of Text as 
+ }
+procedure NonInteractiveLine(const Prefix, Text: string);
+{ UIF-476: the result of the default button of a box with these MB_* flags }
+function DefaultMessageBoxResult(Flags: Longint): Integer;
 { layout.md UIF-320: the canonical dump text of AForm, or of every form of Screen (creation order) for nil }
 function LayoutDumpText(AForm: TCustomForm = nil): string;
 { UIF-320: S as a JSON string: quotes, '\', control characters as \u00XX (upper-case hex), all else literal }
@@ -2233,6 +2249,21 @@ begin
       begin
         SelectNext(FActiveControl, GetKeyState(VK_SHIFT) >= 0, True);
         Message.Result := 1;
+      end
+      else
+      begin
+        { Ctrl+Tab: offered to the focused control and its parents below the form (a page control switches pages,
+          controls-standard.md UIF-775) }
+        C := FActiveControl;
+        while (C <> nil) and (C <> Self) do
+        begin
+          if C.Perform(CM_DIALOGKEY, Message.WParam, Message.LParam) <> 0 then
+          begin
+            Message.Result := 1;
+            Exit;
+          end;
+          C := C.Parent;
+        end;
       end;
     VK_LEFT, VK_UP, VK_RIGHT, VK_DOWN:
       if (FActiveControl <> nil) and (FActiveControl.Parent <> nil) then
@@ -2963,7 +2994,110 @@ begin
   S := E.Message;
   if (S = '') or ((S[Length(S)] <> '.') and (S[Length(S)] <> '!') and (S[Length(S)] <> '?')) then
     S := S + '.';
-  MessageBoxW(0, PChar(S), PChar(FTitle), MB_OK or MB_ICONSTOP or MB_TASKMODAL);
+  MessageBox(PChar(S), PChar(FTitle), MB_OK or MB_ICONSTOP);
+end;
+
+function DefaultMessageBoxResult(Flags: Longint): Integer;
+var
+  Index: Integer;
+begin
+  Index := (Flags and $00000F00) shr 8;                      { MB_DEFBUTTONn - 1 }
+  Result := IDOK;
+  case Flags and $0000000F of
+    MB_OKCANCEL:
+      case Index of
+        1: Result := IDCANCEL;
+      end;
+    MB_ABORTRETRYIGNORE:
+      case Index of
+        1: Result := IDRETRY;
+        2: Result := IDIGNORE;
+      else
+        Result := IDABORT;
+      end;
+    MB_YESNOCANCEL:
+      case Index of
+        1: Result := IDNO;
+        2: Result := IDCANCEL;
+      else
+        Result := IDYES;
+      end;
+    MB_YESNO:
+      if Index = 1 then
+        Result := IDNO
+      else
+        Result := IDYES;
+    MB_RETRYCANCEL:
+      if Index = 1 then
+        Result := IDCANCEL
+      else
+        Result := IDRETRY;
+    MB_CANCELTRYCONTINUE:
+      case Index of
+        1: Result := IDTRYAGAIN;
+        2: Result := IDCONTINUE;
+      else
+        Result := IDCANCEL;
+      end;
+  end;
+end;
+
+{ UIF-470: line breaks of a stderr line as \n }
+function EscapeLineBreaks(const S: string): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  I := 1;
+  while I <= Length(S) do
+  begin
+    if S[I] = #13 then
+    begin
+      Result := Result + '\n';
+      if (I < Length(S)) and (S[I + 1] = #10) then
+        Inc(I);
+    end
+    else if S[I] = #10 then
+      Result := Result + '\n'
+    else
+      Result := Result + S[I];
+    Inc(I);
+  end;
+end;
+
+procedure NonInteractiveLine(const Prefix, Text: string);
+begin
+  WriteLn(ErrOutput, Prefix + ' ' + EscapeLineBreaks(Text));
+end;
+
+function FrameworkMessageBox(const Text, Caption: string; Flags: Longint; const LogPrefix, LogText: string): Integer;
+var
+  Owner: HWND;
+begin
+  Owner := 0;
+  if (Screen <> nil) and (Screen.ActiveForm <> nil) and Screen.ActiveForm.HandleAllocated
+    and IsWindowVisible(Screen.ActiveForm.Handle) then
+    Owner := Screen.ActiveForm.Handle
+  else
+    Flags := Flags or MB_TASKMODAL;
+  if Assigned(MessageBoxHook) then
+    Result := MessageBoxHook(Owner, PChar(Text), PChar(Caption), Flags)
+  else if Application.NonInteractive then
+  begin
+    NonInteractiveLine(LogPrefix, LogText);
+    Result := DefaultMessageBoxResult(Flags);
+  end
+  else
+    Result := MessageBoxW(Owner, PChar(Text), PChar(Caption), UINT(Flags));
+end;
+
+function TApplication.MessageBox(const Text, Caption: PChar; Flags: Longint): Integer;
+var
+  T, C: string;
+begin
+  T := Text;
+  C := Caption;
+  Result := FrameworkMessageBox(T, C, Flags, '[MessageBox]', C + ': ' + T);
 end;
 
 { UIF-471 }
