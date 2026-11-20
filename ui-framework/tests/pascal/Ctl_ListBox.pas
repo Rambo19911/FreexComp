@@ -279,14 +279,15 @@ begin
     Section('sorted (UIF-693)');
     L.Items.Add('pear');
     L.Items.Add('apple');
+    L.ItemIndex := 0;
     H := L.Handle;
     L.Sorted := True;
     Check(L.Handle <> H, 'Sorted recreates');
     CheckEqB(True, HasStyle(L, LBS_SORT), 'LBS_SORT');
-    CheckEqS('apple;pear;', Dump(L), 'sorted');
+    CheckEqS('apple;*pear;', Dump(L), 'sorted, the selected item stays selected');
     CheckEqI(1, L.Items.Add('Fig'), 'Add returns the actual index (case-insensitive)');
     CheckEqI(0, L.Items.Add('Aardvark'), 'Add at the front');
-    CheckEqS('Aardvark;apple;Fig;pear;', Dump(L), 'order');
+    CheckEqS('Aardvark;apple;Fig;*pear;', Dump(L), 'order');
     CheckEqS('Operation not allowed on sorted list', Raises(L, True), 'Insert raises');
     CheckEqS('Operation not allowed on sorted list', Raises(L, False), 'Put raises');
     L.Sorted := False;

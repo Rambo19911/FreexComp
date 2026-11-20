@@ -1,0 +1,38 @@
+object ComboForm: TComboForm
+  Caption = 'Combo boxes'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Pick: TComboBox
+    Left = 10
+    Top = 10
+    Width = 145
+    Height = 40
+    CharCase = ecUpperCase
+    Color = clYellow
+    DropDownCount = 5
+    Font.Height = -16
+    Items = (
+      'PEAR'
+      'APPLE'
+      'FIG'
+    )
+    ItemIndex = 2
+    MaxLength = 10
+    ParentFont = False
+    Sorted = True
+    Style = csDropDownList
+    TabStop = False
+    TextHint = 'choose'
+    OnChange = PickChange
+    OnSelect = PickChange
+  end
+  object Simple: TComboBox
+    Left = 200
+    Top = 10
+    Width = 145
+    Height = 120
+    Style = csSimple
+    Text = 'typed'
+  end
+end

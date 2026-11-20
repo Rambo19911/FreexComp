@@ -1,0 +1,65 @@
+# defaults
+ok Width 65
+ok Height 17
+ok Alignment taLeftJustify
+ok AutoSize True
+ok BorderStyle sbsNone
+ok Caption
+ok Color clBtnFace
+ok FocusControl nil
+ok ParentColor True
+ok ParentFont
+ok ShowAccelChar True
+ok TabOrder
+ok TabStop False
+ok registered
+# window
+ok system class STATIC
+ok SS_NOTIFY
+ok SS_LEFT
+ok ShowAccelChar: no SS_NOPREFIX
+ok sbsNone: no border
+ok caption as window text
+ok caption with a handle
+ok Alignment recreates
+ok SS_CENTER
+ok caption kept
+ok SS_RIGHT
+ok ShowAccelChar recreates
+ok SS_NOPREFIX
+ok BorderStyle recreates
+ok sbsSingle: WS_BORDER
+ok sbsSunken: SS_SUNKEN
+ok sbsSunken: no WS_BORDER
+ok ParentColor follows the form
+ok WM_CTLCOLORSTATIC: the parent colour
+ok own Color: ParentColor False
+ok WM_CTLCOLORSTATIC: Color
+# accelerator (UIF-611)
+ok no FocusControl: not consumed
+ok other character: not consumed
+ok accelerator consumed
+ok FocusControl focused
+ok ShowAccelChar False: not consumed
+ok disabled: not consumed
+ok freeing FocusControl clears the reference
+# mouse
+ok SS_NOTIFY: the mouse reaches the control, OnClick
+# streaming
+ok stored bounds
+ok Alignment
+ok AutoSize False
+ok BorderStyle
+ok Caption
+ok Color
+ok FocusControl resolved
+ok Font.Height
+ok ParentColor False
+ok ShowAccelChar False
+ok TabStop True
+ok OnClick bound
+ok styles of the loaded control
+ok SS_NOPREFIX, SS_SUNKEN
+# leak
+ok GUI objects after 100 instances with handles
+# passed 58 failed 0

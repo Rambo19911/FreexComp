@@ -1,0 +1,21 @@
+object ScrollForm: TScrollForm
+  Caption = 'Scroll bars'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object Bar: TScrollBar
+    Left = 10
+    Top = 10
+    Width = 17
+    Height = 121
+    Kind = sbVertical
+    LargeChange = 10
+    Max = -10
+    Min = -50
+    PageSize = 5
+    Position = -20
+    SmallChange = 2
+    TabStop = False
+    OnChange = BarChange
+  end
+end

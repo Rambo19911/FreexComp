@@ -1,0 +1,63 @@
+# defaults
+ok Width 121
+ok Height 17
+ok Kind sbHorizontal
+ok LargeChange 1
+ok Max 100
+ok Min 0
+ok PageSize 0
+ok Position 0
+ok SmallChange 1
+ok TabOrder
+ok TabStop True
+ok registered
+# position and range (UIF-711)
+ok clamped to Max
+ok OnChange for code
+ok equal position: no OnChange
+ok PageSize 10: Max - 9
+ok clamping by the page fires OnChange
+ok range change keeps the position
+ok range change without a position change: no OnChange
+ok Min above the position
+ok clamping by Min fires OnChange
+ok SetParams
+ok SetParams: Max < Min
+ok rejected: unchanged
+ok Min above Max
+ok LargeChange at least 1
+ok LargeChange at most 32767
+# window
+ok system class SCROLLBAR
+ok SBS_HORZ
+ok range, page and position pushed
+ok position with a handle
+ok Kind recreates
+ok SBS_VERT
+ok state kept
+ok at run time Kind does not swap the bounds
+# user (UIF-710)
+ok SB_LINEDOWN: + SmallChange
+ok SB_LINEUP: - SmallChange
+ok SB_PAGEDOWN: + LargeChange
+ok SB_PAGEUP: - LargeChange
+ok SB_BOTTOM: Max, clamped by the page
+ok the native position follows
+ok at the end: clamped, no OnChange
+ok SB_TOP: Min
+ok SB_ENDSCROLL: the position stays
+ok OnScroll may alter the position, clamped again
+ok vertical: CN_VSCROLL
+# streaming
+ok no OnChange while loading
+ok a range below zero stored Max before Min
+ok Kind
+ok LargeChange
+ok SmallChange
+ok TabStop
+ok stored bounds
+ok pushed to the window
+ok OnChange handler of the form
+# leak
+ok GUI objects after 100 instances with handles
+# passed 56 failed 0

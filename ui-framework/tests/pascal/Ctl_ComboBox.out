@@ -1,0 +1,117 @@
+# defaults
+ok Width 145
+ok Height 23 (rule I1, 12 + 11)
+ok CharCase
+ok Color clWindow
+ok DropDownCount 8
+ok ItemIndex -1
+ok Items empty
+ok MaxLength
+ok ParentColor False
+ok ParentFont
+ok Sorted
+ok Style csDropDown
+ok TabOrder
+ok TabStop True
+ok Text
+ok TextHint
+ok DroppedDown
+ok registered
+# intrinsic height (layout.md UIF-250, UIF-700, E33)
+ok E33 a without a form: 12 + 11
+ok font change re-applies I1
+ok csDropDownList: I1
+ok csSimple: the stored height
+ok back to csDropDown: I1
+ok E33 a on a form: s(11) at the form's DPI
+ok UIF-701: the native height agrees
+ok CB_SETITEMHEIGHT(-1, ...) below the control height
+ok E33 b: alLeft keeps the intrinsic height
+ok with a handle: font change re-applies I1
+ok native height after the font change
+ok csSimple: the window has the stored height
+# handle-less items (UIF-703)
+ok AddObject index
+ok items
+ok AddItem object
+ok ItemIndex sets the text
+ok out of range ignored
+ok deleting before the selection keeps the item
+ok csDropDown: any text
+ok the selection stays
+ok nothing fires for code
+# window
+ok system class COMBOBOX
+ok CBS_DROPDOWN
+ok CBS_HASSTRINGS, CBS_AUTOHSCROLL
+ok items pushed
+ok selection pushed
+ok text pushed after the selection
+ok objects pushed
+ok CB_SETMINVISIBLE(DropDownCount)
+ok DropDownCount with a handle
+ok with a handle
+ok Put keeps the selection
+ok ItemIndex sets the text with a handle
+ok ItemIndex -1 clears the text
+ok SelStart
+ok SelectAll: SelLength
+ok SelText
+ok SelText replaces the selection
+ok nothing fires for code
+# recreate keeps the state
+ok CharCase recreates
+ok CBS_LOWERCASE
+ok items and selection kept (CBS_LOWERCASE converts the list too)
+ok objects kept
+ok Style recreates
+ok CBS_DROPDOWNLIST
+ok list style: the text of the selected item
+ok list style: Text selects the matching item (case-insensitive)
+ok the item's text
+ok no match: -1
+ok nothing fires for code
+ok CBS_SIMPLE
+ok owner-draw behaves as csDropDownList
+ok list style without a handle: Text selects
+# sorted (UIF-703 as UIF-693)
+ok Clear
+ok Clear empties the text
+ok CBS_SORT
+ok sorted, selection kept
+ok Add returns the actual index
+ok Insert raises
+ok Put raises
+# user (UIF-702, UIF-704)
+ok the inner edit
+ok user selection: text updated, OnChange, OnSelect, OnClick
+ok editing: OnChange
+ok DroppedDown
+ok OnDropDown
+ok dropped: Enter wanted
+ok dropped: Escape wanted
+ok closed
+ok OnCloseUp
+ok closed: Enter not wanted
+ok ItemIndex/Text by code: nothing
+ok list style: the same order
+# streaming
+ok no event while loading
+ok stored height replaced by I1
+ok Items, ItemIndex after Items, then Sorted
+ok Text of the selected item
+ok Style
+ok CharCase
+ok Color
+ok DropDownCount
+ok MaxLength
+ok TabStop
+ok TextHint
+ok events bound
+ok Text
+ok csSimple: stored height kept
+ok pushed to the window
+ok selection pushed
+# leak
+ok GUI objects after 100 instances with handles
+# passed 107 failed 0

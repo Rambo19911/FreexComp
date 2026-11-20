@@ -82,7 +82,7 @@ ok Clear
 # sorted (UIF-693)
 ok Sorted recreates
 ok LBS_SORT
-ok sorted
+ok sorted, the selected item stays selected
 ok Add returns the actual index (case-insensitive)
 ok Add at the front
 ok order

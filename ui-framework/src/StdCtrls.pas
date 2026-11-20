@@ -595,6 +595,252 @@ type
     property OnMouseUp;
   end;
 
+  TComboBoxStyle = (csDropDown, csSimple, csDropDownList, csOwnerDrawFixed, csOwnerDrawVariable);
+
+  TCustomComboBox = class;
+
+  { UIF-703: the items of a combo box (CB_* messages; the combo box's saved list without a handle) }
+  TComboBoxStrings = class(TStrings)
+  private
+    FComboBox: TCustomComboBox;
+  protected
+    function Get(Index: Integer): string; override;
+    function GetCount: Integer; override;
+    function GetObject(Index: Integer): TObject; override;
+    procedure Put(Index: Integer; const S: string); override;
+    procedure PutObject(Index: Integer; AObject: TObject); override;
+    procedure SetUpdateState(Updating: Boolean); override;
+  public
+    function Add(const S: string): Integer; override;
+    procedure Clear; override;
+    procedure Delete(Index: Integer); override;
+    procedure Insert(Index: Integer; const S: string); override;
+  end;
+
+  { controls-standard.md section 10 }
+  TCustomComboBox = class(TWinControl)
+  private
+    FCharCase: TEditCharCase;
+    FDropDownCount: Integer;
+    FItems: TStrings;
+    FMaxLength: Integer;
+    FSorted: Boolean;
+    FStyle: TComboBoxStyle;
+    FTextHint: string;
+    FSaved: TStringList;                                     { UIF-703: the items while there is no handle }
+    FSavedIndex: Integer;
+    FSettingIndex: Boolean;
+    FOnChange: TNotifyEvent;
+    FOnCloseUp: TNotifyEvent;
+    FOnDropDown: TNotifyEvent;
+    FOnSelect: TNotifyEvent;
+    procedure SetCharCase(Value: TEditCharCase);
+    procedure SetDropDownCount(Value: Integer);
+    procedure SetItems(Value: TStrings);
+    procedure SetMaxLength(Value: Integer);
+    procedure SetSorted(Value: Boolean);
+    procedure SetStyle(Value: TComboBoxStyle);
+    procedure SetTextHint(const Value: string);
+    function GetItemIndex: Integer;
+    procedure SetItemIndex(Value: Integer);
+    function GetDroppedDown: Boolean;
+    procedure SetDroppedDown(Value: Boolean);
+    function GetSelStart: Integer;
+    procedure SetSelStart(Value: Integer);
+    function GetSelLength: Integer;
+    procedure SetSelLength(Value: Integer);
+    function GetSelText: string;
+    procedure SetSelText(const Value: string);
+    function IsListStyle: Boolean;
+    function IndexOfText(const S: string): Integer;
+    procedure SetItemIndexText(Index: Integer);
+    procedure SortSaved;
+    procedure AdjustHeight;
+    procedure UpdateItemHeight;
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    { UIF-701, UIF-703: items, selection, text, limit, cue banner, visible item count pushed after creation }
+    procedure CreateWnd; override;
+    procedure DestroyWnd; override;
+    { UIF-702 notifications, UIF-704 special keys, list-style text assignment, colours of the inner windows }
+    procedure WndProc(var Message: TMessage); override;
+    { layout.md UIF-250 rule I1 }
+    procedure IntrinsicSize(var AWidth, AHeight: Integer); override;
+    procedure SetParent(AParent: TWinControl); override;
+    procedure Loaded; override;
+    procedure Change; virtual;
+    procedure Select; virtual;
+    procedure DropDown; virtual;
+    procedure CloseUp; virtual;
+    property CharCase: TEditCharCase read FCharCase write SetCharCase default ecNormal;
+    property DropDownCount: Integer read FDropDownCount write SetDropDownCount default 8;
+    property ItemIndex: Integer read GetItemIndex write SetItemIndex default -1;
+    property MaxLength: Integer read FMaxLength write SetMaxLength default 0;
+    property Sorted: Boolean read FSorted write SetSorted default False;
+    property Style: TComboBoxStyle read FStyle write SetStyle default csDropDown;
+    property TextHint: string read FTextHint write SetTextHint;
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
+    property OnCloseUp: TNotifyEvent read FOnCloseUp write FOnCloseUp;
+    property OnDropDown: TNotifyEvent read FOnDropDown write FOnDropDown;
+    property OnSelect: TNotifyEvent read FOnSelect write FOnSelect;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    procedure AddItem(const Item: string; AObject: TObject);
+    procedure Clear;
+    procedure SelectAll;
+    property DroppedDown: Boolean read GetDroppedDown write SetDroppedDown;
+    property Items: TStrings read FItems write SetItems;
+    property SelLength: Integer read GetSelLength write SetSelLength;
+    property SelStart: Integer read GetSelStart write SetSelStart;
+    property SelText: string read GetSelText write SetSelText;
+  end;
+
+  TComboBox = class(TCustomComboBox)
+  published
+    property CharCase;
+    property Color default clWindow;
+    property DropDownCount;
+    property Font;
+    property Items;
+    property ItemIndex;
+    property MaxLength;
+    property ParentColor default False;
+    property ParentFont;
+    property Sorted;
+    property Style;
+    property TabOrder;
+    property TabStop default True;
+    property Text;
+    property TextHint;
+    property OnChange;
+    property OnClick;
+    property OnCloseUp;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnDropDown;
+    property OnEnter;
+    property OnExit;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnSelect;
+  end;
+
+  TScrollBarKind = (sbHorizontal, sbVertical);
+  TScrollCode = (scLineUp, scLineDown, scPageUp, scPageDown, scPosition, scTrack, scTop, scBottom, scEndScroll);
+  TScrollEvent = procedure(Sender: TObject; ScrollCode: TScrollCode; var ScrollPos: Integer) of object;
+
+  { controls-standard.md section 11 }
+  TScrollBar = class(TWinControl)
+  private
+    FKind: TScrollBarKind;
+    FLargeChange: Integer;
+    FMax: Integer;
+    FMin: Integer;
+    FPageSize: Integer;
+    FPosition: Integer;
+    FSmallChange: Integer;
+    FOnChange: TNotifyEvent;
+    FOnScroll: TScrollEvent;
+    procedure SetKind(Value: TScrollBarKind);
+    procedure SetLargeChange(Value: Integer);
+    procedure SetMax(Value: Integer);
+    procedure SetMin(Value: Integer);
+    procedure SetPageSize(Value: Integer);
+    procedure SetPosition(Value: Integer);
+    procedure SetSmallChange(Value: Integer);
+    function ClampPosition(Value: Integer): Integer;
+    procedure UpdateScrollInfo;
+    procedure DoScroll(Code: Integer);
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    { range, page and position pushed after creation }
+    procedure CreateWnd; override;
+    { UIF-710: CN_HSCROLL / CN_VSCROLL }
+    procedure WndProc(var Message: TMessage); override;
+    { the range is checked once all stored properties are known }
+    procedure Loaded; override;
+    procedure Change; virtual;
+    procedure Scroll(ScrollCode: TScrollCode; var ScrollPos: Integer); virtual;
+  public
+    constructor Create(AOwner: TComponent); override;
+    procedure SetParams(APosition, AMin, AMax: Integer);
+  published
+    property Kind: TScrollBarKind read FKind write SetKind default sbHorizontal;
+    property LargeChange: Integer read FLargeChange write SetLargeChange default 1;
+    property Max: Integer read FMax write SetMax default 100;
+    property Min: Integer read FMin write SetMin default 0;
+    property PageSize: Integer read FPageSize write SetPageSize default 0;
+    property Position: Integer read FPosition write SetPosition default 0;
+    property SmallChange: Integer read FSmallChange write SetSmallChange default 1;
+    property TabOrder;
+    property TabStop default True;
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
+    property OnEnter;
+    property OnExit;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnScroll: TScrollEvent read FOnScroll write FOnScroll;
+  end;
+
+  TStaticBorderStyle = (sbsNone, sbsSingle, sbsSunken);
+
+  { controls-standard.md section 18: a windowed TLabel }
+  TCustomStaticText = class(TWinControl)
+  private
+    FAlignment: TAlignment;
+    FBorderStyle: TStaticBorderStyle;
+    FFocusControl: TWinControl;
+    FShowAccelChar: Boolean;
+    procedure SetAlignment(Value: TAlignment);
+    procedure SetBorderStyle(Value: TStaticBorderStyle);
+    procedure SetFocusControl(Value: TWinControl);
+    procedure SetShowAccelChar(Value: Boolean);
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    { CM_DIALOGCHAR as TLabel (UIF-611) }
+    procedure WndProc(var Message: TMessage); override;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    property Alignment: TAlignment read FAlignment write SetAlignment default taLeftJustify;
+    property AutoSize default True;
+    property BorderStyle: TStaticBorderStyle read FBorderStyle write SetBorderStyle default sbsNone;
+    property FocusControl: TWinControl read FFocusControl write SetFocusControl;
+    property ShowAccelChar: Boolean read FShowAccelChar write SetShowAccelChar default True;
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+  TStaticText = class(TCustomStaticText)
+  published
+    property Alignment;
+    property AutoSize;
+    property BorderStyle;
+    property Caption;
+    property Color default clBtnFace;
+    property FocusControl;
+    property Font;
+    property ParentColor;
+    property ParentFont;
+    property ShowAccelChar;
+    property TabOrder;
+    property TabStop default False;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+  end;
+
 implementation
 
 uses
@@ -2045,6 +2291,14 @@ end;
 const
   SListBoxNoSpace = 'Not enough memory for the list box items';
 
+{ the index at which a sorted native list (locale-aware, case-insensitive) inserts S: after equal items }
+function SortedInsertIndex(List: TStrings; const S: string): Integer;
+begin
+  Result := 0;
+  while (Result < List.Count) and (AnsiCompareText(List[Result], S) <= 0) do
+    Inc(Result);
+end;
+
 function TListBoxStrings.Get(Index: Integer): string;
 var
   N: Integer;
@@ -2235,6 +2489,8 @@ begin
       if N < 0 then
         Continue;
       SendMessageW(Handle, LB_SETITEMDATA, WPARAM(N), LPARAM(Pointer(FSaved.Objects[I])));
+      if (Sel >= 0) and (N <= Sel) then                      { a sorted list inserted before the selected item }
+        Inc(Sel);
       if FSavedSel[I + 1] = '1' then
         if FMultiSelect then
           SendMessageW(Handle, LB_SETSEL, 1, LPARAM(N))
@@ -2316,12 +2572,9 @@ begin
     System.Insert('0', FSavedSel, Index + 1);
 end;
 
-{ the native order: locale-aware, case-insensitive; after equal items }
 function TCustomListBox.SortedIndex(const S: string): Integer;
 begin
-  Result := 0;
-  while (Result < FSaved.Count) and (AnsiCompareText(FSaved[Result], S) <= 0) do
-    Inc(Result);
+  Result := SortedInsertIndex(FSaved, S);
 end;
 
 { Sorted became True without a handle: the saved items in the native order }
@@ -2620,6 +2873,891 @@ begin
   FStyle := Value;
 end;
 
+{ ---------------------------------------------------------------- TComboBoxStrings }
+
+function TComboBoxStrings.Get(Index: Integer): string;
+var
+  N: Integer;
+begin
+  if not FComboBox.HandleAllocated then
+  begin
+    Result := FComboBox.FSaved[Index];
+    Exit;
+  end;
+  N := Integer(SendMessageW(FComboBox.Handle, CB_GETLBTEXTLEN, WPARAM(Index), 0));
+  if N = CB_ERR then
+    Error(SListIndexError, Index);
+  SetLength(Result, N + 1);
+  N := Integer(SendMessageW(FComboBox.Handle, CB_GETLBTEXT, WPARAM(Index), LPARAM(PChar(Result))));
+  if N < 0 then
+    N := 0;
+  SetLength(Result, N);
+end;
+
+function TComboBoxStrings.GetCount: Integer;
+begin
+  if FComboBox.HandleAllocated then
+    Result := Integer(SendMessageW(FComboBox.Handle, CB_GETCOUNT, 0, 0))
+  else
+    Result := FComboBox.FSaved.Count;
+end;
+
+function TComboBoxStrings.GetObject(Index: Integer): TObject;
+var
+  D: LRESULT;
+begin
+  if not FComboBox.HandleAllocated then
+  begin
+    Result := FComboBox.FSaved.Objects[Index];
+    Exit;
+  end;
+  D := SendMessageW(FComboBox.Handle, CB_GETITEMDATA, WPARAM(Index), 0);
+  if D = CB_ERR then
+    Error(SListIndexError, Index);
+  Result := TObject(Pointer(D));
+end;
+
+procedure TComboBoxStrings.PutObject(Index: Integer; AObject: TObject);
+begin
+  if not FComboBox.HandleAllocated then
+    FComboBox.FSaved.Objects[Index] := AObject
+  else if SendMessageW(FComboBox.Handle, CB_SETITEMDATA, WPARAM(Index), LPARAM(Pointer(AObject))) = CB_ERR then
+    Error(SListIndexError, Index);
+end;
+
+{ the object and the selection of the item stay }
+procedure TComboBoxStrings.Put(Index: Integer; const S: string);
+var
+  Obj: TObject;
+  Sel: Boolean;
+begin
+  if FComboBox.FSorted then
+    raise EStringListError.Create(SSortedListError);
+  Obj := GetObject(Index);
+  if not FComboBox.HandleAllocated then
+  begin
+    FComboBox.FSaved[Index] := S;
+    Exit;
+  end;
+  Sel := FComboBox.ItemIndex = Index;
+  SendMessageW(FComboBox.Handle, CB_DELETESTRING, WPARAM(Index), 0);
+  SendMessageW(FComboBox.Handle, CB_INSERTSTRING, WPARAM(Index), LPARAM(PChar(S)));
+  SendMessageW(FComboBox.Handle, CB_SETITEMDATA, WPARAM(Index), LPARAM(Pointer(Obj)));
+  if Sel then
+    FComboBox.ItemIndex := Index;
+end;
+
+procedure TComboBoxStrings.SetUpdateState(Updating: Boolean);
+begin
+  if not FComboBox.HandleAllocated then
+    Exit;
+  SendMessageW(FComboBox.Handle, WM_SETREDRAW, WPARAM(Ord(not Updating)), 0);
+  if not Updating then
+    FComboBox.Invalidate;
+end;
+
+function TComboBoxStrings.Add(const S: string): Integer;
+begin
+  if not FComboBox.HandleAllocated then
+  begin
+    if FComboBox.FSorted then
+      Result := SortedInsertIndex(FComboBox.FSaved, S)
+    else
+      Result := FComboBox.FSaved.Count;
+    FComboBox.FSaved.Insert(Result, S);
+    if (FComboBox.FSavedIndex >= Result) then
+      Inc(FComboBox.FSavedIndex);
+    Exit;
+  end;
+  Result := Integer(SendMessageW(FComboBox.Handle, CB_ADDSTRING, 0, LPARAM(PChar(S))));
+  if Result < 0 then
+    raise EOutOfResources.Create(SListBoxNoSpace);
+end;
+
+procedure TComboBoxStrings.Insert(Index: Integer; const S: string);
+begin
+  if FComboBox.FSorted then
+    raise EStringListError.Create(SSortedListError);
+  if (Index < 0) or (Index > GetCount) then
+    Error(SListIndexError, Index);
+  if not FComboBox.HandleAllocated then
+  begin
+    FComboBox.FSaved.Insert(Index, S);
+    if FComboBox.FSavedIndex >= Index then
+      Inc(FComboBox.FSavedIndex);
+  end
+  else if SendMessageW(FComboBox.Handle, CB_INSERTSTRING, WPARAM(Index), LPARAM(PChar(S))) < 0 then
+    raise EOutOfResources.Create(SListBoxNoSpace);
+end;
+
+procedure TComboBoxStrings.Delete(Index: Integer);
+begin
+  if not FComboBox.HandleAllocated then
+  begin
+    FComboBox.FSaved.Delete(Index);
+    if FComboBox.FSavedIndex = Index then
+      FComboBox.FSavedIndex := -1
+    else if FComboBox.FSavedIndex > Index then
+      Dec(FComboBox.FSavedIndex);
+  end
+  else if SendMessageW(FComboBox.Handle, CB_DELETESTRING, WPARAM(Index), 0) = CB_ERR then
+    Error(SListIndexError, Index);
+end;
+
+procedure TComboBoxStrings.Clear;
+begin
+  if FComboBox.HandleAllocated then
+    SendMessageW(FComboBox.Handle, CB_RESETCONTENT, 0, 0)
+  else
+  begin
+    FComboBox.FSaved.Clear;
+    FComboBox.FSavedIndex := -1;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TCustomComboBox }
+
+constructor TCustomComboBox.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  { UIF-702: the native notifications drive the events }
+  ControlStyle := ControlStyle - [csClickEvents, csDoubleClicks, csSetCaption];
+  FSaved := TStringList.Create;
+  FItems := TComboBoxStrings.Create;
+  TComboBoxStrings(FItems).FComboBox := Self;
+  FSavedIndex := -1;
+  FDropDownCount := 8;
+  TabStop := True;
+  Color := clWindow;
+  SetBounds(Left, Top, 145, 23);
+end;
+
+destructor TCustomComboBox.Destroy;
+begin
+  inherited Destroy;
+  FItems.Free;
+  FSaved.Free;
+end;
+
+{ owner-draw styles behave as csDropDownList in Phase 4 }
+function TCustomComboBox.IsListStyle: Boolean;
+begin
+  Result := FStyle in [csDropDownList, csOwnerDrawFixed, csOwnerDrawVariable];
+end;
+
+procedure TCustomComboBox.CreateParams(var Params: TCreateParams);
+const
+  Cases: array[TEditCharCase] of DWORD = (0, CBS_UPPERCASE, CBS_LOWERCASE);
+begin
+  inherited CreateParams(Params);
+  Params.SubclassOf := 'COMBOBOX';
+  Params.Style := Params.Style or CBS_HASSTRINGS or CBS_AUTOHSCROLL or WS_VSCROLL or Cases[FCharCase];
+  if FStyle = csSimple then
+    Params.Style := Params.Style or CBS_SIMPLE
+  else if IsListStyle then
+    Params.Style := Params.Style or CBS_DROPDOWNLIST
+  else
+    Params.Style := Params.Style or CBS_DROPDOWN;
+  if FSorted then
+    Params.Style := Params.Style or CBS_SORT;
+end;
+
+procedure TCustomComboBox.CreateWnd;
+var
+  I, N, Sel: Integer;
+  S: string;
+begin
+  S := Text;
+  inherited CreateWnd;
+  Sel := -1;
+  for I := 0 to FSaved.Count - 1 do
+  begin
+    N := Integer(SendMessageW(Handle, CB_ADDSTRING, 0, LPARAM(PChar(FSaved[I]))));
+    if N < 0 then
+      Continue;
+    SendMessageW(Handle, CB_SETITEMDATA, WPARAM(N), LPARAM(Pointer(FSaved.Objects[I])));
+    if I = FSavedIndex then
+      Sel := N
+    else if (Sel >= 0) and (N <= Sel) then                   { a sorted list inserted before the selected item }
+      Inc(Sel);
+  end;
+  FSaved.Clear;
+  FSavedIndex := -1;
+  if Sel >= 0 then
+    SendMessageW(Handle, CB_SETCURSEL, WPARAM(Sel), 0);
+  if not IsListStyle and (Text <> S) then
+    SendMessageW(Handle, WM_SETTEXT, 0, LPARAM(PChar(S)));
+  SendMessageW(Handle, CB_LIMITTEXT, WPARAM(FMaxLength), 0);
+  SendMessageW(Handle, CB_SETCUEBANNER, 0, LPARAM(PChar(FTextHint)));
+  SendMessageW(Handle, CB_SETMINVISIBLE, WPARAM(FDropDownCount), 0);
+  UpdateItemHeight;
+end;
+
+procedure TCustomComboBox.DestroyWnd;
+var
+  I, N: Integer;
+begin
+  FSaved.Clear;
+  N := Integer(SendMessageW(Handle, CB_GETCOUNT, 0, 0));
+  for I := 0 to N - 1 do
+    FSaved.AddObject(FItems[I], FItems.Objects[I]);
+  FSavedIndex := Integer(SendMessageW(Handle, CB_GETCURSEL, 0, 0));
+  inherited DestroyWnd;
+end;
+
+{ rule I1 and UIF-701: the native selection field gets the height that makes the window as high as the control.
+  CB_SETITEMHEIGHT(-1, H - s(6)) is the first guess; the native frame is then measured and the item height
+  corrected (the system may round the requested value) }
+procedure TCustomComboBox.UpdateItemHeight;
+var
+  R: TRect;
+  IH, I: Integer;
+begin
+  if not HandleAllocated or (FStyle = csSimple) then
+    Exit;
+  IH := Height - LayoutMulDiv(6, ControlDPI(Self), 96);
+  for I := 1 to 3 do
+  begin
+    if IH < 1 then
+      IH := 1;
+    SendMessageW(Handle, CB_SETITEMHEIGHT, WPARAM(-1), LPARAM(IH));
+    GetWindowRect(Handle, R);
+    if R.Bottom - R.Top = Height then
+      Exit;
+    IH := Integer(SendMessageW(Handle, CB_GETITEMHEIGHT, WPARAM(-1), 0)) + Height - (R.Bottom - R.Top);
+  end;
+end;
+
+procedure TCustomComboBox.WndProc(var Message: TMessage);
+var
+  I: Integer;
+  S: string;
+begin
+  case Message.Msg of
+    CN_COMMAND:
+      case HiWord(Message.WParam) of
+        CBN_EDITCHANGE: Change;
+        CBN_SELCHANGE:
+          begin
+            I := ItemIndex;
+            if not IsListStyle and (I >= 0) then
+            begin
+              S := FItems[I];
+              SendMessageW(Handle, WM_SETTEXT, 0, LPARAM(PChar(S)));
+            end;
+            Change;
+            Select;
+            Click;
+          end;
+        CBN_DROPDOWN: DropDown;
+        CBN_CLOSEUP: CloseUp;
+      else
+        inherited WndProc(Message);
+      end;
+    CM_WANTSPECIALKEY:
+      if ((Message.WParam = VK_RETURN) or (Message.WParam = VK_ESCAPE)) and GetDroppedDown then
+        Message.Result := 1
+      else
+        inherited WndProc(Message);
+    WM_SETTEXT:
+      { list styles: the text selects the matching item (exact, case-insensitive) or none }
+      if IsListStyle and not FSettingIndex then
+      begin
+        SetItemIndexText(IndexOfText(string(PChar(Message.LParam))));
+        Message.Result := 1;
+      end
+      else
+        inherited WndProc(Message);
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX:
+      { the inner edit and list windows take the colours of the combo box }
+      if FindControl(HWND(Message.LParam)) = nil then
+        CNCtlColor(Message)
+      else
+        inherited WndProc(Message);
+    CM_FONTCHANGED:
+      begin
+        inherited WndProc(Message);
+        AdjustHeight;
+      end;
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+function TCustomComboBox.IndexOfText(const S: string): Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  for I := 0 to FItems.Count - 1 do
+    if AnsiSameText(FItems[I], S) then
+    begin
+      Result := I;
+      Exit;
+    end;
+end;
+
+{ the selection and the text of the item (none: empty), without events }
+procedure TCustomComboBox.SetItemIndexText(Index: Integer);
+var
+  S: string;
+begin
+  if HandleAllocated then
+  begin
+    SendMessageW(Handle, CB_SETCURSEL, WPARAM(Index), 0);
+    Exit;
+  end;
+  FSavedIndex := Index;
+  if Index >= 0 then
+    S := FSaved[Index]
+  else
+    S := '';
+  FSettingIndex := True;
+  try
+    Perform(WM_SETTEXT, 0, LPARAM(PChar(S)));
+  finally
+    FSettingIndex := False;
+  end;
+end;
+
+function TCustomComboBox.GetItemIndex: Integer;
+begin
+  if HandleAllocated then
+    Result := Integer(SendMessageW(Handle, CB_GETCURSEL, 0, 0))
+  else
+    Result := FSavedIndex;
+end;
+
+{ out of range is ignored (as UIF-692); never an event (UIF-702) }
+procedure TCustomComboBox.SetItemIndex(Value: Integer);
+begin
+  if (Value < -1) or (Value >= FItems.Count) then
+    Exit;
+  SetItemIndexText(Value);
+end;
+
+{ UIF-702: never while loading }
+procedure TCustomComboBox.Change;
+begin
+  if (csLoading in ComponentState) or (csCreating in ControlState) then
+    Exit;
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+end;
+
+procedure TCustomComboBox.Select;
+begin
+  if Assigned(FOnSelect) then
+    FOnSelect(Self);
+end;
+
+procedure TCustomComboBox.DropDown;
+begin
+  if Assigned(FOnDropDown) then
+    FOnDropDown(Self);
+end;
+
+procedure TCustomComboBox.CloseUp;
+begin
+  if Assigned(FOnCloseUp) then
+    FOnCloseUp(Self);
+end;
+
+{ rule I1: Abs(Font.Height) + s(11) unless csSimple }
+procedure TCustomComboBox.IntrinsicSize(var AWidth, AHeight: Integer);
+begin
+  if (FStyle = csSimple) or (csLoading in ComponentState) then
+    Exit;
+  AHeight := Abs(Font.Height) + LayoutMulDiv(11, ControlDPI(Self), 96);
+end;
+
+procedure TCustomComboBox.AdjustHeight;
+begin
+  SetBounds(Left, Top, Width, Height);
+  UpdateItemHeight;
+end;
+
+procedure TCustomComboBox.Loaded;
+begin
+  inherited Loaded;
+  AdjustHeight;
+end;
+
+procedure TCustomComboBox.SetParent(AParent: TWinControl);
+begin
+  inherited SetParent(AParent);
+  if not (csDestroying in ComponentState) then
+    AdjustHeight;
+end;
+
+function TCustomComboBox.GetDroppedDown: Boolean;
+begin
+  Result := HandleAllocated and (SendMessageW(Handle, CB_GETDROPPEDSTATE, 0, 0) <> 0);
+end;
+
+procedure TCustomComboBox.SetDroppedDown(Value: Boolean);
+begin
+  if HandleAllocated then
+    SendMessageW(Handle, CB_SHOWDROPDOWN, WPARAM(Ord(Value)), 0);
+end;
+
+function TCustomComboBox.GetSelStart: Integer;
+var
+  A, B: DWORD;
+begin
+  Result := 0;
+  if HandleAllocated then
+  begin
+    A := 0;
+    B := 0;
+    SendMessageW(Handle, CB_GETEDITSEL, WPARAM(@A), LPARAM(@B));
+    Result := Integer(A);
+  end;
+end;
+
+function TCustomComboBox.GetSelLength: Integer;
+var
+  A, B: DWORD;
+begin
+  Result := 0;
+  if HandleAllocated then
+  begin
+    A := 0;
+    B := 0;
+    SendMessageW(Handle, CB_GETEDITSEL, WPARAM(@A), LPARAM(@B));
+    Result := Integer(B) - Integer(A);
+  end;
+end;
+
+procedure TCustomComboBox.SetSelStart(Value: Integer);
+begin
+  if HandleAllocated then
+    SendMessageW(Handle, CB_SETEDITSEL, 0, MakeLParam(Word(Value), Word(Value)));
+end;
+
+procedure TCustomComboBox.SetSelLength(Value: Integer);
+var
+  S: Integer;
+begin
+  S := GetSelStart;
+  if HandleAllocated then
+    SendMessageW(Handle, CB_SETEDITSEL, 0, MakeLParam(Word(S), Word(S + Value)));
+end;
+
+function TCustomComboBox.GetSelText: string;
+begin
+  Result := Copy(Text, GetSelStart + 1, GetSelLength);
+end;
+
+{ replaces the selection; the caret follows the new text }
+procedure TCustomComboBox.SetSelText(const Value: string);
+var
+  S: string;
+  A: Integer;
+begin
+  A := GetSelStart;
+  S := Text;
+  Text := Copy(S, 1, A) + Value + Copy(S, A + GetSelLength + 1, MaxInt);
+  SetSelStart(A + Length(Value));
+end;
+
+procedure TCustomComboBox.SelectAll;
+begin
+  if HandleAllocated then
+    SendMessageW(Handle, CB_SETEDITSEL, 0, MakeLParam(0, $FFFF));
+end;
+
+procedure TCustomComboBox.AddItem(const Item: string; AObject: TObject);
+begin
+  FItems.AddObject(Item, AObject);
+end;
+
+procedure TCustomComboBox.Clear;
+begin
+  FItems.Clear;
+  Text := '';
+end;
+
+procedure TCustomComboBox.SetItems(Value: TStrings);
+begin
+  FItems.Assign(Value);
+end;
+
+procedure TCustomComboBox.SetCharCase(Value: TEditCharCase);
+begin
+  if FCharCase <> Value then
+  begin
+    FCharCase := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomComboBox.SetDropDownCount(Value: Integer);
+begin
+  FDropDownCount := Value;
+  if HandleAllocated then
+    SendMessageW(Handle, CB_SETMINVISIBLE, WPARAM(Value), 0);
+end;
+
+procedure TCustomComboBox.SetMaxLength(Value: Integer);
+begin
+  if Value < 0 then
+    Value := 0;
+  FMaxLength := Value;
+  if HandleAllocated then
+    SendMessageW(Handle, CB_LIMITTEXT, WPARAM(Value), 0);
+end;
+
+procedure TCustomComboBox.SetTextHint(const Value: string);
+begin
+  FTextHint := Value;
+  if HandleAllocated then
+    SendMessageW(Handle, CB_SETCUEBANNER, 0, LPARAM(PChar(FTextHint)));
+end;
+
+{ Sorted became True without a handle: the saved items in the native order, the selected item kept }
+procedure TCustomComboBox.SortSaved;
+var
+  Items: TStringList;
+  I, N: Integer;
+  SelObj: Integer;
+begin
+  Items := TStringList.Create;
+  try
+    Items.Assign(FSaved);
+    SelObj := FSavedIndex;
+    FSaved.Clear;
+    FSavedIndex := -1;
+    for I := 0 to Items.Count - 1 do
+    begin
+      N := SortedInsertIndex(FSaved, Items[I]);
+      FSaved.InsertObject(N, Items[I], Items.Objects[I]);
+      if (FSavedIndex >= N) then
+        Inc(FSavedIndex);
+      if I = SelObj then
+        FSavedIndex := N;
+    end;
+  finally
+    Items.Free;
+  end;
+end;
+
+procedure TCustomComboBox.SetSorted(Value: Boolean);
+begin
+  if FSorted <> Value then
+  begin
+    FSorted := Value;
+    if Value and not HandleAllocated then
+      SortSaved;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomComboBox.SetStyle(Value: TComboBoxStyle);
+begin
+  if FStyle <> Value then
+  begin
+    FStyle := Value;
+    RecreateWnd;
+    AdjustHeight;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TScrollBar }
+
+const
+  SScrollBarRange = 'Scrollbar property out of range';
+
+constructor TScrollBar.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  ControlStyle := ControlStyle - [csClickEvents, csDoubleClicks, csSetCaption];
+  FMax := 100;
+  FLargeChange := 1;
+  FSmallChange := 1;
+  TabStop := True;
+  SetBounds(Left, Top, 121, 17);
+end;
+
+procedure TScrollBar.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  Params.SubclassOf := 'SCROLLBAR';
+  if FKind = sbVertical then
+    Params.Style := Params.Style or SBS_VERT
+  else
+    Params.Style := Params.Style or SBS_HORZ;
+end;
+
+procedure TScrollBar.CreateWnd;
+begin
+  inherited CreateWnd;
+  UpdateScrollInfo;
+end;
+
+procedure TScrollBar.UpdateScrollInfo;
+var
+  Info: TScrollInfo;
+begin
+  if not HandleAllocated then
+    Exit;
+  FillChar(Info, SizeOf(Info), 0);
+  Info.cbSize := SizeOf(Info);
+  Info.fMask := SIF_RANGE or SIF_PAGE or SIF_POS;
+  Info.nMin := FMin;
+  Info.nMax := FMax;
+  Info.nPage := Cardinal(FPageSize);
+  Info.nPos := FPosition;
+  SetScrollInfo(Handle, SB_CTL, Info, True);
+end;
+
+{ Min ... Max - max(PageSize - 1, 0) }
+function TScrollBar.ClampPosition(Value: Integer): Integer;
+var
+  Top: Integer;
+begin
+  Top := FMax;
+  if FPageSize > 1 then
+    Top := FMax - (FPageSize - 1);
+  if Top < FMin then
+    Top := FMin;
+  Result := Value;
+  if Result > Top then
+    Result := Top;
+  if Result < FMin then
+    Result := FMin;
+end;
+
+{ UIF-711: OnChange on every change of Position; while loading only the fields (checked in Loaded) }
+procedure TScrollBar.SetParams(APosition, AMin, AMax: Integer);
+var
+  Old: Integer;
+begin
+  if csLoading in ComponentState then
+  begin
+    FMin := AMin;
+    FMax := AMax;
+    FPosition := APosition;
+    Exit;
+  end;
+  if AMax < AMin then
+    raise EInvalidOperation.Create(SScrollBarRange);
+  Old := FPosition;
+  FMin := AMin;
+  FMax := AMax;
+  FPosition := ClampPosition(APosition);
+  UpdateScrollInfo;
+  if FPosition <> Old then
+    Change;
+end;
+
+{ a stored range is never rejected: Max below Min becomes Min, the position is clamped, no event }
+procedure TScrollBar.Loaded;
+begin
+  inherited Loaded;
+  if FMax < FMin then
+    FMax := FMin;
+  FPosition := ClampPosition(FPosition);
+  UpdateScrollInfo;
+end;
+
+procedure TScrollBar.SetMin(Value: Integer);
+begin
+  SetParams(FPosition, Value, FMax);
+end;
+
+procedure TScrollBar.SetMax(Value: Integer);
+begin
+  SetParams(FPosition, FMin, Value);
+end;
+
+procedure TScrollBar.SetPosition(Value: Integer);
+begin
+  SetParams(Value, FMin, FMax);
+end;
+
+procedure TScrollBar.SetPageSize(Value: Integer);
+begin
+  if Value < 0 then
+    Value := 0;
+  FPageSize := Value;
+  SetParams(FPosition, FMin, FMax);
+end;
+
+procedure TScrollBar.SetLargeChange(Value: Integer);
+begin
+  if Value < 1 then
+    Value := 1
+  else if Value > 32767 then
+    Value := 32767;
+  FLargeChange := Value;
+end;
+
+procedure TScrollBar.SetSmallChange(Value: Integer);
+begin
+  if Value < 1 then
+    Value := 1
+  else if Value > 32767 then
+    Value := 32767;
+  FSmallChange := Value;
+end;
+
+{ changing Kind at design time swaps Width and Height }
+procedure TScrollBar.SetKind(Value: TScrollBarKind);
+begin
+  if FKind <> Value then
+  begin
+    FKind := Value;
+    if (csDesigning in ComponentState) and not (csLoading in ComponentState) then
+      SetBounds(Left, Top, Height, Width);
+    RecreateWnd;
+  end;
+end;
+
+procedure TScrollBar.Change;
+begin
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+end;
+
+procedure TScrollBar.Scroll(ScrollCode: TScrollCode; var ScrollPos: Integer);
+begin
+  if Assigned(FOnScroll) then
+    FOnScroll(Self, ScrollCode, ScrollPos);
+end;
+
+{ UIF-710 }
+procedure TScrollBar.DoScroll(Code: Integer);
+var
+  NewPos: Integer;
+  Info: TScrollInfo;
+begin
+  if (Code < Ord(Low(TScrollCode))) or (Code > Ord(High(TScrollCode))) then
+    Exit;
+  NewPos := FPosition;
+  case Code of
+    SB_LINEUP: NewPos := FPosition - FSmallChange;
+    SB_LINEDOWN: NewPos := FPosition + FSmallChange;
+    SB_PAGEUP: NewPos := FPosition - FLargeChange;
+    SB_PAGEDOWN: NewPos := FPosition + FLargeChange;
+    SB_TOP: NewPos := FMin;
+    SB_BOTTOM: NewPos := FMax;
+    SB_THUMBPOSITION, SB_THUMBTRACK:
+      begin
+        FillChar(Info, SizeOf(Info), 0);
+        Info.cbSize := SizeOf(Info);
+        Info.fMask := SIF_TRACKPOS;
+        if GetScrollInfo(Handle, SB_CTL, Info) then
+          NewPos := Info.nTrackPos;
+      end;
+  end;
+  NewPos := ClampPosition(NewPos);
+  Scroll(TScrollCode(Code), NewPos);
+  SetPosition(ClampPosition(NewPos));
+end;
+
+procedure TScrollBar.WndProc(var Message: TMessage);
+begin
+  case Message.Msg of
+    CN_HSCROLL, CN_VSCROLL:
+      begin
+        DoScroll(LoWord(Message.WParam));
+        Message.Result := 0;
+      end;
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+{ ---------------------------------------------------------------- TCustomStaticText }
+
+constructor TCustomStaticText.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FShowAccelChar := True;
+  SetBounds(Left, Top, 65, 17);
+  Color := clBtnFace;
+  ParentColor := True;
+  AutoSize := True;
+end;
+
+procedure TCustomStaticText.CreateParams(var Params: TCreateParams);
+const
+  Alignments: array[TAlignment] of DWORD = (SS_LEFT, SS_RIGHT, SS_CENTER);
+begin
+  inherited CreateParams(Params);
+  Params.SubclassOf := 'STATIC';
+  Params.Style := Params.Style or SS_NOTIFY or Alignments[FAlignment];
+  if not FShowAccelChar then
+    Params.Style := Params.Style or SS_NOPREFIX;
+  case FBorderStyle of
+    sbsSingle: Params.Style := Params.Style or WS_BORDER;
+    sbsSunken: Params.Style := Params.Style or SS_SUNKEN;
+  end;
+end;
+
+procedure TCustomStaticText.WndProc(var Message: TMessage);
+begin
+  case Message.Msg of
+    CM_DIALOGCHAR:
+      if Enabled and FShowAccelChar and (FFocusControl <> nil) and IsAccel(Word(Message.WParam), Caption)
+        and FFocusControl.CanFocus then
+      begin
+        FFocusControl.SetFocus;
+        Message.Result := 1;
+      end
+      else
+        inherited WndProc(Message);
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+procedure TCustomStaticText.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (Operation = opRemove) and (AComponent = FFocusControl) then
+    FFocusControl := nil;
+end;
+
+procedure TCustomStaticText.SetFocusControl(Value: TWinControl);
+begin
+  if FFocusControl <> Value then
+  begin
+    FFocusControl := Value;
+    if Value <> nil then
+      Value.FreeNotification(Self);
+  end;
+end;
+
+procedure TCustomStaticText.SetAlignment(Value: TAlignment);
+begin
+  if FAlignment <> Value then
+  begin
+    FAlignment := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomStaticText.SetBorderStyle(Value: TStaticBorderStyle);
+begin
+  if FBorderStyle <> Value then
+  begin
+    FBorderStyle := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomStaticText.SetShowAccelChar(Value: Boolean);
+begin
+  if FShowAccelChar <> Value then
+  begin
+    FShowAccelChar := Value;
+    RecreateWnd;
+  end;
+end;
+
 initialization
-  RegisterClasses([TLabel, TEdit, TMemo, TButton, TCheckBox, TRadioButton, TGroupBox, TListBox]);
+  RegisterClasses([TLabel, TEdit, TMemo, TButton, TCheckBox, TRadioButton, TGroupBox, TListBox, TComboBox,
+    TScrollBar, TStaticText]);
 end.

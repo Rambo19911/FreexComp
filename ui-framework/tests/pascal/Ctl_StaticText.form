@@ -1,0 +1,27 @@
+object StaticForm: TStaticForm
+  Caption = 'Static texts'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object Prompt: TStaticText
+    Left = 10
+    Top = 10
+    Width = 80
+    Height = 20
+    Alignment = taCenter
+    AutoSize = False
+    BorderStyle = sbsSunken
+    Caption = '&Value'
+    Color = clYellow
+    FocusControl = Value
+    Font.Height = -15
+    ParentFont = False
+    ShowAccelChar = False
+    TabStop = True
+    OnClick = PromptClick
+  end
+  object Value: TEdit
+    Left = 100
+    Top = 10
+  end
+end
