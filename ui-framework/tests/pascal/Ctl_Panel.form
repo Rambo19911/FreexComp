@@ -1,0 +1,42 @@
+object PanelForm: TPanelForm
+  Caption = 'Panels'
+  ClientWidth = 300
+  ClientHeight = 200
+  Color = clAqua
+  Scaled = False
+  object Outer: TPanel
+    Left = 10
+    Top = 20
+    Width = 200
+    Height = 100
+    Alignment = taLeftJustify
+    BevelInner = bvLowered
+    BevelOuter = bvNone
+    BevelWidth = 2
+    BorderStyle = bsSingle
+    BorderWidth = 4
+    Caption = 'Streamed'
+    Color = clLime
+    Font.Height = -15
+    Padding.Top = 3
+    ParentFont = False
+    ShowCaption = False
+    TabStop = True
+    VerticalAlignment = taAlignBottom
+    OnClick = OuterClick
+    object Body: TPanel
+      Left = 0
+      Top = 0
+      Width = 10
+      Height = 10
+      Align = alClient
+    end
+  end
+  object Plain: TPanel
+    Left = 220
+    Top = 20
+    Width = 50
+    Height = 50
+    ParentColor = True
+  end
+end

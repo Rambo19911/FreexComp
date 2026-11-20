@@ -1,0 +1,117 @@
+# defaults
+ok Width 185
+ok Height 41
+ok Alignment taCenter
+ok BevelInner bvNone
+ok BevelOuter bvRaised
+ok BevelWidth 1
+ok BorderStyle bsNone
+ok BorderWidth 0
+ok Caption empty
+ok Color clBtnFace
+ok ParentColor False
+ok ParentFont
+ok ShowCaption
+ok TabOrder -1
+ok TabStop
+ok VerticalAlignment taVerticalCenter
+ok Padding 0
+ok csAcceptsControls
+ok registered
+ok parenting keeps Color
+# handle-less state, window
+ok own window class
+ok bsSingle before the handle: WS_BORDER
+ok WS_CLIPCHILDREN
+ok WS_EX_CONTROLPARENT
+ok caption pushed to the window
+ok disabled pushed to the window
+ok BorderStyle recreates the window
+ok bsNone: no WS_BORDER
+ok caption kept across the re-creation
+ok bsSingle recreates the window
+ok bsSingle: WS_BORDER
+# client size (layout.md UIF-215, UIF-216)
+ok bsSingle: ClientWidth = Width - 2
+ok bsSingle: ClientHeight = Height - 2
+ok formula client width = Win32
+ok formula client height = Win32
+ok client width clamped to 0
+ok client height clamped to 0
+ok bsNone: ClientWidth = Width
+ok bsNone: Win32 agrees
+# native -> object
+ok Caption reads the window text
+# events
+ok OnClick on a click
+ok OnResize once on a size change
+ok no OnResize on a bevel change
+# align rect (layout.md UIF-218, E25, UIF-681)
+ok E25 a: raised outer bevel
+ok BevelInner change realigns
+ok E25 b: inset 5
+ok BevelWidth counts per bevel
+ok bvNone: no thickness
+ok bvSpace: same thickness
+ok no bevels: whole client
+ok Padding insets the align rect
+ok bsSingle: client 198 x 98, then the bevel
+ok BorderWidth scaled
+ok BevelWidth not scaled
+ok scaled panel realigned
+# Paint (UIF-680)
+ok raised: top clBtnHighlight
+ok raised: left clBtnHighlight
+ok raised: bottom clBtnShadow
+ok raised: right clBtnShadow
+ok one pixel thick, filled with Color
+ok interior Color
+ok lowered: top clBtnShadow
+ok lowered: bottom clBtnHighlight
+ok bvSpace: drawn in Color
+ok bvNone: nothing drawn
+ok BevelWidth 2: two lines
+ok BevelWidth 2: then Color
+ok outer bevel first
+ok BorderWidth gap in Color
+ok inner lowered bevel: top clBtnShadow
+ok inner lowered bevel: bottom clBtnHighlight
+ok inside the inner bevel: Color
+ok caption drawn
+ok taCenter: left and right quarters empty
+ok taVerticalCenter: top and bottom empty
+ok taLeftJustify: not over the bevel
+ok taLeftJustify: right half empty
+ok taLeftJustify: text in the left half
+ok taRightJustify: left half empty
+ok taAlignTop: lower half empty
+ok taAlignBottom: upper half empty
+ok caption inside the align rect (Padding)
+ok ShowCaption False: no caption
+ok disabled: no text in the font colour
+ok disabled: clGrayText
+# streaming
+ok Alignment
+ok BevelInner
+ok BevelOuter
+ok BevelWidth
+ok BorderStyle
+ok BorderWidth
+ok Caption
+ok Color
+ok ParentFont False
+ok Font.Height
+ok Padding.Top
+ok ShowCaption
+ok TabStop
+ok VerticalAlignment
+ok bounds
+ok child panel parented
+ok alClient child: border, bevel, BorderWidth, Padding
+ok ParentColor True
+ok ParentColor: the form's Color
+ok OnClick bound
+ok OnClick handler of the form
+# leak
+ok GUI objects after 100 instances with handles
+# passed 107 failed 0

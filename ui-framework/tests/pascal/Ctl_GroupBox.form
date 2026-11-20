@@ -1,0 +1,28 @@
+object GroupForm: TGroupForm
+  Caption = 'Groups'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object Group: TGroupBox
+    Left = 10
+    Top = 20
+    Width = 150
+    Height = 90
+    Caption = 'Streamed'
+    Color = clYellow
+    Font.Height = -15
+    Padding.Left = 4
+    ParentColor = False
+    ParentFont = False
+    TabOrder = 0
+    TabStop = True
+    OnClick = GroupClick
+    object Inner: TGroupBox
+      Left = 0
+      Top = 0
+      Width = 10
+      Height = 10
+      Align = alClient
+    end
+  end
+end

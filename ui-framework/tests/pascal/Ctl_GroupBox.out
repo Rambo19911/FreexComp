@@ -1,0 +1,78 @@
+# defaults
+ok Width 185
+ok Height 105
+ok Caption empty
+ok Color clBtnFace
+ok ParentColor
+ok ParentFont
+ok TabOrder -1
+ok TabStop
+ok Padding 0
+ok csAcceptsControls
+ok registered
+ok client rect = bounds (UIF-215)
+# handle-less state, window
+ok own window class
+ok WS_CHILD
+ok WS_CLIPCHILDREN
+ok no WS_TABSTOP
+ok WS_EX_CONTROLPARENT
+ok caption pushed to the window
+ok disabled pushed to the window
+# native -> object
+ok Caption reads the window text
+# events
+ok OnClick on a click
+ok OnResize once on a size change
+ok no OnResize on a move
+ok OnEnter when a child gets the focus
+ok OnExit when the focus leaves
+# accelerator (UIF-671)
+ok other character: not consumed
+ok focus unchanged
+ok accelerator consumed
+ok first child focused
+ok Alt+G through the form focuses the first child
+ok no focusable child: not consumed
+ok focus stays
+# align rect (layout.md UIF-218, E26)
+ok E26 without a form (96 DPI)
+ok Padding insets the align rect
+ok font change realigns
+ok constants scaled at the form's DPI
+# Paint (UIF-670)
+ok background Color
+ok frame top: etched outer line
+ok frame top: etched inner line
+ok above the frame: background
+ok frame left edge at x 0
+ok frame right edge at Width - 1
+ok frame bottom edge at Height - 1
+ok caption drawn at s(8)
+ok nothing left of s(8)
+ok nothing right of the caption
+ok strip starts s(2) left of the text
+ok frame left of the strip
+ok strip ends s(2) right of the text
+ok frame right of the strip
+ok disabled: no text in the font colour
+ok disabled: clGrayText
+ok empty caption: full frame, no gap
+ok empty caption: no strip
+# streaming
+ok Caption
+ok Color
+ok ParentColor False
+ok ParentFont False
+ok Font.Height
+ok Padding.Left
+ok TabOrder (the only windowed child)
+ok TabStop
+ok bounds
+ok child group box parented
+ok alClient child in the align rect
+ok OnClick bound
+ok OnClick handler of the form
+# leak
+ok GUI objects after 100 instances with handles
+# passed 68 failed 0

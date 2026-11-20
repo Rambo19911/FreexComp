@@ -67,6 +67,44 @@ type
     property OnMouseUp;
   end;
 
+  { controls-standard.md section 7 }
+  TCustomGroupBox = class(TCustomControl)
+  private
+    function CaptionHeight: Integer;
+  protected
+    { UIF-670 }
+    procedure Paint; override;
+    { UIF-671: CM_DIALOGCHAR; font changes realign (layout.md UIF-218), text/font/enabled changes repaint }
+    procedure WndProc(var Message: TMessage); override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    { layout.md UIF-218: (s(2), CapH, CW - s(2), CH - s(2)) }
+    procedure AdjustClientRect(var Rect: TRect); override;
+  end;
+
+  TGroupBox = class(TCustomGroupBox)
+  published
+    property Caption;
+    property Color default clBtnFace;
+    property Font;
+    property Padding;
+    property ParentColor;
+    property ParentFont;
+    property TabOrder;
+    property TabStop;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnResize;
+  end;
+
 implementation
 
 uses
@@ -220,6 +258,113 @@ begin
   end;
 end;
 
+{ ---------------------------------------------------------------- TCustomGroupBox }
+
+{ the DPI of the group box: its form's current PixelsPerInch, 96 (logical) without a form }
+function ControlDPI(Control: TControl): Integer;
+var
+  F: TCustomForm;
+begin
+  F := GetParentForm(Control);
+  if F <> nil then
+    Result := TForm(F).PixelsPerInch                         { published in TForm, protected in TCustomForm }
+  else
+    Result := 96;
+end;
+
+constructor TCustomGroupBox.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  ControlStyle := ControlStyle + [csAcceptsControls];
+  SetBounds(Left, Top, 185, 105);
+  Color := clBtnFace;
+  ParentColor := True;
+end;
+
+{ UIF-670: CapH = Abs(Font.Height) + s(5) }
+function TCustomGroupBox.CaptionHeight: Integer;
+begin
+  Result := Abs(Font.Height) + LayoutMulDiv(5, ControlDPI(Self), 96);
+end;
+
+procedure TCustomGroupBox.AdjustClientRect(var Rect: TRect);
+var
+  S2: Integer;
+begin
+  S2 := LayoutMulDiv(2, ControlDPI(Self), 96);
+  Rect.Left := Rect.Left + S2;
+  Rect.Top := Rect.Top + CaptionHeight;
+  Rect.Right := Rect.Right - S2;
+  Rect.Bottom := Rect.Bottom - S2;
+end;
+
+procedure TCustomGroupBox.Paint;
+var
+  R, T: TRect;
+  DPI, S2, S8, W, H: Integer;
+  Text: string;
+begin
+  DPI := ControlDPI(Self);
+  S2 := LayoutMulDiv(2, DPI, 96);
+  S8 := LayoutMulDiv(8, DPI, 96);
+  Canvas.Brush.Style := bsSolid;
+  Canvas.Brush.Color := Color;
+  Canvas.FillRect(Rect(0, 0, Width, Height));
+  R := Rect(0, CaptionHeight div 2, Width, Height);
+  DrawEdge(Canvas.Handle, R, EDGE_ETCHED, BF_RECT);
+  Text := Caption;
+  if Text = '' then
+    Exit;
+  Canvas.Font := Font;
+  if not Enabled then
+    Canvas.Font.Color := clGrayText;
+  T := Rect(0, 0, 0, 0);
+  Canvas.TextRect(T, Text, [tfSingleLine, tfCalcRect]);
+  W := T.Right - T.Left;
+  H := T.Bottom - T.Top;
+  Canvas.FillRect(Rect(S8 - S2, 0, S8 + W + S2, H));
+  T := Rect(S8, 0, S8 + W, H);
+  Canvas.Brush.Style := bsClear;
+  SetBkMode(Canvas.Handle, Windows.TRANSPARENT);
+  Canvas.TextRect(T, Text, [tfSingleLine, tfLeft, tfTop]);
+end;
+
+procedure TCustomGroupBox.WndProc(var Message: TMessage);
+var
+  F: TWinControl;
+begin
+  case Message.Msg of
+    CM_DIALOGCHAR:
+      if IsAccel(Word(Message.WParam), Caption) then
+      begin
+        { SelectFirst, consumed when a child took the focus }
+        F := FindNextControl(nil, True, True, False);
+        if F <> nil then
+        begin
+          F.SetFocus;
+          Message.Result := 1;
+        end
+        else
+          Message.Result := 0;
+      end
+      else
+        inherited WndProc(Message);
+    CM_FONTCHANGED:
+      begin
+        inherited WndProc(Message);
+        Realign;
+        Invalidate;
+      end;
+    CM_TEXTCHANGED, CM_ENABLEDCHANGED:
+      begin
+        inherited WndProc(Message);
+        Invalidate;
+      end;
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
 initialization
-  RegisterClasses([TLabel]);
+  RegisterClasses([TLabel, TGroupBox]);
 end.
