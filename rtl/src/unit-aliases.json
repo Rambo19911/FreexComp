@@ -14,6 +14,7 @@
     "System.TypInfo": "TypInfo",
     "System.Types": "Types",
     "Vcl.Controls": "Controls",
+    "Vcl.ActnList": "ActnList",
     "Vcl.ExtCtrls": "ExtCtrls",
     "Vcl.Forms": "Forms",
     "Vcl.Graphics": "Graphics",
