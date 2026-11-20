@@ -1,0 +1,35 @@
+ok main form
+ok MMc takes AT's shortcut
+ok ActiveControl recorded (the form is not active)
+# order (UIF-921, UIF-925)
+ok Ctrl+O: the focused control's pop-up menu first, no OnKeyDown/OnKeyPress
+ok disabled pop-up item skipped: the main menu
+ok invisible item skipped: the form's action list (ActionComponent nil)
+ok disabled action (Execute False): the main form's action list
+ok disabled main form: not consumed, OnKeyDown and the translated character
+ok suspended list: no match (UIF-923)
+ok the form's pop-up menu (end of the parent chain)
+ok Alt+X (WM_SYSKEYDOWN): the parent's pop-up menu before the main menu
+ok Alt+X: the main menu's nested item after its parent's hook
+ok no match: OnKeyDown and OnKeyPress fire (UIF-924 counter-check)
+# menu items: hooks and updates first (UIF-922, UIF-913)
+ok disabled parent: hook and update ran, item skipped; the action runs from the list (updated in Execute)
+ok enabled: the item clicks its action
+ok no focused control: the search starts at the form
+# direct calls (UIF-921, UIF-923)
+ok a modifier key alone never matches
+ok TActionList.IsShortCut: Execute returned True
+ok the matching action ran
+ok suspended list: False
+ok no action with Ctrl+Z
+# UpdateActions (UIF-910)
+ok hidden form: no control is showing; the menu bar item still counts
+ok form shown (no activation)
+ok each distinct action once; hidden control and sub-menu item excluded; controls before the menu bar
+ok an exception is reported and the rest still updates
+# at idle (UIF-910, application-forms.md UIF-412)
+ok Done: the visible form's actions after OnIdle
+ok Done False: no action updates
+ok hidden form: not updated at idle
+ok an action without a client updates inside Execute (UIF-913)
+# passed 29 failed 0

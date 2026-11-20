@@ -4,7 +4,7 @@ unit ActnList;
 interface
 
 uses
-  SysUtils, Classes, Graphics, ImgList, UIConsts;
+  Windows, Messages, SysUtils, Classes, Graphics, ImgList, UIConsts;
 
 type
   THintEvent = procedure(var HintStr: string; var CanShow: Boolean) of object;
@@ -62,7 +62,7 @@ type
     procedure SetShortCut(Value: TShortCut);
     procedure SetVisible(Value: Boolean);
     procedure UncheckGroup;
-  protected
+  public
     property AutoCheck: Boolean read FAutoCheck write SetAutoCheck default False;
     property Caption: string read FCaption write SetCaption;
     property Checked: Boolean read FChecked write SetChecked default False;
@@ -73,7 +73,6 @@ type
     property ShortCut: TShortCut read FShortCut write SetShortCut default 0;
     property Visible: Boolean read FVisible write SetVisible default True;
     property OnHint: THintEvent read FOnHint write FOnHint;
-  public
     constructor Create(AOwner: TComponent); override;
     { UIF-902 }
     function Execute: Boolean; override;
@@ -130,6 +129,9 @@ type
     function ExecuteAction(Action: TBasicAction): Boolean; override;
     { UIF-903: the list's OnUpdate for Action; True if it handled it }
     function UpdateAction(Action: TBasicAction): Boolean; override;
+    { UIF-923: the first action (index order) whose ShortCut is the key's and whose Execute returns True; False
+      while the list is not asNormal }
+    function IsShortCut(var Message: TWMKey): Boolean;
     property Actions[Index: Integer]: TContainedAction read GetAction; default;
     property ActionCount: Integer read GetActionCount;
   end;
@@ -143,7 +145,68 @@ type
     property OnUpdate;
   end;
 
+  { actions-menus.md section 1.2: the link of one client. Change propagates each property the client still shares
+    with the action: the client's value equals the action's value before the change (UIF-907), which the link
+    recorded at the previous Change (or when the action was assigned) }
+  TActionLink = class(TBasicActionLink)
+  protected
+    FCaption: string;
+    FChecked: Boolean;
+    FEnabled: Boolean;
+    FHint: string;
+    FImageIndex: Integer;
+    FShortCut: TShortCut;
+    FVisible: Boolean;
+    FOnExecute: TNotifyEvent;
+    procedure Change; override;
+    procedure SetAction(Value: TBasicAction); override;
+    { a client property is linked: the client's value equals the recorded one; base: the client has none }
+    function IsCaptionLinked: Boolean; virtual;
+    function IsCheckedLinked: Boolean; virtual;
+    function IsEnabledLinked: Boolean; virtual;
+    function IsHintLinked: Boolean; virtual;
+    function IsImageIndexLinked: Boolean; virtual;
+    function IsShortCutLinked: Boolean; virtual;
+    function IsVisibleLinked: Boolean; virtual;
+    function IsOnExecuteLinked: Boolean; override;
+    procedure SetCaption(const Value: string); virtual;
+    procedure SetChecked(Value: Boolean); virtual;
+    procedure SetEnabled(Value: Boolean); virtual;
+    procedure SetHint(const Value: string); virtual;
+    procedure SetImageIndex(Value: Integer); virtual;
+    procedure SetShortCut(Value: TShortCut); virtual;
+    procedure SetVisible(Value: Boolean); virtual;
+  public
+    { records the action's current values as the reference of UIF-907 }
+    procedure RecordValues;
+  end;
+
+{ the two events are the same method of the same object (both nil counts as the same) }
+function SameEvent(const A, B: TNotifyEvent): Boolean;
+
 implementation
+
+function SameEvent(const A, B: TNotifyEvent): Boolean;
+begin
+  Result := (TMethod(A).Code = TMethod(B).Code) and (TMethod(A).Data = TMethod(B).Data);
+end;
+
+{ UIF-921, UIF-930: the shortcut of a key message (Shift/Ctrl from the key state, Alt from bit 29); 0 for a key
+  above 255 or a key that is only a modifier }
+function KeyShortCut(Key: Word; KeyData: LPARAM): TShortCut;
+begin
+  Result := 0;
+  if (Key > 255) or (Key = VK_SHIFT) or (Key = VK_CONTROL) or (Key = VK_MENU) or (Key = VK_LWIN)
+    or (Key = VK_RWIN) then
+    Exit;
+  Result := Key;
+  if GetKeyState(VK_SHIFT) < 0 then
+    Result := Result or $2000;
+  if GetKeyState(VK_CONTROL) < 0 then
+    Result := Result or $4000;
+  if (KeyData and $20000000) <> 0 then
+    Result := Result or $8000;
+end;
 
 { ---------------------------------------------------------------- TContainedAction }
 
@@ -515,6 +578,152 @@ begin
   Result := False;
   if Assigned(FOnUpdate) then
     FOnUpdate(Action, Result);
+end;
+
+function TCustomActionList.IsShortCut(var Message: TWMKey): Boolean;
+var
+  SC: TShortCut;
+  I: Integer;
+  A: TContainedAction;
+begin
+  Result := False;
+  SC := KeyShortCut(Message.CharCode, Message.KeyData);
+  if (SC = 0) or (FState <> asNormal) then
+    Exit;
+  for I := 0 to FActions.Count - 1 do
+  begin
+    A := TContainedAction(FActions[I]);
+    if (A is TCustomAction) and (TCustomAction(A).FShortCut = SC) and A.Execute then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TActionLink }
+
+procedure TActionLink.RecordValues;
+var
+  A: TCustomAction;
+begin
+  if Action = nil then
+    Exit;
+  FOnExecute := Action.OnExecute;
+  if Action is TCustomAction then
+  begin
+    A := TCustomAction(Action);
+    FCaption := A.FCaption;
+    FChecked := A.FChecked;
+    FEnabled := A.FEnabled;
+    FHint := A.FHint;
+    FImageIndex := A.FImageIndex;
+    FShortCut := A.FShortCut;
+    FVisible := A.FVisible;
+  end;
+end;
+
+procedure TActionLink.SetAction(Value: TBasicAction);
+begin
+  inherited SetAction(Value);
+  RecordValues;
+end;
+
+{ UIF-907 }
+procedure TActionLink.Change;
+var
+  A: TCustomAction;
+begin
+  if Action is TCustomAction then
+  begin
+    A := TCustomAction(Action);
+    if (A.FCaption <> FCaption) and IsCaptionLinked then
+      SetCaption(A.FCaption);
+    if (A.FChecked <> FChecked) and IsCheckedLinked then
+      SetChecked(A.FChecked);
+    if (A.FEnabled <> FEnabled) and IsEnabledLinked then
+      SetEnabled(A.FEnabled);
+    if (A.FHint <> FHint) and IsHintLinked then
+      SetHint(A.FHint);
+    if (A.FImageIndex <> FImageIndex) and IsImageIndexLinked then
+      SetImageIndex(A.FImageIndex);
+    if (A.FShortCut <> FShortCut) and IsShortCutLinked then
+      SetShortCut(A.FShortCut);
+    if (A.FVisible <> FVisible) and IsVisibleLinked then
+      SetVisible(A.FVisible);
+  end;
+  if (Action <> nil) and not SameEvent(Action.OnExecute, FOnExecute) and IsOnExecuteLinked then
+    SetOnExecute(Action.OnExecute);
+  RecordValues;
+  inherited Change;
+end;
+
+function TActionLink.IsCaptionLinked: Boolean;
+begin
+  Result := False;
+end;
+
+function TActionLink.IsCheckedLinked: Boolean;
+begin
+  Result := False;
+end;
+
+function TActionLink.IsEnabledLinked: Boolean;
+begin
+  Result := False;
+end;
+
+function TActionLink.IsHintLinked: Boolean;
+begin
+  Result := False;
+end;
+
+function TActionLink.IsImageIndexLinked: Boolean;
+begin
+  Result := False;
+end;
+
+function TActionLink.IsShortCutLinked: Boolean;
+begin
+  Result := False;
+end;
+
+function TActionLink.IsVisibleLinked: Boolean;
+begin
+  Result := False;
+end;
+
+function TActionLink.IsOnExecuteLinked: Boolean;
+begin
+  Result := False;
+end;
+
+procedure TActionLink.SetCaption(const Value: string);
+begin
+end;
+
+procedure TActionLink.SetChecked(Value: Boolean);
+begin
+end;
+
+procedure TActionLink.SetEnabled(Value: Boolean);
+begin
+end;
+
+procedure TActionLink.SetHint(const Value: string);
+begin
+end;
+
+procedure TActionLink.SetImageIndex(Value: Integer);
+begin
+end;
+
+procedure TActionLink.SetShortCut(Value: TShortCut);
+begin
+end;
+
+procedure TActionLink.SetVisible(Value: Boolean);
+begin
 end;
 
 initialization

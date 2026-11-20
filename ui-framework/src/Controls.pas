@@ -4,7 +4,7 @@ unit Controls;
 interface
 
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Menus, UIConsts;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, ActnList, Menus, UIConsts;
 
 { ---------------------------------------------------------------- core.md section 1: types and constants }
 
@@ -200,6 +200,25 @@ type
 { ---------------------------------------------------------------- core.md section 2: TControl }
 
   TWinControl = class;
+  TControl = class;
+
+  { actions-menus.md section 1.2: Caption, Enabled, Hint, Visible and OnClick of a control }
+  TControlActionLink = class(TActionLink)
+  protected
+    FClient: TControl;
+    procedure AssignClient(AClient: TObject); override;
+    function IsCaptionLinked: Boolean; override;
+    function IsEnabledLinked: Boolean; override;
+    function IsHintLinked: Boolean; override;
+    function IsVisibleLinked: Boolean; override;
+    function IsOnExecuteLinked: Boolean; override;
+    procedure SetCaption(const Value: string); override;
+    procedure SetEnabled(Value: Boolean); override;
+    procedure SetHint(const Value: string); override;
+    procedure SetVisible(Value: Boolean); override;
+    procedure SetOnExecute(Value: TNotifyEvent); override;
+  end;
+  TControlActionLinkClass = class of TControlActionLink;
 
   TControl = class(TComponent)
   private
@@ -245,6 +264,7 @@ type
     FOnMouseWheelUp: TMouseWheelUpDownEvent;
     FOnContextPopup: TContextPopupEvent;
     FPopupMenu: TPopupMenu;
+    FActionLink: TControlActionLink;
     FOnResize: TNotifyEvent;
     FOnConstrainedResize: TConstrainedResizeEvent;
     procedure SetLeft(Value: Integer);
@@ -287,7 +307,15 @@ type
     procedure MouseMessage(var Message: TMessage);
     procedure ClearMouseState;
     procedure TrackMouseControl;
+    function GetAction: TBasicAction;
+    procedure SetAction(Value: TBasicAction);
   protected
+    { actions-menus.md UIF-906: copies the action's values (CheckDefaults: only into properties at their default) }
+    procedure ActionChange(Sender: TObject; CheckDefaults: Boolean); virtual;
+    function GetActionLinkClass: TControlActionLinkClass; virtual;
+    property ActionLink: TControlActionLink read FActionLink;
+    { actions-menus.md section 1.2 (published by TButton, TCheckBox, TRadioButton) }
+    property Action: TBasicAction read GetAction write SetAction;
     procedure SetParent(AParent: TWinControl); virtual;
     function GetShowing: Boolean; virtual;
     function GetClientRect: TRect; virtual;
@@ -654,7 +682,19 @@ function StringToCursor(const S: string): TCursor;
 { UIF-021: the stock cursor of a value (0 for crNone; unknown values: the arrow) }
 function CursorHandle(Cursor: TCursor): HCURSOR;
 
+{ actions-menus.md UIF-940: the text before the first '|' (the whole string without one) }
+function GetShortHint(const Hint: string): string;
+{ UIF-940: the text after the first '|' (the whole string without one) }
+function GetLongHint(const Hint: string): string;
+{ core.md 7.9: ssShift, ssCtrl from GetKeyState; ssAlt from bit 29 of the key data }
+function KeyDataToShiftState(KeyData: LPARAM): TShiftState;
+
+type
+  TMouseControlHook = procedure(Control: TControl);
+
 var
+  { core.md UIF-068: called after the control under the mouse changed (nil: none); set by Forms (hints) }
+  MouseControlHook: TMouseControlHook;
   { application-forms.md 3: the Screen.Cursor override, written by Forms (Controls cannot use Forms); crDefault = none }
   ScreenCursor: TCursor;
   { core.md 8.1: the class that ends a focus chain (TCustomForm, registered by Forms); nil = nothing can focus }
@@ -942,6 +982,87 @@ begin
     inherited AssignTo(Dest);
 end;
 
+{ ---------------------------------------------------------------- TControlActionLink }
+
+procedure TControlActionLink.AssignClient(AClient: TObject);
+begin
+  FClient := TControl(AClient);
+end;
+
+function TControlActionLink.IsCaptionLinked: Boolean;
+begin
+  Result := FClient.Caption = FCaption;
+end;
+
+function TControlActionLink.IsEnabledLinked: Boolean;
+begin
+  Result := FClient.FEnabled = FEnabled;
+end;
+
+function TControlActionLink.IsHintLinked: Boolean;
+begin
+  Result := FClient.FHint = FHint;
+end;
+
+function TControlActionLink.IsVisibleLinked: Boolean;
+begin
+  Result := FClient.FVisible = FVisible;
+end;
+
+function TControlActionLink.IsOnExecuteLinked: Boolean;
+begin
+  Result := SameEvent(FClient.FOnClick, FOnExecute);
+end;
+
+procedure TControlActionLink.SetCaption(const Value: string);
+begin
+  FClient.Caption := Value;
+end;
+
+procedure TControlActionLink.SetEnabled(Value: Boolean);
+begin
+  FClient.Enabled := Value;
+end;
+
+procedure TControlActionLink.SetHint(const Value: string);
+begin
+  FClient.FHint := Value;
+end;
+
+procedure TControlActionLink.SetVisible(Value: Boolean);
+begin
+  FClient.Visible := Value;
+end;
+
+procedure TControlActionLink.SetOnExecute(Value: TNotifyEvent);
+begin
+  FClient.FOnClick := Value;
+end;
+
+{ ---------------------------------------------------------------- hints (actions-menus.md UIF-940) }
+
+function GetShortHint(const Hint: string): string;
+var
+  I: Integer;
+begin
+  I := Pos('|', Hint);
+  if I = 0 then
+    Result := Hint
+  else
+    Result := Copy(Hint, 1, I - 1);
+end;
+
+function GetLongHint(const Hint: string): string;
+var
+  I: Integer;
+begin
+  I := Pos('|', Hint);
+  if I = 0 then
+    Result := Hint
+  else
+    Result := Copy(Hint, I + 1, MaxInt);
+end;
+
 { ---------------------------------------------------------------- TControl }
 
 constructor TControl.Create(AOwner: TComponent);
@@ -970,7 +1091,16 @@ begin
   if CaptureControl = Self then
     SetCaptureControl(nil);
   if MouseControl = Self then
+  begin
     MouseControl := nil;
+    if Assigned(MouseControlHook) then
+      MouseControlHook(nil);
+  end;
+  if FActionLink <> nil then
+  begin
+    FActionLink.Free;
+    FActionLink := nil;
+  end;
   SetParent(nil);
   FConstraints.Free;
   FMargins.Free;
@@ -1453,10 +1583,72 @@ begin
   Result := FVisible and (FParent <> nil) and FParent.Showing;
 end;
 
+{ actions-menus.md UIF-909: the linked action runs unless OnClick is the client's own handler }
 procedure TControl.Click;
 begin
-  if Assigned(FOnClick) then
+  if (FActionLink <> nil) and (FActionLink.Action <> nil) and (not Assigned(FOnClick)
+    or SameEvent(FOnClick, FActionLink.Action.OnExecute)) then
+    FActionLink.Execute(Self)
+  else if Assigned(FOnClick) then
     FOnClick(Self);
+end;
+
+function TControl.GetAction: TBasicAction;
+begin
+  if FActionLink = nil then
+    Result := nil
+  else
+    Result := FActionLink.Action;
+end;
+
+function TControl.GetActionLinkClass: TControlActionLinkClass;
+begin
+  Result := TControlActionLink;
+end;
+
+{ UIF-906; UIF-908: while loading only the link is made (Loaded copies) }
+procedure TControl.SetAction(Value: TBasicAction);
+begin
+  if GetAction = Value then
+    Exit;
+  if FActionLink <> nil then
+  begin
+    if FActionLink.Action <> nil then
+      FActionLink.Action.RemoveFreeNotification(Self);
+    FActionLink.Free;
+    FActionLink := nil;
+  end;
+  if Value = nil then
+  begin
+    Exclude(FControlStyle, csActionClient);
+    Exit;
+  end;
+  FActionLink := GetActionLinkClass.Create(Self);
+  FActionLink.Action := Value;
+  Value.FreeNotification(Self);
+  Include(FControlStyle, csActionClient);
+  if not (csLoading in ComponentState) then
+    ActionChange(Value, True);
+end;
+
+procedure TControl.ActionChange(Sender: TObject; CheckDefaults: Boolean);
+var
+  A: TCustomAction;
+begin
+  if Sender is TCustomAction then
+  begin
+    A := TCustomAction(Sender);
+    if not CheckDefaults or (Caption = '') or (Caption = Name) then
+      Caption := A.Caption;
+    if not CheckDefaults or FEnabled then
+      Enabled := A.Enabled;
+    if not CheckDefaults or (FHint = '') then
+      FHint := A.Hint;
+    if not CheckDefaults or FVisible then
+      Visible := A.Visible;
+  end;
+  if (Sender is TBasicAction) and (not CheckDefaults or not Assigned(FOnClick)) then
+    FOnClick := TBasicAction(Sender).OnExecute;
 end;
 
 procedure TControl.DblClick;
@@ -1750,6 +1942,8 @@ begin
     Old.Perform(CM_MOUSELEAVE, 0, 0);
   MouseControl := Self;
   Perform(CM_MOUSEENTER, 0, 0);
+  if Assigned(MouseControlHook) and (MouseControl = Self) then
+    MouseControlHook(Self);
   H := 0;
   if Self is TWinControl then
     H := TWinControl(Self).FHandle
@@ -1900,6 +2094,14 @@ begin
   inherited Notification(AComponent, Operation);
   if (Operation = opRemove) and (AComponent = FPopupMenu) then
     FPopupMenu := nil;
+  { UIF-912: a freed action (it unregistered the link first) leaves the copied values alone }
+  if (Operation = opRemove) and (FActionLink <> nil) and ((FActionLink.Action = AComponent)
+    or (FActionLink.Action = nil)) then
+  begin
+    FActionLink.Free;
+    FActionLink := nil;
+    Exclude(FControlStyle, csActionClient);
+  end;
 end;
 
 { UIF-130 (graphic part) }
@@ -1963,6 +2165,11 @@ procedure TControl.Loaded;
 begin
   inherited Loaded;
   CaptureBaseline;                                           { UIF-232 case 4 }
+  if (FActionLink <> nil) and (FActionLink.Action <> nil) then
+  begin
+    FActionLink.RecordValues;                                { UIF-908 }
+    ActionChange(FActionLink.Action, True);
+  end;
 end;
 
 procedure TControl.Changed;
@@ -2664,6 +2871,8 @@ begin
   begin
     MouseControl := nil;
     Old.Perform(CM_MOUSELEAVE, 0, 0);
+    if Assigned(MouseControlHook) and (MouseControl = nil) then
+      MouseControlHook(nil);
   end;
   Dispatch(Message);
 end;
@@ -3454,7 +3663,7 @@ begin
 end;
 
 { core.md 7.9: ssShift, ssCtrl from GetKeyState; ssAlt from bit 29 of the key data }
-function KeyDataToShift(KeyData: LPARAM): TShiftState;
+function KeyDataToShiftState(KeyData: LPARAM): TShiftState;
 begin
   Result := [];
   if GetKeyState(VK_SHIFT) < 0 then
@@ -3483,7 +3692,7 @@ var
   P: TWinControl;
 begin
   Key := Message.CharCode;
-  Shift := KeyDataToShift(Message.KeyData);
+  Shift := KeyDataToShiftState(Message.KeyData);
   P := KeyPreviewer(Self);
   if P <> nil then
     P.KeyDown(Key, Shift);
@@ -3503,7 +3712,7 @@ var
   P: TWinControl;
 begin
   Key := Message.CharCode;
-  Shift := KeyDataToShift(Message.KeyData);
+  Shift := KeyDataToShiftState(Message.KeyData);
   P := KeyPreviewer(Self);
   if P <> nil then
     P.KeyUp(Key, Shift);

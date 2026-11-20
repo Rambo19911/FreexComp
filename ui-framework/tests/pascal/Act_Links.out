@@ -1,0 +1,104 @@
+# assignment (UIF-906)
+ok no action by default
+ok Action
+ok empty Caption takes the action's
+ok Enabled (default True) takes the action's
+ok empty Hint takes the action's
+ok Visible
+ok unassigned OnClick takes OnExecute
+ok csActionClient
+ok own Caption kept
+ok Enabled False (not the default) kept
+ok own Hint kept
+ok own OnClick kept
+ok Caption equal to the Name
+ok Caption equal to the Name counts as default
+# later changes (UIF-907)
+ok linked Enabled followed A.Enabled := True
+ok linked Caption follows
+ok independently changed Caption stays
+ok a client value equal to the old value is linked again
+ok Hint follows
+ok Visible follows
+ok Visible back
+ok OnClick follows OnExecute at the next change
+# click (UIF-909)
+ok Click executes the action with ActionComponent = the client
+ok ActionComponent cleared after the call
+ok own OnClick: the action is not executed
+ok unassigned OnClick: the action runs
+ok BN_CLICKED: the action runs
+ok disabled action: Execute does nothing
+# removal (UIF-912)
+ok reassigned
+ok the old action no longer reaches the client
+ok freed action: link cleared
+ok copied values untouched
+ok OnClick copied earlier still runs as a plain handler
+ok csActionClient cleared
+ok Action := nil
+ok no link after Action := nil
+# check box and radio button Checked (UIF-905)
+ok unchecked box takes Checked
+ok copying Checked fires no OnClick
+ok no Click: the action was not executed (AutoCheck would toggle it)
+ok linked Checked follows
+ok still no click
+ok user toggle checks the box
+ok the toggle executes the action once
+ok AutoCheck: the action is checked too
+ok linked again: unchecking the action unchecks the box
+ok native state follows
+ok radio button takes Checked
+ok the group is resolved
+ok no OnClick
+ok radio Checked follows
+ok radio Checked follows again
+ok still no OnClick
+# menu item (UIF-905, UIF-906, UIF-907, UIF-909)
+ok Action
+ok Caption
+ok Checked
+ok Enabled
+ok Hint
+ok ImageIndex
+ok ShortCut
+ok Visible
+ok OnClick
+ok ShortCut follows
+ok ImageIndex follows
+ok Checked follows
+ok Enabled follows
+ok native entry rebuilt
+ok Visible follows
+ok independent Caption stays
+ok Click executes the action
+ok menu not on the form: not routed
+ok WM_COMMAND: the action runs
+ok own Caption kept
+ok own ShortCut kept
+ok own OnClick: no action
+ok freed action: item link cleared (UIF-912)
+ok values kept
+# updates before a menu opens (UIF-911)
+ok Popup: the items' actions are updated first (upd:P;upd:P;)
+ok not the sub-menu's yet
+ok sub-menu: OnClick hook, then the children's actions
+ok the update reached the item
+ok native entry grayed
+ok main menu sub-menu: the children's actions
+# loading (UIF-908)
+ok Button1.Action resolved
+ok stored Caption wins
+ok default Enabled takes the action's
+ok Hint from the action
+ok OnClick from the action
+ok CheckBox1 Caption from the action
+ok CheckBox1 Checked from the action
+ok menu item Caption
+ok menu item ShortCut
+ok menu item Enabled
+ok linked after loading: Button1
+ok linked after loading: Item1
+ok clicks run the form's handler through the action
+# passed 95 failed 0

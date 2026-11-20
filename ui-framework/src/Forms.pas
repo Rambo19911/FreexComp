@@ -283,8 +283,12 @@ type
     function SetFocusedControl(Control: TWinControl): Boolean; override;
     procedure FocusControl(Control: TWinControl);
     procedure DefocusControl(Control: TWinControl; Removing: Boolean); override;
-    { actions-menus.md UIF-921 (menus and actions come with their units); base: no shortcut }
+    { actions-menus.md UIF-921: pop-up menus of the focused chain, the main menu, the form's action lists, then the
+      main form }
     function IsShortCut(var Message: TWMKey): Boolean; virtual;
+    { actions-menus.md UIF-910: Update once on every distinct action linked to a showing control or a main-menu
+      bar item }
+    procedure UpdateActions; virtual;
     property Active: Boolean read GetActive;
     property Monitor: TMonitor read GetMonitor;
     property Canvas: TCanvas read FCanvas;
@@ -427,6 +431,39 @@ type
     property OnActiveControlChange: TNotifyEvent read FOnActiveControlChange write FOnActiveControlChange;
   end;
 
+  { actions-menus.md UIF-943: what a hint shows and where; CM_HINTSHOW (LParam = PHintInfo) and OnShowHint may
+    change it }
+  THintInfo = record
+    HintControl: TControl;
+    HintPos: TPoint;                                         { screen position of the window's top-left corner }
+    HintMaxWidth: Integer;
+    HintColor: TColor;
+    HintStr: string;
+    ReshowTimeout: Integer;
+    HideTimeout: Integer;                                    { ms; 0 = until hidden otherwise }
+  end;
+  PHintInfo = ^THintInfo;
+  TShowHintEvent = procedure(var HintStr: string; var CanShow: Boolean; var HintInfo: THintInfo) of object;
+
+  { actions-menus.md UIF-944, UIF-948: the hint pop-up window (class PN.HintWindow); never takes focus }
+  THintWindow = class(TCustomControl)
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    procedure WndProc(var Message: TMessage); override;
+    procedure Paint; override;
+    { the inner margins (4 and 2 logical px at the hint font's DPI) }
+    function MarginX: Integer;
+    function MarginY: Integer;
+  public
+    constructor Create(AOwner: TComponent); override;
+    { shows the window with the text at the screen rectangle, without activation }
+    procedure ActivateHint(Rect: TRect; const AHint: string); virtual;
+    { the window rectangle at (0, 0) for the text wrapped at MaxWidth }
+    function CalcHintRect(MaxWidth: Integer; const AHint: string; AData: Pointer): TRect; virtual;
+    procedure ReleaseHandle;
+  end;
+  THintWindowClass = class of THintWindow;
+
   { application-forms.md section 2 }
   TApplication = class(TComponent)
   private
@@ -445,7 +482,29 @@ type
     FOnException: TExceptionEvent;
     FOnIdle: TIdleEvent;
     FOnMessage: TMessageEvent;
+    FHint: string;
+    FShowHint: Boolean;
+    FHintPause: Integer;
+    FHintHidePause: Integer;
+    FHintShortPause: Integer;
+    FHintColor: TColor;
+    FOnHint: TNotifyEvent;
+    FOnShowHint: TShowHintEvent;
+    FHintControl: TControl;                                  { UIF-941: the effective hint control, nil if none }
+    FHintWindow: THintWindow;
+    FHintHiddenAt: UInt64;                                   { GetTickCount64 when a hint window was last hidden }
     function GetExeName: string;
+    procedure SetHint(const Value: string);
+    procedure SetHintControl(Value: TControl);
+    function HintVisible: Boolean;
+    { UIF-943 conditions for a hint window over C }
+    function HintAllowed(C: TControl): Boolean;
+    { UIF-942, UIF-943: the control under the mouse changed (Controls.MouseControlHook) }
+    procedure MouseControlChanged(Control: TControl);
+    { UIF-943: a key or mouse button message, or a deactivation, cancels the hint }
+    procedure IsHintMsg(const Msg: TMsg);
+    { UIF-946: WM_TIMER of a hint timer at the application window }
+    procedure HintTimer(ID: UINT_PTR);
     { UIF-412: the Classes.WakeMainThread hook; the loop wakes and runs CheckSynchronize }
     procedure WakeMainThread(Sender: TObject);
   public
@@ -470,6 +529,10 @@ type
     procedure HandleException(Sender: TObject);
     { UIF-461, UIF-462 }
     procedure ShowException(E: Exception);
+    { actions-menus.md UIF-947 }
+    procedure HideHint;
+    procedure CancelHint;
+    procedure ActivateHint(CursorPos: TPoint);
     property Handle: HWND read FHandle;
     property MainForm: TForm read FMainForm;
     { a window of this application is the foreground window }
@@ -487,6 +550,17 @@ type
     property OnException: TExceptionEvent read FOnException write FOnException;
     property OnIdle: TIdleEvent read FOnIdle write FOnIdle;
     property OnMessage: TMessageEvent read FOnMessage write FOnMessage;
+    { actions-menus.md section 4 }
+    property Hint: string read FHint write SetHint;
+    property ShowHint: Boolean read FShowHint write FShowHint;
+    property HintPause: Integer read FHintPause write FHintPause;
+    property HintHidePause: Integer read FHintHidePause write FHintHidePause;
+    property HintShortPause: Integer read FHintShortPause write FHintShortPause;
+    property HintColor: TColor read FHintColor write FHintColor;
+    property OnHint: TNotifyEvent read FOnHint write FOnHint;
+    property OnShowHint: TShowHintEvent read FOnShowHint write FOnShowHint;
+  protected
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   end;
 
 type
@@ -497,6 +571,8 @@ var
   Screen: TScreen;
   { controls-standard.md UIF-730: WM_TIMER at the application window goes here (set by ExtCtrls) }
   TimerHook: TTimerHook;
+  { actions-menus.md UIF-948: the class of the application's hint window }
+  HintWindowClass: THintWindowClass;
 
 { application-forms.md 4.2: the form at the top of the parent chain (TopForm), or the nearest one; nil if none }
 function GetParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
@@ -512,7 +588,11 @@ function LayoutDumpString(const S: string): string;
 implementation
 
 uses
-  RTLConsts;
+  RTLConsts, ActnList;
+
+type
+  { protected access to Action (local descendant) }
+  TControlAccess = class(TControl);
 
 function GetParentForm(Control: TControl; TopForm: Boolean): TCustomForm;
 begin
@@ -604,6 +684,9 @@ end;
 
 const
   AppClassName = 'PN.Application';
+  { UIF-946: reserved ids of the hint timers at the application window (TTimer ids count up from 1) }
+  HintPauseTimer = UINT_PTR($7FFFFF01);
+  HintHideTimer = UINT_PTR($7FFFFF02);
   ShellManifestResource = 124;                               { RTL-871 }
 
 { the message-only window: CM_RELEASE of forms without a window (UIF-443); exceptions never unwind into Win32 }
@@ -614,7 +697,9 @@ begin
     CheckSynchronize(0)                                      { UIF-412: WakeMainThread }
   else if Msg = WM_TIMER then
   begin
-    if Assigned(TimerHook) then
+    if (UINT_PTR(WParam) = HintPauseTimer) or (UINT_PTR(WParam) = HintHideTimer) then
+      Application.HintTimer(UINT_PTR(WParam))                { UIF-946 }
+    else if Assigned(TimerHook) then
       TimerHook(UINT_PTR(WParam));                           { UIF-730 }
   end
   else if Msg = CM_RELEASE then
@@ -1844,6 +1929,25 @@ begin
   end;
 end;
 
+{ UIF-942: Application.Hint follows the highlighted menu item; cleared when the menu closes }
+procedure MenuSelectHint(Menu: TMainMenu; WParam: WPARAM; LParam: LPARAM);
+var
+  Item: TMenuItem;
+begin
+  Item := nil;
+  if not ((HiWord(WParam) = $FFFF) and (LParam = 0)) then
+  begin
+    if Menu <> nil then
+      Item := Menu.FindMenuSelectItem(WParam, LParam);
+    if Item = nil then
+      Item := FindPopupMenuSelectItem(WParam, LParam);
+  end;
+  if Item = nil then
+    Application.Hint := ''
+  else
+    Application.Hint := GetLongHint(Item.Hint);
+end;
+
 procedure TCustomForm.WndProc(var Message: TMessage);
 begin
   case Message.Msg of
@@ -1883,6 +1987,13 @@ begin
     WM_ACTIVATEAPP:
       begin
         Application.FActive := Message.WParam <> 0;
+        if not Application.FActive then
+          Application.CancelHint;                            { UIF-943 }
+        inherited WndProc(Message);
+      end;
+    WM_MENUSELECT:
+      begin
+        MenuSelectHint(FMenu, Message.WParam, Message.LParam);    { UIF-942 }
         inherited WndProc(Message);
       end;
   else
@@ -1991,8 +2102,98 @@ begin
 end;
 
 function TCustomForm.IsShortCut(var Message: TWMKey): Boolean;
+var
+  SC: TShortCut;
+  C: TControl;
+  I: Integer;
 begin
   Result := False;
+  case Message.CharCode of
+    VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN:
+      Exit;
+  end;
+  SC := Menus.ShortCut(Message.CharCode, KeyDataToShiftState(Message.KeyData));
+  if SC = 0 then
+    Exit;
+  { (1) pop-up menus of the focused control and its parents, up to and including the form }
+  C := FActiveControl;
+  if C = nil then
+    C := Self;
+  while C <> nil do
+  begin
+    if (C.PopupMenu <> nil) and C.PopupMenu.DispatchShortCut(SC) then
+    begin
+      Result := True;
+      Exit;
+    end;
+    if C = Self then
+      Break;
+    C := C.Parent;
+  end;
+  { (2) the main menu }
+  if (FMenu <> nil) and FMenu.DispatchShortCut(SC) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  { (3) the action lists owned by the form, in component order }
+  for I := 0 to ComponentCount - 1 do
+    if (Components[I] is TCustomActionList) and TCustomActionList(Components[I]).IsShortCut(Message) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  { (4) the main form }
+  if (Application.MainForm <> nil) and (Application.MainForm <> Self) and (Application.ModalLevel = 0)
+    and Application.MainForm.Enabled then
+    Result := Application.MainForm.IsShortCut(Message);
+end;
+
+procedure AddAction(List: TList; A: TBasicAction);
+begin
+  if (A <> nil) and (List.IndexOf(Pointer(A)) < 0) then
+    List.Add(Pointer(A));
+end;
+
+{ UIF-910 (a): the actions of the showing controls of the tree }
+procedure CollectActions(Parent: TWinControl; List: TList);
+var
+  I: Integer;
+  C: TControl;
+begin
+  for I := 0 to Parent.ControlCount - 1 do
+  begin
+    C := Parent.Controls[I];
+    if not C.Showing then
+      Continue;
+    AddAction(List, TControlAccess(C).Action);
+    if C is TWinControl then
+      CollectActions(TWinControl(C), List);
+  end;
+end;
+
+procedure TCustomForm.UpdateActions;
+var
+  List: TList;
+  I: Integer;
+begin
+  List := TList.Create;
+  try
+    if Showing then
+      AddAction(List, TControlAccess(Self).Action);
+    CollectActions(Self, List);
+    if FMenu <> nil then
+      for I := 0 to FMenu.Items.Count - 1 do
+        AddAction(List, FMenu.Items[I].Action);
+    for I := 0 to List.Count - 1 do
+      try
+        TBasicAction(List[I]).Update;
+      except
+        Application.HandleException(Self);                   { UIF-463 }
+      end;
+  finally
+    List.Free;
+  end;
 end;
 
 { UIF-115 step 3, Return/Escape: offered to every control of the tree, depth-first in z-order, until one answers }
@@ -2685,6 +2886,11 @@ var
 begin
   inherited Create(AOwner);
   FShowMainForm := True;
+  FShowHint := True;
+  FHintPause := 500;
+  FHintHidePause := 2500;
+  FHintShortPause := 50;
+  FHintColor := clInfoBk;
   FTitle := ChangeFileExt(ExtractFileName(ParamStr(0)), '');
   FNonInteractive := GetEnvironmentVariable('FXC_UI_NONINTERACTIVE') = '1';
   { layout.md UIF-310 }
@@ -2771,6 +2977,7 @@ end;
 
 destructor TApplication.Destroy;
 begin
+  SetHintControl(nil);
   if FHandle <> 0 then
     DestroyWindow(FHandle);
   FHandle := 0;
@@ -2943,6 +3150,7 @@ begin
     FOnMessage(Msg, Handled);
   if Handled or (Msg.hwnd = 0) then
     Exit;
+  IsHintMsg(Msg);
   { Escape while a control holds the mouse capture cancels that mode (a splitter drag, UIF-763) }
   if (Msg.message = WM_KEYDOWN) and (Msg.wParam = VK_ESCAPE) and (GetCaptureControl <> nil) then
   begin
@@ -2971,10 +3179,38 @@ begin
     Idle(Msg);
 end;
 
+{ UIF-412 step 3: UpdateActions on every visible form in z-order, front to back }
+procedure UpdateFormActions;
+var
+  I, N: Integer;
+  W: HWND;
+  C: TWinControl;
+begin
+  W := 0;
+  for I := 0 to Screen.CustomFormCount - 1 do
+    if Screen.CustomForms[I].HandleAllocated then
+    begin
+      W := GetWindow(Screen.CustomForms[I].Handle, GW_HWNDFIRST);
+      Break;
+    end;
+  N := 0;
+  while (W <> 0) and (N < 100000) do
+  begin
+    C := FindControl(W);
+    W := GetWindow(W, GW_HWNDNEXT);
+    Inc(N);
+    if (C is TCustomForm) and C.Visible then
+      TCustomForm(C).UpdateActions;
+  end;
+end;
+
 procedure TApplication.Idle(const Msg: TMsg);
 var
   Done: Boolean;
 begin
+  { step 1: a hint whose control is no longer showing is hidden (UIF-943) }
+  if HintVisible and ((FHintControl = nil) or not FHintControl.Showing) then
+    HideHint;
   Done := True;
   if Assigned(FOnIdle) then
     try
@@ -2982,6 +3218,9 @@ begin
     except
       HandleException(Self);                                 { UIF-463 }
     end;
+  { step 3: the visible forms, front to back }
+  if Done then
+    UpdateFormActions;
   { step 4 }
   if CheckSynchronize(0) then
     Done := False;
@@ -2995,6 +3234,323 @@ begin
     PostMessageW(FHandle, WM_NULL, 0, 0);
 end;
 
+{ ---------------------------------------------------------------- hints (actions-menus.md section 4) }
+
+procedure HintMouseControlChanged(Control: TControl);
+begin
+  if Application <> nil then
+    Application.MouseControlChanged(Control);
+end;
+
+procedure HintMenuSelect(Item: TMenuItem);
+begin
+  if Application = nil then
+    Exit;
+  if Item = nil then
+    Application.Hint := ''
+  else
+    Application.Hint := GetLongHint(Item.Hint);
+end;
+
+{ UIF-941: own ShowHint unless ParentShowHint, then the parent's effective value; a form (no parent): its own }
+function EffectiveShowHint(C: TControl): Boolean;
+begin
+  while C.ParentShowHint and (C.Parent <> nil) do
+    C := C.Parent;
+  Result := C.ShowHint;
+end;
+
+{ the monitor of a screen point (nearest) }
+function HintMonitor(const P: TPoint): TMonitor;
+begin
+  Result := Screen.MonitorOf(MonitorFromPoint(P, MONITOR_DEFAULTTONEAREST));
+end;
+
+procedure TApplication.SetHint(const Value: string);
+begin
+  if FHint = Value then
+    Exit;
+  FHint := Value;
+  if Assigned(FOnHint) then
+    try
+      FOnHint(Self);
+    except
+      HandleException(Self);                                 { UIF-463 }
+    end;
+end;
+
+procedure TApplication.SetHintControl(Value: TControl);
+begin
+  if FHintControl = Value then
+    Exit;
+  if FHintControl <> nil then
+    FHintControl.RemoveFreeNotification(Self);
+  FHintControl := Value;
+  if FHintControl <> nil then
+    FHintControl.FreeNotification(Self);
+end;
+
+procedure TApplication.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if Operation <> opRemove then
+    Exit;
+  if AComponent = FHintControl then
+  begin
+    FHintControl := nil;
+    CancelHint;                                              { UIF-943: the control is destroyed }
+  end;
+  if AComponent = FHintWindow then
+    FHintWindow := nil;
+end;
+
+function TApplication.HintVisible: Boolean;
+begin
+  Result := (FHintWindow <> nil) and FHintWindow.HandleAllocated and IsWindowVisible(FHintWindow.Handle);
+end;
+
+function TApplication.HintAllowed(C: TControl): Boolean;
+begin
+  Result := FShowHint and (C <> nil) and EffectiveShowHint(C) and FActive and (GetKeyState(VK_LBUTTON) >= 0)
+    and (GetKeyState(VK_RBUTTON) >= 0) and (GetKeyState(VK_MBUTTON) >= 0);
+end;
+
+procedure TApplication.MouseControlChanged(Control: TControl);
+var
+  H: TControl;
+  Pause: Integer;
+begin
+  H := Control;
+  while (H <> nil) and (H.Hint = '') do
+    H := H.Parent;
+  if H <> FHintControl then
+  begin
+    CancelHint;                                              { the mouse left the hint control }
+    SetHintControl(H);
+    if (H <> nil) and HintAllowed(H) and (FHandle <> 0) then
+    begin
+      Pause := FHintPause;
+      if (FHintHiddenAt <> 0) and (GetTickCount64 - FHintHiddenAt <= UInt64(FHintShortPause + 100)) then
+        Pause := FHintShortPause;
+      if Pause < 1 then
+        Pause := 1;
+      SetTimer(FHandle, HintPauseTimer, Pause, nil);
+    end;
+  end;
+  if H = nil then
+    Hint := ''
+  else
+    Hint := GetLongHint(H.Hint);
+end;
+
+procedure TApplication.IsHintMsg(const Msg: TMsg);
+begin
+  case Msg.message of
+    WM_KEYFIRST..WM_KEYLAST, WM_LBUTTONDOWN..WM_MBUTTONDBLCLK, WM_XBUTTONDOWN..WM_XBUTTONDBLCLK,
+    WM_NCLBUTTONDOWN..WM_NCMBUTTONDBLCLK:
+      CancelHint;
+  end;
+end;
+
+procedure TApplication.HintTimer(ID: UINT_PTR);
+var
+  P: TPoint;
+begin
+  KillTimer(FHandle, ID);
+  if ID = HintHideTimer then
+    HideHint
+  else
+  begin
+    GetCursorPos(P);
+    ActivateHint(P);
+  end;
+end;
+
+procedure TApplication.HideHint;
+begin
+  if FHandle <> 0 then
+    KillTimer(FHandle, HintHideTimer);
+  if HintVisible then
+  begin
+    FHintWindow.Visible := False;
+    FHintHiddenAt := GetTickCount64;
+  end;
+end;
+
+procedure TApplication.CancelHint;
+begin
+  if FHandle <> 0 then
+    KillTimer(FHandle, HintPauseTimer);
+  HideHint;
+end;
+
+{ UIF-943 (expiry), UIF-945 }
+procedure TApplication.ActivateHint(CursorPos: TPoint);
+var
+  Info: THintInfo;
+  HintStr: string;
+  CanShow: Boolean;
+  Mon: TMonitor;
+  DPI, W, H: Integer;
+  R, Work: TRect;
+  A: TBasicAction;
+begin
+  if FHandle <> 0 then
+    KillTimer(FHandle, HintPauseTimer);
+  if not HintAllowed(FHintControl) then
+    Exit;
+  Mon := HintMonitor(CursorPos);
+  DPI := Mon.PixelsPerInch;
+  Info.HintControl := FHintControl;
+  Info.HintPos := Point(CursorPos.X, CursorPos.Y + LayoutMulDiv(20, DPI, 96));
+  Info.HintMaxWidth := (Mon.BoundsRect.Right - Mon.BoundsRect.Left) div 4;
+  Info.HintColor := FHintColor;
+  Info.HintStr := GetShortHint(FHintControl.Hint);
+  Info.ReshowTimeout := 0;
+  Info.HideTimeout := FHintHidePause;
+  HintStr := '';
+  CanShow := False;
+  try
+    CanShow := FHintControl.Perform(CM_HINTSHOW, 0, LPARAM(@Info)) = 0;
+    HintStr := Info.HintStr;
+    if CanShow then
+    begin
+      A := TControlAccess(FHintControl).Action;
+      if A is TCustomAction then
+        CanShow := TCustomAction(A).DoHint(HintStr);
+    end;
+    if CanShow and Assigned(FOnShowHint) then
+      FOnShowHint(HintStr, CanShow, Info);
+  except
+    CanShow := False;
+    HandleException(Self);                                   { UIF-463 }
+  end;
+  if not CanShow or (HintStr = '') or (FHintControl = nil) then
+  begin
+    HideHint;
+    Exit;
+  end;
+  if FHintWindow = nil then
+  begin
+    FHintWindow := HintWindowClass.Create(Self);
+    FHintWindow.FreeNotification(Self);
+  end;
+  FHintWindow.Color := Info.HintColor;
+  R := FHintWindow.CalcHintRect(Info.HintMaxWidth, HintStr, nil);
+  W := R.Right - R.Left;
+  H := R.Bottom - R.Top;
+  R := Bounds(Info.HintPos.X, Info.HintPos.Y, W, H);
+  { inside the work area of the cursor's monitor; above the cursor if it would cover it }
+  Work := Mon.WorkareaRect;
+  if R.Right > Work.Right then
+    OffsetRect(R, Work.Right - R.Right, 0);
+  if R.Left < Work.Left then
+    OffsetRect(R, Work.Left - R.Left, 0);
+  if R.Bottom > Work.Bottom then
+    OffsetRect(R, 0, Work.Bottom - R.Bottom);
+  if R.Top < Work.Top then
+    OffsetRect(R, 0, Work.Top - R.Top);
+  if PtInRect(R, CursorPos) then
+    R := Bounds(R.Left, CursorPos.Y - LayoutMulDiv(2, DPI, 96) - H, W, H);
+  FHintWindow.ActivateHint(R, HintStr);
+  if Info.HideTimeout > 0 then
+    SetTimer(FHandle, HintHideTimer, Info.HideTimeout, nil)
+  else
+    KillTimer(FHandle, HintHideTimer);
+end;
+
+{ ---------------------------------------------------------------- THintWindow }
+
+constructor THintWindow.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  Visible := False;
+  Color := clInfoBk;
+end;
+
+procedure THintWindow.CreateParams(var Params: TCreateParams);
+const
+  WinClass = 'PN.HintWindow';
+var
+  I: Integer;
+begin
+  inherited CreateParams(Params);
+  Params.Style := WS_POPUP or WS_BORDER;
+  Params.ExStyle := WS_EX_TOOLWINDOW or WS_EX_TOPMOST or WS_EX_NOACTIVATE;
+  Params.WndParent := 0;
+  for I := 1 to Length(WinClass) do
+    Params.WinClassName[I - 1] := WinClass[I];
+  Params.WinClassName[Length(WinClass)] := #0;
+end;
+
+{ the mouse passes through to the window below (the hint never becomes the control under the mouse) }
+procedure THintWindow.WndProc(var Message: TMessage);
+begin
+  if Message.Msg = WM_NCHITTEST then
+    Message.Result := HTTRANSPARENT
+  else
+    inherited WndProc(Message);
+end;
+
+function THintWindow.MarginX: Integer;
+begin
+  Result := LayoutMulDiv(4, Screen.HintFont.PixelsPerInch, 96);
+end;
+
+function THintWindow.MarginY: Integer;
+begin
+  Result := LayoutMulDiv(2, Screen.HintFont.PixelsPerInch, 96);
+end;
+
+function THintWindow.CalcHintRect(MaxWidth: Integer; const AHint: string; AData: Pointer): TRect;
+var
+  DC: HDC;
+  Old: HGDIOBJ;
+  R: TRect;
+begin
+  R := Rect(0, 0, MaxWidth, 0);
+  DC := GetDC(0);
+  try
+    Old := SelectObject(DC, Screen.HintFont.Handle);
+    DrawTextW(DC, PChar(AHint), Length(AHint), R, DT_CALCRECT or DT_NOPREFIX or DT_WORDBREAK);
+    SelectObject(DC, Old);
+  finally
+    ReleaseDC(0, DC);
+  end;
+  { the text, the inner margins and the 1 px border of WS_BORDER on each side }
+  Result := Rect(0, 0, R.Right + 2 * MarginX + 2, R.Bottom + 2 * MarginY + 2);
+end;
+
+procedure THintWindow.ActivateHint(Rect: TRect; const AHint: string);
+begin
+  Caption := AHint;
+  SetBounds(Rect.Left, Rect.Top, Rect.Right - Rect.Left, Rect.Bottom - Rect.Top);
+  HandleNeeded;
+  Visible := True;
+  Invalidate;
+end;
+
+procedure THintWindow.ReleaseHandle;
+begin
+  DestroyHandle;
+end;
+
+procedure THintWindow.Paint;
+var
+  R: TRect;
+  S: string;
+begin
+  R := ClientRect;
+  Canvas.Brush.Color := Color;
+  Canvas.FillRect(R);
+  Canvas.Font := Screen.HintFont;
+  Canvas.Font.Color := clInfoText;
+  Canvas.Brush.Style := bsClear;
+  InflateRect(R, -MarginX, -MarginY);
+  S := Caption;
+  DrawTextW(Canvas.Handle, PChar(S), Length(S), R, DT_NOPREFIX or DT_WORDBREAK);
+end;
+
 { UIF-400: the remaining forms in reverse creation order, then Screen, then Application }
 procedure DestroyGlobals;
 var
@@ -3002,6 +3558,8 @@ var
 begin
   FindGlobalComponent := nil;
   Classes.WakeMainThread := nil;
+  MouseControlHook := nil;
+  MenuSelectHook := nil;
   for I := Screen.CustomFormCount - 1 downto 0 do
     if I < Screen.CustomFormCount then
       Screen.CustomForms[I].Free;
@@ -3021,6 +3579,9 @@ initialization
   FindGlobalComponent := FormsFindGlobalComponent;
   Classes.WakeMainThread := Application.WakeMainThread;
   FocusRootClass := TCustomForm;
+  HintWindowClass := THintWindow;
+  MouseControlHook := HintMouseControlChanged;
+  MenuSelectHook := HintMenuSelect;
   RegisterClasses([TForm, TScrollBox]);
 
 finalization

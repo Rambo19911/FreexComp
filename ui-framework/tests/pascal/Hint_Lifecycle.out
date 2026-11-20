@@ -1,0 +1,94 @@
+# short and long parts (UIF-940)
+ok short part
+ok long part
+ok no bar: short = whole
+ok no bar: long = whole
+ok first bar splits (short)
+ok first bar splits (long)
+ok empty short part
+ok empty hint
+# defaults (application-forms.md 2.1)
+ok Hint
+ok ShowHint
+ok HintPause
+ok HintHidePause
+ok HintShortPause
+ok HintColor clInfoBk
+ok HintWindowClass
+ok no hint window before the first hint
+ok application active (WM_ACTIVATEAPP)
+# effective hint control and Application.Hint (UIF-941, UIF-942)
+ok a child without Hint: the parent's long hint
+ok OnHint fired once
+ok same hint text: no OnHint
+ok no bar: the whole hint
+ok graphic control under the mouse
+ok no hint up the chain: cleared
+ok Application.Hint does not depend on ShowHint
+# conditions (UIF-941, UIF-943)
+ok ParentShowHint with a parent whose ShowHint is False: no hint
+ok own ShowHint False: no hint
+ok Application.ShowHint False: no hint
+ok inactive application: no hint
+# window (UIF-944, UIF-945, UIF-947, UIF-948)
+ok ActivateHint shows at once
+ok owned by Application
+ok the short hint
+ok window class
+ok WS_POPUP or WS_BORDER
+ok not a child window
+ok WS_EX_TOOLWINDOW, TOPMOST, NOACTIVATE
+ok never the foreground window
+ok background HintColor
+ok CalcHintRect at (0, 0)
+ok below the cursor by s(20), CalcHintRect size
+ok painted background clInfoBk
+ok transparent to the mouse
+ok kept inside the work area (right edge)
+ok would cover the cursor: above it
+ok inside the work area
+ok HideHint
+# CM_HINTSHOW, action OnHint, OnShowHint (UIF-943)
+ok the button keeps its own Hint
+ok order: CM_HINTSHOW, action OnHint, OnShowHint
+ok the text after the handlers
+ok HintPos from OnShowHint (left)
+ok HintPos from OnShowHint (top)
+ok OnShowHint CanShow False: hidden
+ok action OnHint CanShow False: OnShowHint not called
+ok action OnHint cancels
+ok CM_HINTSHOW result <> 0 cancels
+ok no window
+# timers (UIF-943, UIF-946)
+ok not at once
+ok shown after HintPause
+ok text
+ok hidden on a key message
+ok shown again after moving to another control
+ok hidden on a mouse button message
+ok shown
+ok hidden when the mouse leaves
+ok Application.Hint cleared when the mouse leaves
+ok shown
+ok hidden when the application deactivates
+ok shown
+ok hidden at idle once the control is hidden
+ok shown over a new control
+ok hidden when the control is destroyed
+ok Application.Hint cleared
+ok shown
+ok hidden after HintHidePause
+ok a hint is visible
+ok moving on hides it
+ok the next control's hint after HintShortPause (HintPause is 60 s)
+ok the new control's short hint
+ok CancelHint
+# menu hints (UIF-942)
+ok highlighted command: its long hint
+ok highlighted sub-menu entry (by position)
+ok menu closed: cleared
+ok OnHint on every change
+ok pop-up menu item
+ok pop-up menu closed: cleared
+ok the hint window belongs to Application
+# passed 85 failed 0

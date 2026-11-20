@@ -5,7 +5,7 @@ unit Menus;
 interface
 
 uses
-  Windows, Messages, SysUtils, Classes, Graphics, ImgList, UIConsts;
+  Windows, Messages, SysUtils, Classes, Graphics, ImgList, ActnList, UIConsts;
 
 type
   { the same type as Classes.TShortCut (actions-menus.md section 3) }
@@ -22,6 +22,31 @@ type
   TFindItemKind = (fkCommand, fkHandle);
 
   TMenu = class;
+  TMenuItem = class;
+
+  { actions-menus.md section 1.2: every linkable property of a menu item (UIF-905) }
+  TMenuActionLink = class(TActionLink)
+  protected
+    FClient: TMenuItem;
+    procedure AssignClient(AClient: TObject); override;
+    function IsCaptionLinked: Boolean; override;
+    function IsCheckedLinked: Boolean; override;
+    function IsEnabledLinked: Boolean; override;
+    function IsHintLinked: Boolean; override;
+    function IsImageIndexLinked: Boolean; override;
+    function IsShortCutLinked: Boolean; override;
+    function IsVisibleLinked: Boolean; override;
+    function IsOnExecuteLinked: Boolean; override;
+    procedure SetCaption(const Value: string); override;
+    procedure SetChecked(Value: Boolean); override;
+    procedure SetEnabled(Value: Boolean); override;
+    procedure SetHint(const Value: string); override;
+    procedure SetImageIndex(Value: Integer); override;
+    procedure SetShortCut(Value: TShortCut); override;
+    procedure SetVisible(Value: Boolean); override;
+    procedure SetOnExecute(Value: TNotifyEvent); override;
+  end;
+  TMenuActionLinkClass = class of TMenuActionLink;
 
   { controls-standard.md section 12 }
   TMenuItem = class(TComponent)
@@ -45,6 +70,9 @@ type
     FShortCut: TShortCut;
     FVisible: Boolean;
     FOnClick: TNotifyEvent;
+    FActionLink: TMenuActionLink;
+    function GetAction: TBasicAction;
+    procedure SetAction(Value: TBasicAction);
     function GetCount: Integer;
     function GetItem(Index: Integer): TMenuItem;
     function GetHandle: HMENU;
@@ -64,6 +92,12 @@ type
     procedure InsertNative(Child: TMenuItem; Position: Integer);
     procedure TurnSiblingsOff;
   protected
+    { actions-menus.md UIF-906: copies the action's values (CheckDefaults: only into properties at their default) }
+    procedure ActionChange(Sender: TObject; CheckDefaults: Boolean); virtual;
+    function GetActionLinkClass: TMenuActionLinkClass; virtual;
+    procedure Loaded; override;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    property ActionLink: TMenuActionLink read FActionLink;
     procedure MenuChanged;
     procedure RebuildHandle;
     procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
@@ -80,7 +114,10 @@ type
     procedure Clear;
     function IndexOf(Item: TMenuItem): Integer;
     function Find(ACaption: string): TMenuItem;
+    { UIF-722, UIF-909 }
     procedure Click; virtual;
+    { UIF-911: Update on the actions linked to this item's children }
+    procedure UpdateChildActions;
     function GetParentMenu: TMenu;
     function IsLine: Boolean;
     function HandleAllocated: Boolean;
@@ -91,6 +128,7 @@ type
     property Command: Word read FCommand;
     property Handle: HMENU read GetHandle;
   published
+    property Action: TBasicAction read GetAction write SetAction;
     property AutoCheck: Boolean read FAutoCheck write FAutoCheck default False;
     property Break: TMenuBreak read FBreak write SetBreak default mbNone;
     property Caption: string read FCaption write SetCaption;
@@ -132,6 +170,10 @@ type
     function DispatchCommand(ACommand: Word): Boolean;
     { UIF-723: WM_INITMENUPOPUP for one of this menu's sub-menus; False if the handle is not one of them }
     function DispatchPopup(AHandle: HMENU): Boolean;
+    { UIF-922: Click on the first available item (depth-first, display order) with this shortcut; False if none }
+    function DispatchShortCut(AShortCut: TShortCut): Boolean;
+    { UIF-942: the item of a WM_MENUSELECT (a command id, or a sub-menu entry by position); nil if not in this menu }
+    function FindMenuSelectItem(WParam: WPARAM; LParam: LPARAM): TMenuItem;
     property Items: TMenuItem read FItems;
     property Handle: HMENU read GetHandle;
   end;
@@ -191,6 +233,16 @@ function PopupListWindow: HWND;
 
 { UIF-722: Click on the item with this Command id of any existing TPopupMenu; False if none has it }
 function DispatchPopupCommand(ACommand: Word): Boolean;
+{ UIF-942: the item of a WM_MENUSELECT in any existing TPopupMenu; nil if none }
+function FindPopupMenuSelectItem(WParam: WPARAM; LParam: LPARAM): TMenuItem;
+
+type
+  { UIF-942: a menu item was highlighted (nil: the menu closed) }
+  TMenuSelectHook = procedure(Item: TMenuItem);
+
+var
+  { UIF-942: WM_MENUSELECT of the pop-up owner window goes here (set by Forms) }
+  MenuSelectHook: TMenuSelectHook;
 
 implementation
 
@@ -406,6 +458,11 @@ destructor TMenuItem.Destroy;
 var
   Child: TMenuItem;
 begin
+  if FActionLink <> nil then
+  begin
+    FActionLink.Free;
+    FActionLink := nil;
+  end;
   if FParent <> nil then
     FParent.Remove(Self);
   ClearNative;
@@ -597,7 +654,7 @@ begin
     Proc(Items[I]);
 end;
 
-{ UIF-722 (actions: U-077) }
+{ UIF-722; UIF-909: the linked action runs unless OnClick is the item's own handler }
 procedure TMenuItem.Click;
 begin
   if not FEnabled then
@@ -609,8 +666,189 @@ begin
     else
       Checked := not FChecked;
   end;
-  if Assigned(FOnClick) then
+  if (FActionLink <> nil) and (FActionLink.Action <> nil) and (not Assigned(FOnClick)
+    or SameEvent(FOnClick, FActionLink.Action.OnExecute)) then
+    FActionLink.Execute(Self)
+  else if Assigned(FOnClick) then
     FOnClick(Self);
+end;
+
+procedure TMenuItem.UpdateChildActions;
+var
+  I: Integer;
+begin
+  for I := 0 to Count - 1 do
+    if Items[I].FActionLink <> nil then
+      Items[I].FActionLink.Update;
+end;
+
+function TMenuItem.GetAction: TBasicAction;
+begin
+  if FActionLink = nil then
+    Result := nil
+  else
+    Result := FActionLink.Action;
+end;
+
+function TMenuItem.GetActionLinkClass: TMenuActionLinkClass;
+begin
+  Result := TMenuActionLink;
+end;
+
+{ UIF-906; UIF-908: while loading only the link is made (Loaded copies) }
+procedure TMenuItem.SetAction(Value: TBasicAction);
+begin
+  if GetAction = Value then
+    Exit;
+  if FActionLink <> nil then
+  begin
+    if FActionLink.Action <> nil then
+      FActionLink.Action.RemoveFreeNotification(Self);
+    FActionLink.Free;
+    FActionLink := nil;
+  end;
+  if Value = nil then
+    Exit;
+  FActionLink := GetActionLinkClass.Create(Self);
+  FActionLink.Action := Value;
+  Value.FreeNotification(Self);
+  if not (csLoading in ComponentState) then
+    ActionChange(Value, True);
+end;
+
+procedure TMenuItem.ActionChange(Sender: TObject; CheckDefaults: Boolean);
+var
+  A: TCustomAction;
+begin
+  if Sender is TCustomAction then
+  begin
+    A := TCustomAction(Sender);
+    if not CheckDefaults or (FCaption = '') or (FCaption = Name) then
+      Caption := A.Caption;
+    if not CheckDefaults or not FChecked then
+      Checked := A.Checked;
+    if not CheckDefaults or FEnabled then
+      Enabled := A.Enabled;
+    if not CheckDefaults or (FHint = '') then
+      FHint := A.Hint;
+    if not CheckDefaults or (FImageIndex = -1) then
+      ImageIndex := A.ImageIndex;
+    if not CheckDefaults or (FShortCut = 0) then
+      ShortCut := A.ShortCut;
+    if not CheckDefaults or FVisible then
+      Visible := A.Visible;
+  end;
+  if (Sender is TBasicAction) and (not CheckDefaults or not Assigned(FOnClick)) then
+    FOnClick := TBasicAction(Sender).OnExecute;
+end;
+
+procedure TMenuItem.Loaded;
+begin
+  inherited Loaded;
+  if (FActionLink <> nil) and (FActionLink.Action <> nil) then
+  begin
+    FActionLink.RecordValues;                                { UIF-908 }
+    ActionChange(FActionLink.Action, True);
+  end;
+end;
+
+{ UIF-912: a freed action (it unregistered the link first) leaves the copied values alone }
+procedure TMenuItem.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (Operation = opRemove) and (FActionLink <> nil) and ((FActionLink.Action = AComponent)
+    or (FActionLink.Action = nil)) then
+  begin
+    FActionLink.Free;
+    FActionLink := nil;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TMenuActionLink }
+
+procedure TMenuActionLink.AssignClient(AClient: TObject);
+begin
+  FClient := TMenuItem(AClient);
+end;
+
+function TMenuActionLink.IsCaptionLinked: Boolean;
+begin
+  Result := FClient.FCaption = FCaption;
+end;
+
+function TMenuActionLink.IsCheckedLinked: Boolean;
+begin
+  Result := FClient.FChecked = FChecked;
+end;
+
+function TMenuActionLink.IsEnabledLinked: Boolean;
+begin
+  Result := FClient.FEnabled = FEnabled;
+end;
+
+function TMenuActionLink.IsHintLinked: Boolean;
+begin
+  Result := FClient.FHint = FHint;
+end;
+
+function TMenuActionLink.IsImageIndexLinked: Boolean;
+begin
+  Result := FClient.FImageIndex = FImageIndex;
+end;
+
+function TMenuActionLink.IsShortCutLinked: Boolean;
+begin
+  Result := FClient.FShortCut = FShortCut;
+end;
+
+function TMenuActionLink.IsVisibleLinked: Boolean;
+begin
+  Result := FClient.FVisible = FVisible;
+end;
+
+function TMenuActionLink.IsOnExecuteLinked: Boolean;
+begin
+  Result := SameEvent(FClient.FOnClick, FOnExecute);
+end;
+
+procedure TMenuActionLink.SetCaption(const Value: string);
+begin
+  FClient.Caption := Value;
+end;
+
+procedure TMenuActionLink.SetChecked(Value: Boolean);
+begin
+  FClient.Checked := Value;
+end;
+
+procedure TMenuActionLink.SetEnabled(Value: Boolean);
+begin
+  FClient.Enabled := Value;
+end;
+
+procedure TMenuActionLink.SetHint(const Value: string);
+begin
+  FClient.FHint := Value;
+end;
+
+procedure TMenuActionLink.SetImageIndex(Value: Integer);
+begin
+  FClient.ImageIndex := Value;
+end;
+
+procedure TMenuActionLink.SetShortCut(Value: TShortCut);
+begin
+  FClient.ShortCut := Value;
+end;
+
+procedure TMenuActionLink.SetVisible(Value: Boolean);
+begin
+  FClient.Visible := Value;
+end;
+
+procedure TMenuActionLink.SetOnExecute(Value: TNotifyEvent);
+begin
+  FClient.FOnClick := Value;
 end;
 
 { ---- property setters: a changed entry rebuilds the parent's native menu (UIF-720) }
@@ -935,8 +1173,8 @@ begin
     Item.Click;
 end;
 
-{ UIF-723: the owning item's OnClick first (update hook), then the native menu is refreshed; linked actions of
-  the children are updated with the action links (U-077) }
+{ UIF-723: the owning item's OnClick first (update hook), then the children's linked actions (UIF-911), then the
+  native menu is refreshed }
 function TMenu.DispatchPopup(AHandle: HMENU): Boolean;
 var
   Item: TMenuItem;
@@ -947,7 +1185,115 @@ begin
     Exit;
   if Assigned(Item.FOnClick) then
     Item.FOnClick(Item);
+  Item.UpdateChildActions;
   Item.RebuildHandle;
+end;
+
+{ UIF-922: the item and every ancestor below the root are enabled and visible }
+function ItemAvailable(Item: TMenuItem): Boolean;
+begin
+  Result := True;
+  while Item.FParent <> nil do
+  begin
+    if not (Item.FEnabled and Item.FVisible) then
+    begin
+      Result := False;
+      Exit;
+    end;
+    Item := Item.FParent;
+  end;
+end;
+
+{ UIF-922: the ancestors' OnClick hooks (root first), then the actions linked to the ancestors and the item }
+procedure PrepareShortCut(Item: TMenuItem);
+var
+  Chain: TList;
+  I: Integer;
+  P: TMenuItem;
+begin
+  Chain := TList.Create;
+  try
+    P := Item.FParent;
+    while P <> nil do
+    begin
+      Chain.Insert(0, Pointer(P));
+      P := P.FParent;
+    end;
+    for I := 0 to Chain.Count - 1 do
+    begin
+      P := TMenuItem(Chain[I]);
+      if Assigned(P.FOnClick) then
+        P.FOnClick(P);
+    end;
+    for I := 0 to Chain.Count - 1 do
+      if TMenuItem(Chain[I]).FActionLink <> nil then
+        TMenuItem(Chain[I]).FActionLink.Update;
+    if Item.FActionLink <> nil then
+      Item.FActionLink.Update;
+  finally
+    Chain.Free;
+  end;
+end;
+
+function ShortCutIn(Item: TMenuItem; AShortCut: TShortCut): Boolean;
+var
+  I: Integer;
+  C: TMenuItem;
+begin
+  Result := False;
+  for I := 0 to Item.Count - 1 do
+  begin
+    C := Item.Items[I];
+    if C.FShortCut = AShortCut then
+    begin
+      PrepareShortCut(C);
+      if (C.FShortCut = AShortCut) and ItemAvailable(C) then
+      begin
+        C.Click;
+        Result := True;
+        Exit;
+      end;
+    end;
+    if ShortCutIn(C, AShortCut) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function TMenu.DispatchShortCut(AShortCut: TShortCut): Boolean;
+begin
+  Result := (AShortCut <> 0) and ShortCutIn(FItems, AShortCut);
+end;
+
+function TMenu.FindMenuSelectItem(WParam: WPARAM; LParam: LPARAM): TMenuItem;
+var
+  P: TMenuItem;
+  I, Position: Integer;
+begin
+  Result := nil;
+  if (HiWord(WParam) and MF_POPUP) = 0 then
+  begin
+    Result := FindItem(LoWord(WParam), fkCommand);
+    if Result = FItems then
+      Result := nil;
+    Exit;
+  end;
+  P := FindItem(NativeUInt(LParam), fkHandle);
+  if P = nil then
+    Exit;
+  Position := 0;
+  for I := 0 to P.Count - 1 do
+    if P.Items[I].FVisible then
+    begin
+      if Position = LoWord(WParam) then
+      begin
+        Result := P.Items[I];
+        Exit;
+      end;
+      Inc(Position);
+    end;
 end;
 
 { every existing native menu of the tree is rebuilt (item bitmaps) }
@@ -1046,11 +1392,33 @@ begin
     end;
 end;
 
-{ WM_COMMAND and WM_INITMENUPOPUP go to the menus; WM_MENUSELECT (hints) comes with U-079 }
+function FindPopupMenuSelectItem(WParam: WPARAM; LParam: LPARAM): TMenuItem;
+var
+  I: Integer;
+begin
+  Result := nil;
+  for I := 0 to PopupList.Count - 1 do
+  begin
+    Result := TPopupMenu(PopupList[I]).FindMenuSelectItem(WParam, LParam);
+    if Result <> nil then
+      Exit;
+  end;
+end;
+
+{ WM_COMMAND and WM_INITMENUPOPUP go to the menus, WM_MENUSELECT to MenuSelectHook (UIF-942) }
 function PopupListWndProc(Wnd: HWND; Msg: UINT; WParam: WPARAM; LParam: LPARAM): LRESULT; stdcall;
 begin
   Result := 0;
   case Msg of
+    WM_MENUSELECT:
+      if Assigned(MenuSelectHook) then
+      begin
+        if (HiWord(WParam) = $FFFF) and (LParam = 0) then
+          MenuSelectHook(nil)
+        else
+          MenuSelectHook(FindPopupMenuSelectItem(WParam, LParam));
+        Exit;
+      end;
     WM_COMMAND:
       if (LParam = 0) and DispatchPopupCommand(LoWord(WParam)) then
         Exit;
@@ -1125,7 +1493,7 @@ begin
     FOnPopup(Sender);
 end;
 
-{ UIF-724 (action updates of UIF-911 come with the action links, U-077) }
+{ UIF-724; UIF-911: the actions of the items are updated before the menu shows }
 procedure TPopupMenu.Popup(X, Y: Integer);
 const
   AlignFlags: array[TPopupAlignment] of UINT = (TPM_LEFTALIGN, TPM_RIGHTALIGN, TPM_CENTERALIGN);
@@ -1134,6 +1502,7 @@ var
 begin
   FPopupPoint := Point(X, Y);
   DoPopup(Self);
+  Items.UpdateChildActions;
   Owner := PopupListWindow;
   SetForegroundWindow(Owner);
   TrackPopupMenuEx(Items.Handle, AlignFlags[FAlignment] or TPM_RIGHTBUTTON, X, Y, Owner, nil);

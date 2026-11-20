@@ -1,0 +1,41 @@
+object LinksForm: TLinksForm
+  Caption = 'Links'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object Button1: TButton
+    Left = 8
+    Top = 8
+    Caption = 'Stored'
+    Action = Act1
+    TabOrder = 0
+  end
+  object CheckBox1: TCheckBox
+    Left = 8
+    Top = 40
+    Action = Act2
+    TabOrder = 1
+  end
+  object MainMenu1: TMainMenu
+    DesignLeft = 16
+    DesignTop = 160
+    object Item1: TMenuItem
+      Action = Act1
+    end
+  end
+  object ActionList1: TActionList
+    DesignLeft = 48
+    DesignTop = 160
+    object Act1: TAction
+      Caption = 'ActCap'
+      Enabled = False
+      Hint = 'Short|Long'
+      ShortCut = 16463
+      OnExecute = Act1Execute
+    end
+    object Act2: TAction
+      Caption = 'Check'
+      Checked = True
+    end
+  end
+end

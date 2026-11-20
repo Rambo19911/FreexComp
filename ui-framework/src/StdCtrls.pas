@@ -4,7 +4,7 @@ unit StdCtrls;
 interface
 
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, ActnList, Controls;
 
 type
   TTextLayout = (tlTop, tlCenter, tlBottom);
@@ -281,12 +281,25 @@ type
     property OnMouseUp;
   end;
 
+  { actions-menus.md UIF-905: a button control's link adds Checked (check boxes and radio buttons) }
+  TButtonActionLink = class(TControlActionLink)
+  protected
+    function IsCheckedLinked: Boolean; override;
+    procedure SetChecked(Value: Boolean); override;
+  end;
+
   { controls-standard.md sections 4 ... 6: the base of the BUTTON-class controls }
   TButtonControl = class(TWinControl)
   private
     FWordWrap: Boolean;
+    FClicksDisabled: Boolean;                                { Checked copied from an action: no Click }
     procedure SetWordWrap(Value: Boolean);
   protected
+    function GetActionLinkClass: TControlActionLinkClass; override;
+    { Click unless the state is being copied from an action }
+    procedure Click; override;
+    { sets Checked of a check box or radio button without Click (an action's value) }
+    procedure SetCheckedFromAction(Value: Boolean);
     procedure CreateParams(var Params: TCreateParams); override;
     property WordWrap: Boolean read FWordWrap write SetWordWrap default False;
   public
@@ -312,6 +325,7 @@ type
     { UIF-640 }
     procedure Click; override;
   published
+    property Action;
     property Cancel: Boolean read FCancel write FCancel default False;
     property Caption;
     property Default: Boolean read FDefault write SetDefault default False;
@@ -356,6 +370,8 @@ type
     procedure WndProc(var Message: TMessage); override;
     { UIF-650, UIF-883: the single path of user-initiated state changes }
     procedure Toggle; virtual;
+    { UIF-906: Checked too }
+    procedure ActionChange(Sender: TObject; CheckDefaults: Boolean); override;
     property Alignment: TLeftRight read FAlignment write SetAlignment default taRightJustify;
     property AllowGrayed: Boolean read FAllowGrayed write SetAllowGrayed default False;
     property Checked: Boolean read GetChecked write SetChecked default False;
@@ -366,6 +382,7 @@ type
 
   TCheckBox = class(TCustomCheckBox)
   published
+    property Action;
     property Alignment;
     property AllowGrayed;
     property Caption;
@@ -406,9 +423,12 @@ type
     procedure WndProc(var Message: TMessage); override;
     { UIF-662: the last checked button of a group in creation order stays checked }
     procedure Loaded; override;
+    { UIF-906: Checked too }
+    procedure ActionChange(Sender: TObject; CheckDefaults: Boolean); override;
   public
     constructor Create(AOwner: TComponent); override;
   published
+    property Action;
     property Alignment: TLeftRight read FAlignment write SetAlignment default taRightJustify;
     property Caption;
     property Checked: Boolean read FChecked write SetChecked default False;
@@ -1865,6 +1885,48 @@ begin
   TabStop := True;
 end;
 
+function TButtonControl.GetActionLinkClass: TControlActionLinkClass;
+begin
+  Result := TButtonActionLink;
+end;
+
+procedure TButtonControl.Click;
+begin
+  if not FClicksDisabled then
+    inherited Click;
+end;
+
+procedure TButtonControl.SetCheckedFromAction(Value: Boolean);
+begin
+  FClicksDisabled := True;
+  try
+    if Self is TCustomCheckBox then
+      TCustomCheckBox(Self).Checked := Value
+    else if Self is TRadioButton then
+      TRadioButton(Self).Checked := Value;
+  finally
+    FClicksDisabled := False;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TButtonActionLink }
+
+function TButtonActionLink.IsCheckedLinked: Boolean;
+begin
+  if FClient is TCustomCheckBox then
+    Result := TCustomCheckBox(FClient).Checked = FChecked
+  else if FClient is TRadioButton then
+    Result := TRadioButton(FClient).Checked = FChecked
+  else
+    Result := False;
+end;
+
+procedure TButtonActionLink.SetChecked(Value: Boolean);
+begin
+  if FClient is TButtonControl then
+    TButtonControl(FClient).SetCheckedFromAction(Value);
+end;
+
 procedure TButtonControl.CreateParams(var Params: TCreateParams);
 begin
   inherited CreateParams(Params);
@@ -2142,6 +2204,13 @@ begin
     State := cbUnchecked;
 end;
 
+procedure TCustomCheckBox.ActionChange(Sender: TObject; CheckDefaults: Boolean);
+begin
+  inherited ActionChange(Sender, CheckDefaults);
+  if (Sender is TCustomAction) and (not CheckDefaults or not Checked) then
+    SetCheckedFromAction(TCustomAction(Sender).Checked);
+end;
+
 procedure TCustomCheckBox.SetAlignment(Value: TLeftRight);
 begin
   if FAlignment <> Value then
@@ -2236,6 +2305,13 @@ begin
       Exit;
     end;
   end;
+end;
+
+procedure TRadioButton.ActionChange(Sender: TObject; CheckDefaults: Boolean);
+begin
+  inherited ActionChange(Sender, CheckDefaults);
+  if (Sender is TCustomAction) and (not CheckDefaults or not FChecked) then
+    SetCheckedFromAction(TCustomAction(Sender).Checked);
 end;
 
 procedure TRadioButton.WndProc(var Message: TMessage);
