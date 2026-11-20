@@ -45,11 +45,19 @@ internal static class NativeRun
     public static Task<int> RunAsync(string exe, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr) =>
         RunAsync(exe, workingDirectory, onStdOut, onStdErr, CpuLimit, WallLimit, TestContext.Current.CancellationToken);
 
-    public static async Task<int> RunAsync(string exe, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr,
-        TimeSpan cpuLimit, TimeSpan wallLimit, CancellationToken ct)
+    public static Task<int> RunAsync(string exe, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr,
+        TimeSpan cpuLimit, TimeSpan wallLimit, CancellationToken ct) =>
+        RunAsync(exe, [], workingDirectory, onStdOut, onStdErr, cpuLimit, wallLimit, ct);
+
+    /// <summary>C-259: as <see cref="RunAsync(string, string, Action{string}, Action{string})"/> with <paramref name="arguments"/> (a tool such as the pinned clang).</summary>
+    public static Task<int> RunAsync(string exe, IReadOnlyList<string> arguments, string workingDirectory, Action<string> onStdOut, Action<string> onStdErr) =>
+        RunAsync(exe, arguments, workingDirectory, onStdOut, onStdErr, CpuLimit, WallLimit, TestContext.Current.CancellationToken);
+
+    public static async Task<int> RunAsync(string exe, IReadOnlyList<string> arguments, string workingDirectory, Action<string> onStdOut,
+        Action<string> onStdErr, TimeSpan cpuLimit, TimeSpan wallLimit, CancellationToken ct)
     {
         // as ProcessRunner (CMP-602): no shell, stdin closed, stdout/stderr as UTF-8 lines, process tree killed in finally
-        var start = new ProcessStartInfo(exe)
+        var start = new ProcessStartInfo(exe, arguments)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -95,25 +103,30 @@ internal static class NativeRun
         }
         finally
         {
-            Kill(process);
+            await KillAsync(process, ct);
         }
     }
 
     private static readonly Encoding Utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
-    private static void Kill(Process process)
+    /// <summary>Kills the process tree and reaps it; the reap is bounded by the test's token, not a fixed wall-clock wait (C-259).</summary>
+    private static async Task KillAsync(Process process, CancellationToken ct)
     {
         try
         {
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
-                process.WaitForExit(20_000);
+                await process.WaitForExitAsync(ct);
             }
         }
         catch (InvalidOperationException)
         {
             // already exited between the check and the kill
+        }
+        catch (OperationCanceledException)
+        {
+            // the test was cancelled: the tree is killed, the reap is left to the system
         }
     }
 

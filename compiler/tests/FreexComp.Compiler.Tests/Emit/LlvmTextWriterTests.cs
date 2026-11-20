@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
-using System.Diagnostics;
 using FreexComp.Compiler.Emit;
+using FreexComp.Tests.Shared;
 
 namespace FreexComp.Compiler.Tests.Emit;
 
@@ -758,14 +758,14 @@ public sealed class LlvmTextWriterToolchainTests
     [InlineData("-O0")]
     [InlineData("-O2")]
     [Trait("Req", "CMP-125")]
-    public void LlvmTextWriter_EveryConstruct_CompilesWithPinnedClang(string optimisation)
+    public async Task LlvmTextWriter_EveryConstruct_CompilesWithPinnedClang(string optimisation)
     {
         var writer = new LlvmTextWriter();
         writer.BeginModule("All", "All.pas");
         WriteEveryConstruct(writer);
         writer.EndModule();
 
-        var (exitCode, output) = Clang.CompileToObject(writer.GetText(), optimisation);
+        var (exitCode, output) = await Clang.CompileToObjectAsync(writer.GetText(), optimisation);
 
         Assert.True(exitCode == 0, "clang failed:\n" + output);
     }
@@ -861,50 +861,28 @@ internal static class Clang
 {
     public static string Path => System.IO.Path.Combine(RepoPaths.Root, "third_party", "llvm", "bin", "clang.exe");
 
-    public static (int ExitCode, string Output) CompileToObject(string irText, string optimisation)
+    /// <summary>C-259: clang runs under <see cref="NativeRun"/> (CPU-time limit with a wall cap, the test's token), not a fixed wall-clock wait.</summary>
+    public static async Task<(int ExitCode, string Output)> CompileToObjectAsync(string irText, string optimisation)
     {
         Assert.True(File.Exists(Path), $"Pinned toolchain missing: {Path} (run scripts/bootstrap.ps1).");
         var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var source = System.IO.Path.Combine(dir, "m.ll");
+        var obj = System.IO.Path.Combine(dir, "m.obj");
         File.WriteAllText(source, irText);
-        var start = new ProcessStartInfo(Path)
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var exitCode = await NativeRun.RunAsync(Path, ["-Wno-override-module", optimisation, "-c", source, "-o", obj], dir, lines.Enqueue, lines.Enqueue);
+        var output = string.Join("\n", lines);
+        if (exitCode == 0)
         {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (var arg in new[] { "-Wno-override-module", optimisation, "-c", source, "-o", System.IO.Path.Combine(dir, "m.obj") })
+            Assert.True(File.Exists(obj));
+            TestDirectories.Delete(dir);
+        }
+        else
         {
-            start.ArgumentList.Add(arg);
+            output += "\n(IR kept in " + source + ")";
         }
 
-        using var process = Process.Start(start)!;
-        try
-        {
-            var stdout = process.StandardOutput.ReadToEndAsync();
-            var stderr = process.StandardError.ReadToEndAsync();
-            Assert.True(process.WaitForExit(20_000), "clang timed out");
-            var output = stdout.Result + stderr.Result;
-            if (process.ExitCode == 0)
-            {
-                Assert.True(File.Exists(System.IO.Path.Combine(dir, "m.obj")));
-                TestDirectories.Delete(dir);
-            }
-            else
-            {
-                output += "\n(IR kept in " + source + ")";
-            }
-
-            return (process.ExitCode, output);
-        }
-        finally
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
+        return (exitCode, output);
     }
 }

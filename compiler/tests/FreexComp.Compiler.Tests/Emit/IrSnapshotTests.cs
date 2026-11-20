@@ -2958,9 +2958,9 @@ public sealed class IrSnapshotToolchainTests
     [Theory]
     [MemberData(nameof(Modules))]
     [Trait("Req", "CMP-125")]
-    public void EmittedModule_CompilesWithPinnedClang(string name, string optimisation)
+    public async Task EmittedModule_CompilesWithPinnedClang(string name, string optimisation)
     {
-        var (exitCode, output) = Clang.CompileToObject(IrSnapshotTests.Emit(IrSnapshotTests.Sources[name]), optimisation);
+        var (exitCode, output) = await Clang.CompileToObjectAsync(IrSnapshotTests.Emit(IrSnapshotTests.Sources[name]), optimisation);
 
         Assert.True(exitCode == 0, "clang failed:\n" + output);
     }

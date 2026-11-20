@@ -135,9 +135,9 @@ public sealed class RtlSystemCompilesTests
     [Trait("Kind", "Native")]
     [Trait("Category", "Toolchain")]
     [Trait("Req", "CMP-630")]
-    public void System_AssemblesWithPinnedClang(string optimisation)
+    public async Task System_AssemblesWithPinnedClang(string optimisation)
     {
-        var (exitCode, output) = Clang.CompileToObject(EmitSystem(), optimisation);
+        var (exitCode, output) = await Clang.CompileToObjectAsync(EmitSystem(), optimisation);
 
         Assert.True(exitCode == 0, "clang failed:\n" + output);
     }
