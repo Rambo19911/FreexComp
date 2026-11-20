@@ -1,0 +1,6 @@
+ErrProtAccessForeign.pas(10,13): error E2610: Cannot access protected member 'Value' of 'TBase'
+ErrProtAccessForeign.pas(11,22): error E2610: Cannot access protected member 'Value' of 'TBase'
+ErrProtAccessForeign.pas(12,14): error E2610: Cannot access protected member 'FValue' of 'TBase'
+ErrProtAccessForeign.pas(13,3): error E2610: Cannot access protected member 'Bump' of 'TBase'
+ErrProtAccessForeign.pas(14,3): error E2610: Cannot access protected member 'Reset' of 'TBase'
+ErrProtAccessForeign.pas(15,11): error E2610: Cannot access protected member 'FCount' of 'TBase'

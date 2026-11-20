@@ -91,7 +91,7 @@ internal sealed partial class ExpressionBinder
         {
             Visibility.Private => sameUnit,
             Visibility.StrictPrivate => own,
-            Visibility.Protected => sameUnit || own || descendant,
+            Visibility.Protected => sameUnit || own || descendant || LocalDescendant(owner, receiver),
             _ => own || descendant,                                                     // strict protected
         };
         if (!allowed)
@@ -107,6 +107,34 @@ internal sealed partial class ExpressionBinder
         }
 
         return allowed;
+    }
+
+    /// <summary>
+    /// C-260: (non-strict) protected members of <paramref name="owner"/> are open to code anywhere in a unit that declares a
+    /// descendant of <paramref name="owner"/>, when the receiver's static type is that descendant or one of its descendants
+    /// (<c>TAccess(B).Member</c> with <c>TAccess = class(TBase)</c> declared in the current unit).
+    /// </summary>
+    private bool LocalDescendant(TypeSymbol owner, TypeSymbol? receiver)
+    {
+        if (receiver is not ClassTypeSymbol receiverClass || CurrentUnit is not { } unit)
+        {
+            return false;
+        }
+
+        foreach (var type in receiverClass.SelfAndAncestors())
+        {
+            if (ReferenceEquals(type, owner))
+            {
+                return false;                                                   // reached the owner without a local descendant
+            }
+
+            if (ReferenceEquals(TypeMembers.Outermost(type).ContainingSymbol, unit) && type.SelfAndAncestors().Contains(owner))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>A <c>class var</c> (LANG-615, CMP-370): the class's global, after the visibility check against <paramref name="receiver"/>.</summary>
