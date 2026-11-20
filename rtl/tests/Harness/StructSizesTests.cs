@@ -116,6 +116,11 @@ public sealed class StructSizesTests
         new("TTVSortCB", 24, ("lParam", 16)),
         new("TNMTVCustomDraw", 96, ("clrText", 80), ("clrTextBk", 84), ("iLevel", 88)),
 
+        // keyboard notifications, 1-byte packed (R-186)
+        new("TNMLVKeyDown", 30, ("hdr", 0), ("wVKey", 24), ("flags", 26)),
+        new("TNMTVKeyDown", 30, ("hdr", 0), ("wVKey", 24), ("flags", 26)),
+        new("TNMTCKeyDown", 30, ("hdr", 0), ("wVKey", 24), ("flags", 26)),
+
         // comdlg32 and shell32 rows (R-113)
         new("TOpenFilenameW", 152, ("hwndOwner", 8), ("hInstance", 16), ("lpstrFilter", 24), ("nMaxCustFilter", 40), ("nFilterIndex", 44),
             ("lpstrFile", 48), ("nMaxFile", 56), ("lpstrFileTitle", 64), ("nMaxFileTitle", 72), ("lpstrInitialDir", 80), ("lpstrTitle", 88),

@@ -8,7 +8,7 @@
     TCHITTESTINFO, TBBUTTON, TBADDBITMAP, TBBUTTONINFOW, NMTOOLBARW, PBRANGE, UDACCEL, NMUPDOWN, TTTOOLINFOW,
     NMTTDISPINFOW, HDITEMW, HDLAYOUT, HDHITTESTINFO, NMHEADERW, LVITEMW, LVCOLUMNW, NMLISTVIEW, NMITEMACTIVATE,
     NMLVDISPINFOW, LVHITTESTINFO, LVFINDINFOW, TVITEMW, TVITEMEXW, TVINSERTSTRUCTW, NMTREEVIEWW, NMTVDISPINFOW,
-    TVHITTESTINFO, TVSORTCB;
+    TVHITTESTINFO, TVSORTCB, NMLVKEYDOWN, NMTVKEYDOWN, NMTCKEYDOWN (the last three 1-byte packed, RTL-831);
   - the "Common Control Window Classes", "Common Control Styles", "Common Control Notifications" (NM_*), "Custom
     Draw" and "Image List Draw Flags" pages, and per control the "<control> Control Styles", "<control> Messages",
     "<control> Notifications" and extended-style pages.
@@ -308,6 +308,15 @@ type
     flags: UINT;
   end;
   TCHITTESTINFO = TTCHitTestInfo;
+
+  { NMTCKEYDOWN: 1-byte packed in the platform headers (wVKey at 24, flags at 26, size 30 on x64) }
+  PNMTCKeyDown = ^TNMTCKeyDown;
+  TNMTCKeyDown = packed record
+    hdr: TNMHdr;
+    wVKey: Word;
+    flags: UINT;
+  end;
+  NMTCKEYDOWN = TNMTCKeyDown;
 
 { ---------------------------------------------------------------- status bar }
 const
@@ -1347,6 +1356,15 @@ type
   end;
   NMLVCUSTOMDRAW = TNMLVCustomDraw;
 
+  { NMLVKEYDOWN: 1-byte packed in the platform headers (wVKey at 24, flags at 26, size 30 on x64) }
+  PNMLVKeyDown = ^TNMLVKeyDown;
+  TNMLVKeyDown = packed record
+    hdr: TNMHdr;
+    wVKey: Word;
+    flags: UINT;
+  end;
+  NMLVKEYDOWN = TNMLVKeyDown;
+
 { ---------------------------------------------------------------- tree view }
 const
   TVS_HASBUTTONS = $0001;
@@ -1618,6 +1636,15 @@ type
     iLevel: Integer;
   end;
   NMTVCUSTOMDRAW = TNMTVCustomDraw;
+
+  { NMTVKEYDOWN: 1-byte packed in the platform headers (wVKey at 24, flags at 26, size 30 on x64) }
+  PNMTVKeyDown = ^TNMTVKeyDown;
+  TNMTVKeyDown = packed record
+    hdr: TNMHdr;
+    wVKey: Word;
+    flags: UINT;
+  end;
+  NMTVKEYDOWN = TNMTVKeyDown;
 
 { ---------------------------------------------------------------- macros }
 function LPSTR_TEXTCALLBACKW: LPWSTR; inline;
