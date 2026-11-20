@@ -1,0 +1,42 @@
+# scroll-bar thickness
+ok vertical bar = MulDiv(17, DPI, 96)
+ok horizontal bar = MulDiv(17, DPI, 96)
+ok formula DPI = window DPI
+ok system metric = MulDiv(17, DPI, 96) for every DPI 96..480 step 12
+# form
+ok form: client size
+# TPanel
+ok bsNone: client size
+ok bsNone: client origin
+ok bsSingle: client size
+ok bsSingle: client origin
+ok bsSingle, smaller than its border: client size
+ok bsSingle, smaller than its border: client origin
+ok bsSingle with bevel and border width (align rect only): client size
+ok bsSingle with bevel and border width (align rect only): client origin
+# TGroupBox
+ok group box: client size
+ok group box: client origin
+# TScrollBox bsSingle
+ok no bar: client size
+ok no bar: client origin
+ok H only shown
+ok horizontal bar: client size
+ok horizontal bar: client origin
+ok V only shown
+ok vertical bar: client size
+ok vertical bar: client origin
+ok both shown
+ok both bars: client size
+ok both bars: client origin
+# TScrollBox bsNone
+ok both bars: client size
+ok both bars: client origin
+ok horizontal bar: client size
+ok horizontal bar: client origin
+ok vertical bar: client size
+ok vertical bar: client origin
+ok none shown
+ok no bar: client size
+ok no bar: client origin
+# passed 35 failed 0

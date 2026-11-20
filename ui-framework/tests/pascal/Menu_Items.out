@@ -1,0 +1,140 @@
+# defaults
+ok Caption empty
+ok Enabled True
+ok Visible True
+ok Checked False
+ok AutoCheck False
+ok Default False
+ok RadioItem False
+ok Break mbNone
+ok GroupIndex 0
+ok ImageIndex -1
+ok ShortCut 0
+ok Hint empty
+ok no children
+ok no parent
+ok MenuIndex -1 without parent
+ok HasParent
+ok no menu
+ok no handle yet
+ok Command in 1..65535
+ok IsLine False
+ok IsLine for "-"
+ok TMenuItem registered
+ok TMainMenu registered
+# tree
+ok Add and Insert
+ok Count
+ok Items[]
+ok Parent
+ok MenuIndex
+ok IndexOf
+ok Find: accelerator marks stripped, case-insensitive
+ok Find: marks in the argument stripped
+ok Find: no match
+ok StripHotkey
+ok MenuIndex moves
+ok MenuIndex clamped to the end
+ok Delete removes
+ok Delete clears Parent (not freed)
+ok Remove
+ok Add moves an item from its old parent
+ok old parent lost it
+ok an ancestor cannot be added
+ok an item cannot be added to itself
+ok Insert beyond Count
+ok a freed child leaves its parent
+ok two owned items
+ok Clear empties
+ok Clear frees the children and their children
+ok GetParentMenu
+ok GetParentComponent of a top-level item = the menu
+ok GetParentComponent of a nested item = its parent
+ok a menu root cannot be inserted
+# command ids (UIF-720)
+ok distinct ids
+ok all ids in use: EOutOfResources
+ok up to 65535 ids, all >= 1
+ok a released id is allocated again
+ok ids available again after release
+# native menus (UIF-720, UIF-725, UIF-934)
+ok built lazily
+ok sub-menus built lazily
+ok main menu handle
+ok Handle = Items.Handle
+ok bar: two top-level entries
+ok item with children: pop-up
+ok item without children: command on the bar
+ok pop-up entry id = Command
+ok command entry id = Command
+ok sub-menu = the item's Handle
+ok invisible items are not inserted
+ok caption, tab, shortcut text
+ok id = Command
+ok separator
+ok radio check, checked
+ok break, default, grayed
+# changes rebuild the parent menu
+ok caption change
+ok no shortcut: no tab
+ok bar break, enabled, not default
+ok made visible: inserted
+ok at its position
+ok made invisible: removed
+ok later entries move up
+ok unchecked
+ok MenuIndex change reorders
+ok first child turns a command into a pop-up
+ok the bar keeps its HMENU
+ok the sub-menu keeps its HMENU
+ok new sub-menu built
+ok last child freed: a command again
+ok freed item leaves the bar
+ok added item appears
+# item bitmaps
+ok no Images: no bitmap
+ok Images assigned: bitmap from the image list
+ok index out of range: no bitmap
+ok index back in range
+ok freed image list cleared
+ok freed image list: bitmap removed
+# leaks
+ok 50 menus with handles and bitmaps: no GDI/USER objects leak
+# Click (UIF-722)
+ok OnClick
+ok disabled: nothing
+ok AutoCheck toggles on
+ok AutoCheck toggles off
+# radio groups
+ok checking unchecks the radio items with the same GroupIndex only
+ok AutoCheck on a radio item checks (stays checked)
+ok moving a checked radio item into a group unchecks the others
+# streaming (UIF-721)
+ok two top-level items
+ok FileMenu first
+ok HelpItem second
+ok nested in display order
+ok third level
+ok items owned by the form
+ok GetParentMenu
+ok DesignLeft
+ok DesignTop
+ok ShortCut
+ok Hint
+ok separator
+ok RadioItem
+ok GroupIndex
+ok stored Checked values win while loading
+ok Break
+ok Default
+ok AutoCheck
+ok ImageIndex
+ok Enabled
+ok Visible
+ok OnClick bound to the form method
+ok TMenu.GetChildren: top-level items
+ok TMenuItem.GetChildren: its items
+ok loaded tree builds its native menu
+ok a menu item under a control: EReadError
+ok F0103
+# passed 129 failed 0

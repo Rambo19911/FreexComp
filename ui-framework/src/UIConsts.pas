@@ -49,6 +49,7 @@ resourcestring
   SGridIndexOutOfRange = 'Grid index out of range';
   SGridRowsFixed = 'Cannot insert or delete rows';
   SCommonDialogError = 'Common dialog error 0x%.4x';
+  SMenuInsert = 'Menu item "%s" cannot be inserted here';
 
 implementation
 

@@ -1,0 +1,50 @@
+object MenuForm: TMenuForm
+  Caption = 'Menus'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object MainMenu1: TMainMenu
+    DesignLeft = 16
+    DesignTop = 200
+    object FileMenu: TMenuItem
+      Caption = '&File'
+      object FileOpen: TMenuItem
+        Caption = '&Open...'
+        ShortCut = 16463
+        Hint = 'Open|Opens a file'
+        OnClick = FileOpenClick
+      end
+      object N1: TMenuItem
+        Caption = '-'
+      end
+      object FileRecent: TMenuItem
+        Caption = '&Recent'
+        object Recent1: TMenuItem
+          Caption = 'One'
+          RadioItem = True
+          GroupIndex = 1
+          Checked = True
+        end
+        object Recent2: TMenuItem
+          Caption = 'Two'
+          RadioItem = True
+          GroupIndex = 1
+          Checked = True
+        end
+      end
+      object FileExit: TMenuItem
+        Caption = 'E&xit'
+        ShortCut = 32883
+        Break = mbBarBreak
+        Default = True
+        AutoCheck = True
+        ImageIndex = 2
+        Enabled = False
+        Visible = False
+      end
+    end
+    object HelpItem: TMenuItem
+      Caption = '&Help'
+    end
+  end
+end

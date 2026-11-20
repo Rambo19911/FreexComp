@@ -1,0 +1,60 @@
+# encoding (UIF-930)
+ok scShift
+ok scCtrl
+ok scAlt
+ok scNone
+ok Alt+F4 = 32883
+ok Ctrl+O = 16463
+ok all three modifiers
+ok mouse states are ignored
+ok key above 255 gives 0
+ok ShortCutToKey: key
+ok ShortCutToKey: shift
+ok ShortCutToKey: all modifiers
+ok ShortCutToKey: 0
+ok TShortCut is the Classes type
+# text (UIF-931)
+ok 0 gives empty
+ok Ctrl+O
+ok Alt+F4
+ok fixed order Ctrl, Alt, Shift
+ok Alt before Shift
+ok Ctrl before Shift
+ok Shift prefix
+ok modifier only, key 0: unnamed
+ok unnamed key 7: empty even with a modifier
+# fixed key names (UIF-932)
+ok A to Z
+ok 0 to 9
+ok F1 to F24
+ok editing and navigation keys
+ok Num 0 to Num 9
+ok numeric-pad operators
+ok modifier with Num +
+ok other keys: system key name, non-empty
+ok other keys: not a fixed name
+# parsing (UIF-933)
+ok Ctrl+O
+ok Alt+F4
+ok lower case
+ok upper case and spaces around +
+ok surrounding spaces
+ok modifiers in any order
+ok two modifiers, lower case
+ok no modifier
+ok Num + after a modifier
+ok Num + alone, lower case
+ok PgDn
+ok empty
+ok modifier only
+ok modifier and + only
+ok unknown key name
+ok unknown modifier name
+ok only the fixed short names
+ok F25 unknown
+ok two keys
+ok system names are not recognised
+# round trip
+ok TextToShortCut(ShortCutToText(SC)) = SC for every fixed name and modifier set
+ok round trip ok
+# passed 54 failed 0
