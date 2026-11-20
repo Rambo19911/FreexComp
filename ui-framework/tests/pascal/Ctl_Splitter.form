@@ -1,0 +1,31 @@
+object SplitForm: TSplitForm
+  Caption = 'Splitters'
+  ClientWidth = 300
+  ClientHeight = 200
+  Scaled = False
+  object Side: TPanel
+    Left = 0
+    Top = 0
+    Width = 80
+    Height = 200
+    Align = alLeft
+  end
+  object Bar: TSplitter
+    Left = 80
+    Top = 0
+    Width = 5
+    Height = 200
+    AutoSnap = False
+    Beveled = True
+    MinSize = 40
+    ResizeStyle = rsNone
+    OnMoved = BarMoved
+  end
+  object Body: TPanel
+    Left = 85
+    Top = 0
+    Width = 215
+    Height = 200
+    Align = alClient
+  end
+end

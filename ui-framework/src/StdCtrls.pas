@@ -734,7 +734,7 @@ type
     property OnSelect;
   end;
 
-  TScrollBarKind = (sbHorizontal, sbVertical);
+  { TScrollBarKind is declared in Controls (also used by Forms.TControlScrollBar) }
   TScrollCode = (scLineUp, scLineDown, scPageUp, scPageDown, scPosition, scTrack, scTop, scBottom, scEndScroll);
   TScrollEvent = procedure(Sender: TObject; ScrollCode: TScrollCode; var ScrollPos: Integer) of object;
 

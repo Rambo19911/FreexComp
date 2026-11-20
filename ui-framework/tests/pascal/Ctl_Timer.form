@@ -1,0 +1,10 @@
+object TimerForm: TTimerForm
+  Caption = 'Timers'
+  ClientWidth = 200
+  ClientHeight = 100
+  Scaled = False
+  object Clock: TTimer
+    Interval = 10
+    OnTimer = ClockTimer
+  end
+end

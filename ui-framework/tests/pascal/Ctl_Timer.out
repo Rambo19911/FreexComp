@@ -1,0 +1,29 @@
+# defaults
+ok Enabled True
+ok Interval 1000
+ok OnTimer nil
+ok registered
+# OS timer (UIF-730)
+ok no OnTimer: no OS timer
+ok OnTimer fires while messages are processed
+ok Sender is the timer
+ok Enabled False: no events
+ok Enabled False: OS timer killed
+ok Interval 0: no OS timer
+ok Interval 0: no events
+ok Interval > 0 again: events
+ok OnTimer nil: OS timer killed
+ok OnTimer assigned: an OS timer with id 1
+# guarded (UIF-463)
+ok the exception reached Application.OnException
+ok exception message
+ok the timer keeps running after the exception
+# dump mode (UIF-732)
+ok dump mode: no OS timer
+# streamed timer
+ok Interval loaded
+ok OnTimer bound
+ok started after loading
+ok freed with its form: OS timer killed
+ok freed: OS timer killed
+# passed 23 failed 0

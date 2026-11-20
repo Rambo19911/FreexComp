@@ -21,6 +21,8 @@ type
   TFormBorderStyle = (bsNone, bsSingle, bsSizeable, bsDialog, bsToolWindow, bsSizeToolWin);
   TBorderStyle = bsNone..bsSingle;
   TBevelCut = (bvNone, bvLowered, bvRaised, bvSpace);
+  { TScrollBar (StdCtrls) and TControlScrollBar (Forms) }
+  TScrollBarKind = (sbHorizontal, sbVertical);
   TControlStyle = set of (csAcceptsControls, csCaptureMouse, csClickEvents, csSetCaption, csOpaque,
     csDoubleClicks, csFixedWidth, csFixedHeight, csNoStdEvents, csReflector, csActionClient, csMenuEvents,
     csParentBackground);
@@ -306,6 +308,9 @@ type
     { layout.md UIF-255, UIF-260, UIF-263: measured auto-size may run (AutoSize on; not loading, destroying,
       scaling or in dump mode) }
     function MeasuringAllowed: Boolean;
+    { core.md WM_SETCURSOR: the cursor the control shows while its Cursor is crDefault; crDefault = the parent's
+      (base); a splitter answers by its alignment (controls-standard.md UIF-760) }
+    function DefaultCursor: TCursor; virtual;
     function CanResize(var NewWidth, NewHeight: Integer): Boolean; virtual;
     procedure ConstrainedResize(var MinWidth, MinHeight, MaxWidth, MaxHeight: Integer); virtual;
     { layout.md UIF-250: intrinsic rules I1-I4 of the class (ConstrainSize step 1); base: none }
@@ -502,6 +507,8 @@ type
     procedure SetChildOrder(Child: TComponent; Order: Integer); virtual;
     { layout.md UIF-222: one layout pass over Rect (the align rect) }
     procedure AlignControls(AControl: TControl; var Rect: TRect); virtual;
+    { layout.md UIF-234: the scroll position of a scrolling container (anchor baselines are unscrolled); base (0, 0) }
+    function ScrollOffset: TPoint; virtual;
     procedure Loaded; override;
     { UIF-280: Padding, then the inherited steps, then the children in Controls[] order }
     procedure ChangeScale(M, D: Integer); override;
@@ -545,6 +552,9 @@ type
     function AlignDisabled: Boolean;
     { layout.md UIF-218: shrinks the client rectangle to the area of aligned children; base: no change }
     procedure AdjustClientRect(var Rect: TRect); virtual;
+    { layout.md UIF-293: moves every child by (DeltaX, DeltaY) as a layout pass would (no baseline capture, no
+      realign request) and scrolls the window contents }
+    procedure ScrollBy(DeltaX, DeltaY: Integer);
     function ControlAtPos(const Pos: TPoint; AllowDisabled: Boolean; AllowWinControls: Boolean = False): TControl;
     function FindChildControl(const ControlName: string): TControl;
     function ContainsControl(Control: TControl): Boolean;
@@ -621,6 +631,9 @@ function FindControl(Handle: HWND): TWinControl;
 { core.md 13: the control that holds the mouse capture (graphic controls capture through their parent's window) }
 function GetCaptureControl: TControl;
 procedure SetCaptureControl(Control: TControl);
+{ core.md WM_SETCURSOR: a non-default Screen.Cursor wins; else the first non-default Cursor (or DefaultCursor) up
+  the parent chain }
+function EffectiveCursor(C: TControl): TCursor;
 
 { layout.md section 1: (a*b + c div 2) div c, rounding half away from zero, 64-bit intermediate; c > 0 }
 function LayoutMulDiv(A, B, C: Integer): Integer;
@@ -778,10 +791,20 @@ begin
   Result := ScreenCursor;
   if Result <> crDefault then
     Exit;
-  while (C <> nil) and (C.Cursor = crDefault) do
+  while C <> nil do
+  begin
+    if C.Cursor <> crDefault then
+    begin
+      Result := C.Cursor;
+      Exit;
+    end;
+    if C.DefaultCursor <> crDefault then
+    begin
+      Result := C.DefaultCursor;
+      Exit;
+    end;
     C := C.Parent;
-  if C <> nil then
-    Result := C.Cursor;
+  end;
 end;
 
 { ---------------------------------------------------------------- TSizeConstraints }
@@ -1152,10 +1175,15 @@ end;
 
 { UIF-232: (BL, BT, BW, BH) := bounds, (BPW, BPH) := parent's client size, (0, 0) without a parent (UIF-233) }
 procedure TControl.CaptureBaseline;
+var
+  Offset: TPoint;
 begin
   FBaseBounds := Rect(FLeft, FTop, FWidth, FHeight);
   if FParent <> nil then
   begin
+    Offset := FParent.ScrollOffset;                          { UIF-234: unscrolled coordinates }
+    FBaseBounds.Left := FLeft + Offset.X;
+    FBaseBounds.Top := FTop + Offset.Y;
     FBaseParentWidth := FParent.ClientWidth;
     FBaseParentHeight := FParent.ClientHeight;
   end
@@ -1468,6 +1496,11 @@ end;
 function TControl.CanAutoSize(var NewWidth, NewHeight: Integer): Boolean;
 begin
   Result := True;
+end;
+
+function TControl.DefaultCursor: TCursor;
+begin
+  Result := crDefault;
 end;
 
 function TControl.MeasuringAllowed: Boolean;
@@ -2976,6 +3009,7 @@ end;
 procedure TWinControl.ApplyAnchors(C: TControl);
 var
   PW, PH, BL, BT, BW, BH, L, T, W, H: Integer;
+  Offset: TPoint;
 begin
   PW := ClientWidth;
   PH := ClientHeight;
@@ -3018,9 +3052,33 @@ begin
   else
     T := BT;
   C.ConstrainSize(W, H);
+  Offset := ScrollOffset;                                    { UIF-234 }
   C.FLayoutCall := True;
-  C.SetBounds(L, T, W, H);
+  C.SetBounds(L - Offset.X, T - Offset.Y, W, H);
   C.FLayoutCall := False;
+end;
+
+function TWinControl.ScrollOffset: TPoint;
+begin
+  Result := Point(0, 0);
+end;
+
+procedure TWinControl.ScrollBy(DeltaX, DeltaY: Integer);
+var
+  I: Integer;
+  C: TControl;
+begin
+  if (DeltaX = 0) and (DeltaY = 0) then
+    Exit;
+  for I := 0 to FControls.Count - 1 do
+  begin
+    C := TControl(FControls[I]);
+    C.FLayoutCall := True;
+    C.SetBounds(C.FLeft + DeltaX, C.FTop + DeltaY, C.FWidth, C.FHeight);
+    C.FLayoutCall := False;
+  end;
+  if (FHandle <> 0) and not LayoutDumpMode then
+    ScrollWindowEx(FHandle, DeltaX, DeltaY, nil, nil, 0, nil, SW_INVALIDATE or SW_ERASE);
 end;
 
 procedure TWinControl.MoveChild(AControl: TControl; NewIndex: Integer);

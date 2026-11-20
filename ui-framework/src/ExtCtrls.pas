@@ -1,4 +1,4 @@
-{ ExtCtrls - extended controls (controls-standard.md sections 8, 14, 15, 16). }
+{ ExtCtrls - extended controls (controls-standard.md sections 8, 13, 14, 15, 16, 19). }
 unit ExtCtrls;
 
 interface
@@ -180,7 +180,95 @@ type
     property Style: TBevelStyle read FStyle write SetStyle default bsLowered;
   end;
 
+  NaturalNumber = 1..High(Integer);
+  TResizeStyle = (rsNone, rsLine, rsUpdate, rsPattern);
+  TCanResizeEvent = procedure(Sender: TObject; var NewSize: Integer; var Accept: Boolean) of object;
+
+  { controls-standard.md section 19 }
+  TSplitter = class(TGraphicControl)
+  private
+    FAutoSnap: Boolean;
+    FBeveled: Boolean;
+    FMinSize: NaturalNumber;
+    FResizeStyle: TResizeStyle;
+    FOnCanResize: TCanResizeEvent;
+    FOnMoved: TNotifyEvent;
+    FDragging: Boolean;
+    FTarget: TControl;
+    FDownPos: Integer;                                       { mouse position along the axis, parent coordinates }
+    FStartSize: Integer;                                     { S0 }
+    FStartFree: Integer;                                     { Free0 }
+    procedure SetBeveled(Value: Boolean);
+    function Horizontal: Boolean;
+    function AxisPos(X, Y: Integer): Integer;
+    function FreeExtent: Integer;
+    function TargetSize: Integer;
+    procedure SetTargetSize(Value: Integer);
+    procedure StopDrag;
+  protected
+    { UIF-760 }
+    function DefaultCursor: TCursor; override;
+    { UIF-764 }
+    procedure Paint; override;
+    { UIF-762 }
+    procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
+    procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
+    procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
+    { UIF-763: WM_CANCELMODE (Escape while dragging, sent by the application) restores S0 }
+    procedure WndProc(var Message: TMessage); override;
+    { MinSize is scaled }
+    procedure ChangeScale(M, D: Integer); override;
+    function DoCanResize(var NewSize: Integer): Boolean;
+    procedure DoMoved;
+  public
+    constructor Create(AOwner: TComponent); override;
+    { UIF-761: the control this splitter resizes; nil = inert }
+    function FindTarget: TControl;
+  published
+    property Align default alLeft;
+    property AutoSnap: Boolean read FAutoSnap write FAutoSnap default True;
+    property Beveled: Boolean read FBeveled write SetBeveled default False;
+    property Color default clBtnFace;
+    property MinSize: NaturalNumber read FMinSize write FMinSize default 30;
+    property ParentColor default True;
+    property ResizeStyle: TResizeStyle read FResizeStyle write FResizeStyle default rsUpdate;
+    property OnCanResize: TCanResizeEvent read FOnCanResize write FOnCanResize;
+    property OnMoved: TNotifyEvent read FOnMoved write FOnMoved;
+  end;
+
+  { controls-standard.md section 13 }
+  TTimer = class(TComponent)
+  private
+    FEnabled: Boolean;
+    FInterval: Cardinal;
+    FOnTimer: TNotifyEvent;
+    FID: UINT_PTR;
+    FActive: Boolean;
+    procedure SetEnabled(Value: Boolean);
+    procedure SetInterval(Value: Cardinal);
+    procedure SetOnTimer(Value: TNotifyEvent);
+    { UIF-730: kills the OS timer and re-creates it when the condition holds }
+    procedure UpdateTimer;
+  protected
+    procedure Loaded; override;
+    procedure Timer; virtual;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+  published
+    property Enabled: Boolean read FEnabled write SetEnabled default True;
+    property Interval: Cardinal read FInterval write SetInterval default 1000;
+    property OnTimer: TNotifyEvent read FOnTimer write SetOnTimer;
+  end;
+
 implementation
+
+uses
+  Forms;
+
+type
+  { access to the protected Padding of a parent }
+  TWinControlAccess = class(TWinControl);
 
 { ---------------------------------------------------------------- TCustomPanel }
 
@@ -719,6 +807,371 @@ begin
   end;
 end;
 
+{ ---------------------------------------------------------------- TSplitter }
+
+constructor TSplitter.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  Align := alLeft;
+  SetBounds(Left, Top, 3, 100);
+  Color := clBtnFace;
+  ParentColor := True;
+  FAutoSnap := True;
+  FMinSize := 30;
+  FResizeStyle := rsUpdate;
+end;
+
+function TSplitter.Horizontal: Boolean;
+begin
+  Result := Align in [alLeft, alRight];
+end;
+
+function TSplitter.DefaultCursor: TCursor;
+begin
+  case Align of
+    alLeft, alRight: Result := crVSplit;
+    alTop, alBottom: Result := crHSplit;
+  else
+    Result := crDefault;
+  end;
+end;
+
+{ UIF-761: the participants of the splitter's phase sorted as layout.md UIF-222 sorts them; the one before Self }
+function TSplitter.FindTarget: TControl;
+var
+  List: array of TControl;
+  Keys: array of Integer;
+  I, J, K, Key: Integer;
+  C: TControl;
+begin
+  Result := nil;
+  if (Parent = nil) or not (Align in [alTop, alBottom, alLeft, alRight]) then
+    Exit;
+  SetLength(List, Parent.ControlCount);
+  SetLength(Keys, Parent.ControlCount);
+  K := 0;
+  for I := 0 to Parent.ControlCount - 1 do
+  begin
+    C := Parent.Controls[I];
+    if (C.Align <> Align) or not C.Visible then
+      Continue;
+    case Align of
+      alTop: Key := C.Top;
+      alBottom: Key := -(C.Top + C.Height);
+      alLeft: Key := C.Left;
+    else
+      Key := -(C.Left + C.Width);
+    end;
+    J := K;
+    while (J > 0) and (Keys[J - 1] > Key) do
+    begin
+      Keys[J] := Keys[J - 1];
+      List[J] := List[J - 1];
+      Dec(J);
+    end;
+    Keys[J] := Key;
+    List[J] := C;
+    Inc(K);
+  end;
+  for I := 1 to K - 1 do
+    if List[I] = Self then
+    begin
+      Result := List[I - 1];
+      Exit;
+    end;
+end;
+
+function TSplitter.AxisPos(X, Y: Integer): Integer;
+begin
+  if Horizontal then
+    Result := Left + X
+  else
+    Result := Top + Y;
+end;
+
+{ Free0: the extent along the axis of the align rect that remains after every non-client phase (layout.md UIF-222) }
+function TSplitter.FreeExtent: Integer;
+var
+  R: TRect;
+  I: Integer;
+  C: TControl;
+  P: TWinControlAccess;
+
+  function MarginsAlong(C: TControl): Integer;
+  begin
+    Result := 0;
+    if C.AlignWithMargins then
+      if Horizontal then
+        Result := C.Margins.Left + C.Margins.Right
+      else
+        Result := C.Margins.Top + C.Margins.Bottom;
+  end;
+
+begin
+  P := TWinControlAccess(Parent);
+  R := P.ClientRect;
+  P.AdjustClientRect(R);
+  R.Left := R.Left + P.Padding.Left;
+  R.Top := R.Top + P.Padding.Top;
+  R.Right := R.Right - P.Padding.Right;
+  R.Bottom := R.Bottom - P.Padding.Bottom;
+  if Horizontal then
+    Result := R.Right - R.Left
+  else
+    Result := R.Bottom - R.Top;
+  for I := 0 to P.ControlCount - 1 do
+  begin
+    C := P.Controls[I];
+    if not C.Visible then
+      Continue;
+    if Horizontal and (C.Align in [alLeft, alRight]) then
+      Result := Result - C.Width - MarginsAlong(C)
+    else if not Horizontal and (C.Align in [alTop, alBottom]) then
+      Result := Result - C.Height - MarginsAlong(C);
+  end;
+end;
+
+function TSplitter.TargetSize: Integer;
+begin
+  if Horizontal then
+    Result := FTarget.Width
+  else
+    Result := FTarget.Height;
+end;
+
+procedure TSplitter.SetTargetSize(Value: Integer);
+begin
+  if Horizontal then
+    FTarget.Width := Value
+  else
+    FTarget.Height := Value;
+end;
+
+function TSplitter.DoCanResize(var NewSize: Integer): Boolean;
+begin
+  Result := True;
+  if Assigned(FOnCanResize) then
+    FOnCanResize(Self, NewSize, Result);
+end;
+
+procedure TSplitter.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+begin
+  inherited MouseDown(Button, Shift, X, Y);
+  if (Button <> mbLeft) or (FResizeStyle = rsNone) or FDragging then
+    Exit;
+  FTarget := FindTarget;
+  if FTarget = nil then
+    Exit;
+  FDragging := True;
+  FDownPos := AxisPos(X, Y);
+  FStartSize := TargetSize;
+  FStartFree := FreeExtent;
+end;
+
+procedure TSplitter.MouseMove(Shift: TShiftState; X, Y: Integer);
+var
+  D, NewSize, MaxSize: Integer;
+begin
+  inherited MouseMove(Shift, X, Y);
+  if not FDragging then
+    Exit;
+  D := AxisPos(X, Y) - FDownPos;
+  if Align in [alLeft, alTop] then
+    NewSize := FStartSize + D
+  else
+    NewSize := FStartSize - D;
+  MaxSize := FStartSize + FStartFree - FMinSize;
+  if NewSize > MaxSize then
+    NewSize := MaxSize;
+  if NewSize < FMinSize then
+    if FAutoSnap then
+      NewSize := 0
+    else
+      NewSize := FMinSize;
+  if NewSize < 0 then
+    NewSize := 0;
+  if DoCanResize(NewSize) and (NewSize <> TargetSize) then
+    SetTargetSize(NewSize);
+end;
+
+procedure TSplitter.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+begin
+  inherited MouseUp(Button, Shift, X, Y);
+  if FDragging and (Button = mbLeft) then
+  begin
+    StopDrag;
+    DoMoved;
+  end;
+end;
+
+procedure TSplitter.StopDrag;
+begin
+  FDragging := False;
+  FTarget := nil;
+end;
+
+{ the drag ended with the button: OnMoved }
+procedure TSplitter.DoMoved;
+begin
+  if Assigned(FOnMoved) then
+    FOnMoved(Self);
+end;
+
+procedure TSplitter.WndProc(var Message: TMessage);
+begin
+  if (Message.Msg = WM_CANCELMODE) and FDragging then
+  begin
+    if TargetSize <> FStartSize then
+      SetTargetSize(FStartSize);
+    StopDrag;
+    if GetCaptureControl = Self then
+      SetCaptureControl(nil);
+  end;
+  inherited WndProc(Message);
+end;
+
+procedure TSplitter.ChangeScale(M, D: Integer);
+begin
+  if (M <> D) and (M > 0) and (D > 0) then
+  begin
+    FMinSize := LayoutMulDiv(FMinSize, M, D);
+    if FMinSize < 1 then
+      FMinSize := 1;
+  end;
+  inherited ChangeScale(M, D);
+end;
+
+procedure TSplitter.SetBeveled(Value: Boolean);
+begin
+  if FBeveled <> Value then
+  begin
+    FBeveled := Value;
+    Invalidate;
+  end;
+end;
+
+{ UIF-764: an etched line two pixels wide through the middle, along the splitter }
+procedure TSplitter.Paint;
+var
+  R: TRect;
+begin
+  R := ClientRect;
+  Canvas.Brush.Style := bsSolid;
+  Canvas.Brush.Color := Color;
+  Canvas.FillRect(R);
+  if not FBeveled then
+    Exit;
+  if Horizontal then
+  begin
+    R := Rect(Width div 2 - 1, 0, Width div 2 + 1, Height);
+    DrawEdge(Canvas.Handle, R, EDGE_ETCHED, BF_LEFT);
+  end
+  else
+  begin
+    R := Rect(0, Height div 2 - 1, Width, Height div 2 + 1);
+    DrawEdge(Canvas.Handle, R, EDGE_ETCHED, BF_TOP);
+  end;
+end;
+
+{ ---------------------------------------------------------------- TTimer }
+
+var
+  TimerCounter: UINT_PTR;                                    { the last timer id handed out (UIF-730) }
+  TimerList: TList;                                          { every TTimer instance }
+
+{ Forms.TimerHook: WM_TIMER at the application window; the call is guarded (UIF-463) }
+procedure DispatchTimer(TimerID: UINT_PTR);
+var
+  I: Integer;
+  T: TTimer;
+begin
+  for I := 0 to TimerList.Count - 1 do
+  begin
+    T := TTimer(TimerList[I]);
+    if (T.FID = TimerID) and T.FActive then
+    begin
+      try
+        T.Timer;
+      except
+        Application.HandleException(T);
+      end;
+      Exit;
+    end;
+  end;
+end;
+
+constructor TTimer.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FEnabled := True;
+  FInterval := 1000;
+  Inc(TimerCounter);
+  FID := TimerCounter;
+  TimerList.Add(Self);
+end;
+
+destructor TTimer.Destroy;
+begin
+  FEnabled := False;
+  UpdateTimer;
+  TimerList.Remove(Self);
+  inherited Destroy;
+end;
+
+procedure TTimer.UpdateTimer;
+begin
+  if FActive then
+  begin
+    KillTimer(Application.Handle, FID);
+    FActive := False;
+  end;
+  if FEnabled and (FInterval > 0) and Assigned(FOnTimer) and not (csLoading in ComponentState)
+    and not LayoutDumpMode and (Application.Handle <> 0) then
+    FActive := SetTimer(Application.Handle, FID, FInterval, nil) <> 0;
+end;
+
+procedure TTimer.Loaded;
+begin
+  inherited Loaded;
+  UpdateTimer;
+end;
+
+procedure TTimer.Timer;
+begin
+  if Assigned(FOnTimer) then
+    FOnTimer(Self);
+end;
+
+procedure TTimer.SetEnabled(Value: Boolean);
+begin
+  if FEnabled <> Value then
+  begin
+    FEnabled := Value;
+    UpdateTimer;
+  end;
+end;
+
+procedure TTimer.SetInterval(Value: Cardinal);
+begin
+  if FInterval <> Value then
+  begin
+    FInterval := Value;
+    UpdateTimer;
+  end;
+end;
+
+procedure TTimer.SetOnTimer(Value: TNotifyEvent);
+begin
+  FOnTimer := Value;
+  UpdateTimer;
+end;
+
 initialization
-  RegisterClasses([TPanel, TImage, TShape, TBevel]);
+  TimerList := TList.Create;
+  TimerHook := DispatchTimer;
+  RegisterClasses([TPanel, TImage, TShape, TBevel, TSplitter, TTimer]);
+
+finalization
+  TimerHook := nil;
+  TimerList.Free;
 end.

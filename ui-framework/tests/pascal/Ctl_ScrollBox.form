@@ -1,0 +1,39 @@
+object ScrollForm: TScrollForm
+  Caption = 'Scroll boxes'
+  ClientWidth = 500
+  ClientHeight = 300
+  Scaled = False
+  object Box: TScrollBox
+    Left = 0
+    Top = 0
+    Width = 200
+    Height = 100
+    object N: TPanel
+      Left = 0
+      Top = 0
+      Width = 300
+      Height = 50
+    end
+    object B: TPanel
+      Left = 0
+      Top = 0
+      Width = 10
+      Height = 20
+      Align = alBottom
+    end
+  end
+  object Plain: TScrollBox
+    Left = 250
+    Top = 0
+    Width = 200
+    Height = 100
+    AutoScroll = False
+    BorderStyle = bsNone
+    HorzScrollBar.Increment = 4
+    HorzScrollBar.Range = 500
+    HorzScrollBar.Tracking = True
+    VertScrollBar.Range = 300
+    VertScrollBar.Visible = False
+    TabStop = True
+  end
+end

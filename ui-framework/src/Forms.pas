@@ -11,10 +11,120 @@ type
   TMessageEvent = procedure(var Msg: TMsg; var Handled: Boolean) of object;
   TExceptionEvent = procedure(Sender: TObject; E: Exception) of object;
 
-  { layout.md section 11; scrolling itself comes with U-070 }
+  TScrollingWinControl = class;
+
+  { controls-standard.md section 17: one scroll bar of a scrolling container; lengths are device pixels }
+  TControlScrollBar = class(TPersistent)
+  private
+    FControl: TScrollingWinControl;
+    FKind: TScrollBarKind;
+    FIncrement: Integer;
+    FRange: Integer;
+    FTracking: Boolean;
+    FVisible: Boolean;
+    FPosition: Integer;
+    FShown: Boolean;                                         { layout.md UIF-291: the bar is visible }
+    FCalcRange: Integer;                                     { the range in effect after the last pass }
+    procedure SetPosition(Value: Integer);
+    procedure SetRange(Value: Integer);
+    procedure SetVisible(Value: Boolean);
+    function ClientExtent: Integer;
+    function MaxPosition: Integer;
+    procedure UpdateNative;
+  public
+    constructor Create(AControl: TScrollingWinControl; AKind: TScrollBarKind);
+    procedure Assign(Source: TPersistent); override;
+    { the bar is shown (UIF-291) }
+    function IsScrollBarVisible: Boolean;
+    property Kind: TScrollBarKind read FKind;
+    { 0 ... range - client extent; the setter scrolls the children (UIF-293); always 0 in dump mode }
+    property Position: Integer read FPosition write SetPosition;
+    property ScrollPos: Integer read FPosition;
+  published
+    property Increment: Integer read FIncrement write FIncrement default 8;
+    property Range: Integer read FRange write SetRange default 0;
+    property Tracking: Boolean read FTracking write FTracking default False;
+    property Visible: Boolean read FVisible write SetVisible default True;
+  end;
+
+  { layout.md section 11 }
   TScrollingWinControl = class(TWinControl)
+  private
+    FAutoScroll: Boolean;
+    FHorzScrollBar: TControlScrollBar;
+    FVertScrollBar: TControlScrollBar;
+    procedure SetAutoScroll(Value: Boolean);
+    procedure SetHorzScrollBar(Value: TControlScrollBar);
+    procedure SetVertScrollBar(Value: TControlScrollBar);
+    procedure ScrollMessage(Bar: TControlScrollBar; var Message: TWMScroll);
+  protected
+    { layout.md UIF-215: the device-pixel border on each side (TScrollBox bsSingle: 2) }
+    function BorderInset: Integer; virtual;
+    { the DPI of the form (96 without one or in dump mode) }
+    function ScrollDPI: Integer;
+    { layout.md UIF-215: B = MulDiv(17, DPI, 96) }
+    function BarSize: Integer;
+    { layout.md UIF-290, UIF-291, UIF-292: ranges, bar visibility, position clamp, native bars }
+    procedure UpdateScrollBars; virtual;
+    { the bars are decided before the pass, so the pass uses the resulting client size }
+    procedure AlignControls(AControl: TControl; var Rect: TRect); override;
+    function ScrollOffset: TPoint; override;
+    function GetClientRect: TRect; override;
+    procedure CreateWnd; override;
+    { controls-standard.md UIF-750 }
+    procedure WMHScroll(var Message: TWMScroll); override;
+    procedure WMVScroll(var Message: TWMScroll); override;
+    { core.md UIF-075: 3 x 16 logical px per 120 delta units, vertically }
+    function DoMouseWheel(Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint): Boolean; override;
+    { UIF-751: CM_FOCUSCHANGED for a descendant scrolls it into view }
+    procedure WndProc(var Message: TMessage); override;
+    { Increment, Range and the positions are scaled }
+    procedure ChangeScale(M, D: Integer); override;
+    property AutoScroll: Boolean read FAutoScroll write SetAutoScroll default False;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    { layout.md UIF-218: offset by the scroll position }
+    procedure AdjustClientRect(var Rect: TRect); override;
+    { UIF-751 }
+    procedure ScrollInView(AControl: TControl);
+    property HorzScrollBar: TControlScrollBar read FHorzScrollBar write SetHorzScrollBar;
+    property VertScrollBar: TControlScrollBar read FVertScrollBar write SetVertScrollBar;
+  end;
+
+  { controls-standard.md section 17 }
+  TScrollBox = class(TScrollingWinControl)
+  private
+    FBorderStyle: TBorderStyle;
+    procedure SetBorderStyle(Value: TBorderStyle);
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    function BorderInset: Integer; override;
+  public
+    constructor Create(AOwner: TComponent); override;
+  published
+    property AutoScroll default True;
+    property BorderStyle: TBorderStyle read FBorderStyle write SetBorderStyle default bsSingle;
+    property Color default clBtnFace;
+    property Font;
+    property HorzScrollBar;
+    property Padding;
+    property ParentColor default True;
+    property ParentFont;
+    property TabOrder;
+    property TabStop;
+    property VertScrollBar;
+    property OnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnResize;
   end;
 
   { application-forms.md section 4 }
@@ -109,6 +219,8 @@ type
     procedure CreateWnd; override;
     { layout.md UIF-271: the stored client size }
     function GetClientRect: TRect; override;
+    { forms do not scroll in Phase 4 (AutoScroll False, not published): no bars }
+    procedure UpdateScrollBars; override;
     procedure WMWindowPosChanged(var Message: TWMWindowPosMsg); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure PaintWindow(DC: HDC); override;
@@ -370,9 +482,14 @@ type
     property OnMessage: TMessageEvent read FOnMessage write FOnMessage;
   end;
 
+type
+  TTimerHook = procedure(TimerID: UINT_PTR);
+
 var
   Application: TApplication;
   Screen: TScreen;
+  { controls-standard.md UIF-730: WM_TIMER at the application window goes here (set by ExtCtrls) }
+  TimerHook: TTimerHook;
 
 { application-forms.md 4.2: the form at the top of the parent chain (TopForm), or the nearest one; nil if none }
 function GetParentForm(Control: TControl; TopForm: Boolean = True): TCustomForm;
@@ -488,6 +605,11 @@ begin
   Result := 0;
   if Msg = WM_NULL then
     CheckSynchronize(0)                                      { UIF-412: WakeMainThread }
+  else if Msg = WM_TIMER then
+  begin
+    if Assigned(TimerHook) then
+      TimerHook(UINT_PTR(WParam));                           { UIF-730 }
+  end
   else if Msg = CM_RELEASE then
     try
       TObject(Pointer(LParam)).Free;
@@ -544,10 +666,418 @@ end;
 
 { ---------------------------------------------------------------- TScrollingWinControl }
 
+constructor TControlScrollBar.Create(AControl: TScrollingWinControl; AKind: TScrollBarKind);
+begin
+  inherited Create;
+  FControl := AControl;
+  FKind := AKind;
+  FIncrement := 8;
+  FVisible := True;
+end;
+
+procedure TControlScrollBar.Assign(Source: TPersistent);
+begin
+  if Source is TControlScrollBar then
+  begin
+    FIncrement := TControlScrollBar(Source).FIncrement;
+    FTracking := TControlScrollBar(Source).FTracking;
+    FVisible := TControlScrollBar(Source).FVisible;
+    Range := TControlScrollBar(Source).FRange;
+  end
+  else
+    inherited Assign(Source);
+end;
+
+function TControlScrollBar.IsScrollBarVisible: Boolean;
+begin
+  Result := FShown;
+end;
+
+function TControlScrollBar.ClientExtent: Integer;
+begin
+  if FKind = sbHorizontal then
+    Result := FControl.ClientWidth
+  else
+    Result := FControl.ClientHeight;
+end;
+
+function TControlScrollBar.MaxPosition: Integer;
+begin
+  Result := FCalcRange - ClientExtent;
+  if Result < 0 then
+    Result := 0;
+end;
+
+{ UIF-293: the children move by minus the change; dump mode keeps every position at 0 }
+procedure TControlScrollBar.SetPosition(Value: Integer);
+var
+  D: Integer;
+begin
+  if LayoutDumpMode then
+    Exit;
+  if Value > MaxPosition then
+    Value := MaxPosition;
+  if Value < 0 then
+    Value := 0;
+  if Value = FPosition then
+    Exit;
+  D := Value - FPosition;
+  FPosition := Value;
+  if FKind = sbHorizontal then
+    FControl.ScrollBy(-D, 0)
+  else
+    FControl.ScrollBy(0, -D);
+  UpdateNative;
+end;
+
+procedure TControlScrollBar.SetRange(Value: Integer);
+begin
+  if Value < 0 then
+    Value := 0;
+  if FRange <> Value then
+  begin
+    FRange := Value;
+    if not FControl.FAutoScroll then
+      FControl.Realign;
+  end;
+end;
+
+procedure TControlScrollBar.SetVisible(Value: Boolean);
+begin
+  if FVisible <> Value then
+  begin
+    FVisible := Value;
+    FControl.Realign;
+  end;
+end;
+
+{ SetScrollInfo without SIF_DISABLENOSCROLL: a page as large as the range hides the bar }
+procedure TControlScrollBar.UpdateNative;
+const
+  Bars: array[TScrollBarKind] of Integer = (SB_HORZ, SB_VERT);
+var
+  Info: TScrollInfo;
+begin
+  if not FControl.HandleAllocated or LayoutDumpMode then
+    Exit;
+  FillChar(Info, SizeOf(Info), 0);
+  Info.cbSize := SizeOf(Info);
+  Info.fMask := SIF_RANGE or SIF_PAGE or SIF_POS;
+  if FShown then
+  begin
+    Info.nMax := FCalcRange - 1;
+    Info.nPage := UINT(ClientExtent);
+    Info.nPos := FPosition;
+  end;
+  SetScrollInfo(FControl.Handle, Bars[FKind], Info, True);
+end;
+
+{ ---------------------------------------------------------------- TScrollingWinControl }
+
 constructor TScrollingWinControl.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   ControlStyle := ControlStyle + [csAcceptsControls];
+  FHorzScrollBar := TControlScrollBar.Create(Self, sbHorizontal);
+  FVertScrollBar := TControlScrollBar.Create(Self, sbVertical);
+end;
+
+destructor TScrollingWinControl.Destroy;
+begin
+  inherited Destroy;
+  FHorzScrollBar.Free;
+  FVertScrollBar.Free;
+end;
+
+procedure TScrollingWinControl.SetAutoScroll(Value: Boolean);
+begin
+  if FAutoScroll <> Value then
+  begin
+    FAutoScroll := Value;
+    Realign;
+  end;
+end;
+
+procedure TScrollingWinControl.SetHorzScrollBar(Value: TControlScrollBar);
+begin
+  FHorzScrollBar.Assign(Value);
+end;
+
+procedure TScrollingWinControl.SetVertScrollBar(Value: TControlScrollBar);
+begin
+  FVertScrollBar.Assign(Value);
+end;
+
+function TScrollingWinControl.BorderInset: Integer;
+begin
+  Result := 0;
+end;
+
+function TScrollingWinControl.ScrollDPI: Integer;
+var
+  F: TCustomForm;
+begin
+  Result := 96;
+  F := GetParentForm(Self, False);
+  if (F <> nil) and not LayoutDumpMode and (F.FPixelsPerInch > 0) then
+    Result := F.FPixelsPerInch;
+end;
+
+function TScrollingWinControl.BarSize: Integer;
+begin
+  Result := LayoutMulDiv(17, ScrollDPI, 96);
+end;
+
+{ UIF-215 }
+function TScrollingWinControl.GetClientRect: TRect;
+var
+  W, H: Integer;
+begin
+  W := Width - 2 * BorderInset;
+  H := Height - 2 * BorderInset;
+  if FVertScrollBar.FShown then
+    W := W - BarSize;
+  if FHorzScrollBar.FShown then
+    H := H - BarSize;
+  if W < 0 then
+    W := 0;
+  if H < 0 then
+    H := 0;
+  Result := Rect(0, 0, W, H);
+end;
+
+procedure TScrollingWinControl.UpdateScrollBars;
+var
+  W0, H0, B, RangeH, RangeV, I, V: Integer;
+  HBar, VBar: Boolean;
+  C: TControl;
+begin
+  { UIF-290, UIF-292 }
+  if FAutoScroll then
+  begin
+    RangeH := 0;
+    RangeV := 0;
+    for I := 0 to ControlCount - 1 do
+    begin
+      C := Controls[I];
+      if (C.Align <> alNone) or not C.Visible then
+        Continue;
+      if akRight in C.Anchors then
+        V := C.Left + C.Constraints.MinWidth
+      else
+        V := C.Left + C.Width;
+      V := V + FHorzScrollBar.FPosition;
+      if V > RangeH then
+        RangeH := V;
+      if akBottom in C.Anchors then
+        V := C.Top + C.Constraints.MinHeight
+      else
+        V := C.Top + C.Height;
+      V := V + FVertScrollBar.FPosition;
+      if V > RangeV then
+        RangeV := V;
+    end;
+  end
+  else
+  begin
+    RangeH := FHorzScrollBar.FRange;
+    RangeV := FVertScrollBar.FRange;
+  end;
+  { UIF-291; a bar with Visible = False is never shown and takes no space }
+  W0 := Width - 2 * BorderInset;
+  if W0 < 0 then
+    W0 := 0;
+  H0 := Height - 2 * BorderInset;
+  if H0 < 0 then
+    H0 := 0;
+  B := BarSize;
+  HBar := FHorzScrollBar.FVisible and (RangeH > W0);
+  VBar := FVertScrollBar.FVisible and (RangeV > H0);
+  if HBar and not VBar then
+    VBar := FVertScrollBar.FVisible and (RangeV > H0 - B);
+  if VBar and not HBar then
+    HBar := FHorzScrollBar.FVisible and (RangeH > W0 - B);
+  FHorzScrollBar.FShown := HBar;
+  FVertScrollBar.FShown := VBar;
+  FHorzScrollBar.FCalcRange := RangeH;
+  FVertScrollBar.FCalcRange := RangeV;
+  { a smaller range pulls the position back (children move with it) }
+  if FHorzScrollBar.FPosition > FHorzScrollBar.MaxPosition then
+    FHorzScrollBar.Position := FHorzScrollBar.MaxPosition;
+  if FVertScrollBar.FPosition > FVertScrollBar.MaxPosition then
+    FVertScrollBar.Position := FVertScrollBar.MaxPosition;
+  FHorzScrollBar.UpdateNative;
+  FVertScrollBar.UpdateNative;
+end;
+
+procedure TScrollingWinControl.AlignControls(AControl: TControl; var Rect: TRect);
+begin
+  UpdateScrollBars;
+  Rect := GetClientRect;
+  AdjustClientRect(Rect);
+  Rect.Left := Rect.Left + Padding.Left;
+  Rect.Top := Rect.Top + Padding.Top;
+  Rect.Right := Rect.Right - Padding.Right;
+  Rect.Bottom := Rect.Bottom - Padding.Bottom;
+  inherited AlignControls(AControl, Rect);
+end;
+
+procedure TScrollingWinControl.AdjustClientRect(var Rect: TRect);
+begin
+  inherited AdjustClientRect(Rect);
+  OffsetRect(Rect, -FHorzScrollBar.FPosition, -FVertScrollBar.FPosition);
+end;
+
+function TScrollingWinControl.ScrollOffset: TPoint;
+begin
+  Result := Point(FHorzScrollBar.FPosition, FVertScrollBar.FPosition);
+end;
+
+procedure TScrollingWinControl.CreateWnd;
+begin
+  inherited CreateWnd;
+  FHorzScrollBar.UpdateNative;
+  FVertScrollBar.UpdateNative;
+end;
+
+{ UIF-750: line = Increment, page = client extent - Increment, the thumb only with Tracking while dragging }
+procedure TScrollingWinControl.ScrollMessage(Bar: TControlScrollBar; var Message: TWMScroll);
+var
+  P: Integer;
+begin
+  P := Bar.FPosition;
+  case Message.ScrollCode of
+    SB_LINEUP: P := P - Bar.FIncrement;
+    SB_LINEDOWN: P := P + Bar.FIncrement;
+    SB_PAGEUP: P := P - (Bar.ClientExtent - Bar.FIncrement);
+    SB_PAGEDOWN: P := P + (Bar.ClientExtent - Bar.FIncrement);
+    SB_THUMBPOSITION: P := Message.Pos;
+    SB_THUMBTRACK:
+      if Bar.FTracking then
+        P := Message.Pos;
+    SB_TOP: P := 0;
+    SB_BOTTOM: P := Bar.MaxPosition;
+  end;
+  Bar.Position := P;
+  Message.Result := 0;
+end;
+
+procedure TScrollingWinControl.WMHScroll(var Message: TWMScroll);
+begin
+  ScrollMessage(FHorzScrollBar, Message);
+end;
+
+procedure TScrollingWinControl.WMVScroll(var Message: TWMScroll);
+begin
+  ScrollMessage(FVertScrollBar, Message);
+end;
+
+function TScrollingWinControl.DoMouseWheel(Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint): Boolean;
+var
+  Step: Integer;
+begin
+  Result := inherited DoMouseWheel(Shift, WheelDelta, MousePos);
+  if Result or (FVertScrollBar.MaxPosition = 0) then
+    Exit;
+  Step := LayoutMulDiv(48, ScrollDPI, 96);                   { 3 x 16 logical px }
+  FVertScrollBar.Position := FVertScrollBar.FPosition - MulDiv(WheelDelta, Step, 120);
+  Result := True;
+end;
+
+procedure TScrollingWinControl.WndProc(var Message: TMessage);
+var
+  C: TControl;
+begin
+  if (Message.Msg = CM_FOCUSCHANGED) and (Message.LParam <> 0) then
+  begin
+    C := TControl(Pointer(Message.LParam));
+    if (C <> Self) and ContainsControl(C) then
+      ScrollInView(C);
+  end;
+  inherited WndProc(Message);
+end;
+
+{ UIF-751: the smallest position change that brings the control's bounds into the client area }
+procedure TScrollingWinControl.ScrollInView(AControl: TControl);
+var
+  P: TPoint;
+  R: TRect;
+  D: Integer;
+begin
+  if (AControl = nil) or (AControl = Self) or not ContainsControl(AControl) then
+    Exit;
+  P := AControl.ClientToParent(Point(0, 0), Self);
+  R := Bounds(P.X, P.Y, AControl.Width, AControl.Height);
+  if R.Left < 0 then
+    FHorzScrollBar.Position := FHorzScrollBar.FPosition + R.Left
+  else if R.Right > ClientWidth then
+  begin
+    D := R.Right - ClientWidth;
+    if D > R.Left then
+      D := R.Left;
+    FHorzScrollBar.Position := FHorzScrollBar.FPosition + D;
+  end;
+  if R.Top < 0 then
+    FVertScrollBar.Position := FVertScrollBar.FPosition + R.Top
+  else if R.Bottom > ClientHeight then
+  begin
+    D := R.Bottom - ClientHeight;
+    if D > R.Top then
+      D := R.Top;
+    FVertScrollBar.Position := FVertScrollBar.FPosition + D;
+  end;
+end;
+
+procedure TScrollingWinControl.ChangeScale(M, D: Integer);
+begin
+  if (M <> D) and (M > 0) and (D > 0) then
+  begin
+    FHorzScrollBar.FIncrement := LayoutMulDiv(FHorzScrollBar.FIncrement, M, D);
+    FVertScrollBar.FIncrement := LayoutMulDiv(FVertScrollBar.FIncrement, M, D);
+    FHorzScrollBar.FRange := LayoutMulDiv(FHorzScrollBar.FRange, M, D);
+    FVertScrollBar.FRange := LayoutMulDiv(FVertScrollBar.FRange, M, D);
+    FHorzScrollBar.FPosition := LayoutMulDiv(FHorzScrollBar.FPosition, M, D);
+    FVertScrollBar.FPosition := LayoutMulDiv(FVertScrollBar.FPosition, M, D);
+  end;
+  inherited ChangeScale(M, D);
+end;
+
+{ ---------------------------------------------------------------- TScrollBox }
+
+constructor TScrollBox.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FBorderStyle := bsSingle;
+  AutoScroll := True;
+  SetBounds(Left, Top, 185, 41);
+  Color := clBtnFace;
+  ParentColor := True;
+end;
+
+procedure TScrollBox.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  if FBorderStyle = bsSingle then
+    Params.ExStyle := Params.ExStyle or WS_EX_CLIENTEDGE;
+end;
+
+function TScrollBox.BorderInset: Integer;
+begin
+  if FBorderStyle = bsSingle then
+    Result := 2
+  else
+    Result := 0;
+end;
+
+procedure TScrollBox.SetBorderStyle(Value: TBorderStyle);
+begin
+  if FBorderStyle <> Value then
+  begin
+    FBorderStyle := Value;
+    RecreateWnd;
+    Perform(CM_BORDERCHANGED, 0, 0);
+    Realign;
+  end;
 end;
 
 { ---------------------------------------------------------------- TCustomForm }
@@ -1049,6 +1579,10 @@ begin
   FResizedWidth := FClientWidth;
   FResizedHeight := FClientHeight;
   inherited Resize;
+end;
+
+procedure TCustomForm.UpdateScrollBars;
+begin
 end;
 
 function TCustomForm.GetClientRect: TRect;
@@ -2340,6 +2874,12 @@ begin
     FOnMessage(Msg, Handled);
   if Handled or (Msg.hwnd = 0) then
     Exit;
+  { Escape while a control holds the mouse capture cancels that mode (a splitter drag, UIF-763) }
+  if (Msg.message = WM_KEYDOWN) and (Msg.wParam = VK_ESCAPE) and (GetCaptureControl <> nil) then
+  begin
+    GetCaptureControl.Perform(WM_CANCELMODE, 0, 0);
+    Exit;
+  end;
   if IsKeyMsg(Msg) then
     Exit;
   TranslateMessage(Msg);
@@ -2412,7 +2952,7 @@ initialization
   FindGlobalComponent := FormsFindGlobalComponent;
   Classes.WakeMainThread := Application.WakeMainThread;
   FocusRootClass := TCustomForm;
-  RegisterClasses([TForm]);
+  RegisterClasses([TForm, TScrollBox]);
 
 finalization
   DestroyGlobals;

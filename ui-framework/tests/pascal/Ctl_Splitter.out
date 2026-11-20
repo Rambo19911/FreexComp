@@ -1,0 +1,78 @@
+# defaults
+ok size 3 x 100
+ok Align alLeft
+ok AutoSnap True
+ok Beveled False
+ok Color clBtnFace
+ok MinSize 30
+ok ParentColor True
+ok ResizeStyle rsUpdate
+ok Cursor crDefault
+ok registered
+# cursor (UIF-760)
+ok alLeft: crVSplit
+ok alRight: crVSplit
+ok alTop: crHSplit
+ok alBottom: crHSplit
+ok alNone: the parent's cursor
+ok own Cursor wins
+# target (UIF-761)
+ok splitter placed after the panel
+ok alLeft: the preceding alLeft sibling
+ok splitter first in its phase: no target
+ok panel now after the splitter
+ok moved back after the panel
+ok invisible sibling is no target
+ok splitter after the panel again
+# drag (UIF-762)
+ok live resize: S0 + d
+ok the splitter follows the target
+ok second move from the new splitter position
+ok maximum S0 + Free0 - MinSize
+ok back
+ok below MinSize with AutoSnap: 0
+ok OnCanResize per change, OnMoved on up
+ok no drag after button-up
+ok no events after button-up
+ok below MinSize without AutoSnap: MinSize
+ok OnCanResize refuses
+ok OnCanResize replaces NewSize
+ok OnCanResize log
+# Escape (UIF-763)
+ok dragged
+ok Escape restores S0
+ok capture released
+ok no drag after Escape
+ok no OnMoved after Escape
+# rsNone
+ok rsNone: dragging disabled
+# alRight and alTop
+ok right panel
+ok right splitter before it
+ok alRight: the sibling with the larger right edge
+ok alRight: S0 - d
+ok right splitter follows
+ok top splitter below the top panel
+ok alTop: the preceding alTop sibling
+ok alTop: S0 + d
+ok alTop maximum
+# Beveled (UIF-764)
+ok not beveled: no line
+ok filled with Color
+ok etched: shadow column in the middle
+ok etched: highlight column next to it
+ok rest filled with Color
+ok horizontal: shadow row
+ok horizontal: highlight row
+# scaling
+ok MinSize scaled
+# streaming
+ok default Align alLeft (not stored)
+ok bounds
+ok AutoSnap
+ok Beveled
+ok MinSize
+ok ResizeStyle
+ok OnMoved bound
+ok target of the loaded splitter
+# passed 67 failed 0

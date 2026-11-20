@@ -1,0 +1,112 @@
+# E32 in dump mode (96 DPI)
+ok client 196 x 79
+ok RangeH 300 > 196: HBar
+ok RangeV 50 <= 96 - 17: no VBar
+ok B (0, 59, 196, 20)
+ok N unchanged
+ok dump mode: positions stay 0
+# defaults
+ok size 185 x 41
+ok AutoScroll True
+ok BorderStyle bsSingle
+ok Color clBtnFace
+ok ParentColor True
+ok TabStop False
+ok csAcceptsControls
+ok Increment 8
+ok Range 0
+ok Tracking False
+ok Visible True
+ok Kind sbHorizontal
+ok Kind sbVertical
+ok Position 0
+ok registered
+# client formula (UIF-215)
+ok bsSingle, no bars: 2 px per side
+ok WS_EX_CLIENTEDGE
+ok bsNone: the whole control
+ok bsNone: no client edge
+# E32 at run time
+ok client 196 x (96 - B)
+ok alBottom child above the bar
+ok HBar
+ok no VBar
+ok native horizontal bar shown
+ok native vertical bar hidden
+ok SetScrollInfo: range and page
+# bar procedure (UIF-291)
+ok RangeV > H0 - B with HBar: VBar too
+ok both bars: client
+ok RangeH = W0: no HBar
+ok no bars: full client
+ok RangeV > H0: VBar
+ok RangeH > W0 - B with VBar: HBar too
+ok alClient child does not count
+ok invisible child does not count
+# anchored children (UIF-292)
+ok akRight child: Left + MinWidth = 180 <= 196
+ok akRight child: Left + MinWidth = 210 > 196
+# scrolling (UIF-293, UIF-750)
+ok Position 50
+ok alNone child moved
+ok aligned child moved
+ok native position
+ok a layout pass keeps the aligned child scrolled
+ok a layout pass keeps the alNone child
+ok clamped to Range - client width
+ok clamped to 0
+ok back at 0
+ok line: Increment
+ok page: 8 + (196 - 8), clamped to the maximum 104
+ok line up
+ok page up clamped
+ok thumb track without Tracking: no change
+ok thumb position
+ok thumb track with Tracking
+ok bottom: maximum
+ok top
+# range shrinks
+ok smaller range: position pulled back
+ok child follows
+# unscrolled baselines (UIF-234)
+ok scrolled
+ok anchors from the unscrolled baseline, offset by the position
+ok and back
+ok unscrolled again
+# mouse wheel (UIF-752)
+ok one notch down: 3 x 16 logical px
+ok two notches up: clamped at 0
+ok WM_VSCROLL line
+ok vertical scroll moves the child
+# ScrollInView (UIF-751)
+ok below: the bottom edge into view
+ok child at the bottom of the client area
+ok above: the top edge into view
+ok focused child scrolled in: top
+ok focused child scrolled in: bottom
+ok focused child scrolled in: right
+# AutoScroll False
+ok no Range: no bars
+ok Range 400 > 196: HBar
+ok clamped to Range - client width
+ok Visible False: never shown
+ok Visible False: no space taken
+ok Visible False: still scrolls programmatically
+# scaling
+ok Increment scaled
+ok Range scaled
+# streaming
+ok Box: AutoScroll default
+ok Box: HBar after loading
+ok AutoScroll False
+ok BorderStyle bsNone
+ok HorzScrollBar.Increment
+ok HorzScrollBar.Range
+ok HorzScrollBar.Tracking
+ok VertScrollBar.Range
+ok VertScrollBar.Visible
+ok TabStop
+ok Range 500 > 200: HBar
+ok Visible False: no VBar
+ok client of the loaded box
+# passed 97 failed 0
