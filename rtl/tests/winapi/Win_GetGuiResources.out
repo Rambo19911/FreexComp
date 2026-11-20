@@ -1,0 +1,18 @@
+# GR_* values
+ok GR_GDIOBJECTS
+ok GR_USEROBJECTS
+ok GR_GDIOBJECTS_PEAK
+ok GR_USEROBJECTS_PEAK
+# GDI objects
+ok CreateCompatibleDC
+ok a memory DC adds one GDI object
+ok GDI count is positive
+ok GDI peak is at least the count
+ok DeleteDC
+ok deleting it removes it
+# user objects
+ok CreateWindowExW STATIC
+ok a window adds a user object
+ok user peak is at least the count
+ok DestroyWindow
+# passed 14 failed 0

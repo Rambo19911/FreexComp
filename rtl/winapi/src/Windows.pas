@@ -1621,6 +1621,12 @@ const
   SPIF_SENDCHANGE = $0002;
   SPIF_SENDWININICHANGE = $0002;
 
+  { GetGuiResources }
+  GR_GDIOBJECTS = 0;
+  GR_USEROBJECTS = 1;
+  GR_GDIOBJECTS_PEAK = 2;
+  GR_USEROBJECTS_PEAK = 4;
+
   { monitors and DPI }
   MONITOR_DEFAULTTONULL = $00000000;
   MONITOR_DEFAULTTOPRIMARY = $00000001;
@@ -2564,6 +2570,7 @@ function DestroyCursor(hCursor: HCURSOR): BOOL; stdcall; external user32 name 'D
 { ---------------------------------------------------------------- user32: system / DPI / monitors }
 function GetSystemMetrics(nIndex: Integer): Integer; stdcall; external user32 name 'GetSystemMetrics';
 function GetSystemMetricsForDpi(nIndex: Integer; dpi: UINT): Integer; stdcall; external user32 name 'GetSystemMetricsForDpi';
+function GetGuiResources(hProcess: THandle; uiFlags: DWORD): DWORD; stdcall; external user32 name 'GetGuiResources';
 function SystemParametersInfoW(uiAction, uiParam: UINT; pvParam: Pointer; fWinIni: UINT): BOOL; stdcall;
   external user32 name 'SystemParametersInfoW';
 function SystemParametersInfo(uiAction, uiParam: UINT; pvParam: Pointer; fWinIni: UINT): BOOL; stdcall;
