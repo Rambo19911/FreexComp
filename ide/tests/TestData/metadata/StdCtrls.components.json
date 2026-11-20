@@ -1,0 +1,287 @@
+{
+  "formatVersion": 1,
+  "unit": "StdCtrls",
+  "types": {
+    "TTextLayout": { "kind": "enum", "values": ["tlTop", "tlCenter", "tlBottom"] },
+    "TEditCharCase": { "kind": "enum", "values": ["ecNormal", "ecUpperCase", "ecLowerCase"] },
+    "TScrollStyle": { "kind": "enum", "values": ["ssNone", "ssHorizontal", "ssVertical", "ssBoth"] },
+    "TCheckBoxState": { "kind": "enum", "values": ["cbUnchecked", "cbChecked", "cbGrayed"] },
+    "TListBoxStyle": { "kind": "enum", "values": ["lbStandard", "lbOwnerDrawFixed", "lbOwnerDrawVariable"] },
+    "TComboBoxStyle": { "kind": "enum", "values": ["csDropDown", "csSimple", "csDropDownList", "csOwnerDrawFixed", "csOwnerDrawVariable"] }
+  },
+  "components": [
+    {
+      "class": "TLabel",
+      "ancestor": "TGraphicControl",
+      "palette": { "page": "Standard", "order": 30 },
+      "kind": "control",
+      "defaultSize": { "width": 34, "height": 15 },
+      "namePrefix": "Label",
+      "renderer": "label",
+      "properties": [
+        { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify", "category": "Appearance" },
+        { "name": "AutoSize", "type": "Boolean", "default": true, "category": "Layout" },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)" },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "FocusControl", "type": "TWinControl", "kind": "component", "category": "Behavior" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "Layout", "type": "TTextLayout", "default": "tlTop", "category": "Appearance" },
+        { "name": "ParentColor", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ShowAccelChar", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "Transparent", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "WordWrap", "type": "Boolean", "default": false, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TCustomEdit",
+      "ancestor": "TWinControl",
+      "abstract": true,
+      "kind": "wincontrol",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TEdit",
+      "ancestor": "TCustomEdit",
+      "palette": { "page": "Standard", "order": 40 },
+      "defaultSize": { "width": 121, "height": 23 },
+      "namePrefix": "Edit",
+      "renderer": "edit",
+      "properties": [
+        { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify", "category": "Appearance" },
+        { "name": "AutoSelect", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "AutoSize", "type": "Boolean", "default": true, "category": "Layout", "affectsLayout": true },
+        { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsSingle", "category": "Appearance", "affectsLayout": true },
+        { "name": "CharCase", "type": "TEditCharCase", "default": "ecNormal", "category": "Behavior" },
+        { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "HideSelection", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "MaxLength", "type": "Integer", "default": 0, "category": "Behavior", "min": 0 },
+        { "name": "NumbersOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "ParentColor", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance", "affectsLayout": true },
+        { "name": "PasswordChar", "type": "Char", "default": "", "category": "Behavior" },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Text", "type": "string", "default": "", "category": "Appearance" },
+        { "name": "TextHint", "type": "string", "default": "", "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
+      ]
+    },
+    {
+      "class": "TCustomMemo",
+      "ancestor": "TCustomEdit",
+      "abstract": true,
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TMemo",
+      "ancestor": "TCustomMemo",
+      "palette": { "page": "Standard", "order": 50 },
+      "defaultSize": { "width": 185, "height": 89 },
+      "namePrefix": "Memo",
+      "renderer": "memo",
+      "properties": [
+        { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify", "category": "Appearance" },
+        { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsSingle", "category": "Appearance" },
+        { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "HideSelection", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Lines", "type": "TStrings", "category": "Data", "editor": "strings" },
+        { "name": "MaxLength", "type": "Integer", "default": 0, "category": "Behavior", "min": 0 },
+        { "name": "ParentColor", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ReadOnly", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "ScrollBars", "type": "TScrollStyle", "default": "ssNone", "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "WantReturns", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "WantTabs", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "WordWrap", "type": "Boolean", "default": true, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
+      ]
+    },
+    {
+      "class": "TButtonControl",
+      "ancestor": "TWinControl",
+      "abstract": true,
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TButton",
+      "ancestor": "TButtonControl",
+      "palette": { "page": "Standard", "order": 60 },
+      "defaultSize": { "width": 75, "height": 25 },
+      "namePrefix": "Button",
+      "renderer": "button",
+      "properties": [
+        { "name": "Cancel", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)" },
+        { "name": "Default", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "ModalResult", "type": "Integer", "default": 0, "category": "Behavior" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "WordWrap", "type": "Boolean", "default": false, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
+      ]
+    },
+    {
+      "class": "TCheckBox",
+      "ancestor": "TButtonControl",
+      "palette": { "page": "Standard", "order": 70 },
+      "defaultSize": { "width": 97, "height": 17 },
+      "namePrefix": "CheckBox",
+      "renderer": "checkbox",
+      "properties": [
+        { "name": "Alignment", "type": "TLeftRight", "default": "taRightJustify", "category": "Appearance" },
+        { "name": "AllowGrayed", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)" },
+        { "name": "Checked", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "State", "type": "TCheckBoxState", "default": "cbUnchecked", "category": "Behavior" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "WordWrap", "type": "Boolean", "default": false, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
+      ]
+    },
+    {
+      "class": "TRadioButton",
+      "ancestor": "TButtonControl",
+      "palette": { "page": "Standard", "order": 80 },
+      "defaultSize": { "width": 113, "height": 17 },
+      "namePrefix": "RadioButton",
+      "renderer": "radiobutton",
+      "properties": [
+        { "name": "Alignment", "type": "TLeftRight", "default": "taRightJustify", "category": "Appearance" },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)" },
+        { "name": "Checked", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "WordWrap", "type": "Boolean", "default": false, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
+      ]
+    },
+    {
+      "class": "TListBox",
+      "ancestor": "TWinControl",
+      "palette": { "page": "Standard", "order": 90 },
+      "defaultSize": { "width": 121, "height": 97 },
+      "namePrefix": "ListBox",
+      "renderer": "listbox",
+      "properties": [
+        { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsSingle", "category": "Appearance" },
+        { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
+        { "name": "Columns", "type": "Integer", "default": 0, "category": "Appearance", "min": 0 },
+        { "name": "ExtendedSelect", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "ItemHeight", "type": "Integer", "default": 15, "category": "Appearance", "readOnly": true, "stored": false },
+        { "name": "Items", "type": "TStrings", "category": "Data", "editor": "strings" },
+        { "name": "MultiSelect", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "ParentColor", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "Sorted", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Style", "type": "TListBoxStyle", "default": "lbStandard", "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
+      ]
+    },
+    {
+      "class": "TCustomComboBox",
+      "ancestor": "TWinControl",
+      "abstract": true,
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TComboBox",
+      "ancestor": "TCustomComboBox",
+      "palette": { "page": "Standard", "order": 100 },
+      "defaultSize": { "width": 145, "height": 23 },
+      "namePrefix": "ComboBox",
+      "renderer": "combobox",
+      "properties": [
+        { "name": "CharCase", "type": "TEditCharCase", "default": "ecNormal", "category": "Behavior" },
+        { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
+        { "name": "DropDownCount", "type": "Integer", "default": 8, "category": "Behavior", "min": 1 },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "Items", "type": "TStrings", "category": "Data", "editor": "strings" },
+        { "name": "ItemIndex", "type": "Integer", "default": -1, "category": "Data", "min": -1 },
+        { "name": "MaxLength", "type": "Integer", "default": 0, "category": "Behavior", "min": 0 },
+        { "name": "ParentColor", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance", "affectsLayout": true },
+        { "name": "Sorted", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Style", "type": "TComboBoxStyle", "default": "csDropDown", "category": "Appearance", "affectsLayout": true },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Text", "type": "string", "default": "", "category": "Appearance" },
+        { "name": "TextHint", "type": "string", "default": "", "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
+      ]
+    },
+    {
+      "class": "TGroupBox",
+      "ancestor": "TWinControl",
+      "palette": { "page": "Standard", "order": 120 },
+      "kind": "container",
+      "defaultSize": { "width": 185, "height": 105 },
+      "namePrefix": "GroupBox",
+      "acceptsChildren": true,
+      "renderer": "groupbox",
+      "properties": [
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)" },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "Padding", "type": "TPadding", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "ParentColor", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance", "affectsLayout": true },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": false, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TKeyPressEvent": "procedure(Sender: TObject; var Key: Char)"
+  }
+}

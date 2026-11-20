@@ -1,0 +1,2 @@
+set-of-undeclared.json(5,20): set TMissingSet refers to undeclared enum TMissingEnum (skipped)
+set-of-undeclared.json(12,9): unknown type TMissingSet of property TSurvivor.Flags (treated as read-only string)

@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "unit": "Kinds",
+  "components": [
+    { "class": "TStrange", "ancestor": "TControl", "kind": "gadget" },
+    { "class": "TSurvivor", "ancestor": "TControl" }
+  ]
+}

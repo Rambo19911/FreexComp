@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "unit": "Dialogs",
+  "types": {
+    "TOpenOption": { "kind": "enum", "values": ["ofReadOnly", "ofOverwritePrompt", "ofHideReadOnly", "ofNoChangeDir", "ofShowHelp", "ofNoValidate", "ofAllowMultiSelect", "ofExtensionDifferent", "ofPathMustExist", "ofFileMustExist", "ofCreatePrompt", "ofShareAware", "ofNoReadOnlyReturn", "ofNoTestFileCreate", "ofNoNetworkButton", "ofNoLongNames", "ofOldStyleDialog", "ofNoDereferenceLinks", "ofEnableIncludeNotify", "ofEnableSizing", "ofDontAddToRecent", "ofForceShowHidden"] },
+    "TOpenOptions": { "kind": "set", "of": "TOpenOption" }
+  },
+  "components": [
+    {
+      "class": "TCommonDialog",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TOpenDialog",
+      "ancestor": "TCommonDialog",
+      "palette": { "page": "Dialogs", "order": 10 },
+      "namePrefix": "OpenDialog",
+      "properties": [
+        { "name": "DefaultExt", "type": "string", "default": "", "category": "Behavior" },
+        { "name": "FileName", "type": "string", "default": "", "category": "Behavior", "editor": "filename" },
+        { "name": "Filter", "type": "string", "default": "", "category": "Behavior" },
+        { "name": "FilterIndex", "type": "Integer", "default": 1, "category": "Behavior" },
+        { "name": "InitialDir", "type": "string", "default": "", "category": "Behavior" },
+        { "name": "Options", "type": "TOpenOptions", "default": ["ofHideReadOnly", "ofEnableSizing"], "category": "Behavior" },
+        { "name": "Title", "type": "string", "default": "", "category": "Appearance" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TSaveDialog",
+      "ancestor": "TOpenDialog",
+      "palette": { "page": "Dialogs", "order": 20 },
+      "namePrefix": "SaveDialog",
+      "properties": [],
+      "events": []
+    }
+  ],
+  "eventSignatures": {}
+}

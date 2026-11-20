@@ -1,0 +1,2 @@
+unknown-ancestor.json(5,5): unknown ancestor TNowhere of TOrphan (skipped with its descendants)
+unknown-ancestor.json(6,5): unknown ancestor TOrphan of TOrphanChild (skipped with its descendants)

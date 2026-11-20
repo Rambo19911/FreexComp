@@ -1,0 +1,1 @@
+unknown-property-type.json(9,9): unknown type TMystery of property TSurvivor.Mystery (treated as read-only string)

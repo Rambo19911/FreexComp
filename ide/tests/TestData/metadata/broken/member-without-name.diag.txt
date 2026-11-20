@@ -1,0 +1,2 @@
+member-without-name.json(9,9): property of TSurvivor without "name" (skipped)
+member-without-name.json(13,9): event of TSurvivor without "name" (skipped)

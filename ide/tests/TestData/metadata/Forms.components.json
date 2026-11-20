@@ -1,0 +1,55 @@
+{
+  "formatVersion": 1,
+  "unit": "Forms",
+  "types": {
+    "TBorderIcon": { "kind": "enum", "values": ["biSystemMenu", "biMinimize", "biMaximize", "biHelp"] },
+    "TBorderIcons": { "kind": "set", "of": "TBorderIcon" },
+    "TFormBorderStyle": { "kind": "enum", "values": ["bsNone", "bsSingle", "bsSizeable", "bsDialog", "bsToolWindow", "bsSizeToolWin"] },
+    "TFormStyle": { "kind": "enum", "values": ["fsNormal", "fsMDIChild", "fsMDIForm", "fsStayOnTop"] },
+    "TPosition": { "kind": "enum", "values": ["poDesigned", "poDefault", "poDefaultPosOnly", "poDefaultSizeOnly", "poScreenCenter", "poDesktopCenter", "poMainFormCenter", "poOwnerFormCenter"] },
+    "TWindowState": { "kind": "enum", "values": ["wsNormal", "wsMinimized", "wsMaximized"] }
+  },
+  "components": [
+    {
+      "class": "TForm",
+      "ancestor": "TWinControl",
+      "kind": "form",
+      "defaultSize": { "width": 400, "height": 300 },
+      "namePrefix": "Form",
+      "acceptsChildren": true,
+      "renderer": "form",
+      "properties": [
+        { "name": "Width", "type": "Integer", "stored": false },
+        { "name": "Height", "type": "Integer", "stored": false },
+        { "name": "Align", "type": "TAlign", "hidden": true },
+        { "name": "Anchors", "type": "TAnchors", "hidden": true },
+        { "name": "AlignWithMargins", "type": "Boolean", "hidden": true },
+        { "name": "Margins", "type": "TMargins", "kind": "object", "hidden": true },
+        { "name": "ActiveControl", "type": "TWinControl", "kind": "component", "category": "Behavior" },
+        { "name": "BorderIcons", "type": "TBorderIcons", "default": ["biSystemMenu", "biMinimize", "biMaximize"], "category": "Appearance" },
+        { "name": "BorderStyle", "type": "TFormBorderStyle", "default": "bsSizeable", "category": "Appearance" },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)" },
+        { "name": "ClientWidth", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "ClientHeight", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "FormStyle", "type": "TFormStyle", "default": "fsNormal", "category": "Appearance" },
+        { "name": "KeyPreview", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Menu", "type": "TMainMenu", "kind": "component", "category": "Appearance" },
+        { "name": "PixelsPerInch", "type": "Integer", "category": "Layout", "readOnly": true },
+        { "name": "Position", "type": "TPosition", "default": "poDesigned", "category": "Layout" },
+        { "name": "Scaled", "type": "Boolean", "default": true, "category": "Layout" },
+        { "name": "WindowState", "type": "TWindowState", "default": "wsNormal", "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnCreate", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TKeyPressEvent": "procedure(Sender: TObject; var Key: Char)"
+  }
+}

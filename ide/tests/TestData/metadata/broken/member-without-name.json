@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "unit": "Members",
+  "components": [
+    {
+      "class": "TSurvivor",
+      "ancestor": "TControl",
+      "properties": [
+        { "type": "Integer", "default": 0 },
+        { "name": "Kept", "type": "Integer", "default": 0 }
+      ],
+      "events": [
+        { "signature": "TNotifyEvent" },
+        { "name": "OnKept", "signature": "TNotifyEvent" }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)"
+  }
+}

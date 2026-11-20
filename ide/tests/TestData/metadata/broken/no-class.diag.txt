@@ -1,0 +1,1 @@
+no-class.json(5,5): component without "class" (skipped)

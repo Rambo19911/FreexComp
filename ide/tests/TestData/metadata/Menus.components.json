@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "unit": "Menus",
+  "types": {
+    "TPopupAlignment": { "kind": "enum", "values": ["paLeft", "paRight", "paCenter"] }
+  },
+  "components": [
+    {
+      "class": "TMenu",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TMainMenu",
+      "ancestor": "TMenu",
+      "palette": { "page": "Standard", "order": 10 },
+      "namePrefix": "MainMenu",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TPopupMenu",
+      "ancestor": "TMenu",
+      "palette": { "page": "Standard", "order": 20 },
+      "namePrefix": "PopupMenu",
+      "properties": [
+        { "name": "Alignment", "type": "TPopupAlignment", "default": "paLeft", "category": "Behavior" },
+        { "name": "AutoPopup", "type": "Boolean", "default": true, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnPopup", "signature": "TNotifyEvent", "default": true }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)"
+  }
+}

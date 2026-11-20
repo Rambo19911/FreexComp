@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "unit": "Duplicate",
+  "components": [
+    { "class": "TButton", "ancestor": "TControl", "kind": "nonvisual" },
+    { "class": "TSurvivor", "ancestor": "TControl" }
+  ]
+}

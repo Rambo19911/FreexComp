@@ -1,0 +1,1 @@
+invalid-kind.json(5,5): invalid kind "gadget" of TStrange (skipped)

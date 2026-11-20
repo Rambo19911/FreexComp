@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "unit": "Sets",
+  "types": {
+    "TMissingSet": { "kind": "set", "of": "TMissingEnum" }
+  },
+  "components": [
+    {
+      "class": "TSurvivor",
+      "ancestor": "TControl",
+      "properties": [
+        { "name": "Flags", "type": "TMissingSet", "default": [] }
+      ]
+    }
+  ]
+}

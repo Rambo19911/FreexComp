@@ -1,0 +1,1 @@
+palette-without-page.json(5,5): palette of TSurvivor without "page" (not on the palette)

@@ -1,0 +1,99 @@
+{
+  "formatVersion": 1,
+  "unit": "Controls",
+  "types": {
+    "TAlign": { "kind": "enum", "values": ["alNone", "alTop", "alBottom", "alLeft", "alRight", "alClient"] },
+    "TAnchorKind": { "kind": "enum", "values": ["akLeft", "akTop", "akRight", "akBottom"] },
+    "TAnchors": { "kind": "set", "of": "TAnchorKind" },
+    "TAlignment": { "kind": "enum", "values": ["taLeftJustify", "taRightJustify", "taCenter"] },
+    "TLeftRight": { "kind": "enum", "values": ["taLeftJustify", "taRightJustify"] },
+    "TVerticalAlignment": { "kind": "enum", "values": ["taAlignTop", "taAlignBottom", "taVerticalCenter"] },
+    "TBorderStyle": { "kind": "enum", "values": ["bsNone", "bsSingle"] },
+    "TBevelCut": { "kind": "enum", "values": ["bvNone", "bvLowered", "bvRaised", "bvSpace"] },
+    "TFontPitch": { "kind": "enum", "values": ["fpDefault", "fpVariable", "fpFixed"] },
+    "TFontQuality": { "kind": "enum", "values": ["fqDefault", "fqDraft", "fqProof", "fqNonAntialiased", "fqAntialiased", "fqClearType", "fqClearTypeNatural"] },
+    "TFontStyle": { "kind": "enum", "values": ["fsBold", "fsItalic", "fsUnderline", "fsStrikeOut"] },
+    "TFontStyles": { "kind": "set", "of": "TFontStyle" },
+    "TFont": { "kind": "object", "properties": [
+      { "name": "Charset", "type": "Integer", "default": 1, "min": 0, "max": 255 },
+      { "name": "Color", "type": "TColor", "default": "clWindowText", "editor": "color" },
+      { "name": "Height", "type": "Integer", "default": -12 },
+      { "name": "Name", "type": "string", "default": "Segoe UI" },
+      { "name": "Orientation", "type": "Integer", "default": 0 },
+      { "name": "Pitch", "type": "TFontPitch", "default": "fpDefault" },
+      { "name": "Quality", "type": "TFontQuality", "default": "fqDefault" },
+      { "name": "Style", "type": "TFontStyles", "default": [] },
+      { "name": "Size", "type": "Integer", "default": 9, "stored": false }
+    ] },
+    "TMargins": { "kind": "object", "properties": [
+      { "name": "Left", "type": "Integer", "default": 3, "min": 0, "max": 32767 },
+      { "name": "Top", "type": "Integer", "default": 3, "min": 0, "max": 32767 },
+      { "name": "Right", "type": "Integer", "default": 3, "min": 0, "max": 32767 },
+      { "name": "Bottom", "type": "Integer", "default": 3, "min": 0, "max": 32767 }
+    ] },
+    "TPadding": { "kind": "object", "ancestor": "TMargins", "properties": [
+      { "name": "Left", "type": "Integer", "default": 0 },
+      { "name": "Top", "type": "Integer", "default": 0 },
+      { "name": "Right", "type": "Integer", "default": 0 },
+      { "name": "Bottom", "type": "Integer", "default": 0 }
+    ] },
+    "TSizeConstraints": { "kind": "object", "properties": [
+      { "name": "MaxHeight", "type": "Integer", "default": 0, "min": 0 },
+      { "name": "MaxWidth", "type": "Integer", "default": 0, "min": 0 },
+      { "name": "MinHeight", "type": "Integer", "default": 0, "min": 0 },
+      { "name": "MinWidth", "type": "Integer", "default": 0, "min": 0 }
+    ] }
+  },
+  "components": [
+    {
+      "class": "TControl",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "control",
+      "properties": [
+        { "name": "Left", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "Top", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "Width", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "Height", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "Align", "type": "TAlign", "default": "alNone", "category": "Layout", "affectsLayout": true },
+        { "name": "Anchors", "type": "TAnchors", "default": ["akLeft", "akTop"], "category": "Layout" },
+        { "name": "AlignWithMargins", "type": "Boolean", "default": false, "category": "Layout", "affectsLayout": true },
+        { "name": "Margins", "type": "TMargins", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "Constraints", "type": "TSizeConstraints", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "Cursor", "type": "TCursor", "default": "crDefault", "category": "Appearance" },
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Hint", "type": "string", "default": "", "category": "Behavior" },
+        { "name": "ParentShowHint", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "ShowHint", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Visible", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "PopupMenu", "type": "TPopupMenu", "kind": "component", "category": "Behavior" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TWinControl",
+      "ancestor": "TControl",
+      "abstract": true,
+      "kind": "wincontrol",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TGraphicControl",
+      "ancestor": "TControl",
+      "abstract": true,
+      "kind": "control",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TCustomControl",
+      "ancestor": "TWinControl",
+      "abstract": true,
+      "kind": "wincontrol",
+      "properties": [],
+      "events": []
+    }
+  ],
+  "eventSignatures": {}
+}

@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "unit": "Classes",
+  "components": [
+    { "class": "TComponent", "abstract": true },
+    { "class": "TSurvivor", "ancestor": "TComponent", "kind": "nonvisual" }
+  ]
+}

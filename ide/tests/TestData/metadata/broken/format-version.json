@@ -1,0 +1,7 @@
+{
+  "formatVersion": 2,
+  "unit": "Future",
+  "components": [
+    { "class": "TFutureThing", "ancestor": "TControl", "kind": "control" }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "formatVersion": 1,
+  "unit": "Orphans",
+  "components": [
+    { "class": "TOrphan", "ancestor": "TNowhere" },
+    { "class": "TOrphanChild", "ancestor": "TOrphan" },
+    { "class": "TSurvivor", "ancestor": "TControl" }
+  ]
+}

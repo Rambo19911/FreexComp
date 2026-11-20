@@ -1,0 +1,1 @@
+duplicate-class.json(5,5): duplicate class TButton (the first declaration is used)

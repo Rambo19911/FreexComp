@@ -1,0 +1,78 @@
+{
+  "formatVersion": 1,
+  "unit": "ExtCtrls",
+  "types": {
+    "TPicture": { "kind": "object", "properties": [] }
+  },
+  "components": [
+    {
+      "class": "TPanel",
+      "ancestor": "TCustomControl",
+      "palette": { "page": "Standard", "order": 130 },
+      "kind": "container",
+      "defaultSize": { "width": 185, "height": 41 },
+      "namePrefix": "Panel",
+      "acceptsChildren": true,
+      "renderer": "panel",
+      "properties": [
+        { "name": "Alignment", "type": "TAlignment", "default": "taCenter", "category": "Appearance" },
+        { "name": "BevelInner", "type": "TBevelCut", "default": "bvNone", "category": "Appearance", "affectsLayout": true },
+        { "name": "BevelOuter", "type": "TBevelCut", "default": "bvRaised", "category": "Appearance", "affectsLayout": true },
+        { "name": "BevelWidth", "type": "Integer", "default": 1, "category": "Appearance", "min": 1, "max": 32767, "affectsLayout": true },
+        { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsNone", "category": "Appearance", "affectsLayout": true },
+        { "name": "BorderWidth", "type": "Integer", "default": 0, "category": "Appearance", "min": 0, "max": 32767, "affectsLayout": true },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)" },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "Padding", "type": "TPadding", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "ParentColor", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ShowCaption", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "VerticalAlignment", "type": "TVerticalAlignment", "default": "taVerticalCenter", "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TImage",
+      "ancestor": "TGraphicControl",
+      "palette": { "page": "Additional", "order": 10 },
+      "kind": "control",
+      "defaultSize": { "width": 105, "height": 105 },
+      "namePrefix": "Image",
+      "renderer": "image",
+      "properties": [
+        { "name": "AutoSize", "type": "Boolean", "default": false, "category": "Layout" },
+        { "name": "Center", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "Picture", "type": "TPicture", "kind": "object", "category": "Appearance", "editor": "picture" },
+        { "name": "Proportional", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "Stretch", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "Transparent", "type": "Boolean", "default": false, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TTimer",
+      "ancestor": "TComponent",
+      "palette": { "page": "System", "order": 10 },
+      "kind": "nonvisual",
+      "namePrefix": "Timer",
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Interval", "type": "Integer", "default": 1000, "category": "Behavior", "min": 0 }
+      ],
+      "events": [
+        { "name": "OnTimer", "signature": "TNotifyEvent", "default": true }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)"
+  }
+}
