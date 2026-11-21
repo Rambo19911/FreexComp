@@ -29,9 +29,8 @@ begin
   CheckEqS('D:\other\name.pas.txt', F, 'ChangeFileExt result into a TFileName');
 
   Section('type info');
-  { GetTypeName(TypeInfo(TFileName)) should be 'TFileName' (LANG-205); the compiler still emits the RTTI of string
-    for a 'type string' declaration, reported to the lead with R-213, so only the kind is checked here. }
   TI := TypeInfo(TFileName);
+  CheckEqS('TFileName', GetTypeName(TI), 'type name');
   Check(GetTypeKind(TI) = tkUString, 'kind is tkUString');
   Done;
 end.
