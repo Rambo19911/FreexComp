@@ -1,0 +1,50 @@
+[
+  {
+    "formatVersion": 1,
+    "dpi": 96,
+    "forms": [
+      {
+        "class": "TForm",
+        "name": "LayoutForm",
+        "clientWidth": 100,
+        "clientHeight": 100,
+        "controls": [
+          {
+            "class": "TPanel",
+            "name": "C",
+            "left": 10,
+            "top": 10,
+            "width": 31,
+            "height": 21,
+            "visible": true,
+            "controls": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "formatVersion": 1,
+    "dpi": 96,
+    "forms": [
+      {
+        "class": "TForm",
+        "name": "LayoutForm",
+        "clientWidth": 150,
+        "clientHeight": 175,
+        "controls": [
+          {
+            "class": "TPanel",
+            "name": "C",
+            "left": 23,
+            "top": 25,
+            "width": 31,
+            "height": 21,
+            "visible": true,
+            "controls": []
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,15 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 100
+  ClientHeight = 100
+  PixelsPerInch = 96
+  Scaled = False
+  object C: TPanel
+    Left = 10
+    Top = 10
+    Width = 31
+    Height = 21
+    Anchors = []
+  end
+end

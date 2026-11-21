@@ -1,0 +1,27 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 640
+  ClientHeight = 400
+  PixelsPerInch = 96
+  Scaled = False
+  object ToolBar: TToolBar
+    Left = 0
+    Top = 0
+    Width = 640
+    Height = 29
+  end
+  object StatusBar: TStatusBar
+    Left = 0
+    Top = 381
+    Width = 640
+    Height = 19
+  end
+  object Memo: TMemo
+    Left = 10
+    Top = 40
+    Width = 100
+    Height = 100
+    Align = alClient
+  end
+end

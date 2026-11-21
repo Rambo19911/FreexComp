@@ -1,0 +1,34 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 400,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TPanel",
+          "name": "R",
+          "left": 320,
+          "top": 0,
+          "width": 80,
+          "height": 100,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TPanel",
+          "name": "C",
+          "left": 0,
+          "top": 0,
+          "width": 320,
+          "height": 300,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

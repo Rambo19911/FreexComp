@@ -1,0 +1,24 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 400,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TEdit",
+          "name": "Edit",
+          "left": 10,
+          "top": 10,
+          "width": 121,
+          "height": 27,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

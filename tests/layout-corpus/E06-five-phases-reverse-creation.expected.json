@@ -1,0 +1,64 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 400,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TPanel",
+          "name": "C",
+          "left": 50,
+          "top": 30,
+          "width": 290,
+          "height": 250,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TPanel",
+          "name": "R",
+          "left": 340,
+          "top": 30,
+          "width": 60,
+          "height": 250,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TPanel",
+          "name": "L",
+          "left": 0,
+          "top": 30,
+          "width": 50,
+          "height": 250,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TPanel",
+          "name": "B",
+          "left": 0,
+          "top": 280,
+          "width": 400,
+          "height": 20,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TPanel",
+          "name": "T",
+          "left": 0,
+          "top": 0,
+          "width": 400,
+          "height": 30,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

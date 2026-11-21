@@ -1,0 +1,15 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 240
+  PixelsPerInch = 96
+  object Btn: TButton
+    Left = 10
+    Top = 10
+    Width = 75
+    Height = 25
+    Font.Height = -12
+    ParentFont = False
+  end
+end

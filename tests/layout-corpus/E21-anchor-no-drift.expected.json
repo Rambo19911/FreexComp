@@ -1,0 +1,74 @@
+[
+  {
+    "formatVersion": 1,
+    "dpi": 96,
+    "forms": [
+      {
+        "class": "TForm",
+        "name": "LayoutForm",
+        "clientWidth": 400,
+        "clientHeight": 300,
+        "controls": [
+          {
+            "class": "TPanel",
+            "name": "X",
+            "left": 16,
+            "top": 16,
+            "width": 200,
+            "height": 23,
+            "visible": true,
+            "controls": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "formatVersion": 1,
+    "dpi": 96,
+    "forms": [
+      {
+        "class": "TForm",
+        "name": "LayoutForm",
+        "clientWidth": 150,
+        "clientHeight": 300,
+        "controls": [
+          {
+            "class": "TPanel",
+            "name": "X",
+            "left": 16,
+            "top": 16,
+            "width": 0,
+            "height": 23,
+            "visible": true,
+            "controls": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "formatVersion": 1,
+    "dpi": 96,
+    "forms": [
+      {
+        "class": "TForm",
+        "name": "LayoutForm",
+        "clientWidth": 400,
+        "clientHeight": 300,
+        "controls": [
+          {
+            "class": "TPanel",
+            "name": "X",
+            "left": 16,
+            "top": 16,
+            "width": 200,
+            "height": 23,
+            "visible": true,
+            "controls": []
+          }
+        ]
+      }
+    ]
+  }
+]

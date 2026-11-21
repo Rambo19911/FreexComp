@@ -1,0 +1,15 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  Scaled = False
+  object Memo: TMemo
+    Left = 8
+    Top = 48
+    Width = 384
+    Height = 200
+    Anchors = [akLeft, akTop, akRight, akBottom]
+  end
+end

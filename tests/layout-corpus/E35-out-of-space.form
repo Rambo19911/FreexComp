@@ -1,0 +1,29 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 100
+  ClientHeight = 40
+  PixelsPerInch = 96
+  Scaled = False
+  object A: TPanel
+    Left = 0
+    Top = 0
+    Width = 100
+    Height = 30
+    Align = alTop
+  end
+  object B: TPanel
+    Left = 0
+    Top = 30
+    Width = 100
+    Height = 30
+    Align = alTop
+  end
+  object C: TPanel
+    Left = 0
+    Top = 0
+    Width = 100
+    Height = 40
+    Align = alClient
+  end
+end

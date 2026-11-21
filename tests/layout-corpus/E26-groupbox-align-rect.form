@@ -1,0 +1,23 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  Scaled = False
+  object Group: TGroupBox
+    Left = 0
+    Top = 0
+    Width = 185
+    Height = 105
+    Font.Height = -12
+    ParentFont = False
+    object C: TPanel
+      Left = 0
+      Top = 0
+      Width = 50
+      Height = 50
+      Align = alClient
+    end
+  end
+end

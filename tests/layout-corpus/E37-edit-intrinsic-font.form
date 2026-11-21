@@ -1,0 +1,17 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  Scaled = False
+  object Edit: TEdit
+    Left = 10
+    Top = 10
+    Width = 121
+    Height = 40
+    AutoSize = True
+    Font.Height = -16
+    ParentFont = False
+  end
+end

@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 640,
+      "clientHeight": 400,
+      "controls": [
+        {
+          "class": "TToolBar",
+          "name": "ToolBar",
+          "left": 0,
+          "top": 0,
+          "width": 640,
+          "height": 29,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TStatusBar",
+          "name": "StatusBar",
+          "left": 0,
+          "top": 381,
+          "width": 640,
+          "height": 19,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TMemo",
+          "name": "Memo",
+          "left": 0,
+          "top": 29,
+          "width": 640,
+          "height": 352,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

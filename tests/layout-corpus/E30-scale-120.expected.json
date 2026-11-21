@@ -1,0 +1,24 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 500,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TButton",
+          "name": "Btn",
+          "left": 13,
+          "top": 13,
+          "width": 93,
+          "height": 31,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 400,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TGroupBox",
+          "name": "Group",
+          "left": 0,
+          "top": 0,
+          "width": 185,
+          "height": 105,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TPanel",
+              "name": "C",
+              "left": 2,
+              "top": 17,
+              "width": 181,
+              "height": 86,
+              "visible": true,
+              "controls": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

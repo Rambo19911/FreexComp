@@ -1,0 +1,23 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  Scaled = False
+  object R: TPanel
+    Left = 0
+    Top = 0
+    Width = 80
+    Height = 100
+    Align = alRight
+    Constraints.MaxHeight = 100
+  end
+  object C: TPanel
+    Left = 0
+    Top = 0
+    Width = 100
+    Height = 100
+    Align = alClient
+  end
+end

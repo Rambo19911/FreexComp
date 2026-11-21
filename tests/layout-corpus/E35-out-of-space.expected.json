@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 100,
+      "clientHeight": 40,
+      "controls": [
+        {
+          "class": "TPanel",
+          "name": "A",
+          "left": 0,
+          "top": 0,
+          "width": 100,
+          "height": 30,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TPanel",
+          "name": "B",
+          "left": 0,
+          "top": 30,
+          "width": 100,
+          "height": 30,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TPanel",
+          "name": "C",
+          "left": 0,
+          "top": 60,
+          "width": 100,
+          "height": 0,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  Scaled = False
+  object A: TPanel
+    Left = 10
+    Top = 250
+    Width = 80
+    Height = 30
+    Anchors = [akLeft]
+  end
+end

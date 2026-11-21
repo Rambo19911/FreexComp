@@ -1,0 +1,24 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 400,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TComboBox",
+          "name": "Combo",
+          "left": 10,
+          "top": 10,
+          "width": 145,
+          "height": 23,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

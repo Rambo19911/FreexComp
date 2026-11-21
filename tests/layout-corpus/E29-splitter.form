@@ -1,0 +1,28 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 600
+  ClientHeight = 400
+  PixelsPerInch = 96
+  Scaled = False
+  object Side: TPanel
+    Left = 0
+    Top = 0
+    Width = 150
+    Height = 400
+    Align = alLeft
+  end
+  object Splitter: TSplitter
+    Left = 150
+    Top = 0
+    Width = 3
+    Height = 400
+  end
+  object Main: TPanel
+    Left = 200
+    Top = 0
+    Width = 100
+    Height = 100
+    Align = alClient
+  end
+end

@@ -1,0 +1,70 @@
+[
+  {
+    "formatVersion": 1,
+    "dpi": 96,
+    "forms": [
+      {
+        "class": "TForm",
+        "name": "LayoutForm",
+        "clientWidth": 400,
+        "clientHeight": 300,
+        "controls": [
+          {
+            "class": "TPanel",
+            "name": "T",
+            "left": 0,
+            "top": 0,
+            "width": 400,
+            "height": 30,
+            "visible": true,
+            "controls": []
+          },
+          {
+            "class": "TPanel",
+            "name": "C",
+            "left": 0,
+            "top": 30,
+            "width": 400,
+            "height": 270,
+            "visible": true,
+            "controls": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "formatVersion": 1,
+    "dpi": 96,
+    "forms": [
+      {
+        "class": "TForm",
+        "name": "LayoutForm",
+        "clientWidth": 400,
+        "clientHeight": 300,
+        "controls": [
+          {
+            "class": "TPanel",
+            "name": "T",
+            "left": 0,
+            "top": 0,
+            "width": 400,
+            "height": 30,
+            "visible": false,
+            "controls": []
+          },
+          {
+            "class": "TPanel",
+            "name": "C",
+            "left": 0,
+            "top": 0,
+            "width": 400,
+            "height": 300,
+            "visible": true,
+            "controls": []
+          }
+        ]
+      }
+    ]
+  }
+]

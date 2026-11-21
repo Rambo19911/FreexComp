@@ -1,0 +1,34 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "MainForm",
+      "clientWidth": 400,
+      "clientHeight": 240,
+      "controls": [
+        {
+          "class": "TEdit",
+          "name": "NameEdit",
+          "left": 16,
+          "top": 16,
+          "width": 200,
+          "height": 23,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TButton",
+          "name": "GreetButton",
+          "left": 232,
+          "top": 15,
+          "width": 75,
+          "height": 25,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

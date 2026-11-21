@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 600,
+      "clientHeight": 400,
+      "controls": [
+        {
+          "class": "TPanel",
+          "name": "Side",
+          "left": 0,
+          "top": 0,
+          "width": 150,
+          "height": 400,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TSplitter",
+          "name": "Splitter",
+          "left": 150,
+          "top": 0,
+          "width": 3,
+          "height": 400,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TPanel",
+          "name": "Main",
+          "left": 153,
+          "top": 0,
+          "width": 447,
+          "height": 400,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

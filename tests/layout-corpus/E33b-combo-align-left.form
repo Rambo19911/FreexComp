@@ -1,0 +1,17 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  Scaled = False
+  object Combo: TComboBox
+    Left = 10
+    Top = 10
+    Width = 145
+    Height = 40
+    Align = alLeft
+    Font.Height = -12
+    ParentFont = False
+  end
+end
