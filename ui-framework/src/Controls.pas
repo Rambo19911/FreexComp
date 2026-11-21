@@ -316,6 +316,9 @@ type
     property ActionLink: TControlActionLink read FActionLink;
     { actions-menus.md section 1.2 (published by TButton, TCheckBox, TRadioButton) }
     property Action: TBasicAction read GetAction write SetAction;
+    { actions-menus.md UIF-910 (c): the form's idle update reaches this control's action also while it is not
+      Showing (tool buttons); base False }
+    function UpdatesActionWhenHidden: Boolean; virtual;
     procedure SetParent(AParent: TWinControl); virtual;
     function GetShowing: Boolean; virtual;
     function GetClientRect: TRect; virtual;
@@ -1599,6 +1602,11 @@ begin
     Result := nil
   else
     Result := FActionLink.Action;
+end;
+
+function TControl.UpdatesActionWhenHidden: Boolean;
+begin
+  Result := False;
 end;
 
 function TControl.GetActionLinkClass: TControlActionLinkClass;

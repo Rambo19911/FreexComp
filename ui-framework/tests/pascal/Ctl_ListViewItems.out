@@ -1,0 +1,118 @@
+# items without a window (UIF-821)
+ok no items
+ok Items.Owner
+ok Add returns a TListItem
+ok Caption empty
+ok ImageIndex -1
+ok no sub-items
+ok not checked, selected or focused
+ok Data nil
+ok ListView
+ok Owner
+ok Insert(1) between
+ok Index
+ok IndexOf
+ok Item[2] (default)
+ok Delete(0) and Item.Delete
+ok Selected (first selected)
+ok ItemIndex
+ok ItemFocused
+ok SelCount
+ok GetItemAt without a window: nil
+ok VisibleRowCount without a window: 0
+ok no events without a window
+# the window is created (UIF-821)
+ok three native items
+ok item 0 checked
+ok item 1 selected and focused
+ok item 2 plain
+ok no events while restoring
+# callback text and image (UIF-820)
+ok lParam is the item
+ok caption
+ok sub-item 1
+ok sub-item 2
+ok item 1 sub-item 1
+ok a missing sub-item is empty
+ok no sub-items: empty
+ok image from ImageIndex
+ok no image
+ok Caption: OnChange(ctText)
+ok the new caption is read back
+ok SubItems: OnChange(ctText)
+ok the new sub-item is read back
+ok ImageIndex: OnChange(ctImage)
+ok the new image is read back
+ok unchanged values: no event
+# state notifications (UIF-822)
+ok single selection: the old item is deselected first
+ok item 1 mirror deselected
+ok Selected follows
+ok Checked False
+ok native unchecked
+ok focus moves: OnChange(ctState) only
+ok item 1 lost the focus
+ok ItemFocused follows
+ok the space key checks the focused item
+ok mirror checked
+ok ItemIndex := 0
+ok ItemIndex 0
+ok ItemIndex := -1
+ok Selected nil
+ok ItemIndex -1
+# recreating keeps the state without events (UIF-821)
+ok SelectAll
+ok recreated
+ok no events
+ok the items are back
+ok item 0 state
+ok item 1 state
+ok item 2 state
+ok texts are back
+ok SelCount kept
+ok ClearSelection
+ok native deselected
+# helpers
+ok DisplayRect(drBounds) has a height
+ok GetItemAt
+ok GetItemAt below the items: nil
+ok DisplayRect(drLabel)
+ok GetNextItem(sdBelow)
+ok GetNextItem([isFocused])
+ok GetNextItem([isSelected]): none
+ok TopItem
+ok VisibleRowCount
+ok more rows than items fit
+ok adding an item fires nothing
+ok items added inside BeginUpdate
+ok a caption set after Add: OnChange(ctText)
+ok MakeVisible scrolls
+ok the item is not above the top
+ok and not below the page
+ok deleted natively
+# deleting and clearing
+ok Insert with a window
+ok only the caption change is reported
+ok its lParam
+ok Delete with a window
+ok no events
+# label edit (UIF-824)
+ok an accepted edit returns 1
+ok OnEdited, then the caption is set
+ok Caption from the edited S
+ok the native text is the callback
+ok a cancelled edit returns 0
+ok a cancelled edit: no OnEdited
+ok Caption unchanged
+# mouse (UIF-825)
+ok a click moves the focus and the selection, then OnClick
+ok a double click fires OnDblClick
+# report view without columns (UIF-826)
+ok the item exists
+ok no header items
+ok the item has no width
+# destroying fires nothing (UIF-822)
+ok no events
+# leak
+ok GUI objects after 100 instances with handles
+# passed 105 failed 0

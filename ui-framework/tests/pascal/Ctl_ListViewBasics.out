@@ -1,0 +1,145 @@
+# defaults
+ok Width 250
+ok Height 150
+ok BorderStyle bsSingle
+ok Checkboxes
+ok Color clWindow
+ok ColumnClick
+ok Columns empty
+ok GridLines
+ok HideSelection
+ok LargeImages nil
+ok MultiSelect
+ok ParentColor False
+ok ParentFont
+ok ReadOnly
+ok RowSelect
+ok ShowColumnHeaders
+ok SmallImages nil
+ok TabOrder -1 without a parent
+ok TabStop
+ok ViewStyle vsIcon
+ok does not accept children
+ok TListView registered
+ok Add returns a TListColumn
+ok column Alignment taLeftJustify
+ok column Caption
+ok column Width 50
+ok Columns[0]
+ok the collection belongs to the list view
+ok DisplayName is the caption
+ok DisplayName follows the caption
+# window and styles
+ok window class SysListView32
+ok LVS_ICON for vsIcon
+ok LVS_SHAREIMAGELISTS
+ok LVS_SINGLESEL (not MultiSelect)
+ok no LVS_SHOWSELALWAYS (HideSelection)
+ok LVS_EDITLABELS (not ReadOnly)
+ok no LVS_NOCOLUMNHEADER
+ok no LVS_NOSORTHEADER
+ok WS_TABSTOP
+ok WS_EX_CLIENTEDGE (bsSingle)
+ok LVS_EX_DOUBLEBUFFER always
+ok no LVS_EX_GRIDLINES
+ok no LVS_EX_FULLROWSELECT
+ok no LVS_EX_CHECKBOXES
+ok LVM_GETVIEW: icon
+# extended styles without recreating
+ok GridLines: LVS_EX_GRIDLINES
+ok RowSelect: LVS_EX_FULLROWSELECT
+ok Checkboxes: LVS_EX_CHECKBOXES
+ok LVS_EX_DOUBLEBUFFER kept
+ok not recreated
+ok cleared again
+# view style
+ok vsSmallIcon
+ok vsList
+ok vsReport
+ok ViewStyle does not recreate
+ok vsIcon
+# columns
+ok three native columns
+ok three header items
+ok column 0 stays left
+ok its Alignment is kept
+ok caption and width re-sent
+ok Delete: the columns follow
+ok nothing sent inside BeginUpdate
+ok sent at EndUpdate
+ok a native width change is read back
+ok Clear: no native columns
+ok Clear: no header items
+# recreating properties keep the columns
+ok MultiSelect recreates the window
+ok MultiSelect: no LVS_SINGLESEL
+ok columns kept with the native width
+ok view kept
+ok created with LVS_REPORT
+ok extended styles kept
+ok background kept
+ok HideSelection recreates the window
+ok LVS_SHOWSELALWAYS
+ok ReadOnly recreates the window
+ok ReadOnly: no LVS_EDITLABELS
+ok ShowColumnHeaders recreates the window
+ok LVS_NOCOLUMNHEADER
+ok ColumnClick recreates the window
+ok LVS_NOSORTHEADER
+ok BorderStyle recreates the window
+ok bsNone: no WS_EX_CLIENTEDGE
+ok columns still there
+# colours
+ok text background = Color
+ok clWindow background
+ok clWindow text background
+ok text colour from the font
+ok a parent font colour arrives
+ok own font colour
+ok ParentFont cleared
+ok text colour kept on recreate
+# image lists
+ok LargeImages: LVSIL_NORMAL
+ok SmallImages: LVSIL_SMALL
+ok LVSIL_NORMAL after recreating
+ok LVSIL_SMALL after recreating
+ok a freed list clears SmallImages
+ok and the native list
+ok LargeImages nil
+# scaling
+ok column Width scaled
+ok second column scaled
+ok scaled widths sent
+# column click (UIF-823)
+ok a click on header item 1
+ok a click on header item 0
+ok no event without ColumnClick
+# streaming
+ok two columns
+ok column 0 Caption
+ok column 0 Width
+ok column 1 Alignment
+ok column 1 default Width
+ok ViewStyle vsReport
+ok Checkboxes, GridLines, RowSelect, MultiSelect, ReadOnly
+ok HideSelection False
+ok ColumnClick False
+ok Color clInfoBk
+ok native columns
+ok native view
+ok native extended styles
+ok native styles
+ok no LVS_SINGLESEL, no LVS_EDITLABELS
+ok native background
+ok OnColumnClick bound
+ok BorderStyle bsNone
+ok ShowColumnHeaders False
+ok TabStop False
+ok vsList
+ok created with LVS_LIST
+ok LVS_NOCOLUMNHEADER
+ok no WS_EX_CLIENTEDGE
+ok no events while loading
+# leak
+ok GUI objects after 100 instances with handles
+# passed 132 failed 0

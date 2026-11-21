@@ -1,0 +1,44 @@
+object ListForm: TListForm
+  Caption = 'List'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object List: TListView
+    Left = 8
+    Top = 8
+    Width = 300
+    Height = 200
+    Checkboxes = True
+    Color = clInfoBk
+    ColumnClick = False
+    Columns = <
+      item
+        Caption = 'Name'
+        Width = 120
+      end
+      item
+        Alignment = taRightJustify
+        Caption = 'Size'
+      end
+    >
+    GridLines = True
+    HideSelection = False
+    MultiSelect = True
+    ReadOnly = True
+    RowSelect = True
+    TabOrder = 0
+    ViewStyle = vsReport
+    OnColumnClick = ListColumnClick
+  end
+  object Plain: TListView
+    Left = 8
+    Top = 216
+    Width = 250
+    Height = 60
+    BorderStyle = bsNone
+    ShowColumnHeaders = False
+    TabOrder = 1
+    TabStop = False
+    ViewStyle = vsList
+  end
+end

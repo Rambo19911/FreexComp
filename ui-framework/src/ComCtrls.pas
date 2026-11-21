@@ -300,6 +300,8 @@ type
   protected
     function GetActionLinkClass: TControlActionLinkClass; override;
     procedure ActionChange(Sender: TObject; CheckDefaults: Boolean); override;
+    { UIF-910 (c): an action can show a hidden tool button again }
+    function UpdatesActionWhenHidden: Boolean; override;
     { UIF-802: check buttons toggle (grouped: go down) before the action / OnClick; spacers never click }
     procedure Click; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
@@ -492,6 +494,277 @@ type
     property OnKeyDown;
     property OnKeyPress;
     property OnKeyUp;
+  end;
+
+
+  TCustomListView = class;
+
+  TListItems = class;
+  TDisplayCode = (drBounds, drIcon, drLabel, drSelectBounds);
+
+  { controls-standard.md section 25: an item of a list view (run time only, not streamed); the single source of
+    the native item's text and image (UIF-820) }
+  TListItem = class(TPersistent)
+  private
+    FOwner: TListItems;
+    FCaption: string;
+    FSubItems: TStrings;
+    FImageIndex: Integer;
+    FChecked: Boolean;
+    FSelected: Boolean;
+    FFocused: Boolean;
+    FData: Pointer;
+    function GetIndex: Integer;
+    function GetListView: TCustomListView;
+    procedure SetCaption(const Value: string);
+    procedure SetChecked(Value: Boolean);
+    procedure SetFocused(Value: Boolean);
+    procedure SetImageIndex(Value: Integer);
+    procedure SetSelected(Value: Boolean);
+    procedure SetSubItems(Value: TStrings);
+    procedure SubItemsChanged(Sender: TObject);
+    { the native state bit(s) set, the field kept (the notification fires the events) }
+    procedure SetState(Mask, State: UINT);
+  public
+    constructor Create(AOwner: TListItems);
+    destructor Destroy; override;
+    procedure Assign(Source: TPersistent); override;
+    procedure Delete;
+    procedure MakeVisible(PartialOK: Boolean);
+    function DisplayRect(Code: TDisplayCode): TRect;
+    property Caption: string read FCaption write SetCaption;
+    property Checked: Boolean read FChecked write SetChecked;
+    property Data: Pointer read FData write FData;
+    property Focused: Boolean read FFocused write SetFocused;
+    property ImageIndex: Integer read FImageIndex write SetImageIndex;
+    property Index: Integer read GetIndex;
+    property ListView: TCustomListView read GetListView;
+    property Owner: TListItems read FOwner;
+    property Selected: Boolean read FSelected write SetSelected;
+    property SubItems: TStrings read FSubItems write SetSubItems;
+  end;
+
+  { ListView.Items }
+  TListItems = class(TPersistent)
+  private
+    FOwner: TCustomListView;
+    FList: TList;
+    FUpdateCount: Integer;
+    function GetCount: Integer;
+    function GetItem(Index: Integer): TListItem;
+    { the native item for Item at Index (callback text and image, lParam = the item, its state) }
+    procedure InsertNative(Item: TListItem; Index: Integer);
+  public
+    constructor Create(AOwner: TCustomListView);
+    destructor Destroy; override;
+    function Add: TListItem;
+    function Insert(Index: Integer): TListItem;
+    procedure Delete(Index: Integer);
+    procedure Clear;
+    function IndexOf(Value: TListItem): Integer;
+    { WM_SETREDRAW, nested }
+    procedure BeginUpdate;
+    procedure EndUpdate;
+    property Count: Integer read GetCount;
+    property Item[Index: Integer]: TListItem read GetItem; default;
+    property Owner: TCustomListView read FOwner;
+  end;
+
+  TSearchDirection = (sdLeft, sdRight, sdAbove, sdBelow, sdAll);
+  TItemState = (isNone, isCut, isDropHilited, isFocused, isSelected, isActivating);
+  TItemStates = set of TItemState;
+
+  TItemChange = (ctText, ctImage, ctState);
+  TViewStyle = (vsIcon, vsSmallIcon, vsList, vsReport);
+
+  TListColumn = class(TCollectionItem)
+  private
+    FAlignment: TAlignment;
+    FCaption: string;
+    FWidth: Integer;
+    procedure SetAlignment(Value: TAlignment);
+    procedure SetCaption(const Value: string);
+    procedure SetWidth(Value: Integer);
+  protected
+    function GetDisplayName: string; override;
+  public
+    constructor Create(Collection: TCollection); override;
+    procedure Assign(Source: TPersistent); override;
+  published
+    { column 0 is always shown left-aligned (native rule); the property keeps its value }
+    property Alignment: TAlignment read FAlignment write SetAlignment default taLeftJustify;
+    property Caption: string read FCaption write SetCaption;
+    { follows a width change made in the window (the user dragging a divider) }
+    property Width: Integer read FWidth write SetWidth default 50;
+  end;
+
+  { every change rebuilds the native columns }
+  TListColumns = class(TOwnedCollection)
+  private
+    FListView: TCustomListView;
+    function GetItem(Index: Integer): TListColumn;
+    procedure SetItem(Index: Integer; Value: TListColumn);
+  protected
+    procedure Update(Item: TCollectionItem); override;
+  public
+    constructor Create(ListView: TCustomListView);
+    function Add: TListColumn;
+    property Items[Index: Integer]: TListColumn read GetItem write SetItem; default;
+  end;
+
+  TLVChangeEvent = procedure(Sender: TObject; Item: TListItem; Change: TItemChange) of object;
+  TLVColumnClickEvent = procedure(Sender: TObject; Column: TListColumn) of object;
+  TLVEditedEvent = procedure(Sender: TObject; Item: TListItem; var S: string) of object;
+  TLVCheckedItemEvent = procedure(Sender: TObject; Item: TListItem) of object;
+  TLVSelectItemEvent = procedure(Sender: TObject; Item: TListItem; Selected: Boolean) of object;
+
+  { controls-standard.md section 25 }
+  TCustomListView = class(TWinControl)
+  private
+    FBorderStyle: TBorderStyle;
+    FCheckboxes: Boolean;
+    FColumnClick: Boolean;
+    FColumns: TListColumns;
+    FGridLines: Boolean;
+    FHideSelection: Boolean;
+    FLargeImages: TCustomImageList;
+    FMultiSelect: Boolean;
+    FReadOnly: Boolean;
+    FRowSelect: Boolean;
+    FShowColumnHeaders: Boolean;
+    FSmallImages: TCustomImageList;
+    FViewStyle: TViewStyle;
+    FLargeChangeLink: TChangeLink;
+    FSmallChangeLink: TChangeLink;
+    FUpdatingColumns: Boolean;
+    FItems: TListItems;
+    { set while the window is created, recreated or destroyed and while items are inserted: no events }
+    FNoEvents: Boolean;
+    FOnChange: TLVChangeEvent;
+    FOnColumnClick: TLVColumnClickEvent;
+    FOnEdited: TLVEditedEvent;
+    FOnItemChecked: TLVCheckedItemEvent;
+    FOnSelectItem: TLVSelectItemEvent;
+    procedure SetBorderStyle(Value: TBorderStyle);
+    procedure SetCheckboxes(Value: Boolean);
+    procedure SetColumnClick(Value: Boolean);
+    procedure SetColumns(Value: TListColumns);
+    procedure SetGridLines(Value: Boolean);
+    procedure SetHideSelection(Value: Boolean);
+    procedure SetLargeImages(Value: TCustomImageList);
+    procedure SetMultiSelect(Value: Boolean);
+    procedure SetReadOnly(Value: Boolean);
+    procedure SetRowSelect(Value: Boolean);
+    procedure SetShowColumnHeaders(Value: Boolean);
+    procedure SetSmallImages(Value: TCustomImageList);
+    procedure SetViewStyle(Value: TViewStyle);
+    procedure ImageListChange(Sender: TObject);
+    procedure SetImageList(var Field: TCustomImageList; Value: TCustomImageList; Link: TChangeLink);
+    procedure UpdateExtendedStyles;
+    procedure UpdateImageLists;
+    procedure UpdateColors;
+    procedure ItemChanged(Item: TListItem; Change: TItemChange);
+    procedure SyncItemState(Index: Integer);
+    procedure GetDispInfo(var Info: TLVDispInfoW);
+    function GetSelected: TListItem;
+    procedure SetSelected(Value: TListItem);
+    function GetItemIndex: Integer;
+    procedure SetItemIndex(Value: Integer);
+    function GetItemFocused: TListItem;
+    procedure SetItemFocused(Value: TListItem);
+    function GetSelCount: Integer;
+    function GetTopItem: TListItem;
+    function GetVisibleRowCount: Integer;
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    { UIF-821: every item inserted with its state, no events }
+    procedure CreateWnd; override;
+    procedure DestroyWnd; override;
+    procedure ChangeScale(M, D: Integer); override;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    procedure CMColorChanged(var Message: TMessage); override;
+    procedure CMFontChanged(var Message: TMessage); override;
+    { CN_NOTIFY (LVN_COLUMNCLICK, LVN_GETDISPINFOW, LVN_ITEMCHANGED, LVN_ENDLABELEDITW); WM_NOTIFY of the header
+      (a native width change) }
+    procedure WndProc(var Message: TMessage); override;
+    { the native columns rebuilt from Columns }
+    procedure UpdateColumns; virtual;
+    procedure DoColumnClick(Column: TListColumn); virtual;
+    property BorderStyle: TBorderStyle read FBorderStyle write SetBorderStyle default bsSingle;
+    property Checkboxes: Boolean read FCheckboxes write SetCheckboxes default False;
+    property ColumnClick: Boolean read FColumnClick write SetColumnClick default True;
+    property Columns: TListColumns read FColumns write SetColumns;
+    property GridLines: Boolean read FGridLines write SetGridLines default False;
+    property HideSelection: Boolean read FHideSelection write SetHideSelection default True;
+    property LargeImages: TCustomImageList read FLargeImages write SetLargeImages;
+    property MultiSelect: Boolean read FMultiSelect write SetMultiSelect default False;
+    property ReadOnly: Boolean read FReadOnly write SetReadOnly default False;
+    property RowSelect: Boolean read FRowSelect write SetRowSelect default False;
+    property ShowColumnHeaders: Boolean read FShowColumnHeaders write SetShowColumnHeaders default True;
+    property SmallImages: TCustomImageList read FSmallImages write SetSmallImages;
+    property ViewStyle: TViewStyle read FViewStyle write SetViewStyle default vsIcon;
+    property OnChange: TLVChangeEvent read FOnChange write FOnChange;
+    property OnColumnClick: TLVColumnClickEvent read FOnColumnClick write FOnColumnClick;
+    property OnEdited: TLVEditedEvent read FOnEdited write FOnEdited;
+    property OnItemChecked: TLVCheckedItemEvent read FOnItemChecked write FOnItemChecked;
+    property OnSelectItem: TLVSelectItemEvent read FOnSelectItem write FOnSelectItem;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    function GetItemAt(X, Y: Integer): TListItem;
+    function GetNextItem(StartItem: TListItem; Direction: TSearchDirection; States: TItemStates): TListItem;
+    procedure ClearSelection;
+    procedure SelectAll;
+    procedure Clear;
+    property ItemFocused: TListItem read GetItemFocused write SetItemFocused;
+    property ItemIndex: Integer read GetItemIndex write SetItemIndex;
+    property Items: TListItems read FItems;
+    property SelCount: Integer read GetSelCount;
+    { the first selected item or nil }
+    property Selected: TListItem read GetSelected write SetSelected;
+    property TopItem: TListItem read GetTopItem;
+    property VisibleRowCount: Integer read GetVisibleRowCount;
+  end;
+
+  TListView = class(TCustomListView)
+  published
+    property BorderStyle;
+    property Checkboxes;
+    property Color default clWindow;
+    property ColumnClick;
+    property Columns;
+    property Font;
+    property GridLines;
+    property HideSelection;
+    property LargeImages;
+    property MultiSelect;
+    property ParentColor default False;
+    property ParentFont;
+    property ReadOnly;
+    property RowSelect;
+    property ShowColumnHeaders;
+    property SmallImages;
+    property TabOrder;
+    property TabStop default True;
+    property ViewStyle;
+    property OnChange;
+    property OnClick;
+    property OnColumnClick;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEdited;
+    property OnEnter;
+    property OnExit;
+    property OnItemChecked;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+    property OnSelectItem;
   end;
 
 implementation
@@ -1397,6 +1670,11 @@ begin
   Result := TToolButtonActionLink;
 end;
 
+function TToolButton.UpdatesActionWhenHidden: Boolean;
+begin
+  Result := True;
+end;
+
 procedure TToolButton.ActionChange(Sender: TObject; CheckDefaults: Boolean);
 begin
   inherited ActionChange(Sender, CheckDefaults);
@@ -2127,7 +2405,1020 @@ begin
   end;
 end;
 
+
+{ ---------------------------------------------------------------- TListColumn }
+
+constructor TListColumn.Create(Collection: TCollection);
+begin
+  FWidth := 50;
+  inherited Create(Collection);
+end;
+
+procedure TListColumn.Assign(Source: TPersistent);
+begin
+  if Source is TListColumn then
+  begin
+    FAlignment := TListColumn(Source).FAlignment;
+    FCaption := TListColumn(Source).FCaption;
+    FWidth := TListColumn(Source).FWidth;
+    Changed(False);
+  end
+  else
+    inherited Assign(Source);
+end;
+
+function TListColumn.GetDisplayName: string;
+begin
+  Result := FCaption;
+end;
+
+procedure TListColumn.SetAlignment(Value: TAlignment);
+begin
+  if FAlignment <> Value then
+  begin
+    FAlignment := Value;
+    Changed(False);
+  end;
+end;
+
+procedure TListColumn.SetCaption(const Value: string);
+begin
+  if FCaption <> Value then
+  begin
+    FCaption := Value;
+    Changed(False);
+  end;
+end;
+
+procedure TListColumn.SetWidth(Value: Integer);
+begin
+  if FWidth <> Value then
+  begin
+    FWidth := Value;
+    Changed(False);
+  end;
+end;
+
+{ ---------------------------------------------------------------- TListColumns }
+
+constructor TListColumns.Create(ListView: TCustomListView);
+begin
+  inherited Create(ListView, TListColumn);
+  FListView := ListView;
+end;
+
+function TListColumns.Add: TListColumn;
+begin
+  Result := TListColumn(inherited Add);
+end;
+
+function TListColumns.GetItem(Index: Integer): TListColumn;
+begin
+  Result := TListColumn(inherited GetItem(Index));
+end;
+
+procedure TListColumns.SetItem(Index: Integer; Value: TListColumn);
+begin
+  inherited SetItem(Index, Value);
+end;
+
+procedure TListColumns.Update(Item: TCollectionItem);
+begin
+  if FListView <> nil then
+    FListView.UpdateColumns;
+end;
+
+{ ---------------------------------------------------------------- TListItem }
+
+constructor TListItem.Create(AOwner: TListItems);
+begin
+  inherited Create;
+  FOwner := AOwner;
+  FImageIndex := -1;
+  FSubItems := TStringList.Create;
+  TStringList(FSubItems).OnChange := SubItemsChanged;
+end;
+
+destructor TListItem.Destroy;
+var
+  I: Integer;
+  LV: TCustomListView;
+begin
+  if FOwner <> nil then
+  begin
+    I := FOwner.FList.IndexOf(Self);
+    if I >= 0 then
+    begin
+      LV := FOwner.FOwner;
+      if LV.HandleAllocated then
+        SendMessageW(LV.Handle, LVM_DELETEITEM, WPARAM(I), 0);
+      FOwner.FList.Delete(I);
+    end;
+  end;
+  FSubItems.Free;
+  inherited Destroy;
+end;
+
+procedure TListItem.Assign(Source: TPersistent);
+begin
+  if Source is TListItem then
+  begin
+    Caption := TListItem(Source).FCaption;
+    SubItems := TListItem(Source).FSubItems;
+    ImageIndex := TListItem(Source).FImageIndex;
+    Data := TListItem(Source).FData;
+  end
+  else
+    inherited Assign(Source);
+end;
+
+function TListItem.GetIndex: Integer;
+begin
+  Result := FOwner.IndexOf(Self);
+end;
+
+function TListItem.GetListView: TCustomListView;
+begin
+  Result := FOwner.FOwner;
+end;
+
+procedure TListItem.Delete;
+begin
+  Free;
+end;
+
+procedure TListItem.SetCaption(const Value: string);
+begin
+  if FCaption <> Value then
+  begin
+    FCaption := Value;
+    ListView.ItemChanged(Self, ctText);
+  end;
+end;
+
+procedure TListItem.SetImageIndex(Value: Integer);
+begin
+  if FImageIndex <> Value then
+  begin
+    FImageIndex := Value;
+    ListView.ItemChanged(Self, ctImage);
+  end;
+end;
+
+procedure TListItem.SetSubItems(Value: TStrings);
+begin
+  FSubItems.Assign(Value);
+end;
+
+procedure TListItem.SubItemsChanged(Sender: TObject);
+begin
+  ListView.ItemChanged(Self, ctText);
+end;
+
+procedure TListItem.SetState(Mask, State: UINT);
+var
+  It: TLVItemW;
+  LV: TCustomListView;
+begin
+  LV := ListView;
+  if not LV.HandleAllocated then
+    Exit;
+  FillChar(It, SizeOf(It), 0);
+  It.mask := LVIF_STATE;
+  It.stateMask := Mask;
+  It.state := State;
+  SendMessageW(LV.Handle, LVM_SETITEMSTATE, WPARAM(Index), LPARAM(@It));
+end;
+
+procedure TListItem.SetChecked(Value: Boolean);
+begin
+  SetState(LVIS_STATEIMAGEMASK, UINT(Ord(Value) + 1) shl 12);
+  FChecked := Value;
+end;
+
+procedure TListItem.SetSelected(Value: Boolean);
+begin
+  SetState(LVIS_SELECTED, UINT(Ord(Value)) * LVIS_SELECTED);
+  FSelected := Value;
+end;
+
+procedure TListItem.SetFocused(Value: Boolean);
+var
+  I: Integer;
+begin
+  SetState(LVIS_FOCUSED, UINT(Ord(Value)) * LVIS_FOCUSED);
+  if Value and not ListView.HandleAllocated then
+    for I := 0 to FOwner.Count - 1 do
+      FOwner[I].FFocused := False;
+  FFocused := Value;
+end;
+
+procedure TListItem.MakeVisible(PartialOK: Boolean);
+begin
+  if ListView.HandleAllocated then
+    SendMessageW(ListView.Handle, LVM_ENSUREVISIBLE, WPARAM(Index), LPARAM(Ord(PartialOK)));
+end;
+
+function TListItem.DisplayRect(Code: TDisplayCode): TRect;
+const
+  Codes: array[TDisplayCode] of Integer = (LVIR_BOUNDS, LVIR_ICON, LVIR_LABEL, LVIR_SELECTBOUNDS);
+begin
+  Result := Rect(0, 0, 0, 0);
+  if ListView.HandleAllocated then
+  begin
+    Result.Left := Codes[Code];
+    if SendMessageW(ListView.Handle, LVM_GETITEMRECT, WPARAM(Index), LPARAM(@Result)) = 0 then
+      Result := Rect(0, 0, 0, 0);
+  end;
+end;
+
+{ ---------------------------------------------------------------- TListItems }
+
+constructor TListItems.Create(AOwner: TCustomListView);
+begin
+  inherited Create;
+  FOwner := AOwner;
+  FList := TList.Create;
+end;
+
+destructor TListItems.Destroy;
+begin
+  Clear;
+  FList.Free;
+  inherited Destroy;
+end;
+
+function TListItems.GetCount: Integer;
+begin
+  Result := FList.Count;
+end;
+
+function TListItems.GetItem(Index: Integer): TListItem;
+begin
+  Result := TListItem(FList[Index]);
+end;
+
+function TListItems.IndexOf(Value: TListItem): Integer;
+begin
+  Result := FList.IndexOf(Value);
+end;
+
+function TListItems.Add: TListItem;
+begin
+  Result := Insert(FList.Count);
+end;
+
+function TListItems.Insert(Index: Integer): TListItem;
+begin
+  Result := TListItem.Create(Self);
+  FList.Insert(Index, Result);
+  if FOwner.HandleAllocated then
+    InsertNative(Result, Index);
+end;
+
+procedure TListItems.InsertNative(Item: TListItem; Index: Integer);
+var
+  It: TLVItemW;
+  Old: Boolean;
+begin
+  FillChar(It, SizeOf(It), 0);
+  It.mask := LVIF_TEXT or LVIF_IMAGE or LVIF_PARAM or LVIF_STATE;
+  It.iItem := Index;
+  It.pszText := LPSTR_TEXTCALLBACKW;
+  It.iImage := I_IMAGECALLBACK;
+  It.lParam := LPARAM(Item);
+  It.stateMask := LVIS_SELECTED or LVIS_FOCUSED or LVIS_STATEIMAGEMASK;
+  It.state := UINT(Ord(Item.FChecked) + 1) shl 12;
+  if Item.FSelected then
+    It.state := It.state or LVIS_SELECTED;
+  if Item.FFocused then
+    It.state := It.state or LVIS_FOCUSED;
+  Old := FOwner.FNoEvents;
+  FOwner.FNoEvents := True;
+  try
+    SendMessageW(FOwner.Handle, LVM_INSERTITEMW, 0, LPARAM(@It));
+    { the state is not always taken on insertion (LVS_EX_CHECKBOXES resets the state image) }
+    SendMessageW(FOwner.Handle, LVM_SETITEMSTATE, WPARAM(Index), LPARAM(@It));
+  finally
+    FOwner.FNoEvents := Old;
+  end;
+end;
+
+procedure TListItems.Delete(Index: Integer);
+begin
+  Item[Index].Free;
+end;
+
+procedure TListItems.Clear;
+var
+  I: Integer;
+  It: TListItem;
+begin
+  if FList.Count = 0 then
+    Exit;
+  if FOwner.HandleAllocated then
+    SendMessageW(FOwner.Handle, LVM_DELETEALLITEMS, 0, 0);
+  for I := FList.Count - 1 downto 0 do
+  begin
+    It := TListItem(FList[I]);
+    It.FOwner := nil;
+    It.Free;
+  end;
+  FList.Clear;
+end;
+
+procedure TListItems.BeginUpdate;
+begin
+  if (FUpdateCount = 0) and FOwner.HandleAllocated then
+    SendMessageW(FOwner.Handle, WM_SETREDRAW, 0, 0);
+  Inc(FUpdateCount);
+end;
+
+procedure TListItems.EndUpdate;
+begin
+  Dec(FUpdateCount);
+  if (FUpdateCount = 0) and FOwner.HandleAllocated then
+  begin
+    SendMessageW(FOwner.Handle, WM_SETREDRAW, 1, 0);
+    FOwner.Invalidate;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TCustomListView }
+
+constructor TCustomListView.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  ControlStyle := ControlStyle - [csAcceptsControls, csSetCaption];
+  FColumns := TListColumns.Create(Self);
+  FItems := TListItems.Create(Self);
+  FBorderStyle := bsSingle;
+  FColumnClick := True;
+  FHideSelection := True;
+  FShowColumnHeaders := True;
+  FLargeChangeLink := TChangeLink.Create;
+  FLargeChangeLink.OnChange := ImageListChange;
+  FSmallChangeLink := TChangeLink.Create;
+  FSmallChangeLink.OnChange := ImageListChange;
+  TabStop := True;
+  Color := clWindow;
+  SetBounds(Left, Top, 250, 150);
+end;
+
+destructor TCustomListView.Destroy;
+begin
+  { UIF-822: no events while the list is cleared }
+  FNoEvents := True;
+  FItems.Clear;
+  FColumns.FListView := nil;
+  LargeImages := nil;
+  SmallImages := nil;
+  inherited Destroy;
+  FItems.Free;
+  FItems := nil;
+  FColumns.Free;
+  FColumns := nil;
+  FLargeChangeLink.Free;
+  FLargeChangeLink := nil;
+  FSmallChangeLink.Free;
+  FSmallChangeLink := nil;
+end;
+
+procedure TCustomListView.CreateParams(var Params: TCreateParams);
+const
+  Views: array[TViewStyle] of DWORD = (LVS_ICON, LVS_SMALLICON, LVS_LIST, LVS_REPORT);
+begin
+  inherited CreateParams(Params);
+  Params.SubclassOf := WC_LISTVIEW;
+  Params.Style := Params.Style or LVS_SHAREIMAGELISTS or Views[FViewStyle];
+  if not FMultiSelect then
+    Params.Style := Params.Style or LVS_SINGLESEL;
+  if not FHideSelection then
+    Params.Style := Params.Style or LVS_SHOWSELALWAYS;
+  if not FReadOnly then
+    Params.Style := Params.Style or LVS_EDITLABELS;
+  if not FShowColumnHeaders then
+    Params.Style := Params.Style or LVS_NOCOLUMNHEADER;
+  if not FColumnClick then
+    Params.Style := Params.Style or LVS_NOSORTHEADER;
+  if FBorderStyle = bsSingle then
+    Params.ExStyle := Params.ExStyle or WS_EX_CLIENTEDGE;
+end;
+
+procedure TCustomListView.CreateWnd;
+var
+  I: Integer;
+begin
+  inherited CreateWnd;
+  UpdateExtendedStyles;
+  UpdateColors;
+  UpdateImageLists;
+  UpdateColumns;
+  for I := 0 to FItems.Count - 1 do
+    FItems.InsertNative(FItems[I], I);
+end;
+
+procedure TCustomListView.UpdateExtendedStyles;
+const
+  Mask = LVS_EX_GRIDLINES or LVS_EX_FULLROWSELECT or LVS_EX_CHECKBOXES or LVS_EX_DOUBLEBUFFER;
+var
+  Bits: DWORD;
+begin
+  if not HandleAllocated then
+    Exit;
+  Bits := LVS_EX_DOUBLEBUFFER;
+  if FGridLines then
+    Bits := Bits or LVS_EX_GRIDLINES;
+  if FRowSelect then
+    Bits := Bits or LVS_EX_FULLROWSELECT;
+  if FCheckboxes then
+    Bits := Bits or LVS_EX_CHECKBOXES;
+  SendMessageW(Handle, LVM_SETEXTENDEDLISTVIEWSTYLE, Mask, LPARAM(Bits));
+end;
+
+procedure TCustomListView.UpdateColors;
+begin
+  if not HandleAllocated then
+    Exit;
+  SendMessageW(Handle, LVM_SETBKCOLOR, 0, LPARAM(ColorToRGB(Color)));
+  SendMessageW(Handle, LVM_SETTEXTBKCOLOR, 0, LPARAM(ColorToRGB(Color)));
+  SendMessageW(Handle, LVM_SETTEXTCOLOR, 0, LPARAM(ColorToRGB(Font.Color)));
+  Invalidate;
+end;
+
+procedure TCustomListView.UpdateImageLists;
+var
+  H: HIMAGELIST;
+begin
+  if not HandleAllocated then
+    Exit;
+  H := 0;
+  if FLargeImages <> nil then
+    H := FLargeImages.Handle;
+  SendMessageW(Handle, LVM_SETIMAGELIST, LVSIL_NORMAL, LPARAM(H));
+  H := 0;
+  if FSmallImages <> nil then
+    H := FSmallImages.Handle;
+  SendMessageW(Handle, LVM_SETIMAGELIST, LVSIL_SMALL, LPARAM(H));
+end;
+
+procedure TCustomListView.UpdateColumns;
+const
+  Formats: array[TAlignment] of Integer = (LVCFMT_LEFT, LVCFMT_RIGHT, LVCFMT_CENTER);
+var
+  I: Integer;
+  C: TLVColumnW;
+  Col: TListColumn;
+begin
+  if not HandleAllocated or (FColumns = nil) then
+    Exit;
+  FUpdatingColumns := True;
+  try
+    while SendMessageW(Handle, LVM_DELETECOLUMN, 0, 0) <> 0 do
+      ;
+    for I := 0 to FColumns.Count - 1 do
+    begin
+      Col := FColumns[I];
+      FillChar(C, SizeOf(C), 0);
+      C.mask := LVCF_FMT or LVCF_WIDTH or LVCF_TEXT or LVCF_SUBITEM;
+      if I = 0 then
+        C.fmt := LVCFMT_LEFT
+      else
+        C.fmt := Formats[Col.Alignment];
+      C.cx := Col.Width;
+      C.pszText := PChar(Col.Caption);
+      C.iSubItem := I;
+      SendMessageW(Handle, LVM_INSERTCOLUMNW, WPARAM(I), LPARAM(@C));
+    end;
+  finally
+    FUpdatingColumns := False;
+  end;
+end;
+
+procedure TCustomListView.ChangeScale(M, D: Integer);
+var
+  I: Integer;
+begin
+  inherited ChangeScale(M, D);
+  if M = D then
+    Exit;
+  FColumns.BeginUpdate;
+  try
+    for I := 0 to FColumns.Count - 1 do
+      FColumns[I].Width := LayoutMulDiv(FColumns[I].Width, M, D);
+  finally
+    FColumns.EndUpdate;
+  end;
+end;
+
+procedure TCustomListView.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if Operation = opRemove then
+  begin
+    if AComponent = FLargeImages then
+      LargeImages := nil;
+    if AComponent = FSmallImages then
+      SmallImages := nil;
+  end;
+end;
+
+procedure TCustomListView.CMColorChanged(var Message: TMessage);
+begin
+  inherited CMColorChanged(Message);
+  UpdateColors;
+end;
+
+procedure TCustomListView.CMFontChanged(var Message: TMessage);
+begin
+  inherited CMFontChanged(Message);
+  UpdateColors;
+end;
+
+procedure TCustomListView.WndProc(var Message: TMessage);
+var
+  N: PNMHdr;
+  I: Integer;
+  Item: TListItem;
+  S: string;
+begin
+  case Message.Msg of
+    CN_NOTIFY:
+      begin
+        N := PNMHdr(Message.LParam);
+        case N^.code of
+          LVN_COLUMNCLICK:
+            begin
+              I := PNMListView(Message.LParam)^.iSubItem;
+              if (I >= 0) and (I < FColumns.Count) then
+                DoColumnClick(FColumns[I]);
+              Message.Result := 0;
+            end;
+          LVN_GETDISPINFOW:
+            begin
+              GetDispInfo(PLVDispInfoW(Message.LParam)^);
+              Message.Result := 0;
+            end;
+          LVN_ITEMCHANGED:
+            begin
+              if not FNoEvents and not (csDestroying in ComponentState)
+                and ((PNMListView(Message.LParam)^.uChanged and LVIF_STATE) <> 0) then
+              begin
+                I := PNMListView(Message.LParam)^.iItem;
+                if I = -1 then
+                  for I := 0 to FItems.Count - 1 do
+                    SyncItemState(I)
+                else
+                  SyncItemState(I);
+              end;
+              Message.Result := 0;
+            end;
+          LVN_ENDLABELEDITW:
+            { UIF-824 }
+            if (PLVDispInfoW(Message.LParam)^.item.pszText <> nil)
+              and (PLVDispInfoW(Message.LParam)^.item.iItem >= 0)
+              and (PLVDispInfoW(Message.LParam)^.item.iItem < FItems.Count) then
+            begin
+              Item := FItems[PLVDispInfoW(Message.LParam)^.item.iItem];
+              S := PChar(PLVDispInfoW(Message.LParam)^.item.pszText);
+              if Assigned(FOnEdited) then
+                FOnEdited(Self, Item, S);
+              Item.Caption := S;
+              Message.Result := 1;
+            end
+            else
+              Message.Result := 0;
+        else
+          inherited WndProc(Message);
+        end;
+      end;
+    WM_LBUTTONDOWN, WM_LBUTTONDBLCLK:
+      begin
+        inherited WndProc(Message);
+        { UIF-825: the native control tracks the button itself and consumes WM_LBUTTONUP; when it returns with the
+          button released, the release is replayed through the normal mouse path (OnClick, OnMouseUp) }
+        if HandleAllocated and (GetKeyState(VK_LBUTTON) >= 0) then
+        begin
+          if (Message.Msg = WM_LBUTTONDOWN) and (csClickEvents in ControlStyle) then
+            ControlState := ControlState + [csClicked];
+          Perform(WM_LBUTTONUP, 0, Message.LParam);
+        end;
+      end;
+    WM_NOTIFY:
+      begin
+        inherited WndProc(Message);
+        N := PNMHdr(Message.LParam);
+        if (N <> nil) and (N^.code = HDN_ITEMCHANGEDW) and not FUpdatingColumns
+          and (N^.hwndFrom = HWND(SendMessageW(Handle, LVM_GETHEADER, 0, 0))) then
+        begin
+          I := PNMHeaderW(Message.LParam)^.iItem;
+          if (I >= 0) and (I < FColumns.Count) then
+            FColumns[I].FWidth := Integer(SendMessageW(Handle, LVM_GETCOLUMNWIDTH, WPARAM(I), 0));
+        end;
+      end;
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+procedure TCustomListView.DoColumnClick(Column: TListColumn);
+begin
+  if Assigned(FOnColumnClick) then
+    FOnColumnClick(Self, Column);
+end;
+
+procedure TCustomListView.ImageListChange(Sender: TObject);
+begin
+  UpdateImageLists;
+end;
+
+procedure TCustomListView.SetImageList(var Field: TCustomImageList; Value: TCustomImageList; Link: TChangeLink);
+begin
+  if Field = Value then
+    Exit;
+  if Field <> nil then
+  begin
+    Field.UnRegisterChanges(Link);
+    Field.RemoveFreeNotification(Self);
+  end;
+  Field := Value;
+  if Field <> nil then
+  begin
+    Field.RegisterChanges(Link);
+    Field.FreeNotification(Self);
+  end;
+  UpdateImageLists;
+end;
+
+procedure TCustomListView.SetLargeImages(Value: TCustomImageList);
+begin
+  SetImageList(FLargeImages, Value, FLargeChangeLink);
+end;
+
+procedure TCustomListView.SetSmallImages(Value: TCustomImageList);
+begin
+  SetImageList(FSmallImages, Value, FSmallChangeLink);
+end;
+
+procedure TCustomListView.SetColumns(Value: TListColumns);
+begin
+  FColumns.Assign(Value);
+end;
+
+procedure TCustomListView.SetBorderStyle(Value: TBorderStyle);
+begin
+  if FBorderStyle <> Value then
+  begin
+    FBorderStyle := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListView.SetCheckboxes(Value: Boolean);
+begin
+  if FCheckboxes <> Value then
+  begin
+    FCheckboxes := Value;
+    UpdateExtendedStyles;
+  end;
+end;
+
+procedure TCustomListView.SetColumnClick(Value: Boolean);
+begin
+  if FColumnClick <> Value then
+  begin
+    FColumnClick := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListView.SetGridLines(Value: Boolean);
+begin
+  if FGridLines <> Value then
+  begin
+    FGridLines := Value;
+    UpdateExtendedStyles;
+  end;
+end;
+
+procedure TCustomListView.SetHideSelection(Value: Boolean);
+begin
+  if FHideSelection <> Value then
+  begin
+    FHideSelection := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListView.SetMultiSelect(Value: Boolean);
+begin
+  if FMultiSelect <> Value then
+  begin
+    FMultiSelect := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListView.SetReadOnly(Value: Boolean);
+begin
+  if FReadOnly <> Value then
+  begin
+    FReadOnly := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListView.SetRowSelect(Value: Boolean);
+begin
+  if FRowSelect <> Value then
+  begin
+    FRowSelect := Value;
+    UpdateExtendedStyles;
+  end;
+end;
+
+procedure TCustomListView.SetShowColumnHeaders(Value: Boolean);
+begin
+  if FShowColumnHeaders <> Value then
+  begin
+    FShowColumnHeaders := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomListView.SetViewStyle(Value: TViewStyle);
+const
+  Views: array[TViewStyle] of Integer = (LV_VIEW_ICON, LV_VIEW_SMALLICON, LV_VIEW_LIST, LV_VIEW_DETAILS);
+begin
+  if FViewStyle <> Value then
+  begin
+    FViewStyle := Value;
+    if HandleAllocated then
+      SendMessageW(Handle, LVM_SETVIEW, WPARAM(Views[FViewStyle]), 0);
+  end;
+end;
+
+procedure TCustomListView.DestroyWnd;
+var
+  Old: Boolean;
+begin
+  { the item objects mirror the native state at all times: nothing to read back, nothing to report }
+  Old := FNoEvents;
+  FNoEvents := True;
+  try
+    inherited DestroyWnd;
+  finally
+    FNoEvents := Old;
+  end;
+end;
+
+{ UIF-820: a text or image change of an item with a window }
+procedure TCustomListView.ItemChanged(Item: TListItem; Change: TItemChange);
+begin
+  if not HandleAllocated or FNoEvents or (csDestroying in ComponentState) then
+    Exit;
+  SendMessageW(Handle, LVM_UPDATE, WPARAM(Item.Index), 0);
+  if Assigned(FOnChange) then
+    FOnChange(Self, Item, Change);
+end;
+
+{ UIF-822: the item objects follow the native state; the events for what changed }
+procedure TCustomListView.SyncItemState(Index: Integer);
+var
+  Item: TListItem;
+  S: UINT;
+  Sel, Foc, Any: Boolean;
+  Img: Integer;
+begin
+  if (Index < 0) or (Index >= FItems.Count) then
+    Exit;
+  Item := FItems[Index];
+  S := UINT(SendMessageW(Handle, LVM_GETITEMSTATE, WPARAM(Index),
+    LVIS_SELECTED or LVIS_FOCUSED or LVIS_STATEIMAGEMASK));
+  Sel := (S and LVIS_SELECTED) <> 0;
+  Foc := (S and LVIS_FOCUSED) <> 0;
+  Img := Integer((S and LVIS_STATEIMAGEMASK) shr 12);
+  Any := False;
+  if Sel <> Item.FSelected then
+  begin
+    Item.FSelected := Sel;
+    Any := True;
+    if Assigned(FOnSelectItem) then
+      FOnSelectItem(Self, Item, Sel);
+  end;
+  if (Img <> 0) and ((Img = 2) <> Item.FChecked) then
+  begin
+    Item.FChecked := Img = 2;
+    Any := True;
+    if Assigned(FOnItemChecked) then
+      FOnItemChecked(Self, Item);
+  end;
+  if Foc <> Item.FFocused then
+  begin
+    Item.FFocused := Foc;
+    Any := True;
+  end;
+  if Any and Assigned(FOnChange) then
+    FOnChange(Self, Item, ctState);
+end;
+
+{ LVN_GETDISPINFOW: the caption, the sub-items and the image from the item objects }
+procedure TCustomListView.GetDispInfo(var Info: TLVDispInfoW);
+var
+  Item: TListItem;
+  S: string;
+  N: Integer;
+begin
+  if (Info.item.iItem < 0) or (Info.item.iItem >= FItems.Count) then
+    Exit;
+  Item := FItems[Info.item.iItem];
+  if ((Info.item.mask and LVIF_TEXT) <> 0) and (Info.item.pszText <> nil) and (Info.item.cchTextMax > 0) then
+  begin
+    if Info.item.iSubItem = 0 then
+      S := Item.FCaption
+    else if Info.item.iSubItem <= Item.FSubItems.Count then
+      S := Item.FSubItems[Info.item.iSubItem - 1]
+    else
+      S := '';
+    N := Length(S);
+    if N > Info.item.cchTextMax - 1 then
+      N := Info.item.cchTextMax - 1;
+    if N > 0 then
+      Move(PChar(S)^, Info.item.pszText^, N * SizeOf(Char));
+    PChar(Info.item.pszText)[N] := #0;
+  end;
+  if ((Info.item.mask and LVIF_IMAGE) <> 0) and (Info.item.iSubItem = 0) then
+    Info.item.iImage := Item.FImageIndex;
+end;
+
+function TCustomListView.GetSelected: TListItem;
+var
+  I: Integer;
+begin
+  Result := nil;
+  for I := 0 to FItems.Count - 1 do
+    if FItems[I].FSelected then
+    begin
+      Result := FItems[I];
+      Exit;
+    end;
+end;
+
+procedure TCustomListView.SetSelected(Value: TListItem);
+var
+  I: Integer;
+begin
+  for I := 0 to FItems.Count - 1 do
+    if (FItems[I] <> Value) and FItems[I].FSelected then
+      FItems[I].Selected := False;
+  if Value <> nil then
+    Value.Selected := True;
+end;
+
+function TCustomListView.GetItemIndex: Integer;
+var
+  S: TListItem;
+begin
+  S := GetSelected;
+  if S = nil then
+    Result := -1
+  else
+    Result := S.Index;
+end;
+
+procedure TCustomListView.SetItemIndex(Value: Integer);
+begin
+  if (Value < 0) or (Value >= FItems.Count) then
+    SetSelected(nil)
+  else
+    SetSelected(FItems[Value]);
+end;
+
+function TCustomListView.GetItemFocused: TListItem;
+var
+  I: Integer;
+begin
+  Result := nil;
+  for I := 0 to FItems.Count - 1 do
+    if FItems[I].FFocused then
+    begin
+      Result := FItems[I];
+      Exit;
+    end;
+end;
+
+procedure TCustomListView.SetItemFocused(Value: TListItem);
+var
+  Old: TListItem;
+begin
+  if Value <> nil then
+    Value.Focused := True
+  else
+  begin
+    Old := GetItemFocused;
+    if Old <> nil then
+      Old.Focused := False;
+  end;
+end;
+
+function TCustomListView.GetSelCount: Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  for I := 0 to FItems.Count - 1 do
+    if FItems[I].FSelected then
+      Inc(Result);
+end;
+
+function TCustomListView.GetTopItem: TListItem;
+var
+  I: Integer;
+begin
+  Result := nil;
+  if not HandleAllocated then
+    Exit;
+  I := Integer(SendMessageW(Handle, LVM_GETTOPINDEX, 0, 0));
+  if (I >= 0) and (I < FItems.Count) then
+    Result := FItems[I];
+end;
+
+function TCustomListView.GetVisibleRowCount: Integer;
+begin
+  if HandleAllocated then
+    Result := Integer(SendMessageW(Handle, LVM_GETCOUNTPERPAGE, 0, 0))
+  else
+    Result := 0;
+end;
+
+function TCustomListView.GetItemAt(X, Y: Integer): TListItem;
+var
+  Info: TLVHitTestInfo;
+  I: Integer;
+begin
+  Result := nil;
+  if not HandleAllocated then
+    Exit;
+  FillChar(Info, SizeOf(Info), 0);
+  Info.pt := Point(X, Y);
+  I := Integer(SendMessageW(Handle, LVM_HITTEST, 0, LPARAM(@Info)));
+  if (I >= 0) and (I < FItems.Count) and ((Info.flags and LVHT_ONITEM) <> 0) then
+    Result := FItems[I];
+end;
+
+function TCustomListView.GetNextItem(StartItem: TListItem; Direction: TSearchDirection;
+  States: TItemStates): TListItem;
+const
+  Directions: array[TSearchDirection] of UINT = (LVNI_TOLEFT, LVNI_TORIGHT, LVNI_ABOVE, LVNI_BELOW, LVNI_ALL);
+var
+  Flags: UINT;
+  Start, I: Integer;
+begin
+  Result := nil;
+  if not HandleAllocated then
+    Exit;
+  Flags := Directions[Direction];
+  if isCut in States then
+    Flags := Flags or LVNI_CUT;
+  if isDropHilited in States then
+    Flags := Flags or LVNI_DROPHILITED;
+  if isFocused in States then
+    Flags := Flags or LVNI_FOCUSED;
+  if isSelected in States then
+    Flags := Flags or LVNI_SELECTED;
+  if StartItem = nil then
+    Start := -1
+  else
+    Start := StartItem.Index;
+  I := Integer(SendMessageW(Handle, LVM_GETNEXTITEM, WPARAM(Start), LPARAM(Flags)));
+  if (I >= 0) and (I < FItems.Count) then
+    Result := FItems[I];
+end;
+
+procedure TCustomListView.ClearSelection;
+var
+  I: Integer;
+begin
+  for I := 0 to FItems.Count - 1 do
+    if FItems[I].FSelected then
+      FItems[I].Selected := False;
+end;
+
+procedure TCustomListView.SelectAll;
+var
+  I: Integer;
+begin
+  for I := 0 to FItems.Count - 1 do
+    if not FItems[I].FSelected then
+      FItems[I].Selected := True;
+end;
+
+procedure TCustomListView.Clear;
+begin
+  FItems.Clear;
+end;
+
 initialization
-  RegisterClasses([TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar]);
+  RegisterClasses([TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar, TListView]);
 
 end.

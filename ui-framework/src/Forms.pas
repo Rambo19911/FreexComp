@@ -2171,7 +2171,8 @@ begin
     List.Add(Pointer(A));
 end;
 
-{ UIF-910 (a): the actions of the showing controls of the tree }
+{ UIF-910 (a) and (c): the actions of the showing controls of the tree and of the controls that update their action
+  also while hidden (the whole tree is walked for those) }
 procedure CollectActions(Parent: TWinControl; List: TList);
 var
   I: Integer;
@@ -2180,9 +2181,8 @@ begin
   for I := 0 to Parent.ControlCount - 1 do
   begin
     C := Parent.Controls[I];
-    if not C.Showing then
-      Continue;
-    AddAction(List, TControlAccess(C).Action);
+    if C.Showing or TControlAccess(C).UpdatesActionWhenHidden then
+      AddAction(List, TControlAccess(C).Action);
     if C is TWinControl then
       CollectActions(TWinControl(C), List);
   end;

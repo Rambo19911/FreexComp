@@ -32,4 +32,12 @@ ok Done: the visible form's actions after OnIdle
 ok Done False: no action updates
 ok hidden form: not updated at idle
 ok an action without a client updates inside Execute (UIF-913)
-# passed 29 failed 0
+# hidden tool buttons (UIF-910 (c))
+ok default: False
+ok TToolButton: True
+ok the action hides its tool button
+ok hidden tool buttons (also in a hidden bar) are updated; a hidden button is not
+ok OnUpdate showed the tool button again
+ok showing
+ok a visible tool button: updated once
+# passed 36 failed 0

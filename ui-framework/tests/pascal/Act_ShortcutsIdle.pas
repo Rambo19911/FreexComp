@@ -8,12 +8,16 @@ program Act_ShortcutsIdle;
   lists, then the main form; duplicates resolved by that order; disabled or invisible items (or items in a
   disabled parent) and actions whose Execute fails are skipped after their update hooks ran; suspended lists do
   not match; a consumed key produces no OnKeyDown / OnKeyPress; modifier keys alone never match; Alt shortcuts
-  arrive as WM_SYSKEYDOWN. The Ctrl state is set with SetKeyboardState (thread key state; no real input). }
+  arrive as WM_SYSKEYDOWN. The Ctrl state is set with SetKeyboardState (thread key state; no real input).
+  U-121, UIF-910 (c): controls whose UpdatesActionWhenHidden is True (tool buttons) are updated also while hidden,
+  so an action's OnUpdate can show its hidden tool button again. }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, Menus, ActnList,
-  TestKit;
+  ComCtrls, TestKit;
 
 type
+  TControlAccess = class(TControl);
+
   TMainF = class(TForm)
   public
     constructor Create(AOwner: TComponent); override;
@@ -26,6 +30,7 @@ type
     IdleDone: Boolean;
     procedure Exec(Sender: TObject);
     procedure Upd(Sender: TObject);
+    procedure ShowAgain(Sender: TObject);
     procedure Clicked(Sender: TObject);
     procedure Hook(Sender: TObject);
     procedure KeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -58,6 +63,12 @@ begin
   Text := Text + 'upd:' + TComponent(Sender).Name + ';';
   if RaiseIn = TComponent(Sender).Name then
     raise Exception.Create('boom');
+end;
+
+procedure TLog.ShowAgain(Sender: TObject);
+begin
+  Text := Text + 'upd:' + TComponent(Sender).Name + ';';
+  TAction(Sender).Visible := True;
 end;
 
 procedure TLog.Clicked(Sender: TObject);
@@ -367,12 +378,67 @@ begin
   end;
 end;
 
+{ U-121 }
+procedure HiddenToolButtons;
+var
+  F: TForm;
+  T, T2: TToolBar;
+  TB, TB2: TToolButton;
+  B: TButton;
+  AH, AH2, AB: TAction;
+begin
+  Section('hidden tool buttons (UIF-910 (c))');
+  F := TForm.CreateNew(nil);
+  try
+    F.SetBounds(120, 120, 320, 240);
+    B := TButton.Create(F);
+    TB := TToolButton.Create(F);
+    CheckEqB(False, TControlAccess(B).UpdatesActionWhenHidden, 'default: False');
+    CheckEqB(True, TControlAccess(TB).UpdatesActionWhenHidden, 'TToolButton: True');
+    T := TToolBar.Create(F);
+    T.Parent := F;
+    AH := NewAction(F, nil, 'AH', 0);
+    TB.Name := 'TB';
+    TB.Parent := T;
+    TB.Action := AH;
+    AH.Visible := False;
+    CheckEqB(False, TB.Visible, 'the action hides its tool button');
+    AH.OnUpdate := Log.ShowAgain;
+    AB := NewAction(F, nil, 'AB', 0);
+    AB.OnUpdate := Log.Upd;
+    B.Parent := F;
+    B.Action := AB;
+    B.Visible := False;
+    T2 := TToolBar.Create(F);
+    T2.Parent := F;
+    T2.Visible := False;
+    AH2 := NewAction(F, nil, 'AH2', 0);
+    AH2.OnUpdate := Log.Upd;
+    TB2 := TToolButton.Create(F);
+    TB2.Parent := T2;
+    TB2.Action := AH2;
+    F.Visible := True;
+    Log.Text := '';
+    F.UpdateActions;
+    CheckEqS('upd:AH;upd:AH2;', Log.Text,
+      'hidden tool buttons (also in a hidden bar) are updated; a hidden button is not');
+    CheckEqB(True, TB.Visible, 'OnUpdate showed the tool button again');
+    CheckEqB(True, TB.Showing, 'showing');
+    Log.Text := '';
+    F.UpdateActions;
+    CheckEqS('upd:AH;upd:AH2;', Log.Text, 'a visible tool button: updated once');
+  finally
+    F.Free;
+  end;
+end;
+
 begin
   Application.Initialize;
   Log := TLog.Create;
   try
     Shortcuts;
     Updates;
+    HiddenToolButtons;
   finally
     Log.Free;
   end;
