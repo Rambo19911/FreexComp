@@ -1,0 +1,4 @@
+ErrCastOrdinalRValue.pas(28,8): error E2040: Invalid typecast from 'Double' to 'TFoo'
+ErrCastOrdinalRValue.pas(29,8): error E2040: Invalid typecast from 'Double' to 'TFoo'
+ErrCastOrdinalRValue.pas(30,8): error E2040: Invalid typecast from 'NativeInt' to 'IThing'
+ErrCastOrdinalRValue.pas(31,8): error E2040: Invalid typecast from 'Int64' to 'TPair'

@@ -1764,6 +1764,7 @@ internal sealed partial class ExpressionBinder
             (ClassRefTypeSymbol, ClassRefTypeSymbol or PointerTypeSymbol or IntegerTypeSymbol { Bits: 64 }) => true,  // LANG-290 (C-086)
             (PointerTypeSymbol, ClassRefTypeSymbol) => true,
             (_, ClassRefTypeSymbol) when source.IsOrdinal => true,
+            (_, ClassTypeSymbol) when source.IsOrdinal => true,                 // LANG-290 row 2 (C-261): also a non-variable operand
             (IntegerTypeSymbol or RealTypeSymbol, RealTypeSymbol) => true,
             _ => false,
         };
