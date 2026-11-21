@@ -1,0 +1,87 @@
+{
+  "formatVersion": 1,
+  "unit": "Menus",
+  "types": {
+    "TMenuBreak": { "kind": "enum", "values": ["mbNone", "mbBreak", "mbBarBreak"] },
+    "TPopupAlignment": { "kind": "enum", "values": ["paLeft", "paRight", "paCenter"] }
+  },
+  "components": [
+    {
+      "class": "TMenu",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "designerVerbs": [
+        { "id": "menuDesigner", "caption": "&Menu Designer…", "command": "designer.editComponent" }
+      ],
+      "componentEditor": "menu",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TMenuItem",
+      "ancestor": "TComponent",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "MenuItem",
+      "acceptsChildren": false,
+      "parentClasses": ["TMenu", "TMenuItem"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Action", "type": "TBasicAction", "kind": "component", "category": "Action" },
+        { "name": "AutoCheck", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Break", "type": "TMenuBreak", "default": "mbNone", "category": "Appearance" },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "localizable": true },
+        { "name": "Checked", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Default", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "GroupIndex", "type": "Integer", "default": 0, "category": "Behavior", "min": 0, "max": 255 },
+        { "name": "Hint", "type": "string", "default": "", "category": "Misc", "localizable": true },
+        { "name": "ImageIndex", "type": "Integer", "default": -1, "category": "Appearance" },
+        { "name": "RadioItem", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "ShortCut", "type": "TShortCut", "default": 0, "category": "Action", "editor": "shortcut" },
+        { "name": "Visible", "type": "Boolean", "default": true, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TMainMenu",
+      "ancestor": "TMenu",
+      "abstract": false,
+      "palette": { "page": "Standard", "order": 10, "icon": "icons/TMainMenu.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "MainMenu",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Images", "type": "TCustomImageList", "kind": "component", "category": "Appearance" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TPopupMenu",
+      "ancestor": "TMenu",
+      "abstract": false,
+      "palette": { "page": "Standard", "order": 20, "icon": "icons/TPopupMenu.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "PopupMenu",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Alignment", "type": "TPopupAlignment", "default": "paLeft", "category": "Appearance" },
+        { "name": "AutoPopup", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Images", "type": "TCustomImageList", "kind": "component", "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnPopup", "signature": "TNotifyEvent", "default": true }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)"
+  }
+}

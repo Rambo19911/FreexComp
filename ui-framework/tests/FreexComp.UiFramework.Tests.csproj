@@ -7,6 +7,8 @@
     <ProjectReference Include="..\..\compiler\src\opc\opc.csproj" />
     <!-- the golden runner of rtl/tests is reused, not copied (UIF-1202) -->
     <ProjectReference Include="..\..\rtl\tests\FreexComp.Rtl.Tests.csproj" />
+    <!-- MetadataMatchesSource parses the units with the compiler API (compiler api.md CMP-240) -->
+    <ProjectReference Include="..\..\compiler\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- the Pascal programs are data read from the source tree, never compiled by the .NET SDK build -->

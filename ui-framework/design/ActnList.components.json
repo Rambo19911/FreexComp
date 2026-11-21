@@ -1,0 +1,104 @@
+{
+  "formatVersion": 1,
+  "unit": "ActnList",
+  "types": {
+    "TActionListState": { "kind": "enum", "values": ["asNormal", "asSuspended", "asSuspendedEnabled"] }
+  },
+  "components": [
+    {
+      "class": "TBasicAction",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TCustomActionList",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TContainedAction",
+      "ancestor": "TBasicAction",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TCustomAction",
+      "ancestor": "TContainedAction",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TAction",
+      "ancestor": "TCustomAction",
+      "abstract": false,
+      "kind": "nonvisual",
+      "namePrefix": "Action",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "AutoCheck", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "localizable": true },
+        { "name": "Category", "type": "string", "default": "", "category": "Behavior" },
+        { "name": "Checked", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "GroupIndex", "type": "Integer", "default": 0, "category": "Behavior" },
+        { "name": "Hint", "type": "string", "default": "", "category": "Misc", "localizable": true },
+        { "name": "ImageIndex", "type": "Integer", "default": -1, "category": "Appearance" },
+        { "name": "ShortCut", "type": "TShortCut", "default": 0, "category": "Action", "editor": "shortcut" },
+        { "name": "Visible", "type": "Boolean", "default": true, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnExecute", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnHint", "signature": "THintEvent" },
+        { "name": "OnUpdate", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TActionList",
+      "ancestor": "TCustomActionList",
+      "abstract": false,
+      "palette": { "page": "Standard", "order": 140, "icon": "icons/TActionList.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "ActionList",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "designerVerbs": [
+        { "id": "actionListEditor", "caption": "&Action List Editor…", "command": "designer.editComponent" }
+      ],
+      "componentEditor": "childlist",
+      "properties": [
+        { "name": "Images", "type": "TCustomImageList", "kind": "component", "category": "Appearance" },
+        { "name": "State", "type": "TActionListState", "default": "asNormal", "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent" },
+        { "name": "OnExecute", "signature": "TActionEvent" },
+        { "name": "OnUpdate", "signature": "TActionEvent" }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "THintEvent": "procedure(var HintStr: string; var CanShow: Boolean)",
+    "TActionEvent": "procedure(Action: TBasicAction; var Handled: Boolean)"
+  }
+}

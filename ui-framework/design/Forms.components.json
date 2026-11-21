@@ -1,0 +1,192 @@
+{
+  "formatVersion": 1,
+  "unit": "Forms",
+  "types": {
+    "TFont": { "kind": "object", "properties": [
+      { "name": "Charset", "type": "Integer", "default": 1, "min": 0, "max": 255 },
+      { "name": "Color", "type": "TColor", "default": "clWindowText", "editor": "color" },
+      { "name": "Height", "type": "Integer", "default": -12 },
+      { "name": "Name", "type": "string", "default": "Segoe UI" },
+      { "name": "Orientation", "type": "Integer", "default": 0 },
+      { "name": "Pitch", "type": "TFontPitch", "default": "fpDefault" },
+      { "name": "Quality", "type": "TFontQuality", "default": "fqDefault" },
+      { "name": "Style", "type": "TFontStyles", "default": [] },
+      { "name": "Size", "type": "Integer", "stored": false }
+    ] },
+    "TFontPitch": { "kind": "enum", "values": ["fpDefault", "fpVariable", "fpFixed"] },
+    "TFontQuality": { "kind": "enum", "values": ["fqDefault", "fqDraft", "fqProof", "fqNonAntialiased", "fqAntialiased", "fqClearType", "fqClearTypeNatural"] },
+    "TFontStyle": { "kind": "enum", "values": ["fsBold", "fsItalic", "fsUnderline", "fsStrikeOut"] },
+    "TFontStyles": { "kind": "set", "of": "TFontStyle" },
+    "TControlScrollBar": { "kind": "object", "properties": [
+      { "name": "Increment", "type": "Integer", "default": 8 },
+      { "name": "Range", "type": "Integer", "default": 0 },
+      { "name": "Tracking", "type": "Boolean", "default": false },
+      { "name": "Visible", "type": "Boolean", "default": true }
+    ] },
+    "TBorderIcon": { "kind": "enum", "values": ["biSystemMenu", "biMinimize", "biMaximize", "biHelp"] },
+    "TBorderIcons": { "kind": "set", "of": "TBorderIcon" },
+    "TFormStyle": { "kind": "enum", "values": ["fsNormal", "fsMDIChild", "fsMDIForm", "fsStayOnTop"] },
+    "TPosition": { "kind": "enum", "values": ["poDesigned", "poDefault", "poDefaultPosOnly", "poDefaultSizeOnly", "poScreenCenter", "poDesktopCenter", "poMainFormCenter", "poOwnerFormCenter"] },
+    "TWindowState": { "kind": "enum", "values": ["wsNormal", "wsMinimized", "wsMaximized"] }
+  },
+  "components": [
+    {
+      "class": "TScrollingWinControl",
+      "ancestor": "TWinControl",
+      "abstract": true,
+      "kind": "container",
+      "acceptsChildren": true,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TScrollBox",
+      "ancestor": "TScrollingWinControl",
+      "abstract": false,
+      "palette": { "page": "Additional", "order": 40, "icon": "icons/TScrollBox.svg" },
+      "kind": "container",
+      "defaultSize": { "width": 185, "height": 41 },
+      "namePrefix": "ScrollBox",
+      "acceptsChildren": true,
+      "renderer": "scrollbox",
+      "properties": [
+        { "name": "AutoScroll", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsSingle", "category": "Appearance", "affectsLayout": true },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "HorzScrollBar", "type": "TControlScrollBar", "kind": "object", "category": "Behavior" },
+        { "name": "Padding", "type": "TPadding", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "ParentColor", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "VertScrollBar", "type": "TControlScrollBar", "kind": "object", "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnEnter", "signature": "TNotifyEvent" },
+        { "name": "OnExit", "signature": "TNotifyEvent" },
+        { "name": "OnMouseDown", "signature": "TMouseEvent" },
+        { "name": "OnMouseEnter", "signature": "TNotifyEvent" },
+        { "name": "OnMouseLeave", "signature": "TNotifyEvent" },
+        { "name": "OnMouseMove", "signature": "TMouseMoveEvent" },
+        { "name": "OnMouseUp", "signature": "TMouseEvent" },
+        { "name": "OnResize", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TCustomForm",
+      "ancestor": "TScrollingWinControl",
+      "abstract": true,
+      "kind": "form",
+      "acceptsChildren": true,
+      "renderer": "generic",
+      "properties": [
+        { "name": "Width", "type": "Integer", "category": "Layout", "hidden": true, "stored": false, "affectsLayout": true },
+        { "name": "Height", "type": "Integer", "category": "Layout", "hidden": true, "stored": false, "affectsLayout": true },
+        { "name": "Align", "type": "TAlign", "hidden": true },
+        { "name": "Anchors", "type": "TAnchors", "hidden": true },
+        { "name": "AlignWithMargins", "type": "Boolean", "hidden": true },
+        { "name": "Margins", "type": "TMargins", "kind": "object", "hidden": true }
+      ],
+      "events": []
+    },
+    {
+      "class": "TForm",
+      "ancestor": "TCustomForm",
+      "abstract": false,
+      "kind": "form",
+      "defaultSize": { "width": 400, "height": 300 },
+      "namePrefix": "Form",
+      "acceptsChildren": true,
+      "renderer": "form",
+      "properties": [
+        { "name": "ActiveControl", "type": "TWinControl", "kind": "component", "category": "Behavior" },
+        { "name": "BorderIcons", "type": "TBorderIcons", "default": ["biSystemMenu", "biMinimize", "biMaximize"], "category": "Appearance" },
+        { "name": "BorderStyle", "type": "TFormBorderStyle", "default": "bsSizeable", "category": "Appearance", "affectsLayout": true },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)", "localizable": true },
+        { "name": "ClientWidth", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "ClientHeight", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "FormStyle", "type": "TFormStyle", "default": "fsNormal", "category": "Behavior" },
+        { "name": "KeyPreview", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Menu", "type": "TMainMenu", "kind": "component", "category": "Action", "affectsLayout": true },
+        { "name": "PixelsPerInch", "type": "Integer", "category": "Layout" },
+        { "name": "Position", "type": "TPosition", "default": "poDesigned", "category": "Layout" },
+        { "name": "Scaled", "type": "Boolean", "default": true, "category": "Layout" },
+        { "name": "WindowState", "type": "TWindowState", "default": "wsNormal", "category": "Layout" }
+      ],
+      "events": [
+        { "name": "OnActivate", "signature": "TNotifyEvent" },
+        { "name": "OnAfterMonitorDpiChanged", "signature": "TMonitorDpiChangedEvent" },
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnClose", "signature": "TCloseEvent" },
+        { "name": "OnCloseQuery", "signature": "TCloseQueryEvent" },
+        { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
+        { "name": "OnCreate", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnDeactivate", "signature": "TNotifyEvent" },
+        { "name": "OnDestroy", "signature": "TNotifyEvent" },
+        { "name": "OnHide", "signature": "TNotifyEvent" },
+        { "name": "OnKeyDown", "signature": "TKeyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" },
+        { "name": "OnKeyUp", "signature": "TKeyEvent" },
+        { "name": "OnMouseDown", "signature": "TMouseEvent" },
+        { "name": "OnMouseEnter", "signature": "TNotifyEvent" },
+        { "name": "OnMouseLeave", "signature": "TNotifyEvent" },
+        { "name": "OnMouseMove", "signature": "TMouseMoveEvent" },
+        { "name": "OnMouseUp", "signature": "TMouseEvent" },
+        { "name": "OnMouseWheel", "signature": "TMouseWheelEvent" },
+        { "name": "OnPaint", "signature": "TNotifyEvent" },
+        { "name": "OnResize", "signature": "TNotifyEvent" },
+        { "name": "OnShow", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TScreen",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "THintWindow",
+      "ancestor": "TCustomControl",
+      "abstract": true,
+      "kind": "wincontrol",
+      "acceptsChildren": false,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TApplication",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TContextPopupEvent": "procedure(Sender: TObject; MousePos: TPoint; var Handled: Boolean)",
+    "TMouseEvent": "procedure(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer)",
+    "TMouseMoveEvent": "procedure(Sender: TObject; Shift: TShiftState; X, Y: Integer)",
+    "TMonitorDpiChangedEvent": "procedure(Sender: TObject; OldDPI, NewDPI: Integer)",
+    "TCloseEvent": "procedure(Sender: TObject; var Action: TCloseAction)",
+    "TCloseQueryEvent": "procedure(Sender: TObject; var CanClose: Boolean)",
+    "TKeyEvent": "procedure(Sender: TObject; var Key: Word; Shift: TShiftState)",
+    "TKeyPressEvent": "procedure(Sender: TObject; var Key: Char)",
+    "TMouseWheelEvent": "procedure(Sender: TObject; Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean)"
+  }
+}

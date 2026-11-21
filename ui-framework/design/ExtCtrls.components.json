@@ -1,0 +1,214 @@
+{
+  "formatVersion": 1,
+  "unit": "ExtCtrls",
+  "types": {
+    "TAlignment": { "kind": "enum", "values": ["taLeftJustify", "taRightJustify", "taCenter"] },
+    "TFont": { "kind": "object", "properties": [
+      { "name": "Charset", "type": "Integer", "default": 1, "min": 0, "max": 255 },
+      { "name": "Color", "type": "TColor", "default": "clWindowText", "editor": "color" },
+      { "name": "Height", "type": "Integer", "default": -12 },
+      { "name": "Name", "type": "string", "default": "Segoe UI" },
+      { "name": "Orientation", "type": "Integer", "default": 0 },
+      { "name": "Pitch", "type": "TFontPitch", "default": "fpDefault" },
+      { "name": "Quality", "type": "TFontQuality", "default": "fqDefault" },
+      { "name": "Style", "type": "TFontStyles", "default": [] },
+      { "name": "Size", "type": "Integer", "stored": false }
+    ] },
+    "TFontPitch": { "kind": "enum", "values": ["fpDefault", "fpVariable", "fpFixed"] },
+    "TFontQuality": { "kind": "enum", "values": ["fqDefault", "fqDraft", "fqProof", "fqNonAntialiased", "fqAntialiased", "fqClearType", "fqClearTypeNatural"] },
+    "TFontStyle": { "kind": "enum", "values": ["fsBold", "fsItalic", "fsUnderline", "fsStrikeOut"] },
+    "TFontStyles": { "kind": "set", "of": "TFontStyle" },
+    "TVerticalAlignment": { "kind": "enum", "values": ["taAlignTop", "taAlignBottom", "taVerticalCenter"] },
+    "TPicture": { "kind": "object", "properties": [] },
+    "TBrush": { "kind": "object", "properties": [
+      { "name": "Color", "type": "TColor", "default": "clWhite", "editor": "color" },
+      { "name": "Style", "type": "TBrushStyle", "default": "bsSolid" }
+    ] },
+    "TBrushStyle": { "kind": "enum", "values": ["bsSolid", "bsClear", "bsHorizontal", "bsVertical", "bsFDiagonal", "bsBDiagonal", "bsCross", "bsDiagCross"] },
+    "TPen": { "kind": "object", "properties": [
+      { "name": "Color", "type": "TColor", "default": "clBlack", "editor": "color" },
+      { "name": "Mode", "type": "TPenMode", "default": "pmCopy" },
+      { "name": "Style", "type": "TPenStyle", "default": "psSolid" },
+      { "name": "Width", "type": "Integer", "default": 1 }
+    ] },
+    "TPenMode": { "kind": "enum", "values": ["pmBlack", "pmWhite", "pmNop", "pmNot", "pmCopy", "pmNotCopy", "pmMergePenNot", "pmMaskPenNot", "pmMergeNotPen", "pmMaskNotPen", "pmMerge", "pmNotMerge", "pmMask", "pmNotMask", "pmXor", "pmNotXor"] },
+    "TPenStyle": { "kind": "enum", "values": ["psSolid", "psDash", "psDot", "psDashDot", "psDashDotDot", "psClear", "psInsideFrame"] },
+    "TShapeType": { "kind": "enum", "values": ["stRectangle", "stSquare", "stRoundRect", "stRoundSquare", "stEllipse", "stCircle"] },
+    "TBevelShape": { "kind": "enum", "values": ["bsBox", "bsFrame", "bsTopLine", "bsBottomLine", "bsLeftLine", "bsRightLine", "bsSpacer"] },
+    "TBevelStyle": { "kind": "enum", "values": ["bsLowered", "bsRaised"] },
+    "TResizeStyle": { "kind": "enum", "values": ["rsNone", "rsLine", "rsUpdate", "rsPattern"] }
+  },
+  "components": [
+    {
+      "class": "TCustomPanel",
+      "ancestor": "TCustomControl",
+      "abstract": true,
+      "kind": "container",
+      "acceptsChildren": true,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TPanel",
+      "ancestor": "TCustomPanel",
+      "abstract": false,
+      "palette": { "page": "Standard", "order": 130, "icon": "icons/TPanel.svg" },
+      "kind": "container",
+      "defaultSize": { "width": 185, "height": 41 },
+      "namePrefix": "Panel",
+      "acceptsChildren": true,
+      "renderer": "panel",
+      "properties": [
+        { "name": "Alignment", "type": "TAlignment", "default": "taCenter", "category": "Appearance" },
+        { "name": "BevelInner", "type": "TBevelCut", "default": "bvNone", "category": "Appearance", "affectsLayout": true },
+        { "name": "BevelOuter", "type": "TBevelCut", "default": "bvRaised", "category": "Appearance", "affectsLayout": true },
+        { "name": "BevelWidth", "type": "Integer", "default": 1, "category": "Appearance", "min": 1, "max": 32767, "affectsLayout": true },
+        { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsNone", "category": "Appearance", "affectsLayout": true },
+        { "name": "BorderWidth", "type": "Integer", "default": 0, "category": "Appearance", "min": 0, "max": 32767, "affectsLayout": true },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)", "localizable": true },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font", "affectsLayout": true },
+        { "name": "Padding", "type": "TPadding", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "ParentColor", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ShowCaption", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "VerticalAlignment", "type": "TVerticalAlignment", "default": "taVerticalCenter", "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnEnter", "signature": "TNotifyEvent" },
+        { "name": "OnExit", "signature": "TNotifyEvent" },
+        { "name": "OnMouseDown", "signature": "TMouseEvent" },
+        { "name": "OnMouseEnter", "signature": "TNotifyEvent" },
+        { "name": "OnMouseLeave", "signature": "TNotifyEvent" },
+        { "name": "OnMouseMove", "signature": "TMouseMoveEvent" },
+        { "name": "OnMouseUp", "signature": "TMouseEvent" },
+        { "name": "OnResize", "signature": "TNotifyEvent" }
+      ]
+    },
+    {
+      "class": "TImage",
+      "ancestor": "TGraphicControl",
+      "abstract": false,
+      "palette": { "page": "Additional", "order": 10, "icon": "icons/TImage.svg" },
+      "kind": "control",
+      "defaultSize": { "width": 105, "height": 105 },
+      "namePrefix": "Image",
+      "acceptsChildren": false,
+      "renderer": "image",
+      "properties": [
+        { "name": "AutoSize", "type": "Boolean", "default": false, "category": "Layout", "affectsLayout": true },
+        { "name": "Center", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "Picture", "type": "TPicture", "kind": "object", "category": "Appearance", "editor": "picture" },
+        { "name": "Proportional", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "Stretch", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "Transparent", "type": "Boolean", "default": false, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true },
+        { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnMouseDown", "signature": "TMouseEvent" },
+        { "name": "OnMouseEnter", "signature": "TNotifyEvent" },
+        { "name": "OnMouseLeave", "signature": "TNotifyEvent" },
+        { "name": "OnMouseMove", "signature": "TMouseMoveEvent" },
+        { "name": "OnMouseUp", "signature": "TMouseEvent" }
+      ]
+    },
+    {
+      "class": "TShape",
+      "ancestor": "TGraphicControl",
+      "abstract": false,
+      "palette": { "page": "Additional", "order": 20, "icon": "icons/TShape.svg" },
+      "kind": "control",
+      "defaultSize": { "width": 65, "height": 65 },
+      "namePrefix": "Shape",
+      "acceptsChildren": false,
+      "renderer": "shape",
+      "properties": [
+        { "name": "Brush", "type": "TBrush", "kind": "object", "category": "Appearance" },
+        { "name": "Pen", "type": "TPen", "kind": "object", "category": "Appearance" },
+        { "name": "Shape", "type": "TShapeType", "default": "stRectangle", "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnMouseDown", "signature": "TMouseEvent", "default": true },
+        { "name": "OnMouseEnter", "signature": "TNotifyEvent" },
+        { "name": "OnMouseLeave", "signature": "TNotifyEvent" },
+        { "name": "OnMouseMove", "signature": "TMouseMoveEvent" },
+        { "name": "OnMouseUp", "signature": "TMouseEvent" }
+      ]
+    },
+    {
+      "class": "TBevel",
+      "ancestor": "TGraphicControl",
+      "abstract": false,
+      "palette": { "page": "Additional", "order": 30, "icon": "icons/TBevel.svg" },
+      "kind": "control",
+      "defaultSize": { "width": 50, "height": 50 },
+      "namePrefix": "Bevel",
+      "acceptsChildren": false,
+      "renderer": "bevel",
+      "properties": [
+        { "name": "Shape", "type": "TBevelShape", "default": "bsBox", "category": "Appearance" },
+        { "name": "Style", "type": "TBevelStyle", "default": "bsLowered", "category": "Appearance" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TSplitter",
+      "ancestor": "TGraphicControl",
+      "abstract": false,
+      "palette": { "page": "Additional", "order": 60, "icon": "icons/TSplitter.svg" },
+      "kind": "control",
+      "defaultSize": { "width": 3, "height": 100 },
+      "namePrefix": "Splitter",
+      "acceptsChildren": false,
+      "renderer": "splitter",
+      "properties": [
+        { "name": "Align", "type": "TAlign", "default": "alLeft", "category": "Layout", "affectsLayout": true },
+        { "name": "AutoSnap", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Beveled", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "Color", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "MinSize", "type": "Integer", "default": 30, "category": "Layout", "min": 1, "max": 2147483647 },
+        { "name": "ParentColor", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "ResizeStyle", "type": "TResizeStyle", "default": "rsUpdate", "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnCanResize", "signature": "TCanResizeEvent" },
+        { "name": "OnMoved", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TTimer",
+      "ancestor": "TComponent",
+      "abstract": false,
+      "palette": { "page": "System", "order": 10, "icon": "icons/TTimer.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "Timer",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Interval", "type": "Integer", "default": 1000, "category": "Behavior", "min": 0, "max": 4294967295 }
+      ],
+      "events": [
+        { "name": "OnTimer", "signature": "TNotifyEvent", "default": true }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TContextPopupEvent": "procedure(Sender: TObject; MousePos: TPoint; var Handled: Boolean)",
+    "TMouseEvent": "procedure(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer)",
+    "TMouseMoveEvent": "procedure(Sender: TObject; Shift: TShiftState; X, Y: Integer)",
+    "TCanResizeEvent": "procedure(Sender: TObject; var NewSize: Integer; var Accept: Boolean)"
+  }
+}

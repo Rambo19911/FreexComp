@@ -1,0 +1,107 @@
+{
+  "formatVersion": 1,
+  "unit": "Grids",
+  "types": {
+    "TFont": { "kind": "object", "properties": [
+      { "name": "Charset", "type": "Integer", "default": 1, "min": 0, "max": 255 },
+      { "name": "Color", "type": "TColor", "default": "clWindowText", "editor": "color" },
+      { "name": "Height", "type": "Integer", "default": -12 },
+      { "name": "Name", "type": "string", "default": "Segoe UI" },
+      { "name": "Orientation", "type": "Integer", "default": 0 },
+      { "name": "Pitch", "type": "TFontPitch", "default": "fpDefault" },
+      { "name": "Quality", "type": "TFontQuality", "default": "fqDefault" },
+      { "name": "Style", "type": "TFontStyles", "default": [] },
+      { "name": "Size", "type": "Integer", "stored": false }
+    ] },
+    "TFontPitch": { "kind": "enum", "values": ["fpDefault", "fpVariable", "fpFixed"] },
+    "TFontQuality": { "kind": "enum", "values": ["fqDefault", "fqDraft", "fqProof", "fqNonAntialiased", "fqAntialiased", "fqClearType", "fqClearTypeNatural"] },
+    "TFontStyle": { "kind": "enum", "values": ["fsBold", "fsItalic", "fsUnderline", "fsStrikeOut"] },
+    "TFontStyles": { "kind": "set", "of": "TFontStyle" },
+    "TGridOption": { "kind": "enum", "values": ["goFixedVertLine", "goFixedHorzLine", "goVertLine", "goHorzLine", "goRangeSelect", "goDrawFocusSelected", "goRowSizing", "goColSizing", "goRowMoving", "goColMoving", "goEditing", "goTabs", "goRowSelect", "goAlwaysShowEditor", "goThumbTracking"] },
+    "TGridOptions": { "kind": "set", "of": "TGridOption" }
+  },
+  "components": [
+    {
+      "class": "TCustomGrid",
+      "ancestor": "TCustomControl",
+      "abstract": true,
+      "kind": "wincontrol",
+      "acceptsChildren": false,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TInplaceEdit",
+      "ancestor": "TEdit",
+      "abstract": true,
+      "kind": "wincontrol",
+      "acceptsChildren": false,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TStringGrid",
+      "ancestor": "TCustomGrid",
+      "abstract": false,
+      "palette": { "page": "Additional", "order": 70, "icon": "icons/TStringGrid.svg" },
+      "kind": "wincontrol",
+      "defaultSize": { "width": 320, "height": 120 },
+      "namePrefix": "StringGrid",
+      "acceptsChildren": false,
+      "renderer": "stringgrid",
+      "properties": [
+        { "name": "BorderStyle", "type": "TBorderStyle", "default": "bsSingle", "category": "Appearance", "affectsLayout": true },
+        { "name": "ColCount", "type": "Integer", "default": 5, "category": "Layout" },
+        { "name": "Color", "type": "TColor", "default": "clWindow", "category": "Appearance", "editor": "color" },
+        { "name": "DefaultColWidth", "type": "Integer", "default": 64, "category": "Layout" },
+        { "name": "DefaultRowHeight", "type": "Integer", "default": 24, "category": "Layout" },
+        { "name": "FixedColor", "type": "TColor", "default": "clBtnFace", "category": "Appearance", "editor": "color" },
+        { "name": "FixedCols", "type": "Integer", "default": 1, "category": "Layout" },
+        { "name": "FixedRows", "type": "Integer", "default": 1, "category": "Layout" },
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "GridLineWidth", "type": "Integer", "default": 1, "category": "Appearance" },
+        { "name": "Options", "type": "TGridOptions", "default": ["goFixedVertLine", "goFixedHorzLine", "goVertLine", "goHorzLine", "goRangeSelect"], "category": "Behavior" },
+        { "name": "ParentColor", "type": "Boolean", "default": false, "category": "Appearance" },
+        { "name": "ParentFont", "type": "Boolean", "default": true, "category": "Appearance" },
+        { "name": "RowCount", "type": "Integer", "default": 5, "category": "Layout" },
+        { "name": "ScrollBars", "type": "TScrollStyle", "default": "ssBoth", "category": "Behavior" },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent" },
+        { "name": "OnContextPopup", "signature": "TContextPopupEvent" },
+        { "name": "OnDblClick", "signature": "TNotifyEvent" },
+        { "name": "OnDrawCell", "signature": "TDrawCellEvent" },
+        { "name": "OnEnter", "signature": "TNotifyEvent" },
+        { "name": "OnExit", "signature": "TNotifyEvent" },
+        { "name": "OnGetEditText", "signature": "TGetEditEvent" },
+        { "name": "OnKeyDown", "signature": "TKeyEvent" },
+        { "name": "OnKeyPress", "signature": "TKeyPressEvent" },
+        { "name": "OnKeyUp", "signature": "TKeyEvent" },
+        { "name": "OnMouseDown", "signature": "TMouseEvent" },
+        { "name": "OnMouseEnter", "signature": "TNotifyEvent" },
+        { "name": "OnMouseLeave", "signature": "TNotifyEvent" },
+        { "name": "OnMouseMove", "signature": "TMouseMoveEvent" },
+        { "name": "OnMouseUp", "signature": "TMouseEvent" },
+        { "name": "OnSelectCell", "signature": "TSelectCellEvent", "default": true },
+        { "name": "OnSetEditText", "signature": "TSetEditEvent" },
+        { "name": "OnTopLeftChanged", "signature": "TNotifyEvent" }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)",
+    "TContextPopupEvent": "procedure(Sender: TObject; MousePos: TPoint; var Handled: Boolean)",
+    "TDrawCellEvent": "procedure(Sender: TObject; ACol, ARow: Integer; Rect: TRect; State: TGridDrawState)",
+    "TGetEditEvent": "procedure(Sender: TObject; ACol, ARow: Integer; var Value: string)",
+    "TKeyEvent": "procedure(Sender: TObject; var Key: Word; Shift: TShiftState)",
+    "TKeyPressEvent": "procedure(Sender: TObject; var Key: Char)",
+    "TMouseEvent": "procedure(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer)",
+    "TMouseMoveEvent": "procedure(Sender: TObject; Shift: TShiftState; X, Y: Integer)",
+    "TSelectCellEvent": "procedure(Sender: TObject; ACol, ARow: Integer; var CanSelect: Boolean)",
+    "TSetEditEvent": "procedure(Sender: TObject; ACol, ARow: Integer; const Value: string)"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "unit": "ImgList",
+  "types": {
+    "TColorDepth": { "kind": "enum", "values": ["cdDeviceDependent", "cd4Bit", "cd8Bit", "cd16Bit", "cd24Bit", "cd32Bit"] },
+    "TDrawingStyle": { "kind": "enum", "values": ["dsFocus", "dsSelected", "dsNormal", "dsTransparent"] }
+  },
+  "components": [
+    {
+      "class": "TCustomImageList",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TImageList",
+      "ancestor": "TCustomImageList",
+      "abstract": false,
+      "palette": { "page": "Win32", "order": 20, "icon": "icons/TImageList.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "ImageList",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "ColorDepth", "type": "TColorDepth", "default": "cd32Bit", "category": "Misc" },
+        { "name": "Height", "type": "Integer", "default": 16, "category": "Layout" },
+        { "name": "Width", "type": "Integer", "default": 16, "category": "Layout" },
+        { "name": "Masked", "type": "Boolean", "default": true, "category": "Misc" },
+        { "name": "BkColor", "type": "TColor", "default": "clNone", "category": "Misc", "editor": "color" },
+        { "name": "DrawingStyle", "type": "TDrawingStyle", "default": "dsNormal", "category": "Misc" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent" }
+      ]
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)"
+  }
+}

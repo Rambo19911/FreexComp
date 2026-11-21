@@ -1,0 +1,91 @@
+{
+  "formatVersion": 1,
+  "unit": "Controls",
+  "types": {
+    "TAlign": { "kind": "enum", "values": ["alNone", "alTop", "alBottom", "alLeft", "alRight", "alClient"] },
+    "TAnchorKind": { "kind": "enum", "values": ["akLeft", "akTop", "akRight", "akBottom"] },
+    "TAnchors": { "kind": "set", "of": "TAnchorKind" },
+    "TMargins": { "kind": "object", "properties": [
+      { "name": "Left", "type": "Integer", "default": 3, "min": 0, "max": 32767 },
+      { "name": "Top", "type": "Integer", "default": 3, "min": 0, "max": 32767 },
+      { "name": "Right", "type": "Integer", "default": 3, "min": 0, "max": 32767 },
+      { "name": "Bottom", "type": "Integer", "default": 3, "min": 0, "max": 32767 }
+    ] },
+    "TSizeConstraints": { "kind": "object", "properties": [
+      { "name": "MaxHeight", "type": "Integer", "default": 0, "min": 0, "max": 32767 },
+      { "name": "MaxWidth", "type": "Integer", "default": 0, "min": 0, "max": 32767 },
+      { "name": "MinHeight", "type": "Integer", "default": 0, "min": 0, "max": 32767 },
+      { "name": "MinWidth", "type": "Integer", "default": 0, "min": 0, "max": 32767 }
+    ] },
+    "TBorderStyle": { "kind": "enum", "values": ["bsNone", "bsSingle"] },
+    "TPadding": { "kind": "object", "ancestor": "TMargins", "properties": [
+      { "name": "Left", "type": "Integer", "default": 0, "min": 0, "max": 32767 },
+      { "name": "Top", "type": "Integer", "default": 0, "min": 0, "max": 32767 },
+      { "name": "Right", "type": "Integer", "default": 0, "min": 0, "max": 32767 },
+      { "name": "Bottom", "type": "Integer", "default": 0, "min": 0, "max": 32767 }
+    ] },
+    "TFormBorderStyle": { "kind": "enum", "values": ["bsNone", "bsSingle", "bsSizeable", "bsDialog", "bsToolWindow", "bsSizeToolWin"] },
+    "TScrollBarKind": { "kind": "enum", "values": ["sbHorizontal", "sbVertical"] },
+    "TBevelCut": { "kind": "enum", "values": ["bvNone", "bvLowered", "bvRaised", "bvSpace"] }
+  },
+  "components": [
+    {
+      "class": "TControl",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "control",
+      "acceptsChildren": false,
+      "renderer": "generic",
+      "properties": [
+        { "name": "Left", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "Top", "type": "Integer", "category": "Layout", "affectsLayout": true },
+        { "name": "Width", "type": "Integer", "category": "Layout", "min": 0, "affectsLayout": true },
+        { "name": "Height", "type": "Integer", "category": "Layout", "min": 0, "affectsLayout": true },
+        { "name": "Align", "type": "TAlign", "default": "alNone", "category": "Layout", "affectsLayout": true },
+        { "name": "Anchors", "type": "TAnchors", "default": ["akLeft", "akTop"], "category": "Layout", "affectsLayout": true },
+        { "name": "AlignWithMargins", "type": "Boolean", "default": false, "category": "Layout", "affectsLayout": true },
+        { "name": "Margins", "type": "TMargins", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "Constraints", "type": "TSizeConstraints", "kind": "object", "category": "Layout", "affectsLayout": true },
+        { "name": "Cursor", "type": "TCursor", "default": "crDefault", "category": "Appearance" },
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "Hint", "type": "string", "default": "", "category": "Misc", "localizable": true },
+        { "name": "ParentShowHint", "type": "Boolean", "default": true, "category": "Misc" },
+        { "name": "ShowHint", "type": "Boolean", "default": false, "category": "Misc" },
+        { "name": "Visible", "type": "Boolean", "default": true, "category": "Appearance", "affectsLayout": true },
+        { "name": "PopupMenu", "type": "TPopupMenu", "kind": "component", "category": "Action" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TWinControl",
+      "ancestor": "TControl",
+      "abstract": true,
+      "kind": "wincontrol",
+      "acceptsChildren": false,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TGraphicControl",
+      "ancestor": "TControl",
+      "abstract": true,
+      "kind": "control",
+      "acceptsChildren": false,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TCustomControl",
+      "ancestor": "TWinControl",
+      "abstract": true,
+      "kind": "wincontrol",
+      "acceptsChildren": false,
+      "renderer": "generic",
+      "properties": [],
+      "events": []
+    }
+  ],
+  "eventSignatures": {}
+}

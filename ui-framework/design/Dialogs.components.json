@@ -1,0 +1,105 @@
+{
+  "formatVersion": 1,
+  "unit": "Dialogs",
+  "types": {
+    "TOpenOption": { "kind": "enum", "values": ["ofReadOnly", "ofOverwritePrompt", "ofHideReadOnly", "ofNoChangeDir", "ofShowHelp", "ofNoValidate", "ofAllowMultiSelect", "ofExtensionDifferent", "ofPathMustExist", "ofFileMustExist", "ofCreatePrompt", "ofShareAware", "ofNoReadOnlyReturn", "ofNoTestFileCreate", "ofNoNetworkButton", "ofNoDereferenceLinks", "ofEnableSizing", "ofDontAddToRecent", "ofForceShowHidden", "ofOldStyleDialog", "ofNoLongNames", "ofEnableIncludeNotify"] },
+    "TOpenOptions": { "kind": "set", "of": "TOpenOption" },
+    "TColorDialogOption": { "kind": "enum", "values": ["cdFullOpen", "cdPreventFullOpen", "cdShowHelp", "cdSolidColor", "cdAnyColor"] },
+    "TColorDialogOptions": { "kind": "set", "of": "TColorDialogOption" },
+    "TFont": { "kind": "object", "properties": [
+      { "name": "Charset", "type": "Integer", "default": 1, "min": 0, "max": 255 },
+      { "name": "Color", "type": "TColor", "default": "clWindowText", "editor": "color" },
+      { "name": "Height", "type": "Integer", "default": -12 },
+      { "name": "Name", "type": "string", "default": "Segoe UI" },
+      { "name": "Orientation", "type": "Integer", "default": 0 },
+      { "name": "Pitch", "type": "TFontPitch", "default": "fpDefault" },
+      { "name": "Quality", "type": "TFontQuality", "default": "fqDefault" },
+      { "name": "Style", "type": "TFontStyles", "default": [] },
+      { "name": "Size", "type": "Integer", "stored": false }
+    ] },
+    "TFontPitch": { "kind": "enum", "values": ["fpDefault", "fpVariable", "fpFixed"] },
+    "TFontQuality": { "kind": "enum", "values": ["fqDefault", "fqDraft", "fqProof", "fqNonAntialiased", "fqAntialiased", "fqClearType", "fqClearTypeNatural"] },
+    "TFontStyle": { "kind": "enum", "values": ["fsBold", "fsItalic", "fsUnderline", "fsStrikeOut"] },
+    "TFontStyles": { "kind": "set", "of": "TFontStyle" },
+    "TFontDialogOption": { "kind": "enum", "values": ["fdAnsiOnly", "fdTrueTypeOnly", "fdEffects", "fdFixedPitchOnly", "fdForceFontExist", "fdNoFaceSel", "fdNoSizeSel", "fdNoStyleSel", "fdNoSimulations", "fdNoVectorFonts", "fdScalableOnly", "fdShowHelp", "fdWysiwyg", "fdLimitSize", "fdApplyButton", "fdNoOEMFonts"] },
+    "TFontDialogOptions": { "kind": "set", "of": "TFontDialogOption" }
+  },
+  "components": [
+    {
+      "class": "TCommonDialog",
+      "ancestor": "TComponent",
+      "abstract": true,
+      "kind": "nonvisual",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TOpenDialog",
+      "ancestor": "TCommonDialog",
+      "abstract": false,
+      "palette": { "page": "Dialogs", "order": 10, "icon": "icons/TOpenDialog.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "OpenDialog",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "DefaultExt", "type": "string", "default": "", "category": "Behavior" },
+        { "name": "FileName", "type": "string", "default": "", "category": "Data", "editor": "filename" },
+        { "name": "Filter", "type": "string", "default": "", "category": "Behavior" },
+        { "name": "FilterIndex", "type": "Integer", "default": 1, "category": "Behavior" },
+        { "name": "InitialDir", "type": "string", "default": "", "category": "Behavior" },
+        { "name": "Options", "type": "TOpenOptions", "default": ["ofHideReadOnly", "ofEnableSizing"], "category": "Behavior" },
+        { "name": "Title", "type": "string", "default": "", "category": "Behavior", "localizable": true }
+      ],
+      "events": []
+    },
+    {
+      "class": "TSaveDialog",
+      "ancestor": "TOpenDialog",
+      "abstract": false,
+      "palette": { "page": "Dialogs", "order": 20, "icon": "icons/TSaveDialog.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "SaveDialog",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [],
+      "events": []
+    },
+    {
+      "class": "TColorDialog",
+      "ancestor": "TCommonDialog",
+      "abstract": false,
+      "palette": { "page": "Dialogs", "order": 40, "icon": "icons/TColorDialog.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "ColorDialog",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Color", "type": "TColor", "default": "clBlack", "category": "Appearance", "editor": "color" },
+        { "name": "CustomColors", "type": "TStrings", "category": "Data", "editor": "strings" },
+        { "name": "Options", "type": "TColorDialogOptions", "default": [], "category": "Behavior" }
+      ],
+      "events": []
+    },
+    {
+      "class": "TFontDialog",
+      "ancestor": "TCommonDialog",
+      "abstract": false,
+      "palette": { "page": "Dialogs", "order": 30, "icon": "icons/TFontDialog.svg" },
+      "kind": "nonvisual",
+      "namePrefix": "FontDialog",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },
+        { "name": "MaxFontSize", "type": "Integer", "default": 0, "category": "Behavior" },
+        { "name": "MinFontSize", "type": "Integer", "default": 0, "category": "Behavior" },
+        { "name": "Options", "type": "TFontDialogOptions", "default": ["fdEffects"], "category": "Behavior" }
+      ],
+      "events": []
+    }
+  ],
+  "eventSignatures": {}
+}
