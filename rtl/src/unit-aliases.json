@@ -20,6 +20,7 @@
     "Vcl.ExtCtrls": "ExtCtrls",
     "Vcl.Forms": "Forms",
     "Vcl.Graphics": "Graphics",
+    "Vcl.Grids": "Grids",
     "Vcl.ImgList": "ImgList",
     "Vcl.Menus": "Menus",
     "Vcl.StdCtrls": "StdCtrls",
