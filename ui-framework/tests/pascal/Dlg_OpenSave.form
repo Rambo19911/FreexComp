@@ -1,0 +1,17 @@
+object DlgForm: TDlgForm
+  Caption = 'Dialogs'
+  ClientWidth = 200
+  ClientHeight = 100
+  Scaled = False
+  object OpenDialog1: TOpenDialog
+    Filter = 'Data files (*.dat)|*.dat'
+    FilterIndex = 2
+    Options = [ofHideReadOnly, ofAllowMultiSelect, ofEnableSizing]
+  end
+  object SaveDialog1: TSaveDialog
+    DefaultExt = 'dat'
+    FileName = 'start.dat'
+    InitialDir = 'C:\work'
+    Title = 'Save as'
+  end
+end

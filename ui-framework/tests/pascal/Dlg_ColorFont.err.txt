@@ -1,0 +1,2 @@
+^\[Dialog\] TColorDialog\.Execute$
+^\[Dialog\] TFontDialog\.Execute$

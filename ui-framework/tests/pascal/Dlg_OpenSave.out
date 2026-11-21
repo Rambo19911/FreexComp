@@ -1,0 +1,83 @@
+# defaults (28.1)
+ok DefaultExt
+ok FileName
+ok Filter
+ok FilterIndex 1
+ok InitialDir
+ok Options [ofHideReadOnly, ofEnableSizing]
+ok Title
+ok no Files
+ok a TCommonDialog
+ok TSaveDialog is a TOpenDialog
+ok TSaveDialog: the same Options default (UIF-864)
+# non-interactive (UIF-852)
+ok NonInteractive (FXC_UI_NONINTERACTIVE=1)
+ok TOpenDialog.Execute: False
+ok TSaveDialog.Execute(0): False
+ok nothing changed
+# the OPENFILENAMEW (UIF-860, UIF-861)
+ok cancelled: False
+ok the hook replaced the dialog once
+ok with the dialog
+ok lStructSize 152
+ok the owner passed to the hook
+ok hwndOwner = ParentWnd
+ok filter: | to #0, double terminator
+ok nFilterIndex
+ok file buffer pre-filled with FileName
+ok file buffer of 32 768 characters
+ok lpstrInitialDir
+ok lpstrTitle
+ok lpstrDefExt
+ok default Options plus OFN_EXPLORER and OFN_NOCHANGEDIR
+ok cancel keeps FileName
+ok and FilterIndex
+ok empty Filter: nil
+ok empty InitialDir: nil
+ok empty Title: nil
+ok empty DefaultExt: nil
+ok empty file buffer
+ok Execute(0): no owner
+# Options to OFN flags (28.1 table)
+ok every option: its flag; ignored and output-only options add none
+ok no options: OFN_EXPLORER and OFN_NOCHANGEDIR always
+# a single file chosen (UIF-862)
+ok Execute True
+ok FileName = the chosen path
+ok Files: one entry
+ok FilterIndex updated
+ok ofReadOnly: the state of the check box
+ok ofExtensionDifferent reported
+ok ofReadOnly cleared when the box is unchecked
+ok ofExtensionDifferent cleared
+ok Files replaced
+# multi-select (UIF-862)
+ok Execute True
+ok directory + each name
+ok FileName = Files[0]
+ok a root directory: one separator
+ok one file chosen: a single full path
+ok FileName
+# errors (UIF-851)
+ok a non-zero extended error raises EInvalidOperation
+ok four hex digits
+# owner and task windows (UIF-850)
+ok the other visible form is disabled while the dialog runs
+ok and enabled again afterwards
+ok Execute: the active form's handle, or 0
+ok enabled again after an error too
+# TSaveDialog (UIF-863, UIF-864)
+ok Execute True
+ok the hook receives the save dialog
+ok OFN_OVERWRITEPROMPT
+ok DefaultExt
+ok FileName
+# streaming
+ok Filter
+ok Options
+ok FilterIndex
+ok Title
+ok DefaultExt
+ok InitialDir
+ok FileName
+# passed 72 failed 0

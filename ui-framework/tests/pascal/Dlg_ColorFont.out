@@ -1,0 +1,74 @@
+# defaults (28.2, 28.3)
+ok Color clBlack
+ok CustomColors empty
+ok TColorDialog.Options []
+ok Font: the default font
+ok Font.Height
+ok MaxFontSize 0
+ok MinFontSize 0
+ok TFontDialog.Options [fdEffects]
+ok TColorDialog is a TCommonDialog
+ok TFontDialog is a TCommonDialog
+# non-interactive (UIF-852)
+ok NonInteractive (FXC_UI_NONINTERACTIVE=1)
+ok TColorDialog.Execute: False
+ok TFontDialog.Execute(0): False
+# the CHOOSECOLORW (UIF-870)
+ok cancelled: False
+ok the hook replaced the dialog
+ok with the dialog
+ok lStructSize 72
+ok hwndOwner = ParentWnd
+ok rgbResult = ColorToRGB(Color)
+ok CC_RGBINIT, no options
+ok 16 custom colours; missing and invalid entries white
+ok cancel keeps Color
+ok and CustomColors
+ok every option its flag, cdShowHelp ignored
+# a colour chosen (28.2)
+ok Execute True
+ok Color = the chosen RGB
+ok CustomColors rewritten with 16 entries
+ok ColorA
+ok ColorB white
+ok ColorD: the invalid entry became white
+ok ColorF: the colour the dialog changed
+ok ColorP
+ok a cancel (extended error 0) raises nothing
+ok CDERR_INITIALIZATION raises EInvalidOperation
+# the CHOOSEFONTW (UIF-875)
+ok cancelled: False
+ok with the dialog
+ok lStructSize 104
+ok hwndOwner = ParentWnd
+ok CF_SCREENFONTS, CF_INITTOLOGFONTSTRUCT and the default CF_EFFECTS
+ok LOGFONTW from Font, height in pixels of the owner form's DPI
+ok rgbColors = ColorToRGB(Font.Color)
+ok cancel keeps Font
+ok no owner: the system DPI
+ok every option its flag; fdShowHelp, fdApplyButton, fdNoOEMFonts ignored
+ok a non-zero size pair: CF_LIMITSIZE
+ok nSizeMin
+ok nSizeMax
+ok only one size set: no limit
+ok fdLimitSize: CF_LIMITSIZE
+ok with the sizes as set (min)
+ok with the sizes as set (max)
+# a font chosen (UIF-875)
+ok Execute True
+ok one OnChange
+ok Name
+ok Height back in the font's own pixels
+ok Style
+ok Charset
+ok Color
+ok CFERR_NOFONTS raises EInvalidOperation
+# streaming
+ok Color
+ok TColorDialog.Options
+ok CustomColors
+ok Font.Name
+ok MinFontSize
+ok MaxFontSize
+ok TFontDialog.Options
+# passed 66 failed 0

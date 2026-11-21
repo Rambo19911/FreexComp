@@ -1,0 +1,19 @@
+object DlgForm: TDlgForm
+  Caption = 'Dialogs'
+  ClientWidth = 200
+  ClientHeight = 100
+  Scaled = False
+  object ColorDialog1: TColorDialog
+    Color = clRed
+    CustomColors = (
+      'ColorA=00FF00'
+    )
+    Options = [cdFullOpen]
+  end
+  object FontDialog1: TFontDialog
+    Font.Name = 'Courier New'
+    MaxFontSize = 48
+    MinFontSize = 6
+    Options = [fdTrueTypeOnly, fdEffects]
+  end
+end
