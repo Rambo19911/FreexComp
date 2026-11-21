@@ -14,7 +14,8 @@ public sealed record LayoutCase(string Id, string FormPath, string? StepsPath, s
 /// <summary>
 /// Discovery of this area's tests (testing.md §1, UIF-1200): group A programs <c>ui-framework/tests/pascal/*.pas</c>
 /// (row id <c>pascal/&lt;Name&gt;</c>) and the lead-owned layout corpus (row id <c>layout/&lt;Enn-slug&gt;</c>).
-/// Files directly in <c>pascal/</c> whose name ends in <c>Kit</c> are shared units (e.g. <c>UiTestKit.pas</c>), not programs.
+/// Files directly in <c>pascal/</c> whose name ends in <c>Kit</c> are shared units (e.g. <c>UiTestKit.pas</c>), not programs;
+/// <c>LayoutHost.pas</c> is the host of the layout corpus (group B, <see cref="LayoutCasesTheory"/>), not a golden program.
 /// </summary>
 public static class UiCorpus
 {
@@ -43,7 +44,8 @@ public static class UiCorpus
         }
 
         return [.. Directory.EnumerateFiles(directory, "*.pas")
-            .Where(p => !Path.GetFileNameWithoutExtension(p).EndsWith("Kit", StringComparison.Ordinal))
+            .Where(p => !Path.GetFileNameWithoutExtension(p).EndsWith("Kit", StringComparison.Ordinal)
+                && !string.Equals(Path.GetFileNameWithoutExtension(p), LayoutHost.ProgramName, StringComparison.Ordinal))
             .Select(p => new RtlCase("pascal/" + Path.GetFileNameWithoutExtension(p), p))
             .OrderBy(c => c.Id, StringComparer.Ordinal)];
     }

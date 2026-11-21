@@ -18,6 +18,7 @@ public sealed class UiHarnessTests : IDisposable
         File.WriteAllText(Path.Combine(temp, "B_Two.pas"), "program B_Two; begin end.");
         File.WriteAllText(Path.Combine(temp, "A_One.pas"), "program A_One; begin end.");
         File.WriteAllText(Path.Combine(temp, "UiTestKit.pas"), "unit UiTestKit; interface implementation end.");
+        File.WriteAllText(Path.Combine(temp, "LayoutHost.pas"), "program LayoutHost; begin end.");     // group B host (UIF-331)
 
         var ids = UiCorpus.DiscoverPascal(temp).Select(c => c.Id);
 
