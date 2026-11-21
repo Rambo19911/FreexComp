@@ -84,10 +84,12 @@ sealed class FreexComp.Compiler.Compilation
   public FreexComp.Compiler.IFileSystem FileSystem { get; }
   public FreexComp.Compiler.Symbols.UnitSymbol GetUnitSymbol(System.String unitName)
   public FreexComp.Compiler.Syntax.SyntaxTree GetSyntaxTree(System.String path)
+  public FreexComp.Compiler.Types.BuiltInTypes BuiltIns { get; }
   public FreexComp.Compiler.UnitInfo FindUnit(System.String unitName)
   public System.Boolean TryGetSyntaxTree(System.String path, out FreexComp.Compiler.Syntax.SyntaxTree tree)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetDiagnostics(System.String path = null, System.Threading.CancellationToken ct = default)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetSyntaxDiagnostics(System.String path)
+  public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.UnitInfo> Units { get; }
   public static FreexComp.Compiler.Compilation Create(FreexComp.Compiler.CompilationOptions options, System.Collections.Generic.IEnumerable<FreexComp.Compiler.SourceText> openFiles, FreexComp.Compiler.IFileSystem fs)
 sealed record FreexComp.Compiler.CompilationOptions : System.IEquatable<FreexComp.Compiler.CompilationOptions>
   public FreexComp.Compiler.AppType AppType { get; init; }

@@ -354,11 +354,26 @@ public sealed class Compilation
     /// search, LANG-533 aliases, LANG-535 unit scope names); a unit the main file does not reach is analysed as an additional root
     /// (CMP-201). Null when the name does not resolve or the unit could not be bound.
     /// </summary>
-    public UnitInfo? FindUnit(string unitName) =>
-        Unit(unitName) is { } unit
-            ? new UnitInfo(unit.Name, unit.Path, unit.IsProgram, unit.IsPrecompiled, [.. unit.InterfaceUses.Select(u => u.Name)],
-                           [.. unit.ImplementationUses.Select(u => u.Name)])
-            : null;
+    public UnitInfo? FindUnit(string unitName) => Unit(unitName) is { } unit ? Info(unit) : null;
+
+    private static UnitInfo Info(LoadedUnit unit) =>
+        new(unit.Name, unit.Path, unit.IsProgram, unit.IsPrecompiled, [.. unit.InterfaceUses.Select(u => u.Name)],
+            [.. unit.ImplementationUses.Select(u => u.Name)]);
+
+    /// <summary>
+    /// api.md §1 (C-264): every unit reachable from <see cref="CompilationOptions.MainFile"/> in initialization order (LANG-520:
+    /// <c>System</c> first), the main file last; empty when the front end could not start (no <c>System</c>, invalid alias table).
+    /// </summary>
+    public ImmutableArray<UnitInfo> Units =>
+        _analysis.Value.Front is { } front ? [.. front.InitOrder.Append(front.Binder.Main!).Distinct().Select(Info)] : [];
+
+    private readonly Lazy<BuiltInTypes> _standaloneTypes = new(() => new BuiltInTypes(), LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>
+    /// api.md §1 (C-264): the predeclared types the units of this snapshot are bound with; a fresh, per-snapshot set when the
+    /// front end could not start.
+    /// </summary>
+    public BuiltInTypes BuiltIns => _analysis.Value.Front?.Binder.Types ?? _standaloneTypes.Value;
 
     /// <summary>api.md §1 (C-263): the symbol of the unit <see cref="FindUnit"/> finds, or null.</summary>
     public UnitSymbol? GetUnitSymbol(string unitName) => Unit(unitName)?.Symbol;

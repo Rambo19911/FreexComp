@@ -1,3 +1,5 @@
+using FreexComp.Compiler.Symbols;
+
 namespace FreexComp.Compiler.Tests;
 
 /// <summary>
@@ -17,7 +19,7 @@ public sealed class CompilationApiTests
         var fs = new InMemoryFileSystem()
             .AddSystem(Rtl)
             .Add(Path.Combine(Dir, "P.pas"), "program P; uses Used; begin end.")
-            .Add(Path.Combine(Dir, "Used.pas"), "unit Used; interface uses Helper; const A = 1; implementation uses Other; end.")
+            .Add(Path.Combine(Dir, "Used.pas"), "unit Used; interface uses Helper; const A = 1; var V: Integer; implementation uses Other; end.")
             .Add(Path.Combine(Dir, "Helper.pas"), "unit Helper; interface implementation end.")
             .Add(Path.Combine(Dir, "Other.pas"), "unit Other; interface implementation end.")
             .Add(Path.Combine(Rtl, "Utils.pas"), "unit Utils; interface procedure Hello; implementation procedure Hello; begin end; end.")
@@ -62,4 +64,40 @@ public sealed class CompilationApiTests
         Assert.Null(compilation.GetUnitSymbol("Missing"));
         Assert.Null(compilation.FindUnit("Old.Missing"));
     }
+
+    [Fact]
+    public void Units_InitOrder()
+    {
+        // LANG-520: System first, then depth-first by uses clause (interface before implementation), the main file last
+        var units = Create().Units;
+        Assert.Equal(["System", "Helper", "Other", "Used", "P"], units.Select(u => u.Name));
+        Assert.True(units[^1].IsProgram);
+        Assert.Equal(@"C:\p\P.pas", units[^1].Path);
+        Assert.Equal(["Used"], units[^1].InterfaceUses);
+        Assert.DoesNotContain(units, u => u.Name == "Utils");            // in the RTL directory, but not reached
+
+        // no System: the front end does not start, so there are no units
+        Assert.Empty(Bare().Units);
+    }
+
+    [Fact]
+    public void BuiltIns_Present()
+    {
+        var compilation = Create();
+        var builtIns = compilation.BuiltIns;
+        Assert.Same(builtIns, compilation.BuiltIns);
+        Assert.Equal("Integer", builtIns.Integer.Name);
+        // the types the units are bound with
+        var v = Assert.IsType<VariableSymbol>(compilation.GetUnitSymbol("Used")!.InterfaceMembers.Single(m => m.Name == "V"));
+        Assert.Same(builtIns.Integer, v.Type);
+
+        var bare = Bare();
+        Assert.NotNull(bare.BuiltIns.String);
+        Assert.Same(bare.BuiltIns, bare.BuiltIns);
+    }
+
+    /// <summary>A program without a <c>System</c> unit: the front end does not start.</summary>
+    private static Compilation Bare() =>
+        Compilation.Create(new CompilationOptions { MainFile = @"C:\q\Q.pas", RtlDirectory = @"C:\none", ObjectDirectory = @"C:\q\obj" },
+            [], new InMemoryFileSystem().Add(@"C:\q\Q.pas", "program Q; begin end."));
 }
