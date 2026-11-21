@@ -57,7 +57,7 @@ type
   TOpenDialog = class(TCommonDialog)
   private
     FDefaultExt: string;
-    FFileName: string;
+    FFileName: TFileName;
     FFilter: string;
     FFilterIndex: Integer;
     FInitialDir: string;
@@ -75,7 +75,7 @@ type
     property Files: TStrings read FFiles;
   published
     property DefaultExt: string read FDefaultExt write FDefaultExt;
-    property FileName: string read FFileName write FFileName;
+    property FileName: TFileName read FFileName write FFileName;
     property Filter: string read FFilter write FFilter;
     property FilterIndex: Integer read FFilterIndex write FFilterIndex default 1;
     property InitialDir: string read FInitialDir write FInitialDir;
