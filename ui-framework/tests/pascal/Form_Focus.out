@@ -43,4 +43,13 @@ ok FocusControl sets ActiveControl (UIF-094)
 ok activation focuses the recorded ActiveControl
 ok deactivation and re-activation: no OnExit/OnEnter
 ok ActiveControl kept
-# passed 37 failed 0
+# SetFocus on a form that is not the active window (UIF-091, UIF-092)
+ok the other form is the active window
+ok ActiveControl recorded
+ok no Win32 focus while the form is not active
+ok the active window is unchanged
+ok the form is activated
+ok activation gives the recorded control the Win32 focus
+ok Windows.SetFocus activates the top-level window
+ok and WM_SETFOCUS records ActiveControl
+# passed 45 failed 0

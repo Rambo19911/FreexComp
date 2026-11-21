@@ -1,0 +1,149 @@
+# defaults
+ok Width 121
+ok Height 97
+ok BorderStyle bsSingle
+ok Color clWindow
+ok HideSelection
+ok Images nil
+ok Indent 19
+ok ParentColor False
+ok ParentFont
+ok ReadOnly
+ok RowSelect
+ok ShowButtons
+ok ShowLines
+ok ShowRoot
+ok TabStop
+ok does not accept children
+ok no nodes
+ok Items.Owner
+ok Selected nil
+ok TTreeView registered
+# nodes without a window
+ok the object tree
+ok Count: all nodes
+ok Item[3] in pre-order
+ok Item[7] in pre-order
+ok Level
+ok root Level 0
+ok Index among siblings
+ok root Index
+ok AbsoluteIndex
+ok Parent
+ok a root has no parent
+ok Count of children
+ok Item[1] of a node
+ok HasChildren
+ok GetFirstNode
+ok GetFirstChild
+ok GetLastChild
+ok GetFirstChild of a leaf
+ok GetNextSibling
+ok no next sibling
+ok GetPrevSibling
+ok GetNext climbs
+ok GetPrev descends
+ok nothing before the first node
+ok nothing after the last node
+ok ImageIndex -1
+ok SelectedIndex -1
+ok Data nil
+ok no ItemId without a window
+ok TreeView
+ok Owner
+ok Expanded recorded
+ok Selected recorded
+ok node Selected
+# the window is created (UIF-830, UIF-831)
+ok window class SysTreeView32
+ok eight native items
+ok pre-order, expanded and selected state restored
+ok ItemId
+ok lParam is the node
+ok the caret item
+ok cChildren 1
+ok cChildren 0
+ok the native text
+# callback text and images (UIF-830)
+ok text, image and selected image
+ok SelectedIndex -1: the image
+ok no images
+ok changes are read from the node
+ok the native text follows the node
+ok C is hidden in a collapsed parent
+ok DisplayRect(True) of a visible node
+# styles
+ok buttons, lines, root, edit
+ok no TVS_SHOWSELALWAYS (HideSelection)
+ok no TVS_FULLROWSELECT
+ok WS_TABSTOP
+ok WS_EX_CLIENTEDGE
+ok TVM_GETINDENT 19
+ok ShowButtons recreates the window
+ok no TVS_HASBUTTONS
+ok the tree and its state are kept
+ok ShowLines recreates the window
+ok no TVS_HASLINES
+ok RowSelect recreates the window
+ok TVS_FULLROWSELECT
+ok ShowRoot recreates the window
+ok no TVS_LINESATROOT
+ok HideSelection recreates the window
+ok TVS_SHOWSELALWAYS
+ok ReadOnly recreates the window
+ok no TVS_EDITLABELS
+ok BorderStyle recreates the window
+ok bsNone: no WS_EX_CLIENTEDGE
+ok still the same tree
+# colours, images, indent
+ok TVM_SETBKCOLOR
+ok TVM_SETTEXTCOLOR
+ok background kept
+ok text colour kept
+ok TVSIL_NORMAL
+ok image list kept
+ok a freed list clears Images
+ok and the native list
+ok Indent sent
+ok Indent scaled
+ok scaled Indent sent
+ok Indent kept on recreate
+# the state the window changed is saved (UIF-831)
+ok Expanded follows the window
+ok Selected follows the window
+ok saved and restored
+ok B Selected
+ok Selected := nil clears
+ok no caret item
+# nodes added and removed with a window (UIF-830)
+ok the new parent gets cChildren 1
+ok native positions
+ok object positions
+ok Count
+ok native count
+ok DeleteChildren: cChildren 0
+ok no children
+ok Count after DeleteChildren
+ok Items.Delete
+# deleting deletes the descendants first (UIF-833)
+ok the children first, then the node
+ok objects
+ok native
+ok Free deletes the same way
+ok Clear
+ok Count 0
+ok native count 0
+# helpers
+ok added inside BeginUpdate
+ok TopItem
+ok GetNodeAt
+ok GetNodeAt right of the text: nil
+ok FullExpand
+ok MakeVisible scrolls
+ok the node is visible
+ok FullCollapse
+# destroying
+ok a tree view with nodes and a window is freed
+# leak
+ok GUI objects after 100 instances with handles
+# passed 136 failed 0

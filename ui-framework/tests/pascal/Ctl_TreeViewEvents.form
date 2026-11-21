@@ -1,0 +1,19 @@
+object TreeForm: TTreeForm
+  Caption = 'Tree'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Tree: TTreeView
+    Left = 8
+    Top = 8
+    Width = 200
+    Height = 250
+    HideSelection = False
+    Indent = 25
+    ReadOnly = True
+    ShowLines = False
+    TabOrder = 0
+    OnChange = TreeChange
+    OnExpanded = TreeExpanded
+  end
+end

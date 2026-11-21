@@ -253,6 +253,35 @@ begin
   finally
     K.Free;
   end;
+
+  { U-122: UIF-091 calls Windows.SetFocus only when the form is the active window; otherwise the control is only
+    recorded as ActiveControl and gets the Win32 focus when its form is activated (UIF-092). Windows.SetFocus
+    itself activates the control's top-level window, which is why it behaves differently. }
+  Section('SetFocus on a form that is not the active window (UIF-091, UIF-092)');
+  K := TForm.CreateNew(nil);
+  G := TForm.CreateNew(nil);
+  try
+    X := Box('X', K, True);
+    Y := Box('Y', K, True);
+    A := Box('A', G, True);
+    K.Show;
+    G.Show;
+    SetActiveWindow(G.Handle);
+    CheckEqB(True, GetActiveWindow = G.Handle, 'the other form is the active window');
+    Y.SetFocus;
+    CheckEqB(True, K.ActiveControl = Y, 'ActiveControl recorded');
+    CheckEqB(False, GetFocus = Y.Handle, 'no Win32 focus while the form is not active');
+    CheckEqB(True, GetActiveWindow = G.Handle, 'the active window is unchanged');
+    SetActiveWindow(K.Handle);
+    CheckEqB(True, GetActiveWindow = K.Handle, 'the form is activated');
+    CheckEqB(True, GetFocus = Y.Handle, 'activation gives the recorded control the Win32 focus');
+    Windows.SetFocus(A.Handle);
+    CheckEqB(True, GetActiveWindow = G.Handle, 'Windows.SetFocus activates the top-level window');
+    CheckEqB(True, G.ActiveControl = A, 'and WM_SETFOCUS records ActiveControl');
+  finally
+    G.Free;
+    K.Free;
+  end;
   Log.Free;
 end;
 

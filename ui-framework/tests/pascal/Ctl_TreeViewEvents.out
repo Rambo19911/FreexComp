@@ -1,0 +1,58 @@
+# without a window
+ok no events without a window
+# the window is created (UIF-833)
+ok no events while the state is restored
+ok selection restored
+# programmatic selection (UIF-834)
+ok Selected := B
+ok B selected
+ok a vetoed change
+ok the selection is kept
+ok Node.Selected := True
+ok the same node again: no events
+ok Selected := nil
+ok nothing selected
+# expanding and collapsing (UIF-834)
+ok Expand
+ok expanded
+ok already expanded: no events
+ok Collapse
+ok collapsed
+ok a vetoed expansion
+ok still collapsed
+ok a vetoed collapse
+ok still expanded
+ok a node without children: no events
+ok Collapse(True): the children first
+ok Expand(True): the node first
+# the user
+ok Right expands
+ok Down selects the next node
+ok Left on a leaf selects its parent
+ok Left collapses
+# label edit (UIF-832)
+ok an allowed edit: 0
+ok OnEditing
+ok a vetoed edit: 1
+ok OnEdited
+ok Node.Text := S
+ok a cancelled edit: no OnEdited
+ok Text unchanged
+ok not editing
+# deleting the selected node
+ok the window moves the selection: OnChange
+ok another node is selected
+# recreating and destroying (UIF-833)
+ok no events while recreating
+ok no events while destroying
+# streaming
+ok Indent
+ok native indent
+ok ShowLines False
+ok ReadOnly
+ok HideSelection False
+ok native styles
+ok TVS_SHOWSELALWAYS
+ok events bound
+ok the streamed handlers run
+# passed 48 failed 0

@@ -767,7 +767,267 @@ type
     property OnSelectItem;
   end;
 
+
+  TCustomTreeView = class;
+  TTreeNodes = class;
+
+  { controls-standard.md section 26: a node of a tree view (run time only, not streamed); the objects form their
+    own tree (UIF-831) and are the single source of the native item's text and images (UIF-830) }
+  TTreeNode = class(TPersistent)
+  private
+    FOwner: TTreeNodes;
+    FParent: TTreeNode;
+    FChildren: TList;
+    FText: string;
+    FImageIndex: Integer;
+    FSelectedIndex: Integer;
+    FData: Pointer;
+    FItemId: HTREEITEM;
+    FExpanded: Boolean;
+    function GetCount: Integer;
+    function GetItem(Index: Integer): TTreeNode;
+    function GetLevel: Integer;
+    function GetIndex: Integer;
+    function GetAbsoluteIndex: Integer;
+    function GetHasChildren: Boolean;
+    function GetExpanded: Boolean;
+    procedure SetExpanded(Value: Boolean);
+    function GetSelected: Boolean;
+    procedure SetSelected(Value: Boolean);
+    function GetTreeView: TCustomTreeView;
+    procedure SetText(const Value: string);
+    procedure SetImageIndex(Value: Integer);
+    procedure SetSelectedIndex(Value: Integer);
+    { the siblings list this node is in (the parent's children or the roots) }
+    function Siblings: TList;
+    { the native item re-reads text and images }
+    procedure Refresh;
+    { cChildren of the native item from the object }
+    procedure UpdateChildren;
+  public
+    constructor Create(AOwner: TTreeNodes);
+    { UIF-833: the children first (last first, each deepest first), then the native item }
+    destructor Destroy; override;
+    procedure Assign(Source: TPersistent); override;
+    procedure Delete;
+    procedure DeleteChildren;
+    procedure Expand(Recurse: Boolean);
+    procedure Collapse(Recurse: Boolean);
+    procedure MakeVisible;
+    { starts a label edit in the window (OnEditing may refuse it) }
+    procedure EditText;
+    function GetFirstChild: TTreeNode;
+    function GetLastChild: TTreeNode;
+    function GetNextSibling: TTreeNode;
+    function GetPrevSibling: TTreeNode;
+    { pre-order }
+    function GetNext: TTreeNode;
+    function GetPrev: TTreeNode;
+    function DisplayRect(TextOnly: Boolean): TRect;
+    property AbsoluteIndex: Integer read GetAbsoluteIndex;
+    property Count: Integer read GetCount;
+    property Data: Pointer read FData write FData;
+    property Expanded: Boolean read GetExpanded write SetExpanded;
+    { the caret item of the tree (the same as Selected) }
+    property Focused: Boolean read GetSelected write SetSelected;
+    property HasChildren: Boolean read GetHasChildren;
+    property ImageIndex: Integer read FImageIndex write SetImageIndex;
+    property Index: Integer read GetIndex;
+    property Item[Index: Integer]: TTreeNode read GetItem; default;
+    property ItemId: HTREEITEM read FItemId;
+    property Level: Integer read GetLevel;
+    property Owner: TTreeNodes read FOwner;
+    property Parent: TTreeNode read FParent;
+    property Selected: Boolean read GetSelected write SetSelected;
+    { -1: the ImageIndex is shown for the selected node }
+    property SelectedIndex: Integer read FSelectedIndex write SetSelectedIndex;
+    property Text: string read FText write SetText;
+    property TreeView: TCustomTreeView read GetTreeView;
+  end;
+
+  { TreeView.Items }
+  TTreeNodes = class(TPersistent)
+  private
+    FOwner: TCustomTreeView;
+    FRoots: TList;
+    FCount: Integer;
+    FUpdateCount: Integer;
+    function GetItem(Index: Integer): TTreeNode;
+    { a new node at Index of Parent's children (nil: the roots) }
+    function InternalAdd(Parent: TTreeNode; Index: Integer; const S: string): TTreeNode;
+    { the native item of Node (after its previous sibling) and of its descendants }
+    procedure InsertNative(Node: TTreeNode);
+  public
+    constructor Create(AOwner: TCustomTreeView);
+    destructor Destroy; override;
+    { after the last sibling of Sibling; nil: the last root }
+    function Add(Sibling: TTreeNode; const S: string): TTreeNode;
+    function AddFirst(Sibling: TTreeNode; const S: string): TTreeNode;
+    { the last child of Parent; nil: the last root }
+    function AddChild(Parent: TTreeNode; const S: string): TTreeNode;
+    function AddChildFirst(Parent: TTreeNode; const S: string): TTreeNode;
+    { before Sibling; nil: the last root }
+    function Insert(Sibling: TTreeNode; const S: string): TTreeNode;
+    procedure Delete(Node: TTreeNode);
+    procedure Clear;
+    function GetFirstNode: TTreeNode;
+    { WM_SETREDRAW, nested }
+    procedure BeginUpdate;
+    procedure EndUpdate;
+    { all nodes }
+    property Count: Integer read FCount;
+    { pre-order }
+    property Item[Index: Integer]: TTreeNode read GetItem; default;
+    property Owner: TCustomTreeView read FOwner;
+  end;
+
+  TTVChangedEvent = procedure(Sender: TObject; Node: TTreeNode) of object;
+  TTVChangingEvent = procedure(Sender: TObject; Node: TTreeNode; var AllowChange: Boolean) of object;
+  TTVExpandedEvent = procedure(Sender: TObject; Node: TTreeNode) of object;
+  TTVExpandingEvent = procedure(Sender: TObject; Node: TTreeNode; var AllowExpansion: Boolean) of object;
+  TTVCollapsingEvent = procedure(Sender: TObject; Node: TTreeNode; var AllowCollapse: Boolean) of object;
+  TTVEditedEvent = procedure(Sender: TObject; Node: TTreeNode; var S: string) of object;
+  TTVEditingEvent = procedure(Sender: TObject; Node: TTreeNode; var AllowEdit: Boolean) of object;
+
+  { controls-standard.md section 26 }
+  TCustomTreeView = class(TWinControl)
+  private
+    FBorderStyle: TBorderStyle;
+    FHideSelection: Boolean;
+    FImages: TCustomImageList;
+    FImageChangeLink: TChangeLink;
+    FIndent: Integer;
+    FItems: TTreeNodes;
+    FReadOnly: Boolean;
+    FRowSelect: Boolean;
+    FShowButtons: Boolean;
+    FShowLines: Boolean;
+    FShowRoot: Boolean;
+    { the selected node while there is no window (saved by DestroyWnd) }
+    FSelectedNode: TTreeNode;
+    { set while the window is created, recreated or destroyed and while the control is destroyed: no events }
+    FNoEvents: Boolean;
+    { set during the node's own TVM_EXPAND: a first expansion is also notified by the window, it is not reported
+      twice }
+    FExpanding: Boolean;
+    FOnChange: TTVChangedEvent;
+    FOnChanging: TTVChangingEvent;
+    FOnCollapsed: TTVExpandedEvent;
+    FOnCollapsing: TTVCollapsingEvent;
+    FOnEdited: TTVEditedEvent;
+    FOnEditing: TTVEditingEvent;
+    FOnExpanded: TTVExpandedEvent;
+    FOnExpanding: TTVExpandingEvent;
+    { OnExpanding / OnCollapsing: whether the change may happen }
+    function CanExpandChange(Node: TTreeNode; Expand: Boolean): Boolean;
+    { OnExpanded / OnCollapsed }
+    procedure ExpandChanged(Node: TTreeNode; Expand: Boolean);
+    procedure SetBorderStyle(Value: TBorderStyle);
+    procedure SetHideSelection(Value: Boolean);
+    procedure SetImages(Value: TCustomImageList);
+    procedure SetIndent(Value: Integer);
+    procedure SetReadOnly(Value: Boolean);
+    procedure SetRowSelect(Value: Boolean);
+    procedure SetShowButtons(Value: Boolean);
+    procedure SetShowLines(Value: Boolean);
+    procedure SetShowRoot(Value: Boolean);
+    function GetSelected: TTreeNode;
+    procedure SetSelected(Value: TTreeNode);
+    function GetTopItem: TTreeNode;
+    procedure ImageListChange(Sender: TObject);
+    procedure UpdateColors;
+    procedure UpdateImages;
+    function NodeOf(Item: HTREEITEM): TTreeNode;
+    procedure GetDispInfo(var Info: TTVDispInfoW);
+    procedure SaveState(Node: TTreeNode);
+    procedure ClearIds(Node: TTreeNode);
+  protected
+    procedure CreateParams(var Params: TCreateParams); override;
+    { UIF-831: the nodes inserted in pre-order, then the expanded state and the selection restored }
+    procedure CreateWnd; override;
+    { UIF-831: the expanded state and the selection saved into the objects }
+    procedure DestroyWnd; override;
+    procedure ChangeScale(M, D: Integer); override;
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    procedure CMColorChanged(var Message: TMessage); override;
+    procedure CMFontChanged(var Message: TMessage); override;
+    { CN_NOTIFY: TVN_GETDISPINFOW; UIF-832: the selection, expansion and label edit notifications }
+    procedure WndProc(var Message: TMessage); override;
+    property OnChange: TTVChangedEvent read FOnChange write FOnChange;
+    property OnChanging: TTVChangingEvent read FOnChanging write FOnChanging;
+    property OnCollapsed: TTVExpandedEvent read FOnCollapsed write FOnCollapsed;
+    property OnCollapsing: TTVCollapsingEvent read FOnCollapsing write FOnCollapsing;
+    property OnEdited: TTVEditedEvent read FOnEdited write FOnEdited;
+    property OnEditing: TTVEditingEvent read FOnEditing write FOnEditing;
+    property OnExpanded: TTVExpandedEvent read FOnExpanded write FOnExpanded;
+    property OnExpanding: TTVExpandingEvent read FOnExpanding write FOnExpanding;
+    property BorderStyle: TBorderStyle read FBorderStyle write SetBorderStyle default bsSingle;
+    property HideSelection: Boolean read FHideSelection write SetHideSelection default True;
+    property Images: TCustomImageList read FImages write SetImages;
+    property Indent: Integer read FIndent write SetIndent default 19;
+    property ReadOnly: Boolean read FReadOnly write SetReadOnly default False;
+    property RowSelect: Boolean read FRowSelect write SetRowSelect default False;
+    property ShowButtons: Boolean read FShowButtons write SetShowButtons default True;
+    property ShowLines: Boolean read FShowLines write SetShowLines default True;
+    property ShowRoot: Boolean read FShowRoot write SetShowRoot default True;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    function GetNodeAt(X, Y: Integer): TTreeNode;
+    procedure FullExpand;
+    procedure FullCollapse;
+    { a label edit is in progress }
+    function IsEditing: Boolean;
+    property Items: TTreeNodes read FItems;
+    { settable; nil clears the selection }
+    property Selected: TTreeNode read GetSelected write SetSelected;
+    property TopItem: TTreeNode read GetTopItem;
+  end;
+
+  TTreeView = class(TCustomTreeView)
+  published
+    property BorderStyle;
+    property Color default clWindow;
+    property Font;
+    property HideSelection;
+    property Images;
+    property Indent;
+    property ParentColor default False;
+    property ParentFont;
+    property ReadOnly;
+    property RowSelect;
+    property ShowButtons;
+    property ShowLines;
+    property ShowRoot;
+    property TabOrder;
+    property TabStop default True;
+    property OnChange;
+    property OnChanging;
+    property OnClick;
+    property OnCollapsed;
+    property OnCollapsing;
+    property OnContextPopup;
+    property OnDblClick;
+    property OnEdited;
+    property OnEditing;
+    property OnEnter;
+    property OnExit;
+    property OnExpanded;
+    property OnExpanding;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
+    property OnMouseDown;
+    property OnMouseEnter;
+    property OnMouseLeave;
+    property OnMouseMove;
+    property OnMouseUp;
+  end;
+
 implementation
+
+uses
+  RTLConsts;
 
 type
   TFormAccess = class(TCustomForm);
@@ -3418,7 +3678,963 @@ begin
   FItems.Clear;
 end;
 
+
+{ ---------------------------------------------------------------- TTreeNode }
+
+constructor TTreeNode.Create(AOwner: TTreeNodes);
+begin
+  inherited Create;
+  FOwner := AOwner;
+  FImageIndex := -1;
+  FSelectedIndex := -1;
+end;
+
+destructor TTreeNode.Destroy;
+var
+  TV: TCustomTreeView;
+begin
+  while (FChildren <> nil) and (FChildren.Count > 0) do
+    TTreeNode(FChildren[0]).Free;
+  if FOwner <> nil then
+  begin
+    TV := FOwner.FOwner;
+    if TV.FSelectedNode = Self then
+      TV.FSelectedNode := nil;
+    if (FItemId <> 0) and TV.HandleAllocated then
+      SendMessageW(TV.Handle, TVM_DELETEITEM, 0, LPARAM(FItemId));
+    FItemId := 0;
+    Siblings.Remove(Self);
+    Dec(FOwner.FCount);
+    if (FParent <> nil) and not FParent.HasChildren then
+      FParent.UpdateChildren;
+  end;
+  FChildren.Free;
+  inherited Destroy;
+end;
+
+procedure TTreeNode.Assign(Source: TPersistent);
+begin
+  if Source is TTreeNode then
+  begin
+    Text := TTreeNode(Source).FText;
+    ImageIndex := TTreeNode(Source).FImageIndex;
+    SelectedIndex := TTreeNode(Source).FSelectedIndex;
+    Data := TTreeNode(Source).FData;
+  end
+  else
+    inherited Assign(Source);
+end;
+
+function TTreeNode.Siblings: TList;
+begin
+  if FParent <> nil then
+  begin
+    if FParent.FChildren = nil then
+      FParent.FChildren := TList.Create;
+    Result := FParent.FChildren;
+  end
+  else
+    Result := FOwner.FRoots;
+end;
+
+function TTreeNode.GetTreeView: TCustomTreeView;
+begin
+  Result := FOwner.FOwner;
+end;
+
+function TTreeNode.GetCount: Integer;
+begin
+  if FChildren = nil then
+    Result := 0
+  else
+    Result := FChildren.Count;
+end;
+
+function TTreeNode.GetItem(Index: Integer): TTreeNode;
+begin
+  Result := TTreeNode(FChildren[Index]);
+end;
+
+function TTreeNode.GetHasChildren: Boolean;
+begin
+  Result := GetCount > 0;
+end;
+
+function TTreeNode.GetLevel: Integer;
+var
+  P: TTreeNode;
+begin
+  Result := 0;
+  P := FParent;
+  while P <> nil do
+  begin
+    Inc(Result);
+    P := P.FParent;
+  end;
+end;
+
+function TTreeNode.GetIndex: Integer;
+begin
+  Result := Siblings.IndexOf(Self);
+end;
+
+function TTreeNode.GetAbsoluteIndex: Integer;
+var
+  N: TTreeNode;
+begin
+  Result := 0;
+  N := FOwner.GetFirstNode;
+  while (N <> nil) and (N <> Self) do
+  begin
+    Inc(Result);
+    N := N.GetNext;
+  end;
+end;
+
+function TTreeNode.GetFirstChild: TTreeNode;
+begin
+  if HasChildren then
+    Result := TTreeNode(FChildren[0])
+  else
+    Result := nil;
+end;
+
+function TTreeNode.GetLastChild: TTreeNode;
+begin
+  if HasChildren then
+    Result := TTreeNode(FChildren[FChildren.Count - 1])
+  else
+    Result := nil;
+end;
+
+function TTreeNode.GetNextSibling: TTreeNode;
+var
+  L: TList;
+  I: Integer;
+begin
+  L := Siblings;
+  I := L.IndexOf(Self);
+  if I < L.Count - 1 then
+    Result := TTreeNode(L[I + 1])
+  else
+    Result := nil;
+end;
+
+function TTreeNode.GetPrevSibling: TTreeNode;
+var
+  L: TList;
+  I: Integer;
+begin
+  L := Siblings;
+  I := L.IndexOf(Self);
+  if I > 0 then
+    Result := TTreeNode(L[I - 1])
+  else
+    Result := nil;
+end;
+
+function TTreeNode.GetNext: TTreeNode;
+var
+  N: TTreeNode;
+begin
+  Result := GetFirstChild;
+  if Result <> nil then
+    Exit;
+  N := Self;
+  while N <> nil do
+  begin
+    Result := N.GetNextSibling;
+    if Result <> nil then
+      Exit;
+    N := N.FParent;
+  end;
+end;
+
+function TTreeNode.GetPrev: TTreeNode;
+begin
+  Result := GetPrevSibling;
+  if Result = nil then
+    Result := FParent
+  else
+    while Result.HasChildren do
+      Result := Result.GetLastChild;
+end;
+
+function TTreeNode.GetExpanded: Boolean;
+var
+  TV: TCustomTreeView;
+begin
+  TV := TreeView;
+  if (FItemId <> 0) and TV.HandleAllocated then
+    Result := (SendMessageW(TV.Handle, TVM_GETITEMSTATE, WPARAM(FItemId), TVIS_EXPANDED) and TVIS_EXPANDED) <> 0
+  else
+    Result := FExpanded;
+end;
+
+procedure TTreeNode.SetExpanded(Value: Boolean);
+const
+  Codes: array[Boolean] of WPARAM = (TVE_COLLAPSE, TVE_EXPAND);
+var
+  TV: TCustomTreeView;
+begin
+  TV := TreeView;
+  if (FItemId = 0) or not TV.HandleAllocated or not HasChildren then
+  begin
+    FExpanded := Value;
+    Exit;
+  end;
+  { UIF-834: TVM_EXPAND sends no notifications; the events are fired here, only for a real change }
+  if GetExpanded = Value then
+    Exit;
+  if not TV.CanExpandChange(Self, Value) then
+    Exit;
+  TV.FExpanding := True;
+  try
+    SendMessageW(TV.Handle, TVM_EXPAND, Codes[Value], LPARAM(FItemId));
+  finally
+    TV.FExpanding := False;
+  end;
+  FExpanded := Value;
+  TV.ExpandChanged(Self, Value);
+end;
+
+function TTreeNode.GetSelected: Boolean;
+begin
+  Result := TreeView.Selected = Self;
+end;
+
+procedure TTreeNode.SetSelected(Value: Boolean);
+begin
+  if Value then
+    TreeView.Selected := Self
+  else if GetSelected then
+    TreeView.Selected := nil;
+end;
+
+procedure TTreeNode.Refresh;
+var
+  It: TTVItemW;
+  TV: TCustomTreeView;
+begin
+  TV := TreeView;
+  if (FItemId = 0) or not TV.HandleAllocated then
+    Exit;
+  FillChar(It, SizeOf(It), 0);
+  It.mask := TVIF_HANDLE or TVIF_TEXT or TVIF_IMAGE or TVIF_SELECTEDIMAGE;
+  It.hItem := FItemId;
+  It.pszText := LPSTR_TEXTCALLBACKW;
+  It.iImage := I_IMAGECALLBACK;
+  It.iSelectedImage := I_IMAGECALLBACK;
+  SendMessageW(TV.Handle, TVM_SETITEMW, 0, LPARAM(@It));
+end;
+
+procedure TTreeNode.UpdateChildren;
+var
+  It: TTVItemW;
+  TV: TCustomTreeView;
+begin
+  TV := TreeView;
+  if (FItemId = 0) or not TV.HandleAllocated then
+    Exit;
+  FillChar(It, SizeOf(It), 0);
+  It.mask := TVIF_HANDLE or TVIF_CHILDREN;
+  It.hItem := FItemId;
+  It.cChildren := Ord(HasChildren);
+  SendMessageW(TV.Handle, TVM_SETITEMW, 0, LPARAM(@It));
+end;
+
+procedure TTreeNode.SetText(const Value: string);
+begin
+  if FText <> Value then
+  begin
+    FText := Value;
+    Refresh;
+  end;
+end;
+
+procedure TTreeNode.SetImageIndex(Value: Integer);
+begin
+  if FImageIndex <> Value then
+  begin
+    FImageIndex := Value;
+    Refresh;
+  end;
+end;
+
+procedure TTreeNode.SetSelectedIndex(Value: Integer);
+begin
+  if FSelectedIndex <> Value then
+  begin
+    FSelectedIndex := Value;
+    Refresh;
+  end;
+end;
+
+procedure TTreeNode.Delete;
+begin
+  Free;
+end;
+
+procedure TTreeNode.DeleteChildren;
+begin
+  while HasChildren do
+    TTreeNode(FChildren[0]).Free;
+end;
+
+procedure TTreeNode.Expand(Recurse: Boolean);
+var
+  I: Integer;
+begin
+  Expanded := True;
+  if Recurse then
+    for I := 0 to Count - 1 do
+      Item[I].Expand(True);
+end;
+
+procedure TTreeNode.Collapse(Recurse: Boolean);
+var
+  I: Integer;
+begin
+  if Recurse then
+    for I := 0 to Count - 1 do
+      Item[I].Collapse(True);
+  Expanded := False;
+end;
+
+procedure TTreeNode.MakeVisible;
+begin
+  if (FItemId <> 0) and TreeView.HandleAllocated then
+    SendMessageW(TreeView.Handle, TVM_ENSUREVISIBLE, 0, LPARAM(FItemId));
+end;
+
+procedure TTreeNode.EditText;
+begin
+  if (FItemId <> 0) and TreeView.HandleAllocated then
+    SendMessageW(TreeView.Handle, TVM_EDITLABELW, 0, LPARAM(FItemId));
+end;
+
+function TTreeNode.DisplayRect(TextOnly: Boolean): TRect;
+begin
+  Result := Rect(0, 0, 0, 0);
+  if (FItemId = 0) or not TreeView.HandleAllocated then
+    Exit;
+  { the item handle goes in the first bytes of the rectangle }
+  PNativeUInt(@Result)^ := NativeUInt(FItemId);
+  if SendMessageW(TreeView.Handle, TVM_GETITEMRECT, WPARAM(Ord(TextOnly)), LPARAM(@Result)) = 0 then
+    Result := Rect(0, 0, 0, 0);
+end;
+
+{ ---------------------------------------------------------------- TTreeNodes }
+
+constructor TTreeNodes.Create(AOwner: TCustomTreeView);
+begin
+  inherited Create;
+  FOwner := AOwner;
+  FRoots := TList.Create;
+end;
+
+destructor TTreeNodes.Destroy;
+begin
+  Clear;
+  FRoots.Free;
+  inherited Destroy;
+end;
+
+function TTreeNodes.GetFirstNode: TTreeNode;
+begin
+  if FRoots.Count > 0 then
+    Result := TTreeNode(FRoots[0])
+  else
+    Result := nil;
+end;
+
+function TTreeNodes.GetItem(Index: Integer): TTreeNode;
+begin
+  if (Index < 0) or (Index >= FCount) then
+    raise EListError.CreateFmt(SListIndexError, [Index]);
+  Result := GetFirstNode;
+  while Index > 0 do
+  begin
+    Result := Result.GetNext;
+    Dec(Index);
+  end;
+end;
+
+function TTreeNodes.InternalAdd(Parent: TTreeNode; Index: Integer; const S: string): TTreeNode;
+begin
+  Result := TTreeNode.Create(Self);
+  Result.FParent := Parent;
+  Result.FText := S;
+  Result.Siblings.Insert(Index, Result);
+  Inc(FCount);
+  if FOwner.HandleAllocated and ((Parent = nil) or (Parent.FItemId <> 0)) then
+  begin
+    InsertNative(Result);
+    if Parent <> nil then
+      Parent.UpdateChildren;
+  end;
+end;
+
+procedure TTreeNodes.InsertNative(Node: TTreeNode);
+var
+  S: TTVInsertStructW;
+  Prev: TTreeNode;
+  I: Integer;
+begin
+  FillChar(S, SizeOf(S), 0);
+  if Node.FParent <> nil then
+    S.hParent := Node.FParent.FItemId
+  else
+    S.hParent := TVI_ROOT;
+  Prev := Node.GetPrevSibling;
+  if Prev <> nil then
+    S.hInsertAfter := Prev.FItemId
+  else
+    S.hInsertAfter := TVI_FIRST;
+  S.item.mask := TVIF_TEXT or TVIF_IMAGE or TVIF_SELECTEDIMAGE or TVIF_PARAM or TVIF_CHILDREN;
+  S.item.pszText := LPSTR_TEXTCALLBACKW;
+  S.item.iImage := I_IMAGECALLBACK;
+  S.item.iSelectedImage := I_IMAGECALLBACK;
+  S.item.cChildren := Ord(Node.HasChildren);
+  S.item.lParam := LPARAM(Pointer(Node));
+  Node.FItemId := HTREEITEM(SendMessageW(FOwner.Handle, TVM_INSERTITEMW, 0, LPARAM(@S)));
+  for I := 0 to Node.Count - 1 do
+    InsertNative(Node.Item[I]);
+end;
+
+function TTreeNodes.Add(Sibling: TTreeNode; const S: string): TTreeNode;
+begin
+  if Sibling = nil then
+    Result := InternalAdd(nil, FRoots.Count, S)
+  else
+    Result := InternalAdd(Sibling.FParent, Sibling.Siblings.Count, S);
+end;
+
+function TTreeNodes.AddFirst(Sibling: TTreeNode; const S: string): TTreeNode;
+begin
+  if Sibling = nil then
+    Result := InternalAdd(nil, 0, S)
+  else
+    Result := InternalAdd(Sibling.FParent, 0, S);
+end;
+
+function TTreeNodes.AddChild(Parent: TTreeNode; const S: string): TTreeNode;
+begin
+  if Parent = nil then
+    Result := InternalAdd(nil, FRoots.Count, S)
+  else
+    Result := InternalAdd(Parent, Parent.Count, S);
+end;
+
+function TTreeNodes.AddChildFirst(Parent: TTreeNode; const S: string): TTreeNode;
+begin
+  Result := InternalAdd(Parent, 0, S);
+end;
+
+function TTreeNodes.Insert(Sibling: TTreeNode; const S: string): TTreeNode;
+begin
+  if Sibling = nil then
+    Result := InternalAdd(nil, FRoots.Count, S)
+  else
+    Result := InternalAdd(Sibling.FParent, Sibling.Index, S);
+end;
+
+procedure TTreeNodes.Delete(Node: TTreeNode);
+begin
+  Node.Free;
+end;
+
+procedure TTreeNodes.Clear;
+begin
+  while FRoots.Count > 0 do
+    TTreeNode(FRoots[0]).Free;
+end;
+
+procedure TTreeNodes.BeginUpdate;
+begin
+  if (FUpdateCount = 0) and FOwner.HandleAllocated then
+    SendMessageW(FOwner.Handle, WM_SETREDRAW, 0, 0);
+  Inc(FUpdateCount);
+end;
+
+procedure TTreeNodes.EndUpdate;
+begin
+  Dec(FUpdateCount);
+  if (FUpdateCount = 0) and FOwner.HandleAllocated then
+  begin
+    SendMessageW(FOwner.Handle, WM_SETREDRAW, 1, 0);
+    FOwner.Invalidate;
+  end;
+end;
+
+{ ---------------------------------------------------------------- TCustomTreeView }
+
+constructor TCustomTreeView.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  ControlStyle := ControlStyle - [csAcceptsControls, csSetCaption];
+  FItems := TTreeNodes.Create(Self);
+  FBorderStyle := bsSingle;
+  FHideSelection := True;
+  FIndent := 19;
+  FShowButtons := True;
+  FShowLines := True;
+  FShowRoot := True;
+  FImageChangeLink := TChangeLink.Create;
+  FImageChangeLink.OnChange := ImageListChange;
+  TabStop := True;
+  Color := clWindow;
+  SetBounds(Left, Top, 121, 97);
+end;
+
+destructor TCustomTreeView.Destroy;
+begin
+  { UIF-833 }
+  FNoEvents := True;
+  Images := nil;
+  FItems.Clear;
+  inherited Destroy;
+  FItems.Free;
+  FItems := nil;
+  FImageChangeLink.Free;
+  FImageChangeLink := nil;
+end;
+
+procedure TCustomTreeView.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  Params.SubclassOf := WC_TREEVIEW;
+  if FShowButtons then
+    Params.Style := Params.Style or TVS_HASBUTTONS;
+  if FShowLines then
+    Params.Style := Params.Style or TVS_HASLINES;
+  if FShowRoot then
+    Params.Style := Params.Style or TVS_LINESATROOT;
+  if not FHideSelection then
+    Params.Style := Params.Style or TVS_SHOWSELALWAYS;
+  if not FReadOnly then
+    Params.Style := Params.Style or TVS_EDITLABELS;
+  if FRowSelect then
+    Params.Style := Params.Style or TVS_FULLROWSELECT;
+  if FBorderStyle = bsSingle then
+    Params.ExStyle := Params.ExStyle or WS_EX_CLIENTEDGE;
+end;
+
+procedure TCustomTreeView.CreateWnd;
+var
+  I: Integer;
+  N: TTreeNode;
+  Old: Boolean;
+begin
+  inherited CreateWnd;
+  UpdateColors;
+  UpdateImages;
+  SendMessageW(Handle, TVM_SETINDENT, WPARAM(FIndent), 0);
+  Old := FNoEvents;
+  FNoEvents := True;
+  try
+    for I := 0 to FItems.FRoots.Count - 1 do
+      FItems.InsertNative(TTreeNode(FItems.FRoots[I]));
+    N := FItems.GetFirstNode;
+    while N <> nil do
+    begin
+      if N.FExpanded and N.HasChildren then
+        SendMessageW(Handle, TVM_EXPAND, TVE_EXPAND, LPARAM(N.FItemId));
+      N := N.GetNext;
+    end;
+    if FSelectedNode <> nil then
+      SendMessageW(Handle, TVM_SELECTITEM, TVGN_CARET, LPARAM(FSelectedNode.FItemId));
+  finally
+    FNoEvents := Old;
+  end;
+end;
+
+procedure TCustomTreeView.SaveState(Node: TTreeNode);
+begin
+  while Node <> nil do
+  begin
+    Node.FExpanded := Node.GetExpanded;
+    Node := Node.GetNext;
+  end;
+end;
+
+procedure TCustomTreeView.ClearIds(Node: TTreeNode);
+begin
+  while Node <> nil do
+  begin
+    Node.FItemId := 0;
+    Node := Node.GetNext;
+  end;
+end;
+
+procedure TCustomTreeView.DestroyWnd;
+var
+  Old: Boolean;
+begin
+  SaveState(FItems.GetFirstNode);
+  FSelectedNode := GetSelected;
+  Old := FNoEvents;
+  FNoEvents := True;
+  try
+    inherited DestroyWnd;
+  finally
+    FNoEvents := Old;
+  end;
+  ClearIds(FItems.GetFirstNode);
+end;
+
+procedure TCustomTreeView.UpdateColors;
+begin
+  if not HandleAllocated then
+    Exit;
+  SendMessageW(Handle, TVM_SETBKCOLOR, 0, LPARAM(ColorToRGB(Color)));
+  SendMessageW(Handle, TVM_SETTEXTCOLOR, 0, LPARAM(ColorToRGB(Font.Color)));
+end;
+
+procedure TCustomTreeView.UpdateImages;
+var
+  H: HIMAGELIST;
+begin
+  if not HandleAllocated then
+    Exit;
+  H := 0;
+  if FImages <> nil then
+    H := FImages.Handle;
+  SendMessageW(Handle, TVM_SETIMAGELIST, TVSIL_NORMAL, LPARAM(H));
+end;
+
+procedure TCustomTreeView.CMColorChanged(var Message: TMessage);
+begin
+  inherited CMColorChanged(Message);
+  UpdateColors;
+end;
+
+procedure TCustomTreeView.CMFontChanged(var Message: TMessage);
+begin
+  inherited CMFontChanged(Message);
+  UpdateColors;
+end;
+
+procedure TCustomTreeView.ChangeScale(M, D: Integer);
+begin
+  inherited ChangeScale(M, D);
+  if M <> D then
+    Indent := LayoutMulDiv(FIndent, M, D);
+end;
+
+procedure TCustomTreeView.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited Notification(AComponent, Operation);
+  if (Operation = opRemove) and (AComponent = FImages) then
+    Images := nil;
+end;
+
+procedure TCustomTreeView.ImageListChange(Sender: TObject);
+begin
+  UpdateImages;
+end;
+
+procedure TCustomTreeView.SetImages(Value: TCustomImageList);
+begin
+  if FImages = Value then
+    Exit;
+  if FImages <> nil then
+  begin
+    FImages.UnRegisterChanges(FImageChangeLink);
+    FImages.RemoveFreeNotification(Self);
+  end;
+  FImages := Value;
+  if FImages <> nil then
+  begin
+    FImages.RegisterChanges(FImageChangeLink);
+    FImages.FreeNotification(Self);
+  end;
+  UpdateImages;
+end;
+
+function TCustomTreeView.NodeOf(Item: HTREEITEM): TTreeNode;
+var
+  It: TTVItemW;
+begin
+  Result := nil;
+  if (Item = 0) or not HandleAllocated then
+    Exit;
+  FillChar(It, SizeOf(It), 0);
+  It.mask := TVIF_HANDLE or TVIF_PARAM;
+  It.hItem := Item;
+  if SendMessageW(Handle, TVM_GETITEMW, 0, LPARAM(@It)) <> 0 then
+    Result := TTreeNode(Pointer(It.lParam));
+end;
+
+{ TVN_GETDISPINFOW: the text and the images from the node }
+procedure TCustomTreeView.GetDispInfo(var Info: TTVDispInfoW);
+var
+  Node: TTreeNode;
+  N: Integer;
+begin
+  Node := TTreeNode(Pointer(Info.item.lParam));
+  if Node = nil then
+    Node := NodeOf(Info.item.hItem);
+  if Node = nil then
+    Exit;
+  if ((Info.item.mask and TVIF_TEXT) <> 0) and (Info.item.pszText <> nil) and (Info.item.cchTextMax > 0) then
+  begin
+    N := Length(Node.FText);
+    if N > Info.item.cchTextMax - 1 then
+      N := Info.item.cchTextMax - 1;
+    if N > 0 then
+      Move(PChar(Node.FText)^, Info.item.pszText^, N * SizeOf(Char));
+    PChar(Info.item.pszText)[N] := #0;
+  end;
+  if (Info.item.mask and TVIF_IMAGE) <> 0 then
+    Info.item.iImage := Node.FImageIndex;
+  if (Info.item.mask and TVIF_SELECTEDIMAGE) <> 0 then
+    if Node.FSelectedIndex = -1 then
+      Info.item.iSelectedImage := Node.FImageIndex
+    else
+      Info.item.iSelectedImage := Node.FSelectedIndex;
+end;
+
+procedure TCustomTreeView.WndProc(var Message: TMessage);
+var
+  NM: PNMTreeViewW;
+  D: PTVDispInfoW;
+  Node: TTreeNode;
+  Allow: Boolean;
+  S: string;
+begin
+  if Message.Msg <> CN_NOTIFY then
+  begin
+    inherited WndProc(Message);
+    Exit;
+  end;
+  NM := PNMTreeViewW(Message.LParam);
+  D := PTVDispInfoW(Message.LParam);
+  Message.Result := 0;
+  case NM^.hdr.code of
+    TVN_GETDISPINFOW:
+      GetDispInfo(D^);
+    TVN_SELCHANGINGW:
+      if not FNoEvents and not (csDestroying in ComponentState) and Assigned(FOnChanging) then
+      begin
+        Allow := True;
+        FOnChanging(Self, TTreeNode(Pointer(NM^.itemNew.lParam)), Allow);
+        Message.Result := Ord(not Allow);
+      end;
+    TVN_SELCHANGEDW:
+      if not FNoEvents and not (csDestroying in ComponentState) and Assigned(FOnChange) then
+        FOnChange(Self, TTreeNode(Pointer(NM^.itemNew.lParam)));
+    TVN_ITEMEXPANDINGW:
+      begin
+        Node := TTreeNode(Pointer(NM^.itemNew.lParam));
+        if (Node <> nil) and not FExpanding and ((NM^.action and TVE_TOGGLE) in [TVE_COLLAPSE, TVE_EXPAND])
+          and not CanExpandChange(Node, (NM^.action and TVE_TOGGLE) = TVE_EXPAND) then
+          Message.Result := 1;
+      end;
+    TVN_ITEMEXPANDEDW:
+      begin
+        Node := TTreeNode(Pointer(NM^.itemNew.lParam));
+        if (Node <> nil) and ((NM^.action and TVE_TOGGLE) in [TVE_COLLAPSE, TVE_EXPAND]) then
+        begin
+          Node.FExpanded := (NM^.action and TVE_TOGGLE) = TVE_EXPAND;
+          if not FExpanding then
+            ExpandChanged(Node, Node.FExpanded);
+        end;
+      end;
+    TVN_BEGINLABELEDITW:
+      begin
+        Node := TTreeNode(Pointer(D^.item.lParam));
+        if (Node <> nil) and not FNoEvents and Assigned(FOnEditing) then
+        begin
+          Allow := True;
+          FOnEditing(Self, Node, Allow);
+          Message.Result := Ord(not Allow);
+        end;
+      end;
+    TVN_ENDLABELEDITW:
+      begin
+        { the text stays the callback: the node takes the edited text, result 0 }
+        Node := TTreeNode(Pointer(D^.item.lParam));
+        if (Node <> nil) and (D^.item.pszText <> nil) then
+        begin
+          S := PChar(D^.item.pszText);
+          if Assigned(FOnEdited) then
+            FOnEdited(Self, Node, S);
+          Node.Text := S;
+        end;
+      end;
+  else
+    inherited WndProc(Message);
+  end;
+end;
+
+function TCustomTreeView.CanExpandChange(Node: TTreeNode; Expand: Boolean): Boolean;
+begin
+  Result := True;
+  if FNoEvents or (csDestroying in ComponentState) then
+    Exit;
+  if Expand then
+  begin
+    if Assigned(FOnExpanding) then
+      FOnExpanding(Self, Node, Result);
+  end
+  else if Assigned(FOnCollapsing) then
+    FOnCollapsing(Self, Node, Result);
+end;
+
+procedure TCustomTreeView.ExpandChanged(Node: TTreeNode; Expand: Boolean);
+begin
+  if FNoEvents or (csDestroying in ComponentState) then
+    Exit;
+  if Expand then
+  begin
+    if Assigned(FOnExpanded) then
+      FOnExpanded(Self, Node);
+  end
+  else if Assigned(FOnCollapsed) then
+    FOnCollapsed(Self, Node);
+end;
+
+function TCustomTreeView.IsEditing: Boolean;
+begin
+  Result := HandleAllocated and (SendMessageW(Handle, TVM_GETEDITCONTROL, 0, 0) <> 0);
+end;
+
+function TCustomTreeView.GetSelected: TTreeNode;
+begin
+  if HandleAllocated then
+    Result := NodeOf(HTREEITEM(SendMessageW(Handle, TVM_GETNEXTITEM, TVGN_CARET, 0)))
+  else
+    Result := FSelectedNode;
+end;
+
+procedure TCustomTreeView.SetSelected(Value: TTreeNode);
+var
+  H: HTREEITEM;
+begin
+  if not HandleAllocated then
+    FSelectedNode := Value
+  else
+  begin
+    H := 0;
+    if Value <> nil then
+      H := Value.FItemId;
+    SendMessageW(Handle, TVM_SELECTITEM, TVGN_CARET, LPARAM(H));
+  end;
+end;
+
+function TCustomTreeView.GetTopItem: TTreeNode;
+begin
+  if HandleAllocated then
+    Result := NodeOf(HTREEITEM(SendMessageW(Handle, TVM_GETNEXTITEM, TVGN_FIRSTVISIBLE, 0)))
+  else
+    Result := nil;
+end;
+
+function TCustomTreeView.GetNodeAt(X, Y: Integer): TTreeNode;
+var
+  Info: TTVHitTestInfo;
+begin
+  Result := nil;
+  if not HandleAllocated then
+    Exit;
+  FillChar(Info, SizeOf(Info), 0);
+  Info.pt := Point(X, Y);
+  SendMessageW(Handle, TVM_HITTEST, 0, LPARAM(@Info));
+  if (Info.flags and TVHT_ONITEM) <> 0 then
+    Result := NodeOf(Info.hItem);
+end;
+
+procedure TCustomTreeView.FullExpand;
+var
+  I: Integer;
+begin
+  for I := 0 to FItems.FRoots.Count - 1 do
+    TTreeNode(FItems.FRoots[I]).Expand(True);
+end;
+
+procedure TCustomTreeView.FullCollapse;
+var
+  I: Integer;
+begin
+  for I := 0 to FItems.FRoots.Count - 1 do
+    TTreeNode(FItems.FRoots[I]).Collapse(True);
+end;
+
+procedure TCustomTreeView.SetBorderStyle(Value: TBorderStyle);
+begin
+  if FBorderStyle <> Value then
+  begin
+    FBorderStyle := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomTreeView.SetHideSelection(Value: Boolean);
+begin
+  if FHideSelection <> Value then
+  begin
+    FHideSelection := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomTreeView.SetReadOnly(Value: Boolean);
+begin
+  if FReadOnly <> Value then
+  begin
+    FReadOnly := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomTreeView.SetRowSelect(Value: Boolean);
+begin
+  if FRowSelect <> Value then
+  begin
+    FRowSelect := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomTreeView.SetShowButtons(Value: Boolean);
+begin
+  if FShowButtons <> Value then
+  begin
+    FShowButtons := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomTreeView.SetShowLines(Value: Boolean);
+begin
+  if FShowLines <> Value then
+  begin
+    FShowLines := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomTreeView.SetShowRoot(Value: Boolean);
+begin
+  if FShowRoot <> Value then
+  begin
+    FShowRoot := Value;
+    RecreateWnd;
+  end;
+end;
+
+procedure TCustomTreeView.SetIndent(Value: Integer);
+begin
+  if FIndent <> Value then
+  begin
+    FIndent := Value;
+    if HandleAllocated then
+      SendMessageW(Handle, TVM_SETINDENT, WPARAM(FIndent), 0);
+  end;
+end;
+
 initialization
-  RegisterClasses([TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar, TListView]);
+  RegisterClasses([TPageControl, TTabSheet, TStatusBar, TToolBar, TToolButton, TProgressBar, TTrackBar, TListView, TTreeView]);
 
 end.
