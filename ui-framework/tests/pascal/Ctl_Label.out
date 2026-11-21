@@ -31,16 +31,18 @@ ok tlCenter: bottom empty
 ok no WordWrap: one line
 ok WordWrap: second line
 ok ShowAccelChar False: the ampersand is drawn
+ok && shows one ampersand (UIF-602)
 ok disabled: no text in the font colour
 ok disabled: clGrayText
 # accelerator (UIF-611, UIF-612)
 ok no FocusControl: not consumed
 ok other character: not consumed
 ok ShowAccelChar False: not consumed
+ok &&: a literal ampersand, no accelerator (UIF-602)
 ok disabled: not consumed
 ok focus unchanged so far
 ok accelerator consumed
 ok FocusControl focused
 ok Alt+N through the form focuses FocusControl
 ok freed FocusControl cleared
-# passed 42 failed 0
+# passed 44 failed 0

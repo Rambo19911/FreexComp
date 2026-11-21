@@ -67,9 +67,28 @@ public sealed class MetadataTests
 
     [Fact]
     [Trait("Req", "UIF-951")]
+    [Trait("Req", "UIF-601")]                  // the §29 Default event column: OnClick unless a section names another
     public void MetadataMatchesControlsSpec()
     {
         var problems = MetadataSpecChecks.MatchesControlsSpec(MetadataRoot.Load(DesignDirectory), ControlsStandardPath);
+
+        Assert.True(problems.Count == 0, MetadataMatch.Report(problems));
+    }
+
+    [Fact]
+    [Trait("Req", "UIF-600")]
+    public void MetadataFollowsControlConventions()
+    {
+        var problems = MetadataSpecChecks.ControlConventions(MetadataRoot.Load(DesignDirectory));
+
+        Assert.True(problems.Count == 0, MetadataMatch.Report(problems));
+    }
+
+    [Fact]
+    [Trait("Req", "UIF-602")]
+    public void MetadataCaptionInitialValues()
+    {
+        var problems = MetadataSpecChecks.CaptionInitials(MetadataRoot.Load(DesignDirectory));
 
         Assert.True(problems.Count == 0, MetadataMatch.Report(problems));
     }

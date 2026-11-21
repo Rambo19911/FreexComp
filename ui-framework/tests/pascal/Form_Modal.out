@@ -44,6 +44,15 @@ ok after the inner loop: main still disabled
 ok after the inner loop: outer re-enabled
 ok ModalLevel back to 1
 ok main enabled at the end
+# re-entrant loop (UIF-413)
+ok the modal loop continues after the nested loops
+ok ProcessMessages in the modal loop: both messages dispatched
+ok ProcessMessages inside a dispatched handler: the second one ran before it returned
+ok nested loops leave the modal state alone
+ok ModalLevel unchanged by ProcessMessages
+ok one show, one close
+ok not terminated
+ok ModalLevel 0 after
 # caFree releases after the loop
 ok caFree: result
 ok not freed yet
@@ -54,4 +63,4 @@ ok window destroyed
 ok terminated: mrCancel
 ok terminated
 ok main re-enabled
-# passed 47 failed 0
+# passed 55 failed 0

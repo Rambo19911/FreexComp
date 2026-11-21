@@ -1,4 +1,4 @@
-// covers: UIF-310, UIF-311, UIF-312, UIF-313, UIF-314, UIF-315
+// covers: UIF-245, UIF-310, UIF-311, UIF-312, UIF-313, UIF-314, UIF-315
 // needs: desktop
 // opc-run: rawargs --dump-layout dump.json
 program Dump_Mode;
@@ -6,8 +6,10 @@ program Dump_Mode;
   NonInteractive); PixelsPerInch is 96 and the stored PixelsPerInch = 192 is not scaled; OnCreate runs, OnShow and
   OnActivate do not; a window handle forced by OnCreate changes no bound (no OS feedback, no client adoption);
   Application.Run writes the dump of every form in creation order (visible or not) and halts with exit code 0
-  without showing a form. An exit procedure prints the written file (and checks it has no BOM and no CR); the
-  observations of OnCreate are recorded as names of controls so that they appear in the dump. }
+  without showing a form. The form's own Constraints (MaxWidth 150, MinHeight 400 in the .form) are ignored: the
+  dump keeps the stored client size (layout.md UIF-245). An exit procedure prints the written file (and checks it
+  has no BOM and no CR); the observations of OnCreate are recorded as names of controls so that they appear in the
+  dump. }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
 

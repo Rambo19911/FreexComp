@@ -203,6 +203,8 @@ type
     procedure CloseModal(var FreeAfter: Boolean);
     { layout.md UIF-285 }
     procedure WMDpiChanged(var Message: TMessage);
+    { layout.md UIF-244 (b): WM_GETMINMAXINFO from the outer-size Constraints }
+    procedure ApplyTrackSizes(var Info: TMinMaxInfo);
   protected
     { layout.md UIF-280 step 1 for forms: Left/Top unscaled, the client size scaled }
     procedure ScaleBounds(M, D: Integer); override;
@@ -226,6 +228,8 @@ type
     procedure UpdateScrollBars; override;
     procedure WMWindowPosChanged(var Message: TWMWindowPosMsg); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    { UIF-450: owned components without a parent (owner order), then the child controls (UIF-051) }
+    procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
     procedure PaintWindow(DC: HDC); override;
     procedure DestroyWnd; override;
     function WindowMenu: HMENU; override;
@@ -1734,6 +1738,16 @@ begin
   end;
 end;
 
+procedure TCustomForm.GetChildren(Proc: TGetChildProc; Root: TComponent);
+var
+  I: Integer;
+begin
+  for I := 0 to ComponentCount - 1 do
+    if not Components[I].HasParent then
+      Proc(Components[I]);
+  inherited GetChildren(Proc, Root);
+end;
+
 procedure TCustomForm.Notification(AComponent: TComponent; Operation: TOperation);
 begin
   inherited Notification(AComponent, Operation);
@@ -1966,6 +1980,19 @@ begin
     Application.Hint := GetLongHint(Item.Hint);
 end;
 
+{ layout.md UIF-244 (b): interactive sizing within the outer-size Constraints; 0 leaves the system value }
+procedure TCustomForm.ApplyTrackSizes(var Info: TMinMaxInfo);
+begin
+  if Constraints.MinWidth > 0 then
+    Info.ptMinTrackSize.X := Constraints.MinWidth;
+  if Constraints.MinHeight > 0 then
+    Info.ptMinTrackSize.Y := Constraints.MinHeight;
+  if Constraints.MaxWidth > 0 then
+    Info.ptMaxTrackSize.X := Constraints.MaxWidth;
+  if Constraints.MaxHeight > 0 then
+    Info.ptMaxTrackSize.Y := Constraints.MaxHeight;
+end;
+
 procedure TCustomForm.WndProc(var Message: TMessage);
 begin
   case Message.Msg of
@@ -1980,6 +2007,12 @@ begin
       WMSize(Message);
     WM_DPICHANGED:
       WMDpiChanged(Message);
+    WM_GETMINMAXINFO:
+      begin
+        inherited WndProc(Message);
+        if not LayoutDumpMode then
+          ApplyTrackSizes(PMinMaxInfo(Message.LParam)^);      { layout.md UIF-244 (b) }
+      end;
     WM_COMMAND:
       if (Message.LParam <> 0) or not (((FMenu <> nil) and FMenu.DispatchCommand(LoWord(Message.WParam)))
         or DispatchPopupCommand(LoWord(Message.WParam))) then

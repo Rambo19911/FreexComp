@@ -174,6 +174,89 @@ public static partial class MetadataSpecChecks
         return problems;
     }
 
+    /// <summary>The <c>kind</c> values of components that are controls or forms (component-metadata.md).</summary>
+    private static readonly string[] ControlKinds = ["control", "wincontrol", "container", "form"];
+
+    /// <summary>
+    /// Classes whose <c>Caption</c> is not visible by default and therefore has no palette initial value
+    /// (<c>TToolButton</c>: the tool bar shows captions only with <c>ShowCaptions</c>, controls-standard.md §22).
+    /// </summary>
+    private static readonly string[] HiddenCaptions = ["TToolButton"];
+
+    /// <summary>
+    /// controls-standard.md UIF-600, the metadata side: <c>TabOrder</c> has the default −1 (not assigned) and a control
+    /// that publishes <c>Color</c> / <c>Font</c> publishes the <c>ParentColor</c> / <c>ParentFont</c> flag that decides
+    /// whether they are stored (core.md §2.1); a form has no parent and no flag.
+    /// </summary>
+    public static List<string> ControlConventions(MetadataRoot root)
+    {
+        var problems = new List<string>();
+        foreach (var c in root.Components)
+        {
+            var kind = Inherited(root, c, "kind")?.GetString();
+            if (kind is null || !ControlKinds.Contains(kind))
+            {
+                continue;
+            }
+
+            var props = root.Effective(c, "properties").ToDictionary(p => p["name"].GetString()!, StringComparer.Ordinal);
+            if (props.TryGetValue("TabOrder", out var tab) && (!tab.TryGetValue("default", out var d) || d.GetRawText() != "-1"))
+            {
+                problems.Add($"{c.Class}.TabOrder: default {(tab.TryGetValue("default", out var x) ? x.GetRawText() : "(none)")}, expected -1 (UIF-600)");
+            }
+
+            if (kind == "form")
+            {
+                continue;
+            }
+
+            foreach (var (value, flag) in new[] { ("Color", "ParentColor"), ("Font", "ParentFont") })
+            {
+                if (props.ContainsKey(value) && !props.ContainsKey(flag))
+                {
+                    problems.Add($"{c.Class}: publishes {value} without {flag} (UIF-600)");
+                }
+            }
+        }
+
+        return problems;
+    }
+
+    /// <summary>
+    /// controls-standard.md UIF-602, the palette initial values: a control or form with a visible <c>Caption</c> gets
+    /// <c>$(Name)</c>; <c>Text</c> starts empty (no initial value).
+    /// </summary>
+    public static List<string> CaptionInitials(MetadataRoot root)
+    {
+        var problems = new List<string>();
+        foreach (var c in root.Components)
+        {
+            var kind = Inherited(root, c, "kind")?.GetString();
+            if (kind is null || !ControlKinds.Contains(kind))
+            {
+                continue;
+            }
+
+            foreach (var p in root.Effective(c, "properties"))
+            {
+                var name = p["name"].GetString();
+                var initial = p.TryGetValue("initial", out var i) ? i.GetString() : null;
+                var expected = name switch
+                {
+                    "Caption" => HiddenCaptions.Contains(c.Class) ? null : "$(Name)",
+                    "Text" => null,
+                    _ => initial,
+                };
+                if (initial != expected)
+                {
+                    problems.Add($"{c.Class}.{name}: initial {initial ?? "(none)"}, expected {expected ?? "(none)"} (UIF-602)");
+                }
+            }
+        }
+
+        return problems;
+    }
+
     private static void Check(string at, string column, string expected, string? actual, List<string> problems)
     {
         if (!string.Equals(expected, actual, StringComparison.Ordinal))

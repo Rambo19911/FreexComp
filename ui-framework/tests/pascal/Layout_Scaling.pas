@@ -1,4 +1,4 @@
-// covers: UIF-280, UIF-281, UIF-282, UIF-283, UIF-285
+// covers: UIF-280, UIF-281, UIF-282, UIF-283, UIF-285, UIF-286
 // needs: desktop
 program Layout_Scaling;
 { U-049, layout.md section 9: ChangeScale scales bounds by edges (forms: client size, Left/Top unscaled),
@@ -6,9 +6,11 @@ program Layout_Scaling;
   baseline re-capture and the realign (UIF-283); M = D is a no-op; scaling back stays within 1 px (UIF-281);
   examples E30 and E31; load-time scaling from the stored PixelsPerInch to the form's DPI unless Scaled = False
   (UIF-282); WM_DPICHANGED scales, takes the suggested rectangle, adopts the real client size, broadcasts
-  CM_DPICHANGED and fires OnAfterMonitorDpiChanged (UIF-285); Scaled = False only repositions. }
+  CM_DPICHANGED and fires OnAfterMonitorDpiChanged (UIF-285); Scaled = False only repositions; border thicknesses,
+  TShape pen widths, image list sizes and bitmap contents are not scaled (UIF-286; TBevel has no pen width
+  property: it draws fixed one-pixel lines). }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, ImgList, ExtCtrls, TestKit;
 
 type
   TBox = class(TCustomControl)
@@ -87,8 +89,12 @@ var
   Btn, A, Bx, Inherit, Anchored, Top: TBox;
   S: TScaleForm;
   X: TFixedForm;
-  P, OldDpi, NewDpi: Integer;
+  P, OldDpi, NewDpi, Border: Integer;
   R, CR: TRect;
+  SB: TScrollBox;
+  Sh: TShape;
+  Img: TImage;
+  IL: TImageList;
 begin
   Log := TLog.Create;
   try
@@ -156,6 +162,37 @@ begin
     F.ScaleBy(120, 120);
     CheckEqS('10,10,125,125', B(Bx), 'M = D: no change');
     CheckEqI(25, Bx.Constraints.MinWidth, 'M = D: constraints unchanged');
+    F.Free;
+
+    Section('not scaled (UIF-286)');
+    F := TForm.CreateNew(nil);
+    F.ClientWidth := 400;
+    F.ClientHeight := 300;
+    SB := TScrollBox.Create(F);
+    SB.Parent := F;
+    SB.SetBounds(10, 10, 100, 80);
+    Border := SB.Width - SB.ClientWidth;
+    Sh := TShape.Create(F);
+    Sh.Parent := F;
+    Sh.SetBounds(120, 10, 40, 40);
+    Sh.Pen.Width := 3;
+    Img := TImage.Create(F);
+    Img.Parent := F;
+    Img.SetBounds(170, 10, 40, 40);
+    Img.Picture.Bitmap.SetSize(10, 7);
+    Img.Picture.Bitmap.Canvas.Pixels[9, 6] := clRed;
+    IL := TImageList.Create(F);
+    F.ScaleBy(192, 96);
+    CheckEqI(200, SB.Width, 'scroll box width scaled');
+    CheckEqI(4, Border, 'bsSingle client edge: 2 px each side');
+    CheckEqI(Border, SB.Width - SB.ClientWidth, 'border thickness not scaled');
+    CheckEqI(Border, SB.Height - SB.ClientHeight, 'border thickness not scaled (height)');
+    CheckEqI(80, Sh.Width, 'shape scaled');
+    CheckEqI(3, Sh.Pen.Width, 'TShape pen width not scaled');
+    CheckEqI(80, Img.Width, 'image control scaled');
+    CheckEqS('10,7', Format('%d,%d', [Img.Picture.Bitmap.Width, Img.Picture.Bitmap.Height]), 'bitmap size not scaled');
+    CheckEqB(True, Img.Picture.Bitmap.Canvas.Pixels[9, 6] = clRed, 'bitmap contents not scaled');
+    CheckEqS('16,16', Format('%d,%d', [IL.Width, IL.Height]), 'image list image size not scaled');
     F.Free;
 
     Section('UIF-283: baselines re-captured, realign');

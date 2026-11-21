@@ -2,6 +2,15 @@
 ok Left kept
 ok Top kept
 ok poDesigned: the window has the bounds
+# outer rectangle (UIF-201)
+ok Left/Top: the outer corner, left of and above the client area
+ok Width/Height: the outer size
+ok SetBounds with a handle: the window has the bounds
+ok the client size follows the outer size
+ok moved from outside: Left is the outer corner
+ok moved from outside: Top is the outer corner
+ok moved from outside: the window has the bounds
+# poDesigned, off screen
 ok off screen: moved into the primary work area (left)
 ok off screen: moved into the primary work area (top)
 ok never resized
@@ -11,13 +20,17 @@ ok 40 x 40 px visible: kept (top)
 ok poScreenCenter: Left
 ok poScreenCenter: Top
 ok poScreenCenter: the window has the bounds
+ok poScreenCenter: only Left/Top changed (UIF-276)
 ok poDesktopCenter: Left
 ok poDesktopCenter: Top
+ok poDesktopCenter: only Left/Top changed (UIF-276)
 ok poMainFormCenter, no main form window: screen
 ok poMainFormCenter: Left
 ok poMainFormCenter: Top
+ok poMainFormCenter: only Left/Top changed (UIF-276)
 ok poOwnerFormCenter: Left
 ok poOwnerFormCenter: Top
+ok poOwnerFormCenter: only Left/Top changed (UIF-276)
 ok poOwnerFormCenter without owner: main form
 ok poMainFormCenter: then MakeFullyVisible
 # applied once
@@ -39,4 +52,4 @@ ok not resized
 ok not resized (height)
 ok MakeFullyVisible: the window has the bounds
 ok nil: inside the form's monitor
-# passed 36 failed 0
+# passed 47 failed 0

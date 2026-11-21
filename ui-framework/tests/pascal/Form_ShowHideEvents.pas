@@ -1,11 +1,12 @@
-// covers: UIF-430, UIF-431, UIF-432, UIF-433, UIF-434, UIF-435
+// covers: UIF-138, UIF-430, UIF-431, UIF-432, UIF-433, UIF-434, UIF-435
 // needs: desktop
 program Form_ShowHideEvents;
 { U-038, application-forms.md 5: the event log of a main form equals the normative start-up order OnCreate, OnShow,
   OnActivate, OnResize, OnPaint; OnResize is suppressed before the first show, fires exactly once during it, then
   once per client size change; later shows fire OnShow (and the activation) but no OnResize without a size change;
   hiding the active form fires OnDeactivate before OnHide; Screen.ActiveForm follows the activation and
-  OnActiveFormChange fires after the change; destruction hides (OnHide) before OnDestroy. }
+  OnActiveFormChange fires after the change; destruction hides (OnHide) before OnDestroy. Visible drives the same
+  semantics (core.md UIF-138): Show and Hide set it, assigning it shows and hides with the same events. }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
 
@@ -195,12 +196,26 @@ begin
       Pump;
       CheckEqS(Moved + 'Second.Hide;', Log.Text, 'hide: OnDeactivate (if it was active) before OnHide');
       CheckEqB(False, fsVisible in Second.FormState, 'fsVisible cleared');
+      CheckEqB(False, Second.Visible, 'Hide clears Visible (UIF-138)');
       CheckEqB(False, Second.Active, 'a hidden form is not active');
       Log.Text := '';
       Before;
       Second.Show;
       Pump;
       CheckEqS('Second.Show;' + Moved + 'Second.Paint;', Log.Text, 'later show: no OnResize (UIF-433)');
+      CheckEqB(True, Second.Visible and IsWindowVisible(Second.Handle), 'Show sets Visible (UIF-138)');
+      Log.Text := '';
+      Before;
+      Second.Visible := False;
+      Pump;
+      CheckEqS(Moved + 'Second.Hide;', Log.Text, 'Visible := False hides as Hide does (UIF-138)');
+      CheckEqB(False, IsWindowVisible(Second.Handle), 'Visible := False: window hidden');
+      Log.Text := '';
+      Before;
+      Second.Visible := True;
+      Pump;
+      CheckEqS('Second.Show;' + Moved + 'Second.Paint;', Log.Text, 'Visible := True shows as Show does (UIF-138)');
+      CheckEqB(True, IsWindowVisible(Second.Handle), 'Visible := True: window shown');
       Log.Text := '';
       Before;
     finally

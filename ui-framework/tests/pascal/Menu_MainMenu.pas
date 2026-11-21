@@ -1,10 +1,10 @@
-// covers: UIF-720, UIF-722, UIF-723, UIF-725, UIF-920
+// covers: UIF-072, UIF-720, UIF-722, UIF-723, UIF-725, UIF-920
 // needs: desktop
 program Menu_MainMenu;
 { U-074, controls-standard.md section 12, actions-menus.md UIF-920: a TMainMenu on a form. WM_COMMAND with
   LParam = 0 (menu code 0 and accelerator code 1) is routed by the form to the item with that Command id, which
   Clicks (pop-up and command entries alike; nested items; disabled items ignored; unknown ids and control
-  notifications left to default processing); WM_INITMENUPOPUP for a sub-menu fires the owning item's OnClick
+  notifications left to default processing; core.md UIF-072: the form handles them, a child window does not); WM_INITMENUPOPUP for a sub-menu fires the owning item's OnClick
   first and then refreshes its native menu (changes made by the handler are visible), the window menu flag is
   left alone; a rebuild of the menu bar redraws it (DrawMenuBar: the form receives WM_NCCALCSIZE), a rebuild of
   a nested sub-menu does not; FindItem by command and by handle. }
@@ -69,6 +69,7 @@ var
   F: TSpyForm;
   M: TMainMenu;
   FileItem, Open, Deep, Sub, Off, Help: TMenuItem;
+  Child: TWinControl;
   Calls: Integer;
 begin
   Application.Initialize;
@@ -110,6 +111,15 @@ begin
     CheckEqS('', Log.Text, 'id of an item outside the menu: nothing');
     SendMessageW(F.Handle, WM_COMMAND, MakeWParam(Open.Command, 0), LPARAM(F.Handle));
     CheckEqS('', Log.Text, 'LParam <> 0 is not a menu command');
+    Child := TWinControl.Create(F);
+    Child.SetBounds(0, 0, 50, 20);
+    Child.Parent := F;
+    SendMessageW(Child.Handle, WM_COMMAND, MakeWParam(Open.Command, 0), 0);
+    CheckEqS('', Log.Text, 'LParam = 0 at a child window: not routed (UIF-072)');
+    Cmd(F, Open.Command, 0);
+    CheckEqS('click:Open;', Log.Text, 'LParam = 0 at the form: routed (UIF-072)');
+    Log.Text := '';
+    Child.Free;
     CheckEqB(True, M.FindItem(Deep.Command, fkCommand) = Deep, 'FindItem by command');
     CheckEqB(True, M.FindItem(0, fkCommand) = nil, 'FindItem: id 0 is none');
     CheckEqB(False, M.DispatchCommand(Extra.Command), 'DispatchCommand: unknown id');

@@ -1,11 +1,11 @@
-// covers: UIF-610, UIF-611, UIF-612
+// covers: UIF-602, UIF-610, UIF-611, UIF-612
 // needs: desktop
 program Ctl_Label;
 { U-053, controls-standard.md section 1: TLabel defaults (34 x 15, AutoSize, ParentColor, ParentFont, Transparent
   without csOpaque); Paint (UIF-610) captured with WM_PRINTCLIENT into a memory bitmap: Transparent leaves the
   background, opaque fills with Color, Alignment and Layout place the text, WordWrap breaks lines, ShowAccelChar
-  False draws the ampersand, a disabled label draws in clGrayText; the accelerator focuses FocusControl
-  (UIF-611); freeing FocusControl clears the reference (UIF-612). }
+  False draws the ampersand, '&&' draws one ampersand and marks no accelerator (UIF-602), a disabled label draws in
+  clGrayText; the accelerator focuses FocusControl (UIF-611); freeing FocusControl clears the reference (UIF-612). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
 
@@ -146,6 +146,15 @@ begin
     R2 := RightMost(clBlack, 10, 10, 110, 110);
     Check(R2 > R1, 'ShowAccelChar False: the ampersand is drawn');
     L.ShowAccelChar := True;
+    L.Caption := '&&';
+    Capture;
+    R1 := RightMost(clBlack, 10, 10, 110, 110);
+    L.ShowAccelChar := False;
+    L.Caption := '&';
+    Capture;
+    R2 := RightMost(clBlack, 10, 10, 110, 110);
+    CheckEqI(R2, R1, '&& shows one ampersand (UIF-602)');
+    L.ShowAccelChar := True;
     L.Caption := 'M';
     L.Enabled := False;
     Capture;
@@ -172,6 +181,9 @@ begin
     L.ShowAccelChar := False;
     CheckEqI(0, L.Perform(CM_DIALOGCHAR, Ord('N'), 0), 'ShowAccelChar False: not consumed');
     L.ShowAccelChar := True;
+    L.Caption := '&&Name';
+    CheckEqI(0, L.Perform(CM_DIALOGCHAR, Ord('N'), 0), '&&: a literal ampersand, no accelerator (UIF-602)');
+    L.Caption := '&Name';
     L.Enabled := False;
     CheckEqI(0, L.Perform(CM_DIALOGCHAR, Ord('N'), 0), 'disabled: not consumed');
     L.Enabled := True;

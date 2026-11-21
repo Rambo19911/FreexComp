@@ -1,4 +1,4 @@
-// covers: UIF-445, UIF-446, UIF-447
+// covers: UIF-413, UIF-445, UIF-446, UIF-447
 // needs: desktop
 program Form_Modal;
 { U-048, application-forms.md UIF-445 ... 447: ShowModal checks its preconditions (visible, disabled), disables the
@@ -6,13 +6,16 @@ program Form_Modal;
   ModalResult <> mrNone (CloseModal: CloseQuery and OnClose may veto by resetting ModalResult to mrNone), returns the
   result, re-enables exactly the windows it disabled and hides the form; Close of a modal form sets mrCancel,
   Application.Terminate ends the loop with mrCancel, caFree releases the form after the loop; an exception escaping
-  the sequence still re-enables the windows; a modal form may show another one (nesting). A posted message stands for
-  the click on the OK button (buttons come with U-056). }
+  the sequence still re-enables the windows; a modal form may show another one (nesting). The loop is re-entrant
+  (UIF-413): ProcessMessages inside the modal loop, and again inside a handler it dispatches, runs every message and
+  leaves the modal state alone (message boxes run no loop in non-interactive mode). A posted message stands for the
+  click on the OK button (buttons come with U-056). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
 
 const
   WM_TEST = WM_APP + 1;
+  WM_COUNT = WM_APP + 2;
 
 type
   TModalForm = class;
@@ -24,6 +27,7 @@ type
     procedure WndProc(var Message: TMessage); override;
   public
     OnStep: TStep;
+    Counted, CountedInside: Integer;
   end;
 
   TLog = class
@@ -34,8 +38,8 @@ type
     Action: TCloseAction;
     RaiseOnShow: Boolean;
     Steps: Integer;
-    MainEnabled, OtherEnabled, SelfEnabled, IsModal, Nested2Disabled: Boolean;
-    Level, InnerLevel, InnerResult: Integer;
+    MainEnabled, OtherEnabled, SelfEnabled, IsModal, Nested2Disabled, StillModal: Boolean;
+    Level, InnerLevel, InnerResult, Inside: Integer;
     procedure Add(Sender: TObject; const S: string);
     procedure Shown(Sender: TObject);
     procedure Hidden(Sender: TObject);
@@ -48,6 +52,7 @@ type
     procedure StepTerminate(F: TModalForm);
     procedure StepOuter(F: TModalForm);
     procedure StepInner(F: TModalForm);
+    procedure StepReentrant(F: TModalForm);
   end;
 
 var
@@ -61,6 +66,16 @@ begin
   begin
     if Assigned(OnStep) then
       OnStep(Self);
+  end
+  else if Message.Msg = WM_COUNT then
+  begin
+    Inc(Counted);
+    if Counted = 1 then
+    begin
+      PostMessageW(Handle, WM_COUNT, 0, 0);
+      Application.ProcessMessages;                           { a loop inside a handler of a nested loop }
+      CountedInside := Counted;
+    end;
   end
   else
     inherited WndProc(Message);
@@ -159,6 +174,20 @@ procedure TLog.StepInner(F: TModalForm);
 begin
   Nested2Disabled := not IsWindowEnabled(Main.Handle) and not IsWindowEnabled(Outer.Handle);
   InnerLevel := Application.ModalLevel;
+  F.ModalResult := mrOk;
+end;
+
+{ UIF-413: ProcessMessages inside the modal loop; the WM_COUNT handler nests one more level }
+procedure TLog.StepReentrant(F: TModalForm);
+begin
+  F.Counted := 0;
+  F.CountedInside := 0;
+  PostMessageW(F.Handle, WM_COUNT, 0, 0);
+  Application.ProcessMessages;
+  Steps := F.Counted;
+  Inside := F.CountedInside;
+  StillModal := (fsModal in F.FormState) and (F.ModalResult = mrNone) and F.Visible;
+  Level := Application.ModalLevel;
   F.ModalResult := mrOk;
 end;
 
@@ -304,6 +333,19 @@ begin
     CheckEqI(1, Log.Level, 'ModalLevel back to 1');
     CheckEqB(True, IsWindowEnabled(Main.Handle), 'main enabled at the end');
     Inner.Free;
+
+    Section('re-entrant loop (UIF-413)');
+    Reset;
+    M.OnStep := Log.StepReentrant;
+    R := M.ShowModal;
+    CheckEqI(mrOk, R, 'the modal loop continues after the nested loops');
+    CheckEqI(2, Log.Steps, 'ProcessMessages in the modal loop: both messages dispatched');
+    CheckEqI(2, Log.Inside, 'ProcessMessages inside a dispatched handler: the second one ran before it returned');
+    CheckEqB(True, Log.StillModal, 'nested loops leave the modal state alone');
+    CheckEqI(1, Log.Level, 'ModalLevel unchanged by ProcessMessages');
+    CheckEqS('M.Show;M.CloseQuery;M.Close;M.Hide;', Log.Text, 'one show, one close');
+    CheckEqB(False, Application.Terminated, 'not terminated');
+    CheckEqI(0, Application.ModalLevel, 'ModalLevel 0 after');
 
     Section('caFree releases after the loop');
     Reset;

@@ -26,6 +26,17 @@ ok grandchild scaled
 ok child scaled
 ok M = D: no change
 ok M = D: constraints unchanged
+# not scaled (UIF-286)
+ok scroll box width scaled
+ok bsSingle client edge: 2 px each side
+ok border thickness not scaled
+ok border thickness not scaled (height)
+ok shape scaled
+ok TShape pen width not scaled
+ok image control scaled
+ok bitmap size not scaled
+ok bitmap contents not scaled
+ok image list image size not scaled
 # UIF-283: baselines re-captured, realign
 ok anchored child scaled by edges
 ok alTop child: scaled height, realigned width
@@ -56,4 +67,4 @@ ok OnAfterMonitorDpiChanged
 # WM_DPICHANGED with Scaled = False
 ok child not scaled
 ok repositioned to the suggested rectangle
-# passed 51 failed 0
+# passed 61 failed 0

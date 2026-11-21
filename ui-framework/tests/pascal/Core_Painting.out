@@ -31,4 +31,16 @@ ok Update painted through WM_PAINT
 ok update region validated
 ok windowed control: whole client area
 ok painted
-# passed 27 failed 0
+# form background and OnPaint (UIF-426)
+ok WM_ERASEBKGND fills the client area with Color
+ok up to the client corner
+ok nothing outside the client area
+ok WM_PRINTCLIENT: OnPaint once
+ok Canvas bound to the paint DC
+ok OnPaint drew through Canvas
+ok no erase unless asked
+ok Canvas detached after OnPaint
+ok WM_PAINT: OnPaint once
+ok Canvas bound to the WM_PAINT DC
+ok Canvas detached after WM_PAINT
+# passed 38 failed 0

@@ -1,4 +1,4 @@
-// covers: UIF-300, UIF-301, UIF-430, UIF-451
+// covers: UIF-300, UIF-301, UIF-430, UIF-450, UIF-451
 // needs: desktop
 program Form_Streaming;
 { U-042, application-forms.md 4.4 and 7, layout.md 12: a form class with an embedded .form is read by its
@@ -6,9 +6,11 @@ program Form_Streaming;
   fields and event bindings. Load-time sequence: every Loaded (children first) runs before the first layout pass,
   baselines come from the stored bounds, then the root realigns parents before children; no OnResize fires during
   loading; OnCreate follows the layout; no window handle is created. A reader error propagates as EReadError out
-  of the constructor and CreateForm; a class without form data raises EResNotFound. }
+  of the constructor and CreateForm; a class without form data raises EResNotFound. GetChildren (UIF-450) yields the
+  owned components without a parent first, in owner order, then the form's child controls owned by the form in
+  z-order. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, Menus, TestKit;
 
 type
   TBox = class(TCustomControl)
@@ -24,6 +26,11 @@ type
   protected
     procedure Loaded; override;
     procedure AlignControls(AControl: TControl; var Rect: TRect); override;
+  private
+    FChildren: string;
+    procedure Collect(Child: TComponent);
+  public
+    function ChildNames: string;
   published
     Header: TBox;
     Inner: TBox;
@@ -78,6 +85,18 @@ begin
   inherited AlignControls(AControl, Rect);
 end;
 
+procedure TStreamForm.Collect(Child: TComponent);
+begin
+  FChildren := FChildren + Child.Name + ';';
+end;
+
+function TStreamForm.ChildNames: string;
+begin
+  FChildren := '';
+  GetChildren(Collect, Self);
+  Result := FChildren;
+end;
+
 procedure TStreamForm.FormCreate(Sender: TObject);
 begin
   Log := Log + 'create;';
@@ -117,10 +136,19 @@ begin
     end;
 end;
 
+function NewComponent(AOwner: TComponent; const AName: string): TComponent;
+begin
+  Result := TComponent.Create(AOwner);
+  Result.Name := AName;
+end;
+
 procedure Run;
 var
   F: TStreamForm;
   Count: Integer;
+  M: TMainMenu;
+  Item: TMenuItem;
+  Foreign: TBox;
 begin
   Application.Initialize;
 
@@ -182,6 +210,28 @@ begin
     CheckEqS('350,200,40,30', BoundsText(F.Corner), 'Corner baseline is the stored form client size');
     CheckEqS('10,5,170,20', BoundsText(F.Inner), 'Inner follows its parent');
     Check(FirstPos('resize:Header;', Log) > 0, 'after loading, OnResize fires again');
+  finally
+    F.Free;
+  end;
+
+  Section('GetChildren (UIF-450)');
+  F := TStreamForm.Create(nil);
+  try
+    CheckEqS('Header;Corner;Body;', F.ChildNames, 'loaded form: its controls in z-order');
+    NewComponent(F, 'First');
+    M := TMainMenu.Create(F);
+    M.Name := 'Menu';
+    Item := TMenuItem.Create(F);
+    Item.Name := 'Item';
+    M.Items.Add(Item);
+    NewComponent(F, 'Second');
+    Foreign := TBox.Create(nil);
+    Foreign.Name := 'Foreign';
+    Foreign.Parent := F;
+    F.Body.SendToBack;
+    CheckEqS('First;Menu;Second;Body;Header;Corner;', F.ChildNames,
+      'owned components without a parent in owner order, then owned controls in z-order');
+    Foreign.Free;
   finally
     F.Free;
   end;

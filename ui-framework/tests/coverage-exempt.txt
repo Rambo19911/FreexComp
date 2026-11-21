@@ -34,22 +34,5 @@ UIF-726 main-menu keyboard access (Alt, F10) is Win32 default processing and nee
 UIF-574 stock objects are never deleted: a wrong DeleteObject on a stock object succeeds silently and changes no count
 UIF-577 GDI creation failure: cannot be provoked without exhausting the session's GDI quota
 UIF-243 rule for user OnConstrainedResize handlers (determinism is the author's obligation)
-
-# not yet covered by a test that names them (gaps found by U-113; the candidate test is named)
-UIF-056 graphic-control mouse coordinates and no focus: candidate Core_MouseEvents (exercised there, header lacks the id)
-UIF-072 WM_COMMAND with LParam 0 handled by the form: candidate Menu_MainMenu (menu commands reach the form)
-UIF-138 form Visible drives Show/Hide: candidate Form_ShowHideEvents
-UIF-201 form Left/Top are screen coordinates of the outer corner: candidate Form_Position
-UIF-233 baseline parent size (0, 0) without a parent: candidate Layout_Anchors
-UIF-244 form Constraints apply to the outer size: candidate Form_ClientSize
-UIF-245 form Constraints ignored in handle-less layout: candidate Dump_Mode
-UIF-276 Position changes only Left/Top: candidate Form_Position
-UIF-286 values that scaling leaves alone: candidate Layout_Scaling
-UIF-413 nested message loops (modal, ProcessMessages, message boxes): candidate Form_Modal (nested modal)
-UIF-426 form background erase with Color and OnPaint canvas: candidate Core_Painting
-UIF-450 TCustomForm.GetChildren order: candidate Form_Streaming
-UIF-464 exceptions outside guarded sites end in the RTL handler: candidate App_Exceptions
-UIF-514 Font written to a .form only with ParentFont False: writer side is the designer's (run-time TWriter is a stub, R-107)
-UIF-600 Color/Font parent rules for every control: exercised per control by the Ctl_* Defaults sections
-UIF-601 default event OnClick unless stated: candidate MetadataMatchesControlsSpec (default-event check)
-UIF-602 caption accelerators and && in captions: candidate Ctl_Label / Form_Accelerators
+UIF-233 the (0, 0) parent size of a parentless baseline is never read: anchors are applied only by a parent (ApplyAnchors), and InsertControl re-captures the baseline with the parent's client size before any pass (UIF-232 case 2); the baseline fields are private and have no hook
+UIF-514 a rule for what a writer stores: the run time has no .form writer (the RTL TWriter is a stub, R-107); the writer is the designer's (ide area)

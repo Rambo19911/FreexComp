@@ -28,10 +28,13 @@ ok released outside: no click
 ok capture released
 ok click inside
 ok outside the child: the parent
+# graphic child takes no focus (UIF-056)
+ok the graphic child is clicked
+ok the keyboard focus stays where it was
 # disabled graphic child (UIF-066)
 ok skipped: the parent gets it
 # csNoStdEvents (UIF-067)
 ok no OnMouseDown
 ok no OnClick, no OnMouseUp
 ok no capture
-# passed 30 failed 0
+# passed 32 failed 0

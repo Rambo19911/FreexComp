@@ -12,12 +12,18 @@ ok width and height at once: once
 ok first show of a second form
 ok hide: OnDeactivate (if it was active) before OnHide
 ok fsVisible cleared
+ok Hide clears Visible (UIF-138)
 ok a hidden form is not active
 ok later show: no OnResize (UIF-433)
+ok Show sets Visible (UIF-138)
+ok Visible := False hides as Hide does (UIF-138)
+ok Visible := False: window hidden
+ok Visible := True shows as Show does (UIF-138)
+ok Visible := True: window shown
 ok Free of a visible form: OnHide, then OnDestroy last (UIF-442)
 ok Screen.ActiveForm follows the activation
 # main form
 ok hiding the main form: OnDeactivate (if active) before OnHide
 ok not active
 ok hidden form: OnDestroy only
-# passed 18 failed 0
+# passed 24 failed 0

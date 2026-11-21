@@ -35,6 +35,9 @@ ok OnCreate sees the final layout
 ok Corner baseline is the stored form client size
 ok Inner follows its parent
 ok after loading, OnResize fires again
+# GetChildren (UIF-450)
+ok loaded form: its controls in z-order
+ok owned components without a parent in owner order, then owned controls in z-order
 # errors (UIF-430, application-forms.md 7)
 ok reader error out of the constructor
 ok the failed form is destroyed
@@ -43,4 +46,4 @@ ok CreateForm reference nil
 ok no main form
 ok class without form data
 ok no form left registered
-# passed 42 failed 0
+# passed 44 failed 0

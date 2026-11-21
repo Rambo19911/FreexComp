@@ -1,4 +1,4 @@
-// covers: UIF-064, UIF-065, UIF-066, UIF-067
+// covers: UIF-056, UIF-064, UIF-065, UIF-066, UIF-067
 // needs: desktop
 program Core_MouseEvents;
 { U-029, core.md 7.3: mouse messages become events in the exact order OnMouseDown, OnClick, OnMouseUp; the left
@@ -6,7 +6,8 @@ program Core_MouseEvents;
   release outside the client area gives no click; a double click fires OnDblClick and OnMouseDown with ssDouble
   (without csDoubleClicks it counts as a second press); the right button clicks nothing; Shift comes from the key
   flags; messages over a graphic child are re-sent to it in its own coordinates, a disabled one is skipped (the
-  parent gets the event); csNoStdEvents suppresses every event. }
+  parent gets the event); a press on a graphic child moves no keyboard focus (UIF-056); csNoStdEvents suppresses
+  every event. }
 uses
   Windows, Messages, Types, SysUtils, Classes, Controls, TestKit;
 
@@ -126,6 +127,7 @@ var
   Root: TTopWin;
   W, Quiet: TTestWin;
   G: TTestGraphic;
+  Focus: HWND;
 begin
   Log := TLog.Create;
   Root := TTopWin.Create(nil);
@@ -191,6 +193,15 @@ begin
     Mouse(Root, WM_LBUTTONDOWN, MK_LBUTTON, 25, 30);
     CheckEqS('G.Click;G.Up(L,1,1);', Mouse(Root, WM_LBUTTONUP, 0, 21, 21), 'click inside');
     CheckEqS('Root.Move(5,5);', Mouse(Root, WM_MOUSEMOVE, 0, 5, 5), 'outside the child: the parent');
+
+    Section('graphic child takes no focus (UIF-056)');
+    ShowWindow(Root.Handle, SW_SHOWNOACTIVATE);
+    Windows.SetFocus(W.Handle);
+    Focus := GetFocus;
+    Mouse(Root, WM_LBUTTONDOWN, MK_LBUTTON, 25, 30);
+    CheckEqS('G.Click;G.Up(L,5,10);', Mouse(Root, WM_LBUTTONUP, 0, 25, 30), 'the graphic child is clicked');
+    CheckEqB(True, GetFocus = Focus, 'the keyboard focus stays where it was');
+    ShowWindow(Root.Handle, SW_HIDE);
 
     Section('disabled graphic child (UIF-066)');
     G.Enabled := False;

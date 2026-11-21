@@ -1,11 +1,12 @@
-// covers: UIF-271, UIF-272, UIF-273
+// covers: UIF-244, UIF-271, UIF-272, UIF-273
 // needs: desktop
 program Form_ClientSize;
 { U-037, layout.md 10: a form keeps its client size; outer size = client size + the frame of
   AdjustWindowRectExForDpi with the form's current style properties and PixelsPerInch. Without a handle Width/Height
   are computed, Width := V sets ClientWidth := V - frame width; a BorderStyle change keeps the client size; the window
   is created with the outer size and its client area equals the stored client size; after the window is created or
-  resized by the system the real client size is adopted and a layout pass runs. }
+  resized by the system the real client size is adopted and a layout pass runs. A form's Constraints limit its outer
+  Width/Height in SetBounds and answer WM_GETMINMAXINFO (layout.md UIF-244). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
 
@@ -118,7 +119,48 @@ begin
   end;
 end;
 
+{ UIF-244 }
+procedure Constraints;
+var
+  F: TForm;
+  R: TRect;
+  Info: TMinMaxInfo;
+begin
+  Section('Constraints on the outer size (UIF-244)');
+  F := TForm.CreateNew(nil);
+  try
+    Frame(Sizeable, WS_EX_CONTROLPARENT, F.PixelsPerInch);
+    F.ClientWidth := 450;
+    F.Constraints.MaxWidth := 400;
+    CheckEqI(400, F.Width, 'MaxWidth set: the outer width is limited');
+    CheckEqI(400 - FrameW, F.ClientWidth, 'the client width is the outer limit minus the frame');
+    F.Width := 500;
+    CheckEqI(400, F.Width, 'Width := 500: MaxWidth');
+    F.ClientWidth := 450;
+    CheckEqI(400, F.Width, 'ClientWidth := 450: MaxWidth of the outer width');
+    F.Constraints.MinHeight := 200;
+    F.Height := 50;
+    CheckEqI(200, F.Height, 'Height := 50: MinHeight');
+    CheckEqI(200 - FrameH, F.ClientHeight, 'the client height is the outer minimum minus the frame');
+    F.HandleNeeded;
+    GetWindowRect(F.Handle, R);
+    CheckEqI(400, R.Right - R.Left, 'the window has the limited outer width');
+    CheckEqI(200, R.Bottom - R.Top, 'the window has the minimum outer height');
+    FillChar(Info, SizeOf(Info), 0);
+    Info.ptMinTrackSize := Point(11, 12);
+    Info.ptMaxTrackSize := Point(5001, 6002);
+    SendMessageW(F.Handle, WM_GETMINMAXINFO, 0, LPARAM(@Info));
+    CheckEqI(11, Info.ptMinTrackSize.X, 'WM_GETMINMAXINFO: MinWidth 0 leaves the minimum');
+    CheckEqI(200, Info.ptMinTrackSize.Y, 'WM_GETMINMAXINFO: MinHeight');
+    CheckEqI(400, Info.ptMaxTrackSize.X, 'WM_GETMINMAXINFO: MaxWidth');
+    CheckEqI(6002, Info.ptMaxTrackSize.Y, 'WM_GETMINMAXINFO: MaxHeight 0 leaves the maximum');
+  finally
+    F.Free;
+  end;
+end;
+
 begin
   Run;
+  Constraints;
   Done;
 end.

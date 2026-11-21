@@ -1,4 +1,4 @@
-// covers: UIF-436
+// covers: UIF-201, UIF-276, UIF-436
 // needs: desktop
 program Form_Position;
 { U-039, application-forms.md UIF-436 and 4.2 MakeFullyVisible: Position is applied once, at the first show:
@@ -7,7 +7,8 @@ program Form_Position;
   (the bounds and the client size are then taken from the window); poScreenCenter centres in the work area of the
   monitor under the mouse, poDesktopCenter in the virtual screen, poMainFormCenter over the main form (screen centre
   without one), poOwnerFormCenter over the owner form (else as poMainFormCenter). MakeFullyVisible moves, never
-  resizes, the window into the work area. }
+  resizes, the window into the work area. Position changes only Left/Top, never the size (layout.md UIF-276); a
+  form's Left/Top/Width/Height are the screen rectangle of the window's outer frame (layout.md UIF-201). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
 
@@ -58,10 +59,21 @@ begin
     and (R.Bottom - R.Top = F.Height), Name + ': the window has the bounds');
 end;
 
+{ UIF-276: the size as designed (300 x 200 client) after Position was applied }
+procedure CheckSize(F: TForm; const Name: string);
+var
+  R: TRect;
+begin
+  Windows.GetClientRect(F.Handle, R);
+  CheckEqB(True, (F.ClientWidth = 300) and (F.ClientHeight = 200) and (R.Right = 300) and (R.Bottom = 200),
+    Name + ': only Left/Top changed (UIF-276)');
+end;
+
 procedure Run;
 var
   F: TForm;
   WA, D, R: TRect;
+  P0: TPoint;
   W, H, I: Integer;
   Primary: TMonitor;
 begin
@@ -80,6 +92,20 @@ begin
       CheckEqI(150, F.Left, 'Left kept');
       CheckEqI(140, F.Top, 'Top kept');
       CheckWindow(F, 'poDesigned');
+
+      Section('outer rectangle (UIF-201)');
+      P0 := Point(0, 0);
+      ClientToScreen(F.Handle, P0);
+      Check((P0.X > F.Left) and (P0.Y > F.Top), 'Left/Top: the outer corner, left of and above the client area');
+      Check((F.Width > F.ClientWidth) and (F.Height > F.ClientHeight), 'Width/Height: the outer size');
+      F.SetBounds(170, 160, F.Width + 20, F.Height + 10);
+      CheckWindow(F, 'SetBounds with a handle');
+      CheckEqI(320, F.ClientWidth, 'the client size follows the outer size');
+      SetWindowPos(F.Handle, 0, 180, 175, 0, 0, SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+      CheckEqI(180, F.Left, 'moved from outside: Left is the outer corner');
+      CheckEqI(175, F.Top, 'moved from outside: Top is the outer corner');
+      CheckWindow(F, 'moved from outside');
+      Section('poDesigned, off screen');
     finally
       F.Free;
     end;
@@ -113,6 +139,7 @@ begin
       CheckEqI(R.Left + (R.Right - R.Left - F.Width) div 2, F.Left, 'poScreenCenter: Left');
       CheckEqI(R.Top + (R.Bottom - R.Top - F.Height) div 2, F.Top, 'poScreenCenter: Top');
       CheckWindow(F, 'poScreenCenter');
+      CheckSize(F, 'poScreenCenter');
     finally
       F.Free;
     end;
@@ -122,6 +149,7 @@ begin
       D := Screen.DesktopRect;
       CheckEqI(D.Left + (D.Right - D.Left - F.Width) div 2, F.Left, 'poDesktopCenter: Left');
       CheckEqI(D.Top + (D.Bottom - D.Top - F.Height) div 2, F.Top, 'poDesktopCenter: Top');
+      CheckSize(F, 'poDesktopCenter');
     finally
       F.Free;
     end;
@@ -144,6 +172,7 @@ begin
       F.Show;
       CheckEqI(MainForm.Left + (MainForm.Width - F.Width) div 2, F.Left, 'poMainFormCenter: Left');
       CheckEqI(MainForm.Top + (MainForm.Height - F.Height) div 2, F.Top, 'poMainFormCenter: Top');
+      CheckSize(F, 'poMainFormCenter');
     finally
       F.Free;
     end;
@@ -152,6 +181,7 @@ begin
       F.Show;
       CheckEqI(MainForm.Left + (MainForm.Width - F.Width) div 2, F.Left, 'poOwnerFormCenter: Left');
       CheckEqI(MainForm.Top + (MainForm.Height - F.Height) div 2, F.Top, 'poOwnerFormCenter: Top');
+      CheckSize(F, 'poOwnerFormCenter');
     finally
       F.Free;
     end;

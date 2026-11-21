@@ -2,6 +2,8 @@ object MainForm: TMainForm
   ClientWidth = 300
   ClientHeight = 200
   PixelsPerInch = 192
+  Constraints.MaxWidth = 150
+  Constraints.MinHeight = 400
   OnCreate = FormCreate
   OnShow = FormShow
   OnActivate = FormShow

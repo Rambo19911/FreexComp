@@ -1,0 +1,3 @@
+# CreateForm from the program block (UIF-464)
+ok the exception propagates: finally runs, the reference is nil
+ok no main form

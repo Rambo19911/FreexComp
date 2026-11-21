@@ -6,6 +6,8 @@ ok command entry on the bar (UIF-725)
 ok disabled item: no click
 ok id of an item outside the menu: nothing
 ok LParam <> 0 is not a menu command
+ok LParam = 0 at a child window: not routed (UIF-072)
+ok LParam = 0 at the form: routed (UIF-072)
 ok FindItem by command
 ok FindItem: id 0 is none
 ok DispatchCommand: unknown id
@@ -24,4 +26,4 @@ ok bar has the new entry
 ok nested change: no menu bar redraw
 ok detached menu: no redraw of the former form
 ok without Menu the form routes nothing
-# passed 23 failed 0
+# passed 25 failed 0

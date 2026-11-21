@@ -1,4 +1,4 @@
-// covers: UIF-055, UIF-057, UIF-080, UIF-081, UIF-082
+// covers: UIF-055, UIF-057, UIF-080, UIF-081, UIF-082, UIF-426
 // needs: desktop
 program Core_Painting;
 { U-028, core.md 6 and 7.8: WM_PRINTCLIENT into a memory bitmap erases with the brush (only when asked),
@@ -6,9 +6,10 @@ program Core_Painting;
   their Canvas carries the control's Font and Color during Paint only; hidden ones are skipped; a custom control
   paints through its Canvas; Invalidate marks exactly the control's rectangle (never creating a handle); Update
   paints synchronously through WM_PAINT; the control canvas of a custom control gets a window DC on demand and
-  gives it back when the handle goes. }
+  gives it back when the handle goes. A form (application-forms.md UIF-426) erases with its Color on WM_ERASEBKGND
+  and runs OnPaint inside WM_PAINT / WM_PRINTCLIENT with Canvas bound to the paint DC. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
 
 const
   PRF_CLIENT = $4;
@@ -82,6 +83,68 @@ end;
 function TTestCustom.TheCanvas: TCanvas;
 begin
   Result := Canvas;
+end;
+
+type
+  TPaintLog = class
+  public
+    Paints: Integer;
+    DC: HDC;
+    procedure Paint(Sender: TObject);
+  end;
+
+procedure TPaintLog.Paint(Sender: TObject);
+begin
+  Inc(Paints);
+  DC := TForm(Sender).Canvas.Handle;
+  TForm(Sender).Canvas.Brush.Color := clNavy;
+  TForm(Sender).Canvas.FillRect(Rect(10, 10, 20, 20));
+end;
+
+{ UIF-426 }
+procedure FormPainting(Bmp: TBitmap);
+var
+  F: TForm;
+  PL: TPaintLog;
+  DC: HDC;
+begin
+  Section('form background and OnPaint (UIF-426)');
+  PL := TPaintLog.Create;
+  F := TForm.CreateNew(nil);
+  try
+    F.Color := clYellow;
+    F.ClientWidth := 100;
+    F.ClientHeight := 60;
+    F.Left := 200;
+    F.Top := 200;
+    F.OnPaint := PL.Paint;
+    F.Show;
+    Application.ProcessMessages;
+    DC := Bmp.Canvas.Handle;
+    PatBlt(DC, 0, 0, 120, 80, BLACKNESS);
+    SendMessageW(F.Handle, WM_ERASEBKGND, WPARAM(DC), 0);
+    CheckEqB(True, Bmp.Canvas.Pixels[50, 30] = clYellow, 'WM_ERASEBKGND fills the client area with Color');
+    CheckEqB(True, Bmp.Canvas.Pixels[99, 59] = clYellow, 'up to the client corner');
+    CheckEqB(True, Bmp.Canvas.Pixels[100, 60] = clBlack, 'nothing outside the client area');
+    PatBlt(DC, 0, 0, 120, 80, BLACKNESS);
+    PL.Paints := 0;
+    SendMessageW(F.Handle, WM_PRINTCLIENT, WPARAM(DC), PRF_CLIENT);
+    CheckEqI(1, PL.Paints, 'WM_PRINTCLIENT: OnPaint once');
+    CheckEqB(True, PL.DC = DC, 'Canvas bound to the paint DC');
+    CheckEqB(True, Bmp.Canvas.Pixels[15, 15] = clNavy, 'OnPaint drew through Canvas');
+    CheckEqB(True, Bmp.Canvas.Pixels[50, 30] = clBlack, 'no erase unless asked');
+    CheckEqB(False, F.Canvas.HandleAllocated, 'Canvas detached after OnPaint');
+    PL.Paints := 0;
+    PL.DC := 0;
+    F.Invalidate;
+    F.Update;
+    CheckEqI(1, PL.Paints, 'WM_PAINT: OnPaint once');
+    CheckEqB(True, (PL.DC <> 0) and (PL.DC <> DC), 'Canvas bound to the WM_PAINT DC');
+    CheckEqB(False, F.Canvas.HandleAllocated, 'Canvas detached after WM_PAINT');
+  finally
+    F.Free;
+    PL.Free;
+  end;
 end;
 
 function NewGraphic(AParent: TWinControl; L, T, W, H: Integer; AColor: TColor): TTestGraphic;
@@ -180,6 +243,8 @@ begin
     CheckEqS('0,0,120,80', UpdateRectOf(Root.Handle), 'windowed control: whole client area');
     Root.Update;
     CheckEqS('empty', UpdateRectOf(Root.Handle), 'painted');
+
+    FormPainting(Bmp);
   finally
     Root.Free;
     Bmp.Free;
