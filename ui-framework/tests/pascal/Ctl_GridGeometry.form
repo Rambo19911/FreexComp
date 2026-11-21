@@ -1,0 +1,37 @@
+object GeoForm: TGeoForm
+  Caption = 'Grid geometry'
+  ClientWidth = 500
+  ClientHeight = 300
+  Scaled = False
+  object Full: TStringGrid
+    Left = 10
+    Top = 20
+    Width = 200
+    Height = 150
+    BorderStyle = bsNone
+    ColCount = 3
+    Color = clLime
+    DefaultColWidth = 30
+    DefaultRowHeight = 18
+    FixedColor = clRed
+    FixedCols = 0
+    FixedRows = 2
+    GridLineWidth = 2
+    Options = [goVertLine, goEditing, goTabs]
+    RowCount = 10
+    ScrollBars = ssVertical
+    TabStop = False
+    OnDrawCell = FullDrawCell
+    OnTopLeftChanged = FullTopLeftChanged
+  end
+  object One: TStringGrid
+    Left = 250
+    Top = 20
+    Width = 100
+    Height = 50
+    ColCount = 1
+    FixedCols = 0
+    FixedRows = 0
+    RowCount = 1
+  end
+end

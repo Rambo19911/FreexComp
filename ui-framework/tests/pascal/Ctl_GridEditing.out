@@ -1,0 +1,112 @@
+# defaults
+ok EditorMode False
+ok no editor before the first edit
+ok without goEditing Enter is the form's
+ok without goEditing F2 does nothing
+ok goEditing: the grid wants Enter
+ok goEditing: WM_GETDLGCODE wants characters
+# the editor (UIF-846, UIF-886)
+ok F2 starts editing
+ok OnGetEditText with the cell text
+ok editor created
+ok a TEdit
+ok owned by the grid
+ok child of the grid
+ok no Name
+ok border-less
+ok not a tab stop
+ok editor window shown
+ok over CellRect(Col, Row)
+ok cell (2, 2)
+ok editor text
+ok text selected
+ok editor wants Enter
+ok editor wants Escape
+ok without goTabs the editor leaves Tab
+ok typing replaces the selected text
+ok Enter commits: OnSetEditText before the cell is stored
+ok cell stored
+ok Enter ends editing
+ok editor hidden
+# Enter, Escape, typing (UIF-844)
+ok Enter on the grid starts editing
+ok the cell text
+ok Escape ends editing
+ok Escape: no OnSetEditText
+ok Escape: cell unchanged
+ok a typed character starts editing
+ok replacing the text
+ok caret after the character
+ok nothing selected
+ok typed text committed
+ok OnGetEditText can change the text
+# arrows and focus loss commit (UIF-846)
+ok Left with selected text: stays in the editor
+ok caret moved to the start
+ok Left at the start: commit, then the move
+ok moved left
+ok editor closed
+ok Right at the end (empty text): commit and move
+ok Right inside the text: stays
+ok Down commits and moves
+ok Up commits and moves
+ok focus leaving the editor commits
+ok and closes it
+ok stored
+ok a click on another cell commits first
+ok click: editor closed
+ok goTabs: the editor wants Tab
+ok Tab commits and moves to the next cell
+# EditorMode, goRowSelect
+ok EditorMode True shows the editor
+ok EditorMode False commits
+ok and hides
+ok goRowSelect: no editing
+ok goRowSelect: EditorMode stays False
+ok goRowSelect: Enter is the form's
+# goAlwaysShowEditor (UIF-846)
+ok the editor opens at once
+ok on the focused cell
+ok Enter commits
+ok and the editor stays
+ok Down: commit, move, reopen on the new cell
+ok shown on the new cell
+ok over the new cell
+ok new text
+ok Escape restores the text
+ok Escape keeps the editor open
+ok option off: editor closed
+# scrolling moves the editor
+ok cell (3, 2)
+ok follows LeftCol
+ok follows a width change
+ok takes its own column width
+# column and row sizing (UIF-847)
+ok without goColSizing: no sizing cursor
+ok over a column line in the fixed row: crVSplit
+ok near the line
+ok inside a fixed cell: default
+ok column line outside the fixed row: default
+ok over a row line in the fixed column: crHSplit
+ok dragging resizes the column
+ok minimum 0
+ok released: the final width
+ok sizing selects no cell
+ok focused cell unchanged
+ok after the release: no sizing
+ok dragging resizes the row
+ok second column follows its new left edge
+ok WM_CANCELMODE restores the width
+ok cancelled: no more sizing
+ok without goColSizing: no sizing
+# streaming
+ok Options
+ok OnGetEditText bound
+ok OnSetEditText bound
+ok the form's OnGetEditText
+ok the form's OnSetEditText
+ok stored
+ok the editor is not a component of the form
+# leak
+ok GUI objects after 100 instances with an open editor
+# passed 101 failed 0

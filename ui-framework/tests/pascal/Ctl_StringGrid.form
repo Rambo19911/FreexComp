@@ -1,0 +1,14 @@
+object CellForm: TCellForm
+  Caption = 'String grid'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Grid: TStringGrid
+    Left = 8
+    Top = 8
+    Width = 300
+    Height = 200
+    Options = [goFixedVertLine, goFixedHorzLine, goTabs, goRowSelect]
+    OnSelectCell = GridSelectCell
+  end
+end

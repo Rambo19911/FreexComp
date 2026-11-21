@@ -1,0 +1,197 @@
+# defaults
+ok size 320 x 120
+ok BorderStyle bsSingle
+ok ColCount 5
+ok Color clWindow
+ok DefaultColWidth 64
+ok DefaultRowHeight 24
+ok FixedColor clBtnFace
+ok FixedCols 1
+ok FixedRows 1
+ok GridLineWidth 1
+ok Options default
+ok ParentColor False
+ok ParentFont True
+ok RowCount 5
+ok ScrollBars ssBoth
+ok TabOrder -1
+ok TabStop True
+ok DoubleBuffered True
+ok no csAcceptsControls
+ok Col: first scrollable column
+ok Row: first scrollable row
+ok LeftCol 1
+ok TopRow 1
+ok Selection: the focused cell
+ok ColWidths: DefaultColWidth
+ok RowHeights: DefaultRowHeight
+ok registered
+# counts and indexes
+ok ColCount = FixedCols raises
+ok ColCount unchanged
+ok FixedCols = ColCount raises
+ok RowCount 0 raises
+ok FixedRows > RowCount raises
+ok ColWidths[ColCount] raises
+ok RowHeights[-1] raises
+ok ColWidths set
+ok new column: DefaultColWidth
+ok old columns keep their width
+ok DefaultColWidth resets every column
+ok DefaultRowHeight resets every row
+ok a negative width is 0
+# geometry without a window (UIF-841)
+ok both bars (96 DPI without a form): client 200 - 17 x 100 - 17
+ok fixed cell (0, 0)
+ok cell (2, 1): after two cells and their lines
+ok partly shown cell: its whole rectangle
+ok cell right of the client area: empty
+ok cell below the client area: empty
+ok cell (1, 3)
+ok VisibleColCount: fully shown scrollable columns
+ok VisibleRowCount: fully shown scrollable rows
+ok MouseToCell: the line belongs to the cell before it
+ok MouseToCell (41, 21)
+ok MouseToCell on a partly shown cell
+ok MouseToCell below the client area: row -1
+ok MouseToCell right of the client area: column -1
+ok LeftCol 2
+ok OnTopLeftChanged once
+ok scrolled out: empty
+ok first scrollable column after the fixed one
+ok fixed column stays
+ok LeftCol clamped: the last columns fill the client area
+ok last column shown
+ok VisibleColCount from LeftCol
+ok LeftCol not below FixedCols
+ok no change: no event
+ok TopRow 3
+ok TopRow clamped
+ok one event for the real change
+ok wider: no horizontal bar, vertical bar stays
+ok everything fits: LeftCol back to the first column
+ok pulled back: OnTopLeftChanged
+ok rows: 100 px client
+ok GridLineWidth 0: cells touch
+ok Col moves out of the fixed columns
+ok LeftCol moves out of the fixed columns
+ok selection follows
+ok second fixed column
+ok first scrollable column
+ok fewer fixed columns: LeftCol kept
+# scaling
+ok DefaultColWidth scaled
+ok DefaultRowHeight scaled
+ok ColWidths scaled
+ok other ColWidths scaled
+ok RowHeights scaled
+ok GridLineWidth not scaled
+# window and client formula
+ok own window class
+ok bsSingle: WS_EX_CLIENTEDGE
+ok WS_TABSTOP
+ok WS_CLIPCHILDREN (in-place editor)
+ok horizontal bar needed
+ok vertical bar needed
+ok client: 2 px border per side, both bars
+ok formula = Win32
+ok horizontal range in columns: FixedCols .. ColCount - 1
+ok vertical: page = rows of the last screen, position = TopRow
+# scrolling (UIF-845)
+ok three columns fully shown
+ok line down
+ok line up
+ok page down: VisibleColCount
+ok page up
+ok page up clamped
+ok thumb track without goThumbTracking: no change
+ok thumb position
+ok thumb track with goThumbTracking
+ok bottom: the last three columns
+ok native position
+ok line down clamped
+ok top
+ok vertical line down
+ok vertical top
+ok ssNone: no horizontal bar
+ok ssNone: no vertical bar
+ok ssNone: client without bars
+ok ssNone: formula = Win32
+ok ssNone: LeftCol still set in code
+ok ssHorizontal: horizontal bar
+ok ssHorizontal: no vertical bar
+ok ssHorizontal: client
+ok ssHorizontal: formula = Win32
+ok all cells fit: no horizontal bar
+ok all cells fit: no vertical bar
+ok no bars: client
+ok all fit: LeftCol 1
+ok BorderStyle recreates the window
+ok bsNone: no client edge
+ok LeftCol kept
+ok bsNone, rows fit, columns scroll: client
+ok horizontal bar
+ok bsNone: formula = Win32
+# painting (UIF-842)
+ok fixed cell: FixedColor
+ok focused cell, not highlighted: Color
+ok normal cell: Color
+ok line of a fixed cell: clBtnShadow
+ok horizontal line of the fixed row: clBtnShadow
+ok vertical line of a normal cell: clSilver
+ok horizontal line of a normal cell: clSilver
+ok line after the last column
+ok area after the cells: Color
+ok goVertLine off: the line in the cell colour
+ok fixed line still drawn
+ok goFixedVertLine off: FixedColor
+ok goHorzLine off: cell colour
+ok goFixedHorzLine off: FixedColor
+ok Selection set
+ok Selection: Col at its left
+ok Selection: Row at its top
+ok selected cell: clHighlight
+ok selected cell (1, 2)
+ok focused cell not highlighted
+ok line between selected cells
+ok line off between selected cells: highlight
+ok goDrawFocusSelected: focused cell highlighted
+ok without goRangeSelect: a single cell
+ok single cell: nothing highlighted
+ok goRowSelect: the whole row
+ok goRowSelect: focused cell highlighted
+ok goRowSelect: the row
+ok goRowSelect: other rows not
+ok OnDrawCell per cell, row by row, with Rect = CellRect and the state
+ok OnDrawCell after the default background
+# streaming
+ok BorderStyle
+ok ColCount
+ok Color
+ok DefaultColWidth
+ok DefaultRowHeight
+ok ColWidths from DefaultColWidth
+ok FixedColor
+ok FixedCols
+ok FixedRows
+ok GridLineWidth
+ok Options
+ok RowCount
+ok ScrollBars
+ok TabStop
+ok OnDrawCell bound
+ok OnTopLeftChanged bound
+ok no OnTopLeftChanged while loading
+ok Col: first column (no fixed columns)
+ok Row: after the fixed rows
+ok TopRow
+ok loaded geometry (line width 2)
+ok ssVertical: vertical bar only
+ok ColCount 1 before FixedCols 0 (checked after loading)
+ok FixedCols 0
+ok RowCount 1
+ok FixedRows 0
+ok the only cell is focused
+# leak
+ok GUI objects after 100 instances with handles
+# passed 187 failed 0

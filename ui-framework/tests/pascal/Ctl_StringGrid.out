@@ -1,0 +1,131 @@
+# cells (UIF-840)
+ok unset cell: empty
+ok unset object: nil
+ok cell written and read
+ok neighbour in the same row: empty
+ok object of a written cell: nil
+ok object written and read
+ok text of an object-only cell: empty
+ok Cells[ColCount, 0] raises
+ok Cells[0, -1] raises
+ok Objects[0, RowCount] raises
+ok shrinking ColCount discards the cells
+ok other cells kept
+ok shrinking RowCount discards the cells
+# Cols and Rows (UIF-848)
+ok Cols: count = RowCount
+ok Rows: count = ColCount
+ok Cols[2][3] = Cells[2, 3]
+ok Rows[3][2] = Cells[2, 3]
+ok writing through Cols
+ok object through Rows
+ok the same object through Cols
+ok the view is live: new RowCount
+ok Assign: first cell
+ok Assign: second cell
+ok Assign: the rest cleared
+ok Clear empties the cells
+ok Clear keeps the count
+ok Add raises
+ok Delete raises
+ok Insert raises
+ok count unchanged
+ok Cols[ColCount] raises
+# cell text (UIF-842)
+ok text drawn in Font.Color
+ok left inset 2 px
+ok top inset 2 px
+ok long text drawn
+ok clipped to its cell
+ok fixed cell text
+ok highlighted cell: not in Font.Color
+ok highlighted cell: clHighlightText
+ok OnDrawCell replaces the default text
+# focused cell in code (UIF-843)
+ok Col: OnSelectCell first
+ok Col 3
+ok selection: the focused cell
+ok Row: OnSelectCell
+ok CanSelect False cancels
+ok Col in the fixed columns raises
+ok Row = RowCount raises
+# mouse (UIF-843)
+ok click: OnSelectCell
+ok click: focused cell
+ok click on the focused cell: no event
+ok click on fixed cells: nothing
+ok fixed click: focused cell unchanged
+ok click beside the cells: nothing
+ok vetoed click: the event
+ok vetoed click: no change
+ok drag: one OnSelectCell for the start cell
+ok drag: focused cell = start cell
+ok drag with goRangeSelect: the range
+ok after the button is up: no change
+ok Shift+click extends from the focused cell
+ok Shift+click: focused cell kept
+ok Shift+click: no OnSelectCell
+ok a plain click collapses the range
+ok drag without goRangeSelect: one cell
+ok goRowSelect: the row
+ok goRowSelect drag: rows
+# keys (UIF-844)
+ok WM_GETDLGCODE: arrows
+ok Right
+ok keys fire OnSelectCell
+ok Down
+ok Left
+ok Left stops at the fixed column
+ok Up stops at the fixed row
+ok End: last column of the row
+ok Right stops at the last column
+ok Home: first column of the row
+ok Ctrl+End: last cell
+ok Ctrl+Home: first cell
+ok vetoed key: the event
+ok vetoed key: no move
+ok OnKeyDown Key := 0 swallows the key
+# Shift+arrows (UIF-843)
+ok Shift+Right extends
+ok focused cell is the anchor
+ok Shift+Down extends
+ok extending fires no OnSelectCell
+ok Shift+Left past the anchor
+ok plain arrow moves from the focused cell
+ok and collapses the range
+ok without goRangeSelect Shift+Right moves
+ok one cell
+# Tab (UIF-844)
+ok without goTabs: Tab is the form's
+ok no DLGC_WANTTAB
+ok without goTabs: Tab does not move
+ok goTabs: the grid wants Tab
+ok goTabs: DLGC_WANTTAB
+ok Tab: next cell
+ok Tab wraps to the next row
+ok Shift+Tab wraps back
+ok Tab on the last cell stays
+ok Shift+Tab on the first cell stays
+# scrolling to the focused cell (UIF-845)
+ok five rows shown
+ok Ctrl+End
+ok last row scrolled into view
+ok OnTopLeftChanged
+ok Ctrl+Home: back to the top
+ok five times Down
+ok one row scrolled
+ok PageDown: VisibleRowCount rows
+ok PageDown: scrolled into view
+ok PageUp
+ok PageUp: scrolled back
+ok Row in code scrolls too
+ok TopRow alone does not move the focused cell
+# streaming
+ok Options
+ok OnSelectCell bound
+ok goRowSelect: the first row selected
+ok no OnSelectCell while loading
+ok the form's handler
+# leak
+ok GUI objects after 100 instances with handles
+# passed 119 failed 0
