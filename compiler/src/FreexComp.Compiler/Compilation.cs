@@ -328,8 +328,7 @@ public sealed class Compilation
 
         if (!PathUtil.AreEqual(path, PathUtil.Normalize(Options.MainFile)))
         {
-            var root = new Compilation(Options with { MainFile = path }, _openFiles, FileSystem);
-            var rootAnalysis = root._analysis.Value;
+            var rootAnalysis = RootAnalysis(path);
             if (Bound(rootAnalysis.Front, path) is { } rootUnit)
             {
                 return Model(rootAnalysis.Front!, rootUnit, this, DiagnosticsOf(rootAnalysis, rootUnit.Path));
@@ -341,6 +340,43 @@ public sealed class Compilation
         var result = Binder.BindCompilationUnit(tree, new BuiltInTypes());
         ImmutableArray<Diagnostic> diagnostics = [.. analysis.Diagnostics.Where(d => PathUtil.AreEqual(d.Location.Path, path))];
         return new SemanticModel(this, tree, result, diagnostics.IsEmpty ? [.. tree.Diagnostics, .. result.Diagnostics] : diagnostics, _ => null);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Analysis>> _roots = new(PathUtil.Comparer);
+
+    /// <summary>CMP-201: the analysis of a file the main file does not reach, as the root of its own program (cached per snapshot).</summary>
+    private Analysis RootAnalysis(string path) =>
+        _roots.GetOrAdd(path, p => new Lazy<Analysis>(
+            () => new Compilation(Options with { MainFile = p }, _openFiles, FileSystem)._analysis.Value, LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+
+    /// <summary>
+    /// api.md §1 (C-263): the unit named <paramref name="unitName"/> as a uses entry of the main file would resolve it (LANG-510
+    /// search, LANG-533 aliases, LANG-535 unit scope names); a unit the main file does not reach is analysed as an additional root
+    /// (CMP-201). Null when the name does not resolve or the unit could not be bound.
+    /// </summary>
+    public UnitInfo? FindUnit(string unitName) =>
+        Unit(unitName) is { } unit
+            ? new UnitInfo(unit.Name, unit.Path, unit.IsProgram, unit.IsPrecompiled, [.. unit.InterfaceUses.Select(u => u.Name)],
+                           [.. unit.ImplementationUses.Select(u => u.Name)])
+            : null;
+
+    /// <summary>api.md §1 (C-263): the symbol of the unit <see cref="FindUnit"/> finds, or null.</summary>
+    public UnitSymbol? GetUnitSymbol(string unitName) => Unit(unitName)?.Symbol;
+
+    private LoadedUnit? Unit(string unitName)
+    {
+        ArgumentNullException.ThrowIfNull(unitName);
+        var mainPath = PathUtil.Normalize(Options.MainFile);
+        var aliases = UnitAliasTable.Load(FileSystem, RtlDirectory(), out var aliasError);
+        if (aliasError is not null || Resolver(mainPath, aliases).Find(unitName) is not { } path)
+        {
+            return null;
+        }
+
+        static LoadedUnit? Of(FrontEnd? front, string path) =>
+            front?.Binder.Units.FirstOrDefault(u => PathUtil.AreEqual(u.Path, path) && u.Symbol is not null);
+
+        return Of(_analysis.Value.Front, path) ?? Of(RootAnalysis(path).Front, path);
     }
 
     private static LoadedUnit? Bound(FrontEnd? front, string path) =>

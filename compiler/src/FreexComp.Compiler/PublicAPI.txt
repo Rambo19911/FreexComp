@@ -82,7 +82,9 @@ sealed class FreexComp.Compiler.Compilation
   public FreexComp.Compiler.CompilationOptions Options { get; }
   public FreexComp.Compiler.EmitResult Emit(FreexComp.Compiler.EmitOptions options, System.Threading.CancellationToken ct)
   public FreexComp.Compiler.IFileSystem FileSystem { get; }
+  public FreexComp.Compiler.Symbols.UnitSymbol GetUnitSymbol(System.String unitName)
   public FreexComp.Compiler.Syntax.SyntaxTree GetSyntaxTree(System.String path)
+  public FreexComp.Compiler.UnitInfo FindUnit(System.String unitName)
   public System.Boolean TryGetSyntaxTree(System.String path, out FreexComp.Compiler.Syntax.SyntaxTree tree)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetDiagnostics(System.String path = null, System.Threading.CancellationToken ct = default)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetSyntaxDiagnostics(System.String path)
@@ -1962,3 +1964,19 @@ abstract class FreexComp.Compiler.Types.TypeSymbol : FreexComp.Compiler.Symbols.
   public virtual System.Boolean IsOrdinal { get; }
   public virtual System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Symbols.Symbol> Members { get; }
 sealed class FreexComp.Compiler.Types.UntypedTypeSymbol : FreexComp.Compiler.Types.TypeSymbol
+sealed record FreexComp.Compiler.UnitInfo : System.IEquatable<FreexComp.Compiler.UnitInfo>
+  public FreexComp.Compiler.UnitInfo <Clone>$()
+  public System.Boolean Equals(FreexComp.Compiler.UnitInfo other)
+  public System.Boolean FromPcu { get; init; }
+  public System.Boolean IsProgram { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> ImplementationUses { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> InterfaceUses { get; init; }
+  public System.String Name { get; init; }
+  public System.String Path { get; init; }
+  public System.Void Deconstruct(out System.String Name, out System.String Path, out System.Boolean IsProgram, out System.Boolean FromPcu, out System.Collections.Immutable.ImmutableArray<System.String> InterfaceUses, out System.Collections.Immutable.ImmutableArray<System.String> ImplementationUses)
+  public ctor(System.String Name, System.String Path, System.Boolean IsProgram, System.Boolean FromPcu, System.Collections.Immutable.ImmutableArray<System.String> InterfaceUses, System.Collections.Immutable.ImmutableArray<System.String> ImplementationUses)
+  public override System.Boolean Equals(System.Object obj)
+  public override System.Int32 GetHashCode()
+  public override System.String ToString()
+  public static System.Boolean op_Equality(FreexComp.Compiler.UnitInfo left, FreexComp.Compiler.UnitInfo right)
+  public static System.Boolean op_Inequality(FreexComp.Compiler.UnitInfo left, FreexComp.Compiler.UnitInfo right)
