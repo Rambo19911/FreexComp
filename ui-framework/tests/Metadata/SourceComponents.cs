@@ -10,7 +10,11 @@ namespace FreexComp.MetadataTesting;
 /// metadata <c>type</c>, <see cref="Kind"/> the metadata <c>kind</c> (<c>object</c>/<c>component</c>/<c>collection</c> or null).
 /// Events have <see cref="IsEvent"/> and <see cref="Type"/> = the method-pointer type name (the metadata <c>signature</c>).
 /// </summary>
-public sealed record SourceProperty(string Name, string Type, string? Kind, bool IsEvent, PropertySymbol Symbol);
+public sealed record SourceProperty(string Name, string Type, string? Kind, bool IsEvent, PropertySymbol Symbol)
+{
+    /// <summary>For a collection: the class of its items (the type of the collection class's <c>Items</c> array property), else null.</summary>
+    public string? ItemClass { get; init; }
+}
 
 /// <summary>A <c>TComponent</c> descendant declared in a unit's interface section.</summary>
 public sealed record SourceClass(string Name, string? Ancestor, string Unit, ClassTypeSymbol Symbol);
@@ -41,6 +45,26 @@ public sealed class SourceComponents
     }
 
     public string UnitPath(string unit) => Path.Combine(sourceDirectory, unit + ".pas");
+
+    /// <summary>The units of the source directory that declare at least one <c>TComponent</c> class in their interface (ordinal order).</summary>
+    public string[] ComponentUnits() =>
+        [.. Directory.EnumerateFiles(sourceDirectory, "*.pas").Select(p => Path.GetFileNameWithoutExtension(p)!)
+            .Order(StringComparer.Ordinal).Where(u => !Components(u).IsEmpty)];
+
+    /// <summary>RTL units searched for types the framework units use without declaring them (<c>TNotifyEvent</c>, <c>TAlignment</c>).</summary>
+    public static readonly string[] RtlTypeUnits = ["System", "Types", "Classes", "SysUtils"];
+
+    /// <summary>
+    /// The non-forward types named <paramref name="name"/> declared in an interface section: framework units (ordinal order) first,
+    /// then <see cref="RtlTypeUnits"/>.
+    /// </summary>
+    public ImmutableArray<TypeSymbol> FindTypes(string name)
+    {
+        var paths = Directory.EnumerateFiles(sourceDirectory, "*.pas").Order(StringComparer.Ordinal)
+            .Concat(RtlTypeUnits.Select(u => Path.Combine(rtlDirectory, u + ".pas")).Where(File.Exists));
+        return [.. paths.SelectMany(p => compilation.GetSemanticModel(p).Unit.InterfaceMembers.OfType<TypeSymbol>())
+            .Where(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase) && t is not ClassTypeSymbol { IsForward: true })];
+    }
 
     /// <summary>Errors of parsing/binding <paramref name="unit"/> (a unit that does not compile cannot be compared).</summary>
     public ImmutableArray<Diagnostic> Errors(string unit) =>
@@ -104,6 +128,11 @@ public sealed class SourceComponents
         return [.. list];
     }
 
+    /// <summary>The item class of a collection class: the type of the nearest <c>Items</c> array property (redeclared by each collection).</summary>
+    private static string? ItemClassOf(ClassTypeSymbol collection) =>
+        collection.SelfAndAncestors().SelectMany(c => c.Properties)
+            .FirstOrDefault(p => p.IsArrayProperty && string.Equals(p.Name, "Items", StringComparison.OrdinalIgnoreCase))?.Type.Name;
+
     /// <summary>metadata-authoring.md §2.2: the metadata <c>type</c> and <c>kind</c> of a Pascal property type.</summary>
     public static SourceProperty Map(PropertySymbol p)
     {
@@ -149,7 +178,7 @@ public sealed class SourceComponents
                 var kind = k.SelfAndAncestors().Any(a => a.Name == "TComponent") ? "component"
                     : k.SelfAndAncestors().Any(a => a.Name == "TCollection") ? "collection"
                     : "object";
-                return new(p.Name, k.Name, kind, false, p);
+                return new(p.Name, k.Name, kind, false, p) { ItemClass = kind == "collection" ? ItemClassOf(k) : null };
             default:
                 return new(p.Name, "?" + t.Name, null, false, p);                 // unmapped: always a mismatch
         }

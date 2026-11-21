@@ -58,7 +58,7 @@ public static class LayoutHost
     public const string ProgramName = "LayoutHost";
 
     private static readonly TimeSpan CompileLimit = TimeSpan.FromSeconds(120);
-    private static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(20);           // UIF-1208, group A/B
+    internal static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(20);           // UIF-1208, group A/B
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static Task<(string? Exe, string? Failure)>? compiled;
 
@@ -187,7 +187,7 @@ public static class LayoutHost
         await Gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            compiled ??= CompileAsync(ct);
+            compiled ??= CompileAsync(SourcePath, ct);
             var result = await compiled.ConfigureAwait(false);
             if (result.Exe is null)
             {
@@ -202,8 +202,11 @@ public static class LayoutHost
         }
     }
 
-    /// <summary>As the golden runner compiles group A programs (UIF-1201): opc, the RTL, <c>-U rtl/tests</c>, <c>-U ui-framework/src</c>.</summary>
-    private static async Task<(string? Exe, string? Failure)> CompileAsync(CancellationToken ct)
+    /// <summary>
+    /// As the golden runner compiles group A programs (UIF-1201): opc, the RTL, <c>-U rtl/tests</c>, <c>-U ui-framework/src</c>;
+    /// the executable goes to a fresh work directory.
+    /// </summary>
+    internal static async Task<(string? Exe, string? Failure)> CompileAsync(string sourcePath, CancellationToken ct)
     {
         var setup = UiCorpus.Setup;
         var missing = new[] { "clang.exe", "lld-link.exe", "llvm-dlltool.exe" }.Select(t => Path.Combine(setup.ToolchainDirectory, t))
@@ -213,20 +216,20 @@ public static class LayoutHost
             return (null, $"toolchain missing: {string.Join(", ", missing)} (run scripts/bootstrap.ps1).");     // fails, never skips (UIF-1203)
         }
 
-        if (!File.Exists(SourcePath))
+        if (!File.Exists(sourcePath))
         {
-            return (null, $"{SourcePath} does not exist");
+            return (null, $"{sourcePath} does not exist");
         }
 
         var work = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
-        var exe = Path.Combine(work, ProgramName + ".exe");
+        var exe = Path.Combine(work, Path.GetFileNameWithoutExtension(sourcePath) + ".exe");
         List<string> args =
         [
-            SourcePath, "-U", setup.UnitDirectory, .. setup.ExtraUnitDirectories.SelectMany(d => new[] { "-U", d }),
+            sourcePath, "-U", setup.UnitDirectory, .. setup.ExtraUnitDirectories.SelectMany(d => new[] { "-U", d }),
             "-o", exe, "--obj-dir", Path.Combine(work, "obj"), "--rtl", setup.RtlDirectory, "--toolchain", setup.ToolchainDirectory,
         ];
-        var opc = await RunProcessAsync(setup.OpcPath, GoldenRunner.CommandLine(args, null), UiCorpus.PascalDirectory, CompileLimit, ct).ConfigureAwait(false);
+        var opc = await RunProcessAsync(setup.OpcPath, GoldenRunner.CommandLine(args, null), Path.GetDirectoryName(sourcePath)!, CompileLimit, ct).ConfigureAwait(false);
         if (opc.Stopped is not null)
         {
             return (null, "opc " + opc.Stopped);
@@ -237,10 +240,10 @@ public static class LayoutHost
             : (null, $"opc exit code {opc.ExitCode}, expected 0\n{opc.StdOut}{opc.StdErr}\n(work directory: {work})");
     }
 
-    private readonly record struct ProcessResult(int ExitCode, string StdOut, string StdErr, string? Stopped);
+    internal readonly record struct ProcessResult(int ExitCode, string StdOut, string StdErr, string? Stopped);
 
     /// <summary>One process with empty stdin, killed (with its tree) when <paramref name="limit"/> or the test's token expires.</summary>
-    private static async Task<ProcessResult> RunProcessAsync(string file, string arguments, string workingDirectory, TimeSpan limit, CancellationToken ct)
+    internal static async Task<ProcessResult> RunProcessAsync(string file, string arguments, string workingDirectory, TimeSpan limit, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(file, arguments)
         {

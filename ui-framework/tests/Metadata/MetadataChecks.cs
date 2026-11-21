@@ -176,6 +176,12 @@ public static class MetadataMatch
             {
                 problems.Add($"{name}.{s.Name}: type mismatch: metadata {mType}{(mKind is null ? "" : "/" + mKind)}, source {s.Type}{(s.Kind is null ? "" : "/" + s.Kind)}");
             }
+
+            var mItem = m.TryGetValue("itemClass", out var ic) ? ic.GetString() : null;
+            if (mItem != s.ItemClass)
+            {
+                problems.Add($"{name}.{s.Name}: itemClass mismatch: metadata {mItem ?? "(none)"}, source {s.ItemClass ?? "(none)"}");
+            }
         }
 
         var srcEvents = effective.Where(p => p.IsEvent).ToDictionary(p => p.Name, p => p.Type, StringComparer.Ordinal);

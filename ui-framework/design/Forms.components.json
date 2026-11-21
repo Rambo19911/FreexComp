@@ -90,7 +90,8 @@
         { "name": "Align", "type": "TAlign", "hidden": true },
         { "name": "Anchors", "type": "TAnchors", "hidden": true },
         { "name": "AlignWithMargins", "type": "Boolean", "hidden": true },
-        { "name": "Margins", "type": "TMargins", "kind": "object", "hidden": true }
+        { "name": "Margins", "type": "TMargins", "kind": "object", "hidden": true },
+        { "name": "Visible", "type": "Boolean", "default": false }
       ],
       "events": []
     },

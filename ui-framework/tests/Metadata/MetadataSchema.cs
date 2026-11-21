@@ -17,7 +17,7 @@ public sealed record SchemaExpectations(
 
 /// <summary>
 /// <c>MetadataSchemaValid</c> (metadata-authoring.md §4, UIF-951/952; component-metadata.md §1–§5, §7): every rule yields
-/// <c>location: problem</c> lines; an empty result means valid. The icon-file rule is added with the icons (U-104).
+/// <c>location: problem</c> lines; an empty result means valid. Palette icons must exist and follow UIF-953 (U-104).
 /// </summary>
 public static class MetadataSchema
 {
@@ -264,6 +264,10 @@ public static class MetadataSchema
             if (Str(pal, "icon") != $"icons/{c.Class}.svg")
             {
                 problems.Add($"{at}: palette.icon must be icons/{c.Class}.svg");
+            }
+            else
+            {
+                CheckIcon(at, Path.Combine(root.Directory, "icons", c.Class + ".svg"), problems);
             }
         }
 
@@ -554,6 +558,65 @@ public static class MetadataSchema
     /// <summary>The value of <paramref name="key"/> on <paramref name="c"/> or its nearest ancestor that has it (inherited keys).</summary>
     private static JsonElement? Effective(MetadataRoot root, MetadataComponent c, string key) =>
         root.Chain(c).Select(k => k.Json.TryGetProperty(key, out var v) ? v : (JsonElement?)null).FirstOrDefault(v => v is not null);
+
+    /// <summary>SVG elements an icon may use (UIF-953: shapes only; no text, raster, script or foreign content).</summary>
+    public static readonly string[] IconElements = ["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "title"];
+
+    /// <summary>
+    /// UIF-953: the icon file exists, is SVG with a <c>0 0 24 24</c> view box, uses only <see cref="IconElements"/>, paints only with
+    /// <c>currentColor</c> (or <c>none</c>), and references nothing (no <c>href</c>, no <c>url(…)</c>, no <c>data:</c>).
+    /// </summary>
+    public static void CheckIcon(string at, string path, List<string> problems)
+    {
+        if (!File.Exists(path))
+        {
+            problems.Add($"{at}: icon file {Path.GetFileName(path)} does not exist");
+            return;
+        }
+
+        System.Xml.Linq.XDocument doc;
+        try
+        {
+            doc = System.Xml.Linq.XDocument.Load(path);
+        }
+        catch (System.Xml.XmlException e)
+        {
+            problems.Add($"{at}: icon is not well-formed XML: {e.Message}");
+            return;
+        }
+
+        var svg = doc.Root!;
+        if (svg.Name.LocalName != "svg" || svg.Attribute("viewBox")?.Value != "0 0 24 24")
+        {
+            problems.Add($"{at}: icon root must be <svg viewBox=\"0 0 24 24\">");
+        }
+
+        foreach (var e in svg.DescendantsAndSelf())
+        {
+            if (!IconElements.Contains(e.Name.LocalName))
+            {
+                problems.Add($"{at}: icon element <{e.Name.LocalName}> is not allowed");
+            }
+
+            foreach (var a in e.Attributes())
+            {
+                var name = a.Name.LocalName;
+                var value = a.Value.Trim();
+                if (name is "href" || value.Contains("url(", StringComparison.OrdinalIgnoreCase) || value.Contains("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    problems.Add($"{at}: icon attribute {name} references other content");
+                }
+                else if (name is "fill" or "stroke" or "color" or "stop-color" && value is not ("currentColor" or "none"))
+                {
+                    problems.Add($"{at}: icon {name}=\"{value}\": only currentColor or none");
+                }
+                else if (name == "style")
+                {
+                    problems.Add($"{at}: icon style attributes are not allowed (use fill/stroke)");
+                }
+            }
+        }
+    }
 
     /// <summary>UIF-952: no BOM, LF only, final LF.</summary>
     public static void CheckText(string at, string text, List<string> problems)
