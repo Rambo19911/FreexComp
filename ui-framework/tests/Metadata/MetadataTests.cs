@@ -77,6 +77,7 @@ public sealed class MetadataTests
     [Theory]
     [Trait("Req", "UIF-950")]
     [Trait("Req", "UIF-955")]
+    [Trait("Req", "UIF-970")]                  // source and metadata change together: any drift fails here
     [MemberData(nameof(Units))]
     public void MetadataMatchesSource(string unit)
     {

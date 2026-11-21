@@ -6,9 +6,10 @@ program Dump_Format;
   form, printed to stdout and compared byte for byte with the .out file (the fixture text shared with the
   designer's writer, DSG-LAY-050); controls in Controls[] order, recursively; unnamed controls and their subtrees
   and non-visual components are not listed; visible is the control's own property; JSON string escaping; the
-  document of every form of Screen and of no form. }
+  document of every form of Screen and of no form. U-117: a helper control that a component creates internally (the
+  string grid's in-place editor) has an empty Name and is therefore not listed. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, Grids, TestKit;
 
 type
   TBox = class(TCustomControl);
@@ -27,6 +28,7 @@ procedure Run;
 var
   F, G: TForm;
   Panel, Unnamed: TControl;
+  Grid: TStringGrid;
   S: string;
 begin
   Application.Initialize;
@@ -65,6 +67,23 @@ begin
   Write(LayoutDumpText(nil));
   G.Free;
   F.Free;
+
+  Section('helper controls of a component are not listed (UIF-322, U-117)');
+  G := TForm.CreateNew(nil);
+  G.Name := 'GridForm';
+  Grid := TStringGrid.Create(G);
+  Grid.Name := 'Grid';
+  Grid.Parent := G;
+  Grid.Options := Grid.Options + [goEditing];
+  Grid.EditorMode := True;
+  Check(Grid.InplaceEditor <> nil, 'the grid created its in-place editor');
+  Check(Grid.InplaceEditor.Parent = Grid, 'the editor is a child control of the grid');
+  CheckEqS('', Grid.InplaceEditor.Name, 'the editor has an empty Name');
+  S := LayoutDumpText(G);
+  Check(Pos('"name": "Grid"', S) > 0, 'the grid is listed');
+  Check(Pos(Grid.InplaceEditor.ClassName, S) = 0, 'its editor is not');
+  Check(Pos('"controls": []', Copy(S, Pos('"name": "Grid"', S), MaxInt)) > 0, 'the grid has an empty controls list');
+  G.Free;
 end;
 
 begin

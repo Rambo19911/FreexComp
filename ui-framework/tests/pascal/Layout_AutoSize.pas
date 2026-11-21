@@ -7,9 +7,10 @@ program Layout_AutoSize;
   WordWrap (width stays), AutoSize off and on again, the right-justified position rule, an alTop label (width from
   the parent, height measured, UIF-256), static text borders (+2 / +4 px per side), no measurement while scaling,
   never in dump mode (UIF-263 b), and stored bounds winning while loading (UIF-260), also once the form has
-  windows. }
+  windows. U-117: in dump mode also no static-text border/font measuring, no image sizing from a picture, and no
+  measuring after a form was loaded in dump mode (what an OnCreate handler or a corpus set step does). }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, TestKit;
 
 type
   TAutoForm = class(TForm)
@@ -89,6 +90,7 @@ var
   F: TForm;
   L, T: TLabel;
   S: TStaticText;
+  Img: TImage;
   AF: TAutoForm;
   One: TSize;
   Before: string;
@@ -237,6 +239,11 @@ begin
     CheckEqS(Before, Format('%d,%d', [S.Width, S.Height]), 'static text: the bounds of the scaling rule');
 
     Section('dump mode (UIF-263 b)');
+    Img := TImage.Create(F);
+    Img.SetBounds(300, 10, 5, 5);
+    Img.Parent := F;
+    Img.AutoSize := True;
+    CheckEqS('300,10,5,5', BoundsStr(Img), 'image: an empty picture keeps the bounds');
     Before := BoundsStr(L);
     LayoutDumpMode := True;
     try
@@ -253,9 +260,17 @@ begin
       Before := BoundsStr(S);
       S.Caption := 'Static text in dump mode';
       CheckEqS(Before, BoundsStr(S), 'dump mode: static text does not measure');
+      S.BorderStyle := sbsSunken;
+      CheckEqS(Before, BoundsStr(S), 'dump mode: static text BorderStyle does not measure');
+      S.Font.Height := -33;
+      CheckEqS(Before, BoundsStr(S), 'dump mode: static text font change does not measure');
+      Img.Picture.Bitmap.SetSize(40, 30);
+      CheckEqS('300,10,5,5', BoundsStr(Img), 'dump mode: a picture change does not size the image');
     finally
       LayoutDumpMode := False;
     end;
+    Img.Picture.Bitmap.SetSize(41, 31);
+    CheckEqS('300,10,41,31', BoundsStr(Img), 'image: measuring again afterwards');
     L.Caption := 'After dump mode';
     CheckEqS(MeasureStr(L, L.Font, 'After dump mode', False, True, 0), CtlSize(L), 'measuring again afterwards');
   finally
@@ -288,6 +303,23 @@ begin
     CheckEqS(MeasureStr(AF.Boxed, AF.Boxed.Font, 'Box', False, True, 2), CtlSize(AF.Boxed),
       'static text: a change after loading measures');
   finally
+    AF.Free;
+  end;
+
+  Section('dump mode after loading (UIF-263 b: an OnCreate handler or a corpus set step)');
+  LayoutDumpMode := True;
+  AF := nil;
+  try
+    AF := TAutoForm.Create(nil);
+    CheckEqS('8,8,20,40', BoundsStr(AF.Stored), 'loaded in dump mode: label stored bounds');
+    AF.Stored.Caption := 'Now';
+    CheckEqS('8,8,20,40', BoundsStr(AF.Stored), 'loaded in dump mode: a caption change keeps the label bounds');
+    AF.Right.Caption := 'Wrapped again';
+    CheckEqS('100,60,50,30', BoundsStr(AF.Right), 'loaded in dump mode: word-wrapped label keeps its bounds');
+    AF.Boxed.Caption := 'Box';
+    CheckEqS('8,120,30,50', BoundsStr(AF.Boxed), 'loaded in dump mode: static text keeps its bounds');
+  finally
+    LayoutDumpMode := False;
     AF.Free;
     Bmp.Free;
   end;

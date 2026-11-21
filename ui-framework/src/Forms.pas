@@ -1748,13 +1748,15 @@ begin
   end;
 end;
 
-{ UIF-426: OnPaint with Canvas bound to the paint DC }
+{ UIF-426: OnPaint with Canvas bound to the paint DC. UIF-432 step 7: not before the first show is complete — a
+  themed child drawn during ShowWindow (the default button restyled when focus enters the form) asks the form for
+  its background with WM_PRINTCLIENT, which must not become the first OnPaint ahead of OnResize. }
 procedure TCustomForm.PaintWindow(DC: HDC);
 begin
   TControlCanvas(FCanvas).FreeHandle;
   FCanvas.Handle := DC;
   try
-    if Assigned(FOnPaint) then
+    if Assigned(FOnPaint) and FShownOnce then
       FOnPaint(Self);
   finally
     FCanvas.Handle := 0;

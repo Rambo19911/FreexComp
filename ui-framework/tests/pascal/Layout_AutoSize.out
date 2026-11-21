@@ -49,11 +49,16 @@ ok own font scaled
 ok label: the bounds of the scaling rule, not measured
 ok static text: the bounds of the scaling rule
 # dump mode (UIF-263 b)
+ok image: an empty picture keeps the bounds
 ok dump mode: caption change does not measure
 ok dump mode: font change does not measure
 ok dump mode: AutoSize True does not measure
 ok dump mode: WordWrap does not measure
 ok dump mode: static text does not measure
+ok dump mode: static text BorderStyle does not measure
+ok dump mode: static text font change does not measure
+ok dump mode: a picture change does not size the image
+ok image: measuring again afterwards
 ok measuring again afterwards
 # stored bounds win (UIF-260)
 ok label: stored bounds
@@ -69,4 +74,9 @@ ok word-wrapped: width stays after loading
 ok word-wrapped: right edge
 ok word-wrapped: height measured
 ok static text: a change after loading measures
-# passed 62 failed 0
+# dump mode after loading (UIF-263 b: an OnCreate handler or a corpus set step)
+ok loaded in dump mode: label stored bounds
+ok loaded in dump mode: a caption change keeps the label bounds
+ok loaded in dump mode: word-wrapped label keeps its bounds
+ok loaded in dump mode: static text keeps its bounds
+# passed 71 failed 0

@@ -126,4 +126,11 @@ ok ends with LF
     }
   ]
 }
-# passed 7 failed 0
+# helper controls of a component are not listed (UIF-322, U-117)
+ok the grid created its in-place editor
+ok the editor is a child control of the grid
+ok the editor has an empty Name
+ok the grid is listed
+ok its editor is not
+ok the grid has an empty controls list
+# passed 13 failed 0

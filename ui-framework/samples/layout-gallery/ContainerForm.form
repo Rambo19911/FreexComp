@@ -1,0 +1,61 @@
+object ContainerForm: TContainerForm
+  Left = 200
+  Top = 140
+  Caption = 'Containers'
+  ClientWidth = 500
+  ClientHeight = 300
+  PixelsPerInch = 96
+  object Pages: TPageControl
+    Left = 0
+    Top = 0
+    Width = 500
+    Height = 300
+    ActivePage = Sheet1
+    Align = alClient
+    TabOrder = 0
+    object Sheet1: TTabSheet
+      Caption = 'First'
+      object Group: TGroupBox
+        Left = 8
+        Top = 8
+        Width = 200
+        Height = 120
+        Caption = 'Group'
+        TabOrder = 0
+        object Inner: TPanel
+          Left = 0
+          Top = 0
+          Width = 50
+          Height = 50
+          Align = alClient
+          TabOrder = 0
+        end
+      end
+      object Scroll: TScrollBox
+        Left = 216
+        Top = 8
+        Width = 200
+        Height = 100
+        TabOrder = 1
+        object Wide: TPanel
+          Left = 0
+          Top = 0
+          Width = 300
+          Height = 50
+          TabOrder = 0
+        end
+      end
+    end
+    object Sheet2: TTabSheet
+      Caption = 'Second'
+      object List: TListView
+        Left = 0
+        Top = 0
+        Width = 250
+        Height = 150
+        Align = alClient
+        TabOrder = 0
+      end
+    end
+  end
+end

@@ -1,0 +1,77 @@
+object AlignForm: TAlignForm
+  Left = 160
+  Top = 100
+  Caption = 'Align'
+  ClientWidth = 640
+  ClientHeight = 400
+  PixelsPerInch = 96
+  object ToolBar: TToolBar
+    Left = 0
+    Top = 0
+    Width = 640
+    Height = 29
+    object NewBtn: TToolButton
+      Left = 0
+      Top = 0
+      Height = 22
+      Caption = 'New'
+    end
+    object OpenBtn: TToolButton
+      Left = 0
+      Top = 0
+      Height = 22
+      Caption = 'Open'
+    end
+    object Sep1: TToolButton
+      Left = 0
+      Top = 0
+      Width = 8
+      Height = 22
+      Style = tbsSeparator
+    end
+    object SaveBtn: TToolButton
+      Left = 0
+      Top = 0
+      Height = 22
+      Caption = 'Save'
+    end
+  end
+  object StatusBar: TStatusBar
+    Left = 0
+    Top = 381
+    Width = 640
+    Height = 19
+  end
+  object SidePanel: TPanel
+    Left = 0
+    Top = 29
+    Width = 150
+    Height = 352
+    Align = alLeft
+    BevelOuter = bvNone
+    TabOrder = 0
+  end
+  object Splitter1: TSplitter
+    Left = 150
+    Top = 29
+    Width = 3
+    Height = 352
+  end
+  object RightPanel: TPanel
+    Left = 540
+    Top = 29
+    Width = 100
+    Height = 352
+    Align = alRight
+    AlignWithMargins = True
+    TabOrder = 1
+  end
+  object Memo1: TMemo
+    Left = 0
+    Top = 0
+    Width = 100
+    Height = 50
+    Align = alClient
+    TabOrder = 2
+  end
+end

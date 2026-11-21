@@ -1,4 +1,4 @@
-// covers: UIF-090, UIF-091, UIF-092, UIF-093, UIF-094, UIF-110, UIF-111, UIF-132, UIF-137
+// covers: UIF-037, UIF-090, UIF-091, UIF-092, UIF-093, UIF-094, UIF-110, UIF-111, UIF-132, UIF-137
 // needs: desktop
 program Form_Focus;
 { U-043, core.md 8.1 and 8.3: CanFocus needs a visible, enabled chain ending in a visible, enabled form; SetFocus

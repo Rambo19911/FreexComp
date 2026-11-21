@@ -1,0 +1,84 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TMainForm",
+      "name": "MainForm",
+      "clientWidth": 400,
+      "clientHeight": 240,
+      "controls": [
+        {
+          "class": "TEdit",
+          "name": "NameEdit",
+          "left": 16,
+          "top": 16,
+          "width": 200,
+          "height": 23,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TButton",
+          "name": "GreetButton",
+          "left": 232,
+          "top": 15,
+          "width": 75,
+          "height": 25,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TButton",
+          "name": "ClearButton",
+          "left": 315,
+          "top": 15,
+          "width": 75,
+          "height": 25,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TStaticText",
+          "name": "ResultText",
+          "left": 16,
+          "top": 52,
+          "width": 374,
+          "height": 17,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TCheckBox",
+          "name": "UpperCheck",
+          "left": 16,
+          "top": 80,
+          "width": 150,
+          "height": 17,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TListBox",
+          "name": "HistoryList",
+          "left": 16,
+          "top": 108,
+          "width": 374,
+          "height": 90,
+          "visible": true,
+          "controls": []
+        },
+        {
+          "class": "TStatusBar",
+          "name": "StatusBar",
+          "left": 0,
+          "top": 221,
+          "width": 400,
+          "height": 19,
+          "visible": true,
+          "controls": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "name": "Gallery",
+  "language": "pascal",
+  "appType": "gui",
+  "mainSource": "Gallery.pas",
+  "files": [
+    { "path": "AlignForm.pas", "form": "AlignForm.form" },
+    { "path": "AnchorForm.pas", "form": "AnchorForm.form" },
+    { "path": "ContainerForm.pas", "form": "ContainerForm.form" },
+    { "path": "IntrinsicForm.pas", "form": "IntrinsicForm.form" },
+    { "path": "AnchorForm.form.steps", "kind": "other" }
+  ],
+  "searchPaths": ["../../src"],
+  "platforms": ["win64"],
+  "configurations": {
+    "Debug": { "optimization": 0, "debugInfo": true, "defines": ["DEBUG"], "outputDir": "bin/Debug" },
+    "Release": { "optimization": 2, "debugInfo": false, "defines": ["RELEASE"], "outputDir": "bin/Release" }
+  },
+  "activeConfiguration": "Debug"
+}

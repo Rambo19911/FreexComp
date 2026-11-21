@@ -1,0 +1,60 @@
+object AnchorForm: TAnchorForm
+  Left = 180
+  Top = 120
+  Caption = 'Anchors'
+  ClientWidth = 300
+  ClientHeight = 200
+  PixelsPerInch = 96
+  OnCreate = FormCreate
+  object TopLeft: TButton
+    Left = 8
+    Top = 8
+    Width = 75
+    Height = 25
+    Caption = 'Top left'
+    TabOrder = 0
+  end
+  object TopRight: TButton
+    Left = 217
+    Top = 8
+    Width = 75
+    Height = 25
+    Anchors = [akTop, akRight]
+    Caption = 'Top right'
+    TabOrder = 1
+  end
+  object BottomLeft: TButton
+    Left = 8
+    Top = 167
+    Width = 75
+    Height = 25
+    Anchors = [akLeft, akBottom]
+    Caption = 'Bottom left'
+    TabOrder = 2
+  end
+  object BottomRight: TButton
+    Left = 217
+    Top = 167
+    Width = 75
+    Height = 25
+    Anchors = [akRight, akBottom]
+    Caption = 'Bottom right'
+    TabOrder = 3
+  end
+  object Stretch: TPanel
+    Left = 8
+    Top = 41
+    Width = 284
+    Height = 118
+    Anchors = [akLeft, akTop, akRight, akBottom]
+    TabOrder = 4
+  end
+  object Center: TPanel
+    Left = 110
+    Top = 80
+    Width = 80
+    Height = 40
+    Anchors = []
+    TabOrder = 5
+  end
+end

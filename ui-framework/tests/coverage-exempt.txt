@@ -1,0 +1,55 @@
+# UiReq_Coverage exemptions (testing.md UIF-1206): one requirement id per line, then the reason it has no test.
+# Lines starting with '#' are comments. An id that gains a test must be removed (the check reports it).
+
+# design and process rules: enforced by construction or review, not by a run-time behaviour
+UIF-001 unit graph and language subset: the compiler rejects interface uses cycles; generics/anonymous methods are checked in review
+UIF-003 Win32 imports come only from the rtl Windows/CommCtrl/CommDlg units, whose import list is the winapi.md list (rtl tests)
+UIF-325 rule for changing the dump format version (documentation of how to evolve the format)
+UIF-985 how expected-layout.json files are written (by hand; reviewed with the arithmetic in the commit message)
+UIF-1202 project structure: the test project references the rtl golden runner assembly (proved by every build)
+UIF-1204 rule for writing group A programs (no shown windows unless needed; SW_SHOWNOACTIVATE), applied in review
+UIF-1207 process rule for bug fixes (failing test first)
+
+# owned by another area or another phase
+UIF-251 the designer's font-height mirror (C# engine, ide agent: DSG-LAY tests)
+UIF-302 the C# engine's load sequence (ide agent: LayoutEngineTests)
+UIF-330 location and ownership of the shared corpus (lead-owned tests/layout-corpus)
+UIF-332 design-time side of the corpus (ide agent: LayoutEngineTests.ExpectedDumpsMatch)
+UIF-333 process rule: a layout bug fix adds a corpus case first (lead-owned corpus)
+UIF-334 how corpus expectations are written (lead-owned corpus, by hand)
+UIF-727 designer naming rule for new menu items (ide agent)
+UIF-835 list/tree view check boxes and node streaming: Phase 8+ card UIF-1024
+UIF-880 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
+UIF-881 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
+UIF-882 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
+UIF-883 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
+UIF-884 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
+UIF-885 Phase 7 data-aware hooks: U-116 (Hooks_DataAware)
+UIF-971 data/ components and their metadata tests: Phase 7 (data agent)
+
+# behaviour not observable unattended
+UIF-726 main-menu keyboard access (Alt, F10) is Win32 default processing and needs real keyboard input with the foreground
+
+# not observable or not provokable in a test
+UIF-574 stock objects are never deleted: a wrong DeleteObject on a stock object succeeds silently and changes no count
+UIF-577 GDI creation failure: cannot be provoked without exhausting the session's GDI quota
+UIF-243 rule for user OnConstrainedResize handlers (determinism is the author's obligation)
+
+# not yet covered by a test that names them (gaps found by U-113; the candidate test is named)
+UIF-056 graphic-control mouse coordinates and no focus: candidate Core_MouseEvents (exercised there, header lacks the id)
+UIF-072 WM_COMMAND with LParam 0 handled by the form: candidate Menu_MainMenu (menu commands reach the form)
+UIF-138 form Visible drives Show/Hide: candidate Form_ShowHideEvents
+UIF-201 form Left/Top are screen coordinates of the outer corner: candidate Form_Position
+UIF-233 baseline parent size (0, 0) without a parent: candidate Layout_Anchors
+UIF-244 form Constraints apply to the outer size: candidate Form_ClientSize
+UIF-245 form Constraints ignored in handle-less layout: candidate Dump_Mode
+UIF-276 Position changes only Left/Top: candidate Form_Position
+UIF-286 values that scaling leaves alone: candidate Layout_Scaling
+UIF-413 nested message loops (modal, ProcessMessages, message boxes): candidate Form_Modal (nested modal)
+UIF-426 form background erase with Color and OnPaint canvas: candidate Core_Painting
+UIF-450 TCustomForm.GetChildren order: candidate Form_Streaming
+UIF-464 exceptions outside guarded sites end in the RTL handler: candidate App_Exceptions
+UIF-514 Font written to a .form only with ParentFont False: writer side is the designer's (run-time TWriter is a stub, R-107)
+UIF-600 Color/Font parent rules for every control: exercised per control by the Ctl_* Defaults sections
+UIF-601 default event OnClick unless stated: candidate MetadataMatchesControlsSpec (default-event check)
+UIF-602 caption accelerators and && in captions: candidate Ctl_Label / Form_Accelerators
