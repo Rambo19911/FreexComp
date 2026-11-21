@@ -1,0 +1,20 @@
+# defaults (UIF-560)
+ok DoubleBuffered False by default
+# not buffered: the window DC
+ok Paint and the graphic child get the window DC
+# buffered (UIF-560)
+ok erase logic, Paint and the graphic child draw into one memory bitmap of the update size
+ok the erase fill reached the window
+ok Paint reached the window
+ok the graphic child reached the window
+ok a partial update: bitmap of the update rectangle, origin offset to it
+ok drawn at the right place
+# opaque control: no erase into the buffer (UIF-080)
+ok csOpaque with DoubleBuffered: the erase logic draws nothing
+# a WM_PAINT with its own DC is painted directly
+ok the given DC, no buffer
+# native classes ignore the property (UIF-560)
+ok a subclassed system class paints its graphic child on the window DC
+# leak (UIF-571, UIF-573)
+ok GUI objects after 200 buffered paints
+# passed 12 failed 0

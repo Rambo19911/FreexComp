@@ -469,6 +469,7 @@ type
     FBrush: TBrush;
     FOwnClass: Boolean;                                      { the window is of our own class, not a system class }
     FDoubleBuffered: Boolean;
+    FSkipErase: Boolean;                                     { UIF-560: BeginPaint's erase of a buffered window }
     FPadding: TPadding;
     FCtlID: Cardinal;                                        { control id of the child window (0 = not yet assigned) }
     FSwallowChar: Boolean;                                   { UIF-085 step 2: drop the next WM_CHAR }
@@ -536,6 +537,7 @@ type
     procedure WMPaint(var Message: TWMPaint); virtual;
     procedure WMPrintClient(var Message: TMessage); virtual;
     procedure PaintHandler(var Message: TWMPaint);
+    procedure PaintBuffered;
     procedure PaintWindow(DC: HDC); virtual;
     procedure PaintControls(DC: HDC; First: TControl);
     property DoubleBuffered: Boolean read FDoubleBuffered write FDoubleBuffered default False;
@@ -3692,7 +3694,8 @@ begin
     Result := nil;
 end;
 
-{ UIF-085 steps 1, 2, 4: Key = 0 consumes the key and the WM_CHAR translated from it }
+{ UIF-085 steps 1, 2, 4: Key = 0 consumes the key and the WM_CHAR translated from it (the mark is cleared by the
+  next key-down or key-up, U-123) }
 procedure TWinControl.WMKeyDown(var Message: TWMKey);
 var
   Key: Word;
@@ -3719,6 +3722,8 @@ var
   Shift: TShiftState;
   P: TWinControl;
 begin
+  { U-123: the drop mark covers only the character translated from the key, which arrives before its key-up }
+  FSwallowChar := False;
   Key := Message.CharCode;
   Shift := KeyDataToShiftState(Message.KeyData);
   P := KeyPreviewer(Self);
@@ -3783,6 +3788,12 @@ begin
     DefaultHandler(Message);
     Exit;
   end;
+  { UIF-560: a buffered paint erases into its memory bitmap; the window itself is covered by the copy }
+  if FSkipErase then
+  begin
+    Message.Result := 1;
+    Exit;
+  end;
   if not ((csOpaque in FControlStyle) and FDoubleBuffered and (Self is TCustomControl)) then
     Windows.FillRect(Message.DC, GetClientRect, FBrush.Handle);
   Message.Result := 1;
@@ -3823,6 +3834,11 @@ var
   DC: HDC;
   PS: TPaintStruct;
 begin
+  if (Message.DC = 0) and FOwnClass and FDoubleBuffered then
+  begin
+    PaintBuffered;
+    Exit;
+  end;
   DC := Message.DC;
   if DC = 0 then
     DC := BeginPaint(FHandle, PS);
@@ -3832,6 +3848,55 @@ begin
   finally
     if Message.DC = 0 then
       EndPaint(FHandle, PS);
+  end;
+end;
+
+{ graphics.md UIF-560: the update rectangle is painted (erase logic, PaintWindow, graphic children) into a
+  compatible bitmap whose origin is offset to the rectangle, then copied to the window (UIF-571, UIF-573) }
+procedure TWinControl.PaintBuffered;
+var
+  DC, MemDC: HDC;
+  PS: TPaintStruct;
+  Bmp, OldBmp: HBITMAP;
+  R: TRect;
+  W, H: Integer;
+begin
+  FSkipErase := True;
+  try
+    DC := BeginPaint(FHandle, PS);
+  finally
+    FSkipErase := False;
+  end;
+  try
+    R := PS.rcPaint;
+    W := R.Right - R.Left;
+    H := R.Bottom - R.Top;
+    if (W <= 0) or (H <= 0) then
+      Exit;
+    MemDC := CreateCompatibleDC(DC);
+    if MemDC = 0 then
+      raise EOutOfResources.Create(SOutOfResources);
+    try
+      Bmp := CreateCompatibleBitmap(DC, W, H);
+      if Bmp = 0 then
+        raise EOutOfResources.Create(SOutOfResources);
+      OldBmp := SelectObject(MemDC, Bmp);
+      try
+        SetViewportOrgEx(MemDC, -R.Left, -R.Top, nil);
+        Perform(WM_ERASEBKGND, WPARAM(MemDC), 0);
+        PaintWindow(MemDC);
+        PaintControls(MemDC, nil);
+        SetViewportOrgEx(MemDC, 0, 0, nil);
+        BitBlt(DC, R.Left, R.Top, W, H, MemDC, 0, 0, SRCCOPY);
+      finally
+        SelectObject(MemDC, OldBmp);
+        DeleteObject(Bmp);
+      end;
+    finally
+      DeleteDC(MemDC);
+    end;
+  finally
+    EndPaint(FHandle, PS);
   end;
 end;
 

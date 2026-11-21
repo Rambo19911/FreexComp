@@ -1,0 +1,10 @@
+# a consumed key without a character (U-123)
+ok after a consumed arrow key and its key-up a bare WM_CHAR reaches OnKeyPress
+ok and is typed
+ok a key-down that is not consumed clears the mark
+# a consumed key with a character (UIF-085 unchanged)
+ok its own WM_CHAR, before the key-up, is dropped
+ok nothing typed
+ok the next character is not
+ok without a key-up in between, the next WM_CHAR is still dropped
+# passed 7 failed 0
