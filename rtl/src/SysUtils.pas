@@ -102,6 +102,7 @@ function TrimRight(const S: string): string;
 
 type
   TSysCharSet = set of AnsiChar;
+  TFileName = type string;            { a distinct string type for file names (LANG-205) }
   TReplaceFlag = (rfReplaceAll, rfIgnoreCase);
   TReplaceFlags = set of TReplaceFlag;
 

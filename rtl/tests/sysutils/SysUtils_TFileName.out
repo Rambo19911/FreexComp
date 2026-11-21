@@ -1,0 +1,12 @@
+# declared, assignment-compatible with string
+ok TFileName -> string
+ok string -> TFileName
+ok Length of a TFileName
+# passed to path functions
+ok ExtractFileName
+ok ExtractFilePath
+ok ExtractFileExt
+ok ChangeFileExt result into a TFileName
+# type info
+ok kind is tkUString
+# passed 8 failed 0
