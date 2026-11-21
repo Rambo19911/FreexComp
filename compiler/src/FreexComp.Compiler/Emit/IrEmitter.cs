@@ -1139,15 +1139,15 @@ internal sealed class ModuleState(IIrWriter writer)
     /// </summary>
     private LinkName TypeInfoName(TypeSymbol type)
     {
-        if (type is StringTypeSymbol { Variant: not StringVariant.Short } || type.IsPredefined)
-        {
-            return new LinkName("System." + type.Name + ".$rtti", AlwaysQuote: true);
-        }
-
-        if (IsDeclared(type))
+        if (!type.IsPredefined && IsDeclared(type))                     // before the strings: a distinct string type (C-262)
         {
             var prefix = type.ContainingSymbol is RoutineSymbol routine ? Mangler.Routine(routine).Text + "." + type.Name : type.QualifiedName;
             return new LinkName(prefix + ".$rtti", AlwaysQuote: true);
+        }
+
+        if (type is StringTypeSymbol { Variant: not StringVariant.Short } || type.IsPredefined)
+        {
+            return new LinkName("System." + type.Name + ".$rtti", AlwaysQuote: true);
         }
 
         return new LinkName(UnitName + ".$rtti." + type.Name, AlwaysQuote: true);

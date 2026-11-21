@@ -312,14 +312,14 @@ internal sealed partial class DeclarationBinder
 
     /// <summary>
     /// LANG-205 <c>type T = type U</c>: a new type with the representation of <c>U</c>, assignment-compatible with it. Ordinal
-    /// types become a full-range subrange of <c>U</c>'s host (so char and enumeration rules still match); reals, Booleans and
-    /// pointers a copy. A type constructor after <c>type</c> is already a new type (LANG-206). Distinct copies of structured
-    /// and managed named types are E2900 (C-057 decision).
+    /// types become a full-range subrange of <c>U</c>'s host (so char and enumeration rules still match); reals, Booleans,
+    /// long strings (C-262) and pointers a copy. A type constructor after <c>type</c> is already a new type (LANG-206).
+    /// Distinct copies of other structured and managed named types are E2900 (C-057 decision).
     /// </summary>
     private TypeSymbol BindDistinctType(TypeSyntax syntax, SyntaxToken identifier, ImmutableArray<Symbol>.Builder declared)
     {
         var source = BindType(syntax, identifier, declared);
-        if (syntax is not NamedTypeSyntax || source.TypeKind == TypeKind.Error)
+        if (syntax is not (NamedTypeSyntax or StringTypeSyntax { Length: null }) || source.TypeKind == TypeKind.Error)
         {
             return source;
         }
@@ -328,6 +328,8 @@ internal sealed partial class DeclarationBinder
         ImmutableArray<Text.Location> locations = [DiagnosticBag.LocationOf(identifier)];
         switch (source)
         {
+            case StringTypeSymbol { Variant: not StringVariant.Short } s:                                        // C-262
+                return new StringTypeSymbol(name, s.Variant, s.CodePage, containingSymbol: _container, locations: locations);
             case IntegerTypeSymbol integer:
                 return new IntegerTypeSymbol(name, integer.BaseType as IntegerTypeSymbol ?? integer, integer.Min, integer.Max, _container, locations);
             case CharTypeSymbol c:
@@ -335,9 +337,9 @@ internal sealed partial class DeclarationBinder
             case EnumTypeSymbol e:
                 return new EnumTypeSymbol(name, (EnumTypeSymbol)Ordinals.Host(e), e.Low, e.High, _container, locations);
             case BooleanTypeSymbol boolean:
-                return new BooleanTypeSymbol(name, (int)boolean.Size, boolean.IsCStyle);
+                return new BooleanTypeSymbol(name, (int)boolean.Size, boolean.IsCStyle, _container, locations);
             case RealTypeSymbol real:
-                return new RealTypeSymbol(name, real.RealKind);
+                return new RealTypeSymbol(name, real.RealKind, _container, locations);                          // C-262: RTTI name
             case PointerTypeSymbol { PointedType: var pointed } pointer when !ReferenceEquals(pointer, _types.Nil):
                 return new PointerTypeSymbol(name, pointed, pointer.AllowsPointerMath);
             default:

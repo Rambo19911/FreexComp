@@ -10,7 +10,8 @@ namespace FreexComp.Compiler.Lowering;
 /// <list type="bullet">
 /// <item>to <c>UnicodeString</c>: <c>_UStrFromWChar</c> (characters), <c>_UStrFromAStr</c>, <c>_UStrFromSStr(@d, @s)</c>,
 /// <c>_UStrFromPWChar</c>, a <c>PAnsiChar</c> through an AnsiString temporary, <c>array[0..N] of Char</c> by
-/// <c>_UStrFromPWCharLen(@d, @a[0], n)</c> after an inline scan for the first <c>#0</c> (at most N+1);</item>
+/// <c>_UStrFromPWCharLen(@d, @a[0], n)</c> after an inline scan for the first <c>#0</c> (at most N+1); another UnicodeString type
+/// (a distinct type, LANG-205) shares the block;</item>
 /// <item>to the AnsiString family (code page of the target type, ABI-027): <c>_AStrFromUStr(@d, s, cp)</c> (a <c>Char</c> through a
 /// UnicodeString temporary), <c>_AStrFromPCharLen(@d, p, n, cp)</c> for an <c>AnsiChar</c> (n = 1), a short string (its bytes 1..len)
 /// and a <c>PAnsiChar</c> (n from an inline scan; <c>nil</c> gives 0); another AnsiString type shares the block (<c>_AStrAsg</c>);</item>
@@ -40,6 +41,8 @@ internal static class StringConversions
                 {
                     case CharTypeSymbol:
                         return ManagedRewriter.FromChar(context, AddressOf(context, target), context.Lower(source));
+                    case StringTypeSymbol { Variant: StringVariant.Unicode }:                       // a distinct UnicodeString type (C-262)
+                        return ManagedRewriter.Assign(context, target, context.Lower(source));
                     case StringTypeSymbol { Variant: StringVariant.Ansi }:
                         return Call("_UStrFromAStr", [p, p], AddressOf(context, target), context.Lower(source));
                     case StringTypeSymbol { Variant: StringVariant.Short }:

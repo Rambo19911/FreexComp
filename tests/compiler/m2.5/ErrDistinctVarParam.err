@@ -1,0 +1,3 @@
+ErrDistinctVarParam.pas(31,11): error E2010: Incompatible types: 'string' and 'TMyStr'
+ErrDistinctVarParam.pas(32,12): error E2010: Incompatible types: 'TMyStr' and 'string'
+ErrDistinctVarParam.pas(33,10): error E2010: Incompatible types: 'Double' and 'TMyDbl'

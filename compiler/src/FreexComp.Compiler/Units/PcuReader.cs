@@ -452,7 +452,7 @@ internal static class PcuReader
                 }
 
                 case "boolean":
-                    return _byId[id] = new BooleanTypeSymbol(name, entry["size"]!.GetValue<int>(), entry["cStyle"]!.GetValue<bool>());
+                    return _byId[id] = new BooleanTypeSymbol(name, entry["size"]!.GetValue<int>(), entry["cStyle"]!.GetValue<bool>(), _unit, []);
                 case "real":
                     return _byId[id] = new RealTypeSymbol(name, Text(entry, "realKind") switch
                     {
@@ -460,15 +460,22 @@ internal static class PcuReader
                         "double" => RealKind.Double,
                         "currency" => RealKind.Currency,
                         var other => throw new PcuFormatException($"unknown real kind '{other}'"),
-                    });
+                    }, _unit, []);                                  // C-262: a distinct real keeps its RTTI name
                 case "string":
-                    return _byId[id] = new StringTypeSymbol(name, Text(entry, "variant") switch
+                {
+                    var variant = Text(entry, "variant") switch
                     {
                         "unicode" => StringVariant.Unicode,
                         "ansi" => StringVariant.Ansi,
                         "short" => StringVariant.Short,
                         var other => throw new PcuFormatException($"unknown string variant '{other}'"),
-                    }, entry["codePage"]!.GetValue<int>(), entry["maxLen"]!.GetValue<int>());
+                    };
+
+                    // C-262: a distinct long string type belongs to its unit (RTTI name); short strings stay anonymous as in source
+                    return _byId[id] = new StringTypeSymbol(name, variant, entry["codePage"]!.GetValue<int>(), entry["maxLen"]!.GetValue<int>(),
+                        variant == StringVariant.Short ? null : _unit, []);
+                }
+
                 case "set":
                     return _byId[id] = new SetTypeSymbol(name, Type(entry, "base"), _unit, []);
                 case "array":

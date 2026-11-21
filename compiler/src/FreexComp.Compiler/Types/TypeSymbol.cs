@@ -147,8 +147,8 @@ public sealed class IntegerTypeSymbol : TypeSymbol
 /// <summary><c>Boolean</c> (enumeration False, True) and the C-style <c>ByteBool</c>/<c>WordBool</c>/<c>LongBool</c> (LANG-215).</summary>
 public sealed class BooleanTypeSymbol : TypeSymbol
 {
-    internal BooleanTypeSymbol(string name, int size, bool isCStyle)
-        : base(TypeKind.Boolean, name, size, alignment: size)
+    internal BooleanTypeSymbol(string name, int size, bool isCStyle, Symbol? containingSymbol = null, ImmutableArray<Location> locations = default)
+        : base(TypeKind.Boolean, name, size, alignment: size, containingSymbol, locations)
     {
         IsCStyle = isCStyle;
     }
@@ -478,8 +478,8 @@ public enum RealKind { Single, Double, Currency }
 /// <summary><c>Single</c>, <c>Double</c> and <c>Currency</c> (Phase 8+, E2900 on use).</summary>
 public sealed class RealTypeSymbol : TypeSymbol
 {
-    internal RealTypeSymbol(string name, RealKind realKind)
-        : base(TypeKind.Real, name, size: realKind == RealKind.Single ? 4 : 8, alignment: realKind == RealKind.Single ? 4 : 8)
+    internal RealTypeSymbol(string name, RealKind realKind, Symbol? containingSymbol = null, ImmutableArray<Location> locations = default)
+        : base(TypeKind.Real, name, size: realKind == RealKind.Single ? 4 : 8, alignment: realKind == RealKind.Single ? 4 : 8, containingSymbol, locations)
     {
         RealKind = realKind;
     }
@@ -492,12 +492,15 @@ public enum StringVariant { Unicode, Ansi, Short }
 /// <summary>Long strings (UTF-16 or byte strings with a code page, ABI-027) and short strings.</summary>
 public sealed class StringTypeSymbol : TypeSymbol
 {
-    internal StringTypeSymbol(string name, StringVariant variant, int codePage, int maxLength = 0)
+    internal StringTypeSymbol(string name, StringVariant variant, int codePage, int maxLength = 0, Symbol? containingSymbol = null,
+                              ImmutableArray<Location> locations = default)
         : base(
             variant == StringVariant.Short ? TypeKind.ShortString : TypeKind.String,
             name,
             size: variant == StringVariant.Short ? maxLength + 1 : 8,
-            alignment: variant == StringVariant.Short ? 1 : 8)
+            alignment: variant == StringVariant.Short ? 1 : 8,
+            containingSymbol,
+            locations)
     {
         Variant = variant;
         CodePage = codePage;

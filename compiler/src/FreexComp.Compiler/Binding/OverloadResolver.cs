@@ -161,6 +161,18 @@ internal sealed class OverloadResolver(Conversions conversions)
             return constant?.Value is string ? 2 : 0;                  // a string literal → string costs 2
         }
 
+        // C-262: a converted argument prefers the predeclared real/string type over a distinct copy of it (LANG-205), so that
+        // P('y') or Q(1) with overloads on string and `type string` (Double and `type Double`) is not ambiguous
+        return (source, destination) switch
+        {
+            (_, RealTypeSymbol or StringTypeSymbol { Variant: not StringVariant.Short }) when !destination.IsPredefined
+                => ConvertedCost(source, destination, constant) + 1,
+            _ => ConvertedCost(source, destination, constant),
+        };
+    }
+
+    private static int ConvertedCost(TypeSymbol source, TypeSymbol destination, ConstantValue? constant)
+    {
         return (source, destination) switch
         {
             (BooleanTypeSymbol, BooleanTypeSymbol) => 2,
