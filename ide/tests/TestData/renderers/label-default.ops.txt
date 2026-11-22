@@ -1,0 +1,1 @@
+DrawText "Label1" 0,0,34,15 "Segoe UI" 12 #000000FF Left Top mnemonic

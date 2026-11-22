@@ -1,0 +1,3 @@
+FillRect 0,0,75,25 #E1E1E1FF
+DrawRect 0,0,75,25 #ADADADFF 1 Solid
+DrawText "&OK" 4,4,67,17 "Segoe UI" 12 #000000FF Center Center mnemonic

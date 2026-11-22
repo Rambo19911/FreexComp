@@ -1,0 +1,4 @@
+FillRect 0,0,120,40 #FFFFFFFF
+DrawRect 0,0,120,40 #B3261EFF 1 Dash
+FillPolygon 2,14 14,14 8,2 #B3261EFF
+DrawText "X: TMystery" 0,0,120,40 "Segoe UI" 12 #6D6D6DFF Center Center

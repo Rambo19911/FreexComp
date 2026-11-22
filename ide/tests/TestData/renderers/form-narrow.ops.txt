@@ -1,0 +1,8 @@
+DrawRect 0,0,102,52 #7A7A7AFF 1 Solid
+FillRect 1,1,100,30 #FFFFFFFF
+DrawRect 9,8,16,16 #6D6D6DFF 1 Solid
+FillRect 9,8,16,3 #6D6D6DFF
+DrawRect 27,11,10,10 #000000FF 1 Solid
+DrawLine 73.5,11.5,82.5,20.5 #000000FF 1 Solid
+DrawLine 82.5,11.5,73.5,20.5 #000000FF 1 Solid
+FillRect 1,31,100,20 #F0F0F0FF

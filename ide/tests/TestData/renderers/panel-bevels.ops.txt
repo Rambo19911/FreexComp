@@ -1,0 +1,4 @@
+FillRect 0,0,200,100 #F0F0F0FF
+DrawRect 0,0,200,100 #ADADADFF 2 Solid
+DrawRect 5,5,190,90 #ADADADFF 2 Solid
+DrawText "Bevels" 7,7,186,86 "Segoe UI" 12 #000000FF Center Center mnemonic

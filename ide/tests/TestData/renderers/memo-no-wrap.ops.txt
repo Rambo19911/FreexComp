@@ -1,0 +1,5 @@
+FillRect 0,0,185,40 #FFFFFFFF
+DrawRect 0,0,185,40 #7A7A7AFF 1 Solid
+DrawText "First line" 4,2,177,15 "Segoe UI" 12 #000000FF Left Top
+DrawText "Second line" 4,17,177,15 "Segoe UI" 12 #000000FF Left Top
+DrawText "Third line" 4,32,177,6 "Segoe UI" 12 #000000FF Left Top

@@ -1,0 +1,3 @@
+FillRect 0,0,185,41 #F0F0F0FF
+DrawRect 0,0,185,41 #ADADADFF 1 Solid
+DrawText "Panel1" 1,1,183,39 "Segoe UI" 12 #000000FF Center Center mnemonic

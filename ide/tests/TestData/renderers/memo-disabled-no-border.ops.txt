@@ -1,0 +1,2 @@
+FillRect 0,0,185,89 #F0F0F0FF
+DrawText "First line\nSecond line\nThird line" 3,1,179,87 "Segoe UI" 12 #6D6D6DFF Left Top wrap

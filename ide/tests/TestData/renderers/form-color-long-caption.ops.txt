@@ -1,0 +1,10 @@
+DrawRect 0,0,242,152 #7A7A7AFF 1 Solid
+FillRect 1,1,240,30 #FFFFFFFF
+DrawRect 9,8,16,16 #6D6D6DFF 1 Solid
+FillRect 9,8,16,3 #6D6D6DFF
+DrawText "A caption that is much too long for the caption bar of this form" 33,1,62,30 "Segoe UI" 12 #000000FF Left Center ellipsis
+DrawLine 121,16.5,131,16.5 #000000FF 1 Solid
+DrawRect 167,11,10,10 #000000FF 1 Solid
+DrawLine 213.5,11.5,222.5,20.5 #000000FF 1 Solid
+DrawLine 222.5,11.5,213.5,20.5 #000000FF 1 Solid
+FillRect 1,31,240,120 #FFFFFFFF

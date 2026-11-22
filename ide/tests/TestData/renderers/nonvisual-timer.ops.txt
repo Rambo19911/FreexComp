@@ -1,0 +1,3 @@
+FillRect 0,0,32,32 #FFFFFFFF
+DrawRect 0,0,32,32 #9AA29AFF 1 Solid
+DrawIcon "builtin:component" 4,4,24,24

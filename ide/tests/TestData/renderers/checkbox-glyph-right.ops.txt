@@ -1,0 +1,4 @@
+FillRect 84,2,13,13 #FFFFFFFF
+DrawRect 84,2,13,13 #7A7A7AFF 1 Solid
+DrawPolyline 87,8 89,11 94,5 #000000FF 2
+DrawText "Left text" 0,0,80,17 "Segoe UI" 12 #000000FF Left Center mnemonic

@@ -1,0 +1,5 @@
+DrawRect 0,0,105,105 #ADADADFF 1 Dash
+DrawLine 0.5,0.5,104.5,104.5 #ADADADFF 1 Solid
+DrawLine 104.5,0.5,0.5,104.5 #ADADADFF 1 Solid
+FillRect 47,43,10,19 #F0F0F0FF
+DrawText "X" 49,45,6,15 "Segoe UI" 12 #6D6D6DFF Center Center

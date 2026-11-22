@@ -1,0 +1,5 @@
+FillRect 0,0,145,23 #F0F0F0FF
+DrawRect 0,0,145,23 #7A7A7AFF 1 Solid
+DrawLine 127.5,1,127.5,22 #ADADADFF 1 Solid
+FillPolygon 132,9 139,9 135.5,13 #6D6D6DFF
+DrawText "Off" 4,1,120,21 "Segoe UI" 12 #6D6D6DFF Left Center

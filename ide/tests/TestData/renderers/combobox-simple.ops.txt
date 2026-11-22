@@ -1,0 +1,7 @@
+FillRect 0,0,145,23 #FFFFFFFF
+DrawRect 0,0,145,23 #7A7A7AFF 1 Solid
+DrawText "Typed" 4,1,137,21 "Segoe UI" 12 #000000FF Left Center
+FillRect 0,23,145,57 #FFFFFFFF
+DrawRect 0,23,145,57 #7A7A7AFF 1 Solid
+DrawText "Zero" 3,24,141,15 "Segoe UI" 12 #000000FF Left Center
+DrawText "One" 3,39,141,15 "Segoe UI" 12 #000000FF Left Center

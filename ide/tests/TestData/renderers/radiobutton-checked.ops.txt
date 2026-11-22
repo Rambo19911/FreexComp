@@ -1,0 +1,4 @@
+FillEllipse 0,2,13,13 #FFFFFFFF
+DrawEllipse 0,2,13,13 #7A7A7AFF 1
+FillEllipse 4,6,5,5 #000000FF
+DrawText "On" 17,0,96,17 "Segoe UI" 12 #000000FF Left Center mnemonic

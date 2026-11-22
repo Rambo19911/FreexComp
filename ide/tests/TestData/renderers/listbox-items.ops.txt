@@ -1,0 +1,5 @@
+FillRect 0,0,121,97 #FFFFFFFF
+DrawRect 0,0,121,97 #7A7A7AFF 1 Solid
+DrawText "Apple" 3,1,117,15 "Segoe UI" 12 #000000FF Left Center
+DrawText "Banana" 3,16,117,15 "Segoe UI" 12 #000000FF Left Center
+DrawText "Cherry" 3,31,117,15 "Segoe UI" 12 #000000FF Left Center

@@ -1,0 +1,4 @@
+FillRect 0,0,120,60 #F0F0F0FF
+DrawRect 0,0,120,60 #ADADADFF 1 Solid
+DrawText "X: TButton" 0,15,120,15 "Segoe UI" 12 #000000FF Center Center ellipsis
+DrawText "Shown below" 0,30,120,15 "Segoe UI" 12 #6D6D6DFF Center Center ellipsis

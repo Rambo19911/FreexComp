@@ -1,0 +1,2 @@
+FillRect 0,0,60,15 #FFFFFFFF
+DrawText "Opaque" 0,0,60,15 "Segoe UI" 12 #000000FF Left Top mnemonic

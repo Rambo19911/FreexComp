@@ -1,0 +1,4 @@
+FillRect 0,0,185,105 #F0F0F0FF
+DrawRect 0,8,185,97 #ADADADFF 1 Solid
+FillRect 6,0,22,17 #F0F0F0FF
+DrawText "Off" 8,0,18,17 "Segoe UI" 12 #6D6D6DFF Left Top mnemonic

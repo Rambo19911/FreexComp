@@ -1,0 +1,9 @@
+FillRect 0,0,185,89 #FFFFFFFF
+DrawRect 0,0,185,89 #7A7A7AFF 1 Solid
+FillRect 1,71,183,17 #F0F0F0FF
+DrawLine 1,71.5,184,71.5 #ADADADFF 1 Solid
+FillPolygon 11,76 11,83 7,79.5 #6D6D6DFF
+FillPolygon 173,76 173,83 177,79.5 #6D6D6DFF
+DrawText "First line" 4,2,177,15 "Segoe UI" 12 #000000FF Left Top
+DrawText "Second line" 4,17,177,15 "Segoe UI" 12 #000000FF Left Top
+DrawText "Third line" 4,32,177,15 "Segoe UI" 12 #000000FF Left Top
