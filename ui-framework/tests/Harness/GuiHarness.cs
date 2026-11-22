@@ -45,6 +45,8 @@ public static partial class Gui
     private const uint GW_HWNDNEXT = 2;
     private const uint GW_CHILD = 5;
     private const uint MF_BYPOSITION = 0x0400;
+    private const int SW_MINIMIZE = 6;
+    private const int SW_RESTORE = 9;
 
     private static readonly ConcurrentDictionary<string, Lazy<string>> Built = new(StringComparer.OrdinalIgnoreCase);
 
@@ -441,7 +443,82 @@ public static partial class Gui
 
     public static IntPtr Foreground() => GetForegroundWindow();
 
-    public static bool BringToForeground(IntPtr hwnd) => SetForegroundWindow(hwnd) && GetForegroundWindow() == hwnd;
+    /// <summary>
+    /// U-126: makes <paramref name="hwnd"/> (a top-level window of another process) the foreground window; false only
+    /// when it still is not after <paramref name="timeout"/> (default 5 s). A plain <c>SetForegroundWindow</c> from the
+    /// test process is refused by the foreground lock whenever another process holds the foreground, and even when it
+    /// succeeds the activation of another thread's window completes asynchronously (the foreground is briefly none),
+    /// so attempts take turns until the deadline, each followed by polling <c>GetForegroundWindow</c>:
+    /// <list type="number">
+    /// <item><c>SetForegroundWindow</c>;</item>
+    /// <item>the same with the foreground window's thread attached to the target's input (<c>AttachThreadInput</c>),
+    /// detached again at once;</item>
+    /// <item>minimise and restore (<c>ShowWindow</c> <c>SW_MINIMIZE</c>, <c>SW_RESTORE</c>, which activates the window).</item>
+    /// </list>
+    /// No input is injected and no system setting is changed.
+    /// </summary>
+    public static bool BringToForeground(IntPtr hwnd, TimeSpan? timeout = null)
+    {
+        var watch = Stopwatch.StartNew();
+        var limit = timeout ?? TimeSpan.FromSeconds(5);
+        for (var attempt = 0; ; attempt++)
+        {
+            if (GetForegroundWindow() == hwnd)
+            {
+                return true;
+            }
+
+            if (watch.Elapsed >= limit)
+            {
+                return false;
+            }
+
+            switch (attempt % 3)
+            {
+                case 0:
+                    SetForegroundWindow(hwnd);
+                    break;
+                case 1:
+                    var foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
+                    var targetThread = GetWindowThreadProcessId(hwnd, out _);
+                    var attached = foregroundThread != 0 && foregroundThread != targetThread
+                        && AttachThreadInput(foregroundThread, targetThread, true);
+                    SetForegroundWindow(hwnd);
+                    if (attached)
+                    {
+                        AttachThreadInput(foregroundThread, targetThread, false);
+                    }
+
+                    break;
+                default:
+                    if (!IsIconic(hwnd))
+                    {
+                        ShowWindow(hwnd, SW_MINIMIZE);
+                    }
+
+                    ShowWindow(hwnd, SW_RESTORE);
+                    break;
+            }
+
+            WaitUntil(() => GetForegroundWindow() == hwnd, TimeSpan.FromMilliseconds(500));
+        }
+    }
+
+    /// <summary>
+    /// U-126: starts <c>tests/gui/ForegroundHolder.pas</c>, a second process whose window takes the foreground, and
+    /// waits until its window is shown, idle and the foreground window (it does not always win it on its own: the
+    /// foreground lock may refuse it too); the caller disposes it (killed) or posts <c>WM_CLOSE</c>.
+    /// </summary>
+    public static GuiProcess StartForegroundHolder()
+    {
+        var exe = BuildProgram(Path.Combine(UiCorpus.AreaDirectory, "tests", "gui", "ForegroundHolder.pas"));
+        var holder = StartGui(exe, [], new Dictionary<string, string>());
+        var window = WaitForMainWindow(holder, "FxcForegroundHolder", "Foreground Holder");
+        Assert.True(window != IntPtr.Zero, "the foreground holder shows no window\n" + holder.StdErr);
+        WaitIdle(holder);
+        Assert.True(BringToForeground(window), $"the foreground holder did not get the foreground (it is {GetForegroundWindow():X})");
+        return holder;
+    }
 
     /// <summary>The GDI (<see cref="GR_GDIOBJECTS"/>) or USER (<see cref="GR_USEROBJECTS"/>) object count of <paramref name="process"/> (<c>GetGuiResources</c>).</summary>
     public static int GuiResources(Process process, uint kind) => (int)GetGuiResources(process.Handle, kind);
@@ -660,6 +737,18 @@ public static partial class Gui
     private static extern bool SetForegroundWindow(IntPtr hwnd);
 
     [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AttachThreadInput(uint attach, uint attachTo, [MarshalAs(UnmanagedType.Bool)] bool doAttach);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr hwnd);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr hwnd, int command);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
     private static extern uint GetGuiResources(IntPtr process, uint flags);
 
     [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
@@ -679,4 +768,15 @@ public static partial class Gui
     [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ReadProcessMemory(IntPtr process, IntPtr address, [Out] byte[] buffer, UIntPtr size, out UIntPtr read);
+}
+
+/// <summary>
+/// U-126: the group C and E classes, whose programs show windows that take or win back the foreground, run one test
+/// at a time: a foreground change in the middle of another such test perturbs it (activation repaints the frame and
+/// fills comctl32's caches, so GDI/USER counts move by several objects; focus moves).
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class DesktopCollection
+{
+    public const string Name = "Desktop";
 }

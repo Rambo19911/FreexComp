@@ -8,6 +8,7 @@ namespace FreexComp.UiFramework.Tests;
 [Trait("Category", "Toolchain")]
 [Trait("Category", "Integration")]
 [Trait("Category", "Foreground")]
+[Collection(DesktopCollection.Name)]
 public sealed class GuiHarnessTests
 {
     [Fact]
@@ -70,5 +71,30 @@ public sealed class GuiHarnessTests
         }
 
         Assert.True(other.Process.HasExited);
+    }
+
+    /// <summary>
+    /// U-126: <c>BringToForeground</c> takes the foreground back from another process that holds it (the foreground
+    /// lock refuses a plain <c>SetForegroundWindow</c> from the test process then), three times in a row.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UIF-1203")]
+    public void GuiHarness_BringToForegroundFromAnotherProcess()
+    {
+        Harness.RequireDesktop();
+        var exe = Gui.BuildProgram(Path.Combine(UiCorpus.AreaDirectory, "tests", "gui", "GuiProbe.pas"));
+        using var app = Gui.StartGui(exe, [], new Dictionary<string, string>());
+        var main = Gui.WaitForMainWindow(app, "FxcGuiProbe", "Probe Window");
+        Assert.NotEqual(IntPtr.Zero, main);
+        for (var round = 1; round <= 3; round++)
+        {
+            using var holder = Gui.StartForegroundHolder();
+            Assert.True(Gui.Foreground() != main, $"round {round}: the probe still holds the foreground, so the case is not tested");
+            Assert.True(Gui.BringToForeground(main), $"round {round}: the foreground stays {Gui.Foreground():X} ('{Gui.GetText(Gui.Foreground())}'), not the probe {main:X}");
+            Assert.Equal(main, Gui.Foreground());
+        }
+
+        Gui.Post(main, Gui.WM_CLOSE);
+        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
     }
 }

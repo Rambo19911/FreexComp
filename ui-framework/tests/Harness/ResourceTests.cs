@@ -4,6 +4,7 @@ namespace FreexComp.UiFramework.Tests;
 [Trait("Kind", "Native")]
 [Trait("Category", "Toolchain")]
 [Trait("Category", "Foreground")]
+[Collection(DesktopCollection.Name)]
 public sealed class ResourceTests
 {
     /// <summary>

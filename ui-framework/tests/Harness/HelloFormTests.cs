@@ -6,6 +6,7 @@ namespace FreexComp.UiFramework.Tests;
 [Trait("Kind", "Native")]
 [Trait("Category", "Toolchain")]
 [Trait("Category", "Integration")]
+[Collection(DesktopCollection.Name)]
 public sealed class HelloFormTests : IDisposable
 {
     private readonly string temp = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", "hello-" + Guid.NewGuid().ToString("N"));
@@ -168,7 +169,10 @@ public sealed class HelloFormTests : IDisposable
         Assert.Equal(1, app.Process.ExitCode);
     }
 
-    /// <summary>§3.4: Tab moves the focus in TabOrder, skipping the static text (needs real focus: the foreground).</summary>
+    /// <summary>
+    /// §3.4: Tab moves the focus in TabOrder, skipping the static text (needs real focus: the foreground). U-126: another
+    /// process takes the foreground first, as in a parallel run, and the harness must win it back; it never skips.
+    /// </summary>
     [Fact]
     [Trait("Category", "Foreground")]
     [Trait("Req", "UIF-100")]
@@ -180,9 +184,10 @@ public sealed class HelloFormTests : IDisposable
         using var app = Start(log);
         var form = Gui.WaitForMainWindow(app, "PN.TForm", "Hello Form");
         Assert.True(form != IntPtr.Zero, "main window not found\n" + app.StdErr);
-        if (!Gui.BringToForeground(form))
+        using (Gui.StartForegroundHolder())
         {
-            Assert.Skip("SetForegroundWindow failed: focus cannot be observed");
+            Assert.True(Gui.Foreground() != form, "the form still holds the foreground, so the case is not tested");
+            Assert.True(Gui.BringToForeground(form), $"the foreground stays {Gui.Foreground():X} ('{Gui.GetText(Gui.Foreground())}'), not the form {form:X}: focus cannot be observed");
         }
 
         var edit = Gui.FindDescendant(form, "EDIT");

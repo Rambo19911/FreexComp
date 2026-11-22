@@ -7,6 +7,7 @@ namespace FreexComp.UiFramework.Tests;
 [Trait("Kind", "Native")]
 [Trait("Category", "Toolchain")]
 [Trait("Category", "Integration")]
+[Collection(DesktopCollection.Name)]
 public sealed class LayoutGalleryTests : IDisposable
 {
     private readonly string temp = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", "gallery-" + Guid.NewGuid().ToString("N"));
