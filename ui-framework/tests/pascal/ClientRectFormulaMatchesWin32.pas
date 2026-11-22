@@ -4,11 +4,12 @@ program ClientRectFormulaMatchesWin32;
 { U-071, layout.md section 3.1, testing.md section 3.3: for every container class the client size computed by
   formula from fields (UIF-215) equals what Win32 GetClientRect reports for the window at the form's DPI, and the
   client origin (border thickness, UIF-216, device pixels at every DPI) equals the offset of the native client area
-  inside the window rectangle. Covered: the form, TPanel (bsNone, bsSingle), TGroupBox, TScrollBox (bsSingle,
-  bsNone; no bar, horizontal bar, vertical bar, both bars). The scroll-bar thickness B of the formula is also
+  inside the window rectangle. Covered: every container of the UIF-215 table: the form, TPanel (bsNone, bsSingle),
+  TGroupBox, TScrollBox (bsSingle, bsNone; no bar, horizontal bar, vertical bar, both bars), TPageControl, TTabSheet,
+  TToolBar and TStatusBar (U-129). The scroll-bar thickness B of the formula is also
   compared with the system metric of the form's DPI. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, ComCtrls, TestKit;
 
 function FormulaStr(C: TControl): string;
 begin
@@ -55,6 +56,10 @@ var
   G: TGroupBox;
   S: TScrollBox;
   Content: TPanel;
+  PC: TPageControl;
+  Sheet: TTabSheet;
+  Bar: TToolBar;
+  Status: TStatusBar;
   DPI, B, D: Integer;
   Ok: Boolean;
 begin
@@ -134,6 +139,27 @@ begin
     Content.SetBounds(0, 0, 20, 20);
     CheckEqB(False, S.VertScrollBar.IsScrollBarVisible or S.HorzScrollBar.IsScrollBarVisible, 'none shown');
     Compare(S, '(0, 0)', 'no bar');
+
+    Section('TPageControl and TTabSheet');
+    PC := TPageControl.Create(F);
+    PC.SetBounds(210, 100, 220, 160);
+    PC.Parent := F;
+    Sheet := TTabSheet.Create(F);
+    Sheet.Caption := 'Page';
+    Sheet.PageControl := PC;
+    PC.ActivePage := Sheet;
+    Compare(PC, '(0, 0)', 'page control');
+    Compare(Sheet, '(0, 0)', 'tab sheet');
+
+    Section('TToolBar');
+    Bar := TToolBar.Create(F);
+    Bar.Parent := F;
+    Compare(Bar, '(0, 0)', 'tool bar');
+
+    Section('TStatusBar');
+    Status := TStatusBar.Create(F);
+    Status.Parent := F;
+    Compare(Status, '(0, 0)', 'status bar');
   finally
     F.Free;
   end;

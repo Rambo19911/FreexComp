@@ -1,13 +1,28 @@
 // covers: UIF-570, UIF-571, UIF-573, UIF-575, UIF-576
 program Gdi_NoLeak;
 { U-112, graphics.md UIF-576: creates and destroys forms holding one control of every Phase 4 control class (plus a
-  main menu and an image list), each with its windows created and the whole tree painted once (WM_PRINT into a
-  memory bitmap: every control's paint path runs, no window is shown or activated). The C# test samples this
-  process's GDI and USER object counts (GetGuiResources) at the two synchronisation points: after one warm-up cycle
-  the program writes 'warm' and waits for a line on stdin; after 200 more cycles it writes 'done' and waits again. }
+  main menu, an image list, a popup menu with a sub-menu whose handles are created (U-135) and an enabled TTimer with
+  a handler, so its SetTimer runs and the form's destruction kills it), each with its windows created and the whole
+  tree painted once (WM_PRINT into a memory bitmap: every control's paint path runs, no window is shown or
+  activated). The C# test samples this process's GDI and USER object counts (GetGuiResources) at the two
+  synchronisation points: after one warm-up cycle the program writes 'warm' and waits for a line on stdin; after 200
+  more cycles it writes 'done' and waits again. }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, ComCtrls, Grids, Menus,
   ImgList;
+
+type
+  TTicker = class
+  public
+    procedure Tick(Sender: TObject);
+  end;
+
+procedure TTicker.Tick(Sender: TObject);
+begin
+end;
+
+var
+  Ticker: TTicker;
 
 function Add(AClass: TControlClass; AParent: TWinControl; L, T, W, H: Integer): TControl;
 begin
@@ -30,6 +45,9 @@ var
   Tree: TTreeView;
   List: TListView;
   Grid: TStringGrid;
+  Popup: TPopupMenu;
+  Sub: TMenuItem;
+  Timer: TTimer;
 begin
   F := TForm.CreateNew(nil);
   try
@@ -40,6 +58,19 @@ begin
     Item.Caption := '&File';
     Menu.Items.Add(Item);
     F.Menu := Menu;
+    Popup := TPopupMenu.Create(F);
+    Sub := TMenuItem.Create(F);
+    Sub.Caption := 'Sub';
+    Popup.Items.Add(Sub);
+    Item := TMenuItem.Create(F);
+    Item.Caption := 'Child';
+    Sub.Add(Item);
+    F.PopupMenu := Popup;
+    if (Popup.Handle = 0) or (Sub.Handle = 0) then
+      raise Exception.Create('popup menu handles not created');
+    Timer := TTimer.Create(F);
+    Timer.Interval := 60000;
+    Timer.OnTimer := Ticker.Tick;
     Images := TImageList.Create(F);
     Bmp := TBitmap.Create;
     try
@@ -111,6 +142,7 @@ var
   Line: string;
 begin
   Application.Initialize;
+  Ticker := TTicker.Create;
   Cycle;
   WriteLn('warm');
   Flush(Output);
@@ -120,4 +152,5 @@ begin
   WriteLn('done');
   Flush(Output);
   ReadLn(Line);
+  Ticker.Free;
 end.

@@ -1,0 +1,39 @@
+# loading a .form with every event bound (csLoading)
+ok no event while loading
+ok events bound
+ok no window yet
+ok no event while the streamed state is pushed in CreateWnd
+ok streamed edit text pushed
+ok streamed check state pushed
+ok streamed track position pushed
+ok streamed active page pushed
+# state set in code before the window exists (CreateWnd push)
+ok no edit window before the push
+ok no event during the push
+ok first window: edit text pushed
+ok first window: memo text pushed
+ok first window: check box state pushed
+ok first window: radio button state pushed
+ok first window: combo items pushed
+ok first window: combo index pushed
+ok first window: list items pushed
+ok first window: list index pushed
+ok first window: scroll bar position pushed
+ok first window: track bar position pushed
+ok first window: active page pushed
+# RecreateWnd pushes the state again (no events)
+ok no event during the push of a re-created window
+ok re-created window: edit text pushed
+ok re-created window: memo text pushed
+ok re-created window: check box state pushed
+ok re-created window: radio button state pushed
+ok re-created window: combo items pushed
+ok re-created window: combo index pushed
+ok re-created window: list items pushed
+ok re-created window: list index pushed
+ok re-created window: scroll bar position pushed
+ok re-created window: track bar position pushed
+ok re-created window: active page pushed
+ok after the push: handlers fire on a change by code
+ok after the push: handlers bound where a change by code fires nothing (UIF-702, UIF-774)
+# passed 35 failed 0

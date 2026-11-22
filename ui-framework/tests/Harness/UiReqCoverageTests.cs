@@ -33,13 +33,14 @@ public sealed partial class UiReqCoverageTests
     public static string ExemptPath => Path.Combine(TestsDirectory, "coverage-exempt.txt");
 
     [Fact]
+    [Trait("Category", "Spec")]              // reads docs/ to compare the tests with the spec (TESTING.md, U-132)
     [Trait("Req", "UIF-1206")]
     public void UiReq_Coverage()
     {
         // docs/ is git-ignored working material; without it the check has no input (as the RTL's Req_Coverage)
-        if (!Directory.Exists(SpecDirectory))
+        if (SkipReason(SpecDirectory) is { } reason)
         {
-            Assert.Skip(SpecDirectory + " is not present (plans are not part of the repository)");
+            Assert.Skip(reason);
         }
 
         var requirements = new SortedSet<string>(StringComparer.Ordinal);
@@ -55,6 +56,21 @@ public sealed partial class UiReqCoverageTests
 
         var problems = Problems(requirements, CoveredIds(TestsDirectory), RequirementCoverageTests.ReadExempt(ExemptPath));
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    /// <summary>U-132: <see cref="UiReq_Coverage"/> is a <c>Category=Spec</c> test (TESTING.md) whose only skip has the UIF-1203 reason.</summary>
+    [Fact]
+    [Trait("Req", "UIF-1203")]
+    public void UiReq_Coverage_IsSpecAndSkipsOnlyWithoutDocs()
+    {
+        var method = typeof(UiReqCoverageTests).GetMethod(nameof(UiReq_Coverage))!;
+        var categories = method.GetCustomAttributes(typeof(TraitAttribute), true).Cast<TraitAttribute>()
+            .Concat(typeof(UiReqCoverageTests).GetCustomAttributes(typeof(TraitAttribute), true).Cast<TraitAttribute>())
+            .Where(t => t.Name == "Category").Select(t => t.Value).ToList();
+
+        Assert.Contains("Spec", categories);
+        Assert.Equal("requirement documents not present", SkipReason(Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"))));
+        Assert.Null(SkipReason(SpecDirectory));
     }
 
     [Fact]
@@ -91,6 +107,10 @@ public sealed partial class UiReqCoverageTests
         Assert.Contains(problems, p => p.StartsWith("UIF-004: listed without a reason", StringComparison.Ordinal));
         Assert.Equal(4, problems.Count);
     }
+
+    /// <summary>UIF-1203: the reason of the one permitted skip when <paramref name="specDirectory"/> is absent; null when it exists.</summary>
+    public static string? SkipReason(string specDirectory) =>
+        Directory.Exists(specDirectory) ? null : "requirement documents not present";
 
     /// <summary>The rule ids defined in <paramref name="lines"/>, each once, in order of definition.</summary>
     public static List<string> Requirements(IEnumerable<string> lines)

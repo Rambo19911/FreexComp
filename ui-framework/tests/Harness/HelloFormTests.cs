@@ -206,6 +206,54 @@ public sealed class HelloFormTests : IDisposable
         Assert.Equal(0, app.Process.ExitCode);
     }
 
+    /// <summary>
+    /// U-134, controls-standard.md UIF-726: main-menu keyboard access is Win32 default processing of the form window that
+    /// our key pre-processing lets through. With the form in the foreground (taken from the foreground holder, U-127),
+    /// Alt alone and F10 alone (system key down and up, as the keyboard driver posts them) put the form's thread into
+    /// menu mode with the form as menu owner and no menu window open (the bar is selected), Escape leaves it; Alt+F (with
+    /// its <c>WM_SYSCHAR</c>) opens the File drop-down (a visible menu window of the thread) and X then chooses E&amp;xit, which ends the program with exit code 0.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Foreground")]
+    [Trait("Req", "UIF-726")]
+    public void HelloForm_MenuKeyboardAccess()
+    {
+        Harness.RequireDesktop();
+        using var holder = Gui.StartForegroundHolder();
+        var log = Path.Combine(temp, "events.log");
+        using var app = Start(log);
+        var form = Gui.WaitForMainWindow(app, "PN.TForm", "Hello Form");
+        Assert.True(form != IntPtr.Zero, "main window not found\n" + app.StdErr);
+        Gui.WaitIdle(app);
+        var holderWindow = Gui.WaitForMainWindow(holder, "FxcForegroundHolder", "Foreground Holder");
+        if (Gui.Foreground() != holderWindow)
+        {
+            Assert.True(Gui.BringToForeground(holderWindow), $"the holder did not get the foreground (it is {Gui.Foreground():X})");
+        }
+
+        Assert.True(Gui.BringToForeground(form), $"the form did not get the foreground (it is {Gui.Foreground():X})");
+        Gui.WaitIdle(app);
+        bool InMenu() => (Gui.GuiThreadFlags(form) & Gui.GUI_INMENUMODE) != 0 && Gui.MenuOwner(form) == form;
+        bool InPopup() => Gui.OpenMenuWindows(form) > 0;
+        Assert.False(InMenu(), "the form is in menu mode before any key");
+
+        foreach (var (key, name) in new[] { (Gui.VK_MENU, "Alt"), (Gui.VK_F10, "F10") })
+        {
+            Gui.PostSysKey(form, key, altDown: key == Gui.VK_MENU);
+            Assert.True(Gui.WaitUntil(InMenu), $"{name} did not enter menu mode (flags 0x{Gui.GuiThreadFlags(form):X}, menu owner {Gui.MenuOwner(form):X})");
+            Assert.False(InPopup(), $"{name} opened a menu instead of selecting the menu bar");
+            Gui.PostKey(form, Gui.VK_ESCAPE);
+            Assert.True(Gui.WaitUntil(() => !InMenu()), $"Escape did not leave the menu mode entered by {name}");
+        }
+
+        Gui.PostSysKey(form, 'F', altDown: true, character: 'f');
+        Assert.True(Gui.WaitUntil(InPopup), $"Alt+F did not open the File menu (flags 0x{Gui.GuiThreadFlags(form):X})");
+        Gui.Post(form, Gui.WM_KEYDOWN, 'X', 1);
+        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)), "X in the File menu did not choose Exit within 5 s");
+        Assert.Equal(0, app.Process.ExitCode);
+        Assert.Contains("OnClose", ReadShared(log));
+    }
+
     /// <summary>§3.5: the running sample has comctl32 version 6 loaded (RTL-870/871: the default GUI manifest).</summary>
     [Fact]
     [Trait("Category", "Foreground")]
@@ -264,8 +312,9 @@ public sealed class HelloFormTests : IDisposable
     /// <summary>
     /// U-127: activation cycles (the form takes the foreground from the foreground holder, then the holder takes it
     /// back, both through <see cref="Gui.BringToForeground"/>) grow neither the GDI nor the USER object count by more
-    /// than 2 over <see cref="ActivationCycles"/> cycles after a warm-up of <see cref="ActivationWarmUp"/> cycles; every
-    /// cycle must really activate the form (one <c>OnActivate</c> per cycle in the event log). The focus is first moved
+    /// than 2 at any point of <see cref="ActivationCycles"/> cycles (the maximum over the cycles, U-130) after a warm-up of
+    /// <see cref="ActivationWarmUp"/> cycles; every cycle must really activate the form exactly once (one <c>OnActivate</c>
+    /// per cycle in the event log, counted after the holder took the foreground back and the program went idle). The focus is first moved
     /// from <c>NameEdit</c> to <c>GreetButton</c> (Tab), so each activation focuses the default button (default-button
     /// styles, <c>WM_CTLCOLORBTN</c>, UIF-092 focus restore) and not the edit: a focus change of a themed EDIT animates
     /// its border through uxtheme's buffered-animation cache (a memory DC, bitmap and region per buffer), which grows
@@ -297,6 +346,8 @@ public sealed class HelloFormTests : IDisposable
             Assert.True(Gui.WaitUntil(() => Activations() > before), $"cycle {i}: the form is the foreground but was not activated (no OnActivate)");
             Assert.True(Gui.BringToForeground(holderWindow), $"cycle {i}: the holder did not get the foreground back (it is {Gui.Foreground():X})");
             Gui.WaitIdle(app);
+            var count = Activations() - before;                                                    // U-130: exactly one per cycle
+            Assert.True(count == 1, $"cycle {i}: {count} OnActivate lines, expected exactly 1\n{string.Join("\n", ReadShared(log))}");
         }
 
         Assert.True(Gui.BringToForeground(holderWindow), $"the holder did not get the foreground (it is {Gui.Foreground():X})");
@@ -323,8 +374,8 @@ public sealed class HelloFormTests : IDisposable
         }
 
         var (gdi1, user1) = ResourceTests.Counts(app);
-        Assert.True(gdi1 - gdi0 <= 2 && user1 - user0 <= 2,
-            $"after {ActivationCycles} activation cycles: GDI {gdi0} -> {gdi1} (max {gdiMax}), USER {user0} -> {user1} (max {userMax}); " +
+        Assert.True(gdiMax - gdi0 <= 2 && userMax - user0 <= 2,                                    // U-130: the max over the cycles (§3.7)
+            $"over {ActivationCycles} activation cycles: GDI {gdi0} -> {gdi1} (max {gdiMax}), USER {user0} -> {user1} (max {userMax}); " +
             $"at start GDI {gdiStart}, USER {userStart}, before the warm-up of {ActivationWarmUp} cycles");
         Assert.DoesNotContain("enter: NameEdit", ReadShared(log).SkipWhile(l => l != "enter: GreetButton"));
         Gui.Post(form, Gui.WM_CLOSE);

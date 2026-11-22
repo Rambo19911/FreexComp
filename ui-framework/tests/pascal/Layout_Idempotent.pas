@@ -2,8 +2,8 @@
 program Layout_Idempotent;
 { U-020, layout.md UIF-226: running a second layout pass immediately after a pass changes nothing. Applied to
   trees built in code from the worked examples (all five phases, margins, padding, constraints, space running
-  out, anchors after a parent resize, nested containers). The shared corpus tests/layout-corpus/ is not present
-  yet; LayoutCases_Runtime (U-051) runs the corpus forms. }
+  out, anchors after a parent resize, nested containers). Every form of the shared corpus tests/layout-corpus/ is
+  checked the same way by the theory Layout_Idempotent (U-128) through LayoutHost --check-idempotent. }
 uses
   Windows, Messages, Types, SysUtils, Classes, Controls, TestKit;
 

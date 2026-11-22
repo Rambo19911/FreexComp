@@ -27,9 +27,6 @@ UIF-884 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
 UIF-885 Phase 7 data-aware hooks: U-116 (Hooks_DataAware)
 UIF-971 data/ components and their metadata tests: Phase 7 (data agent)
 
-# behaviour not observable unattended
-UIF-726 main-menu keyboard access (Alt, F10) is Win32 default processing and needs real keyboard input with the foreground
-
 # not observable or not provokable in a test
 UIF-574 stock objects are never deleted: a wrong DeleteObject on a stock object succeeds silently and changes no count
 UIF-577 GDI creation failure: cannot be provoked without exhausting the session's GDI quota

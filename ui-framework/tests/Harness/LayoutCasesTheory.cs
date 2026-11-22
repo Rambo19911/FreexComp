@@ -37,6 +37,38 @@ public sealed class LayoutCasesTheory
         Assert.True(failure is null, failure);
     }
 
+    public static IEnumerable<TheoryDataRow<string>> IdempotentCases() =>
+        UiCorpus.DiscoverLayout().Select(c =>
+        {
+            var row = new TheoryDataRow<string>(c.Id) { TestDisplayName = "Layout_Idempotent " + c.Id };
+            row.Traits["Req"] = ["UIF-226"];
+            return row;
+        });
+
+    /// <summary>
+    /// UIF-226 over every corpus case (U-128): <c>LayoutHost --check-idempotent</c> runs the case's steps and, after every
+    /// dump, a second layout pass over the whole tree; a second dump that differs from the first fails the host.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "4")]
+    [MemberData(nameof(IdempotentCases))]
+    public async Task Layout_Idempotent(string id)
+    {
+        var @case = UiCorpus.DiscoverLayout().Single(c => c.Id == id);
+
+        var failure = await LayoutHost.RunIdempotentAsync(@case, TestContext.Current.CancellationToken);
+
+        Assert.True(failure is null, failure);
+    }
+
+    [Fact]
+    public void Layout_Idempotent_CoversWholeCorpus()
+    {
+        var ids = UiCorpus.DiscoverLayout().Select(c => c.Id[(c.Id.IndexOf('/') + 1)..][..3]).Distinct().ToList();
+
+        Assert.Equal(Enumerable.Range(1, 40).Select(n => $"E{n:00}"), ids.Order(StringComparer.Ordinal));
+    }
+
     [Fact]
     [Trait("Req", "UIF-324")]
     public void LayoutCases_ComparisonIsStructural()
@@ -95,6 +127,32 @@ public static class LayoutHost
         return Compare(expected, stdout) is { } difference
             ? $"{@case.Id}: {difference}\n--- expected\n{expected.Replace("\r\n", "\n", StringComparison.Ordinal)}\n--- actual\n{stdout}"
             : null;
+    }
+
+    /// <summary>UIF-226: null when a second layout pass after every dump of <paramref name="case"/> changed nothing.</summary>
+    public static async Task<string?> RunIdempotentAsync(LayoutCase @case, CancellationToken ct)
+    {
+        var (exe, failure) = await CompileOnceAsync(ct).ConfigureAwait(false);
+        if (exe is null)
+        {
+            return $"{@case.Id}: {failure}";
+        }
+
+        List<string> args = ["--check-idempotent", @case.FormPath];
+        if (@case.StepsPath is not null)
+        {
+            args.Add(@case.StepsPath);
+        }
+
+        var run = await RunProcessAsync(exe, GoldenRunner.CommandLine(args, null), Path.GetDirectoryName(exe)!, RunLimit, ct).ConfigureAwait(false);
+        if (run.Stopped is not null)
+        {
+            return $"{@case.Id}: {run.Stopped}";
+        }
+
+        return run.ExitCode == 0
+            ? null
+            : $"{@case.Id}: LayoutHost --check-idempotent exit code {run.ExitCode}, expected 0\n--- stderr\n{run.StdErr.Replace("\r\n", "\n", StringComparison.Ordinal)}";
     }
 
     /// <summary>UIF-324: null when equal; otherwise the JSON path of the first difference.</summary>

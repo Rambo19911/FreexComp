@@ -75,8 +75,8 @@ public sealed class MetadataTests
         Assert.True(problems.Count == 0, MetadataMatch.Report(problems));
     }
 
+    /// <summary>The metadata side of UIF-600; the requirement itself is covered by <c>Ctl_StatePushNoEvents</c> (U-133).</summary>
     [Fact]
-    [Trait("Req", "UIF-600")]
     public void MetadataFollowsControlConventions()
     {
         var problems = MetadataSpecChecks.ControlConventions(MetadataRoot.Load(DesignDirectory));

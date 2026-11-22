@@ -1,0 +1,89 @@
+object PushForm: TPushForm
+  Caption = 'State push'
+  ClientWidth = 400
+  ClientHeight = 300
+  Scaled = False
+  object Edit: TEdit
+    Left = 10
+    Top = 10
+    Text = 'streamed'
+    OnChange = AnyEvent
+    OnClick = AnyEvent
+  end
+  object Memo: TMemo
+    Left = 10
+    Top = 40
+    Lines = (
+      'one'
+      'two'
+    )
+    OnChange = AnyEvent
+    OnClick = AnyEvent
+  end
+  object Check: TCheckBox
+    Left = 200
+    Top = 10
+    Caption = 'Check'
+    Checked = True
+    OnClick = AnyEvent
+  end
+  object Radio: TRadioButton
+    Left = 200
+    Top = 40
+    Caption = 'Radio'
+    Checked = True
+    OnClick = AnyEvent
+  end
+  object Combo: TComboBox
+    Left = 200
+    Top = 70
+    Items = (
+      'a'
+      'b'
+      'c'
+    )
+    ItemIndex = 1
+    OnChange = AnyEvent
+    OnClick = AnyEvent
+    OnSelect = AnyEvent
+  end
+  object List: TListBox
+    Left = 10
+    Top = 140
+    Items = (
+      'x'
+      'y'
+      'z'
+    )
+    OnClick = AnyEvent
+  end
+  object Scroll: TScrollBar
+    Left = 200
+    Top = 110
+    Position = 30
+    OnChange = AnyEvent
+  end
+  object Track: TTrackBar
+    Left = 200
+    Top = 140
+    Max = 10
+    Position = 5
+    OnChange = AnyEvent
+  end
+  object Pages: TPageControl
+    Left = 200
+    Top = 190
+    Width = 180
+    Height = 100
+    ActivePage = Sheet2
+    OnChange = AnyEvent
+    OnChanging = PagesChanging
+    OnClick = AnyEvent
+    object Sheet1: TTabSheet
+      Caption = 'One'
+    end
+    object Sheet2: TTabSheet
+      Caption = 'Two'
+    end
+  end
+end

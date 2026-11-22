@@ -276,6 +276,64 @@ public static partial class Gui
         WaitIdle(hwnd);
     }
 
+    public const uint WM_SYSKEYDOWN = 0x0104;
+    public const uint WM_SYSKEYUP = 0x0105;
+    public const uint WM_SYSCHAR = 0x0106;
+    public const int VK_MENU = 0x12;
+    public const int VK_F10 = 0x79;
+    public const uint GUI_INMENUMODE = 0x0004;
+
+    /// <summary>
+    /// U-134: a system key (Alt held: context code bit 29 when <paramref name="altDown"/>, except on the release of Alt
+    /// itself) posted as the keyboard driver delivers it to the active window: <c>WM_SYSKEYDOWN</c>, then <c>WM_SYSCHAR</c> when <paramref name="character"/> is given, then
+    /// <c>WM_SYSKEYUP</c>; then <see cref="WaitIdle(IntPtr)"/>. No input is injected into the system queue.
+    /// </summary>
+    public static void PostSysKey(IntPtr hwnd, int vk, bool altDown, char? character = null)
+    {
+        var context = altDown ? 0x20000000 : 0;
+        Post(hwnd, WM_SYSKEYDOWN, (nuint)vk, context | 1);
+        if (character is { } c)
+        {
+            Post(hwnd, WM_SYSCHAR, c, context | 1);
+        }
+
+        Post(hwnd, WM_SYSKEYUP, (nuint)vk, unchecked((nint)(0xC0000001u | (vk == VK_MENU ? 0u : (uint)context))));   // Alt's own release: context 0
+        WaitIdle(hwnd);
+    }
+
+    /// <summary>U-134: the <c>GUI_*</c> flags of the thread that owns <paramref name="hwnd"/> (<c>GetGUIThreadInfo</c>).</summary>
+    public static uint GuiThreadFlags(IntPtr hwnd)
+    {
+        var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
+        Assert.True(GetGUIThreadInfo(GetWindowThreadProcessId(hwnd, out _), ref info), "GetGUIThreadInfo failed");
+        return info.Flags;
+    }
+
+    /// <summary>U-134: the window that owns the active menu of <paramref name="hwnd"/>'s thread (0 when none).</summary>
+    public static IntPtr MenuOwner(IntPtr hwnd)
+    {
+        var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
+        Assert.True(GetGUIThreadInfo(GetWindowThreadProcessId(hwnd, out _), ref info), "GetGUIThreadInfo failed");
+        return info.MenuOwner;
+    }
+
+    /// <summary>U-134: the visible menu windows (system class <c>#32768</c>: an open drop-down or popup menu) of <paramref name="hwnd"/>'s thread.</summary>
+    public static int OpenMenuWindows(IntPtr hwnd)
+    {
+        var thread = GetWindowThreadProcessId(hwnd, out _);
+        var count = 0;
+        EnumWindows((h, _) =>
+        {
+            if (GetWindowThreadProcessId(h, out int _) == thread && IsWindowVisible(h) && ClassName(h) == "#32768")
+            {
+                count++;
+            }
+
+            return true;
+        }, IntPtr.Zero);
+        return count;
+    }
+
     /// <summary><c>PostClick</c>: left button down (<c>MK_LBUTTON</c>) and up at client coordinates, then <see cref="WaitIdle(IntPtr)"/>.</summary>
     public static void PostClick(IntPtr hwnd, int x, int y)
     {
@@ -681,6 +739,24 @@ public static partial class Gui
         public int Right;
         public int Bottom;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public uint Size;
+        public uint Flags;
+        public IntPtr Active;
+        public IntPtr Focus;
+        public IntPtr Capture;
+        public IntPtr MenuOwner;
+        public IntPtr MoveSize;
+        public IntPtr Caret;
+        public Rect CaretRect;
+    }
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
 
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 

@@ -39,4 +39,15 @@ ok vertical bar: client origin
 ok none shown
 ok no bar: client size
 ok no bar: client origin
-# passed 35 failed 0
+# TPageControl and TTabSheet
+ok page control: client size
+ok page control: client origin
+ok tab sheet: client size
+ok tab sheet: client origin
+# TToolBar
+ok tool bar: client size
+ok tool bar: client origin
+# TStatusBar
+ok status bar: client size
+ok status bar: client origin
+# passed 43 failed 0
