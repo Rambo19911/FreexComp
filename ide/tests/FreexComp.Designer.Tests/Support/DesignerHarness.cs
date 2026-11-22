@@ -95,16 +95,30 @@ internal sealed class DesignerHarness : IDisposable
         Controller.OnPointer(new PointerInput(PointerKind.Down, surface.X, surface.Y, PointerButton.Left, modifiers, clickCount));
     }
 
-    public void MoveBy(int dx, int dy) => MoveTo((_pointer.X + dx, _pointer.Y + dy));
+    /// <summary>Pointer move relative to the last pointer position; <paramref name="modifiers"/> default to those of the press.</summary>
+    public void MoveBy(int dx, int dy, InputModifiers? modifiers = null) => MoveTo((_pointer.X + dx, _pointer.Y + dy), modifiers);
 
-    public void MoveTo((int X, int Y) surface)
+    public void MoveTo((int X, int Y) surface, InputModifiers? modifiers = null)
     {
         _pointer = surface;
-        Controller.OnPointer(new PointerInput(PointerKind.Move, surface.X, surface.Y, PointerButton.None, _pressModifiers));
+        Controller.OnPointer(new PointerInput(PointerKind.Move, surface.X, surface.Y, PointerButton.None, modifiers ?? _pressModifiers));
     }
 
-    public void Release() =>
-        Controller.OnPointer(new PointerInput(PointerKind.Up, _pointer.X, _pointer.Y, PointerButton.Left, _pressModifiers));
+    /// <summary>Left button up at the last pointer position; <paramref name="modifiers"/> default to those of the press.</summary>
+    public void Release(InputModifiers? modifiers = null) =>
+        Controller.OnPointer(new PointerInput(PointerKind.Up, _pointer.X, _pointer.Y, PointerButton.Left, modifiers ?? _pressModifiers));
+
+    public void CaptureLost() =>
+        Controller.OnPointer(new PointerInput(PointerKind.CaptureLost, _pointer.X, _pointer.Y, PointerButton.None, InputModifiers.None));
+
+    /// <summary>A key in the Designer scope; true = handled.</summary>
+    public bool Key(DesignKey key, InputModifiers modifiers = InputModifiers.None) => Controller.OnKey(new KeyInput(key, modifiers));
+
+    public void Execute(string commandId, string? argument = null) => Controller.Execute(commandId, argument);
+
+    public void ExecuteUndo() => Execute("edit.undo");
+
+    public void ExecuteRedo() => Execute("edit.redo");
 
     public void Click(string on, (int X, int Y)? at = null, InputModifiers modifiers = InputModifiers.None) =>
         ClickAt(SurfacePoint(on, at), modifiers);

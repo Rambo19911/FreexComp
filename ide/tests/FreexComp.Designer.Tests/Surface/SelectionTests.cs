@@ -72,18 +72,13 @@ public sealed class SelectionTests
         Assert.Equal(["MainForm"], h.Selected);
     }
 
-    private static readonly string NestedWithoutAlign =
-        File.ReadAllText(TestPaths.Combine("forms/canonical/nested.form")).Replace("    Align = alClient\n", "", StringComparison.Ordinal);
-
     [Fact]
     [Trait("Phase", "5")]
     [Trait("Req", "DSG-SUR-024")]
     [Trait("Req", "DSG-SUR-023")]
     public void AncestorCoversDescendant()
     {
-        // forms/canonical/nested.form without OuterPanel's Align: its stored bounds there are not the alClient result,
-        // which the harness's final layout-invariant check (DSG-LAY-040) rejects.
-        using var h = DesignerHarness.FromText(NestedWithoutAlign);
+        using var h = DesignerHarness.FromFile("forms/canonical/nested.form");
 
         // Shift+click across parents: the selection keeps all three, the effective set drops the covered check box.
         h.Click("InfoLabel");
@@ -100,5 +95,209 @@ public sealed class SelectionTests
         // Siblings are not covered by each other.
         h.Select("SafeRadio", "FastCheck");
         Assert.Equal(["FastCheck", "SafeRadio"], h.Selection.GetEffectiveSet().Select(o => o.Name));
+    }
+
+    // Panel1 at surface (25, 55)–(225, 155), client origin (26, 56); Btn1 (36, 66)–(111, 91), Btn2 (126, 66)–(201, 91);
+    // Edit1 (25, 197)–(146, 220). Tray: Timer1's cell (25, 365)–(97, 415), Dialog1's (105, 365)–(177, 415).
+    // Edit1 is created after Timer1: the Tab cycle still visits every control before the tray items.
+    internal const string Mixed = """
+        object F: TForm
+          ClientWidth = 400
+          ClientHeight = 300
+          object Panel1: TPanel
+            Left = 8
+            Top = 8
+            Width = 200
+            Height = 100
+            object Btn1: TButton
+              Left = 10
+              Top = 10
+              Width = 75
+              Height = 25
+            end
+            object Btn2: TButton
+              Left = 100
+              Top = 10
+              Width = 75
+              Height = 25
+            end
+          end
+          object Timer1: TTimer
+            DesignLeft = 8
+            DesignTop = 8
+          end
+          object Edit1: TEdit
+            Left = 8
+            Top = 150
+            Width = 121
+            Height = 23
+          end
+          object Dialog1: TOpenDialog
+            DesignLeft = 88
+            DesignTop = 8
+          end
+        end
+
+        """;
+
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-026")]
+    public void SelectAllSelectsSiblingsOfPrimary()
+    {
+        using var h = DesignerHarness.FromText(Mixed);
+        Assert.True(h.Controller.CanExecute("edit.selectAll"));
+
+        h.Select("Edit1", "Btn1"); // the primary decides: Btn1's parent is Panel1
+        h.Execute("edit.selectAll");
+        Assert.Equal(["Btn1", "Btn2"], h.Selected);
+        Assert.Equal("Btn2", h.Selection.Primary.Name);
+
+        h.Select("Panel1");
+        h.Execute("edit.selectAll"); // direct children of the form, creation order, tray items excluded
+        Assert.Equal(["Panel1", "Edit1"], h.Selected);
+
+        h.Select("F");
+        h.Execute("edit.selectAll");
+        Assert.Equal(["Panel1", "Edit1"], h.Selected);
+
+        h.Select("Timer1");
+        h.Execute("edit.selectAll"); // a tray item: all tray items instead
+        Assert.Equal(["Timer1", "Dialog1"], h.Selected);
+
+        using var empty = DesignerHarness.FromText("object E: TForm\n  ClientWidth = 200\n  ClientHeight = 100\nend\n");
+        var changes = 0;
+        empty.Selection.Changed += (_, _) => changes++;
+        empty.Execute("edit.selectAll"); // nothing to select: unchanged
+        Assert.Equal(["E"], empty.Selected);
+        Assert.Equal(0, changes);
+    }
+
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-027")]
+    [Trait("Req", "DSG-SUR-104")]
+    public void EscapeSelectsParent()
+    {
+        using var h = DesignerHarness.FromFile("forms/canonical/nested.form");
+        h.Select("InfoLabel", "FastCheck"); // primary FastCheck
+        Assert.True(h.Controller.CanExecute("designer.selectParent"));
+        Assert.True(h.Key(DesignKey.Escape));
+        Assert.Equal(["OptionsBox"], h.Selected);
+        Assert.True(h.Key(DesignKey.Escape));
+        Assert.Equal(["OuterPanel"], h.Selected);
+        h.Execute("designer.selectParent"); // a direct child of the form → { form }
+        Assert.Equal(["NestedForm"], h.Selected);
+
+        // The form selected: no change, and the key is reported unhandled (focus stays, UI-A11Y-004).
+        Assert.False(h.Controller.CanExecute("designer.selectParent"));
+        Assert.False(h.Key(DesignKey.Escape));
+        Assert.Equal(["NestedForm"], h.Selected);
+
+        using var tray = DesignerHarness.FromFile("forms/canonical/nonvisual.form");
+        tray.Select("OpenDialog1");
+        Assert.True(tray.Key(DesignKey.Escape)); // a tray item → { form }
+        Assert.Equal(["TrayForm"], tray.Selected);
+    }
+
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-028")]
+    public void TabCyclesInPreOrder()
+    {
+        using var h = DesignerHarness.FromText(Mixed);
+        string[] cycle = ["Panel1", "Btn1", "Btn2", "Edit1", "Timer1", "Dialog1"];
+
+        foreach (var name in cycle) // from the form: the first, then pre-order with the tray items last
+        {
+            Assert.True(h.Key(DesignKey.Tab));
+            Assert.Equal([name], h.Selected);
+        }
+
+        Assert.True(h.Key(DesignKey.Tab)); // from the last: the first (the form is not in the cycle)
+        Assert.Equal(["Panel1"], h.Selected);
+        Assert.True(h.Key(DesignKey.Tab, InputModifiers.Shift)); // and back
+        Assert.Equal(["Dialog1"], h.Selected);
+        h.Execute("designer.selectPrevious");
+        Assert.Equal(["Timer1"], h.Selected);
+
+        h.Select("F");
+        h.Execute("designer.selectPrevious"); // from the form, Shift+Tab selects the last
+        Assert.Equal(["Dialog1"], h.Selected);
+
+        h.Select("Btn2", "Btn1"); // a multi-selection continues from the primary; the result is single
+        h.Execute("designer.selectNext");
+        Assert.Equal(["Btn2"], h.Selected);
+    }
+
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-035")]
+    [Trait("Req", "DSG-SUR-036")]
+    [Trait("Req", "DSG-SUR-037")]
+    public void LassoSelectsIntersectingChildren()
+    {
+        using var h = DesignerHarness.FromText(Mixed);
+
+        // On the form client area: direct children of the form whose bounds intersect, in creation order.
+        h.PressAt((300, 60));
+        h.MoveTo((140, 210));
+        Assert.Equal(InteractionState.Lasso, h.Controller.State);
+        Assert.Equal(new Rect(140, 60, 160, 150), h.Controller.LassoRect);
+        Assert.Equal(["F"], h.Selected); // nothing changes before the release
+        h.Release();
+        Assert.Equal(InteractionState.Idle, h.Controller.State);
+        Assert.Null(h.Controller.LassoRect);
+        Assert.Equal(["Panel1", "Edit1"], h.Selected);
+
+        // Touching edges do not count (Panel1 ends at x = 225): no hit → { the lasso container }.
+        h.PressAt((300, 60));
+        h.MoveTo((225, 100));
+        h.Release();
+        Assert.Equal(["F"], h.Selected);
+
+        // Inside a container only with Ctrl (without it the drag moves the container).
+        h.PressAt((200, 140), InputModifiers.Ctrl);
+        h.MoveTo((150, 80));
+        Assert.Equal(InteractionState.Lasso, h.Controller.State);
+        h.Release();
+        Assert.Equal(["Btn2"], h.Selected); // Btn1 (36 … 111) is outside
+
+        // Shift held at release adds to the selection.
+        h.PressAt((300, 190));
+        h.MoveTo((140, 215));
+        h.Release(InputModifiers.Shift);
+        Assert.Equal(["Btn2", "Edit1"], h.Selected);
+
+        // Escape and CaptureLost cancel without changing the selection.
+        h.PressAt((300, 60));
+        h.MoveTo((140, 210));
+        Assert.True(h.Key(DesignKey.Escape));
+        Assert.Equal(InteractionState.Idle, h.Controller.State);
+        h.Release();
+        Assert.Equal(["Btn2", "Edit1"], h.Selected);
+        h.PressAt((300, 60));
+        h.MoveTo((140, 210));
+        h.CaptureLost();
+        Assert.Equal(InteractionState.Idle, h.Controller.State);
+        Assert.Equal(["Btn2", "Edit1"], h.Selected);
+
+        // The tray background starts a tray lasso over the tray items; no hit → { form }.
+        h.PressAt((300, 400));
+        h.MoveTo((150, 380));
+        h.Release();
+        Assert.Equal(["Dialog1"], h.Selected);
+        h.PressAt((300, 400));
+        h.MoveTo((250, 380));
+        h.Release();
+        Assert.Equal(["F"], h.Selected);
+
+        // The backdrop starts nothing, and a drag is no click.
+        h.Select("Btn1");
+        h.PressAt((600, 600));
+        h.MoveTo((10, 10));
+        Assert.Equal(InteractionState.PressPending, h.Controller.State);
+        h.Release();
+        Assert.Equal(["Btn1"], h.Selected);
     }
 }

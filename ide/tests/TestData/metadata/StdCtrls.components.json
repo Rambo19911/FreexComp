@@ -256,9 +256,10 @@
         { "name": "OnKeyPress", "signature": "TKeyPressEvent" }
       ]
     },
+    { "class": "TCustomGroupBox", "ancestor": "TCustomControl", "abstract": true, "kind": "container", "properties": [], "events": [] },
     {
       "class": "TGroupBox",
-      "ancestor": "TWinControl",
+      "ancestor": "TCustomGroupBox",
       "palette": { "page": "Standard", "order": 120 },
       "kind": "container",
       "defaultSize": { "width": 185, "height": 105 },

@@ -5,9 +5,10 @@
     "TPicture": { "kind": "object", "properties": [] }
   },
   "components": [
+    { "class": "TCustomPanel", "ancestor": "TCustomControl", "abstract": true, "kind": "container", "properties": [], "events": [] },
     {
       "class": "TPanel",
-      "ancestor": "TCustomControl",
+      "ancestor": "TCustomPanel",
       "palette": { "page": "Standard", "order": 130 },
       "kind": "container",
       "defaultSize": { "width": 185, "height": 41 },

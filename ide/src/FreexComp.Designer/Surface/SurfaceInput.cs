@@ -10,6 +10,12 @@ public enum PointerButton { None, Left, Right, Middle }
 [Flags]
 public enum InputModifiers { None = 0, Ctrl = 1, Shift = 2, Alt = 4 }
 
+/// <summary>One key press in the Designer scope (design-surface.md §1, §9).</summary>
+public readonly record struct KeyInput(DesignKey Key, InputModifiers Modifiers = InputModifiers.None);
+
+/// <summary>The keys the design surface handles itself (design-surface.md §9).</summary>
+public enum DesignKey { Left, Right, Up, Down, Tab, Enter, Escape, Delete }
+
 /// <summary>The controller's interaction mode (design-surface.md §1).</summary>
 public enum InteractionState { Idle, PressPending, Moving, Resizing, Lasso, Placing, TabOrder }
 

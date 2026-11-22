@@ -1,6 +1,8 @@
 using FreexComp.Designer.Model;
 using FreexComp.Designer.Surface;
-using FreexComp.Designer.Tests.Layout;
+using FreexComp.Designer.Layout;
+using FreexComp.Designer.Rendering;
+using FreexComp.Designer.Text;
 
 namespace FreexComp.Designer.Tests.Surface;
 
@@ -173,9 +175,10 @@ public sealed class HitTestTests
 
     private static (FormDocument Form, HitTester Hit) Load()
     {
-        // The framework metadata: the layout engine recognises containers by their framework ancestry (DSG-LAY-055).
-        var form = LayoutHarness.Parse(Text);
-        var engine = LayoutHarness.Engine;
+        // The test metadata (testing.md §2) carries the framework ancestry the layout engine recognises containers by (D-103).
+        var form = FormParser.Parse(Text.Replace("\r\n", "\n"), "hit.form", TestCatalog.Instance).Document!;
+        Assert.Empty(form.Diagnostics);
+        var engine = new LayoutEngine(TestCatalog.Instance, RendererRegistry.CreateDefault());
         return (form, new HitTester(new SurfaceGeometry(form, engine.Compute(form), engine.Renderers)));
     }
 

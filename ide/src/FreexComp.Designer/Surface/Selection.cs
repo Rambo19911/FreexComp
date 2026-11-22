@@ -36,6 +36,24 @@ public sealed class Selection
     public void Select(FormObject obj) => Replace([obj]);
 
     /// <summary>
+    /// Selection = <paramref name="objects"/> in that order (the last becomes primary); the root is dropped from a
+    /// multi-selection (DSG-SUR-022); an empty list leaves the selection unchanged.
+    /// </summary>
+    public void Select(IReadOnlyList<FormObject> objects)
+    {
+        var items = objects.Distinct(ReferenceEqualityComparer.Instance).Cast<FormObject>().ToList();
+        if (items.Count > 1)
+        {
+            items.RemoveAll(o => o.Parent is null);
+        }
+
+        if (items.Count > 0)
+        {
+            Replace(items);
+        }
+    }
+
+    /// <summary>
     /// DSG-SUR-021 / DSG-SUR-022 (Shift+click, Ctrl+click): an unselected component is appended (it becomes the primary;
     /// it replaces a selection consisting of the root); a selected one is removed when others remain; the only element
     /// stays. Adding the root to a selection of components is ignored.
