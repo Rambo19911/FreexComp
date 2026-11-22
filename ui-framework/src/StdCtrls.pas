@@ -1771,6 +1771,10 @@ begin
         if not HandleAllocated and not TMemoStrings(FLines).FSyncing then
           TMemoStrings(FLines).FList.Text := LinesTextOf(Text);
         inherited WndProc(Message);
+        { UIF-620: a multi-line edit sends no EN_CHANGE for WM_SETTEXT, so a Text assignment that changed the text
+          reports it here (U-133) }
+        if HandleAllocated and not (csCreating in ControlState) then
+          Change;
       end;
   else
     inherited WndProc(Message);

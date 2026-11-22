@@ -291,6 +291,13 @@ begin
     Log.Text := '';
     M.Text := M.Text;
     CheckEqS('', Log.Text, 'same text: no OnChange');
+    Check(M.HandleAllocated, 'the memo has a window');
+    Log.Text := '';
+    M.Text := 'set' + CRLF + 'by code';
+    CheckEqS('change;', Log.Text, 'Text := with a window fires OnChange once (UIF-620; WM_SETTEXT sends no EN_CHANGE to a multi-line edit)');
+    Log.Text := '';
+    M.Lines.Text := 'by' + CRLF + 'Lines.Text';
+    CheckEqS('change;', Log.Text, 'Lines.Text := with a window fires OnChange once');
     M.OnChange := nil;
 
     Section('special keys (UIF-632)');

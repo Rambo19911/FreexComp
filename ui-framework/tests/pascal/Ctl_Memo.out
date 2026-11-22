@@ -92,6 +92,9 @@ ok CaretPos := (2, 1)
 # OnChange
 ok Lines.Add fires OnChange
 ok same text: no OnChange
+ok the memo has a window
+ok Text := with a window fires OnChange once (UIF-620; WM_SETTEXT sends no EN_CHANGE to a multi-line edit)
+ok Lines.Text := with a window fires OnChange once
 # special keys (UIF-632)
 ok WantReturns: wants Return
 ok WantTabs False: Tab not wanted
@@ -129,4 +132,4 @@ ok OnChange bound
 ok OnChange handler of the form
 # leak
 ok GUI objects after 100 instances with handles
-# passed 122 failed 0
+# passed 125 failed 0
