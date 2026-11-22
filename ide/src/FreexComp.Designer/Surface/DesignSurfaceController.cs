@@ -2,6 +2,7 @@ using FreexComp.Designer.Catalog;
 using FreexComp.Designer.Editing;
 using FreexComp.Designer.Layout;
 using FreexComp.Designer.Model;
+using FreexComp.Designer.Rendering;
 
 namespace FreexComp.Designer.Surface;
 
@@ -32,7 +33,16 @@ public sealed class DesignSurfaceController
     private FormObject? _lassoContainer;
 
     // The move drag (§5): the effective move set with the stored origins, tray or controls, the current delta, the preview.
-    private List<(FormObject Object, int Left, int Top)> _moveSet = [];
+    private List<MoveMember> _moveSet = [];
+
+    // The resize drag (§7): the members with their original bounds, the primary and its handle, the current bounds.
+    private List<(FormObject Object, Rect Original)> _resizeSet = [];
+    private List<(FormObject Object, Rect Bounds)> _resizeBounds = [];
+    private FormObject? _resizePrimary;
+    private HandleKind _resizeHandle;
+
+    private (FormObject? Container, int Left, int Top) _moveTarget;
+    private FormObject? _moveAnchor;
     private bool _moveTray;
     private (int X, int Y) _moveDelta;
     private (int Version, LayoutResult Result, SurfaceGeometry Geometry, HitTester HitTester)? _preview;
@@ -110,6 +120,13 @@ public sealed class DesignSurfaceController
                     StartDrag(input);
                 }
 
+                break;
+            case PointerKind.Move when State == InteractionState.Resizing:
+                UpdateResize(input);
+                break;
+            case PointerKind.Up when input.Button == PointerButton.Left && State == InteractionState.Resizing:
+                UpdateResize(input);
+                DropResize();
                 break;
             case PointerKind.Move when State == InteractionState.Moving:
                 UpdateMove(input);
@@ -194,9 +211,9 @@ public sealed class DesignSurfaceController
     /// <summary>DSG-SUR-104: Escape cancels the first applicable mode, else selects the parent (unhandled on the form).</summary>
     private bool Escape()
     {
-        if (State is InteractionState.Lasso or InteractionState.Moving)
+        if (State is InteractionState.Lasso or InteractionState.Moving or InteractionState.Resizing)
         {
-            ResetPress(); // DSG-SUR-037, DSG-SUR-058: nothing is recorded
+            ResetPress(); // DSG-SUR-037, DSG-SUR-058, DSG-SUR-087: nothing is recorded
             return true;
         }
 
@@ -245,88 +262,149 @@ public sealed class DesignSurfaceController
         Selection.Select(cycle[next]);
     }
 
+    /// <summary>
+    /// During a move that would re-parent: the target container, unless it is the form root (UI-DSG-041 drop-target
+    /// highlight, DSG-SUR-055); null otherwise.
+    /// </summary>
+    public FormObject? DropTarget { get; private set; }
+
+    /// <summary>The guidelines of the snaps currently applied during a drag (DSG-SUR-074, UI-DSG-050); empty otherwise.</summary>
+    public IReadOnlyList<Guideline> Guidelines { get; private set; } = [];
+
     /// <summary>The lasso rectangle in surface coordinates while a lasso is active (DSG-SUR-035), else null.</summary>
     public Rect? LassoRect { get; private set; }
 
     /// <summary>
     /// The drag threshold was crossed (DSG-SUR-040): a lasso on the form client area, on a container hit with Ctrl or on
-    /// the tray background (DSG-SUR-035); the backdrop starts nothing. A drag never applies the click rule.
+    /// the tray background (DSG-SUR-035); the backdrop starts nothing; a move on a selected component; a resize on a
+    /// handle. With <c>designer.lockControls</c> no move or resize starts (DSG-SUR-051, DSG-SUR-087). A drag never applies
+    /// the click rule.
     /// </summary>
     private void StartDrag(PointerInput input)
     {
         _dragging = true;
-        if (_pressedOnHandle)
-        {
-            return;
-        }
-
         var lassoInControl = _pressHit.Kind == HitKind.Control && _downModifiers.HasFlag(InputModifiers.Ctrl)
             && _pressed is { Info.AcceptsChildren: true, IsPreserved: false };
-        if (_pressHit.Kind is HitKind.FormClient or HitKind.Tray || lassoInControl)
+        if (!_pressedOnHandle && (_pressHit.Kind is HitKind.FormClient or HitKind.Tray || lassoInControl))
         {
             _lassoContainer = _pressHit.Kind == HitKind.Tray ? null : _pressed;
             State = InteractionState.Lasso;
             UpdateLasso(input);
+            return;
         }
-        else if (_pressHit.Kind is HitKind.Control or HitKind.TrayItem && _pressed is { } anchor && Selection.Contains(anchor))
+
+        var moves = !_pressedOnHandle && _pressHit.Kind is HitKind.Control or HitKind.TrayItem && _pressed is { } p && Selection.Contains(p);
+        if (!_pressedOnHandle && !moves)
         {
-            StartMove(anchor, input);
+            return;
+        }
+
+        if (_settings.LockControls)
+        {
+            _host.SetStatus(StatusIds.Locked);
+            return;
+        }
+
+        if (moves)
+        {
+            StartMove(_pressed!, input);
+        }
+        else if (_pressHit is { Kind: HitKind.Handle, Object: { } primary, Handle: { } handle })
+        {
+            StartResize(primary, handle, input); // the form's handles (HitKind.FormHandle) resize the form: D-043
         }
     }
 
     /// <summary>
     /// DSG-SUR-050: the effective move set: the selection after DSG-SUR-024 without the form, preserved and aligned
     /// controls; only tray items when the drag starts on a tray item, only controls otherwise. A drag that starts on an
-    /// aligned or preserved control moves nothing.
+    /// aligned control moves nothing (status <c>Msg.Designer.AlignedCannotMove</c>), nor one that starts on a preserved
+    /// component (DSG-SUR-004, <c>Msg.Designer.ReadOnlyItem</c>).
     /// </summary>
     private void StartMove(FormObject anchor, PointerInput input)
     {
         var g = Geometry;
         _moveTray = g.IsTrayItem(anchor);
-        if (!_moveTray && (anchor.IsPreserved || IsAligned(anchor)))
+        if (anchor.IsPreserved)
         {
+            _host.SetStatus(StatusIds.ReadOnlyItem, anchor.Name);
+            return;
+        }
+
+        if (!_moveTray && IsAligned(anchor))
+        {
+            _host.SetStatus(StatusIds.AlignedCannotMove, anchor.Name);
             return;
         }
 
         _moveSet = Selection.GetEffectiveSet()
-            .Where(o => _moveTray ? g.IsTrayItem(o) : g.IsControl(o) && !o.IsPreserved && !IsAligned(o))
+            .Where(o => _moveTray ? g.IsTrayItem(o) && !o.IsPreserved : g.IsControl(o) && !o.IsPreserved && !IsAligned(o))
             .Select(o => _moveTray
-                ? (o, SurfaceGeometry.TrayPosition(o).X, SurfaceGeometry.TrayPosition(o).Y)
-                : (o, Layout.GetBounds(o).Left, Layout.GetBounds(o).Top))
+                ? new MoveMember(o, SurfaceGeometry.TrayPosition(o).X, SurfaceGeometry.TrayPosition(o).Y, 0, 0)
+                : new MoveMember(o, Layout.GetBounds(o).Left, Layout.GetBounds(o).Top, g.GetBounds(o).Left, g.GetBounds(o).Top))
             .ToList();
         if (_moveSet.Count == 0)
         {
             return;
         }
 
+        _moveAnchor = _moveSet.Exists(m => ReferenceEquals(m.Object, anchor)) ? anchor : _moveSet[0].Object;
         State = InteractionState.Moving;
         UpdateMove(input);
     }
 
-    /// <summary>DSG-SUR-052: raw delta = pointer - down pointer; Shift forces the smaller component to 0 (each event).</summary>
+    /// <summary>
+    /// DSG-SUR-052: raw delta = pointer - down pointer; Shift forces the smaller component to 0 (each event). DSG-SUR-055:
+    /// the target container under the pointer. DSG-SUR-053, DSG-SUR-056: snapping (§6) of the anchor control in the
+    /// target's client coordinates, among the target's children, adjusts the delta of the whole move set. An axis forced to
+    /// 0 by Shift is not snapped (the constrained move stays on its axis).
+    /// </summary>
     private void UpdateMove(PointerInput input)
     {
         var (x, y) = SurfaceGeometry.Round(input.X, input.Y);
         var (dx, dy) = (x - _downAt.X, y - _downAt.Y);
+        var (snapX, snapY) = (true, true);
         if (input.Modifiers.HasFlag(InputModifiers.Shift))
         {
-            (dx, dy) = Math.Abs(dx) >= Math.Abs(dy) ? (dx, 0) : (0, dy);
+            (dx, dy, snapX, snapY) = Math.Abs(dx) >= Math.Abs(dy) ? (dx, 0, true, false) : (0, dy, false, true);
         }
 
-        if (_moveDelta == (dx, dy))
+        _preview = null; // the target, the snapping and the preview start from the model's layout
+        var g = Geometry;
+        var options = SnapOptions.From(_settings, input.Modifiers.HasFlag(InputModifiers.Alt));
+        var anchor = _moveAnchor!;
+        IReadOnlyList<Guideline> guidelines = [];
+        if (_moveTray)
         {
-            return;
+            var (left, top) = SurfaceGeometry.TrayPosition(anchor);
+            var snapped = SnapEngine.SnapTray((left + dx, top + dy), options);
+            (dx, dy) = (snapX ? snapped.X - left : dx, snapY ? snapped.Y - top : dy);
+        }
+        else
+        {
+            var target = TargetContainer((x, y), anchor);
+            var origin = g.GetClientRect(target);
+            var s = g.GetBounds(anchor);
+            var candidate = s with { Left = s.Left + dx - origin.Left, Top = s.Top + dy - origin.Top };
+            var snap = SnapEngine.SnapMove(candidate, BaselineOffset(anchor), SnapTargetOf(target, _moveSet.Select(m => m.Object)), options,
+                snapX, snapY);
+            (dx, dy, guidelines) = (dx + snap.Dx, dy + snap.Dy, snap.Guidelines);
+            _moveTarget = (target, origin.Left, origin.Top);
+            DropTarget = ReferenceEquals(target, anchor.Parent) || target.Parent is null ? null : target;
         }
 
+        Guidelines = guidelines;
         _moveDelta = (dx, dy);
-        _preview = null;
-        if (!_moveTray && _moveDelta != (0, 0))
+        if (!_moveTray && (_moveDelta != (0, 0) || Reparents))
         {
             var overrides = new Dictionary<string, LayoutOverride>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (obj, left, top) in _moveSet)
+            foreach (var m in _moveSet)
             {
-                var b = Layout.GetBounds(obj);
-                overrides[obj.Name] = new LayoutOverride(b with { Left = left + dx, Top = top + dy });
+                var b = Layout.GetBounds(m.Object);
+                overrides[m.Object.Name] = MovesToTarget(m)
+                    ? new LayoutOverride(b with { Left = m.SurfaceLeft + dx - _moveTarget.Left, Top = m.SurfaceTop + dy - _moveTarget.Top },
+                        ParentName: _moveTarget.Container!.Name)
+                    : new LayoutOverride(b with { Left = m.Left + dx, Top = m.Top + dy });
             }
 
             var result = _layout.ComputeWithOverrides(Document, overrides);
@@ -337,18 +415,108 @@ public sealed class DesignSurfaceController
         Invalidated?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>The drop re-parents: the target differs from the anchor control's parent (DSG-SUR-055).</summary>
+    private bool Reparents => _moveTarget.Container is { } t && _moveAnchor is { } a && !ReferenceEquals(t, a.Parent);
+
+    /// <summary>A member of the move set that the drop moves into the target (members already there stay in place).</summary>
+    private bool MovesToTarget(MoveMember m) => Reparents && !ReferenceEquals(m.Object.Parent, _moveTarget.Container);
+
     /// <summary>
-    /// The drop: one "Move" undo unit with the new positions and the layout commit (DSG-LAY-040); nothing when no position
-    /// changes (DSG-SUR-059). Tray positions do not go below 0.
+    /// DSG-SUR-055: the deepest container (accepts children, not preserved, not in the move set nor inside a member of it)
+    /// whose client rect contains the surface point; the form when no container does; outside the form client area the
+    /// anchor's current parent. Containers are searched front to back, each inside its parent's client rect.
+    /// </summary>
+    private FormObject TargetContainer((int X, int Y) p, FormObject anchor)
+    {
+        var g = Geometry;
+        if (!Contains(g.FormClientRect, p))
+        {
+            return anchor.Parent!;
+        }
+
+        var target = Document.Root;
+        while (true)
+        {
+            FormObject? next = null;
+            for (var i = target.Children.Count - 1; i >= 0 && next is null; i--)
+            {
+                var c = target.Children[i];
+                if (c.Info is { AcceptsChildren: true } && !c.IsPreserved && g.IsControl(c) && !_moveSet.Exists(m => ReferenceEquals(m.Object, c))
+                    && !IsHiddenPage(c, g) && Contains(g.GetBounds(c), p) && Contains(g.GetClientRect(c), p))
+                {
+                    next = c;
+                }
+            }
+
+            if (next is null)
+            {
+                return target;
+            }
+
+            target = next;
+        }
+    }
+
+    /// <summary>An inactive tab sheet: not drawn, not hit (lead decisions 2026-11-23), so not a drop target either.</summary>
+    private static bool IsHiddenPage(FormObject obj, SurfaceGeometry g) =>
+        obj.Info?.FindProperty("Left") is { Stored: false } && !g.Layout.GetVisible(obj);
+
+    private static bool Contains(Rect r, (int X, int Y) p) => p.X >= r.Left && p.X < r.Right && p.Y >= r.Top && p.Y < r.Bottom;
+
+    /// <summary>
+    /// DSG-SUR-072: the guideline references in <paramref name="parent"/>: its visual children that are not dragged and not
+    /// preserved, with their baselines, and its client size. From the model's layout (call with no preview active).
+    /// </summary>
+    private SnapTarget SnapTargetOf(FormObject parent, IEnumerable<FormObject> dragged)
+    {
+        var g = Geometry;
+        var excluded = new HashSet<FormObject>(dragged, ReferenceEqualityComparer.Instance);
+        var siblings = parent.Children
+            .Where(c => g.IsControl(c) && !c.IsPreserved && !excluded.Contains(c))
+            .Select(c =>
+            {
+                var b = Layout.GetBounds(c);
+                return new SnapReference(c, b, BaselineOffset(c) is { } offset ? b.Top + offset : null);
+            })
+            .ToList();
+        var client = g.GetClientRect(parent);
+        return new SnapTarget(parent, client.Width, client.Height, siblings);
+    }
+
+    /// <summary>The text baseline below the control's top (<c>IDesignRenderer.GetBaseline</c>); null for controls without text.</summary>
+    private int? BaselineOffset(FormObject obj)
+    {
+        var ctx = RenderContext.FromLayout(obj, Layout);
+        return _layout.Renderers.Resolve(ctx.Info.RendererId).GetBaseline(ctx);
+    }
+
+    /// <summary>
+    /// The drop: one "Move" undo unit with the re-parenting (appended to the target in creation order, Left/Top converted
+    /// so the surface position is the dropped one), the new positions and the layout commit (DSG-LAY-040); nothing when no
+    /// position or parent changes (DSG-SUR-059). Tray positions do not go below 0.
     /// </summary>
     private void Drop()
     {
         var (dx, dy) = _moveDelta;
         var (xPath, yPath) = _moveTray ? ("DesignLeft", "DesignTop") : ("Left", "Top");
+        var reparents = !_moveTray && Reparents;
+        var target = _moveTarget;
         var changes = new List<FormChange>();
-        foreach (var (obj, left, top) in _moveSet)
+        var appended = 0;
+        foreach (var m in _moveSet)
         {
-            var (x, y) = _moveTray ? (Math.Max(0, left + dx), Math.Max(0, top + dy)) : (left + dx, top + dy);
+            var (obj, left, top) = (m.Object, m.Left, m.Top);
+            int x, y;
+            if (!_moveTray && MovesToTarget(m))
+            {
+                changes.Add(new MoveObject(obj.Name, target.Container!.Name, target.Container.Children.Count + appended++));
+                (x, y, left, top) = (m.SurfaceLeft + dx - target.Left, m.SurfaceTop + dy - target.Top, int.MinValue, int.MinValue);
+            }
+            else
+            {
+                (x, y) = _moveTray ? (Math.Max(0, left + dx), Math.Max(0, top + dy)) : (left + dx, top + dy);
+            }
+
             if (x != left || !PropertyAccess.IsStored(obj, xPath))
             {
                 changes.Add(new SetProperty(obj.Name, xPath, new IntegerValue(x, false)));
@@ -360,7 +528,7 @@ public sealed class DesignSurfaceController
             }
         }
 
-        var moved = _moveSet.Exists(m => _moveTray
+        var moved = reparents || _moveSet.Exists(m => _moveTray
             ? (Math.Max(0, m.Left + dx), Math.Max(0, m.Top + dy)) != (m.Left, m.Top)
             : (dx, dy) != (0, 0));
         ResetPress();
@@ -373,6 +541,160 @@ public sealed class DesignSurfaceController
         var undo = Editor.Apply(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Undo.Push(new DesignerUndoUnit(UndoTitles.Move, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
+    }
+
+    /// <summary>
+    /// DSG-SUR-080: a drag on a handle of the primary resizes all selected resizable controls (not the form, tray items,
+    /// preserved components or controls with computed geometry) by the primary's edge deltas.
+    /// </summary>
+    private void StartResize(FormObject primary, HandleKind handle, PointerInput input)
+    {
+        var g = Geometry;
+        _resizeSet = Selection.Items
+            .Where(o => g.IsControl(o) && !o.IsPreserved && o.Info?.FindProperty("Left") is not { Stored: false })
+            .Select(o => (o, Layout.GetBounds(o)))
+            .ToList();
+        if (!_resizeSet.Exists(m => ReferenceEquals(m.Object, primary)))
+        {
+            _resizeSet = [];
+            return;
+        }
+
+        _resizePrimary = primary;
+        _resizeHandle = handle;
+        State = InteractionState.Resizing;
+        UpdateResize(input);
+    }
+
+    /// <summary>
+    /// DSG-SUR-081 … 083: the dragged edges of the primary follow the pointer, then snapping (§6, dragged edges only), then
+    /// the size limits (the opposite edge never moves, no flipping); with Shift on a corner the axis with the larger
+    /// relative change drives and the other keeps the original aspect ratio (snapping on the driving axis only). Every
+    /// other member gets the primary's edge deltas, clamped by its own limits.
+    /// </summary>
+    private void UpdateResize(PointerInput input)
+    {
+        var (x, y) = SurfaceGeometry.Round(input.X, input.Y);
+        var (dx, dy) = (x - _downAt.X, y - _downAt.Y);
+        _preview = null; // the snapping and the preview start from the model's layout
+
+        var h = _resizeHandle;
+        var edges = (h is HandleKind.NW or HandleKind.W or HandleKind.SW ? SnapEdges.Left : 0)
+            | (h is HandleKind.NE or HandleKind.E or HandleKind.SE ? SnapEdges.Right : 0)
+            | (h is HandleKind.NW or HandleKind.N or HandleKind.NE ? SnapEdges.Top : 0)
+            | (h is HandleKind.SW or HandleKind.S or HandleKind.SE ? SnapEdges.Bottom : 0);
+        var primary = _resizePrimary!;
+        var b = _resizeSet.Find(m => ReferenceEquals(m.Object, primary)).Original;
+        var raw = Resized(b, edges, dx, dx, dy, dy);
+
+        // Shift on a corner: the axis with the larger relative change (|Δw| / w vs |Δh| / h) drives.
+        var keepRatio = input.Modifiers.HasFlag(InputModifiers.Shift) && h is HandleKind.NW or HandleKind.NE or HandleKind.SE or HandleKind.SW
+            && b.Width > 0 && b.Height > 0;
+        var widthDrives = (long)Math.Abs(raw.Width - b.Width) * b.Height >= (long)Math.Abs(raw.Height - b.Height) * b.Width;
+        var snapEdges = !keepRatio ? edges
+            : edges & (widthDrives ? SnapEdges.Left | SnapEdges.Right : SnapEdges.Top | SnapEdges.Bottom);
+        var options = SnapOptions.From(_settings, input.Modifiers.HasFlag(InputModifiers.Alt));
+        var snap = SnapEngine.SnapResize(raw, snapEdges, SnapTargetOf(primary.Parent!, _resizeSet.Select(m => m.Object)), options);
+        Guidelines = snap.Guidelines;
+        var snapped = Resized(b, edges, dx + snap.Dx, dx + snap.Dx, dy + snap.Dy, dy + snap.Dy);
+        var r = Clamp(primary, snapped, edges);
+        if (keepRatio)
+        {
+            r = widthDrives
+                ? Clamp(primary, WithHeight(r, edges, RoundRatio(r.Width, b.Height, b.Width)), edges & (SnapEdges.Top | SnapEdges.Bottom))
+                : Clamp(primary, WithWidth(r, edges, RoundRatio(r.Height, b.Width, b.Height)), edges & (SnapEdges.Left | SnapEdges.Right));
+        }
+
+        var (dl, dr, dt, db) = (r.Left - b.Left, r.Right - b.Right, r.Top - b.Top, r.Bottom - b.Bottom);
+        _resizeBounds = _resizeSet
+            .Select(m => (m.Object, ReferenceEquals(m.Object, primary) ? r : Clamp(m.Object, Resized(m.Original, edges, dl, dr, dt, db), edges)))
+            .ToList();
+
+        var overrides = new Dictionary<string, LayoutOverride>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (obj, bounds) in _resizeBounds)
+        {
+            overrides[obj.Name] = new LayoutOverride(bounds);
+        }
+
+        var result = _layout.ComputeWithOverrides(Document, overrides);
+        var geometry = new SurfaceGeometry(Document, result, _layout.Renderers, _settings.ShowComponentCaptions);
+        _preview = (Document.Version, result, geometry, new HitTester(geometry));
+        Invalidated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The bounds with the dragged edges moved: left by <paramref name="dl"/>, right by <paramref name="dr"/>, … (may be inverted).</summary>
+    private static Rect Resized(Rect b, SnapEdges edges, int dl, int dr, int dt, int db)
+    {
+        var left = b.Left + (edges.HasFlag(SnapEdges.Left) ? dl : 0);
+        var right = b.Right + (edges.HasFlag(SnapEdges.Right) ? dr : 0);
+        var top = b.Top + (edges.HasFlag(SnapEdges.Top) ? dt : 0);
+        var bottom = b.Bottom + (edges.HasFlag(SnapEdges.Bottom) ? db : 0);
+        return new Rect(left, top, right - left, bottom - top);
+    }
+
+    /// <summary>DSG-SUR-082: width/height ≥ 1 and within <c>Constraints</c> (when &gt; 0); only the dragged edge of an axis moves.</summary>
+    private static Rect Clamp(FormObject obj, Rect r, SnapEdges edges)
+    {
+        static int Limit(FormObject o, string path) => o.FindProperty(path) is { Value: IntegerValue { Value: > 0 and <= int.MaxValue } v } ? (int)v.Value : 0;
+        static int Size(int value, int min, int max) => Math.Max(Math.Max(1, min), max > 0 ? Math.Min(value, max) : value);
+
+        if ((edges & (SnapEdges.Left | SnapEdges.Right)) != 0)
+        {
+            r = WithWidth(r, edges, Size(r.Width, Limit(obj, "Constraints.MinWidth"), Limit(obj, "Constraints.MaxWidth")));
+        }
+
+        if ((edges & (SnapEdges.Top | SnapEdges.Bottom)) != 0)
+        {
+            r = WithHeight(r, edges, Size(r.Height, Limit(obj, "Constraints.MinHeight"), Limit(obj, "Constraints.MaxHeight")));
+        }
+
+        return r;
+    }
+
+    /// <summary>A new width, keeping the edge that is not dragged (the right edge when the left one is dragged).</summary>
+    private static Rect WithWidth(Rect r, SnapEdges edges, int width) =>
+        edges.HasFlag(SnapEdges.Left) ? new Rect(r.Right - width, r.Top, width, r.Height) : r with { Width = width };
+
+    private static Rect WithHeight(Rect r, SnapEdges edges, int height) =>
+        edges.HasFlag(SnapEdges.Top) ? new Rect(r.Left, r.Bottom - height, r.Width, height) : r with { Height = height };
+
+    /// <summary>DSG-SUR-083: <c>round(driven × num / den)</c>, halves away from zero.</summary>
+    private static int RoundRatio(int driven, int num, int den) =>
+        (int)Math.Round((double)driven * num / den, MidpointRounding.AwayFromZero);
+
+    /// <summary>The drop of a resize: one "Resize" undo unit with the changed bounds and the layout commit; nothing when nothing changed.</summary>
+    private void DropResize()
+    {
+        var changes = new List<FormChange>();
+        foreach (var (obj, r) in _resizeBounds)
+        {
+            var original = _resizeSet.Find(m => ReferenceEquals(m.Object, obj)).Original;
+            if (r == original)
+            {
+                continue;
+            }
+
+            (string Path, int Old, int New)[] values =
+                [("Left", original.Left, r.Left), ("Top", original.Top, r.Top), ("Width", original.Width, r.Width), ("Height", original.Height, r.Height)];
+            foreach (var (path, old, value) in values)
+            {
+                if (old != value || !PropertyAccess.IsStored(obj, path))
+                {
+                    changes.Add(new SetProperty(obj.Name, path, new IntegerValue(value, false)));
+                }
+            }
+        }
+
+        ResetPress();
+        if (changes.Count == 0)
+        {
+            return;
+        }
+
+        var selection = Selection.ToSnapshot();
+        var undo = Editor.Apply(changes);
+        var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
+        Undo.Push(new DesignerUndoUnit(UndoTitles.Resize, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
     }
 
     /// <summary>The effective <c>Align</c> is not <c>alNone</c> (aligned controls cannot be moved by drag, DSG-SUR-050).</summary>
@@ -500,7 +822,14 @@ public sealed class DesignSurfaceController
         _dragging = false;
         _lassoContainer = null;
         _moveSet = [];
+        _moveAnchor = null;
+        _resizeSet = [];
+        _resizeBounds = [];
+        _resizePrimary = null;
+        _moveTarget = default;
+        DropTarget = null;
         _moveDelta = (0, 0);
+        Guidelines = [];
         if (_preview is not null)
         {
             _preview = null;
@@ -513,4 +842,7 @@ public sealed class DesignSurfaceController
             Invalidated?.Invoke(this, EventArgs.Empty);
         }
     }
+
+    /// <summary>A member of the move set: stored-as-computed Left/Top (tray: DesignLeft/DesignTop) and the surface origin at drag start.</summary>
+    private readonly record struct MoveMember(FormObject Object, int Left, int Top, int SurfaceLeft, int SurfaceTop);
 }

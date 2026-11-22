@@ -20,4 +20,16 @@ public static class Commands
 public static class UndoTitles
 {
     public const string Move = "Undo_Designer_Move";
+
+    public const string Resize = "Undo_Designer_Resize";
+}
+
+/// <summary>Status message ids the surface shows (states-and-messages.md; design-surface.md §15).</summary>
+public static class StatusIds
+{
+    public const string Locked = "Msg.Designer.Locked";
+
+    public const string AlignedCannotMove = "Msg.Designer.AlignedCannotMove";
+
+    public const string ReadOnlyItem = "Msg.Designer.ReadOnlyItem";
 }

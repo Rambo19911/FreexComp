@@ -76,6 +76,22 @@ internal sealed class DesignerHarness : IDisposable
 
     public Rect Bounds(string name) => Layout.GetBounds(Object(name));
 
+    /// <summary>Stored-as-computed size.</summary>
+    public (int Width, int Height) Size(string name)
+    {
+        var b = Layout.GetBounds(Object(name));
+        return (b.Width, b.Height);
+    }
+
+    /// <summary>The name of the component's parent.</summary>
+    public string Parent(string name) => Object(name).Parent?.Name ?? throw new ArgumentException(name + " is the root", nameof(name));
+
+    /// <summary>The names of the direct children in order (creation / z-order).</summary>
+    public IReadOnlyList<string> ChildNames(string name) => Object(name).Children.Select(c => c.Name).ToList();
+
+    /// <summary>The guidelines currently shown (DSG-SUR-074).</summary>
+    public IReadOnlyList<Guideline> Guidelines => Controller.Guidelines;
+
     /// <summary>A control-relative point (default: the centre) of <paramref name="on"/> in surface coordinates.</summary>
     public (int X, int Y) SurfacePoint(string on, (int X, int Y)? at = null)
     {
@@ -86,6 +102,29 @@ internal sealed class DesignerHarness : IDisposable
 
     public void Press(string on, (int X, int Y)? at = null, InputModifiers modifiers = InputModifiers.None) =>
         PressAt(SurfacePoint(on, at), modifiers);
+
+    /// <summary>Left button down on a resize handle of <paramref name="on"/>.</summary>
+    public void PressHandle(string on, HandleKind handle, InputModifiers modifiers = InputModifiers.None) =>
+        PressAt(HandlePoint(on, handle), modifiers);
+
+    /// <summary>The centre of a handle in surface coordinates (centred on the outline pixels: L, L + W − 1, L + (W − 1) div 2).</summary>
+    public (int X, int Y) HandlePoint(string on, HandleKind handle)
+    {
+        var b = Controller.Geometry.GetBounds(Object(on));
+        var (l, t, r, bottom) = (b.Left, b.Top, b.Right - 1, b.Bottom - 1);
+        var (mx, my) = (b.Left + (b.Width - 1) / 2, b.Top + (b.Height - 1) / 2);
+        return handle switch
+        {
+            HandleKind.NW => (l, t),
+            HandleKind.N => (mx, t),
+            HandleKind.NE => (r, t),
+            HandleKind.E => (r, my),
+            HandleKind.SE => (r, bottom),
+            HandleKind.S => (mx, bottom),
+            HandleKind.SW => (l, bottom),
+            _ => (l, my),
+        };
+    }
 
     /// <summary>Left button down at a surface point.</summary>
     public void PressAt((int X, int Y) surface, InputModifiers modifiers = InputModifiers.None, int clickCount = 1)
@@ -165,6 +204,27 @@ internal sealed class FakeDesignerSettings : IDesignerSettings
     public bool ShowComponentCaptions { get; set; } = true;
 
     public int HandleSize { get; set; } = 7;
+
+    public bool SnapToGrid { get; set; } = true;
+
+    public int GridSizeX { get; set; } = 8;
+
+    public int GridSizeY { get; set; } = 8;
+
+    public bool UseGuidelines { get; set; } = true;
+
+    public int GuidelineSnapDistance { get; set; } = 4;
+
+    public int GuidelineMargin { get; set; } = 8;
+
+    public bool LockControls { get; set; }
+
+    /// <summary>No grid, no guidelines: pointer deltas apply unchanged.</summary>
+    public void NoSnapping()
+    {
+        SnapToGrid = false;
+        UseGuidelines = false;
+    }
 }
 
 /// <summary>Records what the controller asks of the IDE.</summary>

@@ -30,6 +30,27 @@ public interface IDesignerSettings
 
     /// <summary><c>designer.handleSize</c> (5 … 11, odd; default 7, UI-DSG-032).</summary>
     int HandleSize { get; }
+
+    /// <summary><c>designer.snapToGrid</c> (default true, design-surface.md §6).</summary>
+    bool SnapToGrid { get; }
+
+    /// <summary><c>designer.gridSizeX</c> (2 … 64, default 8).</summary>
+    int GridSizeX { get; }
+
+    /// <summary><c>designer.gridSizeY</c> (2 … 64, default 8).</summary>
+    int GridSizeY { get; }
+
+    /// <summary><c>designer.useGuidelines</c> (default true).</summary>
+    bool UseGuidelines { get; }
+
+    /// <summary><c>designer.guidelineSnapDistance</c> (1 … 16, default 4).</summary>
+    int GuidelineSnapDistance { get; }
+
+    /// <summary><c>designer.guidelineMargin</c> (0 … 32, default 8, design-surface.md §15).</summary>
+    int GuidelineMargin { get; }
+
+    /// <summary><c>designer.lockControls</c> (default false): no drag moves or resizes anything (DSG-SUR-051, DSG-SUR-087).</summary>
+    bool LockControls { get; }
 }
 
 /// <summary>What the surface needs from the IDE (design-surface.md §1; implemented in the IDE core).</summary>

@@ -64,6 +64,9 @@ public sealed class DesignerUndoStack
 
     public int RedoCount => _redo.Count;
 
+    /// <summary>The title resource key of the unit <see cref="Undo"/> would revert (DSG-SUR-172: Edit menu "Undo Move"); null when empty.</summary>
+    public string? UndoTitleKey => _undo.Last?.Value.TitleKey;
+
     /// <summary>The state marked by <see cref="MarkSaved"/>; a new stack starts at its save point (an unmodified buffer).</summary>
     public object? SavePoint { get; private set; }
 
