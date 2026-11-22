@@ -30,7 +30,11 @@ internal sealed record IrParameter(IrType Type, string Name);
 
 /// <summary><c>define [linkage] RetType @Name(params) [#group] {</c>.</summary>
 internal sealed record IrFunctionDefinition(
-    LinkName Name, IrLinkage Linkage, IrType ReturnType, ImmutableArray<IrParameter> Parameters, int? AttributeGroup = null);
+    LinkName Name, IrLinkage Linkage, IrType ReturnType, ImmutableArray<IrParameter> Parameters, int? AttributeGroup = null)
+{
+    /// <summary>CMP-421: the metadata node number of the function's <c>DISubprogram</c> (<c>define … !dbg !N</c>); null → none.</summary>
+    public int? Subprogram { get; init; }
+}
 
 /// <summary><c>declare RetType @Name(types) [#group]</c>.</summary>
 internal sealed record IrFunctionDeclaration(LinkName Name, IrType ReturnType, ImmutableArray<IrType> ParameterTypes, int? AttributeGroup = null)
@@ -41,7 +45,11 @@ internal sealed record IrFunctionDeclaration(LinkName Name, IrType ReturnType, I
 
 /// <summary><c>@Name = [linkage] [unnamed_addr] global|constant Type Init, align N</c>.</summary>
 internal sealed record IrGlobalDefinition(
-    LinkName Name, IrLinkage Linkage, bool IsConstant, IrConstant Initializer, int Alignment, bool UnnamedAddr = false);
+    LinkName Name, IrLinkage Linkage, bool IsConstant, IrConstant Initializer, int Alignment, bool UnnamedAddr = false)
+{
+    /// <summary>CMP-422 / DBG-140: the node number of the global's <c>DIGlobalVariableExpression</c> (<c>, !dbg !N</c>); null → none.</summary>
+    public int? DebugVariable { get; init; }
+}
 
 /// <summary>
 /// The seam between <c>IrEmitter</c> and an LLVM backend (CMP-125, ADR 001). "LLVM-shaped": one method per IR entity and
@@ -151,6 +159,18 @@ internal interface IIrWriter
     void Unreachable();
 
     void EndFunction();
+
+    /// <summary>
+    /// CMP-421: every instruction written from now on carries <c>, !dbg !N</c> (node <paramref name="location"/>, a
+    /// <c>DILocation</c>); null → none. <see cref="BeginFunction"/> resets it to null.
+    /// </summary>
+    void SetDebugLocation(int? location);
+
+    /// <summary>CMP-422: the debug record <c>#dbg_declare(ptr %address, !variable, !DIExpression(expression), !location)</c> (DBG-135).</summary>
+    void DebugDeclare(IrValue address, int variable, string expression, int location);
+
+    /// <summary>CMP-420: a module-level metadata line (<c>!name = …</c> or <c>!N = …</c>), written last, in call order.</summary>
+    void AppendMetadata(string line);
 
     void EndModule();
 }

@@ -20,7 +20,14 @@ namespace FreexComp.Compiler.Lowering;
 /// EH milestone hook (CMP-393/394): the same statements become the <c>cleanuppad</c> funclet, calls inside the body become
 /// <c>invoke</c>s unwinding to it.
 /// </param>
-internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal> Locals, LBlock Body, LoweredFrame? Frame = null, LBlock? Cleanup = null);
+internal sealed record LoweredBody(RoutineSymbol? Routine, ImmutableArray<LLocal> Locals, LBlock Body, LoweredFrame? Frame = null, LBlock? Cleanup = null)
+{
+    /// <summary>
+    /// The syntax of the source block the body was lowered from (a routine's <c>begin … end</c>, the program block, a unit section, a
+    /// <c>try … finally … end</c> for a <c>$fin</c> routine); null for a body without source (CMP-421, DBG-114: no debug info).
+    /// </summary>
+    public Syntax.SyntaxNode? Source { get; init; }
+}
 
 /// <summary>
 /// A frame record (CMP-345): field 0 is the routine's static link (null for a top-level routine), then

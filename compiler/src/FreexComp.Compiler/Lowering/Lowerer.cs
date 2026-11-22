@@ -285,7 +285,8 @@ internal sealed partial class LoweringContext
         }
 
         var (copies, releases) = OpenArrayCopies();
-        var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], copies.IsEmpty ? block : new LBlock([.. copies, .. block.Statements])));
+        var lowered = ManagedRewriter.AddLifetimes(this, new LoweredBody(Routine, [.. _locals], copies.IsEmpty ? block : new LBlock([.. copies, .. block.Statements])))
+            with { Source = body?.Syntax };
         releases = [.. releases, .. _managedBodyGlobals.Select(v => ManagedRewriter.Clear(this, new LGlobalRef(v)))];
         if (!releases.IsEmpty)
         {

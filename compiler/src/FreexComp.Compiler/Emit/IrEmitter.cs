@@ -71,7 +71,8 @@ internal static class IrEmitter
     /// <param name="unitTable">
     /// Program only: the <c>$units</c> entries in initialisation order (CMP-355); default = empty table.
     /// </param>
-    public static void EmitUnit(LoweredUnit unit, IIrWriter writer, ImmutableArray<UnitTableEntry> unitTable = default)
+    /// <param name="debug">CMP-420…424: the debug metadata to emit (<c>-g</c>); null → none at all.</param>
+    public static void EmitUnit(LoweredUnit unit, IIrWriter writer, ImmutableArray<UnitTableEntry> unitTable = default, DebugInfoOptions? debug = null)
     {
         var path = unit.Unit.Locations.IsEmpty ? unit.Unit.Name + ".pas" : unit.Unit.Locations[0].Path;
         writer.BeginModule(unit.Unit.Name, Path.GetFileName(path));
@@ -96,7 +97,13 @@ internal static class IrEmitter
         IrLinkage LinkageOf(TypeSymbol type) => type.IsGenericInstance ? IrLinkage.LinkOnceOdr
             : interfaceMembers.Contains(type) ? IrLinkage.External : IrLinkage.Internal;
         var classes = Binding.DeclarationBinder.ClassesOf(unit.Unit).Concat(instances.OfType<ClassTypeSymbol>()).Distinct().ToImmutableArray();
-        var module = new ModuleState(writer) { UnitName = unit.Unit.Name, OwnClasses = [.. classes] };
+        var module = new ModuleState(writer)
+        {
+            UnitName = unit.Unit.Name,
+            OwnClasses = [.. classes],
+            Debug = debug is null ? null : new DebugInfoEmitter(debug, path, unit.Routines.Concat(unit.Bodies).Select(b => b.Source).OfType<Syntax.SyntaxNode>()
+                .Select(s => s.SyntaxTree.Text).FirstOrDefault(t => Text.PathUtil.Comparer.Equals(t.Path, path))),
+        };
         foreach (var body in unit.Routines)
         {
             module.DefinedRoutines.Add(Mangler.Routine(body.Routine!).Text);
@@ -125,9 +132,10 @@ internal static class IrEmitter
         {
             if (body.Frame is { } frame)
             {
-                var (structType, indexes) = TypeLayout.Struct([new TypeLayout(8, 8, IrType.Ptr), .. frame.Variables.Select(FieldLayout)]);
+                ImmutableArray<TypeLayout> fields = [new TypeLayout(8, 8, IrType.Ptr), .. frame.Variables.Select(FieldLayout)];
+                var (structType, indexes) = TypeLayout.Struct(fields);
                 var type = writer.DeclareStruct(Mangler.FrameType(body.Routine!), structType);
-                module.Frames[body.Routine!] = new FrameRecord(type, frame.Variables, indexes);
+                module.Frames[body.Routine!] = new FrameRecord(type, frame.Variables, indexes) { Offsets = TypeLayout.StructOffsets(fields).Offsets };
             }
         }
 
@@ -256,11 +264,14 @@ internal static class IrEmitter
         foreach (var (variable, initializer) in variables.Zip(initializers))
         {
             var layout = TypeLayout.Allocated(variable.Type);
-            writer.DefineGlobal(new IrGlobalDefinition(Mangler.GlobalVariable(variable),
-                variable.ContainingSymbol is TypeSymbol { IsGenericInstance: true } ? IrLinkage.LinkOnceOdr
+            var name = Mangler.GlobalVariable(variable);
+            var linkage = variable.ContainingSymbol is TypeSymbol { IsGenericInstance: true } ? IrLinkage.LinkOnceOdr
                 : interfaceMembers.Contains(variable) || variable.ExplicitLinkName is not null
-                || variable.ContainingSymbol is (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol) and TypeSymbol owner && interfaceMembers.Contains(TypeMembers.Outermost(owner)) ? IrLinkage.External : IrLinkage.Internal,
-                IsConstant: variable.IsReadOnly, initializer, layout.Alignment));
+                || variable.ContainingSymbol is (ClassTypeSymbol or RecordTypeSymbol or HelperTypeSymbol) and TypeSymbol owner && interfaceMembers.Contains(TypeMembers.Outermost(owner)) ? IrLinkage.External : IrLinkage.Internal;
+            writer.DefineGlobal(new IrGlobalDefinition(name, linkage, IsConstant: variable.IsReadOnly, initializer, layout.Alignment)
+            {
+                DebugVariable = module.Debug?.GlobalVariable(variable, name.Text, isLocal: linkage != IrLinkage.External),       // DBG-140
+            });
         }
 
         foreach (var (variable, name) in unit.BodyGlobals)
@@ -324,6 +335,7 @@ internal static class IrEmitter
             writer.DefineAttributeGroup(SystemHelperGroup, [IrAttribute.Enum("noinline"), IrAttribute.Enum("uwtable"), IrAttribute.String("frame-pointer", "all")]);
         }
 
+        module.Debug?.Finish(writer);
         writer.EndModule();
     }
 
@@ -691,6 +703,11 @@ internal sealed record UnitTableEntry(UnitSymbol Unit, bool HasInit, bool HasFin
 internal sealed record FrameRecord(NamedStructIrType Type, ImmutableArray<Symbol> Variables, ImmutableArray<int> Indexes)
 {
     public int FieldOf(Symbol variable) => Variables.IndexOf(variable) is var i and >= 0 ? Indexes[i + 1] : -1;
+
+    /// <summary>The byte offset of every field (field 0 = the static link), for the debug records of captured variables (CMP-422).</summary>
+    public ImmutableArray<long> Offsets { get; init; } = [];
+
+    public long OffsetOf(Symbol variable) => Offsets[Variables.IndexOf(variable) + 1];
 }
 
 /// <summary>Module-wide state shared by the function emitters.</summary>
@@ -703,6 +720,9 @@ internal sealed class EmitNotSupportedException(string message, Text.Location lo
 internal sealed class ModuleState(IIrWriter writer)
 {
     public IIrWriter Writer { get; } = writer;
+
+    /// <summary>CMP-420…424: the module's debug metadata with <c>-g</c>; null without.</summary>
+    public DebugInfoEmitter? Debug { get; init; }
 
     public Dictionary<VariableSymbol, IrGlobal> Globals { get; } = [];
 
@@ -1347,6 +1367,13 @@ internal sealed class FunctionEmitter
 
     private IrBlock _current = Entry;
     private bool _terminated;
+
+    // CMP-421/422 (-g): the subprogram, the location the next instructions carry, the last statement location emitted (an if
+    // arm's jump to the end carries it, DBG-120) and the syntax of the innermost statement being emitted
+    private DebugSubprogram? _subprogram;
+    private int? _location;
+    private int? _lastLocation;
+    private Syntax.SyntaxNode? _statementSyntax;
     private IrValue? _link;
     private FrameRecord? _frame;
     private IrValue? _frameAddress;
@@ -1382,8 +1409,10 @@ internal sealed class FunctionEmitter
         // ABI-082: [static link], [Self], [flag], [hidden Result], declared parameters
         ImmutableArray<IrParameter> all = [.. new[] { link }.OfType<IrParameter>(), .. parameters[.._implicitCount],
             .. new[] { hidden }.OfType<IrParameter>(), .. parameters[_implicitCount..]];
+        var debug = BeginSubprogram(link, hidden);
         var values = _w.BeginFunction(new IrFunctionDefinition(_name, _linkage, _routine is null ? IrType.Void : IrEmitter.ReturnType(_routine),
-            all, _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine)));
+            all, _routine is null ? IrEmitter.RoutineGroup : IrEmitter.AttributeGroupOf(_routine)) { Subprogram = _subprogram?.Node });
+        SetLocation(debug?.Begin);                                      // DBG-117: the prologue at the body's begin
         if (link is not null)
         {
             _link = values[0];
@@ -1476,6 +1505,11 @@ internal sealed class FunctionEmitter
             _w.Store(value, address, alignment);
         }
 
+        if (debug is not null)
+        {
+            DeclareVariables(debug, values, hiddenResult, argumentBase: link is null ? 1 : 2);
+        }
+
         if (_body.Cleanup is not null)
         {
             _scopes.Add(new EhScope(CleanupPadBlock, Leave: null));         // CMP-393: the outermost EH scope
@@ -1483,6 +1517,7 @@ internal sealed class FunctionEmitter
 
         _returnScopes = _scopes.Count;
         Statement(_body.Body);
+        SetLocation(debug?.End);                                        // DBG-118: the epilogue at the final end
         FallThrough(_returnTarget);
         _scopes.Clear();
         if (_body.Cleanup is { } cleanup)
@@ -1523,7 +1558,206 @@ internal sealed class FunctionEmitter
         }
 
         _w.EndFunction();
+        if (_subprogram is not null)
+        {
+            _module.Debug!.EndSubprogram(_subprogram);
+        }
     }
+
+    // ------------------------------------------------------------------ debug information (CMP-421, 422; debug-info.md §2–§4)
+
+    /// <summary>The locations of a body's begin and final end (DBG-117/118).</summary>
+    private sealed record DebugBody(int? Begin, int? End);
+
+    /// <summary>
+    /// DBG-110…113: the <c>DISubprogram</c> of a body compiled from source (with <c>-g</c>); null for one without source (DBG-114:
+    /// <c>_start</c>, thunks, synthesised bodies), whose instructions then carry no location.
+    /// </summary>
+    private DebugBody? BeginSubprogram(IrParameter? link, IrParameter? hidden)
+    {
+        if (_module.Debug is not { } di || _body.Source is not { } source)
+        {
+            return null;
+        }
+
+        var (begin, end) = BodyTokens(source);
+        var heading = HeadingToken(source);
+        var returnType = _routine is null || hidden is not null ? null
+            : _routine.ReturnType ?? (_routine is MethodSymbol { MethodKind: MethodKind.Constructor } constructor ? constructor.Owner : null);
+        var parameters = new List<DebugParameterType>();
+        if (link is not null)
+        {
+            parameters.Add(new DebugParameterType(null, ByAddress: false));
+        }
+
+        parameters.AddRange(_parameters.Take(_implicitCount).Select(p => new DebugParameterType(p.Type, IrEmitter.IsPassedByAddress(p))));
+        if (hidden is not null)
+        {
+            parameters.Add(new DebugParameterType(_routine!.ReturnType, ByAddress: true));
+        }
+
+        parameters.AddRange(_parameters.Skip(_implicitCount).Select(p => new DebugParameterType(p.Type, IrEmitter.IsPassedByAddress(p))));
+        _subprogram = di.BeginSubprogram(_routine, DisplayName(_routine, source), _name.Text, heading, begin, _linkage != IrLinkage.External, returnType, parameters);
+        return new DebugBody(di.Location(begin, _subprogram), di.Location(end, _subprogram));
+    }
+
+    /// <summary>DBG-111: <c>Routine</c>, <c>TClass.Method</c>, <c>Outer.Nested</c>, the program name, <c>Unit.initialization</c>.</summary>
+    private string DisplayName(RoutineSymbol? routine, Syntax.SyntaxNode source) => routine switch
+    {
+        null => source switch
+        {
+            Syntax.InitializationSectionSyntax => _module.UnitName + ".initialization",
+            Syntax.FinalizationSectionSyntax => _module.UnitName + ".finalization",
+            Syntax.TryFinallyStatementSyntax => _name.Text,
+            _ => _module.UnitName,
+        },
+        MethodSymbol method => method.Owner.Name + "." + method.Name,
+        { ContainingSymbol: RoutineSymbol parent } => DisplayName(parent, source) + "." + routine.Name,
+        _ => routine.Name,
+    };
+
+    /// <summary>The body's <c>begin</c> (or section keyword, <c>finally</c>) and its final <c>end</c> (DBG-117, 118, 130).</summary>
+    private static (Syntax.SyntaxToken Begin, Syntax.SyntaxToken End) BodyTokens(Syntax.SyntaxNode source) => source switch
+    {
+        Syntax.CompoundStatementSyntax compound => (compound.BeginKeyword, compound.EndKeyword),
+        Syntax.BlockSyntax block => (block.Body.BeginKeyword, block.Body.EndKeyword),
+        Syntax.InitializationSectionSyntax section => (section.Keyword, (section.Parent as Syntax.UnitSyntax)?.EndKeyword ?? section.LastToken()),
+        Syntax.FinalizationSectionSyntax section => (section.FinalizationKeyword, (section.Parent as Syntax.UnitSyntax)?.EndKeyword ?? section.LastToken()),
+        Syntax.TryFinallyStatementSyntax tryFinally => (tryFinally.FinallyKeyword, tryFinally.EndKeyword),
+        _ => (source.FirstToken(), source.LastToken()),
+    };
+
+    /// <summary>DBG-112: the first token of the routine heading in the implementation (the program keyword, the section keyword).</summary>
+    private static Syntax.SyntaxToken HeadingToken(Syntax.SyntaxNode source)
+    {
+        if (source is Syntax.TryFinallyStatementSyntax or Syntax.InitializationSectionSyntax or Syntax.FinalizationSectionSyntax)
+        {
+            return BodyTokens(source).Begin;
+        }
+
+        for (var node = source.Parent; node is not null; node = node.Parent)
+        {
+            switch (node)
+            {
+                case Syntax.RoutineDeclarationSyntax routine:
+                    return routine.Heading.FirstToken();
+                case Syntax.AnonymousMethodExpressionSyntax anonymous:
+                    return anonymous.Keyword;
+                case Syntax.ProgramSyntax program:
+                    return program.ProgramKeyword ?? BodyTokens(source).Begin;
+            }
+        }
+
+        return BodyTokens(source).Begin;
+    }
+
+    /// <summary>
+    /// DBG-136…139: one <c>#dbg_declare</c> per parameter and named local in the entry block (location: <c>scopeLine</c>). A
+    /// variable living at a received address (by-address parameter, hidden <c>Result</c>) gets an alloca holding that pointer and
+    /// <c>DW_OP_deref</c>; a captured one is described on the frame record (<c>DW_OP_plus_uconst</c>, CMP-422).
+    /// </summary>
+    private void DeclareVariables(DebugBody debug, ImmutableArray<IrLocal> values, IrValue? hiddenResult, int argumentBase)
+    {
+        var di = _module.Debug!;
+        var subprogram = _subprogram!;
+        var location = debug.Begin ?? throw new InvalidOperationException("A subprogram without a begin location.");
+        var headingLine = _body.Source is { } source ? DebugInfoEmitter.LineOf(HeadingToken(source)) : 0;
+        var declarations = new List<(IrValue Address, int Variable, string Expression)>();
+
+        void Declare(Symbol variable, string name, int? arg, TypeSymbol type, IrValue? received, IrValue? slot, string? flags)
+        {
+            var line = variable is ParameterSymbol || variable.Locations.IsEmpty ? headingLine : variable.Locations[0].LineSpan.Start.Line + 1;
+            var node = di.LocalVariable(subprogram, name, arg, line, di.Type(type), flags ?? (name.StartsWith('$') ? "DIFlagArtificial" : null));
+            // DBG-137: the storage holds the variable's address (an untyped parameter is described as that pointer itself)
+            var deref = received is not null && type is not UntypedTypeSymbol ? "DW_OP_deref" : "";
+            if (IsCaptured(variable))
+            {
+                var offset = _frame!.OffsetOf(variable);
+                string[] parts = [offset == 0 ? "" : "DW_OP_plus_uconst, " + offset.ToString(System.Globalization.CultureInfo.InvariantCulture), deref];
+                declarations.Add((_frameAddress!, node, string.Join(", ", parts.Where(e => e.Length > 0))));
+            }
+            else if (received is not null)
+            {
+                var reference = _w.Alloca(Unique(name + ".ref"), IrType.Ptr, 8);
+                _w.Store(received, reference, 8);
+                declarations.Add((reference, node, deref));
+            }
+            else if (slot is not null)
+            {
+                declarations.Add((slot, node, ""));
+            }
+        }
+
+        for (var i = 0; i < _parameters.Length; i++)
+        {
+            var parameter = _parameters[i];
+            if (_routine is MethodSymbol { FlagParameter: { } flag } && ReferenceEquals(parameter, flag))
+            {
+                continue;                                               // the constructor/destructor flag: hidden, no variable
+            }
+
+            var arg = argumentBase + i + (hiddenResult is not null && i >= _implicitCount ? 1 : 0);
+            var self = _routine is MethodSymbol { SelfParameter: { } selfParameter } && ReferenceEquals(parameter, selfParameter);
+            var byAddress = IrEmitter.IsPassedByAddress(parameter);
+            Declare(parameter, parameter.Name, arg, parameter.Type, byAddress ? values[i] : null, byAddress ? null : _parameterAddresses.GetValueOrDefault(parameter),
+                self ? "DIFlagArtificial | DIFlagObjectPointer" : parameter.Name.Contains('$') ? "DIFlagArtificial" : null);
+        }
+
+        foreach (var local in _body.Locals)
+        {
+            if (local.Variable is not { } variable)
+            {
+                continue;                                               // DBG-139: other temporaries get no variable
+            }
+
+            var isHiddenResult = hiddenResult is not null && ReferenceEquals(variable, _routine!.ResultVariable);
+            Declare(variable, local.Name, arg: null, local.Type, isHiddenResult ? hiddenResult : null, isHiddenResult ? null : _locals.GetValueOrDefault(local), flags: null);
+        }
+
+        foreach (var (address, variable, expression) in declarations)
+        {
+            _w.DebugDeclare(address, variable, expression, location);
+        }
+    }
+
+    private void SetLocation(int? location)
+    {
+        _location = location;
+        _w.SetDebugLocation(location);
+    }
+
+    /// <summary>DBG-116/128: the statement location token; none for compound statements, empty statements and labels.</summary>
+    private static Syntax.SyntaxToken StatementToken(Syntax.SyntaxNode syntax) => syntax switch
+    {
+        Syntax.LabeledStatementSyntax labeled => StatementToken(labeled.Statement),
+        Syntax.CompoundStatementSyntax or Syntax.EmptyStatementSyntax => default,
+        Syntax.StatementSyntax statement => statement.FirstToken(),
+        _ => default,
+    };
+
+    /// <summary>The location token of the first statement of <paramref name="statements"/> that has one (looking into compound statements).</summary>
+    private static Syntax.SyntaxToken FirstStatementToken(IEnumerable<Syntax.StatementSyntax> statements)
+    {
+        foreach (var statement in statements)
+        {
+            var token = statement switch
+            {
+                Syntax.CompoundStatementSyntax compound => FirstStatementToken(compound.Statements),
+                Syntax.LabeledStatementSyntax { Statement: Syntax.CompoundStatementSyntax compound } => FirstStatementToken(compound.Statements),
+                _ => StatementToken(statement),
+            };
+            if (token.Kind != Syntax.SyntaxKind.None)
+            {
+                return token;
+            }
+        }
+
+        return default;
+    }
+
+    /// <summary>The location of <paramref name="token"/> in this subprogram; the current one when there is none.</summary>
+    private int? LocationOf(Syntax.SyntaxToken token) =>
+        _subprogram is not null && _module.Debug!.Location(token, _subprogram) is { } location ? location : _location;
 
     // ------------------------------------------------------------------ names (CMP-303)
 
@@ -1573,6 +1807,15 @@ internal sealed class FunctionEmitter
     /// </summary>
     private void Statement(LStatement statement)
     {
+        var (savedLocation, savedSyntax) = (_location, _statementSyntax);
+        if (_subprogram is not null && statement.SourceSyntax is { } syntax && StatementToken(syntax) is { Kind: not Syntax.SyntaxKind.None } token
+            && _module.Debug!.Location(token, _subprogram) is { } here)
+        {
+            SetLocation(here);                                          // DBG-116: the statement's first token
+            _lastLocation = here;
+            _statementSyntax = syntax;
+        }
+
         try
         {
             StatementCore(statement);
@@ -1581,6 +1824,13 @@ internal sealed class FunctionEmitter
         {
             throw new EmitNotSupportedException(e.Message, location);                     // C-213: the innermost statement's location
         }
+
+        if (_location != savedLocation)
+        {
+            SetLocation(savedLocation);                                 // the enclosing construct's own code (DBG-121…125)
+        }
+
+        _statementSyntax = savedSyntax;
     }
 
     private void StatementCore(LStatement statement)
@@ -1786,6 +2036,13 @@ internal sealed class FunctionEmitter
         _scopes.RemoveAt(_scopes.Count - 1);
         FallThrough(end);
 
+        var location = _location;
+        var syntax = _statementSyntax as Syntax.TryExceptStatementSyntax;
+        if (syntax is not null)
+        {
+            SetLocation(LocationOf(syntax.ExceptKeyword));              // DBG-127: entering the handler at except
+        }
+
         Start(dispatch);
         var catchSwitch = _w.CatchSwitch(Unique("cs." + id), pad, outer);
         Start(pad);
@@ -1798,6 +2055,11 @@ internal sealed class FunctionEmitter
         _scopes.Add(new EhScope(cleanup, EndCatch));
         Statement(statement.Handler);
         _scopes.RemoveAt(_scopes.Count - 1);
+        if (syntax is not null)
+        {
+            SetLocation(LocationOf(syntax.EndKeyword));                 // DBG-127: cleanup at the closing end
+        }
+
         if (!_terminated)
         {
             EndCatch();
@@ -1806,6 +2068,7 @@ internal sealed class FunctionEmitter
 
         Start(cleanup);
         Funclet(id, EndCatch, outer);
+        SetLocation(location);
         Start(end);
     }
 
@@ -1827,6 +2090,12 @@ internal sealed class FunctionEmitter
         _scopes.Add(new EhScope(pad, CallFinally));
         Statement(statement.Body);
         _scopes.RemoveAt(_scopes.Count - 1);
+        var location = _location;
+        if (_statementSyntax is Syntax.TryFinallyStatementSyntax syntax)
+        {
+            SetLocation(LocationOf(syntax.FinallyKeyword));             // DBG-127: running the finally part at finally
+        }
+
         if (!_terminated)
         {
             CallFinally();
@@ -1835,6 +2104,7 @@ internal sealed class FunctionEmitter
 
         Start(pad);
         Funclet(id, CallFinally, outer);
+        SetLocation(location);
         Start(end);
     }
 
@@ -1874,21 +2144,32 @@ internal sealed class FunctionEmitter
         _w.CondBr(condition, then, @else);
         if (thenTarget is null)
         {
-            Arm(then, statement.Then, end);
+            Arm(then, statement.Then, end, jumpAtLastStatement: true);
         }
 
         if (elseTarget is null)
         {
-            Arm(@else, statement.Else!, end);
+            Arm(@else, statement.Else!, end, jumpAtLastStatement: true);
         }
 
         Start(end);
     }
 
-    private void Arm(IrBlock block, LStatement body, IrBlock end)
+    /// <param name="jumpAtLastStatement">DBG-120: the jump to <paramref name="end"/> carries the arm's last statement location (no extra stop).</param>
+    private void Arm(IrBlock block, LStatement body, IrBlock end, bool jumpAtLastStatement = false)
     {
         Start(block);
+        _lastLocation = null;
         Statement(body);
+        if (jumpAtLastStatement && !_terminated && _lastLocation is { } last && last != _location)
+        {
+            var location = _location;
+            _w.SetDebugLocation(last);
+            FallThrough(end);
+            _w.SetDebugLocation(location);
+            return;
+        }
+
         FallThrough(end);
     }
 
@@ -1919,13 +2200,28 @@ internal sealed class FunctionEmitter
 
         var step = loop.Step is null ? null : Block(kind switch { "for" => "for.inc", "repeat" => "repeat.cond", _ => kind + ".step" }, id);
         _loops[loop.Label] = (end, step ?? body);
-        Jump(body);
+        var location = _location;
+        if (loop.SourceSyntax is Syntax.RepeatStatementSyntax repeat && _subprogram is not null)
+        {
+            // DBG-124: repeat has no location (the jump into the loop is the first statement's); the condition and the jumps to it
+            // are at until
+            var until = LocationOf(repeat.UntilKeyword);
+            SetLocation(FirstStatementToken(repeat.Statements) is { Kind: not Syntax.SyntaxKind.None } first ? LocationOf(first) : until);
+            Jump(body);
+            SetLocation(until);
+        }
+        else
+        {
+            Jump(body);
+        }
+
         Arm(body, loop.Body, step ?? body);
         if (step is not null)
         {
             Arm(step, loop.Step!, body);
         }
 
+        SetLocation(location);
         Start(end);
     }
 
@@ -1959,12 +2255,12 @@ internal sealed class FunctionEmitter
         _terminated = true;
         for (var k = 0; k < statement.Sections.Length; k++)
         {
-            Arm(arms[k], statement.Sections[k].Body, end);
+            Arm(arms[k], statement.Sections[k].Body, end, jumpAtLastStatement: true);
         }
 
         if (statement.Default is { } body)
         {
-            Arm(@default, body, end);
+            Arm(@default, body, end, jumpAtLastStatement: true);
         }
 
         Start(end);

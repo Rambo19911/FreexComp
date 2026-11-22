@@ -21,6 +21,8 @@ internal sealed class LlvmTextWriter : IIrWriter
     private readonly SortedDictionary<string, string> _declarations = new(StringComparer.Ordinal);
     private readonly List<string> _functions = [];
     private readonly SortedDictionary<int, string> _attributeGroups = [];
+    private readonly List<string> _metadata = [];
+    private int? _location;
     private string? _header;
     private string? _text;
 
@@ -68,6 +70,11 @@ internal sealed class LlvmTextWriter : IIrWriter
         }
 
         line.Append(", align ").Append(Int(global.Alignment));
+        if (global.DebugVariable is { } node)
+        {
+            line.Append(", !dbg !").Append(Int(node));
+        }
+
         _globals.Add(line.ToString());
         return new IrGlobal(global.Name);
     }
@@ -123,7 +130,13 @@ internal sealed class LlvmTextWriter : IIrWriter
             _function.Append(" comdat");
         }
         _headerEnd = _function.Length;
+        if (function.Subprogram is { } subprogram)
+        {
+            _function.Append(" !dbg !").Append(Int(subprogram));         // after the personality (inserted at _headerEnd)
+        }
+
         _function.Append(" {\n");
+        _location = null;
         _inBlock = false;
         _blockTerminated = false;
         _usesEh = false;
@@ -350,6 +363,26 @@ internal sealed class LlvmTextWriter : IIrWriter
         _function = null;
     }
 
+    public void SetDebugLocation(int? location) => _location = location;
+
+    public void DebugDeclare(IrValue address, int variable, string expression, int location)
+    {
+        RequirePointer(address);
+        var function = RequireFunction();
+        if (!_inBlock || _blockTerminated)
+        {
+            throw new InvalidOperationException("Debug record outside an open block.");
+        }
+
+        function.Append($"    #dbg_declare({Typed(address)}, !{Int(variable)}, !DIExpression({expression}), !{Int(location)})\n");
+    }
+
+    public void AppendMetadata(string line)
+    {
+        RequireModuleLevel();
+        _metadata.Add(line);
+    }
+
     public void EndModule()
     {
         RequireModuleLevel();
@@ -364,6 +397,7 @@ internal sealed class LlvmTextWriter : IIrWriter
         }
 
         AppendSection(text, _attributeGroups.Values);
+        AppendSection(text, _metadata);
         _text = text.ToString();
     }
 
@@ -417,7 +451,13 @@ internal sealed class LlvmTextWriter : IIrWriter
             throw new InvalidOperationException("Instruction outside an open block.");
         }
 
-        function.Append("  ").Append(text).Append('\n');
+        function.Append("  ").Append(text);
+        if (_location is { } location)
+        {
+            function.Append(", !dbg !").Append(Int(location));
+        }
+
+        function.Append('\n');
     }
 
     private void Terminator(string text)
@@ -563,7 +603,7 @@ internal sealed class LlvmTextWriter : IIrWriter
     private static string Quote(string text) => "\"" + Escape(text) + "\"";
 
     /// <summary>UTF-8 bytes; <c>"</c>, <c>\</c>, control and non-ASCII bytes as <c>\XX</c>.</summary>
-    private static string Escape(string text)
+    internal static string Escape(string text)
     {
         var result = new StringBuilder();
         foreach (var b in Encoding.UTF8.GetBytes(text))

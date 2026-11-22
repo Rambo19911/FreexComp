@@ -67,6 +67,13 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
     /// </summary>
     public static (StructIrType Body, ImmutableArray<int> FieldIndexes) Struct(IReadOnlyList<TypeLayout> fields)
     {
+        var (offsets, size) = StructOffsets(fields);
+        return Struct([.. fields.Select(f => f.StorageType)], offsets, [.. fields.Select(f => f.Size)], size, packed: false);
+    }
+
+    /// <summary>The ABI-060 byte offset of each field of <see cref="Struct(IReadOnlyList{TypeLayout})"/> (alignment cap 8) and the struct's size.</summary>
+    public static (ImmutableArray<long> Offsets, long Size) StructOffsets(IReadOnlyList<TypeLayout> fields)
+    {
         long end = 0;
         var alignment = 1;
         var offsets = new long[fields.Count];
@@ -78,8 +85,7 @@ internal sealed record TypeLayout(long Size, int Alignment, IrType StorageType)
             end = offsets[i] + fields[i].Size;
         }
 
-        return Struct([.. fields.Select(f => f.StorageType)], [.. offsets], [.. fields.Select(f => f.Size)],
-            (end + alignment - 1) / alignment * alignment, packed: false);
+        return ([.. offsets], (end + alignment - 1) / alignment * alignment);
     }
 
     private static (StructIrType Body, ImmutableArray<int> FieldIndexes) Struct(ImmutableArray<IrType> types, ImmutableArray<long> offsets,

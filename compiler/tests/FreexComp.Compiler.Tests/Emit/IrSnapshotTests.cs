@@ -2923,6 +2923,13 @@ public sealed class IrSnapshotTests
         Assert.Contains("  %t1 = load i32, ptr %t1.1.addr, align 4\n", text);
     }
 
+    /// <summary>CMP-420…423 (C-128): the CMP-310 <c>Add</c> unit with debug metadata (debug-info.md §1–§5).</summary>
+    [Fact]
+    [Trait("Req", "CMP-420")]
+    [Trait("Req", "CMP-421")]
+    [Trait("Req", "CMP-422")]
+    public void DebugInfo() => Snapshot.Verify("DebugInfo", DebugInfoTests.EmitWithDebugInfo(AddSource));
+
     internal static string Emit(string source)
     {
         var tree = SyntaxTree.Parse(SourceText.From(@"C:\p\M.pas", source));

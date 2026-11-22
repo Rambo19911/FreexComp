@@ -489,8 +489,9 @@ public sealed class Compilation
             options.InfoSink?.Invoke("Compiling " + unit.Name);
         }
 
+        var debug = DebugInfoOptions();
         Parallel.For(0, stale.Length, new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism, CancellationToken = ct },
-            i => texts[i] = EmitIr(stale[i].Result!, stale[i].Forms, unitTable, location));
+            i => texts[i] = EmitIr(stale[i].Result!, stale[i].Forms, unitTable, location, debug));
         var llPaths = ImmutableArray.CreateBuilder<string>();
         for (var i = 0; i < stale.Length; i++)
         {
@@ -948,14 +949,35 @@ public sealed class Compilation
         return Lowerer.ManagedGlobals(main.Unit).IsEmpty ? [.. table] : [.. table, new UnitTableEntry(main.Unit, HasInit: false, HasFinal: true)];
     }
 
+    /// <summary>
+    /// CMP-420…424: with <c>-g</c> the metadata options — container, <c>isOptimized</c> (DBG-101) and the source bytes on disk for the
+    /// MD5 checksums (DBG-103); null without <c>-g</c>.
+    /// </summary>
+    private DebugInfoOptions? DebugInfoOptions() => !Options.DebugInfo ? null
+        : new DebugInfoOptions(Options.DebugFormat, IsOptimized: Options.Optimization != OptimizationLevel.O0)
+        {
+            ReadFile = path =>
+            {
+                try
+                {
+                    return FileSystem.FileExists(path) ? FileSystem.ReadAllBytes(path) : null;
+                }
+                catch (IOException)
+                {
+                    return null;
+                }
+            },
+        };
+
     /// <summary>Lowers and emits one unit; the program gets the unit table. Thread-safe (CMP-156).</summary>
-    private static (string? Text, Diagnostic? Failure) EmitIr(BindingResult unit, ImmutableArray<Forms.EmbeddedForm> forms, ImmutableArray<UnitTableEntry> unitTable, Location location)
+    private static (string? Text, Diagnostic? Failure) EmitIr(BindingResult unit, ImmutableArray<Forms.EmbeddedForm> forms, ImmutableArray<UnitTableEntry> unitTable, Location location,
+        DebugInfoOptions? debug)
     {
         try
         {
             var writer = new LlvmTextWriter();
             ImmutableArray<UnitTableEntry> table = unit.Unit.IsProgram ? unitTable : [];
-            IrEmitter.EmitUnit(Lowerer.Lower(unit, forms), writer, table);
+            IrEmitter.EmitUnit(Lowerer.Lower(unit, forms), writer, table, debug);
             return (writer.GetText(), null);
         }
         catch (EmitNotSupportedException e)
