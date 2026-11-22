@@ -16,7 +16,8 @@ public sealed class RenderContext
     /// <param name="obj">The object to draw.</param>
     /// <param name="width">Control width; for the form its client width (the frame is decoration, §4.1).</param>
     /// <param name="height">Control height; for the form its client height.</param>
-    /// <param name="clientRect">From the layout result (DSG-LAY-034); null = computed by <see cref="ContainerRects"/>.</param>
+    /// <param name="clientRect">From the layout result (DSG-LAY-034; use <see cref="FromLayout"/>); null = computed by
+    /// <see cref="ContainerRects"/> from stored properties, for drawing one control without a layout (renderer tests).</param>
     /// <param name="alignRect">From the layout result; null = computed by <see cref="ContainerRects"/>.</param>
     /// <param name="palette">Theme part of the palette; default <see cref="DesignPalette.Light"/>.</param>
     /// <param name="info">Metadata override (tests strip it); default the object's own, or <c>TComponent</c> when unknown.</param>
@@ -35,6 +36,36 @@ public sealed class RenderContext
         ClientRect = clientRect ?? ContainerRects.Client(this);
         AlignRect = alignRect ?? ContainerRects.Align(this);
     }
+
+    /// <summary>
+    /// D-102: the context of <paramref name="obj"/> as the design surface draws it — size, client and align rect from
+    /// <paramref name="layout"/> (the run-time state after loading, steps and scaling; DSG-RND-004, DSG-LAY-034), never
+    /// from stored properties. The align rect is moved from client into control coordinates. The form keeps its design
+    /// caption: its client rect starts at (1, 31) (DSG-RND-005 exception).
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="obj"/> has no layout bounds (non-visual or unplaceable).</exception>
+    public static RenderContext FromLayout(FormObject obj, Layout.LayoutResult layout, DesignPalette? palette = null,
+        Func<TextStyle, TextMetrics>? metrics = null)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        ArgumentNullException.ThrowIfNull(layout);
+        var bounds = layout.GetBounds(obj);
+        var client = layout.GetClientRect(obj);
+        var align = layout.GetAlignRect(obj);
+        if (obj.Parent is null && (obj.Info ?? ComponentCatalog.BuiltInRoot).RendererId == "form")
+        {
+            client = client with { Left = client.Left + FormClientLeft, Top = client.Top + FormClientTop };
+        }
+
+        align = align with { Left = align.Left + client.Left, Top = align.Top + client.Top };
+        return new RenderContext(obj, bounds.Width, bounds.Height, client, align, palette, metrics: metrics);
+    }
+
+    /// <summary>The form's client origin below the design caption (DSG-RND-005 exception; <see cref="ContainerRects.Client"/>).</summary>
+    internal const int FormClientLeft = 1;
+
+    /// <inheritdoc cref="FormClientLeft"/>
+    internal const int FormClientTop = 31;
 
     public FormObject Object { get; }
 

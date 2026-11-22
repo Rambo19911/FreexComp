@@ -10,7 +10,7 @@ public static class ContainerRects
     /// <summary>The client rectangle: form (1, 31, W, H) below the design caption; bordered panel inset 1; else the bounds.</summary>
     public static Rect Client(RenderContext ctx) => ctx.Info.RendererId switch
     {
-        "form" => new Rect(1, 31, Math.Max(0, ctx.Width), Math.Max(0, ctx.Height)),
+        "form" => new Rect(RenderContext.FormClientLeft, RenderContext.FormClientTop, Math.Max(0, ctx.Width), Math.Max(0, ctx.Height)),
         "panel" when IsSingle(ctx) => Clamp(1, 1, ctx.Width - 2, ctx.Height - 2),
         _ => Clamp(0, 0, ctx.Width, ctx.Height),
     };
