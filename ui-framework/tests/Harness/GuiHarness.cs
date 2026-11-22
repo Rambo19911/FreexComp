@@ -50,6 +50,9 @@ public static partial class Gui
 
     private static readonly ConcurrentDictionary<string, Lazy<string>> Built = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>U-127: the windows of <see cref="StartForegroundHolder"/> (with their thread, against a reused handle value).</summary>
+    private static readonly ConcurrentDictionary<(IntPtr Window, uint Thread), bool> HolderWindows = new();
+
     /// <summary>Default for <see cref="WaitForMainWindow"/> (sample-apps.md §2).</summary>
     public static TimeSpan WindowTimeout { get; } = TimeSpan.FromSeconds(10);
 
@@ -448,20 +451,28 @@ public static partial class Gui
     /// when it still is not after <paramref name="timeout"/> (default 5 s). A plain <c>SetForegroundWindow</c> from the
     /// test process is refused by the foreground lock whenever another process holds the foreground, and even when it
     /// succeeds the activation of another thread's window completes asynchronously (the foreground is briefly none),
-    /// so attempts take turns until the deadline, each followed by polling <c>GetForegroundWindow</c>:
+    /// so attempts take turns until the deadline, each followed by polling <c>GetForegroundWindow</c> for up to 500 ms:
     /// <list type="number">
+    /// <item>U-127: when a window of <see cref="StartForegroundHolder"/> is the foreground, the holder is asked to hand
+    /// it over (<see cref="WM_HANDOVER"/>): the foreground process may give the foreground away, so the target is
+    /// really activated (it receives <c>WM_ACTIVATE</c>);</item>
     /// <item><c>SetForegroundWindow</c>;</item>
     /// <item>the same with the foreground window's thread attached to the target's input (<c>AttachThreadInput</c>),
     /// detached again at once;</item>
     /// <item>minimise and restore (<c>ShowWindow</c> <c>SW_MINIMIZE</c>, <c>SW_RESTORE</c>, which activates the window).</item>
     /// </list>
-    /// No input is injected and no system setting is changed.
+    /// U-127 found that methods 2 and 3 can make <c>GetForegroundWindow</c> report the target although the target never
+    /// receives <c>WM_ACTIVATE</c> (seen after a few cycles between the holder and a form); a test of activation
+    /// therefore takes the foreground from a holder, where method 1 applies. A holder window itself starts with
+    /// minimise/restore, which activates it reliably (methods 2 and 3 had no effect on it while a form was the
+    /// foreground). No input is injected and no system setting is changed.
     /// </summary>
     public static bool BringToForeground(IntPtr hwnd, TimeSpan? timeout = null)
     {
         var watch = Stopwatch.StartNew();
         var limit = timeout ?? TimeSpan.FromSeconds(5);
-        for (var attempt = 0; ; attempt++)
+        var first = IsHolder(hwnd) ? 3 : 0;
+        for (var attempt = first; ; attempt++)
         {
             if (GetForegroundWindow() == hwnd)
             {
@@ -473,12 +484,21 @@ public static partial class Gui
                 return false;
             }
 
-            switch (attempt % 3)
+            switch (attempt % 4)
             {
                 case 0:
-                    SetForegroundWindow(hwnd);
+                    var holder = GetForegroundWindow();
+                    if (!IsHolder(holder))
+                    {
+                        continue;                                      // no holder to ask: next method at once
+                    }
+
+                    Send(holder, WM_HANDOVER, (nuint)hwnd, 0);
                     break;
                 case 1:
+                    SetForegroundWindow(hwnd);
+                    break;
+                case 2:
                     var foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
                     var targetThread = GetWindowThreadProcessId(hwnd, out _);
                     var attached = foregroundThread != 0 && foregroundThread != targetThread
@@ -504,6 +524,12 @@ public static partial class Gui
         }
     }
 
+    /// <summary>U-127: the message of <c>tests/gui/ForegroundHolder.pas</c> that hands the foreground to window wParam.</summary>
+    private const uint WM_HANDOVER = 0x8001;                         // WM_APP + 1
+
+    private static bool IsHolder(IntPtr hwnd) =>
+        hwnd != IntPtr.Zero && HolderWindows.ContainsKey((hwnd, GetWindowThreadProcessId(hwnd, out _)));
+
     /// <summary>
     /// U-126: starts <c>tests/gui/ForegroundHolder.pas</c>, a second process whose window takes the foreground, and
     /// waits until its window is shown, idle and the foreground window (it does not always win it on its own: the
@@ -516,6 +542,7 @@ public static partial class Gui
         var window = WaitForMainWindow(holder, "FxcForegroundHolder", "Foreground Holder");
         Assert.True(window != IntPtr.Zero, "the foreground holder shows no window\n" + holder.StdErr);
         WaitIdle(holder);
+        HolderWindows[(window, GetWindowThreadProcessId(window, out _))] = true;
         Assert.True(BringToForeground(window), $"the foreground holder did not get the foreground (it is {GetForegroundWindow():X})");
         return holder;
     }

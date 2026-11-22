@@ -261,6 +261,83 @@ public sealed class HelloFormTests : IDisposable
         Assert.Equal(0, app.Process.ExitCode);
     }
 
+    /// <summary>
+    /// U-127: activation cycles (the form takes the foreground from the foreground holder, then the holder takes it
+    /// back, both through <see cref="Gui.BringToForeground"/>) grow neither the GDI nor the USER object count by more
+    /// than 2 over <see cref="ActivationCycles"/> cycles after a warm-up of <see cref="ActivationWarmUp"/> cycles; every
+    /// cycle must really activate the form (one <c>OnActivate</c> per cycle in the event log). The focus is first moved
+    /// from <c>NameEdit</c> to <c>GreetButton</c> (Tab), so each activation focuses the default button (default-button
+    /// styles, <c>WM_CTLCOLORBTN</c>, UIF-092 focus restore) and not the edit: a focus change of a themed EDIT animates
+    /// its border through uxtheme's buffered-animation cache (a memory DC, bitmap and region per buffer), which grows
+    /// by about 8 objects per back-to-back cycle to a bounded plateau that keeps oscillating by 8 (+70 … +90 objects,
+    /// the same with a plain Win32 EDIT, none with an unthemed one); it is not a framework object and would make the
+    /// count meaningless without wall-clock waits for the animation.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Foreground")]
+    [Trait("Req", "UIF-576")]
+    public void HelloForm_NoGdiLeakOnActivate()
+    {
+        Harness.RequireDesktop();
+        using var holder = Gui.StartForegroundHolder();
+        var holderWindow = Gui.WaitForMainWindow(holder, "FxcForegroundHolder", "Foreground Holder");
+        var log = Path.Combine(temp, "events.log");
+        using var app = Start(log);
+        var form = Gui.WaitForMainWindow(app, "PN.TForm", "Hello Form");
+        Assert.True(form != IntPtr.Zero, "main window not found\n" + app.StdErr);
+        Gui.WaitIdle(app);
+        var (gdiStart, userStart) = ResourceTests.Counts(app);
+        int Activations() => ReadShared(log).Count(l => l == "OnActivate");
+
+        void Cycle(int i)
+        {
+            var before = Activations();
+            Assert.True(Gui.BringToForeground(form), $"cycle {i}: the form did not get the foreground (it is {Gui.Foreground():X})");
+            Gui.WaitIdle(app);
+            Assert.True(Gui.WaitUntil(() => Activations() > before), $"cycle {i}: the form is the foreground but was not activated (no OnActivate)");
+            Assert.True(Gui.BringToForeground(holderWindow), $"cycle {i}: the holder did not get the foreground back (it is {Gui.Foreground():X})");
+            Gui.WaitIdle(app);
+        }
+
+        Assert.True(Gui.BringToForeground(holderWindow), $"the holder did not get the foreground (it is {Gui.Foreground():X})");
+        Assert.True(Gui.BringToForeground(form), $"the form did not get the foreground (it is {Gui.Foreground():X})");
+        Gui.WaitIdle(app);
+        Gui.PostKey(Gui.FindDescendant(form, "EDIT"), Gui.VK_TAB);
+        Assert.True(Gui.WaitUntil(() => ReadShared(log).Contains("enter: GreetButton")), "Tab did not move the focus to GreetButton\n" + string.Join("\n", ReadShared(log)));
+        Assert.True(Gui.BringToForeground(holderWindow), $"the holder did not get the foreground (it is {Gui.Foreground():X})");
+        Gui.WaitIdle(app);
+
+        for (var i = 0; i < ActivationWarmUp; i++)
+        {
+            Cycle(i);
+        }
+
+        var (gdi0, user0) = ResourceTests.Counts(app);
+        int gdiMax = gdi0, userMax = user0;
+        for (var i = 0; i < ActivationCycles; i++)
+        {
+            Cycle(ActivationWarmUp + i);
+            var (g, u) = ResourceTests.Counts(app);
+            gdiMax = Math.Max(gdiMax, g);
+            userMax = Math.Max(userMax, u);
+        }
+
+        var (gdi1, user1) = ResourceTests.Counts(app);
+        Assert.True(gdi1 - gdi0 <= 2 && user1 - user0 <= 2,
+            $"after {ActivationCycles} activation cycles: GDI {gdi0} -> {gdi1} (max {gdiMax}), USER {user0} -> {user1} (max {userMax}); " +
+            $"at start GDI {gdiStart}, USER {userStart}, before the warm-up of {ActivationWarmUp} cycles");
+        Assert.DoesNotContain("enter: NameEdit", ReadShared(log).SkipWhile(l => l != "enter: GreetButton"));
+        Gui.Post(form, Gui.WM_CLOSE);
+        Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
+        Assert.Equal(0, app.Process.ExitCode);
+    }
+
+    /// <summary>U-127: warm-up cycles of <see cref="HelloForm_NoGdiLeakOnActivate"/> (theme parts opened by the first).</summary>
+    private const int ActivationWarmUp = 5;
+
+    /// <summary>U-127: measured cycles of <see cref="HelloForm_NoGdiLeakOnActivate"/>.</summary>
+    private const int ActivationCycles = 50;
+
     /// <summary>The event log while the program may still append to it.</summary>
     private static string[] ReadShared(string path)
     {

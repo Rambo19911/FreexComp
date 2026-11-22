@@ -3,12 +3,16 @@ program ForegroundHolder;
 { U-126: a second process that takes the foreground away from the program under test, so that the harness's
   Gui.BringToForeground is tested against a foreground window owned by another process (what a parallel test run
   does). Plain Win32, no framework unit. One top-level window 'Foreground Holder' (class FxcForegroundHolder),
-  shown with activation and asking for the foreground itself; WM_CLOSE ends it with exit code 0. }
+  shown with activation and asking for the foreground itself; WM_CLOSE ends it with exit code 0. U-127: the message
+  WM_APP + 1 (sent, wParam = a top-level window) hands the foreground to that window while the holder has it (the
+  foreground process may give it away, so the target is really activated); the result is 1 when SetForegroundWindow
+  succeeded. }
 uses
   Windows, Messages;
 
 const
   HolderClass = 'FxcForegroundHolder';
+  WM_HANDOVER = $8001;                                         { WM_APP + 1 }
 
 var
   Main: HWND;
@@ -17,6 +21,8 @@ function WndProc(Wnd: HWND; Msg: UINT; wParam: WPARAM; lParam: LPARAM): LRESULT;
 begin
   Result := 0;
   case Msg of
+    WM_HANDOVER:
+      Result := LRESULT(Ord(SetForegroundWindow(HWND(wParam))));
     WM_CLOSE:
       DestroyWindow(Wnd);
     WM_DESTROY:
