@@ -9,11 +9,23 @@ internal static class Golden
     /// Compares <paramref name="actual"/> (line ends normalised to LF) with the golden file; with
     /// <c>FXC_UPDATE_GOLDENS=1</c> the golden in the source tree is rewritten instead (never in CI).
     /// </summary>
-    public static void Check(string goldenPathInOutput, string actual)
+    public static void Check(string goldenPathInOutput, string actual) =>
+        Check(goldenPathInOutput, actual, Environment.GetEnvironmentVariable);
+
+    /// <summary>
+    /// <see cref="Check(string, string)"/> reading the environment through <paramref name="environment"/>. Update mode
+    /// with <c>CI</c> set (any non-empty value) fails without writing (DSG-TEST-011, TESTING.md rule 5).
+    /// </summary>
+    internal static void Check(string goldenPathInOutput, string actual, Func<string, string?> environment)
     {
         actual = actual.ReplaceLineEndings("\n");
-        if (Environment.GetEnvironmentVariable(UpdateVariable) == "1")
+        if (environment(UpdateVariable) == "1")
         {
+            if (!string.IsNullOrEmpty(environment("CI")))
+            {
+                Assert.Fail($"{UpdateVariable}=1 is not allowed when CI is set: goldens are never rewritten in CI ({goldenPathInOutput})");
+            }
+
             File.WriteAllText(SourcePath(goldenPathInOutput), actual);
             return;
         }
