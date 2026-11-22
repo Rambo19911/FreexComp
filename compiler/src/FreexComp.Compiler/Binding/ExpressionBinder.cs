@@ -2435,7 +2435,10 @@ internal sealed partial class ExpressionBinder
         return new BoundBinaryExpression(binary, OperatorKind(binary.OperatorToken), Convert(left, type), Convert(right, type), type, type, constantValue: null);
     }
 
-    /// <summary>LANG-305: <c>and</c>/<c>or</c> short-circuit under <c>{$B-}</c>; C-style Booleans are normalised (LANG-215).</summary>
+    /// <summary>
+    /// LANG-305: <c>and</c>/<c>or</c> short-circuit under <c>{$B-}</c>; C-style Booleans are normalised (LANG-215). LANG-205: two
+    /// operands of one distinct Boolean type yield that type, anything else <c>Boolean</c>.
+    /// </summary>
     private BoundBinaryExpression BooleanOperation(BinaryExpressionSyntax binary, BoundExpression left, BoundExpression right)
     {
         var op = binary.OperatorToken;
@@ -2451,7 +2454,8 @@ internal sealed partial class ExpressionBinder
         }
 
         var boolean = _types.Boolean;
-        return new BoundBinaryExpression(binary, kind, Convert(left, boolean), Convert(right, boolean), boolean, boolean, constantValue: null);
+        return new BoundBinaryExpression(binary, kind, Convert(left, boolean), Convert(right, boolean), boolean,
+            ConstantFolder.LogicalResultType(left.Type, right.Type, boolean), constantValue: null);
     }
 
     /// <summary>LANG-301…302: integers (mathematically), reals, Booleans, chars of one kind.</summary>

@@ -416,11 +416,19 @@ internal sealed class ConstantFolder
         return Integer(op.Kind == SyntaxKind.DivKeyword ? BigInteger.Divide(l, r) : BigInteger.Remainder(l, r), op);
     }
 
+    /// <summary>
+    /// LANG-205: the type of a Boolean <c>and</c>/<c>or</c>/<c>xor</c> — the operands' type when both are the same distinct
+    /// Boolean type with the representation of <c>Boolean</c>; else <paramref name="boolean"/>.
+    /// </summary>
+    internal static TypeSymbol LogicalResultType(TypeSymbol left, TypeSymbol right, TypeSymbol boolean) =>
+        ReferenceEquals(left, right) && left is BooleanTypeSymbol { IsCStyle: false } ? left : boolean;
+
     private Folded Logical(SyntaxToken op, ConstantValue left, ConstantValue right)
     {
         if (left.Value is bool a && right.Value is bool b)
         {
-            return new ConstantValue(op.Kind switch { SyntaxKind.AndKeyword => a && b, SyntaxKind.OrKeyword => a || b, _ => a ^ b }, _types.Boolean);
+            return new ConstantValue(op.Kind switch { SyntaxKind.AndKeyword => a && b, SyntaxKind.OrKeyword => a || b, _ => a ^ b },
+                LogicalResultType(left.Type, right.Type, _types.Boolean));
         }
 
         if (left.Value is BigInteger l && right.Value is BigInteger r && IsInteger(left) && IsInteger(right))
