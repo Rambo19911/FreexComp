@@ -11,7 +11,7 @@ namespace FreexComp.Compiler.Tests.Syntax;
 /// </summary>
 [Trait("Phase", "3")]
 [Trait("Kind", "Unit")]
-public sealed class SyntaxEditsTests
+public sealed partial class SyntaxEditsTests
 {
     private const string Path = @"C:\p\Unit1.pas";
 

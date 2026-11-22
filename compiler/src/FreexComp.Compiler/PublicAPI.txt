@@ -1033,10 +1033,23 @@ sealed class FreexComp.Compiler.Syntax.SubrangeTypeSyntax : FreexComp.Compiler.S
   public FreexComp.Compiler.Syntax.SyntaxToken DotDotToken { get; }
   public override TResult Accept<TResult>(FreexComp.Compiler.Syntax.SyntaxVisitor<TResult> visitor)
 static class FreexComp.Compiler.Syntax.SyntaxEdits
+  public static FreexComp.Compiler.Syntax.DirectiveTriviaInfo FindDirective(FreexComp.Compiler.Syntax.SyntaxNode scope, System.String directiveName)
+  public static FreexComp.Compiler.Syntax.MemberDeclarationSyntax FindMember(FreexComp.Compiler.Syntax.ClassTypeSyntax cls, System.String name)
+  public static FreexComp.Compiler.Syntax.RoutineDeclarationSyntax FindMethodImplementation(FreexComp.Compiler.Syntax.UnitSyntax unit, System.String className, System.String methodName)
+  public static FreexComp.Compiler.Syntax.TextChange AddField(FreexComp.Compiler.Syntax.TypeDeclarationSyntax type, System.String name, System.String typeName, FreexComp.Compiler.Syntax.EditOptions options = null)
+  public static FreexComp.Compiler.Syntax.TextChange AddMethodDeclaration(FreexComp.Compiler.Syntax.TypeDeclarationSyntax type, System.String headingText, FreexComp.Compiler.Syntax.EditOptions options = null)
   public static FreexComp.Compiler.Syntax.TextChange AddUsesEntry(FreexComp.Compiler.Syntax.CompilationUnitSyntax root, System.String unitName, System.Boolean interfaceSection, FreexComp.Compiler.Syntax.EditOptions options = null)
   public static FreexComp.Compiler.Syntax.TextChange InsertMember(FreexComp.Compiler.Syntax.TypeDeclarationSyntax type, System.String memberText, FreexComp.Compiler.Symbols.Visibility section)
   public static FreexComp.Compiler.Syntax.TextChange InsertMethodImplementation(FreexComp.Compiler.Syntax.CompilationUnitSyntax root, System.String className, System.String methodText)
   public static FreexComp.Compiler.Syntax.TextChange RemoveMember(FreexComp.Compiler.Syntax.SyntaxNode member)
+  public static FreexComp.Compiler.Syntax.TextChange RenameField(FreexComp.Compiler.Syntax.TypeDeclarationSyntax type, System.String oldName, System.String newName)
+  public static FreexComp.Compiler.Syntax.TypeDeclarationSyntax FindClass(FreexComp.Compiler.Syntax.CompilationUnitSyntax root, System.String className, System.Boolean interfaceSectionOnly = true)
+  public static System.Boolean IsEmptyMethodBody(FreexComp.Compiler.Syntax.RoutineDeclarationSyntax implementation)
+  public static System.Boolean UsesContains(FreexComp.Compiler.Syntax.CompilationUnitSyntax root, System.String unitName, System.Boolean interfaceSection)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.MemberDeclarationSyntax> GetDefaultSectionMembers(FreexComp.Compiler.Syntax.ClassTypeSyntax cls)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> RemoveField(FreexComp.Compiler.Syntax.TypeDeclarationSyntax type, System.String name)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> RemoveMethod(FreexComp.Compiler.Syntax.UnitSyntax unit, System.String className, System.String methodName)
+  public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> RenameClass(FreexComp.Compiler.Syntax.UnitSyntax unit, System.String oldName, System.String newName)
   public static System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Syntax.TextChange> RenameMethod(FreexComp.Compiler.Syntax.UnitSyntax unit, System.String className, System.String oldName, System.String newName)
 static class FreexComp.Compiler.Syntax.SyntaxFactory
   public const System.String FragmentPath = "C:\\fragment.pas"
