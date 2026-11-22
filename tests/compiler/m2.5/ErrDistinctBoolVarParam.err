@@ -1,0 +1,3 @@
+ErrDistinctBoolVarParam.pas(29,12): error E2010: Incompatible types: 'TFlag' and 'Boolean'
+ErrDistinctBoolVarParam.pas(30,11): error E2010: Incompatible types: 'Boolean' and 'TFlag'
+ErrDistinctBoolVarParam.pas(31,13): error E2010: Incompatible types: 'Boolean' and 'TFlag'
