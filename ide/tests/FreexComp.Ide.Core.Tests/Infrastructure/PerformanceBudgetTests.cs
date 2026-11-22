@@ -85,7 +85,7 @@ public sealed class PerformanceBudgetTests
         {
             calls++;
             SpinThreadCpu(TimeSpan.FromMilliseconds(calls is 1 or 5 ? 100 : 20));
-        }, runs: 3);
+        }, runs: 3, minRunCpu: TimeSpan.Zero); // one call per run: the call count is the run count
 
         Assert.Equal(5, calls); // two warm-ups, three measured
         Assert.InRange(fastest.TotalMilliseconds, 20, 99);
@@ -101,17 +101,85 @@ public sealed class PerformanceBudgetTests
     {
         var calls = 0;
         var elapsed = () => TimeSpan.FromSeconds(10 * calls); // each call "takes" 10 s of wall time
-        PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.FromSeconds(25), elapsed: elapsed);
+        PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.FromSeconds(25), elapsed: elapsed, minRunCpu: TimeSpan.Zero);
         Assert.Equal(3, calls); // two warm-ups (20 s), one measured run (30 s), then the limit
 
         calls = 0;
-        var fastest = PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.Zero, elapsed: elapsed);
+        var fastest = PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.Zero, elapsed: elapsed, minRunCpu: TimeSpan.Zero);
         Assert.Equal(3, calls); // the limit already passed: still one measured run
         Assert.NotEqual(TimeSpan.MaxValue, fastest);
 
         calls = 0;
-        PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.FromSeconds(1000), elapsed: elapsed);
+        PerformanceBudget.MinThreadCpu(() => calls++, runs: 7, timeLimit: TimeSpan.FromSeconds(1000), elapsed: elapsed, minRunCpu: TimeSpan.Zero);
         Assert.Equal(9, calls); // a fast machine: all seven runs
+    }
+
+    /// <summary>
+    /// I-206: thread CPU time advances in ticks of ~15.6 ms, so a single run of ~2 ms of work used to measure 0 (or a
+    /// whole tick). Each run now repeats the action until it spans many ticks and divides by the count, so the
+    /// per-call time is resolved: within ±50 % of the fastest wall-clock time of the same fixed workload.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Category", "Performance")]
+    public void MinThreadCpuResolvesSubTickWork()
+    {
+        var (work, reference) = FixedWork(TimeSpan.FromMilliseconds(2));
+
+        var measured = PerformanceBudget.MinThreadCpu(work);
+
+        Assert.InRange(reference.TotalMilliseconds, 1.5, 10);
+        Assert.InRange(measured.TotalMilliseconds, reference.TotalMilliseconds * 0.5, reference.TotalMilliseconds * 1.5);
+    }
+
+    /// <summary>I-206: an action of ~4 ms fails a 2 ms budget instead of measuring 0 and passing vacuously.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Category", "Performance")]
+    public void SlowActionFailsShortBudget()
+    {
+        var (work, _) = FixedWork(TimeSpan.FromMilliseconds(4));
+        var budget = PerformanceBudget.Of(2, optimized: true, ciSlow: false);
+
+        var measured = PerformanceBudget.MinThreadCpu(work);
+
+        Assert.False(budget.IsMetBy(measured), budget.Describe("a 4 ms action", measured));
+    }
+
+    /// <summary>
+    /// A fixed amount of computation that takes at least <paramref name="target"/> of wall time on this machine, and
+    /// its fastest wall-clock time over 20 calls (the fastest call is the one least interrupted, so it approximates the
+    /// CPU time of the work itself).
+    /// </summary>
+    private static (Action Work, TimeSpan Reference) FixedWork(TimeSpan target)
+    {
+        var iterations = 1000;
+        while (true)
+        {
+            var n = iterations;
+            void Work()
+            {
+                double sink = 1;
+                for (int i = 0; i < n; i++)
+                {
+                    sink = Math.Sqrt(sink + i);
+                }
+
+                GC.KeepAlive(sink);
+            }
+
+            Work();
+            var fastest = TimeSpan.MaxValue;
+            for (int r = 0; r < 20; r++)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                Work();
+                if (watch.Elapsed < fastest)
+                    fastest = watch.Elapsed;
+            }
+
+            if (fastest >= target)
+                return (Work, fastest);
+            iterations *= 2;
+        }
     }
 
     /// <summary>Burns CPU on the calling thread until it has used <paramref name="cpu"/> (thread CPU, not wall clock).</summary>

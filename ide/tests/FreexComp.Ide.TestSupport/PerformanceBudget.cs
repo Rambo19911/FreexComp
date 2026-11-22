@@ -22,6 +22,15 @@ public static class PerformanceBudget
     /// <summary>I-202: wall time after which <see cref="MinThreadCpu"/> starts no further measured run (half a 30 s test timeout).</summary>
     public static readonly TimeSpan DefaultTimeLimit = TimeSpan.FromSeconds(15);
 
+    /// <summary>I-206: the resolution of thread CPU time (one clock tick, 1/64 s).</summary>
+    public static readonly TimeSpan ThreadCpuTick = TimeSpan.FromTicks(156_250);
+
+    /// <summary>I-206: thread CPU one measured run of <see cref="MinThreadCpu"/> accumulates: 16 ticks (250 ms), so the tick error is at most 1/8.</summary>
+    public static readonly TimeSpan DefaultMinRunCpu = ThreadCpuTick * 16;
+
+    /// <summary>I-206: the most calls one measured run of <see cref="MinThreadCpu"/> makes (bounds actions far below a tick).</summary>
+    public const int MaxCallsPerRun = 100_000;
+
     /// <summary>The budget of <paramref name="milliseconds"/> for work done by <paramref name="underTest"/> in this process.</summary>
     public static Budget Of(double milliseconds, params Assembly[] underTest)
     {
@@ -80,11 +89,18 @@ public static class PerformanceBudget
     /// has passed since the start, warm-ups included, but at least one is always measured. A loaded machine thus
     /// measures fewer runs instead of running into the test timeout; fewer runs can only make the fastest one slower,
     /// never hide a run over budget. <paramref name="elapsed"/> replaces the wall clock (self-tests).
+    /// I-206: thread CPU time advances in ticks of ~15.6 ms, so one call of shorter work measures 0. Each measured run
+    /// therefore calls <paramref name="action"/> repeatedly until the run's thread CPU reaches <paramref name="minRunCpu"/>
+    /// (default <see cref="DefaultMinRunCpu"/>, 16 ticks) or <see cref="MaxCallsPerRun"/> calls, and its sample is the
+    /// total divided by the number of calls. The action must therefore be repeatable. <see cref="TimeSpan.Zero"/> makes
+    /// every run a single call (self-tests).
     /// </summary>
-    public static TimeSpan MinThreadCpu(Action action, int runs = 7, TimeSpan? timeLimit = null, Func<TimeSpan>? elapsed = null)
+    public static TimeSpan MinThreadCpu(Action action, int runs = 7, TimeSpan? timeLimit = null, Func<TimeSpan>? elapsed = null,
+        TimeSpan? minRunCpu = null)
     {
         ArgumentNullException.ThrowIfNull(action);
         var limit = timeLimit ?? DefaultTimeLimit;
+        var runCpu = minRunCpu ?? DefaultMinRunCpu;
         if (elapsed is null)
         {
             var watch = Stopwatch.StartNew();
@@ -102,8 +118,17 @@ public static class PerformanceBudget
             GC.WaitForPendingFinalizers();
             GC.Collect();
             var before = CurrentThreadCpu();
-            action();
-            var sample = CurrentThreadCpu() - before;
+            var spent = TimeSpan.Zero;
+            var calls = 0;
+            do
+            {
+                action();
+                calls++;
+                spent = CurrentThreadCpu() - before;
+            }
+            while (spent < runCpu && calls < MaxCallsPerRun);
+
+            var sample = spent / calls;
             if (sample < best)
                 best = sample;
         }
