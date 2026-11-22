@@ -22,7 +22,7 @@ public static class ContainerRects
         var adjusted = ctx.Info.RendererId switch
         {
             "panel" => Inset(client, PanelInset(ctx)),
-            "groupbox" => Inset(client, 2, CaptionHeight(ctx), 2, 2),
+            "groupbox" => Inset(client, GroupBoxInset, CaptionHeight(ctx), GroupBoxInset, GroupBoxInset),
             _ => client,
         };
         return Inset(adjusted, ctx.Get("Padding.Left", 0), ctx.Get("Padding.Top", 0), ctx.Get("Padding.Right", 0),
@@ -30,15 +30,25 @@ public static class ContainerRects
     }
 
     /// <summary>Group-box caption height <c>Abs(Font.Height) + 5</c> (UIF-218, controls-standard.md UIF-670).</summary>
-    public static int CaptionHeight(RenderContext ctx) => (int)ctx.Font.SizePx + 5;
+    public static int CaptionHeight(RenderContext ctx) => GroupBoxCaptionHeight((int)ctx.Font.SizePx);
 
     /// <summary>Panel inset of the align rect: <c>BorderWidth</c> + <c>BevelWidth</c> per bevel that is not <c>bvNone</c>.</summary>
-    public static int PanelInset(RenderContext ctx)
-    {
-        var bevel = Math.Max(0, ctx.Get("BevelWidth", 1));
-        return Math.Max(0, ctx.Get("BorderWidth", 0)) + (IsBevel(ctx, "BevelOuter", "bvRaised") ? bevel : 0)
-            + (IsBevel(ctx, "BevelInner", "bvNone") ? bevel : 0);
-    }
+    public static int PanelInset(RenderContext ctx) =>
+        PanelInset(Math.Max(0, ctx.Get("BorderWidth", 0)), Math.Max(0, ctx.Get("BevelWidth", 1)),
+            IsBevel(ctx, "BevelOuter", "bvRaised"), IsBevel(ctx, "BevelInner", "bvNone"));
+
+    /// <summary>
+    /// UIF-218 <c>TPanel</c>: <c>I = BorderWidth + (BevelWidth if BevelOuter ≠ bvNone) + (BevelWidth if BevelInner ≠ bvNone)</c>
+    /// (shared with the layout engine, DSG-LAY-034).
+    /// </summary>
+    public static int PanelInset(int borderWidth, int bevelWidth, bool outerBevel, bool innerBevel) =>
+        borderWidth + (outerBevel ? bevelWidth : 0) + (innerBevel ? bevelWidth : 0);
+
+    /// <summary>UIF-218 <c>TGroupBox</c>: <c>CapH = Abs(Font.Height) + 5</c> at 96 DPI (shared with the layout engine).</summary>
+    public static int GroupBoxCaptionHeight(int fontHeight) => Math.Abs(fontHeight) + 5;
+
+    /// <summary>UIF-218 <c>TGroupBox</c>: the side and bottom inset of the align rect at 96 DPI.</summary>
+    public const int GroupBoxInset = 2;
 
     internal static bool IsSingle(RenderContext ctx) =>
         ctx.Get("BorderStyle", "bsNone").Equals("bsSingle", StringComparison.OrdinalIgnoreCase);
