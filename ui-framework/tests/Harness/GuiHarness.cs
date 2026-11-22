@@ -608,6 +608,62 @@ public static partial class Gui
     /// <summary>The GDI (<see cref="GR_GDIOBJECTS"/>) or USER (<see cref="GR_USEROBJECTS"/>) object count of <paramref name="process"/> (<c>GetGuiResources</c>).</summary>
     public static int GuiResources(Process process, uint kind) => (int)GetGuiResources(process.Handle, kind);
 
+    /// <summary>
+    /// U-136: the GDI objects of <paramref name="process"/> by type (DC, region, bitmap, palette, font, brush, …), read
+    /// from the GDI handle table mapped into every GUI process (PEB of the 64-bit target), for failure messages:
+    /// e.g. <c>DC=4 Region=3 Bitmap=9 Font=6 Brush=12</c>; <c>"?"</c> when the table cannot be read.
+    /// </summary>
+    public static string GdiTypeCounts(Process process)
+    {
+        const int entrySize = 24, entries = 65536;
+        var info = new byte[48];
+        if (NtQueryInformationProcess(process.Handle, 0, info, info.Length, out _) != 0)
+        {
+            return "?";
+        }
+
+        var pointer = new byte[8];
+        var peb = (IntPtr)BitConverter.ToInt64(info, 8);
+        if (!ReadProcessMemory(process.Handle, peb + 0xF8, pointer, 8, out _))
+        {
+            return "?";
+        }
+
+        var table = new byte[entrySize * entries];
+        if (!ReadProcessMemory(process.Handle, (IntPtr)BitConverter.ToInt64(pointer, 0), table, (UIntPtr)table.Length, out _))
+        {
+            return "?";
+        }
+
+        var names = new Dictionary<int, string> { [1] = "DC", [4] = "Region", [5] = "Bitmap", [8] = "Palette", [10] = "Font", [16] = "Brush" };
+        var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < entries; i++)
+        {
+            var at = i * entrySize;
+            if (BitConverter.ToUInt16(table, at + 8) != (ushort)process.Id)
+            {
+                continue;
+            }
+
+            var type = table[at + 14] & 0x7F;
+            if (type == 0)
+            {
+                continue;
+            }
+
+            var name = names.TryGetValue(type, out var n) ? n : "Type" + type;
+            counts[name] = counts.GetValueOrDefault(name) + 1;
+        }
+
+        return string.Join(" ", counts.Select(c => $"{c.Key}={c.Value}"));
+    }
+
+    private static bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] buffer, int size, out UIntPtr read) =>
+        ReadProcessMemory(process, address, buffer, (UIntPtr)size, out read);
+
+    [DllImport("ntdll.dll", ExactSpelling = true)]
+    private static extern int NtQueryInformationProcess(IntPtr process, int infoClass, [Out] byte[] info, int size, out int returned);
+
     private static T Aware<T>(Func<T> action)
     {
         var old = SetThreadDpiAwarenessContext(-4);                // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2

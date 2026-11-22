@@ -275,39 +275,73 @@ public sealed class HelloFormTests : IDisposable
         Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
     }
 
-    /// <summary>§3.6: 200 alternating resizes (±E(50)) grow neither the GDI nor the USER object count by more than 2.</summary>
+    /// <summary>
+    /// §3.6: 200 alternating resizes (±E(50)) grow neither the GDI nor the USER object count by more than 2.
+    /// U-136: the measurement must not depend on activation changes made by other windows (a parallel test process, the
+    /// holder of the previous test going away): a focus change of the themed <c>NameEdit</c> during the measurement adds
+    /// the theme library's buffered border-animation buffers (+4 DC, +4 bitmap, +2 region, U-127), so the focus is first
+    /// moved to <c>GreetButton</c> (Tab, as §3.7), and every <see cref="ResizeHandOverEvery"/> resizes the foreground holder
+    /// takes the foreground and the form takes it back, so that this independence is tested on every run.
+    /// </summary>
     [Fact]
     [Trait("Category", "Foreground")]
     [Trait("Req", "UIF-576")]
     public void HelloForm_NoGdiLeakOnResize()
     {
         Harness.RequireDesktop();
-        using var app = Start(null);
+        using var holder = Gui.StartForegroundHolder();
+        var holderWindow = Gui.WaitForMainWindow(holder, "FxcForegroundHolder", "Foreground Holder");
+        var log = Path.Combine(temp, "events.log");
+        using var app = Start(log);
         var form = Gui.WaitForMainWindow(app, "PN.TForm", "Hello Form");
         Assert.True(form != IntPtr.Zero, "main window not found\n" + app.StdErr);
+
+        void HandOver(string when)
+        {
+            Assert.True(Gui.BringToForeground(holderWindow), $"{when}: the holder did not get the foreground (it is {Gui.Foreground():X})");
+            Gui.WaitIdle(app);
+            Assert.True(Gui.BringToForeground(form), $"{when}: the form did not get the foreground (it is {Gui.Foreground():X})");
+            Gui.WaitIdle(app);
+        }
+
+        Assert.True(Gui.BringToForeground(form), $"the form did not get the foreground (it is {Gui.Foreground():X})");
+        Gui.WaitIdle(app);
+        Gui.PostKey(Gui.FindDescendant(form, "EDIT"), Gui.VK_TAB);
+        Assert.True(Gui.WaitUntil(() => ReadShared(log).Contains("enter: GreetButton")), "Tab did not move the focus to GreetButton\n" + string.Join("\n", ReadShared(log)));
         var step = Gui.Px(50, Gui.Dpi(form));
         var (width, height) = Gui.WindowSize(form);
         // warm-up cycle (as UIF-576): one resize pair and a synchronous repaint, so objects created by the first paint
-        // and the first layout pass exist before the baseline even when the machine is loaded
+        // and the first layout pass exist before the baseline even when the machine is loaded; no hand-over here: one
+        // would fill the edit's animation cache before the baseline and hide a focused NameEdit (U-136)
         Gui.SetWindowSize(form, width + step, height + step);
         Gui.SetWindowSize(form, width, height);
         Gui.Repaint(form);
         Gui.WaitIdle(app);
         var (gdi0, user0) = ResourceTests.Counts(app);
+        var types0 = Gui.GdiTypeCounts(app.Process);
         for (var i = 0; i < 200; i++)
         {
             var delta = i % 2 == 0 ? step : 0;
             Gui.SetWindowSize(form, width + delta, height + delta);
+            if (i % ResizeHandOverEvery == ResizeHandOverEvery / 2)
+            {
+                HandOver($"resize {i}");
+            }
         }
 
         Gui.Repaint(form);
         Gui.WaitIdle(app);
         var (gdi1, user1) = ResourceTests.Counts(app);
-        Assert.True(gdi1 - gdi0 <= 2 && user1 - user0 <= 2, $"GDI {gdi0} -> {gdi1}, USER {user0} -> {user1} after 200 resizes");
+        Assert.True(gdi1 - gdi0 <= 2 && user1 - user0 <= 2,
+            $"GDI {gdi0} -> {gdi1}, USER {user0} -> {user1} after 200 resizes; GDI objects by type {types0} -> {Gui.GdiTypeCounts(app.Process)}");
+        Assert.DoesNotContain("enter: NameEdit", ReadShared(log).SkipWhile(l => l != "enter: GreetButton"));
         Gui.Post(form, Gui.WM_CLOSE);
         Assert.True(app.WaitForExit(TimeSpan.FromSeconds(5)));
         Assert.Equal(0, app.Process.ExitCode);
     }
+
+    /// <summary>U-136: <see cref="HelloForm_NoGdiLeakOnResize"/> hands the foreground over once per this many resizes (5 times).</summary>
+    private const int ResizeHandOverEvery = 40;
 
     /// <summary>
     /// U-127: activation cycles (the form takes the foreground from the foreground holder, then the holder takes it
