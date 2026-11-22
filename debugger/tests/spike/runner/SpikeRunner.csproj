@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Throw-away DAP script runner of spike D6-0 (ADR 005). Not part of FreexComp.sln; no package references. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>FreexComp.Debugger.Spike</RootNamespace>
+  </PropertyGroup>
+</Project>
