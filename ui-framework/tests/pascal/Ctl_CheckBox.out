@@ -3,7 +3,7 @@ ok Width 97
 ok Height 17
 ok Alignment taRightJustify
 ok AllowGrayed
-ok Caption
+ok Caption empty, so it follows the Name (UIF-1250)
 ok Checked
 ok ParentFont
 ok State cbUnchecked

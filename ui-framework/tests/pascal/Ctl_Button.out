@@ -2,7 +2,7 @@
 ok Width 75
 ok Height 25
 ok Cancel
-ok Caption
+ok Caption empty, so it follows the Name (UIF-1250)
 ok Default
 ok ModalResult mrNone
 ok ParentFont

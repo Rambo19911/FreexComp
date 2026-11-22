@@ -110,7 +110,7 @@ begin
     CheckEqI(17, C.Height, 'Height 17');
     CheckEqB(True, C.Alignment = taRightJustify, 'Alignment taRightJustify');
     CheckEqB(False, C.AllowGrayed, 'AllowGrayed');
-    CheckEqS('', C.Caption, 'Caption');
+    CheckEqS('C', C.Caption, 'Caption empty, so it follows the Name (UIF-1250)');
     CheckEqB(False, C.Checked, 'Checked');
     CheckEqB(True, C.ParentFont, 'ParentFont');
     CheckEqB(True, C.State = cbUnchecked, 'State cbUnchecked');

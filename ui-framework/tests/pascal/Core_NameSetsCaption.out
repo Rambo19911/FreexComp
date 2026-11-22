@@ -1,0 +1,41 @@
+# label follows the name while unchanged
+ok label has csSetCaption
+ok empty old name and empty caption: copied
+ok caption follows the rename
+ok a rename that changes only the case is copied
+ok a changed caption is kept
+ok comparison is case-sensitive
+ok rename to an empty name copies the empty name
+# empty old name
+ok empty old name with a non-empty caption: kept
+ok TControl itself copies
+# button and edit
+ok button caption copied
+ok button caption follows
+ok changed button caption kept
+ok edit has csSetCaption
+ok edit text copied
+ok edit text follows
+ok changed edit text kept
+# form caption
+ok new form caption
+ok form caption copied
+ok form caption follows
+ok changed form caption kept
+# classes without csSetCaption
+ok no copy from an empty name
+ok no copy while the caption equals the old name
+ok combo box lacks csSetCaption
+ok combo box text not copied
+# loading never copies
+ok copied before loading
+ok csLoading set
+ok no copy while csLoading
+ok root name read
+ok root keeps its stored caption
+ok a loaded label without a stored caption stays empty
+ok a loaded button keeps its stored caption
+ok a loaded edit without stored text stays empty
+ok loading finished
+ok after loading the copy applies again
+# passed 34 failed 0

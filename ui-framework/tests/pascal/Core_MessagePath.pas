@@ -126,6 +126,7 @@ begin
     W.SetBounds(10, 10, 100, 50);
     W.Parent := Root;
     H := W.Handle;
+    W.Pinged := 0;                                           { the Name copy (UIF-1250) sent WM_SETTEXT }
 
     Section('Dispatch fallback to message methods (UIF-060)');
     R := SendMessageW(H, WM_PING, 0, 0);

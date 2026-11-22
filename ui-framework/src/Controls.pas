@@ -324,6 +324,8 @@ type
     function GetClientRect: TRect; virtual;
     function GetText: TCaption; virtual;
     procedure SetText(const Value: TCaption); virtual;
+    { core.md UIF-1250: Name->text copy under csSetCaption }
+    procedure SetName(const NewName: TComponentName); override;
     procedure Click; virtual;
     procedure DblClick; virtual;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); virtual;
@@ -1452,6 +1454,18 @@ end;
 function TControl.GetCaption: TCaption;
 begin
   Result := GetText;
+end;
+
+{ UIF-1250: the text follows the name while it equals the old name exactly; never while loading or reading }
+procedure TControl.SetName(const NewName: TComponentName);
+var
+  Follow: Boolean;
+begin
+  Follow := (csSetCaption in ControlStyle) and not (csLoading in ComponentState) and
+    not (csReading in ComponentState) and (GetText = Name);
+  inherited SetName(NewName);
+  if Follow then
+    SetText(Name);
 end;
 
 procedure TControl.SetCaption(const Value: TCaption);

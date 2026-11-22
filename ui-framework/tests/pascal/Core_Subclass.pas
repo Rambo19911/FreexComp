@@ -109,9 +109,9 @@ begin
   try
     Root.SetBounds(100, 100, 300, 200);
     E := TTestEdit.Create(Root);
-    E.Name := 'E';
     E.SetBounds(10, 10, 150, 24);
     E.Text := 'hello world';
+    E.Name := 'E';                                           { after Text: no Name copy (UIF-1250) }
 
     Section('without a handle (UIF-060 DefaultHandler)');
     CheckEqS('hello world', E.Text, 'text from the field');

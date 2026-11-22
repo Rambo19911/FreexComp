@@ -131,6 +131,7 @@ begin
     W.Parent := Root;
     E := TTestEdit.Create(Root);
     E.Name := 'E';
+    E.Text := '';                                            { clears the Name copy (UIF-1250) }
     E.SetBounds(10, 60, 120, 24);
     E.Parent := Root;
     Root.HandleNeeded;

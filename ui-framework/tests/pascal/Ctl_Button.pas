@@ -120,7 +120,7 @@ begin
     CheckEqI(75, B.Width, 'Width 75');
     CheckEqI(25, B.Height, 'Height 25');
     CheckEqB(False, B.Cancel, 'Cancel');
-    CheckEqS('', B.Caption, 'Caption');
+    CheckEqS('B', B.Caption, 'Caption empty, so it follows the Name (UIF-1250)');
     CheckEqB(False, B.Default, 'Default');
     CheckEqI(mrNone, B.ModalResult, 'ModalResult mrNone');
     CheckEqB(True, B.ParentFont, 'ParentFont');

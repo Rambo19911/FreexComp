@@ -183,6 +183,7 @@ begin
 
     Section('graphic control');
     L := TLabel.Create(F);
+    L.AutoSize := False;                                     { keeps 60 x 20 with the Name copy (UIF-1250) }
     L.SetBounds(250, 20, 60, 20);
     L.Parent := F;
     L.Name := 'L';
