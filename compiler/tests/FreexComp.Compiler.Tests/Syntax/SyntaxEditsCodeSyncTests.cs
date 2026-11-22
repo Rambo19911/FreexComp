@@ -532,6 +532,99 @@ public sealed partial class SyntaxEditsTests
         Assert.Empty(SyntaxEdits.RenameClass(Unit(tree), "TMissing", "TBar"));
     }
 
+    [Fact]
+    public void CodeSync_RenameClassRenamesForwardDeclaration_CMP258()
+    {
+        // C-267: the forward declaration `TOld = class;` is renamed too (in the interface or the implementation section);
+        // the `class of` reference and other type references stay (CMP-258 "nothing else")
+        var source = """
+            unit Nodes;
+            interface
+            type
+              TNode = class;
+              TOther = class;
+              TNodeClass = class of TNode;
+              TNode = class
+                Next: TNode;
+                procedure Run;
+              end;
+              TOther = class
+              end;
+            var
+              Root: TNode;
+            implementation
+            type
+              tnode = class;
+            procedure TNode.Run;
+            begin
+            end;
+            end.
+            """;
+        var tree = Parse(source);
+
+        var text = Apply(tree, [.. SyntaxEdits.RenameClass(Unit(tree), "TNode", "TItem")]);
+
+        Assert.Equal(Expected(source).Replace("  TNode = class;", "  TItem = class;")
+            .Replace("  TNode = class\r\n", "  TItem = class\r\n")
+            .Replace("Root: TNode;", "Root: TItem;")
+            .Replace("  tnode = class;", "  TItem = class;")
+            .Replace("procedure TNode.Run;", "procedure TItem.Run;"), text);
+
+        // a class declared in the implementation section, with its forward declaration there
+        var hidden = """
+            unit Hidden;
+            interface
+            implementation
+            type
+              THidden = class;
+              THidden = class
+                procedure Run;
+              end;
+            procedure THidden.Run;
+            begin
+            end;
+            end.
+            """;
+        tree = Parse(hidden);
+        Assert.Equal(Expected(hidden).Replace("THidden", "TSecret"),
+            Apply(tree, [.. SyntaxEdits.RenameClass(Unit(tree), "THidden", "TSecret")]));
+
+        // the renamed unit still binds without errors (no other type references: CMP-258 leaves those alone)
+        var bindable = """
+            unit Nodes;
+            interface
+            type
+              TNode = class;
+              TNode = class
+                procedure Run;
+              end;
+            var
+              Root: TNode;
+            implementation
+            procedure TNode.Run;
+            begin
+            end;
+            end.
+            """;
+        tree = Parse(bindable);
+        var renamed = Apply(tree, [.. SyntaxEdits.RenameClass(Unit(tree), "TNode", "TItem")]);
+        Assert.Empty(BindErrors(bindable));
+        Assert.Empty(BindErrors(renamed));
+        Assert.NotEmpty(BindErrors(renamed.Replace("  TItem = class;", "  TNode = class;")));   // the C-152 result
+    }
+
+    /// <summary>The error diagnostics of unit <c>Nodes</c> used by a program, bound against the test RTL.</summary>
+    private static IEnumerable<string> BindErrors(string unitText)
+    {
+        var unitPath = @"C:\p\Nodes.pas";
+        var fs = new InMemoryFileSystem().AddSystem()
+            .Add(@"C:\p\P.pas", "program P; uses Nodes; begin end.")
+            .Add(unitPath, unitText);
+        var options = new CompilationOptions { MainFile = @"C:\p\P.pas", RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
+        return Compilation.Create(options, [], fs).GetSemanticModel(unitPath).GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToText()).ToList();
+    }
+
     // ------------------------------------------------------------------ CMP-259
 
     [Fact]

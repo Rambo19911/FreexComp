@@ -241,8 +241,8 @@ public static class SyntaxEdits
 
     /// <summary>
     /// CMP-258: renames the class declaration identifier, the leading qualifier <c>TOld</c> of every implementation-section
-    /// routine heading <c>TOld.…</c>, and the type identifier of interface-section variable declarations typed <c>TOld</c>.
-    /// Nothing else. Class not found → empty.
+    /// routine heading <c>TOld.…</c>, the type identifier of interface-section variable declarations typed <c>TOld</c>, and
+    /// every forward declaration <c>TOld = class;</c> of the class in either section (C-267). Nothing else. Class not found → empty.
     /// </summary>
     public static ImmutableArray<TextChange> RenameClass(UnitSyntax unit, string oldName, string newName)
     {
@@ -256,6 +256,18 @@ public static class SyntaxEdits
 
         var changes = ImmutableArray.CreateBuilder<TextChange>();
         changes.Add(new TextChange(type.Identifier.Span, newName));
+
+        // C-267: every forward declaration `TOld = class;` (no heritage, no body) in either section
+        foreach (var forward in unit.InterfaceSection.Declarations.Concat(unit.ImplementationSection.Declarations)
+                     .OfType<TypeSectionSyntax>().SelectMany(s => s.Declarations))
+        {
+            if (forward.Type is ClassTypeSyntax { EndKeyword: null, Heritage: null, Modifier: null }
+                && Names.Equals(forward.Identifier.Text, oldName))
+            {
+                changes.Add(new TextChange(forward.Identifier.Span, newName));
+            }
+        }
+
         foreach (var routine in unit.ImplementationSection.Declarations.OfType<RoutineDeclarationSyntax>())
         {
             if (routine.Heading.Name is QualifiedNameSyntax qualified && Leftmost(qualified) is { } qualifier
