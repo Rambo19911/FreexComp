@@ -51,7 +51,9 @@ public sealed class BlockCompletionTests
     // text right of the caret: no opener at the end of the old line
     [InlineData("procedure P;\r\nbegin\r\n  if True then begin| X;\r\nend;\r\nend.\r\n",
         "procedure P;\r\nbegin\r\n  if True then begin\r\n    | X;\r\nend;\r\nend.\r\n")]
-    public async Task InsertsMatchingCloser(string before, string after)
+    public Task InsertsMatchingCloser(string before, string after) => TestUiThread.RunAsync(() => InsertsMatchingCloserOnUiThread(before, after)); // I-209
+
+    private async Task InsertsMatchingCloserOnUiThread(string before, string after)
     {
         var (text, doc) = await EnterAsync(Head + before);
         Assert.Equal(Head + after, text);
@@ -63,7 +65,9 @@ public sealed class BlockCompletionTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-024")]
-    public async Task EndWithoutSemicolonBeforeElseAndOffWhenDisabled()
+    public Task EndWithoutSemicolonBeforeElseAndOffWhenDisabled() => TestUiThread.RunAsync(() => EndWithoutSemicolonBeforeElseAndOffWhenDisabledOnUiThread()); // I-209
+
+    private async Task EndWithoutSemicolonBeforeElseAndOffWhenDisabledOnUiThread()
     {
         var (text, _) = await EnterAsync(Head + "procedure P;\r\nbegin\r\n  if True then begin|\r\n  else\r\n    P;\r\nend;\r\nend.\r\n");
         Assert.Equal(Head + "procedure P;\r\nbegin\r\n  if True then begin\r\n    |\r\n  end\r\n  else\r\n    P;\r\nend;\r\nend.\r\n", text);

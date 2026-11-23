@@ -71,7 +71,9 @@ public sealed class RecoveryTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-120")]
     [Trait("Req", "IDE-P1-121")]
-    public async Task WritesCopiesForModifiedDocuments()
+    public Task WritesCopiesForModifiedDocuments() => TestUiThread.RunAsync(() => WritesCopiesForModifiedDocumentsOnUiThread()); // I-209
+
+    private async Task WritesCopiesForModifiedDocumentsOnUiThread()
     {
         var clean = await OpenAsync(@"C:\p\Clean.pas", "clean");
         var dirty = await OpenAsync(@"C:\p\Dirty.pas", "dirty\r\n");
@@ -127,7 +129,9 @@ public sealed class RecoveryTests
     [Trait("Req", "IDE-P1-123")]
     [Trait("Req", "IDE-P1-124")]
     [Trait("Req", "IDE-SET-101")]
-    public async Task OrphanedCopiesAreOfferedOnStart()
+    public Task OrphanedCopiesAreOfferedOnStart() => TestUiThread.RunAsync(() => OrphanedCopiesAreOfferedOnStartOnUiThread()); // I-209
+
+    private async Task OrphanedCopiesAreOfferedOnStartOnUiThread()
     {
         var saved = new DateTime(2025, 12, 31, 23, 15, 0, DateTimeKind.Utc);
         File(@"C:\p\A.pas", "disk text");
@@ -195,7 +199,9 @@ public sealed class RecoveryTests
     [Trait("Req", "IDE-P1-122")]
     [Trait("Req", "IDE-P1-035")]
     [Trait("Req", "IDE-SET-101")]
-    public async Task CopyDeletedOnSaveAndClose()
+    public Task CopyDeletedOnSaveAndClose() => TestUiThread.RunAsync(() => CopyDeletedOnSaveAndCloseOnUiThread()); // I-209
+
+    private async Task CopyDeletedOnSaveAndCloseOnUiThread()
     {
         var saved = await OpenAsync(@"C:\p\Saved.pas", "s");
         var discarded = await OpenAsync(@"C:\p\Discarded.pas", "d");
@@ -251,7 +257,9 @@ public sealed class RecoveryTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-091")]
-    public async Task FatalErrorWritesCopiesSynchronously()
+    public Task FatalErrorWritesCopiesSynchronously() => TestUiThread.RunAsync(() => FatalErrorWritesCopiesSynchronouslyOnUiThread()); // I-209
+
+    private async Task FatalErrorWritesCopiesSynchronouslyOnUiThread()
     {
         var dirty = await OpenAsync(@"C:\p\Dirty.pas", "dirty");
         dirty.Buffer.ApplyEdits([new TextEdit(0, 0, "x")]);

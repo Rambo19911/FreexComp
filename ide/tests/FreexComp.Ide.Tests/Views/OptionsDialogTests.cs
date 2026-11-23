@@ -720,4 +720,37 @@ public sealed class OptionsDialogTests
         settings.Set(SettingsCatalog.DesignerGuidelineMargin, 12);
         Assert.Equal(12, designer.GuidelineMargin);
     }
+    /// <summary>
+    /// dialogs.md §9.6 (D-109): <c>AutoSwitchLayout</c> on Environment › General is bound to <c>layout.autoSwitch</c>; it is
+    /// disabled before Phase 5 and editable from Phase 5; OK writes the key.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Req", "UI-DLG-094")]
+    public async Task AutoSwitchLayoutBinds()
+    {
+        await using (var early = await HeadlessHarness.StartAsync())
+        {
+            var running = early.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+            var dlg = await early.WaitForDialogAsync("Options");
+            CheckFields(dlg, early.Services.Settings,
+                [("AutoSwitchLayout", "Switch window la_yout automatically", SettingsCatalog.LayoutAutoSwitch, false)]);
+            dlg.Click("Cancel");
+            await running;
+        }
+
+        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5);
+        var settings = h.Services.Settings;
+        var shown = h.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+        var options = await h.WaitForDialogAsync("Options");
+        CheckFields(options, settings, [("AutoSwitchLayout", "Switch window la_yout automatically", SettingsCatalog.LayoutAutoSwitch, true)]);
+        Assert.True(options.Find<CheckBox>("AutoSwitchLayout").IsChecked);
+        options.Find<Control>("AutoSwitchLayout").BringIntoView();
+        Dispatcher.UIThread.RunJobs();
+        options.Click("AutoSwitchLayout");
+        Assert.True(settings.Get(SettingsCatalog.LayoutAutoSwitch)); // pending until OK
+        options.Click("Ok");
+        await shown;
+        Assert.False(settings.Get(SettingsCatalog.LayoutAutoSwitch));
+    }
 }

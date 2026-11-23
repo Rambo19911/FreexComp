@@ -38,7 +38,9 @@ public sealed class MessagesServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-064")]
     [Trait("Req", "IDE-P3-065")]
-    public async Task AnchorsFollowEdits()
+    public Task AnchorsFollowEdits() => TestUiThread.RunAsync(() => AnchorsFollowEditsOnUiThread()); // I-209
+
+    private async Task AnchorsFollowEditsOnUiThread()
     {
         var (bed, unit) = await StartAsync();
         bed.Engine.Enqueue(FakeBuildEngine.Failure(BuildTestBed.ProjectPath, Error("Undeclared identifier 'Foo'", 6, 3, 3)));
@@ -76,7 +78,9 @@ public sealed class MessagesServiceTests
     /// <summary>IDE-P3-064: the buffer changed between build start and the row's arrival → original position + LineStale.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-064")]
-    public async Task StaleLineNotice()
+    public Task StaleLineNotice() => TestUiThread.RunAsync(() => StaleLineNoticeOnUiThread()); // I-209
+
+    private async Task StaleLineNoticeOnUiThread()
     {
         var (bed, unit) = await StartAsync();
         var held = bed.Engine.Enqueue(FakeBuildEngine.Failure(BuildTestBed.ProjectPath, Error("Undeclared identifier 'Foo'", 6, 3, 3)).Held());
@@ -109,7 +113,9 @@ public sealed class MessagesServiceTests
     /// <summary>IDE-P3-066: Next/Previous skip rows without position and the summary, wrap at both ends.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-066")]
-    public async Task NextPreviousWrapAndSkipSummary()
+    public Task NextPreviousWrapAndSkipSummary() => TestUiThread.RunAsync(() => NextPreviousWrapAndSkipSummaryOnUiThread()); // I-209
+
+    private async Task NextPreviousWrapAndSkipSummaryOnUiThread()
     {
         var (bed, unit) = await StartAsync();
         var tool = FakeBuildEngine.Diag("E4005", DiagnosticSeverity.Error, "lld-link failed", BuildTestBed.ProjectPath);

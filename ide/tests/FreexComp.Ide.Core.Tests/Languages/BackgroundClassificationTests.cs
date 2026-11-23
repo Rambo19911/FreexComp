@@ -1,6 +1,7 @@
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Languages;
 
@@ -12,7 +13,9 @@ public sealed class BackgroundClassificationTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-053")]
     [Trait("Req", "IDE-P1-056")]
-    public async Task LargeBufferIsClassifiedInTheBackground()
+    public Task LargeBufferIsClassifiedInTheBackground() => TestUiThread.RunAsync(() => LargeBufferIsClassifiedInTheBackgroundOnUiThread()); // I-209
+
+    private async Task LargeBufferIsClassifiedInTheBackgroundOnUiThread()
     {
         var text = string.Concat(Enumerable.Repeat("begin end;\r\n", 20_000)); // 240 000 chars
         Assert.True(text.Length > WholeTextClassifier.BackgroundThreshold);

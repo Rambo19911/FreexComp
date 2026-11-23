@@ -109,6 +109,25 @@ public sealed class SessionService : ISessionService
 
     private void OnBookmarksChanged(object? sender, EventArgs e) => ScheduleSave();
 
+    /// <summary>
+    /// D-109: the Object Inspector whose page, collapsed categories, expanded rows and name column ratio are stored in and
+    /// restored from the session's <c>objectInspector</c> member (DSG-OI-003, DSG-OI-013, UI-DSG-103).
+    /// </summary>
+    public Designer.ObjectInspectorViewModel? ObjectInspector
+    {
+        get => _inspector;
+        set
+        {
+            if (_inspector is not null)
+                _inspector.SessionStateChanged -= OnBookmarksChanged;
+            _inspector = value;
+            if (value is not null)
+                value.SessionStateChanged += OnBookmarksChanged;
+        }
+    }
+
+    private Designer.ObjectInspectorViewModel? _inspector;
+
     public string SessionPath => _projects.Project is { } project
         ? Path.Combine(project.Directory, StateFolderName, "session.json")
         : Path.Combine(_paths.LocalDirectory, "session-noproject.json");
@@ -134,6 +153,9 @@ public sealed class SessionService : ISessionService
                 .Select(m => new Editing.BookmarkInfo(m.Path!, m.Line!.Value, m.Number))
                 .ToList()
             : []);
+
+        if (_inspector is not null && root["objectInspector"] is JsonObject inspector)
+            _inspector.RestoreSessionState(ReadInspector(inspector));
 
         if (!restoreDocuments || root["documents"] is not JsonArray entries)
             return 0;
@@ -192,6 +214,8 @@ public sealed class SessionService : ISessionService
                 ["number"] = b.Number,
             })]));
         }
+        if (_inspector is not null)
+            Put(root, "objectInspector", WriteInspector(_inspector.SessionState));
         if (project is not null)
         {
             Put(root, "projectManager", new JsonObject
@@ -344,6 +368,38 @@ public sealed class SessionService : ISessionService
         {
             return null;
         }
+    }
+
+    /// <summary>The <c>objectInspector</c> member (object-inspector.md §12 session keys; unknown values fall back to the defaults).</summary>
+    private static Designer.ObjectInspectorSessionState ReadInspector(JsonObject json)
+    {
+        static IReadOnlyList<string> TextList(JsonNode? node) =>
+            node is JsonArray array ? [.. array.Select(LayoutStateJson.Str).OfType<string>()] : [];
+        var expanded = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        if (json["expandedRows"] is JsonObject rows)
+        {
+            foreach (var (className, paths) in rows)
+                expanded[className] = TextList(paths);
+        }
+
+        var ratio = json["nameColumnRatio"] is JsonValue value && value.TryGetValue(out double r) ? r : Designer.ObjectInspectorViewModel.DefaultNameColumnRatio;
+        return new Designer.ObjectInspectorSessionState(
+            LayoutStateJson.Str(json["page"]) == "events" ? Designer.InspectorPage.Events : Designer.InspectorPage.Properties,
+            TextList(json["collapsedCategories"]), expanded, ratio);
+    }
+
+    private static JsonObject WriteInspector(Designer.ObjectInspectorSessionState state)
+    {
+        var rows = new JsonObject();
+        foreach (var (className, paths) in state.ExpandedRows)
+            rows[className] = new JsonArray([.. paths.Select(p => (JsonNode)p)]);
+        return new JsonObject
+        {
+            ["page"] = state.Page == Designer.InspectorPage.Events ? "events" : "properties",
+            ["collapsedCategories"] = new JsonArray([.. state.CollapsedCategories.Select(c => (JsonNode)c)]),
+            ["expandedRows"] = rows,
+            ["nameColumnRatio"] = Math.Round(state.NameColumnRatio, 4),
+        };
     }
 
     /// <summary>Replaces a member in place (keeping its position) or appends it.</summary>

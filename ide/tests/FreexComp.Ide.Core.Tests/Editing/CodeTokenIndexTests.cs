@@ -19,7 +19,9 @@ public sealed class CodeTokenIndexTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-083")]
     [Trait("Req", "IDE-ARCH-084")]
-    public async Task StaleScanRestarts()
+    public Task StaleScanRestarts() => TestUiThread.RunAsync(() => StaleScanRestartsOnUiThread()); // I-209
+
+    private async Task StaleScanRestartsOnUiThread()
     {
         var deadline = CurrentTest.Deadline;
         var text = string.Concat(Enumerable.Repeat("begin F(x); end;\r\n", 12_000)); // 216 000 chars

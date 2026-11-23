@@ -12,6 +12,19 @@ public static class TestUiThread
     /// <summary>The context of the test UI thread the caller runs on, or null on any other thread.</summary>
     public static SynchronizationContext? Current => SynchronizationContext.Current as UiContext;
 
+    /// <summary>
+    /// Completes on the caller's test UI thread once no posted work is queued there any more (I-209): the steps a real UI
+    /// thread would have run before the next input, e.g. continuations of awaited worker tasks.
+    /// </summary>
+    public static async Task IdleAsync()
+    {
+        var context = SynchronizationContext.Current as UiContext
+            ?? throw new InvalidOperationException("IdleAsync must be called on a test UI thread.");
+        do
+            await Task.Yield(); // queued behind everything posted so far
+        while (context.HasPending);
+    }
+
     /// <summary>Runs <paramref name="body"/> on a new test UI thread; completes as the body does (its exception, if any).</summary>
     public static Task RunAsync(Func<Task> body)
     {
@@ -68,6 +81,15 @@ public static class TestUiThread
             }
 
             ThreadPool.QueueUserWorkItem(_ => d(state)); // a late result after the test ended
+        }
+
+        public bool HasPending
+        {
+            get
+            {
+                lock (_gate)
+                    return _queue.Count > 0;
+            }
         }
 
         public override void Send(SendOrPostCallback d, object? state) =>

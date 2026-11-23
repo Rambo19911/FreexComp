@@ -46,7 +46,9 @@ public sealed class DocumentServiceTests
     [Trait("Req", "IDE-ARCH-020")]
     [Trait("Req", "IDE-ARCH-021")]
     [Trait("Req", "IDE-P1-032")]
-    public async Task OpenSameFileActivatesExistingTab()
+    public Task OpenSameFileActivatesExistingTab() => TestUiThread.RunAsync(() => OpenSameFileActivatesExistingTabOnUiThread()); // I-209
+
+    private async Task OpenSameFileActivatesExistingTabOnUiThread()
     {
         var a = File(@"C:\p\A.pas", "unit A;\r\n");
         File(@"C:\p\B.pas", "unit B;\r\n");
@@ -75,7 +77,9 @@ public sealed class DocumentServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-037")]
     [Trait("Req", "UI-ED-071")]
-    public async Task DuplicateFileNamesAreDisambiguated()
+    public Task DuplicateFileNamesAreDisambiguated() => TestUiThread.RunAsync(() => DuplicateFileNamesAreDisambiguatedOnUiThread()); // I-209
+
+    private async Task DuplicateFileNamesAreDisambiguatedOnUiThread()
     {
         var other = await OpenAsync(File(@"C:\p\Other.pas", ""));
         var lib = await OpenAsync(File(@"C:\p\lib\Unit1.pas", ""));
@@ -110,7 +114,9 @@ public sealed class DocumentServiceTests
     [Trait("Req", "IDE-P1-033")]
     [Trait("Req", "IDE-P1-034")]
     [Trait("Req", "IDE-P1-079")]
-    public async Task UntitledUnitNamingAndSaveAs()
+    public Task UntitledUnitNamingAndSaveAs() => TestUiThread.RunAsync(() => UntitledUnitNamingAndSaveAsOnUiThread()); // I-209
+
+    private async Task UntitledUnitNamingAndSaveAsOnUiThread()
     {
         _services.Settings.Set(SettingsCatalog.FilesDefaultLineEnding, "lf");
         _services.Settings.Set(SettingsCatalog.FilesDefaultEncoding, "utf-8-bom");
@@ -169,7 +175,9 @@ public sealed class DocumentServiceTests
     [Trait("Req", "IDE-P1-038")]
     [Trait("Req", "IDE-P1-035")]
     [Trait("Req", "UI-ED-077")]
-    public async Task MruAndVisualOrderSwitching()
+    public Task MruAndVisualOrderSwitching() => TestUiThread.RunAsync(() => MruAndVisualOrderSwitchingOnUiThread()); // I-209
+
+    private async Task MruAndVisualOrderSwitchingOnUiThread()
     {
         var a = await OpenAsync(File(@"C:\p\A.pas", ""));
         var b = await OpenAsync(File(@"C:\p\B.pas", ""));
@@ -228,7 +236,9 @@ public sealed class DocumentServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-021")]
-    public async Task ClosingCanBeCanceled()
+    public Task ClosingCanBeCanceled() => TestUiThread.RunAsync(() => ClosingCanBeCanceledOnUiThread()); // I-209
+
+    private async Task ClosingCanBeCanceledOnUiThread()
     {
         var a = await OpenAsync(File(@"C:\p\A.pas", ""));
         Documents.DocumentClosing += (_, e) => e.Cancel = true;
@@ -241,7 +251,9 @@ public sealed class DocumentServiceTests
     [Trait("Req", "IDE-P1-071")]
     [Trait("Req", "IDE-P1-072")]
     [Trait("Req", "IDE-ARCH-092")]
-    public async Task OpenDetectsEncodingAndReportsFailures()
+    public Task OpenDetectsEncodingAndReportsFailures() => TestUiThread.RunAsync(() => OpenDetectsEncodingAndReportsFailuresOnUiThread()); // I-209
+
+    private async Task OpenDetectsEncodingAndReportsFailuresOnUiThread()
     {
         var latin = await OpenAsync(File(@"C:\p\Latin.pas", [0x41, 0xE9, 0x0D, 0x0A]));
         Assert.Equal(FileEncoding.Windows1252, latin.Encoding);
@@ -277,7 +289,9 @@ public sealed class DocumentServiceTests
     [Trait("Req", "IDE-P1-075")]
     [Trait("Req", "IDE-P1-077")]
     [Trait("Req", "IDE-ARCH-022")]
-    public async Task LineEndingStateDrivesInfoBarAndModifiedFlag()
+    public Task LineEndingStateDrivesInfoBarAndModifiedFlag() => TestUiThread.RunAsync(() => LineEndingStateDrivesInfoBarAndModifiedFlagOnUiThread()); // I-209
+
+    private async Task LineEndingStateDrivesInfoBarAndModifiedFlagOnUiThread()
     {
         var mixed = await OpenAsync(File(@"C:\p\Mixed.pas", "a\r\nb\nc\r\n"));
         Assert.Equal(LineEndingKind.Mixed, mixed.LineEnding.Kind);
@@ -314,7 +328,9 @@ public sealed class DocumentServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-022")]
     [Trait("Req", "IDE-P1-094")]
-    public async Task DirtyFlagFollowsSavePoint()
+    public Task DirtyFlagFollowsSavePoint() => TestUiThread.RunAsync(() => DirtyFlagFollowsSavePointOnUiThread()); // I-209
+
+    private async Task DirtyFlagFollowsSavePointOnUiThread()
     {
         var doc = await OpenAsync(File(@"C:\p\A.pas", "unit A;"));
         var changes = 0;
@@ -358,7 +374,9 @@ public sealed class DocumentServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-035")]
     [Trait("Req", "UI-DLG-060")]
-    public async Task CloseModifiedPromptsSaveDontSaveCancel()
+    public Task CloseModifiedPromptsSaveDontSaveCancel() => TestUiThread.RunAsync(() => CloseModifiedPromptsSaveDontSaveCancelOnUiThread()); // I-209
+
+    private async Task CloseModifiedPromptsSaveDontSaveCancelOnUiThread()
     {
         var dialogs = (FakeDialogService)_services.Dialogs;
         var commands = _services.Commands;
@@ -428,7 +446,9 @@ public sealed class DocumentServiceTests
     [Trait("Req", "UI-DLG-061")]
     [Trait("Req", "UI-DLG-062")]
     [Trait("Req", "UI-DLG-063")]
-    public async Task CloseAllAsksOnceWithList()
+    public Task CloseAllAsksOnceWithList() => TestUiThread.RunAsync(() => CloseAllAsksOnceWithListOnUiThread()); // I-209
+
+    private async Task CloseAllAsksOnceWithListOnUiThread()
     {
         var dialogs = (FakeDialogService)_services.Dialogs;
         var commands = _services.Commands;
@@ -524,7 +544,9 @@ public sealed class DocumentServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-061")]
-    public async Task UnsavedChangesSelectionRules()
+    public Task UnsavedChangesSelectionRules() => TestUiThread.RunAsync(() => UnsavedChangesSelectionRulesOnUiThread()); // I-209
+
+    private async Task UnsavedChangesSelectionRulesOnUiThread()
     {
         var a = await OpenAsync(File(@"C:\p\A.pas", "a"));
         var b = Documents.NewUntitledUnit();
@@ -550,7 +572,9 @@ public sealed class DocumentServiceTests
     [Trait("Req", "IDE-P1-034")]
     [Trait("Req", "IDE-PM-080")]
     [Trait("Req", "UI-DLG-050")]
-    public async Task SaveAsSwitchesDocumentPath()
+    public Task SaveAsSwitchesDocumentPath() => TestUiThread.RunAsync(() => SaveAsSwitchesDocumentPathOnUiThread()); // I-209
+
+    private async Task SaveAsSwitchesDocumentPathOnUiThread()
     {
         var commands = _services.Commands;
         var pickers = (FakeFileDialogService)_services.FileDialogs;
@@ -606,7 +630,9 @@ public sealed class DocumentServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-039")]
     [Trait("Req", "IDE-P1-090")]
-    public async Task RevertReloadsAndClearsUndo()
+    public Task RevertReloadsAndClearsUndo() => TestUiThread.RunAsync(() => RevertReloadsAndClearsUndoOnUiThread()); // I-209
+
+    private async Task RevertReloadsAndClearsUndoOnUiThread()
     {
         var commands = _services.Commands;
         var dialogs = (FakeDialogService)_services.Dialogs;
@@ -657,7 +683,9 @@ public sealed class DocumentServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-040")]
     [Trait("Req", "UI-ED-093")]
-    public async Task ReadOnlyFileShowsInfoBarAndBlocksEdits()
+    public Task ReadOnlyFileShowsInfoBarAndBlocksEdits() => TestUiThread.RunAsync(() => ReadOnlyFileShowsInfoBarAndBlocksEditsOnUiThread()); // I-209
+
+    private async Task ReadOnlyFileShowsInfoBarAndBlocksEditsOnUiThread()
     {
         var path = File(@"C:\p\A.pas", "unit A;");
         _fs.SetReadOnly(path, true);
@@ -721,7 +749,9 @@ public sealed class DocumentServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-040")]
     [Trait("Req", "IDE-ED-012")]
-    public async Task ActiveTextDocumentFeedsStatusBar()
+    public Task ActiveTextDocumentFeedsStatusBar() => TestUiThread.RunAsync(() => ActiveTextDocumentFeedsStatusBarOnUiThread()); // I-209
+
+    private async Task ActiveTextDocumentFeedsStatusBarOnUiThread()
     {
         var status = _services.Status;
         Assert.Null(status.Editor);

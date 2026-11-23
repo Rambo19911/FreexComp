@@ -14,7 +14,9 @@ public sealed partial class BuildServiceTests
     [Trait("Req", "IDE-P3-020")]
     [Trait("Req", "IDE-P3-021")]
     [Trait("Req", "IDE-P3-022")]
-    public async Task SaveBeforeBuildModes()
+    public Task SaveBeforeBuildModes() => TestUiThread.RunAsync(() => SaveBeforeBuildModesOnUiThread()); // I-209
+
+    private async Task SaveBeforeBuildModesOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();
@@ -79,7 +81,9 @@ public sealed partial class BuildServiceTests
     [Trait("Req", "IDE-P3-050")]
     [Trait("Req", "IDE-P3-051")]
     [Trait("Req", "IDE-P3-052")]
-    public async Task CancelWaitsThenForcesIdle()
+    public Task CancelWaitsThenForcesIdle() => TestUiThread.RunAsync(() => CancelWaitsThenForcesIdleOnUiThread()); // I-209
+
+    private async Task CancelWaitsThenForcesIdleOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();

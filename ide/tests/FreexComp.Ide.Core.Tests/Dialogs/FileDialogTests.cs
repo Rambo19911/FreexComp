@@ -37,7 +37,9 @@ public sealed class FileDialogTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-050")]
     [Trait("Req", "UI-DLG-051")]
-    public async Task FiltersAndInitialFolderRules()
+    public Task FiltersAndInitialFolderRules() => TestUiThread.RunAsync(() => FiltersAndInitialFolderRulesOnUiThread()); // I-209
+
+    private async Task FiltersAndInitialFolderRulesOnUiThread()
     {
         var documents = _services.UserPaths.DocumentsDirectory;
         var projects = Path.Combine(documents, "FreexComp Projects");
@@ -149,7 +151,9 @@ public sealed class FileDialogTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-030")]
     [Trait("Req", "UI-DLG-054")]
-    public async Task FileOpenOpensEachPickedFile()
+    public Task FileOpenOpensEachPickedFile() => TestUiThread.RunAsync(() => FileOpenOpensEachPickedFileOnUiThread()); // I-209
+
+    private async Task FileOpenOpensEachPickedFileOnUiThread()
     {
         var dialogs = (FakeDialogService)_services.Dialogs;
         var a = File(@"C:\p\A.pas", "a");

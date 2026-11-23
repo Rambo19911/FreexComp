@@ -19,7 +19,9 @@ public sealed partial class KeymapTests
     [Trait("Req", "IDE-SET-061")]
     [Trait("Req", "UI-KEY-020")]
     [Trait("Req", "UI-KEY-021")]
-    public async Task StoresOnlyDifferencesFromDefaults()
+    public Task StoresOnlyDifferencesFromDefaults() => TestUiThread.RunAsync(() => StoresOnlyDifferencesFromDefaultsOnUiThread()); // I-209
+
+    private async Task StoresOnlyDifferencesFromDefaultsOnUiThread()
     {
         var keymap = CreateKeymapService();
         keymap.Load();
@@ -76,7 +78,9 @@ public sealed partial class KeymapTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-064")]
-    public async Task ConflictResolutionOnLoad()
+    public Task ConflictResolutionOnLoad() => TestUiThread.RunAsync(() => ConflictResolutionOnLoadOnUiThread()); // I-209
+
+    private async Task ConflictResolutionOnLoadOnUiThread()
     {
         WriteKeymapFile("""
             {

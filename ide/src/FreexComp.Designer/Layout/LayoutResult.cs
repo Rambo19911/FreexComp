@@ -34,6 +34,9 @@ public sealed class LayoutResult
     /// <summary>The align rect in client coordinates (layout.md UIF-220); extents may be negative (no normalisation).</summary>
     public Rect GetAlignRect(FormObject obj) => Find(obj).Align;
 
+    /// <summary>D-104: the run-time <c>Padding</c> (after scaling) that insets the align rect, as (left, top, right, bottom).</summary>
+    public Rect GetPadding(FormObject obj) => Find(obj).Padding;
+
     /// <summary>Relative to the form's client origin.</summary>
     public Rect GetSurfaceBounds(FormObject obj) => Find(obj).Surface;
 
@@ -119,8 +122,9 @@ public sealed class LayoutResult
         var (cw, ch) = LayoutMachine.ClientSize(n);
         var (l, t, r, b) = LayoutMachine.AlignRect(n);
         return new Entry(new Rect(n.Left, n.Top, n.Width, n.Height), new Rect(ox, oy, cw, ch), new Rect(l, t, r - l, b - t),
-            new Rect(surfaceX, surfaceY, n.Width, n.Height), n.Visible);
+            new Rect(surfaceX, surfaceY, n.Width, n.Height), n.Visible,
+            new Rect(n.PaddingLeft, n.PaddingTop, n.PaddingRight, n.PaddingBottom));
     }
 
-    private readonly record struct Entry(Rect Bounds, Rect Client, Rect Align, Rect Surface, bool Visible);
+    private readonly record struct Entry(Rect Bounds, Rect Client, Rect Align, Rect Surface, bool Visible, Rect Padding);
 }

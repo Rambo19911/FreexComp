@@ -99,7 +99,7 @@ public sealed class DesignerShell
     public event EventHandler? ActiveDesignerChanged;
 
     /// <summary>DSG-FD-071 <c>Show Problems</c> of every form document: the IDE lists them in Messages.</summary>
-    public Action<IReadOnlyList<FreexComp.Designer.Text.FormDiagnostic>>? ShowProblems { get; set; }
+    public Action<FormDocumentViewModel, IReadOnlyList<FreexComp.Designer.Text.FormDiagnostic>>? ShowProblems { get; set; }
 
     private void Attach(DocumentViewModel document)
     {
@@ -110,7 +110,7 @@ public sealed class DesignerShell
 
         form.Designer.Settings = new SettingsDesignerSettings(_settings);
         form.Designer.ContextMenu = () => DesignerContextMenu.Build(_commands);
-        form.Designer.ShowProblems = problems => ShowProblems?.Invoke(problems);
+        form.Designer.ShowProblems = problems => ShowProblems?.Invoke(form, problems);
         form.ActiveViewChanged += (_, _) =>
         {
             if (_documents.ActiveDocument == form)

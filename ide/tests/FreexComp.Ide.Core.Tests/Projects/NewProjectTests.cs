@@ -98,7 +98,9 @@ public sealed class NewProjectTests
     [Trait("Req", "IDE-PM-020")]
     [Trait("Req", "IDE-PM-023")]
     [Trait("Req", "IDE-PM-024")]
-    public async Task CreatesConsoleTemplateFiles()
+    public Task CreatesConsoleTemplateFiles() => TestUiThread.RunAsync(() => CreatesConsoleTemplateFilesOnUiThread()); // I-209
+
+    private async Task CreatesConsoleTemplateFilesOnUiThread()
     {
         // The embedded template (IDE-PM-020/024): listed first, with its template.json metadata.
         var template = Projects.Templates[0];
@@ -142,7 +144,9 @@ public sealed class NewProjectTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-021")]
     [Trait("Req", "IDE-PM-022")]
-    public async Task ValidationOrderAndMessages()
+    public Task ValidationOrderAndMessages() => TestUiThread.RunAsync(() => ValidationOrderAndMessagesOnUiThread()); // I-209
+
+    private async Task ValidationOrderAndMessagesOnUiThread()
     {
         static (string?, string) Name(string name) =>
             NewProjectValidation.ValidateName(name) is var r ? (r.MessageId, string.Join("|", r.Args)) : default;
@@ -203,7 +207,9 @@ public sealed class NewProjectTests
     [InlineData(".pproj")]
     [InlineData(".pas")]
     [Trait("Req", "IDE-PM-023")]
-    public async Task FailureRollsBackCreatedFiles(string failingFile)
+    public Task FailureRollsBackCreatedFiles(string failingFile) => TestUiThread.RunAsync(() => FailureRollsBackCreatedFilesOnUiThread(failingFile)); // I-209
+
+    private async Task FailureRollsBackCreatedFilesOnUiThread(string failingFile)
     {
         // C:\work exists with a file of its own; New\Deep\Hello is created by the operation.
         _memory.CreateDirectory(@"C:\work");
@@ -244,7 +250,9 @@ public sealed class NewProjectTests
     [Trait("Req", "IDE-PM-020")]
     [Trait("Req", "IDE-PM-023")]
     [Trait("Req", "DSG-CS-110")]
-    public async Task GuiTemplateCreatesUnitAndForm()
+    public Task GuiTemplateCreatesUnitAndForm() => TestUiThread.RunAsync(() => GuiTemplateCreatesUnitAndFormOnUiThread()); // I-209
+
+    private async Task GuiTemplateCreatesUnitAndFormOnUiThread()
     {
         // Listed from Phase 5 on (the designer phase), after console-pascal.
         Assert.DoesNotContain(Projects.Templates, t => t.Id == "gui-pascal");

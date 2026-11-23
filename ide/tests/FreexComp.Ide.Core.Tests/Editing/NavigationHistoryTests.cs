@@ -28,7 +28,9 @@ public sealed class NavigationHistoryTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-100")]
     [Trait("Req", "IDE-ED-072")]
-    public async Task BackForwardAndMerging()
+    public Task BackForwardAndMerging() => TestUiThread.RunAsync(() => BackForwardAndMergingOnUiThread()); // I-209
+
+    private async Task BackForwardAndMergingOnUiThread()
     {
         var fs = new InMemoryFileSystem();
         var services = TestComposition.Build(o => o.FileSystem = fs);
@@ -147,7 +149,9 @@ public sealed class NavigationHistoryTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-100")]
-    public async Task BackFromTheOnlyNearbyEntryReportsNoBack()
+    public Task BackFromTheOnlyNearbyEntryReportsNoBack() => TestUiThread.RunAsync(() => BackFromTheOnlyNearbyEntryReportsNoBackOnUiThread()); // I-209
+
+    private async Task BackFromTheOnlyNearbyEntryReportsNoBackOnUiThread()
     {
         var fs = new InMemoryFileSystem();
         var services = TestComposition.Build(o => o.FileSystem = fs);

@@ -180,7 +180,9 @@ public sealed class FoldingTests
     [Trait("Req", "IDE-ARCH-083")]
     [Trait("Req", "IDE-P1-061")]
     [Trait("Req", "IDE-ARCH-033")]
-    public async Task LargeBufferRecomputesInBackground()
+    public Task LargeBufferRecomputesInBackground() => TestUiThread.RunAsync(() => LargeBufferRecomputesInBackgroundOnUiThread()); // I-209
+
+    private async Task LargeBufferRecomputesInBackgroundOnUiThread()
     {
         // A small buffer: computed at once, on the calling thread, from the document buffer itself.
         var small = new StringTextBuffer("procedure A;\r\nbegin\r\nend;\r\n");

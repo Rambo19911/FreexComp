@@ -10,6 +10,7 @@ public static class ObjectInspectorCommands
     {
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(inspector);
+        inspector.AttachCommands(commands, clipboard); // D-109: context menu, Ctrl+C / Ctrl+V on a row
         bool Shown() => !inspector.IsEmpty;
         commands.RegisterHandler("objectInspector.togglePage", new Handler(() => true, () => inspector.TogglePage()));
         commands.RegisterHandler("objectInspector.showProperties", new Handler(() => true,

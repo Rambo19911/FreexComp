@@ -6,6 +6,7 @@ using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Tests.Designer.CodeSync;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Designer;
 
@@ -110,7 +111,9 @@ public sealed class ToolPaletteViewModelTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-TP-040")]
     [Trait("Req", "DSG-TP-041")]
-    public async Task ArmDisarmSticky()
+    public Task ArmDisarmSticky() => TestUiThread.RunAsync(() => ArmDisarmStickyOnUiThread()); // I-209
+
+    private async Task ArmDisarmStickyOnUiThread()
     {
         var f = new DesignerFixture();
         var document = await f.OpenAsync();
@@ -176,7 +179,9 @@ public sealed class ToolPaletteViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-TP-024")]
-    public async Task DisabledWithoutDesignView()
+    public Task DisabledWithoutDesignView() => TestUiThread.RunAsync(() => DisabledWithoutDesignViewOnUiThread()); // I-209
+
+    private async Task DisabledWithoutDesignViewOnUiThread()
     {
         var palette = new ToolPaletteViewModel(CodeSyncTests.Catalog);
         Assert.False(palette.IsEnabled);

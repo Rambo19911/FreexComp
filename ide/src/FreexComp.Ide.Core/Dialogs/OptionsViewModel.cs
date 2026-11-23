@@ -203,6 +203,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Check("RestoreOpenFiles", SettingsCatalog.EnvironmentRestoreOpenFiles, 1),
             Check("ShowWelcome", SettingsCatalog.EnvironmentShowWelcomeOnStartup, 1),
             FolderPath("DefaultProjectsDir", SettingsCatalog.EnvironmentDefaultProjectsDir, 1, prompts.BuiltInProjectsDirectory),
+            Check("AutoSwitchLayout", SettingsCatalog.LayoutAutoSwitch, 5), // D-109 (I-130 automatic layout switching)
         ]);
         var environmentFiles = Page(EnvironmentFilesPage, 1,
         [

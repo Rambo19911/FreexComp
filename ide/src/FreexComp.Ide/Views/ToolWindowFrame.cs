@@ -34,6 +34,7 @@ public sealed class ToolWindowFrame : DockPanel
     private readonly ContentControl _content = new();
     private TextBox? _filter;
     private Button? _clearFilter;
+    private Button? _menu;
 
     public ToolWindowFrame(ToolWindowViewModel model)
     {
@@ -96,6 +97,10 @@ public sealed class ToolWindowFrame : DockPanel
         {
             UpdateState();
         }
+        else if (e.PropertyName == nameof(ToolWindowViewModel.HasCaptionMenu))
+        {
+            _menu!.IsVisible = _model.HasCaptionMenu;
+        }
     }
 
     /// <summary>UI-TW-002: focused → <c>text.primary</c> title and the 2 px accent line; else <c>text.secondary</c>.</summary>
@@ -120,7 +125,23 @@ public sealed class ToolWindowFrame : DockPanel
         hide.HorizontalAlignment = HorizontalAlignment.Right;
         hide.VerticalAlignment = VerticalAlignment.Center;
 
-        var grid = new Grid { Children = { _title, hide, _focusLine } };
+        // UI-DSG-113: the optional ⋯ menu left of Hide (the Object Inspector's arrangement when narrow).
+        _menu = new Button
+        {
+            Content = "⋯", Width = 20, Height = 20, Padding = new Thickness(0), Focusable = false, Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 22, 0),
+            IsVisible = _model.HasCaptionMenu,
+        };
+        AutomationProperties.SetAutomationId(_menu, AutomationIds.Tool(_model.Name) + ".Menu");
+        AutomationProperties.SetName(_menu, _model.Title);
+        _menu.Click += (_, _) =>
+        {
+            _menu.ContextMenu = MenuBarBuilder.CreateContextMenu(_model.BuildCaptionMenu());
+            _menu.ContextMenu.Open(_menu);
+        };
+
+        var grid = new Grid { Children = { _title, _menu, hide, _focusLine } };
         var caption = new Border { Child = grid, BorderThickness = new Thickness(0, 0, 0, 1) };
         caption.Bind(HeightProperty, caption.GetResourceObservable("FxcMetricToolCaptionHeight"));
         caption.Bind(Border.BackgroundProperty, caption.GetResourceObservable("FxcBgHeaderBrush"));

@@ -1,5 +1,6 @@
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Text;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Text;
 
@@ -54,7 +55,9 @@ public sealed class LineEndingTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-077")]
-    public async Task ConvertIsOneUndoStep()
+    public Task ConvertIsOneUndoStep() => TestUiThread.RunAsync(() => ConvertIsOneUndoStepOnUiThread()); // I-209
+
+    private async Task ConvertIsOneUndoStepOnUiThread()
     {
         var text = Fixture("mixed.pas");
         var model = Model(text);

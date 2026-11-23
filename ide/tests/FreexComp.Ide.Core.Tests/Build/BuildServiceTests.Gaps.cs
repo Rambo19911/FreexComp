@@ -13,7 +13,9 @@ public sealed partial class BuildServiceTests
     /// <summary>IDE-P3-005: the build result stays in the state field until the next state change or the next edit of any document.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-005")]
-    public async Task ResultTextClearsOnNextEdit()
+    public Task ResultTextClearsOnNextEdit() => TestUiThread.RunAsync(() => ResultTextClearsOnNextEditOnUiThread()); // I-209
+
+    private async Task ResultTextClearsOnNextEditOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();
@@ -50,7 +52,9 @@ public sealed partial class BuildServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-003")]
-    public async Task ExitDuringBuildCancelsAndWaits()
+    public Task ExitDuringBuildCancelsAndWaits() => TestUiThread.RunAsync(() => ExitDuringBuildCancelsAndWaitsOnUiThread()); // I-209
+
+    private async Task ExitDuringBuildCancelsAndWaitsOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();
@@ -99,7 +103,9 @@ public sealed partial class BuildServiceTests
     /// <summary>IDE-P3-022 in <c>prompt</c> mode: Save is chosen, the save fails and its error dialog ends with Cancel → no build.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-022")]
-    public async Task PromptSaveFailureAborts()
+    public Task PromptSaveFailureAborts() => TestUiThread.RunAsync(() => PromptSaveFailureAbortsOnUiThread()); // I-209
+
+    private async Task PromptSaveFailureAbortsOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();

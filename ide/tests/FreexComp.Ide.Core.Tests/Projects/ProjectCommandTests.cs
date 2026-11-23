@@ -31,7 +31,9 @@ public sealed class ProjectCommandTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task OpenOutputFolder()
+    public Task OpenOutputFolder() => TestUiThread.RunAsync(() => OpenOutputFolderOnUiThread()); // I-209
+
+    private async Task OpenOutputFolderOnUiThread()
     {
         var commands = _services.Commands;
         Assert.False(commands.CanExecute("project.openOutputFolder")); // no project

@@ -22,8 +22,9 @@ public sealed class RenderContext
     /// <param name="palette">Theme part of the palette; default <see cref="DesignPalette.Light"/>.</param>
     /// <param name="info">Metadata override (tests strip it); default the object's own, or <c>TComponent</c> when unknown.</param>
     /// <param name="metrics">Text metrics of the drawing canvas; default the deterministic rule of DSG-RND-012.</param>
+    /// <param name="padding">The run-time <c>Padding</c> as (left, top, right, bottom) from the layout result; null = stored.</param>
     public RenderContext(FormObject obj, int width, int height, Rect? clientRect = null, Rect? alignRect = null,
-        DesignPalette? palette = null, ComponentInfo? info = null, Func<TextStyle, TextMetrics>? metrics = null)
+        DesignPalette? palette = null, ComponentInfo? info = null, Func<TextStyle, TextMetrics>? metrics = null, Rect? padding = null)
     {
         Object = obj;
         Info = info ?? obj.Info ?? ComponentCatalog.BuiltInRoot;
@@ -33,6 +34,7 @@ public sealed class RenderContext
         _metrics = metrics ?? RecordingCanvas.Metrics;
         (Font, FontColor) = ResolveFont(obj, Info, Palette);
         Enabled = ResolveEnabled(obj, Info);
+        Padding = padding ?? new Rect(Get("Padding.Left", 0), Get("Padding.Top", 0), Get("Padding.Right", 0), Get("Padding.Bottom", 0));
         ClientRect = clientRect ?? ContainerRects.Client(this);
         AlignRect = alignRect ?? ContainerRects.Align(this);
     }
@@ -58,7 +60,7 @@ public sealed class RenderContext
         }
 
         align = align with { Left = align.Left + client.Left, Top = align.Top + client.Top };
-        return new RenderContext(obj, bounds.Width, bounds.Height, client, align, palette, metrics: metrics);
+        return new RenderContext(obj, bounds.Width, bounds.Height, client, align, palette, metrics: metrics, padding: layout.GetPadding(obj));
     }
 
     /// <summary>The form's client origin below the design caption (DSG-RND-005 exception; <see cref="ContainerRects.Client"/>).</summary>
@@ -80,6 +82,13 @@ public sealed class RenderContext
 
     /// <summary>The part of <see cref="ClientRect"/> distributed among aligned children, in the same coordinates.</summary>
     public Rect AlignRect { get; }
+
+    /// <summary>
+    /// The <c>Padding</c> between the class's adjusted client rect and <see cref="AlignRect"/>, as (left, top, right,
+    /// bottom) in its <see cref="Rect"/> fields <c>Left</c>, <c>Top</c>, <c>Width</c>, <c>Height</c>; run-time (scaled)
+    /// values when from a layout (D-104).
+    /// </summary>
+    public Rect Padding { get; }
 
     /// <summary>Effective font (DSG-RND-011).</summary>
     public TextStyle Font { get; }

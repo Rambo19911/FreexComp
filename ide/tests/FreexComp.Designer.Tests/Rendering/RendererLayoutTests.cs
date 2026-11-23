@@ -51,4 +51,30 @@ public sealed partial class RendererTests
         Assert.Equal(new Rect(1 + 5, 1 + 5, 198 - 10, 118 - 10), panelCtx.AlignRect); // BorderWidth 2 × 2 + outer bevel 1
         Assert.NotEqual(new RenderContext(panel, 200, 120).AlignRect, panelCtx.AlignRect); // the stored BorderWidth (2) would inset 3
     }
+
+    /// <summary>
+    /// D-104: after scaling, the panel's inner bevel sits just outside the layout's align rect (before its scaled
+    /// <c>Padding</c>), not at the stored <c>BorderWidth</c>: ×2 makes BorderWidth 4 and Padding 6, the bevels stay 1.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-RND-004")]
+    public void ScaledPanelBevelMatchesAlignRect()
+    {
+        var form = Form(600, 400, Obj("Framed", "TPanel", 0, 0, 100, 60,
+            "BorderStyle = bsSingle\nBorderWidth = 2\nBevelInner = bvLowered\nPadding.Left = 3\nPadding.Top = 3\nPadding.Right = 3\nPadding.Bottom = 3"));
+        var scaled = Engine.ComputeWithSteps(form, "scale 2 1").Single();
+        var ctx = RenderContext.FromLayout(form.FindByName("Framed")!, scaled);
+        Assert.Equal(new Rect(1, 1, 198, 118), ctx.ClientRect);
+        Assert.Equal(new Rect(1 + 12, 1 + 12, 198 - 24, 118 - 24), ctx.AlignRect); // BorderWidth 4 + two bevels + Padding 6
+
+        var bevels = RenderHarness.Render(ctx).Ops.Where(op => op.Kind == "DrawRect").Select(op => op.Text).ToList();
+        var border = ctx.Palette.Border;
+        Assert.Equal(
+        [
+            $"DrawRect 0,0,200,120 {ctx.Palette.BorderDark} 1 Solid", // bsSingle frame
+            $"DrawRect 1,1,198,118 {border} 1 Solid", // outer bevel on the client edge
+            $"DrawRect 6,6,188,108 {border} 1 Solid", // inner bevel: the align rect outset by Padding 6 and the bevel 1
+        ], bevels);
+    }
 }

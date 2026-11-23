@@ -41,6 +41,8 @@ public sealed class FormDesignerViewModel
     // The form text the model was last read from or written to, and the model version at that moment: while both
     // still hold, the Text view and the model agree.
     private string _syncedText;
+    private string _parsedText = "";
+    private int _parsedVersion = -1;
     private int _syncedVersion;
     private (long Version, bool Differs) _pending;
     private DocumentView _activeView;
@@ -464,6 +466,33 @@ public sealed class FormDesignerViewModel
     public IReadOnlyList<FormDiagnostic> Problems =>
         Model is { } model ? [.. model.Diagnostics.Where(d => d.Severity is FreexComp.Compiler.DiagnosticSeverity.Error or FreexComp.Compiler.DiagnosticSeverity.Warning)] : [];
 
+    /// <summary>
+    /// DSG-FD-071: a form problem chosen in Messages. While the model and the form text are those of the last parse, the
+    /// Text view shows the diagnostic span (caret at its start, span selected); once the model has changed, the Design
+    /// view selects the diagnostic's object instead.
+    /// </summary>
+    public void GoToProblem(FormDiagnostic problem)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        var buffer = _formText.Buffer;
+        if (Model is { } model && model.Version == _parsedVersion && string.Equals(buffer.Text, _parsedText, StringComparison.Ordinal)
+            && problem.Line > 0 && ShowView(DocumentView.Text))
+        {
+            var line = Math.Clamp(problem.Line, 1, buffer.LineCount);
+            var start = buffer.GetOffset(line, Math.Max(1, problem.Col));
+            var end = problem.EndLine >= problem.Line && problem.EndCol > 0
+                ? buffer.GetOffset(Math.Clamp(problem.EndLine, 1, buffer.LineCount), problem.EndCol)
+                : start;
+            _formText.Selection = new Text.TextSelection(Math.Max(start, end), start); // the caret at the span's start
+            return;
+        }
+
+        if (ShowView(DocumentView.Design) && problem.ObjectName is { } name && Model?.FindByName(name) is { } obj)
+        {
+            Surface!.Selection.Select(obj);
+        }
+    }
+
     /// <summary><c>Show Problems</c> of <c>InfoBar.FormErrors</c>: the IDE lists the problems in the Messages tool window.</summary>
     public Action<IReadOnlyList<FormDiagnostic>>? ShowProblems { get; set; }
 
@@ -690,6 +719,8 @@ public sealed class FormDesignerViewModel
         document.Changed += OnModelChanged;
         _syncedText = text;
         _syncedVersion = document.Version;
+        _parsedText = text;
+        _parsedVersion = document.Version;
         _pending = (_formText.Buffer.Version, false);
         Unit.FormTypeName = document.Root.TypeName;
         _formText.RemoveInfoBar(FormSyntaxInfoBarKind);

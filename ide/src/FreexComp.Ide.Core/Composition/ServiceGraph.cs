@@ -237,15 +237,20 @@ public static class ServiceGraph
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment);
             metadata.RegisterCommands(commands);
             designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase); // D-080, I-130
-            designerShell.ShowProblems = problems =>
+            designerShell.ShowProblems = (form, problems) =>
             {
-                messages.ShowFormDiagnostics(problems); // D-108: the form's problems only
+                messages.ShowFormDiagnostics(problems, problem => // D-108: the form's problems only
+                {
+                    documents.Activate(form); // DSG-FD-071: a row opens the form's Text view (or selects the object)
+                    form.Designer.GoToProblem(problem);
+                });
                 toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false);
             };
             var shell = designerShell;
             var inspector = new Designer.ObjectInspectorViewModel(status, settings, platform.Dialogs); // D-081
             objectInspector = inspector;
             Designer.ObjectInspectorCommands.Register(commands, inspector, platform.Clipboard);
+            session.ObjectInspector = inspector; // D-109: page, categories, expanded rows, divider ratio in session.json
             shell.ActiveDesignerChanged += (_, _) => inspector.Bind(shell.ActiveDesigner);
             inspector.Bind(shell.ActiveDesigner);
             var palette = new Designer.ToolPaletteViewModel(metadata.Catalog, settings, platform.FileSystem, platform.Log); // D-083

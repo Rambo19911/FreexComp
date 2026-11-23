@@ -4,6 +4,7 @@ using FreexComp.Ide.Core.Tests.Build;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.CodeModel;
 
@@ -36,7 +37,9 @@ public sealed class SemanticHighlightTests
         doc.CreateClassifier().Classify(doc.Buffer, new LineRange(1, doc.Buffer.LineCount));
 
     [Fact(Timeout = 30000)]
-    public async Task TypesAndInactiveCode()
+    public Task TypesAndInactiveCode() => TestUiThread.RunAsync(() => TypesAndInactiveCodeOnUiThread()); // I-209
+
+    private async Task TypesAndInactiveCodeOnUiThread()
     {
         var bed = await StartAsync();
         bed.File(BuildTestBed.UnitPath, Unit);
@@ -81,7 +84,9 @@ public sealed class SemanticHighlightTests
 
     /// <summary>Tokens the parser skipped in half-typed code keep their lexical classes (only lexer errors are <c>syntax.invalid</c>).</summary>
     [Fact(Timeout = 30000)]
-    public async Task SkippedTokensKeepLexicalColours()
+    public Task SkippedTokensKeepLexicalColours() => TestUiThread.RunAsync(() => SkippedTokensKeepLexicalColoursOnUiThread()); // I-209
+
+    private async Task SkippedTokensKeepLexicalColoursOnUiThread()
     {
         var bed = await StartAsync();
         var text = Unit.Replace("{$IFDEF FEATURE}", "  := ) Limit 'xy';\n{$IFDEF FEATURE}", StringComparison.Ordinal);
@@ -96,7 +101,9 @@ public sealed class SemanticHighlightTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task LooseFilesKeepLexicalColours()
+    public Task LooseFilesKeepLexicalColours() => TestUiThread.RunAsync(() => LooseFilesKeepLexicalColoursOnUiThread()); // I-209
+
+    private async Task LooseFilesKeepLexicalColoursOnUiThread()
     {
         var bed = await StartAsync();
         var loose = bed.File(@"C:\elsewhere\Loose.pas", Unit);

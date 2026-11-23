@@ -33,7 +33,9 @@ public sealed class TestDeadlineTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-TEST-013")]
-    public async Task ExpiredWaitsNameTheirStep()
+    public Task ExpiredWaitsNameTheirStep() => TestUiThread.RunAsync(() => ExpiredWaitsNameTheirStepOnUiThread()); // I-209
+
+    private async Task ExpiredWaitsNameTheirStepOnUiThread()
     {
         var deadline = new TestDeadline(TimeSpan.FromSeconds(30), elapsed: () => TimeSpan.FromSeconds(28));
         var never = new TaskCompletionSource<int>();

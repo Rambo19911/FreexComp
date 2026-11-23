@@ -79,7 +79,9 @@ public sealed class SessionTests
     [Trait("Req", "IDE-ARCH-076")]
     [Trait("Req", "UI-TW-012")]
     [Trait("Req", "IDE-ARCH-057")]
-    public async Task RoundTripDocumentsCaretsFolds()
+    public Task RoundTripDocumentsCaretsFolds() => TestUiThread.RunAsync(() => RoundTripDocumentsCaretsFoldsOnUiThread()); // I-209
+
+    private async Task RoundTripDocumentsCaretsFoldsOnUiThread()
     {
         WriteHello();
         // Members of later phases are preserved (IDE-ARCH-076); an empty document list opens the main source.
@@ -148,7 +150,9 @@ public sealed class SessionTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-071")]
-    public async Task ChangesAreWrittenFiveSecondsAfterTheLastOne()
+    public Task ChangesAreWrittenFiveSecondsAfterTheLastOne() => TestUiThread.RunAsync(() => ChangesAreWrittenFiveSecondsAfterTheLastOneOnUiThread()); // I-209
+
+    private async Task ChangesAreWrittenFiveSecondsAfterTheLastOneOnUiThread()
     {
         WriteHello();
         Assert.True(await Projects.OpenAsync(ProjectPath));
@@ -168,7 +172,9 @@ public sealed class SessionTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-072")]
-    public async Task GarbageSessionIsIgnored()
+    public Task GarbageSessionIsIgnored() => TestUiThread.RunAsync(() => GarbageSessionIsIgnoredOnUiThread()); // I-209
+
+    private async Task GarbageSessionIsIgnoredOnUiThread()
     {
         WriteHello();
         File(SessionPath, "{ \"formatVersion\": 1, \"documents\": [ { \"path\": ");
@@ -199,7 +205,9 @@ public sealed class SessionTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-074")]
-    public async Task CreatesGitIgnoreInStateFolder()
+    public Task CreatesGitIgnoreInStateFolder() => TestUiThread.RunAsync(() => CreatesGitIgnoreInStateFolderOnUiThread()); // I-209
+
+    private async Task CreatesGitIgnoreInStateFolderOnUiThread()
     {
         WriteHello();
         Assert.False(_fs.DirectoryExists(StateDir));
@@ -222,7 +230,9 @@ public sealed class SessionTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-073")]
-    public async Task MissingFilesAndOutOfRangeCaretsAreTolerated()
+    public Task MissingFilesAndOutOfRangeCaretsAreTolerated() => TestUiThread.RunAsync(() => MissingFilesAndOutOfRangeCaretsAreToleratedOnUiThread()); // I-209
+
+    private async Task MissingFilesAndOutOfRangeCaretsAreToleratedOnUiThread()
     {
         WriteHello();
         File(ProjectPath, """
@@ -266,7 +276,9 @@ public sealed class SessionTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-075")]
-    public async Task LooseFilesUseTheNoProjectSession()
+    public Task LooseFilesUseTheNoProjectSession() => TestUiThread.RunAsync(() => LooseFilesUseTheNoProjectSessionOnUiThread()); // I-209
+
+    private async Task LooseFilesUseTheNoProjectSessionOnUiThread()
     {
         var notes = File(@"C:\other\Notes.pas", "unit Notes;\ninterface\nimplementation\nend.\n");
         var readme = File(@"C:\other\Readme.txt", "r\n");

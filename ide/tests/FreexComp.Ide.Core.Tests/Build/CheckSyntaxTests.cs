@@ -22,7 +22,9 @@ public sealed class CheckSyntaxTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-055")]
     [Trait("Req", "IDE-ARCH-087")]
-    public async Task UsesUnsavedBuffersAndWritesNothing()
+    public Task UsesUnsavedBuffersAndWritesNothing() => TestUiThread.RunAsync(() => UsesUnsavedBuffersAndWritesNothingOnUiThread()); // I-209
+
+    private async Task UsesUnsavedBuffersAndWritesNothingOnUiThread()
     {
         RecordingFileSystem? recording = null;
         var bed = new BuildTestBed(o => o.FileSystem = recording = new RecordingFileSystem(o.FileSystem));

@@ -38,7 +38,9 @@ public sealed class ClipboardTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-038")]
     [Trait("Req", "IDE-P1-076")]
-    public async Task LineCopyPasteWithoutSelection()
+    public Task LineCopyPasteWithoutSelection() => TestUiThread.RunAsync(() => LineCopyPasteWithoutSelectionOnUiThread()); // I-209
+
+    private async Task LineCopyPasteWithoutSelectionOnUiThread()
     {
         var clipboard = new FakeClipboard();
         var clock = new ManualClock();
@@ -96,8 +98,10 @@ public sealed class ClipboardTests
         Caret(doc, 1, 1);
         clipboard.FailNext = 2;
         var copy = commands.ExecuteAsync("edit.copy");
+        await TestUiThread.IdleAsync(); // I-209: the UI thread runs the queued continuations before the next tick
         Assert.False(copy.IsCompleted);
         clock.Advance(RetryInterval);
+        await TestUiThread.IdleAsync();
         Assert.False(copy.IsCompleted);
         clock.Advance(RetryInterval);
         await copy;
@@ -110,6 +114,7 @@ public sealed class ClipboardTests
         var cut = commands.ExecuteAsync("edit.cut");
         for (int i = 0; i < 3; i++)
         {
+            await TestUiThread.IdleAsync();
             Assert.False(cut.IsCompleted);
             clock.Advance(RetryInterval);
         }
@@ -134,7 +139,9 @@ public sealed class ClipboardTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-038")]
-    public async Task LineFormatAcrossInstances()
+    public Task LineFormatAcrossInstances() => TestUiThread.RunAsync(() => LineFormatAcrossInstancesOnUiThread()); // I-209
+
+    private async Task LineFormatAcrossInstancesOnUiThread()
     {
         // Two IDE instances share the OS clipboard.
         var clipboard = new FakeClipboard();

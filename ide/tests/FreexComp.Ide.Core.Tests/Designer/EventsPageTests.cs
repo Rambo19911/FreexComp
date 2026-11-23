@@ -3,6 +3,7 @@ using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
 using static FreexComp.Ide.Core.Tests.Designer.DesignerFixture;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Designer;
 
@@ -28,7 +29,9 @@ public sealed class EventsPageTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-082")]
     [Trait("Req", "DSG-OI-083")]
-    public async Task DefaultHandlerName()
+    public Task DefaultHandlerName() => TestUiThread.RunAsync(() => DefaultHandlerNameOnUiThread()); // I-209
+
+    private async Task DefaultHandlerNameOnUiThread()
     {
         // GreetButtonKeyPress exists with the TNotifyEvent signature: the TKeyPressEvent handler gets the suffix 2.
         var unit = DesignerFixture.Unit
@@ -86,7 +89,9 @@ public sealed class EventsPageTests
     [InlineData(8)]
     [InlineData(9)]
     [InlineData(10)]
-    public async Task CommitDecisionTable(int row)
+    public Task CommitDecisionTable(int row) => TestUiThread.RunAsync(() => CommitDecisionTableOnUiThread(row)); // I-209
+
+    private async Task CommitDecisionTableOnUiThread(int row)
     {
         // Row 9's other reference: OkButton.OnClick names GreetButtonClick too.
         var form = row == 9 ? DesignerFixture.Form.Replace("    Caption = 'OkButton'\n", "    Caption = 'OkButton'\n    OnClick = GreetButtonClick\n", StringComparison.Ordinal)
@@ -199,7 +204,9 @@ public sealed class EventsPageTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-080")]
     [Trait("Req", "DSG-OI-081")]
-    public async Task ListsCompatibleMethods()
+    public Task ListsCompatibleMethods() => TestUiThread.RunAsync(() => ListsCompatibleMethodsOnUiThread()); // I-209
+
+    private async Task ListsCompatibleMethodsOnUiThread()
     {
         var (_, designer, inspector) = await OpenAsync();
         Select(designer, "GreetButton");
@@ -224,7 +231,9 @@ public sealed class EventsPageTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-086")]
-    public async Task MultiSelectionSharesHandler()
+    public Task MultiSelectionSharesHandler() => TestUiThread.RunAsync(() => MultiSelectionSharesHandlerOnUiThread()); // I-209
+
+    private async Task MultiSelectionSharesHandlerOnUiThread()
     {
         var (document, designer, inspector) = await OpenAsync();
 

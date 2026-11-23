@@ -81,7 +81,9 @@ public sealed class FormDesignerViewModelTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-091")]
     [Trait("Req", "DSG-FD-093")]
-    public async Task ViewSwitchingRules()
+    public Task ViewSwitchingRules() => TestUiThread.RunAsync(() => ViewSwitchingRulesOnUiThread()); // I-209
+
+    private async Task ViewSwitchingRulesOnUiThread()
     {
         var document = await OpenAsync();
         var designer = document.Designer;
@@ -150,7 +152,9 @@ public sealed class FormDesignerViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-FD-091")]
-    public async Task DirtyTrackingAcrossBothBuffers()
+    public Task DirtyTrackingAcrossBothBuffers() => TestUiThread.RunAsync(() => DirtyTrackingAcrossBothBuffersOnUiThread()); // I-209
+
+    private async Task DirtyTrackingAcrossBothBuffersOnUiThread()
     {
         var document = await OpenAsync();
         var designer = document.Designer;
@@ -200,7 +204,9 @@ public sealed class FormDesignerViewModelTests
     [Trait("Req", "DSG-CS-091")]
     [Trait("Req", "DSG-CS-072")]
     [Trait("Req", "DSG-CS-074")]
-    public async Task SaveRunsRepairThenRemovesHandlersThenWrites()
+    public Task SaveRunsRepairThenRemovesHandlersThenWrites() => TestUiThread.RunAsync(() => SaveRunsRepairThenRemovesHandlersThenWritesOnUiThread()); // I-209
+
+    private async Task SaveRunsRepairThenRemovesHandlersThenWritesOnUiThread()
     {
         // The unit lacks the NameEdit field; the session creates a handler that stays empty and unreferenced.
         var document = await OpenAsync(TestUnits.Read("MainForm.pas").Replace("    NameEdit: TEdit;\r\n", "", StringComparison.Ordinal));
@@ -232,7 +238,9 @@ public sealed class FormDesignerViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-FD-051")]
-    public async Task UnmodifiedFormIsNotRewritten()
+    public Task UnmodifiedFormIsNotRewritten() => TestUiThread.RunAsync(() => UnmodifiedFormIsNotRewrittenOnUiThread()); // I-209
+
+    private async Task UnmodifiedFormIsNotRewrittenOnUiThread()
     {
         // Valid but not canonical: CRLF, a blank line, different indentation.
         const string form = "object MainForm: TMainForm\r\n\r\n    Left = 200\r\n  Top = 120\r\n  Caption = 'MainForm'\r\n"
@@ -259,7 +267,9 @@ public sealed class FormDesignerViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-080")]
-    public async Task OpeningTheFormFileOpensItsUnitInDesignView()
+    public Task OpeningTheFormFileOpensItsUnitInDesignView() => TestUiThread.RunAsync(() => OpeningTheFormFileOpensItsUnitInDesignViewOnUiThread()); // I-209
+
+    private async Task OpeningTheFormFileOpensItsUnitInDesignViewOnUiThread()
     {
         File(UnitPath, TestUnits.Read("MainForm.pas"));
         File(FormPath, TestUnits.Read("MainForm.form"));
@@ -277,7 +287,9 @@ public sealed class FormDesignerViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-080")]
-    public async Task FormWithoutUnitOpensDesignWithoutCodeSync()
+    public Task FormWithoutUnitOpensDesignWithoutCodeSync() => TestUiThread.RunAsync(() => FormWithoutUnitOpensDesignWithoutCodeSyncOnUiThread()); // I-209
+
+    private async Task FormWithoutUnitOpensDesignWithoutCodeSyncOnUiThread()
     {
         const string lonely = Dir + @"\Lonely.form";
         File(lonely, "object Lonely: TForm\n  Left = 200\n  Top = 120\n  Caption = 'Lonely'\n  ClientWidth = 400\n  ClientHeight = 300\n"
@@ -326,7 +338,9 @@ public sealed class FormDesignerViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-091")]
-    public async Task RepairRunsBeforeFirstEditInSameUnit()
+    public Task RepairRunsBeforeFirstEditInSameUnit() => TestUiThread.RunAsync(() => RepairRunsBeforeFirstEditInSameUnitOnUiThread()); // I-209
+
+    private async Task RepairRunsBeforeFirstEditInSameUnitOnUiThread()
     {
         // The unit lacks the NameEdit field: opening reports it and does not edit (DSG-CS-090).
         var unitText = TestUnits.Read("MainForm.pas").Replace("    NameEdit: TEdit;\r\n", "", StringComparison.Ordinal);
@@ -374,7 +388,9 @@ public sealed class FormDesignerViewModelTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-FD-100")]
     [Trait("Req", "DSG-FD-093")]
-    public async Task ExternalFormChangeReloads()
+    public Task ExternalFormChangeReloads() => TestUiThread.RunAsync(() => ExternalFormChangeReloadsOnUiThread()); // I-209
+
+    private async Task ExternalFormChangeReloadsOnUiThread()
     {
         var document = await OpenAsync();
         var designer = document.Designer;
@@ -416,7 +432,9 @@ public sealed class FormDesignerViewModelTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-022")]
     [Trait("Req", "IDE-PM-071")]
-    public async Task FormFollowsUnitRenameAndSaveAs()
+    public Task FormFollowsUnitRenameAndSaveAs() => TestUiThread.RunAsync(() => FormFollowsUnitRenameAndSaveAsOnUiThread()); // I-209
+
+    private async Task FormFollowsUnitRenameAndSaveAsOnUiThread()
     {
         // Save As: the form goes with the unit under the new base name; the {$FORM} directive follows.
         var document = await OpenAsync();
@@ -459,7 +477,9 @@ public sealed class FormDesignerViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-TP-008")]
-    public async Task ReloadMetadataRebindsOpenForms()
+    public Task ReloadMetadataRebindsOpenForms() => TestUiThread.RunAsync(() => ReloadMetadataRebindsOpenFormsOnUiThread()); // I-209
+
+    private async Task ReloadMetadataRebindsOpenFormsOnUiThread()
     {
         const string meta = @"C:\meta";
         var f = new DesignerFixture();
@@ -508,7 +528,9 @@ public sealed class FormDesignerViewModelTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-TP-053")]
     [Trait("Req", "DSG-CS-051")]
-    public async Task PlacementAddsFieldAndUses()
+    public Task PlacementAddsFieldAndUses() => TestUiThread.RunAsync(() => PlacementAddsFieldAndUsesOnUiThread()); // I-209
+
+    private async Task PlacementAddsFieldAndUsesOnUiThread()
     {
         var document = await OpenAsync();
         var designer = document.Designer;
@@ -550,7 +572,9 @@ public sealed class FormDesignerViewModelTests
     [Trait("Req", "DSG-SUR-127")]
     [Trait("Req", "DSG-SUR-057")]
     [Trait("Req", "DSG-CS-102")]
-    public async Task PasteAddsFieldsAndUndoRemovesThem()
+    public Task PasteAddsFieldsAndUndoRemovesThem() => TestUiThread.RunAsync(() => PasteAddsFieldsAndUndoRemovesThemOnUiThread()); // I-209
+
+    private async Task PasteAddsFieldsAndUndoRemovesThemOnUiThread()
     {
         var document = await OpenAsync();
         var designer = document.Designer;
@@ -608,7 +632,9 @@ public sealed class FormDesignerViewModelTests
     [Trait("Req", "DSG-CS-040")]
     [Trait("Req", "DSG-CS-101")]
     [Trait("Req", "DSG-CS-102")]
-    public async Task DeleteRemovesFieldsAndUndoRestoresThem()
+    public Task DeleteRemovesFieldsAndUndoRestoresThem() => TestUiThread.RunAsync(() => DeleteRemovesFieldsAndUndoRestoresThemOnUiThread()); // I-209
+
+    private async Task DeleteRemovesFieldsAndUndoRestoresThemOnUiThread()
     {
         var document = await OpenAsync();
         var designer = document.Designer;
@@ -664,7 +690,9 @@ public sealed class FormDesignerViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-080")]
-    public async Task ProjectFormEntryNamesTheCompanion()
+    public Task ProjectFormEntryNamesTheCompanion() => TestUiThread.RunAsync(() => ProjectFormEntryNamesTheCompanionOnUiThread()); // I-209
+
+    private async Task ProjectFormEntryNamesTheCompanionOnUiThread()
     {
         File(Dir + @"\App.pproj", """
             { "formatVersion": 1, "name": "App", "mainSource": "App.pas",

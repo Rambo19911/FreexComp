@@ -3755,6 +3755,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Show _Welcome page at start-up</value>
     <comment>dialogs.md §9.6</comment>
   </data>
+  <data name="Options_Field_AutoSwitchLayout" xml:space="preserve">
+    <value>Switch window la_yout automatically</value>
+    <comment>dialogs.md §9.6 (P5)</comment>
+  </data>
   <data name="Options_Field_DefaultProjectsDir" xml:space="preserve">
     <value>_Default project folder:</value>
     <comment>dialogs.md §9.6</comment>
@@ -4582,6 +4586,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Inspector_ArrangeByName" xml:space="preserve">
     <value>Arrange by Name</value>
     <comment>designer.md §11 UI-DSG-102 arrangement toggle; object-inspector.md DSG-OI-039</comment>
+  </data>
+  <data name="Inspector_CopyValue" xml:space="preserve">
+    <value>Copy Value</value>
+    <comment>object-inspector.md DSG-OI-039 row context menu (edit.copy)</comment>
   </data>
   <data name="StringsEditor_Title" xml:space="preserve">
     <value>Edit {0} – {1}</value>

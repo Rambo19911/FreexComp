@@ -25,7 +25,10 @@ public sealed class ObjectInspectorView : UserControl
 {
     private const string Prefix = "Tool.ObjectInspector";
     private const double RowHeight = 22; // UI-DSG-103
-    private const double NameRatio = 0.45; // UI-DSG-103 default split
+    private const double DividerWidth = 5; // the divider's hit area; 1 DIP is drawn
+    private const double SplitterHeight = 5; // UI-DSG-100 splitter: 5 hit / 1 visible
+    private const double MinDescriptionHeight = 44; // UI-DSG-110
+    private const double MinGridHeight = 44;
 
     private readonly ComboBox _selector = new() { HorizontalAlignment = HorizontalAlignment.Stretch, Height = 26 };
     private readonly Button _tabProperties = new() { Content = Strings.Inspector_Tab_Properties };
@@ -43,10 +46,17 @@ public sealed class ObjectInspectorView : UserControl
     private readonly TextBlock _descriptionText = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Border _description;
     private readonly TextBox _editor = new() { BorderThickness = new Thickness(0), Padding = new Thickness(4, 0), MinHeight = 0, VerticalContentAlignment = VerticalAlignment.Center };
+    private readonly Border _splitter;
+    private readonly StackPanel _toggles;
+    private readonly ListBox _list = new() { MaxHeight = 220, MinWidth = 120, Focusable = true };
+    private readonly Popup _listPopup;
     private ObjectInspectorViewModel? _model;
     private Control? _currentRow;
     private bool _building;
     private string? _pressedValuePath;
+    private bool _draggingDivider;
+    private (double StartY, double StartHeight)? _splitterDrag;
+    private ContextMenu? _contextMenu;
 
     public ObjectInspectorView()
     {
@@ -109,6 +119,10 @@ public sealed class ObjectInspectorView : UserControl
         _grid.Child = new Panel { Children = { _scroll, _emptyPanel } };
         Bind(_grid, Border.BackgroundProperty, "FxcBgPanelBrush");
         _grid.AddHandler(PointerPressedEvent, OnGridPointerPressed, RoutingStrategies.Tunnel);
+        _grid.PointerMoved += OnGridPointerMoved;
+        _grid.PointerReleased += (_, e) => EndDividerDrag(e.Pointer);
+        _grid.PointerCaptureLost += (_, _) => _draggingDivider = false;
+        _grid.ContextRequested += OnGridContextRequested;
         _grid.KeyDown += OnGridKeyDown;
         _grid.TextInput += OnGridTextInput;
         _grid.GotFocus += (_, _) => UpdateCurrentBackground();
@@ -130,21 +144,42 @@ public sealed class ObjectInspectorView : UserControl
             }
         };
 
+        // DSG-OI-032: Alt+Down opens the row's value list; Enter or a click enters and commits the value, Escape closes it.
+        _list.AddHandler(KeyDownEvent, OnListKeyDown, RoutingStrategies.Tunnel);
+        _list.AddHandler(PointerReleasedEvent, OnListPointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
+        var listFrame = new Border { BorderThickness = new Thickness(1), Child = _list };
+        Bind(listFrame, Border.BorderBrushProperty, "FxcBorderStrongBrush");
+        Bind(listFrame, Border.BackgroundProperty, "FxcBgRaisedBrush");
+        _listPopup = new Popup
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft, IsLightDismissEnabled = true, ShouldUseOverlayLayer = true, Child = listFrame,
+        };
+        ((Panel)_grid.Child).Children.Add(_listPopup);
+
         _descriptionTitle.Classes.Add("bodyStrong");
         _descriptionText.Classes.Add("body");
         Bind(_descriptionText, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
         _description = new Border
         {
-            MinHeight = 44, Height = 58, Padding = new Thickness(6, 4), BorderThickness = new Thickness(0, 1, 0, 0),
+            MinHeight = MinDescriptionHeight, Height = 58, Padding = new Thickness(6, 4),
             Child = new StackPanel { Spacing = 2, Children = { _descriptionTitle, _descriptionText } },
         };
         AutomationProperties.SetAutomationId(_description, Prefix + ".Description");
-        Bind(_description, Border.BorderBrushProperty, "FxcBorderSubtleBrush");
+
+        // UI-DSG-100: the splitter above the description pane (5 DIP to drag, a 1 DIP line).
+        var splitterLine = new Border { Height = 1, VerticalAlignment = VerticalAlignment.Center };
+        Bind(splitterLine, Border.BackgroundProperty, "FxcBorderSubtleBrush");
+        _splitter = new Border { Height = SplitterHeight, Background = Brushes.Transparent, Child = splitterLine, Cursor = new Cursor(StandardCursorType.SizeNorthSouth) };
+        AutomationProperties.SetAutomationId(_splitter, Prefix + ".Splitter");
+        _splitter.PointerPressed += OnSplitterPressed;
+        _splitter.PointerMoved += OnSplitterMoved;
+        _splitter.PointerReleased += (_, e) => EndSplitterDrag(e.Pointer);
+        _splitter.PointerCaptureLost += (_, _) => _splitterDrag = null;
 
         var tabs = new DockPanel { Height = 26, LastChildFill = false };
-        var toggles = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Children = { _byCategory, _byName } };
-        DockPanel.SetDock(toggles, Dock.Right);
-        tabs.Children.Add(toggles);
+        _toggles = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Children = { _byCategory, _byName } };
+        DockPanel.SetDock(_toggles, Dock.Right);
+        tabs.Children.Add(_toggles);
         tabs.Children.Add(_tabProperties);
         tabs.Children.Add(_tabEvents);
 
@@ -156,10 +191,24 @@ public sealed class ObjectInspectorView : UserControl
         var layout = new DockPanel();
         DockPanel.SetDock(top, Dock.Top);
         DockPanel.SetDock(_description, Dock.Bottom);
+        DockPanel.SetDock(_splitter, Dock.Bottom);
         layout.Children.Add(top);
         layout.Children.Add(_description);
+        layout.Children.Add(_splitter);
         layout.Children.Add(_grid);
         Content = layout;
+        SizeChanged += (_, e) => UpdateNarrow(e.NewSize.Width);
+    }
+
+    /// <summary>UI-DSG-113: below 260 DIP the arrangement buttons move into the caption's menu.</summary>
+    private void UpdateNarrow(double width)
+    {
+        if (_model is { } model && width > 0)
+        {
+            model.IsNarrow = width < ObjectInspectorViewModel.NarrowWidth;
+        }
+
+        _toggles.IsVisible = _model is not { IsNarrow: true };
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -176,6 +225,7 @@ public sealed class ObjectInspectorView : UserControl
             _model.PropertyChanged += OnModelPropertyChanged;
         }
 
+        UpdateNarrow(Bounds.Width);
         Rebuild();
     }
 
@@ -206,6 +256,12 @@ public sealed class ObjectInspectorView : UserControl
                 break;
             case nameof(ObjectInspectorViewModel.DescriptionTitle) or nameof(ObjectInspectorViewModel.DescriptionText):
                 UpdateDescription();
+                break;
+            case nameof(ObjectInspectorViewModel.NameColumnRatio):
+                ApplyRatio();
+                break;
+            case nameof(ObjectInspectorViewModel.IsNarrow):
+                UpdateNarrow(Bounds.Width);
                 break;
         }
     }
@@ -265,6 +321,7 @@ public sealed class ObjectInspectorView : UserControl
             _byCategory.IsChecked = model is { IsArrangedByName: false };
             _byName.IsChecked = model is { IsArrangedByName: true };
             _description.IsVisible = model?.ShowDescription ?? true;
+            _splitter.IsVisible = _description.IsVisible;
 
             var emptyText = model?.EmptyStateText ?? (model is null ? Strings.Msg_Inspector_NoSelection : null);
             _emptyPanel.IsVisible = emptyText is not null;
@@ -422,11 +479,20 @@ public sealed class ObjectInspectorView : UserControl
         }
 
         var valueCell = new Border { Padding = new Thickness(editing ? 0 : 4, 0, 0, 0), Child = valueContent, Background = Brushes.Transparent, Tag = new ValueTag(path) };
-        var divider = new Border { Width = 1 };
-        Bind(divider, Border.BackgroundProperty, "FxcBorderSubtleBrush");
+        // UI-DSG-103: the 1 DIP divider inside a 5 DIP drag area.
+        var line = new Border { Width = 1, HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
+        Bind(line, Border.BackgroundProperty, "FxcBorderSubtleBrush");
+        var divider = new Border { Width = DividerWidth, Background = Brushes.Transparent, Child = line, Tag = new DividerTag(), Cursor = new Cursor(StandardCursorType.SizeWestEast) };
+        AutomationProperties.SetAutomationId(divider, id + ".Divider");
+        var ratio = model.NameColumnRatio;
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions($"{NameRatio.ToString(System.Globalization.CultureInfo.InvariantCulture)}*,1,{(1 - NameRatio).ToString(System.Globalization.CultureInfo.InvariantCulture)}*"),
+            ColumnDefinitions =
+            [
+                new ColumnDefinition(ratio, GridUnitType.Star),
+                new ColumnDefinition(DividerWidth, GridUnitType.Pixel),
+                new ColumnDefinition(1 - ratio, GridUnitType.Star),
+            ],
         };
         grid.Children.Add(nameCell);
         Grid.SetColumn(divider, 1);
@@ -546,8 +612,14 @@ public sealed class ObjectInspectorView : UserControl
                 _ = ActivateAsync(model);
                 break;
             case (Key.F2, KeyModifiers.None):
-            case (Key.Down, KeyModifiers.Alt):
                 BeginEdit();
+                break;
+            case (Key.Down, KeyModifiers.Alt):
+                OpenValueList(model);
+                break;
+            case (Key.F10, KeyModifiers.Shift):
+            case (Key.Apps, KeyModifiers.None):
+                OpenContextMenu(null);
                 break;
             case (Key.Space, KeyModifiers.None):
                 if (model.Page == InspectorPage.Properties)
@@ -653,12 +725,34 @@ public sealed class ObjectInspectorView : UserControl
     /// </summary>
     private void OnGridPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (_model is not { } model || !e.GetCurrentPoint(_grid).Properties.IsLeftButtonPressed)
+        if (_model is not { } model)
+        {
+            return;
+        }
+
+        var properties = e.GetCurrentPoint(_grid).Properties;
+        if (properties.IsRightButtonPressed)
+        {
+            RightPress(model, e);
+            return;
+        }
+
+        if (!properties.IsLeftButtonPressed)
         {
             return;
         }
 
         var source = e.Source as Visual;
+        if (source is Control { Tag: DividerTag })
+        {
+            // UI-DSG-103: dragging the name/value divider.
+            e.Handled = true;
+            model.Commit(InspectorCommitCause.FocusLost);
+            _draggingDivider = true;
+            e.Pointer.Capture(_grid);
+            return;
+        }
+
         if (source?.FindAncestorOfType<Button>(includeSelf: true) is not null)
         {
             return; // the … button
@@ -770,6 +864,213 @@ public sealed class ObjectInspectorView : UserControl
         }
     }
 
+    /// <summary>The path or event name of the row under a press; null outside rows.</summary>
+    private string? RowAt(Visual? source)
+    {
+        for (var v = source; v is not null && v != _grid; v = v.GetVisualParent())
+        {
+            if ((v as Control)?.Tag is RowTag t)
+            {
+                return t.Path;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>DSG-OI-039: a right press makes the row under it current (the menu opens on release).</summary>
+    private void RightPress(ObjectInspectorViewModel model, PointerPressedEventArgs e)
+    {
+        if ((e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) == _editor)
+        {
+            return; // the editor's own menu
+        }
+
+        if (model.IsEditing)
+        {
+            model.Commit(InspectorCommitCause.FocusLost);
+        }
+
+        if (RowAt(e.Source as Visual) is { } row)
+        {
+            model.SetCurrent(row);
+        }
+
+        _grid.Focus();
+    }
+
+    private void OnGridContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if ((e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) == _editor)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        OpenContextMenu(e.TryGetPosition(_grid, out var point) ? point : null);
+    }
+
+    /// <summary>DSG-OI-039: the row context menu at the pointer, or under the current row (Shift+F10, Apps).</summary>
+    private void OpenContextMenu(Point? at)
+    {
+        if (_model is not { IsEmpty: false } model || _contextMenu is { IsOpen: true })
+        {
+            return;
+        }
+
+        var menu = MenuBarBuilder.CreateContextMenu(model.BuildContextMenu());
+        AutomationProperties.SetAutomationId(menu, Prefix + ".ContextMenu");
+        if (at is { } point)
+        {
+            menu.Placement = PlacementMode.AnchorAndGravity;
+            menu.PlacementRect = new Rect(point.X, point.Y, 1, 1);
+            menu.PlacementAnchor = Avalonia.Controls.Primitives.PopupPositioning.PopupAnchor.TopLeft;
+            menu.PlacementGravity = Avalonia.Controls.Primitives.PopupPositioning.PopupGravity.BottomRight;
+        }
+        else
+        {
+            menu.Placement = PlacementMode.Bottom;
+            menu.PlacementTarget = _currentRow ?? _grid;
+        }
+
+        _contextMenu = menu;
+        _grid.ContextMenu = menu;
+        menu.Open(_grid);
+    }
+
+    /// <summary>DSG-OI-032: Alt+Down opens the drop-down list of a row that has one; other text rows enter edit mode.</summary>
+    private void OpenValueList(ObjectInspectorViewModel model)
+    {
+        var values = model.CurrentValueList();
+        if (values.Count == 0 || _currentRow is null)
+        {
+            BeginEdit();
+            return;
+        }
+
+        var current = model.CurrentValueText;
+        _list.ItemsSource = values;
+        _list.SelectedIndex = Math.Max(0, values.ToList().FindIndex(v => string.Equals(v, current, StringComparison.OrdinalIgnoreCase)));
+        AutomationProperties.SetAutomationId(_list, AutomationProperties.GetAutomationId(_currentRow) + ".List");
+        _listPopup.PlacementTarget = _currentRow;
+        _listPopup.Width = Math.Max(_list.MinWidth, _currentRow.Bounds.Width);
+        _listPopup.IsOpen = true;
+        if (!_list.Focus(NavigationMethod.Tab))
+        {
+            Dispatcher.UIThread.Post(() => _list.Focus(NavigationMethod.Tab), DispatcherPriority.Loaded); // the popup is laid out first
+        }
+    }
+
+    private void ChooseListValue()
+    {
+        var value = _list.SelectedItem as string;
+        _listPopup.IsOpen = false;
+        _grid.Focus();
+        if (value is not null && _model is { } model)
+        {
+            model.ChooseValue(value);
+        }
+    }
+
+    private void OnListKeyDown(object? sender, KeyEventArgs e)
+    {
+        switch (e.Key, e.KeyModifiers)
+        {
+            case (Key.Enter, KeyModifiers.None):
+            case (Key.Up, KeyModifiers.Alt):
+                e.Handled = true;
+                ChooseListValue();
+                break;
+            case (Key.Escape, KeyModifiers.None):
+                e.Handled = true;
+                _listPopup.IsOpen = false;
+                _grid.Focus();
+                break;
+            case (Key.Up or Key.Down, KeyModifiers.None):
+                e.Handled = true;
+                _list.SelectedIndex = Math.Clamp(_list.SelectedIndex + (e.Key == Key.Up ? -1 : 1), 0, _list.ItemCount - 1);
+                break;
+        }
+    }
+
+    private void OnListPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton == MouseButton.Left && (e.Source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true) is not null)
+        {
+            ChooseListValue();
+        }
+    }
+
+    /// <summary>UI-DSG-103: the divider follows the pointer; both columns keep at least 60 DIP.</summary>
+    private void OnGridPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_draggingDivider || _model is not { } model)
+        {
+            return;
+        }
+
+        var width = _rows.Bounds.Width;
+        var x = e.GetPosition(_rows).X;
+        var min = ObjectInspectorViewModel.MinColumnWidth;
+        model.NameColumnRatio = width > 2 * min + DividerWidth ? Math.Clamp(x, min, width - min - DividerWidth) / (width - DividerWidth) : 0.5;
+    }
+
+    private void EndDividerDrag(IPointer pointer)
+    {
+        if (_draggingDivider)
+        {
+            _draggingDivider = false;
+            pointer.Capture(null);
+        }
+    }
+
+    /// <summary>Applies <see cref="ObjectInspectorViewModel.NameColumnRatio"/> to the shown rows (no rebuild while dragging).</summary>
+    private void ApplyRatio()
+    {
+        var ratio = _model?.NameColumnRatio ?? ObjectInspectorViewModel.DefaultNameColumnRatio;
+        foreach (var row in _rows.Children.OfType<Border>())
+        {
+            if (row.Child is Grid { ColumnDefinitions.Count: 3 } grid)
+            {
+                grid.ColumnDefinitions[0].Width = new GridLength(ratio, GridUnitType.Star);
+                grid.ColumnDefinitions[2].Width = new GridLength(1 - ratio, GridUnitType.Star);
+            }
+        }
+    }
+
+    private void OnSplitterPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(_splitter).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        _splitterDrag = (e.GetPosition(this).Y, _description.Bounds.Height);
+        e.Pointer.Capture(_splitter);
+    }
+
+    /// <summary>UI-DSG-100: the splitter moves the description pane's top edge (pane at least 44, grid at least 44 DIP).</summary>
+    private void OnSplitterMoved(object? sender, PointerEventArgs e)
+    {
+        if (_splitterDrag is not { } drag)
+        {
+            return;
+        }
+
+        var max = Math.Max(MinDescriptionHeight, _description.Bounds.Height + _grid.Bounds.Height - MinGridHeight);
+        _description.Height = Math.Clamp(drag.StartHeight - (e.GetPosition(this).Y - drag.StartY), MinDescriptionHeight, max);
+    }
+
+    private void EndSplitterDrag(IPointer pointer)
+    {
+        if (_splitterDrag is not null)
+        {
+            _splitterDrag = null;
+            pointer.Capture(null);
+        }
+    }
+
     private static void Bind(Control control, AvaloniaProperty property, string resource) =>
         control.Bind(property, control.GetResourceObservable(resource));
 
@@ -780,6 +1081,8 @@ public sealed class ObjectInspectorView : UserControl
     private sealed record ExpanderTag(string Path);
 
     private sealed record CategoryTag(string Name);
+
+    private sealed record DividerTag;
 
     /// <summary>The focusable grid area (the tool window's primary control, UI-TW-007).</summary>
     private sealed class GridHost : Border

@@ -45,7 +45,9 @@ public sealed class FindInFilesTests
     [Trait("Req", "IDE-ED-120")]
     [Trait("Req", "IDE-ED-121")]
     [Trait("Req", "IDE-ED-122")]
-    public async Task ScopesUseBuffersForOpenFiles()
+    public Task ScopesUseBuffersForOpenFiles() => TestUiThread.RunAsync(() => ScopesUseBuffersForOpenFilesOnUiThread()); // I-209
+
+    private async Task ScopesUseBuffersForOpenFilesOnUiThread()
     {
         File(Dir + @"\Hello.pproj", """
             { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
@@ -112,7 +114,9 @@ public sealed class FindInFilesTests
     /// <summary>IDE-ED-120 (I-187): files with the hidden or system attribute are not read from disk in any scope.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-120")]
-    public async Task HiddenAndSystemFilesAreSkipped()
+    public Task HiddenAndSystemFilesAreSkipped() => TestUiThread.RunAsync(() => HiddenAndSystemFilesAreSkippedOnUiThread()); // I-209
+
+    private async Task HiddenAndSystemFilesAreSkippedOnUiThread()
     {
         File(Dir + @"\Hello.pproj", """
             { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas", "files": [ { "path": "Hidden.pas" }, { "path": "System.pas" } ] }
@@ -153,7 +157,9 @@ public sealed class FindInFilesTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-123")]
     [Trait("Req", "IDE-ED-124")]
-    public async Task OrderCapAndCancel()
+    public Task OrderCapAndCancel() => TestUiThread.RunAsync(() => OrderCapAndCancelOnUiThread()); // I-209
+
+    private async Task OrderCapAndCancelOnUiThread()
     {
         // 40 files × 200 matches: 8 000 matches, capped at 5 000 in file order (ordinal-ignore-case path order).
         var names = Enumerable.Range(0, 40).Select(i => (i % 2 == 0 ? "a" : "B") + i.ToString("D2", CultureInfo.InvariantCulture) + ".pas").ToList();

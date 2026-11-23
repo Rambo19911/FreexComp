@@ -121,7 +121,9 @@ public sealed class FakesTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-054")]
     [Trait("Req", "UI-DLG-027")]
-    public async Task FakeDialogServiceAnswersScriptedRequestsAndFailsOthers()
+    public Task FakeDialogServiceAnswersScriptedRequestsAndFailsOthers() => TestUiThread.RunAsync(() => FakeDialogServiceAnswersScriptedRequestsAndFailsOthersOnUiThread()); // I-209
+
+    private async Task FakeDialogServiceAnswersScriptedRequestsAndFailsOthersOnUiThread()
     {
         IDialogService dialogs = new FakeDialogService();
         var fake = (FakeDialogService)dialogs;
@@ -189,7 +191,9 @@ public sealed class FakesTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task FakeClipboardHoldsText()
+    public Task FakeClipboardHoldsText() => TestUiThread.RunAsync(() => FakeClipboardHoldsTextOnUiThread()); // I-209
+
+    private async Task FakeClipboardHoldsTextOnUiThread()
     {
         var clipboard = new FakeClipboard();
         Assert.Null(await clipboard.GetTextAsync());

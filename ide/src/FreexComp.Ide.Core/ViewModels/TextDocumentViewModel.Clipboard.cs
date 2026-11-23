@@ -130,7 +130,7 @@ public partial class TextDocumentViewModel
             }
             catch (Exception ex) when (IsClipboardFailure(ex) && attempt < ClipboardRetries)
             {
-                await DelayAsync(ClipboardRetryInterval).ConfigureAwait(false); // the clock fires on the UI thread
+                await DelayAsync(ClipboardRetryInterval); // I-209: resumes on the UI thread, where the clipboard may be used
             }
             catch (Exception ex) when (IsClipboardFailure(ex))
             {

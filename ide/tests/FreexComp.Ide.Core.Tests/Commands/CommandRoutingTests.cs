@@ -21,7 +21,9 @@ public sealed class CommandRoutingTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-CMD-011")]
     [Trait("Req", "IDE-ED-040")]
-    public async Task EditorScopeCommandsReachActiveDocument()
+    public Task EditorScopeCommandsReachActiveDocument() => TestUiThread.RunAsync(() => EditorScopeCommandsReachActiveDocumentOnUiThread()); // I-209
+
+    private async Task EditorScopeCommandsReachActiveDocumentOnUiThread()
     {
         // The route itself: a later editor operation reaches the target with no registration of its own.
         var target = new RecordingTarget("edit.completeCode");

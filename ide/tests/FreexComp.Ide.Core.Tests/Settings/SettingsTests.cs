@@ -47,7 +47,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-012")]
-    public async Task OnlyNonDefaultValuesAreWritten()
+    public Task OnlyNonDefaultValuesAreWritten() => TestUiThread.RunAsync(() => OnlyNonDefaultValuesAreWrittenOnUiThread()); // I-209
+
+    private async Task OnlyNonDefaultValuesAreWrittenOnUiThread()
     {
         var settings = Create();
         settings.Load();
@@ -67,7 +69,9 @@ public sealed class SettingsTests
     [Trait("Req", "IDE-SET-010")]
     [Trait("Req", "IDE-SET-011")]
     [Trait("Req", "IDE-SET-014")]
-    public async Task KeysAreSortedAndFormatIsCanonical()
+    public Task KeysAreSortedAndFormatIsCanonical() => TestUiThread.RunAsync(() => KeysAreSortedAndFormatIsCanonicalOnUiThread()); // I-209
+
+    private async Task KeysAreSortedAndFormatIsCanonicalOnUiThread()
     {
         var settings = Create();
         settings.Load();
@@ -99,7 +103,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-013")]
-    public async Task UnknownKeysArePreserved()
+    public Task UnknownKeysArePreserved() => TestUiThread.RunAsync(() => UnknownKeysArePreservedOnUiThread()); // I-209
+
+    private async Task UnknownKeysArePreservedOnUiThread()
     {
         WriteFile("{\r\n    \"zzz.future\": {\"a\": 1},\r\n    \"formatVersion\": 1,\r\n    \"aaa.old\": true,\r\n    \"t.size\": 20\r\n}");
         var settings = Create();
@@ -124,7 +130,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-022")]
-    public async Task InvalidValueFallsBackToDefault()
+    public Task InvalidValueFallsBackToDefault() => TestUiThread.RunAsync(() => InvalidValueFallsBackToDefaultOnUiThread()); // I-209
+
+    private async Task InvalidValueFallsBackToDefaultOnUiThread()
     {
         WriteFile("""
             {
@@ -174,7 +182,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-021")]
-    public async Task CorruptFileIsRenamedAndReported()
+    public Task CorruptFileIsRenamedAndReported() => TestUiThread.RunAsync(() => CorruptFileIsRenamedAndReportedOnUiThread()); // I-209
+
+    private async Task CorruptFileIsRenamedAndReportedOnUiThread()
     {
         WriteFile("{ \"t.size\": ");
         var settings = Create();
@@ -193,7 +203,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-021")]
-    public async Task CorruptFileThatCannotBeRenamedDisablesSaving()
+    public Task CorruptFileThatCannotBeRenamedDisablesSaving() => TestUiThread.RunAsync(() => CorruptFileThatCannotBeRenamedDisablesSavingOnUiThread()); // I-209
+
+    private async Task CorruptFileThatCannotBeRenamedDisablesSavingOnUiThread()
     {
         WriteFile("[1, 2]"); // root is not an object
         _disk.WriteAllBytes(@"C:\u\roaming\settings.corrupt-20261113-091500.json", [0]); // rename target taken
@@ -209,7 +221,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-015")]
-    public async Task NewerFormatVersionIsNeverOverwritten()
+    public Task NewerFormatVersionIsNeverOverwritten() => TestUiThread.RunAsync(() => NewerFormatVersionIsNeverOverwrittenOnUiThread()); // I-209
+
+    private async Task NewerFormatVersionIsNeverOverwrittenOnUiThread()
     {
         const string text = "{\"formatVersion\": 99, \"t.size\": 20, \"x.new\": 1}";
         WriteFile(text);
@@ -270,7 +284,9 @@ public sealed class SettingsTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-026")]
     [Trait("Req", "IDE-SET-027")]
-    public async Task SaveIsDebouncedAndAtomic()
+    public Task SaveIsDebouncedAndAtomic() => TestUiThread.RunAsync(() => SaveIsDebouncedAndAtomicOnUiThread()); // I-209
+
+    private async Task SaveIsDebouncedAndAtomicOnUiThread()
     {
         var spy = new RecordingFileSystem(_disk);
         var settings = Create(spy);
@@ -296,7 +312,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-027")]
-    public async Task FailedSaveIsLoggedAndRetriedAtNextChange()
+    public Task FailedSaveIsLoggedAndRetriedAtNextChange() => TestUiThread.RunAsync(() => FailedSaveIsLoggedAndRetriedAtNextChangeOnUiThread()); // I-209
+
+    private async Task FailedSaveIsLoggedAndRetriedAtNextChangeOnUiThread()
     {
         var spy = new RecordingFileSystem(_disk) { FailWhen = c => c.StartsWith("MoveFile", StringComparison.Ordinal) };
         var settings = Create(spy);
@@ -316,7 +334,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-028")]
-    public async Task SecondInstanceKeepsKeysItDidNotChange()
+    public Task SecondInstanceKeepsKeysItDidNotChange() => TestUiThread.RunAsync(() => SecondInstanceKeepsKeysItDidNotChangeOnUiThread()); // I-209
+
+    private async Task SecondInstanceKeepsKeysItDidNotChangeOnUiThread()
     {
         WriteFile("{\"formatVersion\": 1, \"t.name\": \"start\"}");
         var first = Create();
@@ -337,7 +357,9 @@ public sealed class SettingsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-002")]
-    public async Task UserDirOverrideIsHonoured()
+    public Task UserDirOverrideIsHonoured() => TestUiThread.RunAsync(() => UserDirOverrideIsHonouredOnUiThread()); // I-209
+
+    private async Task UserDirOverrideIsHonouredOnUiThread()
     {
         var spy = new RecordingFileSystem(_disk);
         var paths = UserPaths.Create(UserDir, _ => null, _ => throw new InvalidOperationException("real folder"));

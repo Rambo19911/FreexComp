@@ -41,7 +41,9 @@ public sealed class RunServiceTests
     [Trait("Req", "IDE-P3-080")]
     [Trait("Req", "IDE-P3-081")]
     [Trait("Req", "IDE-P3-002")]
-    public async Task BuildsThenStartsWithArgumentsAndWorkingDir()
+    public Task BuildsThenStartsWithArgumentsAndWorkingDir() => TestUiThread.RunAsync(() => BuildsThenStartsWithArgumentsAndWorkingDirOnUiThread()); // I-209
+
+    private async Task BuildsThenStartsWithArgumentsAndWorkingDirOnUiThread()
     {
         var bed = await StartAsync(run: """, "run": { "arguments": "-n 3 \"a b\"", "workingDir": "data" }""");
         bed.Fs.CreateDirectory(BuildTestBed.Dir + @"\data");
@@ -69,7 +71,9 @@ public sealed class RunServiceTests
     /// <summary>IDE-P3-080: a failed build offers the executable of the last successful build (default Cancel).</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-080")]
-    public async Task BuildFailedOffersPreviousExecutable()
+    public Task BuildFailedOffersPreviousExecutable() => TestUiThread.RunAsync(() => BuildFailedOffersPreviousExecutableOnUiThread()); // I-209
+
+    private async Task BuildFailedOffersPreviousExecutableOnUiThread()
     {
         var bed = await StartAsync();
         var error = FakeBuildEngine.Diag("E2003", DiagnosticSeverity.Error, "Undeclared identifier 'Foo'", BuildTestBed.UnitPath, 3, 1);
@@ -98,7 +102,9 @@ public sealed class RunServiceTests
     /// <summary>IDE-P3-081 (I-190): a successful build whose <c>OutputPath</c> does not exist shows <c>Msg.Run.NoExecutable</c>.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-081")]
-    public async Task FreshBuildWithoutTheExecutableShowsNoExecutable()
+    public Task FreshBuildWithoutTheExecutableShowsNoExecutable() => TestUiThread.RunAsync(() => FreshBuildWithoutTheExecutableShowsNoExecutableOnUiThread()); // I-209
+
+    private async Task FreshBuildWithoutTheExecutableShowsNoExecutableOnUiThread()
     {
         var bed = await StartAsync();
         bed.Engine.Enqueue(FakeBuildEngine.Success(BuildTestBed.ProjectPath, Exe)).WritesOutput = false;
@@ -122,7 +128,9 @@ public sealed class RunServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-084")]
     [Trait("Req", "IDE-P3-072")]
-    public async Task ExitCodeReportedAndStateIdle()
+    public Task ExitCodeReportedAndStateIdle() => TestUiThread.RunAsync(() => ExitCodeReportedAndStateIdleOnUiThread()); // I-209
+
+    private async Task ExitCodeReportedAndStateIdleOnUiThread()
     {
         var bed = await StartAsync();
         var status = new List<string?>();
@@ -157,7 +165,9 @@ public sealed class RunServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-082")]
     [Trait("Req", "IDE-P3-072")]
-    public async Task ConsoleModeOutputClosesStdin()
+    public Task ConsoleModeOutputClosesStdin() => TestUiThread.RunAsync(() => ConsoleModeOutputClosesStdinOnUiThread()); // I-209
+
+    private async Task ConsoleModeOutputClosesStdinOnUiThread()
     {
         var bed = await StartAsync();
         Assert.True(await bed.Services.Run.StartAsync());
@@ -176,7 +186,9 @@ public sealed class RunServiceTests
     /// <summary>IDE-P3-082: the product default runs console programs in the console host; GUI programs ignore the setting.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-082")]
-    public async Task ExternalConsoleIsDefaultForConsoleApps()
+    public Task ExternalConsoleIsDefaultForConsoleApps() => TestUiThread.RunAsync(() => ExternalConsoleIsDefaultForConsoleAppsOnUiThread()); // I-209
+
+    private async Task ExternalConsoleIsDefaultForConsoleAppsOnUiThread()
     {
         var bed = await StartAsync();
         bed.Services.Settings.Reset(SettingsCatalog.RunConsoleMode.Name);
@@ -202,7 +214,9 @@ public sealed class RunServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-088")]
-    public async Task ExternalConsoleReportsExitWhileWindowStaysOpen()
+    public Task ExternalConsoleReportsExitWhileWindowStaysOpen() => TestUiThread.RunAsync(() => ExternalConsoleReportsExitWhileWindowStaysOpenOnUiThread()); // I-209
+
+    private async Task ExternalConsoleReportsExitWhileWindowStaysOpenOnUiThread()
     {
         var bed = await StartAsync();
         bed.Services.Settings.Set(SettingsCatalog.RunConsoleMode, "external");
@@ -239,7 +253,9 @@ public sealed class RunServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-089")]
-    public async Task NextRunClosesWaitingConsoleWindow()
+    public Task NextRunClosesWaitingConsoleWindow() => TestUiThread.RunAsync(() => NextRunClosesWaitingConsoleWindowOnUiThread()); // I-209
+
+    private async Task NextRunClosesWaitingConsoleWindowOnUiThread()
     {
         var bed = await StartAsync();
         bed.Services.Settings.Set(SettingsCatalog.RunConsoleMode, "external");
@@ -285,7 +301,9 @@ public sealed class RunServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-080")]
     [Trait("Req", "IDE-P3-081")]
-    public async Task NotRunnableAndMissingWorkingDirMessages()
+    public Task NotRunnableAndMissingWorkingDirMessages() => TestUiThread.RunAsync(() => NotRunnableAndMissingWorkingDirMessagesOnUiThread()); // I-209
+
+    private async Task NotRunnableAndMissingWorkingDirMessagesOnUiThread()
     {
         var bed = await StartAsync(run: """, "run": { "arguments": "", "workingDir": "nowhere" }""");
         bed.Dialogs.Answer("Msg.Run.WorkingDirMissing", "Cancel");
@@ -307,7 +325,9 @@ public sealed class RunServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-090")]
     [Trait("Req", "IDE-P3-091")]
-    public async Task StopKillsTreeAndReportsStopped()
+    public Task StopKillsTreeAndReportsStopped() => TestUiThread.RunAsync(() => StopKillsTreeAndReportsStoppedOnUiThread()); // I-209
+
+    private async Task StopKillsTreeAndReportsStoppedOnUiThread()
     {
         var bed = await StartAsync();
         Assert.True(await bed.Services.Run.StartAsync());
@@ -335,7 +355,9 @@ public sealed class RunServiceTests
     /// <summary>IDE-P3-092: Restart stops the program, then builds and starts again.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-092")]
-    public async Task RestartStopsThenStarts()
+    public Task RestartStopsThenStarts() => TestUiThread.RunAsync(() => RestartStopsThenStartsOnUiThread()); // I-209
+
+    private async Task RestartStopsThenStartsOnUiThread()
     {
         var bed = await StartAsync();
         Assert.True(await bed.Services.Run.StartAsync());
@@ -354,7 +376,9 @@ public sealed class RunServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-004")]
-    public async Task RunWhileRunningOffersRestart()
+    public Task RunWhileRunningOffersRestart() => TestUiThread.RunAsync(() => RunWhileRunningOffersRestartOnUiThread()); // I-209
+
+    private async Task RunWhileRunningOffersRestartOnUiThread()
     {
         var bed = await StartAsync();
         Assert.True(await bed.Services.Run.StartAsync());
@@ -380,7 +404,9 @@ public sealed class RunServiceTests
     /// <summary>IDE-P3-093: exit and project close while a program runs ask first and stop it on confirmation.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-093")]
-    public async Task ExitWhileRunningAsksAndKills()
+    public Task ExitWhileRunningAsksAndKills() => TestUiThread.RunAsync(() => ExitWhileRunningAsksAndKillsOnUiThread()); // I-209
+
+    private async Task ExitWhileRunningAsksAndKillsOnUiThread()
     {
         var bed = await StartAsync();
         Assert.True(await bed.Services.Run.StartAsync());

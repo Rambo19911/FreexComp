@@ -196,9 +196,11 @@ public sealed partial class DesignSurfaceController
             .SelectMany(g => TabOrderRules.Renumber((FormObject)g.Key!, appended: g))
             .ToList();
         undo.InsertRange(0, ApplyEdit(renumber));
+        var (sizeRedo, sizeUndo) = ApplyAutoSize(copies, withDescendants: true); // DSG-SUR-088: pasted and copied controls are measured
+        undo.InsertRange(0, sizeUndo);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(copies);
-        PushUnit(new DesignerUndoUnit(title, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], edits,
+        PushUnit(new DesignerUndoUnit(title, [.. changes, .. renumber, .. sizeRedo, .. commitRedo], [.. commitUndo, .. undo], edits,
             before, Selection.ToSnapshot()) { CodeOps = ops });
     }
 

@@ -2,6 +2,7 @@ using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Editing;
 
@@ -83,7 +84,9 @@ public sealed class BracketMatchTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-070")]
     [Trait("Req", "IDE-ARCH-081")]
-    public async Task LargeBufferIsScannedInTheBackground()
+    public Task LargeBufferIsScannedInTheBackground() => TestUiThread.RunAsync(() => LargeBufferIsScannedInTheBackgroundOnUiThread()); // I-209
+
+    private async Task LargeBufferIsScannedInTheBackgroundOnUiThread()
     {
         var text = string.Concat(Enumerable.Repeat("begin F(x); end;\r\n", 12_000)); // 216 000 chars
         Assert.True(text.Length > WholeTextClassifier.BackgroundThreshold);

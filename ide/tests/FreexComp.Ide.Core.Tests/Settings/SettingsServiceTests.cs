@@ -47,7 +47,9 @@ public sealed class SettingsServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-029")]
     [Trait("Req", "IDE-SET-020")]
-    public async Task FileAccessAfterTheInitialLoadRunsOnTheThreadPool()
+    public Task FileAccessAfterTheInitialLoadRunsOnTheThreadPool() => TestUiThread.RunAsync(() => FileAccessAfterTheInitialLoadRunsOnTheThreadPoolOnUiThread()); // I-209
+
+    private async Task FileAccessAfterTheInitialLoadRunsOnTheThreadPoolOnUiThread()
     {
         _disk.CreateDirectory(@"C:\u\roaming");
         _disk.WriteAllBytes(SettingsFile, Encoding.UTF8.GetBytes("{ \"formatVersion\": 1, \"t.size\": 12 }"));
@@ -97,7 +99,9 @@ public sealed class SettingsServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-027")]
-    public async Task SaveRetriesWhileFileIsLocked()
+    public Task SaveRetriesWhileFileIsLocked() => TestUiThread.RunAsync(() => SaveRetriesWhileFileIsLockedOnUiThread()); // I-209
+
+    private async Task SaveRetriesWhileFileIsLockedOnUiThread()
     {
         int locked = 2;
         var spy = new RecordingFileSystem(_disk)

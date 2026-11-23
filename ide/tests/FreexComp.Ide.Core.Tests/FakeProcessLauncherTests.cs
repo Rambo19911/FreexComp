@@ -9,7 +9,9 @@ public sealed class FakeProcessLauncherTests
 {
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-094")]
-    public async Task SimulatesStartOutputExitAndKill()
+    public Task SimulatesStartOutputExitAndKill() => TestUiThread.RunAsync(() => SimulatesStartOutputExitAndKillOnUiThread()); // I-209
+
+    private async Task SimulatesStartOutputExitAndKillOnUiThread()
     {
         var launcher = new FakeProcessLauncher();
         var lines = new List<ProcessOutputLine>();

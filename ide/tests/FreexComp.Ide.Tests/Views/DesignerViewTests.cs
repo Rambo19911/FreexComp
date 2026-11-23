@@ -827,6 +827,47 @@ public sealed class DesignerViewTests
         Assert.Empty(InfoBars(h));
     }
 
+    /// <summary>
+    /// DSG-FD-071 (D-109): a double-click on a form problem in Messages opens the form's Text view at the diagnostic span of
+    /// the last parsed text; once the model has changed, it selects the object in the Design view instead.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-071")]
+    public async Task FormProblemClickOpensTextView()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Phase5(o);
+            o.InitialFiles["MainForm.form"] = FormText.ReplaceLineEndings("\n")
+                .Replace("    TabOrder = 0\n", "    TabOrder = 0\n    Shade = 3\n", StringComparison.Ordinal).ReplaceLineEndings("\r\n");
+        });
+        var document = await OpenFormAsync(h);
+        h.Click(ViewTab("Design"));
+        h.Click(AutomationIds.InfoBarAction("FormErrors", "ShowProblems"));
+        Dispatcher.UIThread.RunJobs();
+
+        // The model is unchanged: the Text view of the form, caret and selection on the diagnostic span, editor focused.
+        h.DoubleClick("Tool.Messages.Row.0.Description");
+        await h.WaitForAsync(() => document.ActiveView == DocumentView.Text, "Text view");
+        Assert.Same(document, h.Services.Documents.ActiveDocument);
+        var text = document.FormText;
+        var item = Assert.Single(h.Services.Messages.Items);
+        Assert.Equal(new Core.Text.TextPosition(14, item.Location!.Column), text.ViewState.Caret);
+        Assert.False(text.Selection.IsEmpty);
+        Assert.StartsWith("Shade", text.Buffer.GetText(text.Selection.Start, text.Selection.End - text.Selection.Start), StringComparison.Ordinal);
+
+        // The model changes (a designer edit): the same row now selects the object in the Design view.
+        h.Click(ViewTab("Design"));
+        var designer = document.Designer;
+        designer.Surface!.Selection.Select(designer.Model!.FindByName("GreetButton")!);
+        Assert.True(designer.Surface.Commit("Undo_Designer_Property",
+            [new FreexComp.Designer.Editing.SetProperty("GreetButton", "Tag", new IntegerValue(7, false))]));
+        Dispatcher.UIThread.RunJobs();
+        h.DoubleClick("Tool.Messages.Row.0.Description");
+        await h.WaitForAsync(() => designer.Surface!.Selection.Items.Select(o => o.Name).SequenceEqual(["NameEdit"]), "NameEdit selected");
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-035")]
     public async Task FieldTypeMismatchFixDeclaration()

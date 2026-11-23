@@ -12,7 +12,9 @@ public sealed class HelpServiceTests
 {
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-MENU-031")]
-    public async Task HelpCommandsGoThroughTheHelpService()
+    public Task HelpCommandsGoThroughTheHelpService() => TestUiThread.RunAsync(() => HelpCommandsGoThroughTheHelpServiceOnUiThread()); // I-209
+
+    private async Task HelpCommandsGoThroughTheHelpServiceOnUiThread()
     {
         var dialogs = new FakeDialogService();
         var shell = new FakeShellService();

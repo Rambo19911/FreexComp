@@ -15,7 +15,9 @@ public sealed class WordHighlighterTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-074")]
     [Trait("Req", "IDE-ARCH-081")]
-    public async Task LargeBufferIsHighlightedWhenItsTokensArrive()
+    public Task LargeBufferIsHighlightedWhenItsTokensArrive() => TestUiThread.RunAsync(() => LargeBufferIsHighlightedWhenItsTokensArriveOnUiThread()); // I-209
+
+    private async Task LargeBufferIsHighlightedWhenItsTokensArriveOnUiThread()
     {
         var text = string.Concat(Enumerable.Repeat("Foo := Bar;\r\n", 20_000)); // 260 000 chars
         Assert.True(text.Length > WholeTextClassifier.BackgroundThreshold);

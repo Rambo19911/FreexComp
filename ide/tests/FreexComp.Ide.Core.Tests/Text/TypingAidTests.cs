@@ -44,7 +44,9 @@ public sealed class TypingAidTests
     [Trait("Req", "IDE-ED-021")]
     [Trait("Req", "IDE-ED-022")]
     [Trait("Req", "IDE-ED-023")]
-    public async Task AutoCloseTypeOverPairDelete()
+    public Task AutoCloseTypeOverPairDelete() => TestUiThread.RunAsync(() => AutoCloseTypeOverPairDeleteOnUiThread()); // I-209
+
+    private async Task AutoCloseTypeOverPairDeleteOnUiThread()
     {
         var (_, doc) = await OpenAsync("X := F;");
         Caret(doc, 6);
@@ -119,7 +121,9 @@ public sealed class TypingAidTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-020")]
-    public async Task AutoCloseFollowsTheSetting()
+    public Task AutoCloseFollowsTheSetting() => TestUiThread.RunAsync(() => AutoCloseFollowsTheSettingOnUiThread()); // I-209
+
+    private async Task AutoCloseFollowsTheSettingOnUiThread()
     {
         var (_, doc) = await OpenAsync("", s => s.Set(SettingsCatalog.EditorAutoCloseBrackets, false));
         Type(doc, "('");
@@ -131,7 +135,9 @@ public sealed class TypingAidTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-025")]
-    public async Task OverwriteModeReplacesCharacters()
+    public Task OverwriteModeReplacesCharacters() => TestUiThread.RunAsync(() => OverwriteModeReplacesCharactersOnUiThread()); // I-209
+
+    private async Task OverwriteModeReplacesCharactersOnUiThread()
     {
         var (services, doc) = await OpenAsync("abc\r\nd");
         Caret(doc, 1);
@@ -167,7 +173,9 @@ public sealed class TypingAidTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-026")]
-    public async Task RectangularSelectionTypingCopyPaste()
+    public Task RectangularSelectionTypingCopyPaste() => TestUiThread.RunAsync(() => RectangularSelectionTypingCopyPasteOnUiThread()); // I-209
+
+    private async Task RectangularSelectionTypingCopyPasteOnUiThread()
     {
         var (_, doc) = await OpenAsync("abcdef\r\nab\r\nabcdef\r\n");
         // Block from line 1 column 2 to line 3 column 4 (columns 2..3 on every line).

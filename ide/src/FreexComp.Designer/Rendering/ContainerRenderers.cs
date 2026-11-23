@@ -64,7 +64,11 @@ public sealed class PanelRenderer : DesignRenderer
         var outer = ctx.Get("BevelOuter", "bvRaised");
         var inner = ctx.Get("BevelInner", "bvNone");
         Bevel(canvas, client, outer, bevelWidth, p.Border);
-        var innerRect = ContainerRects.Inset(client, (Is(outer, "bvNone") ? 0 : bevelWidth) + Math.Max(0, ctx.Get("BorderWidth", 0)));
+        // D-104: the inner bevel lies just outside the align rect before Padding, so it follows the run-time (scaled)
+        // BorderWidth of the layout instead of the stored one.
+        // The inset is symmetric; its left side is never clamped away.
+        var innerInset = ctx.AlignRect.Left - client.Left - ctx.Padding.Left - (Is(inner, "bvNone") ? 0 : bevelWidth);
+        var innerRect = ContainerRects.Inset(client, innerInset);
         Bevel(canvas, innerRect, inner, bevelWidth, p.Border);
 
         if (ctx.Get("ShowCaption", true))

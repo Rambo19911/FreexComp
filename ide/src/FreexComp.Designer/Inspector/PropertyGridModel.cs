@@ -71,11 +71,11 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
     /// <summary>Case-insensitive substring of the property path (DSG-OI-020); blank = no filter.</summary>
     public string Filter { get; set; } = "";
 
-    /// <summary>Collapsed categories (DSG-OI-013; the view-model swaps the set per class name).</summary>
-    public ISet<string> CollapsedCategories { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Collapsed categories (DSG-OI-013); the view-model may share one set between grids.</summary>
+    public ISet<string> CollapsedCategories { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Paths of expanded object/set rows (DSG-OI-013).</summary>
-    public ISet<string> ExpandedPaths { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Paths of expanded object/set rows (DSG-OI-013); the view-model swaps the set per class name.</summary>
+    public ISet<string> ExpandedPaths { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>A filter is set and no property row matches it (<c>Msg.Inspector.FilterEmpty</c>).</summary>
     public bool IsFilterEmpty => FilterText.Length > 0 && Rows.Count == 0;

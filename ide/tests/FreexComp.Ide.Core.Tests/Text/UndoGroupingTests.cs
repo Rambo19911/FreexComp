@@ -14,7 +14,9 @@ public sealed class UndoGroupingTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-092")]
-    public async Task CommandEditsAreSingleSteps()
+    public Task CommandEditsAreSingleSteps() => TestUiThread.RunAsync(() => CommandEditsAreSingleStepsOnUiThread()); // I-209
+
+    private async Task CommandEditsAreSingleStepsOnUiThread()
     {
         var fs = new InMemoryFileSystem();
         var services = TestComposition.Build(o => o.FileSystem = fs);

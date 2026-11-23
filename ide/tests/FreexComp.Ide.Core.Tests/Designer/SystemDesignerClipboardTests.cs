@@ -11,7 +11,9 @@ public sealed class SystemDesignerClipboardTests
     [Fact]
     [Trait("Req", "DSG-SUR-110")]
     [Trait("Req", "DSG-SUR-125")]
-    public async Task WritesThroughAndReadsOtherProgramsCopies()
+    public Task WritesThroughAndReadsOtherProgramsCopies() => TestUiThread.RunAsync(() => WritesThroughAndReadsOtherProgramsCopiesOnUiThread()); // I-209
+
+    private async Task WritesThroughAndReadsOtherProgramsCopiesOnUiThread()
     {
         var os = new FakeClipboard();
         var clipboard = new SystemDesignerClipboard(os);

@@ -85,7 +85,9 @@ public sealed class FileChangeTests
     [Trait("Req", "IDE-P1-111")]
     [Trait("Req", "IDE-P1-113")]
     [Trait("Req", "IDE-P1-118")]
-    public async Task UnmodifiedReloadsSilently()
+    public Task UnmodifiedReloadsSilently() => TestUiThread.RunAsync(() => UnmodifiedReloadsSilentlyOnUiThread()); // I-209
+
+    private async Task UnmodifiedReloadsSilentlyOnUiThread()
     {
         var doc = await OpenAsync(@"C:\p\A.pas", "line1\r\nline2\r\nline3\r\n");
         doc.Buffer.ApplyEdits([new TextEdit(0, 0, "x")]);
@@ -153,7 +155,9 @@ public sealed class FileChangeTests
     [Trait("Req", "IDE-P1-110")]
     [Trait("Req", "IDE-P1-114")]
     [Trait("Req", "IDE-P1-116")]
-    public async Task ModifiedShowsInfoBarAndKeepRemembersTimestamp()
+    public Task ModifiedShowsInfoBarAndKeepRemembersTimestamp() => TestUiThread.RunAsync(() => ModifiedShowsInfoBarAndKeepRemembersTimestampOnUiThread()); // I-209
+
+    private async Task ModifiedShowsInfoBarAndKeepRemembersTimestampOnUiThread()
     {
         var doc = await OpenAsync(@"C:\p\A.pas", "disk 1");
         doc.Buffer.ApplyEdits([new TextEdit(0, 0, "mine ")]);
@@ -202,7 +206,9 @@ public sealed class FileChangeTests
     [Trait("Req", "IDE-P1-115")]
     [Trait("Req", "IDE-P1-116")]
     [Trait("Req", "UI-ED-074")]
-    public async Task DeletedFileOffersKeepOrClose()
+    public Task DeletedFileOffersKeepOrClose() => TestUiThread.RunAsync(() => DeletedFileOffersKeepOrCloseOnUiThread()); // I-209
+
+    private async Task DeletedFileOffersKeepOrCloseOnUiThread()
     {
         var area = new DocumentAreaViewModel(_services.Commands, _services.Keymap, _services.Documents);
         var a = await OpenAsync(@"C:\p\A.pas", "a");
@@ -267,7 +273,9 @@ public sealed class FileChangeTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-086")]
     [Trait("Req", "IDE-P1-112")]
-    public async Task OwnSaveIsIgnored()
+    public Task OwnSaveIsIgnored() => TestUiThread.RunAsync(() => OwnSaveIsIgnoredOnUiThread()); // I-209
+
+    private async Task OwnSaveIsIgnoredOnUiThread()
     {
         var doc = await OpenAsync(@"C:\p\A.pas", "a");
         doc.Buffer.ApplyEdits([new TextEdit(1, 0, "b")]);
@@ -298,7 +306,9 @@ public sealed class FileChangeTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-112")]
-    public async Task IdenticalContentIsSilent()
+    public Task IdenticalContentIsSilent() => TestUiThread.RunAsync(() => IdenticalContentIsSilentOnUiThread()); // I-209
+
+    private async Task IdenticalContentIsSilentOnUiThread()
     {
         var unmodified = await OpenAsync(@"C:\p\A.pas", "same");
         var modified = await OpenAsync(@"C:\p\B.pas", "same too");
@@ -326,7 +336,9 @@ public sealed class FileChangeTests
     [Trait("Req", "IDE-P1-117")]
     [Trait("Req", "IDE-P1-110")]
     [Trait("Req", "IDE-P1-086")]
-    public async Task ProjectFileChangePromptsReload()
+    public Task ProjectFileChangePromptsReload() => TestUiThread.RunAsync(() => ProjectFileChangePromptsReloadOnUiThread()); // I-209
+
+    private async Task ProjectFileChangePromptsReloadOnUiThread()
     {
         const string dir = @"C:\p\Hello";
         const string project = dir + @"\Hello.pproj";

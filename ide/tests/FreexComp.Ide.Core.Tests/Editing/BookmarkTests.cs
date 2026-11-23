@@ -56,7 +56,9 @@ public sealed class BookmarkTests
     [Trait("Req", "IDE-ED-112")]
     [Trait("Req", "IDE-ED-113")]
     [Trait("Req", "IDE-ED-114")]
-    public async Task ToggleNumberedGotoAndAnchoring()
+    public Task ToggleNumberedGotoAndAnchoring() => TestUiThread.RunAsync(() => ToggleNumberedGotoAndAnchoringOnUiThread()); // I-209
+
+    private async Task ToggleNumberedGotoAndAnchoringOnUiThread()
     {
         Assert.True(await _services.Projects.OpenAsync(Dir + @"\Hello.pproj"));
         var a = await OpenAsync("A.pas");

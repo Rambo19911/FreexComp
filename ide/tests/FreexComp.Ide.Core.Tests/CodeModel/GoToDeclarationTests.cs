@@ -4,6 +4,7 @@ using FreexComp.Ide.Core.Tests.Build;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.CodeModel;
 
@@ -44,7 +45,9 @@ public sealed class GoToDeclarationTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-101")]
-    public async Task JumpsAndTogglesImplementation()
+    public Task JumpsAndTogglesImplementation() => TestUiThread.RunAsync(() => JumpsAndTogglesImplementationOnUiThread()); // I-209
+
+    private async Task JumpsAndTogglesImplementationOnUiThread()
     {
         var bed = await StartAsync();
         var unit = await bed.OpenDocumentAsync(BuildTestBed.UnitPath);

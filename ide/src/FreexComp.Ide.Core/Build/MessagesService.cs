@@ -57,6 +57,9 @@ public sealed class MessageItem
     /// <summary>Version of the open buffer when the build started; null when the file was not open.</summary>
     public long? BufferVersionAtBuild { get; internal set; }
 
+    /// <summary>Replaces the file navigation of <see cref="MessagesService.NavigateToAsync"/> (form problems, DSG-FD-071).</summary>
+    internal Action? Navigate { get; set; }
+
     /// <summary>A row with a file and a line can be navigated to (IDE-P3-062).</summary>
     public bool IsNavigable => Location is { FilePath: not null, Line: > 0 };
 }
@@ -147,7 +150,9 @@ public sealed partial class MessagesService : IMessagesService
     /// DSG-FD-071 <c>Show Problems</c>: the list is replaced by the problems of one form (1-based positions already);
     /// one <see cref="Changed"/>.
     /// </summary>
-    public void ShowFormDiagnostics(IEnumerable<FreexComp.Designer.Text.FormDiagnostic> diagnostics)
+    /// <param name="navigate">DSG-FD-071: what a row's navigation does instead of opening the file (the form's views).</param>
+    public void ShowFormDiagnostics(IEnumerable<FreexComp.Designer.Text.FormDiagnostic> diagnostics,
+        Action<FreexComp.Designer.Text.FormDiagnostic>? navigate = null)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
         Clear();
@@ -161,6 +166,12 @@ public sealed partial class MessagesService : IMessagesService
             };
             var location = d.Line > 0 ? new MessageLocation(d.Path, d.Line, d.Col, Math.Max(d.EndLine, d.Line), Math.Max(d.EndCol, d.Col)) : null;
             var item = new MessageItem(_items.Count, severity, d.Code, d.Message, location, [], false);
+            if (navigate is not null)
+            {
+                var diagnostic = d;
+                item.Navigate = () => navigate(diagnostic);
+            }
+
             _items.List.Add(item);
             Count(severity);
             OnAdded(item);

@@ -19,7 +19,9 @@ public sealed class LargeFileTests
 
     [Fact(Timeout = 120000)]
     [Trait("Req", "IDE-P1-054")]
-    public async Task OpensAsPlainTextAfterConfirmation()
+    public Task OpensAsPlainTextAfterConfirmation() => TestUiThread.RunAsync(() => OpensAsPlainTextAfterConfirmationOnUiThread()); // I-209
+
+    private async Task OpensAsPlainTextAfterConfirmationOnUiThread()
     {
         var fs = new InMemoryFileSystem();
         var services = TestComposition.Build(o => o.FileSystem = fs);

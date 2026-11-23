@@ -51,7 +51,9 @@ public sealed class MenuTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task SubmenuStateFollowsChildHandlers()
+    public Task SubmenuStateFollowsChildHandlers() => TestUiThread.RunAsync(() => SubmenuStateFollowsChildHandlersOnUiThread()); // I-209
+
+    private async Task SubmenuStateFollowsChildHandlersOnUiThread()
     {
         var fs = new InMemoryFileSystem();
         var services = TestComposition.Build(o => o.FileSystem = fs);

@@ -7,6 +7,7 @@ using FreexComp.Designer.Editing;
 using FreexComp.Designer.Inspector;
 using FreexComp.Designer.Model;
 using FreexComp.Designer.Surface;
+using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Designer.CodeSync;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Models;
@@ -31,7 +32,7 @@ public sealed record EventRow(string Name, string Signature, string Value);
 /// the Properties page (rows of <see cref="PropertyGridModel"/>) and the Events page, and commits edits as one designer
 /// undo unit for all selected components (§9) through <see cref="DesignSurfaceController.Commit"/>. No Avalonia types.
 /// </summary>
-public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
+public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICommandTarget
 {
     private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
     private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
@@ -115,6 +116,7 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
 
     partial void OnPageChanged(InspectorPage value)
     {
+        RaiseSessionStateChanged();
         Cancel();
         EnsureCurrentEvent();
         RaiseRowsChanged();
@@ -176,6 +178,8 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
             }
 
             _grid.SetSelection(Selection);
+            _grid.CollapsedCategories = _collapsed;
+            _grid.ExpandedPaths = ExpandedSet();
             _grid.Arrangement = IsArrangedByName ? PropertyArrangement.Name : PropertyArrangement.Category;
             _grid.Filter = _filter;
             return _grid.Rows;
@@ -222,14 +226,22 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
     public void Expand(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
-        _grid?.ExpandedPaths.Add(path);
+        if (ExpandedSet().Add(path))
+        {
+            RaiseSessionStateChanged();
+        }
+
         RaiseRowsChanged();
     }
 
     public void Collapse(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
-        _grid?.ExpandedPaths.Remove(path);
+        if (ExpandedSet().Remove(path))
+        {
+            RaiseSessionStateChanged();
+        }
+
         RaiseRowsChanged();
     }
 
@@ -237,11 +249,12 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
     public void ToggleCategory(string category)
     {
         ArgumentNullException.ThrowIfNull(category);
-        if (_grid is { } grid && !grid.CollapsedCategories.Remove(category))
+        if (!_collapsed.Remove(category))
         {
-            grid.CollapsedCategories.Add(category);
+            _collapsed.Add(category);
         }
 
+        RaiseSessionStateChanged();
         RaiseRowsChanged();
     }
 
@@ -256,23 +269,9 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
     /// </summary>
     public bool BeginEdit(string? entry)
     {
-        string display;
-        if (Page == InspectorPage.Events)
-        {
-            if (IsEventsReadOnly || CurrentEvent is not { } name || AllEvents().FirstOrDefault(r => Names.Equals(r.Name, name)) is not { } ev)
-            {
-                return false;
-            }
-
-            display = ev.Value;
-        }
-        else if (IsEmpty || Surface.IsReadOnly || CurrentRow is not { } row || !IsTextEditable(row))
+        if (EditDisplay() is not { } display)
         {
             return false;
-        }
-        else
-        {
-            display = row.Display;
         }
 
         _original = display;
@@ -280,6 +279,19 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
         EditError = null;
         IsEditing = true;
         return true;
+    }
+
+    /// <summary>The text an edit of the current row starts from; null when the row is not edited as text.</summary>
+    private string? EditDisplay()
+    {
+        if (Page == InspectorPage.Events)
+        {
+            return IsEventsReadOnly || CurrentEvent is not { } name || AllEvents().FirstOrDefault(r => Names.Equals(r.Name, name)) is not { } ev
+                ? null
+                : ev.Value;
+        }
+
+        return IsEmpty || Surface.IsReadOnly || CurrentRow is not { } row || !IsTextEditable(row) ? null : row.Display;
     }
 
     /// <summary>
@@ -751,9 +763,10 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
             return;
         }
 
+        var expanded = ExpandedSet();
         if (!expand)
         {
-            _grid.ExpandedPaths.Clear();
+            expanded.Clear();
         }
         else
         {
@@ -763,11 +776,12 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
                 added = false;
                 foreach (var row in Rows.Where(r => r.IsExpandable && !r.IsExpanded))
                 {
-                    added |= _grid.ExpandedPaths.Add(row.Path);
+                    added |= expanded.Add(row.Path);
                 }
             }
         }
 
+        RaiseSessionStateChanged();
         RaiseRowsChanged();
     }
 
@@ -1206,8 +1220,6 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
         var grid = new PropertyGridModel(catalog);
         if (_grid is { } old)
         {
-            grid.ExpandedPaths.UnionWith(old.ExpandedPaths);
-            grid.CollapsedCategories.UnionWith(old.CollapsedCategories);
             grid.Arrangement = old.Arrangement;
             grid.Filter = old.Filter;
         }

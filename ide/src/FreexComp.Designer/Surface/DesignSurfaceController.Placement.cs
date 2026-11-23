@@ -336,9 +336,12 @@ public sealed partial class DesignSurfaceController
         var created = Document.FindByName(name)!;
         var renumber = TabOrderRules.IsFocusable(created) ? TabOrderRules.Renumber(parent, appended: [created]) : [];
         undo.InsertRange(0, ApplyEdit(renumber));
+        // DSG-SUR-088: a click-placed auto-size control gets its measured size; a dragged size is the user's and stays.
+        var (sizeRedo, sizeUndo) = size is null ? ApplyAutoSize([created]) : ([], []);
+        undo.InsertRange(0, sizeUndo);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(created);
-        PushUnit(new DesignerUndoUnit(UndoTitles.Add, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], edits,
+        PushUnit(new DesignerUndoUnit(UndoTitles.Add, [.. changes, .. renumber, .. sizeRedo, .. commitRedo], [.. commitUndo, .. undo], edits,
             before, Selection.ToSnapshot()) { TitleArgument = info.ClassName, CodeOps = ops });
         return true;
     }

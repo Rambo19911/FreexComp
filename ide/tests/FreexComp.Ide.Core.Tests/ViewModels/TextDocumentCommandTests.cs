@@ -2,6 +2,7 @@ using FreexComp.Ide.Core.Languages;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.ViewModels;
 
@@ -16,7 +17,9 @@ public sealed class TextDocumentCommandTests
     [Fact]
     [Trait("Req", "IDE-ARCH-030")]
     [Trait("Req", "IDE-P1-095")]
-    public async Task UndoRedoUseTheBufferAndFollowItsState()
+    public Task UndoRedoUseTheBufferAndFollowItsState() => TestUiThread.RunAsync(() => UndoRedoUseTheBufferAndFollowItsStateOnUiThread()); // I-209
+
+    private async Task UndoRedoUseTheBufferAndFollowItsStateOnUiThread()
     {
         var doc = Create("abc");
         var target = doc.CommandTarget!;

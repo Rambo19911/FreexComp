@@ -91,7 +91,9 @@ public sealed class CodeTemplateTests
     [Trait("Req", "IDE-ED-062")]
     [Trait("Req", "IDE-ED-066")]
     [Trait("Req", "IDE-SET-080")]
-    public async Task ExpansionFieldsAndMirrors()
+    public Task ExpansionFieldsAndMirrors() => TestUiThread.RunAsync(() => ExpansionFieldsAndMirrorsOnUiThread()); // I-209
+
+    private async Task ExpansionFieldsAndMirrorsOnUiThread()
     {
         // IDE-ED-060: fields, defaults, mirrors, $end$, $$, indentation of later lines, a leading tab = one indent unit.
         var expansion = CodeTemplateExpander.Expand("a $x:1$ $$ $x$\n\tb$end$\nc", "  ", "  ", "\r\n");
@@ -202,7 +204,9 @@ public sealed class CodeTemplateTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-064")]
-    public async Task TabExpansionRules()
+    public Task TabExpansionRules() => TestUiThread.RunAsync(() => TabExpansionRulesOnUiThread()); // I-209
+
+    private async Task TabExpansionRulesOnUiThread()
     {
         // Right after an abbreviation (case-insensitive): expands, replacing it, at the line's indentation.
         var (services, _, doc) = await OpenAsync(Head + "  BEGIN|\nend;\nend.\n");

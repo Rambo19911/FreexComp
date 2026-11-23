@@ -56,7 +56,9 @@ public sealed class SaveTests
     [InlineData("disk")]
     [Trait("Category", "Integration")]
     [Trait("Req", "IDE-P1-081")]
-    public async Task AtomicWriteLeavesNoTempFile(string kind)
+    public Task AtomicWriteLeavesNoTempFile(string kind) => TestUiThread.RunAsync(() => AtomicWriteLeavesNoTempFileOnUiThread(kind)); // I-209
+
+    private async Task AtomicWriteLeavesNoTempFileOnUiThread(string kind)
     {
         using var temp = new TempDirectory();
         IFileSystem inner = kind == "disk" ? new PhysicalFileSystem() : new InMemoryFileSystem();
@@ -146,7 +148,9 @@ public sealed class SaveTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-084")]
-    public async Task PreservesEncodingAndBom()
+    public Task PreservesEncodingAndBom() => TestUiThread.RunAsync(() => PreservesEncodingAndBomOnUiThread()); // I-209
+
+    private async Task PreservesEncodingAndBomOnUiThread()
     {
         (FileEncoding Encoding, byte[] Bom)[] cases =
         [
@@ -184,7 +188,9 @@ public sealed class SaveTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-083")]
-    public async Task LossyEncodingOffersUtf8()
+    public Task LossyEncodingOffersUtf8() => TestUiThread.RunAsync(() => LossyEncodingOffersUtf8OnUiThread()); // I-209
+
+    private async Task LossyEncodingOffersUtf8OnUiThread()
     {
         var path = File(@"C:\p\Latin.pas", [0x41, 0xFC, 0x0D, 0x0A]); // "Aü" in Windows-1252
         var doc = await OpenAsync(path);
@@ -219,7 +225,9 @@ public sealed class SaveTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-080")]
-    public async Task TrimAndFinalNewlineOptions()
+    public Task TrimAndFinalNewlineOptions() => TestUiThread.RunAsync(() => TrimAndFinalNewlineOptionsOnUiThread()); // I-209
+
+    private async Task TrimAndFinalNewlineOptionsOnUiThread()
     {
         var settings = _services.Settings;
 
@@ -293,7 +301,9 @@ public sealed class SaveTests
     [Trait("Req", "IDE-P1-082")]
     [Trait("Req", "IDE-P1-080")]
     [Trait("Req", "UI-MSG-002")]
-    public async Task FailedSaveKeepsDocumentModified()
+    public Task FailedSaveKeepsDocumentModified() => TestUiThread.RunAsync(() => FailedSaveKeepsDocumentModifiedOnUiThread()); // I-209
+
+    private async Task FailedSaveKeepsDocumentModifiedOnUiThread()
     {
         var path = File(@"C:\p\A.pas", "a\r\n");
         var doc = await OpenAsync(path);
@@ -352,7 +362,9 @@ public sealed class SaveTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-085")]
-    public async Task SaveAllCountsAndOrder()
+    public Task SaveAllCountsAndOrder() => TestUiThread.RunAsync(() => SaveAllCountsAndOrderOnUiThread()); // I-209
+
+    private async Task SaveAllCountsAndOrderOnUiThread()
     {
         var commands = _services.Commands;
         var a = await OpenAsync(File(@"C:\p\A.pas", "a\r\n"));

@@ -4,6 +4,7 @@ using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Tests.Build;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.CodeModel;
 
@@ -23,7 +24,9 @@ public sealed class ParameterInfoTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-090")]
-    public async Task CurrentParameterTracksCommas()
+    public Task CurrentParameterTracksCommas() => TestUiThread.RunAsync(() => CurrentParameterTracksCommasOnUiThread()); // I-209
+
+    private async Task CurrentParameterTracksCommasOnUiThread()
     {
         var bed = await SemanticHighlightTests.StartAsync("");
         bed.File(BuildTestBed.UnitPath, Unit);

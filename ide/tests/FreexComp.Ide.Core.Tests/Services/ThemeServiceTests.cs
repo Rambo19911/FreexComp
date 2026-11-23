@@ -22,7 +22,9 @@ public sealed class ThemeServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-021")]
-    public async Task ThemeCommandsSetTheSettingAndCheckTheActiveEntry()
+    public Task ThemeCommandsSetTheSettingAndCheckTheActiveEntry() => TestUiThread.RunAsync(() => ThemeCommandsSetTheSettingAndCheckTheActiveEntryOnUiThread()); // I-209
+
+    private async Task ThemeCommandsSetTheSettingAndCheckTheActiveEntryOnUiThread()
     {
         var host = new FakeThemeHost();
         var services = Compose(host, "light");
@@ -43,7 +45,9 @@ public sealed class ThemeServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-021")]
-    public async Task FollowSystemTracksOsChanges()
+    public Task FollowSystemTracksOsChanges() => TestUiThread.RunAsync(() => FollowSystemTracksOsChangesOnUiThread()); // I-209
+
+    private async Task FollowSystemTracksOsChangesOnUiThread()
     {
         var host = new FakeThemeHost { SystemTheme = ThemeKind.Light };
         var services = Compose(host, "dark");

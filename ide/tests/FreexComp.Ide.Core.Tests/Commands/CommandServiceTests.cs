@@ -48,7 +48,9 @@ public sealed class CommandServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-046")]
-    public async Task ReentrantExecutionIsBlocked()
+    public Task ReentrantExecutionIsBlocked() => TestUiThread.RunAsync(() => ReentrantExecutionIsBlockedOnUiThread()); // I-209
+
+    private async Task ReentrantExecutionIsBlockedOnUiThread()
     {
         var service = Create();
         var save = new TestHandler { Pending = new TaskCompletionSource() };
@@ -77,7 +79,9 @@ public sealed class CommandServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-045")]
     [Trait("Req", "UI-MSG-005")]
-    public async Task HandlerExceptionShowsInternalError()
+    public Task HandlerExceptionShowsInternalError() => TestUiThread.RunAsync(() => HandlerExceptionShowsInternalErrorOnUiThread()); // I-209
+
+    private async Task HandlerExceptionShowsInternalErrorOnUiThread()
     {
         var service = Create();
         var handler = new TestHandler { Throw = () => new InvalidOperationException("boom") };
@@ -192,7 +196,9 @@ public sealed class CommandServiceTests
     [Trait("Req", "UI-CMD-010")]
     [Trait("Req", "UI-CMD-011")]
     [Trait("Req", "IDE-ARCH-042")]
-    public async Task FocusRoutingFallsBackToActiveDocument()
+    public Task FocusRoutingFallsBackToActiveDocument() => TestUiThread.RunAsync(() => FocusRoutingFallsBackToActiveDocumentOnUiThread()); // I-209
+
+    private async Task FocusRoutingFallsBackToActiveDocumentOnUiThread()
     {
         var services = TestComposition.Build();
         var focus = services.FocusTracker;

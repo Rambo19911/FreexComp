@@ -16,7 +16,8 @@ public sealed partial class DesignSurfaceController
     /// <summary>
     /// An Object Inspector commit (object-inspector.md §9) as one undo unit: the repair of DSG-CS-091 (a) when due, then
     /// <paramref name="code"/> (the code-sync edits, re-run on redo through <paramref name="codeOps"/>), then
-    /// <paramref name="changes"/> and the layout commit (DSG-LAY-040). False when the form is read-only or code sync
+    /// <paramref name="changes"/>, the measured auto-size of controls whose text-size properties changed (DSG-SUR-088) and the
+    /// layout commit (DSG-LAY-040). False when the form is read-only or code sync
     /// refused the edit (DSG-CS-004: <c>Msg.Designer.CodeSyncConflict</c>; nothing is changed then).
     /// </summary>
     /// <exception cref="InvalidFormChangeException">A change is invalid (a caller error); the code edits were reverted.</exception>
@@ -57,8 +58,10 @@ public sealed partial class DesignSurfaceController
             throw;
         }
 
+        var (sizeRedo, sizeUndo) = ApplyAutoSize(AutoSizeTargets(changes)); // DSG-SUR-088
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-        PushUnit(new DesignerUndoUnit(titleKey, [.. changes, .. commitRedo], [.. commitUndo, .. undo], edits, before, Selection.ToSnapshot())
+        PushUnit(new DesignerUndoUnit(titleKey, [.. changes, .. sizeRedo, .. commitRedo], [.. commitUndo, .. sizeUndo, .. undo], edits, before,
+            Selection.ToSnapshot())
         {
             CodeOps = codeOps ?? [],
         });

@@ -15,7 +15,9 @@ public sealed partial class BuildServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-045")]
     [Trait("Req", "IDE-ARCH-086")]
-    public async Task LargeDiagnosticBurstIsBatched()
+    public Task LargeDiagnosticBurstIsBatched() => TestUiThread.RunAsync(() => LargeDiagnosticBurstIsBatchedOnUiThread()); // I-209
+
+    private async Task LargeDiagnosticBurstIsBatchedOnUiThread()
     {
         var clock = new ManualClock();
         var deliveries = new List<(DateTimeOffset At, int Count)>();
@@ -65,7 +67,9 @@ public sealed partial class BuildServiceTests
     /// <summary>IDE-P3-031: the fake engine is scripted with the contract's own event records.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-031")]
-    public async Task FakeEngineReportsScriptedEventsAndResult()
+    public Task FakeEngineReportsScriptedEventsAndResult() => TestUiThread.RunAsync(() => FakeEngineReportsScriptedEventsAndResultOnUiThread()); // I-209
+
+    private async Task FakeEngineReportsScriptedEventsAndResultOnUiThread()
     {
         var engine = new FakeBuildEngine();
         var error = FakeBuildEngine.Diag("E2003", DiagnosticSeverity.Error, "Undeclared identifier 'Foo'", @"C:\p\Unit1.pas", 12, 5, 3);

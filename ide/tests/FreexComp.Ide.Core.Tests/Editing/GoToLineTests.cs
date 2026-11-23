@@ -28,7 +28,9 @@ public sealed class GoToLineTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-120")]
     [Trait("Req", "IDE-P1-100")]
-    public async Task ClampsAndUnfolds()
+    public Task ClampsAndUnfolds() => TestUiThread.RunAsync(() => ClampsAndUnfoldsOnUiThread()); // I-209
+
+    private async Task ClampsAndUnfoldsOnUiThread()
     {
         var fs = new InMemoryFileSystem();
         var services = TestComposition.Build(o => o.FileSystem = fs);

@@ -50,7 +50,9 @@ public sealed class NewFormTemplateTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-110")]
     [Trait("Req", "DSG-CS-111")]
-    public async Task GeneratesUnitAndFormAndProjectEntry()
+    public Task GeneratesUnitAndFormAndProjectEntry() => TestUiThread.RunAsync(() => GeneratesUnitAndFormAndProjectEntryOnUiThread()); // I-209
+
+    private async Task GeneratesUnitAndFormAndProjectEntryOnUiThread()
     {
         // The texts of §11.
         Assert.Equal(Unit("Form2", "\n"), NewFormTemplate.UnitText("Form2", "Form2"));

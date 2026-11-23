@@ -71,7 +71,9 @@ public sealed class ProjectServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-011")]
     [Trait("Req", "IDE-PM-012")]
-    public async Task OpenValidatesAndPopulatesModel()
+    public Task OpenValidatesAndPopulatesModel() => TestUiThread.RunAsync(() => OpenValidatesAndPopulatesModelOnUiThread()); // I-209
+
+    private async Task OpenValidatesAndPopulatesModelOnUiThread()
     {
         // Main source not listed, a duplicate entry (case and separator differ), unknown active configuration.
         File(ProjectPath, """
@@ -120,7 +122,9 @@ public sealed class ProjectServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-011")]
     [Trait("Req", "IDE-PM-014")]
-    public async Task OpenRestoresSession()
+    public Task OpenRestoresSession() => TestUiThread.RunAsync(() => OpenRestoresSessionOnUiThread()); // I-209
+
+    private async Task OpenRestoresSessionOnUiThread()
     {
         WriteHello();
         File(Dir + @"\.freexcomp\session.json", """
@@ -155,7 +159,9 @@ public sealed class ProjectServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-012")]
-    public async Task EmptyFilePathIsIgnoredAndKept()
+    public Task EmptyFilePathIsIgnoredAndKept() => TestUiThread.RunAsync(() => EmptyFilePathIsIgnoredAndKeptOnUiThread()); // I-209
+
+    private async Task EmptyFilePathIsIgnoredAndKeptOnUiThread()
     {
         var text = """
             { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
@@ -180,7 +186,9 @@ public sealed class ProjectServiceTests
     [Trait("Req", "IDE-PM-005")]
     [Trait("Req", "IDE-PM-011")]
     [Trait("Req", "IDE-PM-012")]
-    public async Task OpenRejectsInvalidProjects(string text, string messageId, string? reason)
+    public Task OpenRejectsInvalidProjects(string text, string messageId, string? reason) => TestUiThread.RunAsync(() => OpenRejectsInvalidProjectsOnUiThread(text, messageId, reason)); // I-209
+
+    private async Task OpenRejectsInvalidProjectsOnUiThread(string text, string messageId, string? reason)
     {
         File(ProjectPath, text);
         Dialogs.Answer(messageId, "OK");
@@ -208,7 +216,9 @@ public sealed class ProjectServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-011")]
-    public async Task OpenFailedOffersOpenAsText()
+    public Task OpenFailedOffersOpenAsText() => TestUiThread.RunAsync(() => OpenFailedOffersOpenAsTextOnUiThread()); // I-209
+
+    private async Task OpenFailedOffersOpenAsTextOnUiThread()
     {
         File(ProjectPath, "{ // comments are not JSON\n}");
         Dialogs.Answer("Msg.Project.OpenFailed", "OpenAsText");
@@ -225,7 +235,9 @@ public sealed class ProjectServiceTests
     [Trait("Req", "IDE-PM-080")]
     [Trait("Req", "UI-DLG-063")]
     [Trait("Req", "UI-DLG-055")]
-    public async Task CloseKeepsNonMemberDocuments()
+    public Task CloseKeepsNonMemberDocuments() => TestUiThread.RunAsync(() => CloseKeepsNonMemberDocumentsOnUiThread()); // I-209
+
+    private async Task CloseKeepsNonMemberDocumentsOnUiThread()
     {
         WriteHello();
         var loose = await OpenDocumentAsync(File(@"C:\other\Loose.pas", "unit Loose;\n"));
@@ -276,7 +288,9 @@ public sealed class ProjectServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-010")]
     [Trait("Req", "UI-DLG-063")]
-    public async Task OpeningAnotherProjectClosesTheCurrentOneFirst()
+    public Task OpeningAnotherProjectClosesTheCurrentOneFirst() => TestUiThread.RunAsync(() => OpeningAnotherProjectClosesTheCurrentOneFirstOnUiThread()); // I-209
+
+    private async Task OpeningAnotherProjectClosesTheCurrentOneFirstOnUiThread()
     {
         WriteHello();
         File(@"C:\q\Two\Two.pproj", """{ "formatVersion": 1, "name": "Two", "mainSource": "Two.pas" }""");
@@ -300,7 +314,9 @@ public sealed class ProjectServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-015")]
-    public async Task ViewSourceOpensMainSource()
+    public Task ViewSourceOpensMainSource() => TestUiThread.RunAsync(() => ViewSourceOpensMainSourceOnUiThread()); // I-209
+
+    private async Task ViewSourceOpensMainSourceOnUiThread()
     {
         WriteHello();
         Assert.False(_services.Commands.CanExecute("project.viewSource"));
@@ -315,7 +331,9 @@ public sealed class ProjectServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-053")]
-    public async Task FileOpenWithProjectFileOpensTheProject()
+    public Task FileOpenWithProjectFileOpensTheProject() => TestUiThread.RunAsync(() => FileOpenWithProjectFileOpensTheProjectOnUiThread()); // I-209
+
+    private async Task FileOpenWithProjectFileOpensTheProjectOnUiThread()
     {
         WriteHello();
         var notes = File(@"C:\other\notes.txt", "n");
@@ -330,7 +348,9 @@ public sealed class ProjectServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-051")]
-    public async Task ProjectDirectoryIsTheThirdInitialFolder()
+    public Task ProjectDirectoryIsTheThirdInitialFolder() => TestUiThread.RunAsync(() => ProjectDirectoryIsTheThirdInitialFolderOnUiThread()); // I-209
+
+    private async Task ProjectDirectoryIsTheThirdInitialFolderOnUiThread()
     {
         WriteHello();
         _fs.CreateDirectory(Path.Combine(_services.UserPaths.DocumentsDirectory, "FreexComp Projects"));
@@ -345,7 +365,9 @@ public sealed class ProjectServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-WIN-030")]
     [Trait("Req", "UI-WIN-031")]
-    public async Task WindowTitleSubjectIsTheProject()
+    public Task WindowTitleSubjectIsTheProject() => TestUiThread.RunAsync(() => WindowTitleSubjectIsTheProjectOnUiThread()); // I-209
+
+    private async Task WindowTitleSubjectIsTheProjectOnUiThread()
     {
         WriteHello();
         var window = new MainWindowViewModel(_services);
@@ -373,7 +395,9 @@ public sealed class ProjectServiceTests
     [Trait("Req", "IDE-PM-041")]
     [Trait("Req", "IDE-PM-042")]
     [Trait("Req", "IDE-PM-004")]
-    public async Task AddNewUnitNamesAndSkeleton()
+    public Task AddNewUnitNamesAndSkeleton() => TestUiThread.RunAsync(() => AddNewUnitNamesAndSkeletonOnUiThread()); // I-209
+
+    private async Task AddNewUnitNamesAndSkeletonOnUiThread()
     {
         WriteHello();
         File(Dir + @"\Unit3.pas", "unit Unit3;\n"); // on disk in the target folder, not in the project
@@ -421,7 +445,9 @@ public sealed class ProjectServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-041")]
-    public async Task AddNewUnitWriteFailureOffersRetry()
+    public Task AddNewUnitWriteFailureOffersRetry() => TestUiThread.RunAsync(() => AddNewUnitWriteFailureOffersRetryOnUiThread()); // I-209
+
+    private async Task AddNewUnitWriteFailureOffersRetryOnUiThread()
     {
         var fs = new RecordingFileSystem(_fs);
         var services = TestComposition.Build(o =>
@@ -465,7 +491,9 @@ public sealed class ProjectServiceTests
     [Trait("Req", "IDE-PM-051")]
     [Trait("Req", "IDE-PM-052")]
     [Trait("Req", "IDE-PM-030")]
-    public async Task AddExistingDetectsFormCompanion()
+    public Task AddExistingDetectsFormCompanion() => TestUiThread.RunAsync(() => AddExistingDetectsFormCompanionOnUiThread()); // I-209
+
+    private async Task AddExistingDetectsFormCompanionOnUiThread()
     {
         WriteHello();
         var main = File(Dir + @"\forms\Main.pas", "unit Main;\n\ninterface\n\n{$FORM Main.form}\n\nimplementation\n\nend.\n");
@@ -511,7 +539,9 @@ public sealed class ProjectServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-031")]
-    public async Task DuplicateUnitNameIsRefused()
+    public Task DuplicateUnitNameIsRefused() => TestUiThread.RunAsync(() => DuplicateUnitNameIsRefusedOnUiThread()); // I-209
+
+    private async Task DuplicateUnitNameIsRefusedOnUiThread()
     {
         WriteHello();
         var duplicate = File(@"C:\other\unit1.pas", "unit unit1;\ninterface\nimplementation\nend.\n");
@@ -544,7 +574,9 @@ public sealed class ProjectServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-060")]
     [Trait("Req", "IDE-PM-061")]
-    public async Task RemoveAndDeleteRules()
+    public Task RemoveAndDeleteRules() => TestUiThread.RunAsync(() => RemoveAndDeleteRulesOnUiThread()); // I-209
+
+    private async Task RemoveAndDeleteRulesOnUiThread()
     {
         File(ProjectPath, """
             { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
@@ -626,7 +658,9 @@ public sealed class ProjectServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-004")]
     [Trait("Req", "IDE-PM-033")]
-    public async Task FileOperationsSaveProjectImmediately()
+    public Task FileOperationsSaveProjectImmediately() => TestUiThread.RunAsync(() => FileOperationsSaveProjectImmediatelyOnUiThread()); // I-209
+
+    private async Task FileOperationsSaveProjectImmediatelyOnUiThread()
     {
         WriteHello();
         var extra = File(@"C:\p\Hello\Extra.pas", "unit Extra;\ninterface\nimplementation\nend.\n");
@@ -690,7 +724,9 @@ public sealed class ProjectServiceTests
     [Trait("Req", "UI-DLG-070")]
     [Trait("Req", "UI-DLG-071")]
     [Trait("Req", "UI-DLG-073")]
-    public async Task RenameUpdatesHeadingFormAndProject()
+    public Task RenameUpdatesHeadingFormAndProject() => TestUiThread.RunAsync(() => RenameUpdatesHeadingFormAndProjectOnUiThread()); // I-209
+
+    private async Task RenameUpdatesHeadingFormAndProjectOnUiThread()
     {
         WriteRenameProject();
         File(Dir + @"\forms\Taken.pas", "unit Taken;\n");
@@ -775,7 +811,9 @@ public sealed class ProjectServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-072")]
-    public async Task UpdateReferencesIsOfferedForUnitsOnly()
+    public Task UpdateReferencesIsOfferedForUnitsOnly() => TestUiThread.RunAsync(() => UpdateReferencesIsOfferedForUnitsOnlyOnUiThread()); // I-209
+
+    private async Task UpdateReferencesIsOfferedForUnitsOnlyOnUiThread()
     {
         WriteRenameProject();
         Assert.True(await Projects.OpenAsync(ProjectPath));
@@ -812,7 +850,9 @@ public sealed class ProjectServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-071")]
-    public async Task RenameRollsBackOnFailure()
+    public Task RenameRollsBackOnFailure() => TestUiThread.RunAsync(() => RenameRollsBackOnFailureOnUiThread()); // I-209
+
+    private async Task RenameRollsBackOnFailureOnUiThread()
     {
         var fs = new RecordingFileSystem(_fs);
         var services = TestComposition.Build(o =>

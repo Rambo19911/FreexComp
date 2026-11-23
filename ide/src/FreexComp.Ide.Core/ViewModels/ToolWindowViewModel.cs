@@ -65,6 +65,15 @@ public abstract class ToolWindowViewModel : ObservableObject
     /// <summary>An optional labelled combo box drawn before the tool-bar buttons (UI-TW-501).</summary>
     public virtual ToolWindowToolBarChoice? ToolBarChoice => null;
 
+    /// <summary>
+    /// The caption shows a <c>⋯</c> button (<c>Tool.&lt;Name&gt;.Menu</c>) that opens <see cref="BuildCaptionMenu"/>
+    /// (ui/designer.md UI-DSG-113); raise a change of this property when it changes.
+    /// </summary>
+    public virtual bool HasCaptionMenu => false;
+
+    /// <summary>The items of the caption's <c>⋯</c> menu; empty when <see cref="HasCaptionMenu"/> is false.</summary>
+    public virtual IReadOnlyList<MenuItemModel> BuildCaptionMenu() => [];
+
     /// <summary>The tool-bar buttons, built from <see cref="ToolBarCommands"/>.</summary>
     public IReadOnlyList<ToolBarButtonModel> ToolBar { get; private set; } = [];
 

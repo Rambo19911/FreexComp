@@ -45,7 +45,9 @@ public sealed class FindServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ARCH-084")]
-    public async Task NewerSearchAndClosingCancelTheBackgroundSearch()
+    public Task NewerSearchAndClosingCancelTheBackgroundSearch() => TestUiThread.RunAsync(() => NewerSearchAndClosingCancelTheBackgroundSearchOnUiThread()); // I-209
+
+    private async Task NewerSearchAndClosingCancelTheBackgroundSearchOnUiThread()
     {
         var text = new StringBuilder();
         while (text.Length <= WholeTextClassifier.BackgroundThreshold)
@@ -87,7 +89,9 @@ public sealed class FindServiceTests
     [Trait("Req", "IDE-P1-101")]
     [Trait("Req", "IDE-P1-106")]
     [Trait("Req", "IDE-ARCH-081")]
-    public async Task IncrementalMatchesAndCounter()
+    public Task IncrementalMatchesAndCounter() => TestUiThread.RunAsync(() => IncrementalMatchesAndCounterOnUiThread()); // I-209
+
+    private async Task IncrementalMatchesAndCounterOnUiThread()
     {
         var (services, doc, clock) = await OpenAsync("alpha beta alpha\r\nalpha\r\n");
         var find = services.Find;
@@ -169,7 +173,9 @@ public sealed class FindServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-102")]
     [Trait("Req", "IDE-P1-103")]
-    public async Task OptionsCaseWordRegex()
+    public Task OptionsCaseWordRegex() => TestUiThread.RunAsync(() => OptionsCaseWordRegexOnUiThread()); // I-209
+
+    private async Task OptionsCaseWordRegexOnUiThread()
     {
         var (services, doc, clock) = await OpenAsync("Foo foo food _foo\r\nbar$ end\r\nx\r\n");
         var find = services.Find;
@@ -227,7 +233,9 @@ public sealed class FindServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-104")]
     [Trait("Req", "UI-DLG-103")]
-    public async Task WrapAroundMessages()
+    public Task WrapAroundMessages() => TestUiThread.RunAsync(() => WrapAroundMessagesOnUiThread()); // I-209
+
+    private async Task WrapAroundMessagesOnUiThread()
     {
         var (services, doc, clock) = await OpenAsync("one two one\r\n");
         var commands = services.Commands;
@@ -286,7 +294,9 @@ public sealed class FindServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-107")]
     [Trait("Req", "IDE-P1-109")]
-    public async Task ReplaceAndReplaceAllSingleUndo()
+    public Task ReplaceAndReplaceAllSingleUndo() => TestUiThread.RunAsync(() => ReplaceAndReplaceAllSingleUndoOnUiThread()); // I-209
+
+    private async Task ReplaceAndReplaceAllSingleUndoOnUiThread()
     {
         var (services, doc, clock) = await OpenAsync("cat dog cat\r\ncat\r\n");
         var find = services.Find;
@@ -338,7 +348,9 @@ public sealed class FindServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-107")]
-    public async Task RegexReplacementGroups()
+    public Task RegexReplacementGroups() => TestUiThread.RunAsync(() => RegexReplacementGroupsOnUiThread()); // I-209
+
+    private async Task RegexReplacementGroupsOnUiThread()
     {
         var (services, doc, _) = await OpenAsync("a=1\r\nb=2\r\n");
         var find = services.Find;
@@ -371,7 +383,9 @@ public sealed class FindServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-102")]
-    public async Task InSelectionRangeTracksEdits()
+    public Task InSelectionRangeTracksEdits() => TestUiThread.RunAsync(() => InSelectionRangeTracksEditsOnUiThread()); // I-209
+
+    private async Task InSelectionRangeTracksEditsOnUiThread()
     {
         var (services, doc, clock) = await OpenAsync("x1\r\nx2\r\nx3\r\nx4\r\n");
         var find = services.Find;
@@ -418,7 +432,9 @@ public sealed class FindServiceTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P1-105")]
-    public async Task FindSelectionNextWithoutPanel()
+    public Task FindSelectionNextWithoutPanel() => TestUiThread.RunAsync(() => FindSelectionNextWithoutPanelOnUiThread()); // I-209
+
+    private async Task FindSelectionNextWithoutPanelOnUiThread()
     {
         var (services, doc, _) = await OpenAsync("a.b x a.b axb\r\nword  here word\r\n");
         var find = services.Find;

@@ -170,7 +170,9 @@ public sealed class RecentItemsTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-074")]
     [Trait("Req", "IDE-P1-133")]
-    public async Task ClearRemovesUnpinnedEntriesOfBothLists()
+    public Task ClearRemovesUnpinnedEntriesOfBothLists() => TestUiThread.RunAsync(() => ClearRemovesUnpinnedEntriesOfBothListsOnUiThread()); // I-209
+
+    private async Task ClearRemovesUnpinnedEntriesOfBothListsOnUiThread()
     {
         Assert.False(_services.Commands.CanExecute("file.clearRecent"));
         Recent.Add(RecentKind.Project, Project(1));
@@ -199,7 +201,9 @@ public sealed class RecentItemsTests
     [Trait("Req", "IDE-P1-130")]
     [Trait("Req", "IDE-P1-132")]
     [Trait("Req", "IDE-SET-073")]
-    public async Task OpeningRecordsEntriesAndMissingOnesAskToRemove()
+    public Task OpeningRecordsEntriesAndMissingOnesAskToRemove() => TestUiThread.RunAsync(() => OpeningRecordsEntriesAndMissingOnesAskToRemoveOnUiThread()); // I-209
+
+    private async Task OpeningRecordsEntriesAndMissingOnesAskToRemoveOnUiThread()
     {
         const string dir = @"C:\p\Hello";
         File(dir + @"\Hello.pproj", """{ "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas" }""");

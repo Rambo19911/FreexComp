@@ -13,7 +13,9 @@ public sealed class WindowTitleTests
     [Trait("Req", "IDE-P3-005")]
     [Trait("Req", "UI-WIN-032")]
     [Trait("Req", "UI-WIN-033")]
-    public async Task FormatPerState()
+    public Task FormatPerState() => TestUiThread.RunAsync(() => FormatPerStateOnUiThread()); // I-209
+
+    private async Task FormatPerStateOnUiThread()
     {
         // main-window.md §4: [<project>][ (<state>)] – FreexComp, en dash between parts.
         Assert.Equal("FreexComp", WindowTitle.Format(null, IdeState.Idle));

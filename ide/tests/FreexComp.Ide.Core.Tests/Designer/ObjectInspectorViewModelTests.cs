@@ -5,6 +5,7 @@ using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
 using static FreexComp.Ide.Core.Tests.Designer.DesignerFixture;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Designer;
 
@@ -36,7 +37,9 @@ public sealed class ObjectInspectorViewModelTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-001")]
     [Trait("Req", "DSG-OI-031")]
-    public async Task FollowsSelectionAndKeepsCurrentRow()
+    public Task FollowsSelectionAndKeepsCurrentRow() => TestUiThread.RunAsync(() => FollowsSelectionAndKeepsCurrentRowOnUiThread()); // I-209
+
+    private async Task FollowsSelectionAndKeepsCurrentRowOnUiThread()
     {
         var (document, designer, inspector) = await OpenAsync(design: false);
 
@@ -75,7 +78,9 @@ public sealed class ObjectInspectorViewModelTests
     [Trait("Req", "DSG-OI-093")]
     [Trait("Req", "DSG-OI-034")]
     [Trait("Req", "DSG-OI-041")]
-    public async Task CommitCreatesOneUndoUnitForAllSelected()
+    public Task CommitCreatesOneUndoUnitForAllSelected() => TestUiThread.RunAsync(() => CommitCreatesOneUndoUnitForAllSelectedOnUiThread()); // I-209
+
+    private async Task CommitCreatesOneUndoUnitForAllSelectedOnUiThread()
     {
         var (_, designer, inspector) = await OpenAsync();
         Select(designer, "NameEdit", "GreetButton");
@@ -115,7 +120,9 @@ public sealed class ObjectInspectorViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-035")]
-    public async Task InvalidEntryKeepsEditorOpenWithMessage()
+    public Task InvalidEntryKeepsEditorOpenWithMessage() => TestUiThread.RunAsync(() => InvalidEntryKeepsEditorOpenWithMessageOnUiThread()); // I-209
+
+    private async Task InvalidEntryKeepsEditorOpenWithMessageOnUiThread()
     {
         var (_, designer, inspector) = await OpenAsync();
         Select(designer, "NameEdit");
@@ -151,7 +158,9 @@ public sealed class ObjectInspectorViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-038")]
-    public async Task ResetToDefault()
+    public Task ResetToDefault() => TestUiThread.RunAsync(() => ResetToDefaultOnUiThread()); // I-209
+
+    private async Task ResetToDefaultOnUiThread()
     {
         var (_, designer, inspector) = await OpenAsync();
         Select(designer, "GreetButton", "OkButton");
@@ -189,7 +198,9 @@ public sealed class ObjectInspectorViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-093")]
-    public async Task AlignCommitStoresReflowedBounds()
+    public Task AlignCommitStoresReflowedBounds() => TestUiThread.RunAsync(() => AlignCommitStoresReflowedBoundsOnUiThread()); // I-209
+
+    private async Task AlignCommitStoresReflowedBoundsOnUiThread()
     {
         var (_, designer, inspector) = await OpenAsync();
         Select(designer, "Panel1");
@@ -229,7 +240,9 @@ public sealed class ObjectInspectorViewModelTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-050")]
-    public async Task SetSubRowsToggleElements()
+    public Task SetSubRowsToggleElements() => TestUiThread.RunAsync(() => SetSubRowsToggleElementsOnUiThread()); // I-209
+
+    private async Task SetSubRowsToggleElementsOnUiThread()
     {
         var (_, designer, inspector) = await OpenAsync();
         Select(designer, "GreetButton");
@@ -265,7 +278,9 @@ public sealed class ObjectInspectorViewModelTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task ComponentReferenceListIsTypeFiltered()
+    public Task ComponentReferenceListIsTypeFiltered() => TestUiThread.RunAsync(() => ComponentReferenceListIsTypeFilteredOnUiThread()); // I-209
+
+    private async Task ComponentReferenceListIsTypeFilteredOnUiThread()
     {
         var (_, designer, inspector) = await OpenAsync();
 
@@ -291,7 +306,9 @@ public sealed class ObjectInspectorViewModelTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-070")]
     [Trait("Req", "DSG-OI-072")]
-    public async Task NameValidationOrder()
+    public Task NameValidationOrder() => TestUiThread.RunAsync(() => NameValidationOrderOnUiThread()); // I-209
+
+    private async Task NameValidationOrderOnUiThread()
     {
         var (document, designer, inspector) = await OpenAsync();
         Select(designer, "GreetButton");
@@ -335,7 +352,9 @@ public sealed class ObjectInspectorViewModelTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-071")]
     [Trait("Req", "DSG-CS-046")]
-    public async Task RenameUpdatesCaptionWhenEqualToOldName()
+    public Task RenameUpdatesCaptionWhenEqualToOldName() => TestUiThread.RunAsync(() => RenameUpdatesCaptionWhenEqualToOldNameOnUiThread()); // I-209
+
+    private async Task RenameUpdatesCaptionWhenEqualToOldNameOnUiThread()
     {
         var (document, designer, inspector) = await OpenAsync();
         var before = designer.Undo.UndoCount;

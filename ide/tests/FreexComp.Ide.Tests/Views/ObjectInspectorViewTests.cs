@@ -1,7 +1,15 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using FreexComp.Designer.Inspector;
 using FreexComp.Designer.Model;
+using FreexComp.Ide.Core.Designer;
+using FreexComp.Ide.Core.Documents;
+using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.TestSupport;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Core.Resources;
@@ -336,5 +344,355 @@ public sealed class ObjectInspectorViewTests
         Dispatcher.UIThread.RunJobs();
         Assert.Null(Stored(d, "Memo1", "Lines"));
         Assert.Equal(2, d.Designer.Undo.UndoCount);
+    }
+    private static FakeClipboard Clipboard(HeadlessHarness h) => (FakeClipboard)((DocumentService)h.Services.Documents).Clipboard!;
+
+    private static ObjectInspectorViewModel Inspector(HeadlessHarness h) => (ObjectInspectorViewModel)h.Find<Control>("Tool.ObjectInspector").DataContext!;
+
+    private static string MenuId(object item) => item is Separator ? "-" : AutomationIds.Get((Control)item)!;
+
+    private static MenuItem MenuItem(ContextMenu menu, string id) => menu.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == id);
+
+    private static ContextMenu OpenGridMenu(HeadlessHarness h)
+    {
+        var menu = Assert.IsType<ContextMenu>(h.Find<Control>(Grid).ContextMenu);
+        Assert.True(menu.IsOpen);
+        return menu;
+    }
+
+    private static void CloseMenu(ContextMenu menu)
+    {
+        menu.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>
+    /// DSG-OI-037 (D-109): Ctrl+C (or Ctrl+Insert) on a row not in edit mode copies its value text; Ctrl+V (or Shift+Insert)
+    /// on a text-editable row enters edit mode with the clipboard text, not yet committed. Other rows are not pasted into;
+    /// on the Events page the handler name is copied.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-037")]
+    public async Task RowCopyPaste()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var d = await OpenDesignAsync(h, "GreetButton");
+        var clipboard = Clipboard(h);
+        h.Press("F4");
+
+        GoTo(h, "Caption");
+        h.Press("Ctrl+C");
+        Assert.Equal("&Greet", clipboard.Text);
+        GoTo(h, "Width");
+        h.Press("Ctrl+Insert");
+        Assert.Equal("75", clipboard.Text);
+        Assert.Null(h.TryFind<TextBox>(Row("Width") + ".Editor"));
+
+        // Paste enters edit mode with the clipboard text; Enter commits it.
+        clipboard.Text = "Hello";
+        GoTo(h, "Caption");
+        h.Press("Ctrl+V");
+        var editor = h.Find<TextBox>(Row("Caption") + ".Editor");
+        Assert.Equal("Hello", editor.Text);
+        Assert.True(editor.IsFocused);
+        Assert.Equal(new StringValue("&Greet"), Stored(d, "GreetButton", "Caption"));
+        Assert.Equal(0, d.Designer.Undo.UndoCount);
+        h.Press("Enter");
+        Assert.Equal(new StringValue("Hello"), Stored(d, "GreetButton", "Caption"));
+        Assert.Equal(1, d.Designer.Undo.UndoCount);
+
+        // Shift+Insert pastes too; Escape cancels the pasted entry.
+        clipboard.Text = "120";
+        GoTo(h, "Width");
+        h.Press("Shift+Insert");
+        Assert.Equal("120", h.Find<TextBox>(Row("Width") + ".Editor").Text);
+        h.Press("Escape");
+        Assert.Null(h.TryFind<TextBox>(Row("Width") + ".Editor"));
+        Assert.Equal(new IntegerValue(75, false), Stored(d, "GreetButton", "Width"));
+        Assert.Equal(1, d.Designer.Undo.UndoCount);
+
+        // An object row is not edited as text: nothing is pasted.
+        GoTo(h, "Font");
+        h.Press("Ctrl+V");
+        Assert.Null(h.TryFind<TextBox>(Row("Font") + ".Editor"));
+        Assert.Equal(1, d.Designer.Undo.UndoCount);
+
+        // The Events page copies the handler name.
+        h.Press("Ctrl+Tab");
+        GoTo(h, "OnClick");
+        h.Press("Ctrl+C");
+        Assert.Equal("GreetButtonClick", clipboard.Text);
+    }
+
+    /// <summary>
+    /// DSG-OI-039 (D-109): a right-click makes the row current and opens the row context menu in the spec order; its
+    /// items run their commands (copy value and name, reset, arrangement, description); Shift+F10 opens it by keyboard.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-039")]
+    public async Task RowContextMenu()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var d = await OpenDesignAsync(h, "GreetButton");
+        var clipboard = Clipboard(h);
+        h.Press("F4");
+        GoTo(h, "Width");
+        h.Press("Up");
+        Assert.NotEqual("Width", CurrentRow(h));
+
+        h.RightClick(Row("Width"));
+        Assert.Equal("Width", CurrentRow(h));
+        var menu = OpenGridMenu(h);
+        Assert.Equal("Tool.ObjectInspector.ContextMenu", AutomationIds.Get(menu));
+        Assert.Equal(
+        [
+            "Context.objectInspector.resetToDefault", "Context.edit.copy", "Context.objectInspector.copyPropertyName", "-",
+            "Context.objectInspector.arrangeByCategory", "Context.objectInspector.arrangeByName", "Context.objectInspector.toggleDescription",
+            "Context.objectInspector.expandAll", "Context.objectInspector.collapseAll",
+        ], menu.Items.Cast<object>().Select(MenuId));
+        Assert.Equal("Copy Value", MenuItem(menu, "Context.edit.copy").Header);
+        Assert.False(MenuItem(menu, "Context.objectInspector.resetToDefault").IsEffectivelyEnabled); // geometry has no reset
+        Assert.True(MenuItem(menu, "Context.objectInspector.arrangeByCategory").IsChecked);
+        Assert.False(MenuItem(menu, "Context.objectInspector.arrangeByName").IsChecked);
+        Assert.True(MenuItem(menu, "Context.objectInspector.toggleDescription").IsChecked);
+
+        MenuItem(menu, "Context.edit.copy").Command!.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("75", clipboard.Text);
+        MenuItem(menu, "Context.objectInspector.copyPropertyName").Command!.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Width", clipboard.Text);
+        CloseMenu(menu);
+
+        // On a stored Caption the reset is enabled and removes the value.
+        GoTo(h, "Caption");
+        h.Press("Down");
+        h.RightClick(Row("Caption"));
+        Assert.Equal("Caption", CurrentRow(h));
+        menu = OpenGridMenu(h);
+        var reset = MenuItem(menu, "Context.objectInspector.resetToDefault");
+        Assert.True(reset.IsEffectivelyEnabled);
+        reset.Command!.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(Stored(d, "GreetButton", "Caption"));
+        Assert.Equal(1, d.Designer.Undo.UndoCount);
+        CloseMenu(menu);
+
+        // Arrange by Name (an action item) switches the arrangement and its toolbar toggle.
+        GoTo(h, "Width");
+        h.RightClick(Row("Width"));
+        menu = OpenGridMenu(h);
+        MenuItem(menu, "Context.objectInspector.arrangeByName").RaiseEvent(new RoutedEventArgs(Avalonia.Controls.MenuItem.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("name", h.Services.Settings.Get(SettingsCatalog.ObjectInspectorArrangement));
+        Assert.True(h.Find<ToggleButton>("Tool.ObjectInspector.ToolBar.objectInspector.toggleCategorized:name").IsChecked);
+        CloseMenu(menu);
+
+        // Show Description off hides the pane.
+        h.RightClick(Row("Width"));
+        menu = OpenGridMenu(h);
+        MenuItem(menu, "Context.objectInspector.toggleDescription").Command!.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>("Tool.ObjectInspector.Description").IsVisible);
+        CloseMenu(menu);
+
+        // Shift+F10 opens the menu for the current row.
+        h.Find<Control>(Grid).Focus();
+        h.Press("Shift+F10");
+        Assert.Equal("Width", CurrentRow(h));
+        CloseMenu(OpenGridMenu(h));
+    }
+
+    /// <summary>
+    /// DSG-OI-032 (D-109): Alt+Down opens the row's value list (enum members, compatible handlers) at the current value;
+    /// Up/Down move, Enter enters and commits, Escape closes without a change. A text row without a list enters edit mode.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-032")]
+    public async Task AltDownOpensValueList()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var d = await OpenDesignAsync(h, "NameEdit");
+        h.Press("F4");
+
+        GoTo(h, "CharCase");
+        h.Press("Alt+Down");
+        var list = h.Find<ListBox>(Row("CharCase") + ".List");
+        Assert.True(list.IsEffectivelyVisible);
+        Assert.Equal(["ecNormal", "ecUpperCase", "ecLowerCase"], list.ItemsSource!.Cast<string>());
+        Assert.Equal("ecNormal", list.SelectedItem);
+        Assert.True(list.IsKeyboardFocusWithin, h.FocusedAutomationId + " / " + h.Window.FocusManager?.GetFocusedElement());
+        h.Press("Down");
+        h.Press("Enter");
+        Assert.Equal(new IdentValue("ecUpperCase"), Stored(d, "NameEdit", "CharCase"));
+        Assert.Equal(1, d.Designer.Undo.UndoCount);
+        Assert.Null(h.TryFind<ListBox>(Row("CharCase") + ".List")); // closed
+        Assert.True(h.Find<Control>(Grid).IsFocused);
+
+        // Escape closes the list; nothing changes.
+        h.Press("Alt+Down");
+        Assert.Equal("ecUpperCase", list.SelectedItem);
+        h.Press("Down");
+        h.Press("Escape");
+        Assert.Null(h.TryFind<ListBox>(Row("CharCase") + ".List")); // closed
+        Assert.Equal(new IdentValue("ecUpperCase"), Stored(d, "NameEdit", "CharCase"));
+        Assert.Equal(1, d.Designer.Undo.UndoCount);
+
+        // A text row without a list: Alt+Down enters edit mode.
+        GoTo(h, "Text");
+        h.Press("Alt+Down");
+        Assert.NotNull(h.TryFind<TextBox>(Row("Text") + ".Editor"));
+        h.Press("Escape");
+
+        // The Events page lists the compatible handlers of the form.
+        h.Press("Ctrl+Tab");
+        GoTo(h, "OnChange");
+        h.Press("Alt+Down");
+        list = h.Find<ListBox>(Row("OnChange") + ".List");
+        Assert.Equal(["GreetButtonClick"], list.ItemsSource!.Cast<string>());
+        h.Press("Enter");
+        Assert.Equal("GreetButtonClick", ValueText(h, "OnChange"));
+    }
+
+    /// <summary>
+    /// D-109: the page, the collapsed categories, the expanded rows (per class name) and the name/value divider ratio
+    /// (dragged) are written to <c>session.json</c> (<c>objectInspector.*</c>) and restored from it.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-003")]
+    [Trait("Req", "DSG-OI-013")]
+    [Trait("Req", "UI-DSG-103")]
+    public async Task SessionStateRestored()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var d = await OpenDesignAsync(h, "GreetButton");
+        var inspector = Inspector(h);
+        h.Press("F4");
+
+        // Font expanded (Right), another category collapsed, the divider dragged 30 DIP to the right.
+        GoTo(h, "Font");
+        h.Press("Right");
+        Assert.NotNull(h.TryFind<Control>(Row("Font.Name")));
+        string? fontCategory = null;
+        string? category = null;
+        foreach (var row in inspector.Rows)
+        {
+            if (row.Kind == PropertyRowKind.Category)
+            {
+                category = row.Path;
+            }
+            else if (row.Path == "Font")
+            {
+                fontCategory = category;
+            }
+        }
+
+        var other = inspector.Rows.First(r => r.Kind == PropertyRowKind.Category && r.Path != fontCategory).Path;
+        inspector.ToggleCategory(other); // the click on a category row is covered by D-081
+        Dispatcher.UIThread.RunJobs();
+        Assert.StartsWith("▸", h.Find<Border>("Tool.ObjectInspector.Category." + other).Child is TextBlock t ? t.Text : "", StringComparison.Ordinal);
+
+        var before = inspector.NameColumnRatio;
+        Assert.Equal(ObjectInspectorViewModel.DefaultNameColumnRatio, before);
+        h.Drag(Row("Font") + ".Divider", 30, 0);
+        var ratio = inspector.NameColumnRatio;
+        Assert.True(ratio > before + 0.05, $"ratio {ratio}");
+        var fontGrid = (Grid)h.Find<Border>(Row("Font")).Child!;
+        Assert.Equal(ratio, fontGrid.ColumnDefinitions[0].Width.Value, 6);
+        h.Press("Ctrl+Tab");
+        Assert.Equal(InspectorPage.Events, inspector.Page);
+
+        // Expanded rows are kept per class: the edit shows Font collapsed.
+        h.Press("Ctrl+Tab");
+        d.Designer.Surface!.Selection.Select(d.Designer.Model!.FindByName("NameEdit")!);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.TryFind<Control>(Row("Font.Name")));
+        d.Designer.Surface.Selection.Select(d.Designer.Model.FindByName("GreetButton")!);
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotNull(h.TryFind<Control>(Row("Font.Name")));
+        h.Press("Ctrl+Tab");
+
+        h.Services.Session.Save();
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(h.Services.Session.SessionPath))!["objectInspector"]!;
+        Assert.Equal("events", (string?)json["page"]);
+        Assert.Equal([other], json["collapsedCategories"]!.AsArray().Select(n => (string?)n));
+        Assert.Equal(["Font"], json["expandedRows"]!["TButton"]!.AsArray().Select(n => (string?)n));
+        Assert.Equal(Math.Round(ratio, 4), (double)json["nameColumnRatio"]!, 6);
+
+        // Everything changed back, then the session is read again: the saved state returns.
+        h.Press("Ctrl+Tab");
+        inspector.ExpandAll(false);
+        inspector.ToggleCategory(other);
+        inspector.NameColumnRatio = ObjectInspectorViewModel.DefaultNameColumnRatio;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(InspectorPage.Properties, inspector.Page);
+        Assert.Null(h.TryFind<Control>(Row("Font.Name")));
+
+        await h.Services.Session.RestoreAsync(restoreDocuments: false);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(InspectorPage.Events, inspector.Page);
+        Assert.Equal(Math.Round(ratio, 4), inspector.NameColumnRatio, 6);
+        h.Press("Ctrl+Tab");
+        Assert.NotNull(h.TryFind<Control>(Row("Font.Name")));
+        Assert.StartsWith("▸", h.Find<Border>("Tool.ObjectInspector.Category." + other).Child is TextBlock c ? c.Text : "", StringComparison.Ordinal);
+        Assert.Equal(Math.Round(ratio, 4), ((Grid)h.Find<Border>(Row("Font")).Child!).ColumnDefinitions[0].Width.Value, 6);
+    }
+
+    /// <summary>
+    /// UI-DSG-113 (D-109): below 260 DIP the arrangement buttons leave the tab strip and the caption's ⋯ menu offers the
+    /// two arrangements; wide again, the buttons return and the menu button goes.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-113")]
+    public async Task NarrowCaptionMenu()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        await OpenDesignAsync(h, "GreetButton");
+        var view = h.Window.GetVisualDescendants().OfType<ObjectInspectorView>().Single();
+        const string ByName = "Tool.ObjectInspector.ToolBar.objectInspector.toggleCategorized:name";
+
+        view.Width = 300;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<ToggleButton>(ByName).IsEffectivelyVisible);
+        Assert.False(h.Find<Button>("Tool.ObjectInspector.Menu").IsVisible);
+
+        view.Width = 230;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<ToggleButton>(ByName).IsEffectivelyVisible);
+        var button = h.Find<Button>("Tool.ObjectInspector.Menu");
+        Assert.True(button.IsEffectivelyVisible);
+        h.Click("Tool.ObjectInspector.Menu");
+        var menu = Assert.IsType<ContextMenu>(button.ContextMenu);
+        Assert.True(menu.IsOpen);
+        Assert.Equal(["Context.objectInspector.arrangeByCategory", "Context.objectInspector.arrangeByName"], menu.Items.Cast<object>().Select(MenuId));
+        Assert.True(MenuItem(menu, "Context.objectInspector.arrangeByCategory").IsChecked);
+        MenuItem(menu, "Context.objectInspector.arrangeByName").RaiseEvent(new RoutedEventArgs(Avalonia.Controls.MenuItem.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("name", h.Services.Settings.Get(SettingsCatalog.ObjectInspectorArrangement));
+        CloseMenu(menu);
+
+        view.Width = 300;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<ToggleButton>(ByName).IsEffectivelyVisible);
+        Assert.True(h.Find<ToggleButton>(ByName).IsChecked);
+        Assert.False(button.IsVisible);
+    }
+    /// <summary>UI-DSG-100, UI-DSG-110 (D-109): the splitter above the description pane resizes it; the pane keeps at least 44 DIP.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-100")]
+    public async Task DescriptionSplitterResizes()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        await OpenDesignAsync(h, "GreetButton");
+        var description = h.Find<Border>("Tool.ObjectInspector.Description");
+        Assert.Equal(58, description.Bounds.Height);
+
+        h.Drag("Tool.ObjectInspector.Splitter", 0, -30);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(88, description.Bounds.Height);
+
+        h.Drag("Tool.ObjectInspector.Splitter", 0, 100);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(44, description.Bounds.Height);
     }
 }

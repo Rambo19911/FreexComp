@@ -77,6 +77,13 @@ public sealed partial class MessagesService
             return;
         _current = item;
         CurrentChanged?.Invoke(this, EventArgs.Empty);
+        if (item.Navigate is { } navigate)
+        {
+            navigate();
+            _layout?.Layout.FocusPane(Models.Pane.Documents);
+            return;
+        }
+
         var location = item.Location!;
         if (_fileSystem?.FileExists(location.FilePath!) == false)
         {

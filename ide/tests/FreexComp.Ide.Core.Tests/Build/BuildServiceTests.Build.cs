@@ -22,7 +22,9 @@ public sealed partial class BuildServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-061")]
     [Trait("Req", "IDE-P3-063")]
-    public async Task DuplicateDiagnosticsAreDropped()
+    public Task DuplicateDiagnosticsAreDropped() => TestUiThread.RunAsync(() => DuplicateDiagnosticsAreDroppedOnUiThread()); // I-209
+
+    private async Task DuplicateDiagnosticsAreDroppedOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();
@@ -50,7 +52,9 @@ public sealed partial class BuildServiceTests
     /// <summary>IDE-P3-062: a tool failure is one E40xx row without position; the raw tool lines go to Output only.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-062")]
-    public async Task ToolErrorLinesBecomeRows()
+    public Task ToolErrorLinesBecomeRows() => TestUiThread.RunAsync(() => ToolErrorLinesBecomeRowsOnUiThread()); // I-209
+
+    private async Task ToolErrorLinesBecomeRowsOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();
@@ -81,7 +85,9 @@ public sealed partial class BuildServiceTests
     [Trait("Req", "IDE-P3-060")]
     [Trait("Req", "IDE-P3-071")]
     [Trait("Req", "IDE-P3-013")]
-    public async Task EventsBecomeMessagesAndOutput()
+    public Task EventsBecomeMessagesAndOutput() => TestUiThread.RunAsync(() => EventsBecomeMessagesAndOutputOnUiThread()); // I-209
+
+    private async Task EventsBecomeMessagesAndOutputOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();
@@ -143,7 +149,9 @@ public sealed partial class BuildServiceTests
     /// <summary>IDE-P3-034: the summary text for each kind of result (state field, Output, Messages summary row).</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-034")]
-    public async Task SummaryTextsPerResult()
+    public Task SummaryTextsPerResult() => TestUiThread.RunAsync(() => SummaryTextsPerResultOnUiThread()); // I-209
+
+    private async Task SummaryTextsPerResultOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();
@@ -189,7 +197,9 @@ public sealed partial class BuildServiceTests
     /// <summary>IDE-P3-037: an exception from the engine is an internal error; the state returns to Idle.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-037")]
-    public async Task EngineExceptionReturnsToIdle()
+    public Task EngineExceptionReturnsToIdle() => TestUiThread.RunAsync(() => EngineExceptionReturnsToIdleOnUiThread()); // I-209
+
+    private async Task EngineExceptionReturnsToIdleOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();
@@ -213,7 +223,9 @@ public sealed partial class BuildServiceTests
     /// <summary>IDE-P3-012: no build, no save, a message with Open Options when the toolchain is missing.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-012")]
-    public async Task ToolchainMissingDoesNotBuild()
+    public Task ToolchainMissingDoesNotBuild() => TestUiThread.RunAsync(() => ToolchainMissingDoesNotBuildOnUiThread()); // I-209
+
+    private async Task ToolchainMissingDoesNotBuildOnUiThread()
     {
         var bed = new BuildTestBed();
         await bed.OpenHelloAsync();

@@ -35,7 +35,9 @@ public sealed class EditorOperationsTests
     [Theory(Timeout = 30000)]
     [MemberData(nameof(Cases))]
     [Trait("Req", "IDE-TEST-021")]
-    public async Task DataDrivenCases(string key)
+    public Task DataDrivenCases(string key) => TestUiThread.RunAsync(() => DataDrivenCasesOnUiThread(key)); // I-209
+
+    private async Task DataDrivenCasesOnUiThread(string key)
     {
         var c = LoadCases().Single(x => x.Key == key);
         var eol = c.Eol == "lf" ? "\n" : "\r\n";
@@ -85,7 +87,9 @@ public sealed class EditorOperationsTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-033")]
-    public async Task MoveKeepsInnerFolds()
+    public Task MoveKeepsInnerFolds() => TestUiThread.RunAsync(() => MoveKeepsInnerFoldsOnUiThread()); // I-209
+
+    private async Task MoveKeepsInnerFoldsOnUiThread()
     {
         var fs = new InMemoryFileSystem();
         var services = TestComposition.Build(o => o.FileSystem = fs);

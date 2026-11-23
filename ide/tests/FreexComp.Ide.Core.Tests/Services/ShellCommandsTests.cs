@@ -7,7 +7,9 @@ public sealed class ShellCommandsTests
 {
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-SET-093")]
-    public async Task OpenFolderCommandsCreateTheFolderFirst()
+    public Task OpenFolderCommandsCreateTheFolderFirst() => TestUiThread.RunAsync(() => OpenFolderCommandsCreateTheFolderFirstOnUiThread()); // I-209
+
+    private async Task OpenFolderCommandsCreateTheFolderFirstOnUiThread()
     {
         var shell = new FakeShellService();
         var services = TestComposition.Build(o => o.Shell = shell);
