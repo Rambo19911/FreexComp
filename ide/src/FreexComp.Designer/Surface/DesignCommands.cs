@@ -55,6 +55,12 @@ public static class Commands
 
     public const string SizeToGrid = "designer.sizeToGrid";
 
+    public const string BringToFront = "designer.bringToFront";
+
+    public const string SendToBack = "designer.sendToBack";
+
+    public const string CreateDefaultHandler = "designer.createDefaultHandler";
+
     /// <summary>The commands of design-surface.md §11.1.</summary>
     public static IReadOnlyList<string> Arrange { get; } =
     [
@@ -83,6 +89,13 @@ public static class UndoTitles
     public const string Align = "Undo_Designer_Align";
 
     public const string Size = "Undo_Designer_Size";
+
+    public const string Order = "Undo_Designer_Order";
+
+    /// <summary>Palette placement ("Add {ClassName}"; the class name is the title's argument, <see cref="FreexComp.Designer.Editing.DesignerUndoUnit.TitleArgument"/>).</summary>
+    public const string Add = "Undo_Designer_Add";
+
+    public const string Event = "Undo_Designer_Event";
 }
 
 /// <summary>Status message ids the surface shows (states-and-messages.md; design-surface.md §15).</summary>
@@ -97,4 +110,6 @@ public static class StatusIds
     public const string PasteNothing = "Msg.Designer.PasteNothing";
 
     public const string PasteUnknownClass = "Msg.Designer.PasteUnknownClass";
+
+    public const string CannotDropHere = "Msg.Designer.CannotDropHere";
 }

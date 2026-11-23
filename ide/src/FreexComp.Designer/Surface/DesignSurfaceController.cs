@@ -10,8 +10,8 @@ namespace FreexComp.Designer.Surface;
 /// The interaction logic of the design surface (design-surface.md; no UI dependency, DSG-ARCH-003): selection and the
 /// click rules (D-035), the selection commands (D-036), the lasso (D-037), move drags with snapping and re-parenting
 /// (D-038 … D-041), resize drags incl. the form and child re-flow (D-042, D-043), keyboard nudging (D-044), tab order
-/// (D-045, D-046), delete (D-047), clipboard (D-048, D-049), Ctrl-drag copy (D-050) and the align commands (D-051).
-/// Placement and the other commands follow in later tasks.
+/// (D-045, D-046), delete (D-047), clipboard (D-048, D-049), Ctrl-drag copy (D-050), the align commands (D-051), z-order
+/// (D-052), palette placement (D-053), the default event handler (D-054) and read-only forms / preserved items (D-055).
 /// </summary>
 public sealed partial class DesignSurfaceController
 {
@@ -130,9 +130,26 @@ public sealed partial class DesignSurfaceController
                 var (x, y) = SurfaceGeometry.Round(input.X, input.Y);
                 if (!_dragging && (Math.Abs(x - _downAt.X) >= DragThreshold || Math.Abs(y - _downAt.Y) >= DragThreshold))
                 {
-                    StartDrag(input);
+                    if (_placeClass is not null)
+                    {
+                        StartPlacementDrag(input);
+                    }
+                    else
+                    {
+                        StartDrag(input);
+                    }
                 }
 
+                break;
+            case PointerKind.Move when State == InteractionState.Placing:
+                UpdatePlacement(input);
+                break;
+            case PointerKind.Up when input.Button == PointerButton.Left && State == InteractionState.Placing:
+                UpdatePlacement(input);
+                FinishPlacement();
+                break;
+            case PointerKind.Up when input.Button == PointerButton.Left && State == InteractionState.PressPending && _placeClass is not null:
+                FinishPlacement();
                 break;
             case PointerKind.Move when State == InteractionState.Resizing:
                 UpdateResize(input);
@@ -187,8 +204,19 @@ public sealed partial class DesignSurfaceController
             case DesignKey.Tab:
                 Execute(input.Modifiers.HasFlag(InputModifiers.Shift) ? Commands.SelectPrevious : Commands.SelectNext);
                 return true;
+            case DesignKey.Up or DesignKey.Down when input.Modifiers == (InputModifiers.Ctrl | InputModifiers.Shift):
+                var zOrder = input.Key == DesignKey.Up ? Commands.BringToFront : Commands.SendToBack; // §9
+                if (!CanExecute(zOrder))
+                {
+                    return false;
+                }
+
+                Execute(zOrder);
+                return true;
             case DesignKey.Left or DesignKey.Right or DesignKey.Up or DesignKey.Down:
                 return Arrow(input.Key, input.Modifiers);
+            case DesignKey.Enter when input.Modifiers == InputModifiers.None:
+                return RunDefaultAction(); // §9, §11.4
             case DesignKey.Delete when input.Modifiers == InputModifiers.None:
                 if (!CanExecute(Commands.Delete))
                 {
@@ -202,7 +230,10 @@ public sealed partial class DesignSurfaceController
         }
     }
 
-    public bool CanExecute(string commandId) => commandId switch
+    /// <summary>DSG-SUR-003: on a read-only form only the selection commands and Copy can run.</summary>
+    public bool CanExecute(string commandId) => (!IsReadOnly || IsReadOnlySafe(commandId)) && CanExecuteCore(commandId);
+
+    private bool CanExecuteCore(string commandId) => commandId switch
     {
         Commands.SelectAll or Commands.SelectNext or Commands.SelectPrevious => true,
         Commands.SelectParent => Selection.Primary.Parent is not null,
@@ -213,12 +244,15 @@ public sealed partial class DesignSurfaceController
         Commands.Paste => CanPaste,
         Commands.Undo => Undo.CanUndo && !IsPointerActive, // DSG-SUR-171
         Commands.Redo => Undo.CanRedo && !IsPointerActive,
+        Commands.CreateDefaultHandler => CanCreateDefaultHandler,
+        Commands.BringToFront => CanZOrder(front: true),
+        Commands.SendToBack => CanZOrder(front: false),
         _ when Commands.Arrange.Contains(commandId) => CanArrange(commandId),
         _ => false,
     };
 
     private bool IsPointerActive => State is InteractionState.PressPending or InteractionState.Moving or InteractionState.Resizing
-        or InteractionState.Lasso;
+        or InteractionState.Lasso or InteractionState.Placing;
 
     public void Execute(string commandId, string? argument = null)
     {
@@ -230,6 +264,10 @@ public sealed partial class DesignSurfaceController
         if (commandId is Commands.Undo or Commands.Redo)
         {
             ExitTabOrderMode(); // DSG-SUR-170
+            if (_host.ArmedPaletteClass is not null)
+            {
+                _host.Disarm();
+            }
         }
 
         switch (commandId)
@@ -259,6 +297,12 @@ public sealed partial class DesignSurfaceController
             case Commands.SelectPrevious:
                 SelectInCycle(commandId == Commands.SelectNext ? 1 : -1);
                 break;
+            case Commands.CreateDefaultHandler:
+                CreateDefaultHandler();
+                break;
+            case Commands.BringToFront or Commands.SendToBack:
+                ZOrder(commandId == Commands.BringToFront);
+                break;
             case var _ when Commands.Arrange.Contains(commandId):
                 Arrange(commandId);
                 break;
@@ -276,9 +320,16 @@ public sealed partial class DesignSurfaceController
     /// <summary>DSG-SUR-104: Escape cancels the first applicable mode, else selects the parent (unhandled on the form).</summary>
     private bool Escape()
     {
-        if (State is InteractionState.Lasso or InteractionState.Moving or InteractionState.Resizing)
+        if (State is InteractionState.Lasso or InteractionState.Moving or InteractionState.Resizing or InteractionState.Placing
+            || (State == InteractionState.PressPending && _placeClass is not null))
         {
-            ResetPress(); // DSG-SUR-037, DSG-SUR-058, DSG-SUR-087: nothing is recorded
+            ResetPress(); // DSG-SUR-037, DSG-SUR-058, DSG-SUR-087, DSG-TP-045 (the item stays armed): nothing is recorded
+            return true;
+        }
+
+        if (_host.ArmedPaletteClass is not null)
+        {
+            _host.Disarm(); // DSG-TP-040
             return true;
         }
 
@@ -359,7 +410,7 @@ public sealed partial class DesignSurfaceController
         }
 
         var moves = !_pressedOnHandle && _pressHit.Kind is HitKind.Control or HitKind.TrayItem && _pressed is { } p && Selection.Contains(p);
-        if (!_pressedOnHandle && !moves)
+        if ((!_pressedOnHandle && !moves) || IsReadOnly)
         {
             return;
         }
@@ -668,6 +719,11 @@ public sealed partial class DesignSurfaceController
             .ToList();
         if (_resizeSet.Find(m => ReferenceEquals(m.Object, primary)) is not { Edges: not SnapEdges.None })
         {
+            if (primary.IsPreserved)
+            {
+                _host.SetStatus(StatusIds.ReadOnlyItem, primary.Name); // DSG-SUR-004
+            }
+
             _resizeSet = [];
             return;
         }
@@ -920,10 +976,24 @@ public sealed partial class DesignSurfaceController
 
     private void PressLeft(PointerInput input)
     {
+        if (_host.ArmedPaletteClass is { } armed)
+        {
+            PlacementPress(input, armed); // tool-palette.md §5.2
+            return;
+        }
+
         var alt = input.Modifiers.HasFlag(InputModifiers.Alt);
         var previous = alt && _lastAltPick is { } pick && ReferenceEquals(pick, Selection.Primary) ? pick : null;
         var hit = Current.HitTester.HitTest(input.X, input.Y, Selection.Items, alt, previous, _settings.HandleSize);
         _lastAltPick = alt && hit.Kind is HitKind.Control or HitKind.FormClient ? hit.Object : null;
+        if (input.ClickCount == 2 && hit.Kind is HitKind.Control or HitKind.TrayItem or HitKind.FormClient or HitKind.FormFrame)
+        {
+            // DSG-SUR-042: a double-click on a component runs its default action (a container is not "entered").
+            ResetPress();
+            Selection.Select(Target(hit));
+            RunDefaultAction();
+            return;
+        }
 
         State = InteractionState.PressPending;
         _downAt = SurfaceGeometry.Round(input.X, input.Y);
@@ -977,6 +1047,12 @@ public sealed partial class DesignSurfaceController
     private void PressRight(PointerInput input)
     {
         ResetPress();
+        if (_host.ArmedPaletteClass is not null)
+        {
+            _host.Disarm(); // DSG-TP-041: a right-click on the surface disarms
+            return;
+        }
+
         var hit = Current.HitTester.HitTest(input.X, input.Y, Selection.Items, handleSize: _settings.HandleSize);
         var target = hit.Kind is HitKind.Handle or HitKind.FormHandle ? hit.Object! : Target(hit);
         if (!Selection.Contains(target))
@@ -1007,6 +1083,14 @@ public sealed partial class DesignSurfaceController
         DropTarget = null;
         _moveDelta = (0, 0);
         Guidelines = [];
+        _placeClass = null;
+        _placeParent = null;
+        if (PlacementRect is not null)
+        {
+            PlacementRect = null;
+            Invalidated?.Invoke(this, EventArgs.Empty);
+        }
+
         if (_preview is not null)
         {
             _preview = null;

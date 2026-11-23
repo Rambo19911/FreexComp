@@ -22,6 +22,9 @@ public sealed class DesignerUndoUnit(string titleKey, IReadOnlyList<FormChange> 
     /// <summary>Resource key of the Edit-menu title, e.g. <c>Undo_Designer_Move</c> (DSG-SUR-172).</summary>
     public string TitleKey { get; } = titleKey;
 
+    /// <summary>The argument of the title, e.g. the class name of "Add {ClassName}" (design-surface.md §12); null when none.</summary>
+    public string? TitleArgument { get; init; }
+
     /// <summary>The forward changes.</summary>
     public IReadOnlyList<FormChange> Redo { get; } = redo;
 

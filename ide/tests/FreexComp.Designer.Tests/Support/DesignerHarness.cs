@@ -31,13 +31,17 @@ internal sealed class DesignerHarness : IDisposable
     /// <summary>A form of the shared test data (<c>forms/canonical/hello.form</c>).</summary>
     public static DesignerHarness FromFile(string relativePath) => FromText(File.ReadAllText(TestPaths.Combine(relativePath)), relativePath);
 
-    public static DesignerHarness FromText(string text, string path = "test.form")
+    /// <param name="allowDiagnostics">The form may have diagnostics (preserved items: unknown classes, inherited objects).</param>
+    public static DesignerHarness FromText(string text, string path = "test.form", bool allowDiagnostics = false)
     {
         var result = FormParser.Parse(text.Replace("\r\n", "\n"), path, TestCatalog.Instance);
         var document = result.Document ?? throw new InvalidOperationException("form did not parse:\n" + text);
-        Assert.True(document.Diagnostics.Count == 0, string.Join("\n", document.Diagnostics));
-        return new DesignerHarness(document);
+        Assert.True(allowDiagnostics || document.Diagnostics.Count == 0, string.Join("\n", document.Diagnostics));
+        return new DesignerHarness(document) { AllowDiagnostics = allowDiagnostics };
     }
+
+    /// <summary>The form has diagnostics by design: <see cref="Dispose"/> checks that the text still parses, not that it is clean.</summary>
+    private bool AllowDiagnostics { get; init; }
 
     public FakeDesignerSettings Settings { get; } = new();
 
@@ -198,7 +202,8 @@ internal sealed class DesignerHarness : IDisposable
 
         AssertInvariant();
         var reparsed = FormParser.Parse(Text, "check.form", TestCatalog.Instance);
-        Assert.True(reparsed.Document is { Diagnostics.Count: 0 }, string.Join("\n", reparsed.Document?.Diagnostics ?? []));
+        Assert.True(reparsed.Document is { } doc && (AllowDiagnostics || doc.Diagnostics.Count == 0),
+            string.Join("\n", reparsed.Document?.Diagnostics ?? []));
     }
 }
 
@@ -246,6 +251,23 @@ internal sealed class FakeDesignerHost : IDesignerHost
     public void ShowContextMenu(double x, double y) => ContextMenus.Add((x, y));
 
     public void BeginPropertyEdit(string propertyName, string text) => PropertyEdits.Add((propertyName, text));
+
+    /// <summary>The armed palette class (tool-palette.md DSG-TP-040, 041); set by <see cref="Arm"/>.</summary>
+    public string? ArmedPaletteClass { get; private set; }
+
+    public bool ArmedSticky { get; private set; }
+
+    /// <summary>How often the controller disarmed the palette.</summary>
+    public int DisarmCount { get; private set; }
+
+    /// <summary>The palette arms <paramref name="className"/> (click; Shift+click = <paramref name="sticky"/>).</summary>
+    public void Arm(string className, bool sticky = false) => (ArmedPaletteClass, ArmedSticky) = (className, sticky);
+
+    public void Disarm()
+    {
+        (ArmedPaletteClass, ArmedSticky) = (null, false);
+        DisarmCount++;
+    }
 
     /// <summary>The in-memory clipboard (testing.md §3).</summary>
     public FakeClipboard Clipboard { get; } = new();
@@ -296,6 +318,24 @@ internal sealed class FakeCodeSync : ICodeSync
 
     public IReadOnlyList<string> GetCompatibleMethods(string eventSignature) =>
         Methods.Where(m => string.Equals(m.Value, eventSignature, StringComparison.OrdinalIgnoreCase)).Select(m => m.Key).Order().ToList();
+
+    /// <summary>The handlers created (<see cref="CreateHandler"/>): method name and signature text.</summary>
+    public List<(string Name, string Signature)> CreatedHandlers { get; } = [];
+
+    /// <summary>The methods navigated to (<see cref="NavigateToHandler"/>).</summary>
+    public List<string> Navigations { get; } = [];
+
+    /// <summary>The text edits the last <see cref="CreateHandler"/> reported.</summary>
+    public IReadOnlyList<TextEditRecord> LastEdits { get; private set; } = [];
+
+    public IReadOnlyList<TextEditRecord> CreateHandler(string methodName, string signatureText)
+    {
+        CreatedHandlers.Add((methodName, signatureText));
+        LastEdits = [new TextEditRecord(100 * CreatedHandlers.Count, "", "procedure " + methodName + ";")];
+        return LastEdits;
+    }
+
+    public void NavigateToHandler(string methodName) => Navigations.Add(methodName);
 }
 
 /// <summary>A <see cref="TimeProvider"/> whose time moves only through <see cref="Advance"/> (testing.md DSG-TEST-004).</summary>

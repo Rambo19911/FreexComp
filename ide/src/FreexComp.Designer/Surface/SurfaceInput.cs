@@ -70,6 +70,15 @@ public interface IDesignerHost
     /// </summary>
     void BeginPropertyEdit(string propertyName, string text);
 
+    /// <summary>The class of the armed Tool Palette item (tool-palette.md DSG-TP-040), or null when none is armed.</summary>
+    string? ArmedPaletteClass { get; }
+
+    /// <summary>The armed item stays armed after each placement (DSG-TP-041).</summary>
+    bool ArmedSticky { get; }
+
+    /// <summary>Disarms the Tool Palette (placement done single-shot, Escape, right-click, undo).</summary>
+    void Disarm();
+
     /// <summary>The clipboard (design-surface.md §10).</summary>
     IDesignerClipboard Clipboard { get; }
 

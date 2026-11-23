@@ -19,14 +19,20 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     public bool OnTextInput(string text, InputModifiers modifiers = InputModifiers.None)
     {
-        if (State != InteractionState.Idle || text.Length != 1 || !char.IsLetterOrDigit(text[0])
+        if (IsReadOnly || State != InteractionState.Idle || text.Length != 1 || !char.IsLetterOrDigit(text[0])
             || (modifiers & (InputModifiers.Ctrl | InputModifiers.Alt)) != 0)
         {
             return false;
         }
 
         var primary = Selection.Primary;
-        if (primary.IsPreserved || primary.Info is not { } info)
+        if (primary.IsPreserved)
+        {
+            _host.SetStatus(StatusIds.ReadOnlyItem, primary.Name); // DSG-SUR-004
+            return true;
+        }
+
+        if (primary.Info is not { } info)
         {
             return false;
         }
@@ -50,10 +56,10 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private bool Arrow(DesignKey key, InputModifiers modifiers)
     {
-        if (State != InteractionState.Idle
+        if (IsReadOnly || State != InteractionState.Idle
             || (modifiers.HasFlag(InputModifiers.Ctrl) && modifiers.HasFlag(InputModifiers.Shift)))
         {
-            return false;
+            return false; // DSG-SUR-003: ignored without message on a read-only form
         }
 
         var (dx, dy) = key switch
@@ -75,6 +81,7 @@ public sealed partial class DesignSurfaceController
             return true;
         }
 
+        ReportPreserved(); // DSG-SUR-004: preserved components stay; the others move
         var grid = _settings.SnapToGrid && !modifiers.HasFlag(resize ? InputModifiers.Alt : InputModifiers.Ctrl);
         if (resize)
         {
