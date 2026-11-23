@@ -12,6 +12,8 @@ public static class ContainerRects
     {
         "form" => new Rect(RenderContext.FormClientLeft, RenderContext.FormClientTop, Math.Max(0, ctx.Width), Math.Max(0, ctx.Height)),
         "panel" when IsSingle(ctx) => Clamp(1, 1, ctx.Width - 2, ctx.Height - 2),
+        "scrollbox" => Inset(Clamp(0, 0, ctx.Width, ctx.Height), ScrollBoxBorder(ctx)),
+        "stringgrid" when IsSingle(ctx, "bsSingle") => Inset(Clamp(0, 0, ctx.Width, ctx.Height), 2),
         _ => Clamp(0, 0, ctx.Width, ctx.Height),
     };
 
@@ -50,8 +52,15 @@ public static class ContainerRects
     /// <summary>UIF-218 <c>TGroupBox</c>: the side and bottom inset of the align rect at 96 DPI.</summary>
     public const int GroupBoxInset = 2;
 
-    internal static bool IsSingle(RenderContext ctx) =>
-        ctx.Get("BorderStyle", "bsNone").Equals("bsSingle", StringComparison.OrdinalIgnoreCase);
+    /// <summary>UIF-215 <c>TScrollBox</c>: the border inset per side, 2 for <c>bsSingle</c> (its default), else 0.</summary>
+    public static int ScrollBoxBorder(RenderContext ctx)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        return IsSingle(ctx, "bsSingle") ? 2 : 0;
+    }
+
+    internal static bool IsSingle(RenderContext ctx, string fallback = "bsNone") =>
+        ctx.Get("BorderStyle", fallback).Equals("bsSingle", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsBevel(RenderContext ctx, string property, string fallback) =>
         !ctx.Get(property, fallback).Equals("bvNone", StringComparison.OrdinalIgnoreCase);

@@ -1,0 +1,4 @@
+FillRect 0,0,121,17 #F0F0F0FF
+DrawRect 0,0,121,17 #ADADADFF 1 Solid
+FillPolygon 10,5 10,12 6,8.5 #ADADADFF
+FillPolygon 110,5 110,12 114,8.5 #ADADADFF

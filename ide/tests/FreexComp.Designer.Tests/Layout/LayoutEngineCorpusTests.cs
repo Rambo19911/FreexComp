@@ -8,7 +8,13 @@ namespace FreexComp.Designer.Tests.Layout;
 /// <summary>The shared corpus and the performance budget (D-033).</summary>
 public sealed partial class LayoutEngineTests
 {
-    /// <summary>The <c>Enn-&lt;slug&gt;</c> names of the shared corpus <c>tests/layout-corpus/</c> (layout.md §15).</summary>
+    /// <summary>Prefix of the designer-only cases (testing.md §2: <c>TestData/forms/layout/</c>), which run in design mode.</summary>
+    private const string DesignerCasePrefix = "designer/";
+
+    /// <summary>
+    /// The <c>Enn-&lt;slug&gt;</c> names of the shared corpus <c>tests/layout-corpus/</c> (layout.md §15), then the
+    /// designer-only cases of <c>TestData/forms/layout/</c> as <c>designer/&lt;name&gt;</c>.
+    /// </summary>
     public static TheoryData<string> CorpusCases()
     {
         var data = new TheoryData<string>();
@@ -17,21 +23,33 @@ public sealed partial class LayoutEngineTests
             data.Add(Path.GetFileNameWithoutExtension(file));
         }
 
+        foreach (var file in Directory.EnumerateFiles(DesignerCaseFolder, "*.form").Order(StringComparer.Ordinal))
+        {
+            data.Add(DesignerCasePrefix + Path.GetFileNameWithoutExtension(file));
+        }
+
         return data;
     }
+
+    private static string DesignerCaseFolder => Path.Combine(TestPaths.Forms, "layout");
 
     [Theory]
     [MemberData(nameof(CorpusCases))]
     [Trait("Phase", "5")]
     [Trait("Req", "DSG-LAY-055")]
+    [Trait("Req", "DSG-LAY-005")]
+    [Trait("Req", "DSG-LAY-041")]
     [Trait("Req", "UIF-332")]
     public void ExpectedDumpsMatch(string caseName)
     {
-        var basePath = Path.Combine(CorpusFolder, caseName);
-        var form = Parse(File.ReadAllText(basePath + ".form"), caseName + ".form");
+        // The shared corpus holds for both engines (run-time mode); the designer-only cases describe design mode
+        // (DSG-LAY-005: invisible controls participate) and loaded forms that violate the invariant (DSG-LAY-041).
+        var isDesignerCase = caseName.StartsWith(DesignerCasePrefix, StringComparison.Ordinal);
+        var basePath = isDesignerCase ? Path.Combine(DesignerCaseFolder, caseName[DesignerCasePrefix.Length..]) : Path.Combine(CorpusFolder, caseName);
+        var form = Parse(File.ReadAllText(basePath + ".form"), Path.GetFileName(basePath) + ".form");
         var stepsPath = basePath + ".steps";
         var steps = File.Exists(stepsPath) ? File.ReadAllText(stepsPath) : "dump\n";
-        var results = Engine.ComputeWithSteps(form, steps, LayoutMode.RunTime);
+        var results = Engine.ComputeWithSteps(form, steps, isDesignerCase ? LayoutMode.Design : LayoutMode.RunTime);
 
         var expected = LayoutDump.ParseDocuments(File.ReadAllText(basePath + ".expected.json"));
         Assert.Equal(expected.Count, results.Count);

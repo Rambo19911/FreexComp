@@ -77,6 +77,12 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
     /// <summary>Paths of expanded object/set rows (DSG-OI-013); the view-model swaps the set per class name.</summary>
     public ISet<string> ExpandedPaths { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// DSG-OI-113: the grid of a collection item — no <c>Name</c> row, no categories, rows in declaration order (the
+    /// arrangement is ignored), nested collection rows read-only, no geometry exception of the bold rule.
+    /// </summary>
+    public bool ItemMode { get; set; }
+
     /// <summary>A filter is set and no property row matches it (<c>Msg.Inspector.FilterEmpty</c>).</summary>
     public bool IsFilterEmpty => FilterText.Length > 0 && Rows.Count == 0;
 
@@ -99,6 +105,16 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
 
         var nodes = Common();
         var filter = FilterText;
+        if (ItemMode)
+        {
+            foreach (var node in nodes)
+            {
+                Emit(node, 0, filter, rows);
+            }
+
+            return rows;
+        }
+
         if (Arrangement == PropertyArrangement.Name)
         {
             foreach (var node in nodes.Where(n => n.Source != PropertyRowSource.Unknown).OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
@@ -183,7 +199,7 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
     /// <summary>The top-level rows of one component (DSG-OI-004 … 006).</summary>
     private List<Node> Nodes(FormObject obj)
     {
-        var nodes = new List<Node> { new("Name", "Name", "Misc", null, null, PropertyRowSource.Name, []) };
+        var nodes = ItemMode ? [] : new List<Node> { new("Name", "Name", "Misc", null, null, PropertyRowSource.Name, []) };
         if (obj.IsPreserved || obj.Info is not { } info)
         {
             nodes.Add(new("ClassName", "ClassName", "Misc", null, null, PropertyRowSource.ClassName, []));
@@ -191,7 +207,7 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
             return nodes;
         }
 
-        var isRoot = obj.Parent is null;
+        var isRoot = obj.Parent is null && !ItemMode;
         foreach (var property in info.Properties)
         {
             if (property.Hidden || (isRoot && property.Name is ("Width" or "Height")))
@@ -227,7 +243,7 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
     /// <summary>DSG-OI-036, 072: metadata <c>readOnly</c>, pseudo <c>ClassName</c>, raw values, <c>Name</c> in a multi-selection.</summary>
     private bool IsReadOnly(Node node) => node.Source switch
     {
-        PropertyRowSource.Metadata => node.Info!.ReadOnly,
+        PropertyRowSource.Metadata => node.Info!.ReadOnly || (ItemMode && node.Info.Kind == PropertyKind.Collection),
         PropertyRowSource.Name => IsMulti,
         _ => true,
     };
@@ -277,7 +293,7 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
             return obj.Properties.Any(p => p.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         }
 
-        if (AlwaysWrittenReference(obj, node.Path) is { } reference)
+        if (!ItemMode && AlwaysWrittenReference(obj, node.Path) is { } reference)
         {
             return Effective(obj, node.Path, info) is not IntegerValue { Value: var v } || v != reference;
         }

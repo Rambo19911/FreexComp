@@ -883,6 +883,45 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
     private IReadOnlyList<string> Lines(FormObject obj, string path, PropertyInfo info) =>
         Effective(obj, path, info) is StringListValue list ? list.Lines : [];
 
+    /// <summary>A <c>"kind": "collection"</c> row: read-only text with the <c>…</c> button (object-inspector.md §5.1).</summary>
+    public static bool IsCollectionRow(PropertyRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return row is { Kind: PropertyRowKind.Property, Source: PropertyRowSource.Metadata, Info.Kind: PropertyKind.Collection };
+    }
+
+    /// <summary>A row whose value is edited in a dialog opened by its <c>…</c> button, Enter or double-click.</summary>
+    public static bool HasEditorButton(PropertyRow row) => IsStringsRow(row) || IsCollectionRow(row);
+
+    /// <summary>DSG-OI-110, §5.1: the collection editor needs exactly one selected, non-preserved component of a writable form.</summary>
+    public bool CanEditCollection =>
+        _dialogs is not null && !IsEmpty && !Surface.IsReadOnly && Selection is [{ IsPreserved: false }]
+        && CurrentRow is { IsReadOnly: false } row && IsCollectionRow(row);
+
+    /// <summary>
+    /// DSG-OI-110 … 114: opens <c>Dialog.CollectionEditor</c> on the current collection row; its OK result (when the
+    /// working copy changed) is applied as one undo unit "Property"; Cancel or no change applies nothing.
+    /// </summary>
+    public async Task EditCollectionAsync()
+    {
+        if (!CanEditCollection || CurrentRow is not { } row)
+        {
+            return;
+        }
+
+        var component = Selection[0];
+        var change = await _dialogs!.ShowAsync(new Dialogs.CollectionEditorViewModel(Catalog, Designer.Model!, component, row.Path, _dialogs));
+        if (change is not null && !IsEmpty && Selection is [var still] && ReferenceEquals(still, component))
+        {
+            Surface.Commit(UndoTitles.Property, [change]);
+            RaiseRowsChanged();
+        }
+    }
+
+    /// <summary>The dialog of the current row (<see cref="HasEditorButton"/>): the strings or the collection editor.</summary>
+    public Task EditInDialogAsync() =>
+        CurrentRow is { } row && IsCollectionRow(row) ? EditCollectionAsync() : EditStringsAsync();
+
     /// <summary>
     /// Enter on a row: the Events page creates or shows the handler (DSG-OI-083), a <c>TStrings</c> row opens its editor,
     /// other rows enter edit mode (DSG-OI-032).
@@ -899,9 +938,9 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
             return;
         }
 
-        if (CurrentRow is { } row && IsStringsRow(row))
+        if (CurrentRow is { } row && HasEditorButton(row))
         {
-            await EditStringsAsync();
+            await EditInDialogAsync();
             return;
         }
 

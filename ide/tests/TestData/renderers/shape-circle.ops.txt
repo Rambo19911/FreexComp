@@ -1,0 +1,2 @@
+FillEllipse 15,0,50,50 #FFFF00FF
+DrawEllipse 15,0,50,50 #FF0000FF 1

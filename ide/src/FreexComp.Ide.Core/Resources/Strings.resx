@@ -4607,6 +4607,38 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>1 line</value>
     <comment>object-inspector.md DSG-OI-055 Dialog.StringsEditor.LineCount</comment>
   </data>
+  <data name="CollectionEditor_Title" xml:space="preserve">
+    <value>Edit {0}.{1}</value>
+    <comment>object-inspector.md DSG-OI-110: 0 = component, 1 = property</comment>
+  </data>
+  <data name="CollectionEditor_Items" xml:space="preserve">
+    <value>&amp;Items:</value>
+    <comment>dialogs.md §25 Dialog.CollectionEditor.Items</comment>
+  </data>
+  <data name="CollectionEditor_Empty" xml:space="preserve">
+    <value>No items. Choose Add to create one.</value>
+    <comment>dialogs.md §25 Items placeholder</comment>
+  </data>
+  <data name="CollectionEditor_Add" xml:space="preserve">
+    <value>&amp;Add</value>
+    <comment>dialogs.md §25 Dialog.CollectionEditor.Add</comment>
+  </data>
+  <data name="CollectionEditor_Delete" xml:space="preserve">
+    <value>&amp;Delete</value>
+    <comment>dialogs.md §25 Dialog.CollectionEditor.Delete</comment>
+  </data>
+  <data name="CollectionEditor_MoveUp" xml:space="preserve">
+    <value>Move &amp;Up</value>
+    <comment>dialogs.md §25 Dialog.CollectionEditor.MoveUp</comment>
+  </data>
+  <data name="CollectionEditor_MoveDown" xml:space="preserve">
+    <value>Move Do&amp;wn</value>
+    <comment>dialogs.md §25 Dialog.CollectionEditor.MoveDown</comment>
+  </data>
+  <data name="CollectionEditor_Grid" xml:space="preserve">
+    <value>Properties of the selected item:</value>
+    <comment>dialogs.md §25 Dialog.CollectionEditor.Grid label</comment>
+  </data>
   <data name="ToolPalette_SearchPlaceholder" xml:space="preserve">
     <value>Search components</value>
     <comment>designer.md §12 UI-DSG-120 search box placeholder</comment>

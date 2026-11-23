@@ -26,6 +26,19 @@ public static class PropertyAccess
 
     public static bool IsStored(FormObject obj, string path) => obj.FindProperty(path) is not null;
 
+    /// <summary>
+    /// False when <c>"stored": false</c> applies to <paramref name="path"/>: its own metadata (<paramref name="info"/>) or,
+    /// for a dotted path, the object property it belongs to (component-metadata.md §3, DSG-FD-043).
+    /// </summary>
+    public static bool IsStoredPath(FormObject obj, string path, PropertyInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(info);
+        var dot = path.IndexOf('.');
+        return info.Stored && (dot < 0 || obj.Info?.FindProperty(path[..dot]) is not { Stored: false });
+    }
+
     /// <summary>True when <paramref name="value"/> equals the metadata default of the path (comparison table §2.1).</summary>
     public static bool IsDefault(FormObject obj, string path, FormValue value) => IsDefault(obj.Catalog, Resolve(obj, path), value);
 

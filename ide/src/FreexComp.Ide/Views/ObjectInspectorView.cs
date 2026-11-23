@@ -115,7 +115,8 @@ public sealed class ObjectInspectorView : UserControl
             IsHitTestVisible = false, Children = { _empty, _emptySecondary },
         };
 
-        _scroll = new ScrollViewer { Content = _rows, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        _scroll = new ScrollViewer { Content = _rows, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            AllowAutoHide = false }; // the scrollbar takes its own column: it never covers a row's … button
         _grid.Child = new Panel { Children = { _scroll, _emptyPanel } };
         Bind(_grid, Border.BackgroundProperty, "FxcBgPanelBrush");
         _grid.AddHandler(PointerPressedEvent, OnGridPointerPressed, RoutingStrategies.Tunnel);
@@ -460,15 +461,20 @@ public sealed class ObjectInspectorView : UserControl
                 cell.Children.Add(box);
             }
 
-            if (row is not null && ObjectInspectorViewModel.IsStringsRow(row) && !isReadOnly)
+            if (row is not null && ObjectInspectorViewModel.HasEditorButton(row) && !isReadOnly)
             {
                 var button = new Button { Content = "…", Width = 22, MinWidth = 0, Padding = new Thickness(0), Focusable = false, VerticalAlignment = VerticalAlignment.Stretch };
+                if (ObjectInspectorViewModel.IsCollectionRow(row))
+                {
+                    button.IsEnabled = model.Selection is [{ IsPreserved: false }]; // §5.1: not for multi-selection or preserved components
+                }
+
                 AutomationProperties.SetAutomationId(button, id + ".Button");
                 AutomationProperties.SetName(button, name);
                 button.Click += (_, _) =>
                 {
                     model.SetCurrent(path);
-                    _ = model.EditStringsAsync();
+                    _ = model.EditInDialogAsync();
                 };
                 DockPanel.SetDock(button, Dock.Right);
                 cell.Children.Add(button);
@@ -833,7 +839,7 @@ public sealed class ObjectInspectorView : UserControl
             }
         }
         else if (wasCurrent && value is not null && model.Page == InspectorPage.Properties
-            && model.Rows.FirstOrDefault(r => r.Path == value) is { } clicked && !ObjectInspectorViewModel.IsStringsRow(clicked))
+            && model.Rows.FirstOrDefault(r => r.Path == value) is { } clicked && !ObjectInspectorViewModel.HasEditorButton(clicked))
         {
             BeginEdit();
         }
@@ -852,9 +858,9 @@ public sealed class ObjectInspectorView : UserControl
         }
 
         if (model.Rows.FirstOrDefault(r => string.Equals(r.Path, model.CurrentPath, StringComparison.OrdinalIgnoreCase)) is { } row
-            && ObjectInspectorViewModel.IsStringsRow(row))
+            && ObjectInspectorViewModel.HasEditorButton(row))
         {
-            _ = model.EditStringsAsync();
+            _ = model.EditInDialogAsync();
             return;
         }
 

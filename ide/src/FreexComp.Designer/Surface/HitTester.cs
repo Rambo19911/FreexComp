@@ -195,9 +195,15 @@ public sealed class HitTester
         }
     }
 
-    /// <summary>A tab sheet that is not the active page is not drawn, so it is not hit (its geometry is computed: <c>"stored": false</c>).</summary>
-    private bool IsHiddenPage(FormObject obj) =>
-        obj.Info?.FindProperty("Left") is { Stored: false } && !Geometry.Layout.GetVisible(obj);
+    /// <summary>A tab sheet that is not the active page is not drawn, so it is not hit.</summary>
+    private bool IsHiddenPage(FormObject obj) => IsInactiveSheet(obj, Geometry.Layout);
+
+    /// <summary>
+    /// DSG-RND-017: a tab sheet (renderer <c>tabsheet</c>) that is not the design-active page. Other controls with computed
+    /// geometry (tool buttons) are drawn and hit even when invisible: design mode shows hidden controls (DSG-LAY-005).
+    /// </summary>
+    internal static bool IsInactiveSheet(FormObject obj, Layout.LayoutResult layout) =>
+        obj.Info?.RendererId == "tabsheet" && !layout.GetVisible(obj);
 
     private static int AltIndex(List<FormObject> stack, FormObject? previous)
     {

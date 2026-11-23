@@ -591,8 +591,7 @@ public sealed partial class DesignSurfaceController
     }
 
     /// <summary>An inactive tab sheet: not drawn, not hit (lead decisions 2026-11-23), so not a drop target either.</summary>
-    private static bool IsHiddenPage(FormObject obj, SurfaceGeometry g) =>
-        obj.Info?.FindProperty("Left") is { Stored: false } && !g.Layout.GetVisible(obj);
+    private static bool IsHiddenPage(FormObject obj, SurfaceGeometry g) => HitTester.IsInactiveSheet(obj, g.Layout);
 
     private static bool Contains(Rect r, (int X, int Y) p) => p.X >= r.Left && p.X < r.Right && p.Y >= r.Top && p.Y < r.Bottom;
 
@@ -1009,6 +1008,11 @@ public sealed partial class DesignSurfaceController
             Selection.Select(Target(hit));
             RunDefaultAction();
             return;
+        }
+
+        if (input.ClickCount == 1 && TryActivateTab(hit, input))
+        {
+            return; // DSG-RND-017
         }
 
         State = InteractionState.PressPending;

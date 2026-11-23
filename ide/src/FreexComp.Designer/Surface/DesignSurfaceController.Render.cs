@@ -431,9 +431,8 @@ public sealed partial class DesignSurfaceController
         canvas.DrawText(text, box, TipFont, p.TextPrimary, HAlign.Center, VAlign.Center);
     }
 
-    /// <summary>A tab sheet that is not the active page is not drawn (its geometry is computed: <c>"stored": false</c>).</summary>
-    private static bool IsHiddenPage(SurfaceGeometry g, FormObject obj) =>
-        obj.Info?.FindProperty("Left") is { Stored: false } && !g.Layout.GetVisible(obj);
+    /// <summary>A tab sheet that is not the active page is not drawn (DSG-RND-017).</summary>
+    private static bool IsHiddenPage(SurfaceGeometry g, FormObject obj) => HitTester.IsInactiveSheet(obj, g.Layout);
 
     private static Rect Inner(Rect r) => new(r.Left + 1, r.Top + 1, Math.Max(0, r.Width - 2), Math.Max(0, r.Height - 2));
 }

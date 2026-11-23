@@ -1,0 +1,29 @@
+object MainForm: TMainForm
+  Left = 200
+  Top = 120
+  Caption = 'MainForm'
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  object StatusBar1: TStatusBar
+    Left = 0
+    Top = 281
+    Width = 400
+    Height = 19
+    Panels = <
+      item
+        Alignment = taCenter
+        Text = 'Ready'
+      end
+      item
+        Text = 'Ln 1, Col 1'
+        Width = 75
+      end
+      item
+        Bevel = pbRaised
+        Width = $60
+        Mystery = 'kept'
+      end
+    >
+  end
+end

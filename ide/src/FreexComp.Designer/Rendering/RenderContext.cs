@@ -123,6 +123,10 @@ public sealed class RenderContext
     public T Get<T>(string propertyPath, T fallback) => Convert(Effective(Object, Info, propertyPath), fallback);
 
     /// <summary>TColor → colour (object-inspector.md §5.6); <paramref name="fallback"/> for <c>clNone</c>, <c>clDefault</c> and invalid values.</summary>
+    /// <summary>The effective value of a property of the parent (stored, else its metadata default); the fallback without a parent.</summary>
+    public T ParentValue<T>(string propertyPath, T fallback) =>
+        Object.Parent is { } parent ? GetOf(parent, InfoOf(parent), propertyPath, fallback) : fallback;
+
     public Rgba ResolveColor(FormValue? colorValue, Rgba fallback) => ResolveColor(colorValue, fallback, Palette);
 
     /// <summary>The control's own fill (DSG-RND-015): <c>Color</c>, or the parent's fill when <c>ParentColor</c> is True.</summary>

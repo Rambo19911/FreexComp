@@ -1,0 +1,9 @@
+FillRect 0,0,400,19 #F0F0F0FF
+DrawLine 0,0.5,400,0.5 #ADADADFF 1 Solid
+DrawText "Ready" 2,1,116,18 "Segoe UI" 12 #000000FF Left Center
+DrawLine 119.5,1,119.5,19 #ADADADFF 1 Solid
+DrawText "Ln 1" 122,1,46,18 "Segoe UI" 12 #000000FF Left Center
+DrawLine 169.5,1,169.5,19 #ADADADFF 1 Solid
+DrawLine 396,18.5,399.5,15 #6D6D6DFF 1 Dot
+DrawLine 392,18.5,399.5,11 #6D6D6DFF 1 Dot
+DrawLine 388,18.5,399.5,7 #6D6D6DFF 1 Dot

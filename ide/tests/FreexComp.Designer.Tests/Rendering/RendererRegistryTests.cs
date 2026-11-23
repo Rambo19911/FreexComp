@@ -9,7 +9,26 @@ public sealed class RendererRegistryTests
     [
         "form", "label", "edit", "memo", "button", "checkbox", "radiobutton", "listbox", "combobox", "groupbox", "panel",
         "image", "nonvisual", "generic", "unknown",
+        "scrollbar", "statictext", "shape", "bevel", "splitter", "scrollbox", "pagecontrol", "tabsheet", "stringgrid",
+        "trackbar", "progressbar", "treeview", "listview", "statusbar", "toolbar", "toolbutton",
     ];
+
+    /// <summary>
+    /// D-093: every renderer id the shipped framework metadata names has its own renderer (design-renderers.md §4.16);
+    /// none falls back to <c>generic</c> unless it is <c>generic</c>.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-RND-008")]
+    [Trait("Req", "DSG-RND-017")]
+    public void AllFrameworkRendererIdsAreRegistered()
+    {
+        var registry = RendererRegistry.CreateDefault();
+        var ids = Layout.LayoutHarness.Catalog.All.Select(c => c.RendererId).OfType<string>().Distinct().Order(StringComparer.Ordinal).ToList();
+        Assert.Contains("pagecontrol", ids);
+        Assert.True(ids.Count >= 30, "framework metadata renderer ids: " + string.Join(", ", ids));
+        Assert.Equal(ids, ids.Select(id => registry.Resolve(id).Id));
+    }
 
     [Fact]
     [Trait("Phase", "5")]
@@ -24,7 +43,7 @@ public sealed class RendererRegistryTests
         Assert.Equal("generic", registry.Resolve("generic").Id);
         Assert.Equal("unknown", registry.Resolve("unknown").Id);
 
-        // Every renderer of design-renderers.md §4.1 … 4.15 resolves to itself (the §4.16 ids follow with D-093).
+        // Every renderer of design-renderers.md §4.1 … 4.15 resolves to itself and §4.16.
         foreach (var id in RendererIds)
         {
             Assert.Equal(id, registry.Resolve(id).Id);

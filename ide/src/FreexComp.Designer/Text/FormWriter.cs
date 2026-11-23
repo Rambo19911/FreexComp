@@ -116,12 +116,13 @@ public static class FormWriter
             {
                 var info = property.Info!;
                 var isAlways = always.Any(a => a.Path.Equals(property.Path, StringComparison.OrdinalIgnoreCase));
-                if (!info.Stored && property.RawText is null)
+                var stored = PropertyAccess.IsStoredPath(obj, property.Path, info);
+                if (!stored && property.RawText is null)
                 {
                     continue; // "stored": false values are never written; a line read from a file is kept (DSG-FD-043)
                 }
 
-                if (!isAlways && info.Stored && PropertyAccess.IsDefault(catalog, info, property.Value))
+                if (!isAlways && stored && PropertyAccess.IsDefault(catalog, info, property.Value))
                 {
                     continue; // DSG-FD-043: equal to the default = not written
                 }

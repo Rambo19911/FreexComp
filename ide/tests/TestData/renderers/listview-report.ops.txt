@@ -1,0 +1,8 @@
+FillRect 0,0,250,150 #FFFFFFFF
+DrawRect 0,0,250,150 #7A7A7AFF 1 Solid
+FillRect 1,1,248,21 #F0F0F0FF
+DrawText "Name" 5,1,92,21 "Segoe UI" 12 #000000FF Left Center
+DrawLine 100.5,1,100.5,22 #ADADADFF 1 Solid
+DrawText "Size" 105,1,42,21 "Segoe UI" 12 #000000FF Right Center
+DrawLine 150.5,1,150.5,22 #ADADADFF 1 Solid
+DrawText "X" 4,25,242,15 "Segoe UI" 12 #6D6D6DFF Left Top

@@ -553,6 +553,104 @@ public sealed class FormWriterTests
             FormWriter.WriteObjects([document.FindByName("Chart1")!]));
     }
 
+    /// <summary>
+    /// DSG-FD-043, DSG-FD-044: <c>"stored": false</c> (tab-sheet and tool-button geometry of the framework metadata) wins
+    /// over every writing rule: never written for designer values, never always-written, sub-properties of a non-stored
+    /// object property included; a line read from the file is kept as read until the object is edited (D-095).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-FD-043")]
+    [Trait("Req", "DSG-FD-044")]
+    public void NeverWritesNonStoredProperties()
+    {
+        var catalog = Layout.LayoutHarness.Catalog;
+        const string Input = """
+            object F: TForm
+              Left = 0
+              Top = 0
+              ClientWidth = 300
+              ClientHeight = 200
+              PixelsPerInch = 96
+              object P: TPageControl
+                Left = 0
+                Top = 0
+                Width = 289
+                Height = 193
+                object S1: TTabSheet
+                  Left = 4
+                  Top = 27
+                  Width = 281
+                  Height = 162
+                  Caption = 'One'
+                end
+                object S2: TTabSheet
+                  Caption = 'Two'
+                end
+              end
+              object B: TToolBar
+                Left = 0
+                Top = 0
+                Width = 300
+                Height = 29
+                object T: TToolButton
+                  Width = 23
+                end
+              end
+            end
+
+            """;
+        var document = FormParser.Parse(Input.ReplaceLineEndings("\n"), "s.form", catalog).Document!;
+        Assert.Empty(document.Diagnostics);
+
+        // As read: the sheet's lines stay; nothing is added for sheets or tool buttons (no always-written geometry).
+        Assert.Equal(Input.ReplaceLineEndings("\n"), FormWriter.Write(document));
+
+        var editor = new FreexComp.Designer.Editing.FormEditor(document, catalog);
+        editor.Apply(
+        [
+            new FreexComp.Designer.Editing.SetProperty("S1", "Caption", new StringValue("First")),
+            new FreexComp.Designer.Editing.SetProperty("S2", "Left", new IntegerValue(9, false)),
+            new FreexComp.Designer.Editing.SetProperty("S2", "Margins.Left", new IntegerValue(7, false)),
+            new FreexComp.Designer.Editing.SetProperty("T", "Top", new IntegerValue(5, false)),
+            new FreexComp.Designer.Editing.SetProperty("T", "Caption", new StringValue("Go")),
+        ]);
+
+        // Editing S1 drops its read geometry; designer values of non-stored properties are never written.
+        Assert.Equal("""
+            object F: TForm
+              Left = 0
+              Top = 0
+              ClientWidth = 300
+              ClientHeight = 200
+              PixelsPerInch = 96
+              object P: TPageControl
+                Left = 0
+                Top = 0
+                Width = 289
+                Height = 193
+                object S1: TTabSheet
+                  Caption = 'First'
+                end
+                object S2: TTabSheet
+                  Caption = 'Two'
+                end
+              end
+              object B: TToolBar
+                Left = 0
+                Top = 0
+                Width = 300
+                Height = 29
+                object T: TToolButton
+                  Width = 23
+                  Caption = 'Go'
+                end
+              end
+            end
+
+            """.ReplaceLineEndings("\n"), FormWriter.Write(document));
+    }
+
     private static string Write(string input)
     {
         var result = FormParser.Parse(input, "w.form", Catalog);

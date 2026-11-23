@@ -19,25 +19,31 @@ internal sealed class DesignerHarness : IDisposable
     private (int X, int Y) _pointer;
     private InputModifiers _pressModifiers;
 
-    private DesignerHarness(FormDocument document)
+    private DesignerHarness(FormDocument document, FreexComp.Designer.Catalog.ComponentCatalog catalog)
     {
         Document = document;
-        Editor = new FormEditor(document, TestCatalog.Instance);
+        _catalog = catalog;
+        Editor = new FormEditor(document, catalog);
         Undo = new DesignerUndoStack();
-        Engine = new LayoutEngine(TestCatalog.Instance, RendererRegistry.CreateDefault());
-        Controller = new DesignSurfaceController(document, Editor, Undo, TestCatalog.Instance, Engine, Settings, Host, Time);
+        Engine = new LayoutEngine(catalog, RendererRegistry.CreateDefault());
+        Controller = new DesignSurfaceController(document, Editor, Undo, catalog, Engine, Settings, Host, Time);
     }
+
+    private readonly FreexComp.Designer.Catalog.ComponentCatalog _catalog;
 
     /// <summary>A form of the shared test data (<c>forms/canonical/hello.form</c>).</summary>
     public static DesignerHarness FromFile(string relativePath) => FromText(File.ReadAllText(TestPaths.Combine(relativePath)), relativePath);
 
     /// <param name="allowDiagnostics">The form may have diagnostics (preserved items: unknown classes, inherited objects).</param>
-    public static DesignerHarness FromText(string text, string path = "test.form", bool allowDiagnostics = false)
+    /// <param name="catalog">The metadata: the test metadata when null (the framework metadata is <c>LayoutHarness.Catalog</c>).</param>
+    public static DesignerHarness FromText(string text, string path = "test.form", bool allowDiagnostics = false,
+        FreexComp.Designer.Catalog.ComponentCatalog? catalog = null)
     {
-        var result = FormParser.Parse(text.Replace("\r\n", "\n"), path, TestCatalog.Instance);
+        catalog ??= TestCatalog.Instance;
+        var result = FormParser.Parse(text.Replace("\r\n", "\n"), path, catalog);
         var document = result.Document ?? throw new InvalidOperationException("form did not parse:\n" + text);
         Assert.True(allowDiagnostics || document.Diagnostics.Count == 0, string.Join("\n", document.Diagnostics));
-        return new DesignerHarness(document) { AllowDiagnostics = allowDiagnostics };
+        return new DesignerHarness(document, catalog) { AllowDiagnostics = allowDiagnostics };
     }
 
     /// <summary>The form has diagnostics by design: <see cref="Dispose"/> checks that the text still parses, not that it is clean.</summary>
@@ -201,7 +207,7 @@ internal sealed class DesignerHarness : IDisposable
         }
 
         AssertInvariant();
-        var reparsed = FormParser.Parse(Text, "check.form", TestCatalog.Instance);
+        var reparsed = FormParser.Parse(Text, "check.form", _catalog);
         Assert.True(reparsed.Document is { } doc && (AllowDiagnostics || doc.Diagnostics.Count == 0),
             string.Join("\n", reparsed.Document?.Diagnostics ?? []));
     }

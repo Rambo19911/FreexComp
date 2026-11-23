@@ -1,0 +1,55 @@
+{
+  "formatVersion": 1,
+  "dpi": 96,
+  "forms": [
+    {
+      "class": "TForm",
+      "name": "LayoutForm",
+      "clientWidth": 400,
+      "clientHeight": 300,
+      "controls": [
+        {
+          "class": "TToolBar",
+          "name": "Bar",
+          "left": 0,
+          "top": 0,
+          "width": 400,
+          "height": 29,
+          "visible": true,
+          "controls": [
+            {
+              "class": "TToolButton",
+              "name": "B1",
+              "left": 0,
+              "top": 2,
+              "width": 23,
+              "height": 22,
+              "visible": true,
+              "controls": []
+            },
+            {
+              "class": "TToolButton",
+              "name": "B2",
+              "left": 23,
+              "top": 2,
+              "width": 23,
+              "height": 22,
+              "visible": false,
+              "controls": []
+            },
+            {
+              "class": "TToolButton",
+              "name": "B3",
+              "left": 46,
+              "top": 2,
+              "width": 23,
+              "height": 22,
+              "visible": true,
+              "controls": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

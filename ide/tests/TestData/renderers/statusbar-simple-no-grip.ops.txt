@@ -1,0 +1,3 @@
+FillRect 0,0,400,19 #F0F0F0FF
+DrawLine 0,0.5,400,0.5 #ADADADFF 1 Solid
+DrawText "Simple" 4,1,396,18 "Segoe UI" 12 #000000FF Left Center

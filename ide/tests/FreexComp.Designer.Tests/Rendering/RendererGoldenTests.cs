@@ -9,14 +9,27 @@ public sealed partial class RendererTests
     /// <summary>
     /// One render case: <paramref name="ClassName"/> <c>TForm</c> renders the root form with client size W × H; any other
     /// class renders child <c>X</c>. <paramref name="Renderer"/> also overrides the metadata id (generic, unknown).
+    /// <paramref name="Framework"/> cases (§4.16, D-093) use the shipped framework metadata: <c>X</c> at (8, 8) with
+    /// <paramref name="Children"/> (object blocks at column 0) is laid out and object <paramref name="Target"/> is drawn
+    /// from the layout (<see cref="RenderContext.FromLayout"/>), or at the given size when one is given.
     /// </summary>
-    private sealed record Case(string Renderer, string Name, string ClassName, int W, int H, string Properties = "")
+    private sealed record Case(string Renderer, string Name, string ClassName, int W, int H, string Properties = "",
+        bool Framework = false, string Children = "", string Target = "X")
     {
         public string Id => $"{Renderer}-{Name}";
 
         public RenderContext Context(int? width = null, int? height = null)
         {
             var (w, h) = (width ?? W, height ?? H);
+            if (Framework)
+            {
+                var form = Layout.LayoutHarness.Form(400, 300, Layout.LayoutHarness.Obj("X", ClassName, 8, 8, W, H, Properties, Children));
+                var target = form.FindByName(Target)!;
+                return width is null && height is null
+                    ? RenderContext.FromLayout(target, Layout.LayoutHarness.Engine.Compute(form))
+                    : new RenderContext(target, w, h);
+            }
+
             if (ClassName == "TForm")
             {
                 var root = RenderHarness.Parse($"object F: TForm\n  ClientWidth = {W}\n  ClientHeight = {H}\n"
@@ -105,7 +118,67 @@ public sealed partial class RendererTests
         new("generic", "default", "TStatusBar", 300, 19),
         new("generic", "with-caption", "TButton", 120, 60, "Caption = 'Shown below'"),
         new("unknown", "default", "TMystery", 120, 40),
+
+        // §4.16 (D-093), with the framework metadata.
+        new("scrollbar", "horizontal", "TScrollBar", 121, 17, Framework: true),
+        new("scrollbar", "vertical", "TScrollBar", 17, 121, "Kind = sbVertical", Framework: true),
+        new("scrollbar", "disabled", "TScrollBar", 121, 17, "Enabled = False", Framework: true),
+        new("statictext", "default", "TStaticText", 65, 17, "Caption = '&Static'\nAutoSize = False", Framework: true),
+        new("statictext", "sunken-right", "TStaticText", 90, 25,
+            "Caption = 'Sunken'\nBorderStyle = sbsSunken\nAlignment = taRightJustify\nAutoSize = False", Framework: true),
+        new("statictext", "single-small", "TStaticText", 10, 10, "Caption = 'Measured'\nBorderStyle = sbsSingle", Framework: true),
+        new("shape", "rectangle", "TShape", 65, 65, Framework: true),
+        new("shape", "circle", "TShape", 80, 50, "Shape = stCircle\nBrush.Color = clYellow\nPen.Color = clRed", Framework: true),
+        new("shape", "square", "TShape", 80, 50, "Shape = stSquare", Framework: true),
+        new("bevel", "box", "TBevel", 50, 50, Framework: true),
+        new("bevel", "bottom-line", "TBevel", 120, 10, "Shape = bsBottomLine", Framework: true),
+        new("splitter", "default", "TSplitter", 3, 100, "Align = alNone", Framework: true),
+        new("splitter", "beveled-horizontal", "TSplitter", 120, 6, "Align = alNone\nBeveled = True", Framework: true),
+        new("scrollbox", "empty", "TScrollBox", 185, 41, Framework: true),
+        new("scrollbox", "both-bars", "TScrollBox", 185, 80, Framework: true,
+            Children: "object Wide: TPanel\n  Left = 0\n  Top = 0\n  Width = 400\n  Height = 200\nend\n"),
+        new("scrollbox", "no-border-vertical", "TScrollBox", 185, 80, "BorderStyle = bsNone", Framework: true,
+            Children: "object Tall: TPanel\n  Left = 0\n  Top = 0\n  Width = 100\n  Height = 200\nend\n"),
+        new("pagecontrol", "first-active", "TPageControl", 289, 193, Framework: true, Children: Sheets),
+        new("pagecontrol", "second-active", "TPageControl", 289, 193, "ActivePage = S2", Framework: true, Children: Sheets),
+        new("pagecontrol", "hidden-tab-fixed-width", "TPageControl", 289, 193, "TabWidth = 70\nTabHeight = 24", Framework: true,
+            Children: HiddenSecondSheet),
+        new("pagecontrol", "no-sheets", "TPageControl", 289, 193, Framework: true),
+        new("tabsheet", "default", "TPageControl", 289, 193, Framework: true, Children: Sheets, Target: "S1"),
+        new("stringgrid", "default", "TStringGrid", 320, 120, Framework: true),
+        new("stringgrid", "no-fixed-small-cells", "TStringGrid", 200, 80,
+            "FixedCols = 0\nFixedRows = 0\nDefaultColWidth = 30\nDefaultRowHeight = 15", Framework: true),
+        new("trackbar", "default", "TTrackBar", 150, 45, "Position = 3", Framework: true),
+        new("trackbar", "vertical-max", "TTrackBar", 45, 150, "Orientation = trVertical\nPosition = 10", Framework: true),
+        new("progressbar", "half", "TProgressBar", 150, 17, "Position = 50", Framework: true),
+        new("progressbar", "vertical", "TProgressBar", 17, 150, "Orientation = pbVertical\nPosition = 25", Framework: true),
+        new("treeview", "default", "TTreeView", 121, 97, Framework: true),
+        new("listview", "icons", "TListView", 250, 150, Framework: true),
+        new("listview", "report", "TListView", 250, 150,
+            "ViewStyle = vsReport\nColumns = <\nitem\nCaption = 'Name'\nWidth = 100\nend\nitem\nCaption = 'Size'\nAlignment = taRightJustify\nend\n>",
+            Framework: true),
+        new("statusbar", "panels", "TStatusBar", 300, 19,
+            "Panels = <\nitem\nText = 'Ready'\nWidth = 120\nend\nitem\nText = 'Ln 1'\nend\n>", Framework: true),
+        new("statusbar", "simple-no-grip", "TStatusBar", 300, 19, "SimplePanel = True\nSimpleText = 'Simple'\nSizeGrip = False", Framework: true),
+        new("toolbar", "default", "TToolBar", 300, 29, Framework: true, Children: Buttons),
+        new("toolbutton", "image-only", "TToolBar", 300, 29, Framework: true, Children: Buttons, Target: "B1"),
+        new("toolbutton", "separator", "TToolBar", 300, 29, Framework: true, Children: Buttons, Target: "Sep"),
+        new("toolbutton", "captions", "TToolBar", 300, 40, "ShowCaptions = True\nButtonHeight = 36\nButtonWidth = 50",
+            Framework: true, Children: Buttons, Target: "B1"),
+        new("toolbutton", "list-down", "TToolBar", 300, 29, "ShowCaptions = True\nList = True\nButtonWidth = 60",
+            Framework: true, Children: DownButtons, Target: "B1"),
     ];
+
+    private const string Sheets = "object S1: TTabSheet\n  Caption = '&First'\nend\nobject S2: TTabSheet\n  Caption = 'Second'\nend\n"
+        + "object S3: TTabSheet\n  Caption = 'Third tab'\nend\n";
+
+    private const string HiddenSecondSheet = "object S1: TTabSheet\n  Caption = '&First'\nend\nobject S2: TTabSheet\n  Caption = 'Second'\n"
+        + "  TabVisible = False\nend\nobject S3: TTabSheet\n  Caption = 'Third tab'\nend\n";
+
+    private const string Buttons = "object B1: TToolButton\n  Caption = '&Open'\nend\nobject Sep: TToolButton\n  Style = tbsSeparator\n  Width = 8\nend\n"
+        + "object B2: TToolButton\n  Caption = 'Save'\nend\n";
+
+    private const string DownButtons = "object B1: TToolButton\n  Caption = '&Open'\n  Down = True\nend\nobject B2: TToolButton\n  Caption = 'Save'\nend\n";
 
     public static TheoryData<string> CaseIds => [.. Cases.Select(c => c.Id)];
 

@@ -1,0 +1,22 @@
+object LayoutForm: TForm
+  Left = 0
+  Top = 0
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  Scaled = False
+  object Top1: TPanel
+    Left = 7
+    Top = 50
+    Width = 100
+    Height = 30
+    Align = alTop
+  end
+  object Btn: TButton
+    Left = 300
+    Top = 250
+    Width = 75
+    Height = 25
+    Anchors = [akRight, akBottom]
+  end
+end

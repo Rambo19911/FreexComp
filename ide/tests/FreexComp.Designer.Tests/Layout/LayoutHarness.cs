@@ -45,7 +45,8 @@ internal static class LayoutHarness
     public static FormDocument Parse(string text, string path = "layout.form")
     {
         var result = FormParser.Parse(text.Replace("\r\n", "\n"), path, Catalog);
-        var document = result.Document ?? throw new InvalidOperationException("form did not parse:\n" + text);
+        var document = result.Document
+            ?? throw new InvalidOperationException("form did not parse:\n" + text + "\n" + string.Join("\n", result.Diagnostics));
         Assert.True(document.Diagnostics.Count == 0, string.Join("\n", document.Diagnostics));
         return document;
     }

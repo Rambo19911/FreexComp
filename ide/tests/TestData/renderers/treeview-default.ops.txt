@@ -1,0 +1,3 @@
+FillRect 0,0,121,97 #FFFFFFFF
+DrawRect 0,0,121,97 #7A7A7AFF 1 Solid
+DrawText "X" 4,4,113,15 "Segoe UI" 12 #6D6D6DFF Left Top

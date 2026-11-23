@@ -18,11 +18,12 @@ public sealed partial class DesignSurfaceController
     /// <paramref name="code"/> (the code-sync edits, re-run on redo through <paramref name="codeOps"/>), then
     /// <paramref name="changes"/>, the measured auto-size of controls whose text-size properties changed (DSG-SUR-088) and the
     /// layout commit (DSG-LAY-040). False when the form is read-only or code sync
-    /// refused the edit (DSG-CS-004: <c>Msg.Designer.CodeSyncConflict</c>; nothing is changed then).
+    /// refused the edit (DSG-CS-004: <c>Msg.Designer.CodeSyncConflict</c>; nothing is changed then). <paramref name="select"/>,
+    /// when given, becomes the selection after the changes, inside the unit (DSG-RND-017 tab click).
     /// </summary>
     /// <exception cref="InvalidFormChangeException">A change is invalid (a caller error); the code edits were reverted.</exception>
     public bool Commit(string titleKey, IReadOnlyList<FormChange> changes, Func<IReadOnlyList<TextEditRecord>>? code = null,
-        IReadOnlyList<CodeSyncOp>? codeOps = null)
+        IReadOnlyList<CodeSyncOp>? codeOps = null, Model.FormObject? select = null)
     {
         ArgumentNullException.ThrowIfNull(titleKey);
         ArgumentNullException.ThrowIfNull(changes);
@@ -56,6 +57,11 @@ public sealed partial class DesignSurfaceController
         {
             _host.CodeSync.RevertEdits(edits);
             throw;
+        }
+
+        if (select is not null)
+        {
+            Selection.Select(select);
         }
 
         var (sizeRedo, sizeUndo) = ApplyAutoSize(AutoSizeTargets(changes)); // DSG-SUR-088

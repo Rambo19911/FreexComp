@@ -1,0 +1,2 @@
+FillRect 15,0,50,50 #FFFFFFFF
+DrawRect 15,0,50,50 #000000FF 1 Solid

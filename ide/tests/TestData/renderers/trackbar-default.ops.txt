@@ -1,0 +1,5 @@
+PushClip 0,0,150,45
+FillRect 5,20,140,4 #ADADADFF
+FillRect 42,12,11,21 #E1E1E1FF
+DrawRect 42,12,11,21 #7A7A7AFF 1 Solid
+PopClip

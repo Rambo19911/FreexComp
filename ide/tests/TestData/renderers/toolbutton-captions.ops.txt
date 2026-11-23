@@ -1,0 +1,2 @@
+DrawRect 17,2,16,16 #ADADADFF 1 Solid
+DrawText "&Open" 0,18,50,18 "Segoe UI" 12 #000000FF Center Center mnemonic

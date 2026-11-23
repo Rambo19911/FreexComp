@@ -321,7 +321,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         // a legacy root size follows DSG-FD-012 instead.
         foreach (var property in obj.Properties)
         {
-            if (property.Info is { Stored: false } && !(obj.Parent is null && IsLegacySize(property.Path)) && !plan.Any(p => Same(p.Path, property.Path)))
+            if (property.Info is { } read && !PropertyAccess.IsStoredPath(obj, property.Path, read) && !(obj.Parent is null && IsLegacySize(property.Path)) && !plan.Any(p => Same(p.Path, property.Path)))
             {
                 plan.Add((property.Path, null));
             }
@@ -339,7 +339,7 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
 
     /// <summary>False when the value is not written: equal to the default (except DSG-FD-044) or <c>"stored": false</c>.</summary>
     private bool IsStoredValue(FormObject obj, string path, PropertyInfo info, FormValue value) =>
-        info.Stored && (IsAlwaysWritten(obj, path) || !PropertyAccess.IsDefault(catalog, info, value));
+        PropertyAccess.IsStoredPath(obj, path, info) && (IsAlwaysWritten(obj, path) || !PropertyAccess.IsDefault(catalog, info, value));
 
     /// <summary>form-format.md §2.2.4: Font.* / Color / ShowHint and the Parent… flag that governs them.</summary>
     private void PlanPairs(FormObject obj, ComponentInfo info, string path, FormValue? value, List<(string, FormProperty?)> plan)

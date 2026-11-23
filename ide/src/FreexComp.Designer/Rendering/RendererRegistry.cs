@@ -41,6 +41,10 @@ public sealed class RendererRegistry
             new UnknownRenderer(), new FormRenderer(), new LabelRenderer(), new ButtonRenderer(), new EditRenderer(),
             new MemoRenderer(), new CheckBoxRenderer(), new RadioButtonRenderer(), new ListBoxRenderer(),
             new ComboBoxRenderer(), new GroupBoxRenderer(), new PanelRenderer(), new ImageRenderer(), new NonVisualRenderer(),
+            new ScrollBarRenderer(), new StaticTextRenderer(), new ShapeRenderer(), new BevelRenderer(), new SplitterRenderer(),
+            new ScrollBoxRenderer(), new PageControlRenderer(), new TabSheetRenderer(), new StringGridRenderer(),
+            new TrackBarRenderer(), new ProgressBarRenderer(), new TreeViewRenderer(), new ListViewRenderer(),
+            new StatusBarRenderer(), new ToolBarRenderer(), new ToolButtonRenderer(),
         ];
         foreach (var renderer in builtIn)
         {

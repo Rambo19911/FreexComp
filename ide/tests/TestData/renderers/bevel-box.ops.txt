@@ -1,0 +1,1 @@
+DrawRect 0,0,50,50 #ADADADFF 1 Solid

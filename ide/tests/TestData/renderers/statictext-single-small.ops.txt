@@ -1,0 +1,3 @@
+FillRect 0,0,10,10 #F0F0F0FF
+DrawRect 0,0,10,10 #7A7A7AFF 1 Solid
+DrawText "Measured" 2,2,6,6 "Segoe UI" 12 #000000FF Left Top mnemonic
