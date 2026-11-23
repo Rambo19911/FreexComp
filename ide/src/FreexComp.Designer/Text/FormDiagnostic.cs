@@ -22,3 +22,10 @@ public sealed record FormParseResult(FormDocument? Document, ImmutableArray<Form
     /// <summary>True → <see cref="Document"/> is null (DSG-FD-025).</summary>
     public bool HasSyntaxErrors => Document is null;
 }
+
+/// <summary>The outcome of <see cref="FormParser.ParseFragment"/>: the top-level objects of a clipboard fragment.</summary>
+public sealed record FormFragmentResult(ImmutableArray<FormObject> Objects, ImmutableArray<FormDiagnostic> Diagnostics)
+{
+    /// <summary>True → <see cref="Objects"/> is empty (DSG-FD-025).</summary>
+    public bool HasSyntaxErrors => Diagnostics.Any(d => d.Code == "F0001");
+}

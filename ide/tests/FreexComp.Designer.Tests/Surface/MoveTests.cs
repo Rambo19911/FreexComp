@@ -471,6 +471,82 @@ public sealed class MoveTests
         Assert.Equal((252, 35), h.Position("GreetButton"));
     }
 
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-057")]
+    [Trait("Req", "DSG-SUR-123")]
+    [Trait("Req", "DSG-SUR-124")]
+    public void CtrlAtDropCopies()
+    {
+        using var h = DesignerHarness.FromText(Docked.Replace("      Height = 25\n", "      Height = 25\n      OnClick = Btn1Click\n"));
+        h.Settings.NoSnapping();
+        h.Host.CodeSync.Methods["Btn1Click"] = "TNotifyEvent";
+        var original = h.Text;
+
+        // Ctrl held at the release: the original stays, a clone with the next free name is created where it was dropped.
+        h.Press("Btn1");
+        h.MoveBy(20, 30);
+        h.Release(InputModifiers.Ctrl);
+        Assert.Equal((10, 10), h.Position("Btn1"));
+        Assert.Equal("Panel1", h.Parent("Btn2"));
+        Assert.Equal((30, 40), h.Position("Btn2"));
+        Assert.Equal((75, 25), h.Size("Btn2"));
+        Assert.Equal(new IdentValue("Btn1Click"), h.Object("Btn2").FindProperty("OnClick")!.Value); // compatible handler kept
+        Assert.Equal(["Btn1", "Btn2"], h.ChildNames("Panel1"));
+        Assert.Equal(["Btn2"], h.Selected);
+        Assert.Equal(1, h.Undo.UndoCount);
+        Assert.Equal(UndoTitles.Copy, h.Undo.UndoTitleKey);
+        Assert.Null(h.Host.Clipboard.GetData(ClipboardFormats.Text)); // the clipboard is not touched
+        h.ExecuteUndo();
+        Assert.Equal(original, h.Text);
+        Assert.Equal(["Btn1"], h.Selected);
+        h.ExecuteRedo();
+        Assert.Equal((30, 40), h.Position("Btn2"));
+        h.ExecuteUndo();
+
+        // Ctrl pressed only during the drag: an ordinary move.
+        h.Select("Btn1");
+        h.Press("Btn1");
+        h.MoveBy(10, 0, InputModifiers.Ctrl);
+        h.MoveBy(10, 0, InputModifiers.None);
+        h.Release(InputModifiers.None);
+        Assert.Equal((30, 10), h.Position("Btn1"));
+        Assert.Null(h.Document.FindByName("Btn2"));
+        h.ExecuteUndo();
+        Assert.Equal(original, h.Text);
+
+        // Dropped on another container: the clone goes into the drop target; the original keeps its parent.
+        var panel = h.Controller.Geometry.GetClientRect(h.Object("Panel1"));
+        var form = h.Controller.Geometry.FormClientRect;
+        h.Press("Btn1");
+        h.MoveBy(250, 120);
+        h.Release(InputModifiers.Ctrl);
+        Assert.Equal("Panel1", h.Parent("Btn1"));
+        Assert.Equal((10, 10), h.Position("Btn1"));
+        Assert.Equal("F", h.Parent("Btn2"));
+        Assert.Equal((panel.Left + 10 + 250 - form.Left, panel.Top + 10 + 120 - form.Top), h.Position("Btn2"));
+        Assert.Equal(["Bar", "Panel1", "Timer1", "Dialog1", "Btn2"], h.ChildNames("F"));
+        h.ExecuteUndo();
+        Assert.Equal(original, h.Text);
+
+        // A copied container brings copies of its children; tray items are copied within the tray.
+        h.Select("Panel1");
+        h.Press("Panel1", at: (150, 60));
+        h.MoveBy(0, 120);
+        h.Release(InputModifiers.Ctrl);
+        Assert.Equal(["Panel2"], h.Selected);
+        Assert.Equal((8, 170), h.Position("Panel2"));
+        Assert.Equal(["Btn2"], h.ChildNames("Panel2"));
+        Assert.Equal((10, 10), h.Position("Btn2"));
+        h.Select("Timer1");
+        h.Press("Timer1");
+        h.MoveBy(0, 64);
+        h.Release(InputModifiers.Ctrl);
+        Assert.Equal(["Timer2"], h.Selected);
+        Assert.Equal((8, 8), Tray(h, "Timer1"));
+        Assert.Equal((8, 72), Tray(h, "Timer2"));
+    }
+
     private static (int X, int Y) Tray(DesignerHarness h, string name) =>
         (PropertyAccess.GetInt(h.Object(name), "DesignLeft"), PropertyAccess.GetInt(h.Object(name), "DesignTop"));
 }

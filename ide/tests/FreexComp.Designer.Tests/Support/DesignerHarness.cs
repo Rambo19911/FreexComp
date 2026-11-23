@@ -1,3 +1,4 @@
+using FreexComp.Designer.CodeSync;
 using FreexComp.Designer.Editing;
 using FreexComp.Designer.Layout;
 using FreexComp.Designer.Model;
@@ -245,6 +246,56 @@ internal sealed class FakeDesignerHost : IDesignerHost
     public void ShowContextMenu(double x, double y) => ContextMenus.Add((x, y));
 
     public void BeginPropertyEdit(string propertyName, string text) => PropertyEdits.Add((propertyName, text));
+
+    /// <summary>The in-memory clipboard (testing.md §3).</summary>
+    public FakeClipboard Clipboard { get; } = new();
+
+    IDesignerClipboard IDesignerHost.Clipboard => Clipboard;
+
+    /// <summary>The fake code sync (testing.md §3).</summary>
+    public FakeCodeSync CodeSync { get; } = new();
+
+    ICodeSync IDesignerHost.CodeSync => CodeSync;
+}
+
+/// <summary>An in-memory clipboard: every <see cref="SetData"/> (or <see cref="SetText"/>) replaces all formats and bumps the sequence number.</summary>
+internal sealed class FakeClipboard : IDesignerClipboard
+{
+    private Dictionary<string, string> _formats = [];
+
+    public long SequenceNumber { get; private set; }
+
+    public string? GetData(string format) => _formats.GetValueOrDefault(format);
+
+    public void SetData(IReadOnlyDictionary<string, string> formats)
+    {
+        _formats = new Dictionary<string, string>(formats);
+        SequenceNumber++;
+    }
+
+    /// <summary>Another application put plain text on the clipboard.</summary>
+    public void SetText(string text) => SetData(new Dictionary<string, string> { [ClipboardFormats.Text] = text });
+
+    /// <summary>The formats present now.</summary>
+    public IReadOnlyCollection<string> Formats => _formats.Keys;
+}
+
+/// <summary>
+/// A fake form class: <see cref="Members"/> maps member names to their kind; <see cref="Methods"/> maps method names to the
+/// event signature type they are compatible with (DSG-CS-050).
+/// </summary>
+internal sealed class FakeCodeSync : ICodeSync
+{
+    public Dictionary<string, MemberLookup> Members { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public Dictionary<string, string> Methods { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public MemberLookup LookupMember(string name) =>
+        Members.TryGetValue(name, out var member) ? member
+        : Methods.ContainsKey(name) ? MemberLookup.Method : MemberLookup.None;
+
+    public IReadOnlyList<string> GetCompatibleMethods(string eventSignature) =>
+        Methods.Where(m => string.Equals(m.Value, eventSignature, StringComparison.OrdinalIgnoreCase)).Select(m => m.Key).Order().ToList();
 }
 
 /// <summary>A <see cref="TimeProvider"/> whose time moves only through <see cref="Advance"/> (testing.md DSG-TEST-004).</summary>

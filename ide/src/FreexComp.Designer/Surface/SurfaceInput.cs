@@ -1,3 +1,5 @@
+using FreexComp.Designer.CodeSync;
+
 namespace FreexComp.Designer.Surface;
 
 /// <summary>One pointer event in surface (backdrop) coordinates, DIP (design-surface.md §1).</summary>
@@ -67,4 +69,10 @@ public interface IDesignerHost
     /// editing it with <paramref name="text"/> replacing the value.
     /// </summary>
     void BeginPropertyEdit(string propertyName, string text);
+
+    /// <summary>The clipboard (design-surface.md §10).</summary>
+    IDesignerClipboard Clipboard { get; }
+
+    /// <summary>Code synchronization of the form's unit (code-sync.md).</summary>
+    ICodeSync CodeSync { get; }
 }

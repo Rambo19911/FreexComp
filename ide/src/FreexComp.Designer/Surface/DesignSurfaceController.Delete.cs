@@ -16,7 +16,7 @@ public sealed partial class DesignSurfaceController
     /// and stores the re-flowed layout (DSG-LAY-040). The selection becomes the nearest remaining ancestor of the primary.
     /// Removing the fields from the form class belongs to code sync (code-sync.md §4.3), not wired here yet.
     /// </summary>
-    private void Delete()
+    private void Delete(string title = UndoTitles.Delete)
     {
         var members = Selection.GetEffectiveSet().Where(o => o.Parent is not null).ToList();
         if (members.Count == 0)
@@ -51,7 +51,7 @@ public sealed partial class DesignSurfaceController
         var undo = Editor.Apply(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(after ?? Document.Root);
-        Undo.Push(new DesignerUndoUnit(UndoTitles.Delete, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], before,
+        Undo.Push(new DesignerUndoUnit(title, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], before,
             Selection.ToSnapshot()));
     }
 

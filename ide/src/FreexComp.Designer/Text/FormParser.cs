@@ -35,6 +35,41 @@ public static class FormParser
         }
     }
 
+    /// <summary>
+    /// Fragment mode (design-surface.md DSG-SUR-120): a sequence of zero or more complete objects at any indentation, as
+    /// the clipboard holds them. Lines whose first non-blank character is <c>;</c> are skipped (DSG-SUR-111). The objects
+    /// are bound to the catalog like children of a form (unknown classes: preserved, <c>F0101</c>); they have no parent
+    /// and are not validated. A syntax error gives no objects and exactly one <c>F0001</c>.
+    /// </summary>
+    public static FormFragmentResult ParseFragment(string text, string path, ComponentCatalog catalog)
+    {
+        var parser = new Parser(BlankCommentLines(text), path, catalog, null);
+        try
+        {
+            var objects = parser.ParseObjects();
+            return new FormFragmentResult([.. objects], [.. parser.Diagnostics]);
+        }
+        catch (SyntaxErrorException error)
+        {
+            return new FormFragmentResult([], [parser.SyntaxDiagnostic(error)]);
+        }
+    }
+
+    /// <summary>The text with every <c>;</c> line emptied (its line end kept, so positions keep their line numbers).</summary>
+    private static string BlankCommentLines(string text)
+    {
+        var lines = text.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].TrimStart(' ', '\t', '\uFEFF').StartsWith(';'))
+            {
+                lines[i] = lines[i].EndsWith('\r') ? "\r" : "";
+            }
+        }
+
+        return string.Join('\n', lines);
+    }
+
     private sealed class SyntaxErrorException(int position, string detail, string? objectName) : Exception(detail)
     {
         public int Position { get; } = position;
@@ -76,6 +111,27 @@ public static class FormParser
             var document = new FormDocument(root, _lineEnding ?? "\n") { SourcePath = path, Lines = Lines };
             document.ParseDiagnostics.AddRange(_diagnostics);
             return document;
+        }
+
+        public IEnumerable<FormDiagnostic> Diagnostics => _diagnostics.Select(d => d.Diagnostic);
+
+        /// <summary>Fragment mode: objects until the end of the text.</summary>
+        public List<FormObject> ParseObjects()
+        {
+            if (text.Length > 0 && text[0] == '﻿')
+            {
+                _pos = 1;
+            }
+
+            var objects = new List<FormObject>();
+            SkipBlankLines();
+            while (_pos < text.Length)
+            {
+                objects.Add(ParseObject(parentPreserved: false, isRoot: false));
+                SkipBlankLines();
+            }
+
+            return objects;
         }
 
         public FormDiagnostic SyntaxDiagnostic(SyntaxErrorException error)

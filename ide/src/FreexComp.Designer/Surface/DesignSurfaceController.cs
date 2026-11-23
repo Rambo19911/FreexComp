@@ -10,7 +10,8 @@ namespace FreexComp.Designer.Surface;
 /// The interaction logic of the design surface (design-surface.md; no UI dependency, DSG-ARCH-003): selection and the
 /// click rules (D-035), the selection commands (D-036), the lasso (D-037), move drags with snapping and re-parenting
 /// (D-038 … D-041), resize drags incl. the form and child re-flow (D-042, D-043), keyboard nudging (D-044), tab order
-/// (D-045, D-046) and delete (D-047). Placement, clipboard and the other commands follow in later tasks.
+/// (D-045, D-046), delete (D-047), clipboard (D-048, D-049), Ctrl-drag copy (D-050) and the align commands (D-051).
+/// Placement and the other commands follow in later tasks.
 /// </summary>
 public sealed partial class DesignSurfaceController
 {
@@ -145,7 +146,15 @@ public sealed partial class DesignSurfaceController
                 break;
             case PointerKind.Up when input.Button == PointerButton.Left && State == InteractionState.Moving:
                 UpdateMove(input);
-                Drop();
+                if (input.Modifiers.HasFlag(InputModifiers.Ctrl))
+                {
+                    DropCopy();
+                }
+                else
+                {
+                    Drop();
+                }
+
                 break;
             case PointerKind.Move when State == InteractionState.Lasso:
                 UpdateLasso(input);
@@ -199,8 +208,12 @@ public sealed partial class DesignSurfaceController
         Commands.SelectParent => Selection.Primary.Parent is not null,
         Commands.TabOrder => !IsPointerActive,
         Commands.Delete => CanDelete,
+        Commands.Copy => CanCopy,
+        Commands.Cut => CanCut,
+        Commands.Paste => CanPaste,
         Commands.Undo => Undo.CanUndo && !IsPointerActive, // DSG-SUR-171
         Commands.Redo => Undo.CanRedo && !IsPointerActive,
+        _ when Commands.Arrange.Contains(commandId) => CanArrange(commandId),
         _ => false,
     };
 
@@ -227,6 +240,15 @@ public sealed partial class DesignSurfaceController
             case Commands.Delete:
                 Delete();
                 break;
+            case Commands.Copy:
+                Copy();
+                break;
+            case Commands.Cut:
+                Cut();
+                break;
+            case Commands.Paste:
+                Paste();
+                break;
             case Commands.SelectAll:
                 Selection.Select(SelectAllSet());
                 break;
@@ -236,6 +258,9 @@ public sealed partial class DesignSurfaceController
             case Commands.SelectNext:
             case Commands.SelectPrevious:
                 SelectInCycle(commandId == Commands.SelectNext ? 1 : -1);
+                break;
+            case var _ when Commands.Arrange.Contains(commandId):
+                Arrange(commandId);
                 break;
             case Commands.Undo when Undo.Undo() is { } unit: // DSG-SUR-170 (code-sync edits come with code sync)
                 Editor.Apply(unit.Undo);
@@ -600,6 +625,32 @@ public sealed partial class DesignSurfaceController
         var undo = Editor.Apply(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Undo.Push(new DesignerUndoUnit(UndoTitles.Move, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
+    }
+
+    /// <summary>
+    /// DSG-SUR-057: Ctrl held at the drop copies instead of moving — the originals stay, copies are created where the move
+    /// would have put the members (in the drop target when the drop re-parents) with the paste naming and event rules, as
+    /// one "Copy" unit; the copies become the selection. Nothing when the move would change nothing (DSG-SUR-059). The
+    /// clipboard is not touched.
+    /// </summary>
+    private void DropCopy()
+    {
+        var (dx, dy) = _moveDelta;
+        var reparents = !_moveTray && Reparents;
+        var target = _moveTarget;
+        var placements = _moveSet.Select(m => !_moveTray && MovesToTarget(m)
+                ? new Placement(m.Object, target.Container!, (m.SurfaceLeft + dx - target.Left, m.SurfaceTop + dy - target.Top))
+                : new Placement(m.Object, m.Object.Parent!,
+                    _moveTray ? (Math.Max(0, m.Left + dx), Math.Max(0, m.Top + dy)) : (m.Left + dx, m.Top + dy)))
+            .ToList();
+        var changed = reparents || _moveSet.Exists(m => _moveTray
+            ? (Math.Max(0, m.Left + dx), Math.Max(0, m.Top + dy)) != (m.Left, m.Top)
+            : (dx, dy) != (0, 0));
+        ResetPress();
+        if (changed)
+        {
+            AddCopies(placements, UndoTitles.Copy);
+        }
     }
 
     /// <summary>
