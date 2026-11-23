@@ -12,6 +12,9 @@ public interface ICommandHandler
     /// <summary>Title shown instead of the catalog title (e.g. "Continue" for <c>run.start</c> while paused); null = catalog title.</summary>
     string? TitleOverride => null;
 
+    /// <summary>Main-menu label shown instead of the menu's own (<c>&amp;Continue</c> for <c>run.start</c> while paused, menus.md §7); null = the menu's label.</summary>
+    string? MenuLabelOverride => null;
+
     /// <summary>
     /// True when <see cref="CanExecute"/> is false only because of the IDE state (building, running, …). Its shortcut
     /// then shows <c>Msg.Status.CommandUnavailable</c> (UI-CMD-012); otherwise a disabled shortcut is silent.

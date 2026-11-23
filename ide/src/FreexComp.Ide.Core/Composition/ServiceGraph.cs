@@ -60,7 +60,8 @@ public static class ServiceGraph
             commands.RegisterHandler(definition.Id, new FocusCommandHandler(definition.Id, focus)); // commands.md §3
         }
 
-        var layout = new LayoutService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log, status, commands);
+        var layout = new LayoutService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log, status, commands,
+            debugProfile: (toolWindowPhase ?? ImplementedPhase) >= 6); // I-133
         if (safe)
             layout.LoadSafeMode();
         else
@@ -149,7 +150,8 @@ public static class ServiceGraph
             await projects.AddNewUnitAsync(); // a failure is reported there; no untitled unit instead
             return true;
         };
-        var output = new OutputService(platform.Clock, settings, designer: (toolWindowPhase ?? ImplementedPhase) >= 5);
+        var debugPhase = (toolWindowPhase ?? ImplementedPhase) >= 6;
+        var output = new OutputService(platform.Clock, settings, designer: (toolWindowPhase ?? ImplementedPhase) >= 5, debugger: debugPhase);
         var outputView = new ViewModels.OutputViewModel(output, settings, platform.Clipboard, documents, navigation, status, platform.FileSystem);
         outputView.RegisterCommands(commands);
         outputView.Content.FindSource = find.For; // UI-TW-500: Ctrl+F in the Output
@@ -211,18 +213,42 @@ public static class ServiceGraph
             outputView.SelectChannel(OutputChannels.Program); // UI-TW-501 with output.autoShowOnRun
             toolWindowService.Show(ViewModels.OutputViewModel.ToolName, focus: false);
         };
-        run.RegisterCommands(commands);
+        run.RegisterCommands(commands, debugger: debugPhase);
+        // Phase 6 (I-134, I-139, I-140): breakpoints and the debug session; run.start / stop / restart belong to the debug service.
+        Debugging.BreakpointService? breakpoints = null;
+        Debugging.DebugService? debug = null;
+        if (debugPhase)
+        {
+            breakpoints = new Debugging.BreakpointService(documents, projects, platform.Dialogs, platform.FileDialogs, platform.FileSystem, status,
+                platform.Dispatcher, platform.Log);
+            breakpoints.RegisterCommands(commands);
+            session.Breakpoints = breakpoints;
+            debug = new Debugging.DebugService(platform.DebugSessions, run, projects, settings, state, toolchain, output, breakpoints, documents,
+                navigation, platform.Clock, platform.Dispatcher, platform.Dialogs, status, platform.Log)
+            {
+                OpenProjectOptions = () => commands.ExecuteAsync("project.options"),
+                UiState = layout,
+                SelectProgramOutput = () => outputView.SelectChannel(OutputChannels.Program),
+                ShowWatches = () => toolWindowService.Show(ViewModels.WatchesViewModel.ToolName, focus: false), // UI-DLG-200
+            };
+            debug.RegisterCommands(commands);
+            breakpoints.ValidateCondition = debug.ConditionProblemAsync;
+        }
+
         ProjectDialogCommands.Register(commands, projects, platform.Dialogs, platform.FileDialogs, platform.FileSystem, layout); // I-107, I-108
-        projects.BeforeClose = () => run.ConfirmStopAsync(exiting: false); // IDE-P3-093
+        projects.BeforeClose = async () => (debug is null || await debug.ConfirmStopAsync(exiting: false)) && await run.ConfirmStopAsync(exiting: false); // IDE-P3-093
         projects.ProjectChanged += (_, _) =>
         {
             if (projects.Project is null)
+            {
                 messages.Clear(); // IDE-P3-067
+                breakpoints?.Load([]); // UI-TW-800: breakpoints belong to the project (its session file has them)
+            }
         };
         var application = new ApplicationService(documents, projects, session, recovery, settings, keymap, platform.Dialogs, platform.Clock,
             platform.Log);
         application.RegisterCommands(commands);
-        application.BeforeExit = () => run.ConfirmStopAsync(exiting: true); // IDE-P3-093
+        application.BeforeExit = async () => (debug is null || await debug.ConfirmStopAsync(exiting: true)) && await run.ConfirmStopAsync(exiting: true); // IDE-P3-093
         application.AfterSavePrompt = build.CancelForExitAsync; // file.exit while Building (phase3-build-run.md §2)
         Designer.DesignerShell? designerShell = null; // Phase 5 on (below); the palette lists its verbs
         var quickPick = new Popups.QuickPickHost(); // I-125, I-126 (Phase 3 commands: available from the implemented phase 3)
@@ -267,6 +293,16 @@ public static class ServiceGraph
             palette.Bind(shell.ActiveDesigner);
         }
 
+        // I-133: the debug tool windows, the Debug profile (UI-WIN-012 (b) overrides the designer's rule (a)) and toolbar context.
+        Debugging.DebugShell? debugShell = null;
+        if (debug is not null && breakpoints is not null)
+        {
+            var activeDesign = designerShell;
+            debugShell = new Debugging.DebugShell(commands, debug, breakpoints, settings, layout.Layout, () => activeDesign?.IsDesignActive == true);
+            var holder = debugShell;
+            designerShell?.AutoSwitchSuspended = () => holder.HoldsProfile;
+        }
+
         // A test phase below the product's (testing.md §2.1) gives the later commands the stubs of UI-CMD-004 as before I-207.
         EditorCommandRoute.Register(commands, toolWindowPhase ?? ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(toolWindowPhase ?? ImplementedPhase);
@@ -278,6 +314,8 @@ public static class ServiceGraph
             production = [.. production, objectInspector.Definition];
         if (toolPalette is not null)
             production = [.. production, toolPalette.Definition];
+        if (debugShell is not null)
+            production = [.. production, .. debugShell.ToolWindows];
         foreach (var definition in production)
         {
             if (!extras.Any(e => e.Name == definition.Name))
@@ -341,6 +379,9 @@ public static class ServiceGraph
             SemanticHighlights = semanticHighlights,
             Metadata = metadata,
             DesignerShell = designerShell,
+            Breakpoints = breakpoints,
+            Debug = debug,
+            DebugShell = debugShell,
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;

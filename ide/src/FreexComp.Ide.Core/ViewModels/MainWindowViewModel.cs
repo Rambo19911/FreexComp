@@ -44,6 +44,13 @@ public sealed class MainWindowViewModel : ObservableObject
             designer.IsDesignActiveChanged += (_, _) => designerBar.HasContext = designer.IsDesignActive;
         }
 
+        if (services.DebugShell is { } debugShell && ToolBars.FirstOrDefault(t => t.Name == ToolBarDefinitions.Debug.Name) is { } debugBar)
+        {
+            // UI-TB-004 (I-133): the Debug toolbar while a debug session exists or the Debug profile is active.
+            debugBar.HasContext = debugShell.HasToolBarContext;
+            debugShell.HasToolBarContextChanged += (_, _) => debugBar.HasContext = debugShell.HasToolBarContext;
+        }
+
         services.Documents.ActiveDocumentChanged += (_, _) => FollowTitleSource(services.Documents.ActiveDocument);
         services.Projects.ProjectChanged += (_, _) => OnPropertyChanged(nameof(Title));
         services.Settings.Changed += (_, e) =>

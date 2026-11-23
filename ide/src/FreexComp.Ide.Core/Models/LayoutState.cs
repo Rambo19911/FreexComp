@@ -91,14 +91,19 @@ public static class LayoutProfiles
 
     public const string Design = "Design";
 
+    public const string Debug = "Debug";
+
     public const double DefaultLeftSize = 260;
     public const double DefaultRightSize = 300;
     public const double DefaultBottomSize = 200;
     /// <summary>I-219: the upper right group (Object Inspector) gets 60 % of the right dock (lead 2026-11-23; was 50 %).</summary>
     public const double DefaultRightSplit = 0.6;
 
-    /// <summary>Profiles that exist so far; <c>Debug</c> (P6) is added with its task (I-133).</summary>
+    /// <summary>The profiles of the implemented phase (5); <see cref="Debug"/> joins them from Phase 6 (<see cref="WithDebug"/>, I-133).</summary>
     public static readonly IReadOnlyList<string> BuiltIn = [Edit, Design];
+
+    /// <summary>Phase 6 on: the three built-in profiles of main-window.md §2.</summary>
+    public static readonly IReadOnlyList<string> WithDebug = [Edit, Design, Debug];
 
     public static ProfileLayout Create(string name) => name switch
     {
@@ -113,6 +118,12 @@ public static class LayoutProfiles
             RightUpper = new() { Tools = ["ObjectInspector"], Active = "ObjectInspector" },
             RightLower = new() { Tools = ["ToolPalette"], Active = "ToolPalette" },
             Bottom = new() { Tools = ["Messages", "Output", "SearchResults"], Active = "Messages" },
+        },
+        Debug => new ProfileLayout
+        {
+            Left = new() { Tools = ["CallStack", "Threads", "ProjectManager", "Structure"], Hidden = ["DataExplorer"], Active = "CallStack" },
+            RightUpper = new() { Tools = ["Locals", "Watches"], Active = "Locals" },
+            Bottom = new() { Tools = ["Breakpoints", "EventLog", "Output", "Messages", "SearchResults"], Active = "Breakpoints" },
         },
         _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Unknown layout profile."),
     };

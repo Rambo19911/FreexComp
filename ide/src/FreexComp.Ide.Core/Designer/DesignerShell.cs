@@ -99,6 +99,9 @@ public sealed class DesignerShell
     /// <summary>A Design view is the active document view.</summary>
     public bool IsDesignActive => _isDesignActive;
 
+    /// <summary>UI-WIN-012 (b): true while a debug session holds the <c>Debug</c> profile, which overrides rule (a).</summary>
+    public Func<bool>? AutoSwitchSuspended { get; set; }
+
     /// <summary><see cref="IsDesignActive"/> changed.</summary>
     public event EventHandler? IsDesignActiveChanged;
 
@@ -135,7 +138,7 @@ public sealed class DesignerShell
         var designer = ActiveDesigner;
         Follow(designer);
         ActiveDesignerChanged?.Invoke(this, EventArgs.Empty);
-        if (_settings.Get(SettingsCatalog.LayoutAutoSwitch))
+        if (_settings.Get(SettingsCatalog.LayoutAutoSwitch) && AutoSwitchSuspended?.Invoke() != true)
         {
             _layout.SwitchProfile(designer is not null ? LayoutProfiles.Design : LayoutProfiles.Edit); // UI-WIN-012 (a)
         }

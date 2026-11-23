@@ -40,21 +40,28 @@ public sealed class LayoutService : ILayoutService
     private readonly string _directory;
     private readonly string _path;
     private readonly HashSet<string> _knownTools = [.. ToolWindowService.ShowCommands.Keys];
+    private readonly IReadOnlyList<string> _profiles;
     private JsonObject _root = [];
     private Func<string, ToolWindowViewModel?>? _resolve;
     private WindowPlacement? _windowPlacement;
     private IDisposable? _saveTimer;
     private bool _readOnly;
 
-    public LayoutService(IUserPaths paths, IFileSystem fileSystem, IClock clock, ILog log, IStatusService status, ICommandService commands)
+    /// <param name="debugProfile">Phase 6 on: the <c>Debug</c> profile is read and written like the other built-in profiles.</param>
+    public LayoutService(IUserPaths paths, IFileSystem fileSystem, IClock clock, ILog log, IStatusService status, ICommandService commands,
+        bool debugProfile = false)
     {
+        _profiles = debugProfile ? LayoutProfiles.WithDebug : LayoutProfiles.BuiltIn;
         _fs = fileSystem;
         _clock = clock;
         _log = log;
         _status = status;
         _directory = paths.RoamingDirectory;
         _path = Path.Combine(_directory, FileName);
-        Layout = new LayoutViewModel(LayoutState.CreateDefault(), name => _resolve?.Invoke(name));
+        var initial = LayoutState.CreateDefault();
+        foreach (var name in _profiles.Where(name => !initial.Profiles.ContainsKey(name)))
+            initial.Profiles[name] = LayoutProfiles.Create(name);
+        Layout = new LayoutViewModel(initial, name => _resolve?.Invoke(name));
         Layout.StateChanged += (_, _) => ScheduleSave();
         commands.RegisterHandler("window.nextPane", new ActionHandler(() => Layout.CyclePanes(1))); // UI-A11Y-003
         commands.RegisterHandler("window.previousPane", new ActionHandler(() => Layout.CyclePanes(-1)));
@@ -130,13 +137,13 @@ public sealed class LayoutService : ILayoutService
         _windowPlacement = LayoutStateJson.ReadWindow(root["window"]);
         var state = Layout.State;
         var profiles = root["profiles"] as JsonObject;
-        foreach (var name in LayoutProfiles.BuiltIn)
+        foreach (var name in _profiles)
         {
             state.Profiles[name] = LayoutStateJson.ReadProfile(name, profiles?[name], _knownTools) ?? LayoutProfiles.Create(name);
         }
 
         state.ActiveProfile = root["activeProfile"] is JsonValue active && active.GetValueKind() == JsonValueKind.String
-                              && LayoutProfiles.BuiltIn.Contains(active.GetValue<string>())
+                              && _profiles.Contains(active.GetValue<string>())
             ? active.GetValue<string>()
             : LayoutProfiles.Edit;
         Layout.Reload(notify: false);
@@ -315,7 +322,7 @@ public sealed class LayoutService : ILayoutService
         Put("activeProfile", Layout.State.ActiveProfile, after: _root.ContainsKey("window") ? "window" : "formatVersion");
         Put("profiles", _root["profiles"] as JsonObject ?? [], after: "activeProfile");
         var profiles = (JsonObject)_root["profiles"]!;
-        foreach (var name in LayoutProfiles.BuiltIn)
+        foreach (var name in _profiles)
         {
             profiles[name] = LayoutStateJson.WriteProfile(Layout.State.Profiles[name]);
         }

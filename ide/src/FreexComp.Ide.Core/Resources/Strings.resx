@@ -4761,4 +4761,96 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Properties of the selected item:</value>
     <comment>dialogs.md §27 Dialog.ChildListEditor.Grid accessible name</comment>
   </data>
+  <data name="Menu_run_continue" xml:space="preserve">
+    <value>&amp;Continue</value>
+    <comment>menus.md §7: label of run.start while paused</comment>
+  </data>
+  <data name="Output_Channel_debugger" xml:space="preserve">
+    <value>Debugger</value>
+    <comment>Output channel of the debug session (IDE-P3-070)</comment>
+  </data>
+  <data name="Breakpoint_Title_Add" xml:space="preserve">
+    <value>Add Breakpoint</value>
+    <comment>dialogs.md §19 title (run.addBreakpoint)</comment>
+  </data>
+  <data name="Breakpoint_Title_Properties" xml:space="preserve">
+    <value>Breakpoint Properties</value>
+    <comment>dialogs.md §19 title (run.breakpointProperties)</comment>
+  </data>
+  <data name="Breakpoint_File" xml:space="preserve">
+    <value>_File:</value>
+    <comment>dialogs.md §19 label</comment>
+  </data>
+  <data name="Breakpoint_Line" xml:space="preserve">
+    <value>_Line:</value>
+    <comment>dialogs.md §19 label</comment>
+  </data>
+  <data name="Breakpoint_Condition" xml:space="preserve">
+    <value>_Condition:</value>
+    <comment>dialogs.md §19 label</comment>
+  </data>
+  <data name="Breakpoint_PassCount" xml:space="preserve">
+    <value>_Pass count:</value>
+    <comment>dialogs.md §19 label</comment>
+  </data>
+  <data name="Breakpoint_Enabled" xml:space="preserve">
+    <value>_Enabled</value>
+    <comment>dialogs.md §19 check box</comment>
+  </data>
+  <data name="Breakpoint_FilePicker" xml:space="preserve">
+    <value>Select Source File</value>
+    <comment>dialogs.md §19 file picker title</comment>
+  </data>
+  <data name="Watch_Title_Add" xml:space="preserve">
+    <value>Add Watch</value>
+    <comment>dialogs.md §20 title</comment>
+  </data>
+  <data name="Watch_Title_Edit" xml:space="preserve">
+    <value>Edit Watch</value>
+    <comment>dialogs.md §20 title</comment>
+  </data>
+  <data name="Watch_Expression" xml:space="preserve">
+    <value>_Expression:</value>
+    <comment>dialogs.md §20 label</comment>
+  </data>
+  <data name="Evaluate_Title" xml:space="preserve">
+    <value>Evaluate/Modify</value>
+    <comment>dialogs.md §21 title</comment>
+  </data>
+  <data name="Evaluate_Expression" xml:space="preserve">
+    <value>_Expression:</value>
+    <comment>dialogs.md §21 label</comment>
+  </data>
+  <data name="Evaluate_Evaluate" xml:space="preserve">
+    <value>E_valuate</value>
+    <comment>dialogs.md §21 button</comment>
+  </data>
+  <data name="Evaluate_Result" xml:space="preserve">
+    <value>Result:</value>
+    <comment>dialogs.md §21 label</comment>
+  </data>
+  <data name="Evaluate_Type" xml:space="preserve">
+    <value>Type:</value>
+    <comment>dialogs.md §21 label</comment>
+  </data>
+  <data name="Evaluate_NewValue" xml:space="preserve">
+    <value>_New value:</value>
+    <comment>dialogs.md §21 label</comment>
+  </data>
+  <data name="Evaluate_Modify" xml:space="preserve">
+    <value>_Modify</value>
+    <comment>dialogs.md §21 button</comment>
+  </data>
+  <data name="Evaluate_AddWatch" xml:space="preserve">
+    <value>Add _Watch</value>
+    <comment>dialogs.md §21 button</comment>
+  </data>
+  <data name="Breakpoint_PassCountEqual" xml:space="preserve">
+    <value>= {0}</value>
+    <comment>debug-session interface 6.1: read-only hit count of mode Equal; 0 = value</comment>
+  </data>
+  <data name="Breakpoint_PassCountEvery" xml:space="preserve">
+    <value>every {0}</value>
+    <comment>debug-session interface 6.1: read-only hit count of mode Multiple; 0 = value</comment>
+  </data>
 </root>

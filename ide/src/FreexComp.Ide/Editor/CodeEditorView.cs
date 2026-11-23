@@ -93,7 +93,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         NoLigaturesTransformer.Install(textView); // UI-TOK-021
 
         // editor.md §2: glyph margin, line numbers, fold margin, change bar, then the text padding.
-        _glyphMargin = new GlyphMargin(area);
+        _glyphMargin = new GlyphMargin(area) { LineClicked = line => _document?.GlyphMarginClick?.Invoke(line) }; // UI-ED-012
         _lineNumbers = new LineNumberMargin(area);
         _foldMargin = new FoldMargin(area) { ToggleRequested = ToggleFolding };
         _changeBar = new ChangeBarMargin(area);

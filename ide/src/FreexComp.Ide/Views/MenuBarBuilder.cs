@@ -72,6 +72,18 @@ public static class MenuBarBuilder
             AutomationProperties.SetAutomationId(item, context ? AutomationIds.Context(command.Id, model.Argument) : AutomationIds.Menu(command.Id, model.Argument));
             item.Command = command;
             item.CommandParameter = model.Argument;
+            if (!context)
+            {
+                // menus.md §7: a command may replace its main-menu label while a state lasts ("Continue" while paused).
+                if (command.MenuLabel is { } replaced)
+                    item.Header = ToAccessText(replaced);
+                command.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(IdeCommand.MenuLabel))
+                        item.Header = ToAccessText(command.MenuLabel ?? model.Label);
+                };
+            }
+
             if (model.ToolTip is { } tip)
             {
                 ToolTip.SetTip(item, tip); // UI-MENU-009: the full path

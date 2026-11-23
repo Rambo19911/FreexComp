@@ -6,6 +6,8 @@
     <ProjectReference Include="..\..\src\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />
     <ProjectReference Include="..\..\src\FreexComp.Designer\FreexComp.Designer.csproj" />
     <ProjectReference Include="..\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
+    <!-- Phase 6: the debugger area's scripted debug adapter; the reference copies FakeAdapter.exe next to the tests. -->
+    <ProjectReference Include="..\..\..\debugger\tests\FakeAdapter\FakeAdapter.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- testing.md §4: shared test data, copied to the output as TestData/. -->

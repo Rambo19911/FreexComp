@@ -102,6 +102,9 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     /// <summary>UI-ED-022: the gutter context menu for a 1-based line (set by the document service); null = none.</summary>
     public Func<int, IReadOnlyList<Menus.MenuItemModel>>? GutterMenu { get; internal set; }
 
+    /// <summary>UI-ED-012 (P6): a left click in the glyph margin on the 1-based line toggles a breakpoint; null = no effect.</summary>
+    public Action<int>? GlyphMarginClick { get; internal set; }
+
     /// <summary>Runs a global command (set by the document service): the view's Ctrl+click goes to <c>search.goToDeclaration</c> (I-196).</summary>
     public Func<string, Task>? ExecuteCommand { get; internal set; }
 

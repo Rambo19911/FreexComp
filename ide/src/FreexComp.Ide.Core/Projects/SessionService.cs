@@ -114,6 +114,25 @@ public sealed class SessionService : ISessionService
     private void OnBookmarksChanged(object? sender, EventArgs e) => ScheduleSave();
 
     /// <summary>
+    /// P6 (IDE-ARCH-076, IDE-ARCH-077): the breakpoints stored in and restored from the project session's
+    /// <c>breakpoints</c> member; null before Phase 6, when the member is kept as read.
+    /// </summary>
+    public Debugging.IBreakpointService? Breakpoints
+    {
+        get => _breakpoints;
+        set
+        {
+            if (_breakpoints is not null)
+                _breakpoints.Changed -= OnBookmarksChanged;
+            _breakpoints = value;
+            if (value is not null)
+                value.Changed += OnBookmarksChanged;
+        }
+    }
+
+    private Debugging.IBreakpointService? _breakpoints;
+
+    /// <summary>
     /// D-109: the Object Inspector whose page, collapsed categories, expanded rows and name column ratio are stored in and
     /// restored from the session's <c>objectInspector</c> member (DSG-OI-003, DSG-OI-013, UI-DSG-103).
     /// </summary>
@@ -156,6 +175,11 @@ public sealed class SessionService : ISessionService
                 .Where(m => m.Path is not null && m.Line is not null)
                 .Select(m => new Editing.BookmarkInfo(m.Path!, m.Line!.Value, m.Number))
                 .ToList()
+            : []);
+
+        // Breakpoints are per project (UI-TW-800); like the bookmarks, before the documents open.
+        _breakpoints?.Load(_projects.Project is not null && root["breakpoints"] is JsonArray stops
+            ? [.. stops.OfType<JsonObject>().Select(ReadBreakpoint).OfType<Models.BreakpointInfo>()]
             : []);
 
         if (_inspector is not null && root["objectInspector"] is JsonObject inspector)
@@ -224,6 +248,8 @@ public sealed class SessionService : ISessionService
                 ["number"] = b.Number,
             })]));
         }
+        if (_breakpoints is not null && project is not null && (_breakpoints.All.Count > 0 || root.ContainsKey("breakpoints")))
+            Put(root, "breakpoints", new JsonArray([.. _breakpoints.All.Select(WriteBreakpoint)]));
         if (_inspector is not null)
             Put(root, "objectInspector", WriteInspector(_inspector.SessionState));
         if (project is not null)
@@ -394,6 +420,57 @@ public sealed class SessionService : ISessionService
             return null;
         }
     }
+
+    /// <summary>
+    /// IDE-ARCH-077: <c>path</c> plus the <c>BreakpointSpec</c> members in camelCase; the id is not stored. A legacy
+    /// <c>passCount: n</c> is read as <c>hitCount = { greaterOrEqual, n + 1 }</c> when n &gt; 0.
+    /// </summary>
+    private Models.BreakpointInfo? ReadBreakpoint(JsonObject json)
+    {
+        if (Resolve(LayoutStateJson.Str(json["path"])) is not { } path || LayoutStateJson.Int(json["line"]) is not { } line || line < 1)
+            return null;
+        FreexComp.Debugger.HitCountSpec? hitCount = null;
+        if (json["hitCount"] is JsonObject hit && LayoutStateJson.Int(hit["value"]) is >= 1 and var value)
+        {
+            FreexComp.Debugger.HitCountMode? mode = LayoutStateJson.Str(hit["mode"]) switch
+            {
+                "equal" => FreexComp.Debugger.HitCountMode.Equal,
+                "greaterOrEqual" => FreexComp.Debugger.HitCountMode.GreaterOrEqual,
+                "multiple" => FreexComp.Debugger.HitCountMode.Multiple,
+                _ => null,
+            };
+            if (mode is { } known)
+                hitCount = new FreexComp.Debugger.HitCountSpec(known, value);
+        }
+        else if (LayoutStateJson.Int(json["passCount"]) is > 0 and var passCount)
+        {
+            hitCount = Models.BreakpointModel.HitCountOf(passCount);
+        }
+
+        var enabled = json["enabled"] is not JsonValue flag || !flag.TryGetValue(out bool on) || on;
+        return new Models.BreakpointInfo(path, line, enabled, LayoutStateJson.Str(json["condition"]), hitCount, LayoutStateJson.Str(json["logMessage"]));
+    }
+
+    private JsonNode WriteBreakpoint(Models.BreakpointModel breakpoint) => new JsonObject
+    {
+        ["path"] = ToSessionPath(breakpoint.Path),
+        ["line"] = breakpoint.Line,
+        ["enabled"] = breakpoint.Enabled,
+        ["condition"] = breakpoint.Condition,
+        ["hitCount"] = breakpoint.HitCount is { } hitCount
+            ? new JsonObject
+            {
+                ["mode"] = hitCount.Mode switch
+                {
+                    FreexComp.Debugger.HitCountMode.Equal => "equal",
+                    FreexComp.Debugger.HitCountMode.Multiple => "multiple",
+                    _ => "greaterOrEqual",
+                },
+                ["value"] = hitCount.Value,
+            }
+            : null,
+        ["logMessage"] = breakpoint.LogMessage,
+    };
 
     /// <summary>The <c>objectInspector</c> member (object-inspector.md §12 session keys; unknown values fall back to the defaults).</summary>
     private static Designer.ObjectInspectorSessionState ReadInspector(JsonObject json)

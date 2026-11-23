@@ -92,14 +92,23 @@ public sealed class RunService : IRunService
     /// <summary>Opens the Run Parameters dialog (the <c>Run Parameters…</c> button of <c>Msg.Run.WorkingDirMissing</c>).</summary>
     public Func<Task>? OpenRunParameters { get; set; }
 
-    public void RegisterCommands(ICommandService commands)
+    /// <param name="debugger">
+    /// Phase 6: <c>run.start</c>, <c>run.stop</c> and <c>run.restart</c> belong to the debug service, which passes them on
+    /// to this service while no debug session exists; only <c>run.startWithoutDebugging</c> is registered here.
+    /// </param>
+    public void RegisterCommands(ICommandService commands, bool debugger = false)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("run.start", new Handler(() => _projects.Project is not null, StartWithoutDebuggerNoticeAsync));
         commands.RegisterHandler("run.startWithoutDebugging", new Handler(() => _projects.Project is not null, () => StartCommandAsync(false)));
+        if (debugger)
+            return;
+        commands.RegisterHandler("run.start", new Handler(() => _projects.Project is not null, StartWithoutDebuggerNoticeAsync));
         commands.RegisterHandler("run.stop", new Handler(() => _session is not null, StopAsync));
         commands.RegisterHandler("run.restart", new Handler(() => _session is not null, RestartAsync));
     }
+
+    /// <summary>A program started without the debugger is running.</summary>
+    public bool IsRunning => _session is not null;
 
     public async Task<bool> StartAsync(bool withDebugger = false)
     {
@@ -112,6 +121,18 @@ public sealed class RunService : IRunService
         }
 
         _lastWithDebugger = withDebugger;
+        return await BuildThenAsync(project, exe => LaunchAsync(project, exe));
+    }
+
+    /// <summary>
+    /// IDE-P3-080/081, the part shared with a start under the debugger: saves and builds, offers the previous executable
+    /// after a failed build, then calls <paramref name="launch"/> with the executable while the state is still Building
+    /// (IDE-P3-002); the state is Idle afterwards unless the launch moved on.
+    /// </summary>
+    public async Task<bool> BuildThenAsync(ProjectModel project, Func<string, Task<bool>> launch)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(launch);
         var result = await _build.BuildAsync(BuildKind.Build, continueToRun: true);
         try
         {
@@ -137,7 +158,7 @@ public sealed class RunService : IRunService
                 }
             }
 
-            return await LaunchAsync(project, exe);
+            return await launch(exe);
         }
         finally
         {
@@ -243,7 +264,8 @@ public sealed class RunService : IRunService
         return StartCommandAsync(withDebugger: false);
     }
 
-    private async Task StartCommandAsync(bool withDebugger)
+    /// <summary><c>run.start</c> / <c>run.startWithoutDebugging</c>: asks to restart while a program runs, else starts.</summary>
+    public async Task StartCommandAsync(bool withDebugger)
     {
         if (_state.Current.State == IdeState.Running && _session is { } session)
         {
@@ -257,18 +279,29 @@ public sealed class RunService : IRunService
         await StartAsync(withDebugger);
     }
 
-    private async Task<bool> LaunchAsync(ProjectModel project, string exe)
+    /// <summary>
+    /// The working directory of a start: <c>run.workingDir</c> against the project directory, else the executable's folder.
+    /// A missing one shows <c>Msg.Run.WorkingDirMissing</c> and gives null.
+    /// </summary>
+    public async Task<string?> ResolveWorkingDirAsync(ProjectModel project, string exe)
     {
+        ArgumentNullException.ThrowIfNull(project);
         var run = _projects.Definition?.Run ?? new RunSettings("", "");
         var workingDir = string.IsNullOrWhiteSpace(run.WorkingDir)
             ? Path.GetDirectoryName(exe)!
             : Path.GetFullPath(Path.Combine(project.Directory, run.WorkingDir.Replace('/', '\\')));
-        if (!_fileSystem.DirectoryExists(workingDir))
-        {
-            if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.WorkingDirMissing", [workingDir])) == "RunParameters")
-                _ = OpenRunParameters?.Invoke();
+        if (_fileSystem.DirectoryExists(workingDir))
+            return workingDir;
+        if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.WorkingDirMissing", [workingDir])) == "RunParameters")
+            _ = OpenRunParameters?.Invoke();
+        return null;
+    }
+
+    private async Task<bool> LaunchAsync(ProjectModel project, string exe)
+    {
+        var run = _projects.Definition?.Run ?? new RunSettings("", "");
+        if (await ResolveWorkingDirAsync(project, exe) is not { } workingDir)
             return false;
-        }
 
         // IDE-P3-082: console programs follow run.consoleMode; GUI programs are always captured without a console.
         var external = project.AppType == "console" && _settings.Get(SettingsCatalog.RunConsoleMode) == "external";

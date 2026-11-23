@@ -31,6 +31,12 @@ public sealed class TestCompositionOptions
     /// <summary>The build engine (IDE-P3-031): the scripted fake by default.</summary>
     public FreexComp.Build.IBuildEngine BuildEngine { get; set; } = new FakeBuildEngine();
 
+    /// <summary>
+    /// The debug sessions (Phase 6): real sessions over the scripted adapter once a scenario is set
+    /// (<see cref="FakeAdapterSessions.UseScenario"/>); without one a start fails as with a missing adapter.
+    /// </summary>
+    public FakeAdapterSessions DebugSessions { get; set; } = new();
+
     /// <summary>Core buffers by default; the headless harness uses the AvaloniaEdit factory like production.</summary>
     public ITextBufferFactory TextBuffers { get; set; } = new StringTextBufferFactory();
 
@@ -91,6 +97,7 @@ public static class TestComposition
             ToolchainEnvironment = o.ToolchainEnvironment ?? new Core.Build.ToolchainEnvironment(null, Path.Combine(o.UserDir, "ide"), []),
             Processes = o.Processes,
             BuildEngine = o.BuildEngine,
+            DebugSessions = o.DebugSessions,
         };
 
         var services = ServiceGraph.Build(options, platform, o.ToolWindows, o.ImplementedPhase);
@@ -104,6 +111,8 @@ public static class TestComposition
         TestUiThread.RegisterWork(() => projectManager.MissingFileChecks.IsCompleted, () => projectManager.MissingFileChecks);
         var run = services.Run;
         TestUiThread.RegisterWork(() => run.ExitsPosted, run.WhenExitsPostedAsync);
+        if (services.Debug is { } debug) // Phase 6: a session the test left is ended; its events and breakpoint requests settle
+            TestUiThread.RegisterWork(() => debug.IsIdle, debug.ShutdownAsync);
         services.Documents.DocumentOpened += (_, e) =>
         {
             if (e.Document is TextDocumentViewModel { Folding: var folding })

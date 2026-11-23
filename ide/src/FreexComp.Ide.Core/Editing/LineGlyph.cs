@@ -32,7 +32,7 @@ public sealed record LineGlyph(LineGlyphKind Kind, int Number = 0, string? ToolT
         switch (Kind)
         {
             case LineGlyphKind.BreakpointUnverified:
-                return Resources.Strings.Msg_Debug_BreakpointUnverified;
+                return ToolTip ?? Resources.Strings.Msg_Debug_BreakpointUnverified;
             case LineGlyphKind.Bookmark:
                 return Number > 0 ? string.Format(culture, Resources.Strings.Msg_Editor_Tip_BookmarkNumbered, Number) : Resources.Strings.Msg_Editor_Tip_Bookmark;
             case LineGlyphKind.Execution:

@@ -7,7 +7,6 @@ IDE-ARCH-041 structural: code organisation rule (namespaces, base classes, file 
 IDE-ARCH-047 structural: code organisation rule (namespaces, base classes, file locations)
 IDE-ARCH-050 structural: code organisation rule (namespaces, base classes, file locations)
 IDE-ARCH-053 structural: code organisation rule (namespaces, base classes, file locations)
-IDE-ARCH-077 later phase: the rule text names a later phase or a later-phase element
 IDE-ARCH-090 superseded: log format is IDE-SET-090 (lead decision 2026-11-13)
 IDE-ED-127 later phase: the rule text names a later phase or a later-phase element
 IDE-P1-002 structural: project scope/dependency statement

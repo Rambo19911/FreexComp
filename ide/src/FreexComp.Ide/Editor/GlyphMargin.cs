@@ -13,7 +13,8 @@ namespace FreexComp.Ide.Editor;
 /// Glyph margin (editor.md §3): 2 px left padding + one 16 × 16 slot per line with the highest-priority glyph of the
 /// document's <see cref="EditorDecorations"/>; an execution arrow on a breakpoint line is drawn over the disc. Vector
 /// geometry per §3.1. The tooltip has one line per glyph on the line (UI-ED-021, <see cref="EditorDecorations.ToolTipAt"/>); a
-/// right click asks for the gutter menu (UI-ED-022, <see cref="GutterMargin.ContextMenuRequested"/>).
+/// right click asks for the gutter menu (UI-ED-022, <see cref="GutterMargin.ContextMenuRequested"/>); a left click is
+/// reported through <see cref="LineClicked"/> (UI-ED-012).
 /// </summary>
 public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
 {
@@ -55,6 +56,18 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
                 DrawGlyph(context, glyph);
             }
         }
+    }
+
+    /// <summary>UI-ED-012 (P6): a left click on the margin; the 1-based line is passed on (it toggles a breakpoint there).</summary>
+    public Action<int>? LineClicked { get; set; }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (e.Handled || LineClicked is not { } clicked || TextView is not { VisualLinesValid: true } || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+        e.Handled = true; // the text area must not move the caret or start a selection
+        clicked(LineAt(e.GetPosition(this).Y));
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)

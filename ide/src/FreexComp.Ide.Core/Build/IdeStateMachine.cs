@@ -19,6 +19,12 @@ public sealed record IdeStateInfo(IdeState State, BuildKind? BuildKind, bool Can
 
     /// <summary>"Debugging" in the UI (IDE-P3-001).</summary>
     public bool IsDebugging => State is IdeState.DebugRunning or IdeState.Paused;
+
+    /// <summary>Paused: the source file of the stop location; null when it has no source (<c>Msg.State.PausedNoSource</c>).</summary>
+    public string? PausedFile { get; init; }
+
+    /// <summary>Paused: the 1-based line of the stop location.</summary>
+    public int PausedLine { get; init; }
 }
 
 /// <summary>Read side of the IDE state: <see cref="Current"/> and <see cref="Changed"/> (UI thread).</summary>

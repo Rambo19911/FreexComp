@@ -106,6 +106,15 @@ public sealed record IdeServices
     /// <summary>The designer's IDE wiring (Phase 5, D-080, I-130); null before the designer phase.</summary>
     public Designer.DesignerShell? DesignerShell { get; init; }
 
+    /// <summary>Phase 6 on: the source breakpoints (null before).</summary>
+    public Debugging.IBreakpointService? Breakpoints { get; init; }
+
+    /// <summary>Phase 6 on: the debug session of the IDE (null before).</summary>
+    public Debugging.DebugService? Debug { get; init; }
+
+    /// <summary>Phase 6 on: the Debug layout profile, tool windows and toolbar context (null before).</summary>
+    public Debugging.DebugShell? DebugShell { get; init; }
+
     /// <summary>The component metadata (Phase 5, D-077); null before the designer phase.</summary>
     public Designer.ComponentMetadataService? Metadata { get; init; }
 }

@@ -237,6 +237,7 @@ public sealed class CommandService : ICommandService
                 {
                     var handler = _handlers.GetValueOrDefault(command.Id);
                     command.Title = handler?.TitleOverride ?? TitleOf(command.Definition);
+                    command.MenuLabel = handler?.MenuLabelOverride;
                     command.IsChecked = handler?.IsChecked(null) ?? false;
                     command.RaiseCanExecuteChanged();
                 }

@@ -126,7 +126,8 @@ public sealed class StatusBarViewModel : ObservableObject
         { State: IdeState.Building } => Format(Strings.Msg_State_Building, ProjectName, _projects?.Project?.ActiveConfiguration ?? ""),
         { State: IdeState.Running } s => Format(Strings.Msg_State_Running, Path.GetFileName(s.ProgramPath ?? "")),
         { State: IdeState.DebugRunning } s => Format(Strings.Msg_State_Debugging, Path.GetFileName(s.ProgramPath ?? "")),
-        _ => Strings.Msg_State_PausedNoSource, // the paused location arrives with the debugger (P6)
+        { PausedFile: { } file } s => Format(Strings.Msg_State_Paused, Path.GetFileName(file), s.PausedLine),
+        _ => Strings.Msg_State_PausedNoSource,
     };
 
     /// <summary>L1 background: <c>statusbar.&lt;kind&gt;.bg</c> (states-and-messages.md §9, design-tokens.md §2.5).</summary>

@@ -27,6 +27,9 @@ public static class OutputChannels
     public const string Build = "build";
     public const string Program = "program";
 
+    /// <summary>From P6: the debug session's own lines and log points (the debug-session interface §6.1).</summary>
+    public const string Debugger = "debugger";
+
     /// <summary>From P5: component metadata problems (DSG-TP-005, tool-palette.md "Output channel").</summary>
     public const string Designer = "designer";
 }
@@ -67,13 +70,15 @@ public sealed class OutputService : IOutputService
     private IDisposable? _flush;
 
     /// <param name="designer">P5: the <c>designer</c> channel exists (IDE-P3-070).</param>
-    public OutputService(IClock clock, ISettingsService settings, bool designer = false)
+    /// <param name="debugger">P6: the <c>debugger</c> channel exists, after <c>program</c> (commands.md <c>output.selectChannel</c>).</param>
+    public OutputService(IClock clock, ISettingsService settings, bool designer = false, bool debugger = false)
     {
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(settings);
         _clock = clock;
         _settings = settings;
-        Channels = designer ? [OutputChannels.Build, OutputChannels.Program, OutputChannels.Designer] : [OutputChannels.Build, OutputChannels.Program];
+        Channels = [OutputChannels.Build, OutputChannels.Program, .. debugger ? [OutputChannels.Debugger] : (string[])[],
+            .. designer ? [OutputChannels.Designer] : (string[])[]];
         _channels = Channels.ToDictionary(c => c, _ => new Channel(), StringComparer.Ordinal);
     }
 

@@ -9,6 +9,8 @@
     <ProjectReference Include="..\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
     <!-- I-194: the process tests' helper program; the reference copies its apphost exe next to the tests. -->
     <ProjectReference Include="..\FreexComp.Ide.TestHelper\FreexComp.Ide.TestHelper.csproj" />
+    <!-- Phase 6: the debugger area's scripted debug adapter; the reference copies FakeAdapter.exe next to the tests. -->
+    <ProjectReference Include="..\..\..\debugger\tests\FakeAdapter\FakeAdapter.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless.XUnit" />

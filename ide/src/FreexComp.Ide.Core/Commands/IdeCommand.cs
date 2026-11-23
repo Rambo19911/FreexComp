@@ -35,6 +35,15 @@ public sealed class IdeCommand : ObservableObject, ICommand
     }
 
     /// <summary>The displayed (first) gesture, empty when unbound (UI-KEY-005).</summary>
+    /// <summary>The main-menu label that replaces the menu's own while it applies (menus.md §7 "label Continue while paused"); null otherwise.</summary>
+    public string? MenuLabel
+    {
+        get => _menuLabel;
+        internal set => SetProperty(ref _menuLabel, value);
+    }
+
+    private string? _menuLabel;
+
     public string GestureText
     {
         get => _gestureText;

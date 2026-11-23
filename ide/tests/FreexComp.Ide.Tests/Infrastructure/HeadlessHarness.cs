@@ -174,6 +174,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
             if (options.RealBuild)
                 o.ToolchainEnvironment = new Core.Build.ToolchainEnvironment(null, AppContext.BaseDirectory, []);
             o.BuildEngine = options.RealBuild ? new FreexComp.Build.BuildEngine(new Core.Projects.CompilerFileSystemAdapter(FileSystem)) : Build;
+            o.DebugSessions = DebugSessions;
         });
 
         Status = new StatusBarDriver(this);
@@ -218,6 +219,12 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
     /// <summary>The scripted process launcher (IDE-P3-094).</summary>
     public FakeProcessLauncher Processes { get; } = new();
+
+    /// <summary>
+    /// Phase 6 (testing.md §2.1 "UseFakeDebugAdapter"): the debug sessions of the test; with a scenario
+    /// (<see cref="FakeAdapterSessions.UseScenario"/>) they run over the debugger area's scripted adapter.
+    /// </summary>
+    public FakeAdapterSessions DebugSessions { get; } = new();
 
     /// <summary>The scripted OS pickers (IDE-TEST-015); an unscripted picker request fails the test.</summary>
     public FakeFileDialogService FileDialogs { get; }
@@ -484,6 +491,20 @@ public sealed class HeadlessHarness : IAsyncDisposable
         var failures = new List<string>();
         try
         {
+            // Phase 6: a debug session the test left is ended; its events are applied before the window goes.
+            if (Services.Debug is { IsIdle: false } debug)
+            {
+                var shutdown = debug.ShutdownAsync();
+                while (!shutdown.IsCompleted && !_deadline.IsExpired)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Yield();
+                }
+
+                if (!shutdown.IsCompleted)
+                    failures.Add(_deadline.Expired("the debug session's end").Message);
+            }
+
             Dispatcher.UIThread.RunJobs();
             failures.AddRange(BindingErrorSink.Instance.Since(_bindingErrorStart).Select(e => "Binding error: " + e));
             if (!_unhandledExpected)
@@ -512,6 +533,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
             Window.Close();
             Dispatcher.UIThread.RunJobs();
+            DebugSessions.Dispose();
             DeleteRoot();
         }
 
