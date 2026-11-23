@@ -6,13 +6,26 @@ using Xunit.v3;
 
 namespace FreexComp.Ide.Core.Tests.Infrastructure;
 
-/// <summary>I-205: registers every test of the assembly with its own timeout for <see cref="TestDeadline"/>.</summary>
+/// <summary>
+/// I-205: registers every test of the assembly with its own timeout for <see cref="TestDeadline"/>; I-210: and as the owner
+/// of the background work registered while it runs (<see cref="TestUiThread.RegisterWork"/>).
+/// </summary>
 [AttributeUsage(AttributeTargets.Assembly)]
 internal sealed class RegisterTestDeadlineAttribute : BeforeAfterTestAttribute
 {
-    public override void Before(MethodInfo methodUnderTest, IXunitTest test) => TestDeadline.Begin(test.UniqueID, test.Timeout, TestContext.Current.CancellationToken);
+    // I-210: set before any test class is constructed (a composition built in a constructor registers its work).
+    public RegisterTestDeadlineAttribute() => TestUiThread.CurrentTest = static () => TestContext.Current.Test?.UniqueID;
 
-    public override void After(MethodInfo methodUnderTest, IXunitTest test) => TestDeadline.End(test.UniqueID);
+    public override void Before(MethodInfo methodUnderTest, IXunitTest test)
+    {
+        TestDeadline.Begin(test.UniqueID, test.Timeout, TestContext.Current.CancellationToken);
+    }
+
+    public override void After(MethodInfo methodUnderTest, IXunitTest test)
+    {
+        TestDeadline.End(test.UniqueID);
+        TestUiThread.EndTest(test.UniqueID);
+    }
 }
 
 /// <summary>The running test.</summary>

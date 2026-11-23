@@ -260,7 +260,7 @@ public sealed class CompletionSession
         }
     }
 
-    private int Caret => _document.Buffer.GetOffset(_document.ViewState.Caret.Line, _document.ViewState.Caret.Column);
+    private int Caret => _document.CaretOffset; // I-210
 
     /// <summary>IDE-ED-080 (a), IDE-ED-081: Ctrl+Space.</summary>
     public Task InvokeAsync()

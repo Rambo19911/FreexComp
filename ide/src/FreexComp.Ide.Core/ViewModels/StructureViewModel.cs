@@ -422,8 +422,7 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
             row.IsTracked = false;
         if (IsDesign || _document is not { } document || _nodes.Count == 0)
             return;
-        var caret = document.ViewState.Caret;
-        var offset = document.Buffer.GetOffset(caret.Line, caret.Column);
+        var offset = document.CaretOffset; // clamped: the caret may be stale against the buffer (I-210)
         if (StructureBuilder.FindInnermost(_nodes, offset) is not { } target)
             return;
         var key = target.Key;

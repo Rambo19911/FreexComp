@@ -5,6 +5,7 @@ using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ToolWindows;
+using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.TestSupport;
 
@@ -92,6 +93,22 @@ public static class TestComposition
             BuildEngine = o.BuildEngine,
         };
 
-        return ServiceGraph.Build(options, platform, o.ToolWindows, o.ImplementedPhase);
+        var services = ServiceGraph.Build(options, platform, o.ToolWindows, o.ImplementedPhase);
+
+        // I-210: the test settles the background work it started before it ends: language-service requests (structure,
+        // diagnostics, highlighting; a request queued after all earlier ones completes once they have posted their results)
+        // missing-file checks, exits of the programs run and the folding of a large document.
+        var worker = services.CodeModel.Worker;
+        TestUiThread.RegisterWork(() => worker.IsIdle, () => worker.RunAsync("test.settle", static _ => 0));
+        var projectManager = services.ProjectManager;
+        TestUiThread.RegisterWork(() => projectManager.MissingFileChecks.IsCompleted, () => projectManager.MissingFileChecks);
+        var run = services.Run;
+        TestUiThread.RegisterWork(() => run.ExitsPosted, run.WhenExitsPostedAsync);
+        services.Documents.DocumentOpened += (_, e) =>
+        {
+            if (e.Document is TextDocumentViewModel { Folding: var folding })
+                TestUiThread.RegisterWork(() => folding.Computation.IsCompleted, () => folding.Computation);
+        };
+        return services;
     }
 }

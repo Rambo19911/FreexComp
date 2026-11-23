@@ -70,7 +70,7 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
     {
         if (documents.ActiveDocument is not TextDocumentViewModel document)
             return Task.CompletedTask;
-        return GoAsync(document, document.Buffer.GetOffset(document.ViewState.Caret.Line, document.ViewState.Caret.Column));
+        return GoAsync(document, document.CaretOffset); // I-210
     }
 
     /// <summary>The identifier token at the caret (or ending at it).</summary>

@@ -48,6 +48,12 @@ public partial class TextDocumentViewModel
     /// <summary>A status-bar message for the user (an operation that could not be done), already formatted.</summary>
     public event EventHandler<string>? StatusMessage;
 
+    /// <summary>
+    /// The caret as an offset, clamped to the buffer (I-210): the view state may lag behind an edit, so its line can be past
+    /// the end of the text.
+    /// </summary>
+    public int CaretOffset => OffsetOf(ViewState.Caret);
+
     /// <summary>The current selection as offsets (from <see cref="ViewState"/>).</summary>
     public TextSelection Selection
     {

@@ -71,7 +71,7 @@ public sealed class ParameterInfoSession
     /// <summary>The running or last request; completes when its result is applied (tests await it).</summary>
     public Task Pending { get; private set; } = Task.CompletedTask;
 
-    private int Caret => _document.Buffer.GetOffset(_document.ViewState.Caret.Line, _document.ViewState.Caret.Column);
+    private int Caret => _document.CaretOffset; // I-210
 
     /// <summary><c>edit.parameterInfo</c>: asks at the caret; the result says whether it opened.</summary>
     public Task InvokeAsync()
@@ -255,8 +255,7 @@ public sealed class HoverSession
     public Task ShowAtCaretAsync()
     {
         CancelTimer();
-        var view = _document.ViewState.Caret;
-        Pending = RequestAsync(_document.Buffer.GetOffset(view.Line, view.Column), atCaret: true);
+        Pending = RequestAsync(_document.CaretOffset, atCaret: true); // I-210
         return Pending;
     }
 

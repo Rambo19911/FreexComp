@@ -100,6 +100,9 @@ public sealed record IdeServices
     /// <summary>The Search Results tool window and Find in Files runner (I-123).</summary>
     public required ViewModels.SearchResultsViewModel SearchResults { get; init; }
 
+    /// <summary>The Project Manager tool window (project-manager.md §6); its missing-file checks run in the background (I-210).</summary>
+    public required ViewModels.ProjectManagerViewModel ProjectManager { get; init; }
+
     /// <summary>The designer's IDE wiring (Phase 5, D-080, I-130); null before the designer phase.</summary>
     public Designer.DesignerShell? DesignerShell { get; init; }
 

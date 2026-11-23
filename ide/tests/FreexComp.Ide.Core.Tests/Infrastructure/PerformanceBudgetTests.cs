@@ -117,7 +117,9 @@ public sealed class PerformanceBudgetTests
     /// <summary>
     /// I-206: thread CPU time advances in ticks of ~15.6 ms, so a single run of ~2 ms of work used to measure 0 (or a
     /// whole tick). Each run now repeats the action until it spans many ticks and divides by the count, so the
-    /// per-call time is resolved: within ±50 % of the fastest wall-clock time of the same fixed workload.
+    /// per-call time is resolved: within ±50 % of the reference CPU time per call of the same fixed workload, a sub-tick
+    /// amount. I-211: the reference is thread CPU too (long batches read directly, not through the method under test),
+    /// so load from other processes no longer inflates it the way it inflated the earlier wall-clock reference.
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Category", "Performance")]
@@ -145,9 +147,12 @@ public sealed class PerformanceBudgetTests
     }
 
     /// <summary>
-    /// A fixed amount of computation that takes at least <paramref name="target"/> of wall time on this machine, and
-    /// its fastest wall-clock time over 20 calls (the fastest call is the one least interrupted, so it approximates the
-    /// CPU time of the work itself).
+    /// A fixed amount of computation that takes at least <paramref name="target"/> of thread CPU per call on this machine,
+    /// and its reference CPU time per call. I-211: both are thread CPU, not wall time, so time the thread spends waiting
+    /// for a core on a loaded machine counts in neither: the iteration count doubles until a batch spanning
+    /// <see cref="CalibrationTicks"/> ticks costs at least the target per call and so does the reference, the smallest
+    /// per-call CPU of <see cref="ReferenceBatches"/> batches of <see cref="ReferenceTicks"/> ticks each (tick error at most
+    /// 1/16; the least contended batch, as contention, e.g. a busy sibling core, only ever adds CPU time).
     /// </summary>
     private static (Action Work, TimeSpan Reference) FixedWork(TimeSpan target)
     {
@@ -167,19 +172,43 @@ public sealed class PerformanceBudgetTests
             }
 
             Work();
-            var fastest = TimeSpan.MaxValue;
-            for (int r = 0; r < 20; r++)
+            if (CpuPerCall(Work, PerformanceBudget.ThreadCpuTick * CalibrationTicks) >= target)
             {
-                var watch = System.Diagnostics.Stopwatch.StartNew();
-                Work();
-                if (watch.Elapsed < fastest)
-                    fastest = watch.Elapsed;
+                var reference = TimeSpan.MaxValue;
+                for (int batch = 0; batch < ReferenceBatches; batch++)
+                {
+                    var perCall = CpuPerCall(Work, PerformanceBudget.ThreadCpuTick * ReferenceTicks);
+                    if (perCall < reference)
+                        reference = perCall;
+                }
+
+                if (reference >= target)
+                    return (Work, reference); // else contention inflated the calibration batch: double once more
             }
 
-            if (fastest >= target)
-                return (Work, fastest);
             iterations *= 2;
         }
+    }
+
+    private const int CalibrationTicks = 8;
+    private const int ReferenceTicks = 16;
+    private const int ReferenceBatches = 4;
+
+    /// <summary>Calls <paramref name="work"/> until the calling thread has used <paramref name="span"/> of CPU; CPU per call.</summary>
+    private static TimeSpan CpuPerCall(Action work, TimeSpan span)
+    {
+        var before = PerformanceBudget.CurrentThreadCpu();
+        var calls = 0;
+        TimeSpan spent;
+        do
+        {
+            work();
+            calls++;
+            spent = PerformanceBudget.CurrentThreadCpu() - before;
+        }
+        while (spent < span);
+
+        return spent / calls;
     }
 
     /// <summary>Burns CPU on the calling thread until it has used <paramref name="cpu"/> (thread CPU, not wall clock).</summary>

@@ -30,7 +30,7 @@ public sealed class ImmediateDispatcher : IUiDispatcher
         if (CheckAccess())
             action();
         else if (Volatile.Read(ref _ui) is { } ui)
-            ui.Post(_ => action(), null);
+            ui.Post(static state => ((Action)state!)(), action); // the action as state: a late post is named after it (I-210)
         else
             throw new InvalidOperationException(
                 "Cross-thread post to an ImmediateDispatcher outside a test UI thread; run the test on TestUiThread.RunAsync (I-209).");

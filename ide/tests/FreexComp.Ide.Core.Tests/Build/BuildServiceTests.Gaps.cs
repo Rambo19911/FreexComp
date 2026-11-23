@@ -87,7 +87,7 @@ public sealed partial class BuildServiceTests
         var closed = 0;
         bed2.Services.Application.Shutdown = () => closed++;
         var hung = bed2.Engine.Enqueue(new FakeBuild([], FakeBuildEngine.Result(BuildTestBed.ProjectPath, true)).Held(honorsCancel: false));
-        _ = bed2.Services.Build.BuildAsync(BuildKind.Build);
+        var hungBuild = bed2.Services.Build.BuildAsync(BuildKind.Build);
         await hung.Reached;
         var exiting = bed2.Services.Application.ExitAsync();
         Assert.True(hung.Token.IsCancellationRequested);
@@ -98,6 +98,7 @@ public sealed partial class BuildServiceTests
         Assert.True(await exiting);
         Assert.Equal(1, closed);
         hung.Release();
+        await hungBuild; // I-210: the released build ends within the test, not after it
     }
 
     /// <summary>IDE-P3-022 in <c>prompt</c> mode: Save is chosen, the save fails and its error dialog ends with Cancel → no build.</summary>

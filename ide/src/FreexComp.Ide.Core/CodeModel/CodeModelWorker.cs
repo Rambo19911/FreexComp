@@ -11,6 +11,19 @@ public sealed class CodeModelWorker
     private readonly LinkedList<Item> _queue = new();
     private bool _running;
 
+    /// <summary>
+    /// Nothing queued or running. Once idle, every finished request has completed its task, so continuations awaiting it on
+    /// a synchronization context are already posted there (I-210: a test settles the work it started before it ends).
+    /// </summary>
+    public bool IsIdle
+    {
+        get
+        {
+            lock (_gate)
+                return !_running && _queue.Count == 0;
+        }
+    }
+
     /// <summary>Queues <paramref name="work"/>; the task completes with its result, or canceled when superseded or canceled.</summary>
     public Task<T> RunAsync<T>(string kind, Func<CancellationToken, T> work, CancellationToken ct = default)
     {

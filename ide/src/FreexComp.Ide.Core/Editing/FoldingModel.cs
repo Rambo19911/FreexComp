@@ -232,6 +232,9 @@ public sealed class FoldingModel
     /// <summary>A background run is in progress or its result has not been applied yet (tests drain it, I-179).</summary>
     internal bool IsComputing => _computing;
 
+    /// <summary>The latest background run, complete once its result is applied on the starting context (I-210).</summary>
+    public Task Computation { get; private set; } = Task.CompletedTask;
+
     /// <summary>
     /// One run at a time over a <see cref="StringTextBuffer"/> snapshot; a result for an outdated version (or another
     /// provider) is dropped and the current text is folded again (IDE-ARCH-083). The result is applied on the
@@ -246,7 +249,7 @@ public sealed class FoldingModel
         var version = _buffer.Version;
         var text = _buffer.Text;
         var context = SynchronizationContext.Current;
-        _ = RunInBackground(() => provider.GetRegions(new StringTextBuffer(text)).ToList()).ContinueWith(
+        Computation = RunInBackground(() => provider.GetRegions(new StringTextBuffer(text)).ToList()).ContinueWith(
             t =>
             {
                 if (version == _buffer.Version && ReferenceEquals(provider, _provider))

@@ -329,6 +329,7 @@ public static class ServiceGraph
             Run = run,
             QuickPick = quickPick,
             SearchResults = searchResults,
+            ProjectManager = projectManager,
             CodeModel = codeModel,
             SemanticHighlights = semanticHighlights,
             Metadata = metadata,

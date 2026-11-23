@@ -389,7 +389,17 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// IDE-PM-103: <c>File.Exists</c> per file row on a background thread; the result is applied only when no newer check
     /// or rebuild started meanwhile.
     /// </summary>
-    public async Task CheckMissingFilesAsync()
+    public Task CheckMissingFilesAsync()
+    {
+        var check = CheckMissingFilesCoreAsync();
+        MissingFileChecks = MissingFileChecks.IsCompleted ? check : Task.WhenAll(MissingFileChecks, check);
+        return check;
+    }
+
+    /// <summary>Completes once every missing-file check started so far has applied (or dropped) its result (I-210).</summary>
+    public Task MissingFileChecks { get; private set; } = Task.CompletedTask;
+
+    private async Task CheckMissingFilesCoreAsync()
     {
         var check = ++_missingCheck;
         var files = Roots.SelectMany(r => r.SelfAndDescendants()).Where(n => n.IsFile).ToList();

@@ -47,6 +47,7 @@ public sealed class RunService : IRunService
     private readonly IToolchainLocator _toolchain;
     private readonly IOutputService _output;
     private readonly IProcessLauncher _launcher;
+    private readonly List<(Task<int> Exited, Task Posted)> _exitPosts = [];
     private readonly IFileSystem _fileSystem;
     private readonly IClock _clock;
     private readonly IUiDispatcher _dispatcher;
@@ -286,8 +287,34 @@ public sealed class RunService : IRunService
         else if (_settings.Get(SettingsCatalog.OutputAutoShowOnRun))
             ShowProgramOutput?.Invoke();
 
-        _ = process.Exited.ContinueWith(t => _dispatcher.Post(() => OnExited(session, t)), TaskScheduler.Default);
+        var exited = process.Exited;
+        var posted = exited.ContinueWith(t => _dispatcher.Post(() => OnExited(session, t)), TaskScheduler.Default);
+        lock (_exitPosts)
+            _exitPosts.Add((exited, posted));
         return true;
+    }
+
+    /// <summary>
+    /// I-210: every program that has exited has had its exit posted to the UI dispatcher (a running one does not count);
+    /// a test settles the exits of the programs it ran before it ends.
+    /// </summary>
+    public bool ExitsPosted
+    {
+        get
+        {
+            lock (_exitPosts)
+            {
+                _exitPosts.RemoveAll(p => p.Posted.IsCompleted);
+                return _exitPosts.TrueForAll(p => !p.Exited.IsCompleted);
+            }
+        }
+    }
+
+    /// <summary>Completes once the exits of the programs that have exited so far are posted (see <see cref="ExitsPosted"/>).</summary>
+    public Task WhenExitsPostedAsync()
+    {
+        lock (_exitPosts)
+            return Task.WhenAll(_exitPosts.Where(p => p.Exited.IsCompleted).Select(p => p.Posted));
     }
 
     private void OnExited(Session session, Task<int> exited)
