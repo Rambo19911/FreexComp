@@ -61,6 +61,9 @@ ok CM_HINTSHOW result <> 0 cancels
 ok no window
 # timers (UIF-943, UIF-946)
 ok not at once
+ok a foreign WM_ACTIVATEAPP 0 is sent to the form
+ok the foreign WM_ACTIVATEAPP reached the form
+ok a foreign WM_ACTIVATEAPP leaves the simulated activation
 ok shown after HintPause
 ok text
 ok hidden on a key message
@@ -91,4 +94,4 @@ ok OnHint on every change
 ok pop-up menu item
 ok pop-up menu closed: cleared
 ok the hint window belongs to Application
-# passed 85 failed 0
+# passed 88 failed 0

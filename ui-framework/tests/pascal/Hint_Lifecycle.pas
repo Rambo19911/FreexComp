@@ -13,13 +13,20 @@ program Hint_Lifecycle;
   The mouse is simulated by sending WM_MOUSEMOVE / WM_MOUSELEAVE to the windows; queued mouse-move and leave
   messages (real input, TrackMouseEvent) are swallowed by OnMessage so that the real cursor never interferes. The
   application is made active by sending WM_ACTIVATEAPP. Waits pump the loop until a condition holds, bounded by a
-  guard timer. }
+  guard timer.
+  U-137: the form can really be activated and deactivated by other processes while the loop is pumped (a parallel
+  test takes the foreground, the foreground window of an ending process passes activation on to the form), and a
+  real WM_ACTIVATEAPP 0 during a wait cancels the pending hint (the application deactivates), so the form's
+  WindowProc passes on only the WM_ACTIVATEAPP the test sends itself (SimulateActivateApp). That independence is
+  tested on every run: a worker thread sends a foreign WM_ACTIVATEAPP 0 to the form (a sent message of another
+  thread, as the system's) while a hint is pending. }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, Menus, ActnList,
   TestKit;
 
 const
   GuardTimer = 77;
+  PM_QS_SENDMESSAGE = QS_SENDMESSAGE shl 16;
 
 type
   TLog = class
@@ -34,12 +41,25 @@ type
     NewPos: TPoint;
     OldProc: TWndMethod;
     IdleRan: Boolean;
+    FormOldProc: TWndMethod;
+    Simulating: Boolean;
+    ForeignActivations: Integer;
     procedure Message(var Msg: TMsg; var Handled: Boolean);
     procedure AppHint(Sender: TObject);
     procedure ShowHint(var HintStr: string; var CanShow: Boolean; var HintInfo: THintInfo);
     procedure ActionHint(var HintStr: string; var CanShow: Boolean);
     procedure ButtonProc(var Message: TMessage);
     procedure Idle(Sender: TObject; var Done: Boolean);
+    procedure FormProc(var Message: TMessage);
+  end;
+
+  { U-137: sends WM_ACTIVATEAPP 0 to Target from another thread, as the system does when another process takes the
+    foreground }
+  TForeignActivation = class(TThread)
+  protected
+    procedure Execute; override;
+  public
+    Target: HWND;
   end;
 
 var
@@ -100,6 +120,63 @@ procedure TLog.Idle(Sender: TObject; var Done: Boolean);
 begin
   IdleRan := True;
   PostMessageW(Application.Handle, WM_NULL, 0, 0);
+end;
+
+{ U-137: only the WM_ACTIVATEAPP sent by SimulateActivateApp reaches the form; real activation changes are counted }
+procedure TLog.FormProc(var Message: TMessage);
+begin
+  if (Message.Msg = WM_ACTIVATEAPP) and not Simulating then
+  begin
+    Inc(ForeignActivations);
+    Message.Result := 0;
+    Exit;
+  end;
+  FormOldProc(Message);
+end;
+
+procedure TForeignActivation.Execute;
+begin
+  SendMessageW(Target, WM_ACTIVATEAPP, 0, LPARAM(GetCurrentThreadId));
+end;
+
+procedure SimulateActivateApp(Active: Boolean);
+begin
+  Log.Simulating := True;
+  try
+    SendMessageW(F.Handle, WM_ACTIVATEAPP, WPARAM(Ord(Active)), 0);
+  finally
+    Log.Simulating := False;
+  end;
+end;
+
+{ U-137: a foreign WM_ACTIVATEAPP 0 arrives and is processed while a hint is pending: only sent messages are
+  processed (other processes send some too) until the worker's SendMessageW returned and the worker ended }
+procedure ForeignDeactivation;
+var
+  T: TForeignActivation;
+  Msg: TMsg;
+  Before: Integer;
+  H: THandle;
+  R: Cardinal;
+begin
+  Before := Log.ForeignActivations;
+  T := TForeignActivation.Create(True);
+  try
+    T.Target := F.Handle;
+    T.Start;
+    H := T.Handle;
+    repeat
+      R := MsgWaitForMultipleObjects(1, @H, False, 4000, QS_SENDMESSAGE);
+      if R = WAIT_OBJECT_0 + 1 then
+        PeekMessageW(Msg, 0, 0, 0, PM_NOREMOVE or PM_QS_SENDMESSAGE);
+    until R <> WAIT_OBJECT_0 + 1;
+    CheckEqI(WAIT_OBJECT_0, R, 'a foreign WM_ACTIVATEAPP 0 is sent to the form');
+    T.WaitFor;
+  finally
+    T.Free;
+  end;
+  CheckEqI(Before + 1, Log.ForeignActivations, 'the foreign WM_ACTIVATEAPP reached the form');
+  CheckEqB(True, Application.Active, 'a foreign WM_ACTIVATEAPP leaves the simulated activation');
 end;
 
 type
@@ -290,9 +367,11 @@ begin
 
   Application.OnMessage := Log.Message;
   Application.OnHint := Log.AppHint;
+  Log.FormOldProc := F.WindowProc;
+  F.WindowProc := Log.FormProc;
   F.Visible := True;
   Application.ProcessMessages;
-  SendMessageW(F.Handle, WM_ACTIVATEAPP, 1, 0);
+  SimulateActivateApp(True);
   CheckEqB(True, Application.Active, 'application active (WM_ACTIVATEAPP)');
   Application.HintPause := 60000;
   Application.HintHidePause := 60000;
@@ -328,10 +407,10 @@ begin
   Application.ActivateHint(Pt);
   CheckEqB(False, HintShown, 'Application.ShowHint False: no hint');
   Application.ShowHint := True;
-  SendMessageW(F.Handle, WM_ACTIVATEAPP, 0, 0);
+  SimulateActivateApp(False);
   Application.ActivateHint(Pt);
   CheckEqB(False, HintShown, 'inactive application: no hint');
-  SendMessageW(F.Handle, WM_ACTIVATEAPP, 1, 0);
+  SimulateActivateApp(True);
 
   Section('window (UIF-944, UIF-945, UIF-947, UIF-948)');
   Application.ActivateHint(Pt);
@@ -424,6 +503,7 @@ begin
   MoveTo(Q, 5, 5);
   MoveTo(B, 5, 5);
   CheckEqB(False, HintShown, 'not at once');
+  ForeignDeactivation;
   CheckEqB(True, WaitHint(True), 'shown after HintPause');
   CheckEqS('Bonly', HintText, 'text');
   PostMessageW(B.Handle, WM_KEYDOWN, VK_F24, 1);
@@ -445,9 +525,9 @@ begin
   CheckEqS('hint:;', Log.Text, 'Application.Hint cleared when the mouse leaves');
   MoveTo(B, 5, 5);
   CheckEqB(True, WaitHint(True), 'shown');
-  SendMessageW(F.Handle, WM_ACTIVATEAPP, 0, 0);
+  SimulateActivateApp(False);
   CheckEqB(False, HintShown, 'hidden when the application deactivates');
-  SendMessageW(F.Handle, WM_ACTIVATEAPP, 1, 0);
+  SimulateActivateApp(True);
   MoveTo(Q, 5, 5);
   MoveTo(B, 5, 5);
   CheckEqB(True, WaitHint(True), 'shown');
@@ -512,6 +592,7 @@ begin
 
   Application.OnHint := nil;
   Application.OnMessage := nil;
+  F.WindowProc := Log.FormOldProc;
   F.Free;
   CheckEqB(True, HintWindow <> nil, 'the hint window belongs to Application');
 end;
