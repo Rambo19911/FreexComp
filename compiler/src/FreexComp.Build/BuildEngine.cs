@@ -25,6 +25,10 @@ public sealed class BuildEngine : IBuildEngine
         _processRunner = processRunner;
     }
 
+    /// <summary>
+    /// Never blocks a thread-pool thread (C-269, I-217): the compile runs on the calling thread up to its first tool process and
+    /// tools are awaited. A caller on a UI thread starts it with <c>Task.Run</c>.
+    /// </summary>
     public async Task<BuildResult> RunAsync(BuildRequest request, IProgress<BuildEvent> progress, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -436,8 +440,9 @@ public sealed class BuildEngine : IBuildEngine
                 },
             };
             var compilation = Compilation.Create(options, request.OpenFiles, _fs);
-            // C-269: the front end leaves the caller's thread; nothing blocks a pool worker while tools run
-            var result = await Task.Run(() => compilation.EmitAsync(emit, ct), ct).ConfigureAwait(false);
+            // C-269, I-217: awaited on the engine's own thread, no hop to a pool worker (with every worker busy the hop would never
+            // run); a caller on a UI thread starts RunAsync with Task.Run (the IDE's build service does)
+            var result = await compilation.EmitAsync(emit, ct).ConfigureAwait(false);
             diagnostics.AddRange(result.Diagnostics);
             if (!result.Success)
             {
