@@ -42,6 +42,7 @@ public sealed partial class DesignSurfaceController
     private List<ResizeMember> _resizeSet = [];
     private List<(FormObject Object, Rect Bounds)> _resizeBounds = [];
     private FormObject? _resizePrimary;
+    private HandleKind _resizeHandle;
 
     private (FormObject? Container, int Left, int Top) _moveTarget;
     private FormObject? _moveAnchor;
@@ -741,6 +742,7 @@ public sealed partial class DesignSurfaceController
         }
 
         _resizePrimary = primary;
+        _resizeHandle = handle;
         State = InteractionState.Resizing;
         UpdateResize(input);
     }
@@ -751,6 +753,7 @@ public sealed partial class DesignSurfaceController
         var root = Document.Root;
         _resizeSet = [new ResizeMember(root, Layout.GetBounds(root), HandleEdges(handle) & (SnapEdges.Right | SnapEdges.Bottom))];
         _resizePrimary = root;
+        _resizeHandle = handle;
         State = InteractionState.Resizing;
         UpdateResize(input);
     }

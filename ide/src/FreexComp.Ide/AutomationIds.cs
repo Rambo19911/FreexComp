@@ -56,6 +56,24 @@ public static partial class AutomationIds
     /// <summary>A tab of a form document's view switcher (UI-DSG-001): <c>Document.&lt;fileName&gt;.ViewTabs.&lt;Code|Design|Text&gt;</c>.</summary>
     public static string DocumentViewTab(string fileName, string view) => "Document." + fileName + ".ViewTabs." + view;
 
+    /// <summary>The design surface of a form (accessibility.md §3 Designer): <c>Designer.&lt;formName&gt;</c>.</summary>
+    public static string Designer(string formName) => "Designer." + formName;
+
+    /// <summary>The form frame on the design surface: <c>Designer.&lt;formName&gt;.Form</c>.</summary>
+    public static string DesignerForm(string formName) => Designer(formName) + ".Form";
+
+    /// <summary>A design-time control (virtual element): <c>Designer.&lt;formName&gt;.Control.&lt;ComponentName&gt;</c>.</summary>
+    public static string DesignerControl(string formName, string componentName) => Designer(formName) + ".Control." + componentName;
+
+    /// <summary>The component tray: <c>Designer.&lt;formName&gt;.Tray</c>.</summary>
+    public static string DesignerTray(string formName) => Designer(formName) + ".Tray";
+
+    /// <summary>A tray item: <c>Designer.&lt;formName&gt;.Tray.&lt;ComponentName&gt;</c>.</summary>
+    public static string DesignerTrayItem(string formName, string componentName) => DesignerTray(formName) + "." + componentName;
+
+    /// <summary>A selection handle of the primary: <c>Designer.&lt;formName&gt;.Handle.&lt;NW|N|NE|E|SE|S|SW|W&gt;</c>.</summary>
+    public static string DesignerHandle(string formName, string position) => Designer(formName) + ".Handle." + position;
+
     public static string Tool(string name) => "Tool." + name;
 
     public static string ToolTab(string name) => "ToolTab." + name;

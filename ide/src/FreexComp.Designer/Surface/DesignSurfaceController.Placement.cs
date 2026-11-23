@@ -247,10 +247,13 @@ public sealed partial class DesignSurfaceController
         FormPropertyData[] geometry = info.Kind == ComponentKind.NonVisual
             ? [Int("DesignLeft", position.X), Int("DesignTop", position.Y)]
             : [Int("Left", position.X), Int("Top", position.Y), Int("Width", width), Int("Height", height)];
-        var changes = new List<FormChange>
+        var data = new FormObjectData(FormObjectKind.Object, name, info.ClassName, [.. geometry], []);
+        if (!AddFieldsFor([data], out var edits, out var ops))
         {
-            new AddObject(parent.Name, parent.Children.Count, new FormObjectData(FormObjectKind.Object, name, info.ClassName, [.. geometry], [])),
-        };
+            return false; // DSG-TP-053: code sync refused, the object is not created
+        }
+
+        var changes = new List<FormChange> { new AddObject(parent.Name, parent.Children.Count, data) };
         foreach (var property in info.Properties)
         {
             if (property.Initial is { } initial && InitialValue(property, initial.Replace("$(Name)", name, StringComparison.Ordinal)) is { } value)
@@ -266,8 +269,8 @@ public sealed partial class DesignSurfaceController
         undo.InsertRange(0, ApplyEdit(renumber));
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(created);
-        PushUnit(new DesignerUndoUnit(UndoTitles.Add, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], [],
-            before, Selection.ToSnapshot()) { TitleArgument = info.ClassName });
+        PushUnit(new DesignerUndoUnit(UndoTitles.Add, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], edits,
+            before, Selection.ToSnapshot()) { TitleArgument = info.ClassName, CodeOps = ops });
         return true;
     }
 

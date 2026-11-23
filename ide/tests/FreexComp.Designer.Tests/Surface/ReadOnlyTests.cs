@@ -241,4 +241,40 @@ public sealed class ReadOnlyTests
         Assert.Equal(original, h.Text);
         Assert.Equal(["Chart1"], h.Selected);
     }
+
+    /// <summary>
+    /// DSG-FD-027 (found with D-078, the first view that measures every opened form): a root of a class the catalog does
+    /// not know (an unknown class, or an empty catalog when no metadata was found) is preserved; the surface still lays
+    /// out, hit-tests and draws the frame instead of failing on the unknown size properties.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-FD-027")]
+    public void UnknownRootClassStillDrawsTheFrame()
+    {
+        var catalog = FreexComp.Designer.Catalog.ComponentCatalog.Empty; // DSG-TP-004: no metadata found
+        var document = FreexComp.Designer.Text.FormParser.Parse("""
+            object MainForm: TMainForm
+              Caption = 'MainForm'
+              object B1: TButton
+                Left = 8
+                Top = 8
+              end
+            end
+
+            """, "MainForm.form", catalog).Document!;
+        Assert.True(document.Root.IsPreserved);
+        var controller = new DesignSurfaceController(document, new FreexComp.Designer.Editing.FormEditor(document, catalog),
+            new FreexComp.Designer.Editing.DesignerUndoStack(), catalog,
+            new FreexComp.Designer.Layout.LayoutEngine(catalog, FreexComp.Designer.Rendering.RendererRegistry.CreateDefault()),
+            new FakeDesignerSettings(), new FakeDesignerHost(), new ManualTimeProvider());
+
+        // Without metadata there is no default client size: the stored one, else 0 × 0 (the caption only).
+        var g = controller.Geometry;
+        Assert.Equal(new Rect(16, 16, 2, 32), g.FrameRect);
+        var canvas = new FreexComp.Designer.Rendering.RecordingCanvas();
+        controller.Render(canvas, new Rect(0, 0, 800, 600));
+        Assert.NotEmpty(canvas.Ops);
+        Assert.Equal(CursorKind.Arrow, controller.GetCursor(100, 100));
+    }
 }

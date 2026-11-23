@@ -353,4 +353,41 @@ public sealed class PlacementTests
         Assert.Null(h.Host.ArmedPaletteClass);
         Assert.Equal(["Button4"], h.Selected); // Escape disarmed instead of selecting the parent
     }
+
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-TP-053")]
+    [Trait("Req", "DSG-SUR-127")]
+    public void PlacementAndPasteAddFieldsThroughCodeSync()
+    {
+        using var h = DesignerHarness.FromText(Form);
+        var edit = new FreexComp.Designer.Editing.TextEditRecord(10, "", "Panel2: TPanel;");
+        h.Host.CodeSync.AddFieldsEdits = _ => [edit];
+
+        // Placement: one field with the class's unit, its edits and the logical operation in the "Add" unit.
+        h.Controller.PlaceAtDefaultPosition("TPanel");
+        var fields = Assert.Single(h.Host.CodeSync.AddedFields);
+        Assert.Equal([new FreexComp.Designer.CodeSync.CodeSyncField("Panel1", "TPanel", "ExtCtrls")], fields);
+        Assert.Equal([edit], h.Undo.Peek!.CodeEdits);
+        Assert.Equal(fields, Assert.IsType<FreexComp.Designer.CodeSync.AddFieldsOp>(Assert.Single(h.Undo.Peek.CodeOps)).Fields);
+
+        // Paste of a container: every pasted component (pre-order), with the new names.
+        h.Select("P1");
+        h.Execute("edit.copy");
+        h.Select("F");
+        h.Execute("edit.paste");
+        Assert.Equal(["P2"], h.Host.CodeSync.AddedFields[^1].Select(f => f.Name));
+        h.ExecuteUndo();
+        Assert.Equal([edit], h.Host.CodeSync.Reverted[^1]);
+
+        // Refused by code sync (DSG-CS-004): nothing is created, the conflict is shown.
+        h.Host.CodeSync.AddFieldsEdits = _ => throw new FreexComp.Designer.CodeSync.CodeSyncException("broken");
+        var before = h.Text;
+        var units = h.Undo.UndoCount;
+        h.Controller.PlaceAtDefaultPosition("TButton");
+        h.Execute("edit.paste");
+        Assert.Equal(before, h.Text);
+        Assert.Equal(units, h.Undo.UndoCount);
+        Assert.Equal(("Msg.Designer.CodeSyncConflict", "broken"), (h.Host.Statuses[^1].Id, h.Host.Statuses[^1].Args[0]));
+    }
 }

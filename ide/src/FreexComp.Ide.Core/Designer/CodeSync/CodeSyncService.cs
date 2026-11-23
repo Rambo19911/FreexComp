@@ -142,6 +142,13 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
     public AddFieldsResult AddFields(IReadOnlyList<(string Name, string TypeName, string Unit)> fields) =>
         Run(() => AddFieldsCore(fields));
 
+    /// <summary><see cref="ICodeSync.AddFields"/>: the edits of <see cref="AddFields(IReadOnlyList{ValueTuple{string, string, string}})"/>.</summary>
+    IReadOnlyList<TextEditRecord> ICodeSync.AddFields(IReadOnlyList<CodeSyncField> fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        return AddFields([.. fields.Select(f => (f.Name, f.TypeName, f.Unit))]).Edits;
+    }
+
     /// <summary>code-sync.md §4.3.</summary>
     public IReadOnlyList<TextEditRecord> RemoveFields(IReadOnlyList<string> names) => Run(() => FieldEdits.RemoveFields(Unit, names));
 

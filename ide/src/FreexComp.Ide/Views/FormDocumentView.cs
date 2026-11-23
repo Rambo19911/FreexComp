@@ -8,13 +8,14 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.Designer;
 
 namespace FreexComp.Ide.Views;
 
 /// <summary>
 /// A unit with a companion form (designer.md §1, UI-DSG-001/002; I-129): the active view above a 26-high view switcher
 /// with the tabs <c>Code</c>, <c>Design</c> and <c>Text</c>. Only the active view is in the visual tree, so each text
-/// buffer has a single live editor (I-043). The Design view hosts the designer surface (a backdrop until it exists).
+/// buffer has a single live editor (I-043). The Design view hosts the designer surface in a scroll viewer.
 /// </summary>
 public sealed class FormDocumentView : DockPanel
 {
@@ -127,6 +128,8 @@ public sealed class FormDocumentView : DockPanel
     {
         if (view is TextDocumentView text)
             text.FocusText();
+        else if (view is ScrollViewer { Content: DesignSurfaceControl surface })
+            surface.Focus();
         else
             view.Focus();
     }
@@ -140,9 +143,16 @@ public sealed class FormDocumentView : DockPanel
             case DocumentView.Text:
                 return new TextDocumentView { DataContext = document.FormText };
             default:
-                var backdrop = new Border { Focusable = true };
-                backdrop.Bind(Border.BackgroundProperty, backdrop.GetResourceObservable("FxcDesignerBackdropBrush"));
-                return backdrop;
+                // UI-DSG-003: the backdrop scrolls (both scroll bars, auto) when the surface exceeds the view (D-078).
+                var surface = new DesignSurfaceControl { DataContext = document.Designer };
+                var scroller = new ScrollViewer
+                {
+                    Content = surface,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                };
+                scroller.Bind(ScrollViewer.BackgroundProperty, scroller.GetResourceObservable("FxcDesignerBackdropBrush"));
+                return scroller;
         }
     }
 }

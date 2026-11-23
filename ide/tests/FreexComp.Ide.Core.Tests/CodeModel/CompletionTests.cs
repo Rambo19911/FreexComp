@@ -5,6 +5,7 @@ using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Tests.Build;
 using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
+using FreexComp.Ide.TestSupport;
 using FreexComp.LanguageService;
 
 namespace FreexComp.Ide.Core.Tests.CodeModel;
@@ -41,7 +42,9 @@ public sealed class CompletionTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-ED-080")]
-    public async Task TriggersAndSuppression()
+    public Task TriggersAndSuppression() => TestUiThread.RunAsync(TriggersAndSuppressionOnUiThread); // I-208
+
+    private static async Task TriggersAndSuppressionOnUiThread()
     {
         // The pure rule (b)–(d).
         static string? NoClass(int _) => null;
@@ -138,7 +141,9 @@ public sealed class CompletionTests
     [Trait("Req", "IDE-ED-083")]
     [Trait("Req", "IDE-ED-084")]
     [Trait("Req", "IDE-ED-085")]
-    public async Task FilterRankCommit()
+    public Task FilterRankCommit() => TestUiThread.RunAsync(FilterRankCommitOnUiThread); // I-208
+
+    private static async Task FilterRankCommitOnUiThread()
     {
         // IDE-ED-082 matching and IDE-ED-083 ranking.
         Assert.Equal(CompletionMatch.ExactCasePrefix, CompletionRules.Match("Str", "StringList"));

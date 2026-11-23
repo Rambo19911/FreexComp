@@ -339,6 +339,18 @@ internal sealed class FakeCodeSync : ICodeSync
 
     public void NavigateToHandler(string methodName) => Navigations.Add(methodName);
 
+    /// <summary>The field lists <see cref="AddFields"/> was called with (DSG-TP-053, DSG-SUR-127).</summary>
+    public List<IReadOnlyList<CodeSyncField>> AddedFields { get; } = [];
+
+    /// <summary>What <see cref="AddFields"/> reports as applied: none by default (the fields exist already).</summary>
+    public Func<IReadOnlyList<CodeSyncField>, IReadOnlyList<TextEditRecord>> AddFieldsEdits { get; set; } = _ => [];
+
+    public IReadOnlyList<TextEditRecord> AddFields(IReadOnlyList<CodeSyncField> fields)
+    {
+        AddedFields.Add(fields);
+        return AddFieldsEdits(fields);
+    }
+
     /// <summary>The record lists <see cref="RevertEdits"/> was called with.</summary>
     public List<IReadOnlyList<TextEditRecord>> Reverted { get; } = [];
 

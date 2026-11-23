@@ -506,6 +506,114 @@ public sealed class FormDesignerViewModelTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-TP-053")]
+    [Trait("Req", "DSG-CS-051")]
+    public async Task PlacementAddsFieldAndUses()
+    {
+        var document = await OpenAsync();
+        var designer = document.Designer;
+        Assert.True(document.ShowView(DocumentView.Design));
+        var surface = designer.Surface!;
+        var original = document.Buffer.Text;
+
+        // A panel (unit ExtCtrls, not used yet): the field and the uses entry in the same "Add" undo unit.
+        surface.PlaceAtDefaultPosition("TPanel");
+        Assert.NotNull(designer.Model!.FindByName("Panel1"));
+        var text = document.Buffer.Text;
+        Assert.Contains("    GreetButton: TButton;\r\n    Panel1: TPanel;\r\n", text, StringComparison.Ordinal);
+        Assert.Contains("  Classes, Controls, Forms, StdCtrls, ExtCtrls;", text, StringComparison.Ordinal);
+        Assert.Equal(1, designer.Undo.UndoCount);
+        Assert.NotEmpty(designer.Undo.Peek!.CodeEdits);
+
+        // A button (StdCtrls, used already): only the field.
+        surface.PlaceAtDefaultPosition("TButton");
+        Assert.Contains("    Panel1: TPanel;\r\n    Button1: TButton;\r\n", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Contains("StdCtrls, ExtCtrls;", document.Buffer.Text, StringComparison.Ordinal);
+
+        // Undo removes the object, its field and the uses entry together; redo adds them again.
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(original, document.Buffer.Text);
+        Assert.Null(designer.Model.FindByName("Panel1"));
+        surface.Execute(FreexComp.Designer.Surface.Commands.Redo);
+        Assert.Equal(text, document.Buffer.Text);
+        Assert.NotNull(designer.Model.FindByName("Panel1"));
+
+        // A name the form class uses for another member is not taken (DSG-TP-050).
+        Replace(document.Buffer, "    procedure GreetButtonClick", "    procedure Edit1;\r\n    procedure GreetButtonClick");
+        surface.PlaceAtDefaultPosition("TEdit");
+        Assert.NotNull(designer.Model.FindByName("Edit2"));
+        Assert.Contains("    Edit2: TEdit;\r\n", document.Buffer.Text, StringComparison.Ordinal);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-127")]
+    [Trait("Req", "DSG-SUR-057")]
+    [Trait("Req", "DSG-CS-102")]
+    public async Task PasteAddsFieldsAndUndoRemovesThem()
+    {
+        var document = await OpenAsync();
+        var designer = document.Designer;
+        Assert.True(document.ShowView(DocumentView.Design));
+        var surface = designer.Surface!;
+        var original = document.Buffer.Text;
+
+        // A panel with a child: copied and pasted, every pasted component gets its field (in pre-order), its unit in uses.
+        surface.PlaceAtDefaultPosition("TPanel");
+        surface.PlaceAtDefaultPosition("TButton"); // the panel is selected: the button goes into it
+        Assert.Equal("Panel1", designer.Model!.FindByName("Button1")!.Parent!.Name);
+        var placed = document.Buffer.Text;
+        surface.Selection.Set(["Panel1"]);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Copy);
+        surface.Selection.Set(["MainForm"]);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Paste);
+        Assert.NotNull(designer.Model.FindByName("Panel2"));
+        Assert.NotNull(designer.Model.FindByName("Button2"));
+        Assert.Contains("    Button1: TButton;\r\n    Panel2: TPanel;\r\n    Button2: TButton;\r\n", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Equal(1, CountOf(document.Buffer.Text, "ExtCtrls"));
+        Assert.Equal(3, designer.Undo.UndoCount);
+
+        // Undo removes the pasted objects and their fields in one step; redo re-runs the field edits.
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(placed, document.Buffer.Text);
+        Assert.Null(designer.Model.FindByName("Panel2"));
+        surface.Execute(FreexComp.Designer.Surface.Commands.Redo);
+        Assert.Contains("    Panel2: TPanel;\r\n    Button2: TButton;\r\n", document.Buffer.Text, StringComparison.Ordinal);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+
+        // Ctrl-drag copy of GreetButton (client 232, 15 → surface + (17, 47)): the copy gets its field in the "Copy" unit.
+        surface.Selection.Set(["GreetButton"]);
+        static FreexComp.Designer.Surface.PointerInput Pointer(FreexComp.Designer.Surface.PointerKind kind, double x, double y,
+            FreexComp.Designer.Surface.InputModifiers modifiers = FreexComp.Designer.Surface.InputModifiers.None) =>
+            new(kind, x, y, kind == FreexComp.Designer.Surface.PointerKind.Move ? FreexComp.Designer.Surface.PointerButton.None
+                : FreexComp.Designer.Surface.PointerButton.Left, modifiers, 1);
+        surface.OnPointer(Pointer(FreexComp.Designer.Surface.PointerKind.Down, 259, 72));
+        surface.OnPointer(Pointer(FreexComp.Designer.Surface.PointerKind.Move, 259, 152, FreexComp.Designer.Surface.InputModifiers.Ctrl));
+        surface.OnPointer(Pointer(FreexComp.Designer.Surface.PointerKind.Up, 259, 152, FreexComp.Designer.Surface.InputModifiers.Ctrl));
+        Assert.NotNull(designer.Model.FindByName("GreetButton1"));
+        Assert.Contains("    GreetButton1: TButton;\r\n", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Equal("Undo_Designer_Copy", designer.Undo.Peek!.TitleKey);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(placed, document.Buffer.Text);
+        Assert.Null(designer.Model.FindByName("GreetButton1"));
+
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(original, document.Buffer.Text);
+    }
+
+    private static int CountOf(string text, string value)
+    {
+        var count = 0;
+        for (var at = text.IndexOf(value, StringComparison.Ordinal); at >= 0; at = text.IndexOf(value, at + value.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-CS-080")]
     public async Task ProjectFormEntryNamesTheCompanion()
     {

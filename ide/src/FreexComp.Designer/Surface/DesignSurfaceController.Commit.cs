@@ -65,6 +65,53 @@ public sealed partial class DesignSurfaceController
         return true;
     }
 
+    /// <summary>
+    /// DSG-TP-053, DSG-SUR-127, DSG-SUR-057: the repair when due, then the fields of the components about to be created
+    /// (<paramref name="components"/>, each with its subtree, pre-order) and the units of their classes through code sync;
+    /// <paramref name="edits"/> and <paramref name="ops"/> belong into the action's undo unit. Without a unit nothing is
+    /// added. False when code sync refused the edit (DSG-CS-004: <c>Msg.Designer.CodeSyncConflict</c>): the components
+    /// are not created then.
+    /// </summary>
+    private bool AddFieldsFor(IEnumerable<FormObjectData> components, out IReadOnlyList<TextEditRecord> edits, out IReadOnlyList<CodeSyncOp> ops)
+    {
+        edits = [];
+        ops = [];
+        RepairFirst();
+        var fields = new List<CodeSyncField>();
+        void Collect(FormObjectData data)
+        {
+            var typeName = data.TypeName[(data.TypeName.LastIndexOf('.') + 1)..]; // DSG-CS-030: unit qualifier stripped
+            fields.Add(new CodeSyncField(data.Name, typeName, Catalog.Find(data.TypeName)?.Unit ?? ""));
+            foreach (var child in data.Children)
+            {
+                Collect(child);
+            }
+        }
+
+        foreach (var component in components)
+        {
+            Collect(component);
+        }
+
+        if (fields.Count == 0 || !_host.CodeSync.IsUnitAvailable)
+        {
+            return true;
+        }
+
+        try
+        {
+            edits = _host.CodeSync.AddFields(fields);
+        }
+        catch (CodeSyncException e)
+        {
+            _host.SetStatus(StatusIds.CodeSyncConflict, e.Reason);
+            return false;
+        }
+
+        ops = edits.Count > 0 ? [new AddFieldsOp(fields)] : [];
+        return true;
+    }
+
     /// <summary>DSG-CS-091 (a): asks code sync for the pending repair; its edits wait for the next pushed unit.</summary>
     private void RepairFirst()
     {

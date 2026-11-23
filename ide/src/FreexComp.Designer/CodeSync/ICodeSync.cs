@@ -25,6 +25,14 @@ public interface ICodeSync
     /// </summary>
     IReadOnlyList<TextEditRecord> CreateHandler(string methodName, string signatureText);
 
+    /// <summary>
+    /// code-sync.md §4.2 and §5 (DSG-TP-053, DSG-SUR-127): adds the fields of new components to the form class and ensures
+    /// the units of their classes in the interface <c>uses</c> clause, as one code-editor undo group; returns the text edits
+    /// applied (for the undo unit).
+    /// </summary>
+    /// <exception cref="CodeSyncException">The edits would add syntax errors; nothing was changed (DSG-CS-004).</exception>
+    IReadOnlyList<TextEditRecord> AddFields(IReadOnlyList<CodeSyncField> fields);
+
     /// <summary>DSG-CS-063: shows the Code view with the caret in the body of <paramref name="methodName"/>.</summary>
     void NavigateToHandler(string methodName);
 

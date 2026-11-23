@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Languages;
@@ -805,6 +806,7 @@ public sealed class DocumentService : IDocumentService
             var formDocument = new FormDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, language, detection.Encoding,
                 lineEnding, formText, DesignCatalog) { DiskStamp = stamp };
             formDocument.Designer.Status = _status;
+            BindDesignerClipboard(formDocument);
             formDocument.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
             document = formDocument;
         }
@@ -867,6 +869,7 @@ public sealed class DocumentService : IDocumentService
         var document = new FormDocumentViewModel(_buffers.Create("", lineEnding), fullPath, language, detection.Encoding, lineEnding,
             formText, DesignCatalog, hasUnit: false) { DiskStamp = stamp };
         document.Designer.Status = _status;
+        BindDesignerClipboard(document);
         document.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
         Add(document);
         return OperationResult<DocumentViewModel>.Of(document);
@@ -1088,6 +1091,13 @@ public sealed class DocumentService : IDocumentService
         {
             _status.ShowMessage(Strings.Status_ClipboardBusy, StatusMessageDuration);
         }
+    }
+
+    /// <summary>D-078: the designer copies to and pastes from the OS clipboard (design-surface.md DSG-SUR-110, DSG-SUR-120).</summary>
+    private void BindDesignerClipboard(FormDocumentViewModel document)
+    {
+        if (Clipboard is { } clipboard)
+            document.Designer.Host.Clipboard = new SystemDesignerClipboard(clipboard);
     }
 
     private void RevealInExplorer(string path) => Shell?.RevealFile(path); // a refusal of the shell has no message (P1)

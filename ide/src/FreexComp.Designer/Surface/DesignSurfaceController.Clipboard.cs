@@ -169,7 +169,7 @@ public sealed partial class DesignSurfaceController
     private void AddCopies(IReadOnlyList<Placement> placements, string title)
     {
         var names = PasteNames(placements.Select(p => p.Source));
-        var changes = new List<FormChange>();
+        var changes = new List<AddObject>();
         var appended = new Dictionary<FormObject, int>(ReferenceEqualityComparer.Instance);
         foreach (var (obj, parent, position) in placements)
         {
@@ -179,6 +179,12 @@ public sealed partial class DesignSurfaceController
             var count = appended.GetValueOrDefault(parent);
             changes.Add(new AddObject(parent.Name, parent.Children.Count + count, snapshot));
             appended[parent] = count + 1;
+        }
+
+        // DSG-SUR-127: the fields of every copy (with its subtree) and their units, in the same unit; refused → no copies.
+        if (!AddFieldsFor(changes.Select(c => c.Data), out var edits, out var ops))
+        {
+            return;
         }
 
         var before = Selection.ToSnapshot();
@@ -192,8 +198,8 @@ public sealed partial class DesignSurfaceController
         undo.InsertRange(0, ApplyEdit(renumber));
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(copies);
-        PushUnit(new DesignerUndoUnit(title, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], [],
-            before, Selection.ToSnapshot()));
+        PushUnit(new DesignerUndoUnit(title, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], edits,
+            before, Selection.ToSnapshot()) { CodeOps = ops });
     }
 
     /// <summary>DSG-SUR-122: an object of a class the catalog does not know (or otherwise preserved) is not pasted.</summary>

@@ -19,4 +19,8 @@
     <!-- The buffer contract runs against both implementations (IDE-ARCH-030). -->
     <Compile Include="..\FreexComp.Ide.Core.Tests\Text\TextBufferContractTests.cs" Link="Text\TextBufferContractTests.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- D-078: the designer views load the test component metadata (testing.md §4). -->
+    <None Include="..\TestData\metadata\**\*" LinkBase="TestData\metadata" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -67,9 +67,12 @@ public static class PropertyAccess
         }
     }
 
-    /// <summary>The effective integer value (Left/Top/Width/Height and similar); a non-integer stored value counts as 0.</summary>
+    /// <summary>
+    /// The effective integer value (Left/Top/Width/Height and similar); a non-integer stored value counts as 0, and so does an
+    /// unstored one of an object whose class the catalog does not know (no default to take, DSG-FD-027).
+    /// </summary>
     public static int GetInt(FormObject obj, string path) =>
-        GetEffective(obj, path) is IntegerValue { Value: var v } ? unchecked((int)v) : 0;
+        (obj.Info is null && !IsStored(obj, path) ? null : GetEffective(obj, path)) is IntegerValue { Value: var v } ? unchecked((int)v) : 0;
 
     /// <summary>
     /// Left, Top, Width, Height; the root: (0, 0, ClientWidth, ClientHeight), where a root that stores only
