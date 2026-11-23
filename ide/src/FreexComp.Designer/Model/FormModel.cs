@@ -78,6 +78,19 @@ public sealed class FormDocument
 
     internal void SetDiagnostics(IEnumerable<FormDiagnostic> diagnostics) => _diagnostics = [.. diagnostics];
 
+    /// <summary>
+    /// A warning at the value of <paramref name="property"/> of <paramref name="obj"/> in the last parsed text: the form
+    /// diagnostics code sync reports (<c>F0104</c>, <c>F0108</c>; form-format.md §5, code-sync.md §9).
+    /// </summary>
+    public FormDiagnostic PropertyWarning(FormObject obj, FormProperty property, string code, string message)
+    {
+        ArgumentNullException.ThrowIfNull(obj);
+        ArgumentNullException.ThrowIfNull(property);
+        var (line, col) = Lines.LineCol(property.ValueSpan.Start);
+        var (endLine, endCol) = Lines.LineCol(property.ValueSpan.End);
+        return new FormDiagnostic(code, FreexComp.Compiler.DiagnosticSeverity.Warning, message, SourcePath, line, col, endLine, endCol, obj.Name, property.Path);
+    }
+
     /// <summary>Adds the names of a subtree that joins the tree (an existing owner of a name keeps it).</summary>
     internal void Register(FormObject subtree)
     {

@@ -49,15 +49,33 @@ public sealed partial class DesignSurfaceController
 
         var compatible = code.GetCompatibleMethods(ev.Signature);
         var name = DefaultHandlerName(obj, ev, compatible);
-        var edits = compatible.Contains(name, StringComparer.OrdinalIgnoreCase)
-            ? []
-            : code.CreateHandler(name, Catalog.FindEventSignature(ev.Signature) ?? ev.Signature);
+        var signature = Catalog.FindEventSignature(ev.Signature) ?? ev.Signature;
+        var edits = compatible.Contains(name, StringComparer.OrdinalIgnoreCase) ? [] : code.CreateHandler(name, signature);
         var selection = Selection.ToSnapshot();
         FormChange[] changes = [new SetProperty(obj.Name, ev.Name, new IdentValue(name))];
         var undo = Editor.Apply(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-        Undo.Push(new DesignerUndoUnit(UndoTitles.Event, [.. changes, .. commitRedo], [.. commitUndo, .. undo], edits, selection, selection));
+        Undo.Push(new DesignerUndoUnit(UndoTitles.Event, [.. changes, .. commitRedo], [.. commitUndo, .. undo], edits, selection, selection)
+        {
+            CodeOps = edits.Count > 0 ? [new CreateHandlerOp(name, signature)] : [],
+        });
         code.NavigateToHandler(name);
+    }
+
+    /// <summary>
+    /// DSG-CS-102: the code part of a redone unit runs again; when that is refused (the unit changed so that the edit would
+    /// add syntax errors) the form part stays redone without code edits, and reconciliation repairs the class at save.
+    /// </summary>
+    private IReadOnlyList<TextEditRecord> RedoCode(IReadOnlyList<CodeSyncOp> operations)
+    {
+        try
+        {
+            return _host.CodeSync.Execute(operations);
+        }
+        catch (CodeSyncException)
+        {
+            return [];
+        }
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Designer.Editing;
 using FreexComp.Ide.Core.Services;
@@ -13,6 +14,11 @@ namespace FreexComp.Ide.Core.Designer.CodeSync;
 /// </summary>
 public sealed class FormUnit(ITextBuffer buffer, string formTypeName, string path = FormClassLocator.PlaceholderPath)
 {
+    /// <summary>The anchored range of one applied record (DSG-CS-100); <see cref="End"/> is null for a pure deletion.</summary>
+    private sealed record TrackedRange(ITextAnchor Start, ITextAnchor? End);
+
+    private readonly ConditionalWeakTable<TextEditRecord, TrackedRange> _tracked = new();
+
     public ITextBuffer Buffer { get; } = buffer;
 
     /// <summary>The root object's type name (e.g. <c>TMainForm</c>); follows <see cref="FieldEdits.RenameFormClassAndVariable"/>.</summary>
@@ -77,7 +83,57 @@ public sealed class FormUnit(ITextBuffer buffer, string formTypeName, string pat
 
         var records = ordered.Select(c => new TextEditRecord(c.Span.Start, Buffer.GetText(c.Span.Start, c.Span.Length), c.NewText)).ToList();
         Buffer.ApplyEdits([.. ordered.Select(c => new TextEdit(c.Span.Start, c.Span.Length, c.NewText))]);
+
+        // DSG-CS-100: anchors around each inserted range (one anchor for a pure deletion). The edits went in by descending
+        // offset, so each range moved by the length changes of the edits applied after it (all below it).
+        var shift = 0;
+        for (var i = records.Count - 1; i >= 0; i--)
+        {
+            var record = records[i];
+            var start = record.Offset + shift;
+            _tracked.AddOrUpdate(record, record.InsertedText.Length == 0
+                ? new TrackedRange(Buffer.CreateAnchor(start, movesWithInsertionBefore: false), null)
+                : new TrackedRange(Buffer.CreateAnchor(start, movesWithInsertionBefore: true),
+                    Buffer.CreateAnchor(start + record.InsertedText.Length, movesWithInsertionBefore: false)));
+            shift += record.InsertedText.Length - record.RemovedText.Length;
+        }
+
         return records;
+    }
+
+    /// <summary>
+    /// DSG-CS-101: reverts, last first and as one undo group, each record applied through this unit whose tracked range
+    /// still holds exactly its inserted text; false when at least one record was skipped (changed, deleted or unknown).
+    /// A reverted record is no longer tracked.
+    /// </summary>
+    internal bool Revert(IReadOnlyList<TextEditRecord> edits)
+    {
+        var all = true;
+        using (UndoGroup())
+        {
+            for (var i = edits.Count - 1; i >= 0; i--)
+            {
+                var record = edits[i];
+                if (!_tracked.TryGetValue(record, out var range) || range.Start.IsDeleted || range.End is { IsDeleted: true })
+                {
+                    all = false;
+                    continue;
+                }
+
+                var start = range.Start.Offset;
+                var end = range.End?.Offset ?? start;
+                if (end < start || Buffer.GetText(start, end - start) != record.InsertedText)
+                {
+                    all = false;
+                    continue;
+                }
+
+                Buffer.ApplyEdits([new TextEdit(start, end - start, record.RemovedText)]);
+                _tracked.Remove(record);
+            }
+        }
+
+        return all;
     }
 
     /// <summary>One code-editor undo group around several parse-and-apply steps (DSG-CS-001, 002).</summary>

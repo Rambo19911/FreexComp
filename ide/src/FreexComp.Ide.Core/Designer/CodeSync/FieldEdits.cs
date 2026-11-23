@@ -161,12 +161,12 @@ public static class FieldEdits
             .Any(t => !ReferenceEquals(t, info.Declaration) && Names.Equals(t.Identifier.Text, name));
 
     /// <summary>The type name of a declaration as compared by DSG-CS-035: unit qualifiers stripped, whitespace ignored.</summary>
-    private static string TypeIdentifier(TypeSyntax type) => type switch
+    internal static string TypeIdentifier(TypeSyntax type) => type switch
     {
         NamedTypeSyntax { Name: QualifiedNameSyntax q } => q.Right.Identifier.Text,
         NamedTypeSyntax { Name: SimpleNameSyntax s } => s.Identifier.Text,
         _ => string.Concat(type.DescendantTokens().Select(t => t.Text)),
     };
 
-    private static string StripUnit(string typeName) => typeName[(typeName.LastIndexOf('.') + 1)..].Trim();
+    internal static string StripUnit(string typeName) => typeName[(typeName.LastIndexOf('.') + 1)..].Trim();
 }

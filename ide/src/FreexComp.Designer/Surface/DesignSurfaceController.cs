@@ -306,12 +306,22 @@ public sealed partial class DesignSurfaceController
             case var _ when Commands.Arrange.Contains(commandId):
                 Arrange(commandId);
                 break;
-            case Commands.Undo when Undo.Undo() is { } unit: // DSG-SUR-170 (code-sync edits come with code sync)
+            case Commands.Undo when Undo.Undo() is { } unit: // DSG-SUR-170
                 Editor.Apply(unit.Undo);
+                if (unit.CodeEdits.Count > 0 && !_host.CodeSync.RevertEdits(unit.CodeEdits))
+                {
+                    _host.SetStatus(StatusIds.UndoCodeSkipped); // DSG-CS-101
+                }
+
                 Selection.Set(unit.SelectionBefore.Names);
                 break;
             case Commands.Redo when Undo.Redo() is { } unit:
                 Editor.Apply(unit.Redo);
+                if (unit.CodeOps.Count > 0)
+                {
+                    unit.CodeEdits = RedoCode(unit.CodeOps); // DSG-CS-102
+                }
+
                 Selection.Set(unit.SelectionAfter.Names);
                 break;
         }

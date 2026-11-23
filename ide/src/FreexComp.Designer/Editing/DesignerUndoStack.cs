@@ -31,8 +31,11 @@ public sealed class DesignerUndoUnit(string titleKey, IReadOnlyList<FormChange> 
     /// <summary>The inverses, already in apply order.</summary>
     public IReadOnlyList<FormChange> Undo { get; } = undo;
 
-    /// <summary>Code-sync edits (may be empty).</summary>
-    public IReadOnlyList<TextEditRecord> CodeEdits { get; } = codeEdits;
+    /// <summary>Code-sync edits (may be empty); replaced by the fresh records when a redo re-executes <see cref="CodeOps"/>.</summary>
+    public IReadOnlyList<TextEditRecord> CodeEdits { get; set; } = codeEdits;
+
+    /// <summary>The logical code-sync operations behind <see cref="CodeEdits"/>, re-executed on redo (DSG-CS-102).</summary>
+    public IReadOnlyList<CodeSync.CodeSyncOp> CodeOps { get; init; } = [];
 
     public SelectionSnapshot SelectionBefore { get; } = selectionBefore;
 

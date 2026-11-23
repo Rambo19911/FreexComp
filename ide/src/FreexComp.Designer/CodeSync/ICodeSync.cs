@@ -27,7 +27,52 @@ public interface ICodeSync
 
     /// <summary>DSG-CS-063: shows the Code view with the caret in the body of <paramref name="methodName"/>.</summary>
     void NavigateToHandler(string methodName);
+
+    /// <summary>
+    /// DSG-CS-101 (designer undo): reverts, in reverse order and as one code-editor undo group, each of
+    /// <paramref name="edits"/> whose tracked range still holds exactly its inserted text; the others are skipped. False
+    /// when at least one was skipped (the caller shows <c>Msg.Designer.UndoCodeSkipped</c>).
+    /// </summary>
+    bool RevertEdits(IReadOnlyList<TextEditRecord> edits);
+
+    /// <summary>
+    /// DSG-CS-102 (designer redo): runs the logical operations again against the current text, as one code-editor undo
+    /// group, and returns the fresh (tracked) records.
+    /// </summary>
+    /// <exception cref="CodeSyncException">The edits would add syntax errors; nothing was changed (DSG-CS-004).</exception>
+    IReadOnlyList<TextEditRecord> Execute(IReadOnlyList<CodeSyncOp> operations);
 }
+
+/// <summary>
+/// DSG-CS-004: an edit would have added parser errors to the unit and was rolled back; <see cref="Reason"/> is the first
+/// new diagnostic's message (<c>{0}</c> of <c>Msg.Designer.CodeSyncConflict</c>).
+/// </summary>
+public sealed class CodeSyncException(string reason) : Exception(reason)
+{
+    public string Reason { get; } = reason;
+}
+
+/// <summary>One field to add: component name, class name and the unit declaring the class (DSG-CS-051; empty = none).</summary>
+public sealed record CodeSyncField(string Name, string TypeName, string Unit);
+
+/// <summary>A logical code-sync operation of an undo unit, re-executed on redo (DSG-CS-102).</summary>
+public abstract record CodeSyncOp;
+
+public sealed record AddFieldsOp(IReadOnlyList<CodeSyncField> Fields) : CodeSyncOp;
+
+public sealed record RemoveFieldsOp(IReadOnlyList<string> Names) : CodeSyncOp;
+
+public sealed record RenameFieldOp(string OldName, string NewName) : CodeSyncOp;
+
+/// <summary><see cref="Signature"/>: the event signature type name or a procedural signature text.</summary>
+public sealed record CreateHandlerOp(string MethodName, string Signature) : CodeSyncOp;
+
+public sealed record RenameHandlerOp(string OldName, string NewName) : CodeSyncOp;
+
+public sealed record RenameFormClassAndVariableOp(string OldFormName, string NewFormName) : CodeSyncOp;
+
+/// <summary>code-sync.md §9: report only (no edits), or repair the form class.</summary>
+public enum ReconcileMode { CheckOnly, Repair }
 
 /// <summary>The kind of form-class member a name refers to (code-sync.md §1 <c>LookupMember</c>).</summary>
 public enum MemberLookup { None, Field, Method, Other }

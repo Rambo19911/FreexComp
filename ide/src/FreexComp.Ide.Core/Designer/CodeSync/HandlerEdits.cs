@@ -196,7 +196,7 @@ public static class HandlerEdits
     }
 
     /// <summary>A signature text such as <c>procedure(Sender: TObject)</c> as a procedural type, or null.</summary>
-    private static ProceduralTypeSyntax? ParseSignature(string text)
+    internal static ProceduralTypeSyntax? ParseSignature(string text)
     {
         var type = SyntaxFactory.ParseNode<TypeSyntax>(text);
         return type is ProceduralTypeSyntax procedural && !type.SyntaxTree.Diagnostics.Any() && procedural.ReferenceKeyword is null

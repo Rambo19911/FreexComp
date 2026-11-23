@@ -4441,4 +4441,16 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Options_Templates_Reset" xml:space="preserve">
     <value>_Reset</value>
   </data>
+  <data name="DocumentView_Code" xml:space="preserve">
+    <value>Code</value>
+    <comment>designer.md UI-DSG-001 view switcher (I-129)</comment>
+  </data>
+  <data name="DocumentView_Design" xml:space="preserve">
+    <value>Design</value>
+    <comment>designer.md UI-DSG-001 view switcher (I-129)</comment>
+  </data>
+  <data name="DocumentView_Text" xml:space="preserve">
+    <value>Text</value>
+    <comment>designer.md UI-DSG-001 view switcher (I-129)</comment>
+  </data>
 </root>

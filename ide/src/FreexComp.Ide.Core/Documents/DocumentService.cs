@@ -139,6 +139,11 @@ public sealed class DocumentService : IDocumentService
                 NewUntitledUnit();
         }));
         commands.RegisterHandler("view.welcomePage", new Handler(_ => WelcomeFactory is not null, _ => ShowWelcomePage()));
+        // I-129: the views of a form document (designer README §3; menus.md: "doc has a companion form").
+        commands.RegisterHandler("view.toggleFormCode", new Handler(_ => ActiveDocument is FormDocumentViewModel,
+            _ => ((FormDocumentViewModel)ActiveDocument!).ToggleFormCode()));
+        commands.RegisterHandler("view.formAsText", new Handler(_ => ActiveDocument is FormDocumentViewModel,
+            _ => ((FormDocumentViewModel)ActiveDocument!).ShowFormAsText()));
         commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeAll", new AsyncHandler(_ => _documents.Count > 0, _ => CloseAllAsync()));
         commands.RegisterHandler("file.open", new AsyncHandler(_ => true, _ => OpenPickedFilesAsync()));
@@ -652,6 +657,7 @@ public sealed class DocumentService : IDocumentService
         EncodingDetection detection;
         bool writable;
         DiskStamp stamp;
+        (string Path, EncodingDetection Text)? form;
         var large = false;
         try
         {
@@ -667,11 +673,11 @@ public sealed class DocumentService : IDocumentService
 
             // IDE-P1-040: the open-for-write probe. The time is taken before reading, so a write in between is seen
             // as a change later rather than missed (IDE-P1-110).
-            (detection, writable, stamp) = await Task.Run(() =>
+            (detection, writable, stamp, form) = await Task.Run(() =>
             {
                 var lastWrite = _fileSystem.GetLastWriteTimeUtc(fullPath);
                 var bytes = _fileSystem.ReadAllBytes(fullPath);
-                return (EncodingDetector.Detect(bytes), _fileSystem.CanOpenForWrite(fullPath), DiskStamp.Of(lastWrite, bytes));
+                return (EncodingDetector.Detect(bytes), _fileSystem.CanOpenForWrite(fullPath), DiskStamp.Of(lastWrite, bytes), ReadCompanionForm(fullPath));
             });
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
@@ -688,8 +694,27 @@ public sealed class DocumentService : IDocumentService
 
         var lineEnding = DefaultLineEnding;
         // IDE-P1-054: a large file is Plain Text (no highlighting, folding or bracket matching), word wrap off.
-        var document = new TextDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, null,
-            large ? _languages.PlainText : _languages.ForPath(fullPath), detection.Encoding, lineEnding) { IsLargeFile = large, DiskStamp = stamp };
+        var language = large ? _languages.PlainText : _languages.ForPath(fullPath);
+        TextDocumentViewModel document;
+        if (form is { } companion && !large)
+        {
+            // UI-WIN-020: a unit with a companion form is one document with three views (I-129). Until the form designer
+            // saves the form (D-072) its text is shown read-only.
+            var formText = new TextDocumentViewModel(_buffers.Create(companion.Text.Text, lineEnding), companion.Path, null,
+                _languages.ForPath(companion.Path), companion.Text.Encoding, lineEnding);
+            formText.SetReadOnly(true);
+            Configure(formText);
+            var formDocument = new FormDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, language, detection.Encoding,
+                lineEnding, formText) { DiskStamp = stamp };
+            formDocument.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
+            document = formDocument;
+        }
+        else
+        {
+            document = new TextDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, null, language, detection.Encoding,
+                lineEnding) { IsLargeFile = large, DiskStamp = stamp };
+        }
+
         document.ReopenWithEncodingHandler = () => ReopenWithEncodingAsync(document);
         document.ShowLoadInfoBars(detection.IsFallback);
         if (!writable)
@@ -722,26 +747,53 @@ public sealed class DocumentService : IDocumentService
         _commands?.InvalidateCanExecute();
     }
 
+    /// <summary>
+    /// The companion <c>.form</c> of a <c>.pas</c> unit (same folder, same base name; designer README §3) and its text, or
+    /// null when there is none or it cannot be read as text. Called off the UI thread.
+    /// </summary>
+    private (string Path, EncodingDetection Text)? ReadCompanionForm(string unitPath)
+    {
+        if (!string.Equals(Path.GetExtension(unitPath), ".pas", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var formPath = Path.ChangeExtension(unitPath, ".form");
+        if (!_fileSystem.FileExists(formPath))
+            return null;
+        try
+        {
+            var detection = EncodingDetector.Detect(_fileSystem.ReadAllBytes(formPath));
+            return detection.IsBinary ? null : (formPath, detection);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The editor services of a text document (also of the form text inside a form document, which is not listed).</summary>
+    private void Configure(TextDocumentViewModel textDocument)
+    {
+        textDocument.Options = _editorOptions;
+        textDocument.BlockClipboard = _blockClipboard;
+        textDocument.Clock = Clock;
+        textDocument.Clipboard = Clipboard;
+        textDocument.GutterMenu = line => _commands is null ? [] : Menus.GutterMenu.Build(textDocument.Decorations.GlyphsAt(line), _commands, _settings);
+        textDocument.ExecuteCommand = id => _commands is { } commands && commands.CanExecute(id) ? commands.ExecuteAsync(id) : Task.CompletedTask;
+        textDocument.TextAreaMenu = () => _commands is null ? []
+            : Menus.EditorContextMenu.Build(_commands, Composition.ServiceGraph.ImplementedPhase, hasForm: textDocument is FormDocumentViewModel);
+        textDocument.ViewState.WordWrap = _editorOptions.WordWrap; // IDE-ED-040; a restored session replaces it
+        textDocument.ViewState.PropertyChanged += (_, e) =>
+        {
+            // Zoom limits, Reset Zoom and the Word Wrap check mark follow the view state.
+            if (e.PropertyName is nameof(EditorViewState.FontSize) or nameof(EditorViewState.WordWrap))
+                _commands?.InvalidateCanExecute();
+        };
+    }
+
     /// <summary>A new tab opens right of the active one (UI-ED-077) and becomes active.</summary>
     private void Add(DocumentViewModel document)
     {
         if (document is TextDocumentViewModel textDocument)
-        {
-            textDocument.Options = _editorOptions;
-            textDocument.BlockClipboard = _blockClipboard;
-            textDocument.Clock = Clock;
-            textDocument.Clipboard = Clipboard;
-            textDocument.GutterMenu = line => _commands is null ? [] : Menus.GutterMenu.Build(textDocument.Decorations.GlyphsAt(line), _commands, _settings);
-            textDocument.ExecuteCommand = id => _commands is { } commands && commands.CanExecute(id) ? commands.ExecuteAsync(id) : Task.CompletedTask;
-            textDocument.TextAreaMenu = () => _commands is null ? [] : Menus.EditorContextMenu.Build(_commands, Composition.ServiceGraph.ImplementedPhase, hasForm: false);
-            textDocument.ViewState.WordWrap = _editorOptions.WordWrap; // IDE-ED-040; a restored session replaces it
-            textDocument.ViewState.PropertyChanged += (_, e) =>
-            {
-                // Zoom limits, Reset Zoom and the Word Wrap check mark follow the view state.
-                if (e.PropertyName is nameof(EditorViewState.FontSize) or nameof(EditorViewState.WordWrap))
-                    _commands?.InvalidateCanExecute();
-            };
-        }
+            Configure(textDocument);
         var index = ActiveDocument is null ? _documents.Count : _documents.IndexOf(ActiveDocument) + 1;
         _documents.Insert(index, document);
         var modified = document.IsModified;

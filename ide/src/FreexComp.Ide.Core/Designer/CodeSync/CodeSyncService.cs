@@ -80,16 +80,88 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
             : [];
     }
 
-    /// <summary>code-sync.md §6.1: declaration and stub (only the missing parts); the name becomes a candidate (DSG-CS-071).</summary>
-    public IReadOnlyList<TextEditRecord> CreateHandler(string methodName, string signatureText)
+    /// <summary>
+    /// The form file the <c>{$FORM}</c> directive names (DSG-CS-020); default: the unit's base name + <c>.form</c>.
+    /// </summary>
+    public string FormFileName { get; set; } = System.IO.Path.GetFileNameWithoutExtension(unit.Path) + ".form";
+
+    /// <summary>
+    /// code-sync.md §6.1: declaration and stub (only the missing parts); the name becomes a candidate (DSG-CS-071).
+    /// </summary>
+    /// <exception cref="CodeSyncException">The edit would add syntax errors (DSG-CS-004); nothing was changed.</exception>
+    public IReadOnlyList<TextEditRecord> CreateHandler(string methodName, string signatureText) =>
+        Run(() => CreateHandlerCore(methodName, signatureText));
+
+    /// <summary>DSG-CS-066; a candidate keeps being one under its new name.</summary>
+    public IReadOnlyList<TextEditRecord> RenameHandler(string oldName, string newName) => Run(() => RenameHandlerCore(oldName, newName));
+
+    /// <summary>
+    /// code-sync.md §4.2 and §5: the fields, then the units of their classes in the interface <c>uses</c> clause, as one
+    /// code-editor undo group.
+    /// </summary>
+    public AddFieldsResult AddFields(IReadOnlyList<(string Name, string TypeName, string Unit)> fields) =>
+        Run(() => AddFieldsCore(fields));
+
+    /// <summary>code-sync.md §4.3.</summary>
+    public IReadOnlyList<TextEditRecord> RemoveFields(IReadOnlyList<string> names) => Run(() => FieldEdits.RemoveFields(Unit, names));
+
+    /// <summary>code-sync.md §4.4 DSG-CS-045.</summary>
+    public FieldRenameResult RenameField(string oldName, string newName) => Run(() => FieldEdits.RenameField(Unit, oldName, newName));
+
+    /// <summary>DSG-CS-046.</summary>
+    public FormRenameResult RenameFormClassAndVariable(string oldFormName, string newFormName) =>
+        Run(() => FieldEdits.RenameFormClassAndVariable(Unit, oldFormName, newFormName));
+
+    /// <summary>code-sync.md §9 against <see cref="FormFileName"/>; a repair is one code-editor undo group.</summary>
+    public ReconcileResult Reconcile(FormDocument form, ReconcileMode mode)
+    {
+        ArgumentNullException.ThrowIfNull(form);
+        return mode == ReconcileMode.CheckOnly || State != CodeSyncState.Ok
+            ? Reconciler.Reconcile(Unit, form, Catalog, FormFileName, mode)
+            : Run(() => Reconciler.Reconcile(Unit, form, Catalog, FormFileName, mode));
+    }
+
+    /// <summary>DSG-CS-101: see <see cref="ICodeSync.RevertEdits"/>.</summary>
+    public bool RevertEdits(IReadOnlyList<TextEditRecord> edits)
+    {
+        ArgumentNullException.ThrowIfNull(edits);
+        return Unit.Revert(edits);
+    }
+
+    /// <summary>DSG-CS-102: see <see cref="ICodeSync.Execute"/>.</summary>
+    public IReadOnlyList<TextEditRecord> Execute(IReadOnlyList<CodeSyncOp> operations)
+    {
+        ArgumentNullException.ThrowIfNull(operations);
+        return Run(() => operations.SelectMany(ExecuteCore).ToList());
+    }
+
+    private IReadOnlyList<TextEditRecord> ExecuteCore(CodeSyncOp operation) => operation switch
+    {
+        AddFieldsOp add => AddFieldsCore([.. add.Fields.Select(f => (f.Name, f.TypeName, f.Unit))]).Edits,
+        RemoveFieldsOp remove => FieldEdits.RemoveFields(Unit, remove.Names),
+        RenameFieldOp rename => FieldEdits.RenameField(Unit, rename.OldName, rename.NewName).Edits,
+        CreateHandlerOp create => CreateHandlerCore(create.MethodName, create.Signature),
+        RenameHandlerOp rename => RenameHandlerCore(rename.OldName, rename.NewName),
+        RenameFormClassAndVariableOp rename => FieldEdits.RenameFormClassAndVariable(Unit, rename.OldFormName, rename.NewFormName).Edits,
+        _ => throw new ArgumentException("Unknown code-sync operation: " + operation, nameof(operation)),
+    };
+
+    private AddFieldsResult AddFieldsCore(IReadOnlyList<(string Name, string TypeName, string Unit)> fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        var added = FieldEdits.AddFields(Unit, [.. fields.Select(f => (f.Name, f.TypeName))]);
+        var units = fields.Select(f => f.Unit).Where(u => u.Length > 0).Distinct(Names).ToList();
+        return units.Count == 0 ? added : added with { Edits = [.. added.Edits, .. UsesEdits.EnsureUnits(Unit, units)] };
+    }
+
+    private IReadOnlyList<TextEditRecord> CreateHandlerCore(string methodName, string signatureText)
     {
         var edits = HandlerEdits.CreateHandler(Unit, methodName, Catalog.FindEventSignature(signatureText) ?? signatureText);
         _candidates.Add(methodName);
         return edits;
     }
 
-    /// <summary>DSG-CS-066; a candidate keeps being one under its new name.</summary>
-    public IReadOnlyList<TextEditRecord> RenameHandler(string oldName, string newName)
+    private IReadOnlyList<TextEditRecord> RenameHandlerCore(string oldName, string newName)
     {
         ArgumentNullException.ThrowIfNull(oldName);
         ArgumentNullException.ThrowIfNull(newName);
@@ -100,6 +172,43 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
         }
 
         return edits;
+    }
+
+    /// <summary>
+    /// DSG-CS-001 … 004: runs an edit (state <c>Ok</c> required) as one code-editor undo group; when the unit then has
+    /// parser errors (it had none: state <c>Ok</c>), the group is undone and <see cref="CodeSyncException"/> names the
+    /// first one. A step that found the unit broken half-way counts the same.
+    /// </summary>
+    private T Run<T>(Func<T> edit)
+    {
+        Unit.RequireFormClass();
+        var version = Unit.Buffer.Version;
+        T result = default!;
+        InvalidOperationException? failure = null;
+        using (Unit.UndoGroup())
+        {
+            try
+            {
+                result = edit();
+            }
+            catch (InvalidOperationException e) when (Unit.Buffer.Version != version)
+            {
+                failure = e;
+            }
+        }
+
+        if (Unit.Buffer.Version != version && Unit.Locate().FirstError is { } error)
+        {
+            Unit.Buffer.Undo();
+            throw new CodeSyncException(error.Message);
+        }
+
+        if (failure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(failure);
+        }
+
+        return result;
     }
 
     /// <summary>DSG-CS-070.</summary>

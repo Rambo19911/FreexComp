@@ -21,9 +21,7 @@ public static class FormDirectiveEdits
         ArgumentNullException.ThrowIfNull(formFileName);
         var info = unit.RequireFormClass();
         var implementation = info.Unit.ImplementationSection;
-        var directives = info.Tree.Directives
-            .Where(d => d.IsActive && Names.Equals(d.Name, "FORM") && d.Span.Start >= implementation.ImplementationKeyword.Span.Start)
-            .ToList();
+        var directives = Directives(info);
         var text = info.Tree.Text;
         switch (directives.Count)
         {
@@ -52,6 +50,25 @@ public static class FormDirectiveEdits
 
         var suffix = IsBlank(text, text.Lines.GetLinePosition(insertAt).Line) && insertAt < text.Text.Length ? "" : le;
         return unit.Apply([new TextChange(new TextSpan(insertAt, 0), prefix + "{$FORM " + formFileName + "}" + le + suffix)]);
+    }
+
+    /// <summary>DSG-CS-020 … 022 without editing: true when the directive is missing or names another file (one directive).</summary>
+    public static bool NeedsRepair(FormClassInfo info, string formFileName)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        return Directives(info) switch
+        {
+            [] => true,
+            [var only] => !Names.Equals(only.Argument, formFileName),
+            _ => false,
+        };
+    }
+
+    /// <summary>The active <c>{$FORM}</c> directives of the implementation section.</summary>
+    private static List<DirectiveTriviaInfo> Directives(FormClassInfo info)
+    {
+        var start = info.Unit.ImplementationSection.ImplementationKeyword.Span.Start;
+        return [.. info.Tree.Directives.Where(d => d.IsActive && Names.Equals(d.Name, "FORM") && d.Span.Start >= start)];
     }
 
     /// <summary>The argument inside <c>{$FORM …}</c> / <c>(*$FORM …*)</c>: before the closer and its preceding whitespace.</summary>

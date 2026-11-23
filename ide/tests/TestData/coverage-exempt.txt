@@ -82,7 +82,6 @@ UI-WIN-006 superseded: Dock library removed (architecture.md lead decision I-022
 UI-WIN-007 superseded: Dock library removed (architecture.md lead decision I-022/I-023)
 UI-WIN-012 later phase: the rule text names a later phase or a later-phase element
 UI-WIN-014 later phase: the rule text names a later phase or a later-phase element
-UI-WIN-020 later phase: the rule text names a later phase or a later-phase element
 UI-WIN-024 later phase: the rule text names a later phase or a later-phase element
 UI-WIN-041 later phase: the rule text names a later phase or a later-phase element
 IDE-ARCH-002 structural: code organisation rule (views hold no decision logic), checked by review

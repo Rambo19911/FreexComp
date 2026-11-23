@@ -338,6 +338,27 @@ internal sealed class FakeCodeSync : ICodeSync
     }
 
     public void NavigateToHandler(string methodName) => Navigations.Add(methodName);
+
+    /// <summary>The record lists <see cref="RevertEdits"/> was called with.</summary>
+    public List<IReadOnlyList<TextEditRecord>> Reverted { get; } = [];
+
+    /// <summary>What <see cref="RevertEdits"/> answers (false: the user changed the code, DSG-CS-101).</summary>
+    public bool RevertSucceeds { get; set; } = true;
+
+    public bool RevertEdits(IReadOnlyList<TextEditRecord> edits)
+    {
+        Reverted.Add(edits);
+        return RevertSucceeds;
+    }
+
+    /// <summary>The operation lists <see cref="Execute"/> ran.</summary>
+    public List<IReadOnlyList<CodeSyncOp>> Executed { get; } = [];
+
+    public IReadOnlyList<TextEditRecord> Execute(IReadOnlyList<CodeSyncOp> operations)
+    {
+        Executed.Add(operations);
+        return [new TextEditRecord(1000 * Executed.Count, "", "redone")];
+    }
 }
 
 /// <summary>A <see cref="TimeProvider"/> whose time moves only through <see cref="Advance"/> (testing.md DSG-TEST-004).</summary>

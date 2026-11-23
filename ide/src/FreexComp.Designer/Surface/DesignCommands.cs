@@ -112,4 +112,7 @@ public static class StatusIds
     public const string PasteUnknownClass = "Msg.Designer.PasteUnknownClass";
 
     public const string CannotDropHere = "Msg.Designer.CannotDropHere";
+
+    /// <summary>DSG-CS-101: a designer undo left code the user had changed.</summary>
+    public const string UndoCodeSkipped = "Msg.Designer.UndoCodeSkipped";
 }

@@ -15,6 +15,39 @@ public sealed class DefaultHandlerTests
 
     [Fact]
     [Trait("Phase", "5")]
+    [Trait("Req", "DSG-CS-101")]
+    [Trait("Req", "DSG-CS-102")]
+    public void UndoRevertsCodeAndRedoReexecutesOperations()
+    {
+        using var h = DesignerHarness.FromFile("forms/canonical/hello.form");
+        var code = h.Host.CodeSync;
+        h.Select("NameEdit");
+        h.Execute("designer.createDefaultHandler");
+        var unit = h.Undo.Peek!;
+        Assert.Equal([new FreexComp.Designer.CodeSync.CreateHandlerOp("NameEditChange", Notify)], unit.CodeOps);
+
+        // Undo hands the unit's records to code sync; all reverted → no status.
+        h.ExecuteUndo();
+        Assert.Equal([code.LastEdits], code.Reverted);
+        Assert.Empty(h.Host.Statuses);
+
+        // Redo runs the operations again and keeps the fresh records.
+        h.ExecuteRedo();
+        Assert.Equal([unit.CodeOps], code.Executed);
+        Assert.Equal("NameEditChange", Handler(h, "NameEdit", "OnChange"));
+        var fresh = unit.CodeEdits;
+        Assert.NotEqual(code.LastEdits, fresh);
+
+        // The user changed the code: undo still undoes the form, and says the code stayed.
+        code.RevertSucceeds = false;
+        h.ExecuteUndo();
+        Assert.Same(fresh, code.Reverted[^1]);
+        Assert.Null(Handler(h, "NameEdit", "OnChange"));
+        Assert.Equal("Msg.Designer.UndoCodeSkipped", Assert.Single(h.Host.Statuses).Id);
+    }
+
+    [Fact]
+    [Trait("Phase", "5")]
     [Trait("Req", "DSG-SUR-160")]
     [Trait("Req", "DSG-SUR-161")]
     [Trait("Req", "DSG-SUR-042")]

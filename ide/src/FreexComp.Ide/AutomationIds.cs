@@ -53,6 +53,9 @@ public static partial class AutomationIds
 
     public static string DocumentTabModified(string tabName) => "DocumentTab." + tabName + ".Modified";
 
+    /// <summary>A tab of a form document's view switcher (UI-DSG-001): <c>Document.&lt;fileName&gt;.ViewTabs.&lt;Code|Design|Text&gt;</c>.</summary>
+    public static string DocumentViewTab(string fileName, string view) => "Document." + fileName + ".ViewTabs." + view;
+
     public static string Tool(string name) => "Tool." + name;
 
     public static string ToolTab(string name) => "ToolTab." + name;

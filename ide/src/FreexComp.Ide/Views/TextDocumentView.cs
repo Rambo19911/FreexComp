@@ -55,6 +55,9 @@ public sealed class TextDocumentView : DockPanel
         _document?.InfoBarFocusRequested += OnInfoBarFocusRequested;
     }
 
+    /// <summary>Moves keyboard focus to the text area (a view switch of a form document, I-129).</summary>
+    public bool FocusText() => _editor.FocusText();
+
     private List<Button> Buttons() =>
         [.. _infoBars.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && b.IsEffectivelyEnabled)];
 

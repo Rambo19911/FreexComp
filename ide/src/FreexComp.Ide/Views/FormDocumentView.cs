@@ -1,0 +1,148 @@
+using System.ComponentModel;
+using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Threading;
+using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.ViewModels;
+
+namespace FreexComp.Ide.Views;
+
+/// <summary>
+/// A unit with a companion form (designer.md §1, UI-DSG-001/002; I-129): the active view above a 26-high view switcher
+/// with the tabs <c>Code</c>, <c>Design</c> and <c>Text</c>. Only the active view is in the visual tree, so each text
+/// buffer has a single live editor (I-043). The Design view hosts the designer surface (a backdrop until it exists).
+/// </summary>
+public sealed class FormDocumentView : DockPanel
+{
+    private const double SwitcherHeight = 26; // UI-DSG-001
+    private const double TabPadding = 12;     // space.5
+    private const double TabGap = 4;          // space.2
+
+    private readonly Panel _content = new();
+    private readonly StackPanel _tabs = new() { Orientation = Orientation.Horizontal, Spacing = TabGap };
+    private readonly Dictionary<DocumentView, ToggleButton> _tabButtons = [];
+    private readonly Dictionary<DocumentView, Control> _views = [];
+    private FormDocumentViewModel? _document;
+
+    public FormDocumentView()
+    {
+        var strip = new Border { Height = SwitcherHeight, BorderThickness = new Thickness(0, 1, 0, 0), Child = _tabs };
+        strip.Bind(Border.BackgroundProperty, strip.GetResourceObservable("FxcBgWindowBrush"));
+        strip.Bind(Border.BorderBrushProperty, strip.GetResourceObservable("FxcBorderDefaultBrush"));
+        SetDock(strip, Avalonia.Controls.Dock.Bottom);
+        Children.Add(strip);
+        Children.Add(_content);
+        foreach (var (view, label) in (ReadOnlySpan<(DocumentView, string)>)
+                 [(DocumentView.Code, Strings.DocumentView_Code), (DocumentView.Design, Strings.DocumentView_Design), (DocumentView.Text, Strings.DocumentView_Text)])
+        {
+            var button = CreateTab(label);
+            button.Click += (_, _) =>
+            {
+                _document?.ShowView(view);
+                Show(focus: true); // a click on the active tab must not leave it unchecked
+            };
+            _tabButtons[view] = button;
+            _tabs.Children.Add(button);
+        }
+    }
+
+    /// <summary>A flat toggle tab: caption text; when active, <c>bg.editor</c> with a 2 px <c>tab.active.indicator</c> line at its bottom.</summary>
+    private static ToggleButton CreateTab(string label)
+    {
+        var text = new TextBlock { Text = label, Classes = { "caption" }, VerticalAlignment = VerticalAlignment.Center };
+        var face = new Border { Padding = new Thickness(TabPadding, 0), BorderThickness = new Thickness(0, 0, 0, 2), Child = text };
+        var button = new ToggleButton
+        {
+            Content = face,
+            Padding = new Thickness(0),
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Stretch,
+        };
+        AutomationProperties.SetName(button, label);
+        return button;
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        _document?.PropertyChanged -= OnDocumentChanged;
+        _document = DataContext as FormDocumentViewModel;
+        _document?.PropertyChanged += OnDocumentChanged;
+        _views.Clear();
+        _content.Children.Clear();
+        if (_document is null)
+            return;
+        foreach (var (view, button) in _tabButtons)
+            AutomationProperties.SetAutomationId(button, AutomationIds.DocumentViewTab(_document.Title, view.ToString()));
+        Show(focus: false);
+    }
+
+    private void OnDocumentChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(FormDocumentViewModel.ActiveView))
+            Show(focus: IsKeyboardFocusWithin || _content.Children.Count == 0);
+        else if (e.PropertyName == nameof(DocumentViewModel.Title) && _document is not null)
+            foreach (var (view, button) in _tabButtons)
+                AutomationProperties.SetAutomationId(button, AutomationIds.DocumentViewTab(_document.Title, view.ToString()));
+    }
+
+    /// <summary>Puts the active view in place, marks its tab and (when focus was in the document) focuses it.</summary>
+    private void Show(bool focus)
+    {
+        if (_document is not { } document)
+            return;
+        var active = document.ActiveView;
+        if (!_views.TryGetValue(active, out var view))
+            _views[active] = view = CreateView(document, active);
+        if (_content.Children.Count != 1 || _content.Children[0] != view)
+        {
+            _content.Children.Clear();
+            _content.Children.Add(view);
+        }
+
+        foreach (var (tabView, button) in _tabButtons)
+        {
+            var isActive = tabView == active;
+            button.IsChecked = isActive;
+            var face = (Border)button.Content!;
+            face.Bind(Border.BackgroundProperty, face.GetResourceObservable(isActive ? "FxcBgEditorBrush" : "FxcBgWindowBrush"));
+            if (isActive)
+                face.Bind(Border.BorderBrushProperty, face.GetResourceObservable("FxcTabActiveIndicatorBrush"));
+            else
+                face.BorderBrush = Brushes.Transparent;
+        }
+
+        if (focus)
+            Dispatcher.UIThread.Post(() => Focus(view), DispatcherPriority.Loaded);
+    }
+
+    private static void Focus(Control view)
+    {
+        if (view is TextDocumentView text)
+            text.FocusText();
+        else
+            view.Focus();
+    }
+
+    private static Control CreateView(FormDocumentViewModel document, DocumentView view)
+    {
+        switch (view)
+        {
+            case DocumentView.Code:
+                return new TextDocumentView { DataContext = document };
+            case DocumentView.Text:
+                return new TextDocumentView { DataContext = document.FormText };
+            default:
+                var backdrop = new Border { Focusable = true };
+                backdrop.Bind(Border.BackgroundProperty, backdrop.GetResourceObservable("FxcDesignerBackdropBrush"));
+                return backdrop;
+        }
+    }
+}

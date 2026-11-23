@@ -62,7 +62,7 @@ public sealed class ProjectServiceTests
     {
         var result = await _services.Documents.OpenAsync(path);
         Assert.True(result.Success, result.MessageId);
-        return Assert.IsType<TextDocumentViewModel>(result.Value);
+        return Assert.IsAssignableFrom<TextDocumentViewModel>(result.Value); // a unit with a companion form opens as its subclass (I-129)
     }
 
     private static void Type(TextDocumentViewModel document, string text) =>
