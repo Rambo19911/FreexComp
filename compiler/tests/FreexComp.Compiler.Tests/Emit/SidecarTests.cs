@@ -270,6 +270,12 @@ public sealed partial class SidecarTests
             Assert.Contains(kind, Kinds);
             Assert.NotNull(type["name"]);
             Assert.True(type["size"]!.GetValue<long>() >= 0);
+            if (type.ContainsKey("aliasOf"))
+            {
+                Reference(type["aliasOf"]);                                        // C-268: an alias names its target entry
+                Assert.NotNull(type["unit"]);
+            }
+
             switch (kind)
             {
                 case "integer":

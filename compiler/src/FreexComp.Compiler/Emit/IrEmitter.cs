@@ -348,6 +348,11 @@ internal static class IrEmitter
             debugInfo.Sidecar.TypeId(@class);            // DBG-168: every class of the unit, for the dynamic type of an instance
         }
 
+        foreach (var alias in unit.Unit.TypeAliases)
+        {
+            debugInfo.Sidecar.AliasId(alias, unit.Unit.Name);   // C-268: every plain alias the unit declares
+        }
+
         return debugInfo.Sidecar.ToJson();
     }
 

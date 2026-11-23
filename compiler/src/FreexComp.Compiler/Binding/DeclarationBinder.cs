@@ -276,6 +276,10 @@ internal sealed partial class DeclarationBinder
             if (previous is null && _scope.TryDeclare(name, type, out previous))
             {
                 declared.Add(type);
+                if (declaration.TypeKeyword is null)
+                {
+                    RecordAlias(identifier, declaration.Type, type);
+                }
             }
             else
             {
@@ -308,6 +312,25 @@ internal sealed partial class DeclarationBinder
 
         _sectionTypeNames = null;
         _forwardPointers = null;
+    }
+
+    /// <summary>
+    /// C-268 (debug-info-sidecar.md §4): a unit-level <c>type T = U</c> naming an existing type (or <c>string</c>) is recorded for
+    /// the sidecar; the scope already maps <c>T</c> to <c>U</c>'s symbol, so type identity is untouched (LANG-205). An alias of an
+    /// earlier alias of the same unit keeps that alias as its target.
+    /// </summary>
+    private void RecordAlias(SyntaxToken identifier, TypeSyntax syntax, TypeSymbol type)
+    {
+        if (_container is not UnitSymbol unit || type.TypeKind == TypeKind.Error
+            || syntax is not (NamedTypeSyntax or StringTypeSyntax { Length: null }))
+        {
+            return;
+        }
+
+        var of = syntax is NamedTypeSyntax { Name: IdentifierNameSyntax target }
+            ? unit.TypeAliases.LastOrDefault(a => ReferenceEquals(a.Target, type) && IdentifierComparer.Instance.Equals(a.Name, NameOf(target.Identifier)))
+            : null;
+        unit.TypeAliases.Add(new TypeAlias(NameOf(identifier), type, of, DiagnosticBag.LocationOf(identifier)));
     }
 
     /// <summary>

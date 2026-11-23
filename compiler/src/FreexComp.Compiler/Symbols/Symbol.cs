@@ -125,5 +125,17 @@ public sealed class UnitSymbol : Symbol
     /// <summary>C-121: the forwarder makers of this unit by method reference type and "of object" (guarded by the lock of <see cref="Closures"/>).</summary>
     internal Dictionary<(Types.TypeSymbol Type, bool OfObject), RoutineSymbol> Forwarders { get; } = [];
 
+    /// <summary>
+    /// C-268 (debug-info-sidecar.md §4): the plain type aliases (<c>type T = U</c>) declared at the unit's level, in declaration
+    /// order. Only a record for the sidecar: the alias is no symbol and the same type as its target (LANG-205).
+    /// </summary>
+    internal List<TypeAlias> TypeAliases { get; } = [];
+
     public override string ToDisplayString() => (IsProgram ? "program " : "unit ") + Name;
 }
+
+/// <summary>
+/// C-268: a plain type alias of a unit — its name, the type it denotes (<see cref="Target"/>, identical to the target's symbol) and,
+/// for an alias of an earlier alias of the same unit, that alias (<see cref="Of"/>).
+/// </summary>
+internal sealed record TypeAlias(string Name, Types.TypeSymbol Target, TypeAlias? Of, Location Location);

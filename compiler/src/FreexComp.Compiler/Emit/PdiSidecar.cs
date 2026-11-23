@@ -62,6 +62,7 @@ internal static class PdiAbi
 internal sealed class PdiFragmentBuilder(string unitName, string unitPath, string container)
 {
     private readonly Dictionary<TypeSymbol, int> _ids = [];
+    private readonly Dictionary<TypeAlias, int> _aliasIds = new(ReferenceEqualityComparer.Instance);
     private readonly List<JsonObject> _types = [];
     private readonly List<(string Name, string LinkageName, int Type)> _globals = [];
     private readonly List<PdiRoutine> _routines = [];
@@ -225,6 +226,33 @@ internal sealed class PdiFragmentBuilder(string unitName, string unitPath, strin
         return id;
     }
 
+    /// <summary>
+    /// C-268 (debug-info-sidecar.md §4): a plain alias of <paramref name="unit"/> as its own entry — the alias name and unit, the
+    /// target's kind and members, and <c>aliasOf</c> = the target's id (the inner alias's for an alias of an alias). Variables of
+    /// the alias keep referencing the target's entry (the alias is the same type, LANG-205).
+    /// </summary>
+    public int AliasId(TypeAlias alias, string unit)
+    {
+        if (_aliasIds.TryGetValue(alias, out var known))
+        {
+            return known;
+        }
+
+        var target = alias.Of is { } inner ? AliasId(inner, unit) : TypeId(alias.Target);
+        var entry = new JsonObject { ["id"] = _types.Count + 1, ["name"] = alias.Name, ["unit"] = unit };
+        foreach (var (name, value) in _types[target - 1])
+        {
+            if (name is not ("id" or "name" or "unit" or "aliasOf"))
+            {
+                entry[name] = value?.DeepClone();
+            }
+        }
+
+        entry["aliasOf"] = target;
+        _types.Add(entry);
+        return _aliasIds[alias] = entry["id"]!.GetValue<int>();
+    }
+
     /// <summary>The fragment as JSON text (formatVersion 1; <c>globals</c> sorted by name, <c>routines</c> by file and line).</summary>
     public string ToJson() => PdiSidecar.Write(ToNode());
 
@@ -351,7 +379,7 @@ internal sealed class PdiRoutine(PdiFragmentBuilder owner, string displayName, s
 internal static class PdiSidecar
 {
     /// <summary>The members of a type entry that hold type ids.</summary>
-    private static readonly string[] TypeReferences = ["base", "element", "indexType", "ancestor", "of", "to"];
+    private static readonly string[] TypeReferences = ["base", "element", "indexType", "ancestor", "of", "to", "aliasOf"];
 
     private static readonly JsonWriterOptions WriterOptions = new()
     {
