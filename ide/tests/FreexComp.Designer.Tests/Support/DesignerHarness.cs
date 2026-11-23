@@ -24,7 +24,7 @@ internal sealed class DesignerHarness : IDisposable
         Editor = new FormEditor(document, TestCatalog.Instance);
         Undo = new DesignerUndoStack();
         Engine = new LayoutEngine(TestCatalog.Instance, RendererRegistry.CreateDefault());
-        Controller = new DesignSurfaceController(document, Editor, Undo, TestCatalog.Instance, Engine, Settings, Host);
+        Controller = new DesignSurfaceController(document, Editor, Undo, TestCatalog.Instance, Engine, Settings, Host, Time);
     }
 
     /// <summary>A form of the shared test data (<c>forms/canonical/hello.form</c>).</summary>
@@ -41,6 +41,9 @@ internal sealed class DesignerHarness : IDisposable
     public FakeDesignerSettings Settings { get; } = new();
 
     public FakeDesignerHost Host { get; } = new();
+
+    /// <summary>The controller's clock (testing.md DSG-TEST-004): advanced explicitly, never the wall clock.</summary>
+    public ManualTimeProvider Time { get; } = new();
 
     public FormDocument Document { get; }
 
@@ -234,7 +237,22 @@ internal sealed class FakeDesignerHost : IDesignerHost
 
     public List<(double X, double Y)> ContextMenus { get; } = [];
 
+    /// <summary>Object Inspector edits started by typing on the surface (DSG-SUR-105): property and typed text.</summary>
+    public List<(string Property, string Text)> PropertyEdits { get; } = [];
+
     public void SetStatus(string messageId, params object[] args) => Statuses.Add((messageId, args));
 
     public void ShowContextMenu(double x, double y) => ContextMenus.Add((x, y));
+
+    public void BeginPropertyEdit(string propertyName, string text) => PropertyEdits.Add((propertyName, text));
+}
+
+/// <summary>A <see cref="TimeProvider"/> whose time moves only through <see cref="Advance"/> (testing.md DSG-TEST-004).</summary>
+internal sealed class ManualTimeProvider : TimeProvider
+{
+    private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    public override DateTimeOffset GetUtcNow() => _now;
+
+    public void Advance(TimeSpan by) => _now += by;
 }

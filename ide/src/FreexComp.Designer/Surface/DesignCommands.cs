@@ -11,6 +11,10 @@ public static class Commands
 
     public const string SelectPrevious = "designer.selectPrevious";
 
+    public const string TabOrder = "designer.tabOrder";
+
+    public const string Delete = "edit.delete";
+
     public const string Undo = "edit.undo";
 
     public const string Redo = "edit.redo";
@@ -22,6 +26,10 @@ public static class UndoTitles
     public const string Move = "Undo_Designer_Move";
 
     public const string Resize = "Undo_Designer_Resize";
+
+    public const string TabOrder = "Undo_Designer_TabOrder";
+
+    public const string Delete = "Undo_Designer_Delete";
 }
 
 /// <summary>Status message ids the surface shows (states-and-messages.md; design-surface.md §15).</summary>

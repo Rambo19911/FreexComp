@@ -249,4 +249,220 @@ public sealed class ResizeTests
         Assert.Equal(before.Replace("Width = 200", "Width = 212").Replace("Height = 100", "Height = 110")
             .Replace("Width = 75", "Width = 87").Replace("Height = 25", "Height = 35"), d.Text);
     }
+
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-084")]
+    [Trait("Req", "DSG-SUR-086")]
+    public void AlignedControlOnlyFreeEdge()
+    {
+        using var h = DesignerHarness.FromText("""
+            object F: TForm
+              ClientWidth = 400
+              ClientHeight = 300
+              object Top1: TPanel
+                Left = 0
+                Top = 0
+                Width = 400
+                Height = 40
+                Align = alTop
+              end
+              object Bottom1: TPanel
+                Left = 0
+                Top = 260
+                Width = 400
+                Height = 40
+                Align = alBottom
+              end
+              object Client1: TPanel
+                Left = 0
+                Top = 40
+                Width = 400
+                Height = 220
+                Align = alClient
+              end
+            end
+
+            """);
+        h.Settings.NoSnapping();
+        var original = h.Text;
+
+        // alTop: only S can be dragged; the alClient sibling re-flows and is stored in the same unit.
+        h.Select("Top1");
+        h.PressHandle("Top1", HandleKind.S);
+        h.MoveBy(0, 10);
+        Assert.Equal(new Rect(0, 50, 400, 210), h.Bounds("Client1")); // live re-flow
+        h.Release();
+        Assert.Equal(new Rect(0, 0, 400, 50), h.Bounds("Top1"));
+        Assert.Equal(new Rect(0, 50, 400, 210), h.Bounds("Client1"));
+        Assert.Equal(1, h.Undo.UndoCount);
+        h.ExecuteUndo();
+        Assert.Equal(original, h.Text);
+
+        // A corner handle drags only its free edge; handles of fixed edges only are inert.
+        h.PressHandle("Top1", HandleKind.SE);
+        h.MoveBy(10, 10);
+        h.Release();
+        Assert.Equal(new Rect(0, 0, 400, 50), h.Bounds("Top1"));
+        h.ExecuteUndo();
+        foreach (var inert in new[] { HandleKind.N, HandleKind.E, HandleKind.W, HandleKind.NE, HandleKind.NW })
+        {
+            h.PressHandle("Top1", inert);
+            h.MoveBy(10, -10);
+            Assert.NotEqual(InteractionState.Resizing, h.Controller.State);
+            h.Release();
+        }
+
+        Assert.Equal(original, h.Text);
+        Assert.Equal(0, h.Undo.UndoCount);
+
+        // alBottom: only N; dragging it up grows the panel, the client panel shrinks.
+        h.Select("Bottom1");
+        h.PressHandle("Bottom1", HandleKind.N);
+        h.MoveBy(0, -20);
+        h.Release();
+        Assert.Equal(new Rect(0, 240, 400, 60), h.Bounds("Bottom1"));
+        Assert.Equal(new Rect(0, 40, 400, 200), h.Bounds("Client1"));
+        h.ExecuteUndo();
+        h.PressHandle("Bottom1", HandleKind.S);
+        h.MoveBy(0, 20);
+        Assert.NotEqual(InteractionState.Resizing, h.Controller.State);
+        h.Release();
+
+        // alClient: no edge can be dragged.
+        h.Select("Client1");
+        h.PressHandle("Client1", HandleKind.SE);
+        h.MoveBy(-20, -20);
+        Assert.NotEqual(InteractionState.Resizing, h.Controller.State);
+        h.Release();
+        Assert.Equal(original, h.Text);
+        Assert.Equal(0, h.Undo.UndoCount);
+    }
+
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-085")]
+    [Trait("Req", "DSG-SUR-086")]
+    public void FormResizeReflowsChildrenInOneUnit()
+    {
+        using var h = DesignerHarness.FromText("""
+            object F: TForm
+              ClientWidth = 400
+              ClientHeight = 240
+              object Top1: TPanel
+                Left = 0
+                Top = 0
+                Width = 400
+                Height = 30
+                Align = alTop
+              end
+              object Btn: TButton
+                Left = 232
+                Top = 15
+                Width = 75
+                Height = 25
+                Anchors = [akRight, akBottom]
+              end
+            end
+
+            """);
+        h.Settings.NoSnapping();
+        var original = h.Text;
+        Assert.Equal(["F"], h.Selected);
+
+        h.PressHandle("F", HandleKind.SE);
+        h.MoveBy(100, 60);
+        Assert.Equal(InteractionState.Resizing, h.Controller.State);
+        Assert.Equal(new Rect(0, 0, 500, 300), h.Bounds("F")); // live: client size and re-flow
+        Assert.Equal(new Rect(332, 75, 75, 25), h.Bounds("Btn"));
+        Assert.Equal(original, h.Text);
+        h.Release();
+        Assert.Equal(new Rect(0, 0, 500, 30), h.Bounds("Top1"));
+        Assert.Equal(new Rect(332, 75, 75, 25), h.Bounds("Btn"));
+        Assert.Contains("ClientWidth = 500", h.Text);
+        Assert.Contains("ClientHeight = 300", h.Text);
+        Assert.Equal(1, h.Undo.UndoCount);
+        Assert.Equal("Undo_Designer_Resize", h.Undo.UndoTitleKey);
+        h.ExecuteUndo();
+        Assert.Equal(original, h.Text);
+        h.ExecuteRedo();
+        Assert.Equal(new Rect(332, 75, 75, 25), h.Bounds("Btn"));
+        h.ExecuteUndo();
+
+        // E changes only the width, S only the height; minimum client size 16 × 16.
+        h.PressHandle("F", HandleKind.E);
+        h.MoveBy(-1000, 50);
+        h.Release();
+        Assert.Equal(new Rect(0, 0, 16, 240), h.Bounds("F"));
+        h.ExecuteUndo();
+        h.PressHandle("F", HandleKind.S);
+        h.MoveBy(50, -1000);
+        h.Release();
+        Assert.Equal(new Rect(0, 0, 400, 16), h.Bounds("F"));
+        h.ExecuteUndo();
+
+        // Grid snapping on the client size (405 → 408, 243 → 240); Alt disables it.
+        h.Settings.SnapToGrid = true;
+        h.PressHandle("F", HandleKind.SE);
+        h.MoveBy(5, 3);
+        h.Release();
+        Assert.Equal(new Rect(0, 0, 408, 240), h.Bounds("F"));
+        h.ExecuteUndo();
+        h.PressHandle("F", HandleKind.SE, InputModifiers.Alt);
+        h.MoveBy(5, 3);
+        h.Release();
+        Assert.Equal(new Rect(0, 0, 405, 243), h.Bounds("F"));
+        h.ExecuteUndo();
+
+        // Escape cancels; the lock prevents it.
+        h.PressHandle("F", HandleKind.SE);
+        h.MoveBy(30, 30);
+        Assert.True(h.Key(DesignKey.Escape));
+        h.Release();
+        h.Settings.LockControls = true;
+        h.PressHandle("F", HandleKind.SE);
+        h.MoveBy(30, 30);
+        h.Release();
+        Assert.Equal(original, h.Text);
+        Assert.Equal(0, h.Undo.UndoCount);
+    }
+
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-086")]
+    public void ContainerResizeReflowsAnchoredChildren()
+    {
+        using var h = DesignerHarness.FromText("""
+            object F: TForm
+              ClientWidth = 400
+              ClientHeight = 300
+              object Panel1: TPanel
+                Left = 8
+                Top = 8
+                Width = 200
+                Height = 100
+                object Inner: TButton
+                  Left = 100
+                  Top = 50
+                  Width = 75
+                  Height = 25
+                  Anchors = [akRight, akBottom]
+                end
+              end
+            end
+
+            """);
+        h.Settings.NoSnapping();
+        var original = h.Text;
+        h.Select("Panel1");
+        h.PressHandle("Panel1", HandleKind.SE);
+        h.MoveBy(20, 10);
+        Assert.Equal(new Rect(120, 60, 75, 25), h.Bounds("Inner")); // live
+        h.Release();
+        Assert.Equal(new Rect(8, 8, 220, 110), h.Bounds("Panel1"));
+        Assert.Equal(new Rect(120, 60, 75, 25), h.Bounds("Inner"));
+        Assert.Equal(1, h.Undo.UndoCount);
+        h.ExecuteUndo();
+        Assert.Equal(original, h.Text);
+    }
 }

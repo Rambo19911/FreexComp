@@ -88,6 +88,25 @@ public sealed class DesignerUndoStack
         }
     }
 
+    /// <summary>The unit <see cref="Undo"/> would revert, or null.</summary>
+    public DesignerUndoUnit? Peek => _undo.Last?.Value;
+
+    /// <summary>
+    /// Replaces the newest unit by <paramref name="unit"/> (merging keyboard nudges, design-surface.md DSG-SUR-107); a save
+    /// point at the replaced unit is not carried over (the buffer differs from the saved one).
+    /// </summary>
+    public void ReplaceLast(DesignerUndoUnit unit)
+    {
+        ArgumentNullException.ThrowIfNull(unit);
+        if (_undo.Last is not { } last)
+        {
+            throw new InvalidOperationException("no unit to replace");
+        }
+
+        _redo.Clear();
+        last.Value = unit;
+    }
+
     /// <summary>The unit to undo (moved to the redo list), or null.</summary>
     public DesignerUndoUnit? Undo()
     {

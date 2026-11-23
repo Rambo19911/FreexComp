@@ -85,6 +85,30 @@ public sealed class LayoutEngine
         return LayoutResult.Capture(machine.Root);
     }
 
+    /// <summary>
+    /// Layout after explicit bounds changes of several controls, applied in list order (interactive resize preview,
+    /// design-surface.md DSG-SUR-086): each re-flows its own children against their baselines and requests its parent's
+    /// align pass, as <see cref="ComputeWithResize"/> does for one. For the root, the bounds' size is the client size.
+    /// </summary>
+    public LayoutResult ComputeWithResizes(FormDocument form, IReadOnlyList<(string Name, Rect Bounds)> changes)
+    {
+        var (machine, nodes) = Load(form, LayoutMode.Design, null);
+        foreach (var (name, b) in changes)
+        {
+            var node = FindNode(form, nodes, name, name);
+            if (node.Parent is null)
+            {
+                machine.SetBoundsExplicit(node, node.Left, node.Top, b.Width, b.Height);
+            }
+            else
+            {
+                machine.SetBoundsExplicit(node, b.Left, b.Top, b.Width, b.Height);
+            }
+        }
+
+        return LayoutResult.Capture(machine.Root);
+    }
+
     /// <summary>Layout with overridden stored bounds/properties for some objects (drag previews). Design mode.</summary>
     public LayoutResult ComputeWithOverrides(FormDocument form, IReadOnlyDictionary<string, LayoutOverride> overrides) =>
         LayoutResult.Capture(Load(form, LayoutMode.Design, overrides).Machine.Root);

@@ -14,7 +14,7 @@ public enum InputModifiers { None = 0, Ctrl = 1, Shift = 2, Alt = 4 }
 public readonly record struct KeyInput(DesignKey Key, InputModifiers Modifiers = InputModifiers.None);
 
 /// <summary>The keys the design surface handles itself (design-surface.md §9).</summary>
-public enum DesignKey { Left, Right, Up, Down, Tab, Enter, Escape, Delete }
+public enum DesignKey { Left, Right, Up, Down, Tab, Enter, Escape, Delete, Space }
 
 /// <summary>The controller's interaction mode (design-surface.md §1).</summary>
 public enum InteractionState { Idle, PressPending, Moving, Resizing, Lasso, Placing, TabOrder }
@@ -61,4 +61,10 @@ public interface IDesignerHost
 
     /// <summary>Opens the design-surface context menu at a surface point.</summary>
     void ShowContextMenu(double x, double y);
+
+    /// <summary>
+    /// DSG-SUR-105: moves focus to the Object Inspector, selects the row of <paramref name="propertyName"/> and starts
+    /// editing it with <paramref name="text"/> replacing the value.
+    /// </summary>
+    void BeginPropertyEdit(string propertyName, string text);
 }

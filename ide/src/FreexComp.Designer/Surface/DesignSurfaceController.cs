@@ -8,10 +8,11 @@ namespace FreexComp.Designer.Surface;
 
 /// <summary>
 /// The interaction logic of the design surface (design-surface.md; no UI dependency, DSG-ARCH-003): selection and the
-/// click rules (D-035), the selection commands (D-036), the lasso (D-037) and move drags with undo (D-038). Snapping,
-/// re-parenting, resizing, placement, the other keys and commands follow in later tasks.
+/// click rules (D-035), the selection commands (D-036), the lasso (D-037), move drags with snapping and re-parenting
+/// (D-038 … D-041), resize drags incl. the form and child re-flow (D-042, D-043), keyboard nudging (D-044), tab order
+/// (D-045, D-046) and delete (D-047). Placement, clipboard and the other commands follow in later tasks.
 /// </summary>
-public sealed class DesignSurfaceController
+public sealed partial class DesignSurfaceController
 {
     /// <summary>DSG-SUR-040: a drag begins after this many DIP of movement on either axis.</summary>
     public const int DragThreshold = 4;
@@ -19,6 +20,7 @@ public sealed class DesignSurfaceController
     private readonly LayoutEngine _layout;
     private readonly IDesignerSettings _settings;
     private readonly IDesignerHost _host;
+    private readonly TimeProvider _time;
     private (int Version, LayoutResult Result, SurfaceGeometry Geometry, HitTester HitTester)? _cache;
 
     // The pending press (DSG-SUR-040, DSG-SUR-041).
@@ -36,10 +38,9 @@ public sealed class DesignSurfaceController
     private List<MoveMember> _moveSet = [];
 
     // The resize drag (§7): the members with their original bounds, the primary and its handle, the current bounds.
-    private List<(FormObject Object, Rect Original)> _resizeSet = [];
+    private List<ResizeMember> _resizeSet = [];
     private List<(FormObject Object, Rect Bounds)> _resizeBounds = [];
     private FormObject? _resizePrimary;
-    private HandleKind _resizeHandle;
 
     private (FormObject? Container, int Left, int Top) _moveTarget;
     private FormObject? _moveAnchor;
@@ -48,8 +49,9 @@ public sealed class DesignSurfaceController
     private (int Version, LayoutResult Result, SurfaceGeometry Geometry, HitTester HitTester)? _preview;
 
     public DesignSurfaceController(FormDocument document, FormEditor editor, DesignerUndoStack undo, ComponentCatalog catalog,
-        LayoutEngine layout, IDesignerSettings settings, IDesignerHost host)
+        LayoutEngine layout, IDesignerSettings settings, IDesignerHost host, TimeProvider? time = null)
     {
+        _time = time ?? TimeProvider.System;
         Document = document;
         Editor = editor;
         Undo = undo;
@@ -105,6 +107,16 @@ public sealed class DesignSurfaceController
 
     public void OnPointer(PointerInput input)
     {
+        if (State == InteractionState.TabOrder)
+        {
+            if (input is { Kind: PointerKind.Down, Button: PointerButton.Left })
+            {
+                TabOrderPress(input); // DSG-SUR-092, 093: no selection, no drag, no context menu in the mode
+            }
+
+            return;
+        }
+
         switch (input.Kind)
         {
             case PointerKind.Down when input.Button == PointerButton.Left:
@@ -154,12 +166,27 @@ public sealed class DesignSurfaceController
     /// <summary>A key in the Designer scope (design-surface.md §9); true = handled.</summary>
     public bool OnKey(KeyInput input)
     {
+        if (State == InteractionState.TabOrder)
+        {
+            return TabOrderKey(input);
+        }
+
         switch (input.Key)
         {
             case DesignKey.Escape:
                 return Escape();
             case DesignKey.Tab:
                 Execute(input.Modifiers.HasFlag(InputModifiers.Shift) ? Commands.SelectPrevious : Commands.SelectNext);
+                return true;
+            case DesignKey.Left or DesignKey.Right or DesignKey.Up or DesignKey.Down:
+                return Arrow(input.Key, input.Modifiers);
+            case DesignKey.Delete when input.Modifiers == InputModifiers.None:
+                if (!CanExecute(Commands.Delete))
+                {
+                    return false;
+                }
+
+                Execute(Commands.Delete);
                 return true;
             default:
                 return false;
@@ -170,6 +197,8 @@ public sealed class DesignSurfaceController
     {
         Commands.SelectAll or Commands.SelectNext or Commands.SelectPrevious => true,
         Commands.SelectParent => Selection.Primary.Parent is not null,
+        Commands.TabOrder => !IsPointerActive,
+        Commands.Delete => CanDelete,
         Commands.Undo => Undo.CanUndo && !IsPointerActive, // DSG-SUR-171
         Commands.Redo => Undo.CanRedo && !IsPointerActive,
         _ => false,
@@ -185,8 +214,19 @@ public sealed class DesignSurfaceController
             return;
         }
 
+        if (commandId is Commands.Undo or Commands.Redo)
+        {
+            ExitTabOrderMode(); // DSG-SUR-170
+        }
+
         switch (commandId)
         {
+            case Commands.TabOrder:
+                ToggleTabOrderMode();
+                break;
+            case Commands.Delete:
+                Delete();
+                break;
             case Commands.SelectAll:
                 Selection.Select(SelectAllSet());
                 break;
@@ -311,7 +351,11 @@ public sealed class DesignSurfaceController
         }
         else if (_pressHit is { Kind: HitKind.Handle, Object: { } primary, Handle: { } handle })
         {
-            StartResize(primary, handle, input); // the form's handles (HitKind.FormHandle) resize the form: D-043
+            StartResize(primary, handle, input);
+        }
+        else if (_pressHit is { Kind: HitKind.FormHandle, Handle: { } formHandle })
+        {
+            StartFormResize(formHandle, input);
         }
     }
 
@@ -528,6 +572,21 @@ public sealed class DesignSurfaceController
             }
         }
 
+        if (reparents)
+        {
+            // DSG-SUR-096: the old parents close their gaps, the re-parented controls take the last positions in the target.
+            var entering = _moveSet.Where(MovesToTarget).Select(m => m.Object).ToList();
+            foreach (var oldParent in entering.Where(TabOrderRules.IsFocusable).Select(o => o.Parent!).Distinct())
+            {
+                changes.AddRange(TabOrderRules.Renumber(oldParent, entering));
+            }
+
+            if (entering.Exists(TabOrderRules.IsFocusable))
+            {
+                changes.AddRange(TabOrderRules.Renumber(target.Container!, appended: entering));
+            }
+        }
+
         var moved = reparents || _moveSet.Exists(m => _moveTray
             ? (Math.Max(0, m.Left + dx), Math.Max(0, m.Top + dy)) != (m.Left, m.Top)
             : (dx, dy) != (0, 0));
@@ -545,32 +604,70 @@ public sealed class DesignSurfaceController
 
     /// <summary>
     /// DSG-SUR-080: a drag on a handle of the primary resizes all selected resizable controls (not the form, tray items,
-    /// preserved components or controls with computed geometry) by the primary's edge deltas.
+    /// preserved components or controls with computed geometry) by the primary's edge deltas. DSG-SUR-084: of an aligned
+    /// control only the edges not fixed by <c>Align</c> move; a handle that moves none of them is inert.
     /// </summary>
     private void StartResize(FormObject primary, HandleKind handle, PointerInput input)
     {
         var g = Geometry;
+        var edges = HandleEdges(handle);
         _resizeSet = Selection.Items
             .Where(o => g.IsControl(o) && !o.IsPreserved && o.Info?.FindProperty("Left") is not { Stored: false })
-            .Select(o => (o, Layout.GetBounds(o)))
+            .Select(o => new ResizeMember(o, Layout.GetBounds(o), edges & FreeEdges(o)))
             .ToList();
-        if (!_resizeSet.Exists(m => ReferenceEquals(m.Object, primary)))
+        if (_resizeSet.Find(m => ReferenceEquals(m.Object, primary)) is not { Edges: not SnapEdges.None })
         {
             _resizeSet = [];
             return;
         }
 
         _resizePrimary = primary;
-        _resizeHandle = handle;
         State = InteractionState.Resizing;
         UpdateResize(input);
+    }
+
+    /// <summary>DSG-SUR-085: a drag on the form's E, S or SE handle changes its client size.</summary>
+    private void StartFormResize(HandleKind handle, PointerInput input)
+    {
+        var root = Document.Root;
+        _resizeSet = [new ResizeMember(root, Layout.GetBounds(root), HandleEdges(handle) & (SnapEdges.Right | SnapEdges.Bottom))];
+        _resizePrimary = root;
+        State = InteractionState.Resizing;
+        UpdateResize(input);
+    }
+
+    private static SnapEdges HandleEdges(HandleKind h) =>
+        (h is HandleKind.NW or HandleKind.W or HandleKind.SW ? SnapEdges.Left : 0)
+        | (h is HandleKind.NE or HandleKind.E or HandleKind.SE ? SnapEdges.Right : 0)
+        | (h is HandleKind.NW or HandleKind.N or HandleKind.NE ? SnapEdges.Top : 0)
+        | (h is HandleKind.SW or HandleKind.S or HandleKind.SE ? SnapEdges.Bottom : 0);
+
+    /// <summary>DSG-SUR-084: the edges <c>Align</c> leaves free — <c>alTop</c>: bottom; <c>alBottom</c>: top; <c>alLeft</c>: right; <c>alRight</c>: left; <c>alClient</c>: none.</summary>
+    private static SnapEdges FreeEdges(FormObject obj)
+    {
+        const SnapEdges all = SnapEdges.Left | SnapEdges.Right | SnapEdges.Top | SnapEdges.Bottom;
+        if (!IsAligned(obj) || PropertyAccess.GetEffective(obj, "Align") is not IdentValue { Name: var align })
+        {
+            return all;
+        }
+
+        return align.ToLowerInvariant() switch
+        {
+            "altop" => SnapEdges.Bottom,
+            "albottom" => SnapEdges.Top,
+            "alleft" => SnapEdges.Right,
+            "alright" => SnapEdges.Left,
+            "alclient" => SnapEdges.None,
+            _ => all, // alCustom and unknown values: the layout engine decides
+        };
     }
 
     /// <summary>
     /// DSG-SUR-081 … 083: the dragged edges of the primary follow the pointer, then snapping (§6, dragged edges only), then
     /// the size limits (the opposite edge never moves, no flipping); with Shift on a corner the axis with the larger
     /// relative change drives and the other keeps the original aspect ratio (snapping on the driving axis only). Every
-    /// other member gets the primary's edge deltas, clamped by its own limits.
+    /// other member gets the primary's edge deltas, clamped by its own limits. DSG-SUR-086: the preview applies the new
+    /// bounds as explicit changes, so containers re-flow their children (anchors against the baselines, Align).
     /// </summary>
     private void UpdateResize(PointerInput input)
     {
@@ -578,49 +675,62 @@ public sealed class DesignSurfaceController
         var (dx, dy) = (x - _downAt.X, y - _downAt.Y);
         _preview = null; // the snapping and the preview start from the model's layout
 
-        var h = _resizeHandle;
-        var edges = (h is HandleKind.NW or HandleKind.W or HandleKind.SW ? SnapEdges.Left : 0)
-            | (h is HandleKind.NE or HandleKind.E or HandleKind.SE ? SnapEdges.Right : 0)
-            | (h is HandleKind.NW or HandleKind.N or HandleKind.NE ? SnapEdges.Top : 0)
-            | (h is HandleKind.SW or HandleKind.S or HandleKind.SE ? SnapEdges.Bottom : 0);
         var primary = _resizePrimary!;
-        var b = _resizeSet.Find(m => ReferenceEquals(m.Object, primary)).Original;
-        var raw = Resized(b, edges, dx, dx, dy, dy);
-
-        // Shift on a corner: the axis with the larger relative change (|Δw| / w vs |Δh| / h) drives.
-        var keepRatio = input.Modifiers.HasFlag(InputModifiers.Shift) && h is HandleKind.NW or HandleKind.NE or HandleKind.SE or HandleKind.SW
-            && b.Width > 0 && b.Height > 0;
-        var widthDrives = (long)Math.Abs(raw.Width - b.Width) * b.Height >= (long)Math.Abs(raw.Height - b.Height) * b.Width;
-        var snapEdges = !keepRatio ? edges
-            : edges & (widthDrives ? SnapEdges.Left | SnapEdges.Right : SnapEdges.Top | SnapEdges.Bottom);
-        var options = SnapOptions.From(_settings, input.Modifiers.HasFlag(InputModifiers.Alt));
-        var snap = SnapEngine.SnapResize(raw, snapEdges, SnapTargetOf(primary.Parent!, _resizeSet.Select(m => m.Object)), options);
-        Guidelines = snap.Guidelines;
-        var snapped = Resized(b, edges, dx + snap.Dx, dx + snap.Dx, dy + snap.Dy, dy + snap.Dy);
-        var r = Clamp(primary, snapped, edges);
-        if (keepRatio)
+        var p = _resizeSet.Find(m => ReferenceEquals(m.Object, primary));
+        var (b, edges) = (p.Original, p.Edges);
+        Rect r;
+        if (primary.Parent is null)
         {
-            r = widthDrives
-                ? Clamp(primary, WithHeight(r, edges, RoundRatio(r.Width, b.Height, b.Width)), edges & (SnapEdges.Top | SnapEdges.Bottom))
-                : Clamp(primary, WithWidth(r, edges, RoundRatio(r.Height, b.Width, b.Height)), edges & (SnapEdges.Left | SnapEdges.Right));
+            r = FormResized(b, edges, dx, dy, input.Modifiers.HasFlag(InputModifiers.Alt));
+            _resizeBounds = [(primary, r)];
+        }
+        else
+        {
+            var raw = Resized(b, edges, dx, dx, dy, dy);
+
+            // Shift on a corner: the axis with the larger relative change (|Δw| / w vs |Δh| / h) drives.
+            var corner = (edges & (SnapEdges.Left | SnapEdges.Right)) != 0 && (edges & (SnapEdges.Top | SnapEdges.Bottom)) != 0;
+            var keepRatio = input.Modifiers.HasFlag(InputModifiers.Shift) && corner && b.Width > 0 && b.Height > 0;
+            var widthDrives = (long)Math.Abs(raw.Width - b.Width) * b.Height >= (long)Math.Abs(raw.Height - b.Height) * b.Width;
+            var snapEdges = !keepRatio ? edges
+                : edges & (widthDrives ? SnapEdges.Left | SnapEdges.Right : SnapEdges.Top | SnapEdges.Bottom);
+            var options = SnapOptions.From(_settings, input.Modifiers.HasFlag(InputModifiers.Alt));
+            var snap = SnapEngine.SnapResize(raw, snapEdges, SnapTargetOf(primary.Parent!, _resizeSet.Select(m => m.Object)), options);
+            Guidelines = snap.Guidelines;
+            var snapped = Resized(b, edges, dx + snap.Dx, dx + snap.Dx, dy + snap.Dy, dy + snap.Dy);
+            r = Clamp(primary, snapped, edges);
+            if (keepRatio)
+            {
+                r = widthDrives
+                    ? Clamp(primary, WithHeight(r, edges, RoundRatio(r.Width, b.Height, b.Width)), edges & (SnapEdges.Top | SnapEdges.Bottom))
+                    : Clamp(primary, WithWidth(r, edges, RoundRatio(r.Height, b.Width, b.Height)), edges & (SnapEdges.Left | SnapEdges.Right));
+            }
+
+            var (dl, dr, dt, db) = (r.Left - b.Left, r.Right - b.Right, r.Top - b.Top, r.Bottom - b.Bottom);
+            _resizeBounds = _resizeSet
+                .Select(m => (m.Object, ReferenceEquals(m.Object, primary) ? r
+                    : Clamp(m.Object, Resized(m.Original, m.Edges, dl, dr, dt, db), m.Edges)))
+                .ToList();
         }
 
-        var (dl, dr, dt, db) = (r.Left - b.Left, r.Right - b.Right, r.Top - b.Top, r.Bottom - b.Bottom);
-        _resizeBounds = _resizeSet
-            .Select(m => (m.Object, ReferenceEquals(m.Object, primary) ? r : Clamp(m.Object, Resized(m.Original, edges, dl, dr, dt, db), edges)))
-            .ToList();
-
-        var overrides = new Dictionary<string, LayoutOverride>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (obj, bounds) in _resizeBounds)
-        {
-            overrides[obj.Name] = new LayoutOverride(bounds);
-        }
-
-        var result = _layout.ComputeWithOverrides(Document, overrides);
+        var result = _layout.ComputeWithResizes(Document, _resizeBounds.Select(m => (m.Object.Name, m.Bounds)).ToList());
         var geometry = new SurfaceGeometry(Document, result, _layout.Renderers, _settings.ShowComponentCaptions);
         _preview = (Document.Version, result, geometry, new HitTester(geometry));
         Invalidated?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>DSG-SUR-085: the new client size — dragged dimensions follow the pointer, grid snapping only (not with Alt), at least 16 × 16.</summary>
+    private Rect FormResized(Rect b, SnapEdges edges, int dx, int dy, bool alt)
+    {
+        var grid = _settings.SnapToGrid && !alt;
+        int Size(int value, int g) => Math.Max(MinFormClientSize, grid ? SnapEngine.ToGrid(value, g) : value);
+        var width = edges.HasFlag(SnapEdges.Right) ? Size(b.Width + dx, _settings.GridSizeX) : b.Width;
+        var height = edges.HasFlag(SnapEdges.Bottom) ? Size(b.Height + dy, _settings.GridSizeY) : b.Height;
+        return b with { Width = width, Height = height };
+    }
+
+    /// <summary>DSG-SUR-085: the minimum client width and height of a form resized by handle.</summary>
+    private const int MinFormClientSize = 16;
 
     /// <summary>The bounds with the dragged edges moved: left by <paramref name="dl"/>, right by <paramref name="dr"/>, … (may be inverted).</summary>
     private static Rect Resized(Rect b, SnapEdges edges, int dl, int dr, int dt, int db)
@@ -662,40 +772,56 @@ public sealed class DesignSurfaceController
     private static int RoundRatio(int driven, int num, int den) =>
         (int)Math.Round((double)driven * num / den, MidpointRounding.AwayFromZero);
 
-    /// <summary>The drop of a resize: one "Resize" undo unit with the changed bounds and the layout commit; nothing when nothing changed.</summary>
+    /// <summary>
+    /// The drop of a resize: one "Resize" undo unit with the form's new client size (form resize) and every bounds of
+    /// the preview layout that differs from the stored one — the resized controls and the re-flowed children
+    /// (DSG-SUR-085, DSG-SUR-086) — then the layout commit of the result (DSG-LAY-040); nothing when nothing changed.
+    /// </summary>
     private void DropResize()
     {
-        var changes = new List<FormChange>();
-        foreach (var (obj, r) in _resizeBounds)
-        {
-            var original = _resizeSet.Find(m => ReferenceEquals(m.Object, obj)).Original;
-            if (r == original)
-            {
-                continue;
-            }
-
-            (string Path, int Old, int New)[] values =
-                [("Left", original.Left, r.Left), ("Top", original.Top, r.Top), ("Width", original.Width, r.Width), ("Height", original.Height, r.Height)];
-            foreach (var (path, old, value) in values)
-            {
-                if (old != value || !PropertyAccess.IsStored(obj, path))
-                {
-                    changes.Add(new SetProperty(obj.Name, path, new IntegerValue(value, false)));
-                }
-            }
-        }
-
+        var changed = _resizeBounds.Exists(m => m.Bounds != _resizeSet.Find(s => ReferenceEquals(s.Object, m.Object)).Original);
+        var preview = _preview?.Result;
+        var form = _resizeBounds is [{ Object.Parent: null } f] ? f.Bounds : (Rect?)null;
         ResetPress();
-        if (changes.Count == 0)
+        if (!changed || preview is null)
         {
             return;
         }
 
         var selection = Selection.ToSnapshot();
-        var undo = Editor.Apply(changes);
-        var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-        Undo.Push(new DesignerUndoUnit(UndoTitles.Resize, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
+        var (redo, undo) = ApplyResize(form, preview);
+        Undo.Push(new DesignerUndoUnit(UndoTitles.Resize, redo, undo, [], selection, selection));
     }
+
+    /// <summary>
+    /// Stores a resize: the form's new client size (when <paramref name="formClient"/> is given), every bounds of
+    /// <paramref name="preview"/> that differs from the stored one, then the layout commit; returns the unit's changes.
+    /// </summary>
+    private (List<FormChange> Redo, List<FormChange> Undo) ApplyResize(Rect? formClient, LayoutResult preview)
+    {
+        var changes = new List<FormChange>();
+        if (formClient is { } client)
+        {
+            var root = Document.Root;
+            if (client.Width != PropertyAccess.GetInt(root, "ClientWidth"))
+            {
+                changes.Add(new SetProperty(root.Name, "ClientWidth", new IntegerValue(client.Width, false)));
+            }
+
+            if (client.Height != PropertyAccess.GetInt(root, "ClientHeight"))
+            {
+                changes.Add(new SetProperty(root.Name, "ClientHeight", new IntegerValue(client.Height, false)));
+            }
+        }
+
+        var undo = Editor.Apply(changes);
+        var (flowRedo, flowUndo) = LayoutCommit.StoreDifferences(Editor, preview);
+        var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
+        return ([.. changes, .. flowRedo, .. commitRedo], [.. commitUndo, .. flowUndo, .. undo]);
+    }
+
+    /// <summary>A member of a resize drag: bounds at drag start (the form: its client size) and the edges it moves.</summary>
+    private readonly record struct ResizeMember(FormObject Object, Rect Original, SnapEdges Edges);
 
     /// <summary>The effective <c>Align</c> is not <c>alNone</c> (aligned controls cannot be moved by drag, DSG-SUR-050).</summary>
     private static bool IsAligned(FormObject obj) =>
