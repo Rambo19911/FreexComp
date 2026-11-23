@@ -17,7 +17,9 @@ namespace FreexComp.Ide.Views;
 /// The Structure tool window (tool-windows.md §3): a flat list of the visible tree rows (<c>Tool.Structure.Row.&lt;key&gt;</c>,
 /// error rows with the cells <c>.Message</c> and <c>.Position</c>), indented by depth with a chevron for expandable rows;
 /// Left/Right collapse/expand, Enter and double-click run <c>structure.goToSource</c>; the tracked row is selected without
-/// taking the focus. Empty state <c>Tool.Structure.Empty</c> (<c>Msg.Structure.Empty</c>).
+/// taking the focus. Empty state <c>Tool.Structure.Empty</c> (<c>Msg.Structure.Empty</c>). In the Design view
+/// (UI-TW-207) the list allows several selected rows, kept equal to the surface selection; non-visual components carry
+/// a gear overlay, unknown or read-only ones are drawn in <c>text.disabled</c> with a warning overlay.
 /// </summary>
 public sealed class StructureView : UserControl
 {
@@ -37,10 +39,21 @@ public sealed class StructureView : UserControl
             Setters = { new Setter(ListBoxItem.PaddingProperty, new Thickness(0)), new Setter(MinHeightProperty, 22.0) },
         });
         _list.ItemTemplate = new FuncDataTemplate<StructureRow>((row, _) => row is null ? new Border() : CreateRow(row), supportsRecycling: false);
-        _list.SelectionChanged += (_, _) =>
+        _list.SelectionChanged += (_, e) =>
         {
-            if (_model is not null && !_syncing)
+            if (_model is null || _syncing)
+                return;
+            if (_model.IsDesign)
+            {
+                // The row selected last becomes the primary selection on the surface.
+                var added = e.AddedItems.OfType<StructureRow>().ToList();
+                var rows = (_list.SelectedItems?.OfType<StructureRow>() ?? []).Except(added).Concat(added).ToList();
+                _model.SelectRows(rows);
+            }
+            else
+            {
                 _model.SelectedRow = _list.SelectedItem as StructureRow;
+            }
         };
         _list.DoubleTapped += async (_, _) =>
         {
@@ -67,7 +80,8 @@ public sealed class StructureView : UserControl
 
     private void OnModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(StructureViewModel.SelectedRow) or nameof(StructureViewModel.IsEmpty))
+        if (e.PropertyName is nameof(StructureViewModel.SelectedRow) or nameof(StructureViewModel.SelectedRows)
+            or nameof(StructureViewModel.IsEmpty) or nameof(StructureViewModel.IsDesign))
             Sync();
     }
 
@@ -76,7 +90,22 @@ public sealed class StructureView : UserControl
         _empty.IsVisible = _model?.IsEmpty != false;
         _list.IsVisible = !_empty.IsVisible;
         _syncing = true;
-        _list.SelectedItem = _model?.SelectedRow;
+        if (_model is { IsDesign: true } design)
+        {
+            _list.SelectionMode = SelectionMode.Multiple;
+            if (_list.SelectedItems is { } items)
+            {
+                items.Clear();
+                foreach (var selected in design.SelectedRows)
+                    items.Add(selected);
+            }
+        }
+        else
+        {
+            _list.SelectionMode = SelectionMode.Single;
+            _list.SelectedItem = _model?.SelectedRow;
+        }
+
         _syncing = false;
         if (_model?.SelectedRow is { } row)
             _list.ScrollIntoView(row);
@@ -129,8 +158,19 @@ public sealed class StructureView : UserControl
             panel.Children.Add(position);
         }
 
+        // UI-TW-207: the gear overlay of a non-visual component, the warning overlay of an unknown or read-only one.
+        foreach (var overlay in (ReadOnlySpan<(bool Shown, string Icon)>)[(row.Node.IsNonVisual, "settings"), (row.Node.IsUnavailable, "warning")])
+        {
+            if (!overlay.Shown)
+                continue;
+            var glyph = new IdeIcon { IconName = overlay.Icon, Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
+            DockPanel.SetDock(glyph, Avalonia.Controls.Dock.Left);
+            panel.Children.Add(glyph);
+        }
+
         var text = new TextBlock { Text = row.Node.Text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
-        text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(row.Node.Kind == StructureKind.Error ? "FxcStatusErrorBrush" : "FxcTextPrimaryBrush"));
+        text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable(row.Node.Kind == StructureKind.Error ? "FxcStatusErrorBrush"
+            : row.Node.IsUnavailable ? "FxcTextDisabledBrush" : "FxcTextPrimaryBrush"));
         if (row.Node.Kind == StructureKind.Error)
             AutomationProperties.SetAutomationId(text, id + ".Message");
         if (row.Node.Visibility is { } visibility)

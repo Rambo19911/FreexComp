@@ -128,6 +128,8 @@ public sealed class FormDocumentView : DockPanel
     {
         if (view is TextDocumentView text)
             text.FocusText();
+        else if (view is DockPanel { Children: [_, TextDocumentView formText] })
+            formText.FocusText();
         else if (view is DockPanel { Children: [_, ScrollViewer { Content: DesignSurfaceControl surface }] })
             surface.Focus();
         else
@@ -141,7 +143,13 @@ public sealed class FormDocumentView : DockPanel
             case DocumentView.Code:
                 return new TextDocumentView { DataContext = document };
             case DocumentView.Text:
-                return new TextDocumentView { DataContext = document.FormText };
+                // DSG-FD-100: the document's own bars (external change or deletion of either file) above the form text's.
+                var textView = new DockPanel();
+                var documentBars = new ItemsControl { ItemsSource = document.VisibleInfoBars };
+                SetDock(documentBars, Avalonia.Controls.Dock.Top);
+                textView.Children.Add(documentBars);
+                textView.Children.Add(new TextDocumentView { DataContext = document.FormText });
+                return textView;
             default:
                 // UI-DSG-003: the backdrop scrolls (both scroll bars, auto) when the surface exceeds the view (D-078).
                 var surface = new DesignSurfaceControl { DataContext = document.Designer };
@@ -153,7 +161,15 @@ public sealed class FormDocumentView : DockPanel
                 };
                 scroller.Bind(ScrollViewer.BackgroundProperty, scroller.GetResourceObservable("FxcDesignerBackdropBrush"));
                 // UI-DSG-004: the info bars (designer.md §9) sit above the backdrop, outside the scroll area.
-                var bars = new ItemsControl { ItemsSource = document.Designer.DesignInfoBars };
+                // DSG-FD-100: the document's own bars (external change or deletion) first, then the designer's.
+                var bars = new StackPanel
+                {
+                    Children =
+                    {
+                        new ItemsControl { ItemsSource = document.VisibleInfoBars },
+                        new ItemsControl { ItemsSource = document.Designer.DesignInfoBars },
+                    },
+                };
                 var design = new DockPanel();
                 SetDock(bars, Avalonia.Controls.Dock.Top);
                 design.Children.Add(bars);

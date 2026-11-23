@@ -8,16 +8,18 @@ using FreexComp.LanguageService;
 namespace FreexComp.Ide.Core.CodeModel;
 
 /// <summary>Icon kind of a Structure row (UI-TW-203).</summary>
-public enum StructureKind { Group, Error, Unit, Class, Record, Interface, Enum, Type, Field, Constant, Routine, Property }
+public enum StructureKind { Group, Error, Unit, Class, Record, Interface, Enum, Type, Field, Constant, Routine, Property, Component }
 
 /// <summary>
 /// A Structure row (tool-windows.md §3): <see cref="Key"/> per UI-TW-209, <see cref="Text"/> per UI-TW-202,
 /// <see cref="NameOffset"/> = the start of the declaration's name (or the error position), <see cref="Start"/>/<see cref="End"/>
 /// = the declaration span (caret tracking, UI-TW-205). <see cref="Visibility"/> = <c>private</c>, <c>protected</c>, … for
-/// members (null = none / public); <see cref="Position"/> = <c>line:col</c> of an error row.
+/// members (null = none / public); <see cref="Position"/> = <c>line:col</c> of an error row. Design view (UI-TW-207):
+/// <see cref="IsNonVisual"/> = a non-visual component (gear overlay), <see cref="IsUnavailable"/> = an unknown or read-only
+/// (preserved) object (<c>text.disabled</c>, warning overlay).
 /// </summary>
 public sealed record StructureNode(string Key, string Name, string Text, StructureKind Kind, int NameOffset, int Start, int End,
-    IReadOnlyList<StructureNode> Children, string? Visibility = null, string? Position = null);
+    IReadOnlyList<StructureNode> Children, string? Visibility = null, string? Position = null, bool IsNonVisual = false, bool IsUnavailable = false);
 
 /// <summary>The Structure tree of a Pascal syntax tree (UI-TW-200…209, IDE-ED-130), from <c>NavigationService.GetDocumentSymbols</c>.</summary>
 public static class StructureBuilder

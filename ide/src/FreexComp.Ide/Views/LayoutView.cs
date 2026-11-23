@@ -144,8 +144,10 @@ public sealed class LayoutView : Grid
         switch (pane)
         {
             case Pane.Documents:
-                // The active document's text; another document view; while none is open, the document area itself.
-                if (_documents.GetVisualDescendants().OfType<Editor.CodeEditorView>().FirstOrDefault()?.FocusText() != true)
+                // The active document's text (or its design surface in the Design view, UI-A11Y-004); another document
+                // view; while none is open, the document area itself.
+                if (_documents.GetVisualDescendants().OfType<Editor.CodeEditorView>().FirstOrDefault(v => v.IsEffectivelyVisible)?.FocusText() != true
+                    && _documents.GetVisualDescendants().OfType<Designer.DesignSurfaceControl>().FirstOrDefault(c => c.IsEffectivelyVisible)?.Focus(NavigationMethod.Tab) != true)
                     _documents.GetVisualDescendants().OfType<InputElement>()
                         .FirstOrDefault(c => c.Focusable && c.IsEffectivelyEnabled && c.IsEffectivelyVisible && c.FindAncestorOfType<DocumentTabStrip>() is null)
                         ?.Focus(NavigationMethod.Tab); // the tabs are reached by keyboard from the document, not instead of it

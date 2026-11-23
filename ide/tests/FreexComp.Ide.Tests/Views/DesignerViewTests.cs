@@ -183,6 +183,99 @@ public sealed class DesignerViewTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-A11Y-010")]
+    [Trait("Req", "DSG-TP-033")]
+    [Trait("Req", "DSG-TP-042")]
+    public async Task PlaceButtonFromPaletteWithKeyboardOnly()
+    {
+        // The real Object Inspector and Tool Palette (ImplementedPhase 5 without the sample tool windows).
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Files(o);
+            o.ImplementedPhase = 5;
+        });
+        var s = await OpenDesignAsync(h);
+
+        // Alt+4 focuses the palette's search box; typing filters; Enter places the first match at the default position.
+        h.Press("Alt+4");
+        var search = h.Find<TextBox>("Tool.ToolPalette.Filter");
+        Assert.True(search.IsKeyboardFocusWithin);
+        h.Type("button");
+        h.Press("Enter");
+        var button = s.Document.Designer.Model!.FindByName("Button1");
+        Assert.NotNull(button);
+        Assert.Equal("TButton", button.TypeName);
+        Assert.Equal(["Button1"], s.Selected);
+        Assert.Contains("    Button1: TButton;\r\n", s.Document.Buffer.Text, StringComparison.Ordinal);
+        var form = Assert.Single(ControlAutomationPeer.CreatePeerForElement(s.Control).GetChildren(), p => p.GetAutomationId() == "Designer.MainForm.Form");
+        Assert.Contains(form.GetChildren(), p => p.GetAutomationId() == AutomationIds.DesignerControl("MainForm", "Button1"));
+        Assert.True(s.Control.IsKeyboardFocusWithin); // focus back on the surface
+        Assert.Equal("", search.Text ?? "");
+
+        // In the list: Down moves into it, Enter (toolPalette.placeSelected) places the current item.
+        h.Press("Alt+4");
+        h.Type("memo");
+        h.Press("Down");
+        Assert.True(h.Find<Control>("Tool.ToolPalette.List").IsKeyboardFocusWithin);
+        h.Press("Enter");
+        Assert.NotNull(s.Document.Designer.Model!.FindByName("Memo1"));
+        Assert.Contains("    Memo1: TMemo;\r\n", s.Document.Buffer.Text, StringComparison.Ordinal);
+        Assert.True(s.Control.IsKeyboardFocusWithin);
+        Assert.Null(s.Document.Designer.Host.ArmedPaletteClass);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-042")]
+    [Trait("Req", "DSG-SUR-161")]
+    [Trait("Req", "DSG-CS-063")]
+    public async Task DoubleClickCreatesHandlerAndShowsCode()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var s = await OpenDesignAsync(h);
+
+        // A double-click on the edit creates its default handler (OnChange): declaration, stub, assignment; the Code view
+        // opens with the caret in the stub (line "begin" + 1, column 3) and focus in the editor.
+        var (x, y) = s.Center("NameEdit");
+        DoubleClick(h, s.At(x, y));
+        Assert.Equal(DocumentView.Code, s.Document.ActiveView);
+        var text = s.Document.Buffer.Text;
+        Assert.Contains("    procedure NameEditChange(Sender: TObject);\r\n", text, StringComparison.Ordinal);
+        Assert.Contains("procedure TMainForm.NameEditChange(Sender: TObject);\r\nbegin\r\n  \r\nend;\r\n", text, StringComparison.Ordinal);
+        Assert.Equal("NameEditChange", Assert.IsType<IdentValue>(s.Object("NameEdit").FindProperty("OnChange")!.Value).Name);
+        var lines = text.Split("\r\n").ToList();
+        var stubLine = lines.IndexOf("procedure TMainForm.NameEditChange(Sender: TObject);") + 1;
+        Assert.Equal((stubLine + 2, 3), (s.Document.ViewState.Caret.Line, s.Document.ViewState.Caret.Column));
+        Assert.True(h.Find<Control>(AutomationIds.Editor("MainForm.pas")).IsKeyboardFocusWithin);
+
+        // A double-click on the button with an assigned OnClick only navigates: no text change, caret in its body.
+        h.Press("F7");
+        Assert.Equal(DocumentView.Design, s.Document.ActiveView);
+        (x, y) = s.Center("GreetButton");
+        DoubleClick(h, s.At(x, y));
+        Assert.Equal(DocumentView.Code, s.Document.ActiveView);
+        Assert.Equal(text, s.Document.Buffer.Text);
+        var clickLine = lines.IndexOf("procedure TMainForm.GreetButtonClick(Sender: TObject);") + 1;
+        Assert.Equal(clickLine + 2, s.Document.ViewState.Caret.Line);
+
+        // One undo in the designer removes the handler assignment created by the double-click (the "Event" unit).
+        h.Press("F7");
+        h.Press("Ctrl+Z");
+        Assert.Null(s.Object("NameEdit").FindProperty("OnChange"));
+    }
+
+    /// <summary>A left double-click at a window point (the second press may replace the surface by the Code view).</summary>
+    private static void DoubleClick(HeadlessHarness h, Point at)
+    {
+        for (var i = 0; i < 2; i++)
+        {
+            h.Window.MouseDown(at, MouseButton.Left);
+            h.Window.MouseUp(at, MouseButton.Left);
+        }
+
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-DSG-036")]
     [Trait("Req", "UI-DSG-003")]
     [Trait("Req", "DSG-SUR-057")]

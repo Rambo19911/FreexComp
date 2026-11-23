@@ -231,6 +231,7 @@ public static class ServiceGraph
         Designer.ComponentMetadataService? metadata = null;
         Designer.DesignerShell? designerShell = null;
         Designer.ObjectInspectorViewModel? objectInspector = null;
+        Designer.ToolPaletteViewModel? toolPalette = null;
         if ((toolWindowPhase ?? ImplementedPhase) >= 5)
         {
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment);
@@ -247,6 +248,12 @@ public static class ServiceGraph
             Designer.ObjectInspectorCommands.Register(commands, inspector, platform.Clipboard);
             shell.ActiveDesignerChanged += (_, _) => inspector.Bind(shell.ActiveDesigner);
             inspector.Bind(shell.ActiveDesigner);
+            var palette = new Designer.ToolPaletteViewModel(metadata.Catalog, settings, platform.FileSystem, platform.Log); // D-083
+            toolPalette = palette;
+            palette.RegisterCommands(commands);
+            metadata.CatalogChanged += (_, catalog) => palette.SetCatalog(catalog);
+            shell.ActiveDesignerChanged += (_, _) => palette.Bind(shell.ActiveDesigner);
+            palette.Bind(shell.ActiveDesigner);
         }
 
         EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
@@ -257,6 +264,8 @@ public static class ServiceGraph
         ToolWindowDefinition[] production = [projectManager.Definition, structureView.Definition, messagesView.Definition, outputView.Definition, searchResults.Definition];
         if (objectInspector is not null)
             production = [.. production, objectInspector.Definition];
+        if (toolPalette is not null)
+            production = [.. production, toolPalette.Definition];
         foreach (var definition in production)
         {
             if (!extras.Any(e => e.Name == definition.Name))

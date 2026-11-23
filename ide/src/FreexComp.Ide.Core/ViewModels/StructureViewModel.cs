@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Compiler;
 using FreexComp.Compiler.Syntax;
+using FreexComp.Designer.Catalog;
+using FreexComp.Designer.Model;
 using FreexComp.Ide.Core.CodeModel;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Documents;
@@ -40,10 +42,15 @@ public sealed class StructureRow(StructureNode node, int depth, bool isExpanded)
 /// parsed on the <see cref="CodeModelWorker"/> 400 ms after the last edit and immediately on document switch; expansion
 /// kept by node key; <c>structure.sortAlphabetically</c> persisted in <c>toolWindows.Structure.sorted</c>;
 /// <c>structure.goToSource</c> moves the caret to the name and focuses the editor; the caret's declaration is tracked
-/// 300 ms after the caret rests. Other documents show <c>Msg.Structure.Empty</c>.
+/// 300 ms after the caret rests. A form document in the Design view (UI-TW-207, D-086) shows its component tree instead:
+/// the selection follows the design surface both ways, the default action focuses the surface and <c>edit.delete</c>
+/// deletes the selected components. Other documents show <c>Msg.Structure.Empty</c>.
 /// </summary>
-public sealed class StructureViewModel : ToolWindowViewModel
+public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
 {
+    /// <summary>UI-TW-209: the key prefix of the Design view's rows (<c>Form/&lt;ComponentName&gt;</c>).</summary>
+    public const string DesignKeyPrefix = "Form/";
+
     public const string ToolName = "Structure";
 
     /// <summary>UI-TW-200: refresh delay after the last edit.</summary>
@@ -67,6 +74,8 @@ public sealed class StructureViewModel : ToolWindowViewModel
     private int _generation;
     private bool _isEmpty = true;
     private StructureRow? _selected;
+    private IReadOnlyList<StructureRow> _selectedRows = [];
+    private FormDocumentViewModel? _form;
     private ICommandService? _commands;
 
     public StructureViewModel(IDocumentService documents, IClock clock, IUiDispatcher dispatcher, CodeModelWorker worker, ILayoutService layout,
@@ -110,6 +119,16 @@ public sealed class StructureViewModel : ToolWindowViewModel
         }
     }
 
+    /// <summary>The Design view of a form document is active: the rows are its components (UI-TW-207).</summary>
+    public bool IsDesign => _form is { Designer: { IsDesignActive: true, Model: not null } };
+
+    /// <summary>UI-TW-207: the rows of the components selected on the design surface (several: multi-select).</summary>
+    public IReadOnlyList<StructureRow> SelectedRows
+    {
+        get => _selectedRows;
+        private set => SetProperty(ref _selectedRows, value);
+    }
+
     /// <summary>The source of the rows (after a refresh); for tests and the view.</summary>
     public IReadOnlyList<StructureNode> Nodes => _nodes;
 
@@ -125,8 +144,34 @@ public sealed class StructureViewModel : ToolWindowViewModel
             Rebuild();
             return Task.CompletedTask;
         }, () => IsSorted));
-        commands.RegisterHandler("structure.goToSource", new Handler(() => SelectedRow is { Node.NameOffset: >= 0 } && _document is not null,
+        commands.RegisterHandler("structure.goToSource", new Handler(
+            () => SelectedRow is { } row && (IsDesign || row.Node.NameOffset >= 0 && _document is not null),
             () => GoToSourceAsync(SelectedRow!)));
+    }
+
+    /// <summary>
+    /// UI-TW-207: the rows selected in the tree select their components on the design surface (the last one primary);
+    /// nothing outside the Design view.
+    /// </summary>
+    public void SelectRows(IReadOnlyList<StructureRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        if (!IsDesign || rows.Count == 0 || _form!.Designer.Surface is not { } surface)
+            return;
+        surface.Selection.Set(rows.Select(r => r.Node.Name));
+        SyncFromSurface(); // also when the surface kept its selection (the root dropped from a multi-selection)
+    }
+
+    /// <summary>UI-TW-207: <c>edit.delete</c> in the Design view's tree deletes the selected components, as on the surface.</summary>
+    bool ICommandTarget.CanExecute(string commandId, string? argument) =>
+        commandId == FreexComp.Designer.Surface.Commands.Delete && IsDesign && _form!.Designer.Surface is { } surface && surface.CanExecute(commandId);
+
+    Task<bool> ICommandTarget.ExecuteAsync(string commandId, string? argument)
+    {
+        if (!((ICommandTarget)this).CanExecute(commandId, argument))
+            return Task.FromResult(false);
+        _form!.Designer.Surface!.Execute(commandId, argument);
+        return Task.FromResult(true);
     }
 
     /// <summary>Expands or collapses a row (keyed, kept across refreshes).</summary>
@@ -137,12 +182,20 @@ public sealed class StructureViewModel : ToolWindowViewModel
             return;
         _expanded[row.Node.Key] = expanded;
         Flatten(row.Node.Key);
+        if (IsDesign)
+            SyncFromSurface();
     }
 
     /// <summary>UI-TW-204: caret to the name (or error position), revealed at one third, editor focused.</summary>
     public Task GoToSourceAsync(StructureRow row)
     {
         ArgumentNullException.ThrowIfNull(row);
+        if (IsDesign)
+        {
+            ReturnFocusToDocument(); // UI-TW-207: the default action focuses the design surface
+            return Task.CompletedTask;
+        }
+
         if (_document is not { } document || row.Node.NameOffset < 0)
             return Task.CompletedTask;
         var from = document.ViewState.Caret;
@@ -155,7 +208,12 @@ public sealed class StructureViewModel : ToolWindowViewModel
         return Task.CompletedTask;
     }
 
-    protected override void OnFilterApplied(string filter) => Flatten(null);
+    protected override void OnFilterApplied(string filter)
+    {
+        Flatten(null);
+        if (IsDesign)
+            SyncFromSurface();
+    }
 
     private void OnActiveDocumentChanged()
     {
@@ -163,6 +221,30 @@ public sealed class StructureViewModel : ToolWindowViewModel
         {
             old.Buffer.Changed -= OnBufferChanged;
             old.ViewState.PropertyChanged -= OnViewStateChanged;
+        }
+
+        if (_form is { } oldForm)
+        {
+            oldForm.Designer.ActiveViewChanged -= OnDesignViewChanged;
+            oldForm.Designer.ModelChanged -= OnDesignModelChanged;
+            oldForm.Designer.ModelReplaced -= OnDesignModelChanged;
+            oldForm.Designer.SelectionChanged -= OnDesignSelectionChanged;
+        }
+
+        _form = _documents.ActiveDocument as FormDocumentViewModel;
+        if (_form is { } form)
+        {
+            form.Designer.ActiveViewChanged += OnDesignViewChanged;
+            form.Designer.ModelChanged += OnDesignModelChanged;
+            form.Designer.ModelReplaced += OnDesignModelChanged;
+            form.Designer.SelectionChanged += OnDesignSelectionChanged;
+            if (IsDesign)
+            {
+                _document = null;
+                _generation++;
+                Rebuild(); // immediately on document switch
+                return;
+            }
         }
 
         _document = _documents.ActiveDocument as TextDocumentViewModel;
@@ -180,6 +262,21 @@ public sealed class StructureViewModel : ToolWindowViewModel
             _nodes = [];
             Flatten(null);
         }
+    }
+
+    /// <summary>Code and Design switched: the tree of the view now shown (the unit is parsed again, code sync may have changed it).</summary>
+    private void OnDesignViewChanged(object? sender, EventArgs e) => OnActiveDocumentChanged();
+
+    private void OnDesignModelChanged(object? sender, EventArgs e)
+    {
+        if (IsDesign)
+            Rebuild();
+    }
+
+    private void OnDesignSelectionChanged(object? sender, EventArgs e)
+    {
+        if (IsDesign)
+            SyncFromSurface();
     }
 
     private void OnBufferChanged(object? sender, TextChangedEventArgs e)
@@ -233,10 +330,54 @@ public sealed class StructureViewModel : ToolWindowViewModel
 
     private void Rebuild()
     {
-        _nodes = _tree is null ? [] : StructureBuilder.Build(_tree, IsSorted);
-        Flatten(null);
-        Track();
+        if (IsDesign)
+        {
+            _nodes = BuildDesign(_form!.Designer.Model!);
+            Flatten(null);
+            SyncFromSurface();
+        }
+        else
+        {
+            _nodes = _tree is null ? [] : StructureBuilder.Build(_tree, IsSorted);
+            Flatten(null);
+            SelectedRows = [];
+            Track();
+        }
+
         Refreshed?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// UI-TW-207, 209: the form, then its components in creation order (non-visual ones after their visual siblings), each
+    /// <c>Name: TClass</c> with the key <c>Form/&lt;Name&gt;</c> (a duplicate name, preserved F0106, appends <c>#&lt;n&gt;</c>).
+    /// </summary>
+    private static IReadOnlyList<StructureNode> BuildDesign(FormDocument model)
+    {
+        var keys = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        static bool IsNonVisual(FormObject obj) => obj.Info?.Kind == ComponentKind.NonVisual;
+        StructureNode Node(FormObject obj)
+        {
+            var key = DesignKeyPrefix + obj.Name;
+            var seen = keys.GetValueOrDefault(key);
+            keys[key] = seen + 1;
+            if (seen > 0)
+                key += "#" + seen.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var children = obj.Children.Where(c => !IsNonVisual(c)).Concat(obj.Children.Where(IsNonVisual)).Select(Node).ToList();
+            return new StructureNode(key, obj.Name, $"{obj.Name}: {obj.TypeName}", StructureKind.Component, -1, 0, 0, children,
+                IsNonVisual: IsNonVisual(obj), IsUnavailable: obj.IsPreserved);
+        }
+
+        return [Node(model.Root)];
+    }
+
+    /// <summary>UI-TW-207: the tree selection follows the surface's (the primary is the selected row).</summary>
+    private void SyncFromSurface()
+    {
+        if (_form?.Designer.Surface is not { } surface)
+            return;
+        var selected = surface.Selection.Items;
+        SelectedRows = [.. Rows.Where(r => selected.Any(o => o.Name.Equals(r.Node.Name, StringComparison.OrdinalIgnoreCase)))];
+        SelectedRow = Rows.FirstOrDefault(r => r.Node.Name.Equals(surface.Selection.Primary.Name, StringComparison.OrdinalIgnoreCase));
     }
 
     private void Flatten(string? keepKey)
@@ -263,7 +404,8 @@ public sealed class StructureViewModel : ToolWindowViewModel
 
         foreach (var node in _nodes)
             Add(node, 0);
-        IsEmpty = _document is null || Rows.Count == 0 && filter.Length == 0;
+        IsEmpty = _document is null && !IsDesign || Rows.Count == 0 && filter.Length == 0;
+        OnPropertyChanged(nameof(IsDesign));
         SelectedRow = Rows.FirstOrDefault(r => r.Node.Key == selectedKey);
     }
 
@@ -278,7 +420,7 @@ public sealed class StructureViewModel : ToolWindowViewModel
         _trackTimer = null;
         foreach (var row in Rows)
             row.IsTracked = false;
-        if (_document is not { } document || _nodes.Count == 0)
+        if (IsDesign || _document is not { } document || _nodes.Count == 0)
             return;
         var caret = document.ViewState.Caret;
         var offset = document.Buffer.GetOffset(caret.Line, caret.Column);

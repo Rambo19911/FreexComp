@@ -86,6 +86,11 @@ public sealed partial class DesignSurfaceController
             }
         }
 
+        if (PlacementRect is { } placement)
+        {
+            canvas.DrawRect(placement, p.RubberBandBorder, 1, LineStyle.Dash); // DSG-TP-045, 060: placement drag and palette ghost
+        }
+
         if (State == InteractionState.TabOrder)
         {
             DrawTabOrder(canvas, g, p);
@@ -408,6 +413,10 @@ public sealed partial class DesignSurfaceController
                  && _resizeBounds.Find(m => ReferenceEquals(m.Object, primary)) is { Object: not null } resized)
         {
             text = string.Create(CultureInfo.InvariantCulture, $"{resized.Bounds.Width} × {resized.Bounds.Height}");
+        }
+        else if (State == InteractionState.Placing && PlacementRect is { } placement)
+        {
+            text = string.Create(CultureInfo.InvariantCulture, $"{placement.Width} × {placement.Height}"); // DSG-TP-045
         }
 
         if (text is null)

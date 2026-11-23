@@ -23,7 +23,6 @@ IDE-TEST-020 process: rule for writing tests, checked by review
 IDE-TEST-022 process: rule for writing tests, checked by review
 IDE-TEST-023 process: rule for writing tests, checked by review
 IDE-TEST-031 process: rule for writing tests, checked by review
-UI-A11Y-010 later phase: the rule text names a later phase or a later-phase element
 UI-A11Y-011 later phase: the rule text names a later phase or a later-phase element
 UI-A11Y-023 later phase: the rule text names a later phase or a later-phase element
 UI-A11Y-024 later phase: the rule text names a later phase or a later-phase element

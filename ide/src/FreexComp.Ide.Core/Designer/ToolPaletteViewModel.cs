@@ -1,7 +1,14 @@
 using System.Globalization;
-using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Designer.Catalog;
+using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Logging;
+using FreexComp.Ide.Core.Menus;
+using FreexComp.Ide.Core.Models;
+using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.ToolWindows;
+using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Core.Designer;
 
@@ -12,25 +19,69 @@ public sealed record PaletteItem(string ClassName, string DisplayName, string Un
 public sealed record PalettePage(string Name, bool IsExpanded, IReadOnlyList<PaletteItem> Items);
 
 /// <summary>
-/// The Tool Palette (tool-palette.md §3–§5): the catalog's palette pages and items in their order, the search box, arming
-/// an item for placement on the active form document's Design view (single-shot or sticky) and the enablement rules.
-/// No Avalonia types.
+/// A row of the palette as the keyboard walks it (tool-palette.md §6): a page header or an item of an expanded page.
+/// <see cref="Key"/> is the AutomationId suffix (<c>Page.&lt;PageName&gt;</c>, <c>Item.&lt;ClassName&gt;</c>, UI-TW-353).
 /// </summary>
-public sealed class ToolPaletteViewModel : ObservableObject
+public sealed record PaletteRow(PalettePage Page, PaletteItem? Item)
 {
+    public bool IsPage => Item is null;
+
+    public string Key => Item is null ? "Page." + Page.Name : "Item." + Item.ClassName;
+}
+
+/// <summary>
+/// The Tool Palette tool window (tool-palette.md §3–§7, ui/designer.md §12): the catalog's palette pages and items in
+/// their order, the search box, the keyboard-current row, arming an item for placement on the active form document's
+/// Design view (single-shot or sticky), placing at the default position, the palette drag onto the surface, the list /
+/// icon view and the collapsed pages (settings <c>toolPalette.*</c>) and the enablement rules. No Avalonia types.
+/// </summary>
+public sealed class ToolPaletteViewModel : ToolWindowViewModel
+{
+    /// <summary>The tool window's name (tool-windows.md §5, IDE-ARCH-100).</summary>
+    public const string ToolName = "ToolPalette";
+
+    private const string LogCategory = "Designer";
     private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
 
     private readonly HashSet<string> _collapsed = new(Names);
+    private readonly HashSet<string> _iconFailures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ISettingsService? _settings;
+    private readonly IFileSystem? _fileSystem;
+    private readonly ILog? _log;
     private ComponentCatalog _catalog;
     private List<PalettePage> _all = [];
     private FormDesignerViewModel? _designer;
+    private ICommandService? _commands;
     private string _searchText = "";
+    private string? _currentKey;
+    private bool _iconView;
 
-    public ToolPaletteViewModel(ComponentCatalog catalog)
+    /// <param name="settings">The <c>toolPalette.*</c> settings (view, collapsed pages); null: in-memory state.</param>
+    /// <param name="fileSystem">Reads the palette icons (DSG-TP-009); null: every item shows the generic glyph.</param>
+    /// <param name="log">The one log line of an icon that cannot be read.</param>
+    public ToolPaletteViewModel(ComponentCatalog catalog, ISettingsService? settings = null, IFileSystem? fileSystem = null, ILog? log = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        _settings = settings;
+        _fileSystem = fileSystem;
+        _log = log;
+        if (settings is not null)
+        {
+            _collapsed.UnionWith(settings.Get(SettingsCatalog.ToolPaletteCollapsedPages));
+            settings.Changed += (_, e) =>
+            {
+                if (e.Key == SettingsCatalog.ToolPaletteView.Name)
+                {
+                    OnPropertyChanged(nameof(IsIconView));
+                }
+            };
+        }
+
         Build();
     }
+
+    /// <summary>The Tool Palette tool window in the right lower group from Phase 5 (UI-WIN-011).</summary>
+    public ToolWindowDefinition Definition => new(ToolName, "Cmd_view_toolPalette", ToolGroupId.RightLower, 5, () => this);
 
     /// <summary>The pages shown: all pages, or with a search text the pages with matches (expanded), DSG-TP-031.</summary>
     public IReadOnlyList<PalettePage> Pages
@@ -65,7 +116,14 @@ public sealed class ToolPaletteViewModel : ObservableObject
         }
     }
 
-    /// <summary>The collapsed pages (DSG-TP-022; persisted by the view in the layout).</summary>
+    /// <summary>The rows the keyboard walks (§6): each page header, followed by its items when expanded.</summary>
+    public IReadOnlyList<PaletteRow> Rows =>
+        [.. Pages.SelectMany(p => (IEnumerable<PaletteRow>)[new PaletteRow(p, null), .. p.IsExpanded ? p.Items.Select(i => new PaletteRow(p, i)) : []])];
+
+    /// <summary>The keyboard-current row (focus ring, Enter, Space); null when none is current.</summary>
+    public PaletteRow? Current => _currentKey is { } key ? Rows.FirstOrDefault(r => r.Key == key) : null;
+
+    /// <summary>The collapsed pages (DSG-TP-022; persisted in <c>toolPalette.collapsedPages</c>).</summary>
     public IReadOnlySet<string> CollapsedPages => _collapsed;
 
     /// <summary>The search box (DSG-TP-030): words separated by spaces, each a substring of the class name.</summary>
@@ -76,18 +134,27 @@ public sealed class ToolPaletteViewModel : ObservableObject
         {
             if (SetProperty(ref _searchText, value ?? ""))
             {
+                // DSG-TP-032: the first match is the keyboard-current item.
+                if (CurrentItem is { } first)
+                {
+                    _currentKey = "Item." + first.ClassName;
+                }
+
                 Changed();
             }
         }
     }
 
-    /// <summary>The item Enter places: with a search text the first match (DSG-TP-032); null otherwise.</summary>
+    /// <summary>The item Enter in the search box places: with a search text the first match (DSG-TP-032); null otherwise.</summary>
     public PaletteItem? CurrentItem => Words.Length == 0 ? null : Pages.SelectMany(p => p.Items).FirstOrDefault();
 
     /// <summary>A search text matches nothing: <see cref="FilterEmptyText"/> is shown.</summary>
     public bool IsFilterEmpty => Words.Length > 0 && Pages.Count == 0;
 
     public string FilterEmptyText => string.Format(CultureInfo.CurrentCulture, Strings.Msg_Palette_FilterEmpty, SearchText.Trim());
+
+    /// <summary>UI-DSG-120: the placeholder of the search box.</summary>
+    public string SearchPlaceholder => Strings.ToolPalette_SearchPlaceholder;
 
     /// <summary>DSG-TP-024: a form document shows its Design view.</summary>
     public bool HasForm => _designer is { IsDesignActive: true };
@@ -107,7 +174,99 @@ public sealed class ToolPaletteViewModel : ObservableObject
     /// <summary>The armed item stays armed after each placement (DSG-TP-041).</summary>
     public bool IsSticky => _designer?.Host.ArmedSticky == true;
 
+    /// <summary>DSG-TP-023: <c>toolPalette.view</c> is <c>"icons"</c>.</summary>
+    public bool IsIconView => _settings is { } s ? s.Get(SettingsCatalog.ToolPaletteView) == "icons" : _iconView;
+
+    /// <summary><c>toolPalette.focusSearch</c>: the view focuses the search box and selects its text (DSG-TP-030).</summary>
+    public event EventHandler? SearchFocusRequested;
+
+    /// <summary>The items of the palette's context menu (§6); null until the commands are registered.</summary>
+    public Func<IReadOnlyList<MenuItemModel>>? ContextMenu { get; private set; }
+
     private string[] Words => _searchText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>
+    /// UI-DSG-124: the ranges of <paramref name="className"/> the search words match (case-insensitive, merged, in
+    /// order); empty without a search text.
+    /// </summary>
+    public IReadOnlyList<(int Start, int Length)> Highlights(string className)
+    {
+        ArgumentNullException.ThrowIfNull(className);
+        var marked = new bool[className.Length];
+        foreach (var word in Words)
+        {
+            var at = className.IndexOf(word, StringComparison.OrdinalIgnoreCase);
+            for (var i = 0; at >= 0 && i < word.Length; i++)
+            {
+                marked[at + i] = true;
+            }
+        }
+
+        var ranges = new List<(int, int)>();
+        for (var i = 0; i < marked.Length; i++)
+        {
+            if (!marked[i])
+            {
+                continue;
+            }
+
+            var start = i;
+            while (i < marked.Length && marked[i])
+            {
+                i++;
+            }
+
+            ranges.Add((start, i - start));
+        }
+
+        return ranges;
+    }
+
+    /// <summary>UI-DSG-126: line 2 of an item's tooltip (<c>unit UnitName</c>).</summary>
+    public static string UnitText(PaletteItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return string.Format(CultureInfo.CurrentCulture, Strings.ToolPalette_TooltipUnit, item.Unit);
+    }
+
+    /// <summary>
+    /// DSG-TP-009: the SVG bytes of the item's icon, read when first shown; null without an icon or when it cannot be read
+    /// (one log line per file, no message: the view shows the generic glyph).
+    /// </summary>
+    public byte[]? ReadIcon(PaletteItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (item.Icon is not { } path || _fileSystem is null || _iconFailures.Contains(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (!path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) || !_fileSystem.FileExists(path))
+            {
+                ReportIconFailure(path);
+                return null;
+            }
+
+            return _fileSystem.ReadAllBytes(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            ReportIconFailure(path);
+            return null;
+        }
+    }
+
+    /// <summary>DSG-TP-009: an icon could not be read or drawn (logged once; the generic glyph is shown).</summary>
+    public void ReportIconFailure(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (_iconFailures.Add(path))
+        {
+            _log?.Info(LogCategory, "Palette icon not usable: " + path);
+        }
+    }
 
     /// <summary>DSG-TP-008: the metadata was reloaded.</summary>
     public void SetCatalog(ComponentCatalog catalog)
@@ -117,7 +276,10 @@ public sealed class ToolPaletteViewModel : ObservableObject
         Changed();
     }
 
-    /// <summary>The active document (null: none, or not a form document); a change disarms the previous one.</summary>
+    /// <summary>
+    /// The active document (null: none, or not a form document); a change disarms the previous one. The palette lists
+    /// the components of the catalog the bound form was read with.
+    /// </summary>
     public void Bind(FormDesignerViewModel? designer)
     {
         if (ReferenceEquals(designer, _designer))
@@ -139,12 +301,13 @@ public sealed class ToolPaletteViewModel : ObservableObject
             designer.ActiveViewChanged += OnDesignerChanged;
             designer.ModelReplaced += OnDesignerChanged;
             designer.Host.ArmedChanged += OnDesignerChanged;
+            FollowCatalog();
         }
 
         Changed();
     }
 
-    /// <summary>DSG-TP-022: expands or collapses a page.</summary>
+    /// <summary>DSG-TP-022: expands or collapses a page (persisted).</summary>
     public void TogglePage(string name)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -153,7 +316,120 @@ public sealed class ToolPaletteViewModel : ObservableObject
             _collapsed.Add(name);
         }
 
-        Changed();
+        SaveCollapsed();
+    }
+
+    /// <summary><c>toolPalette.expandAll</c> / <c>toolPalette.collapseAll</c>.</summary>
+    public void ExpandAll(bool expand)
+    {
+        _collapsed.Clear();
+        if (!expand)
+        {
+            _collapsed.UnionWith(_all.Select(p => p.Name));
+        }
+
+        SaveCollapsed();
+    }
+
+    /// <summary>DSG-TP-023: <c>toolPalette.toggleView</c> switches between the list and the icon view (persisted).</summary>
+    public void ToggleView() => SetIconView(!IsIconView);
+
+    public void SetIconView(bool icons)
+    {
+        if (_settings is { } s)
+        {
+            s.Set(SettingsCatalog.ToolPaletteView, icons ? "icons" : "list");
+        }
+        else
+        {
+            _iconView = icons;
+        }
+
+        OnPropertyChanged(nameof(IsIconView));
+    }
+
+    /// <summary>The keyboard-current row becomes <paramref name="key"/> (a <see cref="PaletteRow.Key"/>).</summary>
+    public void SetCurrent(string? key)
+    {
+        if (_currentKey == key)
+        {
+            return;
+        }
+
+        _currentKey = key;
+        OnPropertyChanged(nameof(Current));
+        _commands?.InvalidateCanExecute();
+    }
+
+    /// <summary>§6 Up / Down: the current row moves across items and page headers (the first row when there is none).</summary>
+    public void MoveCurrent(int delta)
+    {
+        var rows = Rows;
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var index = Current is { } current ? rows.ToList().FindIndex(r => r.Key == current.Key) : -1;
+        SetCurrent(rows[index < 0 ? 0 : Math.Clamp(index + delta, 0, rows.Count - 1)].Key);
+    }
+
+    /// <summary>§6 Enter (<c>toolPalette.placeSelected</c>): a header toggles; an item is placed at the default position.</summary>
+    public void ActivateCurrent()
+    {
+        switch (Current)
+        {
+            case { IsPage: true } page:
+                TogglePage(page.Page.Name);
+                break;
+            case { Item: { } item }:
+                Place(item.ClassName);
+                break;
+        }
+    }
+
+    /// <summary>§6 Space: arms or disarms the current item (single-shot); Shift+Space arms it sticky.</summary>
+    public void ArmCurrent(bool sticky)
+    {
+        if (Current?.Item is { } item)
+        {
+            Click(item.ClassName, sticky);
+        }
+    }
+
+    /// <summary>
+    /// DSG-TP-033 Enter in the search box: the first match is placed at the default position and the search is cleared;
+    /// false without a match.
+    /// </summary>
+    public bool PlaceFirstMatch()
+    {
+        if (CurrentItem is not { } item || !AreItemsEnabled)
+        {
+            return false;
+        }
+
+        Place(item.ClassName);
+        SearchText = "";
+        return true;
+    }
+
+    /// <summary>
+    /// §6 Escape: disarms when armed, else clears the search text, else moves focus to the document (UI-A11Y-004).
+    /// </summary>
+    public void EscapeKey()
+    {
+        if (Escape())
+        {
+            return;
+        }
+
+        if (SearchText.Length > 0)
+        {
+            SearchText = "";
+            return;
+        }
+
+        ReturnFocusToDocument();
     }
 
     /// <summary>
@@ -191,7 +467,10 @@ public sealed class ToolPaletteViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>DSG-TP-042: Enter or double-click places the item at the default position without arming it.</summary>
+    /// <summary>
+    /// DSG-TP-042, 054: Enter or double-click places the item at the default position without arming it; keyboard focus
+    /// moves to the design surface.
+    /// </summary>
     public void Place(string className)
     {
         ArgumentNullException.ThrowIfNull(className);
@@ -202,6 +481,63 @@ public sealed class ToolPaletteViewModel : ObservableObject
 
         _designer!.Host.Disarm();
         _designer.Surface!.PlaceAtDefaultPosition(className);
+        ReturnFocusToDocument();
+    }
+
+    /// <summary>DSG-TP-060: an item dragged over the surface point (<paramref name="x"/>, <paramref name="y"/>): the ghost follows.</summary>
+    public void DragOver(string className, double x, double y)
+    {
+        ArgumentNullException.ThrowIfNull(className);
+        if (AreItemsEnabled)
+        {
+            _designer!.Surface!.PaletteDragOver(className, x, y);
+        }
+    }
+
+    /// <summary>The drag left the surface (or ended outside it): the ghost goes.</summary>
+    public void DragLeave() => _designer?.Surface?.PaletteDragLeave();
+
+    /// <summary>DSG-TP-060: released over the surface point = armed and clicked there; focus moves to the surface.</summary>
+    public void Drop(string className, double x, double y)
+    {
+        ArgumentNullException.ThrowIfNull(className);
+        if (!AreItemsEnabled)
+        {
+            return;
+        }
+
+        _designer!.Host.Disarm(); // armed and clicked: single-shot (DSG-TP-040)
+        _designer.Surface!.PaletteDrop(className, x, y);
+        ReturnFocusToDocument();
+    }
+
+    /// <summary>Registers the <c>toolPalette.*</c> commands (tool-palette.md §9) and builds the context menu (§6).</summary>
+    public void RegisterCommands(ICommandService commands)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        _commands = commands;
+        commands.RegisterHandler("toolPalette.focusSearch", new Handler(() => HasForm, () => SearchFocusRequested?.Invoke(this, EventArgs.Empty)));
+        commands.RegisterHandler("toolPalette.placeSelected", new Handler(
+            () => Current is { IsPage: true } || (Current is { Item: not null } && AreItemsEnabled), ActivateCurrent));
+        commands.RegisterHandler("toolPalette.toggleView", new Handler(() => true, ToggleView));
+        commands.RegisterHandler("toolPalette.expandAll", new Handler(() => _all.Count > 0, () => ExpandAll(true)));
+        commands.RegisterHandler("toolPalette.collapseAll", new Handler(() => _all.Count > 0, () => ExpandAll(false)));
+        ContextMenu = () =>
+        [
+            MenuItemModel.ForCommand(Strings.Menu_toolPalette_placeSelected, commands.Get("toolPalette.placeSelected"), null, MenuToggleKind.None),
+            MenuItemModel.Separator(),
+            MenuItemModel.ForAction("toolPalette.viewAsList", Strings.Menu_toolPalette_viewAsList, () => SetIconView(false), !IsIconView),
+            MenuItemModel.ForAction("toolPalette.viewAsIcons", Strings.Menu_toolPalette_viewAsIcons, () => SetIconView(true), IsIconView),
+            MenuItemModel.Separator(),
+            MenuItemModel.ForCommand(Strings.Menu_toolPalette_expandAll, commands.Get("toolPalette.expandAll"), null, MenuToggleKind.None),
+            MenuItemModel.ForCommand(Strings.Menu_toolPalette_collapseAll, commands.Get("toolPalette.collapseAll"), null, MenuToggleKind.None),
+        ];
+    }
+
+    private void SaveCollapsed()
+    {
+        _settings?.Set(SettingsCatalog.ToolPaletteCollapsedPages, (IReadOnlyList<string>)[.. _collapsed.Order(StringComparer.Ordinal)]);
+        Changed();
     }
 
     private static bool StartsWith(PaletteItem item, string text) =>
@@ -224,11 +560,27 @@ public sealed class ToolPaletteViewModel : ObservableObject
             .Select(i => new PaletteItem(i.ClassName, i.ClassName is ['T', _, ..] ? i.ClassName[1..] : i.ClassName, i.Unit, i.Palette!.Icon))]))];
     }
 
-    private void OnDesignerChanged(object? sender, EventArgs e) => Changed();
+    /// <summary>The bound form was read with another catalog (a reload, or a test's own metadata): the palette follows it.</summary>
+    private void FollowCatalog()
+    {
+        if (_designer is { } designer && !ReferenceEquals(designer.Catalog, _catalog))
+        {
+            _catalog = designer.Catalog;
+            Build();
+        }
+    }
+
+    private void OnDesignerChanged(object? sender, EventArgs e)
+    {
+        FollowCatalog();
+        Changed();
+    }
 
     private void Changed()
     {
         OnPropertyChanged(nameof(Pages));
+        OnPropertyChanged(nameof(Rows));
+        OnPropertyChanged(nameof(Current));
         OnPropertyChanged(nameof(CurrentItem));
         OnPropertyChanged(nameof(IsFilterEmpty));
         OnPropertyChanged(nameof(FilterEmptyText));
@@ -237,5 +589,19 @@ public sealed class ToolPaletteViewModel : ObservableObject
         OnPropertyChanged(nameof(IsEnabled));
         OnPropertyChanged(nameof(ArmedClass));
         OnPropertyChanged(nameof(IsSticky));
+        _commands?.InvalidateCanExecute();
+    }
+
+    private sealed class Handler(Func<bool> canExecute, Action execute) : ICommandHandler
+    {
+        public bool CanExecute(string? argument) => canExecute();
+
+        public Task ExecuteAsync(string? argument)
+        {
+            execute();
+            return Task.CompletedTask;
+        }
+
+        public bool IsChecked(string? argument) => false;
     }
 }

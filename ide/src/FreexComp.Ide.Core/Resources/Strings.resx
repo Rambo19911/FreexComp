@@ -4599,4 +4599,32 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>1 line</value>
     <comment>object-inspector.md DSG-OI-055 Dialog.StringsEditor.LineCount</comment>
   </data>
+  <data name="ToolPalette_SearchPlaceholder" xml:space="preserve">
+    <value>Search components</value>
+    <comment>designer.md §12 UI-DSG-120 search box placeholder</comment>
+  </data>
+  <data name="ToolPalette_TooltipUnit" xml:space="preserve">
+    <value>unit {0}</value>
+    <comment>designer.md §12 UI-DSG-126 tooltip line 2; 0 = unit name</comment>
+  </data>
+  <data name="Menu_toolPalette_placeSelected" xml:space="preserve">
+    <value>&amp;Place on Form</value>
+    <comment>tool-palette.md §6 context menu</comment>
+  </data>
+  <data name="Menu_toolPalette_viewAsList" xml:space="preserve">
+    <value>View as &amp;List</value>
+    <comment>tool-palette.md §6 context menu (radio)</comment>
+  </data>
+  <data name="Menu_toolPalette_viewAsIcons" xml:space="preserve">
+    <value>View as &amp;Icons</value>
+    <comment>tool-palette.md §6 context menu (radio)</comment>
+  </data>
+  <data name="Menu_toolPalette_expandAll" xml:space="preserve">
+    <value>&amp;Expand All Pages</value>
+    <comment>tool-palette.md §6 context menu</comment>
+  </data>
+  <data name="Menu_toolPalette_collapseAll" xml:space="preserve">
+    <value>&amp;Collapse All Pages</value>
+    <comment>tool-palette.md §6 context menu</comment>
+  </data>
 </root>

@@ -39,6 +39,75 @@ public sealed partial class DesignSurfaceController
 
     private ComponentInfo? PlaceableInfo(string className) => Catalog.Find(className) is { IsAbstract: false } info ? info : null;
 
+    /// <summary>
+    /// DSG-TP-060: a Tool Palette item dragged over the surface point (<paramref name="x"/>, <paramref name="y"/>): a ghost
+    /// rectangle of the default size (<see cref="PlacementRect"/>) at the grid-snapped point in the target that a click
+    /// there would place into (DSG-TP-044), and the target highlighted. Nothing for a non-visual class, outside the form
+    /// client area, on a read-only form or while the surface has a drag of its own.
+    /// </summary>
+    public void PaletteDragOver(string className, double x, double y)
+    {
+        ArgumentNullException.ThrowIfNull(className);
+        var at = SurfaceGeometry.Round(x, y);
+        if (IsReadOnly || IsPointerActive || State == InteractionState.TabOrder
+            || PlaceableInfo(className) is not { Kind: not ComponentKind.NonVisual } info || !Contains(Geometry.FormClientRect, at)
+            || PlacementParent(at, info, report: false) is not { } parent)
+        {
+            PaletteDragLeave();
+            return;
+        }
+
+        var g = Geometry;
+        var options = SnapOptions.From(_settings, alt: false);
+        var (px, py) = g.SurfaceToParentClient(parent, at);
+        if (options.SnapToGrid)
+        {
+            (px, py) = (SnapEngine.ToGrid(px, options.GridSizeX), SnapEngine.ToGrid(py, options.GridSizeY));
+        }
+
+        var origin = g.GetClientRect(parent);
+        var ghost = new Rect(origin.Left + px, origin.Top + py, info.DefaultSize.Width, info.DefaultSize.Height);
+        var target = parent.Parent is null ? null : parent;
+        if (PlacementRect == ghost && ReferenceEquals(DropTarget, target))
+        {
+            return;
+        }
+
+        PlacementRect = ghost;
+        DropTarget = target;
+        Invalidated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>DSG-TP-060: the palette drag left the surface (or ended): the ghost and the target highlight go.</summary>
+    public void PaletteDragLeave()
+    {
+        if (State != InteractionState.Idle || (PlacementRect is null && DropTarget is null))
+        {
+            return;
+        }
+
+        PlacementRect = null;
+        DropTarget = null;
+        Invalidated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>DSG-TP-060: the palette item released over the surface point — the same as arming it and clicking there (DSG-TP-043, 044).</summary>
+    public void PaletteDrop(string className, double x, double y)
+    {
+        ArgumentNullException.ThrowIfNull(className);
+        PaletteDragLeave();
+        if (IsReadOnly || IsPointerActive || State == InteractionState.TabOrder || PlaceableInfo(className) is null)
+        {
+            return;
+        }
+
+        PlacementPress(new PointerInput(PointerKind.Down, x, y, PointerButton.Left, InputModifiers.None), className);
+        if (_placeClass is not null)
+        {
+            FinishPlacement();
+        }
+    }
+
     /// <summary>A left press while a palette item is armed: a placement press (refused silently on a read-only form, DSG-TP-055).</summary>
     private void PlacementPress(PointerInput input, string className)
     {
