@@ -41,7 +41,15 @@ public sealed class BreakpointGutterTests
     [Trait("Req", "UI-TW-802")]
     public async Task ToggleByKeyboardAndClick()
     {
-        await using var h = await DebugScenario.StartAsync(o => o.InitialFiles[@"Hello\Notes.txt"] = "one\r\ntwo\r\nthree\r\n");
+        await using var h = await DebugScenario.StartAsync(o =>
+        {
+            o.InitialFiles[@"Hello\Notes.txt"] = "one\r\ntwo\r\nthree\r\n";
+            // Unit1.pas of the scenario has an undeclared identifier (line 6); its error marker arrives once the waits below
+            // have advanced the test clock past the live-diagnostics delay — sooner or later, depending on the machine's
+            // load. This test is about breakpoint glyphs only: with the diagnostics off, a line without a breakpoint has
+            // no glyph, in every run.
+            o.Settings["editor.liveDiagnostics"] = false;
+        });
         var unitPath = DebugScenario.UnitPath(h);
         var (document, editor, probe) = await DebugScenario.OpenAsync(h, unitPath);
         var breakpoints = h.Services.Breakpoints!;

@@ -33,6 +33,13 @@ public sealed class ExecutionLineTests
             """);
         Assert.Equal("Hello – FreexComp", h.Window.Title);
 
+        // Unit1.pas of the scenario has an undeclared identifier on line 6 (`Foo := 1;`): the live diagnostics mark it once
+        // their delay has passed on the test clock, which every harness wait advances. They are settled first, so each glyph
+        // below is seen with the error marker present, whatever the machine's load.
+        var (_, _, unitProbe) = await DebugScenario.OpenAsync(h, unitPath);
+        h.Clock.Advance(TimeSpan.FromMilliseconds(h.Services.Settings.Get(Core.Settings.SettingsCatalog.EditorLiveDiagnosticsDelayMs)));
+        await h.WaitForAsync(() => unitProbe.GlyphAt(6) == "Error", "the error marker of line 6");
+
         await h.ExecuteAsync("run.start");
         await DebugScenario.WaitForStateAsync(h, IdeState.Paused);
         await h.WaitForAsync(() => h.Services.Documents.ActiveDocument?.FilePath == unitPath, "the editor shows the stop");
@@ -42,7 +49,7 @@ public sealed class ExecutionLineTests
         var probe = DebugScenario.ProbeOf(h, unitPath);
         Assert.Equal("Execution", probe.GlyphAt(5));
         Assert.Equal("editor.execution.line.bg", probe.LineBackgroundAt(5));
-        Assert.Null(probe.GlyphAt(6));
+        Assert.Equal("Error", probe.GlyphAt(6)); // no debug glyph there: the line's error marker shows
         Assert.Equal(5, ((Core.ViewModels.TextDocumentViewModel)h.Services.Documents.ActiveDocument!).ViewState.Caret.Line);
         Assert.Equal("Hello (Paused) – FreexComp", h.Window.Title);
         Assert.Equal("Paused at Unit1.pas:5", h.Status.State);
@@ -56,7 +63,8 @@ public sealed class ExecutionLineTests
 
         // A selected call frame that is not the top frame: hollow arrow and its own background in its file.
         var (_, _, mainProbe) = await DebugScenario.OpenAsync(h, mainPath);
-        Assert.Null(mainProbe.GlyphAt(3));
+        // Hello.pas: its own diagnostics are not settled here, so only the frame marker is asserted on its lines.
+        Assert.NotEqual("Frame", mainProbe.GlyphAt(3));
         var caller = new StackFrameInfo(101, 1, "Hello", new SourceLocation(mainPath, 3, 1), true, 0, "Hello.exe");
         h.Services.Debug!.SelectFrame(caller);
         Dispatcher.UIThread.RunJobs();
@@ -66,7 +74,8 @@ public sealed class ExecutionLineTests
         // Frame 0 returns to the execution point: no frame marker.
         h.Services.Debug.SelectFrame(caller with { Index = 0, Location = new SourceLocation(unitPath, 5, 1) });
         Dispatcher.UIThread.RunJobs();
-        Assert.Null(mainProbe.GlyphAt(3));
+        Assert.NotEqual("Frame", mainProbe.GlyphAt(3));
+        Assert.NotEqual("editor.callFrame.line.bg", mainProbe.LineBackgroundAt(3));
         Assert.Null(h.Services.Debug.SelectedFrame);
         h.Services.Debug.SelectFrame(caller);
         Dispatcher.UIThread.RunJobs();
@@ -78,14 +87,14 @@ public sealed class ExecutionLineTests
         await h.WaitForAsync(() => h.Services.Documents.ActiveDocument?.FilePath == unitPath, "the editor shows the stop");
         Dispatcher.UIThread.RunJobs();
         probe = DebugScenario.ProbeOf(h, unitPath);
-        Assert.Equal("Execution", probe.GlyphAt(6));
+        Assert.Equal("Execution", probe.GlyphAt(6)); // editor.md §3: the arrow has priority over the error marker
         Assert.Equal("editor.execution.line.bg", probe.LineBackgroundAt(6));
         Assert.Equal("Breakpoint", probe.GlyphAt(5));
         Assert.Equal("editor.breakpoint.line.bg", probe.LineBackgroundAt(5));
         Assert.Null(h.Services.Debug.SelectedFrame);
         Assert.Equal("Paused at Unit1.pas:6", h.Status.State);
         await DebugScenario.OpenAsync(h, mainPath);
-        Assert.Null(DebugScenario.ProbeOf(h, mainPath).GlyphAt(3));
+        Assert.NotEqual("Frame", DebugScenario.ProbeOf(h, mainPath).GlyphAt(3));
 
         // Alt+Multiply shows the execution point again.
         await h.ExecuteAsync("run.showExecutionPoint");
@@ -97,7 +106,7 @@ public sealed class ExecutionLineTests
         await DebugScenario.WaitForStateAsync(h, IdeState.DebugRunning);
         Dispatcher.UIThread.RunJobs();
         probe = DebugScenario.ProbeOf(h, unitPath);
-        Assert.Null(probe.GlyphAt(6));
+        Assert.Equal("Error", probe.GlyphAt(6)); // the arrow is gone: the line's error marker shows again
         Assert.NotEqual("editor.execution.line.bg", probe.LineBackgroundAt(6));
         Assert.Equal("Hello (Debugging) – FreexComp", h.Window.Title);
         Assert.Equal("Debugging Hello.exe", h.Status.State);
