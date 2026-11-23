@@ -143,6 +143,32 @@ public sealed partial class MessagesService : IMessagesService
             Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// DSG-FD-071 <c>Show Problems</c>: the list is replaced by the problems of one form (1-based positions already);
+    /// one <see cref="Changed"/>.
+    /// </summary>
+    public void ShowFormDiagnostics(IEnumerable<FreexComp.Designer.Text.FormDiagnostic> diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        Clear();
+        foreach (var d in diagnostics)
+        {
+            var severity = d.Severity switch
+            {
+                DiagnosticSeverity.Error => MessageSeverity.Error,
+                DiagnosticSeverity.Warning => MessageSeverity.Warning,
+                _ => MessageSeverity.Hint,
+            };
+            var location = d.Line > 0 ? new MessageLocation(d.Path, d.Line, d.Col, Math.Max(d.EndLine, d.Line), Math.Max(d.EndCol, d.Col)) : null;
+            var item = new MessageItem(_items.Count, severity, d.Code, d.Message, location, [], false);
+            _items.List.Add(item);
+            Count(severity);
+            OnAdded(item);
+        }
+
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>An error row without position and code (internal error, IDE-P3-034).</summary>
     public void AddError(string text)
     {

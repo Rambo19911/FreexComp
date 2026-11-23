@@ -314,12 +314,12 @@ public sealed class OptionsWindow : DialogWindow
                         return text;
                     }),
                 };
-                void Select() => combo.SelectedItem = field.Choices.FirstOrDefault(c => c.Value == (string)field.Value);
+                void Select() => combo.SelectedItem = field.Choices.FirstOrDefault(c => c.Value == field.ChoiceValue);
                 Select();
                 combo.SelectionChanged += (_, _) =>
                 {
-                    if (combo.SelectedItem is OptionChoice choice && choice.Value != (string)field.Value)
-                        field.Value = choice.Value;
+                    if (combo.SelectedItem is OptionChoice choice && choice.Value != field.ChoiceValue)
+                        field.ChoiceValue = choice.Value;
                 };
                 field.PropertyChanged += (_, e) =>
                 {

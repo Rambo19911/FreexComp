@@ -159,6 +159,20 @@ public sealed class OptionField : ObservableObject
         }
     }
 
+    /// <summary>
+    /// A <see cref="OptionFieldKind.Choice"/> field's value as the stored text of its entry: a <c>string</c> key's value,
+    /// or an <c>int</c> key's value in invariant digits (dialogs.md §9.8 <c>HandleSize</c>).
+    /// </summary>
+    public string ChoiceValue
+    {
+        get => Value is int number ? number.ToString(CultureInfo.InvariantCulture) : (string)Value;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            Value = Key is SettingKey<int> ? int.Parse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture) : value;
+        }
+    }
+
     /// <summary>The integer or path field's text; a valid number in range (a valid path) becomes <see cref="Value"/>.</summary>
     public string Text
     {

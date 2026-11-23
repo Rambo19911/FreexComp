@@ -84,7 +84,8 @@ public sealed class MemoryDesignerClipboard : IDesignerClipboard
 /// <summary>The defaults of the <c>designer.*</c> settings (design-surface.md §1, §6).</summary>
 public sealed class DefaultDesignerSettings : IDesignerSettings
 {
-    public bool ShowComponentCaptions => false;
+    /// <summary>The settings catalog's default wins (lead decision D-079, D-080, I-130).</summary>
+    public bool ShowComponentCaptions => true;
 
     public int HandleSize => 7;
 

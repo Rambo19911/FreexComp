@@ -102,6 +102,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
     public const string EnvironmentGeneralPage = "Environment.General";
     public const string EnvironmentFilesPage = "Environment.Files";
     public const string ToolchainPathsPage = "ToolchainPaths";
+    public const string DesignerPage = "Designer";
 
     /// <summary>UI-DLG-096: the fixed Pascal sample of the previews (Editor › Display shows the first 6 lines).</summary>
     public static readonly IReadOnlyList<string> PreviewSample =
@@ -216,7 +217,25 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Integer("RecoveryInterval", SettingsCatalog.EnvironmentRecoveryIntervalSeconds, 1, () => Strings.Msg_Options_RecoveryRange),
             Integer("LargeFile", SettingsCatalog.FilesLargeFileThresholdMb, 1, () => Strings.Msg_Options_LargeFileRange),
         ]);
-        var designer = Page("Designer", 5, []);
+        // dialogs.md §9.8 (I-132).
+        var designer = Page(DesignerPage, 5,
+        [
+            Check("ShowGrid", SettingsCatalog.DesignerShowGrid, 5),
+            Check("SnapToGrid", SettingsCatalog.DesignerSnapToGrid, 5),
+            Integer("GridSizeX", SettingsCatalog.DesignerGridSizeX, 5, () => Strings.Msg_Options_GridRange),
+            Integer("GridSizeY", SettingsCatalog.DesignerGridSizeY, 5, () => Strings.Msg_Options_GridRange),
+            Check("UseGuidelines", SettingsCatalog.DesignerUseGuidelines, 5),
+            Integer("GuidelineDistance", SettingsCatalog.DesignerGuidelineSnapDistance, 5, () => Strings.Msg_Options_GuidelineRange),
+            NumberChoice("HandleSize", SettingsCatalog.DesignerHandleSize, 5, 5, 7, 9, 11),
+            Check("ShowCaptions", SettingsCatalog.DesignerShowComponentCaptions, 5),
+            FixedChoice("DefaultView", SettingsCatalog.DesignerDefaultView, 5,
+                ("design", Strings.Options_DefaultView_Design), ("code", Strings.Options_DefaultView_Code)),
+            FixedChoice("Arrangement", SettingsCatalog.ObjectInspectorArrangement, 5,
+                ("category", Strings.Options_Arrangement_Category), ("name", Strings.Options_Arrangement_Name)),
+            Check("ShowDescription", SettingsCatalog.ObjectInspectorShowDescription, 5),
+            FixedChoice("PaletteView", SettingsCatalog.ToolPaletteView, 5,
+                ("list", Strings.Options_PaletteView_List), ("icons", Strings.Options_PaletteView_Icons)),
+        ]);
         // dialogs.md §9.9 (I-093): the effective folder of each field is checked; the placeholder names the automatic one.
         var automatic = toolchain?.ResolveAutomatic();
         var toolchainPage = Page(ToolchainPathsPage, 3,
@@ -550,7 +569,19 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         return field;
     }
 
-    /// <summary>A folder field: empty or an absolute valid path (else <c>Msg.Project.LocationInvalid</c>), with Browse.</summary>
+    /// <summary>A combo of an <c>int</c> key offering <paramref name="values"/> (shown as their digits).</summary>
+    private OptionField NumberChoice(string id, SettingKey<int> key, int phase, params int[] values)
+    {
+        var field = new OptionField(id, Resource("Options_Field_" + id), key, OptionFieldKind.Choice, _settings.Get(key), phase, null);
+        foreach (var value in values)
+        {
+            var text = value.ToString(CultureInfo.InvariantCulture);
+            field.Choices.Add(new OptionChoice(text, text));
+        }
+
+        return field;
+    }
+
     /// <summary>
     /// A toolchain folder (dialogs.md §9.9): placeholder "(automatic: &lt;path or not found&gt;)"; an explicit folder must hold
     /// <paramref name="files"/>; an empty one reports the automatic result. Without a file system nothing is checked.

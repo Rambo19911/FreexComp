@@ -102,6 +102,9 @@ public sealed class OptionsDialogTests
                 case SettingKey<bool> b:
                     Assert.Equal(settings.Get(b), ((CheckBox)control).IsChecked);
                     break;
+                case SettingKey<int> i when control is ComboBox numbers:
+                    Assert.Equal(settings.Get(i).ToString(System.Globalization.CultureInfo.InvariantCulture), ((OptionChoice)numbers.SelectedItem!).Value);
+                    break;
                 case SettingKey<int> i:
                     Assert.Equal(settings.Get(i).ToString(System.Globalization.CultureInfo.InvariantCulture), FieldText(dlg, field));
                     break;
@@ -296,9 +299,9 @@ public sealed class OptionsDialogTests
         Assert.True(IsHighlighted(dlg, "RightMargin"));
         Assert.False(IsHighlighted(dlg, "FontSize"));
 
-        // Several pages: "line" matches labels on both editor pages and Environment › Files; the current page stays selected.
+        // Several pages: "line" matches labels on both editor pages, Environment › Files and Designer ("guidelines"); the current page stays selected.
         SetText(dlg, "Filter", "line");
-        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Environment", "Environment.Files"], VisiblePages(dlg));
+        Assert.Equal(["Editor", "Editor.General", "Editor.Display", "Environment", "Environment.Files", "Designer"], VisiblePages(dlg));
         Assert.Equal("Editor › Display", PageTitle(dlg));
         Assert.True(IsHighlighted(dlg, "ShowLineNumbers"));
         Assert.True(IsHighlighted(dlg, "HighlightCurrentLine"));
@@ -627,5 +630,94 @@ public sealed class OptionsDialogTests
         Assert.True(dlg.Find<CheckBox>("ExpandOnTab").IsChecked);
         dlg.Press("Escape");
         await running;
+    }
+
+    /// <summary>dialogs.md §9.8 (all P5).</summary>
+    private static readonly (string Field, string Label, ISettingKey Key, bool Enabled)[] DesignerFields =
+    [
+        ("ShowGrid", "Show _grid", SettingsCatalog.DesignerShowGrid, true),
+        ("SnapToGrid", "_Snap to grid", SettingsCatalog.DesignerSnapToGrid, true),
+        ("GridSizeX", "Grid size _X:", SettingsCatalog.DesignerGridSizeX, true),
+        ("GridSizeY", "Grid size _Y:", SettingsCatalog.DesignerGridSizeY, true),
+        ("UseGuidelines", "Use _alignment guidelines", SettingsCatalog.DesignerUseGuidelines, true),
+        ("GuidelineDistance", "Guideline snap _distance:", SettingsCatalog.DesignerGuidelineSnapDistance, true),
+        ("HandleSize", "Selection _handle size:", SettingsCatalog.DesignerHandleSize, true),
+        ("ShowCaptions", "Show _names of non-visual components", SettingsCatalog.DesignerShowComponentCaptions, true),
+        ("DefaultView", "_Open forms in:", SettingsCatalog.DesignerDefaultView, true),
+        ("Arrangement", "Arrange _properties by:", SettingsCatalog.ObjectInspectorArrangement, true),
+        ("ShowDescription", "Show property d_escription pane", SettingsCatalog.ObjectInspectorShowDescription, true),
+        ("PaletteView", "_Tool Palette shows:", SettingsCatalog.ToolPaletteView, true),
+    ];
+
+    /// <summary>
+    /// dialogs.md §9.8 (I-132): at Phase 5 every Designer field is bound to its key and enabled, the combos offer the
+    /// listed values, range errors use the page's messages, and OK writes the keys; the designer reads them live through
+    /// its settings (<c>designer.showComponentCaptions</c> defaults to true, the catalog default).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Req", "UI-DLG-094")]
+    public async Task DesignerPageBindsSettings()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5);
+        var settings = h.Services.Settings;
+        var designer = new Core.Designer.SettingsDesignerSettings(settings);
+        Assert.True(designer.ShowComponentCaptions);
+        Assert.True(new Core.Designer.DefaultDesignerSettings().ShowComponentCaptions);
+
+        var running = h.Services.Commands.ExecuteAsync("tools.options", "Designer");
+        var dlg = await h.WaitForDialogAsync("Options");
+        Assert.Equal("Designer", PageTitle(dlg));
+        Assert.False(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
+        CheckFields(dlg, settings, DesignerFields);
+        Assert.Equal(["5", "7", "9", "11"], ChoiceTexts(dlg, "HandleSize"));
+        Assert.Equal(["Design view", "Code view"], ChoiceTexts(dlg, "DefaultView"));
+        Assert.Equal(["Category", "Name"], ChoiceTexts(dlg, "Arrangement"));
+        Assert.Equal(["List with names", "Icons only"], ChoiceTexts(dlg, "PaletteView"));
+
+        // Range checks.
+        SetText(dlg, "GridSizeX", "1");
+        Assert.Equal("Enter a grid size from 2 to 64.", dlg.ErrorText("GridSizeX"));
+        SetText(dlg, "GuidelineDistance", "17");
+        Assert.Equal("Enter a distance from 1 to 16.", dlg.ErrorText("GuidelineDistance"));
+        Assert.False(dlg.Find<Button>("Ok").IsEnabled);
+
+        // Every field changed in the UI; OK writes exactly these keys.
+        SetText(dlg, "GridSizeX", "16");
+        SetText(dlg, "GridSizeY", "4");
+        SetText(dlg, "GuidelineDistance", "6");
+        foreach (var check in (string[])["ShowGrid", "SnapToGrid", "UseGuidelines", "ShowCaptions", "ShowDescription"])
+        {
+            dlg.Find<Control>(check).BringIntoView();
+            Dispatcher.UIThread.RunJobs();
+            dlg.Click(check);
+        }
+
+        ((ComboBox)dlg.Find<Control>("HandleSize")).SelectedIndex = 2;
+        ((ComboBox)dlg.Find<Control>("DefaultView")).SelectedIndex = 1;
+        ((ComboBox)dlg.Find<Control>("Arrangement")).SelectedIndex = 1;
+        ((ComboBox)dlg.Find<Control>("PaletteView")).SelectedIndex = 1;
+        Dispatcher.UIThread.RunJobs();
+        dlg.Click("Ok");
+        await running;
+        Assert.False(settings.Get(SettingsCatalog.DesignerShowGrid));
+        Assert.False(settings.Get(SettingsCatalog.DesignerSnapToGrid));
+        Assert.Equal(16, settings.Get(SettingsCatalog.DesignerGridSizeX));
+        Assert.Equal(4, settings.Get(SettingsCatalog.DesignerGridSizeY));
+        Assert.False(settings.Get(SettingsCatalog.DesignerUseGuidelines));
+        Assert.Equal(6, settings.Get(SettingsCatalog.DesignerGuidelineSnapDistance));
+        Assert.Equal(9, settings.Get(SettingsCatalog.DesignerHandleSize));
+        Assert.False(settings.Get(SettingsCatalog.DesignerShowComponentCaptions));
+        Assert.Equal("code", settings.Get(SettingsCatalog.DesignerDefaultView));
+        Assert.Equal("name", settings.Get(SettingsCatalog.ObjectInspectorArrangement));
+        Assert.False(settings.Get(SettingsCatalog.ObjectInspectorShowDescription));
+        Assert.Equal("icons", settings.Get(SettingsCatalog.ToolPaletteView));
+
+        // The designer reads them (no fixed defaults any more).
+        Assert.Equal((false, false, 16, 4, false, 6, 9, false),
+            (designer.ShowGrid, designer.SnapToGrid, designer.GridSizeX, designer.GridSizeY, designer.UseGuidelines,
+                designer.GuidelineSnapDistance, designer.HandleSize, designer.ShowComponentCaptions));
+        settings.Set(SettingsCatalog.DesignerGuidelineMargin, 12);
+        Assert.Equal(12, designer.GuidelineMargin);
     }
 }

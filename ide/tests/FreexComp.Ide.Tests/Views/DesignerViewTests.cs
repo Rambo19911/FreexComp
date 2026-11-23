@@ -696,6 +696,117 @@ public sealed class DesignerViewTests
         Assert.True(inspector.IsKeyboardFocusWithin);
     }
 
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-091")]
+    [Trait("Req", "DSG-FD-071")]
+    public async Task FormErrorsInfoBarShowsProblems()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Phase5(o);
+            o.InitialFiles["MainForm.form"] = FormText.ReplaceLineEndings("\n")
+                .Replace("    TabOrder = 0\n", "    TabOrder = 0\n    Shade = 3\n", StringComparison.Ordinal).ReplaceLineEndings("\r\n");
+        });
+        var document = await OpenFormAsync(h);
+        h.Click(ViewTab("Design"));
+
+        // One unknown property: InfoBar.FormErrors (warning) with the singular text; the component stays editable around it.
+        Assert.Equal([AutomationIds.InfoBar("FormErrors")], InfoBars(h));
+        Assert.Equal(Strings.Msg_Designer_FormParseErrorsOne, InfoBarText(h, "FormErrors"));
+        Assert.False(document.Designer.Surface!.IsReadOnly);
+
+        // Show Problems: the Messages tool window lists the form's diagnostics (only those), at the .form file.
+        h.Click(AutomationIds.InfoBarAction("FormErrors", "ShowProblems"));
+        Assert.Equal("Messages", h.Services.Layout.Layout.Bottom.ActiveTool);
+        var item = Assert.Single(h.Services.Messages.Items);
+        Assert.Equal(("F0102", Core.Build.MessageSeverity.Warning), (item.Code, item.Severity));
+        Assert.Equal(Path.Combine(h.TempDir, "MainForm.form"), item.Location!.FilePath);
+        Assert.Equal(14, item.Location.Line);
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+
+        // View as Text: the Text view; back in the Design view the bar is still there; × dismisses it.
+        h.Click(AutomationIds.InfoBarAction("FormErrors", "ViewAsText"));
+        Assert.Equal(DocumentView.Text, document.ActiveView);
+        h.Click(ViewTab("Design"));
+        Assert.Equal([AutomationIds.InfoBar("FormErrors")], InfoBars(h));
+        document.Designer.DesignInfoBars.Single().Dismiss();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(InfoBars(h));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-CS-035")]
+    public async Task FieldTypeMismatchFixDeclaration()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Phase5(o);
+            o.InitialFiles["MainForm.pas"] = Unit.Replace("    NameEdit: TEdit;", "    NameEdit: TMemo;", StringComparison.Ordinal).ReplaceLineEndings("\r\n");
+        });
+        var document = await OpenFormAsync(h);
+        h.Click(ViewTab("Design"));
+
+        // The field is declared with another type: InfoBar.FieldTypeMismatch; the form stays editable.
+        Assert.Equal([AutomationIds.InfoBar("FieldTypeMismatch")], InfoBars(h));
+        Assert.Equal(string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Msg_Designer_FieldTypeMismatch, "NameEdit", "TMemo", "TEdit"),
+            InfoBarText(h, "FieldTypeMismatch"));
+        Assert.False(document.Designer.Surface!.IsReadOnly);
+
+        // Fix Declaration: the declaration takes the form's type (code sync), the bar goes; the Design view stays.
+        h.Click(AutomationIds.InfoBarAction("FieldTypeMismatch", "FixDeclaration"));
+        Assert.Contains("    NameEdit: TEdit;\r\n", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Empty(InfoBars(h));
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+
+        // A new mismatch typed in the code: Ignore hides the bar for this model.
+        document.Buffer.ReplaceAll(document.Buffer.Text.Replace("    GreetButton: TButton;", "    GreetButton: TLabel;", StringComparison.Ordinal), resetUndo: false);
+        Dispatcher.UIThread.RunJobs();
+        h.Press("F7");
+        h.Press("F7");
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.Equal(string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Msg_Designer_FieldTypeMismatch, "GreetButton", "TLabel", "TButton"),
+            InfoBarText(h, "FieldTypeMismatch"));
+        h.Click(AutomationIds.InfoBarAction("FieldTypeMismatch", "Ignore"));
+        Assert.Empty(InfoBars(h));
+        Assert.Contains("    GreetButton: TLabel;", document.Buffer.Text, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-027")]
+    [Trait("Req", "UI-DSG-092")]
+    public async Task FormReadOnlyKindInfoBar()
+    {
+        const string inheritedChild = "  inherited Base1: TButton\r\n    Caption = 'Base'\r\n  end\r\nend\r\n";
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Phase5(o);
+            var form = FormText.ReplaceLineEndings("\r\n");
+            o.InitialFiles["MainForm.form"] = form[..form.LastIndexOf("end\r\n", StringComparison.Ordinal)] + inheritedChild;
+        });
+        var document = await OpenFormAsync(h);
+        h.Click(ViewTab("Design"));
+
+        // An inherited component: InfoBar.FormReadOnlyKind (info); the item is preserved, the rest of the form editable.
+        Assert.Equal([AutomationIds.InfoBar("FormReadOnlyKind")], InfoBars(h));
+        Assert.Equal(Strings.Msg_Designer_InheritedNotSupported, InfoBarText(h, "FormReadOnlyKind"));
+        Assert.True(document.Designer.Model!.FindByName("Base1")!.IsPreserved);
+        Assert.False(document.Designer.Surface!.IsReadOnly);
+        Assert.Equal(InfoBarSeverity.Info, document.Designer.DesignInfoBars.Single().Severity);
+
+        // View as Text goes to the Text view.
+        h.Click(AutomationIds.InfoBarAction("FormReadOnlyKind", "ViewAsText"));
+        Assert.Equal(DocumentView.Text, document.ActiveView);
+
+        // An inherited root: the whole form is read-only (DSG-FD-027) with the same bar.
+        var root = "inherited MainForm: TMainForm\r\n  Caption = 'Derived'\r\nend\r\n";
+        document.FormBuffer.ReplaceAll(root, resetUndo: false);
+        Dispatcher.UIThread.RunJobs();
+        h.Click(ViewTab("Design"));
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.Equal([AutomationIds.InfoBar("FormReadOnlyKind")], InfoBars(h));
+        Assert.True(document.Designer.Surface!.IsReadOnly);
+    }
+
     private static Color ToColor(Rgba c) => Color.FromArgb(c.A, c.R, c.G, c.B);
 
     private static Color ColorAt(List<(Rect Rect, Color Color)> fills, Rect rect) => Assert.Single(fills, f => f.Rect == rect).Color;

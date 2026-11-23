@@ -46,6 +46,8 @@ public sealed class FormDesignerViewModel
     private DocumentView _activeView;
     private readonly LiveSettings _liveSettings;
     private InteractionState? _shownState;
+    private FieldMismatch? _mismatch;
+    private readonly HashSet<(string Kind, string Text)> _dismissed = [];
 
     /// <param name="hasUnit">False: a <c>.form</c> opened without its unit (code-sync.md §8 <c>NoUnit</c>, DSG-CS-080) —
     /// the Design view without code sync and without a Code view; <paramref name="unit"/> is then an empty placeholder.</param>
@@ -438,15 +440,54 @@ public sealed class FormDesignerViewModel
         }
     }
 
-    /// <summary>code-sync.md §8: a unit that is not <c>Ok</c> makes the form read-only (not in the <c>NoUnit</c> mode).</summary>
+    /// <summary>
+    /// code-sync.md §8: a unit that is not <c>Ok</c> makes the form read-only (not in the <c>NoUnit</c> mode); so does a
+    /// preserved root (DSG-FD-027). The field-type check of DSG-CS-035 runs again (CheckOnly, no edits).
+    /// </summary>
     private void UpdateReadOnly()
     {
         if (Surface is { } surface)
         {
-            surface.IsReadOnly = HasUnit && CodeSync.State != CodeSyncState.Ok;
+            surface.IsReadOnly = (HasUnit && CodeSync.State != CodeSyncState.Ok) || Model!.Root.IsPreserved;
         }
 
+        _mismatch = HasUnit && Model is { } model && CodeSync.State == CodeSyncState.Ok
+            ? CodeSync.Reconcile(model, ReconcileMode.CheckOnly).Issues.FirstOrDefault(i => i.Kind == ReconcileIssueKind.FieldTypeMismatch)?.Mismatch
+            : null;
         UpdateInfoBars();
+    }
+
+    /// <summary>
+    /// The form problems <c>InfoBar.FormErrors</c> counts and <c>Show Problems</c> lists (DSG-FD-071): the model's parse and
+    /// validation diagnostics of severity warning or error (the <c>F0107</c> hints have <c>InfoBar.FormReadOnlyKind</c>).
+    /// </summary>
+    public IReadOnlyList<FormDiagnostic> Problems =>
+        Model is { } model ? [.. model.Diagnostics.Where(d => d.Severity is FreexComp.Compiler.DiagnosticSeverity.Error or FreexComp.Compiler.DiagnosticSeverity.Warning)] : [];
+
+    /// <summary><c>Show Problems</c> of <c>InfoBar.FormErrors</c>: the IDE lists the problems in the Messages tool window.</summary>
+    public Action<IReadOnlyList<FormDiagnostic>>? ShowProblems { get; set; }
+
+    /// <summary>A bar the user dismissed (× or <c>Ignore</c>) stays hidden while its text is the same, until the model is replaced.</summary>
+    private void Dismiss(InfoBarViewModel bar)
+    {
+        _dismissed.Add((bar.Kind, bar.Text));
+        UpdateInfoBars();
+    }
+
+    /// <summary><c>Fix Declaration</c> (DSG-CS-035): the field's declared type becomes the form's type (one code undo group).</summary>
+    private Task FixFieldTypeAsync(FieldMismatch mismatch)
+    {
+        try
+        {
+            CodeSync.FixFieldType(mismatch.Name, mismatch.ExpectedType);
+        }
+        catch (CodeSyncException)
+        {
+            // DSG-CS-004: rolled back; the bar stays.
+        }
+
+        UpdateReadOnly();
+        return Task.CompletedTask;
     }
 
     /// <summary>The tab-order mode started or ended: <c>InfoBar.TabOrder</c> follows.</summary>
@@ -464,6 +505,16 @@ public sealed class FormDesignerViewModel
     {
         _shownState = Surface?.State;
         var bars = new List<InfoBarViewModel>();
+        if (Surface is not null && Problems.Count is var problems and > 0)
+        {
+            bars.Add(new InfoBarViewModel("FormErrors", InfoBarSeverity.Warning,
+                problems == 1 ? Strings.Msg_Designer_FormParseErrorsOne : string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_FormParseErrorsMany, problems),
+            [
+                new InfoBarAction("ShowProblems", Strings.Button_ShowProblems, () => Run(() => ShowProblems?.Invoke(Problems))),
+                new InfoBarAction("ViewAsText", Strings.Button_ViewAsText, () => Run(ShowFormAsText)),
+            ], Dismiss));
+        }
+
         if (HasUnit && Surface is not null)
         {
             switch (CodeSync.State)
@@ -480,6 +531,22 @@ public sealed class FormDesignerViewModel
             }
         }
 
+        if (Surface is not null && _mismatch is { } mismatch)
+        {
+            bars.Add(new InfoBarViewModel("FieldTypeMismatch", InfoBarSeverity.Warning,
+                string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_FieldTypeMismatch, mismatch.Name, mismatch.DeclaredType, mismatch.ExpectedType),
+            [
+                new InfoBarAction("FixDeclaration", Strings.Button_FixDeclaration, () => FixFieldTypeAsync(mismatch)),
+                new InfoBarAction("Ignore", Strings.Button_Ignore, () => Run(() => Dismiss(DesignInfoBars.First(b => b.Kind == "FieldTypeMismatch")))),
+            ], Dismiss));
+        }
+
+        if (Model is { } model && Surface is not null && model.Diagnostics.Any(d => d.Code == "F0107"))
+        {
+            bars.Add(new InfoBarViewModel("FormReadOnlyKind", InfoBarSeverity.Info, Strings.Msg_Designer_InheritedNotSupported,
+                [new InfoBarAction("ViewAsText", Strings.Button_ViewAsText, () => Run(ShowFormAsText))], null));
+        }
+
         if (Surface is { State: InteractionState.TabOrder } tabOrder)
         {
             bars.Add(new InfoBarViewModel("TabOrder", InfoBarSeverity.Info, Strings.Msg_Designer_TabOrderMode,
@@ -489,7 +556,7 @@ public sealed class FormDesignerViewModel
             ], null));
         }
 
-        bars = [.. bars.Take(DocumentViewModel.MaxVisibleInfoBars)];
+        bars = [.. bars.Where(b => !_dismissed.Contains((b.Kind, b.Text))).Take(DocumentViewModel.MaxVisibleInfoBars)];
         if (bars.Select(b => (b.Kind, b.Text)).SequenceEqual(DesignInfoBars.Select(b => (b.Kind, b.Text))))
         {
             return;
@@ -619,6 +686,7 @@ public sealed class FormDesignerViewModel
         Surface.Selection.Changed += OnSelectionChanged;
         Surface.Invalidated += OnSurfaceInvalidated;
         _shownState = null;
+        _dismissed.Clear();
         document.Changed += OnModelChanged;
         _syncedText = text;
         _syncedVersion = document.Version;
@@ -642,6 +710,7 @@ public sealed class FormDesignerViewModel
         Unit.FormTypeName = Model!.Root.TypeName;
         ModelChanged?.Invoke(this, EventArgs.Empty);
         ModifiedChanged?.Invoke(this, EventArgs.Empty);
+        UpdateInfoBars();
     }
 
     /// <summary>InfoBar.FormSyntax with <c>Msg.Designer.FormSyntaxError</c>; the caret goes to the error position.</summary>

@@ -65,7 +65,7 @@ public sealed class DesignerShell
 
         settings.Changed += (_, e) =>
         {
-            if (Toggles.Values.Any(k => k.Name == e.Key))
+            if (e.Key.StartsWith("designer.", StringComparison.Ordinal)) // every designer.* setting is read live (I-132)
             {
                 foreach (var form in documents.Documents.OfType<FormDocumentViewModel>())
                 {
@@ -95,6 +95,12 @@ public sealed class DesignerShell
     /// <summary><see cref="IsDesignActive"/> changed.</summary>
     public event EventHandler? IsDesignActiveChanged;
 
+    /// <summary>The active document or its view changed: <see cref="ActiveDesigner"/> may be another (the Object Inspector follows it, DSG-OI-001).</summary>
+    public event EventHandler? ActiveDesignerChanged;
+
+    /// <summary>DSG-FD-071 <c>Show Problems</c> of every form document: the IDE lists them in Messages.</summary>
+    public Action<IReadOnlyList<FreexComp.Designer.Text.FormDiagnostic>>? ShowProblems { get; set; }
+
     private void Attach(DocumentViewModel document)
     {
         if (document is not FormDocumentViewModel form)
@@ -104,6 +110,7 @@ public sealed class DesignerShell
 
         form.Designer.Settings = new SettingsDesignerSettings(_settings);
         form.Designer.ContextMenu = () => DesignerContextMenu.Build(_commands);
+        form.Designer.ShowProblems = problems => ShowProblems?.Invoke(problems);
         form.ActiveViewChanged += (_, _) =>
         {
             if (_documents.ActiveDocument == form)
@@ -118,6 +125,7 @@ public sealed class DesignerShell
     {
         var designer = ActiveDesigner;
         Follow(designer);
+        ActiveDesignerChanged?.Invoke(this, EventArgs.Empty);
         if (_settings.Get(SettingsCatalog.LayoutAutoSwitch))
         {
             _layout.SwitchProfile(designer is not null ? LayoutProfiles.Design : LayoutProfiles.Edit); // UI-WIN-012 (a)
@@ -169,31 +177,28 @@ public sealed class DesignerShell
 }
 
 /// <summary>
-/// The designer settings over the settings service: the four settings the Designer toolbar and the context menu toggle
-/// (<c>designer.showGrid</c>, <c>snapToGrid</c>, <c>useGuidelines</c>, <c>lockControls</c>); the others keep the surface
-/// defaults until the Designer options page binds them (I-132).
+/// The designer settings over the settings service (<c>designer.*</c>, I-132): every value is read live, so a change in
+/// Tools › Options › Designer or through a toolbar toggle takes effect at the next read.
 /// </summary>
 public sealed class SettingsDesignerSettings(ISettingsService settings) : IDesignerSettings
 {
-    private static readonly DefaultDesignerSettings Defaults = new();
+    public bool ShowComponentCaptions => settings.Get(SettingsCatalog.DesignerShowComponentCaptions);
 
-    public bool ShowComponentCaptions => Defaults.ShowComponentCaptions;
-
-    public int HandleSize => Defaults.HandleSize;
+    public int HandleSize => settings.Get(SettingsCatalog.DesignerHandleSize);
 
     public bool ShowGrid => settings.Get(SettingsCatalog.DesignerShowGrid);
 
     public bool SnapToGrid => settings.Get(SettingsCatalog.DesignerSnapToGrid);
 
-    public int GridSizeX => Defaults.GridSizeX;
+    public int GridSizeX => settings.Get(SettingsCatalog.DesignerGridSizeX);
 
-    public int GridSizeY => Defaults.GridSizeY;
+    public int GridSizeY => settings.Get(SettingsCatalog.DesignerGridSizeY);
 
     public bool UseGuidelines => settings.Get(SettingsCatalog.DesignerUseGuidelines);
 
-    public int GuidelineSnapDistance => Defaults.GuidelineSnapDistance;
+    public int GuidelineSnapDistance => settings.Get(SettingsCatalog.DesignerGuidelineSnapDistance);
 
-    public int GuidelineMargin => Defaults.GuidelineMargin;
+    public int GuidelineMargin => settings.Get(SettingsCatalog.DesignerGuidelineMargin);
 
     public bool LockControls => settings.Get(SettingsCatalog.DesignerLockControls);
 }

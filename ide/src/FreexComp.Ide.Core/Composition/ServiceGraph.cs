@@ -75,7 +75,8 @@ public static class ServiceGraph
             projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
         var toolchain = new ToolchainLocator(settings, platform.FileSystem, platform.ToolchainEnvironment); // IDE-P3-010
         var templates = new Editing.CodeTemplateService(platform.UserPaths, platform.FileSystem); // I-118
-        OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, ImplementedPhase, toolchain, platform.FileSystem, templates);
+        OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, toolWindowPhase ?? ImplementedPhase, toolchain,
+            platform.FileSystem, templates); // the phase override enables later pages in tests (I-132)
         ShellCommands.RegisterCommands(commands, platform.Shell, platform.FileSystem, platform.UserPaths, platform.Log);
         var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
         documents.Layout = layout;
@@ -229,11 +230,23 @@ public static class ServiceGraph
         // D-077: component metadata and component.reloadMetadata from Phase 5 on; Load() is the start-up wiring point (D-088).
         Designer.ComponentMetadataService? metadata = null;
         Designer.DesignerShell? designerShell = null;
+        Designer.ObjectInspectorViewModel? objectInspector = null;
         if ((toolWindowPhase ?? ImplementedPhase) >= 5)
         {
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment);
             metadata.RegisterCommands(commands);
             designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase); // D-080, I-130
+            designerShell.ShowProblems = problems =>
+            {
+                messages.ShowFormDiagnostics(problems); // D-108: the form's problems only
+                toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false);
+            };
+            var shell = designerShell;
+            var inspector = new Designer.ObjectInspectorViewModel(status, settings, platform.Dialogs); // D-081
+            objectInspector = inspector;
+            Designer.ObjectInspectorCommands.Register(commands, inspector, platform.Clipboard);
+            shell.ActiveDesignerChanged += (_, _) => inspector.Bind(shell.ActiveDesigner);
+            inspector.Bind(shell.ActiveDesigner);
         }
 
         EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
@@ -241,7 +254,10 @@ public static class ServiceGraph
 
         // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.
         var extras = toolWindows ?? [];
-        foreach (var definition in (ToolWindowDefinition[])[projectManager.Definition, structureView.Definition, messagesView.Definition, outputView.Definition, searchResults.Definition])
+        ToolWindowDefinition[] production = [projectManager.Definition, structureView.Definition, messagesView.Definition, outputView.Definition, searchResults.Definition];
+        if (objectInspector is not null)
+            production = [.. production, objectInspector.Definition];
+        foreach (var definition in production)
         {
             if (!extras.Any(e => e.Name == definition.Name))
                 toolWindowService.Register(definition);

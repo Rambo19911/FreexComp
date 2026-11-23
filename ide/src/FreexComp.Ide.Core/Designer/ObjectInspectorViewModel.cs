@@ -9,7 +9,11 @@ using FreexComp.Designer.Model;
 using FreexComp.Designer.Surface;
 using FreexComp.Ide.Core.Designer.CodeSync;
 using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.Services;
+using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.ToolWindows;
+using FreexComp.Ide.Core.ViewModels;
 
 namespace FreexComp.Ide.Core.Designer;
 
@@ -27,7 +31,7 @@ public sealed record EventRow(string Name, string Signature, string Value);
 /// the Properties page (rows of <see cref="PropertyGridModel"/>) and the Events page, and commits edits as one designer
 /// undo unit for all selected components (§9) through <see cref="DesignSurfaceController.Commit"/>. No Avalonia types.
 /// </summary>
-public sealed partial class ObjectInspectorViewModel(IStatusService status) : ObservableObject
+public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel
 {
     private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
     private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
@@ -35,11 +39,102 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
     /// <summary>DSG-OI-070: the longest component name.</summary>
     public const int MaxNameLength = 127;
 
-    private readonly IStatusService _status = status ?? throw new ArgumentNullException(nameof(status));
+    /// <summary>The tool window's name (tool-windows.md, IDE-ARCH-100).</summary>
+    public const string ToolName = "ObjectInspector";
+
+    private readonly IStatusService _status;
+    private readonly ISettingsService? _settings;
+    private readonly IDialogService? _dialogs;
     private FormDesignerViewModel? _designer;
     private PropertyGridModel? _grid;
     private ComponentCatalog? _gridCatalog;
     private string? _original;
+    private string _filter = "";
+    private bool _byName;
+    private bool _showDescription = true;
+
+    /// <param name="settings">The <c>objectInspector.*</c> settings (arrangement, description pane); null: in-memory defaults.</param>
+    /// <param name="dialogs">Opens <c>Dialog.StringsEditor</c> (DSG-OI-055); null: the editor is unavailable.</param>
+    public ObjectInspectorViewModel(IStatusService status, ISettingsService? settings = null, IDialogService? dialogs = null)
+    {
+        _status = status ?? throw new ArgumentNullException(nameof(status));
+        _settings = settings;
+        _dialogs = dialogs;
+        if (settings is not null)
+        {
+            settings.Changed += (_, e) =>
+            {
+                if (e.Key.StartsWith("objectInspector.", StringComparison.Ordinal))
+                {
+                    OnPropertyChanged(nameof(IsArrangedByName));
+                    OnPropertyChanged(nameof(ShowDescription));
+                    RaiseRowsChanged();
+                }
+            };
+        }
+    }
+
+    /// <summary>The Object Inspector tool window in the right upper group from Phase 5 (UI-WIN-011).</summary>
+    public ToolWindowDefinition Definition => new(ToolName, "Cmd_view_objectInspector", ToolGroupId.RightUpper, 5, () => this);
+
+    /// <summary>DSG-OI-010, 011: <c>objectInspector.arrangement</c> is <c>"name"</c>.</summary>
+    public bool IsArrangedByName => _settings is { } s ? s.Get(SettingsCatalog.ObjectInspectorArrangement) == "name" : _byName;
+
+    /// <summary>DSG-OI-012: <c>objectInspector.toggleCategorized</c> switches the arrangement and persists it.</summary>
+    public void ToggleArrangement()
+    {
+        if (_settings is { } s)
+        {
+            s.Set(SettingsCatalog.ObjectInspectorArrangement, IsArrangedByName ? "category" : "name");
+            return;
+        }
+
+        _byName = !_byName;
+        OnPropertyChanged(nameof(IsArrangedByName));
+        RaiseRowsChanged();
+    }
+
+    /// <summary>UI-DSG-110: <c>objectInspector.showDescription</c>.</summary>
+    public bool ShowDescription => _settings is { } s ? s.Get(SettingsCatalog.ObjectInspectorShowDescription) : _showDescription;
+
+    /// <summary><c>objectInspector.toggleDescription</c>.</summary>
+    public void ToggleDescription()
+    {
+        if (_settings is { } s)
+        {
+            s.Set(SettingsCatalog.ObjectInspectorShowDescription, !ShowDescription);
+            return;
+        }
+
+        _showDescription = !_showDescription;
+        OnPropertyChanged(nameof(ShowDescription));
+    }
+
+    /// <summary>DSG-OI-003: <c>objectInspector.togglePage</c>.</summary>
+    public void TogglePage() => Page = Page == InspectorPage.Properties ? InspectorPage.Events : InspectorPage.Properties;
+
+    partial void OnPageChanged(InspectorPage value)
+    {
+        Cancel();
+        EnsureCurrentEvent();
+        RaiseRowsChanged();
+    }
+
+    /// <summary>The filter took effect (DSG-OI-020, 150 ms after the last keystroke).</summary>
+    protected override void OnFilterApplied(string filter)
+    {
+        _filter = filter.Trim();
+        EnsureCurrentEvent();
+        RaiseRowsChanged();
+    }
+
+    /// <summary>Applies the filter text at once (tests, Escape in the filter box).</summary>
+    public void ApplyFilterNow(string filter)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        FilterText = filter;
+        OnFilterApplied(filter);
+    }
 
     /// <summary>The page shown.</summary>
     [ObservableProperty]
@@ -81,6 +176,8 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
             }
 
             _grid.SetSelection(Selection);
+            _grid.Arrangement = IsArrangedByName ? PropertyArrangement.Name : PropertyArrangement.Category;
+            _grid.Filter = _filter;
             return _grid.Rows;
         }
     }
@@ -136,18 +233,50 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
         RaiseRowsChanged();
     }
 
+    /// <summary>A click on a category row collapses or expands it (DSG-OI-013, UI-DSG-108).</summary>
+    public void ToggleCategory(string category)
+    {
+        ArgumentNullException.ThrowIfNull(category);
+        if (_grid is { } grid && !grid.CollapsedCategories.Remove(category))
+        {
+            grid.CollapsedCategories.Add(category);
+        }
+
+        RaiseRowsChanged();
+    }
+
     // ---- the edit lifecycle (§4) ------------------------------------------------------------------------------------
 
     /// <summary>Enters edit mode on the current row with its display text; false for rows that are not edited as text.</summary>
-    public bool BeginEdit()
+    public bool BeginEdit() => BeginEdit(null);
+
+    /// <summary>
+    /// DSG-OI-032: enters edit mode on the current row; <paramref name="entry"/> (a typed character, pasted text) replaces
+    /// the displayed value. On the Events page the handler name is edited (DSG-OI-084).
+    /// </summary>
+    public bool BeginEdit(string? entry)
     {
-        if (IsEmpty || Surface.IsReadOnly || CurrentRow is not { } row || !IsTextEditable(row))
+        string display;
+        if (Page == InspectorPage.Events)
+        {
+            if (IsEventsReadOnly || CurrentEvent is not { } name || AllEvents().FirstOrDefault(r => Names.Equals(r.Name, name)) is not { } ev)
+            {
+                return false;
+            }
+
+            display = ev.Value;
+        }
+        else if (IsEmpty || Surface.IsReadOnly || CurrentRow is not { } row || !IsTextEditable(row))
         {
             return false;
         }
+        else
+        {
+            display = row.Display;
+        }
 
-        _original = row.Display;
-        EditText = row.Display;
+        _original = display;
+        EditText = entry ?? display;
         EditError = null;
         IsEditing = true;
         return true;
@@ -165,13 +294,33 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
             return true;
         }
 
-        if (string.Equals(EditText, _original, StringComparison.Ordinal) || CurrentRow is not { } row)
+        string? error;
+        if (string.Equals(EditText, _original, StringComparison.Ordinal))
         {
             Cancel();
             return true;
         }
 
-        var error = row.Source == PropertyRowSource.Name ? CommitName(EditText) : CommitValue(row, EditText);
+        if (Page == InspectorPage.Events)
+        {
+            if (CurrentEvent is not { } name)
+            {
+                Cancel();
+                return true;
+            }
+
+            error = CommitEvent(name, EditText) ? null : EditError ?? "";
+        }
+        else if (CurrentRow is not { } row)
+        {
+            Cancel();
+            return true;
+        }
+        else
+        {
+            error = row.Source == PropertyRowSource.Name ? CommitName(EditText) : CommitValue(row, EditText);
+        }
+
         if (error is null)
         {
             Cancel();
@@ -281,27 +430,26 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
 
     // ---- the Events page (§8) --------------------------------------------------------------------------------------
 
-    /// <summary>DSG-OI-080, 086: the events every selected component has (same name and signature), by name.</summary>
-    public IReadOnlyList<EventRow> EventRows
-    {
-        get
-        {
-            var selection = Selection;
-            if (selection.Count == 0 || selection.Any(o => o.Info is null || o.IsPreserved))
-            {
-                return [];
-            }
+    /// <summary>DSG-OI-080, 086: the events every selected component has (same name and signature), by name; the filter applies (DSG-OI-020).</summary>
+    public IReadOnlyList<EventRow> EventRows => [.. AllEvents().Where(e => _filter.Length == 0 || e.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase))];
 
-            var primary = selection[^1].Info!;
-            return [.. primary.Events
-                .Where(e => selection.All(o => o.Info!.FindEvent(e.Name) is { } other && Names.Equals(other.Signature, e.Signature)))
-                .OrderBy(e => e.Name, Names)
-                .Select(e => new EventRow(e.Name, e.Signature, CommonHandler(e.Name) ?? ""))];
+    private IReadOnlyList<EventRow> AllEvents()
+    {
+        var selection = Selection;
+        if (selection.Count == 0 || selection.Any(o => o.Info is null || o.IsPreserved))
+        {
+            return [];
         }
+
+        var primary = selection[^1].Info!;
+        return [.. primary.Events
+            .Where(e => selection.All(o => o.Info!.FindEvent(e.Name) is { } other && Names.Equals(other.Signature, e.Signature)))
+            .OrderBy(e => e.Name, Names)
+            .Select(e => new EventRow(e.Name, e.Signature, CommonHandler(e.Name) ?? ""))];
     }
 
     /// <summary>DSG-OI-087: the selection has no events.</summary>
-    public bool HasNoEvents => !IsEmpty && EventRows.Count == 0;
+    public bool HasNoEvents => !IsEmpty && AllEvents().Count == 0;
 
     /// <summary>The Events page cannot change anything: no unit (code-sync.md §8 <c>NoUnit</c>) or a read-only form.</summary>
     public bool IsEventsReadOnly => IsEmpty || !Designer.HasUnit || Surface.IsReadOnly || Designer.CodeSync.State != CodeSyncState.Ok;
@@ -444,6 +592,380 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
         return Create(ev, t) || Fail(null);
     }
 
+    // ---- the view's operations (D-081) -------------------------------------------------------------------------------
+
+    /// <summary>The current row of the Events page (the event name).</summary>
+    [ObservableProperty]
+    private string? _currentEvent;
+
+    partial void OnCurrentPathChanged(string? value) => RaiseDescriptionChanged();
+
+    partial void OnCurrentEventChanged(string? value) => RaiseDescriptionChanged();
+
+    /// <summary>
+    /// DSG-OI-002: the components of the form, the form first, then the others by name; item text <c>Name: TClassName</c>
+    /// (UI-DSG-101).
+    /// </summary>
+    public IReadOnlyList<FormObject> Components
+    {
+        get
+        {
+            if (IsEmpty || Designer.Model is not { } model)
+            {
+                return [];
+            }
+
+            return [model.Root, .. model.AllObjects().Where(o => o.Parent is not null).OrderBy(o => o.Name, Names)];
+        }
+    }
+
+    /// <summary>The instance selector's entries (UI-DSG-101).</summary>
+    public IReadOnlyList<string> ComponentItems => [.. Components.Select(o => o.Name + ": " + o.TypeName)];
+
+    /// <summary>The entry of the single selected component; -1 for none or several.</summary>
+    public int SelectedComponentIndex
+    {
+        get
+        {
+            var selection = Selection;
+            if (selection.Count != 1)
+            {
+                return -1;
+            }
+
+            var components = Components;
+            for (var i = 0; i < components.Count; i++)
+            {
+                if (ReferenceEquals(components[i], selection[0]))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+    }
+
+    /// <summary>UI-DSG-101: the closed selector's text with several components selected; null otherwise.</summary>
+    public string? MultiSelectionText =>
+        Selection.Count > 1 ? DesignerMessages.Format("Msg.Designer.SelectionMany", Selection.Count) : null;
+
+    /// <summary>DSG-OI-002: choosing an entry selects that component on the surface.</summary>
+    public void SelectComponent(int index)
+    {
+        var components = Components;
+        if (index < 0 || index >= components.Count || SelectedComponentIndex == index)
+        {
+            return;
+        }
+
+        Surface.Selection.Select(components[index]);
+    }
+
+    /// <summary>The paths (Properties page) or event names (Events page) the current row moves over.</summary>
+    private IReadOnlyList<string> NavigableRows =>
+        Page == InspectorPage.Events
+            ? [.. EventRows.Select(r => r.Name)]
+            : [.. Rows.Where(r => r.Kind == PropertyRowKind.Property).Select(r => r.Path)];
+
+    private string? Current => Page == InspectorPage.Events ? CurrentEvent : CurrentPath;
+
+    /// <summary>Makes <paramref name="path"/> the current row of the shown page (a click, the end of an edit).</summary>
+    public void SetCurrent(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        if (Page == InspectorPage.Events)
+        {
+            CurrentEvent = path;
+        }
+        else
+        {
+            CurrentPath = path;
+        }
+    }
+
+    /// <summary>DSG-OI-030: Up/Down (plus or minus 1), PageUp/PageDown (a page) move the current row; it stops at the ends.</summary>
+    public void MoveCurrent(int delta)
+    {
+        var rows = NavigableRows;
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var index = Current is { } current ? IndexOf(rows, current) : -1;
+        var next = index < 0 ? (delta < 0 ? rows.Count - 1 : 0) : Math.Clamp(index + delta, 0, rows.Count - 1);
+        SetCurrent(rows[next]);
+    }
+
+    /// <summary>Home / End.</summary>
+    public void MoveCurrentToEdge(bool end)
+    {
+        var rows = NavigableRows;
+        if (rows.Count > 0)
+        {
+            SetCurrent(end ? rows[^1] : rows[0]);
+        }
+    }
+
+    private static int IndexOf(IReadOnlyList<string> rows, string path)
+    {
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (Names.Equals(rows[i], path))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>DSG-OI-030: Right expands the current object/set row, Left collapses it or moves to its parent row.</summary>
+    public void ExpandCurrent(bool expand)
+    {
+        if (Page != InspectorPage.Properties || CurrentRow is not { } row)
+        {
+            return;
+        }
+
+        if (expand && row.IsExpandable && !row.IsExpanded)
+        {
+            Expand(row.Path);
+        }
+        else if (!expand && row.IsExpandable && row.IsExpanded)
+        {
+            Collapse(row.Path);
+        }
+        else if (!expand && row.Path.LastIndexOf('.') is var dot and > 0)
+        {
+            CurrentPath = row.Path[..dot];
+        }
+    }
+
+    /// <summary><c>objectInspector.expandAll</c> / <c>collapseAll</c>: every expandable row of the selection.</summary>
+    public void ExpandAll(bool expand)
+    {
+        if (_grid is null)
+        {
+            return;
+        }
+
+        if (!expand)
+        {
+            _grid.ExpandedPaths.Clear();
+        }
+        else
+        {
+            // Expanding shows sub-rows that may expand in turn: repeat until nothing changes.
+            for (var added = true; added;)
+            {
+                added = false;
+                foreach (var row in Rows.Where(r => r.IsExpandable && !r.IsExpanded))
+                {
+                    added |= _grid.ExpandedPaths.Add(row.Path);
+                }
+            }
+        }
+
+        RaiseRowsChanged();
+    }
+
+    /// <summary><c>objectInspector.copyPropertyName</c>: the current row's path; null without one.</summary>
+    public string? CurrentPropertyName => Page == InspectorPage.Events ? CurrentEvent : CurrentRow?.Path;
+
+    /// <summary>
+    /// DSG-OI-032: double-click on the value cell of an enum or Boolean row cycles to the next value (wrapping) and
+    /// commits. False when the row has no such list.
+    /// </summary>
+    public bool CycleValue()
+    {
+        if (Page != InspectorPage.Properties || IsEmpty || Surface.IsReadOnly || CurrentRow is not { IsReadOnly: false, Info: { } info } row)
+        {
+            return false;
+        }
+
+        if (row.SetMember is not null || info.Type.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
+        {
+            ToggleBoolean();
+            return true;
+        }
+
+        if (info.Kind != PropertyKind.Enum || ValueList(row.Path) is not { Count: > 0 } list)
+        {
+            return false;
+        }
+
+        var index = -1;
+        for (var i = 0; i < list.Count; i++)
+        {
+            if (Names.Equals(list[i], row.Display))
+            {
+                index = i;
+            }
+        }
+
+        if (!BeginEdit())
+        {
+            return false;
+        }
+
+        EditText = list[(index + 1) % list.Count];
+        return Commit();
+    }
+
+    /// <summary>A <c>TStrings</c> row (<c>editor: "strings"</c>): read-only text with the button (object-inspector.md §5.1).</summary>
+    public static bool IsStringsRow(PropertyRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return row is { Kind: PropertyRowKind.Property, Source: PropertyRowSource.Metadata, Info: { } info }
+            && (info.Type.Equals("TStrings", StringComparison.OrdinalIgnoreCase) || string.Equals(info.Editor, "strings", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// DSG-OI-055: opens <c>Dialog.StringsEditor</c> on the current <c>TStrings</c> row (initial text from the primary);
+    /// OK with a changed text sets the list on every selected component (an empty list removes the property, it is the
+    /// default) as one undo unit; unchanged text or Cancel changes nothing.
+    /// </summary>
+    public async Task EditStringsAsync()
+    {
+        if (_dialogs is null || IsEmpty || Surface.IsReadOnly || CurrentRow is not { IsReadOnly: false, Info: { } info } row || !IsStringsRow(row))
+        {
+            return;
+        }
+
+        var selection = Selection;
+        var primary = selection[^1];
+        var lines = Lines(primary, row.Path, info);
+        var component = selection.Count == 1
+            ? primary.Name
+            : string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.StringsEditor_Components, selection.Count);
+        var result = await _dialogs.ShowAsync(new Dialogs.StringsEditorViewModel(row.Name, component, lines));
+        if (result is null || IsEmpty || !ReferenceEquals(Selection[^1], primary))
+        {
+            return;
+        }
+
+        var changes = new List<FormChange>();
+        foreach (var obj in Selection)
+        {
+            if (Lines(obj, row.Path, info).SequenceEqual(result, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            changes.Add(result.Count == 0
+                ? new RemoveProperty(obj.Name, row.Path)
+                : new SetProperty(obj.Name, row.Path, new StringListValue([.. result])));
+        }
+
+        if (changes.Count > 0)
+        {
+            Surface.Commit(UndoTitles.Property, changes);
+            RaiseRowsChanged();
+        }
+    }
+
+    private IReadOnlyList<string> Lines(FormObject obj, string path, PropertyInfo info) =>
+        Effective(obj, path, info) is StringListValue list ? list.Lines : [];
+
+    /// <summary>
+    /// Enter on a row: the Events page creates or shows the handler (DSG-OI-083), a <c>TStrings</c> row opens its editor,
+    /// other rows enter edit mode (DSG-OI-032).
+    /// </summary>
+    public async Task ActivateCurrentAsync()
+    {
+        if (Page == InspectorPage.Events)
+        {
+            if (CurrentEvent is { } name)
+            {
+                ActivateEvent(name);
+            }
+
+            return;
+        }
+
+        if (CurrentRow is { } row && IsStringsRow(row))
+        {
+            await EditStringsAsync();
+            return;
+        }
+
+        BeginEdit();
+    }
+
+    /// <summary>DSG-OI-100: the current row's name (<c>type.bodyStrong</c>), empty without a current row.</summary>
+    public string DescriptionTitle => IsEmpty ? "" : Page == InspectorPage.Events ? CurrentEvent ?? "" : CurrentRow?.Name ?? "";
+
+    /// <summary>DSG-OI-100: the metadata description, else <c>Name: TypeName</c>; for events the signature text.</summary>
+    public string DescriptionText
+    {
+        get
+        {
+            if (IsEmpty)
+            {
+                return "";
+            }
+
+            if (Page == InspectorPage.Events)
+            {
+                return CurrentEvent is { } name && FindEvent(name) is { } ev ? SignatureText(ev) : "";
+            }
+
+            return CurrentRow switch
+            {
+                { Info.Description: { Length: > 0 } description } => description,
+                { Info: { } info } row => row.Name + ": " + info.Type,
+                { } row => row.Name,
+                null => "",
+            };
+        }
+    }
+
+    /// <summary>
+    /// UI-DSG-112: the empty state of the grid area: <c>Msg.Inspector.NoSelection</c> without a Design view (DSG-OI-001),
+    /// <c>Msg.Inspector.NoEvents</c>, <c>Msg.Inspector.FilterEmpty</c>; null when rows are shown.
+    /// </summary>
+    public string? EmptyStateText
+    {
+        get
+        {
+            if (IsEmpty)
+            {
+                return Strings.Msg_Inspector_NoSelection;
+            }
+
+            if (Page == InspectorPage.Events)
+            {
+                return HasNoEvents ? Strings.Msg_Inspector_NoEvents
+                    : EventRows.Count == 0 ? DesignerMessages.Format("Msg.Inspector.FilterEmpty", _filter) : null;
+            }
+
+            return _filter.Length > 0 && !Rows.Any(r => r.Kind == PropertyRowKind.Property)
+                ? DesignerMessages.Format("Msg.Inspector.FilterEmpty", _filter)
+                : null;
+        }
+    }
+
+    /// <summary>The secondary line under <see cref="EmptyStateText"/> (states-and-messages.md §7), or null.</summary>
+    public string? EmptyStateSecondary => IsEmpty ? Strings.Msg_Inspector_NoSelection_Secondary : null;
+
+    /// <summary>The Events page's current row stays when it is still listed, else the first event (DSG-OI-031).</summary>
+    private void EnsureCurrentEvent()
+    {
+        var events = EventRows;
+        if (CurrentEvent is null || !events.Any(r => Names.Equals(r.Name, CurrentEvent)))
+        {
+            CurrentEvent = events.FirstOrDefault()?.Name;
+        }
+    }
+
+    private void RaiseDescriptionChanged()
+    {
+        OnPropertyChanged(nameof(DescriptionTitle));
+        OnPropertyChanged(nameof(DescriptionText));
+    }
+
     // ---- internals --------------------------------------------------------------------------------------------------
 
     private bool Fail(string? message)
@@ -486,7 +1008,7 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
             .Count(p => p.IsEvent && p.Value is IdentValue { Name: var n } && Names.Equals(n, method));
 
     private EventInfo? FindEvent(string eventName) =>
-        IsEmpty ? null : EventRows.Any(r => Names.Equals(r.Name, eventName)) ? Selection[^1].Info!.FindEvent(eventName) : null;
+        IsEmpty ? null : AllEvents().Any(r => Names.Equals(r.Name, eventName)) ? Selection[^1].Info!.FindEvent(eventName) : null;
 
     /// <summary>The handler all selected components have for the event; "" when none has one, null when they differ.</summary>
     private string? CommonHandler(string eventName)
@@ -675,6 +1197,7 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
             CurrentPath = rows.FirstOrDefault(r => r.Kind == PropertyRowKind.Property)?.Path;
         }
 
+        EnsureCurrentEvent();
         RaiseRowsChanged();
     }
 
@@ -701,6 +1224,11 @@ public sealed partial class ObjectInspectorViewModel(IStatusService status) : Ob
         OnPropertyChanged(nameof(Rows));
         OnPropertyChanged(nameof(EventRows));
         OnPropertyChanged(nameof(SelectedNames));
+        OnPropertyChanged(nameof(ComponentItems));
+        OnPropertyChanged(nameof(SelectedComponentIndex));
+        OnPropertyChanged(nameof(MultiSelectionText));
+        OnPropertyChanged(nameof(EmptyStateText));
+        RaiseDescriptionChanged();
     }
 
     /// <summary>A change list computed when the commit applies it (after the code part ran).</summary>

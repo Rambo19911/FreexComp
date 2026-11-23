@@ -155,6 +155,9 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
     /// <summary>code-sync.md §4.4 DSG-CS-045.</summary>
     public FieldRenameResult RenameField(string oldName, string newName) => Run(() => FieldEdits.RenameField(Unit, oldName, newName));
 
+    /// <summary>DSG-CS-035 <c>Fix Declaration</c>: the field's declared type becomes <paramref name="typeName"/>.</summary>
+    public IReadOnlyList<TextEditRecord> FixFieldType(string name, string typeName) => Run(() => FieldEdits.FixFieldType(Unit, name, typeName));
+
     /// <summary>DSG-CS-046.</summary>
     public FormRenameResult RenameFormClassAndVariable(string oldFormName, string newFormName) =>
         Run(() => FieldEdits.RenameFormClassAndVariable(Unit, oldFormName, newFormName));

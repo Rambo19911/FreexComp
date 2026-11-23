@@ -4479,4 +4479,124 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Text</value>
     <comment>designer.md UI-DSG-001 view switcher (I-129)</comment>
   </data>
+  <data name="Options_Field_ShowGrid" xml:space="preserve">
+    <value>Show _grid</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_SnapToGrid" xml:space="preserve">
+    <value>_Snap to grid</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_GridSizeX" xml:space="preserve">
+    <value>Grid size _X:</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_GridSizeY" xml:space="preserve">
+    <value>Grid size _Y:</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_UseGuidelines" xml:space="preserve">
+    <value>Use _alignment guidelines</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_GuidelineDistance" xml:space="preserve">
+    <value>Guideline snap _distance:</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_HandleSize" xml:space="preserve">
+    <value>Selection _handle size:</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_ShowCaptions" xml:space="preserve">
+    <value>Show _names of non-visual components</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_DefaultView" xml:space="preserve">
+    <value>_Open forms in:</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_Arrangement" xml:space="preserve">
+    <value>Arrange _properties by:</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_ShowDescription" xml:space="preserve">
+    <value>Show property d_escription pane</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_Field_PaletteView" xml:space="preserve">
+    <value>_Tool Palette shows:</value>
+    <comment>dialogs.md §9.8</comment>
+  </data>
+  <data name="Options_DefaultView_Design" xml:space="preserve">
+    <value>Design view</value>
+    <comment>dialogs.md §9.8 DefaultView combo</comment>
+  </data>
+  <data name="Options_DefaultView_Code" xml:space="preserve">
+    <value>Code view</value>
+    <comment>dialogs.md §9.8 DefaultView combo</comment>
+  </data>
+  <data name="Options_Arrangement_Category" xml:space="preserve">
+    <value>Category</value>
+    <comment>dialogs.md §9.8 Arrangement combo</comment>
+  </data>
+  <data name="Options_Arrangement_Name" xml:space="preserve">
+    <value>Name</value>
+    <comment>dialogs.md §9.8 Arrangement combo</comment>
+  </data>
+  <data name="Options_PaletteView_List" xml:space="preserve">
+    <value>List with names</value>
+    <comment>dialogs.md §9.8 PaletteView combo</comment>
+  </data>
+  <data name="Options_PaletteView_Icons" xml:space="preserve">
+    <value>Icons only</value>
+    <comment>dialogs.md §9.8 PaletteView combo</comment>
+  </data>
+  <data name="Button_ShowProblems" xml:space="preserve">
+    <value>Show Problems</value>
+    <comment>designer.md §9 InfoBar.FormErrors</comment>
+  </data>
+  <data name="Button_ViewAsText" xml:space="preserve">
+    <value>View as Text</value>
+    <comment>designer.md §9 InfoBar.FormErrors, InfoBar.FormReadOnlyKind</comment>
+  </data>
+  <data name="Button_FixDeclaration" xml:space="preserve">
+    <value>Fix Declaration</value>
+    <comment>designer.md §9 InfoBar.FieldTypeMismatch</comment>
+  </data>
+  <data name="Button_Ignore" xml:space="preserve">
+    <value>Ignore</value>
+    <comment>designer.md §9 InfoBar.FieldTypeMismatch</comment>
+  </data>
+  <data name="Inspector_Tab_Properties" xml:space="preserve">
+    <value>Properties</value>
+    <comment>designer.md §11 UI-DSG-102 page tab</comment>
+  </data>
+  <data name="Inspector_Tab_Events" xml:space="preserve">
+    <value>Events</value>
+    <comment>designer.md §11 UI-DSG-102 page tab</comment>
+  </data>
+  <data name="Inspector_ArrangeByCategory" xml:space="preserve">
+    <value>Arrange by Category</value>
+    <comment>designer.md §11 UI-DSG-102 arrangement toggle; object-inspector.md DSG-OI-039</comment>
+  </data>
+  <data name="Inspector_ArrangeByName" xml:space="preserve">
+    <value>Arrange by Name</value>
+    <comment>designer.md §11 UI-DSG-102 arrangement toggle; object-inspector.md DSG-OI-039</comment>
+  </data>
+  <data name="StringsEditor_Title" xml:space="preserve">
+    <value>Edit {0} – {1}</value>
+    <comment>object-inspector.md DSG-OI-055: 0 = property, 1 = component name or StringsEditor_Components</comment>
+  </data>
+  <data name="StringsEditor_Components" xml:space="preserve">
+    <value>{0} components</value>
+    <comment>object-inspector.md DSG-OI-055 title of a multi-selection; 0 = count</comment>
+  </data>
+  <data name="StringsEditor_LinesMany" xml:space="preserve">
+    <value>{0} lines</value>
+    <comment>object-inspector.md DSG-OI-055 Dialog.StringsEditor.LineCount; 0 = count</comment>
+  </data>
+  <data name="StringsEditor_LineOne" xml:space="preserve">
+    <value>1 line</value>
+    <comment>object-inspector.md DSG-OI-055 Dialog.StringsEditor.LineCount</comment>
+  </data>
 </root>
