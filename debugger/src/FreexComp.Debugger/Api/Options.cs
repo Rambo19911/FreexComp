@@ -6,6 +6,12 @@ public sealed record DebugSessionOptions
     /// <summary>Absolute path of the debug adapter executable. The library performs no search.</summary>
     public required string AdapterPath { get; init; }
 
+    /// <summary>
+    /// Extra command-line arguments for the adapter process. Empty for the real adapter; tests pass a scenario file
+    /// to the scripted test adapter. Sessions never set process-wide environment variables.
+    /// </summary>
+    public IReadOnlyList<string> AdapterArguments { get; init; } = [];
+
     /// <summary>Directories whose sources count as "user code" (project directory and search paths). Absolute.</summary>
     public IReadOnlyList<string> UserSourceRoots { get; init; } = [];
 

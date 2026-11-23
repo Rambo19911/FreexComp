@@ -8,6 +8,7 @@ IDebugSessionFactory.Create(DebugSessionOptions options) : IDebugSession
 type DebugSessionOptions : sealed record
 DebugSessionOptions..ctor()
 DebugSessionOptions.AdapterPath : required string { get; init; }
+DebugSessionOptions.AdapterArguments : IReadOnlyList<string> { get; init; }
 DebugSessionOptions.UserSourceRoots : IReadOnlyList<string> { get; init; }
 DebugSessionOptions.RequestTimeout : TimeSpan { get; init; }
 DebugSessionOptions.LaunchTimeout : TimeSpan { get; init; }

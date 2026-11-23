@@ -16,6 +16,8 @@ internal sealed class EventDispatcher : IDisposable
     private readonly BlockingCollection<Action> _queue = new(new ConcurrentQueue<Action>());
     private readonly Lock _gate = new();   // held while a queued action runs
     private readonly Thread _thread;
+    private readonly List<TaskCompletionSource> _flushes = [];   // guarded by _flushes
+    private bool _flushesClosed;
     private bool _disposed;
 
     /// <param name="sender">The <c>sender</c> argument of every event (the session).</param>
@@ -62,6 +64,29 @@ internal sealed class EventDispatcher : IDisposable
     }
 
     /// <summary>
+    /// Completes when everything queued before this call has been delivered, or when the dispatcher is disposed
+    /// (whichever comes first): lets the session order a task completion after an event.
+    /// </summary>
+    public Task FlushAsync()
+    {
+        var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_flushes)
+        {
+            if (_flushesClosed)
+                return Task.CompletedTask;
+            _flushes.Add(delivered);
+        }
+
+        Post(() =>
+        {
+            lock (_flushes)
+                _flushes.Remove(delivered);
+            delivered.TrySetResult();
+        });
+        return delivered.Task;
+    }
+
+    /// <summary>
     /// Stops delivery. Waits for a handler that is running (unless called from that handler); queued events are dropped.
     /// </summary>
     public void Dispose()
@@ -69,6 +94,16 @@ internal sealed class EventDispatcher : IDisposable
         lock (_gate)
             _disposed = true;
         _queue.CompleteAdding();
+        List<TaskCompletionSource> pending;
+        lock (_flushes)
+        {
+            _flushesClosed = true;
+            pending = [.. _flushes];
+            _flushes.Clear();
+        }
+
+        foreach (var flush in pending)
+            flush.TrySetResult();
         if (Thread.CurrentThread != _thread)
             _thread.Join();
     }

@@ -4,6 +4,9 @@
 // Exit codes: 0 = input closed or disconnect, 2 = bad scenario or bad input, 3 = unexpected request or argument
 // mismatch, any other = "thenExit" of a step. "SCENARIO-COMPLETE" is written to stderr at exit iff every step was
 // consumed and the exit is not a failure (2, 3).
+// Step extensions beyond the specification: "thenRaw" (text sent as one framed message after the response and events,
+// not necessarily JSON: simulates a protocol error) and "hang": true (after the step the adapter blocks forever and
+// ignores its input: simulates an adapter that does not react to disconnect or end of input).
 
 using System.Diagnostics;
 using System.Globalization;
@@ -170,7 +173,7 @@ internal static class Program
             response = command switch
             {
                 "initialize" => Success(requestSeq, command, WriteCapabilities),
-                "launch" or "configurationDone" or "disconnect" => Success(requestSeq, command, null),
+                "launch" or "configurationDone" or "disconnect" or "setExceptionBreakpoints" => Success(requestSeq, command, null),
                 "readMemory" => ReadMemory(requestSeq, arguments),
                 "writeMemory" => WriteMemory(requestSeq, arguments),
                 _ => Unexpected(requestSeq, command),
@@ -208,6 +211,14 @@ internal static class Program
         {
             foreach (var item in events.EnumerateArray())
                 Send(Event(item.GetProperty("event").GetString()!, item.TryGetProperty("body", out var body) ? body : null));
+        }
+
+        if (step is not null && step.Json.TryGetProperty("thenRaw", out var raw))
+            Send(Encoding.UTF8.GetBytes(raw.GetString() ?? ""));
+        if (step is not null && step.Json.TryGetProperty("hang", out var hang) && hang.ValueKind == JsonValueKind.True)
+        {
+            Output.Flush();
+            Thread.Sleep(Timeout.Infinite);
         }
 
         if (step is not null && step.Json.TryGetProperty("thenExit", out var exitCode))

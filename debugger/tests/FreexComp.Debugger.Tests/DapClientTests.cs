@@ -41,6 +41,50 @@ public sealed class DapClientTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-053")]
+    public async Task Request_OnCompleted_RunsInOrderWithEvents()
+    {
+        await using var h = new Harness();
+
+        // The callback runs on the reader task before the next message is read: the response keeps its place among the events.
+        var task = h.Client.RequestAsync("launch", null, RequestTimeout, Ct,
+            completed => h.Order.Enqueue("response:" + completed.Status));
+        await h.ReceiveAsync();
+        await h.SendAsync("""{"seq":1,"type":"event","event":"initialized"}""");
+        await h.SendAsync("""{"seq":2,"type":"response","request_seq":1,"success":true,"command":"launch"}""");
+        await h.SendAsync("""{"seq":3,"type":"event","event":"stopped","body":{"reason":"entry"}}""");
+        await h.NextEventAsync();
+        await h.NextEventAsync();
+        await task.WaitAsync(Safety, Ct);
+
+        Assert.Equal(["event:initialized", "response:RanToCompletion", "event:stopped"], h.Order);
+    }
+
+    [Fact]
+    public async Task Request_OnCompleted_CalledOnceForTimeoutCancellationAndClose()
+    {
+        await using var h = new Harness();
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        void Record(Task<JsonElement> completed) => h.Order.Enqueue(completed.Status.ToString());
+
+        var timedOut = h.Client.RequestAsync("threads", null, RequestTimeout, Ct, Record);
+        h.Time.Advance(RequestTimeout);
+        await Assert.ThrowsAsync<DebuggerException>(() => timedOut.WaitAsync(Safety, Ct));
+        var cancelled = h.Client.RequestAsync("threads", null, RequestTimeout, cancel.Token, Record);
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled.WaitAsync(Safety, Ct));
+        var pending = h.Client.RequestAsync("threads", null, RequestTimeout, Ct, Record);
+        h.Client.Close();
+        await Assert.ThrowsAsync<DebuggerException>(() => pending.WaitAsync(Safety, Ct));
+        var afterClose = h.Client.RequestAsync("threads", null, RequestTimeout, Ct, Record);
+        await Assert.ThrowsAsync<DebuggerException>(() => afterClose.WaitAsync(Safety, Ct));
+        var preCancelled = h.Client.RequestAsync("threads", null, RequestTimeout, cancel.Token, Record);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => preCancelled.WaitAsync(Safety, Ct));
+
+        Assert.Equal(["Faulted", "Canceled", "Faulted", "Faulted", "Canceled"], h.Order);
+    }
+
+    [Fact]
     public async Task Request_Success_WithoutBody_ReturnsUndefined()
     {
         await using var h = new Harness();
@@ -345,12 +389,19 @@ public sealed class DapClientTests
         {
             var clientSide = new DapTransport(_fromAdapter.Reader.AsStream(), _toAdapter.Writer.AsStream());
             _adapterSide = new DapTransport(_toAdapter.Reader.AsStream(), _fromAdapter.Writer.AsStream());
-            Client = new DapClient(clientSide, (name, body) => _events.Writer.TryWrite((name, body)), Closed.SetResult, trace, Time);
+            Client = new DapClient(clientSide, (name, body) =>
+            {
+                Order.Enqueue("event:" + name);
+                _events.Writer.TryWrite((name, body));
+            }, Closed.SetResult, trace, Time);
             Client.Start();
         }
 
         public ManualTimeProvider Time { get; } = new();
         public DapClient Client { get; }
+
+        /// <summary>Events ("event:name") and whatever a test adds, in the order the reader task produced them.</summary>
+        public ConcurrentQueue<string> Order { get; } = new();
         public TaskCompletionSource<DebuggerException?> Closed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <summary>The next message the client wrote.</summary>

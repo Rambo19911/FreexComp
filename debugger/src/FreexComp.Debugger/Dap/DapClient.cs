@@ -57,29 +57,44 @@ internal sealed partial class DapClient
     /// <c>AdapterCrashed</c> when the connection ends; or <see cref="OperationCanceledException"/> on cancellation.
     /// An abandoned request's late response is dropped.
     /// </summary>
-    public Task<JsonElement> RequestAsync(string command, object? arguments, TimeSpan timeout, CancellationToken ct)
+    /// <param name="onCompleted">
+    /// Called once with the completed task, synchronously on the thread that completes the request (for a response:
+    /// the reader task, before the next message is read). Lets the owner keep a response in order with the events
+    /// around it; continuations of the returned task give no such guarantee.
+    /// </param>
+    public Task<JsonElement> RequestAsync(
+        string command, object? arguments, TimeSpan timeout, CancellationToken ct, Action<Task<JsonElement>>? onCompleted = null)
     {
         if (ct.IsCancellationRequested)
-            return Task.FromCanceled<JsonElement>(ct);
+            return Completed(Task.FromCanceled<JsonElement>(ct), onCompleted);
 
-        var pending = new PendingRequest(command);
+        var pending = new PendingRequest(command) { OnCompleted = onCompleted };
+        var accepted = false;
         lock (_gate)
         {
-            if (_closed)
-                return Task.FromException<JsonElement>(Crashed(command));
-            var seq = _nextSeq++;
-            var message = DapJson.SerializeRequest(seq, command, arguments);
-            _pending.Add(seq, pending);
-            pending.Timer = _time.CreateTimer(
-                _ => Complete(seq, p => p.Completion.TrySetException(
-                    new DebuggerException(DebugErrorCode.RequestTimeout, Messages.RequestTimedOut(command), command))),
-                null, timeout, Timeout.InfiniteTimeSpan);
-            pending.Cancellation = ct.UnsafeRegister(
-                _ => Complete(seq, p => p.Completion.TrySetCanceled(ct)), null);
-            _outgoing.Writer.TryWrite(message);
+            if (!_closed)
+            {
+                accepted = true;
+                var seq = _nextSeq++;
+                var message = DapJson.SerializeRequest(seq, command, arguments);
+                _pending.Add(seq, pending);
+                pending.Timer = _time.CreateTimer(
+                    _ => Complete(seq, p => p.Completion.TrySetException(
+                        new DebuggerException(DebugErrorCode.RequestTimeout, Messages.RequestTimedOut(command), command))),
+                    null, timeout, Timeout.InfiniteTimeSpan);
+                pending.Cancellation = ct.UnsafeRegister(
+                    _ => Complete(seq, p => p.Completion.TrySetCanceled(ct)), null);
+                _outgoing.Writer.TryWrite(message);
+            }
         }
 
-        return pending.Completion.Task;
+        return accepted ? pending.Completion.Task : Completed(Task.FromException<JsonElement>(Crashed(command)), onCompleted);
+    }
+
+    private static Task<JsonElement> Completed(Task<JsonElement> task, Action<Task<JsonElement>>? onCompleted)
+    {
+        onCompleted?.Invoke(task);
+        return task;
     }
 
     /// <summary>Owner-initiated end: pending requests fail with <c>AdapterCrashed</c>; no closed callback.</summary>
@@ -225,6 +240,7 @@ internal sealed partial class DapClient
 
         pending.Release();
         completion(pending);
+        pending.OnCompleted?.Invoke(pending.Completion.Task);
     }
 
     private void Shutdown(DebuggerException? error, bool notify)
@@ -246,6 +262,7 @@ internal sealed partial class DapClient
         {
             request.Release();
             request.Completion.TrySetException(Crashed(request.Command));
+            request.OnCompleted?.Invoke(request.Completion.Task);
         }
 
         if (notify)
@@ -281,6 +298,7 @@ internal sealed partial class DapClient
     {
         public string Command { get; } = command;
         public TaskCompletionSource<JsonElement> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Action<Task<JsonElement>>? OnCompleted { get; init; }
         public ITimer? Timer { get; set; }
         public CancellationTokenRegistration Cancellation { get; set; }
 

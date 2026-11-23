@@ -5,6 +5,7 @@ internal sealed class ManualTimeProvider : TimeProvider
 {
     private readonly Lock _gate = new();
     private readonly List<ManualTimer> _timers = [];
+    private readonly List<(TimeSpan Due, TaskCompletionSource Created)> _watchers = [];
     private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     public override DateTimeOffset GetUtcNow()
@@ -21,6 +22,18 @@ internal sealed class ManualTimeProvider : TimeProvider
             lock (_gate)
                 return _timers.Count;
         }
+    }
+
+    /// <summary>
+    /// Completes when a timer with exactly this due time is created after this call. Lets a test advance the clock
+    /// only once the code under test is really waiting (no polling, no sleeping).
+    /// </summary>
+    public Task WhenTimerCreated(TimeSpan dueTime)
+    {
+        var created = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_gate)
+            _watchers.Add((dueTime, created));
+        return created.Task;
     }
 
     public void Advance(TimeSpan by)
@@ -48,6 +61,12 @@ internal sealed class ManualTimeProvider : TimeProvider
             {
                 timer.Due = _now + dueTime;
                 _timers.Add(timer);
+            }
+
+            foreach (var watcher in _watchers.Where(w => w.Due == dueTime).ToList())
+            {
+                _watchers.Remove(watcher);
+                watcher.Created.TrySetResult();
             }
         }
 

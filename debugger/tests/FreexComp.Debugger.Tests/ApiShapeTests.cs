@@ -34,6 +34,7 @@ public sealed class ApiShapeTests
     public void ApiDefaults_MatchInterfaceDocument()
     {
         var options = new DebugSessionOptions { AdapterPath = @"C:\x\adapter.exe" };
+        Assert.Empty(options.AdapterArguments);
         Assert.Empty(options.UserSourceRoots);
         Assert.Equal(TimeSpan.FromSeconds(10), options.RequestTimeout);
         Assert.Equal(TimeSpan.FromSeconds(30), options.LaunchTimeout);
