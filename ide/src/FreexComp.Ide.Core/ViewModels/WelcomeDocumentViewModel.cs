@@ -158,7 +158,17 @@ public sealed class WelcomeDocumentViewModel : DocumentViewModel
     public void OnWindowActivated() => _ = CheckMissingAsync();
 
     /// <summary>IDE-WEL-004: checks every entry's project file on a background thread; stale results are dropped.</summary>
-    public async Task CheckMissingAsync()
+    public Task CheckMissingAsync()
+    {
+        var check = CheckMissingCoreAsync();
+        MissingChecks = MissingChecks.IsCompleted ? check : Task.WhenAll(MissingChecks, check);
+        return check;
+    }
+
+    /// <summary>Completes once every existence check started so far has applied (or dropped) its result (I-221).</summary>
+    public Task MissingChecks { get; private set; } = Task.CompletedTask;
+
+    private async Task CheckMissingCoreAsync()
     {
         var check = ++_missingCheck;
         var paths = _recent.Projects.Select(p => p.Path).ToList();

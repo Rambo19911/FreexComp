@@ -25,6 +25,18 @@ internal sealed class RegisterTestDeadlineAttribute : BeforeAfterTestAttribute
     {
         TestDeadline.End(test.UniqueID);
         TestUiThread.EndTest(test.UniqueID);
+        ThrowIfLateWork(test.TestDisplayName, TestUiThread.TakeLateWork(test.UniqueID));
+    }
+
+    /// <summary>
+    /// I-221: fails the ending test when work was posted to a test UI thread after its test ended (I-210): the message names
+    /// that test and the work, so it reaches the test output (an assembly fixture's failure shows only its exception type).
+    /// </summary>
+    internal static void ThrowIfLateWork(string testName, IReadOnlyList<string> late)
+    {
+        if (late.Count > 0)
+            throw new InvalidOperationException(
+                $"{testName}: work posted to a test UI thread after its test ended (I-210; await it in the test named first on its line):\n" + string.Join("\n", late));
     }
 }
 

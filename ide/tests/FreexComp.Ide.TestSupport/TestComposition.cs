@@ -97,7 +97,7 @@ public static class TestComposition
 
         // I-210: the test settles the background work it started before it ends: language-service requests (structure,
         // diagnostics, highlighting; a request queued after all earlier ones completes once they have posted their results)
-        // missing-file checks, exits of the programs run and the folding of a large document.
+        // missing-file checks, exits of the programs run, the folding of a large document and the Welcome page's checks.
         var worker = services.CodeModel.Worker;
         TestUiThread.RegisterWork(() => worker.IsIdle, () => worker.RunAsync("test.settle", static _ => 0));
         var projectManager = services.ProjectManager;
@@ -108,6 +108,8 @@ public static class TestComposition
         {
             if (e.Document is TextDocumentViewModel { Folding: var folding })
                 TestUiThread.RegisterWork(() => folding.Computation.IsCompleted, () => folding.Computation);
+            else if (e.Document is WelcomeDocumentViewModel welcome) // I-221: its recent-project existence checks
+                TestUiThread.RegisterWork(() => welcome.MissingChecks.IsCompleted, () => welcome.MissingChecks);
         };
         return services;
     }

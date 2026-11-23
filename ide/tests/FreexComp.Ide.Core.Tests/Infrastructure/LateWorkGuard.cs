@@ -7,7 +7,8 @@ namespace FreexComp.Ide.Core.Tests.Infrastructure;
 /// <summary>
 /// I-210: fails the run when a test left work behind that was posted to its <see cref="TestUiThread"/> after it ended (a
 /// worker result it did not await). That work is never run; the failure names the test and the work so the test can
-/// await it.
+/// await it. I-221: each test already fails at its end on such work (<see cref="RegisterTestDeadlineAttribute"/>), naming
+/// itself; this guard only catches work posted after the last test ended.
 /// </summary>
 public sealed class LateWorkGuard : IDisposable
 {

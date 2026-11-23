@@ -127,6 +127,32 @@ public sealed class DispatcherTests
         }
     }
 
+    /// <summary>
+    /// I-221: late work fails the test that left it, and the failure names that test and the work — before, only the
+    /// assembly fixture threw at the end of the run, and the output showed its exception type alone.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    public async Task LateWorkFailsTheTestThatLeftItAndNamesIt()
+    {
+        SynchronizationContext? ended = null;
+        await TestUiThread.RunAsync(() =>
+        {
+            ended = TestUiThread.Current;
+            return Task.CompletedTask;
+        });
+        await Task.Run(() => ended!.Post(_ => LateDispatcherWork(), null), TestContext.Current.CancellationToken);
+
+        var test = TestContext.Current.Test!;
+        var late = TestUiThread.TakeLateWork(test.UniqueID); // what the end of this test reads
+        var failure = Assert.Throws<InvalidOperationException>(() => Infrastructure.RegisterTestDeadlineAttribute.ThrowIfLateWork(test.TestDisplayName, late));
+
+        Assert.Contains(test.TestDisplayName, failure.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(DispatcherTests) + "." + nameof(LateWorkFailsTheTestThatLeftItAndNamesIt) + ": ", failure.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(LateWorkFailsTheTestThatLeftItAndNamesIt), late.Single(), StringComparison.Ordinal); // the posted lambda
+        Assert.False(s_lateDispatcherWorkRan);
+        Assert.Empty(TestUiThread.TakeLateWork(test.UniqueID));
+    }
+
     private static bool s_lateDispatcherWorkRan;
 
     private static void LateDispatcherWork() => s_lateDispatcherWorkRan = true;

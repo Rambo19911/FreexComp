@@ -12,13 +12,14 @@ namespace FreexComp.Ide.TestSupport;
 /// I-210: before the test ends, the background work registered for it (<see cref="RegisterWork"/>: the code-model worker
 /// of a <see cref="TestComposition"/>) is settled — awaited until idle and its results applied on this thread. Work posted
 /// after the test ended never runs — not on the thread pool, where it ran unseen on the state of a finished test — but is
-/// recorded under that test (<see cref="TakeLatePosts"/>); each test project fails its run when any test left such work
-/// behind, so the test awaits the work it started instead.
+/// recorded under that test (<see cref="TakeLatePosts"/>); each test project fails the test that left such work behind
+/// (I-221: <see cref="TakeLateWork"/> at its end, naming it), so the test awaits the work it started instead.
 /// </summary>
 public static class TestUiThread
 {
     private static readonly object LateGate = new();
-    private static readonly List<(string Owner, string Work)> Late = [];
+    private static readonly List<(string Owner, string? TestId, string Work)> Late = [];
+    private static readonly HashSet<string> Ended = [];
     private static readonly Dictionary<object, List<Work>> Registered = [];
 
     /// <summary>
@@ -54,6 +55,27 @@ public static class TestUiThread
             Registered.Remove(testId);
     }
 
+    /// <summary>
+    /// I-221: ends the test <paramref name="testId"/> for late work and returns, as <c>owner: work</c> lines, the work posted
+    /// after the end of its test UI threads, plus any work a test that already ended posted since its own end (marked as
+    /// such): each test project fails the test that ends with such work, so the failure names the test that left it.
+    /// </summary>
+    public static IReadOnlyList<string> TakeLateWork(string testId)
+    {
+        ArgumentNullException.ThrowIfNull(testId);
+        lock (LateGate)
+        {
+            Ended.Add(testId);
+            bool Over((string Owner, string? TestId, string Work) l) => l.TestId is null || Ended.Contains(l.TestId);
+            var taken = Late
+                .Where(Over)
+                .Select(l => l.TestId == testId ? $"{l.Owner}: {l.Work}" : $"{l.Owner} (an earlier test, posted after it ended): {l.Work}")
+                .ToList();
+            Late.RemoveAll(Over);
+            return taken;
+        }
+    }
+
     /// <summary>The context of the test UI thread the caller runs on, or null on any other thread.</summary>
     public static SynchronizationContext? Current => SynchronizationContext.Current as UiContext;
 
@@ -82,7 +104,7 @@ public static class TestUiThread
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
-            var context = new UiContext(owner);
+            var context = new UiContext(owner, testId);
             SynchronizationContext.SetSynchronizationContext(context);
             Task task;
             try
@@ -197,7 +219,7 @@ public static class TestUiThread
     private sealed record Work(Func<bool> IsIdle, Func<Task> SettleAsync);
 
     /// <summary>Posted callbacks queue until the owning thread runs them; after the test they are recorded, never run.</summary>
-    private sealed class UiContext(string owner) : SynchronizationContext
+    private sealed class UiContext(string owner, string? testId) : SynchronizationContext
     {
         private readonly object _gate = new();
         private readonly Queue<(SendOrPostCallback Callback, object? State)> _queue = new();
@@ -216,7 +238,7 @@ public static class TestUiThread
             }
 
             lock (LateGate)
-                Late.Add((owner, Describe(d, state))); // a late result after the test ended
+                Late.Add((owner, testId, Describe(d, state))); // a late result after the test ended
         }
 
         public bool HasPending
