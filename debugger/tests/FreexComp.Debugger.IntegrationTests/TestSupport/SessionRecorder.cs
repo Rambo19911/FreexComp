@@ -21,6 +21,7 @@ internal sealed class SessionRecorder
     private readonly List<DapTraceEntry> _trace = [];
     private readonly StringBuilder _stdout = new();
     private readonly StringBuilder _stderr = new();
+    private readonly List<OutputEventArgs> _outputs = [];
     private readonly List<(string Expected, TaskCompletionSource Reached)> _stdoutWaiters = [];
     // Stops and the end of the session, in order: what the script waits for.
     private readonly Channel<object> _milestones = Channel.CreateUnbounded<object>();
@@ -48,6 +49,8 @@ internal sealed class SessionRecorder
         session.Output += (_, e) =>
         {
             Add($"Output({e.Category}, {System.Text.Json.JsonSerializer.Serialize(e.Text)})");
+            lock (_gate)
+                _outputs.Add(e);
             if (e.Category == OutputCategory.Stdout)
                 OnStdout(e.Text);
             else if (e.Category == OutputCategory.Stderr)
@@ -58,7 +61,10 @@ internal sealed class SessionRecorder
         {
             Add($"BreakpointChanged({e.Status.Id}, {e.Status.State}, line {e.Status.ActualLine}, hits {e.Status.HitCount}, {e.Status.Message ?? "-"})");
             lock (_gate)
+            {
                 _breakpoints[e.Status.Id] = e.Status;
+                _statusHistory.Add(e.Status);
+            }
         };
         session.ThreadChanged += (_, e) => Add($"ThreadChanged({e.ThreadId}, {e.Change})");
         session.ModuleLoaded += (_, e) => Add($"ModuleLoaded({e.Name}, {e.Path}, symbols {e.HasSymbols})");
@@ -70,6 +76,7 @@ internal sealed class SessionRecorder
     }
 
     private readonly Dictionary<int, BreakpointStatus> _breakpoints = [];
+    private readonly List<BreakpointStatus> _statusHistory = [];
 
     /// <summary>Every event so far, one line each, in delivery order.</summary>
     public IReadOnlyList<string> Events
@@ -79,6 +86,27 @@ internal sealed class SessionRecorder
             lock (_gate)
                 return [.. _events];
         }
+    }
+
+    /// <summary>Forgets the events recorded so far: a script step that asserts exactly what follows starts here.</summary>
+    public void ClearEvents()
+    {
+        lock (_gate)
+            _events.Clear();
+    }
+
+    /// <summary>The texts of all output of one category so far, concatenated, line ends normalised to LF.</summary>
+    public string OutputSoFar(OutputCategory category)
+    {
+        lock (_gate)
+            return string.Concat(_outputs.Where(o => o.Category == category).Select(o => o.Text)).Replace("\r\n", "\n", StringComparison.Ordinal);
+    }
+
+    /// <summary>Every status reported for a breakpoint through <c>BreakpointChanged</c>, in order.</summary>
+    public IReadOnlyList<BreakpointStatus> StatusHistory(int breakpointId)
+    {
+        lock (_gate)
+            return [.. _statusHistory.Where(s => s.Id == breakpointId)];
     }
 
     /// <summary>The last status reported for a breakpoint through <c>BreakpointChanged</c>; null when none was.</summary>
@@ -116,6 +144,9 @@ internal sealed class SessionRecorder
     public async Task<TerminatedEventArgs> WaitForTerminatedAsync(TimeSpan? timeout = null) =>
         await NextMilestoneAsync("the end of the session", timeout).ConfigureAwait(false) as TerminatedEventArgs
         ?? throw new XunitException("The debuggee stopped while the test waited for the end of the session.");
+
+    /// <summary>The next stop (<see cref="StopInfo"/>) or the end of the session (<see cref="TerminatedEventArgs"/>), whichever comes.</summary>
+    public Task<object> WaitForMilestoneAsync(TimeSpan? timeout = null) => NextMilestoneAsync("a stop or the end of the session", timeout);
 
     private async Task<object> NextMilestoneAsync(string what, TimeSpan? timeout)
     {
