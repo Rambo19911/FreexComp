@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Debugger</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Syntax namespaces only (expression parsing); enforced by ArchitectureTests.UsesOnlyCompilerSyntaxNamespaces. -->
+    <ProjectReference Include="..\..\..\compiler\src\FreexComp.Compiler\FreexComp.Compiler.csproj" />
+    <InternalsVisibleTo Include="FreexComp.Debugger.Tests" />
+    <InternalsVisibleTo Include="FreexComp.Debugger.IntegrationTests" />
+  </ItemGroup>
+</Project>

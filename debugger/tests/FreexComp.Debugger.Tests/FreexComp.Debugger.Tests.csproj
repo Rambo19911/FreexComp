@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Debugger.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FreexComp.Debugger\FreexComp.Debugger.csproj" />
+    <!-- Helper exe started by the tests (FakeAdapter.exe is copied next to the test assembly). -->
+    <ProjectReference Include="..\FakeAdapter\FakeAdapter.csproj" />
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
