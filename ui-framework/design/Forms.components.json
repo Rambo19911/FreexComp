@@ -189,5 +189,11 @@
     "TKeyEvent": "procedure(Sender: TObject; var Key: Word; Shift: TShiftState)",
     "TKeyPressEvent": "procedure(Sender: TObject; var Key: Char)",
     "TMouseWheelEvent": "procedure(Sender: TObject; Shift: TShiftState; WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean)"
+  },
+  "eventSignatureUnits": {
+    "TCloseAction": "Forms",
+    "TMouseButton": "Controls",
+    "TPoint": "Types",
+    "TShiftState": "Classes"
   }
 }

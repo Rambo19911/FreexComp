@@ -459,5 +459,14 @@
     "TTVCollapsingEvent": "procedure(Sender: TObject; Node: TTreeNode; var AllowCollapse: Boolean)",
     "TTVEditedEvent": "procedure(Sender: TObject; Node: TTreeNode; var S: string)",
     "TTVEditingEvent": "procedure(Sender: TObject; Node: TTreeNode; var AllowEdit: Boolean)"
+  },
+  "eventSignatureUnits": {
+    "TItemChange": "ComCtrls",
+    "TListColumn": "ComCtrls",
+    "TListItem": "ComCtrls",
+    "TMouseButton": "Controls",
+    "TPoint": "Types",
+    "TShiftState": "Classes",
+    "TTreeNode": "ComCtrls"
   }
 }

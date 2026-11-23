@@ -103,5 +103,12 @@
     "TMouseMoveEvent": "procedure(Sender: TObject; Shift: TShiftState; X, Y: Integer)",
     "TSelectCellEvent": "procedure(Sender: TObject; ACol, ARow: Integer; var CanSelect: Boolean)",
     "TSetEditEvent": "procedure(Sender: TObject; ACol, ARow: Integer; const Value: string)"
+  },
+  "eventSignatureUnits": {
+    "TGridDrawState": "Grids",
+    "TMouseButton": "Controls",
+    "TPoint": "Types",
+    "TRect": "Types",
+    "TShiftState": "Classes"
   }
 }

@@ -210,5 +210,10 @@
     "TMouseEvent": "procedure(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer)",
     "TMouseMoveEvent": "procedure(Sender: TObject; Shift: TShiftState; X, Y: Integer)",
     "TCanResizeEvent": "procedure(Sender: TObject; var NewSize: Integer; var Accept: Boolean)"
+  },
+  "eventSignatureUnits": {
+    "TMouseButton": "Controls",
+    "TPoint": "Types",
+    "TShiftState": "Classes"
   }
 }

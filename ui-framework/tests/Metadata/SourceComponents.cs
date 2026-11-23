@@ -66,6 +66,17 @@ public sealed class SourceComponents
             .Where(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase) && t is not ClassTypeSymbol { IsForward: true })];
     }
 
+    /// <summary>
+    /// The interface of <paramref name="unit"/> (a framework unit, else an RTL unit) declares a non-forward type named <paramref name="name"/>.
+    /// </summary>
+    public bool DeclaresType(string unit, string name)
+    {
+        var path = new[] { UnitPath(unit), Path.Combine(rtlDirectory, unit + ".pas") }.FirstOrDefault(File.Exists);
+        return unit.Length > 0 && path is not null
+            && compilation.GetSemanticModel(path).Unit.InterfaceMembers.OfType<TypeSymbol>()
+                .Any(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase) && t is not ClassTypeSymbol { IsForward: true });
+    }
+
     /// <summary>Errors of parsing/binding <paramref name="unit"/> (a unit that does not compile cannot be compared).</summary>
     public ImmutableArray<Diagnostic> Errors(string unit) =>
         [.. compilation.GetDiagnostics(UnitPath(unit)).Where(d => d.Severity == DiagnosticSeverity.Error)];

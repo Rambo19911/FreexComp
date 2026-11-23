@@ -557,5 +557,11 @@
     "TKeyEvent": "procedure(Sender: TObject; var Key: Word; Shift: TShiftState)",
     "TKeyPressEvent": "procedure(Sender: TObject; var Key: Char)",
     "TScrollEvent": "procedure(Sender: TObject; ScrollCode: TScrollCode; var ScrollPos: Integer)"
+  },
+  "eventSignatureUnits": {
+    "TMouseButton": "Controls",
+    "TPoint": "Types",
+    "TScrollCode": "StdCtrls",
+    "TShiftState": "Classes"
   }
 }

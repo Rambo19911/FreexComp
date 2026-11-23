@@ -46,14 +46,89 @@ public static partial class MetadataDecls
         return problems;
     }
 
+    /// <summary>Predeclared types of the language and of unit System: a handler signature never needs a unit for them.</summary>
+    public static readonly HashSet<string> SystemTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Integer", "Cardinal", "ShortInt", "SmallInt", "LongInt", "Int64", "Byte", "Word", "LongWord", "UInt64", "NativeInt", "NativeUInt",
+        "Boolean", "ByteBool", "WordBool", "LongBool", "Char", "AnsiChar", "WideChar", "string", "AnsiString", "UnicodeString", "WideString",
+        "ShortString", "Single", "Double", "Extended", "Currency", "Real", "Comp", "Pointer", "Variant", "TObject", "TClass",
+    };
+
+    /// <summary>The distinct non-system type identifiers of the parameters of a <c>procedure(&lt;params&gt;)</c> text, in order.</summary>
+    public static List<string> SignatureTypes(string signature)
+    {
+        var open = signature.IndexOf('(');
+        var close = signature.LastIndexOf(')');
+        var types = new List<string>();
+        if (open < 0 || close < open)
+        {
+            return types;
+        }
+
+        foreach (var group in signature[(open + 1)..close].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var colon = group.IndexOf(':');
+            if (colon < 0)
+            {
+                continue;                                  // untyped var/const parameter
+            }
+
+            var type = group[(colon + 1)..].Trim();
+            if (type.StartsWith("array of ", StringComparison.OrdinalIgnoreCase))
+            {
+                type = type["array of ".Length..].Trim();
+            }
+
+            if (!SystemTypes.Contains(type) && !types.Contains(type, StringComparer.OrdinalIgnoreCase))
+            {
+                types.Add(type);
+            }
+        }
+
+        return types;
+    }
+
+    /// <summary>
+    /// U-138 (component-metadata.md §5): every non-system type of an <c>eventSignatures</c> text has an <c>eventSignatureUnits</c> entry
+    /// in the same file, and the interface of each mapped unit declares that type (checked against the Pascal source).
+    /// </summary>
+    public static List<string> EventSignatureTypesHaveUnits(MetadataRoot root, SourceComponents source)
+    {
+        var problems = new List<string>();
+        foreach (var file in root.Files)
+        {
+            var units = file.EventSignatureUnits.ToDictionary(u => u.Name, u => u.Value.ValueKind == JsonValueKind.String ? u.Value.GetString()! : "",
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var s in file.EventSignatures.Where(s => s.Value.ValueKind == JsonValueKind.String))
+            {
+                foreach (var type in SignatureTypes(s.Value.GetString()!).Where(t => !units.ContainsKey(t)))
+                {
+                    problems.Add($"{file.Name}: eventSignatures.{s.Name}: type {type} has no eventSignatureUnits entry");
+                    units[type] = "";                     // report each missing type once per file
+                }
+            }
+
+            foreach (var u in file.EventSignatureUnits)
+            {
+                var unit = u.Value.ValueKind == JsonValueKind.String ? u.Value.GetString()! : "";
+                if (!source.DeclaresType(unit, u.Name))
+                {
+                    problems.Add($"{file.Name}: eventSignatureUnits.{u.Name}: unit '{unit}' does not declare {u.Name} in its interface");
+                }
+            }
+        }
+
+        return problems;
+    }
+
     /// <summary>A name declared under <c>types</c> or <c>eventSignatures</c> of several files has identical text in all of them.</summary>
     public static List<string> SharedDeclsAgree(MetadataRoot root)
     {
         var problems = new List<string>();
-        foreach (var section in new[] { "types", "eventSignatures" })
+        foreach (var section in new[] { "types", "eventSignatures", "eventSignatureUnits" })
         {
             var decls = root.Files
-                .SelectMany(f => (section == "types" ? f.Types : f.EventSignatures).Select(p => (File: f.Name, p.Name, Text: p.Value.GetRawText())))
+                .SelectMany(f => (section == "types" ? f.Types : section == "eventSignatures" ? f.EventSignatures : f.EventSignatureUnits).Select(p => (File: f.Name, p.Name, Text: p.Value.GetRawText())))
                 .GroupBy(d => d.Name, StringComparer.Ordinal);
             foreach (var g in decls)
             {

@@ -17,6 +17,10 @@ public sealed record MetadataFile(string Name, string Path, string Text, JsonEle
 
     public IEnumerable<JsonProperty> EventSignatures =>
         Json.TryGetProperty("eventSignatures", out var t) && t.ValueKind == JsonValueKind.Object ? t.EnumerateObject() : [];
+
+    /// <summary>The optional <c>eventSignatureUnits</c> object (component-metadata.md §5): signature type → declaring unit.</summary>
+    public IEnumerable<JsonProperty> EventSignatureUnits =>
+        Json.TryGetProperty("eventSignatureUnits", out var t) && t.ValueKind == JsonValueKind.Object ? t.EnumerateObject() : [];
 }
 
 /// <summary>A component entry with the file that declares it.</summary>

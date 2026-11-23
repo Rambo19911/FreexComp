@@ -100,5 +100,8 @@
     "TNotifyEvent": "procedure(Sender: TObject)",
     "THintEvent": "procedure(var HintStr: string; var CanShow: Boolean)",
     "TActionEvent": "procedure(Action: TBasicAction; var Handled: Boolean)"
+  },
+  "eventSignatureUnits": {
+    "TBasicAction": "Classes"
   }
 }

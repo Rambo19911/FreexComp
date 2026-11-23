@@ -22,7 +22,7 @@ public sealed record SchemaExpectations(
 public static class MetadataSchema
 {
     public static readonly string[] IndexKeys = ["formatVersion", "palettePages", "files"];
-    public static readonly string[] FileKeys = ["formatVersion", "unit", "types", "components", "eventSignatures"];
+    public static readonly string[] FileKeys = ["formatVersion", "unit", "types", "components", "eventSignatures", "eventSignatureUnits"];
     public static readonly string[] ComponentKeys =
     [
         "class", "ancestor", "abstract", "palette", "kind", "defaultSize", "namePrefix", "acceptsChildren", "childClasses",
@@ -119,6 +119,21 @@ public static class MetadataSchema
             if (!file.Json.TryGetProperty(key, out var o) || o.ValueKind != JsonValueKind.Object)
             {
                 problems.Add($"{at}: {key} must be an object");
+            }
+        }
+
+        if (file.Json.TryGetProperty("eventSignatureUnits", out var su))
+        {
+            if (su.ValueKind != JsonValueKind.Object)
+            {
+                problems.Add($"{at}: eventSignatureUnits must be an object");
+            }
+            else
+            {
+                foreach (var u in su.EnumerateObject().Where(u => u.Value.ValueKind != JsonValueKind.String || u.Value.GetString()!.Length == 0))
+                {
+                    problems.Add($"{at}: eventSignatureUnits.{u.Name}: the unit must be a non-empty string");
+                }
             }
         }
 
