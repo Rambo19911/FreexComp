@@ -72,7 +72,8 @@ internal static class IrEmitter
     /// Program only: the <c>$units</c> entries in initialisation order (CMP-355); default = empty table.
     /// </param>
     /// <param name="debug">CMP-420…424: the debug metadata to emit (<c>-g</c>); null → none at all.</param>
-    public static void EmitUnit(LoweredUnit unit, IIrWriter writer, ImmutableArray<UnitTableEntry> unitTable = default, DebugInfoOptions? debug = null)
+    /// <returns>CMP-425: with <paramref name="debug"/> the unit's sidecar fragment (JSON text), else null.</returns>
+    public static string? EmitUnit(LoweredUnit unit, IIrWriter writer, ImmutableArray<UnitTableEntry> unitTable = default, DebugInfoOptions? debug = null)
     {
         var path = unit.Unit.Locations.IsEmpty ? unit.Unit.Name + ".pas" : unit.Unit.Locations[0].Path;
         writer.BeginModule(unit.Unit.Name, Path.GetFileName(path));
@@ -101,7 +102,7 @@ internal static class IrEmitter
         {
             UnitName = unit.Unit.Name,
             OwnClasses = [.. classes],
-            Debug = debug is null ? null : new DebugInfoEmitter(debug, path, unit.Routines.Concat(unit.Bodies).Select(b => b.Source).OfType<Syntax.SyntaxNode>()
+            Debug = debug is null ? null : new DebugInfoEmitter(debug, unit.Unit.Name, path, unit.Routines.Concat(unit.Bodies).Select(b => b.Source).OfType<Syntax.SyntaxNode>()
                 .Select(s => s.SyntaxTree.Text).FirstOrDefault(t => Text.PathUtil.Comparer.Equals(t.Path, path))),
         };
         foreach (var body in unit.Routines)
@@ -337,6 +338,17 @@ internal static class IrEmitter
 
         module.Debug?.Finish(writer);
         writer.EndModule();
+        if (module.Debug is not { } debugInfo)
+        {
+            return null;
+        }
+
+        foreach (var @class in classes.Where(c => !c.IsGenericDefinition))
+        {
+            debugInfo.Sidecar.TypeId(@class);            // DBG-168: every class of the unit, for the dynamic type of an instance
+        }
+
+        return debugInfo.Sidecar.ToJson();
     }
 
     private static readonly LinkName UnitsName = new("$units", AlwaysQuote: true);
@@ -1597,7 +1609,8 @@ internal sealed class FunctionEmitter
         }
 
         parameters.AddRange(_parameters.Skip(_implicitCount).Select(p => new DebugParameterType(p.Type, IrEmitter.IsPassedByAddress(p))));
-        _subprogram = di.BeginSubprogram(_routine, DisplayName(_routine, source), _name.Text, heading, begin, _linkage != IrLinkage.External, returnType, parameters);
+        var self = _routine is MethodSymbol { SelfParameter: { } selfParameter } ? selfParameter.Type : null;
+        _subprogram = di.BeginSubprogram(_routine, DisplayName(_routine, source), _name.Text, heading, begin, end, _linkage != IrLinkage.External, returnType, parameters, self);
         return new DebugBody(di.Location(begin, _subprogram), di.Location(end, _subprogram));
     }
 
@@ -1664,12 +1677,13 @@ internal sealed class FunctionEmitter
         var headingLine = _body.Source is { } source ? DebugInfoEmitter.LineOf(HeadingToken(source)) : 0;
         var declarations = new List<(IrValue Address, int Variable, string Expression)>();
 
-        void Declare(Symbol variable, string name, int? arg, TypeSymbol type, IrValue? received, IrValue? slot, string? flags)
+        void Declare(Symbol variable, string name, int? arg, TypeSymbol type, IrValue? received, IrValue? slot, string? flags, string kind)
         {
             var line = variable is ParameterSymbol || variable.Locations.IsEmpty ? headingLine : variable.Locations[0].LineSpan.Start.Line + 1;
-            var node = di.LocalVariable(subprogram, name, arg, line, di.Type(type), flags ?? (name.StartsWith('$') ? "DIFlagArtificial" : null));
             // DBG-137: the storage holds the variable's address (an untyped parameter is described as that pointer itself)
             var deref = received is not null && type is not UntypedTypeSymbol ? "DW_OP_deref" : "";
+            var sidecarKind = kind == "param" && deref.Length > 0 ? "varParam" : kind;                     // debug-info-sidecar.md §5
+            var node = di.LocalVariable(subprogram, name, arg, line, type, flags ?? (name.StartsWith('$') ? "DIFlagArtificial" : null), sidecarKind);
             if (IsCaptured(variable))
             {
                 var offset = _frame!.OffsetOf(variable);
@@ -1700,7 +1714,7 @@ internal sealed class FunctionEmitter
             var self = _routine is MethodSymbol { SelfParameter: { } selfParameter } && ReferenceEquals(parameter, selfParameter);
             var byAddress = IrEmitter.IsPassedByAddress(parameter);
             Declare(parameter, parameter.Name, arg, parameter.Type, byAddress ? values[i] : null, byAddress ? null : _parameterAddresses.GetValueOrDefault(parameter),
-                self ? "DIFlagArtificial | DIFlagObjectPointer" : parameter.Name.Contains('$') ? "DIFlagArtificial" : null);
+                self ? "DIFlagArtificial | DIFlagObjectPointer" : parameter.Name.Contains('$') ? "DIFlagArtificial" : null, self ? "self" : "param");
         }
 
         foreach (var local in _body.Locals)
@@ -1711,7 +1725,8 @@ internal sealed class FunctionEmitter
             }
 
             var isHiddenResult = hiddenResult is not null && ReferenceEquals(variable, _routine!.ResultVariable);
-            Declare(variable, local.Name, arg: null, local.Type, isHiddenResult ? hiddenResult : null, isHiddenResult ? null : _locals.GetValueOrDefault(local), flags: null);
+            var kind = ReferenceEquals(variable, _routine?.ResultVariable) ? "result" : "local";
+            Declare(variable, local.Name, arg: null, local.Type, isHiddenResult ? hiddenResult : null, isHiddenResult ? null : _locals.GetValueOrDefault(local), flags: null, kind);
         }
 
         foreach (var (address, variable, expression) in declarations)

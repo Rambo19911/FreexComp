@@ -34,18 +34,27 @@ internal sealed class DebugInfoEmitter
     private readonly Dictionary<TypeSymbol, int> _types = [];
     private readonly Dictionary<ClassTypeSymbol, int> _classes = [];
     private readonly Dictionary<RoutineSymbol, int> _subprograms = [];
+    private readonly Dictionary<RoutineSymbol, string> _linkageNames = [];
     private readonly List<int> _enums = [];
     private readonly List<int> _globals = [];
     private int? _byte;
 
-    public DebugInfoEmitter(DebugInfoOptions options, string unitPath, SourceText? unitText)
+    public DebugInfoEmitter(DebugInfoOptions options, string unitName, string unitPath, SourceText? unitText)
     {
         _options = options;
+        Sidecar = new PdiFragmentBuilder(unitName, unitPath, PdiSidecar.ContainerName(options.Format));
         Reserve();                                                                  // !0 the compile unit, written last
         Add("!{i32 2, !\"Debug Info Version\", i32 3}");
         Add(options.Format == DebugFormat.Dwarf ? "!{i32 7, !\"Dwarf Version\", i32 5}" : "!{i32 2, !\"CodeView\", i32 1}");
+        MainPath = unitPath;
         MainFile = File(unitPath, unitText);
     }
+
+    /// <summary>The unit's own source path.</summary>
+    public string MainPath { get; }
+
+    /// <summary>CMP-425: the unit's sidecar fragment, filled with every subprogram and variable this emitter describes (DBG-145).</summary>
+    public PdiFragmentBuilder Sidecar { get; }
 
     /// <summary>The <c>DIFile</c> of the unit's own source.</summary>
     public int MainFile { get; }
@@ -105,13 +114,16 @@ internal sealed class DebugInfoEmitter
     // ------------------------------------------------------------------ routines
 
     /// <summary>DBG-110…113: starts a <c>distinct !DISubprogram</c>; its node is written by <see cref="EndSubprogram"/>.</summary>
-    public DebugSubprogram BeginSubprogram(RoutineSymbol? routine, string name, string linkageName, SyntaxToken heading, SyntaxToken begin,
-        bool localToUnit, TypeSymbol? returnType, IEnumerable<DebugParameterType> parameters)
+    /// <param name="self">The type of <c>Self</c> for a method (the sidecar's <c>self</c>), else null.</param>
+    public DebugSubprogram BeginSubprogram(RoutineSymbol? routine, string name, string linkageName, SyntaxToken heading, SyntaxToken begin, SyntaxToken end,
+        bool localToUnit, TypeSymbol? returnType, IEnumerable<DebugParameterType> parameters, TypeSymbol? self)
     {
         var node = Reserve();
+        var parentLinkage = routine?.ContainingSymbol is RoutineSymbol enclosing && _linkageNames.TryGetValue(enclosing, out var p) ? p : null;
         if (routine is not null)
         {
             _subprograms[routine] = node;
+            _linkageNames[routine] = linkageName;
         }
 
         var file = FileOf(heading) ?? FileOf(begin);
@@ -121,7 +133,8 @@ internal sealed class DebugInfoEmitter
             [returnType is null ? "null" : "!" + N(Type(returnType)), .. parameters.Select(p => "!" + N(ParameterType(p)))];
         var type = Unique($"!DISubroutineType(types: !{N(Tuple(types))})");
         var flags = "DISPFlagDefinition" + (localToUnit ? " | DISPFlagLocalToUnit" : "") + (_options.IsOptimized ? " | DISPFlagOptimized" : "");
-        return new DebugSubprogram(node, file?.Path ?? "", fileNode,
+        var sidecar = Sidecar.AddRoutine(name, linkageName, file?.Path ?? MainPath, LineOf(heading), LineOf(begin), LineOf(end), self, parentLinkage);
+        return new DebugSubprogram(node, file?.Path ?? "", fileNode, sidecar,
             $"distinct !DISubprogram(name: {Quote(name)}, linkageName: {Quote(linkageName)}, scope: !{N(scope)}, file: !{N(fileNode)}, "
             + $"line: {N(LineOf(heading))}, type: !{N(type)}, scopeLine: {N(LineOf(begin))}, spFlags: {flags}, unit: !{N(CompileUnit)}");
     }
@@ -133,12 +146,15 @@ internal sealed class DebugInfoEmitter
     }
 
     /// <summary>DBG-136…139: a <c>DILocalVariable</c> of <paramref name="subprogram"/> (<paramref name="arg"/>: 1-based IR position).</summary>
-    public int LocalVariable(DebugSubprogram subprogram, string name, int? arg, int line, int type, string? flags)
+    /// <param name="kind">The sidecar's variable kind (debug-info-sidecar.md §5): <c>param</c>, <c>varParam</c>, <c>self</c>, <c>result</c>, <c>local</c>.</param>
+    public int LocalVariable(DebugSubprogram subprogram, string name, int? arg, int line, TypeSymbol type, string? flags, string kind)
     {
+        var typeNode = Type(type);
         var text = $"!DILocalVariable(name: {Quote(name)}{(arg is { } a ? ", arg: " + N(a) : "")}, scope: !{N(subprogram.Node)}, file: !{N(subprogram.File)}, "
-            + $"line: {N(line)}, type: !{N(type)}{(flags is null ? "" : ", flags: " + flags)})";
+            + $"line: {N(line)}, type: !{N(typeNode)}{(flags is null ? "" : ", flags: " + flags)})";
         var node = Add(text);
         subprogram.Variables.Add(node);
+        subprogram.Sidecar.AddVariable(name, kind, type);
         return node;
     }
 
@@ -154,6 +170,7 @@ internal sealed class DebugInfoEmitter
             + $"file: !{N(file)}, line: {N(line)}, type: !{N(type)}, isLocal: {(isLocal ? "true" : "false")}, isDefinition: true)");
         _nodes[expression] = $"!DIGlobalVariableExpression(var: !{N(global)}, expr: !DIExpression())";
         _globals.Add(expression);
+        Sidecar.AddGlobal(variable.Name, linkageName, variable.Type);
         return expression;
     }
 
@@ -387,8 +404,11 @@ internal sealed class DebugInfoEmitter
 internal sealed record DebugParameterType(TypeSymbol? Type, bool ByAddress);
 
 /// <summary>A subprogram being emitted: its node, file and the variables for <c>retainedNodes</c>.</summary>
-internal sealed class DebugSubprogram(int node, string path, int file, string text)
+internal sealed class DebugSubprogram(int node, string path, int file, PdiRoutine sidecar, string text)
 {
+    /// <summary>The routine's entry in the sidecar fragment (CMP-425).</summary>
+    public PdiRoutine Sidecar { get; } = sidecar;
+
     public int Node { get; } = node;
 
     /// <summary>The path of the subprogram's file (locations in other files get a lexical block file).</summary>

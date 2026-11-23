@@ -483,7 +483,7 @@ public sealed class Compilation
 
         // CMP-156: units lower and emit on up to MaxParallelism threads (each reads only bound symbols and writes its own module);
         // results and failures are then taken in link order, as a sequential run would
-        var texts = new (string? Text, Diagnostic? Failure)[stale.Length];
+        var texts = new (string? Text, string? Sidecar, Diagnostic? Failure)[stale.Length];
         foreach (var unit in stale)
         {
             options.InfoSink?.Invoke("Compiling " + unit.Name);
@@ -505,6 +505,13 @@ public sealed class Compilation
             var path = Path.Combine(objectDirectory, loaded.Name + ".ll");
             FileSystem.Delete(Path.ChangeExtension(path, ".pcu"));        // CMP-141: no .pcu may vouch for an .obj being replaced
             if (!Write(path, text, location, diagnostics))
+            {
+                return Finish(false, null, []);
+            }
+
+            // CMP-425: the unit's sidecar fragment next to its .ll with -g; none without (a stale one would vouch for old code)
+            var fragment = Path.Combine(objectDirectory, loaded.Name + PdiFragmentExtension);
+            if (texts[i].Sidecar is { } sidecar ? !Write(fragment, sidecar, location, diagnostics) : !Delete(fragment, location, diagnostics))
             {
                 return Finish(false, null, []);
             }
@@ -640,7 +647,7 @@ public sealed class Compilation
         };
         if (compiled.IsEmpty && !regenerated && !options.ForceRebuild && LinkIsUpToDate(request))
         {
-            return Finish(true, output, compiled);                                  // CMP-155
+            return Finish(WriteSidecar(output, main.Unit.Name, linkUnits, objectDirectory, location, diagnostics), output, compiled);   // CMP-155
         }
 
         if (!await VersionAsync().ConfigureAwait(false))
@@ -657,7 +664,62 @@ public sealed class Compilation
             Write(Path.Combine(objectDirectory, LinkedManifest), FileSystem.ReadAllText(request.ManifestPath), location, diagnostics);
         }
 
-        return Finish(linked.Success, linked.Success ? output : null, compiled);
+        var success = linked.Success && WriteSidecar(output, main.Unit.Name, linkUnits, objectDirectory, location, diagnostics);
+        return Finish(success, success ? output : null, compiled);
+    }
+
+    /// <summary>The per-unit sidecar fragment written next to the unit's <c>.ll</c> with <c>-g</c> (CMP-425).</summary>
+    internal const string PdiFragmentExtension = ".pdi.json";
+
+    /// <summary>
+    /// CMP-425, DBG-147: with <c>-g</c> the program's <c>&lt;output&gt;.pdi</c> is the merge of the fragments of the linked units that
+    /// have one (source units: in the object directory; precompiled units: next to their <c>.obj</c>), in link order; without
+    /// <c>-g</c> there is no sidecar (a stale one is removed).
+    /// </summary>
+    private bool WriteSidecar(string output, string program, ImmutableArray<LoadedUnit> linkUnits, string objectDirectory, Location location,
+        ImmutableArray<Diagnostic>.Builder diagnostics)
+    {
+        var path = Path.ChangeExtension(output, ".pdi");
+        if (!Options.DebugInfo)
+        {
+            return Delete(path, location, diagnostics);
+        }
+
+        var fragments = new List<string>();
+        foreach (var unit in linkUnits)
+        {
+            var fragment = unit.IsPrecompiled
+                ? Path.ChangeExtension(unit.ObjectPath, PdiFragmentExtension)
+                : Path.Combine(objectDirectory, unit.Name + PdiFragmentExtension);
+            try
+            {
+                if (FileSystem.FileExists(fragment))
+                {
+                    fragments.Add(FileSystem.ReadAllText(fragment));
+                }
+            }
+            catch (IOException e)
+            {
+                diagnostics.Add(Diagnostic.Create("E0003", location, fragment, e.Message));
+                return false;
+            }
+        }
+
+        return Write(path, PdiSidecar.Merge(program, PdiSidecar.ContainerName(Options.DebugFormat), fragments), location, diagnostics);
+    }
+
+    private bool Delete(string path, Location location, ImmutableArray<Diagnostic>.Builder diagnostics)
+    {
+        try
+        {
+            FileSystem.Delete(path);
+            return true;
+        }
+        catch (IOException e)
+        {
+            diagnostics.Add(Diagnostic.Create("E0004", location, path, e.Message));
+            return false;
+        }
     }
 
     /// <summary>The copy of the manifest the last successful link embedded (CMP-629, CMP-155), in the object directory.</summary>
@@ -970,24 +1032,24 @@ public sealed class Compilation
         };
 
     /// <summary>Lowers and emits one unit; the program gets the unit table. Thread-safe (CMP-156).</summary>
-    private static (string? Text, Diagnostic? Failure) EmitIr(BindingResult unit, ImmutableArray<Forms.EmbeddedForm> forms, ImmutableArray<UnitTableEntry> unitTable, Location location,
+    private static (string? Text, string? Sidecar, Diagnostic? Failure) EmitIr(BindingResult unit, ImmutableArray<Forms.EmbeddedForm> forms, ImmutableArray<UnitTableEntry> unitTable, Location location,
         DebugInfoOptions? debug)
     {
         try
         {
             var writer = new LlvmTextWriter();
             ImmutableArray<UnitTableEntry> table = unit.Unit.IsProgram ? unitTable : [];
-            IrEmitter.EmitUnit(Lowerer.Lower(unit, forms), writer, table, debug);
-            return (writer.GetText(), null);
+            var sidecar = IrEmitter.EmitUnit(Lowerer.Lower(unit, forms), writer, table, debug);
+            return (writer.GetText(), sidecar, null);
         }
         catch (EmitNotSupportedException e)
         {
-            return (null, Diagnostic.Create("E2900", e.Location, e.Message));                // C-213
+            return (null, null, Diagnostic.Create("E2900", e.Location, e.Message));                // C-213
         }
         catch (NotSupportedException e)
         {
             // constructs the binder accepts but the back end does not handle yet
-            return (null, Diagnostic.Create("E2900", location, e.Message));
+            return (null, null, Diagnostic.Create("E2900", location, e.Message));
         }
     }
 
