@@ -182,17 +182,17 @@ public sealed partial class DesignSurfaceController
         }
 
         var before = Selection.ToSnapshot();
-        var undo = new List<FormChange>(Editor.Apply(changes));
+        var undo = new List<FormChange>(ApplyEdit(changes));
         var copies = placements.Select(p => Document.FindByName(names[p.Source])!).ToList();
 
         // DSG-SUR-127: focusable objects take the tab positions after the existing ones, in copied order.
         var renumber = copies.Where(TabOrderRules.IsFocusable).GroupBy(o => o.Parent!, ReferenceEqualityComparer.Instance)
             .SelectMany(g => TabOrderRules.Renumber((FormObject)g.Key!, appended: g))
             .ToList();
-        undo.InsertRange(0, Editor.Apply(renumber));
+        undo.InsertRange(0, ApplyEdit(renumber));
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(copies);
-        Undo.Push(new DesignerUndoUnit(title, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], [],
+        PushUnit(new DesignerUndoUnit(title, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], [],
             before, Selection.ToSnapshot()));
     }
 

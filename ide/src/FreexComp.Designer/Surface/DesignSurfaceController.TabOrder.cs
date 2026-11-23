@@ -87,10 +87,10 @@ public sealed partial class DesignSurfaceController
         if (changes.Count > 0)
         {
             var selection = Selection.ToSnapshot();
-            var undo = Editor.Apply(changes);
+            var undo = ApplyEdit(changes);
             // DSG-LAY-040 / 041: like every unit, it stores the differences of a loaded form that violates the invariant.
             var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-            Undo.Push(new DesignerUndoUnit(UndoTitles.TabOrder, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
+            PushUnit(new DesignerUndoUnit(UndoTitles.TabOrder, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
         }
 
         Invalidated?.Invoke(this, EventArgs.Empty);

@@ -36,6 +36,12 @@ public sealed record RenameObject(string OldName, string NewName) : FormChange
     internal ImmutableArray<(FormObject Owner, ImmutableArray<PropertySlot> Slots)> RestoreReferences { get; init; }
 }
 
+/// <summary>
+/// Changes the type name of the form root (code-sync.md DSG-CS-046: the form's type follows the renamed form class); the
+/// root stays bound to the same metadata.
+/// </summary>
+public sealed record RetypeObject(string ObjectName, string NewTypeName) : FormChange;
+
 /// <summary>A deep snapshot of an object: header, stored properties in order, children (clipboard, undo).</summary>
 public sealed record FormObjectData(FormObjectKind Kind, string Name, string TypeName,
     ImmutableArray<FormPropertyData> Properties, ImmutableArray<FormObjectData> Children)

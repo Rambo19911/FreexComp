@@ -54,8 +54,26 @@ public sealed class FormEditor(FormDocument document, ComponentCatalog catalog)
         RemoveObject remove => Remove(remove, effects),
         MoveObject move => Move(move, effects),
         RenameObject rename => Rename(rename, effects),
+        RetypeObject retype => Retype(retype, effects),
         _ => throw new InvalidFormChangeException("Unknown change " + change),
     };
+
+    /// <summary>DSG-CS-046: only the root's type name changes (the metadata it is bound to stays).</summary>
+    private FormChange Retype(RetypeObject change, Effects effects)
+    {
+        var obj = document.FindByName(change.ObjectName) ?? throw NotFound(change.ObjectName);
+        if (obj.Parent is not null)
+        {
+            throw new InvalidFormChangeException($"Only the type name of the form root can change, not that of {obj.Name}");
+        }
+
+        CheckIdentifier(change.NewTypeName);
+        var old = obj.TypeName;
+        obj.TypeName = change.NewTypeName;
+        effects.Name(obj.Name);
+        effects.Flags |= FormChangeFlags.Name;
+        return new RetypeObject(obj.Name, old);
+    }
 
     // ---- objects (DSG-FD-081 … 085) ------------------------------------------------------------------------------
 

@@ -21,12 +21,12 @@ public sealed class FormDocumentViewModel : TextDocumentViewModel
     private readonly FormDesignerViewModel? _designer;
 
     public FormDocumentViewModel(ITextBuffer buffer, string filePath, ILanguageDefinition language, FileEncoding encoding,
-        LineEndingKind defaultLineEnding, TextDocumentViewModel formText, ComponentCatalog catalog)
+        LineEndingKind defaultLineEnding, TextDocumentViewModel formText, ComponentCatalog catalog, bool hasUnit = true)
         : base(buffer, filePath, null, language, encoding, defaultLineEnding)
     {
         ArgumentNullException.ThrowIfNull(formText);
         FormText = formText;
-        _designer = new FormDesignerViewModel(this, formText, catalog);
+        _designer = new FormDesignerViewModel(this, formText, catalog, hasUnit);
         _designer.ActiveViewChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(ActiveView));
@@ -35,6 +35,9 @@ public sealed class FormDocumentViewModel : TextDocumentViewModel
         };
         _designer.ModifiedChanged += (_, _) => OnPropertyChanged(nameof(IsModified));
     }
+
+    /// <summary>False: a <c>.form</c> opened without its unit (DSG-CS-080); this document's own buffer is an empty placeholder.</summary>
+    public bool HasUnit => Designer.HasUnit;
 
     /// <summary>The <c>.form</c> text as a document of its own (not in the document list): what the Text view edits.</summary>
     public TextDocumentViewModel FormText { get; }

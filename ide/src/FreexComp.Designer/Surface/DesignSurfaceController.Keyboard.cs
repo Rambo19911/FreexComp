@@ -165,7 +165,7 @@ public sealed partial class DesignSurfaceController
         }
 
         var selection = Selection.ToSnapshot();
-        var undo = Editor.Apply(changes);
+        var undo = ApplyEdit(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         PushNudge(UndoTitles.Move, [.. changes, .. commitRedo], [.. commitUndo, .. undo], selection);
     }
@@ -243,14 +243,15 @@ public sealed partial class DesignSurfaceController
             && last.Selection.Names.SequenceEqual(selection.Names, StringComparer.OrdinalIgnoreCase)
             && last.Selection.Primary == selection.Primary && now - last.At <= NudgeMergeWindow)
         {
-            unit = new DesignerUndoUnit(kind, [.. last.Unit.Redo, .. redo], [.. undo, .. last.Unit.Undo], [],
-                last.Unit.SelectionBefore, selection);
+            unit = new DesignerUndoUnit(kind, [.. last.Unit.Redo, .. redo], [.. undo, .. last.Unit.Undo], last.Unit.CodeEdits,
+                last.Unit.SelectionBefore, selection) { CodeOps = last.Unit.CodeOps };
+            unit = WithRepair(unit);
             Undo.ReplaceLast(unit);
         }
         else
         {
             unit = new DesignerUndoUnit(kind, redo, undo, [], selection, selection);
-            Undo.Push(unit);
+            unit = PushUnit(unit);
         }
 
         _lastNudge = (unit, kind, selection, now);

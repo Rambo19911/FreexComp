@@ -48,10 +48,10 @@ public sealed partial class DesignSurfaceController
         }
 
         var before = Selection.ToSnapshot();
-        var undo = Editor.Apply(changes);
+        var undo = ApplyEdit(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(after ?? Document.Root);
-        Undo.Push(new DesignerUndoUnit(title, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], before,
+        PushUnit(new DesignerUndoUnit(title, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], before,
             Selection.ToSnapshot()));
     }
 

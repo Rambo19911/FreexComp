@@ -115,7 +115,8 @@ public sealed class FileDialogTests
         Assert.Equal(["All files (*.*)"], Labels(Pickers.Requests[^1]));
         Assert.Null(Pickers.Requests[^1].DefaultExtension);
 
-        var form = Assert.IsType<TextDocumentViewModel>((await _services.Documents.OpenAsync(File(@"C:\q\Main.form"))).Value);
+        // A .form without unit opens as a form document (DSG-CS-080).
+        var form = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(File(@"C:\q\Main.form"))).Value);
         Pickers.NextCancel();
         await Prompts.SaveAsAsync(form);
         Assert.Equal(["Form file (*.form)"], Labels(Pickers.Requests[^1]));

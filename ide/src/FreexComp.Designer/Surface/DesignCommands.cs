@@ -96,6 +96,12 @@ public static class UndoTitles
     public const string Add = "Undo_Designer_Add";
 
     public const string Event = "Undo_Designer_Event";
+
+    /// <summary>An Object Inspector value commit (object-inspector.md §9).</summary>
+    public const string Property = "Undo_Designer_Property";
+
+    /// <summary>An Object Inspector <c>Name</c> commit (object-inspector.md §7).</summary>
+    public const string Rename = "Undo_Designer_Rename";
 }
 
 /// <summary>Status message ids the surface shows (states-and-messages.md; design-surface.md §15).</summary>
@@ -115,4 +121,7 @@ public static class StatusIds
 
     /// <summary>DSG-CS-101: a designer undo left code the user had changed.</summary>
     public const string UndoCodeSkipped = "Msg.Designer.UndoCodeSkipped";
+
+    /// <summary>DSG-CS-004: a code-sync edit was refused (it would add syntax errors); {0} = the reason.</summary>
+    public const string CodeSyncConflict = "Msg.Designer.CodeSyncConflict";
 }

@@ -91,6 +91,9 @@ public sealed class FileChangeService : IFileChangeService
             e.Document.IsDeletedOnDisk = false;
             e.Document.RemoveInfoBar(TextDocumentViewModel.ExternalChangeInfoBarKind);
             e.Document.RemoveInfoBar(TextDocumentViewModel.ExternalDeleteInfoBarKind);
+            if (e.Document is FormDocumentViewModel form)
+                form.FormText.IsDeletedOnDisk = false;
+            SyncWatchers(); // a form that followed its unit may live in another folder now
         };
         settings.Changed += (_, e) =>
         {
@@ -124,9 +127,9 @@ public sealed class FileChangeService : IFileChangeService
     {
         if (!Enabled)
             return;
-        foreach (var document in _documents.Documents.OfType<TextDocumentViewModel>().Where(d => d.FilePath is not null).ToList())
+        foreach (var (owner, file) in Files().ToList())
         {
-            Check(document);
+            Check(owner, file);
         }
 
         CheckProjectFile();
@@ -183,7 +186,7 @@ public sealed class FileChangeService : IFileChangeService
     private void SyncWatchers()
     {
         var wanted = Enabled
-            ? _documents.Documents.Select(d => d.FilePath).Append(_projectFile).OfType<string>().Select(Path.GetDirectoryName)
+            ? Files().Select(f => f.File.FilePath).Append(_projectFile).OfType<string>().Select(Path.GetDirectoryName)
                 .OfType<string>().ToHashSet(PathComparer)
             : [];
         foreach (var directory in _watchers.Keys.Where(d => !wanted.Contains(d)).ToList())
@@ -230,26 +233,49 @@ public sealed class FileChangeService : IFileChangeService
                 });
             }
 
-            if (path is null || FindDocument(Path.GetFullPath(path)) is not { FilePath: { } documentPath } || IsQuiet(documentPath))
+            if (path is null || FindFile(Path.GetFullPath(path)) is not { File.FilePath: { } documentPath } || IsQuiet(documentPath))
                 continue;
             if (_pending.Remove(documentPath, out var timer))
                 timer.Dispose();
             _pending[documentPath] = _clock.Schedule(Debounce, () =>
             {
                 _pending.Remove(documentPath);
-                if (FindDocument(documentPath) is { } document)
-                    Check(document);
+                if (FindFile(documentPath) is { } found)
+                    Check(found.Owner, found.File);
             });
         }
     }
 
-    private TextDocumentViewModel? FindDocument(string path) =>
-        _documents.Documents.OfType<TextDocumentViewModel>().FirstOrDefault(d => PathComparer.Equals(d.FilePath, path));
-
-    private void Check(TextDocumentViewModel document)
+    /// <summary>
+    /// The files of the open documents: a text document is its own file; a form document has its unit and its
+    /// <c>.form</c> (DSG-FD-100: one document, both files watched), a form without unit only the <c>.form</c>.
+    /// </summary>
+    private IEnumerable<(TextDocumentViewModel Owner, TextDocumentViewModel File)> Files()
     {
-        if (document.FilePath is { } path && !IsQuiet(path))
-            Track(CheckAsync(document, path));
+        foreach (var document in _documents.Documents.OfType<TextDocumentViewModel>().Where(d => d.FilePath is not null))
+        {
+            if (document is not FormDocumentViewModel { HasUnit: false })
+                yield return (document, document);
+            if (document is FormDocumentViewModel { FormText.FilePath: not null } form)
+                yield return (form, form.FormText);
+        }
+    }
+
+    private (TextDocumentViewModel Owner, TextDocumentViewModel File)? FindFile(string path)
+    {
+        foreach (var entry in Files())
+        {
+            if (PathComparer.Equals(entry.File.FilePath, path))
+                return entry;
+        }
+
+        return null;
+    }
+
+    private void Check(TextDocumentViewModel owner, TextDocumentViewModel file)
+    {
+        if (file.FilePath is { } path && !IsQuiet(path))
+            Track(CheckAsync(owner, file, path));
     }
 
     private void Track(Task task)
@@ -282,9 +308,9 @@ public sealed class FileChangeService : IFileChangeService
     }
 
     /// <summary>IDE-P1-110: compares (existence, last-write time, length) with the recorded stamp; reads only on a difference.</summary>
-    private async Task CheckAsync(TextDocumentViewModel document, string path)
+    private async Task CheckAsync(TextDocumentViewModel document, TextDocumentViewModel file, string path)
     {
-        var recorded = document.DiskStamp;
+        var recorded = file.DiskStamp;
         Probe probe;
         try
         {
@@ -296,21 +322,21 @@ public sealed class FileChangeService : IFileChangeService
             return;
         }
 
-        if (!_documents.Documents.Contains(document) || !PathComparer.Equals(document.FilePath, path) || IsQuiet(path)
-            || !ReferenceEquals(document.DiskStamp, recorded))
+        if (!_documents.Documents.Contains(document) || !PathComparer.Equals(file.FilePath, path) || IsQuiet(path)
+            || !ReferenceEquals(file.DiskStamp, recorded))
             return; // closed, saved or reloaded meanwhile
 
         if (probe.Missing)
         {
-            if (!document.IsDeletedOnDisk)
-                ShowDeletedBar(document);
+            if (!file.IsDeletedOnDisk)
+                ShowDeletedBar(document, file);
             return;
         }
 
-        if (document.IsDeletedOnDisk)
+        if (file.IsDeletedOnDisk)
         {
             // IDE-P1-115: the file came back before the user answered.
-            document.IsDeletedOnDisk = false;
+            file.IsDeletedOnDisk = false;
             document.RemoveInfoBar(TextDocumentViewModel.ExternalDeleteInfoBarKind);
         }
 
@@ -319,19 +345,19 @@ public sealed class FileChangeService : IFileChangeService
         if (recorded is null || recorded.Hash == stamp.Hash)
         {
             // IDE-P1-112: identical content only updates the recorded stamp (unknown before: start from here).
-            document.DiskStamp = stamp;
+            file.DiskStamp = stamp;
             document.RemoveInfoBar(TextDocumentViewModel.ExternalChangeInfoBarKind);
             return;
         }
 
         if (!document.IsModified && _settings.Get(SettingsCatalog.EnvironmentAutoReloadUnmodified))
         {
-            Reload(document, stamp, probe.Bytes!); // IDE-P1-113
+            Reload(document, file, stamp, probe.Bytes!); // IDE-P1-113
             _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_ReloadedSilently, document.Title), StatusMessageDuration);
             return;
         }
 
-        ShowChangedBar(document, stamp, dirty: document.IsModified);
+        ShowChangedBar(document, file, stamp, dirty: document.IsModified);
     }
 
     private Probe Examine(string path, DiskStamp? recorded)
@@ -353,17 +379,20 @@ public sealed class FileChangeService : IFileChangeService
     }
 
     /// <summary>IDE-P1-113: the disk text replaces the buffer (caret kept, clamped; undo cleared; folds kept).</summary>
-    private void Reload(TextDocumentViewModel document, DiskStamp stamp, byte[] bytes)
+    private void Reload(TextDocumentViewModel document, TextDocumentViewModel file, DiskStamp stamp, byte[] bytes)
     {
-        document.Reload(FileEncodings.Decode(bytes, document.Encoding));
-        document.DiskStamp = stamp;
+        file.Reload(FileEncodings.Decode(bytes, file.Encoding));
+        file.DiskStamp = stamp;
+        if (document is FormDocumentViewModel form && ReferenceEquals(file, form.FormText))
+            form.Designer.ReloadForm(); // DSG-FD-100: the model is replaced, the selection kept by name
+        document.RemoveInfoBar(TextDocumentViewModel.ExternalChangeInfoBarKind);
         _commands.InvalidateCanExecute();
     }
 
     /// <summary>Reload / Reload and Discard My Changes: the file as it is now.</summary>
-    private async Task ReloadFromDiskAsync(TextDocumentViewModel document)
+    private async Task ReloadFromDiskAsync(TextDocumentViewModel document, TextDocumentViewModel file)
     {
-        if (document.FilePath is not { } path || !_documents.Documents.Contains(document))
+        if (file.FilePath is not { } path || !_documents.Documents.Contains(document))
             return;
         Probe probe;
         try
@@ -378,26 +407,26 @@ public sealed class FileChangeService : IFileChangeService
 
         if (probe.Missing)
         {
-            ShowDeletedBar(document);
+            ShowDeletedBar(document, file);
             return;
         }
 
-        Reload(document, probe.Stamp!, probe.Bytes!);
+        Reload(document, file, probe.Stamp!, probe.Bytes!);
     }
 
     /// <summary>IDE-P1-113 / IDE-P1-114: one external-change bar per document (IDE-P1-116).</summary>
-    private void ShowChangedBar(TextDocumentViewModel document, DiskStamp stamp, bool dirty)
+    private void ShowChangedBar(TextDocumentViewModel document, TextDocumentViewModel file, DiskStamp stamp, bool dirty)
     {
         Task Keep(InfoBarViewModel? _)
         {
-            document.DiskStamp = stamp; // the same change is not reported again
+            file.DiskStamp = stamp; // the same change is not reported again
             document.RemoveInfoBar(TextDocumentViewModel.ExternalChangeInfoBarKind);
             return Task.CompletedTask;
         }
 
         Task ReloadNow()
         {
-            var task = ReloadFromDiskAsync(document);
+            var task = ReloadFromDiskAsync(document, file);
             Track(task);
             return task;
         }
@@ -415,11 +444,11 @@ public sealed class FileChangeService : IFileChangeService
     }
 
     /// <summary>IDE-P1-115: Keep in Editor / Close; the tab title is struck through (UI-ED-074).</summary>
-    private void ShowDeletedBar(TextDocumentViewModel document)
+    private void ShowDeletedBar(TextDocumentViewModel document, TextDocumentViewModel file)
     {
         Task KeepInEditor()
         {
-            document.MarkModified(); // saving recreates the file
+            file.MarkModified(); // saving recreates the file
             document.RemoveInfoBar(TextDocumentViewModel.ExternalDeleteInfoBarKind);
             return Task.CompletedTask;
         }
@@ -432,7 +461,7 @@ public sealed class FileChangeService : IFileChangeService
                 _documents.Close(document);
         }
 
-        document.IsDeletedOnDisk = true;
+        file.IsDeletedOnDisk = true;
         document.RemoveInfoBar(TextDocumentViewModel.ExternalChangeInfoBarKind);
         document.ShowInfoBar(new InfoBarViewModel(TextDocumentViewModel.ExternalDeleteInfoBarKind, InfoBarSeverity.Warning,
             Strings.Msg_File_ExternalDelete,

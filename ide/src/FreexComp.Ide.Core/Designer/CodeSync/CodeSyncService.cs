@@ -31,10 +31,50 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
 
     public FormUnit Unit { get; } = unit ?? throw new ArgumentNullException(nameof(unit));
 
-    public ComponentCatalog Catalog { get; } = catalog ?? throw new ArgumentNullException(nameof(catalog));
+    /// <remarks>Replaced when the metadata is reloaded (DSG-TP-008).</remarks>
+    public ComponentCatalog Catalog { get; set; } = catalog ?? throw new ArgumentNullException(nameof(catalog));
+
+    /// <summary>False for a form opened without its unit (code-sync.md §8 <c>NoUnit</c>): every edit is refused.</summary>
+    public bool HasUnit { get; init; } = true;
+
+    /// <summary><see cref="ICodeSync.IsUnitAvailable"/>.</summary>
+    public bool IsUnitAvailable => HasUnit;
+
+    /// <summary>The form model the repairs of DSG-CS-091 (a) reconcile against (set by the form document).</summary>
+    public Func<FormDocument?>? Form { get; set; }
+
+    /// <summary>
+    /// DSG-CS-091 (a): set after open and after a Text-view model replacement; the next mutating designer action repairs
+    /// the form class first (<see cref="RepairBeforeEdit"/>) and clears it.
+    /// </summary>
+    public bool RepairPending { get; set; }
 
     /// <summary>code-sync.md §8, computed from a fresh parse.</summary>
-    public CodeSyncState State => Unit.Locate().State;
+    public CodeSyncState State => HasUnit ? Unit.Locate().State : CodeSyncState.NoUnit;
+
+    /// <summary>DSG-CS-091 (a): see <see cref="ICodeSync.RepairBeforeEdit"/>; a refused repair (DSG-CS-004) edits nothing.</summary>
+    public IReadOnlyList<TextEditRecord> RepairBeforeEdit()
+    {
+        if (!RepairPending)
+        {
+            return [];
+        }
+
+        RepairPending = false;
+        if (Form?.Invoke() is not { } form || State != CodeSyncState.Ok)
+        {
+            return [];
+        }
+
+        try
+        {
+            return Reconcile(form, ReconcileMode.Repair).Edits;
+        }
+        catch (CodeSyncException)
+        {
+            return [];
+        }
+    }
 
     /// <summary>DSG-CS-071: the per-document, not persisted set of handler names the designer touched in this session.</summary>
     public IReadOnlySet<string> HandlerCandidates => _candidates;
@@ -132,6 +172,11 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
     public IReadOnlyList<TextEditRecord> Execute(IReadOnlyList<CodeSyncOp> operations)
     {
         ArgumentNullException.ThrowIfNull(operations);
+        foreach (var rename in operations.OfType<RenameFormClassAndVariableOp>().Take(1))
+        {
+            FollowFormClass(rename.OldFormName);
+        }
+
         return Run(() => operations.SelectMany(ExecuteCore).ToList());
     }
 
@@ -143,8 +188,28 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
         CreateHandlerOp create => CreateHandlerCore(create.MethodName, create.Signature),
         RenameHandlerOp rename => RenameHandlerCore(rename.OldName, rename.NewName),
         RenameFormClassAndVariableOp rename => FieldEdits.RenameFormClassAndVariable(Unit, rename.OldFormName, rename.NewFormName).Edits,
+        RepairOp => Form?.Invoke() is { } form ? Reconciler.Reconcile(Unit, form, Catalog, FormFileName, ReconcileMode.Repair).Edits : [],
         _ => throw new ArgumentException("Unknown code-sync operation: " + operation, nameof(operation)),
     };
+
+    /// <summary>
+    /// A redo of a form rename runs after the form's type name changed already: the class is still found under the old
+    /// name <c>T&lt;OldFormName&gt;</c> (DSG-CS-046).
+    /// </summary>
+    private void FollowFormClass(string oldFormName)
+    {
+        if (Unit.Locate().State != CodeSyncState.FormClassNotFound)
+        {
+            return;
+        }
+
+        var current = Unit.FormTypeName;
+        Unit.FormTypeName = "T" + oldFormName;
+        if (Unit.Locate().State != CodeSyncState.Ok)
+        {
+            Unit.FormTypeName = current;
+        }
+    }
 
     private AddFieldsResult AddFieldsCore(IReadOnlyList<(string Name, string TypeName, string Unit)> fields)
     {

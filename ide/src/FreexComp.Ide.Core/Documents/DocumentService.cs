@@ -227,6 +227,10 @@ public sealed class DocumentService : IDocumentService
                 owner.ShowView(DocumentView.Design);
                 return OperationResult<DocumentViewModel>.Of(owner);
             }
+
+            // DSG-CS-080: without its unit the form opens in the NoUnit mode (editable Design view, no code sync).
+            if (owner is null && FindByPath(unitPath) is null && !_fileSystem.FileExists(unitPath) && _fileSystem.FileExists(fullPath))
+                return await LoadFormOnlyAsync(fullPath);
         }
 
         if (_loading.TryGetValue(fullPath, out var pending))
@@ -593,14 +597,17 @@ public sealed class DocumentService : IDocumentService
 
         // A form document: repair, then the removal of empty handlers, before the unit text is taken (DSG-CS-091 b, 072).
         var form = document as FormDocumentViewModel;
+        var movedForm = form is { HasUnit: true } ? FollowingFormPath(form, fullPath) : null;
+        if (movedForm is not null)
+            form!.Designer.RetargetForm(Path.GetFileName(movedForm)); // DSG-CS-022: the {$FORM} directive follows
         var plan = form?.Designer.PrepareSave();
         ApplySaveEdits(document); // steps 1-2 (IDE-P1-080)
         var text = document.Buffer.Text;
         if (!FileEncodings.CanEncode(text, document.Encoding))
             return OperationResult.Fail("Msg.File.EncodingLossy", FileEncodings.DisplayName(document.Encoding));
 
-        // designer README §3: only the modified buffers are written, the .pas first.
-        if (form is null || form.IsUnitModified || !string.Equals(form.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))
+        // designer README §3: only the modified buffers are written, the .pas first; a form without unit has no .pas.
+        if (form is null || (form.HasUnit && (form.IsUnitModified || !string.Equals(form.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))))
         {
             var written = await WriteAsync(fullPath, FileEncodings.Encode(text, document.Encoding));
             if (!written.Success)
@@ -608,13 +615,24 @@ public sealed class DocumentService : IDocumentService
             document.DiskStamp = written.Stamp;
         }
 
-        if (form is not null && plan?.FormText is { } formText)
+        // The form: written when modified; a form that follows the unit to a new path (Save As, rename) is written there
+        // unless that file already holds exactly its text (a rename moved it).
+        if (form is not null && (plan?.FormText ?? (movedForm is null ? null : form.Designer.CurrentFormText())) is { } formText)
         {
-            var formPath = form.FormText.FilePath!;
-            var written = await WriteAsync(formPath, FileEncodings.Encode(formText, form.FormText.Encoding));
-            if (!written.Success)
-                return written.Failure!;
-            form.FormText.DiskStamp = written.Stamp;
+            var formPath = movedForm ?? (form.HasUnit ? form.FormText.FilePath! : fullPath);
+            var bytes = FileEncodings.Encode(formText, form.FormText.Encoding);
+            if (plan?.FormText is null && _fileSystem.FileExists(formPath) && _fileSystem.ReadAllBytes(formPath).AsSpan().SequenceEqual(bytes))
+            {
+                form.FormText.DiskStamp = StampAfterWrite(formPath, bytes);
+            }
+            else
+            {
+                var written = await WriteAsync(formPath, bytes);
+                if (!written.Success)
+                    return written.Failure!;
+                form.FormText.DiskStamp = written.Stamp;
+            }
+
             form.FormText.MarkSaved(formPath, form.FormText.Language);
             form.Designer.MarkFormSaved(formText);
         }
@@ -661,6 +679,22 @@ public sealed class DocumentService : IDocumentService
     }
 
     /// <summary>The stamp of the file just written; null when it cannot be examined (the next check records it).</summary>
+    /// <summary>
+    /// DSG-CS-022, IDE-PM-071: the form path of a form document saved as <paramref name="unitPath"/>, or null when the
+    /// unit keeps its path. The form gets the unit's new base name; a form beside the unit moves to the unit's new folder,
+    /// one elsewhere (a project form entry) stays in its folder.
+    /// </summary>
+    private static string? FollowingFormPath(FormDocumentViewModel form, string unitPath)
+    {
+        if (form.FilePath is not { } oldUnit || string.Equals(oldUnit, unitPath, StringComparison.OrdinalIgnoreCase)
+            || form.FormText.FilePath is not { } oldForm)
+            return null;
+        var besideUnit = string.Equals(Path.GetDirectoryName(oldForm), Path.GetDirectoryName(oldUnit), StringComparison.OrdinalIgnoreCase);
+        var folder = besideUnit ? Path.GetDirectoryName(unitPath)! : Path.GetDirectoryName(oldForm)!;
+        var moved = Path.Combine(folder, Path.GetFileNameWithoutExtension(unitPath) + ".form");
+        return string.Equals(moved, oldForm, StringComparison.Ordinal) ? null : moved;
+    }
+
     private DiskStamp? StampAfterWrite(string path, byte[] bytes)
     {
         try
@@ -770,6 +804,7 @@ public sealed class DocumentService : IDocumentService
             Configure(formText);
             var formDocument = new FormDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, language, detection.Encoding,
                 lineEnding, formText, DesignCatalog) { DiskStamp = stamp };
+            formDocument.Designer.Status = _status;
             formDocument.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
             document = formDocument;
         }
@@ -789,6 +824,50 @@ public sealed class DocumentService : IDocumentService
                 bar => document.RemoveInfoBar(bar.Kind)));
         }
 
+        Add(document);
+        return OperationResult<DocumentViewModel>.Of(document);
+    }
+
+    /// <summary>
+    /// DSG-CS-080, code-sync.md §8 <c>NoUnit</c>: a <c>.form</c> whose unit does not exist is one form document without a
+    /// unit — its own buffer is an empty placeholder, its path is the form's, it shows the Design view.
+    /// </summary>
+    private async Task<OperationResult<DocumentViewModel>> LoadFormOnlyAsync(string fullPath)
+    {
+        EncodingDetection detection;
+        DiskStamp stamp;
+        try
+        {
+            (detection, stamp) = await Task.Run(() =>
+            {
+                var lastWrite = _fileSystem.GetLastWriteTimeUtc(fullPath);
+                var bytes = _fileSystem.ReadAllBytes(fullPath);
+                return (EncodingDetector.Detect(bytes), DiskStamp.Of(lastWrite, bytes));
+            });
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return OperationResult<DocumentViewModel>.Fail("Msg.File.NotFound", fullPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return OperationResult<DocumentViewModel>.Fail("Msg.File.OpenFailed", fullPath, ex.Message);
+        }
+
+        if (detection.IsBinary)
+            return OperationResult<DocumentViewModel>.Fail("Msg.File.Binary", fullPath);
+        if (FindByPath(fullPath) is { } open)
+            return OperationResult<DocumentViewModel>.Of(open);
+
+        var lineEnding = DefaultLineEnding;
+        var language = _languages.ForPath(fullPath);
+        var formText = new TextDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, null, language, detection.Encoding,
+            lineEnding) { DiskStamp = stamp };
+        Configure(formText);
+        var document = new FormDocumentViewModel(_buffers.Create("", lineEnding), fullPath, language, detection.Encoding, lineEnding,
+            formText, DesignCatalog, hasUnit: false) { DiskStamp = stamp };
+        document.Designer.Status = _status;
+        document.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
         Add(document);
         return OperationResult<DocumentViewModel>.Of(document);
     }

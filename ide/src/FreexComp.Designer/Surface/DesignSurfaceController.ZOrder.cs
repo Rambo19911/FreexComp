@@ -47,8 +47,8 @@ public sealed partial class DesignSurfaceController
     {
         var changes = ZOrderChanges(front);
         var selection = Selection.ToSnapshot();
-        var undo = Editor.Apply(changes);
+        var undo = ApplyEdit(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-        Undo.Push(new DesignerUndoUnit(UndoTitles.Order, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
+        PushUnit(new DesignerUndoUnit(UndoTitles.Order, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
     }
 }

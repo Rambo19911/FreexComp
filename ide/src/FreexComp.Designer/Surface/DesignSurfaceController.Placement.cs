@@ -260,13 +260,13 @@ public sealed partial class DesignSurfaceController
         }
 
         var before = Selection.ToSnapshot();
-        var undo = new List<FormChange>(Editor.Apply(changes));
+        var undo = new List<FormChange>(ApplyEdit(changes));
         var created = Document.FindByName(name)!;
         var renumber = TabOrderRules.IsFocusable(created) ? TabOrderRules.Renumber(parent, appended: [created]) : [];
-        undo.InsertRange(0, Editor.Apply(renumber));
+        undo.InsertRange(0, ApplyEdit(renumber));
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(created);
-        Undo.Push(new DesignerUndoUnit(UndoTitles.Add, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], [],
+        PushUnit(new DesignerUndoUnit(UndoTitles.Add, [.. changes, .. renumber, .. commitRedo], [.. commitUndo, .. undo], [],
             before, Selection.ToSnapshot()) { TitleArgument = info.ClassName });
         return true;
     }

@@ -11,7 +11,7 @@ public sealed partial class DesignSurfaceController
 {
     /// <summary>DSG-SUR-160: exactly one component, not preserved, its class has events; not read-only, not during a drag or tab-order mode.</summary>
     private bool CanCreateDefaultHandler =>
-        !IsReadOnly && !IsPointerActive && State != InteractionState.TabOrder && Selection.Items.Count == 1
+        !IsReadOnly && _host.CodeSync.IsUnitAvailable && !IsPointerActive && State != InteractionState.TabOrder && Selection.Items.Count == 1
         && Selection.Primary is { IsPreserved: false, Info.Events.IsEmpty: false };
 
     /// <summary>
@@ -47,15 +47,16 @@ public sealed partial class DesignSurfaceController
             return;
         }
 
+        RepairFirst(); // DSG-CS-091 (a): before the handler is created
         var compatible = code.GetCompatibleMethods(ev.Signature);
         var name = DefaultHandlerName(obj, ev, compatible);
         var signature = Catalog.FindEventSignature(ev.Signature) ?? ev.Signature;
         var edits = compatible.Contains(name, StringComparer.OrdinalIgnoreCase) ? [] : code.CreateHandler(name, signature);
         var selection = Selection.ToSnapshot();
         FormChange[] changes = [new SetProperty(obj.Name, ev.Name, new IdentValue(name))];
-        var undo = Editor.Apply(changes);
+        var undo = ApplyEdit(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-        Undo.Push(new DesignerUndoUnit(UndoTitles.Event, [.. changes, .. commitRedo], [.. commitUndo, .. undo], edits, selection, selection)
+        PushUnit(new DesignerUndoUnit(UndoTitles.Event, [.. changes, .. commitRedo], [.. commitUndo, .. undo], edits, selection, selection)
         {
             CodeOps = edits.Count > 0 ? [new CreateHandlerOp(name, signature)] : [],
         });

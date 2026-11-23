@@ -226,6 +226,14 @@ public static class ServiceGraph
             quickPick.Show(new Popups.GoToFileViewModel(documents, projects, navigation, layout, platform.Dialogs))));
         commands.RegisterHandler("search.commandPalette", new DelegateHandler(() => popupsAvailable, () =>
             quickPick.Show(new Popups.CommandPaletteViewModel(commands, layout, focus.Current, toolWindowPhase ?? ImplementedPhase))));
+        // D-077: component metadata and component.reloadMetadata from Phase 5 on; Load() is the start-up wiring point (D-088).
+        Designer.ComponentMetadataService? metadata = null;
+        if ((toolWindowPhase ?? ImplementedPhase) >= 5)
+        {
+            metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment);
+            metadata.RegisterCommands(commands);
+        }
+
         EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
         commands.RegisterLaterPhaseStubs(ImplementedPhase);
 
@@ -291,6 +299,7 @@ public static class ServiceGraph
             SearchResults = searchResults,
             CodeModel = codeModel,
             SemanticHighlights = semanticHighlights,
+            Metadata = metadata,
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;

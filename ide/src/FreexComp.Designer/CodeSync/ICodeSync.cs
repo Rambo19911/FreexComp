@@ -29,6 +29,16 @@ public interface ICodeSync
     void NavigateToHandler(string methodName);
 
     /// <summary>
+    /// DSG-CS-091 (a): the first mutating designer action after open or after a Text-view model replacement repairs the
+    /// form class first; returns the edits of that repair (empty: nothing to repair, already done, or not possible) for the
+    /// action's undo unit. Default: nothing to repair.
+    /// </summary>
+    IReadOnlyList<TextEditRecord> RepairBeforeEdit() => [];
+
+    /// <summary>False when the form has no unit (code-sync.md §8 <c>NoUnit</c>): no handlers can be created or shown.</summary>
+    bool IsUnitAvailable => true;
+
+    /// <summary>
     /// DSG-CS-101 (designer undo): reverts, in reverse order and as one code-editor undo group, each of
     /// <paramref name="edits"/> whose tracked range still holds exactly its inserted text; the others are skipped. False
     /// when at least one was skipped (the caller shows <c>Msg.Designer.UndoCodeSkipped</c>).
@@ -70,6 +80,9 @@ public sealed record CreateHandlerOp(string MethodName, string Signature) : Code
 public sealed record RenameHandlerOp(string OldName, string NewName) : CodeSyncOp;
 
 public sealed record RenameFormClassAndVariableOp(string OldFormName, string NewFormName) : CodeSyncOp;
+
+/// <summary>DSG-CS-091 (a): the repair that ran before the unit's action (re-run on redo against the then current form).</summary>
+public sealed record RepairOp : CodeSyncOp;
 
 /// <summary>code-sync.md §9: report only (no edits), or repair the form class.</summary>
 public enum ReconcileMode { CheckOnly, Repair }

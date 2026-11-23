@@ -685,9 +685,9 @@ public sealed partial class DesignSurfaceController
         }
 
         var selection = Selection.ToSnapshot();
-        var undo = Editor.Apply(changes);
+        var undo = ApplyEdit(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-        Undo.Push(new DesignerUndoUnit(UndoTitles.Move, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
+        PushUnit(new DesignerUndoUnit(UndoTitles.Move, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], selection, selection));
     }
 
     /// <summary>
@@ -910,7 +910,7 @@ public sealed partial class DesignSurfaceController
 
         var selection = Selection.ToSnapshot();
         var (redo, undo) = ApplyResize(form, preview);
-        Undo.Push(new DesignerUndoUnit(UndoTitles.Resize, redo, undo, [], selection, selection));
+        PushUnit(new DesignerUndoUnit(UndoTitles.Resize, redo, undo, [], selection, selection));
     }
 
     /// <summary>
@@ -934,7 +934,7 @@ public sealed partial class DesignSurfaceController
             }
         }
 
-        var undo = Editor.Apply(changes);
+        var undo = ApplyEdit(changes);
         var (flowRedo, flowUndo) = LayoutCommit.StoreDifferences(Editor, preview);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         return ([.. changes, .. flowRedo, .. commitRedo], [.. commitUndo, .. flowUndo, .. undo]);

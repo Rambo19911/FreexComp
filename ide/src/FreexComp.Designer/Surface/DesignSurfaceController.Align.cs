@@ -73,7 +73,7 @@ public sealed partial class DesignSurfaceController
         var title = commandId is Commands.SameWidth or Commands.SameHeight or Commands.SameSize or Commands.SizeToGrid
             ? UndoTitles.Size
             : UndoTitles.Align;
-        Undo.Push(new DesignerUndoUnit(title, redo, undo, [], selection, selection));
+        PushUnit(new DesignerUndoUnit(title, redo, undo, [], selection, selection));
     }
 
     /// <summary>The align and same-size commands: every other movable selected control against the primary (reference).</summary>

@@ -272,8 +272,11 @@ public sealed class SaveTests
         Append(json, " ");
         Assert.True(await Documents.SaveAsync(json));
         Assert.Equal("{ }   ", Disk(@"C:\p\Data.json"));
-        var form = await OpenAsync(File(@"C:\p\Main.form", "object Form1  "));
-        Append(form, " ");
+        // A .form without unit opens as a form document (DSG-CS-080); its form text is the file.
+        var formResult = await Documents.OpenAsync(File(@"C:\p\Main.form", "object Form1  "));
+        Assert.True(formResult.Success, formResult.MessageId);
+        var form = Assert.IsType<FormDocumentViewModel>(formResult.Value);
+        Append(form.FormText, " ");
         Assert.True(await Documents.SaveAsync(form));
         Assert.Equal("object Form1   ", Disk(@"C:\p\Main.form"));
 

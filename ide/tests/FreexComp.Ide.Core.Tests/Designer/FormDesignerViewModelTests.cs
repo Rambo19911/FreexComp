@@ -273,10 +273,236 @@ public sealed class FormDesignerViewModelTests
         Assert.Same(document, (await _services.Documents.OpenAsync(FormPath)).Value);
         Assert.Equal(DocumentView.Design, document.ActiveView);
         Assert.Single(_services.Documents.Documents);
+    }
 
-        // A form without its unit opens as text (no design view without code sync yet).
-        File(Dir + @"\Lonely.form", "object Lonely: TForm\nend\n");
-        Assert.IsNotType<FormDocumentViewModel>((await _services.Documents.OpenAsync(Dir + @"\Lonely.form")).Value);
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-CS-080")]
+    public async Task FormWithoutUnitOpensDesignWithoutCodeSync()
+    {
+        const string lonely = Dir + @"\Lonely.form";
+        File(lonely, "object Lonely: TForm\n  Left = 200\n  Top = 120\n  Caption = 'Lonely'\n  ClientWidth = 400\n  ClientHeight = 300\n"
+            + "  PixelsPerInch = 96\n  object Button1: TButton\n    Left = 8\n    Top = 8\n    Width = 75\n    Height = 25\n    TabOrder = 0\n  end\nend\n");
+
+        // The NoUnit mode: an editable Design view without code sync and without a Code view.
+        var document = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(lonely)).Value);
+        var designer = document.Designer;
+        Assert.Equal(lonely, document.FilePath);
+        Assert.Equal("Lonely.form", document.Title);
+        Assert.False(document.HasUnit);
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.Equal(FreexComp.Ide.Core.Designer.CodeSync.CodeSyncState.NoUnit, designer.CodeSync.State);
+        Assert.False(designer.Surface!.IsReadOnly);
+        Assert.False(document.ShowView(DocumentView.Code));
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.Same(document, (await _services.Documents.OpenAsync(lonely)).Value);
+
+        // Edits work; the events page is read-only and the default handler does nothing.
+        var inspector = new ObjectInspectorViewModel(_services.Status);
+        inspector.Bind(designer);
+        designer.Surface.Selection.Set(["Button1"]);
+        inspector.CurrentPath = "Caption";
+        Assert.True(inspector.BeginEdit());
+        inspector.EditText = "Press";
+        Assert.True(inspector.Commit());
+        inspector.Page = InspectorPage.Events;
+        Assert.True(inspector.IsEventsReadOnly);
+        Assert.False(inspector.CommitEvent("OnClick", "Button1Click"));
+        Assert.False(designer.Surface.CanExecute(FreexComp.Designer.Surface.Commands.CreateDefaultHandler));
+        inspector.CurrentPath = "Name";
+        inspector.Page = InspectorPage.Properties;
+        Assert.True(inspector.BeginEdit());
+        inspector.EditText = "PressButton";
+        Assert.True(inspector.Commit());
+        Assert.True(document.IsModified);
+
+        // Save writes only the form.
+        Assert.True(await _services.Documents.SaveAsync(document));
+        Assert.Equal([lonely], Writes());
+        Assert.Contains("Caption = 'Press'", Disk(lonely), StringComparison.Ordinal);
+        Assert.Contains("object PressButton: TButton", Disk(lonely), StringComparison.Ordinal);
+        Assert.False(_memory.FileExists(Dir + @"\Lonely.pas"));
+        Assert.False(document.IsModified);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-CS-091")]
+    public async Task RepairRunsBeforeFirstEditInSameUnit()
+    {
+        // The unit lacks the NameEdit field: opening reports it and does not edit (DSG-CS-090).
+        var unitText = TestUnits.Read("MainForm.pas").Replace("    NameEdit: TEdit;\r\n", "", StringComparison.Ordinal);
+        var document = await OpenAsync(unitText);
+        var designer = document.Designer;
+        Assert.Equal(unitText, document.Buffer.Text);
+        Assert.True(document.ShowView(DocumentView.Design));
+        Assert.Equal(unitText, document.Buffer.Text);
+        var surface = designer.Surface!;
+
+        // The first mutating action repairs the class first, inside its own undo unit.
+        surface.Selection.Set(["GreetButton"]);
+        Assert.True(surface.OnKey(new FreexComp.Designer.Surface.KeyInput(FreexComp.Designer.Surface.DesignKey.Right, FreexComp.Designer.Surface.InputModifiers.Ctrl)));
+        Assert.Contains("    NameEdit: TEdit;", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Equal(1, designer.Undo.UndoCount);
+        Assert.NotEmpty(designer.Undo.Peek!.CodeEdits);
+
+        // Undo reverts the action and the repair together; redo repeats both.
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(unitText, document.Buffer.Text);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Redo);
+        Assert.Contains("    NameEdit: TEdit;", document.Buffer.Text, StringComparison.Ordinal);
+
+        // Later actions do not repair again (the user's code edits stand until save).
+        Replace(document.Buffer, "    NameEdit: TEdit;\r\n", "");
+        surface.Execute(FreexComp.Designer.Surface.Commands.SendToBack);
+        Assert.DoesNotContain("NameEdit: TEdit;", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Empty(designer.Undo.Peek!.CodeEdits);
+
+        // After a Text-view replacement of the model the next action repairs again (also from the Object Inspector).
+        Assert.True(document.ShowView(DocumentView.Text));
+        Replace(document.FormBuffer, "Caption = 'MainForm'", "Caption = 'Main'");
+        Assert.True(document.ShowView(DocumentView.Design));
+        Assert.DoesNotContain("NameEdit: TEdit;", document.Buffer.Text, StringComparison.Ordinal);
+        var inspector = new ObjectInspectorViewModel(_services.Status);
+        inspector.Bind(designer);
+        inspector.CurrentPath = "Caption";
+        Assert.True(inspector.BeginEdit());
+        inspector.EditText = "Hello";
+        Assert.True(inspector.Commit());
+        Assert.Contains("    NameEdit: TEdit;", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.NotEmpty(designer.Undo.Peek!.CodeEdits);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-100")]
+    [Trait("Req", "DSG-FD-093")]
+    public async Task ExternalFormChangeReloads()
+    {
+        var document = await OpenAsync();
+        var designer = document.Designer;
+        Assert.True(document.ShowView(DocumentView.Design));
+        designer.Surface!.Selection.Set(["GreetButton"]);
+        var model = designer.Model;
+
+        // Unmodified: the changed form is reloaded silently, the model replaced, the selection kept by name.
+        var changed = TestUnits.Read("MainForm.form").Replace("Caption = 'MainForm'", "Caption = 'Outside'", StringComparison.Ordinal);
+        File(FormPath, changed);
+        _services.FileChanges.CheckAll();
+        await _services.FileChanges.WhenIdle();
+        Assert.NotSame(model, designer.Model);
+        Assert.Equal("Outside", Caption(designer));
+        Assert.Equal(["GreetButton"], designer.Surface!.Selection.Items.Select(o => o.Name));
+        Assert.Equal(changed, document.FormBuffer.Text);
+        Assert.False(document.IsModified);
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_ReloadedSilently, document.Title), _services.Status.Message);
+
+        // Modified: the document's external-change bar; Reload and Discard replaces the model and clears the undo stack.
+        Edit(designer, new SetProperty("MainForm", "Caption", new StringValue("Mine")));
+        File(FormPath, changed.Replace("'Outside'", "'Again'", StringComparison.Ordinal));
+        _services.FileChanges.CheckAll();
+        await _services.FileChanges.WhenIdle();
+        Assert.Equal("Mine", Caption(designer));
+        var bar = Assert.Single(document.InfoBars, b => b.Kind == TextDocumentViewModel.ExternalChangeInfoBarKind);
+        Assert.Equal(Strings.Msg_File_ExternalChangeDirty, bar.Text);
+        await bar.Actions.Single(a => a.Name == "ReloadAndDiscard").ExecuteAsync();
+        await _services.FileChanges.WhenIdle();
+        Assert.Equal("Again", Caption(designer));
+        Assert.Equal(0, designer.Undo.UndoCount);
+        Assert.False(document.IsModified);
+        Assert.DoesNotContain(document.InfoBars, b => b.Kind == TextDocumentViewModel.ExternalChangeInfoBarKind);
+
+        // A form in another folder is watched as well (the watcher of its folder reports it).
+        Assert.Equal(TestUnits.Read("MainForm.pas"), document.Buffer.Text);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-CS-022")]
+    [Trait("Req", "IDE-PM-071")]
+    public async Task FormFollowsUnitRenameAndSaveAs()
+    {
+        // Save As: the form goes with the unit under the new base name; the {$FORM} directive follows.
+        var document = await OpenAsync();
+        Assert.True((await _services.Documents.SaveAsAsync(document, Dir + @"\Other.pas")).Success);
+        Assert.Equal(Dir + @"\Other.pas", document.FilePath);
+        Assert.Equal(Dir + @"\Other.form", document.FormText.FilePath);
+        Assert.Equal("Other.form", document.Designer.CodeSync.FormFileName);
+        Assert.Contains("{$FORM Other.form}", Disk(Dir + @"\Other.pas"), StringComparison.Ordinal);
+        Assert.Equal(TestUnits.Read("MainForm.form"), Disk(Dir + @"\Other.form"));
+        Assert.Equal(TestUnits.Read("MainForm.form"), Disk(FormPath)); // the original stays
+        Assert.False(document.IsModified);
+
+        // A later designer edit saves into the new form file.
+        Edit(document.Designer, new SetProperty("MainForm", "Caption", new StringValue("Moved")));
+        Assert.True(await _services.Documents.SaveAsync(document));
+        Assert.Contains("Caption = 'Moved'", Disk(Dir + @"\Other.form"), StringComparison.Ordinal);
+        Assert.DoesNotContain("Moved", Disk(FormPath), StringComparison.Ordinal);
+        Assert.True(_services.Documents.Close(document));
+
+        // Rename in the project: the form file is renamed with it and the open document follows it.
+        File(Dir + @"\App.pproj", """
+            { "formatVersion": 1, "name": "App", "mainSource": "App.pas",
+              "files": [ { "path": "App.pas" }, { "path": "MainForm.pas", "form": "MainForm.form" } ] }
+            """);
+        File(Dir + @"\App.pas", "program App;\nbegin\nend.\n");
+        Assert.True(await _services.Projects.OpenAsync(Dir + @"\App.pproj"));
+        var opened = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(UnitPath)).Value);
+        Assert.True(await _services.Projects.RenameFileAsync("MainForm.pas", "Renamed.pas"));
+        Assert.Equal(Dir + @"\Renamed.pas", opened.FilePath);
+        Assert.Equal(Dir + @"\Renamed.form", opened.FormText.FilePath);
+        Assert.Equal("Renamed.form", opened.Designer.CodeSync.FormFileName);
+        Assert.False(_memory.FileExists(FormPath));
+        Assert.Equal(TestUnits.Read("MainForm.form"), Disk(Dir + @"\Renamed.form"));
+        Assert.Contains("{$FORM Renamed.form}", Disk(Dir + @"\Renamed.pas"), StringComparison.Ordinal);
+        Edit(opened.Designer, new SetProperty("MainForm", "Caption", new StringValue("Renamed")));
+        Assert.True(await _services.Documents.SaveAsync(opened));
+        Assert.Contains("Caption = 'Renamed'", Disk(Dir + @"\Renamed.form"), StringComparison.Ordinal);
+        Assert.False(_memory.FileExists(FormPath));
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-TP-008")]
+    public async Task ReloadMetadataRebindsOpenForms()
+    {
+        const string meta = @"C:\meta";
+        var f = new DesignerFixture();
+        foreach (var file in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "TestData", "metadata"), "*.json"))
+        {
+            f.File(Path.Combine(meta, Path.GetFileName(file)), System.IO.File.ReadAllText(file));
+        }
+
+        f.Services.Settings.Set(FreexComp.Ide.Core.Settings.SettingsCatalog.ToolchainFrameworkDesignDir, meta);
+        var document = await f.OpenAsync();
+        var designer = document.Designer;
+        var palette = new ToolPaletteViewModel(CodeSyncTests.Catalog);
+        f.Services.Metadata!.CatalogChanged += (_, catalog) => palette.SetCatalog(catalog);
+        designer.Surface!.Selection.Set(["NameEdit", "GreetButton"]);
+        Assert.True(designer.Surface.OnKey(new FreexComp.Designer.Surface.KeyInput(FreexComp.Designer.Surface.DesignKey.Right, FreexComp.Designer.Surface.InputModifiers.Ctrl)));
+        Assert.Equal(1, designer.Undo.UndoCount);
+        var model = designer.Model;
+        var replaced = 0;
+        designer.ModelReplaced += (_, _) => replaced++;
+
+        // Same structure: the model is re-read against the new catalog, selection kept by name, undo stack kept.
+        await f.Services.Commands.ExecuteAsync("component.reloadMetadata");
+        Assert.NotSame(model, designer.Model);
+        Assert.Equal(1, replaced);
+        Assert.Equal(["NameEdit", "GreetButton"], designer.Surface!.Selection.Items.Select(o => o.Name));
+        Assert.Equal(1, designer.Undo.UndoCount);
+        var count = f.Services.Metadata.Catalog.All.Count(c => c.ClassName != "TComponent");
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_MetadataReloaded, count), f.Services.Status.Message);
+        Assert.Same(f.Services.Metadata.Catalog, designer.Catalog);
+        Assert.Same(f.Services.Metadata.Catalog, ((DocumentService)f.Services.Documents).DesignCatalog);
+        Assert.Contains(palette.Pages, p => p.Name == "Standard");
+        designer.Surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(232, ((IntegerValue)designer.Model!.FindByName("GreetButton")!.FindProperty("Left")!.Value).Value);
+
+        // A catalog without the StdCtrls classes: the structure differs (preserved components), the stack is cleared.
+        f.File(Path.Combine(meta, "index.json"), System.IO.File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "metadata", "index.json"))
+            .Replace("\"StdCtrls.components.json\", ", "", StringComparison.Ordinal));
+        designer.Surface.Execute(FreexComp.Designer.Surface.Commands.Redo);
+        await f.Services.Commands.ExecuteAsync("component.reloadMetadata");
+        Assert.True(designer.Model!.FindByName("GreetButton")!.IsPreserved);
+        Assert.Equal(0, designer.Undo.UndoCount);
+        Assert.Equal(["NameEdit", "GreetButton"], designer.Surface!.Selection.Items.Select(o => o.Name));
+        Assert.DoesNotContain(palette.Pages.SelectMany(p => p.Items), i => i.ClassName == "TButton");
     }
 
     [Fact(Timeout = 30000)]
