@@ -90,6 +90,7 @@ sealed class FreexComp.Compiler.Compilation
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetDiagnostics(System.String path = null, System.Threading.CancellationToken ct = default)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.Diagnostic> GetSyntaxDiagnostics(System.String path)
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.UnitInfo> Units { get; }
+  public System.Threading.Tasks.Task<FreexComp.Compiler.EmitResult> EmitAsync(FreexComp.Compiler.EmitOptions options, System.Threading.CancellationToken ct)
   public static FreexComp.Compiler.Compilation Create(FreexComp.Compiler.CompilationOptions options, System.Collections.Generic.IEnumerable<FreexComp.Compiler.SourceText> openFiles, FreexComp.Compiler.IFileSystem fs)
 sealed record FreexComp.Compiler.CompilationOptions : System.IEquatable<FreexComp.Compiler.CompilationOptions>
   public FreexComp.Compiler.AppType AppType { get; init; }

@@ -436,7 +436,8 @@ public sealed class BuildEngine : IBuildEngine
                 },
             };
             var compilation = Compilation.Create(options, request.OpenFiles, _fs);
-            var result = await Task.Run(() => compilation.Emit(emit, ct), ct).ConfigureAwait(false);
+            // C-269: the front end leaves the caller's thread; nothing blocks a pool worker while tools run
+            var result = await Task.Run(() => compilation.EmitAsync(emit, ct), ct).ConfigureAwait(false);
             diagnostics.AddRange(result.Diagnostics);
             if (!result.Success)
             {
@@ -515,7 +516,15 @@ public sealed class BuildEngine : IBuildEngine
                 if (!process.HasExited)
                 {
                     process.Kill(entireProcessTree: true);
-                    process.WaitForExit(20_000);
+                    using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                    try
+                    {
+                        await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);     // C-269: no thread waits
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // the tree did not exit within the limit
+                    }
                 }
             }
         }

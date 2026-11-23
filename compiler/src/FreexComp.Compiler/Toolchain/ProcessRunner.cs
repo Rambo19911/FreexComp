@@ -84,23 +84,29 @@ public sealed class ProcessRunner : IProcessRunner
         }
         finally
         {
-            Kill(process);
+            await KillAsync(process).ConfigureAwait(false);
         }
     }
 
-    private static void Kill(Process process)
+    /// <summary>Kills the tree of a process that has not exited and awaits its exit (at most 20 s); no thread waits (C-269).</summary>
+    private static async Task KillAsync(Process process)
     {
         try
         {
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
-                process.WaitForExit(20_000);
+                using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);
             }
         }
         catch (InvalidOperationException)
         {
             // already exited between the check and the kill
+        }
+        catch (OperationCanceledException)
+        {
+            // the tree did not exit within the limit: nothing more can be done for it
         }
     }
 }

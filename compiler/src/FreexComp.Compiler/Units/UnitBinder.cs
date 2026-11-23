@@ -162,7 +162,7 @@ internal sealed class UnitBinder : IUsesScopes
         }
         else
         {
-            Parallel.ForEach(ready, new ParallelOptions { MaxDegreeOfParallelism = maxParallelism }, Complete);
+            ParallelWork.For(ready.Count, maxParallelism, i => Complete(ready[i]));       // C-269: never waits for a free pool worker
         }
 
         // C-116 (CMP-385): generic instance bodies once all implementation parts are bound; in unit order (deterministic)

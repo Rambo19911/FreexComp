@@ -445,11 +445,24 @@ public sealed class Compilation
         return new Compilation(options, open.ToImmutable(), fs);
     }
 
+    /// <summary>
+    /// The synchronous form of <see cref="EmitAsync"/> for callers that are synchronous by design (the <c>opc</c> command line):
+    /// it holds a thread-pool worker until the emit is done. Callers in a long-lived process (the build engine, the IDE) use
+    /// <see cref="EmitAsync"/> (C-269).
+    /// </summary>
     public EmitResult Emit(EmitOptions options, CancellationToken ct) =>
         Task.Run(() => EmitAsync(options, ct), ct).GetAwaiter().GetResult();
 
-    private async Task<EmitResult> EmitAsync(EmitOptions options, CancellationToken ct)
+    /// <summary>
+    /// C-269: the emit without blocking any thread-pool thread. The front end and IR emission run on the calling thread (with
+    /// up to <see cref="CompilationOptions.MaxParallelism"/> pool helpers when workers are free, CMP-156), tool processes are
+    /// awaited (exit and output streams), so the emit completes even when no pool worker is free. Callers on a UI thread start
+    /// it with <c>Task.Run(() =&gt; compilation.EmitAsync(options, ct))</c> so the front end leaves that thread; cancelling
+    /// <paramref name="ct"/> stops the work and kills running tool processes (<see cref="OperationCanceledException"/>).
+    /// </summary>
+    public async Task<EmitResult> EmitAsync(EmitOptions options, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(options);
         var clock = Stopwatch.StartNew();
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         var mainPath = PathUtil.Normalize(Options.MainFile);
@@ -490,8 +503,8 @@ public sealed class Compilation
         }
 
         var debug = DebugInfoOptions();
-        Parallel.For(0, stale.Length, new ParallelOptions { MaxDegreeOfParallelism = MaxParallelism, CancellationToken = ct },
-            i => texts[i] = EmitIr(stale[i].Result!, stale[i].Forms, unitTable, location, debug));
+        await ParallelWork.ForAsync(stale.Length, MaxParallelism,
+            i => texts[i] = EmitIr(stale[i].Result!, stale[i].Forms, unitTable, location, debug), ct).ConfigureAwait(false);
         var llPaths = ImmutableArray.CreateBuilder<string>();
         for (var i = 0; i < stale.Length; i++)
         {
