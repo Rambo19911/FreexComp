@@ -23,14 +23,18 @@ internal sealed class AdapterProcess : IAsyncDisposable
     private int? _exitCode;
     private bool _disposed;
 
-    private AdapterProcess(Process process, Action<string>? onStderrLine)
+    private AdapterProcess(Process process, Action<string>? onStderrLine, Func<Func<Task>, Task>? startStderrReader)
     {
         _process = process;
         ProcessId = process.Id;
         StandardInput = process.StandardInput.BaseStream;
         StandardOutput = process.StandardOutput.BaseStream;
         _job = JobHandle.TryCreateFor(process);
-        StderrCompleted = Task.Run(() => ReadStderrAsync(process.StandardError, onStderrLine));
+        // The stream is taken here, not by the reader: the reader may get its first turn only after the adapter has
+        // exited and this object was disposed, and a disposed process object no longer hands out its streams. A
+        // stream that was taken stays open over that disposal, so a late reader still reads everything.
+        var stderr = process.StandardError;
+        StderrCompleted = (startStderrReader ?? Task.Run)(() => ReadStderrAsync(stderr, onStderrLine));
     }
 
     /// <summary>
@@ -40,7 +44,12 @@ internal sealed class AdapterProcess : IAsyncDisposable
     /// <param name="adapterPath">Absolute path of the adapter executable.</param>
     /// <param name="arguments">Command line arguments; empty for the real adapter (tests pass a scenario file).</param>
     /// <param name="onStderrLine">Called for every stderr line, on the stderr reader task.</param>
-    public static AdapterProcess Start(string adapterPath, IReadOnlyList<string> arguments, Action<string>? onStderrLine)
+    /// <param name="startStderrReader">
+    /// Test hook: starts the stderr reader and returns the task that ends with it; null: on the thread pool. Lets a
+    /// test decide when the reader runs relative to the rest (it may start after the process has been disposed).
+    /// </param>
+    public static AdapterProcess Start(
+        string adapterPath, IReadOnlyList<string> arguments, Action<string>? onStderrLine, Func<Func<Task>, Task>? startStderrReader = null)
     {
         if (!File.Exists(adapterPath))
             throw new DebuggerException(DebugErrorCode.AdapterNotFound, Messages.AdapterNotFound + adapterPath);
@@ -77,7 +86,7 @@ internal sealed class AdapterProcess : IAsyncDisposable
             throw new DebuggerException(DebugErrorCode.AdapterStartFailed, Messages.AdapterStartFailed + e.Message, inner: e);
         }
 
-        return new AdapterProcess(process, onStderrLine);
+        return new AdapterProcess(process, onStderrLine, startStderrReader);
     }
 
     /// <summary>

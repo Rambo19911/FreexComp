@@ -149,16 +149,19 @@ internal sealed partial class DebugSession
         await WaitBrieflyAsync(adapter.StderrCompleted).ConfigureAwait(false);
     }
 
-    /// <summary>Waits up to 2 s on the session clock; a timeout is not an error.</summary>
+    /// <summary>
+    /// Waits up to 2 s on the session clock. Neither a timeout nor a failure of what is waited for is an error: these
+    /// waits only collect what the adapter left behind, and the end of the session must not depend on them.
+    /// </summary>
     private async Task WaitBrieflyAsync(Task task)
     {
         try
         {
             await task.WaitAsync(AdapterExitWait, _time).ConfigureAwait(false);
         }
-        catch (TimeoutException)
+        catch (Exception)
         {
-            // Not in time: the caller goes on (and kills the process tree).
+            // Not in time, or the wait itself failed: the caller goes on (and kills the process tree).
         }
     }
 

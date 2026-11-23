@@ -26,6 +26,9 @@ internal sealed partial class DebugSession
 
     private bool LaunchPending => _launch is { Task.IsCompleted: false };
 
+    /// <summary>Test hook, set before the launch: how the stderr reader of the adapter is started (<see cref="AdapterProcess.Start"/>).</summary>
+    internal Func<Func<Task>, Task>? StderrReaderStarter { get; set; }
+
     public Task LaunchAsync(LaunchRequest request, CancellationToken ct = default)
     {
         if (_disposed)
@@ -82,7 +85,7 @@ internal sealed partial class DebugSession
             if (_typeInfo is null)
                 _events.Raise(() => Output, new OutputEventArgs(OutputCategory.Debugger, Messages.TypeInfoMissing(typeInfoPath)));
 
-            _adapter = AdapterProcess.Start(_options.AdapterPath, _options.AdapterArguments, TraceStderr);
+            _adapter = AdapterProcess.Start(_options.AdapterPath, _options.AdapterArguments, TraceStderr, StderrReaderStarter);
             _adapterProcessId = _adapter.ProcessId;
             _client = new DapClient(
                 new DapTransport(_adapter.StandardOutput, _adapter.StandardInput),

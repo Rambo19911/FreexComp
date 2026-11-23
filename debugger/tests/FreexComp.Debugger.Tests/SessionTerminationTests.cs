@@ -363,6 +363,67 @@ public sealed class SessionTerminationTests
         Assert.EndsWith("See docs/QUESTIONS.md: lldb-dap requires a Python runtime that is not installed.", exception.Message);
     }
 
+    /// <summary>
+    /// G-075: the stderr reader of an adapter that exits by itself may have failed by the time the session collects
+    /// what the adapter left behind (it got its first turn after the process object was disposed). The session must
+    /// end all the same, in every state: here the reader is replaced by one that has already failed.
+    /// </summary>
+    [Theory]
+    [InlineData("exit 0 before initialize")]
+    [InlineData("exit 2 before initialize")]
+    [InlineData("starting")]
+    [InlineData("running")]
+    [Trait("Req", "DBG-007")]
+    [Trait("Req", "DBG-023")]
+    public async Task Crash_StderrReaderFailed_SessionStillEnds(string when)
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", "scenario." + Guid.NewGuid().ToString("N"));
+        var scenario = when switch
+        {
+            "starting" => """{ "initializedAfter": "never", "steps": [ { "on": "launch", "thenExit": 5 } ] }""",
+            "running" => """{ "steps": [ { "on": "configurationDone", "respond": {}, "thenExit": 7 } ] }""",
+            _ => "{}",
+        };
+        await using var harness = SessionHarness.Create(scenario, configure: o => when switch
+        {
+            "exit 0 before initialize" => o with { AdapterArguments = ["--stderr-lines", "3"] },
+            "exit 2 before initialize" => o with { AdapterArguments = [missing] },
+            _ => o,
+        });
+        harness.Session.StderrReaderStarter = _ => Task.FromException(new ObjectDisposedException("System.Diagnostics.Process"));
+
+        // No stderr line was read: the messages carry the exit code only.
+        if (when == "running")
+        {
+            await harness.LaunchAsync();
+            var terminated = await harness.WaitForEventAsync("terminated");
+
+            Assert.Equal("terminated AdapterCrashed null Debug adapter exited unexpectedly (exit code 7).", terminated);
+            Assert.Equal(
+                ["state Idle->Starting", "state Starting->Running", "state Running->Terminated", terminated],
+                harness.Events.Snapshot());
+        }
+        else
+        {
+            var exception = await Assert.ThrowsAsync<DebuggerException>(() => harness.LaunchAsync());
+
+            var (code, message) = when switch
+            {
+                "exit 0 before initialize" => (DebugErrorCode.AdapterStartFailed, "Debug adapter could not be started: it exited with code 0."),
+                "exit 2 before initialize" => (DebugErrorCode.AdapterStartFailed, "Debug adapter could not be started: it exited with code 2."),
+                _ => (DebugErrorCode.LaunchFailed, "Debug adapter exited unexpectedly (exit code 5)."),
+            };
+            Assert.Equal(code, exception.Code);
+            Assert.Equal(message, exception.Message);
+            Assert.Equal(
+                ["state Idle->Starting", "state Starting->Terminated", "terminated LaunchFailed null " + message],
+                harness.Events.Snapshot());
+        }
+
+        Assert.Equal(DebugState.Terminated, harness.Session.State);
+        Assert.False(SessionHarness.IsAlive(Assert.NotNull(harness.AdapterProcessId)));
+    }
+
     [Fact]
     [Trait("Req", "DBG-023")]
     public async Task MalformedJson_ProtocolError()

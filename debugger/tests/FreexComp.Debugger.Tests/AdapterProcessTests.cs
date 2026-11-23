@@ -91,6 +91,32 @@ public sealed class AdapterProcessTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-006")]
+    public async Task StderrReader_StartedAfterDispose_StillReadsEveryLine()
+    {
+        // G-075: the reader is queued when the adapter starts and may get its first turn only after the adapter has
+        // exited and the process object has been disposed. The gate forces exactly that order.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lines = new ConcurrentQueue<string>();
+        var adapter = AdapterProcess.Start(FakeAdapterRunner.ExePath, ["--stderr-lines", "3"], lines.Enqueue, async read =>
+        {
+            await gate.Task;
+            await read();
+        });
+        ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(AdapterProcessTests));
+        await adapter.WaitForExitAsync(Ct).WaitAsync(Safety, Ct);
+        await adapter.DisposeAsync();
+        Assert.False(adapter.StderrCompleted.IsCompleted);
+
+        gate.SetResult();
+        await adapter.StderrCompleted.WaitAsync(Safety, Ct);   // must not fault
+
+        Assert.Equal(0, adapter.ExitCode);
+        Assert.Equal(["line 1", "line 2", "line 3"], lines);
+        Assert.Equal(["line 1", "line 2", "line 3"], adapter.LastStderrLines);
+    }
+
+    [Fact]
     [Trait("Req", "DBG-004")]
     public void Missing_AdapterNotFound()
     {
