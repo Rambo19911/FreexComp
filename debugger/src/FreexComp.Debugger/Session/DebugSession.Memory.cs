@@ -101,9 +101,12 @@ internal sealed partial class DebugSession
             session.AddressOfCoreAsync(frameId, variablePath, ct);
 
         public Task<bool> WriteMemoryAsync(ulong address, ReadOnlyMemory<byte> data, CancellationToken ct) =>
-            throw NotYet(SessionMethod.SetValueAsync, "G-048");
+            session.WriteMemoryCoreAsync(address, data, ct);
 
         public Task<IReadOnlyList<RawVariable>> GetRawVariablesAsync(int frameId, ScopeKind scope, CancellationToken ct) =>
-            throw NotYet(SessionMethod.GetScopesAsync, "G-041");
+            session.GetRawVariablesCoreAsync(frameId, scope, ct);
+
+        public Task<IReadOnlyList<RawVariable>> GetRawChildrenAsync(int reference, CancellationToken ct) =>
+            session.GetRawChildrenCoreAsync(reference, ct);
     }
 }

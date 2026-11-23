@@ -38,6 +38,52 @@ internal static class Messages
     public const string NotAvailable = "<not available>";
     public const string StaleFrame = "The stack frame belongs to an earlier stop.";
 
+    // ---- expressions (Pascal values §9) ----
+    public const string ExpressionExpected = "Expression expected";
+    public const string IdentifierExpected = "Identifier expected";
+    public const string InvalidStringLiteral = "Invalid string literal";
+    public const string SyntaxError = "Syntax error";
+    public const string FunctionCallsNotSupported = "Function calls are not supported in expressions";
+    public const string DivisionByZero = "Division by zero";
+    public const string NilReference = "Access through nil reference";
+    public const string UntypedDereference = "Cannot dereference an untyped pointer";
+    public const string InvalidTypecast = "Invalid typecast";
+    public const string StringTooLong = "String too long to evaluate";
+    public const string BooleanExpected = "Boolean expression expected";
+    public const string SetElementOutOfRange = "Set element out of range";
+    public const string SetElementsDiffer = "Set elements must have the same type";
+    public const string NoTypeInfo = "Type information is not available";
+    public const string MemoryWriteIncomplete = "Memory write was incomplete.";
+    public const string HitCountTooSmall = "Hit count must be at least 1";
+
+    public static string AtColumn(string message, int column) => message + " at column " + column;
+    public static string Unexpected(string token) => "Unexpected '" + token + "'";
+    public static string Expected(string token) => "'" + token + "' expected";
+    public static string InvalidNumber(string text) => "Invalid number '" + text + "'";
+    public static string NotSupportedInExpressions(string construct, int column) =>
+        "'" + construct + "' is not supported in debugger expressions at column " + column;
+    public static string UndeclaredIdentifier(string name) => "Undeclared identifier '" + name + "'";
+    public static string NotAvailableVariable(string name) => "'" + name + "' is not available";
+    public static string TypeIsNotValue(string name) => "'" + name + "' is a type, not a value";
+    public static string OperatorNotApplicable(string op, string type) => "Operator '" + op + "' not applicable to " + type;
+    public static string OperatorNotApplicable(string op, string left, string right) =>
+        "Operator '" + op + "' not applicable to " + left + " and " + right;
+    public static string BuiltinNotApplicable(string name, string type) => "'" + name + "' is not applicable to " + type;
+    public static string WrongArgumentCount(string name) => "Wrong number of arguments for '" + name + "'";
+    public static string IndexOutOfBounds(long index, long low, long high) => "Index " + index + " out of bounds (" + low + ".." + high + ")";
+    public static string ValueOutOfRange(string type) => "Value out of range for " + type;
+    public static string IncompatibleTypes(string source, string target) => "Incompatible types: " + source + " and " + target;
+    public static string FormatSuffixNotSupported(int count) => "Format suffix '," + count + "' is not supported";
+    public static string NotModifiable(string name) => "'" + name + "' cannot be modified.";
+
+    // ---- breakpoints, run to line (features §2, §4) ----
+    public static string ConditionError(string message) => "Breakpoint condition error: " + message;
+    public static string BreakpointMessage(string fileName, int line, string message) => "Breakpoint " + fileName + ":" + line + ": " + message;
+    public static string LogError(string message) => "<error: " + message + ">";
+    public static string NoCodeAt(string fileName, int line) => "No code at " + fileName + ":" + line + ".";
+    public const string RunToLineCompleted = "Run to line completed";
+    public const string StaleHandle = "The value belongs to an earlier stop.";
+
     public static string TypeInfoMissing(string path) => "Type information file not found: " + path + ". Values are shown unformatted.";
     public static string TypeInfoInvalid(string path, string detail) => "Type information file is invalid: " + path + ": " + detail;
     public static string UnreadableMemory(ulong address) => "<unreadable memory at " + Address(address) + ">";

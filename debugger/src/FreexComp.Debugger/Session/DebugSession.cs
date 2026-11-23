@@ -82,7 +82,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     public bool HasTypeInfo => _hasTypeInfo;
 
     int? IDebugSessionDiagnostics.AdapterProcessId => (int?)_adapterProcessId;
-    int IDebugSessionDiagnostics.InternalStopCount => 0;
+    int IDebugSessionDiagnostics.InternalStopCount => _internalStops;
 
     // ---- events ----
 
@@ -113,7 +113,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
         PostAsync(SessionMethod.StepOutAsync, () => ResumeAsync("stepOut", threadId, ct), ct);
 
     public Task RunToLineAsync(string path, int line, CancellationToken ct = default) =>
-        NotYetAsync<bool>(SessionMethod.RunToLineAsync, "G-052", ct);
+        PostAsync(SessionMethod.RunToLineAsync, () => RunToLineCoreAsync(path, line, ct), ct);
 
     // ---- breakpoints ----
 
@@ -133,20 +133,17 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
         PostAsync(SessionMethod.GetStackTraceAsync, () => GetStackTraceCoreAsync(threadId, startFrame, maxFrames, ct), ct);
 
     public Task<IReadOnlyList<VariableScope>> GetScopesAsync(int frameId, CancellationToken ct = default) =>
-        PostAsync<IReadOnlyList<VariableScope>>(SessionMethod.GetScopesAsync, () =>
-        {
-            RequireFrame(frameId);   // a stale id faults before anything is sent (DBG-408)
-            throw NotYet(SessionMethod.GetScopesAsync, "G-041");
-        }, ct);
+        // A stale frame id faults before anything is sent (DBG-408); the scopes themselves need no request.
+        PostAsync(SessionMethod.GetScopesAsync, () => Task.FromResult(GetScopesCore(frameId)), ct);
 
     public Task<IReadOnlyList<VariableInfo>> GetChildrenAsync(VariableHandle handle, int start = 0, int count = 0, CancellationToken ct = default) =>
-        NotYetAsync<IReadOnlyList<VariableInfo>>(SessionMethod.GetChildrenAsync, "G-041", ct);
+        PostAsync(SessionMethod.GetChildrenAsync, () => GetChildrenCoreAsync(handle, start, count, ct), ct);
 
     public Task<EvaluateResult> EvaluateAsync(string expression, int? frameId, EvaluateContext context, CancellationToken ct = default) =>
-        NotYetAsync<EvaluateResult>(SessionMethod.EvaluateAsync, "G-047", ct);
+        PostAsync(SessionMethod.EvaluateAsync, () => EvaluateCoreAsync(expression, frameId, ct), ct);
 
     public Task<VariableInfo> SetValueAsync(string evaluateName, string valueExpression, int? frameId, CancellationToken ct = default) =>
-        NotYetAsync<VariableInfo>(SessionMethod.SetValueAsync, "G-048", ct);
+        PostAsync(SessionMethod.SetValueAsync, () => SetValueCoreAsync(evaluateName, valueExpression, frameId, ct), ct);
 
     public Task<byte[]> ReadMemoryAsync(ulong address, int count, CancellationToken ct = default) =>
         PostAsync(SessionMethod.ReadMemoryAsync, () => ReadMemoryCoreAsync(address, count, ct), ct);

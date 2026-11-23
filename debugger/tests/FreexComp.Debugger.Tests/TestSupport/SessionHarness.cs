@@ -141,6 +141,14 @@ internal sealed class SessionHarness : IAsyncDisposable
         (await Trace.WaitAsync(e => e.Direction == DapDirection.FromAdapter && e.Json.Contains("\"type\":\"response\"", StringComparison.Ordinal)
             && e.Json.Contains($"\"command\":\"{command}\"", StringComparison.Ordinal))).Json;
 
+    /// <summary>Waits until the adapter has answered <paramref name="count"/> requests of this command.</summary>
+    public async Task WaitForResponsesAsync(string command, int count)
+    {
+        var seen = 0;
+        await Trace.WaitAsync(e => e.Direction == DapDirection.FromAdapter && e.Json.Contains("\"type\":\"response\"", StringComparison.Ordinal)
+            && e.Json.Contains($"\"command\":\"{command}\"", StringComparison.Ordinal) && ++seen == count);
+    }
+
     /// <summary>The commands of all requests sent so far, in order.</summary>
     public IReadOnlyList<string> SentCommands() =>
         [.. SentRequests().Select(json => JsonDocument.Parse(json).RootElement.GetProperty("command").GetString()!)];

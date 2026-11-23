@@ -7,6 +7,8 @@
 // Step extensions beyond the specification: "thenRaw" (text sent as one framed message after the response and events,
 // not necessarily JSON: simulates a protocol error) and "hang": true (after the step the adapter blocks forever and
 // ignores its input: simulates an adapter that does not react to disconnect or end of input).
+// Scenario extension: "variables": { "Name": "0x1000" } answers an "evaluate" of "&Name" that no step claims the way the
+// real adapter does (result = the address as "0x" and 16 lower-case digits; an unknown name fails).
 
 using System.Diagnostics;
 using System.Globalization;
@@ -27,6 +29,7 @@ internal static class Program
 
     private static readonly List<Step> Steps = [];
     private static readonly SortedDictionary<ulong, byte> Memory = [];
+    private static readonly Dictionary<string, ulong> Variables = new(StringComparer.Ordinal);
     private static JsonElement? _capabilities;
     private static string _initializedAfter = "launch";
     private static string _launchResponseAfter = "configurationDone";
@@ -122,6 +125,12 @@ internal static class Program
             }
         }
 
+        if (root.TryGetProperty("variables", out var variables))
+        {
+            foreach (var variable in variables.EnumerateObject())
+                Variables[variable.Name] = ParseAddress(variable.Value.GetString()!);
+        }
+
         if (root.TryGetProperty("steps", out var steps))
         {
             foreach (var step in steps.EnumerateArray())
@@ -176,6 +185,7 @@ internal static class Program
                 "launch" or "configurationDone" or "disconnect" or "setExceptionBreakpoints" => Success(requestSeq, command, null),
                 "readMemory" => ReadMemory(requestSeq, arguments),
                 "writeMemory" => WriteMemory(requestSeq, arguments),
+                "evaluate" when Variables.Count > 0 => AddressOf(requestSeq, arguments),
                 _ => Unexpected(requestSeq, command),
             };
         }
@@ -308,6 +318,23 @@ internal static class Program
         {
             w.WriteStartObject();
             w.WriteNumber("bytesWritten", written);
+            w.WriteEndObject();
+        });
+    }
+
+    /// <summary>"&amp;Name" for a name of the scenario's <c>variables</c>: its address, as the real adapter prints it.</summary>
+    private static byte[] AddressOf(int requestSeq, JsonElement arguments)
+    {
+        var expression = arguments.GetProperty("expression").GetString() ?? "";
+        var name = expression.StartsWith('&') ? expression[1..] : expression;
+        if (!expression.StartsWith('&') || !Variables.TryGetValue(name, out var address))
+            return Failure(requestSeq, "evaluate", $"no variable named '{name}' found in this frame");
+        return Success(requestSeq, "evaluate", w =>
+        {
+            w.WriteStartObject();
+            w.WriteString("result", "0x" + address.ToString("x16", CultureInfo.InvariantCulture));
+            w.WriteString("type", "?");
+            w.WriteNumber("variablesReference", 0);
             w.WriteEndObject();
         });
     }

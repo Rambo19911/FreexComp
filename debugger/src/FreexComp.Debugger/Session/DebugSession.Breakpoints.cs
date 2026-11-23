@@ -1,4 +1,5 @@
 using FreexComp.Debugger.Dap;
+using FreexComp.Debugger.Expressions;
 
 namespace FreexComp.Debugger.Session;
 
@@ -15,7 +16,8 @@ internal sealed partial class DebugSession
     private async Task<IReadOnlyList<BreakpointStatus>> SetBreakpointsCoreAsync(
         string path, IReadOnlyList<BreakpointSpec> breakpoints, CancellationToken ct)
     {
-        var source = _breakpoints.Set(PathText.Normalize(path), breakpoints);
+        // During a session a condition is parsed at once; while idle it is not (DBG-211).
+        var source = _breakpoints.Set(PathText.Normalize(path), breakpoints, State == DebugState.Idle ? null : ConditionSyntaxError);
         if (State is DebugState.Running or DebugState.Stopped || (State == DebugState.Starting && _initializedProcessed))
             await SendBreakpointsAsync(source, ct, raiseChanges: false).ConfigureAwait(false);
         var statuses = source.Statuses;
@@ -23,8 +25,23 @@ internal sealed partial class DebugSession
         return statuses;
     }
 
+    /// <summary>The syntax error of a condition, or null when it parses (what it means is found out when it is evaluated).</summary>
+    private string? ConditionSyntaxError(string condition)
+    {
+        try
+        {
+            SubsetValidator.Parse(condition, name => _typeInfo is not null && Evaluator.FindType(_typeInfo, name) is not null);
+            return null;
+        }
+        catch (DebuggerException e)
+        {
+            return e.Code == DebugErrorCode.ExpressionSyntax ? e.Message : null;
+        }
+    }
+
     /// <summary>
-    /// One <c>setBreakpoints</c> request with the complete enabled set of the file. A file without enabled breakpoints
+    /// One <c>setBreakpoints</c> request with the complete enabled set of the file (and, last, the temporary
+    /// run-to-line breakpoint, DBG-065). A file without enabled breakpoints
     /// is sent only if the adapter still holds breakpoints for it, and then once (DBG-063). A rejected request makes
     /// the breakpoints <c>Invalid</c> (DBG-054); a timeout faults.
     /// </summary>
@@ -33,7 +50,7 @@ internal sealed partial class DebugSession
     /// <param name="raiseChanges">Raise <c>BreakpointChanged</c> for every status that changed (launch: nobody gets a return value).</param>
     private async Task SendBreakpointsAsync(BreakpointManager.Source source, CancellationToken ct, bool raiseChanges)
     {
-        var sent = source.Entries.Where(e => e.IsSent).ToList();
+        var sent = source.Sent;
         if (sent.Count == 0 && !source.KnownToAdapter)
             return;
 

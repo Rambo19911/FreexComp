@@ -25,7 +25,7 @@ internal sealed class ValueTestBed
     public const int PInteger = 80, Pointer = 81, PPoint = 82, IInterface = 83, TProc = 84, TNotify = 85, AnonymousProc = 86;
     public const int Text = 87, TSmall = 88, AnonymousMethod = 89, PPInteger = 90;
 
-    private const string Types = """
+    internal const string Types = """
         { "id": 1, "name": "Integer", "kind": "integer", "size": 4, "signed": true },
         { "id": 2, "name": "Byte", "kind": "integer", "size": 1, "signed": false },
         { "id": 3, "name": "ShortInt", "kind": "integer", "size": 1, "signed": true },
