@@ -58,6 +58,7 @@ public sealed partial class DesignSurfaceController
         }
 
         DrawTray(canvas, g, p);
+        DrawHoveredTab(canvas);
 
         if (DropTarget is { } target)
         {

@@ -92,6 +92,68 @@ public sealed class TabSheetTests
     }
 
     /// <summary>
+    /// UI-DSG-084 (D-113): over a tab the cursor is the arrow and the hovered tab gets a 1 px handle-border underline; the
+    /// selected sheet's outline is the page rectangle, without resize handles.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "5")]
+    [Trait("Req", "UI-DSG-084")]
+    public void TabsAreHoveredWithAnUnderlineAndTheSheetOutlineHasNoHandles()
+    {
+        using var h = DesignerHarness.FromText(Text, catalog: Layout.LayoutHarness.Catalog);
+        var book = h.Controller.Geometry.GetBounds(h.Object("Book"));
+        Rect Tab(string sheet)
+        {
+            var ctx = RenderContext.FromLayout(h.Object("Book"), h.Layout);
+            var t = PageControlRenderer.Tabs(ctx, h.Controller.MeasureCanvas).Single(x => x.Sheet.Name == sheet).Tab;
+            return new Rect(book.Left + t.Left, book.Top + t.Top, t.Width, t.Height);
+        }
+
+        RecordingCanvas Render()
+        {
+            var canvas = new RecordingCanvas();
+            h.Controller.Render(canvas, new Rect(0, 0, 2000, 2000));
+            return canvas;
+        }
+
+        void Hover(double x, double y) => h.Controller.OnPointer(new PointerInput(PointerKind.Move, x, y, PointerButton.None, InputModifiers.None));
+        string Underline(Rect tab) => $"FillRect {tab.Left},{tab.Bottom - 1},{tab.Width},1 {h.Controller.Palette.HandleBorder}";
+
+        // The page control selected: over its body the move cursor; over a tab the arrow.
+        h.Click("Book", (280, 10));
+        Assert.Equal(["Book"], h.Selected);
+        var second = Tab("S2");
+        Assert.Equal(CursorKind.SizeAll, h.Controller.GetCursor(book.Left + 280, book.Top + 10)); // the strip beyond the tabs
+        Assert.Equal(CursorKind.Arrow, h.Controller.GetCursor(second.Left + 3, second.Top + 3));
+
+        // Hovering a tab underlines it (one tab at a time); leaving the strip removes the underline.
+        var invalidated = 0;
+        h.Controller.Invalidated += (_, _) => invalidated++;
+        Hover(second.Left + 3, second.Top + 3);
+        Assert.Equal(1, invalidated);
+        Assert.Contains(Render().Ops, op => op.Text == Underline(second));
+        Hover(second.Left + 4, second.Top + 3); // same tab: nothing to redraw
+        Assert.Equal(1, invalidated);
+        var third = Tab("S3");
+        Hover(third.Left + 3, third.Top + 3);
+        var ops = Render().Ops;
+        Assert.Contains(ops, op => op.Text == Underline(third));
+        Assert.DoesNotContain(ops, op => op.Text == Underline(second));
+        Hover(book.Left + 150, book.Top + 100);
+        ops = Render().Ops;
+        Assert.DoesNotContain(ops, op => op.Text == Underline(Tab("S1")) || op.Text == Underline(second) || op.Text == Underline(third));
+
+        // The selected sheet: its outline is the page rectangle, and no handle is drawn or hit.
+        h.Click("Book", (second.Left - book.Left + 3, second.Top - book.Top + 3));
+        Assert.Equal(["S2"], h.Selected);
+        var page = h.Controller.Geometry.GetBounds(h.Object("S2"));
+        ops = Render().Ops;
+        Assert.Contains(ops, op => op.Kind == "DrawRect" && op.Text.StartsWith($"DrawRect {page.Left},{page.Top},{page.Width},{page.Height} {h.Controller.Palette.HandleBorder}", StringComparison.Ordinal));
+        Assert.Empty(new HitTester(h.Controller.Geometry).GetHandleCenters(h.Object("S2")));
+        Assert.Equal(CursorKind.Arrow, h.Controller.GetCursor(page.Right - 1, page.Bottom - 1));
+    }
+
+    /// <summary>
     /// Only inactive tab sheets are hidden (DSG-RND-017): an invisible tool button — also computed geometry — is drawn and
     /// hit in design mode like every hidden control (layout-engine.md DSG-LAY-005).
     /// </summary>

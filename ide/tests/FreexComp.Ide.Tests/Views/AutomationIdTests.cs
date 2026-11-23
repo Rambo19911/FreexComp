@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using FreexComp.Ide.Core.Designer;
+using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Tests.Infrastructure;
 
 namespace FreexComp.Ide.Tests.Views;
@@ -28,6 +30,81 @@ public sealed class AutomationIdTests
             var malformed = AutomationIdChecks.AllIds(window).Where(id => !AutomationIds.IsWellFormed(id)).ToList();
             Assert.True(malformed.Count == 0, "Malformed AutomationIds (UI-A11Y-031): " + string.Join(", ", malformed));
         }
+
+        // The designer (D-087): the Design view with the real Object Inspector, Tool Palette and Structure, then each
+        // designer dialog (strings, collection, menu, child list) while it is open.
+        await ForEachDesignerWindowAsync(window =>
+        {
+            var missing = AutomationIdChecks.ControlsWithoutId(window);
+            Assert.True(missing.Count == 0, $"{AutomationIds.Get(window)}: interactive controls without AutomationId: {string.Join(", ", missing)}");
+            var malformed = AutomationIdChecks.AllIds(window).Where(id => !AutomationIds.IsWellFormed(id)).ToList();
+            Assert.True(malformed.Count == 0, $"{AutomationIds.Get(window)}: malformed AutomationIds (UI-A11Y-031): " + string.Join(", ", malformed));
+        });
+    }
+
+    /// <summary>
+    /// Opens the designer form (a memo, a status bar with a panel, a main menu and an action list) in the Design view and
+    /// runs <paramref name="check"/> on the main window, then on each designer dialog while it is open (D-087).
+    /// </summary>
+    private static async Task ForEachDesignerWindowAsync(Action<Window> check)
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            DesignerViewTests.Files(o);
+            o.ImplementedPhase = 5; // the real Object Inspector and Tool Palette
+            var unit = DesignerViewTests.Unit.Replace("GreetButton: TButton;", "GreetButton: TButton;\n    StatusBar1: TStatusBar;\n    MainMenu1: TMainMenu;\n"
+                + "    ActionList1: TActionList;\n    Memo1: TMemo;", StringComparison.Ordinal).Replace("StdCtrls;", "StdCtrls, ComCtrls, Menus, ActnList;", StringComparison.Ordinal);
+            o.InitialFiles["MainForm.pas"] = unit.ReplaceLineEndings("\r\n");
+            var form = DesignerViewTests.FormText.ReplaceLineEndings("\n");
+            var at = form.TrimEnd().LastIndexOf("end", StringComparison.Ordinal);
+            o.InitialFiles["MainForm.form"] = (form[..at]
+                + "  object StatusBar1: TStatusBar\n    Left = 0\n    Top = 281\n    Width = 400\n    Height = 19\n    TabOrder = 2\n"
+                + "    Panels = <\n      item\n        Text = 'Ready'\n      end\n    >\n  end\n"
+                + "  object Memo1: TMemo\n    Left = 16\n    Top = 60\n    Width = 185\n    Height = 89\n    TabOrder = 3\n  end\n"
+                + "  object MainMenu1: TMainMenu\n    DesignLeft = 8\n    DesignTop = 8\n  end\n"
+                + "  object ActionList1: TActionList\n    DesignLeft = 88\n    DesignTop = 8\n  end\n" + form[at..]).ReplaceLineEndings("\r\n");
+        });
+        var document = await DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        var model = document.Designer.Model!;
+        Assert.NotNull(model.FindByName("Memo1"));
+        Assert.NotNull(h.TryFind<Control>("Tool.ObjectInspector.Grid"));
+        Assert.NotNull(h.TryFind<Control>("Tool.ToolPalette.Item.TButton"));
+        Assert.NotNull(h.TryFind<Control>(AutomationIds.Designer("MainForm")));
+        h.Press("Alt+2");
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotNull(h.TryFind<Control>("Tool.Structure"));
+        check(h.Window);
+
+        var inspector = (ObjectInspectorViewModel)h.Find<Control>("Tool.ObjectInspector").DataContext!;
+        async Task Dialog(string select, string name, Func<Task> open)
+        {
+            document.Designer.Surface!.Selection.Select(model.FindByName(select)!);
+            Dispatcher.UIThread.RunJobs();
+            var task = open();
+            var dlg = await h.WaitForDialogAsync(name);
+            try
+            {
+                check(dlg.Window);
+            }
+            finally
+            {
+                dlg.Window.Close();
+                Dispatcher.UIThread.RunJobs();
+                await task;
+            }
+        }
+
+        Task Property(string path)
+        {
+            inspector.SetCurrent(path);
+            return inspector.EditInDialogAsync();
+        }
+
+        await Dialog("Memo1", "StringsEditor", () => Property("Lines"));
+        await Dialog("StatusBar1", "CollectionEditor", () => Property("Panels"));
+        await Dialog("MainMenu1", "MenuDesigner", () => h.Services.Commands.ExecuteAsync("designer.editComponent"));
+        await Dialog("ActionList1", "ChildListEditor", () => h.Services.Commands.ExecuteAsync("designer.editComponent"));
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -42,6 +119,12 @@ public sealed class AutomationIdTests
             var duplicates = AutomationIdChecks.DuplicateIds(window);
             Assert.True(duplicates.Count == 0, "Duplicate AutomationIds: " + string.Join(", ", duplicates));
         }
+
+        await ForEachDesignerWindowAsync(window =>
+        {
+            var duplicates = AutomationIdChecks.DuplicateIds(window);
+            Assert.True(duplicates.Count == 0, $"{AutomationIds.Get(window)}: duplicate AutomationIds: " + string.Join(", ", duplicates));
+        });
     }
 
     [AvaloniaFact(Timeout = 30000)]

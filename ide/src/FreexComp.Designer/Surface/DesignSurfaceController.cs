@@ -83,6 +83,9 @@ public sealed partial class DesignSurfaceController
     /// <summary>The layout of the current model version (DSG-SUR-181: cached per <see cref="FormDocument.Version"/>).</summary>
     public LayoutResult Layout => Current.Result;
 
+    /// <summary>A move or resize shows a preview layout (<see cref="Layout"/> is the preview, the model is unchanged; DSG-OI-095).</summary>
+    public bool HasLayoutPreview => _preview is not null;
+
     /// <summary>The surface geometry of the current model version.</summary>
     public SurfaceGeometry Geometry => Current.Geometry;
 
@@ -144,6 +147,9 @@ public sealed partial class DesignSurfaceController
                 break;
             case PointerKind.Move when State == InteractionState.Placing:
                 UpdatePlacement(input);
+                break;
+            case PointerKind.Move when State == InteractionState.Idle:
+                UpdateHover(input);
                 break;
             case PointerKind.Up when input.Button == PointerButton.Left && State == InteractionState.Placing:
                 UpdatePlacement(input);

@@ -13,10 +13,15 @@ namespace FreexComp.Ide.Platform;
 /// <see cref="IDialogService"/> over real windows (IDE-ARCH-054, UI-DLG-008): the window of a dialog view-model is
 /// <c>FreexComp.Ide.Views.&lt;X&gt;Window</c> for <c>&lt;X&gt;ViewModel</c> (or, for a view-model in an
 /// <c>….ViewModels</c> namespace of another assembly, <c>….Views.&lt;X&gt;Window</c> there), constructed with the
-/// view-model and shown modally over the main window. Focus returns to the element that had it (UI-A11Y-008).
+/// view-model and shown modally over the main window — or, while a dialog is open, over the innermost open dialog (a
+/// message box over the Menu Designer, D-112). When it closes, its owner is active again and the focus returns to the
+/// element of the owner that had it (UI-A11Y-008).
 /// </summary>
 public sealed class WindowDialogService(Func<Window?> owner, IClipboardService clipboard) : IDialogService
 {
+    /// <summary>The dialog windows shown by this service and not closed yet, innermost last.</summary>
+    private readonly List<Window> _open = [];
+
     public async Task<string> ShowMessageAsync(MessageRequest request)
     {
         var model = new MessageBoxViewModel(request, clipboard);
@@ -34,10 +39,22 @@ public sealed class WindowDialogService(Func<Window?> owner, IClipboardService c
             return viewModel.Result;
         }
 
+        var parent = _open.LastOrDefault(w => w.IsVisible) ?? main;
         var window = CreateWindow(viewModel);
-        window.FitToWorkingArea(main);
-        var previous = main.FocusManager?.GetFocusedElement() as InputElement;
-        await window.ShowDialog(main);
+        window.FitToWorkingArea(parent);
+        var previous = parent.FocusManager?.GetFocusedElement() as InputElement;
+        _open.Add(window);
+        try
+        {
+            await window.ShowDialog(parent);
+        }
+        finally
+        {
+            _open.Remove(window);
+        }
+
+        if (!ReferenceEquals(parent, main) && parent.IsVisible)
+            parent.Activate(); // the owner dialog, not the main window, is active again
         if (previous is Visual visual && visual.IsAttachedToVisualTree() && previous.IsEffectivelyVisible)
             previous.Focus(NavigationMethod.Tab);
         return viewModel.Result;

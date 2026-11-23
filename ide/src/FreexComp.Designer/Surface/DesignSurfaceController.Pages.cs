@@ -15,23 +15,12 @@ public sealed partial class DesignSurfaceController
     /// </summary>
     private bool TryActivateTab(HitResult hit, PointerInput input)
     {
-        if (hit is not { Kind: HitKind.Control, Object: { Info.RendererId: "pagecontrol" } pageControl }
-            || input.Modifiers != InputModifiers.None)
+        if (input.Modifiers != InputModifiers.None || TabAt(hit, input.X, input.Y) is not { } found)
         {
             return false;
         }
 
-        var bounds = Geometry.GetBounds(pageControl);
-        var (x, y) = SurfaceGeometry.Round(input.X - bounds.Left, input.Y - bounds.Top);
-        var ctx = RenderContext.FromLayout(pageControl, Layout, Palette.Renderers);
-        var sheet = PageControlRenderer.Tabs(ctx, MeasureCanvas)
-            .Where(t => t.Tab.Left <= x && x < t.Tab.Right && t.Tab.Top <= y && y < t.Tab.Bottom && t.Tab.Left < ctx.Width)
-            .Select(t => t.Sheet)
-            .FirstOrDefault();
-        if (sheet is null)
-        {
-            return false;
-        }
+        var (pageControl, sheet) = found;
 
         ResetPress();
         if (!ReferenceEquals(sheet, PageControlRenderer.ActiveSheet(pageControl)) && !IsReadOnly)
@@ -45,5 +34,60 @@ public sealed partial class DesignSurfaceController
 
         Selection.Select(sheet);
         return true;
+    }
+
+    // UI-DSG-084: the tab under the pointer (its page control and sheet); null when the pointer is not over a tab.
+    private (FormObject PageControl, FormObject Sheet)? _hoveredTab;
+
+    /// <summary>The tab of a <c>pagecontrol</c> at a surface point when <paramref name="hit"/> is that page control.</summary>
+    private (FormObject PageControl, FormObject Sheet)? TabAt(HitResult hit, double surfaceX, double surfaceY)
+    {
+        if (hit is not { Kind: HitKind.Control, Object: { Info.RendererId: "pagecontrol" } pageControl })
+        {
+            return null;
+        }
+
+        var bounds = Geometry.GetBounds(pageControl);
+        var (x, y) = SurfaceGeometry.Round(surfaceX - bounds.Left, surfaceY - bounds.Top);
+        var ctx = RenderContext.FromLayout(pageControl, Layout, Palette.Renderers);
+        var sheet = PageControlRenderer.Tabs(ctx, MeasureCanvas)
+            .Where(t => t.Tab.Left <= x && x < t.Tab.Right && t.Tab.Top <= y && y < t.Tab.Bottom && t.Tab.Left < ctx.Width)
+            .Select(t => t.Sheet)
+            .FirstOrDefault();
+        return sheet is null ? null : (pageControl, sheet);
+    }
+
+    /// <summary>UI-DSG-084: the tab under a pointer at rest (no button, no drag) — the arrow cursor and the underline.</summary>
+    private (FormObject PageControl, FormObject Sheet)? TabAt(double x, double y) =>
+        TabAt(Current.HitTester.HitTest(x, y, [], handleSize: _settings.HandleSize), x, y);
+
+    /// <summary>UI-DSG-084: a pointer move without a press updates the hovered tab (redrawn when it changes).</summary>
+    private void UpdateHover(PointerInput input)
+    {
+        var tab = TabAt(input.X, input.Y);
+        if (tab?.Sheet != _hoveredTab?.Sheet)
+        {
+            _hoveredTab = tab;
+            Invalidated?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>UI-DSG-084: a 1 px <c>designer.handle.border</c> line along the bottom of the hovered tab.</summary>
+    private void DrawHoveredTab(IDesignCanvas canvas)
+    {
+        if (_hoveredTab is not { } hovered || !Layout.HasBounds(hovered.PageControl) || hovered.Sheet.Parent != hovered.PageControl)
+        {
+            return;
+        }
+
+        var bounds = Geometry.GetBounds(hovered.PageControl);
+        var ctx = RenderContext.FromLayout(hovered.PageControl, Layout, Palette.Renderers);
+        foreach (var (sheet, tab) in PageControlRenderer.Tabs(ctx, MeasureCanvas))
+        {
+            if (ReferenceEquals(sheet, hovered.Sheet) && tab.Left < ctx.Width)
+            {
+                canvas.FillRect(new Rect(bounds.Left + tab.Left, bounds.Top + tab.Bottom - 1, Math.Min(tab.Width, ctx.Width - tab.Left), 1), Palette.HandleBorder);
+            }
+        }
     }
 }

@@ -221,15 +221,16 @@ public static class ServiceGraph
         application.RegisterCommands(commands);
         application.BeforeExit = () => run.ConfirmStopAsync(exiting: true); // IDE-P3-093
         application.AfterSavePrompt = build.CancelForExitAsync; // file.exit while Building (phase3-build-run.md §2)
+        Designer.DesignerShell? designerShell = null; // Phase 5 on (below); the palette lists its verbs
         var quickPick = new Popups.QuickPickHost(); // I-125, I-126 (Phase 3 commands: available from the implemented phase 3)
         var popupsAvailable = (toolWindowPhase ?? ImplementedPhase) >= 3;
         commands.RegisterHandler("search.goToFile", new DelegateHandler(() => popupsAvailable, () =>
             quickPick.Show(new Popups.GoToFileViewModel(documents, projects, navigation, layout, platform.Dialogs))));
         commands.RegisterHandler("search.commandPalette", new DelegateHandler(() => popupsAvailable, () =>
-            quickPick.Show(new Popups.CommandPaletteViewModel(commands, layout, focus.Current, toolWindowPhase ?? ImplementedPhase))));
+            quickPick.Show(new Popups.CommandPaletteViewModel(commands, layout, focus.Current, toolWindowPhase ?? ImplementedPhase,
+                designerShell?.ActiveDesigner?.Surface?.Verbs)))); // D-111: the selection's designer verbs (DSG-SUR-191)
         // D-077: component metadata and component.reloadMetadata from Phase 5 on; Load() is the start-up wiring point (D-088).
         Designer.ComponentMetadataService? metadata = null;
-        Designer.DesignerShell? designerShell = null;
         Designer.ObjectInspectorViewModel? objectInspector = null;
         Designer.ToolPaletteViewModel? toolPalette = null;
         if ((toolWindowPhase ?? ImplementedPhase) >= 5)
@@ -237,7 +238,7 @@ public static class ServiceGraph
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment);
             metadata.RegisterCommands(commands);
             designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase,
-                platform.Dialogs); // D-080, I-130; D-097: the verbs' editors
+                platform.Dialogs, layout); // D-080, I-130; D-097: the verbs' editors (their sizes: D-112)
             designerShell.ShowProblems = (form, problems) =>
             {
                 messages.ShowFormDiagnostics(problems, problem => // D-108: the form's problems only

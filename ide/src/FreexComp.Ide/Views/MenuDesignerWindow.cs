@@ -69,7 +69,7 @@ public sealed class MenuDesignerWindow : DialogWindow
         var insertBefore = Button("InsertBefore", Strings.MenuDesigner_InsertBefore, model.InsertBefore);
         var newSubItem = Button("NewSubItem", Strings.MenuDesigner_NewSubItem, model.NewSubItem);
         var newSeparator = Button("NewSeparator", Strings.MenuDesigner_NewSeparator, model.NewSeparator);
-        var delete = Button("Delete", Strings.MenuDesigner_Delete, () => _ = DeleteAsync(model, p));
+        var delete = Button("Delete", Strings.MenuDesigner_Delete, () => _ = model.DeleteAsync() /* a question box returns the focus here (D-112) */);
         var up = Button("MoveUp", Strings.MenuDesigner_MoveUp, model.MoveUp);
         var down = Button("MoveDown", Strings.MenuDesigner_MoveDown, model.MoveDown);
         var buttons = new WrapPanel
@@ -312,7 +312,7 @@ public sealed class MenuDesignerWindow : DialogWindow
                 model.NewSubItem();
                 break;
             case (Key.Delete, KeyModifiers.None):
-                _ = DeleteAsync(model, p);
+                _ = model.DeleteAsync();
                 break;
             case (Key.Up, KeyModifiers.Control):
                 model.MoveUp();
@@ -376,22 +376,6 @@ public sealed class MenuDesignerWindow : DialogWindow
         }
 
         return item;
-    }
-
-    /// <summary>
-    /// Delete (UI-DLG-251); when it asked first, the message box gave the focus back to the main window: the tree takes it
-    /// again, on the selected node.
-    /// </summary>
-    private static async Task DeleteAsync(MenuDesignerViewModel model, Parts p)
-    {
-        var asks = model.Selected is { Children.Count: > 0 };
-        await model.DeleteAsync();
-        if (asks && p.Tree.IsAttachedToVisualTree())
-        {
-            (TopLevel.GetTopLevel(p.Tree) as Window)?.Activate();
-            FocusSelected(p);
-            Dispatcher.UIThread.Post(() => FocusSelected(p), DispatcherPriority.Loaded);
-        }
     }
 
     private static void FocusSelected(Parts p)

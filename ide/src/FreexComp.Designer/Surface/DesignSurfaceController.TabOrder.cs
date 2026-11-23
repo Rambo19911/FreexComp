@@ -61,6 +61,12 @@ public sealed partial class DesignSurfaceController
         {
             TabOrderClick(obj);
         }
+        else if (hit.Kind is HitKind.Backdrop or HitKind.Tray or HitKind.TrayItem && TabOrderFocus is not null)
+        {
+            // DSG-SUR-044: outside the form only the keyboard focus rectangle goes (no counter, selection or mode change).
+            TabOrderFocus = null;
+            Invalidated?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>

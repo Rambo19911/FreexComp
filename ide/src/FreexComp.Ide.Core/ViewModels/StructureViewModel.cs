@@ -174,6 +174,12 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// tool-windows.md §3: in the Design view a row's context menu is the designer context menu of the selection (its
+    /// verb group first, DSG-SUR-191, UI-DSG-082); null outside the Design view.
+    /// </summary>
+    public IReadOnlyList<Menus.MenuItemModel>? BuildDesignContextMenu() => IsDesign ? _form!.Designer.ContextMenu?.Invoke() : null;
+
     /// <summary>Expands or collapses a row (keyed, kept across refreshes).</summary>
     public void SetExpanded(StructureRow row, bool expanded)
     {
@@ -192,6 +198,15 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
         ArgumentNullException.ThrowIfNull(row);
         if (IsDesign)
         {
+            // DSG-SUR-196: a component whose class has a component editor opens it (Enter, double-click on its node).
+            const string editComponent = FreexComp.Designer.Surface.Commands.EditComponent;
+            if (_commands is { } commands && _form!.Designer.Model?.FindByName(row.Node.Name) is { Info.ComponentEditor: not null } component
+                && _form.Designer.Surface is { } surface && surface.Selection.Items is [var only] && ReferenceEquals(only, component)
+                && commands.CanExecute(editComponent))
+            {
+                return commands.ExecuteAsync(editComponent);
+            }
+
             ReturnFocusToDocument(); // UI-TW-207: the default action focuses the design surface
             return Task.CompletedTask;
         }

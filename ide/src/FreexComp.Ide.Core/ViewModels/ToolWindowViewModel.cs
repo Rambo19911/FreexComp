@@ -24,6 +24,9 @@ public abstract class ToolWindowViewModel : ObservableObject
     private IToolWindowService? _service;
     private ILayoutService? _layout;
     private IClock? _clock;
+
+    /// <summary>The IDE clock once the tool window is attached (null before).</summary>
+    protected IClock? Clock => _clock;
     private IDisposable? _pendingFilter;
     private IdeCommand? _hideCommand;
     private string _filterText = "";

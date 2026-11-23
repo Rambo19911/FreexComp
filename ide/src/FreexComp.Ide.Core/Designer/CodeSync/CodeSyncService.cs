@@ -233,7 +233,9 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
     {
         var edits = HandlerEdits.CreateHandler(Unit, methodName, Catalog.FindEventSignature(signatureText) ?? signatureText);
         _candidates.Add(methodName);
-        return edits;
+
+        // DSG-CS-055: the unit of the signature's types when the metadata names it (eventSignatureUnits); else nothing.
+        return Catalog.FindEventSignatureUnit(signatureText) is { } unit ? [.. edits, .. UsesEdits.EnsureUnits(Unit, [unit])] : edits;
     }
 
     private IReadOnlyList<TextEditRecord> RenameHandlerCore(string oldName, string newName)

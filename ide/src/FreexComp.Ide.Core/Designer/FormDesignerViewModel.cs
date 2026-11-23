@@ -50,6 +50,10 @@ public sealed class FormDesignerViewModel
     private InteractionState? _shownState;
     private FieldMismatch? _mismatch;
     private readonly HashSet<(string Kind, string Text)> _dismissed = [];
+    private IDisposable? _stateTimer;
+
+    /// <summary>DSG-CS-010: the delay after the last unit or model change before the shown state is recomputed.</summary>
+    public static readonly TimeSpan StateRecomputeDelay = TimeSpan.FromMilliseconds(300);
 
     /// <param name="hasUnit">False: a <c>.form</c> opened without its unit (code-sync.md §8 <c>NoUnit</c>, DSG-CS-080) —
     /// the Design view without code sync and without a Code view; <paramref name="unit"/> is then an empty placeholder.</param>
@@ -68,6 +72,7 @@ public sealed class FormDesignerViewModel
         Unit = new FormUnit(unit.Buffer, parsed.Document?.Root.TypeName ?? "", unit.FilePath ?? FormClassLocator.PlaceholderPath);
         CodeSync = new CodeSyncService(Unit, catalog, ShowCodeAt) { HasUnit = hasUnit, Form = () => Model };
         formText.Buffer.Changed += (_, _) => ModifiedChanged?.Invoke(this, EventArgs.Empty);
+        unit.Buffer.Changed += (_, _) => ScheduleStateRecompute();
         if (parsed.Document is { } document)
         {
             SetModel(document, _syncedText);
@@ -183,6 +188,9 @@ public sealed class FormDesignerViewModel
 
     /// <summary>The form model changed (any applied change).</summary>
     public event EventHandler? ModelChanged;
+
+    /// <summary>The surface asks to be redrawn (a drag step, a hover, a mode change); the Object Inspector's live update (DSG-OI-095).</summary>
+    public event EventHandler? SurfaceInvalidated;
 
     /// <summary>The form buffer's modified flag may have changed.</summary>
     public event EventHandler? ModifiedChanged;
@@ -437,15 +445,28 @@ public sealed class FormDesignerViewModel
         }
     }
 
+    /// <summary>The UI state the component editors remember their size in (<c>dialogs.&lt;Name&gt;.size</c>, UI-DLG-252); null: none (set by the IDE).</summary>
+    public Layout.ILayoutService? UiState { get; set; }
+
     /// <summary>
     /// DSG-SUR-196: the component editor of <paramref name="component"/>'s class — <c>menu</c>: the Menu Designer
-    /// (DSG-SUR-197); <c>childlist</c>: the Child List Editor (D-099, not yet present: nothing opens).
+    /// (DSG-SUR-197); <c>childlist</c>: the Child List Editor (DSG-SUR-198).
     /// </summary>
     internal void EditComponent(FormObject component)
     {
-        if (Dialogs is { } dialogs && Model is not null && component.Info?.ComponentEditor == "menu")
+        if (Dialogs is not { } dialogs || Model is null)
         {
-            PendingEditor = dialogs.ShowAsync(new Dialogs.MenuDesignerViewModel(this, component, dialogs));
+            return;
+        }
+
+        switch (component.Info?.ComponentEditor)
+        {
+            case "menu":
+                PendingEditor = dialogs.ShowAsync(new Dialogs.MenuDesignerViewModel(this, component, dialogs, UiState));
+                break;
+            case "childlist":
+                PendingEditor = dialogs.ShowAsync(new Dialogs.ChildListEditorViewModel(this, component, dialogs, UiState));
+                break;
         }
     }
 
@@ -579,6 +600,7 @@ public sealed class FormDesignerViewModel
     /// <summary>The tab-order mode started or ended: <c>InfoBar.TabOrder</c> follows.</summary>
     private void OnSurfaceInvalidated(object? sender, EventArgs e)
     {
+        SurfaceInvalidated?.Invoke(this, EventArgs.Empty);
         if (Surface is { } surface && surface.State != _shownState
             && (surface.State == InteractionState.TabOrder || _shownState == InteractionState.TabOrder))
         {
@@ -799,6 +821,25 @@ public sealed class FormDesignerViewModel
         ModelChanged?.Invoke(this, EventArgs.Empty);
         ModifiedChanged?.Invoke(this, EventArgs.Empty);
         UpdateInfoBars();
+        ScheduleStateRecompute();
+    }
+
+    /// <summary>
+    /// DSG-CS-010: the read-only state and the info bars follow the code-sync state 300 ms after the last change of the
+    /// unit buffer or the model (each change restarts the wait); the edit methods compute it synchronously themselves.
+    /// Without a clock (no IDE services) the state is recomputed on the next view switch only.
+    /// </summary>
+    private void ScheduleStateRecompute()
+    {
+        _stateTimer?.Dispose();
+        _stateTimer = _unit.Clock?.Schedule(StateRecomputeDelay, () =>
+        {
+            _stateTimer = null;
+            if (Surface is not null && Model is not null)
+            {
+                UpdateReadOnly();
+            }
+        });
     }
 
     /// <summary>InfoBar.FormSyntax with <c>Msg.Designer.FormSyntaxError</c>; the caret goes to the error position.</summary>

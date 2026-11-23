@@ -61,6 +61,7 @@ public sealed class StructureView : UserControl
                 await _model.GoToSourceAsync(row);
         };
         _list.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+        _list.ContextRequested += OnContextRequested;
         AutomationProperties.SetAutomationId(_empty, Prefix + ".Empty");
         _empty.Bind(TextBlock.ForegroundProperty, _empty.GetResourceObservable("FxcTextSecondaryBrush"));
         Content = new Panel { Children = { _list, _empty } };
@@ -109,6 +110,18 @@ public sealed class StructureView : UserControl
         _syncing = false;
         if (_model?.SelectedRow is { } row)
             _list.ScrollIntoView(row);
+    }
+
+    /// <summary>Design view rows use the designer context menu, verb group first (tool-windows.md §3, DSG-SUR-191).</summary>
+    private void OnContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (_model?.BuildDesignContextMenu() is not { } items)
+            return;
+        _list.ContextMenu?.Close();
+        var menu = MenuBarBuilder.CreateContextMenu(items);
+        _list.ContextMenu = menu;
+        menu.Open(_list);
+        e.Handled = true;
     }
 
     private async void OnKeyDown(object? sender, KeyEventArgs e)

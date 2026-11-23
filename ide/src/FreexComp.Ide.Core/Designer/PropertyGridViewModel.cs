@@ -76,8 +76,12 @@ public sealed class PropertyGridViewModel : ObservableObject
         _dialogs = dialogs;
         _itemMode = itemMode;
         _modelCatalog = target.Catalog;
-        _model = new PropertyGridModel(_modelCatalog) { ItemMode = itemMode };
+        _model = new PropertyGridModel(_modelCatalog) { ItemMode = itemMode, PreviewBounds = PreviewBounds };
     }
+
+    /// <summary>DSG-OI-095: the surface's preview bounds of a control while a drag shows one.</summary>
+    private FreexComp.Designer.Rect? PreviewBounds(FormObject obj) =>
+        Designer?.Surface is { HasLayoutPreview: true } surface && surface.Layout.HasBounds(obj) ? surface.Layout.GetBounds(obj) : null;
 
     /// <summary>
     /// Sets the arrangement, collapsed categories and expanded rows of the model before each read (the Object Inspector's
@@ -170,7 +174,7 @@ public sealed class PropertyGridViewModel : ObservableObject
                 _model = new PropertyGridModel(_modelCatalog)
                 {
                     ItemMode = _itemMode, Arrangement = old.Arrangement, ExpandedPaths = old.ExpandedPaths,
-                    CollapsedCategories = old.CollapsedCategories,
+                    CollapsedCategories = old.CollapsedCategories, PreviewBounds = PreviewBounds,
                 };
             }
 
@@ -805,8 +809,19 @@ public sealed class PropertyGridViewModel : ObservableObject
     public void ActivateEvent(string eventName, bool navigate = true)
     {
         ArgumentNullException.ThrowIfNull(eventName);
-        if (IsEventsReadOnly || FindEvent(eventName) is not { } ev)
+        if (FindEvent(eventName) is not { } ev)
         {
+            return;
+        }
+
+        if (IsEventsReadOnly)
+        {
+            // DSG-OI-087: on a read-only form an assigned event still navigates to its method; nothing is created.
+            if (navigate && Designer is { HasUnit: true } readOnly && CommonHandler(ev.Name) is { Length: > 0 } assigned)
+            {
+                readOnly.CodeSync.NavigateToHandler(assigned);
+            }
+
             return;
         }
 

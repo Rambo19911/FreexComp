@@ -58,6 +58,7 @@ public static class CatalogLoader
         private readonly Dictionary<string, RawComponent> _byName = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, RawType> _rawTypes = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _signatures = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _signatureUnits = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _palettePages = [];
         private readonly Dictionary<string, JsonPositions> _positions = new(StringComparer.Ordinal);
         private readonly Dictionary<string, TypeInfo> _types = new(StringComparer.OrdinalIgnoreCase);
@@ -128,6 +129,29 @@ public static class CatalogLoader
                     else
                     {
                         _signatures[signature.Name] = text;
+                    }
+                }
+            }
+
+            // DSG-CS-055, A-CS-2: optional "eventSignatureUnits": { "<signature type>": "<unit>" }; the first declaration wins.
+            if (root.TryGetProperty("eventSignatureUnits", out var signatureUnits) && signatureUnits.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var entry in signatureUnits.EnumerateObject())
+                {
+                    if (entry.Value.ValueKind != JsonValueKind.String || entry.Value.GetString() is not { Length: > 0 } signatureUnit)
+                    {
+                        Problem(path, "eventSignatureUnits." + entry.Name, "the unit must be a non-empty string");
+                    }
+                    else if (_signatureUnits.TryGetValue(entry.Name, out var earlier))
+                    {
+                        if (!string.Equals(earlier, signatureUnit, StringComparison.OrdinalIgnoreCase))
+                        {
+                            Problem(path, "eventSignatureUnits", $"the unit of {entry.Name} differs from its earlier declaration (the first is used)");
+                        }
+                    }
+                    else
+                    {
+                        _signatureUnits[entry.Name] = signatureUnit;
                     }
                 }
             }
@@ -242,7 +266,7 @@ public static class CatalogLoader
                 infos.Add(flattened.Info);
             }
 
-            var catalog = new ComponentCatalog(infos, _types.Values, _signatures, _palettePages);
+            var catalog = new ComponentCatalog(infos, _types.Values, _signatures, _palettePages, _signatureUnits);
             return new CatalogLoadResult(catalog, [.. _problems]);
         }
 

@@ -46,16 +46,18 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
 
     private readonly FormDesignerViewModel _designer;
     private readonly IDialogService? _dialogs;
+    private readonly Layout.ILayoutService? _layout;
     private FormObject? _selected;
     private string _captionText = "";
     private string _shortCutText = "";
 
-    public MenuDesignerViewModel(FormDesignerViewModel designer, FormObject menu, IDialogService? dialogs = null)
+    public MenuDesignerViewModel(FormDesignerViewModel designer, FormObject menu, IDialogService? dialogs = null, Layout.ILayoutService? layout = null)
     {
         ArgumentNullException.ThrowIfNull(designer);
         ArgumentNullException.ThrowIfNull(menu);
         _designer = designer;
         _dialogs = dialogs;
+        _layout = layout;
         Menu = menu;
         Title = string.Format(CultureInfo.CurrentCulture, Strings.MenuDesigner_Title, menu.Name);
         Grid = new PropertyGridViewModel(new DesignerGridTarget(() => _designer, () => _selected is { } item ? [item] : [], designer.Status), dialogs);
@@ -75,6 +77,13 @@ public sealed class MenuDesignerViewModel : DialogViewModel<bool>
     public override double? Height => 460;
 
     public override bool CanResize => true;
+
+    /// <summary>UI-DLG-252: the dialog remembers its size between openings (UI state <c>dialogs.MenuDesigner.size</c>), nothing else.</summary>
+    public override (double Width, double Height)? StoredSize
+    {
+        get => StoredDialogSize.Read(_layout, DialogName);
+        set => StoredDialogSize.Write(_layout, DialogName, value);
+    }
 
     public override IReadOnlyList<DialogButtonViewModel> Buttons { get; }
 

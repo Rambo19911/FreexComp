@@ -91,4 +91,53 @@ public sealed class CommandPaletteTests
         h.Press("Escape");
         await h.WaitForAsync(() => h.TryFind<Control>("CommandPalette.Input") is null, "closed");
     }
+    /// <summary>
+    /// DSG-SUR-191 (D-111): the verbs of the current selection's verb component are palette entries
+    /// <c>Designer: &lt;caption&gt;</c> (also those whose command takes an argument); one runs its command on the verb
+    /// component; a selection without verbs adds none.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-191")]
+    public async Task ListsDesignerVerbs()
+    {
+        await using var h = await HeadlessHarness.StartAsync(DesignerViewTests.EditorFiles);
+        var document = await DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        var surface = document.Designer.Surface!;
+
+        // The status bar: its Panels Editor verb (designer.editCollection Panels) is listed and enabled.
+        surface.Selection.Set(["StatusBar1"]);
+        Dispatcher.UIThread.RunJobs();
+        await OpenAsync(h);
+        h.Type("panels editor");
+        await h.WaitForAsync(() => Items(h).FirstOrDefault() == "verb.editPanels", "the verb listed");
+        Assert.Equal("Designer: Panels Editor…", string.Concat(h.Find<TextBlock>("CommandPalette.Item.verb.editPanels.Title").Inlines!
+            .OfType<Avalonia.Controls.Documents.Run>().Select(r => r.Text)));
+        Assert.True(h.Find<Control>("CommandPalette.Item.verb.editPanels").IsEnabled);
+
+        // Enter runs it: the collection editor of StatusBar1.Panels opens.
+        h.Press("Enter");
+        var dlg = await h.WaitForDialogAsync("CollectionEditor");
+        Assert.Equal("Edit StatusBar1.Panels", dlg.Window.Title);
+        dlg.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+
+        // The action list: its editor verb.
+        surface.Selection.Set(["ActionList1"]);
+        Dispatcher.UIThread.RunJobs();
+        await OpenAsync(h);
+        Assert.Contains("verb.actionListEditor", Items(h));
+        Assert.DoesNotContain("verb.editPanels", Items(h));
+        h.Press("Escape");
+        await h.WaitForAsync(() => h.TryFind<Control>("CommandPalette.Input") is null, "closed");
+
+        // A component without verbs: no verb entries.
+        surface.Selection.Set(["GreetButton"]);
+        Dispatcher.UIThread.RunJobs();
+        await OpenAsync(h);
+        Assert.DoesNotContain(Items(h), id => id.StartsWith("verb.", StringComparison.Ordinal));
+        h.Press("Escape");
+        await h.WaitForAsync(() => h.TryFind<Control>("CommandPalette.Input") is null, "closed");
+    }
 }

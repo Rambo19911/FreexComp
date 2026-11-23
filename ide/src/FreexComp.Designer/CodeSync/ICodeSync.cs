@@ -43,6 +43,11 @@ public interface ICodeSync
     /// <summary>DSG-CS-063: shows the Code view with the caret in the body of <paramref name="methodName"/>.</summary>
     void NavigateToHandler(string methodName);
 
+    /// <summary>DSG-CS-071, 075: an event property referencing the method was lost with its deleted component. Default: nothing.</summary>
+    void NoteHandlerCandidate(string methodName)
+    {
+    }
+
     /// <summary>
     /// DSG-CS-091 (a): the first mutating designer action after open or after a Text-view model replacement repairs the
     /// form class first; returns the edits of that repair (empty: nothing to repair, already done, or not possible) for the

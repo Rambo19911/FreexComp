@@ -200,4 +200,44 @@ public sealed class MenuDesignerViewTests
         Assert.Equal(undo, d.Designer.Undo.UndoCount);
         Assert.True(undo >= 7);
     }
+    /// <summary>UI-DLG-252 (D-112): the dialog remembers its size between openings (<c>dialogs.MenuDesigner.size</c>), nothing else.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-252")]
+    [Trait("Req", "UI-DLG-005")]
+    public async Task RemembersSize()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.ImplementedPhase = 5;
+            o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
+            o.InitialFiles["MainForm.pas"] = Unit.ReplaceLineEndings("\r\n");
+            o.InitialFiles["MainForm.form"] = Form.ReplaceLineEndings("\r\n");
+        });
+        var d = await DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        d.Designer.Surface!.Selection.Select(Item(d, "MainMenu1"));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.Services.Layout.GetDialogValue("MenuDesigner", "size"));
+
+        async Task<(double, double)> OpenAndCloseAsync((double Width, double Height)? resizeTo)
+        {
+            var command = h.Services.Commands.ExecuteAsync("designer.editComponent");
+            var dlg = await h.WaitForDialogAsync("MenuDesigner");
+            var opened = (dlg.Window.Width, dlg.Window.Height);
+            if (resizeTo is { } size)
+            {
+                dlg.Window.Width = size.Width;
+                dlg.Window.Height = size.Height;
+            }
+
+            dlg.Press("Escape");
+            await h.WaitForAsync(() => command.IsCompleted, "Menu Designer closed");
+            await command;
+            return opened;
+        }
+
+        Assert.Equal((720.0, 460.0), await OpenAndCloseAsync((800, 520)));
+        Assert.Equal("800,520", h.Services.Layout.GetDialogValue("MenuDesigner", "size"));
+        Assert.Equal((800.0, 520.0), await OpenAndCloseAsync(null));
+    }
 }

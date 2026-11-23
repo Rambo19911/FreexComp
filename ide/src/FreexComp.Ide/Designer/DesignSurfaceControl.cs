@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using FreexComp.Designer.Rendering;
 using FreexComp.Designer.Surface;
 using FreexComp.Ide.Core.Commands;
@@ -232,6 +233,42 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
         }
 
         Send(PointerKind.Move, e.GetPosition(this), PointerButton.None, e.KeyModifiers, 1);
+        UpdateToolTip();
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        _surface?.PointerLeft(); // UI-DSG-084: no hovered tab
+        ToolTip.SetTip(this, null);
+        _toolTipFor = null;
+    }
+
+    private TrayToolTip? _toolTipFor;
+
+    /// <summary>UI-DSG-083: over a tray item its class name (bodyStrong), plus "Double-click to edit" with a componentEditor.</summary>
+    private void UpdateToolTip()
+    {
+        var tip = _surface is { State: InteractionState.Idle } surface ? surface.GetTrayToolTip(_pointer.X, _pointer.Y) : null;
+        if (tip == _toolTipFor)
+        {
+            return;
+        }
+
+        _toolTipFor = tip;
+        if (tip is null)
+        {
+            ToolTip.SetTip(this, null);
+            return;
+        }
+
+        var panel = new StackPanel { Children = { new TextBlock { Text = tip.ClassName, Classes = { "bodyStrong" } } } };
+        if (tip.OpensEditor)
+        {
+            panel.Children.Add(new TextBlock { Text = FreexComp.Ide.Core.Resources.Strings.Designer_TrayEditHint, Classes = { "body" } });
+        }
+
+        ToolTip.SetTip(this, panel);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -381,16 +418,24 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
         | (m.HasFlag(KeyModifiers.Shift) ? InputModifiers.Shift : 0)
         | (m.HasFlag(KeyModifiers.Alt) ? InputModifiers.Alt : 0);
 
-    /// <summary>DSG-SUR-030: the primary selection scrolls into view.</summary>
+    /// <summary>
+    /// DSG-SUR-030: the primary selection scrolls into view by the minimum distance, with an 8 DIP margin (aligned at its
+    /// top-left when larger than the view) — for a selection from outside (Object Inspector, Structure, Messages) and
+    /// equally for one made on the surface (keyboard selection of a control outside the view).
+    /// </summary>
     private void BringSelectionIntoView()
     {
-        if (_surface is not { } surface || surface.Selection.Items.Count == 0)
+        if (_surface is not { } surface || surface.Selection.Items.Count == 0 || this.FindAncestorOfType<ScrollViewer>() is not { } scroller)
         {
             return;
         }
 
-        var b = surface.Geometry.GetBounds(surface.Selection.Primary);
-        this.BringIntoView(new Rect(b.Left, b.Top, b.Width, b.Height));
+        var view = new SurfaceViewport(scroller.Offset.X, scroller.Offset.Y, scroller.Viewport.Width, scroller.Viewport.Height);
+        var (x, y) = SurfaceScroll.EnsureVisible(view, surface.Geometry.GetBounds(surface.Selection.Primary));
+        if ((x, y) != (view.OffsetX, view.OffsetY))
+        {
+            scroller.Offset = new Vector(x, y);
+        }
     }
 
     // ---- commands ----

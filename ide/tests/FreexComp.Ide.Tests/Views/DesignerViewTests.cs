@@ -745,6 +745,121 @@ public sealed class DesignerViewTests
         s.Control.ContextMenu!.Close();
     }
 
+    /// <summary>The form files with a status bar, and a main menu and an action list in the tray (D-099, D-111).</summary>
+    internal static void EditorFiles(HarnessOptions o)
+    {
+        Phase5(o);
+        o.InitialFiles["MainForm.pas"] = Unit
+            .Replace("GreetButton: TButton;", "GreetButton: TButton;\n    StatusBar1: TStatusBar;\n    MainMenu1: TMainMenu;\n    ActionList1: TActionList;", StringComparison.Ordinal)
+            .Replace("StdCtrls;", "StdCtrls, ComCtrls, Menus, ActnList;", StringComparison.Ordinal)
+            .ReplaceLineEndings("\r\n");
+        var form = FormText.ReplaceLineEndings("\n");
+        var at = form.TrimEnd().LastIndexOf("end", StringComparison.Ordinal);
+        o.InitialFiles["MainForm.form"] = (form[..at]
+            + "  object StatusBar1: TStatusBar\n    Left = 0\n    Top = 281\n    Width = 400\n    Height = 19\n    TabOrder = 2\n  end\n"
+            + "  object MainMenu1: TMainMenu\n    DesignLeft = 8\n    DesignTop = 8\n  end\n"
+            + "  object ActionList1: TActionList\n    DesignLeft = 88\n    DesignTop = 8\n  end\n" + form[at..]).ReplaceLineEndings("\r\n");
+    }
+
+    /// <summary>
+    /// DSG-SUR-160, DSG-SUR-196 (D-099): a double-click on a component whose class has a <c>componentEditor</c> opens that
+    /// editor instead of creating a handler — the Child List Editor for an action list (its keys, ids and the
+    /// <c>OnExecute</c> handler on Enter, dialogs.md §27), the Menu Designer for a menu — on the tray tile and on its
+    /// Structure node; Close only closes.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-160")]
+    [Trait("Req", "DSG-SUR-196")]
+    [Trait("Req", "DSG-SUR-198")]
+    [Trait("Req", "UI-DLG-260")]
+    [Trait("Req", "UI-DLG-261")]
+    public async Task DoubleClickOpensComponentEditor()
+    {
+        await using var h = await HeadlessHarness.StartAsync(EditorFiles);
+        var s = await OpenDesignAsync(h);
+
+        // The action list's tray tile: the Child List Editor opens (640 × 400, resizable, "Edit ActionList1").
+        var (x, y) = s.Center("ActionList1");
+        DoubleClick(h, s.At(x, y));
+        Assert.Equal(["ActionList1"], s.Selected);
+        var dlg = await h.WaitForDialogAsync("ChildListEditor");
+        try
+        {
+            Assert.Equal(DocumentView.Design, s.Document.ActiveView);
+            Assert.Equal("Edit ActionList1", dlg.Window.Title);
+            Assert.Equal((640, 400), (dlg.Window.Width, dlg.Window.Height));
+            Assert.True(dlg.Window.CanResize);
+            foreach (var field in (string[])["Items", "Items.Empty", "New", "Delete", "MoveUp", "MoveDown", "Grid", "Grid.Page.Properties",
+                "Grid.Page.Events", "Close"])
+            {
+                Assert.True(dlg.TryFind<Control>(field) is not null, field);
+            }
+
+            Assert.True(dlg.Find<TextBlock>("Items.Empty").IsVisible);
+            Assert.Equal("No items. Choose New to create one.", dlg.Find<TextBlock>("Items.Empty").Text);
+            Assert.False(dlg.Find<Button>("Delete").IsEnabled);
+            Assert.Equal("Dialog.ChildListEditor.Items", dlg.FocusedAutomationId);
+
+            // Insert = New: the new action is listed and selected; the focus moves to the grid on its Caption row.
+            dlg.Press("Insert");
+            Assert.NotNull(dlg.TryFind<ListBoxItem>("Item.Action1"));
+            Assert.Equal("Dialog.ChildListEditor.Grid", dlg.FocusedAutomationId);
+            Assert.NotNull(dlg.TryFind<Control>("Grid.Row.Caption"));
+            Assert.Contains("    Action1: TAction;", s.Document.Buffer.Text, StringComparison.Ordinal);
+            dlg.Click("New");
+            Assert.NotNull(dlg.TryFind<ListBoxItem>("Item.Action2"));
+            Assert.False(dlg.Window.IsClosed());
+
+            // Ctrl+Up in the list moves the selected action; Delete deletes it.
+            dlg.Find<ListBoxItem>("Item.Action2").Focus(NavigationMethod.Tab);
+            dlg.Press("Ctrl+Up");
+            Assert.Equal(["Action2", "Action1"], s.Object("ActionList1").Children.Select(c => c.Name));
+            Assert.Equal("Dialog.ChildListEditor.Item.Action2", dlg.FocusedAutomationId);
+
+            // Enter on a row creates and assigns OnExecute without closing; the Events page shows the method.
+            dlg.Press("Enter");
+            Assert.False(dlg.Window.IsClosed());
+            Assert.Equal("Action2Execute", ((IdentValue)s.Object("Action2").FindProperty("OnExecute")!.Value).Name);
+            Assert.Equal("Action2Execute", dlg.Find<TextBlock>("Grid.Row.OnExecute.Value").Text);
+            Assert.Equal(DocumentView.Design, s.Document.ActiveView);
+
+            dlg.Find<ListBoxItem>("Item.Action2").Focus(NavigationMethod.Tab);
+            dlg.Press("Delete");
+            Assert.Equal(["Action1"], s.Object("ActionList1").Children.Select(c => c.Name));
+        }
+        catch
+        {
+            dlg.Window.Close();
+            throw;
+        }
+
+        // Escape is Close: the operations stay applied.
+        var undo = s.Document.Designer.Undo.UndoCount;
+        dlg.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(dlg.Window.IsClosed());
+        Assert.Equal(undo, s.Document.Designer.Undo.UndoCount);
+        Assert.Null(s.Object("Action1").FindProperty("OnExecute"));
+
+        // The menu's tray tile: the Menu Designer (no handler is created on the menu).
+        (x, y) = s.Center("MainMenu1");
+        DoubleClick(h, s.At(x, y));
+        var menu = await h.WaitForDialogAsync("MenuDesigner");
+        menu.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(menu.Window.IsClosed());
+        Assert.Equal(undo, s.Document.Designer.Undo.UndoCount);
+
+        // The Structure node of the action list: double-click opens its editor too.
+        await h.ExecuteAsync("view.structure");
+        h.DoubleClick("Tool.Structure.Row.Form/ActionList1");
+        var again = await h.WaitForDialogAsync("ChildListEditor");
+        Assert.Equal(["ActionList1"], s.Selected);
+        again.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(again.Window.IsClosed());
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-DSG-130")]
     public async Task StatusBarShowsSelectionGeometry()

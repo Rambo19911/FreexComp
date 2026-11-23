@@ -42,6 +42,9 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
     private readonly ISettingsService? _settings;
     private FormDesignerViewModel? _designer;
     private string _filter = "";
+
+    // The last document whose Design view was bound (DSG-OI-021).
+    private FormDesignerViewModel? _lastDesigner;
     private bool _byName;
     private bool _showDescription = true;
 
@@ -206,14 +209,23 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
             old.SelectionChanged -= OnSelectionChanged;
             old.ActiveViewChanged -= OnSelectionChanged;
             old.ModelChanged -= OnModelChanged;
+            old.SurfaceInvalidated -= OnSurfaceInvalidated;
         }
 
         _designer = designer;
         if (designer is not null)
         {
+            // DSG-OI-021: the filter is kept across selection and view changes, cleared when another document is active.
+            if (_lastDesigner is not null && !ReferenceEquals(_lastDesigner, designer) && FilterText.Length > 0)
+            {
+                ApplyFilterNow("");
+            }
+
+            _lastDesigner = designer;
             designer.SelectionChanged += OnSelectionChanged;
             designer.ActiveViewChanged += OnSelectionChanged;
             designer.ModelChanged += OnModelChanged;
+            designer.SurfaceInvalidated += OnSurfaceInvalidated;
         }
 
         OnSelectionChanged(this, EventArgs.Empty);
@@ -501,6 +513,32 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
     }
 
     private void OnModelChanged(object? sender, EventArgs e) => RaiseRowsChanged();
+
+    /// <summary>DSG-OI-095: the live update interval during a drag on the surface.</summary>
+    public static readonly TimeSpan LiveUpdateInterval = TimeSpan.FromMilliseconds(50);
+
+    private IDisposable? _liveUpdate;
+
+    /// <summary>
+    /// DSG-OI-095: while a drag shows a preview layout, the rows are re-read at most every 50 ms (the first step of a
+    /// window schedules one refresh at its end); the drop's model change refreshes at once.
+    /// </summary>
+    private void OnSurfaceInvalidated(object? sender, EventArgs e)
+    {
+        if (_liveUpdate is not null || Clock is not { } clock || _designer?.Surface is not { HasLayoutPreview: true })
+        {
+            return;
+        }
+
+        _liveUpdate = clock.Schedule(LiveUpdateInterval, () =>
+        {
+            _liveUpdate = null;
+            if (_designer?.Surface is not null)
+            {
+                Grid.Refresh();
+            }
+        });
+    }
 
     private void RaiseRowsChanged()
     {

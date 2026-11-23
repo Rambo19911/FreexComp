@@ -52,6 +52,7 @@ public sealed class PropertyGridView : Border
         _categoryPrefix = categoryPrefix;
         Focusable = true;
         AutomationProperties.SetAutomationId(this, hostId);
+        AutomationProperties.SetAutomationId(_list, hostId + ".List"); // the row's own id is set when the list opens
         _scroll = new ScrollViewer
         {
             Content = _rows, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -332,6 +333,7 @@ public sealed class PropertyGridView : Border
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 AutomationProperties.SetAccessibilityView(box, AccessibilityView.Raw);
+                AutomationProperties.SetAutomationId(box, id + ".Check"); // UI-A11Y-030: every interactive element has an id
                 DockPanel.SetDock(box, Dock.Left);
                 cell.Children.Add(box);
             }

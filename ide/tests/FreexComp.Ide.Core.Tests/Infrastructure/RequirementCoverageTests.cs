@@ -50,7 +50,8 @@ public sealed partial class RequirementCoverageTests
         Assert.DoesNotContain("UI-TW-400", inScope); // tool-windows.md §6 Messages (P3)
 
         var covered = CoveredIds(Path.Combine(root, "ide", "tests"));
-        var exempt = ReadList(Path.Combine(testData, "coverage-exempt.txt"));
+        var exempt = ReadList(Path.Combine(testData, "coverage-exempt.txt")).Where(e => !IsDesignerId(e.Key))
+            .ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal); // designer ids: AllDesignerRequirementsHaveTests
         var pending = ReadList(Path.Combine(testData, "coverage-pending.txt"));
 
         var problems = new List<string>();
@@ -71,6 +72,73 @@ public sealed partial class RequirementCoverageTests
             problems.Add($"{id}: listed without a reason");
 
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    [GeneratedRegex(@"^\|\s*(DSG-[A-Z0-9]+-\d+[a-z]?|UI-DSG-\d+[a-z]?)\s*\|")]
+    private static partial Regex DesignerRuleRow();
+
+    /// <summary><c>&lt;category&gt;: &lt;reason&gt;</c>; the categories of the IDE list plus <c>pending &lt;task&gt;</c> (D-087).</summary>
+    [GeneratedRegex(@"^(?:structural|superseded|later phase|not checkable headless|platform|principle|process|definition|absence|pending [A-Z]-\d{3}): \S")]
+    private static partial Regex DesignerExemption();
+
+    private static bool IsDesignerId(string id) => id.StartsWith("DSG-", StringComparison.Ordinal) || id.StartsWith("UI-DSG-", StringComparison.Ordinal);
+
+    /// <summary>
+    /// D-087, DSG-TEST-001, DSG-TEST-003: every requirement id of the designer specification — the rule-table rows
+    /// <c>| DSG-… |</c> of <c>docs/spec/designer/*.md</c> and <c>| UI-DSG-… |</c> of <c>docs/spec/ui/designer.md</c> — is
+    /// referenced by a test (<c>[Trait("Req", "…")]</c> in <c>ide/tests/**/*.cs</c>) or listed in
+    /// <c>TestData/coverage-exempt.txt</c> with a category and a reason (testing.md lead decisions 2026-11-23). An exempt id
+    /// that a test covers fails ("remove it"); <c>pending &lt;task&gt;</c> marks an id owned by an open task.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Category", "Spec")]
+    [Trait("Req", "DSG-TEST-001")]
+    [Trait("Req", "DSG-TEST-003")]
+    public void AllDesignerRequirementsHaveTests()
+    {
+        var files = Directory.EnumerateFiles(Path.GetDirectoryName(SpecTables.DocPath(Path.Combine("spec", "designer", "README.md")))!, "*.md")
+            .Append(SpecTables.DocPath(Path.Combine("spec", "ui", "designer.md")));
+        var ids = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var file in files)
+        {
+            var inFence = false;
+            foreach (var line in File.ReadLines(file))
+            {
+                if (line.StartsWith("```", StringComparison.Ordinal))
+                    inFence = !inFence;
+                if (!inFence && DesignerRuleRow().Match(line) is { Success: true } row)
+                    ids.Add(row.Groups[1].Value);
+            }
+        }
+
+        Assert.Contains("DSG-SUR-198", ids);
+        Assert.Contains("UI-DSG-082", ids);
+        var root = SpecTables.RepoRootPath();
+        var covered = CoveredIds(Path.Combine(root, "ide", "tests"));
+        var exempt = ReadList(Path.Combine(root, "ide", "tests", "TestData", "coverage-exempt.txt")).Where(e => IsDesignerId(e.Key))
+            .ToDictionary(e => e.Key, e => e.Value, StringComparer.Ordinal);
+        var problems = DesignerProblems(ids, covered, exempt);
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    internal static List<string> DesignerProblems(IReadOnlySet<string> ids, IReadOnlySet<string> covered, IReadOnlyDictionary<string, string> exempt)
+    {
+        var problems = new List<string>();
+        var missing = ids.Where(id => !covered.Contains(id) && !exempt.ContainsKey(id)).ToList();
+        if (missing.Count > 0)
+            problems.Add($"{missing.Count} of {ids.Count} designer requirement ids have no test: {string.Join(", ", missing)}");
+        foreach (var (id, reason) in exempt)
+        {
+            if (covered.Contains(id))
+                problems.Add($"{id}: covered by a test; remove it from coverage-exempt.txt");
+            else if (!ids.Contains(id))
+                problems.Add($"{id}: listed in coverage-exempt.txt but not a designer requirement id");
+            if (!DesignerExemption().IsMatch(reason))
+                problems.Add($"{id}: coverage-exempt.txt needs \"<category>: <reason>\" (got \"{reason}\")");
+        }
+
+        return problems;
     }
 
     /// <summary><c>phase N</c> line plus one spec path (relative to <c>docs/</c>) per line; <c>#</c> starts a comment.</summary>

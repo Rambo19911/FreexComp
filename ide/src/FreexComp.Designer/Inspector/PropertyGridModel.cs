@@ -83,6 +83,12 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
     /// </summary>
     public bool ItemMode { get; set; }
 
+    /// <summary>
+    /// DSG-OI-095: the preview bounds of a control during a drag on the surface (parent-relative); null when there is no
+    /// preview. The geometry rows <c>Left</c>, <c>Top</c>, <c>Width</c> and <c>Height</c> show them instead of the model.
+    /// </summary>
+    public Func<FormObject, Rect?>? PreviewBounds { get; set; }
+
     /// <summary>A filter is set and no property row matches it (<c>Msg.Inspector.FilterEmpty</c>).</summary>
     public bool IsFilterEmpty => FilterText.Length > 0 && Rows.Count == 0;
 
@@ -320,8 +326,26 @@ public sealed class PropertyGridModel(ComponentCatalog catalog)
         };
     }
 
-    private FormValue Effective(FormObject obj, string path, PropertyInfo info) =>
-        obj.FindProperty(path)?.Value ?? PropertyAccess.DefaultValue(catalog, info);
+    private FormValue Effective(FormObject obj, string path, PropertyInfo info)
+    {
+        if (obj.Parent is not null && PreviewBounds?.Invoke(obj) is { } b)
+        {
+            int? preview = path.ToUpperInvariant() switch
+            {
+                "LEFT" => b.Left,
+                "TOP" => b.Top,
+                "WIDTH" => b.Width,
+                "HEIGHT" => b.Height,
+                _ => null,
+            };
+            if (preview is { } value)
+            {
+                return new IntegerValue(value, false);
+            }
+        }
+
+        return obj.FindProperty(path)?.Value ?? PropertyAccess.DefaultValue(catalog, info);
+    }
 
     private static bool Contains(FormValue set, string member) =>
         set is SetValue s && s.Elements.Contains(member, StringComparer.OrdinalIgnoreCase);

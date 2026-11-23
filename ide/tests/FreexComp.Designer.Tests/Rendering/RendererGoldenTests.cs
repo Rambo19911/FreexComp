@@ -274,6 +274,7 @@ public sealed partial class RendererTests
     [Fact]
     [Trait("Phase", "5")]
     [Trait("Req", "DSG-RND-005")]
+    [Trait("Req", "DSG-RND-018")]
     public void NeverDrawsOutsideBounds()
     {
         var random = new Random(20261123);

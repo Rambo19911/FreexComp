@@ -30,12 +30,14 @@ public sealed class DesignerShell
     private readonly ISettingsService _settings;
     private readonly LayoutViewModel _layout;
     private readonly Services.IDialogService? _dialogs;
+    private readonly Layout.ILayoutService? _uiState;
     private FormDesignerViewModel? _followed;
     private bool _isDesignActive;
 
     /// <param name="dialogs">The modal dialogs of the component editors the designer verbs open (DSG-SUR-195, 196).</param>
+    /// <param name="uiState">The UI state the component editors remember their size in (UI-DLG-252).</param>
     public DesignerShell(ICommandService commands, IDocumentService documents, ISettingsService settings, LayoutViewModel layout, int implementedPhase,
-        Services.IDialogService? dialogs = null)
+        Services.IDialogService? dialogs = null, Layout.ILayoutService? uiState = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(documents);
@@ -46,6 +48,7 @@ public sealed class DesignerShell
         _settings = settings;
         _layout = layout;
         _dialogs = dialogs;
+        _uiState = uiState;
 
         commands.RegisterHandler("window.layout.design", new Handler(_ => true, _ =>
         {
@@ -114,6 +117,7 @@ public sealed class DesignerShell
 
         form.Designer.Settings = new SettingsDesignerSettings(_settings);
         form.Designer.Dialogs = _dialogs;
+        form.Designer.UiState = _uiState;
         form.Designer.ContextMenu = () => DesignerContextMenu.Build(_commands, form.Designer.Surface?.Verbs);
         form.Designer.ShowProblems = problems => ShowProblems?.Invoke(form, problems);
         form.ActiveViewChanged += (_, _) =>

@@ -172,8 +172,11 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
     public MainWindow Window { get; }
 
-    /// <summary>The main window and every window it owns (dialogs).</summary>
-    public IReadOnlyList<Window> AllWindows => [Window, .. Window.OwnedWindows];
+    /// <summary>The main window and every window it owns (dialogs), also through a dialog (a message box over a dialog, D-112).</summary>
+    public IReadOnlyList<Window> AllWindows => [Window, .. Owned(Window)];
+
+    /// <summary>The windows <paramref name="owner"/> owns, each followed by the windows it owns in turn.</summary>
+    private static IEnumerable<Window> Owned(Window owner) => owner.OwnedWindows.SelectMany(w => Owned(w).Prepend(w));
 
     public IdeServices Services { get; }
 
@@ -406,7 +409,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
     public async Task<DialogDriver> WaitForDialogAsync(string dialogName)
     {
         var id = AutomationIds.Dialog(dialogName);
-        DialogWindow? Open() => Window.OwnedWindows.OfType<DialogWindow>().LastOrDefault(w => w.IsVisible && !w.Model.IsClosed && AutomationIds.Get(w) == id);
+        DialogWindow? Open() => Owned(Window).OfType<DialogWindow>().LastOrDefault(w => w.IsVisible && !w.Model.IsClosed && AutomationIds.Get(w) == id);
         await WaitForAsync(() => Open() is not null, $"dialog {dialogName} open");
         return new DialogDriver(Open()!, dialogName);
     }
@@ -450,7 +453,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
                 failures.AddRange(_unhandled.Select(e => "Unhandled dispatcher exception: " + e));
             }
 
-            failures.AddRange(Window.OwnedWindows.Select(w => $"Dialog still open: {w.Title}"));
+            failures.AddRange(Owned(Window).Select(w => $"Dialog still open: {w.Title}"));
             failures.AddRange(Messages.Unanswered.Select(r => $"Unanswered message box: {r.MessageId}"));
             if (!_errorExpected)
             {
@@ -464,7 +467,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
         finally
         {
             Dispatcher.UIThread.UnhandledException -= OnUnhandledException;
-            foreach (var dialog in Window.OwnedWindows.ToList())
+            foreach (var dialog in Owned(Window).Reverse().ToList()) // the innermost first
             {
                 dialog.Close(); // a dialog window closes through its Cancel (UI-DLG-004)
             }
@@ -486,7 +489,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
         | (modifiers.HasFlag(KeyModifiers.Alt) ? RawInputModifiers.Alt : RawInputModifiers.None);
 
     private IEnumerable<Control> AllWithId() =>
-        new[] { Window }.Concat(Window.OwnedWindows)
+        AllWindows
             .SelectMany(w => new Visual[] { w }.Concat(w.GetVisualDescendants()))
             .SelectMany(v => v is Avalonia.Controls.Primitives.Popup { IsOpen: true, Child: { } child } // the content lives in its own root
                 ? new Visual[] { v, child }.Concat(child.GetVisualDescendants())

@@ -14,10 +14,12 @@ public sealed class ComponentCatalog
     private readonly Dictionary<string, ComponentInfo> _components = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TypeInfo> _types = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _signatures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _signatureUnits = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="components">Flattened components in load order; a duplicate class name keeps the first.</param>
     public ComponentCatalog(IEnumerable<ComponentInfo> components, IEnumerable<TypeInfo> types,
-        IReadOnlyDictionary<string, string> eventSignatures, IEnumerable<string> palettePages)
+        IReadOnlyDictionary<string, string> eventSignatures, IEnumerable<string> palettePages,
+        IReadOnlyDictionary<string, string>? eventSignatureUnits = null)
     {
         var all = new List<ComponentInfo> { BuiltInRoot };
         _components[RootClassName] = BuiltInRoot;
@@ -37,6 +39,11 @@ public sealed class ComponentCatalog
         foreach (var (name, text) in eventSignatures)
         {
             _signatures.TryAdd(name, text);
+        }
+
+        foreach (var (name, unit) in eventSignatureUnits ?? new Dictionary<string, string>())
+        {
+            _signatureUnits.TryAdd(name, unit);
         }
 
         All = all;
@@ -70,6 +77,12 @@ public sealed class ComponentCatalog
 
     /// <summary>The text of a signature type, e.g. <c>procedure(Sender: TObject)</c>.</summary>
     public string? FindEventSignature(string name) => _signatures.GetValueOrDefault(name);
+
+    /// <summary>
+    /// DSG-CS-055, A-CS-2: the unit that declares the types of an event signature (optional metadata key
+    /// <c>eventSignatureUnits</c>); null when the metadata does not name one (then no unit is added).
+    /// </summary>
+    public string? FindEventSignatureUnit(string name) => _signatureUnits.GetValueOrDefault(StripUnit(name));
 
     /// <summary>True when <paramref name="fromClass"/> is <paramref name="toClass"/> or one of its metadata descendants.</summary>
     public bool IsAssignable(string fromClass, string toClass)

@@ -93,4 +93,50 @@ public sealed class StructureViewTests
         Dispatcher.UIThread.RunJobs();
         Assert.True(empty.IsVisible);
     }
+    /// <summary>
+    /// DSG-SUR-191, UI-DSG-082 (D-111): in the Design view a row's context menu is the designer context menu — for a
+    /// component with designer verbs the verb group comes first (<c>Context.Verb.&lt;id&gt;</c>, a separator, then Cut);
+    /// the verb runs on that component; a component without verbs starts with Cut.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Req", "DSG-SUR-191")]
+    [Trait("Req", "UI-DSG-082")]
+    public async Task ContextMenuShowsVerbs()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Views.DesignerViewTests.EditorFiles);
+        var document = await Views.DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        await h.ExecuteAsync("view.structure");
+        Dispatcher.UIThread.RunJobs();
+        var list = h.Find<ListBox>("Tool.Structure.List");
+        static string Id(object item) => item is Separator ? "-" : AutomationIds.Get((Control)item)!;
+
+        // The action list's row: selected by the right-click, the verb group first.
+        h.RightClick("Tool.Structure.Row.Form/ActionList1");
+        Assert.Equal(["ActionList1"], document.Designer.Surface!.Selection.Items.Select(o => o.Name));
+        var menu = Assert.IsType<ContextMenu>(list.ContextMenu);
+        Assert.True(menu.IsOpen);
+        Assert.Equal(["Context.Verb.actionListEditor", "-", "Context.edit.cut"], menu.Items.Cast<object>().Select(Id).Take(3));
+        var verb = menu.Items.OfType<MenuItem>().First();
+        Assert.Equal("_Action List Editor…", verb.Header);
+        Assert.True(verb.IsEffectivelyEnabled);
+
+        // The verb opens the action list's editor; Close only closes.
+        menu.Close();
+        verb.Command!.Execute(verb.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        var dlg = await h.WaitForDialogAsync("ChildListEditor");
+        Assert.Equal("Edit ActionList1", dlg.Window.Title);
+        dlg.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(0, document.Designer.Undo.UndoCount);
+
+        // A component without verbs: the standard designer menu.
+        h.RightClick("Tool.Structure.Row.Form/GreetButton");
+        Assert.Equal(["GreetButton"], document.Designer.Surface.Selection.Items.Select(o => o.Name));
+        menu = Assert.IsType<ContextMenu>(list.ContextMenu);
+        Assert.Equal("Context.edit.cut", Id(menu.Items[0]!));
+        menu.Close();
+    }
 }

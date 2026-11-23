@@ -36,13 +36,19 @@ public sealed partial class DesignSurfaceController
 
         var g = Geometry;
         var hit = Current.HitTester.HitTest(x, y, Selection.Items, handleSize: _settings.HandleSize);
+        if (hit.Kind == HitKind.Control && TabAt(hit, x, y) is not null)
+        {
+            return CursorKind.Arrow; // UI-DSG-084: a tab is clicked, not dragged
+        }
+
         return hit switch
         {
             { Kind: HitKind.FormHandle, Handle: { } h } => SizeCursor(h),
             { Kind: HitKind.Handle, Object: { } o, Handle: { } h }
                 when !o.IsPreserved && o.Info?.FindProperty("Left") is not { Stored: false } && (HandleEdges(h) & FreeEdges(o)) != SnapEdges.None
                 => SizeCursor(h),
-            { Kind: HitKind.Control, Object: { } o } when Selection.Contains(o) && !o.IsPreserved && !IsAligned(o) => CursorKind.SizeAll,
+            { Kind: HitKind.Control, Object: { } o } when Selection.Contains(o) && !o.IsPreserved && !IsAligned(o)
+                && o.Info?.FindProperty("Left") is not { Stored: false } => CursorKind.SizeAll, // a tab sheet does not move (UI-DSG-084)
             { Kind: HitKind.TrayItem, Object: { } o } when Selection.Contains(o) && !o.IsPreserved && g.IsTrayItem(o) => CursorKind.SizeAll,
             _ => CursorKind.Arrow,
         };

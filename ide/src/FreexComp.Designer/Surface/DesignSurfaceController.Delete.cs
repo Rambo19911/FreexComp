@@ -70,6 +70,18 @@ public sealed partial class DesignSurfaceController
             }
         }
 
+        // DSG-CS-075: the handler code of deleted components stays; their handlers become candidates (DSG-CS-071).
+        foreach (var obj in removed)
+        {
+            foreach (var property in obj.Properties)
+            {
+                if (property.Value is IdentValue { Name: var method } && obj.Info?.FindEvent(property.Path) is not null)
+                {
+                    _host.CodeSync.NoteHandlerCandidate(method);
+                }
+            }
+        }
+
         var changes = new List<FormChange>(ReferenceClearing.Changes(Document, removed));
         foreach (var parent in members.Where(TabOrderRules.IsFocusable).Select(m => m.Parent!).Distinct())
         {

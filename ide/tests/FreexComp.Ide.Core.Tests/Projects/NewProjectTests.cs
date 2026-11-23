@@ -250,6 +250,7 @@ public sealed class NewProjectTests
     [Trait("Req", "IDE-PM-020")]
     [Trait("Req", "IDE-PM-023")]
     [Trait("Req", "DSG-CS-110")]
+    [Trait("Phase", "5")]
     public Task GuiTemplateCreatesUnitAndForm() => TestUiThread.RunAsync(() => GuiTemplateCreatesUnitAndFormOnUiThread()); // I-209
 
     private async Task GuiTemplateCreatesUnitAndFormOnUiThread()
