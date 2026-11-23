@@ -228,6 +228,31 @@ public sealed class ObjectInspectorViewTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-035")]
+    public async Task OneEscapeCancelsRefusedEntry()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var d = await OpenDesignAsync(h, "GreetButton");
+        h.Press("F4");
+        GoTo(h, "Left");
+        h.Press("Enter");
+        h.Type("x");
+        h.Press("Enter");
+        Assert.NotNull(h.TryFind<TextBlock>(Row("Left") + ".Error"));
+
+        // One press: the editor and its error are gone, the value is unchanged, and the press did not also leave the
+        // Object Inspector (an Escape on a row not being edited would move the focus to the design surface).
+        h.Press("Escape");
+        Assert.Null(h.TryFind<TextBox>(Row("Left") + ".Editor"));
+        Assert.Null(h.TryFind<TextBlock>(Row("Left") + ".Error"));
+        Assert.Equal("232", ValueText(h, "Left"));
+        Assert.Equal("ObjectInspector", h.Services.FocusTracker.Current.ToolWindowName);
+        Assert.Equal("Left", CurrentRow(h));
+        Assert.Equal(["GreetButton"], d.Designer.Surface!.Selection.Items.Select(o => o.Name));
+        Assert.Equal(0, d.Designer.Undo.UndoCount);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-083")]
     [Trait("Req", "UI-DSG-111")]
     public async Task EventsPageDoubleClickCreatesHandler()

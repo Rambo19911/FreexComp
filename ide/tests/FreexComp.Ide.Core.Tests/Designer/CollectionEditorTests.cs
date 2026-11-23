@@ -320,6 +320,25 @@ public sealed class CollectionEditorTests
     /// UI-DLG-243: OK is always enabled, also for an empty collection; an invalid value in a grid editor blocks it only while
     /// that editor is open. UI-DLG-242: a <c>TStrings</c> row of the embedded grid opens <c>Dialog.StringsEditor</c> on top.
     /// </summary>
+    [Fact]
+    [Trait("Req", "DSG-OI-113")]
+    [Trait("Req", "DSG-OI-035")]
+    public void InvalidItemValueReportsMessage()
+    {
+        // An invalid item value left by focus loss: refused (the item keeps its value) and its message is reported.
+        var status = new RecordingStatusService();
+        var document = Parse();
+        var editor = new CollectionEditorViewModel(CodeSyncTests.Catalog, document, document.FindByName("StatusBar1")!, "Panels", status: status);
+        editor.Grid.SetCurrent("Width");
+        Assert.True(editor.Grid.BeginEdit());
+        editor.Grid.EditText = "wide";
+        Assert.False(editor.Grid.Commit(InspectorCommitCause.FocusLost));
+        Assert.False(editor.Grid.IsEditing);
+        var message = Assert.Single(status.Messages).Text;
+        Assert.False(string.IsNullOrWhiteSpace(message));
+        Assert.Equal(Editor(Parse()).Model.Items[0].FindProperty("Width")!.Value, editor.Model.Items[0].FindProperty("Width")!.Value);
+    }
+
     [Fact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-242")]
     [Trait("Req", "UI-DLG-243")]

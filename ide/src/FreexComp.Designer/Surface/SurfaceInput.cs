@@ -64,6 +64,12 @@ public interface IDesignerHost
     /// <summary>Shows a status message (<c>states-and-messages.md</c> id and its arguments).</summary>
     void SetStatus(string messageId, params object[] args);
 
+    /// <summary>
+    /// Shows a message the catalog defines as an error dialog with <c>OK</c> (<c>states-and-messages.md</c> id and its
+    /// arguments), e.g. <c>Msg.Designer.CodeSyncConflict</c> (DSG-CS-004); the surface does not wait for it.
+    /// </summary>
+    void ShowErrorDialog(string messageId, params object[] args);
+
     /// <summary>Opens the design-surface context menu at a surface point.</summary>
     void ShowContextMenu(double x, double y);
 

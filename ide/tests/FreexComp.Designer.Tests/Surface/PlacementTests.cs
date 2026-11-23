@@ -388,6 +388,9 @@ public sealed class PlacementTests
         h.Execute("edit.paste");
         Assert.Equal(before, h.Text);
         Assert.Equal(units, h.Undo.UndoCount);
-        Assert.Equal(("Msg.Designer.CodeSyncConflict", "broken"), (h.Host.Statuses[^1].Id, h.Host.Statuses[^1].Args[0]));
+        // DSG-CS-004: the catalog defines it as an error dialog (OK), not a status message; one per refused action.
+        Assert.Equal([("Msg.Designer.CodeSyncConflict", "broken"), ("Msg.Designer.CodeSyncConflict", "broken")],
+            h.Host.ErrorDialogs.Select(d => (d.Id, (string)d.Args[0])));
+        Assert.DoesNotContain(h.Host.Statuses, s => s.Id == "Msg.Designer.CodeSyncConflict");
     }
 }

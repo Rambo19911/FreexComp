@@ -321,8 +321,8 @@ public sealed class ValueConverterTests
         Assert.Equal(1, Eval("7 Mod -2"));
         Assert.Equal(255, Eval("$FF"));
         Assert.Equal(256, Eval("$ff+1"));
-        Assert.Equal(5, Eval("--5"));
-        Assert.Equal(-5, Eval("+-5"));
+        Assert.Equal(5, Eval("-(-5)")); // one sign per factor: "--5" and "+-5" are invalid (below)
+        Assert.Equal(-5, Eval("+(-5)"));
         Assert.Equal(6, Eval("2*-(-3)"));
         Assert.Equal(10, Eval("  1+2 +3+4 "));
         Assert.Equal(1, Eval("10 - 4 - 5"));
@@ -335,7 +335,7 @@ public sealed class ValueConverterTests
         Assert.Equal("Msg.Designer.ValueInvalidInteger", large.MessageId);
 
         foreach (var bad in new[] { "1 / 0", "5 mod 0", "9223372036854775807 + 1", "-9223372036854775808 div -1", "3037000500*3037000500",
-                     "99999999999999999999", "(1 + 2", "1 + 2)", "1 +", "* 2", "2 ** 3", "1.5", "$", "$G", "x", "1 2", "di v", "()" })
+                     "99999999999999999999", "(1 + 2", "1 + 2)", "1 +", "* 2", "2 ** 3", "1.5", "$", "$G", "x", "1 2", "di v", "()", "--5", "+-5" })
         {
             Assert.Equal("Msg.Designer.ValueInvalidExpression", Converter.Parse(PropertyOf("Int64"), bad).MessageId);
         }

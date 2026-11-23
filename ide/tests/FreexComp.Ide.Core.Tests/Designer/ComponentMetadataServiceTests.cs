@@ -137,4 +137,58 @@ public sealed class ComponentMetadataServiceTests
         var second = Assert.IsType<FormDocumentViewModel>((await f.Services.Documents.OpenAsync(@"C:\p\Second.pas")).Value);
         Assert.True(second.ShowView(DocumentView.Design));
     }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-TP-003")]
+    [Trait("Req", "DSG-TP-004")]
+    public Task LoaderFailureEndsInErrorState() => TestUiThread.RunAsync(LoaderFailureEndsInErrorStateOnUiThread);
+
+    private static async Task LoaderFailureEndsInErrorStateOnUiThread()
+    {
+        var deadline = CurrentTest.Deadline;
+        using var gate = new ManualResetEventSlim();
+        var dialogs = new FakeDialogService();
+        RecordingFileSystem? recording = null;
+        RecordingLog? log = null;
+        var f = new DesignerFixture(o =>
+        {
+            o.Dialogs = dialogs;
+            o.FileSystem = recording = new RecordingFileSystem(o.FileSystem);
+            log = (RecordingLog)o.Log;
+        });
+        CopyTestMetadata(f);
+        recording!.BeforeRead = path =>
+        {
+            if (path.StartsWith(Meta, StringComparison.OrdinalIgnoreCase))
+            {
+                gate.Wait(deadline.Remaining);
+                throw new InvalidOperationException("metadata reader broke"); // not an I/O error: the loader itself fails
+            }
+        };
+        var metadata = f.Services.Metadata!;
+        await StartupSequence.RunAsync(f.Services);
+        var document = await f.OpenAsync(design: false);
+        var designer = document.Designer;
+        Assert.True(designer.IsMetadataLoading);
+
+        // The load fails: a terminal error state, the waiting form stops waiting (no endless progress ring).
+        gate.Set();
+        await metadata.Loading;
+        Assert.Equal(MetadataLoadState.Failed, metadata.State);
+        Assert.Same(ComponentCatalog.Empty, metadata.Catalog);
+        Assert.False(designer.IsMetadataLoading);
+        Assert.Contains(log!.Lines, l => l.StartsWith("ERROR Designer: ", StringComparison.Ordinal) && l.Contains("metadata reader broke", StringComparison.Ordinal));
+
+        // Like a missing index: the Design view is refused with Msg.Designer.MetadataMissing, naming the reason.
+        dialogs.Answer("Msg.Designer.MetadataMissing", "Cancel");
+        Assert.False(document.ShowView(DocumentView.Design));
+        await metadata.MissingMessage;
+        var request = Assert.Single(dialogs.Requests);
+        Assert.Equal("Msg.Designer.MetadataMissing", request.MessageId);
+        Assert.Contains("metadata reader broke", Assert.Single(request.Args), StringComparison.Ordinal);
+
+        // The reload command is available again (not stuck in Loading).
+        recording.BeforeRead = null;
+        Assert.True(f.Services.Commands.CanExecute("component.reloadMetadata"));
+    }
 }

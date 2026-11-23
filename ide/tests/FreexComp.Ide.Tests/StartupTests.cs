@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Avalonia.Headless.XUnit;
+using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ViewModels;
@@ -44,29 +45,31 @@ public sealed class StartupTests
         [.. h.Services.Documents.Documents.Select(d => d.FilePath).OfType<string>().Select(p => Path.GetRelativePath(h.TempDir, p).Replace('\\', '/'))];
 
     /// <summary>
-    /// UI-WIN-070: with no project the main window is shown within 5 s (×3 for a Debug build, ×3 with <c>CI_SLOW=1</c>: <see cref="PerformanceBudget"/>). Measured from the
-    /// start of composition (services, main window) until the start-up sequence has finished and the window is
-    /// visible — the median wall-clock time of three starts, each in a fresh harness. First-use costs of the process
-    /// (JIT, XAML/theme load) are paid by <see cref="TestAppBuilder"/>'s warm-up, as in every headless test (I-172).
+    /// UI-WIN-070 as a logical check (I-220: no wall-clock budget on a shared, variably loaded machine): no splash, the
+    /// main window is shown as soon as the shell is composed and the slow start-up work does not hold it. The component
+    /// metadata load (DSG-TP-003), started by the start-up sequence, is held on its background thread: the window is
+    /// visible and takes commands, the start-up sequence has finished, and the load is still running; only its own end
+    /// (the event of the released read, not a timeout: the harness clock is manual) completes it.
     /// </summary>
     [AvaloniaFact(Timeout = 30000)]
-    [Trait("Category", "Performance")]
     [Trait("Req", "UI-WIN-070")]
     public async Task ShellComposesWithinBudget()
     {
-        var samples = new List<TimeSpan>();
-        for (int run = 0; run < 3; run++)
-        {
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            await using var h = await HeadlessHarness.StartAsync();
-            samples.Add(watch.Elapsed);
-            Assert.True(h.Window.IsVisible, "main window shown");
-            Assert.Null(h.Services.Projects.Project);
-        }
+        using var gate = new ManualResetEventSlim();
+        await using var h = await HeadlessHarness.StartAsync(o => o.MetadataGate = gate);
+        var metadata = h.Services.Metadata!;
 
-        var median = PerformanceBudget.Median(samples);
-        var budget = PerformanceBudget.Of(5000, typeof(FreexComp.Ide.App).Assembly, typeof(FreexComp.Ide.Core.Documents.DocumentService).Assembly);
-        Assert.True(budget.IsMetBy(median), budget.Describe("median start-up", median));
+        Assert.True(h.Window.IsVisible, "main window shown");
+        Assert.True(h.Startup.IsCompletedSuccessfully, "start-up sequence finished");
+        Assert.DoesNotContain(h.Window.OwnedWindows, w => w.IsVisible); // no splash or other window in front
+        Assert.Null(h.Services.Projects.Project);
+        Assert.Equal(MetadataLoadState.Loading, metadata.State);
+        Assert.False(metadata.Loading.IsCompleted);
+        Assert.True(h.Services.Commands.CanExecute("file.open")); // the shell is usable meanwhile
+
+        gate.Set();
+        await h.WaitForAsync(() => metadata.Loading.IsCompleted, "metadata loaded");
+        Assert.Equal(MetadataLoadState.Loaded, metadata.State);
     }
 
     [AvaloniaFact(Timeout = 30000)]

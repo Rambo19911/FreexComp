@@ -38,6 +38,8 @@ public sealed class DesignerHost : IDesignerHost
 
     public void SetStatus(string messageId, params object[] args) => _owner.ShowStatus(messageId, args);
 
+    public void ShowErrorDialog(string messageId, params object[] args) => _owner.ShowErrorDialog(messageId, args);
+
     public void ShowContextMenu(double x, double y) => ContextMenuRequested?.Invoke(this, (x, y));
 
     public void BeginPropertyEdit(string propertyName, string text) => PropertyEditRequested?.Invoke(this, (propertyName, text));

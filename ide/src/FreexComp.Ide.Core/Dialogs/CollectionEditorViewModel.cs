@@ -25,15 +25,16 @@ public sealed class CollectionEditorViewModel : DialogViewModel<FormChange>
     /// <param name="document">The form (component references of the item grid).</param>
     /// <param name="component">The one selected component (DSG-OI-110).</param>
     /// <param name="propertyName">Its <c>"kind": "collection"</c> property.</param>
+    /// <param name="status">Where an item value refused at focus loss is reported (DSG-OI-035); null: nowhere.</param>
     public CollectionEditorViewModel(ComponentCatalog catalog, FormDocument document, FormObject component, string propertyName,
-        IDialogService? dialogs = null)
+        IDialogService? dialogs = null, IStatusService? status = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(document);
         _document = document;
         Model = new CollectionEditorModel(catalog, component, propertyName);
         Title = string.Format(CultureInfo.CurrentCulture, Strings.CollectionEditor_Title, component.Name, Model.Property.Name);
-        Grid = new PropertyGridViewModel(new ItemTarget(this, catalog), dialogs, itemMode: true);
+        Grid = new PropertyGridViewModel(new ItemTarget(this, catalog, status), dialogs, itemMode: true);
         Ok = new DialogButtonViewModel("Ok", Strings.Button_OK, () => Close(Model.CommitChange())) { IsDefault = true, IsAccent = true };
         Buttons = [Ok, new DialogButtonViewModel("Cancel", Strings.Button_Cancel, () => Close(null)) { IsCancel = true }];
         // UI-DLG-243: OK is always enabled, except while a grid editor is open with a refused (invalid) entry.
@@ -150,8 +151,10 @@ public sealed class CollectionEditorViewModel : DialogViewModel<FormChange>
     }
 
     /// <summary>The grid edits the selected item of the working copy.</summary>
-    private sealed class ItemTarget(CollectionEditorViewModel owner, ComponentCatalog catalog) : IPropertyGridTarget
+    private sealed class ItemTarget(CollectionEditorViewModel owner, ComponentCatalog catalog, IStatusService? status) : IPropertyGridTarget
     {
+        private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
+
         public ComponentCatalog Catalog => catalog;
 
         public IReadOnlyList<FormObject> Selection => owner._selected is [var i] ? [owner.Model.Items[i]] : [];
@@ -166,6 +169,9 @@ public sealed class CollectionEditorViewModel : DialogViewModel<FormChange>
             owner.OnPropertyChanged(nameof(ItemTexts)); // UI-DLG-241
             return true;
         }
+
+        /// <summary>DSG-OI-035 in the dialog: the refused entry's message goes to the status bar, as for the Object Inspector.</summary>
+        public void ReportError(string message) => status?.ShowMessage(message, StatusDuration);
 
         public IReadOnlyList<string> References(PropertyInfo info) =>
             [.. owner._document.AllObjects()

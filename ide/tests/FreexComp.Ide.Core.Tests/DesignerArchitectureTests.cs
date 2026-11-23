@@ -4,6 +4,7 @@ using FreexComp.Designer.Surface;
 using FreexComp.Ide.Core.Designer.CodeSync;
 using FreexComp.Ide.Core.Tests.Designer;
 using FreexComp.Ide.Core.Tests.Infrastructure;
+using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests;
@@ -68,8 +69,51 @@ public sealed partial class DesignerArchitectureTests
         var files = f.Memory.EnumerateFiles(DesignerFixture.Dir, "*").Select(Path.GetFileName).Order(StringComparer.OrdinalIgnoreCase);
         Assert.Equal(["MainForm.form", "MainForm.pas"], files);
 
-        // The selection is not stored in the form or the unit: reopening shows the form selected (session state is optional).
-        Assert.DoesNotContain("OkButton", f.Disk(DesignerFixture.FormPath).Split('\n').Where(l => l.Contains("Select", StringComparison.OrdinalIgnoreCase)));
+        // The selection is not stored in the form: the file is the original text with only the moved Left changed.
+        Assert.Equal(MovedOkButtonForm, f.Disk(DesignerFixture.FormPath));
+    }
+
+    /// <summary><see cref="DesignerFixture.Form"/> with OkButton moved one pixel right.</summary>
+    private static string MovedOkButtonForm => DesignerFixture.Form.Replace(
+        "  object OkButton: TButton\n    Left = 232\n", "  object OkButton: TButton\n    Left = 233\n", StringComparison.Ordinal);
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-ARCH-004")]
+    public Task SelectionIsSessionOnly() => TestUiThread.RunAsync(SelectionIsSessionOnlyOnUiThread);
+
+    private static async Task SelectionIsSessionOnlyOnUiThread()
+    {
+        var f = new DesignerFixture();
+        var document = await f.OpenAsync();
+        DesignerFixture.Select(document.Designer, "OkButton");
+        document.Designer.Surface!.OnKey(new KeyInput(DesignKey.Right, InputModifiers.Ctrl));
+        Assert.True(await f.Services.Documents.SaveAsync(document));
+        f.Services.Session.Save();
+
+        // Neither the form nor the unit holds the selection; every other file written lies under the user directories.
+        Assert.Equal(MovedOkButtonForm, f.Disk(DesignerFixture.FormPath));
+        Assert.Equal(DesignerFixture.Unit, f.Disk(DesignerFixture.UnitPath));
+        var paths = f.Services.UserPaths;
+        var userDirs = new[] { paths.LocalDirectory, paths.RoamingDirectory }.Select(d => d.TrimEnd('\\') + "\\").ToList();
+        bool InUserDir(string p) => userDirs.Exists(d => p.StartsWith(d, StringComparison.OrdinalIgnoreCase));
+        var stray = f.Memory.AllFiles.Where(p => !string.Equals(p, DesignerFixture.UnitPath, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(p, DesignerFixture.FormPath, StringComparison.OrdinalIgnoreCase) && !InUserDir(p)).ToList();
+        Assert.True(stray.Count == 0, string.Join(Environment.NewLine, stray));
+        Assert.Contains(f.Memory.AllFiles, InUserDir); // the session was written, there
+
+        // Without any session state the form still opens, with the form itself selected and the saved position.
+        Assert.True(await f.Services.Documents.CloseAsync(document));
+        foreach (var file in f.Memory.AllFiles.Where(InUserDir))
+        {
+            f.Memory.DeleteFile(file);
+        }
+
+        var reopened = await f.Services.Documents.OpenAsync(DesignerFixture.UnitPath);
+        Assert.True(reopened.Success, reopened.MessageId);
+        var form = Assert.IsType<FormDocumentViewModel>(reopened.Value);
+        Assert.True(form.ShowView(DocumentView.Design));
+        Assert.True(form.Designer.Surface!.Selection.IsFormOnly);
+        Assert.Equal("233", DesignerFixture.Stored(form.Designer, "OkButton", "Left"));
     }
 
     [GeneratedRegex(@"Trait\(\s*""Req""\s*,\s*""(?:DSG-|UI-DSG-)")]

@@ -256,6 +256,11 @@ internal sealed class FakeDesignerHost : IDesignerHost
 
     public void SetStatus(string messageId, params object[] args) => Statuses.Add((messageId, args));
 
+    /// <summary>The error dialogs the controller asked for (DSG-CS-004): message id and arguments.</summary>
+    public List<(string Id, object[] Args)> ErrorDialogs { get; } = [];
+
+    public void ShowErrorDialog(string messageId, params object[] args) => ErrorDialogs.Add((messageId, args));
+
     public void ShowContextMenu(double x, double y) => ContextMenus.Add((x, y));
 
     public void BeginPropertyEdit(string propertyName, string text) => PropertyEdits.Add((propertyName, text));

@@ -7,10 +7,14 @@ namespace FreexComp.Designer.Inspector;
 /// <c>expr = term {("+" | "-") term}</c>, <c>term = factor {("*" | "/" | "div" | "mod") factor}</c>,
 /// <c>factor = ["-" | "+"] (integer | "$" hex | "(" expr ")")</c>. Whitespace is ignored, <c>div</c>/<c>mod</c> are
 /// case-insensitive, <c>/</c> is integer division truncating toward zero, <c>mod</c> has the sign of the dividend.
-/// Every intermediate value must fit <see cref="long"/>; division by zero and overflow fail.
+/// Every intermediate value must fit <see cref="long"/>; division by zero and overflow fail. A factor has at most one
+/// sign (<c>--5</c> is invalid, <c>-(-5)</c> is 5); parentheses nest at most <see cref="MaxDepth"/> deep.
 /// </summary>
 public static class IntegerExpression
 {
+    /// <summary>The deepest parenthesis nesting accepted; deeper input is invalid (no stack overflow).</summary>
+    public const int MaxDepth = 64;
+
     private static readonly Int128 Min = long.MinValue;
     private static readonly Int128 Max = long.MaxValue;
 
@@ -35,6 +39,7 @@ public static class IntegerExpression
         private int _pos;
         private (Kind Kind, Int128 Value) _token;
         private bool _started;
+        private int _depth;
 
         public bool AtEnd => Peek().Kind == Kind.End;
 
@@ -94,19 +99,16 @@ public static class IntegerExpression
         }
 
         /// <summary>
-        /// One optional sign, then a number, a hex number or a parenthesised expression. The literal 2^63 is accepted only
-        /// under a minus sign (so that <c>-9223372036854775808</c> is the Int64 minimum).
+        /// One optional sign, then a number, a hex number or a parenthesised expression (at most <see cref="MaxDepth"/>
+        /// deep). The literal 2^63 is accepted only under a minus sign (so that <c>-9223372036854775808</c> is the Int64
+        /// minimum).
         /// </summary>
         private Int128? Factor()
         {
             var negate = false;
             if (Peek().Kind is Kind.Plus or Kind.Minus)
             {
-                negate = Next().Kind == Kind.Minus;
-                if (Peek().Kind is Kind.Plus or Kind.Minus)
-                {
-                    return Factor() is { } inner ? Checked(negate ? -inner : inner) : null; // "--5", "+-5": a factor again
-                }
+                negate = Next().Kind == Kind.Minus; // a second sign is no factor start: "--5" fails below
             }
 
             Int128 value;
@@ -116,7 +118,14 @@ public static class IntegerExpression
                     value = n;
                     break;
                 case { Kind: Kind.Open }:
-                    if (Expression() is not { } e || Next().Kind != Kind.Close)
+                    if (++_depth > MaxDepth)
+                    {
+                        return null;
+                    }
+
+                    var inner = Expression();
+                    _depth--;
+                    if (inner is not { } e || Next().Kind != Kind.Close)
                     {
                         return null;
                     }

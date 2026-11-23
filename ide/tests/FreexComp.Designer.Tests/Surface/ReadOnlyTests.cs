@@ -80,6 +80,7 @@ public sealed class ReadOnlyTests
     [Trait("Req", "DSG-SUR-003")]
     [Trait("Req", "DSG-CS-081")]
     [Trait("Req", "DSG-TP-055")]
+    [Trait("Req", "DSG-SUR-043")]
     public void ReadOnlyFormAllowsOnlySelectionAndCopy()
     {
         using var h = DesignerHarness.FromText(Form);

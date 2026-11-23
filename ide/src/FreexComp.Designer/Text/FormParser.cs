@@ -15,6 +15,9 @@ namespace FreexComp.Designer.Text;
 /// </summary>
 public static class FormParser
 {
+    /// <summary>The deepest nesting of objects and of collections accepted; deeper text is a syntax error (F0001).</summary>
+    public const int MaxNesting = 256;
+
     /// <param name="rootAncestorClass">
     /// The ancestor of the form class declared in the unit (code sync supplies it from <c>class(TForm)</c>). The root
     /// binds to its own class when the catalog has it, else to this class, else to the first catalog class of kind
@@ -87,6 +90,7 @@ public static class FormParser
         private string? _lineEnding;
         private string? _currentObject;
         private SourceLines? _lines;
+        private int _depth;
 
         // Lines of the top-level property value being read (FormProperty.RawLines).
         private List<(int Level, string Text)> _rawLines = [];
@@ -141,9 +145,19 @@ public static class FormParser
                 line, col, line, col, error.ObjectName, null);
         }
 
+        /// <summary>One more nesting level of objects or collections (<see cref="MaxNesting"/>); the caller leaves it.</summary>
+        private void EnterNesting(int position)
+        {
+            if (++_depth > MaxNesting)
+            {
+                throw new SyntaxErrorException(position, $"objects and collections nest more than {MaxNesting} levels deep", _currentObject);
+            }
+        }
+
         private FormObject ParseObject(bool parentPreserved, bool isRoot)
         {
             var lineStart = _pos;
+            EnterNesting(lineStart);
             SkipSpaces();
             var keywordStart = _pos;
             var keyword = ReadIdentifier("object");
@@ -222,6 +236,7 @@ public static class FormParser
             var endTokenEnd = _pos;
             ExpectLineEnd();
             _currentObject = parentObject;
+            _depth--;
             obj.SourceSpan = new TextSpan(lineStart, _pos - lineStart);
             if (preserved && !parentPreserved)
             {
@@ -512,6 +527,7 @@ public static class FormParser
         /// <summary><c>&lt;</c> NL { <c>item</c> NL { property } <c>end</c> NL } <c>&gt;</c>.</summary>
         private CollectionValue ParseCollection(int level)
         {
+            EnterNesting(_pos);
             _pos++; // '<'
             ValueLineEnd();
             var items = new List<CollectionItem>();
@@ -561,6 +577,7 @@ public static class FormParser
 
             _rawLevel = level;
             _pos++;
+            _depth--;
             return new CollectionValue([.. items]);
         }
 

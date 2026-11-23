@@ -177,6 +177,18 @@ public sealed class InMemoryFileSystem : IFileSystem
         }
     }
 
+    /// <summary>Every file, in path order: what a test checks when it asserts where state was written.</summary>
+    public IReadOnlyList<string> AllFiles
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _files.Keys.Order(Cmp)];
+            }
+        }
+    }
+
     public IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern)
     {
         lock (_gate)

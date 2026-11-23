@@ -1,6 +1,9 @@
+using System.Globalization;
 using System.Text;
 using FreexComp.Compiler.Syntax;
+using FreexComp.Designer.CodeSync;
 using FreexComp.Designer.Editing;
+using FreexComp.Ide.Core.Resources;
 
 namespace FreexComp.Ide.Core.Designer.CodeSync;
 
@@ -48,7 +51,8 @@ public static class HandlerEdits
     /// implementation of that name is kept, so only the missing part is added.
     /// </summary>
     /// <exception cref="ArgumentException">The signature is not a procedural type.</exception>
-    /// <exception cref="InvalidOperationException">The state is not <c>Ok</c>, or the name is another kind of member.</exception>
+    /// <exception cref="InvalidOperationException">The state is not <c>Ok</c>.</exception>
+    /// <exception cref="CodeSyncException">The name is another kind of member (D-065, <c>Msg.Designer.NameConflictsWithMember</c>).</exception>
     public static IReadOnlyList<TextEditRecord> CreateHandler(FormUnit unit, string methodName, string signatureText)
     {
         ArgumentNullException.ThrowIfNull(unit);
@@ -70,7 +74,7 @@ public static class HandlerEdits
                 case MethodDeclarationSyntax:
                     break;
                 default:
-                    throw new InvalidOperationException($"{methodName} is a member of the form class that is not a method.");
+                    throw new CodeSyncException(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_NameConflictsWithMember, info.ClassName, methodName));
             }
 
             if (!info.Implementations.ContainsKey(methodName))

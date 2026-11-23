@@ -450,7 +450,7 @@ public sealed class FormDesignerViewModel
 
     private async Task EditCollectionAsync(Services.IDialogService dialogs, FormDocument model, FormObject component, string propertyName)
     {
-        var change = await dialogs.ShowAsync(new Dialogs.CollectionEditorViewModel(Catalog, model, component, propertyName, dialogs));
+        var change = await dialogs.ShowAsync(new Dialogs.CollectionEditorViewModel(Catalog, model, component, propertyName, dialogs, Status));
         if (change is not null && Surface is { IsReadOnly: false } surface && ReferenceEquals(Model, model)
             && ReferenceEquals(model.FindByName(component.Name), component))
         {
@@ -485,6 +485,23 @@ public sealed class FormDesignerViewModel
 
     /// <summary>Shows a designer status message (<c>states-and-messages.md</c> id and arguments).</summary>
     internal void ShowStatus(string messageId, object[] args) => Status?.ShowMessage(DesignerMessages.Format(messageId, args), StatusDuration);
+
+    /// <summary>
+    /// An error dialog of the catalog (<c>Msg.Designer.CodeSyncConflict</c>, DSG-CS-004) through <see cref="Dialogs"/>; it
+    /// becomes the <see cref="PendingEditor"/> a running command awaits. Without dialogs (no IDE) it goes to the status bar.
+    /// </summary>
+    internal void ShowErrorDialog(string messageId, object[] args)
+    {
+        if (Dialogs is { } dialogs)
+        {
+            PendingEditor = dialogs.ShowMessageAsync(new Services.MessageRequest(messageId,
+                [.. args.Select(a => Convert.ToString(a, CultureInfo.CurrentCulture) ?? "")]));
+        }
+        else
+        {
+            ShowStatus(messageId, args);
+        }
+    }
 
     private string[] SelectedNames() => Surface is { } surface ? [.. surface.Selection.Items.Select(o => o.Name)] : [];
 

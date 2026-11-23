@@ -617,6 +617,42 @@ public sealed class DesignerViewTests
     }
 
     [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-CS-004")]
+    [Trait("Req", "DSG-CS-010")]
+    public async Task ConflictShowsErrorDialog()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Files);
+        var s = await OpenDesignAsync(h);
+
+        // The unit breaks; before the 300 ms recompute (the clock does not move) a delete reaches code sync, which refuses.
+        var unit = s.Document.Buffer;
+        unit.ApplyEdits([new Core.Text.TextEdit(unit.Text.IndexOf("  private\r\n", StringComparison.Ordinal), 0, "    ) ;\r\n")]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(s.Surface.IsReadOnly);
+        var statusBefore = h.Services.Status.Message;
+        s.Surface.Selection.Set(["GreetButton"]);
+        h.Press("Delete");
+
+        // Msg.Designer.CodeSyncConflict is the catalog's error dialog with OK, the first syntax error as its reason.
+        var dlg = await h.WaitForDialogAsync("Message");
+        var box = Assert.IsType<Core.Dialogs.MessageBoxViewModel>(dlg.Window.Model);
+        Assert.Equal("Msg.Designer.CodeSyncConflict", box.Request.MessageId);
+        Assert.Equal(Core.Dialogs.MessageKind.Error, box.Kind);
+        var reason = Assert.Single(box.Request.Args);
+        Assert.StartsWith("Syntax error", reason, StringComparison.Ordinal);
+        Assert.Contains(reason, box.Text, StringComparison.Ordinal);
+        Assert.Equal(["Dialog.Message.Button.OK"], dlg.FindAll("Dialog.Message.Button.").Select(c => AutomationIds.Get(c)!));
+        dlg.Press("Enter");
+        await h.WaitForAsync(() => h.Messages.Unanswered.Count == 0, "conflict dialog closed");
+        Assert.Single(h.Messages.Requests);
+        Assert.False(dlg.Window.IsVisible);
+
+        // Nothing was deleted and the status bar did not get the message.
+        Assert.NotNull(s.Object("GreetButton"));
+        Assert.Equal(statusBefore, h.Services.Status.Message);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-DSG-080")]
     [Trait("Req", "UI-DSG-081")]
     [Trait("Req", "DSG-SUR-043")]
@@ -1102,6 +1138,54 @@ public sealed class DesignerViewTests
         Assert.Equal(DocumentView.Design, document.ActiveView);
         Assert.Equal([AutomationIds.InfoBar("FormReadOnlyKind")], InfoBars(h));
         Assert.True(document.Designer.Surface!.IsReadOnly);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-091")]
+    public async Task InfoBarsStackAndCapAtThree()
+    {
+        // Form problems, a field declared with another type and an inherited component: three bars apply.
+        const string inheritedChild = "  inherited Base1: TButton\r\n    Caption = 'Base'\r\n  end\r\nend\r\n";
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Phase5(o);
+            var form = FormText.ReplaceLineEndings("\n")
+                .Replace("    TabOrder = 0\n", "    TabOrder = 0\n    Shade = 3\n", StringComparison.Ordinal).ReplaceLineEndings("\r\n");
+            o.InitialFiles["MainForm.form"] = form[..form.LastIndexOf("end\r\n", StringComparison.Ordinal)] + inheritedChild;
+            o.InitialFiles["MainForm.pas"] = Unit.Replace("    NameEdit: TEdit;", "    NameEdit: TMemo;", StringComparison.Ordinal).ReplaceLineEndings("\r\n");
+        });
+        var s = await OpenDesignAsync(h);
+        List<string> Kinds() => [.. s.Document.Designer.DesignInfoBars.Select(b => b.Kind)];
+        void AssertStackedTopDown(params string[] kinds)
+        {
+            // Shown in the window in table order, each below the previous one.
+            Assert.Equal(kinds.Select(AutomationIds.InfoBar), InfoBars(h));
+            var tops = kinds.Select(k => h.Find<InfoBarView>(AutomationIds.InfoBar(k)).TranslatePoint(default, h.Window)!.Value.Y).ToList();
+            Assert.Equal(tops.Order(), tops);
+            Assert.Equal(tops.Count, tops.Distinct().Count());
+        }
+
+        Assert.Equal(["FormErrors", "FieldTypeMismatch", "FormReadOnlyKind"], Kinds());
+        AssertStackedTopDown("FormErrors", "FieldTypeMismatch", "FormReadOnlyKind");
+
+        // Tab-order mode applies a fourth bar (last in the table): dropped while three are shown.
+        s.Surface.Execute(Commands.TabOrder);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(InteractionState.TabOrder, s.Surface.State);
+        Assert.Equal(["FormErrors", "FieldTypeMismatch", "FormReadOnlyKind"], Kinds());
+
+        // Dismissing one makes room: the dropped bar appears, still in table order.
+        s.Document.Designer.DesignInfoBars[0].Dismiss();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["FieldTypeMismatch", "FormReadOnlyKind", "TabOrder"], Kinds());
+        AssertStackedTopDown("FieldTypeMismatch", "FormReadOnlyKind", "TabOrder");
+
+        // With room, entering tab-order mode shows its bar at once, at the bottom of the stack.
+        h.Click(AutomationIds.InfoBarAction("TabOrder", "Done"));
+        Assert.Equal(["FieldTypeMismatch", "FormReadOnlyKind"], Kinds());
+        s.Surface.Execute(Commands.TabOrder);
+        Dispatcher.UIThread.RunJobs();
+        AssertStackedTopDown("FieldTypeMismatch", "FormReadOnlyKind", "TabOrder");
     }
 
     private static Color ToColor(Rgba c) => Color.FromArgb(c.A, c.R, c.G, c.B);

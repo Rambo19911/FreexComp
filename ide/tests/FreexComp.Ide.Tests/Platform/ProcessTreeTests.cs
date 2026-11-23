@@ -71,11 +71,11 @@ public sealed class ProcessTreeTests
         using var grandchildProcess = Process.GetProcessById(grandchild);
         Assert.False(grandchildProcess.HasExited);
 
-        var watch = Stopwatch.StartNew();
+        // The kill is the job's termination, not a timeout (I-220: no wall-clock budget): the launcher's clock is manual and
+        // never advanced, so no timed path of the launcher can act, and both helpers wait forever, so neither ends on its
+        // own: the grandchild's exit and the child's TerminateJobObject exit code come from the kill alone.
         Assert.True(await process.KillTreeAsync());
         await deadline.WaitAsync(grandchildProcess.WaitForExitAsync(TestContext.Current.CancellationToken), "the grandchild's exit");
-
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(3), $"tree gone after {watch.Elapsed}"); // a measured budget, not a wait
         Assert.True(IsGone(process.ProcessId));
         Assert.Equal(1, await deadline.WaitAsync(process.Exited, "the exit report")); // TerminateJobObject exit code
     }

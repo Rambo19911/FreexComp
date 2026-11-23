@@ -629,6 +629,11 @@ public sealed class DocumentService : IDocumentService
         if (!FileEncodings.CanEncode(text, document.Encoding))
             return OperationResult.Fail("Msg.File.EncodingLossy", FileEncodings.DisplayName(document.Encoding));
 
+        // The form text and its bytes are settled before anything is written: a .form is always UTF-8 without BOM
+        // (DSG-FD-040), which encodes every text, so a save never stops between the unit and the form.
+        var formText = form is null ? null : plan?.FormText ?? (movedForm is null ? null : form.Designer.CurrentFormText());
+        var formBytes = formText is null ? null : FileEncodings.Encode(formText, FileEncoding.Utf8);
+
         // designer README §3: only the modified buffers are written, the .pas first; a form without unit has no .pas.
         if (form is null || (form.HasUnit && (form.IsUnitModified || !string.Equals(form.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))))
         {
@@ -640,10 +645,9 @@ public sealed class DocumentService : IDocumentService
 
         // The form: written when modified; a form that follows the unit to a new path (Save As, rename) is written there
         // unless that file already holds exactly its text (a rename moved it).
-        if (form is not null && (plan?.FormText ?? (movedForm is null ? null : form.Designer.CurrentFormText())) is { } formText)
+        if (form is not null && formText is not null && formBytes is { } bytes)
         {
             var formPath = movedForm ?? (form.HasUnit ? form.FormText.FilePath! : fullPath);
-            var bytes = FileEncodings.Encode(formText, form.FormText.Encoding);
             if (plan?.FormText is null && _fileSystem.FileExists(formPath) && _fileSystem.ReadAllBytes(formPath).AsSpan().SequenceEqual(bytes))
             {
                 form.FormText.DiskStamp = StampAfterWrite(formPath, bytes);
@@ -656,6 +660,7 @@ public sealed class DocumentService : IDocumentService
                 form.FormText.DiskStamp = written.Stamp;
             }
 
+            form.FormText.SetEncoding(FileEncoding.Utf8);
             form.FormText.MarkSaved(formPath, form.FormText.Language);
             form.Designer.MarkFormSaved(formText);
         }

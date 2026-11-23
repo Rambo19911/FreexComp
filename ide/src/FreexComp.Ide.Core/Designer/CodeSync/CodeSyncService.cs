@@ -1,8 +1,10 @@
+using System.Globalization;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Designer.Catalog;
 using FreexComp.Designer.CodeSync;
 using FreexComp.Designer.Editing;
 using FreexComp.Designer.Model;
+using FreexComp.Ide.Core.Resources;
 
 namespace FreexComp.Ide.Core.Designer.CodeSync;
 
@@ -254,39 +256,50 @@ public sealed class CodeSyncService(FormUnit unit, ComponentCatalog catalog, Act
     /// <summary>
     /// DSG-CS-001 … 004: runs an edit (state <c>Ok</c> required) as one code-editor undo group; when the unit then has
     /// parser errors (it had none: state <c>Ok</c>), the group is undone and <see cref="CodeSyncException"/> names the
-    /// first one. A step that found the unit broken half-way counts the same.
+    /// first one. A step that found the unit broken half-way counts the same. Every refusal is a
+    /// <see cref="CodeSyncException"/> (DSG-CS-102, I-220): a state other than <c>Ok</c> (an edit inside the DSG-CS-010
+    /// window after the unit broke) and a name taken by another kind of member included; nothing is changed then.
     /// </summary>
     private T Run<T>(Func<T> edit)
     {
-        Unit.RequireFormClass();
+        if (Unit.Locate() is { State: not CodeSyncState.Ok } location)
+        {
+            throw new CodeSyncException(StateReason(location));
+        }
+
         var version = Unit.Buffer.Version;
         T result = default!;
-        InvalidOperationException? failure = null;
+        Exception? failure = null;
         using (Unit.UndoGroup())
         {
             try
             {
                 result = edit();
             }
-            catch (InvalidOperationException e) when (Unit.Buffer.Version != version)
+            catch (Exception e) when (e is InvalidOperationException or CodeSyncException)
             {
                 failure = e;
             }
         }
 
-        if (Unit.Buffer.Version != version && Unit.Locate().FirstError is { } error)
+        if (Unit.Buffer.Version != version && (failure is not null || Unit.Locate().FirstError is not null))
         {
+            var after = Unit.Locate();
+            var reason = after.FirstError?.Message ?? Reason(failure!, after);
             Unit.Buffer.Undo();
-            throw new CodeSyncException(error.Message);
+            throw new CodeSyncException(reason);
         }
 
-        if (failure is not null)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(failure);
-        }
-
-        return result;
+        return failure is null ? result : throw new CodeSyncException(Reason(failure, Unit.Locate()));
     }
+
+    /// <summary>The <c>{0}</c> of <c>Msg.Designer.CodeSyncConflict</c> for a refused step.</summary>
+    private string Reason(Exception failure, FormClassLocation location) =>
+        failure is CodeSyncException refused ? refused.Reason : StateReason(location);
+
+    /// <summary>Why the unit cannot be edited: its first syntax error, else the form class it lacks (code-sync.md §8).</summary>
+    private string StateReason(FormClassLocation location) =>
+        location.FirstError?.Message ?? string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_FormClassNotFound, Unit.FormTypeName);
 
     /// <summary>DSG-CS-070.</summary>
     public bool IsHandlerEmpty(string methodName)

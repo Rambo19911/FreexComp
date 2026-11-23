@@ -42,7 +42,7 @@ public sealed partial class DesignSurfaceController
             }
             catch (CodeSyncException e)
             {
-                _host.SetStatus(StatusIds.CodeSyncConflict, e.Reason);
+                _host.ShowErrorDialog(StatusIds.CodeSyncConflict, e.Reason);
                 return false;
             }
         }
@@ -113,7 +113,7 @@ public sealed partial class DesignSurfaceController
         }
         catch (CodeSyncException e)
         {
-            _host.SetStatus(StatusIds.CodeSyncConflict, e.Reason);
+            _host.ShowErrorDialog(StatusIds.CodeSyncConflict, e.Reason);
             return false;
         }
 

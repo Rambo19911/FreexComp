@@ -27,6 +27,12 @@ public enum MetadataLoadState
 
     /// <summary>No framework index was found: <see cref="ComponentCatalog.Empty"/>, no Design view.</summary>
     Missing,
+
+    /// <summary>
+    /// The load itself failed (an unexpected error, logged): <see cref="ComponentCatalog.Empty"/>, no Design view, as
+    /// <see cref="Missing"/>; a terminal state, so no form keeps waiting (DSG-TP-003).
+    /// </summary>
+    Failed,
 }
 
 /// <summary>
@@ -79,6 +85,9 @@ public sealed class ComponentMetadataService
     /// <summary>The index path a <see cref="MetadataLoadState.Missing"/> load expected (the argument of <c>Msg.Designer.MetadataMissing</c>).</summary>
     public string? MissingIndexPath { get; private set; }
 
+    /// <summary>The error a <see cref="MetadataLoadState.Failed"/> load ended with (the argument of <c>Msg.Designer.MetadataMissing</c>).</summary>
+    public string? FailureReason { get; private set; }
+
     /// <summary>The running (or last) load; completed before the first one starts.</summary>
     public Task Loading { get; private set; } = Task.CompletedTask;
 
@@ -116,7 +125,22 @@ public sealed class ComponentMetadataService
 
     private async Task LoadCoreAsync(IReadOnlyList<(string Setting, string Relative, bool Required)> folders)
     {
-        var (result, missing) = await Task.Run(() => Read(folders));
+        CatalogLoadResult result;
+        string? missing;
+        try
+        {
+            (result, missing) = await Task.Run(() => Read(folders));
+        }
+        catch (Exception ex)
+        {
+            // DSG-TP-003: never an endless wait; the load ends in the terminal Failed state with the empty catalog.
+            _log.Error(LogCategory, "component metadata could not be loaded: " + ex.Message, ex);
+            MissingIndexPath = null;
+            FailureReason = ex.Message;
+            Finish(ComponentCatalog.Empty, MetadataLoadState.Failed);
+            return;
+        }
+
         foreach (var problem in result.Problems)
         {
             _log.Warning(LogCategory, problem.ToString() ?? "");
@@ -125,10 +149,17 @@ public sealed class ComponentMetadataService
                 Resources.Strings.Msg_Designer_MetadataError, problem.File, problem.Line, problem.Column, problem.Message), Build.OutputKind.Error);
         }
         MissingIndexPath = missing;
-        Catalog = missing is null ? result.Catalog : ComponentCatalog.Empty;
-        State = missing is null ? MetadataLoadState.Loaded : MetadataLoadState.Missing;
+        FailureReason = null;
         if (missing is null)
-            _log.Info(LogCategory, $"component metadata loaded: {Catalog.All.Count} classes, {Catalog.All.Count(c => c.Palette is not null && !c.IsAbstract)} on the palette");
+            _log.Info(LogCategory, $"component metadata loaded: {result.Catalog.All.Count} classes, {result.Catalog.All.Count(c => c.Palette is not null && !c.IsAbstract)} on the palette");
+        Finish(missing is null ? result.Catalog : ComponentCatalog.Empty, missing is null ? MetadataLoadState.Loaded : MetadataLoadState.Missing);
+    }
+
+    /// <summary>The end of a load: the catalog and state, then the waiting form documents re-bind to it.</summary>
+    private void Finish(ComponentCatalog catalog, MetadataLoadState state)
+    {
+        Catalog = catalog;
+        State = state;
         _documents.DesignCatalog = Catalog;
         foreach (var form in _documents.Documents.OfType<FormDocumentViewModel>().Where(d => d.Designer.IsMetadataLoading))
             form.Designer.Rebind(Catalog);
@@ -197,7 +228,7 @@ public sealed class ComponentMetadataService
     /// <summary>DSG-TP-004: true when the form was read with the empty catalog of a missing index; the first time, the message.</summary>
     private bool RefuseDesign(FormDesignerViewModel designer)
     {
-        if (State != MetadataLoadState.Missing || !ReferenceEquals(designer.Catalog, ComponentCatalog.Empty))
+        if (State is not (MetadataLoadState.Missing or MetadataLoadState.Failed) || !ReferenceEquals(designer.Catalog, ComponentCatalog.Empty))
             return false;
         if (!_missingShown)
         {
@@ -210,7 +241,7 @@ public sealed class ComponentMetadataService
 
     private async Task ShowMissingAsync()
     {
-        var answer = await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Designer.MetadataMissing", [MissingIndexPath ?? ""]));
+        var answer = await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Designer.MetadataMissing", [MissingIndexPath ?? FailureReason ?? ""]));
         if (answer == "OpenOptions" && _commands is { } commands)
             await commands.ExecuteAsync("tools.options", OptionsViewModel.ToolchainPathsPage);
     }

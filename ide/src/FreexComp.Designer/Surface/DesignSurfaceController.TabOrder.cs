@@ -49,8 +49,8 @@ public sealed partial class DesignSurfaceController
 
         ResetPress();
         Selection.Select(Document.Root);
-        RestartTabOrderNumbering();
         State = InteractionState.TabOrder;
+        RestartTabOrderNumbering(); // raises Invalidated in the new state: InfoBar.TabOrder follows (UI-DSG-091)
     }
 
     /// <summary>A left press in tab-order mode: a click on a focusable control numbers it (DSG-SUR-092); anything else does nothing (DSG-SUR-093).</summary>

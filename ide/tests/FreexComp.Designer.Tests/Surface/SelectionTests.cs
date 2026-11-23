@@ -13,6 +13,7 @@ public sealed class SelectionTests
     [Trait("Req", "DSG-SUR-022")]
     [Trait("Req", "DSG-SUR-025")]
     [Trait("Req", "DSG-SUR-041")]
+    [Trait("Req", "DSG-SUR-043")]
     public void ClickShiftClickCtrlClick()
     {
         using var h = DesignerHarness.FromFile("forms/canonical/hello.form");

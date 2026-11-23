@@ -51,7 +51,20 @@ public sealed partial class DesignSurfaceController
         var compatible = code.GetCompatibleMethods(ev.Signature);
         var name = DefaultHandlerName(obj, ev, compatible);
         var signature = Catalog.FindEventSignature(ev.Signature) ?? ev.Signature;
-        var edits = compatible.Contains(name, StringComparer.OrdinalIgnoreCase) ? [] : code.CreateHandler(name, signature);
+        IReadOnlyList<TextEditRecord> edits = [];
+        if (!compatible.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                edits = code.CreateHandler(name, signature);
+            }
+            catch (CodeSyncException e)
+            {
+                _host.ShowErrorDialog(StatusIds.CodeSyncConflict, e.Reason); // DSG-CS-004: nothing is changed
+                return;
+            }
+        }
+
         var selection = Selection.ToSnapshot();
         FormChange[] changes = [new SetProperty(obj.Name, ev.Name, new IdentValue(name))];
         var undo = ApplyEdit(changes);
