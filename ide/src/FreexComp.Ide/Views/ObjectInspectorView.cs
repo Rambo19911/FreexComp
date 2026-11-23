@@ -56,6 +56,7 @@ public sealed class ObjectInspectorView : UserControl
         AutomationProperties.SetName(_byName, Strings.Inspector_ArrangeByName);
         ToolTip.SetTip(_byCategory, Strings.Inspector_ArrangeByCategory);
         ToolTip.SetTip(_byName, Strings.Inspector_ArrangeByName);
+        ToolWindowFrame.FitFilterBox(_filter); // I-215
         AutomationProperties.SetAutomationId(_filter, Prefix + ".Filter");
         AutomationProperties.SetName(_grid, Strings.Cmd_view_objectInspector);
         AutomationProperties.SetAutomationId(_empty, Prefix + ".Empty");

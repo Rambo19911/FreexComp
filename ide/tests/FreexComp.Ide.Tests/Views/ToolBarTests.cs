@@ -274,4 +274,42 @@ public sealed class ToolBarTests
         Assert.Equal("undo", ToolBarDefinitions.IconOf("edit.undo"));
         Assert.Null(ToolBarDefinitions.IconOf("file.saveAs"));
     }
+
+    /// <summary>
+    /// I-214: UI-TB-009 is in scope at Phase 5 — the Designer toolbar's toggles show the checked state of
+    /// design-tokens.md §9 (bg.selected fill, 1 px accent.default border; released: no fill).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Req", "UI-TB-009")]
+    public async Task DesignerTogglesShowTheCheckedState()
+    {
+        await using var h = await HeadlessHarness.StartAsync(DesignerViewTests.Phase5);
+        await DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        Avalonia.Media.Color Token(string key) =>
+            Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(h.Window.TryFindResource(key, h.Window.ActualThemeVariant, out var v) ? v : null).Color;
+        foreach (var id in new[] { "designer.lockControls", "designer.tabOrder", "designer.toggleGrid" })
+        {
+            var toggle = h.Find<ToggleButton>(AutomationIds.ToolBarButton(id));
+            foreach (var on in new[] { true, false })
+            {
+                toggle.IsChecked = on;
+                Dispatcher.UIThread.RunJobs();
+                var presenter = toggle.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.ContentPresenter>().First(p => p.Name == "PART_ContentPresenter");
+                var fill = (presenter.Background as Avalonia.Media.ISolidColorBrush)?.Color;
+                if (on)
+                {
+                    Assert.Equal(Token("FxcBgSelectedBrush"), fill);
+                    Assert.Equal(Token("FxcAccentDefaultBrush"), Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(presenter.BorderBrush).Color);
+                    Assert.Equal(new Avalonia.Thickness(1), presenter.BorderThickness);
+                }
+                else
+                {
+                    Assert.NotEqual(Token("FxcBgSelectedBrush"), fill);
+                    Assert.NotEqual(Token("FxcAccentDefaultBrush"), fill);
+                }
+            }
+        }
+    }
 }

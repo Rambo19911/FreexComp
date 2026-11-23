@@ -22,6 +22,23 @@ public sealed class ProcessTreeTests
         return new ProcessStartRequest(file, arguments, Path.GetTempPath());
     }
 
+    /// <summary>
+    /// I-216 diagnostics for an exit wait that used up the test's time: when the synchronous start returned, whether the
+    /// program had already ended, and the thread pool's state (the exit report is delivered by a pool thread).
+    /// </summary>
+    private static async Task<int> WaitForExitReportAsync(IRunningProcess process, TimeSpan startReturnedAt)
+    {
+        try
+        {
+            return await CurrentTest.Deadline.WaitAsync(process.Exited, "the helper's exit");
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException(e.Message + string.Create(CultureInfo.InvariantCulture,
+                $"; Start returned {startReturnedAt.TotalSeconds:0.0} s into the test; program ended: {IsGone(process.ProcessId)}; pool threads {ThreadPool.ThreadCount}, queued work items {ThreadPool.PendingWorkItemCount}"), e);
+        }
+    }
+
     private static bool IsGone(int pid)
     {
         try
@@ -95,11 +112,92 @@ public sealed class ProcessTreeTests
         var lines = new ConcurrentQueue<ProcessOutputLine>();
         var launcher = new WindowsProcessLauncher(new ManualClock());
         using (var process = launcher.Start(Request(HelperProgram.PeekHandle + " " + readEnd.ToString(CultureInfo.InvariantCulture)), lines.Enqueue))
-            Assert.Equal(0, await CurrentTest.Deadline.WaitAsync(process.Exited, "the helper's exit"));
+            Assert.Equal(0, await WaitForExitReportAsync(process, CurrentTest.Deadline.Elapsed));
 
         // The child still got its own pipe ends: its answer arrived on the captured stdout.
         Assert.Equal([HelperProgram.NotInherited], lines.Where(l => !l.IsError).Select(l => l.Text));
         leak.DisposeLocalCopyOfClientHandle();
+    }
+
+    /// <summary>
+    /// I-216: while captured programs start, other code of the IDE process starts programs with <see cref="Process"/> and
+    /// redirected streams (the build engine's tools, the E2E sample runs); such a child inherits every handle of the
+    /// process that is inheritable at that moment. None of them may get a pipe end of a captured program: a holder keeps the
+    /// pipe open, so the program's final partial line (emitted only at end-of-file under a manual clock) never arrives.
+    /// Each round starts two captured programs and three long-lived redirected programs at the same instant (a barrier).
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-082")]
+    [Trait("Req", "IDE-P3-084")]
+    public async Task ConcurrentLaunchesDoNotInheritEachOthersPipes()
+    {
+        const int Rounds = 8, Launches = 2, Holders = 3;
+        Assert.True(WindowsProcessLauncher.SharesRuntimeLock, "the launcher does not share the runtime's process-creation lock");
+        var deadline = CurrentTest.Deadline;
+        var holders = new ConcurrentBag<Process>();
+        var failures = new ConcurrentQueue<string>();
+        var launcher = new WindowsProcessLauncher(new ManualClock());
+        var shell = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        try
+        {
+            for (var round = 0; round < Rounds; round++)
+            {
+                using var barrier = new Barrier(Launches + Holders);
+                var work = new List<Task>();
+                for (var h = 0; h < Holders; h++)
+                {
+                    work.Add(Task.Factory.StartNew(() =>
+                    {
+                        // Started the way ProcessRunner starts the toolchain: all three streams redirected. It reads its
+                        // never-closed stdin, so it lives until the test kills it.
+                        var start = new ProcessStartInfo(shell, "/d /q /k")
+                        {
+                            UseShellExecute = false, CreateNoWindow = true,
+                            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+                        };
+                        barrier.SignalAndWait(deadline.Token);
+                        holders.Add(Process.Start(start)!);
+                    }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default));
+                }
+
+                for (var l = 0; l < Launches; l++)
+                {
+                    var name = string.Create(CultureInfo.InvariantCulture, $"round {round} launch {l}");
+                    work.Add(Task.Factory.StartNew(async () =>
+                    {
+                        var lines = new ConcurrentQueue<ProcessOutputLine>();
+                        barrier.SignalAndWait(deadline.Token);
+                        using var process = launcher.Start(Request(HelperProgram.WriteBoth), lines.Enqueue);
+                        await deadline.WaitAsync(process.Exited, "the exit of " + name);
+                        var stdout = string.Join("|", lines.Where(x => !x.IsError).Select(x => x.Text));
+                        if (stdout != "out 1|grün|cr|Name: ")
+                            failures.Enqueue(name + ": stdout " + stdout);
+                    }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap());
+                }
+
+                await deadline.WaitAsync(Task.WhenAll(work), "round " + round.ToString(CultureInfo.InvariantCulture));
+            }
+
+            Assert.True(failures.IsEmpty, $"{failures.Count} of {Rounds * Launches} captured programs lost their end-of-file to a "
+                + "concurrently started program: " + string.Join("; ", failures));
+        }
+        finally
+        {
+            foreach (var holder in holders)
+            {
+                try
+                {
+                    holder.Kill(entireProcessTree: true);
+                    holder.WaitForExit();
+                }
+                catch (InvalidOperationException)
+                {
+                    // already gone
+                }
+
+                holder.Dispose();
+            }
+        }
     }
 
     [Fact(Timeout = 30000)]

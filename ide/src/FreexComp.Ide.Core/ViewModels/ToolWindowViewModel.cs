@@ -83,6 +83,31 @@ public abstract class ToolWindowViewModel : ObservableObject
     /// <summary>True when the tool bar has a filter box (UI-TW-008).</summary>
     public virtual bool HasFilter => false;
 
+    /// <summary>UI-TW-008: a tool-bar button is 24 × 24.</summary>
+    public const double ToolBarButtonSize = 24;
+
+    /// <summary>UI-TW-008: the filter box is 120 … 240 wide.</summary>
+    public const double FilterMinWidth = 120;
+
+    /// <summary>UI-TW-008: the filter box's maximum width.</summary>
+    public const double FilterMaxWidth = 240;
+
+    /// <summary>The filter box's margin at each side (space.2).</summary>
+    public const double FilterMargin = 4;
+
+    /// <summary>The choice combo box's right margin (UI-TW-501).</summary>
+    public const double ChoiceMargin = 4;
+
+    /// <summary>
+    /// I-215: the narrowest the tool window may be laid out so that its tool bar never overlaps: the buttons, the choice
+    /// combo box (its label not counted) and the filter box at its minimum width. A dock is never narrower than the
+    /// largest value of its windows.
+    /// </summary>
+    public double ToolBarMinWidth =>
+        (ToolBar.Count * ToolBarButtonSize)
+        + (ToolBarChoice is { } choice ? choice.Width + ChoiceMargin : 0)
+        + (HasFilter ? FilterMinWidth + (2 * FilterMargin) : 0);
+
     public string FilterText
     {
         get => _filterText;

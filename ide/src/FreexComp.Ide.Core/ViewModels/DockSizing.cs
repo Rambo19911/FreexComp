@@ -14,11 +14,19 @@ public static class DockSizing
     public const double RightGroupMinHeight = 80;
 
     /// <summary>
-    /// UI-WIN-005: a dragged side-dock width, 160 … <paramref name="available"/> − 320 − <paramref name="otherSide"/> −
-    /// <paramref name="splitters"/> (the minimum wins when there is no room).
+    /// UI-WIN-005: a dragged side-dock width, <paramref name="min"/> (160, or more for a wide tool bar, I-215) …
+    /// <paramref name="available"/> − 320 − <paramref name="otherSide"/> − <paramref name="splitters"/> (the minimum wins
+    /// when there is no room).
     /// </summary>
-    public static double ClampSide(double value, double available, double otherSide, double splitters) =>
-        Math.Clamp(value, SideDockMinWidth, Math.Max(SideDockMinWidth, available - DocumentMinWidth - otherSide - splitters));
+    public static double ClampSide(double value, double available, double otherSide, double splitters, double min = SideDockMinWidth) =>
+        Math.Clamp(value, min, Math.Max(min, available - DocumentMinWidth - otherSide - splitters));
+
+    /// <summary>
+    /// I-215: the minimum width of a side dock: 160, or the widest tool bar of its windows (buttons + minimum filter
+    /// width, <see cref="ToolWindowViewModel.ToolBarMinWidth"/>), so that a tool bar never overlaps.
+    /// </summary>
+    public static double SideMinWidth(IEnumerable<ToolWindowViewModel> windows) =>
+        windows.Select(w => w.ToolBarMinWidth).Append(SideDockMinWidth).Max();
 
     /// <summary>UI-WIN-005: a dragged bottom-dock height, 80 … <paramref name="available"/> − 160 − <paramref name="splitter"/>.</summary>
     public static double ClampBottom(double value, double available, double splitter) =>
@@ -38,21 +46,22 @@ public static class DockSizing
     }
 
     /// <summary>Widths of the left and right dock (0 when not shown); <paramref name="splitter"/> per shown side dock.</summary>
-    public static (double Left, double Right) Widths(double available, double left, double right, bool leftShown, bool rightShown, double splitter)
+    public static (double Left, double Right) Widths(double available, double left, double right, bool leftShown, bool rightShown, double splitter,
+        double leftMin = SideDockMinWidth, double rightMin = SideDockMinWidth)
     {
-        left = leftShown ? left : 0;
-        right = rightShown ? right : 0;
+        left = leftShown ? Math.Max(left, leftMin) : 0;
+        right = rightShown ? Math.Max(right, rightMin) : 0;
         var deficit = left + right + (leftShown ? splitter : 0) + (rightShown ? splitter : 0) + DocumentMinWidth - available;
         if (deficit > 0 && rightShown)
         {
-            var take = Math.Min(deficit, Math.Max(0, right - SideDockMinWidth));
+            var take = Math.Min(deficit, Math.Max(0, right - rightMin));
             right -= take;
             deficit -= take;
         }
 
         if (deficit > 0 && leftShown)
         {
-            left -= Math.Min(deficit, Math.Max(0, left - SideDockMinWidth));
+            left -= Math.Min(deficit, Math.Max(0, left - leftMin));
         }
 
         return (left, right);

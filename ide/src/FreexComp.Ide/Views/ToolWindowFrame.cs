@@ -151,7 +151,9 @@ public sealed class ToolWindowFrame : DockPanel
 
     private Control CreateToolBar()
     {
-        var row = new DockPanel { LastChildFill = false }; // UI-A11Y-006: buttons first in tab order, the filter at the right
+        // UI-A11Y-006: buttons first in tab order, the filter at the right. I-215: the filter shrinks down to its
+        // minimum width and never overlaps the buttons (ToolBarRowPanel).
+        var row = new ToolBarRowPanel();
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         if (_model.ToolBarChoice is { } choice)
@@ -161,7 +163,7 @@ public sealed class ToolWindowFrame : DockPanel
 
         foreach (var item in _model.ToolBar)
         {
-            var button = FlatButton($"{AutomationIds.Tool(_model.Name)}.ToolBar.{item.Command.Id}", item.IconName, 24, item.IsToggle);
+            var button = FlatButton($"{AutomationIds.Tool(_model.Name)}.ToolBar.{item.Command.Id}", item.IconName, ToolWindowViewModel.ToolBarButtonSize, item.IsToggle);
             button.Command = item.Command;
             if (button is ToggleButton toggle)
             {
@@ -180,9 +182,7 @@ public sealed class ToolWindowFrame : DockPanel
         row.Children.Add(buttons);
         if (_model.HasFilter)
         {
-            var filter = CreateFilter();
-            SetDock(filter, Avalonia.Controls.Dock.Right);
-            row.Children.Add(filter);
+            row.Children.Add(CreateFilter());
         }
 
         var bar = new Border { Child = row, Height = 28, BorderThickness = new Thickness(0, 0, 0, 1) };
@@ -203,7 +203,7 @@ public sealed class ToolWindowFrame : DockPanel
             MinHeight = 24,
             VerticalAlignment = VerticalAlignment.Center,
             ItemsSource = choice.Items,
-            Margin = new Thickness(0, 0, 4, 0),
+            Margin = new Thickness(0, 0, ToolWindowViewModel.ChoiceMargin, 0),
         };
         AutomationProperties.SetAutomationId(combo, $"{AutomationIds.Tool(_model.Name)}.{choice.Name}");
         AutomationProperties.SetLabeledBy(combo, label);
@@ -232,15 +232,12 @@ public sealed class ToolWindowFrame : DockPanel
     {
         _filter = new TextBox
         {
-            Height = 26,
-            MinHeight = 26,
-            MinWidth = 120,
-            MaxWidth = 240,
-            Width = 180,
+            MinWidth = ToolWindowViewModel.FilterMinWidth,
+            MaxWidth = ToolWindowViewModel.FilterMaxWidth,
             PlaceholderText = Strings.ToolWindow_FilterPlaceholder,
             VerticalAlignment = VerticalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
         };
+        FitFilterBox(_filter);
         AutomationProperties.SetAutomationId(_filter, AutomationIds.Tool(_model.Name) + ".Filter");
         AutomationProperties.SetName(_filter, Strings.ToolWindow_FilterPlaceholder); // UI-A11Y-020
         _filter.Bind(TextBox.TextProperty, new Binding(nameof(ToolWindowViewModel.FilterText)) { Source = _model, Mode = BindingMode.TwoWay });
@@ -251,8 +248,21 @@ public sealed class ToolWindowFrame : DockPanel
         ToolTip.SetTip(_clearFilter, Strings.ToolWindow_ClearFilter);
         _clearFilter.Click += (_, _) => _model.FilterText = "";
         _filter.InnerRightContent = _clearFilter;
-        _filter.Bind(MarginProperty, _filter.GetResourceObservable("FxcSpace2Horizontal"));
+        _filter.Margin = new Thickness(ToolWindowViewModel.FilterMargin, 0);
         return _filter;
+    }
+
+    /// <summary>
+    /// I-215: a filter / search box of a tool window is 26 high (UI-TW-008) and its text and placeholder fit the font's
+    /// line height: no vertical padding (the 1 px border leaves 24 for the text line), text centred vertically.
+    /// </summary>
+    public static void FitFilterBox(TextBox box)
+    {
+        ArgumentNullException.ThrowIfNull(box);
+        box.Height = 26;
+        box.MinHeight = 26;
+        box.Padding = new Thickness(6, 0, 6, 0);
+        box.VerticalContentAlignment = VerticalAlignment.Center;
     }
 
     /// <summary>Escape: a non-empty filter is cleared, an empty one returns focus to the list (UI-TW-008).</summary>
@@ -283,7 +293,8 @@ public sealed class ToolWindowFrame : DockPanel
         button.Padding = new Thickness(0);
         button.Focusable = false;
         button.Background = Brushes.Transparent;
-        button.BorderThickness = new Thickness(0);
+        if (!toggle)
+            button.BorderThickness = new Thickness(0); // a toggle keeps its border: the checked state draws it (I-215)
         button.HorizontalContentAlignment = HorizontalAlignment.Center;
         button.VerticalContentAlignment = VerticalAlignment.Center;
         button.Content = new IdeIcon { IconName = icon, Width = 16, Height = 16 };

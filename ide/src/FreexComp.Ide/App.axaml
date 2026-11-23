@@ -49,6 +49,14 @@
     <Style Selector="ScrollViewer.editorScroll ScrollBar /template/ RepeatButton#PART_LineUpButton, ScrollViewer.editorScroll ScrollBar /template/ RepeatButton#PART_LineDownButton">
       <Setter Property="IsVisible" Value="False" />
     </Style>
+    <!-- design-tokens.md §9 Selected / checked, toggle buttons (I-215): subtle bg.selected fill and a 1 px accent.default
+         border instead of Fluent's accent fill, so status glyphs keep >= 3:1 contrast; text glyphs in text.primary. -->
+    <Style Selector="ToggleButton:checked /template/ ContentPresenter#PART_ContentPresenter, ToggleButton:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton:checked:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource FxcBgSelectedBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource FxcAccentDefaultBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource FxcTextPrimaryBrush}" />
+    </Style>
     <!-- UI-TW-010: the selected row is bg.selected while its list has focus, bg.selected.inactive otherwise. -->
     <Style Selector="TreeView:not(:focus-within) TreeViewItem:selected /template/ Border#PART_LayoutRoot">
       <Setter Property="Background" Value="{DynamicResource FxcBgSelectedInactiveBrush}" />

@@ -63,6 +63,7 @@ public sealed class ToolPaletteView : UserControl
 
     public ToolPaletteView()
     {
+        ToolWindowFrame.FitFilterBox(_search); // I-215
         AutomationProperties.SetAutomationId(_search, Prefix + ".Filter");
         AutomationProperties.SetName(_search, Strings.ToolPalette_SearchPlaceholder);
         _search.PlaceholderText = Strings.ToolPalette_SearchPlaceholder;

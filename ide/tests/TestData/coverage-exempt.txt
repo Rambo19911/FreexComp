@@ -26,7 +26,6 @@ IDE-TEST-022 process: rule for writing tests, checked by review
 IDE-TEST-023 process: rule for writing tests, checked by review
 IDE-TEST-031 process: rule for writing tests, checked by review
 UI-A11Y-011 later phase: the rule text names a later phase or a later-phase element
-UI-A11Y-023 later phase: the rule text names a later phase or a later-phase element
 UI-A11Y-024 later phase: the rule text names a later phase or a later-phase element
 UI-A11Y-041 principle: realised by the concrete rules that cite it
 UI-A11Y-042 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
@@ -66,21 +65,17 @@ UI-PRIN-010 principle: realised by the concrete rules that cite it
 UI-PRIN-011 principle: realised by the concrete rules that cite it
 UI-PRIN-012 principle: realised by the concrete rules that cite it
 UI-TB-007 absence: states that a feature does not exist in Phases 1-7
-UI-TB-009 later phase: the rule text names a later phase or a later-phase element
-UI-TB-010 later phase: the rule text names a later phase or a later-phase element
 UI-TOK-001 structural: code organisation rule (namespaces, base classes, file locations)
 UI-TOK-051 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-TOK-052 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-TOK-053 not checkable headless: drawing geometry, cursors, animation or timing of rendering (IDE-TEST-010)
 UI-TOK-060 platform: done by the OS picker or the OS, not by the IDE
-UI-TOK-063 later phase: the rule text names a later phase or a later-phase element
 UI-TOK-064 platform: done by the OS picker or the OS, not by the IDE
 UI-TW-004 absence: states that a feature does not exist in Phases 1-7
 UI-WIN-003 absence: states that a feature does not exist in Phases 1-7
 UI-WIN-006 superseded: Dock library removed (architecture.md lead decision I-022/I-023)
 UI-WIN-007 superseded: Dock library removed (architecture.md lead decision I-022/I-023)
 UI-WIN-024 later phase: the rule text names a later phase or a later-phase element
-UI-WIN-041 later phase: the rule text names a later phase or a later-phase element
 IDE-ARCH-002 structural: code organisation rule (views hold no decision logic), checked by review
 UI-A11Y-001 principle: realised by the concrete keyboard rules UI-A11Y-003...014, each with its own test
 UI-A11Y-012 principle: realised by the concrete rules that cite it (UI-TW-018 Enter = double-click; UI-WIN-021 tab order not significant)

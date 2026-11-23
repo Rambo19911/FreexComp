@@ -4,3 +4,7 @@ UI-ED-114 not implemented: the completion list draws a letter glyph per symbol k
 UI-TW-203 not implemented: Structure rows have no symbol-kind icon (only the chevron, the visibility tooltip and the design-view overlays)
 UI-TW-304 not implemented: category rows use the category name as row key, not $cat.<Category> (a category and a property of the same name, e.g. Action, share a key)
 UI-TW-401 not implemented: the Messages columns cannot be sorted (arrival order only)
+UI-A11Y-023 in scope since Phase 3 (I-214 review): no test yet checks the live-region notification of the status-bar state field
+UI-TB-010 in scope since Phase 3 (I-214 review; the paused tooltip part is Phase 6): no test yet checks that the toolbar width stays constant across build state changes
+UI-TOK-063 in scope since Phase 5 (I-214 review): no test yet checks the design surface at IDE scale (400 wide at 96 PPI = 400 DIP)
+UI-WIN-041 in scope since Phase 3 (I-214 review): no test yet checks the status-bar background per IDE state

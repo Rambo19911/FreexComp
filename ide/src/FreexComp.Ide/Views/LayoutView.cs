@@ -184,7 +184,8 @@ public sealed class LayoutView : Grid
         var bottomShown = !model.Bottom.IsCollapsed;
         var width = Bounds.Width > 0 ? Bounds.Width : double.PositiveInfinity;
         var height = Bounds.Height > 0 ? Bounds.Height : double.PositiveInfinity;
-        var (left, right) = DockSizing.Widths(width, model.LeftSize, model.RightSize, leftShown, rightShown, splitter);
+        var (leftMin, rightMin) = SideMinimums(model);
+        var (left, right) = DockSizing.Widths(width, model.LeftSize, model.RightSize, leftShown, rightShown, splitter, leftMin, rightMin);
         var bottom = DockSizing.BottomHeight(height, model.BottomSize, bottomShown, splitter);
 
         ColumnDefinitions[LeftColumn].Width = new GridLength(left);
@@ -193,8 +194,8 @@ public sealed class LayoutView : Grid
 
         // UI-WIN-005: a splitter drag stays within the limits (the grid enforces them while dragging).
         var splitters = (leftShown ? splitter : 0) + (rightShown ? splitter : 0);
-        SetLimits(ColumnDefinitions[LeftColumn], leftShown, DockSizing.SideDockMinWidth, DockSizing.ClampSide(double.PositiveInfinity, width, right, splitters));
-        SetLimits(ColumnDefinitions[RightColumn], rightShown, DockSizing.SideDockMinWidth, DockSizing.ClampSide(double.PositiveInfinity, width, left, splitters));
+        SetLimits(ColumnDefinitions[LeftColumn], leftShown, leftMin, DockSizing.ClampSide(double.PositiveInfinity, width, right, splitters, leftMin));
+        SetLimits(ColumnDefinitions[RightColumn], rightShown, rightMin, DockSizing.ClampSide(double.PositiveInfinity, width, left, splitters, rightMin));
         SetLimits(_center.RowDefinitions[BottomRow], bottomShown, DockSizing.BottomDockMinHeight, DockSizing.ClampBottom(double.PositiveInfinity, height, splitter));
         _left.IsVisible = _leftSplitter.IsVisible = leftShown;
         _right.IsVisible = _rightSplitter.IsVisible = rightShown;
@@ -210,6 +211,10 @@ public sealed class LayoutView : Grid
         _right.RowDefinitions[2].Height = lowerShown ? new GridLength(upperShown ? 1 - model.RightSplit : 1, GridUnitType.Star) : new GridLength(0);
         _right.RowDefinitions[0].MinHeight = _right.RowDefinitions[2].MinHeight = upperShown && lowerShown ? DockSizing.RightGroupMinHeight : 0;
     }
+
+    /// <summary>I-215: each side dock is at least as wide as the widest tool bar of its windows.</summary>
+    private static (double Left, double Right) SideMinimums(LayoutViewModel model) =>
+        (DockSizing.SideMinWidth(model.Left.Windows), DockSizing.SideMinWidth(model.RightUpper.Windows.Concat(model.RightLower.Windows)));
 
     private static void SetLimits(ColumnDefinition column, bool shown, double min, double max)
     {
@@ -238,10 +243,10 @@ public sealed class LayoutView : Grid
         switch (which)
         {
             case DockSplitter.Left:
-                model.LeftSize = DockSizing.ClampSide(left, Bounds.Width, right, splitters);
+                model.LeftSize = DockSizing.ClampSide(left, Bounds.Width, right, splitters, SideMinimums(model).Left);
                 break;
             case DockSplitter.Right:
-                model.RightSize = DockSizing.ClampSide(right, Bounds.Width, left, splitters);
+                model.RightSize = DockSizing.ClampSide(right, Bounds.Width, left, splitters, SideMinimums(model).Right);
                 break;
             case DockSplitter.Bottom:
                 model.BottomSize = DockSizing.ClampBottom(_center.RowDefinitions[BottomRow].ActualHeight, _center.Bounds.Height, splitter);

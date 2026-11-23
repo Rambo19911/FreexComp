@@ -26,8 +26,32 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
     /// Pipe ends are inheritable only between their creation and CreateProcess; one start at a time. Each captured child
     /// gets a <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> of its own three pipe ends (I-188), so it never inherits another
     /// inheritable handle of the IDE (one made by another component, e.g. <c>System.Diagnostics.Process</c>).
+    /// <para>
+    /// I-216: the other direction. <see cref="System.Diagnostics.Process"/> always creates its children with
+    /// <c>bInheritHandles</c> = TRUE and no handle list, so a child it starts while our pipe ends are inheritable gets
+    /// copies of them and keeps the captured program's pipe open (its output never reaches end-of-file). The runtime
+    /// serialises its own pipe creation and CreateProcess under one private lock; the launcher takes that same lock, so
+    /// no <see cref="System.Diagnostics.Process"/> start (build engine, toolchain, shell) falls inside our window.
+    /// </para>
     /// </summary>
-    private static readonly Lock CreateGate = new();
+    internal static readonly object CreateGate = RuntimeCreateProcessLock();
+
+    /// <summary>True when <see cref="CreateGate"/> is the runtime's own process-creation lock (I-216).</summary>
+    internal static bool SharesRuntimeLock { get; private set; }
+
+    private static object RuntimeCreateProcessLock()
+    {
+        var field = typeof(System.Diagnostics.Process).GetField("s_createProcessLock",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        // The runtime locks it with Monitor (a plain object); a System.Threading.Lock would need EnterScope instead.
+        if (field?.GetValue(null) is { } gate && gate is not Lock)
+        {
+            SharesRuntimeLock = true;
+            return gate;
+        }
+
+        return new object(); // a runtime without the field: our own starts stay serialised (I-216 test fails loudly)
+    }
 
     private static int _pipeCounter;
 

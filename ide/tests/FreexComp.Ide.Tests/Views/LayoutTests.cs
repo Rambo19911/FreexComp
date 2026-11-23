@@ -384,12 +384,14 @@ public sealed class LayoutTests
         var documents = h.Find<Control>(AutomationIds.DocumentArea);
         Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible);
 
-        // Left dock: at most window − 320 (− its splitter; the right dock is collapsed), at least 160.
+        // Left dock: at most window − 320 (− its splitter; the right dock is collapsed), at least 160 — or, I-215, the
+        // Project Manager's tool bar: 4 buttons × 24 + the filter's minimum 120 + its margins 2 × 4 = 224.
         h.Drag(AutomationIds.Splitter(AutomationIds.DockLeft), 2000, 0);
         Assert.Equal(width - 320 - Splitter, left.Bounds.Width);
         Assert.Equal(320, documents.Bounds.Width);
         h.Drag(AutomationIds.Splitter(AutomationIds.DockLeft), -2000, 0);
-        Assert.Equal(160, layout.LeftSize);
+        Assert.Equal(224, layout.LeftSize);
+        Assert.Equal(224, left.Bounds.Width);
 
         // Bottom dock: 80 … available height − 160.
         h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, -2000);
