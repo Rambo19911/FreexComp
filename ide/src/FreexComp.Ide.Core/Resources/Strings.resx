@@ -2221,6 +2221,32 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Menu_designer_toggleGuidelines" xml:space="preserve">
     <value>&amp;Use Guidelines</value>
   </data>
+  <data name="Menu_designer_selectParent" xml:space="preserve">
+    <value>Select Pa&amp;rent</value>
+  </data>
+  <data name="Menu_designer_createDefaultHandler" xml:space="preserve">
+    <value>Create Default Event &amp;Handler</value>
+  </data>
+  <data name="Menu_Designer_Order" xml:space="preserve">
+    <value>&amp;Order</value>
+    <comment>designer.md §8: design-surface context sub-menu</comment>
+  </data>
+  <data name="Button_GoToFirstError" xml:space="preserve">
+    <value>Go to First Error</value>
+    <comment>designer.md §9 InfoBar.UnitErrors</comment>
+  </data>
+  <data name="Button_ViewCode" xml:space="preserve">
+    <value>View Code</value>
+    <comment>designer.md §9 InfoBar.FormClassNotFound</comment>
+  </data>
+  <data name="Button_Done" xml:space="preserve">
+    <value>Done</value>
+    <comment>designer.md §9 InfoBar.TabOrder</comment>
+  </data>
+  <data name="Button_RestartNumbering" xml:space="preserve">
+    <value>Restart Numbering</value>
+    <comment>designer.md §9 InfoBar.TabOrder</comment>
+  </data>
   <data name="Menu_search_find" xml:space="preserve">
     <value>&amp;Find…</value>
   </data>

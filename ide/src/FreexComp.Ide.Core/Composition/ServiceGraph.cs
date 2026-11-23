@@ -67,7 +67,7 @@ public static class ServiceGraph
             layout.Load(); // step 7: UI state (small file, synchronous)
         var toolWindowService = new ToolWindowService(commands, focus, platform.Clock, layout, toolWindowPhase ?? ImplementedPhase); // tool windows register here (IDE-ARCH-100)
         theme.RegisterCommands(commands);
-        ToolBarRowModel.RegisterCommands(commands, settings, ImplementedPhase);
+        ToolBarRowModel.RegisterCommands(commands, settings, Math.Max(ImplementedPhase, toolWindowPhase ?? ImplementedPhase)); // view.toolbar.designer from P5 (I-130)
         ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
         var languages = new LanguageRegistry();
         ProjectService? projects = null; // created after the documents it uses; the prompts ask it lazily
@@ -228,10 +228,12 @@ public static class ServiceGraph
             quickPick.Show(new Popups.CommandPaletteViewModel(commands, layout, focus.Current, toolWindowPhase ?? ImplementedPhase))));
         // D-077: component metadata and component.reloadMetadata from Phase 5 on; Load() is the start-up wiring point (D-088).
         Designer.ComponentMetadataService? metadata = null;
+        Designer.DesignerShell? designerShell = null;
         if ((toolWindowPhase ?? ImplementedPhase) >= 5)
         {
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment);
             metadata.RegisterCommands(commands);
+            designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase); // D-080, I-130
         }
 
         EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
@@ -300,6 +302,7 @@ public static class ServiceGraph
             CodeModel = codeModel,
             SemanticHighlights = semanticHighlights,
             Metadata = metadata,
+            DesignerShell = designerShell,
         };
         VerifyCommands(commands, platform.Log); // I-091: every Phase 1 command has its handler since I-161
         return services;

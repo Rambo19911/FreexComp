@@ -1,3 +1,4 @@
+using FreexComp.Designer.CodeSync;
 using FreexComp.Designer.Editing;
 using FreexComp.Designer.Layout;
 using FreexComp.Designer.Model;
@@ -14,7 +15,8 @@ public sealed partial class DesignSurfaceController
     /// DSG-SUR-130 … 132: removes the effective set (DSG-SUR-024) with its subtrees in one "Delete" unit, which also clears
     /// the references to every removed component (DSG-SUR-131), renumbers the remaining focusable siblings (DSG-SUR-096)
     /// and stores the re-flowed layout (DSG-LAY-040). The selection becomes the nearest remaining ancestor of the primary.
-    /// Removing the fields from the form class belongs to code sync (code-sync.md §4.3), not wired here yet.
+    /// The fields of every removed component leave the form class through code sync in the same unit (code-sync.md §4.3);
+    /// when code sync refuses (DSG-CS-004) nothing is deleted and <c>Msg.Designer.CodeSyncConflict</c> is shown.
     /// </summary>
     private void Delete(string title = UndoTitles.Delete)
     {
@@ -25,11 +27,30 @@ public sealed partial class DesignSurfaceController
         }
 
         var removed = new HashSet<FormObject>(ReferenceEqualityComparer.Instance);
+        var names = new List<string>();
         foreach (var member in members)
         {
             foreach (var obj in Subtree(member))
             {
-                removed.Add(obj);
+                if (removed.Add(obj))
+                {
+                    names.Add(obj.Name);
+                }
+            }
+        }
+
+        RepairFirst();
+        IReadOnlyList<TextEditRecord> edits = [];
+        if (_host.CodeSync.IsUnitAvailable)
+        {
+            try
+            {
+                edits = _host.CodeSync.RemoveFields(names);
+            }
+            catch (CodeSyncException e)
+            {
+                _host.SetStatus(StatusIds.CodeSyncConflict, e.Reason);
+                return;
             }
         }
 
@@ -51,8 +72,8 @@ public sealed partial class DesignSurfaceController
         var undo = ApplyEdit(changes);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
         Selection.Select(after ?? Document.Root);
-        PushUnit(new DesignerUndoUnit(title, [.. changes, .. commitRedo], [.. commitUndo, .. undo], [], before,
-            Selection.ToSnapshot()));
+        PushUnit(new DesignerUndoUnit(title, [.. changes, .. commitRedo], [.. commitUndo, .. undo], edits, before,
+            Selection.ToSnapshot()) { CodeOps = edits.Count > 0 ? [new RemoveFieldsOp(names)] : [] });
     }
 
     private static IEnumerable<FormObject> Subtree(FormObject obj) => obj.Children.SelectMany(Subtree).Prepend(obj);

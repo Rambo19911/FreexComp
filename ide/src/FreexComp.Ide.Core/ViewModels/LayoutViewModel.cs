@@ -226,6 +226,27 @@ public sealed class LayoutViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// UI-WIN-012 … 014: makes <paramref name="name"/> the active profile; its own modifications are kept (UI-WIN-013) and
+    /// the groups and sizes are re-read in one pass. Focus is not touched.
+    /// </summary>
+    public void SwitchProfile(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        if (State.ActiveProfile == name)
+        {
+            return;
+        }
+
+        if (!State.Profiles.ContainsKey(name))
+        {
+            State.Profiles[name] = LayoutProfiles.Create(name);
+        }
+
+        State.ActiveProfile = name;
+        Reload(notify: true);
+    }
+
     /// <summary>UI-WIN-015 (<c>window.resetLayout</c>): the active profile returns to its built-in arrangement and sizes.</summary>
     public void ResetProfile()
     {

@@ -14,6 +14,14 @@ public sealed class RecordingStatusService : IStatusService
 
     public EditorStatus? Editor { get; private set; }
 
+    public string? DesignerSelection { get; private set; }
+
+    public void SetDesignerSelection(string? text)
+    {
+        DesignerSelection = text;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     public void ShowMessage(string text, TimeSpan duration)
     {
         Messages.Add((text, duration));

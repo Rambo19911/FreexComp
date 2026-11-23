@@ -984,13 +984,21 @@ public sealed class DocumentService : IDocumentService
         _commands?.InvalidateCanExecute();
     }
 
-    /// <summary>The status bar shows the active text document's fields (IDE-ARCH: <c>IStatusService.SetEditor</c>).</summary>
+    /// <summary>
+    /// The status bar shows the active text document's fields (IDE-ARCH: <c>IStatusService.SetEditor</c>); in the Design
+    /// view of a form document the designer selection instead (UI-DSG-130).
+    /// </summary>
     private void FollowStatus(TextDocumentViewModel? document)
     {
         if (_statusSource is not null)
         {
             _statusSource.PropertyChanged -= OnStatusSourceChanged;
             _statusSource.ViewState.PropertyChanged -= OnStatusSourceChanged;
+            if (_statusSource is FormDocumentViewModel old)
+            {
+                old.Designer.SelectionChanged -= OnDesignerStatusChanged;
+                old.Designer.ModelChanged -= OnDesignerStatusChanged;
+            }
         }
 
         _statusSource = document;
@@ -998,10 +1006,17 @@ public sealed class DocumentService : IDocumentService
         {
             document.PropertyChanged += OnStatusSourceChanged;
             document.ViewState.PropertyChanged += OnStatusSourceChanged;
+            if (document is FormDocumentViewModel form)
+            {
+                form.Designer.SelectionChanged += OnDesignerStatusChanged;
+                form.Designer.ModelChanged += OnDesignerStatusChanged;
+            }
         }
 
         PushStatus();
     }
+
+    private void OnDesignerStatusChanged(object? sender, EventArgs e) => PushStatus();
 
     private void OnStatusSourceChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -1009,8 +1024,18 @@ public sealed class DocumentService : IDocumentService
             PushStatus(); // scrolling changes no status field
     }
 
-    private void PushStatus() =>
+    private void PushStatus()
+    {
+        if (_statusSource is FormDocumentViewModel { ActiveView: DocumentView.Design } form)
+        {
+            _status.SetEditor(null);
+            _status.SetDesignerSelection(form.Designer.SelectionStatusText);
+            return;
+        }
+
+        _status.SetDesignerSelection(null);
         _status.SetEditor(_statusSource?.GetStatus(_settings.Get(SettingsCatalog.EditorInsertSpaces), _settings.Get(SettingsCatalog.EditorTabWidth)));
+    }
 
     /// <summary>
     /// UI-ED-071 / IDE-P1-037: documents sharing a file name get the shortest run of parent folders that no other of

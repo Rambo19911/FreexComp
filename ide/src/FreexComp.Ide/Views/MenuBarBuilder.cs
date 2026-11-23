@@ -92,7 +92,7 @@ public static class MenuBarBuilder
             return item;
         }
 
-        AutomationProperties.SetAutomationId(item, AutomationIds.TopMenu(model.Key!));
+        AutomationProperties.SetAutomationId(item, context ? "Context." + model.Key : AutomationIds.TopMenu(model.Key!)); // UI-DSG-081
         item.Bind(MenuItem.IsEnabledProperty, new Binding(nameof(MenuItemModel.IsEnabled)) { Source = model, Mode = BindingMode.OneWay });
         foreach (var child in model.Children)
         {

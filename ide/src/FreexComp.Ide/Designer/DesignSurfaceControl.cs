@@ -38,16 +38,27 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
     private DesignSurfaceAutomationPeer? _peer;
     private Point _pointer;
 
+    /// <summary>
+    /// The keys the surface handles itself while focused (design-surface.md §9): the IDE's key routing leaves them to it
+    /// although they are bound to <c>designer.*</c> commands (Escape cancels a drag before it selects the parent, Tab
+    /// numbers in tab-order mode, Enter runs the default action).
+    /// </summary>
+    public static readonly IReadOnlyList<Core.Commands.KeyGesture> LocalKeys =
+        [.. ((string[])["Escape", "Tab", "Shift+Tab", "Enter", "Ctrl+Shift+Up", "Ctrl+Shift+Down"]).Select(Core.Commands.KeyGesture.Parse)];
+
     public DesignSurfaceControl()
     {
         Focusable = true;
         ClipToBounds = true;
         CommandRouting.SetScope(this, CommandScope.Designer);
+        CommandRouting.SetLocalKeys(this, LocalKeys);
         ActualThemeVariantChanged += (_, _) =>
         {
             UpdatePalette();
             InvalidateVisual();
         };
+        // The surface opens its menu itself (UI-DSG-080, at the press); the toolkit's own request is not used.
+        AddHandler(ContextRequestedEvent, (_, e) => e.Handled = true, Avalonia.Interactivity.RoutingStrategies.Tunnel);
     }
 
     /// <summary>The designer shown (the <c>DataContext</c>).</summary>
@@ -55,6 +66,9 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
 
     /// <summary>The current surface controller (replaced with the model, DSG-FD-030).</summary>
     public DesignSurfaceController? Surface => _surface;
+
+    /// <summary>Where the context menu was last opened, in control coordinates (null: never).</summary>
+    public Point? ContextMenuPoint { get; private set; }
 
     /// <summary>The cursor kind last asked of the surface (UI-DSG-036).</summary>
     public CursorKind CursorKind { get; private set; }
@@ -73,6 +87,8 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
             _designer.ModelReplaced -= OnModelReplaced;
             _designer.ModelChanged -= OnModelChanged;
             _designer.SelectionChanged -= OnSelectionChanged;
+            _designer.DisplayChanged -= OnDisplayChanged;
+            _designer.Host.ContextMenuRequested -= OnContextMenuRequested;
         }
 
         _designer = DataContext as FormDesignerViewModel;
@@ -82,12 +98,35 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
             _designer.ModelReplaced += OnModelReplaced;
             _designer.ModelChanged += OnModelChanged;
             _designer.SelectionChanged += OnSelectionChanged;
+            _designer.DisplayChanged += OnDisplayChanged;
+            _designer.Host.ContextMenuRequested += OnContextMenuRequested;
         }
 
         Rebind();
     }
 
     private void OnModelReplaced(object? sender, EventArgs e) => Rebind();
+
+    private void OnDisplayChanged(object? sender, EventArgs e) => Invalidate();
+
+    /// <summary>designer.md §8: the context menu at a surface point (the press, or the primary's top-left + (8, 8) by keyboard).</summary>
+    private void OnContextMenuRequested(object? sender, (double X, double Y) at)
+    {
+        if (_designer?.ContextMenu?.Invoke() is not { } items)
+        {
+            return;
+        }
+
+        ContextMenu?.Close();
+        var menu = Views.MenuBarBuilder.CreateContextMenu(items);
+        menu.Placement = PlacementMode.AnchorAndGravity;
+        menu.PlacementRect = new Rect(at.X, at.Y, 1, 1);
+        menu.PlacementAnchor = Avalonia.Controls.Primitives.PopupPositioning.PopupAnchor.TopLeft;
+        menu.PlacementGravity = Avalonia.Controls.Primitives.PopupPositioning.PopupGravity.BottomRight;
+        ContextMenu = menu;
+        ContextMenuPoint = new Point(at.X, at.Y);
+        menu.Open(this);
+    }
 
     private void OnModelChanged(object? sender, EventArgs e)
     {
@@ -273,6 +312,14 @@ public sealed class DesignSurfaceControl : Control, ICommandTarget
         base.OnKeyDown(e);
         if (_surface is null || e.Handled)
         {
+            return;
+        }
+        if (e.Key == Key.Apps || (e.Key == Key.F10 && e.KeyModifiers == KeyModifiers.Shift))
+        {
+            // designer.md §8: by keyboard at the primary selection's top-left + (8, 8).
+            var b = _surface.Geometry.GetBounds(_surface.Selection.Primary);
+            _designer!.Host.ShowContextMenu(b.Left + 8, b.Top + 8);
+            e.Handled = true;
             return;
         }
 

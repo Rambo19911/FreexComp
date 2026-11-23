@@ -15,6 +15,17 @@ public sealed class StatusService(IClock clock) : IStatusService
 
     public EditorStatus? Editor { get; private set; }
 
+    public string? DesignerSelection { get; private set; }
+
+    public void SetDesignerSelection(string? text)
+    {
+        if (DesignerSelection != text)
+        {
+            DesignerSelection = text;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     public void ShowMessage(string text, TimeSpan duration)
     {
         var token = Show(text);

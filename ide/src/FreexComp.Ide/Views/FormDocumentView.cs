@@ -128,7 +128,7 @@ public sealed class FormDocumentView : DockPanel
     {
         if (view is TextDocumentView text)
             text.FocusText();
-        else if (view is ScrollViewer { Content: DesignSurfaceControl surface })
+        else if (view is DockPanel { Children: [_, ScrollViewer { Content: DesignSurfaceControl surface }] })
             surface.Focus();
         else
             view.Focus();
@@ -152,7 +152,13 @@ public sealed class FormDocumentView : DockPanel
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 };
                 scroller.Bind(ScrollViewer.BackgroundProperty, scroller.GetResourceObservable("FxcDesignerBackdropBrush"));
-                return scroller;
+                // UI-DSG-004: the info bars (designer.md §9) sit above the backdrop, outside the scroll area.
+                var bars = new ItemsControl { ItemsSource = document.Designer.DesignInfoBars };
+                var design = new DockPanel();
+                SetDock(bars, Avalonia.Controls.Dock.Top);
+                design.Children.Add(bars);
+                design.Children.Add(scroller);
+                return design;
         }
     }
 }

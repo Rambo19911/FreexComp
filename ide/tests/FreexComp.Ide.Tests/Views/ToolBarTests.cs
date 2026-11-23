@@ -1,10 +1,12 @@
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Settings;
+using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Icons;
 using FreexComp.Ide.Tests.Infrastructure;
@@ -170,6 +172,60 @@ public sealed class ToolBarTests
         await h.ExecuteAsync("view.toolbar.standard");
         Assert.NotNull(h.TryFind<Control>("ToolBar.Standard"));
         Assert.True(row.IsVisible);
+    }
+
+    /// <summary>I-130: the Designer toolbar (toolbars.md §2.4) is shown only while a Design view is the active document view.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Category", "Spec")]
+    [Trait("Req", "UI-TB-004")]
+    [Trait("Req", "UI-TB-005")]
+    public async Task DesignerToolbarVisibleOnlyInDesignView()
+    {
+        await using var h = await HeadlessHarness.StartAsync(DesignerViewTests.Phase5);
+        Assert.Null(h.TryFind<Control>("ToolBar.Designer"));
+        var document = await DesignerViewTests.OpenFormAsync(h);
+        Assert.Null(h.TryFind<Control>("ToolBar.Designer")); // the Code view
+
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        var rows = SpecTables.Read(SpecTables.DocPath("spec/ui/toolbars.md"), "2.4 Designer");
+        var expected = rows.Select(r => r["Element"] == "Separator" ? "---" : $"ToolBar.{r["Command id"]}|{r["Icon name"]}|{r["Element"] == "Toggle"}").ToList();
+        var designer = h.Find<Panel>("ToolBar.Designer");
+        var actual = designer.Children.Select(c => c is Button b
+            ? $"{AutomationIds.Get(b)}|{Assert.IsType<IdeIcon>(b.Content).IconName}|{b is ToggleButton}"
+            : "---").ToList();
+        Assert.Equal(expected, actual);
+        var row = designer.FindAncestorOfType<ToolBarRow>()!;
+        Assert.Equal(["ToolBar.Standard", "ToolBar.Build", "ToolBar.Designer"], row.InRow.Select(c => AutomationIds.Get(c)));
+
+        // The buttons work on the active design surface; the toggles show their state.
+        var grid = h.Find<ToggleButton>(AutomationIds.ToolBarButton("designer.toggleGrid"));
+        Assert.True(grid.IsChecked);
+        Assert.True(grid.IsEffectivelyEnabled);
+        h.Click(AutomationIds.ToolBarButton("designer.toggleGrid"));
+        Assert.False(h.Services.Settings.Get(SettingsCatalog.DesignerShowGrid));
+        Assert.False(grid.IsChecked);
+        Assert.False(h.Find<Button>(AutomationIds.ToolBarButton("designer.alignLeft")).IsEffectivelyEnabled); // the form alone is selected
+        document.Designer.Surface!.Selection.Set(["NameEdit", "GreetButton"]);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Button>(AutomationIds.ToolBarButton("designer.alignLeft")).IsEffectivelyEnabled);
+        h.Click(AutomationIds.ToolBarButton("designer.alignTop"));
+        int Top(string name) => FreexComp.Designer.Model.PropertyAccess.GetInt(document.Designer.Model!.FindByName(name)!, "Top");
+        Assert.Equal(Top("NameEdit"), Top("GreetButton"));
+        Assert.True(document.IsModified);
+
+        // View Code from the toolbar: the Code view, the toolbar goes.
+        h.Click(AutomationIds.ToolBarButton("view.toggleFormCode"));
+        Assert.Equal(DocumentView.Code, document.ActiveView);
+        Assert.Null(h.TryFind<Control>("ToolBar.Designer"));
+
+        // Its visibility setting still applies (view.toolbar.designer).
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        Assert.NotNull(h.TryFind<Control>("ToolBar.Designer"));
+        Assert.True(h.Services.Commands.Get("view.toolbar.designer").IsChecked);
+        await h.ExecuteAsync("view.toolbar.designer");
+        Assert.False(h.Services.Settings.Get(SettingsCatalog.AppearanceToolbarDesigner));
+        Assert.Null(h.TryFind<Control>("ToolBar.Designer"));
     }
 
     [AvaloniaFact(Timeout = 30000)]

@@ -602,6 +602,55 @@ public sealed class FormDesignerViewModelTests
         Assert.Equal(original, document.Buffer.Text);
     }
 
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-SUR-131")]
+    [Trait("Req", "DSG-SUR-113")]
+    [Trait("Req", "DSG-CS-040")]
+    [Trait("Req", "DSG-CS-101")]
+    [Trait("Req", "DSG-CS-102")]
+    public async Task DeleteRemovesFieldsAndUndoRestoresThem()
+    {
+        var document = await OpenAsync();
+        var designer = document.Designer;
+        Assert.True(document.ShowView(DocumentView.Design));
+        var surface = designer.Surface!;
+        var original = document.Buffer.Text;
+        Assert.Contains("    GreetButton: TButton;\r\n", original, StringComparison.Ordinal);
+
+        // Delete: the component and its field go in one "Delete" unit; the handler stays (DSG-CS-070).
+        surface.Selection.Set(["GreetButton"]);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Delete);
+        Assert.Null(designer.Model!.FindByName("GreetButton"));
+        Assert.DoesNotContain("GreetButton: TButton;", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Contains("procedure GreetButtonClick(Sender: TObject);", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Equal(1, designer.Undo.UndoCount);
+        Assert.Equal("Undo_Designer_Delete", designer.Undo.Peek!.TitleKey);
+
+        // Undo restores the component and the field text exactly; redo re-runs the removal; undo again.
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(original, document.Buffer.Text);
+        Assert.NotNull(designer.Model.FindByName("GreetButton"));
+        surface.Execute(FreexComp.Designer.Surface.Commands.Redo);
+        Assert.DoesNotContain("GreetButton: TButton;", document.Buffer.Text, StringComparison.Ordinal);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(original, document.Buffer.Text);
+
+        // Cut of a container removes the fields of its whole subtree in the "Cut" unit.
+        surface.PlaceAtDefaultPosition("TPanel");
+        surface.PlaceAtDefaultPosition("TButton"); // into the selected panel
+        var placed = document.Buffer.Text;
+        Assert.Contains("    Panel1: TPanel;\r\n    Button1: TButton;\r\n", placed, StringComparison.Ordinal);
+        surface.Selection.Set(["Panel1"]);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Cut);
+        Assert.Null(designer.Model.FindByName("Button1"));
+        Assert.DoesNotContain("Panel1: TPanel;", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Button1: TButton;", document.Buffer.Text, StringComparison.Ordinal);
+        Assert.Equal("Undo_Designer_Cut", designer.Undo.Peek!.TitleKey);
+        surface.Execute(FreexComp.Designer.Surface.Commands.Undo);
+        Assert.Equal(placed, document.Buffer.Text);
+        Assert.Equal("Panel1", designer.Model.FindByName("Button1")!.Parent!.Name);
+    }
+
     private static int CountOf(string text, string value)
     {
         var count = 0;

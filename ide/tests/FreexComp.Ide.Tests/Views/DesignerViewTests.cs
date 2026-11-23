@@ -1,20 +1,28 @@
 using Avalonia;
 using Avalonia.Automation.Peers;
 using Avalonia.Automation.Provider;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FreexComp.Designer.Catalog;
 using FreexComp.Designer.Model;
 using FreexComp.Designer.Rendering;
 using FreexComp.Designer.Surface;
 using FreexComp.Ide.Core.Documents;
+using FreexComp.Ide.Core.Models;
+using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Designer;
+using FreexComp.Ide.Tests.Fixtures.ViewModels;
 using FreexComp.Ide.Tests.Infrastructure;
 using FreexComp.Ide.TestSupport;
+using FreexComp.Ide.Views;
 using Point = Avalonia.Point;
 using Rect = Avalonia.Rect;
 
@@ -28,7 +36,7 @@ namespace FreexComp.Ide.Tests.Views;
 [Trait("Kind", "Ui")]
 public sealed class DesignerViewTests
 {
-    private const string Unit = """
+    internal const string Unit = """
         unit MainForm;
 
         interface
@@ -61,7 +69,7 @@ public sealed class DesignerViewTests
 
         """;
 
-    private const string FormText = """
+    internal const string FormText = """
         object MainForm: TMainForm
           Left = 200
           Top = 120
@@ -118,6 +126,14 @@ public sealed class DesignerViewTests
             Up(x, y);
         }
 
+        public void RightClick(double x, double y)
+        {
+            Run(() => H.Window.MouseDown(At(x, y), MouseButton.Right));
+            Run(() => H.Window.MouseUp(At(x, y), MouseButton.Right));
+        }
+
+        public IReadOnlyList<string> Selected => [.. Surface.Selection.Items.Select(o => o.Name)];
+
         /// <summary>The centre of a component on the surface.</summary>
         public (double X, double Y) Center(string name)
         {
@@ -134,9 +150,7 @@ public sealed class DesignerViewTests
 
     private static async Task<Session> OpenDesignAsync(HeadlessHarness h)
     {
-        ((DocumentService)h.Services.Documents).DesignCatalog = Catalog.Value;
-        var document = Assert.IsType<FormDocumentViewModel>((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "MainForm.pas"))).Value);
-        Dispatcher.UIThread.RunJobs();
+        var document = await OpenFormAsync(h);
         h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
         Assert.Equal(DocumentView.Design, document.ActiveView);
         var control = h.Find<DesignSurfaceControl>(AutomationIds.Designer("MainForm"));
@@ -144,10 +158,28 @@ public sealed class DesignerViewTests
         return new Session(h, document, control);
     }
 
-    private static void Files(HarnessOptions o)
+    /// <summary>Opens <c>MainForm.pas</c> (Code view) with the test component metadata.</summary>
+    internal static async Task<FormDocumentViewModel> OpenFormAsync(HeadlessHarness h)
+    {
+        ((DocumentService)h.Services.Documents).DesignCatalog = Catalog.Value;
+        var document = Assert.IsType<FormDocumentViewModel>((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "MainForm.pas"))).Value);
+        Dispatcher.UIThread.RunJobs();
+        return document;
+    }
+
+    internal static void Files(HarnessOptions o)
     {
         o.InitialFiles["MainForm.pas"] = Unit.ReplaceLineEndings("\r\n");
         o.InitialFiles["MainForm.form"] = FormText.ReplaceLineEndings("\r\n");
+    }
+
+    /// <summary>The form files at Phase 5 with sample Object Inspector and Tool Palette tool windows (I-207 has not switched the phase yet).</summary>
+    internal static void Phase5(HarnessOptions o)
+    {
+        Files(o);
+        o.ImplementedPhase = 5;
+        o.ToolWindows.Add(SampleToolViewModel.Definition("ObjectInspector", ToolGroupId.RightUpper, 5, "Cmd_view_objectInspector"));
+        o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -341,6 +373,327 @@ public sealed class DesignerViewTests
         Assert.Equal(ColorAt(light, client), ColorAt(dark, client));
         Assert.Equal(ColorAt(light, buttonRect), ColorAt(dark, buttonRect));
         Assert.Equal(ToColor(DesignPalette.Light.Face), ColorAt(light, client));
+    }
+
+    private static string ViewTab(string view) => AutomationIds.DocumentViewTab("MainForm.pas", view);
+
+    /// <summary>The info bars shown in the window (their AutomationIds), in visual order.</summary>
+    private static List<string> InfoBars(HeadlessHarness h) =>
+        [.. h.Window.GetVisualDescendants().OfType<InfoBarView>().Where(b => b.IsEffectivelyVisible).Select(b => AutomationIds.Get(b)!)];
+
+    private static string InfoBarText(HeadlessHarness h, string kind) =>
+        h.Find<TextBlock>(AutomationIds.InfoBar(kind) + ".Text").Text ?? "";
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-001")]
+    [Trait("Req", "UI-DSG-002")]
+    public async Task ViewSwitcherShowsThreeTabsOnlyForFormUnits()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Files(o);
+            o.InitialFiles["Plain.pas"] = "unit Plain;\r\n\r\ninterface\r\n\r\nimplementation\r\n\r\nend.\r\n";
+        });
+        var document = await OpenFormAsync(h);
+
+        // One document tab, three view tabs in the order Code, Design, Text; Code active.
+        Assert.Single(h.Services.Documents.Documents);
+        var tabs = h.FindAll("Document.MainForm.pas.ViewTabs.").Select(c => AutomationIds.Get(c)!).ToList();
+        Assert.Equal([ViewTab("Code"), ViewTab("Design"), ViewTab("Text")], tabs);
+        Assert.True(h.Find<ToggleButton>(ViewTab("Code")).IsChecked);
+
+        // The Design view: the surface, no info bar for a sound unit and form.
+        h.Click(ViewTab("Design"));
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.NotNull(h.TryFind<DesignSurfaceControl>(AutomationIds.Designer("MainForm")));
+        Assert.Empty(InfoBars(h));
+
+        // The Text view edits the .form text with the form highlighting (design-tokens.md §3.1: language "form").
+        h.Click(ViewTab("Text"));
+        Assert.Equal(DocumentView.Text, document.ActiveView);
+        Assert.Equal("form", document.FormText.Language.Id);
+        var editor = h.Window.GetVisualDescendants().OfType<FreexComp.Ide.Editor.CodeEditorView>().Single(e => e.IsEffectivelyVisible);
+        Assert.Same(document.FormText, editor.DataContext);
+        Assert.StartsWith("object MainForm: TMainForm", editor.Editor.Text, StringComparison.Ordinal);
+
+        // A unit without a companion form has no switcher.
+        Assert.IsNotType<FormDocumentViewModel>((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "Plain.pas"))).Value);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(h.FindAll("Document.Plain.pas.ViewTabs"));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-KEY-001")]
+    public async Task F7TogglesCodeAndDesign()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Files);
+        var document = await OpenFormAsync(h);
+
+        // Code → Design: the surface has focus; F7 from the surface (Designer scope) goes back to the code with focus in it.
+        h.Press("F7");
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        var surface = h.Find<DesignSurfaceControl>(AutomationIds.Designer("MainForm"));
+        Assert.True(surface.IsKeyboardFocusWithin);
+        h.Press("F7");
+        Assert.Equal(DocumentView.Code, document.ActiveView);
+        Assert.True(h.Find<Control>(AutomationIds.Editor("MainForm.pas")).IsKeyboardFocusWithin);
+
+        // From the Text view F7 goes to the Design view.
+        h.Click(ViewTab("Text"));
+        h.Press("F7");
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.True(h.Find<ToggleButton>(ViewTab("Design")).IsChecked);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-FD-101")]
+    public async Task TextViewSyntaxErrorKeepsTextViewWithInfoBar()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Files);
+        var document = await OpenFormAsync(h);
+        h.Click(ViewTab("Text"));
+        var form = document.FormBuffer;
+        form.ReplaceAll(form.Text.Replace("  Left = 200", "  Left = = 200", StringComparison.Ordinal), resetUndo: false);
+        Dispatcher.UIThread.RunJobs();
+
+        // Leaving the Text view is refused: the Text view stays with InfoBar.FormSyntax (error style) above the editor.
+        h.Click(ViewTab("Design"));
+        Assert.Equal(DocumentView.Text, document.ActiveView);
+        Assert.True(h.Find<ToggleButton>(ViewTab("Text")).IsChecked);
+        Assert.Equal([AutomationIds.InfoBar("FormSyntax")], InfoBars(h));
+        Assert.StartsWith("The form file cannot be read: ", InfoBarText(h, "FormSyntax"), StringComparison.Ordinal);
+        Assert.Equal(2, document.FormText.ViewState.Caret.Line);
+        h.Press("F7");
+        Assert.Equal(DocumentView.Text, document.ActiveView);
+
+        // Fixed: the switch succeeds and the bar is gone.
+        form.ReplaceAll(form.Text.Replace("  Left = = 200", "  Left = 210", StringComparison.Ordinal), resetUndo: false);
+        Dispatcher.UIThread.RunJobs();
+        h.Click(ViewTab("Design"));
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.Empty(InfoBars(h));
+        Assert.Equal(210, (int)((IntegerValue)PropertyAccess.GetEffective(document.Designer.Model!.Root, "Left")).Value);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-004")]
+    [Trait("Req", "UI-DSG-092")]
+    [Trait("Req", "DSG-CS-110")]
+    public async Task ReadOnlyInfoBarWhenUnitHasErrors()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Files);
+        var document = await OpenFormAsync(h);
+        var unit = document.Buffer;
+        var original = unit.Text;
+        unit.ReplaceAll(original.Replace("    GreetButton: TButton;", "    GreetButton: ;", StringComparison.Ordinal), resetUndo: false);
+        Dispatcher.UIThread.RunJobs();
+
+        // The Design view of a unit with syntax errors: InfoBar.UnitErrors above the backdrop (outside the scroll area), read-only.
+        h.Click(ViewTab("Design"));
+        Assert.Equal(DocumentView.Design, document.ActiveView);
+        Assert.Equal([AutomationIds.InfoBar("UnitErrors")], InfoBars(h));
+        Assert.Equal(Strings.Msg_Designer_UnitHasErrors, InfoBarText(h, "UnitErrors"));
+        var bar = h.Find<InfoBarView>(AutomationIds.InfoBar("UnitErrors"));
+        Assert.Null(bar.FindAncestorOfType<ScrollViewer>());
+        var surface = h.Find<DesignSurfaceControl>(AutomationIds.Designer("MainForm"));
+        Assert.NotNull(surface.FindAncestorOfType<ScrollViewer>());
+        Assert.True(bar.TranslatePoint(default, h.Window)!.Value.Y < surface.FindAncestorOfType<ScrollViewer>()!.TranslatePoint(default, h.Window)!.Value.Y);
+        Assert.True(document.Designer.Surface!.IsReadOnly);
+        document.Designer.Surface.Selection.Set(["GreetButton"]);
+        h.Press("Delete");
+        Assert.NotNull(document.Designer.Model!.FindByName("GreetButton"));
+
+        // Go to First Error: the Code view with the caret on the error line.
+        h.Click(AutomationIds.InfoBarAction("UnitErrors", "GoToFirstError"));
+        Assert.Equal(DocumentView.Code, document.ActiveView);
+        var errorLine = unit.Text.Split("\r\n").ToList().FindIndex(l => l == "    GreetButton: ;") + 1;
+        Assert.Equal(errorLine, document.ViewState.Caret.Line);
+
+        // The class renamed: InfoBar.FormClassNotFound instead; View Code goes to the Code view.
+        unit.ReplaceAll(original.Replace("  TMainForm = class(TForm)", "  TOtherForm = class(TForm)", StringComparison.Ordinal), resetUndo: false);
+        Dispatcher.UIThread.RunJobs();
+        h.Click(ViewTab("Design"));
+        Assert.Equal([AutomationIds.InfoBar("FormClassNotFound")], InfoBars(h));
+        Assert.Equal(string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Msg_Designer_FormClassNotFound, "TMainForm"),
+            InfoBarText(h, "FormClassNotFound"));
+        Assert.True(document.Designer.Surface!.IsReadOnly);
+        h.Click(AutomationIds.InfoBarAction("FormClassNotFound", "ViewCode"));
+        Assert.Equal(DocumentView.Code, document.ActiveView);
+
+        // Sound again: no bar, editable.
+        unit.ReplaceAll(original, resetUndo: false);
+        Dispatcher.UIThread.RunJobs();
+        h.Click(ViewTab("Design"));
+        Assert.Empty(InfoBars(h));
+        Assert.False(document.Designer.Surface!.IsReadOnly);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-080")]
+    [Trait("Req", "UI-DSG-081")]
+    [Trait("Req", "DSG-SUR-043")]
+    public async Task ContextMenuListsCommandsWithAutomationIds()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var s = await OpenDesignAsync(h);
+
+        // Right-click on an unselected control selects it, then opens the menu (designer.md §8 order).
+        var (x, y) = s.Center("GreetButton");
+        s.RightClick(x, y);
+        Assert.Equal(["GreetButton"], s.Selected);
+        var menu = Assert.IsType<ContextMenu>(s.Control.ContextMenu);
+        Assert.True(menu.IsOpen);
+        static string Id(object item) => item is Separator ? "-" : AutomationIds.Get((Control)item)!;
+        Assert.Equal(
+        [
+            "Context.edit.cut", "Context.edit.copy", "Context.edit.paste", "Context.edit.delete", "Context.edit.selectAll",
+            "Context.designer.selectParent", "-",
+            "Context.Designer.Align", "Context.Designer.Size", "Context.Designer.Order", "-",
+            "Context.designer.tabOrder", "Context.designer.lockControls", "-",
+            "Context.designer.toggleGrid", "Context.designer.toggleSnapToGrid", "Context.designer.toggleGuidelines", "-",
+            "Context.designer.createDefaultHandler", "Context.view.toggleFormCode", "Context.view.formAsText",
+        ], menu.Items.Cast<object>().Select(Id));
+        MenuItem Item(string id) => menu.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == id);
+        Assert.Equal(
+        [
+            "Context.designer.alignLeft", "Context.designer.alignRight", "Context.designer.alignTop", "Context.designer.alignBottom",
+            "Context.designer.alignHCenter", "Context.designer.alignVCenter", "-",
+            "Context.designer.centerHInParent", "Context.designer.centerVInParent", "-",
+            "Context.designer.spaceHEqually", "Context.designer.spaceVEqually", "-", "Context.designer.alignToGrid",
+        ], Item("Context.Designer.Align").Items.Cast<object>().Select(Id));
+        Assert.Equal(["Context.designer.sameWidth", "Context.designer.sameHeight", "Context.designer.sameSize", "-", "Context.designer.sizeToGrid"],
+            Item("Context.Designer.Size").Items.Cast<object>().Select(Id));
+        Assert.Equal(["Context.designer.bringToFront", "Context.designer.sendToBack"], Item("Context.Designer.Order").Items.Cast<object>().Select(Id));
+
+        // Enabled-when (design-surface.md §13) and check marks; the labels are the main menu's.
+        Assert.True(Item("Context.edit.cut").IsEffectivelyEnabled);
+        Assert.True(Item("Context.designer.selectParent").IsEffectivelyEnabled);
+        Assert.True(Item("Context.designer.createDefaultHandler").IsEffectivelyEnabled);
+        Assert.True(Item("Context.designer.toggleGrid").IsChecked);
+        Assert.False(Item("Context.designer.lockControls").IsChecked);
+        Assert.Equal("_Lock Controls", Item("Context.designer.lockControls").Header);
+
+        // An item runs its command: Show Grid off (the setting), the check mark follows.
+        Item("Context.designer.toggleGrid").Command!.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Services.Settings.Get(SettingsCatalog.DesignerShowGrid));
+        Assert.False(Item("Context.designer.toggleGrid").IsChecked);
+        menu.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        // Right-click on the backdrop selects the form.
+        var frame = s.Surface.Geometry.FrameRect;
+        s.RightClick(frame.Right + 8, frame.Bottom + 8);
+        Assert.Equal(["MainForm"], s.Selected);
+        Assert.True(Assert.IsType<ContextMenu>(s.Control.ContextMenu).IsOpen);
+        s.Control.ContextMenu!.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        // Shift+F10 opens it at the primary selection's top-left + (8, 8).
+        s.Surface.Selection.Set(["GreetButton"]);
+        s.Control.Focus();
+        h.Press("Shift+F10");
+        Assert.True(Assert.IsType<ContextMenu>(s.Control.ContextMenu).IsOpen);
+        var b = s.Surface.Geometry.GetBounds(s.Object("GreetButton"));
+        Assert.Equal(new Point(b.Left + 8, b.Top + 8), s.Control.ContextMenuPoint);
+        s.Control.ContextMenu!.Close();
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-130")]
+    public async Task StatusBarShowsSelectionGeometry()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var s = await OpenDesignAsync(h);
+
+        // The form selected: its position and client size; the text-editor fields are hidden, Language shows Form.
+        Assert.Equal("MainForm: TMainForm — 200, 120 — 400 × 300", h.Status.Field("DesignerSelection"));
+        foreach (var field in (string[])["CaretPosition", "Selection", "InsertMode", "Indent", "LineEnding", "Encoding"])
+        {
+            Assert.Null(h.Status.Field(field));
+        }
+
+        Assert.Equal("Form", h.Status.Field("Language"));
+
+        // One control: name, class, left, top, width, height; the field follows moves.
+        var (x, y) = s.Center("GreetButton");
+        s.Click(x, y);
+        Assert.Equal("GreetButton: TButton — 232, 15 — 75 × 25", h.Status.Field("DesignerSelection"));
+        h.Press("Right");
+        Assert.Equal("GreetButton: TButton — 240, 15 — 75 × 25", h.Status.Field("DesignerSelection"));
+
+        // Several: the count.
+        var (nx, ny) = s.Center("NameEdit");
+        s.Down(nx, ny, RawInputModifiers.Shift);
+        s.Up(nx, ny, RawInputModifiers.Shift);
+        Assert.Equal(2, s.Surface.Selection.Items.Count);
+        Assert.Equal("2 components selected", h.Status.Field("DesignerSelection"));
+
+        // The Code view: the editor fields come back.
+        h.Press("F7");
+        Assert.Null(h.Status.Field("DesignerSelection"));
+        Assert.NotNull(h.Status.Field("CaretPosition"));
+        Assert.NotEqual("Form", h.Status.Field("Language"));
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-WIN-012")]
+    [Trait("Req", "UI-WIN-014")]
+    public async Task DesignLayoutProfileActivates()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var layout = h.Services.Layout.Layout;
+        var document = await OpenFormAsync(h);
+        Assert.Equal(LayoutProfiles.Edit, layout.ActiveProfile);
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible);
+
+        // Entering the Design view activates the Design profile: Object Inspector and Tool Palette in the right dock.
+        h.Click(ViewTab("Design"));
+        Assert.Equal(LayoutProfiles.Design, layout.ActiveProfile);
+        Assert.True(h.Find<Control>(AutomationIds.DockRight).IsVisible);
+        Assert.Equal("ObjectInspector", layout.RightUpper.ActiveTool);
+        Assert.Equal("ToolPalette", layout.RightLower.ActiveTool);
+        Assert.Equal("Structure", layout.Left.ActiveTool);
+        Assert.True(h.Services.Commands.Get("window.layout.design").IsChecked);
+        Assert.False(h.Services.Commands.Get("window.layout.edit").IsChecked);
+
+        // Focus stays in the document (UI-WIN-014).
+        Assert.True(h.Find<DesignSurfaceControl>(AutomationIds.Designer("MainForm")).IsKeyboardFocusWithin);
+
+        // Back to the code: Edit again.
+        h.Press("F7");
+        Assert.Equal(DocumentView.Code, document.ActiveView);
+        Assert.Equal(LayoutProfiles.Edit, layout.ActiveProfile);
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible);
+        Assert.True(h.Find<Control>(AutomationIds.Editor("MainForm.pas")).IsKeyboardFocusWithin);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-CMD-011")]
+    public async Task UndoFromObjectInspectorFocusUndoesDesignerAction()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var s = await OpenDesignAsync(h);
+        var (x, y) = s.Center("GreetButton");
+        s.Click(x, y);
+        h.Press("Delete");
+        Assert.Null(s.Document.Designer.Model!.FindByName("GreetButton"));
+
+        // Focus in the Object Inspector: Ctrl+Z undoes the designer action of the active document; focus stays there.
+        var inspector = h.Find<Control>(AutomationIds.Tool("ObjectInspector"));
+        h.Click("Tool.ObjectInspector.List");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("ObjectInspector", h.Services.FocusTracker.Current.ToolWindowName);
+        Assert.True(h.Services.Commands.CanExecute("edit.undo"));
+        h.Press("Ctrl+Z");
+        Assert.NotNull(s.Document.Designer.Model!.FindByName("GreetButton"));
+        Assert.Contains("    GreetButton: TButton;\r\n", s.Document.Buffer.Text, StringComparison.Ordinal);
+        Assert.True(inspector.IsKeyboardFocusWithin);
+
+        // Redo from there as well.
+        await h.ExecuteAsync("edit.redo");
+        Assert.Null(s.Document.Designer.Model!.FindByName("GreetButton"));
+        Assert.True(inspector.IsKeyboardFocusWithin);
     }
 
     private static Color ToColor(Rgba c) => Color.FromArgb(c.A, c.R, c.G, c.B);

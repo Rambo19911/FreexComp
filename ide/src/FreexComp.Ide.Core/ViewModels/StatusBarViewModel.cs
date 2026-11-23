@@ -177,7 +177,13 @@ public sealed class StatusBarViewModel : ObservableObject
         ? Strings.ResourceManager.GetString("StatusBar_Encoding_" + e.EncodingId.Replace('-', '_'), CultureInfo.CurrentCulture) ?? e.EncodingId
         : "";
 
-    public string LanguageText => Editor?.Language ?? "";
+    /// <summary>UI-DSG-130: the Design view shows <c>Form</c>.</summary>
+    public string LanguageText => HasDesigner ? Strings.Language_Form : Editor?.Language ?? "";
+
+    /// <summary>UI-DSG-130: <c>StatusBar.DesignerSelection</c> replaces the caret and selection fields while a Design view is active.</summary>
+    public bool HasDesigner => _status.DesignerSelection is not null;
+
+    public string DesignerSelectionText => _status.DesignerSelection ?? "";
 
     /// <summary>L1 click: <c>view.messages</c>.</summary>
     public IdeCommand StateCommand { get; }

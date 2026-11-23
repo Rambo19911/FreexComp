@@ -100,6 +100,9 @@ public sealed record IdeServices
     /// <summary>The Search Results tool window and Find in Files runner (I-123).</summary>
     public required ViewModels.SearchResultsViewModel SearchResults { get; init; }
 
+    /// <summary>The designer's IDE wiring (Phase 5, D-080, I-130); null before the designer phase.</summary>
+    public Designer.DesignerShell? DesignerShell { get; init; }
+
     /// <summary>The component metadata (Phase 5, D-077); null before the designer phase.</summary>
     public Designer.ComponentMetadataService? Metadata { get; init; }
 }

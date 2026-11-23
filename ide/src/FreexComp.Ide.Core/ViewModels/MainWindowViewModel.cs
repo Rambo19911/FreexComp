@@ -37,6 +37,12 @@ public sealed class MainWindowViewModel : ObservableObject
         ToolBars = ToolBarRowModel.Build(services.Commands, services.Settings, services.ImplementedPhase);
         ProjectCombos.Attach(ToolBars, services.Projects, services.State, services.Commands);
         ToolBarContextMenu = ToolBarRowModel.BuildContextMenu(services.Commands);
+        if (services.DesignerShell is { } designer && ToolBars.FirstOrDefault(t => t.Name == ToolBarDefinitions.Designer.Name) is { } designerBar)
+        {
+            // UI-TB-004 (I-130): the Designer toolbar while a Design view is the active document view.
+            designerBar.HasContext = designer.IsDesignActive;
+            designer.IsDesignActiveChanged += (_, _) => designerBar.HasContext = designer.IsDesignActive;
+        }
 
         services.Documents.ActiveDocumentChanged += (_, _) => FollowTitleSource(services.Documents.ActiveDocument);
         services.Projects.ProjectChanged += (_, _) => OnPropertyChanged(nameof(Title));
@@ -112,6 +118,9 @@ public sealed class MainWindowViewModel : ObservableObject
 
     /// <summary>IDE-ARCH-042: keyboard focus moved.</summary>
     public void UpdateFocus(FocusState state) => _services.FocusTracker.Update(state);
+
+    /// <summary>IDE-ARCH-043: the keys the focused element handles itself (the design surface's, D-080).</summary>
+    public void SetLocalKeys(IReadOnlyCollection<KeyGesture> keys) => _services.FocusTracker.SetLocalKeys(keys);
 
     /// <summary>The focused element's own command state changed (e.g. a TextBox selection): re-query CanExecute.</summary>
     public void InvalidateCommands() => _services.Commands.InvalidateCanExecute();

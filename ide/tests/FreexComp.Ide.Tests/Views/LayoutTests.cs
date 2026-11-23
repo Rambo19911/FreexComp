@@ -4,6 +4,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FreexComp.Ide.Core.Models;
+using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.Tests.Infrastructure;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
@@ -58,6 +59,82 @@ public sealed class LayoutTests
         {
             window.Close();
         }
+    }
+
+    /// <summary>I-130: the Design column of main-window.md §2, automatic switching (UI-WIN-012) and per-profile memory (UI-WIN-013).</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Category", "Spec")]
+    [Trait("Req", "UI-WIN-012")]
+    [Trait("Req", "UI-WIN-013")]
+    public async Task DesignProfileArrangement()
+    {
+        var rows = SpecTables.Read(SpecTables.DocPath("spec/ui/main-window.md"), "2. Default layout per profile");
+        Assert.Equal([LayoutProfiles.Edit, LayoutProfiles.Design], LayoutProfiles.BuiltIn);
+        var profile = LayoutProfiles.Create(LayoutProfiles.Design);
+        foreach (var group in Enum.GetValues<ToolGroupId>())
+        {
+            Assert.Equal(ExpectedGroup(rows, group, "Design profile (P5)"), Describe(profile.Group(group)));
+        }
+
+        Assert.Equal((260, 300, 200, 0.5), (profile.LeftSize, profile.RightSize, profile.BottomSize, profile.RightSplit));
+
+        await using var h = await HeadlessHarness.StartAsync(DesignerViewTests.Phase5);
+        var layout = h.Services.Layout.Layout;
+        var document = await DesignerViewTests.OpenFormAsync(h);
+        var design = AutomationIds.DocumentViewTab("MainForm.pas", "Design");
+        Assert.Equal(LayoutProfiles.Edit, layout.ActiveProfile);
+
+        // (a) The Design view makes Design the profile: its tool windows in their docks.
+        h.Click(design);
+        Assert.Equal(LayoutProfiles.Design, layout.ActiveProfile);
+        Assert.Equal(["ProjectManager", "Structure"], layout.Left.Tools);
+        Assert.Equal("Structure", layout.Left.ActiveTool);
+        Assert.Equal(["ObjectInspector"], layout.RightUpper.Tools);
+        Assert.Equal(["ToolPalette"], layout.RightLower.Tools);
+        Assert.Equal(["Messages", "Output", "SearchResults"], layout.Bottom.Tools);
+        Assert.Equal(1440 - 260 - 300 - (2 * Splitter), h.Find<Control>(AutomationIds.DocumentArea).Bounds.Width);
+
+        // UI-WIN-013: each profile keeps its own changes.
+        layout.LeftSize = 333;
+        Assert.True(h.Services.ToolWindows.Hide("ToolPalette"));
+        Dispatcher.UIThread.RunJobs();
+        h.Press("F7");
+        Assert.Equal(LayoutProfiles.Edit, layout.ActiveProfile);
+        Assert.Equal(260, layout.LeftSize);
+        Assert.Equal("ProjectManager", layout.Left.ActiveTool);
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible);
+        h.Press("F7");
+        Assert.Equal(LayoutProfiles.Design, layout.ActiveProfile);
+        Assert.Equal(333, layout.LeftSize);
+        Assert.Empty(layout.RightLower.Tools);
+        Assert.Equal(["ObjectInspector"], layout.RightUpper.Tools);
+
+        // The window.layout.* commands switch too (exclusive check marks); the next view change switches back.
+        await h.ExecuteAsync("window.layout.edit");
+        Assert.Equal(LayoutProfiles.Edit, layout.ActiveProfile);
+        Assert.True(h.Services.Commands.Get("window.layout.edit").IsChecked);
+        Assert.False(h.Services.Commands.Get("window.layout.design").IsChecked);
+        await h.ExecuteAsync("window.layout.design");
+        Assert.Equal(LayoutProfiles.Design, layout.ActiveProfile);
+        Assert.True(h.Services.Commands.Get("window.layout.design").IsChecked);
+
+        // The active profile and both profiles' changes are saved.
+        h.Clock.Advance(TimeSpan.FromSeconds(2));
+        var saved = File.ReadAllText(Path.Combine(h.UserDir, "roaming", "uistate.json"));
+        Assert.Contains("\"activeProfile\": \"Design\"", saved, StringComparison.Ordinal);
+        Assert.Contains("\"Design\": {", saved, StringComparison.Ordinal);
+
+        // layout.autoSwitch = false: only the commands switch.
+        h.Services.Settings.Set(SettingsCatalog.LayoutAutoSwitch, false);
+        h.Press("F7");
+        Assert.Equal(DocumentView.Code, document.ActiveView);
+        Assert.Equal(LayoutProfiles.Design, layout.ActiveProfile);
+        h.Services.Settings.Set(SettingsCatalog.LayoutAutoSwitch, true);
+        h.Press("F7");
+        Assert.Equal(LayoutProfiles.Design, layout.ActiveProfile);
+        h.Press("F7");
+        Assert.Equal(LayoutProfiles.Edit, layout.ActiveProfile);
     }
 
     [AvaloniaFact(Timeout = 30000)]
@@ -367,7 +444,7 @@ public sealed class LayoutTests
         $"tools=[{string.Join(",", group.Tools)}] hidden=[{string.Join(",", group.Hidden)}] active={group.Active}";
 
     /// <summary>Cells like "Left ①, active", "Bottom ④, hidden", "hidden" (= not placed in this profile).</summary>
-    private static string ExpectedGroup(IReadOnlyList<IReadOnlyDictionary<string, string>> rows, ToolGroupId group)
+    private static string ExpectedGroup(IReadOnlyList<IReadOnlyDictionary<string, string>> rows, ToolGroupId group, string column = "Edit profile")
     {
         var prefix = group switch
         {
@@ -377,7 +454,7 @@ public sealed class LayoutTests
             _ => "Bottom",
         };
         var placed = rows
-            .Select(r => (Name: ToolName(r["Tool window"]), Cell: r["Edit profile"]))
+            .Select(r => (Name: ToolName(r["Tool window"]), Cell: r[column]))
             .Where(t => t.Cell.StartsWith(prefix + " ", StringComparison.Ordinal))
             .Select(t => (t.Name, Order: "①②③④⑤⑥⑦⑧⑨".IndexOf(t.Cell[prefix.Length + 1], StringComparison.Ordinal), Hidden: t.Cell.EndsWith("hidden", StringComparison.Ordinal), Active: t.Cell.EndsWith("active", StringComparison.Ordinal)))
             .OrderBy(t => t.Order)

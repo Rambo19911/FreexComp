@@ -60,8 +60,16 @@ public sealed class LayoutService : ILayoutService
         commands.RegisterHandler("window.previousPane", new ActionHandler(() => Layout.CyclePanes(-1)));
         commands.RegisterHandler("window.focusEditor", new ActionHandler(() => Layout.FocusPane(Pane.Documents))); // UI-A11Y-004
         commands.RegisterHandler("window.resetLayout", new ActionHandler(Layout.ResetProfile)); // UI-WIN-015, no confirmation
-        // menus.md "not session (exclusive)": Edit is the only profile before I-130, so choosing it changes nothing.
-        commands.RegisterHandler("window.layout.edit", new ActionHandler(() => { }, () => Layout.ActiveProfile == LayoutProfiles.Edit));
+        // menus.md "not session (exclusive)": window.layout.design is registered with the designer (Phase 5, I-130).
+        commands.RegisterHandler("window.layout.edit", new ActionHandler(() => Layout.SwitchProfile(LayoutProfiles.Edit),
+            () => Layout.ActiveProfile == LayoutProfiles.Edit));
+        Layout.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(LayoutViewModel.ActiveProfile))
+            {
+                commands.InvalidateCanExecute(); // moves the exclusive check mark
+            }
+        };
     }
 
     public LayoutViewModel Layout { get; }

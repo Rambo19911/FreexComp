@@ -229,6 +229,7 @@ public sealed partial class MainWindow : Window
             focused.DetachedFromVisualTree += OnFocusedDetached;
         }
 
+        vm.SetLocalKeys(CommandRouting.LocalKeysOf(FocusManager?.GetFocusedElement() as Avalonia.Visual)); // IDE-ARCH-043
         vm.UpdateFocus(state);
     }
 

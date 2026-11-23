@@ -19,6 +19,26 @@ public static class CommandRouting
     public static readonly AttachedProperty<string?> ToolWindowProperty =
         AvaloniaProperty.RegisterAttached<Control, string?>("ToolWindow", typeof(CommandRouting));
 
+    /// <summary>Keys the marked element handles itself although they are bound to commands (<see cref="IFocusTracker.LocalKeys"/>).</summary>
+    public static readonly AttachedProperty<IReadOnlyList<KeyGesture>?> LocalKeysProperty =
+        AvaloniaProperty.RegisterAttached<Control, IReadOnlyList<KeyGesture>?>("LocalKeys", typeof(CommandRouting));
+
+    public static void SetLocalKeys(Control element, IReadOnlyList<KeyGesture>? value) => element.SetValue(LocalKeysProperty, value);
+
+    /// <summary>The local keys of the innermost scope element around <paramref name="focused"/>; empty when it has none.</summary>
+    public static IReadOnlyList<KeyGesture> LocalKeysOf(Visual? focused)
+    {
+        for (var v = focused; v is not null; v = v.GetVisualParent())
+        {
+            if (v is Control control && GetScope(control) is not null)
+            {
+                return control.GetValue(LocalKeysProperty) ?? [];
+            }
+        }
+
+        return [];
+    }
+
     public static CommandScope? GetScope(Control element) => element.GetValue(ScopeProperty);
 
     public static void SetScope(Control element, CommandScope? value) => element.SetValue(ScopeProperty, value);

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using FreexComp.Designer.Catalog;
 using FreexComp.Designer.CodeSync;
@@ -8,6 +9,7 @@ using FreexComp.Designer.Rendering;
 using FreexComp.Designer.Surface;
 using FreexComp.Designer.Text;
 using FreexComp.Ide.Core.Designer.CodeSync;
+using FreexComp.Ide.Core.Menus;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.ViewModels;
@@ -42,6 +44,8 @@ public sealed class FormDesignerViewModel
     private int _syncedVersion;
     private (long Version, bool Differs) _pending;
     private DocumentView _activeView;
+    private readonly LiveSettings _liveSettings;
+    private InteractionState? _shownState;
 
     /// <param name="hasUnit">False: a <c>.form</c> opened without its unit (code-sync.md §8 <c>NoUnit</c>, DSG-CS-080) —
     /// the Design view without code sync and without a Code view; <paramref name="unit"/> is then an empty placeholder.</param>
@@ -55,6 +59,7 @@ public sealed class FormDesignerViewModel
         _syncedText = formText.Buffer.Text;
         _pending = (formText.Buffer.Version, false);
         Host = new DesignerHost(this);
+        _liveSettings = new LiveSettings(this);
         var parsed = Parse(_syncedText);
         Unit = new FormUnit(unit.Buffer, parsed.Document?.Root.TypeName ?? "", unit.FilePath ?? FormClassLocator.PlaceholderPath);
         CodeSync = new CodeSyncService(Unit, catalog, ShowCodeAt) { HasUnit = hasUnit, Form = () => Model };
@@ -88,8 +93,55 @@ public sealed class FormDesignerViewModel
     /// <summary>What the surface needs from the IDE: status, palette arming, clipboard, code sync.</summary>
     public DesignerHost Host { get; }
 
-    /// <summary>The designer settings the surface reads (defaults until the IDE binds its settings service).</summary>
+    /// <summary>
+    /// The designer settings the surface reads, live (defaults until the IDE binds its settings service); a change of a
+    /// shown value is announced with <see cref="RefreshDisplay"/>.
+    /// </summary>
     public IDesignerSettings Settings { get; set; } = new DefaultDesignerSettings();
+
+    /// <summary>The items of the design-surface context menu (designer.md §8); null: no menu (set by the IDE's designer wiring).</summary>
+    public Func<IReadOnlyList<MenuItemModel>>? ContextMenu { get; set; }
+
+    /// <summary>
+    /// The info bars of the Design view (designer.md §9) in stack order, at most <see cref="DocumentViewModel.MaxVisibleInfoBars"/>:
+    /// <c>InfoBar.UnitErrors</c>, <c>InfoBar.FormClassNotFound</c> (the form is read-only, code-sync.md §8) and
+    /// <c>InfoBar.TabOrder</c>. Re-evaluated when the Design view is entered, the model is replaced or the tab-order mode changes.
+    /// </summary>
+    public ObservableCollection<InfoBarViewModel> DesignInfoBars { get; } = [];
+
+    /// <summary>Something the surface draws from outside the model changed (a designer setting): the view repaints.</summary>
+    public event EventHandler? DisplayChanged;
+
+    /// <summary>Raises <see cref="DisplayChanged"/>.</summary>
+    public void RefreshDisplay() => DisplayChanged?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>
+    /// UI-DSG-130: the status-bar text of the selection — <c>Msg.Designer.Selection</c> (name, class, left, top, width,
+    /// height; the form: its position and client size) or <c>Msg.Designer.SelectionMany</c>; null without a surface.
+    /// </summary>
+    public string? SelectionStatusText
+    {
+        get
+        {
+            if (Surface is not { } surface)
+            {
+                return null;
+            }
+
+            var items = surface.Selection.Items;
+            if (items.Count > 1)
+            {
+                return string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_SelectionMany, items.Count);
+            }
+
+            var obj = surface.Selection.Primary;
+            var bounds = obj.Parent is not null && surface.Layout.HasBounds(obj) ? surface.Layout.GetBounds(obj) : PropertyAccess.GetBounds(obj);
+            var (left, top) = obj.Parent is null || !surface.Layout.HasBounds(obj)
+                ? (PropertyAccess.GetInt(obj, "Left"), PropertyAccess.GetInt(obj, "Top"))
+                : (bounds.Left, bounds.Top);
+            return string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_Selection, obj.Name, obj.TypeName, left, top, bounds.Width, bounds.Height);
+        }
+    }
 
     /// <summary>Where <see cref="DesignerHost.SetStatus"/> messages go (set by the document service).</summary>
     public IStatusService? Status { get; set; }
@@ -393,6 +445,112 @@ public sealed class FormDesignerViewModel
         {
             surface.IsReadOnly = HasUnit && CodeSync.State != CodeSyncState.Ok;
         }
+
+        UpdateInfoBars();
+    }
+
+    /// <summary>The tab-order mode started or ended: <c>InfoBar.TabOrder</c> follows.</summary>
+    private void OnSurfaceInvalidated(object? sender, EventArgs e)
+    {
+        if (Surface is { } surface && surface.State != _shownState
+            && (surface.State == InteractionState.TabOrder || _shownState == InteractionState.TabOrder))
+        {
+            UpdateInfoBars();
+        }
+    }
+
+    /// <summary>designer.md §9 (UI-DSG-091): the bars that apply, in table order, at most three.</summary>
+    private void UpdateInfoBars()
+    {
+        _shownState = Surface?.State;
+        var bars = new List<InfoBarViewModel>();
+        if (HasUnit && Surface is not null)
+        {
+            switch (CodeSync.State)
+            {
+                case CodeSyncState.UnitHasErrors:
+                    bars.Add(new InfoBarViewModel("UnitErrors", InfoBarSeverity.Warning, Strings.Msg_Designer_UnitHasErrors,
+                        [new InfoBarAction("GoToFirstError", Strings.Button_GoToFirstError, GoToFirstErrorAsync)], null));
+                    break;
+                case CodeSyncState.FormClassNotFound:
+                    bars.Add(new InfoBarViewModel("FormClassNotFound", InfoBarSeverity.Warning,
+                        string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_FormClassNotFound, Unit.FormTypeName),
+                        [new InfoBarAction("ViewCode", Strings.Button_ViewCode, () => Run(() => ShowView(DocumentView.Code)))], null));
+                    break;
+            }
+        }
+
+        if (Surface is { State: InteractionState.TabOrder } tabOrder)
+        {
+            bars.Add(new InfoBarViewModel("TabOrder", InfoBarSeverity.Info, Strings.Msg_Designer_TabOrderMode,
+            [
+                new InfoBarAction("Done", Strings.Button_Done, () => Run(tabOrder.ExitTabOrderMode)),
+                new InfoBarAction("RestartNumbering", Strings.Button_RestartNumbering, () => Run(tabOrder.RestartTabOrderNumbering)),
+            ], null));
+        }
+
+        bars = [.. bars.Take(DocumentViewModel.MaxVisibleInfoBars)];
+        if (bars.Select(b => (b.Kind, b.Text)).SequenceEqual(DesignInfoBars.Select(b => (b.Kind, b.Text))))
+        {
+            return;
+        }
+
+        DesignInfoBars.Clear();
+        foreach (var bar in bars)
+        {
+            DesignInfoBars.Add(bar);
+        }
+    }
+
+    private static Task Run(Action action)
+    {
+        action();
+        return Task.CompletedTask;
+    }
+
+    private static Task Run(Func<bool> action)
+    {
+        action();
+        return Task.CompletedTask;
+    }
+
+    /// <summary><c>Go to First Error</c>: the Code view with the caret at the unit's first syntax error.</summary>
+    private Task GoToFirstErrorAsync()
+    {
+        if (Unit.Locate().FirstError is { Location.HasPosition: true } error)
+        {
+            ShowCodeAt(error.Location.Span.Start);
+        }
+        else
+        {
+            ShowView(DocumentView.Code);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The settings the surface reads: always those of <see cref="Settings"/> at the moment of reading.</summary>
+    private sealed class LiveSettings(FormDesignerViewModel owner) : IDesignerSettings
+    {
+        public bool ShowComponentCaptions => owner.Settings.ShowComponentCaptions;
+
+        public int HandleSize => owner.Settings.HandleSize;
+
+        public bool ShowGrid => owner.Settings.ShowGrid;
+
+        public bool SnapToGrid => owner.Settings.SnapToGrid;
+
+        public int GridSizeX => owner.Settings.GridSizeX;
+
+        public int GridSizeY => owner.Settings.GridSizeY;
+
+        public bool UseGuidelines => owner.Settings.UseGuidelines;
+
+        public int GuidelineSnapDistance => owner.Settings.GuidelineSnapDistance;
+
+        public int GuidelineMargin => owner.Settings.GuidelineMargin;
+
+        public bool LockControls => owner.Settings.LockControls;
     }
 
     /// <summary>Leaving the Text view: an unchanged text keeps the model; a changed one must parse and replaces it.</summary>
@@ -451,13 +609,16 @@ public sealed class FormDesignerViewModel
         if (Surface is not null)
         {
             Surface.Selection.Changed -= OnSelectionChanged;
+            Surface.Invalidated -= OnSurfaceInvalidated;
         }
 
         Model = document;
         Editor = new FormEditor(document, Catalog);
         Surface = new DesignSurfaceController(document, Editor, Undo, Catalog, new LayoutEngine(Catalog, RendererRegistry.CreateDefault()),
-            Settings, Host);
+            _liveSettings, Host);
         Surface.Selection.Changed += OnSelectionChanged;
+        Surface.Invalidated += OnSurfaceInvalidated;
+        _shownState = null;
         document.Changed += OnModelChanged;
         _syncedText = text;
         _syncedVersion = document.Version;

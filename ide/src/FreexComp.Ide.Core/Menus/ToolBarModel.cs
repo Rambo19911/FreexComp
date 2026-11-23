@@ -132,6 +132,7 @@ public sealed class ToolBarModel : ObservableObject
 {
     private readonly ISettingsService _settings;
     private readonly bool _phaseReached;
+    private bool _hasContext;
 
     public ToolBarModel(ToolBarDefinition definition, ICommandService commands, ISettingsService settings, int implementedPhase)
     {
@@ -162,8 +163,24 @@ public sealed class ToolBarModel : ObservableObject
 
     public bool IsVisible => _phaseReached && _settings.Get(Definition.Visibility) && ContextAllowsIt;
 
+    /// <summary>
+    /// The context of a Debug or Designer toolbar exists (UI-TB-004): set by the IDE — for Designer while a Design view is
+    /// the active document view (I-130). Ignored by the other toolbars.
+    /// </summary>
+    public bool HasContext
+    {
+        get => _hasContext;
+        set
+        {
+            if (SetProperty(ref _hasContext, value))
+            {
+                OnPropertyChanged(nameof(IsVisible));
+            }
+        }
+    }
+
     /// <summary>UI-TB-004: Debug needs a session or the Debug profile (P6), Designer an active Design view (P5).</summary>
-    private bool ContextAllowsIt => Definition.Name is not ("Debug" or "Designer");
+    private bool ContextAllowsIt => Definition.Name is not ("Debug" or "Designer") || _hasContext;
 }
 
 /// <summary>The toolbar row (UI-TB-001) and the <c>view.toolbar.*</c> handlers.</summary>

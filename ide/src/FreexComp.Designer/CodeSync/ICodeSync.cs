@@ -33,6 +33,13 @@ public interface ICodeSync
     /// <exception cref="CodeSyncException">The edits would add syntax errors; nothing was changed (DSG-CS-004).</exception>
     IReadOnlyList<TextEditRecord> AddFields(IReadOnlyList<CodeSyncField> fields);
 
+    /// <summary>
+    /// code-sync.md §4.3 (DSG-SUR-131): removes the fields of deleted components from the form class as one code-editor
+    /// undo group; missing names are skipped. Returns the text edits applied (for the undo unit). Default: nothing.
+    /// </summary>
+    /// <exception cref="CodeSyncException">The edits would add syntax errors; nothing was changed (DSG-CS-004).</exception>
+    IReadOnlyList<TextEditRecord> RemoveFields(IReadOnlyList<string> names) => [];
+
     /// <summary>DSG-CS-063: shows the Code view with the caret in the body of <paramref name="methodName"/>.</summary>
     void NavigateToHandler(string methodName);
 

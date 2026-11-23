@@ -89,13 +89,15 @@ public static class LayoutProfiles
 {
     public const string Edit = "Edit";
 
+    public const string Design = "Design";
+
     public const double DefaultLeftSize = 260;
     public const double DefaultRightSize = 300;
     public const double DefaultBottomSize = 200;
     public const double DefaultRightSplit = 0.5;
 
-    /// <summary>Profiles that exist so far; <c>Design</c> (I-130) and <c>Debug</c> (P6) are added with their tasks.</summary>
-    public static readonly IReadOnlyList<string> BuiltIn = [Edit];
+    /// <summary>Profiles that exist so far; <c>Debug</c> (P6) is added with its task (I-133).</summary>
+    public static readonly IReadOnlyList<string> BuiltIn = [Edit, Design];
 
     public static ProfileLayout Create(string name) => name switch
     {
@@ -103,6 +105,13 @@ public static class LayoutProfiles
         {
             Left = new() { Tools = ["ProjectManager", "Structure"], Hidden = ["DataExplorer"], Active = "ProjectManager" },
             Bottom = new() { Tools = ["Messages", "Output", "SearchResults"], Hidden = ["ToDo"], Active = "Messages" },
+        },
+        Design => new ProfileLayout
+        {
+            Left = new() { Tools = ["ProjectManager", "Structure"], Hidden = ["DataExplorer"], Active = "Structure" },
+            RightUpper = new() { Tools = ["ObjectInspector"], Active = "ObjectInspector" },
+            RightLower = new() { Tools = ["ToolPalette"], Active = "ToolPalette" },
+            Bottom = new() { Tools = ["Messages", "Output", "SearchResults"], Active = "Messages" },
         },
         _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Unknown layout profile."),
     };

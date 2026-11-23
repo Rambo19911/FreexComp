@@ -35,7 +35,13 @@ public interface IStatusService
     /// <summary>The active text editor's fields; null while no text editor view is the active document view (UI-WIN-040).</summary>
     EditorStatus? Editor { get; }
 
-    /// <summary>Raised when <see cref="Message"/> or <see cref="Editor"/> changes.</summary>
+    /// <summary>
+    /// UI-DSG-130: the selection text of the active Design view (<c>StatusBar.DesignerSelection</c>); null while no Design
+    /// view is the active document view.
+    /// </summary>
+    string? DesignerSelection { get; }
+
+    /// <summary>Raised when <see cref="Message"/>, <see cref="Editor"/> or <see cref="DesignerSelection"/> changes.</summary>
     event EventHandler? Changed;
 
     /// <summary>Shows <paramref name="text"/> for <paramref name="duration"/> (UI-MSG-003 "Status"), replacing the current message.</summary>
@@ -49,4 +55,7 @@ public interface IStatusService
 
     /// <summary>The active text editor reports its fields; null when the active document view is not a text editor.</summary>
     void SetEditor(EditorStatus? editor);
+
+    /// <summary>The active Design view reports its selection text; null when the active document view is not a Design view.</summary>
+    void SetDesignerSelection(string? text);
 }

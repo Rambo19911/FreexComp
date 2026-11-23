@@ -35,6 +35,9 @@ public sealed class StatusBarView : DockPanel
     private readonly Button _lineEnding;
     private readonly Button _encoding;
     private readonly TextBlock _language = Text(AutomationIds.StatusBarField("Language"));
+    private readonly TextBlock _designerSelection = Text(AutomationIds.StatusBarField("DesignerSelection"));
+    private Border? _designerCell;
+    private Border? _languageCell;
     private readonly List<Button> _buttons = [];
     private readonly List<Control> _editorFields = [];
     private StatusBarViewModel? _model;
@@ -68,10 +71,15 @@ public sealed class StatusBarView : DockPanel
         var right = new StackPanel { Orientation = Orientation.Horizontal };
         _diagnosticsCell = Field(_diagnostics, lineBefore: true);
         right.Children.Add(_diagnosticsCell);
+        _designerCell = Field(_designerSelection, lineBefore: true); // UI-DSG-130: in place of R2/R3 in the Design view
+        right.Children.Add(_designerCell);
         foreach (var field in new Control[] { _caret, _selection, _insertMode, _indent, _lineEnding, _encoding, _language })
         {
             var cell = Field(field, lineBefore: true);
-            _editorFields.Add(cell);
+            if (field == _language)
+                _languageCell = cell;
+            else
+                _editorFields.Add(cell);
             right.Children.Add(cell);
         }
 
@@ -142,6 +150,10 @@ public sealed class StatusBarView : DockPanel
         {
             cell.IsVisible = m.HasEditor;
         }
+
+        _designerSelection.Text = m.DesignerSelectionText;
+        _designerCell!.IsVisible = m.HasDesigner;
+        _languageCell!.IsVisible = m.HasEditor || m.HasDesigner;
 
         SetText(_caret, m.CaretText);
         _selection.Text = m.SelectionText;
