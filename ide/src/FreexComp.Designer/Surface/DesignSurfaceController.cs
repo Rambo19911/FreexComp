@@ -482,6 +482,8 @@ public sealed partial class DesignSurfaceController
     private void UpdateMove(PointerInput input)
     {
         var (x, y) = SurfaceGeometry.Round(input.X, input.Y);
+        _pointerAt = (x, y);
+        CopyBadge = input.Modifiers.HasFlag(InputModifiers.Ctrl);
         var (dx, dy) = (x - _downAt.X, y - _downAt.Y);
         var (snapX, snapY) = (true, true);
         if (input.Modifiers.HasFlag(InputModifiers.Shift))
@@ -779,6 +781,7 @@ public sealed partial class DesignSurfaceController
     private void UpdateResize(PointerInput input)
     {
         var (x, y) = SurfaceGeometry.Round(input.X, input.Y);
+        _pointerAt = (x, y);
         var (dx, dy) = (x - _downAt.X, y - _downAt.Y);
         _preview = null; // the snapping and the preview start from the model's layout
 
@@ -1082,6 +1085,7 @@ public sealed partial class DesignSurfaceController
         _moveTarget = default;
         DropTarget = null;
         _moveDelta = (0, 0);
+        CopyBadge = false;
         Guidelines = [];
         _placeClass = null;
         _placeParent = null;

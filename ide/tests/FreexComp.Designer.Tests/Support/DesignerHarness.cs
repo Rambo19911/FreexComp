@@ -214,6 +214,8 @@ internal sealed class FakeDesignerSettings : IDesignerSettings
 
     public int HandleSize { get; set; } = 7;
 
+    public bool ShowGrid { get; set; } = true;
+
     public bool SnapToGrid { get; set; } = true;
 
     public int GridSizeX { get; set; } = 8;

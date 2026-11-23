@@ -114,19 +114,25 @@ public sealed class HitTester
     /// axis shorter than 3 × <paramref name="handleSize"/> (UI-DSG-033). None for tray items (decoration only), preserved
     /// components (UI-DSG-038) and controls whose geometry is computed (<c>"stored": false</c>, e.g. tab sheets, UI-DSG-084).
     /// </summary>
-    public IReadOnlyList<(HandleKind Kind, Rect Square)> GetHandleSquares(FormObject obj, bool soleSelection = true, int handleSize = DefaultHandleSize)
+    public IReadOnlyList<(HandleKind Kind, Rect Square)> GetHandleSquares(FormObject obj, bool soleSelection = true, int handleSize = DefaultHandleSize) =>
+        GetHandleCenters(obj, soleSelection, handleSize)
+            .Select(h => (h.Kind, new Rect(h.X - HandleHitSize / 2, h.Y - HandleHitSize / 2, HandleHitSize, HandleHitSize)))
+            .ToList();
+
+    /// <summary>The centres of the handles of <see cref="GetHandleSquares"/> (on the outline pixels), in hit priority order.</summary>
+    public IReadOnlyList<(HandleKind Kind, int X, int Y)> GetHandleCenters(FormObject obj, bool soleSelection = true, int handleSize = DefaultHandleSize)
     {
         var g = Geometry;
-        var list = new List<(HandleKind, Rect)>();
+        var list = new List<(HandleKind, int, int)>();
         if (obj.Parent is null)
         {
             if (soleSelection)
             {
                 var f = g.FrameRect;
                 var (r, b) = (f.Right - 1, f.Bottom - 1);
-                Add(list, HandleKind.SE, r, b);
-                Add(list, HandleKind.E, r, f.Top + (f.Height - 1) / 2);
-                Add(list, HandleKind.S, f.Left + (f.Width - 1) / 2, b);
+                list.Add((HandleKind.SE, r, b));
+                list.Add((HandleKind.E, r, f.Top + (f.Height - 1) / 2));
+                list.Add((HandleKind.S, f.Left + (f.Width - 1) / 2, b));
             }
 
             return list;
@@ -146,14 +152,14 @@ public sealed class HitTester
         {
             switch (kind)
             {
-                case HandleKind.SE: Add(list, kind, right, bottom); break;
-                case HandleKind.NE: Add(list, kind, right, top); break;
-                case HandleKind.SW: Add(list, kind, left, bottom); break;
-                case HandleKind.NW: Add(list, kind, left, top); break;
-                case HandleKind.E when high: Add(list, kind, right, midY); break;
-                case HandleKind.S when wide: Add(list, kind, midX, bottom); break;
-                case HandleKind.W when high: Add(list, kind, left, midY); break;
-                case HandleKind.N when wide: Add(list, kind, midX, top); break;
+                case HandleKind.SE: list.Add((kind, right, bottom)); break;
+                case HandleKind.NE: list.Add((kind, right, top)); break;
+                case HandleKind.SW: list.Add((kind, left, bottom)); break;
+                case HandleKind.NW: list.Add((kind, left, top)); break;
+                case HandleKind.E when high: list.Add((kind, right, midY)); break;
+                case HandleKind.S when wide: list.Add((kind, midX, bottom)); break;
+                case HandleKind.W when high: list.Add((kind, left, midY)); break;
+                case HandleKind.N when wide: list.Add((kind, midX, top)); break;
             }
         }
 
@@ -198,9 +204,6 @@ public sealed class HitTester
         var at = previous is null ? -1 : stack.FindIndex(o => ReferenceEquals(o, previous));
         return at >= 0 ? (at + 1) % stack.Count : Math.Min(1, stack.Count - 1);
     }
-
-    private static void Add(List<(HandleKind, Rect)> list, HandleKind kind, int cx, int cy) =>
-        list.Add((kind, new Rect(cx - HandleHitSize / 2, cy - HandleHitSize / 2, HandleHitSize, HandleHitSize)));
 
     private static bool Contains(Rect r, (int X, int Y) p) => p.X >= r.Left && p.X < r.Right && p.Y >= r.Top && p.Y < r.Bottom;
 }

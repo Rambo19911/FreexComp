@@ -33,6 +33,9 @@ public interface IDesignerSettings
     /// <summary><c>designer.handleSize</c> (5 … 11, odd; default 7, UI-DSG-032).</summary>
     int HandleSize { get; }
 
+    /// <summary><c>designer.showGrid</c> (default true): grid dots on the form and on containers (UI-DSG-020).</summary>
+    bool ShowGrid { get; }
+
     /// <summary><c>designer.snapToGrid</c> (default true, design-surface.md §6).</summary>
     bool SnapToGrid { get; }
 
