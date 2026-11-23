@@ -99,11 +99,14 @@ public static class ServiceGraph
         var navigation = new NavigationService(documents, platform.Dialogs, status, platform.FileSystem);
         navigation.RegisterCommands(commands);
         projects =new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
-            ProjectTemplates.LoadEmbedded(platform.Log), layout, platform.Clock, platform.Shell);
+            // gui-pascal is the designer's template (code-sync.md §11): listed from Phase 5 on.
+            [.. ProjectTemplates.LoadEmbedded(platform.Log).Where(t => t.AppType != "gui" || (toolWindowPhase ?? ImplementedPhase) >= 5)],
+            layout, platform.Clock, platform.Shell);
         projects.RegisterCommands(commands);
         projects.FileChanges = fileChanges; // IDE-P1-117
         projects.WriteGuard = fileChanges.BeginOwnWrite;
         documents.ProjectOpener = path => projects.OpenAsync(path);
+        documents.FormPathOf = projects.FormPathOf; // designer README §3: the project's form entry names the companion
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
             platform.Log, toolWindowPhase ?? ImplementedPhase);
         projectManager.RegisterCommands();

@@ -39,10 +39,16 @@ public sealed class ProjectTemplate
     /// <summary>Text of a source file of the template, placeholders not yet substituted.</summary>
     public string ReadSource(string source) => _readSource(source);
 
-    /// <summary>Substitutes <c>$(ProjectName)</c>, <c>$(UnitName)</c> = <c>Unit1</c>, <c>$(FormName)</c> = <c>MainForm</c> (IDE-PM-023).</summary>
-    public static string Expand(string text, string projectName) =>
+    /// <summary>
+    /// <c>$(UnitName)</c> of IDE-PM-023: <c>Unit1</c>; in a template with a form file it is the first form's unit,
+    /// <c>MainForm</c> (code-sync.md DSG-CS-110).
+    /// </summary>
+    public string UnitName => Files.Any(f => f.Target.EndsWith(".form", StringComparison.OrdinalIgnoreCase)) ? "MainForm" : "Unit1";
+
+    /// <summary>Substitutes <c>$(ProjectName)</c>, <c>$(UnitName)</c> (<see cref="UnitName"/>), <c>$(FormName)</c> = <c>MainForm</c> (IDE-PM-023).</summary>
+    public string Expand(string text, string projectName) =>
         text.Replace("$(ProjectName)", projectName, StringComparison.Ordinal)
-            .Replace("$(UnitName)", "Unit1", StringComparison.Ordinal)
+            .Replace("$(UnitName)", UnitName, StringComparison.Ordinal)
             .Replace("$(FormName)", "MainForm", StringComparison.Ordinal);
 }
 

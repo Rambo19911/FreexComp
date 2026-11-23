@@ -1,0 +1,52 @@
+{
+  "formatVersion": 1,
+  "name": "$(ProjectName)",
+  "language": "pascal",
+  "appType": "gui",
+  "mainSource": "$(ProjectName).pas",
+  "files": [
+    {
+      "path": "$(ProjectName).pas"
+    },
+    {
+      "path": "$(UnitName).pas",
+      "form": "$(UnitName).form"
+    }
+  ],
+  "searchPaths": [],
+  "unitScopeNames": [],
+  "rtti": "broad",
+  "manifest": "default",
+  "defines": [],
+  "platforms": [
+    "win64"
+  ],
+  "configurations": {
+    "Debug": {
+      "optimization": 0,
+      "debugInfo": true,
+      "defines": [
+        "DEBUG"
+      ],
+      "outputDir": "bin/Debug"
+    },
+    "Release": {
+      "optimization": 2,
+      "debugInfo": false,
+      "defines": [
+        "RELEASE"
+      ],
+      "outputDir": "bin/Release"
+    }
+  },
+  "activeConfiguration": "Debug",
+  "run": {
+    "arguments": "",
+    "workingDir": ""
+  },
+  "events": {
+    "preBuild": [],
+    "postBuild": []
+  },
+  "dependencies": []
+}

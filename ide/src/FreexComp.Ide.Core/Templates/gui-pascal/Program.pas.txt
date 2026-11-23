@@ -1,0 +1,10 @@
+program $(ProjectName);
+
+uses
+  Forms, $(UnitName);
+
+begin
+  Application.Initialize;
+  Application.CreateForm(T$(FormName), $(UnitName).$(FormName));
+  Application.Run;
+end.

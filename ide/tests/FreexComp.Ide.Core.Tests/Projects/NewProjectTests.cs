@@ -242,6 +242,47 @@ public sealed class NewProjectTests
 
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-PM-020")]
+    [Trait("Req", "IDE-PM-023")]
+    [Trait("Req", "DSG-CS-110")]
+    public async Task GuiTemplateCreatesUnitAndForm()
+    {
+        // Listed from Phase 5 on (the designer phase), after console-pascal.
+        Assert.DoesNotContain(Projects.Templates, t => t.Id == "gui-pascal");
+        var services = TestComposition.Build(o =>
+        {
+            o.FileSystem = _fs;
+            o.ImplementedPhase = 5;
+        });
+        var gui = services.Projects.Templates.Single(t => t.Id == "gui-pascal");
+        Assert.Equal("console-pascal", services.Projects.Templates[0].Id);
+        Assert.Equal(("pascal", "gui"), (gui.Language, gui.AppType));
+
+        Assert.Equal(NewProjectOutcome.Created, await services.Projects.CreateProjectAsync(new NewProjectRequest("gui-pascal", "Hello", Location)));
+
+        // The program, the first form (unit and form named MainForm, DSG-CS-110) and the project with its form entry.
+        var dir = Location + @"\Hello";
+        Assert.Equal([dir + @"\Hello.pas", dir + @"\Hello.pproj", dir + @"\MainForm.form", dir + @"\MainForm.pas"],
+            _memory.EnumerateFiles(dir, "*").Order(StringComparer.Ordinal));
+        Assert.Equal(string.Join("\r\n", "program Hello;", "", "uses", "  Forms, MainForm;", "", "begin", "  Application.Initialize;",
+            "  Application.CreateForm(TMainForm, MainForm.MainForm);", "  Application.Run;", "end.", ""), Text(dir + @"\Hello.pas"));
+        Assert.Equal(Designer.NewFormTemplateTests.Unit("MainForm", "\r\n"), Text(dir + @"\MainForm.pas"));
+        Assert.Equal(Designer.NewFormTemplateTests.Form("MainForm"), Text(dir + @"\MainForm.form"));
+        var project = services.Projects.Project!;
+        Assert.Equal("gui", project.AppType);
+        Assert.Equal([("Hello.pas", null), ("MainForm.pas", "MainForm.form")], project.Files.Select(f => (f.Path, f.Form)));
+        const string consoleFiles = "      \"path\": \"Hello.pas\"\n    }\n";
+        const string guiFiles = "      \"path\": \"Hello.pas\"\n    },\n    {\n      \"path\": \"MainForm.pas\",\n      \"form\": \"MainForm.form\"\n    }\n";
+        Assert.Equal(HelloPproj.Replace("\"console\"", "\"gui\"", StringComparison.Ordinal).Replace(consoleFiles, guiFiles, StringComparison.Ordinal),
+            Text(dir + @"\Hello.pproj"));
+
+        // Opened with the program active and the caret on the first line after `begin`.
+        var main = Assert.IsType<TextDocumentViewModel>(services.Documents.ActiveDocument);
+        Assert.Equal(dir + @"\Hello.pas", main.FilePath);
+        Assert.Equal(new TextPosition(7, 3), main.ViewState.Caret);
+    }
+
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-PM-020")]
     public void InvalidTemplateIsSkippedWithLogError()
     {
         var log = new RecordingLog();

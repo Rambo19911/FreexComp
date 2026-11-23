@@ -89,6 +89,8 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("file.closeProject", new Handler(_ => Project is not null, _ => CloseAsync()));
         commands.RegisterHandler("project.viewSource", new Handler(_ => Project is not null, _ => ViewSourceAsync()));
         commands.RegisterHandler("project.addNewUnit", new Handler(_ => Project is not null, _ => AddNewUnitAsync()));
+        commands.RegisterHandler("project.addNewForm", new Handler(_ => Project is not null, _ => AddNewFormAsync()));
+        commands.RegisterHandler("file.newForm", new Handler(_ => Project is not null, _ => AddNewFormAsync())); // menus.md: needs a project
         commands.RegisterHandler("file.newFile", new Handler(_ => true, _ => NewFileAsync()));
         commands.RegisterHandler("project.addExistingFile", new Handler(_ => Project is not null, _ => PickAndAddExistingAsync()));
         commands.RegisterHandler("project.removeFile", new Handler(_ => CanOperateOnFiles(), _ => RemoveFilesAsync(FileTargets())));
@@ -282,6 +284,78 @@ public sealed class ProjectService : IProjectService
         else if (opened.NeedsMessage)
             await _dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
         return true;
+    }
+
+    public async Task<bool> AddNewFormAsync()
+    {
+        if (_project is null)
+            return false;
+
+        // The folder of IDE-PM-040; DSG-CS-110: a name is free when no project unit and no file of the folder has it.
+        var folder = SelectedFolder?.Invoke() is { } selected && IsInside(selected, _project.Directory)
+            ? Path.GetFullPath(selected)
+            : Path.GetDirectoryName(Resolve(_project.MainSource))!;
+        var units = UnitNames(_project);
+        var name = Designer.NewFormTemplate.NextName(
+            FilesForMutation(_project).Any(f => !string.IsNullOrEmpty(f.Form)),
+            n => units.Contains(n) || _fileSystem.FileExists(Path.Combine(folder, n + ".pas")) || _fileSystem.FileExists(Path.Combine(folder, n + ".form")));
+        var unitPath = Path.Combine(folder, name + ".pas");
+        var formPath = Path.Combine(folder, name + ".form");
+        if (!await WriteNewFileAsync(unitPath, SourceBytes(Designer.NewFormTemplate.UnitText(name, name))))
+            return false;
+        if (!await WriteNewFileAsync(formPath, FileEncodings.Encode(Designer.NewFormTemplate.FormText(name), FileEncoding.Utf8)))
+        {
+            DeleteQuietly(unitPath);
+            return false;
+        }
+
+        var projectPath = ToProjectPath(unitPath);
+        if (!await SaveChangedProjectAsync(_project with
+            {
+                Files = FilesForMutation(_project).Add(new ProjectFile(projectPath, ToProjectPath(formPath), null)),
+            }))
+        {
+            DeleteQuietly(unitPath);
+            DeleteQuietly(formPath);
+            return false;
+        }
+
+        FilesAdded?.Invoke(this, [projectPath]);
+        var opened = await _documents.OpenAsync(unitPath);
+        if (opened.Value is FormDocumentViewModel document)
+            document.ShowView(DocumentView.Design);
+        else if (opened.NeedsMessage)
+            await _dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
+        return true;
+    }
+
+    public string? FormPathOf(string unitPath)
+    {
+        ArgumentNullException.ThrowIfNull(unitPath);
+        if (_project is null)
+            return null;
+        var full = Path.GetFullPath(unitPath);
+        var entry = FilesForMutation(_project).FirstOrDefault(f => !string.IsNullOrEmpty(f.Form) && !string.IsNullOrEmpty(f.Path)
+            && string.Equals(Resolve(f.Path), full, StringComparison.OrdinalIgnoreCase));
+        return entry is null ? null : Resolve(entry.Form!);
+    }
+
+    /// <summary>A new file of a "new" command: Retry and Cancel only on a failure (UI-DLG-040: nothing to "Save As" yet).</summary>
+    private async Task<bool> WriteNewFileAsync(string path, byte[] bytes)
+    {
+        while (true)
+        {
+            try
+            {
+                AtomicFileWriter.Write(_fileSystem, path, bytes);
+                return true;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.File.SaveFailed", [path, e.Message], Buttons: ["Retry", "Cancel"])) != "Retry")
+                    return false;
+            }
+        }
     }
 
     /// <summary>project-manager.md §4.2: the unit skeleton (LF; <see cref="SourceBytes"/> applies the line-ending setting).</summary>
@@ -1031,8 +1105,8 @@ public sealed class ProjectService : IProjectService
             _fileSystem.CreateDirectory(target);
             foreach (var file in template.Files)
             {
-                var path = Path.Combine(target, ProjectTemplate.Expand(file.Target, name));
-                var text = ProjectTemplate.Expand(template.ReadSource(file.Source), name).Replace("\r", "", StringComparison.Ordinal);
+                var path = Path.Combine(target, template.Expand(file.Target, name));
+                var text = template.Expand(template.ReadSource(file.Source), name).Replace("\r", "", StringComparison.Ordinal);
                 files.Add(path);
                 if (path.EndsWith(".pproj", StringComparison.OrdinalIgnoreCase))
                 {

@@ -98,6 +98,17 @@ public interface IProjectService
     Task<bool> AddNewUnitAsync();
 
     /// <summary>
+    /// <c>project.addNewForm</c> / <c>file.newForm</c> (code-sync.md §11, DSG-CS-110): creates the unit and form of the new
+    /// form template (<c>MainForm</c> for the project's first form, else <c>Form&lt;N&gt;</c>) in the folder
+    /// <see cref="AddNewUnitAsync"/> uses, appends <c>{ path, form }</c> to <c>files</c>, saves the project and opens the
+    /// unit in the Design view. False without a project or on a reported failure.
+    /// </summary>
+    Task<bool> AddNewFormAsync();
+
+    /// <summary>The absolute path of the <c>form</c> entry of the project unit <paramref name="unitPath"/>; null when none.</summary>
+    string? FormPathOf(string unitPath);
+
+    /// <summary>
     /// IDE-PM-050/051: adds the files by reference — <c>.form</c> files are refused (<c>Status_AddFormViaUnit</c>), files
     /// already in the project skipped (<c>Msg.Project.FileAlreadyInProject</c>), duplicate unit names refused
     /// (<c>Msg.Project.DuplicateUnitName</c>); a unit with its <c>{$FORM}</c> companion gets <c>form</c>. Saved at once, not

@@ -74,6 +74,19 @@ public sealed class DocumentService : IDocumentService
     /// </summary>
     public Func<Task<bool>>? ProjectNewUnit { get; set; }
 
+    /// <summary>
+    /// The component metadata form documents are read with (designer README §3); an empty catalog until the metadata is
+    /// loaded (architecture.md IDE-ARCH-015 step 9, P5). Set by the service graph (tests set it directly).
+    /// </summary>
+    public FreexComp.Designer.Catalog.ComponentCatalog DesignCatalog { get; set; } =
+        new([], [], new Dictionary<string, string>(), []);
+
+    /// <summary>
+    /// The companion form of a unit named by the open project's <c>form</c> entry (designer README §3; absolute path),
+    /// or null; the sibling <c>.form</c> of the same base name is used otherwise (set by the service graph).
+    /// </summary>
+    public Func<string, string?>? FormPathOf { get; set; }
+
     /// <summary>The UI state holding the Documents dialog size (UI-DLG-005; set by the service graph).</summary>
     public ILayoutService? Layout { get; set; }
 
@@ -198,6 +211,22 @@ public sealed class DocumentService : IDocumentService
         {
             Activate(open);
             return OperationResult<DocumentViewModel>.Of(open);
+        }
+
+        // DSG-CS-080: a .form opens its unit (same folder and base name) in the Design view.
+        if (string.Equals(Path.GetExtension(fullPath), ".form", StringComparison.OrdinalIgnoreCase))
+        {
+            var owner = _documents.OfType<FormDocumentViewModel>()
+                .FirstOrDefault(d => string.Equals(d.FormText.FilePath, fullPath, StringComparison.OrdinalIgnoreCase));
+            var unitPath = Path.ChangeExtension(fullPath, ".pas");
+            if (owner is null && FindByPath(unitPath) is null && _fileSystem.FileExists(unitPath))
+                owner = (await OpenAsync(unitPath)).Value as FormDocumentViewModel;
+            if (owner is not null && string.Equals(owner.FormText.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                Activate(owner);
+                owner.ShowView(DocumentView.Design);
+                return OperationResult<DocumentViewModel>.Of(owner);
+            }
         }
 
         if (_loading.TryGetValue(fullPath, out var pending))
@@ -562,25 +591,32 @@ public sealed class DocumentService : IDocumentService
         if (FindByPath(fullPath) is { } other && other != document)
             return OperationResult.Fail("Msg.File.SaveFailed", other.FilePath!, Strings.Reason_OpenInAnotherTab);
 
+        // A form document: repair, then the removal of empty handlers, before the unit text is taken (DSG-CS-091 b, 072).
+        var form = document as FormDocumentViewModel;
+        var plan = form?.Designer.PrepareSave();
         ApplySaveEdits(document); // steps 1-2 (IDE-P1-080)
         var text = document.Buffer.Text;
         if (!FileEncodings.CanEncode(text, document.Encoding))
             return OperationResult.Fail("Msg.File.EncodingLossy", FileEncodings.DisplayName(document.Encoding));
 
-        var bytes = FileEncodings.Encode(text, document.Encoding);
-        using var ownWrite = WriteGuard?.Invoke(fullPath); // IDE-P1-086: the watcher ignores our own write
-        try
+        // designer README §3: only the modified buffers are written, the .pas first.
+        if (form is null || form.IsUnitModified || !string.Equals(form.FilePath, fullPath, StringComparison.OrdinalIgnoreCase))
         {
-            // IDE-ARCH-081: off the UI thread. The new timestamp/size are recorded (IDE-P1-080 step 5).
-            document.DiskStamp = await Task.Run(() =>
-            {
-                AtomicFileWriter.Write(_fileSystem, fullPath, bytes);
-                return StampAfterWrite(fullPath, bytes);
-            });
+            var written = await WriteAsync(fullPath, FileEncodings.Encode(text, document.Encoding));
+            if (!written.Success)
+                return written.Failure!;
+            document.DiskStamp = written.Stamp;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+
+        if (form is not null && plan?.FormText is { } formText)
         {
-            return OperationResult.Fail("Msg.File.SaveFailed", fullPath, ex.Message);
+            var formPath = form.FormText.FilePath!;
+            var written = await WriteAsync(formPath, FileEncodings.Encode(formText, form.FormText.Encoding));
+            if (!written.Success)
+                return written.Failure!;
+            form.FormText.DiskStamp = written.Stamp;
+            form.FormText.MarkSaved(formPath, form.FormText.Language);
+            form.Designer.MarkFormSaved(formText);
         }
 
         // The recovery copy is deleted by the recovery service on DocumentSaved (IDE-P1-080 step 5).
@@ -591,8 +627,37 @@ public sealed class DocumentService : IDocumentService
             PushStatus();
         DocumentSaved?.Invoke(this, new DocumentEventArgs(document));
         _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_File_Saved, document.Title), StatusMessageDuration);
+        if (plan is { RemovedHandlers: > 0 } removed) // DSG-CS-074
+        {
+            _status.ShowMessage(removed.RemovedHandlers == 1
+                ? Strings.Msg_Designer_HandlersRemovedOne
+                : string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_HandlersRemovedMany, removed.RemovedHandlers), StatusMessageDuration);
+        }
+
         _commands?.InvalidateCanExecute();
         return OperationResult.Ok;
+    }
+
+    /// <summary>
+    /// One file of a save, off the UI thread (IDE-ARCH-081) and marked as our own write (IDE-P1-086); the new stamp
+    /// (IDE-P1-080 step 5) or the <c>Msg.File.SaveFailed</c> result.
+    /// </summary>
+    private async Task<(bool Success, DiskStamp? Stamp, OperationResult? Failure)> WriteAsync(string path, byte[] bytes)
+    {
+        using var ownWrite = WriteGuard?.Invoke(path);
+        try
+        {
+            var stamp = await Task.Run(() =>
+            {
+                AtomicFileWriter.Write(_fileSystem, path, bytes);
+                return StampAfterWrite(path, bytes);
+            });
+            return (true, stamp, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (false, null, OperationResult.Fail("Msg.File.SaveFailed", path, ex.Message));
+        }
     }
 
     /// <summary>The stamp of the file just written; null when it cannot be examined (the next check records it).</summary>
@@ -657,7 +722,7 @@ public sealed class DocumentService : IDocumentService
         EncodingDetection detection;
         bool writable;
         DiskStamp stamp;
-        (string Path, EncodingDetection Text)? form;
+        (string Path, EncodingDetection Text, DiskStamp Stamp)? form;
         var large = false;
         try
         {
@@ -673,11 +738,12 @@ public sealed class DocumentService : IDocumentService
 
             // IDE-P1-040: the open-for-write probe. The time is taken before reading, so a write in between is seen
             // as a change later rather than missed (IDE-P1-110).
+            var formPath = FormPathOf?.Invoke(fullPath);
             (detection, writable, stamp, form) = await Task.Run(() =>
             {
                 var lastWrite = _fileSystem.GetLastWriteTimeUtc(fullPath);
                 var bytes = _fileSystem.ReadAllBytes(fullPath);
-                return (EncodingDetector.Detect(bytes), _fileSystem.CanOpenForWrite(fullPath), DiskStamp.Of(lastWrite, bytes), ReadCompanionForm(fullPath));
+                return (EncodingDetector.Detect(bytes), _fileSystem.CanOpenForWrite(fullPath), DiskStamp.Of(lastWrite, bytes), ReadCompanionForm(fullPath, formPath));
             });
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
@@ -698,14 +764,12 @@ public sealed class DocumentService : IDocumentService
         TextDocumentViewModel document;
         if (form is { } companion && !large)
         {
-            // UI-WIN-020: a unit with a companion form is one document with three views (I-129). Until the form designer
-            // saves the form (D-072) its text is shown read-only.
+            // UI-WIN-020: a unit with a companion form is one document with three views (I-129, D-072).
             var formText = new TextDocumentViewModel(_buffers.Create(companion.Text.Text, lineEnding), companion.Path, null,
-                _languages.ForPath(companion.Path), companion.Text.Encoding, lineEnding);
-            formText.SetReadOnly(true);
+                _languages.ForPath(companion.Path), companion.Text.Encoding, lineEnding) { DiskStamp = companion.Stamp };
             Configure(formText);
             var formDocument = new FormDocumentViewModel(_buffers.Create(detection.Text, lineEnding), fullPath, language, detection.Encoding,
-                lineEnding, formText) { DiskStamp = stamp };
+                lineEnding, formText, DesignCatalog) { DiskStamp = stamp };
             formDocument.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
             document = formDocument;
         }
@@ -751,17 +815,19 @@ public sealed class DocumentService : IDocumentService
     /// The companion <c>.form</c> of a <c>.pas</c> unit (same folder, same base name; designer README §3) and its text, or
     /// null when there is none or it cannot be read as text. Called off the UI thread.
     /// </summary>
-    private (string Path, EncodingDetection Text)? ReadCompanionForm(string unitPath)
+    private (string Path, EncodingDetection Text, DiskStamp Stamp)? ReadCompanionForm(string unitPath, string? projectForm)
     {
         if (!string.Equals(Path.GetExtension(unitPath), ".pas", StringComparison.OrdinalIgnoreCase))
             return null;
-        var formPath = Path.ChangeExtension(unitPath, ".form");
+        var formPath = projectForm is not null && _fileSystem.FileExists(projectForm) ? projectForm : Path.ChangeExtension(unitPath, ".form");
         if (!_fileSystem.FileExists(formPath))
             return null;
         try
         {
-            var detection = EncodingDetector.Detect(_fileSystem.ReadAllBytes(formPath));
-            return detection.IsBinary ? null : (formPath, detection);
+            var lastWrite = _fileSystem.GetLastWriteTimeUtc(formPath);
+            var bytes = _fileSystem.ReadAllBytes(formPath);
+            var detection = EncodingDetector.Detect(bytes);
+            return detection.IsBinary ? null : (formPath, detection, DiskStamp.Of(lastWrite, bytes));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

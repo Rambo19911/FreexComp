@@ -70,7 +70,7 @@ public static class NewProjectValidation
             && (fileSystem.EnumerateFiles(target, "*").Count > 0 || fileSystem.EnumerateDirectories(target).Count > 0))
             return OperationResult.Fail("Msg.Project.LocationNotEmpty", target);
 
-        var longest = template.Files.Select(f => Path.Combine(target, ProjectTemplate.Expand(f.Target, name)).Length).DefaultIfEmpty(target.Length).Max();
+        var longest = template.Files.Select(f => Path.Combine(target, template.Expand(f.Target, name)).Length).DefaultIfEmpty(target.Length).Max();
         if (longest > MaxPathLength)
             return OperationResult.Fail("Msg.Project.PathTooLong", MaxPathLength.ToString(CultureInfo.CurrentCulture));
         return OperationResult.Ok;

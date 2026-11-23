@@ -1,0 +1,6 @@
+{ "id": "gui-pascal", "name": "Windows Application", "description": "A program with a main window designed in the form designer.",
+  "language": "pascal", "appType": "gui",
+  "files": [ { "source": "Program.pas.txt", "target": "$(ProjectName).pas" },
+             { "source": "Form.pas.txt", "target": "$(UnitName).pas" },
+             { "source": "Form.form.txt", "target": "$(UnitName).form" },
+             { "source": "Project.pproj.txt", "target": "$(ProjectName).pproj" } ] }
