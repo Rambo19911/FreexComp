@@ -139,7 +139,16 @@ public sealed class FormDesignerViewModel
             }
 
             var obj = surface.Selection.Primary;
-            var bounds = obj.Parent is not null && surface.Layout.HasBounds(obj) ? surface.Layout.GetBounds(obj) : PropertyAccess.GetBounds(obj);
+            if (obj.Info?.Kind == ComponentKind.NonVisual)
+            {
+                // A tray tile or a menu item / action (D-097): its design position, the tile's size (no geometry properties).
+                int Stored(string path) => obj.FindProperty(path)?.Value is IntegerValue { Value: var v } ? (int)v : 0;
+                var cell = surface.Geometry.IsTrayItem(obj) ? surface.Geometry.GetBounds(obj) : default;
+                return string.Format(CultureInfo.CurrentCulture, Strings.Msg_Designer_Selection, obj.Name, obj.TypeName,
+                    Stored("DesignLeft"), Stored("DesignTop"), cell.Width, cell.Height);
+            }
+
+            var bounds =obj.Parent is not null && surface.Layout.HasBounds(obj) ? surface.Layout.GetBounds(obj) : PropertyAccess.GetBounds(obj);
             var (left, top) = obj.Parent is null || !surface.Layout.HasBounds(obj)
                 ? (PropertyAccess.GetInt(obj, "Left"), PropertyAccess.GetInt(obj, "Top"))
                 : (bounds.Left, bounds.Top);
@@ -390,6 +399,54 @@ public sealed class FormDesignerViewModel
 
         Surface!.Selection.Set(names);
         Replaced();
+    }
+
+    /// <summary>The modal dialogs of the component editors the designer verbs open (DSG-SUR-195, 196); null: none (set by the IDE).</summary>
+    public Services.IDialogService? Dialogs { get; set; }
+
+    /// <summary>
+    /// The editor a verb opened (the collection editor, the Menu Designer) until it closes; null when none is open. The
+    /// command that opened it awaits it (<see cref="DesignSurfaceCommands"/>).
+    /// </summary>
+    public Task? PendingEditor { get; private set; }
+
+    /// <summary>Takes <see cref="PendingEditor"/> for the caller to await.</summary>
+    internal Task? TakePendingEditor()
+    {
+        var editor = PendingEditor;
+        PendingEditor = null;
+        return editor;
+    }
+
+    /// <summary>DSG-SUR-195: the collection editor on <paramref name="component"/>'s collection; OK with a change is one "Property" unit (DSG-OI-114).</summary>
+    internal void EditCollection(FormObject component, string propertyName)
+    {
+        if (Dialogs is { } dialogs && Model is { } model)
+        {
+            PendingEditor = EditCollectionAsync(dialogs, model, component, propertyName);
+        }
+    }
+
+    private async Task EditCollectionAsync(Services.IDialogService dialogs, FormDocument model, FormObject component, string propertyName)
+    {
+        var change = await dialogs.ShowAsync(new Dialogs.CollectionEditorViewModel(Catalog, model, component, propertyName, dialogs));
+        if (change is not null && Surface is { IsReadOnly: false } surface && ReferenceEquals(Model, model)
+            && ReferenceEquals(model.FindByName(component.Name), component))
+        {
+            surface.Commit(UndoTitles.Property, [change]);
+        }
+    }
+
+    /// <summary>
+    /// DSG-SUR-196: the component editor of <paramref name="component"/>'s class — <c>menu</c>: the Menu Designer
+    /// (DSG-SUR-197); <c>childlist</c>: the Child List Editor (D-099, not yet present: nothing opens).
+    /// </summary>
+    internal void EditComponent(FormObject component)
+    {
+        if (Dialogs is { } dialogs && Model is not null && component.Info?.ComponentEditor == "menu")
+        {
+            PendingEditor = dialogs.ShowAsync(new Dialogs.MenuDesignerViewModel(this, component, dialogs));
+        }
     }
 
     /// <summary>Shows a designer status message (<c>states-and-messages.md</c> id and arguments).</summary>

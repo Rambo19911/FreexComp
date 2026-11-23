@@ -121,10 +121,7 @@ public sealed partial class ObjectInspectorViewModel
     // ---- copy and paste (DSG-OI-037) -------------------------------------------------------------------------------
 
     /// <summary>The value text of the current row (Events page: the handler name); null without a current row.</summary>
-    public string? CurrentValueText =>
-        IsEmpty ? null
-        : Page == InspectorPage.Events ? CurrentEvent is { } name ? EventRows.FirstOrDefault(r => Names.Equals(r.Name, name))?.Value : null
-        : CurrentRow?.Display;
+    public string? CurrentValueText => IsEmpty ? null : Grid.CurrentValueText;
 
     bool ICommandTarget.CanExecute(string commandId, string? argument) => commandId switch
     {
@@ -212,15 +209,7 @@ public sealed partial class ObjectInspectorViewModel
     // ---- value lists (DSG-OI-032 Alt+Down) -------------------------------------------------------------------------
 
     /// <summary>The drop-down list of the current row: enum members, Booleans, references, compatible handlers; empty for none.</summary>
-    public IReadOnlyList<string> CurrentValueList()
-    {
-        if (EditDisplay() is null)
-        {
-            return [];
-        }
-
-        return Page == InspectorPage.Events ? EventMethods(CurrentEvent!) : ValueList(CurrentPath!);
-    }
+    public IReadOnlyList<string> CurrentValueList() => IsEmpty ? [] : Grid.CurrentValueList();
 
     /// <summary>A value chosen from the list is entered and committed; false when the entry was refused.</summary>
     public bool ChooseValue(string value)

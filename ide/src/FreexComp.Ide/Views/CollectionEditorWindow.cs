@@ -5,7 +5,6 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using FreexComp.Designer.Inspector;
 using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Resources;
@@ -41,13 +40,10 @@ public sealed class CollectionEditorWindow : DialogWindow
     {
         public ListBox List { get; } = new() { SelectionMode = SelectionMode.Multiple };
 
-        public StackPanel Rows { get; } = new();
-
-        public Border Grid { get; } = new() { Focusable = true, BorderThickness = new Thickness(1) };
+        /// <summary>The Object Inspector's grid control (D-110), without categories or description.</summary>
+        public PropertyGridView Grid { get; } = new(Id("Grid"), Id("Grid.Row.")) { IsInDialog = true, BorderThickness = new Thickness(1) };
 
         public bool Syncing { get; set; }
-
-        public bool Rebuilding { get; set; }
     }
 
     private static Grid Body(CollectionEditorViewModel model, Parts p)
@@ -70,9 +66,8 @@ public sealed class CollectionEditorWindow : DialogWindow
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 8, 0, 0), Children = { add, delete, up, down } };
 
         var gridLabel = new TextBlock { Text = Strings.CollectionEditor_Grid, Margin = new Thickness(0, 0, 0, 4) };
-        p.Grid.Child = new ScrollViewer { Content = p.Rows };
+        p.Grid.Grid = model.Grid;
         p.Grid.Bind(Border.BorderBrushProperty, p.Grid.GetResourceObservable("FxcBorderDefaultBrush"));
-        AutomationProperties.SetAutomationId(p.Grid, Id("Grid"));
         AutomationProperties.SetName(p.Grid, Strings.CollectionEditor_Grid);
 
         var body = new Grid
@@ -121,8 +116,6 @@ public sealed class CollectionEditorWindow : DialogWindow
                 FocusSelected(p.List);
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => FocusSelected(p.List), Avalonia.Threading.DispatcherPriority.Loaded);
             }
-
-            BuildRows(model.Grid, p);
         }
 
         p.List.SelectionChanged += (_, _) =>
@@ -162,23 +155,7 @@ public sealed class CollectionEditorWindow : DialogWindow
 
             e.Handled = true;
         }, RoutingStrategies.Tunnel);
-        p.Grid.KeyDown += (_, e) => GridKey(model.Grid, p, e);
-        p.Grid.TextInput += (_, e) =>
-        {
-            if (!model.Grid.IsEditing && e.Text is { Length: > 0 } text && !char.IsControl(text[0]) && text != " " && model.Grid.BeginEdit(text))
-            {
-                e.Handled = true;
-            }
-        };
         model.PropertyChanged += (_, _) => Sync();
-        model.Grid.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName is nameof(PropertyGridViewModel.Rows) or nameof(PropertyGridViewModel.CurrentPath)
-                or nameof(PropertyGridViewModel.IsEditing) or nameof(PropertyGridViewModel.EditError))
-            {
-                BuildRows(model.Grid, p);
-            }
-        };
         Sync();
         return body;
     }
@@ -190,157 +167,6 @@ public sealed class CollectionEditorWindow : DialogWindow
         {
             list.Focus(NavigationMethod.Tab);
         }
-    }
-
-    private static void GridKey(PropertyGridViewModel grid, Parts p, KeyEventArgs e)
-    {
-        if (grid.IsEditing)
-        {
-            return; // the editor handles its keys
-        }
-
-        switch (e.Key, e.KeyModifiers)
-        {
-            case (Key.Up, KeyModifiers.None):
-                grid.MoveCurrent(-1);
-                break;
-            case (Key.Down, KeyModifiers.None):
-                grid.MoveCurrent(1);
-                break;
-            case (Key.F2, KeyModifiers.None):
-                _ = grid.ActivateCurrentAsync();
-                break;
-            case (Key.Space, KeyModifiers.None):
-                grid.ToggleBoolean();
-                break;
-            default:
-                return;
-        }
-
-        e.Handled = true;
-    }
-
-    /// <summary>The grid rows: name (45 %) and value; the current row is highlighted and shows its editor while editing.</summary>
-    private static void BuildRows(PropertyGridViewModel grid, Parts p)
-    {
-        p.Rebuilding = true; // a rebuilt editor losing the focus is not "focus left the editor"
-        p.Rows.Children.Clear();
-        p.Rebuilding = false;
-        foreach (var row in grid.Rows)
-        {
-            var path = row.Path;
-            var current = string.Equals(path, grid.CurrentPath, StringComparison.OrdinalIgnoreCase);
-            var name = new TextBlock
-            {
-                Text = row.Name, Margin = new Thickness(6 + 12 * row.Depth, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            };
-            Control value;
-            if (current && grid.IsEditing)
-            {
-                var editor = new TextBox { Text = grid.EditText, MinHeight = 0, Padding = new Thickness(2, 0), VerticalContentAlignment = VerticalAlignment.Center };
-                AutomationProperties.SetAutomationId(editor, Id("Grid.Row." + path) + ".Editor");
-                AutomationProperties.SetName(editor, row.Name);
-                editor.TextChanged += (_, _) => grid.EditText = editor.Text ?? "";
-                editor.KeyDown += (_, e) =>
-                {
-                    if (e.KeyModifiers != KeyModifiers.None || e.Key is not (Key.Enter or Key.Escape))
-                    {
-                        return;
-                    }
-
-                    e.Handled = true; // UI-DLG-240: never OK / Cancel of the dialog
-                    if (e.Key == Key.Enter)
-                    {
-                        grid.Commit();
-                    }
-                    else
-                    {
-                        grid.Cancel();
-                    }
-
-                    p.Grid.Focus(NavigationMethod.Tab);
-                };
-                editor.LostFocus += (_, _) =>
-                {
-                    if (!p.Rebuilding && grid.IsEditing && !editor.IsKeyboardFocusWithin)
-                    {
-                        grid.Commit(InspectorCommitCause.FocusLost);
-                    }
-                };
-                editor.AttachedToVisualTree += (_, _) =>
-                {
-                    editor.Focus(NavigationMethod.Tab);
-                    editor.CaretIndex = editor.Text?.Length ?? 0;
-                };
-                value = editor;
-            }
-            else
-            {
-                var text = new TextBlock
-                {
-                    Text = row.Display, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
-                    FontWeight = row.IsBold ? FontWeight.Bold : FontWeight.Normal,
-                };
-                if (row.IsReadOnly)
-                {
-                    text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable("FxcTextSecondaryBrush"));
-                }
-
-                value = text;
-            }
-
-            var cells = new Grid { ColumnDefinitions = new ColumnDefinitions("45*,55*"), Height = 22 };
-            Place(cells, name, 0, 0);
-            Place(cells, value, 0, 1);
-            var border = new Border { Child = cells, Background = Brushes.Transparent };
-            if (current)
-            {
-                border.Bind(Border.BackgroundProperty, border.GetResourceObservable("FxcBgSelectedBrush"));
-            }
-
-            AutomationProperties.SetAutomationId(border, Id("Grid.Row." + path));
-            AutomationProperties.SetName(border, row.Name);
-            border.PointerPressed += (_, e) =>
-            {
-                if (!e.GetCurrentPoint(border).Properties.IsLeftButtonPressed)
-                {
-                    return;
-                }
-
-                e.Handled = true;
-                var wasCurrent = string.Equals(path, grid.CurrentPath, StringComparison.OrdinalIgnoreCase);
-                grid.SetCurrent(path);
-                if (e.ClickCount == 2)
-                {
-                    if (!(PropertyGridViewModel.IsStringsRow(row) ? Activate(grid) : grid.CycleValue()))
-                    {
-                        grid.BeginEdit();
-                    }
-                }
-                else if (wasCurrent && !grid.IsEditing)
-                {
-                    grid.BeginEdit();
-                }
-
-                p.Grid.Focus(NavigationMethod.Pointer);
-            };
-            p.Rows.Children.Add(border);
-
-            if (current && grid.EditError is { } error)
-            {
-                var message = new TextBlock { Text = error, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(6, 2, 6, 4) };
-                message.Bind(TextBlock.ForegroundProperty, message.GetResourceObservable("FxcStatusErrorBrush"));
-                AutomationProperties.SetAutomationId(message, Id("Grid.Row." + path) + ".Error");
-                p.Rows.Children.Add(message);
-            }
-        }
-    }
-
-    private static bool Activate(PropertyGridViewModel grid)
-    {
-        _ = grid.EditStringsAsync();
-        return true;
     }
 
     private static Button Button(string field, string text, Action action)

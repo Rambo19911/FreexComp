@@ -1,0 +1,21 @@
+object MainForm: TMainForm
+  Left = 200
+  Top = 120
+  Caption = 'Hello Form'
+  ClientWidth = 400
+  ClientHeight = 300
+  Menu = MainMenu1
+  PixelsPerInch = 96
+  object MainMenu1: TMainMenu
+    DesignLeft = 320
+    DesignTop = 120
+    object FileMenu: TMenuItem
+      Caption = '&File'
+      object FileExit: TMenuItem
+        Caption = 'E&xit'
+        ShortCut = 16465
+        OnClick = FileExitClick
+      end
+    end
+  end
+end

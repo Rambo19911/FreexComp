@@ -61,6 +61,23 @@ public static class Commands
 
     public const string CreateDefaultHandler = "designer.createDefaultHandler";
 
+    /// <summary>DSG-SUR-192 (arg <c>Class[;Prop=Value…]</c>).</summary>
+    public const string NewChild = "designer.newChild";
+
+    public const string DeletePage = "designer.deletePage";
+
+    public const string NextPage = "designer.nextPage";
+
+    public const string PreviousPage = "designer.previousPage";
+
+    /// <summary>DSG-SUR-195 (arg = the collection property).</summary>
+    public const string EditCollection = "designer.editCollection";
+
+    public const string EditComponent = "designer.editComponent";
+
+    /// <summary>The commands a metadata verb may name (component-metadata.md §7); other verbs are not shown.</summary>
+    public static IReadOnlyList<string> Verbs { get; } = [NewChild, DeletePage, NextPage, PreviousPage, EditCollection, EditComponent];
+
     /// <summary>The commands of design-surface.md §11.1.</summary>
     public static IReadOnlyList<string> Arrange { get; } =
     [

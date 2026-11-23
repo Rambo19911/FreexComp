@@ -83,7 +83,16 @@ public static class MessageDefinitions
         new("Msg.ProjectOptions.ConfigDeleteConfirm", Q, ["Delete", "Cancel"]),
     ];
 
-    private static readonly Dictionary<string, MessageDefinition> ById = All.ToDictionary(d => d.Id, StringComparer.Ordinal);
+    /// <summary>
+    /// The message boxes specified outside the Dialog tables (dialogs.md §27.1, kind "Message box"): shown like the others,
+    /// not part of <see cref="All"/> (which mirrors the Dialog rows of the spec).
+    /// </summary>
+    public static readonly IReadOnlyList<MessageDefinition> MessageBoxes =
+    [
+        new("Msg.MenuDesigner.DeleteWithSubItems", W, ["Cancel", "Delete"]), // UI-DLG-251: destructive, Cancel is the default
+    ];
+
+    private static readonly Dictionary<string, MessageDefinition> ById = All.Concat(MessageBoxes).ToDictionary(d => d.Id, StringComparer.Ordinal);
 
     public static MessageDefinition? TryGet(string id) => ById.GetValueOrDefault(id);
 

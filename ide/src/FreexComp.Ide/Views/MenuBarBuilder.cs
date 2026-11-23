@@ -58,6 +58,15 @@ public static class MenuBarBuilder
             return item;
         }
 
+        if (model is { VerbId: { } verbId, Command: { } verbCommand })
+        {
+            // UI-DSG-082: the metadata caption, no shortcut text, no icon.
+            AutomationProperties.SetAutomationId(item, (context ? "Context.Verb." : "Menu.Verb.") + verbId);
+            item.Command = verbCommand;
+            item.CommandParameter = model.Argument;
+            return item;
+        }
+
         if (model.Command is { } command)
         {
             AutomationProperties.SetAutomationId(item, context ? AutomationIds.Context(command.Id, model.Argument) : AutomationIds.Menu(command.Id, model.Argument));

@@ -11,6 +11,10 @@
       "abstract": true,
       "kind": "nonvisual",
       "renderer": "nonvisual",
+      "designerVerbs": [
+        { "id": "menuDesigner", "caption": "&Menu Designer…", "command": "designer.editComponent" }
+      ],
+      "componentEditor": "menu",
       "properties": [],
       "events": []
     },
@@ -33,6 +37,25 @@
       ],
       "events": [
         { "name": "OnPopup", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TMenuItem",
+      "ancestor": "TComponent",
+      "kind": "nonvisual",
+      "namePrefix": "MenuItem",
+      "acceptsChildren": false,
+      "parentClasses": ["TMenu", "TMenuItem"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance" },
+        { "name": "Checked", "type": "Boolean", "default": false, "category": "Behavior" },
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "ShortCut", "type": "TShortCut", "default": 0, "category": "Action", "editor": "shortcut" },
+        { "name": "Visible", "type": "Boolean", "default": true, "category": "Appearance" }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
       ]
     }
   ],

@@ -29,10 +29,13 @@ public sealed class DesignerShell
     private readonly IDocumentService _documents;
     private readonly ISettingsService _settings;
     private readonly LayoutViewModel _layout;
+    private readonly Services.IDialogService? _dialogs;
     private FormDesignerViewModel? _followed;
     private bool _isDesignActive;
 
-    public DesignerShell(ICommandService commands, IDocumentService documents, ISettingsService settings, LayoutViewModel layout, int implementedPhase)
+    /// <param name="dialogs">The modal dialogs of the component editors the designer verbs open (DSG-SUR-195, 196).</param>
+    public DesignerShell(ICommandService commands, IDocumentService documents, ISettingsService settings, LayoutViewModel layout, int implementedPhase,
+        Services.IDialogService? dialogs = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(documents);
@@ -42,8 +45,9 @@ public sealed class DesignerShell
         _documents = documents;
         _settings = settings;
         _layout = layout;
+        _dialogs = dialogs;
 
-        commands.RegisterHandler("window.layout.design", new Handler(() => true, () =>
+        commands.RegisterHandler("window.layout.design", new Handler(_ => true, _ =>
         {
             layout.SwitchProfile(LayoutProfiles.Design);
             return Task.CompletedTask;
@@ -52,14 +56,14 @@ public sealed class DesignerShell
         {
             var id = definition.Id;
             commands.RegisterHandler(id, Toggles.TryGetValue(id, out var key)
-                ? new Handler(() => ActiveDesigner is not null, () =>
+                ? new Handler(_ => ActiveDesigner is not null, _ =>
                 {
                     settings.Set(key, !settings.Get(key));
                     return Task.CompletedTask;
                 }, () => settings.Get(key))
                 : new Handler(
-                    () => ActiveDesigner is { } d && new DesignSurfaceCommands(d).CanExecute(id, null),
-                    () => ActiveDesigner is { } d ? new DesignSurfaceCommands(d).ExecuteAsync(id, null) : Task.CompletedTask,
+                    argument => ActiveDesigner is { } d && new DesignSurfaceCommands(d).CanExecute(id, argument),
+                    argument => ActiveDesigner is { } d ? new DesignSurfaceCommands(d).ExecuteAsync(id, argument) : Task.CompletedTask,
                     () => id == FreexComp.Designer.Surface.Commands.TabOrder && ActiveDesigner?.Surface?.State == InteractionState.TabOrder));
         }
 
@@ -109,7 +113,8 @@ public sealed class DesignerShell
         }
 
         form.Designer.Settings = new SettingsDesignerSettings(_settings);
-        form.Designer.ContextMenu = () => DesignerContextMenu.Build(_commands);
+        form.Designer.Dialogs = _dialogs;
+        form.Designer.ContextMenu = () => DesignerContextMenu.Build(_commands, form.Designer.Surface?.Verbs);
         form.Designer.ShowProblems = problems => ShowProblems?.Invoke(form, problems);
         form.ActiveViewChanged += (_, _) =>
         {
@@ -166,11 +171,11 @@ public sealed class DesignerShell
 
     private void OnDesignerChanged(object? sender, EventArgs e) => _commands.InvalidateCanExecute();
 
-    private sealed class Handler(Func<bool> canExecute, Func<Task> execute, Func<bool> isChecked) : ICommandHandler
+    private sealed class Handler(Func<string?, bool> canExecute, Func<string?, Task> execute, Func<bool> isChecked) : ICommandHandler
     {
-        public bool CanExecute(string? argument) => canExecute();
+        public bool CanExecute(string? argument) => canExecute(argument);
 
-        public Task ExecuteAsync(string? argument) => execute();
+        public Task ExecuteAsync(string? argument) => execute(argument);
 
         public bool IsChecked(string? argument) => isChecked();
     }

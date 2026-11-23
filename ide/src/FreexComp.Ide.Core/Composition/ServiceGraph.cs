@@ -236,7 +236,8 @@ public static class ServiceGraph
         {
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment);
             metadata.RegisterCommands(commands);
-            designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase); // D-080, I-130
+            designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase,
+                platform.Dialogs); // D-080, I-130; D-097: the verbs' editors
             designerShell.ShowProblems = (form, problems) =>
             {
                 messages.ShowFormDiagnostics(problems, problem => // D-108: the form's problems only

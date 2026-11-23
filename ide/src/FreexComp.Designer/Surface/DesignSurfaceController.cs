@@ -249,6 +249,7 @@ public sealed partial class DesignSurfaceController
         Commands.BringToFront => CanZOrder(front: true),
         Commands.SendToBack => CanZOrder(front: false),
         _ when Commands.Arrange.Contains(commandId) => CanArrange(commandId),
+        _ when Commands.Verbs.Contains(commandId) => CanExecuteVerb(commandId, null),
         _ => false,
     };
 
@@ -257,7 +258,7 @@ public sealed partial class DesignSurfaceController
 
     public void Execute(string commandId, string? argument = null)
     {
-        if (!CanExecute(commandId))
+        if (!CanExecute(commandId, argument))
         {
             return;
         }
@@ -306,6 +307,9 @@ public sealed partial class DesignSurfaceController
                 break;
             case var _ when Commands.Arrange.Contains(commandId):
                 Arrange(commandId);
+                break;
+            case var _ when Commands.Verbs.Contains(commandId):
+                ExecuteVerb(commandId, argument); // DSG-SUR-192 … 196
                 break;
             case Commands.Undo when Undo.Undo() is { } unit: // DSG-SUR-170
                 Editor.Apply(unit.Undo);

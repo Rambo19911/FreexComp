@@ -102,7 +102,7 @@ public sealed class FormValidatorTests
         Assert.Equal(["F0105", "F0101", "F0102", "F0103"], mixed.Diagnostics.Select(d => d.Code));
     }
 
-    /// <summary>The test metadata plus a page control that takes only tab sheets and a tab sheet that needs one.</summary>
+    /// <summary>The test metadata (its page control takes only tab sheets, its tab sheet needs one, D-097) plus a header with sections.</summary>
     internal static ComponentCatalog RestrictedCatalog()
     {
         var files = new CatalogLoaderTests.MemoryFiles
@@ -122,11 +122,7 @@ public sealed class FormValidatorTests
                     { "class": "THeader", "ancestor": "TWinControl", "kind": "wincontrol", "defaultSize": { "width": 200, "height": 20 },
                       "properties": [
                         { "name": "Sections", "type": "THeaderSections", "kind": "collection", "itemClass": "THeaderSection", "category": "Data" }
-                      ] },
-                    { "class": "TPageControl", "ancestor": "TWinControl", "kind": "container", "acceptsChildren": true,
-                      "defaultSize": { "width": 289, "height": 193 }, "childClasses": ["TTabSheet"] },
-                    { "class": "TTabSheet", "ancestor": "TWinControl", "kind": "container", "acceptsChildren": true,
-                      "defaultSize": { "width": 281, "height": 165 }, "parentClasses": ["TPageControl"] }
+                      ] }
                   ]
                 }
                 """,

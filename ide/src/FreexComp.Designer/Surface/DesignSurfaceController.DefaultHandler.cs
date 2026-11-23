@@ -110,7 +110,19 @@ public sealed partial class DesignSurfaceController
             return true; // DSG-SUR-004
         }
 
-        if (Selection.Primary.Info?.ComponentEditor is not null || !CanExecute(Commands.CreateDefaultHandler))
+        if (Selection.Primary.Info?.ComponentEditor is not null)
+        {
+            // DSG-SUR-196: a class with a component editor opens it instead of the default handler.
+            if (Selection.Items.Count != 1 || !CanExecute(Commands.EditComponent, null))
+            {
+                return false;
+            }
+
+            Execute(Commands.EditComponent);
+            return true;
+        }
+
+        if (!CanExecute(Commands.CreateDefaultHandler))
         {
             return false;
         }

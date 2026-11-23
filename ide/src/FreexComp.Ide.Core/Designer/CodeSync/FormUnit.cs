@@ -81,8 +81,8 @@ public sealed class FormUnit(ITextBuffer buffer, string formTypeName, string pat
             return [];
         }
 
-        var records = ordered.Select(c => new TextEditRecord(c.Span.Start, Buffer.GetText(c.Span.Start, c.Span.Length), c.NewText)).ToList();
-        Buffer.ApplyEdits([.. ordered.Select(c => new TextEdit(c.Span.Start, c.Span.Length, c.NewText))]);
+        var records = ordered.Select((_, i) => Record(i, ordered)).ToList();
+        Buffer.ApplyEdits([.. records.Select(r => new TextEdit(r.Offset, r.RemovedText.Length, r.InsertedText))]);
 
         // DSG-CS-100: anchors around each inserted range (one anchor for a pure deletion). The edits went in by descending
         // offset, so each range moved by the length changes of the edits applied after it (all below it).
@@ -100,6 +100,31 @@ public sealed class FormUnit(ITextBuffer buffer, string formTypeName, string pat
 
         return records;
     }
+
+    /// <summary>
+    /// The record of one change. Lines are added as "line ending + text" after the previous line, but whole lines are
+    /// removed as "text + line ending"; a pure deletion of "text + line ending" that follows the same line ending is
+    /// recorded as the identical change "line ending + text" one line ending earlier, so removing a line that was added
+    /// (and putting it back) lines up with the added range and its neighbours' anchors (DSG-CS-100, 101).
+    /// </summary>
+    private TextEditRecord Record(int index, List<TextChange> all)
+    {
+        var change = all[index];
+        var start = change.Span.Start;
+        var removed = Buffer.GetText(start, change.Span.Length);
+        if (change.NewText.Length == 0 && LineEndingAtEnd(removed) is { } newline && start >= newline.Length
+            && Buffer.GetText(start - newline.Length, newline.Length) == newline
+            && !all.Where((_, i) => i != index).Any(c => c.Span.End >= start - newline.Length && c.Span.Start <= start))
+        {
+            start -= newline.Length;
+            return new TextEditRecord(start, Buffer.GetText(start, removed.Length), "");
+        }
+
+        return new TextEditRecord(start, removed, change.NewText);
+    }
+
+    private static string? LineEndingAtEnd(string text) =>
+        text.EndsWith("\r\n", StringComparison.Ordinal) ? "\r\n" : text.EndsWith('\n') ? "\n" : null;
 
     /// <summary>
     /// DSG-CS-101: reverts, last first and as one undo group, each record applied through this unit whose tracked range
@@ -122,7 +147,14 @@ public sealed class FormUnit(ITextBuffer buffer, string formTypeName, string pat
 
                 var start = range.Start.Offset;
                 var end = range.End?.Offset ?? start;
-                if (end < start || Buffer.GetText(start, end - start) != record.InsertedText)
+                if (end < start)
+                {
+                    // The range had collapsed to a point and text was put back exactly there (a removed line restored):
+                    // its anchors now sit on both sides of that text, swapped; the text check below decides.
+                    (start, end) = (end, start);
+                }
+
+                if (Buffer.GetText(start, end - start) != record.InsertedText)
                 {
                     all = false;
                     continue;

@@ -308,21 +308,33 @@ public sealed partial class DesignSurfaceController
     /// <c>initial</c> values (<c>$(Name)</c> replaced; defaults are not stored), then the last TabOrder when focusable —
     /// as one "Add {ClassName}" unit with the layout commit. The new component becomes the only selection.
     /// </summary>
-    private bool Create(ComponentInfo info, FormObject parent, (int X, int Y) position, (int Width, int Height)? size)
+    private bool Create(ComponentInfo info, FormObject parent, (int X, int Y) position, (int Width, int Height)? size) =>
+        CreateCore(info, parent, position, size, null, [], select: true, null) is not null;
+
+    /// <summary>
+    /// <see cref="Create"/> at child <paramref name="index"/> (null: last) with <paramref name="extra"/> properties after the
+    /// initial values (DSG-SUR-192), optionally keeping the selection, optionally with a given <paramref name="name"/>.
+    /// Geometry with <c>"stored": false</c> is not written; a non-visual child of a component (a menu item, an action) is no
+    /// tray item and gets no design position. A tab sheet added to a page control becomes its active page (DSG-SUR-192).
+    /// </summary>
+    private FormObject? CreateCore(ComponentInfo info, FormObject parent, (int X, int Y) position, (int Width, int Height)? size,
+        int? index, IReadOnlyList<(string Path, FormValue Value)> extra, bool select, string? name)
     {
-        var name = NewComponentName(info.NamePrefix);
+        name ??= NewComponentName(info.NamePrefix);
         FormPropertyData Int(string path, int value) => new(path, new IntegerValue(value, false));
         var (width, height) = size ?? (info.DefaultSize.Width, info.DefaultSize.Height);
         FormPropertyData[] geometry = info.Kind == ComponentKind.NonVisual
-            ? [Int("DesignLeft", position.X), Int("DesignTop", position.Y)]
+            ? parent.Parent is null ? [Int("DesignLeft", position.X), Int("DesignTop", position.Y)] : []
             : [Int("Left", position.X), Int("Top", position.Y), Int("Width", width), Int("Height", height)];
+        geometry = [.. geometry.Where(g => info.FindProperty(g.Path) is not { Stored: false })];
         var data = new FormObjectData(FormObjectKind.Object, name, info.ClassName, [.. geometry], []);
         if (!AddFieldsFor([data], out var edits, out var ops))
         {
-            return false; // DSG-TP-053: code sync refused, the object is not created
+            return null; // DSG-TP-053: code sync refused, the object is not created
         }
 
-        var changes = new List<FormChange> { new AddObject(parent.Name, parent.Children.Count, data) };
+        var at = Math.Clamp(index ?? parent.Children.Count, 0, parent.Children.Count);
+        var changes = new List<FormChange> { new AddObject(parent.Name, at, data) };
         foreach (var property in info.Properties)
         {
             if (property.Initial is { } initial && InitialValue(property, initial.Replace("$(Name)", name, StringComparison.Ordinal)) is { } value)
@@ -331,19 +343,30 @@ public sealed partial class DesignSurfaceController
             }
         }
 
+        changes.AddRange(extra.Select(p => (FormChange)new SetProperty(name, p.Path, p.Value)));
         var before = Selection.ToSnapshot();
         var undo = new List<FormChange>(ApplyEdit(changes));
         var created = Document.FindByName(name)!;
+        if (parent.Info is { } parentInfo && IsPageControl(parentInfo) && ActivePageChange(parent, created) is { } activate)
+        {
+            changes.Add(activate); // DSG-SUR-192, DSG-RND-017: the new sheet is the active page
+            undo.InsertRange(0, ApplyEdit([activate]));
+        }
+
         var renumber = TabOrderRules.IsFocusable(created) ? TabOrderRules.Renumber(parent, appended: [created]) : [];
         undo.InsertRange(0, ApplyEdit(renumber));
         // DSG-SUR-088: a click-placed auto-size control gets its measured size; a dragged size is the user's and stays.
         var (sizeRedo, sizeUndo) = size is null ? ApplyAutoSize([created]) : ([], []);
         undo.InsertRange(0, sizeUndo);
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-        Selection.Select(created);
+        if (select)
+        {
+            Selection.Select(created);
+        }
+
         PushUnit(new DesignerUndoUnit(UndoTitles.Add, [.. changes, .. renumber, .. sizeRedo, .. commitRedo], [.. commitUndo, .. undo], edits,
             before, Selection.ToSnapshot()) { TitleArgument = info.ClassName, CodeOps = ops });
-        return true;
+        return created;
     }
 
     /// <summary>DSG-TP-050: <c>&lt;prefix&gt;&lt;n&gt;</c> with the smallest n ≥ 1 that no component uses and the form class does not declare.</summary>

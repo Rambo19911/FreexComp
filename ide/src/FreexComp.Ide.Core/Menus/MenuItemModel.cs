@@ -106,6 +106,12 @@ public sealed class MenuItemModel : ObservableObject
     /// </summary>
     public string? ActionId { get; private init; }
 
+    /// <summary>
+    /// A designer verb item (UI-DSG-082): its element id is <c>Context.Verb.&lt;VerbId&gt;</c>, and it shows the metadata
+    /// caption with no shortcut text and no icon. Null for other items.
+    /// </summary>
+    public string? VerbId { get; private init; }
+
     /// <summary>The action of an action item (always enabled); null for command items.</summary>
     public Action? Run { get; private init; }
 
@@ -119,6 +125,10 @@ public sealed class MenuItemModel : ObservableObject
 
     internal static MenuItemModel ForCommand(string label, IdeCommand command, string? argument, MenuToggleKind toggleKind, string? toolTip = null) =>
         new(null, label, command, argument, toggleKind, [], false, false, toolTip);
+
+    /// <summary>A designer verb (UI-DSG-082): <paramref name="command"/> with the verb's argument under its own element id.</summary>
+    internal static MenuItemModel ForVerb(string verbId, string caption, IdeCommand command, string? argument) =>
+        new(null, caption, command, argument, MenuToggleKind.None, [], false, false) { VerbId = verbId };
 
     /// <summary>An item that runs <paramref name="run"/> (no command; IDE-WEL-008 Pin/Unpin, Remove from List).</summary>
     internal static MenuItemModel ForAction(string actionId, string label, Action run, bool? isChecked = null) =>

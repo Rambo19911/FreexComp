@@ -13,7 +13,7 @@ public sealed class DesignSurfaceCommands(FormDesignerViewModel designer) : ICom
 {
     private static readonly TimeSpan StatusDuration = TimeSpan.FromSeconds(5); // UI-MSG-003 "Status"
 
-    public bool CanExecute(string commandId, string? argument) => designer.Surface is { } surface && surface.CanExecute(commandId);
+    public bool CanExecute(string commandId, string? argument) => designer.Surface is { } surface && surface.CanExecute(commandId, argument);
 
     public async Task<bool> ExecuteAsync(string commandId, string? argument)
     {
@@ -23,12 +23,17 @@ public sealed class DesignSurfaceCommands(FormDesignerViewModel designer) : ICom
             await clipboard.RefreshAsync();
         }
 
-        if (designer.Surface is not { } surface || !surface.CanExecute(commandId))
+        if (designer.Surface is not { } surface || !surface.CanExecute(commandId, argument))
         {
             return false;
         }
 
         surface.Execute(commandId, argument);
+        if (designer.TakePendingEditor() is { } editor)
+        {
+            await editor; // DSG-SUR-195, 196: the editor a verb opened (its result is one undo unit)
+        }
+
         if (commandId is FreexComp.Designer.Surface.Commands.Copy or FreexComp.Designer.Surface.Commands.Cut
             && clipboard is not null && !await clipboard.FlushAsync())
         {

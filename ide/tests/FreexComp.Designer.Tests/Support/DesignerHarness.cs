@@ -285,6 +285,16 @@ internal sealed class FakeDesignerHost : IDesignerHost
     /// <summary>The fake code sync (testing.md §3).</summary>
     public FakeCodeSync CodeSync { get; } = new();
 
+    /// <summary>The collection editors the surface asked for (DSG-SUR-195): component and property.</summary>
+    public List<(string Component, string Property)> CollectionEdits { get; } = [];
+
+    /// <summary>The component editors the surface asked for (DSG-SUR-196).</summary>
+    public List<string> ComponentEdits { get; } = [];
+
+    public void EditCollection(FormObject component, string propertyName) => CollectionEdits.Add((component.Name, propertyName));
+
+    public void EditComponent(FormObject component) => ComponentEdits.Add(component.Name);
+
     ICodeSync IDesignerHost.CodeSync => CodeSync;
 }
 
@@ -355,6 +365,15 @@ internal sealed class FakeCodeSync : ICodeSync
     {
         AddedFields.Add(fields);
         return AddFieldsEdits(fields);
+    }
+
+    /// <summary>The name lists <see cref="RemoveFields"/> was called with (DSG-SUR-131).</summary>
+    public List<IReadOnlyList<string>> RemovedFields { get; } = [];
+
+    public IReadOnlyList<TextEditRecord> RemoveFields(IReadOnlyList<string> names)
+    {
+        RemovedFields.Add(names);
+        return [];
     }
 
     /// <summary>The record lists <see cref="RevertEdits"/> was called with.</summary>

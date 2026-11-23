@@ -121,6 +121,29 @@ public sealed class CodeSyncUndoTests
         Assert.DoesNotContain("NameEditChange", buffer.Text, StringComparison.Ordinal);
     }
 
+    [Fact, Trait("Req", "DSG-CS-100"), Trait("Req", "DSG-CS-101")]
+    public void RemovedLastFieldRestoredBeforeLaterMethodStillReverts()
+    {
+        // A field added as the last one, a handler declared right after it, the field's line removed, then everything
+        // undone last first: the removal, the handler and the field each revert (D-098 menu item delete and undo).
+        var original = TestUnits.Read("MainForm.pas")
+            .Replace("    procedure GreetButtonClick(Sender: TObject);\r\n", "", StringComparison.Ordinal)
+            .Replace("procedure TMainForm.GreetButtonClick(Sender: TObject);\r\nbegin\r\n\r\nend;\r\n\r\n", "", StringComparison.Ordinal);
+        Assert.DoesNotContain("GreetButtonClick", original, StringComparison.Ordinal);
+        var buffer = new StringTextBuffer(original);
+        var service = CodeSyncTests.Service(buffer);
+        var field = service.AddFields([("Item1", "TButton", "StdCtrls")]).Edits;
+        var handler = service.CreateHandler("Item1Click", "TNotifyEvent");
+        Assert.Contains("    Item1: TButton;\r\n    procedure Item1Click(Sender: TObject);", buffer.Text, StringComparison.Ordinal);
+        var removal = service.RemoveFields(["Item1"]);
+        Assert.DoesNotContain("Item1: TButton", buffer.Text, StringComparison.Ordinal);
+
+        Assert.True(service.RevertEdits(removal));
+        Assert.True(service.RevertEdits(handler));
+        Assert.True(service.RevertEdits(field));
+        Assert.Equal(original, buffer.Text);
+    }
+
     [Fact, Trait("Req", "DSG-CS-101")]
     public void DesignerUndoSkipsCodeWhenUserEdited()
     {

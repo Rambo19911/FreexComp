@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using FreexComp.Designer.Model;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Models;
 using FreexComp.Ide.Core.ViewModels;
@@ -28,29 +29,25 @@ public sealed class CollectionEditorViewTests
     private static CollectionValue? Panels(FormDocumentViewModel d) =>
         d.Designer.Model!.FindByName("StatusBar1")!.FindProperty("Panels")?.Value as CollectionValue;
 
-    [AvaloniaFact(Timeout = 30000)]
-    [Trait("Req", "UI-DLG-240")]
-    [Trait("Req", "UI-DLG-241")]
-    [Trait("Req", "DSG-OI-110")]
-    public async Task KeyboardAndAutomationIds()
+    private static Task<HeadlessHarness> StartAsync() => HeadlessHarness.StartAsync(o =>
     {
-        await using var h = await HeadlessHarness.StartAsync(o =>
-        {
-            DesignerViewTests.Files(o);
-            o.ImplementedPhase = 5;
-            o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
-            o.InitialFiles["MainForm.pas"] = DesignerViewTests.Unit
-                .Replace("GreetButton: TButton;", "GreetButton: TButton;\n    StatusBar1: TStatusBar;", StringComparison.Ordinal)
-                .Replace("StdCtrls;", "StdCtrls, ComCtrls;", StringComparison.Ordinal)
-                .ReplaceLineEndings("\r\n");
-            var form = DesignerViewTests.FormText.ReplaceLineEndings("\n");
-            var at = form.TrimEnd().LastIndexOf("end", StringComparison.Ordinal);
-            o.InitialFiles["MainForm.form"] = (form[..at]
-                + "  object StatusBar1: TStatusBar\n    Left = 0\n    Top = 281\n    Width = 400\n    Height = 19\n    TabOrder = 2\n"
-                + "    Panels = <\n      item\n        Text = 'Ready'\n      end\n    >\n  end\n" + form[at..]).ReplaceLineEndings("\r\n");
-        });
-        var d = await DesignerViewTests.OpenFormAsync(h);
-        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        DesignerViewTests.Files(o);
+        o.ImplementedPhase = 5;
+        o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
+        o.InitialFiles["MainForm.pas"] = DesignerViewTests.Unit
+            .Replace("GreetButton: TButton;", "GreetButton: TButton;\n    StatusBar1: TStatusBar;", StringComparison.Ordinal)
+            .Replace("StdCtrls;", "StdCtrls, ComCtrls;", StringComparison.Ordinal)
+            .ReplaceLineEndings("\r\n");
+        var form = DesignerViewTests.FormText.ReplaceLineEndings("\n");
+        var at = form.TrimEnd().LastIndexOf("end", StringComparison.Ordinal);
+        o.InitialFiles["MainForm.form"] = (form[..at]
+            + "  object StatusBar1: TStatusBar\n    Left = 0\n    Top = 281\n    Width = 400\n    Height = 19\n    TabOrder = 2\n"
+            + "    Panels = <\n      item\n        Text = 'Ready'\n      end\n    >\n  end\n" + form[at..]).ReplaceLineEndings("\r\n");
+    });
+
+    /// <summary>Selects StatusBar1, makes Panels the current Object Inspector row and clicks its … button.</summary>
+    private static void OpenPanels(HeadlessHarness h, FormDocumentViewModel d)
+    {
         d.Designer.Surface!.Selection.Select(d.Designer.Model!.FindByName("StatusBar1")!);
         Dispatcher.UIThread.RunJobs();
         h.Press("F4");
@@ -63,9 +60,22 @@ public sealed class CollectionEditorViewTests
         Assert.Equal("Panels", CurrentRow(h));
         Assert.Equal("(1 item)", h.Find<TextBlock>(Row("Panels") + ".Value").Text);
 
-        // The … button opens the dialog: title, size, initial focus on the list with the first item selected.
         Assert.True(h.Find<Button>(Row("Panels") + ".Button").IsEnabled);
         h.Click(Row("Panels") + ".Button");
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-240")]
+    [Trait("Req", "UI-DLG-241")]
+    [Trait("Req", "DSG-OI-110")]
+    public async Task KeyboardAndAutomationIds()
+    {
+        await using var h = await StartAsync();
+        var d = await DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        OpenPanels(h, d);
+
+        // The … button opens the dialog: title, size, initial focus on the list with the first item selected.
         var dlg = await h.WaitForDialogAsync("CollectionEditor");
         Assert.Equal("Edit StatusBar1.Panels", dlg.Window.Title);
         Assert.Equal((640, 400), (dlg.Window.Width, dlg.Window.Height));
@@ -117,6 +127,49 @@ public sealed class CollectionEditorViewTests
         Assert.Equal(2, Panels(d)!.Items.Length);
         Assert.Equal(1, d.Designer.Undo.UndoCount);
         Assert.Equal("(2 items)", h.Find<TextBlock>(Row("Panels") + ".Value").Text);
+    }
+
+    /// <summary>
+    /// D-110: the collection editor embeds the Object Inspector's grid control itself (one implementation): same control
+    /// type, its own AutomationIds, and the inspector's grid behaviour such as the value list (Alt+Down) and the divider.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-110")]
+    [Trait("Req", "UI-DLG-240")]
+    public async Task EmbeddedGridIsInspectorControl()
+    {
+        await using var h = await StartAsync();
+        var d = await DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        var inspectorGrid = h.Find<Control>("Tool.ObjectInspector.Grid");
+        Assert.IsType<PropertyGridView>(inspectorGrid);
+        OpenPanels(h, d);
+        var dlg = await h.WaitForDialogAsync("CollectionEditor");
+        var grid = dlg.Find<Control>("Grid");
+        Assert.IsType<PropertyGridView>(grid);
+        Assert.Same(((CollectionEditorViewModel)dlg.Window.Model).Grid, ((PropertyGridView)grid).Grid);
+        Assert.NotNull(dlg.TryFind<Control>("Grid.Row.Alignment.Divider")); // the inspector's row layout (UI-DSG-103)
+        Assert.Null(dlg.TryFind<Control>("Grid.Category.Misc")); // no category rows (dialogs.md §25)
+
+        // The inspector's value list on an enum row: Alt+Down opens it under the row, Enter chooses and commits.
+        dlg.Press("F4");
+        Assert.Equal("Dialog.CollectionEditor.Grid", dlg.FocusedAutomationId);
+        Assert.Equal("taLeftJustify", dlg.Find<TextBlock>("Grid.Row.Alignment.Value").Text);
+        dlg.Press("Alt+Down");
+        Dispatcher.UIThread.RunJobs();
+        var list = dlg.Find<ListBox>("Grid.Row.Alignment.List");
+        Assert.Contains("taCenter", list.ItemsSource!.Cast<string>());
+        list.SelectedItem = "taCenter";
+        dlg.Press("Enter");
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(dlg.Window.IsClosed());
+        Assert.Equal("taCenter", dlg.Find<TextBlock>("Grid.Row.Alignment.Value").Text);
+
+        // Escape outside an editor is the dialog's Cancel: nothing applied.
+        dlg.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(dlg.Window.IsClosed());
+        Assert.Equal(0, d.Designer.Undo.UndoCount);
     }
 }
 

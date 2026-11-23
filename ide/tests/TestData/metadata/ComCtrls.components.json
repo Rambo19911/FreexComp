@@ -2,6 +2,7 @@
   "formatVersion": 1,
   "unit": "ComCtrls",
   "types": {
+    "TToolButtonStyle": { "kind": "enum", "values": ["tbsButton", "tbsCheck", "tbsDropDown", "tbsSeparator", "tbsDivider"] },
     "TStatusPanelBevel": { "kind": "enum", "values": ["pbNone", "pbLowered", "pbRaised"] },
     "TStatusPanel": { "kind": "object", "properties": [
       { "name": "Alignment", "type": "TAlignment", "default": "taLeftJustify" },
@@ -12,6 +13,100 @@
   },
   "components": [
     {
+      "class": "TTabSheet",
+      "ancestor": "TWinControl",
+      "kind": "container",
+      "defaultSize": { "width": 0, "height": 0 },
+      "namePrefix": "TabSheet",
+      "acceptsChildren": true,
+      "parentClasses": ["TPageControl"],
+      "renderer": "tabsheet",
+      "properties": [
+        { "name": "Left", "type": "Integer", "hidden": true, "stored": false },
+        { "name": "Top", "type": "Integer", "hidden": true, "stored": false },
+        { "name": "Width", "type": "Integer", "hidden": true, "stored": false },
+        { "name": "Height", "type": "Integer", "hidden": true, "stored": false },
+        { "name": "Align", "type": "TAlign", "hidden": true, "stored": false },
+        { "name": "Anchors", "type": "TAnchors", "hidden": true, "stored": false },
+        { "name": "Visible", "type": "Boolean", "hidden": true, "stored": false },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance", "initial": "$(Name)" },
+        { "name": "TabVisible", "type": "Boolean", "default": true, "category": "Behavior", "affectsLayout": true }
+      ],
+      "events": [
+        { "name": "OnShow", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TPageControl",
+      "ancestor": "TWinControl",
+      "kind": "container",
+      "defaultSize": { "width": 289, "height": 193 },
+      "namePrefix": "PageControl",
+      "acceptsChildren": true,
+      "childClasses": ["TTabSheet"],
+      "renderer": "pagecontrol",
+      "designerVerbs": [
+        { "id": "newPage", "caption": "New &Page", "command": "designer.newChild", "arg": "TTabSheet" },
+        { "id": "deletePage", "caption": "&Delete Page", "command": "designer.deletePage" },
+        { "id": "nextPage", "caption": "Ne&xt Page", "command": "designer.nextPage" },
+        { "id": "previousPage", "caption": "Pre&vious Page", "command": "designer.previousPage" }
+      ],
+      "properties": [
+        { "name": "ActivePage", "type": "TTabSheet", "kind": "component", "category": "Behavior", "affectsLayout": true },
+        { "name": "TabHeight", "type": "Integer", "default": 0, "category": "Layout", "min": 0, "max": 32767, "affectsLayout": true },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": true, "category": "Behavior" }
+      ],
+      "events": [
+        { "name": "OnChange", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TToolButton",
+      "ancestor": "TGraphicControl",
+      "kind": "control",
+      "defaultSize": { "width": 23, "height": 22 },
+      "namePrefix": "ToolButton",
+      "acceptsChildren": false,
+      "parentClasses": ["TToolBar"],
+      "renderer": "toolbutton",
+      "properties": [
+        { "name": "Left", "type": "Integer", "hidden": true, "stored": false },
+        { "name": "Top", "type": "Integer", "hidden": true, "stored": false },
+        { "name": "Height", "type": "Integer", "hidden": true, "stored": false },
+        { "name": "Align", "type": "TAlign", "hidden": true, "stored": false },
+        { "name": "Anchors", "type": "TAnchors", "hidden": true, "stored": false },
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance" },
+        { "name": "ImageIndex", "type": "Integer", "default": -1, "category": "Appearance" },
+        { "name": "Style", "type": "TToolButtonStyle", "default": "tbsButton", "category": "Appearance", "affectsLayout": true }
+      ],
+      "events": [
+        { "name": "OnClick", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TToolBar",
+      "ancestor": "TCustomControl",
+      "kind": "container",
+      "defaultSize": { "width": 300, "height": 29 },
+      "namePrefix": "ToolBar",
+      "acceptsChildren": true,
+      "renderer": "toolbar",
+      "designerVerbs": [
+        { "id": "newButton", "caption": "New &Button", "command": "designer.newChild", "arg": "TToolButton" },
+        { "id": "newSeparator", "caption": "New &Separator", "command": "designer.newChild", "arg": "TToolButton;Style=tbsSeparator;Width=8" }
+      ],
+      "properties": [
+        { "name": "Align", "type": "TAlign", "default": "alTop", "category": "Layout", "affectsLayout": true },
+        { "name": "ButtonHeight", "type": "Integer", "default": 22, "category": "Layout", "affectsLayout": true },
+        { "name": "ButtonWidth", "type": "Integer", "default": 23, "category": "Layout", "affectsLayout": true },
+        { "name": "Indent", "type": "Integer", "default": 0, "category": "Layout", "affectsLayout": true },
+        { "name": "TabOrder", "type": "Integer", "default": -1, "category": "Behavior", "min": -1, "max": 32767 },
+        { "name": "TabStop", "type": "Boolean", "default": false, "category": "Behavior" }
+      ],
+      "events": []
+    },
+    {
       "class": "TStatusBar",
       "ancestor": "TWinControl",
       "palette": { "page": "Win32", "order": 70 },
@@ -19,6 +114,9 @@
       "defaultSize": { "width": 300, "height": 19 },
       "namePrefix": "StatusBar",
       "renderer": "statusbar",
+      "designerVerbs": [
+        { "id": "editPanels", "caption": "&Panels Editor…", "command": "designer.editCollection", "arg": "Panels" }
+      ],
       "properties": [
         { "name": "Align", "type": "TAlign", "default": "alBottom", "category": "Layout", "affectsLayout": true },
         { "name": "Font", "type": "TFont", "kind": "object", "category": "Appearance", "editor": "font" },

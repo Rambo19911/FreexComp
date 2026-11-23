@@ -87,4 +87,10 @@ public interface IDesignerHost
 
     /// <summary>Code synchronization of the form's unit (code-sync.md).</summary>
     ICodeSync CodeSync { get; }
+
+    /// <summary>DSG-SUR-195: opens the collection editor (object-inspector.md §5.7) for that property of the component.</summary>
+    void EditCollection(Model.FormObject component, string propertyName);
+
+    /// <summary>DSG-SUR-196: opens the component editor named by the component class's <c>componentEditor</c>.</summary>
+    void EditComponent(Model.FormObject component);
 }

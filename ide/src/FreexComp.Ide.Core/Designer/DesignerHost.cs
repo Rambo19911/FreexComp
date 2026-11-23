@@ -42,6 +42,10 @@ public sealed class DesignerHost : IDesignerHost
 
     public void BeginPropertyEdit(string propertyName, string text) => PropertyEditRequested?.Invoke(this, (propertyName, text));
 
+    public void EditCollection(FreexComp.Designer.Model.FormObject component, string propertyName) => _owner.EditCollection(component, propertyName);
+
+    public void EditComponent(FreexComp.Designer.Model.FormObject component) => _owner.EditComponent(component);
+
     /// <summary>DSG-TP-040, 041: arms <paramref name="className"/> (single-shot, or sticky).</summary>
     public void Arm(string className, bool sticky)
     {

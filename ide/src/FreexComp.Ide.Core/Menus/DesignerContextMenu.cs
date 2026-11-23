@@ -6,7 +6,8 @@ namespace FreexComp.Ide.Core.Menus;
 /// <summary>
 /// The design-surface context menu (designer.md §8): the commands with their main-menu labels, the sub-menus
 /// <c>Context.Designer.Align</c>, <c>.Size</c> and <c>.Order</c> (UI-DSG-081) and check marks on the toggles. Enabled
-/// states come from the commands (design-surface.md §13). The verb group (UI-DSG-082) joins with D-097.
+/// states come from the commands (design-surface.md §13). The verbs of the verb component come first, followed by a
+/// separator (DSG-SUR-191, UI-DSG-082).
 /// </summary>
 public static class DesignerContextMenu
 {
@@ -21,9 +22,15 @@ public static class DesignerContextMenu
 
     private static readonly string?[] Order = ["designer.bringToFront", "designer.sendToBack"];
 
-    public static IReadOnlyList<MenuItemModel> Build(ICommandService commands)
+    public static IReadOnlyList<MenuItemModel> Build(ICommandService commands, IReadOnlyList<FreexComp.Designer.Catalog.DesignerVerb>? verbs = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
+        List<MenuItemModel> verbGroup = [.. (verbs ?? []).Select(v => MenuItemModel.ForVerb(v.Id, v.Caption, commands.Get(v.Command), v.Arg))];
+        if (verbGroup.Count > 0)
+        {
+            verbGroup.Add(MenuItemModel.Separator());
+        }
+
         MenuItemModel Item(string id) => MenuItemModel.ForCommand(MenuLabels.For(new CommandMenuNode(id)), commands.Get(id), null,
             commands.Get(id).Definition.IsToggle ? MenuToggleKind.Check : MenuToggleKind.None);
         List<MenuItemModel> Items(IEnumerable<string?> ids) => [.. ids.Select(id => id is null ? MenuItemModel.Separator() : Item(id))];
@@ -31,6 +38,7 @@ public static class DesignerContextMenu
 
         return
         [
+            .. verbGroup,
             .. Items(["edit.cut", "edit.copy", "edit.paste", "edit.delete", "edit.selectAll", "designer.selectParent"]),
             MenuItemModel.Separator(),
             Submenu("Designer.Align", Strings.Menu_Edit_Align, Align),

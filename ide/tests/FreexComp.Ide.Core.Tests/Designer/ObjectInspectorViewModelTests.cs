@@ -74,6 +74,52 @@ public sealed class ObjectInspectorViewModelTests
     }
 
     [Fact(Timeout = 30000)]
+    [Trait("Req", "DSG-OI-113")]
+    public Task UsesSharedPropertyGridViewModel() => TestUiThread.RunAsync(UsesSharedPropertyGridViewModelOnUiThread); // D-110
+
+    /// <summary>
+    /// D-110: the inspector's state and operations are those of its <see cref="PropertyGridViewModel"/> — the one grid the
+    /// collection editor and the Menu Designer embed — and the grid's changes reach the inspector's bindings.
+    /// </summary>
+    private async Task UsesSharedPropertyGridViewModelOnUiThread()
+    {
+        var (_, designer, inspector) = await OpenAsync();
+        var grid = Assert.IsType<PropertyGridViewModel>(inspector.Grid);
+        Select(designer, "GreetButton");
+        Assert.Equal(inspector.Rows.Select(r => r.Path), grid.Rows.Select(r => r.Path));
+        Assert.Contains(grid.Rows, r => r.Source == PropertyRowSource.Name); // the Name row of a designer target
+
+        grid.SetCurrent("Name");
+        var changed = new List<string?>();
+        inspector.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        // A value edited through the grid is the inspector's edit: one "Property" unit, seen in the inspector's rows.
+        grid.SetCurrent("Caption");
+        Assert.Equal("Caption", inspector.CurrentPath);
+        Assert.True(grid.BeginEdit());
+        Assert.True(inspector.IsEditing);
+        grid.EditText = "Hello";
+        Assert.Equal("Hello", inspector.EditText);
+        Assert.True(grid.Commit());
+        Assert.False(inspector.IsEditing);
+        Assert.Equal("Hello", inspector.Rows.Single(r => r.Path == "Caption").Display);
+        Assert.Equal(1, designer.Undo.UndoCount);
+        Assert.Contains(nameof(ObjectInspectorViewModel.CurrentPath), changed);
+        Assert.Contains(nameof(ObjectInspectorViewModel.IsEditing), changed);
+        Assert.Contains(nameof(ObjectInspectorViewModel.Rows), changed);
+
+        // And the other way round: the inspector's page and current event are the grid's.
+        changed.Clear();
+        inspector.Page = InspectorPage.Events;
+        Assert.Equal(InspectorPage.Events, grid.Page);
+        Assert.Contains(nameof(ObjectInspectorViewModel.Page), changed);
+        Assert.Equal(inspector.EventRows, grid.EventRows);
+        Assert.Equal("OnClick", inspector.CurrentEvent);
+        Assert.Equal(grid.CurrentEvent, inspector.CurrentEvent);
+        Assert.Equal("GreetButtonClick", grid.CurrentValueText);
+    }
+
+    [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-092")]
     [Trait("Req", "DSG-OI-093")]
     [Trait("Req", "DSG-OI-034")]

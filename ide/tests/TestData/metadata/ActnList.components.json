@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "unit": "ActnList",
+  "types": {},
+  "components": [
+    {
+      "class": "TAction",
+      "ancestor": "TComponent",
+      "kind": "nonvisual",
+      "namePrefix": "Action",
+      "acceptsChildren": false,
+      "parentClasses": ["TActionList"],
+      "renderer": "nonvisual",
+      "properties": [
+        { "name": "Caption", "type": "string", "default": "", "category": "Appearance" },
+        { "name": "Category", "type": "string", "default": "", "category": "Misc" },
+        { "name": "Enabled", "type": "Boolean", "default": true, "category": "Behavior" },
+        { "name": "ShortCut", "type": "TShortCut", "default": 0, "category": "Action", "editor": "shortcut" }
+      ],
+      "events": [
+        { "name": "OnExecute", "signature": "TNotifyEvent", "default": true }
+      ]
+    },
+    {
+      "class": "TActionList",
+      "ancestor": "TComponent",
+      "kind": "nonvisual",
+      "namePrefix": "ActionList",
+      "acceptsChildren": false,
+      "renderer": "nonvisual",
+      "designerVerbs": [
+        { "id": "actionListEditor", "caption": "&Action List Editor…", "command": "designer.editComponent" }
+      ],
+      "componentEditor": "childlist",
+      "properties": [],
+      "events": []
+    }
+  ],
+  "eventSignatures": {
+    "TNotifyEvent": "procedure(Sender: TObject)"
+  }
+}

@@ -21,9 +21,25 @@ public sealed partial class DesignSurfaceController
     private void Delete(string title = UndoTitles.Delete)
     {
         var members = Selection.GetEffectiveSet().Where(o => o.Parent is not null).ToList();
-        if (members.Count == 0)
+        if (members.Count > 0)
         {
-            return;
+            DeleteObjects(members, null, null, title);
+        }
+    }
+
+    /// <summary>
+    /// The delete of <paramref name="members"/> with their subtrees (DSG-SUR-130 … 132) as one unit, followed in the same
+    /// unit by <paramref name="after"/>'s changes (DSG-SUR-193: the neighbour page becomes active). The selection becomes
+    /// <paramref name="select"/>, or the nearest remaining ancestor of the primary when null. False when the form is
+    /// read-only or code sync refused (nothing is deleted then).
+    /// </summary>
+    public bool DeleteObjects(IReadOnlyList<FormObject> members, FormObject? select, Func<IReadOnlyList<FormChange>>? after = null,
+        string title = UndoTitles.Delete)
+    {
+        ArgumentNullException.ThrowIfNull(members);
+        if (IsReadOnly || members.Count == 0 || members.Any(m => m.Parent is null))
+        {
+            return false;
         }
 
         var removed = new HashSet<FormObject>(ReferenceEqualityComparer.Instance);
@@ -50,7 +66,7 @@ public sealed partial class DesignSurfaceController
             catch (CodeSyncException e)
             {
                 _host.SetStatus(StatusIds.CodeSyncConflict, e.Reason);
-                return;
+                return false;
             }
         }
 
@@ -62,18 +78,28 @@ public sealed partial class DesignSurfaceController
 
         changes.AddRange(members.Select(m => new RemoveObject(m.Name)));
 
-        var after = Selection.Primary.Parent;
-        while (after is not null && removed.Contains(after))
+        if (select is null)
         {
-            after = after.Parent;
+            select = Selection.Primary.Parent;
+            while (select is not null && removed.Contains(select))
+            {
+                select = select.Parent;
+            }
         }
 
         var before = Selection.ToSnapshot();
-        var undo = ApplyEdit(changes);
+        var undo = new List<FormChange>(ApplyEdit(changes));
+        if (after?.Invoke() is { Count: > 0 } more)
+        {
+            changes.AddRange(more);
+            undo.InsertRange(0, ApplyEdit(more));
+        }
+
         var (commitRedo, commitUndo) = LayoutCommit.StoreDifferences(Editor, _layout.Compute(Document));
-        Selection.Select(after ?? Document.Root);
+        Selection.Select(select ?? Document.Root);
         PushUnit(new DesignerUndoUnit(title, [.. changes, .. commitRedo], [.. commitUndo, .. undo], edits, before,
             Selection.ToSnapshot()) { CodeOps = edits.Count > 0 ? [new RemoveFieldsOp(names)] : [] });
+        return true;
     }
 
     private static IEnumerable<FormObject> Subtree(FormObject obj) => obj.Children.SelectMany(Subtree).Prepend(obj);

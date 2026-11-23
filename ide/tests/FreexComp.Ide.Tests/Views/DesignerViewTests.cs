@@ -692,6 +692,59 @@ public sealed class DesignerViewTests
         s.Control.ContextMenu!.Close();
     }
 
+    /// <summary>
+    /// UI-DSG-082 (D-097): for a component with designer verbs the context menu starts with the verb group (metadata
+    /// captions, <c>Context.Verb.&lt;id&gt;</c>), then a separator, then the standard items; a verb item runs its command.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-082")]
+    [Trait("Req", "DSG-SUR-195")]
+    public async Task ContextMenuShowsVerbGroupFirst()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            Phase5(o);
+            o.InitialFiles["MainForm.pas"] = Unit
+                .Replace("GreetButton: TButton;", "GreetButton: TButton;\n    StatusBar1: TStatusBar;", StringComparison.Ordinal)
+                .Replace("StdCtrls;", "StdCtrls, ComCtrls;", StringComparison.Ordinal)
+                .ReplaceLineEndings("\r\n");
+            var form = FormText.ReplaceLineEndings("\n");
+            var at = form.TrimEnd().LastIndexOf("end", StringComparison.Ordinal);
+            o.InitialFiles["MainForm.form"] = (form[..at]
+                + "  object StatusBar1: TStatusBar\n    Left = 0\n    Top = 281\n    Width = 400\n    Height = 19\n    TabOrder = 2\n"
+                + "    Panels = <\n      item\n        Text = 'Ready'\n      end\n    >\n  end\n" + form[at..]).ReplaceLineEndings("\r\n");
+        });
+        var s = await OpenDesignAsync(h);
+        static string Id(object item) => item is Separator ? "-" : AutomationIds.Get((Control)item)!;
+
+        var (x, y) = s.Center("StatusBar1");
+        s.RightClick(x, y);
+        Assert.Equal(["StatusBar1"], s.Selected);
+        var menu = Assert.IsType<ContextMenu>(s.Control.ContextMenu);
+        Assert.True(menu.IsOpen);
+        var ids = menu.Items.Cast<object>().Select(Id).ToList();
+        Assert.Equal(["Context.Verb.editPanels", "-", "Context.edit.cut"], ids.Take(3));
+        var verb = menu.Items.OfType<MenuItem>().First();
+        Assert.Equal("_Panels Editor…", verb.Header);
+        Assert.True(verb.IsEffectivelyEnabled);
+
+        // The verb runs designer.editCollection on Panels: the collection editor opens; Cancel applies nothing.
+        menu.Close();
+        verb.Command!.Execute(verb.CommandParameter);
+        Dispatcher.UIThread.RunJobs();
+        var dlg = await h.WaitForDialogAsync("CollectionEditor");
+        Assert.Equal("Edit StatusBar1.Panels", dlg.Window.Title);
+        dlg.Press("Escape");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(0, s.Document.Designer.Undo.UndoCount);
+
+        // A component without verbs: the standard menu only.
+        (x, y) = s.Center("GreetButton");
+        s.RightClick(x, y);
+        Assert.Equal("Context.edit.cut", Id(Assert.IsType<ContextMenu>(s.Control.ContextMenu).Items[0]!));
+        s.Control.ContextMenu!.Close();
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-DSG-130")]
     public async Task StatusBarShowsSelectionGeometry()
