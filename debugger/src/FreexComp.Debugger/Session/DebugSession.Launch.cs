@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FreexComp.Debugger.Dap;
+using FreexComp.Debugger.Values.TypeInfo;
 
 namespace FreexComp.Debugger.Session;
 
@@ -71,6 +72,14 @@ internal sealed partial class DebugSession
         {
             if (!File.Exists(request.Program))
                 throw new DebuggerException(DebugErrorCode.ProgramNotFound, Messages.ProgramNotFound + request.Program);
+
+            // The type-information file is read once, here. Missing: not an error, values are shown as the adapter
+            // prints them; present but unusable: the launch fails before the adapter is started (DBG-403).
+            var typeInfoPath = request.TypeInfoPath ?? Path.ChangeExtension(request.Program, ".pdi");
+            _typeInfo = PdiLoader.Load(typeInfoPath);
+            _hasTypeInfo = _typeInfo is not null;
+            if (_typeInfo is null)
+                _events.Raise(() => Output, new OutputEventArgs(OutputCategory.Debugger, Messages.TypeInfoMissing(typeInfoPath)));
 
             _adapter = AdapterProcess.Start(_options.AdapterPath, _options.AdapterArguments, TraceStderr);
             _adapterProcessId = _adapter.ProcessId;

@@ -108,6 +108,7 @@ internal sealed partial class DebugSession
         _currentStop = null;
         _frames.Clear();
         _threadsAreOfThisStop = false;
+        _memory?.Clear();
     }
 
     // ---- execution control ----
@@ -172,9 +173,12 @@ internal sealed partial class DebugSession
             location = new SourceLocation(PathText.Normalize(path), frame.Line, Math.Max(frame.Column, 1));
 
         var instructionPointer = ParseAddress(frame.InstructionPointerReference);
-        var name = string.IsNullOrEmpty(frame.Name)
-            ? "$" + instructionPointer.ToString("X16", CultureInfo.InvariantCulture)
-            : frame.Name;
+        // DBG-075: the routine of the type information that contains the frame's line, else the adapter's name.
+        var name = location is not null && _typeInfo?.FindRoutine(location.Path, location.Line) is { } routine
+            ? routine.DisplayName
+            : string.IsNullOrEmpty(frame.Name)
+                ? "$" + instructionPointer.ToString("X16", CultureInfo.InvariantCulture)
+                : frame.Name;
         var roots = _options.UserSourceRoots;
         var isUserCode = location is not null && (roots.Count == 0 || roots.Any(root => PathText.IsUnder(location.Path, root)));
         var module = DapJson.IdText(frame.ModuleId) is { } moduleId && _modules.TryGetValue(moduleId, out var fileName) ? fileName : "";

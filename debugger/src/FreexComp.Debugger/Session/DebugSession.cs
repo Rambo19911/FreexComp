@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Threading.Channels;
 using FreexComp.Debugger.Dap;
+using FreexComp.Debugger.Values.TypeInfo;
 
 namespace FreexComp.Debugger.Session;
 
@@ -43,14 +44,13 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     private volatile object? _processId;
     private volatile object? _exitCode;
     private volatile object? _adapterProcessId;
-#pragma warning disable CS0649 // assigned by the type-information tasks
     private volatile bool _hasTypeInfo;
-#pragma warning restore CS0649
 
     // Session loop only.
     private AdapterProcess? _adapter;
     private DapClient? _client;
     private Dictionary<string, JsonElement>? _capabilities;
+    private PdiFile? _typeInfo;                     // null: the program has no type-information file (DBG-403)
 
     public DebugSession(DebugSessionOptions options)
         : this(options, DebugState.Idle, TimeProvider.System)
@@ -149,7 +149,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
         NotYetAsync<VariableInfo>(SessionMethod.SetValueAsync, "G-048", ct);
 
     public Task<byte[]> ReadMemoryAsync(ulong address, int count, CancellationToken ct = default) =>
-        NotYetAsync<byte[]>(SessionMethod.ReadMemoryAsync, "G-030", ct);
+        PostAsync(SessionMethod.ReadMemoryAsync, () => ReadMemoryCoreAsync(address, count, ct), ct);
 
     // ---- disposal ----
 

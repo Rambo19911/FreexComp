@@ -129,6 +129,47 @@ public sealed class InspectionTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-075")]
+    [Trait("Req", "DBG-134")]
+    public async Task FrameName_FromSidecar()
+    {
+        await using var harness = SessionHarness.Create($$"""
+            { "steps": [ {{StopAtStart(MainThread)}},
+            { "on": "stackTrace", "respond": { "stackFrames": [
+                { "id": 1, "name": "DbgDemo.Factorial", "line": 40, "column": 5, "source": { "path": "c:\\work\\dbgdemo\\DBGDEMO.pas" } },
+                { "id": 2, "name": "DbgDemo.Run", "line": 69, "column": 3, "source": { "path": "C:\\work\\DbgDemo\\DbgDemo.pas" } },
+                { "id": 3, "name": "$main", "line": 77, "column": 3, "source": { "path": "C:\\work\\DbgDemo\\DbgDemo.pas" } },
+                { "id": 4, "name": "DbgDemo.Beyond", "line": 90, "column": 1, "source": { "path": "C:\\work\\DbgDemo\\DbgDemo.pas" } },
+                { "id": 5, "name": "Unit1.Helper", "line": 40, "column": 1, "source": { "path": "C:\\work\\DbgDemo\\Unit1.pas" } },
+                { "id": 6, "name": "System._Raise", "line": 2990, "column": 1, "source": { "path": "C:\\rtl\\System.pas" } },
+                { "id": 7, "name": "BaseThreadInitThunk", "line": 0, "column": 0, "instructionPointerReference": "0x7FFB12345678" },
+                { "id": 8, "name": "", "line": 0, "column": 0, "instructionPointerReference": "0x7FFB12340000" } ] } } ] }
+            """);
+        await harness.LaunchAsync(new LaunchRequest { Program = SessionHarness.Program, TypeInfoPath = PdiFixture.DbgDemoPath });
+        var stop = await harness.WaitForEventAsync("stopped");
+
+        var trace = await harness.Session.GetStackTraceAsync(7412, ct: Ct).WaitAsync(Safety, Ct);
+
+        Assert.True(harness.Session.HasTypeInfo);
+        Assert.Equal(
+        [
+            // The routine of the type information that contains (path, line): its display name, not the adapter's.
+            "Factorial", "Run",
+            // The main block: the program's routine spans the whole file.
+            "DbgDemo",
+            // A line outside every routine, a file the type information does not know: the adapter's name.
+            "DbgDemo.Beyond", "Unit1.Helper",
+            "_Raise",
+            // No source: the adapter's name, or "$" and the instruction pointer.
+            "BaseThreadInitThunk", "$00007FFB12340000",
+        ], trace.Frames.Select(f => f.Name));
+        // With type information present nothing is reported as missing.
+        Assert.DoesNotContain(harness.Events.Snapshot(), e => e.StartsWith("output", StringComparison.Ordinal));
+        Assert.Contains("loc=" + Demo + ":40:5", stop);
+        await EndAsync(harness);
+    }
+
+    [Fact]
     [Trait("Req", "DBG-074")]
     public async Task StackTrace_NoUserSourceRoots_EveryFrameWithSourceIsUserCode()
     {

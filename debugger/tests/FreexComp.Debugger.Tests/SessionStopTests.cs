@@ -121,7 +121,7 @@ public sealed class SessionStopTests
             """);
 
         // With StopOnEntry the launch completes only when the entry stop has been published.
-        await harness.LaunchAsync(new LaunchRequest { Program = SessionHarness.Program, StopOnEntry = true });
+        await harness.LaunchAsync(new LaunchRequest { Program = SessionHarness.Program, StopOnEntry = true, TypeInfoPath = PdiFixture.DbgDemoPath });
 
         Assert.Equal(DebugState.Stopped, harness.Session.State);
         var stop = harness.Session.CurrentStop;

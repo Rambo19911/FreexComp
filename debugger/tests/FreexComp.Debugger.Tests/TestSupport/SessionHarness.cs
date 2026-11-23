@@ -122,8 +122,13 @@ internal sealed class SessionHarness : IAsyncDisposable
         return new SessionHarness(scenarioPath, session, clock, trace);
     }
 
+    /// <summary>
+    /// The default request launches <see cref="Program"/> with the demo program's type information; a test about a
+    /// program without type information passes its own request.
+    /// </summary>
     public Task LaunchAsync(LaunchRequest? request = null) =>
-        Session.LaunchAsync(request ?? new LaunchRequest { Program = Program }, TestContext.Current.CancellationToken).WaitAsync(Safety);
+        Session.LaunchAsync(request ?? new LaunchRequest { Program = Program, TypeInfoPath = PdiFixture.DbgDemoPath },
+            TestContext.Current.CancellationToken).WaitAsync(Safety);
 
     public Task<string> WaitForEventAsync(string prefix) => Events.WaitAsync(e => e.StartsWith(prefix, StringComparison.Ordinal));
 

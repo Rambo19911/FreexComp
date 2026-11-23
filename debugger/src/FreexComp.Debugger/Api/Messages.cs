@@ -35,7 +35,18 @@ internal static class Messages
     public const string StepCompleted = "Step completed";
     public const string Paused = "Paused";
     public const string BreakpointHit = "Breakpoint";
+    public const string NotAvailable = "<not available>";
     public const string StaleFrame = "The stack frame belongs to an earlier stop.";
+
+    public static string TypeInfoMissing(string path) => "Type information file not found: " + path + ". Values are shown unformatted.";
+    public static string TypeInfoInvalid(string path, string detail) => "Type information file is invalid: " + path + ": " + detail;
+    public static string UnreadableMemory(ulong address) => "<unreadable memory at " + Address(address) + ">";
+    public static string InvalidString(ulong address) => "<invalid string at " + Address(address) + ">";
+    public static string InvalidArray(ulong address) => "<invalid array at " + Address(address) + ">";
+    public static string MemoryUnreadable(ulong address, int count) => "Memory at " + Address(address) + " (" + count + " bytes) cannot be read.";
+
+    /// <summary>"$" and 16 upper-case hexadecimal digits (DBG-153).</summary>
+    public static string Address(ulong address) => "$" + address.ToString("X16", System.Globalization.CultureInfo.InvariantCulture);
 
     public static string AdapterExitedWithCode(int exitCode) => "Debug adapter exited unexpectedly (exit code " + exitCode + ").";
     public static string AdapterExitedDuringStart(int exitCode) => AdapterStartFailed + "it exited with code " + exitCode + ".";
