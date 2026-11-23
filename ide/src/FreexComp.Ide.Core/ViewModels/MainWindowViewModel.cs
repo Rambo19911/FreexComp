@@ -128,6 +128,16 @@ public sealed class MainWindowViewModel : ObservableObject
     /// <summary>IDE-P1-110 (b): the main window was activated; every open file is re-checked for external changes.</summary>
     public void OnActivated() => _services.FileChanges.CheckAll();
 
+    /// <summary>IDE-ED-086: the main window was deactivated; the completion and parameter-info popups of the active editor close.</summary>
+    public void OnDeactivated()
+    {
+        if (_services.Documents.ActiveDocument is TextDocumentViewModel document)
+        {
+            document.Completion?.Close();
+            document.ParameterInfo?.Close();
+        }
+    }
+
     /// <summary>
     /// IDE-P1-031 / UI-TW-113: files dropped from the OS. Onto the Project Manager with a project open they are added to
     /// it (<c>project.addExistingFile</c>); anywhere else they open like command-line paths (a <c>.pproj</c> opens the

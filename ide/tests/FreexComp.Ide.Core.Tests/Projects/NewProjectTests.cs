@@ -255,13 +255,9 @@ public sealed class NewProjectTests
 
     private async Task GuiTemplateCreatesUnitAndFormOnUiThread()
     {
-        // Listed from Phase 5 on (the designer phase), after console-pascal.
-        Assert.DoesNotContain(Projects.Templates, t => t.Id == "gui-pascal");
-        var services = TestComposition.Build(o =>
-        {
-            o.FileSystem = _fs;
-            o.ImplementedPhase = 5;
-        });
+        // Listed from Phase 5 on (the designer phase; phase gating: not at Phase 4), after console-pascal.
+        Assert.DoesNotContain(TestComposition.Build(o => o.ImplementedPhase = 4).Projects.Templates, t => t.Id == "gui-pascal");
+        var services = _services;
         var gui = services.Projects.Templates.Single(t => t.Id == "gui-pascal");
         Assert.Equal("console-pascal", services.Projects.Templates[0].Id);
         Assert.Equal(("pascal", "gui"), (gui.Language, gui.AppType));

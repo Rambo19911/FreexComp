@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
@@ -33,7 +34,6 @@ public sealed class ObjectInspectorViewTests
     private static void Phase5(HarnessOptions o)
     {
         DesignerViewTests.Files(o);
-        o.ImplementedPhase = 5;
         o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
     }
 
@@ -151,6 +151,8 @@ public sealed class ObjectInspectorViewTests
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-003")]
+    [Trait("Req", "UI-TW-300")]
+    [Trait("Req", "UI-TW-302")]
     public async Task CtrlTabSwitchesPages()
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
@@ -243,9 +245,70 @@ public sealed class ObjectInspectorViewTests
         Assert.Contains("procedure TMainForm.NameEditChange(Sender: TObject);", d.Buffer.Text, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// tool-windows.md §4 (what the shell fixes): UI-TW-301 the regions top to bottom and the description pane following
+    /// <c>objectInspector.showDescription</c>; UI-TW-302 F4 / Alt+3 return to the row last focused, Escape on a row that is
+    /// not being edited returns to the design surface; UI-TW-303 a filter without match; UI-TW-300 the rows follow the selection.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-300")]
+    [Trait("Req", "UI-TW-301")]
+    [Trait("Req", "UI-TW-302")]
+    [Trait("Req", "UI-TW-303")]
+    public async Task RegionsFocusAndFilterEmpty()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var d = await OpenDesignAsync(h, "GreetButton");
+        h.Press("F4");
+
+        // Regions: instance selector, then the page tabs with the filter box, then the grid, then the description pane.
+        double Top(string id) => h.Find<Control>(id).TranslatePoint(default, h.Window)!.Value.Y;
+        Assert.True(Top("Tool.ObjectInspector.InstanceSelector") < Top("Tool.ObjectInspector.Tab.Properties"));
+        Assert.True(Top("Tool.ObjectInspector.Tab.Properties") < Top(Grid));
+        Assert.True(Top("Tool.ObjectInspector.Filter") < Top(Grid));
+        Assert.True(Top(Grid) < Top("Tool.ObjectInspector.Description"));
+        Assert.True(h.Find<Control>("Tool.ObjectInspector.Description").IsEffectivelyVisible);
+        h.Services.Settings.Set(SettingsCatalog.ObjectInspectorShowDescription, false);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.TryFind<Control>("Tool.ObjectInspector.Description")?.IsEffectivelyVisible == true);
+        h.Services.Settings.Set(SettingsCatalog.ObjectInspectorShowDescription, true);
+        Dispatcher.UIThread.RunJobs();
+
+        // Escape on a row that is not being edited: the design surface gets the focus; F4 and Alt+3 come back to that row.
+        GoTo(h, "Caption");
+        h.Press("Escape");
+        Assert.NotEqual("ObjectInspector", h.Services.FocusTracker.Current.ToolWindowName);
+        Assert.False(h.Find<Control>(Grid).IsKeyboardFocusWithin);
+        h.Press("F4");
+        Assert.True(h.Find<Control>(Grid).IsFocused);
+        Assert.Equal("Caption", CurrentRow(h));
+        h.Press("Escape");
+        h.Press("Alt+3");
+        Assert.Equal("ObjectInspector", h.Services.FocusTracker.Current.ToolWindowName);
+        Assert.Equal("Caption", CurrentRow(h));
+
+        // The rows are the selection's: another component, other rows.
+        d.Designer.Surface!.Selection.Select(d.Designer.Model!.FindByName("NameEdit")!);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("NameEdit: TEdit", h.Find<ComboBox>("Tool.ObjectInspector.InstanceSelector").SelectedItem as string);
+        Assert.NotNull(h.TryFind<Control>(Row("Text")));
+
+        // A filter without a match: Msg.Inspector.FilterEmpty.
+        var filter = h.Find<TextBox>("Tool.ObjectInspector.Filter");
+        filter.Text = "zzz";
+        Dispatcher.UIThread.RunJobs(); // the text box raises TextChanged through the dispatcher
+        h.Clock.Advance(Core.ViewModels.ToolWindowViewModel.FilterDelay);
+        Dispatcher.UIThread.RunJobs();
+        var empty = h.Find<TextBlock>("Tool.ObjectInspector.Empty");
+        var dbg = (ObjectInspectorViewModel)h.Services.ToolWindows.Get("ObjectInspector")!;
+        Assert.True(empty.IsEffectivelyVisible);
+        Assert.Equal(string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Msg_Inspector_FilterEmpty, "zzz"), empty.Text);
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-001")]
     [Trait("Req", "UI-DSG-112")]
+    [Trait("Req", "UI-TW-303")]
     public async Task EmptyStateWithoutDesigner()
     {
         await using var h = await HeadlessHarness.StartAsync(Phase5);

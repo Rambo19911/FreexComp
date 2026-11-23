@@ -650,6 +650,7 @@ public sealed class EditorVisualTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-ED-021")]
     [Trait("Req", "UI-ED-022")]
+    [Trait("Req", "IDE-ED-115")]
     public async Task GlyphContextMenuAndTooltip()
     {
         await using var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = Lines(8));
@@ -724,6 +725,16 @@ public sealed class EditorVisualTests
         Assert.True(((MenuItem)menu.Items[4]!).IsChecked);
         menu.Close();
         Dispatcher.UIThread.RunJobs();
+
+        // IDE-ED-115: a left click on a bookmark glyph does nothing (the gutter menu above offers the toggle).
+        var text = doc.Buffer.Text;
+        h.Window.MouseDown(LineCenter(gutter, 4), Avalonia.Input.MouseButton.Left);
+        h.Window.MouseUp(LineCenter(gutter, 4), Avalonia.Input.MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(text, doc.Buffer.Text);
+        Assert.Equal([new LineGlyph(LineGlyphKind.BreakpointUnverified), new LineGlyph(LineGlyphKind.Bookmark)], glyphs.Glyphs[4]);
+        Assert.False(gutter.ContextMenu?.IsOpen == true);
+        Assert.Empty(h.Services.Bookmarks.All);
     }
 
     [AvaloniaFact(Timeout = 30000)]

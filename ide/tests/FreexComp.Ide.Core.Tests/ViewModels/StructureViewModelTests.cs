@@ -57,6 +57,65 @@ public sealed class StructureViewModelTests
         Assert.True(model.SelectedRow!.IsTracked);
     }
 
+    /// <summary>
+    /// UI-TW-208: the filter matches the row text (a row stays when a descendant matches). IDE-ED-133: the expansion state
+    /// is kept per open document by node key; another document has its own.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-208")]
+    [Trait("Req", "IDE-ED-133")]
+    public Task FilterAndExpansionPerDocument() => TestUiThread.RunAsync(FilterAndExpansionPerDocumentOnUiThread);
+
+    private static async Task FilterAndExpansionPerDocumentOnUiThread()
+    {
+        var fs = new InMemoryFileSystem();
+        var clock = new ManualClock();
+        var services = TestComposition.Build(o =>
+        {
+            o.FileSystem = fs;
+            o.Clock = clock;
+        });
+        fs.CreateDirectory(@"C:\p");
+        const string unit = "unit {0};\r\ninterface\r\nimplementation\r\nprocedure Alpha;\r\nbegin\r\nend;\r\nprocedure Beta;\r\nbegin\r\nend;\r\nend.\r\n";
+        fs.WriteAllBytes(@"C:\p\A.pas", Encoding.UTF8.GetBytes(string.Format(System.Globalization.CultureInfo.InvariantCulture, unit, "A")));
+        fs.WriteAllBytes(@"C:\p\B.pas", Encoding.UTF8.GetBytes(string.Format(System.Globalization.CultureInfo.InvariantCulture, unit, "B")));
+        var model = (StructureViewModel)services.ToolWindows.Get(StructureViewModel.ToolName)!;
+        List<string> Keys() => [.. model.Rows.Select(r => r.Node.Key)];
+
+        var refreshed = Refreshed(model);
+        var a = Assert.IsType<TextDocumentViewModel>((await services.Documents.OpenAsync(@"C:\p\A.pas")).Value);
+        await refreshed;
+        Assert.Equal(["Routines", "Routines/Alpha", "Routines/Beta"], Keys());
+
+        // The filter matches the row text, case-insensitively; the group stays for its matching child.
+        model.FilterText = "alp";
+        clock.Advance(ToolWindowViewModel.FilterDelay);
+        Assert.Equal(["Routines", "Routines/Alpha"], Keys());
+        model.FilterText = "";
+        clock.Advance(ToolWindowViewModel.FilterDelay);
+        Assert.Equal(["Routines", "Routines/Alpha", "Routines/Beta"], Keys());
+
+        // A collapses its group; B (opened next) has its own state; back on A the group is still collapsed.
+        model.SetExpanded(model.Rows[0], false);
+        Assert.Equal(["Routines"], Keys());
+        refreshed = Refreshed(model);
+        var b = Assert.IsType<TextDocumentViewModel>((await services.Documents.OpenAsync(@"C:\p\B.pas")).Value);
+        await refreshed;
+        Assert.Equal(["Routines", "Routines/Alpha", "Routines/Beta"], Keys());
+        refreshed = Refreshed(model);
+        services.Documents.Activate(a);
+        await refreshed;
+        Assert.Equal(["Routines"], Keys());
+
+        // Closed and opened again: a new document, the default state.
+        Assert.True(services.Documents.Close(a));
+        refreshed = Refreshed(model);
+        await services.Documents.OpenAsync(@"C:\p\A.pas");
+        await refreshed;
+        Assert.Equal(["Routines", "Routines/Alpha", "Routines/Beta"], Keys());
+        Assert.NotNull(b);
+    }
+
     private static Task Refreshed(StructureViewModel model)
     {
         var done = new TaskCompletionSource();

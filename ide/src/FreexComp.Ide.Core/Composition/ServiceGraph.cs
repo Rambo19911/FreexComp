@@ -22,7 +22,7 @@ namespace FreexComp.Ide.Core.Composition;
 public static class ServiceGraph
 {
     /// <summary>Commands of later phases get <c>CanExecute = false</c> stubs (UI-CMD-004).</summary>
-    public const int ImplementedPhase = 3;
+    public const int ImplementedPhase = 5;
 
     /// <param name="toolWindows">Tool windows registered after the production ones (tests, IDE-ARCH-100); one named like a
     /// production tool window is registered instead of it.</param>
@@ -67,7 +67,7 @@ public static class ServiceGraph
             layout.Load(); // step 7: UI state (small file, synchronous)
         var toolWindowService = new ToolWindowService(commands, focus, platform.Clock, layout, toolWindowPhase ?? ImplementedPhase); // tool windows register here (IDE-ARCH-100)
         theme.RegisterCommands(commands);
-        ToolBarRowModel.RegisterCommands(commands, settings, Math.Max(ImplementedPhase, toolWindowPhase ?? ImplementedPhase)); // view.toolbar.designer from P5 (I-130)
+        ToolBarRowModel.RegisterCommands(commands, settings, toolWindowPhase ?? ImplementedPhase); // view.toolbar.designer from P5 (I-130)
         ViewModels.StatusBarViewModel.RegisterCommands(commands, settings);
         var languages = new LanguageRegistry();
         ProjectService? projects = null; // created after the documents it uses; the prompts ask it lazily
@@ -229,13 +229,14 @@ public static class ServiceGraph
         commands.RegisterHandler("search.commandPalette", new DelegateHandler(() => popupsAvailable, () =>
             quickPick.Show(new Popups.CommandPaletteViewModel(commands, layout, focus.Current, toolWindowPhase ?? ImplementedPhase,
                 designerShell?.ActiveDesigner?.Surface?.Verbs)))); // D-111: the selection's designer verbs (DSG-SUR-191)
-        // D-077: component metadata and component.reloadMetadata from Phase 5 on; Load() is the start-up wiring point (D-088).
+        // D-077: component metadata and component.reloadMetadata from Phase 5 on; StartupSequence starts the load (D-088).
         Designer.ComponentMetadataService? metadata = null;
         Designer.ObjectInspectorViewModel? objectInspector = null;
         Designer.ToolPaletteViewModel? toolPalette = null;
         if ((toolWindowPhase ?? ImplementedPhase) >= 5)
         {
-            metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment);
+            metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment,
+                platform.Dialogs); // D-088: loaded by the start-up sequence (DSG-TP-003)
             metadata.RegisterCommands(commands);
             designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase,
                 platform.Dialogs, layout); // D-080, I-130; D-097: the verbs' editors (their sizes: D-112)
@@ -263,8 +264,9 @@ public static class ServiceGraph
             palette.Bind(shell.ActiveDesigner);
         }
 
-        EditorCommandRoute.Register(commands, ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
-        commands.RegisterLaterPhaseStubs(ImplementedPhase);
+        // A test phase below the product's (testing.md §2.1) gives the later commands the stubs of UI-CMD-004 as before I-207.
+        EditorCommandRoute.Register(commands, toolWindowPhase ?? ImplementedPhase, () => documents.ActiveDocument?.CommandTarget); // I-158
+        commands.RegisterLaterPhaseStubs(toolWindowPhase ?? ImplementedPhase);
 
         // IDE-ARCH-100: production tool windows, then the extra ones; an extra one with a production name replaces it.
         var extras = toolWindows ?? [];

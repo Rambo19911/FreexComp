@@ -124,7 +124,6 @@ internal sealed class DesignerFixture
         Services = TestComposition.Build(o =>
         {
             o.FileSystem = Memory;
-            o.ImplementedPhase = 5;
             configure?.Invoke(o);
         });
         ((DocumentService)Services.Documents).DesignCatalog = CodeSyncTests.Catalog;

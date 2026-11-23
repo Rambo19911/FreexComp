@@ -64,6 +64,19 @@ public sealed class HarnessOptions
     public int? ImplementedPhase { get; set; }
 
     /// <summary>
+    /// D-088: the test component metadata (<c>TestData/metadata</c>) is copied beside the IDE directory of the composition
+    /// (<c>&lt;UserDir&gt;\ide\ui-framework\design</c>, DSG-TP-001 step 3) and the start-up sequence loads it; false: no
+    /// index anywhere under the root (DSG-TP-004).
+    /// </summary>
+    public bool ComponentMetadata { get; set; } = true;
+
+    /// <summary>
+    /// D-088: when set, every read of a metadata file waits for this event (DSG-TP-003: the load is still running when
+    /// <see cref="HeadlessHarness.StartAsync"/> returns); without it start-up waits for the load to finish.
+    /// </summary>
+    public ManualResetEventSlim? MetadataGate { get; set; }
+
+    /// <summary>
     /// Watch with the real <c>FileSystemWatcher</c> (<see cref="FileSystemWatcherFactory"/>) instead of the manual one;
     /// <see cref="HeadlessHarness.WriteFileExternally"/> then raises nothing itself.
     /// </summary>
@@ -100,6 +113,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
     private bool _errorExpected;
     private bool _unhandledExpected;
     private bool _disposed;
+    private readonly ManualResetEventSlim? _metadataGate;
 
     private HeadlessHarness(HarnessOptions options)
     {
@@ -109,9 +123,21 @@ public sealed class HeadlessHarness : IAsyncDisposable
         UserDir = Path.Combine(Root, "user");
         Directory.CreateDirectory(TempDir);
         WriteInitialFiles(options);
-        WriteSettings(options);
+        var metadataFolder = Path.Combine(UserDir, "ide", "ui-framework", "design");
+        WriteSettings(options, metadataFolder);
+        if (options.ComponentMetadata)
+            CopyTestMetadata(metadataFolder);
+        _metadataGate = options.MetadataGate;
 
         FileSystem = new RecordingFileSystem(new PhysicalFileSystem());
+        if (options.MetadataGate is { } gate)
+        {
+            FileSystem.BeforeRead = path =>
+            {
+                if (path.StartsWith(metadataFolder, StringComparison.OrdinalIgnoreCase))
+                    gate.Wait(_deadline.Remaining); // held on the background thread of the load (DSG-TP-003)
+            };
+        }
         Clock = new ManualClock(DateTimeOffset.Now);
         var clipboard = new FakeClipboard();
         Messages = new MessageScript(new WindowDialogService(() => _window, clipboard));
@@ -256,6 +282,18 @@ public sealed class HeadlessHarness : IAsyncDisposable
         if (h.Startup.IsCompleted)
         {
             await h.Startup; // its exception, if any
+        }
+
+        // D-088: the component metadata load the start-up sequence started (unless the test holds it).
+        while (h._metadataGate is null && h.Services.Metadata is { Loading.IsCompleted: false })
+        {
+            if (h._deadline.IsExpired)
+            {
+                throw new HarnessAssertionException(h._deadline.Expired("the component metadata load").Message);
+            }
+
+            Dispatcher.UIThread.RunJobs();
+            await Task.Yield();
         }
 
         Dispatcher.UIThread.RunJobs();
@@ -532,7 +570,17 @@ public sealed class HeadlessHarness : IAsyncDisposable
         }
     }
 
-    private void WriteSettings(HarnessOptions options)
+    /// <summary>The test metadata files (not the <c>broken</c> cases) into <paramref name="folder"/>.</summary>
+    private static void CopyTestMetadata(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        foreach (var file in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "TestData", "metadata"), "*.json"))
+        {
+            File.Copy(file, Path.Combine(folder, Path.GetFileName(file)));
+        }
+    }
+
+    private void WriteSettings(HarnessOptions options, string metadataFolder)
     {
         var roaming = Path.Combine(UserDir, "roaming");
         Directory.CreateDirectory(roaming);
@@ -541,6 +589,13 @@ public sealed class HeadlessHarness : IAsyncDisposable
         {
             values[key] = value;
         }
+
+        // The design folders stay inside the root (IDE-TEST-003): without a setting, DSG-TP-001 walks up from the IDE
+        // directory. The data-access folder is absent; without test metadata the framework index is absent where the
+        // harness would have put it.
+        values.TryAdd("toolchain.dataDesignDir", Path.Combine(Root, "no-data-design"));
+        if (!options.ComponentMetadata)
+            values.TryAdd("toolchain.frameworkDesignDir", metadataFolder);
 
         File.WriteAllText(Path.Combine(roaming, "settings.json"), JsonSerializer.Serialize(values));
         foreach (var (relative, content) in options.UserFiles)

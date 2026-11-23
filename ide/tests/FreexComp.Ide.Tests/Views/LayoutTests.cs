@@ -311,9 +311,9 @@ public sealed class LayoutTests
         Assert.Equal(1440 - 260 - Splitter, h.Find<Control>(AutomationIds.DocumentArea).Bounds.Width);
     }
 
-    /// <summary>I-193: <see cref="EmptyDockCollapses"/> with the product's Phase 3 tool windows.</summary>
+    /// <summary>I-193, I-207: <see cref="EmptyDockCollapses"/> with the product's tool windows (Phase 5: the designer windows on the right).</summary>
     [AvaloniaFact(Timeout = 30000)]
-    [Trait("Phase", "3")]
+    [Trait("Phase", "5")]
     [Trait("Req", "UI-WIN-004")]
     [Trait("Req", "UI-TW-005")]
     public async Task EmptyDockCollapsesAtDefaultPhase()
@@ -329,6 +329,8 @@ public sealed class LayoutTests
         Dispatcher.UIThread.RunJobs();
         Assert.False(h.Find<Control>(AutomationIds.DockBottom).IsVisible);
         Assert.Equal(height + 200 + Splitter, documents.Bounds.Height); // the document area takes the space, splitter included
+
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible); // UI-WIN-010: the Edit profile's right dock is empty
 
         layout.LeftSize = 300;
         Assert.True(tools.Hide("ProjectManager"));
@@ -350,7 +352,20 @@ public sealed class LayoutTests
         Assert.Equal(1440 - 300 - Splitter, documents.Bounds.Width);
         Assert.Equal("ProjectManager", layout.Left.ActiveTool);
         Assert.Equal("Output", layout.Bottom.ActiveTool);
-        Assert.False(tools.Show("ObjectInspector", focus: false)); // P5: not registered (UI-WIN-011)
+        Assert.False(tools.Show("CallStack", focus: false)); // P6: not registered (UI-WIN-011)
+
+        // The Design profile (P5): Object Inspector and Tool Palette in the right dock; hiding both collapses it.
+        await h.ExecuteAsync("window.layout.design");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Control>(AutomationIds.DockRight).IsVisible);
+        var width = documents.Bounds.Width;
+        Assert.True(tools.Hide("ObjectInspector"));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Control>(AutomationIds.DockRight).IsVisible); // the Tool Palette is still in the right dock
+        Assert.True(tools.Hide("ToolPalette"));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(h.Find<Control>(AutomationIds.DockRight).IsVisible);
+        Assert.True(documents.Bounds.Width > width);
     }
 
     /// <summary>I-193: <see cref="SplitterLimitsAreClamped"/> and <see cref="ResetLayoutRestoresDefaults"/> with the product's Phase 3 tool windows (no right dock).</summary>

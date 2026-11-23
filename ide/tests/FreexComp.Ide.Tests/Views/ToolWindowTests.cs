@@ -205,9 +205,9 @@ public sealed class ToolWindowTests
         Assert.False(tools.Get("Messages")!.IsActive);
     }
 
-    /// <summary>I-193: UI-TW-006 at the product's phase 3: the P3 windows are registered, the P5+ ones are not.</summary>
+    /// <summary>I-193, I-207: UI-TW-006 at the product's phase 5: the P1–P5 windows are registered, the P6+ ones are not.</summary>
     [AvaloniaFact(Timeout = 30000)]
-    [Trait("Phase", "3")]
+    [Trait("Phase", "5")]
     [Trait("Req", "UI-TW-006")]
     [Trait("Req", "UI-WIN-011")]
     public async Task LaterPhaseWindowsAreNotRegisteredAtDefaultPhase()
@@ -215,20 +215,23 @@ public sealed class ToolWindowTests
         await using var h = await HeadlessHarness.StartAsync();
         var tools = h.Services.ToolWindows;
 
-        foreach (var name in new[] { "ProjectManager", "Structure", "Messages", "Output", "SearchResults" })
+        foreach (var name in new[] { "ProjectManager", "Structure", "Messages", "Output", "SearchResults", "ObjectInspector", "ToolPalette" })
             Assert.True(tools.IsRegistered(name), name);
-        foreach (var name in new[] { "ObjectInspector", "ToolPalette", "CallStack", "Locals", "Watches", "Breakpoints", "DataExplorer" })
+        foreach (var name in new[] { "CallStack", "Locals", "Watches", "Breakpoints", "DataExplorer" })
         {
             Assert.False(tools.IsRegistered(name), name);
             Assert.False(tools.Show(name, focus: true), name);
         }
 
         Assert.True(h.Services.Commands.CanExecute("view.structure"));
-        Assert.False(h.Services.Commands.CanExecute("view.objectInspector"));
+        Assert.True(h.Services.Commands.CanExecute("view.objectInspector"));
+        Assert.True(h.Services.Commands.CanExecute("view.toolPalette"));
+        Assert.False(h.Services.Commands.CanExecute("view.callStack"));
+        Assert.False(h.Services.Commands.CanExecute("view.dataExplorer"));
         var view = h.Find<Menu>(AutomationIds.MenuBar).Items.Cast<MenuItem>().Single(m => AutomationIds.Get(m) == AutomationIds.TopMenu("View"));
-        var inspector = view.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == AutomationIds.Menu("view.objectInspector"));
-        Assert.True(inspector.IsVisible);
-        Assert.False(inspector.IsEnabled && inspector.Command!.CanExecute(null)); // visible and disabled (UI-MENU-004)
+        var explorer = view.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == AutomationIds.Menu("view.dataExplorer"));
+        Assert.True(explorer.IsVisible);
+        Assert.False(explorer.IsEnabled && explorer.Command!.CanExecute(null)); // visible and disabled (UI-MENU-004)
     }
 
     [AvaloniaFact(Timeout = 30000)]

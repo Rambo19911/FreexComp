@@ -15,6 +15,7 @@ public sealed class FindInFilesDialogTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-DLG-110")]
     [Trait("Req", "UI-DLG-111")]
+    [Trait("Req", "UI-DLG-112")]
     public async Task ScopeValidation()
     {
         await using var h = await BuildScenario.StartAsync();
@@ -33,6 +34,8 @@ public sealed class FindInFilesDialogTests
         Assert.False(dlg.Find<TextBox>("Folder").IsEffectivelyEnabled);
         Assert.False(dlg.Find<CheckBox>("Subfolders").IsEffectivelyEnabled);
         Assert.Equal("*.pas;*.inc;*.form", dlg.Find<TextBox>("FileTypes").Text);
+        Assert.Null(dlg.TryFind<Control>("ReplaceText")); // UI-DLG-112: no Replace row before search.replaceInFiles (P8+)
+        Assert.Null(dlg.TryFind<Control>("Replace"));
 
         // Empty text and an invalid pattern block Find.
         dlg.Find<TextBox>("SearchText").Text = "";

@@ -130,7 +130,7 @@ public sealed class FormDocumentView : DockPanel
             text.FocusText();
         else if (view is DockPanel { Children: [_, TextDocumentView formText] })
             formText.FocusText();
-        else if (view is DockPanel { Children: [_, ScrollViewer { Content: DesignSurfaceControl surface }] })
+        else if (view is DockPanel { Children: [_, Panel { Children: [ScrollViewer { Content: DesignSurfaceControl surface }, _] }] })
             surface.Focus();
         else
             view.Focus();
@@ -170,10 +170,24 @@ public sealed class FormDocumentView : DockPanel
                         new ItemsControl { ItemsSource = document.Designer.DesignInfoBars },
                     },
                 };
+                // DSG-TP-003: while the component metadata loads, a centered progress ring stands in for the surface.
+                var designer = document.Designer;
+                var ring = new ProgressRing { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                AutomationProperties.SetAutomationId(ring, AutomationIds.DesignerLoading(Path.GetFileNameWithoutExtension(document.Title)));
+                var loading = new Panel { Children = { ring } };
+                loading.Bind(Panel.BackgroundProperty, loading.GetResourceObservable("FxcDesignerBackdropBrush"));
+                void ShowLoading()
+                {
+                    loading.IsVisible = designer.IsMetadataLoading;
+                    scroller.IsVisible = !designer.IsMetadataLoading;
+                }
+
+                ShowLoading();
+                designer.MetadataLoadingChanged += (_, _) => ShowLoading();
                 var design = new DockPanel();
                 SetDock(bars, Avalonia.Controls.Dock.Top);
                 design.Children.Add(bars);
-                design.Children.Add(scroller);
+                design.Children.Add(new Panel { Children = { scroller, loading } });
                 return design;
         }
     }

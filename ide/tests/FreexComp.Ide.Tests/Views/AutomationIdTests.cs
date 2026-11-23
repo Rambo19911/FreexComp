@@ -51,7 +51,6 @@ public sealed class AutomationIdTests
         await using var h = await HeadlessHarness.StartAsync(o =>
         {
             DesignerViewTests.Files(o);
-            o.ImplementedPhase = 5; // the real Object Inspector and Tool Palette
             var unit = DesignerViewTests.Unit.Replace("GreetButton: TButton;", "GreetButton: TButton;\n    StatusBar1: TStatusBar;\n    MainMenu1: TMainMenu;\n"
                 + "    ActionList1: TActionList;\n    Memo1: TMemo;", StringComparison.Ordinal).Replace("StdCtrls;", "StdCtrls, ComCtrls, Menus, ActnList;", StringComparison.Ordinal);
             o.InitialFiles["MainForm.pas"] = unit.ReplaceLineEndings("\r\n");

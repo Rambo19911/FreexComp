@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -111,5 +112,94 @@ public sealed class HoverTests
         h.Press("Escape");
         Dispatcher.UIThread.RunJobs();
         Assert.False(signature.IsVisible);
+    }
+
+    /// <summary>
+    /// editor.md §11.2: UI-ED-120 the popup (<c>Editor.SignatureHelp</c>, our tokens); UI-ED-121 above the caret line, left edge
+    /// at the opening parenthesis, below the line without room above, max width 600, padding 6 × 4; UI-ED-123 it follows the
+    /// caret between arguments and closes when the caret leaves the argument list or the editor loses focus.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-ED-120")]
+    [Trait("Req", "UI-ED-121")]
+    [Trait("Req", "UI-ED-123")]
+    public async Task SignatureHelpPlacementAndTracking()
+    {
+        var text = "unit Unit1;\r\ninterface\r\nimplementation\r\nfunction Join(const A: string; B: Integer): string;\r\n" +
+            "begin\r\n  Result := A;\r\nend;\r\nvar S: string;\r\nbegin\r\n  S := Join('x', 2);\r\n" +
+            string.Concat(Enumerable.Repeat("\r\n", 120)) + "end.\r\n";
+        await using var h = await BuildScenario.StartAsync(o =>
+        {
+            LiveDiagnosticsTests.AddRealRtl(o);
+            o.InitialFiles[@"Hello\Unit1.pas"] = text;
+        });
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Value);
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextEditor>("Editor.Unit1.pas");
+        Assert.True(editor.TextArea.Focus());
+        var view = editor.FindAncestorOfType<CodeEditorView>()!;
+        var textView = editor.TextArea.TextView;
+        var signature = h.Find<SignatureHelpView>("Editor.SignatureHelp");
+        var paren = text.IndexOf("Join('x'", StringComparison.Ordinal) + "Join".Length;
+        var line = doc.Buffer.GetPosition(paren).Line;
+
+        async Task OpenAtAsync(int offset)
+        {
+            doc.Selection = TextSelection.At(offset);
+            Dispatcher.UIThread.RunJobs();
+            h.Press("Ctrl+Shift+Space");
+            await doc.ParameterInfo!.Pending;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(signature.IsVisible);
+        }
+
+        Point InView(VisualYPosition y)
+        {
+            textView.EnsureVisualLines();
+            var column = doc.Buffer.GetPosition(paren).Column;
+            var at = textView.GetVisualPosition(new TextViewPosition(line, column), y) - textView.ScrollOffset;
+            return textView.TranslatePoint(at, view)!.Value;
+        }
+
+        // UI-ED-120/121: our popup with the tokens, above the caret line, its left edge at the opening parenthesis.
+        await OpenAtAsync(paren + 1);
+        Assert.Equal("const A: string", signature.CurrentParameter);
+        Assert.Equal(600, signature.MaxWidth);
+        Assert.Equal(new Thickness(6, 4), signature.Padding);
+        Assert.True(signature.TryFindResource("FxcBgRaisedBrush", signature.ActualThemeVariant, out var raised));
+        Assert.Same(raised, signature.Background);
+        Assert.Equal(InView(VisualYPosition.LineTop).X, signature.Margin.Left, 0.5);
+        Assert.True(signature.Margin.Top + signature.Bounds.Height <= InView(VisualYPosition.LineTop).Y + 0.5, "above the caret line");
+
+        // UI-ED-123: the current parameter follows the caret to the next argument; leaving the list closes the popup.
+        doc.Selection = TextSelection.At(text.IndexOf(" 2);", StringComparison.Ordinal) + 1);
+        Dispatcher.UIThread.RunJobs();
+        await doc.ParameterInfo!.Pending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(signature.IsVisible);
+        Assert.Equal("B: Integer", signature.CurrentParameter);
+        Assert.True(signature.Margin.Top + signature.Bounds.Height <= InView(VisualYPosition.LineTop).Y + 0.5, "still above after the update");
+        doc.Selection = TextSelection.At(text.IndexOf(");", paren, StringComparison.Ordinal) + 2);
+        Dispatcher.UIThread.RunJobs();
+        await doc.ParameterInfo!.Pending;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(signature.IsVisible);
+
+        // Focus loss closes it.
+        await OpenAtAsync(paren + 1);
+        h.Services.ToolWindows.Show("ProjectManager", focus: true);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(editor.TextArea.IsKeyboardFocusWithin);
+        Assert.False(signature.IsVisible);
+
+        // No room above (the call line is the first visible line): below the line.
+        Assert.True(editor.TextArea.Focus());
+        var scroller = editor.GetVisualDescendants().OfType<ScrollViewer>().First(); // as the view restores offsets
+        scroller.Offset = new Vector(0, textView.GetVisualTopByDocumentLine(line));
+        Dispatcher.UIThread.RunJobs();
+        await OpenAtAsync(paren + 1);
+        Assert.True(InView(VisualYPosition.LineTop).Y < signature.Bounds.Height, "the line is at the top");
+        Assert.True(signature.Margin.Top >= InView(VisualYPosition.LineBottom).Y - 0.5, "below the caret line");
+        Assert.Equal(InView(VisualYPosition.LineTop).X, signature.Margin.Left, 0.5);
     }
 }

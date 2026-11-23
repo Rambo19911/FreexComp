@@ -202,7 +202,7 @@ public sealed class FormDesignerViewModel
     public bool IsFormModified => !Undo.IsAtSavePoint || HasPendingText;
 
     /// <summary>The Design view is shown and has a model: the Object Inspector and the Tool Palette work on it.</summary>
-    public bool IsDesignActive => _activeView == DocumentView.Design && Surface is not null;
+    public bool IsDesignActive => _activeView == DocumentView.Design && Surface is not null && !IsMetadataLoading;
 
     private bool HasPendingText
     {
@@ -236,6 +236,11 @@ public sealed class FormDesignerViewModel
         if (view == DocumentView.Code && !HasUnit)
         {
             return false;
+        }
+
+        if (view == DocumentView.Design && DesignRefused?.Invoke() == true)
+        {
+            return false; // DSG-TP-004
         }
 
         if (previous == DocumentView.Text && !TryReadText())
@@ -373,8 +378,16 @@ public sealed class FormDesignerViewModel
     public void Rebind(ComponentCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        var unbound = IsMetadataLoading || ReferenceEquals(Catalog, ComponentCatalog.Empty);
         Catalog = catalog;
         CodeSync.Catalog = catalog;
+        if (unbound)
+        {
+            // DSG-TP-003: the form was read before the metadata existed: read its text again, as at opening.
+            BindLoadedMetadata();
+            return;
+        }
+
         if (Model is not { } old)
         {
             return;
@@ -474,6 +487,49 @@ public sealed class FormDesignerViewModel
     internal void ShowStatus(string messageId, object[] args) => Status?.ShowMessage(DesignerMessages.Format(messageId, args), StatusDuration);
 
     private string[] SelectedNames() => Surface is { } surface ? [.. surface.Selection.Items.Select(o => o.Name)] : [];
+
+    /// <summary>
+    /// DSG-TP-003: the component metadata is still loading (the form was opened before it finished). The Design view
+    /// shows a progress ring instead of the surface until <see cref="Rebind"/> brings the loaded catalog.
+    /// </summary>
+    public bool IsMetadataLoading { get; private set; }
+
+    /// <summary><see cref="IsMetadataLoading"/> changed.</summary>
+    public event EventHandler? MetadataLoadingChanged;
+
+    /// <summary>DSG-TP-003: the form waits for the metadata being loaded.</summary>
+    public void BeginMetadataWait()
+    {
+        IsMetadataLoading = true;
+        MetadataLoadingChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// DSG-TP-004: asked before the Design view is shown; true refuses it (no metadata — the component metadata service
+    /// shows <c>Msg.Designer.MetadataMissing</c>). Null: never refused.
+    /// </summary>
+    public Func<bool>? DesignRefused { get; set; }
+
+    /// <summary>The text the model was read from, read again against the new <see cref="Catalog"/> (no designer edit was possible).</summary>
+    private void BindLoadedMetadata()
+    {
+        var wasLoading = IsMetadataLoading;
+        IsMetadataLoading = false;
+        if (Parse(_syncedText).Document is { } document)
+        {
+            var pending = HasPendingText;
+            var names = SelectedNames();
+            SetModel(document, _syncedText);
+            _pending = (_formText.Buffer.Version, pending);
+            Surface!.Selection.Set(names);
+            Replaced();
+        }
+
+        if (wasLoading)
+        {
+            MetadataLoadingChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     private void Replaced()
     {

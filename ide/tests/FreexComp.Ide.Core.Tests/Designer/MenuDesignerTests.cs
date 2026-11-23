@@ -69,7 +69,7 @@ public sealed class MenuDesignerTests
         public IReadOnlyList<string> Children(string name) => [.. Item(name).Children.Select(c => c.Name)];
 
         /// <summary>Opens the Menu Designer on MainMenu1 (designer.editComponent) and runs <paramref name="drive"/> in it, then Close.</summary>
-        public async Task<MenuDesignerViewModel> DesignAsync(Func<MenuDesignerViewModel, Task> drive)
+        public async Task<MenuDesignerViewModel> DesignAsync(Func<MenuDesignerViewModel, Task> drive, string menu = "MainMenu1")
         {
             MenuDesignerViewModel? shown = null;
             System.Runtime.ExceptionServices.ExceptionDispatchInfo? failure = null;
@@ -88,7 +88,7 @@ public sealed class MenuDesignerTests
 
                 await shown.PressCancelAsync(); // Escape = Close (UI-DLG-252)
             });
-            DesignerFixture.Select(Designer, "MainMenu1");
+            DesignerFixture.Select(Designer, menu);
             await Fixture.Services.Commands.ExecuteAsync(DesignCommandIds.EditComponent);
             failure?.Throw();
             return shown ?? throw new InvalidOperationException("The Menu Designer did not open.");
@@ -199,6 +199,52 @@ public sealed class MenuDesignerTests
             Assert.Equal("MenuItem3", md.Selected!.Name);
         });
         Assert.Equal(["MainMenu1"], s.Designer.Surface!.Selection.Items.Select(o => o.Name)); // the surface selection is kept
+    }
+
+    /// <summary>UI-DLG-253: for a <c>TPopupMenu</c> the tree's top level is the popup's item list; the dialog is the same.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-253")]
+    public Task PopupMenuTopLevelIsItsItemList() => TestUiThread.RunAsync(PopupMenuTopLevelIsItsItemListOnUiThread);
+
+    private static async Task PopupMenuTopLevelIsItsItemListOnUiThread()
+    {
+        var form = Form.Replace("""
+              object MainMenu1: TMainMenu
+                DesignLeft = 320
+                DesignTop = 120
+              end
+            """, """
+              object MainMenu1: TMainMenu
+                DesignLeft = 320
+                DesignTop = 120
+              end
+              object PopupMenu1: TPopupMenu
+                DesignLeft = 360
+                DesignTop = 120
+                object Open1: TMenuItem
+                  Caption = '&Open'
+                end
+              end
+            """, StringComparison.Ordinal);
+        Assert.Contains("PopupMenu1", form, StringComparison.Ordinal);
+        var unit = Unit.Replace("    MainMenu1: TMainMenu;", "    MainMenu1: TMainMenu;\r\n    PopupMenu1: TPopupMenu;\r\n    Open1: TMenuItem;", StringComparison.Ordinal);
+        var dialogs = new FakeDialogService();
+        var f = new DesignerFixture(o => o.Dialogs = dialogs);
+        var s = new Session(f, dialogs, await f.OpenAsync(unit, form));
+        var shown = await s.DesignAsync(md =>
+        {
+            Assert.Equal("PopupMenu1", md.Menu.Name);
+            Assert.Equal(["Open1"], md.Nodes.Select(n => n.Name)); // the popup's items are the top level
+            Assert.Equal("&Open", md.Nodes[0].Text);
+            md.Select("Open1");
+            md.NewItem(); // same level: the popup's item list
+            Assert.Equal(["Open1", "MenuItem1"], s.Children("PopupMenu1"));
+            md.NewSubItem();
+            Assert.Equal(["MenuItem2"], s.Children("MenuItem1"));
+            Assert.Empty(s.Children("MainMenu1")); // the main menu is untouched
+            return Task.CompletedTask;
+        }, "PopupMenu1");
+        Assert.Equal(MenuDesignerViewModel.DialogName, shown.Name); // the same dialog as for a main menu
     }
 
     [Fact(Timeout = 30000)]

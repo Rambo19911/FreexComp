@@ -316,6 +316,100 @@ public sealed class CollectionEditorTests
         new FormEditor(document, CodeSyncTests.Catalog).Apply(change);
     }
 
+    /// <summary>
+    /// UI-DLG-243: OK is always enabled, also for an empty collection; an invalid value in a grid editor blocks it only while
+    /// that editor is open. UI-DLG-242: a <c>TStrings</c> row of the embedded grid opens <c>Dialog.StringsEditor</c> on top.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-DLG-242")]
+    [Trait("Req", "UI-DLG-243")]
+    public Task OkBlockedOnlyByAnOpenInvalidEditor() => TestUiThread.RunAsync(OkBlockedOnlyByAnOpenInvalidEditorOnUiThread);
+
+    private static async Task OkBlockedOnlyByAnOpenInvalidEditorOnUiThread()
+    {
+        var editor = Editor(Parse());
+        Assert.True(editor.Ok.IsEnabled);
+
+        // An invalid entry: the inline error, OK blocked while the editor stays open.
+        editor.Grid.SetCurrent("Width");
+        Assert.True(editor.Grid.BeginEdit());
+        Assert.True(editor.Ok.IsEnabled); // an open editor alone does not block it
+        editor.Grid.EditText = "wide";
+        Assert.False(editor.Grid.Commit());
+        Assert.NotNull(editor.Grid.EditError);
+        Assert.False(editor.Ok.IsEnabled);
+        await editor.Ok.PressAsync();
+        Assert.False(editor.IsClosed);
+        editor.Grid.Cancel(); // Escape: the editor closes, OK is available again
+        Assert.True(editor.Ok.IsEnabled);
+
+        // An empty collection is valid.
+        editor.Select([0, 1]);
+        editor.Delete();
+        Assert.True(editor.IsEmpty);
+        Assert.True(editor.Ok.IsEnabled);
+        await editor.Ok.PressAsync();
+        Assert.True(editor.IsClosed);
+
+        // A TStrings item property: its row opens the strings editor over this dialog, OK sets the lines.
+        var dialogs = new FakeDialogService();
+        IReadOnlyList<string>? shown = null;
+        dialogs.Script(StringsEditorViewModel.DialogName, vm =>
+        {
+            var strings = (StringsEditorViewModel)vm;
+            shown = Split(strings.Text);
+            strings.Text = "one\ntwo";
+            return strings.Ok.PressAsync();
+        });
+        var catalog = StringsCatalog();
+        var document = FormParser.Parse(
+            "object MainForm: TForm\n  object Holder1: THolder\n    Rows = <\n      item\n        Caption = 'A'\n      end\n    >\n  end\nend\n",
+            "MainForm.form", catalog).Document!;
+        var rows = new CollectionEditorViewModel(catalog, document, document.FindByName("Holder1")!, "Rows", dialogs);
+        rows.Grid.SetCurrent("Lines");
+        Assert.True(PropertyGridViewModel.HasEditorButton(rows.Grid.CurrentRow!));
+        await rows.Grid.EditStringsAsync();
+        Assert.Equal(StringsEditorViewModel.DialogName, Assert.Single(dialogs.Dialogs).Name);
+        Assert.Empty(shown!); // no lines yet
+        Assert.False(rows.IsClosed); // the collection editor stays open under it
+        await rows.Ok.PressAsync();
+        new FormEditor(document, catalog).Apply(rows.Result!);
+        var text = FormWriter.Write(document);
+        Assert.Contains("'one'", text, StringComparison.Ordinal);
+        Assert.Contains("'two'", text, StringComparison.Ordinal);
+    }
+
+    private static List<string> Split(string text) => [.. StringsEditorViewModel.Split(text)];
+
+    /// <summary>A holder whose collection items have a <c>TStrings</c> property.</summary>
+    private static ComponentCatalog StringsCatalog()
+    {
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"C:\s\index.json"] = """{ "formatVersion": 1, "files": ["S.components.json"] }""",
+            [@"C:\s\S.components.json"] = """
+                {
+                  "formatVersion": 1,
+                  "unit": "S",
+                  "types": {
+                    "TRowItem": { "kind": "object", "properties": [
+                      { "name": "Caption", "type": "string", "default": "" },
+                      { "name": "Lines", "type": "TStrings", "editor": "strings" }
+                    ] }
+                  },
+                  "components": [
+                    { "class": "TForm", "kind": "form", "acceptsChildren": true },
+                    { "class": "THolder", "kind": "nonvisual",
+                      "properties": [ { "name": "Rows", "type": "TRowItems", "kind": "collection", "itemClass": "TRowItem" } ] }
+                  ]
+                }
+                """,
+        };
+        var result = CatalogLoader.Load([@"C:\s\index.json"], path => files.TryGetValue(path, out var t) ? Encoding.UTF8.GetBytes(t) : null);
+        Assert.Empty(result.Problems);
+        return result.Catalog;
+    }
+
     /// <summary>A holder whose collection items have a nested collection.</summary>
     private static ComponentCatalog NestedCatalog()
     {

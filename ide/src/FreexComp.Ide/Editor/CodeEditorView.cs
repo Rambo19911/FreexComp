@@ -1085,7 +1085,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         var top = textView.GetVisualPosition(anchor, VisualYPosition.LineTop) - textView.ScrollOffset;
         var bottom = textView.GetVisualPosition(anchor, VisualYPosition.LineBottom) - textView.ScrollOffset;
         _signatureHelp.Measure(Size.Infinity);
-        var height = _signatureHelp.DesiredSize.Height;
+        var height = _signatureHelp.DesiredSize.Height - _signatureHelp.Margin.Top; // DesiredSize includes the last placement
         var y = top.Y - height - 2 >= 0 && !_completion.IsVisible ? top.Y - height - 2 : bottom.Y + 2;
         if (textView.TranslatePoint(new Point(top.X, y), this) is { } at)
             _signatureHelp.Margin = new Thickness(Math.Max(0, at.X), Math.Max(0, at.Y), 0, 0);
@@ -1102,7 +1102,7 @@ public sealed class CodeEditorView : Decorator, ICommandTarget, IEditorTestProbe
         var top = textView.GetVisualPosition(position, VisualYPosition.LineTop) - textView.ScrollOffset;
         var bottom = textView.GetVisualPosition(position, VisualYPosition.LineBottom) - textView.ScrollOffset;
         _hover.Measure(Size.Infinity);
-        var height = _hover.DesiredSize.Height;
+        var height = _hover.DesiredSize.Height - _hover.Margin.Top; // DesiredSize includes the last placement
         var y = bottom.Y + 2 + height <= textView.Bounds.Height || top.Y - height - 2 < 0 ? bottom.Y + 2 : top.Y - height - 2;
         if (textView.TranslatePoint(new Point(bottom.X, y), this) is { } at)
             _hover.Margin = new Thickness(Math.Max(0, at.X), Math.Max(0, at.Y), 0, 0);

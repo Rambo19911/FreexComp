@@ -122,6 +122,58 @@ public sealed class CompletionTests
         Assert.False(session.IsOpen);
     }
 
+    /// <summary>
+    /// IDE-ED-087: a superseded request and a result for a stale buffer version are dropped; an explicit request that takes
+    /// longer than 300 ms shows <c>Status_ComputingCompletions</c>.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-087")]
+    public Task StaleAndSupersededResultsAreDropped() => TestUiThread.RunAsync(StaleAndSupersededResultsAreDroppedOnUiThread);
+
+    private static async Task StaleAndSupersededResultsAreDroppedOnUiThread()
+    {
+        var (bed, doc) = await StartAsync();
+        var requests = new List<(TaskCompletionSource<CompletionList?> Result, CancellationToken Token)>();
+        var statuses = new List<string>();
+        var session = new CompletionSession(doc, (_, _, ct) =>
+        {
+            var result = new TaskCompletionSource<CompletionList?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            requests.Add((result, ct));
+            return result.Task;
+        }, bed.Clock, () => false, () => TimeSpan.Zero, statuses.Add);
+        CaretAfter(doc, "  P := P;");
+        var caret = doc.Selection.Caret;
+        static CompletionList List(int at, params string[] labels) =>
+            new(new FreexComp.Compiler.Text.TextSpan(at, 0), [.. labels.Select(l => Item(l, l))], false);
+
+        // Waiting: the status after 300 ms, not before.
+        var first = session.InvokeAsync();
+        bed.Clock.Advance(TimeSpan.FromMilliseconds(299));
+        Assert.Empty(statuses);
+        bed.Clock.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal([Strings.Status_ComputingCompletions], statuses);
+
+        // A second request supersedes the first: the first is canceled and its late result dropped.
+        var second = session.InvokeAsync();
+        Assert.True(requests[0].Token.IsCancellationRequested);
+        requests[0].Result.SetResult(List(caret, "Old"));
+        await first;
+        Assert.False(session.IsOpen);
+        requests[1].Result.SetResult(List(caret, "Alpha", "Beta"));
+        await second;
+        Assert.True(session.IsOpen);
+        Assert.Equal(["Alpha", "Beta"], session.Items.Select(i => i.Label));
+        session.Close();
+
+        // The buffer changed while the request ran: the result is for a stale version and is dropped.
+        var third = session.InvokeAsync();
+        BuildTestBed.Type(doc, " ", 0);
+        requests[2].Result.SetResult(List(caret, "Gamma"));
+        await third;
+        Assert.False(session.IsOpen);
+        Assert.Single(statuses); // fast requests show no status
+    }
+
     /// <summary>UI-ED-115 (I-198): the characters of a label that the typed text matched, for the highlight.</summary>
     [Fact]
     [Trait("Req", "UI-ED-115")]
@@ -141,6 +193,7 @@ public sealed class CompletionTests
     [Trait("Req", "IDE-ED-083")]
     [Trait("Req", "IDE-ED-084")]
     [Trait("Req", "IDE-ED-085")]
+    [Trait("Req", "IDE-ED-063")]
     public Task FilterRankCommit() => TestUiThread.RunAsync(FilterRankCommitOnUiThread); // I-208
 
     private static async Task FilterRankCommitOnUiThread()

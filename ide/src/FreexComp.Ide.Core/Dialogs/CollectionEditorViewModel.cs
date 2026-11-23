@@ -36,6 +36,12 @@ public sealed class CollectionEditorViewModel : DialogViewModel<FormChange>
         Grid = new PropertyGridViewModel(new ItemTarget(this, catalog), dialogs, itemMode: true);
         Ok = new DialogButtonViewModel("Ok", Strings.Button_OK, () => Close(Model.CommitChange())) { IsDefault = true, IsAccent = true };
         Buttons = [Ok, new DialogButtonViewModel("Cancel", Strings.Button_Cancel, () => Close(null)) { IsCancel = true }];
+        // UI-DLG-243: OK is always enabled, except while a grid editor is open with a refused (invalid) entry.
+        Grid.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(PropertyGridViewModel.IsEditing) or nameof(PropertyGridViewModel.EditError))
+                Ok.IsEnabled = !(Grid.IsEditing && Grid.EditError is not null);
+        };
         _selected = Model.Items.Count > 0 ? [0] : [];
     }
 

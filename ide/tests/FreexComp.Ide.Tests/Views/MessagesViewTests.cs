@@ -2,6 +2,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
+using Avalonia.Media;
 using Avalonia.Threading;
 using FreexComp.Compiler;
 using FreexComp.Ide.Core.Build;
@@ -60,6 +61,9 @@ public sealed class MessagesViewTests
     [Trait("Req", "UI-TW-403")]
     [Trait("Req", "UI-TW-409")]
     [Trait("Req", "UI-TW-411")]
+    [Trait("Req", "UI-TW-400")]
+    [Trait("Req", "UI-TW-402")]
+    [Trait("Req", "IDE-P3-067")]
     public async Task SeverityTogglesAndFilter()
     {
         await using var h = await BuildScenario.StartAsync();
@@ -69,6 +73,13 @@ public sealed class MessagesViewTests
         Assert.Equal(MessagesViewModel.ToolName, h.Services.Layout.Layout.Bottom.ActiveTool);
         foreach (var key in (string[])["0", "1", "2", "3", "summary"])
             Assert.NotNull(Row<Control>(h, key));
+        // UI-TW-400: the diagnostics of the last build plus one summary row, which is last.
+        Assert.Equal(["0", "1", "2", "3", "summary"], BuildScenario.Messages(h).Rows.Select(r => r.Key));
+        // UI-TW-402: no row tint; the severity is the icon and its word; the summary row is type.bodyStrong.
+        Assert.Null(Row<Grid>(h, "0").Background);
+        Assert.Equal(FontWeight.Normal, Row<TextBlock>(h, "0", "Description").FontWeight);
+        Assert.Equal(FontWeight.SemiBold, Row<TextBlock>(h, "summary", "Description").FontWeight);
+        Assert.Equal(Strings.MessagesView_Severity_Warning, ToolTip.GetTip(Row<Control>(h, "2", "Severity")));
         Assert.Equal("E2003", Row<TextBlock>(h, "0", "Code").Text);
         Assert.Equal("Unit1.pas", h.Find<TextBlock>("Tool.Messages.Row.0.File").Text);
         Assert.Equal(("6", "3"), (h.Find<TextBlock>("Tool.Messages.Row.0.Line").Text, h.Find<TextBlock>("Tool.Messages.Row.0.Col").Text));
@@ -120,10 +131,21 @@ public sealed class MessagesViewTests
         h.Press("Left");
         Assert.False(HasRow(h, "0.r0"));
 
-        // messages.clear: the empty state, counts gone.
+        // messages.clear: the empty state, counts gone; Output keeps its lines (IDE-P3-067).
+        var outputLines = h.Services.Output.GetLines(OutputChannels.Build).Count;
         await h.ExecuteAsync("messages.clear");
         Assert.True(h.Find<Control>("Tool.Messages.Empty").IsVisible);
         Assert.Equal("Messages", BuildScenario.Messages(h).Title);
+        Assert.Empty(h.Services.Messages.Items);
+        Assert.Equal((0, 0, 0), (h.Services.Messages.ErrorCount, h.Services.Messages.WarningCount, h.Services.Messages.HintCount));
+        Assert.Equal(outputLines, h.Services.Output.GetLines(OutputChannels.Build).Count);
+
+        // Closing the project clears Messages.
+        await BuildWithMessagesAsync(h);
+        Assert.NotEmpty(h.Services.Messages.Items);
+        await h.ExecuteAsync("file.closeProject");
+        Assert.Null(h.Services.Projects.Project);
+        Assert.Empty(h.Services.Messages.Items);
     }
 
     /// <summary>UI-TW-408: Ctrl+C copies the selected rows in the text diagnostic format; Copy All copies every row.</summary>
@@ -158,6 +180,7 @@ public sealed class MessagesViewTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TW-405")]
     [Trait("Req", "IDE-P3-066")]
+    [Trait("Req", "IDE-ED-103")]
     public async Task F8CyclesVisibleRows()
     {
         await using var h = await BuildScenario.StartAsync();

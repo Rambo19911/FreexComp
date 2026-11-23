@@ -80,7 +80,9 @@ public static class Phase3Scenario
     /// <summary>Steps 2–6 on a harness from <see cref="StartAsync"/>.</summary>
     public static async Task BuildErrorNavigateFixRunAsync(HeadlessHarness h)
     {
-        Assert.Equal(3, ServiceGraph.ImplementedPhase); // the product is at Phase 3: no test override of the implemented phase
+        // The scenario runs at the product's phase (Phase 3 or later; Phase 5 since I-207): no test override of the implemented phase.
+        Assert.True(ServiceGraph.ImplementedPhase >= 3);
+        Assert.Equal(ServiceGraph.ImplementedPhase, h.Services.ImplementedPhase);
         var real = h.RealBuild;
         // I-205: every wait, on the real compiler, linker and program too, is bounded by the test's own timeout.
         if (real)

@@ -53,6 +53,7 @@ public sealed class RunService : IRunService
     private readonly IUiDispatcher _dispatcher;
     private readonly IDialogService _dialogs;
     private readonly IStatusService _status;
+    private bool _debugNoticeShown;
     private readonly ILog _log;
     private Session? _session;
     private IRunningProcess? _waitingHost; // IDE-P3-089: a console host whose program ended, still at its key prompt
@@ -94,7 +95,7 @@ public sealed class RunService : IRunService
     public void RegisterCommands(ICommandService commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        commands.RegisterHandler("run.start", new Handler(() => _projects.Project is not null, () => StartCommandAsync(withDebugger: false)));
+        commands.RegisterHandler("run.start", new Handler(() => _projects.Project is not null, StartWithoutDebuggerNoticeAsync));
         commands.RegisterHandler("run.startWithoutDebugging", new Handler(() => _projects.Project is not null, () => StartCommandAsync(false)));
         commands.RegisterHandler("run.stop", new Handler(() => _session is not null, StopAsync));
         commands.RegisterHandler("run.restart", new Handler(() => _session is not null, RestartAsync));
@@ -226,6 +227,21 @@ public sealed class RunService : IRunService
     public static string FormatExitCode(int code) => code is > 255 or < 0
         ? string.Create(CultureInfo.InvariantCulture, $"{code} (0x{unchecked((uint)code):X8})")
         : code.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// UI-MENU-020 / IDE-P3-086: until the debugger exists (Phases 3–5) <c>run.start</c> runs like
+    /// <c>run.startWithoutDebugging</c>; the status bar says so once per IDE session.
+    /// </summary>
+    private Task StartWithoutDebuggerNoticeAsync()
+    {
+        if (!_debugNoticeShown)
+        {
+            _debugNoticeShown = true;
+            _status.ShowMessage(Strings.Msg_Debug_NotAvailable, StatusDuration);
+        }
+
+        return StartCommandAsync(withDebugger: false);
+    }
 
     private async Task StartCommandAsync(bool withDebugger)
     {

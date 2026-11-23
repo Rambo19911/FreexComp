@@ -86,7 +86,6 @@ public sealed class MenuDesignerViewTests
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
         {
-            o.ImplementedPhase = 5;
             o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
             o.InitialFiles["MainForm.pas"] = Unit.ReplaceLineEndings("\r\n");
             o.InitialFiles["MainForm.form"] = Form.ReplaceLineEndings("\r\n");
@@ -208,7 +207,6 @@ public sealed class MenuDesignerViewTests
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
         {
-            o.ImplementedPhase = 5;
             o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
             o.InitialFiles["MainForm.pas"] = Unit.ReplaceLineEndings("\r\n");
             o.InitialFiles["MainForm.form"] = Form.ReplaceLineEndings("\r\n");

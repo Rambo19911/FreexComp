@@ -14,6 +14,7 @@ public sealed partial class BuildServiceTests
     [Trait("Req", "IDE-P3-020")]
     [Trait("Req", "IDE-P3-021")]
     [Trait("Req", "IDE-P3-022")]
+    [Trait("Req", "IDE-P3-023")]
     public Task SaveBeforeBuildModes() => TestUiThread.RunAsync(() => SaveBeforeBuildModesOnUiThread()); // I-209
 
     private async Task SaveBeforeBuildModesOnUiThread()
@@ -33,6 +34,14 @@ public sealed partial class BuildServiceTests
         Assert.False(unit.IsModified);
         Assert.True(notes.IsModified);
         Assert.Equal("unit Notes;\n", bed.Text(outsider));
+
+        // IDE-P3-023: an untitled document is never a member, so no Save As picker appears; it stays unsaved.
+        var untitled = bed.Services.Documents.NewUntitledUnit();
+        BuildTestBed.Type(untitled, "{u}");
+        Assert.NotNull(await build.BuildAsync(BuildKind.Build));
+        Assert.True(untitled.IsModified);
+        Assert.Null(untitled.FilePath);
+        Assert.Empty(bed.Dialogs.Requests);
 
         // Clean saves nothing.
         BuildTestBed.Type(unit, "{b}");

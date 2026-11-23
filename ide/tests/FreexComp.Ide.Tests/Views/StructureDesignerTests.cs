@@ -102,13 +102,13 @@ public sealed class StructureDesignerTests
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-TW-207")]
     [Trait("Req", "UI-TW-209")]
+    [Trait("Req", "IDE-ED-132")]
     public async Task TreeMirrorsFormAndSelection()
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
         {
             o.InitialFiles["MainForm.pas"] = Unit.ReplaceLineEndings("\r\n");
             o.InitialFiles["MainForm.form"] = FormText.ReplaceLineEndings("\r\n");
-            o.ImplementedPhase = 5;
         });
         var document = await ToolPaletteViewTests.OpenDesignAsync(h);
         var designer = document.Designer;

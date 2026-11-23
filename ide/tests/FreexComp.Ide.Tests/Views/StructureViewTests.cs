@@ -28,6 +28,7 @@ public sealed class StructureViewTests
     [Trait("Req", "UI-TW-205")]
     [Trait("Req", "UI-TW-206")]
     [Trait("Req", "IDE-ED-131")]
+    [Trait("Req", "IDE-ED-132")]
     public async Task GroupsAndCaretTracking()
     {
         await using var h = await HeadlessHarness.StartAsync(o =>
@@ -39,6 +40,7 @@ public sealed class StructureViewTests
         await h.ExecuteAsync("view.structure");
         var empty = h.Find<TextBlock>("Tool.Structure.Empty");
         Assert.True(empty.IsVisible); // no document
+        Assert.Equal(Core.Resources.Strings.Msg_Structure_Empty, empty.Text);
 
         Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "Main.pas"))).Success);
         await h.WaitForAsync(() => RowKeys(h).Count > 0, "structure built on document switch");

@@ -234,6 +234,7 @@ public sealed class ObjectInspectorRuleTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "DSG-OI-005")]
     [Trait("Req", "DSG-OI-087")]
+    [Trait("Req", "UI-TW-303")]
     public Task EventsPageOfPreservedComponentAndReadOnlyForm() => TestUiThread.RunAsync(EventsPageOfPreservedComponentAndReadOnlyFormOnUiThread);
 
     private async Task EventsPageOfPreservedComponentAndReadOnlyFormOnUiThread()

@@ -1,1 +1,6 @@
 # IDE-TEST-030: in-scope behaviour without a test yet (known gaps). "<id> <note>". Remove a line when a test covers the id.
+IDE-P3-035 not implemented: an E4008 (output file in use) result shows no Msg.Build.OutputLocked and offers no Stop and Build; the message definition exists only
+UI-ED-114 not implemented: the completion list draws a letter glyph per symbol kind (SymbolKindIcon), not the outline icons of the brief; the symbol-kind SVG icons do not exist yet
+UI-TW-203 not implemented: Structure rows have no symbol-kind icon (only the chevron, the visibility tooltip and the design-view overlays)
+UI-TW-304 not implemented: category rows use the category name as row key, not $cat.<Category> (a category and a property of the same name, e.g. Action, share a key)
+UI-TW-401 not implemented: the Messages columns cannot be sorted (arrival order only)

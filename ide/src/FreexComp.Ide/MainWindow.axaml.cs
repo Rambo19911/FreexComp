@@ -57,6 +57,7 @@ public sealed partial class MainWindow : Window
         };
         Closed += (_, _) => _closed = true;
         Activated += (_, _) => ViewModel?.OnActivated(); // IDE-P1-110 (b)
+        Deactivated += (_, _) => ViewModel?.OnDeactivated(); // IDE-ED-086
         ToolBars.EscapeRequested += (_, _) => ViewModel?.Layout.FocusPane(Core.Models.Pane.Documents); // UI-TB-008
         StatusBar.EscapeRequested += (_, _) => ViewModel?.Layout.FocusPane(Core.Models.Pane.Documents);
         MenuBar.Closed += (_, _) => Dispatcher.UIThread.Post(() =>

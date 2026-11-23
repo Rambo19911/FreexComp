@@ -36,7 +36,6 @@ public sealed class ToolPaletteViewTests
     internal static void Phase5(HarnessOptions o)
     {
         DesignerViewTests.Files(o);
-        o.ImplementedPhase = 5;
     }
 
     internal static async Task<FormDocumentViewModel> OpenDesignAsync(HeadlessHarness h)
@@ -70,6 +69,8 @@ public sealed class ToolPaletteViewTests
     [Trait("Req", "UI-DSG-122")]
     [Trait("Req", "UI-DSG-124")]
     [Trait("Req", "UI-TW-351")]
+    [Trait("Req", "UI-TW-350")]
+    [Trait("Req", "UI-TW-353")]
     [Trait("Req", "DSG-TP-022")]
     [Trait("Req", "DSG-TP-023")]
     [Trait("Req", "DSG-TP-030")]

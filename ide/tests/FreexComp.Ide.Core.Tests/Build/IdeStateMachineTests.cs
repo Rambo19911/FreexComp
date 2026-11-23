@@ -75,6 +75,7 @@ public sealed class IdeStateMachineTests
     [Trait("Req", "IDE-P3-003")]
     [Trait("Req", "IDE-P3-004")]
     [Trait("Req", "IDE-PM-032")]
+    [Trait("Req", "IDE-P3-033")]
     public void CommandAvailabilityPerState()
     {
         string[] idleOnly =

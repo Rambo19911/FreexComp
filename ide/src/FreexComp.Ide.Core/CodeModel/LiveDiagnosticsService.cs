@@ -14,6 +14,7 @@ namespace FreexComp.Ide.Core.CodeModel;
 /// IDE-ED-092/093 (I-111): every open Pascal document of the project gets a <see cref="LiveDiagnostics"/> decoration
 /// provider. <c>editor.liveDiagnostics.delayMs</c> after the last edit (and after opening) the document is analysed in the
 /// project <c>Compilation</c> with every open buffer; the result becomes squiggles and error glyphs, never Messages rows.
+/// A loose file (no project open, or not a member) gets the parser's diagnostics only (IDE-ED-094).
 /// </summary>
 public sealed class LiveDiagnosticsService
 {
@@ -166,22 +167,26 @@ public sealed class LiveDiagnostics : IEditorDecorationProvider, IDisposable
         _timer?.Dispose();
         _timer = null;
         var generation = ++_generation;
-        if (_service.CodeModel.Synchronize() is not { } compilation || _document.FilePath is not { } path)
+        if (_document.FilePath is not { } path)
         {
             SetMarkers([]);
             return;
         }
 
+        // IDE-ED-094: a loose file (no project, or not a member) gets the parser's diagnostics only.
+        var compilation = _service.CodeModel.IsProjectFile(path) ? _service.CodeModel.Synchronize() : null;
         var text = _document.Buffer.Text;
         _ = AnalyseAsync(generation, compilation, path, text);
     }
 
-    private async Task AnalyseAsync(int generation, Compilation compilation, string path, string text)
+    private async Task AnalyseAsync(int generation, Compilation? compilation, string path, string text)
     {
         ImmutableArray<Diagnostic> diagnostics;
         try
         {
-            diagnostics = await _service.CodeModel.Worker.RunAsync("liveDiagnostics:" + path, token => compilation.GetDiagnostics(path, token));
+            diagnostics = await _service.CodeModel.Worker.RunAsync("liveDiagnostics:" + path, token => compilation is null
+                ? FreexComp.Compiler.Syntax.SyntaxTree.Parse(SourceText.From(PathUtil.Normalize(path), text)).Diagnostics
+                : compilation.GetDiagnostics(path, token));
         }
         catch (OperationCanceledException)
         {

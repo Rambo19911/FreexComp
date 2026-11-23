@@ -38,6 +38,7 @@ public sealed class GoToFilePopupTests
     [Trait("Req", "UI-DLG-130")]
     [Trait("Req", "UI-DLG-131")]
     [Trait("Req", "UI-DLG-132")]
+    [Trait("Req", "IDE-ED-102")]
     public async Task RankingAndLineSuffix()
     {
         await using var h = await StartWithProjectAsync();

@@ -3046,6 +3046,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>&amp;Open</value>
     <comment>tool-windows.md §2 Project Manager context menu (title: commands.md)</comment>
   </data>
+  <data name="Menu_projectManager_openForm" xml:space="preserve">
+    <value>Open &amp;Form Designer</value>
+    <comment>tool-windows.md §2 Project Manager context menu, P5 (title: commands.md)</comment>
+  </data>
   <data name="Menu_projectManager_collapseAll" xml:space="preserve">
     <value>Collapse &amp;All</value>
     <comment>tool-windows.md §2 Project Manager context menu</comment>

@@ -148,6 +148,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     public void RegisterCommands()
     {
         _commands.RegisterHandler("projectManager.open", new Handler(_ => _selection.Count > 0, _ => OpenSelectionAsync()));
+        if (_implementedPhase >= 5)
+            _commands.RegisterHandler("projectManager.openForm", new Handler(_ => SelectedFormPath() is not null, _ => OpenFormAsync())); // UI-TW-108
         _commands.RegisterHandler("projectManager.collapseAll", new Handler(_ => HasProject, _ =>
         {
             CollapseAll();
@@ -320,6 +322,8 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
             var command = _commands.Get(id);
             if (command.Definition.Phase > _implementedPhase)
                 continue;
+            if (id == "projectManager.openForm" && SelectedFormPath() is null)
+                continue; // only for units with a form and .form rows (tool-windows.md §2)
             if (pendingSeparator)
                 items.Add(MenuItemModel.Separator());
             pendingSeparator = false;
@@ -360,6 +364,26 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
 
         if (opened)
             ReturnFocusToDocument();
+    }
+
+    /// <summary>The form of the single selected row: a <c>.form</c> row, or the form child of a unit row; else null.</summary>
+    private string? SelectedFormPath() => _selection switch
+    {
+        [{ Kind: ProjectNodeKind.Form } form] => form.FullPath,
+        [{ Kind: ProjectNodeKind.File } file] => file.Children.FirstOrDefault(c => c.Kind == ProjectNodeKind.Form)?.FullPath,
+        _ => null,
+    };
+
+    /// <summary><c>projectManager.openForm</c> (UI-TW-108, P5): the form document in its Design view (DSG-CS-080).</summary>
+    private async Task OpenFormAsync()
+    {
+        if (SelectedFormPath() is not { } path)
+            return;
+        var result = await _documents.OpenAsync(path);
+        if (result.Success)
+            ReturnFocusToDocument();
+        else if (result.NeedsMessage)
+            await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args));
     }
 
     public void CollapseAll()

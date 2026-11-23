@@ -59,6 +59,12 @@ public static partial class AutomationIds
     /// <summary>The design surface of a form (accessibility.md §3 Designer): <c>Designer.&lt;formName&gt;</c>.</summary>
     public static string Designer(string formName) => "Designer." + formName;
 
+    /// <summary>
+    /// The progress ring of a Design view whose component metadata is still loading (DSG-TP-003):
+    /// <c>Designer.&lt;formName&gt;.Loading</c> (the form's file name; the form is not read yet).
+    /// </summary>
+    public static string DesignerLoading(string formName) => Designer(formName) + ".Loading";
+
     /// <summary>The form frame on the design surface: <c>Designer.&lt;formName&gt;.Form</c>.</summary>
     public static string DesignerForm(string formName) => Designer(formName) + ".Form";
 

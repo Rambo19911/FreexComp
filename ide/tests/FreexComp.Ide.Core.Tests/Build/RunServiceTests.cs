@@ -376,6 +376,8 @@ public sealed class RunServiceTests
     /// </summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-004")]
+    [Trait("Req", "IDE-P3-085")]
+    [Trait("Req", "IDE-P3-006")]
     public Task RunWhileRunningOffersRestart() => TestUiThread.RunAsync(() => RunWhileRunningOffersRestartOnUiThread()); // I-209
 
     private async Task RunWhileRunningOffersRestartOnUiThread()
@@ -387,6 +389,14 @@ public sealed class RunServiceTests
         Assert.True(bed.Services.Commands.CanExecute("run.start"));
         Assert.True(bed.Services.Commands.CanExecute("run.startWithoutDebugging"));
 
+        // IDE-P3-006: editing is allowed while the program runs, without a message.
+        var unit = await bed.OpenDocumentAsync(BuildTestBed.UnitPath);
+        BuildTestBed.Type(unit, "{x}");
+        Assert.True(unit.IsModified);
+        Assert.Empty(bed.Dialogs.Requests);
+        Assert.Equal(IdeState.Running, bed.Services.State.Current.State);
+
+        // IDE-P3-085: one program at a time; a second start asks first and keeps the running one on Cancel.
         bed.Dialogs.Answer("Msg.Run.AlreadyRunning", "Cancel");
         await bed.Services.Commands.ExecuteAsync("run.startWithoutDebugging");
         Assert.Equal(["Hello.exe"], bed.Dialogs.Requests.Single(r => r.MessageId == "Msg.Run.AlreadyRunning").Args);
@@ -399,6 +409,36 @@ public sealed class RunServiceTests
         Assert.Equal(1, first.KillCount);
         Assert.Equal(2, bed.Processes.Started.Count);
         Assert.Equal(new IdeStateInfo(IdeState.Running, null, false, Exe, bed.Processes.Last.ProcessId), bed.Services.State.Current);
+    }
+
+    /// <summary>UI-MENU-020 / IDE-P3-086: in Phases 3–5 F5 runs without the debugger and says so once per IDE session.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-MENU-020")]
+    [Trait("Req", "IDE-P3-086")]
+    public Task StartRunsWithoutDebuggerAndSaysSoOnce() => TestUiThread.RunAsync(() => StartRunsWithoutDebuggerAndSaysSoOnceOnUiThread());
+
+    private async Task StartRunsWithoutDebuggerAndSaysSoOnceOnUiThread()
+    {
+        var bed = await StartAsync();
+        var statuses = new List<string?>();
+        bed.Services.Status.Changed += (_, _) => statuses.Add(bed.Services.Status.Message);
+
+        async Task RunAndExitAsync(string command)
+        {
+            await bed.Services.Commands.ExecuteAsync(command);
+            Assert.Equal(IdeState.Running, bed.Services.State.Current.State); // the program, not a debug session
+            var ended = Ended(bed);
+            bed.Processes.Last.Exit(0);
+            await ended;
+        }
+
+        await RunAndExitAsync("run.startWithoutDebugging");
+        Assert.DoesNotContain(Strings.Msg_Debug_NotAvailable, statuses);
+        await RunAndExitAsync("run.start");
+        Assert.Contains(Strings.Msg_Debug_NotAvailable, statuses);
+        await RunAndExitAsync("run.start");
+        Assert.Single(statuses, s => s == Strings.Msg_Debug_NotAvailable);
+        Assert.Equal(3, bed.Processes.Started.Count);
     }
 
     /// <summary>IDE-P3-093: exit and project close while a program runs ask first and stop it on confirmation.</summary>

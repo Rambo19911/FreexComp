@@ -38,6 +38,7 @@ public sealed class MessagesServiceTests
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-064")]
     [Trait("Req", "IDE-P3-065")]
+    [Trait("Req", "IDE-P3-068")]
     public Task AnchorsFollowEdits() => TestUiThread.RunAsync(() => AnchorsFollowEditsOnUiThread()); // I-209
 
     private async Task AnchorsFollowEditsOnUiThread()
@@ -59,6 +60,8 @@ public sealed class MessagesServiceTests
         unit.Selection = TextSelection.At(0);
         await messages.NavigateToAsync(row);
         Expect(unit, 7, 3, 3);
+        Assert.Same(row, messages.Items[0]); // IDE-P3-068: editing the file keeps its rows until the next build
+        Assert.Equal(2, messages.Items.Count);
 
         // A row of a file opened after the build is anchored on open (its text is the disk text).
         var main = Error("Missing ';'", 2, 5, 1, BuildTestBed.MainPath);
@@ -67,6 +70,7 @@ public sealed class MessagesServiceTests
         bed.Services.Settings.Set(Core.Settings.SettingsCatalog.EnvironmentAutoSaveBeforeBuild, "none");
         await bed.Services.Build.BuildAsync(BuildKind.Build);
         var mainRow = messages.Items[0];
+        Assert.DoesNotContain(row, messages.Items); // the next build replaced the rows
         Assert.Null(mainRow.Anchor);
         var opened = await bed.OpenDocumentAsync(BuildTestBed.MainPath);
         Assert.NotNull(mainRow.Anchor);

@@ -74,4 +74,29 @@ public sealed class LiveDiagnosticsTests
         Dispatcher.UIThread.RunJobs();
         Assert.Empty(probe.Markers);
     }
+
+    /// <summary>IDE-ED-094: a file outside the project gets the parser's diagnostics only, no semantic analysis.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-094")]
+    public async Task LooseFileGetsSyntaxDiagnosticsOnly()
+    {
+        const string loose = "unit Notes;\r\ninterface\r\nimplementation\r\nbegin\r\n  Foo := 1;\r\n  Bar := ;\r\nend.\r\n";
+        await using var h = await BuildScenario.StartAsync(o =>
+        {
+            AddRealRtl(o);
+            o.InitialFiles[@"Loose\Notes.pas"] = loose;
+        });
+        var delay = TimeSpan.FromMilliseconds(h.Services.Settings.Get(SettingsCatalog.EditorLiveDiagnosticsDelayMs));
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, @"Loose\Notes.pas"))).Value);
+        Assert.False(h.Services.Projects.IsMember(doc.FilePath!));
+        Dispatcher.UIThread.RunJobs();
+        IEditorTestProbe probe = h.Find<TextEditor>("Editor.Notes.pas").FindAncestorOfType<CodeEditorView>()!;
+
+        h.Clock.Advance(delay);
+        await h.WaitForAsync(() => probe.Markers.Count > 0, "syntax squiggle");
+        var marker = Assert.Single(probe.Markers);
+        Assert.Equal("Error", marker.Kind);
+        Assert.True(marker.Offset > loose.IndexOf("Bar :=", StringComparison.Ordinal)); // the missing expression, not the undeclared Foo
+        Assert.Empty(doc.Decorations.MarkersAt(loose.IndexOf("Foo", StringComparison.Ordinal) + 1));
+    }
 }

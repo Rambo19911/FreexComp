@@ -85,6 +85,7 @@ public sealed partial class BuildServiceTests
     [Trait("Req", "IDE-P3-060")]
     [Trait("Req", "IDE-P3-071")]
     [Trait("Req", "IDE-P3-013")]
+    [Trait("Req", "IDE-P3-032")]
     public Task EventsBecomeMessagesAndOutput() => TestUiThread.RunAsync(() => EventsBecomeMessagesAndOutputOnUiThread()); // I-209
 
     private async Task EventsBecomeMessagesAndOutputOnUiThread()
@@ -94,6 +95,7 @@ public sealed partial class BuildServiceTests
         bed.Services.Settings.Set(SettingsCatalog.BuildShowCommandLines, true);
         bed.Services.Output.Append(OutputChannels.Build, "old line", OutputKind.Normal);
         bed.FlushOutput();
+        bed.Services.Messages.AddError("row of an earlier check"); // IDE-P3-032: Messages is cleared when the build starts
 
         var related = new RelatedLocation(new Location(BuildTestBed.UnitPath, default,
             new LinePositionSpan(new LinePosition(2, 0), new LinePosition(2, 0))), "Declared here");
@@ -119,6 +121,8 @@ public sealed partial class BuildServiceTests
         Assert.Equal((@"G:\llvm", @"G:\rtl"), (request.ToolchainDirectory, request.RtlDirectory));
         Assert.Empty(request.OpenFiles);
 
+        Assert.Equal(2, bed.Services.Messages.Items.Count); // the error and the summary row, nothing older
+        Assert.DoesNotContain(bed.Services.Messages.Items, i => i.Text == "row of an earlier check");
         var row = bed.Services.Messages.Items[0];
         Assert.Equal(new MessageLocation(BuildTestBed.UnitPath, 12, 5, 12, 8), row.Location);
         Assert.Equal(("E2003", "Undeclared identifier 'Foo'", MessageSeverity.Error), (row.Code, row.Text, row.Severity));
@@ -144,6 +148,29 @@ public sealed partial class BuildServiceTests
         await bed.Services.Build.BuildAsync(BuildKind.Rebuild);
         await bed.Services.Build.BuildAsync(BuildKind.Clean);
         Assert.Equal([BuildTarget.Build, BuildTarget.Rebuild, BuildTarget.Clean], bed.Engine.Requests.Select(r => r.Target));
+    }
+
+    /// <summary>IDE-P3-036: pre/post-build events of the project are not run; the Output says so once per build.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-P3-036")]
+    public Task BuildEventsAreIgnoredOncePerBuild() => TestUiThread.RunAsync(() => BuildEventsAreIgnoredOncePerBuildOnUiThread());
+
+    private async Task BuildEventsAreIgnoredOncePerBuildOnUiThread()
+    {
+        var bed = new BuildTestBed();
+        await bed.OpenHelloAsync(extra: """, "events": { "preBuild": [ "echo pre" ], "postBuild": [ "echo post" ] }""");
+        await bed.Services.Build.BuildAsync(BuildKind.Build);
+        Assert.Equal(1, bed.OutputText(OutputChannels.Build).Count(l => l == Strings.Msg_Project_EventsIgnored));
+        bed.Services.Settings.Set(SettingsCatalog.OutputClearOnBuild, false);
+        await bed.Services.Build.BuildAsync(BuildKind.Rebuild);
+        Assert.Equal(2, bed.OutputText(OutputChannels.Build).Count(l => l == Strings.Msg_Project_EventsIgnored)); // once more, for the second build
+        Assert.Equal(2, bed.Engine.Requests.Count);
+
+        // A project without events: no line.
+        var plain = new BuildTestBed();
+        await plain.OpenHelloAsync();
+        await plain.Services.Build.BuildAsync(BuildKind.Build);
+        Assert.DoesNotContain(Strings.Msg_Project_EventsIgnored, plain.OutputText(OutputChannels.Build));
     }
 
     /// <summary>IDE-P3-034: the summary text for each kind of result (state field, Output, Messages summary row).</summary>

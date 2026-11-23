@@ -271,11 +271,12 @@ public sealed class OptionsDialogTests
         Assert.Equal("Editor › General", PageTitle(dlg));
         Assert.Equal("Code assistance", ((OptionsViewModel)dlg.Window.Model).Field("CompletionAuto").GroupHeading); // menus.md N4
 
-        // Selecting a group row selects its first child; a later-phase page shows the note and no editable content.
+        // Selecting a group row selects its first child; at the product's phase the Designer page is live (the note of a
+        // later-phase page: AutoSwitchLayoutBinds at Phase 4).
         dlg.Click("Page.Designer");
         Assert.Equal("Designer", PageTitle(dlg));
-        Assert.Equal("These options take effect in a later version.", dlg.Find<TextBlock>("LaterVersion").Text);
-        Assert.True(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
+        Assert.False(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
+        Assert.True(dlg.Find<Control>("ShowGrid").IsEffectivelyEnabled);
         dlg.Click("Page.Editor");
         Assert.Equal("Editor › General", PageTitle(dlg));
         Assert.False(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
@@ -659,7 +660,7 @@ public sealed class OptionsDialogTests
     [Trait("Req", "UI-DLG-094")]
     public async Task DesignerPageBindsSettings()
     {
-        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5);
+        await using var h = await HeadlessHarness.StartAsync();
         var settings = h.Services.Settings;
         var designer = new Core.Designer.SettingsDesignerSettings(settings);
         Assert.True(designer.ShowComponentCaptions);
@@ -729,17 +730,22 @@ public sealed class OptionsDialogTests
     [Trait("Req", "UI-DLG-094")]
     public async Task AutoSwitchLayoutBinds()
     {
-        await using (var early = await HeadlessHarness.StartAsync())
+        // Before Phase 5 (phase gating, UI-DLG-090): the field is disabled and a later-phase page shows the note.
+        await using (var early = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 4))
         {
             var running = early.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
             var dlg = await early.WaitForDialogAsync("Options");
             CheckFields(dlg, early.Services.Settings,
                 [("AutoSwitchLayout", "Switch window la_yout automatically", SettingsCatalog.LayoutAutoSwitch, false)]);
+            dlg.Click("Page.Designer");
+            Assert.Equal("These options take effect in a later version.", dlg.Find<TextBlock>("LaterVersion").Text);
+            Assert.True(dlg.Find<TextBlock>("LaterVersion").IsEffectivelyVisible);
+            Assert.False(dlg.Find<Control>("ShowGrid").IsEffectivelyEnabled);
             dlg.Click("Cancel");
             await running;
         }
 
-        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5);
+        await using var h = await HeadlessHarness.StartAsync();
         var settings = h.Services.Settings;
         var shown = h.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
         var options = await h.WaitForDialogAsync("Options");

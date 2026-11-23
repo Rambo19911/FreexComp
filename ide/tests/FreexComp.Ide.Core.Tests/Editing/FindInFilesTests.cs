@@ -212,6 +212,78 @@ public sealed class FindInFilesTests
         Assert.Equal(reports[0], partial.Matches);
     }
 
+    /// <summary>
+    /// Search Results over the service: IDE-ED-125 / UI-TW-604 a result follows edits through its anchor (open at search
+    /// time, or opened later); UI-TW-605 the filter matches file names and line texts; IDE-ED-126 <c>searchResults.repeat</c>
+    /// runs the last search again and a new search replaces the results; UI-TW-606 the capped info bar.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-125")]
+    [Trait("Req", "IDE-ED-126")]
+    [Trait("Req", "UI-TW-604")]
+    [Trait("Req", "UI-TW-605")]
+    [Trait("Req", "UI-TW-606")]
+    public Task ResultsFollowEditsFilterRepeatAndCap() => TestUiThread.RunAsync(() => ResultsFollowEditsFilterRepeatAndCapOnUiThread());
+
+    private async Task ResultsFollowEditsFilterRepeatAndCapOnUiThread()
+    {
+        File(Dir + @"\Hello.pproj", """
+            { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
+              "files": [ { "path": "Hello.pas" }, { "path": "Unit1.pas" } ] }
+            """);
+        File(Dir + @"\Hello.pas", "program Hello;\nbegin\n  Needle;\nend.\n");
+        File(Dir + @"\Unit1.pas", "unit Unit1;\ninterface\n{needle}\nimplementation\nend.\n");
+        Assert.True(await _services.Projects.OpenAsync(Dir + @"\Hello.pproj"));
+        var model = (SearchResultsViewModel)_services.ToolWindows.Get(SearchResultsViewModel.ToolName)!;
+        var unit1 = Assert.IsType<TextDocumentViewModel>((await _services.Documents.OpenAsync(Dir + @"\Unit1.pas")).Value);
+        SearchResultRow MatchRow(string file) => model.Rows.Single(r => r.Match is { } m && Path.GetFileName(m.Path) == file);
+        List<string> Files() => [.. model.Rows.Where(r => r.IsFile).Select(r => r.FileName)];
+
+        await model.RunAsync(Request("needle", FindInFilesScope.Project));
+        Assert.Equal(["Hello.pas", "Unit1.pas"], Files());
+
+        // Unit1 was open at search time: a line inserted above the match moves the target with it.
+        unit1.Buffer.ApplyEdits([new TextEdit(0, 0, "// new line\n")]);
+        await model.GoToAsync(MatchRow("Unit1.pas"));
+        var at = unit1.Buffer.Text.IndexOf("needle", StringComparison.Ordinal);
+        Assert.Equal(new TextSelection(at, at + 6), unit1.Selection);
+
+        // Hello.pas is opened after the search: anchored on open, it follows edits too.
+        var hello = Assert.IsType<TextDocumentViewModel>((await _services.Documents.OpenAsync(Dir + @"\Hello.pas")).Value);
+        hello.Buffer.ApplyEdits([new TextEdit(0, 0, "{a}\n{b}\n")]);
+        await model.GoToAsync(MatchRow("Hello.pas"));
+        at = hello.Buffer.Text.IndexOf("Needle", StringComparison.Ordinal);
+        Assert.Equal(new TextSelection(at, at + 6), hello.Selection);
+
+        // The filter matches a file name, or the text of a match line.
+        model.FilterText = "unit1";
+        _clock.Advance(ToolWindowViewModel.FilterDelay);
+        Assert.Equal(["Unit1.pas"], Files());
+        model.FilterText = "Needle;";
+        _clock.Advance(ToolWindowViewModel.FilterDelay);
+        Assert.Equal(["Hello.pas"], Files());
+        model.FilterText = "";
+        _clock.Advance(ToolWindowViewModel.FilterDelay);
+
+        // Repeat runs the last search again (with what the files hold now); a new search replaces the results.
+        unit1.Buffer.ApplyEdits([new TextEdit(0, 0, "needle ")]);
+        Assert.True(_services.Commands.CanExecute("searchResults.repeat"));
+        await _services.Commands.ExecuteAsync("searchResults.repeat");
+        await model.Running;
+        Assert.Equal(3, model.Rows.Count(r => r.Match is not null));
+        await model.RunAsync(Request("program", FindInFilesScope.Project));
+        Assert.Equal(["Hello.pas"], Files());
+        Assert.Single(model.Rows, r => r.Match is not null);
+        Assert.False(model.IsCapped);
+
+        // More than the cap: the info bar text.
+        File(Dir + @"\Many.pas", string.Concat(Enumerable.Repeat("x needle\n", FindInFilesService.MatchCap + 1)));
+        await model.RunAsync(Request("needle", FindInFilesScope.Folder, Dir));
+        Assert.True(model.IsCapped);
+        Assert.Equal(string.Format(CultureInfo.CurrentCulture, Core.Resources.Strings.Msg_FindInFiles_Capped,
+            FindInFilesService.MatchCap.ToString("N0", CultureInfo.CurrentCulture)), model.CappedText);
+    }
+
     /// <summary>An <see cref="IProgress{T}"/> that reports on the calling thread (no synchronization context).</summary>
     private sealed class SyncProgress(Action<IReadOnlyList<FileMatch>> report) : IProgress<IReadOnlyList<FileMatch>>
     {

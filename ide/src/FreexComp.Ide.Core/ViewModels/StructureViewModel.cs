@@ -65,7 +65,9 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
     private readonly CodeModelWorker _worker;
     private readonly ILayoutService _layout;
     private readonly NavigationService _navigation;
-    private readonly Dictionary<string, bool> _expanded = new(StringComparer.Ordinal);
+    /// <summary>IDE-ED-133: the expansion state of each open document, by node key (dropped when the document closes).</summary>
+    private readonly Dictionary<DocumentViewModel, Dictionary<string, bool>> _expansions = new(ReferenceEqualityComparer.Instance);
+    private Dictionary<string, bool> _expanded = new(StringComparer.Ordinal);
     private IReadOnlyList<StructureNode> _nodes = [];
     private TextDocumentViewModel? _document;
     private IDisposable? _refreshTimer;
@@ -89,6 +91,7 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
         _layout = layout;
         _navigation = navigation;
         documents.ActiveDocumentChanged += (_, _) => OnActiveDocumentChanged();
+        documents.DocumentClosed += (_, e) => _expansions.Remove(e.Document);
         OnActiveDocumentChanged();
     }
 
@@ -244,6 +247,15 @@ public sealed class StructureViewModel : ToolWindowViewModel, ICommandTarget
             oldForm.Designer.ModelChanged -= OnDesignModelChanged;
             oldForm.Designer.ModelReplaced -= OnDesignModelChanged;
             oldForm.Designer.SelectionChanged -= OnDesignSelectionChanged;
+        }
+
+        _expanded = new(StringComparer.Ordinal);
+        if (_documents.ActiveDocument is { } active)
+        {
+            if (_expansions.TryGetValue(active, out var kept))
+                _expanded = kept;
+            else
+                _expansions[active] = _expanded;
         }
 
         _form = _documents.ActiveDocument as FormDocumentViewModel;

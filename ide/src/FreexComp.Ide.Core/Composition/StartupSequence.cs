@@ -6,7 +6,8 @@ using FreexComp.Ide.Core.Settings;
 namespace FreexComp.Ide.Core.Composition;
 
 /// <summary>
-/// IDE-ARCH-015 step 9, run once after the main window is shown: the recovery check (IDE-P1-123), then the start-up
+/// IDE-ARCH-015 step 9, run once after the main window is shown: the component metadata load (started, not awaited;
+/// DSG-TP-003), the recovery check (IDE-P1-123), then the start-up
 /// content in the order of IDE-P1-015 — command-line paths (IDE-P1-010), else the last project (IDE-P1-016), else the
 /// Welcome page (UI-WIN-071) followed by the loose-file session.
 /// </summary>
@@ -18,6 +19,8 @@ public static class StartupSequence
     {
         ArgumentNullException.ThrowIfNull(services);
         var options = services.Options;
+        // DSG-TP-003 (P5): the component metadata loads in the background; forms opened before it finished wait for it.
+        _ = services.Metadata?.LoadAsync();
         await services.Recovery.RecoverAsync(); // does nothing with --safe
 
         if (options.Paths.Count > 0)

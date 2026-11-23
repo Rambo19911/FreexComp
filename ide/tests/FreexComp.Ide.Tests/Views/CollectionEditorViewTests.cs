@@ -32,7 +32,6 @@ public sealed class CollectionEditorViewTests
     private static Task<HeadlessHarness> StartAsync() => HeadlessHarness.StartAsync(o =>
     {
         DesignerViewTests.Files(o);
-        o.ImplementedPhase = 5;
         o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
         o.InitialFiles["MainForm.pas"] = DesignerViewTests.Unit
             .Replace("GreetButton: TButton;", "GreetButton: TButton;\n    StatusBar1: TStatusBar;", StringComparison.Ordinal)

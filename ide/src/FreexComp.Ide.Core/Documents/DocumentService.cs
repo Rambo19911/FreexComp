@@ -79,8 +79,7 @@ public sealed class DocumentService : IDocumentService
     /// The component metadata form documents are read with (designer README §3); an empty catalog until the metadata is
     /// loaded (architecture.md IDE-ARCH-015 step 9, P5). Set by the service graph (tests set it directly).
     /// </summary>
-    public FreexComp.Designer.Catalog.ComponentCatalog DesignCatalog { get; set; } =
-        new([], [], new Dictionary<string, string>(), []);
+    public FreexComp.Designer.Catalog.ComponentCatalog DesignCatalog { get; set; } = FreexComp.Designer.Catalog.ComponentCatalog.Empty;
 
     /// <summary>
     /// The companion form of a unit named by the open project's <c>form</c> entry (designer README §3; absolute path),

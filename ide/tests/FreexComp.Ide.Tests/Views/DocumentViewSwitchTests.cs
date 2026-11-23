@@ -110,4 +110,47 @@ public sealed class DocumentViewSwitchTests
         h.Press("F7");
         Assert.Equal(DocumentView.Design, document.ActiveView);
     }
+
+    /// <summary>The Phase-5 commands at the product's implemented phase, in a form document's Code and Design views.</summary>
+    private static readonly string[] Phase5ViewCommands =
+        ["view.toggleFormCode", "view.formAsText", "view.objectInspector", "view.toolPalette", "view.toolbar.designer",
+         "window.layout.design", "component.reloadMetadata"];
+
+    private static readonly string[] Phase5DesignerCommands =
+        ["designer.toggleGrid", "designer.toggleSnapToGrid", "designer.toggleGuidelines", "designer.lockControls", "designer.tabOrder",
+         "designer.selectNext", "designer.sendToBack", "designer.selectParent"];
+
+    /// <summary>
+    /// I-207: <c>ServiceGraph.ImplementedPhase</c> is 5, so the designer and form-view commands are real (not later-phase stubs)
+    /// and enabled in their context without a test override; below Phase 5 the same commands are disabled stubs.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-KEY-001")]
+    public async Task CommandsEnabledInPhase5()
+    {
+        Assert.Equal(5, Core.Composition.ServiceGraph.ImplementedPhase);
+        await using (var h = await HeadlessHarness.StartAsync(DesignerViewTests.Files))
+        {
+            Assert.Equal(5, h.Services.ImplementedPhase);
+            var document = await DesignerViewTests.OpenFormAsync(h);
+            Assert.All(Phase5ViewCommands, id => Assert.True(h.Services.Commands.CanExecute(id), id));
+            h.Click(Tab("Design"));
+            Assert.Equal(DocumentView.Design, document.ActiveView);
+            document.Designer.Surface!.Selection.Select(document.Designer.Model!.FindByName("GreetButton")!);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.All(Phase5DesignerCommands, id => Assert.True(h.Services.Commands.CanExecute(id), id));
+            await h.ExecuteAsync("view.toggleFormCode");
+            Assert.Equal(DocumentView.Code, document.ActiveView);
+        }
+
+        // The gating itself: at Phase 4 they are later-phase stubs, never enabled. (The two form-view commands are registered by
+        // the document service at every phase and stay usable on a form document: they are not part of the phase switch.)
+        await using var early = await HeadlessHarness.StartAsync(o =>
+        {
+            Files(o);
+            o.ImplementedPhase = 4;
+        });
+        await OpenAsync(early, "MainForm.pas");
+        Assert.All(Phase5ViewCommands.Skip(2).Concat(Phase5DesignerCommands), id => Assert.False(early.Services.Commands.CanExecute(id), id));
+    }
 }

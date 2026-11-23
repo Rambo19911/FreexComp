@@ -79,6 +79,63 @@ public sealed class CompletionViewTests
         Assert.Contains("  Foo1o :=", doc.Buffer.Text, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// IDE-ED-086: the popup follows the caret while it stays in the identifier; it closes when the caret leaves it, the
+    /// editor loses focus, the window is deactivated, or another document becomes active.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-ED-086")]
+    public async Task PopupClosesWhenTheCaretOrFocusLeaves()
+    {
+        await using var h = await BuildScenario.StartAsync(LiveDiagnosticsTests.AddRealRtl);
+        var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(BuildScenario.UnitPath(h))).Value);
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextEditor>("Editor.Unit1.pas");
+        var popup = editor.FindAncestorOfType<CodeEditorView>()!.CompletionList;
+        var session = doc.Completion!;
+        var foo = doc.Buffer.Text.IndexOf("Foo :=", StringComparison.Ordinal);
+
+        async Task OpenAsync()
+        {
+            Assert.True(editor.TextArea.Focus());
+            doc.Selection = TextSelection.At(foo + 2);
+            h.Press("Ctrl+Space");
+            await session.Pending;
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(popup.IsVisible);
+        }
+
+        // Inside the identifier the popup stays open; leaving it closes the popup.
+        await OpenAsync();
+        h.Press("Right");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(popup.IsVisible);
+        doc.Selection = TextSelection.At(foo + 5); // in ":="
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(session.IsOpen);
+        Assert.False(popup.IsVisible);
+
+        // The editor loses focus.
+        await OpenAsync();
+        Assert.True(h.Services.ToolWindows.Show("ProjectManager", focus: true));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(editor.TextArea.IsKeyboardFocusWithin);
+        Assert.False(session.IsOpen);
+
+        // The window is deactivated (the editor keeps its focus inside the window).
+        await OpenAsync();
+        ((Core.ViewModels.MainWindowViewModel)h.Window.DataContext!).OnDeactivated(); // what MainWindow.Deactivated calls
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(session.IsOpen);
+        Assert.False(popup.IsVisible);
+
+        // Another document becomes active.
+        await OpenAsync();
+        await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, @"Hello\Hello.pas"));
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(session.IsOpen);
+    }
+
     /// <summary>UI-ED-111 (I-198): without room below the caret line the popup opens above it, never covering the line.</summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-ED-111")]
@@ -128,6 +185,7 @@ public sealed class CompletionViewTests
     [Trait("Req", "UI-ED-113")]
     [Trait("Req", "UI-ED-115")]
     [Trait("Req", "UI-ED-117")]
+    [Trait("Req", "IDE-ED-088")]
     public async Task DocumentationPanelIconsAndHighlight()
     {
         await using var h = await BuildScenario.StartAsync(LiveDiagnosticsTests.AddRealRtl);

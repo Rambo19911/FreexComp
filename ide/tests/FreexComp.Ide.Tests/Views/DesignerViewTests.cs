@@ -173,11 +173,10 @@ public sealed class DesignerViewTests
         o.InitialFiles["MainForm.form"] = FormText.ReplaceLineEndings("\r\n");
     }
 
-    /// <summary>The form files at Phase 5 with sample Object Inspector and Tool Palette tool windows (I-207 has not switched the phase yet).</summary>
+    /// <summary>The form files with sample Object Inspector and Tool Palette tool windows in place of the real ones.</summary>
     internal static void Phase5(HarnessOptions o)
     {
         Files(o);
-        o.ImplementedPhase = 5;
         o.ToolWindows.Add(SampleToolViewModel.Definition("ObjectInspector", ToolGroupId.RightUpper, 5, "Cmd_view_objectInspector"));
         o.ToolWindows.Add(SampleToolViewModel.Definition("ToolPalette", ToolGroupId.RightLower, 5, "Cmd_view_toolPalette"));
     }
@@ -188,12 +187,8 @@ public sealed class DesignerViewTests
     [Trait("Req", "DSG-TP-042")]
     public async Task PlaceButtonFromPaletteWithKeyboardOnly()
     {
-        // The real Object Inspector and Tool Palette (ImplementedPhase 5 without the sample tool windows).
-        await using var h = await HeadlessHarness.StartAsync(o =>
-        {
-            Files(o);
-            o.ImplementedPhase = 5;
-        });
+        // The real Object Inspector and Tool Palette (the product's phase, without the sample tool windows).
+        await using var h = await HeadlessHarness.StartAsync(Files);
         var s = await OpenDesignAsync(h);
 
         // Alt+4 focuses the palette's search box; typing filters; Enter places the first match at the default position.
