@@ -260,4 +260,45 @@ public sealed class ToolPaletteViewTests
         Assert.True(h.Find<TextBlock>("Tool.ToolPalette.Empty").IsEffectivelyVisible);
         Assert.Empty(Shown(h));
     }
+
+    private static IEnumerable<Avalonia.Automation.Peers.AutomationPeer> Descendants(Avalonia.Automation.Peers.AutomationPeer peer)
+    {
+        foreach (var child in peer.GetChildren())
+        {
+            yield return child;
+            foreach (var below in Descendants(child))
+                yield return below;
+        }
+    }
+
+    /// <summary>
+    /// I-213 (smoke launch): palette pages and items are UI Automation control elements carrying their AutomationIds and
+    /// names (UI-A11Y-020, UI-A11Y-030, UI-DSG-121/122), reachable from the list, so an external UIA client finds them.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-A11Y-030")]
+    [Trait("Req", "UI-A11Y-020")]
+    public async Task ItemsHaveAutomationPeers()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        await OpenDesignAsync(h);
+        await h.ExecuteAsync("view.toolPalette");
+        var list = Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(h.Find<Control>("Tool.ToolPalette.List"));
+        Assert.True(list.IsControlElement());
+        Assert.Equal(Avalonia.Automation.Peers.AutomationControlType.List, list.GetAutomationControlType());
+        Assert.Equal("Tool.ToolPalette.List", list.GetAutomationId());
+
+        var shown = Shown(h);
+        Assert.Contains("Item.TButton", shown);
+        var peers = Descendants(list).Where(p => p.IsControlElement() && !string.IsNullOrEmpty(p.GetAutomationId()))
+            .ToDictionary(p => p.GetAutomationId()!, StringComparer.Ordinal); // ids are unique (UI-A11Y-031)
+        foreach (var key in shown)
+        {
+            Assert.True(peers.TryGetValue("Tool.ToolPalette." + key, out var peer), $"no control element for {key}");
+            var isItem = key.StartsWith("Item.", StringComparison.Ordinal);
+            Assert.Equal(isItem ? Avalonia.Automation.Peers.AutomationControlType.ListItem : Avalonia.Automation.Peers.AutomationControlType.Group,
+                peer.GetAutomationControlType());
+            Assert.Equal(key[(key.IndexOf('.', StringComparison.Ordinal) + 1)..], peer.GetName());
+        }
+    }
 }

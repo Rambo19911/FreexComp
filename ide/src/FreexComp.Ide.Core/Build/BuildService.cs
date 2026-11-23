@@ -59,11 +59,14 @@ public sealed class BuildService : IBuildService
     private TaskCompletionSource<bool>? _forced;
     private IDisposable? _cancelTimer;
     private bool _internalError;
+    private string? _lockedOutput;
+    private readonly IProcessLauncher _processes;
 
     public BuildService(IBuildEngine engine, IProjectService projects, IDocumentService documents, ISettingsService settings,
         IdeStateMachine state, IToolchainLocator toolchain, IOutputService output, MessagesService messages, IClock clock,
-        IUiDispatcher dispatcher, IDialogService dialogs, IStatusService status, ILog log)
+        IUiDispatcher dispatcher, IDialogService dialogs, IStatusService status, ILog log, IProcessLauncher processes)
     {
+        _processes = processes;
         _engine = engine;
         _projects = projects;
         _documents = documents;
@@ -91,6 +94,23 @@ public sealed class BuildService : IBuildService
 
     public async Task<BuildResult?> BuildAsync(BuildKind kind, bool continueToRun = false)
     {
+        var result = await BuildOnceAsync(kind, continueToRun);
+        if (result is not { Success: false, Canceled: false } || _lockedOutput is not { } exe)
+            return result;
+
+        // IDE-P3-035: the output exe is held by a program started outside the IDE (E4008).
+        if (_state.Current.State == IdeState.Building)
+            _state.TryTransition(IdeStateInfo.Idle); // a run waiting on this build (IDE-P3-002) does not continue
+        if (await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Build.OutputLocked", [Path.GetFileName(exe)])) != "StopAndBuild")
+            return result;
+        if (!await _processes.TerminateByPathAsync(exe))
+            _log.Error(Category, "The program holding " + exe + " could not be terminated."); // the repeated build reports E4008 again
+        return await BuildAsync(kind, continueToRun);
+    }
+
+    private async Task<BuildResult?> BuildOnceAsync(BuildKind kind, bool continueToRun)
+    {
+        _lockedOutput = null;
         if (kind == BuildKind.CheckSyntax)
             throw new ArgumentException("Check Syntax does not use the build engine (IDE-P3-055).", nameof(kind));
         if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle)
@@ -393,6 +413,8 @@ public sealed class BuildService : IBuildService
                     if (d.Code != "E9010") // IDE-P3-034: the cancellation diagnostic is not a row
                         diagnostics.Add(d);
                     _internalError |= d.Code == "E0001";
+                    if (d.Code == "E4008")
+                        _lockedOutput ??= d.Arguments.Length > 0 && d.Arguments[0] is string locked ? locked : d.Location.Path;
                     break;
                 case BuildEvent.CommandLine c:
                     _output.Append(OutputChannels.Build, Format(Strings.Msg_Build_CommandLine, c.Text), OutputKind.Command);

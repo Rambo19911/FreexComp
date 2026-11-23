@@ -36,6 +36,7 @@ public sealed class MessagesView : UserControl
     private readonly ListBox _list = new() { SelectionMode = SelectionMode.Multiple };
     private readonly TextBlock _empty = new() { Text = Strings.Msg_Messages_Empty, HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
     private readonly StackPanel _filteredEmpty = new() { HorizontalAlignment = HorizontalAlignment.Center, Spacing = 4 };
+    private readonly Dictionary<string, (TextBlock Label, string Text)> _headerLabels = new(StringComparer.Ordinal);
     private MessagesViewModel? _model;
 
     public MessagesView()
@@ -90,23 +91,38 @@ public sealed class MessagesView : UserControl
         return grid;
     }
 
-    private static Grid CreateHeader()
+    private Grid CreateHeader()
     {
         var header = Cells();
         header.Height = 24;
         for (var i = 0; i < Columns.Length; i++)
         {
             var (id, text, _, align) = Columns[i];
-            var cell = new TextBlock { Text = text, HorizontalAlignment = align, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
+            var label = new TextBlock { Text = text, HorizontalAlignment = align, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
+            Bind(label, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
+            // UI-TW-011: the whole header cell is the click target; sortable columns cycle the sort (UI-TW-401).
+            var cell = new Border { Background = Brushes.Transparent, Child = label };
             if (id == "Severity")
                 ToolTip.SetTip(cell, Strings.MessagesView_Column_Severity);
             AutomationProperties.SetAutomationId(cell, $"{Prefix}.Column.{id}");
-            Bind(cell, TextBlock.ForegroundProperty, "FxcTextSecondaryBrush");
+            cell.PointerReleased += (_, e) =>
+            {
+                if (e.InitialPressMouseButton == MouseButton.Left)
+                    _model?.CycleSort(id);
+            };
+            _headerLabels[id] = (label, text);
             Grid.SetColumn(cell, i);
             header.Children.Add(cell);
         }
 
         return header;
+    }
+
+    /// <summary>UI-TW-011: the sort column shows ▲ / ▼ after its text.</summary>
+    private void UpdateHeader()
+    {
+        foreach (var (id, (label, text)) in _headerLabels)
+            label.Text = _model?.SortColumn == id ? text + (_model.SortDescending ? " ▼" : " ▲") : text;
     }
 
     private static Control CreateRow(MessageRow row)
@@ -189,6 +205,7 @@ public sealed class MessagesView : UserControl
             _list.SelectedItems?.Add(row);
         _empty.IsVisible = _model?.IsEmpty ?? true;
         _filteredEmpty.IsVisible = _model?.IsFilteredEmpty ?? false;
+        UpdateHeader();
     }
 
     private MessageRow? RowAt(object? source)

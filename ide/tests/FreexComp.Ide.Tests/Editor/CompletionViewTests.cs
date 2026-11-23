@@ -212,7 +212,7 @@ public sealed class CompletionViewTests
         var icon = Assert.IsType<SymbolKindIcon>(cells[0]);
         Assert.Equal(FreexComp.LanguageService.CompletionItemKind.Variable, icon.Kind);
         Assert.Equal(16, icon.Bounds.Width);
-        Assert.False(string.IsNullOrEmpty(icon.Glyph));
+        Assert.Equal("symbol-field", icon.IconName); // UI-ED-114: a variable
         var name = cells.OfType<Avalonia.Controls.TextBlock>().First();
         var runs = name.Inlines!.OfType<Avalonia.Controls.Documents.Run>().ToList();
         Assert.Equal("Fo", string.Concat(runs.Where(r => r.Classes.Contains(CompletionListView.MatchClass)).Select(r => r.Text)));

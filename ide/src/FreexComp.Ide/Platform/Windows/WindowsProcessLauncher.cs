@@ -55,6 +55,43 @@ public sealed class WindowsProcessLauncher(IClock clock, string? consoleHostPath
 
     private static int _pipeCounter;
 
+    public async Task<bool> TerminateByPathAsync(string exePath)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(exePath);
+        var target = Path.GetFullPath(exePath);
+        var all = true;
+        foreach (var process in System.Diagnostics.Process.GetProcesses())
+        {
+            using (process)
+            {
+                string? image;
+                try
+                {
+                    image = process.MainModule?.FileName;
+                }
+                catch (Exception e) when (e is Win32Exception or InvalidOperationException or NotSupportedException)
+                {
+                    continue; // another user's or an exited process: it cannot hold our exe open for writing anyway
+                }
+
+                if (image is null || !string.Equals(Path.GetFullPath(image), target, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                    using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    await process.WaitForExitAsync(wait.Token).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is Win32Exception or InvalidOperationException or OperationCanceledException)
+                {
+                    all = false;
+                }
+            }
+        }
+
+        return all;
+    }
+
     public IRunningProcess Start(ProcessStartRequest request, Action<ProcessOutputLine> onOutput)
     {
         ArgumentNullException.ThrowIfNull(request);

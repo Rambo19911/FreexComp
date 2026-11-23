@@ -79,12 +79,16 @@ public sealed class SessionService : ISessionService
         {
             if (e.Document is TextDocumentViewModel text)
                 text.ViewState.PropertyChanged += OnStoredValueChanged;
+            if (e.Document is FormDocumentViewModel form)
+                form.ActiveViewChanged += OnBookmarksChanged; // the stored view (IDE-ARCH-070)
             ScheduleSave();
         };
         documents.DocumentClosed += (_, e) =>
         {
             if (e.Document is TextDocumentViewModel text)
                 text.ViewState.PropertyChanged -= OnStoredValueChanged;
+            if (e.Document is FormDocumentViewModel form)
+                form.ActiveViewChanged -= OnBookmarksChanged;
             ScheduleSave();
         };
         documents.ActiveDocumentChanged += (_, _) => ScheduleSave();
@@ -178,6 +182,12 @@ public sealed class SessionService : ISessionService
             restored++;
             if (document is TextDocumentViewModel text)
                 Apply(entry, text);
+            if (document is FormDocumentViewModel form && ViewOf(LayoutStateJson.Str(entry["view"])) is { } view && view != form.ActiveView
+                && !form.ShowView(view))
+            {
+                _log.Warning(LogCategory, $"{path}: the stored {view} view could not be shown");
+            }
+
             if (string.Equals(path, activePath, StringComparison.OrdinalIgnoreCase))
                 active = document;
         }
@@ -322,7 +332,13 @@ public sealed class SessionService : ISessionService
 
     private JsonObject Write(DocumentViewModel document)
     {
-        var json = new JsonObject { ["path"] = ToSessionPath(document.FilePath!), ["view"] = "code" };
+        var view = document is FormDocumentViewModel form ? form.ActiveView : DocumentView.Code;
+        var json = new JsonObject { ["path"] = ToSessionPath(document.FilePath!), ["view"] = view switch
+        {
+            DocumentView.Design => "design",
+            DocumentView.Text => "text",
+            _ => "code",
+        } };
         if (document is not TextDocumentViewModel text)
             return json;
         var state = text.ViewState;
@@ -336,6 +352,15 @@ public sealed class SessionService : ISessionService
         json["wordWrap"] = state.WordWrap;
         return json;
     }
+
+    /// <summary>IDE-ARCH-070: <c>view</c> ∈ <c>code</c>, <c>design</c>, <c>text</c>; anything else = none.</summary>
+    private static DocumentView? ViewOf(string? text) => text switch
+    {
+        "code" => DocumentView.Code,
+        "design" => DocumentView.Design,
+        "text" => DocumentView.Text,
+        _ => null,
+    };
 
     private static JsonObject WritePosition(TextPosition position) => new() { ["line"] = position.Line, ["column"] = position.Column };
 

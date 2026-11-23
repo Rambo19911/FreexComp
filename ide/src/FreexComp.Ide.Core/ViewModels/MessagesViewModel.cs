@@ -248,6 +248,65 @@ public sealed class MessagesViewModel : ToolWindowViewModel, ICommandTarget
         Refresh();
     }
 
+    /// <summary>The sortable columns (tool-windows.md §6 column table; <c>Col</c> is not sortable).</summary>
+    public static readonly IReadOnlyList<string> SortableColumns = ["Severity", "Code", "Description", "File", "Line"];
+
+    /// <summary>The sort column, null = natural (arrival) order (UI-TW-401).</summary>
+    public string? SortColumn { get; private set; }
+
+    public bool SortDescending { get; private set; }
+
+    /// <summary>
+    /// UI-TW-011: a click on a sortable header cycles ascending → descending → unsorted; another column starts ascending.
+    /// </summary>
+    public void CycleSort(string column)
+    {
+        if (!SortableColumns.Contains(column, StringComparer.Ordinal))
+            return;
+        if (SortColumn != column)
+            (SortColumn, SortDescending) = (column, false);
+        else if (!SortDescending)
+            SortDescending = true;
+        else
+            (SortColumn, SortDescending) = (null, false);
+        OnPropertyChanged(nameof(SortColumn));
+        Refresh();
+    }
+
+    /// <summary>
+    /// UI-TW-401: the shown diagnostics in sort order, arrival order as tie-breaker (also when descending); summary rows
+    /// are not sorted and stay last.
+    /// </summary>
+    private IEnumerable<MessageItem> Ordered(IEnumerable<MessageItem> items)
+    {
+        var list = items.ToList();
+        if (SortColumn is not { } column)
+            return list;
+        var diagnostics = list.Where(i => !i.IsSummary);
+        var sign = SortDescending ? -1 : 1;
+        Comparison<MessageItem> compare = column switch
+        {
+            "Severity" => (a, b) => SeverityRank(a).CompareTo(SeverityRank(b)),
+            "Code" => (a, b) => string.Compare(a.Code, b.Code, StringComparison.OrdinalIgnoreCase),
+            "Description" => (a, b) => string.Compare(a.Text, b.Text, StringComparison.OrdinalIgnoreCase),
+            "File" => (a, b) => string.Compare(FileName(a), FileName(b), StringComparison.OrdinalIgnoreCase),
+            _ => (a, b) => (a.Location?.Line ?? 0).CompareTo(b.Location?.Line ?? 0),
+        };
+        var sorted = diagnostics.ToList();
+        sorted.Sort((a, b) => sign * compare(a, b) is var c and not 0 ? c : a.Index.CompareTo(b.Index));
+        return sorted.Concat(list.Where(i => i.IsSummary));
+    }
+
+    private static int SeverityRank(MessageItem item) => item.Severity switch
+    {
+        MessageSeverity.Error => 0,
+        MessageSeverity.Warning => 1,
+        MessageSeverity.Hint => 2,
+        _ => 3,
+    };
+
+    private static string FileName(MessageItem item) => item.Location?.FilePath is { } path ? Path.GetFileName(path) : "";
+
     /// <summary>The row of <see cref="MessagesService.Current"/> (F8 selects it, UI-TW-405).</summary>
     public MessageRow? CurrentRow => _messages.Current is { } current ? _rows.FirstOrDefault(r => r.Item == current) : null;
 
@@ -298,7 +357,7 @@ public sealed class MessagesViewModel : ToolWindowViewModel, ICommandTarget
     private void Refresh()
     {
         var rows = new List<MessageRow>();
-        foreach (var item in _messages.Items.Where(Shows))
+        foreach (var item in Ordered(_messages.Items.Where(Shows)))
         {
             var row = new MessageRow(item, Key(item), null) { IsExpanded = _expanded.Contains(item.Index) };
             rows.Add(row);

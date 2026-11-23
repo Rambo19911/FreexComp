@@ -78,7 +78,10 @@ public static class ServiceGraph
         OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, toolWindowPhase ?? ImplementedPhase, toolchain,
             platform.FileSystem, templates); // the phase override enables later pages in tests (I-132)
         ShellCommands.RegisterCommands(commands, platform.Shell, platform.FileSystem, platform.UserPaths, platform.Log);
-        var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts);
+        var documents = new DocumentService(platform.FileSystem, platform.TextBuffers, languages, settings, status, focus, platform.Dialogs, prompts)
+        {
+            ImplementedPhase = toolWindowPhase ?? ServiceGraph.ImplementedPhase, // I-213
+        };
         documents.Layout = layout;
         documents.Clock = platform.Clock;
         documents.Clipboard = platform.Clipboard;
@@ -109,7 +112,7 @@ public static class ServiceGraph
         documents.ProjectOpener = path => projects.OpenAsync(path);
         documents.FormPathOf = projects.FormPathOf; // designer README §3: the project's form entry names the companion
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
-            platform.Log, toolWindowPhase ?? ImplementedPhase);
+            platform.Log, toolWindowPhase ?? ImplementedPhase) { Settings = settings };
         projectManager.RegisterCommands();
         projects.SelectedFolder = () => projectManager.SelectedFolderPath;
         projects.SelectedFiles = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
@@ -146,7 +149,7 @@ public static class ServiceGraph
             await projects.AddNewUnitAsync(); // a failure is reported there; no untitled unit instead
             return true;
         };
-        var output = new OutputService(platform.Clock, settings);
+        var output = new OutputService(platform.Clock, settings, designer: (toolWindowPhase ?? ImplementedPhase) >= 5);
         var outputView = new ViewModels.OutputViewModel(output, settings, platform.Clipboard, documents, navigation, status, platform.FileSystem);
         outputView.RegisterCommands(commands);
         outputView.Content.FindSource = find.For; // UI-TW-500: Ctrl+F in the Output
@@ -154,7 +157,7 @@ public static class ServiceGraph
         var messages = new MessagesService(documents, navigation, platform.FileSystem, status, layout) { IsProjectFile = projects.IsMember };
         var engine = platform.BuildEngine;
         var build = new BuildService(engine, projects, documents, settings, state, toolchain, output, messages, platform.Clock,
-            platform.Dispatcher, platform.Dialogs, status, platform.Log)
+            platform.Dispatcher, platform.Dialogs, status, platform.Log, platform.Processes)
         {
             OpenToolchainOptions = () => commands.ExecuteAsync("tools.options", OptionsViewModel.ToolchainPathsPage),
         };
@@ -236,7 +239,7 @@ public static class ServiceGraph
         if ((toolWindowPhase ?? ImplementedPhase) >= 5)
         {
             metadata = new Designer.ComponentMetadataService(documents, platform.FileSystem, settings, status, platform.Log, platform.ToolchainEnvironment,
-                platform.Dialogs); // D-088: loaded by the start-up sequence (DSG-TP-003)
+                platform.Dialogs) { Output = output }; // D-088: loaded by the start-up sequence (DSG-TP-003)
             metadata.RegisterCommands(commands);
             designerShell = new Designer.DesignerShell(commands, documents, settings, layout.Layout, toolWindowPhase ?? ImplementedPhase,
                 platform.Dialogs, layout); // D-080, I-130; D-097: the verbs' editors (their sizes: D-112)

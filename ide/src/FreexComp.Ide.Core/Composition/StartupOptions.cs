@@ -23,6 +23,9 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
     /// <summary>IDE-P1-012.</summary>
     public bool Safe { get; init; }
 
+    /// <summary><c>--new-window</c>: the paths open in this new instance even when another one runs (I-213).</summary>
+    public bool NewWindow { get; init; }
+
     /// <summary>IDE-P1-013.</summary>
     public bool ShowVersion { get; init; }
 
@@ -39,7 +42,7 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
         var baseDirectory = workingDirectory ?? Environment.CurrentDirectory;
         string? userDir = null;
         string? unknown = null;
-        bool safe = false, version = false, help = false;
+        bool safe = false, version = false, help = false, newWindow = false;
         var rest = new List<string>();
         var paths = new List<string>();
         for (var i = 0; i < args.Count; i++)
@@ -59,7 +62,7 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
             else if (Is(arg, HelpOption))
                 help = true;
             else if (Is(arg, NewWindowOption))
-                continue; // IDE-P1-014: accepted and ignored (reserved)
+                newWindow = true; // I-213: never hand the paths to a running instance
             else if (arg.StartsWith("--", StringComparison.Ordinal))
                 unknown ??= arg;
             else if (arg.Length > 0)
@@ -70,6 +73,7 @@ public sealed record StartupOptions(string? UserDir, IReadOnlyList<string> Argum
         {
             Paths = paths,
             Safe = safe,
+            NewWindow = newWindow,
             ShowVersion = version,
             ShowHelp = help,
             UnknownOption = unknown,

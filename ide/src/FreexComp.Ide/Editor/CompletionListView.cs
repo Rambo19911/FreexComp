@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using FreexComp.Ide.Core.CodeModel;
+using FreexComp.Ide.Icons;
 using FreexComp.LanguageService;
 
 namespace FreexComp.Ide.Editor;
@@ -184,17 +185,12 @@ public sealed class CompletionListView : Border
 }
 
 /// <summary>
-/// UI-ED-113: the 16 × 16 symbol icon of a completion row — a letter for the item's kind in the syntax colour of that
-/// kind (the icon set of toolbars.md §4 has no symbol icons).
+/// UI-ED-113 / UI-ED-114: the 16 × 16 symbol icon of a completion row — the outline icon of the item's kind
+/// (<see cref="SymbolIcons"/>) drawn as vector geometry in its token colours.
 /// </summary>
 public sealed class SymbolKindIcon : Border
 {
-    private readonly TextBlock _glyph = new()
-    {
-        HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.SemiBold,
-        Classes = { "caption" },
-    };
-
+    private readonly IdeIcon _icon = new() { Width = 16, Height = 16 };
     private CompletionItemKind _kind;
 
     public SymbolKindIcon()
@@ -202,7 +198,7 @@ public sealed class SymbolKindIcon : Border
         Width = Height = 16;
         Focusable = false;
         VerticalAlignment = VerticalAlignment.Center;
-        Child = _glyph;
+        Child = _icon;
         Kind = CompletionItemKind.Keyword;
     }
 
@@ -212,35 +208,12 @@ public sealed class SymbolKindIcon : Border
         set
         {
             _kind = value;
-            var (glyph, brush) = Look(value);
-            _glyph.Text = glyph;
-            _glyph.Bind(TextBlock.ForegroundProperty, _glyph.GetResourceObservable(brush));
+            _icon.IconName = SymbolIcons.For(value);
         }
     }
 
-    /// <summary>The drawn letter (tests).</summary>
-    public string Glyph => _glyph.Text ?? "";
-
-    private static (string Glyph, string Brush) Look(CompletionItemKind kind) => kind switch
-    {
-        CompletionItemKind.Keyword => ("K", "FxcSyntaxKeywordBrush"),
-        CompletionItemKind.Directive => ("D", "FxcSyntaxDirectiveBrush"),
-        CompletionItemKind.Unit => ("U", "FxcTextSecondaryBrush"),
-        CompletionItemKind.Type => ("T", "FxcSyntaxTypeBrush"),
-        CompletionItemKind.Class => ("C", "FxcSyntaxTypeBrush"),
-        CompletionItemKind.Interface => ("I", "FxcSyntaxTypeBrush"),
-        CompletionItemKind.Enum => ("E", "FxcSyntaxTypeBrush"),
-        CompletionItemKind.EnumMember or CompletionItemKind.Constant => ("#", "FxcSyntaxConstantBrush"),
-        CompletionItemKind.Method => ("M", "FxcSyntaxRoutineBrush"),
-        CompletionItemKind.Routine => ("R", "FxcSyntaxRoutineBrush"),
-        CompletionItemKind.Property => ("P", "FxcSyntaxTextBrush"),
-        CompletionItemKind.Field => ("F", "FxcSyntaxTextBrush"),
-        CompletionItemKind.Parameter => ("A", "FxcSyntaxTextBrush"),
-        CompletionItemKind.Variable => ("V", "FxcSyntaxTextBrush"),
-        CompletionItemKind.Label => ("L", "FxcSyntaxLabelBrush"),
-        CompletionItemKind.Snippet => ("S", "FxcTextSecondaryBrush"),
-        _ => ("?", "FxcTextSecondaryBrush"),
-    };
+    /// <summary>The drawn icon's name (tests).</summary>
+    public string IconName => _icon.IconName ?? "";
 }
 
 /// <summary>

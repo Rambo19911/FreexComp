@@ -258,4 +258,38 @@ public sealed class PropertyGridModelTests
         var withDefault = Grid(document, "Button1", "Button3");
         Assert.False(Row(withDefault, "Caption").IsBold); // Button3 does not store it
     }
+
+    /// <summary>
+    /// UI-TW-304 (I-212): the row key is the property path; a category row's key is <c>$cat.&lt;Category&gt;</c>, so the
+    /// category <c>Layout</c> and the property <c>Layout</c> of a label (category Appearance) have different keys.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "UI-TW-304")]
+    public void CategoryRowKeysDoNotCollideWithPropertyPaths()
+    {
+        var document = Load("""
+            object Form1: TForm
+              ClientWidth = 400
+              ClientHeight = 300
+              PixelsPerInch = 96
+              object Label1: TLabel
+                Left = 8
+                Top = 8
+                Caption = 'Hi'
+              end
+            end
+
+            """);
+        var grid = Grid(document, "Label1");
+        grid.ExpandedPaths.Add("Font");
+        var rows = grid.Rows;
+        var category = Assert.Single(rows, r => r.Kind == PropertyRowKind.Category && r.Name == "Layout");
+        Assert.Equal("$cat.Layout", category.Key);
+        var property = Row(grid, "Layout");
+        Assert.Equal("Layout", property.Key);
+        Assert.Equal("Appearance", property.Category);
+        Assert.Equal("Font.Size", Row(grid, "Font.Size").Key);
+        Assert.Equal(rows.Count, rows.Select(r => r.Key).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.All(rows.Where(r => r.Kind == PropertyRowKind.Category), r => Assert.Equal(PropertyRow.CategoryKeyPrefix + r.Name, r.Key));
+    }
 }

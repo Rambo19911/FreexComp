@@ -26,6 +26,9 @@ public static class OutputChannels
 {
     public const string Build = "build";
     public const string Program = "program";
+
+    /// <summary>From P5: component metadata problems (DSG-TP-005, tool-palette.md "Output channel").</summary>
+    public const string Designer = "designer";
 }
 
 /// <summary>
@@ -63,13 +66,14 @@ public sealed class OutputService : IOutputService
     private readonly List<(string Channel, OutputLine Line)> _pending = [];
     private IDisposable? _flush;
 
-    public OutputService(IClock clock, ISettingsService settings)
+    /// <param name="designer">P5: the <c>designer</c> channel exists (IDE-P3-070).</param>
+    public OutputService(IClock clock, ISettingsService settings, bool designer = false)
     {
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(settings);
         _clock = clock;
         _settings = settings;
-        Channels = [OutputChannels.Build, OutputChannels.Program];
+        Channels = designer ? [OutputChannels.Build, OutputChannels.Program, OutputChannels.Designer] : [OutputChannels.Build, OutputChannels.Program];
         _channels = Channels.ToDictionary(c => c, _ => new Channel(), StringComparer.Ordinal);
     }
 

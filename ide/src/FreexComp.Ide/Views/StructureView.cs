@@ -171,12 +171,25 @@ public sealed class StructureView : UserControl
             panel.Children.Add(position);
         }
 
-        // UI-TW-207: the gear overlay of a non-visual component, the warning overlay of an unknown or read-only one.
-        foreach (var overlay in (ReadOnlySpan<(bool Shown, string Icon)>)[(row.Node.IsNonVisual, "settings"), (row.Node.IsUnavailable, "warning")])
+        // UI-TW-203: the symbol-kind icon (16).
+        var kind = new IdeIcon
+        {
+            IconName = SymbolIcons.For(row.Node.Kind), Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4, 0), Classes = { "symbol" },
+        };
+        DockPanel.SetDock(kind, Avalonia.Controls.Dock.Left);
+        panel.Children.Add(kind);
+
+        // UI-TW-201: the visibility overlay of a member; UI-TW-207: the gear overlay of a non-visual component, the warning
+        // overlay of an unknown or read-only one.
+        var lockIcon = SymbolIcons.VisibilityOverlay(row.Node.Visibility);
+        foreach (var overlay in (ReadOnlySpan<(bool Shown, string? Icon, string Class)>)[(lockIcon is not null, lockIcon, "visibility"),
+                     (row.Node.IsNonVisual, "settings", "overlay"), (row.Node.IsUnavailable, "warning", "overlay")])
         {
             if (!overlay.Shown)
                 continue;
             var glyph = new IdeIcon { IconName = overlay.Icon, Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
+            glyph.Classes.Add(overlay.Class);
             DockPanel.SetDock(glyph, Avalonia.Controls.Dock.Left);
             panel.Children.Add(glyph);
         }

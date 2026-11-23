@@ -79,6 +79,21 @@ public static class CompositionRoot
     }
 
     /// <summary>
+    /// I-213: paths handed over by a second instance (<see cref="Platform.Windows.InstanceHandOver"/>) open as if given on
+    /// the command line (IDE-P1-010), then the main window comes to the front. UI thread.
+    /// </summary>
+    public static async Task ReceiveHandOverAsync(IdeServices services, Window window, IReadOnlyList<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(paths);
+        if (window.WindowState == WindowState.Minimized)
+            window.WindowState = WindowState.Normal;
+        window.Activate();
+        await StartupSequence.OpenPathsAsync(services, paths);
+    }
+
+    /// <summary>
     /// IDE-ARCH-091 process-wide hooks (production only): unobserved task exceptions are logged; a fatal error writes the
     /// recovery copies synchronously before the runtime ends the process.
     /// </summary>

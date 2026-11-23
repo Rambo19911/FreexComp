@@ -56,4 +56,11 @@ public interface IProcessLauncher
 {
     /// <exception cref="System.ComponentModel.Win32Exception">The process could not be created (IDE-P3-081 <c>Msg.Run.StartFailed</c>).</exception>
     IRunningProcess Start(ProcessStartRequest request, Action<ProcessOutputLine> onOutput);
+
+    /// <summary>
+    /// IDE-P3-035 (<c>Stop and Build</c> of <c>Msg.Build.OutputLocked</c>): terminates every process, with its descendants,
+    /// whose executable is <paramref name="exePath"/> (a program started outside the IDE that holds the output exe) and waits
+    /// up to 3 s for each to end; false when one could not be terminated in time.
+    /// </summary>
+    Task<bool> TerminateByPathAsync(string exePath);
 }

@@ -193,7 +193,7 @@ public sealed class PropertyGridViewModel : ObservableObject
     /// <summary>The target's objects or values changed: the rows are re-read (a current row no longer shown is cleared).</summary>
     public void Refresh()
     {
-        if (CurrentPath is { } path && !Rows.Any(r => Names.Equals(r.Path, path)))
+        if (CurrentPath is { } path && !Rows.Any(r => Names.Equals(r.Key, path)))
         {
             CurrentPath = null;
         }
@@ -242,7 +242,7 @@ public sealed class PropertyGridViewModel : ObservableObject
             return;
         }
 
-        CurrentPath = path is not null && Rows.FirstOrDefault(r => Names.Equals(r.Path, path)) is { } row ? row.Path : null;
+        CurrentPath = path is not null && Rows.FirstOrDefault(r => Names.Equals(r.Key, path)) is { } row ? row.Key : null; // UI-TW-304
     }
 
     /// <summary>DSG-OI-030: Up/Down (plus or minus 1), PageUp/PageDown (a page) move the current row; it stops at the ends.</summary>

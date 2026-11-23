@@ -8,6 +8,9 @@ internal static class Program
 {
     private const int AttachParentProcess = -1;
 
+    /// <summary>How long a second instance waits for the running one to take its files before it starts itself.</summary>
+    private static readonly TimeSpan HandOverTimeout = TimeSpan.FromSeconds(5);
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -23,6 +26,12 @@ internal static class Program
             return options.HandleInformationOptions(Console.Out, Console.Error) ?? 0;
         }
 
+        // I-213: with files to open, hand them to the IDE already running for this user directory and exit (no window).
+        var key = Platform.Windows.InstanceHandOver.Key(options.UserDir);
+        if (options.Paths.Count > 0 && !options.NewWindow && Platform.Windows.InstanceHandOver.TrySend(key, options.Paths, HandOverTimeout))
+            return 0;
+        using var instance = Platform.Windows.InstanceHandOver.TryClaim(key); // null: another instance runs (IDE-P1-014)
+        App.HandOver = instance;
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

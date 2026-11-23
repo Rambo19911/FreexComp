@@ -131,6 +131,9 @@ public sealed class DocumentService : IDocumentService
     private FileEncoding DefaultEncoding => FileEncodings.FromId(_settings.Get(SettingsCatalog.FilesDefaultEncoding)) ?? FileEncoding.Utf8;
 
     /// <summary>Handlers of the document commands that need no picker or prompt (commands.md).</summary>
+    /// <summary>The composition's implemented phase (commands and menus of later phases, I-213); set before <see cref="RegisterCommands"/>.</summary>
+    public int ImplementedPhase { get; set; } = Composition.ServiceGraph.ImplementedPhase;
+
     public void RegisterCommands(ICommandService commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
@@ -153,10 +156,14 @@ public sealed class DocumentService : IDocumentService
         }));
         commands.RegisterHandler("view.welcomePage", new Handler(_ => WelcomeFactory is not null, _ => ShowWelcomePage()));
         // I-129: the views of a form document (designer README §3; menus.md: "doc has a companion form").
-        commands.RegisterHandler("view.toggleFormCode", new Handler(_ => ActiveDocument is FormDocumentViewModel,
-            _ => ((FormDocumentViewModel)ActiveDocument!).ToggleFormCode()));
-        commands.RegisterHandler("view.formAsText", new Handler(_ => ActiveDocument is FormDocumentViewModel,
-            _ => ((FormDocumentViewModel)ActiveDocument!).ShowFormAsText()));
+        // I-213: from P5 only; before, the later-phase stub (never executable) stands for them.
+        if (ImplementedPhase >= 5)
+        {
+            commands.RegisterHandler("view.toggleFormCode", new Handler(_ => ActiveDocument is FormDocumentViewModel,
+                _ => ((FormDocumentViewModel)ActiveDocument!).ToggleFormCode()));
+            commands.RegisterHandler("view.formAsText", new Handler(_ => ActiveDocument is FormDocumentViewModel,
+                _ => ((FormDocumentViewModel)ActiveDocument!).ShowFormAsText()));
+        }
         commands.RegisterHandler("file.close", new AsyncHandler(_ => ActiveDocument is not null, _ => CloseAsync(ActiveDocument!)));
         commands.RegisterHandler("file.closeAll", new AsyncHandler(_ => _documents.Count > 0, _ => CloseAllAsync()));
         commands.RegisterHandler("file.open", new AsyncHandler(_ => true, _ => OpenPickedFilesAsync()));
@@ -926,7 +933,7 @@ public sealed class DocumentService : IDocumentService
         textDocument.GutterMenu = line => _commands is null ? [] : Menus.GutterMenu.Build(textDocument.Decorations.GlyphsAt(line), _commands, _settings);
         textDocument.ExecuteCommand = id => _commands is { } commands && commands.CanExecute(id) ? commands.ExecuteAsync(id) : Task.CompletedTask;
         textDocument.TextAreaMenu = () => _commands is null ? []
-            : Menus.EditorContextMenu.Build(_commands, Composition.ServiceGraph.ImplementedPhase, hasForm: textDocument is FormDocumentViewModel);
+            : Menus.EditorContextMenu.Build(_commands, ImplementedPhase, hasForm: textDocument is FormDocumentViewModel);
         textDocument.ViewState.WordWrap = _editorOptions.WordWrap; // IDE-ED-040; a restored session replaces it
         textDocument.ViewState.PropertyChanged += (_, e) =>
         {

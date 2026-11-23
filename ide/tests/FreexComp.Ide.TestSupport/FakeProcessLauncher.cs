@@ -23,6 +23,15 @@ public sealed class FakeProcessLauncher : IProcessLauncher
     /// <summary>Raised at the beginning of every <see cref="Start"/> (to check what happened before a launch).</summary>
     public event Action<ProcessStartRequest>? Starting;
 
+    /// <summary>Every <see cref="TerminateByPathAsync"/> call, in order.</summary>
+    public List<string> Terminated { get; } = [];
+
+    public Task<bool> TerminateByPathAsync(string exePath)
+    {
+        Terminated.Add(exePath);
+        return Task.FromResult(true);
+    }
+
     public IRunningProcess Start(ProcessStartRequest request, Action<ProcessOutputLine> onOutput)
     {
         ArgumentNullException.ThrowIfNull(request);

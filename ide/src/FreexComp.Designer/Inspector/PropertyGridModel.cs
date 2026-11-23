@@ -29,7 +29,7 @@ public enum PropertyRowSource
 /// <summary>
 /// One visible row of the grid. <see cref="Path"/> is the property path (<c>Font.Size</c>, <c>Anchors.akLeft</c>) or, for a
 /// category row, the category name; <see cref="Name"/> its last segment. <see cref="Display"/> is blank when the selected
-/// components disagree (<see cref="IsMixed"/>, DSG-OI-091).
+/// components disagree (<see cref="IsMixed"/>, DSG-OI-091). <see cref="Key"/> identifies the row (UI-TW-304).
 /// </summary>
 public sealed record PropertyRow(
     PropertyRowKind Kind,
@@ -45,7 +45,14 @@ public sealed record PropertyRow(
     bool IsBold,
     bool IsReadOnly,
     bool IsExpandable,
-    bool IsExpanded);
+    bool IsExpanded)
+{
+    /// <summary>The key prefix of a category row (UI-TW-304).</summary>
+    public const string CategoryKeyPrefix = "$cat.";
+
+    /// <summary>UI-TW-304: the property path; <c>$cat.&lt;Category&gt;</c> for a category row (never equal to a property path).</summary>
+    public string Key => Kind == PropertyRowKind.Category ? CategoryKeyPrefix + Category : Path;
+}
 
 /// <summary>
 /// The rows of the Object Inspector's Properties page (object-inspector.md §1–§3, §6, §9): built from the component

@@ -15,17 +15,24 @@ public sealed record Icon(string Name, string ColorToken, IReadOnlyList<IconLaye
 /// Icon lookup (UI-TOK-040…042): reads the original 16 × 16 path geometry in <c>Assets/Icons/&lt;name&gt;.svg</c>.
 /// Each <c>path</c> is a layer; <c>fill="none"</c> means outline. <c>data-token</c> on the root sets the icon's colour
 /// token (default <c>text.primary</c>), on a path that layer's token. Geometry is created per call (thread-affine
-/// objects are never cached).
+/// objects are never cached). The symbol-kind icons (UI-ED-114, UI-TW-203) are a second set in <c>Assets/SymbolIcons</c>,
+/// named <c>symbol-*</c>: <see cref="Get"/> finds both, <see cref="Names"/> lists the toolbar set only.
 /// </summary>
 public static class IconCatalog
 {
     public const string DefaultToken = "text.primary";
     public const double StrokeThickness = 1.25;
     private const string Folder = "avares://FreexComp.Ide/Assets/Icons/";
+    private const string SymbolFolder = "avares://FreexComp.Ide/Assets/SymbolIcons/";
 
-    private static readonly Lazy<IReadOnlyDictionary<string, Definition>> Definitions = new(Load);
+    private static readonly Lazy<IReadOnlyDictionary<string, Definition>> Toolbar = new(() => Load(Folder));
+    private static readonly Lazy<IReadOnlyDictionary<string, Definition>> Symbols = new(() => Load(SymbolFolder));
 
-    public static IReadOnlyCollection<string> Names => [.. Definitions.Value.Keys];
+    /// <summary>The icons of toolbars.md §4.</summary>
+    public static IReadOnlyCollection<string> Names => [.. Toolbar.Value.Keys];
+
+    /// <summary>The symbol-kind icons (UI-ED-114, UI-TW-203).</summary>
+    public static IReadOnlyCollection<string> SymbolNames => [.. Symbols.Value.Keys];
 
     /// <exception cref="KeyNotFoundException">No icon of that name.</exception>
     public static Icon Get(string name) =>
@@ -33,7 +40,7 @@ public static class IconCatalog
 
     public static bool TryGet(string name, out Icon icon)
     {
-        if (!Definitions.Value.TryGetValue(name, out var definition))
+        if (!Toolbar.Value.TryGetValue(name, out var definition) && !Symbols.Value.TryGetValue(name, out definition))
         {
             icon = null!;
             return false;
@@ -72,10 +79,10 @@ public static class IconCatalog
         return new DrawingImage(group);
     }
 
-    private static Dictionary<string, Definition> Load()
+    private static Dictionary<string, Definition> Load(string folder)
     {
         var result = new Dictionary<string, Definition>(StringComparer.Ordinal);
-        foreach (var uri in AssetLoader.GetAssets(new Uri(Folder), null).Where(u => u.AbsolutePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)))
+        foreach (var uri in AssetLoader.GetAssets(new Uri(folder), null).Where(u => u.AbsolutePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)))
         {
             using var stream = AssetLoader.Open(uri);
             var root = XDocument.Load(stream).Root!;

@@ -12,6 +12,9 @@ public sealed class App : Application
     /// <summary>The service graph of this process; null in the headless test application.</summary>
     internal IdeServices? Services { get; private set; }
 
+    /// <summary>I-213: this process's claim as the running instance of its user directory (null: not the first one).</summary>
+    internal static Platform.Windows.InstanceHandOver? HandOver { get; set; }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -46,7 +49,12 @@ public sealed class App : Application
             window = CompositionRoot.CreateMainWindow(Services);
             var services = Services;
             CompositionRoot.AttachProcessErrorHandlers(services); // IDE-ARCH-091
-            window.Opened += (_, _) => _ = StartupSequence.RunAsync(services); // step 9: recovery, then the start-up content
+            window.Opened += (_, _) =>
+            {
+                _ = StartupSequence.RunAsync(services); // step 9: recovery, then the start-up content
+                // I-213: files a second instance hands over open here.
+                HandOver?.Serve(paths => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = CompositionRoot.ReceiveHandOverAsync(services, window, paths)));
+            };
             // The exit sequence (UI-WIN-072, IApplicationService) has written the state and deleted the recovery folder.
             desktop.Exit += (_, _) => (platform.Log as IDisposable)?.Dispose();
             desktop.MainWindow = window;

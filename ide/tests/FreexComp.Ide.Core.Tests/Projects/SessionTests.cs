@@ -304,4 +304,56 @@ public sealed class SessionTests
         Assert.Equal(notes, _services.Documents.ActiveDocument!.FilePath);
         Assert.Equal(new TextPosition(3, 2), Document(notes).ViewState.Caret);
     }
+
+    /// <summary>
+    /// I-213 (IDE-ARCH-070): a unit with a form stores the view it shows (<c>code</c>, <c>design</c>, <c>text</c>) and is
+    /// reopened in that view; plain units store <c>code</c>; an unknown value keeps the opening view.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Req", "IDE-ARCH-070")]
+    public Task RestoresDocumentView() => TestUiThread.RunAsync(() => RestoresDocumentViewOnUiThread());
+
+    private async Task RestoresDocumentViewOnUiThread()
+    {
+        ((Core.Documents.DocumentService)_services.Documents).DesignCatalog = Tests.Designer.CodeSync.CodeSyncTests.Catalog;
+        File(ProjectPath, """
+            { "formatVersion": 1, "name": "Hello", "appType": "gui", "mainSource": "Hello.pas",
+              "files": [ { "path": "Hello.pas" }, { "path": "MainForm.pas", "form": "MainForm.form" }, { "path": "Second.pas", "form": "Second.form" } ] }
+            """);
+        File(Dir + @"\Hello.pas", "program Hello;\nuses MainForm, Second;\nbegin\nend.\n");
+        foreach (var name in (string[])["MainForm", "Second"])
+        {
+            File(Dir + $@"\{name}.pas", Tests.Designer.DesignerFixture.Unit.Replace("MainForm", name, StringComparison.Ordinal));
+            File(Dir + $@"\{name}.form", Tests.Designer.DesignerFixture.Form.Replace("MainForm", name, StringComparison.Ordinal));
+        }
+
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        var main = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(Dir + @"\MainForm.pas")).Value);
+        var second = Assert.IsType<FormDocumentViewModel>((await _services.Documents.OpenAsync(Dir + @"\Second.pas")).Value);
+        Assert.True(main.ShowView(DocumentView.Design));
+        second.ShowFormAsText();
+        Assert.Equal(DocumentView.Text, second.ActiveView);
+        Assert.True(await Projects.CloseAsync());
+
+        var documents = JsonNode.Parse(Read(SessionPath))!["documents"]!.AsArray();
+        Assert.Equal(["Hello.pas", "MainForm.pas", "Second.pas"], documents.Select(d => (string)d!["path"]!));
+        Assert.Equal(["code", "design", "text"], documents.Select(d => (string)d!["view"]!));
+
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        Assert.Equal(DocumentView.Design, Assert.IsType<FormDocumentViewModel>(_services.Documents.Documents.Single(d => d.FilePath!.EndsWith("MainForm.pas", StringComparison.Ordinal))).ActiveView);
+        Assert.Equal(DocumentView.Text, Assert.IsType<FormDocumentViewModel>(_services.Documents.Documents.Single(d => d.FilePath!.EndsWith("Second.pas", StringComparison.Ordinal))).ActiveView);
+
+        // A view change alone is a stored value (written 5 s later); an unknown value opens the code view.
+        main = Assert.IsType<FormDocumentViewModel>(_services.Documents.Documents.Single(d => d.FilePath!.EndsWith("MainForm.pas", StringComparison.Ordinal)));
+        _clock.Advance(TimeSpan.FromSeconds(10));
+        Assert.True(main.ShowView(DocumentView.Code));
+        _clock.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal("code", (string)JsonNode.Parse(Read(SessionPath))!["documents"]![1]!["view"]!);
+        Assert.True(await Projects.CloseAsync());
+        File(SessionPath, Read(SessionPath).Replace("\"text\"", "\"sideways\"", StringComparison.Ordinal));
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        Assert.Equal(DocumentView.Code, Assert.IsType<FormDocumentViewModel>(_services.Documents.Documents.Single(d => d.FilePath!.EndsWith("Second.pas", StringComparison.Ordinal))).ActiveView);
+        Assert.Empty(Dialogs.Requests);
+    }
 }

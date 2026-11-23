@@ -81,6 +81,9 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     private int _missingCheck;
     private bool _isCheckingMissingFiles;
 
+    /// <summary>The settings (<c>designer.defaultView</c>, UI-TW-108); null = code view.</summary>
+    public Core.Settings.ISettingsService? Settings { get; set; }
+
     public ProjectManagerViewModel(IProjectService projects, IDocumentService documents, IFileSystem fileSystem, IDialogService dialogs,
         ICommandService commands, ILog log, int implementedPhase)
     {
@@ -355,9 +358,16 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         var opened = false;
         foreach (var node in _selection.Where(n => n.IsFile).ToList())
         {
+            var wasOpen = _documents.Documents.Any(d => string.Equals(d.FilePath, node.FullPath, StringComparison.OrdinalIgnoreCase));
             var result = await _documents.OpenAsync(node.FullPath);
             if (result.Success)
                 opened = true;
+            // UI-TW-108: from P5 a newly opened unit with a form shows the view of designer.defaultView.
+            if (!wasOpen && _implementedPhase >= 5 && result.Value is FormDocumentViewModel { HasUnit: true } form
+                && Settings?.Get(Core.Settings.SettingsCatalog.DesignerDefaultView) == "design")
+            {
+                form.ShowView(DocumentView.Design);
+            }
             else if (result.NeedsMessage)
                 await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args));
         }

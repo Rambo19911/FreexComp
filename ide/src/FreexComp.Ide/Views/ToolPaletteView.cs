@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Automation;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
@@ -292,7 +293,7 @@ public sealed class ToolPaletteView : UserControl
         panel.Children.Add(count);
         panel.Children.Add(name);
         var key = new PaletteRow(page, null).Key;
-        var row = new Border { Height = 22, Child = panel, BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Tag = Brushes.Transparent };
+        var row = new AutomationBorder(AutomationControlType.Group) { Height = 22, Child = panel, BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Tag = Brushes.Transparent };
         Bind(row, Border.BackgroundProperty, "FxcBgHeaderBrush");
         AutomationProperties.SetAutomationId(row, Prefix + "." + key);
         AutomationProperties.SetName(row, page.Name);
@@ -332,7 +333,7 @@ public sealed class ToolPaletteView : UserControl
         panel.Children.Add(name);
         var bar = new Border { Width = 2, HorizontalAlignment = HorizontalAlignment.Left, IsVisible = armed, IsHitTestVisible = false };
         Bind(bar, Border.BackgroundProperty, "FxcAccentDefaultBrush");
-        var row = new Border { Height = 28, BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Tag = Brushes.Transparent, Child = new Panel { Children = { panel, bar } } };
+        var row = new AutomationBorder(AutomationControlType.ListItem) { Height = 28, BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Tag = Brushes.Transparent, Child = new Panel { Children = { panel, bar } } };
         return Item(model, item, row, armed);
     }
 
@@ -354,7 +355,7 @@ public sealed class ToolPaletteView : UserControl
 
         var accent = Resource("FxcAccentDefaultBrush");
         var outline = armed ? accent : Brushes.Transparent;
-        var cell = new Border { Width = 32, Height = 32, BorderThickness = new Thickness(armed ? 2 : 1), BorderBrush = outline, Tag = outline, Child = content };
+        var cell = new AutomationBorder(AutomationControlType.ListItem) { Width = 32, Height = 32, BorderThickness = new Thickness(armed ? 2 : 1), BorderBrush = outline, Tag = outline, Child = content };
         return Item(model, item, cell, armed);
     }
 
@@ -734,6 +735,26 @@ public sealed class ToolPaletteView : UserControl
     private static void Bind(Control control, AvaloniaProperty property, string resource) =>
         control.Bind(property, control.GetResourceObservable(resource));
 
-    /// <summary>The focusable list area (the keyboard target of §6).</summary>
-    private sealed class ListHost : Border;
+    /// <summary>The focusable list area (the keyboard target of §6), a UI Automation list (I-213).</summary>
+    private sealed class ListHost() : AutomationBorder(AutomationControlType.List);
+
+    /// <summary>
+    /// I-213: a border exposed to UI Automation as a control element of <paramref name="type"/> (a plain border is not), with
+    /// its AutomationId and name, so page headers and items are found by external UIA clients.
+    /// </summary>
+    private class AutomationBorder(AutomationControlType type) : Border
+    {
+        protected override Type StyleKeyOverride => typeof(Border);
+
+        protected override AutomationPeer OnCreateAutomationPeer() => new Peer(this, type);
+
+        private sealed class Peer(Control owner, AutomationControlType type) : ControlAutomationPeer(owner)
+        {
+            protected override AutomationControlType GetAutomationControlTypeCore() => type;
+
+            protected override bool IsControlElementCore() => true;
+
+            protected override bool IsContentElementCore() => true;
+        }
+    }
 }

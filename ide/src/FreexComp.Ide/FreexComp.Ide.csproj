@@ -14,6 +14,8 @@
     <AvaloniaResource Include="..\..\..\assets\brand\app.ico" Link="Assets\app.ico" />
     <!-- UI-TOK-040: original icon geometry, read by Icons/IconCatalog. -->
     <AvaloniaResource Include="Assets\Icons\*.svg" />
+    <!-- UI-ED-114 / UI-TW-203: original symbol-kind icons (same format), a set of their own. -->
+    <AvaloniaResource Include="Assets\SymbolIcons\*.svg" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />

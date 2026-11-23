@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Automation;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -63,6 +64,7 @@ public sealed class StatusBarView : DockPanel
         _diagnostics = FieldButton("Diagnostics", m => m.StateCommand);
         _configuration = FieldButton("Configuration", m => m.ConfigurationCommand, OpenConfigurationMenu);
         ((TextBlock)_state.Content!).MaxWidth = 360;
+        AutomationProperties.SetLiveSetting(_state, AutomationLiveSetting.Polite); // UI-A11Y-023
 
         var left = new StackPanel { Orientation = Orientation.Horizontal };
         left.Children.Add(Field(_state, lineBefore: false));
@@ -145,6 +147,7 @@ public sealed class StatusBarView : DockPanel
         }
 
         SetText(_state, m.StateText);
+        AnnounceState(m.StateText);
         _message.Text = m.Message;
         foreach (var cell in _editorFields)
         {
@@ -310,6 +313,19 @@ public sealed class StatusBarView : DockPanel
         }
 
         return text;
+    }
+
+    /// <summary>
+    /// UI-A11Y-023: the state field is a polite live region; its accessible name is the state text and a change raises
+    /// the name-changed event on its peer, which screen readers announce for live regions.
+    /// </summary>
+    private void AnnounceState(string text)
+    {
+        var old = AutomationProperties.GetName(_state);
+        if (old == text)
+            return;
+        AutomationProperties.SetName(_state, text);
+        ControlAutomationPeer.CreatePeerForElement(_state).RaisePropertyChangedEvent(AutomationElementIdentifiers.NameProperty, old, text);
     }
 
     private static void SetText(Button button, string text) => ((TextBlock)button.Content!).Text = text;

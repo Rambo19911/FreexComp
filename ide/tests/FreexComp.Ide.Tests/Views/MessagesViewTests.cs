@@ -320,4 +320,65 @@ public sealed class MessagesViewTests
         Assert.Same(alreadyOpen, h.Services.Documents.ActiveDocument);
         Assert.False(alreadyOpen.Buffer.IsReadOnly); // a document the user opened keeps its state
     }
+
+    private static string Header(HeadlessHarness h, string column) =>
+        ((TextBlock)h.Find<Border>("Tool.Messages.Column." + column).Child!).Text ?? "";
+
+    private static void SortBy(HeadlessHarness h, string column)
+    {
+        h.Click("Tool.Messages.Column." + column);
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>
+    /// UI-TW-401 (I-212), UI-TW-011: a header click cycles ascending → descending → unsorted (arrival order); ties keep
+    /// arrival order; related rows stay under their diagnostic; the summary row stays last; Col is not sortable.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-401")]
+    public async Task ColumnsSortWithArrivalOrderAsTieBreaker()
+    {
+        await using var h = await BuildScenario.StartAsync();
+        await BuildWithMessagesAsync(h); // 0 E2003 line 6, 1 E2010 line 4, 2 W1002 line 4, 3 H2077 line 6
+        List<string> Keys() => [.. BuildScenario.Messages(h).Rows.Select(r => r.Key)];
+        Assert.Equal(["0", "1", "2", "3", "summary"], Keys());
+        Assert.Equal(Strings.MessagesView_Column_Line, Header(h, "Line"));
+
+        SortBy(h, "Line");
+        Assert.Equal(["1", "2", "0", "3", "summary"], Keys());
+        Assert.Equal(Strings.MessagesView_Column_Line + " ▲", Header(h, "Line"));
+        SortBy(h, "Line");
+        Assert.Equal(["0", "3", "1", "2", "summary"], Keys()); // descending; ties still in arrival order
+        Assert.Equal(Strings.MessagesView_Column_Line + " ▼", Header(h, "Line"));
+        SortBy(h, "Line");
+        Assert.Equal(["0", "1", "2", "3", "summary"], Keys()); // unsorted = natural order
+        Assert.Equal(Strings.MessagesView_Column_Line, Header(h, "Line"));
+
+        SortBy(h, "Code");
+        Assert.Equal(["0", "1", "3", "2", "summary"], Keys());
+        SortBy(h, "Description"); // another column starts ascending, the previous one loses its glyph
+        Assert.Equal(["1", "0", "3", "2", "summary"], Keys());
+        Assert.Equal(Strings.MessagesView_Column_Code, Header(h, "Code"));
+        SortBy(h, "Severity");
+        Assert.Equal(["0", "1", "2", "3", "summary"], Keys()); // error < warning < hint
+        SortBy(h, "Severity");
+        Assert.Equal(["3", "2", "0", "1", "summary"], Keys());
+        SortBy(h, "File"); // one file: arrival order
+        Assert.Equal(["0", "1", "2", "3", "summary"], Keys());
+        SortBy(h, "Col"); // not sortable: nothing changes
+        Assert.Equal(["0", "1", "2", "3", "summary"], Keys());
+        Assert.Equal(Strings.MessagesView_Column_Col, Header(h, "Col"));
+        Assert.Equal(Strings.MessagesView_Column_File + " ▲", Header(h, "File"));
+
+        // Related rows follow their diagnostic; the filter still applies and the summary stays last and visible.
+        SortBy(h, "File");
+        SortBy(h, "File");
+        SortBy(h, "Line");
+        BuildScenario.Messages(h).SetExpanded(BuildScenario.Messages(h).Rows.Single(r => r.Key == "0"), true);
+        Assert.Equal(["1", "2", "0", "0.r0", "3", "summary"], Keys());
+        h.Find<TextBox>("Tool.Messages.Filter").Text = "E20";
+        h.Clock.Advance(ToolWindowViewModel.FilterDelay);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(["1", "0", "0.r0", "summary"], Keys());
+    }
 }

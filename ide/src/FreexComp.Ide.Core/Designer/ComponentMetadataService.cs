@@ -51,6 +51,9 @@ public sealed class ComponentMetadataService
     private ICommandService? _commands;
     private bool _missingShown;
 
+    /// <summary>The Output whose <c>designer</c> channel receives the metadata problems (DSG-TP-005); null = log only.</summary>
+    public Build.IOutputService? Output { get; set; }
+
     public ComponentMetadataService(DocumentService documents, IFileSystem fileSystem, ISettingsService settings, IStatusService status,
         ILog log, ToolchainEnvironment environment, IDialogService dialogs)
     {
@@ -115,7 +118,12 @@ public sealed class ComponentMetadataService
     {
         var (result, missing) = await Task.Run(() => Read(folders));
         foreach (var problem in result.Problems)
+        {
             _log.Warning(LogCategory, problem.ToString() ?? "");
+            // DSG-TP-005: every problem on the Output's designer channel.
+            Output?.Append(Build.OutputChannels.Designer, string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                Resources.Strings.Msg_Designer_MetadataError, problem.File, problem.Line, problem.Column, problem.Message), Build.OutputKind.Error);
+        }
         MissingIndexPath = missing;
         Catalog = missing is null ? result.Catalog : ComponentCatalog.Empty;
         State = missing is null ? MetadataLoadState.Loaded : MetadataLoadState.Missing;

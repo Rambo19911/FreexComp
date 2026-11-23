@@ -723,6 +723,9 @@ The form change was undone.</value>
   <data name="Output_Channel_program" xml:space="preserve">
     <value>Program</value>
   </data>
+  <data name="Output_Channel_designer" xml:space="preserve">
+    <value>Designer</value>
+  </data>
   <data name="Msg_Editor_NoDocuments" xml:space="preserve">
     <value>No open documents</value>
   </data>
