@@ -117,6 +117,9 @@ internal sealed class ValueService
         // The adapter lists parameters and locals in one scope.
         var listed = await _debuggee.GetRawVariablesAsync(
             frame.AdapterFrameId, kind == ScopeKind.Globals ? ScopeKind.Globals : ScopeKind.Locals, ct).ConfigureAwait(false);
+        // The adapter prints a global with the global-scope prefix "::".
+        if (kind == ScopeKind.Globals)
+            listed = [.. listed.Select(v => v.Name.StartsWith("::", StringComparison.Ordinal) ? v with { Name = v.Name[2..] } : v)];
         var declared = kind switch
         {
             // Self first, then the parameters in declaration order.
@@ -151,14 +154,12 @@ internal sealed class ValueService
             result.Add(ToInfo(await _decoder.DecodeAsync(name, type, address, name, ct, high).ConfigureAwait(false)));
         }
 
-        // What the adapter lists but the type information does not know is shown as the adapter prints it, except
-        // compiler temporaries. Unknown locals appear under Locals.
-        if (kind != ScopeKind.Arguments)
+        // A local the adapter lists but the type information does not know is shown as the adapter prints it, except
+        // compiler temporaries. Not so for globals: the adapter lists the globals of the whole program there, and the
+        // scope holds those of the frame's unit only (DBG-256).
+        if (kind == ScopeKind.Locals)
         {
-            var known = kind == ScopeKind.Globals
-                ? routine.Unit.Globals.Select(g => g.Name)
-                : routine.Variables.Select(v => v.Name);
-            var knownNames = known.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var knownNames = routine.Variables.Select(v => v.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             result.AddRange(await RawInfosAsync(
                 listed.Where(v => !knownNames.Contains(v.Name) && !IsHidden(v.Name, routine)), ct).ConfigureAwait(false));
         }

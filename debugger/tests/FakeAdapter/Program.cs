@@ -7,6 +7,8 @@
 // Step extensions beyond the specification: "thenRaw" (text sent as one framed message after the response and events,
 // not necessarily JSON: simulates a protocol error) and "hang": true (after the step the adapter blocks forever and
 // ignores its input: simulates an adapter that does not react to disconnect or end of input).
+// Built-in answers (no step needed): initialize, launch, configurationDone, disconnect, setExceptionBreakpoints,
+// setFunctionBreakpoints (every breakpoint verified, ids from 1001), readMemory, writeMemory.
 // Scenario extension: "variables": { "Name": "0x1000" } answers an "evaluate" of "&Name" that no step claims the way the
 // real adapter does (result = the address as "0x" and 16 lower-case digits; an unknown name fails).
 
@@ -183,6 +185,7 @@ internal static class Program
             {
                 "initialize" => Success(requestSeq, command, WriteCapabilities),
                 "launch" or "configurationDone" or "disconnect" or "setExceptionBreakpoints" => Success(requestSeq, command, null),
+                "setFunctionBreakpoints" => FunctionBreakpoints(requestSeq, arguments),
                 "readMemory" => ReadMemory(requestSeq, arguments),
                 "writeMemory" => WriteMemory(requestSeq, arguments),
                 "evaluate" when Variables.Count > 0 => AddressOf(requestSeq, arguments),
@@ -279,6 +282,27 @@ internal static class Program
             default:
                 return JsonElement.DeepEquals(expected, value) ? null : Difference();
         }
+    }
+
+    /// <summary>Built-in answer: every requested function breakpoint is verified; ids count from 1001.</summary>
+    private static byte[] FunctionBreakpoints(int requestSeq, JsonElement arguments)
+    {
+        var count = arguments.TryGetProperty("breakpoints", out var breakpoints) ? breakpoints.GetArrayLength() : 0;
+        return Success(requestSeq, "setFunctionBreakpoints", w =>
+        {
+            w.WriteStartObject();
+            w.WriteStartArray("breakpoints");
+            for (var i = 0; i < count; i++)
+            {
+                w.WriteStartObject();
+                w.WriteNumber("id", 1001 + i);
+                w.WriteBoolean("verified", true);
+                w.WriteEndObject();
+            }
+
+            w.WriteEndArray();
+            w.WriteEndObject();
+        });
     }
 
     // ---- memory ----

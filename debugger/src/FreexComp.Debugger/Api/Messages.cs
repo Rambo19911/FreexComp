@@ -34,6 +34,9 @@ internal static class Messages
     public const string StoppedAtEntry = "Stopped at program entry";
     public const string StepCompleted = "Step completed";
     public const string Paused = "Paused";
+    public const string HardCodedBreakpoint = "Hard-coded breakpoint";
+    public const string ExceptionNotificationUnavailable = "Exception notification is unavailable (adapter lacks function breakpoints).";
+    public const string AdapterNotResponding = "Debug adapter is not responding.";
     public const string BreakpointHit = "Breakpoint";
     public const string NotAvailable = "<not available>";
     public const string StaleFrame = "The stack frame belongs to an earlier stop.";
@@ -93,6 +96,13 @@ internal static class Messages
 
     /// <summary>"$" and 16 upper-case hexadecimal digits (DBG-153).</summary>
     public static string Address(ulong address) => "$" + address.ToString("X16", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>"Exception EClass: message"; without a message "Exception EClass"; without a class name "Exception" (DBG-245).</summary>
+    public static string ExceptionStop(string className, string message) =>
+        "Exception" + (className.Length > 0 ? " " + className : "") + (message.Length > 0 ? ": " + message : "");
+
+    public static string OsExceptionAt(string text, ulong address) => text + " at " + Address(address);
+    public static string UnknownOsException(uint code) => "Exception $" + code.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
 
     public static string AdapterExitedWithCode(int exitCode) => "Debug adapter exited unexpectedly (exit code " + exitCode + ").";
     public static string AdapterExitedDuringStart(int exitCode) => AdapterStartFailed + "it exited with code " + exitCode + ".";

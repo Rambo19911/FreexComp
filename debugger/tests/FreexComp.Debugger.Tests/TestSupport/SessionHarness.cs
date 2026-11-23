@@ -110,24 +110,38 @@ internal sealed class SessionHarness : IAsyncDisposable
     {
         var scenarioPath = FakeAdapterRunner.WriteScenario(scenarioJson);
         var trace = new Watch<DapTraceEntry>();
+        DebugSession? session = null;
+        var tracked = 0;
+        var test = ProcessLeakFixture.CurrentTest;
         var options = new DebugSessionOptions
         {
             AdapterPath = FakeAdapterRunner.ExePath,
             AdapterArguments = [scenarioPath],
-            Trace = trace.Add,
+            Trace = entry =>
+            {
+                trace.Add(entry);
+                // The first traced message: the adapter process exists. It goes on the list of the process-leak check.
+                if (session is IDebugSessionDiagnostics { AdapterProcessId: { } adapter } && Interlocked.Exchange(ref tracked, 1) == 0)
+                    ProcessLeakFixture.Registry.Track(adapter, "scripted adapter of a session", test);
+            },
         };
         options = configure?.Invoke(options) ?? options;
         var clock = manualClock ? new ManualTimeProvider() : null;
-        var session = clock is null ? new DebugSession(options) : new DebugSession(options, clock);
+        session = clock is null ? new DebugSession(options) : new DebugSession(options, clock);
         return new SessionHarness(scenarioPath, session, clock, trace);
     }
 
+    /// <summary>Exception settings of tests that are not about exceptions: no function breakpoint on the raise hook is requested.</summary>
+    public static ExceptionSettings NoLanguageExceptions => new() { BreakOnLanguageExceptions = false };
+
     /// <summary>
-    /// The default request launches <see cref="Program"/> with the demo program's type information; a test about a
-    /// program without type information passes its own request.
+    /// The default request launches <see cref="Program"/> with the demo program's type information and without
+    /// notification of language exceptions; a test about a program without type information, or about exceptions,
+    /// passes its own request.
     /// </summary>
     public Task LaunchAsync(LaunchRequest? request = null) =>
-        Session.LaunchAsync(request ?? new LaunchRequest { Program = Program, TypeInfoPath = PdiFixture.DbgDemoPath },
+        Session.LaunchAsync(
+            request ?? new LaunchRequest { Program = Program, TypeInfoPath = PdiFixture.DbgDemoPath, Exceptions = NoLanguageExceptions },
             TestContext.Current.CancellationToken).WaitAsync(Safety);
 
     public Task<string> WaitForEventAsync(string prefix) => Events.WaitAsync(e => e.StartsWith(prefix, StringComparison.Ordinal));

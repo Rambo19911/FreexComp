@@ -25,6 +25,8 @@ internal interface IDebugSessionDiagnostics
 /// </remarks>
 internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnostics
 {
+    private const int MaxConsecutiveTimeouts = 3;
+
     private readonly DebugSessionOptions _options;
     private readonly TimeProvider _time;
     private readonly SessionStateMachine _state;
@@ -51,6 +53,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     private DapClient? _client;
     private Dictionary<string, JsonElement>? _capabilities;
     private PdiFile? _typeInfo;                     // null: the program has no type-information file (DBG-403)
+    private int _consecutiveTimeouts;
 
     public DebugSession(DebugSessionOptions options)
         : this(options, DebugState.Idle, TimeProvider.System)
@@ -100,8 +103,14 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     public Task ContinueAsync(CancellationToken ct = default) =>
         PostAsync(SessionMethod.ContinueAsync, () => ResumeAsync("continue", _currentStop!.ThreadId, ct), ct);
 
-    public Task PauseAsync(CancellationToken ct = default) =>
-        PostAsync(SessionMethod.PauseAsync, () => PauseCoreAsync(ct), ct);
+    public Task PauseAsync(CancellationToken ct = default)
+    {
+        // Noted at once, not when the loop gets to the call: a stop that is being resolved internally right now must
+        // not be continued (DBG-029).
+        if (State == DebugState.Running)
+            _pauseRequested = true;
+        return PostAsync(SessionMethod.PauseAsync, () => PauseCoreAsync(ct), ct);
+    }
 
     public Task StepOverAsync(int threadId, CancellationToken ct = default) =>
         PostAsync(SessionMethod.StepOverAsync, () => ResumeAsync("next", threadId, ct), ct);
@@ -122,7 +131,7 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
         PostAsync(SessionMethod.SetBreakpointsAsync, () => SetBreakpointsCoreAsync(path, breakpoints, ct), ct);
 
     public Task SetExceptionSettingsAsync(ExceptionSettings settings, CancellationToken ct = default) =>
-        NotYetAsync<bool>(SessionMethod.SetExceptionSettingsAsync, "G-055", ct);
+        PostAsync(SessionMethod.SetExceptionSettingsAsync, () => SetExceptionSettingsCoreAsync(settings, ct), ct);
 
     // ---- inspection ----
 
@@ -258,10 +267,30 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     /// Sends a request for the work item in progress and awaits the response. Cancelled by the caller's token and
     /// when the session starts to end.
     /// </summary>
+    /// <remarks>
+    /// Three timeouts in a row, with no answer of any kind in between, end the session: the adapter is taken for dead
+    /// (architecture §9). The request that timed out faults as usual; the session ends in the next work item.
+    /// </remarks>
     private async Task<JsonElement> RequestAsync(string command, object? arguments, CancellationToken ct, TimeSpan? timeout = null)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _abort.Token);
-        return await _client!.RequestAsync(command, arguments, timeout ?? _options.RequestTimeout, linked.Token).ConfigureAwait(false);
+        try
+        {
+            var body = await _client!.RequestAsync(command, arguments, timeout ?? _options.RequestTimeout, linked.Token).ConfigureAwait(false);
+            _consecutiveTimeouts = 0;
+            return body;
+        }
+        catch (DebuggerException e) when (e.Code == DebugErrorCode.RequestFailed)
+        {
+            _consecutiveTimeouts = 0;   // the adapter answered
+            throw;
+        }
+        catch (DebuggerException e) when (e.Code == DebugErrorCode.RequestTimeout)
+        {
+            if (++_consecutiveTimeouts == MaxConsecutiveTimeouts)
+                Post(() => FailSessionAsync(TerminationCause.AdapterCrashed, Messages.AdapterNotResponding));
+            throw;
+        }
     }
 
     /// <summary>Session loop only: the snapshot changes before the event is queued (DBG-024, DBG-422).</summary>
@@ -288,11 +317,4 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
             // A failing trace sink must never break the session.
         }
     }
-
-    /// <summary>A call whose behaviour belongs to a later task: state-checked like every call, then not implemented.</summary>
-    private Task<T> NotYetAsync<T>(SessionMethod method, string task, CancellationToken ct) =>
-        PostAsync<T>(method, () => throw NotYet(method, task), ct);
-
-    private static NotImplementedException NotYet(SessionMethod method, string task) =>
-        new($"{method} is implemented by task {task}.");
 }

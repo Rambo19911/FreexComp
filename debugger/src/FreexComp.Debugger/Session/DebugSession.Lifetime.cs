@@ -51,7 +51,11 @@ internal sealed partial class DebugSession
     /// The shutdown sequence (DBG-020): <c>Terminating</c>, <c>disconnect</c>, close the adapter's input, wait for its
     /// exit, kill what is left, <c>Terminated</c>. No-op when the session has already ended.
     /// </summary>
-    private async Task ShutdownAsync(TerminationCause cause)
+    /// <param name="cause">Why the session ends.</param>
+    /// <param name="terminateDebuggee">
+    /// Whether the adapter is told to end the debuggee; null: yes unless the debuggee ended by itself (DBG-094, DBG-095).
+    /// </param>
+    private async Task ShutdownAsync(TerminationCause cause, bool? terminateDebuggee = null)
     {
         if (State == DebugState.Terminated)
             return;
@@ -65,7 +69,7 @@ internal sealed partial class DebugSession
         LeaveStop();
         SetState(DebugState.Terminating);
         // After a natural end the adapter is only asked to end itself (DBG-095); otherwise the debuggee is killed (DBG-094).
-        await StopAdapterAsync(disconnect: true, terminateDebuggee: cause != TerminationCause.Exited).ConfigureAwait(false);
+        await StopAdapterAsync(disconnect: true, terminateDebuggee: terminateDebuggee ?? cause != TerminationCause.Exited).ConfigureAwait(false);
         Terminate(cause, null);
         await FaultLaunchAsync(new DebuggerException(DebugErrorCode.LaunchFailed, Messages.SessionTerminated)).ConfigureAwait(false);
     }

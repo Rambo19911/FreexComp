@@ -62,6 +62,10 @@ internal sealed class AdapterProcess : IAsyncDisposable
             info.ArgumentList.Add(argument);
         // Only meaningful for the CodeView/PDB debug container; harmless otherwise (DBG-005).
         info.Environment["LLDB_USE_NATIVE_PDB_READER"] = "1";
+        // The adapter needs a Python runtime library; only the bundled one may satisfy it, never one that happens to
+        // be installed on the machine: its directory goes first on the adapter's own search path.
+        if (BundledPythonDirectory(adapterPath) is { } python)
+            info.Environment["PATH"] = python + Path.PathSeparator + (info.Environment.TryGetValue("PATH", out var path) ? path : "");
 
         Process process;
         try
@@ -74,6 +78,26 @@ internal sealed class AdapterProcess : IAsyncDisposable
         }
 
         return new AdapterProcess(process, onStderrLine);
+    }
+
+    /// <summary>
+    /// The directory of the Python runtime bundled with the toolchain the adapter belongs to: <c>python-embed</c>
+    /// (development tree) or <c>python</c> (installed product) next to the toolchain folder, i.e. two levels above the
+    /// adapter's <c>bin</c> directory. Null when there is none (the adapter then runs with the unchanged environment).
+    /// </summary>
+    internal static string? BundledPythonDirectory(string adapterPath)
+    {
+        var toolchain = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(adapterPath)));
+        if (Path.GetDirectoryName(toolchain) is not { } parent)
+            return null;
+        foreach (var name in (string[])["python-embed", "python"])
+        {
+            var candidate = Path.Combine(parent, name);
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
     public int ProcessId { get; }

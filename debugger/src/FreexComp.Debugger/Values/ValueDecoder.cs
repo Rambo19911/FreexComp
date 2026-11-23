@@ -300,6 +300,37 @@ internal sealed class ValueDecoder
         return await WithFieldsAsync(node, type.AllFields(), instance, nested, ct, summary: false).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The dynamic class name of the exception object at <paramref name="instance"/> and the text of its message: the
+    /// string field named <c>abi.exceptionMessageField</c> of the dynamic class or its ancestors (the nearest known
+    /// ancestor when the class itself has no type information). What cannot be read is "".
+    /// </summary>
+    public async Task<(string ClassName, string Message)> ReadExceptionAsync(ulong instance, CancellationToken ct)
+    {
+        if (await _memory.ReadMemoryAsync(instance, _pointerSize, ct).ConfigureAwait(false) is not { } vmtBytes)
+            return ("", "");
+        var vmt = ValueFormatter.Unsigned(vmtBytes);
+        if (await ClassNameAsync(vmt, ct).ConfigureAwait(false) is not { } className)
+            return ("", "");
+
+        var type = _pdi.FindClass(className, null);
+        for (var depth = 0; type is null && depth < MaxAncestorDepth; depth++)
+        {
+            if (await ParentVmtAsync(vmt, ct).ConfigureAwait(false) is not { } parent || parent == 0
+                || await ClassNameAsync(parent, ct).ConfigureAwait(false) is not { } parentName)
+                break;
+            vmt = parent;
+            type = _pdi.FindClass(parentName, null);
+        }
+
+        var field = type?.AllFields().LastOrDefault(f =>
+            f.Type.Kind == PdiTypeKind.String && string.Equals(f.Name, _pdi.Abi.ExceptionMessageField, StringComparison.OrdinalIgnoreCase));
+        if (field is null)
+            return (className, "");
+        var message = await DecodeAsync(field.Name, field.Type, Offset(instance, field.Offset), null, ct).ConfigureAwait(false);
+        return (className, message.Kind == ValueKind.String ? message.Text ?? "" : "");
+    }
+
     /// <summary>The class name stored in a VMT (<c>abi.vmt</c>); null when it cannot be read.</summary>
     private async Task<string?> ClassNameAsync(ulong vmt, CancellationToken ct)
     {

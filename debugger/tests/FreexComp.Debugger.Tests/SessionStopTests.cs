@@ -346,4 +346,113 @@ public sealed class SessionStopTests
         Assert.Equal("StepOverAsync is not allowed in state Running.", exception.Message);
         await EndAsync(harness);
     }
+
+    // ---- pause (G-057) ----
+
+    [Fact]
+    [Trait("Req", "DBG-235")]
+    [Trait("Req", "DBG-405")]
+    public async Task Pause_PublishesPause()
+    {
+        // A genuine "pause" stop keeps the thread the adapter reports.
+        await using var harness = await StoppedAtBreakpointAsync($$"""
+            { "on": "continue", "respond": {} },
+            { "on": "pause", "respond": {}, "thenEvents": [ {{Stopped("""{ "reason": "pause", "description": "signal SIGSTOP", "threadId": 8120 }""")}} ] },
+            {{Threads}}, {{Stack(55, 8120)}}
+            """);
+        await harness.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
+
+        await harness.Session.PauseAsync(Ct).WaitAsync(Safety, Ct);
+
+        var line = await harness.WaitForEventAsync("stopped Pause");
+        Assert.Equal($"stopped Pause epoch=2 thread=8120 loc={Demo}:55:5 hits=[] desc=Paused", line);
+        Assert.Equal(DebugState.Stopped, harness.Session.State);
+        Assert.Equal(StopReason.Pause, harness.Session.CurrentStop!.Reason);
+        Assert.Null(harness.Session.CurrentStop.Exception);
+        Assert.Equal(["state Running->Stopped", line], harness.Events.Snapshot().TakeLast(2));
+        await EndAsync(harness);
+    }
+
+    [Theory]
+    [InlineData(0, "Paused")]              // within 5 s of the pause request: the pause stop, whatever the adapter calls it
+    [InlineData(6, "signal SIGSTOP")]      // later: an unknown stop, described by the adapter
+    [Trait("Req", "DBG-091")]
+    public async Task Pause_OtherReasonWithinWindow_IsPauseStop(int secondsAfterPause, string description)
+    {
+        var steps = $$"""
+            { "steps": [ {{BreakpointAtStart()}},
+              { "on": "continue", "respond": {} },
+              { "on": "pause", "respond": {} },
+              { "on": "setBreakpoints", "respond": { "breakpoints": [ { "id": 2, "verified": true, "line": 40 } ] },
+                "thenEvents": [ {{Stopped("""{ "reason": "signal", "description": "signal SIGSTOP", "threadId": 7412 }""")}} ] },
+              {{Threads}}, {{Stack(55)}} ] }
+            """;
+        await using var harness = SessionHarness.Create(steps, manualClock: true);
+        await harness.LaunchAsync(LaunchWithBreakpoint());
+        await harness.WaitForEventAsync("stopped");
+        await harness.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
+        await harness.Session.PauseAsync(Ct).WaitAsync(Safety, Ct);
+
+        harness.Clock!.Advance(TimeSpan.FromSeconds(secondsAfterPause));
+        // The scripted adapter stops the debuggee after its next answer.
+        await harness.Session.SetBreakpointsAsync(Demo, [new BreakpointSpec { Id = 5, Line = 40 }], Ct).WaitAsync(Safety, Ct);
+
+        Assert.Equal(
+            $"stopped Pause epoch=2 thread=7412 loc={Demo}:55:5 hits=[] desc={description}",
+            await harness.WaitForEventAsync("stopped Pause"));
+        await EndAsync(harness);
+    }
+
+    [Fact]
+    [Trait("Req", "DBG-029")]
+    [Trait("Req", "DBG-236")]
+    public async Task Pause_DuringInternalStop_Wins()
+    {
+        // The breakpoint stops at its first pass only. Its second arrival is resolved internally; the user's Pause
+        // arrives while that stop is being resolved (deterministically: issued from the protocol trace when the
+        // resolver sends its stackTrace request). The resolver then does not continue: the stop is published as Pause.
+        // The scenario has neither a second "continue" nor a "pause" step and fails on unexpected requests.
+        IDebugSession? session = null;
+        Task? pause = null;
+        var armed = 0;
+        await using var harness = SessionHarness.Create(
+            $$"""
+            { "steps": [ {{BreakpointAtStart()}},
+              { "on": "continue", "respond": {}, "thenEvents": [ {{Stopped("""{ "reason": "breakpoint", "threadId": 7412, "hitBreakpointIds": [2] }""")}} ] },
+              {{Threads}}, {{Stack(40)}} ] }
+            """,
+            configure: options =>
+            {
+                var record = options.Trace!;
+                return options with
+                {
+                    Trace = entry =>
+                    {
+                        record(entry);
+                        if (entry.Direction == DapDirection.ToAdapter && entry.Json.Contains("\"command\":\"stackTrace\"", StringComparison.Ordinal)
+                            && Interlocked.Exchange(ref armed, 0) == 1)
+                            pause = session!.PauseAsync(Ct);
+                    },
+                };
+            });
+        session = harness.Session;
+        await harness.LaunchAsync(new LaunchRequest
+        {
+            Program = SessionHarness.Program,
+            Breakpoints = [new SourceBreakpoints(Demo, [new BreakpointSpec { Id = 5, Line = 40, HitCount = new HitCountSpec(HitCountMode.Equal, 1) }])],
+        });
+        await harness.WaitForEventAsync("stopped Breakpoint epoch=1");
+
+        Interlocked.Exchange(ref armed, 1);
+        await session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
+
+        Assert.Equal($"stopped Pause epoch=2 thread=7412 loc={Demo}:40:5 hits=[] desc=Paused", await harness.WaitForEventAsync("stopped Pause"));
+        Assert.Equal(DebugState.Stopped, session.State);
+        Assert.NotNull(pause);
+        await pause.WaitAsync(Safety, Ct);     // the call itself completes: the debuggee is stopped
+        Assert.Contains("breakpoint 5 Verified line=40 hits=2 msg=null", harness.Events.Snapshot());   // the arrival was counted
+        Assert.Single(harness.SentRequests("continue"));
+        Assert.Empty(harness.SentRequests("pause"));
+        await EndAsync(harness);
+    }
 }

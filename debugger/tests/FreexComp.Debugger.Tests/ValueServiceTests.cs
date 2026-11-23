@@ -122,6 +122,22 @@ public sealed class ValueServiceTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-256")]
+    public async Task Globals_OnlyTheFramesUnit_AdapterNamesWithScopePrefix()
+    {
+        // The real adapter lists the globals of the whole module in its Globals scope, each name prefixed "::". The
+        // Globals scope of a frame holds the globals of the frame's unit only: other units' globals are not shown.
+        var test = ZooBed.Test();
+        var listed = test.Debuggee.Listed[ScopeKind.Globals];
+        var counter = listed.Single(v => v.Name == "Counter");
+        listed[listed.IndexOf(counter)] = counter with { Name = "::Counter" };
+        listed.Add(new RawVariable("::_fltused", "39029", "int"));
+        listed.Add(new RawVariable("::OverflowText", "u\"\"", "char16_t[48]"));
+
+        Assert.Equal(["Counter = 5 : Integer [Integer]"], Lines(await test.ScopeAsync(ScopeKind.Globals)));
+    }
+
+    [Fact]
     [Trait("Req", "DBG-079")]
     public async Task Scopes_DemoLocals_AsTheScriptedTestExpects()
     {

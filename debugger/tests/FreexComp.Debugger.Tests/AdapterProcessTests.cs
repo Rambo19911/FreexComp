@@ -29,6 +29,7 @@ public sealed class AdapterProcessTests
         try
         {
             await using var adapter = AdapterProcess.Start(FakeAdapterRunner.ExePath, [scenario], stderrLines.Enqueue);
+            ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(AdapterProcessTests));
             var transport = new DapTransport(adapter.StandardOutput, adapter.StandardInput);
 
             Assert.True(adapter.ProcessId > 0);
@@ -66,6 +67,7 @@ public sealed class AdapterProcessTests
         var lines = new ConcurrentQueue<string>();
         await using var adapter = AdapterProcess.Start(
             FakeAdapterRunner.ExePath, ["--print-env", "LLDB_USE_NATIVE_PDB_READER"], lines.Enqueue);
+        ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(AdapterProcessTests));
 
         await adapter.WaitForExitAsync(Ct).WaitAsync(Safety, Ct);
         await adapter.StderrCompleted.WaitAsync(Safety, Ct);
@@ -80,6 +82,7 @@ public sealed class AdapterProcessTests
     public async Task Stderr_KeepsLast20Lines()
     {
         await using var adapter = AdapterProcess.Start(FakeAdapterRunner.ExePath, ["--stderr-lines", "25"], null);
+        ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(AdapterProcessTests));
 
         await adapter.WaitForExitAsync(Ct).WaitAsync(Safety, Ct);
         await adapter.StderrCompleted.WaitAsync(Safety, Ct);
@@ -133,9 +136,11 @@ public sealed class AdapterProcessTests
             if (line.StartsWith("CHILD-PID ", StringComparison.Ordinal))
                 childPid.TrySetResult(int.Parse(line["CHILD-PID ".Length..], System.Globalization.CultureInfo.InvariantCulture));
         });
+        ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(AdapterProcessTests));
         try
         {
             child = Process.GetProcessById(await childPid.Task.WaitAsync(Safety, Ct));
+            ProcessLeakFixture.Registry.Track(child.Id, nameof(AdapterProcessTests) + " child");
             using var adapterProcess = Process.GetProcessById(adapter.ProcessId);
             Assert.False(child.HasExited);
             Assert.True(adapter.IsInJob);
@@ -161,6 +166,7 @@ public sealed class AdapterProcessTests
     public async Task Kill_EndsProcess_StreamsReportEof()
     {
         await using var adapter = AdapterProcess.Start(FakeAdapterRunner.ExePath, ["--spawn-child"], null);
+        ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(AdapterProcessTests));
         var transport = new DapTransport(adapter.StandardOutput, adapter.StandardInput);
 
         adapter.Kill();
@@ -170,5 +176,56 @@ public sealed class AdapterProcessTests
         Assert.NotEqual(0, adapter.ExitCode);
         Assert.Null(await transport.ReadAsync(Ct).WaitAsync(Safety, Ct));
         adapter.Kill();   // no-op on an exited process
+    }
+
+    [Theory]
+    [InlineData("python-embed")]   // development tree: next to the toolchain folder
+    [InlineData("python")]         // installed product
+    [InlineData(null)]             // none: the adapter runs with the unchanged environment
+    public void BundledPython_FoundNextToToolchainFolder(string? folder)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var adapter = Path.Combine(root, "llvm", "bin", "lldb-dap.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(adapter)!);
+            if (folder is not null)
+                Directory.CreateDirectory(Path.Combine(root, folder));
+
+            Assert.Equal(folder is null ? null : Path.Combine(root, folder), AdapterProcess.BundledPythonDirectory(adapter));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Start_BundledPython_FirstOnAdapterSearchPath()
+    {
+        // A copy of the scripted adapter placed like the real one (<root>\llvm\bin) with a Python folder next to the
+        // toolchain folder: the adapter process sees that folder first on its search path.
+        var root = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
+        var bin = Path.Combine(root, "llvm", "bin");
+        Directory.CreateDirectory(bin);
+        Directory.CreateDirectory(Path.Combine(root, "python-embed"));
+        foreach (var file in Directory.GetFiles(AppContext.BaseDirectory, "FakeAdapter.*"))
+            File.Copy(file, Path.Combine(bin, Path.GetFileName(file)));
+        try
+        {
+            var lines = new ConcurrentQueue<string>();
+            await using (var adapter = AdapterProcess.Start(Path.Combine(bin, "FakeAdapter.exe"), ["--print-env", "PATH"], lines.Enqueue))
+            {
+                ProcessLeakFixture.Registry.Track(adapter.ProcessId, nameof(AdapterProcessTests));
+                await adapter.WaitForExitAsync(Ct).WaitAsync(Safety, Ct);
+                await adapter.StderrCompleted.WaitAsync(Safety, Ct);
+            }
+
+            Assert.StartsWith("ENV PATH=" + Path.Combine(root, "python-embed") + ";", Assert.Single(lines, l => l.StartsWith("ENV ", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

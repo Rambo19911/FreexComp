@@ -122,6 +122,15 @@ internal sealed partial class DebugSession
     /// </summary>
     private async Task<DapScope?> FindAdapterScopeAsync(int adapterFrameId, ScopeKind kind, CancellationToken ct)
     {
+        var scopes = await GetAdapterScopesAsync(adapterFrameId, ct).ConfigureAwait(false);
+        var wanted = kind == ScopeKind.Globals ? "globals" : "locals";
+        return scopes.FirstOrDefault(s => string.Equals(s.PresentationHint, wanted, StringComparison.OrdinalIgnoreCase))
+            ?? scopes.FirstOrDefault(s => string.IsNullOrEmpty(s.PresentationHint) && s.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>One <c>scopes</c> request per frame; the answer is kept for the stop.</summary>
+    private async Task<IReadOnlyList<DapScope>> GetAdapterScopesAsync(int adapterFrameId, CancellationToken ct)
+    {
         if (!_adapterScopes.TryGetValue(adapterFrameId, out var scopes))
         {
             scopes = DapJson.Deserialize<ScopesResponseBody>(
@@ -129,9 +138,7 @@ internal sealed partial class DebugSession
             _adapterScopes[adapterFrameId] = scopes;
         }
 
-        var wanted = kind == ScopeKind.Globals ? "globals" : "locals";
-        return scopes.FirstOrDefault(s => string.Equals(s.PresentationHint, wanted, StringComparison.OrdinalIgnoreCase))
-            ?? scopes.FirstOrDefault(s => string.IsNullOrEmpty(s.PresentationHint) && s.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+        return scopes;
     }
 
     private async Task<IReadOnlyList<RawVariable>> GetRawVariablesCoreAsync(int adapterFrameId, ScopeKind kind, CancellationToken ct)

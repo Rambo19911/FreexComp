@@ -4,5 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\FreexComp.Debugger\FreexComp.Debugger.csproj" />
+    <!-- Build order only: the tests run the Pascal compiler's built output as a tool (scripted test DBG-301). -->
+    <ProjectReference Include="..\..\..\compiler\src\opc\opc.csproj" ReferenceOutputAssembly="false" />
+    <!-- The process-leak check is the same in both debugger test projects (debugger testing DBG-334). -->
+    <Compile Include="..\FreexComp.Debugger.Tests\TestSupport\ProcessLeakFixture.cs" Link="TestSupport\ProcessLeakFixture.cs" />
   </ItemGroup>
 </Project>

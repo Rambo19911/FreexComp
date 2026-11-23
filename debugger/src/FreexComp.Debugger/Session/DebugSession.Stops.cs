@@ -7,6 +7,7 @@ namespace FreexComp.Debugger.Session;
 internal sealed partial class DebugSession
 {
     private const int StopFrameCount = 20;
+    private static readonly TimeSpan PauseWindow = TimeSpan.FromSeconds(5);
     private const int MaxStackLevels = 1000;
 
     // Session loop only.
@@ -23,6 +24,8 @@ internal sealed partial class DebugSession
     private int _stopDepth;                   // frames on the stopping thread's stack at the current public stop
     private RunToLineState? _runToLine;       // a run to a line in progress
     private volatile int _internalStops;
+    private volatile bool _pauseRequested;    // the user asked to pause and no stop has been published since (DBG-029)
+    private DateTimeOffset? _pauseAcknowledged;   // when the adapter acknowledged our pause request (DBG-091)
 
     /// <summary>A run to a line: the file of the temporary breakpoint, or the user breakpoint that stands in for it.</summary>
     private sealed record RunToLineState(BreakpointManager.Source Source, BreakpointManager.Entry? Bypass);
@@ -74,6 +77,8 @@ internal sealed partial class DebugSession
 
         // Public stop: epoch++, snapshot, StateChanged immediately before Stopped (DBG-015, DBG-421, DBG-422).
         _step = null;
+        _pauseRequested = false;
+        _pauseAcknowledged = null;
         _values = null;   // handles are numbered anew in the new epoch
         _epoch = stop.Epoch;
         _currentStop = stop;
@@ -106,14 +111,93 @@ internal sealed partial class DebugSession
         var location = (frames.FirstOrDefault(f => f.IsUserCode) ?? frames.FirstOrDefault(f => f.Location is not null))?.Location;
         var depth = response.TotalFrames ?? frames.Count;
 
-        StopInfo Public(StopReason reason, IReadOnlyList<int> hit, string description)
+        StopInfo Public(StopReason reason, IReadOnlyList<int> hit, string description, ExceptionInfo? exception = null, SourceLocation? at = null)
         {
             _stopDepth = depth;
-            return new StopInfo(_epoch + 1, reason, threadId, location, hit, null, description);
+            return new StopInfo(_epoch + 1, reason, threadId, exception is null ? location : at, hit, exception, description);
         }
+
+        // Resumes after a stop the session resolves itself - unless the user asked to pause meanwhile: then the
+        // debuggee stays stopped and this stop is published as the pause (DBG-029).
+        async Task<StopInfo?> ResumeOrPauseAsync(string command, int resumeThread)
+        {
+            if (_pauseRequested)
+                return Public(StopReason.Pause, [], Messages.Paused);
+            await ResumeInternallyAsync(command, resumeThread).ConfigureAwait(false);
+            return null;
+        }
+
+        StopInfo RaiseStop(SourceLocation? at, (string ClassName, string Message, ulong Address) raised) => Public(
+            StopReason.Exception, [], Messages.ExceptionStop(raised.ClassName, raised.Message),
+            new ExceptionInfo(ExceptionKind.Language, raised.ClassName, raised.Message, 0, raised.Address), at);
+
+        // What the previous stop left behind for this one.
+        var raiseReportedHere = _raiseReportedThread == threadId;
+        _raiseReportedThread = null;
+        _fatalCode = null;
+
+        // The raise hook (DBG-242 ... DBG-245): the exception object, then the ignore list.
+        async Task<StopInfo?> RaiseHookStopAsync()
+        {
+            var raised = await ReadExceptionAsync(response.StackFrames[0].Id, registers: true).ConfigureAwait(false);
+            _raiseReportedThread = threadId;
+            if (ExceptionMonitor.IsIgnored(_exceptionSettings, raised.ClassName))
+            {
+                // Resolved internally: continue, or go on with the user's step (DBG-244, DBG-030).
+                var (command, resumeThread) = StopResolver.ResumeAfterSkip(_step, threadId, depth);
+                return await ResumeOrPauseAsync(command, resumeThread).ConfigureAwait(false);
+            }
+
+            return RaiseStop(LocationBelow(frames, 0), raised);
+        }
+
+        // DBG-070: the adapter names the hook's breakpoint.
+        if (body.Reason is "breakpoint" or "function breakpoint" && frames.Count > 0 && IsRaiseHookBreakpoint(body))
+            return await RaiseHookStopAsync().ConfigureAwait(false);
 
         switch (body.Reason)
         {
+            case "exception" when !isInterrupt:
+            {
+                // An exception that no handler takes: the adapter reports no others (DBG-247).
+                var code = ExceptionMonitor.ParseCode(body.Description, body.Text);
+                if (code == ExceptionMonitor.ThreadNameCode)
+                {
+                    var (command, resumeThread) = StopResolver.ResumeAfterSkip(_step, threadId, depth);
+                    return await ResumeOrPauseAsync(command, resumeThread).ConfigureAwait(false);
+                }
+
+                if (code == ExceptionMonitor.BreakpointCode)
+                    return Public(StopReason.Pause, [], Messages.HardCodedBreakpoint);
+
+                if (code != 0 && code == _typeInfo?.Abi.PascalExceptionCode)
+                {
+                    if (raiseReportedHere)
+                    {
+                        // The hook already reported this raise (DBG-248): no second stop. Nothing handles it, and a
+                        // resume would mask it, so the debuggee ends here with the code as its exit code.
+                        _internalStops++;
+                        await EndAfterFatalExceptionAsync(code).ConfigureAwait(false);
+                        return null;
+                    }
+
+                    // DBG-246: not seen through the hook. The object is read from the frame of the raise routine when
+                    // the type information describes it.
+                    var hookIndex = Enumerable.Range(0, frames.Count).FirstOrDefault(i => IsHookFrame(response.StackFrames[i], frames[i]), -1);
+                    var raised = hookIndex >= 0
+                        ? await ReadExceptionAsync(response.StackFrames[hookIndex].Id, registers: false).ConfigureAwait(false)
+                        : ("", "", 0UL);
+                    _fatalCode = code;
+                    return RaiseStop(hookIndex >= 0 ? LocationBelow(frames, hookIndex) : location, raised);
+                }
+
+                var address = frames.Count > 0 ? frames[0].InstructionPointer : 0;
+                var text = ExceptionMonitor.OsText(code);
+                _fatalCode = code;
+                return Public(StopReason.Exception, [], Messages.OsExceptionAt(text, address),
+                    new ExceptionInfo(ExceptionKind.Os, "", text, code, address), location);
+            }
+
             case "entry" when _launchRequest is { StopOnEntry: true }:
                 return Public(StopReason.Entry, [], Messages.StoppedAtEntry);
 
@@ -165,13 +249,15 @@ internal sealed partial class DebugSession
 
                 if (temporaryHit)
                     return Public(StopReason.RunToLine, [], Messages.RunToLineCompleted);
+                // DBG-070: ... or the top frame is the hook routine (and the stop is at no line breakpoint of ours).
+                if (hit.Count == 0 && _hookArmed && frames.Count > 0 && IsHookFrame(response.StackFrames[0], frames[0]))
+                    return await RaiseHookStopAsync().ConfigureAwait(false);
                 if (hit.Count == 0)
                     break;   // none of ours: a plain pause
 
                 // Every breakpoint skipped: continue, or go on with the user's step (DBG-030).
                 var (command, resumeThread) = StopResolver.ResumeAfterSkip(_step, threadId, depth);
-                await ResumeInternallyAsync(command, resumeThread).ConfigureAwait(false);
-                return null;
+                return await ResumeOrPauseAsync(command, resumeThread).ConfigureAwait(false);
             }
 
             case "step":
@@ -180,14 +266,15 @@ internal sealed partial class DebugSession
                 {
                     if (internalCommand == StopResolver.Continue)
                         _step = null;
-                    await ResumeInternallyAsync(internalCommand, step.ThreadId).ConfigureAwait(false);
-                    return null;
+                    return await ResumeOrPauseAsync(internalCommand, step.ThreadId).ConfigureAwait(false);
                 }
 
                 return Public(StopReason.Step, [], Messages.StepCompleted);
         }
 
-        var description = body.Reason is "pause" or "breakpoint" or "function breakpoint" || isInterrupt
+        // DBG-091: any other stop within 5 s of our pause request, while no step is in progress, is the pause stop.
+        var answersPause = _pauseAcknowledged is { } asked && _step is null && _time.GetUtcNow() - asked <= PauseWindow;
+        var description = body.Reason is "pause" or "breakpoint" or "function breakpoint" || isInterrupt || answersPause
             ? Messages.Paused
             : FirstNonEmpty(body.Description, body.Text) ?? Messages.Paused;
         return Public(StopReason.Pause, [], description);
@@ -229,6 +316,12 @@ internal sealed partial class DebugSession
     /// </summary>
     private async Task<bool> ResumeAsync(string command, int threadId, CancellationToken ct)
     {
+        if (_fatalCode is { } fatal)
+        {
+            await EndAfterFatalExceptionAsync(fatal).ConfigureAwait(false);
+            return true;
+        }
+
         var depth = threadId == _currentStop?.ThreadId ? _stopDepth : 0;
         await RequestAsync(command, new ThreadArguments(threadId), ct).ConfigureAwait(false);
         _step = command == StopResolver.Continue ? null : new StepState(command, threadId, depth);
@@ -244,6 +337,12 @@ internal sealed partial class DebugSession
     /// </summary>
     private async Task<bool> RunToLineCoreAsync(string path, int line, CancellationToken ct)
     {
+        if (_fatalCode is { } fatal)
+        {
+            await EndAfterFatalExceptionAsync(fatal).ConfigureAwait(false);
+            return true;
+        }
+
         var source = _breakpoints.GetOrAdd(PathText.Normalize(path));
         var noCode = new DebuggerException(DebugErrorCode.RequestFailed, Messages.NoCodeAt(Path.GetFileName(source.Path), line), "setBreakpoints");
         var existing = source.Entries.FirstOrDefault(e => e.IsSent && (e.Spec.Line == line || e.ActualLine == line));
@@ -320,10 +419,24 @@ internal sealed partial class DebugSession
     private async Task<bool> PauseCoreAsync(CancellationToken ct)
     {
         if (State == DebugState.Stopped)
+        {
+            _pauseRequested = false;   // also when the stop being resolved while the call waited was published for it (DBG-029)
             return true;
-        if (_threads.Count == 0)
-            _threads = DapJson.Deserialize<ThreadsResponseBody>(await RequestAsync("threads", null, ct).ConfigureAwait(false)).Threads;
-        await RequestAsync("pause", new ThreadArguments(_threads.FirstOrDefault()?.Id ?? 0), ct).ConfigureAwait(false);
+        }
+
+        try
+        {
+            if (_threads.Count == 0)
+                _threads = DapJson.Deserialize<ThreadsResponseBody>(await RequestAsync("threads", null, ct).ConfigureAwait(false)).Threads;
+            await RequestAsync("pause", new ThreadArguments(_threads.FirstOrDefault()?.Id ?? 0), ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is DebuggerException or OperationCanceledException)
+        {
+            _pauseRequested = false;
+            throw;
+        }
+
+        _pauseAcknowledged = _time.GetUtcNow();
         return true;
     }
 

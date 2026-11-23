@@ -58,7 +58,9 @@ internal sealed class FakeAdapterRunner : IAsyncDisposable
             info.Environment["FAKEADAPTER_SCENARIO"] = scenarioPath;
         else
             info.ArgumentList.Add(scenarioPath);
-        return new FakeAdapterRunner(Process.Start(info)!, Path.GetDirectoryName(scenarioPath)!);
+        var process = Process.Start(info)!;
+        ProcessLeakFixture.Registry.Track(process.Id, "scripted adapter (raw)");
+        return new FakeAdapterRunner(process, Path.GetDirectoryName(scenarioPath)!);
     }
 
     /// <summary>Sends a request without waiting for anything.</summary>

@@ -57,6 +57,7 @@ internal sealed partial class DebugSession
     {
         _launchRequest = request;
         _launchCancellation = ct;
+        _exceptionSettings = request.Exceptions;
         foreach (var source in request.Breakpoints)
             _breakpoints.Set(PathText.Normalize(source.Path), source.Breakpoints);
         SetState(DebugState.Starting);
@@ -165,7 +166,8 @@ internal sealed partial class DebugSession
 
     /// <summary>
     /// Configuration phase, started by the <c>initialized</c> event (DBG-054): all <c>setBreakpoints</c>,
-    /// <c>setExceptionBreakpoints</c>, <c>configurationDone</c>, each awaited before the next is sent.
+    /// <c>setFunctionBreakpoints</c>, <c>setExceptionBreakpoints</c>, <c>configurationDone</c>, each awaited before
+    /// the next is sent.
     /// </summary>
     private async Task ConfigureAsync()
     {
@@ -177,8 +179,9 @@ internal sealed partial class DebugSession
         {
             foreach (var source in _breakpoints.Sources)
                 await SendBreakpointsAsync(source, CancellationToken.None, raiseChanges: true).ConfigureAwait(false);
-            // The function breakpoint on the exception raise hook needs the hook symbol of the type information
-            // (task G-054); the adapter's own exception filters are never used (§4.3).
+            // The function breakpoint on the raise hook: only when language exceptions are to be reported and the
+            // type information names the hook. The adapter's own exception filters are never used (§4.3).
+            await SyncRaiseHookAsync(CancellationToken.None).ConfigureAwait(false);
             await RequestAsync("setExceptionBreakpoints", new SetExceptionBreakpointsArguments(), CancellationToken.None).ConfigureAwait(false);
             await RequestAsync("configurationDone", null, CancellationToken.None).ConfigureAwait(false);
         }
