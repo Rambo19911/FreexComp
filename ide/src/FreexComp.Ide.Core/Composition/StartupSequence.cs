@@ -74,7 +74,7 @@ public static class StartupSequence
             }
             else
             {
-                var opened = await services.Documents.OpenAsync(path);
+                var opened = await services.Documents.OpenInDefaultViewAsync(path); // I-218
                 if (opened.NeedsMessage)
                     await services.Dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
             }

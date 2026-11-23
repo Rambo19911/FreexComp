@@ -388,6 +388,18 @@ public sealed class ToolPaletteView : UserControl
         ToolTip.SetTip(row, new StackPanel { Children = { new TextBlock { Text = item.ClassName, Classes = { "bodyStrong" } }, unit } });
         ToolTip.SetShowDelay(row, 600);
 
+        if (row is AutomationBorder automation)
+        {
+            // I-219: UI Automation Invoke is a click on the item (arms it; invoking the armed item disarms it).
+            automation.Invoked = () =>
+            {
+                if (model.AreItemsEnabled)
+                {
+                    model.Click(item.ClassName);
+                }
+            };
+        }
+
         row.PointerPressed += (_, e) => OnItemPressed(row, item, key, e);
         row.PointerMoved += (_, e) => OnItemMoved(row, item, e);
         row.PointerReleased += (_, e) => OnItemReleased(row, item, e);
@@ -746,15 +758,23 @@ public sealed class ToolPaletteView : UserControl
     {
         protected override Type StyleKeyOverride => typeof(Border);
 
-        protected override AutomationPeer OnCreateAutomationPeer() => new Peer(this, type);
+        /// <summary>The action of the UI Automation Invoke pattern; null = the element has no Invoke pattern.</summary>
+        public Action? Invoked { get; set; }
 
-        private sealed class Peer(Control owner, AutomationControlType type) : ControlAutomationPeer(owner)
+        protected override AutomationPeer OnCreateAutomationPeer() => Invoked is null ? new Peer(this, type) : new InvokablePeer(this, type);
+
+        private class Peer(Control owner, AutomationControlType type) : ControlAutomationPeer(owner)
         {
             protected override AutomationControlType GetAutomationControlTypeCore() => type;
 
             protected override bool IsControlElementCore() => true;
 
             protected override bool IsContentElementCore() => true;
+        }
+
+        private sealed class InvokablePeer(AutomationBorder owner, AutomationControlType type) : Peer(owner, type), Avalonia.Automation.Provider.IInvokeProvider
+        {
+            public void Invoke() => owner.Invoked?.Invoke();
         }
     }
 }

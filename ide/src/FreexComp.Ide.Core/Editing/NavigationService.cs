@@ -95,6 +95,9 @@ public sealed class NavigationService : INavigationService
     public void GoToLine(TextDocumentViewModel document, int line, int? column)
     {
         ArgumentNullException.ThrowIfNull(document);
+        // I-218: a source position is shown in the Code view of a form document (designer.defaultView may open it in Design).
+        if (document is FormDocumentViewModel { HasUnit: true, ActiveView: not DocumentView.Code } form)
+            form.ShowView(DocumentView.Code);
         var buffer = document.Buffer;
         var from = document.ViewState.Caret;
         line = Math.Clamp(line, 1, buffer.LineCount);

@@ -23,10 +23,11 @@ public static class DockSizing
 
     /// <summary>
     /// I-215: the minimum width of a side dock: 160, or the widest tool bar of its windows (buttons + minimum filter
-    /// width, <see cref="ToolWindowViewModel.ToolBarMinWidth"/>), so that a tool bar never overlaps.
+    /// width, <see cref="ToolWindowViewModel.ToolBarMinWidth"/>), so that a tool bar never overlaps; I-219: or the
+    /// largest <see cref="ToolWindowViewModel.ContentMinWidth"/>.
     /// </summary>
     public static double SideMinWidth(IEnumerable<ToolWindowViewModel> windows) =>
-        windows.Select(w => w.ToolBarMinWidth).Append(SideDockMinWidth).Max();
+        windows.Select(w => Math.Max(w.ToolBarMinWidth, w.ContentMinWidth)).Append(SideDockMinWidth).Max();
 
     /// <summary>UI-WIN-005: a dragged bottom-dock height, 80 … <paramref name="available"/> − 160 − <paramref name="splitter"/>.</summary>
     public static double ClampBottom(double value, double available, double splitter) =>

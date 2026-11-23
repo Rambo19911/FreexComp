@@ -28,8 +28,9 @@ public sealed class ObjectInspectorView : UserControl
     private readonly ComboBox _selector = new() { HorizontalAlignment = HorizontalAlignment.Stretch, Height = 26 };
     private readonly Button _tabProperties = new() { Content = Strings.Inspector_Tab_Properties };
     private readonly Button _tabEvents = new() { Content = Strings.Inspector_Tab_Events };
-    private readonly ToggleButton _byCategory = new() { Content = "▤", Width = 22, Height = 22 };
-    private readonly ToggleButton _byName = new() { Content = "A↓", Width = 22, Height = 22 };
+    // UI-DSG-102 (I-219): 22 × 22 flat toggles whose glyph gets the whole inner area (no template padding).
+    private readonly ToggleButton _byCategory = ArrangeToggle("▤");
+    private readonly ToggleButton _byName = ArrangeToggle(new Icons.IdeIcon { IconName = "sort-az", Width = 16, Height = 16 });
     private readonly TextBox _filter = new() { PlaceholderText = Strings.ToolWindow_FilterPlaceholder, Height = 26 };
     private readonly PropertyGridView _grid = new(Prefix + ".Grid", Prefix + ".Row.", Prefix + ".Category.");
     private readonly TextBlock _empty = new() { HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap };
@@ -150,6 +151,12 @@ public sealed class ObjectInspectorView : UserControl
         Content = layout;
         SizeChanged += (_, e) => UpdateNarrow(e.NewSize.Width);
     }
+
+    private static ToggleButton ArrangeToggle(object content) => new()
+    {
+        Content = content, Width = 22, Height = 22, Padding = new Thickness(0), Background = Brushes.Transparent,
+        HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
+    };
 
     /// <summary>UI-DSG-113: below 260 DIP the arrangement buttons move into the caption's menu.</summary>
     private void UpdateNarrow(double width)

@@ -28,6 +28,12 @@ public sealed partial class ObjectInspectorViewModel
     /// <summary>UI-DSG-113: below this width the arrangement buttons move into the caption's <c>⋯</c> menu.</summary>
     public const double NarrowWidth = 260;
 
+    /// <summary>UI-DSG-113: the minimum usable width of the Object Inspector.</summary>
+    public const double MinWidth = 200;
+
+    /// <summary>UI-DSG-113 (I-219): the right dock is never narrower than the inspector's minimum usable width.</summary>
+    public override double ContentMinWidth => MinWidth;
+
     private readonly HashSet<string> _collapsed = new(Names);
     private readonly Dictionary<string, HashSet<string>> _expanded = new(Names);
     private ICommandService? _commands;

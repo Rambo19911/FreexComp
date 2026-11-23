@@ -108,6 +108,12 @@ public abstract class ToolWindowViewModel : ObservableObject
         + (ToolBarChoice is { } choice ? choice.Width + ChoiceMargin : 0)
         + (HasFilter ? FilterMinWidth + (2 * FilterMargin) : 0);
 
+    /// <summary>
+    /// I-219: the narrowest the window's content is usable (e.g. the Object Inspector's 200, UI-DSG-113); 0 = no own
+    /// minimum. A side dock is never narrower than the largest value of its windows.
+    /// </summary>
+    public virtual double ContentMinWidth => 0;
+
     public string FilterText
     {
         get => _filterText;
@@ -136,6 +142,17 @@ public abstract class ToolWindowViewModel : ObservableObject
     /// <summary>The user resized a grid column (UI-TW-011); the width is persisted in the global UI state.</summary>
     public void SetColumnWidth(string columnId, double width) => _layout?.SetColumnWidth(Name, columnId, width);
 
+    /// <summary>UI-TW-012: the persisted sort of this tool window's grid; null = unsorted (or not attached).</summary>
+    protected ColumnSort? StoredSort => _layout?.GetSort(Name);
+
+    /// <summary>The user changed the sort (UI-TW-011); it is persisted in the global UI state.</summary>
+    protected void StoreSort(ColumnSort? sort) => _layout?.SetSort(Name, sort);
+
+    /// <summary>Called once the tool window is attached (name, layout and clock available).</summary>
+    protected virtual void OnAttached()
+    {
+    }
+
     /// <summary>UI-TW-002: "Hide (Shift+Escape)", the shortcut of <c>window.closeToolWindow</c>.</summary>
     public string HideTooltip => _hideCommand is { GestureText.Length: > 0 } command
         ? string.Format(CultureInfo.CurrentCulture, Strings.Format_TitleWithShortcut, Strings.ToolWindow_Hide, command.GestureText)
@@ -163,6 +180,7 @@ public abstract class ToolWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(HideTooltip));
             }
         };
+        OnAttached();
     }
 
     internal void RequestFocus() => FocusRequested?.Invoke(this, EventArgs.Empty);

@@ -34,7 +34,7 @@ public sealed class LayoutTests
             Assert.Equal(ExpectedGroup(rows, group), Describe(profile.Group(group)));
         }
 
-        Assert.Equal((260, 300, 200, 0.5), (profile.LeftSize, profile.RightSize, profile.BottomSize, profile.RightSplit));
+        Assert.Equal((260, 300, 200, 0.6), (profile.LeftSize, profile.RightSize, profile.BottomSize, profile.RightSplit));
 
         // Phase 1: only the P1 tool windows are registered; the profile skips the others (UI-WIN-011).
         var phase1 = rows.Where(r => r["First phase"] == "P1").Select(r => ToolName(r["Tool window"])).ToHashSet();
@@ -61,6 +61,29 @@ public sealed class LayoutTests
         }
     }
 
+    /// <summary>
+    /// I-219 (lead visual check, 1456 × 819): with the Object Inspector stacked over the Tool Palette, the default split
+    /// gives the inspector at least 60 % of the right dock, so it shows more than a handful of rows.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "5")]
+    [Trait("Req", "UI-WIN-005")]
+    public async Task DesignProfileInspectorGetsSixtyPercent()
+    {
+        Assert.True(LayoutProfiles.Create(LayoutProfiles.Design).RightSplit >= 0.6);
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            DesignerViewTests.Phase5(o);
+            o.WindowSize = new Size(1456, 819);
+        });
+        await DesignerViewTests.OpenFormAsync(h);
+        h.Click(AutomationIds.DocumentViewTab("MainForm.pas", "Design"));
+        Assert.Equal(LayoutProfiles.Design, h.Services.Layout.Layout.ActiveProfile);
+        var upper = h.Find<Control>(AutomationIds.DockRightUpper).Bounds.Height;
+        var lower = h.Find<Control>(AutomationIds.DockRightLower).Bounds.Height;
+        Assert.True(upper >= 0.6 * (upper + lower) - 0.5, $"inspector group {upper:0.#} of {upper + lower:0.#}");
+    }
+
     /// <summary>I-130: the Design column of main-window.md §2, automatic switching (UI-WIN-012) and per-profile memory (UI-WIN-013).</summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Phase", "5")]
@@ -77,7 +100,7 @@ public sealed class LayoutTests
             Assert.Equal(ExpectedGroup(rows, group, "Design profile (P5)"), Describe(profile.Group(group)));
         }
 
-        Assert.Equal((260, 300, 200, 0.5), (profile.LeftSize, profile.RightSize, profile.BottomSize, profile.RightSplit));
+        Assert.Equal((260, 300, 200, 0.6), (profile.LeftSize, profile.RightSize, profile.BottomSize, profile.RightSplit));
 
         await using var h = await HeadlessHarness.StartAsync(DesignerViewTests.Phase5);
         var layout = h.Services.Layout.Layout;
@@ -240,7 +263,7 @@ public sealed class LayoutTests
         h.DoubleClick(AutomationIds.Splitter(AutomationIds.DockRight));
         h.DoubleClick(AutomationIds.Splitter(AutomationIds.DockBottom));
         h.DoubleClick(AutomationIds.Splitter(AutomationIds.DockRightUpper));
-        Assert.Equal((260, 300, 200, 0.5), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
+        Assert.Equal((260, 300, 200, 0.6), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
         Assert.Equal(260, left.Bounds.Width);
         Assert.Equal(200, bottom.Bounds.Height);
     }
@@ -271,7 +294,7 @@ public sealed class LayoutTests
             Assert.Equal(Describe(builtIn.Group(group)), Describe(profile.Group(group)));
         }
 
-        Assert.Equal((260, 300, 200, 0.5), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
+        Assert.Equal((260, 300, 200, 0.6), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
         Assert.Equal(260, h.Find<Control>(AutomationIds.DockLeft).Bounds.Width);
         Assert.Equal("ProjectManager", layout.Left.ActiveTool);
         Assert.Equal(["Messages", "Output"], layout.Bottom.Tools);
@@ -405,7 +428,7 @@ public sealed class LayoutTests
         Assert.True(h.Services.ToolWindows.Show("SearchResults", focus: false));
         await h.ExecuteAsync("window.resetLayout");
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal((260, 300, 200, 0.5), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
+        Assert.Equal((260, 300, 200, 0.6), (layout.LeftSize, layout.RightSize, layout.BottomSize, layout.RightSplit));
         Assert.Equal(["ProjectManager", "Structure"], layout.Left.Tools);
         Assert.Equal("ProjectManager", layout.Left.ActiveTool);
         Assert.Equal(["Messages", "Output", "SearchResults"], layout.Bottom.Tools);

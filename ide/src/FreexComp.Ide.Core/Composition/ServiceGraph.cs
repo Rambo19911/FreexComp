@@ -112,7 +112,7 @@ public static class ServiceGraph
         documents.ProjectOpener = path => projects.OpenAsync(path);
         documents.FormPathOf = projects.FormPathOf; // designer README §3: the project's form entry names the companion
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
-            platform.Log, toolWindowPhase ?? ImplementedPhase) { Settings = settings };
+            platform.Log, toolWindowPhase ?? ImplementedPhase);
         projectManager.RegisterCommands();
         projects.SelectedFolder = () => projectManager.SelectedFolderPath;
         projects.SelectedFiles = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
@@ -137,7 +137,7 @@ public static class ServiceGraph
         };
         recent.RegisterCommands(commands, platform.Dialogs, path => projects.OpenAsync(path), async path =>
         {
-            var opened = await documents.OpenAsync(path);
+            var opened = await documents.OpenInDefaultViewAsync(path); // I-218
             if (opened.NeedsMessage)
                 await platform.Dialogs.ShowMessageAsync(new MessageRequest(opened.MessageId!, opened.Args));
         });

@@ -381,4 +381,46 @@ public sealed class MessagesViewTests
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(["1", "0", "0.r0", "summary"], Keys());
     }
+
+    /// <summary>
+    /// UI-TW-012 (I-218): the sort column and direction are stored in <c>toolWindows.Messages.sort</c> and restored at
+    /// the next start; unsorted is stored as <c>null</c>.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-012")]
+    [Trait("Req", "UI-TW-401")]
+    public async Task SortIsPersisted()
+    {
+        byte[] saved;
+        await using (var h = await BuildScenario.StartAsync())
+        {
+            await BuildWithMessagesAsync(h);
+            SortBy(h, "Line");
+            SortBy(h, "Line"); // descending
+            h.Window.Close();
+            Dispatcher.UIThread.RunJobs();
+            saved = File.ReadAllBytes(Path.Combine(h.UserDir, "roaming", "uistate.json"));
+        }
+
+        Assert.Contains("\"sort\": {\n        \"column\": \"Line\",\n        \"direction\": \"descending\"\n      }",
+            System.Text.Encoding.UTF8.GetString(saved), StringComparison.Ordinal);
+
+        await using (var h = await BuildScenario.StartAsync(o => o.UserFiles["roaming/uistate.json"] = saved))
+        {
+            var messages = BuildScenario.Messages(h);
+            Assert.Equal(("Line", true), (messages.SortColumn, messages.SortDescending));
+            await BuildWithMessagesAsync(h);
+            Assert.Equal(["0", "3", "1", "2", "summary"], messages.Rows.Select(r => r.Key));
+            Assert.Equal(Strings.MessagesView_Column_Line + " ▼", Header(h, "Line"));
+
+            SortBy(h, "Line"); // back to unsorted: stored as null
+            h.Window.Close();
+            Dispatcher.UIThread.RunJobs();
+            saved = File.ReadAllBytes(Path.Combine(h.UserDir, "roaming", "uistate.json"));
+        }
+
+        Assert.Contains("\"sort\": null", System.Text.Encoding.UTF8.GetString(saved), StringComparison.Ordinal);
+        await using (var h = await BuildScenario.StartAsync(o => o.UserFiles["roaming/uistate.json"] = saved))
+            Assert.Null(BuildScenario.Messages(h).SortColumn);
+    }
 }

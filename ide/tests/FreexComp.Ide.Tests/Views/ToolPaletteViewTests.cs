@@ -301,4 +301,30 @@ public sealed class ToolPaletteViewTests
             Assert.Equal(key[(key.IndexOf('.', StringComparison.Ordinal) + 1)..], peer.GetName());
         }
     }
+
+    /// <summary>
+    /// I-219: a Tool Palette item supports the UI Automation Invoke pattern; invoking it is a click — it arms the class
+    /// for placement, and invoking the armed item disarms it.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-A11Y-030")]
+    public async Task ItemsSupportInvoke()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        var document = await OpenDesignAsync(h);
+        await h.ExecuteAsync("view.toolPalette");
+        Avalonia.Automation.Provider.IInvokeProvider Invoker() =>
+            Assert.IsAssignableFrom<Avalonia.Automation.Provider.IInvokeProvider>(
+                Avalonia.Automation.Peers.ControlAutomationPeer.CreatePeerForElement(h.Find<Control>(Item + "TButton"))
+                    .GetProvider<Avalonia.Automation.Provider.IInvokeProvider>());
+
+        Invoker().Invoke();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("TButton", document.Designer.Host.ArmedPaletteClass);
+        Assert.Contains("armed", h.Find<Control>(Item + "TButton").Classes);
+
+        Invoker().Invoke();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(document.Designer.Host.ArmedPaletteClass);
+    }
 }

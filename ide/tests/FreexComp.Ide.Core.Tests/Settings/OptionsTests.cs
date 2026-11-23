@@ -69,7 +69,41 @@ public sealed class OptionsTests
         services.Settings.Set(SettingsCatalog.DesignerDefaultView, "code");
         Assert.Equal(DocumentView.Code, (await OpenFromTreeAsync(services, tree)).ActiveView);
 
+        // I-218: below P5 there is no form document at all; the unit opens as plain code.
         (services, tree) = await OpenAsync(phase: 4);
-        Assert.Equal(DocumentView.Code, (await OpenFromTreeAsync(services, tree)).ActiveView);
+        tree.Select(tree.Find("MainForm.pas")!);
+        await tree.OpenSelectionAsync();
+        Assert.IsNotType<FormDocumentViewModel>(services.Documents.ActiveDocument);
+        Assert.Equal(Dir + @"\MainForm.pas", services.Documents.ActiveDocument?.FilePath);
+    }
+
+    /// <summary>
+    /// I-218, settings.md <c>designer.defaultView</c> ("view shown when a unit with a form is opened"): an open without a
+    /// source position (File › Open, recent files, Go to File without a line, command line) shows the view of the setting
+    /// too; navigation to a source position (Messages, Search Results, Go to Declaration, bookmarks) shows the Code view.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-108")]
+    public Task DesignerDefaultViewOnNavigation() => TestUiThread.RunAsync(DesignerDefaultViewOnNavigationOnUiThread);
+
+    private static async Task DesignerDefaultViewOnNavigationOnUiThread()
+    {
+        const string unit = Dir + @"\MainForm.pas";
+        var (services, _) = await OpenAsync();
+        var form = Assert.IsType<FormDocumentViewModel>((await services.Documents.OpenInDefaultViewAsync(unit)).Value);
+        Assert.Equal(DocumentView.Design, form.ActiveView);
+
+        // A navigation to a line of the unit shows its code with the caret there.
+        services.Navigation.GoToLine(form, 3, 1);
+        Assert.Equal(DocumentView.Code, form.ActiveView);
+        Assert.Equal(3, form.ViewState.Caret.Line);
+
+        // An open that navigates to a source position (Messages, Search Results, …) shows the code.
+        (services, _) = await OpenAsync();
+        Assert.Equal(DocumentView.Code, Assert.IsType<FormDocumentViewModel>((await services.Documents.OpenAsync(unit)).Value).ActiveView);
+
+        (services, _) = await OpenAsync();
+        services.Settings.Set(SettingsCatalog.DesignerDefaultView, "code");
+        Assert.Equal(DocumentView.Code, Assert.IsType<FormDocumentViewModel>((await services.Documents.OpenInDefaultViewAsync(unit)).Value).ActiveView);
     }
 }

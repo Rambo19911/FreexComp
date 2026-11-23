@@ -412,6 +412,35 @@ public sealed class ObjectInspectorViewTests
 
     private static ObjectInspectorViewModel Inspector(HeadlessHarness h) => (ObjectInspectorViewModel)h.Find<Control>("Tool.ObjectInspector").DataContext!;
 
+    /// <summary>
+    /// UI-DSG-106 (I-219): the 14 × 14 Boolean check box of a row is drawn whole — every part of it lies inside the box,
+    /// and the box lies inside its value cell and row (the real IDE showed only a corner stub).
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-DSG-106")]
+    public async Task BooleanCheckFitsRow()
+    {
+        await using var h = await HeadlessHarness.StartAsync(Phase5);
+        await OpenDesignAsync(h, "NameEdit");
+        h.Press("F4");
+        GoTo(h, "AutoSelect");
+        var box = h.Find<CheckBox>(Row("AutoSelect") + ".Check");
+        var row = h.Find<Control>(Row("AutoSelect"));
+        Assert.Equal(new Size(14, 14), box.Bounds.Size);
+        var boxRect = new Rect(box.TranslatePoint(default, row)!.Value, box.Bounds.Size);
+        Assert.True(new Rect(row.Bounds.Size).Contains(boxRect), $"check box {boxRect} outside its row {row.Bounds.Size}");
+        var parts = box.GetVisualDescendants().OfType<Control>().Where(c => c.IsEffectivelyVisible && c.Bounds.Width > 0 && c.Bounds.Height > 0).ToList();
+        Assert.NotEmpty(parts);
+        foreach (var part in parts)
+        {
+            var r = new Rect(part.TranslatePoint(default, box)!.Value, part.Bounds.Size);
+            Assert.True(r.X >= -0.5 && r.Y >= -0.5 && r.Right <= 14.5 && r.Bottom <= 14.5, $"{part.GetType().Name} '{part.Name}' {r} sticks out of the 14 × 14 box");
+        }
+
+        // The box shows the state: a visible mark when True.
+        Assert.True(box.IsChecked);
+    }
+
     private static string MenuId(object item) => item is Separator ? "-" : AutomationIds.Get((Control)item)!;
 
     private static MenuItem MenuItem(ContextMenu menu, string id) => menu.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == id);

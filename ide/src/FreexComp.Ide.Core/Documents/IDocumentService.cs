@@ -51,6 +51,13 @@ public interface IDocumentService
     /// </summary>
     Task<OperationResult<DocumentViewModel>> OpenAsync(string path);
 
+    /// <summary>
+    /// <see cref="OpenAsync"/> for an open without a source position (Project Manager, File › Open, recent files, Go to
+    /// File, command line): a newly opened unit with a form shows the view of <c>designer.defaultView</c> (settings.md,
+    /// UI-TW-108, I-218). Opens that navigate to a source position use <see cref="OpenAsync"/> (Code view).
+    /// </summary>
+    Task<OperationResult<DocumentViewModel>> OpenInDefaultViewAsync(string path);
+
     /// <summary>A new untitled unit <c>Unit&lt;N&gt;.pas</c>, opened and activated (IDE-P1-033).</summary>
     TextDocumentViewModel NewUntitledUnit();
 

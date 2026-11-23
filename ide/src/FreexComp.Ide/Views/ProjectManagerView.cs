@@ -29,7 +29,8 @@ public sealed class ProjectManagerView : UserControl
     private readonly TreeView _tree;
     private readonly Border _barHost = new();
     private readonly Control _empty;
-    private readonly StackPanel _links = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 8 };
+    // I-219: the links wrap in a narrow dock instead of running past its edge.
+    private readonly WrapPanel _links = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, ItemSpacing = 8, LineSpacing = 4 };
     private ProjectManagerViewModel? _model;
     private Window? _window;
     private bool _syncing;

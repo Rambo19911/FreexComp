@@ -17,7 +17,7 @@ namespace FreexComp.Ide.Core.Layout;
 /// <remarks>
 /// The file is kept as a JSON tree so members owned by other features or by newer versions are written back unchanged
 /// (architecture.md §8 common rules); this service rewrites only <c>window</c>, <c>activeProfile</c>, the built-in
-/// profiles and <c>toolWindows.&lt;Name&gt;.columns</c>. The file is small, so it is read and written synchronously on the UI
+/// profiles and <c>toolWindows.&lt;Name&gt;.columns</c> / <c>.sort</c>. The file is small, so it is read and written synchronously on the UI
 /// thread (IDE-ARCH-081 allows that for the settings-sized files): saves are debounced 2 s (UI-WIN-051 (b)) and run at
 /// once on <see cref="Save"/>.
 /// </remarks>
@@ -158,6 +158,28 @@ public sealed class LayoutService : ILayoutService
         var tools = Child(_root, "toolWindows");
         var columns = Child(Child(tools, toolWindow), "columns");
         columns[columnId] = width;
+        ScheduleSave();
+    }
+
+    public ColumnSort? GetSort(string toolWindow) =>
+        _root["toolWindows"] is JsonObject tools && tools[toolWindow] is JsonObject tool && tool["sort"] is JsonObject sort
+            && LayoutStateJson.Str(sort["column"]) is { Length: > 0 } column
+            && LayoutStateJson.Str(sort["direction"]) is "ascending" or "descending"
+            ? new ColumnSort(column, LayoutStateJson.Str(sort["direction"]) == "descending")
+            : null;
+
+    public void SetSort(string toolWindow, ColumnSort? sort)
+    {
+        var tool = Child(Child(_root, "toolWindows"), toolWindow);
+        if (tool.ContainsKey("sort") && GetSort(toolWindow) == sort)
+        {
+            return;
+        }
+
+        // UI-TW-012: { "column", "direction" } or null.
+        tool["sort"] = sort is null
+            ? null
+            : new JsonObject { ["column"] = sort.Column, ["direction"] = sort.Descending ? "descending" : "ascending" };
         ScheduleSave();
     }
 

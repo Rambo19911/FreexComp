@@ -269,8 +269,20 @@ public sealed class MessagesViewModel : ToolWindowViewModel, ICommandTarget
             SortDescending = true;
         else
             (SortColumn, SortDescending) = (null, false);
+        StoreSort(SortColumn is { } sorted ? new Layout.ColumnSort(sorted, SortDescending) : null);
         OnPropertyChanged(nameof(SortColumn));
         Refresh();
+    }
+
+    /// <summary>UI-TW-012 (I-218): the sort of the last session; an unknown column is ignored.</summary>
+    protected override void OnAttached()
+    {
+        if (StoredSort is { } sort && SortableColumns.Contains(sort.Column, StringComparer.Ordinal))
+        {
+            (SortColumn, SortDescending) = (sort.Column, sort.Descending);
+            OnPropertyChanged(nameof(SortColumn));
+            Refresh();
+        }
     }
 
     /// <summary>

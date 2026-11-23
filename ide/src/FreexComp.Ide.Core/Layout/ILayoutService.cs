@@ -4,6 +4,9 @@ using FreexComp.Ide.Core.Services;
 
 namespace FreexComp.Ide.Core.Layout;
 
+/// <summary>The sort of a grid tool window (UI-TW-011, UI-TW-012): column id and direction.</summary>
+public sealed record ColumnSort(string Column, bool Descending);
+
 /// <summary>
 /// Layout profiles, pane cycling and the global UI state file <c>R\uistate.json</c> (architecture.md §4 and §8.1,
 /// main-window.md §2 and §6). Owns <c>window.nextPane</c>, <c>window.previousPane</c>, <c>window.focusEditor</c> and
@@ -23,6 +26,12 @@ public interface ILayoutService
 
     /// <summary>Stores a column width (at least 32 DIP, UI-TW-011); saved with the rest of the UI state.</summary>
     void SetColumnWidth(string toolWindow, string columnId, double width);
+
+    /// <summary>UI-TW-012: the stored sort of a tool window's grid, or null when unsorted or never sorted.</summary>
+    ColumnSort? GetSort(string toolWindow);
+
+    /// <summary>Stores the sort of a tool window's grid (null = unsorted); saved with the rest of the UI state.</summary>
+    void SetSort(string toolWindow, ColumnSort? sort);
 
     /// <summary>UI-DLG-051: the folder of the last successful pick of a picker prompt (<c>dialogs.lastFolder.&lt;promptId&gt;</c>).</summary>
     string? GetLastFolder(string promptId);

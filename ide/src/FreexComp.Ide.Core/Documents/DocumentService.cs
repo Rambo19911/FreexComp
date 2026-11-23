@@ -220,8 +220,9 @@ public sealed class DocumentService : IDocumentService
             return OperationResult<DocumentViewModel>.Of(open);
         }
 
-        // DSG-CS-080: a .form opens its unit (same folder and base name) in the Design view.
-        if (string.Equals(Path.GetExtension(fullPath), ".form", StringComparison.OrdinalIgnoreCase))
+        // DSG-CS-080: a .form opens its unit (same folder and base name) in the Design view. I-218: from P5 only; before,
+        // a .form opens as text (UI-TW-108).
+        if (ImplementedPhase >= 5 && string.Equals(Path.GetExtension(fullPath), ".form", StringComparison.OrdinalIgnoreCase))
         {
             var owner = _documents.OfType<FormDocumentViewModel>()
                 .FirstOrDefault(d => string.Equals(d.FormText.FilePath, fullPath, StringComparison.OrdinalIgnoreCase));
@@ -253,6 +254,21 @@ public sealed class DocumentService : IDocumentService
         {
             _loading.Remove(fullPath);
         }
+    }
+
+    public async Task<OperationResult<DocumentViewModel>> OpenInDefaultViewAsync(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        var wasOpen = FindByPath(Path.GetFullPath(path)) is not null;
+        var result = await OpenAsync(path);
+        // settings.md designer.defaultView (UI-TW-108, I-218): only a newly opened unit; an open document keeps its view.
+        if (!wasOpen && result.Value is FormDocumentViewModel { HasUnit: true } form
+            && _settings.Get(SettingsCatalog.DesignerDefaultView) == "design")
+        {
+            form.ShowView(DocumentView.Design);
+        }
+
+        return result;
     }
 
     public TextDocumentViewModel NewUntitledUnit()
@@ -588,7 +604,7 @@ public sealed class DocumentService : IDocumentService
             await ProjectOpener!(project);
         foreach (var path in picked.Where(p => !ReferenceEquals(p, project)))
         {
-            var result = await OpenAsync(path);
+            var result = await OpenInDefaultViewAsync(path);
             if (result.NeedsMessage)
                 await _dialogs.ShowMessageAsync(new MessageRequest(result.MessageId!, result.Args));
         }
@@ -784,7 +800,9 @@ public sealed class DocumentService : IDocumentService
             {
                 var lastWrite = _fileSystem.GetLastWriteTimeUtc(fullPath);
                 var bytes = _fileSystem.ReadAllBytes(fullPath);
-                return (EncodingDetector.Detect(bytes), _fileSystem.CanOpenForWrite(fullPath), DiskStamp.Of(lastWrite, bytes), ReadCompanionForm(fullPath, formPath));
+                // I-218: below P5 no form document is created, so the companion form is not read.
+                var companion = ImplementedPhase >= 5 ? ReadCompanionForm(fullPath, formPath) : null;
+                return (EncodingDetector.Detect(bytes), _fileSystem.CanOpenForWrite(fullPath), DiskStamp.Of(lastWrite, bytes), companion);
             });
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)

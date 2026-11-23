@@ -330,7 +330,7 @@ public sealed class PropertyGridView : Border
                 {
                     IsChecked = display == "True" ? true : display == "False" ? false : null, IsThreeState = true, IsHitTestVisible = false,
                     Focusable = false, Width = 14, Height = 14, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), Margin = new Thickness(0, 0, 4, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center, Template = CheckTemplate,
                 };
                 AutomationProperties.SetAccessibilityView(box, AccessibilityView.Raw);
                 AutomationProperties.SetAutomationId(box, id + ".Check"); // UI-A11Y-030: every interactive element has an id
@@ -908,6 +908,31 @@ public sealed class PropertyGridView : Border
             }
         }
     }
+
+    /// <summary>
+    /// UI-DSG-106 (I-219): the toolkit's check box template draws a 20 DIP box, which a 14 × 14 cell clips to a corner;
+    /// this one fits: a 1 DIP <c>border.strong</c> square, checked = <c>accent.default</c> fill with a
+    /// <c>text.onAccent</c> tick, undetermined (mixed set members) = a <c>text.primary</c> dash.
+    /// </summary>
+    private static readonly Avalonia.Controls.Templates.FuncControlTemplate<CheckBox> CheckTemplate = new((box, _) =>
+    {
+        var mark = new Avalonia.Controls.Shapes.Path
+        {
+            StrokeThickness = 1.5, StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round, IsHitTestVisible = false,
+            Data = box.IsChecked switch
+            {
+                true => Geometry.Parse("M3,6.5 L5.5,9 L10,3.5"),
+                null => Geometry.Parse("M3.5,6 L8.5,6"),
+                _ => null,
+            },
+            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+        };
+        var square = new Border { Width = 14, Height = 14, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2), Child = mark };
+        Bind(square, Border.BorderBrushProperty, box.IsChecked == true ? "FxcAccentDefaultBrush" : "FxcBorderStrongBrush");
+        Bind(square, Border.BackgroundProperty, box.IsChecked == true ? "FxcAccentDefaultBrush" : "FxcBgEditorBrush");
+        Bind(mark, Avalonia.Controls.Shapes.Shape.StrokeProperty, box.IsChecked == true ? "FxcTextOnAccentBrush" : "FxcTextPrimaryBrush");
+        return square;
+    });
 
     private static void Bind(Control control, AvaloniaProperty property, string resource) =>
         control.Bind(property, control.GetResourceObservable(resource));

@@ -94,7 +94,8 @@ public static class LayoutProfiles
     public const double DefaultLeftSize = 260;
     public const double DefaultRightSize = 300;
     public const double DefaultBottomSize = 200;
-    public const double DefaultRightSplit = 0.5;
+    /// <summary>I-219: the upper right group (Object Inspector) gets 60 % of the right dock (lead 2026-11-23; was 50 %).</summary>
+    public const double DefaultRightSplit = 0.6;
 
     /// <summary>Profiles that exist so far; <c>Debug</c> (P6) is added with its task (I-133).</summary>
     public static readonly IReadOnlyList<string> BuiltIn = [Edit, Design];

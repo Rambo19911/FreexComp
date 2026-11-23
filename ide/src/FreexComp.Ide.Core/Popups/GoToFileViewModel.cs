@@ -77,7 +77,8 @@ public sealed class GoToFileViewModel : QuickPickViewModel
             return;
         var line = Line;
         Close();
-        var opened = await _documents.OpenAsync(path);
+        // I-218: without a line it is an open without a source position (designer.defaultView); with one, the code.
+        var opened = line is null ? await _documents.OpenInDefaultViewAsync(path) : await _documents.OpenAsync(path);
         if (opened.Value is not TextDocumentViewModel document)
         {
             if (opened.NeedsMessage)
