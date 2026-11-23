@@ -1,0 +1,8 @@
+object MissingForm: TMissingForm
+  Left = 200
+  Top = 120
+  Caption = 'MissingForm'
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+end

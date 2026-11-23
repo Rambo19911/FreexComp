@@ -1,0 +1,29 @@
+unit MainForm;
+
+interface
+
+uses
+  Classes, Controls, Forms, StdCtrls, ExtCtrls, Dialogs;
+
+type
+  TMainForm = class(TForm)
+    NameEdit: TEdit;
+    GreetButton: TButton;
+    procedure GreetButtonClick(Sender: TObject);
+  private
+  public
+  end;
+
+var
+  MainForm: TMainForm;
+
+implementation
+
+{$FORM MainForm.form}
+
+procedure TMainForm.GreetButtonClick(Sender: TObject);
+begin
+
+end;
+
+end.

@@ -1,0 +1,26 @@
+object PublishedForm: TPublishedForm
+  Left = 200
+  Top = 120
+  Caption = 'PublishedForm'
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  object OkButton: TButton
+    Left = 8
+    Top = 8
+    Width = 75
+    Height = 25
+    Caption = 'OK'
+    TabOrder = 0
+    OnClick = OkButtonClick
+  end
+  object CancelButton: TButton
+    Left = 96
+    Top = 8
+    Width = 75
+    Height = 25
+    Caption = 'Cancel'
+    TabOrder = 1
+    OnClick = CancelButtonClick
+  end
+end

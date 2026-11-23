@@ -1,0 +1,8 @@
+object BrokenForm: TBrokenForm
+  Left = 200
+  Top = 120
+  Caption = 'BrokenForm'
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+end

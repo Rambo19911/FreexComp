@@ -1,0 +1,8 @@
+object InitForm: TInitForm
+  Left = 200
+  Top = 120
+  Caption = 'InitForm'
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+end

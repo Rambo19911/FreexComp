@@ -1,0 +1,19 @@
+object HandlersForm: THandlersForm
+  Left = 200
+  Top = 120
+  Caption = 'HandlersForm'
+  ClientWidth = 400
+  ClientHeight = 300
+  PixelsPerInch = 96
+  OnCreate = FormCreate
+  object OkButton: TButton
+    Left = 8
+    Top = 8
+    Width = 75
+    Height = 25
+    Caption = 'OK'
+    TabOrder = 0
+    OnClick = OkButtonClick
+    OnKeyPress = OkButtonKeyPress
+  end
+end
