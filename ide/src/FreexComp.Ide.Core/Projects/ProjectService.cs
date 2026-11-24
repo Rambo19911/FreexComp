@@ -979,9 +979,11 @@ public sealed class ProjectService : IProjectService
         if (headingUpdated)
         {
             // IDE-PM-136: the count of edited places outside the heading and of the files they are in.
-            _status.ShowMessage(references.Places > 0
-                ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_RenameUnitRefsNote, oldName, newName, references.Places, references.Files)
-                : string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_RenameUnitNote, oldName, newName), StatusDuration);
+            var format = references.Places == 0 ? Strings.Msg_Project_RenameUnitNote
+                : references.Files > 1 ? Strings.Msg_Project_RenameUnitRefsNote
+                : references.Places > 1 ? Strings.Msg_Project_RenameUnitRefsNoteOneFile
+                : Strings.Msg_Project_RenameUnitRefsNoteOne;
+            _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, format, oldName, newName, references.Places, references.Files), StatusDuration);
         }
 
         return true;

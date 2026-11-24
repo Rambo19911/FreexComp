@@ -75,7 +75,12 @@ public sealed class NewProjectWindow : DialogWindow
         AutomationProperties.SetAutomationId(location, Id("Location"));
         location.TextChanged += (_, _) => model.Location = location.Text ?? "";
         location.LostFocus += (_, _) => model.FieldLeft("Location");
-        var browse = new Button { Content = "…", Width = 26, Height = 26, Margin = new Thickness(8, 0, 0, 0), HorizontalContentAlignment = HorizontalAlignment.Center };
+        // The 26 × 26 button has no room for the theme's padding: without it the glyph is clipped away (I-256).
+        var browse = new Button
+        {
+            Content = "…", Width = 26, Height = 26, MinWidth = 0, Padding = new Thickness(0), Margin = new Thickness(8, 0, 0, 0),
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
+        };
         AutomationProperties.SetAutomationId(browse, Id("Location.Browse"));
         AutomationProperties.SetName(browse, Strings.NewProject_Browse);
         browse.Click += async (_, _) => await model.BrowseAsync();
@@ -83,7 +88,7 @@ public sealed class NewProjectWindow : DialogWindow
         AddError(grid, 5, "Location", location, model, nameof(NewProjectViewModel.LocationError), () => model.LocationError);
 
         // Row 6: the target path, live.
-        var targetLabel = new TextBlock { Text = Strings.NewProject_TargetPath, VerticalAlignment = VerticalAlignment.Center };
+        var targetLabel = new TextBlock { Text = Strings.NewProject_TargetPath, Margin = new Thickness(0, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center };
         targetLabel.Classes.Add("body");
         var target = new TextBlock { Text = model.TargetPath, TextTrimming = TextTrimming.PrefixCharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         target.Classes.Add("body");

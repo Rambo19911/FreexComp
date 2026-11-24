@@ -76,7 +76,12 @@ public sealed class NewFileWindow : DialogWindow
         var folder = new TextBox { Text = model.Folder };
         AutomationProperties.SetAutomationId(folder, Id("Folder"));
         folder.TextChanged += (_, _) => model.Folder = folder.Text ?? "";
-        var browse = new Button { Content = "…", Width = 26, Height = 26, Margin = new Thickness(8, 0, 0, 0), HorizontalContentAlignment = HorizontalAlignment.Center };
+        // The 26 × 26 button has no room for the theme's padding: without it the glyph is clipped away (I-256).
+        var browse = new Button
+        {
+            Content = "…", Width = 26, Height = 26, MinWidth = 0, Padding = new Thickness(0), Margin = new Thickness(8, 0, 0, 0),
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
+        };
         AutomationProperties.SetAutomationId(browse, Id("Folder.Browse"));
         AutomationProperties.SetName(browse, Strings.NewProject_Browse);
         browse.Click += async (_, _) => await model.BrowseAsync();

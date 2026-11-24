@@ -191,6 +191,151 @@ public sealed class NewProjectDialogTests
         dlg.Press("Escape");
         await running;
     }
+
+    /// <summary>
+    /// I-255: a mouse click on <c>Create</c> while a text field has the focus creates the project. The press moves the
+    /// focus out of the field; leaving a field must not disable the button under the pointer.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-DLG-006")]
+    [Trait("Req", "UI-DLG-030")]
+    public async Task ClickOnCreate_CreatesProject()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        h.Services.Settings.Set(SettingsCatalog.EnvironmentDefaultProjectsDir, h.TempDir);
+
+        // Right after the dialog opened: the focus is in Name.
+        var running = h.Services.Commands.ExecuteAsync("file.newProject");
+        var dlg = await h.WaitForDialogAsync("NewProject");
+        try
+        {
+            await CheckedAsync(h, dlg);
+            Assert.Equal("Dialog.NewProject.Name", dlg.FocusedAutomationId);
+            dlg.Click("Ok");
+            Assert.True(dlg.Window.Model.IsClosed, "the click on Create closed the dialog");
+            await running;
+            Assert.True(File.Exists(Path.Combine(h.TempDir, "Project1", "Project1.pproj")));
+            Assert.Equal("Project1", h.Services.Projects.Project?.Name);
+
+            // With a typed location and the focus in Location.
+            var typed = Path.Combine(h.TempDir, "Typed");
+            running = h.Services.Commands.ExecuteAsync("file.newProject");
+            dlg = await h.WaitForDialogAsync("NewProject");
+            SetText(dlg, "Location", "");
+            dlg.Type("Location", typed);
+            await CheckedAsync(h, dlg);
+            Assert.Equal("Dialog.NewProject.Location", dlg.FocusedAutomationId);
+            dlg.Click("Ok");
+            Assert.True(dlg.Window.Model.IsClosed, "the click on Create closed the dialog");
+            await running;
+            Assert.True(File.Exists(Path.Combine(typed, "Project2", "Project2.pproj"))); // Project1 exists at the first location
+
+            // Leaving an empty field still shows its message (UI-DLG-006) and Create stays disabled.
+            running = h.Services.Commands.ExecuteAsync("file.newProject");
+            dlg = await h.WaitForDialogAsync("NewProject");
+            await CheckedAsync(h, dlg);
+            dlg.Press("Tab"); // Name → Location
+            SetText(dlg, "Location", "");
+            await CheckedAsync(h, dlg);
+            dlg.Press("Tab"); // leaves Location
+            await CheckedAsync(h, dlg);
+            Assert.Equal("Choose a folder for the project.", dlg.ErrorText("Location"));
+            Assert.False(dlg.Find<Button>("Ok").IsEnabled);
+        }
+        finally
+        {
+            await CancelAsync(dlg, running);
+        }
+    }
+
+    /// <summary>Closes a dialog that is still open, so that a failed assertion is reported and not the open dialog.</summary>
+    private static async Task CancelAsync(DialogDriver dlg, Task running)
+    {
+        if (!dlg.Window.Model.IsClosed)
+            dlg.Press("Escape");
+        await running;
+    }
+
+    /// <summary>I-256 (a): the 26 × 26 <c>…</c> button (UI-DLG-011) shows its glyph — the text is not clipped away by padding.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-DLG-011")]
+    public async Task BrowseButtonHasGlyph()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        h.Services.Settings.Set(SettingsCatalog.EnvironmentDefaultProjectsDir, h.TempDir);
+        var running = h.Services.Commands.ExecuteAsync("file.newProject");
+        var dlg = await h.WaitForDialogAsync("NewProject");
+
+        try
+        {
+            var browse = dlg.Find<Button>("Location.Browse");
+            Assert.Equal((26.0, 26.0), (browse.Bounds.Width, browse.Bounds.Height));
+            AssertGlyphFits(browse);
+        }
+        finally
+        {
+            await CancelAsync(dlg, running);
+        }
+
+        // The New File dialog has the same button beside Folder.
+        running = h.Services.Commands.ExecuteAsync("file.newFile");
+        dlg = await h.WaitForDialogAsync("NewFile");
+        try
+        {
+            AssertGlyphFits(dlg.Find<Button>("Folder.Browse"));
+        }
+        finally
+        {
+            await CancelAsync(dlg, running);
+        }
+    }
+
+    /// <summary>The text of <paramref name="button"/> is laid out at its natural size, inside the button.</summary>
+    internal static void AssertGlyphFits(Button button)
+    {
+        var text = Assert.Single(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(button).OfType<TextBlock>());
+        Assert.Equal("…", text.Text);
+        var natural = new TextBlock { Text = text.Text, FontFamily = text.FontFamily, FontSize = text.FontSize, FontWeight = text.FontWeight };
+        natural.Measure(Avalonia.Size.Infinity);
+        Assert.True(natural.DesiredSize.Width > 0 && natural.DesiredSize.Height > 0, "the glyph has a size");
+        Assert.True(text.Bounds.Width >= natural.DesiredSize.Width && text.Bounds.Height >= natural.DesiredSize.Height,
+            $"the glyph needs {natural.DesiredSize} but gets {text.Bounds.Size}");
+        var inButton = Avalonia.VisualExtensions.TranslatePoint(text, default, button)!.Value;
+        Assert.True(inButton.X >= 0 && inButton.Y >= 0
+            && inButton.X + text.Bounds.Width <= button.Bounds.Width && inButton.Y + text.Bounds.Height <= button.Bounds.Height,
+            $"the glyph at {inButton} size {text.Bounds.Size} lies outside the button");
+    }
+
+    /// <summary>I-256 (b): the path follows its label <c>Will be created in:</c> after the same gap as the other fields.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "UI-DLG-030")]
+    public async Task TargetPathLabelHasSpace()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        h.Services.Settings.Set(SettingsCatalog.EnvironmentDefaultProjectsDir, h.TempDir);
+        var running = h.Services.Commands.ExecuteAsync("file.newProject");
+        var dlg = await h.WaitForDialogAsync("NewProject");
+
+        try
+        {
+            var target = dlg.Find<TextBlock>("TargetPath");
+            var label = Assert.Single(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(dlg.Window).OfType<TextBlock>(),
+                t => t.Text == "Will be created in:");
+            var labelRight = Avalonia.VisualExtensions.TranslatePoint(label, new Avalonia.Point(label.Bounds.Width, 0), dlg.Window)!.Value.X;
+            var targetLeft = Avalonia.VisualExtensions.TranslatePoint(target, default, dlg.Window)!.Value.X;
+            Assert.True(targetLeft - labelRight >= 16, $"gap between the label and the path is {targetLeft - labelRight}");
+            // The path starts where the Name and Location fields start.
+            var nameLeft = Avalonia.VisualExtensions.TranslatePoint(dlg.Find<TextBox>("Name"), default, dlg.Window)!.Value.X;
+            Assert.Equal(nameLeft, targetLeft);
+        }
+        finally
+        {
+            await CancelAsync(dlg, running);
+        }
+    }
 }
 
 internal static class ControlTextExtensions

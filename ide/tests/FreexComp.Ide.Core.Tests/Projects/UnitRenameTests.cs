@@ -162,6 +162,34 @@ public sealed class UnitRenameTests
         Assert.Equal(RenameFixture.Unit3, Text(Dir + @"\Unit3.pas"));
     }
 
+    /// <summary>
+    /// I-256 (c), IDE-PM-136: the status names the counts grammatically — "1 reference in 1 file was updated",
+    /// "{n} references in 1 file were updated", "{n} references in {m} files were updated".
+    /// </summary>
+    [Fact(Timeout = 60000)]
+    [Trait("Req", "IDE-PM-136")]
+    public Task StatusUsesSingularAndPlural() => TestUiThread.RunAsync(() => StatusUsesSingularAndPluralOnUiThread());
+
+    private async Task StatusUsesSingularAndPluralOnUiThread()
+    {
+        await OpenFixtureAsync();
+        // Unit3 is named twice in the program (uses + qualifier), Unit2 once, Unit1 in three files.
+        File(Dir + @"\App.pas", RenameFixture.App.Replace("  Three;", "  Unit3.Three;", StringComparison.Ordinal));
+
+        Assert.True(await _services.Projects.RenameFileAsync("Unit2.pas", "Second.pas"));
+        Assert.Equal("Renamed Unit2.pas to Second.pas; 1 reference in 1 file was updated", _services.Status.Message);
+        Assert.Equal(Status(Strings.Msg_Project_RenameUnitRefsNoteOne, "Unit2.pas", "Second.pas"), _services.Status.Message);
+
+        Assert.True(await _services.Projects.RenameFileAsync("Unit3.pas", "Third.pas"));
+        Assert.Equal("Renamed Unit3.pas to Third.pas; 2 references in 1 file were updated", _services.Status.Message);
+        Assert.Equal(Status(Strings.Msg_Project_RenameUnitRefsNoteOneFile, "Unit3.pas", "Third.pas", 2), _services.Status.Message);
+
+        Assert.True(await _services.Projects.RenameFileAsync("Unit1.pas", "Customers.pas"));
+        Assert.Equal("Renamed Unit1.pas to Customers.pas; 4 references in 3 files were updated", _services.Status.Message);
+        Assert.Equal(Status(Strings.Msg_Project_RenameUnitRefsNote, "Unit1.pas", "Customers.pas", 4, 3), _services.Status.Message);
+        Assert.Empty(Dialogs.Requests);
+    }
+
     [Fact(Timeout = 60000)]
     [Trait("Req", "IDE-PM-132")]
     public Task OpenBuffersGetOneUndoGroupAndAreSaved() => TestUiThread.RunAsync(() => OpenBuffersGetOneUndoGroupAndAreSavedOnUiThread());

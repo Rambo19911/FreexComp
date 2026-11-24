@@ -151,14 +151,32 @@ public sealed class NewProjectViewModel : DialogViewModel<NewProjectRequest>
         private set => SetProperty(ref _isChecking, value);
     }
 
-    /// <summary>A field lost focus: from now on an empty value shows its message (UI-DLG-006).</summary>
+    /// <summary>
+    /// A field lost focus: from now on an empty value shows its message (UI-DLG-006). Only that message can change, so a
+    /// new check is scheduled only for a field left empty for the first time — <c>Create</c> is disabled then anyway.
+    /// Leaving a field never disables an enabled <c>Create</c>: the mouse press on it is what takes the focus away (I-255).
+    /// </summary>
     public void FieldLeft(string fieldId)
     {
+        bool reveals;
         if (fieldId == "Name")
+        {
+            reveals = !_nameTouched && ProjectName.Length == 0;
             _nameTouched = true;
+        }
         else if (fieldId == "Location")
+        {
+            reveals = !_locationTouched && Location.Length == 0;
             _locationTouched = true;
-        ScheduleCheck();
+        }
+        else
+        {
+            return;
+        }
+
+        // A pending check reads the flags when it finishes.
+        if (reveals && !IsChecking)
+            ScheduleCheck();
     }
 
     /// <summary>The Browse button: the folder picker starting at the field's value; a picked folder replaces it.</summary>

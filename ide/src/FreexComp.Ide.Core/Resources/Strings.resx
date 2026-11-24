@@ -5090,6 +5090,12 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="Msg_Project_RenameUnitRefsNote" xml:space="preserve">
     <value>Renamed {0} to {1}; {2} references in {3} files were updated</value>
   </data>
+  <data name="Msg_Project_RenameUnitRefsNoteOneFile" xml:space="preserve">
+    <value>Renamed {0} to {1}; {2} references in 1 file were updated</value>
+  </data>
+  <data name="Msg_Project_RenameUnitRefsNoteOne" xml:space="preserve">
+    <value>Renamed {0} to {1}; 1 reference in 1 file was updated</value>
+  </data>
   <data name="Msg_Project_RenameConflict" xml:space="preserve">
     <value>The unit cannot be renamed to {0}.
 {1}</value>
