@@ -1,0 +1,10 @@
+FreexComp
+Copyright 2026 The FreexComp authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The runtime libraries in rtl/, ui-framework/ and data/ are licensed under
+the Apache License, Version 2.0 with LLVM Exceptions (see LICENSE-RUNTIME).
+
+This product includes third-party software. Names, versions, licenses and
+license texts are listed in THIRD-PARTY-NOTICES.txt.

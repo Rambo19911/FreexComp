@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FreexComp.Policy.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Repository-wide policy checks (licence files, notices). The shared helpers come from the IDE test support library. -->
+    <ProjectReference Include="..\..\..\ide\tests\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
+  </ItemGroup>
+</Project>

@@ -25,4 +25,7 @@ dotnet test FreexComp.sln
 ```
 
 ## License
-Apache License 2.0 – see `LICENSE`. Third-party components: `THIRD-PARTY-NOTICES.md`.
+FreexComp is licensed under the Apache License 2.0 (`LICENSE`).
+The runtime libraries are licensed under Apache-2.0 WITH LLVM-exception (`LICENSE-RUNTIME`), so programs built with
+FreexComp can be distributed without attribution duties from these libraries.
+Third-party components are listed in `THIRD-PARTY-NOTICES.txt`.
