@@ -1,0 +1,4 @@
+HintInlineHides.pas(22,9): hint H2011: Inline declaration 'Count' hides 'TCounter.Count'
+HintInlineHides.pas(35,9): hint H2011: Inline declaration 'Total' hides 'Outer.Total'
+HintInlineHides.pas(50,9): hint H2011: Inline declaration 'Limit' hides 'HintInlineHides.Limit'
+HintInlineHides.pas(74,7): hint H2011: Inline declaration 'Limit' hides 'HintInlineHides.Limit'

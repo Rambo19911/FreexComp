@@ -316,4 +316,115 @@ public sealed class BinderDiagnosticTests
     [InlineData("{$HINTS OFF}" + W1020Snippet, "W1020 Warning")]
     public void WarningsOff_SilencesBinderWarnings(string snippet, string expected) =>
         Assert.Equal(expected, string.Join("; ", Diagnose(snippet).Select(d => $"{d.Code} {d.Severity}")));
+
+    // ---- inline declarations: placement, initialiser, hiding (inline-variables.md LANG-568, 569; C-307) ----
+
+    /// <summary>The diagnostics of <paramref name="marked"/> without its <c>^</c>, and the 1-based column the <c>^</c> stood at.</summary>
+    private static (string[] Diagnostics, int Column) BindMarked(string marked)
+    {
+        var at = marked.IndexOf('^', StringComparison.Ordinal);
+        return (BindDiagnostics(marked.Remove(at, 1)), at + 1);
+    }
+
+    /// <summary>LANG-568: an inline declaration that is the statement of another statement, not an element of a statement list.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-568")]
+    [InlineData("var c: Boolean; begin if c then ^var x := 1; end.")]
+    [InlineData("var c: Boolean; begin if c then else ^var x: Integer; end.")]
+    [InlineData("var c: Boolean; begin if c then ^const k = 1; end.")]
+    [InlineData("var n: Integer; begin case n of 1: ^var x := 1; end; end.")]
+    [InlineData("var n: Integer; begin case n of 1: ; 2, 3: ^const k = 2; else end; end.")]
+    [InlineData("var c: Boolean; begin while c do ^var x := 1; end.")]
+    [InlineData("var i: Integer; begin for i := 1 to 2 do ^var x := i; end.")]
+    [InlineData("var a: array[0..1] of Integer; begin for var e in a do ^var x := e; end.")]
+    [InlineData("var r: record a: Integer; end; begin with r do ^var x := 1; end.")]
+    [InlineData("type TE = class end; begin try except on E: TE do ^var x := 1; end; end.")]
+    public void InlineDeclaration_NotInStatementList_E2077(string marked)
+    {
+        var (diagnostics, column) = BindMarked(marked);
+
+        Assert.Equal([$"E2077(1,{column}): An inline declaration is only allowed directly in a statement list"], diagnostics);
+    }
+
+    /// <summary>LANG-568: the statement lists of LANG-560 take inline declarations (no E2077).</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-568")]
+    [InlineData("var c: Boolean; begin if c then begin var x := 1; end; end.")]
+    [InlineData("var n: Integer; begin case n of 1: ; else var x := 1; const k = 2; end; end.")]
+    [InlineData("begin repeat var x := 1; until x = 1; end.")]
+    [InlineData("begin try var x := 1; finally var y := 2; end; try var z := 3; except var w := 4; end; end.")]
+    public void InlineDeclaration_InStatementList_IsAccepted(string text) => Assert.Empty(BindDiagnostics(text));
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-568")]
+    public void InlineInitialiserWithNameList_E2078()
+    {
+        const string Message = "An initialiser is only allowed for a single inline variable";
+
+        Assert.Equal([$"E2078(1,25): {Message}"], BindDiagnostics("begin var a, b: Integer := 1; end."));
+        Assert.Equal([$"E2078(1,16): {Message}"], BindDiagnostics("begin var a, b := 1; end."));
+        Assert.Equal([$"E2078(3,15): {Message}"], BindDiagnostics("begin\n  var a, b, c\n    : Integer := 1;\n  a := b + c;\nend."));
+        Assert.Empty(BindDiagnostics("begin var a, b: Integer; var c: Integer := 1; var d := 2; end."));
+    }
+
+    /// <summary>
+    /// LANG-569: an inline name that hides a member reachable through <c>Self</c>, a name of an enclosing routine or a unit-level
+    /// name of the same unit gets H2011 with the qualified name of the hidden entity; a name of a used unit gives none.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-569")]
+    [InlineData("type TFoo = class Count: Integer; procedure P; end; procedure TFoo.P; begin var ^Count := 1; end; begin end.", "TFoo.Count")]
+    [InlineData("type TFoo = class FC: Integer; property Count: Integer read FC; procedure P; end; procedure TFoo.P; begin var ^Count := 1; end; begin end.", "TFoo.Count")]
+    [InlineData("type TFoo = class procedure Count; procedure P; end; procedure TFoo.Count; begin end; procedure TFoo.P; begin var ^Count := 1; end; begin end.", "TFoo.Count")]
+    [InlineData("type TBase = class Count: Integer; end; TFoo = class(TBase) procedure P; end; procedure TFoo.P; begin var ^Count := 1; end; begin end.", "TBase.Count")]
+    [InlineData("procedure Outer; var Total: Integer; procedure Inner; begin var ^Total := 1; end; begin end; begin end.", "Outer.Total")]
+    [InlineData("procedure Outer(Total: Integer); procedure Inner; begin const ^Total = 1; end; begin end; begin end.", "Outer.Total")]
+    [InlineData("procedure Outer; begin var Total := 1; var P := procedure begin var ^Total := 2; end; end; begin end.", "Outer.Total")]
+    [InlineData("unit Unit1; interface var Limit: Integer; implementation procedure P; begin var ^Limit := 1; end; end.", "Unit1.Limit")]
+    [InlineData("unit Unit1; interface implementation const Limit = 5; procedure P; begin if Limit > 0 then begin var ^Limit: Integer; end; end; end.", "Unit1.Limit")]
+    [InlineData("program Prog; var Limit: Integer; procedure P; begin var ^Limit := 1; end; begin end.", "Prog.Limit")]
+    [InlineData("program Prog; var Limit: Integer; begin var ^Limit := 1; end.", "Prog.Limit")]
+    [InlineData("program Prog; procedure P; begin var ^Output := 1; end; begin var Input := 2; var Integer := 3; end.", null)]
+    [InlineData("program Prog; procedure P; begin var ^Fresh := 1; end; begin var Fresh := 2; end.", null)]
+    public void InlineHidesOuter_H2011(string marked, string? hidden)
+    {
+        var (diagnostics, column) = BindMarked(marked);
+        var name = marked[(marked.IndexOf('^', StringComparison.Ordinal) + 1)..].Split(' ', ':', ';')[0];
+
+        Assert.Equal(hidden is null ? [] : [$"H2011(1,{column}): Inline declaration '{name}' hides '{hidden}'"], diagnostics);
+    }
+
+    /// <summary>LANG-569: H2011 follows <c>{$HINTS}</c> and <c>{$WARN INLINE_HIDES_OUTER}</c>.</summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-569")]
+    [InlineData("", "H2011 Hint")]
+    [InlineData("{$HINTS OFF}", "")]
+    [InlineData("{$WARN INLINE_HIDES_OUTER OFF}", "")]
+    [InlineData("{$WARN INLINE_HIDES_OUTER ERROR}", "H2011 Error")]
+    public void InlineHidesOuter_FollowsTheDirectives(string directive, string expected) =>
+        Assert.Equal(expected, string.Join("; ", Diagnose(directive + "var Limit: Integer; begin var Limit := 1; Limit := 2; end.")
+            .Where(d => d.Code == "H2011").Select(d => $"{d.Code} {d.Severity}")));
+
+    /// <summary>LANG-570: before the declaration, in its own initialiser and after the scope the name is the outer entity (or E2003).</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-570")]
+    public void InlineName_ResolvesOutsideItsScope()
+    {
+        Assert.Equal(["E2003(1,7): Undeclared identifier 'x'"], BindDiagnostics("begin x := 1; var x := 2; end."));
+        Assert.Equal(["E2003(1,16): Undeclared identifier 'x'"], BindDiagnostics("begin var x := x; end."));
+        Assert.Equal(["E2003(1,38): Undeclared identifier 'x'"], BindDiagnostics("begin begin var x := 1; x := 2; end; x := 3; end."));
+        Assert.Equal(["E2003(1,53): Undeclared identifier 'x'"], BindDiagnostics("begin repeat var x := 1; until x = 1; if 1 = 1 then x := 2; end."));
+
+        // the outer entity: the global is a string, the inline variable an Integer
+        Assert.Equal(["H2011(1,42): Inline declaration 'G' hides 'test.G'"],
+            BindDiagnostics("var G: string; begin G := 'a'; begin var G := 1; G := G + 1; end; G := 'b'; end."));
+        Assert.Equal(["H2011(1,26): Inline declaration 'G' hides 'test.G'", "E2010(1,40): Incompatible types: 'string' and 'Integer'"],
+            BindDiagnostics("var G: string; begin var G: Integer := G; end."));
+    }
 }

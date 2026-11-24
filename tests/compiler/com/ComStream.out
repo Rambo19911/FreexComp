@@ -1,0 +1,13 @@
+created TRUE
+write 0 5
+seek 0 0
+stat 0 size 5 name TRUE
+read TRUE 5
+Hello
+as IUnknown TRUE
+Supports IStream TRUE
+Supports ISequentialStream TRUE
+seek 0
+read through the ancestor 0 2 el
+final release 0
+done

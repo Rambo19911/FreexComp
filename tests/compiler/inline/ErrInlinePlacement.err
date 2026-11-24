@@ -1,0 +1,8 @@
+ErrInlinePlacement.pas(14,5): error E2077: An inline declaration is only allowed directly in a statement list
+ErrInlinePlacement.pas(18,5): error E2077: An inline declaration is only allowed directly in a statement list
+ErrInlinePlacement.pas(20,5): error E2077: An inline declaration is only allowed directly in a statement list
+ErrInlinePlacement.pas(22,5): error E2077: An inline declaration is only allowed directly in a statement list
+ErrInlinePlacement.pas(24,8): error E2077: An inline declaration is only allowed directly in a statement list
+ErrInlinePlacement.pas(25,8): error E2077: An inline declaration is only allowed directly in a statement list
+ErrInlinePlacement.pas(31,21): error E2078: An initialiser is only allowed for a single inline variable
+ErrInlinePlacement.pas(32,12): error E2078: An initialiser is only allowed for a single inline variable

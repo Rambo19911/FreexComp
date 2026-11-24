@@ -325,4 +325,65 @@ public sealed class CompletionTests
         Assert.Contains("Next(A: Integer): Integer", description.Signature, StringComparison.Ordinal);
         Assert.Equal("Adds one.", description.Documentation?.Trim());
     }
+
+    /// <summary>
+    /// LANG-572 (C-307): an inline name is offered only inside its declaration scope — not before the declaration (there the
+    /// outer entity of that name is), not in its own initialiser and not after the statement list; the <c>until</c> condition
+    /// of a <c>repeat</c> is inside the scope (LANG-560), a <c>for var</c> variable is offered in its loop only.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-572")]
+    public void InlineVariable_OfferedOnlyInsideScope()
+    {
+        const string Source = """
+            program P;
+            var Name: string;
+            procedure Run;
+            begin
+              {@before}
+              begin
+                {@inner-before}
+                var Inner := 1;
+                var Name := Inner + {@initialiser}0;
+                const Limit = 3;
+                {@inside}
+              end;
+              {@after}
+              repeat
+                var Line := 1;
+              until {@until}Line = 1;
+              for var Index := 0 to 2 do
+                {@loop};
+              {@end}
+            end;
+            begin
+              {@main-before}
+              var Top := 1;
+              {@main-inside}
+            end.
+            """;
+
+        CompletionItem[] At(string marker) =>
+            [.. Complete(Source.Replace("{@" + marker + "}", "$$", StringComparison.Ordinal)).List.Items];
+        string[] Inline(string marker) =>
+            [.. At(marker).Where(i => i.Label is "Inner" or "Limit" or "Line" or "Index" or "Top").Select(i => i.Label).Order(StringComparer.Ordinal)];
+        string OriginOfName(string marker) => At(marker).Single(i => i.Label == "Name").Origin;
+
+        Assert.Empty(Inline("before"));
+        Assert.Empty(Inline("inner-before"));
+        Assert.Equal("P", OriginOfName("inner-before"));                   // the global: the inline Name is declared below
+        Assert.Equal(["Inner"], Inline("initialiser"));
+        Assert.Equal("P", OriginOfName("initialiser"));
+        Assert.Equal(["Inner", "Limit"], Inline("inside"));
+        Assert.Equal("", OriginOfName("inside"));                          // the inline variable hides the global
+        Assert.Contains(At("inside"), i => i.Label == "Inner" && i.Kind == CompletionItemKind.Variable && i.SortText.StartsWith('0'));
+        Assert.Empty(Inline("after"));
+        Assert.Equal("P", OriginOfName("after"));
+        Assert.Equal(["Line"], Inline("until"));
+        Assert.Equal(["Index"], Inline("loop"));
+        Assert.Empty(Inline("end"));
+        Assert.Empty(Inline("main-before"));
+        Assert.Equal(["Top"], Inline("main-inside"));
+    }
 }

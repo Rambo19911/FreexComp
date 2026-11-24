@@ -118,6 +118,8 @@ public static class DiagnosticCatalog
         new("E2072", null, DiagnosticSeverity.Error, "'goto' cannot jump into or out of this statement"),
         new("E2073", null, DiagnosticSeverity.Error, "Label '%s' is declared but never defined"),
         new("E2075", null, DiagnosticSeverity.Error, "Cannot infer the type of '%s'"),
+        new("E2077", null, DiagnosticSeverity.Error, "An inline declaration is only allowed directly in a statement list"),
+        new("E2078", null, DiagnosticSeverity.Error, "An initialiser is only allowed for a single inline variable"),
         new("E2100", null, DiagnosticSeverity.Error, "Unsatisfied forward or external declaration: '%s'"),
         new("E2101", null, DiagnosticSeverity.Error, "Declaration of '%s' differs from its previous declaration"),
         new("E2102", null, DiagnosticSeverity.Error, "Function needs a result type"),
@@ -296,6 +298,7 @@ public static class DiagnosticCatalog
         new("H2004", "UNUSED_UNIT", DiagnosticSeverity.Hint, "Unit '%s' is used but nothing from it is referenced"),
         new("H2005", "UNUSED_PARAMETER", DiagnosticSeverity.Hint, "Parameter '%s' is never used"),
         new("H2010", "ATTRIBUTE_IGNORED", DiagnosticSeverity.Hint, "Attribute '%s' has no effect yet"),
+        new("H2011", "INLINE_HIDES_OUTER", DiagnosticSeverity.Hint, "Inline declaration '%s' hides '%s'"),
     ];
 
     private static readonly FrozenDictionary<string, DiagnosticDescriptor> ByCode =

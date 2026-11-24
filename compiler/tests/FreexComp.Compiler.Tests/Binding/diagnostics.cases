@@ -324,6 +324,8 @@ type TA = class end; TB = class(TA, Integer) end; begin end.
 type I = interface procedure P; end; J = interface procedure Q; end; TA = class(I) procedure J.Q = R; procedure P; procedure R; end; procedure TA.P; begin end; procedure TA.R; begin end; begin end.
 === E2654 1,20
 type I = interface X: Integer; end; begin end.
+=== E2655 1,138
+unit System; interface type TGUID = record D1: Cardinal; D2, D3: Word; D4: array[0..7] of Byte; end; I = interface end; const G: TGUID = I; implementation end.
 === W1060 1,69
 type TA = class procedure P; virtual; end; TB = class(TA) procedure P; end; procedure TA.P; begin end; procedure TB.P; begin end; begin end.
 === E2600 1,91
@@ -468,3 +470,11 @@ type IFoo = dispinterface procedure P; dispid 1; procedure Q; dispid 1; end; beg
 type IFoo = dispinterface procedure P; dispid 1; overload; end; begin end.
 === E2661 1,65
 type IFoo = dispinterface procedure P; dispid 1; end; T = class(IFoo) end; begin end.
+=== E2077 1,33
+var c: Boolean; begin if c then var x := 1; end.
+=== E2078 1,25
+begin var a, b: Integer := 1; a := b; b := a; end.
+=== E2078 1,16
+begin var a, b := 1; end.
+=== H2011 1,31
+var Limit: Integer; begin var Limit := 1; Limit := Limit + 1; end.

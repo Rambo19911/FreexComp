@@ -913,6 +913,12 @@ internal sealed class BoundLocalsStatement : BoundStatement
     public LocalsScopeKind ScopeKind { get; }
 
     public BoundStatement Body { get; }
+
+    /// <summary>The scope that declares the names of an inline declaration or a <c>for var</c> loop (LANG-560); null for hidden locals.</summary>
+    public Scope? DeclarationScope { get; init; }
+
+    /// <summary>The source positions (both inclusive) at which <see cref="DeclarationScope"/> is the innermost scope (LANG-572).</summary>
+    public (int Start, int End) ScopeRange { get; init; }
 }
 
 /// <summary><c>Halt</c> / <c>Halt(ExitCode)</c>: ends the program after the finalization sections (LANG-364).</summary>

@@ -42,4 +42,3 @@ W4003  reserved  lead decision 2026-11-15 (C-246): CMP-629 variant 3 only; C-167
 H1002  elsewhere EmitTests  the driver compares the program heading with the file name
 H2004  Phase3  language service only
 H2005  Phase8  off by default; no milestone implements it yet
-E2655  elsewhere GuidBindingTests  needs System.TGUID, which the stub System of the case snippets lacks (LANG-680, C-299)

@@ -1,0 +1,12 @@
+field before 10
+inside inline
+field after 10
+outer local before 20
+inside 2.5
+outer local after 20
+global before 30
+inside text
+global after 30
+system names 7
+program block before 30
+program block inside 31

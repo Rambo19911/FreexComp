@@ -1,0 +1,7 @@
+count 2
+Supports FALSE
+EIntfCastError: Interface not supported
+Other is nil TRUE
+count unchanged TRUE
+final release 0
+done

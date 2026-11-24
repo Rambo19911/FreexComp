@@ -93,6 +93,61 @@ internal sealed partial class BodyBinder
         };
     }
 
+    /// <summary>
+    /// LANG-569: hint H2011 when the inline name <paramref name="name"/> (not a redeclaration: <see cref="CheckInlineName"/>) hides a
+    /// member reachable through <c>Self</c>, a name of an enclosing routine or a unit-level name of this unit. Names of used units
+    /// and built-ins are hidden silently.
+    /// </summary>
+    private void ReportHidden(SyntaxToken identifier, string name)
+    {
+        if (_scope.DeclaringScope(name) is not { } declaring || declaring.LookupLocal(name) is not { ContainingSymbol: { } container } hidden)
+        {
+            return;
+        }
+
+        var reported = declaring.Kind switch
+        {
+            ScopeKind.TypeMember => true,
+            ScopeKind.Routine or ScopeKind.Block => declaring.Owner is RoutineSymbol routine && !ReferenceEquals(routine, _routine),
+            ScopeKind.Unit => true,
+            _ => false,
+        };
+        if (reported)
+        {
+            _diagnostics.Report(identifier, "H2011", name, container.Name + "." + hidden.Name);
+        }
+    }
+
+    /// <summary>
+    /// LANG-560, 572: the source range of the declaration scope of the inline declaration <paramref name="declaration"/> — from the
+    /// end of the declaration statement (its <c>;</c> included) to the token that closes its statement list; for a <c>repeat</c>
+    /// list to the end of the <c>until</c> condition.
+    /// </summary>
+    private static (int Start, int End) ListScopeRange(StatementSyntax declaration)
+    {
+        var next = declaration.LastToken().GetNextToken();
+        var start = next.Kind == SyntaxKind.SemicolonToken ? next.Span.End : declaration.Span.End;
+        var list = declaration.Parent;
+        var listEnd = list?.Span.End ?? int.MaxValue;
+        while (next.Kind != SyntaxKind.None && next.Span.Start < listEnd
+            && (next.Kind == SyntaxKind.SemicolonToken || !ReferenceEquals(next.Parent, list)))
+        {
+            next = next.GetNextToken();                         // the statements of the rest of the list
+        }
+
+        var end = next.Kind == SyntaxKind.None || next.Span.Start >= listEnd ? listEnd       // a section: the list ends its node
+            : next.Kind == SyntaxKind.UntilKeyword && list is RepeatStatementSyntax repeat ? repeat.Span.End
+            : next.Span.Start;
+        return (start, Math.Max(start, end));
+    }
+
+    /// <summary>LANG-564, 572: the range of a <c>for var</c> variable's scope — the loop's statement, up to the token after the loop.</summary>
+    private static (int Start, int End) LoopScopeRange(StatementSyntax loop, SyntaxToken doKeyword)
+    {
+        var next = loop.LastToken().GetNextToken();
+        return (doKeyword.Span.End, Math.Max(doKeyword.Span.End, next.Kind == SyntaxKind.None ? loop.Span.End : next.Span.Start));
+    }
+
     /// <summary>A new inline local in <paramref name="scope"/> (E2004 checked by the caller).</summary>
     private VariableSymbol InlineLocal(Scope scope, SyntaxToken identifier, string name, TypeSymbol type)
     {
@@ -135,7 +190,7 @@ internal sealed partial class BodyBinder
 
                 if (value is not null && syntax.Identifiers.Count > 1)
                 {
-                    _diagnostics.Report(syntax.Initializer!, "E2900", "initialised inline variable list");
+                    _diagnostics.Report(syntax.ColonEqualsToken!.Value, "E2078");       // LANG-568
                     value = null;
                 }
 
@@ -153,6 +208,7 @@ internal sealed partial class BodyBinder
                         continue;
                     }
 
+                    ReportHidden(name.Identifier, text);
                     var local = InlineLocal(scope, name.Identifier, text, type ?? _types.Error);
                     locals.Add(local);
                     if (value is not null && type is not null && type.TypeKind != TypeKind.Error)
@@ -172,6 +228,8 @@ internal sealed partial class BodyBinder
                 {
                     break;
                 }
+
+                ReportHidden(syntax.Identifier, text);
 
                 if (syntax.Type is { } typeSyntax)
                 {
@@ -211,7 +269,11 @@ internal sealed partial class BodyBinder
         var scope = new Scope(ScopeKind.Block, _scope, _routine);
         var local = InlineLocal(scope, identifier, name, type);
         var loop = InScope(scope, () => BindForLoop(syntax, new BoundVariableExpression(syntax.Variable, local), start, finish));
-        return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop);
+        return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop)
+        {
+            DeclarationScope = scope,
+            ScopeRange = LoopScopeRange(syntax, syntax.DoKeyword),
+        };
     }
 
     /// <summary>LANG-386 <c>for var x [: T] in e do s</c>: <c>x</c> is a local of the loop of the element type of <c>e</c>.</summary>
@@ -239,7 +301,11 @@ internal sealed partial class BodyBinder
         var scope = new Scope(ScopeKind.Block, _scope, _routine);
         var local = InlineLocal(scope, identifier, name, type);
         var loop = InScope(scope, () => BindForInLoop(syntax, new BoundVariableExpression(syntax.Variable, local), collection));
-        return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop);
+        return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop)
+        {
+            DeclarationScope = scope,
+            ScopeRange = LoopScopeRange(syntax, syntax.DoKeyword),
+        };
     }
 
     /// <summary>The element type of a <c>for…in</c> collection (LANG-362), the enumerator's <c>Current</c> included; null when none.</summary>

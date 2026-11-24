@@ -1,0 +1,12 @@
+same object TRUE
+write 5
+seek 0
+read 5 Hello
+stdcall seek 0 2
+safecall seek to the end 5
+rejected call
+  stdcall result negative TRUE
+  ESafecallException
+still usable 0
+final release 0
+done

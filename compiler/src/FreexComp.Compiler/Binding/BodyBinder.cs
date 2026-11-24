@@ -60,7 +60,11 @@ internal sealed partial class BodyBinder
                 var (locals, initialization, scope) = BindInlineDeclaration(statement);
                 var next = i + 1;
                 var rest = InScope(scope, () => BindStatements(statements, next, atEnd));
-                bound.Add(new BoundLocalsStatement(statement, locals, new BoundBlock(statement, [.. initialization, .. rest]), LocalsScopeKind.List));
+                bound.Add(new BoundLocalsStatement(statement, locals, new BoundBlock(statement, [.. initialization, .. rest]), LocalsScopeKind.List)
+                {
+                    DeclarationScope = scope,
+                    ScopeRange = ListScopeRange(statement),
+                });
                 return bound.ToImmutable();
             }
 
@@ -108,6 +112,10 @@ internal sealed partial class BodyBinder
                 return BindWith(with, 0);
             case ForInStatementSyntax forIn:
                 return BindForIn(forIn);
+            case InlineVarStatementSyntax or InlineConstStatementSyntax:
+                // LANG-568: only BindStatements takes an inline declaration (an element of a statement list)
+                _diagnostics.Report(statement.FirstToken(), "E2077");
+                return new BoundErrorStatement(statement);
             default:
                 if (!statement.ContainsDiagnostics)
                 {

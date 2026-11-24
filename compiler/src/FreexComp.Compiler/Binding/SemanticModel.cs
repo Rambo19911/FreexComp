@@ -30,6 +30,7 @@ public sealed class SemanticModel
     private readonly Dictionary<int, Symbol> _references = [];
     private readonly Dictionary<SyntaxNode, (BoundExpression Outer, BoundExpression Inner)> _expressions = new(ReferenceEqualityComparer.Instance);
     private readonly List<(TextSpan Span, BoundRoutineBody Body)> _bodies = [];
+    private readonly List<(int Start, int End, Scope Scope)> _inlineScopes = [];
 
     internal SemanticModel(Compilation compilation, SyntaxTree tree, BindingResult result, ImmutableArray<Diagnostic> diagnostics,
                            Func<string, UnitSymbol?> findUnit)
@@ -376,6 +377,23 @@ public sealed class SemanticModel
 
     private Scope ScopeAt(int position)
     {
+        // LANG-572: inside the declaration scope of an inline name, the innermost such scope (the one declared last); its
+        // parents are the enclosing lists' scopes, then the routine's or the unit's
+        Scope? inline = null;
+        var inlineStart = -1;
+        foreach (var (start, end, scope) in _inlineScopes)
+        {
+            if (start <= position && position <= end && start > inlineStart)
+            {
+                (inline, inlineStart) = (scope, start);
+            }
+        }
+
+        if (inline is not null)
+        {
+            return inline;
+        }
+
         if (InnermostBody(position) is { } body)
         {
             return body.Scope;
@@ -714,6 +732,16 @@ public sealed class SemanticModel
                 foreach (var local in locals.Locals)
                 {
                     Declare(local);
+                }
+
+                if (locals.DeclarationScope is { } declarationScope && ReferenceEquals(locals.Syntax.SyntaxTree, SyntaxTree))
+                {
+                    foreach (var symbol in declarationScope.Symbols)
+                    {
+                        Declare(symbol);                    // also the true constants of an inline const
+                    }
+
+                    _inlineScopes.Add((locals.ScopeRange.Start, locals.ScopeRange.End, declarationScope));
                 }
 
                 Walk(locals.Body);

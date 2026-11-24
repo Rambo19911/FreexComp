@@ -1,0 +1,24 @@
+assignment
+  one addref -> 1
+second reference
+  one addref -> 2
+re-assignment
+  two addref -> 1
+  one release -> 1
+value parameter
+  one addref -> 2
+  in ByValue one
+  one release -> 1
+const parameter
+  in ByConst one
+function result
+  three addref -> 1
+  two release -> 0
+  two destroyed
+nil
+  one release -> 0
+  one destroyed
+scope exit
+  three release -> 0
+  three destroyed
+done

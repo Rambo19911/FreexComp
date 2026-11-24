@@ -722,4 +722,63 @@ public sealed class RenameTests
         Assert.False(result.Success);
         Assert.Equal("The form file 'UMain.form' cannot be read, so its references cannot be updated.", result.Error);
     }
+
+    // ------------------------------------------------------------------------------------------------ LANG-572 (C-307)
+
+    private const string InlineScopes = """
+        program P;
+        var Value: string;
+        begin
+          Value := 'outer';
+          begin
+            var Value := 1;
+            Value := Value + 1;
+          end;
+          begin
+            var Value := 2.5;
+            Value := Value * 2;
+          end;
+          Value := Value + '!';
+        end.
+        """;
+
+    /// <summary>
+    /// LANG-572: three entities named <c>Value</c> — a global and two inline variables of sibling blocks. A rename started on
+    /// one of them (declaration or use) edits only the occurrences inside that entity's scope.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "LANG-572")]
+    public void InlineVariable_RenamesOnlyItsScope()
+    {
+        (string Name, string Text)[] files = [("P.pas", InlineScopes.ReplaceLineEndings("\n"))];
+
+        var first = Rename(files, "P.pas", "Value := 1", "Count");
+        Assert.Equal(["P.pas: 3"], Counts(first));
+        Assert.Equal(InlineScopes.ReplaceLineEndings("\n").Replace("    var Value := 1;\n    Value := Value + 1;", "    var Count := 1;\n    Count := Count + 1;", StringComparison.Ordinal),
+            TextOf(Applied(files, first), "P.pas"));
+        AssertCompiles(Applied(files, first));
+
+        // from a use inside the second block
+        var second = Rename(files, "P.pas", "Value * 2", "Ratio");
+        Assert.Equal(["P.pas: 3"], Counts(second));
+        Assert.Equal(InlineScopes.ReplaceLineEndings("\n").Replace("    var Value := 2.5;\n    Value := Value * 2;", "    var Ratio := 2.5;\n    Ratio := Ratio * 2;", StringComparison.Ordinal),
+            TextOf(Applied(files, second), "P.pas"));
+        AssertCompiles(Applied(files, second));
+
+        // the global: its declaration and the uses outside the two blocks
+        var global = Rename(files, "P.pas", "Value := 'outer'", "Text");
+        Assert.Equal(["P.pas: 4"], Counts(global));
+        var text = TextOf(Applied(files, global), "P.pas");
+        Assert.Contains("var Text: string;\nbegin\n  Text := 'outer';", text, StringComparison.Ordinal);
+        Assert.Contains("  Text := Text + '!';", text, StringComparison.Ordinal);
+        Assert.Contains("    var Value := 1;\n    Value := Value + 1;", text, StringComparison.Ordinal);
+        Assert.Contains("    var Value := 2.5;\n    Value := Value * 2;", text, StringComparison.Ordinal);
+        AssertCompiles(Applied(files, global));
+
+        // a new name that an inline variable would capture inside its scope is a conflict
+        (string Name, string Text)[] hiding = [("P.pas", "program P;\nvar Outer: Integer;\nbegin\n  begin\n    var Inner := 1;\n    Outer := Inner;\n  end;\nend.\n")];
+        Assert.False(Rename(hiding, "P.pas", "Outer: Integer", "Inner").Success);
+        Assert.False(Rename(hiding, "P.pas", "Inner := 1", "Outer").Success);
+    }
 }
