@@ -9,7 +9,7 @@ program Ctl_GroupBox;
   clGrayText when disabled; the accelerator selects the first child (UIF-671); streaming of every published
   property kind; 100 instances with handles leak no GUI objects. No property recreates the window. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TFocusBox = class(TCustomControl)
@@ -229,7 +229,7 @@ begin
     CheckEqI(1, G.Perform(CM_DIALOGCHAR, Ord('g'), 0), 'accelerator consumed');
     CheckEqB(True, F.ActiveControl = A, 'first child focused');
     B.SetFocus;
-    PostMessageW(B.Handle, WM_SYSCHAR, Ord('g'), 1);
+    PostKeyMessage(B.Handle, WM_SYSCHAR, Ord('g'), 1);
     Application.ProcessMessages;
     CheckEqB(True, F.ActiveControl = A, 'Alt+G through the form focuses the first child');
     A.Enabled := False;

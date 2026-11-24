@@ -12,7 +12,7 @@ program Ctl_GridEditing;
   streaming of the editing events; 100 instances with an open editor leak no GUI objects. Keys and mouse input are
   window messages sent to the grid and to its editor (the hidden form takes no focus). }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, Grids, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, Grids, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -83,23 +83,12 @@ begin
   Result := Format('%d,%d', [G.Col, G.Row]);
 end;
 
-procedure SetKeys(Shift: Boolean);
-var
-  State: TKeyboardState;
-begin
-  GetKeyboardState(State);
-  if Shift then
-    State[VK_SHIFT] := $80
-  else
-    State[VK_SHIFT] := 0;
-  State[VK_CONTROL] := 0;
-  SetKeyboardState(State);
-end;
-
+{ no modifier down, whatever the real keyboard did since the last key (the messages are sent, not retrieved) }
 procedure Key(C: TWinControl; VK: Word);
 begin
-  SendMessageW(C.Handle, WM_KEYDOWN, VK, 1);
-  SendMessageW(C.Handle, WM_KEYUP, VK, LPARAM($C0000001));
+  SetKeyState(False, False);
+  SendKeyMessage(C.Handle, WM_KEYDOWN, VK, 1);
+  SendKeyMessage(C.Handle, WM_KEYUP, VK, LPARAM($C0000001));
 end;
 
 { a typed letter or digit as the keyboard delivers it: key down, the translated character, key up }
@@ -108,9 +97,10 @@ var
   VK: Word;
 begin
   VK := Ord(UpCase(Ch));
-  SendMessageW(C.Handle, WM_KEYDOWN, VK, 1);
-  SendMessageW(C.Handle, WM_CHAR, Ord(Ch), 1);
-  SendMessageW(C.Handle, WM_KEYUP, VK, LPARAM($C0000001));
+  SetKeyState(False, False);
+  SendKeyMessage(C.Handle, WM_KEYDOWN, VK, 1);
+  SendKeyMessage(C.Handle, WM_CHAR, Ord(Ch), 1);
+  SendKeyMessage(C.Handle, WM_KEYUP, VK, LPARAM($C0000001));
 end;
 
 function Editor(G: TStringGrid): TEdit;
@@ -176,7 +166,7 @@ begin
     G.OnSetEditText := Log.SetEditText;
     G.OnSelectCell := Log.SelectCell;
     G.Cells[2, 2] := 'abc';
-    SetKeys(False);
+    SetKeyState(False, False);
 
     Section('defaults');
     CheckEqB(False, G.EditorMode, 'EditorMode False');

@@ -8,7 +8,7 @@ program Ctl_KeyCharDrop;
   This control facet only: the Ctl_* sections of testing.md 3.5 (defaults, streaming, leak) do not apply to a
   message-path fix. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -36,17 +36,17 @@ end;
 
 procedure KeyDownMsg(C: TWinControl; VK: Word);
 begin
-  SendMessageW(C.Handle, WM_KEYDOWN, VK, 1);
+  SendKeyMessage(C.Handle, WM_KEYDOWN, VK, 1);
 end;
 
 procedure KeyUpMsg(C: TWinControl; VK: Word);
 begin
-  SendMessageW(C.Handle, WM_KEYUP, VK, LPARAM($C0000001));
+  SendKeyMessage(C.Handle, WM_KEYUP, VK, LPARAM($C0000001));
 end;
 
 procedure CharMsg(C: TWinControl; Ch: Char);
 begin
-  SendMessageW(C.Handle, WM_CHAR, Ord(Ch), 1);
+  SendKeyMessage(C.Handle, WM_CHAR, Ord(Ch), 1);
 end;
 
 var

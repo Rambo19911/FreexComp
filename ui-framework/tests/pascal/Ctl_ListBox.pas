@@ -8,7 +8,7 @@ program Ctl_ListBox;
   for user selection changes (LBN_SELCHANGE), OnDblClick on LBN_DBLCLK; sorted lists (Add index, Insert/Put
   raise); selection API, TopIndex, ItemRect, ItemAtPos; streaming; leak check. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -330,7 +330,7 @@ begin
     L.ItemIndex := 0;
     F.Show;
     Log.Text := '';
-    SendMessageW(L.Handle, WM_KEYDOWN, VK_DOWN, 0);
+    SendKeyMessage(L.Handle, WM_KEYDOWN, VK_DOWN, 0);
     CheckEqS('click:1;', Log.Text, 'keyboard selection change: OnClick');
     R := L.ItemRect(2);
     Log.Text := '';

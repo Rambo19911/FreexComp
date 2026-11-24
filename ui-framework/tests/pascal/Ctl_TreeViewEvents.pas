@@ -8,7 +8,7 @@ program Ctl_TreeViewEvents;
   OnEditing (veto: result 1) and OnEdited (Node.Text := S); no events while the window is created, recreated or
   destroyed (UIF-833); streaming of the properties and the events. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, CommCtrl, ComCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, CommCtrl, ComCtrls, TestKit, KeyStateKit;
 
 type
   TWinAccess = class(TWinControl);
@@ -109,8 +109,8 @@ end;
 
 procedure Key(C: TWinControl; K: Word);
 begin
-  SendMessageW(C.Handle, WM_KEYDOWN, K, 1);
-  SendMessageW(C.Handle, WM_KEYUP, K, LPARAM($C0000001));
+  SendKeyMessage(C.Handle, WM_KEYDOWN, K, 1);
+  SendKeyMessage(C.Handle, WM_KEYUP, K, LPARAM($C0000001));
 end;
 
 { the label edit notifications the window sends (Text nil: the edit was cancelled) }

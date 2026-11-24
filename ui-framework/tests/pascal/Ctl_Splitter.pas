@@ -8,7 +8,7 @@ program Ctl_Splitter;
   OnMoved on button-up, rsNone inert; Escape restores S0 (UIF-763); the etched line of Beveled (UIF-764); MinSize
   scaled; streaming with the default Align not stored. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, ExtCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, ExtCtrls, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -207,7 +207,7 @@ begin
     Down(78, 50);
     Move(128, 50);
     CheckEqI(127, L.Width, 'dragged');
-    PostMessageW(F.Handle, WM_KEYDOWN, VK_ESCAPE, 1);
+    PostKeyMessage(F.Handle, WM_KEYDOWN, VK_ESCAPE, 1);
     Application.ProcessMessages;
     CheckEqI(77, L.Width, 'Escape restores S0');
     CheckEqB(True, GetCaptureControl = nil, 'capture released');

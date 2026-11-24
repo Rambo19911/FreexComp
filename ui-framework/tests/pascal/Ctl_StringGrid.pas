@@ -9,10 +9,11 @@ program Ctl_StringGrid;
   keys of UIF-844 (arrows, Home / End, Ctrl+Home / Ctrl+End, PageUp / PageDown, Tab / Shift+Tab with goTabs and
   CM_WANTSPECIALKEY, Shift+arrows extending a range, OnKeyDown swallowing a key, WM_GETDLGCODE); scrolling that
   keeps the focused cell visible (UIF-845); streaming of OnSelectCell; 100 instances with cells and handles leak no
-  GUI objects. The Shift / Ctrl state of keys is set with SetKeyboardState (thread key state; no real input).
+  GUI objects. The Shift / Ctrl state of keys is set with KeyStateKit (whole thread key state; no real input).
   Mouse input is sent as window messages to the grid of a hidden form (the grid does not take the focus then). }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, Grids, UIConsts, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, Grids,
+  UIConsts, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -74,30 +75,14 @@ begin
   Result := Format('%d,%d', [G.Col, G.Row]);
 end;
 
-procedure SetKeys(Shift, Ctrl: Boolean);
-var
-  State: TKeyboardState;
-begin
-  GetKeyboardState(State);
-  if Shift then
-    State[VK_SHIFT] := $80
-  else
-    State[VK_SHIFT] := 0;
-  if Ctrl then
-    State[VK_CONTROL] := $80
-  else
-    State[VK_CONTROL] := 0;
-  SetKeyboardState(State);
-end;
-
 procedure Key(G: TWinControl; VK: Word; Shift, Ctrl: Boolean);
 begin
-  SetKeys(Shift, Ctrl);
+  SetKeyState(Shift, Ctrl);
   try
-    SendMessageW(G.Handle, WM_KEYDOWN, VK, 1);
-    SendMessageW(G.Handle, WM_KEYUP, VK, LPARAM($C0000001));
+    SendKeyMessage(G.Handle, WM_KEYDOWN, VK, 1);
+    SendKeyMessage(G.Handle, WM_KEYUP, VK, LPARAM($C0000001));
   finally
-    SetKeys(False, False);
+    SetKeyState(False, False);
   end;
 end;
 

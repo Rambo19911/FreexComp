@@ -7,7 +7,7 @@ program Ctl_Label;
   False draws the ampersand, '&&' draws one ampersand and marks no accelerator (UIF-602), a disabled label draws in
   clGrayText; the accelerator focuses FocusControl (UIF-611); freeing FocusControl clears the reference (UIF-612). }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TFocusBox = class(TCustomControl)
@@ -192,7 +192,7 @@ begin
     CheckEqB(True, F.ActiveControl = B, 'FocusControl focused');
     F.ActiveControl := A;
     A.SetFocus;
-    PostMessageW(A.Handle, WM_SYSCHAR, Ord('n'), 1);
+    PostKeyMessage(A.Handle, WM_SYSCHAR, Ord('n'), 1);
     Application.ProcessMessages;
     CheckEqB(True, F.ActiveControl = B, 'Alt+N through the form focuses FocusControl');
     B.Free;

@@ -10,7 +10,8 @@ program Ctl_ProgressTrack;
   changed, and from programmatic changes of the position (also by a range clamp); streaming; leak checks.
   The user is simulated with key messages sent to the track bar's window. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, CommCtrl, ComCtrls, UIConsts, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, CommCtrl, ComCtrls,
+  UIConsts, TestKit, KeyStateKit;
 
 type
   TWinAccess = class(TWinControl);
@@ -88,8 +89,8 @@ end;
 
 procedure Key(C: TWinControl; K: Word);
 begin
-  SendMessageW(C.Handle, WM_KEYDOWN, K, 1);
-  SendMessageW(C.Handle, WM_KEYUP, K, LPARAM($C0000001));
+  SendKeyMessage(C.Handle, WM_KEYDOWN, K, 1);
+  SendKeyMessage(C.Handle, WM_KEYUP, K, LPARAM($C0000001));
 end;
 
 function GuiObjects: Integer;

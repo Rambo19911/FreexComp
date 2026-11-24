@@ -11,7 +11,7 @@ program Ctl_ListViewItems;
   the end of a label edit (UIF-824), OnClick / OnDblClick from the mouse path (UIF-825), a report view
   without columns (UIF-826), no events while destroying, and a leak check. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, CommCtrl, ComCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, CommCtrl, ComCtrls, TestKit, KeyStateKit;
 
 type
   TWinAccess = class(TWinControl);
@@ -293,8 +293,8 @@ begin
     CheckEqB(False, Bi.Focused, 'item 1 lost the focus');
     CheckEqB(True, L.ItemFocused = C, 'ItemFocused follows');
     Log.Text := '';
-    SendMessageW(L.Handle, WM_KEYDOWN, VK_SPACE, 1);
-    SendMessageW(L.Handle, WM_KEYUP, VK_SPACE, LPARAM($C0000001));
+    SendKeyMessage(L.Handle, WM_KEYDOWN, VK_SPACE, 1);
+    SendKeyMessage(L.Handle, WM_KEYUP, VK_SPACE, LPARAM($C0000001));
     CheckEqS('checked:2:T;change:2:state;', Log.Text, 'the space key checks the focused item');
     CheckEqB(True, C.Checked, 'mirror checked');
     Log.Text := '';

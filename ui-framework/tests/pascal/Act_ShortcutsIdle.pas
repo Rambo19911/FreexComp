@@ -8,12 +8,13 @@ program Act_ShortcutsIdle;
   lists, then the main form; duplicates resolved by that order; disabled or invisible items (or items in a
   disabled parent) and actions whose Execute fails are skipped after their update hooks ran; suspended lists do
   not match; a consumed key produces no OnKeyDown / OnKeyPress; modifier keys alone never match; Alt shortcuts
-  arrive as WM_SYSKEYDOWN. The Ctrl state is set with SetKeyboardState (thread key state; no real input).
+  arrive as WM_SYSKEYDOWN. The Ctrl state is set with KeyStateKit (whole thread key state, written again when the
+  key message is retrieved; no real input).
   U-121, UIF-910 (c): controls whose UpdatesActionWhenHidden is True (tool buttons) are updated also while hidden,
   so an action's OnUpdate can show its hidden tool button again. }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, Menus, ActnList,
-  ComCtrls, TestKit;
+  ComCtrls, TestKit, KeyStateKit;
 
 type
   TControlAccess = class(TControl);
@@ -104,15 +105,8 @@ begin
 end;
 
 procedure SetCtrl(Down: Boolean);
-var
-  State: TKeyboardState;
 begin
-  GetKeyboardState(State);
-  if Down then
-    State[VK_CONTROL] := $80
-  else
-    State[VK_CONTROL] := 0;
-  SetKeyboardState(State);
+  SetKeyState(False, Down);
 end;
 
 { Ctrl+Key (or Alt+Key as WM_SYSKEYDOWN) posted to the control and pumped }
@@ -121,9 +115,9 @@ begin
   Log.Text := '';
   SetCtrl(Ctrl);
   if Alt then
-    PostMessageW(C.Handle, WM_SYSKEYDOWN, Key, $20000001)
+    PostKeyMessage(C.Handle, WM_SYSKEYDOWN, Key, $20000001)
   else
-    PostMessageW(C.Handle, WM_KEYDOWN, Key, 1);
+    PostKeyMessage(C.Handle, WM_KEYDOWN, Key, 1);
   Application.ProcessMessages;
   SetCtrl(False);
 end;
@@ -185,6 +179,7 @@ var
   AL, ML: TActionList;
   AO, AT, AM: TAction;
   Msg: TWMKey;
+  Stale: TKeyboardState;
 begin
   Application.CreateForm(TMainF, MainF);
   CheckEqB(True, Application.MainForm = MainF, 'main form');
@@ -257,6 +252,13 @@ begin
     CheckEqS('hook:MMtop;click:MMx;', Log.Text, 'Alt+X: the main menu''s nested item after its parent''s hook');
     Press(E, Ord('Q'), True);
     CheckEqS('keydown;keypress;', Log.Text, 'no match: OnKeyDown and OnKeyPress fire (UIF-924 counter-check)');
+    { U-141: a modifier left in the thread key state by the real keyboard (here Alt, which turns Ctrl+Q into a key
+      without a character) must not reach the next key of the test }
+    GetKeyboardState(Stale);
+    Stale[VK_MENU] := $80;
+    SetKeyboardState(Stale);
+    Press(E, Ord('Q'), True);
+    CheckEqS('keydown;keypress;', Log.Text, 'no match with a stale Alt in the thread key state: same result');
 
     Section('menu items: hooks and updates first (UIF-922, UIF-913)');
     MMtop.Enabled := False;

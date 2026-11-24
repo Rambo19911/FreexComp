@@ -8,7 +8,7 @@ program Ctl_Button;
   button or else the first usable default button in tab order, Escape the cancel button (UIF-642, UIF-643);
   the default-button appearance follows the focus (UIF-641); streaming; leak check. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -84,7 +84,7 @@ end;
 procedure Press(C: TWinControl; Key: Word);
 begin
   Log.Text := '';
-  PostMessageW(C.Handle, WM_KEYDOWN, Key, 1);
+  PostKeyMessage(C.Handle, WM_KEYDOWN, Key, 1);
   Application.ProcessMessages;
 end;
 
@@ -241,7 +241,7 @@ begin
     B2.Caption := '&Go';
     E.SetFocus;
     Log.Text := '';
-    PostMessageW(E.Handle, WM_SYSCHAR, Ord('g'), $20000001);
+    PostKeyMessage(E.Handle, WM_SYSCHAR, Ord('g'), $20000001);
     Application.ProcessMessages;
     CheckEqS('click:B2;', Log.Text, 'accelerator clicks');
     CheckEqB(True, F.ActiveControl = B2, 'accelerator focuses the button');

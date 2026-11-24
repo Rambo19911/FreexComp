@@ -9,7 +9,7 @@ program Ctl_Edit;
   height rules I2/I3 (layout.md UIF-250, E37); streaming of every published property kind; leak check.
   UIF-623 (no EM_SETMARGINS) has no observable assertion beyond the native default. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TKeyBox = class(TCustomControl)
@@ -130,7 +130,7 @@ end;
 
 procedure Press(C: TWinControl; Key: Word);
 begin
-  PostMessageW(C.Handle, WM_KEYDOWN, Key, 1);
+  PostKeyMessage(C.Handle, WM_KEYDOWN, Key, 1);
   Application.ProcessMessages;
 end;
 
@@ -304,7 +304,7 @@ begin
     E.Text := 'one';
     CheckEqS('', Log.Text, 'same text: no OnChange');
     SendMessageW(E.Handle, EM_SETSEL, 3, 3);
-    SendMessageW(E.Handle, WM_CHAR, Ord('z'), 1);
+    SendKeyMessage(E.Handle, WM_CHAR, Ord('z'), 1);
     CheckEqS('onez', E.Text, 'typed character');
     CheckEqS('change;', Log.Text, 'user edit fires OnChange');
     Log.Text := '';

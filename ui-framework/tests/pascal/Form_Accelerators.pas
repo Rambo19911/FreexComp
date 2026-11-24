@@ -7,7 +7,7 @@ program Form_Accelerators;
   that answers consumes the character (no OnKeyPress); hidden, disabled controls and children of disabled parents are
   skipped; nothing answering means normal delivery. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit, KeyStateKit;
 
 type
   TAccelBox = class(TCustomControl)
@@ -73,7 +73,7 @@ end;
 procedure Send(C: TWinControl; Msg: UINT; Ch: Char);
 begin
   Log.Text := '';
-  PostMessageW(C.Handle, Msg, Ord(Ch), 1);
+  PostKeyMessage(C.Handle, Msg, Ord(Ch), 1);
   Application.ProcessMessages;
 end;
 

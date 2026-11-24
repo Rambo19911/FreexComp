@@ -7,7 +7,7 @@ program Core_KeyEvents;
   before default processing; ssAlt comes from bit 29 of LParam. The top of the parent chain previews keys first
   when its PreviewKeys hook says so (forms: KeyPreview) and may consume them. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Controls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Controls, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -102,7 +102,7 @@ end;
 function Send(C: TWinControl; Msg: Cardinal; WParam: WPARAM; LParam: LPARAM): string;
 begin
   Log.Text := '';
-  SendMessageW(C.Handle, Msg, WParam, LParam);
+  SendKeyMessage(C.Handle, Msg, WParam, LParam);
   Result := Log.Text;
 end;
 

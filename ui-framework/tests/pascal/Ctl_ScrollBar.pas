@@ -7,7 +7,7 @@ program Ctl_ScrollBar;
   change and never for a range change that keeps the position; the user's scroll codes through OnScroll, which may
   alter the new position; a stored range applied after loading; leak check. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -82,7 +82,7 @@ end;
 
 procedure Key(C: TWinControl; VK: Word);
 begin
-  SendMessageW(C.Handle, WM_KEYDOWN, VK, 1);
+  SendKeyMessage(C.Handle, WM_KEYDOWN, VK, 1);
 end;
 
 { GDI + USER objects of the process }

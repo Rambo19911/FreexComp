@@ -7,7 +7,7 @@ program Form_DialogKeys;
   selects the next tab stop, arrows the next sibling (wrapping), Return/Escape are offered to the controls of the
   form (nested ones too). A consumed key never reaches OnKeyDown. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, TestKit, KeyStateKit;
 
 type
   TKeyBox = class(TCustomControl)
@@ -84,7 +84,7 @@ end;
 procedure Press(C: TWinControl; Key: Word);
 begin
   Log.Text := '';
-  PostMessageW(C.Handle, WM_KEYDOWN, Key, 1);
+  PostKeyMessage(C.Handle, WM_KEYDOWN, Key, 1);
   Application.ProcessMessages;
 end;
 

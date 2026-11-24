@@ -10,7 +10,7 @@ program Dlg_InputQuery;
   pixels scaled by edges to the form's PixelsPerInch, layout.md UIF-280) and then runs the real ShowModal, driven by
   key messages posted from OnShow: Enter presses the default OK button, Escape the Cancel button. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Controls, Forms, StdCtrls, Dialogs, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Controls, Forms, StdCtrls, Dialogs, TestKit, KeyStateKit;
 
 type
   TDriver = class
@@ -57,8 +57,8 @@ begin
   SelEnd := B;
   if Typed <> '' then
     E.Text := Typed;
-  PostMessageW(E.Handle, WM_KEYDOWN, Key, 1);
-  PostMessageW(E.Handle, WM_KEYUP, Key, LPARAM($C0000001));
+  PostKeyMessage(E.Handle, WM_KEYDOWN, Key, 1);
+  PostKeyMessage(E.Handle, WM_KEYUP, Key, LPARAM($C0000001));
 end;
 
 function TestHook(Form: TForm): Integer;

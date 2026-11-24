@@ -9,7 +9,7 @@ program Ctl_Memo;
   CM_WANTSPECIALKEY and WM_GETDLGCODE for Return/Tab, Escape passed to the form and never closing it (UIF-632);
   OnChange; streaming of every published property kind; leak check. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TKeyBox = class(TCustomControl)
@@ -107,23 +107,18 @@ begin
     + Integer(GetGuiResources(GetCurrentProcess, GR_USEROBJECTS));
 end;
 
+{ a key without modifiers, whatever the real keyboard is doing (KeyStateKit) }
 procedure Press(C: TWinControl; Key: Word);
 begin
   Log.Text := '';
-  PostMessageW(C.Handle, WM_KEYDOWN, Key, 1);
+  SetKeyState(False, False);
+  PostKeyMessage(C.Handle, WM_KEYDOWN, Key, 1);
   Application.ProcessMessages;
 end;
 
 procedure SetCtrl(Down: Boolean);
-var
-  State: TKeyboardState;
 begin
-  GetKeyboardState(State);
-  if Down then
-    State[VK_CONTROL] := $80
-  else
-    State[VK_CONTROL] := 0;
-  SetKeyboardState(State);
+  SetKeyState(False, Down);
 end;
 
 { the same Lines checks without and with a handle }

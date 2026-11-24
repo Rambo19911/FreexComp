@@ -9,7 +9,7 @@ program Ctl_ComboBox;
   selection, OnChange on editing, OnDropDown / OnCloseUp; nothing for code; Enter / Escape wanted while dropped;
   streaming (ItemIndex after Items); leak check. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -335,11 +335,11 @@ begin
     Edit := GetWindow(C.Handle, GW_CHILD);
     CheckEqS('Edit', ClassOf(Edit), 'the inner edit');
     Log.Text := '';
-    SendMessageW(Edit, WM_KEYDOWN, VK_DOWN, 0);
+    SendKeyMessage(Edit, WM_KEYDOWN, VK_DOWN, 0);
     CheckEqS('change:b;select:1;click;', Log.Text, 'user selection: text updated, OnChange, OnSelect, OnClick');
     C.SelStart := 1;
     Log.Text := '';
-    SendMessageW(Edit, WM_CHAR, Ord('x'), 0);
+    SendKeyMessage(Edit, WM_CHAR, Ord('x'), 0);
     CheckEqS('change:bx;', Log.Text, 'editing: OnChange');
     Log.Text := '';
     C.DroppedDown := True;
@@ -359,7 +359,7 @@ begin
     C.Style := csDropDownList;
     C.ItemIndex := 0;
     Log.Text := '';
-    SendMessageW(C.Handle, WM_KEYDOWN, VK_DOWN, 0);
+    SendKeyMessage(C.Handle, WM_KEYDOWN, VK_DOWN, 0);
     CheckEqS('change:b;select:1;click;', Log.Text, 'list style: the same order');
     F.Hide;
 

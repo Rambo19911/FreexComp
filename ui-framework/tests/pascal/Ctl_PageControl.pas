@@ -11,10 +11,10 @@ program Ctl_PageControl;
   Ctrl+Tab / Ctrl+Shift+Tab inside the page control through the form's dialog-key handling, accelerators (UIF-775,
   UIF-776); destroying the active page (UIF-777); MultiLine / TabPosition not supported in Phase 4; streaming with
   ActivePage stored and not stored; 50 instances with handles leak no GUI objects.
-  The Ctrl state is set with SetKeyboardState (thread key state; no real input). }
+  The Ctrl / Shift state is set with KeyStateKit (whole thread key state; no real input). }
 uses
   Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, ExtCtrls, ImgList, CommCtrl,
-  ComCtrls, UIConsts, TestKit;
+  ComCtrls, UIConsts, TestKit, KeyStateKit;
 
 type
   TFocusBox = class(TCustomControl)
@@ -168,40 +168,14 @@ begin
       Result := Result + PC.Pages[I].Name + ';';
 end;
 
-procedure SetCtrl(Down: Boolean);
-var
-  State: TKeyboardState;
-begin
-  GetKeyboardState(State);
-  if Down then
-    State[VK_CONTROL] := $80
-  else
-    State[VK_CONTROL] := 0;
-  SetKeyboardState(State);
-end;
-
-procedure SetShift(Down: Boolean);
-var
-  State: TKeyboardState;
-begin
-  GetKeyboardState(State);
-  if Down then
-    State[VK_SHIFT] := $80
-  else
-    State[VK_SHIFT] := 0;
-  SetKeyboardState(State);
-end;
-
 procedure Press(C: TWinControl; Key: Word; Ctrl, Shift: Boolean);
 begin
   Log.Text := '';
-  SetCtrl(Ctrl);
-  SetShift(Shift);
-  PostMessageW(C.Handle, WM_KEYDOWN, Key, 1);
+  SetKeyState(Shift, Ctrl);
+  PostKeyMessage(C.Handle, WM_KEYDOWN, Key, 1);
   Application.ProcessMessages;
-  SetCtrl(False);
-  SetShift(False);
-  PostMessageW(C.Handle, WM_KEYUP, Key, LPARAM($C0000001));
+  SetKeyState(False, False);
+  PostKeyMessage(C.Handle, WM_KEYUP, Key, LPARAM($C0000001));
   Application.ProcessMessages;
 end;
 

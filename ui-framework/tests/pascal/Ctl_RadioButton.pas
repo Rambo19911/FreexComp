@@ -7,7 +7,7 @@ program Ctl_RadioButton;
   follows Checked; a native click, the accelerator and arrow-key navigation between siblings check the button;
   while loading several checked buttons of one group leave the last one in creation order checked; leak check. }
 uses
-  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit;
+  Windows, Messages, Types, SysUtils, Classes, Graphics, Controls, Forms, StdCtrls, TestKit, KeyStateKit;
 
 type
   TLog = class
@@ -203,27 +203,34 @@ begin
     Section('arrow navigation (UIF-115)');
     A.SetFocus;
     Log.Text := '';
+    SetKeyState(False, False);
     CheckEqI(1, F.Perform(CM_DIALOGKEY, VK_DOWN, 0), 'Down consumed');
     CheckEqB(True, F.ActiveControl = B, 'Down: next sibling focused');
     CheckEqS('B;', CheckedOf(F), 'Down: the focused button is checked');
     CheckEqS('B;', Log.Text, 'Down: OnClick');
+    SetKeyState(False, False);
     F.Perform(CM_DIALOGKEY, VK_RIGHT, 0);
     CheckEqB(True, F.ActiveControl = C, 'Right: next sibling');
     CheckEqS('C;', CheckedOf(F), 'Right: checked');
+    SetKeyState(False, False);
     F.Perform(CM_DIALOGKEY, VK_DOWN, 0);
     CheckEqB(True, F.ActiveControl = G, 'Down: siblings only, the group box is next');
     CheckEqS('C;', CheckedOf(F), 'a non-radio sibling: nothing checked');
     CheckEqB(True, Other.Checked, 'inside the group box: unchanged');
     C.SetFocus;
+    SetKeyState(False, False);
     F.Perform(CM_DIALOGKEY, VK_UP, 0);
     CheckEqB(True, F.ActiveControl = B, 'Up: previous sibling');
+    SetKeyState(False, False);
     F.Perform(CM_DIALOGKEY, VK_LEFT, 0);
     CheckEqB(True, F.ActiveControl = A, 'Left: previous sibling');
     CheckEqS('A;', CheckedOf(F), 'Left: checked');
+    SetKeyState(False, False);
     F.Perform(CM_DIALOGKEY, VK_UP, 0);
     CheckEqB(True, F.ActiveControl = G, 'Up from the first: wraps to the last sibling');
     Other.SetFocus;
     Log.Text := '';
+    SetKeyState(False, False);
     F.Perform(CM_DIALOGKEY, VK_DOWN, 0);
     CheckEqB(True, F.ActiveControl = Other, 'only child: stays');
     CheckEqS('', Log.Text, 'stays: no OnClick');

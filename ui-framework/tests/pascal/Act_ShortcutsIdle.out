@@ -12,6 +12,7 @@ ok the form's pop-up menu (end of the parent chain)
 ok Alt+X (WM_SYSKEYDOWN): the parent's pop-up menu before the main menu
 ok Alt+X: the main menu's nested item after its parent's hook
 ok no match: OnKeyDown and OnKeyPress fire (UIF-924 counter-check)
+ok no match with a stale Alt in the thread key state: same result
 # menu items: hooks and updates first (UIF-922, UIF-913)
 ok disabled parent: hook and update ran, item skipped; the action runs from the list (updated in Execute)
 ok enabled: the item clicks its action
@@ -40,4 +41,4 @@ ok hidden tool buttons (also in a hidden bar) are updated; a hidden button is no
 ok OnUpdate showed the tool button again
 ok showing
 ok a visible tool button: updated once
-# passed 36 failed 0
+# passed 37 failed 0
