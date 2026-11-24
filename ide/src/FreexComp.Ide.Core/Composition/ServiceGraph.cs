@@ -321,6 +321,7 @@ public static class ServiceGraph
             production = [.. production, toolPalette.Definition];
         if (debugShell is not null)
             production = [.. production, .. debugShell.ToolWindows];
+        production = [.. production, new ViewModels.DataExplorerViewModel().Definition]; // I-137: registers from Phase 7 (UI-TW-1401)
         foreach (var definition in production)
         {
             if (!extras.Any(e => e.Name == definition.Name))
