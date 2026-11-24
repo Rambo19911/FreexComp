@@ -45,13 +45,13 @@ public sealed partial class RequirementCoverageTests
             inScope.UnionWith(ScopedIds(File.ReadAllLines(SpecTables.DocPath(file)), phase));
         }
 
-        // I-207: the scope follows the product's implemented phase (Phase 6: the shell, build/run, the designer and the debug windows).
+        // I-207, I-226: the scope follows the product's implemented phase (Phase 7: the shell, build/run, the designer, the debug windows and the Data Explorer).
         Assert.Equal(Composition.ServiceGraph.ImplementedPhase, phase);
         Assert.Contains("IDE-P1-056", inScope);
         Assert.Contains("IDE-P3-001", inScope); // phase3-build-run.md
         Assert.Contains("UI-TW-400", inScope); // tool-windows.md §6 Messages (P3)
         Assert.Contains("UI-TW-800", inScope); // tool-windows.md §10 Breakpoints (P6)
-        Assert.DoesNotContain("UI-TW-1400", inScope); // tool-windows.md §16 Data Explorer (P7)
+        Assert.Contains("UI-TW-1400", inScope); // tool-windows.md §16 Data Explorer (P7)
 
         var covered = CoveredIds(Path.Combine(root, "ide", "tests"));
         var exempt = ReadList(Path.Combine(testData, "coverage-exempt.txt")).Where(e => !IsDesignerId(e.Key))

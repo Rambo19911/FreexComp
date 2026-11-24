@@ -22,7 +22,7 @@ namespace FreexComp.Ide.Core.Composition;
 public static class ServiceGraph
 {
     /// <summary>Commands of later phases get <c>CanExecute = false</c> stubs (UI-CMD-004).</summary>
-    public const int ImplementedPhase = 6;
+    public const int ImplementedPhase = 7;
 
     /// <param name="toolWindows">Tool windows registered after the production ones (tests, IDE-ARCH-100); one named like a
     /// production tool window is registered instead of it.</param>

@@ -128,10 +128,10 @@ public sealed class DocumentViewSwitchTests
     [Trait("Req", "UI-KEY-001")]
     public async Task CommandsEnabledInPhase5()
     {
-        Assert.Equal(6, Core.Composition.ServiceGraph.ImplementedPhase); // Phase 6 since I-146
+        Assert.Equal(7, Core.Composition.ServiceGraph.ImplementedPhase); // Phase 6 since I-146, Phase 7 since I-226
         await using (var h = await HeadlessHarness.StartAsync(DesignerViewTests.Files))
         {
-            Assert.Equal(6, h.Services.ImplementedPhase);
+            Assert.Equal(7, h.Services.ImplementedPhase); // the product's phase: no test override
             var document = await DesignerViewTests.OpenFormAsync(h);
             Assert.All(Phase5ViewCommands, id => Assert.True(h.Services.Commands.CanExecute(id), id));
             h.Click(Tab("Design"));

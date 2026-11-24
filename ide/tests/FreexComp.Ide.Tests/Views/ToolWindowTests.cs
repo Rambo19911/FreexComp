@@ -205,16 +205,46 @@ public sealed class ToolWindowTests
         Assert.False(tools.Get("Messages")!.IsActive);
     }
 
-    /// <summary>I-146: UI-TW-006 at the product's phase 6: the P1–P6 windows are registered, the P7 one is not.</summary>
+    /// <summary>I-226: UI-TW-006 at the product's phase 7, without a test override: every P1–P7 window is registered.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "7")]
+    [Trait("Req", "UI-TW-006")]
+    [Trait("Req", "UI-WIN-011")]
+    [Trait("Req", "UI-TW-1401")]
+    public async Task EveryWindowIsRegisteredAtProductPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var tools = h.Services.ToolWindows;
+        Assert.Equal(7, Core.Composition.ServiceGraph.ImplementedPhase);
+        Assert.Equal(7, h.Services.ImplementedPhase);
+
+        foreach (var name in new[] { "ProjectManager", "Structure", "Messages", "Output", "SearchResults", "ObjectInspector", "ToolPalette",
+                     "Breakpoints", "CallStack", "Locals", "Watches", "Threads", "EventLog", "DataExplorer" })
+            Assert.True(tools.IsRegistered(name), name);
+        Assert.False(tools.IsRegistered("ToDo")); // P8+ (UI-TW-700)
+        Assert.False(h.Services.Commands.CanExecute("view.todo"));
+        Assert.Null(h.TryFind<Control>("Tool.DataExplorer")); // hidden by default
+        Assert.True(h.Services.Commands.CanExecute("view.dataExplorer"));
+        var view = h.Find<Menu>(AutomationIds.MenuBar).Items.Cast<MenuItem>().Single(m => AutomationIds.Get(m) == AutomationIds.TopMenu("View"));
+        var explorer = view.Items.OfType<MenuItem>().Single(i => AutomationIds.Get(i) == AutomationIds.Menu("view.dataExplorer"));
+        Assert.True(explorer.IsVisible);
+        Assert.True(explorer.Command!.CanExecute(null));
+        await h.ExecuteAsync("view.dataExplorer");
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Control>("Tool.DataExplorer").IsEffectivelyVisible);
+        Assert.True(h.Find<Control>("Tool.DataExplorer.Empty").IsEffectivelyVisible);
+    }
+
+    /// <summary>I-146: UI-TW-006 at phase 6 (the product's phase until I-226): the P1–P6 windows are registered, the P7 one is not.</summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Phase", "6")]
     [Trait("Req", "UI-TW-006")]
     [Trait("Req", "UI-WIN-011")]
-    public async Task DebugWindowsAreRegisteredAtProductPhase()
+    public async Task DebugWindowsAreRegisteredAtPhase6()
     {
-        await using var h = await HeadlessHarness.StartAsync();
+        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 6);
         var tools = h.Services.ToolWindows;
-        Assert.Equal(6, Core.Composition.ServiceGraph.ImplementedPhase);
+        Assert.Equal(6, h.Services.ImplementedPhase);
 
         foreach (var name in new[] { "ProjectManager", "Structure", "Messages", "Output", "SearchResults", "ObjectInspector", "ToolPalette",
                      "Breakpoints", "CallStack", "Locals", "Watches", "Threads", "EventLog" })

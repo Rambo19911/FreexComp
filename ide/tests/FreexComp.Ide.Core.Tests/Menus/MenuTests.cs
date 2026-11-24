@@ -1,5 +1,7 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Editing;
 using FreexComp.Ide.Core.Menus;
+using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Menus;
@@ -96,6 +98,29 @@ public sealed class MenuTests
                 Check(sub.Key, sub.Children, problems);
             }
         }
+    }
+
+    /// <summary>I-226: Breakpoint Properties has no main-menu, toolbar or editor-menu entry; the breakpoint glyph and the Breakpoints rows offer it.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "6")]
+    [Trait("Req", "UI-MENU-021")]
+    public void BreakpointPropertiesOnlyInGutterAndBreakpointsMenus()
+    {
+        const string Id = "run.breakpointProperties";
+        var services = TestComposition.Build(o => o.ImplementedPhase = 6);
+        var debug = services.DebugShell!;
+
+        Assert.DoesNotContain(Commands(MainMenuDefinition.TopLevel), c => c.CommandId == Id);
+        Assert.DoesNotContain(ToolBarDefinitions.All.SelectMany(t => t.Items).OfType<ToolBarButton>(), b => b.CommandId == Id);
+        Assert.DoesNotContain(Id, EditorContextMenu.Commands);
+        Assert.DoesNotContain(Id, MessagesViewModel.ContextCommands);
+        Assert.DoesNotContain(Id, OutputViewModel.ContextCommands);
+        DebugGridViewModel[] others = [debug.CallStack, debug.Locals, debug.Watches, debug.Threads, debug.EventLog];
+        Assert.All(others, grid => Assert.DoesNotContain(Id, grid.ContextCommands));
+        Assert.DoesNotContain(GutterMenu.Build([], services.Commands, services.Settings), m => m.CommandId == Id); // no breakpoint on the line
+
+        Assert.Contains(GutterMenu.Build([new LineGlyph(LineGlyphKind.Breakpoint)], services.Commands, services.Settings), m => m.CommandId == Id);
+        Assert.Contains(Id, debug.Breakpoints.ContextCommands);
     }
 
     private static IEnumerable<CommandMenuNode> Commands(IEnumerable<MenuNode> nodes) =>

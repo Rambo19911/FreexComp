@@ -34,8 +34,8 @@ public sealed class Phase6AcceptanceTests
         var shell = h.Services.DebugShell!;
         var layout = h.Services.Layout.Layout;
         h.DebugSessions.UseScenarioFile("phase6-acceptance.json", ("source", demo));
-        Assert.Equal(6, Core.Composition.ServiceGraph.ImplementedPhase); // the product's phase: no test override needed for the debug windows
-        Assert.Equal(6, h.Services.ImplementedPhase);
+        Assert.True(Core.Composition.ServiceGraph.ImplementedPhase >= 6); // the product has the debug windows (Phase 7 since I-226)
+        Assert.Equal(6, h.Services.ImplementedPhase); // the scenario is pinned to its own phase (DebugScenario)
 
         // The user opens the program's source and sets a breakpoint with F9 on line 71 of Run.
         var (document, editor, probe) = await DebugScenario.OpenAsync(h, demo);
