@@ -299,7 +299,15 @@ public sealed partial class DebugService : IDebugService
     /// As <see cref="StartAsync(bool)"/>; <paramref name="runTo"/> is "Run to Cursor" without a session (DBG-232): the
     /// program starts with a temporary breakpoint on that line, which goes at the first stop.
     /// </summary>
-    public async Task<bool> StartAsync(bool stopOnEntry, (string Path, int Line)? runTo)
+    public Task<bool> StartAsync(bool stopOnEntry, (string Path, int Line)? runTo) => StartAsync(stopOnEntry, runTo, stopAtMainBody: false);
+
+    /// <summary>
+    /// DBG-225: Step Over / Step Into as the first command — the program starts and stops on the first statement of its
+    /// main block (<c>LaunchRequest.StopAtMainBody</c>; at its entry when the program has no type information).
+    /// </summary>
+    public Task<bool> StartAtMainBodyAsync() => StartAsync(stopOnEntry: false, null, stopAtMainBody: true);
+
+    private async Task<bool> StartAsync(bool stopOnEntry, (string Path, int Line)? runTo, bool stopAtMainBody)
     {
         if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle || _active is not null)
             return false;
@@ -320,7 +328,7 @@ public sealed partial class DebugService : IDebugService
                 return false;
         }
 
-        return await _run.BuildThenAsync(project, exe => LaunchAsync(project, exe, stopOnEntry, runTo));
+        return await _run.BuildThenAsync(project, exe => LaunchAsync(project, exe, stopOnEntry, runTo, stopAtMainBody));
     }
 
     public async Task StopAsync()
@@ -344,9 +352,9 @@ public sealed partial class DebugService : IDebugService
 
     public async Task<bool> RestartAsync()
     {
-        var stopOnEntry = _active?.StopOnEntry ?? false;
+        var (stopOnEntry, stopAtMainBody) = (_active?.StopOnEntry ?? false, _active?.StopAtMainBody ?? false);
         await StopAsync();
-        return await StartAsync(stopOnEntry);
+        return await StartAsync(stopOnEntry, null, stopAtMainBody);
     }
 
     /// <summary>IDE-P3-093: while a session exists, asks <c>Msg.Run.StopOnExit</c> / <c>StopOnClose</c> and ends it; false = canceled.</summary>
@@ -389,6 +397,10 @@ public sealed partial class DebugService : IDebugService
         catch (DebuggerException e)
         {
             return e.Message;
+        }
+        catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+        {
+            return null; // the session is gone: the condition cannot be checked now
         }
     }
 
@@ -441,11 +453,11 @@ public sealed partial class DebugService : IDebugService
         commands.RegisterHandler("run.pause", new Handler(() => _active is not null, () => _state.Current.State == IdeState.DebugRunning,
             () => ControlAsync(s => s.PauseAsync())));
         commands.RegisterHandler("run.stepOver", new Handler(() => Paused() || Project(), () => Paused() || Idle(),
-            () => Paused() ? ControlAsync(s => s.StepOverAsync(_stop!.ThreadId)) : StartAsync(stopOnEntry: true)));
+            () => Paused() ? ControlAsync(s => s.StepOverAsync(StepThread)) : StartAtMainBodyAsync()));
         commands.RegisterHandler("run.stepInto", new Handler(() => Paused() || Project(), () => Paused() || Idle(),
-            () => Paused() ? ControlAsync(s => s.StepIntoAsync(_stop!.ThreadId)) : StartAsync(stopOnEntry: true)));
+            () => Paused() ? ControlAsync(s => s.StepIntoAsync(StepThread)) : StartAtMainBodyAsync()));
         commands.RegisterHandler("run.stepOut", new Handler(() => _active is not null, Paused,
-            () => ControlAsync(s => s.StepOutAsync(_stop!.ThreadId))));
+            () => ControlAsync(s => s.StepOutAsync(StepThread))));
         // menus.md §7: text and (paused or (project and runnable and idle)); idle starts with a temporary breakpoint (DBG-232).
         commands.RegisterHandler("run.runToCursor", new Handler(() => EditorFile is not null && (_active is not null || Project()), () => Paused() || Idle(), () =>
             EditorFile is not { } editor ? Task.CompletedTask
@@ -483,6 +495,9 @@ public sealed partial class DebugService : IDebugService
         var text = document.Buffer.GetText(start, end - start);
         return text.Contains('\n', StringComparison.Ordinal) ? "" : text.Trim();
     }
+
+    /// <summary>DBG-255: the step commands name the current thread — the thread of the stop until another was switched to.</summary>
+    private int StepThread => _threadId ?? _stop!.ThreadId;
 
     private TextDocumentViewModel? EditorFile => _documents.ActiveDocument as TextDocumentViewModel is { FilePath: not null } text ? text : null;
 
@@ -541,7 +556,7 @@ public sealed partial class DebugService : IDebugService
             _navigation.GoToLine(document, Math.Clamp(location.Line, 1, document.Buffer.LineCount), Math.Max(1, location.Column));
     }
 
-    private async Task<bool> LaunchAsync(ProjectModel project, string exe, bool stopOnEntry, (string Path, int Line)? runTo)
+    private async Task<bool> LaunchAsync(ProjectModel project, string exe, bool stopOnEntry, (string Path, int Line)? runTo, bool stopAtMainBody)
     {
         if (await _run.ResolveWorkingDirAsync(project, exe) is not { } workingDir)
             return false;
@@ -552,7 +567,7 @@ public sealed partial class DebugService : IDebugService
             AdapterPath = Path.Combine(_toolchain.Resolve().LlvmBinDir ?? "", AdapterFileName),
             UserSourceRoots = [project.Directory, .. searchPaths],
         };
-        var active = new Active(_factory.Create(options), exe, _clock.Now, stopOnEntry);
+        var active = new Active(_factory.Create(options), exe, _clock.Now, stopOnEntry) { StopAtMainBody = stopAtMainBody };
         var session = active.Session;
         _active = active;
 
@@ -584,6 +599,7 @@ public sealed partial class DebugService : IDebugService
                 Arguments = SplitArguments(run.Arguments),
                 WorkingDirectory = workingDir,
                 StopOnEntry = stopOnEntry,
+                StopAtMainBody = stopAtMainBody,
                 Breakpoints = breakpoints,
                 Exceptions = ExceptionSettingsNow(),
             });
@@ -823,6 +839,9 @@ public sealed partial class DebugService : IDebugService
         public DateTimeOffset StartedAt { get; } = startedAt;
 
         public bool StopOnEntry { get; } = stopOnEntry;
+
+        /// <summary>The session was started by a step (DBG-225); a restart starts the same way.</summary>
+        public bool StopAtMainBody { get; init; }
 
         /// <summary><c>run.stop</c> asked for the end of the session.</summary>
         public bool StoppedByUser { get; set; }

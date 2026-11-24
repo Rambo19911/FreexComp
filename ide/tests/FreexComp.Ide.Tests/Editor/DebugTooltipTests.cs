@@ -27,6 +27,7 @@ public sealed class DebugTooltipTests
 {
     [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-ED-130")]
+    [Trait("Req", "DBG-258")]
     public async Task HoverEvaluatesIdentifier()
     {
         await using var h = await DebugScenario.StartDemoAsync();
@@ -34,7 +35,7 @@ public sealed class DebugTooltipTests
         var settings = h.Services.Settings;
         h.DebugSessions.UseScenario($$"""
             { {{DebugDemo.Data()}}, "steps": [
-              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent("entry")}} ] },
+              {{DebugDemo.FirstStep(demo)}},
               {{DebugDemo.AtStop(demo)}},
               {{DebugScenarios.Continue()}} ] }
             """);

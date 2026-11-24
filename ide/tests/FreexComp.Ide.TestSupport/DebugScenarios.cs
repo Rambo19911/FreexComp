@@ -72,9 +72,11 @@ public static class DebugScenarios
     /// <summary>
     /// A minimal type-information sidecar (the debug-info sidecar interface) for a program with one unit and one routine
     /// <c>Run</c> without variables: enough for the session to evaluate constant expressions while stopped in it. A test
-    /// writes it next to the program as <c>&lt;program&gt;.pdi</c>.
+    /// writes it next to the program as <c>&lt;program&gt;.pdi</c>. With <paramref name="mainBody"/> the program's main block
+    /// is listed too (a routine named as the program, its first statement on that line of that file): what a first Step
+    /// Over / Step Into runs to (the debugger's features DBG-225).
     /// </summary>
-    public static string TypeInfo(string program, string unitPath) => $$"""
+    public static string TypeInfo(string program, string unitPath, (string Path, int Line)? mainBody = null) => $$"""
         { "formatVersion": 1, "program": {{Json(program)}}, "container": "codeview",
           "abi": { "pointerSize": 8, "raiseHookSymbol": "System._Raise", "pascalExceptionCode": 3763355987, "exceptionMessageField": "FMessage",
                    "unicodeString": { "lengthOffset": -12, "lengthSize": 4, "lengthUnit": "chars", "charSize": 2 },
@@ -85,7 +87,28 @@ public static class DebugScenarios
           "types": [ { "id": 1, "name": "Integer", "kind": "integer", "size": 4, "signed": true }, { "id": 2, "name": "Boolean", "kind": "boolean", "size": 1 } ],
           "units": [ { "name": {{Json(Path.GetFileNameWithoutExtension(unitPath))}}, "file": {{Json(unitPath)}}, "globals": [],
                        "routines": [ { "displayName": "Run", "linkageName": "Run", "file": {{Json(unitPath)}}, "line": 1, "bodyLine": 1, "endLine": 999,
-                                       "self": null, "vars": [] } ] } ] }
+                                       "self": null, "vars": [] }{{MainRoutine(program, mainBody)}} ] } ] }
+        """;
+
+    private static string MainRoutine(string program, (string Path, int Line)? mainBody) => mainBody is not { } main ? "" : $$"""
+        , { "displayName": {{Json(program)}}, "linkageName": "$main", "file": {{Json(main.Path)}}, "line": 1, "bodyLine": {{main.Line}}, "endLine": 999,
+            "self": null, "vars": [] }
+        """;
+
+    /// <summary>
+    /// Steps: the start of a program by a first Step Over / Step Into when its type information lists the main block
+    /// (DBG-225) — the entry stop, which the session keeps to itself; its temporary breakpoint on the main block (bound
+    /// by the adapter to <paramref name="boundLine"/>); the run to it; the removal of the temporary breakpoint. The steps
+    /// of the stop it publishes (<see cref="AtStop"/>) follow. <paramref name="threads"/>: the step that answers the
+    /// thread list of the entry stop; default <see cref="Threads"/>.
+    /// </summary>
+    public static string FirstStep(string mainPath, int boundLine, string? threads = null, int threadId = 1) => $$"""
+        { "on": "configurationDone", "respond": {}, "thenEvents": [ {{StoppedEvent("entry", threadId: threadId)}} ] },
+        {{threads ?? Threads}},
+        {{Stack(("$entry", mainPath, 1))}},
+        { "on": "setBreakpoints", "respond": { "breakpoints": [ { "id": 900, "verified": true, "line": {{boundLine}} } ] } },
+        {{Continue(StoppedEvent("breakpoint", """, "hitBreakpointIds": [900]""", threadId))}},
+        { "on": "setBreakpoints", "respond": { "breakpoints": [] } }
         """;
 
     /// <summary>A JSON string literal.</summary>

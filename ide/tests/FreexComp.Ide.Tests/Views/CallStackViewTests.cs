@@ -46,6 +46,7 @@ public sealed class CallStackViewTests
     [Trait("Req", "UI-TW-902")]
     [Trait("Req", "UI-TW-903")]
     [Trait("Req", "UI-TW-904")]
+    [Trait("Req", "DBG-251")]
     public async Task FramesSelectionAndPaging()
     {
         await using var h = await DebugScenario.StartAsync();

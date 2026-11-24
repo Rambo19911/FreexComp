@@ -24,6 +24,8 @@ public sealed class DebugServiceTests
     [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-086")]
     [Trait("Req", "IDE-P3-010")]
+    [Trait("Req", "DBG-200")]
+    [Trait("Req", "DBG-201")]
     public Task StartStopWithFakeAdapter() => TestUiThread.RunAsync(StartStopWithFakeAdapterOnUiThread);
 
     private static async Task StartStopWithFakeAdapterOnUiThread()
@@ -159,6 +161,7 @@ public sealed class DebugServiceTests
     /// <summary>The debug-session interface §6.1: Stdout / Stderr → <c>program</c>, Debugger / LogPoint → <c>debugger</c>; chunks become lines.</summary>
     [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-070")]
+    [Trait("Req", "DBG-263")]
     public Task OutputCategoriesGoToChannels() => TestUiThread.RunAsync(OutputCategoriesGoToChannelsOnUiThread);
 
     private static async Task OutputCategoriesGoToChannelsOnUiThread()
@@ -275,5 +278,6 @@ public sealed class DebugServiceTests
     [InlineData("\"\" x", new[] { "", "x" })]
     [InlineData(@"C:\dir\ ""C:\my dir\\"" a\""b", new[] { @"C:\dir\", @"C:\my dir\", "a\"b" })]
     [InlineData(@"a\\b pre""mid dle""post", new[] { @"a\\b", "premid dlepost" })]
+    [Trait("Req", "DBG-200")]
     public void SplitsRunArguments(string commandLine, string[] expected) => Assert.Equal(expected, DebugService.SplitArguments(commandLine));
 }

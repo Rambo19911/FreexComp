@@ -204,6 +204,60 @@ public sealed class DebugCommandTests
     }
 
     /// <summary>
+    /// DBG-225 (I-222): Step Over as the first command starts the program with <c>StopAtMainBody</c> — the first stop is a
+    /// step stop on the first statement of the main block (from the program's type information), with the execution
+    /// line there; the entry stop and the run to the main block are the session's own. The next step is a plain step.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "DBG-225")]
+    public Task FirstStepStopsAtTheFirstStatementOfTheProgram() => TestUiThread.RunAsync(FirstStepStopsAtTheFirstStatementOfTheProgramOnUiThread);
+
+    private static async Task FirstStepStopsAtTheFirstStatementOfTheProgramOnUiThread()
+    {
+        using var bed = new DebugTestBed();
+        await bed.OpenHelloAsync();
+        var main = bed.MainPath; // "begin" on line 3, the first statement "Run;" on line 4
+        bed.File(Path.ChangeExtension(bed.Exe, ".pdi"), DebugScenarios.TypeInfo("Hello", bed.UnitPath, (main, 3)));
+        var document = await bed.OpenDocumentAsync(main);
+        await bed.OpenDocumentAsync(bed.UnitPath);
+        bed.Sessions.UseScenario($$"""
+            { "steps": [
+              {{DebugScenarios.FirstStep(main, 4, ThreadSeven, Thread)}},
+              {{DebugScenarios.AtStop([("Hello", main, 4)], threads: ThreadSeven)}},
+              { "on": "next", "expectArguments": { "threadId": {{Thread}} }, "respond": {}, "thenEvents": [ {{Stopped("step")}} ] },
+              {{DebugScenarios.AtStop([("Hello", main, 5)], threads: ThreadSeven)}} ] }
+            """);
+
+        var stop = await StopAfterAsync(bed, "run.stepOver");
+
+        Assert.Equal((StopReason.Step, Thread, new SourceLocation(main, 4, 1)), (stop.Reason, stop.ThreadId, stop.Location));
+        Assert.Equal(IdeState.Paused, bed.State);
+        Assert.Equal((main, 4), (bed.Services.State.Current.PausedFile, bed.Services.State.Current.PausedLine));
+        Assert.Same(document, bed.Services.Documents.ActiveDocument);
+        Assert.Equal(4, document.ViewState.Caret.Line);
+        Assert.Equal(FreexComp.Ide.Core.Editing.LineGlyphKind.Execution, document.Decorations.GlyphAt(4)?.Kind);
+        Assert.Null(document.Decorations.GlyphAt(3));
+
+        // One launch that stops by itself; the temporary breakpoint on the main block (line 3, bound to line 4) is the
+        // session's: sent, then removed, never listed.
+        Assert.Contains("\"stopOnEntry\":true", Assert.Single(bed.Sessions.SentArguments("launch")), StringComparison.Ordinal);
+        Assert.Equal(["3", ""], bed.Sessions.SentArguments("setBreakpoints").Select(Lines));
+        Assert.Empty(bed.Breakpoints.All);
+        Assert.Single(bed.Sessions.SentRequests("continue"));
+        Assert.Equal(1, bed.Debug.Log.Count(row => row.Kind == FreexComp.Ide.Core.Debugging.DebugLogKind.Breakpoint)); // the entry stop is not a row
+
+        // The step that follows steps in the main block.
+        stop = await StopAfterAsync(bed, "run.stepOver");
+        Assert.Equal((StopReason.Step, 5), (stop.Reason, stop.Location!.Line));
+        Assert.Single(bed.Sessions.SentRequests("next"));
+        Assert.Single(bed.Sessions.SentRequests("continue"));
+
+        await bed.Debug.StopAsync();
+        Assert.Equal(IdeState.Idle, bed.State);
+        Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
+    }
+
+    /// <summary>
     /// DBG-224 (I-222): a second execution-control request that arrives while the first is not yet acknowledged (F8 held
     /// down) is ignored — one <c>next</c> reaches the adapter and nothing is reported.
     /// </summary>

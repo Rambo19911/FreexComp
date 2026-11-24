@@ -31,6 +31,7 @@ public sealed partial class EventLogViewTests
     [Trait("Req", "UI-TW-1301")]
     [Trait("Req", "UI-TW-1302")]
     [Trait("Req", "UI-TW-1303")]
+    [Trait("Req", "DBG-263")]
     public async Task KindsFromSessionEvents()
     {
         await using var h = await DebugScenario.StartAsync();

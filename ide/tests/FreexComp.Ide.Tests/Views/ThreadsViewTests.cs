@@ -27,6 +27,7 @@ public sealed class ThreadsViewTests
     [Trait("Req", "UI-TW-1200")]
     [Trait("Req", "UI-TW-1201")]
     [Trait("Req", "UI-TW-1202")]
+    [Trait("Req", "DBG-255")]
     public async Task ListStateAndSwitch()
     {
         await using var h = await DebugScenario.StartAsync();

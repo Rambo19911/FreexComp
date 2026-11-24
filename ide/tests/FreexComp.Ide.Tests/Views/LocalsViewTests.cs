@@ -40,6 +40,8 @@ public sealed class LocalsViewTests
     [Trait("Req", "UI-TW-1003")]
     [Trait("Req", "UI-TW-1006")]
     [Trait("Req", "UI-TW-1007")]
+    [Trait("Req", "DBG-251")]
+    [Trait("Req", "DBG-259")]
     public async Task ScopesLazyChildrenAndChangedHighlight()
     {
         await using var h = await DebugScenario.StartDemoAsync();
@@ -50,7 +52,7 @@ public sealed class LocalsViewTests
         var numsLength = 0x1F3A2B40108ul;
         h.DebugSessions.UseScenario($$"""
             { {{DebugDemo.Data((numsLength, "FA00000000000000"))}}, "steps": [
-              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent("entry")}} ] },
+              {{DebugDemo.FirstStep(demo)}},
               {{DebugDemo.AtStop(demo)}},
               {{StepTo("next", DebugDemo.Frames(demo, 72), DebugDemo.Scopes)}},
               {{StepTo("next", DebugDemo.Frames(demo, 73), DebugDemo.Scopes)}},
@@ -204,7 +206,7 @@ public sealed class LocalsViewTests
         var locals = h.Services.DebugShell!.Locals;
         h.DebugSessions.UseScenario($$"""
             { {{DebugDemo.Data()}}, "steps": [
-              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent("entry")}} ] },
+              {{DebugDemo.FirstStep(demo)}},
               {{DebugDemo.AtStop(demo)}} ] }
             """);
         h.Press("F11");
@@ -245,7 +247,7 @@ public sealed class LocalsViewTests
         var clipboard = (FakeClipboard)h.Services.Clipboard;
         h.DebugSessions.UseScenario($$"""
             { {{DebugDemo.Data()}}, "steps": [
-              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent("entry")}} ] },
+              {{DebugDemo.FirstStep(demo)}},
               {{DebugDemo.AtStop(demo)}},
               {{DebugDemo.Scopes}}, {{DebugDemo.Scopes}} ] }
             """); // after each assignment the session lists the frame's variables again

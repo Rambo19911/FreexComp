@@ -34,7 +34,7 @@ public sealed class EvaluateDialogTests
         var locals = h.Services.DebugShell!.Locals;
         h.DebugSessions.UseScenario($$"""
             { {{DebugDemo.Data()}}, "steps": [
-              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent("entry")}} ] },
+              {{DebugDemo.FirstStep(demo)}},
               {{DebugDemo.AtStop(demo)}},
               {{DebugDemo.Scopes}} ] }
             """);

@@ -33,6 +33,7 @@ public sealed class BreakpointSyncTests
     /// </summary>
     [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-ARCH-077")]
+    [Trait("Req", "DBG-200")]
     public Task SyncedToSession() => TestUiThread.RunAsync(SyncedToSessionOnUiThread);
 
     private static async Task SyncedToSessionOnUiThread()

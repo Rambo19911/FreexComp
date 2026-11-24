@@ -33,6 +33,7 @@ public sealed class WatchesViewTests
     [Trait("Req", "UI-TW-1105")]
     [Trait("Req", "UI-TW-1106")]
     [Trait("Req", "IDE-ARCH-076")]
+    [Trait("Req", "DBG-257")]
     public async Task AddEditDeleteAndEvaluate()
     {
         await using var h = await DebugScenario.StartDemoAsync();
@@ -44,7 +45,7 @@ public sealed class WatchesViewTests
         var list = debug.Watches;
         h.DebugSessions.UseScenario($$"""
             { {{DebugDemo.Data()}}, "steps": [
-              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent("entry")}} ] },
+              {{DebugDemo.FirstStep(demo)}},
               {{DebugDemo.AtStop(demo)}},
               {{DebugDemo.Scopes}},
               { "on": "next", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent("step")}} ] },

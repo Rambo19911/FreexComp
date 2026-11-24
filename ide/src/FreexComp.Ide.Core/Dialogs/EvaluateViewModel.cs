@@ -148,6 +148,11 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
             // Msg.Debug.EvalFailed: the evaluator's message as it is.
             SetValue(null, string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_EvalFailed, e.Message), isError: true);
         }
+        catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+        {
+            // The session is gone (disposed under the open dialog): as without a paused program.
+            SetValue(null, string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_EvalFailed, Strings.Msg_Debug_NotPaused), isError: true);
+        }
     }
 
     private async Task RunModifyAsync()
@@ -162,6 +167,12 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
         catch (DebuggerException e)
         {
             ModifyError = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_ModifyFailed, e.Message);
+            return;
+        }
+        catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+        {
+            // The session is gone (disposed under the open dialog): as without a paused program; the result stays.
+            ModifyError = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_ModifyFailed, Strings.Msg_Debug_NotPaused);
             return;
         }
 

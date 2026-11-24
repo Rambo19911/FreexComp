@@ -93,6 +93,16 @@ public static class DebugDemo
                 $$"""{ "name": {{l.GetProperty("name").GetRawText()}}, "value": {{l.GetProperty("value").GetRawText()}}, "type": "?", "variablesReference": 0 }"""))}} ] } }
         """;
 
+    /// <summary>The first statement of the demo's main block, as its type information has it.</summary>
+    public const int MainBodyLine = 76;
+
+    /// <summary>
+    /// Steps: the demo started by a first Step Over / Step Into (<see cref="DebugScenarios.FirstStep"/>; its type
+    /// information lists the main block). The scripted adapter then reports the stop wherever the test's next steps say —
+    /// in <c>Run</c> with <see cref="AtStop"/>, where the recorded memory was taken.
+    /// </summary>
+    public static string FirstStep(string sourcePath) => DebugScenarios.FirstStep(sourcePath, MainBodyLine);
+
     /// <summary>Steps: what a stop in <c>Run</c> on <paramref name="line"/> asks for (<see cref="DebugScenarios.AtStop"/> with the demo's scopes).</summary>
     public static string AtStop(string sourcePath, int line = StopLine) => DebugScenarios.AtStop(Frames(sourcePath, line), Scopes);
 }
