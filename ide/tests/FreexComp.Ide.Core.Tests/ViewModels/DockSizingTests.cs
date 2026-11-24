@@ -21,10 +21,15 @@ public sealed class DockSizingTests
         Assert.Equal((0, 0), DockSizing.Widths(800, 260, 300, false, false, 5));
         Assert.Equal((260, 0), DockSizing.Widths(800, 260, 300, true, false, 5));
 
-        // Bottom: the document area keeps 160 while the bottom dock can shrink to 80.
+        // Bottom: the document area keeps 160 while the bottom dock can shrink to its minimum 128 (I-250); a stored size
+        // below the minimum is laid out at it; too low for both minimums, the document area wins and the dock keeps its header.
         Assert.Equal(200, DockSizing.BottomHeight(500, 200, true, 5));
         Assert.Equal(135, DockSizing.BottomHeight(300, 200, true, 5));
-        Assert.Equal(80, DockSizing.BottomHeight(150, 200, true, 5));
+        Assert.Equal(128, DockSizing.BottomHeight(293, 200, true, 5));
+        Assert.Equal(128, DockSizing.BottomHeight(500, 80, true, 5));
+        Assert.Equal(26, DockSizing.BottomHeight(292, 200, true, 5));
+        Assert.Equal(26, DockSizing.BottomHeight(150, 200, true, 5));
+        Assert.Equal((128, 26), (DockSizing.BottomLaidOutMin(293, 5), DockSizing.BottomLaidOutMin(292, 5)));
         Assert.Equal(0, DockSizing.BottomHeight(500, 200, false, 5));
     }
 
@@ -38,9 +43,10 @@ public sealed class DockSizingTests
         Assert.Equal(400, DockSizing.ClampSide(400, 1440, 300, 10));
         Assert.Equal(160, DockSizing.ClampSide(400, 600, 300, 10)); // no room at all: the minimum wins
 
-        // Bottom dock: 80 … available − 160 − the splitter.
+        // Bottom dock: 128 … available − 160 − the splitter; the stored size never goes below the minimum.
         Assert.Equal(635, DockSizing.ClampBottom(2000, 800, 5));
-        Assert.Equal(80, DockSizing.ClampBottom(10, 800, 5));
+        Assert.Equal(128, DockSizing.ClampBottom(10, 800, 5));
+        Assert.Equal(128, DockSizing.ClampBottom(10, 200, 5));
 
         // Right-dock split: each group at least 80 high.
         Assert.Equal(80 / 495.0, DockSizing.ClampSplit(0, 500, 5), 9);

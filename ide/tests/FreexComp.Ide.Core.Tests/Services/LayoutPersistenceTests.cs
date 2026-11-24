@@ -99,7 +99,7 @@ public sealed class LayoutPersistenceTests
         Assert.Equal("Structure", edit.Left.Active);
 
         // Sizes below the dock minimums are clamped (UI-WIN-005); the split is kept.
-        Assert.Equal((160, 5000, 80, 0.25), (edit.LeftSize, edit.RightSize, edit.BottomSize, edit.RightSplit));
+        Assert.Equal((160, 5000, 128, 0.25), (edit.LeftSize, edit.RightSize, edit.BottomSize, edit.RightSplit));
 
         Assert.Equal(90, layout.GetColumnWidth("Messages", "Code"));
         Assert.Null(layout.GetColumnWidth("Messages", "File"));

@@ -561,7 +561,8 @@ public sealed partial class DebugService : IDebugService
         if (await _run.ResolveWorkingDirAsync(project, exe) is not { } workingDir)
             return false;
         var run = _projects.Definition?.Run ?? new FreexComp.Build.RunSettings("", "");
-        var searchPaths = _projects.Definition?.SearchPaths.Select(p => Path.GetFullPath(Path.Combine(project.Directory, p.Replace('/', '\\')))) ?? [];
+        // The effective search paths of the active configuration (CMP-1160), as the build uses them.
+        var searchPaths = (_projects.Definition is { } definition ? ConfigurationEdits.Effective(definition, project.ActiveConfiguration)?.SearchPaths : null)?.Select(p => Path.GetFullPath(Path.Combine(project.Directory, p.Replace('/', '\\')))) ?? [];
         var options = new DebugSessionOptions
         {
             AdapterPath = Path.Combine(_toolchain.Resolve().LlvmBinDir ?? "", AdapterFileName),

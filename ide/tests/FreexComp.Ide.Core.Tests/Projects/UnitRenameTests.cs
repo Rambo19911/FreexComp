@@ -366,6 +366,34 @@ public sealed class UnitRenameTests
         Assert.Equal(RenameFixture.Renamed(withLibrary), Text(Dir + @"\App.pas"));
     }
 
+    /// <summary>I-252: the search paths of IDE-PM-133 are the effective ones of the active configuration (CMP-1160).</summary>
+    [Fact(Timeout = 60000)]
+    [Trait("Req", "IDE-PM-133")]
+    [Trait("Req", "IDE-CFG-001")]
+    public Task EditInSearchPathOfActiveConfiguration() => TestUiThread.RunAsync(() => EditInSearchPathOfActiveConfigurationOnUiThread());
+
+    private async Task EditInSearchPathOfActiveConfigurationOnUiThread()
+    {
+        // Shared lies outside the project directory, on a search path that only configuration Wide (and Wider) has.
+        const string Shared = "unit Shared;\ninterface\nuses Unit1;\nimplementation\nend.\n";
+        var withShared = RenameFixture.App.Replace("uses Unit1,", "uses Shared, Unit1,", StringComparison.Ordinal);
+        File(@"C:\p\Shared\Shared.pas", Shared);
+        await OpenFixtureAsync("""
+            { "formatVersion": 1, "name": "App", "appType": "console", "mainSource": "App.pas",
+              "configurations": { "Debug": { "optimization": 0, "debugInfo": true, "defines": [], "outputDir": "bin/Debug" },
+                                  "Wide": { "optimization": 0, "debugInfo": true, "defines": [], "searchPaths": ["../Shared"], "outputDir": "bin/Wide" },
+                                  "Wider": { "inherits": "Wide" } },
+              "activeConfiguration": "Wider",
+              "files": [ { "path": "App.pas" }, { "path": "Unit1.pas" }, { "path": "Unit2.pas" }, { "path": "Unit3.pas" } ] }
+            """);
+        File(Dir + @"\App.pas", withShared);
+
+        Assert.True(await _services.Projects.RenameFileAsync("Unit1.pas", "Customers.pas"));
+        Assert.Empty(Dialogs.Requests);
+        Assert.Equal(RenameFixture.Renamed(Shared), Text(@"C:\p\Shared\Shared.pas"));
+        Assert.Equal(RenameFixture.Renamed(withShared), Text(Dir + @"\App.pas"));
+    }
+
     [Fact(Timeout = 60000)]
     [Trait("Req", "IDE-PM-135")]
     public Task UnparsableUnitFallsBackToHeadingOnly() => TestUiThread.RunAsync(() => UnparsableUnitFallsBackToHeadingOnlyOnUiThread());

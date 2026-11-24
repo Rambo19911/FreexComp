@@ -1154,7 +1154,17 @@ public sealed class DocumentService : IDocumentService
             document.Designer.Host.Clipboard = new SystemDesignerClipboard(clipboard);
     }
 
-    private void RevealInExplorer(string path) => Shell?.RevealFile(path); // a refusal of the shell has no message (P1)
+    /// <summary>
+    /// <c>file.showInExplorer</c>. When the path no longer exists (it did when the command was enabled) or the shell
+    /// cannot be started, the status bar says so for the usual message time; no dialog, no retry (I-251).
+    /// </summary>
+    private void RevealInExplorer(string path)
+    {
+        if ((_fileSystem.FileExists(path) || _fileSystem.DirectoryExists(path)) && Shell?.RevealFile(path) == true)
+            return;
+        _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Status_ShowInExplorerFailed,
+            Path.GetFileName(Path.TrimEndingDirectorySeparator(path))), StatusMessageDuration);
+    }
 
     private static bool IsOrderArgument(string? argument) => argument is null or MruArgument or VisualArgument;
 

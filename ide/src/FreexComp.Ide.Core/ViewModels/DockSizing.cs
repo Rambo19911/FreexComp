@@ -10,7 +10,16 @@ public static class DockSizing
     public const double DocumentMinWidth = 320;
     public const double DocumentMinHeight = 160;
     public const double SideDockMinWidth = 160;
-    public const double BottomDockMinHeight = 80;
+
+    /// <summary>
+    /// UI-WIN-005 (I-250): the height at which the Messages frame shows its tool bar, its column header and one full
+    /// row — tool-window caption 26 + tool bar + column header 24 + row 22 + tab strip 26, rounded up to a multiple of 8
+    /// (<c>MainWindowLayoutTests.BottomDockMinimum_ShowsHeaderAndOneRow</c> measures it).
+    /// </summary>
+    public const double BottomDockMinHeight = 128;
+
+    /// <summary>What is left of the bottom dock when the layout is too low for its minimum and the document area: its header (26).</summary>
+    public const double BottomDockHeaderHeight = 26;
     public const double RightGroupMinHeight = 80;
 
     /// <summary>
@@ -29,9 +38,19 @@ public static class DockSizing
     public static double SideMinWidth(IEnumerable<ToolWindowViewModel> windows) =>
         windows.Select(w => Math.Max(w.ToolBarMinWidth, w.ContentMinWidth)).Append(SideDockMinWidth).Max();
 
-    /// <summary>UI-WIN-005: a dragged bottom-dock height, 80 … <paramref name="available"/> − 160 − <paramref name="splitter"/>.</summary>
+    /// <summary>
+    /// UI-WIN-005: a dragged bottom-dock height, <see cref="BottomDockMinHeight"/> … <paramref name="available"/> − 160 −
+    /// <paramref name="splitter"/>. This is the stored size, so the minimum wins when there is no room.
+    /// </summary>
     public static double ClampBottom(double value, double available, double splitter) =>
         Math.Clamp(value, BottomDockMinHeight, Math.Max(BottomDockMinHeight, available - DocumentMinHeight - splitter));
+
+    /// <summary>
+    /// The lowest height the bottom dock is laid out with: its minimum, or — when <paramref name="available"/> cannot hold
+    /// that and the document area's 160 — its header only (the document area wins).
+    /// </summary>
+    public static double BottomLaidOutMin(double available, double splitter) =>
+        available - DocumentMinHeight - splitter >= BottomDockMinHeight ? BottomDockMinHeight : BottomDockHeaderHeight;
 
     /// <summary>§7: the upper group's share of the right dock, so that both groups keep 80 DIP; 0.5 when that cannot be.</summary>
     public static double ClampSplit(double split, double height, double splitter)
@@ -76,7 +95,13 @@ public static class DockSizing
             return 0;
         }
 
+        if (BottomLaidOutMin(available, splitter) < BottomDockMinHeight)
+        {
+            return BottomDockHeaderHeight; // too low for both minimums: the document area wins
+        }
+
+        bottom = Math.Max(bottom, BottomDockMinHeight);
         var deficit = bottom + splitter + DocumentMinHeight - available;
-        return deficit > 0 ? bottom - Math.Min(deficit, Math.Max(0, bottom - BottomDockMinHeight)) : bottom;
+        return deficit > 0 ? bottom - Math.Min(deficit, bottom - BottomDockMinHeight) : bottom;
     }
 }

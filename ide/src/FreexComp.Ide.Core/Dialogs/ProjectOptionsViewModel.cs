@@ -34,10 +34,16 @@ public sealed class ProjectOptionsPage(string id, string title, bool perConfigur
 /// <summary>An entry of the <c>AppType</c> combo (dialogs.md §8.1): disabled items stay visible.</summary>
 public sealed record AppTypeItem(string Value, string Title, bool IsEnabled);
 
-/// <summary>A row of the <c>SearchPaths</c> list; <see cref="IsMissing"/> shows the warning glyph (§8.3).</summary>
-public sealed record SearchPathRow(string Path, bool IsMissing)
+/// <summary>
+/// A row of the <c>SearchPaths</c> list; <see cref="IsMissing"/> shows the warning glyph (§8.3). <see cref="Origin"/> is
+/// set for a read-only row a configuration inherits: <c>Project</c> or the name of the configuration that holds the entry.
+/// </summary>
+public sealed record SearchPathRow(string Path, bool IsMissing, string? Origin = null)
 {
     public string? ToolTip => IsMissing ? Strings.Msg_ProjectOptions_SearchPathMissing : null;
+
+    /// <summary>Read-only: the entry belongs to the project level or to an ancestor.</summary>
+    public bool IsInherited => Origin is not null;
 }
 
 /// <summary>
@@ -53,7 +59,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     private static readonly Regex ConfigNamePattern = new("^[A-Za-z0-9_-]{1,32}$", RegexOptions.CultureInvariant);
     private static readonly Regex SymbolPattern = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
 
-    /// <summary>CMP-1153: as the first entry of a configuration's defines it discards the inherited ones.</summary>
+    /// <summary>CMP-1153: as the first entry of a configuration's defines or search paths it discards the inherited ones.</summary>
     private const string ResetMarker = "!";
 
     private readonly IProjectService _projects;
@@ -62,6 +68,8 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     private readonly IdeFileSystem _fileSystem;
     private readonly ILayoutService _layout;
     private readonly List<ConfigState> _configs = [];
+    private ImmutableArray<string> _projectSearchPaths;
+    private bool _searchPathsAllConfigurations = true;
     private Project _baseline;
     private ProjectOptionsPage _selectedPage;
     private string _selectedConfiguration;
@@ -89,7 +97,8 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         foreach (var name in _baseline.ConfigurationNames)
             _configs.Add(ConfigState.From(name, _baseline.Configurations[name]));
         _selectedConfiguration = _configs.Any(c => c.Name == _baseline.ActiveConfiguration) ? _baseline.ActiveConfiguration : _configs[0].Name;
-        SearchPaths = new ObservableCollection<SearchPathRow>(_baseline.SearchPaths.Select(Row));
+        _projectSearchPaths = _baseline.SearchPaths;
+        SearchPaths = new ObservableCollection<SearchPathRow>(_projectSearchPaths.Select(p => Row(p)));
         Run = new RunFields(_baseline.Directory, () => RunParametersViewModel.ExecutablePath(Build(), ActiveName), fileSystem, _baseline.Run,
             () => AppType == "library");
         Run.PropertyChanged += (_, e) =>
@@ -102,7 +111,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         [
             new("Application", Strings.ProjectOptions_Page_Application, false),
             new("Compiler", Strings.ProjectOptions_Page_Compiler, true),
-            new("SearchPaths", Strings.ProjectOptions_Page_SearchPaths, false),
+            new("SearchPaths", Strings.ProjectOptions_Page_SearchPaths, true),
             new("ConditionalDefines", Strings.ProjectOptions_Page_ConditionalDefines, true),
             new("Output", Strings.ProjectOptions_Page_Output, true),
             new("Run", Strings.ProjectOptions_Page_Run, false),
@@ -145,6 +154,9 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
                 return;
             _layout.SetDialogValue(DialogName, "page", value.Id);
             OnPropertyChanged(nameof(ConfigurationBarEnabled));
+            OnPropertyChanged(nameof(HasAllConfigurationsChoice));
+            OnPropertyChanged(nameof(ConfigurationSelected));
+            OnPropertyChanged(nameof(CanDeleteConfiguration));
         }
     }
 
@@ -158,6 +170,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         {
             if (value is null || !_configs.Any(c => c.Name == value) || !SetProperty(ref _selectedConfiguration, value))
                 return;
+            LoadSearchPaths();
             OnConfigurationFieldsChanged();
         }
     }
@@ -173,8 +186,14 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
 
     public bool ConfigurationBarEnabled => SelectedPage.PerConfiguration;
 
+    /// <summary>The Search Paths page: the selector starts with <c>All configurations</c>, the project-level list.</summary>
+    public bool HasAllConfigurationsChoice => SelectedPage.Id == "SearchPaths";
+
+    /// <summary>The page shows the values of <see cref="SelectedConfiguration"/>: <c>New…</c> and <c>Delete</c> apply.</summary>
+    public bool ConfigurationSelected => ConfigurationBarEnabled && !(HasAllConfigurationsChoice && SearchPathsAllConfigurations);
+
     /// <summary>UI-DLG-084, IDE-CFG-014: not the last configuration and not one another configuration inherits from.</summary>
-    public bool CanDeleteConfiguration => ConfigurationBarEnabled && DeleteConfigurationToolTip is null;
+    public bool CanDeleteConfiguration => ConfigurationSelected && DeleteConfigurationToolTip is null;
 
     /// <summary>Why <c>DeleteConfiguration</c> is disabled (its tooltip); null when the selected configuration can be deleted.</summary>
     public string? DeleteConfigurationToolTip =>
@@ -242,6 +261,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         OnPropertyChanged(nameof(ConfigurationNames));
         OnPropertyChanged(nameof(SelectedConfiguration));
         OnPropertyChanged(nameof(CanDeleteConfiguration));
+        LoadSearchPaths();
         OnConfigurationFieldsChanged();
         MarkChanged();
     }
@@ -342,9 +362,78 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             Replace(Selected with { DebugInfo = false, OwnDebugInfo = false });
     }
 
-    // ---- Search Paths (§8.3) ----
+    // ---- Search Paths (§8.3; per configuration: phase8-configurations.md § "Decision 2026-11-24") ----
 
+    /// <summary>
+    /// The editable rows: the project-level list under <c>All configurations</c>, else the own entries of the selected
+    /// configuration (without the reset marker).
+    /// </summary>
     public ObservableCollection<SearchPathRow> SearchPaths { get; }
+
+    /// <summary>
+    /// <c>All configurations</c> is chosen on the Search Paths page (the state when the dialog opens): the project-level
+    /// list is edited. False: the list of <see cref="SelectedConfiguration"/>.
+    /// </summary>
+    public bool SearchPathsAllConfigurations
+    {
+        get => _searchPathsAllConfigurations;
+        set
+        {
+            if (!SetProperty(ref _searchPathsAllConfigurations, value))
+                return;
+            LoadSearchPaths();
+            foreach (var name in (string[])[nameof(InheritedSearchPaths), nameof(SearchPathsDoNotInherit), nameof(CanSearchPathsDoNotInherit),
+                         nameof(ConfigurationSelected), nameof(CanDeleteConfiguration)])
+                OnPropertyChanged(name);
+            Validate();
+        }
+    }
+
+    /// <summary>
+    /// The read-only rows shown above the own ones, in resolution order (CMP-1160): the project-level entries, then the
+    /// entries of each ancestor from the root on. An ancestor that does not inherit discards the rows before it. Empty
+    /// under <c>All configurations</c> and while <see cref="SearchPathsDoNotInherit"/> is checked.
+    /// </summary>
+    public IReadOnlyList<SearchPathRow> InheritedSearchPaths
+    {
+        get
+        {
+            if (SearchPathsAllConfigurations || Selected.ResetSearchPaths)
+                return [];
+            var chain = new List<ConfigState>();
+            var seen = new HashSet<string>(StringComparer.Ordinal) { SelectedConfiguration };
+            for (var ancestor = _configs.FirstOrDefault(c => c.Name == Selected.Inherits);
+                 ancestor is not null && seen.Add(ancestor.Name);
+                 ancestor = _configs.FirstOrDefault(c => c.Name == ancestor.Inherits))
+                chain.Insert(0, ancestor);
+            var rows = _projectSearchPaths.Select(p => Row(p, Strings.ProjectOptions_SearchPathOriginProject)).ToList();
+            foreach (var ancestor in chain)
+            {
+                if (ancestor.ResetSearchPaths)
+                    rows.Clear();
+                rows.AddRange(ancestor.SearchPaths.Select(p => Row(p, ancestor.Name)));
+            }
+
+            return rows;
+        }
+    }
+
+    /// <summary>The check box <c>Do not inherit</c> applies: a configuration is chosen.</summary>
+    public bool CanSearchPathsDoNotInherit => !SearchPathsAllConfigurations;
+
+    /// <summary>
+    /// <c>SearchPaths.DoNotInherit</c>: the configuration's list starts with the reset marker <c>"!"</c> (CMP-1153), which
+    /// discards the project-level and ancestor entries; the inherited rows are hidden.
+    /// </summary>
+    public bool SearchPathsDoNotInherit
+    {
+        get => CanSearchPathsDoNotInherit && Selected.ResetSearchPaths;
+        set
+        {
+            if (CanSearchPathsDoNotInherit && value != Selected.ResetSearchPaths)
+                Replace(Selected with { ResetSearchPaths = value });
+        }
+    }
 
     /// <summary>An entry that is empty or has invalid syntax (<c>Msg.Project.LocationInvalid</c>); null when all are valid.</summary>
     public string? SearchPathsError { get; private set; }
@@ -540,17 +629,17 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
                 Optimization = c.OwnOptimization ? c.Optimization : 0,
                 DebugInfo = c.OwnDebugInfo && c.DebugInfo,
                 Defines = SameOr(template.Defines, defines),
+                SearchPaths = SameOr(template.SearchPaths, c.ResetSearchPaths ? c.SearchPaths.Insert(0, ResetMarker) : c.SearchPaths),
                 OutputDir = outputDir,
             };
         }
 
-        var searchPaths = ImmutableArray.CreateRange(SearchPaths.Select(r => r.Path));
         return _baseline with
         {
             Name = ProjectName.Trim(),
             AppType = AppType,
             MainSource = MainSource,
-            SearchPaths = SameOr(_baseline.SearchPaths, searchPaths),
+            SearchPaths = SameOr(_baseline.SearchPaths, _projectSearchPaths),
             Defines = SameOr(_baseline.Defines, ImmutableArray.CreateRange(ParseDefines(ProjectDefines))),
             Configurations = configurations.Count == _baseline.Configurations.Count
                 && configurations.All(kv => _baseline.Configurations.TryGetValue(kv.Key, out var b) && b == kv.Value)
@@ -598,7 +687,8 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         foreach (var name in (string[])[nameof(Optimization), nameof(DebugInfo), nameof(ConfigDefines), nameof(EffectiveDefines), nameof(OutputDir),
                      nameof(OutputFile), nameof(ObjDir), nameof(ConfigurationNote), nameof(IsDerived), nameof(OptimizationIsOwn), nameof(DebugInfoIsOwn),
                      nameof(ConfigDefinesIsOwn), nameof(OptimizationHelpText), nameof(DebugInfoHelpText), nameof(ConfigDefinesHelpText), nameof(DefinesHint),
-                     nameof(InheritedDefines), nameof(OutputDirWarning), nameof(CanDeleteConfiguration), nameof(DeleteConfigurationToolTip)])
+                     nameof(InheritedDefines), nameof(OutputDirWarning), nameof(CanDeleteConfiguration), nameof(DeleteConfigurationToolTip),
+                     nameof(InheritedSearchPaths), nameof(SearchPathsDoNotInherit)])
             OnPropertyChanged(name);
         Validate();
         Run.Refresh();
@@ -615,10 +705,31 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         MarkChanged();
     }
 
+    /// <summary>Stores the edited rows in the list they belong to: the project level or the selected configuration.</summary>
     private void SearchPathsEdited()
     {
-        Validate();
-        MarkChanged();
+        var paths = ImmutableArray.CreateRange(SearchPaths.Select(r => r.Path));
+        if (SearchPathsAllConfigurations)
+        {
+            _projectSearchPaths = paths;
+            OnPropertyChanged(nameof(InheritedSearchPaths));
+            MarkChanged();
+        }
+        else
+        {
+            Replace(Selected with { SearchPaths = paths });
+        }
+    }
+
+    /// <summary>Shows the rows of the list now edited (the project level or the selected configuration).</summary>
+    private void LoadSearchPaths()
+    {
+        var paths = SearchPathsAllConfigurations ? _projectSearchPaths : Selected.SearchPaths;
+        if (SearchPaths.Select(r => r.Path).SequenceEqual(paths, StringComparer.Ordinal))
+            return;
+        SearchPaths.Clear();
+        foreach (var path in paths)
+            SearchPaths.Add(Row(path));
     }
 
     private void MarkChanged()
@@ -633,15 +744,13 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     {
         var name = NewProjectValidation.ValidateName(ProjectName.Trim());
         ProjectNameError = name.Success ? null : NewProjectValidation.MessageText(name);
-        SearchPathsError = SearchPaths.Any(r => RunFields.Resolve(_baseline.Directory, r.Path) is null || r.Path.Trim().Length == 0)
-            ? Strings.Msg_Project_LocationInvalid
-            : null;
+        SearchPathsError = SearchPaths.Any(r => !ValidSearchPath(r.Path)) ? Strings.Msg_Project_LocationInvalid : null;
         ProjectDefinesError = DefineError(ProjectDefines);
         ConfigDefinesError = DefineError(ConfigDefines, allowReset: true);
         OutputDirError = OutputDirMessage(OutputDir);
         Pages[0].HasError = ProjectNameError is not null;
         Pages[1].HasError = false;
-        Pages[2].HasError = SearchPathsError is not null;
+        Pages[2].HasError = !_projectSearchPaths.All(ValidSearchPath) || _configs.Any(c => !c.SearchPaths.All(ValidSearchPath));
         Pages[3].HasError = ProjectDefinesError is not null || _configs.Any(c => DefineError(c.DefinesText, allowReset: true) is not null);
         Pages[4].HasError = _configs.Any(c => OutputDirMessage(c.OutputDir) is not null);
         Pages[5].HasError = !Run.IsValid;
@@ -651,6 +760,10 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         Ok.IsEnabled = IsValid;
         Apply.IsEnabled = _changed && IsValid;
     }
+
+    /// <summary>Non-empty with valid path syntax; the reset marker is written by <c>Do not inherit</c> only, never typed.</summary>
+    private bool ValidSearchPath(string path) =>
+        path.Trim().Length > 0 && path.Trim() != ResetMarker && RunFields.Resolve(_baseline.Directory, path) is not null;
 
     private string? OutputDirMessage(string text) =>
         text.Trim().Length == 0 || RunFields.Resolve(_baseline.Directory, text) is null ? Strings.Msg_ProjectOptions_OutputDirInvalid : null;
@@ -694,8 +807,8 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     private static ImmutableArray<string> SameOr(ImmutableArray<string> original, ImmutableArray<string> value) =>
         original.SequenceEqual(value, StringComparer.Ordinal) ? original : value;
 
-    private SearchPathRow Row(string path) =>
-        new(path, RunFields.Resolve(_baseline.Directory, path) is { } full && !_fileSystem.DirectoryExists(full));
+    private SearchPathRow Row(string path, string? origin = null) =>
+        new(path, RunFields.Resolve(_baseline.Directory, path) is { } full && !_fileSystem.DirectoryExists(full), origin);
 
     private bool SamePath(string a, string b) =>
         string.Equals(RunFields.Resolve(_baseline.Directory, a) ?? a, RunFields.Resolve(_baseline.Directory, b) ?? b, StringComparison.OrdinalIgnoreCase);
@@ -719,9 +832,22 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     private sealed record ConfigState(string Name, string? Original, int Optimization, bool DebugInfo, string DefinesText, string OutputDir,
         string? Inherits, bool OwnOptimization, bool OwnDebugInfo)
     {
-        public static ConfigState From(string name, ProjectConfiguration c) =>
-            new(name, name, c.Optimization, c.DebugInfo, string.Join(";", c.Defines), c.OutputDir, c.Inherits,
-                c.Inherits is null || !c.InheritsOptimization, c.Inherits is null || !c.InheritsDebugInfo);
+        /// <summary>The own search paths without the reset marker (CMP-1152).</summary>
+        public ImmutableArray<string> SearchPaths { get; init; } = [];
+
+        /// <summary>The own list starts with the reset marker: nothing is inherited (CMP-1153).</summary>
+        public bool ResetSearchPaths { get; init; }
+
+        public static ConfigState From(string name, ProjectConfiguration c)
+        {
+            var reset = c.SearchPaths is [ResetMarker, ..];
+            return new(name, name, c.Optimization, c.DebugInfo, string.Join(";", c.Defines), c.OutputDir, c.Inherits,
+                c.Inherits is null || !c.InheritsOptimization, c.Inherits is null || !c.InheritsDebugInfo)
+            {
+                SearchPaths = reset ? c.SearchPaths.RemoveAt(0) : c.SearchPaths,
+                ResetSearchPaths = reset,
+            };
+        }
     }
 }
 

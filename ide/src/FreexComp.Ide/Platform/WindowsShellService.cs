@@ -21,7 +21,8 @@ public sealed class WindowsShellService : IShellService
     public bool RevealFile(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-        return File.Exists(filePath) && StartExplorer($"/select,\"{Path.GetFullPath(filePath)}\"");
+        // A folder node is shown the same way: its parent folder opens with the folder selected.
+        return (File.Exists(filePath) || Directory.Exists(filePath)) && StartExplorer($"/select,\"{Path.GetFullPath(filePath)}\"");
     }
 
     public bool MoveToRecycleBin(string path) => MoveToRecycleBin(path, out _);

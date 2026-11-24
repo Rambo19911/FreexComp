@@ -51,19 +51,28 @@ public sealed class ProjectOptionsWindow : DialogWindow
         var syncing = false;
         configuration.SelectionChanged += (_, _) =>
         {
-            if (!syncing && model.ConfigurationBarEnabled && configuration.SelectedIndex >= 0 && configuration.SelectedIndex < model.ConfigurationNames.Count)
-                model.SelectedConfiguration = model.ConfigurationNames[configuration.SelectedIndex];
+            // The Search Paths page lists "All configurations" (the project-level list) before the configurations.
+            var index = configuration.SelectedIndex - (model.HasAllConfigurationsChoice ? 1 : 0);
+            if (syncing || !model.ConfigurationBarEnabled || configuration.SelectedIndex < 0 || index >= model.ConfigurationNames.Count)
+                return;
+            if (index >= 0)
+                model.SelectedConfiguration = model.ConfigurationNames[index];
+            if (model.HasAllConfigurationsChoice)
+                model.SearchPathsAllConfigurations = index < 0;
         };
         void SyncBar()
         {
             syncing = true;
-            configuration.ItemsSource = model.ConfigurationBarEnabled
-                ? model.ConfigurationNames.Select(model.ConfigurationTitle).ToList()
-                : [Strings.ProjectOptions_AllConfigurations];
-            configuration.SelectedIndex = model.ConfigurationBarEnabled ? model.ConfigurationNames.ToList().IndexOf(model.SelectedConfiguration) : 0;
+            var titles = model.ConfigurationBarEnabled ? model.ConfigurationNames.Select(model.ConfigurationTitle).ToList() : [];
+            if (!model.ConfigurationBarEnabled || model.HasAllConfigurationsChoice)
+                titles.Insert(0, Strings.ProjectOptions_AllConfigurations);
+            configuration.ItemsSource = titles;
+            configuration.SelectedIndex = model.ConfigurationSelected
+                ? model.ConfigurationNames.ToList().IndexOf(model.SelectedConfiguration) + (model.HasAllConfigurationsChoice ? 1 : 0)
+                : 0;
             syncing = false;
             configuration.IsEnabled = model.ConfigurationBarEnabled;
-            newButton.IsEnabled = model.ConfigurationBarEnabled;
+            newButton.IsEnabled = model.ConfigurationSelected;
             deleteButton.IsEnabled = model.CanDeleteConfiguration;
             // UI-DLG-084, IDE-CFG-014: a disabled Delete tells why, also to a screen reader.
             ToolTip.SetTip(deleteButton, model.DeleteConfigurationToolTip);
@@ -108,7 +117,7 @@ public sealed class ProjectOptionsWindow : DialogWindow
         model.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(ProjectOptionsViewModel.SelectedPage) or nameof(ProjectOptionsViewModel.SelectedConfiguration)
-                or nameof(ProjectOptionsViewModel.ConfigurationNames))
+                or nameof(ProjectOptionsViewModel.ConfigurationNames) or nameof(ProjectOptionsViewModel.SearchPathsAllConfigurations))
                 ShowPage();
             else if (e.PropertyName == nameof(ProjectOptionsViewModel.CanDeleteConfiguration))
                 SyncBar();
@@ -356,26 +365,75 @@ public sealed class ProjectOptionsWindow : DialogWindow
         return grid;
     }
 
+    /// <summary>
+    /// §8.3. Under <c>All configurations</c> the project-level list; for a configuration its own rows below the read-only
+    /// rows it inherits (<c>text.tertiary</c>, origin in the second column) and the check box <c>Do not inherit</c>.
+    /// The indexes of the model count the own rows only.
+    /// </summary>
     private static Control SearchPathsPage(DialogFieldBuilder f, ProjectOptionsViewModel model)
     {
-        var list = new ListBox { ItemsSource = model.SearchPaths, Height = 220, SelectionMode = SelectionMode.Single };
+        var configuration = model.SelectedConfiguration;
+        var all = model.SearchPathsAllConfigurations;
+        // The page was built for this list; a later one gets its own page (the model outlives both).
+        bool Current() => model.SelectedPage.Id == "SearchPaths" && model.SearchPathsAllConfigurations == all && (all || model.SelectedConfiguration == configuration);
+        var list = new ListBox { Height = 220, SelectionMode = SelectionMode.Single };
+        ScrollViewer.SetHorizontalScrollBarVisibility(list, Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled);
         AutomationProperties.SetAutomationId(list, f.Id("SearchPaths"));
         list.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<SearchPathRow>((row, _) =>
         {
-            var text = new TextBlock { Text = row.Path };
-            ToolTip.SetTip(text, row.ToolTip);
+            if (row is null)
+                return new Panel(); // a container between two fillings of the list
+            var text = new TextBlock { Text = row.Path, TextTrimming = TextTrimming.CharacterEllipsis };
+            ToolTip.SetTip(text, row.ToolTip ?? row.Path);
             var glyph = new TextBlock { Text = "⚠", IsVisible = row.IsMissing, Margin = new Thickness(0, 0, 4, 0) };
             glyph.Bind(TextBlock.ForegroundProperty, glyph.GetResourceObservable("FxcStatusWarningBrush"));
-            return new StackPanel { Orientation = Orientation.Horizontal, Children = { glyph, text } };
+            var cells = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+            Grid.SetColumn(text, 1);
+            cells.Children.Add(glyph);
+            cells.Children.Add(text);
+            if (row.Origin is { } origin)
+            {
+                // Inherited: read-only, text.tertiary, the origin (Project or a configuration) at the right.
+                var from = new TextBlock { Text = origin, Margin = new Thickness(16, 0, 0, 0), MaxWidth = 160, TextTrimming = TextTrimming.CharacterEllipsis };
+                ToolTip.SetTip(from, origin);
+                foreach (var block in (TextBlock[])[text, from])
+                    block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable("FxcTextTertiaryBrush"));
+                Grid.SetColumn(from, 2);
+                cells.Children.Add(from);
+            }
+
+            return cells;
         }, supportsRecycling: false);
+        list.ContainerPrepared += (_, e) =>
+        {
+            if (e.Container is not ListBoxItem item || item.DataContext is not SearchPathRow row)
+                return;
+            item.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            AutomationProperties.SetName(item, row.Path);
+            AutomationProperties.SetHelpText(item, row.Origin is { } origin
+                ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Msg_ProjectOptions_ValueInherited, origin)
+                : "");
+        };
+
+        var inherited = 0;
+        int Own() => list.SelectedIndex - inherited; // the selected own row; negative for an inherited row or none
+        void Fill(int? select = null)
+        {
+            var rows = model.InheritedSearchPaths;
+            var index = select is { } own ? rows.Count + own : list.SelectedIndex;
+            inherited = rows.Count;
+            list.ItemsSource = rows.Concat(model.SearchPaths).ToList();
+            list.SelectedIndex = Math.Min(index, list.ItemCount - 1);
+        }
+
         var editor = new TextBox { IsVisible = false };
         AutomationProperties.SetAutomationId(editor, f.Id("SearchPaths.Editor"));
         var editing = -1;
         void BeginEdit()
         {
-            if (list.SelectedIndex < 0)
+            if (Own() < 0)
                 return;
-            editing = list.SelectedIndex;
+            editing = Own();
             editor.Text = model.SearchPaths[editing].Path;
             editor.IsVisible = true;
             editor.Focus();
@@ -389,9 +447,18 @@ public sealed class ProjectOptionsWindow : DialogWindow
             var index = editing;
             editing = -1;
             editor.IsVisible = false;
-            if (commit)
+            if (commit && Current())
                 model.EditSearchPath(index, editor.Text ?? "");
             list.Focus();
+        }
+
+        void Move(int delta)
+        {
+            var index = Own();
+            if (index < 0)
+                return;
+            model.MoveSearchPath(index, delta);
+            Fill(Math.Clamp(index + delta, 0, model.SearchPaths.Count - 1));
         }
 
         editor.KeyDown += (_, e) =>
@@ -406,22 +473,19 @@ public sealed class ProjectOptionsWindow : DialogWindow
         list.DoubleTapped += (_, _) => BeginEdit();
         list.KeyDown += (_, e) =>
         {
-            var index = list.SelectedIndex;
             switch (e.Key)
             {
                 case Key.F2:
                     BeginEdit();
                     break;
                 case Key.Delete:
-                    model.RemoveSearchPath(index);
+                    model.RemoveSearchPath(Own());
                     break;
                 case Key.Up when e.KeyModifiers == KeyModifiers.Alt:
-                    model.MoveSearchPath(index, -1);
-                    list.SelectedIndex = Math.Max(0, index - 1);
+                    Move(-1);
                     break;
                 case Key.Down when e.KeyModifiers == KeyModifiers.Alt:
-                    model.MoveSearchPath(index, 1);
-                    list.SelectedIndex = Math.Min(model.SearchPaths.Count - 1, index + 1);
+                    Move(1);
                     break;
                 default:
                     return;
@@ -440,31 +504,54 @@ public sealed class ProjectOptionsWindow : DialogWindow
 
         var add = new Button { Content = Strings.ProjectOptions_Add, HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetAutomationId(add, f.Id("SearchPaths.Add"));
-        add.Click += async (_, _) => await model.AddSearchPathAsync();
+        add.Click += async (_, _) =>
+        {
+            var before = model.SearchPaths.Count;
+            await model.AddSearchPathAsync();
+            if (Current() && model.SearchPaths.Count > before)
+                Fill(model.SearchPaths.Count - 1);
+        };
         var edit = Action("Edit", Strings.ProjectOptions_Edit, BeginEdit);
-        var remove = Action("Remove", Strings.ProjectOptions_Remove, () => model.RemoveSearchPath(list.SelectedIndex));
-        var up = Action("MoveUp", Strings.ProjectOptions_MoveUp, () =>
-        {
-            var i = list.SelectedIndex;
-            model.MoveSearchPath(i, -1);
-            list.SelectedIndex = Math.Max(0, i - 1);
-        });
-        var down = Action("MoveDown", Strings.ProjectOptions_MoveDown, () =>
-        {
-            var i = list.SelectedIndex;
-            model.MoveSearchPath(i, 1);
-            list.SelectedIndex = Math.Min(model.SearchPaths.Count - 1, i + 1);
-        });
+        var remove = Action("Remove", Strings.ProjectOptions_Remove, () => model.RemoveSearchPath(Own()));
+        var up = Action("MoveUp", Strings.ProjectOptions_MoveUp, () => Move(-1));
+        var down = Action("MoveDown", Strings.ProjectOptions_MoveDown, () => Move(1));
         void SyncButtons()
         {
-            var i = list.SelectedIndex;
+            var i = Own();
             edit.IsEnabled = remove.IsEnabled = i >= 0;
             up.IsEnabled = i > 0;
             down.IsEnabled = i >= 0 && i < model.SearchPaths.Count - 1;
         }
 
+        // Do not inherit: the reset marker of the configuration (CMP-1153); no part of the project-level list.
+        var doNotInherit = new CheckBox { Content = Strings.ProjectOptions_SearchPathsDoNotInherit, IsChecked = model.SearchPathsDoNotInherit, IsVisible = model.CanSearchPathsDoNotInherit };
+        AutomationProperties.SetAutomationId(doNotInherit, f.Id("SearchPaths.DoNotInherit"));
+        var syncing = false;
+        doNotInherit.IsCheckedChanged += (_, _) =>
+        {
+            if (!syncing && Current())
+                model.SearchPathsDoNotInherit = doNotInherit.IsChecked == true;
+        };
+
         list.SelectionChanged += (_, _) => SyncButtons();
-        model.SearchPaths.CollectionChanged += (_, _) => SyncButtons();
+        void Refresh()
+        {
+            if (!Current())
+                return;
+            Fill();
+            syncing = true;
+            doNotInherit.IsChecked = model.SearchPathsDoNotInherit;
+            syncing = false;
+            SyncButtons();
+        }
+
+        model.SearchPaths.CollectionChanged += (_, _) => Refresh();
+        model.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(ProjectOptionsViewModel.InheritedSearchPaths) or nameof(ProjectOptionsViewModel.SearchPathsDoNotInherit))
+                Refresh();
+        };
+        Fill();
         SyncButtons();
         var buttons = new StackPanel { Spacing = 4, Width = 110, Margin = new Thickness(8, 0, 0, 0), Children = { add, edit, remove, up, down } };
         var grid = new DockPanel();
@@ -472,8 +559,9 @@ public sealed class ProjectOptionsWindow : DialogWindow
         grid.Children.Add(buttons);
         grid.Children.Add(new StackPanel { Children = { list, editor } });
         return Page(
-            DialogFieldBuilder.Label(Strings.ProjectOptions_SearchPaths, list, Strings.ProjectOptions_SearchPathsNote),
+            DialogFieldBuilder.Label(Strings.ProjectOptions_SearchPaths, list, all ? Strings.ProjectOptions_SearchPathsNote : model.ConfigurationNote),
             grid,
+            doNotInherit,
             f.Message("SearchPaths", model, () => model.SearchPathsError, () => true));
     }
 

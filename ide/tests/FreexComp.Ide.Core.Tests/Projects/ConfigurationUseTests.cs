@@ -96,6 +96,38 @@ public sealed class ConfigurationUseTests
         await bed.Debug.StopAsync();
     }
 
+    /// <summary>I-252: the user-code roots of a debug session are the effective search paths of the active configuration (CMP-1160).</summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "IDE-CFG-001")]
+    public Task DebugUserRootsUseEffectiveSearchPaths() => TestUiThread.RunAsync(DebugUserRootsUseEffectiveSearchPathsOnUiThread);
+
+    private static async Task DebugUserRootsUseEffectiveSearchPathsOnUiThread()
+    {
+        using var bed = new DebugTestBed();
+        bed.File(bed.ProjectPath, """
+            { "formatVersion": 1, "name": "Hello", "appType": "console", "mainSource": "Hello.pas", "searchPaths": ["lib"],
+              "configurations": { "Debug": { "optimization": 0, "debugInfo": true, "defines": [], "searchPaths": ["dbg"], "outputDir": "bin/Debug" },
+                                  "Demo": { "inherits": "Debug", "searchPaths": ["../demo"], "outputDir": "bin/Debug" },
+                                  "Alone": { "inherits": "Demo", "searchPaths": ["!", "alone"], "outputDir": "bin/Debug" } },
+              "activeConfiguration": "Demo",
+              "files": [ { "path": "Hello.pas" } ] }
+            """);
+        bed.File(bed.MainPath, "program Hello;\nbegin\nend.\n");
+        Assert.True(await bed.Services.Projects.OpenAsync(bed.ProjectPath));
+        bed.Sessions.UseScenario("{}");
+
+        Assert.True(await bed.Debug.StartAsync());
+        Assert.Equal([bed.Dir, Path.Combine(bed.Dir, "lib"), Path.Combine(bed.Dir, "dbg"), Path.GetFullPath(Path.Combine(bed.Dir, @"..\demo"))],
+            bed.Sessions.Requested[^1].UserSourceRoots);
+        await bed.Debug.StopAsync();
+
+        // The reset marker of the active configuration discards the inherited roots.
+        await bed.Services.Commands.ExecuteAsync("project.setConfiguration", "Alone");
+        Assert.True(await bed.Debug.StartAsync());
+        Assert.Equal([bed.Dir, Path.Combine(bed.Dir, "alone")], bed.Sessions.Requested[^1].UserSourceRoots);
+        await bed.Debug.StopAsync();
+    }
+
     /// <summary>Run, the Run Parameters preview and Open Output Folder use <c>bin/&lt;name&gt;</c> of the derived configuration.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-CFG-001")]

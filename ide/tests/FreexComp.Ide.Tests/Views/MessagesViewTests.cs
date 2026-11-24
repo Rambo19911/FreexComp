@@ -24,7 +24,7 @@ public sealed class MessagesViewTests
         FakeBuildEngine.Diag(code, severity, message, BuildScenario.UnitPath(h), line, column, length);
 
     /// <summary>2 errors (the first with a related location), 1 warning, 1 hint; builds and waits for Idle.</summary>
-    private static async Task BuildWithMessagesAsync(HeadlessHarness h)
+    internal static async Task BuildWithMessagesAsync(HeadlessHarness h)
     {
         var related = new RelatedLocation(new FreexComp.Compiler.Text.Location(BuildScenario.UnitPath(h), default,
             new FreexComp.Compiler.Text.LinePositionSpan(new(3, 4), new(3, 8))), "Declared here");

@@ -1061,7 +1061,13 @@ public sealed class ProjectService : IProjectService
         if (IsMember(path))
             return true;
         return !analyzer.IsLibrarySource(path)
-            && (IsInside(path, _project!.Directory) || _project.SearchPaths.Any(s => IsInside(path, Resolve(s))));
+            && (IsInside(path, _project!.Directory) || EffectiveSearchPaths().Any(s => IsInside(path, Resolve(s))));
+    }
+
+    /// <summary>The search paths the active configuration is built with (CMP-1160): project level, then its chain.</summary>
+    private IEnumerable<string> EffectiveSearchPaths()
+    {
+        return ConfigurationEdits.Effective(_project!, _project!.ActiveConfiguration)?.SearchPaths ?? _project.SearchPaths;
     }
 
     /// <summary>One entry of a move (IDE-PM-123): the unit or file and its companion form, before and after.</summary>

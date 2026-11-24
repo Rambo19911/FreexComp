@@ -242,14 +242,14 @@ public sealed class LayoutTests
         h.Drag(AutomationIds.Splitter(AutomationIds.DockRight), 2000, 0);
         Assert.Equal(160, layout.RightSize);
 
-        // Bottom dock: 80 … available height − 160.
+        // Bottom dock: 128 (I-250) … available height − 160.
         h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, -2000);
         Assert.Equal(height - 160 - Splitter, bottom.Bounds.Height);
         Assert.Equal(160, documents.Bounds.Height);
         Assert.Equal(height - 160 - Splitter, layout.BottomSize);
         h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, 2000);
-        Assert.Equal(80, bottom.Bounds.Height);
-        Assert.Equal(80, layout.BottomSize);
+        Assert.Equal(128, bottom.Bounds.Height);
+        Assert.Equal(128, layout.BottomSize);
 
         // Right-dock groups: at least 80 high each.
         h.Drag(AutomationIds.Splitter(AutomationIds.DockRightUpper), 0, 2000);
@@ -416,12 +416,12 @@ public sealed class LayoutTests
         Assert.Equal(224, layout.LeftSize);
         Assert.Equal(224, left.Bounds.Width);
 
-        // Bottom dock: 80 … available height − 160.
+        // Bottom dock: 128 (I-250) … available height − 160.
         h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, -2000);
         Assert.Equal(height - 160 - Splitter, bottom.Bounds.Height);
         Assert.Equal(160, documents.Bounds.Height);
         h.Drag(AutomationIds.Splitter(AutomationIds.DockBottom), 0, 2000);
-        Assert.Equal(80, layout.BottomSize);
+        Assert.Equal(128, layout.BottomSize);
 
         // Reset: the Edit column of main-window.md §2 and the default sizes.
         Assert.True(h.Services.ToolWindows.Hide("ProjectManager"));

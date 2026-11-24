@@ -21,10 +21,10 @@ public sealed partial class VisualSnapshotTests
     /// <summary>Eight configurations; the 32-character one at inheritance level 3 (UI-DLG-276).</summary>
     private const string FilledConfigurations = """
         "Debug": { "optimization": 0, "debugInfo": true, "defines": ["DEBUG"], "outputDir": "bin/Debug" },
-        "Release": { "optimization": 2, "debugInfo": false, "defines": ["RELEASE"], "outputDir": "bin/Release" },
+        "Release": { "optimization": 2, "debugInfo": false, "defines": ["RELEASE"], "searchPaths": ["release/units"], "outputDir": "bin/Release" },
         "Release-Demo": { "inherits": "Release", "debugInfo": true, "defines": ["DEMO", "TRIAL_PERIOD", "NO_EXPORT", "SPLASH_SCREEN"] },
         "Profiling": { "inherits": "Release-Demo", "optimization": 1, "defines": ["PROFILE"] },
-        "Customer-Edition-With-Long-NameX": { "inherits": "Profiling", "defines": ["CUSTOMER"], "searchPaths": ["vendor"], "outputDir": "out/customer", "rtti": "published" },
+        "Customer-Edition-With-Long-NameX": { "inherits": "Profiling", "defines": ["CUSTOMER"], "searchPaths": ["vendor", "C:/Shared/Customer Units/Reporting/Templates"], "outputDir": "out/customer", "rtti": "published" },
         "Staging": { "inherits": "Release" },
         "Debug-Trace": { "inherits": "Debug", "defines": ["TRACE"] },
         "Nightly": { "optimization": 1, "debugInfo": true, "defines": [], "outputDir": "bin/Nightly" }
@@ -36,12 +36,15 @@ public sealed partial class VisualSnapshotTests
         o.ImplementedPhase = 7;
         o.InitialFiles[@"Hello\Hello.pproj"] = $$"""
             { "formatVersion": 1, "name": "Hello", "appType": "console", "mainSource": "Hello.pas",
-              "defines": ["APP", "WINDOWS_ONLY"],
+              "defines": ["APP", "WINDOWS_ONLY"], "searchPaths": ["lib", "C:/Shared/Units/Common"],
               "configurations": { {{configurations}} },
               "activeConfiguration": "{{active}}",
               "files": [ { "path": "Hello.pas" } ] }
             """;
         o.InitialFiles[@"Hello\Hello.pas"] = "program Hello;\nbegin\nend.\n";
+        // Two search paths that exist; the others show the warning glyph.
+        o.InitialFiles[@"Hello\lib\Common.pas"] = "unit Common;\ninterface\nimplementation\nend.\n";
+        o.InitialFiles[@"Hello\vendor\Vendor.pas"] = "unit Vendor;\ninterface\nimplementation\nend.\n";
     }
 
     private static string ManyConfigurations() => string.Join(",\n", Enumerable.Range(1, 20).Select(i =>
@@ -56,7 +59,8 @@ public sealed partial class VisualSnapshotTests
     /// <c>configuration-manager-many</c> (twenty: the list scrolls). The sub-dialogs at their one size:
     /// <c>configuration-manager-rename</c> and <c>new-configuration-inherit</c>. Project Options at 760 × 520 and
     /// 1100 × 760 on a derived configuration: <c>project-options-compiler-derived</c> (one inherited and one own field with
-    /// Revert) and <c>project-options-defines-derived</c>. Rules: the layout rules hold for every window (nothing
+    /// Revert), <c>project-options-defines-derived</c> and <c>project-options-search-paths-derived</c> (I-252: the
+    /// 32-character configuration at level 3 with three inherited rows from two origins and two own rows). Rules: the layout rules hold for every window (nothing
     /// clipped, nothing overlapping); the header cells stand above their columns; the active row draws its bullet; a
     /// trimmed name has its tooltip; bold and regular labels have the same left edge; the Revert button is drawn inside
     /// the page.
@@ -90,7 +94,11 @@ public sealed partial class VisualSnapshotTests
             ("configuration-manager-filled", FilledConfigurations, "Release-Demo", "Release"),
             ("configuration-manager-many", ManyConfigurations(), "Variant-02", "Variant-12"),
         ];
-        (string Subject, string Page)[] pages = [("project-options-compiler-derived", "Compiler"), ("project-options-defines-derived", "ConditionalDefines")];
+        (string Subject, string Page)[] pages =
+        [
+            ("project-options-compiler-derived", "Compiler"), ("project-options-defines-derived", "ConditionalDefines"),
+            ("project-options-search-paths-derived", "SearchPaths"),
+        ];
         const string rename = "configuration-manager-rename", create = "new-configuration-inherit";
         Size[] managerSizes = [new(560, 420), new(900, 700)];
         Size[] optionSizes = [new(760, 520), new(1100, 760)];
@@ -257,11 +265,62 @@ public sealed partial class VisualSnapshotTests
                     foreach (var (subject, page) in pages)
                     {
                         ProjectOptionsViewTests.ShowPage(dlg, page);
-                        Assert.Equal("Release-Demo (active)", dlg.Find<ComboBox>("Configuration").SelectedItem);
+                        if (page == "SearchPaths")
+                        {
+                            // All configurations first; then the 32-character configuration at level 3, an own row selected.
+                            var selector = dlg.Find<ComboBox>("Configuration");
+                            Assert.Equal((9, Strings.ProjectOptions_AllConfigurations), (selector.ItemCount, selector.SelectedItem));
+                            selector.SelectedItem = LongConfigurationName;
+                            Dispatcher.UIThread.RunJobs();
+                            dlg.Find<ListBox>("SearchPaths").SelectedIndex = 3;
+                            Dispatcher.UIThread.RunJobs();
+                        }
+                        else
+                        {
+                            Assert.Equal("Release-Demo (active)", dlg.Find<ComboBox>("Configuration").SelectedItem);
+                        }
+
                         void Check(string variant)
                         {
                             Control regular, bold;
                             Button revert;
+                            if (page == "SearchPaths")
+                            {
+                                var paths = dlg.Find<ListBox>("SearchPaths");
+                                var rows = paths.GetVisualDescendants().OfType<ListBoxItem>().ToList();
+                                var data = rows.Select(r => (Core.Dialogs.SearchPathRow)r.DataContext!).ToList();
+                                Assert.Equal(["lib", "C:/Shared/Units/Common", "release/units", "vendor", "C:/Shared/Customer Units/Reporting/Templates"], data.Select(d => d.Path));
+                                Assert.Equal(["Project", "Project", "Release", null, null], data.Select(d => d.Origin));
+                                Assert.Equal([false, true, true, false, true], data.Select(d => d.IsMissing));
+                                // Every row lies inside the list; the origin column ends at the same x in every inherited row.
+                                var rights = new List<double>();
+                                foreach (var row in rows)
+                                {
+                                    var entry = (Core.Dialogs.SearchPathRow)row.DataContext!;
+                                    if (VisualSnapshot.HiddenPart(row, dlg.Window) is { } hidden)
+                                        defects.Add((variant, $"cut: row {entry.Path} — {hidden}"));
+                                    var cells = row.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsVisible).ToList();
+                                    if (entry.Origin is not null)
+                                        rights.Add(X(cells[^1], dlg.Window) + cells[^1].Bounds.Width);
+                                }
+
+                                if (rights.Max() - rights.Min() > 0.5)
+                                    defects.Add((variant, $"the origin column is ragged: right edges {string.Join(", ", rights.Select(r => r.ToString("0.#")))}"));
+                                var scroller = paths.GetVisualDescendants().OfType<ScrollViewer>().First();
+                                if (scroller.Extent.Width > scroller.Viewport.Width + 0.5)
+                                    defects.Add((variant, $"the list scrolls horizontally: {scroller.Extent.Width:0.#} in {scroller.Viewport.Width:0.#}"));
+                                foreach (var id in (string[])["SearchPaths.Add", "SearchPaths.Edit", "SearchPaths.Remove", "SearchPaths.MoveUp", "SearchPaths.MoveDown", "SearchPaths.DoNotInherit", "Configuration", "NewConfiguration", "DeleteConfiguration"])
+                                {
+                                    if (VisualSnapshot.HiddenPart(dlg.Find<Control>(id), dlg.Window) is { } hidden)
+                                        defects.Add((variant, $"cut: {id} — {hidden}"));
+                                }
+
+                                // An own row is selected: it can be edited, removed and moved down (it is the first of two).
+                                Assert.Equal([true, true, false, true], ((string[])["Edit", "Remove", "MoveUp", "MoveDown"]).Select(id => dlg.Find<Button>("SearchPaths." + id).IsEffectivelyEnabled));
+                                Assert.True(dlg.Find<CheckBox>("SearchPaths.DoNotInherit").IsEffectivelyVisible);
+                                return;
+                            }
+
                             if (page == "Compiler")
                             {
                                 // Optimization is inherited (regular label, no Revert); debug information is own (bold, Revert).

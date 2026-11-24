@@ -14,7 +14,7 @@ namespace FreexComp.Ide.Core.Services;
 internal static class LayoutStateJson
 {
     private const double SideMin = 160;
-    private const double BottomMin = 80;
+    private const double BottomMin = ViewModels.DockSizing.BottomDockMinHeight;
 
     public static WindowPlacement? ReadWindow(JsonNode? node)
     {

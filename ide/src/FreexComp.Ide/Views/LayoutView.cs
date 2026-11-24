@@ -196,7 +196,7 @@ public sealed class LayoutView : Grid
         var splitters = (leftShown ? splitter : 0) + (rightShown ? splitter : 0);
         SetLimits(ColumnDefinitions[LeftColumn], leftShown, leftMin, DockSizing.ClampSide(double.PositiveInfinity, width, right, splitters, leftMin));
         SetLimits(ColumnDefinitions[RightColumn], rightShown, rightMin, DockSizing.ClampSide(double.PositiveInfinity, width, left, splitters, rightMin));
-        SetLimits(_center.RowDefinitions[BottomRow], bottomShown, DockSizing.BottomDockMinHeight, DockSizing.ClampBottom(double.PositiveInfinity, height, splitter));
+        SetLimits(_center.RowDefinitions[BottomRow], bottomShown, DockSizing.BottomLaidOutMin(height, splitter), Math.Max(DockSizing.BottomLaidOutMin(height, splitter), height - DockSizing.DocumentMinHeight - splitter));
         _left.IsVisible = _leftSplitter.IsVisible = leftShown;
         _right.IsVisible = _rightSplitter.IsVisible = rightShown;
         _bottom.IsVisible = _bottomSplitter.IsVisible = bottomShown;

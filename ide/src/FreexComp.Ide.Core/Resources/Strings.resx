@@ -900,6 +900,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>  <data name="Status_OpeningProject" xml:space="preserve">
     <value>Opening {0}…</value>
   </data>
+  <data name="Status_ShowInExplorerFailed" xml:space="preserve">
+    <value>Cannot show "{0}" in File Explorer.</value>
+    <comment>phase8-ui-additions.md D2 (I-251): {0} = file name without directory</comment>
+  </data>
   <data name="Status_AddFormViaUnit" xml:space="preserve">
     <value>Add the unit; its form is added with it</value>
   </data>
@@ -4366,8 +4370,16 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <comment>dialogs.md §8.3</comment>
   </data>
   <data name="ProjectOptions_MoveDown" xml:space="preserve">
-    <value>Move _Down</value>
+    <value>Move D_own</value>
     <comment>dialogs.md §8.3</comment>
+  </data>
+  <data name="ProjectOptions_SearchPathsDoNotInherit" xml:space="preserve">
+    <value>Do not _inherit</value>
+    <comment>dialogs.md §8.3; phase8-configurations.md, decision 2026-11-24 (I-252)</comment>
+  </data>
+  <data name="ProjectOptions_SearchPathOriginProject" xml:space="preserve">
+    <value>Project</value>
+    <comment>dialogs.md §8.3: origin of a project-level search path listed for a configuration (I-252)</comment>
   </data>
   <data name="ProjectOptions_ProjectDefines" xml:space="preserve">
     <value>Defines for _all configurations:</value>
