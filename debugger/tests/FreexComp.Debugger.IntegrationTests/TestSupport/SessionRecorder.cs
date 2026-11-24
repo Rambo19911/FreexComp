@@ -211,12 +211,14 @@ internal sealed class SessionRecorder
     /// everything it started must be gone (DBG-305). A failure is reported together with the path of a file that
     /// holds the event list and the complete protocol trace.
     /// </summary>
-    public async Task RunAsync(IntegrationFixture fixture, BuiltProgram program, Func<IDebugSession, Task> script)
+    /// <param name="userSourceRoots">The user source roots of the session; by default the program's directory only.</param>
+    public async Task RunAsync(IntegrationFixture fixture, BuiltProgram program, Func<IDebugSession, Task> script,
+        IReadOnlyList<string>? userSourceRoots = null)
     {
         var session = new DebugSessionFactory().Create(new DebugSessionOptions
         {
             AdapterPath = fixture.AdapterPath,
-            UserSourceRoots = [program.Directory],
+            UserSourceRoots = userSourceRoots ?? [program.Directory],
             Trace = Trace,
         });
         Attach(session);

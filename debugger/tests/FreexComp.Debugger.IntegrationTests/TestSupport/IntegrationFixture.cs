@@ -42,7 +42,8 @@ public sealed class IntegrationFixture : IDisposable
     /// <summary>The real debug adapter.</summary>
     public string AdapterPath { get; }
 
-    private string RtlDirectory => Path.Combine(RepositoryRoot, "rtl", "src");
+    /// <summary>The root of the runtime library sources the test programs are compiled against.</summary>
+    internal string RtlDirectory =>Path.Combine(RepositoryRoot, "rtl", "src");
 
     private string ProgramsDirectory => Path.Combine(RepositoryRoot, "debugger", "tests", "programs");
 

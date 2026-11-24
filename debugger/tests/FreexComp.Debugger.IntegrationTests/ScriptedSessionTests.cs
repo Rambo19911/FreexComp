@@ -557,4 +557,81 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
             Assert.Equal("Dog Rex\n24\ndone\n", recorder.StdoutSoFar);
         });
     }
+
+    /// <summary>The line of the first statement of a routine of a unit: the line after the <c>begin</c> of its implementation.</summary>
+    private static int FirstStatementLine(string unitPath, string heading)
+    {
+        var lines = File.ReadAllLines(unitPath);
+        // The heading occurs twice: in the interface section and at the implementation.
+        var implementation = Array.FindLastIndex(lines, line => line == heading);
+        Assert.True(implementation >= 0, $"'{heading}' not found in {unitPath}.");
+        var begin = Array.FindIndex(lines, implementation, line => line == "begin");
+        Assert.True(begin > implementation, $"No 'begin' after '{heading}' in {unitPath}.");
+        return begin + 2;   // one-based line of the line after 'begin'
+    }
+
+    /// <summary>
+    /// Step Into on a call of a runtime-library routine: with the library root among the user source roots the step
+    /// ends at the routine's first statement in the library file; without it the step ends on the program's next line.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-221")]
+    [Trait("Req", "DBG-222")]
+    public async Task Phase8_StepIntoLibrarySource_StopsInRtlFile(bool libraryRootIsUserSource)
+    {
+        const int CallLine = 11;   // LibStep.pas: T := UpperCase(S);
+        var program = fixture.Build("LibStep");
+        var p = program.SourcePath;
+        var unit = Path.Combine(fixture.RtlDirectory, "SysUtils.pas");
+        var firstStatement = FirstStatementLine(unit, "function UpperCase(const S: string): string;");
+        string[] roots = libraryRootIsUserSource ? [program.Directory, fixture.RtlDirectory] : [program.Directory];
+        var recorder = new SessionRecorder(nameof(Phase8_StepIntoLibrarySource_StopsInRtlFile) + (libraryRootIsUserSource ? "-with-root" : "-without-root"));
+        await recorder.RunAsync(
+            fixture,
+            program,
+            async session =>
+            {
+                await session.LaunchAsync(
+                    new LaunchRequest
+                    {
+                        Program = program.ExePath,
+                        Breakpoints = [new SourceBreakpoints(p, [new BreakpointSpec { Id = 1, Line = CallLine }])],
+                    },
+                    Ct);
+                var stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, p, CallLine, [1]);
+
+                await session.StepIntoAsync(stop.ThreadId, Ct);
+                stop = await recorder.WaitForStopAsync();
+                if (libraryRootIsUserSource)
+                {
+                    AssertStop(session, stop, StopReason.Step, unit, firstStatement);
+                    Assert.True(PathIsUnder(stop.Location!.Path, fixture.RtlDirectory), stop.Location.Path);
+                    var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+                    Assert.Equal("UpperCase", frames[0].Name);
+                    Assert.True(frames[0].IsUserCode);
+                    Assert.Equal(p, frames[1].Location?.Path, ignoreCase: true);
+                    Assert.Equal(CallLine, frames[1].Location?.Line);
+                }
+                else
+                {
+                    AssertStop(session, stop, StopReason.Step, p, CallLine + 1);
+                }
+
+                await session.ContinueAsync(Ct);
+                var terminated = await recorder.WaitForTerminatedAsync();
+                Assert.Equal(TerminationCause.Exited, terminated.Cause);
+                Assert.Equal(0, terminated.ExitCode);
+                Assert.Equal("STEP\n", recorder.StdoutSoFar);
+                // One breakpoint stop and one step stop: nothing in between was shown.
+                Assert.Equal(2, recorder.Events.Count(e => e.StartsWith("Stopped(", StringComparison.Ordinal)));
+            },
+            roots);
+    }
+
+    private static bool PathIsUnder(string path, string root) =>
+        Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 }
