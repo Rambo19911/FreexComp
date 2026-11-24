@@ -21,8 +21,8 @@ FreexComp uses the following third-party components. Each is used unmodified und
 ## Development and test only (not shipped)
 | Component | Version | License | Source |
 |---|---|---|---|
-| xUnit.net v3 | 3.2.2 | Apache-2.0 | https://github.com/xunit/xunit |
+| xunit.v3 (xUnit v3 test framework) | 3.2.2 | Apache-2.0 | https://github.com/xunit/xunit |
 | xunit.runner.visualstudio | 3.1.4 | Apache-2.0 | https://github.com/xunit/visualstudio.xunit |
 | Microsoft.NET.Test.Sdk | 18.12.0 | MIT | https://github.com/microsoft/vstest |
-| Avalonia.Headless.XUnit | 12.1.6 | MIT | https://github.com/AvaloniaUI/Avalonia |
+| Avalonia.Headless.XUnit, Avalonia.Headless | 12.1.6 | MIT | https://github.com/AvaloniaUI/Avalonia |
 | Pillow (icon generation script) | any | HPND (MIT-CMU) | https://github.com/python-pillow/Pillow |

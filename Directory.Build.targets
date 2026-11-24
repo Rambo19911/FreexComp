@@ -15,4 +15,17 @@
     <Error Condition="!Exists('$(RepoRoot)NETWORK-POLICY.md')" Text="Policy file 'NETWORK-POLICY.md' is missing in the repository root." />
     <Copy SourceFiles="$(RepoRoot)NETWORK-POLICY.md" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
+
+  <!--
+    Licence files shipped next to the tools: the four root files are copied to <output>/licenses/.
+    Libraries and test projects do not get the folder.
+  -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'FreexComp.Ide' or '$(MSBuildProjectName)' == 'opc' or '$(MSBuildProjectName)' == 'pbuild'">
+    <ProductLicenseFile Include="LICENSE;LICENSE-RUNTIME;NOTICE;THIRD-PARTY-NOTICES.txt" />
+  </ItemGroup>
+  <Target Name="CopyLicenseFiles" AfterTargets="Build" Condition="'@(ProductLicenseFile)' != ''">
+    <Error Condition="!Exists('$(RepoRoot)%(ProductLicenseFile.Identity)')"
+           Text="License file '%(ProductLicenseFile.Identity)' is missing in the repository root." />
+    <Copy SourceFiles="@(ProductLicenseFile->'$(RepoRoot)%(Identity)')" DestinationFolder="$(OutDir)licenses" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
