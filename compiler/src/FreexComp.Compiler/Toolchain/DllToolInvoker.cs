@@ -29,27 +29,61 @@ internal sealed class DllToolInvoker(ToolRunner runner, string dllToolPath, IFil
         Location location,
         TargetInfo? target = null)
     {
+        var (path, _, diagnostic) = Find(fs, dllName, unitDefinitionFiles, declaringUnitDirectories, [], rtlDirectory, location, target);
+        return (path, diagnostic);
+    }
+
+    /// <summary>
+    /// CMP-1071, the whole order: (1) a <c>{$L x.def}</c> of a unit, (2) the declaring units' directories, (3) a ready-made
+    /// <c>&lt;dll-base&gt;.lib</c> in a library path, in order (<c>ReadyMade</c>: used as is, never generated), (4) the RTL
+    /// definitions of <see cref="FindDefinition"/>. Not found → E4006.
+    /// </summary>
+    public static (string? Path, bool ReadyMade, Diagnostic? Diagnostic) Find(
+        IFileSystem fs,
+        string dllName,
+        IEnumerable<string> unitDefinitionFiles,
+        IEnumerable<string> declaringUnitDirectories,
+        IEnumerable<string> libraryPaths,
+        string rtlDirectory,
+        Location location,
+        TargetInfo? target = null)
+    {
         var baseName = BaseName(dllName);
         var fromUnit = unitDefinitionFiles.FirstOrDefault(
             f => string.Equals(Path.GetFileNameWithoutExtension(f), baseName, StringComparison.OrdinalIgnoreCase) && fs.FileExists(f));
         if (fromUnit is not null)
         {
-            return (fromUnit, null);
+            return (fromUnit, false, null);
         }
+
+        string? In(IEnumerable<string> directories, string extension) =>
+            directories.Select(d => Path.Combine(d, baseName + extension)).FirstOrDefault(fs.FileExists);
 
         var flat = PathUtil.Normalize(Path.Combine(rtlDirectory, "..", "winapi", "def"));
-        var candidates = declaringUnitDirectories.Append(Path.Combine(flat, (target ?? TargetRegistry.Default).ImportDefSubdirectory)).Append(flat);
-        foreach (var dir in candidates)
+        if (In(declaringUnitDirectories, ".def") is { } unitDefinition)
         {
-            var path = Path.Combine(dir, baseName + ".def");
-            if (fs.FileExists(path))
-            {
-                return (path, null);
-            }
+            return (unitDefinition, false, null);
         }
 
-        return (null, Diagnostic.Create("E4006", location, dllName));
+        if (In(libraryPaths, ".lib") is { } library)
+        {
+            return (PathUtil.Normalize(library), true, null);
+        }
+
+        return In([Path.Combine(flat, (target ?? TargetRegistry.Default).ImportDefSubdirectory), flat], ".def") is { } rtlDefinition
+            ? (rtlDefinition, false, null)
+            : (null, false, Diagnostic.Create("E4006", location, dllName));
     }
+
+    /// <summary>
+    /// CMP-1071 step 3: where the SHA-256 of a ready-made import library is recorded after a successful link
+    /// (<c>&lt;objdir&gt;\imports\&lt;dll-base&gt;.ext.sha256</c>), so that a rebuilt library with other content relinks.
+    /// </summary>
+    public static string ReadyMadeHashPath(string objectDirectory, string dllName) =>
+        Path.Combine(objectDirectory, "imports", BaseName(dllName) + ".ext.sha256");
+
+    /// <summary>The content hash of a ready-made import library, as recorded in <see cref="ReadyMadeHashPath"/>.</summary>
+    public static string ContentHash(IFileSystem fs, string path) => Convert.ToHexStringLower(SHA256.HashData(fs.ReadAllBytes(path)));
 
     public static string LibraryPath(string objectDirectory, string dllName) =>
         Path.Combine(objectDirectory, "imports", BaseName(dllName) + ".lib");

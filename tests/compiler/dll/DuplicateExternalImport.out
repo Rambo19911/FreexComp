@@ -1,0 +1,4 @@
+identical declarations agree: TRUE
+extra argument is ignored: TRUE
+nil as pointer and as number: TRUE
+by name: TRUE

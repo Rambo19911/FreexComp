@@ -8,8 +8,11 @@ namespace FreexComp.Compiler.Toolchain;
 /// <summary>One linked unit as the import-library step sees it: the directory of its source and its link inputs.</summary>
 internal sealed record LinkUnit(string Directory, UnitLinkInputs Inputs);
 
-/// <summary>One import library to build: the DLL and the <c>.def</c> it is generated from.</summary>
-internal sealed record PlannedImportLibrary(string Dll, string Definition);
+/// <summary>
+/// One import library of a link: the DLL and the <c>.def</c> it is generated from — or, when <paramref name="ReadyMade"/>, the
+/// ready-made <c>.lib</c> of a library path that is used as is (CMP-1071 step 3).
+/// </summary>
+internal sealed record PlannedImportLibrary(string Dll, string Definition, bool ReadyMade = false);
 
 /// <summary>CMP-620 across units (C-077): which import libraries a link needs and where their <c>.def</c> files come from.</summary>
 internal static class ImportLibraryPlan
@@ -19,11 +22,13 @@ internal static class ImportLibraryPlan
     /// <c>.dll</c>) and <see cref="LinkInputs.AlwaysLinked"/>, sorted. Each DLL's definition is looked up in the CMP-620 order: a
     /// <c>{$L}</c> <c>.def</c> of any unit (units in link order, then directive order); the directory of each unit declaring the DLL,
     /// in link order (for the always-linked DLLs then <paramref name="systemDirectory"/>); <c>&lt;rtl&gt;\..\winapi\def</c> (the target's
-    /// sub-directory first, CMP-1023). Not found → E4006.
+    /// sub-directory first, CMP-1023). Not found → E4006. CMP-1071: a ready-made <c>&lt;dll-base&gt;.lib</c> in one of
+    /// <paramref name="libraryPaths"/> (in order) comes after the units' definitions and before the RTL's.
     /// </summary>
     /// <param name="units">The linked units in link order (program, System, init order; CMP-625).</param>
     public static (ImmutableArray<PlannedImportLibrary> Libraries, ImmutableArray<Diagnostic> Errors) Create(
-        IFileSystem fs, IReadOnlyList<LinkUnit> units, string systemDirectory, string rtlDirectory, Location location, TargetInfo? target = null)
+        IFileSystem fs, IReadOnlyList<LinkUnit> units, string systemDirectory, string rtlDirectory, Location location, TargetInfo? target = null,
+        IReadOnlyList<string>? libraryPaths = null)
     {
         target ??= TargetRegistry.Default;
         var always = LinkInputs.AlwaysLinked(target);
@@ -43,14 +48,15 @@ internal static class ImportLibraryPlan
                 declaring = declaring.Append(systemDirectory);
             }
 
-            var (definition, notFound) = DllToolInvoker.FindDefinition(fs, dll, defs, declaring.Distinct(PathUtil.Comparer), rtlDirectory, location, target);
+            var (definition, readyMade, notFound) =
+                DllToolInvoker.Find(fs, dll, defs, declaring.Distinct(PathUtil.Comparer), libraryPaths ?? [], rtlDirectory, location, target);
             if (definition is null)
             {
                 errors.Add(notFound!);
                 continue;
             }
 
-            libraries.Add(new PlannedImportLibrary(dll, definition));
+            libraries.Add(new PlannedImportLibrary(dll, definition, readyMade));
         }
 
         return (libraries.ToImmutable(), errors.ToImmutable());

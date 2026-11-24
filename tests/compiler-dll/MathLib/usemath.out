@@ -1,0 +1,11 @@
+Add(2, 3) = 5
+Scale(1.5, 4) = 6.00
+MakeVec = 1 2 3
+Greeting = hello from mathlib
+loaded: TRUE
+by name: 42
+by ordinal 7: 4 5 6
+wrong case is nil: TRUE
+make_vec by name is ordinal 7: TRUE
+MakeVec is not exported: TRUE
+freed: TRUE

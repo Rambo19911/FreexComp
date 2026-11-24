@@ -1,0 +1,3 @@
+dll ownlib.pas
+exe useown.pas
+run useown.exe

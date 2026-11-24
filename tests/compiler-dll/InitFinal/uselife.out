@@ -1,0 +1,7 @@
+before load: init FALSE, final FALSE
+loaded: TRUE
+after load: init TRUE, final FALSE
+Ping = 1
+host IsLibrary: FALSE
+freed: TRUE
+after free: init TRUE, final TRUE

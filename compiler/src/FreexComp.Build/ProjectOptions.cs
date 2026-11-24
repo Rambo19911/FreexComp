@@ -9,7 +9,7 @@ public static class ProjectOptions
 {
     /// <exception cref="ArgumentException">
     /// The project has no file path, the configuration does not exist, or the model holds a value the loader
-    /// would have rejected (optimization not 0..2, appType not console/gui).
+    /// would have rejected (optimization not 0..2, appType not console/gui/library).
     /// </exception>
     public static CompilationOptions ToCompilationOptions(Project project, string configuration) =>
         ToCompilationOptions(project, configuration, TargetRegistry.Default);
@@ -48,6 +48,7 @@ public static class ProjectOptions
         {
             MainFile = Resolve(dir, project.MainSource),
             SearchPaths = [.. searchPaths],
+            LibraryPaths = [.. project.LibraryPaths.Select(path => Resolve(dir, path))],          // CMP-1082
             Defines = [.. project.Defines, .. config.Defines],
             Optimization = config.Optimization switch
             {
@@ -61,6 +62,7 @@ public static class ProjectOptions
             {
                 "console" => AppType.Console,
                 "gui" => AppType.Gui,
+                "library" => AppType.Library,                                                   // CMP-1080
                 _ => throw new ArgumentException($"Unsupported application type '{project.AppType}'", nameof(project)),
             },
             ObjectDirectory = PathUtil.Normalize(TargetRegistry.ObjectDirectory(dir, target, configuration)),
@@ -76,12 +78,23 @@ public static class ProjectOptions
         };
     }
 
-    /// <summary>Output exe: <c>&lt;project dir&gt;/&lt;outputDir&gt;/&lt;name&gt;.exe</c> (project-format.md §1).</summary>
+    /// <summary>
+    /// Output: <c>&lt;project dir&gt;/&lt;outputDir&gt;/&lt;name&gt;.exe</c>, or <c>&lt;name&gt;.dll</c> for <c>appType</c>
+    /// <c>library</c> (project-format.md §1, CMP-1081).
+    /// </summary>
     public static string GetOutputPath(Project project, string configuration)
     {
         var config = GetConfiguration(project, configuration);
-        return PathUtil.Normalize(Resolve(RequireDirectory(project), config.OutputDir) + @"\" + project.Name + ".exe");
+        return PathUtil.Normalize(
+            Resolve(RequireDirectory(project), config.OutputDir) + @"\" + project.Name + (project.AppType == "library" ? ".dll" : ".exe"));
     }
+
+    /// <summary>
+    /// CMP-1083: the executable target <c>Run</c> starts for a library project (<c>run.hostApplication</c>, relative to the
+    /// project directory or absolute); null when none is set.
+    /// </summary>
+    public static string? GetHostApplicationPath(Project project) =>
+        project.Run.HostApplication.Length == 0 ? null : Resolve(RequireDirectory(project), project.Run.HostApplication);
 
     private static ProjectConfiguration GetConfiguration(Project project, string configuration) =>
         project.Configurations.TryGetValue(configuration, out var config)

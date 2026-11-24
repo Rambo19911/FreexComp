@@ -43,11 +43,17 @@ internal static class ApplicationManifest
     /// <summary>
     /// The manifest to pass to lld-link, or null for none. <paramref name="manifest"/> is <c>default</c>, <c>none</c>, an absolute
     /// path, or "" (<c>default</c> for GUI programs, <c>none</c> for console programs). <c>default</c> writes
-    /// <c>&lt;objdir&gt;\app.manifest</c>; a path is returned as is.
+    /// <c>&lt;objdir&gt;\app.manifest</c>; a path is returned as is. A library (CMP-1060) has none by default and treats
+    /// <c>default</c> as <c>none</c>: the default manifest describes an application, not a DLL.
     /// </summary>
     public static string? Prepare(string manifest, AppType appType, string objectDirectory, IFileSystem fs)
     {
         var effective = manifest == "" ? (appType == AppType.Gui ? "default" : "none") : manifest;
+        if (appType == AppType.Library && effective == "default")
+        {
+            effective = "none";
+        }
+
         switch (effective)
         {
             case "none":

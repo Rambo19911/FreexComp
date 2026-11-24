@@ -180,6 +180,7 @@ sealed record FreexComp.Build.Project : System.IEquatable<FreexComp.Build.Projec
   public System.Collections.Immutable.ImmutableArray<System.String> ConfigurationNames { get; }
   public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> Dependencies { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> LibraryPaths { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> Platforms { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> UnitScopeNames { get; init; }
@@ -275,6 +276,7 @@ sealed record FreexComp.Build.ProjectGroup : System.IEquatable<FreexComp.Build.P
 static class FreexComp.Build.ProjectOptions
   public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration)
   public static FreexComp.Compiler.CompilationOptions ToCompilationOptions(FreexComp.Build.Project project, System.String configuration, FreexComp.Compiler.Targets.TargetInfo target)
+  public static System.String GetHostApplicationPath(FreexComp.Build.Project project)
   public static System.String GetOutputPath(FreexComp.Build.Project project, System.String configuration)
 static class FreexComp.Build.ProjectSerializer
   public const System.Int32 SupportedFormatVersion = 1
@@ -288,6 +290,7 @@ sealed record FreexComp.Build.RunSettings : System.IEquatable<FreexComp.Build.Ru
   public FreexComp.Build.RunSettings <Clone>$()
   public System.Boolean Equals(FreexComp.Build.RunSettings other)
   public System.String Arguments { get; init; }
+  public System.String HostApplication { get; init; }
   public System.String WorkingDir { get; init; }
   public System.Void Deconstruct(out System.String Arguments, out System.String WorkingDir)
   public ctor(System.String Arguments, System.String WorkingDir)

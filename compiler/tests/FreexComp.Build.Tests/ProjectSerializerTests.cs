@@ -322,9 +322,9 @@ public sealed class ProjectSerializerTests
 
     [Theory]
     [Trait("Req", "CMP-810")]
-    [InlineData("library")]
     [InlineData("package")]
     [InlineData("service")]
+    [InlineData("Library")]
     public void ParseProject_UnsupportedAppType_IsE9008(string appType)
     {
         var d = ParseError($$"""{ "formatVersion": 1, "name": "A", "appType": "{{appType}}", "mainSource": "A.pas" }""");
@@ -691,6 +691,101 @@ public sealed class ProjectSerializerTests
         var result = ProjectSerializer.LoadGroup(GroupPath, new InMemoryFileSystem());
 
         Assert.Equal("E9003", Assert.Single(result.Diagnostics).Code);
+    }
+
+    // --- library projects (dll-output.md CMP-1080, 1082, 1083; task C-291)
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1080")]
+    [Trait("Req", "CMP-1082")]
+    [Trait("Req", "CMP-1083")]
+    public void LibraryKeys_RoundTrip()
+    {
+        const string text = """
+            {
+              "formatVersion": 1,
+              "name": "MathLib",
+              "language": "pascal",
+              "appType": "library",
+              "mainSource": "MathLib.pas",
+              "files": [
+                {
+                  "path": "MathLib.pas"
+                }
+              ],
+              "searchPaths": [],
+              "libraryPaths": [
+                "libs",
+                "D:/sdk/lib"
+              ],
+              "defines": [],
+              "platforms": [
+                "win64"
+              ],
+              "configurations": {
+                "Debug": {
+                  "optimization": 0,
+                  "debugInfo": true,
+                  "defines": [
+                    "DEBUG"
+                  ],
+                  "outputDir": "bin/Debug"
+                }
+              },
+              "activeConfiguration": "Debug",
+              "run": {
+                "arguments": "--demo",
+                "workingDir": "",
+                "hostApplication": "../Host/bin/Debug/Host.exe"
+              },
+              "events": {
+                "preBuild": [],
+                "postBuild": []
+              },
+              "dependencies": []
+            }
+
+            """;
+
+        var p = Parse(text);
+
+        Assert.Equal("library", p.AppType);
+        Assert.Equal(["libs", "D:/sdk/lib"], p.LibraryPaths);
+        Assert.Equal(new RunSettings("--demo", "") { HostApplication = "../Host/bin/Debug/Host.exe" }, p.Run);
+        Assert.Equal(Lf(text), ProjectSerializer.Save(p));                          // byte for byte, keys in the order of the interface
+
+        // the mapping: library app type, resolved library paths in order, the DLL as output, the resolved host application
+        var options = ProjectOptions.ToCompilationOptions(p, "Debug");
+        Assert.Equal(AppType.Library, options.AppType);
+        Assert.Equal([@"C:\p\Hello\libs", @"D:\sdk\lib"], options.LibraryPaths);
+        Assert.Equal(@"C:\p\Hello\bin\Debug\MathLib.dll", ProjectOptions.GetOutputPath(p, "Debug"));
+        Assert.Equal(@"C:\p\Host\bin\Debug\Host.exe", ProjectOptions.GetHostApplicationPath(p));
+
+        // both keys are optional: a file without them loads with the defaults and is saved without them …
+        var plain = Parse(CanonicalExample);
+        Assert.Empty(plain.LibraryPaths);
+        Assert.Equal("", plain.Run.HostApplication);
+        Assert.Null(ProjectOptions.GetHostApplicationPath(plain));
+        Assert.Equal(@"C:\p\Hello\bin\Debug\Hello.exe", ProjectOptions.GetOutputPath(plain, "Debug"));
+        var saved = ProjectSerializer.Save(plain);
+        Assert.DoesNotContain("libraryPaths", saved, StringComparison.Ordinal);
+        Assert.DoesNotContain("hostApplication", saved, StringComparison.Ordinal);
+
+        // … and they appear, at their place, once set; back slashes are written as '/'
+        var edited = ProjectSerializer.Save(plain with { LibraryPaths = [@"out\libs"], Run = plain.Run with { HostApplication = @"tools\Host.exe" } });
+        Assert.Contains("  \"searchPaths\": [\n    \"lib\"\n  ],\n  \"libraryPaths\": [\n    \"out/libs\"\n  ],\n", edited, StringComparison.Ordinal);
+        Assert.Contains("    \"workingDir\": \"\",\n    \"hostApplication\": \"tools/Host.exe\"\n  },\n", edited, StringComparison.Ordinal);
+
+        // present but empty in the loaded file: kept
+        var empty = Parse(text.Replace("\"libs\",\n", "", StringComparison.Ordinal).Replace("\r", "", StringComparison.Ordinal));
+        var kept = ProjectSerializer.Save(empty with { LibraryPaths = [], Run = empty.Run with { HostApplication = "" } });
+        Assert.Contains("  \"libraryPaths\": [],\n", kept, StringComparison.Ordinal);
+        Assert.Contains("    \"hostApplication\": \"\"\n", kept, StringComparison.Ordinal);
+
+        // wrong value types are E9002 at the token
+        Assert.Equal("E9002", ParseError("""{ "formatVersion": 1, "name": "A", "mainSource": "A.pas", "libraryPaths": "libs" }""").Code);
+        Assert.Equal("E9002", ParseError("""{ "formatVersion": 1, "name": "A", "mainSource": "A.pas", "run": { "hostApplication": 1 } }""").Code);
     }
 
     private sealed class ConfigComparer : IEqualityComparer<ProjectConfiguration>

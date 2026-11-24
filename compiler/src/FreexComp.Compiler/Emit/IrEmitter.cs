@@ -104,6 +104,7 @@ internal static class IrEmitter
         {
             Target = unit.Target,
             UnitName = unit.Unit.Name,
+            ExportLocations = unit.Unit.ExportLocations,
             OwnClasses = [.. classes],
             Debug = debug is null ? null : new DebugInfoEmitter(debug, unit.Target, unit.Unit.Name, path, unit.Routines.Concat(unit.Bodies).Select(b => b.Source).OfType<Syntax.SyntaxNode>()
                 .Select(s => s.SyntaxTree.Text).FirstOrDefault(t => Text.PathUtil.Comparer.Equals(t.Path, path))),
@@ -111,6 +112,7 @@ internal static class IrEmitter
         foreach (var body in unit.Routines)
         {
             module.DefinedRoutines.Add(Mangler.Routine(body.Routine!).Text);
+            module.LinkNameOwners[Mangler.Routine(body.Routine!).Text] = body.Routine!;
         }
 
         // globals are defined after the functions (CMP-301: string literals, found while emitting, come first)
@@ -490,6 +492,13 @@ internal static class IrEmitter
             return;
         }
 
+        // C-293: the thunk is a definition of the symbol <export name>; the module must not already declare (an imported routine
+        // the library file calls) or define (another routine's public name) a function of that name
+        if (module.LinkNameOwners.TryGetValue(export.Name, out var owner))
+        {
+            throw new EmitDiagnosticException("E2218", module.ExportLocations[export.Name], export.Name, owner.Name);
+        }
+
         var w = module.Writer;
         var hidden = HasHiddenResult(routine);
         var names = new HashSet<string>(StringComparer.Ordinal);
@@ -844,12 +853,25 @@ internal sealed class EmitNotSupportedException(string message, Text.Location lo
     public Text.Location Location { get; } = location;
 }
 
+/// <summary>A user error that only the emitted module reveals (C-293): reported as the diagnostic <paramref name="code"/>.</summary>
+internal sealed class EmitDiagnosticException(string code, Text.Location location, params object[] arguments) : Exception(code)
+{
+    public string Code { get; } = code;
+
+    public Text.Location Location { get; } = location;
+
+    public object[] Arguments { get; } = arguments;
+}
+
 internal sealed class ModuleState(IIrWriter writer)
 {
     public IIrWriter Writer { get; } = writer;
 
     /// <summary>The compilation's target (CMP-1000): every machine fact of the module comes from it.</summary>
     public required TargetInfo Target { get; init; }
+
+    /// <summary>Where each export item of a library file is written (by export name), for diagnostics of the thunks.</summary>
+    public IReadOnlyDictionary<string, Text.Location> ExportLocations { get; init; } = new Dictionary<string, Text.Location>();
 
     /// <summary>Alignment of a stored code or data address.</summary>
     public int PtrAlign => Target.PointerAlign;
@@ -888,6 +910,12 @@ internal sealed class ModuleState(IIrWriter writer)
     public HashSet<string> DefinedRoutines { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// C-293: the routine behind each function symbol of the module that a user declaration names — the routines defined here and
+    /// the <c>external</c> routines declared so far (by link name).
+    /// </summary>
+    public Dictionary<string, RoutineSymbol> LinkNameOwners { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// The function to call: routines with a body in this module directly, all others (external routines, routines of other
     /// units such as System's, C-175) through a declaration. A noreturn routine is declared with <c>#1</c>, like the helpers.
     /// </summary>
@@ -903,6 +931,16 @@ internal sealed class ModuleState(IIrWriter writer)
         if (routine.IsExternal)
         {
             name = Mangler.Decorated(name, routine, Target);                // CMP-1011
+
+            // C-293: several declarations may bind the same import name (overloads over one entry point, an integer and a pointer
+            // view of one parameter). The module declares the symbol once, as the first declaration used; every call site states
+            // its own signature, so a later declaration needs none of its own.
+            if (LinkNameOwners.TryGetValue(name.Text, out var first) && !ReferenceEquals(first, routine))
+            {
+                return new IrGlobal(name);
+            }
+
+            LinkNameOwners[name.Text] = routine;
         }
 
         return Declare(new IrFunctionDeclaration(name, IrEmitter.ReturnType(routine), IrEmitter.ParameterTypes(routine),

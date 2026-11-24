@@ -34,6 +34,11 @@ public sealed class DiagnosticServiceTests
             {
                 MainFile = main, RtlDirectory = rtl, ObjectDirectory = Path.Combine(Path.GetTempPath(), "freexcomp-ls-never-written"), MaxParallelism = 1,
             };
+            if (Compilation.Create(options, [], PhysicalFileSystem.Instance).MainModuleKind == ModuleKind.Library)
+            {
+                options = options with { AppType = AppType.Library };           // CMP-1060: as opc does for a library main file (else E0012)
+            }
+
             var cli = Compilation.Create(options, [], PhysicalFileSystem.Instance).Emit(new EmitOptions { Stage = EmitStage.Check }, ct)
                 .Diagnostics.Where(d => string.Equals(d.Location.Path, main, StringComparison.OrdinalIgnoreCase));
             var workspace = new Workspace(PhysicalFileSystem.Instance);

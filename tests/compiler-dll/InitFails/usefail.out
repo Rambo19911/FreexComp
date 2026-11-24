@@ -1,0 +1,7 @@
+LoadLibraryW returned 0: TRUE
+first unit initialised: TRUE
+first unit finalised: TRUE
+failing unit not finalised: TRUE
+library block not run: TRUE
+caught: host exceptions still work
+host continues

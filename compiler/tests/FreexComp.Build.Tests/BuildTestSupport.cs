@@ -188,6 +188,11 @@ internal sealed class FakeToolchain(IFileSystem fs) : IProcessRunner
                 if (!LinkWritesNothing)
                 {
                     fs.WriteAllBytes(outLine.Trim('"')["/out:".Length..], LinkCopiesFrom is { } real ? File.ReadAllBytes(real) : Encoding.UTF8.GetBytes("exe"));
+                    // a library link also writes its import library (CMP-1063)
+                    if (rsp.Split('\n').SingleOrDefault(l => l.TrimStart('"').StartsWith("/implib:", StringComparison.Ordinal)) is { } implib)
+                    {
+                        fs.WriteAllBytes(implib.Trim('"')["/implib:".Length..], Encoding.UTF8.GetBytes("import library"));
+                    }
                 }
 
                 onStdOut("fake lld-link done");

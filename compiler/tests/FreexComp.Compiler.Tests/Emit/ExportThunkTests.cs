@@ -65,6 +65,14 @@ public sealed class ExportThunkTests
 
     internal static Dictionary<string, string> Emit(string name, string source, params (string Name, string Source)[] units)
     {
+        var (result, fs) = EmitResultOf(name, source, units);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
+        return result.CompiledUnits.ToDictionary(u => u, u => fs.ReadAllText(Path.Combine(@"C:\p\obj", u + ".ll")));
+    }
+
+    /// <summary>Stage <c>ll</c> of <paramref name="name"/> whatever its outcome.</summary>
+    private static (EmitResult Result, InMemoryFileSystem Fs) EmitResultOf(string name, string source, params (string Name, string Source)[] units)
+    {
         var fs = new InMemoryFileSystem().Add(Path.Combine(Dir, name + ".pas"), source).AddSystem();
         foreach (var (unit, text) in units)
         {
@@ -72,9 +80,12 @@ public sealed class ExportThunkTests
         }
 
         var options = new CompilationOptions { MainFile = Path.Combine(Dir, name + ".pas"), RtlDirectory = @"C:\rtl", ObjectDirectory = @"C:\p\obj" };
-        var result = Compilation.Create(options, [], fs).Emit(new EmitOptions { Stage = EmitStage.Ll }, TestContext.Current.CancellationToken);
-        Assert.True(result.Success, string.Join("\n", result.Diagnostics.Select(d => d.ToText())));
-        return result.CompiledUnits.ToDictionary(u => u, u => fs.ReadAllText(Path.Combine(@"C:\p\obj", u + ".ll")));
+        if (source.TrimStart().StartsWith("library", StringComparison.OrdinalIgnoreCase))
+        {
+            options = options with { AppType = AppType.Library };               // CMP-1060: the application type of a library main file
+        }
+
+        return (Compilation.Create(options, [], fs).Emit(new EmitOptions { Stage = EmitStage.Ll }, TestContext.Current.CancellationToken), fs);
     }
 
     private static string MathLib() => EmitLibraryIr("mathlib", MathLibSource, ("MathUnit", MathUnitSource));
@@ -256,6 +267,84 @@ public sealed class ExportThunkTests
             "  %r = call i8 @\"L.Sum\"(ptr %Values, i64 %Values$high, ptr %Total, ptr %Big, double %D)\n" +
             "  ret i8 %r\n" +
             "}\n", text);
+    }
+
+    /// <summary>
+    /// C-293: the thunk defines the symbol <c>&lt;export name&gt;</c>; a library file that also calls an imported routine of that
+    /// link name (declared in the same module), or defines another routine under that public name, gets a diagnostic at the export
+    /// item instead of a module the back end rejects.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-1053")]
+    public void ExportNameEqualToImport_Diagnosed()
+    {
+        const string library = """
+            library L;
+            function OsTicks: Cardinal; stdcall; external 'kernel32.dll' name 'GetTickCount';
+            function Ticks: Cardinal; stdcall;
+            begin
+              Result := OsTicks;
+            end;
+            exports
+              Ticks name 'GetTickCount';
+            end.
+            """;
+
+        var (result, _) = EmitResultOf("L", library);
+
+        Assert.False(result.Success);
+        Assert.Equal(
+            [@"C:\p\L.pas(8,3): error E2218: Export name 'GetTickCount' conflicts with the link name of 'OsTicks'"],
+            result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToText()));
+
+        // the import declared by a used unit and called from the library file is in the same module too
+        const string unit = "unit U;\ninterface\nfunction OsTicks: Cardinal; stdcall; external 'kernel32.dll' name 'GetTickCount';\nimplementation\nend.";
+        (result, _) = EmitResultOf("L", library.Replace("function OsTicks: Cardinal; stdcall; external 'kernel32.dll' name 'GetTickCount';", "uses U;", StringComparison.Ordinal), ("U", unit));
+        Assert.Equal(
+            [@"C:\p\L.pas(8,3): error E2218: Export name 'GetTickCount' conflicts with the link name of 'OsTicks'"],
+            result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToText()));
+
+        // another routine of the library file carries that name as its public name
+        (result, _) = EmitResultOf("L", "library L;\nprocedure A; public name 'entry_a';\nbegin\nend;\nprocedure B;\nbegin\nend;\nexports B name 'entry_a';\nend.");
+        Assert.Equal(
+            [@"C:\p\L.pas(8,9): error E2218: Export name 'entry_a' conflicts with the link name of 'A'"],
+            result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToText()));
+
+        // no conflict: another export name; and an import of that name the library file never calls is not part of the module
+        var text = EmitLibraryIr("L", library.Replace("name 'GetTickCount';\nend.", "name 'get_ticks';\nend.", StringComparison.Ordinal));
+        Assert.Contains("define i32 @get_ticks() #0 {\n", text);
+        Assert.Contains("declare dllimport i32 @GetTickCount()\n", text);
+        text = EmitLibraryIr("L", library.Replace("Result := OsTicks;", "Result := 1;", StringComparison.Ordinal));
+        Assert.Contains("define i32 @GetTickCount() #0 {\n", text);
+        Assert.DoesNotContain("declare dllimport", text);
+    }
+
+    /// <summary>
+    /// C-293: two <c>external</c> declarations that bind one import name with different signatures used to end in an internal error
+    /// ("Conflicting declarations"). The symbol is declared once (the first declaration used); each call states its own signature.
+    /// </summary>
+    [Fact]
+    [Trait("Req", "CMP-430")]
+    public void DuplicateExternalImport_DeclaredOnce_EachCallKeepsItsSignature()
+    {
+        var text = EmitLibraryIr("P", """
+            program P;
+            function Ticks: Cardinal; stdcall; external 'kernel32.dll' name 'GetTickCount';
+            function TicksAgain: Cardinal; stdcall; external 'kernel32.dll' name 'GetTickCount';
+            function TicksWith(Ignored: NativeInt; P: Pointer): Cardinal; stdcall; external 'kernel32.dll' name 'GetTickCount';
+            var
+              A: Cardinal;
+            begin
+              A := Ticks;
+              A := A + TicksWith(1, nil);
+              A := A + TicksAgain;
+            end.
+            """);
+
+        Assert.Single(text.Split('\n'), l => l.StartsWith("declare ", StringComparison.Ordinal) && l.Contains("@GetTickCount(", StringComparison.Ordinal));
+        Assert.Contains("declare dllimport i32 @GetTickCount()\n", text);
+        Assert.Contains(" = call i32 @GetTickCount()\n", text);
+        Assert.Contains(" = call i32 @GetTickCount(i64 1, ptr null)\n", text);
     }
 
     public static TheoryData<string> Optimisations() => ["-O0", "-O2"];

@@ -1,0 +1,3 @@
+dll mathlib.pas
+exe usemath.pas
+run usemath.exe

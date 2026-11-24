@@ -1,0 +1,5 @@
+dll lifelib.pas
+exe uselife.pas
+run uselife.exe
+exists life-init.txt
+exists life-final.txt

@@ -3,6 +3,7 @@ static class FreexComp.Compiler.AbiInfo
 enum FreexComp.Compiler.AppType
   Console = 0
   Gui = 1
+  Library = 2
 enum FreexComp.Compiler.Binding.CandidateReason
   Ambiguous = 2
   Inaccessible = 3
@@ -107,6 +108,7 @@ sealed record FreexComp.Compiler.CompilationOptions : System.IEquatable<FreexCom
   public System.Boolean RangeChecks { get; init; }
   public System.Boolean UsePcuCache { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> Defines { get; init; }
+  public System.Collections.Immutable.ImmutableArray<System.String> LibraryPaths { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> SearchPaths { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> UnitScopeNames { get; init; }
   public System.Int32 MaxParallelism { get; init; }

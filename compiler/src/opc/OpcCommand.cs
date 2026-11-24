@@ -17,7 +17,17 @@ public sealed record OpcArguments(
     bool Verbose,
     bool Help,
     bool Version,
-    ImmutableArray<Diagnostic> Errors);
+    ImmutableArray<Diagnostic> Errors)
+{
+    /// <summary>CMP-1060: <c>--app-type</c> was given; without it a library main file selects <see cref="AppType.Library"/>.</summary>
+    public bool ExplicitAppType { get; init; }
+
+    /// <summary>CMP-1060: <c>-o</c> was given; without it a library main file is written to <c>&lt;main&gt;.dll</c>.</summary>
+    public bool ExplicitOutput { get; init; }
+
+    /// <summary><c>--manifest</c> was given; without it the default follows the application type.</summary>
+    public bool ExplicitManifest { get; init; }
+}
 
 /// <summary>
 /// The <c>opc</c> driver (compiler-cli.md §1–2, build-engine.md CMP-850…852): arguments → <see cref="CompilationOptions"/> /
@@ -30,14 +40,17 @@ public static class OpcCommand
     /// <summary>The option table of compiler-cli.md §1 (CMP-852), without the references to internal documents.</summary>
     public const string HelpText = """
         opc <main.pas> [options]
-          -o <file>             output exe (default: <main>.exe in the current directory)
+          -o <file>             output file (default: <main>.exe, or <main>.dll for a library main file, in the
+                                current directory)
           -U <dir>              unit search path (repeatable; searched in order, after the main file's directory)
+          -L <dir>              import-library search path (repeatable; ready-made <dll>.lib files)
           --obj-dir <dir>       intermediates (.ll, .obj, .pcu); default ./obj/Debug for -O0, ./obj/Release otherwise
           -D <SYMBOL>           define conditional symbol (repeatable)
           -O0 | -O1 | -O2       optimisation (default -O0)
           -g                    emit debug info: LLVM debug metadata (<output>.pdb or DWARF in the exe) and
                                 the Pascal debug-info sidecar <output>.pdi
-          --app-type console|gui    PE subsystem (default console)
+          --app-type console|gui|library    PE subsystem / module kind (default console; `library` is implied by a
+                                library main file)
           --manifest default|none|<file>   application manifest embedded as RT_MANIFEST 1:
                                 `default` = Common Controls 6 + per-monitor-v2 DPI awareness; default value is `default`
                                 for --app-type gui and `none` for console
@@ -104,6 +117,16 @@ public static class OpcCommand
         EmitResult result;
         try
         {
+            if (!parsed.ExplicitAppType && Compilation.Create(options, [], env.FileSystem).MainModuleKind == ModuleKind.Library)
+            {
+                // CMP-1060: a library main file selects DLL output by itself
+                options = options with { AppType = AppType.Library, Manifest = parsed.ExplicitManifest ? options.Manifest : "none" };
+                if (!parsed.ExplicitOutput)
+                {
+                    emit = emit with { OutputPath = Path.ChangeExtension(emit.OutputPath, ".dll") };
+                }
+            }
+
             result = Compilation.Create(options, [], env.FileSystem).Emit(emit, ct);
         }
         catch (Exception e) when (e is not OperationCanceledException)
@@ -160,6 +183,7 @@ public static class OpcCommand
         string? main = null, output = null, objDir = null, rtl = null, toolchain = null, manifest = null, unknownTarget = null;
         var target = TargetRegistry.Default;
         var searchPaths = ImmutableArray.CreateBuilder<string>();
+        var libraryPaths = ImmutableArray.CreateBuilder<string>();
         var defines = ImmutableArray.CreateBuilder<string>();
         var scopes = ImmutableArray.CreateBuilder<string>();
         var optimization = OptimizationLevel.O0;
@@ -168,6 +192,7 @@ public static class OpcCommand
         var rtti = "broad";
         var jobs = 0;
         bool debug = false, json = false, verbose = false, help = false, version = false;
+        var explicitAppType = false;
         var invalid = new List<string>();
 
         for (var i = 0; i < args.Count; i++)
@@ -207,13 +232,21 @@ public static class OpcCommand
                 case "--version": version = true; break;
                 case "-o": if (Value() is { } o) { output = Full(o); } break;
                 case "-U": if (Value() is { } u) { searchPaths.Add(Full(u)); } break;
+                case "-L": if (Value() is { } l) { libraryPaths.Add(Full(l)); } break;        // CMP-1070
                 case "--obj-dir": if (Value() is { } d) { objDir = Full(d); } break;
                 case "-D": if (Value() is { } symbol) { defines.Add(symbol); } break;
                 case "-O0": optimization = OptimizationLevel.O0; break;
                 case "-O1": optimization = OptimizationLevel.O1; break;
                 case "-O2": optimization = OptimizationLevel.O2; break;
                 case "-g": debug = true; break;
-                case "--app-type": if (Choice("console", "gui") is { } a) { appType = a == "gui" ? AppType.Gui : AppType.Console; } break;
+                case "--app-type":                                           // CMP-1060
+                    if (Choice("console", "gui", "library") is { } a)
+                    {
+                        appType = a switch { "gui" => AppType.Gui, "library" => AppType.Library, _ => AppType.Console };
+                        explicitAppType = true;
+                    }
+
+                    break;
                 case "--manifest": if (Value() is { } m) { manifest = m is "default" or "none" ? m : Full(m); } break;
                 case "--rtti": if (Choice("broad", "published") is { } r) { rtti = r; } break;
                 case "--unit-scope": if (Value() is { } scope) { scopes.Add(scope); } break;
@@ -298,6 +331,7 @@ public static class OpcCommand
         {
             MainFile = main!,
             SearchPaths = searchPaths.ToImmutable(),
+            LibraryPaths = libraryPaths.ToImmutable(),
             Defines = defines.ToImmutable(),
             ObjectDirectory = objDir ?? TargetRegistry.ObjectDirectory(cwd, target, optimization == OptimizationLevel.O0 ? "Debug" : "Release"),   // CMP-1020
             Target = target,
@@ -314,10 +348,15 @@ public static class OpcCommand
         var emit = new EmitOptions
         {
             Stage = stage,
-            OutputPath = output ?? Path.Combine(cwd, Path.GetFileNameWithoutExtension(main!) + ".exe"),
+            OutputPath = output ?? Path.Combine(cwd, Path.GetFileNameWithoutExtension(main!) + (appType == AppType.Library ? ".dll" : ".exe")),
             Verbose = verbose,
         };
-        return new OpcArguments(compilation, emit, json, verbose, false, false, []);
+        return new OpcArguments(compilation, emit, json, verbose, false, false, [])
+        {
+            ExplicitAppType = explicitAppType,
+            ExplicitOutput = output is not null,
+            ExplicitManifest = manifest is not null,
+        };
     }
 
     private static string JsonString(string value)

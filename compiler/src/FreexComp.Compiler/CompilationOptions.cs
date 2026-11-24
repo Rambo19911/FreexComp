@@ -2,7 +2,8 @@ using System.Collections.Immutable;
 
 namespace FreexComp.Compiler;
 
-public enum AppType { Console, Gui }
+/// <summary><c>Library</c>: a dynamic-link library; goes with a library main file (CMP-1060).</summary>
+public enum AppType { Console, Gui, Library }
 
 public enum OptimizationLevel { O0, O1, O2 }
 
@@ -18,6 +19,11 @@ public sealed record CompilationOptions
 
     /// <summary>-U, in order.</summary>
     public ImmutableArray<string> SearchPaths { get; init; } = [];
+
+    /// <summary>
+    /// -L, in order: directories searched for ready-made import libraries <c>&lt;dll-base&gt;.lib</c> (CMP-1070, 1071 step 3).
+    /// </summary>
+    public ImmutableArray<string> LibraryPaths { get; init; } = [];
 
     /// <summary>-D.</summary>
     public ImmutableArray<string> Defines { get; init; } = [];

@@ -25,6 +25,12 @@ public sealed record Project
 
     public ImmutableArray<string> SearchPaths { get; init; } = [];
 
+    /// <summary>
+    /// Optional key <c>libraryPaths</c> (CMP-1082): directories of ready-made import libraries, relative to the project directory
+    /// or absolute, in order. Written when non-empty or present in the loaded file.
+    /// </summary>
+    public ImmutableArray<string> LibraryPaths { get; init; } = [];
+
     /// <summary>Optional key; written when non-empty or present in the loaded file.</summary>
     public ImmutableArray<string> UnitScopeNames { get; init; } = [];
 
@@ -103,7 +109,15 @@ public sealed record ProjectFile(string Path, string? Form, string? Kind)
 /// <param name="Rtti">Optional per-configuration RTTI scope; null = absent.</param>
 public sealed record ProjectConfiguration(int Optimization, bool DebugInfo, ImmutableArray<string> Defines, string OutputDir, string? Rtti = null);
 
-public sealed record RunSettings(string Arguments, string WorkingDir);
+public sealed record RunSettings(string Arguments, string WorkingDir)
+{
+    /// <summary>
+    /// Optional member <c>hostApplication</c> (CMP-1083): the executable that target <c>Run</c> starts for a library project,
+    /// relative to the project directory or absolute; ignored for other application types. Written when non-empty or present in
+    /// the loaded file.
+    /// </summary>
+    public string HostApplication { get; init; } = "";
+}
 
 public sealed record ProjectEvents(ImmutableArray<string> PreBuild, ImmutableArray<string> PostBuild);
 

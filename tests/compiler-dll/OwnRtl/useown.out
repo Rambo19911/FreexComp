@@ -1,0 +1,8 @@
+host blocks unchanged by the call: TRUE
+library blocks back to the start: TRUE
+TextLength(1000) = 1004
+host block counted by the host: TRUE
+not by the library: TRUE
+kept 104 characters
+host IsLibrary: FALSE
+library IsLibrary: TRUE

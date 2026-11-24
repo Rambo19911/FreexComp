@@ -490,6 +490,12 @@ public sealed class Compilation
         EmitResult Done(bool success, string? output, ImmutableArray<string> compiled) =>
             new(success && !diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), output, diagnostics.ToImmutable(), compiled, [], clock.Elapsed);
 
+        if (AppTypeMismatch(mainPath) is { } mismatch)
+        {
+            diagnostics.Add(mismatch);                                          // CMP-1060: nothing is built
+            return Done(false, null, []);
+        }
+
         if (Bind(diagnostics) is not { } front || options.Stage == EmitStage.Check)
         {
             return Done(true, null, []);
@@ -599,13 +605,32 @@ public sealed class Compilation
             jobs.Add(ClangInvoker.Job(toolchain.Clang, unit.Name, ll, Path.ChangeExtension(ll, ".obj"), Options.Optimization, Options.DebugInfo, Options.Target));
         }
 
-        // until the DLL link of C-288 (CMP-1060…1066) a library stops after its objects and .pcu files: the link is refused
-        var libraryLink = options.Stage == EmitStage.Exe && main.Unit.IsLibrary;
-        var link = options.Stage == EmitStage.Exe && main.Unit.IsProgram && !libraryLink;
+        // CMP-1060: the module kind follows the main source; the default output is next to it
+        var isLibrary = main.Unit.IsLibrary;
+        var output = string.IsNullOrEmpty(options.OutputPath)
+            ? PathUtil.Normalize(Path.Combine(Path.GetDirectoryName(mainPath)!, Path.GetFileNameWithoutExtension(mainPath) + (isLibrary ? ".dll" : ".exe")))
+            : PathUtil.Normalize(options.OutputPath);
+
+        // CMP-1061, 1066: the export definition file of a library, from stage obj on; rewritten only when its content changes
+        var exportDefinition = isLibrary ? Path.Combine(objectDirectory, Path.GetFileNameWithoutExtension(output) + ".exports.def") : null;
+        var exportsChanged = false;
+        var exports = unitBinder.Main!.Symbol!.Exports;
+        if (exportDefinition is not null)
+        {
+            var text = ExportDefinitionFile.Render(exports);
+            exportsChanged = !FileSystem.FileExists(exportDefinition) || FileSystem.ReadAllText(exportDefinition) != text;
+            if (exportsChanged && !Write(exportDefinition, text, location, diagnostics))
+            {
+                return Finish(false, null, compiled);
+            }
+        }
+
+        var link = options.Stage == EmitStage.Exe && main.Unit.IsProgram;
         var imports = LinkInputs.Imports(linkUnits.Select(u => u.Symbol!));
         var libraries = ImmutableArray.CreateBuilder<string>();
         var definitions = new Dictionary<string, string>(StringComparer.Ordinal);
         var hashes = new Dictionary<BackendJob, (string Library, string Hash)>();
+        var readyMadeHashes = new SortedDictionary<string, string>(StringComparer.Ordinal);      // hash file → new content hash
         ImmutableArray<Diagnostic> notFound = [];
         if (link)
         {
@@ -615,16 +640,32 @@ public sealed class Compilation
                 Path.GetDirectoryName(systemPath)!,
                 RtlDirectory(),
                 location,
-                Options.Target);
+                Options.Target,
+                [.. Options.LibraryPaths.Select(PathUtil.Normalize)]);
             var libraryJobs = new List<BackendJob>();
-            foreach (var (dll, definition) in planned)
+            foreach (var (dll, definition, readyMade) in planned)
             {
-                var (library, job, hash) = DllToolInvoker.Prepare(FileSystem, toolchain.DllTool, dll, definition, objectDirectory, Options.Target);
-                libraries.Add(library);
                 foreach (var import in imports.Where(i => i.DllName == dll))
                 {
                     definitions.TryAdd(import.ImportName, definition);
                 }
+
+                if (readyMade)
+                {
+                    // CMP-1071 step 3: used as is by absolute path; other content than at the last successful link relinks
+                    libraries.Add(definition);
+                    var recorded = DllToolInvoker.ReadyMadeHashPath(objectDirectory, dll);
+                    var content = DllToolInvoker.ContentHash(FileSystem, definition);
+                    if (!FileSystem.FileExists(recorded) || FileSystem.ReadAllText(recorded) != content)
+                    {
+                        readyMadeHashes[recorded] = content;
+                    }
+
+                    continue;
+                }
+
+                var (library, job, hash) = DllToolInvoker.Prepare(FileSystem, toolchain.DllTool, dll, definition, objectDirectory, Options.Target);
+                libraries.Add(library);
 
                 if (job is not null)
                 {
@@ -675,19 +716,11 @@ public sealed class Compilation
 
         ct.ThrowIfCancellationRequested();
         diagnostics.AddRange(notFound);
-        if (libraryLink && !diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
-        {
-            diagnostics.Add(Diagnostic.Create("E2900", location, "linking a library (DLL output)"));
-        }
-
         if (!link || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {
             return Finish(true, null, compiled);                                    // CMP-1140: no link after a failed job
         }
 
-        var output = string.IsNullOrEmpty(options.OutputPath)
-            ? PathUtil.Normalize(Path.Combine(Path.GetDirectoryName(mainPath)!, Path.GetFileNameWithoutExtension(mainPath) + ".exe"))
-            : PathUtil.Normalize(options.OutputPath);
         var request = new LinkRequest(output, objectDirectory,
             [.. linkUnits.Select(u => u.IsPrecompiled ? u.ObjectPath : Path.Combine(objectDirectory, u.Name + ".obj"))])
         {
@@ -699,8 +732,10 @@ public sealed class Compilation
             ExtraObjects = [.. linkUnits.SelectMany(u => u.LinkInputs.Objects).Distinct(PathUtil.Comparer)],
             ImportLibraries = libraries.ToImmutable(),
             ImportDefinitions = definitions.ToImmutableDictionary(StringComparer.Ordinal),
+            ExportDefinition = exportDefinition,
+            ImportLibraryOutput = isLibrary && !exports.IsEmpty ? LinkInvoker.ImportLibraryPath(output) : null,   // CMP-1063
         };
-        if (compiled.IsEmpty && !regenerated && !options.ForceRebuild && LinkIsUpToDate(request))
+        if (compiled.IsEmpty && !regenerated && !exportsChanged && readyMadeHashes.Count == 0 && !options.ForceRebuild && LinkIsUpToDate(request))
         {
             return Finish(WriteSidecar(output, main.Unit.Name, linkUnits, objectDirectory, location, diagnostics), output, compiled);   // CMP-155
         }
@@ -719,8 +754,32 @@ public sealed class Compilation
             Write(Path.Combine(objectDirectory, LinkedManifest), FileSystem.ReadAllText(request.ManifestPath), location, diagnostics);
         }
 
+        if (linked.Success)
+        {
+            foreach (var (path, hash) in readyMadeHashes)
+            {
+                Write(path, hash, location, diagnostics);                           // CMP-1071: what this link used
+            }
+        }
+
         var success = linked.Success && WriteSidecar(output, main.Unit.Name, linkUnits, objectDirectory, location, diagnostics);
         return Finish(success, success ? output : null, compiled);
+    }
+
+    /// <summary>
+    /// CMP-1060: <c>E0012</c> when <see cref="CompilationOptions.AppType"/> and the kind of the main source disagree — a library
+    /// file needs <see cref="AppType.Library"/> and nothing else may have it.
+    /// </summary>
+    private Diagnostic? AppTypeMismatch(string mainPath)
+    {
+        if (!TryGetSyntaxTree(mainPath, out var tree) || tree.Root is LibrarySyntax == (Options.AppType == AppType.Library))
+        {
+            return null;                                                        // an unreadable main file is reported by the front end
+        }
+
+        var appType = Options.AppType switch { AppType.Library => "library", AppType.Gui => "gui", _ => "console" };
+        var kind = tree.Root switch { LibrarySyntax => "library", UnitSyntax => "unit", _ => "program" };
+        return Diagnostic.Create("E0012", Location.ForFile(mainPath), appType, Path.GetFileName(mainPath), kind);
     }
 
     /// <summary>The per-unit sidecar fragment written next to the unit's <c>.ll</c> with <c>-g</c> (CMP-425).</summary>
@@ -783,6 +842,8 @@ public sealed class Compilation
     /// <summary>
     /// CMP-155: the link is skipped when (and only when) the <c>link.rsp</c> it would write is byte-identical to the one in the object
     /// directory, no unit was recompiled (checked by the caller) and the output exe exists. Timestamps are not consulted.
+    /// CMP-1065: for a library the DLL and — when it has exports — its import library must exist (the caller checks that the
+    /// export definition file did not change in this run).
     /// </summary>
     private bool LinkIsUpToDate(LinkRequest request)
     {
@@ -790,6 +851,7 @@ public sealed class Compilation
         try
         {
             return FileSystem.FileExists(request.OutputPath) && FileSystem.FileExists(rsp)
+                && (request.ImportLibraryOutput is null || FileSystem.FileExists(request.ImportLibraryOutput))
                 && FileSystem.ReadAllBytes(rsp).AsSpan().SequenceEqual(
                     new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(LinkInvoker.RenderResponseFile(LinkInvoker.BuildArguments(request))))
                 && (request.ManifestPath is null
@@ -1100,6 +1162,10 @@ public sealed class Compilation
         catch (EmitNotSupportedException e)
         {
             return (null, null, Diagnostic.Create("E2900", e.Location, e.Message));                // C-213
+        }
+        catch (EmitDiagnosticException e)
+        {
+            return (null, null, Diagnostic.Create(e.Code, e.Location, e.Arguments));               // C-293
         }
         catch (NotSupportedException e)
         {

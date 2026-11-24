@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Shared\NativeRun.cs" Link="Shared\NativeRun.cs" />
+    <Compile Include="..\Shared\DllScenario.cs" Link="Shared\DllScenario.cs" />
     <ProjectReference Include="..\..\src\opc\opc.csproj" />
   </ItemGroup>
 </Project>

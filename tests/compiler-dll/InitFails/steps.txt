@@ -1,0 +1,4 @@
+dll faillib.pas
+exe usefail.pas
+run usefail.exe
+exists first-final.txt

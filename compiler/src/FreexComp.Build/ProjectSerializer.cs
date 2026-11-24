@@ -132,7 +132,7 @@ public static class ProjectSerializer
 
         var appTypeNode = root.Optional("appType");
         var appType = appTypeNode?.String() ?? "console";
-        if (appType is not ("console" or "gui"))
+        if (appType is not ("console" or "gui" or "library"))                   // CMP-1080: E9008 remains for package and unknown values
         {
             throw new ProjectFileException("E9008", appTypeNode!.Value.Offset, appType);
         }
@@ -154,7 +154,10 @@ public static class ProjectSerializer
             runNode.RequireObject();
             run = new RunSettings(
                 runNode.Optional("arguments")?.String() ?? "",
-                Slashes(runNode.Optional("workingDir")?.String() ?? ""));
+                Slashes(runNode.Optional("workingDir")?.String() ?? ""))
+            {
+                HostApplication = Slashes(runNode.Optional("hostApplication")?.String() ?? ""),
+            };
         }
 
         var events = new ProjectEvents([], []);
@@ -175,6 +178,7 @@ public static class ProjectSerializer
             MainSource = mainSource,
             Files = files,
             SearchPaths = root.Optional("searchPaths")?.Strings(path: true) ?? [],
+            LibraryPaths = root.Optional("libraryPaths")?.Strings(path: true) ?? [],
             UnitScopeNames = root.Optional("unitScopeNames")?.Strings() ?? [],
             Rtti = root.Optional("rtti")?.Rtti(),
             Manifest = root.Optional("manifest")?.String() is { } manifest ? ManifestValue(manifest) : null,
@@ -289,6 +293,7 @@ public static class ProjectSerializer
             ("mainSource", w => w.WriteStringValue(Slashes(p.MainSource))),
             ("files", w => WriteFiles(w, p.Files, Child(source, "files"))),
             ("searchPaths", w => WriteStrings(w, p.SearchPaths, path: true)),
+            ("libraryPaths", Has(source, "libraryPaths") || !p.LibraryPaths.IsEmpty ? w => WriteStrings(w, p.LibraryPaths, path: true) : null),
             ("unitScopeNames", Has(source, "unitScopeNames") || !p.UnitScopeNames.IsEmpty ? w => WriteStrings(w, p.UnitScopeNames) : null),
             ("rtti", p.Rtti is { } rtti ? w => w.WriteStringValue(rtti) : null),
             ("manifest", p.Manifest is { } manifest ? w => w.WriteStringValue(ManifestValue(manifest)) : null),
@@ -301,6 +306,9 @@ public static class ProjectSerializer
             [
                 ("arguments", w => w.WriteStringValue(p.Run.Arguments)),
                 ("workingDir", w => w.WriteStringValue(Slashes(p.Run.WorkingDir))),
+                ("hostApplication", Has(Child(source, "run"), "hostApplication") || p.Run.HostApplication.Length > 0
+                    ? w => w.WriteStringValue(Slashes(p.Run.HostApplication))
+                    : null),
             ])),
             ("events", w => WriteObject(w, Child(source, "events"),
             [

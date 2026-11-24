@@ -1,5 +1,5 @@
 // covers: LANG-551
-// opc: --emit obj
+// the DLL is linked; a library case has no run step
 library WarnExportUnsafeType;
 // exporting a routine whose parameter or result type is not boundary-safe is allowed and warned once
 // per export item (first offending type); {$WARN EXPORT_UNSAFE_TYPE OFF} silences it; the library still builds

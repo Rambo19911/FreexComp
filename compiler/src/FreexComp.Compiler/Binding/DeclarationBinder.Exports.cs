@@ -218,6 +218,7 @@ internal sealed partial class DeclarationBinder
         }
 
         library.Exports = [.. result.OrderBy(e => e.Ordinal)];
+        library.ExportLocations = valid.ToDictionary(e => e.Name!, e => DiagnosticBag.LocationOf(e.Item), StringComparer.Ordinal);
     }
 
     /// <summary>LANG-551: the first parameter type (in order), else the result type, that is not boundary-safe; null when all are.</summary>

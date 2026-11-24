@@ -33,7 +33,16 @@ internal sealed record LinkRequest(string OutputPath, string ObjectDirectory, Im
     /// <summary>Import libraries; sorted by name by the invoker.</summary>
     public ImmutableArray<string> ImportLibraries { get; init; } = [];
 
-    /// <summary>Import name (<c>Foo</c> of <c>external 'x.dll' name 'Foo'</c>) → its <c>.def</c>, for the CMP-623 hint.</summary>
+    /// <summary>CMP-1062: the module-definition file with the exports; set for a library link (<c>/dll</c>), null for an executable.</summary>
+    public string? ExportDefinition { get; init; }
+
+    /// <summary>CMP-1063: the import library written next to the DLL; null for an executable and for a library without exports.</summary>
+    public string? ImportLibraryOutput { get; init; }
+
+    /// <summary>
+    /// Import name (<c>Foo</c> of <c>external 'x.dll' name 'Foo'</c>) → its <c>.def</c>, for the CMP-623 hint — or the ready-made
+    /// <c>.lib</c> it was expected in (CMP-1072).
+    /// </summary>
     public ImmutableDictionary<string, string> ImportDefinitions { get; init; } = ImmutableDictionary<string, string>.Empty;
 }
 
@@ -55,6 +64,35 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
         }
 
         var args = ImmutableArray.CreateBuilder<string>();
+        if (request.ExportDefinition is not null)
+        {
+            // CMP-1062: a library — no /stack line (stack sizes belong to the executable)
+            args.AddRange(
+                "/nologo",
+                "/out:" + request.OutputPath,
+                "/dll",
+                "/entry:" + request.Target.LibraryEntrySymbol,
+                "/subsystem:windows",
+                "/machine:" + request.Target.LinkerMachine,
+                "/nodefaultlib",
+                "/incremental:no",
+                "/opt:ref",
+                "/opt:icf",
+                "/Brepro",
+                "/largeaddressaware",
+                "/dynamicbase",
+                "/nxcompat");
+            args.AddRange(request.Target.LinkerArguments);
+            args.Add("/def:" + request.ExportDefinition);
+            if (request.ImportLibraryOutput is not null)
+            {
+                args.Add("/implib:" + request.ImportLibraryOutput);
+            }
+
+            AddCommonTail(args, request, "/manifest:embed,id=2");               // CMP-1060: the id reserved for a DLL's isolation manifest
+            return args.ToImmutable();
+        }
+
         args.AddRange(
             "/nologo",
             "/out:" + request.OutputPath,
@@ -71,6 +109,13 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
             "/dynamicbase",
             "/nxcompat");
         args.AddRange(request.Target.LinkerArguments);
+        AddCommonTail(args, request, "/manifest:embed");
+        return args.ToImmutable();
+    }
+
+    /// <summary>The lines shared by both module kinds (CMP-625, CMP-1062): debug, manifest, objects, import libraries.</summary>
+    private static void AddCommonTail(ImmutableArray<string>.Builder args, LinkRequest request, string manifestOption)
+    {
         if (request.DebugInfo)
         {
             args.Add(request.DebugFormat == DebugFormat.Dwarf ? "/debug:dwarf" : "/debug");
@@ -78,14 +123,13 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
 
         if (request.ManifestPath is not null)
         {
-            args.Add("/manifest:embed");
+            args.Add(manifestOption);
             args.Add("/manifestinput:" + request.ManifestPath);
         }
 
         args.AddRange(request.UnitObjects);
         args.AddRange(SortedByName(request.ExtraObjects));
         args.AddRange(SortedByName(request.ImportLibraries));
-        return args.ToImmutable();
     }
 
     /// <summary>One argument per line (LF, final LF), quoted when it contains spaces.</summary>
@@ -133,7 +177,9 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
                 var d = Diagnostic.Create("E4005", location, import is null ? symbol : "__imp_" + import);
                 if (import is not null && importDefinitions.TryGetValue(import, out var def))
                 {
-                    d = d with { Related = [new RelatedLocation(location, "add it to " + def)] };
+                    // CMP-1072: a ready-made import library cannot be edited - it does not export the name
+                    var hint = def.EndsWith(".lib", StringComparison.OrdinalIgnoreCase) ? "not exported by " + def : "add it to " + def;
+                    d = d with { Related = [new RelatedLocation(location, hint)] };
                 }
 
                 mapped.Add(d);
@@ -175,10 +221,21 @@ internal sealed class LinkInvoker(ToolRunner runner, string lldLinkPath, IFileSy
         if (!success)
         {
             TryDelete(request.OutputPath);
+            if (request.ExportDefinition is not null)
+            {
+                TryDelete(ImportLibraryPath(request.OutputPath));               // CMP-1064: no stale import library either
+            }
+        }
+        else if (request.ExportDefinition is not null && request.ImportLibraryOutput is null)
+        {
+            TryDelete(ImportLibraryPath(request.OutputPath));                   // CMP-1063: a library without exports has none
         }
 
         return new LinkResult(success, diagnostics);
     }
+
+    /// <summary>CMP-1063: <c>&lt;dll base name&gt;.lib</c> in the DLL's directory.</summary>
+    public static string ImportLibraryPath(string dllPath) => Path.ChangeExtension(dllPath, ".lib");
 
     /// <summary>Deletes the file if present; false when another process holds it (sharing violation, access denied).</summary>
     private bool TryDelete(string path)

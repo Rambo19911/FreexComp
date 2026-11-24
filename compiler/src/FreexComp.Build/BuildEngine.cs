@@ -131,16 +131,23 @@ public sealed class BuildEngine : IBuildEngine
 
         var outcomes = ImmutableArray.CreateBuilder<ProjectOutcome>();
         var failed = new Dictionary<string, string>(PathUtil.Comparer);                        // project → its name
+        var libraries = new Dictionary<string, string>(PathUtil.Comparer);                     // library project → the DLL it built (CMP-1084)
         foreach (var project in order)
         {
             var target = request.Target == BuildTarget.Run && !PathUtil.AreEqual(project, last) ? BuildTarget.Build : request.Target;
             var failedDependency = dependencies[project].FirstOrDefault(failed.ContainsKey);
+            ImmutableArray<string> libraryDependencies = [.. dependencies[project].Where(libraries.ContainsKey).Select(d => libraries[d]).Distinct(PathUtil.Comparer)];
             var outcome = await BuildProjectAsync(
-                project, loads[project], target, request, progress, ct, failedDependency is null ? null : failed[failedDependency]).ConfigureAwait(false);
+                project, loads[project], target, request, progress, ct, failedDependency is null ? null : failed[failedDependency], libraryDependencies)
+                .ConfigureAwait(false);
             outcomes.Add(outcome);
             if (!outcome.Result.Success)
             {
                 failed[project] = loads[project].Value?.Name ?? Path.GetFileNameWithoutExtension(project);
+            }
+            else if (loads[project].Value is { AppType: "library" } && outcome.Result.OutputPath is { } dll)
+            {
+                libraries[project] = dll;
             }
 
             if (outcome.Canceled)
@@ -208,11 +215,12 @@ public sealed class BuildEngine : IBuildEngine
     /// <summary>
     /// One project: exactly one <c>Started</c>, its events, exactly one <c>Finished</c> (CMP-800). <paramref name="load"/> without a
     /// value reports its diagnostics only (also used for group-level errors); <paramref name="skippedBecause"/> = the name of a failed
-    /// dependency (CMP-821: no diagnostics of its own, 0 errors, one Info line).
+    /// dependency (CMP-821: no diagnostics of its own, 0 errors, one Info line). <paramref name="libraryDependencies"/> = the DLLs
+    /// built by the direct dependencies that are library projects (CMP-1084).
     /// </summary>
     private async Task<ProjectOutcome> BuildProjectAsync(
         string path, LoadResult<Project> load, BuildTarget target, BuildRequest request, IProgress<BuildEvent> progress, CancellationToken ct,
-        string? skippedBecause = null)
+        string? skippedBecause = null, ImmutableArray<string> libraryDependencies = default)
     {
         var clock = Stopwatch.StartNew();
         var sink = new EventSink(progress, path);
@@ -249,7 +257,10 @@ public sealed class BuildEngine : IBuildEngine
             }
             else
             {
-                var run = new ProjectRun(this, project, configuration, TargetOverride?.Invoke(registered) ?? registered, request, sink, diagnostics, location);
+                var run = new ProjectRun(this, project, configuration, TargetOverride?.Invoke(registered) ?? registered, request, sink, diagnostics, location)
+                {
+                    LibraryDependencies = libraryDependencies.IsDefault ? [] : libraryDependencies,
+                };
                 try
                 {
                     (upToDate, output) = await run.ExecuteAsync(target, ct).ConfigureAwait(false);
@@ -332,6 +343,9 @@ public sealed class BuildEngine : IBuildEngine
         List<Diagnostic> diagnostics,
         Location location)
     {
+        /// <summary>The name of the file in the object directory that lists the deployed files, one per line (CMP-1084).</summary>
+        private const string DeployedFile = "deployed.txt";
+
         private readonly IFileSystem _fs = engine._fs;
         private string? _exe;
         private DateTime? _exeTimeBefore;
@@ -339,6 +353,11 @@ public sealed class BuildEngine : IBuildEngine
 
         /// <summary>Target = Run and the program ran.</summary>
         public int? RunExitCode { get; private set; }
+
+        /// <summary>CMP-1084: the DLLs of the direct dependencies that are library projects, in dependency order.</summary>
+        public ImmutableArray<string> LibraryDependencies { get; init; } = [];
+
+        private bool IsLibrary => project.AppType == "library";
 
         /// <returns>Whether nothing had to be done, and the output exe.</returns>
         public async Task<(bool UpToDate, string? Output)> ExecuteAsync(BuildTarget target, CancellationToken ct)
@@ -357,7 +376,19 @@ public sealed class BuildEngine : IBuildEngine
                     return await BuildAsync(force: true, ct).ConfigureAwait(false);
                 case BuildTarget.Run:
                     var built = await BuildAsync(force: false, ct).ConfigureAwait(false);
-                    if (built.Output is not null)
+                    if (built.Output is not null && IsLibrary)
+                    {
+                        // CMP-1083: a library runs inside its host application
+                        if (ProjectOptions.GetHostApplicationPath(project) is { } host)
+                        {
+                            await RunProgramAsync(host, ct).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            diagnostics.Add(Diagnostic.Create("E9014", location, project.Name));
+                        }
+                    }
+                    else if (built.Output is not null)
                     {
                         await RunProgramAsync(built.Output, ct).ConfigureAwait(false);
                     }
@@ -370,7 +401,8 @@ public sealed class BuildEngine : IBuildEngine
 
         /// <summary>
         /// CMP-832: <c>obj/&lt;config&gt;/</c> (the baseline target) or <c>obj/&lt;target id&gt;/&lt;config&gt;/</c> (CMP-1020) recursively and the
-        /// output exe (+ <c>.pdb</c>); nothing else.
+        /// output exe (+ <c>.pdb</c>, <c>.pdi</c>); nothing else. CMP-1081: for a library the DLL with its import library; CMP-1084:
+        /// and exactly the files recorded in <c>&lt;objdir&gt;/deployed.txt</c>.
         /// </summary>
         private bool Clean()
         {
@@ -387,6 +419,7 @@ public sealed class BuildEngine : IBuildEngine
             }
 
             var exe = ProjectOptions.GetOutputPath(project, configuration);
+            var deployed = ReadDeployed(objectDirectory).Select(name => Path.Combine(Path.GetDirectoryName(exe)!, name)).ToList();
             try
             {
                 _fs.DeleteDirectory(objectDirectory);
@@ -397,7 +430,13 @@ public sealed class BuildEngine : IBuildEngine
                 return false;
             }
 
-            foreach (var file in new[] { exe, Path.ChangeExtension(exe, ".pdb") })
+            List<string> outputs = [exe, Path.ChangeExtension(exe, ".pdb"), Path.ChangeExtension(exe, ".pdi")];
+            if (IsLibrary)
+            {
+                outputs.Add(Path.ChangeExtension(exe, ".lib"));
+            }
+
+            foreach (var file in outputs.Concat(deployed))
             {
                 try
                 {
@@ -429,6 +468,10 @@ public sealed class BuildEngine : IBuildEngine
                 MaxParallelism = request.MaxParallelism != 0 ? request.MaxParallelism : project.Jobs,   // CMP-1130; 0 = one per processor
                 SearchPaths = [.. projectOptions.SearchPaths,
                     .. request.ExtraSearchPaths.Select(PathUtil.Normalize).Where(p => !projectOptions.SearchPaths.Contains(p, PathUtil.Comparer))],
+                // CMP-1084 (a): the directory of each direct library dependency, after the project's own library paths
+                LibraryPaths = [.. projectOptions.LibraryPaths,
+                    .. LibraryDependencies.Select(d => Path.GetDirectoryName(d)!).Distinct(PathUtil.Comparer)
+                        .Where(p => !projectOptions.LibraryPaths.Contains(p, PathUtil.Comparer))],
             };
             foreach (var file in project.Files)
             {
@@ -477,12 +520,83 @@ public sealed class BuildEngine : IBuildEngine
                 return (false, null);
             }
 
+            if (!Deploy(output, options.ObjectDirectory, ref didWork))
+            {
+                return (false, null);
+            }
+
             if (!didWork)
             {
                 sink.Info(project.Name + ": up to date");
             }
 
             return (!didWork, result.OutputPath);
+        }
+
+        /// <summary>
+        /// CMP-1084 (b): after a successful build each direct library dependency's DLL (and its <c>.pdb</c> / <c>.pdi</c> when present)
+        /// is copied next to <paramref name="output"/> when it lives in another directory and the bytes differ; the copied file names
+        /// are recorded in <c>&lt;objdir&gt;/deployed.txt</c>. A target that is in use → E4008 and false.
+        /// </summary>
+        private bool Deploy(string output, string objectDirectory, ref bool didWork)
+        {
+            var outputDirectory = Path.GetDirectoryName(output)!;
+            var names = new List<string>();
+            foreach (var dll in LibraryDependencies.Where(d => !PathUtil.AreEqual(Path.GetDirectoryName(d)!, outputDirectory)))
+            {
+                foreach (var source in new[] { dll, Path.ChangeExtension(dll, ".pdb"), Path.ChangeExtension(dll, ".pdi") }.Where(_fs.FileExists))
+                {
+                    var name = Path.GetFileName(source);
+                    var destination = Path.Combine(outputDirectory, name);
+                    if (!names.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    {
+                        names.Add(name);
+                    }
+
+                    try
+                    {
+                        var bytes = _fs.ReadAllBytes(source);
+                        if (_fs.FileExists(destination) && _fs.ReadAllBytes(destination).AsSpan().SequenceEqual(bytes))
+                        {
+                            continue;
+                        }
+
+                        sink.Info("Deploying " + name);
+                        didWork = true;
+                        _fs.WriteAllBytes(destination, bytes);
+                    }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                    {
+                        diagnostics.Add(Diagnostic.Create("E4008", location, destination));
+                        return false;
+                    }
+                }
+            }
+
+            var text = string.Concat(names.Select(n => n + "\n"));
+            var record = Path.Combine(objectDirectory, DeployedFile);
+            if (names.Count > 0 && !(_fs.FileExists(record) && _fs.ReadAllText(record) == text))
+            {
+                _fs.WriteAllBytes(record, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(text));
+            }
+
+            return true;
+        }
+
+        /// <summary>The file names recorded by <see cref="Deploy"/>; names that are not plain file names are ignored (Clean deletes nothing else).</summary>
+        private List<string> ReadDeployed(string objectDirectory)
+        {
+            var record = Path.Combine(objectDirectory, DeployedFile);
+            try
+            {
+                return !_fs.FileExists(record) ? []
+                    : [.. _fs.ReadAllText(record).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Where(n => n == Path.GetFileName(n) && n is not ("." or ".."))];
+            }
+            catch (IOException)
+            {
+                return [];
+            }
         }
 
         /// <summary>

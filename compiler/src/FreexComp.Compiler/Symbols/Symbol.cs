@@ -112,6 +112,9 @@ public sealed class UnitSymbol : Symbol
     /// <summary>LANG-545…549: the exports of a library file in ordinal order (set by the export binder); empty otherwise.</summary>
     internal ImmutableArray<ExportInfo> Exports { get; set; } = [];
 
+    /// <summary>The location of the export item of each entry of <see cref="Exports"/>, by export name (emit-time diagnostics, C-293).</summary>
+    internal IReadOnlyDictionary<string, Text.Location> ExportLocations { get; set; } = new Dictionary<string, Text.Location>();
+
     /// <summary>
     /// End of the last field of the unit's threadvar record so far (ABI-180; filled while the var sections are bound, or
     /// from the <c>.pcu</c>); the descriptor's <c>Size</c> is this rounded up to 16.

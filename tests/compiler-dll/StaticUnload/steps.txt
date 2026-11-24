@@ -1,0 +1,4 @@
+dll unloadlib.pas
+exe useunload.pas
+run useunload.exe
+exists unloaded.txt
