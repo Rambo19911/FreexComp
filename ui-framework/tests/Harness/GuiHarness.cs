@@ -110,15 +110,15 @@ public static partial class Gui
             CreateNoWindow = true,
         };
         using var opc = Process.Start(psi)!;
-        var stdout = opc.StandardOutput.ReadToEndAsync();
-        var stderr = opc.StandardError.ReadToEndAsync();
+        var stdout = PipeCapture.Start(opc.StandardOutput, "opc stdout");   // U-142: never on the thread pool
+        var stderr = PipeCapture.Start(opc.StandardError, "opc stderr");
         if (!opc.WaitForExit(BuildSafetyNet))
         {
             opc.Kill(entireProcessTree: true);
             Assert.Fail($"opc did not finish building {source} (safety net {BuildSafetyNet.TotalSeconds:F0} s; its process tree was killed)");
         }
 
-        var output = stdout.Result + stderr.Result;
+        var output = stdout.ReadToEnd() + stderr.ReadToEnd();
         Assert.True(opc.ExitCode == 0, $"opc exit code {opc.ExitCode} building {source}\n{output}");
         var ours = new[] { UiCorpus.AreaDirectory, Path.Combine(RtlSetup.RepositoryRoot, "rtl") };
         var warnings = output.ReplaceLineEndings("\n").Split('\n')
@@ -699,18 +699,15 @@ public static partial class Gui
     /// <summary>A started GUI program: output captured, the <see cref="SessionTimeout"/> backstop, killed (tree) on dispose.</summary>
     public sealed class GuiProcess : IDisposable
     {
-        private readonly StringBuilder stdout = new();
-        private readonly StringBuilder stderr = new();
         private readonly Timer deadline;
         private bool killed;
 
         internal GuiProcess(Process process)
         {
             Process = process;
-            process.OutputDataReceived += (_, e) => Append(stdout, e.Data);
-            process.ErrorDataReceived += (_, e) => Append(stderr, e.Data);
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            // U-142: the pipes are read line by line on threads of their own for the whole session, never on the pool
+            OutputReader = PipeCapture.Start(process.StandardOutput, $"gui stdout {process.Id}", lines: true);
+            ErrorReader = PipeCapture.Start(process.StandardError, $"gui stderr {process.Id}", lines: true);
             deadline = new Timer(_ => Kill(), null, SessionTimeout, Timeout.InfiniteTimeSpan);
         }
 
@@ -718,28 +715,14 @@ public static partial class Gui
 
         public IntPtr MainWindow { get; internal set; }
 
-        /// <summary>Complete only after <see cref="WaitForExit"/> returned true.</summary>
-        public string StdOut
-        {
-            get
-            {
-                lock (stdout)
-                {
-                    return stdout.ToString();
-                }
-            }
-        }
+        internal PipeCapture OutputReader { get; }
 
-        public string StdErr
-        {
-            get
-            {
-                lock (stderr)
-                {
-                    return stderr.ToString();
-                }
-            }
-        }
+        internal PipeCapture ErrorReader { get; }
+
+        /// <summary>The lines written so far, each ended by <c>\n</c>. Complete only after <see cref="WaitForExit"/> returned true.</summary>
+        public string StdOut => OutputReader.Text;
+
+        public string StdErr => ErrorReader.Text;
 
         /// <summary>True once the session backstop (<see cref="SessionTimeout"/>) or a missed exit (<see cref="WaitForExit"/>) killed the process tree.</summary>
         public bool Killed
@@ -774,7 +757,8 @@ public static partial class Gui
                 return false;
             }
 
-            Process.WaitForExit();                                  // drains the redirected streams
+            OutputReader.ReadToEnd();                               // drains the redirected streams
+            ErrorReader.ReadToEnd();
             return !Killed;
         }
 
@@ -803,19 +787,6 @@ public static partial class Gui
             catch (InvalidOperationException)
             {
                 // exited meanwhile
-            }
-        }
-
-        private static void Append(StringBuilder sb, string? line)
-        {
-            if (line is null)
-            {
-                return;
-            }
-
-            lock (sb)
-            {
-                sb.Append(line).Append('\n');
             }
         }
     }

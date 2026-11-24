@@ -320,10 +320,15 @@ public static class LayoutHost
         try
         {
             process.StandardInput.Close();
-            var stdout = process.StandardOutput.ReadToEndAsync(stop.Token);
-            var stderr = process.StandardError.ReadToEndAsync(stop.Token);
+            // U-142: the pipes are read on threads of their own, never on the thread pool; they end with the process (or its kill)
+            var stdout = PipeCapture.Start(process.StandardOutput, "layout stdout");
+            var stderr = PipeCapture.Start(process.StandardError, "layout stderr");
             await process.WaitForExitAsync(stop.Token).ConfigureAwait(false);
-            return new(process.ExitCode, await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false), null);
+            return new(
+                process.ExitCode,
+                await stdout.Completion.WaitAsync(stop.Token).ConfigureAwait(false),
+                await stderr.Completion.WaitAsync(stop.Token).ConfigureAwait(false),
+                null);
         }
         catch (OperationCanceledException)
         {
