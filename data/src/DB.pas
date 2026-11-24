@@ -428,12 +428,21 @@ type
   end;
 
   TBlobField = class(TField)
+  private
+    function GetBlobSize: Integer;
   protected
     function ValueAsBytes(const V: TDBValue): TBytes; override;
     function BytesToValue(const Value: TBytes): TDBValue; override;
     function DefaultText(const V: TDBValue; Display: Boolean): string; override;
   public
     constructor Create(AOwner: TComponent); override;
+    { Assigns the bytes from the position of the stream to its end (a memo decodes them as UTF-8); the
+      assignment sequence of AsBytes. }
+    procedure LoadFromStream(Stream: TStream);
+    { Writes AsBytes at the position of the stream (a memo as UTF-8); nothing for a null or empty value. }
+    procedure SaveToStream(Stream: TStream);
+    { Length of AsBytes; 0 for a null value. }
+    property BlobSize: Integer read GetBlobSize;
   end;
 
   TMemoField = class(TBlobField)
@@ -701,6 +710,9 @@ type
     procedure Delete;
     { Asks the data links to write pending control text into their fields. }
     procedure UpdateRecord;
+    { In dsEdit / dsInsert: sets every data field that can be written to null and flags it as assigned; no
+      field events, one deRecordChange notification. }
+    procedure ClearFields;
     procedure First;
     procedure Last;
     procedure Next;
@@ -2134,6 +2146,36 @@ begin
   Result := '(Blob)';
 end;
 
+function TBlobField.GetBlobSize: Integer;
+begin
+  Result := Length(GetAsBytes);
+end;
+
+procedure TBlobField.SaveToStream(Stream: TStream);
+var
+  B: TBytes;
+begin
+  B := GetAsBytes;
+  if Length(B) > 0 then
+    Stream.WriteBuffer(B[0], Length(B));
+end;
+
+procedure TBlobField.LoadFromStream(Stream: TStream);
+var
+  B: TBytes;
+  Count: Int64;
+begin
+  { the state and read-only errors come before the stream is read }
+  CheckWrite;
+  Count := Stream.Size - Stream.Position;
+  if Count < 0 then
+    Count := 0;
+  SetLength(B, Count);
+  if Count > 0 then
+    Stream.ReadBuffer(B[0], Count);
+  StoreValue(BytesToValue(B));
+end;
+
 constructor TMemoField.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -2756,6 +2798,29 @@ begin
   if not (FState in [dsEdit, dsInsert]) then
     DatabaseError(SDatNotEditing);
   Notify(deUpdateRecord, nil);
+end;
+
+procedure TDataSet.ClearFields;
+var
+  I: Integer;
+  F: TField;
+begin
+  CheckActive;
+  if FReadLocked or (FActiveRow >= 0) or not (FState in [dsEdit, dsInsert]) then
+    DatabaseError(SDatNotEditing);
+  for I := 0 to FFields.Count - 1 do
+  begin
+    F := FFields[I];
+    { the fields a field write would accept: inside OnNewRecord also the read-only ones }
+    if (F.FFieldKind = fkData) and (FInNewRecord or not (F.FReadOnly or not FieldUpdatable(F))) then
+    begin
+      SetFieldValue(F, NullValue, True);
+      FModified := True;
+    end;
+  end;
+  if FAutoCalcFields and (FCalcFieldCount > 0) then
+    InternalCalcBuffer;
+  Notify(deRecordChange, nil);
 end;
 
 { every required data field has a value; an auto-increment field gets its value from the driver }

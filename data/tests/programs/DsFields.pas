@@ -3,7 +3,8 @@ program DsFields;
 { Field value access. Read section: the As... getters of every field class, the null rules and the
   conversion, access and range errors. Write section: the As... setters, Clear, the size, read-only and
   state errors and the assignment sequence with OnValidate and OnChange. Text section: Text and DisplayText,
-  OnGetText and OnSetText, DisplayFormat, Precision and DisplayValues. }
+  OnGetText and OnSetText, DisplayFormat, Precision and DisplayValues. Clear section: ClearFields. Blob
+  section: BlobSize, SaveToStream and LoadFromStream of blob and memo fields. }
 uses
   SysUtils, Classes, DB, DataTestUtils, TestDataSet;
 
@@ -801,6 +802,318 @@ begin
   DS.Free;
 end;
 
+{ ---------------------------------------------------------------- ClearFields, blob streams }
+
+type
+  TMoreCalls = class
+    DS: TDataSet;
+    Blob: TBlobField;
+    Stream: TStream;
+    Text, Len: TField;
+    Probing: Boolean;
+    procedure DoClearFields;
+    procedure DoLoad;
+    procedure DoSave;
+    procedure ReadBlobSize;
+    procedure NewRecord(DataSet: TDataSet);
+    procedure Calc(DataSet: TDataSet);
+    procedure Change(Sender: TField);
+  end;
+
+procedure TMoreCalls.DoClearFields;
+begin
+  DS.ClearFields;
+end;
+
+procedure TMoreCalls.DoLoad;
+begin
+  Blob.LoadFromStream(Stream);
+end;
+
+procedure TMoreCalls.DoSave;
+begin
+  Blob.SaveToStream(Stream);
+end;
+
+procedure TMoreCalls.ReadBlobSize;
+begin
+  WriteLn(Blob.BlobSize);
+end;
+
+procedure TMoreCalls.NewRecord(DataSet: TDataSet);
+begin
+  DataSet.FieldByName('s').AsString := 'preset';
+  DataSet.FieldByName('ro').AsString := 'preset';
+  DataSet.ClearFields;
+end;
+
+procedure TMoreCalls.Calc(DataSet: TDataSet);
+begin
+  AddLog('OnCalcFields');
+  if Probing then
+    try
+      DataSet.ClearFields;
+    except
+      on E: Exception do
+        AddLog(E.ClassName + ': ' + E.Message);
+    end;
+  if not Text.IsNull then
+    Len.AsInteger := Length(Text.AsString);
+end;
+
+procedure TMoreCalls.Change(Sender: TField);
+begin
+  AddLog('OnChange(' + Sender.FieldName + ')');
+end;
+
+var
+  More: TMoreCalls;
+
+function MakeBytes(const Values: array of Byte): TBytes;
+var
+  I: Integer;
+begin
+  SetLength(Result, Length(Values));
+  for I := 0 to Length(Values) - 1 do
+    Result[I] := Values[I];
+end;
+
+function HexOf(const B: TBytes): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to Length(B) - 1 do
+  begin
+    if I > 0 then
+      Result := Result + ' ';
+    Result := Result + IntToHex(B[I], 2);
+  end;
+end;
+
+{ the whole content of the stream; the position is kept }
+function StreamHex(Stream: TStream): string;
+var
+  B: TBytes;
+  Saved: Int64;
+begin
+  Saved := Stream.Position;
+  SetLength(B, Stream.Size);
+  Stream.Position := 0;
+  if Length(B) > 0 then
+    Stream.ReadBuffer(B[0], Length(B));
+  Stream.Position := Saved;
+  Result := HexOf(B);
+end;
+
+procedure PutBytes(Stream: TStream; const Values: array of Byte);
+var
+  B: TBytes;
+begin
+  B := MakeBytes(Values);
+  if Length(B) > 0 then
+    Stream.WriteBuffer(B[0], Length(B));
+end;
+
+procedure TestClearFields;
+var
+  DS: TTestDataSet;
+  S, I, Ro, Fx: TField;
+begin
+  Section('clear: ClearFields');
+  DS := TTestDataSet.Create(nil);
+  DS.AddDef('s', ftString, 10);
+  DS.AddDef('i', ftInteger);
+  DS.AddDef('ro', ftString, 10);
+  DS.AddDef('fx', ftInteger);
+  DS.AddRow([StringValue('old'), IntValue(1), StringValue('keep'), IntValue(5)]);
+  DS.FixedField := 'fx';
+  More.DS := DS;
+  CheckRaises(More.DoClearFields, 'EDatabaseError', 'Cannot perform this operation on a closed dataset',
+    'ClearFields on a closed dataset');
+  DS.Open;
+  S := DS.FieldByName('s');
+  I := DS.FieldByName('i');
+  Ro := DS.FieldByName('ro');
+  Fx := DS.FieldByName('fx');
+  Ro.ReadOnly := True;
+  S.OnValidate := Calls.Validate;
+  S.OnChange := Calls.Change;
+  CheckRaises(More.DoClearFields, 'EDatabaseError', 'Dataset not in edit or insert mode', 'ClearFields in dsBrowse');
+  DS.Edit;
+  ClearLog;
+  DS.ClearFields;
+  CheckEq(TakeLog, '[deRecordChange dsEdit]', 'one record notification and no field events');
+  Check(S.IsNull and I.IsNull, 'the modifiable fields are null');
+  CheckEq(Ro.AsString + ' ' + Fx.AsString, 'keep 5',
+    'a read-only field and a column the driver cannot update keep their values');
+  CheckEqBool(DS.Modified, True, 'Modified after ClearFields');
+  DS.Post;
+  CheckEq(DS.LastApply, 'update old=[old|1|keep|5] new=[NULL|NULL|keep|5] assigned=1,2',
+    'the cleared fields are flagged as assigned');
+  DS.Edit;
+  DS.OverrideRow(0);
+  CheckRaises(More.DoClearFields, 'EDatabaseError', 'Dataset not in edit or insert mode',
+    'ClearFields under an active-row override');
+  DS.OverrideRow(-1);
+  DS.Cancel;
+
+  Section('clear: nothing to clear');
+  S.ReadOnly := True;
+  I.ReadOnly := True;
+  DS.Edit;
+  ClearLog;
+  DS.ClearFields;
+  CheckEq(TakeLog, '[deRecordChange dsEdit]', 'the notification is sent');
+  CheckEqBool(DS.Modified, False, 'Modified stays False');
+  DS.Cancel;
+  S.ReadOnly := False;
+  I.ReadOnly := False;
+
+  Section('clear: while inserting');
+  DS.Append;
+  S.AsString := 'x';
+  I.AsInteger := 7;
+  ClearLog;
+  DS.ClearFields;
+  CheckEq(TakeLog, '[deRecordChange dsInsert]', 'the notification in dsInsert');
+  Check(S.IsNull and I.IsNull and Ro.IsNull and Fx.IsNull, 'every field is null');
+  DS.Post;
+  CheckEq(DS.LastApply, 'insert new=[NULL|NULL|NULL|NULL] assigned=1,2', 'the insert that follows');
+  DS.OnNewRecord := More.NewRecord;
+  DS.Append;
+  Check(S.IsNull and Ro.IsNull, 'inside OnNewRecord a read-only field is cleared too');
+  CheckEqBool(DS.Modified, False, 'Modified is False after OnNewRecord');
+  DS.Cancel;
+  DS.Free;
+
+  Section('clear: calculated fields');
+  DS := TTestDataSet.Create(nil);
+  DS.AddDef('s', ftString, 10);
+  DS.AddRow([StringValue('four')]);
+  More.DS := DS;
+  More.Text := TStringField.Create(DS);
+  More.Text.FieldName := 's';
+  More.Text.DataSet := DS;
+  More.Len := TIntegerField.Create(DS);
+  More.Len.FieldName := 'len';
+  More.Len.FieldKind := fkCalculated;
+  More.Len.DataSet := DS;
+  More.Probing := False;
+  DS.OnCalcFields := More.Calc;
+  DS.Open;
+  DS.Edit;
+  CheckEqInt(More.Len.AsInteger, 4, 'the calculated value before');
+  ClearLog;
+  DS.ClearFields;
+  CheckEq(TakeLog, 'OnCalcFields,[deRecordChange dsEdit]', 'the record is calculated again before the notification');
+  Check(More.Len.IsNull, 'the calculated field follows the cleared data');
+  DS.Cancel;
+  DS.AutoCalcFields := False;
+  DS.Edit;
+  ClearLog;
+  DS.ClearFields;
+  CheckEq(TakeLog, '[deRecordChange dsEdit]', 'no calculation without AutoCalcFields');
+  DS.Cancel;
+  DS.AutoCalcFields := True;
+  More.Probing := True;
+  DS.Edit;
+  ClearLog;
+  More.Text.AsString := 'ab';
+  CheckEq(TakeLog,
+    'OnCalcFields,EDatabaseError: Operation not allowed while calculating fields,[deFieldChange dsEdit s]',
+    'ClearFields is refused while OnCalcFields runs');
+  DS.Cancel;
+  DS.Free;
+end;
+
+procedure TestBlobStreams;
+var
+  DS: TTestDataSet;
+  B, M: TBlobField;
+  Stream: TMemoryStream;
+begin
+  Section('blob: BlobSize and SaveToStream');
+  DS := TTestDataSet.Create(nil);
+  DS.AddDef('b', ftBlob);
+  DS.AddDef('m', ftMemo);
+  DS.AddRow([BytesValue(MakeBytes([1, 2, 3])), StringValue('h' + #$00E9)]);
+  DS.AddRow([NullValue, NullValue]);
+  DS.AddRow([BytesValue(nil), StringValue('')]);
+  Stream := TMemoryStream.Create;
+  More.Stream := Stream;
+  DS.Open;
+  B := TBlobField(DS.FieldByName('b'));
+  M := TBlobField(DS.FieldByName('m'));
+  Check(M is TMemoField, 'the memo field is a blob field');
+  CheckEqInt(B.BlobSize, 3, 'BlobSize of a blob is its number of bytes');
+  CheckEqInt(M.BlobSize, 3, 'BlobSize of a memo is the length of its UTF-8 form');
+  PutBytes(Stream, [$AA]);
+  B.SaveToStream(Stream);
+  CheckEq(StreamHex(Stream), 'AA 01 02 03', 'SaveToStream writes the bytes at the position of the stream');
+  CheckEqInt(Stream.Position, 4, 'and leaves the position behind them');
+  M.SaveToStream(Stream);
+  CheckEq(StreamHex(Stream), 'AA 01 02 03 68 C3 A9', 'a memo is written as UTF-8 without a byte order mark');
+  DS.Next;
+  CheckEqInt(B.BlobSize + M.BlobSize, 0, 'BlobSize of a null value is 0');
+  B.SaveToStream(Stream);
+  M.SaveToStream(Stream);
+  CheckEqInt(Stream.Size, 7, 'a null value writes nothing');
+  DS.Next;
+  CheckEqInt(B.BlobSize + M.BlobSize, 0, 'BlobSize of an empty value is 0');
+  B.SaveToStream(Stream);
+  M.SaveToStream(Stream);
+  CheckEqInt(Stream.Size, 7, 'an empty value writes nothing');
+
+  Section('blob: LoadFromStream');
+  DS.First;
+  More.Blob := B;
+  Stream.Clear;
+  PutBytes(Stream, [9, 8, 7, 6]);
+  Stream.Position := 1;
+  CheckRaises(More.DoLoad, 'EDatabaseError', 'Dataset not in edit or insert mode', 'LoadFromStream in dsBrowse');
+  CheckEqInt(Stream.Position, 1, 'the stream was not read');
+  B.OnChange := More.Change;
+  DS.Edit;
+  ClearLog;
+  B.LoadFromStream(Stream);
+  CheckEq(HexOf(B.AsBytes), '08 07 06', 'the bytes from the position to the end are the new value');
+  CheckEqInt(Stream.Position, 4, 'the stream is at its end');
+  CheckEq(TakeLog, 'OnChange(b),[deFieldChange dsEdit b]', 'the assignment sequence runs');
+  B.OnChange := nil;
+  B.LoadFromStream(Stream);
+  Check(not B.IsNull and (B.BlobSize = 0), 'nothing left in the stream gives an empty value, not null');
+  Stream.Clear;
+  PutBytes(Stream, [$61, $E2, $82, $AC]);
+  Stream.Position := 0;
+  M.LoadFromStream(Stream);
+  CheckEq(M.AsString, 'a' + #$20AC, 'a memo decodes the bytes as UTF-8');
+  Stream.Clear;
+  PutBytes(Stream, [$EF, $BB, $BF, $61]);
+  Stream.Position := 0;
+  M.LoadFromStream(Stream);
+  CheckEq(M.AsString, #$FEFF + 'a', 'a byte order mark is not removed');
+  B.ReadOnly := True;
+  Stream.Position := 0;
+  CheckRaises(More.DoLoad, 'EDatabaseError', 'Field ''b'' cannot be modified', 'LoadFromStream on a read-only field');
+  CheckEqInt(Stream.Position, 0, 'the stream was not read either');
+  Stream.Clear;
+  More.DoSave;
+  CheckEqInt(Stream.Size, 0, 'SaveToStream in dsEdit reads the edit buffer');
+  DS.Post;
+  CheckEq(DS.LastApply, 'update old=[bytes(3)|h' + #$00E9 + '] new=[bytes(0)|' + #$FEFF + 'a] assigned=1,2',
+    'the row that is posted');
+  DS.Close;
+  CheckRaises(More.ReadBlobSize, 'EDatabaseError', 'Cannot perform this operation on a closed dataset',
+    'BlobSize on a closed dataset');
+  CheckRaises(More.DoSave, 'EDatabaseError', 'Cannot perform this operation on a closed dataset',
+    'SaveToStream on a closed dataset');
+  CheckRaises(More.DoLoad, 'EDatabaseError', 'Cannot perform this operation on a closed dataset',
+    'LoadFromStream on a closed dataset');
+  Stream.Free;
+  DS.Free;
+end;
+
 begin
   Calls := TCalls.Create;
   TestMatrix;
@@ -812,6 +1125,10 @@ begin
   TestWriteState;
   TestWriteSequence;
   TestText;
+  More := TMoreCalls.Create;
+  TestClearFields;
+  TestBlobStreams;
+  More.Free;
   Calls.Free;
   WriteLn('failed checks: ', FailedChecks);
 end.

@@ -1,0 +1,117 @@
+== refused operations
+ok Open without a table name
+ok Open without a connection
+ok Open with a connection and no table name
+ok the table stays closed
+ok Open of a missing table
+ok SQL := on a closed table
+ok SQL.Text := on a closed table
+ok ExecSQL on a closed table
+ok SQL := on an open table
+ok SQL.Text := on an open table
+ok SQL.Add on an open table
+ok ExecSQL on an open table
+ok the table stays open
+ok the generated statement is kept
+ok and Refresh still runs it
+== table with a primary key
+ok assigning TableName does not open
+ok no parameters
+ok the statement
+ok the fields
+ok no rowid field
+ok the table is updatable
+ok UpdateTable is the table name
+ok KeyFields is empty
+ok Required follows NOT NULL
+ok without IndexFieldNames the rows come in row id order
+ok the key of the inserted row
+ok the row is in the table
+ok an edit is written
+ok a delete is written
+ok a row added behind the back of the table is not seen
+ok until Refresh
+ok ReadOnly
+ok Edit on a read-only table
+== IndexFieldNames
+ok assigning IndexFieldNames does not open
+ok the statement
+ok ordered by name
+ok assigning the same value does nothing
+ok a change on an open table closes and reopens it
+ok two fields
+ok ordered by age (null first), then name
+ok names are trimmed, empty parts skipped
+ok only separators: no order
+ok a new row stays where it was inserted
+ok until Refresh sorts it in
+ok an ordered table is updatable
+ok the new row is found
+ok and deleted
+ok an unknown field
+ok the table is closed after the failed reopen
+ok and has the new value
+ok Open fails as well
+ok a change on a closed table does not open it
+ok row id order again
+== TableName
+ok the first table
+ok assigning the same value does nothing
+ok a change on an open table closes and reopens it
+ok the fields of the other table
+ok UpdateTable follows
+ok a missing table
+ok the table is closed after the failed reopen
+ok a change on a closed table does not open it
+ok Prepare prepares the generated statement
+ok a new table name unprepares
+ok and the next Open reads the new table
+ok closing the connection closes the table
+ok Open opens the connection: a new, empty memory database
+ok the connection is open
+== table without a primary key
+ok the statement selects the row id
+ok the fields
+ok the table is updatable
+ok the rowid field cannot be modified
+ok a write to the rowid field
+ok the row id of the inserted row is read back
+ok the second row id
+ok of two equal rows only the edited one changes
+ok of two equal rows only the deleted one goes
+ok the row ids after Refresh
+ok the fields after Refresh
+ok with IndexFieldNames
+ok ordered by n
+ok the fields after the reopen
+ok an edit in an ordered table
+== the table changes between two opens
+ok the statement follows the new definition
+ok the fields
+ok and back
+== a user column named rowid
+ok the statement
+ok the fields are the columns of the table
+ok the table is read-only
+ok the column is read
+ok Edit
+== table without row id
+ok the statement
+ok the fields
+ok the table is updatable by its primary key
+ok an edit
+ok an insert
+ok a delete
+== view
+ok the statement
+ok the fields
+ok a view is read-only
+ok the rows
+== identifiers that need quoting
+ok the statement
+ok the fields
+ok the rows
+ok an insert
+ok an edit
+ok a delete
+failed checks: 0

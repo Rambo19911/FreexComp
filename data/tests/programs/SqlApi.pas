@@ -101,8 +101,8 @@ begin
     'statement functions');
   Check(Assigned(sqlite3_bind_parameter_count) and Assigned(sqlite3_bind_parameter_name) and
     Assigned(sqlite3_bind_parameter_index) and Assigned(sqlite3_bind_null) and Assigned(sqlite3_bind_int64) and
-    Assigned(sqlite3_bind_double) and Assigned(sqlite3_bind_text16) and Assigned(sqlite3_bind_blob) and
-    Assigned(sqlite3_bind_zeroblob), 'bind functions');
+    Assigned(sqlite3_bind_double) and Assigned(sqlite3_bind_text16) and Assigned(sqlite3_bind_text) and
+    Assigned(sqlite3_bind_blob) and Assigned(sqlite3_bind_zeroblob), 'bind functions');
   Check(Assigned(sqlite3_column_count) and Assigned(sqlite3_column_name) and Assigned(sqlite3_column_decltype) and
     Assigned(sqlite3_column_type) and Assigned(sqlite3_column_int64) and Assigned(sqlite3_column_double) and
     Assigned(sqlite3_column_text16) and Assigned(sqlite3_column_bytes16) and Assigned(sqlite3_column_blob) and

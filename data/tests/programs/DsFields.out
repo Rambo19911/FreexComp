@@ -720,4 +720,55 @@ ok with the value it chose
 ok a handler that assigns nothing
 ok leaves the value
 ok also for the empty text
+== clear: ClearFields
+ok ClearFields on a closed dataset
+ok ClearFields in dsBrowse
+ok one record notification and no field events
+ok the modifiable fields are null
+ok a read-only field and a column the driver cannot update keep their values
+ok Modified after ClearFields
+ok the cleared fields are flagged as assigned
+ok ClearFields under an active-row override
+== clear: nothing to clear
+ok the notification is sent
+ok Modified stays False
+== clear: while inserting
+ok the notification in dsInsert
+ok every field is null
+ok the insert that follows
+ok inside OnNewRecord a read-only field is cleared too
+ok Modified is False after OnNewRecord
+== clear: calculated fields
+ok the calculated value before
+ok the record is calculated again before the notification
+ok the calculated field follows the cleared data
+ok no calculation without AutoCalcFields
+ok ClearFields is refused while OnCalcFields runs
+== blob: BlobSize and SaveToStream
+ok the memo field is a blob field
+ok BlobSize of a blob is its number of bytes
+ok BlobSize of a memo is the length of its UTF-8 form
+ok SaveToStream writes the bytes at the position of the stream
+ok and leaves the position behind them
+ok a memo is written as UTF-8 without a byte order mark
+ok BlobSize of a null value is 0
+ok a null value writes nothing
+ok BlobSize of an empty value is 0
+ok an empty value writes nothing
+== blob: LoadFromStream
+ok LoadFromStream in dsBrowse
+ok the stream was not read
+ok the bytes from the position to the end are the new value
+ok the stream is at its end
+ok the assignment sequence runs
+ok nothing left in the stream gives an empty value, not null
+ok a memo decodes the bytes as UTF-8
+ok a byte order mark is not removed
+ok LoadFromStream on a read-only field
+ok the stream was not read either
+ok SaveToStream in dsEdit reads the edit buffer
+ok the row that is posted
+ok BlobSize on a closed dataset
+ok SaveToStream on a closed dataset
+ok LoadFromStream on a closed dataset
 failed checks: 0

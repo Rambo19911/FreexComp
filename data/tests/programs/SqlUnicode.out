@@ -49,4 +49,51 @@ ok the table name comes back unchanged
 ok the column name comes back unchanged
 ok and is stored in the file
 ok the file is deleted
+== data: write and read back
+ok a database we create stores text as UTF-8
+ok the field has the name of the column
+ok value 1 after Post
+ok value 2 after Post
+ok value 3 after Post
+ok value 4 after Post
+ok value 5 after Post
+ok value 6 after Post
+ok value 7 after Post
+ok every value after Refresh
+ok stored bytes: UTF-8
+ok stored bytes: a surrogate pair is one four-byte character
+ok stored bytes: #0 is kept
+ok an empty string is stored as empty text
+ok stored bytes: a leading U+FEFF is kept
+ok stored bytes: a leading U+FFFE is kept
+ok every value is TEXT
+== data: string size, edit, key with text
+ok a size of 4 holds four UTF-16 code units
+ok five code units are too long
+ok an edit writes the new text
+== data: stored in the file
+ok every value after the database was reopened
+== data: SQL text, parameters, messages
+ok value 1 as a parameter finds its row
+ok value 2 as a parameter finds its row
+ok value 3 as a parameter finds its row
+ok value 4 as a parameter finds its row
+ok value 5 as a parameter finds its row
+ok value 6 as a parameter finds its row
+ok value 7 as a parameter finds its row
+ok a literal in the SQL text
+ok a literal in the SQL text finds its row
+ok an alias in the SQL text
+ok IndexFieldNames with the column name
+ok the rows in the binary order of their UTF-8 text
+ok the message of SQLite names table and column
+== data: dataset operations
+ok Locate by a text with surrogate pairs
+ok the row found
+ok Locate by a text with #0
+ok the row found by the text with #0
+ok the text before the #0 is another value
+ok a filter with the column name and a text
+ok a delete
+ok the file is deleted
 failed checks: 0

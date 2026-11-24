@@ -173,6 +173,8 @@ type
     procedure BindKey(Stmt: Pointer; First: Integer; Row: TDataRow);
     procedure RereadInserted(Buffer: TDataRow);
   protected
+    { Called before the SQL text is assigned and after any change of it. Default: nothing. }
+    procedure CheckSQLChange; virtual;
     procedure DriverOpen; override;
     procedure DriverInitFieldDefs; override;
     procedure DriverLoadRows; override;
@@ -186,10 +188,10 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     { Compiles the statement; a closed connection is opened. Nothing to do when prepared. }
-    procedure Prepare;
+    procedure Prepare; virtual;
     procedure Unprepare;
     { Runs a statement without a result set (rows of a result set are ignored). }
-    procedure ExecSQL;
+    procedure ExecSQL; virtual;
     function ParamByName(const Name: string): TParam;
     property Prepared: Boolean read GetPrepared write SetPrepared;
     { Rows changed by the last ExecSQL; -1 before any. }
@@ -234,6 +236,40 @@ type
     property OnEditError;
     property OnCalcFields;
     property OnFilterRecord;
+  end;
+
+  { A dataset over all rows of one table (DAT-160...DAT-162): the statement is generated from TableName
+    and IndexFieldNames; a table without primary key is edited through its row id, read into the hidden
+    first field "rowid". SQL, UpdateTable and KeyFields are managed by the table. }
+  TSQLiteTable = class(TSQLiteQuery)
+  private
+    FTableName: string;
+    FIndexFieldNames: string;
+    { the statement text the table generated last }
+    FGeneratedSQL: string;
+    { the table itself assigns the SQL text }
+    FGenerating: Boolean;
+    { the statement reads the row id into the first column }
+    FHiddenRowId: Boolean;
+    procedure SetTableName(const Value: string);
+    procedure SetIndexFieldNames(const Value: string);
+    procedure GenerateSQL;
+  protected
+    procedure CheckSQLChange; override;
+    procedure DriverOpen; override;
+    procedure DriverInitFieldDefs; override;
+    procedure DriverLoadRows; override;
+  public
+    procedure Prepare; override;
+    { Not supported: raises EDatabaseError. }
+    procedure ExecSQL; override;
+  published
+    property TableName: string read FTableName write SetTableName;
+    { 'a;b' orders the rows by these columns; '' = row id order }
+    property IndexFieldNames: string read FIndexFieldNames write SetIndexFieldNames;
+    property SQL stored False;
+    property UpdateTable stored False;
+    property KeyFields stored False;
   end;
 
 { The exception for a result code (DAT-115): message "SQLite error <extended code>: <text>", the text and
@@ -900,6 +936,7 @@ var
   Rc: Integer;
   S: string;
   IsText: Boolean;
+  Utf8: TBytes;
 begin
   Rc := SQLITE_OK;
   IsText := False;
@@ -936,6 +973,13 @@ begin
     { the length is in bytes, never -1: an embedded #0 is kept; an empty string is empty TEXT, not NULL }
     if S = '' then
       Rc := sqlite3_bind_text16(Stmt, Index, @ZeroWord, 0, SQLITE_STATIC)
+    else if (S[1] = #$FEFF) or (S[1] = #$FFFE) then
+    begin
+      { SQLite takes these as the byte order mark of UTF-16 text: it would drop the first and swap the
+        bytes of the whole text after the second. UTF-8 text is stored as it is. }
+      Utf8 := Utf16ToUtf8(S);
+      Rc := sqlite3_bind_text(Stmt, Index, PUtf8(@Utf8[0]), Length(Utf8) - 1, SQLITE_TRANSIENT);
+    end
     else
       Rc := sqlite3_bind_text16(Stmt, Index, Pointer(PChar(S)), Length(S) * 2, SQLITE_TRANSIENT);
   end;
@@ -1569,13 +1613,19 @@ begin
     FConnection := nil;
 end;
 
+procedure TSQLiteQuery.CheckSQLChange;
+begin
+end;
+
 procedure TSQLiteQuery.SetSQL(Value: TStrings);
 begin
+  CheckSQLChange;
   FSQL.Assign(Value);
 end;
 
 procedure TSQLiteQuery.SQLChanged(Sender: TObject);
 begin
+  CheckSQLChange;
   if Active then
     Close;
   Unprepare;
@@ -2277,6 +2327,162 @@ begin
   RunToEnd(Db, Stmt, SQL);
   if sqlite3_changes(Db) = 0 then
     DatabaseError(SSqlRowChanged);
+end;
+
+{ ----------------------------------------------------------------------------------------- TSQLiteTable }
+
+const
+  SSqlNoTableName = 'Table name is empty';
+  SSqlReasonNoUsableKey = 'No usable key';
+
+procedure TSQLiteTable.SetTableName(const Value: string);
+var
+  WasActive: Boolean;
+begin
+  if Value = FTableName then
+    Exit;
+  WasActive := Active;
+  if WasActive then
+    Close;
+  FTableName := Value;
+  Unprepare;
+  if WasActive then
+    Open;
+end;
+
+procedure TSQLiteTable.SetIndexFieldNames(const Value: string);
+var
+  WasActive: Boolean;
+begin
+  if Value = FIndexFieldNames then
+    Exit;
+  WasActive := Active;
+  if WasActive then
+    Close;
+  FIndexFieldNames := Value;
+  Unprepare;
+  if WasActive then
+    Open;
+end;
+
+{ The SQL text belongs to the table: a change from outside is undone and refused. }
+procedure TSQLiteTable.CheckSQLChange;
+begin
+  if FGenerating then
+    Exit;
+  if Trim(FSQL.Text) <> FGeneratedSQL then
+  begin
+    TStringList(FSQL).OnChange := nil;
+    FSQL.Text := FGeneratedSQL;
+    TStringList(FSQL).OnChange := SQLChanged;
+  end;
+  DatabaseError(SDatNotSupported);
+end;
+
+{ SELECT * FROM "T" [ORDER BY ...]; for a table without primary key the row id is selected as the first
+  column "rowid", unless a column of that name hides it. }
+procedure TSQLiteTable.GenerateSQL;
+var
+  Db: Psqlite3;
+  Info: TSQLiteTableColumns;
+  Text, Order, Rest, Part: string;
+  I, K: Integer;
+  HasKey: Boolean;
+begin
+  if FTableName = '' then
+    raise ESQLiteError.Create(SSqlNoTableName);
+  if FConnection = nil then
+    raise ESQLiteError.Create(SSqlNoConnection);
+  FConnection.Open;
+  Db := FConnection.Handle;
+  Info := TableColumns(Db, FTableName);
+  HasKey := False;
+  for I := 0 to Length(Info) - 1 do
+    if Info[I].Pk > 0 then
+      HasKey := True;
+  { a table without primary key always has a row id; a view has neither; a missing table gets SQLite's
+    own error from the plain statement }
+  FHiddenRowId := (Length(Info) > 0) and not HasKey and (IndexOfTableColumn(Info, 'rowid') < 0) and
+    not IsView(Db, FTableName, Info[0].Name);
+  if FHiddenRowId then
+    Text := 'SELECT rowid AS "rowid", * FROM '
+  else
+    Text := 'SELECT * FROM ';
+  Text := Text + SQLiteQuoteIdent(FTableName);
+  Order := '';
+  Rest := FIndexFieldNames;
+  while Rest <> '' do
+  begin
+    K := Pos(';', Rest);
+    if K = 0 then
+      K := Length(Rest) + 1;
+    Part := Trim(Copy(Rest, 1, K - 1));
+    Rest := Copy(Rest, K + 1, Length(Rest));
+    if Part <> '' then
+    begin
+      if Order <> '' then
+        Order := Order + ', ';
+      { qualified: SQLite would take a quoted name that is no column as a string }
+      Order := Order + SQLiteQuoteIdent(FTableName) + '.' + SQLiteQuoteIdent(Part);
+    end;
+  end;
+  if Order <> '' then
+    Text := Text + ' ORDER BY ' + Order;
+  FUpdateTable := FTableName;
+  FKeyFields := '';
+  FGeneratedSQL := Text;
+  if Trim(FSQL.Text) <> Text then
+  begin
+    FGenerating := True;
+    try
+      FSQL.Text := Text;
+    finally
+      FGenerating := False;
+    end;
+  end;
+end;
+
+procedure TSQLiteTable.Prepare;
+begin
+  if not Prepared then
+    GenerateSQL;
+  inherited Prepare;
+end;
+
+procedure TSQLiteTable.ExecSQL;
+begin
+  DatabaseError(SDatNotSupported);
+end;
+
+procedure TSQLiteTable.DriverOpen;
+begin
+  { the table may have been redefined since the statement was prepared: it is generated again }
+  Unprepare;
+  inherited DriverOpen;
+end;
+
+procedure TSQLiteTable.DriverInitFieldDefs;
+begin
+  inherited DriverInitFieldDefs;
+  if FReason = SSqlReasonNoKey then
+    FReason := SSqlReasonNoUsableKey;
+end;
+
+procedure TSQLiteTable.DriverLoadRows;
+var
+  F: TField;
+begin
+  { at Open (the first step waits): the fields exist now }
+  if FStepped and FHiddenRowId then
+  begin
+    F := FindField('rowid');
+    if (F <> nil) and (F.FieldNo = 1) then
+    begin
+      F.Visible := False;
+      F.ReadOnly := True;
+    end;
+  end;
+  inherited DriverLoadRows;
 end;
 
 end.

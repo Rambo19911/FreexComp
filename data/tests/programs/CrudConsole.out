@@ -1,0 +1,18 @@
+C01 0 dsBrowse
+C02 1 dsBrowse
+C03 2 dsBrowse
+C04 3 dsBrowse
+C05 3 dsBrowse
+C06 error: Name is required
+C06 3 dsBrowse
+C07 error: CHECK constraint failed
+C07 3 dsBrowse
+C08 2 dsBrowse
+C09 2 dsBrowse
+C10 3 dsBrowse id=4
+C11 3 dsBrowse
+C12 1 dsBrowse
+C12 3 dsBrowse
+1|Ada Lovelace|ada@example.org|37|1|First
+2|Bob Stone|NULL|41|0|NULL
+4|Eve Moss|NULL|NULL|1|NULL

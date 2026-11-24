@@ -83,6 +83,8 @@ var
   sqlite3_bind_double: function(stmt: Psqlite3_stmt; idx: Integer; value: Double): Integer; cdecl;
   sqlite3_bind_text16: function(stmt: Psqlite3_stmt; idx: Integer; text: Pointer; nBytes: Integer;
     destructor_: Pointer): Integer; cdecl;
+  sqlite3_bind_text: function(stmt: Psqlite3_stmt; idx: Integer; text: PUtf8; nBytes: Integer;
+    destructor_: Pointer): Integer; cdecl;
   sqlite3_bind_blob: function(stmt: Psqlite3_stmt; idx: Integer; data: Pointer; n: Integer;
     destructor_: Pointer): Integer; cdecl;
   sqlite3_bind_zeroblob: function(stmt: Psqlite3_stmt; idx: Integer; n: Integer): Integer; cdecl;
@@ -206,6 +208,7 @@ begin
   Resolve(Lib, sqlite3_bind_int64, 'sqlite3_bind_int64', True, Result);
   Resolve(Lib, sqlite3_bind_double, 'sqlite3_bind_double', True, Result);
   Resolve(Lib, sqlite3_bind_text16, 'sqlite3_bind_text16', True, Result);
+  Resolve(Lib, sqlite3_bind_text, 'sqlite3_bind_text', True, Result);
   Resolve(Lib, sqlite3_bind_blob, 'sqlite3_bind_blob', True, Result);
   Resolve(Lib, sqlite3_bind_zeroblob, 'sqlite3_bind_zeroblob', True, Result);
   Resolve(Lib, sqlite3_column_count, 'sqlite3_column_count', True, Result);
