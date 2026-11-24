@@ -77,6 +77,7 @@ public static class SettingsCatalog
     public static readonly SettingKey<string> ToolchainFrameworkDesignDir = String("toolchain.frameworkDesignDir", "");
     public static readonly SettingKey<string> ToolchainDataDesignDir = String("toolchain.dataDesignDir", "");
     public static readonly SettingKey<bool> BuildShowCommandLines = Bool("build.showCommandLines", false);
+    public static readonly SettingKey<int> BuildJobs = Int("build.jobs", 0, new SettingRange(0, 256)); // IDE-TGT-001 (P8, F01-010): 0 = automatic
     public static readonly SettingKey<string> RunConsoleMode = Enum("run.consoleMode", "external", "external", "output");
     public static readonly SettingKey<bool> MessagesShowErrors = Bool("messages.showErrors", true);
     public static readonly SettingKey<bool> MessagesShowWarnings = Bool("messages.showWarnings", true);

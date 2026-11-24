@@ -17,6 +17,7 @@ public static class Phase8Features
     /// </summary>
     internal static readonly IReadOnlyList<string> DeliveredIds =
     [
+        "options:Environment.General.BuildJobs", // F01-010
     ];
 
     private static readonly FrozenSet<string> Shipped = DeliveredIds.ToFrozenSet(StringComparer.Ordinal);

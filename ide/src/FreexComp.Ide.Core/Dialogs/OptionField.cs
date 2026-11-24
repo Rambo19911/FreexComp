@@ -67,6 +67,9 @@ public sealed class OptionField : ObservableObject
     /// <summary>A group heading (<c>type.bodyStrong</c>) shown above this field, or null.</summary>
     public string? GroupHeading { get; init; }
 
+    /// <summary>A fixed explanation shown under the field (<c>&lt;Field&gt;.Hint</c>), or null.</summary>
+    public string? Hint { get; init; }
+
     /// <summary>Id of a check-box field that must be checked for this field to be enabled, or null.</summary>
     public string? EnabledBy { get; init; }
 

@@ -228,6 +228,12 @@ public sealed class OptionsWindow : DialogWindow
                 AddRow(CreateStatus(field), 1, 2);
                 row++;
             }
+
+            if (field.Hint is { } hint)
+            {
+                AddRow(CreateHint(field, hint), 1, 2);
+                row++;
+            }
         }
 
         if (page.Id == OptionsViewModel.EditorDisplayPage)
@@ -449,6 +455,16 @@ public sealed class OptionsWindow : DialogWindow
                 Show();
         };
         return message;
+    }
+
+    /// <summary>The fixed explanation under a field (<c>&lt;Field&gt;.Hint</c>), in <c>text.secondary</c>.</summary>
+    private static TextBlock CreateHint(OptionField field, string text)
+    {
+        var hint = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
+        hint.Classes.Add("caption");
+        hint.Bind(TextBlock.ForegroundProperty, hint.GetResourceObservable("FxcTextSecondaryBrush"));
+        AutomationProperties.SetAutomationId(hint, Id(field.Id + ".Hint"));
+        return hint;
     }
 
     /// <summary>

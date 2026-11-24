@@ -79,6 +79,37 @@ public sealed partial class BuildServiceTests
         Assert.Contains(@"C:\p\Hello\Unit1.pas(3,1): error E9999: not a row", output);
     }
 
+    /// <summary>
+    /// IDE-TGT-002 (F01-010): every build the IDE starts passes <c>build.jobs</c> as <c>BuildRequest.MaxParallelism</c> —
+    /// 0 (automatic: the engine resolves the project key and the processor count) by default, the set value otherwise;
+    /// a change applies to the next build.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-002")]
+    public Task JobsSettingFlowsIntoBuildRequest() => TestUiThread.RunAsync(() => JobsSettingFlowsIntoBuildRequestOnUiThread());
+
+    private async Task JobsSettingFlowsIntoBuildRequestOnUiThread()
+    {
+        var bed = new BuildTestBed();
+        await bed.OpenHelloAsync();
+
+        await bed.Services.Build.BuildAsync(BuildKind.Build);
+        Assert.Equal(0, bed.Engine.Requests[^1].MaxParallelism);
+
+        bed.Services.Settings.Set(SettingsCatalog.BuildJobs, 4);
+        foreach (var kind in new[] { BuildKind.Build, BuildKind.Rebuild, BuildKind.Clean })
+        {
+            await bed.Services.Build.BuildAsync(kind);
+            Assert.Equal(4, bed.Engine.Requests[^1].MaxParallelism);
+        }
+
+        bed.Services.Settings.Set(SettingsCatalog.BuildJobs, 0);
+        await bed.Services.Build.BuildAsync(BuildKind.Build);
+        Assert.Equal(0, bed.Engine.Requests[^1].MaxParallelism);
+        Assert.Equal(5, bed.Engine.Requests.Count);
+    }
+
     /// <summary>IDE-P3-030, -060, -071: the request, the rows (mapping) and the build channel in order.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-P3-030")]

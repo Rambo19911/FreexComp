@@ -336,6 +336,7 @@ public sealed class BuildService : IBuildService
                 _ => BuildTarget.Build,
             },
             Verbose = _settings.Get(SettingsCatalog.BuildShowCommandLines),
+            MaxParallelism = _settings.Get(SettingsCatalog.BuildJobs), // IDE-TGT-002: 0 = the engine decides (project key, then processors)
             ToolchainDirectory = paths.LlvmBinDir,
             RtlDirectory = paths.RtlDir,
             // IDE-P3-010: the framework and (P7) the data-access directory contribute <dir>\src, in that order.

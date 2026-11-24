@@ -204,6 +204,9 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             Check("ShowWelcome", SettingsCatalog.EnvironmentShowWelcomeOnStartup, 1),
             FolderPath("DefaultProjectsDir", SettingsCatalog.EnvironmentDefaultProjectsDir, 1, prompts.BuiltInProjectsDirectory),
             Check("AutoSwitchLayout", SettingsCatalog.LayoutAutoSwitch, 5), // D-109 (I-130 automatic layout switching)
+            // phase8-build-options.md IDE-TGT-003 (I-227); the other fields of the group join with their own tasks.
+            Integer("BuildJobs", SettingsCatalog.BuildJobs, 8, () => Strings.Options_Range_BuildJobs, heading: Strings.Options_Group_Build,
+                hint: Strings.Options_Hint_BuildJobs),
         ]);
         var environmentFiles = Page(EnvironmentFilesPage, 1,
         [
@@ -611,8 +614,12 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
             TextValidator = text => text.Length == 0 || Projects.NewProjectValidation.NormalizeLocation(text) is not null,
         };
 
-    private OptionField Integer(string id, SettingKey<int> key, int phase, Func<string> rangeMessage, string? enabledBy = null) =>
-        new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Integer, _settings.Get(key), phase, rangeMessage) { EnabledBy = enabledBy };
+    private OptionField Integer(string id, SettingKey<int> key, int phase, Func<string> rangeMessage, string? enabledBy = null, string? heading = null,
+        string? hint = null) =>
+        new(id, Resource("Options_Field_" + id), key, OptionFieldKind.Integer, _settings.Get(key), phase, rangeMessage)
+        {
+            EnabledBy = enabledBy, GroupHeading = heading, Hint = hint,
+        };
 
     private OptionField Choice(string id, SettingKey<string> key, int phase)
     {

@@ -798,4 +798,81 @@ public sealed class OptionsDialogTests
 
         await CheckAsync(h, enabled: false); // the scope ended
     }
+
+    /// <summary>
+    /// IDE-TGT-003 (F01-010, I-227): Environment › General, group "Build", has the numeric field <c>BuildJobs</c>
+    /// (<c>Parallel build &amp;jobs:</c>, 0…256) bound to <c>build.jobs</c> with the hint "0 = automatic (one per processor)";
+    /// it is delivered (<c>options:Environment.General.BuildJobs</c>), so it is enabled in the product's composition and
+    /// disabled in one pinned below phase 7; a value outside the range blocks OK; OK writes the key.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-003")]
+    public async Task BuildJobsFieldEditsSetting()
+    {
+        (string, string, ISettingKey, bool)[] Jobs(bool enabled) => [("BuildJobs", "Parallel build _jobs:", SettingsCatalog.BuildJobs, enabled)];
+        Assert.Contains("options:Environment.General.BuildJobs", Core.Composition.Phase8Features.Delivered);
+
+        await using (var early = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5))
+        {
+            var pinned = early.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+            var disabled = await early.WaitForDialogAsync("Options");
+            CheckFields(disabled, early.Services.Settings, Jobs(false));
+            disabled.Click("Cancel");
+            await pinned;
+        }
+
+        await using var h = await HeadlessHarness.StartAsync();
+        var settings = h.Services.Settings;
+        var running = h.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+        var dlg = await h.WaitForDialogAsync("Options");
+        var model = (OptionsViewModel)dlg.Window.Model;
+
+        CheckFields(dlg, settings, Jobs(true));
+        Assert.Equal(OptionFieldKind.Integer, model.Field("BuildJobs").Kind);
+        Assert.IsType<NumericUpDown>(dlg.Find<Control>("BuildJobs"));
+        Assert.Equal("0", FieldText(dlg, "BuildJobs"));
+        var hint = dlg.Find<TextBlock>("BuildJobs.Hint");
+        Assert.Equal("0 = automatic (one per processor)", hint.Text);
+        Assert.True(hint.IsEffectivelyVisible);
+
+        // The field is the page's last one, under the group heading "Build".
+        var page = model.Pages.Single(p => p.Id == OptionsViewModel.EnvironmentGeneralPage);
+        Assert.Same(model.Field("BuildJobs"), page.Fields[^1]);
+        Assert.Equal("Build", model.Field("BuildJobs").GroupHeading);
+        Assert.Single(dlg.Window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Build" && t.IsEffectivelyVisible);
+
+        // 0…256: a value outside the range shows the inline message and blocks OK and Apply.
+        foreach (var bad in new[] { "257", "-1", "x" })
+        {
+            SetText(dlg, "BuildJobs", bad);
+            Assert.Equal("Enter a number of jobs from 0 to 256 (0 = automatic).", dlg.ErrorText("BuildJobs"));
+            Assert.False(dlg.Find<Button>("Ok").IsEnabled);
+            Assert.False(dlg.Find<Button>("Apply").IsEnabled);
+        }
+
+        SetText(dlg, "BuildJobs", "256");
+        Assert.Null(dlg.ErrorText("BuildJobs"));
+        Assert.True(dlg.Find<Button>("Ok").IsEnabled);
+        SetText(dlg, "BuildJobs", "8");
+        Assert.Null(dlg.ErrorText("BuildJobs"));
+        Assert.Equal(0, settings.Get(SettingsCatalog.BuildJobs)); // pending until OK
+        Assert.True(dlg.Find<Button>("BuildJobs.Reset").IsEffectivelyVisible);
+
+        dlg.Click("Ok");
+        await running;
+        Assert.Equal(8, settings.Get(SettingsCatalog.BuildJobs));
+
+        // The stored value is shown the next time; Reset returns to automatic.
+        var again = h.Services.Commands.ExecuteAsync("tools.options", "Environment.General");
+        var second = await h.WaitForDialogAsync("Options");
+        CheckFields(second, settings, Jobs(true));
+        Assert.Equal("8", FieldText(second, "BuildJobs"));
+        ((OptionsViewModel)second.Window.Model).Field("BuildJobs").Reset();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("0", FieldText(second, "BuildJobs"));
+        second.Click("Ok");
+        await again;
+        Assert.Equal(0, settings.Get(SettingsCatalog.BuildJobs));
+    }
 }

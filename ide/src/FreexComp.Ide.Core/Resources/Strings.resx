@@ -3785,6 +3785,22 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Switch window la_yout automatically</value>
     <comment>dialogs.md §9.6 (P5)</comment>
   </data>
+  <data name="Options_Group_Build" xml:space="preserve">
+    <value>Build</value>
+    <comment>phase8-build-options.md IDE-TGT-003 group heading</comment>
+  </data>
+  <data name="Options_Field_BuildJobs" xml:space="preserve">
+    <value>Parallel build _jobs:</value>
+    <comment>phase8-build-options.md IDE-TGT-003 (P8)</comment>
+  </data>
+  <data name="Options_Hint_BuildJobs" xml:space="preserve">
+    <value>0 = automatic (one per processor)</value>
+    <comment>phase8-build-options.md IDE-TGT-003: hint under the field</comment>
+  </data>
+  <data name="Options_Range_BuildJobs" xml:space="preserve">
+    <value>Enter a number of jobs from 0 to 256 (0 = automatic).</value>
+    <comment>phase8-build-options.md IDE-TGT-003: inline message for a value outside 0…256</comment>
+  </data>
   <data name="Options_Field_DefaultProjectsDir" xml:space="preserve">
     <value>_Default project folder:</value>
     <comment>dialogs.md §9.6</comment>

@@ -24,3 +24,4 @@ spec/ui/shortcuts.md
 spec/ui/states-and-messages.md
 spec/ui/tool-windows.md
 spec/ui/toolbars.md
+spec/ide/phase8-build-options.md

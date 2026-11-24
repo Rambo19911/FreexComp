@@ -373,6 +373,50 @@ public sealed class SettingsTests
         Assert.All(spy.Calls, c => Assert.Contains(@"C:\u\roaming", c, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// IDE-TGT-001 (F01-010): <c>build.jobs</c> is an integer 0…256, default 0 (automatic); a stored value outside the range
+    /// is replaced by the default when the settings are loaded; a set value is written and read back.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-001")]
+    public Task BuildJobs_DefaultRangeAndRoundTrip() => TestUiThread.RunAsync(() => BuildJobsDefaultRangeAndRoundTripOnUiThread());
+
+    private async Task BuildJobsDefaultRangeAndRoundTripOnUiThread()
+    {
+        var key = Assert.IsType<SettingKey<int>>(SettingsCatalog.All.Single(k => k.Name == "build.jobs"));
+        Assert.Same(SettingsCatalog.BuildJobs, key);
+        Assert.Equal((SettingType.Int, 0), (key.Type, key.Default));
+        Assert.Equal([new SettingRange(0, 256)], key.Ranges);
+        Assert.True(key.IsValid(0) && key.IsValid(256));
+        Assert.False(key.IsValid(-1) || key.IsValid(257));
+
+        SettingsService Load(string? file)
+        {
+            if (file is not null)
+                WriteFile(file);
+            var service = new SettingsService(UserPaths.Create(UserDir, _ => null, _ => throw new InvalidOperationException()), _disk, _clock, _log, [key]);
+            service.Load();
+            return service;
+        }
+
+        Assert.Equal(0, Load(null).Get(key)); // no file: automatic
+        Assert.Equal(0, Load("{\"formatVersion\": 1, \"build.jobs\": 257}").Get(key));
+        Assert.Equal(0, Load("{\"formatVersion\": 1, \"build.jobs\": -1}").Get(key));
+        Assert.Equal(256, Load("{\"formatVersion\": 1, \"build.jobs\": 256}").Get(key));
+
+        var settings = Load("{\"formatVersion\": 1}");
+        Assert.Throws<ArgumentException>(() => settings.Set(key, 257));
+        settings.Set(key, 4);
+        await settings.FlushAsync();
+        Assert.Equal("{\n  \"formatVersion\": 1,\n  \"build.jobs\": 4\n}\n", ReadFile());
+        Assert.Equal(4, Load(null).Get(key)); // read back from the file just written
+
+        settings.Set(key, 0);
+        await settings.FlushAsync();
+        Assert.Equal("{\n  \"formatVersion\": 1\n}\n", ReadFile()); // the default is not stored
+    }
+
     private SettingsService Create(Core.Platform.IFileSystem? fs = null) =>
         new(UserPaths.Create(UserDir, _ => null, _ => throw new InvalidOperationException()), fs ?? _disk, _clock, _log, Keys);
 
