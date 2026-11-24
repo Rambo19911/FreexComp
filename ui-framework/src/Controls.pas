@@ -2751,6 +2751,7 @@ end;
 procedure TWinControl.WndProc(var Message: TMessage);
 var
   C: TWinControl;
+  Accepted: Boolean;
 begin
   if (Message.Msg >= WM_MOUSEFIRST) and (Message.Msg <= WM_MOUSEBUTTONLAST) and RouteMouse(Message) then
     Exit;
@@ -2759,7 +2760,16 @@ begin
     WM_SETFOCUS:
       begin
         C := FocusRoot;
-        if (C = nil) or (C = Self) or C.SetFocusedControl(Self) then
+        try
+          Accepted := (C = nil) or (C = Self) or C.SetFocusedControl(Self);
+        except
+          { controls-standard.md UIF-885: an exception of DoExit leaves after the focus change; the window that
+            has the focus still learns of it (caret, focus rectangle) }
+          if GetFocus = FHandle then
+            inherited WndProc(Message);
+          raise;
+        end;
+        if Accepted then
           inherited WndProc(Message);
       end;
     WM_KILLFOCUS:

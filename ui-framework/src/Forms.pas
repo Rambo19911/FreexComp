@@ -182,6 +182,7 @@ type
     FOnPaint: TNotifyEvent;
     FOnShow: TNotifyEvent;
     procedure SetActiveControl(Value: TWinControl);
+    procedure EnterFocusedControl(Old, Control: TWinControl);
     procedure SetBorderIcons(Value: TBorderIcons);
     procedure SetBorderStyle(Value: TFormBorderStyle);
     procedure SetFormStyle(Value: TFormStyle);
@@ -2087,8 +2088,7 @@ end;
 function TCustomForm.SetFocusedControl(Control: TWinControl): Boolean;
 var
   Old, C: TWinControl;
-  Serial, I: Integer;
-  Enter: TList;
+  Serial: Integer;
 begin
   Result := True;
   if csDestroying in ComponentState then
@@ -2112,7 +2112,20 @@ begin
       begin
         if (C = Old) or not IsAncestor(C, Control) then
         begin
-          C.Perform(CM_EXIT, 0, 0);
+          try
+            C.Perform(CM_EXIT, 0, 0);
+          except
+            { controls-standard.md UIF-885: an exception of DoExit leaves after the focus change. The window of
+              Control has the focus already when the user moved it (WM_SETFOCUS); a handler that took the focus
+              back, and a change by code (the focus is still where it was), keep the old state }
+            if (FFocusSerial = Serial) and (Control <> nil) and Control.HandleAllocated
+              and (GetFocus = Control.Handle) then
+            begin
+              FFocusExiting := False;
+              EnterFocusedControl(Old, Control);
+            end;
+            raise;
+          end;
           if FFocusSerial <> Serial then
           begin
             Result := False;
@@ -2125,6 +2138,16 @@ begin
       FFocusExiting := False;
     end;
   end;
+  EnterFocusedControl(Old, Control);
+end;
+
+{ UIF-110, second half: Control is the active control; enter events, CM_FOCUSCHANGED }
+procedure TCustomForm.EnterFocusedControl(Old, Control: TWinControl);
+var
+  C: TWinControl;
+  I: Integer;
+  Enter: TList;
+begin
   FActiveControl := Control;
   FEnteredControl := Control;
   if Control <> nil then

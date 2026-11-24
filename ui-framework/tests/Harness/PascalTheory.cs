@@ -30,6 +30,19 @@ public sealed class PascalTheory
         return RunAsync(id);
     }
 
+    public static IEnumerable<TheoryDataRow<string>> Phase7Desktop() => UiCorpus.Rows(7, desktop: true);
+
+    /// <summary>Phase 7 programs (<c>// phase: 7</c>, UIF-1209): the hooks for data-aware controls (<c>Hooks_DataAware</c>).</summary>
+    [Theory]
+    [Trait("Phase", "7")]
+    [Trait("Category", "Foreground")]
+    [MemberData(nameof(Phase7Desktop))]
+    public Task Pascal_Phase7_Desktop(string id)
+    {
+        Harness.RequireDesktop();
+        return RunAsync(id);
+    }
+
     private static async Task RunAsync(string id)
     {
         var failure = await UiCorpus.RunAsync(id, TestContext.Current.CancellationToken);

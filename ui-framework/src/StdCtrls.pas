@@ -9,6 +9,9 @@ uses
 type
   TTextLayout = (tlTop, tlCenter, tlBottom);
 
+  { UIF-882, UIF-884: tells the user that a modification was rejected }
+  TRejectBeepHook = procedure;
+
   { controls-standard.md section 1 }
   TCustomLabel = class(TGraphicControl)
   private
@@ -108,13 +111,15 @@ type
     procedure SetModified(Value: Boolean);
     function GetCanUndo: Boolean;
     procedure AdjustHeight;
+    function UserModify: Boolean;
   protected
     procedure CreateParams(var Params: TCreateParams); override;
     { UIF-033: selection, limit, password character, cue banner and modified flag pushed after creation }
     procedure CreateWnd; override;
     { UIF-034: selection and modified flag saved before the window goes }
     procedure DestroyWnd; override;
-    { UIF-620: EN_CHANGE (CN_COMMAND); handle-less text changes; font changes re-apply I2/I3 }
+    { UIF-620: EN_CHANGE (CN_COMMAND); handle-less text changes; font changes re-apply I2/I3;
+      UIF-882: paste, cut, clear and undo (the messages, and so the methods that send them) ask EditCanModify }
     procedure WndProc(var Message: TMessage); override;
     { layout.md UIF-250 rules I2/I3 }
     procedure IntrinsicSize(var AWidth, AHeight: Integer); override;
@@ -123,7 +128,11 @@ type
     procedure Loaded; override;
     { AutoSelect: select all when the focus arrives without a mouse click }
     procedure DoEnter; override;
+    { UIF-881: called exactly when OnChange fires; the base fires it }
     procedure Change; virtual;
+    { UIF-882: asked before a modification by the user is applied (never while ReadOnly, never for code);
+      False discards the input }
+    function EditCanModify: Boolean; virtual;
     { selects AStart .. AStart + ALength (handle: EM_SETSEL; else the fields) }
     procedure SetSelection(AStart, ALength: Integer);
     property Alignment: TAlignment read FAlignment write SetAlignment default taLeftJustify;
@@ -140,6 +149,8 @@ type
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   public
     constructor Create(AOwner: TComponent); override;
+    { UIF-882: a character, Backspace and the Delete key ask EditCanModify after KeyPress / KeyDown }
+    procedure DefaultHandler(var Message); override;
     procedure Clear; virtual;
     procedure ClearSelection;
     procedure SelectAll;
@@ -652,6 +663,12 @@ type
     FSaved: TStringList;                                     { UIF-703: the items while there is no handle }
     FSavedIndex: Integer;
     FSettingIndex: Boolean;
+    FEditHandle: HWND;                                       { UIF-884: the edit part (0: list styles, no handle) }
+    FEditProc: Pointer;                                      { its window procedure before ours }
+    FEditRelay: Cardinal;                                    { the key message of the edit part being handled }
+    FUserIndex: Integer;                                     { UIF-884: the selection and text before the user's }
+    FUserText: string;                                       { input, restored when a selection is rejected }
+    FRestorePending: Boolean;
     FOnChange: TNotifyEvent;
     FOnCloseUp: TNotifyEvent;
     FOnDropDown: TNotifyEvent;
@@ -679,6 +696,13 @@ type
     procedure SortSaved;
     procedure AdjustHeight;
     procedure UpdateItemHeight;
+    procedure HookEdit;
+    procedure UnhookEdit;
+    procedure EditWndProc(var Message: TMessage);
+    function UserModify: Boolean;
+    procedure SaveUserState;
+    procedure RestoreUserState;
+    procedure UserSelect;
   protected
     procedure CreateParams(var Params: TCreateParams); override;
     { UIF-701, UIF-703: items, selection, text, limit, cue banner, visible item count pushed after creation }
@@ -690,10 +714,14 @@ type
     procedure IntrinsicSize(var AWidth, AHeight: Integer); override;
     procedure SetParent(AParent: TWinControl); override;
     procedure Loaded; override;
+    { UIF-884: each fires its event }
     procedure Change; virtual;
     procedure Select; virtual;
     procedure DropDown; virtual;
     procedure CloseUp; virtual;
+    { UIF-884: asked before the user's typing into the edit part or the user's selection is applied; False
+      discards the input (a selection is taken back) }
+    function EditCanModify: Boolean; virtual;
     property CharCase: TEditCharCase read FCharCase write SetCharCase default ecNormal;
     property DropDownCount: Integer read FDropDownCount write SetDropDownCount default 8;
     property ItemIndex: Integer read GetItemIndex write SetItemIndex default -1;
@@ -708,6 +736,8 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+    { UIF-884: the key messages of the edit part end in the edit part's own window procedure }
+    procedure DefaultHandler(var Message); override;
     procedure AddItem(const Item: string; AObject: TObject);
     procedure Clear;
     procedure SelectAll;
@@ -865,6 +895,10 @@ type
     property OnMouseUp;
   end;
 
+var
+  { called instead of MessageBeep(0) when assigned (a program that must stay silent, a test that counts) }
+  RejectBeepHook: TRejectBeepHook;
+
 implementation
 
 uses
@@ -873,6 +907,35 @@ uses
 type
   { access to the protected PixelsPerInch / ActiveControl of a form }
   TFormAccess = class(TCustomForm);
+
+const
+  { posted by a combo box to itself: show the state before a rejected selection again, after the native control
+    has finished the selection change (UIF-884) }
+  CM_RESTORESELECTION = CM_BASE + 90;
+  { the property of a combo box's edit part that holds its window procedure before ours }
+  ComboEditProp = 'PN.ComboEdit';
+
+{ UIF-882, UIF-884: the user's input was discarded }
+procedure RejectBeep;
+begin
+  if Assigned(RejectBeepHook) then
+    RejectBeepHook
+  else
+    MessageBeep(0);
+end;
+
+{ UIF-882: a WM_CHAR that modifies the text of an edit control: a printable character or Backspace; in a
+  multi-line control also a line break and a tab. (Ctrl+V, Ctrl+X and Ctrl+Z arrive as WM_PASTE, WM_CUT, EM_UNDO.) }
+function IsModifyingChar(Ch: Word; MultiLine: Boolean): Boolean;
+begin
+  Result := (Ch >= 32) or (Ch = 8) or (MultiLine and ((Ch = 9) or (Ch = 10) or (Ch = 13)));
+end;
+
+{ UIF-882: the Delete key modifies the text (Shift+Delete arrives as WM_CUT) }
+function IsModifyingKey(Key: Word): Boolean;
+begin
+  Result := (Key = VK_DELETE) and (GetKeyState(VK_SHIFT) >= 0);
+end;
 
 { the DPI of a control: its form's current PixelsPerInch, 96 (logical) without a form }
 function ControlDPI(Control: TControl): Integer;
@@ -1190,9 +1253,48 @@ begin
         inherited WndProc(Message);
         AdjustHeight;
       end;
+    { Ctrl+V, Ctrl+X and Ctrl+Z arrive as WM_PASTE, WM_CUT and EM_UNDO from the native control }
+    WM_PASTE, WM_CUT, WM_CLEAR, WM_UNDO, EM_UNDO:
+      if UserModify then
+        inherited WndProc(Message);
   else
     inherited WndProc(Message);
   end;
+end;
+
+{ UIF-882: False = the modification is discarded (the user is told) }
+function TCustomEdit.UserModify: Boolean;
+begin
+  Result := FReadOnly or EditCanModify;
+  if not Result then
+    RejectBeep;
+end;
+
+function TCustomEdit.EditCanModify: Boolean;
+begin
+  Result := True;
+end;
+
+{ the key events have run and left the key (core.md UIF-085): the native control is about to apply it }
+procedure TCustomEdit.DefaultHandler(var Message);
+var
+  M: PMessage;
+  Modifies: Boolean;
+begin
+  M := @Message;
+  case M^.Msg of
+    WM_CHAR:
+      Modifies := IsModifyingChar(Word(M^.WParam),
+        HandleAllocated and ((GetWindowLongPtrW(Handle, GWL_STYLE) and ES_MULTILINE) <> 0));
+    WM_KEYDOWN:
+      Modifies := IsModifyingKey(Word(M^.WParam));
+  else
+    Modifies := False;
+  end;
+  if Modifies and not UserModify then
+    M^.Result := 0
+  else
+    inherited DefaultHandler(Message);
 end;
 
 { UIF-620: never while loading }
@@ -3249,12 +3351,189 @@ begin
   SendMessageW(Handle, CB_SETCUEBANNER, 0, LPARAM(PChar(FTextHint)));
   SendMessageW(Handle, CB_SETMINVISIBLE, WPARAM(FDropDownCount), 0);
   UpdateItemHeight;
+  HookEdit;
+end;
+
+{ UIF-884: the window procedure of the edit part of a combo box. The edit part is a window of the native control,
+  so its keys, paste, cut, clear and undo are brought to the combo box object here }
+function ComboEditWndProc(Wnd: HWND; Msg: UINT; WParam: WPARAM; LParam: LPARAM): LRESULT; stdcall;
+var
+  Prev: Pointer;
+  C: TWinControl;
+  M: TMessage;
+begin
+  Prev := Pointer(GetPropW(Wnd, ComboEditProp));
+  if Prev = nil then
+  begin
+    Result := DefWindowProcW(Wnd, Msg, WParam, LParam);
+    Exit;
+  end;
+  C := FindControl(GetParent(Wnd));
+  if (Msg = WM_NCDESTROY) or not (C is TCustomComboBox) or (TCustomComboBox(C).FEditHandle <> Wnd) then
+  begin
+    if Msg = WM_NCDESTROY then
+    begin
+      RemovePropW(Wnd, ComboEditProp);
+      if (C is TCustomComboBox) and (TCustomComboBox(C).FEditHandle = Wnd) then
+        TCustomComboBox(C).FEditHandle := 0;
+    end;
+    Result := CallWindowProcW(TFNWndProc(Prev), Wnd, Msg, WParam, LParam);
+    Exit;
+  end;
+  M.Msg := Msg;
+  M.WParam := WParam;
+  M.LParam := LParam;
+  M.Result := 0;
+  try
+    TCustomComboBox(C).EditWndProc(M);
+  except
+    if Assigned(ApplicationHandleException) then
+      ApplicationHandleException(C)
+    else if not (ExceptObject is EAbort) then
+      ShowException(ExceptObject, ExceptAddr);
+  end;
+  Result := M.Result;
+end;
+
+procedure TCustomComboBox.HookEdit;
+begin
+  FEditHandle := 0;
+  if IsListStyle then
+    Exit;
+  FEditHandle := FindWindowExW(Handle, 0, 'Edit', nil);
+  if FEditHandle = 0 then
+    Exit;
+  FEditProc := Pointer(GetWindowLongPtrW(FEditHandle, GWLP_WNDPROC));
+  SetPropW(FEditHandle, ComboEditProp, THandle(FEditProc));
+  SetWindowLongPtrW(FEditHandle, GWLP_WNDPROC, LONG_PTR(@ComboEditWndProc));
+end;
+
+procedure TCustomComboBox.UnhookEdit;
+begin
+  if FEditHandle = 0 then
+    Exit;
+  SetWindowLongPtrW(FEditHandle, GWLP_WNDPROC, LONG_PTR(FEditProc));
+  RemovePropW(FEditHandle, ComboEditProp);
+  FEditHandle := 0;
+end;
+
+{ a message of the edit part. Key messages take the path of the combo box's own (core.md UIF-085: KeyDown,
+  KeyPress, KeyUp and the events; DefaultHandler then hands them to the edit part) }
+procedure TCustomComboBox.EditWndProc(var Message: TMessage);
+var
+  Relay: Cardinal;
+begin
+  case Message.Msg of
+    WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_CHAR:
+      begin
+        Relay := FEditRelay;
+        FEditRelay := Message.Msg;
+        try
+          WindowProc(Message);
+        finally
+          FEditRelay := Relay;
+        end;
+      end;
+    WM_PASTE, WM_CUT, WM_CLEAR, WM_UNDO, EM_UNDO:
+      if UserModify then
+        Message.Result := CallWindowProcW(TFNWndProc(FEditProc), FEditHandle, Message.Msg, Message.WParam,
+          Message.LParam);
+  else
+    Message.Result := CallWindowProcW(TFNWndProc(FEditProc), FEditHandle, Message.Msg, Message.WParam,
+      Message.LParam);
+  end;
+end;
+
+procedure TCustomComboBox.DefaultHandler(var Message);
+var
+  M: PMessage;
+  Modifies: Boolean;
+  Edit: HWND;
+begin
+  M := @Message;
+  if (FEditRelay = 0) or (M^.Msg <> FEditRelay) then
+  begin
+    inherited DefaultHandler(Message);
+    Exit;
+  end;
+  FEditRelay := 0;
+  case M^.Msg of
+    WM_CHAR: Modifies := IsModifyingChar(Word(M^.WParam), False);
+    WM_KEYDOWN: Modifies := IsModifyingKey(Word(M^.WParam));
+  else
+    Modifies := False;
+  end;
+  Edit := FEditHandle;
+  if Modifies and not UserModify then
+    M^.Result := 0
+  else if Edit <> 0 then
+    M^.Result := CallWindowProcW(TFNWndProc(FEditProc), Edit, M^.Msg, M^.WParam, M^.LParam);
+end;
+
+function TCustomComboBox.UserModify: Boolean;
+begin
+  Result := EditCanModify;
+  if not Result then
+    RejectBeep;
+end;
+
+function TCustomComboBox.EditCanModify: Boolean;
+begin
+  Result := True;
+end;
+
+{ UIF-884: the selection and the text the user's next input starts from }
+procedure TCustomComboBox.SaveUserState;
+begin
+  FRestorePending := False;
+  FUserIndex := ItemIndex;
+  if not IsListStyle then
+    FUserText := Text;
+end;
+
+{ UIF-884: the state before the rejected selection, without events }
+procedure TCustomComboBox.RestoreUserState;
+begin
+  if not HandleAllocated then
+    Exit;
+  SendMessageW(Handle, CB_SETCURSEL, WPARAM(FUserIndex), 0);
+  if not IsListStyle and (Text <> FUserText) then
+    SendMessageW(Handle, WM_SETTEXT, 0, LPARAM(PChar(FUserText)));
+end;
+
+{ UIF-702, UIF-884: CBN_SELCHANGE }
+procedure TCustomComboBox.UserSelect;
+var
+  I: Integer;
+  S: string;
+begin
+  if not UserModify then
+  begin
+    { the native control may still copy the item it selected into the edit part after this notification: the
+      state is restored now, and again when the native control has finished }
+    RestoreUserState;
+    FRestorePending := True;
+    PostMessageW(Handle, CM_RESTORESELECTION, 0, 0);
+    Exit;
+  end;
+  I := ItemIndex;
+  if not IsListStyle and (I >= 0) then
+  begin
+    S := FItems[I];
+    SendMessageW(Handle, WM_SETTEXT, 0, LPARAM(PChar(S)));
+  end;
+  SaveUserState;
+  Change;
+  Select;
+  Click;
 end;
 
 procedure TCustomComboBox.DestroyWnd;
 var
   I, N: Integer;
 begin
+  UnhookEdit;
+  FRestorePending := False;
   FSaved.Clear;
   N := Integer(SendMessageW(Handle, CB_GETCOUNT, 0, 0));
   for I := 0 to N - 1 do
@@ -3287,30 +3566,43 @@ begin
 end;
 
 procedure TCustomComboBox.WndProc(var Message: TMessage);
-var
-  I: Integer;
-  S: string;
 begin
   case Message.Msg of
     CN_COMMAND:
       case HiWord(Message.WParam) of
-        CBN_EDITCHANGE: Change;
-        CBN_SELCHANGE:
+        CBN_EDITCHANGE:
           begin
-            I := ItemIndex;
-            if not IsListStyle and (I >= 0) then
-            begin
-              S := FItems[I];
-              SendMessageW(Handle, WM_SETTEXT, 0, LPARAM(PChar(S)));
-            end;
+            SaveUserState;
             Change;
-            Select;
-            Click;
           end;
-        CBN_DROPDOWN: DropDown;
+        CBN_SELCHANGE: UserSelect;
+        CBN_DROPDOWN:
+          begin
+            SaveUserState;
+            DropDown;
+          end;
         CBN_CLOSEUP: CloseUp;
       else
         inherited WndProc(Message);
+      end;
+    WM_KEYDOWN, WM_SYSKEYDOWN, WM_CHAR, WM_MOUSEWHEEL:
+      begin
+        { UIF-884: input that may change the selection (in the dropped list the selection follows the mouse: the
+          state saved when the list opened stays) }
+        if HandleAllocated and not GetDroppedDown then
+          SaveUserState;
+        inherited WndProc(Message);
+        if FRestorePending then
+        begin
+          FRestorePending := False;
+          RestoreUserState;
+        end;
+      end;
+    CM_RESTORESELECTION:
+      if FRestorePending then
+      begin
+        FRestorePending := False;
+        RestoreUserState;
       end;
     CM_WANTSPECIALKEY:
       if ((Message.WParam = VK_RETURN) or (Message.WParam = VK_ESCAPE)) and GetDroppedDown then

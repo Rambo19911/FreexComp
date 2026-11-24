@@ -19,12 +19,6 @@ UIF-333 process rule: a layout bug fix adds a corpus case first (lead-owned corp
 UIF-334 how corpus expectations are written (lead-owned corpus, by hand)
 UIF-727 designer naming rule for new menu items (ide agent)
 UIF-835 list/tree view check boxes and node streaming: Phase 8+ card UIF-1024
-UIF-880 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
-UIF-881 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
-UIF-882 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
-UIF-883 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
-UIF-884 Phase 7 data-aware hooks: U-115 (Hooks_DataAware)
-UIF-885 Phase 7 data-aware hooks: U-116 (Hooks_DataAware)
 UIF-971 data/ components and their metadata tests: Phase 7 (data agent)
 
 # not observable or not provokable in a test

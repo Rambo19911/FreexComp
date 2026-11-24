@@ -1,0 +1,194 @@
+# Toggle (UIF-883)
+ok user click: Toggle, which assigns State
+ok checked
+ok unchecked
+ok the base computes the next state (AllowGrayed)
+ok an override that does not call inherited: no change, no OnClick
+ok state kept
+ok native state kept
+ok Checked := / State := do not call Toggle
+ok accelerator consumed
+ok accelerator: Toggle
+ok checked
+ok accelerator: the override decides
+ok state kept
+# bases declare, concrete classes publish (UIF-880)
+ok label defaults
+ok label members published
+ok edit defaults
+ok edit members published
+ok a descendant publishes only what it names
+ok an unpublished AutoSize / BorderStyle keeps its default (rule I2)
+ok an unpublished Style keeps its default (rule I1)
+ok memo defaults
+ok memo members published
+ok check box defaults
+ok check box members published
+ok combo box defaults
+ok combo box members published
+ok owner-drawn control: WS_VSCROLL from CreateParams
+ok SetScrollInfo
+ok WM_VSCROLL arrives in WndProc
+ok Paint
+ok Canvas
+# Change, ReadOnly, Modified (UIF-881)
+ok handle-less assignment: Change, which fires OnChange
+ok assignment that changes the text
+ok same text: no Change
+ok user edit
+ok Modified after a user edit
+ok Modified := False
+ok an override that does not call inherited: no OnChange
+ok ReadOnly := True (EM_SETREADONLY)
+ok read-only: the character is discarded
+ok read-only: EditCanModify is not asked
+ok ReadOnly := False
+ok ReadOnly := True (EM_SETREADONLY)
+ok read-only: the character is discarded
+ok read-only: EditCanModify is not asked
+ok ReadOnly := False
+ok ReadOnly := True (EM_SETREADONLY)
+ok read-only: the character is discarded
+ok read-only: EditCanModify is not asked
+ok ReadOnly := False
+ok the window was never recreated
+ok memo: Change inherited from the edit base
+ok memo: ReadOnly at run time
+# EditCanModify (UIF-882)
+ok refused character: discarded
+ok asked once
+ok one beep
+ok KeyPress ran before, no Change
+ok refused Backspace
+ok asked once
+ok refused Delete key
+ok asked once
+ok one beep
+ok refused WM_PASTE
+ok asked once
+ok refused WM_CUT
+ok asked once
+ok refused WM_CLEAR
+ok asked once
+ok PasteFromClipboard / CutToClipboard are the user's paste and cut
+ok asked once each
+ok a beep for every refusal
+ok nothing changed
+ok allowed character: applied
+ok asked once
+ok no beep
+ok KeyPress, then the change
+ok refused WM_UNDO
+ok asked once
+ok refused Ctrl+Z (the native control sends itself EM_UNDO)
+ok asked once
+ok refused Undo
+ok asked once
+ok refused Ctrl+V (the native control sends itself WM_PASTE)
+ok asked once
+ok refused Ctrl+X (the native control sends itself WM_CUT)
+ok asked once
+ok allowed WM_UNDO
+ok asked once
+ok allowed Backspace
+ok allowed Delete key
+ok allowed WM_CLEAR
+ok asked once per message
+ok no beep
+ok keys that do not modify the text do not ask
+ok a key swallowed in KeyPress / KeyDown does not ask
+ok and does not beep
+ok Text := and SelText := are applied
+ok Clear
+ok code never asks
+ok code never beeps
+ok memo: refused line break, tab and character
+ok memo: asked once each
+ok memo: allowed line break
+ok memo: read-only does not ask
+# combo box hooks (UIF-884)
+ok the edit part
+ok user selection: Change, Select, then OnClick
+ok selected
+ok text of the item
+ok asked once
+ok DropDown
+ok CloseUp
+ok allowed character in the edit part
+ok editing: Change
+ok asked once
+ok no beep
+ok refused character: discarded
+ok asked once
+ok one beep
+ok refused Backspace, Delete, paste, cut, clear and undo
+ok asked once each
+ok a beep each
+ok no event
+ok selection kept
+ok refused selection: ItemIndex restored
+ok text restored
+ok no event
+ok asked once
+ok one beep
+ok still restored after the message queue is empty
+ok text too
+ok a text that is no item
+ok refused selection: no item again
+ok the typed text again
+ok no event
+ok dropped list: refused, no event
+ok dropped list: ItemIndex restored
+ok dropped list: text restored
+ok ItemIndex := / Text := are applied
+ok code never asks
+ok code fires nothing
+ok key events of the edit part
+ok a swallowed key does not reach the edit part
+ok nor the list
+ok and does not ask
+ok list style: no edit part
+ok list style: refused selection restored
+ok list style: text restored
+ok list style: no event
+ok list style: one beep
+ok list style: allowed selection
+ok list style: the same order
+ok a recreated window: the new edit part asks
+# keys, Escape and Enter (UIF-885)
+ok DoEnter when the focus enters
+ok the key methods run before the events
+ok the character was applied
+ok Key := 0 in KeyDown swallows the key and its character
+ok Key := #0 in KeyPress swallows the character
+ok Escape not wanted: the cancel button
+ok Enter not wanted: the default button
+ok Escape wanted (CM_WANTSPECIALKEY): the control gets the key
+ok Enter still not wanted
+ok Enter wanted: the control gets the key
+ok Escape not wanted again
+# DoEnter, DoExit (UIF-885)
+ok DoExit when the focus leaves
+ok the focus moved
+ok an exception raised in DoExit reaches the application handler
+ok after the focus change
+ok natively too
+ok a control that takes the focus back before raising
+ok has the focus
+ok natively too
+ok SetFocus by code raises the exception of DoExit
+ok not reported twice
+ok the control that took the focus back has it
+ok the focus comes back as usual
+ok and leaves as usual
+# helper child controls (UIF-886)
+ok Owner = the control
+ok Parent = the control
+ok empty Name
+ok a child window of the control
+ok the control is in the layout dump
+ok its helper is not
+ok the control has no listed children
+ok the control is a named component of the form
+ok the helper is not a component of the form
+# passed 185 failed 0
