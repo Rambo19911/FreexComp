@@ -36,6 +36,7 @@ public sealed class KeymapService : IKeymapService
     private IDisposable? _saveTimer;
     private bool _dirty;
     private bool _readOnly;
+    private IReadOnlyList<KeyBinding> _base = DefaultKeymap.Bindings;
 
     public KeymapService(IUserPaths paths, IFileSystem fileSystem, IClock clock, ILog log)
     {
@@ -53,6 +54,23 @@ public sealed class KeymapService : IKeymapService
     public static bool IsReserved(KeyGesture gesture) => Reserved.Contains(gesture);
 
     public Keymap Current { get; private set; }
+
+    public string Preset { get; private set; } = KeymapPresets.Default;
+
+    public void SetPreset(string preset)
+    {
+        preset = KeymapPresets.Normalize(preset);
+        if (preset == Preset)
+        {
+            return;
+        }
+
+        // The user's differences stay as they are (and keymap.json with them); only what they apply to changes.
+        Preset = preset;
+        _base = KeymapPresets.Bindings(preset);
+        Current = Build(logConflicts: false);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>The most recently started save (tests await it after advancing the clock).</summary>
     internal Task LastSaveTask { get; private set; } = Task.CompletedTask;
@@ -183,7 +201,7 @@ public sealed class KeymapService : IKeymapService
     {
         _added.Clear();
         _removed.Clear();
-        Current = DefaultKeymap.Create();
+        Current = KeymapPresets.Create(Preset);
         MarkDirty();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -213,16 +231,16 @@ public sealed class KeymapService : IKeymapService
 
     private static CommandScope Level(CommandScope scope) => scope == CommandScope.Focus ? CommandScope.Global : scope;
 
-    private static IReadOnlyList<KeyGesture> Defaults(string commandId) =>
-        [.. DefaultKeymap.Bindings.Where(b => b.CommandId == commandId).Select(b => b.Gesture).Distinct()];
+    private IReadOnlyList<KeyGesture> Defaults(string commandId) =>
+        [.. _base.Where(b => b.CommandId == commandId).Select(b => b.Gesture).Distinct()];
 
     /// <summary>
-    /// Where a user binding of the command applies (IDE-SET-063): the places of its default bindings, or else
+    /// Where a user binding of the command applies (IDE-SET-063): the places of its bindings in the preset, or else
     /// every scope of commands.md with no tool window.
     /// </summary>
-    private static List<(CommandScope Scope, string? ToolWindow)> Places(string commandId)
+    private List<(CommandScope Scope, string? ToolWindow)> Places(string commandId)
     {
-        var places = DefaultKeymap.Bindings.Where(b => b.CommandId == commandId).Select(b => (b.Scope, b.ToolWindow)).Distinct().ToList();
+        var places = _base.Where(b => b.CommandId == commandId).Select(b => (b.Scope, b.ToolWindow)).Distinct().ToList();
         return places.Count > 0 ? places : [.. CommandCatalog.Get(commandId).Scopes.Select(s => (s, (string?)null))];
     }
 
@@ -290,10 +308,10 @@ public sealed class KeymapService : IKeymapService
         }
     }
 
-    /// <summary>Defaults − removed + bindings; a binding beats a default, a later binding an earlier one (IDE-SET-064).</summary>
+    /// <summary>Preset − removed + bindings; a binding beats a default, a later binding an earlier one (IDE-SET-064).</summary>
     private Keymap Build(bool logConflicts)
     {
-        var bindings = DefaultKeymap.Bindings
+        var bindings = _base
             .Where(b => !(_removed.TryGetValue(b.CommandId, out var r) && r.Contains(b.Gesture)))
             .ToList();
         var userBindings = new List<KeyBinding>();
@@ -332,7 +350,7 @@ public sealed class KeymapService : IKeymapService
             _added.Remove(empty);
         }
 
-        return new Keymap(bindings);
+        return KeymapPresets.Create(Preset, bindings);
     }
 
     private void HandleCorruptFile()

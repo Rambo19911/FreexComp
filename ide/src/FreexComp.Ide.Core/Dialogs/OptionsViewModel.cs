@@ -187,7 +187,7 @@ public sealed class OptionsViewModel : DialogViewModel<bool>
         templatesPage.OtherLabels = CodeTemplatesFieldLabels;
         Colors = new ColorsPageViewModel(settings, dialogs, actualTheme);
         var colors = new OptionsPage(ColorsPage, Strings.Options_Page_Colors, Strings.Options_Tree_Colors, 1, []) { OtherLabels = ColorsPageViewModel.FieldLabels };
-        KeyMappings = new KeyMappingsPageViewModel(keymap, dialogs, implementedPhase);
+        KeyMappings = new KeyMappingsPageViewModel(keymap, settings, dialogs, implementedPhase);
         var keys = new OptionsPage(KeyMappingsPage, Strings.Options_Page_KeyMappings, Strings.Options_Tree_KeyMappings, 1, [])
         {
             OtherLabels = KeyMappingsPageViewModel.FieldLabels,

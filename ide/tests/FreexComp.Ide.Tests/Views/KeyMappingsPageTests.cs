@@ -281,4 +281,130 @@ public sealed class KeyMappingsPageTests
         dlg.Press("Escape");
         await running;
     }
+
+    /// <summary>
+    /// I-253 (phase8-ui-additions.md D3): the <c>Key map:</c> drop-down above the command list shows the gestures of
+    /// the chosen built-in map at once, the user's assignments stay on top of it, Apply writes <c>keyboard.preset</c>,
+    /// and the menus show the gestures of the active map.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    public async Task KeyMapSelector_SwitchesPresetAndKeepsAssignments()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var keymap = h.Services.Keymap;
+        var running = h.Services.Commands.ExecuteAsync("tools.keyMappings");
+        var dlg = await h.WaitForDialogAsync("Options");
+
+        // The drop-down: Default and Classic, labelled, above the filter box and inside the page.
+        var combo = dlg.Find<ComboBox>("KeyMap");
+        Assert.Equal(["Default", "Classic"], combo.Items.Cast<Core.Dialogs.OptionChoice>().Select(c => c.Display));
+        Assert.Equal(0, combo.SelectedIndex);
+        Assert.Equal("Key map", Avalonia.Automation.AutomationProperties.GetName(combo));
+        var comboBox = BoundsInWindow(combo);
+        var filterBox = BoundsInWindow(dlg.Find<TextBox>("KeyMappings.Filter"));
+        var listBox = BoundsInWindow(dlg.Find<ListBox>("Commands"));
+        Assert.True(combo.IsEffectivelyVisible && comboBox.Width >= 160 && comboBox.Height > 0, comboBox.ToString());
+        Assert.True(comboBox.Bottom <= filterBox.Top, $"{comboBox} / {filterBox}");
+        Assert.True(comboBox.Left >= listBox.Left && comboBox.Right <= listBox.Right, $"{comboBox} / {listBox}");
+        var label = combo.GetVisualParent()!.GetVisualChildren().OfType<Label>().Single();
+        Assert.Equal("_Key map:", label.Content);
+        Assert.Same(combo, label.Target);
+        Assert.True(BoundsInWindow(label).Right <= comboBox.Left, $"{BoundsInWindow(label)} / {comboBox}");
+
+        // An assignment of the user, made under Default.
+        Select(dlg, "Save All", "file.saveAll");
+        Capture(dlg, "Ctrl+F1");
+        dlg.Click("Assign");
+        Assert.Equal(["Ctrl+Shift+S", "Ctrl+F1"], Chips(dlg));
+
+        // Classic: its gestures at once (pending), not marked as changed by the user; the user's assignment stays.
+        combo.SelectedIndex = 1;
+        Dispatcher.UIThread.RunJobs();
+        SetText(dlg, "KeyMappings.Filter", "run.start");
+        Assert.Equal("F9", Cells(dlg, "run.start")[1]);
+        Assert.Equal("Ctrl+Shift+F9", Cells(dlg, "run.startWithoutDebugging")[1]);
+        Assert.Equal(FontWeight.Normal, ShortcutWeight(dlg, "run.start"));
+        SetText(dlg, "KeyMappings.Filter", "view.objectInspector");
+        Assert.Equal("F11, Alt+3", Cells(dlg, "view.objectInspector")[1]);
+        SetText(dlg, "KeyMappings.Filter", "file.saveAll");
+        Assert.Equal("Ctrl+Shift+S, Ctrl+F1", Cells(dlg, "file.saveAll")[1]);
+        Assert.Equal(FontWeight.SemiBold, ShortcutWeight(dlg, "file.saveAll"));
+        Assert.Equal(KeymapPresets.Default, keymap.Preset); // nothing applied yet
+        Assert.Equal(["F5"], Gestures(keymap, "run.start"));
+        Assert.True(dlg.Find<Button>("Apply").IsEnabled);
+
+        // Back and forth changes nothing else.
+        combo.SelectedIndex = 0;
+        Dispatcher.UIThread.RunJobs();
+        SetText(dlg, "KeyMappings.Filter", "run.start");
+        Assert.Equal("F5", Cells(dlg, "run.start")[1]);
+        combo.SelectedIndex = 1;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("F9", Cells(dlg, "run.start")[1]);
+
+        // Reset Command gives the gestures of the chosen map.
+        Select(dlg, "run.stepOver", "run.stepOver");
+        Assert.Equal(["F8"], Chips(dlg));
+        dlg.Click("KeyMappings.Current.F8.Remove");
+        Assert.Empty(Chips(dlg));
+        dlg.Click("ResetCommand");
+        Assert.Equal(["F8"], Chips(dlg));
+
+        // Apply: the setting, the service and the user's assignment on top of the map.
+        dlg.Click("Apply");
+        Assert.Equal(KeymapPresets.Classic, h.Services.Settings.Get(Core.Settings.SettingsCatalog.KeyboardPreset));
+        Assert.Equal(KeymapPresets.Classic, keymap.Preset);
+        Assert.Equal(["F9"], Gestures(keymap, "run.start"));
+        Assert.Equal(["F8"], Gestures(keymap, "run.stepOver"));
+        Assert.Equal(["Ctrl+Shift+S", "Ctrl+F1"], Gestures(keymap, "file.saveAll"));
+        Assert.False(dlg.Find<Button>("Apply").IsEnabled);
+        dlg.Click("Ok");
+        await running;
+
+        // Menus show the gestures of the active map, and follow the setting.
+        var run = MenuItemOf(h, AutomationIds.TopMenu("Run"));
+        run.Open();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("F9", ShownGesture(MenuItemOf(h, AutomationIds.Menu("run.start"))));
+        Assert.Equal("F8", ShownGesture(MenuItemOf(h, AutomationIds.Menu("run.stepOver"))));
+        h.Services.Settings.Set(Core.Settings.SettingsCatalog.KeyboardPreset, KeymapPresets.Default);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(KeymapPresets.Default, keymap.Preset);
+        Assert.Equal("F5", ShownGesture(MenuItemOf(h, AutomationIds.Menu("run.start"))));
+        Assert.Equal("F10", ShownGesture(MenuItemOf(h, AutomationIds.Menu("run.stepOver"))));
+        Assert.Equal(["Ctrl+Shift+S", "Ctrl+F1"], Gestures(keymap, "file.saveAll"));
+        run.Close();
+    }
+
+    /// <summary>The key map named in <c>settings.json</c> is the one the IDE starts with.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    public async Task KeyMapSetting_IsReadAtStartUp()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o => o.Settings["keyboard.preset"] = "classic");
+        Assert.Equal(KeymapPresets.Classic, h.Services.Keymap.Preset);
+        Assert.Equal(["F7"], Gestures(h.Services.Keymap, "run.stepInto"));
+
+        var running = h.Services.Commands.ExecuteAsync("tools.keyMappings");
+        var dlg = await h.WaitForDialogAsync("Options");
+        Assert.Equal(1, dlg.Find<ComboBox>("KeyMap").SelectedIndex);
+        SetText(dlg, "KeyMappings.Filter", "run.stepInto");
+        Assert.Equal("F7", Cells(dlg, "run.stepInto")[1]);
+        Assert.False(dlg.Find<Button>("Apply").IsEnabled);
+        dlg.Press("Escape");
+        await running;
+    }
+
+    private static Rect BoundsInWindow(Visual visual) =>
+        new Rect(visual.Bounds.Size).TransformToAABB(visual.TransformToVisual(TopLevel.GetTopLevel(visual)!)!.Value);
+
+    private static MenuItem MenuItemOf(HeadlessHarness h, string id)
+    {
+        static IEnumerable<MenuItem> Descendants(IEnumerable<object?> items) =>
+            items.OfType<MenuItem>().SelectMany(i => new[] { i }.Concat(Descendants(i.Items.Cast<object?>())));
+        return Descendants(h.Find<Menu>(AutomationIds.MenuBar).Items.Cast<object?>()).Single(i => AutomationIds.Get(i) == id);
+    }
+
+    /// <summary>The shortcut text the menu item's template shows.</summary>
+    private static string ShownGesture(MenuItem item) =>
+        item.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Name == "PART_InputGestureText").Text ?? "";
 }

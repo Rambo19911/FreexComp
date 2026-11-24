@@ -44,6 +44,12 @@ public static class ServiceGraph
             settings.Load();
         var theme = new ThemeService(settings, platform.ThemeHost); // step 5: theme applied
         var keymap = new KeymapService(platform.UserPaths, platform.FileSystem, platform.Clock, platform.Log);
+        keymap.SetPreset(settings.Get(SettingsCatalog.KeyboardPreset)); // I-253: the built-in key map under the user's keys
+        settings.Changed += (_, e) =>
+        {
+            if (e.Key == SettingsCatalog.KeyboardPreset.Name)
+                keymap.SetPreset(settings.Get(SettingsCatalog.KeyboardPreset));
+        };
         if (safe)
             keymap.LoadSafeMode();
         else

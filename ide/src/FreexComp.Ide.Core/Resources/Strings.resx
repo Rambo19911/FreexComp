@@ -3619,6 +3619,18 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Reset A_ll…</value>
     <comment>dialogs.md §9.5</comment>
   </data>
+  <data name="Options_Keys_KeyMap" xml:space="preserve">
+    <value>_Key map:</value>
+    <comment>phase8-ui-additions.md D3</comment>
+  </data>
+  <data name="Options_Keys_KeyMap_default" xml:space="preserve">
+    <value>Default</value>
+    <comment>phase8-ui-additions.md D3</comment>
+  </data>
+  <data name="Options_Keys_KeyMap_classic" xml:space="preserve">
+    <value>Classic</value>
+    <comment>phase8-ui-additions.md D3</comment>
+  </data>
   <data name="Options_Keys_Scope_Global" xml:space="preserve">
     <value>Global</value>
     <comment>commands.md §1 scope</comment>

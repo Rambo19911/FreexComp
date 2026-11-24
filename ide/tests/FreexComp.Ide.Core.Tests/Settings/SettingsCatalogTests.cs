@@ -28,6 +28,9 @@ public sealed class SettingsCatalogTests
             }
         }
 
+        // Rows a later spec document gives as text to apply to settings.md count until they are there.
+        expected.AddRange(RowsToApply(SpecTables.DocPath("spec/ui/phase8-ui-additions.md")).Where(r => expected.All(e => e.Name != r.Name)));
+
         Assert.Equal(
             ["colors.light.<token>", "colors.dark.<token>", "colors.light.<syntaxToken>.style", "colors.dark.<syntaxToken>.style"],
             SpecTables.Read(settingsMd, "4.3 ").Select(r => r["Key pattern"]));
@@ -177,6 +180,23 @@ public sealed class SettingsCatalogTests
         }
 
         return offenders;
+    }
+
+    /// <summary>
+    /// <c>Interface text to apply (`settings.md`)</c> rows: <c>`| name | enum a, b | default | text |`</c> on a line of its own.
+    /// </summary>
+    private static IEnumerable<Expected> RowsToApply(string path)
+    {
+        var lines = File.ReadAllLines(path);
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(lines[i], @"^\s*`\| (?<name>[A-Za-z.]+) \| enum (?<values>[a-z, ]+) \| (?<default>[a-z]+) \|");
+            if (match.Success && lines[i - 1].Contains("(`settings.md`)", StringComparison.Ordinal))
+            {
+                yield return new Expected(match.Groups["name"].Value, SettingType.Enum, match.Groups["default"].Value,
+                    match.Groups["values"].Value.Split(", "), []);
+            }
+        }
     }
 
     private static Expected FromKeyRow(string name, string type, string defaultText, string rule)

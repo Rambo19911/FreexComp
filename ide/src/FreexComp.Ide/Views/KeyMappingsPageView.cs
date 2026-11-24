@@ -14,7 +14,8 @@ using FreexComp.Ide.Input;
 namespace FreexComp.Ide.Views;
 
 /// <summary>
-/// Content of the Options › Key Mappings page (dialogs.md §9.5): <c>KeyMappings.Filter</c>, <c>ByShortcut</c>,
+/// Content of the Options › Key Mappings page (dialogs.md §9.5): the key map drop-down <c>KeyMap</c>
+/// (phase8-ui-additions.md D3); <c>KeyMappings.Filter</c>, <c>ByShortcut</c>,
 /// <c>ResetAll</c>; the grid <c>Commands</c> (rows <c>KeyMappings.Row.&lt;commandId&gt;</c>: command, shortcut, scope);
 /// the selected command's chips (<c>KeyMappings.CurrentLabel</c>, <c>KeyMappings.Current.&lt;gesture&gt;</c> with
 /// <c>.Remove</c>); the capture box <c>NewShortcut</c> with <c>Error.NewShortcut</c> and <c>Conflict</c>; <c>Assign</c>,
@@ -26,6 +27,22 @@ internal static class KeyMappingsPageView
 
     public static Control Create(KeyMappingsPageViewModel model)
     {
+        // Key map: the built-in map under the user's assignments (I-253).
+        var keyMap = new ComboBox { ItemsSource = model.Presets, DisplayMemberBinding = new Avalonia.Data.Binding(nameof(OptionChoice.Display)), MinWidth = 160, VerticalAlignment = VerticalAlignment.Center };
+        AutomationProperties.SetAutomationId(keyMap, Id("KeyMap"));
+        AutomationProperties.SetName(keyMap, Strings.Options_Keys_KeyMap.Replace("_", "", StringComparison.Ordinal).TrimEnd(':'));
+        keyMap.SelectedItem = model.Presets.First(p => p.Value == model.Preset);
+        keyMap.SelectionChanged += (_, _) =>
+        {
+            if (keyMap.SelectedItem is OptionChoice choice)
+                model.Preset = choice.Value;
+        };
+        var keyMapLabel = new Label { Content = Strings.Options_Keys_KeyMap, Target = keyMap, Padding = new Thickness(0), Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        keyMapLabel.Bind(TemplatedControl.ForegroundProperty, keyMapLabel.GetResourceObservable("FxcTextPrimaryBrush"));
+        var keyMapRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        keyMapRow.Children.Add(keyMapLabel);
+        keyMapRow.Children.Add(keyMap);
+
         // Top row: filter, search by shortcut, Reset All.
         var filter = new TextBox { PlaceholderText = Strings.Options_Keys_Filter, Width = 260 };
         AutomationProperties.SetAutomationId(filter, Id("KeyMappings.Filter"));
@@ -106,12 +123,13 @@ internal static class KeyMappingsPageView
         conflictRow.Children.Add(conflict);
 
         var body = new StackPanel { Margin = new Thickness(0, 0, 16, 0) };
-        foreach (var control in new Control[] { top, header, frame, currentRow, captureRow, error, conflictRow })
+        foreach (var control in new Control[] { keyMapRow, top, header, frame, currentRow, captureRow, error, conflictRow })
             body.Children.Add(control);
 
         void Update()
         {
             list.SelectedItem = model.SelectedRow;
+            keyMap.SelectedItem = model.Presets.First(p => p.Value == model.Preset);
             currentLabel.Text = model.CurrentLabel;
             currentRow.IsVisible = model.SelectedRow is not null;
             if (capture.Text != model.CapturedText)

@@ -12,7 +12,9 @@ public sealed class Keymap
 {
     private readonly Dictionary<string, List<KeyGesture>> _gesturesByCommand = new(StringComparer.Ordinal);
 
-    public Keymap(IEnumerable<KeyBinding> bindings)
+    /// <param name="bindings">The effective bindings.</param>
+    /// <param name="displayed">Per command, gestures shown before the catalog's (a key map preset's own gestures).</param>
+    public Keymap(IEnumerable<KeyBinding> bindings, IReadOnlyDictionary<string, IReadOnlyList<KeyGesture>>? displayed = null)
     {
         Bindings = [.. bindings];
         foreach (var binding in Bindings)
@@ -33,6 +35,11 @@ public sealed class Keymap
         {
             var preferred = CommandCatalog.All.FirstOrDefault(c => c.Id == id)?.DefaultGestures ?? [];
             var order = preferred.Select(KeyGesture.Parse).ToList();
+            if (displayed is not null && displayed.TryGetValue(id, out var first))
+            {
+                order.InsertRange(0, first);
+            }
+
             var sorted = list.OrderBy(g => Rank(order, g)).ToList(); // stable: table order for the rest
             list.Clear();
             list.AddRange(sorted);

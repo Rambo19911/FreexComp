@@ -62,6 +62,7 @@ public static class SettingsCatalog
         Int("environment.recoveryIntervalSeconds", 30, new SettingRange(0, 0), new SettingRange(5, 600));
     public static readonly SettingKey<string> EnvironmentLanguage = String("environment.language", "en");
     public static readonly SettingKey<bool> LayoutAutoSwitch = Bool("layout.autoSwitch", true);
+    public static readonly SettingKey<string> KeyboardPreset = Enum("keyboard.preset", "default", "default", "classic"); // phase8-ui-additions.md D3
     public static readonly SettingKey<string> FilesDefaultEncoding =
         Enum("files.defaultEncoding", "utf-8", "utf-8", "utf-8-bom", "utf-16le", "utf-16be", "windows-1252");
     public static readonly SettingKey<string> FilesDefaultLineEnding = Enum("files.defaultLineEnding", "crlf", "crlf", "lf");

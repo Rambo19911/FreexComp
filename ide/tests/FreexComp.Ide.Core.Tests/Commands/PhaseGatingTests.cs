@@ -245,7 +245,7 @@ public sealed class PhaseGatingTests
         Assert.False(PaletteLists(commands, services.Layout, ProjectManagerFocus, Phase, "project.setActive"));
 
         // Key Mappings.
-        var keys = new KeyMappingsPageViewModel(services.Keymap, services.Dialogs, Phase);
+        var keys = new KeyMappingsPageViewModel(services.Keymap, services.Settings, services.Dialogs, Phase);
         Assert.False(keys.Rows.Single(r => r.Command.Id == "project.newFolder").IsLaterPhase);
         Assert.False(keys.Rows.Single(r => r.Command.Id == "refactor.rename").IsLaterPhase);
         Assert.True(keys.Rows.Single(r => r.Command.Id == "project.setActive").IsLaterPhase);
@@ -308,7 +308,7 @@ public sealed class PhaseGatingTests
         Assert.All(EditorContextMenu.Build(commands, phase, hasForm: true).Where(i => i.Command is not null),
             i => Assert.True(Phase8Features.IsAvailable(i.CommandId!, i.Command!.Definition.Phase, phase), i.CommandId));
 
-        var keys = new KeyMappingsPageViewModel(services.Keymap, services.Dialogs, phase);
+        var keys = new KeyMappingsPageViewModel(services.Keymap, services.Settings, services.Dialogs, phase);
         Assert.True(keys.Rows.Single(r => r.Command.Id == "project.setActive").IsLaterPhase);
     }
 
@@ -382,7 +382,7 @@ public sealed class PhaseGatingTests
         Assert.DoesNotContain(document.TextAreaMenu!(), i => i.CommandId == "refactor.rename");
         Assert.True(PaletteLists(services.Commands, services.Layout, EditorFocus, 5, "edit.selectAll")); // the control
         Assert.False(PaletteLists(services.Commands, services.Layout, EditorFocus, 5, "refactor.rename"));
-        Assert.True(new KeyMappingsPageViewModel(services.Keymap, services.Dialogs, 5).Rows.Single(r => r.Command.Id == "refactor.rename").IsLaterPhase);
+        Assert.True(new KeyMappingsPageViewModel(services.Keymap, services.Settings, services.Dialogs, 5).Rows.Single(r => r.Command.Id == "refactor.rename").IsLaterPhase);
         Assert.False(Options(services, 5).Field("Language").IsEnabled);
 
         // The same ids at the product's phase.

@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Resources;
 using FreexComp.Ide.Core.Services;
+using FreexComp.Ide.Core.Settings;
 
 namespace FreexComp.Ide.Core.Dialogs;
 
@@ -72,7 +73,9 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
 {
     private readonly IKeymapService _keymap;
     private readonly IDialogService _dialogs;
-    private readonly Keymap _defaults = DefaultKeymap.Create();
+    private readonly ISettingsService _settings;
+    private Keymap _defaults;
+    private string _preset;
     private readonly Dictionary<string, List<KeyGesture>> _pending = new(StringComparer.Ordinal);
     private readonly Dictionary<string, KeyMappingRow> _rows = new(StringComparer.Ordinal);
     private string _filter = "";
@@ -85,10 +88,14 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
     private string? _conflictText;
     private bool _resetAll;
 
-    internal KeyMappingsPageViewModel(IKeymapService keymap, IDialogService dialogs, int implementedPhase)
+    internal KeyMappingsPageViewModel(IKeymapService keymap, ISettingsService settings, IDialogService dialogs, int implementedPhase)
     {
         _keymap = keymap;
+        _settings = settings;
         _dialogs = dialogs;
+        _preset = keymap.Preset;
+        _defaults = KeymapPresets.Create(_preset);
+        Presets = [.. KeymapPresets.All.Select(p => new OptionChoice(p, Strings.ResourceManager.GetString("Options_Keys_KeyMap_" + p, CultureInfo.CurrentCulture) ?? p))];
         var categories = CommandCatalog.All.Select(c => c.Category).Distinct().ToList();
         Rows =
         [
@@ -109,6 +116,48 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
 
     /// <summary>Raised when the working copy changes (the dialog updates OK/Apply).</summary>
     public event EventHandler? PendingChanged;
+
+    /// <summary>The built-in key maps of the <c>Key map:</c> drop-down (phase8-ui-additions.md D3).</summary>
+    public IReadOnlyList<OptionChoice> Presets { get; }
+
+    /// <summary>
+    /// The pending built-in key map. Changing it shows the gestures of the chosen map at once; what the working copy
+    /// has more or less than the map it leaves (the user's assignments) stays and wins over the new map.
+    /// </summary>
+    public string Preset
+    {
+        get => _preset;
+        set
+        {
+            if (value == _preset || !KeymapPresets.All.Contains(value))
+                return;
+            var next = KeymapPresets.Create(value);
+            var added = new List<(KeyMappingRow Row, KeyGesture Gesture)>();
+            foreach (var row in Rows)
+            {
+                var old = _defaults.GetGestures(row.CommandId);
+                var pending = _pending[row.CommandId];
+                added.AddRange(pending.Where(g => !old.Contains(g)).Select(g => (row, g)));
+                var removed = old.Where(g => !pending.Contains(g)).ToList();
+                _pending[row.CommandId] = [.. next.GetGestures(row.CommandId).Where(g => !removed.Contains(g))];
+            }
+
+            foreach (var (row, gesture) in added)
+            {
+                foreach (var other in Conflicts(row.Command, gesture))
+                {
+                    _pending[other.Id].Remove(gesture);
+                }
+
+                _pending[row.CommandId].Add(gesture);
+            }
+
+            _preset = value;
+            _defaults = next;
+            OnPropertyChanged();
+            Changed();
+        }
+    }
 
     /// <summary>Every listed command in natural order.</summary>
     public IReadOnlyList<KeyMappingRow> Rows { get; }
@@ -210,7 +259,7 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
 
     public bool CanAssign => SelectedRow is not null && _captured is { } g && CaptureError is null && !_pending[SelectedRow.CommandId].Contains(g);
 
-    public bool HasChanges => Rows.Any(r => !SameSet(_pending[r.CommandId], _keymap.GetGestures(r.CommandId)));
+    public bool HasChanges => _preset != _keymap.Preset || Rows.Any(r => !SameSet(_pending[r.CommandId], _keymap.GetGestures(r.CommandId)));
 
     /// <summary>Pending gestures of a command.</summary>
     public IReadOnlyList<KeyGesture> PendingGestures(string commandId) => _pending[commandId];
@@ -281,13 +330,19 @@ public sealed class KeyMappingsPageViewModel : ObservableObject
     /// <summary>Labels of the page's fields, for the dialog filter (UI-DLG-091).</summary>
     internal static IReadOnlyList<string> FieldLabels =>
     [
-        Strings.Options_Keys_Filter, Strings.Options_Keys_ByShortcut, Strings.Options_Keys_NewShortcut, Strings.Options_Keys_Assign,
+        Strings.Options_Keys_KeyMap, Strings.Options_Keys_Filter, Strings.Options_Keys_ByShortcut, Strings.Options_Keys_NewShortcut, Strings.Options_Keys_Assign,
         Strings.Options_Keys_ResetCommand, Strings.Options_Keys_ResetAll,
     ];
 
     /// <summary>Writes the changed commands through the keymap service (OK/Apply).</summary>
     internal void Apply()
     {
+        if (_preset != _keymap.Preset)
+        {
+            _settings.Set(SettingsCatalog.KeyboardPreset, _preset);
+            _keymap.SetPreset(_preset); // the user's assignments are kept on top of it
+        }
+
         if (_resetAll)
         {
             _keymap.ResetAll();
