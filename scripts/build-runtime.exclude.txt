@@ -1,0 +1,4 @@
+# Library units that scripts/build-runtime.ps1 leaves out of the rebuild.
+# One unit per line, followed by '#' and the reason, for example:
+#   SomeUnit   # why it cannot be compiled on its own
+# Lines that start with '#' and empty lines are ignored. The list is empty: every unit is compiled.

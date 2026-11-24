@@ -9,5 +9,7 @@
   <ItemGroup>
     <!-- Repository-wide policy checks (licence files, notices). The shared helpers come from the IDE test support library. -->
     <ProjectReference Include="..\..\..\ide\tests\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
+    <!-- The runtime rebuild script test runs the script with the compiler built beside this assembly (opc.exe). -->
+    <ProjectReference Include="..\..\..\compiler\src\opc\opc.csproj" />
   </ItemGroup>
 </Project>

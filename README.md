@@ -186,6 +186,7 @@ dotnet run --project compiler/src/opc -- Hello.pas -o Hello.exe
 
 More topics:
 * [Writing and calling a library](help/libraries.md)
+* [Library source](help/library-source.md)
 * [Supported platforms](help/supported-platforms.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
