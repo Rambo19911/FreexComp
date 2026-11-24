@@ -1,0 +1,84 @@
+== stored rows: lazy calculation
+ok AutoCalcFields defaults to True
+ok Open calculates nothing
+ok a calculated field has FieldNo -1
+ok and cannot be modified
+ok reading a data field calculates nothing
+ok no call yet
+ok the first read of a calculated field
+ok calls OnCalcFields; the values are null before the handler runs
+ok the handler fills every calculated field
+ok DisplayText of a calculated field
+ok the values are cached
+ok a value the handler does not assign stays null
+ok row 2
+ok one call per row
+ok back on row 1
+ok the cache of a row survives navigation
+ok after Refresh
+ok the reloaded row is calculated again
+ok Locate on a calculated field
+ok calculates the rows it scans
+== no handler
+ok the values stay null
+ok and read as defaults
+ok also after an edit
+== writes
+ok outside OnCalcFields: dsBrowse
+ok outside OnCalcFields: dsEdit
+ok closed dataset
+== edit buffer: AutoCalcFields
+ok the stored row
+ok entering dsEdit calculates the buffer
+ok the buffer has its own values
+ok already calculated
+ok a field write recalculates before it notifies
+ok the new value
+ok every write recalculates
+ok the other calculated field
+ok Cancel: the stored row still has its values
+ok without a new call
+ok Post calculates nothing itself
+ok the posted row
+ok is calculated again at the next read
+ok and cached
+== edit buffer: AutoCalcFields = False
+ok entering dsEdit still calculates
+ok a field write does not recalculate
+ok the value is the one from entering the state
+ok after Post the row is calculated
+ok by one call
+== insert
+ok entering dsInsert calculates the empty buffer
+ok calculated from nulls
+ok recalculated after the writes
+ok total of the new row
+ok Post of an insert
+ok the new stored row
+ok is calculated at the first read
+ok a row that was never read
+ok is calculated when it is read
+== restrictions while OnCalcFields runs
+ok the value is calculated
+ok every dataset method and data-field write is refused
+ok the calculated fields were assigned
+ok afterwards the dataset works as before
+== a failing handler
+ok the exception reaches the reader
+ok the row is not marked as calculated
+ok the handler ran twice
+ok a later read calculates
+ok the dataset is not left in the calculating mode
+== active-row override
+ok data fields read the override row
+ok no events
+ok calculated fields too
+ok the override row is calculated lazily
+ok the cursor does not move
+ok without the override: the current row
+ok in dsEdit the override row is read, not the buffer
+ok writes are refused while an override is set
+ok the stored row under the buffer
+ok the buffer again
+ok the edit continues after the override
+failed checks: 0

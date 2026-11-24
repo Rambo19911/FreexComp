@@ -1,0 +1,71 @@
+== dispatch points
+ok the source is attached
+ok Open
+ok Next
+ok Last
+ok Next at the end (no move)
+ok Prior
+ok First
+ok MoveBy
+ok MoveBy(0)
+ok RecNo
+ok GotoBookmark
+ok Locate, found
+ok Locate, not found
+ok Edit
+ok a field write
+ok UpdateRecord
+ok Post
+ok Insert
+ok Cancel
+ok Append
+ok navigation posts a modified record
+ok CheckBrowseMode cancels an unmodified record
+ok Delete
+ok Refresh
+ok Filter without Filtered
+ok Filtered
+ok Filter while Filtered
+ok FilterOptions while Filtered
+ok Filtered off
+ok FocusControl
+ok a field is moved
+ok Close
+== several data sources
+ok every source is notified, in the order of attachment
+ok each event goes to all sources before the next event
+ok detached
+ok a detached source gets nothing
+ok attached again: now last
+ok a destroyed source is detached
+ok destroying the dataset detaches its sources
+== DisableControls
+ok enabled at first
+ok ControlsDisabled
+ok DisableControls itself sends nothing
+ok the events of the dataset still fire; no data event is sent
+ok editing while disabled
+ok nothing reached the data sources
+ok the operations themselves worked (the refresh reloaded the rows)
+ok enabled again
+ok EnableControls: the state is the same, the data changed
+ok EnableControls fires no dataset events, only the data event
+== EnableControls: what is sent
+ok nothing was suppressed: nothing is sent
+ok the state changed meanwhile: deUpdateState first
+ok events flow again
+ok the state is the same as at DisableControls: no deUpdateState
+== nesting
+ok one EnableControls of two: still disabled
+ok and nothing is sent yet
+ok the second EnableControls enables
+ok and notifies once
+ok EnableControls without DisableControls does nothing
+ok the counter never went below zero
+ok one EnableControls is enough
+== closed dataset
+ok closed while disabled
+ok DisableControls works on a closed dataset
+ok Open while disabled sends nothing
+ok opened while disabled
+failed checks: 0

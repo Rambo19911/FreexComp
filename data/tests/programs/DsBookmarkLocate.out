@@ -1,0 +1,130 @@
+== bookmarks: value
+ok the row id as 8 little-endian bytes
+ok the bookmark of the third row
+ok the Bookmark property reads GetBookmark
+ok in dsEdit: the row being edited
+ok in dsInsert: nil
+ok FreeBookmark sets nil
+ok empty dataset: nil
+ok GetBookmark on a closed dataset
+ok GotoBookmark on a closed dataset
+ok BookmarkValid on a closed dataset
+ok CompareBookmarks on a closed dataset
+== bookmarks: validity
+ok a bookmark of a row of the view
+ok nil
+ok wrong length
+ok unknown row id
+ok the row was deleted
+ok another row stays valid
+ok GotoBookmark: deleted row
+ok GotoBookmark: nil
+ok GotoBookmark: wrong length
+ok an invalid bookmark fires no events
+ok and leaves the cursor
+ok bookmarks are invalid after Refresh
+ok the reloaded rows have new ids
+== bookmarks: GotoBookmark
+ok at the end
+ok event order
+ok the cursor is on the row
+ok Bof and Eof are False
+ok the current row: the events still fire
+ok Bookmark := is GotoBookmark
+ok the cursor follows
+ok a modified record is posted first
+ok the edit is stored
+ok then the cursor moves
+== bookmarks: CompareBookmarks
+ok nil = nil
+ok nil < a bookmark
+ok a bookmark > nil
+ok an earlier row
+ok a later row
+ok the same row
+ok the new row has the next id
+ok and is first in the view
+ok by position in the view, not by row id
+ok in both directions
+ok rows 1 and 2 are deleted
+ok deleted rows: by row id
+ok deleted rows: by row id, reversed
+ok the same deleted row
+ok a deleted row and a row of the view: by row id
+== locate: string keys and options
+ok found
+ok found: event order
+ok the scan starts at the first row
+ok Bof and Eof are False
+ok the current row is found again
+ok and the events still fire
+ok the compare is case-sensitive
+ok not found: no events
+ok not found: the cursor is unchanged
+ok loCaseInsensitive
+ok row 2
+ok a prefix does not match
+ok loPartialKey
+ok row 3
+ok loPartialKey is case-sensitive
+ok both options; field names ignore case
+ok row 3 again
+ok the key is longer than the value
+ok a memo field compares as a string
+ok memo: row 3
+ok memo: partial key
+ok memo: row 1
+== locate: typed compare
+ok integer
+ok integer: row 4
+ok the key is converted to the field type
+ok integer: row 2
+ok an unconvertible key matches nothing
+ok loPartialKey applies to string fields only
+ok float
+ok float: row 2
+ok float: an integral key
+ok float: row 4
+ok largeint
+ok largeint: row 1
+ok date
+ok date: row 3
+ok date: unconvertible
+ok boolean
+ok boolean: row 2
+ok boolean: the text ignores case
+ok boolean: row 1
+ok boolean: 0
+ok boolean: row 2 again
+ok boolean: unconvertible
+ok a blob value matches no text
+== locate: null
+ok the empty key matches null
+ok the first row with a null amount
+ok string field: null
+ok the row with a null name
+ok blob field: null
+ok the first row without a picture
+ok null does not match a value
+== locate: several fields
+ok two fields
+ok the row matching both
+ok every field must match
+ok a value where null is asked
+ok a string and a null key
+ok row 4
+ok fewer values than fields
+ok more values than fields
+ok unknown field
+ok the errors fire no events
+ok and leave the cursor
+== locate: browse mode first
+ok the posted value is found
+ok a modified record is posted first
+ok not found after an edit
+ok an unmodified record is cancelled; no scroll events
+ok the cursor is unchanged
+ok empty dataset: not found
+ok empty dataset: no row for a null key either
+ok Locate on a closed dataset
+failed checks: 0

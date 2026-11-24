@@ -1,5 +1,6 @@
 { DB - the dataset abstraction: TDataSet (state machine, events, field management, navigation API),
-  TRowDataSet (fully buffered row list + view, driver hooks), fields, field definitions, EDatabaseError.
+  TRowDataSet (fully buffered row list + view, driver hooks), fields, field definitions, parameters, the
+  data-source attachment point, EDatabaseError.
   Must not use any UI-framework unit: console programs can do data access. }
 unit DB;
 
@@ -24,6 +25,7 @@ resourcestring
   SDatFieldType = 'Field ''%s'' has an unsupported type';
   SDatTypeMismatch = 'Type mismatch for field ''%s''';
   SDatParamNotFound = 'Parameter ''%s'' not found';
+  SDatParamAccess = 'Cannot access parameter ''%s'' as type %s';
   SDatRecNoRange = 'Record number out of range';
   SDatBadBookmark = 'Bookmark is not valid';
   SDatLocateCount = 'Locate: number of values does not match number of fields';
@@ -72,12 +74,16 @@ type
   end;
 
   { One row: Values is indexed by data-field number - 1; RowId is unique within an open dataset.
-    Flags are the "assigned in this edit" marks, one per value; only an edit buffer has them. }
+    Flags are the "assigned in this edit" marks, one per value; only an edit buffer has them.
+    CalcValues is the cache of the calculated fields, filled by OnCalcFields when CalcValid is False and a
+    calculated field is read. }
   TDataRow = class
   public
     Values: array of TDBValue;
     Flags: array of Boolean;
     RowId: Int64;
+    CalcValues: array of TDBValue;
+    CalcValid: Boolean;
     constructor Create(ValueCount: Integer);
   end;
 
@@ -147,6 +153,7 @@ type
     FFieldName: string;
     FFieldKind: TFieldKind;
     FFieldNo: Integer;
+    FCalcIndex: Integer;
     FDisplayLabel: string;
     FDisplayWidth: Integer;
     FAlignment: TAlignment;
@@ -470,11 +477,88 @@ type
     property DataSet: TDataSet read FDataSet;
   end;
 
+  { ---- parameters ---- }
+
+  { One named statement parameter: a value with the type of the last As... assignment. A parameter that was
+    never assigned is unbound (drivers send NULL). }
+  TParam = class
+  private
+    FName: string;
+    FDataType: TFieldType;
+    FValue: TDBValue;
+    FBound: Boolean;
+    procedure AccessError(const TypeName: string);
+    procedure Store(DataType: TFieldType; const Value: TDBValue);
+    function GetIsNull: Boolean;
+    function GetAsString: string;
+    function GetAsInteger: Integer;
+    function GetAsLargeInt: Int64;
+    function GetAsFloat: Double;
+    function GetAsBoolean: Boolean;
+    function GetAsDateTime: TDateTime;
+    function GetAsBytes: TBytes;
+    procedure SetAsString(const Value: string);
+    procedure SetAsInteger(Value: Integer);
+    procedure SetAsLargeInt(Value: Int64);
+    procedure SetAsFloat(Value: Double);
+    procedure SetAsBoolean(Value: Boolean);
+    procedure SetAsDateTime(Value: TDateTime);
+    procedure SetAsBytes(const Value: TBytes);
+  public
+    constructor Create(const AName: string);
+    { Sets null; the parameter counts as bound. }
+    procedure Clear;
+    property Name: string read FName;
+    property DataType: TFieldType read FDataType;
+    property IsNull: Boolean read GetIsNull;
+    property Bound: Boolean read FBound write FBound;
+    property AsString: string read GetAsString write SetAsString;
+    property AsInteger: Integer read GetAsInteger write SetAsInteger;
+    property AsLargeInt: Int64 read GetAsLargeInt write SetAsLargeInt;
+    property AsFloat: Double read GetAsFloat write SetAsFloat;
+    property AsBoolean: Boolean read GetAsBoolean write SetAsBoolean;
+    property AsDateTime: TDateTime read GetAsDateTime write SetAsDateTime;
+    property AsBytes: TBytes read GetAsBytes write SetAsBytes;
+  end;
+
+  { The parameters of one statement, in the order of their first occurrence in the SQL text. }
+  TParams = class
+  private
+    FItems: TList;
+    function GetCount: Integer;
+    function GetItem(Index: Integer): TParam;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    function ParamByName(const Name: string): TParam;
+    function FindParam(const Name: string): TParam;
+    { Scans SQL for named parameters (:name); with DoCreate the collection is rebuilt from them, keeping the
+      parameters whose names occur again. Returns SQL unchanged. }
+    function ParseSQL(const SQL: string; DoCreate: Boolean): string;
+    property Count: Integer read GetCount;
+    property Items[Index: Integer]: TParam read GetItem; default;
+  end;
+
   { ---- datasets ---- }
 
   TDataSet = class(TComponent)
   private
     FState: TDataSetState;
+    FDataSources: TList;
+    FDisableCount: Integer;
+    FDisableState: TDataSetState;
+    FSuppressed: Boolean;
+    FAutoCalcFields: Boolean;
+    FCalcFieldCount: Integer;
+    FCalculating: Boolean;
+    FActiveRow: Integer;
+    FReadLocked: Boolean;
+    FFilter: string;
+    FFiltered: Boolean;
+    FFilterOptions: TFilterOptions;
+    FFilterExpr: TObject;
+    FOnCalcFields: TDataSetNotifyEvent;
+    FOnFilterRecord: TFilterRecordEvent;
     FFields: TFields;
     FFieldDefs: TFieldDefs;
     FDynamicFields: Boolean;
@@ -515,6 +599,15 @@ type
     function GetRecordCount: Integer;
     procedure SetActive(Value: Boolean);
     procedure SetRecNo(Value: Integer);
+    procedure SetFilter(const Value: string);
+    procedure SetFiltered(Value: Boolean);
+    procedure SetFilterOptions(Value: TFilterOptions);
+    { After a filter property changed: rebuilds the view, keeps the cursor on its row or goes to the first
+      row, notifies. }
+    procedure FilterChanged;
+    { Sends a data event to the data sources unless the controls are disabled. }
+    procedure Notify(Event: TDataEvent; Info: TObject);
+    procedure CheckNotCalculating;
     procedure BeginScroll;
     procedure EndScroll;
     procedure CloseSilently;
@@ -526,8 +619,22 @@ type
     function RetryAfterError(E: EDatabaseError; Handler: TDataSetErrorEvent): Boolean;
   protected
     procedure Loaded; override;
-    { Notifies the attached data sources. Info is the field of deFieldChange, else nil. }
+    { Passes a data event to the attached data sources, in the order of attachment. Info is the field of
+      deFieldChange and deFocusControl, else nil. Not called while the controls are disabled. }
     procedure DataEvent(Event: TDataEvent; Info: TObject); virtual;
+    { Calls OnCalcFields in the calculating mode: only calculated fields may be written, every dataset
+      method raises. }
+    procedure DoCalcFields;
+    { Binds the filter expression to the fields; raises the filter error of an unknown field or a
+      literal of the wrong type. }
+    procedure PrepareFilter;
+    { The filter verdict (expression and OnFilterRecord) for the row the fields read now. }
+    function RowAccepted: Boolean;
+    { Active-row override: field reads refer to this view row and field writes are refused until it is
+      set back to -1. }
+    procedure SetActiveRow(ViewIndex: Integer);
+    property ActiveRow: Integer read FActiveRow;
+    property CalcFieldCount: Integer read FCalcFieldCount;
     procedure CheckActive;
     procedure CheckInactive;
     { Creates the dynamic fields or binds the persistent ones to FieldDefs; called by InternalOpen
@@ -566,6 +673,13 @@ type
     procedure InternalDelete; virtual; abstract;
     { Loads the rows again and rebuilds the view. }
     procedure InternalRefresh; virtual; abstract;
+    { Rebuilds the view from the rows that pass the filter (RowAccepted); on failure the view is unchanged. }
+    procedure InternalBuildView; virtual; abstract;
+    { Calculates the calculated fields of the edit buffer. }
+    procedure InternalCalcBuffer; virtual; abstract;
+    function RowIdAt(ViewIndex: Integer): Int64; virtual; abstract;
+    { -1 when no row of the view has this id. }
+    function ViewIndexOfRowId(RowId: Int64): Integer; virtual; abstract;
     property Cursor: Integer read FCursor;
   public
     constructor Create(AOwner: TComponent); override;
@@ -595,6 +709,23 @@ type
     function FieldByName(const FieldName: string): TField;
     function FindField(const FieldName: string): TField;
     procedure GetFieldNames(List: TStrings);
+    { Moves to the first row of the view whose key fields (names separated by ';') equal the values. }
+    function Locate(const KeyFields: string; const KeyValues: array of string; Options: TLocateOptions): Boolean;
+    { The row id of the current row as 8 little-endian bytes; nil on an empty dataset and in dsInsert. }
+    function GetBookmark: TBookmark;
+    procedure GotoBookmark(const Bookmark: TBookmark);
+    function BookmarkValid(const Bookmark: TBookmark): Boolean;
+    function CompareBookmarks(const Bookmark1, Bookmark2: TBookmark): Integer;
+    procedure FreeBookmark(var Bookmark: TBookmark);
+    { While disabled no data event reaches the data sources; the calls nest. }
+    procedure DisableControls;
+    procedure EnableControls;
+    function ControlsDisabled: Boolean;
+    property Bookmark: TBookmark read GetBookmark write GotoBookmark;
+    property Filter: string read FFilter write SetFilter;
+    property Filtered: Boolean read FFiltered write SetFiltered;
+    property FilterOptions: TFilterOptions read FFilterOptions write SetFilterOptions;
+    property AutoCalcFields: Boolean read FAutoCalcFields write FAutoCalcFields default True;
     property Active: Boolean read GetActive write SetActive;
     property State: TDataSetState read FState;
     property Bof: Boolean read FBof;
@@ -630,6 +761,8 @@ type
     property OnPostError: TDataSetErrorEvent read FOnPostError write FOnPostError;
     property OnDeleteError: TDataSetErrorEvent read FOnDeleteError write FOnDeleteError;
     property OnEditError: TDataSetErrorEvent read FOnEditError write FOnEditError;
+    property OnCalcFields: TDataSetNotifyEvent read FOnCalcFields write FOnCalcFields;
+    property OnFilterRecord: TFilterRecordEvent read FOnFilterRecord write FOnFilterRecord;
   end;
 
   { The fully buffered dataset: all rows in memory; drivers implement only the Driver*/Apply* methods
@@ -642,9 +775,19 @@ type
     FDriverOpened: Boolean;
     FBuffer: TDataRow;
     FInsertIndex: Integer;
+    { the row being calculated or tested by the filter; field reads refer to it first }
+    FCandidate: TDataRow;
     procedure BuildView;
     function NewBuffer: TDataRow;
+    { The row the fields read: the candidate, the active-row override, the edit buffer, the current row. }
+    function ReadRow: TDataRow;
+    procedure CalculateRow(Row: TDataRow);
+    function RowPasses(Row: TDataRow): Boolean;
   protected
+    procedure InternalBuildView; override;
+    procedure InternalCalcBuffer; override;
+    function RowIdAt(ViewIndex: Integer): Int64; override;
+    function ViewIndexOfRowId(RowId: Int64): Integer; override;
     function InternalCanModify: Boolean; override;
     function FieldUpdatable(Field: TField): Boolean; override;
     procedure SetFieldValue(Field: TField; const Value: TDBValue; IsAssigned: Boolean); override;
@@ -686,6 +829,19 @@ type
     destructor Destroy; override;
   end;
 
+  { The attachment point of data links: a data source registers itself with its dataset and receives the
+    dataset's data events. }
+  TDataSource = class(TComponent)
+  private
+    FDataSet: TDataSet;
+    procedure SetDataSet(Value: TDataSet);
+  protected
+    procedure DataEvent(Event: TDataEvent; Info: TObject); virtual;
+  public
+    destructor Destroy; override;
+    property DataSet: TDataSet read FDataSet write SetDataSet;
+  end;
+
 procedure DatabaseError(const Msg: string);
 procedure DatabaseErrorFmt(const Msg: string; const Args: array of const);
 
@@ -702,7 +858,7 @@ function FieldClassOf(DataType: TFieldType): TFieldClass;
 implementation
 
 uses
-  Character;
+  Character, DBFilter;
 
 procedure DatabaseError(const Msg: string);
 begin
@@ -1146,7 +1302,7 @@ begin
   if (Current < 0) or (Current = Value) then
     Exit;
   FDataSet.FFields.FList.Move(Current, Value);
-  FDataSet.DataEvent(deLayoutChange, nil);
+  FDataSet.Notify(deLayoutChange, nil);
 end;
 
 procedure TField.SetDataSet(Value: TDataSet);
@@ -1297,8 +1453,16 @@ begin
   if (FDataSet = nil) or (FDataSet.FState = dsInactive) then
     DatabaseError(SDatClosed);
   if FFieldKind = fkCalculated then
-    DatabaseErrorFmt(SDatFieldReadOnly, [FFieldName]);
-  if not (FDataSet.FState in [dsEdit, dsInsert]) then
+  begin
+    { a calculated field is written by OnCalcFields only, in any state }
+    if not FDataSet.FCalculating then
+      DatabaseErrorFmt(SDatFieldReadOnly, [FFieldName]);
+    Exit;
+  end;
+  if FDataSet.FCalculating then
+    DatabaseError(SDatCalcOp);
+  { while the reads are directed to another row (filter candidate, active-row override) nothing is written }
+  if FDataSet.FReadLocked or (FDataSet.FActiveRow >= 0) or not (FDataSet.FState in [dsEdit, dsInsert]) then
     DatabaseError(SDatNotEditing);
   if not FDataSet.FInNewRecord and (FReadOnly or not FDataSet.FieldUpdatable(Self)) then
     DatabaseErrorFmt(SDatFieldReadOnly, [FFieldName]);
@@ -1309,6 +1473,12 @@ var
   OldValue: TDBValue;
   OldAssigned, OldModified: Boolean;
 begin
+  if FFieldKind = fkCalculated then
+  begin
+    { the value goes into the cache of the row being calculated; no events }
+    FDataSet.SetFieldValue(Self, Value, False);
+    Exit;
+  end;
   OldValue := FDataSet.GetFieldValue(Self);
   OldAssigned := FDataSet.GetFieldAssigned(Self);
   OldModified := FDataSet.FModified;
@@ -1324,7 +1494,9 @@ begin
     end;
   if Assigned(FOnChange) then
     FOnChange(Self);
-  FDataSet.DataEvent(deFieldChange, Self);
+  if FDataSet.FAutoCalcFields and (FDataSet.FCalcFieldCount > 0) then
+    FDataSet.InternalCalcBuffer;
+  FDataSet.Notify(deFieldChange, Self);
 end;
 
 procedure TField.Clear;
@@ -1336,7 +1508,7 @@ end;
 procedure TField.FocusControl;
 begin
   if FDataSet <> nil then
-    FDataSet.DataEvent(deFocusControl, Self);
+    FDataSet.Notify(deFocusControl, Self);
 end;
 
 procedure TField.SetAsString(const Value: string);
@@ -2212,6 +2384,9 @@ begin
   inherited Create(AOwner);
   FFields := TFields.Create(Self);
   FFieldDefs := TFieldDefs.Create(Self);
+  FDataSources := TList.Create;
+  FAutoCalcFields := True;
+  FActiveRow := -1;
   FCursor := -1;
   FBof := True;
   FEof := True;
@@ -2233,6 +2408,13 @@ destructor TDataSet.Destroy;
 var
   I: Integer;
 begin
+  if FDataSources <> nil then
+    for I := 0 to FDataSources.Count - 1 do
+      TDataSource(FDataSources[I]).FDataSet := nil;
+  FDataSources.Free;
+  FDataSources := nil;
+  FFilterExpr.Free;
+  FFilterExpr := nil;
   if FFields <> nil then
     for I := 0 to FFields.Count - 1 do
       FFields[I].FDataSet := nil;
@@ -2254,13 +2436,89 @@ begin
 end;
 
 procedure TDataSet.DataEvent(Event: TDataEvent; Info: TObject);
+var
+  I: Integer;
 begin
+  I := 0;
+  while I < FDataSources.Count do
+  begin
+    TDataSource(FDataSources[I]).DataEvent(Event, Info);
+    I := I + 1;
+  end;
 end;
 
+procedure TDataSet.Notify(Event: TDataEvent; Info: TObject);
+begin
+  if FDisableCount > 0 then
+    FSuppressed := True
+  else
+    DataEvent(Event, Info);
+end;
+
+procedure TDataSet.DisableControls;
+begin
+  if FDisableCount = 0 then
+  begin
+    FDisableState := FState;
+    FSuppressed := False;
+  end;
+  FDisableCount := FDisableCount + 1;
+end;
+
+procedure TDataSet.EnableControls;
+begin
+  if FDisableCount = 0 then
+    Exit;
+  FDisableCount := FDisableCount - 1;
+  if (FDisableCount = 0) and FSuppressed then
+  begin
+    FSuppressed := False;
+    if FState <> FDisableState then
+      DataEvent(deUpdateState, nil);
+    DataEvent(deDataSetChange, nil);
+  end;
+end;
+
+function TDataSet.ControlsDisabled: Boolean;
+begin
+  Result := FDisableCount > 0;
+end;
+
+procedure TDataSet.CheckNotCalculating;
+begin
+  if FCalculating then
+    DatabaseError(SDatCalcOp);
+end;
+
+{ Every method that needs an open dataset passes here: none of them is allowed while OnCalcFields runs. }
 procedure TDataSet.CheckActive;
 begin
   if FState = dsInactive then
     DatabaseError(SDatClosed);
+  CheckNotCalculating;
+end;
+
+procedure TDataSet.DoCalcFields;
+var
+  Saved: Boolean;
+begin
+  if not Assigned(FOnCalcFields) then
+    Exit;
+  Saved := FCalculating;
+  FCalculating := True;
+  try
+    FOnCalcFields(Self);
+  finally
+    FCalculating := Saved;
+  end;
+end;
+
+procedure TDataSet.SetActiveRow(ViewIndex: Integer);
+begin
+  if ViewIndex < 0 then
+    FActiveRow := -1
+  else
+    FActiveRow := ViewIndex;
 end;
 
 procedure TDataSet.CheckInactive;
@@ -2325,6 +2583,7 @@ begin
   for I := 0 to FFieldDefs.Count - 1 do
     if FFieldDefs[I].DataType = ftUnknown then
       DatabaseErrorFmt(SDatFieldType, [FFieldDefs[I].Name]);
+  FCalcFieldCount := 0;
   if FFields.Count = 0 then
   begin
     FDynamicFields := True;
@@ -2346,7 +2605,11 @@ begin
     begin
       F := FFields[I];
       if F.FFieldKind = fkCalculated then
-        F.FFieldNo := -1
+      begin
+        F.FFieldNo := -1;
+        F.FCalcIndex := FCalcFieldCount;
+        FCalcFieldCount := FCalcFieldCount + 1;
+      end
       else
       begin
         DefIndex := FFieldDefs.IndexOf(F.FFieldName);
@@ -2377,25 +2640,32 @@ end;
 
 procedure TDataSet.Open;
 begin
+  CheckNotCalculating;
   if FState <> dsInactive then
     Exit;
   if Assigned(FBeforeOpen) then
     FBeforeOpen(Self);
   try
     InternalOpen;
+    { the filter reads the rows through the fields: the dataset counts as open from here }
+    FState := dsBrowse;
+    if FFiltered then
+      InternalBuildView;
   except
+    FState := dsInactive;
+    if FFilterExpr <> nil then
+      TFilterExpr(FFilterExpr).Unbind;
     InternalClose;
     UnbindFields;
     raise;
   end;
-  FState := dsBrowse;
   FBof := True;
   FEof := GetViewCount = 0;
   if FEof then
     FCursor := -1
   else
     FCursor := 0;
-  DataEvent(deUpdateState, nil);
+  Notify(deUpdateState, nil);
   if Assigned(FAfterOpen) then
     FAfterOpen(Self);
   if Assigned(FAfterScroll) then
@@ -2408,6 +2678,9 @@ begin
   FState := dsInactive;
   FModified := False;
   FInNewRecord := False;
+  FActiveRow := -1;
+  if FFilterExpr <> nil then
+    TFilterExpr(FFilterExpr).Unbind;
   UnbindFields;
   FCursor := -1;
   FBof := True;
@@ -2416,12 +2689,13 @@ end;
 
 procedure TDataSet.Close;
 begin
+  CheckNotCalculating;
   if FState = dsInactive then
     Exit;
   if Assigned(FBeforeClose) then
     FBeforeClose(Self);
   CloseSilently;
-  DataEvent(deUpdateState, nil);
+  Notify(deUpdateState, nil);
   if Assigned(FAfterClose) then
     FAfterClose(Self);
 end;
@@ -2431,7 +2705,7 @@ begin
   CheckActive;
   if FState in [dsEdit, dsInsert] then
   begin
-    DataEvent(deCheckBrowseMode, nil);
+    Notify(deCheckBrowseMode, nil);
     if FModified then
       Post
     else
@@ -2489,7 +2763,15 @@ begin
   until Done;
   FModified := False;
   FState := dsEdit;
-  DataEvent(deUpdateState, nil);
+  if FCalcFieldCount > 0 then
+    try
+      InternalCalcBuffer;
+    except
+      InternalCancel;
+      FState := dsBrowse;
+      raise;
+    end;
+  Notify(deUpdateState, nil);
   if Assigned(FAfterEdit) then
     FAfterEdit(Self);
 end;
@@ -2510,10 +2792,12 @@ begin
   FEof := False;
   FModified := False;
   FState := dsInsert;
-  DataEvent(deUpdateState, nil);
-  { assignments made by OnNewRecord may write read-only fields and do not count as modifications }
-  FInNewRecord := True;
   try
+    if FCalcFieldCount > 0 then
+      InternalCalcBuffer;
+    Notify(deUpdateState, nil);
+    { assignments made by OnNewRecord may write read-only fields and do not count as modifications }
+    FInNewRecord := True;
     try
       if Assigned(FOnNewRecord) then
         FOnNewRecord(Self);
@@ -2526,10 +2810,10 @@ begin
     FState := dsBrowse;
     FBof := FSavedBof;
     FEof := FSavedEof;
-    DataEvent(deUpdateState, nil);
+    Notify(deUpdateState, nil);
     raise;
   end;
-  DataEvent(deDataSetChange, nil);
+  Notify(deDataSetChange, nil);
   if Assigned(FAfterInsert) then
     FAfterInsert(Self);
   if Assigned(FAfterScroll) then
@@ -2551,7 +2835,7 @@ begin
   CheckActive;
   if not (FState in [dsEdit, dsInsert]) then
     DatabaseError(SDatNotEditing);
-  DataEvent(deUpdateRecord, nil);
+  Notify(deUpdateRecord, nil);
 end;
 
 { every required data field has a value; an auto-increment field gets its value from the driver }
@@ -2594,10 +2878,16 @@ begin
     end;
   until Done;
   FCursor := InternalPost;
+  if GetViewCount = 0 then
+  begin
+    { the posted row did not pass the filter and was the only one }
+    FBof := True;
+    FEof := True;
+  end;
   FModified := False;
   FState := dsBrowse;
-  DataEvent(deUpdateState, nil);
-  DataEvent(deDataSetChange, nil);
+  Notify(deUpdateState, nil);
+  Notify(deDataSetChange, nil);
   if Assigned(FAfterPost) then
     FAfterPost(Self);
 end;
@@ -2621,8 +2911,8 @@ begin
     FBof := FSavedBof;
     FEof := FSavedEof;
   end;
-  DataEvent(deUpdateState, nil);
-  DataEvent(deDataSetChange, nil);
+  Notify(deUpdateState, nil);
+  Notify(deDataSetChange, nil);
   if Assigned(FAfterCancel) then
     FAfterCancel(Self);
   if WasInsert and Assigned(FAfterScroll) then
@@ -2669,7 +2959,7 @@ begin
     FCursor := N - 1;
   FBof := N = 0;
   FEof := N = 0;
-  DataEvent(deDataSetChange, nil);
+  Notify(deDataSetChange, nil);
   if Assigned(FAfterDelete) then
     FAfterDelete(Self);
   if Assigned(FAfterScroll) then
@@ -2700,7 +2990,7 @@ begin
     FBof := N = 0;
     FEof := N = 0;
   end;
-  DataEvent(deDataSetChange, nil);
+  Notify(deDataSetChange, nil);
   if Assigned(FAfterRefresh) then
     FAfterRefresh(Self);
   if Assigned(FAfterScroll) then
@@ -2718,7 +3008,7 @@ end;
 
 procedure TDataSet.EndScroll;
 begin
-  DataEvent(deDataSetScroll, nil);
+  Notify(deDataSetScroll, nil);
   if Assigned(FAfterScroll) then
     FAfterScroll(Self);
 end;
@@ -2822,6 +3112,686 @@ begin
   EndScroll;
 end;
 
+{ TDataSet: bookmarks and Locate }
+
+function EncodeBookmark(RowId: Int64): TBookmark;
+var
+  I: Integer;
+begin
+  SetLength(Result, 8);
+  for I := 0 to 7 do
+    Result[I] := Byte((RowId shr (8 * I)) and $FF);
+end;
+
+function DecodeBookmark(const Bookmark: TBookmark): Int64;
+var
+  I: Integer;
+begin
+  Result := 0;
+  for I := High(Bookmark) downto 0 do
+    if I < 8 then
+      Result := (Result shl 8) or Bookmark[I];
+end;
+
+function TDataSet.GetBookmark: TBookmark;
+begin
+  CheckActive;
+  if (FState = dsInsert) or (FCursor < 0) then
+    Result := nil
+  else
+    Result := EncodeBookmark(RowIdAt(FCursor));
+end;
+
+function TDataSet.BookmarkValid(const Bookmark: TBookmark): Boolean;
+begin
+  CheckActive;
+  Result := (Length(Bookmark) = 8) and (ViewIndexOfRowId(DecodeBookmark(Bookmark)) >= 0);
+end;
+
+procedure TDataSet.GotoBookmark(const Bookmark: TBookmark);
+var
+  Index: Integer;
+begin
+  if not BookmarkValid(Bookmark) then
+    DatabaseError(SDatBadBookmark);
+  CheckBrowseMode;
+  { posting a pending edit can take the row out of a filtered view }
+  Index := ViewIndexOfRowId(DecodeBookmark(Bookmark));
+  if Index < 0 then
+    DatabaseError(SDatBadBookmark);
+  if Assigned(FBeforeScroll) then
+    FBeforeScroll(Self);
+  FCursor := Index;
+  FBof := False;
+  FEof := False;
+  EndScroll;
+end;
+
+function TDataSet.CompareBookmarks(const Bookmark1, Bookmark2: TBookmark): Integer;
+var
+  Index1, Index2: Integer;
+  Id1, Id2: Int64;
+begin
+  CheckActive;
+  Result := 0;
+  if (Length(Bookmark1) = 0) or (Length(Bookmark2) = 0) then
+  begin
+    if Length(Bookmark2) > 0 then
+      Result := -1
+    else if Length(Bookmark1) > 0 then
+      Result := 1;
+    Exit;
+  end;
+  Id1 := DecodeBookmark(Bookmark1);
+  Id2 := DecodeBookmark(Bookmark2);
+  Index1 := -1;
+  Index2 := -1;
+  if Length(Bookmark1) = 8 then
+    Index1 := ViewIndexOfRowId(Id1);
+  if Length(Bookmark2) = 8 then
+    Index2 := ViewIndexOfRowId(Id2);
+  if (Index1 >= 0) and (Index2 >= 0) then
+  begin
+    { both rows are in the view: by position }
+    Id1 := Index1;
+    Id2 := Index2;
+  end;
+  if Id1 < Id2 then
+    Result := -1
+  else if Id1 > Id2 then
+    Result := 1;
+end;
+
+procedure TDataSet.FreeBookmark(var Bookmark: TBookmark);
+begin
+  Bookmark := nil;
+end;
+
+function TDataSet.Locate(const KeyFields: string; const KeyValues: array of string; Options: TLocateOptions): Boolean;
+var
+  Names: array of string;
+  Keys: array of TField;
+  Wanted: array of TDBValue;
+  Usable: array of Boolean;
+  I, K, Start, Found, SavedRow: Integer;
+  Stored: TDBValue;
+  Key, Text: string;
+  Match: Boolean;
+begin
+  Result := False;
+  CheckBrowseMode;
+  SetLength(Names, 0);
+  Start := 1;
+  for I := 1 to Length(KeyFields) + 1 do
+    if (I > Length(KeyFields)) or (KeyFields[I] = ';') then
+    begin
+      SetLength(Names, Length(Names) + 1);
+      Names[High(Names)] := Copy(KeyFields, Start, I - Start);
+      Start := I + 1;
+    end;
+  if Length(Names) <> Length(KeyValues) then
+    DatabaseError(SDatLocateCount);
+  SetLength(Keys, Length(Names));
+  SetLength(Wanted, Length(Names));
+  SetLength(Usable, Length(Names));
+  for K := 0 to High(Names) do
+  begin
+    Keys[K] := FieldByName(Names[K]);
+    { a key for a field that is not a string field is converted to the field's type once; a key that cannot
+      be converted matches no value }
+    Wanted[K] := NullValue;
+    Usable[K] := False;
+    if (CanonicalKind(Keys[K].FDataType) <> vkString) and (KeyValues[K] <> '') then
+      try
+        Wanted[K] := Keys[K].StringToValue(KeyValues[K]);
+        Usable[K] := True;
+      except
+        on EDatabaseError do
+          Usable[K] := False;
+      end;
+  end;
+  Found := -1;
+  SavedRow := FActiveRow;
+  try
+    I := 0;
+    while (Found < 0) and (I < GetViewCount) do
+    begin
+      FActiveRow := I;
+      Match := True;
+      K := 0;
+      while Match and (K <= High(Keys)) do
+      begin
+        Stored := GetFieldValue(Keys[K]);
+        Key := KeyValues[K];
+        if Stored.Kind = vkNull then
+          Match := Key = ''
+        else if Stored.Kind = vkString then
+        begin
+          Text := Stored.StrVal;
+          if loPartialKey in Options then
+            Text := Copy(Text, 1, Length(Key));
+          if loCaseInsensitive in Options then
+            Match := ToUpper(Text) = ToUpper(Key)
+          else
+            Match := Text = Key;
+        end
+        else if not Usable[K] or (Wanted[K].Kind <> Stored.Kind) then
+          Match := False
+        else if Stored.Kind = vkInt then
+          Match := Stored.IntVal = Wanted[K].IntVal
+        else if Stored.Kind = vkFloat then
+          Match := Stored.FloatVal = Wanted[K].FloatVal
+        else
+          Match := False;
+        K := K + 1;
+      end;
+      if Match then
+        Found := I;
+      I := I + 1;
+    end;
+  finally
+    FActiveRow := SavedRow;
+  end;
+  if Found < 0 then
+    Exit;
+  if Assigned(FBeforeScroll) then
+    FBeforeScroll(Self);
+  FCursor := Found;
+  FBof := False;
+  FEof := False;
+  EndScroll;
+  Result := True;
+end;
+
+{ TDataSet: filter }
+
+procedure TDataSet.PrepareFilter;
+begin
+  if FFilterExpr <> nil then
+    TFilterExpr(FFilterExpr).Bind(Self);
+end;
+
+function TDataSet.RowAccepted: Boolean;
+var
+  Saved: Boolean;
+begin
+  Result := True;
+  if not FFiltered then
+    Exit;
+  Saved := FReadLocked;
+  FReadLocked := True;
+  try
+    if FFilterExpr <> nil then
+      Result := TFilterExpr(FFilterExpr).Matches(FFilterOptions);
+    if Result and Assigned(FOnFilterRecord) then
+      FOnFilterRecord(Self, Result);
+  finally
+    FReadLocked := Saved;
+  end;
+end;
+
+procedure TDataSet.FilterChanged;
+var
+  HadRow: Boolean;
+  RowId: Int64;
+  Index, N: Integer;
+begin
+  HadRow := FCursor >= 0;
+  RowId := 0;
+  if HadRow then
+    RowId := RowIdAt(FCursor);
+  InternalBuildView;
+  N := GetViewCount;
+  Index := -1;
+  if HadRow then
+    Index := ViewIndexOfRowId(RowId);
+  if Index >= 0 then
+    FCursor := Index
+  else
+  begin
+    if N = 0 then
+      FCursor := -1
+    else
+      FCursor := 0;
+    FBof := True;
+    FEof := N = 0;
+  end;
+  Notify(deDataSetChange, nil);
+  if Assigned(FAfterScroll) then
+    FAfterScroll(Self);
+end;
+
+procedure TDataSet.SetFilter(const Value: string);
+var
+  NewExpr, OldExpr: TFilterExpr;
+  OldText: string;
+begin
+  CheckNotCalculating;
+  NewExpr := nil;
+  if Trim(Value) <> '' then
+    NewExpr := TFilterExpr.Create(Value);
+  try
+    if FState <> dsInactive then
+    begin
+      if NewExpr <> nil then
+        NewExpr.Bind(Self);
+      if FFiltered then
+        CheckBrowseMode;
+    end;
+  except
+    NewExpr.Free;
+    raise;
+  end;
+  OldExpr := TFilterExpr(FFilterExpr);
+  OldText := FFilter;
+  FFilterExpr := NewExpr;
+  FFilter := Value;
+  if (FState <> dsInactive) and FFiltered then
+    try
+      FilterChanged;
+    except
+      FFilterExpr := OldExpr;
+      FFilter := OldText;
+      NewExpr.Free;
+      raise;
+    end;
+  OldExpr.Free;
+end;
+
+procedure TDataSet.SetFiltered(Value: Boolean);
+begin
+  CheckNotCalculating;
+  if Value = FFiltered then
+    Exit;
+  if FState = dsInactive then
+  begin
+    FFiltered := Value;
+    Exit;
+  end;
+  if Value then
+    PrepareFilter;
+  CheckBrowseMode;
+  FFiltered := Value;
+  try
+    FilterChanged;
+  except
+    FFiltered := not Value;
+    raise;
+  end;
+end;
+
+procedure TDataSet.SetFilterOptions(Value: TFilterOptions);
+var
+  Old: TFilterOptions;
+begin
+  CheckNotCalculating;
+  if Value = FFilterOptions then
+    Exit;
+  if (FState = dsInactive) or not FFiltered then
+  begin
+    FFilterOptions := Value;
+    Exit;
+  end;
+  CheckBrowseMode;
+  Old := FFilterOptions;
+  FFilterOptions := Value;
+  try
+    FilterChanged;
+  except
+    FFilterOptions := Old;
+    raise;
+  end;
+end;
+
+{ TDataSource }
+
+destructor TDataSource.Destroy;
+begin
+  SetDataSet(nil);
+  inherited Destroy;
+end;
+
+procedure TDataSource.SetDataSet(Value: TDataSet);
+begin
+  if Value = FDataSet then
+    Exit;
+  if FDataSet <> nil then
+    FDataSet.FDataSources.Remove(Self);
+  FDataSet := Value;
+  if FDataSet <> nil then
+    FDataSet.FDataSources.Add(Self);
+end;
+
+procedure TDataSource.DataEvent(Event: TDataEvent; Info: TObject);
+begin
+end;
+
+{ TParam }
+
+constructor TParam.Create(const AName: string);
+begin
+  inherited Create;
+  FName := AName;
+  FValue := NullValue;
+end;
+
+procedure TParam.AccessError(const TypeName: string);
+begin
+  DatabaseErrorFmt(SDatParamAccess, [FName, TypeName]);
+end;
+
+procedure TParam.Store(DataType: TFieldType; const Value: TDBValue);
+begin
+  FDataType := DataType;
+  FValue := Value;
+  FBound := True;
+end;
+
+procedure TParam.Clear;
+begin
+  FValue := NullValue;
+  FBound := True;
+end;
+
+function TParam.GetIsNull: Boolean;
+begin
+  Result := FValue.Kind = vkNull;
+end;
+
+function TParam.GetAsString: string;
+begin
+  Result := '';
+  case FValue.Kind of
+    vkString:
+      Result := FValue.StrVal;
+    vkInt:
+      if FDataType <> ftBoolean then
+        Result := IntToStr(FValue.IntVal)
+      else if FValue.IntVal <> 0 then
+        Result := 'True'
+      else
+        Result := 'False';
+    vkFloat:
+      if FDataType = ftDateTime then
+        Result := DateTimeToStr(FValue.FloatVal)
+      else
+        Result := FloatToStr(FValue.FloatVal);
+    vkBytes:
+      AccessError('String');
+  end;
+end;
+
+function TParam.GetAsLargeInt: Int64;
+begin
+  Result := 0;
+  case FValue.Kind of
+    vkInt:
+      Result := FValue.IntVal;
+    vkString:
+      if not TryStrToInt64(FValue.StrVal, Result) then
+        AccessError('LargeInt');
+    vkFloat, vkBytes:
+      AccessError('LargeInt');
+  end;
+end;
+
+function TParam.GetAsInteger: Integer;
+var
+  V: Int64;
+begin
+  V := 0;
+  case FValue.Kind of
+    vkInt:
+      V := FValue.IntVal;
+    vkString:
+      if not TryStrToInt64(FValue.StrVal, V) then
+        AccessError('Integer');
+    vkFloat, vkBytes:
+      AccessError('Integer');
+  end;
+  if (V < Low(Integer)) or (V > High(Integer)) then
+    AccessError('Integer');
+  Result := Integer(V);
+end;
+
+function TParam.GetAsFloat: Double;
+begin
+  Result := 0;
+  case FValue.Kind of
+    vkFloat:
+      Result := FValue.FloatVal;
+    vkInt:
+      Result := FValue.IntVal;
+    vkString:
+      if not TryStrToFloat(FValue.StrVal, Result) then
+        AccessError('Float');
+    vkBytes:
+      AccessError('Float');
+  end;
+end;
+
+function TParam.GetAsBoolean: Boolean;
+begin
+  Result := False;
+  case FValue.Kind of
+    vkInt:
+      Result := FValue.IntVal <> 0;
+    vkString:
+      begin
+        Result := SameText(FValue.StrVal, 'True') or (FValue.StrVal = '1');
+        if not Result and not SameText(FValue.StrVal, 'False') and (FValue.StrVal <> '0') then
+          AccessError('Boolean');
+      end;
+    vkFloat, vkBytes:
+      AccessError('Boolean');
+  end;
+end;
+
+function TParam.GetAsDateTime: TDateTime;
+begin
+  Result := 0;
+  case FValue.Kind of
+    vkFloat:
+      Result := FValue.FloatVal;
+    vkString:
+      if not TryStrToDateTime(FValue.StrVal, Result) then
+        AccessError('DateTime');
+    vkInt, vkBytes:
+      AccessError('DateTime');
+  end;
+end;
+
+function TParam.GetAsBytes: TBytes;
+begin
+  Result := nil;
+  case FValue.Kind of
+    vkBytes:
+      Result := FValue.BytesVal;
+    vkString:
+      Result := TEncoding.UTF8.GetBytes(FValue.StrVal);
+    vkInt, vkFloat:
+      AccessError('Bytes');
+  end;
+end;
+
+procedure TParam.SetAsString(const Value: string);
+begin
+  Store(ftString, StringValue(Value));
+end;
+
+procedure TParam.SetAsInteger(Value: Integer);
+begin
+  Store(ftInteger, IntValue(Value));
+end;
+
+procedure TParam.SetAsLargeInt(Value: Int64);
+begin
+  Store(ftLargeint, IntValue(Value));
+end;
+
+procedure TParam.SetAsFloat(Value: Double);
+begin
+  Store(ftFloat, FloatValue(Value));
+end;
+
+procedure TParam.SetAsBoolean(Value: Boolean);
+begin
+  Store(ftBoolean, IntValue(Ord(Value)));
+end;
+
+procedure TParam.SetAsDateTime(Value: TDateTime);
+begin
+  Store(ftDateTime, FloatValue(Value));
+end;
+
+procedure TParam.SetAsBytes(const Value: TBytes);
+begin
+  Store(ftBlob, BytesValue(Value));
+end;
+
+{ TParams }
+
+constructor TParams.Create;
+begin
+  inherited Create;
+  FItems := TList.Create;
+end;
+
+destructor TParams.Destroy;
+var
+  I: Integer;
+begin
+  if FItems <> nil then
+    for I := 0 to FItems.Count - 1 do
+      TParam(FItems[I]).Free;
+  FItems.Free;
+  FItems := nil;
+  inherited Destroy;
+end;
+
+function TParams.GetCount: Integer;
+begin
+  Result := FItems.Count;
+end;
+
+function TParams.GetItem(Index: Integer): TParam;
+begin
+  Result := TParam(FItems[Index]);
+end;
+
+function TParams.FindParam(const Name: string): TParam;
+var
+  I: Integer;
+begin
+  Result := nil;
+  for I := 0 to FItems.Count - 1 do
+    if SameName(TParam(FItems[I]).FName, Name) then
+    begin
+      Result := TParam(FItems[I]);
+      Exit;
+    end;
+end;
+
+function TParams.ParamByName(const Name: string): TParam;
+begin
+  Result := FindParam(Name);
+  if Result = nil then
+    DatabaseErrorFmt(SDatParamNotFound, [Name]);
+end;
+
+function IsNameStart(C: Char): Boolean;
+begin
+  Result := ((C >= 'A') and (C <= 'Z')) or ((C >= 'a') and (C <= 'z')) or (C = '_') or (C > #127);
+end;
+
+function IsNameChar(C: Char): Boolean;
+begin
+  Result := IsNameStart(C) or ((C >= '0') and (C <= '9'));
+end;
+
+function TParams.ParseSQL(const SQL: string; DoCreate: Boolean): string;
+var
+  NewItems: TList;
+  I, J, N, Start: Integer;
+  C, Closing: Char;
+  Name: string;
+  P: TParam;
+  Known: Boolean;
+begin
+  Result := SQL;
+  if not DoCreate then
+    Exit;
+  NewItems := TList.Create;
+  N := Length(SQL);
+  I := 1;
+  while I <= N do
+  begin
+    C := SQL[I];
+    if (C = '''') or (C = '"') or (C = '`') or (C = '[') then
+    begin
+      { a string literal or a quoted identifier: up to the closing character (a doubled one closes and opens) }
+      if C = '[' then
+        Closing := ']'
+      else
+        Closing := C;
+      I := I + 1;
+      while (I <= N) and (SQL[I] <> Closing) do
+        I := I + 1;
+      I := I + 1;
+    end
+    else if (C = '-') and (I < N) and (SQL[I + 1] = '-') then
+    begin
+      while (I <= N) and (SQL[I] <> #10) and (SQL[I] <> #13) do
+        I := I + 1;
+    end
+    else if (C = '/') and (I < N) and (SQL[I + 1] = '*') then
+    begin
+      I := I + 2;
+      while (I <= N) and not ((SQL[I] = '*') and (I < N) and (SQL[I + 1] = '/')) do
+        I := I + 1;
+      I := I + 2;
+    end
+    else if C = ':' then
+    begin
+      if (I < N) and (SQL[I + 1] = ':') then
+        I := I + 2
+      else if (I < N) and IsNameStart(SQL[I + 1]) then
+      begin
+        Start := I + 1;
+        I := Start;
+        while (I <= N) and IsNameChar(SQL[I]) do
+          I := I + 1;
+        Name := Copy(SQL, Start, I - Start);
+        Known := False;
+        for J := 0 to NewItems.Count - 1 do
+          if SameName(TParam(NewItems[J]).FName, Name) then
+            Known := True;
+        if not Known then
+        begin
+          { a parameter of the same name moves over with its value }
+          P := FindParam(Name);
+          if P <> nil then
+          begin
+            FItems.Remove(P);
+            P.FName := Name;
+          end
+          else
+            P := TParam.Create(Name);
+          NewItems.Add(P);
+        end;
+      end
+      else
+        I := I + 1;
+    end
+    else
+      I := I + 1;
+  end;
+  for J := 0 to FItems.Count - 1 do
+    TParam(FItems[J]).Free;
+  FItems.Free;
+  FItems := NewItems;
+end;
+
 { TRowDataSet }
 
 constructor TRowDataSet.Create(AOwner: TComponent);
@@ -2864,21 +3834,115 @@ begin
   Result := DriverFieldUpdatable(Field);
 end;
 
-{ In dsEdit / dsInsert the edit buffer, else the current row. }
-function TRowDataSet.GetFieldValue(Field: TField): TDBValue;
+function TRowDataSet.ReadRow: TDataRow;
 begin
-  if Field.FieldNo < 1 then
-    Result := NullValue
+  if FCandidate <> nil then
+    Result := FCandidate
+  else if ActiveRow >= 0 then
+  begin
+    if ActiveRow < FView.Count then
+      Result := FView[ActiveRow]
+    else
+      Result := nil;
+  end
   else if FBuffer <> nil then
-    Result := FBuffer.Values[Field.FieldNo - 1]
-  else if Cursor < 0 then
-    Result := NullValue
+    Result := FBuffer
+  else if Cursor >= 0 then
+    Result := FView[Cursor]
   else
-    Result := FView[Cursor].Values[Field.FieldNo - 1];
+    Result := nil;
+end;
+
+{ Runs OnCalcFields for the row: its calculated values start as null and the fields read the row. A
+  failing handler leaves the row uncalculated. }
+procedure TRowDataSet.CalculateRow(Row: TDataRow);
+var
+  Saved: TDataRow;
+  I: Integer;
+begin
+  SetLength(Row.CalcValues, CalcFieldCount);
+  for I := 0 to High(Row.CalcValues) do
+    Row.CalcValues[I] := NullValue;
+  Row.CalcValid := True;
+  Saved := FCandidate;
+  FCandidate := Row;
+  try
+    try
+      DoCalcFields;
+    except
+      Row.CalcValid := False;
+      raise;
+    end;
+  finally
+    FCandidate := Saved;
+  end;
+end;
+
+procedure TRowDataSet.InternalCalcBuffer;
+begin
+  if FBuffer <> nil then
+    CalculateRow(FBuffer);
+end;
+
+function TRowDataSet.RowPasses(Row: TDataRow): Boolean;
+var
+  Saved: TDataRow;
+begin
+  Saved := FCandidate;
+  FCandidate := Row;
+  try
+    Result := RowAccepted;
+  finally
+    FCandidate := Saved;
+  end;
+end;
+
+function TRowDataSet.RowIdAt(ViewIndex: Integer): Int64;
+begin
+  Result := FView[ViewIndex].RowId;
+end;
+
+function TRowDataSet.ViewIndexOfRowId(RowId: Int64): Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  for I := 0 to FView.Count - 1 do
+    if FView[I].RowId = RowId then
+    begin
+      Result := I;
+      Exit;
+    end;
+end;
+
+{ The value of the row the fields read (ReadRow); a calculated field is calculated when its row is not. }
+function TRowDataSet.GetFieldValue(Field: TField): TDBValue;
+var
+  Row: TDataRow;
+begin
+  Result := NullValue;
+  Row := ReadRow;
+  if Row = nil then
+    Exit;
+  if Field.FieldKind = fkCalculated then
+  begin
+    if not Row.CalcValid then
+      CalculateRow(Row);
+    if Field.FCalcIndex < Length(Row.CalcValues) then
+      Result := Row.CalcValues[Field.FCalcIndex];
+  end
+  else if Field.FieldNo >= 1 then
+    Result := Row.Values[Field.FieldNo - 1];
 end;
 
 procedure TRowDataSet.SetFieldValue(Field: TField; const Value: TDBValue; IsAssigned: Boolean);
 begin
+  if Field.FieldKind = fkCalculated then
+  begin
+    if (FCandidate <> nil) and (Field.FCalcIndex < Length(FCandidate.CalcValues)) then
+      FCandidate.CalcValues[Field.FCalcIndex] := Value;
+    Exit;
+  end;
   if (FBuffer = nil) or (Field.FieldNo < 1) then
     Exit;
   FBuffer.Values[Field.FieldNo - 1] := Value;
@@ -2948,22 +4012,34 @@ begin
     SetLength(Row.Flags, 0);
     Row.RowId := FNextRowId;
     FNextRowId := FNextRowId + 1;
+    Row.CalcValid := False;
     if FInsertIndex < FView.Count then
       StoreIndex := FRows.IndexOf(FView[FInsertIndex])
     else
       StoreIndex := FRows.Count;
     FRows.Insert(StoreIndex, Row);
-    FView.Insert(FInsertIndex, Row);
     Result := FInsertIndex;
+    if RowPasses(Row) then
+      FView.Insert(FInsertIndex, Row)
+    else if Result >= FView.Count then
+      Result := FView.Count - 1;
   end
   else
   begin
     Row := FView[Cursor];
     for I := 0 to High(Row.Values) do
       Row.Values[I] := FBuffer.Values[I];
+    Row.CalcValid := False;
     FBuffer.Free;
     FBuffer := nil;
     Result := Cursor;
+    { a row that no longer passes the filter leaves the view; the following row (or the last) is current }
+    if not RowPasses(Row) then
+    begin
+      FView.Delete(Result);
+      if Result >= FView.Count then
+        Result := FView.Count - 1;
+    end;
   end;
 end;
 
@@ -3028,13 +4104,36 @@ begin
   end;
 end;
 
+procedure TRowDataSet.InternalBuildView;
+begin
+  BuildView;
+end;
+
+{ The rows that pass the filter, in row-list order. While the dataset is not open yet (rows being loaded by
+  Open) every row is taken: Open filters afterwards. The view is replaced only when every row was tested. }
 procedure TRowDataSet.BuildView;
 var
   I: Integer;
+  NewView: TDataRowList;
 begin
-  FView.Clear;
-  for I := 0 to FRows.Count - 1 do
-    FView.Add(FRows[I]);
+  NewView := TDataRowList.Create(False);
+  try
+    if Filtered and (State <> dsInactive) then
+    begin
+      PrepareFilter;
+      for I := 0 to FRows.Count - 1 do
+        if RowPasses(FRows[I]) then
+          NewView.Add(FRows[I]);
+    end
+    else
+      for I := 0 to FRows.Count - 1 do
+        NewView.Add(FRows[I]);
+  except
+    NewView.Free;
+    raise;
+  end;
+  FView.Free;
+  FView := NewView;
 end;
 
 function TRowDataSet.AddLoadedRow: TDataRow;

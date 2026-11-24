@@ -86,6 +86,8 @@ type
     { stand-ins for component streaming }
     procedure SimulateLoading;
     procedure SimulateLoaded;
+    { the active-row override: field reads refer to this view row; -1 ends it }
+    procedure OverrideRow(ViewIndex: Integer);
     { row-model probes }
     function StoredCount: Integer;
     function StoredRowIds: string;
@@ -598,6 +600,11 @@ procedure TTestDataSet.ApplyDelete(Row: TDataRow);
 begin
   ApplyStep('ApplyDelete');
   LastApply := 'delete row=' + RowText(Row);
+end;
+
+procedure TTestDataSet.OverrideRow(ViewIndex: Integer);
+begin
+  SetActiveRow(ViewIndex);
 end;
 
 function TTestDataSet.StoredCount: Integer;

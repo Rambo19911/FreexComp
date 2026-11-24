@@ -1,0 +1,96 @@
+== ParseSQL: names
+ok <>
+ok <SELECT 1>
+ok <SELECT * FROM t WHERE a = :a AND b = :b_2>
+ok <:first>
+ok <(:a,:b);>
+ok <x=:_p1+:Q9z>
+ok <a - :p / :q>
+ok <a = :1>
+ok <a = : x>
+ok <a = :>
+ok <a = :p.q>
+== ParseSQL: duplicates
+ok <:x, :y, :x>
+ok <:Name or :NAME or :name>
+ok <:b :a :b :a>
+== ParseSQL: literals, identifiers, comments
+ok <a = ':no' AND b = :yes>
+ok <a = 'it''s :no' AND b = :yes>
+ok <a = '' AND b = :yes>
+ok <a = 'never closed :no>
+ok <"col:no" = :yes>
+ok <`col:no` = :yes>
+ok <[col:no] = :yes>
+ok <a = :p -- :no~AND b = :q>
+ok <a = :p -- :no>
+ok <a = :p /* :no~:no */ AND b = :q>
+ok <a = :p /* :no>
+ok </* ' */ :p>
+ok <'/*' :p>
+ok <-- ' :no~~:p>
+== ParseSQL: double colon
+ok <SELECT a::text, :p>
+ok <a:::p>
+ok <a:: :p>
+== ParseSQL: rebuilding the collection
+ok a new collection is empty
+ok the text is returned unchanged
+ok DoCreate = False creates nothing
+ok DoCreate = True creates the parameters
+ok DoCreate = False leaves the collection
+ok rebuilt in the order of first occurrence
+ok a new parameter is unbound
+ok a parameter of the same name keeps type and state
+ok and its value
+ok whatever the case of the name
+ok a parameter that is no longer named is removed
+ok the kept parameter is the same object
+ok no parameters in the text: empty
+== lookup
+ok ParamByName ignores case
+ok FindParam ignores case
+ok FindParam: nil when missing
+ok ParamByName: missing
+== typing
+ok Name
+ok never assigned: unbound and null
+ok a null parameter reads as defaults
+ok AsString
+ok the string value
+ok AsInteger
+ok the integer value
+ok AsLargeInt
+ok the 64-bit value
+ok AsFloat
+ok the float value
+ok AsBoolean
+ok the boolean value
+ok AsDateTime
+ok the date-time value
+ok AsBytes
+ok the bytes
+ok Clear: null, bound, the type stays
+ok cleared
+ok Bound can be reset
+ok Clear binds an unbound parameter
+== reading as another type
+ok an integer
+ok a 64-bit value as Integer
+ok a boolean
+ok a float as string
+ok a float as Integer
+ok a float as Boolean
+ok a date-time as string
+ok a date-time as float
+ok a numeric string
+ok a boolean string
+ok a text as Integer
+ok a text as Float
+ok a text as Boolean
+ok a text as DateTime
+ok a string as bytes: UTF-8
+ok bytes as String
+ok an integer as Bytes
+ok an integer as DateTime
+failed checks: 0

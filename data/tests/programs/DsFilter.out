@@ -1,0 +1,231 @@
+== parse: syntax errors
+ok error in <id>
+ok error in <id = >
+ok error in <= 1>
+ok error in <id == 1>
+ok error in <id = 1 AND>
+ok error in <id = 1 AND OR id = 2>
+ok error in <NOT>
+ok error in <NOT NOT id = 1>
+ok error in <null = 1>
+ok error in <5 = id>
+ok error in <(id = 1>
+ok error in <(id = 1 id = 2)>
+ok error in <id = 1)>
+ok error in <id = 1 name = 2>
+ok error in <id IS 1>
+ok error in <id IS NOT>
+ok error in <id < > 1>
+ok error in <id = AND>
+== parse: lexical errors
+ok error in <name = 'abc>
+ok error in <name = 'it''s>
+ok error in <[id = 1>
+ok error in <id = 1 AND [name>
+ok error in <id # 1>
+ok error in <id = ->
+ok error in <id = 1.>
+ok error in <id = 1 ; id = 2>
+== parse: fields and operand types
+ok error in <nope = 1>
+ok error in <id = 1 OR [no such] = 2>
+ok error in <id = nope>
+ok error in <id = 'abc'>
+ok error in <amount > '1x'>
+ok error in <born = 'not a date'>
+ok error in <flag = 'maybe'>
+ok error in <name = 5>
+ok error in <name = TRUE>
+ok error in <id = TRUE>
+ok error in <flag = 1>
+ok error in <born = 5>
+ok error in <pic = 'x'>
+ok error in <id = pic>
+== parse: an error changes nothing
+ok the old filter is kept
+ok the view is unchanged
+ok no events
+ok state and cursor are unchanged
+ok error in <id =>
+ok an error is raised before the pending edit is posted
+ok the dataset stays in dsEdit
+== parse: accepted forms
+ok the empty filter
+ok blanks only
+ok no blanks
+ok nested parentheses
+ok keywords in any case
+ok NULL as an operand
+ok a negative number with decimals
+ok bracketed field names
+ok doubled quotes and the empty string
+ok a blob field can be tested for null
+ok numbers as string literals
+== parse: closed dataset
+ok error in <id = >
+ok a syntax error is raised at once and nothing is stored
+ok field names are checked when the dataset opens
+ok Open with a bad filter
+ok the open is undone
+ok the dataset stays closed
+ok without Filtered the bad filter does not matter
+ok Filtered := True with a bad filter
+ok Filtered stays False
+== compare: numbers
+ok <>
+ok <id = 2>
+ok <id <> 2>
+ok <id < 3>
+ok <id <= 3>
+ok <id > 3>
+ok <id >= 3>
+ok <  ID=2  >
+ok <id = '3'>
+ok <amount > 2>
+ok <amount = 2.25>
+ok <amount = 1.50>
+ok <amount > -1>
+ok <amount < 2.5>
+ok <[my col] >= 30>
+== compare: strings and options
+ok <name = 'Ada'>
+ok <name = 'ada'>
+ok <name < 'B'>
+ok <name >= 'Bob'>
+ok <name = 'Ad*'>
+ok <name <> 'Ad*'>
+ok <name = '*'>
+ok <name > 'Ad*'>
+ok <note = 'it''s'>
+ok <note = 'x'>
+ok changing FilterOptions rebuilds the view
+ok <name = 'ada'>
+ok <name < 'B'>
+ok <name = 'AD*'>
+ok <name <> 'aD*'>
+ok <name = 'Ad*'>
+ok <name <> 'Ad*'>
+ok <name = 'AD*'>
+ok <name = 'AD*'>
+== compare: null
+ok <amount IS NULL>
+ok <amount IS NOT NULL>
+ok <amount = NULL>
+ok <amount <> NULL>
+ok <amount < NULL>
+ok <amount >= NULL>
+ok <pic IS NULL>
+ok <pic is not null>
+ok <name = ''>
+ok <NOT amount > 2>
+== compare: boolean and date
+ok <flag = TRUE>
+ok <flag = false>
+ok <flag <> TRUE>
+ok <flag = 'true'>
+ok <flag = '0'>
+ok a date equal to a string literal
+ok a date after a string literal
+ok a date up to a string literal
+== compare: field with field
+ok <id < amount>
+ok <id > amount>
+ok <[my col] > id>
+ok <name <> note>
+ok <name = name>
+ok <id = flag>
+ok <id = name>
+== logic
+ok <id = 1 OR id = 3>
+ok <id > 1 AND id < 4>
+ok <id = 1 OR id = 2 AND amount > 5>
+ok <(id = 1 OR id = 2) AND amount > 2>
+ok <NOT id = 2>
+ok <NOT (id = 1 OR id = 2)>
+ok <not id = 1 and not id = 2>
+ok <id = 1 or ID = 2 Or [Id] = 4>
+ok <((id = 3))>
+ok the row list is never filtered
+== view rebuild: cursor and events
+ok Filter without Filtered: no events
+ok and no effect
+ok Filtered := True: event order
+ok the view
+ok the cursor stays on its row
+ok the same row
+ok flags unchanged
+ok the same value again: nothing happens
+ok Filter while Filtered: event order
+ok the new view
+ok the row is no longer visible: first row
+ok with Bof
+ok FilterOptions while Filtered: event order
+ok the cursor stays
+ok Filtered := False: event order
+ok all rows again
+ok still on the row
+ok FilterOptions without Filtered: no events
+ok a filter no row passes
+ok the view is empty
+ok fields read null
+ok the empty filter shows all rows
+ok from an empty view: first row
+== view rebuild: browse mode first
+ok a modified record is posted first
+ok the posted value is filtered
+ok the cursor stays on the posted row
+== navigation in a filtered view
+ok the loop visits the visible rows
+ok RecNo counts view rows
+ok MoveBy is limited by the view
+ok Locate does not see hidden rows
+ok Locate finds a visible row
+== close and open
+ok Open with a filter: the usual events
+ok the filter is applied at open (the rows are loaded again)
+ok Filter is kept across Close
+ok the filter properties of a closed dataset fire no events
+ok opened unfiltered
+ok the filter assigned while closed
+ok Refresh filters the reloaded rows
+== post under a filter
+ok the view
+ok a row that still passes stays
+ok and stays current
+ok Post: the usual events, no scroll events
+ok a row that no longer passes leaves the view
+ok but not the row list
+ok the cursor is on the following row
+ok an inserted row that passes is shown at its position
+ok and is current
+ok Post of a hidden insert: the usual events
+ok an inserted row that does not pass is hidden
+ok and stored
+ok the cursor is on the last row
+ok the last row leaves the view: the new last row is current
+ok the only row leaves the view: empty
+ok all rows are still there
+ok Delete removes the row from the view
+ok and from the row list
+== OnFilterRecord
+ok assigning the handler does nothing by itself
+ok the handler sees every row; Accept starts as True
+ok the rows it accepts
+ok the handler is asked only for rows the expression passes
+ok expression and handler must both accept
+ok the cursor is on the visible row
+ok a field write in the handler is refused
+ok the rows are untouched
+ok after the rebuild the fields read the current row again
+ok Post asks the handler for the posted row
+ok and removes the row it rejects
+ok a handler that leaves Accept alone accepts every row
+== bookmarks in a filtered view
+ok a visible row
+ok a hidden row
+ok GotoBookmark to a hidden row
+ok hidden rows compare by row id
+ok a hidden and a visible row compare by row id
+ok valid again without the filter
+ok and reachable
+failed checks: 0
