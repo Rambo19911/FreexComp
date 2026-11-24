@@ -1,4 +1,4 @@
-// covers: DAT-002, DAT-005, DAT-006, DAT-010, DAT-023, DAT-031, DAT-032, DAT-033
+// covers: DAT-002, DAT-005, DAT-006, DAT-010, DAT-023, DAT-031, DAT-032, DAT-033, DAT-034, DAT-035
 program DsFields;
 { Field value access. Read section: the As... getters of every field class, the null rules and the
   conversion, access and range errors. Write section: the As... setters, Clear, the size, read-only and

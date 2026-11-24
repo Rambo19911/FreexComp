@@ -579,6 +579,7 @@ type
     FInNewRecord: Boolean;
     FSavedBof: Boolean;
     FSavedEof: Boolean;
+    FInsertAtEnd: Boolean;
     FBeforeInsert: TDataSetNotifyEvent;
     FAfterInsert: TDataSetNotifyEvent;
     FBeforeEdit: TDataSetNotifyEvent;
@@ -852,18 +853,166 @@ type
     destructor Destroy; override;
   end;
 
-  { The attachment point of data links: a data source registers itself with its dataset and receives the
-    dataset's data events. }
+  TDataLink = class;
+
+  TDataChangeEvent = procedure(Sender: TObject; Field: TField) of object;
+
+  { The attachment point of data links: a data source registers itself with its dataset and passes the
+    dataset's data events to its links, in the order of their registration, and to its own events. }
   TDataSource = class(TComponent)
   private
     FDataSet: TDataSet;
+    FLinks: TList;
+    FEnabled: Boolean;
+    FAutoEdit: Boolean;
+    FLastState: TDataSetState;
+    FOnStateChange: TNotifyEvent;
+    FOnDataChange: TDataChangeEvent;
+    FOnUpdateData: TNotifyEvent;
+    function GetState: TDataSetState;
     procedure SetDataSet(Value: TDataSet);
+    procedure SetEnabled(Value: Boolean);
+    { Passes an event to the links and fires the event of the data source that belongs to it. }
+    procedure Distribute(Event: TDataEvent; Info: TObject);
+    { After DataSet or Enabled changed: a state change followed by a dataset change. }
+    procedure Rebind;
+    { The dataset is being destroyed: detaches without any event. }
+    procedure DataSetGone;
   protected
+    { Called by the dataset; ignored while not Enabled. }
     procedure DataEvent(Event: TDataEvent; Info: TObject); virtual;
   public
+    constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+    { DataSet.Edit when State = dsBrowse (independent of AutoEdit); otherwise nothing. }
+    procedure Edit;
+    function IsLinkedTo(DataSet: TDataSet): Boolean;
+    { The state of the dataset; dsInactive without a dataset and while not Enabled. }
+    property State: TDataSetState read GetState;
+  published
     property DataSet: TDataSet read FDataSet write SetDataSet;
+    property AutoEdit: Boolean read FAutoEdit write FAutoEdit default True;
+    property Enabled: Boolean read FEnabled write SetEnabled default True;
+    property OnStateChange: TNotifyEvent read FOnStateChange write FOnStateChange;
+    property OnDataChange: TDataChangeEvent read FOnDataChange write FOnDataChange;
+    property OnUpdateData: TNotifyEvent read FOnUpdateData write FOnUpdateData;
   end;
+
+  { The connection of one control to a data source. A link with BufferCount > 1 sees a window of consecutive
+    rows that always contains the current row; the row being inserted counts as a row at its insert position. }
+  TDataLink = class
+  private
+    FDataSource: TDataSource;
+    FActive: Boolean;
+    FEditing: Boolean;
+    FReadOnly: Boolean;
+    FUpdating: Boolean;
+    FBufferCount: Integer;
+    { index of window row 0 among the rows (the row being inserted included) }
+    FFirstRow: Integer;
+    { window index of the current row }
+    FCurrentPos: Integer;
+    function GetDataSet: TDataSet;
+    function GetRecordCount: Integer;
+    function GetActiveRecord: Integer;
+    procedure SetActiveRecord(Value: Integer);
+    procedure SetBufferCount(Value: Integer);
+    procedure SetDataSource(Value: TDataSource);
+    { Number of rows incl. the one being inserted; Current = index of the current row among them, -1 if none. }
+    function RowTotal(out Current: Integer): Integer;
+    { Moves the window so that it contains the current row: by the minimum amount, or (KeepPosition) so that
+      the current row keeps its window position where possible; never leaves window rows unused while rows exist. }
+    procedure AdjustWindow(KeepPosition: Boolean);
+    { Recomputes Active and Editing and calls ActiveChanged / EditingChanged for what changed. }
+    procedure UpdateState;
+    procedure DataEvent(Event: TDataEvent; Info: TObject);
+    { Becomes inactive without calling any method (the dataset is being destroyed with its owner). }
+    procedure ForceInactive; virtual;
+  protected
+    procedure ActiveChanged; virtual;
+    procedure EditingChanged; virtual;
+    { default: RecordChanged(nil) }
+    procedure DataSetChanged; virtual;
+    { default: DataSetChanged }
+    procedure DataSetScrolled(Distance: Integer); virtual;
+    { default: DataSetChanged }
+    procedure LayoutChanged; virtual;
+    procedure RecordChanged(Field: TField); virtual;
+    procedure UpdateData; virtual;
+    procedure CheckBrowseMode; virtual;
+    procedure FocusControl(Field: TField); virtual;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    { Tries to enter edit mode (not for a read-only link); returns Editing. }
+    function Edit: Boolean; virtual;
+    { Calls UpdateData once; a call from inside UpdateData is ignored. }
+    procedure UpdateRecord;
+    property DataSource: TDataSource read FDataSource write SetDataSource;
+    { nil without a data source }
+    property DataSet: TDataSet read GetDataSet;
+    { the data source is enabled and its dataset is open }
+    property Active: Boolean read FActive;
+    { the dataset is in dsEdit or dsInsert }
+    property Editing: Boolean read FEditing;
+    property ReadOnly: Boolean read FReadOnly write FReadOnly;
+    { rows the owner displays; at least 1 }
+    property BufferCount: Integer read FBufferCount write SetBufferCount;
+    { rows available in the window }
+    property RecordCount: Integer read GetRecordCount;
+    { The window row the fields read from, 0 .. RecordCount - 1; by default the current row. Assigning another
+      row sets the active-row override of the dataset: the owner restores the previous value before it returns
+      to the message loop. }
+    property ActiveRecord: Integer read GetActiveRecord write SetActiveRecord;
+  end;
+
+  { The link of a single-field control. }
+  TFieldDataLink = class(TDataLink)
+  private
+    FFieldName: string;
+    FField: TField;
+    FControl: TComponent;
+    FModified: Boolean;
+    FOnDataChange: TNotifyEvent;
+    FOnEditingChange: TNotifyEvent;
+    FOnUpdateData: TNotifyEvent;
+    FOnActiveChange: TNotifyEvent;
+    function GetCanModify: Boolean;
+    procedure SetFieldName(const Value: string);
+    procedure UpdateField;
+    procedure ForceInactive; override;
+  protected
+    procedure ActiveChanged; override;
+    procedure EditingChanged; override;
+    procedure LayoutChanged; override;
+    procedure RecordChanged(Field: TField); override;
+    procedure UpdateData; override;
+    procedure CheckBrowseMode; override;
+    procedure FocusControl(Field: TField); override;
+  public
+    { True when already editing; else enters edit mode if CanModify and the data source has AutoEdit. }
+    function Edit: Boolean; override;
+    { The owner tells that the user changed the control. }
+    procedure Modified;
+    { Discards the change of the control: the control reloads from the field. }
+    procedure Reset;
+    property FieldName: string read FFieldName write SetFieldName;
+    { nil while inactive or when the dataset has no field of this name }
+    property Field: TField read FField;
+    property Control: TComponent read FControl write FControl;
+    property CanModify: Boolean read GetCanModify;
+    property OnDataChange: TNotifyEvent read FOnDataChange write FOnDataChange;
+    property OnEditingChange: TNotifyEvent read FOnEditingChange write FOnEditingChange;
+    property OnUpdateData: TNotifyEvent read FOnUpdateData write FOnUpdateData;
+    property OnActiveChange: TNotifyEvent read FOnActiveChange write FOnActiveChange;
+  end;
+
+  TDataLinkFocusProc = procedure(Control: TComponent);
+
+var
+  { Gives the focus to the control of a field link (TField.FocusControl). Set by the unit of the data-aware
+    controls: this unit does not use the UI framework. }
+  DataLinkFocusHook: TDataLinkFocusProc;
 
 procedure DatabaseError(const Msg: string);
 procedure DatabaseErrorFmt(const Msg: string; const Args: array of const);
@@ -2368,7 +2517,7 @@ var
 begin
   if FDataSources <> nil then
     for I := 0 to FDataSources.Count - 1 do
-      TDataSource(FDataSources[I]).FDataSet := nil;
+      TDataSource(FDataSources[I]).DataSetGone;
   FDataSources.Free;
   FDataSources := nil;
   FFilterExpr.Free;
@@ -2748,6 +2897,7 @@ begin
   if Assigned(FBeforeScroll) then
     FBeforeScroll(Self);
   InternalInsert(AtEnd);
+  FInsertAtEnd := AtEnd;
   FSavedBof := FBof;
   FSavedEof := FEof;
   FBof := False;
@@ -3430,10 +3580,104 @@ end;
 
 { TDataSource }
 
+constructor TDataSource.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FLinks := TList.Create;
+  FEnabled := True;
+  FAutoEdit := True;
+  FLastState := dsInactive;
+end;
+
 destructor TDataSource.Destroy;
 begin
-  SetDataSet(nil);
+  if FLinks <> nil then
+    while FLinks.Count > 0 do
+      TDataLink(FLinks[FLinks.Count - 1]).DataSource := nil;
+  if (FDataSet <> nil) and (FDataSet.FDataSources <> nil) then
+    FDataSet.FDataSources.Remove(Self);
+  FDataSet := nil;
+  FLinks.Free;
+  FLinks := nil;
   inherited Destroy;
+end;
+
+function TDataSource.GetState: TDataSetState;
+begin
+  if FEnabled and (FDataSet <> nil) then
+    Result := FDataSet.FState
+  else
+    Result := dsInactive;
+end;
+
+procedure TDataSource.Edit;
+begin
+  if GetState = dsBrowse then
+    FDataSet.Edit;
+end;
+
+function TDataSource.IsLinkedTo(DataSet: TDataSet): Boolean;
+begin
+  Result := (DataSet <> nil) and (DataSet = FDataSet);
+end;
+
+procedure TDataSource.Distribute(Event: TDataEvent; Info: TObject);
+var
+  I: Integer;
+  Old: TDataSetState;
+begin
+  { the handler may still adjust controls before the links write their data }
+  if (Event = deUpdateRecord) and Assigned(FOnUpdateData) then
+    FOnUpdateData(Self);
+  I := 0;
+  while I < FLinks.Count do
+  begin
+    TDataLink(FLinks[I]).DataEvent(Event, Info);
+    I := I + 1;
+  end;
+  case Event of
+    deUpdateState:
+      begin
+        Old := FLastState;
+        FLastState := GetState;
+        if FLastState <> Old then
+        begin
+          if Assigned(FOnStateChange) then
+            FOnStateChange(Self);
+          if (Old = dsInactive) and (FLastState = dsBrowse) and Assigned(FOnDataChange) then
+            FOnDataChange(Self, nil);
+        end;
+      end;
+    deFieldChange:
+      if Assigned(FOnDataChange) then
+        FOnDataChange(Self, TField(Info));
+    deRecordChange, deDataSetChange, deDataSetScroll, deLayoutChange:
+      if Assigned(FOnDataChange) then
+        FOnDataChange(Self, nil);
+  end;
+end;
+
+procedure TDataSource.DataEvent(Event: TDataEvent; Info: TObject);
+begin
+  if FEnabled then
+    Distribute(Event, Info);
+end;
+
+procedure TDataSource.Rebind;
+begin
+  Distribute(deUpdateState, nil);
+  if GetState <> dsInactive then
+    Distribute(deDataSetChange, nil);
+end;
+
+procedure TDataSource.DataSetGone;
+var
+  I: Integer;
+begin
+  FDataSet := nil;
+  FLastState := dsInactive;
+  for I := 0 to FLinks.Count - 1 do
+    TDataLink(FLinks[I]).ForceInactive;
 end;
 
 procedure TDataSource.SetDataSet(Value: TDataSet);
@@ -3441,14 +3685,414 @@ begin
   if Value = FDataSet then
     Exit;
   if FDataSet <> nil then
+  begin
+    { the links leave the old dataset before they see the new one: fields are resolved again }
     FDataSet.FDataSources.Remove(Self);
+    FDataSet := nil;
+    Distribute(deUpdateState, nil);
+  end;
   FDataSet := Value;
-  if FDataSet <> nil then
-    FDataSet.FDataSources.Add(Self);
+  if Value <> nil then
+  begin
+    Value.FDataSources.Add(Self);
+    Rebind;
+  end;
 end;
 
-procedure TDataSource.DataEvent(Event: TDataEvent; Info: TObject);
+procedure TDataSource.SetEnabled(Value: Boolean);
 begin
+  if Value = FEnabled then
+    Exit;
+  FEnabled := Value;
+  Rebind;
+end;
+
+{ TDataLink }
+
+constructor TDataLink.Create;
+begin
+  inherited Create;
+  FBufferCount := 1;
+end;
+
+destructor TDataLink.Destroy;
+begin
+  if (FDataSource <> nil) and (FDataSource.FLinks <> nil) then
+    FDataSource.FLinks.Remove(Self);
+  FDataSource := nil;
+  inherited Destroy;
+end;
+
+function TDataLink.GetDataSet: TDataSet;
+begin
+  if FDataSource <> nil then
+    Result := FDataSource.FDataSet
+  else
+    Result := nil;
+end;
+
+procedure TDataLink.SetDataSource(Value: TDataSource);
+begin
+  if Value = FDataSource then
+    Exit;
+  if FDataSource <> nil then
+  begin
+    FDataSource.FLinks.Remove(Self);
+    FDataSource := nil;
+    UpdateState;
+  end;
+  FDataSource := Value;
+  if Value <> nil then
+  begin
+    Value.FLinks.Add(Self);
+    UpdateState;
+  end;
+end;
+
+function TDataLink.RowTotal(out Current: Integer): Integer;
+var
+  DS: TDataSet;
+begin
+  DS := FDataSource.FDataSet;
+  Result := DS.GetViewCount;
+  if DS.FState = dsInsert then
+  begin
+    if DS.FInsertAtEnd or (DS.FCursor < 0) then
+      Current := Result
+    else
+      Current := DS.FCursor;
+    Result := Result + 1;
+  end
+  else
+    Current := DS.FCursor;
+end;
+
+procedure TDataLink.AdjustWindow(KeepPosition: Boolean);
+var
+  Total, Current: Integer;
+begin
+  Current := -1;
+  Total := 0;
+  if FActive then
+    Total := RowTotal(Current);
+  if Current < 0 then
+  begin
+    FFirstRow := 0;
+    FCurrentPos := 0;
+    Exit;
+  end;
+  if KeepPosition then
+    FFirstRow := Current - FCurrentPos;
+  if FFirstRow > Total - FBufferCount then
+    FFirstRow := Total - FBufferCount;
+  if FFirstRow > Current then
+    FFirstRow := Current;
+  if FFirstRow < Current - FBufferCount + 1 then
+    FFirstRow := Current - FBufferCount + 1;
+  if FFirstRow < 0 then
+    FFirstRow := 0;
+  FCurrentPos := Current - FFirstRow;
+end;
+
+function TDataLink.GetRecordCount: Integer;
+var
+  Current: Integer;
+begin
+  Result := 0;
+  if not FActive then
+    Exit;
+  Result := RowTotal(Current) - FFirstRow;
+  if Result > FBufferCount then
+    Result := FBufferCount;
+  if Result < 0 then
+    Result := 0;
+end;
+
+function TDataLink.GetActiveRecord: Integer;
+var
+  DS: TDataSet;
+  Current, Row: Integer;
+begin
+  Result := 0;
+  if not FActive then
+    Exit;
+  DS := FDataSource.FDataSet;
+  if DS.FActiveRow < 0 then
+    Result := FCurrentPos
+  else
+  begin
+    Row := DS.FActiveRow;
+    RowTotal(Current);
+    { view rows from the insert position on are shown one row further down }
+    if (DS.FState = dsInsert) and (Row >= Current) then
+      Row := Row + 1;
+    Result := Row - FFirstRow;
+  end;
+end;
+
+procedure TDataLink.SetActiveRecord(Value: Integer);
+var
+  DS: TDataSet;
+  Current, Row: Integer;
+begin
+  if not FActive then
+    Exit;
+  DS := FDataSource.FDataSet;
+  { the current row (also "no row" of an empty dataset): no override }
+  if Value = FCurrentPos then
+    DS.SetActiveRow(-1)
+  else
+  begin
+    if (Value < 0) or (Value >= GetRecordCount) then
+      DatabaseError(SDatRecNoRange);
+    Row := FFirstRow + Value;
+    RowTotal(Current);
+    if (DS.FState = dsInsert) and (Row > Current) then
+      Row := Row - 1;
+    DS.SetActiveRow(Row);
+  end;
+end;
+
+procedure TDataLink.SetBufferCount(Value: Integer);
+begin
+  if Value < 1 then
+    Value := 1;
+  if Value = FBufferCount then
+    Exit;
+  FBufferCount := Value;
+  AdjustWindow(True);
+end;
+
+procedure TDataLink.UpdateState;
+var
+  State: TDataSetState;
+  NewActive, NewEditing: Boolean;
+begin
+  if FDataSource <> nil then
+    State := FDataSource.GetState
+  else
+    State := dsInactive;
+  NewActive := State <> dsInactive;
+  NewEditing := State in [dsEdit, dsInsert];
+  if NewActive <> FActive then
+  begin
+    FActive := NewActive;
+    FFirstRow := 0;
+    FCurrentPos := 0;
+    AdjustWindow(False);
+    ActiveChanged;
+  end
+  else
+    AdjustWindow(False);
+  if NewEditing <> FEditing then
+  begin
+    FEditing := NewEditing;
+    EditingChanged;
+  end;
+end;
+
+procedure TDataLink.ForceInactive;
+begin
+  FActive := False;
+  FEditing := False;
+  FFirstRow := 0;
+  FCurrentPos := 0;
+end;
+
+procedure TDataLink.DataEvent(Event: TDataEvent; Info: TObject);
+begin
+  if Event = deUpdateState then
+  begin
+    UpdateState;
+    Exit;
+  end;
+  if not FActive then
+    Exit;
+  case Event of
+    deFieldChange: RecordChanged(TField(Info));
+    deRecordChange: RecordChanged(nil);
+    deDataSetChange:
+      begin
+        AdjustWindow(True);
+        DataSetChanged;
+      end;
+    deDataSetScroll:
+      begin
+        AdjustWindow(False);
+        DataSetScrolled(0);
+      end;
+    deLayoutChange:
+      begin
+        AdjustWindow(True);
+        LayoutChanged;
+      end;
+    deUpdateRecord: UpdateRecord;
+    deCheckBrowseMode: CheckBrowseMode;
+    deFocusControl: FocusControl(TField(Info));
+  end;
+end;
+
+function TDataLink.Edit: Boolean;
+begin
+  if FActive and not FEditing and not FReadOnly then
+    FDataSource.Edit;
+  Result := FEditing;
+end;
+
+procedure TDataLink.UpdateRecord;
+begin
+  if FUpdating then
+    Exit;
+  FUpdating := True;
+  try
+    UpdateData;
+  finally
+    FUpdating := False;
+  end;
+end;
+
+procedure TDataLink.ActiveChanged;
+begin
+end;
+
+procedure TDataLink.EditingChanged;
+begin
+end;
+
+procedure TDataLink.DataSetChanged;
+begin
+  RecordChanged(nil);
+end;
+
+procedure TDataLink.DataSetScrolled(Distance: Integer);
+begin
+  DataSetChanged;
+end;
+
+procedure TDataLink.LayoutChanged;
+begin
+  DataSetChanged;
+end;
+
+procedure TDataLink.RecordChanged(Field: TField);
+begin
+end;
+
+procedure TDataLink.UpdateData;
+begin
+end;
+
+procedure TDataLink.CheckBrowseMode;
+begin
+end;
+
+procedure TDataLink.FocusControl(Field: TField);
+begin
+end;
+
+{ TFieldDataLink }
+
+procedure TFieldDataLink.UpdateField;
+begin
+  if FActive and (FFieldName <> '') then
+    FField := FDataSource.FDataSet.FindField(FFieldName)
+  else
+    FField := nil;
+end;
+
+procedure TFieldDataLink.ForceInactive;
+begin
+  inherited ForceInactive;
+  FField := nil;
+  FModified := False;
+end;
+
+function TFieldDataLink.GetCanModify: Boolean;
+begin
+  Result := FActive and (FField <> nil) and FField.CanModify and not FReadOnly;
+end;
+
+procedure TFieldDataLink.SetFieldName(const Value: string);
+begin
+  if Value = FFieldName then
+    Exit;
+  FFieldName := Value;
+  UpdateField;
+  if FActive then
+    RecordChanged(nil);
+end;
+
+function TFieldDataLink.Edit: Boolean;
+begin
+  if not FEditing and GetCanModify and FDataSource.FAutoEdit then
+    FDataSource.FDataSet.Edit;
+  Result := FEditing;
+end;
+
+procedure TFieldDataLink.Modified;
+begin
+  FModified := True;
+end;
+
+procedure TFieldDataLink.Reset;
+begin
+  RecordChanged(nil);
+end;
+
+procedure TFieldDataLink.ActiveChanged;
+begin
+  UpdateField;
+  FModified := False;
+  if Assigned(FOnActiveChange) then
+    FOnActiveChange(Self);
+  if Assigned(FOnDataChange) then
+    FOnDataChange(Self);
+end;
+
+procedure TFieldDataLink.EditingChanged;
+begin
+  if Assigned(FOnEditingChange) then
+    FOnEditingChange(Self);
+end;
+
+procedure TFieldDataLink.LayoutChanged;
+begin
+  UpdateField;
+  inherited LayoutChanged;
+end;
+
+procedure TFieldDataLink.RecordChanged(Field: TField);
+begin
+  if (Field = nil) or (Field = FField) then
+  begin
+    FModified := False;
+    if Assigned(FOnDataChange) then
+      FOnDataChange(Self);
+  end;
+end;
+
+{ the flag stays set when the handler raises: the control still holds the text }
+procedure TFieldDataLink.UpdateData;
+begin
+  if FModified then
+  begin
+    if Assigned(FOnUpdateData) then
+      FOnUpdateData(Self);
+    FModified := False;
+  end;
+end;
+
+{ text typed into the control reaches the field before the dataset decides between Post and Cancel }
+procedure TFieldDataLink.CheckBrowseMode;
+begin
+  if FModified then
+    UpdateRecord;
+end;
+
+procedure TFieldDataLink.FocusControl(Field: TField);
+begin
+  if (Field <> nil) and (Field = FField) and (FControl <> nil) and Assigned(DataLinkFocusHook) then
+    DataLinkFocusHook(FControl);
 end;
 
 { TParam }

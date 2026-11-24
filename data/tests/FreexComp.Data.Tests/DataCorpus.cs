@@ -77,7 +77,7 @@ public static class DataCorpus
         return new DataHeader(covers.ToImmutable(), options.ToImmutable());
     }
 
-    /// <summary>The theory rows: display name = program name, <c>Req</c> traits from the <c>// covers:</c> header (testing.md §1.1).</summary>
+    /// <summary>The theory rows: display name = program name, <c>Req</c> traits from the <c>// covers:</c> header, <c>Category=Foreground</c> for control programs (testing.md §1.1).</summary>
     public static IEnumerable<TheoryDataRow<string>> Rows()
     {
         foreach (var program in Discover())
@@ -87,6 +87,12 @@ public static class DataCorpus
             if (covers.Length > 0)
             {
                 row.Traits["Req"] = [.. covers];
+            }
+
+            // control programs need an interactive desktop (testing.md §1.1, DAT-406)
+            if (program.Name.StartsWith("Ctl", StringComparison.Ordinal) || program.Name == "FormStream")
+            {
+                row.Traits["Category"] = ["Foreground"];
             }
 
             yield return row;

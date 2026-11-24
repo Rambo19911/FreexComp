@@ -1,0 +1,244 @@
+== data source: state, Edit, registration
+ok AutoEdit is True by default
+ok Enabled is True by default
+ok no dataset at first
+ok State without a dataset
+ok Edit without a dataset does nothing
+ok IsLinkedTo its dataset
+ok IsLinkedTo another dataset
+ok IsLinkedTo(nil)
+ok State of a closed dataset
+ok Edit on a closed dataset does nothing
+ok State follows the dataset
+ok State of a disabled source
+ok Edit of a disabled source does nothing
+ok Edit enters dsEdit, also with AutoEdit = False
+ok Edit in dsEdit does nothing
+ok Edit in dsInsert does nothing
+ok the dataset works after its source is destroyed
+== data source: dispatch order and events
+ok attaching to a closed dataset sends nothing
+ok Open: links in registration order, OnStateChange, then OnDataChange
+ok Next
+ok Edit
+ok a field write
+ok UpdateRecord: OnUpdateData before the links
+ok Post
+ok Insert
+ok ClearFields (deRecordChange)
+ok navigation: deCheckBrowseMode reaches the links only, then the post and the scroll
+ok CheckBrowseMode cancels an unmodified record
+ok deFocusControl reaches the links only
+ok deLayoutChange
+ok Delete
+ok Refresh
+ok attaching a source to an open dataset: a state change, then a dataset change
+ok a link attached to an active source becomes active
+ok two sources: in the order of attachment, each with its links first
+ok a destroyed link is gone
+ok a link registered again comes last
+ok nothing while the controls are disabled
+ok EnableControls
+ok Close
+== data source: order relative to the dataset events
+ok Open
+ok Next
+ok Edit
+ok a field write
+ok Post
+ok Close
+== data source: Enabled and DataSet changes
+ok Enabled := False: like closing
+ok the link of a disabled source is inactive
+ok a disabled source dispatches nothing
+ok assigning the same Enabled does nothing
+ok Enabled := True: a state change followed by a dataset change
+ok disabled while editing
+ok enabled on an editing dataset: no extra OnDataChange (the state is not dsBrowse)
+ok assigning the same dataset does nothing
+ok another open dataset: through inactive
+ok the link reads the new dataset
+ok the old dataset no longer notifies
+ok the new dataset notifies
+ok a closed dataset
+ok from a closed dataset to none: no state change
+ok DataSet of the link is nil-safe
+ok from none to an open dataset
+== data source: free notification
+ok destroying an open dataset closes it first
+ok destroying the dataset sets DataSet to nil
+ok the link is inactive
+ok the link has no dataset
+ok State after the dataset is gone
+ok destroying the source detaches every link
+ok DataSource of the first link is nil
+ok DataSource of the second link is nil
+ok the dataset no longer reaches the links
+ok the field is resolved
+ok a dataset destroyed with its owner sends no events
+ok the source is detached
+ok the field link is inactive
+ok the field link dropped its field
+== data link: active, editing, default methods
+ok a new link is inactive
+ok a new link is not editing
+ok ReadOnly is False by default
+ok BufferCount is 1 by default
+ok RecordCount of an inactive link
+ok ActiveRecord of an inactive link
+ok DataSet without a source
+ok Edit without a source
+ok DataSet through the source
+ok attached to a closed dataset
+ok Open
+ok Active
+ok RecordCount with BufferCount 1
+ok Edit
+ok Editing
+ok Cancel
+ok Editing in dsInsert
+ok DataSetScrolled defaults to DataSetChanged, that to RecordChanged(nil)
+ok LayoutChanged defaults to DataSetChanged
+ok Edit enters edit mode
+ok the dataset is in dsEdit
+ok Edit notifies
+ok Edit while editing
+ok Edit while editing does nothing
+ok UpdateRecord calls UpdateData
+ok UpdateRecord from inside UpdateData is ignored
+ok deUpdateRecord: once
+ok Edit of a read-only link
+ok the dataset stays in dsBrowse
+ok UpdateRecord in dsBrowse calls UpdateData as well
+ok DataSource := nil
+ok inactive without a source
+ok a detached link is not notified
+ok attached to an active source
+== data link: row window
+ok RecordCount = BufferCount when enough rows
+ok ActiveRecord defaults to the current row
+ok after Open
+ok a link with BufferCount 1 sees the current row
+ok Next inside the window: the window stays
+ok the last window row
+ok Next beyond the window: moves by one
+ok BufferCount 1 follows
+ok MoveBy beyond the window: the minimum amount
+ok Prior inside the window
+ok MoveBy above the window
+ok Last
+ok First
+ok RecNo
+ok Locate inside the window
+ok the current row reads the edit buffer
+ok ActiveRecord while editing
+ok ActiveRecord reads back
+ok fields read the active record
+ok writes are refused under an override
+ok restored: the edit buffer again
+ok after Cancel
+ok RecordCount in dsInsert
+ok Insert: the new row at its insert position
+ok BufferCount 1 in dsInsert
+ok after Post
+ok Append: the new row after the last one
+ok ActiveRecord of the appended row
+ok Cancel: back to the row before the insert
+ok Delete: the next row takes the position
+ok Delete of the last row: the position is kept
+ok Insert before the first row
+ok rows after the insert position are read from the view
+ok restored: the new row
+ok after Cancel of the insert
+ok filter: fewer rows than BufferCount
+ok RecordCount = number of rows
+ok filter off: the window is filled again
+ok Refresh (the test driver loads its ten rows again) keeps the window position
+ok a smaller BufferCount
+ok scrolling with the smaller window
+ok a larger BufferCount: no window row stays unused while rows exist
+ok BufferCount beyond the row count: every row
+ok RecordCount = min(BufferCount, rows)
+ok BufferCount is at least 1
+ok ActiveRecord beyond RecordCount raises
+ok negative ActiveRecord raises
+ok ActiveRecord unchanged after the errors
+ok RecordCount of an empty view
+ok ActiveRecord of an empty view
+ok no rows
+ok RecordCount in dsInsert counts the new row
+ok RecordCount after Close
+ok ActiveRecord after Close
+ok an empty dataset
+ok Insert into an empty dataset
+ok the new row is the only one
+== field link: field resolution
+ok FieldName
+ok no field while inactive
+ok CanModify while inactive
+ok Edit while inactive
+ok nothing so far
+ok Open: OnActiveChange, then OnDataChange
+ok the field is resolved
+ok CanModify
+ok an unknown field name: no exception, the control reloads
+ok Field is nil when not resolvable
+ok CanModify without a field
+ok Edit without a field
+ok the dataset stays in dsBrowse
+ok FieldName is resolved without regard to case
+ok the same FieldName does nothing
+ok a layout change resolves again and reloads
+ok scrolling reloads
+ok Edit: OnEditingChange
+ok a change of another field is ignored
+ok a change of the field reloads
+ok Cancel
+== field link: Edit
+ok AutoEdit = False: Edit is refused
+ok no edit mode
+ok already editing: True, also with AutoEdit = False
+ok CanModify of a read-only link
+ok Edit of a read-only link
+ok CanModify of a read-only field
+ok Edit on a read-only field
+ok CanModify on a read-only dataset
+ok Edit on a read-only dataset
+ok still dsBrowse
+ok Edit enters edit mode
+ok dsEdit
+ok OnEditingChange
+ok Editing
+== field link: Modified, UpdateRecord, Reset
+ok UpdateRecord without Modified does nothing
+ok UpdateRecord after Modified: OnUpdateData writes the field
+ok the field has the value
+ok the flag is cleared
+ok Reset reloads
+ok Reset cleared the flag
+ok a change of another field keeps the flag; deUpdateRecord writes
+ok an exception of OnUpdateData propagates
+ok the flag survived the failed write
+ok Post without pending text
+ok posted
+ok Post writes pending text first
+ok posted with the text
+== field link: push before CheckBrowseMode decides
+ok the dataset is not modified yet
+ok navigation: the text is written, the record posted, then the scroll
+ok the pushed text was posted
+ok without Modified: nothing is written, the edit is cancelled
+== field link: focus, close, another source
+ok Control
+ok FocusControl of the field reaches the control
+ok another field is ignored
+ok no control: nothing
+ok Close
+ok no field after Close
+ok Open again
+ok the new field object is resolved
+ok another source: through inactive; the field does not exist there
+ok the field of the other dataset
+ok another dataset of the source: the field is resolved again
+ok the field of the new dataset
+failed checks: 0

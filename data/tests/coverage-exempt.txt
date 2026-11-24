@@ -1,0 +1,97 @@
+# Data rules in Phase 7 scope without a covering test yet (DataCoverageTests.AllPhase7RulesCovered).
+# One per line: DAT-nnn | category | reason. An id leaves the list when a test covers it.
+# Categories:
+#   pending      the rule is implemented by a later task; the reason starts with that task
+#   design-time  design-time.md rules; the reason starts with the task that brings the test
+#   crud-sample  crud-sample.md rules; the reason starts with the task that brings the test
+#   informative  the rule states no behaviour a test of this project can observe
+
+# dataset, SQLite, in-memory table
+DAT-071 | informative | contract for driver authors (how apply methods report failure); each driver's own edit tests show it
+DAT-105 | informative | build and deployment note: the build engine does not copy the library; the runner copies it (DAT-401)
+DAT-165 | informative | thread-safety statement; the open flag is not observable through the API
+DAT-166 | informative | usage rule for applications (one thread at a time)
+DAT-167 | informative | states the absence of a check
+DAT-308 | informative | refers to the single-thread usage rule DAT-166
+
+# data links and single-field controls
+DAT-216 | pending | A-055 focus needs a window control; the dispatch to the link's control is in LinkBasic
+DAT-221 | pending | A-055 starting a modification (edit control)
+DAT-222 | pending | A-055 write-back
+DAT-223 | pending | A-056 focus-loss validation
+DAT-224 | pending | A-056 Escape
+DAT-225 | pending | A-056 read-only state
+DAT-230 | pending | A-055 edit display
+DAT-231 | pending | A-056 input limit
+DAT-232 | pending | A-055 edit write-back
+DAT-233 | pending | A-056 Enter key
+DAT-238 | pending | A-057 memo display
+DAT-239 | pending | A-057 memo write-back
+DAT-242 | pending | A-058 check box state
+DAT-243 | pending | A-058 check box click
+DAT-246 | pending | A-059 combo box display
+DAT-247 | pending | A-059 combo box modification
+DAT-250 | pending | A-060 lookup list
+DAT-251 | pending | A-060 lookup display
+DAT-252 | pending | A-060 lookup selection
+DAT-253 | pending | A-060 lookup list dataset untouched
+DAT-256 | pending | A-061 navigator layout
+DAT-257 | pending | A-061 navigator hints
+DAT-258 | pending | A-061 navigator enabling
+DAT-259 | pending | A-061 navigator actions
+DAT-260 | pending | A-062 grid columns
+DAT-261 | pending | A-062 grid geometry
+DAT-262 | pending | A-062 grid column width
+DAT-263 | pending | A-063 grid rows
+DAT-264 | pending | A-062 grid painting
+DAT-265 | pending | A-063 grid scroll bars
+DAT-266 | pending | A-063 grid mouse
+DAT-267 | pending | A-063 grid keyboard
+DAT-268 | pending | A-064 grid editing condition
+DAT-269 | pending | A-064 grid in-place editor
+DAT-270 | pending | A-064 grid commit rules
+DAT-271 | pending | A-064 grid row changes post
+DAT-272 | pending | A-064 grid repainting
+
+# component metadata
+DAT-280 | pending | A-066 metadata renderer ids
+DAT-281 | pending | A-066 metadata property typing
+DAT-282 | pending | A-066 metadata Active / Connected
+DAT-283 | pending | A-066 metadata events
+DAT-284 | pending | A-066 MetadataMatchesSource
+
+# design time
+DAT-330 | design-time | A-067 tool palette pages (ide)
+DAT-331 | design-time | A-067 non-visual components on a form (ide)
+DAT-332 | design-time | A-067 component-reference editor (ide)
+DAT-333 | design-time | A-067 connection editor (ide)
+DAT-334 | design-time | A-067 strings editor (ide)
+DAT-335 | design-time | A-067 field-name and table-name editors (ide)
+DAT-336 | design-time | A-065 Active / Connected stored in the form
+DAT-337 | design-time | A-067 columns collection editor (ide)
+DAT-338 | design-time | A-067 uses clause and field declaration (ide)
+DAT-339 | design-time | A-067 grid and navigator design renderers (ide)
+DAT-340 | design-time | A-065 deferred activation in Loaded
+DAT-341 | design-time | A-065 exception while applying a deferred activation
+DAT-342 | design-time | A-065 no special design-time code path (FormStream)
+DAT-343 | design-time | A-065 references resolved by the streaming fix-up
+
+# CRUD sample
+DAT-360 | crud-sample | A-068 command line
+DAT-361 | crud-sample | A-068 opening and closing in the form events
+DAT-362 | crud-sample | A-068 library beside the executable
+DAT-365 | crud-sample | A-068 OnNewRecord handler
+DAT-366 | crud-sample | A-068 BeforePost handler
+DAT-367 | crud-sample | A-068 status label
+DAT-368 | crud-sample | A-069 automated-test switches
+DAT-370 | crud-sample | A-069 script scheduling
+DAT-371 | crud-sample | A-069 simulated input
+DAT-372 | crud-sample | A-069 step results
+DAT-373 | crud-sample | A-069 database dump
+DAT-374 | crud-sample | A-069 result file
+
+# testing rules
+DAT-403 | informative | constrains where test programs keep their files; the runner gives each a fresh directory (DAT-401)
+DAT-406 | pending | A-055 control tests that need a shown form and simulated input
+DAT-407 | pending | A-061 message-box hook
+DAT-408 | pending | A-062 geometry through numbers
