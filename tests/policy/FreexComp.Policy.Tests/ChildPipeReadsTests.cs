@@ -24,8 +24,6 @@ public sealed partial class ChildPipeReadsTests
         ["compiler/tests/FreexComp.Compiler.GoldenTests/OpcProcessTests.cs"] = "C-319",
         ["compiler/tests/FreexComp.Compiler.GoldenTests/StackProbeImportTests.cs"] = "C-319",
         ["compiler/tests/FreexComp.Compiler.Tests/Emit/DeterminismTests.cs"] = "C-319",
-        ["ui-framework/tests/Harness/GuiHarness.cs"] = "U-142",
-        ["ui-framework/tests/Harness/LayoutCasesTheory.cs"] = "U-142",
     };
 
     /// <summary>The area guard tests: they hold the forbidden calls as samples.</summary>
