@@ -112,7 +112,7 @@ internal sealed partial class DebugSession
         var response = DapJson.Deserialize<StackTraceResponseBody>(await RequestAsync(
             "stackTrace", new StackTraceArguments(threadId, 0, StopFrameCount), CancellationToken.None).ConfigureAwait(false));
         var frames = response.StackFrames.Select((frame, index) => MapFrame(frame, index, register: false)).ToList();
-        _stopTopFrame = response.StackFrames.Count > 0 ? new FrameEntry(response.StackFrames[0].Id, frames[0].Location) : null;
+        _stopTopFrame = response.StackFrames.Count > 0 ? EntryOf(response.StackFrames, 0) : null;
         // Top user frame; when there is none, the first frame that has source.
         var location = (frames.FirstOrDefault(f => f.IsUserCode) ?? frames.FirstOrDefault(f => f.Location is not null))?.Location;
         var depth = response.TotalFrames ?? frames.Count;
@@ -580,6 +580,8 @@ internal sealed partial class DebugSession
         var response = DapJson.Deserialize<StackTraceResponseBody>(await RequestAsync(
             "stackTrace", new StackTraceArguments(threadId, startFrame, levels), ct).ConfigureAwait(false));
         var frames = response.StackFrames.Select((frame, index) => MapFrame(frame, startFrame + index, register: true)).ToList();
+        for (var index = 0; index < frames.Count; index++)
+            _frames.Add(frames[index].Id, EntryOf(response.StackFrames, index));
         // DBG-076: without totalFrames, exactly "levels" frames signal "maybe more".
         var total = response.TotalFrames ?? startFrame + frames.Count + (frames.Count == levels ? 1 : 0);
         return new StackTraceResult(frames, total);
@@ -588,14 +590,10 @@ internal sealed partial class DebugSession
     /// <summary>Maps an adapter frame (DBG-074 … DBG-077). With <paramref name="register"/> the frame gets an id of the current stop.</summary>
     private StackFrameInfo MapFrame(DapStackFrame frame, int index, bool register)
     {
-        SourceLocation? location = null;
-        if (frame.Source is { Path: { Length: > 0 } path } source && (source.SourceReference ?? 0) == 0
-            && Path.IsPathFullyQualified(path) && !path.Contains('`') && frame.Line > 0)
-            location = new SourceLocation(PathText.Normalize(path), frame.Line, Math.Max(frame.Column, 1));
-
+        var location = LocationOf(frame);
         var instructionPointer = ParseAddress(frame.InstructionPointerReference);
         // DBG-075: the routine of the type information that contains the frame's line, else the adapter's name.
-        var name = location is not null && _typeInfo?.FindRoutine(location.Path, location.Line) is { } routine
+        var name = RoutineOf(frame, location) is { } routine
             ? routine.DisplayName
             : string.IsNullOrEmpty(frame.Name)
                 ? "$" + instructionPointer.ToString("X16", CultureInfo.InvariantCulture)
@@ -606,13 +604,16 @@ internal sealed partial class DebugSession
 
         var id = 0;
         if (register)
-        {
-            id = ++_lastFrameId;
-            _frames.Add(id, new FrameEntry(frame.Id, location));
-        }
-
+            id = ++_lastFrameId;   // the entry is added by the caller, which has the whole stack
         return new StackFrameInfo(id, index, name, location, isUserCode, instructionPointer, module);
     }
+
+    /// <summary>The source position of an adapter frame; null when it has no source file (DBG-074).</summary>
+    private static SourceLocation? LocationOf(DapStackFrame frame) =>
+        frame.Source is { Path: { Length: > 0 } path } source && (source.SourceReference ?? 0) == 0
+        && Path.IsPathFullyQualified(path) && !path.Contains('`') && frame.Line > 0
+            ? new SourceLocation(PathText.Normalize(path), frame.Line, Math.Max(frame.Column, 1))
+            : null;
 
     private static ulong ParseAddress(string? text)
     {

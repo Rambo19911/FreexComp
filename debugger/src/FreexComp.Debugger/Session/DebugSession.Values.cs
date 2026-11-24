@@ -11,7 +11,11 @@ namespace FreexComp.Debugger.Session;
 internal sealed partial class DebugSession
 {
     /// <summary>A frame of the current stop: the adapter's id and where it is.</summary>
-    private sealed record FrameEntry(int AdapterId, SourceLocation? Location);
+    /// <param name="AdapterId">The adapter's id of the frame.</param>
+    /// <param name="Location">Where the frame is.</param>
+    /// <param name="Routine">The routine whose variables the frame sees; null without type information.</param>
+    /// <param name="VariablesAdapterId">The adapter's id of the frame that holds those variables: the frame itself, or for an outlined finally part the frame of its routine.</param>
+    private sealed record FrameEntry(int AdapterId, SourceLocation? Location, PdiRoutine? Routine, int VariablesAdapterId);
 
     // Session loop only; everything here is valid for one stop.
     private ValueService? _values;
@@ -42,10 +46,34 @@ internal sealed partial class DebugSession
         _adapterVariables.Clear();
     }
 
-    private FrameContext ContextOf(FrameEntry frame) =>
-        new(frame.AdapterId,
-            frame.Location is { } location ? _typeInfo?.FindRoutine(location.Path, location.Line) : null,
-            frame.Location?.Line ?? 0);
+    private static FrameContext ContextOf(FrameEntry frame) =>
+        new(frame.VariablesAdapterId, frame.Routine, frame.Location?.Line ?? 0);
+
+    /// <summary>
+    /// The entry of frame <paramref name="index"/> of a stack as the adapter returned it. The code of a finally part
+    /// is a subprogram of its own that the routine calls: a frame in it sees the variables of the routine (those
+    /// declared in the part are listed there, by line), which are in the nearest frame of that routine further down.
+    /// When that frame is not among <paramref name="stack"/>, the frame is left with its own (empty) routine.
+    /// </summary>
+    private FrameEntry EntryOf(IReadOnlyList<DapStackFrame> stack, int index)
+    {
+        var location = LocationOf(stack[index]);
+        var routine = RoutineOf(stack[index], location);
+        if (routine is not null && _typeInfo!.VariableOwner(routine) is var owner && !ReferenceEquals(owner, routine))
+        {
+            for (var below = index + 1; below < stack.Count; below++)
+            {
+                if (ReferenceEquals(RoutineOf(stack[below], LocationOf(stack[below])), owner))
+                    return new FrameEntry(stack[index].Id, location, owner, stack[below].Id);
+            }
+        }
+
+        return new FrameEntry(stack[index].Id, location, routine, stack[index].Id);
+    }
+
+    /// <summary>DBG-134, with the adapter's name of the frame deciding on the lines of an outlined finally part.</summary>
+    private PdiRoutine? RoutineOf(DapStackFrame frame, SourceLocation? location) =>
+        location is null ? null : _typeInfo?.FindRoutine(location.Path, location.Line, frame.Name);
 
     /// <summary>The frame of an inspection call: one of our frame ids of this stop, or (null) the top frame of the stopping thread.</summary>
     private FrameContext ContextOf(int? frameId) =>

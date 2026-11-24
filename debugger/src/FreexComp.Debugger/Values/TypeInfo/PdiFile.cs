@@ -30,6 +30,7 @@ internal sealed record PdiAbi(
 internal sealed class PdiFile
 {
     private readonly Dictionary<string, List<PdiRoutine>> _routinesByFile = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PdiRoutine> _routinesByLinkageName = new(StringComparer.Ordinal);
 
     public PdiFile(string program, string container, PdiAbi abi, IReadOnlyList<PdiType> types, IReadOnlyList<PdiUnit> units)
     {
@@ -44,6 +45,7 @@ internal sealed class PdiFile
             if (!_routinesByFile.TryGetValue(file, out var list))
                 _routinesByFile.Add(file, list = []);
             list.Add(routine);
+            _routinesByLinkageName.TryAdd(routine.LinkageName, routine);
         }
     }
 
@@ -86,6 +88,49 @@ internal sealed class PdiFile
         }
 
         return best;
+    }
+
+    /// <summary>
+    /// The routine a stack frame runs. The lines of a finally part belong to two subprograms: the outlined part, and
+    /// the routine itself where it calls the part. The line alone names the part (DBG-134); a frame whose name at the
+    /// adapter is not the part's (<c>Part</c> or <c>Scope::Part</c>) is a frame of the routine the part belongs to.
+    /// A frame without a name is taken by its line.
+    /// </summary>
+    public PdiRoutine? FindRoutine(string path, int line, string? adapterFrameName)
+    {
+        var routine = FindRoutine(path, line);
+        while (routine is not null && !string.IsNullOrEmpty(adapterFrameName) && OutlinedPartOf(routine) is { } owner
+            && adapterFrameName != routine.DisplayName && !adapterFrameName.EndsWith("::" + routine.DisplayName, StringComparison.Ordinal))
+            routine = owner;
+        return routine;
+    }
+
+    /// <summary>
+    /// The routine whose variables are in scope in <paramref name="routine"/>: for an outlined finally part (also one
+    /// nested in another) the routine that contains the <c>try</c> statement and lists the variables declared in the
+    /// part; every other routine itself.
+    /// </summary>
+    public PdiRoutine VariableOwner(PdiRoutine routine)
+    {
+        while (OutlinedPartOf(routine) is { } owner)
+            routine = owner;
+        return routine;
+    }
+
+    /// <summary>
+    /// For an outlined finally part - a routine with <c>parent</c> whose linkage name is the parent's followed by
+    /// <c>.$fin</c> and a number - its parent; null for any other routine (a nested routine too) and when the parent
+    /// is not described.
+    /// </summary>
+    private PdiRoutine? OutlinedPartOf(PdiRoutine routine)
+    {
+        const string Marker = ".$fin";
+        if (routine.Parent is not { } parent || routine.LinkageName.Length <= parent.Length + Marker.Length
+            || !routine.LinkageName.StartsWith(parent, StringComparison.Ordinal)
+            || string.CompareOrdinal(routine.LinkageName, parent.Length, Marker, 0, Marker.Length) != 0
+            || routine.LinkageName.AsSpan(parent.Length + Marker.Length).IndexOfAnyExceptInRange('0', '9') >= 0)
+            return null;
+        return _routinesByLinkageName.GetValueOrDefault(parent);
     }
 
     /// <summary>

@@ -632,6 +632,100 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
             roots);
     }
 
+    /// <summary>
+    /// Inline variables of a routine (InlineScope.pas): each is listed under Locals and evaluable (watch and hover)
+    /// only while stopped inside its declaration scope; the redeclaration of a name in a sibling block shows under
+    /// the plain name with its own type; a variable declared in a finally part is visible while stopped inside that
+    /// part, whose code is a subprogram of its own, together with the other variables of the routine.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "DBG-142")]
+    public async Task Phase8_InlineVariable_VisibleOnlyInsideItsBlock()
+    {
+        var program = fixture.Build("InlineScope");
+        var p = program.SourcePath;
+        var recorder = new SessionRecorder(nameof(Phase8_InlineVariable_VisibleOnlyInsideItsBlock));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            // Line of the stop -> the rows of Locals, and what "Tmp" and "Fin" evaluate to (null: not declared there).
+            (int Line, string[] Locals, string? Tmp, string? Fin)[] stops =
+            [
+                (7, ["Total = 0 : Integer"], null, null),                                       // before the first block
+                (11, ["Total = 3 : Integer", "Tmp = 6 : Integer"], "6 : Integer", null),        // inside the first block
+                (16, ["Total = 9 : Integer", "Tmp = 'two' : string"], "'two' : string", null),  // inside the sibling block
+                (22, ["Total = 10 : Integer", "Fin = 100 : Integer"], null, "100 : Integer"),   // inside the finally part
+                (24, ["Total = 10 : Integer"], null, null),                                     // after all of them
+            ];
+
+            await session.LaunchAsync(
+                new LaunchRequest
+                {
+                    Program = program.ExePath,
+                    Breakpoints = [new SourceBreakpoints(p, [.. stops.Select((s, index) => new BreakpointSpec { Id = index + 1, Line = s.Line })])],
+                },
+                Ct);
+            Assert.True(session.HasTypeInfo);
+
+            for (var index = 0; index < stops.Length; index++)
+            {
+                var (line, expectedLocals, tmp, fin) = stops[index];
+                var stop = await recorder.WaitForStopAsync();
+                AssertStop(session, stop, StopReason.Breakpoint, p, line, [index + 1]);
+                var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+                var scopes = await session.GetScopesAsync(frames[0].Id, Ct);
+                Assert.Equal(["N = 3 : Integer"], (await session.GetChildrenAsync(scopes[0].Handle, ct: Ct)).Select(Row));
+                var locals = await session.GetChildrenAsync(scopes[1].Handle, ct: Ct);
+                // The first stop is before the assignment to Total: its value is not fixed.
+                Assert.Equal(index == 0 ? ["Total"] : expectedLocals, locals.Select(l => index == 0 ? l.Name : Row(l)));
+
+                foreach (var (name, expected) in ((string, string?)[])[("Tmp", tmp), ("Fin", fin)])
+                {
+                    // Watch and hover agree with the list, with the frame given and (null) in the top frame of the stop.
+                    foreach (var context in (EvaluateContext[])[EvaluateContext.Watch, EvaluateContext.Hover])
+                    {
+                        foreach (var frameId in (int?[])[frames[0].Id, null])
+                        {
+                            if (expected is null)
+                            {
+                                var error = await Assert.ThrowsAsync<DebuggerException>(() => session.EvaluateAsync(name, frameId, context, Ct));
+                                Assert.Equal(DebugErrorCode.ExpressionEvaluation, error.Code);
+                                Assert.Equal($"Undeclared identifier '{name}'", error.Message);
+                            }
+                            else
+                            {
+                                var value = (await session.EvaluateAsync(name, frameId, context, Ct)).Value;
+                                Assert.Equal(expected, $"{value.Value} : {value.TypeName}");
+                                Assert.Equal(name, value.Name);
+                            }
+                        }
+                    }
+                }
+
+                // The numbered name of the redeclaration is not an identifier anywhere.
+                var numbered = await Assert.ThrowsAsync<DebuggerException>(() => session.EvaluateAsync("Tmp$2", frames[0].Id, EvaluateContext.Watch, Ct));
+                Assert.Equal(DebugErrorCode.ExpressionSyntax, numbered.Code);
+                Assert.DoesNotContain(locals, l => l.Name.Contains('$'));
+
+                if (line == 22)
+                {
+                    // The finally part is a subprogram called by the routine: the routine's own frame is the next one.
+                    Assert.Equal("Run", frames[1].Name);
+                    Assert.Equal("InlineScope", frames[2].Name);
+                    Assert.Equal("10", (await session.EvaluateAsync("Total", frames[0].Id, EvaluateContext.Watch, Ct)).Value.Value);
+                    Assert.Equal("103", (await session.EvaluateAsync("Fin + N", frames[0].Id, EvaluateContext.Watch, Ct)).Value.Value);
+                }
+
+                await session.ContinueAsync(Ct);
+            }
+
+            var terminated = await recorder.WaitForTerminatedAsync();
+            Assert.Equal(TerminationCause.Exited, terminated.Cause);
+            Assert.Equal(0, terminated.ExitCode);
+            Assert.Equal("two\n100\n10\n", recorder.StdoutSoFar);
+        });
+    }
+
     private static bool PathIsUnder(string path, string root) =>
         Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 }
