@@ -878,22 +878,39 @@ internal sealed class BoundWithStatement : BoundStatement
     public BoundStatement Body { get; }
 }
 
+/// <summary>What the locals of a <see cref="BoundLocalsStatement"/> are (inline-variables.md LANG-560…565).</summary>
+internal enum LocalsScopeKind
+{
+    /// <summary>Compiler temporaries of a statement (the collection copy and index of a <c>for…in</c> loop): routine lifetime.</summary>
+    Hidden,
+
+    /// <summary>An inline <c>var</c>/<c>const</c> of a statement list: its scope is the rest of that list (LANG-560).</summary>
+    List,
+
+    /// <summary>The variable of a <c>for var</c> loop or the hidden enumerator of a <c>for…in</c> loop: its scope is the loop (LANG-564).</summary>
+    Loop,
+}
+
 /// <summary>
-/// Compiler-declared hidden locals (<see cref="Locals"/>, in no scope) used by <see cref="Body"/>: the collection and index of a
-/// <c>for…in</c> loop (LANG-362, C-111).
+/// Locals declared by a statement (<see cref="Locals"/>) and used by <see cref="Body"/>: the hidden collection and index of a
+/// <c>for…in</c> loop (LANG-362, C-111, in no scope), an inline declaration with the rest of its statement list (LANG-385), a
+/// <c>for var</c> variable or an enumerator with its loop. <see cref="ScopeKind"/> decides when managed ones are finalised (C-306).
 /// </summary>
 internal sealed class BoundLocalsStatement : BoundStatement
 {
-    public BoundLocalsStatement(SyntaxNode syntax, ImmutableArray<VariableSymbol> locals, BoundStatement body)
+    public BoundLocalsStatement(SyntaxNode syntax, ImmutableArray<VariableSymbol> locals, BoundStatement body, LocalsScopeKind scopeKind = LocalsScopeKind.Hidden)
         : base(syntax)
     {
         Locals = locals;
         Body = body;
+        ScopeKind = scopeKind;
     }
 
     public override BoundKind Kind => BoundKind.LocalsStatement;
 
     public ImmutableArray<VariableSymbol> Locals { get; }
+
+    public LocalsScopeKind ScopeKind { get; }
 
     public BoundStatement Body { get; }
 }

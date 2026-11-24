@@ -1,0 +1,28 @@
+init
+create init whole
+create init block
+touch init block
+destroy init block
+init after block 42
+create init loop
+destroy init loop
+create init loop
+destroy init loop
+touch init whole
+end of init
+destroy init whole
+main 44
+create main local
+create main nested
+touch main nested
+destroy main nested
+touch main local
+end of main
+destroy main local
+final
+create final whole
+create final block
+touch final block
+destroy final block
+end of final 44
+destroy final whole

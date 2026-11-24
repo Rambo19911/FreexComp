@@ -311,7 +311,9 @@ internal static class ManagedRewriter
         prologue.AddRange(locals.Select(l => new LZero(AddressOf(context, new LLocalRef(l)), l.Type)));
         prologue.AddRange(valueParameters.Select(p => AddRef(context, new LParamRef(p))));
         prologue.AddRange(parameters.Where(p => p.Mode == ParameterMode.Out).Select(p => Clear(context, new LParamRef(p))));
-        var finalised = valueParameters.Select(p => (LExpression)new LParamRef(p)).Concat(locals.Select(l => new LLocalRef(l))).ToImmutableArray();
+        // CMP-1180: a variable its declaration scope finalises is only zeroed here
+        var finalised = valueParameters.Select(p => (LExpression)new LParamRef(p))
+            .Concat(locals.Where(l => !context.IsScopeFinalised(l.Variable)).Select(l => new LLocalRef(l))).ToImmutableArray();
         return body with
         {
             Body = new LBlock([.. prologue, .. body.Body.Statements]),
@@ -361,7 +363,7 @@ internal static class ManagedRewriter
         LMemSet m => References(m.Target, local) || References(m.Count, local) || References(m.Value, local),
         LMemMove m => References(m.Source, local) || References(m.Destination, local) || References(m.Count, local),
         LTryExcept t => ReferenceEquals(t.Exception, local) || References(t.Body, local) || References(t.Handler, local),
-        LTryFinally t => References(t.Body, local),
+        LTryFinally t => References(t.Body, local) || (t.Cleanup is { } c && References(c, local)),
         _ => throw new InvalidOperationException($"Unknown lowered node {node.GetType().Name}."),
     };
 

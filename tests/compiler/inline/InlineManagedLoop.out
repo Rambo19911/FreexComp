@@ -1,0 +1,14 @@
+[]0 x 1
+[]0 xx 2
+[]0 xxx 3
+while leaked: 0
+<> x! 1
+<><> xxx! 3
+
+for leaked: 0
+{} xxx 3
+{} xx 2
+{} x 1
+repeat leaked: 0
+ xx xxx xxx xxxx
+nested leaked: 0

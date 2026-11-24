@@ -1,0 +1,40 @@
+create exit
+create exit inner
+destroy exit inner
+destroy exit
+finally of ByExit
+1
+not left
+finally of ByExit
+0
+create loop 1
+touch loop 1
+destroy loop 1
+create loop 2
+destroy loop 2
+create loop 3
+destroy loop 3
+after for
+create while 1
+destroy while 1
+create while 2
+destroy while 2
+after while
+create raises whole
+create raises block
+destroy raises block
+destroy raises whole
+caught outside out
+try
+create caught
+create caught too
+destroy caught too
+destroy caught
+handler inside
+after handler
+create in loop 1
+destroy in loop 1
+create in loop 2
+destroy in loop 2
+caught in loop
+done

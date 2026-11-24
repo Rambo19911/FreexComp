@@ -1,0 +1,26 @@
+redred
+greengreen
+blueblue
+leaked: 0
+red.red
+leaked after break: 0
+item one
+destroy item one
+item two
+destroy item two
+item three
+destroy enumerator
+destroy item three
+after full loop
+item one
+destroy item one
+item two
+destroy enumerator
+destroy item two
+after break
+destroy enumerator
+after classic loop
+destroy item one
+end of Classic
+destroy items
+done

@@ -46,9 +46,10 @@ internal sealed partial class BodyBinder
 
     /// <summary>
     /// The statements from <paramref name="start"/> on; an inline <c>var</c>/<c>const</c> (LANG-385, C-125) opens a block scope for the
-    /// rest of the list, which becomes the body of its <see cref="BoundLocalsStatement"/>.
+    /// rest of the list, which becomes the body of its <see cref="BoundLocalsStatement"/>. <paramref name="atEnd"/> runs after the
+    /// last statement, in the scope of the list's last declaration (LANG-560: the <c>until</c> condition of a <c>repeat</c>).
     /// </summary>
-    private ImmutableArray<BoundStatement> BindStatements(SeparatedSyntaxList<StatementSyntax> statements, int start)
+    private ImmutableArray<BoundStatement> BindStatements(SeparatedSyntaxList<StatementSyntax> statements, int start, Action? atEnd = null)
     {
         var bound = ImmutableArray.CreateBuilder<BoundStatement>();
         for (var i = start; i < statements.Count; i++)
@@ -58,9 +59,9 @@ internal sealed partial class BodyBinder
             {
                 var (locals, initialization, scope) = BindInlineDeclaration(statement);
                 var next = i + 1;
-                var rest = InScope(scope, () => BindStatements(statements, next));
-                bound.Add(new BoundLocalsStatement(statement, locals, new BoundBlock(statement, [.. initialization, .. rest])));
-                break;
+                var rest = InScope(scope, () => BindStatements(statements, next, atEnd));
+                bound.Add(new BoundLocalsStatement(statement, locals, new BoundBlock(statement, [.. initialization, .. rest]), LocalsScopeKind.List));
+                return bound.ToImmutable();
             }
 
             if (statement is not EmptyStatementSyntax)
@@ -69,6 +70,7 @@ internal sealed partial class BodyBinder
             }
         }
 
+        atEnd?.Invoke();
         return bound.ToImmutable();
     }
 
@@ -253,11 +255,12 @@ internal sealed partial class BodyBinder
 
     private BoundRepeatStatement BindRepeat(RepeatStatementSyntax syntax)
     {
+        // LANG-560: the condition is inside the scope of the list's inline declarations
+        BoundExpression? condition = null;
         _loopDepth++;
-        var body = BindBlock(syntax, syntax.Statements);
+        var body = new BoundBlock(syntax, BindStatements(syntax.Statements, 0, () => condition = _expressions.BindCondition(syntax.Condition)));
         _loopDepth--;
-        var condition = _expressions.BindCondition(syntax.Condition);
-        return new BoundRepeatStatement(syntax, body, condition);
+        return new BoundRepeatStatement(syntax, body, condition!);
     }
 
     // ------------------------------------------------------------------ for (LANG-361)

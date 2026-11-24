@@ -185,6 +185,9 @@ internal sealed partial class LoweringContext
     /// </summary>
     public List<(VariableSymbol Variable, LinkName Name)>? BodyGlobals { get; init; }
 
+    /// <summary>Whether this body is the outlined finally part of a <c>try … finally</c> statement (a <c>$fin</c> routine, CMP-392).</summary>
+    public bool IsFinally { get; init; }
+
     /// <summary>The <c>$fin</c> routines outlined from this body and, after each, those outlined from it (CMP-392).</summary>
     public List<LoweredBody> Outlined { get; } = [];
 
@@ -254,6 +257,7 @@ internal sealed partial class LoweringContext
     {
         // CMP-380 (C-120): a body with anonymous methods first creates its closure
         var closure = Routine is null ? body?.Closure : Routine.Closure;
+        _outermostTail = IsFinally ? null : ListTail(body);             // LANG-565: its variables stay in the cleanup scope below
         ImmutableArray<LStatement> prologue = closure is null ? [] : ClosurePrologue(closure);
         LBlock block;
         if (Routine is MethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } method && body is not null)
@@ -524,6 +528,8 @@ internal sealed partial class LoweringContext
                 return new LLoop(label, new LIf(condition, LowerLoopBody(label, loop.Body), new LBreak(label)), step: null);
             }
 
+            case BoundRepeatStatement loop when RepeatWithRegion(loop) is { } scoped:
+                return scoped;
             case BoundRepeatStatement loop:
             {
                 var label = NewLoop("repeat");
@@ -538,7 +544,7 @@ internal sealed partial class LoweringContext
             case BoundBreakStatement:
                 return new LBreak(_loops.Peek());
             case BoundContinueStatement:
-                return new LContinue(_loops.Peek());
+                return _continueTargets.TryGetValue(_loops.Peek(), out var iteration) ? new LBreak(iteration) : new LContinue(_loops.Peek());
             case BoundExitStatement { Value: null }:
                 return _bodyLabel is { } bodyLabel ? new LBreak(bodyLabel) : new LReturn();       // CMP-368/369: through the epilogue
             case BoundExitStatement { Value.Type.IsManaged: true } exit:
@@ -578,12 +584,7 @@ internal sealed partial class LoweringContext
             }
 
             case BoundLocalsStatement locals:
-                foreach (var local in locals.Locals)
-                {
-                    HandlerVariable(local);                                     // C-111: declared before the body uses them
-                }
-
-                return Lower(locals.Body);
+                return LocalsScope(locals);
 
             default:
                 throw new InvalidOperationException($"Cannot lower {statement.Kind}.");
@@ -616,17 +617,21 @@ internal sealed partial class LoweringContext
 
     /// <summary>
     /// The storage of a handler variable: a local of the routine (in its frame when a <c>$fin</c> uses it); in a unit-level body
-    /// an internal global <c>&lt;U&gt;.&lt;body&gt;.&lt;Name&gt;.&lt;n&gt;</c>, since those bodies have no frame record.
+    /// an internal global <c>&lt;U&gt;.&lt;body&gt;.&lt;Name&gt;.&lt;n&gt;</c>, since those bodies have no frame record. One declared inside a
+    /// finally part is storage of the enclosing routine (or unit-level body) too, so that a <c>$fin</c> nested in that part reaches
+    /// it the same way (LANG-561).
     /// </summary>
     private LExpression HandlerVariable(VariableSymbol variable)
     {
-        if (Routine is not null || BodyGlobals is null)
+        if (BodyGlobals is null)
         {
-            return new LLocalRef(DeclareLocal(variable));
+            return IsFinally && variable.ContainingSymbol is RoutineSymbol && !ReferenceEquals(variable.ContainingSymbol, Routine)
+                ? Outer(variable, variable.Type)                            // declared by the owner in its TryFinally
+                : new LLocalRef(DeclareLocal(variable));
         }
 
         BodyGlobals.Add((variable, new LinkName($"{Unit!.Name}.{BodyName}.{variable.Name}.{BodyGlobals.Count + 1}", AlwaysQuote: true)));
-        if (variable.Type.IsManaged)
+        if (variable.Type.IsManaged && !_scopeFinalised.Contains(variable))
         {
             _managedBodyGlobals.Add(variable);                              // a hidden for…in / with local: released with the body (C-111)
         }
@@ -649,7 +654,9 @@ internal sealed partial class LoweringContext
         var context = new LoweringContext(Types, fin, locals: [])
         {
             Unit = Unit,
+            BodyName = BodyName,
             BodyGlobals = BodyGlobals,
+            IsFinally = true,
             Output = Output,
             Input = Input,
             CheckedSystem = CheckedSystem,
@@ -665,9 +672,16 @@ internal sealed partial class LoweringContext
             }
             else
             {
+                if (variable is VariableSymbol declared && !_variables.ContainsKey(declared))
+                {
+                    DeclareLocal(declared);                             // declared inside the finally part: this routine's storage
+                }
+
                 _finCaptured.Add(variable);
             }
         }
+
+        _scopeFinalised.UnionWith(context._scopeFinalised);
 
         return new LTryFinally(body, fin);
     }
@@ -1435,7 +1449,9 @@ internal sealed partial class LoweringContext
         }
 
         var result = new LLocalRef(NewTemp(call.Type));
-        return new LBlock([new LAssign(result, call), .. writeBacks, ManagedRewriter.Assign(this, target, result)]);
+        // CMP-1180: the temporary must not keep the value alive past the scope that finalises the target
+        LStatement[] release = IsScopeFinalised(target) ? [ManagedRewriter.Clear(this, result)] : [];
+        return new LBlock([new LAssign(result, call), .. writeBacks, ManagedRewriter.Assign(this, target, result), .. release]);
     }
 
     /// <summary>

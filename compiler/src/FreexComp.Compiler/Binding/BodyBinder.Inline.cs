@@ -211,7 +211,7 @@ internal sealed partial class BodyBinder
         var scope = new Scope(ScopeKind.Block, _scope, _routine);
         var local = InlineLocal(scope, identifier, name, type);
         var loop = InScope(scope, () => BindForLoop(syntax, new BoundVariableExpression(syntax.Variable, local), start, finish));
-        return new BoundLocalsStatement(syntax, [local], loop);
+        return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop);
     }
 
     /// <summary>LANG-386 <c>for var x [: T] in e do s</c>: <c>x</c> is a local of the loop of the element type of <c>e</c>.</summary>
@@ -239,7 +239,7 @@ internal sealed partial class BodyBinder
         var scope = new Scope(ScopeKind.Block, _scope, _routine);
         var local = InlineLocal(scope, identifier, name, type);
         var loop = InScope(scope, () => BindForInLoop(syntax, new BoundVariableExpression(syntax.Variable, local), collection));
-        return new BoundLocalsStatement(syntax, [local], loop);
+        return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop);
     }
 
     /// <summary>The element type of a <c>for…in</c> collection (LANG-362), the enumerator's <c>Current</c> included; null when none.</summary>
@@ -298,6 +298,6 @@ internal sealed partial class BodyBinder
             loop = new BoundTryFinallyStatement(syntax, new BoundBlock(syntax, [loop]), new BoundBlock(syntax, [free]));
         }
 
-        return new BoundLocalsStatement(syntax, [enumerator], new BoundBlock(syntax, [new BoundAssignmentStatement(at, reference, getEnumerator), loop]));
+        return new BoundLocalsStatement(syntax, [enumerator], new BoundBlock(syntax, [new BoundAssignmentStatement(at, reference, getEnumerator), loop]), LocalsScopeKind.Loop);
     }
 }

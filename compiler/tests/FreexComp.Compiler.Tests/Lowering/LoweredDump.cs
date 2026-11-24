@@ -45,6 +45,8 @@ internal static class LoweredDump
         LIf i => i.Else is null ? $"(if {Of(i.Condition)} {Of(i.Then)})" : $"(if {Of(i.Condition)} {Of(i.Then)} {Of(i.Else)})",
         LLoop l => l.Step is null ? $"(loop {l.Label} {Of(l.Body)})" : $"(loop {l.Label} {Of(l.Body)} {Of(l.Step)})",
         LBreak b => $"(break {b.Label})",
+        LTryFinally { Cleanup: { } cleanup } t => $"(scope {Of(t.Body)} {Of(cleanup)})",
+        LTryFinally t => $"(finally {Of(t.Body)} {t.Finally!.Name})",
         LContinue c => $"(continue {c.Label})",
         LSwitch s => Switch(s),
         LMemSet m => $"(memset {Of(m.Target)} {Of(m.Count)} {Of(m.Value)})",

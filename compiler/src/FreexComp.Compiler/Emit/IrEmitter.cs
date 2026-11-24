@@ -2411,7 +2411,18 @@ internal sealed class FunctionEmitter
             _unwindTargets.Add(outer);                                  // the catchswitch / cleanupret unwind there
         }
 
-        void CallFinally() => Call(named: false, new LRoutineCallee(statement.Finally), []);
+        void CallFinally()
+        {
+            if (statement.Cleanup is { } cleanup)
+            {
+                Statement(cleanup);                                     // CMP-1180: a declaration scope clears its variables in place
+            }
+            else
+            {
+                Call(named: false, new LRoutineCallee(statement.Finally!), []);
+            }
+        }
+
         _scopes.Add(new EhScope(pad, CallFinally));
         Statement(statement.Body);
         _scopes.RemoveAt(_scopes.Count - 1);

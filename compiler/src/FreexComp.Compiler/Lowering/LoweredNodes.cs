@@ -296,11 +296,31 @@ internal sealed class LTryExcept(LStatement body, LLocal exception, LStatement h
 /// current one, no parameters, reaching the variables through the frame record), called after normal completion, before a
 /// jump that leaves <see cref="Body"/>, and from a cleanup funclet on the exception path.
 /// </summary>
-internal sealed class LTryFinally(LStatement body, RoutineSymbol @finally) : LStatement
+/// <remarks>
+/// CMP-1180 (C-306): the region of a declaration scope has no routine; its finally part is <see cref="Cleanup"/>, statements that
+/// clear the scope's managed variables, emitted in place on each of those paths (they need no frame record).
+/// </remarks>
+internal sealed class LTryFinally : LStatement
 {
-    public LStatement Body { get; } = body;
+    public LTryFinally(LStatement body, RoutineSymbol @finally)
+    {
+        Body = body;
+        Finally = @finally;
+    }
 
-    public RoutineSymbol Finally { get; } = @finally;
+    public LTryFinally(LStatement body, LBlock cleanup)
+    {
+        Body = body;
+        Cleanup = cleanup;
+    }
+
+    public LStatement Body { get; }
+
+    /// <summary>The outlined finally part of a <c>try … finally</c> statement; null for a declaration scope.</summary>
+    public RoutineSymbol? Finally { get; }
+
+    /// <summary>The finalisation of a declaration scope; null for a <c>try … finally</c> statement.</summary>
+    public LBlock? Cleanup { get; }
 }
 
 /// <summary>Leaves the body (branch to its exit block, CMP-310).</summary>

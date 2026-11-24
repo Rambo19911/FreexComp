@@ -1,0 +1,32 @@
+create whole
+before block
+create block
+touch block
+destroy block
+after block
+create first
+create second
+two guards 2
+destroy second
+destroy first
+after two
+create outer
+create inner
+touch inner
+destroy inner
+between
+create again
+touch again
+destroy again
+touch outer
+destroy outer
+after nested
+unused
+touch whole
+end of Run
+destroy whole
+after Run
+create main block
+touch main block
+destroy main block
+done

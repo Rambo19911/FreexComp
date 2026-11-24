@@ -1,0 +1,21 @@
+start 2
+sum 6
+nested 7 14
+after
+sibling
+ 3 4 5
+try 12
+inner try 13
+finally 7
+finally block
+nested try 7
+finally again
+except 6
+typed!
+else list
+case else 200
+ 1# 4# 9#
+ 0 2
+10
+main block
+main

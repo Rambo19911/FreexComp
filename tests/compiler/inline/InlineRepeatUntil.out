@@ -1,0 +1,19 @@
+<alpha>
+<beta>
+<>
+leaked: 0
+create 1
+body 1
+value of 1
+destroy 1
+create 2
+body 2
+value of 2
+destroy 2
+after guards
+create 10
+ran 1
+destroy 10
+stopped at 2
+kept!
+done

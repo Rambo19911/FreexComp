@@ -1613,6 +1613,53 @@ public sealed class IrSnapshotTests
     public void InterfaceAggregateResultThunk() => Snapshot.Verify("InterfaceAggregateResultThunk", Emit(InterfaceAggregateResultSource));
 
     /// <summary>
+    /// C-306 (CMP-1180, 1181; LANG-563, 565): the string and interface variables of a nested block share one region whose finally
+    /// part clears them in reverse order on the normal path, before the jump of <c>Exit</c> and in the cleanup funclet; a loop body's
+    /// variable is cleared on every iteration and before <c>Break</c>; the outermost list's variable stays in the routine epilogue.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1180")]
+    [Trait("Req", "CMP-1181")]
+    public void InlineManagedScopeFinally() => Snapshot.Verify("InlineManagedScopeFinally", Emit(InlineManagedScopeSource));
+
+    internal const string InlineManagedScopeSource = """
+        unit M;
+        interface
+        type
+          IGuard = interface
+            procedure Touch;
+          end;
+        function Run(const G: IGuard; N: Integer): Integer;
+        implementation
+        function Run(const G: IGuard; N: Integer): Integer;
+        var I: Integer;
+        begin
+          var Outer: string;
+          Outer := 'o';
+          Result := 0;
+          if N > 0 then
+          begin
+            var S: string;
+            S := Outer;
+            var H: IGuard;
+            H := G;
+            H.Touch;
+            if N > 5 then
+              Exit;
+          end;
+          for I := 1 to N do
+          begin
+            var T: string;
+            T := Outer;
+            if I = 3 then
+              Break;
+          end;
+        end;
+        end.
+        """;
+
+    /// <summary>
     /// C-301 (CMP-1202…1205; LANG-686…688): <c>safecall</c> routines are <c>i32 ([Self,] params [, ptr Ret])</c>; a call passes the
     /// address of an emptied result temporary last, compares the <c>HResult</c> with 0 and calls <c>System._SafecallError</c> for a
     /// negative one (an <c>invoke</c> inside a protected region); a body runs inside a catch-all handler that returns
@@ -2038,6 +2085,7 @@ public sealed class IrSnapshotTests
         ["StaticArrays"] = StaticArraysSource,
         ["BigSets"] = BigSetsSource,
         ["Enums"] = EnumsSource,
+        ["InlineManagedScopeFinally"] = InlineManagedScopeSource,
         ["Sets"] = SetsSource,
         ["ExternalDecl"] = ExternalDeclSource,
         ["Writeln"] = WritelnSource,

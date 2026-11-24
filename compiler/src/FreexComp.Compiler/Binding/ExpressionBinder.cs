@@ -63,6 +63,11 @@ internal sealed partial class ExpressionBinder
     /// <summary>Records <paramref name="symbol"/> as captured when it belongs to an enclosing routine (LANG-450).</summary>
     public void NoteReference(Symbol symbol)
     {
+        if (_routine != null && symbol is VariableSymbol { IsGlobal: false, ContainingSymbol: not RoutineSymbol } bodyLocal)
+        {
+            bodyLocal.IsCapturedBodyLocal = true;               // a unit-level body's inline variable used by an anonymous method
+        }
+
         if (_routine != null && symbol is (VariableSymbol { IsGlobal: false } or ParameterSymbol)
             && symbol.ContainingSymbol is RoutineSymbol owner && !ReferenceEquals(owner, _routine) && !CapturedVariables.Contains(symbol))
         {
