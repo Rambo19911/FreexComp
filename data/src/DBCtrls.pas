@@ -216,8 +216,6 @@ type
   TDBComboBox = class(TCustomComboBox)
   private
     FDataLink: TFieldDataLink;
-    { the user is selecting an item (not typing) }
-    FSelecting: Boolean;
     function GetDataField: string;
     function GetDataSource: TDataSource;
     function GetField: TField;
@@ -228,7 +226,7 @@ type
     procedure DataChange(Sender: TObject);
     procedure UpdateData(Sender: TObject);
   protected
-    { tells a selection from typing; Escape is wanted while typed text is pending }
+    { Escape is wanted while typed text is pending }
     procedure WndProc(var Message: TMessage); override;
     { Escape discards pending typed text }
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
@@ -448,29 +446,6 @@ begin
     RejectBeepHook
   else
     MessageBeep(0);
-end;
-
-var
-  { the beep hook that is put back after a silent refusal }
-  SilencedHook: TRejectBeepHook;
-  Silenced: Boolean;
-
-procedure SilentRejection;
-begin
-  RejectBeepHook := SilencedHook;
-  Silenced := False;
-end;
-
-{ The base control tells the user about every input its EditCanModify refuses. A combo box in the read-only
-  state ignores the input without a sound: the control calls this just before it answers False, and the one
-  beep that follows is swallowed. }
-procedure SilenceNextRejection;
-begin
-  if Silenced then
-    Exit;
-  SilencedHook := RejectBeepHook;
-  Silenced := True;
-  RejectBeepHook := SilentRejection;
 end;
 
 { a field whose value is bytes, not text }
@@ -1218,12 +1193,12 @@ begin
   end;
   if not FDataLink.CanModify then
   begin
-    SilenceNextRejection;
+    RejectSilently := True;
     Result := False;
     Exit;
   end;
   Result := FDataLink.Edit;
-  if Result and not FSelecting then
+  if Result and not IsSelecting then
     FDataLink.Modified;
 end;
 
@@ -1231,7 +1206,7 @@ procedure TDBComboBox.Change;
 var
   I: Integer;
 begin
-  if FSelecting and (FDataLink <> nil) and FDataLink.Editing then
+  if IsSelecting and (FDataLink <> nil) and FDataLink.Editing then
   begin
     I := ItemIndex;
     if I >= 0 then
@@ -1248,17 +1223,6 @@ end;
 procedure TDBComboBox.WndProc(var Message: TMessage);
 begin
   case Message.Msg of
-    CN_COMMAND:
-      if HiWord(Message.WParam) = CBN_SELCHANGE then
-      begin
-        FSelecting := True;
-        try
-          inherited WndProc(Message);
-        finally
-          FSelecting := False;
-        end;
-        Exit;
-      end;
     CM_WANTSPECIALKEY:
       if (Message.WParam = VK_ESCAPE) and (FDataLink <> nil) and FDataLink.IsModified and not DroppedDown then
       begin
@@ -1537,7 +1501,7 @@ begin
   end;
   if not FDataLink.CanModify then
   begin
-    SilenceNextRejection;
+    RejectSilently := True;
     Result := False;
     Exit;
   end;
