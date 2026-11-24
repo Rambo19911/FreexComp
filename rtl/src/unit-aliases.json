@@ -1,5 +1,6 @@
 {
   "aliases": {
+    "Data.DB": "DB",
     "System.Character": "Character",
     "System.Classes": "Classes",
     "System.DateUtils": "DateUtils",
