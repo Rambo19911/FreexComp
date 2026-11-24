@@ -79,4 +79,41 @@ public sealed class GoToDeclarationTests
         Assert.Equal((BuildTestBed.UnitPath, new TextPosition(8, 2)), Where(bed)); // where the caret was put
         Assert.Equal(Strings.Msg_Editor_NotAnIdentifier, statuses[^1]);
     }
+
+    /// <summary>
+    /// F02-004 acceptance 2 (I-232): Go to Declaration on a library symbol — <c>TStringList.Add</c> of the real run-time
+    /// library — opens the real source file, which lies under a root of <c>ILibrarySourceService</c>, as a protected
+    /// document.
+    /// </summary>
+    [Fact(Timeout = 60000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-ED-101")]
+    [Trait("Req", "IDE-LIB-001")]
+    [Trait("Req", "IDE-LIB-002")]
+    public Task LibrarySymbolOpensFileUnderLibraryRoot() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = new BuildTestBed();
+        foreach (var file in Directory.GetFiles(Path.Combine(SpecTables.RepoRootPath(), "rtl", "src")))
+            bed.File(@"G:\rtl\" + Path.GetFileName(file), File.ReadAllText(file));
+        await bed.OpenHelloAsync();
+        Assert.True(await bed.Services.Documents.CloseAllAsync());
+        bed.File(BuildTestBed.MainPath, "program Hello;\nuses Classes;\nvar\n  L: TStringList;\nbegin\n  L := TStringList.Create;\n  L.Add('x');\n  L.Free;\nend.\n");
+        var main = await bed.OpenDocumentAsync(BuildTestBed.MainPath);
+
+        await GoAsync(bed, main, "Add");
+
+        var library = bed.Services.LibrarySource;
+        Assert.Equal([@"G:\rtl"], library.Roots);
+        var target = Assert.IsType<TextDocumentViewModel>(bed.Services.Documents.ActiveDocument);
+        Assert.Equal(@"G:\rtl\Classes.pas", target.FilePath);
+        Assert.Contains(library.Roots, root => target.FilePath!.StartsWith(root + @"\", StringComparison.OrdinalIgnoreCase));
+        Assert.True(library.IsLibrarySource(target.FilePath!));
+        Assert.Equal(File.ReadAllText(Path.Combine(SpecTables.RepoRootPath(), "rtl", "src", "Classes.pas")).ReplaceLineEndings("\n"),
+            target.Buffer.Text.ReplaceLineEndings("\n")); // the real source, not a stub
+        var line = target.Buffer.GetLine(target.ViewState.Caret.Line);
+        Assert.Contains("TStringList.Add(const S: string)", target.Buffer.Text.Substring(line.Offset, line.Length), StringComparison.Ordinal);
+        Assert.True(target.IsLibraryProtected);
+        Assert.True(target.Buffer.IsReadOnly);
+        Assert.False(main.IsLibraryProtected);
+    });
 }

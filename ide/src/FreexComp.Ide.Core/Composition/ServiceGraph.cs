@@ -75,6 +75,7 @@ public static class ServiceGraph
         var prompts = new FilePrompts(platform.FileDialogs, platform.FileSystem, layout, settings, platform.UserPaths,
             projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
         var toolchain = new ToolchainLocator(settings, platform.FileSystem, platform.ToolchainEnvironment); // IDE-P3-010
+        var librarySource = new LibrarySourceService(toolchain); // IDE-LIB-001
         var templates = new Editing.CodeTemplateService(platform.UserPaths, platform.FileSystem); // I-118
         OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, toolWindowPhase ?? ImplementedPhase, toolchain,
             platform.FileSystem, templates); // the phase override enables later pages in tests (I-132)
@@ -113,6 +114,8 @@ public static class ServiceGraph
         projects.FileChanges = fileChanges; // IDE-P1-117
         projects.WriteGuard = fileChanges.BeginOwnWrite;
         documents.ProjectOpener = path => projects.OpenAsync(path);
+        // IDE-LIB-002, IDE-LIB-006: library source that is not a member of the open project opens protected.
+        documents.IsProtectedLibrarySource = path => librarySource.IsLibrarySource(path) && !projects.IsMember(path);
         documents.FormPathOf = projects.FormPathOf; // designer README §3: the project's form entry names the companion
         var projectManager = new ViewModels.ProjectManagerViewModel(projects, documents, platform.FileSystem, platform.Dialogs, commands,
             platform.Log, toolWindowPhase ?? ImplementedPhase);
@@ -175,11 +178,11 @@ public static class ServiceGraph
         };
         var codeModel = new CodeModel.CodeModelService(projects, documents, toolchain, platform.FileSystem); // I-110
         build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
-        projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain); // I-236
+        projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain, librarySource); // I-236
         _ = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112
         projects.ProjectChanged += (_, _) => semanticHighlights.OnProjectChanged(projects.Definition); // I-247
-        new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status, toolchain).RegisterCommands(commands); // I-117
+        new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status).RegisterCommands(commands); // I-117
         new CodeModel.CompletionController(documents, projects, codeModel, settings, platform.Clock, status).RegisterCommands(commands); // I-114
         var parameterInfo = new CodeModel.ParameterInfoController(documents, projects, codeModel, settings, platform.Clock); // I-116
         parameterInfo.RegisterCommands(commands);
@@ -386,6 +389,7 @@ public static class ServiceGraph
             Help = help,
             State = state,
             Toolchain = toolchain,
+            LibrarySource = librarySource,
             Output = output,
             Processes = platform.Processes,
             BuildEngine = engine,

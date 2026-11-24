@@ -622,7 +622,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
         // The design folders stay inside the root (IDE-TEST-003): without a setting, DSG-TP-001 walks up from the IDE
         // directory. The data-access folder is absent; without test metadata the framework index is absent where the
         // harness would have put it.
-        values.TryAdd("toolchain.dataDesignDir", Path.Combine(Root, "no-data-design"));
+        // Its parent is the data-access library directory (IDE-SET-050), a library source root (IDE-LIB-001): a folder
+        // of its own, so that the files of the test are not library source.
+        values.TryAdd("toolchain.dataDesignDir", Path.Combine(Root, "no-data", "design"));
         if (!options.ComponentMetadata)
             values.TryAdd("toolchain.frameworkDesignDir", metadataFolder);
 

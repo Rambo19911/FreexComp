@@ -70,6 +70,9 @@ public sealed record IdeServices
     /// <summary>The toolchain directories (IDE-P3-010, IDE-SET-050).</summary>
     public required Build.IToolchainLocator Toolchain { get; init; }
 
+    /// <summary>What library source is (IDE-LIB-001).</summary>
+    public required Build.ILibrarySourceService LibrarySource { get; init; }
+
     /// <summary>The Output channels (IDE-P3-070).</summary>
     public required Build.IOutputService Output { get; init; }
 

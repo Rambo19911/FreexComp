@@ -105,6 +105,12 @@ public sealed class DocumentService : IDocumentService
     /// <summary>Creates the Welcome page (welcome-page.md; set by the service graph).</summary>
     public Func<WelcomeDocumentViewModel>? WelcomeFactory { get; set; }
 
+    /// <summary>
+    /// IDE-LIB-002: true for a file that opens as a protected document — library source (<c>ILibrarySourceService</c>)
+    /// that is not a member of the open project. Asked once, when the text document is created (set by the service graph).
+    /// </summary>
+    public Func<string, bool>? IsProtectedLibrarySource { get; set; }
+
     /// <summary>The OS shell of <c>file.showInExplorer</c> (set by the service graph).</summary>
     public IShellService? Shell { get; set; }
 
@@ -180,6 +186,10 @@ public sealed class DocumentService : IDocumentService
         commands.RegisterHandler("file.showInExplorer", new Handler(
             arg => (arg ?? PathTarget()) is { } path && (_fileSystem.FileExists(path) || _fileSystem.DirectoryExists(path)),
             arg => RevealInExplorer(arg ?? PathTarget()!)));
+        // IDE-LIB-004: the Edit Anyway action of the library-source bar as a command.
+        commands.RegisterHandler("file.editLibrarySource", new Handler(
+            _ => ActiveDocument is TextDocumentViewModel { IsLibraryProtected: true },
+            _ => EditLibrarySource((TextDocumentViewModel)ActiveDocument!)));
         commands.RegisterHandler("file.saveAs", new AsyncHandler(
             _ => ActiveDocument is TextDocumentViewModel, _ => PickAndSaveAsAsync(ActiveDocument!)));
         commands.RegisterHandler("file.saveAll", new AsyncHandler(_ => _documents.Any(d => d.IsModified), _ => SaveAllAsync()));
@@ -667,7 +677,14 @@ public sealed class DocumentService : IDocumentService
 
         // The recovery copy is deleted by the recovery service on DocumentSaved (IDE-P1-080 step 5).
         document.MarkSaved(fullPath, document.IsLargeFile ? _languages.PlainText : _languages.ForPath(fullPath)); // IDE-P1-054
-        document.SetReadOnly(false); // a read-only document saved under a new name now has a file we just wrote
+        // A read-only document saved under a new name now has a file we just wrote; a protected library document stays
+        // protected only when the new file is library source too (IDE-LIB-007: a copy elsewhere is an ordinary file).
+        if (!(document.IsLibraryProtected && IsProtectedLibrarySource?.Invoke(fullPath) == true))
+        {
+            document.RemoveInfoBar(TextDocumentViewModel.LibrarySourceInfoBarKind);
+            document.SetReadOnly(false);
+        }
+
         UpdateTitleSuffixes();
         if (document == _statusSource)
             PushStatus();
@@ -847,12 +864,19 @@ public sealed class DocumentService : IDocumentService
 
         document.ReopenWithEncodingHandler = () => ReopenWithEncodingAsync(document);
         document.ShowLoadInfoBars(detection.IsFallback);
-        if (!writable)
+        if (IsProtectedLibrarySource?.Invoke(fullPath) == true)
         {
+            // IDE-LIB-002/003: decided here, the one place a text document of a file is created, so it holds for every
+            // way of opening. IDE-LIB-005: while protected only the library bar is shown, also for a read-only file.
             document.SetReadOnly(true);
-            document.ShowInfoBar(new InfoBarViewModel(TextDocumentViewModel.ReadOnlyInfoBarKind, InfoBarSeverity.Info, Strings.Msg_File_ReadOnly,
-                [new InfoBarAction("MakeWritable", Strings.Button_MakeWritable, () => MakeWritableAsync(document))],
-                bar => document.RemoveInfoBar(bar.Kind)));
+            document.ShowInfoBar(new InfoBarViewModel(TextDocumentViewModel.LibrarySourceInfoBarKind, InfoBarSeverity.Info,
+                Strings.Msg_File_LibrarySource,
+                [new InfoBarAction("EditAnyway", Strings.InfoBar_Action_EditAnyway, () => { EditLibrarySource(document); return Task.CompletedTask; })],
+                dismiss: null) { IsTopMost = true });
+        }
+        else if (!writable)
+        {
+            ShowDiskReadOnly(document);
         }
 
         Add(document);
@@ -902,6 +926,32 @@ public sealed class DocumentService : IDocumentService
         document.ActiveViewChanged += (_, _) => _commands?.InvalidateCanExecute();
         Add(document);
         return OperationResult<DocumentViewModel>.Of(document);
+    }
+
+    /// <summary>IDE-P1-040: a file that cannot be opened for writing is read-only with the <c>Make Writable</c> bar.</summary>
+    private void ShowDiskReadOnly(TextDocumentViewModel document)
+    {
+        document.SetReadOnly(true);
+        document.ShowInfoBar(new InfoBarViewModel(TextDocumentViewModel.ReadOnlyInfoBarKind, InfoBarSeverity.Info, Strings.Msg_File_ReadOnly,
+            [new InfoBarAction("MakeWritable", Strings.Button_MakeWritable, () => MakeWritableAsync(document))],
+            bar => document.RemoveInfoBar(bar.Kind)));
+    }
+
+    /// <summary>
+    /// <c>Edit Anyway</c> / <c>file.editLibrarySource</c> (IDE-LIB-004): the library bar goes and the buffer becomes
+    /// writable, for this open document only. IDE-LIB-005: a file that is read-only on disk shows
+    /// <c>Msg.File.ReadOnly</c> now and stays read-only until <c>Make Writable</c> succeeds.
+    /// </summary>
+    private void EditLibrarySource(TextDocumentViewModel document)
+    {
+        if (!document.IsLibraryProtected)
+            return;
+        document.RemoveInfoBar(TextDocumentViewModel.LibrarySourceInfoBarKind);
+        if (document.FilePath is { } path && _fileSystem.FileExists(path) && !_fileSystem.CanOpenForWrite(path))
+            ShowDiskReadOnly(document);
+        else
+            document.SetReadOnly(false);
+        _commands?.InvalidateCanExecute();
     }
 
     /// <summary>The <c>Make Writable</c> action (IDE-P1-040): clears the attribute, then the buffer becomes writable.</summary>

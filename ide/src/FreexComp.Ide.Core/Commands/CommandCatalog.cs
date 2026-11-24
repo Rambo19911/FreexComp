@@ -28,6 +28,7 @@ public static class CommandCatalog
         new("file.closeProject", [Global], 1, []),
         new("file.copyPath", [Global], 1, []),
         new("file.showInExplorer", [Global], 1, []),
+        new("file.editLibrarySource", [Editor], 8, []),
         new("file.openInTerminal", [Global], 8, []),
         new("file.print", [Editor], 8, []),
         new("file.exit", [Global], 1, ["Alt+F4"]),

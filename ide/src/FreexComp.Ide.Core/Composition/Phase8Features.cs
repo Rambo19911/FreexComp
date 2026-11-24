@@ -17,6 +17,7 @@ public static class Phase8Features
     /// </summary>
     internal static readonly IReadOnlyList<string> DeliveredIds =
     [
+        "file.editLibrarySource", // F02-004
         "file.openInTerminal", // F09-054
         "options:Environment.General.BuildJobs", // F01-010
         "project.addNewFile", // F09-054

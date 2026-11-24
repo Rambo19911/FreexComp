@@ -110,7 +110,10 @@ public abstract class DocumentViewModel : ObservableObject
 
     private void SyncVisibleInfoBars()
     {
-        var wanted = InfoBars.Skip(Math.Max(0, InfoBars.Count - MaxVisibleInfoBars)).ToList();
+        // UI-ED-144: a top-most bar is always shown, first; the others fill the remaining places, oldest first shown.
+        var top = InfoBars.Where(b => b.IsTopMost).ToList();
+        var rest = InfoBars.Where(b => !b.IsTopMost).ToList();
+        var wanted = top.Concat(rest.Skip(Math.Max(0, rest.Count - Math.Max(0, MaxVisibleInfoBars - top.Count)))).ToList();
         if (wanted.SequenceEqual(VisibleInfoBars))
             return;
         VisibleInfoBars.Clear();

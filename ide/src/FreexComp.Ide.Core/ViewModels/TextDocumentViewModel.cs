@@ -18,6 +18,7 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     public const string EncodingInfoBarKind = "Encoding";
     public const string MixedLineEndingsInfoBarKind = "MixedLineEndings";
     public const string ReadOnlyInfoBarKind = "ReadOnly";
+    public const string LibrarySourceInfoBarKind = "LibrarySource";
     public const string ExternalChangeInfoBarKind = "ExternalChange";
     public const string ExternalDeleteInfoBarKind = "ExternalDelete";
     public const string RecoveredInfoBarKind = "Recovered";
@@ -212,6 +213,12 @@ public partial class TextDocumentViewModel : DocumentViewModel, ICommandTarget
     }
 
     public override bool IsReadOnly => Buffer.IsReadOnly;
+
+    /// <summary>
+    /// IDE-LIB-003: the document is a protected library source — read-only with the <c>LibrarySource</c> info bar — until
+    /// <c>Edit Anyway</c> (IDE-LIB-004) or the document is closed.
+    /// </summary>
+    public bool IsLibraryProtected => InfoBars.Any(bar => bar.Kind == LibrarySourceInfoBarKind);
 
     /// <summary>
     /// The document itself: <c>edit.undo</c> / <c>edit.redo</c> through <see cref="ITextBuffer.Undo"/> /

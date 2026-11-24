@@ -48,6 +48,12 @@ public sealed class InfoBarViewModel : ObservableObject
 
     public IReadOnlyList<InfoBarAction> Actions { get; }
 
+    /// <summary>
+    /// True for a bar that is always shown, above every other bar of the document (UI-ED-144: the library-source bar);
+    /// it does not wait in the queue of UI-ED-092.
+    /// </summary>
+    public bool IsTopMost { get; init; }
+
     /// <summary>True when the bar has a close (×) button (UI-ED-093).</summary>
     public bool CanDismiss => _dismiss is not null;
 

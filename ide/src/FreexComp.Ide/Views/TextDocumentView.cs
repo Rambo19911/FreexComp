@@ -26,6 +26,7 @@ public sealed class TextDocumentView : DockPanel
         Children.Add(_infoBars);
         Children.Add(_editor);
         _infoBars.KeyDown += OnInfoBarKeyDown;
+        _infoBars.AddHandler(Button.ClickEvent, OnInfoBarButtonClick, handledEventsToo: true);
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -67,6 +68,16 @@ public sealed class TextDocumentView : DockPanel
             first.Focus(NavigationMethod.Tab);
         else // a bar shown in the same turn is not built yet
             Dispatcher.UIThread.Post(() => Buttons().FirstOrDefault()?.Focus(NavigationMethod.Tab), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// UI-ED-145: an action that removes its own bar (Edit Anyway) leaves keyboard focus in the text area — in the same
+    /// turn, because the button that had the focus is gone.
+    /// </summary>
+    private void OnInfoBarButtonClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (e.Source is Button button && TopLevel.GetTopLevel(button) is null)
+            _editor.FocusText();
     }
 
     private void OnInfoBarKeyDown(object? sender, KeyEventArgs e)

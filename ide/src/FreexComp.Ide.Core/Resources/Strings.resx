@@ -63,6 +63,9 @@
 {0}
 {1}</value>
   </data>
+  <data name="Msg_File_LibrarySource" xml:space="preserve">
+    <value>This file is part of the library source installed with FreexComp. It is protected because a change affects every project that uses it.</value>
+  </data>
   <data name="Msg_File_ExternalChange" xml:space="preserve">
     <value>This file was changed outside FreexComp.</value>
   </data>
@@ -1140,6 +1143,9 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   </data>
   <data name="Cmd_file_showInExplorer" xml:space="preserve">
     <value>Show in File Explorer</value>
+  </data>
+  <data name="Cmd_file_editLibrarySource" xml:space="preserve">
+    <value>Edit Library Source Anyway</value>
   </data>
   <data name="Cmd_file_print" xml:space="preserve">
     <value>Print…</value>
@@ -5286,6 +5292,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
   <data name="InfoBar_Action_Ignore" xml:space="preserve">
     <value>Ignore</value>
     <comment>Msg.Project.UnlistedFiles* info bar (UI-TW-123)</comment>
+  </data>
+  <data name="InfoBar_Action_EditAnyway" xml:space="preserve">
+    <value>Edit Anyway</value>
+    <comment>Msg.File.LibrarySource info-bar action (UI-ED-144)</comment>
   </data>
   <data name="QuickPick_MoveToFolder_Title" xml:space="preserve">
     <value>Move to Folder</value>

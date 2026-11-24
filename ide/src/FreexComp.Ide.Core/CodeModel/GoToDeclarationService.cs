@@ -1,7 +1,6 @@
 using System.Globalization;
 using FreexComp.Compiler.Syntax;
 using FreexComp.Compiler.Text;
-using FreexComp.Ide.Core.Build;
 using FreexComp.Ide.Core.Commands;
 using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Editing;
@@ -17,10 +16,10 @@ namespace FreexComp.Ide.Core.CodeModel;
 /// IDE-ED-101 <c>search.goToDeclaration</c> (F12, Ctrl+click; I-117): resolves the identifier at the caret in the project
 /// <c>Compilation</c> (<c>NavigationService.GoToDefinition</c> of the language service, which also toggles between a
 /// declaration heading and its implementation) and moves the caret to the target's name, opening the file if needed —
-/// read-only when it is an RTL or framework source outside the project.
+/// a library source outside the project opens as a protected document (IDE-LIB-002, decided by the document service).
 /// </summary>
 public sealed class GoToDeclarationService(IDocumentService documents, IProjectService projects, CodeModelService codeModel,
-    INavigationService navigation, IStatusService status, IToolchainLocator toolchain)
+    INavigationService navigation, IStatusService status)
 {
     public const string CommandId = "search.goToDeclaration";
 
@@ -55,12 +54,9 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
         }
 
         var target = targets[0];
-        var wasOpen = documents.Documents.Any(d => d.FilePath is { } p && PathUtil.AreEqual(p, target.Path));
         var opened = PathUtil.AreEqual(target.Path, path) ? document : (await documents.OpenAsync(target.Path)).Value as TextDocumentViewModel;
         if (opened is null)
             return false;
-        if (!wasOpen && !projects.IsMember(target.Path) && IsLibrarySource(target.Path))
-            opened.Buffer.IsReadOnly = true;
         var start = target.LineSpan.Start;
         navigation.GoToLine(opened, start.Line + 1, start.Column + 1);
         return true;
@@ -86,13 +82,6 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
         }
 
         return null;
-    }
-
-    private bool IsLibrarySource(string path)
-    {
-        var paths = toolchain.Resolve();
-        return new[] { paths.RtlDir, paths.FrameworkDir, paths.DataDir }.OfType<string>()
-            .Any(dir => PathUtil.Normalize(path).StartsWith(PathUtil.Normalize(dir).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
     }
 
     private sealed class Handler(GoToDeclarationService owner) : ICommandHandler

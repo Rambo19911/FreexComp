@@ -1,12 +1,4 @@
 # IDE-TEST-030: in-scope behaviour without a test yet (known gaps). "<id> <note>". Remove a line when a test covers the id.
-IDE-LIB-001 pending I-232: ILibrarySourceService is not implemented yet (library-source.md §2)
-IDE-LIB-002 pending I-232: protected library documents are not implemented yet
-IDE-LIB-003 pending I-232: protected library documents are not implemented yet
-IDE-LIB-004 pending I-232: protected library documents are not implemented yet
-IDE-LIB-005 pending I-232: protected library documents are not implemented yet
-IDE-LIB-006 pending I-232: protected library documents are not implemented yet
-IDE-LIB-007 pending I-232: protected library documents are not implemented yet
-IDE-LIB-009 pending I-232: protected library documents are not implemented yet
 IDE-LIB-020 pending I-233: stepping into library source is not implemented yet (library-source.md §3)
 IDE-LIB-021 pending I-233: stepping into library source is not implemented yet
 IDE-LIB-022 pending I-233: stepping into library source is not implemented yet

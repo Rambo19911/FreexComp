@@ -38,7 +38,7 @@ public sealed record UnitRenamePlan(UnitRenameOutcome Outcome, string? Error, Im
 /// IDE-PM-130: asks the language service's rename (<see cref="RenameService"/>, CMP-750…752) for the edit set of a unit
 /// rename on the project compilation with the unsaved buffers, on the code-model worker. Nothing is written here.
 /// </summary>
-public sealed class UnitRenameAnalyzer(CodeModelService codeModel, IToolchainLocator toolchain)
+public sealed class UnitRenameAnalyzer(CodeModelService codeModel, IToolchainLocator toolchain, ILibrarySourceService library)
 {
     /// <summary>
     /// The plan for renaming the unit in <paramref name="path"/> (whose heading names <paramref name="oldName"/>) to
@@ -75,9 +75,7 @@ public sealed class UnitRenameAnalyzer(CodeModelService codeModel, IToolchainLoc
     public bool IsLibrarySource(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
-        var paths = toolchain.Resolve();
-        return new[] { paths.RtlDir, paths.FrameworkDir, paths.DataDir }.OfType<string>()
-            .Any(dir => PathUtil.Normalize(path).StartsWith(PathUtil.Normalize(dir).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
+        return library.IsLibrarySource(path);
     }
 
     private static UnitRenamePlan Analyze(Document document, string oldName, string newName, CancellationToken ct)
