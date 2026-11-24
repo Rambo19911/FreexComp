@@ -1,6 +1,7 @@
 {
   "aliases": {
     "Data.DB": "DB",
+    "Data.DBCtrls": "DBCtrls",
     "Data.DBFilter": "DBFilter",
     "Data.MemData": "MemData",
     "Data.SQLite3API": "SQLite3API",
