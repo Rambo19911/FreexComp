@@ -1977,7 +1977,10 @@ internal sealed class FunctionEmitter
     /// <summary>
     /// DBG-136…139: one <c>#dbg_declare</c> per parameter and named local in the entry block (location: <c>scopeLine</c>). A
     /// variable living at a received address (by-address parameter, hidden <c>Result</c>) gets an alloca holding that pointer and
-    /// <c>DW_OP_deref</c>; a captured one is described on the frame record (<c>DW_OP_plus_uconst</c>, CMP-422).
+    /// <c>DW_OP_deref</c>; a captured one is described on the frame record (<c>DW_OP_plus_uconst</c>, CMP-422). CMP-1184 (C-309):
+    /// an inline variable carries its line range to the sidecar, a later declaration of its name in the routine is <c>Name$2</c>…
+    /// (DBG-142), and one captured by an anonymous method is described on the hidden local of its block frame: the instance
+    /// that local points to (<c>DW_OP_deref</c>) plus the offset of its field.
     /// </summary>
     private void DeclareVariables(DebugBody debug, ImmutableArray<IrLocal> values, IrValue? hiddenResult, int argumentBase)
     {
@@ -1986,19 +1989,47 @@ internal sealed class FunctionEmitter
         var location = debug.Begin ?? throw new InvalidOperationException("A subprogram without a begin location.");
         var headingLine = _body.Source is { } source ? DebugInfoEmitter.LineOf(HeadingToken(source)) : 0;
         var declarations = new List<(IrValue Address, int Variable, string Expression)>();
+        var bodyEnd = _body.Source is { } bodySource ? BodyTokens(bodySource).End : default;
+
+        // CMP-1183: the captured inline variables of the body's block frames, each with the frame's hidden local
+        var blocks = _routine?.Closure?.Blocks ?? [];
+        var inFrames = blocks.SelectMany(b => b.Fields.Select(f => (Variable: f.Key as VariableSymbol, Frame: b, Field: f.Value)))
+            .Where(f => f.Variable?.InlineScope is not null).OrderBy(f => f.Variable!.InlineScope!.Value.From.Span.Start).ToList();
+
+        // DBG-142: the first declaration of a name keeps it, later ones (source order) are Name$2, Name$3, …
+        var debugNames = new Dictionary<VariableSymbol, string>(ReferenceEqualityComparer.Instance);
+        var declared = new Dictionary<string, int>(Syntax.IdentifierComparer.Instance);
+        foreach (var inline in _body.Locals.Select(l => l.Variable).Concat(inFrames.Select(f => f.Variable))
+            .Where(v => v?.InlineScope is not null && !v.Name.StartsWith('$')).OrderBy(v => v!.InlineScope!.Value.From.Span.Start))
+        {
+            var count = declared[inline!.Name] = declared.GetValueOrDefault(inline.Name) + 1;
+            if (count > 1)
+            {
+                debugNames[inline] = inline.Name + "$" + count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        static string PlusOffset(long offset) => offset == 0 ? "" : "DW_OP_plus_uconst, " + offset.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        static string Expression(params string[] parts) => string.Join(", ", parts.Where(e => e.Length > 0));
+
+        int Node(Symbol variable, string name, int? arg, TypeSymbol type, string? flags, string kind)
+        {
+            var line = variable is ParameterSymbol || variable.Locations.IsEmpty ? headingLine : variable.Locations[0].LineSpan.Start.Line + 1;
+            var scope = (variable as VariableSymbol)?.InlineScope;
+            int? toLine = scope is { To: var to } && to.Kind != Syntax.SyntaxKind.None && !to.Equals(bodyEnd) ? DebugInfoEmitter.LineOf(to) : null;
+            return di.LocalVariable(subprogram, variable is VariableSymbol v && debugNames.TryGetValue(v, out var numbered) ? numbered : name, arg, line, type,
+                flags ?? (name.StartsWith('$') ? "DIFlagArtificial" : null), kind, scope is null ? null : DebugInfoEmitter.LineOf(scope.Value.From), toLine);
+        }
 
         void Declare(Symbol variable, string name, int? arg, TypeSymbol type, IrValue? received, IrValue? slot, string? flags, string kind)
         {
-            var line = variable is ParameterSymbol || variable.Locations.IsEmpty ? headingLine : variable.Locations[0].LineSpan.Start.Line + 1;
             // DBG-137: the storage holds the variable's address (an untyped parameter is described as that pointer itself)
             var deref = received is not null && type is not UntypedTypeSymbol ? "DW_OP_deref" : "";
             var sidecarKind = kind == "param" && deref.Length > 0 ? "varParam" : kind;                     // debug-info-sidecar.md §5
-            var node = di.LocalVariable(subprogram, name, arg, line, type, flags ?? (name.StartsWith('$') ? "DIFlagArtificial" : null), sidecarKind);
+            var node = Node(variable, name, arg, type, flags, sidecarKind);
             if (IsCaptured(variable))
             {
-                var offset = _frame!.OffsetOf(variable);
-                string[] parts = [offset == 0 ? "" : "DW_OP_plus_uconst, " + offset.ToString(System.Globalization.CultureInfo.InvariantCulture), deref];
-                declarations.Add((_frameAddress!, node, string.Join(", ", parts.Where(e => e.Length > 0))));
+                declarations.Add((_frameAddress!, node, Expression(PlusOffset(_frame!.OffsetOf(variable)), deref)));
             }
             else if (received is not null)
             {
@@ -2037,6 +2068,18 @@ internal sealed class FunctionEmitter
             var isHiddenResult = hiddenResult is not null && ReferenceEquals(variable, _routine!.ResultVariable);
             var kind = ReferenceEquals(variable, _routine?.ResultVariable) ? "result" : "local";
             Declare(variable, local.Name, arg: null, local.Type, isHiddenResult ? hiddenResult : null, isHiddenResult ? null : _locals.GetValueOrDefault(local), flags: null, kind);
+        }
+
+        foreach (var (variable, frame, field) in inFrames)
+        {
+            // the frame's hidden local: a slot of this body, or a field of its frame record when a nested routine uses it
+            var holder = _body.Locals.FirstOrDefault(l => ReferenceEquals(l.Variable, frame.Local));
+            var (address, at) = IsCaptured(frame.Local) ? (_frameAddress, PlusOffset(_frame!.OffsetOf(frame.Local)))
+                : (holder is null ? null : _locals.GetValueOrDefault(holder), "");
+            if (address is not null)
+            {
+                declarations.Add((address, Node(variable!, variable!.Name, arg: null, variable.Type, flags: null, "local"), Expression(at, "DW_OP_deref", PlusOffset(field.Offset))));
+            }
         }
 
         foreach (var (address, variable, expression) in declarations)

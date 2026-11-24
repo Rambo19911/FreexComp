@@ -153,14 +153,16 @@ internal sealed class DebugInfoEmitter
 
     /// <summary>DBG-136…139: a <c>DILocalVariable</c> of <paramref name="subprogram"/> (<paramref name="arg"/>: 1-based IR position).</summary>
     /// <param name="kind">The sidecar's variable kind (debug-info-sidecar.md §5): <c>param</c>, <c>varParam</c>, <c>self</c>, <c>result</c>, <c>local</c>.</param>
-    public int LocalVariable(DebugSubprogram subprogram, string name, int? arg, int line, TypeSymbol type, string? flags, string kind)
+    /// <param name="fromLine">CMP-1184: the sidecar's line range of an inline variable (<paramref name="toLine"/> null: no upper end).</param>
+    public int LocalVariable(DebugSubprogram subprogram, string name, int? arg, int line, TypeSymbol type, string? flags, string kind,
+        int? fromLine = null, int? toLine = null)
     {
         var typeNode = Type(type);
         var text = $"!DILocalVariable(name: {Quote(name)}{(arg is { } a ? ", arg: " + N(a) : "")}, scope: !{N(subprogram.Node)}, file: !{N(subprogram.File)}, "
             + $"line: {N(line)}, type: !{N(typeNode)}{(flags is null ? "" : ", flags: " + flags)})";
         var node = Add(text);
         subprogram.Variables.Add(node);
-        subprogram.Sidecar.AddVariable(name, kind, type);
+        subprogram.Sidecar.AddVariable(name, kind, type, fromLine, toLine);
         return node;
     }
 

@@ -338,12 +338,26 @@ internal sealed class PdiRoutine(PdiFragmentBuilder owner, string displayName, s
     public int Line { get; } = line;
 
     /// <summary>DBG-145: a variable for which a <c>DILocalVariable</c> was emitted; <c>$</c>-prefixed temporaries are left out.</summary>
-    public void AddVariable(string name, string kind, TypeSymbol type)
+    /// <param name="fromLine">CMP-1184: the line of an inline variable's declaration statement; null for every other variable.</param>
+    /// <param name="toLine">The line of the token closing the variable's statement list; null for the routine's outermost list.</param>
+    public void AddVariable(string name, string kind, TypeSymbol type, int? fromLine = null, int? toLine = null)
     {
-        if (!name.StartsWith('$'))
+        if (name.StartsWith('$'))
         {
-            _vars.Add(new JsonObject { ["name"] = name, ["kind"] = kind, ["type"] = owner.TypeId(type) });
+            return;
         }
+
+        var entry = new JsonObject { ["name"] = name, ["kind"] = kind, ["type"] = owner.TypeId(type) };
+        if (fromLine is not null)
+        {
+            entry["fromLine"] = fromLine;
+            if (toLine is not null)
+            {
+                entry["toLine"] = toLine;
+            }
+        }
+
+        _vars.Add(entry);
     }
 
     public JsonObject ToNode()

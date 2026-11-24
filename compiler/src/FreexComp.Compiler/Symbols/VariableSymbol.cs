@@ -61,6 +61,13 @@ public sealed class VariableSymbol : Symbol
     /// </summary>
     internal Binding.ClosureInfo? BlockFrame { get; set; }
 
+    /// <summary>
+    /// The debug scope of an inline variable or typed constant (inline-variables.md CMP-1184, C-309): the first token of its
+    /// declaration statement and the token that closes its statement list (the last token of a <c>repeat</c> or <c>for var</c>
+    /// statement; none when the list ends a unit section). Null for every other variable.
+    /// </summary>
+    internal (Syntax.SyntaxToken From, Syntax.SyntaxToken To)? InlineScope { get; set; }
+
     /// <summary><c>var Name: Type</c> / <c>threadvar Name: Type</c> (CMP-731).</summary>
     public override string ToDisplayString() => $"{(IsThreadVar ? "threadvar" : "var")} {Name}: {Type.Name}";
 }

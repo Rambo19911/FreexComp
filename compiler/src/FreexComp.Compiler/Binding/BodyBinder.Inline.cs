@@ -123,7 +123,10 @@ internal sealed partial class BodyBinder
     /// end of the declaration statement (its <c>;</c> included) to the token that closes its statement list; for a <c>repeat</c>
     /// list to the end of the <c>until</c> condition.
     /// </summary>
-    private static (int Start, int End) ListScopeRange(StatementSyntax declaration)
+    private static (int Start, int End) ListScopeRange(StatementSyntax declaration) => ListScopeRange(declaration, out _);
+
+    /// <param name="closer">CMP-1184: the token that closes the list (the last token of a <c>repeat</c> statement); none for a section.</param>
+    private static (int Start, int End) ListScopeRange(StatementSyntax declaration, out SyntaxToken closer)
     {
         var next = declaration.LastToken().GetNextToken();
         var start = next.Kind == SyntaxKind.SemicolonToken ? next.Span.End : declaration.Span.End;
@@ -138,6 +141,9 @@ internal sealed partial class BodyBinder
         var end = next.Kind == SyntaxKind.None || next.Span.Start >= listEnd ? listEnd       // a section: the list ends its node
             : next.Kind == SyntaxKind.UntilKeyword && list is RepeatStatementSyntax repeat ? repeat.Span.End
             : next.Span.Start;
+        closer = next.Kind == SyntaxKind.None || next.Span.Start >= listEnd ? default
+            : next.Kind == SyntaxKind.UntilKeyword && list is RepeatStatementSyntax loop ? loop.LastToken()
+            : next;
         return (start, Math.Max(start, end));
     }
 
@@ -268,6 +274,7 @@ internal sealed partial class BodyBinder
 
         var scope = new Scope(ScopeKind.Block, _scope, _routine);
         var local = InlineLocal(scope, identifier, name, type);
+        local.InlineScope = (syntax.FirstToken(), syntax.LastToken());
         var loop = InScope(scope, () => BindForLoop(syntax, new BoundVariableExpression(syntax.Variable, local), start, finish));
         return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop)
         {
@@ -300,6 +307,7 @@ internal sealed partial class BodyBinder
 
         var scope = new Scope(ScopeKind.Block, _scope, _routine);
         var local = InlineLocal(scope, identifier, name, type);
+        local.InlineScope = (syntax.FirstToken(), syntax.LastToken());
         var loop = InScope(scope, () => BindForInLoop(syntax, new BoundVariableExpression(syntax.Variable, local), collection));
         return new BoundLocalsStatement(syntax, [local], loop, LocalsScopeKind.Loop)
         {

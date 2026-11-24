@@ -59,6 +59,11 @@ internal sealed partial class BodyBinder
             {
                 var (locals, initialization, scope) = BindInlineDeclaration(statement);
                 var next = i + 1;
+                var range = ListScopeRange(statement, out var closer);
+                foreach (var local in locals)
+                {
+                    local.InlineScope = (statement.FirstToken(), closer);       // CMP-1184: the debug scope
+                }
 
                 // C-308: start > 0 only here, so the declaration then continues the list of the current one
                 var outerInline = _expressions.CurrentInline;
@@ -78,7 +83,7 @@ internal sealed partial class BodyBinder
                 {
                     Inline = inline,
                     DeclarationScope = scope,
-                    ScopeRange = ListScopeRange(statement),
+                    ScopeRange = range,
                 });
                 return bound.ToImmutable();
             }
