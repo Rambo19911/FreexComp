@@ -68,6 +68,7 @@ HeapAlloc
 HeapFree
 HeapReAlloc
 HeapSize
+InitializeCriticalSection
 InitializeCriticalSectionAndSpinCount
 IsDebuggerPresent
 LCMapStringEx

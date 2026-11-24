@@ -120,6 +120,7 @@ ok GetExitCodeThread
 ok WaitForSingleObject
 ok ExitThread code
 ok TryEnterCriticalSection
+ok InitializeCriticalSection
 ok GetCurrentThreadId
 ok GetCurrentThread pseudo handle
 ok TlsAlloc
@@ -133,4 +134,4 @@ ok event reset
 ok CreateMutexW/ReleaseMutex
 ok ReleaseMutex not owned
 ok CreateSemaphoreW/ReleaseSemaphore
-# passed 127 failed 0
+# passed 128 failed 0

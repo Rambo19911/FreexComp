@@ -2244,6 +2244,8 @@ function TlsAlloc: DWORD; stdcall; external kernel32 name 'TlsAlloc';
 function TlsFree(dwTlsIndex: DWORD): BOOL; stdcall; external kernel32 name 'TlsFree';
 function TlsGetValue(dwTlsIndex: DWORD): Pointer; stdcall; external kernel32 name 'TlsGetValue';
 function TlsSetValue(dwTlsIndex: DWORD; lpTlsValue: Pointer): BOOL; stdcall; external kernel32 name 'TlsSetValue';
+procedure InitializeCriticalSection(var lpCriticalSection: TRTLCriticalSection); stdcall;
+  external kernel32 name 'InitializeCriticalSection';
 function InitializeCriticalSectionAndSpinCount(var lpCriticalSection: TRTLCriticalSection; dwSpinCount: DWORD): BOOL;
   stdcall; external kernel32 name 'InitializeCriticalSectionAndSpinCount';
 procedure EnterCriticalSection(var lpCriticalSection: TRTLCriticalSection); stdcall;

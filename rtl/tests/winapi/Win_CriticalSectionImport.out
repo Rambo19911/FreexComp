@@ -1,0 +1,5 @@
+# InitializeCriticalSection
+ok not owned after initialisation
+ok entered twice by the owner
+ok released
+# passed 3 failed 0

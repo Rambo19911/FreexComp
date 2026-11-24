@@ -264,6 +264,10 @@ begin
   Check(TryEnterCriticalSection(Lock), 'TryEnterCriticalSection');
   LeaveCriticalSection(Lock);
   DeleteCriticalSection(Lock);
+  InitializeCriticalSection(Lock);
+  Check(TryEnterCriticalSection(Lock) and (Lock.RecursionCount = 1), 'InitializeCriticalSection');
+  LeaveCriticalSection(Lock);
+  DeleteCriticalSection(Lock);
   Check(GetCurrentThreadId = MainThreadID, 'GetCurrentThreadId');
   CheckEqI(-2, NativeInt(GetCurrentThread), 'GetCurrentThread pseudo handle');
   SwitchToThread;
