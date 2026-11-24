@@ -252,17 +252,7 @@ internal sealed class MatrixProject : IDisposable
         return new MatrixBuild(result, log, runner.Started);
     }
 
-    public void Dispose()
-    {
-        try
-        {
-            System.IO.Directory.Delete(Directory, recursive: true);
-        }
-        catch (IOException)
-        {
-            // a scanner may still hold a file; the temp folder is cleaned later
-        }
-    }
+    public void Dispose() => TempDirectories.Delete(Directory);          // C-292: a scanner may still hold a file
 
     /// <summary>Real processes, recording each start (<c>clang.exe --version</c> for the version check).</summary>
     private sealed class RecordingRunner : IProcessRunner

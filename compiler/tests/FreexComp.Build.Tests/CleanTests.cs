@@ -85,6 +85,6 @@ public sealed class CleanTests
         Assert.False(Directory.Exists(Path.Combine(dir, "obj", "Debug")));
         Assert.True(Directory.Exists(Path.Combine(dir, "bin", "Debug")));
         Assert.False(File.Exists(Path.Combine(dir, "bin", "Debug", "Hello.exe")));
-        Directory.Delete(dir, recursive: true);
+        TempDirectories.Delete(dir);
     }
 }

@@ -20,8 +20,10 @@ sealed record FreexComp.Build.BuildEvent.CommandLine : FreexComp.Build.BuildEven
   protected override System.Type EqualityContract { get; }
   public System.Boolean Equals(FreexComp.Build.BuildEvent.CommandLine other)
   public System.DateTime T { get; init; }
+  public System.String Dll { get; init; }
   public System.String ProjectPath { get; init; }
   public System.String Text { get; init; }
+  public System.String Unit { get; init; }
   public System.Void Deconstruct(out System.DateTime T, out System.String ProjectPath, out System.String Text)
   public ctor(System.DateTime T, System.String ProjectPath, System.String Text)
   public override System.Boolean Equals(System.Object obj)
@@ -111,6 +113,7 @@ sealed record FreexComp.Build.BuildRequest : System.IEquatable<FreexComp.Build.B
   public System.Boolean Verbose { get; init; }
   public System.Collections.Immutable.ImmutableArray<FreexComp.Compiler.SourceText> OpenFiles { get; init; }
   public System.Collections.Immutable.ImmutableArray<System.String> ExtraSearchPaths { get; init; }
+  public System.Int32 MaxParallelism { get; init; }
   public System.String Configuration { get; init; }
   public System.String Platform { get; init; }
   public System.String ProjectInGroup { get; init; }
@@ -182,6 +185,7 @@ sealed record FreexComp.Build.Project : System.IEquatable<FreexComp.Build.Projec
   public System.Collections.Immutable.ImmutableArray<System.String> UnitScopeNames { get; init; }
   public System.Collections.Immutable.ImmutableDictionary<System.String, FreexComp.Build.ProjectConfiguration> Configurations { get; init; }
   public System.Int32 FormatVersion { get; init; }
+  public System.Int32 Jobs { get; init; }
   public System.String ActiveConfiguration { get; init; }
   public System.String AppType { get; init; }
   public System.String Directory { get; }

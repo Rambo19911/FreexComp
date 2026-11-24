@@ -47,6 +47,9 @@ public sealed record BuildRequest
 
     /// <summary>Target = Run: capture stdout/stderr as OutputLine events.</summary>
     public bool RedirectRunOutput { get; init; } = true;
+
+    /// <summary>0 → the project's "jobs", else one job per processor.</summary>
+    public int MaxParallelism { get; init; }
 }
 
 /// <param name="Success">Every project succeeded and the build was not cancelled.</param>
@@ -84,7 +87,14 @@ public abstract record BuildEvent(DateTime TimestampUtc)
 
     public sealed record Diagnostic(DateTime T, string ProjectPath, FreexComp.Compiler.Diagnostic Value) : BuildEvent(T);
 
-    public sealed record CommandLine(DateTime T, string ProjectPath, string Text) : BuildEvent(T);
+    public sealed record CommandLine(DateTime T, string ProjectPath, string Text) : BuildEvent(T)
+    {
+        /// <summary>The unit a compile job's command line belongs to (CMP-1139); null for every other command.</summary>
+        public string? Unit { get; init; }
+
+        /// <summary>The DLL an import-library job's command line belongs to (CMP-1139); null for every other command.</summary>
+        public string? Dll { get; init; }
+    }
 
     public sealed record OutputLine(DateTime T, string ProjectPath, OutputSource Source, string Text) : BuildEvent(T);
 

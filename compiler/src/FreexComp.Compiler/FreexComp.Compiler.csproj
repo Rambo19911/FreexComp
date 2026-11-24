@@ -7,5 +7,6 @@
     <InternalsVisibleTo Include="FreexComp.LanguageService" />
     <InternalsVisibleTo Include="FreexComp.LanguageService.Tests" />
     <InternalsVisibleTo Include="FreexComp.Build" />
+    <InternalsVisibleTo Include="opc" />
   </ItemGroup>
 </Project>

@@ -25,6 +25,9 @@ public sealed class BuildEngine : IBuildEngine
         _processRunner = processRunner;
     }
 
+    /// <summary>The clock of the tool timeouts (CMP-1137); a test seam, null = the system clock.</summary>
+    internal TimeProvider? ToolTimeProvider { get; init; }
+
     /// <summary>
     /// Never blocks a thread-pool thread (C-269, I-217): the compile runs on the calling thread up to its first tool process and
     /// tools are awaited. A caller on a UI thread starts it with <c>Task.Run</c>.
@@ -300,6 +303,10 @@ public sealed class BuildEngine : IBuildEngine
         public void Tool(string text) => Report(new BuildEvent.OutputLine(DateTime.UtcNow, projectPath, OutputSource.Tool, text));
 
         public void Command(string text) => Report(new BuildEvent.CommandLine(DateTime.UtcNow, projectPath, text));
+
+        /// <summary>CMP-1139: the command line of a back-end job, with its unit or DLL.</summary>
+        public void JobCommand(string text, string? unit, string? dll) =>
+            Report(new BuildEvent.CommandLine(DateTime.UtcNow, projectPath, text) { Unit = unit, Dll = dll });
     }
 
     /// <summary>The targets of one loaded project and configuration (CMP-830…835).</summary>
@@ -401,6 +408,7 @@ public sealed class BuildEngine : IBuildEngine
             {
                 ToolchainDirectory = request.ToolchainDirectory ?? "",
                 RtlDirectory = request.RtlDirectory ?? "",
+                MaxParallelism = request.MaxParallelism != 0 ? request.MaxParallelism : project.Jobs,   // CMP-1130; 0 = one per processor
                 SearchPaths = [.. projectOptions.SearchPaths,
                     .. request.ExtraSearchPaths.Select(PathUtil.Normalize).Where(p => !projectOptions.SearchPaths.Contains(p, PathUtil.Comparer))],
             };
@@ -431,6 +439,8 @@ public sealed class BuildEngine : IBuildEngine
                 Verbose = request.Verbose,
                 ForceRebuild = force,
                 CommandLineSink = request.Verbose ? sink.Command : null,
+                JobCommandLineSink = request.Verbose ? sink.JobCommand : null,
+                ToolTimeProvider = engine.ToolTimeProvider,
                 ToolOutputSink = sink.Tool,
                 ProcessRunner = engine._processRunner,
                 InfoSink = line =>

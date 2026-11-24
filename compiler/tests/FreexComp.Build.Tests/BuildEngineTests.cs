@@ -73,6 +73,37 @@ public sealed class BuildEngineTests
         Assert.True(workspace.Fs.FileExists(BuildWorkspace.Exe));
     }
 #pragma warning restore xUnit1031
+
+    /// <summary>
+    /// C-272 (CMP-1130, CMP-1131): the job limit is the request's value, else the project's <c>jobs</c>, else the processor count.
+    /// Observed as the peak number of compile processes: the gate opens only when <c>J</c> processes wait in it (16 compile jobs),
+    /// so a smaller limit never opens it and a larger one raises the peak. No timing is asserted.
+    /// </summary>
+    [Theory]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1130")]
+    [Trait("Req", "CMP-1131")]
+    [InlineData(2, 3, 2)]                // the request wins
+    [InlineData(5, 0, 5)]
+    [InlineData(0, 3, 3)]                // request automatic → the project's key
+    [InlineData(0, 0, 0)]                // both automatic → one job per processor
+    public async Task Jobs_RequestOverridesProjectOverridesProcessorCount(int requestJobs, int projectJobs, int expected)
+    {
+        const int CompileJobs = 16;
+        var limit = expected == 0 ? Math.Min(Environment.ProcessorCount, CompileJobs) : expected;
+        var w = JobFixture.Workspace(units: CompileJobs - 2, projectExtra: projectJobs == 0 ? "" : $"\"jobs\": {projectJobs}");
+        var runner = new JobRunner(w.Tools);
+        var gate = new BatchGate(runner, size: limit, total: CompileJobs, tool: "clang.exe");
+        var log = new EventLog();
+
+        var result = await new BuildEngine(w.Fs, runner)
+            .RunAsync(w.Request() with { MaxParallelism = requestJobs }, log, TestContext.Current.CancellationToken)
+            .WaitAsync(SafetyNet, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, string.Join("\n", log.Lines));
+        Assert.Equal(limit, gate.PeakWaiting);
+        Assert.Equal(limit, runner.Peak("clang.exe"));
+    }
 }
 
 [CollectionDefinition(nameof(BuildEngineTests), DisableParallelization = true)]

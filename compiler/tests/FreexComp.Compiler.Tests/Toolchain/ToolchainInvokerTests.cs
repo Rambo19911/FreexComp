@@ -29,7 +29,7 @@ public sealed partial class ToolchainTests
         string[] expected =
         [
             "-c", Obj + @"\Hello.ll", "-o", Obj + @"\Hello.obj", flag, "--target=x86_64-pc-windows-msvc",
-            "-fno-stack-protector", "-Wno-override-module", .. debug ? new[] { "-g" } : [],
+            "-fno-stack-protector", "-Wno-override-module", "-mno-incremental-linker-compatible", .. debug ? new[] { "-g" } : [],
         ];
         Assert.Equal(expected, args);
     }
@@ -49,7 +49,7 @@ public sealed partial class ToolchainTests
         Assert.Equal(Bin + @"\clang.exe", call.FileName);
         Assert.Equal(Obj, call.WorkingDirectory);
         Assert.Equal(
-            [Bin + @"\clang.exe -c " + Obj + @"\System.ll -o " + Obj + @"\System.obj -O0 --target=x86_64-pc-windows-msvc -fno-stack-protector -Wno-override-module"],
+            [Bin + @"\clang.exe -c " + Obj + @"\System.ll -o " + Obj + @"\System.obj -O0 --target=x86_64-pc-windows-msvc -fno-stack-protector -Wno-override-module -mno-incremental-linker-compatible"],
             lines);
     }
 

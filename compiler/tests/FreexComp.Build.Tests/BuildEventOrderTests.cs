@@ -19,8 +19,8 @@ public sealed class BuildEventOrderTests
         Assert.Equal(
             [
                 "started Hello.pproj Debug win64 Build",
-                "info Compiling Hello",
                 "info Compiling System",
+                "info Compiling Hello",
                 "info Linking Hello.exe",
                 "tool fake lld-link done",
                 "finished Hello.pproj success=True upToDate=False 0/0/0",
@@ -92,7 +92,7 @@ public sealed class BuildEventOrderTests
         var (result, log) = await w.RunAsync(w.Request(BuildTarget.Rebuild));
 
         Assert.True(result.Success);
-        Assert.Equal(["Compiling Hello", "Compiling System", "Linking Hello.exe"], log.Info);
+        Assert.Equal(["Compiling System", "Compiling Hello", "Linking Hello.exe"], log.Info);
         Assert.Equal("started Hello.pproj Debug win64 Rebuild", log.Lines[0]);
         Assert.False(w.Fs.FileExists(@"C:\p\obj\Debug\stale.txt"));
     }

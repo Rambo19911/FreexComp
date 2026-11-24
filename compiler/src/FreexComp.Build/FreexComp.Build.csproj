@@ -3,6 +3,9 @@
     <RootNamespace>FreexComp.Build</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="FreexComp.Build.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\FreexComp.Compiler\FreexComp.Compiler.csproj" />
   </ItemGroup>
 </Project>

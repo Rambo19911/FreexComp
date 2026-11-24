@@ -179,6 +179,7 @@ public static class ProjectSerializer
             Manifest = root.Optional("manifest")?.String() is { } manifest ? ManifestValue(manifest) : null,
             Defines = root.Optional("defines")?.Strings() ?? [],
             Platforms = root.Optional("platforms")?.Strings() ?? ["win64"],
+            Jobs = root.Optional("jobs") is { } jobs ? ReadJobs(jobs) : 0,
             Configurations = configurations,
             ActiveConfiguration = root.Optional("activeConfiguration")?.String() ?? "Debug",
             Run = run,
@@ -187,6 +188,13 @@ public static class ProjectSerializer
             FilePath = path,
             Source = root.Element,
         };
+    }
+
+    /// <summary>CMP-1133: an integer from 0 to 256 (0 = automatic).</summary>
+    private static int ReadJobs(Node node)
+    {
+        var jobs = node.Int();
+        return jobs is >= 0 and <= 256 ? jobs : throw ProjectFileException.Invalid(node.Offset, $"'{node.Display}' must be an integer from 0 to 256");
     }
 
     private static ProjectFile ReadFile(Node node)
@@ -280,6 +288,7 @@ public static class ProjectSerializer
             ("manifest", p.Manifest is { } manifest ? w => w.WriteStringValue(ManifestValue(manifest)) : null),
             ("defines", w => WriteStrings(w, p.Defines)),
             ("platforms", w => WriteStrings(w, p.Platforms)),
+            ("jobs", Has(source, "jobs") || p.Jobs != 0 ? w => w.WriteNumberValue(p.Jobs) : null),
             ("configurations", w => WriteConfigurations(w, p, Child(source, "configurations"))),
             ("activeConfiguration", w => w.WriteStringValue(p.ActiveConfiguration)),
             ("run", w => WriteObject(w, Child(source, "run"),

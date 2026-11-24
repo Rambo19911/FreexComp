@@ -49,6 +49,7 @@ public static class OpcCommand
           --diagnostics text|json   (default text)
           --rtl <dir>           RTL root (default: $FREEXCOMP_HOME/rtl/src, else relative to opc.exe)
           --toolchain <dir>     LLVM bin dir (default: third_party/llvm/bin, else PATH)
+          --jobs <N> | -j <N>   maximum number of parallel compile jobs (0 = automatic: one per processor; default 0)
           --verbose             echo external commands
           --version | --help
         """;
@@ -89,6 +90,11 @@ public static class OpcCommand
             emit = emit with
             {
                 CommandLineSink = line => WriteLine(env.Out, parsed.Json ? "{\"event\":\"commandLine\",\"text\":" + JsonString(line) + "}" : "> " + line),
+                // CMP-1139: the command line of a back-end job names its unit or DLL in JSON form
+                JobCommandLineSink = (line, unit, dll) => WriteLine(env.Out, parsed.Json
+                    ? "{\"event\":\"commandLine\",\"text\":" + JsonString(line)
+                        + (unit is not null ? ",\"unit\":" + JsonString(unit) : dll is not null ? ",\"dll\":" + JsonString(dll) : "") + "}"
+                    : "> " + line),
             };
         }
 
@@ -156,6 +162,7 @@ public static class OpcCommand
         var appType = AppType.Console;
         var stage = EmitStage.Exe;
         var rtti = "broad";
+        var jobs = 0;
         bool debug = false, json = false, verbose = false, help = false, version = false;
         var invalid = new List<string>();
 
@@ -217,6 +224,20 @@ public static class OpcCommand
                 case "--diagnostics": if (Choice("text", "json") is { } f) { json = f == "json"; } break;
                 case "--rtl": if (Value() is { } rtlDir) { rtl = Full(rtlDir); } break;
                 case "--toolchain": if (Value() is { } bin) { toolchain = Full(bin); } break;
+                case "--jobs" or "-j":                                       // CMP-1130: 0…256, 0 = automatic
+                    if (Value() is { } n)
+                    {
+                        if (int.TryParse(n, NumberStyles.None, CultureInfo.InvariantCulture, out var limit) && limit <= 256)
+                        {
+                            jobs = limit;
+                        }
+                        else
+                        {
+                            invalid.Add(arg + " " + n);
+                        }
+                    }
+
+                    break;
                 case "--verbose": verbose = true; break;
                 default:
                     if (arg.StartsWith('-'))
@@ -271,6 +292,7 @@ public static class OpcCommand
             Rtti = rtti,
             Manifest = manifest ?? (appType == AppType.Gui ? "default" : "none"),
             UnitScopeNames = scopes.ToImmutable(),
+            MaxParallelism = jobs,
         };
         var emit = new EmitOptions
         {

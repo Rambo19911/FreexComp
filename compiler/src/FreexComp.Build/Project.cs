@@ -37,6 +37,12 @@ public sealed record Project
 
     public ImmutableArray<string> Platforms { get; init; } = ["win64"];
 
+    /// <summary>
+    /// Optional key <c>jobs</c> (CMP-1133): the project-wide default number of parallel compile jobs, 0…256; 0 = automatic (also
+    /// when the key is absent). Written when non-zero or present in the loaded file.
+    /// </summary>
+    public int Jobs { get; init; }
+
     /// <summary>Order: see <see cref="ConfigurationNames"/>.</summary>
     public ImmutableDictionary<string, ProjectConfiguration> Configurations { get; init; } =
         ImmutableDictionary<string, ProjectConfiguration>.Empty;

@@ -109,7 +109,7 @@ public sealed class OutputLockedTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectories.Delete(dir);
         }
     }
 

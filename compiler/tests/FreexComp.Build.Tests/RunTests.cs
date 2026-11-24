@@ -20,8 +20,8 @@ public sealed class RunTests
         Assert.Equal(
             [
                 "started Hello.pproj Debug win64 Run",
-                "info Compiling Hello",
                 "info Compiling System",
+                "info Compiling Hello",
                 "info Linking Hello.exe",
                 "tool fake lld-link done",
                 "programstdout out 1",
@@ -211,7 +211,7 @@ public sealed class RunTests
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TempDirectories.Delete(dir);
         }
     }
 }

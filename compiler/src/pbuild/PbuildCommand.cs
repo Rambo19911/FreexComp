@@ -32,12 +32,14 @@ public static class PbuildCommand
 {
     public const string HelpText = """
         pbuild <project.pproj | group.pgroup> [--config Debug|Release] [--target build|rebuild|clean|run]
-               [--diagnostics text|json] [--rtl <dir>] [--toolchain <dir>] [--verbose]
+               [--diagnostics text|json] [--rtl <dir>] [--toolchain <dir>] [--jobs <N>] [--verbose]
           --config <name>       configuration (default: the project's active configuration; matched case-insensitively)
           --target <target>     build (default), rebuild, clean or run (build, then run the program)
           --diagnostics text|json   output form (default text)
           --rtl <dir>           RTL root (default: $FREEXCOMP_HOME/rtl/src, else relative to pbuild.exe)
           --toolchain <dir>     LLVM bin dir (default: third_party/llvm/bin, else PATH)
+          --jobs <N> | -j <N>   maximum number of parallel compile jobs (0 = automatic: the project's "jobs", else one
+                                per processor; default 0)
           --verbose             echo external commands
           --version | --help
         """;
@@ -55,6 +57,7 @@ public static class PbuildCommand
 
         string? project = null, configuration = null, rtl = null, toolchain = null;
         var target = BuildTarget.Build;
+        var jobs = 0;
         bool json = false, verbose = false, help = false, version = false;
         var invalid = new List<string>();
         var errors = new List<Diagnostic>();
@@ -95,6 +98,20 @@ public static class PbuildCommand
                 case "--config": configuration = Value() ?? configuration; break;
                 case "--rtl": if (Value() is { } rtlDir) { rtl = Folder(arg, rtlDir); } break;          // C-239: as opc §1
                 case "--toolchain": if (Value() is { } bin) { toolchain = Folder(arg, bin); } break;
+                case "--jobs" or "-j":                                                           // CMP-1130: 0…256, 0 = automatic
+                    if (Value() is { } n)
+                    {
+                        if (int.TryParse(n, NumberStyles.None, CultureInfo.InvariantCulture, out var limit) && limit <= 256)
+                        {
+                            jobs = limit;
+                        }
+                        else
+                        {
+                            invalid.Add(arg + " " + n);
+                        }
+                    }
+
+                    break;
                 case "--target":
                     switch (Value())
                     {
@@ -178,6 +195,7 @@ public static class PbuildCommand
             Verbose = verbose,
             ToolchainDirectory = toolchain ?? env.ToolchainDirectory,
             RtlDirectory = rtl ?? env.RtlDirectory,
+            MaxParallelism = jobs,
             RedirectRunOutput = false,                                                  // CMP-833: the program shares pbuild's console
         };
         BuildResult result;
@@ -215,7 +233,10 @@ public static class PbuildCommand
                     Diagnostic(d.Value);
                     break;
                 case BuildEvent.CommandLine c:
-                    Line(json ? "{\"event\":\"commandLine\",\"text\":" + Json(c.Text) + "}" : "> " + c.Text);
+                    Line(json
+                        ? "{\"event\":\"commandLine\",\"text\":" + Json(c.Text)
+                            + (c.Unit is not null ? ",\"unit\":" + Json(c.Unit) : c.Dll is not null ? ",\"dll\":" + Json(c.Dll) : "") + "}"   // CMP-1139
+                        : "> " + c.Text);
                     break;
                 case BuildEvent.OutputLine o:
                     Line(json ? $"{{\"event\":\"output\",\"source\":{Json(SourceName(o.Source))},\"text\":{Json(o.Text)}}}" : o.Text);

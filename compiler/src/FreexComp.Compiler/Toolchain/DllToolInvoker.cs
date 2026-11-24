@@ -58,24 +58,45 @@ internal sealed class DllToolInvoker(ToolRunner runner, string dllToolPath, IFil
     /// </summary>
     public async Task<ImportLibraryResult> BuildAsync(string dllName, string definitionPath, string objectDirectory, CancellationToken ct)
     {
+        var (lib, job, hash) = Prepare(fs, dllToolPath, dllName, definitionPath, objectDirectory);
+        if (job is null)
+        {
+            return new ImportLibraryResult(lib, Regenerated: false, null);
+        }
+
+        var result = await runner.RunAsync(job.ToolPath, job.Arguments, job.WorkingDirectory, ct).ConfigureAwait(false);
+        if (result.Failure is null)
+        {
+            Complete(fs, lib, hash);
+        }
+
+        return new ImportLibraryResult(lib, Regenerated: true, result.Failure);
+    }
+
+    /// <summary>
+    /// CMP-622 as a back-end job (CMP-1134): null <c>Job</c> when the recorded hash matches and the <c>.lib</c> exists; otherwise
+    /// the <c>llvm-dlltool</c> job, with the recorded hash already deleted (CMP-1141: no hash may vouch for a library that is being
+    /// replaced). <see cref="Complete"/> records <c>Hash</c> after the job succeeded.
+    /// </summary>
+    public static (string LibraryPath, BackendJob? Job, string Hash) Prepare(
+        IFileSystem fs, string dllToolPath, string dllName, string definitionPath, string objectDirectory)
+    {
         var lib = LibraryPath(objectDirectory, dllName);
         var hashFile = lib + ".sha256";
         var hash = Convert.ToHexStringLower(SHA256.HashData(fs.ReadAllBytes(definitionPath)));
         if (fs.FileExists(lib) && fs.FileExists(hashFile) && fs.ReadAllText(hashFile) == hash)
         {
-            return new ImportLibraryResult(lib, Regenerated: false, null);
+            return (lib, null, hash);
         }
 
         fs.Delete(hashFile);
         fs.CreateDirectory(Path.GetDirectoryName(lib)!);
-        var result = await runner.RunAsync(dllToolPath, BuildArguments(definitionPath, dllName, lib), objectDirectory, ct).ConfigureAwait(false);
-        if (result.Failure is null)
-        {
-            fs.WriteAllBytes(hashFile, Encoding.UTF8.GetBytes(hash));
-        }
-
-        return new ImportLibraryResult(lib, Regenerated: true, result.Failure);
+        return (lib, new BackendJob(null, dllName, dllToolPath, BuildArguments(definitionPath, dllName, lib), objectDirectory, lib), hash);
     }
+
+    /// <summary>The hash of the <c>.def</c> a successfully generated library was made from (CMP-622).</summary>
+    public static void Complete(IFileSystem fs, string libraryPath, string hash) =>
+        fs.WriteAllBytes(libraryPath + ".sha256", Encoding.UTF8.GetBytes(hash));
 
     private static string BaseName(string dllName) => Path.GetFileNameWithoutExtension(dllName);
 }

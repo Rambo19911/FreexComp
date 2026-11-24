@@ -39,10 +39,19 @@ public sealed record EmitOptions
     internal IProcessRunner? ProcessRunner { get; init; }
 
     /// <summary>
-    /// Progress lines of build-engine.md CMP-802 as they occur: <c>Compiling &lt;Unit&gt;</c> before each recompiled unit (link
-    /// order) and <c>Linking &lt;exe name&gt;</c> before the link (C-144).
+    /// Progress lines of build-engine.md CMP-802: <c>Compiling &lt;Unit&gt;</c> at the head of each compile job's released buffer
+    /// (job-key order, CMP-1138) and <c>Linking &lt;exe name&gt;</c> before the link (C-144).
     /// </summary>
     internal Action<string>? InfoSink { get; init; }
+
+    /// <summary>
+    /// CMP-1139: the command line of a back-end job with its unit (compile job) or DLL (import-library job). When set, job
+    /// command lines go here instead of <see cref="CommandLineSink"/> (which keeps receiving every other command line).
+    /// </summary>
+    internal Action<string, string?, string?>? JobCommandLineSink { get; init; }
+
+    /// <summary>The clock of the tool timeouts (CMP-1137); a test seam, null → the system clock.</summary>
+    internal TimeProvider? ToolTimeProvider { get; init; }
 }
 
 /// <param name="OutputPath">The exe, or null.</param>
@@ -497,15 +506,9 @@ public sealed class Compilation
         // CMP-156: units lower and emit on up to MaxParallelism threads (each reads only bound symbols and writes its own module);
         // results and failures are then taken in link order, as a sequential run would
         var texts = new (string? Text, string? Sidecar, Diagnostic? Failure)[stale.Length];
-        foreach (var unit in stale)
-        {
-            options.InfoSink?.Invoke("Compiling " + unit.Name);
-        }
-
         var debug = DebugInfoOptions();
         await ParallelWork.ForAsync(stale.Length, MaxParallelism,
             i => texts[i] = EmitIr(stale[i].Result!, stale[i].Forms, unitTable, location, debug), ct).ConfigureAwait(false);
-        var llPaths = ImmutableArray.CreateBuilder<string>();
         for (var i = 0; i < stale.Length; i++)
         {
             var loaded = stale[i];
@@ -528,8 +531,6 @@ public sealed class Compilation
             {
                 return Finish(false, null, []);
             }
-
-            llPaths.Add(path);
         }
 
         ImmutableArray<string> compiled = [.. stale.Select(u => u.Name)];
@@ -569,79 +570,100 @@ public sealed class Compilation
             return Finish(false, null, compiled);
         }
 
-        var runner = new ToolRunner(processRunner, new ToolRunOptions(location)
+        var toolOptions = new ToolRunOptions(location)
         {
             CommandLineSink = options.CommandLineSink,
             ToolOutputSink = options.ToolOutputSink,
-        });
-        var clang = new ClangInvoker(runner, toolchain.Clang);
-        var objects = llPaths.Select(ll => Path.ChangeExtension(ll, ".obj")).ToImmutableArray();
-        using var slots = new SemaphoreSlim(MaxParallelism);                       // CMP-156: up to MaxParallelism clang processes
-        var results = await Task.WhenAll(llPaths.Select(async (ll, i) =>
+            TimeProvider = options.ToolTimeProvider ?? TimeProvider.System,
+        };
+        var runner = new ToolRunner(processRunner, toolOptions);
+
+        // the back-end jobs (CMP-1134, 1135): the compile jobs in unit initialisation order, the program last, then the
+        // import-library jobs (CMP-620…622; every DLL named by any linked unit, {$L} inputs of every unit, C-077) by DLL name
+        var jobs = new List<BackendJob>();
+        var compileJobs = initOrder.Where(u => u != unitBinder.Main).Append(unitBinder.Main!).Where(stale.Contains).ToImmutableArray();
+        foreach (var unit in compileJobs)
         {
-            await slots.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-                return await clang.CompileAsync(ll, objects[i], Options.Optimization, Options.DebugInfo, ct).ConfigureAwait(false);
-            }
-            finally
-            {
-                slots.Release();
-            }
-        })).ConfigureAwait(false);                                                  // CMP-606: units in parallel
-        foreach (var failure in results.Select(r => r.Failure).OfType<Diagnostic>())
-        {
-            diagnostics.Add(failure);
+            var ll = Path.Combine(objectDirectory, unit.Name + ".ll");
+            jobs.Add(ClangInvoker.Job(toolchain.Clang, unit.Name, ll, Path.ChangeExtension(ll, ".obj"), Options.Optimization, Options.DebugInfo));
         }
 
-        // CMP-141: each unit's .pcu last, after its .obj succeeded (C-073)
-        for (var i = 0; i < stale.Length; i++)
-        {
-            if (results[i].Failure is null && !Write(Path.Combine(objectDirectory, stale[i].Name + ".pcu"), pcus.Write(stale[i]), location, diagnostics))
-            {
-                return Finish(false, null, compiled);
-            }
-        }
-
-        if (options.Stage == EmitStage.Obj || !main.Unit.IsProgram || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
-        {
-            return Finish(true, null, compiled);
-        }
-
-        // import libraries (CMP-620…622) and the link (CMP-625…627)
-        // every DLL named by any linked unit, {$L} inputs of every unit (C-077)
+        var link = options.Stage == EmitStage.Exe && main.Unit.IsProgram;
         var imports = LinkInputs.Imports(linkUnits.Select(u => u.Symbol!));
-        var dllTool = new DllToolInvoker(runner, toolchain.DllTool, FileSystem);
         var libraries = ImmutableArray.CreateBuilder<string>();
         var definitions = new Dictionary<string, string>(StringComparer.Ordinal);
-        var (planned, notFound) = ImportLibraryPlan.Create(
-            FileSystem,
-            [.. linkUnits.Select(u => new LinkUnit(Path.GetDirectoryName(u.Path)!, u.LinkInputs))],
-            Path.GetDirectoryName(systemPath)!,
-            RtlDirectory(),
-            location);
-        diagnostics.AddRange(notFound);
-        var regenerated = false;
-        foreach (var (dll, definition) in planned)
+        var hashes = new Dictionary<BackendJob, (string Library, string Hash)>();
+        ImmutableArray<Diagnostic> notFound = [];
+        if (link)
         {
-            var library = await dllTool.BuildAsync(dll, definition, objectDirectory, ct).ConfigureAwait(false);
-            regenerated |= library.Regenerated;
-            if (library.Failure is { } failure)
+            (var planned, notFound) = ImportLibraryPlan.Create(
+                FileSystem,
+                [.. linkUnits.Select(u => new LinkUnit(Path.GetDirectoryName(u.Path)!, u.LinkInputs))],
+                Path.GetDirectoryName(systemPath)!,
+                RtlDirectory(),
+                location);
+            var libraryJobs = new List<BackendJob>();
+            foreach (var (dll, definition) in planned)
             {
-                diagnostics.Add(failure);
+                var (library, job, hash) = DllToolInvoker.Prepare(FileSystem, toolchain.DllTool, dll, definition, objectDirectory);
+                libraries.Add(library);
+                foreach (var import in imports.Where(i => i.DllName == dll))
+                {
+                    definitions.TryAdd(import.ImportName, definition);
+                }
+
+                if (job is not null)
+                {
+                    libraryJobs.Add(job);
+                    hashes.Add(job, (library, hash));
+                }
+            }
+
+            jobs.AddRange(libraryJobs.OrderBy(j => j.Dll!.ToLowerInvariant(), StringComparer.Ordinal));
+        }
+
+        // CMP-1136…1140: at most MaxParallelism processes; reports are released in job-key order
+        var queue = new BackendJobQueue(processRunner, FileSystem, toolOptions, new BackendJobSinks
+        {
+            Info = options.InfoSink,
+            CommandLine = options.JobCommandLineSink is { } jobCommand ? (line, job) => jobCommand(line, job.Unit, job.Dll)
+                : options.CommandLineSink is { } command ? (line, _) => command(line)
+                : null,
+            ToolOutput = options.ToolOutputSink,
+            Diagnostic = diagnostics.Add,
+        }, MaxParallelism);
+        var states = await queue.RunAsync(jobs, ct).ConfigureAwait(false);
+
+        // CMP-141: each unit's .pcu last, after its .obj succeeded (C-073); CMP-622: a library's hash after the library. Both
+        // also for the jobs that finished before a cancellation (CMP-1142): their outputs are complete
+        var regenerated = false;
+        for (var i = 0; i < jobs.Count; i++)
+        {
+            if (states[i] != BackendJobState.Succeeded)
+            {
                 continue;
             }
 
-            libraries.Add(library.LibraryPath);
-            foreach (var import in imports.Where(i => i.DllName == dll))
+            if (i < compileJobs.Length)
             {
-                definitions.TryAdd(import.ImportName, definition);
+                if (!Write(Path.Combine(objectDirectory, compileJobs[i].Name + ".pcu"), pcus.Write(compileJobs[i]), location, diagnostics))
+                {
+                    return Finish(false, null, compiled);
+                }
+            }
+            else
+            {
+                var (library, hash) = hashes[jobs[i]];
+                DllToolInvoker.Complete(FileSystem, library, hash);
+                regenerated = true;
             }
         }
 
-        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
+        ct.ThrowIfCancellationRequested();
+        diagnostics.AddRange(notFound);
+        if (!link || diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {
-            return Finish(false, null, compiled);
+            return Finish(true, null, compiled);                                    // CMP-1140: no link after a failed job
         }
 
         var output = string.IsNullOrEmpty(options.OutputPath)

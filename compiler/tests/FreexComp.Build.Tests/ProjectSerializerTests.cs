@@ -556,6 +556,53 @@ public sealed class ProjectSerializerTests
         Assert.Equal("none", reloaded.Manifest);
     }
 
+    /// <summary>C-272 (CMP-1133): optional top-level key <c>jobs</c> after <c>platforms</c>; absent by default; 0…256.</summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1133")]
+    public void JobsKey_RoundTripsAndValidates()
+    {
+        const string Minimal = """{ "formatVersion": 1, "name": "A", "mainSource": "A.pas" }""";
+
+        // absent by default: not read, not written, not created
+        Assert.Equal(0, Parse(Minimal).Jobs);
+        Assert.DoesNotContain("\"jobs\"", ProjectSerializer.Save(Parse(Minimal)), StringComparison.Ordinal);
+        Assert.Equal(0, ProjectSerializer.CreateDefault("A", "A.pas", "console").Jobs);
+        Assert.DoesNotContain("\"jobs\"", ProjectSerializer.Save(ProjectSerializer.CreateDefault("A", "A.pas", "console")), StringComparison.Ordinal);
+
+        // read, written after "platforms", stable
+        var four = Parse("""{ "formatVersion": 1, "name": "A", "mainSource": "A.pas", "jobs": 4 }""");
+        Assert.Equal(4, four.Jobs);
+        var saved = ProjectSerializer.Save(four);
+        Assert.Contains("  \"platforms\": [\n    \"win64\"\n  ],\n  \"jobs\": 4,\n  \"configurations\": {", saved, StringComparison.Ordinal);
+        Assert.Equal(saved, ProjectSerializer.Save(Parse(saved)));
+        Assert.Equal(256, Parse("""{ "formatVersion": 1, "name": "A", "mainSource": "A.pas", "jobs": 256 }""").Jobs);
+
+        // set in memory → written; an explicit 0 in the file is preserved
+        Assert.Contains("  \"jobs\": 8,\n", ProjectSerializer.Save(Parse(Minimal) with { Jobs = 8 }), StringComparison.Ordinal);
+        var zero = Parse("""{ "formatVersion": 1, "name": "A", "mainSource": "A.pas", "jobs": 0 }""");
+        Assert.Equal(0, zero.Jobs);
+        Assert.Contains("  \"jobs\": 0,\n", ProjectSerializer.Save(zero), StringComparison.Ordinal);
+
+        // E9002 at the JSON token
+        foreach (var (value, detail) in new[]
+                 {
+                     ("-1", "'jobs' must be an integer from 0 to 256"),
+                     ("257", "'jobs' must be an integer from 0 to 256"),
+                     ("\"4\"", "'jobs' must be an integer"),
+                     ("1.5", "'jobs' must be an integer"),
+                     ("null", "'jobs' must be an integer"),
+                     ("true", "'jobs' must be an integer"),
+                 })
+        {
+            var text = """{ "formatVersion": 1, "name": "A", "mainSource": "A.pas", "jobs": """ + value + " }";
+            var d = ParseError(text);
+            Assert.Equal("E9002", d.Code);
+            Assert.Equal("Invalid project file: " + detail, d.Message);
+            Assert.Equal(new(0, text.IndexOf(value + " }", StringComparison.Ordinal)), d.Location.LineSpan.Start);
+        }
+    }
+
     [Fact]
     public void ConfigurationRtti_RoundTrips()
     {

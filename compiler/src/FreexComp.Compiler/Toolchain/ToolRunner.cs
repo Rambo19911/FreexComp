@@ -16,6 +16,9 @@ internal sealed record ToolRunOptions(Location DiagnosticLocation)
     public Action<string>? ToolOutputSink { get; init; }
 
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>The clock of <see cref="Timeout"/> (a test seam; the system clock otherwise).</summary>
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }
 
 /// <param name="Output">stdout and stderr lines in arrival order.</param>
@@ -41,8 +44,9 @@ internal sealed class ToolRunner(IProcessRunner processRunner, ToolRunOptions op
         }
 
         var toolName = Path.GetFileName(toolPath);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(options.Timeout);
+        // CMP-1137: the timeout counts from here, the start of the process (a job waiting for a free slot is not here yet)
+        using var limit = new CancellationTokenSource(options.Timeout, options.TimeProvider);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, limit.Token);
         int exitCode;
         try
         {

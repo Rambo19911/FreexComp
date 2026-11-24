@@ -104,6 +104,41 @@ public sealed partial class OpcCliTests
         Assert.Empty(err);
     }
 
+    // ------------------------------------------------------------------ --jobs / -j (CMP-1130, C-272)
+
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Req", "CMP-1130")]
+    public void JobsOption_ParsedAndValidated()
+    {
+        Assert.Equal(0, Parse("P.pas").Compilation!.MaxParallelism);                       // automatic
+        Assert.Equal(4, Parse("P.pas", "--jobs", "4").Compilation!.MaxParallelism);
+        Assert.Equal(4, Parse("P.pas", "-j", "4").Compilation!.MaxParallelism);
+        Assert.Equal(0, Parse("P.pas", "--jobs", "0").Compilation!.MaxParallelism);
+        Assert.Equal(256, Parse("P.pas", "--jobs", "256").Compilation!.MaxParallelism);
+
+        foreach (var (option, value) in new[] { ("--jobs", "-1"), ("--jobs", "257"), ("--jobs", "x"), ("-j", "1.5"), ("-j", "+4"), ("--jobs", " 4") })
+        {
+            var (code, output, _) = Run(Fs(), "P.pas", option, value);
+            Assert.Equal(1, code);
+            Assert.EndsWith($"(0,0): error E0005: Invalid command-line option '{option} {value}'", Assert.Single(output), StringComparison.Ordinal);
+        }
+
+        foreach (var option in new[] { "--jobs", "-j" })
+        {
+            var (code, output, _) = Run(Fs(), "P.pas", option);
+            Assert.Equal(1, code);
+            Assert.EndsWith($"(0,0): error E0006: Missing argument for option '{option}'", Assert.Single(output), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(1, Run(Fs(), "P.pas", "--jobs=4").ExitCode);                           // only the separated forms
+        Assert.Equal(1, Run(Fs(), "P.pas", "-j4").ExitCode);
+
+        var help = Run(new InMemoryFileSystem(), "--help").Out;
+        var toolchain = Array.FindIndex(help, l => l.StartsWith("  --toolchain <dir>", StringComparison.Ordinal));
+        Assert.Equal("  --jobs <N> | -j <N>   maximum number of parallel compile jobs (0 = automatic: one per processor; default 0)", help[toolchain + 1]);
+    }
+
     // ------------------------------------------------------------------ option mapping (CMP-850)
 
     [Fact]
@@ -314,9 +349,61 @@ public sealed partial class OpcCliTests
         Assert.True(File.Exists(exe));
         var output = new List<string>();
         var exit = await NativeRun.RunAsync(exe, dir, output.Add, _ => { });                  // C-258: CPU limit, wall cap
-        Directory.Delete(dir, recursive: true);
+        TempDirectories.Delete(dir);
         Assert.Equal(0, exit);
         Assert.Equal(["Hello, world!"], output);
+    }
+
+    /// <summary>
+    /// C-273 (CMP-1139): with <c>--verbose --diagnostics json</c> the command line of every back-end job names its unit or DLL,
+    /// in job-key order (the units in initialisation order, the program last, then the import libraries by DLL name); the link's
+    /// command line names neither. Text mode stays the bare command after <c>&gt; </c>, the same lines for every job limit.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "8")]
+    [Trait("Category", "Toolchain")]
+    [Trait("Req", "CMP-1139")]
+    public void Verbose_Json_JobCommandLinesNameTheirUnitOrDll()
+    {
+        var bin = Path.Combine(RepoPaths.Root, "third_party", "llvm", "bin");
+        Assert.True(File.Exists(Path.Combine(bin, "clang.exe")), $"Pinned toolchain missing in {bin} (run scripts/bootstrap.ps1).");
+        var dir = Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "Hello.pas"), "program Hello; uses Greet; begin Writeln(Text) end.");
+            File.WriteAllText(Path.Combine(dir, "Greet.pas"), "unit Greet; interface const Text = 'hi'; implementation end.");
+            string[] Opc(params string[] extra)
+            {
+                var stdout = new StringWriter { NewLine = "\n" };
+                var stderr = new StringWriter();
+                var code = OpcCommand.Run(
+                    ["Hello.pas", "--rtl", Path.Combine(RepoPaths.Root, "rtl", "src"), "--toolchain", bin, "--verbose", .. extra],
+                    new OpcEnvironment(dir, stdout, stderr, PhysicalFileSystem.Instance), TestContext.Current.CancellationToken);
+                Assert.True(code == 0, stdout + stderr.ToString());
+                TempDirectories.Delete(Path.Combine(dir, "obj"));                       // the next run compiles everything again
+                return stdout.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            }
+
+            var json = Opc("--diagnostics", "json", "--jobs", "4").Where(l => l.StartsWith("{\"event\":\"commandLine\"", StringComparison.Ordinal)).ToList();
+            var serial = Opc("--jobs", "1");
+            var parallel = Opc("--jobs", "8");
+
+            static string Tail(string line) => line[line.LastIndexOf(",\"", StringComparison.Ordinal)..];
+            Assert.Equal(
+                [",\"unit\":\"System\"}", ",\"unit\":\"Greet\"}", ",\"unit\":\"Hello\"}", ",\"dll\":\"kernel32.dll\"}", ",\"dll\":\"ntdll.dll\"}"],
+                json.Take(5).Select(Tail));
+            Assert.Equal(6, json.Count);
+            Assert.Contains("lld-link", json[5], StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\"unit\"", json[5], StringComparison.Ordinal);
+            Assert.DoesNotContain("\"dll\"", json[5], StringComparison.Ordinal);
+            Assert.Equal(6, serial.Count(l => l.StartsWith("> ", StringComparison.Ordinal)));
+            Assert.Equal(serial, parallel);
+        }
+        finally
+        {
+            TempDirectories.Delete(dir);
+        }
     }
 
     /// <summary>Reading any source throws a non-I/O exception: an internal error.</summary>
