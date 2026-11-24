@@ -91,7 +91,7 @@ public sealed class GoToDeclarationService(IDocumentService documents, IProjectS
     private bool IsLibrarySource(string path)
     {
         var paths = toolchain.Resolve();
-        return new[] { paths.RtlDir, paths.FrameworkDir }.OfType<string>()
+        return new[] { paths.RtlDir, paths.FrameworkDir, paths.DataDir }.OfType<string>()
             .Any(dir => PathUtil.Normalize(path).StartsWith(PathUtil.Normalize(dir).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
     }
 

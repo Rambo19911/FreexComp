@@ -283,7 +283,7 @@ public static class ServiceGraph
                 toolWindowService.Show(ViewModels.MessagesViewModel.ToolName, focus: false);
             };
             var shell = designerShell;
-            var inspector = new Designer.ObjectInspectorViewModel(status, settings, platform.Dialogs); // D-081
+            var inspector = new Designer.ObjectInspectorViewModel(status, settings, platform.Dialogs, prompts); // D-081; I-148: the file-name editor
             objectInspector = inspector;
             Designer.ObjectInspectorCommands.Register(commands, inspector, platform.Clipboard);
             session.ObjectInspector = inspector; // D-109: page, categories, expanded rows, divider ratio in session.json

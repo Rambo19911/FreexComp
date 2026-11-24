@@ -338,7 +338,7 @@ public sealed class PropertyGridView : Border
                 cell.Children.Add(box);
             }
 
-            if (row is not null && PropertyGridViewModel.HasEditorButton(row) && !isReadOnly)
+            if (row is not null && grid.ShowsButton(row) && !isReadOnly)
             {
                 var button = new Button { Content = "…", Width = 22, MinWidth = 0, Padding = new Thickness(0), Focusable = false, VerticalAlignment = VerticalAlignment.Stretch };
                 if (PropertyGridViewModel.IsCollectionRow(row))

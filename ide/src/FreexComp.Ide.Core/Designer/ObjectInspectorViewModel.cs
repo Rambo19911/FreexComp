@@ -50,12 +50,15 @@ public sealed partial class ObjectInspectorViewModel : ToolWindowViewModel, ICom
 
     /// <param name="settings">The <c>objectInspector.*</c> settings (arrangement, description pane); null: in-memory defaults.</param>
     /// <param name="dialogs">Opens <c>Dialog.StringsEditor</c> (DSG-OI-055) and the collection editor; null: they are unavailable.</param>
-    public ObjectInspectorViewModel(IStatusService status, ISettingsService? settings = null, IDialogService? dialogs = null)
+    /// <param name="filePrompts">The file picker of the <c>editor: "filename"</c> rows; null: they are plain text rows.</param>
+    public ObjectInspectorViewModel(IStatusService status, ISettingsService? settings = null, IDialogService? dialogs = null,
+        Dialogs.FilePrompts? filePrompts = null)
     {
         ArgumentNullException.ThrowIfNull(status);
         _settings = settings;
         Grid = new PropertyGridViewModel(new DesignerGridTarget(() => _designer, () => Selection, status), dialogs)
         {
+            FilePrompts = filePrompts,
             Configure = model =>
             {
                 model.CollapsedCategories = _collapsed;

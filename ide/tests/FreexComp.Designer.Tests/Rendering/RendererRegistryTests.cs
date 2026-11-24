@@ -11,6 +11,7 @@ public sealed class RendererRegistryTests
         "image", "nonvisual", "generic", "unknown",
         "scrollbar", "statictext", "shape", "bevel", "splitter", "scrollbox", "pagecontrol", "tabsheet", "stringgrid",
         "trackbar", "progressbar", "treeview", "listview", "statusbar", "toolbar", "toolbutton",
+        "dbgrid", "dbnavigator", // Phase 7 (data design-time.md DAT-339)
     ];
 
     /// <summary>

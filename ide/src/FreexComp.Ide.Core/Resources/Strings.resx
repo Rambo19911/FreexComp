@@ -2937,6 +2937,10 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Add to Project</value>
     <comment>dialogs.md §5</comment>
   </data>
+  <data name="FilePrompt_Title_propertyFile" xml:space="preserve">
+    <value>Select File</value>
+    <comment>object-inspector.md §5.1 editor "filename": title of the open-file picker</comment>
+  </data>
   <data name="FilePrompt_Title_folder" xml:space="preserve">
     <value>Select Folder</value>
     <comment>dialogs.md §5</comment>

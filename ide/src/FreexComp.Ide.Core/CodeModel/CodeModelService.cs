@@ -21,7 +21,7 @@ public sealed class CodeModelService
     private readonly IDocumentService _documents;
     private readonly IToolchainLocator _toolchain;
     private readonly Dictionary<string, long> _overrides = new(StringComparer.OrdinalIgnoreCase);
-    private (Project? Definition, string? Rtl, string? Framework) _projectKey;
+    private (Project? Definition, string? Rtl, string? Framework, string? Data) _projectKey;
 
     public CodeModelService(IProjectService projects, IDocumentService documents, IToolchainLocator toolchain,
         Platform.IFileSystem fileSystem)
@@ -45,7 +45,7 @@ public sealed class CodeModelService
         if (_projects.Definition is not { } definition || _projects.Project is not { } project)
             return null;
         var paths = _toolchain.Resolve();
-        var key = (definition, paths.RtlDir, paths.FrameworkDir);
+        var key = (definition, paths.RtlDir, paths.FrameworkDir, paths.DataDir);
         if (key != _projectKey)
         {
             _projectKey = key;
@@ -54,8 +54,8 @@ public sealed class CodeModelService
                 RtlDirectory = paths.RtlDir ?? "",
                 UsePcuCache = false, // Check Syntax reads sources only and writes nothing (IDE-P3-055)
             };
-            if (paths.FrameworkDir is { } framework)
-                options = options with { SearchPaths = options.SearchPaths.Add(Path.Combine(framework, "src")) };
+            foreach (var library in new[] { paths.FrameworkDir, paths.DataDir }.OfType<string>()) // as BuildRequest.ExtraSearchPaths
+                options = options with { SearchPaths = options.SearchPaths.Add(Path.Combine(library, "src")) };
             Workspace.SetProject(options);
         }
 

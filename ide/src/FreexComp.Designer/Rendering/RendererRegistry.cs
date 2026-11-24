@@ -45,6 +45,7 @@ public sealed class RendererRegistry
             new ScrollBoxRenderer(), new PageControlRenderer(), new TabSheetRenderer(), new StringGridRenderer(),
             new TrackBarRenderer(), new ProgressBarRenderer(), new TreeViewRenderer(), new ListViewRenderer(),
             new StatusBarRenderer(), new ToolBarRenderer(), new ToolButtonRenderer(),
+            new DbGridRenderer(), new DbNavigatorRenderer(), // Phase 7 (data design-time.md DAT-339)
         ];
         foreach (var renderer in builtIn)
         {

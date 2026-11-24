@@ -4,8 +4,11 @@ using FreexComp.Ide.Core.Settings;
 
 namespace FreexComp.Ide.Core.Build;
 
-/// <summary>Resolved toolchain directories; null = not found (IDE-P3-010). The data-access directory arrives in P7.</summary>
-public sealed record ToolchainPaths(string? LlvmBinDir, string? RtlDir, string? FrameworkDir);
+/// <summary>
+/// Resolved toolchain directories; null = not found (IDE-P3-010). <paramref name="DataDir"/> is the data-access library's
+/// directory (P7): its <c>src</c> holds the units, its <c>design</c> the component metadata.
+/// </summary>
+public sealed record ToolchainPaths(string? LlvmBinDir, string? RtlDir, string? FrameworkDir, string? DataDir = null);
 
 /// <summary>Where the automatic search looks (IDE-SET-050): <c>FREEXCOMP_HOME</c>, the IDE's directory and <c>PATH</c>.</summary>
 public sealed record ToolchainEnvironment(string? FreexCompHome, string IdeDirectory, IReadOnlyList<string> PathDirectories)
@@ -52,7 +55,8 @@ public sealed class ToolchainLocator(ISettingsService settings, IFileSystem file
         return new ToolchainPaths(
             Explicit(SettingsCatalog.ToolchainLlvmBinDir) ?? automatic.LlvmBinDir,
             Explicit(SettingsCatalog.ToolchainRtlDir) ?? automatic.RtlDir,
-            Explicit(SettingsCatalog.ToolchainFrameworkDir) ?? automatic.FrameworkDir);
+            Explicit(SettingsCatalog.ToolchainFrameworkDir) ?? automatic.FrameworkDir,
+            DataDirOfDesignDir(Explicit(SettingsCatalog.ToolchainDataDesignDir)) ?? automatic.DataDir);
     }
 
     public ToolchainPaths ResolveAutomatic()
@@ -61,7 +65,8 @@ public sealed class ToolchainLocator(ISettingsService settings, IFileSystem file
             ?? environment.PathDirectories.FirstOrDefault(d => fileSystem.FileExists(Path.Combine(d, "clang.exe")));
         var rtl = First(Candidates(@"rtl\src", @"rtl\src"), "System.pas");
         var framework = First(Candidates("ui-framework", "ui-framework"), @"design\index.json");
-        return new ToolchainPaths(llvm, rtl, framework);
+        var data = First(Candidates("data", "data"), @"design\index.json");
+        return new ToolchainPaths(llvm, rtl, framework, data);
     }
 
     public OperationResult CheckForBuild(bool needsLlvm)
@@ -86,6 +91,10 @@ public sealed class ToolchainLocator(ISettingsService settings, IFileSystem file
             ? new FolderCheck(true, "Msg.Options.ToolchainFound", [string.Join(", ", requiredFiles)])
             : new FolderCheck(false, "Msg.Options.ToolNotFound", [missing]);
     }
+
+    /// <summary>IDE-SET-050: the data-access directory is the parent of <c>toolchain.dataDesignDir</c>.</summary>
+    private static string? DataDirOfDesignDir(string? designDir) =>
+        designDir is null ? null : Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(designDir)) is { Length: > 0 } parent ? parent : null;
 
     private string? Explicit(SettingKey<string> key) => settings.Get(key) is { Length: > 0 } value ? value.Trim() : null;
 

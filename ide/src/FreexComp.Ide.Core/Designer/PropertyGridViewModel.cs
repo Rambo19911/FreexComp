@@ -654,6 +654,95 @@ public sealed class PropertyGridViewModel : ObservableObject
     public static bool HasEditorButton(PropertyRow row) => IsStringsRow(row) || IsCollectionRow(row);
 
     /// <summary>
+    /// The file picker of the <c>editor: "filename"</c> rows (object-inspector.md §5.1); null: such a row is plain text
+    /// without the button (the embedded grids of the component editors).
+    /// </summary>
+    public Dialogs.FilePrompts? FilePrompts { get; set; }
+
+    /// <summary>
+    /// An <c>editor: "filename"</c> row (object-inspector.md §5.1): text that can always be typed, plus the <c>…</c> button
+    /// that opens the file picker. Not a dialog-only row (<see cref="HasEditorButton"/>).
+    /// </summary>
+    public static bool IsFileNameRow(PropertyRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return row is { Kind: PropertyRowKind.Property, Source: PropertyRowSource.Metadata, Info: { } info }
+            && string.Equals(info.Editor, "filename", StringComparison.OrdinalIgnoreCase)
+            && info.Type.Equals("string", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The row shows the <c>…</c> button: a dialog row, or a file-name row when the picker is available.</summary>
+    public bool ShowsButton(PropertyRow row) => HasEditorButton(row) || (FilePrompts is not null && IsFileNameRow(row));
+
+    /// <summary>
+    /// What a picked file is stored as (component-metadata.md §3 <c>filename</c>): the path relative to the project
+    /// directory when <paramref name="relativeToProject"/> and the file is inside it, otherwise the absolute path.
+    /// </summary>
+    public static string StoredFileName(string chosen, string? projectDirectory, bool relativeToProject)
+    {
+        ArgumentNullException.ThrowIfNull(chosen);
+        if (!relativeToProject || string.IsNullOrEmpty(projectDirectory))
+        {
+            return chosen;
+        }
+
+        var root = Path.TrimEndingDirectorySeparator(projectDirectory) + Path.DirectorySeparatorChar;
+        return chosen.Length > root.Length && chosen.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? chosen[root.Length..] : chosen;
+    }
+
+    /// <summary>
+    /// The <c>…</c> button of a file-name row: the open-file picker with the filter of <c>editorOptions.filter</c>, starting
+    /// in the folder of the stored file (else the project directory); the picked path is set on every selected object as
+    /// one unit (<see cref="StoredFileName"/>). Cancel changes nothing.
+    /// </summary>
+    public async Task EditFileNameAsync()
+    {
+        if (FilePrompts is not { } prompts || !CanEdit || CurrentRow is not { IsReadOnly: false, Info: { } info } row || !IsFileNameRow(row))
+        {
+            return;
+        }
+
+        Cancel();
+        var primary = Selection[^1];
+        var project = prompts.ProjectDirectory;
+        var options = info.EditorOptions;
+        var filter = options is not null && options.TryGetValue("filter", out var f) ? f as string : null;
+        var relative = options is not null && options.TryGetValue("relativeToProject", out var r) && r is true;
+        var chosen = await prompts.PropertyFileAsync(filter, FolderOf(FileName(primary, row.Path, info), project));
+        if (chosen is null || Selection.Count == 0 || !ReferenceEquals(Selection[^1], primary))
+        {
+            return;
+        }
+
+        var stored = StoredFileName(chosen, project, relative);
+        var changes = Selection.Where(o => !string.Equals(FileName(o, row.Path, info), stored, StringComparison.Ordinal))
+            .Select(o => (FormChange)new SetProperty(o.Name, row.Path, new StringValue(stored)))
+            .ToList();
+        if (changes.Count > 0)
+        {
+            _target.Apply(changes);
+            Refresh();
+        }
+    }
+
+    private string FileName(FormObject obj, string path, PropertyInfo info) => Effective(obj, path, info) is StringValue { Value: var s } ? s : "";
+
+    /// <summary>The folder of a stored file name (a relative one is taken from the project directory); null when it has none.</summary>
+    private static string? FolderOf(string fileName, string? projectDirectory)
+    {
+        try
+        {
+            var full = Path.IsPathFullyQualified(fileName) ? fileName
+                : fileName.Length > 0 && !string.IsNullOrEmpty(projectDirectory) ? Path.Combine(projectDirectory, fileName) : null;
+            return full is null ? null : Path.GetDirectoryName(Path.GetFullPath(full));
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null; // any text can be typed into the row (":memory:")
+        }
+    }
+
+    /// <summary>
     /// DSG-OI-055: opens <c>Dialog.StringsEditor</c> on the current <c>TStrings</c> row (initial text from the primary);
     /// OK with a changed text sets the list on every object (an empty list removes the property, it is the default) as one
     /// unit; unchanged text or Cancel changes nothing.
@@ -716,9 +805,12 @@ public sealed class PropertyGridViewModel : ObservableObject
         }
     }
 
-    /// <summary>The dialog of the current row (<see cref="HasEditorButton"/>): the strings or the collection editor.</summary>
+    /// <summary>The <c>…</c> button of the current row (<see cref="ShowsButton"/>): the strings or collection editor, or the file picker.</summary>
     public Task EditInDialogAsync() =>
-        CurrentRow is { } row && IsCollectionRow(row) ? EditCollectionAsync() : EditStringsAsync();
+        CurrentRow is not { } row ? Task.CompletedTask
+        : IsCollectionRow(row) ? EditCollectionAsync()
+        : IsFileNameRow(row) ? EditFileNameAsync()
+        : EditStringsAsync();
 
     /// <summary>
     /// Enter on a row: the Events page creates or shows the handler (DSG-OI-083), a dialog row opens its editor, other rows

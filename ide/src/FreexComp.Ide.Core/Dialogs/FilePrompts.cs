@@ -97,6 +97,37 @@ public sealed class FilePrompts
         return chosen;
     }
 
+    /// <summary>The open project's directory; null without a project.</summary>
+    public string? ProjectDirectory => _projectDirectory();
+
+    /// <summary>
+    /// The open-file picker of an <c>editor: "filename"</c> property (<c>propertyFile</c>, object-inspector.md §5.1): single
+    /// file; <paramref name="filter"/> in the metadata form <c>Description|pattern|Description|pattern</c> (patterns
+    /// separated by <c>;</c>; null or empty = all files); stated folder = <paramref name="folder"/>, else the project directory.
+    /// </summary>
+    public async Task<string?> PropertyFileAsync(string? filter, string? folder) =>
+        (await OpenAsync("propertyFile", Strings.FilePrompt_Title_propertyFile, multiple: false, ParseFilter(filter), folder ?? _projectDirectory()))
+        .FirstOrDefault();
+
+    /// <summary>The filters of a metadata filter text; a description's trailing <c>(patterns)</c> is dropped (the label adds it).</summary>
+    public static IReadOnlyList<FileFilter> ParseFilter(string? filter)
+    {
+        var parts = (filter ?? "").Split('|');
+        var filters = new List<FileFilter>();
+        for (var i = 0; i + 1 < parts.Length; i += 2)
+        {
+            var patterns = parts[i + 1].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (patterns.Length == 0)
+                continue;
+            var name = parts[i].Trim();
+            if (name.EndsWith(')') && name.LastIndexOf('(') is > 0 and var open)
+                name = name[..open].TrimEnd();
+            filters.Add(new FileFilter(name, patterns));
+        }
+
+        return filters.Count > 0 ? filters : [AllFiles];
+    }
+
     /// <summary><c>environment.defaultProjectsDir</c>; empty = <see cref="BuiltInProjectsDirectory"/>.</summary>
     public string DefaultProjectsDirectory =>
         _settings.Get(SettingsCatalog.EnvironmentDefaultProjectsDir) is { Length: > 0 } configured

@@ -38,7 +38,8 @@ public sealed class CollectionEditorWindow : DialogWindow
     /// <summary>The controls the handlers share.</summary>
     private sealed class Parts
     {
-        public ListBox List { get; } = new() { SelectionMode = SelectionMode.Multiple };
+        // Focusable itself: an empty list still takes the initial focus and the Insert key (UI-DLG-240).
+        public ListBox List { get; } = new() { SelectionMode = SelectionMode.Multiple, Focusable = true };
 
         /// <summary>The Object Inspector's grid control (D-110), without categories or description.</summary>
         public PropertyGridView Grid { get; } = new(Id("Grid"), Id("Grid.Row.")) { IsInDialog = true, BorderThickness = new Thickness(1) };

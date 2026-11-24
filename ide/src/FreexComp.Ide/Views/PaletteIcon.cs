@@ -9,7 +9,7 @@ namespace FreexComp.Ide.Views;
 
 /// <summary>
 /// A Tool Palette icon (tool-palette.md DSG-TP-009, ui/designer.md UI-DSG-122): the component's SVG (24 × 24 view box,
-/// <c>path</c>, <c>rect</c> and <c>circle</c> shapes drawn in <c>currentColor</c>, UIF-953) scaled to the control, or the
+/// <c>path</c>, <c>rect</c>, <c>circle</c> and <c>ellipse</c> shapes drawn in <c>currentColor</c>, UIF-953) scaled to the control, or the
 /// generic component glyph when the item has no icon or its file cannot be read. <c>currentColor</c> is the icon colour
 /// <c>text.primary</c> (<c>text.disabled</c> when disabled, UI-TOK-041).
 /// </summary>
@@ -96,7 +96,8 @@ public sealed class PaletteIcon : Control
                 {
                     "path" => (string?)element.Attribute("d"),
                     "rect" => RectData(element),
-                    "circle" => CircleData(element),
+                    "circle" => EllipseData(Attr(element, "cx"), Attr(element, "cy"), Attr(element, "r"), Attr(element, "r")),
+                    "ellipse" => EllipseData(Attr(element, "cx"), Attr(element, "cy"), Attr(element, "rx"), Attr(element, "ry")),
                     _ => null,
                 };
                 if (data is null)
@@ -147,12 +148,11 @@ public sealed class PaletteIcon : Control
             + $"V{F(y + ry)}A{F(rx)} {F(ry)} 0 0 1 {F(x + rx)} {F(y)}Z";
     }
 
-    /// <summary>A circle as two arcs.</summary>
-    private static string CircleData(XElement e)
+    /// <summary>A circle or an ellipse as two arcs.</summary>
+    private static string EllipseData(double cx, double cy, double rx, double ry)
     {
-        var (cx, cy, r) = (Attr(e, "cx"), Attr(e, "cy"), Attr(e, "r"));
         static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
-        return $"M{F(cx - r)} {F(cy)}A{F(r)} {F(r)} 0 1 0 {F(cx + r)} {F(cy)}A{F(r)} {F(r)} 0 1 0 {F(cx - r)} {F(cy)}Z";
+        return $"M{F(cx - rx)} {F(cy)}A{F(rx)} {F(ry)} 0 1 0 {F(cx + rx)} {F(cy)}A{F(rx)} {F(ry)} 0 1 0 {F(cx - rx)} {F(cy)}Z";
     }
 
     private sealed record Shape(string Data, bool Filled, bool Stroked, double StrokeWidth);

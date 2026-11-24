@@ -338,7 +338,8 @@ public sealed class BuildService : IBuildService
             Verbose = _settings.Get(SettingsCatalog.BuildShowCommandLines),
             ToolchainDirectory = paths.LlvmBinDir,
             RtlDirectory = paths.RtlDir,
-            ExtraSearchPaths = paths.FrameworkDir is { } framework ? [Path.Combine(framework, "src")] : [],
+            // IDE-P3-010: the framework and (P7) the data-access directory contribute <dir>\src, in that order.
+            ExtraSearchPaths = [.. new[] { paths.FrameworkDir, paths.DataDir }.OfType<string>().Select(dir => Path.Combine(dir, "src"))],
         };
 
         using var cts = new CancellationTokenSource();
