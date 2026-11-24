@@ -23,13 +23,25 @@ internal static class LayoutRoundTrip
     /// <summary>Step (2): the exe must exit within this time with code 0.</summary>
     public static readonly TimeSpan DumpTimeout = TimeSpan.FromSeconds(20);
 
-    private static readonly Lazy<ComponentCatalog> FrameworkCatalog = new(() =>
+    /// <summary>
+    /// The catalog the IDE loads in this checkout: its metadata service over the real files, with the automatic folder
+    /// search from the test assembly's folder — the framework root, then the data-access root (DSG-TP-001, DSG-TP-003).
+    /// </summary>
+    private static readonly Lazy<ComponentCatalog> IdeCatalog = new(() =>
     {
-        var index = Path.Combine(FrameworkDesignDir, "index.json");
-        Assert.True(File.Exists(index), "Framework metadata not found: " + index);
-        var result = CatalogLoader.Load([index]);
-        Assert.Empty(result.Problems);
-        return result.Catalog;
+        var log = new RecordingLog();
+        FreexComp.Ide.Core.Designer.ComponentMetadataService? metadata = null;
+        TestUiThread.RunAsync(async () => // its own UI thread: the load's results are applied there, whatever thread asks first
+        {
+            metadata = Compose(log).Metadata;
+            Assert.NotNull(metadata);
+            await metadata.LoadAsync();
+        }).GetAwaiter().GetResult();
+        Assert.NotNull(metadata);
+        Assert.True(metadata.State == FreexComp.Ide.Core.Designer.MetadataLoadState.Loaded,
+            $"component metadata not loaded ({metadata.State}): {metadata.MissingIndexPath ?? metadata.FailureReason}");
+        Assert.DoesNotContain(log.Lines, line => line.StartsWith("WARN", StringComparison.Ordinal) || line.StartsWith("ERROR", StringComparison.Ordinal));
+        return metadata.Catalog;
     });
 
     public static string RepoRoot => SpecTables.RepoRootPath();
@@ -38,11 +50,11 @@ internal static class LayoutRoundTrip
 
     public static string FrameworkDesignDir => Path.Combine(FrameworkDir, "design");
 
-    public static ComponentCatalog Catalog => FrameworkCatalog.Value;
+    public static ComponentCatalog Catalog => IdeCatalog.Value;
 
     /// <summary>
     /// Step (1): builds <paramref name="projectPath"/> (Debug) with the real engine; the LLVM folder and the RTL come from
-    /// the IDE's automatic search from the test assembly's folder (IDE-SET-050), the framework sources are an extra search path as the IDE passes them. Fails (never
+    /// the IDE's automatic search from the test assembly's folder (IDE-SET-050), the framework and data-access sources are extra search paths as the IDE passes them (IDE-P3-010). Fails (never
     /// skips, testing.md rule 5) when the toolchain is missing or the build reports errors. Returns the exe.
     /// </summary>
     public static async Task<string> BuildAsync(string projectPath)
@@ -55,7 +67,7 @@ internal static class LayoutRoundTrip
             Configuration = "Debug",
             ToolchainDirectory = toolchain.LlvmBinDir,
             RtlDirectory = toolchain.RtlDir,
-            ExtraSearchPaths = [Path.Combine(FrameworkDir, "src")],
+            ExtraSearchPaths = [.. new[] { FrameworkDir, toolchain.DataDir }.OfType<string>().Select(dir => Path.Combine(dir, "src"))],
         };
         var result = await CurrentTest.Deadline.WaitAsync(
             engine.RunAsync(request, new SyncProgress(_ => { }), CurrentTest.Deadline.Token),
@@ -70,16 +82,19 @@ internal static class LayoutRoundTrip
     /// <summary>The IDE's automatic toolchain search from the test assembly's folder inside the checkout (IDE-SET-050).</summary>
     public static ToolchainPaths Toolchain()
     {
-        var services = TestComposition.Build(o =>
-        {
-            o.FileSystem = new FreexComp.Ide.Core.Platform.PhysicalFileSystem();
-            o.ToolchainEnvironment = new ToolchainEnvironment(null, AppContext.BaseDirectory, []);
-        });
-        var paths = services.Toolchain.Resolve();
+        var paths = Compose(new RecordingLog()).Toolchain.Resolve();
         if (paths.LlvmBinDir is null || paths.RtlDir is null)
             Assert.Fail("LLVM toolchain not found (run scripts/bootstrap.ps1)"); // testing.md rule 5: fails, never skips
         return paths;
     }
+
+    /// <summary>The service graph over the real file system, searching from the test assembly's folder inside the checkout.</summary>
+    private static FreexComp.Ide.Core.Composition.IdeServices Compose(RecordingLog log) => TestComposition.Build(o =>
+    {
+        o.FileSystem = new FreexComp.Ide.Core.Platform.PhysicalFileSystem();
+        o.ToolchainEnvironment = new ToolchainEnvironment(null, AppContext.BaseDirectory, []);
+        o.Log = log;
+    });
 
     /// <summary>
     /// Step (2): runs <paramref name="exe"/> with <c>--dump-layout &lt;dir&gt;/runtime.json</c>; asserts exit code 0 within

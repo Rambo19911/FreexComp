@@ -45,6 +45,16 @@ public sealed class DumpLayoutEqualityTests
     }
 
     /// <summary>
+    /// Phase 7 (data task A-071, ADR 004): the same equality for the data-access CRUD sample, whose form holds data
+    /// components — the catalog is the framework root followed by the data root and the build finds the data units, as in
+    /// the IDE. The body is shared with the cross-area test <c>Layout_CrudForm_DesignerEqualsRuntime</c>.
+    /// </summary>
+    [Fact(Timeout = 120000)]
+    [Trait("Phase", "7")]
+    [Trait("Req", "DSG-LAY-061")]
+    public Task CrudSampleLayoutEqualsRuntimeLayout() => DataLayoutScenario.CrudFormEqualsRuntimeAsync();
+
+    /// <summary>
     /// DSG-LAY-063: a form designed from scratch in a headless designer session (new <c>gui-pascal</c> project, controls
     /// placed and edited, form resized by its handle), saved, built and run with <c>--dump-layout</c>: the runtime layout
     /// equals the designer's.

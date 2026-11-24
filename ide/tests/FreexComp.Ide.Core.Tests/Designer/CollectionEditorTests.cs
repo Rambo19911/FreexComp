@@ -5,8 +5,10 @@ using FreexComp.Designer.Inspector;
 using FreexComp.Designer.Model;
 using FreexComp.Designer.Surface;
 using FreexComp.Designer.Text;
+using DesignCommandIds = FreexComp.Designer.Surface.Commands;
 using FreexComp.Ide.Core.Designer;
 using FreexComp.Ide.Core.Dialogs;
+using FreexComp.Ide.Core.Documents;
 using FreexComp.Ide.Core.Tests.Designer.CodeSync;
 using FreexComp.Ide.TestSupport;
 
@@ -237,6 +239,131 @@ public sealed class CollectionEditorTests
         DesignerFixture.Select(designer, "Panel1", "StatusBar1");
         inspector.CurrentPath = "Panels";
         Assert.False(inspector.CanEditCollection);
+    }
+
+    /// <summary>
+    /// D-100 (DAT-337): the generic collection editor and the <c>editColumns</c> verb on <c>TDBGrid.Columns</c> with the
+    /// shipped metadata (the framework root, then <c>data/design</c>); a missing data root fails the test.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "7")]
+    [Trait("Req", "DAT-337")]
+    [Trait("Req", "DSG-OI-110")]
+    public Task EditsDbGridColumnsFromDataMetadata() => TestUiThread.RunAsync(EditsDbGridColumnsFromDataMetadataOnUiThread);
+
+    private static async Task EditsDbGridColumnsFromDataMetadataOnUiThread()
+    {
+        Assert.True(File.Exists(Path.Combine(DataDesignTests.DataDesignDir, "index.json")), "data metadata not found: " + DataDesignTests.DataDesignDir);
+        var catalog = DataDesignTests.Catalog;
+
+        // The metadata: a collection property with the item class TColumn and the verb that edits it.
+        var grid = catalog.Find("TDBGrid")!;
+        var columns = grid.FindProperty("Columns")!;
+        Assert.Equal((PropertyKind.Collection, "TColumn"), (columns.Kind, columns.ItemClass));
+        var verb = Assert.Single(grid.DesignerVerbs);
+        Assert.Equal(("editColumns", "&Columns Editor…", "designer.editCollection", "Columns"), (verb.Id, verb.Caption, verb.Command, verb.Arg));
+
+        var dialogs = new FakeDialogService();
+        var f = new DesignerFixture(o => o.Dialogs = dialogs);
+        ((DocumentService)f.Services.Documents).DesignCatalog = catalog;
+        var unit = DataDesignTests.EmptyUnit
+            .Replace("  Classes, Controls, Forms;", "  Classes, Controls, Forms, DB, DBGrids;", StringComparison.Ordinal)
+            .Replace("  TMainForm = class(TForm)\r\n", "  TMainForm = class(TForm)\r\n    DataSource1: TDataSource;\r\n    DBGrid1: TDBGrid;\r\n", StringComparison.Ordinal);
+        var form = DataDesignTests.EmptyForm[..DataDesignTests.EmptyForm.LastIndexOf("end", StringComparison.Ordinal)]
+            + "  object DataSource1: TDataSource\n    DesignLeft = 16\n    DesignTop = 240\n  end\n"
+            + "  object DBGrid1: TDBGrid\n    Left = 16\n    Top = 16\n    Width = 320\n    Height = 120\n    DataSource = DataSource1\n    TabOrder = 0\n  end\nend\n";
+        var designer = (await f.OpenAsync(unit, form)).Designer;
+        var commands = f.Services.Commands;
+        CollectionValue? Columns() => DesignerFixture.Object(designer, "DBGrid1").FindProperty("Columns")?.Value as CollectionValue;
+
+        // The context menu of the grid starts with the verb; a component without the property cannot run its command.
+        DesignerFixture.Select(designer, "DataSource1");
+        Assert.False(commands.CanExecute(DesignCommandIds.EditCollection, "Columns"));
+        DesignerFixture.Select(designer, "DBGrid1");
+        var menu = designer.ContextMenu!();
+        Assert.Equal(("editColumns", "designer.editCollection", "Columns", true), (menu[0].VerbId, menu[0].CommandId, menu[0].Argument, menu[0].IsEnabled));
+        Assert.True(menu[1].IsSeparator);
+
+        // The verb opens the collection editor on the empty collection; the items are TColumn objects of the metadata.
+        dialogs.Script(CollectionEditorViewModel.DialogName, async dialog =>
+        {
+            var editor = Assert.IsType<CollectionEditorViewModel>(dialog);
+            Assert.Equal("Edit DBGrid1.Columns", editor.Title);
+            Assert.True(editor.IsEmpty);
+            editor.Add();
+            Assert.Equal(["0 – Column"], editor.ItemTexts); // DSG-OI-111: no string value yet → the class name without T
+            Assert.Equal(["Alignment", "FieldName", "ReadOnly", "Title", "Visible", "Width"], editor.Grid.Rows.Select(r => r.Path).Order(StringComparer.Ordinal));
+            Assert.False(Enter(editor.Grid, "Width", "-2")); // min -1
+            editor.Grid.Cancel();
+            Assert.True(Enter(editor.Grid, "FieldName", "name"));
+            Assert.True(Enter(editor.Grid, "Width", "100"));
+            Assert.True(Enter(editor.Grid, "ReadOnly", "False")); // the default: not stored
+            editor.Add();
+            Assert.True(Enter(editor.Grid, "Title", "E-mail"));
+            Assert.True(Enter(editor.Grid, "Alignment", "taCenter"));
+            Assert.True(Enter(editor.Grid, "Visible", "False"));
+            Assert.Equal(["0 – name", "1 – E-mail"], editor.ItemTexts);
+            editor.Add();
+            Assert.True(Enter(editor.Grid, "FieldName", "id"));
+            editor.MoveUp();
+            editor.MoveUp();
+            Assert.Equal(["0 – id", "1 – name", "2 – E-mail"], editor.ItemTexts);
+            Assert.Null(Columns()); // the form is untouched while the dialog is open
+            await editor.PressDefaultAsync();
+        });
+        await commands.ExecuteAsync(DesignCommandIds.EditCollection, "Columns");
+        Assert.Equal(3, Columns()!.Items.Length);
+        Assert.Equal((1, UndoTitles.Property), (designer.Undo.UndoCount, designer.Undo.UndoTitleKey));
+
+        // The canonical text (form-format.md §2.4): items in order, properties in the item class's declaration order, defaults dropped.
+        const string written = """
+              object DBGrid1: TDBGrid
+                Left = 16
+                Top = 16
+                Width = 320
+                Height = 120
+                DataSource = DataSource1
+                Columns = <
+                  item
+                    FieldName = 'id'
+                  end
+                  item
+                    FieldName = 'name'
+                    Width = 100
+                  end
+                  item
+                    Title = 'E-mail'
+                    Alignment = taCenter
+                    Visible = False
+                  end
+                >
+                TabOrder = 0
+              end
+
+            """;
+        Assert.Contains(written.ReplaceLineEndings("\n"), FormWriter.Write(designer.Model!), StringComparison.Ordinal);
+
+        // The Object Inspector row opens the same editor; deleting every item removes the property (one more unit).
+        var inspector = new ObjectInspectorViewModel(f.Services.Status, null, dialogs);
+        inspector.Bind(designer);
+        inspector.CurrentPath = "Columns";
+        Assert.Equal("(3 items)", inspector.Rows.Single(r => r.Path == "Columns").Display);
+        Assert.True(inspector.CanEditCollection);
+        dialogs.Script(CollectionEditorViewModel.DialogName, async dialog =>
+        {
+            var editor = (CollectionEditorViewModel)dialog;
+            editor.Select([0, 1, 2]);
+            editor.Delete();
+            Assert.True(editor.IsEmpty);
+            await editor.PressDefaultAsync();
+        });
+        await inspector.EditCollectionAsync();
+        Assert.Null(Columns());
+        Assert.Equal(2, designer.Undo.UndoCount);
+
+        // Undo restores the three columns.
+        designer.Surface!.Execute("edit.undo");
+        Assert.Equal(3, Columns()!.Items.Length);
     }
 
     [Fact(Timeout = 30000)]
