@@ -14,21 +14,6 @@ DAT-166 | informative | usage rule for applications (one thread at a time)
 DAT-167 | informative | states the absence of a check
 DAT-308 | informative | refers to the single-thread usage rule DAT-166
 
-# data links and single-field controls
-DAT-260 | pending | A-062 grid columns
-DAT-261 | pending | A-062 grid geometry
-DAT-262 | pending | A-062 grid column width
-DAT-263 | pending | A-063 grid rows
-DAT-264 | pending | A-062 grid painting
-DAT-265 | pending | A-063 grid scroll bars
-DAT-266 | pending | A-063 grid mouse
-DAT-267 | pending | A-063 grid keyboard
-DAT-268 | pending | A-064 grid editing condition
-DAT-269 | pending | A-064 grid in-place editor
-DAT-270 | pending | A-064 grid commit rules
-DAT-271 | pending | A-064 grid row changes post
-DAT-272 | pending | A-064 grid repainting
-
 # component metadata
 DAT-280 | pending | A-066 metadata renderer ids
 DAT-281 | pending | A-066 metadata property typing
@@ -68,4 +53,3 @@ DAT-374 | crud-sample | A-069 result file
 
 # testing rules
 DAT-403 | informative | constrains where test programs keep their files; the runner gives each a fresh directory (DAT-401)
-DAT-408 | pending | A-062 geometry through numbers

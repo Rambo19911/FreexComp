@@ -948,6 +948,10 @@ type
     function Edit: Boolean; virtual;
     { Calls UpdateData once; a call from inside UpdateData is ignored. }
     procedure UpdateRecord;
+    { The current row (the row being inserted counts at its insert position) is the first / the last of the
+      rows; True without rows, False while the link is not active. }
+    function AtFirstRow: Boolean;
+    function AtLastRow: Boolean;
     property DataSource: TDataSource read FDataSource write SetDataSource;
     { nil without a data source }
     property DataSet: TDataSet read GetDataSet;
@@ -3939,6 +3943,28 @@ begin
   if FActive and not FEditing and not FReadOnly then
     FDataSource.Edit;
   Result := FEditing;
+end;
+
+function TDataLink.AtFirstRow: Boolean;
+var
+  Current: Integer;
+begin
+  Result := False;
+  if not FActive then
+    Exit;
+  RowTotal(Current);
+  Result := Current <= 0;
+end;
+
+function TDataLink.AtLastRow: Boolean;
+var
+  Total, Current: Integer;
+begin
+  Result := False;
+  if not FActive then
+    Exit;
+  Total := RowTotal(Current);
+  Result := Current >= Total - 1;
 end;
 
 procedure TDataLink.UpdateRecord;

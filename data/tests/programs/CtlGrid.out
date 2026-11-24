@@ -1,0 +1,439 @@
+== defaults
+ok a custom control
+ok Width
+ok Height
+ok TabStop
+ok Options
+ok ReadOnly
+ok DataSource
+ok no persistent columns
+ok no columns without a dataset
+ok SelectedIndex
+ok SelectedField
+ok EditorMode
+ok no cell text
+ok no editor without data
+ok the border takes two pixels on each side: client width
+ok client height
+ok paints without a data source
+ok no vertical scroll bar
+ok no horizontal scroll bar
+== automatic columns
+ok a closed dataset: no columns
+ok one column per field, in field order
+ok the Columns collection stays empty
+ok the title is the display label of the field
+ok the column knows its field
+ok SelectedField
+ok the width is computed
+ok a layout change rebuilds them: field order, invisible fields left out
+ok a display label
+ok closing removes them
+ok opening builds them
+== persistent columns
+ok a new column: Width
+ok ReadOnly
+ok Visible
+ok Title
+ok FieldName
+ok a persistent column replaces the automatic ones
+ok an invisible column is not shown
+ok ColCount counts the shown columns
+ok Items
+ok the field of a column
+ok a column whose field does not exist has none
+ok and shows empty cells
+ok its title is the field name
+ok an own title
+ok no own title: the display label
+ok shown again
+ok the alignment is the field's
+ok an assigned alignment stays
+ok without a field: left
+ok SelectedIndex is kept inside the columns
+ok at both ends
+ok persistent columns stay when the dataset closes
+ok without fields
+ok the own title stays
+ok a deleted column
+ok the selection moves inside
+ok no persistent column: automatic columns again
+== cell text
+ok window row 0
+ok window row 1
+ok window row 2
+ok a null value
+ok a row beyond the data
+ok a negative row
+ok a column beyond the columns
+ok a negative column
+ok a memo: the first line
+ok a lone line feed ends the first line
+ok a memo: at most 255 characters
+ok a null memo
+ok a blob
+ok the display text of the field
+ok rows are window rows, not relative to the current row
+ok reading cells leaves the fields on the current row
+ok and does not move the dataset
+ok the row being edited shows its new values
+ok the other rows their own
+== geometry
+ok the display width of a string field is its size
+ok the corner: indicator width, row height
+ok the first title cell
+ok the second title cell
+ok the first data cell
+ok a cell of the third row
+ok an indicator cell
+ok no such column: empty
+ok no such row: empty
+ok the whole rows below the title row
+ok a longer title widens the column
+ok without titles the rows start at the top
+ok and there is no title cell
+ok one more row fits
+ok without indicator the cells start at the left
+ok and there is no indicator cell
+== column width
+ok a persistent column: computed like an automatic one
+ok an own width
+ok zero is a width
+ok computed again, from the own title
+ok without a field: from the title alone
+== font
+ok the row height follows the font
+ok and the column width
+== painting
+ok titles, the indicator of the current row, the cells with their alignment; no highlight without focus
+ok focused: the selected cell is highlighted
+ok the selection follows the column and the row
+ok the focus left: no highlight
+ok dgAlwaysShowSelection: highlighted without focus
+ok dgRowSelect without focus: no highlight
+ok dgRowSelect: the whole current row
+ok the row being edited has the edit mark
+ok the row being inserted has the insert mark
+ok and occupies its insert position
+ok no title row, no indicator column
+ok persistent columns: own title and alignment, empty cells for a missing field
+ok a closed dataset: the titles only
+ok paints to the screen
+== row window
+ok three whole rows fit
+ok the first rows
+ok the window follows the current row by the minimum
+ok a move inside the window keeps it
+ok the last rows
+ok the first rows again
+ok a taller grid
+ok shows more rows
+ok at least one row
+ok the current one
+ok without the title row one more
+ok is shown
+== vertical scroll bar
+ok a closed dataset: hidden
+ok more records than rows: range 1..RecordCount, position RecNo
+ok the columns fit: no horizontal bar
+ok the bar takes its width from the client area
+ok line down: Next
+ok the position follows
+ok line up: Prior
+ok page down: by the visible rows
+ok page up
+ok dragging the thumb does not move yet
+ok releasing it: RecNo := position
+ok bottom: Last
+ok the position at the end
+ok line down at the last record does not append
+ok top: First
+ok as many records as rows: hidden
+ok the client area has its full width
+ok one record more: shown
+ok an inactive link: hidden
+ok active again: shown
+== horizontal scroll bar
+ok four records in five rows: no vertical bar
+ok the columns exceed the width: one position per column
+ok the bar takes its height from the client area
+ok LeftCol
+ok the partly visible column starts inside the client area
+ok and keeps its width
+ok line right: one whole column
+ok the position follows
+ok the column scrolled out has no rectangle
+ok the next one starts after the indicator
+ok page right: by the whole columns shown
+ok not beyond the position that shows the last column whole
+ok the thumb
+ok page left
+ok right end
+ok left end
+ok not before the first column
+ok selecting a column scrolls it into view
+ok to the left as well
+ok a column that is whole in view does not scroll
+ok wide enough: hidden
+ok and scrolled back
+== mouse
+ok a click on a cell moves to its row
+ok selects its column
+ok OnColExit, OnColEnter, OnCellClick
+ok and focuses the grid
+ok a click in another row
+ok the same column: only OnCellClick
+ok a click on a title: OnTitleClick
+ok no move
+ok no column change
+ok a click on the indicator moves to the row
+ok without a cell click
+ok a click below the last record does nothing
+ok a click beside the last column does nothing
+ok no event
+ok a click in another row posts the edited one
+ok with its values
+ok and moves
+ok a double click moves like a click
+ok fires the click events
+ok and shows the editor
+ok on the clicked cell
+ok read-only: the double click moves
+ok but shows no editor
+ok wheel down: three records forward
+ok wheel up: three records back
+== keyboard: rows
+ok Down: Next
+ok Up: Prior
+ok PageDown: by the visible rows
+ok PageDown near the end: the last record
+ok PageUp
+ok Ctrl+End: Last
+ok Ctrl+Home: First
+== keyboard: columns
+ok Right: the next column
+ok Right in the last column: no wrap
+ok and no row change
+ok Left: the previous column
+ok Left in the first column: no wrap
+ok End: the last column
+ok Home: the first column
+ok Home and End do not move the dataset
+== keyboard: Tab
+ok Tab: the next column
+ok Tab in the last column: the first column
+ok of the next row
+ok Shift+Tab in the first column: the last column
+ok of the previous row
+ok Shift+Tab: the previous column
+ok still in the grid
+ok Shift+Tab in the very first cell leaves the grid backwards
+ok Tab in the very last cell leaves the grid forwards
+ok without appending
+ok dgTabs: the grid wants Tab
+ok and the arrow keys
+ok without dgTabs the grid does not handle Tab
+ok and does not want it
+== keyboard: editor, insert, cancel
+ok F2 shows the editor
+ok Escape hides it
+ok the grid has the focus again
+ok Enter shows the editor
+ok with the text of the cell
+ok a character shows the editor
+ok and replaces the text
+ok the dataset is in edit mode
+ok Enter writes the text to the field
+ok while editing the grid wants Escape
+ok Escape in the grid cancels the record
+ok the value is back
+ok in browse mode the grid does not want Escape
+ok Insert inserts a record
+ok Escape cancels it
+ok nothing inserted
+== keyboard: delete
+ok Delete alone does nothing
+ok and asks nothing
+ok Ctrl+Delete asks
+ok declined: nothing deleted
+ok asks again
+ok confirmed: the current record is deleted
+ok without dgConfirmDelete: not asked
+ok deleted
+ok a read-only grid does not delete
+ok and does not insert
+== keyboard: append
+ok Down on the last record appends
+ok the new row is the last row of the grid
+ok after the last record
+ok Down in the untouched new row does nothing
+ok the row stays
+ok Up leaves and cancels it
+ok nothing appended
+ok Down in a filled new row posts it
+ok and appends the next one
+ok Down in the edited last record posts it
+ok and appends
+ok a read-only grid does not append
+ok nor a grid without dgEditing
+ok nor a grid on a dataset that cannot be modified
+ok the records are unchanged
+ok Up in an empty dataset does nothing
+ok Down in an empty dataset appends
+== editing possible
+ok a closed dataset: no
+ok the default: yes
+ok without dgEditing: no
+ok with dgRowSelect: no
+ok a read-only grid: no
+ok a blob column: no
+ok AutoEdit off: the editor shows (changes are rejected when they start)
+ok EditorMode := True shows the editor
+ok EditorMode := False hides it
+ok a persistent column: yes
+ok a read-only column: no
+ok a column without a field: no
+ok a field that cannot be modified: no
+ok the field beside it: yes
+ok a dataset that cannot be modified: no
+== editor
+ok no editor control before the first use
+ok ShowEditor creates the editor
+ok a child of the grid
+ok without a name
+ok with the edit text of the field
+ok all selected
+ok focused
+ok over the selected cell, inside its grid lines
+ok showing the editor does not start editing
+ok the first change puts the dataset into edit mode
+ok the typed text
+ok the field is not written yet
+ok the record is not modified yet
+ok Enter writes the text to the field
+ok and hides the editor
+ok the record is not posted
+ok the grid has the focus
+ok Escape hides the editor
+ok without writing
+ok the record stays in edit mode
+ok Enter in an unchanged editor writes nothing
+ok and hides it
+== editor: moving commits
+ok Tab writes the text
+ok and moves to the next column
+ok the editor is hidden
+ok the record is not posted
+ok Down writes the text and the row change posts the record
+ok the next row
+ok the editor is hidden
+ok the editor shows the cell it is opened on
+ok Up writes and posts
+ok the previous row
+ok selecting another column writes the text
+ok without posting
+ok Post by the application writes the text first
+ok and the editor is hidden
+ok a move by the application writes the text and posts
+ok Cancel by the application hides the editor
+ok nothing written
+== editor: deleting keys
+ok Backspace is a change
+ok the selected text is gone
+ok an emptied editor writes an empty text
+ok Delete is a change
+ok the selected text is gone
+== editor: rejected changes
+ok AutoEdit off: a typed character beeps
+ok and is swallowed
+ok the dataset stays in browse mode
+ok Delete beeps
+ok and deletes nothing
+ok after Edit by the application the character is accepted
+ok and typed
+ok a character typed into the grid beeps as well
+ok and shows no editor
+== editor: a text the field rejects
+ok Enter: the exception reaches the application
+ok the editor stays
+ok with its text
+ok and the focus
+ok Down: the exception reaches the application
+ok the row does not change
+ok the editor stays
+ok Tab: the exception reaches the application
+ok the column does not change
+ok Escape gives the text up
+ok without an error
+== dgAlwaysShowEditor
+ok no editor while the grid is not focused
+ok focusing the grid shows the editor
+ok on the selected cell
+ok the editor has the focus
+ok Down moves
+ok the editor stays shown
+ok with the text of the new row
+ok over the new cell
+ok Enter writes
+ok and the editor stays
+ok Escape keeps the editor
+ok with the text of the field again
+ok a column change
+ok keeps the editor
+ok on the new cell
+ok leaving the grid hides the editor
+ok the editor control is hidden
+== leaving the grid
+ok the editor is part of the grid: one OnEnter, one OnExit
+ok leaving writes the text of the editor
+ok without posting
+ok the editor is closed
+ok and hidden
+ok the focus moved
+== leaving with a text the field rejects
+ok the exception leaves SetFocus
+ok the editor keeps the focus
+ok and stays open
+ok with its text
+ok after Escape the focus can leave
+== dgCancelOnExit
+ok a new record
+ok leaving cancels the untouched new record
+ok nothing inserted
+ok a modified new record stays
+ok a new record with a text in the editor stays
+ok the text is written
+ok an untouched record in edit mode is not cancelled
+ok without dgCancelOnExit the new record stays
+== row changes post
+ok Down posts the modified record
+ok and moves
+ok a post error reaches the application
+ok the cursor stays on the row
+ok in edit mode
+ok the same for a click on another row
+ok the cursor stays
+ok without the error the record is posted
+ok and the cursor moves
+== repainting
+ok opening: everything
+ok a scroll: everything
+ok entering edit mode: the current row (its indicator)
+ok a field change: the current row only
+ok a post: everything
+ok a layout change: everything
+ok a column change: the current row
+ok closing: everything
+== lifetime
+ok linked, the editor open
+ok destroying the source clears DataSource
+ok no columns
+ok no editor
+ok paints empty
+ok a new source at run time
+ok shows its data
+ok a grid with an open editor can be destroyed
+ok destroying the dataset leaves the persistent columns
+ok without data
+ok paints the titles
+failed checks: 0
