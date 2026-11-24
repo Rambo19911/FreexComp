@@ -1,0 +1,75 @@
+# by value: type numbers, values, reverse order (RTL-1014 step 1)
+ok no arguments: zero IID, user locale, no result
+ok signed integers
+ok their largest values
+ok unsigned integers
+ok Single, Double, Currency, TDateTime
+ok True is -1 for Boolean and WordBool; the OLE string keeps #0
+ok False is 0; the empty string is nil
+ok interface references
+ok nil references
+ok after the calls by value: the server's reference count
+ok after the calls by value: the other object's reference count
+# by reference: records and copy-back (RTL-1014 steps 1 and 6)
+ok signed integers
+ok changed by the server
+ok unsigned integers
+ok changed by the server
+ok real types
+ok Single doubled
+ok Double doubled
+ok Currency plus one unit
+ok TDateTime doubled
+ok Boolean as a 16-bit -1, WordBool, enumeration, string as an OLE string, an emptied out string
+ok Boolean copied back
+ok WordBool changed
+ok its value is -1
+ok enumeration changed
+ok string copied back by length
+ok its length
+ok out string copied back
+ok False and the empty string by reference
+ok Boolean copied back as True
+ok WordBool back to False
+ok interface variables
+ok the IDispatch variable holds the other object
+ok the IInterface variable holds the server
+ok after the calls by reference: the server's reference count
+ok after the calls by reference: the other object's reference count
+# results of every type (RTL-1014 steps 3 and 5)
+ok ShortInt
+ok the result record arrives empty
+ok SmallInt
+ok Integer
+ok Int64
+ok Byte
+ok Word
+ok Cardinal
+ok UInt64
+ok Single
+ok Double
+ok Currency
+ok TDateTime
+ok Boolean
+ok WordBool
+ok enumeration
+ok string, copied by length
+ok its length
+ok IDispatch result
+ok IInterface result
+# results given in another type are converted (RTL-1014 step 5)
+ok Integer from an OLE string
+ok string from an integer
+ok Boolean from a non-zero integer
+ok WordBool from a non-zero integer is -1
+ok Int64 from a 16-bit integer
+ok Byte from a 16-bit integer
+ok Double from a 16-bit integer
+ok Single from a 16-bit integer
+ok Currency from a 16-bit integer
+ok enumeration from a 16-bit integer
+ok IDispatch from an IUnknown record
+ok IInterface from an IDispatch record
+ok after the results: the server's reference count
+ok after the results: the other object's reference count
+# passed 70 failed 0

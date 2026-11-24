@@ -1,0 +1,40 @@
+# property get: flags 2, no named argument (RTL-1014 step 2)
+ok Count
+ok get of a plain property
+ok an empty string property
+ok get of a string property
+# property put: flags 4, one named argument -3 (RTL-1014 step 2)
+ok put of a string
+ok the server stored it
+ok and gives it back
+ok put of a Boolean
+ok True arrives as -1
+ok read back
+ok False arrives as 0
+ok read back
+ok put of a write-only property
+ok its value
+# put of an interface value: flags 8 (RTL-1014 step 2)
+ok put by reference of an IDispatch
+ok only the server took a reference
+ok get of an interface property
+ok the same object comes back
+ok a dispatch-interface property
+ok reading it left no reference behind
+ok put of nil
+ok the server released the object
+ok nil comes back
+# indexed and default properties (RTL-1014 step 2)
+ok indexed put: the value first, then the index
+ok default property put
+ok indexed get
+ok indexed get: flags 2, one argument
+ok default property get
+ok two keys are stored
+ok get and put in one statement
+ok two indexes and the value
+ok stored at row 2, column 3
+ok read back
+ok two indexes
+ok the other cell is untouched
+# passed 35 failed 0

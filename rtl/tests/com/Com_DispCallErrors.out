@@ -1,0 +1,29 @@
+# exception information (RTL-1014 step 4)
+ok the filled record
+ok its help context
+ok through the deferred fill-in callback
+ok its help context
+ok the callback ran once
+ok an empty record: the code is DISP_E_EXCEPTION and the message is the text of the system (RTL-1010)
+ok no help context
+# other failures (RTL-1014 steps 4 and 5)
+ok DISP_E_MEMBERNOTFOUND
+ok no help context
+ok a failing code with a result record
+ok a result that cannot be converted: the code of the conversion
+# by-reference variables after a failure (RTL-1014 step 6)
+ok the call failed
+ok the Integer was passed by its own address: the server wrote to it
+ok the string is unchanged
+ok the Boolean is unchanged
+ok the result could not be converted
+ok the Integer was passed by its own address; the result was not stored
+ok the string is unchanged
+ok the Boolean is unchanged
+ok the same arguments on success
+ok the Integer is copied back
+ok the string is copied back
+ok the Boolean is copied back
+# nothing stays allocated (RTL-1014 step 6)
+ok live allocations after every outcome
+# passed 24 failed 0

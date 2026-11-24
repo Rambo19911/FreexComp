@@ -1,0 +1,26 @@
+ok CoInitializeEx
+# the system object (RTL-1015: the program initialises COM itself)
+ok the class is registered
+ok created in process
+ok an IDispatch reference
+# the declaration matches the object
+Add=1 Count=2 Exists=3 Item=0
+ok Add
+ok Count
+ok Exists
+ok Item
+# calls through the dispatch interface (LANG-697, RTL-1014)
+ok a new dictionary is empty
+ok Count after two Add
+ok Exists of a key
+ok Exists of a missing key
+ok Item get
+ok the default property
+ok Item put
+ok the put replaced, it did not add
+# a failure of the object (RTL-1014 step 4)
+ok the description of the object
+ok adding a key twice: the code of the object
+ok the value is untouched
+ok and so is the count
+# passed 20 failed 0
