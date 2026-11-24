@@ -15,7 +15,7 @@ public sealed class RunParametersWindow : DialogWindow
     }
 
     private RunParametersWindow(RunParametersViewModel model, DialogFieldBuilder fields)
-        : base(model, Fields(fields, model.Fields, model.BrowseAsync))
+        : base(model, Fields(fields, model.Fields, model.BrowseAsync, model.BrowseHostAsync))
     {
         Opened += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
@@ -25,8 +25,21 @@ public sealed class RunParametersWindow : DialogWindow
     }
 
     /// <summary>The §22 fields, shared with the Run page of Project Options (§8.6).</summary>
-    internal static StackPanel Fields(DialogFieldBuilder fields, RunFields model, Func<Task> browse)
+    internal static StackPanel Fields(DialogFieldBuilder fields, RunFields model, Func<Task> browse, Func<Task> browseHost)
     {
+        // IDE-TGT-012: the host application of a library project; disabled (value kept) for the other application types.
+        var host = fields.Text("HostApplication", () => model.HostApplication, v => model.HostApplication = v);
+        var hostLabel = DialogFieldBuilder.Label(Strings.RunParameters_HostApplication, host);
+        var hostRow = DialogFieldBuilder.Row(hostLabel, fields.WithBrowse("HostApplication", host, browseHost));
+        hostRow.IsEnabled = model.HostApplicationEnabled;
+        model.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(RunFields.HostApplication) && host.Text != model.HostApplication)
+                host.Text = model.HostApplication;
+            if (e.PropertyName == nameof(RunFields.HostApplicationEnabled))
+                hostRow.IsEnabled = model.HostApplicationEnabled;
+        };
+
         var arguments = fields.Text("Arguments", () => model.Arguments, v => model.Arguments = v, code: true);
         var working = fields.Text("WorkingDir", () => model.WorkingDir, v => model.WorkingDir = v);
         model.PropertyChanged += (_, e) =>
@@ -58,6 +71,14 @@ public sealed class RunParametersWindow : DialogWindow
                         DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.RunParameters_WorkingDir, working), fields.WithBrowse("WorkingDir", working, browse)),
                         hint,
                         fields.Message("WorkingDir", model, () => model.WorkingDirMessage, () => model.WorkingDirIsError, working),
+                    },
+                },
+                new StackPanel
+                {
+                    Children =
+                    {
+                        hostRow,
+                        fields.Message("HostApplication", model, () => model.HostApplicationError, () => true, host),
                     },
                 },
                 DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.RunParameters_CommandLine, null), commandLine),

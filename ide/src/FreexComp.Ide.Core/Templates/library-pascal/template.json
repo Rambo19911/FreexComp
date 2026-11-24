@@ -1,0 +1,4 @@
+{ "id": "library-pascal", "name": "Dynamic-link library", "description": "A library of routines that other programs load and call.",
+  "language": "pascal", "appType": "library",
+  "files": [ { "source": "Library.pas.txt", "target": "$(ProjectName).pas" },
+             { "source": "Project.pproj.txt", "target": "$(ProjectName).pproj" } ] }

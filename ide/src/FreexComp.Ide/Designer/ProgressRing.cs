@@ -13,8 +13,8 @@ namespace FreexComp.Ide.Designer;
 /// </summary>
 public sealed class ProgressRing : Control
 {
-    private const double Size = 32;
-    private const double Stroke = 3;
+    private readonly double Size;
+    private readonly double Stroke;
 
     /// <summary>The turn of the arc in degrees (animated while the ring is shown).</summary>
     public static readonly StyledProperty<double> AngleProperty = AvaloniaProperty.Register<ProgressRing, double>(nameof(Angle));
@@ -23,8 +23,12 @@ public sealed class ProgressRing : Control
 
     static ProgressRing() => AffectsRender<ProgressRing>(AngleProperty);
 
-    public ProgressRing()
+    /// <param name="size">Diameter in DIP: 32 on a document surface, 12 inside a tree row (UI-TW-118).</param>
+    /// <param name="stroke">Thickness of the track and the arc.</param>
+    public ProgressRing(double size = 32, double stroke = 3)
     {
+        Size = size;
+        Stroke = stroke;
         Width = Size;
         Height = Size;
     }

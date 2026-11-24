@@ -436,12 +436,13 @@ public sealed partial class DebugService : IDebugService
     public void RegisterCommands(ICommandService commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        bool Project() => _projects.Project is not null;
+        // IDE-TGT-014: a library (or package) cannot be started under the debugger; breakpoints stay.
+        bool Debuggable() => _projects.Project is { AppType: "console" or "gui" };
         bool Idle() => _state.Current.State == IdeState.Idle;
         bool Paused() => _state.Current.State == IdeState.Paused && _active is not null;
 
         // menus.md §7; the state part of each condition is what a shortcut reports (UI-CMD-012).
-        commands.RegisterHandler("run.start", new Handler(Project, () => true, StartCommandAsync)
+        commands.RegisterHandler("run.start", new Handler(() => _active is not null || Debuggable(), () => true, StartCommandAsync)
         {
             Title = () => Paused() ? Strings.Button_Continue : null,
             MenuLabel = () => Paused() ? Strings.Menu_run_continue : null,
@@ -452,14 +453,14 @@ public sealed partial class DebugService : IDebugService
             () => _active is not null ? RestartAsync() : _run.RestartAsync()));
         commands.RegisterHandler("run.pause", new Handler(() => _active is not null, () => _state.Current.State == IdeState.DebugRunning,
             () => ControlAsync(s => s.PauseAsync())));
-        commands.RegisterHandler("run.stepOver", new Handler(() => Paused() || Project(), () => Paused() || Idle(),
+        commands.RegisterHandler("run.stepOver", new Handler(() => Paused() || Debuggable(), () => Paused() || Idle(),
             () => Paused() ? ControlAsync(s => s.StepOverAsync(StepThread)) : StartAtMainBodyAsync()));
-        commands.RegisterHandler("run.stepInto", new Handler(() => Paused() || Project(), () => Paused() || Idle(),
+        commands.RegisterHandler("run.stepInto", new Handler(() => Paused() || Debuggable(), () => Paused() || Idle(),
             () => Paused() ? ControlAsync(s => s.StepIntoAsync(StepThread)) : StartAtMainBodyAsync()));
         commands.RegisterHandler("run.stepOut", new Handler(() => _active is not null, Paused,
             () => ControlAsync(s => s.StepOutAsync(StepThread))));
         // menus.md §7: text and (paused or (project and runnable and idle)); idle starts with a temporary breakpoint (DBG-232).
-        commands.RegisterHandler("run.runToCursor", new Handler(() => EditorFile is not null && (_active is not null || Project()), () => Paused() || Idle(), () =>
+        commands.RegisterHandler("run.runToCursor", new Handler(() => EditorFile is not null && (_active is not null || Debuggable()), () => Paused() || Idle(), () =>
             EditorFile is not { } editor ? Task.CompletedTask
                 : Paused() ? ControlAsync(s => s.RunToLineAsync(editor.FilePath!, editor.ViewState.Caret.Line))
                 : StartAsync(stopOnEntry: false, (editor.FilePath!, editor.ViewState.Caret.Line))));

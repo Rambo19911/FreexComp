@@ -114,14 +114,27 @@ public sealed class RunService : IRunService
     {
         if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle)
             return false;
-        if (project.AppType is not ("console" or "gui"))
+        // IDE-TGT-013: a library is runnable iff it names a host application; that program is what is started.
+        var host = project.AppType == "library" && _projects.Definition is { } definition ? ProjectOptions.GetHostApplicationPath(definition) : null;
+        if (project.AppType is not ("console" or "gui") && host is null)
         {
             _status.ShowMessage(Strings.Msg_Run_NotRunnable, StatusDuration);
             return false;
         }
 
         _lastWithDebugger = withDebugger;
-        return await BuildThenAsync(project, exe => LaunchAsync(project, exe));
+        if (host is null)
+            return await BuildThenAsync(project, exe => LaunchAsync(project, exe));
+        return await BuildThenAsync(project, async _ =>
+        {
+            if (!_fileSystem.FileExists(host))
+            {
+                await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Run.NoExecutable", [host]));
+                return false;
+            }
+
+            return await LaunchAsync(project, host);
+        });
     }
 
     /// <summary>
@@ -241,7 +254,7 @@ public sealed class RunService : IRunService
         if (definition is null || !definition.Configurations.TryGetValue(project.ActiveConfiguration, out var configuration))
             return null;
         var dir = Path.GetFullPath(Path.Combine(project.Directory, configuration.OutputDir.Replace('/', '\\')));
-        return Path.Combine(dir, project.Name + ".exe");
+        return Path.Combine(dir, project.Name + (project.AppType == "library" ? ".dll" : ".exe")); // IDE-TGT-011
     }
 
     /// <summary>"0", or "-1073741819 (0xC0000005)" when the code is above 255 or negative (states-and-messages.md).</summary>
@@ -304,8 +317,9 @@ public sealed class RunService : IRunService
             return false;
 
         // IDE-P3-082: console programs follow run.consoleMode; GUI programs are always captured without a console.
+        // IDE-TGT-013: the host of a library is started like a program of its own — no console host, nothing captured.
         var external = project.AppType == "console" && _settings.Get(SettingsCatalog.RunConsoleMode) == "external";
-        var request = new ProcessStartRequest(exe, run.Arguments, workingDir) { Capture = !external, ConsoleHost = external };
+        var request = new ProcessStartRequest(exe, run.Arguments, workingDir) { Capture = !external && project.AppType != "library", ConsoleHost = external };
         if (_settings.Get(SettingsCatalog.OutputClearOnRun))
             _output.Clear(OutputChannels.Program);
 

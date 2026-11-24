@@ -75,4 +75,71 @@ public sealed class RunParametersDialogTests
         Assert.True(await h.Services.Projects.CloseAsync());
         Assert.False(h.Services.Commands.CanExecute("run.parameters"));
     }
+
+    /// <summary>
+    /// IDE-TGT-012: Run Parameters shows <c>HostApplication</c> under the same rule as Project Options — enabled for a
+    /// library project (where the dialog is available to set it), disabled with its value kept for other types.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-012")]
+    public async Task HostApplicationField()
+    {
+        const string Run = """, "run": { "arguments": "-v", "workingDir": "", "hostApplication": "tools/Loader.exe" }""";
+        await using var h = await BuildScenario.StartAsync(projectExtra: Run, implementedPhase: null);
+        var projectPath = BuildScenario.ProjectPath(h);
+        var dir = Path.GetDirectoryName(projectPath)!;
+
+        // A console project: disabled, the value shown and kept.
+        var opening = h.Services.Commands.ExecuteAsync("run.parameters");
+        var dlg = await h.WaitForDialogAsync("RunParameters");
+        Assert.Equal("tools/Loader.exe", dlg.Find<TextBox>("HostApplication").Text);
+        Assert.False(dlg.Find<TextBox>("HostApplication").IsEffectivelyEnabled);
+        Assert.False(dlg.Find<Button>("HostApplication.Browse").IsEffectivelyEnabled);
+        Assert.Equal(Path.Combine(dir, @"bin\Debug\Hello.exe") + " -v", dlg.Find<TextBlock>("CommandLine").Text);
+        Assert.Equal("Dialog.RunParameters.Arguments", dlg.FocusedAutomationId); // the initial focus is unchanged
+        dlg.Click("Ok");
+        await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+        await opening;
+        Assert.Equal("tools/Loader.exe", h.Services.Projects.Definition!.Run.HostApplication);
+
+        // The same project as a library: the command stays available, the field is enabled.
+        Assert.True(await h.Services.Projects.ApplyOptionsAsync(h.Services.Projects.Definition with { AppType = "library" }));
+        Assert.True(h.Services.Commands.CanExecute("run.parameters"));
+        opening = h.Services.Commands.ExecuteAsync("run.parameters");
+        dlg = await h.WaitForDialogAsync("RunParameters");
+        var host = dlg.Find<TextBox>("HostApplication");
+        Assert.True(host.IsEffectivelyEnabled);
+        Assert.Equal(Path.Combine(dir, @"tools\Loader.exe") + " -v", dlg.Find<TextBlock>("CommandLine").Text);
+
+        host.Text = "x<y.exe";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Strings.Msg_Project_LocationInvalid, dlg.ErrorText("HostApplication"));
+        Assert.False(dlg.Find<Button>("Ok").IsEffectivelyEnabled);
+
+        Directory.CreateDirectory(Path.Combine(h.TempDir, "Elsewhere"));
+        var outside = Path.Combine(h.TempDir, "Elsewhere", "Host.exe");
+        File.WriteAllText(outside, "");
+        h.FileDialogs.NextOpen(outside);
+        dlg.Click("HostApplication.Browse");
+        await h.WaitForAsync(() => host.Text == outside, "a host outside the project directory is stored absolute");
+        Assert.Equal(["*.exe"], Assert.Single(h.FileDialogs.Requests[^1].Filters).Patterns);
+        Assert.Equal("RunParameters.HostApplication", h.FileDialogs.Requests[^1].PromptId);
+        Assert.Null(dlg.ErrorText("HostApplication"));
+        Assert.Equal(outside + " -v", dlg.Find<TextBlock>("CommandLine").Text);
+
+        // Cleared: nothing to run, the preview shows the arguments only.
+        host.Text = "";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("-v", dlg.Find<TextBlock>("CommandLine").Text);
+        host.Text = "host/Loader.exe";
+        Dispatcher.UIThread.RunJobs();
+
+        dlg.Click("Ok");
+        await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+        await opening;
+        Assert.Equal("host/Loader.exe", h.Services.Projects.Definition!.Run.HostApplication);
+        Assert.Contains("\"hostApplication\": \"host/Loader.exe\"", File.ReadAllText(projectPath), StringComparison.Ordinal);
+        Assert.Empty(h.Processes.Started);
+    }
 }

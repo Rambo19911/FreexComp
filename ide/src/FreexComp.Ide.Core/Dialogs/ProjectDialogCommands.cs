@@ -14,9 +14,10 @@ public static class ProjectDialogCommands
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(dialogs);
-        // UI-DLG-220: disabled without a project or when it is not runnable.
+        // UI-DLG-220: disabled without a project or when it can never run; a library runs through its host application,
+        // which is set here (IDE-TGT-012).
         commands.RegisterHandler("run.parameters", new Handler(
-            () => projects.Definition is { AppType: not ("library" or "package") },
+            () => projects.Definition is { AppType: not "package" },
             () => dialogs.ShowAsync(new RunParametersViewModel(projects, pickers, fileSystem))));
         commands.RegisterHandler("project.options", new Handler(
             () => projects.Definition is not null,

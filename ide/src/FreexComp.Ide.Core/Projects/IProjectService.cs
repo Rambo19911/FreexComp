@@ -6,6 +6,9 @@ namespace FreexComp.Ide.Core.Projects;
 /// The open project (architecture.md §4, project-manager.md): at most one at a time (IDE-PM-002). UI thread only.
 /// Lives outside <c>Services</c> next to its file access (<see cref="ProjectFileAccess"/>).
 /// </summary>
+/// <summary>The <c>files</c> entry being renamed and the file name typed for it (UI-TW-118).</summary>
+public sealed record PendingUnitRename(string ProjectPath, string NewName);
+
 public interface IProjectService
 {
     /// <summary>The open project; null without one.</summary>
@@ -91,6 +94,14 @@ public interface IProjectService
 
     /// <summary>A file was renamed (its new project path); the Project Manager selects its row (IDE-PM-033).</summary>
     event EventHandler<string>? FileRenamed;
+
+    /// <summary>
+    /// UI-TW-118: the unit rename that waits for the language service (IDE-PM-130); null otherwise. While it is set the
+    /// rename, remove and delete commands are disabled and <see cref="RenameFileAsync"/> returns false.
+    /// </summary>
+    PendingUnitRename? PendingRename { get; }
+
+    event EventHandler? PendingRenameChanged;
 
     /// <summary>
     /// <c>project.addNewUnit</c> / <c>file.newUnit</c> with a project (IDE-PM-040…042): creates <c>Unit&lt;N&gt;.pas</c> with

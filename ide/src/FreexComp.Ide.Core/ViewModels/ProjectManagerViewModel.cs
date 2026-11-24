@@ -102,6 +102,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
         projects.ProjectChanged += (_, _) => Rebuild();
         projects.FilesAdded += (_, paths) => SelectAdded(paths);
         projects.FileRenamed += (_, path) => SelectAdded([path]);
+        projects.PendingRenameChanged += (_, _) => UpdateBusyRow();
         ((INotifyCollectionChanged)documents.Documents).CollectionChanged += (_, _) => UpdateDocumentMarkers();
         documents.ActiveDocumentChanged += (_, _) =>
         {
@@ -285,13 +286,23 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     /// <summary>The in-place rename of a file row ended (committed or canceled); the view puts focus back on the tree.</summary>
     public event EventHandler? RenameEnded;
 
+    private ProjectNodeViewModel? _busyRow;
+
+    /// <summary>UI-TW-118: the row of the unit rename that waits for the language service shows the typed name and the busy ring.</summary>
+    private void UpdateBusyRow()
+    {
+        _busyRow?.BusyName = null;
+        _busyRow = _projects.PendingRename is { } pending ? Find(pending.ProjectPath) : null;
+        _busyRow?.BusyName = _projects.PendingRename?.NewName;
+    }
+
     /// <summary>
     /// UI-TW-112: the file row <paramref name="projectPath"/> gets an in-place editor (<see cref="ProjectNodeViewModel.Rename"/>)
     /// with the validation and rename of the service. False when there is no such row.
     /// </summary>
     public bool BeginRename(string projectPath, bool newFile = false)
     {
-        if (Find(projectPath) is not { Kind: ProjectNodeKind.File } node)
+        if (_projects.PendingRename is not null || Find(projectPath) is not { Kind: ProjectNodeKind.File } node)
             return false;
         var rename = new RenameFileViewModel(node.Name, name => _projects.ValidateRename(projectPath, name, newFile),
             (name, update) => _projects.RenameFileAsync(projectPath, name, update));
@@ -481,7 +492,7 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     {
         ArgumentNullException.ThrowIfNull(node);
         return IsMovable(node) && FileOperationsDelivered("project.moveFile") && FilterText.Length == 0 && _appliedFilter.Length == 0
-            && IsIdle?.Invoke() != false
+            && IsIdle?.Invoke() != false && _projects.PendingRename is null
             && !Roots.SelectMany(r => r.SelfAndDescendants()).Any(n => n.Rename is not null);
     }
 
@@ -1136,8 +1147,13 @@ public sealed class ProjectManagerViewModel : ToolWindowViewModel, ICommandTarge
     private ProjectNodeViewModel BuildTree(ProjectModel project)
     {
         var badge = $"{project.ActiveConfiguration} · {project.Platforms.FirstOrDefault() ?? "win64"}";
+        var library = project.AppType == "library";
         var root = new ProjectNodeViewModel(ProjectNodeKind.Project, RootKey, project.Name, project.FilePath, null)
         {
+            IsLibrary = library,
+            ToolTipText = library && _projects.Definition is { } definition && definition.Configurations.ContainsKey(project.ActiveConfiguration)
+                ? FreexComp.Build.ProjectOptions.GetOutputPath(definition, project.ActiveConfiguration) // IDE-TGT-011, 017
+                : null!,
             Badge = badge,
             IsExpanded = true,
         };

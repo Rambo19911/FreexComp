@@ -87,7 +87,31 @@ public static class StructureBuilder
         AddGroup(groups, "Constants", Strings.Structure_Group_Constants, constants, sorted, text);
         AddGroup(groups, "Variables", Strings.Structure_Group_Variables, variables, sorted, text);
         AddGroup(groups, "Routines", Strings.Structure_Group_Routines, routines, sorted, text);
+        if (Exports(tree, sorted) is { Count: > 0 } exports)
+            groups.Add(Group("Exports", Strings.Structure_Group_Exports, exports));
         return groups;
+    }
+
+    /// <summary>
+    /// IDE-TGT-018: one row per item of the <c>exports</c> clauses, as written (name with its <c>index</c> and <c>name</c>
+    /// specifiers), navigable to the item.
+    /// </summary>
+    private static List<StructureNode> Exports(SyntaxTree tree, bool sorted)
+    {
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var nodes = new List<StructureNode>();
+        foreach (var item in tree.Root.DescendantNodes().OfType<ExportsClauseSyntax>().SelectMany(c => c.Items))
+        {
+            if (item.Name.IsMissing)
+                continue;
+            var name = Slice(tree.Text.Text, item.Name.Span.Start, item.Name.Span.End);
+            var count = seen.GetValueOrDefault(name);
+            seen[name] = count + 1;
+            nodes.Add(new StructureNode("Exports/" + name + (count > 0 ? "#" + count.ToString(CultureInfo.InvariantCulture) : ""), name,
+                Collapse(Slice(tree.Text.Text, item.Span.Start, item.Span.End)), StructureKind.Routine, item.Name.Span.Start, item.Span.Start, item.Span.End, []));
+        }
+
+        return sorted ? [.. nodes.OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)] : nodes;
     }
 
     /// <summary>UI-TW-205: the innermost declaration whose span contains <paramref name="offset"/> (errors excluded).</summary>

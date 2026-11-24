@@ -96,9 +96,9 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("project.addNewFile", new Handler(_ => Project is not null, _ => AddNewFileAsync()));
         // IDE-PM-115: on a folder row without project files the command removes the (empty) folder.
         commands.RegisterHandler("project.removeFile", new Handler(
-            _ => RemovableFolder?.Invoke() is not null || CanOperateOnFiles(),
+            _ => PendingRename is null && (RemovableFolder?.Invoke() is not null || CanOperateOnFiles()),
             _ => RemovableFolder?.Invoke() is { } removeFolder ? removeFolder() : RemoveFilesAsync(FileTargets())));
-        commands.RegisterHandler("project.deleteFile", new Handler(_ => CanOperateOnFiles(), _ => DeleteFilesAsync(FileTargets())));
+        commands.RegisterHandler("project.deleteFile", new Handler(_ => PendingRename is null && CanOperateOnFiles(), _ => DeleteFilesAsync(FileTargets())));
         commands.RegisterHandler("project.renameFile", new Handler(_ => RenameTarget() is not null, _ => RenameCommandAsync()));
         commands.RegisterHandler("project.setConfiguration", new Handler(_ => Project is not null, SetActiveConfigurationAsync));
         // menus.md: enabled while a project is open and the active configuration's output folder exists (I-191).
@@ -736,9 +736,16 @@ public sealed class ProjectService : IProjectService
 
     public event EventHandler<string>? FileRenamed;
 
+    /// <summary>IDE-PM-130: the language service's edit set for a unit rename (set by the service graph); null: lexer only.</summary>
+    public CodeModel.UnitRenameAnalyzer? UnitRename { get; set; }
+
+    public PendingUnitRename? PendingRename { get; private set; }
+
+    public event EventHandler? PendingRenameChanged;
+
     /// <summary>The one <c>files</c> entry (not a form) <c>project.renameFile</c> acts on; null when there is none.</summary>
     private string? RenameTarget() =>
-        FileTargets() is [var target] && FindEntry(target) is not null ? target : null;
+        PendingRename is null && FileTargets() is [var target] && FindEntry(target) is not null ? target : null;
 
     /// <summary>The <c>files</c> entry whose path resolves like <paramref name="projectPath"/>.</summary>
     private ProjectFile? FindEntry(string projectPath) =>
@@ -816,6 +823,28 @@ public sealed class ProjectService : IProjectService
     {
         ArgumentNullException.ThrowIfNull(projectPath);
         ArgumentNullException.ThrowIfNull(newName);
+        if (PendingRename is not null)
+            return false;
+        try
+        {
+            return await RenameFileCoreAsync(projectPath, newName, updateHeading);
+        }
+        finally
+        {
+            SetPendingRename(null); // UI-TW-118: the row is busy until the rename ended
+        }
+    }
+
+    private void SetPendingRename(PendingUnitRename? pending)
+    {
+        if (PendingRename == pending)
+            return;
+        PendingRename = pending;
+        PendingRenameChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private async Task<bool> RenameFileCoreAsync(string projectPath, string newName, bool updateHeading)
+    {
         if (_project is null || FindEntry(projectPath) is not { } entry || !ValidateRename(projectPath, newName).Success)
             return false;
         var oldPath = Resolve(projectPath);
@@ -823,13 +852,24 @@ public sealed class ProjectService : IProjectService
         if (newName == oldName)
             return true;
         var newPath = Path.Combine(Path.GetDirectoryName(oldPath)!, newName);
+        var oldBase = Path.GetFileNameWithoutExtension(oldName);
         var newBase = Path.GetFileNameWithoutExtension(newName);
-        var document = _documents.Documents.OfType<TextDocumentViewModel>()
-            .FirstOrDefault(d => string.Equals(d.FilePath, oldPath, StringComparison.OrdinalIgnoreCase));
+        var document = DocumentOf(oldPath);
 
         // (1) A modified open document is saved first; a failure (reported by the save) aborts.
         if (document is { IsModified: true } && !await _documents.SaveAsync(document))
             return false;
+
+        // IDE-PM-130, 137: a unit whose name changes other than in letter case asks the language service for the edits.
+        CodeModel.UnitRenamePlan? plan = null;
+        if (updateHeading && UnitRename is { } analyzer && IsUnitFile(oldName) && !string.Equals(oldBase, newBase, StringComparison.OrdinalIgnoreCase))
+        {
+            plan = await AnalyzeUnitRenameAsync(analyzer, projectPath, oldPath, newPath, newName);
+            if (plan is null)
+                return false; // refused and reported (IDE-PM-134)
+            if (plan.Outcome != CodeModel.UnitRenameOutcome.Edits)
+                plan = null; // IDE-PM-135: as in Phases 1-7
+        }
 
         var oldForm = FormToRename(projectPath);
         var newForm = oldForm is null ? null : Path.Combine(Path.GetDirectoryName(oldForm)!, newBase + ".form");
@@ -842,7 +882,10 @@ public sealed class ProjectService : IProjectService
             MainSource = IsMainSource(oldPath) ? Rename(original.MainSource, newName) : original.MainSource,
         };
         var undo = new Stack<Action>();
+        var edited = new List<(TextDocumentViewModel Document, string Text)>();
+        var written = new List<string> { oldPath, newPath };
         var headingUpdated = false;
+        var references = (Places: 0, Files: 0);
         try
         {
             // (2)-(3) the files on disk.
@@ -859,10 +902,47 @@ public sealed class ProjectService : IProjectService
             SaveOrThrow(renamed);
             undo.Push(() => WriteProjectFile(original.FilePath, () => AtomicFileWriter.Write(_fileSystem, original.FilePath, projectBytes))); // the exact bytes back
 
+            // IDE-PM-132: the references in the other files, each open buffer as one undo group and saved, each other file
+            // rewritten atomically; what was written is restored when a later step fails.
+            IReadOnlyList<TextEdit>? ownEdits = null;
+            foreach (var edit in plan?.Edits ?? [])
+            {
+                var edits = edit.Changes.Select(c => new TextEdit(c.Span.Start, c.Span.Length, c.NewText)).ToList();
+                if (string.Equals(edit.Path, oldPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    ownEdits = edits;
+                    var outside = edits.Count(e => e.Offset != plan!.Heading.Start);
+                    references = (references.Places + outside, references.Files + (outside > 0 ? 1 : 0));
+                    continue;
+                }
+
+                references = (references.Places + edits.Count, references.Files + 1);
+                if (DocumentOf(edit.Path) is { } other)
+                {
+                    var text = other.Buffer.Text;
+                    other.Buffer.ApplyEdits(edits, Strings.Cmd_project_renameFile);
+                    edited.Add((other, text));
+                    var saved = await _documents.SaveAsAsync(other, other.FilePath!);
+                    if (!saved.Success)
+                        throw new IOException(saved.Args[^1]);
+                }
+                else
+                {
+                    var bytes = _fileSystem.ReadAllBytes(edit.Path);
+                    var file = EncodingDetector.Detect(bytes);
+                    var text = file.Text;
+                    foreach (var change in edits.OrderByDescending(e => e.Offset))
+                        text = string.Concat(text.AsSpan(0, change.Offset), change.NewText, text.AsSpan(change.Offset + change.Length));
+                    AtomicFileWriter.Write(_fileSystem, edit.Path, FileEncodings.Encode(text, file.Encoding));
+                    undo.Push(() => AtomicFileWriter.Write(_fileSystem, edit.Path, bytes));
+                    written.Add(edit.Path);
+                }
+            }
+
             // (5)-(6) heading and {$FORM} in the buffer or the file; the open document follows the new path.
             if (IsUnitFile(oldName))
-                headingUpdated = await UpdateUnitTextAsync(document, newPath, Path.GetFileNameWithoutExtension(oldName), newBase,
-                    oldForm is null ? null : (Path.GetFileName(oldForm), Path.GetFileName(newForm!)), updateHeading);
+                headingUpdated = await UpdateUnitTextAsync(document, newPath, oldBase, newBase,
+                    oldForm is null ? null : (Path.GetFileName(oldForm), Path.GetFileName(newForm!)), updateHeading, ownEdits);
             else if (document is not null)
                 await SaveDocumentAsAsync(document, newPath, document.Buffer.Text);
         }
@@ -880,15 +960,106 @@ public sealed class ProjectService : IProjectService
                 }
             }
 
+            // IDE-PM-132: every edited buffer gets its text back (the undo group is undone) and is saved again.
+            foreach (var (other, text) in edited)
+            {
+                while (other.Buffer.Text != text && other.Buffer.CanUndo)
+                    other.Buffer.Undo();
+                if (!(await _documents.SaveAsAsync(other, other.FilePath!)).Success)
+                    _log.Warning(LogCategory, $"{other.FilePath}: rename not fully undone");
+            }
+
             await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.RenameFailed", [oldPath, e.Message]));
             return false;
         }
 
         SetProject(renamed);
+        UnitRename?.NotifyChanged(written);
         FileRenamed?.Invoke(this, Rename(projectPath, newName));
         if (headingUpdated)
-            _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_RenameUnitNote, oldName, newName), StatusDuration);
+        {
+            // IDE-PM-136: the count of edited places outside the heading and of the files they are in.
+            _status.ShowMessage(references.Places > 0
+                ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_RenameUnitRefsNote, oldName, newName, references.Places, references.Files)
+                : string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_RenameUnitNote, oldName, newName), StatusDuration);
+        }
+
         return true;
+    }
+
+    private TextDocumentViewModel? DocumentOf(string path) => _documents.Documents.OfType<TextDocumentViewModel>()
+        .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// IDE-PM-130…135: the edit set of the unit rename, with the busy state of UI-TW-118 while the language service
+    /// works. Null when the rename is refused (<c>Msg.Project.RenameConflict</c> was shown): a conflict found by the
+    /// service, an edit set that does not match the rename asked for, or one that touches a file the IDE must not edit.
+    /// </summary>
+    private async Task<CodeModel.UnitRenamePlan?> AnalyzeUnitRenameAsync(CodeModel.UnitRenameAnalyzer analyzer, string projectPath,
+        string oldPath, string newPath, string newName)
+    {
+        var newBase = Path.GetFileNameWithoutExtension(newName);
+        CodeModel.UnitRenamePlan plan;
+        IDisposable? sticky = null;
+        var slow = _clock.Schedule(UpdatingReferencesDelay, () => sticky = _status.ShowStickyMessage(Strings.Status_UpdatingReferences));
+        SetPendingRename(new PendingUnitRename(projectPath, newName));
+        try
+        {
+            plan = await analyzer.AnalyzeAsync(oldPath, Path.GetFileNameWithoutExtension(oldPath), newBase);
+        }
+        finally
+        {
+            slow.Dispose();
+            sticky?.Dispose();
+        }
+
+        var reason = plan.Outcome == CodeModel.UnitRenameOutcome.Refused ? plan.Error : null;
+        if (plan.Outcome == CodeModel.UnitRenameOutcome.Edits)
+        {
+            // IDE-PM-131: the file rename of the service is the one asked for; IDE-PM-133: only the project's own files
+            // are edited, and the texts are still the ones the edits were computed against.
+            var same = plan.FileRename is null
+                || (string.Equals(Path.GetFullPath(plan.FileRename.OldPath), oldPath, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(Path.GetFullPath(plan.FileRename.NewPath), newPath, StringComparison.OrdinalIgnoreCase));
+            if (!same || plan.Edits.Any(e => !MayEditForRename(analyzer, e.Path)))
+            {
+                reason = Strings.Reason_RenameOutsideProject;
+            }
+            else if (plan.Edits.FirstOrDefault(e => CurrentText(e.Path) != plan.Texts[e.Path]) is { } stale)
+            {
+                await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.RenameFailed", [stale.Path, Strings.Msg_File_ExternalChange]));
+                return null;
+            }
+        }
+
+        if (reason is null)
+            return plan;
+        await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.RenameConflict", [newBase, reason]));
+        return null;
+    }
+
+    /// <summary>UI-TW-118: a wait longer than this shows "Updating references…" in the status bar.</summary>
+    private static readonly TimeSpan UpdatingReferencesDelay = TimeSpan.FromMilliseconds(400);
+
+    private string? CurrentText(string path)
+    {
+        try
+        {
+            return DocumentOf(path)?.Buffer.Text ?? EncodingDetector.Detect(_fileSystem.ReadAllBytes(path)).Text;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>IDE-PM-133: a project member, or a file under the project directory or its search paths that is not a library source.</summary>
+    private bool MayEditForRename(CodeModel.UnitRenameAnalyzer analyzer, string path)
+    {
+        if (IsMember(path))
+            return true;
+        return !analyzer.IsLibrarySource(path)
+            && (IsInside(path, _project!.Directory) || _project.SearchPaths.Any(s => IsInside(path, Resolve(s))));
     }
 
     /// <summary>One entry of a move (IDE-PM-123): the unit or file and its companion form, before and after.</summary>
@@ -941,8 +1112,6 @@ public sealed class ProjectService : IProjectService
         }
 
         // (1) every open, modified document of a moved file is saved first; a failure (reported by the save) aborts.
-        TextDocumentViewModel? DocumentOf(string path) => _documents.Documents.OfType<TextDocumentViewModel>()
-            .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
         foreach (var move in moves)
         {
             if (DocumentOf(move.From) is { IsModified: true } modified && !await _documents.SaveAsync(modified))
@@ -1164,14 +1333,19 @@ public sealed class ProjectService : IProjectService
     /// open buffer (then saved under the new path) or in the renamed file. True when the heading was replaced.
     /// </summary>
     private async Task<bool> UpdateUnitTextAsync(TextDocumentViewModel? document, string path, string oldBase, string newBase,
-        (string Old, string New)? form, bool updateHeading)
+        (string Old, string New)? form, bool updateHeading, IReadOnlyList<TextEdit>? serviceEdits = null)
     {
         EncodingDetection? file = null;
         var text = document?.Buffer.Text ?? (file = EncodingDetector.Detect(_fileSystem.ReadAllBytes(path))).Text;
         var edits = new List<TextEdit>();
         var headingUpdated = false;
         var tokens = Lexer.Tokenize(SourceText.From(path, text));
-        if (updateHeading && tokens.Length > 1
+        if (serviceEdits is not null)
+        {
+            edits.AddRange(serviceEdits); // IDE-PM-131: heading, uses entries and qualified names from the language service
+            headingUpdated = true;
+        }
+        else if (updateHeading && tokens.Length > 1
             && tokens[0].Kind is SyntaxKind.UnitKeyword or SyntaxKind.ProgramKeyword or SyntaxKind.LibraryKeyword or SyntaxKind.PackageKeyword
             && tokens[1].Kind == SyntaxKind.IdentifierToken && string.Equals(tokens[1].Text, oldBase, StringComparison.OrdinalIgnoreCase))
         {

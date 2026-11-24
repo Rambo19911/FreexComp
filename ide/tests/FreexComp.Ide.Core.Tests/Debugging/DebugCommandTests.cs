@@ -1,6 +1,8 @@
 using System.Text.Json;
 using FreexComp.Debugger;
 using FreexComp.Ide.Core.Models;
+using FreexComp.Ide.Core.Resources;
+using FreexComp.Ide.Core.Text;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.TestSupport;
 
@@ -340,5 +342,52 @@ public sealed class DebugCommandTests
         await bed.Debug.StopAsync();
         Assert.Equal(IdeState.Idle, bed.State);
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
+    }
+
+    /// <summary>
+    /// IDE-TGT-014: for a library project Start Debugging, Step Over / Step Into as the first command and Run to Cursor
+    /// are disabled (also with a host application); asked for all the same, the debug service answers
+    /// <c>Msg.Run.NotRunnable</c>. Breakpoints can still be set and are kept. Run Without Debugging stays available.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-014")]
+    public Task LibraryProject_DebugCommandsDisabled() => TestUiThread.RunAsync(LibraryProject_DebugCommandsDisabledOnUiThread);
+
+    private static async Task LibraryProject_DebugCommandsDisabledOnUiThread()
+    {
+        using var bed = new DebugTestBed();
+        var commands = bed.Services.Commands;
+        bed.File(bed.ProjectPath, """
+            { "formatVersion": 1, "name": "Hello", "appType": "library", "mainSource": "Hello.pas",
+              "configurations": { "Debug": { "optimization": 0, "debugInfo": true, "defines": [], "outputDir": "bin/Debug" } },
+              "run": { "arguments": "", "workingDir": "", "hostApplication": "Loader.exe" },
+              "files": [ { "path": "Hello.pas" } ] }
+            """);
+        bed.File(bed.MainPath, "library Hello;\n\nfunction Add(A, B: Integer): Integer; stdcall;\nbegin\n  Result := A + B;\nend;\n\nexports\n  Add;\n\nbegin\nend.\n");
+        Assert.True(await bed.Services.Projects.OpenAsync(bed.ProjectPath));
+        var main = await bed.OpenDocumentAsync(bed.MainPath);
+        bed.Services.Documents.Activate(main);
+
+        string[] ids = ["run.start", "run.stepOver", "run.stepInto", "run.runToCursor", "run.stepOut", "run.pause", "run.stop"];
+        Assert.Equal([], ids.Where(id => commands.CanExecute(id)));
+        Assert.True(commands.CanExecute("run.startWithoutDebugging"));
+        Assert.True(commands.CanExecute("run.parameters"));
+
+        Assert.False(await bed.Debug.StartAsync());
+        Assert.Equal(Strings.Msg_Run_NotRunnable, bed.Services.Status.Message);
+        Assert.Equal(IdeState.Idle, bed.State);
+        Assert.Empty(bed.Engine.Requests);
+
+        // Breakpoints: set, listed and kept.
+        Assert.True(commands.CanExecute("run.toggleBreakpoint"));
+        main.Selection = TextSelection.At(main.Buffer.Text.IndexOf("Result", StringComparison.Ordinal));
+        await commands.ExecuteAsync("run.toggleBreakpoint");
+        var breakpoint = Assert.Single(bed.Breakpoints.All);
+        Assert.Equal((bed.MainPath, 5), (breakpoint.Path, breakpoint.Line));
+
+        // The same project as a console program: the commands are back.
+        Assert.True(await bed.Services.Projects.ApplyOptionsAsync(bed.Services.Projects.Definition! with { AppType = "console" }));
+        Assert.Equal(["run.start", "run.stepOver", "run.stepInto", "run.runToCursor"], ids.Where(id => commands.CanExecute(id)));
     }
 }

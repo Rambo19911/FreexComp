@@ -309,4 +309,64 @@ public sealed class NewProjectTests
         Assert.Contains(log.Lines, l => l.Contains("broken", StringComparison.Ordinal));
         Assert.Contains(log.Lines, l => l.Contains("nosource", StringComparison.Ordinal));
     }
+
+    /// <summary>The template source of IDE-TGT-016 (phase8-build-options.md §2.1) for a project of that name.</summary>
+    private static string Library(string name, string newLine) => string.Join(newLine,
+        $"library {name};",
+        "",
+        "{ Routines listed under \"exports\" can be called from other programs.",
+        "  Pass only simple types, records of simple types and pointers across the",
+        "  library boundary: the caller and the library do not share a memory manager. }",
+        "",
+        "function Add(A, B: Integer): Integer; stdcall;",
+        "begin",
+        "  Result := A + B;",
+        "end;",
+        "",
+        "exports",
+        "  Add;",
+        "",
+        "begin",
+        "end.",
+        "");
+
+    /// <summary>
+    /// IDE-TGT-015, 016: the template <c>library-pascal</c> ("Dynamic-link library", <c>pascal</c>, <c>library</c>) is
+    /// listed after <c>gui-pascal</c> and creates <c>&lt;name&gt;.pproj</c> and <c>&lt;name&gt;.pas</c> with exactly the
+    /// specified source; the project is a library without a host application.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-015")]
+    [Trait("Req", "IDE-TGT-016")]
+    public Task LibraryTemplateCreatesFiles() => TestUiThread.RunAsync(async () =>
+    {
+        Assert.Equal(["console-pascal", "gui-pascal", "library-pascal"], Projects.Templates.Select(t => t.Id));
+        var template = Projects.Templates[2];
+        Assert.Equal(("Dynamic-link library", "pascal", "library"), (template.Name, template.Language, template.AppType));
+        Assert.Equal(["$(ProjectName).pas", "$(ProjectName).pproj"], template.Files.Select(f => f.Target));
+        // A composition of an earlier phase does not list it.
+        Assert.DoesNotContain(TestComposition.Build(o => o.ImplementedPhase = 6).Projects.Templates, t => t.Id == "library-pascal");
+
+        Assert.Equal(NewProjectOutcome.Created, await Projects.CreateProjectAsync(new NewProjectRequest("library-pascal", "Mathlib", Location)));
+
+        var dir = Location + @"\Mathlib";
+        Assert.Equal([dir + @"\Mathlib.pas", dir + @"\Mathlib.pproj"], _memory.EnumerateFiles(dir, "*").Order(StringComparer.Ordinal));
+        Assert.Equal(Library("Mathlib", "\r\n"), Text(dir + @"\Mathlib.pas"));
+        Assert.DoesNotContain("\t", Text(dir + @"\Mathlib.pas"), StringComparison.Ordinal);
+        Assert.Equal(HelloPproj.Replace("\"console\"", "\"library\"", StringComparison.Ordinal).Replace("Hello", "Mathlib", StringComparison.Ordinal),
+            Text(dir + @"\Mathlib.pproj"));
+        var project = Projects.Project!;
+        Assert.Equal(("Mathlib", "library", "Mathlib.pas"), (project.Name, project.AppType, project.MainSource));
+        Assert.Equal(["Debug", "Release"], Projects.Definition!.ConfigurationNames);
+        Assert.Equal("", Projects.Definition!.Run.HostApplication);
+        Assert.DoesNotContain("hostApplication", Text(dir + @"\Mathlib.pproj"), StringComparison.Ordinal);
+        Assert.Equal(dir + @"\Mathlib.pas", _services.Documents.ActiveDocument?.FilePath);
+        Assert.Empty(Dialogs.Requests);
+
+        // LF when that is the default line ending of new files.
+        _services.Settings.Set(FreexComp.Ide.Core.Settings.SettingsCatalog.FilesDefaultLineEnding, "lf");
+        Assert.Equal(NewProjectOutcome.Created, await Projects.CreateProjectAsync(new NewProjectRequest("library-pascal", "Other", Location)));
+        Assert.Equal(Library("Other", "\n"), Text(Location + @"\Other\Other.pas"));
+    });
 }

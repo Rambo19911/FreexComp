@@ -104,4 +104,72 @@ public sealed class Phase8ProjectFilesTests
         Assert.True(File.Exists(Abs(@"bin\Debug\Hello.exe")));
         Assert.Empty(h.Messages.Requests);
     }
+
+    /// <summary>
+    /// Card acceptance 1 / IDE-PM-138: <see cref="FreexComp.Ide.TestSupport.RenameFixture"/> — <c>Unit1</c> is renamed to
+    /// <c>Customers</c> in the Project Manager; the heading, the three <c>uses</c> entries and the qualified call follow,
+    /// and the project builds and runs without a change to any other file.
+    /// </summary>
+    [AvaloniaFact(Timeout = 120000)]
+    [Trait("Req", "IDE-PM-138")]
+    [Trait("Req", "IDE-PM-130")]
+    [Trait("Req", "IDE-PM-131")]
+    public async Task E2E_Phase8_RenameUnit_ProjectStillBuilds()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.RealBuild = true;
+            o.InitialFiles[@"App\App.pproj"] = FreexComp.Ide.TestSupport.RenameFixture.ProjectFile;
+            o.InitialFiles[@"App\App.pas"] = FreexComp.Ide.TestSupport.RenameFixture.App;
+            o.InitialFiles[@"App\Unit1.pas"] = FreexComp.Ide.TestSupport.RenameFixture.Unit1;
+            o.InitialFiles[@"App\Unit2.pas"] = FreexComp.Ide.TestSupport.RenameFixture.Unit2;
+            o.InitialFiles[@"App\Unit3.pas"] = FreexComp.Ide.TestSupport.RenameFixture.Unit3;
+        });
+        var toolchain = h.Services.Toolchain.Resolve();
+        if (toolchain.LlvmBinDir is null || toolchain.RtlDir is null)
+            Assert.Fail("LLVM toolchain not found (run scripts/bootstrap.ps1)"); // testing.md: fails, never skips
+        string Abs(string relative) => Path.Combine(h.TempDir, "App", relative);
+        Assert.True(await h.Services.Projects.OpenAsync(Abs("App.pproj")));
+        var pm = (ProjectManagerViewModel)h.Services.ToolWindows.Get(ProjectManagerViewModel.ToolName)!;
+        await h.WaitForAsync(() => !pm.IsCheckingMissingFiles, "missing-file check done");
+
+        // The rename, in place in the tree.
+        Assert.True(h.Services.ToolWindows.Show(ProjectManagerViewModel.ToolName, focus: true));
+        Dispatcher.UIThread.RunJobs();
+        pm.Select(pm.Find("Unit1.pas")!);
+        Assert.True(pm.BeginRename("Unit1.pas"));
+        var rename = pm.Find("Unit1.pas")!.Rename!;
+        rename.NewName = "Customers.pas";
+        Assert.True(await rename.CommitAsync());
+        Assert.Empty(h.Messages.Requests);
+        static string Renamed(string text) => FreexComp.Ide.TestSupport.RenameFixture.Renamed(text);
+        Assert.False(File.Exists(Abs("Unit1.pas")));
+        Assert.Equal(Renamed(FreexComp.Ide.TestSupport.RenameFixture.Unit1), File.ReadAllText(Abs("Customers.pas")));
+        Assert.Equal(Renamed(FreexComp.Ide.TestSupport.RenameFixture.Unit2), File.ReadAllText(Abs("Unit2.pas")));
+        Assert.Equal(Renamed(FreexComp.Ide.TestSupport.RenameFixture.Unit3), File.ReadAllText(Abs("Unit3.pas")));
+        Assert.Equal(Renamed(FreexComp.Ide.TestSupport.RenameFixture.App), File.ReadAllText(Abs("App.pas")));
+        Assert.Equal(["App.pas", "Customers.pas", "Unit2.pas", "Unit3.pas"], h.Services.Projects.Project!.Files.Select(f => f.Path));
+        Assert.Equal("Renamed Unit1.pas to Customers.pas; 4 references in 3 files were updated", h.Services.Status.Message);
+
+        // It builds and runs with the real toolchain, no other change made.
+        string Output() => h.TryFind<TextEditor>("Tool.Output.Text")?.Document.Text ?? "";
+        string Diagnostics() => $"state {h.Services.State.Current.State}; messages: "
+            + string.Join(" | ", h.Services.Messages.Items.Select(i => $"{i.Code} {i.Text}")) + "; output: " + Output();
+        await h.ExecuteAsync("run.startWithoutDebugging");
+        try
+        {
+            await h.WaitForAsync(() => Output().Contains("Program exited with code", StringComparison.Ordinal) || h.Services.Messages.ErrorCount > 0,
+                "build and run finished");
+        }
+        catch (HarnessAssertionException e)
+        {
+            Assert.Fail(e.Message + " — " + Diagnostics());
+        }
+
+        Assert.True(h.Services.Messages.ErrorCount == 0, Diagnostics());
+        await h.WaitForAsync(() => h.Services.State.Current.State == IdeState.Idle, "idle after the run");
+        Assert.Contains("hello from the unit", Output(), StringComparison.Ordinal);
+        Assert.Contains("Program exited with code 0 after ", Output(), StringComparison.Ordinal);
+        Assert.True(File.Exists(Abs(@"bin\Debug\App.exe")));
+    }
 }

@@ -95,7 +95,7 @@ public sealed class ProjectOptionsWindow : DialogWindow
                 "SearchPaths" => SearchPathsPage(f, model),
                 "ConditionalDefines" => DefinesPage(f, model),
                 "Output" => OutputPage(f, model),
-                "Run" => RunParametersWindow.Fields(f, model.Run, BrowseWorkingDirAsync),
+                "Run" => RunParametersWindow.Fields(f, model.Run, BrowseWorkingDirAsync, model.BrowseHostAsync),
                 _ => BuildEventsPage(f, model),
             };
         }
@@ -166,12 +166,27 @@ public sealed class ProjectOptionsWindow : DialogWindow
                 model.MainSource = path;
         };
         AutomationProperties.SetAutomationId(main, f.Id("MainSource"));
-        var projectFile = new SelectableTextBlock { Text = model.ProjectFile, VerticalAlignment = VerticalAlignment.Center };
+        // A path longer than the page is trimmed; the tooltip and a copy of the selection give the whole path.
+        var projectFile = new SelectableTextBlock { Text = model.ProjectFile, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        ToolTip.SetTip(projectFile, model.ProjectFile);
         projectFile.Classes.Add("codeSmall");
         AutomationProperties.SetAutomationId(projectFile, f.Id("ProjectFile"));
+        // IDE-TGT-011: the output file the name gives — <name>.dll for a library.
+        var nameHint = new TextBlock { Text = model.NameHint, Margin = new Thickness(DialogFieldBuilder.LabelWidth, 2, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+        nameHint.Classes.Add("caption");
+        nameHint.Bind(TextBlock.ForegroundProperty, nameHint.GetResourceObservable("FxcTextSecondaryBrush"));
+        AutomationProperties.SetAutomationId(nameHint, f.Id("Name.Hint"));
+        model.PropertyChanged += (_, _) => nameHint.Text = model.NameHint;
         return Page(
-            Field(DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_Name, name), name),
-                f.Message("Name", model, () => model.ProjectNameError, () => true, name)),
+            new StackPanel
+            {
+                Children =
+                {
+                    DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_Name, name), name),
+                    nameHint,
+                    f.Message("Name", model, () => model.ProjectNameError, () => true, name),
+                },
+            },
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_AppType, appType), appType),
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_MainSource, main), main),
             DialogFieldBuilder.Row(DialogFieldBuilder.Label(Strings.ProjectOptions_Language, null), f.ReadOnly("Language", model.LanguageText)),

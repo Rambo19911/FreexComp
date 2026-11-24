@@ -11,26 +11,58 @@ namespace FreexComp.Ide.Core.Dialogs;
 /// <summary>
 /// The fields of dialogs.md §22, shared by the Run Parameters dialog and the <c>Run</c> page of Project Options (§8.6):
 /// <c>Arguments</c> (verbatim), <c>WorkingDir</c> (invalid syntax → <c>Msg.Project.LocationInvalid</c>, blocking; a missing
-/// folder → the warning <c>Msg.ProjectOptions.SearchPathMissing</c>) and the live <c>CommandLine</c> preview.
+/// folder → the warning <c>Msg.ProjectOptions.SearchPathMissing</c>), <c>HostApplication</c> (IDE-TGT-012: enabled for
+/// library projects only; invalid syntax → <c>Msg.Project.LocationInvalid</c>) and the live <c>CommandLine</c> preview.
 /// </summary>
 public sealed class RunFields : ObservableObject
 {
     private readonly string _projectDirectory;
     private readonly Func<string> _executable;
     private readonly IdeFileSystem _fileSystem;
+    private readonly Func<bool> _isLibrary;
     private string _arguments;
     private string _workingDir;
+    private string _hostApplication;
 
-    public RunFields(string projectDirectory, Func<string> executable, IdeFileSystem fileSystem, RunSettings run)
+    /// <param name="isLibrary">The application type of the working copy is <c>library</c>.</param>
+    public RunFields(string projectDirectory, Func<string> executable, IdeFileSystem fileSystem, RunSettings run, Func<bool> isLibrary)
     {
         ArgumentNullException.ThrowIfNull(run);
         _projectDirectory = projectDirectory;
         _executable = executable;
         _fileSystem = fileSystem;
+        _isLibrary = isLibrary;
         _arguments = run.Arguments;
         _workingDir = run.WorkingDir;
+        _hostApplication = run.HostApplication;
         Validate();
     }
+
+    /// <summary>
+    /// <c>run.hostApplication</c> (IDE-TGT-012): the program that loads the library; relative to the project directory
+    /// with <c>/</c> or absolute. Kept unchanged while the field is disabled.
+    /// </summary>
+    public string HostApplication
+    {
+        get => _hostApplication;
+        set
+        {
+            if (!SetProperty(ref _hostApplication, value ?? ""))
+                return;
+            OnPropertyChanged(nameof(HostApplicationError));
+            OnPropertyChanged(nameof(IsValid));
+            OnPropertyChanged(nameof(CommandLine));
+        }
+    }
+
+    /// <summary>The field is enabled only for a library project.</summary>
+    public bool HostApplicationEnabled => _isLibrary();
+
+    /// <summary>The message under <c>HostApplication</c> (<c>Error.HostApplication</c>): invalid path syntax; null when none.</summary>
+    public string? HostApplicationError =>
+        HostApplicationEnabled && HostApplication.Trim().Length > 0 && Resolve(_projectDirectory, HostApplication) is null
+            ? Strings.Msg_Project_LocationInvalid
+            : null;
 
     public string Arguments
     {
@@ -58,16 +90,16 @@ public sealed class RunFields : ObservableObject
     /// <summary>The message is the blocking error (otherwise it is the warning).</summary>
     public bool WorkingDirIsError { get; private set; }
 
-    public bool IsValid => !WorkingDirIsError;
+    public bool IsValid => !WorkingDirIsError && HostApplicationError is null;
 
-    /// <summary><c>&lt;exe of the active configuration&gt; &lt;arguments&gt;</c>.</summary>
-    public string CommandLine => Arguments.Length == 0 ? _executable() : _executable() + " " + Arguments;
+    /// <summary><c>&lt;exe of the active configuration&gt; &lt;arguments&gt;</c>; for a library the host application.</summary>
+    public string CommandLine => (Arguments.Length == 0 ? _executable() : _executable() + " " + Arguments).TrimStart();
 
-    /// <summary>The settings as stored: a relative working folder with <c>/</c>.</summary>
+    /// <summary>The settings as stored: a relative working folder and host application with <c>/</c>.</summary>
     public RunSettings ToSettings()
     {
-        var dir = WorkingDir.Trim();
-        return new RunSettings(Arguments, Path.IsPathFullyQualified(dir) ? dir : dir.Replace('\\', '/'));
+        static string Stored(string path) => Path.IsPathFullyQualified(path) ? path : path.Replace('\\', '/');
+        return new RunSettings(Arguments, Stored(WorkingDir.Trim())) { HostApplication = Stored(HostApplication.Trim()) };
     }
 
     /// <summary>The picked folder, relative with <c>/</c> when it lies inside the project directory, else absolute.</summary>
@@ -83,7 +115,14 @@ public sealed class RunFields : ObservableObject
     public static string? Resolve(string projectDirectory, string folder) =>
         NewProjectValidation.NormalizeLocation(Path.Combine(projectDirectory, folder.Trim().Replace('/', '\\')));
 
-    public void Refresh() => OnPropertyChanged(nameof(CommandLine));
+    /// <summary>The executable or the application type of the working copy changed.</summary>
+    public void Refresh()
+    {
+        OnPropertyChanged(nameof(HostApplicationEnabled));
+        OnPropertyChanged(nameof(HostApplicationError));
+        OnPropertyChanged(nameof(IsValid));
+        OnPropertyChanged(nameof(CommandLine));
+    }
 
     private void Validate()
     {
@@ -129,7 +168,9 @@ public sealed class RunParametersViewModel : DialogViewModel<bool>
         _projects = projects;
         _pickers = pickers;
         _project = projects.Definition ?? throw new InvalidOperationException("No project is open.");
-        Fields = new RunFields(_project.Directory, () => ExecutablePath(_project, _project.ActiveConfiguration), fileSystem, _project.Run);
+        Fields = new RunFields(_project.Directory,
+            () => ExecutablePath(_project with { Run = Fields!.ToSettings() }, _project.ActiveConfiguration), fileSystem, _project.Run,
+            () => _project.AppType == "library");
         Ok = new DialogButtonViewModel("Ok", Strings.Button_OK, CommitAsync) { IsDefault = true, IsAccent = true };
         Buttons = [Ok, new DialogButtonViewModel("Cancel", Strings.Button_Cancel, () => Close(false)) { IsCancel = true }];
         Fields.PropertyChanged += (_, _) => Ok.IsEnabled = Fields.IsValid;
@@ -148,10 +189,19 @@ public sealed class RunParametersViewModel : DialogViewModel<bool>
 
     public RunFields Fields { get; }
 
-    /// <summary><c>&lt;project dir&gt;\&lt;outputDir&gt;\&lt;name&gt;.exe</c> of a configuration (dialogs.md §8.5).</summary>
+    /// <summary>
+    /// What Run starts: <c>&lt;project dir&gt;\&lt;outputDir&gt;\&lt;name&gt;.exe</c> of a configuration (dialogs.md §8.5); for a
+    /// library project the host application (IDE-TGT-013), empty when none is set.
+    /// </summary>
     public static string ExecutablePath(Project project, string configuration)
     {
         ArgumentNullException.ThrowIfNull(project);
+        if (project.AppType == "library")
+        {
+            var host = project.Run.HostApplication.Trim();
+            return host.Length == 0 ? "" : RunFields.Resolve(project.Directory, host) ?? host;
+        }
+
         var outputDir = project.Configurations.TryGetValue(configuration, out var c) ? c.OutputDir : "";
         var dir = RunFields.Resolve(project.Directory, outputDir) ?? project.Directory;
         return Path.Combine(dir, project.Name + ".exe");
@@ -164,6 +214,20 @@ public sealed class RunParametersViewModel : DialogViewModel<bool>
         var picked = await _pickers.PickFolderAsync(new FilePickerRequest(DialogName + ".WorkingDir", Strings.RunParameters_WorkingDirPicker, [], initial));
         if (picked is not null)
             Fields.WorkingDir = RunFields.StoredFolder(_project.Directory, picked);
+    }
+
+    /// <summary>The <c>HostApplication.Browse</c> button (IDE-TGT-012).</summary>
+    public Task BrowseHostAsync() => BrowseHostAsync(_pickers, DialogName, _project.Directory, Fields);
+
+    /// <summary>The file picker filtered to <c>*.exe</c>; the choice is stored relative with <c>/</c> inside the project directory.</summary>
+    internal static async Task BrowseHostAsync(IFileDialogService pickers, string dialogName, string projectDirectory, RunFields fields)
+    {
+        var current = RunFields.Resolve(projectDirectory, fields.HostApplication);
+        var initial = fields.HostApplication.Trim().Length > 0 && current is not null ? Path.GetDirectoryName(current) : projectDirectory;
+        var picked = await pickers.PickOpenFilesAsync(new FilePickerRequest(dialogName + ".HostApplication", Strings.RunParameters_HostApplicationPicker,
+            [new FileFilter(Strings.FilePrompt_Filter_Programs, ["*.exe"])], initial));
+        if (picked.Count > 0)
+            fields.HostApplication = RunFields.StoredFolder(projectDirectory, picked[0]);
     }
 
     private async Task CommitAsync()

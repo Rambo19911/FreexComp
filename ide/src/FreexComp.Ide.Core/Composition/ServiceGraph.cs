@@ -105,7 +105,9 @@ public static class ServiceGraph
         navigation.RegisterCommands(commands);
         projects =new ProjectService(platform.FileSystem, documents, platform.Dialogs, status, platform.Log, prompts, settings,
             // gui-pascal is the designer's template (code-sync.md §11): listed from Phase 5 on.
-            [.. ProjectTemplates.LoadEmbedded(platform.Log).Where(t => t.AppType != "gui" || (toolWindowPhase ?? ImplementedPhase) >= 5)],
+            // library-pascal is delivered in Phase 8 (IDE-TGT-015): not listed by a composition of an earlier phase.
+            [.. ProjectTemplates.LoadEmbedded(platform.Log).Where(t => (t.AppType != "gui" || (toolWindowPhase ?? ImplementedPhase) >= 5)
+                && (t.AppType != "library" || (toolWindowPhase ?? ImplementedPhase) >= 7))],
             layout, platform.Clock, platform.Shell);
         projects.RegisterCommands(commands);
         projects.FileChanges = fileChanges; // IDE-P1-117
@@ -173,6 +175,7 @@ public static class ServiceGraph
         };
         var codeModel = new CodeModel.CodeModelService(projects, documents, toolchain, platform.FileSystem); // I-110
         build.CheckSyntax = codeModel.GetProjectDiagnosticsAsync;
+        projects.UnitRename = new CodeModel.UnitRenameAnalyzer(codeModel, toolchain); // I-236
         _ = new CodeModel.LiveDiagnosticsService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-111
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112
         new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status, toolchain).RegisterCommands(commands); // I-117

@@ -29,6 +29,7 @@ public sealed class ProjectNodeViewModel : ObservableObject
     private int _matchLength;
     private Dialogs.RenameFileViewModel? _rename;
     private bool _isDropTarget;
+    private string? _busyName;
     private bool _isDragged;
 
     public ProjectNodeViewModel(ProjectNodeKind kind, string key, string name, string fullPath, ProjectNodeViewModel? parent)
@@ -57,6 +58,16 @@ public sealed class ProjectNodeViewModel : ObservableObject
     /// <summary>The project's <c>mainSource</c> (icon with the play corner, UI-TW-104).</summary>
     public bool IsMainSource { get; init; }
 
+    /// <summary>IDE-TGT-017: the root of a library project (icon variant <c>project.library</c>).</summary>
+    public bool IsLibrary { get; init; }
+
+    /// <summary>The row's tooltip: the full path (UI-TW-111); for the root of a library project the DLL path (IDE-TGT-017).</summary>
+    public string ToolTipText
+    {
+        get => field ?? FullPath;
+        init;
+    }
+
     /// <summary>The <c>&lt;activeConfiguration&gt; · &lt;platform&gt;</c> badge of the root (UI-TW-100); null elsewhere.</summary>
     public string? Badge { get; init; }
 
@@ -66,7 +77,7 @@ public sealed class ProjectNodeViewModel : ObservableObject
     /// <summary>The 16 px glyph (UI-TW-104); the missing and main-source overlays are separate flags.</summary>
     public string IconName => Kind switch
     {
-        ProjectNodeKind.Project => "project",
+        ProjectNodeKind.Project => IsLibrary ? "project.library" : "project",
         ProjectNodeKind.Folder => IsExpanded ? "open-folder" : "folder",
         ProjectNodeKind.Form => "form",
         _ => Path.GetExtension(Name).ToLowerInvariant() switch
@@ -92,6 +103,16 @@ public sealed class ProjectNodeViewModel : ObservableObject
     {
         get => _rename;
         set => SetProperty(ref _rename, value);
+    }
+
+    /// <summary>
+    /// UI-TW-118: the file name typed for the unit rename that waits for the language service; the row shows it in
+    /// <c>text.secondary</c> with the busy ring, the editor closed. Null otherwise.
+    /// </summary>
+    public string? BusyName
+    {
+        get => _busyName;
+        set => SetProperty(ref _busyName, value);
     }
 
     /// <summary>The target of the drag in progress (UI-TW-121): <c>accent.subtle</c> fill, 1 px <c>accent</c> outline.</summary>

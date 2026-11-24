@@ -235,4 +235,135 @@ public sealed class ProjectOptionsDialogTests
         Assert.Equal("Release", json.GetProperty("activeConfiguration").GetString());
         Assert.Equal("Release", h.Services.Projects.Project!.ActiveConfiguration);
     }
+
+    // ---- Library projects (phase8-build-options.md §2, I-228) ----
+
+    private const string HostRun = """, "run": { "arguments": "-v", "workingDir": "", "hostApplication": "tools/Loader.exe" }""";
+
+    /// <summary>
+    /// IDE-TGT-010, 011: <c>Library</c> can be chosen, <c>Package</c> stays visible and disabled; the choice changes the
+    /// <c>appType</c> key only (the main source is not rewritten) and the output file shown becomes <c>&lt;name&gt;.dll</c>.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-010")]
+    [Trait("Req", "IDE-TGT-011")]
+    public async Task LibraryAppTypeSelectable_PackageDisabled()
+    {
+        await using var h = await BuildScenario.StartAsync(implementedPhase: null);
+        var dir = Path.GetDirectoryName(BuildScenario.ProjectPath(h))!;
+        var mainSource = File.ReadAllText(Path.Combine(dir, "Hello.pas"));
+        var (dlg, opening) = await OpenAsync(h);
+        var appType = dlg.Find<ComboBox>("AppType");
+        var items = appType.Items.Cast<Core.Dialogs.AppTypeItem>().ToList();
+        Assert.Equal(["console", "gui", "library", "package"], items.Select(i => i.Value));
+        Assert.Equal(("Library", true), (items[2].Title, items[2].IsEnabled));
+        Assert.False(items[3].IsEnabled);
+        Assert.Equal("output file name (Hello.exe)", dlg.Find<TextBlock>("Name.Hint").Text);
+
+        // The drop-down: the Package item is shown and cannot be chosen.
+        appType.IsDropDownOpen = true;
+        Dispatcher.UIThread.RunJobs();
+        var containers = items.Select(i => Assert.IsType<ComboBoxItem>(appType.ContainerFromItem(i))).ToList();
+        Assert.All(containers, c => Assert.True(c.IsVisible));
+        Assert.True(containers[2].IsEffectivelyEnabled);
+        Assert.False(containers[3].IsEffectivelyEnabled);
+        appType.IsDropDownOpen = false;
+
+        appType.SelectedItem = items[2];
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("output file name (Hello.dll)", dlg.Find<TextBlock>("Name.Hint").Text);
+        ShowPage(dlg, "Output");
+        Assert.Equal(Path.Combine(dir, @"bin\Debug\Hello.dll"), dlg.Find<TextBlock>("OutputFile").Text);
+
+        dlg.Click("Ok");
+        await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+        await opening;
+        Assert.Equal("library", ReadProject(h).GetProperty("appType").GetString());
+        Assert.Equal("library", h.Services.Projects.Project!.AppType);
+        Assert.Equal(mainSource, File.ReadAllText(Path.Combine(dir, "Hello.pas"))); // never rewritten by the IDE
+        Assert.Empty(h.Messages.Requests);
+    }
+
+    /// <summary>
+    /// IDE-TGT-012: Run › <c>HostApplication</c> is enabled only while the working copy is a library; for another type it
+    /// is disabled and the stored value stays. Invalid path syntax is an inline error; the picker is filtered to
+    /// <c>*.exe</c> and a file inside the project directory is stored relative with <c>/</c> in <c>run.hostApplication</c>.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-012")]
+    public async Task HostApplicationEnabledOnlyForLibrary_RoundTripsKey()
+    {
+        await using var h = await BuildScenario.StartAsync(projectExtra: HostRun, implementedPhase: null);
+        var dir = Path.GetDirectoryName(BuildScenario.ProjectPath(h))!;
+
+        // A console project: the field shows the stored value and is disabled; OK leaves the key as it is.
+        var (dlg, opening) = await OpenAsync(h);
+        ShowPage(dlg, "Run");
+        var host = dlg.Find<TextBox>("HostApplication");
+        Assert.Equal("tools/Loader.exe", host.Text);
+        Assert.False(host.IsEffectivelyEnabled);
+        Assert.False(dlg.Find<Button>("HostApplication.Browse").IsEffectivelyEnabled);
+        Assert.Equal(Path.Combine(dir, @"bin\Debug\Hello.exe") + " -v", dlg.Find<TextBlock>("CommandLine").Text);
+        SetText(dlg, "Arguments", "-q");
+        dlg.Click("Ok");
+        await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+        await opening;
+        var run = ReadProject(h).GetProperty("run");
+        Assert.Equal(("-q", "tools/Loader.exe"), (run.GetProperty("arguments").GetString(), run.GetProperty("hostApplication").GetString()));
+
+        // Library chosen in the working copy: enabled at once; the command line shows the host.
+        (dlg, opening) = await OpenAsync(h);
+        ShowPage(dlg, "Application");
+        var appType = dlg.Find<ComboBox>("AppType");
+        appType.SelectedItem = appType.Items.Cast<Core.Dialogs.AppTypeItem>().Single(i => i.Value == "library");
+        Dispatcher.UIThread.RunJobs();
+        ShowPage(dlg, "Run");
+        host = dlg.Find<TextBox>("HostApplication");
+        Assert.True(host.IsEffectivelyEnabled);
+        Assert.Equal(Path.Combine(dir, @"tools\Loader.exe") + " -q", dlg.Find<TextBlock>("CommandLine").Text);
+
+        // Invalid path syntax: inline error, the page is marked, OK is blocked.
+        SetText(dlg, "HostApplication", "a|b.exe");
+        Assert.Equal(Strings.Msg_Project_LocationInvalid, dlg.ErrorText("HostApplication"));
+        Assert.True(dlg.Find<Control>("Page.Run.Error").IsVisible);
+        Assert.False(dlg.Find<Button>("Ok").IsEffectivelyEnabled);
+
+        // The picker: *.exe; inside the project directory → relative with '/'; outside → absolute.
+        Directory.CreateDirectory(Path.Combine(dir, @"host\bin"));
+        File.WriteAllText(Path.Combine(dir, @"host\bin\Loader.exe"), "");
+        h.FileDialogs.NextOpen(Path.Combine(dir, @"host\bin\Loader.exe"));
+        dlg.Click("HostApplication.Browse");
+        await h.WaitForAsync(() => host.Text == "host/bin/Loader.exe", "picked host stored relative");
+        var request = h.FileDialogs.Requests[^1];
+        Assert.Equal(("ProjectOptions.HostApplication", "Choose the Host Application"), (request.PromptId, request.Title));
+        Assert.Equal(["*.exe"], Assert.Single(request.Filters).Patterns);
+        Assert.Null(dlg.ErrorText("HostApplication"));
+        Assert.False(dlg.Find<Control>("Page.Run.Error").IsVisible);
+        Assert.True(dlg.Find<Button>("Ok").IsEffectivelyEnabled);
+        Assert.Equal(Path.Combine(dir, @"host\bin\Loader.exe") + " -q", dlg.Find<TextBlock>("CommandLine").Text);
+
+        dlg.Click("Ok");
+        await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+        await opening;
+        var json = ReadProject(h);
+        Assert.Equal("library", json.GetProperty("appType").GetString());
+        Assert.Equal("host/bin/Loader.exe", json.GetProperty("run").GetProperty("hostApplication").GetString());
+        Assert.Equal("host/bin/Loader.exe", h.Services.Projects.Definition!.Run.HostApplication);
+
+        // Back to a console application: disabled again, the value kept.
+        (dlg, opening) = await OpenAsync(h);
+        ShowPage(dlg, "Application");
+        appType = dlg.Find<ComboBox>("AppType");
+        appType.SelectedItem = appType.Items.Cast<Core.Dialogs.AppTypeItem>().Single(i => i.Value == "console");
+        Dispatcher.UIThread.RunJobs();
+        ShowPage(dlg, "Run");
+        Assert.False(dlg.Find<TextBox>("HostApplication").IsEffectivelyEnabled);
+        Assert.Equal("host/bin/Loader.exe", dlg.Find<TextBox>("HostApplication").Text);
+        dlg.Click("Ok");
+        await h.WaitForAsync(() => !dlg.Window.IsVisible, "dialog closed");
+        await opening;
+        Assert.Equal("host/bin/Loader.exe", ReadProject(h).GetProperty("run").GetProperty("hostApplication").GetString());
+    }
 }

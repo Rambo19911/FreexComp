@@ -390,6 +390,59 @@ public sealed partial class ProjectManagerViewTests
 
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Phase", "8")]
+    [Trait("Req", "UI-TW-118")]
+    [Trait("Req", "IDE-PM-134")]
+    public async Task BusyRowShowsRingAndTypedName()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.Settings["appearance.theme"] = "light";
+            HelloProject(o);
+        });
+        var pm = await OpenHelloAsync(h);
+        Dispatcher.UIThread.RunJobs();
+        const string Id = Row + "Unit1.pas";
+        var node = pm.Find("Unit1.pas")!;
+        pm.Select(node);
+        Assert.True(pm.BeginRename("Unit1.pas"));
+        Dispatcher.UIThread.RunJobs();
+        var editor = h.Find<TextBox>(Id + ".Editor");
+        editor.Text = "Customers.pas";
+        Assert.Null(h.TryFind<Control>(Id + ".Busy"));
+
+        // The rename waits for the language service: the editor is closed, the row shows the typed name in
+        // text.secondary and the 12 px ring where the modified marker is.
+        node.IsModified = true;
+        node.BusyName = "Customers.pas";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.TryFind<TextBox>(Id + ".Editor"));
+        var name = h.Find<TextBlock>(Id + ".Name");
+        Assert.True(name.IsEffectivelyVisible);
+        Assert.Equal("Customers.pas", name.Text);
+        Assert.True(h.Window.TryFindResource("FxcTextSecondaryBrush", h.Window.ActualThemeVariant, out var secondary));
+        Assert.Equal(((ISolidColorBrush)secondary!).Color, Assert.IsAssignableFrom<ISolidColorBrush>(name.Foreground).Color);
+        var ring = h.Find<Control>(Id + ".Busy");
+        Assert.True(ring.IsEffectivelyVisible);
+        Assert.Equal(new Size(12, 12), ring.Bounds.Size);
+        Assert.Null(h.TryFind<Control>(Id + ".Modified"));
+        Assert.NotNull(node.Rename); // the model of the editor waits for the answer
+
+        // Refused (IDE-PM-134): the editor is open again with the typed name, its base name selected.
+        node.BusyName = null;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Null(h.TryFind<Control>(Id + ".Busy"));
+        Assert.NotNull(h.TryFind<Control>(Id + ".Modified"));
+        var reopened = h.Find<TextBox>(Id + ".Editor");
+        Assert.Equal("Customers.pas", reopened.Text);
+        Assert.True(reopened.IsFocused);
+        Assert.Equal((0, "Customers".Length), (Math.Min(reopened.SelectionStart, reopened.SelectionEnd), Math.Max(reopened.SelectionStart, reopened.SelectionEnd)));
+        node.Rename!.Cancel();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Unit1.pas", h.Find<TextBlock>(Id + ".Name").Text);
+    }
+
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
     [Trait("Req", "UI-TW-123")]
     [Trait("Req", "IDE-PM-146")]
     public async Task UnlistedFilesBarRenders()
@@ -448,5 +501,54 @@ public sealed partial class ProjectManagerViewTests
         await h.WaitForAsync(() => pm.Find("aaa/Fourth.pas") is not null, "the file added");
         await h.WaitForAsync(() => !pm.IsCheckingMissingFiles, "check after the add");
         Assert.Null(h.TryFind<Control>(Bar));
+    }
+
+    /// <summary>
+    /// IDE-TGT-017: the root of a library project has the icon variant <c>project.library</c> and its tooltip is the DLL
+    /// path of the active configuration; other projects keep the project icon and the project file's path.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-017")]
+    [Trait("Req", "IDE-TGT-011")]
+    public async Task LibraryProjectIconAndTooltip()
+    {
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles[@"Mathlib\Mathlib.pproj"] = """
+                { "formatVersion": 1, "name": "Mathlib", "appType": "library", "mainSource": "Mathlib.pas",
+                  "configurations": { "Debug": { "optimization": 0, "debugInfo": true, "defines": [], "outputDir": "bin/Debug" },
+                                      "Release": { "optimization": 2, "debugInfo": false, "defines": [], "outputDir": "out" } },
+                  "files": [ { "path": "Mathlib.pas" } ] }
+                """;
+            o.InitialFiles[@"Mathlib\Mathlib.pas"] = "library Mathlib;\nbegin\nend.\n";
+            HelloProject(o);
+        });
+        var dir = Path.Combine(h.TempDir, "Mathlib");
+        Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(dir, "Mathlib.pproj")));
+        var pm = Pm(h);
+        await h.WaitForAsync(() => !pm.IsCheckingMissingFiles, "missing-file check done");
+        Assert.True(h.Services.ToolWindows.Show(ProjectManagerViewModel.ToolName, focus: true));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("project.library", IconOf(h, ProjectManagerViewModel.RootKey));
+        Assert.Contains("project.library", FreexComp.Ide.Icons.IconCatalog.Names);
+        var icon = h.Find<FreexComp.Ide.Icons.IdeIcon>(Row + ProjectManagerViewModel.RootKey + ".Icon");
+        Assert.True(icon.IsEffectivelyVisible);
+        Assert.Equal(new Size(16, 16), icon.Bounds.Size);
+        Assert.Equal(Path.Combine(dir, @"bin\Debug\Mathlib.dll"), ToolTip.GetTip(h.Find<TreeViewItem>(Row + ProjectManagerViewModel.RootKey)));
+        Assert.Equal(Path.Combine(dir, "Mathlib.pas"), ToolTip.GetTip(h.Find<TreeViewItem>(Row + "Mathlib.pas"))); // file rows: the path
+        Assert.Equal("unit", IconOf(h, "Mathlib.pas"));
+
+        // The tooltip follows the active configuration.
+        await h.Services.Commands.ExecuteAsync("project.setConfiguration", "Release");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Path.Combine(dir, @"out\Mathlib.dll"), ToolTip.GetTip(h.Find<TreeViewItem>(Row + ProjectManagerViewModel.RootKey)));
+
+        // Another kind of project: the project icon and the project file.
+        await OpenHelloAsync(h);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("project", IconOf(h, ProjectManagerViewModel.RootKey));
+        Assert.Equal(Path.Combine(h.TempDir, "Hello", "Hello.pproj"), ToolTip.GetTip(h.Find<TreeViewItem>(Row + ProjectManagerViewModel.RootKey)));
     }
 }

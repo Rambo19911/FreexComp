@@ -19,7 +19,7 @@ namespace FreexComp.Ide.Tests.Views;
 /// </summary>
 [Trait("Phase", "8")]
 [Trait("Kind", "Ui")]
-public sealed class VisualSnapshotTests
+public sealed partial class VisualSnapshotTests
 {
     private static readonly string[] Themes = ["light", "dark"];
     private static readonly double[] Scales = [1.0, 2.0];

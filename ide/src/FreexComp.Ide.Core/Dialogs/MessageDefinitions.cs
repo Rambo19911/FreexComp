@@ -60,6 +60,7 @@ public static class MessageDefinitions
         new("Msg.Project.RemoveMainSource", E, ["OK"]),
         new("Msg.Project.DuplicateUnitName", E, ["OK"]),
         new("Msg.Project.RenameFailed", E, ["OK"]),
+        new("Msg.Project.RenameConflict", E, ["OK"]),
         new("Msg.Project.NewFolderFailed", E, ["OK"]),
         new("Msg.Project.MoveExists", E, ["OK"]),
         new("Msg.Project.MoveFailed", E, ["OK"]),

@@ -1,11 +1,1 @@
 # IDE-TEST-030: in-scope behaviour without a test yet (known gaps). "<id> <note>". Remove a line when a test covers the id.
-IDE-TGT-010 library projects: open task I-228 (phase8-build-options.md §2)
-IDE-TGT-011 library projects: open task I-228 (phase8-build-options.md §2)
-IDE-TGT-012 library projects: open task I-228 (phase8-build-options.md §2)
-IDE-TGT-013 library projects: open task I-228 (phase8-build-options.md §2)
-IDE-TGT-014 library projects: open task I-228 (phase8-build-options.md §2)
-IDE-TGT-015 library projects: open task I-229 (phase8-build-options.md §2)
-IDE-TGT-016 library projects: open task I-229 (phase8-build-options.md §2)
-IDE-TGT-017 library projects: open task I-228 (phase8-build-options.md §2)
-IDE-TGT-018 library projects: open task I-228 (phase8-build-options.md §2)
-IDE-TGT-019 library projects: open task I-228 (phase8-build-options.md §2)

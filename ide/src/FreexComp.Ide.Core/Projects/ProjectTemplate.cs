@@ -55,10 +55,12 @@ public sealed class ProjectTemplate
 /// <summary>
 /// The templates embedded in <c>FreexComp.Ide.Core</c> under <c>Templates/&lt;id&gt;/</c> (IDE-PM-020): an invalid
 /// <c>template.json</c> or a missing source file skips the template with a log error. Sorted with
-/// <c>console-pascal</c> first, then by name (dialogs.md §3).
+/// <c>console-pascal</c>, <c>gui-pascal</c>, <c>library-pascal</c> first, then by name (dialogs.md §3, IDE-TGT-015).
 /// </summary>
 public static class ProjectTemplates
 {
+    private static readonly string[] BuiltInOrder = [ConsoleId, "gui-pascal", "library-pascal"];
+
     private const string LogCategory = "project";
     private const string ConsoleId = "console-pascal";
 
@@ -99,7 +101,9 @@ public static class ProjectTemplates
             }
         }
 
-        return [.. templates.OrderBy(t => t.Id == ConsoleId ? 0 : 1).ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase)];
+        // The built-in templates in their fixed order (IDE-TGT-015: library-pascal after gui-pascal), then the others by name.
+        static int Rank(string id) => Array.IndexOf(BuiltInOrder, id) is >= 0 and var index ? index : BuiltInOrder.Length;
+        return [.. templates.OrderBy(t => Rank(t.Id)).ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase)];
     }
 
     private static ProjectTemplate Parse(string json, Func<string, string> readSource)

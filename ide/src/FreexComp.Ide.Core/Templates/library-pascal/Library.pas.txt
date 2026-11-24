@@ -1,0 +1,16 @@
+library $(ProjectName);
+
+{ Routines listed under "exports" can be called from other programs.
+  Pass only simple types, records of simple types and pointers across the
+  library boundary: the caller and the library do not share a memory manager. }
+
+function Add(A, B: Integer): Integer; stdcall;
+begin
+  Result := A + B;
+end;
+
+exports
+  Add;
+
+begin
+end.

@@ -31,6 +31,7 @@ public sealed class ProjectNodeView : DockPanel
     private readonly IdeIcon _missing = new() { IconName = "warning", Width = 9, Height = 9, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
     private readonly TextBlock _name = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Ellipse _dot = new() { Width = 6, Height = 6, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
+    private readonly FreexComp.Ide.Designer.ProgressRing _busy = new(12, 1.5) { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) };
     private ProjectNodeViewModel? _bound;
     private TextBox? _editor;
     private Popup? _errorPopup;
@@ -68,6 +69,7 @@ public sealed class ProjectNodeView : DockPanel
         AutomationProperties.SetAutomationId(_missing, id + ".Icon.Missing");
         AutomationProperties.SetAutomationId(_name, id + ".Name");
         AutomationProperties.SetAutomationId(_dot, id + ".Modified");
+        AutomationProperties.SetAutomationId(_busy, id + ".Busy");
 
         if (node.Badge is { } badge)
         {
@@ -96,9 +98,9 @@ public sealed class ProjectNodeView : DockPanel
 
     private void OnNodeChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ProjectNodeViewModel.Rename))
+        if (e.PropertyName is nameof(ProjectNodeViewModel.Rename) or nameof(ProjectNodeViewModel.BusyName))
             UpdateEditor();
-        else
+        if (e.PropertyName != nameof(ProjectNodeViewModel.Rename))
             Update();
     }
 
@@ -107,15 +109,16 @@ public sealed class ProjectNodeView : DockPanel
     {
         if (_editor is not null)
         {
-            _errorPopup!.IsOpen = false;
-            Children.Remove(_editorHost!);
-            _editor = null;
-            _errorPopup = null;
-            _editorHost = null;
-            Children.Add(_name);
+            // The fields first: taking the focused editor out of the tree makes it lose focus, which must not commit.
+            var (oldPopup, oldHost) = (_errorPopup!, _editorHost!);
+            (_editor, _errorPopup, _editorHost) = (null, null, null);
+            oldPopup.IsOpen = false;
+            Children.Remove(oldHost);
+            if (!Children.Contains(_name))
+                Children.Add(_name);
         }
 
-        if (Node.Rename is not { } rename)
+        if (Node.Rename is not { } rename || Node.BusyName is not null) // UI-TW-118: closed while the rename is busy
             return;
         var id = ProjectManagerView.RowPrefix + Node.Key;
         var editor = new TextBox { Text = rename.NewName, MinHeight = 20, Padding = new Thickness(2, 0), VerticalContentAlignment = VerticalAlignment.Center };
@@ -159,7 +162,7 @@ public sealed class ProjectNodeView : DockPanel
                 rename.Cancel();
             }
         }, RoutingStrategies.Tunnel);
-        editor.LostFocus += (_, _) => _ = rename.FocusLostAsync(); // focus loss commits (UI-TW-112; UI-TW-116 for folders)
+        editor.LostFocus += (_, _) => _ = _editor == editor ? rename.FocusLostAsync() : Task.CompletedTask; // focus loss commits (UI-TW-112; UI-TW-116 for folders)
 
         Children.Remove(_name);
         _editorHost = new Panel { Children = { editor, popup } };
@@ -172,7 +175,8 @@ public sealed class ProjectNodeView : DockPanel
                 return;
             editor.Focus(NavigationMethod.Tab);
             editor.SelectionStart = 0;
-            editor.SelectionEnd = rename.BaseNameLength;
+            // A refused rename opens the editor again with the typed name selected (IDE-PM-134).
+            editor.SelectionEnd = rename.NewName == rename.OriginalName ? rename.BaseNameLength : System.IO.Path.GetFileNameWithoutExtension(rename.NewName).Length;
             ShowError();
         }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
@@ -189,9 +193,14 @@ public sealed class ProjectNodeView : DockPanel
         _missing.IsVisible = Node.IsMissing;
         _name.Classes.Set("body", !Strong);
         _name.Classes.Set("bodyStrong", Strong);
-        _name.Bind(TextBlock.ForegroundProperty, _name.GetResourceObservable(Node.IsMissing ? "FxcTextDisabledBrush" : "FxcTextPrimaryBrush"));
+        _name.Bind(TextBlock.ForegroundProperty, _name.GetResourceObservable(
+            Node.BusyName is not null ? "FxcTextSecondaryBrush" : Node.IsMissing ? "FxcTextDisabledBrush" : "FxcTextPrimaryBrush"));
         _name.Inlines!.Clear();
-        if (Node.MatchStart >= 0 && Node.MatchLength > 0)
+        if (Node.BusyName is { } typed)
+        {
+            _name.Text = typed; // UI-TW-118
+        }
+        else if (Node.MatchStart >= 0 && Node.MatchLength > 0)
         {
             var highlight = this.TryFindResource("FxcEditorFindMatchBgBrush", ActualThemeVariant, out var brush) ? brush as IBrush : null;
             _name.Inlines.Add(new Run(Node.Name[..Node.MatchStart]));
@@ -203,7 +212,19 @@ public sealed class ProjectNodeView : DockPanel
             _name.Text = Node.Name;
         }
 
-        var showDot = Node.IsModified;
+        // UI-TW-118: the 12 px ring takes the place of the modified marker while the rename is busy.
+        var busy = Node.BusyName is not null;
+        if (busy && !Children.Contains(_busy))
+        {
+            SetDock(_busy, Avalonia.Controls.Dock.Right);
+            Children.Insert(0, _busy);
+        }
+        else if (!busy)
+        {
+            Children.Remove(_busy);
+        }
+
+        var showDot = Node.IsModified && !busy;
         if (showDot && !Children.Contains(_dot))
         {
             SetDock(_dot, Avalonia.Controls.Dock.Right);

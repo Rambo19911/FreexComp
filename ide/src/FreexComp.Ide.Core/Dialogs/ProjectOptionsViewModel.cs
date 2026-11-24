@@ -87,10 +87,11 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
             _configs.Add(ConfigState.From(name, _baseline.Configurations[name]));
         _selectedConfiguration = _configs.Any(c => c.Name == _baseline.ActiveConfiguration) ? _baseline.ActiveConfiguration : _configs[0].Name;
         SearchPaths = new ObservableCollection<SearchPathRow>(_baseline.SearchPaths.Select(Row));
-        Run = new RunFields(_baseline.Directory, () => RunParametersViewModel.ExecutablePath(Build(), ActiveName), fileSystem, _baseline.Run);
+        Run = new RunFields(_baseline.Directory, () => RunParametersViewModel.ExecutablePath(Build(), ActiveName), fileSystem, _baseline.Run,
+            () => AppType == "library");
         Run.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(RunFields.Arguments) or nameof(RunFields.WorkingDir))
+            if (e.PropertyName is nameof(RunFields.Arguments) or nameof(RunFields.WorkingDir) or nameof(RunFields.HostApplication))
                 MarkChanged();
         };
 
@@ -220,7 +221,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     [
         new("console", Strings.ProjectOptions_AppType_Console, true),
         new("gui", Strings.ProjectOptions_AppType_Gui, false), // enabled from P4
-        new("library", Strings.ProjectOptions_AppType_Library, false), // P8+
+        new("library", Strings.ProjectOptions_AppType_Library, true), // IDE-TGT-010
         new("package", Strings.ProjectOptions_AppType_Package, false),
     ];
 
@@ -230,7 +231,7 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
         set
         {
             if (AppTypes.Any(a => a.Value == value && a.IsEnabled))
-                Edit(ref _appType, value);
+                Edit(ref _appType, value, nameof(OutputFile));
         }
     }
 
@@ -372,7 +373,14 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
 
     public string? OutputDirError { get; private set; }
 
-    public string OutputFile => Path.Combine(RunFields.Resolve(_baseline.Directory, OutputDir) ?? _baseline.Directory, ProjectName + ".exe");
+    /// <summary>IDE-TGT-011: <c>&lt;name&gt;.dll</c> for a library, else <c>&lt;name&gt;.exe</c>.</summary>
+    public string OutputFileName => ProjectName.Trim() + (AppType == "library" ? ".dll" : ".exe");
+
+    /// <summary>The hint under <c>Name</c>: "output file name (&lt;name&gt;.dll)".</summary>
+    public string NameHint => string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.ProjectOptions_NameHint, OutputFileName);
+
+    public string OutputFile => Path.Combine(RunFields.Resolve(_baseline.Directory, OutputDir) ?? _baseline.Directory,
+        ProjectName + (AppType == "library" ? ".dll" : ".exe"));
 
     public string ObjDir => Path.Combine(_baseline.Directory, "obj", SelectedConfiguration) + "\\";
 
@@ -388,6 +396,9 @@ public sealed class ProjectOptionsViewModel : DialogViewModel<bool>
     // ---- Run (§8.6) and Build Events (§8.7) ----
 
     public RunFields Run { get; }
+
+    /// <summary><c>HostApplication.Browse</c> of the Run page (IDE-TGT-012).</summary>
+    public Task BrowseHostAsync() => RunParametersViewModel.BrowseHostAsync(_pickers, DialogName, _baseline.Directory, Run);
 
     /// <summary><c>WorkingDir.Browse</c> of the Run page.</summary>
     public async Task BrowseWorkingDirAsync()

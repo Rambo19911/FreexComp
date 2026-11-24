@@ -10,7 +10,7 @@ namespace FreexComp.Ide.Views;
 
 /// <summary>
 /// The Rename File dialog (dialogs.md §7), 420 × auto: <c>NewName</c> with its message <c>Error.NewName</c> under it and,
-/// for Pascal units, <c>UpdateReferences</c> (tooltip <c>Rename_UsesNote</c>, IDE-PM-072). Initial focus on the name with
+/// for Pascal units, <c>UpdateReferences</c> (heading, uses clauses and qualified names, IDE-PM-130). Initial focus on the name with
 /// the base name selected (UI-DLG-071).
 /// </summary>
 public sealed class RenameFileWindow : DialogWindow
@@ -63,7 +63,6 @@ public sealed class RenameFileWindow : DialogWindow
         {
             var update = new CheckBox { Content = Strings.RenameFile_UpdateReferences, IsChecked = model.UpdateReferences };
             AutomationProperties.SetAutomationId(update, Id("UpdateReferences"));
-            ToolTip.SetTip(update, Strings.Rename_UsesNote);
             update.IsCheckedChanged += (_, _) => model.UpdateReferences = update.IsChecked == true;
             panel.Children.Add(update);
         }

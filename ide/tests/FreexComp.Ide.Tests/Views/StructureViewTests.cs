@@ -141,4 +141,45 @@ public sealed class StructureViewTests
         Assert.Equal("Context.edit.cut", Id(menu.Items[0]!));
         menu.Close();
     }
+
+    /// <summary>
+    /// IDE-TGT-018: a library file shows the group <c>Exports</c> after <c>Routines</c>, one row per export item as written
+    /// (name with <c>index</c> / <c>name</c>), and Enter goes to the item.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-018")]
+    public async Task LibraryFile_ShowsExportsGroup()
+    {
+        const string Library = "library Mathlib;\r\n\r\nfunction Add(A, B: Integer): Integer; stdcall;\r\nbegin\r\n  Result := A + B;\r\nend;\r\n\r\n" +
+                               "function Sub(A, B: Integer): Integer; stdcall;\r\nbegin\r\n  Result := A - B;\r\nend;\r\n\r\n" +
+                               "exports\r\n  Add,\r\n  Sub index   3 name 'Subtract';\r\n\r\nbegin\r\nend.\r\n";
+        await using var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["Mathlib.pas"] = Library;
+            o.InitialFiles["Unit1.pas"] = "unit Unit1;\r\ninterface\r\nprocedure Run;\r\nimplementation\r\nprocedure Run; begin end;\r\nend.\r\n";
+        });
+        await h.ExecuteAsync("view.structure");
+        Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "Mathlib.pas"))).Success);
+        await h.WaitForAsync(() => RowKeys(h).Count > 0, "structure built");
+        Assert.Equal(["Routines", "Routines/Add", "Routines/Sub", "Exports", "Exports/Add", "Exports/Sub"], RowKeys(h));
+        var model = (StructureViewModel)h.Find<ListBox>("Tool.Structure.List").DataContext!;
+        Assert.Equal(["Exports", "Add", "Sub index 3 name 'Subtract'"], model.Rows.Where(r => r.Node.Key.StartsWith("Exports", StringComparison.Ordinal)).Select(r => r.Node.Text));
+
+        // Enter on an export row: the caret on the item's name in the exports clause.
+        var editor = h.Find<TextEditor>("Editor.Mathlib.pas");
+        h.Click("Tool.Structure.Row.Exports/Sub");
+        Assert.Equal("Exports/Sub", model.SelectedRow?.Node.Key);
+        h.Press("Enter");
+        await h.WaitForAsync(() => h.FocusedAutomationId == "Editor.Mathlib.pas", "editor focused");
+        Assert.Equal(Library.IndexOf("Sub index", StringComparison.Ordinal), editor.TextArea.Caret.Offset);
+
+        // Sorted: the items by name; a unit without an exports clause has no such group.
+        await h.ExecuteAsync("structure.sortAlphabetically");
+        Assert.Equal(["Exports/Add", "Exports/Sub"], model.Rows.Select(r => r.Node.Key).Where(k => k.StartsWith("Exports/", StringComparison.Ordinal)));
+        await h.ExecuteAsync("structure.sortAlphabetically");
+        Assert.True((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "Unit1.pas"))).Success);
+        await h.WaitForAsync(() => RowKeys(h).Contains("Routines/Run"), "structure of the unit");
+        Assert.DoesNotContain("Exports", RowKeys(h));
+    }
 }

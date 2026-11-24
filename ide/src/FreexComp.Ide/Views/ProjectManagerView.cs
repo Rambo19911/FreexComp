@@ -60,7 +60,7 @@ public sealed class ProjectManagerView : UserControl
             {
                 new Setter(TreeViewItem.IsExpandedProperty, new Binding(nameof(ProjectNodeViewModel.IsExpanded)) { Mode = BindingMode.TwoWay }),
                 new Setter(IsVisibleProperty, new Binding(nameof(ProjectNodeViewModel.IsVisibleInTree))),
-                new Setter(ToolTip.TipProperty, new Binding(nameof(ProjectNodeViewModel.FullPath))),
+                new Setter(ToolTip.TipProperty, new Binding(nameof(ProjectNodeViewModel.ToolTipText))),
                 new Setter(AutomationProperties.NameProperty, new Binding(nameof(ProjectNodeViewModel.AutomationName))),
                 new Setter(AutomationProperties.AutomationIdProperty, new Binding(nameof(ProjectNodeViewModel.Key)) { StringFormat = RowPrefix + "{0}" }),
                 new Setter(MinHeightProperty, 22d),

@@ -467,4 +467,92 @@ public sealed class RunServiceTests
         Assert.Equal(1, process.KillCount);
         Assert.Equal(IdeState.Idle, bed.Services.State.Current.State);
     }
+
+    // ---- Library projects (phase8-build-options.md §2, I-228) ----
+
+    private const string Dll = BuildTestBed.Dir + @"\bin\Debug\Hello.dll";
+
+    private static async Task<BuildTestBed> StartLibraryAsync(string run)
+    {
+        var bed = new BuildTestBed();
+        bed.Engine.DefaultOutputPath = Dll;
+        bed.Fs.CreateDirectory(BuildTestBed.Dir + @"\bin\Debug");
+        await bed.OpenHelloAsync("library", Configurations + run);
+        return bed;
+    }
+
+    /// <summary>IDE-TGT-013: without <c>run.hostApplication</c> a library is not runnable — nothing is built or started.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-013")]
+    public Task Library_WithoutHost_NotRunnable() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = await StartLibraryAsync(""", "run": { "arguments": "-x", "workingDir": "" }""");
+        Assert.True(bed.Services.Commands.CanExecute("run.startWithoutDebugging"));
+
+        Assert.False(await bed.Services.Run.StartAsync());
+
+        Assert.Equal(Strings.Msg_Run_NotRunnable, bed.Services.Status.Message);
+        Assert.Empty(bed.Engine.Requests);
+        Assert.Empty(bed.Processes.Started);
+        Assert.Equal(IdeState.Idle, bed.Services.State.Current.State);
+        Assert.Empty(bed.Dialogs.Requests);
+    });
+
+    /// <summary>
+    /// IDE-TGT-011, 013: the library is built (output <c>&lt;name&gt;.dll</c>), then the host application is started with
+    /// <c>run.arguments</c>, in <c>run.workingDir</c> or else the host's own folder, without capture and without the
+    /// console host.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-011")]
+    [Trait("Req", "IDE-TGT-013")]
+    public Task Library_WithHost_StartsHostWithArgumentsAndWorkingDir() => TestUiThread.RunAsync(async () =>
+    {
+        const string Host = BuildTestBed.Dir + @"\host\Loader.exe";
+        var bed = await StartLibraryAsync(""", "run": { "arguments": "-n 3", "workingDir": "", "hostApplication": "host/Loader.exe" }""");
+        bed.File(Host, "");
+        bed.Services.Settings.Set(SettingsCatalog.RunConsoleMode, "external"); // applies to console projects only
+
+        Assert.True(await bed.Services.Run.StartAsync());
+
+        Assert.Single(bed.Engine.Requests);
+        Assert.True(bed.Fs.FileExists(Dll));
+        Assert.Equal(Dll, bed.Services.Run.PreviousExecutable(bed.Services.Projects.Project!));
+        var process = bed.Processes.Last;
+        Assert.Equal(new ProcessStartRequest(Host, "-n 3", BuildTestBed.Dir + @"\host") { Capture = false, ConsoleHost = false }, process.Request);
+        Assert.Equal(new IdeStateInfo(IdeState.Running, null, false, Host, process.ProcessId), bed.Services.State.Current);
+        Assert.Contains(F(Strings.Msg_Run_Started, Host, "-n 3", process.ProcessId), bed.OutputText(OutputChannels.Program));
+        var ended = Ended(bed);
+        process.Exit(0);
+        await ended;
+        Assert.Equal(IdeState.Idle, bed.Services.State.Current.State);
+
+        // run.workingDir, when set, is resolved against the project directory; an absolute host path is used as it is.
+        var bed2 = await StartLibraryAsync(""", "run": { "arguments": "", "workingDir": "data", "hostApplication": "D:/tools/Loader.exe" }""");
+        bed2.File(@"D:\tools\Loader.exe", "");
+        bed2.Fs.CreateDirectory(BuildTestBed.Dir + @"\data");
+        Assert.True(await bed2.Services.Run.StartAsync());
+        Assert.Equal(new ProcessStartRequest(@"D:\tools\Loader.exe", "", BuildTestBed.Dir + @"\data") { Capture = false }, bed2.Processes.Last.Request);
+    });
+
+    /// <summary>IDE-TGT-013: a host application that does not exist → <c>Msg.Run.NoExecutable</c> with the host path, after the build.</summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-013")]
+    public Task Library_HostMissing_NoExecutable() => TestUiThread.RunAsync(async () =>
+    {
+        var bed = await StartLibraryAsync(""", "run": { "arguments": "", "workingDir": "", "hostApplication": "host/Loader.exe" }""");
+        bed.Dialogs.Answer("Msg.Run.NoExecutable", "OK");
+
+        Assert.False(await bed.Services.Run.StartAsync());
+
+        Assert.Single(bed.Engine.Requests);
+        var request = Assert.Single(bed.Dialogs.Requests);
+        Assert.Equal("Msg.Run.NoExecutable", request.MessageId);
+        Assert.Equal([BuildTestBed.Dir + @"\host\Loader.exe"], request.Args);
+        Assert.Empty(bed.Processes.Started);
+        Assert.Equal(IdeState.Idle, bed.Services.State.Current.State);
+    });
 }
