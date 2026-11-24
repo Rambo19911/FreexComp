@@ -1,0 +1,43 @@
+# numbers
+ok Major = Win32MajorVersion
+ok Minor = Win32MinorVersion
+ok Build = Win32BuildNumber
+ok Major >= 10
+ok Build > 0
+ok ServicePackMajor >= 0
+ok ServicePackMinor >= 0
+# system
+ok Platform = pfWindows
+ok Architecture = arIntelX64
+# Check
+ok Check(Major)
+ok Check(Major - 1)
+ok Check(Major + 1)
+ok Check(Major, Minor)
+ok Check(Major, Minor + 1)
+ok Check(Major - 1, Minor + 1)
+ok Check(Major + 1, 0)
+ok Check(Major, Minor, ServicePackMajor)
+ok Check(Major, Minor, ServicePackMajor + 1)
+ok Check(Major - 1, Minor + 1, ServicePackMajor + 1)
+ok Check(Major, Minor + 1, 0)
+# CheckBuild
+ok CheckBuild(17763)
+ok CheckBuild(Build)
+ok CheckBuild(Build + 1)
+ok CheckBuild(0)
+# second thread
+ok thread started
+ok Major
+ok Minor
+ok Build
+ok ServicePackMajor
+ok ServicePackMinor
+ok Architecture
+ok Platform
+ok Check(Major, Minor)
+ok CheckBuild(Build)
+ok CheckBuild(Build + 1)
+ok Name
+ok ToString
+# passed 37 failed 0

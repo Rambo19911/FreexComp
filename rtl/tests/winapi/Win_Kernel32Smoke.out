@@ -49,6 +49,8 @@ ok GetSystemInfo architecture
 ok GetSystemInfo page size
 ok GetSystemInfo processors
 ok GetSystemInfo granularity
+ok GetNativeSystemInfo architecture
+ok GetNativeSystemInfo page size
 ok MulDiv rounds
 ok MulDiv by zero
 ok LoadLibraryW of a loaded module
@@ -134,4 +136,4 @@ ok event reset
 ok CreateMutexW/ReleaseMutex
 ok ReleaseMutex not owned
 ok CreateSemaphoreW/ReleaseSemaphore
-# passed 128 failed 0
+# passed 130 failed 0

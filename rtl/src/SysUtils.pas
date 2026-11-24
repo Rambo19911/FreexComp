@@ -533,6 +533,40 @@ var
   Win32MinorVersion: Integer;
   Win32BuildNumber: Integer;
 
+type
+  { the operating system the program runs on (os-version.md): read once at initialization from RtlGetVersion and
+    GetNativeSystemInfo; the members only return those values, so they are safe from any thread }
+  TOSVersion = record
+  public type
+    TArchitecture = (arIntelX86, arIntelX64);
+    TPlatform = (pfWindows);
+  public
+    class function Architecture: TArchitecture; static;
+    class function Platform: TPlatform; static;
+    class function Major: Integer; static;
+    class function Minor: Integer; static;
+    class function Build: Integer; static;
+    class function ServicePackMajor: Integer; static;
+    class function ServicePackMinor: Integer; static;
+    { the product name in English: 'Windows 11', 'Windows 10', 'Windows Server 2025' ...; 'Windows' when unknown }
+    class function Name: string; static;
+    { True when the system version is at least the given one }
+    class function Check(AMajor: Integer): Boolean; overload; static;
+    class function Check(AMajor, AMinor: Integer): Boolean; overload; static;
+    class function Check(AMajor, AMinor, AServicePackMajor: Integer): Boolean; overload; static;
+    { True when the system is version 10.0 build ABuild or later, e.g. CheckBuild(22000) for Windows 11 }
+    class function CheckBuild(ABuild: Integer): Boolean; static;
+    { '<Name> (<Major>.<Minor>.<Build>, x64)' }
+    class function ToString: string; static;
+  end;
+
+const
+  { the values of the two enumerations under their plain names, so `TOSVersion.Platform = pfWindows` compiles (the
+    elements of a nested enumeration are otherwise reached only through the record: TOSVersion.pfWindows) }
+  arIntelX86 = TOSVersion.arIntelX86;
+  arIntelX64 = TOSVersion.arIntelX64;
+  pfWindows = TOSVersion.pfWindows;
+
 implementation
 
 { ------------------------------------------------------------------------------------------- format settings (1) }
@@ -4907,18 +4941,127 @@ begin
   Result := (Win32MajorVersion > Major) or ((Win32MajorVersion = Major) and (Win32MinorVersion >= Minor));
 end;
 
+var
+  { filled by ReadVersion; stay 0 when RtlGetVersion fails (RTL-980) }
+  OSServicePackMajor: Integer;
+  OSServicePackMinor: Integer;
+  OSProductType: Integer;
+  OSArchitecture: TOSVersion.TArchitecture;
+
 procedure ReadVersion;
 var
-  V: TOSVersionInfoW;
+  V: TOSVersionInfoExW;
+  Info: TSystemInfo;
 begin
   FillChar(V, SizeOf(V), 0);
   V.dwOSVersionInfoSize := SizeOf(V);
-  if RtlGetVersion(@V) = 0 then
+  if RtlGetVersion(POSVersionInfoW(@V)) = 0 then
   begin
     Win32MajorVersion := Integer(V.dwMajorVersion);
     Win32MinorVersion := Integer(V.dwMinorVersion);
     Win32BuildNumber := Integer(V.dwBuildNumber);
+    OSServicePackMajor := V.wServicePackMajor;
+    OSServicePackMinor := V.wServicePackMinor;
+    OSProductType := V.wProductType;
   end;
+  FillChar(Info, SizeOf(Info), 0);
+  Info.wProcessorArchitecture := PROCESSOR_ARCHITECTURE_AMD64;
+  GetNativeSystemInfo(Info);
+  if Info.wProcessorArchitecture = PROCESSOR_ARCHITECTURE_INTEL then
+    OSArchitecture := arIntelX86
+  else
+    OSArchitecture := arIntelX64;
+end;
+
+{ ------------------------------------------------------------------------------------ TOSVersion (os-version.md) }
+
+class function TOSVersion.Architecture: TArchitecture;
+begin
+  Result := OSArchitecture;
+end;
+
+class function TOSVersion.Platform: TPlatform;
+begin
+  Result := pfWindows;
+end;
+
+class function TOSVersion.Major: Integer;
+begin
+  Result := Win32MajorVersion;
+end;
+
+class function TOSVersion.Minor: Integer;
+begin
+  Result := Win32MinorVersion;
+end;
+
+class function TOSVersion.Build: Integer;
+begin
+  Result := Win32BuildNumber;
+end;
+
+class function TOSVersion.ServicePackMajor: Integer;
+begin
+  Result := OSServicePackMajor;
+end;
+
+class function TOSVersion.ServicePackMinor: Integer;
+begin
+  Result := OSServicePackMinor;
+end;
+
+{ RTL-982: releases of version 10 are told apart by build number; product type 1 is a workstation }
+class function TOSVersion.Name: string;
+begin
+  if Win32MajorVersion <> 10 then
+    Result := 'Windows'
+  else if OSProductType = VER_NT_WORKSTATION then
+  begin
+    if Win32BuildNumber >= 22000 then
+      Result := 'Windows 11'
+    else
+      Result := 'Windows 10';
+  end
+  else if Win32BuildNumber >= 26100 then
+    Result := 'Windows Server 2025'
+  else if Win32BuildNumber >= 20348 then
+    Result := 'Windows Server 2022'
+  else if Win32BuildNumber >= 17763 then
+    Result := 'Windows Server 2019'
+  else
+    Result := 'Windows Server';
+end;
+
+class function TOSVersion.Check(AMajor: Integer): Boolean;
+begin
+  Result := Win32MajorVersion >= AMajor;
+end;
+
+class function TOSVersion.Check(AMajor, AMinor: Integer): Boolean;
+begin
+  Result := (Win32MajorVersion > AMajor) or ((Win32MajorVersion = AMajor) and (Win32MinorVersion >= AMinor));
+end;
+
+class function TOSVersion.Check(AMajor, AMinor, AServicePackMajor: Integer): Boolean;
+begin
+  Result := (Win32MajorVersion > AMajor) or ((Win32MajorVersion = AMajor) and ((Win32MinorVersion > AMinor) or
+    ((Win32MinorVersion = AMinor) and (OSServicePackMajor >= AServicePackMajor))));
+end;
+
+class function TOSVersion.CheckBuild(ABuild: Integer): Boolean;
+begin
+  Result := (Win32MajorVersion > 10) or ((Win32MajorVersion = 10) and ((Win32MinorVersion > 0) or
+    (Win32BuildNumber >= ABuild)));
+end;
+
+class function TOSVersion.ToString: string;
+begin
+  Result := Name + ' (' + IntToStr(Win32MajorVersion) + '.' + IntToStr(Win32MinorVersion) + '.' +
+    IntToStr(Win32BuildNumber) + ', ';
+  if OSArchitecture = arIntelX86 then
+    Result := Result + 'x86)'
+  else
+    Result := Result + 'x64)';
 end;
 
 { System.AssertErrorProc (ABI-103, RTL-214) }

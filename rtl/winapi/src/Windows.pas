@@ -2093,6 +2093,7 @@ function IsDebuggerPresent: BOOL; stdcall; external kernel32 name 'IsDebuggerPre
 procedure OutputDebugStringW(lpOutputString: LPCWSTR); stdcall; external kernel32 name 'OutputDebugStringW';
 procedure OutputDebugString(lpOutputString: LPCWSTR); stdcall; external kernel32 name 'OutputDebugStringW';
 procedure GetSystemInfo(var lpSystemInfo: TSystemInfo); stdcall; external kernel32 name 'GetSystemInfo';
+procedure GetNativeSystemInfo(var lpSystemInfo: TSystemInfo); stdcall; external kernel32 name 'GetNativeSystemInfo';
 function MulDiv(nNumber, nNumerator, nDenominator: Integer): Integer; stdcall; external kernel32 name 'MulDiv';
 function GetSystemDirectoryW(lpBuffer: LPWSTR; uSize: UINT): UINT; stdcall; external kernel32 name 'GetSystemDirectoryW';
 function GetSystemDirectory(lpBuffer: LPWSTR; uSize: UINT): UINT; stdcall; external kernel32 name 'GetSystemDirectoryW';

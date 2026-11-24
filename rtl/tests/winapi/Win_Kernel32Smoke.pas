@@ -103,6 +103,10 @@ begin
   CheckEqI(4096, Info.dwPageSize, 'GetSystemInfo page size');
   Check(Info.dwNumberOfProcessors >= 1, 'GetSystemInfo processors');
   CheckEqI(65536, Info.dwAllocationGranularity, 'GetSystemInfo granularity');
+  FillChar(Info, SizeOf(Info), 0);
+  GetNativeSystemInfo(Info);
+  CheckEqI(PROCESSOR_ARCHITECTURE_AMD64, Info.wProcessorArchitecture, 'GetNativeSystemInfo architecture');
+  CheckEqI(4096, Info.dwPageSize, 'GetNativeSystemInfo page size');
   CheckEqI(8, MulDiv(10, 3, 4), 'MulDiv rounds');
   CheckEqI(-1, MulDiv(1, 1, 0), 'MulDiv by zero');
   Lib := LoadLibraryW('kernel32.dll');
