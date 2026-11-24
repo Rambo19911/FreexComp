@@ -110,12 +110,22 @@ public sealed class RunService : IRunService
     /// <summary>A program started without the debugger is running.</summary>
     public bool IsRunning => _session is not null;
 
+    /// <summary>
+    /// IDE-TGT-013: the host application of the open library project — <c>run.hostApplication</c> resolved against the
+    /// project directory; null when the project is no library or names none.
+    /// </summary>
+    public string? HostApplication =>
+        _projects.Project is { AppType: "library" } && _projects.Definition is { } definition ? ProjectOptions.GetHostApplicationPath(definition) : null;
+
+    /// <summary>IDE-TGT-014: <see cref="HostApplication"/> when that file exists (what a library is debugged through), else null.</summary>
+    public string? ExistingHostApplication => HostApplication is { } host && _fileSystem.FileExists(host) ? host : null;
+
     public async Task<bool> StartAsync(bool withDebugger = false)
     {
         if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle)
             return false;
         // IDE-TGT-013: a library is runnable iff it names a host application; that program is what is started.
-        var host = project.AppType == "library" && _projects.Definition is { } definition ? ProjectOptions.GetHostApplicationPath(definition) : null;
+        var host = HostApplication;
         if (project.AppType is not ("console" or "gui") && host is null)
         {
             _status.ShowMessage(Strings.Msg_Run_NotRunnable, StatusDuration);

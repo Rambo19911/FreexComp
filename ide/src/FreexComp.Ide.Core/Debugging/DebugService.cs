@@ -339,7 +339,9 @@ public sealed partial class DebugService : IDebugService
     {
         if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle || _active is not null)
             return false;
-        if (project.AppType is not ("console" or "gui"))
+        // IDE-TGT-014: a library runs inside its host application; that program is what the session starts.
+        var host = project.AppType is "console" or "gui" ? null : _run.ExistingHostApplication;
+        if (project.AppType is not ("console" or "gui") && host is null)
         {
             _status.ShowMessage(Strings.Msg_Run_NotRunnable, StatusDuration);
             return false;
@@ -355,7 +357,9 @@ public sealed partial class DebugService : IDebugService
                 return false;
         }
 
-        return await _run.BuildThenAsync(project, exe => LaunchAsync(project, exe, stopOnEntry, runTo, stopAtMainBody));
+        return await _run.BuildThenAsync(project, output => host is null
+            ? LaunchAsync(project, output, [], stopOnEntry, runTo, stopAtMainBody)
+            : LaunchAsync(project, host, [output], stopOnEntry, runTo, stopAtMainBody));
     }
 
     public async Task StopAsync()
@@ -463,8 +467,9 @@ public sealed partial class DebugService : IDebugService
     public void RegisterCommands(ICommandService commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        // IDE-TGT-014: a library (or package) cannot be started under the debugger; breakpoints stay.
-        bool Debuggable() => _projects.Project is { AppType: "console" or "gui" };
+        // IDE-TGT-014: a library is debugged through its host application, when it names one that exists; without it
+        // (and for a package) nothing can be started under the debugger; breakpoints stay.
+        bool Debuggable() => _projects.Project is { AppType: "console" or "gui" } || _run.ExistingHostApplication is not null;
         bool Idle() => _state.Current.State == IdeState.Idle;
         bool Paused() => _state.Current.State == IdeState.Paused && _active is not null;
 
@@ -594,7 +599,13 @@ public sealed partial class DebugService : IDebugService
             _navigation.GoToLine(document, Math.Clamp(location.Line, 1, document.Buffer.LineCount), Math.Max(1, location.Column));
     }
 
-    private async Task<bool> LaunchAsync(ProjectModel project, string exe, bool stopOnEntry, (string Path, int Line)? runTo, bool stopAtMainBody)
+    /// <summary>
+    /// Starts <paramref name="exe"/> under the debugger. <paramref name="libraries"/>: the library the project builds when
+    /// <paramref name="exe"/> is its host application (<c>LaunchRequest.Libraries</c>: its type information is loaded and
+    /// breakpoints in its units bind when the host loads it); empty for a program project.
+    /// </summary>
+    private async Task<bool> LaunchAsync(ProjectModel project, string exe, IReadOnlyList<string> libraries, bool stopOnEntry, (string Path, int Line)? runTo,
+        bool stopAtMainBody)
     {
         if (await _run.ResolveWorkingDirAsync(project, exe) is not { } workingDir)
             return false;
@@ -643,6 +654,7 @@ public sealed partial class DebugService : IDebugService
                 StopAtMainBody = stopAtMainBody,
                 Breakpoints = breakpoints,
                 Exceptions = ExceptionSettingsNow(),
+                Libraries = libraries,
             });
         }
         catch (Exception e) when (e is DebuggerException or OperationCanceledException or ObjectDisposedException)

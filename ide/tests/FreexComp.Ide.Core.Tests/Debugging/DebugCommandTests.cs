@@ -344,33 +344,43 @@ public sealed class DebugCommandTests
         Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
     }
 
+    private const string LibrarySource = "library Hello;\n\nfunction Add(A, B: Integer): Integer; stdcall;\nbegin\n  Result := A + B;\nend;\n\nexports\n  Add;\n\nbegin\nend.\n";
+
+    /// <summary>Writes and opens Hello.pproj as a library; <paramref name="run"/> is its <c>run</c> member (empty: none).</summary>
+    private static async Task<TextDocumentViewModel> OpenLibraryAsync(DebugTestBed bed, string run)
+    {
+        bed.File(bed.ProjectPath, $$"""
+            { "formatVersion": 1, "name": "Hello", "appType": "library", "mainSource": "Hello.pas",
+              "configurations": { "Debug": { "optimization": 0, "debugInfo": true, "defines": [], "outputDir": "bin/Debug" } },{{run}}
+              "files": [ { "path": "Hello.pas" } ] }
+            """);
+        bed.File(bed.MainPath, LibrarySource);
+        Assert.True(await bed.Services.Projects.OpenAsync(bed.ProjectPath));
+        var main = await bed.OpenDocumentAsync(bed.MainPath);
+        bed.Services.Documents.Activate(main);
+        return main;
+    }
+
+    private static readonly string[] RunCommandIds = ["run.start", "run.stepOver", "run.stepInto", "run.runToCursor", "run.stepOut", "run.pause", "run.stop"];
+
     /// <summary>
-    /// IDE-TGT-014: for a library project Start Debugging, Step Over / Step Into as the first command and Run to Cursor
-    /// are disabled (also with a host application); asked for all the same, the debug service answers
-    /// <c>Msg.Run.NotRunnable</c>. Breakpoints can still be set and are kept. Run Without Debugging stays available.
+    /// IDE-TGT-014: for a library project without a host application (none named, or the named file does not exist) Start
+    /// Debugging, Step Over / Step Into as the first command and Run to Cursor are disabled; asked for all the same, the
+    /// debug service answers <c>Msg.Run.NotRunnable</c> and builds nothing. Breakpoints can still be set and are kept. Run
+    /// Without Debugging stays available.
     /// </summary>
     [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Phase", "8")]
     [Trait("Req", "IDE-TGT-014")]
-    public Task LibraryProject_DebugCommandsDisabled() => TestUiThread.RunAsync(LibraryProject_DebugCommandsDisabledOnUiThread);
+    public Task LibraryProject_WithoutHost_DebugCommandsDisabled() => TestUiThread.RunAsync(LibraryProject_WithoutHost_DebugCommandsDisabledOnUiThread);
 
-    private static async Task LibraryProject_DebugCommandsDisabledOnUiThread()
+    private static async Task LibraryProject_WithoutHost_DebugCommandsDisabledOnUiThread()
     {
         using var bed = new DebugTestBed();
         var commands = bed.Services.Commands;
-        bed.File(bed.ProjectPath, """
-            { "formatVersion": 1, "name": "Hello", "appType": "library", "mainSource": "Hello.pas",
-              "configurations": { "Debug": { "optimization": 0, "debugInfo": true, "defines": [], "outputDir": "bin/Debug" } },
-              "run": { "arguments": "", "workingDir": "", "hostApplication": "Loader.exe" },
-              "files": [ { "path": "Hello.pas" } ] }
-            """);
-        bed.File(bed.MainPath, "library Hello;\n\nfunction Add(A, B: Integer): Integer; stdcall;\nbegin\n  Result := A + B;\nend;\n\nexports\n  Add;\n\nbegin\nend.\n");
-        Assert.True(await bed.Services.Projects.OpenAsync(bed.ProjectPath));
-        var main = await bed.OpenDocumentAsync(bed.MainPath);
-        bed.Services.Documents.Activate(main);
+        var main = await OpenLibraryAsync(bed, "");
 
-        string[] ids = ["run.start", "run.stepOver", "run.stepInto", "run.runToCursor", "run.stepOut", "run.pause", "run.stop"];
-        Assert.Equal([], ids.Where(id => commands.CanExecute(id)));
+        Assert.Equal([], RunCommandIds.Where(id => commands.CanExecute(id)));
         Assert.True(commands.CanExecute("run.startWithoutDebugging"));
         Assert.True(commands.CanExecute("run.parameters"));
 
@@ -386,9 +396,98 @@ public sealed class DebugCommandTests
         var breakpoint = Assert.Single(bed.Breakpoints.All);
         Assert.Equal((bed.MainPath, 5), (breakpoint.Path, breakpoint.Line));
 
+        // A host application that is named but is no file: the same.
+        Assert.True(await bed.Services.Projects.ApplyOptionsAsync(bed.Services.Projects.Definition! with
+        {
+            Run = new FreexComp.Build.RunSettings("", "") { HostApplication = "host/Loader.exe" },
+        }));
+        Assert.Equal([], RunCommandIds.Where(id => commands.CanExecute(id)));
+        Assert.False(await bed.Debug.StartAsync());
+        Assert.Equal(Strings.Msg_Run_NotRunnable, bed.Services.Status.Message);
+        Assert.Equal(IdeState.Idle, bed.State);
+        Assert.Empty(bed.Engine.Requests);
+        Assert.Empty(bed.Sessions.Sessions);
+
         // The same project as a console program: the commands are back.
         Assert.True(await bed.Services.Projects.ApplyOptionsAsync(bed.Services.Projects.Definition! with { AppType = "console" }));
-        Assert.Equal(["run.start", "run.stepOver", "run.stepInto", "run.runToCursor"], ids.Where(id => commands.CanExecute(id)));
+        Assert.Equal(["run.start", "run.stepOver", "run.stepInto", "run.runToCursor"], RunCommandIds.Where(id => commands.CanExecute(id)));
+    }
+
+    /// <summary>
+    /// IDE-TGT-014 as amended (I-254): a library project whose <c>run.hostApplication</c> names an existing file is
+    /// debugged through that program. Start Debugging, Step Over / Step Into as the first command and Run to Cursor are
+    /// enabled; the session's program is the host (arguments and working directory from the run settings, the working
+    /// directory defaulting to the host's folder) and the library that was built is named as a module of the session
+    /// (<c>LaunchRequest.Libraries</c>): its type-information file is the one looked for, the host's is not asked about.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-TGT-014")]
+    public Task LibraryProject_WithHost_DebugCommandsEnabled() => TestUiThread.RunAsync(LibraryProject_WithHost_DebugCommandsEnabledOnUiThread);
+
+    private static async Task LibraryProject_WithHost_DebugCommandsEnabledOnUiThread()
+    {
+        using var bed = new DebugTestBed();
+        var commands = bed.Services.Commands;
+        var main = await OpenLibraryAsync(bed, """ "run": { "arguments": "-n 3", "workingDir": "", "hostApplication": "host/Loader.exe" },""");
+        var host = bed.File(Path.Combine(bed.Dir, @"host\Loader.exe"), "");
+        var dll = bed.File(Path.Combine(bed.Dir, @"bin\Debug\Hello.dll"), "");
+        bed.Engine.DefaultOutputPath = dll;
+
+        Assert.Equal(["run.start", "run.stepOver", "run.stepInto", "run.runToCursor"], RunCommandIds.Where(id => commands.CanExecute(id)));
+        Assert.True(commands.CanExecute("run.startWithoutDebugging"));
+
+        // A breakpoint in the library's source goes to the session with the launch.
+        main.Selection = TextSelection.At(main.Buffer.Text.IndexOf("Result", StringComparison.Ordinal));
+        await commands.ExecuteAsync("run.toggleBreakpoint");
+
+        bed.Sessions.UseScenario($$"""
+            { "steps": [
+              { "on": "setBreakpoints", "expectArguments": { "source": { "path": {{DebugTestBed.Json(bed.MainPath)}} }, "breakpoints": [ { "line": 5 } ] },
+                "respond": { "breakpoints": [ { "id": 1, "verified": false, "line": 5 } ] } },
+              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{Stopped("breakpoint", """, "hitBreakpointIds": [1]""")}} ] },
+              {{DebugScenarios.AtStop([("Add", bed.MainPath, 5)], threads: ThreadSeven)}},
+              {{DebugScenarios.Continue(DebugTestBed.Exit())}} ] }
+            """);
+
+        // Start Debugging: the library is built, the host is what runs under the debugger.
+        var stop = await StopAfterAsync(bed, "run.start");
+        Assert.Equal((StopReason.Breakpoint, bed.MainPath, 5), (stop.Reason, stop.Location!.Path, stop.Location.Line));
+        Assert.Single(bed.Engine.Requests);
+        var launch = JsonDocument.Parse(Assert.Single(bed.Sessions.SentArguments("launch"))).RootElement;
+        Assert.Equal(host, launch.GetProperty("program").GetString());
+        Assert.Equal(["-n", "3"], launch.GetProperty("args").EnumerateArray().Select(a => a.GetString()));
+        Assert.Equal(Path.GetDirectoryName(host), launch.GetProperty("cwd").GetString());
+        Assert.Equal(IdeState.Paused, bed.State);
+        Assert.Equal(host, bed.Services.State.Current.ProgramPath);
+
+        // The library is a module of the session: its type-information file was looked for (there is none here), the host's was not.
+        var debuggerLines = bed.Debug.Log.Where(row => row.Kind == FreexComp.Ide.Core.Debugging.DebugLogKind.Debugger).Select(row => row.Message).ToList();
+        Assert.Contains(debuggerLines, l => l.Contains(Path.ChangeExtension(dll, ".pdi"), StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(debuggerLines, l => l.Contains("Loader.pdi", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(bed.Processes.Started); // nothing was started without the debugger
+
+        // Continue: the host runs to its end.
+        await commands.ExecuteAsync("run.start");
+        await bed.WaitForStateAsync(IdeState.Idle);
+        Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
+
+        // Step Into as the first command starts the host too, stopping at its entry.
+        bed.Sessions.UseScenario($$"""
+            { "steps": [
+              { "on": "setBreakpoints", "respond": { "breakpoints": [ { "id": 1, "verified": false, "line": 5 } ] } },
+              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{Stopped("entry")}} ] }, {{At(bed.MainPath, 5)}} ] }
+            """);
+        stop = await StopAfterAsync(bed, "run.stepInto");
+        Assert.Equal(StopReason.Entry, stop.Reason);
+        var second = JsonDocument.Parse(bed.Sessions.SentArguments("launch")[1]).RootElement;
+        Assert.Equal((host, true), (second.GetProperty("program").GetString(), second.GetProperty("stopOnEntry").GetBoolean()));
+        await bed.Debug.StopAsync();
+        Assert.Equal(IdeState.Idle, bed.State);
+
+        // The host goes away: the commands are disabled again.
+        File.Delete(host);
+        Assert.Equal([], RunCommandIds.Where(id => commands.CanExecute(id)));
     }
 
     /// <summary>
