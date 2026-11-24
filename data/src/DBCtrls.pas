@@ -28,13 +28,13 @@ type
     { the native read-only state and the input limit follow the link and the field }
     procedure UpdateNative;
     function NativeReadOnly: Boolean;
-    function BeginModify: Boolean;
   protected
     procedure CreateWnd; override;
-    { paste, cut, clear and undo are modifications; Escape is wanted while a modification is pending }
+    { Escape is wanted while a modification is pending }
     procedure WndProc(var Message: TMessage); override;
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
-    procedure KeyPress(var Key: Char); override;
+    { the start of a modification by the user: the dataset enters edit mode, or the input is refused }
+    function EditCanModify: Boolean; override;
     procedure DoEnter; override;
     { writes a pending modification; when the field rejects it the control keeps the focus }
     procedure DoExit; override;
@@ -124,11 +124,11 @@ type
     procedure DataChange(Sender: TObject);
     procedure UpdateData(Sender: TObject);
     function NativeReadOnly: Boolean;
-    function BeginModify: Boolean;
   protected
+    { Escape is wanted while a modification is pending }
     procedure WndProc(var Message: TMessage); override;
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
-    procedure KeyPress(var Key: Char); override;
+    function EditCanModify: Boolean; override;
     procedure DoExit; override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure SetName(const NewName: TComponentName); override;
@@ -177,7 +177,7 @@ type
     procedure SetValueChecked(const Value: string);
     procedure SetValueUnchecked(const Value: string);
     function FieldState: TCheckBoxState;
-    procedure WriteState;
+    procedure WriteCheckState;
     procedure DataChange(Sender: TObject);
   protected
     { the path of every click by the user: ignored in the read-only state, rejected when the dataset cannot be
@@ -216,6 +216,8 @@ type
   TDBComboBox = class(TCustomComboBox)
   private
     FDataLink: TFieldDataLink;
+    { the user is selecting an item (not typing) }
+    FSelecting: Boolean;
     function GetDataField: string;
     function GetDataSource: TDataSource;
     function GetField: TField;
@@ -225,11 +227,16 @@ type
     procedure SetReadOnly(Value: Boolean);
     procedure DataChange(Sender: TObject);
     procedure UpdateData(Sender: TObject);
-    procedure UserSelect;
-    procedure UserEdit(var Message: TMessage);
   protected
-    { selections and typed text of the user; Escape while typed text is pending }
+    { tells a selection from typing; Escape is wanted while typed text is pending }
     procedure WndProc(var Message: TMessage); override;
+    { Escape discards pending typed text }
+    procedure KeyDown(var Key: Word; Shift: TShiftState); override;
+    { typing and selecting start a modification: ignored in the read-only state, refused when the dataset cannot
+      be put into edit mode }
+    function EditCanModify: Boolean; override;
+    { a selected item is written to the field before OnChange }
+    procedure Change; override;
     procedure DoExit; override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
   public
@@ -289,9 +296,12 @@ type
     procedure SetNullValueText(const Value: string);
     procedure RebuildList;
     procedure DataChange(Sender: TObject);
-    procedure UserSelect;
   protected
-    procedure WndProc(var Message: TMessage); override;
+    { a selection starts a modification: ignored in the read-only state, refused when the dataset cannot be put
+      into edit mode }
+    function EditCanModify: Boolean; override;
+    { the key of the selected item is written to the field before OnChange }
+    procedure Change; override;
     { Delete and Backspace on the closed control clear the field }
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
@@ -384,23 +394,17 @@ type
   end;
 
   TMessageBoxHook = function(const Text: string): Integer;
-  TBeepHook = procedure;
 
 var
   { When assigned, it answers the confirmation of the navigator in place of the message box (IDOK proceeds). }
   MessageBoxHook: TMessageBoxHook;
-  { When assigned, it is called in place of the beep that tells the user a modification was rejected. }
-  BeepHook: TBeepHook;
+
+{ Tells the user that a modification was rejected: StdCtrls.RejectBeepHook when assigned, else the beep. }
+procedure RejectBeep;
 
 implementation
 
 type
-  { Reaches the Alignment property of TCustomLabel, which TDBText declares again. (The compiler does not accept
-    the inherited-property form yet; replace the casts when it does.) }
-  TLabelAccess = class(TCustomLabel);
-  { Reaches the ReadOnly property of TCustomEdit (the native state), which TDBEdit and TDBMemo declare again. }
-  TEditAccess = class(TCustomEdit);
-
   { the link of the list dataset of a lookup combo box: data and layout changes rebuild the list, scrolling and
     field writes do not }
   TLookupListLink = class(TDataLink)
@@ -428,9 +432,6 @@ const
   SConfirmCaption = 'Confirm';
   { rows of the list dataset a lookup combo box reads at most }
   MaxLookupItems = 10000;
-  { posted by a combo box to itself: show the field value again (after the native control has finished the
-    selection change that was taken back) }
-  DBM_RESTORE = WM_APP + $1DB;
   DefaultHints: array[TNavigateBtn] of string = ('First record', 'Prior record', 'Next record', 'Last record',
     'Insert record', 'Delete record', 'Edit record', 'Post edit', 'Cancel edit', 'Refresh data');
 
@@ -441,13 +442,35 @@ begin
     TWinControl(Control).SetFocus;
 end;
 
-{ tells the user that a modification was rejected }
 procedure RejectBeep;
 begin
-  if Assigned(BeepHook) then
-    BeepHook
+  if Assigned(RejectBeepHook) then
+    RejectBeepHook
   else
     MessageBeep(0);
+end;
+
+var
+  { the beep hook that is put back after a silent refusal }
+  SilencedHook: TRejectBeepHook;
+  Silenced: Boolean;
+
+procedure SilentRejection;
+begin
+  RejectBeepHook := SilencedHook;
+  Silenced := False;
+end;
+
+{ The base control tells the user about every input its EditCanModify refuses. A combo box in the read-only
+  state ignores the input without a sound: the control calls this just before it answers False, and the one
+  beep that follows is swallowed. }
+procedure SilenceNextRejection;
+begin
+  if Silenced then
+    Exit;
+  SilencedHook := RejectBeepHook;
+  Silenced := True;
+  RejectBeepHook := SilentRejection;
 end;
 
 { a field whose value is bytes, not text }
@@ -576,7 +599,7 @@ end;
 
 function TDBEdit.NativeReadOnly: Boolean;
 begin
-  Result := TEditAccess(Self).ReadOnly;
+  Result := inherited ReadOnly;
 end;
 
 procedure TDBEdit.UpdateNative;
@@ -585,7 +608,7 @@ var
   Limit: Integer;
 begin
   F := FDataLink.Field;
-  TEditAccess(Self).ReadOnly := not FDataLink.CanModify or IsBinaryField(F);
+  inherited ReadOnly := not FDataLink.CanModify or IsBinaryField(F);
   Limit := MaxLength;
   if (Limit = 0) and (F is TStringField) and (F.Size > 0) then
     Limit := F.Size;
@@ -623,30 +646,21 @@ begin
   FDataLink.Field.Text := Text;
 end;
 
-{ the start of a modification by the user: the dataset enters edit mode, or the modification is rejected }
-function TDBEdit.BeginModify: Boolean;
+function TDBEdit.EditCanModify: Boolean;
 begin
-  Result := FDataLink.Edit;
+  Result := (FDataLink <> nil) and FDataLink.Edit;
   if Result then
-    FDataLink.Modified
-  else
-    RejectBeep;
+    FDataLink.Modified;
 end;
 
 procedure TDBEdit.WndProc(var Message: TMessage);
 begin
-  if FDataLink <> nil then
-    case Message.Msg of
-      WM_PASTE, WM_CUT, WM_CLEAR, WM_UNDO:
-        if not NativeReadOnly and not BeginModify then
-          Exit;
-      CM_WANTSPECIALKEY:
-        if (Message.WParam = VK_ESCAPE) and FDataLink.IsModified then
-        begin
-          Message.Result := 1;
-          Exit;
-        end;
-    end;
+  if (Message.Msg = CM_WANTSPECIALKEY) and (Message.WParam = VK_ESCAPE) and (FDataLink <> nil)
+    and FDataLink.IsModified then
+  begin
+    Message.Result := 1;
+    Exit;
+  end;
   inherited WndProc(Message);
 end;
 
@@ -658,16 +672,7 @@ begin
     FDataLink.Reset;
     SelectAll;
     Key := 0;
-  end
-  else if (Key = VK_DELETE) and not NativeReadOnly and not BeginModify then
-    Key := 0;
-end;
-
-procedure TDBEdit.KeyPress(var Key: Char);
-begin
-  inherited KeyPress(Key);
-  if ((Key >= #32) or (Key = #8)) and not NativeReadOnly and not BeginModify then
-    Key := #0;
+  end;
 end;
 
 procedure TDBEdit.DoEnter;
@@ -732,13 +737,13 @@ end;
 
 function TDBText.GetAlignment: TAlignment;
 begin
-  Result := TLabelAccess(Self).Alignment;
+  Result := inherited Alignment;
 end;
 
 procedure TDBText.SetAlignment(Value: TAlignment);
 begin
   FAlignmentSet := True;
-  TLabelAccess(Self).Alignment := Value;
+  inherited Alignment := Value;
 end;
 
 function TDBText.GetDataField: string;
@@ -779,7 +784,7 @@ begin
   else if FDataLink.Field <> nil then
   begin
     if not FAlignmentSet then
-      TLabelAccess(Self).Alignment := FDataLink.Field.Alignment;
+      inherited Alignment := FDataLink.Field.Alignment;
     Caption := FDataLink.Field.DisplayText;
   end
   else
@@ -810,7 +815,7 @@ begin
   FDataLink.Control := Self;
   FDataLink.OnDataChange := DataChange;
   FDataLink.OnUpdateData := UpdateData;
-  TEditAccess(Self).ReadOnly := True;
+  inherited ReadOnly := True;
 end;
 
 destructor TDBMemo.Destroy;
@@ -864,7 +869,7 @@ end;
 
 function TDBMemo.NativeReadOnly: Boolean;
 begin
-  Result := TEditAccess(Self).ReadOnly;
+  Result := inherited ReadOnly;
 end;
 
 procedure TDBMemo.DataChange(Sender: TObject);
@@ -877,7 +882,7 @@ begin
     Exit;
   F := FDataLink.Field;
   IsText := (F is TStringField) or (F is TMemoField);
-  TEditAccess(Self).ReadOnly := not (FDataLink.CanModify and IsText);
+  inherited ReadOnly := not (FDataLink.CanModify and IsText);
   { a pending modification is kept when only the read-only state is evaluated again }
   if (Sender = Self) and FDataLink.IsModified then
     Exit;
@@ -898,29 +903,21 @@ begin
   FDataLink.Field.AsString := Text;
 end;
 
-function TDBMemo.BeginModify: Boolean;
+function TDBMemo.EditCanModify: Boolean;
 begin
-  Result := FDataLink.Edit;
+  Result := (FDataLink <> nil) and FDataLink.Edit;
   if Result then
-    FDataLink.Modified
-  else
-    RejectBeep;
+    FDataLink.Modified;
 end;
 
 procedure TDBMemo.WndProc(var Message: TMessage);
 begin
-  if FDataLink <> nil then
-    case Message.Msg of
-      WM_PASTE, WM_CUT, WM_CLEAR, WM_UNDO:
-        if not NativeReadOnly and not BeginModify then
-          Exit;
-      CM_WANTSPECIALKEY:
-        if (Message.WParam = VK_ESCAPE) and FDataLink.IsModified then
-        begin
-          Message.Result := 1;
-          Exit;
-        end;
-    end;
+  if (Message.Msg = CM_WANTSPECIALKEY) and (Message.WParam = VK_ESCAPE) and (FDataLink <> nil)
+    and FDataLink.IsModified then
+  begin
+    Message.Result := 1;
+    Exit;
+  end;
   inherited WndProc(Message);
 end;
 
@@ -931,17 +928,7 @@ begin
   begin
     FDataLink.Reset;
     Key := 0;
-  end
-  else if (Key = VK_DELETE) and not NativeReadOnly and not BeginModify then
-    Key := 0;
-end;
-
-procedure TDBMemo.KeyPress(var Key: Char);
-begin
-  inherited KeyPress(Key);
-  if ((Key >= #32) or (Key = #8) or (Key = #13) or (Key = #10) or ((Key = #9) and WantTabs))
-    and not NativeReadOnly and not BeginModify then
-    Key := #0;
+  end;
 end;
 
 procedure TDBMemo.DoExit;
@@ -1083,7 +1070,7 @@ begin
   end;
 end;
 
-procedure TDBCheckBox.WriteState;
+procedure TDBCheckBox.WriteCheckState;
 var
   F: TField;
 begin
@@ -1114,7 +1101,7 @@ begin
     FQuiet := False;
   end;
   try
-    WriteState;
+    WriteCheckState;
   except
     FDataLink.Reset;
     raise;
@@ -1222,92 +1209,74 @@ begin
   FDataLink.Field.Text := Text;
 end;
 
-{ the user selected an item: it is written to the field at once, or the selection is taken back }
-procedure TDBComboBox.UserSelect;
-var
-  I: Integer;
-  Allowed: Boolean;
+function TDBComboBox.EditCanModify: Boolean;
 begin
-  I := ItemIndex;
-  Allowed := FDataLink.CanModify;
-  if not Allowed or not FDataLink.Edit then
+  if (FDataLink = nil) or (csDesigning in ComponentState) then
   begin
-    DataChange(Self);
-    { the drop-down style copies the item of the selection into the edit part after this notification }
-    if Style = csDropDown then
-      PostMessageW(Handle, DBM_RESTORE, 0, 0);
-    if Allowed then
-      RejectBeep;
+    Result := inherited EditCanModify;
     Exit;
   end;
-  if I >= 0 then
-    try
-      FDataLink.Field.Text := Items[I];
-    except
-      FDataLink.Reset;
-      raise;
-    end;
-  Change;
-  Select;
-  Click;
+  if not FDataLink.CanModify then
+  begin
+    SilenceNextRejection;
+    Result := False;
+    Exit;
+  end;
+  Result := FDataLink.Edit;
+  if Result and not FSelecting then
+    FDataLink.Modified;
 end;
 
-{ the user changed the text of the edit part (the change is already in the control: the edit part is a window of
-  its own, so the change cannot be refused before it happens; it is taken back instead) }
-procedure TDBComboBox.UserEdit(var Message: TMessage);
+procedure TDBComboBox.Change;
+var
+  I: Integer;
 begin
-  if not FDataLink.IsModified then
+  if FSelecting and (FDataLink <> nil) and FDataLink.Editing then
   begin
-    if not FDataLink.CanModify then
-    begin
-      DataChange(Self);
-      Exit;
-    end;
-    if not FDataLink.Edit then
-    begin
-      DataChange(Self);
-      RejectBeep;
-      Exit;
-    end;
-    FDataLink.Modified;
+    I := ItemIndex;
+    if I >= 0 then
+      try
+        FDataLink.Field.Text := Items[I];
+      except
+        FDataLink.Reset;
+        raise;
+      end;
   end;
-  inherited WndProc(Message);
+  inherited Change;
 end;
 
 procedure TDBComboBox.WndProc(var Message: TMessage);
 begin
-  if (FDataLink <> nil) and not (csDesigning in ComponentState) then
-    case Message.Msg of
-      CN_COMMAND:
-        case HiWord(Message.WParam) of
-          CBN_SELCHANGE:
-            begin
-              UserSelect;
-              Exit;
-            end;
-          CBN_EDITCHANGE:
-            begin
-              UserEdit(Message);
-              Exit;
-            end;
+  case Message.Msg of
+    CN_COMMAND:
+      if HiWord(Message.WParam) = CBN_SELCHANGE then
+      begin
+        FSelecting := True;
+        try
+          inherited WndProc(Message);
+        finally
+          FSelecting := False;
         end;
-      DBM_RESTORE:
-        begin
-          if not FDataLink.IsModified then
-            DataChange(Self);
-          Exit;
-        end;
-      CM_WANTSPECIALKEY:
-        { the keys of the edit part do not pass through this control: the pending text is discarded when the
-          form asks whether the control wants the key, and the key then goes to the edit part, which ignores it }
-        if (Message.WParam = VK_ESCAPE) and FDataLink.IsModified and not DroppedDown then
-        begin
-          FDataLink.Reset;
-          Message.Result := 1;
-          Exit;
-        end;
-    end;
+        Exit;
+      end;
+    CM_WANTSPECIALKEY:
+      if (Message.WParam = VK_ESCAPE) and (FDataLink <> nil) and FDataLink.IsModified and not DroppedDown then
+      begin
+        Message.Result := 1;
+        Exit;
+      end;
+  end;
   inherited WndProc(Message);
+end;
+
+procedure TDBComboBox.KeyDown(var Key: Word; Shift: TShiftState);
+begin
+  inherited KeyDown(Key, Shift);
+  if (Key = VK_ESCAPE) and FDataLink.IsModified and not DroppedDown then
+  begin
+    FDataLink.Reset;
+    Key := 0;
+  end;
 end;
 
 procedure TDBComboBox.DoExit;
@@ -1559,43 +1528,38 @@ begin
     TextHint := '';
 end;
 
-procedure TDBLookupComboBox.UserSelect;
+function TDBLookupComboBox.EditCanModify: Boolean;
+begin
+  if (FDataLink = nil) or (csDesigning in ComponentState) then
+  begin
+    Result := inherited EditCanModify;
+    Exit;
+  end;
+  if not FDataLink.CanModify then
+  begin
+    SilenceNextRejection;
+    Result := False;
+    Exit;
+  end;
+  Result := FDataLink.Edit;
+end;
+
+procedure TDBLookupComboBox.Change;
 var
   I: Integer;
 begin
-  I := ItemIndex;
-  if not FDataLink.CanModify then
+  if (FDataLink <> nil) and FDataLink.Editing then
   begin
-    DataChange(Self);
-    Exit;
+    I := ItemIndex;
+    if (I >= 0) and (I < FKeys.Count) then
+      try
+        FDataLink.Field.Text := FKeys[I];
+      except
+        FDataLink.Reset;
+        raise;
+      end;
   end;
-  if not FDataLink.Edit then
-  begin
-    DataChange(Self);
-    RejectBeep;
-    Exit;
-  end;
-  if (I >= 0) and (I < FKeys.Count) then
-    try
-      FDataLink.Field.Text := FKeys[I];
-    except
-      FDataLink.Reset;
-      raise;
-    end;
-  Change;
-  Select;
-  Click;
-end;
-
-procedure TDBLookupComboBox.WndProc(var Message: TMessage);
-begin
-  if (FDataLink <> nil) and not (csDesigning in ComponentState) and (Message.Msg = CN_COMMAND)
-    and (HiWord(Message.WParam) = CBN_SELCHANGE) then
-  begin
-    UserSelect;
-    Exit;
-  end;
-  inherited WndProc(Message);
+  inherited Change;
 end;
 
 procedure TDBLookupComboBox.KeyDown(var Key: Word; Shift: TShiftState);
@@ -1967,5 +1931,6 @@ end;
 
 initialization
   DataLinkFocusHook := FocusLinkControl;
+  RegisterClasses([TDBEdit, TDBText, TDBMemo, TDBCheckBox, TDBComboBox, TDBLookupComboBox, TDBNavigator]);
 
 end.

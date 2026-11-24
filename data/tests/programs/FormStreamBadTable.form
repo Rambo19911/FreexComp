@@ -1,0 +1,9 @@
+object BadTableForm: TBadTableForm
+  Caption = 'Bad table'
+  object Source: TDataSource
+    DataSet = Table
+  end
+  object Table: TMemTable
+    Active = True
+  end
+end

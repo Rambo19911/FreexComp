@@ -110,36 +110,53 @@ type
 
   { ---- field definitions ---- }
 
-  TFieldDef = class
+  TFieldDefs = class;
+
+  { One definition: an item of the collection, so a form file can store the definitions. The properties can be
+    changed only while the dataset is closed; a name must stay unique. }
+  TFieldDef = class(TCollectionItem)
   private
     FName: string;
     FDataType: TFieldType;
     FSize: Integer;
     FRequired: Boolean;
+    function Defs: TFieldDefs;
+    procedure CheckInactive;
+    procedure SetName(const Value: string);
+    procedure SetDataType(Value: TFieldType);
+    procedure SetSize(Value: Integer);
+    procedure SetRequired(Value: Boolean);
   public
-    property Name: string read FName;
-    property DataType: TFieldType read FDataType;
-    property Size: Integer read FSize;
-    property Required: Boolean read FRequired;
+    { refused while the dataset of the collection is open }
+    constructor Create(Collection: TCollection); override;
+  published
+    property Name: string read FName write SetName;
+    property DataType: TFieldType read FDataType write SetDataType default ftUnknown;
+    property Size: Integer read FSize write SetSize default 0;
+    property Required: Boolean read FRequired write SetRequired default False;
   end;
 
-  TFieldDefs = class
+  TFieldDefs = class(TCollection)
   private
     FDataSet: TDataSet;
-    FItems: TList;
-    function GetCount: Integer;
+    { Add or Clear is running: it reports the change itself, once }
+    FReporting: Integer;
     function GetItem(Index: Integer): TFieldDef;
     procedure CheckInactive;
+    procedure Report;
+  protected
+    function GetOwner: TPersistent; override;
+    { every change of the definitions reaches the dataset }
+    procedure Update(Item: TCollectionItem); overload; override;
   public
     constructor Create(ADataSet: TDataSet);
-    destructor Destroy; override;
     function Add(const Name: string; DataType: TFieldType; Size: Integer = 0; Required: Boolean = False): TFieldDef;
     procedure Clear;
+    procedure Delete(Index: Integer);
     function Find(const Name: string): TFieldDef;
     function IndexOf(const Name: string): Integer;
     { Asks the driver for the definitions; the dataset may be closed. Nothing to do on an open dataset. }
-    procedure Update;
-    property Count: Integer read GetCount;
+    procedure Update; overload;
     property Items[Index: Integer]: TFieldDef read GetItem; default;
     property DataSet: TDataSet read FDataSet;
   end;
@@ -647,7 +664,7 @@ type
     property CalcFieldCount: Integer read FCalcFieldCount;
     procedure CheckActive;
     procedure CheckInactive;
-    { Called after FieldDefs.Add and FieldDefs.Clear changed the definitions. Default: nothing. }
+    { Called after the definitions changed (an item added, removed or modified). Default: nothing. }
     procedure DefsChanged; virtual;
     { Creates the dynamic fields or binds the persistent ones to FieldDefs; called by InternalOpen
       between building the definitions and loading the rows. }
@@ -1218,23 +1235,84 @@ begin
   FList.Clear;
 end;
 
+{ TFieldDef }
+
+constructor TFieldDef.Create(Collection: TCollection);
+begin
+  if Collection is TFieldDefs then
+    TFieldDefs(Collection).CheckInactive;
+  inherited Create(Collection);
+end;
+
+function TFieldDef.Defs: TFieldDefs;
+begin
+  if Collection is TFieldDefs then
+    Result := TFieldDefs(Collection)
+  else
+    Result := nil;
+end;
+
+procedure TFieldDef.CheckInactive;
+begin
+  if Defs <> nil then
+    Defs.CheckInactive;
+end;
+
+procedure TFieldDef.SetName(const Value: string);
+var
+  I: Integer;
+begin
+  if FName = Value then
+    Exit;
+  CheckInactive;
+  if Defs <> nil then
+  begin
+    I := Defs.IndexOf(Value);
+    if (I >= 0) and (Defs[I] <> Self) then
+      DatabaseErrorFmt(SDatDuplicateField, [Value]);
+  end;
+  FName := Value;
+  Changed(False);
+end;
+
+procedure TFieldDef.SetDataType(Value: TFieldType);
+begin
+  if FDataType = Value then
+    Exit;
+  CheckInactive;
+  FDataType := Value;
+  Changed(False);
+end;
+
+procedure TFieldDef.SetSize(Value: Integer);
+begin
+  if FSize = Value then
+    Exit;
+  CheckInactive;
+  FSize := Value;
+  Changed(False);
+end;
+
+procedure TFieldDef.SetRequired(Value: Boolean);
+begin
+  if FRequired = Value then
+    Exit;
+  CheckInactive;
+  FRequired := Value;
+  Changed(False);
+end;
+
 { TFieldDefs }
 
 constructor TFieldDefs.Create(ADataSet: TDataSet);
 begin
-  inherited Create;
+  inherited Create(TFieldDef);
   FDataSet := ADataSet;
-  FItems := TList.Create;
 end;
 
-destructor TFieldDefs.Destroy;
-var
-  I: Integer;
+function TFieldDefs.GetOwner: TPersistent;
 begin
-  for I := 0 to FItems.Count - 1 do
-    TFieldDef(FItems[I]).Free;
-  FItems.Free;
-  inherited Destroy;
+  Result := FDataSet;
 end;
 
 procedure TFieldDefs.CheckInactive;
@@ -1243,14 +1321,21 @@ begin
     FDataSet.CheckInactive;
 end;
 
-function TFieldDefs.GetCount: Integer;
+procedure TFieldDefs.Report;
 begin
-  Result := FItems.Count;
+  if FDataSet <> nil then
+    FDataSet.DefsChanged;
+end;
+
+procedure TFieldDefs.Update(Item: TCollectionItem);
+begin
+  if FReporting = 0 then
+    Report;
 end;
 
 function TFieldDefs.GetItem(Index: Integer): TFieldDef;
 begin
-  Result := TFieldDef(FItems[Index]);
+  Result := TFieldDef(inherited GetItem(Index));
 end;
 
 function TFieldDefs.Add(const Name: string; DataType: TFieldType; Size: Integer; Required: Boolean): TFieldDef;
@@ -1258,34 +1343,43 @@ begin
   CheckInactive;
   if IndexOf(Name) >= 0 then
     DatabaseErrorFmt(SDatDuplicateField, [Name]);
-  Result := TFieldDef.Create;
-  Result.FName := Name;
-  Result.FDataType := DataType;
-  Result.FSize := Size;
-  Result.FRequired := Required;
-  FItems.Add(Result);
-  if FDataSet <> nil then
-    FDataSet.DefsChanged;
+  Inc(FReporting);
+  try
+    Result := TFieldDef(inherited Add);
+    Result.FName := Name;
+    Result.FDataType := DataType;
+    Result.FSize := Size;
+    Result.FRequired := Required;
+  finally
+    Dec(FReporting);
+  end;
+  Report;
 end;
 
 procedure TFieldDefs.Clear;
-var
-  I: Integer;
 begin
   CheckInactive;
-  for I := 0 to FItems.Count - 1 do
-    TFieldDef(FItems[I]).Free;
-  FItems.Clear;
-  if FDataSet <> nil then
-    FDataSet.DefsChanged;
+  Inc(FReporting);
+  try
+    inherited Clear;
+  finally
+    Dec(FReporting);
+  end;
+  Report;
+end;
+
+procedure TFieldDefs.Delete(Index: Integer);
+begin
+  CheckInactive;
+  inherited Delete(Index);
 end;
 
 function TFieldDefs.IndexOf(const Name: string): Integer;
 var
   I: Integer;
 begin
-  for I := 0 to FItems.Count - 1 do
-    if SameName(TFieldDef(FItems[I]).FName, Name) then
+  for I := 0 to Count - 1 do
+    if SameName(GetItem(I).FName, Name) then
     begin
       Result := I;
       Exit;
@@ -1299,7 +1393,7 @@ var
 begin
   I := IndexOf(Name);
   if I >= 0 then
-    Result := TFieldDef(FItems[I])
+    Result := GetItem(I)
   else
     Result := nil;
 end;
@@ -4840,5 +4934,8 @@ begin
   FNextRowId := FNextRowId + 1;
   FRows.Add(Result);
 end;
+
+initialization
+  RegisterClasses([TDataSource]);
 
 end.

@@ -69,6 +69,8 @@ type
     procedure LoadFromJSON(const JSON: string);
   published
     property Active;
+    { stored in a form file as a collection }
+    property FieldDefs;
     property ReadOnly: Boolean read FReadOnly write FReadOnly default False;
     property Filter;
     property Filtered;
@@ -1516,5 +1518,8 @@ begin
   end;
   LoadBytes(Bytes);
 end;
+
+initialization
+  RegisterClasses([TMemTable]);
 
 end.

@@ -5,7 +5,7 @@ unit CtlTestUtils;
 interface
 
 uses
-  Windows, Messages, SysUtils, Classes, Controls, Forms, DB, DBCtrls;
+  Windows, Messages, SysUtils, Classes, Controls, Forms, StdCtrls, DB, DBCtrls;
 
 { A shown form at a fixed place. Exit code 3 when no window can be created (no interactive window station). }
 function NewForm: TForm;
@@ -41,7 +41,7 @@ end;
 
 procedure HookBeeps;
 begin
-  BeepHook := CountBeep;
+  RejectBeepHook := CountBeep;
 end;
 
 function TakeBeeps: Integer;

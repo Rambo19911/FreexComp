@@ -1,0 +1,117 @@
+== loading
+ok Active and Connected are applied when the components are loaded, last component first
+ok loading is over
+ok never the design state
+== connection
+ok Connected
+ok Database
+ok OpenMode
+ok BusyTimeout
+ok Params
+ok three datasets use the connection
+ok the design position is read
+== table
+ok Connection: a reference to a later component
+ok Active
+ok TableName
+ok IndexFieldNames
+ok RecordCount
+ok the first row in index order
+ok TableName is stored
+ok the generated SQL of a table
+ok Params of a table
+ok UpdateTable of a table
+ok KeyFields of a table
+== queries
+ok Connection: a reference to an earlier component
+ok Active
+ok SQL
+ok ReadOnly
+ok RecordCount
+ok a query without Active stays closed
+ok SQL of a query is stored
+ok Params of a query are published
+ok the parameter of the SQL text
+ok its name
+ok opened by code
+ok the row
+ok events are bound to the form
+== in-memory tables
+ok FieldDefs is a collection
+ok FieldDefs of an in-memory table are stored
+ok FieldDefs of a table
+ok the definitions
+ok Active: opened empty from the definitions
+ok no rows
+ok the fields
+ok Required
+ok a control shows the appended row
+ok a table without Active stays closed
+ok its definitions
+ok ReadOnly
+== data sources
+ok DataSet: a reference to a later component
+ok DataSet of the list source
+ok AutoEdit
+ok DataSet of the third source
+== grid
+ok DataSource: a reference to a later component
+ok two columns
+ok column 0: FieldName
+ok column 0: Title
+ok column 0: Width
+ok column 0: ReadOnly
+ok column 0: bound to the field
+ok column 1: FieldName
+ok column 1: the title of the field
+ok column 1: Width
+ok column 1: Alignment
+ok column 1: ReadOnly
+ok Options
+ok the grid shows the two columns
+== controls
+ok edit: Field
+ok edit
+ok text
+ok memo: null
+ok check box
+ok check box: ValueChecked
+ok combo box: Style
+ok combo box
+ok lookup combo box: ListSource
+ok lookup combo box: null
+ok navigator: VisibleButtons
+ok navigator: ConfirmDelete
+ok navigator: Hints
+ok navigator: Prior is disabled on the first row
+ok Next: edit
+ok Next: text
+ok Next: memo
+ok Next: check box
+ok Next: combo box
+ok Next: lookup combo box
+ok Next: the navigator follows
+== failures
+ok a connection that cannot be opened: the error leaves the creation of the form
+ok a dataset that cannot be opened: the error leaves the creation of the form
+== field definitions as a collection
+ok the dataset owns the collection
+ok a definition is an item of the collection
+ok Index
+ok an item added without values
+ok is the second definition
+ok with the default values
+ok a name that exists is refused
+ok the properties are assigned
+ok Add refuses a duplicate
+ok open: Add
+ok open: Name
+ok open: Size
+ok open: Clear
+ok open: Delete
+ok nothing changed
+ok the row survives Close and Open
+ok a changed definition discards the rows
+ok Delete
+ok Clear
+failed checks: 0

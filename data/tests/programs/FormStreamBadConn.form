@@ -1,0 +1,8 @@
+object BadConnForm: TBadConnForm
+  Caption = 'Bad connection'
+  object Conn: TSQLiteConnection
+    Database = 'formstream-missing.db'
+    OpenMode = omReadWrite
+    Connected = True
+  end
+end

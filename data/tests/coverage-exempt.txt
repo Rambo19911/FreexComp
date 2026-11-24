@@ -28,14 +28,9 @@ DAT-332 | design-time | A-067 component-reference editor (ide)
 DAT-333 | design-time | A-067 connection editor (ide)
 DAT-334 | design-time | A-067 strings editor (ide)
 DAT-335 | design-time | A-067 field-name and table-name editors (ide)
-DAT-336 | design-time | A-065 Active / Connected stored in the form
 DAT-337 | design-time | A-067 columns collection editor (ide)
 DAT-338 | design-time | A-067 uses clause and field declaration (ide)
 DAT-339 | design-time | A-067 grid and navigator design renderers (ide)
-DAT-340 | design-time | A-065 deferred activation in Loaded
-DAT-341 | design-time | A-065 exception while applying a deferred activation
-DAT-342 | design-time | A-065 no special design-time code path (FormStream)
-DAT-343 | design-time | A-065 references resolved by the streaming fix-up
 
 # CRUD sample
 DAT-360 | crud-sample | A-068 command line

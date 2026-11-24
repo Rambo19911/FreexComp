@@ -1,0 +1,194 @@
+object StreamForm: TStreamForm
+  Caption = 'Stream'
+  ClientWidth = 480
+  ClientHeight = 360
+  Scaled = False
+  object Grid: TDBGrid
+    Left = 8
+    Top = 8
+    Width = 300
+    Height = 120
+    DataSource = ContactsSource
+    Columns = <
+      item
+        FieldName = 'name'
+        Title = 'Who'
+        Width = 120
+      end
+      item
+        FieldName = 'age'
+        Alignment = taCenter
+        ReadOnly = True
+      end
+    >
+    Options = [dgEditing, dgTitles, dgRowLines]
+  end
+  object NameEdit: TDBEdit
+    Left = 8
+    Top = 136
+    Width = 120
+    Height = 23
+    DataSource = ContactsSource
+    DataField = 'name'
+  end
+  object NameText: TDBText
+    Left = 136
+    Top = 136
+    Width = 120
+    Height = 17
+    DataSource = ContactsSource
+    DataField = 'name'
+  end
+  object Notes: TDBMemo
+    Left = 8
+    Top = 168
+    Width = 200
+    Height = 60
+    DataSource = ContactsSource
+    DataField = 'notes'
+  end
+  object ActiveBox: TDBCheckBox
+    Left = 216
+    Top = 168
+    Width = 100
+    Height = 17
+    Caption = 'Active'
+    DataSource = ContactsSource
+    DataField = 'active'
+    ValueChecked = '1;yes'
+    ValueUnchecked = '0;no'
+  end
+  object Kind: TDBComboBox
+    Left = 8
+    Top = 236
+    Width = 120
+    Height = 23
+    DataSource = ContactsSource
+    DataField = 'kind'
+    Items = (
+      'friend'
+      'work'
+    )
+    Style = csDropDownList
+  end
+  object City: TDBLookupComboBox
+    Left = 136
+    Top = 236
+    Width = 120
+    Height = 23
+    DataSource = ContactsSource
+    DataField = 'city_id'
+    ListSource = CitySource
+    KeyField = 'id'
+    ListField = 'name'
+    NullValueText = '(none)'
+  end
+  object Nav: TDBNavigator
+    Left = 8
+    Top = 268
+    Width = 200
+    Height = 25
+    DataSource = ContactsSource
+    VisibleButtons = [nbFirst, nbPrior, nbNext, nbLast]
+    ConfirmDelete = False
+    Hints = (
+      'Top'
+    )
+  end
+  object MemEdit: TDBEdit
+    Left = 216
+    Top = 268
+    Width = 100
+    Height = 23
+    DataSource = MemSource
+    DataField = 'code'
+  end
+  object ContactsSource: TDataSource
+    DataSet = Contacts
+    DesignLeft = 16
+    DesignTop = 304
+  end
+  object CitySource: TDataSource
+    DataSet = Cities
+    AutoEdit = False
+    DesignLeft = 56
+    DesignTop = 304
+  end
+  object MemSource: TDataSource
+    DataSet = Mem
+    DesignLeft = 96
+    DesignTop = 304
+  end
+  object Contacts: TSQLiteTable
+    Active = True
+    Connection = Conn
+    TableName = 'contacts'
+    IndexFieldNames = 'name'
+    AfterOpen = DataSetAfterOpen
+    DesignLeft = 136
+    DesignTop = 304
+  end
+  object Conn: TSQLiteConnection
+    Connected = True
+    Database = 'formstream.db'
+    OpenMode = omReadWrite
+    BusyTimeout = 1000
+    Params = (
+      'cache_size=100'
+    )
+    AfterConnect = ConnAfterConnect
+    DesignLeft = 176
+    DesignTop = 304
+  end
+  object Cities: TSQLiteQuery
+    Active = True
+    Connection = Conn
+    SQL = (
+      'select id, name from cities'
+      'order by id'
+    )
+    ReadOnly = True
+    AfterOpen = DataSetAfterOpen
+    DesignLeft = 216
+    DesignTop = 304
+  end
+  object Adults: TSQLiteQuery
+    Connection = Conn
+    SQL = (
+      'select name from contacts where age >= :min order by name'
+    )
+    AfterOpen = DataSetAfterOpen
+    DesignLeft = 256
+    DesignTop = 304
+  end
+  object Mem: TMemTable
+    Active = True
+    FieldDefs = <
+      item
+        Name = 'code'
+        DataType = ftString
+        Size = 8
+        Required = True
+      end
+      item
+        Name = 'qty'
+        DataType = ftInteger
+      end
+    >
+    AfterOpen = DataSetAfterOpen
+    DesignLeft = 296
+    DesignTop = 304
+  end
+  object Idle: TMemTable
+    FieldDefs = <
+      item
+        Name = 'n'
+        DataType = ftAutoInc
+      end
+    >
+    ReadOnly = True
+    AfterOpen = DataSetAfterOpen
+    DesignLeft = 336
+    DesignTop = 304
+  end
+end

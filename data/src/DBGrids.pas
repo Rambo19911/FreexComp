@@ -274,6 +274,7 @@ type
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
     procedure KeyPress(var Key: Char); override;
     procedure WndProc(var Message: TMessage); override;
+    function EditCanModify: Boolean; override;
   public
     constructor Create(AOwner: TComponent); override;
   end;
@@ -286,15 +287,6 @@ const
     dgCancelOnExit];
   MaxMemoCellLength = 255;
   WheelRows = 3;
-
-{ tells the user that a modification was rejected }
-procedure RejectBeep;
-begin
-  if Assigned(BeepHook) then
-    BeepHook
-  else
-    MessageBeep(0);
-end;
 
 { a field whose value is bytes, not text }
 function IsBinaryField(Field: TField): Boolean;
@@ -530,9 +522,6 @@ begin
       Forward := (SelStart = 0) and (SelLength = 0);
     VK_RIGHT:
       Forward := (SelStart = Length(Text)) and (SelLength = 0);
-    VK_DELETE:
-      if not FGrid.EditorBeginModify then
-        Key := 0;
   end;
   if Forward then
     try
@@ -547,8 +536,11 @@ begin
   if (Key = #13) or (Key = #27) or (Key = #9) then
     Key := #0;
   inherited KeyPress(Key);
-  if ((Key >= #32) or (Key = #8)) and (FGrid <> nil) and not FGrid.EditorBeginModify then
-    Key := #0;
+end;
+
+function TGridEditor.EditCanModify: Boolean;
+begin
+  Result := (FGrid = nil) or FGrid.EditorBeginModify;
 end;
 
 procedure TGridEditor.WndProc(var Message: TMessage);
@@ -559,9 +551,6 @@ begin
     Exit;
   end;
   case Message.Msg of
-    WM_PASTE, WM_CUT, WM_CLEAR, WM_UNDO:
-      if FGrid.EditorBeginModify then
-        inherited WndProc(Message);
     CM_WANTSPECIALKEY:
       if (Message.WParam = VK_RETURN) or (Message.WParam = VK_ESCAPE)
         or ((Message.WParam = VK_TAB) and (dgTabs in FGrid.FOptions)) then
@@ -1732,9 +1721,7 @@ function TDBGrid.EditorBeginModify: Boolean;
 begin
   Result := FEditorOpen and StartModify;
   if Result then
-    FEditorModified := True
-  else
-    RejectBeep;
+    FEditorModified := True;
 end;
 
 procedure TDBGrid.StartEditWith(Ch: Char);
@@ -2062,5 +2049,8 @@ begin
     inherited WndProc(Message);
   end;
 end;
+
+initialization
+  RegisterClasses([TDBGrid]);
 
 end.

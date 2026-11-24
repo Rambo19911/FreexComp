@@ -268,6 +268,7 @@ type
     { 'a;b' orders the rows by these columns; '' = row id order }
     property IndexFieldNames: string read FIndexFieldNames write SetIndexFieldNames;
     property SQL stored False;
+    property Params stored False;
     property UpdateTable stored False;
     property KeyFields stored False;
   end;
@@ -2484,5 +2485,8 @@ begin
   end;
   inherited DriverLoadRows;
 end;
+
+initialization
+  RegisterClasses([TSQLiteConnection, TSQLiteQuery, TSQLiteTable]);
 
 end.

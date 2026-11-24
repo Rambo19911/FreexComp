@@ -149,6 +149,7 @@ begin
 
   Section('drop-down style: Escape');
   CheckEqInt(C.Perform(CM_WANTSPECIALKEY, VK_ESCAPE, 0), 1, 'pending: Escape is consumed');
+  PressKey(Ed, VK_ESCAPE);
   CheckEq(C.Text, 'greenx', 'and restores the field value');
   CheckEq(StateName(DS.State), 'dsEdit', 'the record stays in edit mode');
   CheckEqInt(C.Perform(CM_WANTSPECIALKEY, VK_ESCAPE, 0), 0, 'nothing pending: Escape is not consumed');
