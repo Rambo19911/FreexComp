@@ -9,7 +9,8 @@ namespace FreexComp.Ide.TestSupport;
 /// area's scripted adapter, <c>FakeAdapter.exe</c> next to the test assembly, which gets the scenario file as its
 /// argument (<c>DebugSessionOptions.AdapterArguments</c>; no process-wide environment, so tests run in parallel).
 /// Without a scenario the options pass through unchanged — the adapter path the IDE asked for, which does not exist in a
-/// test. The options as the IDE gave them and every traced protocol message are recorded.
+/// test. The options as the IDE gave them and every traced protocol message are recorded. A scripted session's request
+/// and launch limits are the test's safety net (<see cref="TestDeadline.DebugTestTimeout"/>, I-258).
 /// </summary>
 public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
 {
@@ -26,6 +27,9 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
 
     /// <summary>The options of every session the IDE asked for, as it gave them.</summary>
     public List<DebugSessionOptions> Requested { get; } = [];
+
+    /// <summary>The options each session was created with, in order (those of <see cref="Requested"/> as the factory changed them).</summary>
+    public List<DebugSessionOptions> Created { get; } = [];
 
     /// <summary>The sessions created, in order.</summary>
     public List<IDebugSession> Sessions { get; } = [];
@@ -70,9 +74,14 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
     {
         ArgumentNullException.ThrowIfNull(options);
         Requested.Add(options);
+        // I-258: the product's wall-clock limits (10 s per request, 30 s for the launch) are not what a scripted session
+        // is about, and a machine that runs every test project at once does not keep them (the adapter is a process to
+        // start); the test's own timeout is the only bound.
+        var net = TimeSpan.FromMilliseconds(TestDeadline.DebugTestTimeout);
         var actual = ScenarioPath is { } scenario
-            ? options with { AdapterPath = AdapterExe, AdapterArguments = [scenario], Trace = Record }
+            ? options with { AdapterPath = AdapterExe, AdapterArguments = [scenario], Trace = Record, RequestTimeout = net, LaunchTimeout = net }
             : options with { Trace = Record };
+        Created.Add(actual);
         var session = _inner.Create(actual);
         Sessions.Add(session);
         return session;

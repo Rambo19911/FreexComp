@@ -25,6 +25,7 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
     private string _newValue = "";
     private string? _modifyError;
     private VariableInfo? _value;
+    private int _evaluations; // the number of the newest evaluation: an older one's answer is not shown (I-258)
 
     public EvaluateViewModel(IDebugService debug, ILayoutService? layout, string expression)
     {
@@ -138,20 +139,30 @@ public sealed class EvaluateViewModel : DialogViewModel<bool>
             return;
         var expression = Expression.Trim();
         _layout?.AddDialogHistory(DialogName, HistoryField, expression);
+
+        // Evaluate can be asked for again before the answer is there (the dialog evaluates what it was opened with; the
+        // user types the next expression), and the answers need not come back in the order of the questions: only the
+        // newest evaluation's answer is shown.
+        var evaluation = ++_evaluations;
         try
         {
             var value = (await _debug.EvaluateAsync(expression, EvaluateContext.Console)).Value;
-            SetValue(value, value.Value, isError: false);
+            if (evaluation == _evaluations)
+                SetValue(value, value.Value, isError: false);
         }
-        catch (DebuggerException e)
+        catch (DebuggerException e) when (evaluation == _evaluations)
         {
             // Msg.Debug.EvalFailed: the evaluator's message as it is.
             SetValue(null, string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_EvalFailed, e.Message), isError: true);
         }
-        catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+        catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException && evaluation == _evaluations)
         {
             // The session is gone (disposed under the open dialog): as without a paused program.
             SetValue(null, string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_EvalFailed, Strings.Msg_Debug_NotPaused), isError: true);
+        }
+        catch (Exception e) when (e is DebuggerException or ObjectDisposedException or OperationCanceledException)
+        {
+            // The failure of an evaluation that a newer one has replaced: nothing to show.
         }
     }
 

@@ -173,6 +173,36 @@ public sealed class HarnessTests
         expected.ExpectLoggedError();
     }
 
+    /// <summary>
+    /// I-258: a wait that used up the test's time is the test's failure; what dispose finds afterwards (a debug session
+    /// still open, a logged error) replaces that exception while it propagates, so dispose names the wait first.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "IDE-TEST-014")]
+    public async Task DisposeFailureNamesTheWaitThatTimedOut()
+    {
+        var elapsed = TimeSpan.Zero;
+        var deadline = new TestDeadline(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken, () => elapsed);
+        var h = await HeadlessHarness.StartAsync(o => o.Deadline = deadline);
+        elapsed = TimeSpan.FromSeconds(29);
+        var wait = await Assert.ThrowsAsync<HarnessAssertionException>(() => h.WaitForAsync(() => false, "a thing that never happens"));
+        Assert.Contains("a thing that never happens", wait.Message, StringComparison.Ordinal);
+        elapsed = TimeSpan.Zero;
+        h.Services.Log.Error("test", "found at dispose");
+
+        var error = await Assert.ThrowsAsync<HarnessAssertionException>(() => h.DisposeAsync().AsTask());
+        var lines = error.Message.Split(Environment.NewLine);
+        Assert.Contains("a thing that never happens", lines[0], StringComparison.Ordinal);
+        Assert.Contains(lines, l => l.Contains("found at dispose", StringComparison.Ordinal));
+
+        // A wait that failed alone stays the test's own exception: dispose adds nothing.
+        var quiet = await HeadlessHarness.StartAsync(o => o.Deadline = deadline);
+        elapsed = TimeSpan.FromSeconds(29);
+        await Assert.ThrowsAsync<HarnessAssertionException>(() => quiet.WaitForAsync(() => false, "another"));
+        elapsed = TimeSpan.Zero;
+        await quiet.DisposeAsync();
+    }
+
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "IDE-TEST-016")]
     public async Task MessagesAreAnsweredByScriptAndUnansweredOnesFailDispose()

@@ -58,15 +58,17 @@ public sealed class TraitConventionTests
     }
 
     /// <summary>
-    /// IDE-TEST-006: at most 30 s per test, 120 s for <c>Toolchain</c> tests (gate item N7) and for the tests that run a
-    /// debug session over the scripted adapter process (I-222).
+    /// IDE-TEST-006: at most 30 s per test, 120 s for <c>Toolchain</c> tests (gate item N7), for the tests that run a
+    /// debug session over the scripted adapter process (I-222) and for the tests that start programs through the real
+    /// process launcher (I-258).
     /// </summary>
     [Fact]
     public void TimeoutsStayWithinTheLimits()
     {
         var over = TestMethods()
             .Select(m => (m, Timeout: m.Method.GetCustomAttributes<FactAttribute>(inherit: true).Single().Timeout))
-            .Where(x => x.Timeout > (x.m.Traits["Category"].Contains("Toolchain") ? 120000 : RunsDebugSession(x.m.Traits) ? TestDeadline.DebugTestTimeout : 30000))
+            .Where(x => x.Timeout > (x.m.Traits["Category"].Contains("Toolchain") ? 120000 : RunsDebugSession(x.m.Traits) ? TestDeadline.DebugTestTimeout
+                : StartsPrograms(x.m.Method) ? TestDeadline.ProcessTestTimeout : 30000))
             .Select(x => $"{x.m.Method.DeclaringType!.Name}.{x.m.Method.Name}: {x.Timeout} ms").ToList();
         Assert.Empty(over);
     }
@@ -89,6 +91,30 @@ public sealed class TraitConventionTests
             .Where(x => x.Timeout != TestDeadline.DebugTestTimeout)
             .Select(x => $"{x.m.Method.DeclaringType!.Name}.{x.m.Method.Name}: {x.Timeout} ms").ToList();
         Assert.Empty(other);
+    }
+
+    /// <summary>The tests that start programs through the real process launcher and wait for what those programs do.</summary>
+    private static bool StartsPrograms(MethodInfo method) =>
+        method.DeclaringType == typeof(Platform.ProcessTreeTests) || method.DeclaringType == typeof(Platform.ConsoleHostTests);
+
+    /// <summary>
+    /// I-258: how long a started program takes to load, run and end is the machine's business (measured with every core
+    /// busy three times over: a helper that needs 60 ms of processor time ends after 2 to 4 s, a thread starts after
+    /// 0.3 s). A test that waits for started programs declares the safety-net timeout
+    /// <see cref="TestDeadline.ProcessTestTimeout"/>: its waits are on the programs' events, bounded by that deadline and
+    /// by nothing shorter.
+    /// </summary>
+    [Fact]
+    public void ProcessTestsUseTheSafetyNetTimeout()
+    {
+        var methods = TestMethods().Where(m => StartsPrograms(m.Method) && typeof(Task).IsAssignableFrom(m.Method.ReturnType)).ToList();
+        Assert.True(methods.Count >= 5, $"only {methods.Count} process tests seen");
+        var other = methods
+            .Select(m => (m, m.Method.GetCustomAttributes<FactAttribute>(inherit: true).Single().Timeout))
+            .Where(x => x.Timeout != TestDeadline.ProcessTestTimeout)
+            .Select(x => $"{x.m.Method.DeclaringType!.Name}.{x.m.Method.Name}: {x.Timeout} ms").ToList();
+        Assert.Empty(other);
+        Assert.Equal(TimeSpan.FromSeconds(120), TimeSpan.FromMilliseconds(TestDeadline.ProcessTestTimeout));
     }
 
     [Fact]

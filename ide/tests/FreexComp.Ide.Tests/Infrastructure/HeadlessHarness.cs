@@ -95,6 +95,9 @@ public sealed class HarnessOptions
     /// <c>BuildEvent</c> stream and the result the IDE received).
     /// </summary>
     public Func<FreexComp.Build.IBuildEngine, FreexComp.Build.IBuildEngine>? WrapBuildEngine { get; set; }
+
+    /// <summary>The deadline of the harness's waits; null = the running test's own (the harness's self-tests pass one with a clock of their own).</summary>
+    public TestDeadline? Deadline { get; set; }
 }
 
 /// <summary>Thrown by <see cref="HeadlessHarness.DisposeAsync"/> when a test left a failure behind (IDE-TEST-014).</summary>
@@ -110,7 +113,8 @@ public sealed class HeadlessHarness : IAsyncDisposable
     private static readonly TimeSpan WaitStep = TimeSpan.FromMilliseconds(10);
 
     private readonly int _bindingErrorStart;
-    private readonly TestDeadline _deadline = CurrentTest.Deadline;
+    private readonly TestDeadline _deadline;
+    private string? _timedOutWait; // I-258: the first wait that used up the test's time
     private readonly RecordingLog _log;
     private readonly ManualFileWatcherFactory _watchers;
     private readonly bool _realWatchers;
@@ -124,6 +128,7 @@ public sealed class HeadlessHarness : IAsyncDisposable
     private HeadlessHarness(HarnessOptions options)
     {
         _bindingErrorStart = BindingErrorSink.Instance.Count;
+        _deadline = options.Deadline ?? CurrentTest.Deadline;
         Root = options.Root ?? Path.Combine(Path.GetTempPath(), "FreexComp.Tests", Guid.NewGuid().ToString("N"));
         TempDir = Path.Combine(Root, "work");
         UserDir = Path.Combine(Root, "user");
@@ -449,7 +454,9 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
             if (_deadline.IsExpired)
             {
-                throw new HarnessAssertionException(_deadline.Expired(description).Message);
+                var expired = _deadline.Expired(description).Message;
+                _timedOutWait ??= expired;
+                throw new HarnessAssertionException(expired);
             }
 
             Clock.Advance(WaitStep);
@@ -546,6 +553,13 @@ public sealed class HeadlessHarness : IAsyncDisposable
 
         if (failures.Count > 0)
         {
+            // I-258: this exception replaces the one of the test body while that propagates through "await using"; the
+            // wait that failed there is the cause, what dispose found is what it left behind.
+            if (_timedOutWait is not null)
+            {
+                failures.Insert(0, _timedOutWait);
+            }
+
             throw new HarnessAssertionException(string.Join(Environment.NewLine, failures));
         }
     }

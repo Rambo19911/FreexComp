@@ -78,7 +78,7 @@ public sealed class ConsoleHostTests
     /// <summary>The IDE executable next to the test assembly (the project reference copies its apphost).</summary>
     private static string IdeExecutable => Path.ChangeExtension(typeof(ConsoleHost).Assembly.Location, ".exe");
 
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
     [Trait("Req", "IDE-P3-087")]
     [Trait("Req", "IDE-P3-088")]
     public async Task RunsChildReportsExitCodeAndWaitsForKey()

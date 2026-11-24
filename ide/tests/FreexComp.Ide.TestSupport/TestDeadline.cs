@@ -23,6 +23,13 @@ public sealed class TestDeadline
     /// </summary>
     public const int DebugTestTimeout = 120_000;
 
+    /// <summary>
+    /// I-258: the timeout, in milliseconds, of a test that starts programs through the real process launcher and waits
+    /// for what they do. Like <see cref="DebugTestTimeout"/> a safety net against a hang, never a budget: how long a
+    /// program takes to load, run and end depends on the machine's load alone.
+    /// </summary>
+    public const int ProcessTestTimeout = 120_000;
+
     /// <summary>How long before the test timeout a wait gives up, so that its own message is the one reported.</summary>
     public static readonly TimeSpan Margin = TimeSpan.FromSeconds(2);
 

@@ -52,7 +52,7 @@ public sealed class ProcessTreeTests
         }
     }
 
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
     [Trait("Req", "IDE-P3-083")]
     [Trait("Req", "IDE-P3-090")]
     [Trait("Req", "IDE-P3-094")]
@@ -80,7 +80,7 @@ public sealed class ProcessTreeTests
         Assert.Equal(1, await deadline.WaitAsync(process.Exited, "the exit report")); // TerminateJobObject exit code
     }
 
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
     [Trait("Req", "IDE-P3-073")]
     [Trait("Req", "IDE-P3-082")]
     [Trait("Req", "IDE-P3-084")]
@@ -97,7 +97,7 @@ public sealed class ProcessTreeTests
         Assert.Equal(["err 1", "stdin 0"], lines.Where(l => l.IsError).Select(l => l.Text));
     }
 
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
     [Trait("Req", "IDE-P3-082")]
     [Trait("Req", "IDE-P3-083")]
     public async Task OnlyPipeHandlesAreInherited()
@@ -125,8 +125,14 @@ public sealed class ProcessTreeTests
     /// process that is inheritable at that moment. None of them may get a pipe end of a captured program: a holder keeps the
     /// pipe open, so the program's final partial line (emitted only at end-of-file under a manual clock) never arrives.
     /// Each round starts two captured programs and three long-lived redirected programs at the same instant (a barrier).
+    /// <para>
+    /// I-258: the five starting threads live for all rounds (one barrier phase per round) and a round ends when its
+    /// starts have returned — the window in question is the start. The captured programs' ends are awaited together
+    /// after the last round: a program's run time (seconds on a machine whose cores are all busy) is paid once, not
+    /// once per round, and no thread is created between rounds.
+    /// </para>
     /// </summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.ProcessTestTimeout)]
     [Trait("Req", "IDE-P3-082")]
     [Trait("Req", "IDE-P3-084")]
     public async Task ConcurrentLaunchesDoNotInheritEachOthersPipes()
@@ -135,54 +141,87 @@ public sealed class ProcessTreeTests
         Assert.True(WindowsProcessLauncher.SharesRuntimeLock, "the launcher does not share the runtime's process-creation lock");
         var deadline = CurrentTest.Deadline;
         var holders = new ConcurrentBag<Process>();
+        var captured = new ConcurrentBag<Task>();
         var failures = new ConcurrentQueue<string>();
         var launcher = new WindowsProcessLauncher(new ManualClock());
         var shell = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+
+        // The end of one captured program: its exit report, then its complete standard output.
+        async Task EndAsync(IRunningProcess process, ConcurrentQueue<ProcessOutputLine> lines, string name)
+        {
+            using (process)
+            {
+                await deadline.WaitAsync(process.Exited, "the exit of " + name);
+                var stdout = string.Join("|", lines.Where(x => !x.IsError).Select(x => x.Text));
+                if (stdout != "out 1|grün|cr|Name: ")
+                    failures.Enqueue(name + ": stdout " + stdout);
+            }
+        }
+
+        using var barrier = new Barrier(Launches + Holders);
+        using var abort = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token); // a start that failed releases the others
+
+        // One thread per starter, for all rounds; a failure of one stops the others at the barrier.
+        Task Starter(Action<int> startOne) => Task.Factory.StartNew(() =>
+        {
+            try
+            {
+                for (var round = 0; round < Rounds; round++)
+                {
+                    barrier.SignalAndWait(abort.Token);
+                    startOne(round);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // another starter failed (its failure is recorded) or the test's time is up (the wait below reports it)
+            }
+            catch (Exception e)
+            {
+                failures.Enqueue("a start failed: " + e);
+                abort.Cancel();
+            }
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
         try
         {
-            for (var round = 0; round < Rounds; round++)
+            var starters = new List<Task>();
+            for (var h = 0; h < Holders; h++)
             {
-                using var barrier = new Barrier(Launches + Holders);
-                var work = new List<Task>();
-                for (var h = 0; h < Holders; h++)
+                starters.Add(Starter(_ =>
                 {
-                    work.Add(Task.Factory.StartNew(() =>
+                    // Started the way ProcessRunner starts the toolchain: all three streams redirected. It reads its
+                    // never-closed stdin, so it lives until the test kills it.
+                    var start = new ProcessStartInfo(shell, "/d /q /k")
                     {
-                        // Started the way ProcessRunner starts the toolchain: all three streams redirected. It reads its
-                        // never-closed stdin, so it lives until the test kills it.
-                        var start = new ProcessStartInfo(shell, "/d /q /k")
-                        {
-                            UseShellExecute = false, CreateNoWindow = true,
-                            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-                        };
-                        barrier.SignalAndWait(deadline.Token);
-                        holders.Add(Process.Start(start)!);
-                    }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default));
-                }
-
-                for (var l = 0; l < Launches; l++)
-                {
-                    var name = string.Create(CultureInfo.InvariantCulture, $"round {round} launch {l}");
-                    work.Add(Task.Factory.StartNew(async () =>
-                    {
-                        var lines = new ConcurrentQueue<ProcessOutputLine>();
-                        barrier.SignalAndWait(deadline.Token);
-                        using var process = launcher.Start(Request(HelperProgram.WriteBoth), lines.Enqueue);
-                        await deadline.WaitAsync(process.Exited, "the exit of " + name);
-                        var stdout = string.Join("|", lines.Where(x => !x.IsError).Select(x => x.Text));
-                        if (stdout != "out 1|grün|cr|Name: ")
-                            failures.Enqueue(name + ": stdout " + stdout);
-                    }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap());
-                }
-
-                await deadline.WaitAsync(Task.WhenAll(work), "round " + round.ToString(CultureInfo.InvariantCulture));
+                        UseShellExecute = false, CreateNoWindow = true,
+                        RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+                    };
+                    holders.Add(Process.Start(start)!);
+                }));
             }
+
+            for (var l = 0; l < Launches; l++)
+            {
+                var launch = l;
+                starters.Add(Starter(round =>
+                {
+                    var lines = new ConcurrentQueue<ProcessOutputLine>();
+                    var process = launcher.Start(Request(HelperProgram.WriteBoth), lines.Enqueue);
+                    captured.Add(EndAsync(process, lines, string.Create(CultureInfo.InvariantCulture, $"round {round} launch {launch}")));
+                }));
+            }
+
+            await deadline.WaitAsync(Task.WhenAll(starters), "the starts of all rounds");
+            await deadline.WaitAsync(Task.WhenAll(captured), "the ends of the captured programs");
 
             Assert.True(failures.IsEmpty, $"{failures.Count} of {Rounds * Launches} captured programs lost their end-of-file to a "
                 + "concurrently started program: " + string.Join("; ", failures));
+            Assert.Equal((Rounds * Launches, Rounds * Holders), (captured.Count, holders.Count));
         }
         finally
         {
+            await abort.CancelAsync(); // no starter stays at the barrier
             foreach (var holder in holders)
             {
                 try
