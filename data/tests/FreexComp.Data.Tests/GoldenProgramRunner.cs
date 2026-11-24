@@ -162,16 +162,21 @@ public static class GoldenProgramRunner
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         stop.CancelAfter(limit);
         using var process = Process.Start(psi)!;
+        // each pipe on a thread of its own, never the thread pool (ChildPipe); both at once, so neither pipe can fill up
+        var image = Path.GetFileName(file);
+        var stdout = ChildPipe.ReadToEnd(process.StandardOutput, image + " stdout");
+        var stderr = ChildPipe.ReadToEnd(process.StandardError, image + " stderr");
         try
         {
             process.StandardInput.Close();
-            var stdout = process.StandardOutput.ReadToEndAsync(stop.Token);
-            var stderr = process.StandardError.ReadToEndAsync(stop.Token);
             await process.WaitForExitAsync(stop.Token).ConfigureAwait(false);
-            return new(process.ExitCode, await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false), null);
+            // the limit also covers the pipes: a surviving descendant can hold them open after the process itself ended
+            return new(process.ExitCode, await stdout.WaitAsync(stop.Token).ConfigureAwait(false), await stderr.WaitAsync(stop.Token).ConfigureAwait(false), null);
         }
         catch (OperationCanceledException)
         {
+            ChildPipe.Abandon(stdout);
+            ChildPipe.Abandon(stderr);
             var reason = ct.IsCancellationRequested ? "test cancelled" : $"time limit {limit.TotalSeconds:F0} s reached";
             return new(-1, "", "", $"{reason}: {Path.GetFileName(file)} stopped");
         }
