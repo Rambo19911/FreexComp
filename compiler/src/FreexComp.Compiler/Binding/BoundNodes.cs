@@ -736,9 +736,12 @@ internal sealed class BoundCaseLabel
 }
 
 /// <summary>A label of a body's <c>label</c> section (LANG-380); the identity of the jump target through lowering and emission.</summary>
-internal sealed class GotoLabel(string name)
+internal sealed class GotoLabel(Symbols.LabelSymbol symbol)
 {
-    public string Name { get; } = name;
+    public string Name => Symbol.Name;
+
+    /// <summary>The label as a symbol of the semantic model (C-318).</summary>
+    public Symbols.LabelSymbol Symbol { get; } = symbol;
 }
 
 /// <summary><c>Label: Statement</c> (LANG-380): the definition of <see cref="Label"/>.</summary>

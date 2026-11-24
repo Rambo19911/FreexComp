@@ -64,7 +64,8 @@ public sealed class VariableSymbol : Symbol
     /// <summary>
     /// The debug scope of an inline variable or typed constant (inline-variables.md CMP-1184, C-309): the first token of its
     /// declaration statement and the token that closes its statement list (the last token of a <c>repeat</c> or <c>for var</c>
-    /// statement; none when the list ends a unit section). Null for every other variable.
+    /// statement; none when the list ends a unit section); for the variable of an exception handler (DBG-142, C-315) the first and
+    /// last token of the handler. Null for every other variable.
     /// </summary>
     internal (Syntax.SyntaxToken From, Syntax.SyntaxToken To)? InlineScope { get; set; }
 

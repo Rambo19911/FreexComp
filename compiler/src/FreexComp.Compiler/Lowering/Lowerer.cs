@@ -769,6 +769,17 @@ internal sealed partial class LoweringContext
                 return ObjectToInterface(FrameInstance(frame), frame.Class.FindInterface(target)!.Offset, target);
             case BoundConversionExpression { Type: InterfaceTypeSymbol target, Operand.Type: ClassTypeSymbol source } conversion:
                 return ObjectToInterface(Lower(conversion.Operand), source.FindInterface(target)!.Offset, target);
+            case BoundConversionExpression { IsExplicit: true, Operand.Type: BooleanTypeSymbol { IsCStyle: true } source, Type: { IsOrdinal: true } and not BooleanTypeSymbol } conversion:
+            {
+                // LANG-215 / LANG-290 (C-313): an ordinal cast of a C-style Boolean takes the stored bits as a signed integer of
+                // its size (a variable: its storage; a value: all ones for True); only a cast to a Boolean type normalises
+                var bits = source.Size switch { 1 => Types.ShortInt, 2 => Types.SmallInt, _ => Types.Integer };
+                var operand = Lower(conversion.Operand);
+                return Convert(ExpressionBinder.IsAddressable(conversion.Operand)
+                    ? new LView(operand, bits)
+                    : new LSelect(operand, Constant(BigInteger.MinusOne, bits), Constant(BigInteger.Zero, bits)), conversion.Type);
+            }
+
             case BoundConversionExpression conversion:
                 return conversion.IsExplicit
                     ? Convert(Lower(conversion.Operand), conversion.Type)

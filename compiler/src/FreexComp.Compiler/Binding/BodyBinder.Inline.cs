@@ -38,10 +38,16 @@ internal sealed partial class BodyBinder
 
     /// <summary>
     /// LANG-385: E2004 when <paramref name="name"/> is already declared in an enclosing block of this body or in the routine's own
-    /// scope (parameters, <c>Result</c>, locals).
+    /// scope (parameters, <c>Result</c>, locals), or is a label of the body (LANG-569, C-317).
     /// </summary>
     private bool CheckInlineName(SyntaxToken identifier, string name)
     {
+        if (_labels.TryGetValue(name, out var label))
+        {
+            _diagnostics.ReportRedeclared(identifier, name, DiagnosticBag.LocationOf(label.Declaration));
+            return false;
+        }
+
         for (var scope = _scope; scope is { Kind: ScopeKind.Block or ScopeKind.Routine }; scope = scope.Parent)
         {
             if (scope.LookupLocal(name) is { } existing)

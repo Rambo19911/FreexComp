@@ -750,7 +750,13 @@ public sealed class SemanticModel
                 Walk(halt.ExitCode);
                 break;
             case BoundLabelStatement label:
+                Declare(label.Label.Symbol);                                    // C-318: the label section's name
+                Reference(((LabeledStatementSyntax)label.Syntax).Label, label.Label.Symbol);
                 Walk(label.Statement);
+                break;
+            case BoundGotoStatement jump:
+                Declare(jump.Label.Symbol);
+                Reference(((GotoStatementSyntax)jump.Syntax).Label, jump.Label.Symbol);
                 break;
         }
     }

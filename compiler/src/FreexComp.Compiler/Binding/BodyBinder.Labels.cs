@@ -1,3 +1,4 @@
+using FreexComp.Compiler.Symbols;
 using FreexComp.Compiler.Syntax;
 
 namespace FreexComp.Compiler.Binding;
@@ -50,7 +51,7 @@ internal sealed partial class BodyBinder
             {
                 if (LabelName(label) is { } name)
                 {
-                    _labels.TryAdd(name, new LabelInfo(new GotoLabel(name), label));
+                    _labels.TryAdd(name, new LabelInfo(new GotoLabel(new LabelSymbol(name, Container, [DiagnosticBag.LocationOf(label)])), label));
                 }
             }
         }

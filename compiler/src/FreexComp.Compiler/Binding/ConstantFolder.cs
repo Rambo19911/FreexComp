@@ -261,6 +261,11 @@ internal sealed class ConstantFolder
             return null;
         }
 
+        if (operand.Type is BooleanTypeSymbol { IsCStyle: true } && target is not BooleanTypeSymbol)
+        {
+            ordinal = -ordinal;                                         // LANG-215 (C-313): True of a C-style Boolean is all ones
+        }
+
         return target switch
         {
             IntegerTypeSymbol integer => new ConstantValue(Wrap(ordinal, integer.Bits, integer.IsSigned), target),

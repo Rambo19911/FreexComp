@@ -504,3 +504,9 @@ label L; begin end.
 label L; begin goto L; var X := 1; L: X := X + 1; goto L end.
 === E2076 1,16
 label L; begin goto L; begin const C = 1; L: end end.
+=== E2004 1,25
+label L; begin L: ; var L := 1; end.
+=== E2004 1,27
+label L; begin L: ; const l = 1; end.
+=== E2004 1,29
+label L; begin L: ; for var L := 1 to 2 do end.

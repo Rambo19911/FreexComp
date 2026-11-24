@@ -1,0 +1,16 @@
+ByteBool: -1 -1 -1 255 65535 4294967295
+WordBool: -1 -1 -1 255 65535 4294967295
+LongBool: -1 -1 -1 255 65535 4294967295
+Boolean:  1 1 1 TRUE TRUE TRUE
+ByteBool: 2 2 2 2 2 2
+WordBool: 2 2 2 2 2 2
+LongBool: 2 2 2 2 2 2
+Boolean:  1 1 1 TRUE TRUE TRUE
+ByteBool: 0 0 0 0 0 0
+WordBool: 0 0 0 0 0 0
+LongBool: 0 0 0 0 0 0
+Boolean:  0 0 0 FALSE FALSE FALSE
+field: -1 65535
+field: 256 0 TRUE
+result: -1 -1 65535
+const: -1 4294967295

@@ -98,6 +98,10 @@ internal sealed class DiagnosticBag
             : diagnostic with { Related = [new RelatedLocation(previous.Locations[0], "previous declaration")] });
     }
 
+    /// <summary>E2004 for a name whose previous declaration has no symbol (a label, LANG-569).</summary>
+    public void ReportRedeclared(SyntaxToken identifier, string name, Location previous) =>
+        _diagnostics.Add(Diagnostic.Create("E2004", LocationOf(identifier), name) with { Related = [new RelatedLocation(previous, "previous declaration")] });
+
     public ImmutableArray<Diagnostic> ToImmutable() => [.. _diagnostics];
 
     public static Location LocationOf(SyntaxToken token) => LocationOf(FileOf(token), token.Span);

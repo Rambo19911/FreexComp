@@ -133,6 +133,8 @@ internal static class IrEmitter
             module.Globals[variable] = new IrGlobal(name);                      // unit-level handler variables (C-091)
         }
 
+        module.BodyGlobals = unit.BodyGlobals;
+
         // CMP-345 frame record types, in definition order (CMP-301: named struct types first)
         foreach (var body in unit.Routines)
         {
@@ -966,6 +968,9 @@ internal sealed class ModuleState(IIrWriter writer)
     public DebugInfoEmitter? Debug { get; init; }
 
     public Dictionary<VariableSymbol, IrGlobal> Globals { get; } = [];
+
+    /// <summary>The storage of the variables of the unit's bodies without frame record (<see cref="LoweredUnit.BodyGlobals"/>), for their debug scope (C-316).</summary>
+    public ImmutableArray<(VariableSymbol Variable, LinkName Name)> BodyGlobals { get; set; } = [];
 
     public Dictionary<RoutineSymbol, FrameRecord> Frames { get; } = [];
 
@@ -2079,10 +2084,18 @@ internal sealed class FunctionEmitter
         var inFrames = blocks.SelectMany(b => b.Fields.Select(f => (Variable: f.Key as VariableSymbol, Frame: b, Field: f.Value)))
             .Where(f => f.Variable?.InlineScope is not null).OrderBy(f => f.Variable!.InlineScope!.Value.From.Span.Start).ToList();
 
+        // CMP-1184 (C-316): the inline and handler variables of a unit-level body (the main block, an initialization or
+        // finalization part, with their finally parts) are internal globals; each is a variable of this subprogram all the same
+        var inGlobals = _routine is null && _body.Source is { } unitBody and not Syntax.TryFinallyStatementSyntax
+            ? _module.BodyGlobals.Select(g => g.Variable)
+                .Where(v => v.InlineScope is { } scope && !v.Name.StartsWith('$') && unitBody.Span.Contains(scope.From.Span.Start))
+                .OrderBy(v => v.InlineScope!.Value.From.Span.Start).ToList()
+            : [];
+
         // DBG-142: the first declaration of a name keeps it, later ones (source order) are Name$2, Name$3, …
         var debugNames = new Dictionary<VariableSymbol, string>(ReferenceEqualityComparer.Instance);
         var declared = new Dictionary<string, int>(Syntax.IdentifierComparer.Instance);
-        foreach (var inline in _body.Locals.Select(l => l.Variable).Concat(inFrames.Select(f => f.Variable))
+        foreach (var inline in _body.Locals.Select(l => l.Variable).Concat(inFrames.Select(f => f.Variable)).Concat(inGlobals)
             .Where(v => v?.InlineScope is not null && !v.Name.StartsWith('$')).OrderBy(v => v!.InlineScope!.Value.From.Span.Start))
         {
             var count = declared[inline!.Name] = declared.GetValueOrDefault(inline.Name) + 1;
@@ -2151,6 +2164,11 @@ internal sealed class FunctionEmitter
             var isHiddenResult = hiddenResult is not null && ReferenceEquals(variable, _routine!.ResultVariable);
             var kind = ReferenceEquals(variable, _routine?.ResultVariable) ? "result" : "local";
             Declare(variable, local.Name, arg: null, local.Type, isHiddenResult ? hiddenResult : null, isHiddenResult ? null : _locals.GetValueOrDefault(local), flags: null, kind);
+        }
+
+        foreach (var variable in inGlobals)
+        {
+            Declare(variable, variable.Name, arg: null, variable.Type, _module.Globals[variable], slot: null, flags: null, "local");   // a slot holding the global's address
         }
 
         foreach (var (variable, frame, field) in inFrames)

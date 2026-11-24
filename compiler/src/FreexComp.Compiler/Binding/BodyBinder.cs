@@ -635,7 +635,11 @@ internal sealed partial class BodyBinder
             if (handler.Identifier is { IsMissing: false } identifier)
             {
                 variable = new VariableSymbol(identifier.Value as string ?? identifier.Text, type, isGlobal: false, _routine,
-                    [DiagnosticBag.LocationOf(identifier)]) { IsReadOnly = true };
+                    [DiagnosticBag.LocationOf(identifier)])
+                {
+                    IsReadOnly = true,
+                    InlineScope = (handler.FirstToken(), handler.LastToken()),  // DBG-142 (C-315): the debug scope is the handler
+                };
                 scope = new Scope(ScopeKind.Block, _scope, _routine);
                 scope.TryDeclare(variable, out _);
             }

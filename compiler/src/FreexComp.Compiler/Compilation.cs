@@ -388,12 +388,25 @@ public sealed class Compilation
     /// <summary>api.md §1 (C-263): the symbol of the unit <see cref="FindUnit"/> finds, or null.</summary>
     public UnitSymbol? GetUnitSymbol(string unitName) => Unit(unitName)?.Symbol;
 
-    private LoadedUnit? Unit(string unitName)
+    /// <summary>
+    /// api.md §1 (C-314): the file the unit named <paramref name="unitName"/> would be loaded from, resolved like a uses entry of
+    /// the main file (LANG-510 search order, LANG-533 aliases, LANG-535 unit scope names) — its source, or its precompiled unit
+    /// where a directory has no source of it. Resolve only: no unit is parsed or bound (the alias table is the only file read).
+    /// Null when the name does not resolve or the alias table is invalid.
+    /// </summary>
+    public string? ResolveUnitPath(string unitName)
     {
         ArgumentNullException.ThrowIfNull(unitName);
-        var mainPath = PathUtil.Normalize(Options.MainFile);
         var aliases = UnitAliasTable.Load(FileSystem, RtlDirectory(), out var aliasError);
-        if (aliasError is not null || Resolver(mainPath, aliases).Find(unitName) is not { } path)
+        return aliasError is null ? Resolver(PathUtil.Normalize(Options.MainFile), aliases).Find(unitName) : null;
+    }
+
+    /// <summary>Whether this snapshot has analysed its program (C-314: resolving a unit name does not).</summary>
+    internal bool IsAnalyzed => _analysis.IsValueCreated;
+
+    private LoadedUnit? Unit(string unitName)
+    {
+        if (ResolveUnitPath(unitName) is not { } path)
         {
             return null;
         }
