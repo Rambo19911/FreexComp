@@ -1,0 +1,5 @@
+# dll-runtime.md RTL-967: Halt inside an exported routine ends the host process (exit code in usehalt.exit)
+dll haltlib.pas
+exe usehalt.pas
+run usehalt.exe
+exists halt-final.txt

@@ -1,0 +1,4 @@
+# dll-runtime.md RTL-968: each module keeps its own allocation counters and memory manager
+dll heaplib.pas
+exe useheap.pas
+run useheap.exe

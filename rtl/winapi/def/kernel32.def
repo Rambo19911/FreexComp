@@ -102,6 +102,7 @@ SetEvent
 SetFileAttributesW
 SetFilePointerEx
 SetLastError
+SetStdHandle
 Sleep
 SwitchToThread
 SystemTimeToFileTime

@@ -239,6 +239,10 @@ function FileGetAttr(const FileName: string): Integer;
 function FileSetAttr(const FileName: string; Attr: Integer): Integer;
 function GetTempDir: string;
 function GetModuleName(Module: THandle): string;
+{ LoadLibraryW under the process error mode ErrorMode; the error mode and the calling thread's floating-point control
+  state are as before the call afterwards. 0 on failure, with the last-error value of LoadLibraryW. Never raises
+  (dll-runtime.md RTL-953) }
+function SafeLoadLibrary(const FileName: string; ErrorMode: Cardinal = SEM_NOOPENFILEERRORBOX): HMODULE;
 { 0 = found, else a Win32 error (18 at the end, 2 when nothing matches) }
 function FindFirst(const Path: string; Attr: Integer; var F: TSearchRec): Integer;
 function FindNext(var F: TSearchRec): Integer;
@@ -2132,6 +2136,21 @@ var
 begin
   Len := GetModuleFileNameW(HMODULE(Module), @Buffer[0], Length(Buffer));
   SetString(Result, PChar(@Buffer[0]), Integer(Len));
+end;
+
+function SafeLoadLibrary(const FileName: string; ErrorMode: Cardinal = SEM_NOOPENFILEERRORBOX): HMODULE;
+var
+  FloatState: Cardinal;
+  OldMode: UINT;
+  Error: DWORD;
+begin
+  FloatState := _GetMXCSR;
+  OldMode := SetErrorMode(ErrorMode);
+  Result := LoadLibraryW(PChar(FileName));
+  Error := Windows.GetLastError;
+  SetErrorMode(OldMode);
+  _SetMXCSR(FloatState);               { the initialisation of a foreign library may have changed it }
+  Windows.SetLastError(Error);
 end;
 
 { the entry in F.FindData copied to the public fields }

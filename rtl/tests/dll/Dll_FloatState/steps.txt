@@ -1,0 +1,5 @@
+# dll-runtime.md RTL-966: loading a library leaves the floating-point control state of the host alone
+dll quietlib.pas
+dll rudelib.pas
+exe usefloat.pas
+run usefloat.exe

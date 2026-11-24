@@ -3,6 +3,11 @@
     <RootNamespace>FreexComp.Rtl.Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- the library scenario harness shared with the compiler tests (dll-runtime.md section 4, R-227) -->
+    <Compile Include="..\..\compiler\tests\Shared\DllScenario.cs" Link="Shared\DllScenario.cs" />
+    <Compile Include="..\..\compiler\tests\Shared\NativeRun.cs" Link="Shared\NativeRun.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- opc.exe is copied next to the test assembly; the runner starts it as a process (RTL-901) -->
     <ProjectReference Include="..\..\compiler\src\opc\opc.csproj" />
     <!-- DefFilesMatchDeclarations parses the binding units (R-036) -->

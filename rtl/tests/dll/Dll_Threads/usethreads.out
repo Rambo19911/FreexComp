@@ -1,0 +1,9 @@
+main thread: 11
+thread 0: 1 then 2
+thread 1: 2 then 4
+thread 2: 3 then 6
+thread 3: 4 then 8
+library blocks held by the 4 threads: 8
+library blocks after the threads have ended: 0
+host blocks back to the start: TRUE
+main thread again: 22

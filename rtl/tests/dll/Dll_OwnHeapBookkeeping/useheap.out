@@ -1,0 +1,14 @@
+TextLength(1000) = 1004
+after a string inside the library: host 0, library 0
+the library keeps 500 characters
+while the library keeps a string: host 0, library 1
+while both keep a string: host 1, library 1
+after the library dropped its string: host 1, library 0
+after the host dropped its string: host 0, library 0
+host manager unchanged by SetMemoryManager in the library: TRUE
+host IsMemoryManagerSet: FALSE
+library IsMemoryManagerSet: TRUE
+host allocations reach the library manager: FALSE
+library allocations reach the library manager: TRUE
+library IsMemoryManagerSet after restoring: FALSE
+TextLength(10) = 12

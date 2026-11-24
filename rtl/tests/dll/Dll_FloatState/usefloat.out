@@ -1,0 +1,26 @@
+control state of the host: 5F80
+LoadLibraryW loaded: TRUE
+control state after LoadLibraryW: 5F80
+control state the library block saw: 5F80
+freed: TRUE
+control state after FreeLibrary: 5F80
+SafeLoadLibrary loaded: TRUE
+state after SafeLoadLibrary is the state before: TRUE
+error mode restored: TRUE
+freed: TRUE
+control state after LoadLibraryW of the changing library: 1F80
+freed: TRUE
+SafeLoadLibrary loaded the changing library: TRUE
+state after SafeLoadLibrary is the state before: TRUE
+error mode during the load is the default argument: TRUE
+error mode restored: TRUE
+freed: TRUE
+error mode during the load is the argument: TRUE
+error mode restored: TRUE
+freed: TRUE
+SafeLoadLibrary of a missing file returned 0: TRUE
+last error: 126
+state after SafeLoadLibrary is the state before: TRUE
+error mode restored: TRUE
+SafeLoadLibrary of an empty name returned 0: TRUE
+control state at the end: 5F80

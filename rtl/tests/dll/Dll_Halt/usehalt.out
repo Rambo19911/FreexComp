@@ -1,0 +1,4 @@
+host: calling Quit(7), own ExitCode is 0
+library: Halt(7)
+library: exit procedure
+library: finalization of HaltUnit

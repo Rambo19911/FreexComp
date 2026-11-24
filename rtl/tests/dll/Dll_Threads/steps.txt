@@ -1,0 +1,4 @@
+# dll-runtime.md RTL-965: threads of the host use the library and end
+dll threadlib.pas
+exe usethreads.pas
+run usethreads.exe

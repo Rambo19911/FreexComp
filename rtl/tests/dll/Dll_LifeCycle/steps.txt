@@ -1,0 +1,5 @@
+# dll-runtime.md RTL-963: a library loaded and freed by its host
+dll lifelib.pas
+exe uselife.pas
+run uselife.exe one two
+exists life-order.txt

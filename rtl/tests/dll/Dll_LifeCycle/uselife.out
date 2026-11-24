@@ -1,0 +1,30 @@
+order file before the load: FALSE
+loaded: TRUE
+after LoadLibraryW:
+  initialization LifeA
+  initialization LifeB
+  initialization LifeC
+  library block
+library IsLibrary: TRUE
+host IsLibrary: FALSE
+library HInstance is the handle of LoadLibraryW: TRUE
+host HInstance is another module: TRUE
+library ParamStr(0) is the host program: TRUE
+library ParamCount: 2, ParamStr(2): two
+library IsConsole: TRUE
+library MainThreadID is the loading thread: TRUE
+GetModuleName(HInstance) in the library is the library file: TRUE
+GetModuleName(library handle) in the host: TRUE
+GetModuleName(HInstance) in the host is the host program: TRUE
+library: a line of its own Output
+freed: TRUE
+unloaded: TRUE
+after FreeLibrary:
+  initialization LifeA
+  initialization LifeB
+  initialization LifeC
+  library block
+  exit procedure
+  finalization LifeC
+  finalization LifeB
+  finalization LifeA

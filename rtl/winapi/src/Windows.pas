@@ -2140,6 +2140,7 @@ function RemoveVectoredExceptionHandler(Handle: Pointer): ULONG; stdcall;
 
 { ---------------------------------------------------------------- kernel32: console / std handles }
 function GetStdHandle(nStdHandle: DWORD): THandle; stdcall; external kernel32 name 'GetStdHandle';
+function SetStdHandle(nStdHandle: DWORD; hHandle: THandle): BOOL; stdcall; external kernel32 name 'SetStdHandle';
 function GetConsoleMode(hConsoleHandle: THandle; var lpMode: DWORD): BOOL; stdcall; external kernel32 name 'GetConsoleMode';
 function WriteConsoleW(hConsoleOutput: THandle; lpBuffer: Pointer; nNumberOfCharsToWrite: DWORD;
   var lpNumberOfCharsWritten: DWORD; lpReserved: Pointer): BOOL; stdcall; external kernel32 name 'WriteConsoleW';

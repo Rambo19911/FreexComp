@@ -1,0 +1,5 @@
+# dll-runtime.md RTL-964: the initialization of the second unit raises, the load fails quietly
+dll faillib.pas
+exe usefail.pas
+run usefail.exe
+exists first-final.txt

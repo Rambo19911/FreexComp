@@ -1,0 +1,12 @@
+loading
+LoadLibraryW returned 0: TRUE
+last error: 1114
+module not loaded: TRUE
+first unit initialised: TRUE
+first unit finalised: TRUE
+failing unit not finalised: TRUE
+library block not run: TRUE
+  standard error line 1: FailFirst initialised
+lines on standard error during the load: 1
+caught: host exceptions still work
+host continues
