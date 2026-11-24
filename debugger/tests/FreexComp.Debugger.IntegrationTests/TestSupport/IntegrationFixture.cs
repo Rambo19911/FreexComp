@@ -77,6 +77,32 @@ public sealed class IntegrationFixture : IDisposable
         }
     }
 
+    /// <summary>
+    /// The test library and one of its hosts, built once per test run into one fresh directory (the host finds the
+    /// library beside itself): the library with debug information, the host with or without.
+    /// </summary>
+    /// <param name="host">Name of the host's source file in the folder of the host programs.</param>
+    /// <param name="hostDebugInfo">False: the host is built without debug information (no type-information file).</param>
+    internal (BuiltProgram Host, BuiltProgram Library) BuildLibraryWithHost(string host = "DllHost", bool hostDebugInfo = true)
+    {
+        lock (_gate)
+        {
+            var key = host + "+DllLib" + (hostDebugInfo ? "" : "-nodebug");
+            if (!_built.TryGetValue(key, out var builtHost))
+            {
+                RequireToolchain();
+                var directory = Path.Combine(_buildRoot, key);
+                Directory.CreateDirectory(directory);
+                foreach (var checkedIn in (string[])[.. Directory.GetFiles(Path.Combine(ProgramsDirectory, "DllLib"), "*.pas"), Path.Combine(ProgramsDirectory, "DllHost", host + ".pas")])
+                    File.Copy(checkedIn, Path.Combine(directory, Path.GetFileName(checkedIn)));
+                _built.Add(key + ":library", RunCompiler(directory, "DllLib", ".dll", debugInfo: true));
+                _built.Add(key, builtHost = RunCompiler(directory, host, ".exe", hostDebugInfo));
+            }
+
+            return (builtHost, _built[key + ":library"]);
+        }
+    }
+
     private BuiltProgram Compile(string name, string key, bool debugInfo)
     {
         RequireToolchain();
@@ -85,9 +111,16 @@ public sealed class IntegrationFixture : IDisposable
 
         var directory = Path.Combine(_buildRoot, key);
         Directory.CreateDirectory(directory);
+        File.Copy(checkedIn, Path.Combine(directory, name + ".pas"));
+        return RunCompiler(directory, name, ".exe", debugInfo);
+    }
+
+    /// <summary>Compiles <c>name.pas</c> of <paramref name="directory"/> into that directory (import libraries are looked for there too).</summary>
+    private BuiltProgram RunCompiler(string directory, string name, string extension, bool debugInfo)
+    {
         var source = Path.Combine(directory, name + ".pas");
-        File.Copy(checkedIn, source);
-        var exe = Path.Combine(directory, name + ".exe");
+        Assert.True(File.Exists(source), $"Test program not found: {source}.");
+        var exe = Path.Combine(directory, name + extension);
 
         var (command, prefix) = CompilerCommand();
         var info = new ProcessStartInfo(command)
@@ -101,7 +134,7 @@ public sealed class IntegrationFixture : IDisposable
             WorkingDirectory = directory,
         };
         string[] options = debugInfo ? ["-g", "-O0"] : ["-O0"];
-        foreach (var argument in (string[])[.. prefix, source, .. options, "-o", exe, "--diagnostics", "json", "--rtl", RtlDirectory, "--toolchain", ToolchainDirectory])
+        foreach (var argument in (string[])[.. prefix, source, .. options, "-o", exe, "-L", directory, "--diagnostics", "json", "--rtl", RtlDirectory, "--toolchain", ToolchainDirectory])
             info.ArgumentList.Add(argument);
 
         using var process = Process.Start(info) ?? throw new InvalidOperationException("The compiler could not be started: " + command);

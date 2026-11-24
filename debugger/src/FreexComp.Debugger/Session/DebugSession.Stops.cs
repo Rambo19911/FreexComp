@@ -144,7 +144,7 @@ internal sealed partial class DebugSession
         // The raise hook (DBG-242 ... DBG-245): the exception object, then the ignore list.
         async Task<StopInfo?> RaiseHookStopAsync()
         {
-            var raised = await ReadExceptionAsync(response.StackFrames[0].Id, registers: true).ConfigureAwait(false);
+            var raised = await ReadExceptionAsync(response.StackFrames[0].Id, frames[0].Location, registers: true).ConfigureAwait(false);
             _raiseReportedThreads.Add(threadId);
             if (ExceptionMonitor.IsIgnored(_exceptionSettings, raised.Classes))
             {
@@ -190,7 +190,7 @@ internal sealed partial class DebugSession
                     // the type information describes it.
                     var hookIndex = Enumerable.Range(0, frames.Count).FirstOrDefault(i => IsHookFrame(response.StackFrames[i], frames[i]), -1);
                     var raised = hookIndex >= 0
-                        ? await ReadExceptionAsync(response.StackFrames[hookIndex].Id, registers: false).ConfigureAwait(false)
+                        ? await ReadExceptionAsync(response.StackFrames[hookIndex].Id, frames[hookIndex].Location, registers: false).ConfigureAwait(false)
                         : RaisedException.Unknown(0);
                     _fatalCode = code;
                     return RaiseStop(hookIndex >= 0 ? LocationBelow(frames, hookIndex) : location, raised);
@@ -290,8 +290,10 @@ internal sealed partial class DebugSession
             }
 
             case "step":
-                // With user source roots, a step does not end in code that is not the user's (DBG-222).
-                if (_step is { } step && _options.UserSourceRoots.Count > 0 && UserCodeFilter.Decide(step, frames) is { } internalCommand)
+                // With user source roots, a step does not end in code that is not the user's (DBG-222). The same holds
+                // when a library is debugged through its host: the host's frames without source are not the user's.
+                if (_step is { } step && (_options.UserSourceRoots.Count > 0 || _launchRequest is { Libraries.Count: > 0 })
+                    && UserCodeFilter.Decide(step, frames) is { } internalCommand)
                 {
                     if (internalCommand == StopResolver.Continue)
                         _step = null;
@@ -466,7 +468,7 @@ internal sealed partial class DebugSession
     /// </summary>
     private async Task<RunToLineState?> PlaceMainBodyTargetAsync(CancellationToken ct)
     {
-        if (_typeInfo is not { } typeInfo
+        if (_programInfo is not { } typeInfo
             || typeInfo.Units.SelectMany(unit => unit.Routines)
                 .FirstOrDefault(routine => string.Equals(routine.DisplayName, typeInfo.Program, StringComparison.OrdinalIgnoreCase)) is not { } main
             || !Path.IsPathFullyQualified(main.File))

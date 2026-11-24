@@ -52,7 +52,11 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     private AdapterProcess? _adapter;
     private DapClient? _client;
     private Dictionary<string, JsonElement>? _capabilities;
-    private PdiFile? _typeInfo;                     // null: the program has no type-information file (DBG-403)
+    // null: no type-information file (DBG-403). With libraries debugged through a host: the view over the files of
+    // all modules that have one, the libraries' first.
+    private PdiFile? _typeInfo;
+    private PdiFile? _programInfo;                  // the program's own file: where its main block is (DBG-225)
+    private IReadOnlyList<string> _hookSymbols = [];   // raise routine of every module with type information, each name once
     private int _consecutiveTimeouts;
 
     public DebugSession(DebugSessionOptions options)

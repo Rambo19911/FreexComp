@@ -79,11 +79,29 @@ internal sealed partial class DebugSession
 
             // The type-information file is read once, here. Missing: not an error, values are shown as the adapter
             // prints them; present but unusable: the launch fails before the adapter is started (DBG-403).
+            // Libraries debugged through the program (their host): the file of each is loaded besides; the host's own
+            // is optional then and its absence is not worth a message.
             var typeInfoPath = request.TypeInfoPath ?? Path.ChangeExtension(request.Program, ".pdi");
-            _typeInfo = PdiLoader.Load(typeInfoPath);
-            _hasTypeInfo = _typeInfo is not null;
-            if (_typeInfo is null)
+            _programInfo = PdiLoader.Load(typeInfoPath);
+            if (_programInfo is null && request.Libraries.Count == 0)
                 _events.Raise(() => Output, new OutputEventArgs(OutputCategory.Debugger, Messages.TypeInfoMissing(typeInfoPath)));
+            var modules = new List<PdiFile>();
+            foreach (var library in request.Libraries)
+            {
+                if (!File.Exists(library))
+                    throw new DebuggerException(DebugErrorCode.ProgramNotFound, Messages.LibraryNotFound + library);
+                var libraryInfoPath = Path.ChangeExtension(library, ".pdi");
+                if (PdiLoader.Load(libraryInfoPath) is { } libraryInfo)
+                    modules.Add(libraryInfo);
+                else
+                    _events.Raise(() => Output, new OutputEventArgs(OutputCategory.Debugger, Messages.TypeInfoMissing(libraryInfoPath)));
+            }
+
+            if (_programInfo is not null)
+                modules.Add(_programInfo);
+            _typeInfo = PdiFile.Merge(modules);
+            _hasTypeInfo = _typeInfo is not null;
+            _hookSymbols = [.. modules.Select(module => module.Abi.RaiseHookSymbol).Where(symbol => symbol.Length > 0).Distinct(StringComparer.Ordinal)];
 
             _adapter = AdapterProcess.Start(_options.AdapterPath, _options.AdapterArguments, TraceStderr, StderrReaderStarter);
             _adapterProcessId = _adapter.ProcessId;

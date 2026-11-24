@@ -22,16 +22,13 @@ internal sealed partial class DebugSession
 
     // Session loop only.
     private ExceptionSettings _exceptionSettings = new();
-    private bool _hookArmed;                    // the adapter holds the function breakpoint on the raise hook
-    private int? _raiseHookBreakpointId;
+    private bool _hookArmed;                    // the adapter holds the function breakpoints on the raise hooks
+    private IReadOnlyList<int> _raiseHookBreakpointIds = [];
     private bool _hookUnavailableReported;
     // Threads whose last stop was a raise seen through the hook, published or ignored (DBG-248). A thread leaves the
     // set with its own next stop, or when it ends: the stop of another thread says nothing about it.
     private readonly HashSet<int> _raiseReportedThreads = [];
     private uint? _fatalCode;                   // the current public stop is an exception no handler takes (DBG-247)
-
-    /// <summary>The symbol of the raise hook; "" without type information or when the runtime has none.</summary>
-    private string HookSymbol => _typeInfo?.Abi.RaiseHookSymbol ?? "";
 
     /// <summary>
     /// DBG-016: stored; from the configuration phase on, a change of what the adapter must hold is sent at once.
@@ -49,9 +46,14 @@ internal sealed partial class DebugSession
     /// language exceptions are to be reported, none otherwise. Nothing is sent when nothing changes. Without the
     /// adapter capability the notification is off and that is said once.
     /// </summary>
+    /// <remarks>
+    /// Every module links its own run-time library and so has its own raise routine. The breakpoint is set by name,
+    /// once per distinct name among the modules with type information; the adapter places it in every loaded module
+    /// that defines the name and in those loaded later, and removes it from one that is unloaded.
+    /// </remarks>
     private async Task SyncRaiseHookAsync(CancellationToken ct)
     {
-        var wanted = _exceptionSettings.BreakOnLanguageExceptions && HookSymbol.Length > 0;
+        var wanted = _exceptionSettings.BreakOnLanguageExceptions && _hookSymbols.Count > 0;
         if (wanted && !HasCapability("supportsFunctionBreakpoints"))
         {
             if (!_hookUnavailableReported)
@@ -62,11 +64,11 @@ internal sealed partial class DebugSession
 
         if (wanted == _hookArmed)
             return;
-        var arguments = new SetFunctionBreakpointsArguments(wanted ? [new DapFunctionBreakpoint(HookSymbol)] : []);
+        var arguments = new SetFunctionBreakpointsArguments(wanted ? [.. _hookSymbols.Select(symbol => new DapFunctionBreakpoint(symbol))] : []);
         var response = DapJson.Deserialize<SetBreakpointsResponseBody>(
             await RequestAsync("setFunctionBreakpoints", arguments, ct).ConfigureAwait(false));
         _hookArmed = wanted;
-        _raiseHookBreakpointId = wanted ? response.Breakpoints.FirstOrDefault()?.Id : null;
+        _raiseHookBreakpointIds = wanted ? [.. response.Breakpoints.Select(breakpoint => breakpoint.Id).OfType<int>()] : [];
     }
 
     /// <summary>
@@ -74,17 +76,18 @@ internal sealed partial class DebugSession
     /// <see cref="IsHookFrame"/>) when the top frame is the hook routine; either suffices.
     /// </summary>
     private bool IsRaiseHookBreakpoint(StoppedEventBody body) =>
-        _hookArmed && _raiseHookBreakpointId is { } id && body.HitBreakpointIds is { } hit && hit.Contains(id);
+        _hookArmed && body.HitBreakpointIds is { } hit && hit.Any(_raiseHookBreakpointIds.Contains);
 
     /// <summary>The frame is in the raise routine: by the adapter's name for it, or by its place in the type information.</summary>
     private bool IsHookFrame(DapStackFrame raw, StackFrameInfo frame) =>
-        HookSymbol.Length > 0
-        && (string.Equals(raw.Name, HookSymbol, StringComparison.OrdinalIgnoreCase)
-            || (frame.Location is { } location
-                && string.Equals(_typeInfo?.FindRoutine(location.Path, location.Line)?.LinkageName, HookSymbol, StringComparison.Ordinal)));
+        _hookSymbols.Contains(raw.Name, StringComparer.OrdinalIgnoreCase) || HookRoutineAt(frame.Location) is not null;
 
-    private PdiRoutine? HookRoutine() =>
-        _typeInfo?.Units.SelectMany(unit => unit.Routines).FirstOrDefault(routine => routine.LinkageName == HookSymbol);
+    /// <summary>The raise routine the location is in, from the type information; null when it is in none.</summary>
+    private PdiRoutine? HookRoutineAt(SourceLocation? location) =>
+        location is not null && _typeInfo?.FindRoutine(location.Path, location.Line) is { } routine
+        && _hookSymbols.Contains(routine.LinkageName, StringComparer.Ordinal)
+            ? routine
+            : null;
 
     /// <summary>
     /// DBG-242, DBG-243: the exception object of a frame of the raise routine, its dynamic class and its message.
@@ -92,11 +95,14 @@ internal sealed partial class DebugSession
     /// <paramref name="registers"/> (the frame is frame 0, stopped at the routine's start): the first argument
     /// register. Neither works: empty class name and message.
     /// </summary>
-    private async Task<RaisedException> ReadExceptionAsync(int adapterFrameId, bool registers)
+    private async Task<RaisedException> ReadExceptionAsync(int adapterFrameId, SourceLocation? location, bool registers)
     {
+        // The routine of the frame; for a frame the adapter gives no source for, any module's (they are alike).
+        var hook = HookRoutineAt(location)
+            ?? _typeInfo?.Units.SelectMany(unit => unit.Routines).FirstOrDefault(routine => _hookSymbols.Contains(routine.LinkageName, StringComparer.Ordinal));
         ulong? instance = null;
         if (_typeInfo is { } pdi
-            && HookRoutine()?.Variables.FirstOrDefault(v => v.Kind is PdiVariableKind.Param or PdiVariableKind.VarParam) is { } parameter
+            && hook?.Variables.FirstOrDefault(v => v.Kind is PdiVariableKind.Param or PdiVariableKind.VarParam) is { } parameter
             && await AddressOfCoreAsync(adapterFrameId, parameter.Name, CancellationToken.None).ConfigureAwait(false) is { } slot
             && await Memory.ReadAsync(slot, pdi.Abi.PointerSize, CancellationToken.None).ConfigureAwait(false) is { } pointer)
             instance = ValueFormatter.Unsigned(pointer);

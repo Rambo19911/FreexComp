@@ -83,4 +83,13 @@ public sealed record LaunchRequest
 
     /// <summary>Type-information sidecar; null means the program path with the extension replaced by ".pdi".</summary>
     public string? TypeInfoPath { get; init; }
+
+    /// <summary>
+    /// Library modules debugged through a host: absolute paths of the library files whose type-information sidecars
+    /// (the library path with the extension replaced by ".pdi") are loaded in addition to the program's.
+    /// <see cref="Program"/> is then the host; its sidecar is optional (without one, host frames are not user code).
+    /// Breakpoints in units of these libraries stay pending until the module is loaded, bind when it is and unbind
+    /// when it is unloaded. Empty: as before.
+    /// </summary>
+    public IReadOnlyList<string> Libraries { get; init; } = [];
 }

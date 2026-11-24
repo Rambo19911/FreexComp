@@ -47,6 +47,20 @@ internal sealed class PdiFile
         }
     }
 
+    /// <summary>
+    /// One view over the type information of several modules of one process (a library and its host): the types and
+    /// units of all of them, in the order given; program, container and layout constants are those of the first. Null
+    /// for none, the file itself for one. Modules built with the same run-time library describe its routines and
+    /// types alike, so the first description of a name or a source line stands for all of them.
+    /// </summary>
+    public static PdiFile? Merge(IReadOnlyList<PdiFile> files) => files.Count switch
+    {
+        0 => null,
+        1 => files[0],
+        _ => new PdiFile(files[0].Program, files[0].Container, files[0].Abi,
+            [.. files.SelectMany(file => file.Types)], [.. files.SelectMany(file => file.Units)]),
+    };
+
     public string Program { get; }
     public string Container { get; }
     public PdiAbi Abi { get; }

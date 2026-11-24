@@ -19,6 +19,7 @@ internal static class Messages
     public const string HandlerFailed = "Event handler failed: ";
 
     public const string ProgramNotFound = "Program not found: ";
+    public const string LibraryNotFound = "Library not found: ";
     public const string MissingCapability = "Debug adapter lacks a required capability: ";
     public const string AdapterNotReady = "Debug adapter did not become ready.";
     public const string LaunchTimedOut = "The program did not start in time.";
