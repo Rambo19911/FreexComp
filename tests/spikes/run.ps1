@@ -18,7 +18,9 @@ function Build($ll, $exe, $extra) {
     $l += @('-entry:_start', '-subsystem:console', '-nodefaultlib', "-out:$(Join-Path $out $exe)")
     Tool 'lld-link.exe' $l
 }
-function Run($exe) { $p = Start-Process (Join-Path $out $exe) -Wait -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $out "$exe.txt"); return @{ Code = $p.ExitCode; Text = (Get-Content (Join-Path $out "$exe.txt") -Raw) } }
+# The call operator waits for the exe and sets $LASTEXITCODE itself; Start-Process -Wait -PassThru can fail with
+# "the process has exited" when a short-lived exe ends before the handle is taken.
+function Run($exe) { $text = & (Join-Path $out $exe) | Out-String; return @{ Code = $LASTEXITCODE; Text = $text } }
 
 Tool 'llvm-dlltool.exe' @('-m', 'i386:x86-64', '-d', (Join-Path $PSScriptRoot 'kernel32.def'), '-l', (Join-Path $out 'kernel32.lib'))
 Tool 'llvm-dlltool.exe' @('-m', 'i386:x86-64', '-d', (Join-Path $PSScriptRoot 'ntdll.def'), '-l', (Join-Path $out 'ntdll.lib'))
