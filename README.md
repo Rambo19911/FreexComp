@@ -286,7 +286,6 @@ Project link: [https://github.com/Rambo19911/FreexComp](https://github.com/Rambo
 * [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet)
 * [xUnit.net](https://xunit.net/)
 * [Shields.io](https://shields.io/)
-* README layout based on [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
