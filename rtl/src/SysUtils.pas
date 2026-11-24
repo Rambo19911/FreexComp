@@ -1892,18 +1892,34 @@ begin
   Result := (Index >= 1) and (Index <= Length(S)) and IsDelimChar(S[Index]);
 end;
 
+{ platform-layer.md "Long paths": no routine assumes a longest path. A call that returns a path first gets a stack
+  buffer of PathStackSize units and, when that is too small, a heap buffer of the size the call reports (or a doubled
+  one, up to PathSizeLimit, when it reports none). }
+const
+  PathStackSize = 300;
+  PathSizeLimit = 65536;
+
 function ExpandFileName(const FileName: string): string;
 var
-  N: DWORD;
+  Stack: array[0..PathStackSize - 1] of Char;
+  N, Size: DWORD;
   Buf: string;
 begin
-  SetLength(Buf, 260);
-  N := GetFullPathNameW(PChar(FileName), 260, PChar(Buf), nil);
-  if N > 260 then
+  N := GetFullPathNameW(PChar(FileName), PathStackSize, @Stack[0], nil);
+  if N < PathStackSize then
   begin
-    SetLength(Buf, N);
-    N := GetFullPathNameW(PChar(FileName), N, PChar(Buf), nil);
+    if N = 0 then
+      Result := FileName
+    else
+      SetString(Result, PChar(@Stack[0]), Integer(N));
+    Exit;
   end;
+  { too small: N is the size needed, terminator included; repeated because the current directory may change }
+  repeat
+    Size := N;
+    SetLength(Buf, Size);
+    N := GetFullPathNameW(PChar(FileName), Size, PChar(Buf), nil);
+  until N < Size;
   if N = 0 then
     Result := FileName
   else
@@ -2087,14 +2103,21 @@ end;
 
 function GetCurrentDir: string;
 var
-  Len: DWORD;
+  Stack: array[0..PathStackSize - 1] of Char;
+  Len, Size: DWORD;
 begin
-  Result := '';
-  Len := GetCurrentDirectoryW(0, nil);
-  if Len = 0 then
+  Len := GetCurrentDirectoryW(PathStackSize, @Stack[0]);
+  if Len < PathStackSize then
+  begin
+    SetString(Result, PChar(@Stack[0]), Integer(Len));
     Exit;
-  SetLength(Result, Len);
-  Len := GetCurrentDirectoryW(Len, PChar(Result));
+  end;
+  { too small: Len is the size needed, terminator included; repeated because another thread may change the directory }
+  repeat
+    Size := Len;
+    SetLength(Result, Size);
+    Len := GetCurrentDirectoryW(Size, PChar(Result));
+  until Len < Size;
   SetLength(Result, Len);
 end;
 
@@ -2154,22 +2177,47 @@ end;
 
 function GetTempDir: string;
 var
-  Buffer: array[0..MAX_PATH + 1] of Char;
-  Len: DWORD;
+  Stack: array[0..PathStackSize - 1] of Char;
+  Len, Size: DWORD;
 begin
-  Len := GetTempPathW(MAX_PATH + 1, @Buffer[0]);
-  SetString(Result, PChar(@Buffer[0]), Integer(Len));
+  Len := GetTempPathW(PathStackSize, @Stack[0]);
+  if Len < PathStackSize then
+    SetString(Result, PChar(@Stack[0]), Integer(Len))
+  else
+  begin
+    { too small: Len is the size needed, terminator included }
+    repeat
+      Size := Len;
+      SetLength(Result, Size);
+      Len := GetTempPathW(Size, PChar(Result));
+    until Len < Size;
+    SetLength(Result, Len);
+  end;
   if Result <> '' then
     Result := IncludeTrailingPathDelimiter(Result);
 end;
 
 function GetModuleName(Module: THandle): string;
 var
-  Buffer: array[0..32767] of Char;
-  Len: DWORD;
+  Stack: array[0..PathStackSize - 1] of Char;
+  Len, Size: DWORD;
 begin
-  Len := GetModuleFileNameW(HMODULE(Module), @Buffer[0], Length(Buffer));
-  SetString(Result, PChar(@Buffer[0]), Integer(Len));
+  Len := GetModuleFileNameW(HMODULE(Module), @Stack[0], PathStackSize);
+  if Len < PathStackSize then
+  begin
+    SetString(Result, PChar(@Stack[0]), Integer(Len));
+    Exit;
+  end;
+  { cut off: the call does not report the size needed, so the buffer doubles up to the longest path there is }
+  Size := PathStackSize;
+  repeat
+    Size := Size * 2;
+    SetLength(Result, Size);
+    Len := GetModuleFileNameW(HMODULE(Module), PChar(Result), Size);
+  until (Len < Size) or (Size > PathSizeLimit);
+  if Len >= Size then
+    Len := 0;
+  SetLength(Result, Len);
 end;
 
 function SafeLoadLibrary(const FileName: string; ErrorMode: Cardinal = SEM_NOOPENFILEERRORBOX): HMODULE;

@@ -8,6 +8,8 @@ declares for user32 (one program grew too long and was split; the helpers and Ge
 function it declares for gdi32. `Win_CommCtrlSmoke` and `Win_CommCtrlViews` call every function the `CommCtrl` unit
 declares for comctl32;
 `Win_CommDlgDecl` calls the functions of `CommDlg` (comdlg32) and `ShellAPI` (shell32) that run unattended.
+`LongPaths` and `LongPaths_Unaware` call the registry functions it declares for advapi32 (through the shared unit
+`rtl/tests/LongPathKit.pas`, which reads the system long-path policy with them).
 Exceptions:
 
 | Function | Covered by |

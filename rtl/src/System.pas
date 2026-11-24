@@ -5294,7 +5294,6 @@ const
   OPEN_EXISTING = 3;
   FILE_ATTRIBUTE_NORMAL = $00000080;
   FILE_END = 2;
-  ERROR_FILENAME_EXCED_RANGE = 206;
   NameMax = 259;                       { units of TTextRec.Name before its #0 }
 
 { False (and error 102) when F was never assigned }
@@ -5305,18 +5304,44 @@ begin
     SetInOutRes(102);
 end;
 
-{ Name into R.Name; False when it does not fit }
-function StoreName(var R: TTextRec; const Name: string): Boolean;
+{ the block of a name that did not fit into R.Name goes back to the heap }
+procedure FreeLongName(var R: TTextRec);
+begin
+  if R.NameTooLong and (R.LongName <> nil) then
+    _FreeMem(R.LongName);
+  R.LongName := nil;
+  R.NameTooLong := False;
+end;
+
+{ Name into R.Name, or into a heap block of its own when it is longer (no path length is assumed) }
+procedure StoreName(var R: TTextRec; const Name: string);
 var
   I, Len: Integer;
+  Target: PWideChar;
 begin
+  FreeLongName(R);
   Len := Length(Name);
-  Result := Len <= NameMax;
-  if not Result then
-    Exit;
+  if Len <= NameMax then
+    Target := @R.Name[0]
+  else
+  begin
+    R.Name[0] := #0;
+    R.LongName := PWideChar(_GetMem((NativeInt(Len) + 1) * SizeOf(WideChar)));
+    R.NameTooLong := True;
+    Target := R.LongName;
+  end;
   for I := 1 to Len do
-    R.Name[I - 1] := Name[I];
-  R.Name[Len] := #0;
+    Target[I - 1] := Name[I];
+  Target[Len] := #0;
+end;
+
+{ the assigned name, #0-terminated }
+function NameOf(var R: TTextRec): PWideChar;
+begin
+  if R.NameTooLong then
+    Result := R.LongName
+  else
+    Result := @R.Name[0];
 end;
 
 { flushes an output file, closes its handle (never a standard handle) and frees the buffer }
@@ -5339,10 +5364,12 @@ begin
   R := TextRec(F);
   if (R^.Magic = TextMagic) and (R^.Mode <> tmClosed) then
     CloseText(R^);
+  if R^.Magic = TextMagic then
+    FreeLongName(R^);
   FillChar(R^, SizeOf(TTextRec), 0);
   R^.Magic := TextMagic;
   R^.CodePage := CpUtf8;
-  R^.NameTooLong := not StoreName(R^, Name);
+  StoreName(R^, Name);
 end;
 
 procedure Assign(var F: Text; const Name: string);
@@ -5366,12 +5393,7 @@ begin
     SetInOutRes(106);
     Exit;
   end;
-  if R^.NameTooLong then
-  begin
-    SetInOutRes(ERROR_FILENAME_EXCED_RANGE);
-    Exit;
-  end;
-  if R^.Name[0] = #0 then
+  if NameOf(R^)[0] = #0 then
   begin
     if Mode = tmInput then
       H := GetStdHandle(STD_INPUT_HANDLE)
@@ -5380,7 +5402,7 @@ begin
     StartText(R^, H, StreamKind(H), Mode, True);
     Exit;
   end;
-  H := CreateFileW(@R^.Name[0], Access, FILE_SHARE_READ, nil, Disposition, FILE_ATTRIBUTE_NORMAL, 0);
+  H := CreateFileW(NameOf(R^), Access, FILE_SHARE_READ, nil, Disposition, FILE_ATTRIBUTE_NORMAL, 0);
   if H = INVALID_HANDLE_VALUE then
   begin
     SetLastIOError;
@@ -5449,29 +5471,24 @@ begin
   R := TextRec(F);
   if not IsAssigned(R^) then
     Exit;
-  if not DeleteFileW(@R^.Name[0]) then
+  if not DeleteFileW(NameOf(R^)) then
     SetLastIOError;
 end;
 
 procedure Rename(var F: Text; const NewName: string);
 var
   R: PTextRec;
-  Target: array[0..NameMax] of WideChar;
-  I, Len: Integer;
+  Empty: WideChar;
+  Target: PWideChar;
 begin
   R := TextRec(F);
   if not IsAssigned(R^) then
     Exit;
-  Len := Length(NewName);
-  if Len > NameMax then
-  begin
-    SetInOutRes(ERROR_FILENAME_EXCED_RANGE);
-    Exit;
-  end;
-  for I := 1 to Len do
-    Target[I - 1] := NewName[I];
-  Target[Len] := #0;
-  if MoveFileW(@R^.Name[0], @Target[0]) then
+  Empty := #0;
+  Target := PWideChar(PPointer(@NewName)^);
+  if Target = nil then
+    Target := @Empty;
+  if MoveFileW(NameOf(R^), Target) then
     StoreName(R^, NewName)
   else
     SetLastIOError;

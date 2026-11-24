@@ -700,6 +700,7 @@ const
   ERROR_DIR_NOT_EMPTY = 145;
   ERROR_ALREADY_EXISTS = 183;
   ERROR_ENVVAR_NOT_FOUND = 203;
+  ERROR_FILENAME_EXCED_RANGE = 206;
   ERROR_MORE_DATA = 234;
   ERROR_NO_MORE_ITEMS = 259;
   ERROR_NOT_OWNER = 288;
@@ -709,6 +710,14 @@ const
   ERROR_INVALID_FLAGS = 1004;
   ERROR_NO_UNICODE_TRANSLATION = 1113;
   ERROR_TIMEOUT = 1460;
+
+  { registry (advapi32) }
+  HKEY_CURRENT_USER = HKEY($80000001);
+  HKEY_LOCAL_MACHINE = HKEY($80000002);
+  KEY_QUERY_VALUE = $0001;
+  KEY_READ = $20019;
+  REG_SZ = 1;
+  REG_DWORD = 4;
 
   { access rights, sharing, creation }
   GENERIC_READ = DWORD($80000000);
@@ -2305,6 +2314,17 @@ function CreateSemaphore(lpSemaphoreAttributes: PSecurityAttributes; lInitialCou
   lpName: LPCWSTR): THandle; stdcall; external kernel32 name 'CreateSemaphoreW';
 function ReleaseSemaphore(hSemaphore: THandle; lReleaseCount: LONG; lpPreviousCount: PLONG): BOOL; stdcall;
   external kernel32 name 'ReleaseSemaphore';
+
+{ ---------------------------------------------------------------- advapi32: registry read }
+function RegOpenKeyExW(hKey: HKEY; lpSubKey: LPCWSTR; ulOptions: DWORD; samDesired: DWORD; out phkResult: HKEY): LONG;
+  stdcall; external advapi32 name 'RegOpenKeyExW';
+function RegOpenKeyEx(hKey: HKEY; lpSubKey: LPCWSTR; ulOptions: DWORD; samDesired: DWORD; out phkResult: HKEY): LONG;
+  stdcall; external advapi32 name 'RegOpenKeyExW';
+function RegQueryValueExW(hKey: HKEY; lpValueName: LPCWSTR; lpReserved, lpType: PDWORD; lpData: PByte;
+  lpcbData: PDWORD): LONG; stdcall; external advapi32 name 'RegQueryValueExW';
+function RegQueryValueEx(hKey: HKEY; lpValueName: LPCWSTR; lpReserved, lpType: PDWORD; lpData: PByte;
+  lpcbData: PDWORD): LONG; stdcall; external advapi32 name 'RegQueryValueExW';
+function RegCloseKey(hKey: HKEY): LONG; stdcall; external advapi32 name 'RegCloseKey';
 
 { ---------------------------------------------------------------- ntdll }
 function RtlGetVersion(lpVersionInformation: POSVersionInfoW): NTSTATUS; stdcall; external ntdll name 'RtlGetVersion';

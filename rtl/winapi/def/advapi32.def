@@ -1,0 +1,7 @@
+; advapi32.def - exports used by the FreexComp RTL. Source: learn.microsoft.com (function reference pages).
+; Content: the registry read functions of the Windows unit (winapi.md 5.8).
+LIBRARY advapi32.dll
+EXPORTS
+RegCloseKey
+RegOpenKeyExW
+RegQueryValueExW

@@ -96,15 +96,18 @@ type
     BufEnd: Integer;                   { 24: input only: bytes valid in Buffer }
     PendingHigh: WideChar;             { 28: high surrogate waiting for its low half (RTL-093) }
     EofSeen: Boolean;                  { 30: input: the stream reported its end }
-    Name: array[0..259] of WideChar;   { 32: empty for the standard streams }
+    Name: array[0..259] of WideChar;   { 32: empty for the standard streams; a name of 260 units or more is in
+                                         LongName instead }
     Magic: Cardinal;                   { 552: TextMagic once assigned (AssignFile or start-up); else unassigned (102) }
     Look: array[0..1] of WideChar;     { 556: input: decoded UTF-16 units not yet consumed }
     LookCount: Byte;                   { 560: 0 ... 2 }
     StartDone: Boolean;                { 561: input: the first character was decoded (a leading BOM is skipped) }
     Std: Boolean;                      { 562: the handle is a standard handle (never closed by CloseFile) }
     LineStart: Boolean;                { 563: console input: the next ReadConsoleW starts a line (Ctrl+Z test) }
-    NameTooLong: Boolean;              { 564: the assigned name did not fit into Name }
-    Padding: array[0..58] of Byte;     { 565 ... 623 }
+    NameTooLong: Boolean;              { 564: the assigned name did not fit into Name: it is LongName^ }
+    Reserved: array[0..2] of Byte;     { 565 ... 567 }
+    LongName: PWideChar;               { 568: a _GetMem block, freed by the next AssignFile; nil otherwise }
+    Padding: array[0..47] of Byte;     { 576 ... 623 }
   end;
   PTextRec = ^TTextRec;
 

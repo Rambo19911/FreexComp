@@ -1,0 +1,24 @@
+# policy
+ok registry read, W names and aliases
+# directories
+ok start directory
+ok CreateDir down to 300 characters
+ok ForceDirectories, RemoveDir
+ok SetCurrentDir, GetCurrentDir, ExpandFileName of a relative name
+# full names
+ok ExpandFileName of a long name
+ok GetModuleName
+# files
+ok FileCreate, FileWrite, FileOpen, FileRead
+ok FileExists
+ok FindFirst, FindNext
+ok RenameFile
+ok renamed
+ok DeleteFile
+ok deleted
+ok TFileStream
+ok text file: Rewrite, Rename, Reset, Erase
+ok TIniFile
+# clean up
+ok RemoveDir up to the start directory
+# passed 18 failed 0
