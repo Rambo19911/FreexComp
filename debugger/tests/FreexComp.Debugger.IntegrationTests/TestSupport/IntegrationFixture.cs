@@ -235,9 +235,9 @@ public sealed class IntegrationFixture : IDisposable
                     process.Kill(entireProcessTree: true);
                     process.WaitForExit(TimeSpan.FromSeconds(30));
                 }
-                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception)
+                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or AggregateException)
                 {
-                    // Ended meanwhile.
+                    // Ended meanwhile, or a member of its tree was already ending by itself.
                 }
             }
         }

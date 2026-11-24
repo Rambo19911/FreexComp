@@ -50,6 +50,38 @@ public sealed class ProcessLeakFixtureTests
     }
 
     [Fact]
+    public void Registry_TreeMemberAlreadyEnding_LeakStillReported_ProcessGoneOnReturn()
+    {
+        // G-083: killing a tree fails with "not all processes could be terminated" (access is denied) when a member
+        // of the tree is already on its way out - the console host of a child that was just killed ends by itself.
+        // That is no failure of the clean-up: the leak is reported as usual and the process is gone on return.
+        var registry = new ProcessRegistry
+        {
+            KillTree = process =>
+            {
+                process.Kill(entireProcessTree: true);
+                throw new AggregateException(
+                    "Not all processes in process tree could be terminated.", new System.ComponentModel.Win32Exception(5));
+            },
+        };
+        using var process = StartWaiting("--wait");   // never exits by itself
+        try
+        {
+            registry.Track(process.Id, "left behind on purpose");
+
+            var leaked = registry.KillLeaked();
+
+            Assert.Equal([$"left behind on purpose (FakeAdapter), process id {process.Id}"], leaked);
+            Assert.True(process.HasExited);
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    [Fact]
     public async Task Registry_EndedProcess_NotReported()
     {
         var registry = new ProcessRegistry();

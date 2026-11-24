@@ -17,6 +17,7 @@ public sealed class SessionRobustnessTests
     private const string Unanswered = """{ "on": "stackTrace" }""";
     private const string Answered = """{ "on": "stackTrace", "respond": { "stackFrames": [], "totalFrames": 0 } }""";
     private const string StepStop = """{ "event": "stopped", "body": { "reason": "step", "threadId": 1 } }""";
+    private const string PauseStop = """{ "event": "stopped", "body": { "reason": "pause", "threadId": 1 } }""";
 
     private static string Scenario(string steps) => $$"""
         { "steps": [ { "on": "configurationDone", "respond": {}, "thenEvents": [ {{StepStop}} ] },
@@ -86,7 +87,8 @@ public sealed class SessionRobustnessTests
     {
         await using var harness = await StoppedAsync(
             $$"""
-            { "on": "continue", "respond": {}, "thenEvents": [ {{StepStop}} ] }, {{Threads}}, {{DemoSession.Stack(72)}},
+            { "on": "continue", "respond": {} },
+            { "on": "pause", "respond": {}, "thenEvents": [ {{PauseStop}} ] }, {{Threads}}, {{DemoSession.Stack(72)}},
             {{Unanswered}}
             """);
         var session = harness.Session;
@@ -98,7 +100,10 @@ public sealed class SessionRobustnessTests
         await resume.WaitAsync(Safety, Ct);
         var invalid = await Assert.ThrowsAsync<DebuggerException>(() => queued.WaitAsync(Safety, Ct));
         Assert.Equal(DebugErrorCode.InvalidState, invalid.Code);
-        await harness.WaitForEventAsync("stopped Step epoch=2");
+        // The next stop comes only now, on request: a stop that followed the resume by itself could be processed
+        // before the queued call was even posted, which would then be an ordinary call in the new stop (G-083).
+        await session.PauseAsync(Ct).WaitAsync(Safety, Ct);
+        await harness.WaitForEventAsync("stopped Pause epoch=2");
         Assert.Equal(2, harness.SentRequests("stackTrace").Count);   // one per stop, none for the queued call
 
         // In flight when the state leaves Stopped: StaleReference.

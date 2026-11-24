@@ -17,6 +17,9 @@ internal sealed class ProcessRegistry
 
     public int Count => _processes.Count;
 
+    /// <summary>How a leaked process is killed (whole tree); a test replaces it to fail the way the system call does.</summary>
+    public Action<Process> KillTree { get; init; } = process => process.Kill(entireProcessTree: true);
+
     public bool IsTracked(int processId) => _processes.ContainsKey(processId);
 
     /// <summary>Records a running process; one that has already ended needs no record.</summary>
@@ -101,12 +104,21 @@ internal sealed class ProcessRegistry
             {
                 try
                 {
-                    process.Kill(entireProcessTree: true);
+                    KillTree(process);
+                }
+                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or AggregateException)
+                {
+                    // Gone in the meantime (killed with its parent), or a member of its tree is already ending by
+                    // itself and cannot be terminated a second time. Either way the wait below sees it out.
+                }
+
+                try
+                {
                     process.WaitForExit(TimeSpan.FromSeconds(30));
                 }
                 catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception)
                 {
-                    // Gone in the meantime (killed with its parent).
+                    // Gone in the meantime.
                 }
             }
         }

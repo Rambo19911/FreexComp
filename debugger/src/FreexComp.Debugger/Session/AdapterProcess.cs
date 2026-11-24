@@ -14,6 +14,8 @@ namespace FreexComp.Debugger.Session;
 internal sealed class AdapterProcess : IAsyncDisposable
 {
     private const int StderrTailLines = 20;
+    private const string StdoutThreadName = "FreexComp.Debugger.AdapterOutput";
+    private const string StderrThreadName = "FreexComp.Debugger.AdapterStderr";
     private static readonly TimeSpan ExitWaitAfterKill = TimeSpan.FromSeconds(10);
 
     private readonly Process _process;
@@ -28,13 +30,16 @@ internal sealed class AdapterProcess : IAsyncDisposable
         _process = process;
         ProcessId = process.Id;
         StandardInput = process.StandardInput.BaseStream;
-        StandardOutput = process.StandardOutput.BaseStream;
+        // Both pipes of the adapter are read by blocking, each on a thread of its own (never on the thread pool):
+        // see StreamPump.
+        StandardOutput = StreamPump.Start(process.StandardOutput.BaseStream, StdoutThreadName);
         _job = JobHandle.TryCreateFor(process);
         // The stream is taken here, not by the reader: the reader may get its first turn only after the adapter has
         // exited and this object was disposed, and a disposed process object no longer hands out its streams. A
         // stream that was taken stays open over that disposal, so a late reader still reads everything.
         var stderr = process.StandardError;
-        StderrCompleted = (startStderrReader ?? Task.Run)(() => ReadStderrAsync(stderr, onStderrLine));
+        Task Read() => DedicatedThread.Run(StderrThreadName, () => ReadStderr(stderr, onStderrLine));
+        StderrCompleted = startStderrReader is null ? Read() : startStderrReader(Read);
     }
 
     /// <summary>
@@ -45,8 +50,9 @@ internal sealed class AdapterProcess : IAsyncDisposable
     /// <param name="arguments">Command line arguments; empty for the real adapter (tests pass a scenario file).</param>
     /// <param name="onStderrLine">Called for every stderr line, on the stderr reader task.</param>
     /// <param name="startStderrReader">
-    /// Test hook: starts the stderr reader and returns the task that ends with it; null: on the thread pool. Lets a
-    /// test decide when the reader runs relative to the rest (it may start after the process has been disposed).
+    /// Test hook: starts the stderr reader (the function it is given starts the reader's thread) and returns the task
+    /// that ends with it; null: at once. Lets a test decide when the reader runs relative to the rest (it may start
+    /// after the process has been disposed).
     /// </param>
     public static AdapterProcess Start(
         string adapterPath, IReadOnlyList<string> arguments, Action<string>? onStderrLine, Func<Func<Task>, Task>? startStderrReader = null)
@@ -118,7 +124,7 @@ internal sealed class AdapterProcess : IAsyncDisposable
     /// <summary>Bytes to the adapter.</summary>
     public Stream StandardInput { get; }
 
-    /// <summary>Bytes from the adapter.</summary>
+    /// <summary>Bytes from the adapter. Reading it asynchronously blocks no thread.</summary>
     public Stream StandardOutput { get; }
 
     /// <summary>True when the adapter was put into a kill-on-close job object (DBG-008).</summary>
@@ -221,11 +227,11 @@ internal sealed class AdapterProcess : IAsyncDisposable
         _process.Dispose();
     }
 
-    private async Task ReadStderrAsync(StreamReader reader, Action<string>? onLine)
+    private void ReadStderr(StreamReader reader, Action<string>? onLine)
     {
         try
         {
-            while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
+            while (reader.ReadLine() is { } line)
             {
                 lock (_gate)
                 {

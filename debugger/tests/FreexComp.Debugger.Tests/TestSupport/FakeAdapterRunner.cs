@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using FreexComp.Debugger.Dap;
+using FreexComp.Debugger.Session;
 
 namespace FreexComp.Debugger.Tests.TestSupport;
 
@@ -24,8 +25,18 @@ internal sealed class FakeAdapterRunner : IAsyncDisposable
     {
         _process = process;
         _directory = directory;
-        _transport = new DapTransport(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
-        _stderr = process.StandardError.ReadToEndAsync();
+        // Like the session, the runner reads the adapter's pipes on threads of its own: an asynchronous read of such
+        // a pipe parks a thread-pool thread until the adapter writes (G-083).
+        _transport = new DapTransport(
+            StreamPump.Start(process.StandardOutput.BaseStream, "scripted adapter output"), process.StandardInput.BaseStream);
+        _stderr = ReadToEndAsync(process.StandardError);
+    }
+
+    private static async Task<string> ReadToEndAsync(StreamReader stderr)
+    {
+        var text = "";
+        await DedicatedThread.Run("scripted adapter stderr", () => text = stderr.ReadToEnd());
+        return text;
     }
 
     public static string ExePath => Path.Combine(AppContext.BaseDirectory, "FakeAdapter.exe");
@@ -118,8 +129,17 @@ internal sealed class FakeAdapterRunner : IAsyncDisposable
     {
         try
         {
-            if (!_process.HasExited)
-                _process.Kill(entireProcessTree: true);
+            try
+            {
+                if (!_process.HasExited)
+                    _process.Kill(entireProcessTree: true);
+            }
+            catch (AggregateException)
+            {
+                // A member of the tree (the adapter's console host) was already ending by itself and cannot be
+                // terminated a second time (G-083). The adapter itself must still be gone: the wait below.
+            }
+
             await _process.WaitForExitAsync().WaitAsync(Safety);
         }
         finally
