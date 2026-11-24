@@ -72,6 +72,7 @@ type
   public
     Allow: Boolean;
     Asked: Integer;
+    Silent: Boolean;                                         { EditCanModify sets RejectSilently }
     Quiet: Boolean;                                          { Change does not call inherited }
     EatDown: Boolean;                                        { KeyDown sets Key := 0 }
     EatPress: Boolean;                                       { KeyPress sets Key := #0 }
@@ -126,6 +127,7 @@ type
   public
     Allow: Boolean;
     Asked: Integer;
+    Silent: Boolean;
   published
     property Alignment;
     property BorderStyle;
@@ -203,6 +205,9 @@ type
   public
     Allow: Boolean;
     Asked: Integer;
+    Silent: Boolean;                                         { EditCanModify sets RejectSilently }
+    Trace: Boolean;                                          { EditCanModify and Change log IsSelecting }
+    function Selecting: Boolean;
   published
     property CharCase;
     property Color;
@@ -354,6 +359,8 @@ end;
 function THookEdit.EditCanModify: Boolean;
 begin
   Inc(Asked);
+  if Silent then
+    RejectSilently := True;
   Result := Allow;
 end;
 
@@ -417,6 +424,8 @@ end;
 function THookMemo.EditCanModify: Boolean;
 begin
   Inc(Asked);
+  if Silent then
+    RejectSilently := True;
   Result := Allow;
 end;
 
@@ -427,8 +436,15 @@ begin
     inherited Toggle;
 end;
 
+function THookCombo.Selecting: Boolean;
+begin
+  Result := IsSelecting;
+end;
+
 procedure THookCombo.Change;
 begin
+  if Trace then
+    Log.Add('selecting=' + BoolToStr(IsSelecting, True));
   Log.Add('Change');
   inherited Change;
 end;
@@ -454,6 +470,10 @@ end;
 function THookCombo.EditCanModify: Boolean;
 begin
   Inc(Asked);
+  if Trace then
+    Log.Add('ask,selecting=' + BoolToStr(IsSelecting, True));
+  if Silent then
+    RejectSilently := True;
   Result := Allow;
 end;
 
@@ -824,6 +844,38 @@ begin
   CheckEqS('', E.Text, 'Clear');
   CheckEqI(0, E.Asked, 'code never asks');
   CheckEqI(0, Beeps, 'code never beeps');
+  { U-140: a refusal without the beep }
+  Reset(E, 'abc', False);
+  E.Silent := True;
+  E.SelStart := 3;
+  SendMessageW(H, WM_KEYDOWN, VK_DELETE, 1);
+  SendMessageW(H, WM_CHAR, Ord('x'), 1);
+  E.SelectAll;
+  SendMessageW(H, WM_PASTE, 0, 0);
+  SendMessageW(H, WM_CUT, 0, 0);
+  CheckEqS('abc', E.Text, 'RejectSilently: the input is still discarded');
+  CheckEqI(4, E.Asked, 'RejectSilently: asked once each');
+  CheckEqI(0, Beeps, 'RejectSilently: no beep');
+  E.Silent := False;
+  SendMessageW(H, WM_CHAR, Ord('x'), 1);
+  CheckEqI(1, Beeps, 'RejectSilently lasts for the one question: the next refusal beeps');
+  E.Silent := True;
+  E.Allow := True;
+  E.SelStart := 3;
+  SendMessageW(H, WM_CHAR, Ord('d'), 1);
+  CheckEqS('abcd', E.Text, 'RejectSilently with True: the input is applied');
+  E.Silent := False;
+  E.Allow := False;
+  SendMessageW(H, WM_CHAR, Ord('x'), 1);
+  CheckEqI(2, Beeps, 'RejectSilently set while allowing does not silence a later refusal');
+  M.Allow := False;
+  M.Silent := True;
+  M.Text := 'line';
+  Beeps := 0;
+  SendMessageW(M.Handle, WM_CHAR, Ord('x'), 1);
+  CheckEqS('line', M.Text, 'memo: RejectSilently discards');
+  CheckEqI(0, Beeps, 'memo: RejectSilently, no beep');
+  M.Silent := False;
   { memo: a line break and a tab modify the text }
   M.Allow := False;
   M.Asked := 0;
@@ -1002,6 +1054,47 @@ begin
   CheckEqI(0, C.Asked, 'code never asks');
   CheckEqS('', Log.Text, 'code fires nothing');
 
+  { U-140: a refusal without the beep; a selection told from typing }
+  ResetCombo(C, 0, False);
+  C.Silent := True;
+  C.SelStart := 1;
+  SendMessageW(Edit, WM_CHAR, Ord('x'), 1);
+  SendMessageW(Edit, WM_PASTE, 0, 0);
+  CheckEqS('a', C.Text, 'RejectSilently: typing is still discarded');
+  SendMessageW(Edit, WM_KEYDOWN, VK_DOWN, 1);
+  Application.ProcessMessages;
+  CheckEqI(0, C.ItemIndex, 'RejectSilently: the selection is still taken back');
+  CheckEqS('a', C.Text, 'RejectSilently: text restored');
+  CheckEqI(3, C.Asked, 'RejectSilently: asked once each');
+  CheckEqI(0, Beeps, 'RejectSilently: no beep');
+  CheckEqS('', Log.Text, 'RejectSilently: no event');
+  C.Silent := False;
+  SendMessageW(Edit, WM_KEYDOWN, VK_DOWN, 1);
+  Application.ProcessMessages;
+  CheckEqI(1, Beeps, 'RejectSilently lasts for the one question: the next refusal beeps');
+  C.Trace := True;
+  ResetCombo(C, 0, True);
+  CheckEqB(False, C.Selecting, 'IsSelecting: False at rest');
+  SendMessageW(Edit, WM_KEYDOWN, VK_DOWN, 1);
+  CheckEqS('ask,selecting=True;selecting=True;Change;OnChange;Select;OnSelect;OnClick;', Log.Text,
+    'IsSelecting: True in EditCanModify and Change of a user selection');
+  CheckEqB(False, C.Selecting, 'IsSelecting: False after the selection');
+  Log.Text := '';
+  C.SelStart := 1;
+  SendMessageW(Edit, WM_CHAR, Ord('x'), 1);
+  CheckEqS('ask,selecting=False;selecting=False;Change;OnChange;', Log.Text,
+    'IsSelecting: False in EditCanModify and Change of typing');
+  ResetCombo(C, 0, False);
+  SendMessageW(Edit, WM_KEYDOWN, VK_DOWN, 1);
+  Application.ProcessMessages;
+  CheckEqS('ask,selecting=True;', Log.Text, 'IsSelecting: True in the question of a refused selection');
+  CheckEqB(False, C.Selecting, 'IsSelecting: False after the refusal');
+  Log.Text := '';
+  C.ItemIndex := 2;
+  C.Text := 'code';
+  CheckEqS('', Log.Text, 'IsSelecting: code asks nothing');
+  C.Trace := False;
+
   { the keys of the edit part take the key path of the combo box (UIF-885) }
   C.OnKeyDown := Log.KeyDown;
   C.OnKeyPress := Log.KeyPress;
@@ -1036,6 +1129,15 @@ begin
   SendMessageW(C.Handle, WM_KEYDOWN, VK_DOWN, 1);
   CheckEqI(1, C.ItemIndex, 'list style: allowed selection');
   CheckEqS('Change;OnChange;Select;OnSelect;OnClick;', Log.Text, 'list style: the same order');
+  C.Trace := True;
+  C.Silent := True;
+  ResetCombo(C, 0, False);
+  SendMessageW(C.Handle, WM_KEYDOWN, VK_DOWN, 1);
+  CheckEqS('ask,selecting=True;', Log.Text, 'list style: IsSelecting in the question');
+  CheckEqI(0, C.ItemIndex, 'list style: RejectSilently, selection restored');
+  CheckEqI(0, Beeps, 'list style: RejectSilently, no beep');
+  C.Trace := False;
+  C.Silent := False;
   C.Style := csDropDown;
   Edit := FindWindowExW(C.Handle, 0, 'Edit', nil);
   ResetCombo(C, 0, False);

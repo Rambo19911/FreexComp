@@ -87,6 +87,7 @@ type
     FNumbersOnly: Boolean;
     FPasswordChar: Char;
     FReadOnly: Boolean;
+    FRejectSilently: Boolean;
     FTextHint: string;
     FSelStart: Integer;                                      { UIF-621: the selection without a handle }
     FSelLength: Integer;
@@ -133,6 +134,8 @@ type
     { UIF-882: asked before a modification by the user is applied (never while ReadOnly, never for code);
       False discards the input }
     function EditCanModify: Boolean; virtual;
+    { UIF-882: set by EditCanModify to refuse without the beep; False again before every question }
+    property RejectSilently: Boolean read FRejectSilently write FRejectSilently;
     { selects AStart .. AStart + ALength (handle: EM_SETSEL; else the fields) }
     procedure SetSelection(AStart, ALength: Integer);
     property Alignment: TAlignment read FAlignment write SetAlignment default taLeftJustify;
@@ -669,6 +672,8 @@ type
     FUserIndex: Integer;                                     { UIF-884: the selection and text before the user's }
     FUserText: string;                                       { input, restored when a selection is rejected }
     FRestorePending: Boolean;
+    FRejectSilently: Boolean;
+    FSelecting: Boolean;
     FOnChange: TNotifyEvent;
     FOnCloseUp: TNotifyEvent;
     FOnDropDown: TNotifyEvent;
@@ -722,6 +727,11 @@ type
     { UIF-884: asked before the user's typing into the edit part or the user's selection is applied; False
       discards the input (a selection is taken back) }
     function EditCanModify: Boolean; virtual;
+    { UIF-884: set by EditCanModify to refuse without the beep; False again before every question }
+    property RejectSilently: Boolean read FRejectSilently write FRejectSilently;
+    { UIF-884: True while a selection by the user is handled (EditCanModify, Change, Select, Click of
+      CBN_SELCHANGE); False for typing into the edit part and for code }
+    property IsSelecting: Boolean read FSelecting;
     property CharCase: TEditCharCase read FCharCase write SetCharCase default ecNormal;
     property DropDownCount: Integer read FDropDownCount write SetDropDownCount default 8;
     property ItemIndex: Integer read GetItemIndex write SetItemIndex default -1;
@@ -1265,9 +1275,11 @@ end;
 { UIF-882: False = the modification is discarded (the user is told) }
 function TCustomEdit.UserModify: Boolean;
 begin
+  FRejectSilently := False;
   Result := FReadOnly or EditCanModify;
-  if not Result then
+  if not Result and not FRejectSilently then
     RejectBeep;
+  FRejectSilently := False;
 end;
 
 function TCustomEdit.EditCanModify: Boolean;
@@ -3472,9 +3484,11 @@ end;
 
 function TCustomComboBox.UserModify: Boolean;
 begin
+  FRejectSilently := False;
   Result := EditCanModify;
-  if not Result then
+  if not Result and not FRejectSilently then
     RejectBeep;
+  FRejectSilently := False;
 end;
 
 function TCustomComboBox.EditCanModify: Boolean;
@@ -3506,26 +3520,33 @@ procedure TCustomComboBox.UserSelect;
 var
   I: Integer;
   S: string;
+  Nested: Boolean;
 begin
-  if not UserModify then
-  begin
-    { the native control may still copy the item it selected into the edit part after this notification: the
-      state is restored now, and again when the native control has finished }
-    RestoreUserState;
-    FRestorePending := True;
-    PostMessageW(Handle, CM_RESTORESELECTION, 0, 0);
-    Exit;
+  Nested := FSelecting;
+  FSelecting := True;
+  try
+    if not UserModify then
+    begin
+      { the native control may still copy the item it selected into the edit part after this notification: the
+        state is restored now, and again when the native control has finished }
+      RestoreUserState;
+      FRestorePending := True;
+      PostMessageW(Handle, CM_RESTORESELECTION, 0, 0);
+      Exit;
+    end;
+    I := ItemIndex;
+    if not IsListStyle and (I >= 0) then
+    begin
+      S := FItems[I];
+      SendMessageW(Handle, WM_SETTEXT, 0, LPARAM(PChar(S)));
+    end;
+    SaveUserState;
+    Change;
+    Select;
+    Click;
+  finally
+    FSelecting := Nested;
   end;
-  I := ItemIndex;
-  if not IsListStyle and (I >= 0) then
-  begin
-    S := FItems[I];
-    SendMessageW(Handle, WM_SETTEXT, 0, LPARAM(PChar(S)));
-  end;
-  SaveUserState;
-  Change;
-  Select;
-  Click;
 end;
 
 procedure TCustomComboBox.DestroyWnd;

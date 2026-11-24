@@ -102,6 +102,14 @@ ok Text := and SelText := are applied
 ok Clear
 ok code never asks
 ok code never beeps
+ok RejectSilently: the input is still discarded
+ok RejectSilently: asked once each
+ok RejectSilently: no beep
+ok RejectSilently lasts for the one question: the next refusal beeps
+ok RejectSilently with True: the input is applied
+ok RejectSilently set while allowing does not silence a later refusal
+ok memo: RejectSilently discards
+ok memo: RejectSilently, no beep
 ok memo: refused line break, tab and character
 ok memo: asked once each
 ok memo: allowed line break
@@ -143,6 +151,20 @@ ok dropped list: text restored
 ok ItemIndex := / Text := are applied
 ok code never asks
 ok code fires nothing
+ok RejectSilently: typing is still discarded
+ok RejectSilently: the selection is still taken back
+ok RejectSilently: text restored
+ok RejectSilently: asked once each
+ok RejectSilently: no beep
+ok RejectSilently: no event
+ok RejectSilently lasts for the one question: the next refusal beeps
+ok IsSelecting: False at rest
+ok IsSelecting: True in EditCanModify and Change of a user selection
+ok IsSelecting: False after the selection
+ok IsSelecting: False in EditCanModify and Change of typing
+ok IsSelecting: True in the question of a refused selection
+ok IsSelecting: False after the refusal
+ok IsSelecting: code asks nothing
 ok key events of the edit part
 ok a swallowed key does not reach the edit part
 ok nor the list
@@ -154,6 +176,9 @@ ok list style: no event
 ok list style: one beep
 ok list style: allowed selection
 ok list style: the same order
+ok list style: IsSelecting in the question
+ok list style: RejectSilently, selection restored
+ok list style: RejectSilently, no beep
 ok a recreated window: the new edit part asks
 # keys, Escape and Enter (UIF-885)
 ok DoEnter when the focus enters
@@ -191,4 +216,4 @@ ok its helper is not
 ok the control has no listed children
 ok the control is a named component of the form
 ok the helper is not a component of the form
-# passed 185 failed 0
+# passed 210 failed 0
