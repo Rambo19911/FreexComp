@@ -27,6 +27,9 @@
     <a href="https://github.com/Rambo19911/FreexComp/issues/new?labels=bug">Report Bug</a>
     &middot;
     <a href="https://github.com/Rambo19911/FreexComp/issues/new?labels=enhancement">Request Feature</a>
+    <br />
+    <br />
+    <sub>Copyright &copy; 2026 Rihards Laškovs &middot; <a href="LICENSE">Apache License 2.0</a> &middot; runtime libraries: <a href="LICENSE-RUNTIME">Apache 2.0 with LLVM Exception</a></sub>
   </p>
 </div>
 
@@ -273,7 +276,7 @@ Third-party components are listed in `THIRD-PARTY-NOTICES.txt`.
 <!-- CONTACT -->
 ## Contact
 
-Rihards Laškovs: [@Rambo19911](https://github.com/Rambo19911)
+Rihards Laškovs (author and copyright holder): [@Rambo19911](https://github.com/Rambo19911)
 
 Project link: [https://github.com/Rambo19911/FreexComp](https://github.com/Rambo19911/FreexComp)
 
