@@ -49,4 +49,39 @@ public sealed class LibrarySourceServiceTests
         Assert.Single(library.Roots);
         return Task.CompletedTask;
     });
+
+    /// <summary>
+    /// I-259: the Win32 binding units live beside the run-time library (<c>&lt;RtlDir&gt;/../winapi/src</c>); when that
+    /// directory exists it is a root too, so the binding units open protected and count as library code for stepping.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-LIB-001")]
+    public Task RootsIncludeWinApiBindings() => TestUiThread.RunAsync(() =>
+    {
+        var fs = new InMemoryFileSystem();
+        var services = TestComposition.Build(o => o.FileSystem = fs);
+        var library = services.LibrarySource;
+        services.Settings.Set(SettingsCatalog.ToolchainRtlDir, @"G:\kit\rtl\src\");
+        services.Settings.Set(SettingsCatalog.ToolchainFrameworkDir, @"G:\kit\ui");
+
+        // Without the directory: the roots of the settings only.
+        Assert.Equal([@"G:\kit\rtl\src", @"G:\kit\ui"], library.Roots);
+        Assert.False(library.IsLibrarySource(@"G:\kit\rtl\winapi\src\Windows.pas"));
+
+        // With it: the binding directory follows the other roots, normalised; its units are library source.
+        fs.CreateDirectory(@"G:\kit\rtl\winapi\src");
+        Assert.Equal([@"G:\kit\rtl\src", @"G:\kit\ui", @"G:\kit\rtl\winapi\src"], library.Roots);
+        Assert.True(library.IsLibrarySource(@"G:\kit\rtl\winapi\src\Windows.pas"));
+        Assert.True(library.IsLibrarySource(@"g:/kit/rtl/WINAPI/src/Messages.pas"));
+        Assert.False(library.IsLibrarySource(@"G:\kit\rtl\winapi\def\kernel32.def"));
+        Assert.False(library.IsLibrarySource(@"G:\kit\rtl\tests\T.pas"));
+
+        // It follows the run-time library setting; without that setting there is no binding root.
+        fs.CreateDirectory(@"H:\other\winapi\src");
+        services.Settings.Set(SettingsCatalog.ToolchainRtlDir, @"H:\other\rtl");
+        Assert.Equal([@"H:\other\rtl", @"G:\kit\ui", @"H:\other\winapi\src"], library.Roots);
+        services.Settings.Set(SettingsCatalog.ToolchainRtlDir, "");
+        Assert.Equal([@"G:\kit\ui"], library.Roots);
+        return Task.CompletedTask;
+    });
 }

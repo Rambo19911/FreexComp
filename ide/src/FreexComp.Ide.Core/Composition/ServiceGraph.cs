@@ -75,7 +75,7 @@ public static class ServiceGraph
         var prompts = new FilePrompts(platform.FileDialogs, platform.FileSystem, layout, settings, platform.UserPaths,
             projectDirectory: () => projects?.Project?.Directory, isProjectMember: path => projects?.IsMember(path) == true);
         var toolchain = new ToolchainLocator(settings, platform.FileSystem, platform.ToolchainEnvironment); // IDE-P3-010
-        var librarySource = new LibrarySourceService(toolchain); // IDE-LIB-001
+        var librarySource = new LibrarySourceService(toolchain, platform.FileSystem); // IDE-LIB-001
         var templates = new Editing.CodeTemplateService(platform.UserPaths, platform.FileSystem); // I-118
         OptionsViewModel.RegisterCommands(commands, settings, keymap, layout, platform.Dialogs, prompts, theme, toolWindowPhase ?? ImplementedPhase, toolchain,
             platform.FileSystem, templates); // the phase override enables later pages in tests (I-132)

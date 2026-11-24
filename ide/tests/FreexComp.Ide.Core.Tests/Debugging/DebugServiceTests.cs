@@ -302,8 +302,12 @@ public sealed class DebugServiceTests
         var framework = Path.Combine(Path.GetDirectoryName(rtl)!, "ui");
         Directory.CreateDirectory(framework);
         bed.Services.Settings.Set(Core.Settings.SettingsCatalog.ToolchainFrameworkDir, framework);
-        var roots = bed.Services.LibrarySource.Roots;
-        Assert.Equal([rtl, framework], roots);
+        Assert.Equal([rtl, framework], bed.Services.LibrarySource.Roots);
+
+        // I-259: the Win32 binding directory beside the run-time library is a library root once it exists.
+        var winapi = Path.Combine(Path.GetDirectoryName(rtl)!, "winapi", "src");
+        Directory.CreateDirectory(winapi);
+        Assert.Equal([rtl, framework, winapi], bed.Services.LibrarySource.Roots);
 
         // The run-time library directory is a search path of the project too, in another letter case: listed once.
         var searched = rtl.ToUpperInvariant();
@@ -321,7 +325,7 @@ public sealed class DebugServiceTests
         await bed.Services.Commands.ExecuteAsync("run.toggleLibraryStepping");
         Assert.True(await bed.Debug.StartAsync());
         var on = bed.Sessions.Requested[^1];
-        Assert.Equal([bed.Dir, lib, searched, framework], on.UserSourceRoots);
+        Assert.Equal([bed.Dir, lib, searched, framework, winapi], on.UserSourceRoots);
         Assert.Equal((off.AdapterPath, off.RequestTimeout, off.LaunchTimeout, off.Format), (on.AdapterPath, on.RequestTimeout, on.LaunchTimeout, on.Format)); // IDE-LIB-025: the only input that differs
         await bed.Debug.StopAsync();
 
@@ -329,7 +333,7 @@ public sealed class DebugServiceTests
         await bed.Services.Commands.ExecuteAsync("project.setConfiguration", "Release");
         bed.Dialogs.Answer("Msg.Debug.NoDebugInfo", "RunAnyway");
         Assert.True(await bed.Debug.StartAsync());
-        Assert.Equal([bed.Dir, lib, searched, framework], bed.Sessions.Requested[^1].UserSourceRoots);
+        Assert.Equal([bed.Dir, lib, searched, framework, winapi], bed.Sessions.Requested[^1].UserSourceRoots);
         Assert.Equal(["Msg.Debug.NoDebugInfo"], bed.Dialogs.Requests.Select(r => r.MessageId));
         await bed.Debug.StopAsync();
 
