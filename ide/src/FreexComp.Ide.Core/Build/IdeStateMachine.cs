@@ -128,6 +128,8 @@ public static class IdeCommandAvailability
         ["project.addNewForm"] = IdleOnly,
         ["project.addExistingFile"] = IdleOnly,
         ["project.newFolder"] = IdleOnly,
+        ["project.addNewFile"] = IdleOnly,
+        ["project.moveFile"] = IdleOnly,
         ["project.removeFile"] = IdleOnly,
         ["project.renameFile"] = IdleOnly,
         ["project.deleteFile"] = IdleOnly,

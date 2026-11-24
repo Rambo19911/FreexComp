@@ -65,6 +65,54 @@ public sealed class WindowsShellService : IShellService
         }
     }
 
+    public bool OpenConsole(string directory, out string reason)
+    {
+        using var process = StartConsole(directory, [], hidden: false, out reason);
+        return process is not null;
+    }
+
+    /// <summary>
+    /// IDE-PM-141. The interpreter is started through the shell so that it gets a console window of its own (also when
+    /// the IDE itself was started from a console) and is no child of any job of the IDE; it has no arguments and the
+    /// IDE's environment. <paramref name="arguments"/> and <paramref name="hidden"/> are for the test only (an
+    /// interpreter that exits at once, without a window). Null on failure, with the OS reason.
+    /// </summary>
+    internal static Process? StartConsole(string directory, IReadOnlyList<string> arguments, bool hidden, out string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        reason = "";
+        if (!Directory.Exists(directory))
+        {
+            // The shell would start the interpreter in another directory instead of failing.
+            reason = new Win32Exception(ErrorDirectory).Message;
+            return null;
+        }
+
+        var interpreter = Environment.GetEnvironmentVariable("ComSpec");
+        if (string.IsNullOrWhiteSpace(interpreter))
+            interpreter = Path.Combine(Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows", "System32", "cmd.exe");
+        try
+        {
+            var start = new ProcessStartInfo(interpreter)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetFullPath(directory),
+                WindowStyle = hidden ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal,
+            };
+            foreach (var argument in arguments)
+                start.ArgumentList.Add(argument);
+            var process = Process.Start(start);
+            if (process is null)
+                reason = new Win32Exception(ErrorFileNotFound).Message;
+            return process;
+        }
+        catch (Exception e) when (e is Win32Exception or IOException or InvalidOperationException)
+        {
+            reason = e.Message;
+            return null;
+        }
+    }
+
     private static bool StartExplorer(string arguments)
     {
         try
@@ -80,6 +128,7 @@ public sealed class WindowsShellService : IShellService
 
     private const int ErrorFileNotFound = 2;
     private const int ErrorCancelled = 1223;
+    private const int ErrorDirectory = 267; // "The directory name is invalid."
     private const uint FoDelete = 0x0003;
     private const ushort FofSilent = 0x0004;
     private const ushort FofNoConfirmation = 0x0010;

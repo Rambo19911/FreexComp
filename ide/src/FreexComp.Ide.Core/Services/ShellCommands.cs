@@ -1,4 +1,5 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.Logging;
 using FreexComp.Ide.Core.Platform;
 using FreexComp.Ide.Core.Settings;
@@ -18,6 +19,31 @@ public static class ShellCommands
         ArgumentNullException.ThrowIfNull(commands);
         commands.RegisterHandler("tools.openLogFolder", new Handler(() => Open(shell, fileSystem, log, paths.LogDirectory)));
         commands.RegisterHandler("tools.openSettingsFolder", new Handler(() => Open(shell, fileSystem, log, paths.RoamingDirectory)));
+    }
+
+    /// <summary>
+    /// <c>file.openInTerminal</c> (IDE-PM-140…142): a console in <paramref name="directory"/>() — the selected Project
+    /// Manager node's directory while that tool window has focus, else the active document's; disabled when there is
+    /// none or it does not exist. A failure shows <c>Msg.File.ConsoleFailed</c>.
+    /// </summary>
+    public static void RegisterConsoleCommand(ICommandService commands, IShellService shell, IFileSystem fileSystem, IDialogService dialogs,
+        Func<string?> directory)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        commands.RegisterHandler("file.openInTerminal", new ConsoleHandler(shell, fileSystem, dialogs, directory));
+    }
+
+    private sealed class ConsoleHandler(IShellService shell, IFileSystem fileSystem, IDialogService dialogs, Func<string?> directory) : ICommandHandler
+    {
+        public bool CanExecute(string? argument) => directory() is { } target && fileSystem.DirectoryExists(target);
+
+        public async Task ExecuteAsync(string? argument)
+        {
+            if (directory() is not { } target || !fileSystem.DirectoryExists(target))
+                return;
+            if (!shell.OpenConsole(target, out var reason))
+                await dialogs.ShowMessageAsync(new MessageRequest("Msg.File.ConsoleFailed", [target, reason]));
+        }
     }
 
     private static void Open(IShellService shell, IFileSystem fileSystem, ILog log, string directory)

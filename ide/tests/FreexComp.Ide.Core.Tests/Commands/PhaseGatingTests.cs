@@ -325,7 +325,9 @@ public sealed class PhaseGatingTests
     {
         const int Phase = ServiceGraph.ImplementedPhase;
         var services = BuildWithProject();
-        (string, ICommandHandler)[] implemented = [.. CommandCatalog.All.Where(c => c.Phase <= Phase).Select(c => (c.Id, (ICommandHandler)new RecordingHandler()))];
+        // Every command the product treats as implemented: the earlier phases and the delivered phase-8 ones (F09-054 on).
+        (string, ICommandHandler)[] implemented = [.. CommandCatalog.All.Where(c => Phase8Features.IsAvailable(c.Id, c.Phase, Phase))
+            .Select(c => (c.Id, (ICommandHandler)new RecordingHandler()))];
 
         // Not delivered: the stub satisfies the check.
         var stubbed = StandaloneCommands(services, Phase, implemented);

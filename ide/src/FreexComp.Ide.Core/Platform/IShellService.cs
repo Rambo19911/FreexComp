@@ -17,4 +17,14 @@ public interface IShellService
     /// <paramref name="reason"/> is empty on success.
     /// </summary>
     bool MoveToRecycleBin(string path, out string reason);
+
+    /// <summary>
+    /// IDE-PM-141: starts the command interpreter (<c>ComSpec</c>, else <c>%SystemRoot%\System32\cmd.exe</c>) in its own
+    /// console window with <paramref name="directory"/> as the working directory, no arguments and the IDE's
+    /// environment; the window outlives the IDE.
+    /// </summary>
+    bool OpenConsole(string directory) => OpenConsole(directory, out _);
+
+    /// <summary><see cref="OpenConsole(string)"/> that also gives the OS reason of a failure (<c>Msg.File.ConsoleFailed</c>).</summary>
+    bool OpenConsole(string directory, out string reason);
 }

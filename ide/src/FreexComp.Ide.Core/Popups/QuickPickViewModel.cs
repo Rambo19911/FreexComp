@@ -31,6 +31,9 @@ public abstract class QuickPickViewModel : ObservableObject
     /// <summary>The cell suffixes of a row: the left text and the right text.</summary>
     public abstract (string Text, string Detail) CellNames { get; }
 
+    /// <summary>The title shown in the empty input line (UI-TW-124: "Move to Folder"); null for none.</summary>
+    public virtual string? Title => null;
+
     /// <summary>The rows carry a file icon.</summary>
     public virtual bool ShowsFileIcon => false;
 

@@ -93,7 +93,11 @@ public sealed class ProjectService : IProjectService
         commands.RegisterHandler("file.newForm", new Handler(_ => Project is not null, _ => AddNewFormAsync())); // menus.md: needs a project
         commands.RegisterHandler("file.newFile", new Handler(_ => true, _ => NewFileAsync()));
         commands.RegisterHandler("project.addExistingFile", new Handler(_ => Project is not null, _ => PickAndAddExistingAsync()));
-        commands.RegisterHandler("project.removeFile", new Handler(_ => CanOperateOnFiles(), _ => RemoveFilesAsync(FileTargets())));
+        commands.RegisterHandler("project.addNewFile", new Handler(_ => Project is not null, _ => AddNewFileAsync()));
+        // IDE-PM-115: on a folder row without project files the command removes the (empty) folder.
+        commands.RegisterHandler("project.removeFile", new Handler(
+            _ => RemovableFolder?.Invoke() is not null || CanOperateOnFiles(),
+            _ => RemovableFolder?.Invoke() is { } removeFolder ? removeFolder() : RemoveFilesAsync(FileTargets())));
         commands.RegisterHandler("project.deleteFile", new Handler(_ => CanOperateOnFiles(), _ => DeleteFilesAsync(FileTargets())));
         commands.RegisterHandler("project.renameFile", new Handler(_ => RenameTarget() is not null, _ => RenameCommandAsync()));
         commands.RegisterHandler("project.setConfiguration", new Handler(_ => Project is not null, SetActiveConfigurationAsync));
@@ -329,6 +333,30 @@ public sealed class ProjectService : IProjectService
         return true;
     }
 
+    public async Task<bool> AddNewFileAsync()
+    {
+        if (_project is null)
+            return false;
+
+        // IDE-PM-118: the folder of IDE-PM-040; IDE-PM-119: File<N>.txt with the smallest free N, zero bytes.
+        var folder = SelectedFolder?.Invoke() is { } selected && IsInside(selected, _project.Directory)
+            ? Path.GetFullPath(selected)
+            : Path.GetDirectoryName(Resolve(_project.MainSource))!;
+        var path = Path.Combine(folder, FolderNames.FirstFree(_fileSystem, folder, "File", ".txt"));
+        if (!await WriteNewFileAsync(path, []))
+            return false;
+        var projectPath = ToProjectPath(path);
+        if (!await SaveChangedProjectAsync(_project with { Files = FilesForMutation(_project).Add(new ProjectFile(projectPath, null, null)) }))
+        {
+            DeleteQuietly(path);
+            return false;
+        }
+
+        FilesAdded?.Invoke(this, [projectPath]);
+        RenameInPlace?.Invoke(projectPath, true); // UI-TW-117: the base name selected; Enter on the row opens the file
+        return true;
+    }
+
     public string? FormPathOf(string unitPath)
     {
         ArgumentNullException.ThrowIfNull(unitPath);
@@ -433,7 +461,7 @@ public sealed class ProjectService : IProjectService
         return true;
     }
 
-    public async Task<int> AddExistingFilesAsync(IReadOnlyList<string> paths)
+    public async Task<int> AddExistingFilesAsync(IReadOnlyList<string> paths, bool reportFirstDuplicateOnly = false)
     {
         ArgumentNullException.ThrowIfNull(paths);
         if (_project is null)
@@ -442,6 +470,7 @@ public sealed class ProjectService : IProjectService
         var files = FilesForMutation(_project).ToBuilder();
         var added = new List<string>();
         var addedFull = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var duplicateReported = false;
         foreach (var path in paths.Select(Path.GetFullPath))
         {
             var fileName = Path.GetFileName(path);
@@ -462,7 +491,9 @@ public sealed class ProjectService : IProjectService
             var unitName = Path.GetFileNameWithoutExtension(path);
             if (isUnit && !units.Add(unitName))
             {
-                await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.DuplicateUnitName", [unitName])); // IDE-PM-031
+                if (!duplicateReported || !reportFirstDuplicateOnly)
+                    await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.DuplicateUnitName", [unitName])); // IDE-PM-031
+                duplicateReported = true;
                 continue;
             }
 
@@ -695,7 +726,13 @@ public sealed class ProjectService : IProjectService
     /// Starts the in-place rename of a Project Manager row (UI-TW-112); false when the row cannot be edited, so the
     /// dialog is used (set by the service graph).
     /// </summary>
-    public Func<string, bool>? RenameInPlace { get; set; }
+    public Func<string, bool, bool>? RenameInPlace { get; set; }
+
+    /// <summary>
+    /// IDE-PM-115: the removal of the selected Project Manager folder row when it holds no project file and the tree has
+    /// focus; null otherwise (set by the service graph).
+    /// </summary>
+    public Func<Func<Task>?>? RemovableFolder { get; set; }
 
     public event EventHandler<string>? FileRenamed;
 
@@ -713,14 +750,14 @@ public sealed class ProjectService : IProjectService
     {
         if (RenameTarget() is not { } target)
             return;
-        if (SelectedFiles?.Invoke() is not null && RenameInPlace?.Invoke(target) == true)
+        if (SelectedFiles?.Invoke() is not null && RenameInPlace?.Invoke(target, false) == true)
             return;
         var dialog = new RenameFileViewModel(Path.GetFileName(Resolve(target)), name => ValidateRename(target, name),
             (name, update) => RenameFileAsync(target, name, update));
         await _dialogs.ShowAsync(dialog);
     }
 
-    public OperationResult ValidateRename(string projectPath, string newName)
+    public OperationResult ValidateRename(string projectPath, string newName, bool newFile = false)
     {
         ArgumentNullException.ThrowIfNull(projectPath);
         ArgumentNullException.ThrowIfNull(newName);
@@ -732,6 +769,10 @@ public sealed class ProjectService : IProjectService
             return OperationResult.Ok;
         var isUnit = IsUnitFile(oldName);
         var newBase = Path.GetFileNameWithoutExtension(newName);
+        if (newFile && IsUnitFile(newName))
+            return OperationResult.Fail("Msg.Project.NewFileIsUnit"); // IDE-PM-119: a unit needs its skeleton
+        if (newFile && Path.GetExtension(newName).Equals(".form", StringComparison.OrdinalIgnoreCase))
+            return OperationResult.Fail("Status.AddFormViaUnit");
         if (isUnit)
         {
             if (!Path.GetExtension(newName).Equals(".pas", StringComparison.OrdinalIgnoreCase) || !IsIdentifier(newBase)
@@ -848,6 +889,143 @@ public sealed class ProjectService : IProjectService
         if (headingUpdated)
             _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_RenameUnitNote, oldName, newName), StatusDuration);
         return true;
+    }
+
+    /// <summary>One entry of a move (IDE-PM-123): the unit or file and its companion form, before and after.</summary>
+    private sealed record FileMove(ProjectFile Entry, string From, string To, string? FormFrom, string? FormTo);
+
+    public async Task<IReadOnlyList<string>> MoveFilesAsync(IReadOnlyList<string> projectPaths, string targetDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(projectPaths);
+        ArgumentNullException.ThrowIfNull(targetDirectory);
+        if (_project is null || !IsInside(targetDirectory, _project.Directory))
+            return [];
+        var original = _project;
+        var target = Path.GetFullPath(targetDirectory);
+        var moves = new List<FileMove>();
+        foreach (var projectPath in projectPaths.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (FindEntry(projectPath) is not { } entry || moves.Any(m => m.Entry == entry))
+                continue;
+            var from = Resolve(entry.Path);
+            // IDE-PM-120: only files inside the project directory move; IDE-PM-121: a file already there stays.
+            if (!IsInside(from, original.Directory) || string.Equals(Path.GetDirectoryName(from), target, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var formFrom = string.IsNullOrEmpty(entry.Form) ? null : Resolve(entry.Form);
+            moves.Add(new FileMove(entry, from, Path.Combine(target, Path.GetFileName(from)), formFrom,
+                formFrom is null ? null : Path.Combine(target, Path.GetFileName(formFrom))));
+        }
+
+        if (moves.Count == 0)
+            return [];
+
+        // IDE-PM-122: validation over all files before anything changes.
+        var folderName = string.Equals(target, original.Directory, StringComparison.OrdinalIgnoreCase)
+            ? original.Name
+            : Path.GetRelativePath(original.Directory, target).Replace('\\', '/');
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var to in moves.SelectMany(m => new[] { m.To, m.FormTo }).OfType<string>())
+        {
+            if (!targets.Add(to) || _fileSystem.FileExists(to) || _fileSystem.DirectoryExists(to))
+            {
+                await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.MoveExists", [Path.GetFileName(to), folderName]));
+                return [];
+            }
+        }
+
+        if (targets.MaxBy(t => t.Length) is { Length: > NewProjectValidation.MaxPathLength } longest)
+        {
+            var reason = string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_PathTooLong, NewProjectValidation.MaxPathLength);
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.MoveFailed", [longest, reason]));
+            return [];
+        }
+
+        // (1) every open, modified document of a moved file is saved first; a failure (reported by the save) aborts.
+        TextDocumentViewModel? DocumentOf(string path) => _documents.Documents.OfType<TextDocumentViewModel>()
+            .FirstOrDefault(d => string.Equals(d.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        foreach (var move in moves)
+        {
+            if (DocumentOf(move.From) is { IsModified: true } modified && !await _documents.SaveAsync(modified))
+                return [];
+        }
+
+        var moved = original with
+        {
+            Files = [.. FilesForMutation(original).Select(f => moves.FirstOrDefault(m => m.Entry == f) is { } m
+                ? f with { Path = ToProjectPath(m.To), Form = m.FormTo is null ? f.Form : ToProjectPath(m.FormTo) }
+                : f)],
+            MainSource = moves.FirstOrDefault(m => IsMainSource(m.From)) is { } main ? ToProjectPath(main.To) : original.MainSource,
+        };
+        var undo = new Stack<(string Path, Action Step)>();
+        var followed = new List<(TextDocumentViewModel Document, string From)>();
+        string failedPath = moves[0].From;
+        try
+        {
+            // (2) the files on disk.
+            foreach (var move in moves)
+            {
+                failedPath = move.From;
+                _fileSystem.MoveFile(move.From, move.To, overwrite: false);
+                undo.Push((move.To, () => _fileSystem.MoveFile(move.To, move.From, overwrite: false)));
+                if (move.FormFrom is not null && _fileSystem.FileExists(move.FormFrom))
+                {
+                    failedPath = move.FormFrom;
+                    _fileSystem.MoveFile(move.FormFrom, move.FormTo!, overwrite: false);
+                    undo.Push((move.FormTo!, () => _fileSystem.MoveFile(move.FormTo!, move.FormFrom, overwrite: false)));
+                }
+            }
+
+            // (3)+(5) the project file, saved before the documents follow so that a failure there can still be undone.
+            failedPath = original.FilePath;
+            var projectBytes = _fileSystem.ReadAllBytes(original.FilePath);
+            SaveOrThrow(moved);
+            undo.Push((original.FilePath, () => WriteProjectFile(original.FilePath, () => AtomicFileWriter.Write(_fileSystem, original.FilePath, projectBytes))));
+
+            // (4) open documents follow their file (a form document takes its form along).
+            foreach (var move in moves)
+            {
+                if (DocumentOf(move.From) is not { } document)
+                    continue;
+                failedPath = move.From;
+                await SaveDocumentAsAsync(document, move.To, document.Buffer.Text);
+                followed.Add((document, move.From));
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // IDE-PM-124: back in reverse order; what cannot be restored is named on its own line.
+            var text = e.Message;
+            while (undo.TryPop(out var step))
+            {
+                try
+                {
+                    step.Step();
+                }
+                catch (Exception u) when (u is IOException or UnauthorizedAccessException)
+                {
+                    _log.Warning(LogCategory, $"{step.Path}: move not undone", u);
+                    text += "\n" + step.Path;
+                }
+            }
+
+            foreach (var (document, from) in followed)
+            {
+                if (!(await _documents.SaveAsAsync(document, from)).Success)
+                    text += "\n" + from;
+            }
+
+            await _dialogs.ShowMessageAsync(new MessageRequest("Msg.Project.MoveFailed", [failedPath, text]));
+            return [];
+        }
+
+        SetProject(moved);
+        var result = moves.Select(m => ToProjectPath(m.To)).ToList();
+        foreach (var path in result)
+            FileRenamed?.Invoke(this, path);
+        _status.ShowMessage(moves.Count == 1
+            ? string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_MovedOne, Path.GetFileName(moves[0].To), folderName)
+            : string.Format(CultureInfo.CurrentCulture, Strings.Msg_Project_MovedMany, moves.Count, folderName), StatusDuration);
+        return result;
     }
 
     /// <summary>A stored project path with its last segment replaced (keeps relative/absolute form and '/').</summary>

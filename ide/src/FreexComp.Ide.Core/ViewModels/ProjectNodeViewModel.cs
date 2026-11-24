@@ -28,6 +28,8 @@ public sealed class ProjectNodeViewModel : ObservableObject
     private int _matchStart = -1;
     private int _matchLength;
     private Dialogs.RenameFileViewModel? _rename;
+    private bool _isDropTarget;
+    private bool _isDragged;
 
     public ProjectNodeViewModel(ProjectNodeKind kind, string key, string name, string fullPath, ProjectNodeViewModel? parent)
     {
@@ -92,6 +94,24 @@ public sealed class ProjectNodeViewModel : ObservableObject
         set => SetProperty(ref _rename, value);
     }
 
+    /// <summary>The target of the drag in progress (UI-TW-121): <c>accent.subtle</c> fill, 1 px <c>accent</c> outline.</summary>
+    public bool IsDropTarget
+    {
+        get => _isDropTarget;
+        set
+        {
+            if (SetProperty(ref _isDropTarget, value))
+                OnPropertyChanged(nameof(AutomationName));
+        }
+    }
+
+    /// <summary>The row is being dragged (UI-TW-120): drawn at 50 % opacity.</summary>
+    public bool IsDragged
+    {
+        get => _isDragged;
+        set => SetProperty(ref _isDragged, value);
+    }
+
     /// <summary>Listed in the project, absent on disk (UI-TW-107).</summary>
     public bool IsMissing
     {
@@ -143,7 +163,8 @@ public sealed class ProjectNodeViewModel : ObservableObject
 
     /// <summary>UI-TW-105 / UI-A11Y-021: the automation name carries ", missing" (status icon) and ", modified".</summary>
     public string AutomationName =>
-        Name + (IsMissing ? Resources.Strings.ProjectManager_MissingSuffix : "") + (IsModified ? Resources.Strings.ProjectManager_ModifiedSuffix : "");
+        Name + (IsMissing ? Resources.Strings.ProjectManager_MissingSuffix : "") + (IsModified ? Resources.Strings.ProjectManager_ModifiedSuffix : "")
+        + (IsDropTarget ? Resources.Strings.ProjectManager_DropTargetSuffix : ""); // UI-TW-122
 
     internal void SetMatch(int start, int length)
     {

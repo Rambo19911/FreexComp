@@ -12,6 +12,7 @@ using Avalonia.Media;
 using FreexComp.Ide.Core.Dialogs;
 using FreexComp.Ide.Core.ViewModels;
 using FreexComp.Ide.Icons;
+using Avalonia.VisualTree;
 
 namespace FreexComp.Ide.Views;
 
@@ -23,6 +24,9 @@ namespace FreexComp.Ide.Views;
 /// </summary>
 public sealed class ProjectNodeView : DockPanel
 {
+    /// <summary>Style class of the row container while it is the drop target (UI-TW-121).</summary>
+    internal const string DropTargetClass = "dropTarget";
+
     private readonly IdeIcon _icon = new() { Width = 16, Height = 16 };
     private readonly IdeIcon _missing = new() { IconName = "warning", Width = 9, Height = 9, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
     private readonly TextBlock _name = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -39,6 +43,12 @@ public sealed class ProjectNodeView : DockPanel
     }
 
     private ProjectNodeViewModel Node => _bound!;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Update(); // the row container exists now: its drop-target class follows the node
+    }
 
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -80,6 +90,8 @@ public sealed class ProjectNodeView : DockPanel
         Children.Add(glyph);
         Children.Add(_name);
         Update();
+        if (node.Rename is not null)
+            UpdateEditor(); // a row created by the operation that names it (new folder, new file): the editor from the start
     }
 
     private void OnNodeChanged(object? sender, PropertyChangedEventArgs e)
@@ -107,7 +119,8 @@ public sealed class ProjectNodeView : DockPanel
             return;
         var id = ProjectManagerView.RowPrefix + Node.Key;
         var editor = new TextBox { Text = rename.NewName, MinHeight = 20, Padding = new Thickness(2, 0), VerticalContentAlignment = VerticalAlignment.Center };
-        AutomationProperties.SetAutomationId(editor, id + ".Editor");
+        // UI-TW-116: the naming editor of a new folder has its own id; file rows keep UI-TW-112's.
+        AutomationProperties.SetAutomationId(editor, id + (Node.Kind == ProjectNodeKind.Folder ? ".NameEditor" : ".Editor"));
         AutomationProperties.SetName(editor, rename.Title);
         var message = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxWidth = 320 };
         message.Classes.Add("caption");
@@ -146,7 +159,7 @@ public sealed class ProjectNodeView : DockPanel
                 rename.Cancel();
             }
         }, RoutingStrategies.Tunnel);
-        editor.LostFocus += (_, _) => _ = rename.CommitAsync(); // focus loss commits (UI-TW-112)
+        editor.LostFocus += (_, _) => _ = rename.FocusLostAsync(); // focus loss commits (UI-TW-112; UI-TW-116 for folders)
 
         Children.Remove(_name);
         _editorHost = new Panel { Children = { editor, popup } };
@@ -171,6 +184,8 @@ public sealed class ProjectNodeView : DockPanel
 
         _icon.IconName = Node.IconName;
         _icon.IsEnabled = !Node.IsMissing;
+        Opacity = Node.IsDragged ? 0.5 : 1; // UI-TW-120
+        this.FindAncestorOfType<TreeViewItem>()?.Classes.Set(DropTargetClass, Node.IsDropTarget); // UI-TW-121
         _missing.IsVisible = Node.IsMissing;
         _name.Classes.Set("body", !Strong);
         _name.Classes.Set("bodyStrong", Strong);

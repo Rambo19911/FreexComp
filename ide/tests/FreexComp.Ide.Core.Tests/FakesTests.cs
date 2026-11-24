@@ -7,6 +7,47 @@ namespace FreexComp.Ide.Core.Tests;
 [Trait("Phase", "1")]
 public sealed class FakesTests
 {
+    /// <summary>
+    /// <c>IFileSystem.MoveDirectory</c> (IDE-PM-112: the rename of a folder created in the Project Manager): the same
+    /// contract against the fake and the real disk.
+    /// </summary>
+    [Theory(Timeout = 30000)]
+    [InlineData("memory")]
+    [InlineData("disk")]
+    [Trait("Phase", "8")]
+    [Trait("Category", "Integration")]
+    [Trait("Req", "IDE-ARCH-012")]
+    [Trait("Req", "IDE-PM-112")]
+    public void MoveDirectoryBehavesLikeDisk(string kind)
+    {
+        using var target = FileSystemUnderTest.Create(kind);
+        var fs = target.FileSystem;
+        var from = Path.Combine(target.Root, "NewFolder1");
+        var to = Path.Combine(target.Root, "data");
+        fs.CreateDirectory(Path.Combine(from, "deep"));
+        fs.WriteAllBytes(Path.Combine(from, "a.txt"), [1]);
+        fs.WriteAllBytes(Path.Combine(from, "deep", "b.txt"), [2, 3]);
+
+        fs.MoveDirectory(from, to);
+
+        // Everything in it moves along; the old name is gone.
+        Assert.False(fs.DirectoryExists(from));
+        Assert.True(fs.DirectoryExists(to));
+        Assert.True(fs.DirectoryExists(Path.Combine(to, "deep")));
+        Assert.Equal([1], fs.ReadAllBytes(Path.Combine(to, "a.txt")));
+        Assert.Equal([2, 3], fs.ReadAllBytes(Path.Combine(to, "deep", "b.txt")));
+        Assert.Equal([Path.Combine(to, "deep")], fs.EnumerateDirectories(to));
+
+        // A missing source; a destination that exists as a directory or as a file.
+        Assert.Throws<DirectoryNotFoundException>(() => fs.MoveDirectory(from, Path.Combine(target.Root, "other")));
+        fs.CreateDirectory(from);
+        Assert.Throws<IOException>(() => fs.MoveDirectory(from, to));
+        fs.WriteAllBytes(Path.Combine(target.Root, "taken"), [0]);
+        Assert.Throws<IOException>(() => fs.MoveDirectory(from, Path.Combine(target.Root, "taken")));
+        Assert.True(fs.DirectoryExists(from));
+        Assert.True(fs.DirectoryExists(to));
+    }
+
     /// <summary>The same contract runs against the fake and the real disk (testing.md §5.1).</summary>
     [Theory(Timeout = 30000)]
     [InlineData("memory")]

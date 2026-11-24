@@ -27,8 +27,15 @@ public sealed class ProjectManagerView : UserControl
     private static readonly FuncTemplate<Panel?> VirtualizingRows = new(() => new VirtualizingStackPanel());
 
     private readonly TreeView _tree;
-    private readonly Border _barHost = new();
+    private readonly StackPanel _barHost = new(); // the missing-files bar above the unlisted-files bar (UI-TW-123)
     private readonly Control _empty;
+    private readonly Canvas _dragLayer = new() { IsHitTestVisible = false };
+    private Border? _dragAdorner;
+    private ProjectNodeViewModel? _pressed;
+    private Point _pressedAt;
+    private bool _dragging;
+    private Avalonia.Threading.DispatcherTimer? _edgeScroll;
+    private Point _lastDragPoint;
     // I-219: the links wrap in a narrow dock instead of running past its edge.
     private readonly WrapPanel _links = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, ItemSpacing = 8, LineSpacing = 4 };
     private ProjectManagerViewModel? _model;
@@ -60,7 +67,18 @@ public sealed class ProjectManagerView : UserControl
                 new Setter(ItemsControl.ItemsPanelProperty, VirtualizingRows),
             },
         });
+        // UI-TW-121: the drop-target row is filled with accent.subtle and outlined with 1 px accent.
+        var dropTarget = new Style(x => x.OfType<TreeViewItem>().Class(ProjectNodeView.DropTargetClass).Template().OfType<Border>().Name("PART_LayoutRoot"));
+        dropTarget.Setters.Add(new Setter(Border.BackgroundProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("FxcAccentSubtleBrush")));
+        dropTarget.Setters.Add(new Setter(Border.BorderBrushProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("FxcAccentDefaultBrush")));
+        dropTarget.Setters.Add(new Setter(Border.BorderThicknessProperty, new Thickness(1)));
+        _tree.Styles.Add(dropTarget);
         _tree.SelectionChanged += OnTreeSelectionChanged;
+        // UI-TW-119…122: moving rows by pointer inside the tree (no OS drag-and-drop loop).
+        _tree.AddHandler(PointerMovedEvent, OnPointerMoved, RoutingStrategies.Tunnel);
+        _tree.AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel);
+        _tree.AddHandler(PointerCaptureLostEvent, (_, _) => CancelDrag(), RoutingStrategies.Direct | RoutingStrategies.Bubble);
+        _tree.AddHandler(KeyDownEvent, OnKeyDownWhileDragging, RoutingStrategies.Tunnel);
         _tree.AddHandler(ContextRequestedEvent, OnContextRequested, RoutingStrategies.Tunnel);
         _tree.AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
         // UI-TW-113: files dragged from the OS over the tree get the drop-target highlight (design-tokens §2.3
@@ -71,7 +89,7 @@ public sealed class ProjectManagerView : UserControl
         _tree.AddHandler(DragDrop.DropEvent, (_, _) => SetDropTarget(false), handledEventsToo: true);
 
         _empty = CreateEmptyState();
-        var body = new Panel { Children = { _tree, _empty } };
+        var body = new Panel { Children = { _tree, _empty, _dragLayer } };
         DockPanel.SetDock(_barHost, Avalonia.Controls.Dock.Top);
         Content = new DockPanel { Children = { _barHost, body } };
     }
@@ -136,7 +154,8 @@ public sealed class ProjectManagerView : UserControl
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ProjectManagerViewModel.HasProject) or nameof(ProjectManagerViewModel.MissingFilesBar))
+        if (e.PropertyName is nameof(ProjectManagerViewModel.HasProject) or nameof(ProjectManagerViewModel.MissingFilesBar)
+            or nameof(ProjectManagerViewModel.UnlistedFilesBar))
             UpdateState();
     }
 
@@ -145,9 +164,14 @@ public sealed class ProjectManagerView : UserControl
         var hasProject = _model?.HasProject == true;
         _tree.IsVisible = hasProject;
         _empty.IsVisible = !hasProject;
-        _barHost.Child = _model?.MissingFilesBar is { } bar
-            ? new InfoBarView { AutomationIdBase = "Tool.ProjectManager.InfoBar", DataContext = bar }
-            : null;
+        InfoBarViewModel?[] bars = [_model?.MissingFilesBar, _model?.UnlistedFilesBar];
+        var shown = bars.OfType<InfoBarViewModel>().ToList();
+        if (!shown.SequenceEqual(_barHost.Children.Select(c => c.DataContext)))
+        {
+            _barHost.Children.Clear();
+            foreach (var bar in shown)
+                _barHost.Children.Add(new InfoBarView { AutomationIdBase = "Tool.ProjectManager.InfoBar", DataContext = bar });
+        }
     }
 
     private void OnTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -267,6 +291,154 @@ public sealed class ProjectManagerView : UserControl
             _ = _model.OpenSelectionAsync();
             e.Handled = true;
         }
+        else if (point.Properties.IsLeftButtonPressed && e.ClickCount == 1 && e.KeyModifiers == KeyModifiers.None && node is not null
+                 && _model.CanStartDrag(node) && (e.Source as Visual)?.FindAncestorOfType<TextBox>(includeSelf: true) is null)
+        {
+            // UI-TW-119: a drag may start here once the pointer has moved more than 4 DIP.
+            _pressed = node;
+            _pressedAt = point.Position;
+            if (_model.Selection.Count > 1 && _model.Selection.Contains(node))
+                e.Handled = true; // the multi-selection stays: its rows are dragged together (a plain click selects on release)
+        }
+    }
+
+    /// <summary>UI-TW-119: beyond this distance from the press the drag starts.</summary>
+    internal const double DragThreshold = 4;
+
+    /// <summary>UI-TW-121: this close to the top or bottom edge the tree scrolls while dragging.</summary>
+    private const double EdgeScrollZone = 24;
+
+    private void OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_model is null || _pressed is null)
+            return;
+        var point = e.GetPosition(_tree);
+        if (!_dragging)
+        {
+            if (!e.GetCurrentPoint(_tree).Properties.IsLeftButtonPressed)
+            {
+                _pressed = null; // the button went up somewhere else: no drag from a later hover
+                return;
+            }
+
+            if (Math.Abs(point.X - _pressedAt.X) <= DragThreshold && Math.Abs(point.Y - _pressedAt.Y) <= DragThreshold)
+                return;
+            if (!_model.BeginDrag(_pressed))
+            {
+                _pressed = null;
+                return;
+            }
+
+            _dragging = true;
+            e.Pointer.Capture(_tree);
+            ShowDragAdorner(_pressed, _model.DraggedRows.Count);
+            _edgeScroll = new Avalonia.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(50), Avalonia.Threading.DispatcherPriority.Input, (_, _) => ScrollAtEdge());
+            _edgeScroll.Start();
+        }
+
+        _lastDragPoint = point;
+        UpdateDrag(point);
+        e.Handled = true;
+    }
+
+    /// <summary>UI-TW-120 / UI-TW-121: the adorner follows the pointer; the row under it decides target and cursor.</summary>
+    private void UpdateDrag(Point point)
+    {
+        if (_model is null || _dragAdorner is null)
+            return;
+        var onLayer = _tree.TranslatePoint(point, _dragLayer) ?? point;
+        Canvas.SetLeft(_dragAdorner, onLayer.X + 12);
+        Canvas.SetTop(_dragAdorner, onLayer.Y + 16);
+        var inside = new Rect(_tree.Bounds.Size).Contains(point);
+        var over = inside ? (_tree.InputHitTest(point) as Visual)?.FindAncestorOfType<TreeViewItem>(includeSelf: true)?.DataContext as ProjectNodeViewModel : null;
+        var target = _model.DragOver(over);
+        _tree.Cursor = new Cursor(target is null ? StandardCursorType.No : StandardCursorType.DragMove);
+    }
+
+    private void ShowDragAdorner(ProjectNodeViewModel pressed, int count)
+    {
+        var text = new TextBlock
+        {
+            Text = count > 1 ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Drag_FileCount, count) : pressed.Name,
+            Classes = { "body" },
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        if (count == 1)
+            content.Children.Add(new Icons.IdeIcon { IconName = pressed.IconName, Width = 16, Height = 16 });
+        content.Children.Add(text);
+        var adorner = new Border { BorderThickness = new Thickness(1), Padding = new Thickness(6, 2), Child = content };
+        adorner.Bind(Border.BackgroundProperty, adorner.GetResourceObservable("FxcBgRaisedBrush"));
+        adorner.Bind(Border.BorderBrushProperty, adorner.GetResourceObservable("FxcBorderStrongBrush"));
+        adorner.Bind(Border.CornerRadiusProperty, adorner.GetResourceObservable("FxcRadiusControl"));
+        AutomationProperties.SetAutomationId(adorner, "Tool.ProjectManager.DragAdorner");
+        AutomationProperties.SetName(adorner, text.Text);
+        _dragAdorner = adorner;
+        _dragLayer.Children.Add(adorner);
+    }
+
+    /// <summary>UI-TW-121: within 24 DIP of the top or bottom edge the tree scrolls by one row every 50 ms.</summary>
+    private void ScrollAtEdge()
+    {
+        if (!_dragging || _tree.FindDescendantOfType<ScrollViewer>() is not { } scroll)
+            return;
+        var step = _lastDragPoint.Y < EdgeScrollZone ? -22d : _lastDragPoint.Y > _tree.Bounds.Height - EdgeScrollZone ? 22d : 0d;
+        if (step == 0)
+            return;
+        var y = Math.Clamp(scroll.Offset.Y + step, 0, Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height));
+        if (y == scroll.Offset.Y)
+            return;
+        scroll.Offset = scroll.Offset.WithY(y);
+        UpdateDrag(_lastDragPoint);
+    }
+
+    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var pressed = _pressed;
+        _pressed = null;
+        if (_model is null)
+            return;
+        if (!_dragging)
+        {
+            // A press on a row of a multi-selection that did not become a drag is a plain click: the row alone.
+            if (pressed is not null && e.InitialPressMouseButton == MouseButton.Left && _model.Selection.Count > 1 && _model.Selection.Contains(pressed))
+                _model.Select(pressed);
+            return;
+        }
+
+        UpdateDrag(e.GetPosition(_tree));
+        StopDragVisuals();
+        e.Pointer.Capture(null);
+        e.Handled = true;
+        _ = _model.DropAsync(); // releasing outside a valid target cancels (UI-TW-119)
+    }
+
+    /// <summary>UI-TW-119: Escape during the drag cancels it.</summary>
+    private void OnKeyDownWhileDragging(object? sender, KeyEventArgs e)
+    {
+        if (!_dragging || e.Key != Key.Escape)
+            return;
+        e.Handled = true;
+        CancelDrag();
+    }
+
+    private void CancelDrag()
+    {
+        if (!_dragging)
+            return; // a row container that gives up the pointer before the drag starts (it scrolled) cancels nothing
+        _pressed = null;
+        StopDragVisuals();
+        _model?.EndDrag();
+    }
+
+    private void StopDragVisuals()
+    {
+        _dragging = false;
+        _edgeScroll?.Stop();
+        _edgeScroll = null;
+        _dragLayer.Children.Clear();
+        _dragAdorner = null;
+        _tree.ClearValue(CursorProperty);
     }
 
     private void OnContextRequested(object? sender, ContextRequestedEventArgs e)

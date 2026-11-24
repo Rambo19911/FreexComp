@@ -5029,4 +5029,87 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>Rebuild and Restart</value>
     <comment>Msg.Debug.SourceChanged action</comment>
   </data>
+  <data name="Cmd_project_addNewFile" xml:space="preserve">
+    <value>Add New File…</value>
+    <comment>commands.md (F09-054, I-234)</comment>
+  </data>
+  <data name="Cmd_project_moveFile" xml:space="preserve">
+    <value>Move to Folder…</value>
+    <comment>commands.md (F09-054, I-235)</comment>
+  </data>
+  <data name="Cmd_file_openInTerminal" xml:space="preserve">
+    <value>Open in Console</value>
+    <comment>commands.md (F09-054, I-237)</comment>
+  </data>
+  <data name="Menu_project_addNewFile" xml:space="preserve">
+    <value>Add Ne&amp;w File…</value>
+    <comment>Project Manager context menus (tool-windows.md §2)</comment>
+  </data>
+  <data name="Menu_project_moveFile" xml:space="preserve">
+    <value>&amp;Move to Folder…</value>
+    <comment>Project Manager context menus (tool-windows.md §2)</comment>
+  </data>
+  <data name="Menu_file_openInTerminal" xml:space="preserve">
+    <value>Open &amp;in Console</value>
+    <comment>Project Manager context menus (tool-windows.md §2)</comment>
+  </data>
+  <data name="Msg_Project_NewFolderFailed" xml:space="preserve">
+    <value>The folder cannot be created.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_Project_FolderNameInvalid" xml:space="preserve">
+    <value>Enter a valid folder name.</value>
+  </data>
+  <data name="Msg_Project_FolderExists" xml:space="preserve">
+    <value>{0} already exists in this folder.</value>
+  </data>
+  <data name="Msg_Project_NewFileIsUnit" xml:space="preserve">
+    <value>Use Add New Unit to create a Pascal unit.</value>
+  </data>
+  <data name="Msg_Project_MoveExists" xml:space="preserve">
+    <value>{0} already exists in the folder {1}. Nothing was moved.</value>
+  </data>
+  <data name="Msg_Project_MoveFailed" xml:space="preserve">
+    <value>The file cannot be moved.
+{0}
+{1}</value>
+  </data>
+  <data name="Msg_Project_MovedOne" xml:space="preserve">
+    <value>Moved {0} to {1}</value>
+  </data>
+  <data name="Msg_Project_MovedMany" xml:space="preserve">
+    <value>Moved {0} files to {1}</value>
+  </data>
+  <data name="Msg_Project_UnlistedFilesOne" xml:space="preserve">
+    <value>1 Pascal file in the project folders is not part of the project.</value>
+  </data>
+  <data name="Msg_Project_UnlistedFilesMany" xml:space="preserve">
+    <value>{0} Pascal files in the project folders are not part of the project.</value>
+  </data>
+  <data name="Msg_File_ConsoleFailed" xml:space="preserve">
+    <value>The console window cannot be opened.
+{0}
+{1}</value>
+  </data>
+  <data name="InfoBar_Action_AddToProject" xml:space="preserve">
+    <value>Add to Project</value>
+    <comment>Msg.Project.UnlistedFiles* info bar (UI-TW-123)</comment>
+  </data>
+  <data name="InfoBar_Action_Ignore" xml:space="preserve">
+    <value>Ignore</value>
+    <comment>Msg.Project.UnlistedFiles* info bar (UI-TW-123)</comment>
+  </data>
+  <data name="QuickPick_MoveToFolder_Title" xml:space="preserve">
+    <value>Move to Folder</value>
+    <comment>UI-TW-124</comment>
+  </data>
+  <data name="Drag_FileCount" xml:space="preserve">
+    <value>{0} files</value>
+    <comment>UI-TW-120 drag adorner of a multi-selection</comment>
+  </data>
+  <data name="ProjectManager_DropTargetSuffix" xml:space="preserve">
+    <value>, drop target</value>
+    <comment>UI-TW-122 automation name state suffix</comment>
+  </data>
 </root>

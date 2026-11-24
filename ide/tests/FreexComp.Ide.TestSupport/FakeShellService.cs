@@ -37,6 +37,16 @@ public sealed class FakeShellService(IFileSystem? fileSystem = null) : IShellSer
         return succeeded;
     }
 
+    /// <summary>The reason a failed <see cref="OpenConsole(string, out string)"/> gives.</summary>
+    public const string ConsoleFailure = "Injected console failure";
+
+    public bool OpenConsole(string directory, out string reason)
+    {
+        var succeeded = Record(nameof(OpenConsole), directory);
+        reason = succeeded ? "" : ConsoleFailure;
+        return succeeded;
+    }
+
     private bool Record(string method, string path)
     {
         Calls.Add(method + " " + path);

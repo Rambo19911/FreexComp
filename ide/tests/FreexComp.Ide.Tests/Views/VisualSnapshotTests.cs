@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -394,6 +395,258 @@ public sealed class VisualSnapshotTests
 
                     defects.AddRange(VisualSnapshot.LayoutDefects(h.Window).Select(d => (variant, d)));
                     files.Add((subject, theme, size, VisualSnapshot.Capture(h.Window, subject, theme)));
+                }
+            }
+        }
+
+        foreach (var subject in subjects)
+            Assert.Equal(4, Directory.GetFiles(VisualSnapshot.FolderOf(subject), "*.png").Length);
+        foreach (var (_, _, size, file) in files)
+        {
+            Assert.Equal(((int)size.Width, (int)size.Height), VisualSnapshot.PngSize(file.Path));
+            Assert.True(file.DistinctColors >= 16, $"{file.Path}: only {file.DistinctColors} colours — not a real rendering");
+        }
+
+        foreach (var light in files.Where(f => f.Theme == "light"))
+        {
+            var dark = files.Single(f => f.Theme == "dark" && f.Subject == light.Subject && f.Size == light.Size);
+            Assert.True(dark.File.MeanLuminance + 64 < light.File.MeanLuminance, $"{dark.File.Path}: {dark.File.MeanLuminance} against {light.File.MeanLuminance}");
+        }
+
+        Assert.True(defects.Count == 0, Report(defects));
+    }
+
+    /// <summary>
+    /// Card F09-054 (phase8-ui-additions.md §1): the Project Manager in the main window at its minimum size 800 × 500 and at
+    /// 1920 × 1040, light and dark, in four states — the missing-files and the unlisted-files info bars above the tree
+    /// (UI-TW-107, UI-TW-123); a folder tree with remembered empty folders and a new folder being named in place
+    /// (UI-TW-115, UI-TW-116); a row dragged over a folder with adorner and drop-target feedback (UI-TW-120, UI-TW-121);
+    /// and the Move to Folder quick pick (UI-TW-124). Only the window size varies. Beside the general layout rules:
+    /// every bar button and every bar text is shown completely, the bars span the tool window, the naming editor and
+    /// the drag adorner lie inside the window, and no quick-pick row is cut.
+    /// </summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Req", "UI-TW-123")]
+    [Trait("Req", "UI-TW-115")]
+    [Trait("Req", "UI-TW-116")]
+    [Trait("Req", "UI-TW-120")]
+    [Trait("Req", "UI-TW-121")]
+    [Trait("Req", "UI-TW-124")]
+    public async Task ProjectManagerFileOperations_RenderAtMinimumAndLargeWindow()
+    {
+        if (!SkiaProcess.IsCurrent)
+        {
+            await SkiaProcess.RunThisTestAsync(typeof(VisualSnapshotTests));
+            return;
+        }
+
+        string[] subjects = ["project-manager-info-bars", "project-manager-folder-naming", "project-manager-drag-feedback", "project-manager-move-quick-pick"];
+        Size[] sizes = [new(800, 500), new(1920, 1040)];
+        string[] bars = ["Tool.ProjectManager.InfoBar.MissingFiles", "Tool.ProjectManager.InfoBar.UnlistedFiles"];
+        foreach (var subject in subjects)
+        {
+            if (Directory.Exists(VisualSnapshot.FolderOf(subject)))
+                Directory.Delete(VisualSnapshot.FolderOf(subject), recursive: true);
+        }
+
+        var defects = new List<(string Variant, string Defect)>();
+        var files = new List<(string Subject, string Theme, Size Size, SnapshotFile File)>();
+        foreach (var theme in Themes)
+        {
+            await using var h = await HeadlessHarness.StartAsync(o =>
+            {
+                o.Settings["appearance.theme"] = theme;
+                o.InitialFiles[@"Hello\Hello.pproj"] = """
+                    { "formatVersion": 1, "name": "Hello", "mainSource": "Hello.pas",
+                      "files": [ { "path": "Hello.pas" }, { "path": "Unit1.pas" }, { "path": "notes.md" }, { "path": "lib/StrUtils2.pas" },
+                                 { "path": "lib/net/HttpClient.pas" }, { "path": "Missing.pas" }, { "path": "lib/Gone.pas" } ] }
+                    """;
+                o.InitialFiles[@"Hello\Hello.pas"] = "program Hello;\nbegin\nend.\n";
+                o.InitialFiles[@"Hello\Unit1.pas"] = "unit Unit1;\ninterface\nimplementation\nend.\n";
+                o.InitialFiles[@"Hello\notes.md"] = "notes\n";
+                o.InitialFiles[@"Hello\lib\StrUtils2.pas"] = "unit StrUtils2;\ninterface\nimplementation\nend.\n";
+                o.InitialFiles[@"Hello\lib\net\HttpClient.pas"] = "unit HttpClient;\ninterface\nimplementation\nend.\n";
+                o.InitialFiles[@"Hello\Extra.pas"] = "unit Extra;\ninterface\nimplementation\nend.\n"; // unlisted
+                o.InitialFiles[@"Hello\lib\More.pas"] = "unit More;\ninterface\nimplementation\nend.\n"; // unlisted
+                o.InitialFiles[@"Hello\assets\.keep"] = "";
+                o.InitialFiles[@"Hello\.freexcomp\session.json"] = """
+                    { "formatVersion": 1, "project": "Hello.pproj",
+                      "projectManager": { "expanded": ["$project", "lib/"], "selected": null, "folders": ["assets/"], "ignoredFiles": [] } }
+                    """;
+            });
+            Assert.True(await h.Services.Projects.OpenAsync(Path.Combine(h.TempDir, "Hello", "Hello.pproj")));
+            var pm = h.Services.ProjectManager;
+            await h.WaitForAsync(() => !pm.IsCheckingMissingFiles && pm.UnlistedFilesBar is not null, "missing-file and unlisted-file check done");
+            Assert.True(h.Services.ToolWindows.Show(Core.ViewModels.ProjectManagerViewModel.ToolName, focus: true));
+            Dispatcher.UIThread.RunJobs();
+            var tree = h.Find<TreeView>("Tool.ProjectManager.Tree");
+            var view = tree.FindAncestorOfType<ProjectManagerView>()!;
+
+            foreach (var subject in subjects)
+            {
+                var naming = subject == subjects[1];
+                var dragging = subject == subjects[2];
+                var picking = subject == subjects[3];
+                pm.Find("lib/")!.IsExpanded = !dragging;
+                Dispatcher.UIThread.RunJobs();
+                if (naming)
+                {
+                    // A new folder under lib/, its name being edited (all selected); the bars stay above the tree.
+                    pm.Select(pm.Find("lib/")!);
+                    Assert.True(await pm.NewFolderAsync());
+                    Dispatcher.UIThread.RunJobs();
+                }
+
+                foreach (var size in sizes)
+                {
+                    VisualSnapshot.Arrange(h.Window, size, 1.0);
+                    var variant = $"{subject} {VisualSnapshot.FileName(theme, 1.0, size)}";
+                    Assert.Equal(size, h.Window.ClientSize);
+                    Assert.True(tree.IsEffectivelyVisible, variant + ": the Project Manager is not shown");
+                    var viewRight = view.TranslatePoint(new Point(view.Bounds.Width, 0), h.Window)!.Value.X;
+                    Point RowPoint(string key)
+                    {
+                        var name = h.Find<TextBlock>("Tool.ProjectManager.Row." + key + ".Name");
+                        return name.TranslatePoint(new Point(10, name.Bounds.Height / 2), h.Window)!.Value;
+                    }
+
+                    if (dragging)
+                    {
+                        // Hello.pas pressed, moved beyond the threshold and on over the (empty) folder row assets/ — rows
+                        // that are in view also in the minimum window (lib/ is collapsed for this state).
+                        // A click on another row first: a second press on the same spot (the next window size) would be a
+                        // double-click, which opens the file instead of dragging it.
+                        h.Window.MouseDown(RowPoint("lib/"), Avalonia.Input.MouseButton.Left);
+                        h.Window.MouseUp(RowPoint("lib/"), Avalonia.Input.MouseButton.Left);
+                        Dispatcher.UIThread.RunJobs();
+                        var start = RowPoint("Hello.pas");
+                        h.Window.MouseDown(start, Avalonia.Input.MouseButton.Left);
+                        Dispatcher.UIThread.RunJobs();
+                        Assert.Equal(["Hello.pas"], pm.Selection.Select(n => n.Key)); // the press reached the row
+                        h.Window.MouseMove(start + new Point(0, -8), Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                        Dispatcher.UIThread.RunJobs();
+                        Assert.Equal(["Hello.pas"], pm.DraggedRows.Select(n => n.Key)); // beyond the threshold: the drag has begun
+                        h.Window.MouseMove(RowPoint("assets/"), Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                        Dispatcher.UIThread.RunJobs();
+                        var adorner = h.Find<Border>("Tool.ProjectManager.DragAdorner");
+                        Assert.Equal("Hello.pas", Avalonia.Automation.AutomationProperties.GetName(adorner));
+                        Assert.Same(pm.Find("assets/"), pm.DropTarget);
+                        Assert.Equal("assets, drop target", Avalonia.Automation.AutomationProperties.GetName(h.Find<TreeViewItem>("Tool.ProjectManager.Row.assets/")));
+                        Assert.Equal(0.5, h.Find<TextBlock>("Tool.ProjectManager.Row.Hello.pas.Name").FindAncestorOfType<ProjectNodeView>()!.Opacity);
+                        var corner = adorner.TranslatePoint(new Point(adorner.Bounds.Width, adorner.Bounds.Height), h.Window)!.Value;
+                        if (corner.X > size.Width + 0.5 || corner.Y > size.Height + 0.5 || adorner.Bounds.Width < 40)
+                            defects.Add((variant, $"cut: drag adorner ends at {corner} ({adorner.Bounds.Width:0.#} wide)"));
+                    }
+
+                    if (picking)
+                    {
+                        pm.Select(pm.Find("Unit1.pas")!);
+                        Dispatcher.UIThread.RunJobs();
+                        await h.ExecuteAsync("project.moveFile");
+                        Dispatcher.UIThread.RunJobs();
+                        var popup = Assert.IsType<Core.Popups.MoveToFolderViewModel>(h.Services.QuickPick.Current);
+                        Assert.Equal(["assets/", "lib/", "lib/net/", "lib/NewFolder1/"], popup.Items.Select(i => i.Id)); // tree order; the root (the file's folder) is omitted
+                        foreach (var item in popup.Items)
+                        {
+                            var cell = h.Find<TextBlock>($"QuickPick.Item.{item.Id}.Name");
+                            Assert.True(cell.IsEffectivelyVisible, $"{variant}: quick-pick row {item.Id} is not shown");
+                            if (VisualSnapshot.HiddenPart(cell, h.Window) is { } hiddenCell)
+                                defects.Add((variant, $"cut: quick-pick row {item.Id} — {hiddenCell}"));
+                            if (VisualSnapshot.TextWidth(cell) > cell.Bounds.Width + 0.5)
+                                defects.Add((variant, $"cut: quick-pick row {item.Id} needs {VisualSnapshot.TextWidth(cell):0.#} wide, has {cell.Bounds.Width:0.#}"));
+                        }
+
+                        Assert.Equal(Core.Resources.Strings.QuickPick_MoveToFolder_Title,
+                            Avalonia.Automation.AutomationProperties.GetName(h.Find<Control>("QuickPick.Input")));
+                        Assert.Equal("Move to Folder", h.Find<TextBox>("QuickPick.Input").PlaceholderText); // the title (UI-TW-124)
+                    }
+
+                    foreach (var id in bars)
+                    {
+                        var bar = h.Find<InfoBarView>(id);
+                        Assert.True(bar.IsEffectivelyVisible, $"{variant}: {id} is not shown");
+                        Assert.Equal(view.Bounds.Width, bar.Bounds.Width);
+                        if (VisualSnapshot.HiddenPart(bar, h.Window) is { } hiddenBar)
+                            defects.Add((variant, $"cut: {id} — {hiddenBar}"));
+                        var text = h.Find<TextBlock>(id + ".Text");
+                        if (VisualSnapshot.HiddenPart(text, h.Window) is { } hiddenText)
+                            defects.Add((variant, $"cut: text of {id} — {hiddenText}"));
+                        if (text.TextLayout.TextLines.Any(l => l.HasCollapsed) || text.Bounds.Height + 0.5 < text.TextLayout.Height)
+                            defects.Add((variant, $"cut: text of {id} is not shown completely"));
+                        foreach (var button in bar.GetVisualDescendants().OfType<Button>())
+                        {
+                            var name = Avalonia.Automation.AutomationProperties.GetAutomationId(button);
+                            if (VisualSnapshot.HiddenPart(button, h.Window) is { } hidden)
+                                defects.Add((variant, $"cut: {name} — {hidden}"));
+                            var right = button.TranslatePoint(new Point(button.Bounds.Width, 0), h.Window)!.Value.X;
+                            if (right > viewRight + 0.5)
+                                defects.Add((variant, $"cut: {name} ends at x = {right:0.#}, beyond the tool window ({viewRight:0.#})"));
+                        }
+                    }
+
+                    // The unlisted-files bar directly below the missing-files bar, the tree below both (UI-TW-123).
+                    double Top(Visual v) => v.TranslatePoint(default, h.Window)!.Value.Y;
+                    var missing = h.Find<InfoBarView>(bars[0]);
+                    var unlisted = h.Find<InfoBarView>(bars[1]);
+                    Assert.Equal(Top(missing) + missing.Bounds.Height, Top(unlisted));
+                    Assert.Equal(Top(unlisted) + unlisted.Bounds.Height, Top(tree));
+                    Assert.Equal(["Tool.ProjectManager.InfoBar.UnlistedFiles.Action.AddToProject", "Tool.ProjectManager.InfoBar.UnlistedFiles.Action.Show",
+                        "Tool.ProjectManager.InfoBar.UnlistedFiles.Action.Ignore"],
+                        unlisted.GetVisualDescendants().OfType<Button>().Select(b => Avalonia.Automation.AutomationProperties.GetAutomationId(b)));
+
+                    // The folder tree: a derived folder with a sub-folder, a remembered empty folder (no children).
+                    // (For the quick pick the tree has scrolled to the selected file; for the drag lib/ is collapsed.)
+                    Assert.Empty(pm.Find("assets/")!.Children);
+                    if (!picking)
+                    {
+                        Assert.Equal(!dragging, h.TryFind<TreeViewItem>("Tool.ProjectManager.Row.lib/net/")?.IsEffectivelyVisible == true);
+                        Assert.True(h.Find<TreeViewItem>("Tool.ProjectManager.Row.assets/").IsEffectivelyVisible, variant);
+                    }
+                    if (naming)
+                    {
+                        var editor = h.Find<TextBox>("Tool.ProjectManager.Row.lib/NewFolder1/.NameEditor");
+                        Assert.True(editor.IsEffectivelyVisible, variant + ": no naming editor");
+                        Assert.True(editor.IsFocused, variant + ": the naming editor has lost focus");
+                        Assert.Equal("NewFolder1", editor.Text);
+                        Assert.Equal((0, "NewFolder1".Length), (Math.Min(editor.SelectionStart, editor.SelectionEnd), Math.Max(editor.SelectionStart, editor.SelectionEnd)));
+                        if (VisualSnapshot.HiddenPart(editor, h.Window) is { } hiddenEditor)
+                            defects.Add((variant, $"cut: naming editor — {hiddenEditor}"));
+                        var right = editor.TranslatePoint(new Point(editor.Bounds.Width, 0), h.Window)!.Value.X;
+                        if (right > viewRight + 0.5 || editor.Bounds.Width < 60)
+                            defects.Add((variant, $"cut: naming editor is {editor.Bounds.Width:0.#} wide and ends at x = {right:0.#} (tool window: {viewRight:0.#})"));
+                    }
+                    else
+                    {
+                        Assert.Null(h.TryFind<TextBox>("Tool.ProjectManager.Row.lib/NewFolder1/.NameEditor"));
+                    }
+
+                    defects.AddRange(VisualSnapshot.LayoutDefects(h.Window).Select(d => (variant, d)));
+                    files.Add((subject, theme, size, VisualSnapshot.Capture(h.Window, subject, theme)));
+
+                    if (dragging)
+                    {
+                        // Escape cancels the drag: nothing moves.
+                        h.Press("Escape");
+                        h.Window.MouseUp(RowPoint("assets/"), Avalonia.Input.MouseButton.Left);
+                        Dispatcher.UIThread.RunJobs();
+                        Assert.Null(h.TryFind<Control>("Tool.ProjectManager.DragAdorner"));
+                        Assert.NotNull(pm.Find("Hello.pas"));
+                    }
+
+                    if (picking)
+                    {
+                        h.Services.QuickPick.Current!.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+                }
+
+                if (naming)
+                {
+                    // Escape keeps the provisional name; the editor is gone for the next state.
+                    pm.Find("lib/NewFolder1/")!.Rename!.Cancel();
+                    Dispatcher.UIThread.RunJobs();
+                    Assert.True(h.Services.ToolWindows.Show(Core.ViewModels.ProjectManagerViewModel.ToolName, focus: true));
+                    Dispatcher.UIThread.RunJobs();
                 }
             }
         }

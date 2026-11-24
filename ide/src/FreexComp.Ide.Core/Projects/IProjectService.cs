@@ -73,8 +73,11 @@ public interface IProjectService
     /// <c>Msg.Project.RenameInvalid</c>, another file empty or with invalid characters → <c>Msg.NewFile.NameInvalid</c>;
     /// the file or its companion form exists → <c>Msg.Project.RenameExists</c> [name]; another unit of that name →
     /// <c>Msg.Project.DuplicateUnitName</c> [unit]. An unchanged name and a change of letter case only are valid.
+    /// With <paramref name="newFile"/> (the first naming after <see cref="AddNewFileAsync"/>, IDE-PM-119) a name ending
+    /// in <c>.pas</c> fails with <c>Msg.Project.NewFileIsUnit</c> and one ending in <c>.form</c> with the text of
+    /// <c>Status_AddFormViaUnit</c>.
     /// </summary>
-    OperationResult ValidateRename(string projectPath, string newName);
+    OperationResult ValidateRename(string projectPath, string newName, bool newFile = false);
 
     /// <summary>
     /// <c>project.renameFile</c> (IDE-PM-071…073), all-or-nothing: saves the open document when modified (failure
@@ -105,6 +108,25 @@ public interface IProjectService
     /// </summary>
     Task<bool> AddNewFormAsync();
 
+    /// <summary>
+    /// <c>project.addNewFile</c> (IDE-PM-118, IDE-PM-119): creates the empty file <c>File&lt;N&gt;.txt</c> in the folder
+    /// <see cref="AddNewUnitAsync"/> uses, appends it to <c>files</c>, saves the project, selects the row and starts its
+    /// in-place naming. The file is not opened. False without a project or on a reported failure.
+    /// </summary>
+    Task<bool> AddNewFileAsync();
+
+    /// <summary>
+    /// IDE-PM-121…125: moves the <c>files</c> entries <paramref name="projectPaths"/> (a unit with its companion form)
+    /// into <paramref name="targetDirectory"/> inside the project directory, all or nothing. Entries outside the project
+    /// directory or already in the target directory are skipped. Validation first (<c>Msg.Project.MoveExists</c>; a path
+    /// over 240 characters), then: modified open documents saved, files moved on disk, <c>files[].path</c>,
+    /// <c>files[].form</c> and <c>mainSource</c> rewritten, the project saved, open documents follow
+    /// (<see cref="FileRenamed"/> per file), status <c>Msg.Project.MovedOne</c> / <c>MovedMany</c>. A failure moves
+    /// everything back, restores the project and shows <c>Msg.Project.MoveFailed</c>. Source text is never edited.
+    /// Returns the new project paths of the moved entries; empty when nothing was moved.
+    /// </summary>
+    Task<IReadOnlyList<string>> MoveFilesAsync(IReadOnlyList<string> projectPaths, string targetDirectory);
+
     /// <summary>The absolute path of the <c>form</c> entry of the project unit <paramref name="unitPath"/>; null when none.</summary>
     string? FormPathOf(string unitPath);
 
@@ -112,9 +134,10 @@ public interface IProjectService
     /// IDE-PM-050/051: adds the files by reference — <c>.form</c> files are refused (<c>Status_AddFormViaUnit</c>), files
     /// already in the project skipped (<c>Msg.Project.FileAlreadyInProject</c>), duplicate unit names refused
     /// (<c>Msg.Project.DuplicateUnitName</c>); a unit with its <c>{$FORM}</c> companion gets <c>form</c>. Saved at once, not
-    /// opened. Returns the number added.
+    /// opened. Returns the number added. With <paramref name="reportFirstDuplicateOnly"/> only the first duplicate unit
+    /// name is reported (IDE-PM-147).
     /// </summary>
-    Task<int> AddExistingFilesAsync(IReadOnlyList<string> paths);
+    Task<int> AddExistingFilesAsync(IReadOnlyList<string> paths, bool reportFirstDuplicateOnly = false);
 
     /// <summary>Files were added (project paths as stored); the Project Manager selects their rows (IDE-PM-033).</summary>
     event EventHandler<IReadOnlyList<string>>? FilesAdded;

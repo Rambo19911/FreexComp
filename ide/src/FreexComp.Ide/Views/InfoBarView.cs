@@ -37,8 +37,7 @@ public sealed class InfoBarView : Border
         BorderThickness = new Thickness(0, 0, 0, 1);
         this.Bind(MinHeightProperty, this.GetResourceObservable("FxcMetricInfoBarHeight"));
 
-        var row = new DockPanel { Margin = new Thickness(8, 4) };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Top };
+        var buttons = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 4, LineSpacing = 4 };
         foreach (var action in model.Actions)
         {
             var button = new Button { Content = action.Label };
@@ -58,8 +57,6 @@ public sealed class InfoBarView : Border
             buttons.Children.Add(dismiss);
         }
 
-        DockPanel.SetDock(buttons, Avalonia.Controls.Dock.Right);
-        row.Children.Add(buttons);
         var icon = new IdeIcon
         {
             IconName = model.Severity switch
@@ -73,12 +70,78 @@ public sealed class InfoBarView : Border
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0), // space.4 (designer.md UI-DSG-090)
         };
-        DockPanel.SetDock(icon, Avalonia.Controls.Dock.Left);
-        row.Children.Add(icon);
         var text = new TextBlock { Text = model.Text, Classes = { "body" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(text, id + ".Text");
         text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable("FxcTextPrimaryBrush"));
-        row.Children.Add(text);
-        return row;
+        return new InfoBarRow(icon, text, buttons) { Margin = new Thickness(8, 4) };
+    }
+
+    /// <summary>
+    /// The row of an info bar: icon, text, buttons. With room for the text (at least <see cref="MinTextWidth"/>) beside
+    /// the buttons, the buttons sit at the right edge and the text fills the middle (the document layout). In a narrow
+    /// host — a docked tool window (tool-windows.md §2: the Project Manager's bars) — the buttons go below the text,
+    /// left-aligned with it, wrapping onto further lines, so that no button is cut off.
+    /// </summary>
+    private sealed class InfoBarRow : Panel
+    {
+        /// <summary>Below this text width the buttons move under the text.</summary>
+        private const double MinTextWidth = 200;
+
+        private const double Gap = 4;
+
+        private readonly Control _icon;
+        private readonly Control _text;
+        private readonly Control _buttons;
+        private bool _stacked;
+
+        public InfoBarRow(Control icon, Control text, Control buttons)
+        {
+            _icon = icon;
+            _text = text;
+            _buttons = buttons;
+            Children.AddRange([icon, text, buttons]);
+        }
+
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            _icon.Measure(Size.Infinity);
+            _buttons.Measure(Size.Infinity);
+            var icon = _icon.DesiredSize;
+            var inline = _buttons.DesiredSize;
+            _stacked = !double.IsInfinity(availableSize.Width) && inline.Width > 0
+                && availableSize.Width - icon.Width - inline.Width - Gap < MinTextWidth;
+            if (!_stacked)
+            {
+                _text.Measure(new Size(Math.Max(0, availableSize.Width - icon.Width - inline.Width - (inline.Width > 0 ? Gap : 0)), availableSize.Height));
+                return new Size(
+                    Math.Min(availableSize.Width, icon.Width + _text.DesiredSize.Width + inline.Width),
+                    Math.Max(icon.Height, Math.Max(_text.DesiredSize.Height, inline.Height)));
+            }
+
+            var width = Math.Max(0, availableSize.Width - icon.Width);
+            _text.Measure(new Size(width, availableSize.Height));
+            _buttons.Measure(new Size(width, double.PositiveInfinity));
+            return new Size(availableSize.Width, Math.Max(icon.Height, _text.DesiredSize.Height) + Gap + _buttons.DesiredSize.Height);
+        }
+
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            var icon = _icon.DesiredSize;
+            if (!_stacked)
+            {
+                var buttons = _buttons.DesiredSize;
+                _icon.Arrange(new Rect(0, (finalSize.Height - icon.Height) / 2, icon.Width, icon.Height));
+                _buttons.Arrange(new Rect(finalSize.Width - buttons.Width, 0, buttons.Width, buttons.Height));
+                _text.Arrange(new Rect(icon.Width, 0, Math.Max(0, finalSize.Width - icon.Width - buttons.Width - (buttons.Width > 0 ? Gap : 0)), finalSize.Height));
+                return finalSize;
+            }
+
+            var textHeight = Math.Max(icon.Height, _text.DesiredSize.Height);
+            var width = Math.Max(0, finalSize.Width - icon.Width);
+            _icon.Arrange(new Rect(0, 0, icon.Width, icon.Height));
+            _text.Arrange(new Rect(icon.Width, 0, width, textHeight));
+            _buttons.Arrange(new Rect(icon.Width, textHeight + Gap, width, _buttons.DesiredSize.Height));
+            return finalSize;
+        }
     }
 }

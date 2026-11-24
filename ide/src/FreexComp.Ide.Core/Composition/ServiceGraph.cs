@@ -120,6 +120,14 @@ public static class ServiceGraph
             ? projectManager.SelectedFilePaths
             : null;
         projects.RenameInPlace = projectManager.BeginRename;
+        projects.RemovableFolder = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName && projectManager.CanRemoveSelectedFolder
+            ? projectManager.RemoveSelectedFolderAsync
+            : null;
+        projectManager.Shell = platform.Shell;
+        ShellCommands.RegisterConsoleCommand(commands, platform.Shell, platform.FileSystem, platform.Dialogs,
+            () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
+                ? projectManager.SelectedNodeDirectory
+                : Path.GetDirectoryName(documents.ActiveDocument?.FilePath));
         documents.SelectedNodePaths = () => focus.Current.ToolWindowName == ViewModels.ProjectManagerViewModel.ToolName
             ? projectManager.SelectedNodePaths
             : null;
@@ -256,6 +264,8 @@ public static class ServiceGraph
         application.AfterSavePrompt = build.CancelForExitAsync; // file.exit while Building (phase3-build-run.md §2)
         Designer.DesignerShell? designerShell = null; // Phase 5 on (below); the palette lists its verbs
         var quickPick = new Popups.QuickPickHost(); // I-125, I-126 (Phase 3 commands: available from the implemented phase 3)
+        projectManager.ShowQuickPick = quickPick.Show; // UI-TW-124
+        projectManager.IsIdle = () => state.Current.State == Models.IdeState.Idle; // IDE-PM-120
         var popupsAvailable = (toolWindowPhase ?? ImplementedPhase) >= 3;
         commands.RegisterHandler("search.goToFile", new DelegateHandler(() => popupsAvailable, () =>
             quickPick.Show(new Popups.GoToFileViewModel(documents, projects, navigation, layout, platform.Dialogs))));

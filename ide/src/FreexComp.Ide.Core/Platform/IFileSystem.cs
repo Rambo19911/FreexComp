@@ -37,6 +37,11 @@ public interface IFileSystem
     /// <exception cref="IOException">The directory is not empty.</exception>
     void DeleteDirectory(string path);
 
+    /// <summary>Renames a directory with everything in it (same volume; IDE-PM-112).</summary>
+    /// <exception cref="DirectoryNotFoundException">The source does not exist.</exception>
+    /// <exception cref="IOException">A file or directory exists at the destination.</exception>
+    void MoveDirectory(string sourcePath, string destinationPath);
+
     /// <exception cref="FileNotFoundException">The source does not exist.</exception>
     /// <exception cref="IOException">The destination exists and <paramref name="overwrite"/> is false.</exception>
     void MoveFile(string sourcePath, string destinationPath, bool overwrite);

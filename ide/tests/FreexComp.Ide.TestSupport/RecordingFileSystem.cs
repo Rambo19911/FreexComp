@@ -52,6 +52,9 @@ public sealed class RecordingFileSystem(IFileSystem inner) : IFileSystem
 
     public void DeleteDirectory(string path) => Run($"DeleteDirectory {path}", () => inner.DeleteDirectory(path));
 
+    public void MoveDirectory(string sourcePath, string destinationPath) =>
+        Run($"MoveDirectory {sourcePath} -> {destinationPath}", () => inner.MoveDirectory(sourcePath, destinationPath));
+
     public void MoveFile(string sourcePath, string destinationPath, bool overwrite) =>
         Run($"MoveFile {sourcePath} -> {destinationPath}", () => inner.MoveFile(sourcePath, destinationPath, overwrite));
 

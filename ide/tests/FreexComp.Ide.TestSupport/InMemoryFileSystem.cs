@@ -118,6 +118,39 @@ public sealed class InMemoryFileSystem : IFileSystem
         }
     }
 
+    public void MoveDirectory(string sourcePath, string destinationPath)
+    {
+        lock (_gate)
+        {
+            var source = Normalize(sourcePath);
+            var destination = Normalize(destinationPath);
+            if (!_directories.Contains(source))
+            {
+                throw new DirectoryNotFoundException($"Could not find a part of the path '{source}'.");
+            }
+
+            RequireParent(destination);
+            if (_files.ContainsKey(destination) || (_directories.Contains(destination) && !Cmp.Equals(source, destination)))
+            {
+                throw new IOException($"Cannot create '{destination}' because a file or directory with the same name already exists.");
+            }
+
+            string Moved(string path) => destination + path[source.Length..];
+            bool Under(string path) => path.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            foreach (var file in _files.Keys.Where(Under).ToList())
+            {
+                _files.Remove(file, out var entry);
+                _files[Moved(file)] = entry!;
+            }
+
+            foreach (var directory in _directories.Where(d => Under(d) || Cmp.Equals(d, source)).ToList())
+            {
+                _directories.Remove(directory);
+                _directories.Add(Moved(directory));
+            }
+        }
+    }
+
     public void MoveFile(string sourcePath, string destinationPath, bool overwrite)
     {
         lock (_gate)

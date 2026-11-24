@@ -117,6 +117,7 @@ public sealed class QuickPickView : Border
         AutomationProperties.SetAutomationId(_noMatch, model.Name + ".NoMatch");
         AutomationProperties.SetName(_input, model.AccessibleName);
         AutomationProperties.SetName(_list, model.AccessibleName);
+        _input.PlaceholderText = model.Title; // UI-TW-124: the popup's title, while nothing is typed
         Child = _panel; // the controls exist only while the popup is open
         _syncing = true;
         _input.Text = model.Input;

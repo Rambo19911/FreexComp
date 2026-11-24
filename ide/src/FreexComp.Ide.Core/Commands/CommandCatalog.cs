@@ -28,6 +28,7 @@ public static class CommandCatalog
         new("file.closeProject", [Global], 1, []),
         new("file.copyPath", [Global], 1, []),
         new("file.showInExplorer", [Global], 1, []),
+        new("file.openInTerminal", [Global], 8, []),
         new("file.print", [Editor], 8, []),
         new("file.exit", [Global], 1, ["Alt+F4"]),
 
@@ -157,6 +158,8 @@ public static class CommandCatalog
         new("project.renameFile", [ProjectManager], 1, ["F2"]),
         new("project.deleteFile", [ProjectManager], 1, ["Shift+Delete"]),
         new("project.newFolder", [ProjectManager], 8, []),
+        new("project.addNewFile", [ProjectManager], 8, []),
+        new("project.moveFile", [ProjectManager], 8, []),
         new("project.viewSource", [Global], 1, []),
         new("project.build", [Global], 3, ["Ctrl+Shift+B"]),
         new("project.rebuild", [Global], 3, []),

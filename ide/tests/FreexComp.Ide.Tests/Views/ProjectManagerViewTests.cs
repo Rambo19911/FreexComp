@@ -384,7 +384,9 @@ public sealed partial class ProjectManagerViewTests
     /// <summary>
     /// I-193, I-207: the context menus of <see cref="ContextMenusAndSelection"/> at the product's phase 5 (tool-windows.md
     /// §Project Manager; P5 <c>project.addNewForm</c> and, for units with a form and <c>.form</c> rows,
-    /// <c>projectManager.openForm</c>; P8+ items such as <c>project.newFolder</c> omitted, UI-MENU-042).
+    /// <c>projectManager.openForm</c>; the delivered P8+ items of card F09-054 — <c>project.newFolder</c>,
+    /// <c>project.addNewFile</c>, <c>project.moveFile</c>, <c>file.openInTerminal</c>, Remove on folder rows
+    /// (phase8-project-files.md §8); other P8+ items such as <c>project.setActive</c> omitted, UI-MENU-042).
     /// </summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Phase", "5")]
@@ -401,21 +403,22 @@ public sealed partial class ProjectManagerViewTests
 
         pm.Select(pm.Find("$project")!);
         Assert.Equal(["project.build", "project.rebuild", "project.clean", "-", "run.start", "run.startWithoutDebugging", "-",
-            "project.addNewUnit", "project.addNewForm", "project.addExistingFile", "-", "project.viewSource", "file.showInExplorer",
-            "project.openOutputFolder", "file.copyPath", "-", "file.closeProject", "-", "project.options"], Ids(pm.ContextMenu()));
+            "project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
+            "project.viewSource", "file.showInExplorer", "file.openInTerminal", "project.openOutputFolder", "file.copyPath", "-",
+            "file.closeProject", "-", "project.options"], Ids(pm.ContextMenu()));
         pm.Select(pm.Find("lib/")!);
-        Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addExistingFile", "-", "file.showInExplorer", "file.copyPath"],
-            Ids(pm.ContextMenu()));
+        Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addNewFile", "project.addExistingFile", "project.newFolder", "-",
+            "project.removeFile", "-", "file.showInExplorer", "file.openInTerminal", "file.copyPath"], Ids(pm.ContextMenu()));
         pm.Select(pm.Find("MainForm.pas")!);
-        Assert.Equal(["projectManager.open", "projectManager.openForm", "-", "file.save", "-", "project.renameFile", "project.removeFile",
-            "project.deleteFile", "-", "file.showInExplorer", "file.copyPath"], Ids(pm.ContextMenu()));
+        Assert.Equal(["projectManager.open", "projectManager.openForm", "-", "file.save", "-", "project.renameFile", "project.moveFile",
+            "project.removeFile", "project.deleteFile", "-", "file.showInExplorer", "file.openInTerminal", "file.copyPath"], Ids(pm.ContextMenu()));
         Assert.True(h.Services.Commands.CanExecute("projectManager.openForm"));
         pm.Select(pm.Find("Unit1.pas")!);
-        Assert.Equal(["projectManager.open", "-", "file.save", "-", "project.renameFile", "project.removeFile", "project.deleteFile", "-",
-            "file.showInExplorer", "file.copyPath"], Ids(pm.ContextMenu()));
+        Assert.Equal(["projectManager.open", "-", "file.save", "-", "project.renameFile", "project.moveFile", "project.removeFile",
+            "project.deleteFile", "-", "file.showInExplorer", "file.openInTerminal", "file.copyPath"], Ids(pm.ContextMenu()));
         Assert.False(h.Services.Commands.CanExecute("projectManager.openForm"));
         pm.Select(pm.Find("notes.md")!, ProjectSelectMode.Toggle);
-        Assert.Equal(["projectManager.open", "-", "project.removeFile", "project.deleteFile"], Ids(pm.ContextMenu()));
+        Assert.Equal(["projectManager.open", "-", "project.moveFile", "project.removeFile", "project.deleteFile"], Ids(pm.ContextMenu()));
         pm.ClearSelection();
         Assert.Equal(["project.addNewUnit", "project.addNewForm", "project.addExistingFile", "-", "projectManager.collapseAll"],
             Ids(pm.ContextMenu()));

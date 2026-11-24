@@ -440,6 +440,78 @@ public sealed class ProjectServiceTests
     }
 
     /// <summary>
+    /// <c>project.addNewFile</c> (phase8-project-files.md §3): <c>File&lt;N&gt;.txt</c> with zero bytes in the folder of
+    /// IDE-PM-040, listed and saved, its row selected and being named, not opened; a name that would make it a unit or
+    /// a form is refused inline.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Phase", "8")]
+    [Trait("Req", "IDE-PM-118")]
+    [Trait("Req", "IDE-PM-119")]
+    [Trait("Req", "UI-TW-117")]
+    public Task AddNewFile_CreatesListsAndRefusesUnitExtension() => TestUiThread.RunAsync(() => AddNewFile_CreatesListsAndRefusesUnitExtensionOnUiThread());
+
+    private async Task AddNewFile_CreatesListsAndRefusesUnitExtensionOnUiThread()
+    {
+        WriteHello();
+        File(Dir + @"\file1.TXT", "taken, in another letter case");
+        _fs.CreateDirectory(Dir + @"\File2.txt"); // a directory of that name counts too (IDE-PM-111)
+        var projectManagerFocus = new FocusState(CommandScope.ProjectManager, ProjectManagerViewModel.ToolName, null, false);
+        _services.FocusTracker.Update(projectManagerFocus);
+        Assert.False(_services.Commands.CanExecute("project.addNewFile")); // enabled as project.addNewUnit: a project is open
+        Assert.True(await Projects.OpenAsync(ProjectPath));
+        Assert.True(_services.Commands.CanExecute("project.addNewFile"));
+        var documents = _services.Documents.Documents.Count;
+
+        // A file row selected: the main source's folder (IDE-PM-040).
+        ProjectManager.Select(ProjectManager.Find("Unit1.pas")!);
+        await _services.Commands.ExecuteAsync("project.addNewFile");
+
+        var path = Dir + @"\File3.txt";
+        Assert.Empty(_fs.ReadAllBytes(path)); // zero bytes
+        Assert.Equal(new ProjectFileItem("File3.txt", null, "other"), Projects.Project!.Files[^1]); // kind from the extension
+        Assert.Contains("\"path\": \"File3.txt\"", Saved(), StringComparison.Ordinal); // saved at once (IDE-PM-004)
+        Assert.Equal(documents, _services.Documents.Documents.Count); // not opened
+        var row = Assert.Single(ProjectManager.Selection);
+        Assert.Equal("File3.txt", row.Key);
+        var naming = Assert.IsType<RenameFileViewModel>(row.Rename);
+        Assert.Equal("File3".Length, naming.BaseNameLength); // UI-TW-117: the base name selected
+
+        // IDE-PM-119: a unit needs its skeleton, a form its unit; the editor stays open with the message.
+        naming.NewName = "Helper.PAS";
+        Assert.Equal(Strings.Msg_Project_NewFileIsUnit, naming.Error);
+        Assert.False(await naming.CommitAsync());
+        naming.NewName = "Main.form";
+        Assert.Equal(Strings.Status_AddFormViaUnit, naming.Error);
+        Assert.False(await naming.CommitAsync());
+        naming.NewName = "a?.txt"; // the validation of IDE-PM-070 for non-unit files
+        Assert.Equal(Strings.Msg_NewFile_NameInvalid, naming.Error);
+        Assert.Same(naming, row.Rename);
+        Assert.True(_fs.FileExists(path));
+
+        // A valid name renames file and entry.
+        naming.NewName = "notes.md";
+        Assert.Null(naming.Error);
+        Assert.True(await naming.CommitAsync());
+        Assert.False(_fs.FileExists(path));
+        Assert.Empty(_fs.ReadAllBytes(Dir + @"\notes.md"));
+        Assert.Equal("notes.md", Projects.Project!.Files[^1].Path);
+        Assert.Equal(["notes.md"], ProjectManager.Selection.Select(n => n.Key));
+
+        // A selected folder row is the target folder; a later rename of that file is an ordinary rename again.
+        ProjectManager.Select(ProjectManager.Find("sub/")!);
+        Assert.True(await Projects.AddNewFileAsync());
+        Assert.Equal("sub/File1.txt", Projects.Project!.Files[^1].Path);
+        Assert.Empty(_fs.ReadAllBytes(Dir + @"\sub\File1.txt"));
+        Assert.Equal(["sub/File1.txt"], ProjectManager.Selection.Select(n => n.Key));
+        ProjectManager.Selection[0].Rename!.Cancel(); // Escape keeps the provisional name
+        Assert.True(_fs.FileExists(Dir + @"\sub\File1.txt"));
+        Assert.True(Projects.ValidateRename("sub/File1.txt", "Later.pas").Success);
+        Assert.Equal("Msg.Project.NewFileIsUnit", Projects.ValidateRename("sub/File1.txt", "Later.pas", newFile: true).MessageId);
+        Assert.Empty(Dialogs.Requests);
+    }
+
+    /// <summary>
     /// A unit that cannot be written: <c>Msg.File.SaveFailed</c> with Retry and Cancel only (there is no document to
     /// "Save As" yet, as in the New File dialog, UI-DLG-040); Retry writes again, Cancel creates nothing.
     /// </summary>

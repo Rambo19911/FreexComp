@@ -28,6 +28,8 @@ public sealed class PhysicalFileSystem : IFileSystem
             Directory.Delete(path, recursive: false);
     }
 
+    public void MoveDirectory(string sourcePath, string destinationPath) => Directory.Move(sourcePath, destinationPath);
+
     public void MoveFile(string sourcePath, string destinationPath, bool overwrite) =>
         File.Move(sourcePath, destinationPath, overwrite);
 

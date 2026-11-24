@@ -118,4 +118,22 @@ public sealed class RenameFileViewModel : DialogViewModel<bool>
 
     /// <summary>Escape: closes without renaming.</summary>
     public void Cancel() => Close(false);
+
+    /// <summary>
+    /// UI-TW-116: in-place naming of a new folder cancels an invalid name on focus loss (the provisional name stays)
+    /// instead of keeping the editor open.
+    /// </summary>
+    public bool CancelInvalidOnFocusLoss { get; init; }
+
+    /// <summary>The in-place editor lost focus: commits (UI-TW-112), or cancels per <see cref="CancelInvalidOnFocusLoss"/>.</summary>
+    public Task FocusLostAsync()
+    {
+        if (CancelInvalidOnFocusLoss && Error is not null)
+        {
+            Cancel();
+            return Task.CompletedTask;
+        }
+
+        return CommitAsync();
+    }
 }

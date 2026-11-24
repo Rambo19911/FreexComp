@@ -93,6 +93,7 @@ public sealed class SessionService : ISessionService
         };
         documents.ActiveDocumentChanged += (_, _) => ScheduleSave();
         projectManager.SelectionChanged += (_, _) => ScheduleSave();
+        projectManager.SessionStateChanged += (_, _) => ScheduleSave(); // IDE-PM-113, IDE-PM-148
     }
 
     /// <summary>IDE-ED-114 (P3): the bookmarks stored in and restored from the session's <c>bookmarks</c> member.</summary>
@@ -182,6 +183,10 @@ public sealed class SessionService : ISessionService
         var root = Load(SessionPath);
         if (_projects.Project is not null && root["projectManager"] is JsonObject tree)
         {
+            // IDE-PM-113 / IDE-PM-148: the remembered empty folders and the ignored unlisted files, before the expansion.
+            _projectManager.RestoreFolders(
+                tree["folders"] is JsonArray folders ? [.. folders.Select(LayoutStateJson.Str).OfType<string>()] : [],
+                tree["ignoredFiles"] is JsonArray ignored ? [.. ignored.Select(LayoutStateJson.Str).OfType<string>()] : []);
             var expanded = tree["expanded"] is JsonArray keys ? keys.Select(LayoutStateJson.Str).OfType<string>().ToList() : null;
             if (expanded is not null)
                 _projectManager.RestoreSessionState(expanded, LayoutStateJson.Str(tree["selected"]));
@@ -284,6 +289,8 @@ public sealed class SessionService : ISessionService
             {
                 ["expanded"] = new JsonArray([.. _projectManager.ExpandedKeys().Select(k => (JsonNode)k)]),
                 ["selected"] = _projectManager.Selection.FirstOrDefault()?.Key,
+                ["folders"] = new JsonArray([.. _projectManager.EmptyFolders.Select(k => (JsonNode)k)]),
+                ["ignoredFiles"] = new JsonArray([.. _projectManager.IgnoredFiles.Select(k => (JsonNode)k)]),
             });
         }
 
