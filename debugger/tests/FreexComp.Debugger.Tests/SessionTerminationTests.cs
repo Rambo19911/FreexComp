@@ -163,10 +163,10 @@ public sealed class SessionTerminationTests
     public async Task AdapterIgnoresDisconnect_Killed()
     {
         // The adapter neither answers disconnect nor reacts to its input being closed.
-        await using var harness = SessionHarness.Create("""{ "steps": [ { "on": "disconnect", "hang": true } ] }""", manualClock: true);
+        await using var harness = SessionHarness.Create("""{ "steps": [ { "on": "disconnect", "hang": true } ] }""");
         await harness.LaunchAsync();
         var adapter = Assert.NotNull(harness.AdapterProcessId);
-        var disconnectWait = harness.Clock!.WhenTimerCreated(TimeSpan.FromSeconds(3));
+        var disconnectWait = harness.Clock.WhenTimerCreated(TimeSpan.FromSeconds(3));
         var exitWait = harness.Clock.WhenTimerCreated(TimeSpan.FromSeconds(2));
 
         var terminate = harness.Session.TerminateAsync(Ct);
@@ -184,6 +184,38 @@ public sealed class SessionTerminationTests
         Assert.Equal(DebugState.Terminated, harness.Session.State);
         await harness.WaitForEventAsync("terminated");
         Assert.Equal("terminated TerminatedByUser null null", harness.Events.Snapshot()[^1]);
+    }
+
+    [Fact]
+    [Trait("Req", "DBG-020")]
+    public async Task AdapterSlowToExit_ScenarioStillComplete()
+    {
+        // G-078: the adapter answers disconnect and then takes its time to exit (a loaded machine).
+        var gateName = "FreexComp-FakeAdapter-" + Guid.NewGuid().ToString("N");
+        using var gate = new EventWaitHandle(false, EventResetMode.ManualReset, gateName);
+        await using var harness = SessionHarness.Create(
+            $$"""{ "steps": [ { "on": "disconnect", "respond": {}, "thenWaitForEvent": "{{gateName}}" } ] }""");
+        await harness.LaunchAsync();
+        var adapter = Assert.NotNull(harness.AdapterProcessId);
+        var exitWait = harness.Clock.WhenTimerCreated(TimeSpan.FromSeconds(2));
+        Task terminate;
+        try
+        {
+            terminate = harness.Session.TerminateAsync(Ct);
+            // Disconnect is answered and the adapter's input is closed: the session waits for the adapter's exit. However
+            // long the adapter needs, no time passes on the session's clock, so it is not killed before it is done.
+            await exitWait.WaitAsync(Safety, Ct);
+            Assert.True(SessionHarness.IsAlive(adapter));
+            Assert.False(terminate.IsCompleted);
+        }
+        finally
+        {
+            gate.Set();
+        }
+
+        await terminate.WaitAsync(Safety, Ct);
+        Assert.False(SessionHarness.IsAlive(adapter));
+        harness.AssertScenarioComplete();
     }
 
     [Fact]

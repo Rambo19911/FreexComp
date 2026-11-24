@@ -144,13 +144,13 @@ public sealed class SessionLaunchTests
     [Trait("Req", "DBG-056")]
     public async Task Launch_NoInitialized_Fails()
     {
-        await using var harness = SessionHarness.Create("""{ "initializedAfter": "never", "launchResponseAfter": "launch" }""", manualClock: true);
+        await using var harness = SessionHarness.Create("""{ "initializedAfter": "never", "launchResponseAfter": "launch" }""");
 
         var launch = harness.LaunchAsync();
         // The 10 s limit starts with the initialize response; it is armed before the launch request goes out.
         await harness.WaitForRequestAsync("launch");
         Assert.False(launch.IsCompleted);
-        harness.Clock!.Advance(TimeSpan.FromSeconds(10));
+        harness.Clock.Advance(TimeSpan.FromSeconds(10));
 
         var exception = await Assert.ThrowsAsync<DebuggerException>(() => launch);
         Assert.Equal(DebugErrorCode.LaunchFailed, exception.Code);
@@ -166,11 +166,11 @@ public sealed class SessionLaunchTests
     public async Task Launch_Timeout_Terminates()
     {
         // The launch request is never answered: configuration completes, the debuggee never reports running.
-        await using var harness = SessionHarness.Create("""{ "steps": [ { "on": "launch" } ] }""", manualClock: true);
+        await using var harness = SessionHarness.Create("""{ "steps": [ { "on": "launch" } ] }""");
 
         var launch = harness.LaunchAsync();
         await harness.WaitForResponseAsync("configurationDone");
-        harness.Clock!.Advance(TimeSpan.FromSeconds(29));
+        harness.Clock.Advance(TimeSpan.FromSeconds(29));
         Assert.False(launch.IsCompleted);
         Assert.Equal(DebugState.Starting, harness.Session.State);
         harness.Clock.Advance(TimeSpan.FromSeconds(1));

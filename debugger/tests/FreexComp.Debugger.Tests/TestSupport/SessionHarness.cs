@@ -64,7 +64,7 @@ internal sealed class SessionHarness : IAsyncDisposable
 
     private readonly string _scenarioPath;
 
-    private SessionHarness(string scenarioPath, DebugSession session, ManualTimeProvider? clock, Watch<DapTraceEntry> trace)
+    private SessionHarness(string scenarioPath, DebugSession session, ManualTimeProvider clock, Watch<DapTraceEntry> trace)
     {
         _scenarioPath = scenarioPath;
         Session = session;
@@ -84,8 +84,12 @@ internal sealed class SessionHarness : IAsyncDisposable
 
     public DebugSession Session { get; }
 
-    /// <summary>Non-null when the session runs on a manual clock.</summary>
-    public ManualTimeProvider? Clock { get; }
+    /// <summary>
+    /// The session's clock. It only moves when the test advances it, so none of the session's time limits (request,
+    /// launch, disconnect and adapter exit waits) ever runs out because the machine is slow: a scripted adapter is
+    /// waited for as long as it takes, and a limit is reached exactly when a test says so (G-078).
+    /// </summary>
+    public ManualTimeProvider Clock { get; }
 
     /// <summary>Every public event, in delivery order, one line each.</summary>
     public Watch<string> Events { get; } = new();
@@ -103,10 +107,9 @@ internal sealed class SessionHarness : IAsyncDisposable
         $"{status.Id} {status.State} line={status.ActualLine} hits={status.HitCount} msg={status.Message ?? "null"}";
 
     /// <param name="scenarioJson">FakeAdapter scenario.</param>
-    /// <param name="manualClock">Run the session on a clock that only the test advances.</param>
     /// <param name="configure">Changes to the session options.</param>
     public static SessionHarness Create(
-        string scenarioJson, bool manualClock = false, Func<DebugSessionOptions, DebugSessionOptions>? configure = null)
+        string scenarioJson, Func<DebugSessionOptions, DebugSessionOptions>? configure = null)
     {
         var scenarioPath = FakeAdapterRunner.WriteScenario(scenarioJson);
         var trace = new Watch<DapTraceEntry>();
@@ -126,8 +129,8 @@ internal sealed class SessionHarness : IAsyncDisposable
             },
         };
         options = configure?.Invoke(options) ?? options;
-        var clock = manualClock ? new ManualTimeProvider() : null;
-        session = clock is null ? new DebugSession(options) : new DebugSession(options, clock);
+        var clock = new ManualTimeProvider();
+        session = new DebugSession(options, clock);
         return new SessionHarness(scenarioPath, session, clock, trace);
     }
 
@@ -184,8 +187,18 @@ internal sealed class SessionHarness : IAsyncDisposable
     public IReadOnlyList<string> StderrLines() =>
         [.. Trace.Snapshot().Where(e => e.Direction == DapDirection.AdapterStderr).Select(e => e.Json)];
 
-    /// <summary>The adapter consumed every scenario step and met no unexpected request (valid once the session ended).</summary>
-    public void AssertScenarioComplete() => Assert.Contains("SCENARIO-COMPLETE", StderrLines());
+    /// <summary>
+    /// The adapter consumed every scenario step and met no unexpected request (valid once the session ended: the
+    /// session reads the adapter's stderr to its end before it reports the end, and on the harness clock it gives up
+    /// neither on the adapter's exit nor on that reading).
+    /// </summary>
+    public void AssertScenarioComplete()
+    {
+        var stderr = StderrLines();
+        // The adapter writes nothing when steps are left - the requests that were sent tell which.
+        Assert.True(stderr.Contains("SCENARIO-COMPLETE"),
+            $"The scripted adapter did not report SCENARIO-COMPLETE. Its stderr: [{string.Join(" | ", stderr)}]. Requests sent: [{string.Join(", ", SentCommands())}].");
+    }
 
     public int? AdapterProcessId => ((IDebugSessionDiagnostics)Session).AdapterProcessId;
 

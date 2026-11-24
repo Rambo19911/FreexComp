@@ -26,7 +26,7 @@ public sealed class ConditionFaultTests
             """,
             setup: """
                 { "on": "setBreakpoints", "respond": { "breakpoints": [ { "id": 1, "verified": true, "line": 69 } ] } },
-                """), manualClock: true);
+                """));
         var session = harness.Session;
         await harness.LaunchAsync(new LaunchRequest
         {
@@ -39,7 +39,7 @@ public sealed class ConditionFaultTests
 
         await session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
         await harness.WaitForRequestAsync("evaluate");   // the request's timer exists before the request is written
-        harness.Clock!.Advance(TimeSpan.FromSeconds(10));
+        harness.Clock.Advance(TimeSpan.FromSeconds(10));
         var stop = await harness.Events.WaitAsync(e => e.Contains("epoch=2", StringComparison.Ordinal) || e.StartsWith("terminated", StringComparison.Ordinal));
 
         Assert.StartsWith("stopped Pause epoch=2 thread=1 loc=null hits=[] desc=Stopped (details unavailable: ", stop);

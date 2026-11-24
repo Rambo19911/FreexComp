@@ -6,7 +6,9 @@
 // consumed and the exit is not a failure (2, 3).
 // Step extensions beyond the specification: "thenRaw" (text sent as one framed message after the response and events,
 // not necessarily JSON: simulates a protocol error) and "hang": true (after the step the adapter blocks forever and
-// ignores its input: simulates an adapter that does not react to disconnect or end of input).
+// ignores its input: simulates an adapter that does not react to disconnect or end of input) and "thenWaitForEvent":
+// "<name>" (after the response and events of the step the adapter blocks until the named operating-system event is
+// signalled: a test holds the adapter for as long as it wants, e.g. past a wait of the session).
 // Built-in answers (no step needed): initialize, launch, configurationDone, disconnect, setExceptionBreakpoints,
 // setFunctionBreakpoints (every breakpoint verified, ids from 1001), readMemory, writeMemory.
 // Scenario extension: "variables": { "Name": "0x1000" } answers an "evaluate" of "&Name" that no step claims the way the
@@ -232,6 +234,13 @@ internal static class Program
         {
             Output.Flush();
             Thread.Sleep(Timeout.Infinite);
+        }
+
+        if (step is not null && step.Json.TryGetProperty("thenWaitForEvent", out var gateName))
+        {
+            Output.Flush();
+            using var gate = new EventWaitHandle(false, EventResetMode.ManualReset, gateName.GetString());
+            gate.WaitOne();
         }
 
         if (step is not null && step.Json.TryGetProperty("thenExit", out var exitCode))

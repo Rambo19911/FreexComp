@@ -23,9 +23,9 @@ public sealed class SessionRobustnessTests
                      {{Threads}}, {{DemoSession.Stack(71)}}{{(steps.Length > 0 ? ", " + steps : "")}} ] }
         """;
 
-    private static async Task<SessionHarness> StoppedAsync(string steps, bool manualClock)
+    private static async Task<SessionHarness> StoppedAsync(string steps)
     {
-        var harness = SessionHarness.Create(Scenario(steps), manualClock);
+        var harness = SessionHarness.Create(Scenario(steps));
         await harness.LaunchAsync();
         await harness.WaitForEventAsync("stopped");
         return harness;
@@ -34,7 +34,7 @@ public sealed class SessionRobustnessTests
     /// <summary>An inspection call that the adapter never answers: faults when the session clock passes the request timeout.</summary>
     private static async Task<DebuggerException> TimeOutAsync(SessionHarness harness)
     {
-        var waiting = harness.Clock!.WhenTimerCreated(RequestTimeout);
+        var waiting = harness.Clock.WhenTimerCreated(RequestTimeout);
         var call = harness.Session.GetStackTraceAsync(1, ct: Ct);
         await waiting.WaitAsync(Safety, Ct);
         harness.Clock.Advance(RequestTimeout);
@@ -44,7 +44,7 @@ public sealed class SessionRobustnessTests
     [Fact]
     public async Task ThreeTimeouts_Terminates()
     {
-        await using var harness = await StoppedAsync($"{Unanswered}, {Unanswered}, {Unanswered}", manualClock: true);
+        await using var harness = await StoppedAsync($"{Unanswered}, {Unanswered}, {Unanswered}");
 
         for (var attempt = 1; attempt <= 2; attempt++)
         {
@@ -67,7 +67,7 @@ public sealed class SessionRobustnessTests
     public async Task TwoTimeouts_ThenAnswer_CountStartsAgain()
     {
         await using var harness = await StoppedAsync(
-            $"{Unanswered}, {Unanswered}, {Answered}, {Unanswered}, {Unanswered}", manualClock: true);
+            $"{Unanswered}, {Unanswered}, {Answered}, {Unanswered}, {Unanswered}");
 
         await TimeOutAsync(harness);
         await TimeOutAsync(harness);
@@ -88,7 +88,7 @@ public sealed class SessionRobustnessTests
             $$"""
             { "on": "continue", "respond": {}, "thenEvents": [ {{StepStop}} ] }, {{Threads}}, {{DemoSession.Stack(72)}},
             {{Unanswered}}
-            """, manualClock: false);
+            """);
         var session = harness.Session;
 
         // Queued behind the resume: when its turn comes the state has left Stopped. It faults with InvalidState and

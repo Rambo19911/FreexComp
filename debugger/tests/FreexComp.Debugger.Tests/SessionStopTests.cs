@@ -414,13 +414,13 @@ public sealed class SessionStopTests
                 "thenEvents": [ {{Stopped("""{ "reason": "signal", "description": "signal SIGSTOP", "threadId": 7412 }""")}} ] },
               {{Threads}}, {{Stack(55)}} ] }
             """;
-        await using var harness = SessionHarness.Create(steps, manualClock: true);
+        await using var harness = SessionHarness.Create(steps);
         await harness.LaunchAsync(LaunchWithBreakpoint());
         await harness.WaitForEventAsync("stopped");
         await harness.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
         await harness.Session.PauseAsync(Ct).WaitAsync(Safety, Ct);
 
-        harness.Clock!.Advance(TimeSpan.FromSeconds(secondsAfterPause));
+        harness.Clock.Advance(TimeSpan.FromSeconds(secondsAfterPause));
         // The scripted adapter stops the debuggee after its next answer.
         await harness.Session.SetBreakpointsAsync(Demo, [new BreakpointSpec { Id = 5, Line = 40 }], Ct).WaitAsync(Safety, Ct);
 
@@ -428,6 +428,44 @@ public sealed class SessionStopTests
             $"stopped Pause epoch=2 thread=7412 loc={Demo}:55:5 hits=[] desc={description}",
             await harness.WaitForEventAsync("stopped Pause"));
         await EndAsync(harness);
+    }
+
+    [Fact]
+    [Trait("Req", "DBG-020")]
+    [Trait("Req", "DBG-425")]
+    public async Task Terminate_WhileStopIsResolved_SendsNoResume()
+    {
+        // G-078: a termination that overtakes a stop the session resolves itself ends the session at once; the internal
+        // resume is not sent any more. For a scripted adapter this means: its "continue" step stays unconsumed and it
+        // writes no completion marker - a test that ends the session must first wait for the resume it scripted.
+        const string set = """{ "on": "setBreakpoints", "respond": { "breakpoints": [ { "id": 2, "verified": true, "line": 40 } ] }""";
+        SessionHarness? created = null;
+        var terminated = 0;
+        await using var harness = created = SessionHarness.Create($$"""
+            { "steps": [ {{set}} },
+              {{set}}, "thenEvents": [ {{Stopped("""{ "reason": "breakpoint", "threadId": 7412, "hitBreakpointIds": [2] }""")}} ] },
+              {{Threads}}, {{Stack(40)}},
+              { "on": "continue", "respond": {}, "expectArguments": { "threadId": 7412 } } ] }
+            """,
+            configure: options => options with
+            {
+                Trace = entry =>
+                {
+                    options.Trace!(entry);
+                    // On the reader, before the stack trace answer reaches the session: the user ends the session.
+                    if (entry.Direction == DapDirection.FromAdapter && entry.Json.Contains("\"command\":\"stackTrace\"", StringComparison.Ordinal)
+                        && Interlocked.Exchange(ref terminated, 1) == 0)
+                        _ = created!.Session.TerminateAsync(CancellationToken.None);
+                },
+            });
+        var spec = new BreakpointSpec { Id = 5, Line = 40, HitCount = new HitCountSpec(HitCountMode.Equal, 2) };
+        await harness.LaunchAsync(new LaunchRequest { Program = SessionHarness.Program, Breakpoints = [new SourceBreakpoints(Demo, [spec])] });
+        await harness.Session.SetBreakpointsAsync(Demo, [spec], Ct).WaitAsync(Safety, Ct);
+
+        Assert.Equal("terminated TerminatedByUser null null", await harness.WaitForEventAsync("terminated"));
+        Assert.DoesNotContain("continue", harness.SentCommands());
+        Assert.DoesNotContain(harness.Events.Snapshot(), e => e.StartsWith("stopped", StringComparison.Ordinal));
+        Assert.Empty(harness.StderrLines());
     }
 
     [Fact]
@@ -454,6 +492,9 @@ public sealed class SessionStopTests
         // Sending the set again makes the scripted adapter report the arrival.
         await session.SetBreakpointsAsync(Demo, [spec], Ct).WaitAsync(Safety, Ct);
         await harness.WaitForEventAsync("breakpoint 5 Verified line=40 hits=1");
+        // The arrival is reported before the debuggee is resumed, and a termination that overtakes the resume cancels
+        // it (Terminate_WhileStopIsResolved_SendsNoResume): the end waits for the resume.
+        await harness.WaitForResponseAsync("continue");
 
         await EndAsync(harness);   // the scenario is complete: the internal continue was sent
         Assert.DoesNotContain(harness.Events.Snapshot(), e => e.StartsWith("stopped", StringComparison.Ordinal));
