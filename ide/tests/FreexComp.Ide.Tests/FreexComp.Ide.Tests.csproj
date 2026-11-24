@@ -11,6 +11,8 @@
     <ProjectReference Include="..\FreexComp.Ide.TestHelper\FreexComp.Ide.TestHelper.csproj" />
     <!-- Phase 6: the debugger area's scripted debug adapter; the reference copies FakeAdapter.exe next to the tests. -->
     <ProjectReference Include="..\..\..\debugger\tests\FakeAdapter\FakeAdapter.csproj" />
+    <!-- F09-001: the command-line build driver; the reference copies pbuild.exe next to the tests. -->
+    <ProjectReference Include="..\..\..\compiler\src\pbuild\pbuild.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless.XUnit" />

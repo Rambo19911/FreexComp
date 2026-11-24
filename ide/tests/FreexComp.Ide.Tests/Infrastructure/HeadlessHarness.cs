@@ -89,6 +89,12 @@ public sealed class HarnessOptions
     /// product does from its own folder (the test assembly's folder inside the checkout, IDE-SET-050).
     /// </summary>
     public bool RealBuild { get; set; }
+
+    /// <summary>
+    /// With <see cref="RealBuild"/>: wraps the real engine before the IDE gets it (F09-001: a test records the
+    /// <c>BuildEvent</c> stream and the result the IDE received).
+    /// </summary>
+    public Func<FreexComp.Build.IBuildEngine, FreexComp.Build.IBuildEngine>? WrapBuildEngine { get; set; }
 }
 
 /// <summary>Thrown by <see cref="HeadlessHarness.DisposeAsync"/> when a test left a failure behind (IDE-TEST-014).</summary>
@@ -173,7 +179,8 @@ public sealed class HeadlessHarness : IAsyncDisposable
             o.Processes = options.RealBuild ? new FreexComp.Ide.Platform.Windows.WindowsProcessLauncher(Clock) : Processes;
             if (options.RealBuild)
                 o.ToolchainEnvironment = new Core.Build.ToolchainEnvironment(null, AppContext.BaseDirectory, []);
-            o.BuildEngine = options.RealBuild ? new FreexComp.Build.BuildEngine(new Core.Projects.CompilerFileSystemAdapter(FileSystem)) : Build;
+            FreexComp.Build.IBuildEngine real = new FreexComp.Build.BuildEngine(new Core.Projects.CompilerFileSystemAdapter(FileSystem));
+            o.BuildEngine = options.RealBuild ? options.WrapBuildEngine?.Invoke(real) ?? real : Build;
             o.DebugSessions = DebugSessions;
         });
 
