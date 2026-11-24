@@ -3,7 +3,7 @@ namespace FreexComp.Rtl.Tests.Harness;
 /// <summary>
 /// The golden theories of RTL-908: one method per phase, a program is a row of the theory selected by its
 /// <c>// phase: N</c> marker (default 2). Row display name <c>&lt;group&gt;/&lt;TestName&gt;</c> (RTL-900).
-/// Methods for phases 7 and 8 are added with the first program of that phase (xUnit fails a theory without rows).
+/// A method is added with the first program of its phase (xUnit fails a theory without rows).
 /// </summary>
 [Trait("Kind", "Golden")]
 [Trait("Category", "Toolchain")]
@@ -30,6 +30,13 @@ public sealed class GoldenTheory
     [Trait("Phase", "7")]
     [MemberData(nameof(Phase7))]
     public Task Golden_Phase7(string id) => RunAsync(id);
+
+    public static IEnumerable<TheoryDataRow<string>> Phase8() => RtlCorpus.Rows(RtlCorpus.Discover(RtlSetup.TestsDirectory), 8);
+
+    [Theory]
+    [Trait("Phase", "8")]
+    [MemberData(nameof(Phase8))]
+    public Task Golden_Phase8(string id) => RunAsync(id);
 
     private static async Task RunAsync(string id)
     {

@@ -30,6 +30,18 @@ public sealed record RtlSetup(string OpcPath, string RtlDirectory, string Toolch
 {
     public ImmutableArray<string> ExtraUnitDirectories { get; init; } = [];
 
+    /// <summary>The baseline target (platform-layer.md RTL-970): the only one the harness compiles for until F01-004.</summary>
+    public const string BaselineTarget = "win64";
+
+    /// <summary>The target id passed to opc as <c>--target</c> (RTL-976); always explicit, never the compiler's default.</summary>
+    public string Target { get; init; } = BaselineTarget;
+
+    /// <summary>
+    /// The options every opc command line of the harness carries: RTL root, toolchain and target. The only place that
+    /// spells them, so no command line can leave the target out (<c>PlatformLayerTests.Harness_PassesBaselineTargetExplicitly</c>).
+    /// </summary>
+    public ImmutableArray<string> CompilerOptions => ["--rtl", RtlDirectory, "--toolchain", ToolchainDirectory, "--target", Target];
+
     public static string RepositoryRoot { get; } = FindRoot();
 
     public static string TestsDirectory => Path.Combine(RepositoryRoot, "rtl", "tests");
@@ -263,15 +275,18 @@ public static class GoldenRunner
         return (null, next < MinimumCheck ? MinimumCheck : next);
     }
 
+    /// <summary>The opc command line of one program: unit paths, output into <paramref name="work"/>, the setup's options (with the target, RTL-976), then the program's own.</summary>
+    public static List<string> OpcArguments(RtlCase @case, RtlHeader header, RtlSetup setup, string work) =>
+    [
+        @case.SourcePath, "-U", setup.UnitDirectory, .. setup.ExtraUnitDirectories.SelectMany(d => new[] { "-U", d }),
+        "-o", Path.Combine(work, @case.Name + ".exe"), "--obj-dir", Path.Combine(work, "obj"),
+        .. setup.CompilerOptions, .. header.OpcOptions,
+    ];
+
     private static async Task<string?> RunInAsync(RtlCase @case, RtlHeader header, RtlSetup setup, string work, Action<TimeSpan>? runTime, RunLimits limits, CancellationToken ct)
     {
         var exe = Path.Combine(work, @case.Name + ".exe");
-        List<string> args =
-        [
-            @case.SourcePath, "-U", setup.UnitDirectory, .. setup.ExtraUnitDirectories.SelectMany(d => new[] { "-U", d }),
-            "-o", exe, "--obj-dir", Path.Combine(work, "obj"),
-            "--rtl", setup.RtlDirectory, "--toolchain", setup.ToolchainDirectory, .. header.OpcOptions,
-        ];
+        var args = OpcArguments(@case, header, setup, work);
 
         // the source folder is the current directory, so relative paths in "// opc:" options resolve against it
         // opc's own CPU time is bounded; clang and lld-link run as its children and are covered by the wall cap

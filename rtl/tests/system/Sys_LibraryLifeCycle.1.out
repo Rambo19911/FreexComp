@@ -1,0 +1,27 @@
+program: IsLibrary False
+not attached: thread attach returns 0
+not attached: process detach returns 0
+not attached: blocks left by a thread 2
+process attach returns 1
+IsLibrary True
+HInstance is the module handle True
+MainThreadID is the loading thread True
+CmdLine is the host command line True
+IsConsole of the host True
+ExitCode 0
+second process attach returns 0
+initialising: blocks left by a thread 2
+init A
+init B
+init C
+attached: thread attach returns 0
+attached: blocks left by a thread 0
+text written through Output
+exit procedure
+final C
+final B
+final A
+�process detach returns 0
+blocks released at unload 4
+second process detach returns 0
+end of program

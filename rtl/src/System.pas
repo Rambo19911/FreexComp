@@ -225,6 +225,13 @@ procedure _DivZeroError; noreturn;
 procedure _InvalidCast; noreturn;
 procedure _AbstractError; noreturn;                                  { IR void(): the code of abstract VMT slots }
 
+{ library modules only (rtl-abi.md section 12.1, ABI-190 ... ABI-195; dll-runtime.md section 2): the entry routine the
+  compiler emits for a library hands every notification of the operating system to _DllEntry and runs the unit
+  initializations and the library block when it returns non-zero. A program never calls them. }
+function _DllEntry(HInst: THandle; Reason: Cardinal; Reserved, UnitTable: Pointer; UnitCount: NativeInt): Integer;
+procedure _DllInitDone;
+procedure _DllInitFailed;
+
 { exceptions (rtl-abi.md section 9.7, ABI-120 ... 125; system.md section 14). _Raise is the debugger's raise hook. }
 const
   _PascalExceptionCode = $E0504153;
@@ -2581,14 +2588,12 @@ end;
 
 { ---------------------------------------------------------------- start-up (ABI-105) }
 
-{ the image's own PE optional header: Subsystem = 3 is a console program }
-function ImageIsConsole: Boolean;
+{ the PE optional header of the executable image at Base: Subsystem = 3 is a console program }
+function ImageIsConsole(Base: PByte): Boolean;
 var
-  Base: PByte;
   LfaNew: PInteger;
   Subsystem: PWord;
 begin
-  Base := PByte(HInstance);
   LfaNew := PInteger(Base + PeHeaderOffsetField);
   Subsystem := PWord(Base + LfaNew^ + PeSubsystemOffset);
   Result := Subsystem^ = IMAGE_SUBSYSTEM_WINDOWS_CUI;
@@ -2606,7 +2611,7 @@ begin
   HInstance := GetModuleHandleW(nil);
   MainThreadID := GetCurrentThreadId;
   CmdLine := GetCommandLineW;
-  IsConsole := ImageIsConsole;
+  IsConsole := ImageIsConsole(PByte(HInstance));
   _SetMXCSR($1F80);                    { ABI-105, RTL-042 }
   OpenStandard(Input, STD_INPUT_HANDLE, tmInput);
   OpenStandard(Output, STD_OUTPUT_HANDLE, tmOutput);
@@ -2637,11 +2642,64 @@ end;
 procedure ReportUnhandled; forward;
 procedure ReportLeaks; forward;
 
+{ RTL-956: the life-cycle state of a library module; a program stays "not attached" for ever }
+const
+  lsNotAttached = 0;
+  lsInitialising = 1;
+  lsAttached = 2;
+  lsInitFailed = 3;
+  lsDetached = 4;
+
+var
+  LibraryState: Integer;
+
+{ ABI-192 steps 1 ... 3, shared by the process-detach notification and by Halt inside a library (RTL-957). As in
+  _Halt0 every exit procedure and every unit is taken off before it is called, so nothing runs twice. An exception
+  that escapes one is caught and its object released; nothing is written and the remaining steps still run. }
+procedure LibraryShutdownSteps;
+var
+  P: Pointer;
+  Proc: TProcedure;
+begin
+  while ExitProc <> nil do
+  begin
+    P := ExitProc;
+    ExitProc := nil;
+    Proc := TProcedure(P);
+    try
+      Proc;
+    except
+    end;
+  end;
+  while InitCount > 0 do
+  begin
+    InitCount := InitCount - 1;
+    if Assigned(Units[InitCount].Final) then
+      try
+        Units[InitCount].Final;
+      except
+      end;
+  end;
+  if ShutdownStep < 4 then
+  begin
+    ShutdownStep := 4;
+    FinishText(Output);
+    FinishText(ErrOutput);
+  end;
+end;
+
 procedure _Halt0;
 var
   P: Pointer;
   Proc: TProcedure;
 begin
+  if IsLibrary then
+  begin
+    { RTL-957: Halt inside a library ends the host process; the detach notification that follows finds "detached" }
+    LibraryShutdownSteps;
+    LibraryState := lsDetached;
+    ExitProcess(ExitCode);
+  end;
   while ExitProc <> nil do
   begin
     P := ExitProc;
@@ -2684,6 +2742,106 @@ procedure _Halt(Code: Integer);
 begin
   ExitCode := Code;
   _Halt0;
+end;
+
+{ ---------------------------------------------------------------- library life cycle (ABI-190 ... ABI-195) }
+{ Everything below runs inside the entry routine of a library, under the loader lock: only kernel32 is called. }
+
+const
+  { notification codes of the entry routine (Reason) }
+  ReasonProcessDetach = 0;
+  ReasonProcessAttach = 1;
+  ReasonThreadDetach = 3;
+
+{ ABI-190: the library start-up sequence, the counterpart of _Startup. The floating-point control state of the
+  calling thread belongs to the host and is left alone. No thread of a library is its "main thread" for the
+  per-thread blocks: each block goes with its thread (ABI-194) or at unload (ABI-192 step 4). }
+procedure LibraryStartup(HInst: THandle; UnitTable: Pointer; UnitCount: NativeInt);
+begin
+  ProcessHeap := GetProcessHeap;
+  InitMemoryManager;
+  IsLibrary := True;
+  HInstance := HInst;
+  MainThreadID := GetCurrentThreadId;
+  CmdLine := GetCommandLineW;
+  IsConsole := ImageIsConsole(PByte(GetModuleHandleW(nil)));   { RTL-951: the host executable }
+  MainBlock := nil;
+  SetInOutRes(0);                      { makes the loading thread's block, in the module's own TLS slot }
+  OpenStandard(Input, STD_INPUT_HANDLE, tmInput);
+  OpenStandard(Output, STD_OUTPUT_HANDLE, tmOutput);
+  OpenStandard(ErrOutput, STD_ERROR_HANDLE, tmOutput);
+  ExitCode := 0;
+  Units := UnitTable;
+  Entries := UnitCount;
+  InitCount := 0;
+  LibraryState := lsInitialising;
+end;
+
+{ the buffer of a standard text file, allocated by the start-up sequence with the default manager }
+procedure ReleaseStandardBuffer(var T: Text);
+var
+  R: PTextRec;
+begin
+  R := TextRec(T);
+  if (R^.Magic <> TextMagic) or (R^.Buffer = nil) then
+    Exit;
+  SysFreeMem(R^.Buffer);
+  R^.Buffer := nil;
+  R^.Magic := 0;
+end;
+
+{ ABI-192: the library shutdown sequence. Unload = the library leaves a process that goes on (FreeLibrary or a failed
+  load): what the module took from the process is given back. At process end memory is left to the operating system. }
+procedure LibraryShutdown(Unload: Boolean);
+begin
+  LibraryShutdownSteps;
+  if Unload then
+  begin
+    ReleaseStandardBuffer(Input);
+    ReleaseStandardBuffer(Output);
+    ReleaseStandardBuffer(ErrOutput);
+    ReleaseThreadBlocks;
+    if ThreadSlot <> 0 then
+    begin
+      TlsFree(Cardinal(ThreadSlot - 1));
+      ThreadSlot := 0;
+    end;
+  end;
+  LibraryState := lsDetached;
+end;
+
+function _DllEntry(HInst: THandle; Reason: Cardinal; Reserved, UnitTable: Pointer; UnitCount: NativeInt): Integer;
+begin
+  Result := 0;
+  case Reason of
+    ReasonProcessAttach:
+      if LibraryState = lsNotAttached then
+      begin
+        LibraryStartup(HInst, UnitTable, UnitCount);
+        Result := 1;
+      end;
+    ReasonProcessDetach:
+      if (LibraryState = lsInitialising) or (LibraryState = lsAttached) or (LibraryState = lsInitFailed) then
+        LibraryShutdown(Reserved = nil);
+    ReasonThreadDetach:
+      if LibraryState = lsAttached then
+        ReleaseThreadBlocks;           { ABI-194; a thread attach does nothing: blocks are made on first use }
+  end;
+end;
+
+{ ABI-191 }
+procedure _DllInitDone;
+begin
+  if LibraryState = lsInitialising then
+    LibraryState := lsAttached;
+end;
+
+{ ABI-193: the entry routine's handler has begun the catch; the exception object goes and nothing is written }
+procedure _DllInitFailed;
+begin
+  _EndCatch;
+  if LibraryState = lsInitialising then
+    LibraryState := lsInitFailed;
 end;
 
 type

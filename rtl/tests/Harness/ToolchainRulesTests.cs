@@ -102,8 +102,7 @@ public sealed class ToolchainRulesTests
         await File.WriteAllTextAsync(source, text, TestContext.Current.CancellationToken);
         string[] args =
         [
-            source, "-o", Path.Combine(work, name + ".exe"), "--obj-dir", Path.Combine(work, "obj"), "--rtl", setup.RtlDirectory,
-            "--toolchain", setup.ToolchainDirectory, .. extra,
+            source, "-o", Path.Combine(work, name + ".exe"), "--obj-dir", Path.Combine(work, "obj"), .. setup.CompilerOptions, .. extra,
         ];
         return await ImportTableTests.RunAsync(setup.OpcPath, GoldenRunner.CommandLine(args, null), work);
     }

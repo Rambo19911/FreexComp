@@ -1,0 +1,48 @@
+# constants
+ok DLL_PROCESS_DETACH
+ok DLL_PROCESS_ATTACH
+ok DLL_THREAD_ATTACH
+ok DLL_THREAD_DETACH
+ok SEM_FAILCRITICALERRORS
+ok SEM_NOGPFAULTERRORBOX
+ok SEM_NOOPENFILEERRORBOX
+ok DONT_RESOLVE_DLL_REFERENCES
+ok LOAD_LIBRARY_AS_DATAFILE
+ok LOAD_WITH_ALTERED_SEARCH_PATH
+ok LOAD_IGNORE_CODE_AUTHZ_LEVEL
+ok LOAD_LIBRARY_AS_IMAGE_RESOURCE
+ok LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE
+ok LOAD_LIBRARY_REQUIRE_SIGNED_TARGET
+ok LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
+ok LOAD_LIBRARY_SEARCH_APPLICATION_DIR
+ok LOAD_LIBRARY_SEARCH_USER_DIRS
+ok LOAD_LIBRARY_SEARCH_SYSTEM32
+ok LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+ok LOAD_LIBRARY_SAFE_CURRENT_DIRS
+# SetErrorMode
+ok SetErrorMode returns the previous mode
+ok SetErrorMode restored the first mode
+# LoadLibraryExW / GetProcAddress / FreeLibrary
+ok LoadLibraryExW of a loaded module
+ok kernel32: GetProcAddress by name
+ok kernel32: ordinal found in the export directory
+ok kernel32: GetProcAddress by ordinal
+ok GetProcAddress unknown name
+ok GetProcAddress unknown ordinal
+ok FreeLibrary kernel32
+ok LoadLibraryEx alias with LOAD_LIBRARY_SEARCH_SYSTEM32
+ok user32: GetProcAddress by name
+ok user32: ordinal found in the export directory
+ok user32: GetProcAddress by ordinal
+ok FreeLibrary user32
+ok LoadLibraryExW as a data file
+ok FreeLibrary of a data file mapping
+ok LoadLibraryExW of a missing file
+ok last error of a missing file
+ok FreeLibrary(0) fails
+# DisableThreadLibraryCalls
+ok version.dll loaded
+ok DisableThreadLibraryCalls
+ok FreeLibrary version.dll
+ok DisableThreadLibraryCalls(0) fails
+# passed 43 failed 0

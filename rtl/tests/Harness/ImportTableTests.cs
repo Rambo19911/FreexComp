@@ -81,8 +81,7 @@ public sealed class ImportTableTests
             var exe = Path.Combine(work, name + ".exe");
             string[] args =
             [
-                source, "-U", setup.UnitDirectory, "-o", exe, "--obj-dir", Path.Combine(work, "obj"), "--rtl", setup.RtlDirectory,
-                "--toolchain", setup.ToolchainDirectory,
+                source, "-U", setup.UnitDirectory, "-o", exe, "--obj-dir", Path.Combine(work, "obj"), .. setup.CompilerOptions,
             ];
             var (exit, output) = await RunAsync(setup.OpcPath, GoldenRunner.CommandLine(args, null), work);
             Assert.True(exit == 0, $"opc exit code {exit}\n{output}");

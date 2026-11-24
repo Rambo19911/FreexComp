@@ -16,6 +16,7 @@ CreateSemaphoreW
 CreateThread
 DeleteCriticalSection
 DeleteFileW
+DisableThreadLibraryCalls
 EnterCriticalSection
 ExitProcess
 ExitThread
@@ -73,6 +74,7 @@ InitializeCriticalSectionAndSpinCount
 IsDebuggerPresent
 LCMapStringEx
 LeaveCriticalSection
+LoadLibraryExW
 LoadLibraryW
 LocalFileTimeToFileTime
 LocalFree
@@ -95,6 +97,7 @@ ResumeThread
 SetCurrentDirectoryW
 SetEndOfFile
 SetEnvironmentVariableW
+SetErrorMode
 SetEvent
 SetFileAttributesW
 SetFilePointerEx

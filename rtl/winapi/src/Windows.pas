@@ -770,6 +770,29 @@ const
   GetFileExInfoStandard = 0;
   GetFileExMaxInfoLevel = 1;
 
+  { library loading (dll-runtime.md RTL-954): SetErrorMode modes, LoadLibraryEx flags and the notification codes
+    an entry routine of a library receives }
+  SEM_FAILCRITICALERRORS = $0001;
+  SEM_NOGPFAULTERRORBOX = $0002;
+  SEM_NOOPENFILEERRORBOX = $8000;
+  DONT_RESOLVE_DLL_REFERENCES = $00000001;
+  LOAD_LIBRARY_AS_DATAFILE = $00000002;
+  LOAD_WITH_ALTERED_SEARCH_PATH = $00000008;
+  LOAD_IGNORE_CODE_AUTHZ_LEVEL = $00000010;
+  LOAD_LIBRARY_AS_IMAGE_RESOURCE = $00000020;
+  LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE = $00000040;
+  LOAD_LIBRARY_REQUIRE_SIGNED_TARGET = $00000080;
+  LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR = $00000100;
+  LOAD_LIBRARY_SEARCH_APPLICATION_DIR = $00000200;
+  LOAD_LIBRARY_SEARCH_USER_DIRS = $00000400;
+  LOAD_LIBRARY_SEARCH_SYSTEM32 = $00000800;
+  LOAD_LIBRARY_SEARCH_DEFAULT_DIRS = $00001000;
+  LOAD_LIBRARY_SAFE_CURRENT_DIRS = $00002000;
+  DLL_PROCESS_DETACH = 0;
+  DLL_PROCESS_ATTACH = 1;
+  DLL_THREAD_ATTACH = 2;
+  DLL_THREAD_DETACH = 3;
+
   { waits, threads, TLS }
   INFINITE = DWORD($FFFFFFFF);
   WAIT_OBJECT_0 = $00000000;
@@ -2044,7 +2067,14 @@ function GetModuleHandleW(lpModuleName: LPCWSTR): HMODULE; stdcall; external ker
 function GetModuleHandle(lpModuleName: LPCWSTR): HMODULE; stdcall; external kernel32 name 'GetModuleHandleW';
 function LoadLibraryW(lpLibFileName: LPCWSTR): HMODULE; stdcall; external kernel32 name 'LoadLibraryW';
 function LoadLibrary(lpLibFileName: LPCWSTR): HMODULE; stdcall; external kernel32 name 'LoadLibraryW';
+function LoadLibraryExW(lpLibFileName: LPCWSTR; hFile: THandle; dwFlags: DWORD): HMODULE; stdcall;
+  external kernel32 name 'LoadLibraryExW';
+function LoadLibraryEx(lpLibFileName: LPCWSTR; hFile: THandle; dwFlags: DWORD): HMODULE; stdcall;
+  external kernel32 name 'LoadLibraryExW';
 function FreeLibrary(hLibModule: HMODULE): BOOL; stdcall; external kernel32 name 'FreeLibrary';
+function DisableThreadLibraryCalls(hLibModule: HMODULE): BOOL; stdcall; external kernel32 name 'DisableThreadLibraryCalls';
+{ returns the previous error mode of the process }
+function SetErrorMode(uMode: UINT): UINT; stdcall; external kernel32 name 'SetErrorMode';
 { ANSI only by nature (RTL-821); the FARPROC result is an untyped code pointer }
 function GetProcAddress(hModule: HMODULE; lpProcName: LPCSTR): Pointer; stdcall; external kernel32 name 'GetProcAddress';
 function GetModuleFileNameW(hModule: HMODULE; lpFilename: LPWSTR; nSize: DWORD): DWORD; stdcall;
