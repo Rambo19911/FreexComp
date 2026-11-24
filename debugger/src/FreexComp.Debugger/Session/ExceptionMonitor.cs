@@ -50,7 +50,12 @@ internal static partial class ExceptionMonitor
         _ => Messages.UnknownOsException(code),
     };
 
-    /// <summary>DBG-244: the class name equals an entry of the list (case-insensitive, exact, no inheritance matching).</summary>
-    public static bool IsIgnored(ExceptionSettings settings, string className) =>
-        className.Length > 0 && settings.IgnoredClasses.Any(entry => string.Equals(entry, className, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// DBG-244: an entry of the list equals (case-insensitive) the name of the exception's dynamic class or of one of
+    /// its ancestors. <paramref name="classes"/> is the class followed by its ancestors as far as they are known; with
+    /// the class alone this is the exact match. A name that could not be read ("") matches nothing.
+    /// </summary>
+    public static bool IsIgnored(ExceptionSettings settings, IReadOnlyList<string> classes) =>
+        classes.Any(name => name.Length > 0
+            && settings.IgnoredClasses.Any(entry => string.Equals(entry, name, StringComparison.OrdinalIgnoreCase)));
 }

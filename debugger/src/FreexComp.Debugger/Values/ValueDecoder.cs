@@ -18,6 +18,7 @@ internal sealed class ValueDecoder
 
     private const int MaxClassNameChars = 255;
     private const int MaxAncestorDepth = 64;
+    private const int MaxClassChain = 320;      // guards against a cyclic ancestor chain in damaged type information
     private const int ChunkAlignment = 256;
 
     private readonly PdiFile _pdi;
@@ -304,15 +305,20 @@ internal sealed class ValueDecoder
     /// The dynamic class name of the exception object at <paramref name="instance"/> and the text of its message: the
     /// string field named <c>abi.exceptionMessageField</c> of the dynamic class or its ancestors (the nearest known
     /// ancestor when the class itself has no type information). What cannot be read is "".
+    /// <c>Classes</c> is the dynamic class followed by its ancestors as far as they are known (DBG-244): from the type
+    /// information; for a class it does not describe, from the parent pointers of the VMTs up to the first described
+    /// class and on from there. Where neither goes on the chain ends, so at least it holds the class itself; it is
+    /// empty when the class name cannot be read.
     /// </summary>
-    public async Task<(string ClassName, string Message)> ReadExceptionAsync(ulong instance, CancellationToken ct)
+    public async Task<(string ClassName, string Message, IReadOnlyList<string> Classes)> ReadExceptionAsync(ulong instance, CancellationToken ct)
     {
         if (await _memory.ReadMemoryAsync(instance, _pointerSize, ct).ConfigureAwait(false) is not { } vmtBytes)
-            return ("", "");
+            return ("", "", []);
         var vmt = ValueFormatter.Unsigned(vmtBytes);
         if (await ClassNameAsync(vmt, ct).ConfigureAwait(false) is not { } className)
-            return ("", "");
+            return ("", "", []);
 
+        var classes = new List<string> { className };
         var type = _pdi.FindClass(className, null);
         for (var depth = 0; type is null && depth < MaxAncestorDepth; depth++)
         {
@@ -320,15 +326,19 @@ internal sealed class ValueDecoder
                 || await ClassNameAsync(parent, ct).ConfigureAwait(false) is not { } parentName)
                 break;
             vmt = parent;
+            classes.Add(parentName);
             type = _pdi.FindClass(parentName, null);
         }
+
+        for (var ancestor = type?.Ancestor; ancestor is not null && classes.Count < MaxClassChain; ancestor = ancestor.Ancestor)
+            classes.Add(ancestor.Name);
 
         var field = type?.AllFields().LastOrDefault(f =>
             f.Type.Kind == PdiTypeKind.String && string.Equals(f.Name, _pdi.Abi.ExceptionMessageField, StringComparison.OrdinalIgnoreCase));
         if (field is null)
-            return (className, "");
+            return (className, "", classes);
         var message = await DecodeAsync(field.Name, field.Type, Offset(instance, field.Offset), null, ct).ConfigureAwait(false);
-        return (className, message.Kind == ValueKind.String ? message.Text ?? "" : "");
+        return (className, message.Kind == ValueKind.String ? message.Text ?? "" : "", classes);
     }
 
     /// <summary>The class name stored in a VMT (<c>abi.vmt</c>); null when it cannot be read.</summary>

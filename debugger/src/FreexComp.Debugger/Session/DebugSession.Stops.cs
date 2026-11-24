@@ -133,7 +133,7 @@ internal sealed partial class DebugSession
             return null;
         }
 
-        StopInfo RaiseStop(SourceLocation? at, (string ClassName, string Message, ulong Address) raised) => Public(
+        StopInfo RaiseStop(SourceLocation? at, RaisedException raised) => Public(
             StopReason.Exception, [], Messages.ExceptionStop(raised.ClassName, raised.Message),
             new ExceptionInfo(ExceptionKind.Language, raised.ClassName, raised.Message, 0, raised.Address), at);
 
@@ -146,7 +146,7 @@ internal sealed partial class DebugSession
         {
             var raised = await ReadExceptionAsync(response.StackFrames[0].Id, registers: true).ConfigureAwait(false);
             _raiseReportedThreads.Add(threadId);
-            if (ExceptionMonitor.IsIgnored(_exceptionSettings, raised.ClassName))
+            if (ExceptionMonitor.IsIgnored(_exceptionSettings, raised.Classes))
             {
                 // Resolved internally: continue, or go on with the user's step (DBG-244, DBG-030).
                 var (command, resumeThread) = StopResolver.ResumeAfterSkip(_step, threadId, depth);
@@ -191,7 +191,7 @@ internal sealed partial class DebugSession
                     var hookIndex = Enumerable.Range(0, frames.Count).FirstOrDefault(i => IsHookFrame(response.StackFrames[i], frames[i]), -1);
                     var raised = hookIndex >= 0
                         ? await ReadExceptionAsync(response.StackFrames[hookIndex].Id, registers: false).ConfigureAwait(false)
-                        : ("", "", 0UL);
+                        : RaisedException.Unknown(0);
                     _fatalCode = code;
                     return RaiseStop(hookIndex >= 0 ? LocationBelow(frames, hookIndex) : location, raised);
                 }

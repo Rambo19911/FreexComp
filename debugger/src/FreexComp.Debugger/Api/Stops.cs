@@ -39,6 +39,8 @@ public sealed record ExceptionSettings
     /// <summary>Stop on operating-system exceptions.</summary>
     public bool BreakOnOsExceptions { get; init; } = true;
 
-    /// <summary>Class names (case-insensitive, exact match, no inheritance) that never stop.</summary>
+    /// <summary>
+    /// Class names (case-insensitive) that never stop; a class whose ancestor is listed is also ignored.
+    /// </summary>
     public IReadOnlyList<string> IgnoredClasses { get; init; } = ["EAbort"];
 }

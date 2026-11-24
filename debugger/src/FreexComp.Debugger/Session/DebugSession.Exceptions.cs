@@ -11,6 +11,15 @@ internal sealed partial class DebugSession
 {
     private const int RegisterGroupLimit = 4;
 
+    /// <summary>
+    /// A raised exception object: its dynamic class, message and address, and the class followed by its known
+    /// ancestors (what the ignore list is compared with, DBG-244).
+    /// </summary>
+    private readonly record struct RaisedException(string ClassName, string Message, ulong Address, IReadOnlyList<string> Classes)
+    {
+        public static RaisedException Unknown(ulong address) => new("", "", address, []);
+    }
+
     // Session loop only.
     private ExceptionSettings _exceptionSettings = new();
     private bool _hookArmed;                    // the adapter holds the function breakpoint on the raise hook
@@ -83,7 +92,7 @@ internal sealed partial class DebugSession
     /// <paramref name="registers"/> (the frame is frame 0, stopped at the routine's start): the first argument
     /// register. Neither works: empty class name and message.
     /// </summary>
-    private async Task<(string ClassName, string Message, ulong Address)> ReadExceptionAsync(int adapterFrameId, bool registers)
+    private async Task<RaisedException> ReadExceptionAsync(int adapterFrameId, bool registers)
     {
         ulong? instance = null;
         if (_typeInfo is { } pdi
@@ -95,11 +104,11 @@ internal sealed partial class DebugSession
         if (instance is null && registers)
             instance = await ReadRegisterAsync(adapterFrameId, "rcx").ConfigureAwait(false);
         if (instance is not { } address || address == 0 || _typeInfo is null)
-            return ("", "", instance ?? 0);
+            return RaisedException.Unknown(instance ?? 0);
 
-        var (className, message) = await new ValueDecoder(_typeInfo, Debuggee, _options.Format)
+        var (className, message, classes) = await new ValueDecoder(_typeInfo, Debuggee, _options.Format)
             .ReadExceptionAsync(address, CancellationToken.None).ConfigureAwait(false);
-        return (className, message, address);
+        return new RaisedException(className, message, address, classes);
     }
 
     /// <summary>

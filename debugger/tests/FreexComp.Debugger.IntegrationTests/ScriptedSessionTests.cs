@@ -487,6 +487,49 @@ public sealed class ScriptedSessionTests(IntegrationFixture fixture)
     }
 
     [Fact]
+    [Trait("Req", "DBG-244")]
+    public async Task Scripted_Exception_DescendantOfIgnoredClass_DoesNotStop()
+    {
+        // The program raises a class that descends from EAbort, one that descends from that one, and a plain
+        // Exception. With the default list (EAbort) only the last one stops: the list covers descendants.
+        var program = fixture.Build("QuietAbort");
+        var stops = new List<StopInfo>();
+        var recorder = new SessionRecorder(nameof(Scripted_Exception_DescendantOfIgnoredClass_DoesNotStop));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(new LaunchRequest { Program = program.ExePath }, Ct);
+
+            while (true)
+            {
+                var next = await recorder.WaitForMilestoneAsync();
+                if (next is not StopInfo stop)
+                {
+                    var terminated = Assert.IsType<TerminatedEventArgs>(next);
+                    Assert.Equal(TerminationCause.Exited, terminated.Cause);
+                    Assert.Equal(0, terminated.ExitCode);
+                    break;
+                }
+
+                stops.Add(stop);
+                Assert.True(stops.Count <= 3, "More stops than exceptions: " + stop);
+                await session.ContinueAsync(Ct);
+            }
+
+            Assert.Equal("start\ncaught quiet\ncaught quieter\ncaught loud\n", recorder.StdoutSoFar);
+        });
+
+        var only = Assert.Single(stops);
+        Assert.Equal(StopReason.Exception, only.Reason);
+        Assert.NotNull(only.Exception);
+        Assert.Equal(ExceptionKind.Language, only.Exception.Kind);
+        Assert.Equal("Exception", only.Exception.ClassName);
+        Assert.Equal("loud", only.Exception.Message);
+        Assert.NotNull(only.Location);
+        Assert.Equal(program.SourcePath, only.Location.Path, ignoreCase: true);
+        Assert.Equal(22, only.Location.Line);
+    }
+
+    [Fact]
     [Trait("Req", "DBG-326")]
     public async Task Scripted_NoDebugInfo()
     {

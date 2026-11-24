@@ -337,13 +337,13 @@ public sealed class ExceptionMonitorTests
     public async Task Ignored_ContinuesSilently()
     {
         // EFirst is ignored (the list is compared case-insensitively): the session continues by itself. ESecond is
-        // not on the list, although it has the same ancestor: no inheritance matching.
+        // not on the list and neither is one of its ancestors: a class next to a listed one still stops.
         await using var bed = Create(Scenario(
             HookSet, StoppedFirst(HookHit), Threads, Stack(HookFrame, GoFrame12, MainFrame), AddressOfObj(ObjSlot1),
             $$"""{ "on": "continue", "respond": {}, "expectArguments": { "threadId": 1 }, "thenEvents": [ {{HookHit}} ] }""",
             Threads, Stack(HookFrame, GoFrame17, MainFrame), AddressOfObj(ObjSlot2)));
 
-        await bed.LaunchAsync(new ExceptionSettings { IgnoredClasses = ["efirst", "Exception"] });
+        await bed.LaunchAsync(new ExceptionSettings { IgnoredClasses = ["efirst", "ENever"] });
 
         Assert.Equal(
             $"stopped Exception epoch=1 thread=1 loc={Raises}:17:3 hits=[] desc=Exception ESecond: second",
@@ -661,5 +661,5 @@ public sealed class ExceptionMonitorTests
     [InlineData("", false)]
     [Trait("Req", "DBG-244")]
     public void IsIgnored_DefaultList_ExactCaseInsensitive(string className, bool expected) =>
-        Assert.Equal(expected, ExceptionMonitor.IsIgnored(new ExceptionSettings(), className));
+        Assert.Equal(expected, ExceptionMonitor.IsIgnored(new ExceptionSettings(), [className]));
 }
