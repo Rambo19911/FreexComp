@@ -4853,4 +4853,148 @@ Runtime libraries: Apache-2.0 WITH LLVM-exception.</value>
     <value>every {0}</value>
     <comment>debug-session interface 6.1: read-only hit count of mode Multiple; 0 = value</comment>
   </data>
+  <data name="DebugLog_ProcessStarted" xml:space="preserve">
+    <value>Program started: {0} (process {1})</value>
+    <comment>tool-windows.md 15 Event Log, kind Process at the first Running; 0 = program file name, 1 = process id</comment>
+  </data>
+  <data name="DebugLog_Exception" xml:space="preserve">
+    <value>{0}: {1}</value>
+    <comment>Event Log, kind Exception; 0 = class name (OS exception: its text), 1 = message (OS exception: its code)</comment>
+  </data>
+  <data name="DebugLog_Kind_Process" xml:space="preserve">
+    <value>Process</value>
+    <comment>Event Log Kind column</comment>
+  </data>
+  <data name="DebugLog_Kind_Module" xml:space="preserve">
+    <value>Module</value>
+    <comment>Event Log Kind column</comment>
+  </data>
+  <data name="DebugLog_Kind_Thread" xml:space="preserve">
+    <value>Thread</value>
+    <comment>Event Log Kind column</comment>
+  </data>
+  <data name="DebugLog_Kind_Breakpoint" xml:space="preserve">
+    <value>Breakpoint</value>
+    <comment>Event Log Kind column</comment>
+  </data>
+  <data name="DebugLog_Kind_Exception" xml:space="preserve">
+    <value>Exception</value>
+    <comment>Event Log Kind column</comment>
+  </data>
+  <data name="DebugLog_Kind_Output" xml:space="preserve">
+    <value>Output</value>
+    <comment>Event Log Kind column</comment>
+  </data>
+  <data name="DebugLog_Kind_Debugger" xml:space="preserve">
+    <value>Debugger</value>
+    <comment>Event Log Kind column</comment>
+  </data>
+  <data name="DebugView_Column_Enabled" xml:space="preserve">
+    <value>Enabled</value>
+    <comment>tool-windows.md 10: automation name of the check-box column</comment>
+  </data>
+  <data name="DebugView_Column_Location" xml:space="preserve">
+    <value>Location</value>
+    <comment>tool-windows.md 10, 14 column header</comment>
+  </data>
+  <data name="DebugView_Column_Condition" xml:space="preserve">
+    <value>Condition</value>
+    <comment>tool-windows.md 10 column header</comment>
+  </data>
+  <data name="DebugView_Column_PassCount" xml:space="preserve">
+    <value>Pass count</value>
+    <comment>tool-windows.md 10 column header</comment>
+  </data>
+  <data name="DebugView_Column_Hits" xml:space="preserve">
+    <value>Hits</value>
+    <comment>tool-windows.md 10 column header</comment>
+  </data>
+  <data name="DebugView_Column_Routine" xml:space="preserve">
+    <value>Routine</value>
+    <comment>tool-windows.md 11 column header</comment>
+  </data>
+  <data name="DebugView_Column_File" xml:space="preserve">
+    <value>File</value>
+    <comment>tool-windows.md 11 column header</comment>
+  </data>
+  <data name="DebugView_Column_Line" xml:space="preserve">
+    <value>Line</value>
+    <comment>tool-windows.md 11 column header</comment>
+  </data>
+  <data name="DebugView_Column_Name" xml:space="preserve">
+    <value>Name</value>
+    <comment>tool-windows.md 12, 14 column header</comment>
+  </data>
+  <data name="DebugView_Column_Value" xml:space="preserve">
+    <value>Value</value>
+    <comment>tool-windows.md 12, 13 column header</comment>
+  </data>
+  <data name="DebugView_Column_Type" xml:space="preserve">
+    <value>Type</value>
+    <comment>tool-windows.md 12, 13 column header</comment>
+  </data>
+  <data name="DebugView_Column_Expression" xml:space="preserve">
+    <value>Expression</value>
+    <comment>tool-windows.md 13 column header</comment>
+  </data>
+  <data name="DebugView_Column_Id" xml:space="preserve">
+    <value>ID</value>
+    <comment>tool-windows.md 14 column header</comment>
+  </data>
+  <data name="DebugView_Column_State" xml:space="preserve">
+    <value>State</value>
+    <comment>tool-windows.md 14 column header</comment>
+  </data>
+  <data name="DebugView_Column_Time" xml:space="preserve">
+    <value>Time</value>
+    <comment>tool-windows.md 15 column header</comment>
+  </data>
+  <data name="DebugView_Column_Kind" xml:space="preserve">
+    <value>Kind</value>
+    <comment>tool-windows.md 15 column header</comment>
+  </data>
+  <data name="DebugView_Column_Message" xml:space="preserve">
+    <value>Message</value>
+    <comment>tool-windows.md 15 column header</comment>
+  </data>
+  <data name="DebugThread_Running" xml:space="preserve">
+    <value>Running</value>
+    <comment>tool-windows.md 14 State column</comment>
+  </data>
+  <data name="DebugThread_Paused" xml:space="preserve">
+    <value>Paused</value>
+    <comment>tool-windows.md 14 State column</comment>
+  </data>
+  <data name="DebugThread_StoppedAtBreakpoint" xml:space="preserve">
+    <value>Stopped at breakpoint</value>
+    <comment>tool-windows.md 14 State column</comment>
+  </data>
+  <data name="DebugThread_Stepping" xml:space="preserve">
+    <value>Stepping</value>
+    <comment>tool-windows.md 14 State column</comment>
+  </data>
+  <data name="DebugThread_Unnamed" xml:space="preserve">
+    <value>Thread {0}</value>
+    <comment>tool-windows.md 14 Name column of an unnamed thread; 0 = thread id</comment>
+  </data>
+  <data name="DebugRow_Current" xml:space="preserve">
+    <value>, current</value>
+    <comment>UI-TW-803: automation name suffix of the breakpoint row the program is paused at</comment>
+  </data>
+  <data name="DebugRow_Changed" xml:space="preserve">
+    <value>, changed</value>
+    <comment>UI-TW-1002: automation name suffix of a row whose value changed since the last stop</comment>
+  </data>
+  <data name="Debug_Exception_Check" xml:space="preserve">
+    <value>Do not stop on this exception class again</value>
+    <comment>dialogs.md 23, states-and-messages Msg.Debug.Exception: the check box</comment>
+  </data>
+  <data name="Debug_Hover_Value" xml:space="preserve">
+    <value>= {0}</value>
+    <comment>UI-ED-130: first line of the hover tooltip of a variable while paused; 0 = value</comment>
+  </data>
+  <data name="Button_RebuildAndRestart" xml:space="preserve">
+    <value>Rebuild and Restart</value>
+    <comment>Msg.Debug.SourceChanged action</comment>
+  </data>
 </root>

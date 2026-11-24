@@ -19,9 +19,10 @@ public sealed class RunServiceTests
 
     private static string F(string format, params object[] args) => string.Format(CultureInfo.CurrentCulture, format, args);
 
-    private static async Task<BuildTestBed> StartAsync(string appType = "console", string run = "")
+    /// <param name="phase">The implemented phase of the composition; null = the product's.</param>
+    private static async Task<BuildTestBed> StartAsync(string appType = "console", string run = "", int? phase = null)
     {
-        var bed = new BuildTestBed();
+        var bed = new BuildTestBed(o => o.ImplementedPhase = phase);
         bed.Engine.DefaultOutputPath = Exe;
         bed.Fs.CreateDirectory(BuildTestBed.Dir + @"\bin\Debug");
         await bed.OpenHelloAsync(appType, Configurations + run);
@@ -419,7 +420,7 @@ public sealed class RunServiceTests
 
     private async Task StartRunsWithoutDebuggerAndSaysSoOnceOnUiThread()
     {
-        var bed = await StartAsync();
+        var bed = await StartAsync(phase: 5); // Phases 3–5: from Phase 6 F5 starts under the debugger (DebugServiceTests)
         var statuses = new List<string?>();
         bed.Services.Status.Changed += (_, _) => statuses.Add(bed.Services.Status.Message);
 

@@ -3,7 +3,7 @@
 # (P3, P5, P8+ ...) is out of scope with its subsections, and so is a rule row whose text starts with a later-phase
 # marker or that has a later-phase cell. Paths are relative to docs/.
 # Not listed: spec/ui/designer.md (its UI-DSG ids are checked by AllDesignerRequirementsHaveTests).
-phase 5
+phase 6
 spec/ide/phase1-shell.md
 spec/ide/phase3-build-run.md
 spec/ide/architecture.md

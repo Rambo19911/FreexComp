@@ -51,6 +51,8 @@ public sealed class BreakpointSyncTests
             """);
 
         Assert.True(await bed.Debug.StartAsync());
+        // The statuses of the launch come as events of the session's own thread: they are waited for, not assumed applied.
+        await bed.WaitForBreakpointsAsync(() => breakpoints.All.All(b => b.State != BreakpointState.Pending), "the launch statuses");
 
         // Launch: one request per file (the session sends them by path); a disabled breakpoint is known to the session but
         // not sent to the adapter.

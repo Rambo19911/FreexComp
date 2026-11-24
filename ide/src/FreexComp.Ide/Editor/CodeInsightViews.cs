@@ -151,6 +151,9 @@ public sealed class HoverView : Border
 
     public string? Documentation { get; private set; }
 
+    /// <summary>UI-ED-130 (P6): the first line <c>= value</c> of a variable while the program is paused; null = none.</summary>
+    public string? ValueLine { get; private set; }
+
     public event EventHandler? PlacementRequested;
 
     private void OnChanged(object? sender, EventArgs e) => Sync();
@@ -162,6 +165,7 @@ public sealed class HoverView : Border
         Declaration = info?.Content?.Declaration;
         Origin = info?.Content?.Origin;
         Documentation = info?.Content?.Documentation;
+        ValueLine = info?.Value is { } value ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Core.Resources.Strings.Debug_Hover_Value, value) : null;
         if (info is null)
         {
             IsVisible = false;
@@ -171,12 +175,19 @@ public sealed class HoverView : Border
         if (info.Markers.Count > 0)
         {
             _content.Children.Add(CodeEditorView.BuildErrorTooltip(info.Markers));
-            if (info.Content is not null)
+            if (info.Content is not null || info.Value is not null)
             {
                 var separator = new Border { Height = 1 };
                 separator.Bind(BackgroundProperty, separator.GetResourceObservable("FxcBorderSubtleBrush"));
                 _content.Children.Add(separator);
             }
+        }
+
+        if (ValueLine is { } valueLine)
+        {
+            var line = new TextBlock { Text = valueLine, Classes = { "codeSmall" }, TextWrapping = TextWrapping.Wrap };
+            AutomationProperties.SetAutomationId(line, "Editor.Hover.Value");
+            _content.Children.Add(line);
         }
 
         if (info.Content is { } content)

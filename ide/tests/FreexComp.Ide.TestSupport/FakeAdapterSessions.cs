@@ -42,8 +42,26 @@ public sealed class FakeAdapterSessions : IDebugSessionFactory, IDisposable
         File.WriteAllText(ScenarioPath, scenarioJson, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
-    /// <summary>The scenario file <c>TestData/debug-scenarios/&lt;name&gt;</c> next to the test assembly.</summary>
-    public void UseScenarioFile(string name) => ScenarioPath = Path.Combine(AppContext.BaseDirectory, "TestData", "debug-scenarios", name);
+    /// <summary>
+    /// The scenario file <c>TestData/debug-scenarios/&lt;name&gt;</c> next to the test assembly. With
+    /// <paramref name="values"/> a copy runs in which every <c>${token}</c> is replaced by its value as JSON string content
+    /// (the paths of the test's own files, which a file cannot know).
+    /// </summary>
+    public void UseScenarioFile(string name, params (string Token, string Value)[] values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var path = Path.Combine(AppContext.BaseDirectory, "TestData", "debug-scenarios", name);
+        if (values.Length == 0)
+        {
+            ScenarioPath = path;
+            return;
+        }
+
+        var text = File.ReadAllText(path, Encoding.UTF8);
+        foreach (var (token, value) in values)
+            text = text.Replace("${" + token + "}", JsonSerializer.Serialize(value)[1..^1], StringComparison.Ordinal);
+        UseScenario(text);
+    }
 
     /// <summary>The sessions created from now on get the options unchanged.</summary>
     public void UseNoAdapter() => ScenarioPath = null;

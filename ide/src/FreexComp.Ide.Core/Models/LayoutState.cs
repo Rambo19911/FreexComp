@@ -75,7 +75,7 @@ public sealed class LayoutState
     public static LayoutState CreateDefault()
     {
         var state = new LayoutState();
-        foreach (var name in LayoutProfiles.BuiltIn)
+        foreach (var name in LayoutProfiles.BeforeDebug) // the Debug profile joins where the debug windows exist (LayoutService)
         {
             state.Profiles[name] = LayoutProfiles.Create(name);
         }
@@ -99,11 +99,11 @@ public static class LayoutProfiles
     /// <summary>I-219: the upper right group (Object Inspector) gets 60 % of the right dock (lead 2026-11-23; was 50 %).</summary>
     public const double DefaultRightSplit = 0.6;
 
-    /// <summary>The profiles of the implemented phase (5); <see cref="Debug"/> joins them from Phase 6 (<see cref="WithDebug"/>, I-133).</summary>
-    public static readonly IReadOnlyList<string> BuiltIn = [Edit, Design];
+    /// <summary>The three built-in profiles of main-window.md §2 (the implemented phase is 6: <see cref="Debug"/> is one of them).</summary>
+    public static readonly IReadOnlyList<string> BuiltIn = [Edit, Design, Debug];
 
-    /// <summary>Phase 6 on: the three built-in profiles of main-window.md §2.</summary>
-    public static readonly IReadOnlyList<string> WithDebug = [Edit, Design, Debug];
+    /// <summary>The profiles of a composition below Phase 6 (tests of earlier phases): without <see cref="Debug"/>.</summary>
+    public static readonly IReadOnlyList<string> BeforeDebug = [Edit, Design];
 
     public static ProfileLayout Create(string name) => name switch
     {

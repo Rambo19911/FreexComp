@@ -43,4 +43,41 @@ public static class DebugScenario
 
     public static Task WaitForStateAsync(HeadlessHarness h, IdeState state) =>
         h.WaitForAsync(() => h.Services.State.Current.State == state, $"IDE state {state}");
+
+    /// <summary>The demo program of <see cref="FreexComp.Ide.TestSupport.DebugDemo"/> in the project folder (its frames are there).</summary>
+    public static string DemoPath(HeadlessHarness h) => Path.Combine(h.TempDir, @"Hello\DbgDemo.pas");
+
+    /// <summary>
+    /// Phase 6 set-up with the demo program: its source in the project folder and its type information beside the
+    /// executable, so a session over the scripted adapter reads the locals of <c>Run</c>.
+    /// </summary>
+    public static async Task<HeadlessHarness> StartDemoAsync(Action<HarnessOptions>? configure = null)
+    {
+        var h = await StartAsync(o =>
+        {
+            o.InitialFiles[@"Hello\DbgDemo.pas"] = FreexComp.Ide.TestSupport.DebugDemo.SourceText;
+            configure?.Invoke(o);
+        });
+        File.WriteAllText(Path.ChangeExtension(BuildScenario.ExePath(h), ".pdi"), FreexComp.Ide.TestSupport.DebugDemo.TypeInfo(DemoPath(h)));
+        return h;
+    }
+
+    /// <summary>Waits until the program is paused at <paramref name="line"/>, the editor shows the stop and the debug views have what they asked for.</summary>
+    public static async Task WaitForStopAsync(HeadlessHarness h, int line)
+    {
+        await h.WaitForAsync(() => h.Services.State.Current is { State: IdeState.Paused } state && state.PausedLine == line, $"the stop at line {line}");
+        await h.WaitForAsync(() => h.Services.Documents.ActiveDocument?.FilePath == h.Services.State.Current.PausedFile, "the editor shows the stop");
+        await SettleAsync(h);
+    }
+
+    /// <summary>Waits until the debug views have the answers to everything they asked the session.</summary>
+    public static async Task SettleAsync(HeadlessHarness h)
+    {
+        await h.WaitForAsync(() => !h.Services.Debug!.HasViewWork, "the debug views' requests");
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>The text of a cell of a debug tool window (<c>Tool.&lt;tool&gt;.Row.&lt;key&gt;.&lt;column&gt;</c>), as the view shows it.</summary>
+    public static string Cell(HeadlessHarness h, string tool, string key, string column) =>
+        h.Find<Avalonia.Controls.TextBlock>($"Tool.{tool}.Row.{key}.{column}").Text ?? "";
 }

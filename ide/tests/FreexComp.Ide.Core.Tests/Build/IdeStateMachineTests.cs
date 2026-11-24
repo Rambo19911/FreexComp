@@ -164,7 +164,13 @@ public sealed class IdeStateMachineTests
     /// <summary>IDE-WEL-005: Welcome rows are disabled while the IDE is not Idle.</summary>
     [Fact(Timeout = 30000)]
     [Trait("Req", "IDE-WEL-005")]
-    public void WelcomeRowsFollowIdle()
+    public Task WelcomeRowsFollowIdle() => TestUiThread.RunAsync(WelcomeRowsFollowIdleOnUiThread);
+
+    /// <summary>
+    /// On a test UI thread: the page's background existence check applies its result there, not on a pool thread while the
+    /// test reads <c>changes</c> ("Collection was modified", seen under load); it is awaited before the test ends (I-221).
+    /// </summary>
+    private static async Task WelcomeRowsFollowIdleOnUiThread()
     {
         var services = TestComposition.Build();
         var welcome = new WelcomeDocumentViewModel(services.RecentItems, services.Commands, services.Settings, services.FileSystem,
@@ -180,6 +186,7 @@ public sealed class IdeStateMachineTests
         Assert.False(welcome.RowsEnabled);
         Assert.True(services.State.TryTransition(IdeStateInfo.Idle));
         Assert.True(welcome.RowsEnabled);
+        await welcome.MissingChecks;
     }
 
     private static void Expect(string[] commandIds, params IdeState[] availableIn)

@@ -130,6 +130,43 @@ internal sealed class DebugTestBed : IDisposable
         return CurrentTest.Deadline.WaitAsync(reached.Task, $"IDE state {state}");
     }
 
+    /// <summary>
+    /// Completes on the UI thread once <paramref name="condition"/> holds for the breakpoints (it may already): the
+    /// session reports their launch-time status with events of its own thread, which arrive independently of the launch.
+    /// </summary>
+    public Task WaitForBreakpointsAsync(Func<bool> condition, string step)
+    {
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Check(object? sender, EventArgs e)
+        {
+            if (!condition())
+                return;
+            Breakpoints.Changed -= Check;
+            reached.TrySetResult();
+        }
+
+        Breakpoints.Changed += Check;
+        Check(null, EventArgs.Empty);
+        return CurrentTest.Deadline.WaitAsync(reached.Task, step);
+    }
+
+    /// <summary>Completes on the UI thread once <paramref name="condition"/> holds for the Event Log's rows (it may already).</summary>
+    public Task WaitForLogAsync(Func<bool> condition)
+    {
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Check(object? sender, Core.Debugging.DebugLogEntry? e)
+        {
+            if (!condition())
+                return;
+            Debug.LogChanged -= Check;
+            reached.TrySetResult();
+        }
+
+        Debug.LogChanged += Check;
+        Check(null, null);
+        return CurrentTest.Deadline.WaitAsync(reached.Task, "the Event Log's rows");
+    }
+
     /// <summary>Waits for a task of the product, bounded by the test's own timeout.</summary>
     public static Task WaitAsync(Task task, string step) => CurrentTest.Deadline.WaitAsync(task, step);
 

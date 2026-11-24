@@ -22,7 +22,7 @@ namespace FreexComp.Ide.Core.Composition;
 public static class ServiceGraph
 {
     /// <summary>Commands of later phases get <c>CanExecute = false</c> stubs (UI-CMD-004).</summary>
-    public const int ImplementedPhase = 5;
+    public const int ImplementedPhase = 6;
 
     /// <param name="toolWindows">Tool windows registered after the production ones (tests, IDE-ARCH-100); one named like a
     /// production tool window is registered instead of it.</param>
@@ -169,7 +169,8 @@ public static class ServiceGraph
         var semanticHighlights = new CodeModel.SemanticHighlightService(documents, codeModel, settings, platform.Clock, platform.Dispatcher); // I-112
         new CodeModel.GoToDeclarationService(documents, projects, codeModel, navigation, status, toolchain).RegisterCommands(commands); // I-117
         new CodeModel.CompletionController(documents, projects, codeModel, settings, platform.Clock, status).RegisterCommands(commands); // I-114
-        new CodeModel.ParameterInfoController(documents, projects, codeModel, settings, platform.Clock).RegisterCommands(commands); // I-116
+        var parameterInfo = new CodeModel.ParameterInfoController(documents, projects, codeModel, settings, platform.Clock); // I-116
+        parameterInfo.RegisterCommands(commands);
         new CodeModel.CodeTemplateController(documents, templates, settings).RegisterCommands(commands);
         build.RegisterCommands(commands);
         var structureView = new ViewModels.StructureViewModel(documents, platform.Clock, platform.Dispatcher, codeModel.Worker, layout, navigation); // I-124
@@ -233,6 +234,8 @@ public static class ServiceGraph
             };
             debug.RegisterCommands(commands);
             breakpoints.ValidateCondition = debug.ConditionProblemAsync;
+            session.Watches = debug.Watches; // IDE-ARCH-076
+            parameterInfo.DebugValue = debug.HoverValueAsync; // UI-ED-130: "= value" in the hover tooltip while paused
         }
 
         ProjectDialogCommands.Register(commands, projects, platform.Dialogs, platform.FileDialogs, platform.FileSystem, layout); // I-107, I-108
@@ -243,6 +246,7 @@ public static class ServiceGraph
             {
                 messages.Clear(); // IDE-P3-067
                 breakpoints?.Load([]); // UI-TW-800: breakpoints belong to the project (its session file has them)
+                debug?.Watches.Load([]); // UI-TW-1100: and so do the watches
             }
         };
         var application = new ApplicationService(documents, projects, session, recovery, settings, keymap, platform.Dialogs, platform.Clock,
@@ -298,7 +302,8 @@ public static class ServiceGraph
         if (debug is not null && breakpoints is not null)
         {
             var activeDesign = designerShell;
-            debugShell = new Debugging.DebugShell(commands, debug, breakpoints, settings, layout.Layout, () => activeDesign?.IsDesignActive == true);
+            debugShell = new Debugging.DebugShell(commands, debug, breakpoints, settings, layout, documents, navigation, platform.Clipboard,
+                platform.Dialogs, () => activeDesign?.IsDesignActive == true);
             var holder = debugShell;
             designerShell?.AutoSwitchSuspended = () => holder.HoldsProfile;
         }

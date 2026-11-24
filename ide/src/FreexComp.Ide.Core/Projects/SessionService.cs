@@ -133,6 +133,25 @@ public sealed class SessionService : ISessionService
     private Debugging.IBreakpointService? _breakpoints;
 
     /// <summary>
+    /// P6 (IDE-ARCH-076, UI-TW-1100): the watch expressions stored in and restored from the project session's
+    /// <c>watches</c> member; null before Phase 6, when the member is kept as read.
+    /// </summary>
+    public Debugging.WatchList? Watches
+    {
+        get => _watches;
+        set
+        {
+            if (_watches is not null)
+                _watches.Changed -= OnBookmarksChanged;
+            _watches = value;
+            if (value is not null)
+                value.Changed += OnBookmarksChanged;
+        }
+    }
+
+    private Debugging.WatchList? _watches;
+
+    /// <summary>
     /// D-109: the Object Inspector whose page, collapsed categories, expanded rows and name column ratio are stored in and
     /// restored from the session's <c>objectInspector</c> member (DSG-OI-003, DSG-OI-013, UI-DSG-103).
     /// </summary>
@@ -180,6 +199,11 @@ public sealed class SessionService : ISessionService
         // Breakpoints are per project (UI-TW-800); like the bookmarks, before the documents open.
         _breakpoints?.Load(_projects.Project is not null && root["breakpoints"] is JsonArray stops
             ? [.. stops.OfType<JsonObject>().Select(ReadBreakpoint).OfType<Models.BreakpointInfo>()]
+            : []);
+
+        // Watches are per project too (UI-TW-1100).
+        _watches?.Load(_projects.Project is not null && root["watches"] is JsonArray watches
+            ? [.. watches.Select(LayoutStateJson.Str).OfType<string>()]
             : []);
 
         if (_inspector is not null && root["objectInspector"] is JsonObject inspector)
@@ -250,6 +274,8 @@ public sealed class SessionService : ISessionService
         }
         if (_breakpoints is not null && project is not null && (_breakpoints.All.Count > 0 || root.ContainsKey("breakpoints")))
             Put(root, "breakpoints", new JsonArray([.. _breakpoints.All.Select(WriteBreakpoint)]));
+        if (_watches is not null && project is not null && (_watches.Expressions.Count > 0 || root.ContainsKey("watches")))
+            Put(root, "watches", new JsonArray([.. _watches.Expressions.Select(e => (JsonNode)e)]));
         if (_inspector is not null)
             Put(root, "objectInspector", WriteInspector(_inspector.SessionState));
         if (project is not null)

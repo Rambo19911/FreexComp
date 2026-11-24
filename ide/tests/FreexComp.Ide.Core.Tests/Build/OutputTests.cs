@@ -24,7 +24,11 @@ public sealed class OutputTests
     private static async Task DesignerChannelOnUiThread()
     {
         var clock = new ManualClock();
-        var f = new DesignerFixture(o => o.Clock = clock);
+        var f = new DesignerFixture(o =>
+        {
+            o.Clock = clock;
+            o.ImplementedPhase = 5; // the channels of Phase 5; Phase 6 adds "debugger" (DebugServiceTests.OutputCategoriesGoToChannels)
+        });
         var output = f.Services.Output;
         Assert.Equal([OutputChannels.Build, OutputChannels.Program, OutputChannels.Designer], output.Channels);
         Assert.Equal("designer", OutputChannels.Designer);

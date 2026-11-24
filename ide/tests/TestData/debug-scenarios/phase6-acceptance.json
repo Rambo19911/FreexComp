@@ -1,0 +1,464 @@
+{
+  "comment": "Phase 6 IDE acceptance (I-146): the demo program stops at its breakpoint on line 71 of Run, steps over to line 72, continues and exits with code 0. ${source} is the absolute path of DbgDemo.pas (JSON-escaped), filled in by the test. Variables and memory are the frame Run of the demo program on line 71.",
+  "variables": {
+    "I": "0x7F3A6FFB00",
+    "Total": "0x7F3A6FFB04",
+    "Ch": "0x7F3A6FFB08",
+    "Ok": "0x7F3A6FFB0A",
+    "Color": "0x7F3A6FFB0B",
+    "Colors": "0x7F3A6FFB0C",
+    "S": "0x7F3A6FFB10",
+    "P": "0x7F3A6FFB18",
+    "Nums": "0x7F3A6FFB20",
+    "Pet": "0x7F3A6FFB28",
+    "PTotal": "0x7F3A6FFB30"
+  },
+  "memory": [
+    {
+      "address": "0x7F3A6FFB00",
+      "hex": "030000001800000041000101050000002000B4A2F301000003000000040000001001B4A2F3010000601CB4A2F301000004FB6F3A7F0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "address": "0x1F3A2B40000",
+      "hex": "00000000000000000000000000000000000000000500000000000000000000004800E9006C006C006F0000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000052006500780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "address": "0x1F3A2B40100",
+      "hex": "000000000000000003000000000000000A000000140000001E000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "address": "0x1F3A2B41C00",
+      "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000050B2A1F67F00006000B4A2F3010000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "address": "0x7FF6A1B24E00",
+      "hex": "00000000000000000000000000000000A060B2A1F67F000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "address": "0x7FF6A1B24F00",
+      "hex": "004EB2A1F67F000000000000000000006060B2A1F67F000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "address": "0x7FF6A1B25000",
+      "hex": "004FB2A1F67F000000000000000000002060B2A1F67F000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "address": "0x7FF6A1B26000",
+      "hex": "0000000000000000000000000000000000000000040000000000000000000000540044006F0067000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000070000000000000000000000540041006E0069006D0061006C00000000000000000000000000000000000000000000000000000000000000000000000000000007000000000000000000000054004F0062006A0065006300740000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "steps": [
+    {
+      "on": "setBreakpoints",
+      "expectArguments": {
+        "source": {
+          "path": "${source}"
+        },
+        "breakpoints": [
+          {
+            "line": 71
+          }
+        ]
+      },
+      "respond": {
+        "breakpoints": [
+          {
+            "id": 1,
+            "verified": true,
+            "line": 71
+          }
+        ]
+      }
+    },
+    {
+      "on": "configurationDone",
+      "respond": {},
+      "thenEvents": [
+        {
+          "event": "output",
+          "body": {
+            "category": "stdout",
+            "output": "Dog Rex\r\n"
+          }
+        },
+        {
+          "event": "stopped",
+          "body": {
+            "reason": "breakpoint",
+            "threadId": 1,
+            "allThreadsStopped": true,
+            "hitBreakpointIds": [
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "on": "threads",
+      "respond": {
+        "threads": [
+          {
+            "id": 1,
+            "name": "main"
+          }
+        ]
+      }
+    },
+    {
+      "on": "stackTrace",
+      "respond": {
+        "totalFrames": 2,
+        "stackFrames": [
+          {
+            "id": 100,
+            "name": "Run",
+            "line": 71,
+            "column": 3,
+            "source": {
+              "name": "DbgDemo.pas",
+              "path": "${source}"
+            }
+          },
+          {
+            "id": 101,
+            "name": "DbgDemo",
+            "line": 77,
+            "column": 3,
+            "source": {
+              "name": "DbgDemo.pas",
+              "path": "${source}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "on": "stackTrace",
+      "respond": {
+        "totalFrames": 2,
+        "stackFrames": [
+          {
+            "id": 100,
+            "name": "Run",
+            "line": 71,
+            "column": 3,
+            "source": {
+              "name": "DbgDemo.pas",
+              "path": "${source}"
+            }
+          },
+          {
+            "id": 101,
+            "name": "DbgDemo",
+            "line": 77,
+            "column": 3,
+            "source": {
+              "name": "DbgDemo.pas",
+              "path": "${source}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "on": "scopes",
+      "respond": {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 11
+          },
+          {
+            "name": "Globals",
+            "variablesReference": 12
+          }
+        ]
+      }
+    },
+    {
+      "on": "variables",
+      "expectArguments": {
+        "variablesReference": 11
+      },
+      "respond": {
+        "variables": [
+          {
+            "name": "I",
+            "value": "<raw I>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Total",
+            "value": "<raw Total>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Ch",
+            "value": "<raw Ch>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Ok",
+            "value": "<raw Ok>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Color",
+            "value": "<raw Color>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Colors",
+            "value": "<raw Colors>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "S",
+            "value": "<raw S>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "P",
+            "value": "<raw P>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Nums",
+            "value": "<raw Nums>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Pet",
+            "value": "<raw Pet>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "PTotal",
+            "value": "<raw PTotal>",
+            "type": "?",
+            "variablesReference": 0
+          }
+        ]
+      }
+    },
+    {
+      "on": "next",
+      "expectArguments": {
+        "threadId": 1
+      },
+      "respond": {},
+      "thenEvents": [
+        {
+          "event": "output",
+          "body": {
+            "category": "stdout",
+            "output": "24\r\n"
+          }
+        },
+        {
+          "event": "stopped",
+          "body": {
+            "reason": "step",
+            "threadId": 1,
+            "allThreadsStopped": true
+          }
+        }
+      ]
+    },
+    {
+      "on": "threads",
+      "respond": {
+        "threads": [
+          {
+            "id": 1,
+            "name": "main"
+          }
+        ]
+      }
+    },
+    {
+      "on": "stackTrace",
+      "respond": {
+        "totalFrames": 2,
+        "stackFrames": [
+          {
+            "id": 100,
+            "name": "Run",
+            "line": 72,
+            "column": 3,
+            "source": {
+              "name": "DbgDemo.pas",
+              "path": "${source}"
+            }
+          },
+          {
+            "id": 101,
+            "name": "DbgDemo",
+            "line": 77,
+            "column": 3,
+            "source": {
+              "name": "DbgDemo.pas",
+              "path": "${source}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "on": "stackTrace",
+      "respond": {
+        "totalFrames": 2,
+        "stackFrames": [
+          {
+            "id": 100,
+            "name": "Run",
+            "line": 72,
+            "column": 3,
+            "source": {
+              "name": "DbgDemo.pas",
+              "path": "${source}"
+            }
+          },
+          {
+            "id": 101,
+            "name": "DbgDemo",
+            "line": 77,
+            "column": 3,
+            "source": {
+              "name": "DbgDemo.pas",
+              "path": "${source}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "on": "scopes",
+      "respond": {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 11
+          },
+          {
+            "name": "Globals",
+            "variablesReference": 12
+          }
+        ]
+      }
+    },
+    {
+      "on": "variables",
+      "expectArguments": {
+        "variablesReference": 11
+      },
+      "respond": {
+        "variables": [
+          {
+            "name": "I",
+            "value": "<raw I>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Total",
+            "value": "<raw Total>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Ch",
+            "value": "<raw Ch>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Ok",
+            "value": "<raw Ok>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Color",
+            "value": "<raw Color>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Colors",
+            "value": "<raw Colors>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "S",
+            "value": "<raw S>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "P",
+            "value": "<raw P>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Nums",
+            "value": "<raw Nums>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "Pet",
+            "value": "<raw Pet>",
+            "type": "?",
+            "variablesReference": 0
+          },
+          {
+            "name": "PTotal",
+            "value": "<raw PTotal>",
+            "type": "?",
+            "variablesReference": 0
+          }
+        ]
+      }
+    },
+    {
+      "on": "continue",
+      "respond": {
+        "allThreadsContinued": true
+      },
+      "thenEvents": [
+        {
+          "event": "output",
+          "body": {
+            "category": "stdout",
+            "output": "done\r\n"
+          }
+        },
+        {
+          "event": "exited",
+          "body": {
+            "exitCode": 0
+          }
+        },
+        {
+          "event": "terminated"
+        }
+      ]
+    }
+  ]
+}

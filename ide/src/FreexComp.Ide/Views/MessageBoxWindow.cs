@@ -41,6 +41,16 @@ public sealed class MessageBoxWindow(MessageBoxViewModel model) : DialogWindow(m
         }
 
         column.Children.Add(new ScrollViewer { Content = paragraphs, MaxHeight = TextMaxHeight, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });
+        if (model.Check is { } check)
+        {
+            // UI-DLG-026: the optional check box below the text.
+            var box = new CheckBox { Content = check.Label, IsChecked = check.IsChecked };
+            box.IsCheckedChanged += (_, _) => check.IsChecked = box.IsChecked == true;
+            AutomationProperties.SetAutomationId(box, Id("Check"));
+            AutomationProperties.SetName(box, check.Label);
+            column.Children.Add(box);
+        }
+
         if (model.HasDetails)
         {
             column.Children.Add(CreateDetails(model));
@@ -53,9 +63,13 @@ public sealed class MessageBoxWindow(MessageBoxViewModel model) : DialogWindow(m
 
     private static TextBlock CreateParagraph(MessageParagraph paragraph, HashSet<string> named)
     {
-        var text = new TextBlock { Text = paragraph.Text, TextWrapping = TextWrapping.Wrap };
+        // UI-DLG-231: the exception message can be selected (and copied).
+        var text = paragraph.Style == MessageParagraphStyle.Code
+            ? new SelectableTextBlock { Text = paragraph.Text, TextWrapping = TextWrapping.Wrap }
+            : new TextBlock { Text = paragraph.Text, TextWrapping = TextWrapping.Wrap };
         var (field, textClass, brush) = paragraph.Style switch
         {
+            MessageParagraphStyle.Code => ("Text.Code", "codeSmall", "FxcTextPrimaryBrush"),
             MessageParagraphStyle.Path => ("Text.Path", "codeSmall", "FxcTextSecondaryBrush"),
             MessageParagraphStyle.Secondary => ("Text.Reason", "body", "FxcTextSecondaryBrush"),
             _ => ("Text", "body", "FxcTextPrimaryBrush"),

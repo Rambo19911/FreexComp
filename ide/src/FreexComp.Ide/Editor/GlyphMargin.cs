@@ -48,12 +48,12 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
             if (glyph.Kind == LineGlyphKind.Execution && glyphs.FirstOrDefault(g => g.IsBreakpoint) is { } breakpoint)
             {
                 // §3: both stay recognizable — the breakpoint below, the arrow with a 1 px gutter outline on top.
-                DrawGlyph(context, breakpoint);
+                DrawGlyph(context, breakpoint, Brush);
                 context.DrawGeometry(Brush("editor.execution"), new Pen(Brush("bg.gutter"), 1), Arrow());
             }
             else
             {
-                DrawGlyph(context, glyph);
+                DrawGlyph(context, glyph, Brush);
             }
         }
     }
@@ -76,7 +76,11 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
         ToolTip.SetTip(this, TextView is null ? null : _decorations?.ToolTipAt(LineAt(e.GetPosition(this).Y))); // UI-ED-021
     }
 
-    private void DrawGlyph(DrawingContext context, LineGlyph glyph)
+    /// <summary>
+    /// Draws <paramref name="glyph"/> in a 16 × 16 slot at the origin (§3.1); <paramref name="Brush"/> gives the brush of a
+    /// design token. Shared with the debug tool windows, whose State and Marker columns show the same glyphs.
+    /// </summary>
+    internal static void DrawGlyph(DrawingContext context, LineGlyph glyph, Func<string, IBrush?> Brush)
     {
         var center = new Point(8, 8);
         switch (glyph.Kind)
@@ -89,14 +93,14 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
                 DrawEqualsBars(context, Brushes.White);
                 break;
             case LineGlyphKind.BreakpointDisabled:
-                DrawRing(context);
+                DrawRing(context, Brush);
                 break;
             case LineGlyphKind.BreakpointConditionalDisabled:
-                DrawRing(context);
+                DrawRing(context, Brush);
                 DrawEqualsBars(context, Brush("editor.breakpoint.disabled"));
                 break;
             case LineGlyphKind.BreakpointUnverified:
-                DrawRing(context);
+                DrawRing(context, Brush);
                 DrawCenteredText(context, "?", 8, Brush("editor.breakpoint.disabled"), center);
                 break;
             case LineGlyphKind.Execution:
@@ -106,15 +110,15 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
                 context.DrawGeometry(null, new Pen(Brush("status.success"), 1.25), Arrow());
                 break;
             case LineGlyphKind.Bookmark:
-                DrawBookmark(context, glyph.Number);
+                DrawBookmark(context, glyph.Number, Brush);
                 break;
             case LineGlyphKind.Error:
-                DrawErrorMarker(context);
+                DrawErrorMarker(context, Brush);
                 break;
         }
     }
 
-    private void DrawRing(DrawingContext context) =>
+    private static void DrawRing(DrawingContext context, Func<string, IBrush?> Brush) =>
         context.DrawEllipse(null, new Pen(Brush("editor.breakpoint.disabled"), 1.5), new Point(8, 8), 5.25, 5.25);
 
     /// <summary>Two bars 6 × 1.5 with a 1.5 gap forming <c>=</c>, centred.</summary>
@@ -130,7 +134,7 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
     private static StreamGeometry Arrow() => Polygon((2, 6), (8, 6), (8, 3), (14, 8), (8, 13), (8, 10), (2, 10));
 
     /// <summary>Flag 9 × 7 with a V-notch of depth 2 on a 1.25 px pole 12 high at x = 3; a numbered bookmark shows its digit.</summary>
-    private void DrawBookmark(DrawingContext context, int number)
+    private static void DrawBookmark(DrawingContext context, int number, Func<string, IBrush?> Brush)
     {
         var brush = Brush("editor.bookmark");
         context.FillRectangle(brush ?? Brushes.Transparent, new Rect(3, 2, 1.25, 12));
@@ -140,7 +144,7 @@ public sealed class GlyphMargin(TextArea area) : GutterMargin(area)
     }
 
     /// <summary>Filled octagon, diameter 8, with a 1 px white ✕.</summary>
-    private void DrawErrorMarker(DrawingContext context)
+    private static void DrawErrorMarker(DrawingContext context, Func<string, IBrush?> Brush)
     {
         const double r = 4, k = 1.657; // half side of a regular octagon of circumradius ≈ 4
         context.DrawGeometry(Brush("editor.squiggle.error"), null,

@@ -1,5 +1,10 @@
 using FreexComp.Ide.Core.Commands;
+using FreexComp.Ide.Core.Documents;
+using FreexComp.Ide.Core.Editing;
+using FreexComp.Ide.Core.Layout;
 using FreexComp.Ide.Core.Models;
+using FreexComp.Ide.Core.Platform;
+using FreexComp.Ide.Core.Services;
 using FreexComp.Ide.Core.Settings;
 using FreexComp.Ide.Core.ToolWindows;
 using FreexComp.Ide.Core.ViewModels;
@@ -7,25 +12,13 @@ using FreexComp.Ide.Core.ViewModels;
 namespace FreexComp.Ide.Core.Debugging;
 
 /// <summary>
-/// The IDE around a debug session from Phase 6 on (I-133): the six debug tool windows, the <c>Debug</c> layout profile
-/// with automatic switching (UI-WIN-012 (b), <c>layout.autoSwitch</c>) and <c>window.layout.debug</c>, and whether the
-/// Debug toolbar has its context (UI-TB-004: a session exists or the Debug profile is active).
+/// The IDE around a debug session from Phase 6 on (I-133, I-142…I-144): the six debug tool windows with their
+/// commands, the <c>Debug</c> layout profile with automatic switching (UI-WIN-012 (b), <c>layout.autoSwitch</c>) and
+/// <c>window.layout.debug</c>, and whether the Debug toolbar has its context (UI-TB-004: a session exists or the Debug
+/// profile is active).
 /// </summary>
 public sealed class DebugShell
 {
-    /// <summary>
-    /// Phase 6 commands of the debug tool windows whose behaviour arrives with their windows' content; until then they are
-    /// registered unavailable, so the command check of the start-up (IDE-ARCH-040) sees every catalog id handled.
-    /// </summary>
-    public static readonly IReadOnlyList<string> PendingCommands =
-    [
-        "breakpoints.delete", "breakpoints.enableAll", "breakpoints.disableAll", "breakpoints.goToSource",
-        "callStack.goToFrame", "callStack.copy",
-        "watches.edit", "watches.delete", "watches.deleteAll",
-        "locals.copyValue", "locals.modifyValue",
-        "threads.switchTo", "eventLog.clear",
-    ];
-
     private readonly IDebugService _debug;
     private readonly ISettingsService _settings;
     private readonly LayoutViewModel _layout;
@@ -34,32 +27,73 @@ public sealed class DebugShell
     private bool _hasToolBarContext;
 
     /// <param name="isDesignActive">A Design view is the active document view: the profile rule (a) selects <c>Design</c>.</param>
-    public DebugShell(ICommandService commands, IDebugService debug, IBreakpointService breakpoints, ISettingsService settings, LayoutViewModel layout,
-        Func<bool> isDesignActive)
+    public DebugShell(ICommandService commands, DebugService debug, BreakpointService breakpoints, ISettingsService settings, ILayoutService layout,
+        IDocumentService documents, INavigationService navigation, IClipboardService clipboard, IDialogService dialogs, Func<bool> isDesignActive)
     {
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(debug);
+        ArgumentNullException.ThrowIfNull(breakpoints);
         ArgumentNullException.ThrowIfNull(layout);
         _debug = debug;
         _settings = settings;
-        _layout = layout;
+        _layout = layout.Layout;
         _isDesignActive = isDesignActive;
-        ToolWindows =
-        [
-            new BreakpointsViewModel(breakpoints).Definition, new CallStackViewModel(debug).Definition, new LocalsViewModel(debug).Definition,
-            new WatchesViewModel(debug).Definition, new ThreadsViewModel(debug).Definition, new EventLogViewModel().Definition,
-        ];
-        commands.RegisterHandler("window.layout.debug", new ProfileHandler(layout));
-        foreach (var id in PendingCommands.Where(id => !commands.IsHandled(id)))
-            commands.RegisterHandler(id, PendingHandler.Instance);
+        Breakpoints = new BreakpointsViewModel(commands, breakpoints, debug, documents, navigation);
+        CallStack = new CallStackViewModel(commands, debug, clipboard);
+        Locals = new LocalsViewModel(commands, debug, clipboard);
+        Watches = new WatchesViewModel(commands, debug, clipboard, dialogs) { UiState = layout };
+        Threads = new ThreadsViewModel(commands, debug, clipboard);
+        EventLog = new EventLogViewModel(commands, debug, clipboard, documents, navigation);
+        ToolWindows = [Breakpoints.Definition, CallStack.Definition, Locals.Definition, Watches.Definition, Threads.Definition, EventLog.Definition];
+
+        commands.RegisterHandler("window.layout.debug", new ProfileHandler(_layout));
+        Breakpoints.RegisterCommands();
+        CallStack.RegisterCommands();
+        Watches.RegisterCommands();
+        Threads.RegisterCommands();
+        EventLog.RegisterCommands();
+
+        // tool-windows.md §12, §13: the value commands belong to Locals and Watches alike — the one with focus, else Locals.
+        VariableTreeViewModel Values() => Watches.IsActive ? Watches : Locals;
+        commands.RegisterHandler("locals.modifyValue", new Handler(() => Values().CanModifySelected, () =>
+        {
+            Values().BeginModifySelected();
+            return Task.CompletedTask;
+        }));
+        commands.RegisterHandler("locals.copyValue", new Handler(() => Values().CanCopySelected, () => Values().CopySelectedValueAsync()));
+
+        // The row commands of the windows that have focus act on their rows.
+        breakpoints.ToolSelection = () => Breakpoints.IsActive ? Breakpoints.SelectedBreakpoints : null;
+        debug.ToolExpression = () => Watches.IsActive ? Watches.SelectedExpression : Locals.IsActive ? Locals.SelectedExpression : null;
+        debug.AddWatchInPlace = () =>
+        {
+            if (!Watches.IsActive)
+                return false;
+            Watches.BeginAdd();
+            return true;
+        };
+
         debug.SessionChanged += (_, _) => OnSessionChanged();
-        layout.PropertyChanged += (_, e) =>
+        debug.Stopped += (_, _) => OnStopped();
+        _layout.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(LayoutViewModel.ActiveProfile))
                 UpdateToolBarContext();
         };
         UpdateToolBarContext();
     }
+
+    public BreakpointsViewModel Breakpoints { get; }
+
+    public CallStackViewModel CallStack { get; }
+
+    public LocalsViewModel Locals { get; }
+
+    public WatchesViewModel Watches { get; }
+
+    public ThreadsViewModel Threads { get; }
+
+    public EventLogViewModel EventLog { get; }
 
     /// <summary>The debug tool windows, to register with the tool-window service.</summary>
     public IReadOnlyList<ToolWindowDefinition> ToolWindows { get; }
@@ -88,6 +122,13 @@ public sealed class DebugShell
         UpdateToolBarContext();
     }
 
+    /// <summary>I-141: a stop brings the Debug profile's windows back when the user left the profile during the session.</summary>
+    private void OnStopped()
+    {
+        if (_settings.Get(SettingsCatalog.LayoutAutoSwitch) && _layout.ActiveProfile != LayoutProfiles.Debug)
+            _layout.SwitchProfile(LayoutProfiles.Debug);
+    }
+
     private void UpdateToolBarContext()
     {
         var context = _debug.Session is not null || _layout.ActiveProfile == LayoutProfiles.Debug;
@@ -110,12 +151,10 @@ public sealed class DebugShell
         }
     }
 
-    private sealed class PendingHandler : ICommandHandler
+    private sealed class Handler(Func<bool> canExecute, Func<Task> execute) : ICommandHandler
     {
-        public static readonly PendingHandler Instance = new();
+        public bool CanExecute(string? argument) => canExecute();
 
-        public bool CanExecute(string? argument) => false;
-
-        public Task ExecuteAsync(string? argument) => Task.CompletedTask;
+        public Task ExecuteAsync(string? argument) => execute();
     }
 }

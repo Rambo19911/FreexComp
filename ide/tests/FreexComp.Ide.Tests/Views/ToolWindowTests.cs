@@ -205,14 +205,38 @@ public sealed class ToolWindowTests
         Assert.False(tools.Get("Messages")!.IsActive);
     }
 
-    /// <summary>I-193, I-207: UI-TW-006 at the product's phase 5: the P1–P5 windows are registered, the P6+ ones are not.</summary>
+    /// <summary>I-146: UI-TW-006 at the product's phase 6: the P1–P6 windows are registered, the P7 one is not.</summary>
+    [AvaloniaFact(Timeout = 30000)]
+    [Trait("Phase", "6")]
+    [Trait("Req", "UI-TW-006")]
+    [Trait("Req", "UI-WIN-011")]
+    public async Task DebugWindowsAreRegisteredAtProductPhase()
+    {
+        await using var h = await HeadlessHarness.StartAsync();
+        var tools = h.Services.ToolWindows;
+        Assert.Equal(6, Core.Composition.ServiceGraph.ImplementedPhase);
+
+        foreach (var name in new[] { "ProjectManager", "Structure", "Messages", "Output", "SearchResults", "ObjectInspector", "ToolPalette",
+                     "Breakpoints", "CallStack", "Locals", "Watches", "Threads", "EventLog" })
+            Assert.True(tools.IsRegistered(name), name);
+        Assert.False(tools.IsRegistered("DataExplorer"));
+        Assert.False(tools.Show("DataExplorer", focus: true));
+        Assert.True(h.Services.Commands.CanExecute("view.callStack"));
+        Assert.True(h.Services.Commands.CanExecute("view.eventLog"));
+        Assert.False(h.Services.Commands.CanExecute("view.dataExplorer"));
+        Assert.True(tools.Show("CallStack", focus: false));
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(h.Find<Control>("Tool.CallStack").IsEffectivelyVisible);
+    }
+
+    /// <summary>I-193, I-207: UI-TW-006 at phase 5 (the product's phase until I-146): the P1–P5 windows are registered, the P6+ ones are not.</summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Phase", "5")]
     [Trait("Req", "UI-TW-006")]
     [Trait("Req", "UI-WIN-011")]
     public async Task LaterPhaseWindowsAreNotRegisteredAtDefaultPhase()
     {
-        await using var h = await HeadlessHarness.StartAsync();
+        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5);
         var tools = h.Services.ToolWindows;
 
         foreach (var name in new[] { "ProjectManager", "Structure", "Messages", "Output", "SearchResults", "ObjectInspector", "ToolPalette" })

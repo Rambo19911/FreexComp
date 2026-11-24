@@ -6,4 +6,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FreexComp.Ide.Core\FreexComp.Ide.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Phase 6 (I-143, I-146): the debugger area's demo program with its type-information sidecar and the memory of its
+         frame Run on line 71, read (never changed) from that area's test fixtures; DebugDemo makes scenarios of them. -->
+    <None Include="..\..\..\debugger\tests\programs\DbgDemo\DbgDemo.pas" Link="TestData\debug-demo\DbgDemo.pas" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\debugger\tests\FreexComp.Debugger.Tests\Fixtures\pdi\DbgDemo.pdi" Link="TestData\debug-demo\DbgDemo.pdi" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\debugger\tests\FreexComp.Debugger.Tests\Fixtures\memory\DbgDemo.line71.json" Link="TestData\debug-demo\DbgDemo.line71.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

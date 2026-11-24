@@ -93,7 +93,7 @@ public sealed class LayoutTests
     public async Task DesignProfileArrangement()
     {
         var rows = SpecTables.Read(SpecTables.DocPath("spec/ui/main-window.md"), "2. Default layout per profile");
-        Assert.Equal([LayoutProfiles.Edit, LayoutProfiles.Design], LayoutProfiles.BuiltIn);
+        Assert.Equal([LayoutProfiles.Edit, LayoutProfiles.Design, LayoutProfiles.Debug], LayoutProfiles.BuiltIn); // Phase 6: Debug is built in
         var profile = LayoutProfiles.Create(LayoutProfiles.Design);
         foreach (var group in Enum.GetValues<ToolGroupId>())
         {
@@ -341,7 +341,7 @@ public sealed class LayoutTests
     [Trait("Req", "UI-TW-005")]
     public async Task EmptyDockCollapsesAtDefaultPhase()
     {
-        await using var h = await HeadlessHarness.StartAsync();
+        await using var h = await HeadlessHarness.StartAsync(o => o.ImplementedPhase = 5); // the product's phase until I-146 (Call Stack is a Phase 6 window)
         var layout = h.Services.Layout.Layout;
         var tools = h.Services.ToolWindows;
         var documents = h.Find<Control>(AutomationIds.DocumentArea);

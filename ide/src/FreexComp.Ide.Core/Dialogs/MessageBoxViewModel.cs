@@ -16,6 +16,9 @@ public enum MessageParagraphStyle
 
     /// <summary>An OS reason or other inserted detail: <c>type.body</c>, <c>text.secondary</c>.</summary>
     Secondary,
+
+    /// <summary>The message of the debuggee's exception (UI-DLG-231): <c>type.codeSmall</c>, selectable.</summary>
+    Code,
 }
 
 public sealed record MessageParagraph(string Text, MessageParagraphStyle Style);
@@ -41,7 +44,7 @@ public sealed class MessageBoxViewModel : DialogViewModel<string>
         _clipboard = clipboard;
         Request = request;
         Definition = MessageDefinitions.Get(request.MessageId);
-        Paragraphs = Format(Definition.Text, request.Args);
+        Paragraphs = Format(Definition.Text, request.Args, codeDetail: request.MessageId == "Msg.Debug.Exception");
         Text = string.Join(Environment.NewLine, Paragraphs.Select(p => p.Text));
         Buttons = CreateButtons();
     }
@@ -70,6 +73,9 @@ public sealed class MessageBoxViewModel : DialogViewModel<string>
     /// <summary>The whole message text, paragraphs separated by line breaks.</summary>
     public string Text { get; }
 
+    /// <summary>The check box below the text (UI-DLG-026); null = none. Its state is the request's when the box closes.</summary>
+    public MessageCheck? Check => Request.Check;
+
     public string? Details => Request.Details;
 
     public bool HasDetails => Request.Details is not null;
@@ -89,7 +95,7 @@ public sealed class MessageBoxViewModel : DialogViewModel<string>
     /// ⏎ starts a paragraph (UI-DLG-021). A paragraph that is only a placeholder shows an inserted value: a fully
     /// qualified path is a path paragraph, anything else (an OS reason, a message) is secondary text.
     /// </summary>
-    private static List<MessageParagraph> Format(string template, IReadOnlyList<string> args)
+    private static List<MessageParagraph> Format(string template, IReadOnlyList<string> args, bool codeDetail)
     {
         var values = args.Cast<object>().ToArray();
         var result = new List<MessageParagraph>();
@@ -107,7 +113,7 @@ public sealed class MessageBoxViewModel : DialogViewModel<string>
 
             var style = MessageParagraphStyle.Main;
             if (paragraph.Length > 2 && paragraph[0] == '{' && paragraph[^1] == '}' && int.TryParse(paragraph[1..^1], out _))
-                style = Path.IsPathFullyQualified(text) ? MessageParagraphStyle.Path : MessageParagraphStyle.Secondary;
+                style = codeDetail ? MessageParagraphStyle.Code : Path.IsPathFullyQualified(text) ? MessageParagraphStyle.Path : MessageParagraphStyle.Secondary;
             result.Add(new MessageParagraph(text, style));
         }
 

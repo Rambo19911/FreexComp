@@ -8,7 +8,19 @@ namespace FreexComp.Ide.Core.Services;
 /// Details expander (UI-DLG-025), null for none. <paramref name="Buttons"/> limits the definition's buttons to these
 /// ids (shown in the definition's order; e.g. UI-DLG-040 "Retry, Cancel only"); null = all of them.
 /// </summary>
-public sealed record MessageRequest(string MessageId, IReadOnlyList<string> Args, string? Details = null, IReadOnlyList<string>? Buttons = null);
+public sealed record MessageRequest(string MessageId, IReadOnlyList<string> Args, string? Details = null, IReadOnlyList<string>? Buttons = null)
+{
+    /// <summary>The optional check box below the text (UI-DLG-026, <c>Dialog.Message.Check</c>); null = none.</summary>
+    public MessageCheck? Check { get; init; }
+}
+
+/// <summary>The check box of a message box (UI-DLG-026): its label and, when the box closes, whether it was checked.</summary>
+public sealed class MessageCheck(string label)
+{
+    public string Label { get; } = label;
+
+    public bool IsChecked { get; set; }
+}
 
 /// <summary>Modal dialogs (IDE-ARCH-054, UI-DLG-008). UI thread only.</summary>
 public interface IDialogService

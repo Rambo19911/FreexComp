@@ -24,5 +24,7 @@
   <ItemGroup>
     <!-- D-078: the designer views load the test component metadata (testing.md §4). -->
     <None Include="..\TestData\metadata\**\*" LinkBase="TestData\metadata" CopyToOutputDirectory="PreserveNewest" />
+    <!-- I-146: scenario files of the scripted debug adapter (testing.md §5.4). -->
+    <None Include="..\TestData\debug-scenarios\**\*" LinkBase="TestData\debug-scenarios" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

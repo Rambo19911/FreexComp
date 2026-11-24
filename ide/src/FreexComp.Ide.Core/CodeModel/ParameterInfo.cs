@@ -168,7 +168,11 @@ public sealed class ParameterInfoSession
 public sealed record HoverContent(int Offset, int Length, string Declaration, string? Origin, string? Documentation);
 
 /// <summary>A shown hover: the hovered range, the symbol content (null = markers only) and the markers there (UI-ED-131).</summary>
-public sealed record HoverInfo(int Offset, int Length, HoverContent? Content, IReadOnlyList<TextMarker> Markers, bool AtCaret);
+public sealed record HoverInfo(int Offset, int Length, HoverContent? Content, IReadOnlyList<TextMarker> Markers, bool AtCaret)
+{
+    /// <summary>UI-ED-130, from P6 while paused: the value of the hovered variable, shown as <c>= value</c> first; null = none.</summary>
+    public string? Value { get; init; }
+}
 
 /// <summary>
 /// The hover tooltip's model for one document (IDE-ED-091, UI-ED-130): the pointer resting on an identifier for
@@ -187,6 +191,13 @@ public sealed class HoverSession
     private readonly IClock _clock;
     private readonly Func<bool> _enabled;
     private readonly Func<TimeSpan> _delay;
+
+    /// <summary>
+    /// Asks the debugger for the value of the identifier at an offset while the program is paused (UI-ED-130,
+    /// <c>debugger.evaluateTooltips</c>): the identifier's range and its value text; null = none. Null before Phase 6.
+    /// </summary>
+    public Func<int, Task<(int Offset, int Length, string Value)?>>? ValueFetch { get; set; }
+
     private IDisposable? _timer;
     private IDisposable? _closing;
     private CancellationTokenSource? _request;
@@ -295,17 +306,20 @@ public sealed class HoverSession
 
         if (request.IsCancellationRequested || !ReferenceEquals(request, _request) || _document.Buffer.Version != version)
             return;
+        var value = ValueFetch is { } fetch ? await fetch(offset) : null;
+        if (request.IsCancellationRequested || !ReferenceEquals(request, _request) || _document.Buffer.Version != version)
+            return;
         _request = null;
         var markers = _document.Decorations.MarkersAt(offset);
-        if (content is null && (!atCaret || markers.Count == 0))
+        if (content is null && value is null && (!atCaret || markers.Count == 0))
         {
             Close();
             return;
         }
 
         KeepOpen();
-        Current = content is not null
-            ? new HoverInfo(content.Offset, content.Length, content, markers, atCaret)
+        Current = content is not null ? new HoverInfo(content.Offset, content.Length, content, markers, atCaret) { Value = value?.Value }
+            : value is { } evaluated ? new HoverInfo(evaluated.Offset, evaluated.Length, null, markers, atCaret) { Value = evaluated.Value }
             : new HoverInfo(markers[0].Offset, Math.Max(1, markers[0].Length), null, markers, atCaret);
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -341,6 +355,12 @@ public sealed class ParameterInfoController
             Attach(document);
     }
 
+    /// <summary>
+    /// Phase 6 (UI-ED-130): the debugger's value of the identifier at an offset of a document while the program is paused;
+    /// set before documents open. Null = no value line.
+    /// </summary>
+    public Func<TextDocumentViewModel, int, Task<(int Offset, int Length, string Value)?>>? DebugValue { get; set; }
+
     public void RegisterCommands(ICommandService commands)
     {
         ArgumentNullException.ThrowIfNull(commands);
@@ -357,7 +377,10 @@ public sealed class ParameterInfoController
             () => _settings.Get(SettingsCatalog.EditorParameterInfoAutoTrigger));
         text.Hover = new HoverSession(text, (offset, ct) => HoverAsync(text, offset, ct), _clock,
             () => _settings.Get(SettingsCatalog.EditorHoverEnabled),
-            () => TimeSpan.FromMilliseconds(_settings.Get(SettingsCatalog.EditorHoverDelayMs)));
+            () => TimeSpan.FromMilliseconds(_settings.Get(SettingsCatalog.EditorHoverDelayMs)))
+        {
+            ValueFetch = DebugValue is null ? null : offset => DebugValue(text, offset),
+        };
     }
 
     private Document? Source(TextDocumentViewModel document) =>

@@ -121,17 +121,17 @@ public sealed class DocumentViewSwitchTests
          "designer.selectNext", "designer.sendToBack", "designer.selectParent"];
 
     /// <summary>
-    /// I-207: <c>ServiceGraph.ImplementedPhase</c> is 5, so the designer and form-view commands are real (not later-phase stubs)
+    /// I-207: <c>ServiceGraph.ImplementedPhase</c> is at least 5, so the designer and form-view commands are real (not later-phase stubs)
     /// and enabled in their context without a test override; below Phase 5 the same commands are disabled stubs.
     /// </summary>
     [AvaloniaFact(Timeout = 30000)]
     [Trait("Req", "UI-KEY-001")]
     public async Task CommandsEnabledInPhase5()
     {
-        Assert.Equal(5, Core.Composition.ServiceGraph.ImplementedPhase);
+        Assert.Equal(6, Core.Composition.ServiceGraph.ImplementedPhase); // Phase 6 since I-146
         await using (var h = await HeadlessHarness.StartAsync(DesignerViewTests.Files))
         {
-            Assert.Equal(5, h.Services.ImplementedPhase);
+            Assert.Equal(6, h.Services.ImplementedPhase);
             var document = await DesignerViewTests.OpenFormAsync(h);
             Assert.All(Phase5ViewCommands, id => Assert.True(h.Services.Commands.CanExecute(id), id));
             h.Click(Tab("Design"));

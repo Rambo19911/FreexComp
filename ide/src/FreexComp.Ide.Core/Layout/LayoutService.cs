@@ -51,7 +51,7 @@ public sealed class LayoutService : ILayoutService
     public LayoutService(IUserPaths paths, IFileSystem fileSystem, IClock clock, ILog log, IStatusService status, ICommandService commands,
         bool debugProfile = false)
     {
-        _profiles = debugProfile ? LayoutProfiles.WithDebug : LayoutProfiles.BuiltIn;
+        _profiles = debugProfile ? LayoutProfiles.BuiltIn : LayoutProfiles.BeforeDebug;
         _fs = fileSystem;
         _clock = clock;
         _log = log;

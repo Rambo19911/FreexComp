@@ -50,7 +50,14 @@ public interface IBreakpointService
     /// set per file. Until <see cref="DetachSession"/> every change is sent with <c>SetBreakpointsAsync</c> and
     /// <c>BreakpointChanged</c> updates state, line and hits.
     /// </summary>
-    IReadOnlyList<SourceBreakpoints> AttachSession(IDebugSession session);
+    /// <param name="runTo">
+    /// "Run to Cursor" without a session (DBG-232): a temporary breakpoint on that line joins the launch set, unless a
+    /// breakpoint is there already; it is not listed and goes with <see cref="ClearTemporary"/>.
+    /// </param>
+    IReadOnlyList<SourceBreakpoints> AttachSession(IDebugSession session, (string Path, int Line)? runTo = null);
+
+    /// <summary>The program stopped: the temporary breakpoint of a "Run to Cursor" start, if any, is taken from the session.</summary>
+    void ClearTemporary();
 
     /// <summary>The session ended: ids, states and hits are cleared.</summary>
     void DetachSession();
@@ -78,6 +85,7 @@ public sealed class BreakpointService : IBreakpointService
     private IDebugSession? _session;
     private EventHandler<BreakpointChangedEventArgs>? _sessionHandler;
     private int _nextId = 1;
+    private (string Path, BreakpointSpec Spec)? _temporary;
     private Task _sync = Task.CompletedTask;
 
     public BreakpointService(IDocumentService documents, IProjectService projects, IDialogService dialogs, IFileDialogService pickers,
@@ -190,7 +198,7 @@ public sealed class BreakpointService : IBreakpointService
         RaiseChanged();
     }
 
-    public IReadOnlyList<SourceBreakpoints> AttachSession(IDebugSession session)
+    public IReadOnlyList<SourceBreakpoints> AttachSession(IDebugSession session, (string Path, int Line)? runTo = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         DetachSession();
@@ -210,8 +218,33 @@ public sealed class BreakpointService : IBreakpointService
                 ApplyStatus(e.Status);
         });
         session.BreakpointChanged += _sessionHandler;
-        return [.. _entries.GroupBy(e => e.Model.Path, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new SourceBreakpoints(g.Key, [.. g.Select(e => e.Model.ToSpec())]))];
+        if (runTo is { } target && FindEntry(target.Path, target.Line) is null)
+            _temporary = (Path.GetFullPath(target.Path), new BreakpointSpec { Id = _nextId++, Line = target.Line });
+        return [.. _entries.Select(e => e.Model.Path).Concat(_temporary is { } t ? [t.Path] : []).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(path => new SourceBreakpoints(path, SpecsOf(path)))];
+    }
+
+    public void ClearTemporary()
+    {
+        if (_temporary is not { } temporary)
+            return;
+        _temporary = null;
+        Sync(temporary.Path);
+    }
+
+    /// <summary>The complete set of one file as the session takes it: its breakpoints at their current lines, then the temporary one.</summary>
+    private List<BreakpointSpec> SpecsOf(string path)
+    {
+        var specs = new List<BreakpointSpec>();
+        foreach (var entry in _entries.Where(e => SamePath(e.Model.Path, path)))
+        {
+            entry.Model.Line = CurrentLine(entry);
+            specs.Add(entry.Model.ToSpec());
+        }
+
+        if (_temporary is { } temporary && SamePath(temporary.Path, path))
+            specs.Add(temporary.Spec);
+        return specs;
     }
 
     public void DetachSession()
@@ -221,6 +254,7 @@ public sealed class BreakpointService : IBreakpointService
         session.BreakpointChanged -= _sessionHandler;
         _session = null;
         _sessionHandler = null;
+        _temporary = null;
         foreach (var entry in _entries)
             (entry.Model.Id, entry.Model.State, entry.Model.Hits, entry.Model.Message) = (0, null, 0, null);
         RaiseChanged();
@@ -266,7 +300,16 @@ public sealed class BreakpointService : IBreakpointService
     private TextDocumentViewModel? Editor =>
         _documents.ActiveDocument is TextDocumentViewModel { FilePath: not null } text && CanHold(text) ? text : null;
 
-    private BreakpointModel? AtCaret => Editor is { } editor ? Find(editor.FilePath!, editor.ViewState.Caret.Line) : null;
+    private BreakpointModel? AtCaret =>
+        ToolSelection?.Invoke() is { Count: > 0 } rows ? (rows.Count == 1 ? rows[0] : null)
+        : Editor is { } editor ? Find(editor.FilePath!, editor.ViewState.Caret.Line) : null;
+
+    /// <summary>
+    /// The selected rows of the focused Breakpoints tool window (tool-windows.md §10 context menu): the row commands
+    /// (<c>run.toggleBreakpointEnabled</c>, <c>run.breakpointProperties</c>) act on a single selected row; null when the
+    /// window does not have focus.
+    /// </summary>
+    public Func<IReadOnlyList<BreakpointModel>?>? ToolSelection { get; set; }
 
     private static bool CanHold(TextDocumentViewModel document) => document.FilePath is not null && document.Language.Id == "pascal";
 
@@ -353,14 +396,7 @@ public sealed class BreakpointService : IBreakpointService
     {
         if (_session is not { } session)
             return;
-        var specs = new List<BreakpointSpec>();
-        foreach (var entry in _entries.Where(e => SamePath(e.Model.Path, path)))
-        {
-            entry.Model.Line = CurrentLine(entry);
-            specs.Add(entry.Model.ToSpec());
-        }
-
-        _sync = SendAsync(_sync, session, Path.GetFullPath(path), specs);
+        _sync = SendAsync(_sync, session, Path.GetFullPath(path), SpecsOf(path));
     }
 
     private async Task SendAsync(Task previous, IDebugSession session, string path, IReadOnlyList<BreakpointSpec> specs)

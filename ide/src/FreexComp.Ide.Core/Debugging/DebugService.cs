@@ -68,10 +68,57 @@ public interface IDebugService
 
     /// <summary>Makes <paramref name="frame"/> the selected frame (UI-TW-901); frame 0 or null returns to the execution point.</summary>
     void SelectFrame(StackFrameInfo? frame);
+
+    /// <summary>The thread whose frames the views show (UI-TW-1201): the thread of the stop until another is switched to; null while not paused.</summary>
+    int? CurrentThreadId { get; }
+
+    /// <summary>What the views of a paused program depend on; null while not paused.</summary>
+    DebugContext? Context { get; }
+
+    /// <summary>The stop, the current thread or the selected frame changed (also to "not paused").</summary>
+    event EventHandler? ContextChanged;
+
+    /// <summary>
+    /// The innermost frames of the current thread (at most <see cref="DebugService.FramePageSize"/>), asked once per stop
+    /// and thread; null while not paused or when they cannot be read.
+    /// </summary>
+    Task<StackTraceResult?> GetFramesAsync();
+
+    /// <summary>The next page of the current thread's frames from <paramref name="startFrame"/> (UI-TW-902); null when it cannot be read.</summary>
+    Task<StackTraceResult?> GetMoreFramesAsync(int startFrame);
+
+    /// <summary>The frame the views evaluate in: the selected frame, else the top frame of the current thread; null when unknown.</summary>
+    Task<StackFrameInfo?> GetEvaluationFrameAsync();
+
+    /// <summary>UI-TW-901: selects the frame and shows its line in the editor (frame 0: the execution point).</summary>
+    Task GoToFrameAsync(StackFrameInfo frame);
+
+    /// <summary>UI-TW-1201: makes the thread the current thread; Call Stack, Locals, Watches and the editor follow. Only while paused.</summary>
+    Task SwitchThreadAsync(int threadId);
+
+    /// <summary>A value of the paused program was assigned: every visible value is read again (DBG-413).</summary>
+    event EventHandler? ValuesChanged;
+
+    /// <summary>A thread of the debuggee started or exited (UI-TW-1200).</summary>
+    event EventHandler<ThreadChangedEventArgs>? ThreadChanged;
+
+    /// <summary>The Event Log's rows since the last session start (UI-TW-1300), oldest first.</summary>
+    IReadOnlyList<DebugLogEntry> Log { get; }
+
+    /// <summary>A row was appended to <see cref="Log"/> (the oldest row may have been dropped for it), or (null) the log was cleared.</summary>
+    event EventHandler<DebugLogEntry?>? LogChanged;
+
+    void ClearLog();
+
+    /// <summary>
+    /// Registers work a debug view started against the session (reading frames, values): execution control and the end of
+    /// the session wait for it, so a request is never abandoned half-way. Returns <paramref name="work"/>.
+    /// </summary>
+    Task Track(Task work);
 }
 
 /// <inheritdoc cref="IDebugService"/>
-public sealed class DebugService : IDebugService
+public sealed partial class DebugService : IDebugService
 {
     /// <summary>The debug adapter in the LLVM tools folder (IDE-P3-010).</summary>
     public const string AdapterFileName = "lldb-dap.exe";
@@ -95,6 +142,7 @@ public sealed class DebugService : IDebugService
     private readonly IStatusService _status;
     private readonly ILog _log;
     private readonly Dictionary<TextDocumentViewModel, ExecutionGlyphs> _decorated = [];
+    private readonly HashSet<Task> _work = [];
     private Active? _active;
     private StopInfo? _stop;
     private StackFrameInfo? _selectedFrame;
@@ -132,6 +180,7 @@ public sealed class DebugService : IDebugService
             if (e.Document is TextDocumentViewModel text && _decorated.Remove(text, out var glyphs))
                 text.Decorations.Remove(glyphs);
         };
+        settings.Changed += OnSettingChanged;
     }
 
     public IDebugSession? Session => _active?.Session;
@@ -244,7 +293,13 @@ public sealed class DebugService : IDebugService
         return result;
     }
 
-    public async Task<bool> StartAsync(bool stopOnEntry = false)
+    public Task<bool> StartAsync(bool stopOnEntry = false) => StartAsync(stopOnEntry, null);
+
+    /// <summary>
+    /// As <see cref="StartAsync(bool)"/>; <paramref name="runTo"/> is "Run to Cursor" without a session (DBG-232): the
+    /// program starts with a temporary breakpoint on that line, which goes at the first stop.
+    /// </summary>
+    public async Task<bool> StartAsync(bool stopOnEntry, (string Path, int Line)? runTo)
     {
         if (_projects.Project is not { } project || _state.Current.State != IdeState.Idle || _active is not null)
             return false;
@@ -265,7 +320,7 @@ public sealed class DebugService : IDebugService
                 return false;
         }
 
-        return await _run.BuildThenAsync(project, exe => LaunchAsync(project, exe, stopOnEntry));
+        return await _run.BuildThenAsync(project, exe => LaunchAsync(project, exe, stopOnEntry, runTo));
     }
 
     public async Task StopAsync()
@@ -273,6 +328,7 @@ public sealed class DebugService : IDebugService
         if (_active is not { } active)
             return;
         active.StoppedByUser = true;
+        await WhenViewsSettledAsync(); // the views' requests are answered first
         try
         {
             await active.Session.TerminateAsync();
@@ -314,6 +370,7 @@ public sealed class DebugService : IDebugService
     {
         await StopAsync();
         await _breakpoints.WhenSyncedAsync();
+        await WhenViewsSettledAsync();
     }
 
     /// <summary>
@@ -336,17 +393,22 @@ public sealed class DebugService : IDebugService
     }
 
     /// <summary>No session exists and no breakpoint request is under way.</summary>
-    public bool IsIdle => _active is null && _breakpoints.WhenSyncedAsync().IsCompleted;
+    public bool IsIdle => _active is null && _breakpoints.WhenSyncedAsync().IsCompleted && _work.Count == 0;
 
     public Task<EvaluateResult> EvaluateAsync(string expression, EvaluateContext context) =>
         _active is { } active && _stop is not null
-            ? active.Session.EvaluateAsync(expression, _selectedFrame?.Id, context)
+            ? active.Session.EvaluateAsync(expression, FrameId, context)
             : Task.FromException<EvaluateResult>(new DebuggerException(DebugErrorCode.InvalidState, Strings.Msg_Debug_NotPaused));
 
-    public Task<VariableInfo> SetValueAsync(string evaluateName, string valueExpression) =>
-        _active is { } active && _stop is not null
-            ? active.Session.SetValueAsync(evaluateName, valueExpression, _selectedFrame?.Id)
-            : Task.FromException<VariableInfo>(new DebuggerException(DebugErrorCode.InvalidState, Strings.Msg_Debug_NotPaused));
+    public async Task<VariableInfo> SetValueAsync(string evaluateName, string valueExpression)
+    {
+        if (_active is not { } active || _stop is null)
+            throw new DebuggerException(DebugErrorCode.InvalidState, Strings.Msg_Debug_NotPaused);
+        var value = await active.Session.SetValueAsync(evaluateName, valueExpression, FrameId);
+        if (_active == active)
+            ValuesChanged?.Invoke(this, EventArgs.Empty); // DBG-413: other nodes may alias the same memory
+        return value;
+    }
 
     public void SelectFrame(StackFrameInfo? frame)
     {
@@ -356,6 +418,7 @@ public sealed class DebugService : IDebugService
         _selectedFrame = selected;
         RefreshDecorations();
         StateChanged?.Invoke(this, EventArgs.Empty);
+        ContextChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void RegisterCommands(ICommandService commands)
@@ -383,19 +446,25 @@ public sealed class DebugService : IDebugService
             () => Paused() ? ControlAsync(s => s.StepIntoAsync(_stop!.ThreadId)) : StartAsync(stopOnEntry: true)));
         commands.RegisterHandler("run.stepOut", new Handler(() => _active is not null, Paused,
             () => ControlAsync(s => s.StepOutAsync(_stop!.ThreadId))));
-        commands.RegisterHandler("run.runToCursor", new Handler(() => _active is not null && EditorFile is not null, Paused, () =>
-            EditorFile is { } editor ? ControlAsync(s => s.RunToLineAsync(editor.FilePath!, editor.ViewState.Caret.Line)) : Task.CompletedTask));
+        // menus.md §7: text and (paused or (project and runnable and idle)); idle starts with a temporary breakpoint (DBG-232).
+        commands.RegisterHandler("run.runToCursor", new Handler(() => EditorFile is not null && (_active is not null || Project()), () => Paused() || Idle(), () =>
+            EditorFile is not { } editor ? Task.CompletedTask
+                : Paused() ? ControlAsync(s => s.RunToLineAsync(editor.FilePath!, editor.ViewState.Caret.Line))
+                : StartAsync(stopOnEntry: false, (editor.FilePath!, editor.ViewState.Caret.Line))));
         commands.RegisterHandler("run.showExecutionPoint", new Handler(() => _active is not null, Paused, ShowExecutionPointAsync));
+        // tool-windows.md §12, §13: from a Locals or Watches row the commands take the row's expression.
         commands.RegisterHandler("run.evaluate", new Handler(() => _active is not null, Paused, () =>
-            _dialogs.ShowAsync(new EvaluateViewModel(this, UiState, ExpressionAtCaret()))));
-        commands.RegisterHandler("run.addWatch", new Handler(() => _documents.ActiveDocument is TextDocumentViewModel, () => true, () =>
+            _dialogs.ShowAsync(new EvaluateViewModel(this, UiState, ToolExpression?.Invoke() ?? ExpressionAtCaret()))));
+        commands.RegisterHandler("run.addWatch", new Handler(() => ToolExpression?.Invoke() is not null || _documents.ActiveDocument is TextDocumentViewModel, () => true, () =>
         {
-            if (Watches.Add(ExpressionAtCaret()) >= 0) // UI-TW-1103: directly, without the dialog
+            if (Watches.Add(ToolExpression?.Invoke() ?? ExpressionAtCaret()) >= 0) // UI-TW-1103: directly, without the dialog
                 ShowWatches?.Invoke();
             return Task.CompletedTask;
         }));
         commands.RegisterHandler("watches.add", new Handler(() => true, () => true, async () =>
         {
+            if (AddWatchInPlace?.Invoke() == true)
+                return; // UI-TW-1103: inside the Watches tool window the new row is edited in place
             // UI-DLG-200: invoked from outside the Watches tool window.
             if (await _dialogs.ShowAsync(new WatchViewModel(UiState, ExpressionAtCaret(), edit: false)) is { } expression && Watches.Add(expression) >= 0)
                 ShowWatches?.Invoke();
@@ -430,6 +499,9 @@ public sealed class DebugService : IDebugService
     {
         if (_active is not { } active)
             return;
+        await WhenViewsSettledAsync(); // the views' requests of this stop are answered first
+        if (_active != active)
+            return;
         try
         {
             await request(active.Session);
@@ -449,7 +521,7 @@ public sealed class DebugService : IDebugService
             _navigation.GoToLine(document, Math.Clamp(location.Line, 1, document.Buffer.LineCount), Math.Max(1, location.Column));
     }
 
-    private async Task<bool> LaunchAsync(ProjectModel project, string exe, bool stopOnEntry)
+    private async Task<bool> LaunchAsync(ProjectModel project, string exe, bool stopOnEntry, (string Path, int Line)? runTo)
     {
         if (await _run.ResolveWorkingDirAsync(project, exe) is not { } workingDir)
             return false;
@@ -470,7 +542,10 @@ public sealed class DebugService : IDebugService
         session.Continued += (_, _) => _dispatcher.Post(() => OnContinued(active));
         session.Output += (_, e) => _dispatcher.Post(() => OnOutput(active, e));
         session.Terminated += (_, e) => _dispatcher.Post(() => _ = ObserveAsync(FinishAsync(active, e)));
-        var breakpoints = _breakpoints.AttachSession(session);
+        session.ModuleLoaded += (_, e) => _dispatcher.Post(() => OnModuleLoaded(active, e));
+        session.ThreadChanged += (_, e) => _dispatcher.Post(() => OnThreadChanged(active, e));
+        var breakpoints = _breakpoints.AttachSession(session, runTo);
+        ClearLog(); // UI-TW-1300: cleared when a new session starts
 
         if (_settings.Get(SettingsCatalog.OutputClearOnRun))
         {
@@ -481,7 +556,6 @@ public sealed class DebugService : IDebugService
         if (!_state.TryTransition(new IdeStateInfo(IdeState.DebugRunning, null, false, exe, null)))
             _state.ForceIdle();
         SessionChanged?.Invoke(this, EventArgs.Empty);
-        var breakOnExceptions = _settings.Get(SettingsCatalog.DebuggerBreakOnExceptions);
         try
         {
             await session.LaunchAsync(new LaunchRequest
@@ -491,12 +565,7 @@ public sealed class DebugService : IDebugService
                 WorkingDirectory = workingDir,
                 StopOnEntry = stopOnEntry,
                 Breakpoints = breakpoints,
-                Exceptions = new ExceptionSettings
-                {
-                    BreakOnLanguageExceptions = breakOnExceptions,
-                    BreakOnOsExceptions = breakOnExceptions,
-                    IgnoredClasses = _settings.Get(SettingsCatalog.DebuggerIgnoredExceptions),
-                },
+                Exceptions = ExceptionSettingsNow(),
             });
         }
         catch (Exception e) when (e is DebuggerException or OperationCanceledException or ObjectDisposedException)
@@ -524,9 +593,32 @@ public sealed class DebugService : IDebugService
         // Stopped and Terminated are applied by their own events, which carry the stop and the cause (DBG-421).
         if (_active != active || active.Finishing || Map(e.NewState) != IdeState.DebugRunning)
             return;
+        // The program runs again: the stop goes with the state, so "Debugging" never shows together with a stop.
+        var left = LeaveStop();
         if (_state.Current.State != IdeState.DebugRunning)
             _state.TryTransition(new IdeStateInfo(IdeState.DebugRunning, null, false, active.ExePath, active.Session.ProcessId));
+        if (e.NewState == DebugState.Running && !active.StartLogged)
+        {
+            // The debug-session interface §6.1: kind Process at the first Running (the process id is known then).
+            active.StartLogged = true;
+            AppendLog(DebugLogKind.Process, string.Format(CultureInfo.CurrentCulture, Strings.DebugLog_ProcessStarted,
+                Path.GetFileName(active.ExePath), active.Session.ProcessId ?? 0));
+        }
+
         StateChanged?.Invoke(this, EventArgs.Empty);
+        if (left)
+            ContextChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The program is no longer stopped: the stop, the selected frame and the execution line go. False when it was not stopped.</summary>
+    private bool LeaveStop()
+    {
+        if (_stop is null)
+            return false;
+        _stop = null;
+        ResetContext(null);
+        RefreshDecorations();
+        return true;
     }
 
     private void OnStopped(Active active, StopInfo stop)
@@ -534,7 +626,9 @@ public sealed class DebugService : IDebugService
         if (_active != active || active.Finishing)
             return;
         _stop = stop;
-        _selectedFrame = null;
+        ResetContext(stop.ThreadId);
+        _breakpoints.ClearTemporary(); // a "Run to Cursor" start ends at the first stop, whatever stopped
+        LogStop(stop);
         if (_state.Current.State != IdeState.Paused)
         {
             _state.TryTransition(new IdeStateInfo(IdeState.Paused, null, false, active.ExePath, active.Session.ProcessId)
@@ -547,6 +641,7 @@ public sealed class DebugService : IDebugService
         RefreshDecorations();
         _status.ShowMessage(stop.Description, StatusDuration);
         StateChanged?.Invoke(this, EventArgs.Empty);
+        ContextChanged?.Invoke(this, EventArgs.Empty);
         _ = ObserveAsync(NavigateThenRaiseAsync(active, stop));
     }
 
@@ -566,23 +661,35 @@ public sealed class DebugService : IDebugService
     private async Task NavigateThenRaiseAsync(Active active, StopInfo stop)
     {
         await ShowExecutionPointAsync();
-        if (_active == active && _stop == stop)
-            Stopped?.Invoke(this, stop);
+        if (_active != active || _stop != stop)
+            return;
+        Stopped?.Invoke(this, stop);
+        if (stop is { Reason: StopReason.Exception, Exception: { } exception })
+            await NotifyExceptionAsync(active, stop, exception); // UI-DLG-230: the editor shows the line before the dialog
     }
 
     private void OnContinued(Active active)
     {
-        if (_active != active || active.Finishing)
-            return;
-        _stop = null;
-        _selectedFrame = null;
-        RefreshDecorations();
+        if (_active != active || active.Finishing || !LeaveStop())
+            return; // already applied with the state change that precedes this event (DBG-421)
         StateChanged?.Invoke(this, EventArgs.Empty);
+        ContextChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>DBG-424: text arrives in arbitrary chunks; complete lines go to the channel of their category.</summary>
     private void OnOutput(Active active, OutputEventArgs e)
     {
+        if (e.Category is OutputCategory.LogPoint or OutputCategory.Debugger)
+        {
+            // The debug-session interface §6.1: log points are Breakpoint rows, the debugger's own messages Debugger rows —
+            // each event is a message of its own, whether or not it ends with a line break.
+            foreach (var line in e.Text.Split('\n'))
+            {
+                if (line.TrimEnd('\r') is { Length: > 0 } row)
+                    AppendLog(e.Category == OutputCategory.LogPoint ? DebugLogKind.Breakpoint : DebugLogKind.Debugger, row);
+            }
+        }
+
         if (!active.Partial.TryGetValue(e.Category, out var partial))
             active.Partial[e.Category] = partial = new StringBuilder();
         partial.Append(e.Text);
@@ -620,13 +727,17 @@ public sealed class DebugService : IDebugService
             case { Cause: TerminationCause.Exited }:
                 var seconds = (_clock.Now - active.StartedAt).TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture);
                 Report(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Run_Exited, RunService.FormatExitCode(terminated.ExitCode ?? 0), seconds));
+                AppendLog(DebugLogKind.Process, string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_ProcessExited,
+                    active.Session.ProcessId ?? 0, RunService.FormatExitCode(terminated.ExitCode ?? 0)));
                 break;
             case { Cause: TerminationCause.TerminatedByUser }:
                 Report(Strings.Msg_Run_Terminated);
+                AppendLog(DebugLogKind.Process, Strings.Msg_Run_Terminated);
                 break;
             case { Cause: TerminationCause.AdapterCrashed }:
                 crash = terminated.Message ?? "";
                 _log.Warning(Category, "The debug adapter ended unexpectedly: " + crash);
+                AppendLog(DebugLogKind.Debugger, crash);
                 break;
         }
 
@@ -644,12 +755,14 @@ public sealed class DebugService : IDebugService
         {
             _active = null;
             _stop = null;
-            _selectedFrame = null;
+            ResetContext(null);
+            RemoveSourceChangedBars();
             RefreshDecorations();
             if (_state.Current.IsDebugging && !_state.TryTransition(IdeStateInfo.Idle))
                 _state.ForceIdle();
             SessionChanged?.Invoke(this, EventArgs.Empty);
             StateChanged?.Invoke(this, EventArgs.Empty);
+            ContextChanged?.Invoke(this, EventArgs.Empty);
         }
 
         active.Ended.TrySetResult();
@@ -671,6 +784,7 @@ public sealed class DebugService : IDebugService
         var glyphs = new ExecutionGlyphs(this, document);
         _decorated[document] = glyphs;
         document.Decorations.Add(glyphs);
+        document.Buffer.Changed += (_, _) => OnSourceEdited(document);
     }
 
     private void RefreshDecorations()
@@ -699,6 +813,9 @@ public sealed class DebugService : IDebugService
         /// <summary>Completes when the session is disposed and the IDE is Idle again.</summary>
         public TaskCompletionSource Ended { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        /// <summary>The Event Log has the row of the program's start.</summary>
+        public bool StartLogged { get; set; }
+
         /// <summary>The text after the last line break, per category.</summary>
         public Dictionary<OutputCategory, StringBuilder> Partial { get; } = [];
     }
@@ -718,7 +835,7 @@ public sealed class DebugService : IDebugService
             var glyphs = new List<LineGlyph>(2);
             if (IsAt(stop.Location, path, line))
                 glyphs.Add(new LineGlyph(LineGlyphKind.Execution));
-            if (owner._selectedFrame is { } frame && IsAt(frame.Location, path, line))
+            if ((owner._selectedFrame ?? owner._threadFrame) is { } frame && IsAt(frame.Location, path, line))
                 glyphs.Add(new LineGlyph(LineGlyphKind.Frame, ToolTip: frame.Name));
             return glyphs;
         }

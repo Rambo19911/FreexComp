@@ -17,9 +17,14 @@ namespace FreexComp.Ide.Tests.Editor;
 [Trait("Kind", "Ui")]
 public sealed class EditorContextMenuTests
 {
-    private static async Task<(HeadlessHarness H, TextEditor Editor, TextDocumentViewModel Doc)> OpenAsync()
+    /// <param name="phase">The implemented phase of the composition; null = the product's.</param>
+    private static async Task<(HeadlessHarness H, TextEditor Editor, TextDocumentViewModel Doc)> OpenAsync(int? phase = null)
     {
-        var h = await HeadlessHarness.StartAsync(o => o.InitialFiles["A.pas"] = "unit A;\ninterface\nimplementation\nbegin\nend.\n");
+        var h = await HeadlessHarness.StartAsync(o =>
+        {
+            o.InitialFiles["A.pas"] = "unit A;\ninterface\nimplementation\nbegin\nend.\n";
+            o.ImplementedPhase = phase;
+        });
         var doc = Assert.IsType<TextDocumentViewModel>((await h.Services.Documents.OpenAsync(Path.Combine(h.TempDir, "A.pas"))).Value);
         Dispatcher.UIThread.RunJobs();
         var editor = h.Find<TextEditor>("Editor.A.pas");
@@ -77,7 +82,7 @@ public sealed class EditorContextMenuTests
     [Trait("Req", "UI-MENU-042")]
     public async Task ItemsMirrorTheMainMenu()
     {
-        var (h, editor, _) = await OpenAsync();
+        var (h, editor, _) = await OpenAsync(phase: 5); // the items up to Phase 5; the Phase 6 items (breakpoints, Run to Cursor, watches) are left out
         await using var _ = h;
 
         RightClick(h, At(h, editor, 1, 2));

@@ -69,7 +69,7 @@ public sealed class BreakpointPersistenceTests
         // Before Phase 6 the member is kept as read (IDE-ARCH-076).
         Assert.True(await bed.Services.Projects.CloseAsync());
         var before = Stored(bed).ToJsonString();
-        var phase5 = new BuildTestBed();
+        var phase5 = new BuildTestBed(o => o.ImplementedPhase = 5);
         phase5.Fs.CreateDirectory(Path.GetDirectoryName(SessionPath)!);
         phase5.File(SessionPath, bed.Text(SessionPath));
         await phase5.OpenHelloAsync();
