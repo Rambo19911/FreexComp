@@ -2,6 +2,7 @@
   "aliases": {
     "Data.DB": "DB",
     "Data.DBFilter": "DBFilter",
+    "Data.MemData": "MemData",
     "System.Character": "Character",
     "System.Classes": "Classes",
     "System.DateUtils": "DateUtils",
