@@ -130,23 +130,13 @@ implementation
 
 {$POINTERMATH ON}
 
-type
-  { CRITICAL_SECTION: 40 bytes, pointer-aligned, on win64 }
-  TLoadLock = array[0..4] of NativeUInt;
-
-function LoadLibraryW(lpLibFileName: PWideChar): NativeUInt; stdcall; external 'kernel32.dll' name 'LoadLibraryW';
-function FreeLibrary(hLibModule: NativeUInt): LongBool; stdcall; external 'kernel32.dll' name 'FreeLibrary';
-function GetProcAddress(hModule: NativeUInt; lpProcName: PAnsiChar): Pointer; stdcall;
-  external 'kernel32.dll' name 'GetProcAddress';
-function InitializeCriticalSectionAndSpinCount(var Section: TLoadLock; SpinCount: Cardinal): LongBool; stdcall;
-  external 'kernel32.dll' name 'InitializeCriticalSectionAndSpinCount';
-procedure EnterCriticalSection(var Section: TLoadLock); stdcall; external 'kernel32.dll' name 'EnterCriticalSection';
-procedure LeaveCriticalSection(var Section: TLoadLock); stdcall; external 'kernel32.dll' name 'LeaveCriticalSection';
+uses
+  Windows;
 
 var
-  LoadLock: TLoadLock;
+  LoadLock: TRTLCriticalSection;
   { the loaded library; 0 until a load succeeded }
-  Module: NativeUInt;
+  Module: HMODULE;
 
 { -------------------------------------------------------------------------------------------------- loader }
 
@@ -163,7 +153,7 @@ begin
   Result := (Pos('\', Name) > 0) or (Pos('/', Name) > 0);
 end;
 
-function OpenLibrary(const LibraryName: string): NativeUInt;
+function OpenLibrary(const LibraryName: string): HMODULE;
 begin
   if HasPathSeparator(LibraryName) then
     { as a full path: the system would search for a relative one in its own directories }
@@ -178,7 +168,7 @@ end;
 
 { Stores the address of an exported function in a function variable (nil when Lib is 0); for a required
   function that is absent, Missing receives its name (the first one is kept). }
-procedure Resolve(Lib: NativeUInt; var Target; const Name: AnsiString; Required: Boolean; var Missing: string);
+procedure Resolve(Lib: HMODULE; var Target; const Name: AnsiString; Required: Boolean; var Missing: string);
 begin
   if Lib = 0 then
     Pointer(Target) := nil
@@ -190,7 +180,7 @@ end;
 
 { '' or the name of the first required function the library does not export. Lib = 0 clears every
   function variable. }
-function ResolveAll(Lib: NativeUInt): string;
+function ResolveAll(Lib: HMODULE): string;
 begin
   Result := '';
   Resolve(Lib, sqlite3_libversion, 'sqlite3_libversion', True, Result);
@@ -242,7 +232,7 @@ end;
 { One load attempt; the caller holds the lock. '' or the reason of the failure. }
 function TryLoad(const LibraryName: string): string;
 var
-  Lib: NativeUInt;
+  Lib: HMODULE;
   Missing: string;
 begin
   Lib := OpenLibrary(LibraryName);
