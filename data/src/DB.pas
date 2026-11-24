@@ -3112,17 +3112,22 @@ begin
       end;
     end;
   until Done;
-  FCursor := InternalPost;
-  if GetViewCount = 0 then
-  begin
-    { the posted row did not pass the filter and was the only one }
-    FBof := True;
-    FEof := True;
+  { the change is applied: an exception from here on (a filter handler asked for the posted row) must not
+    leave the edit state behind; InternalPost has then hidden the row and placed the cursor itself }
+  try
+    FCursor := InternalPost;
+  finally
+    if GetViewCount = 0 then
+    begin
+      { the posted row did not pass the filter and was the only one }
+      FBof := True;
+      FEof := True;
+    end;
+    FModified := False;
+    FState := dsBrowse;
+    Notify(deUpdateState, nil);
+    Notify(deDataSetChange, nil);
   end;
-  FModified := False;
-  FState := dsBrowse;
-  Notify(deUpdateState, nil);
-  Notify(deDataSetChange, nil);
   if Assigned(FAfterPost) then
     FAfterPost(Self);
 end;
@@ -4761,6 +4766,7 @@ function TRowDataSet.InternalPost: Integer;
 var
   Row: TDataRow;
   I, StoreIndex: Integer;
+  Passes: Boolean;
 begin
   if State = dsInsert then
   begin
@@ -4777,7 +4783,16 @@ begin
       StoreIndex := FRows.Count;
     FRows.Insert(StoreIndex, Row);
     Result := FInsertIndex;
-    if RowPasses(Row) then
+    try
+      Passes := RowPasses(Row);
+    except
+      { a filter handler that raises: the row is stored but hidden, the exception goes on to the caller }
+      if Result >= FView.Count then
+        Result := FView.Count - 1;
+      FCursor := Result;
+      raise;
+    end;
+    if Passes then
       FView.Insert(FInsertIndex, Row)
     else if Result >= FView.Count then
       Result := FView.Count - 1;
@@ -4792,7 +4807,17 @@ begin
     FBuffer := nil;
     Result := Cursor;
     { a row that no longer passes the filter leaves the view; the following row (or the last) is current }
-    if not RowPasses(Row) then
+    try
+      Passes := RowPasses(Row);
+    except
+      { a filter handler that raises: the row is updated but hidden, the exception goes on to the caller }
+      FView.Delete(Result);
+      if Result >= FView.Count then
+        Result := FView.Count - 1;
+      FCursor := Result;
+      raise;
+    end;
+    if not Passes then
     begin
       FView.Delete(Result);
       if Result >= FView.Count then

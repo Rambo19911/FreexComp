@@ -429,6 +429,6 @@ begin
 end;
 
 initialization
-  InitializeCriticalSectionAndSpinCount(LoadLock, 0);
+  InitializeCriticalSection(LoadLock);
 
 end.

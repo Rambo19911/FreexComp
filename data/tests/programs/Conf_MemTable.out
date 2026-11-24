@@ -189,4 +189,16 @@ ok position of the emptied dataset
 ok Delete on an empty dataset
 ok RecordCount after Refresh of the emptied dataset
 ok the dataset stays open
+== filter handler raising during Post
+ok Post of an insert: the exception reaches the caller
+ok browse state, the inserted row hidden
+ok a second Post after the insert does nothing
+ok the insert was applied
+ok the inserted row is in the store
+ok Post of an edit: the exception reaches the caller
+ok browse state, the edited row hidden
+ok a second Post after the edit does nothing
+ok the edit was applied
+ok the edited row is in the store
+ok empty after the raising filter handler
 failed checks: 0

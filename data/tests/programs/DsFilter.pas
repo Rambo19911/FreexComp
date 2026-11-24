@@ -1,4 +1,4 @@
-// covers: DAT-004, DAT-055, DAT-056, DAT-057, DAT-061, DAT-062
+// covers: DAT-004, DAT-055, DAT-056, DAT-057, DAT-061, DAT-062, DAT-025
 program DsFilter;
 { Filtering. Parse section: the filter grammar and the position and text of every filter error. Evaluation
   section: comparison semantics per field type, null rules, FilterOptions, OnFilterRecord, the view rebuild
@@ -17,7 +17,10 @@ type
     DS: TTestDataSet;
     Mark: TBookmark;
     WriteInFilter: Boolean;
+    RaiseNext: Boolean;
     procedure OddIds(DataSet: TDataSet; var Accept: Boolean);
+    procedure RaiseOnce(DataSet: TDataSet; var Accept: Boolean);
+    procedure DoPost;
     procedure AcceptUntouched(DataSet: TDataSet; var Accept: Boolean);
     procedure DoGoto;
     procedure DoOpen;
@@ -43,6 +46,23 @@ end;
 
 procedure TCalls.AcceptUntouched(DataSet: TDataSet; var Accept: Boolean);
 begin
+end;
+
+{ accepts every row; raises once when RaiseNext is set }
+procedure TCalls.RaiseOnce(DataSet: TDataSet; var Accept: Boolean);
+begin
+  if RaiseNext then
+  begin
+    RaiseNext := False;
+    AddLog('raise(' + DataSet.FieldByName('id').AsString + ')');
+    raise Exception.Create('filter failed');
+  end;
+  AddLog('filter(' + DataSet.FieldByName('id').AsString + ')');
+end;
+
+procedure TCalls.DoPost;
+begin
+  DS.Post;
 end;
 
 procedure TCalls.DoGoto;
@@ -102,6 +122,7 @@ begin
   Result.HookEvents;
   Calls.DS := Result;
   Calls.WriteInFilter := False;
+  Calls.RaiseNext := False;
 end;
 
 function OpenPeople: TTestDataSet;
@@ -538,6 +559,68 @@ begin
   DS.Free;
 end;
 
+{ a handler that raises while Post asks it for the posted row: the change is applied, the row is hidden, the
+  dataset is in browse state and the exception reaches the caller }
+procedure TestFilterRecordRaises;
+var
+  DS: TTestDataSet;
+begin
+  Section('OnFilterRecord raising during Post');
+  DS := OpenPeople;
+  DS.OnFilterRecord := Calls.RaiseOnce;
+  DS.Filtered := True;
+  DS.Next;
+  DS.Edit;
+  DS.FieldByName('name').AsString := 'zed';
+  ClearLog;
+  Calls.RaiseNext := True;
+  CheckRaises(Calls.DoPost, 'Exception', 'filter failed', 'edit: the exception reaches the caller');
+  CheckEq(TakeLog, '[deUpdateRecord dsEdit],BeforePost,ApplyUpdate,raise(2),[deUpdateState dsBrowse],[deDataSetChange dsBrowse]',
+    'edit: the change is applied and the state change announced; no AfterPost');
+  CheckEqBool(DS.State = dsBrowse, True, 'edit: browse state');
+  CheckEq(DS.ViewRowIds, '1,3,4,5', 'edit: the row is hidden');
+  CheckEq(DS.StoredRowIds, '1,2,3,4,5', 'edit: but still in the row list');
+  CheckEqBool(Pos('[2|zed|', DS.StoredText) > 0, True, 'edit: the stored row has the posted values');
+  CheckEq(DS.FieldByName('id').AsString, '3', 'edit: the cursor is on the following row');
+  DS.Post;
+  CheckEq(TakeLog, '', 'edit: a second Post does nothing');
+  DS.Insert;
+  DS.FieldByName('id').AsInteger := 6;
+  ClearLog;
+  Calls.RaiseNext := True;
+  CheckRaises(Calls.DoPost, 'Exception', 'filter failed', 'insert: the exception reaches the caller');
+  CheckEq(TakeLog, '[deUpdateRecord dsInsert],BeforePost,ApplyInsert,raise(6),[deUpdateState dsBrowse],[deDataSetChange dsBrowse]',
+    'insert: the change is applied and the state change announced; no AfterPost');
+  CheckEqBool(DS.State = dsBrowse, True, 'insert: browse state');
+  CheckEq(DS.ViewRowIds, '1,3,4,5', 'insert: the row is hidden');
+  CheckEq(DS.StoredRowIds, '1,2,6,3,4,5', 'insert: and stored at its position');
+  CheckEq(DS.FieldByName('id').AsString, '3', 'insert: the row it was inserted at is current');
+  DS.Post;
+  CheckEq(TakeLog, '', 'insert: a second Post does nothing');
+  DS.Append;
+  DS.FieldByName('id').AsInteger := 7;
+  Calls.RaiseNext := True;
+  CheckRaises(Calls.DoPost, 'Exception', 'filter failed', 'append: the exception reaches the caller');
+  CheckEqBool(DS.State = dsBrowse, True, 'append: browse state');
+  CheckEq(IntToStr(DS.RecordCount) + ' ' + IntToStr(DS.RecNo), '4 4', 'append: the last visible row is current');
+  DS.First;
+  DS.Edit;
+  DS.FieldByName('name').AsString := 'Ann';
+  DS.Post;
+  CheckEq(DS.ViewRowIds, '1,3,4,5', 'the dataset edits and posts as usual afterwards');
+  DS.Filtered := False;
+  DS.Filtered := True;
+  CheckEq(DS.ViewRowIds, '1,2,6,3,4,5,7', 'the next rebuild asks the handler again and shows the rows');
+  DS.Filter := 'id = 1';
+  DS.Edit;
+  DS.FieldByName('name').AsString := 'Abe';
+  Calls.RaiseNext := True;
+  CheckRaises(Calls.DoPost, 'Exception', 'filter failed', 'only row: the exception reaches the caller');
+  CheckEq(IntToStr(DS.RecordCount) + ' ' + IntToStr(DS.RecNo) + ' ' + Flags(DS), '0 0 Bof+Eof', 'only row: the view is empty');
+  CheckEqBool(DS.State = dsBrowse, True, 'only row: browse state');
+  DS.Free;
+end;
+
 procedure TestBookmarks;
 var
   DS: TTestDataSet;
@@ -574,6 +657,7 @@ begin
   TestViewRebuild;
   TestPost;
   TestFilterRecord;
+  TestFilterRecordRaises;
   TestBookmarks;
   Calls.Free;
   WriteLn('failed checks: ', FailedChecks);

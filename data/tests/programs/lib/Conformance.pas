@@ -72,6 +72,8 @@ type
   public
     DS: TDataSet;
     Mark: TBookmark;
+    RaiseInFilter: Boolean;
+    procedure RaisingFilter(DataSet: TDataSet; var Accept: Boolean);
     procedure RecNoTooBig;
     procedure WriteName;
     procedure WriteId;
@@ -329,6 +331,16 @@ end;
 procedure TConfCalls.LocateCount;
 begin
   DS.Locate('id;name', ['1'], []);
+end;
+
+{ accepts every row; raises once when RaiseInFilter is set }
+procedure TConfCalls.RaisingFilter(DataSet: TDataSet; var Accept: Boolean);
+begin
+  if RaiseInFilter then
+  begin
+    RaiseInFilter := False;
+    raise Exception.Create('filter failed');
+  end;
 end;
 
 procedure TConfCalls.BadFilter;
@@ -790,6 +802,39 @@ begin
   DS.Refresh;
   CheckEqInt(DS.RecordCount, 0, 'RecordCount after Refresh of the emptied dataset');
   CheckEq(StateNames[DS.State], 'dsBrowse', 'the dataset stays open');
+
+  Section('filter handler raising during Post');
+  Calls.RaiseInFilter := False;
+  DS.OnFilterRecord := Calls.RaisingFilter;
+  DS.Filtered := True;
+  DS.Append;
+  Name.AsString := 'Fay';
+  Calls.RaiseInFilter := True;
+  CheckRaises(Calls.Post, 'Exception', 'filter failed', 'Post of an insert: the exception reaches the caller');
+  CheckEq(StateNames[DS.State] + ' ' + Position(DS), 'dsBrowse 0 Bof+Eof', 'browse state, the inserted row hidden');
+  DS.Post;
+  CheckEq(StateNames[DS.State], 'dsBrowse', 'a second Post after the insert does nothing');
+  DS.Filtered := False;
+  CheckEq(NamesForward(DS), 'Fay', 'the insert was applied');
+  DS.Refresh;
+  CheckEq(NamesForward(DS), 'Fay', 'the inserted row is in the store');
+  DS.Filtered := True;
+  DS.First;
+  DS.Edit;
+  Name.AsString := 'Gil';
+  Calls.RaiseInFilter := True;
+  CheckRaises(Calls.Post, 'Exception', 'filter failed', 'Post of an edit: the exception reaches the caller');
+  CheckEq(StateNames[DS.State] + ' ' + Position(DS), 'dsBrowse 0 Bof+Eof', 'browse state, the edited row hidden');
+  DS.Post;
+  CheckEq(StateNames[DS.State], 'dsBrowse', 'a second Post after the edit does nothing');
+  DS.Filtered := False;
+  CheckEq(NamesForward(DS), 'Gil', 'the edit was applied');
+  DS.Refresh;
+  CheckEq(NamesForward(DS), 'Gil', 'the edited row is in the store');
+  DS.OnFilterRecord := nil;
+  DS.First;
+  DS.Delete;
+  Check(DS.IsEmpty, 'empty after the raising filter handler');
   Calls.Free;
 end;
 

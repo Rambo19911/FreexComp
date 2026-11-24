@@ -225,6 +225,30 @@ ok after the rebuild the fields read the current row again
 ok Post asks the handler for the posted row
 ok and removes the row it rejects
 ok a handler that leaves Accept alone accepts every row
+== OnFilterRecord raising during Post
+ok edit: the exception reaches the caller
+ok edit: the change is applied and the state change announced; no AfterPost
+ok edit: browse state
+ok edit: the row is hidden
+ok edit: but still in the row list
+ok edit: the stored row has the posted values
+ok edit: the cursor is on the following row
+ok edit: a second Post does nothing
+ok insert: the exception reaches the caller
+ok insert: the change is applied and the state change announced; no AfterPost
+ok insert: browse state
+ok insert: the row is hidden
+ok insert: and stored at its position
+ok insert: the row it was inserted at is current
+ok insert: a second Post does nothing
+ok append: the exception reaches the caller
+ok append: browse state
+ok append: the last visible row is current
+ok the dataset edits and posts as usual afterwards
+ok the next rebuild asks the handler again and shows the rows
+ok only row: the exception reaches the caller
+ok only row: the view is empty
+ok only row: browse state
 == bookmarks in a filtered view
 ok a visible row
 ok a hidden row

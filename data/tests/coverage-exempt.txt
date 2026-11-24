@@ -2,7 +2,8 @@
 # One per line: DAT-nnn | category | reason. An id leaves the list when a test covers it.
 # Categories:
 #   pending      the rule is implemented by a later task; the reason starts with that task
-#   design-time  design-time.md rules; the reason starts with the task that brings the test
+#   design-time  design-time.md rules tested in the ide test projects; the reason starts with the data task and
+#                names the ide test classes and tasks
 #   crud-sample  crud-sample.md rules; the reason starts with the task that brings the test
 #   informative  the rule states no behaviour a test of this project can observe
 
@@ -15,15 +16,15 @@ DAT-167 | informative | states the absence of a check
 DAT-308 | informative | refers to the single-thread usage rule DAT-166
 
 # design time
-DAT-330 | design-time | A-067 tool palette pages (ide)
-DAT-331 | design-time | A-067 non-visual components on a form (ide)
-DAT-332 | design-time | A-067 component-reference editor (ide)
-DAT-333 | design-time | A-067 connection editor (ide)
-DAT-334 | design-time | A-067 strings editor (ide)
-DAT-335 | design-time | A-067 field-name and table-name editors (ide)
-DAT-337 | design-time | A-067 columns collection editor (ide)
-DAT-338 | design-time | A-067 uses clause and field declaration (ide)
-DAT-339 | design-time | A-067 grid and navigator design renderers (ide)
+DAT-330 | design-time | A-067 tool palette pages: tested in ide/tests (DataDesignTests, Phase7AcceptanceTests; I-147)
+DAT-331 | design-time | A-067 non-visual components on a form: tested in ide/tests (DataDesignTests; I-147)
+DAT-332 | design-time | A-067 component-reference editor: tested in ide/tests (DataDesignTests, Phase7AcceptanceTests; I-148)
+DAT-333 | design-time | A-067 connection editor: tested in ide/tests (DataDesignTests, Phase7AcceptanceTests; I-148)
+DAT-334 | design-time | A-067 strings editor: tested in ide/tests (DataDesignTests, Phase7AcceptanceTests; I-148)
+DAT-335 | design-time | A-067 field-name and table-name editors: tested in ide/tests (DataDesignTests; I-148)
+DAT-337 | design-time | A-067 columns collection editor: tested in ide/tests (CollectionEditorTests, DataDesignTests, Phase7AcceptanceTests; I-148, D-100)
+DAT-338 | design-time | A-067 uses clause and field declaration: tested in ide/tests (DataDesignTests, Phase7AcceptanceTests; I-150)
+DAT-339 | design-time | A-067 grid and navigator design renderers: tested in ide/tests (RendererRegistryTests, DataDesignTests; I-149)
 
 # testing rules
 DAT-403 | informative | constrains where test programs keep their files; the runner gives each a fresh directory (DAT-401)
