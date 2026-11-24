@@ -25,7 +25,7 @@ internal static class Messages
     public const string LaunchCancelled = "Cancelled";
     public const string SessionTerminated = "The debug session was terminated.";
     public const string SessionEnded = "The debug session has ended.";
-    public const string MissingPythonRuntime = "See docs/QUESTIONS.md: lldb-dap requires a Python runtime that is not installed.";
+    public const string MissingPythonRuntime = "The debugger needs its bundled Python runtime, which was not found next to the toolchain.";
     public const string InternalErrorPrefix = "Internal debugger error: ";
 
     public const string NotBoundYet = "Not bound yet";

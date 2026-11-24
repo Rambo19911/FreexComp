@@ -23,12 +23,18 @@ internal sealed partial class DebugSession
     private StepState? _step;                 // the user's step in progress
     private int _stopDepth;                   // frames on the stopping thread's stack at the current public stop
     private RunToLineState? _runToLine;       // a run to a line in progress
+    private bool _entryStopSeen;              // the entry stop of a launch that goes on to the main block (DBG-225)
     private volatile int _internalStops;
     private volatile bool _pauseRequested;    // the user asked to pause and no stop has been published since (DBG-029)
     private DateTimeOffset? _pauseAcknowledged;   // when the adapter acknowledged our pause request (DBG-091)
 
-    /// <summary>A run to a line: the file of the temporary breakpoint, or the user breakpoint that stands in for it.</summary>
-    private sealed record RunToLineState(BreakpointManager.Source Source, BreakpointManager.Entry? Bypass);
+    /// <summary>
+    /// A run to a line: the file of the temporary breakpoint, or the id of the user breakpoint of that file that
+    /// stands in for it - the id, not the table entry: the IDE may send the file's set again during the run (DBG-065).
+    /// <paramref name="Reason"/> and <paramref name="Description"/> are those of the stop at the line: a run to the
+    /// cursor, or the first step of a program (DBG-225).
+    /// </summary>
+    private sealed record RunToLineState(BreakpointManager.Source Source, int? BypassId, StopReason Reason, string Description);
 
     // ---- stop pipeline ----
 
@@ -132,15 +138,14 @@ internal sealed partial class DebugSession
             new ExceptionInfo(ExceptionKind.Language, raised.ClassName, raised.Message, 0, raised.Address), at);
 
         // What the previous stop left behind for this one.
-        var raiseReportedHere = _raiseReportedThread == threadId;
-        _raiseReportedThread = null;
+        var raiseReportedHere = _raiseReportedThreads.Remove(threadId);
         _fatalCode = null;
 
         // The raise hook (DBG-242 ... DBG-245): the exception object, then the ignore list.
         async Task<StopInfo?> RaiseHookStopAsync()
         {
             var raised = await ReadExceptionAsync(response.StackFrames[0].Id, registers: true).ConfigureAwait(false);
-            _raiseReportedThread = threadId;
+            _raiseReportedThreads.Add(threadId);
             if (ExceptionMonitor.IsIgnored(_exceptionSettings, raised.ClassName))
             {
                 // Resolved internally: continue, or go on with the user's step (DBG-244, DBG-030).
@@ -198,7 +203,15 @@ internal sealed partial class DebugSession
                     new ExceptionInfo(ExceptionKind.Os, "", text, code, address), location);
             }
 
-            case "entry" when _launchRequest is { StopOnEntry: true }:
+            case "entry" when _launchRequest is { StopAtMainBody: true } && !_entryStopSeen:
+                // DBG-225: on to the first statement of the main block; where that is not known, the entry stop is
+                // the public stop.
+                _entryStopSeen = true;
+                if (await RunToMainBodyAsync(threadId).ConfigureAwait(false))
+                    return null;
+                return Public(StopReason.Entry, [], Messages.StoppedAtEntry);
+
+            case "entry" when _launchRequest is { StopOnEntry: true } or { StopAtMainBody: true }:
                 return Public(StopReason.Entry, [], Messages.StoppedAtEntry);
 
             case "breakpoint" or "function breakpoint":
@@ -214,27 +227,43 @@ internal sealed partial class DebugSession
                         && source.Path.Equals(top.Path, StringComparison.OrdinalIgnoreCase) && temporary.ActualLine == top.Line;
                 }
 
-                if (_runToLine?.Bypass is { } bypass && hit.Contains(bypass))
+                if (_runToLine is { BypassId: { } bypassId } run
+                    && hit.FirstOrDefault(e => e.Spec.Id == bypassId && e.SourcePath.Equals(run.Source.Path, StringComparison.OrdinalIgnoreCase)) is { } bypass)
                 {
                     // The user's breakpoint on the target line of a run to that line: the arrival is counted, its
                     // condition and hit count are bypassed for this one run (DBG-065).
                     bypass.HitCount++;
                     _events.Raise(() => BreakpointChanged, new BreakpointChangedEventArgs(bypass.Status));
-                    return Public(StopReason.RunToLine, [], Messages.RunToLineCompleted);
+                    return Public(run.Reason, [], run.Description);
                 }
 
                 if (hit.Count > 0)
                 {
                     // Conditions, hit counts and log messages are ours (features §2.2), evaluated in the top frame.
                     var frame = _stopTopFrame is { } topFrame ? ContextOf(topFrame) : null;
-                    var outcome = await BreakpointManager.EvaluateArrivalAsync(
-                        hit,
-                        condition => frame is null
-                            ? throw new DebuggerException(DebugErrorCode.ExpressionEvaluation, Messages.NotAvailable)
-                            : Values.EvaluateConditionAsync(condition, frame, CancellationToken.None),
-                        expression => frame is null
-                            ? throw new DebuggerException(DebugErrorCode.ExpressionEvaluation, Messages.NotAvailable)
-                            : Values.EvaluateLogTextAsync(expression, frame, CancellationToken.None)).ConfigureAwait(false);
+                    var countsBefore = hit.Select(e => e.HitCount).ToList();
+                    BreakpointManager.ArrivalOutcome outcome;
+                    try
+                    {
+                        outcome = await BreakpointManager.EvaluateArrivalAsync(
+                            hit,
+                            condition => frame is null
+                                ? throw new DebuggerException(DebugErrorCode.ExpressionEvaluation, Messages.NotAvailable)
+                                : Values.EvaluateConditionAsync(condition, frame, CancellationToken.None),
+                            expression => frame is null
+                                ? throw new DebuggerException(DebugErrorCode.ExpressionEvaluation, Messages.NotAvailable)
+                                : Values.EvaluateLogTextAsync(expression, frame, CancellationToken.None)).ConfigureAwait(false);
+                    }
+                    catch (Exception e) when (e is DebuggerException or OperationCanceledException)
+                    {
+                        // The adapter failed, not the expression (a timeout, say). The arrivals counted so far are
+                        // reported all the same (DBG-410); the stop itself is the caller's to publish (DBG-028).
+                        foreach (var counted in hit.Where((entry, index) => entry.HitCount != countsBefore[index]).OrderBy(entry => entry.Spec.Id))
+                            _events.Raise(() => BreakpointChanged, new BreakpointChangedEventArgs(counted.Status));
+
+                        throw;
+                    }
+
                     foreach (var output in outcome.Outputs)
                         _events.Raise(() => Output, output);
                     foreach (var entry in hit.OrderBy(e => e.Spec.Id))
@@ -248,7 +277,7 @@ internal sealed partial class DebugSession
                 }
 
                 if (temporaryHit)
-                    return Public(StopReason.RunToLine, [], Messages.RunToLineCompleted);
+                    return Public(_runToLine?.Reason ?? StopReason.RunToLine, [], _runToLine?.Description ?? Messages.RunToLineCompleted);
                 // DBG-070: ... or the top frame is the hook routine (and the stop is at no line breakpoint of ours).
                 if (hit.Count == 0 && _hookArmed && frames.Count > 0 && IsHookFrame(response.StackFrames[0], frames[0]))
                     return await RaiseHookStopAsync().ConfigureAwait(false);
@@ -322,6 +351,33 @@ internal sealed partial class DebugSession
             return true;
         }
 
+        // A step at the entry stop is the first step of the program (DBG-225): at its entry the program has no
+        // statement to step from - the step would end in code that is not the user's and the program would run on to
+        // its end (DBG-222) - so it runs to the first statement of the main block instead, where that is known.
+        RunToLineState? toMainBody = null;
+        if (command != StopResolver.Continue && _currentStop is { Reason: StopReason.Entry })
+            toMainBody = await PlaceMainBodyTargetAsync(ct).ConfigureAwait(false);
+        if (toMainBody is not null)
+        {
+            try
+            {
+                await RequestAsync(StopResolver.Continue, new ThreadArguments(threadId), ct).ConfigureAwait(false);
+            }
+            catch (DebuggerException e) when (e.Code != DebugErrorCode.AdapterCrashed)
+            {
+                // Not resumed: the session stays stopped, without the temporary breakpoint.
+                await RemoveTemporaryBreakpointAsync(toMainBody.Source, CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+
+            _runToLine = toMainBody;
+            _step = null;
+            LeaveStop();
+            SetState(DebugState.Running);
+            _events.Raise(() => Continued);
+            return true;
+        }
+
         var depth = threadId == _currentStop?.ThreadId ? _stopDepth : 0;
         await RequestAsync(command, new ThreadArguments(threadId), ct).ConfigureAwait(false);
         _step = command == StopResolver.Continue ? null : new StepState(command, threadId, depth);
@@ -343,34 +399,7 @@ internal sealed partial class DebugSession
             return true;
         }
 
-        var source = _breakpoints.GetOrAdd(PathText.Normalize(path));
-        var noCode = new DebuggerException(DebugErrorCode.RequestFailed, Messages.NoCodeAt(Path.GetFileName(source.Path), line), "setBreakpoints");
-        var existing = source.Entries.FirstOrDefault(e => e.IsSent && (e.Spec.Line == line || e.ActualLine == line));
-        if (existing is not null)
-        {
-            if (existing.State != BreakpointState.Verified)
-                throw noCode;
-        }
-        else
-        {
-            source.Temporary = new BreakpointManager.Entry(new BreakpointSpec { Id = 0, Line = line }, source.Path) { State = BreakpointState.Pending };
-            try
-            {
-                await SendBreakpointsAsync(source, ct, raiseChanges: true).ConfigureAwait(false);
-            }
-            catch (Exception e) when (e is DebuggerException or OperationCanceledException)
-            {
-                source.Temporary = null;
-                _breakpoints.DropIfEmpty(source);
-                throw;
-            }
-
-            if (source.Temporary.State != BreakpointState.Verified)
-            {
-                await RemoveTemporaryBreakpointAsync(source, ct).ConfigureAwait(false);
-                throw noCode;
-            }
-        }
+        var (source, existing) = await PlaceRunTargetAsync(path, line, ct).ConfigureAwait(false);
 
         try
         {
@@ -383,11 +412,98 @@ internal sealed partial class DebugSession
             throw;
         }
 
-        _runToLine = new RunToLineState(source, existing);
+        _runToLine = new RunToLineState(source, existing?.Spec.Id, StopReason.RunToLine, Messages.RunToLineCompleted);
         _step = null;
         LeaveStop();
         SetState(DebugState.Running);
         _events.Raise(() => Continued);
+        return true;
+    }
+
+    /// <summary>
+    /// The breakpoint a run to a line stops at: the enabled user breakpoint that already is on the line (returned), or
+    /// else a temporary breakpoint, sent with the file's set (DBG-065). Faults when the line has no code; then no
+    /// temporary breakpoint is left behind.
+    /// </summary>
+    private async Task<(BreakpointManager.Source Source, BreakpointManager.Entry? Existing)> PlaceRunTargetAsync(string path, int line, CancellationToken ct)
+    {
+        var source = _breakpoints.GetOrAdd(PathText.Normalize(path));
+        var noCode = new DebuggerException(DebugErrorCode.RequestFailed, Messages.NoCodeAt(Path.GetFileName(source.Path), line), "setBreakpoints");
+        var existing = source.Entries.FirstOrDefault(e => e.IsSent && (e.Spec.Line == line || e.ActualLine == line));
+        if (existing is not null)
+        {
+            if (existing.State != BreakpointState.Verified)
+                throw noCode;
+            return (source, existing);
+        }
+
+        source.Temporary = new BreakpointManager.Entry(new BreakpointSpec { Id = 0, Line = line }, source.Path) { State = BreakpointState.Pending };
+        try
+        {
+            await SendBreakpointsAsync(source, ct, raiseChanges: true).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is DebuggerException or OperationCanceledException)
+        {
+            source.Temporary = null;
+            _breakpoints.DropIfEmpty(source);
+            throw;
+        }
+
+        if (source.Temporary.State != BreakpointState.Verified)
+        {
+            await RemoveTemporaryBreakpointAsync(source, ct).ConfigureAwait(false);
+            throw noCode;
+        }
+
+        return (source, null);
+    }
+
+    /// <summary>
+    /// DBG-225: the target of the first step of a program that stands at its entry - the first statement of the main
+    /// block (the routine of the type information whose display name is the program's name). The stop there is
+    /// published as a step stop; any other public stop that comes first ends the run like a run to a line (DBG-231).
+    /// Null when the main block is not known or its line has no code: nothing is left behind.
+    /// </summary>
+    private async Task<RunToLineState?> PlaceMainBodyTargetAsync(CancellationToken ct)
+    {
+        if (_typeInfo is not { } typeInfo
+            || typeInfo.Units.SelectMany(unit => unit.Routines)
+                .FirstOrDefault(routine => string.Equals(routine.DisplayName, typeInfo.Program, StringComparison.OrdinalIgnoreCase)) is not { } main
+            || !Path.IsPathFullyQualified(main.File))
+            return null;
+
+        try
+        {
+            var (source, existing) = await PlaceRunTargetAsync(main.File, main.BodyLine, ct).ConfigureAwait(false);
+            return new RunToLineState(source, existing?.Spec.Id, StopReason.Step, Messages.StepCompleted);
+        }
+        catch (DebuggerException e) when (e.Code == DebugErrorCode.RequestFailed)
+        {
+            return null;   // no code on the line
+        }
+    }
+
+    /// <summary>
+    /// At the entry stop of a launch with <c>StopAtMainBody</c>: on to the main block, resumed internally - no public
+    /// event, the state stays <c>Starting</c> (DBG-425). False when the main block cannot be run to: nothing was resumed.
+    /// </summary>
+    private async Task<bool> RunToMainBodyAsync(int threadId)
+    {
+        if (await PlaceMainBodyTargetAsync(CancellationToken.None).ConfigureAwait(false) is not { } run)
+            return false;
+        _runToLine = run;
+        try
+        {
+            await ResumeInternallyAsync(StopResolver.Continue, threadId).ConfigureAwait(false);
+        }
+        catch (DebuggerException e) when (e.Code == DebugErrorCode.RequestFailed)
+        {
+            // Not resumed: the debuggee is still at its entry.
+            _internalStops--;
+            await EndRunToLineAsync().ConfigureAwait(false);
+            return false;
+        }
+
         return true;
     }
 

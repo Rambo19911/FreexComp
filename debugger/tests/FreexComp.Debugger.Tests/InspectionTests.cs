@@ -50,6 +50,7 @@ public sealed class InspectionTests
 
     [Fact]
     [Trait("Req", "DBG-400")]
+    [Trait("Req", "DBG-254")]
     public async Task Threads_Mapped()
     {
         await using var harness = await StoppedAsync(
@@ -70,6 +71,8 @@ public sealed class InspectionTests
     [Trait("Req", "DBG-074")]
     [Trait("Req", "DBG-076")]
     [Trait("Req", "DBG-415")]
+    [Trait("Req", "DBG-250")]
+    [Trait("Req", "DBG-253")]
     public async Task StackTrace_Mapped_NoSource()
     {
         await using var harness = await StoppedAsync(MainThread, """
@@ -131,6 +134,7 @@ public sealed class InspectionTests
     [Fact]
     [Trait("Req", "DBG-075")]
     [Trait("Req", "DBG-134")]
+    [Trait("Req", "DBG-252")]
     public async Task FrameName_FromSidecar()
     {
         await using var harness = SessionHarness.Create($$"""

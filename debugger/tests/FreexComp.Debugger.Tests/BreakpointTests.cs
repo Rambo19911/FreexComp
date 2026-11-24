@@ -66,6 +66,8 @@ public sealed class BreakpointTests
     [Fact]
     [Trait("Req", "DBG-062")]
     [Trait("Req", "DBG-410")]
+    [Trait("Req", "DBG-205")]
+    [Trait("Req", "DBG-206")]
     public async Task Response_MapsByIndex()
     {
         await using var harness = SessionHarness.Create("""
@@ -91,6 +93,7 @@ public sealed class BreakpointTests
 
     [Fact]
     [Trait("Req", "DBG-061")]
+    [Trait("Req", "DBG-206")]
     public async Task Disabled_NotSent()
     {
         await using var harness = SessionHarness.Create("""
@@ -133,6 +136,7 @@ public sealed class BreakpointTests
 
     [Fact]
     [Trait("Req", "DBG-054")]
+    [Trait("Req", "DBG-206")]
     public async Task FailedRequest_Invalid()
     {
         await using var harness = SessionHarness.Create("""

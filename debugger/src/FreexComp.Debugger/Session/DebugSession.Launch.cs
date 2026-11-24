@@ -127,7 +127,7 @@ internal sealed partial class DebugSession
                 Args = request.Arguments,
                 Cwd = request.WorkingDirectory ?? Path.GetDirectoryName(Path.GetFullPath(request.Program)) ?? "",
                 Env = request.Environment,
-                StopOnEntry = request.StopOnEntry,
+                StopOnEntry = request.StopOnEntry || request.StopAtMainBody,
             };
             _ = _client.RequestAsync("launch", arguments, Timeout.InfiniteTimeSpan, _abort.Token,
                 response =>
@@ -211,11 +211,12 @@ internal sealed partial class DebugSession
 
     /// <summary>
     /// DBG-055: the launch completes in state <c>Running</c> when both the launch response and the configurationDone
-    /// response have arrived; with <c>StopOnEntry</c> it waits for the stop instead (completed by the stop pipeline).
+    /// response have arrived; with <c>StopOnEntry</c> or <c>StopAtMainBody</c> it waits for the stop instead (completed
+    /// by the stop pipeline).
     /// </summary>
     private void CompleteLaunchIfRunning()
     {
-        if (State != DebugState.Starting || !_launchResponded || !_configurationDone || _launchRequest!.StopOnEntry)
+        if (State != DebugState.Starting || !_launchResponded || !_configurationDone || _launchRequest!.StopOnEntry || _launchRequest.StopAtMainBody)
             return;
         SetState(DebugState.Running);
         CompleteLaunch();

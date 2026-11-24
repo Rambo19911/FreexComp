@@ -181,6 +181,78 @@ public sealed class RealAdapterTests(IntegrationFixture fixture)
         });
     }
 
+    /// <summary>
+    /// DBG-225: the first step of a program that is not running. The entry stop and the run to the main block are
+    /// internal; the first public stop is a step stop on the first statement of the main block, and the Step Over that
+    /// follows is a step there (it ends on the next statement; the program does not run to its end).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "DBG-225")]
+    [Trait("Req", "DBG-220")]
+    public async Task StopAtMainBody_StepStopOnTheFirstStatement_StepOverStepsOn()
+    {
+        var program = fixture.Build("DbgDemo");
+        var recorder = new SessionRecorder(nameof(StopAtMainBody_StepStopOnTheFirstStatement_StepOverStepsOn));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(new LaunchRequest { Program = program.ExePath, StopAtMainBody = true }, Ct);
+            Assert.True(session.HasTypeInfo);
+            Assert.Equal(DebugState.Stopped, session.State);
+            var stop = await recorder.WaitForStopAsync();
+            AssertStop(stop, StopReason.Step, program.SourcePath, 77, []);
+            Assert.Equal(1, stop.Epoch);
+            Assert.Equal(1, ((FreexComp.Debugger.Session.IDebugSessionDiagnostics)session).InternalStopCount);
+            // Nothing public happened before that stop: no entry stop, no Continued, no Running state.
+            Assert.Equal(
+                ["StateChanged(Idle→Starting)", "StateChanged(Starting→Stopped)"],
+                recorder.Events.Where(e => e.StartsWith("StateChanged", StringComparison.Ordinal) || e == "Continued"));
+            Assert.Single(recorder.Events, e => e.StartsWith("Stopped", StringComparison.Ordinal));
+            Assert.Equal("", recorder.StdoutSoFar);
+            var frames = (await session.GetStackTraceAsync(stop.ThreadId, ct: Ct)).Frames;
+            Assert.Equal("DbgDemo", frames[0].Name);
+            Assert.True(frames[0].IsUserCode);
+
+            // Step Over the call of Run: the whole routine runs, the step ends on the main block's last line.
+            await session.StepOverAsync(stop.ThreadId, Ct);
+            var next = Assert.IsType<StopInfo>(await recorder.WaitForMilestoneAsync());
+            AssertStop(next, StopReason.Step, program.SourcePath, 78, []);
+            Assert.Equal(2, next.Epoch);
+            await recorder.WaitForStdoutAsync("Dog Rex\n24\ndone\n");
+
+            await session.TerminateAsync(Ct);
+            Assert.Equal(TerminationCause.TerminatedByUser, (await recorder.WaitForTerminatedAsync()).Cause);
+        });
+    }
+
+    /// <summary>
+    /// A Step Over at the public entry stop (<c>StopOnEntry</c>) does not let the program run to its end: it ends on
+    /// the first statement of the main block (DBG-225; the user-code filter alone, DBG-222, would continue).
+    /// </summary>
+    [Fact]
+    [Trait("Req", "DBG-225")]
+    [Trait("Req", "DBG-222")]
+    public async Task StepOver_AtTheEntryStop_EndsOnTheFirstStatementOfTheMainBlock()
+    {
+        var program = fixture.Build("DbgDemo");
+        var recorder = new SessionRecorder(nameof(StepOver_AtTheEntryStop_EndsOnTheFirstStatementOfTheMainBlock));
+        await recorder.RunAsync(fixture, program, async session =>
+        {
+            await session.LaunchAsync(new LaunchRequest { Program = program.ExePath, StopOnEntry = true }, Ct);
+            var entry = await recorder.WaitForStopAsync();
+            Assert.Equal(StopReason.Entry, entry.Reason);
+
+            await session.StepOverAsync(entry.ThreadId, Ct);
+            var next = await recorder.WaitForMilestoneAsync();
+
+            var stop = Assert.IsType<StopInfo>(next);
+            AssertStop(stop, StopReason.Step, program.SourcePath, 77, []);
+            Assert.Equal(2, stop.Epoch);
+            Assert.Equal("", recorder.StdoutSoFar);
+            await session.TerminateAsync(Ct);
+            Assert.Equal(TerminationCause.TerminatedByUser, (await recorder.WaitForTerminatedAsync()).Cause);
+        });
+    }
+
     private static bool IsAlive(int processId)
     {
         try

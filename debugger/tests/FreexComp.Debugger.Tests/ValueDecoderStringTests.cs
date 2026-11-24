@@ -220,6 +220,44 @@ public sealed class ValueDecoderStringTests
         Assert.Equal(new VariableInfo("A", Expand(expected), "AnsiString", ValueKind.String, null, 0, false, "A", T.At), bed.Info(node));
     }
 
+    /// <summary>Code page 1252 differs from Latin-1 in 0x80 … 0x9F; the five bytes it leaves undefined are the C1 controls.</summary>
+    [Theory]
+    [Trait("Req", "DBG-161")]
+    [InlineData("80", "'€'")]
+    [InlineData("8A", "'Š'")]
+    [InlineData("9F", "'Ÿ'")]
+    [InlineData("808A9F", "'€ŠŸ'")]
+    [InlineData("82838485868788898B8C8E", "'‚ƒ„…†‡ˆ‰‹ŒŽ'")]
+    [InlineData("9192939495969798999A9B9C9E", "'‘’“”•–—˜™š›œž'")]
+    [InlineData("41A0E9FF", "'A éÿ'")]
+    public async Task Ansi_CodePage1252_HighRange(string payloadHex, string expected)
+    {
+        var bed = Bed();
+        bed.Memory.PutAnsiString(Payload, Convert.FromHexString(payloadHex), 1252);
+
+        var node = await bed.DecodeAsync(T.AnsiString, T.At, "A");
+
+        Assert.Equal(expected, bed.Info(node).Value);
+    }
+
+    /// <summary>The 1252 table is the decoder's own: it does not depend on a code-page provider being registered.</summary>
+    [Fact]
+    [Trait("Req", "DBG-161")]
+    public void CodePage1252_OwnTable_MatchesEveryByte()
+    {
+        var all = Enumerable.Range(0, 256).Select(b => (byte)b).ToArray();
+
+        var text = FreexComp.Debugger.Values.ValueDecoder.DecodeCodePage1252(all);
+
+        Assert.Equal(256, text.Length);
+        Assert.Equal(Encoding.Latin1.GetString(all, 0, 0x80), text[..0x80]);
+        Assert.Equal(
+            "€‚ƒ„…†‡ˆ‰Š‹ŒŽ"
+            + "‘’“”•–—˜™š›œžŸ",
+            text[0x80..0xA0]);
+        Assert.Equal(Encoding.Latin1.GetString(all, 0xA0, 0x60), text[0xA0..]);
+    }
+
     [Fact]
     [Trait("Req", "DBG-161")]
     public async Task Ansi_Nil_InvalidLength_Truncated_Unreadable()

@@ -84,6 +84,8 @@ internal sealed partial class DebugSession
             "exited" => ThreadChange.Exited,
             _ => null,
         };
+        if (change == ThreadChange.Exited)
+            _raiseReportedThreads.Remove(body.ThreadId);   // nothing more comes from this thread (DBG-248)
         if (change is { } value)
             _events.Raise(() => ThreadChanged, new ThreadChangedEventArgs(body.ThreadId, value));
     }

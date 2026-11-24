@@ -103,6 +103,7 @@ public sealed class SessionTerminationTests
 
     [Fact]
     [Trait("Req", "DBG-094")]
+    [Trait("Req", "DBG-203")]
     public async Task Terminate_WithTerminateDebuggeeCapability_SendsTerminateDebuggee()
     {
         await using var harness = SessionHarness.Create("""
@@ -220,6 +221,7 @@ public sealed class SessionTerminationTests
 
     [Fact]
     [Trait("Req", "DBG-426")]
+    [Trait("Req", "DBG-204")]
     public async Task Exit_ReportsCode()
     {
         await using var harness = SessionHarness.Create("""
@@ -360,7 +362,7 @@ public sealed class SessionTerminationTests
 
         Assert.Equal(DebugErrorCode.AdapterStartFailed, exception.Code);
         Assert.StartsWith("Debug adapter could not be started: it exited with code 2.\nSCENARIO-ERROR: ", exception.Message);
-        Assert.EndsWith("See docs/QUESTIONS.md: lldb-dap requires a Python runtime that is not installed.", exception.Message);
+        Assert.EndsWith("The debugger needs its bundled Python runtime, which was not found next to the toolchain.", exception.Message);
     }
 
     /// <summary>

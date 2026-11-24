@@ -33,6 +33,7 @@ LaunchRequest.Arguments : IReadOnlyList<string> { get; init; }
 LaunchRequest.WorkingDirectory : string? { get; init; }
 LaunchRequest.Environment : IReadOnlyDictionary<string, string>? { get; init; }
 LaunchRequest.StopOnEntry : bool { get; init; }
+LaunchRequest.StopAtMainBody : bool { get; init; }
 LaunchRequest.Breakpoints : IReadOnlyList<SourceBreakpoints> { get; init; }
 LaunchRequest.Exceptions : ExceptionSettings { get; init; }
 LaunchRequest.TypeInfoPath : string? { get; init; }

@@ -1,0 +1,22 @@
+# Phase 6 rows of the debugger feature document that no test of the debugger library carries as a Req trait.
+# One row per line: id | category | reason. Categories:
+#   informative  the row states no behaviour of the library that a test could observe
+#   ide          the row is implemented and tested in the IDE (the library's part is covered by other rules)
+#   other-area   the row is implemented by another area; the library only consumes the result
+# RequirementCoverageTests fails for a Phase 6 row that has neither a test nor a line here, and for a line here
+# whose id is no Phase 6 row or has a test.
+
+DBG-200 | ide | implemented and tested in ide (I-133 to I-146): run with debugging: build, then launch with the project's settings
+DBG-201 | ide | implemented and tested in ide (I-133 to I-146): warning for a configuration without debug information; the library's part, a session without type information, is DBG-403
+DBG-208 | ide | implemented and tested in ide (I-133 to I-146): source-changed warning; the library never re-maps lines
+DBG-215 | informative | cost note; states no behaviour
+DBG-228 | informative | the stepping order of loops is the line table's (debug-info DBG-121 to DBG-124); the debugger adds no logic
+DBG-232 | ide | implemented and tested in ide (I-133 to I-146): run to cursor without a session is a launch with the breakpoint in the initial set
+DBG-240 | other-area | the raise hook routine and its name in the type information belong to the runtime library and the compiler; the library's use of it is DBG-241 to DBG-245
+DBG-251 | ide | implemented and tested in ide (I-133 to I-146): frame selection; the library keeps no current frame: every call takes the frame id, DBG-408
+DBG-255 | ide | implemented and tested in ide (I-133 to I-146): thread selection; the library takes the thread id in every call, DBG-090
+DBG-257 | ide | implemented and tested in ide (I-133 to I-146): watch list and its re-evaluation; the library's part is EvaluateAsync, DBG-412
+DBG-258 | ide | implemented and tested in ide (I-133 to I-146): hover evaluation; the library's part is EvaluateAsync, DBG-412
+DBG-259 | ide | implemented and tested in ide (I-133 to I-146): changed-value highlighting; the library is stateless across stops
+DBG-262 | ide | implemented and tested in ide (I-133 to I-146): run without debugging does not involve the library
+DBG-263 | ide | implemented and tested in ide (I-133 to I-146): routing of output to the panes; the categories the library raises are DBG-424

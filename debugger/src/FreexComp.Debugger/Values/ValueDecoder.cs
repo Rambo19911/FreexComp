@@ -476,8 +476,27 @@ internal sealed class ValueDecoder
         var (bytes, complete) = await ReadPrefixAsync(payload, wanted, ct).ConfigureAwait(false);
         if (!complete && bytes.Length == 0)
             return StringText.Failed(Messages.UnreadableMemory(payload));
-        var units = codePage == 1200 ? Utf16(bytes) : AnsiEncoding(codePage).GetString(bytes);
+        var units = codePage == 1200 ? Utf16(bytes)
+            : codePage == 1252 ? DecodeCodePage1252(bytes)
+            : AnsiEncoding(codePage).GetString(bytes);
         return new StringText(units, length, !complete, wanted < length, null);
+    }
+
+    // Code page 1252, bytes 0x80 ... 0x9F; the five bytes the code page leaves undefined are the C1 controls.
+    private const string CodePage1252High =
+        "\u20AC\u0081\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030\u0160\u2039\u0152\u008D\u017D\u008F"
+        + "\u0090\u2018\u2019\u201C\u201D\u2022\u2013\u2014\u02DC\u2122\u0161\u203A\u0153\u009D\u017E\u0178";
+
+    /// <summary>
+    /// DBG-161: text in code page 1252, the usual ANSI code page, decoded with the decoder's own table: it differs
+    /// from Latin-1 in 0x80 ... 0x9F only and must not depend on a code-page provider being available.
+    /// </summary>
+    internal static string DecodeCodePage1252(ReadOnlySpan<byte> bytes)
+    {
+        var units = new char[bytes.Length];
+        for (var i = 0; i < bytes.Length; i++)
+            units[i] = bytes[i] is >= 0x80 and < 0xA0 ? CodePage1252High[bytes[i] - 0x80] : (char)bytes[i];
+        return new string(units);
     }
 
     private static Encoding AnsiEncoding(int codePage)

@@ -219,6 +219,34 @@ public sealed class RunToLineTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-065")]
+    [Trait("Req", "DBG-207")]
+    public async Task ExistingUserBreakpoint_SetAgainDuringTheRun_StillBypassed()
+    {
+        // The user breakpoint on the target line has a false condition. While the run is under way the IDE sends the
+        // file's set again (same id, same line): the table entry is a new object, the run's bypass must survive it.
+        const string set = """{ "on": "setBreakpoints", "expectArguments": { "breakpoints": [ { "line": 73 } ] }, "respond": { "breakpoints": [ { "id": 1, "verified": true, "line": 73 } ] }""";
+        await using var harness = await StoppedAsync($$"""
+            { "on": "continue", "respond": { "allThreadsContinued": true } },
+            {{set}}, "thenEvents": [ {{Hit(1)}} ] },
+            {{DemoSession.Threads}}, {{DemoSession.Stack(73)}}
+            """,
+            user: new BreakpointSpec { Id = 5, Line = 73, Condition = "Total = 0" },
+            setup: set + " },");
+        var session = harness.Session;
+
+        await session.RunToLineAsync(Demo, 73, Ct).WaitAsync(Safety, Ct);
+        var statuses = await session.SetBreakpointsAsync(Demo, [new BreakpointSpec { Id = 5, Line = 73, Condition = "Total = 0" }], Ct).WaitAsync(Safety, Ct);
+        var outcome = await harness.Events.WaitAsync(e => e.Contains("epoch=2", StringComparison.Ordinal) || e.StartsWith("terminated", StringComparison.Ordinal));
+
+        Assert.Equal("5 Verified line=73 hits=0 msg=null", SessionHarness.Status(Assert.Single(statuses)));
+        Assert.Equal($"stopped RunToLine epoch=2 thread=1 loc={Demo}:73:3 hits=[] desc=Run to line completed", outcome);
+        Assert.Contains("breakpoint 5 Verified line=73 hits=1 msg=null", harness.Events.Snapshot());
+        Assert.Equal(0, ((IDebugSessionDiagnostics)session).InternalStopCount);
+        await DemoSession.EndAsync(harness);
+    }
+
+    [Fact]
     [Trait("Req", "DBG-230")]
     public async Task ContinueRejected_RemovesTemp_StaysStopped()
     {

@@ -553,6 +553,33 @@ public sealed class ExceptionMonitorTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-248")]
+    public async Task PascalCode_AfterHook_StopOfAnotherThreadBetween_StillSuppressed()
+    {
+        // The hook reported the raise on thread 1. Before the adapter stops with the runtime's exception code on that
+        // thread, another thread stops (a pause) and the user resumes. What the hook reported is remembered per
+        // thread: the stop of thread 2 does not make the exception of thread 1 a new one.
+        await using var bed = Create(Scenario(
+            HookSet, StoppedFirst(HookHit), Threads, Stack(HookFrame, GoFrame12, MainFrame), AddressOfObj(ObjSlot1),
+            """{ "on": "continue", "respond": {}, "thenEvents": [ { "event": "stopped", "body": { "reason": "pause", "threadId": 2 } } ] }""",
+            """{ "on": "threads", "respond": { "threads": [ { "id": 1, "name": "main" }, { "id": 2, "name": "worker" } ] } }""",
+            Stack(GoFrame17, MainFrame),
+            $$"""{ "on": "continue", "respond": {}, "thenEvents": [ {{OsStop("Exception 0xe0504153 encountered at address 0x7ffbe9fd569a")}} ] }""",
+            Threads, Stack(Frame(99, "KernelBase.dll`RaiseException", null, 0), HookFrame, GoFrame12, MainFrame),
+            """{ "on": "disconnect", "respond": {}, "expectArguments": { "terminateDebuggee": true } }"""));
+        await bed.LaunchAsync();
+        await bed.Harness.WaitForEventAsync("stopped Exception epoch=1");
+
+        await bed.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
+        Assert.Equal($"stopped Pause epoch=2 thread=2 loc={Raises}:17:3 hits=[] desc=Paused", await bed.Harness.WaitForEventAsync("stopped Pause"));
+        await bed.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
+
+        Assert.Equal("terminated Exited -531611309 null", await bed.Harness.WaitForEventAsync("terminated"));
+        Assert.Equal(2, bed.Harness.Events.Snapshot().Count(e => e.StartsWith("stopped", StringComparison.Ordinal)));
+        bed.Harness.AssertScenarioComplete();
+    }
+
+    [Fact]
     [Trait("Req", "DBG-246")]
     [Trait("Req", "DBG-248")]
     public async Task PascalCode_WithoutHook_LanguageStop()

@@ -106,10 +106,15 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     public Task PauseAsync(CancellationToken ct = default)
     {
         // Noted at once, not when the loop gets to the call: a stop that is being resolved internally right now must
-        // not be continued (DBG-029).
-        if (State == DebugState.Running)
-            _pauseRequested = true;
-        return PostAsync(SessionMethod.PauseAsync, () => PauseCoreAsync(ct), ct);
+        // not be continued (DBG-029). Only a call the session takes is a request: one that is refused here (disposed,
+        // token already cancelled) leaves nothing behind that would turn a later internal stop into a pause.
+        if (_disposed || ct.IsCancellationRequested || State != DebugState.Running)
+            return PostAsync(SessionMethod.PauseAsync, () => PauseCoreAsync(ct), ct);
+        _pauseRequested = true;
+        var call = PostAsync(SessionMethod.PauseAsync, () => PauseCoreAsync(ct), ct, out var accepted);
+        if (!accepted)
+            _pauseRequested = false;
+        return call;
     }
 
     public Task StepOverAsync(int threadId, CancellationToken ct = default) =>
@@ -231,15 +236,20 @@ internal sealed partial class DebugSession : IDebugSession, IDebugSessionDiagnos
     /// Posts a public call to the session loop. The returned task faults with <c>InvalidState</c> when the state at
     /// the time the call is processed does not allow it (DBG-401, DBG-026); nothing is sent to the adapter then.
     /// </summary>
-    private Task<T> PostAsync<T>(SessionMethod method, Func<Task<T>> body, CancellationToken ct)
+    private Task<T> PostAsync<T>(SessionMethod method, Func<Task<T>> body, CancellationToken ct) =>
+        PostAsync(method, body, ct, out _);
+
+    /// <param name="accepted">False when the call was refused without reaching the session loop.</param>
+    private Task<T> PostAsync<T>(SessionMethod method, Func<Task<T>> body, CancellationToken ct, out bool accepted)
     {
+        accepted = false;
         if (_disposed)
             return Task.FromException<T>(new ObjectDisposedException(nameof(IDebugSession)));
         if (ct.IsCancellationRequested)
             return Task.FromCanceled<T>(ct);
 
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var accepted = Post(async () =>
+        accepted = Post(async () =>
         {
             try
             {

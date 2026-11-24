@@ -68,6 +68,13 @@ public sealed record LaunchRequest
     /// <summary>Stop at the program entry.</summary>
     public bool StopOnEntry { get; init; } = false;
 
+    /// <summary>
+    /// DBG-225: launch with an internal entry stop, run to the first statement of the program's main block and publish
+    /// that stop with <see cref="StopReason.Step"/>; without type information the public stop is
+    /// <see cref="StopReason.Entry"/>. Takes precedence over <see cref="StopOnEntry"/>.
+    /// </summary>
+    public bool StopAtMainBody { get; init; } = false;
+
     /// <summary>Initial breakpoints, one entry per source file.</summary>
     public IReadOnlyList<SourceBreakpoints> Breakpoints { get; init; } = [];
 

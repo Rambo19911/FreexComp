@@ -114,6 +114,7 @@ public sealed class EventMappingTests
     }
 
     [Fact]
+    [Trait("Req", "DBG-254")]
     public async Task Thread_StartedExited()
     {
         var (harness, events) = await RunAsync("""

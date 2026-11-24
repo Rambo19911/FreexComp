@@ -13,6 +13,7 @@ public sealed class EvaluateApiTests
     [Fact]
     [Trait("Req", "DBG-412")]
     [Trait("Req", "DBG-183")]
+    [Trait("Req", "DBG-260")]
     public async Task Immediate_IsLeaf()
     {
         await using var harness = await DemoSession.StoppedInRunAsync();

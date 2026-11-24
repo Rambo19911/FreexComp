@@ -31,6 +31,7 @@ public sealed class SetValueTests
     [Trait("Category", "Integration")]
     [Trait("Req", "DBG-413")]
     [Trait("Req", "DBG-177")]
+    [Trait("Req", "DBG-261")]
     public async Task Integer_Written_LittleEndian()
     {
         await using var harness = await DemoSession.StoppedInRunAsync();

@@ -250,6 +250,10 @@ public sealed class SessionStopTests
     [Fact]
     [Trait("Req", "DBG-090")]
     [Trait("Req", "DBG-092")]
+    [Trait("Req", "DBG-220")]
+    [Trait("Req", "DBG-221")]
+    [Trait("Req", "DBG-223")]
+    [Trait("Req", "DBG-226")]
     public async Task Step_Requests_ExactJson()
     {
         // Each step is acknowledged (state Running) and ends in a new stop; the thread id is the caller's.
@@ -335,6 +339,7 @@ public sealed class SessionStopTests
 
     [Fact]
     [Trait("Req", "DBG-401")]
+    [Trait("Req", "DBG-224")]
     public async Task Step_WhileRunning_InvalidState_NothingSent()
     {
         await using var harness = SessionHarness.Create("{}");
@@ -345,6 +350,28 @@ public sealed class SessionStopTests
         Assert.Equal(DebugErrorCode.InvalidState, exception.Code);
         Assert.Equal("StepOverAsync is not allowed in state Running.", exception.Message);
         await EndAsync(harness);
+    }
+
+    [Fact]
+    [Trait("Req", "DBG-202")]
+    public async Task TwoSessions_InOneProcess_AreIndependent()
+    {
+        // "One session at a time" is the IDE's rule; the library runs several, each with its own adapter and state.
+        await using var first = await StoppedAtBreakpointAsync("""{ "on": "continue", "respond": {} }""");
+        await using var second = await StoppedAtBreakpointAsync("");
+
+        await first.Session.ContinueAsync(Ct).WaitAsync(Safety, Ct);
+
+        Assert.Equal(DebugState.Running, first.Session.State);
+        Assert.Null(first.Session.CurrentStop);
+        Assert.Equal(DebugState.Stopped, second.Session.State);
+        Assert.Equal(1, second.Session.CurrentStop!.Epoch);
+        Assert.NotEqual(Assert.NotNull(first.AdapterProcessId), Assert.NotNull(second.AdapterProcessId));
+        await EndAsync(first);
+        Assert.DoesNotContain("continue", second.SentCommands());
+        Assert.DoesNotContain("continued", second.Events.Snapshot());
+        Assert.Equal(DebugState.Stopped, second.Session.State);
+        await EndAsync(second);
     }
 
     // ---- pause (G-057) ----
@@ -401,6 +428,37 @@ public sealed class SessionStopTests
             $"stopped Pause epoch=2 thread=7412 loc={Demo}:55:5 hits=[] desc={description}",
             await harness.WaitForEventAsync("stopped Pause"));
         await EndAsync(harness);
+    }
+
+    [Fact]
+    [Trait("Req", "DBG-029")]
+    [Trait("Req", "DBG-425")]
+    public async Task Pause_NotAccepted_LeavesNoPauseRequestBehind()
+    {
+        // A pause call that is refused before it reaches the session (its token is already cancelled) is no pause
+        // request: the next stop the session resolves itself - here the first arrival at a breakpoint that stops at
+        // its second pass - is still resumed and not published as a pause.
+        const string set = """{ "on": "setBreakpoints", "respond": { "breakpoints": [ { "id": 2, "verified": true, "line": 40 } ] }""";
+        await using var harness = SessionHarness.Create($$"""
+            { "steps": [ {{set}} },
+              {{set}}, "thenEvents": [ {{Stopped("""{ "reason": "breakpoint", "threadId": 7412, "hitBreakpointIds": [2] }""")}} ] },
+              {{Threads}}, {{Stack(40)}},
+              { "on": "continue", "respond": {}, "expectArguments": { "threadId": 7412 } } ] }
+            """);
+        var session = harness.Session;
+        var spec = new BreakpointSpec { Id = 5, Line = 40, HitCount = new HitCountSpec(HitCountMode.Equal, 2) };
+        await harness.LaunchAsync(new LaunchRequest { Program = SessionHarness.Program, Breakpoints = [new SourceBreakpoints(Demo, [spec])] });
+        Assert.Equal(DebugState.Running, session.State);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => session.PauseAsync(new CancellationToken(canceled: true)));
+        // Sending the set again makes the scripted adapter report the arrival.
+        await session.SetBreakpointsAsync(Demo, [spec], Ct).WaitAsync(Safety, Ct);
+        await harness.WaitForEventAsync("breakpoint 5 Verified line=40 hits=1");
+
+        await EndAsync(harness);   // the scenario is complete: the internal continue was sent
+        Assert.DoesNotContain(harness.Events.Snapshot(), e => e.StartsWith("stopped", StringComparison.Ordinal));
+        Assert.Equal(1, ((FreexComp.Debugger.Session.IDebugSessionDiagnostics)session).InternalStopCount);
+        Assert.DoesNotContain("pause", harness.SentCommands());
     }
 
     [Fact]

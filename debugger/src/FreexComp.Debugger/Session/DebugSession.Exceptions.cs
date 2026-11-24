@@ -16,7 +16,9 @@ internal sealed partial class DebugSession
     private bool _hookArmed;                    // the adapter holds the function breakpoint on the raise hook
     private int? _raiseHookBreakpointId;
     private bool _hookUnavailableReported;
-    private int? _raiseReportedThread;          // the last stop was a raise on this thread, published or ignored (DBG-248)
+    // Threads whose last stop was a raise seen through the hook, published or ignored (DBG-248). A thread leaves the
+    // set with its own next stop, or when it ends: the stop of another thread says nothing about it.
+    private readonly HashSet<int> _raiseReportedThreads = [];
     private uint? _fatalCode;                   // the current public stop is an exception no handler takes (DBG-247)
 
     /// <summary>The symbol of the raise hook; "" without type information or when the runtime has none.</summary>
