@@ -8,6 +8,10 @@
     <ProjectReference Include="..\..\..\ide\tests\FreexComp.Ide.TestSupport\FreexComp.Ide.TestSupport.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Child-process pipes read on dedicated threads (L-022). -->
+    <Compile Include="..\..\Shared\ChildPipe.cs" Link="Shared\ChildPipe.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia.Headless.XUnit" />
   </ItemGroup>
 </Project>

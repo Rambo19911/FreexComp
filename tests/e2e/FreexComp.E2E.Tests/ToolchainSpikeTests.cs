@@ -34,8 +34,8 @@ public sealed class ToolchainSpikeTests
 
         using var p = Process.Start(psi)!;
         var ct = TestContext.Current.CancellationToken;
-        var stdout = p.StandardOutput.ReadToEndAsync(ct);
-        var stderr = p.StandardError.ReadToEndAsync(ct);
+        var stdout = FreexComp.Tests.Shared.ChildPipe.ReadToEndOnThread(p.StandardOutput, "stdout");
+        var stderr = FreexComp.Tests.Shared.ChildPipe.ReadToEndOnThread(p.StandardError, "stderr");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMinutes(5));
         try

@@ -97,8 +97,8 @@ public sealed class PlatformPrograms : IDisposable
         }
 
         using var process = Process.Start(info)!;
-        var stdout = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
-        var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
+        var stdout = FreexComp.Tests.Shared.ChildPipe.ReadToEndOnThread(process.StandardOutput, "stdout");
+        var stderr = FreexComp.Tests.Shared.ChildPipe.ReadToEndOnThread(process.StandardError, "stderr");
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(deadline);
         try

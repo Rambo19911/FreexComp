@@ -42,8 +42,8 @@ public sealed class NoticesFileTests
 
         using var process = Process.Start(start)!;
         process.StandardInput.Close();
-        var output = process.StandardOutput.ReadToEndAsync();
-        var error = process.StandardError.ReadToEndAsync();
+        var output = FreexComp.Tests.Shared.ChildPipe.ReadToEndOnThread(process.StandardOutput, "stdout");
+        var error = FreexComp.Tests.Shared.ChildPipe.ReadToEndOnThread(process.StandardError, "stderr");
         if (!process.WaitForExit(TimeSpan.FromMinutes(2)))
         {
             process.Kill(entireProcessTree: true);

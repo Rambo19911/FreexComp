@@ -5,6 +5,8 @@
   <ItemGroup>
     <!-- The reader of the manifest resource of a built program, shared with the compiler tests (platform check suite). -->
     <Compile Include="..\..\..\compiler\tests\Shared\PeManifest.cs" Link="Shared\PeManifest.cs" />
+    <!-- Child-process pipes read on dedicated threads (L-022). -->
+    <Compile Include="..\..\Shared\ChildPipe.cs" Link="Shared\ChildPipe.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Repository-wide policy checks (licence files, notices). The shared helpers come from the IDE test support library. -->

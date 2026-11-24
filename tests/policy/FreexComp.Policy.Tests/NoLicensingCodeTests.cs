@@ -49,7 +49,7 @@ public sealed class NoLicensingCodeTests
         foreach (var argument in (string[])["-c", "core.quotepath=off", "ls-files", "-z"])
             start.ArgumentList.Add(argument);
         using var git = Process.Start(start) ?? throw new InvalidOperationException("git could not be started");
-        var errors = git.StandardError.ReadToEndAsync();
+        var errors = FreexComp.Tests.Shared.ChildPipe.ReadToEndOnThread(git.StandardError, "stderr");
         var output = git.StandardOutput.ReadToEnd();
         git.WaitForExit();
         Assert.True(git.ExitCode == 0, $"git ls-files failed ({git.ExitCode}): {errors.Result}");
