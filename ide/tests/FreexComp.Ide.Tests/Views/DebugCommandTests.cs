@@ -19,7 +19,7 @@ namespace FreexComp.Ide.Tests.Views;
 [Trait("Category", "Integration")]
 public sealed class DebugCommandTests
 {
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-ED-020")]
     [Trait("Req", "UI-WIN-012")]
     public async Task StopNavigatesAndMarksExecutionLine()
@@ -93,7 +93,7 @@ public sealed class DebugCommandTests
     /// IDE-P3-006 (from Phase 6): a file edited while a debug session is active gets the info bar
     /// <c>Msg.Debug.SourceChanged</c> with <c>Rebuild and Restart</c>; it goes with the session.
     /// </summary>
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-006")]
     [Trait("Req", "UI-ED-093")]
     public async Task EditDuringSessionShowsSourceChanged()

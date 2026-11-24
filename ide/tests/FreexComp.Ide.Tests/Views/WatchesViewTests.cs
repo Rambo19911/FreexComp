@@ -24,7 +24,7 @@ public sealed class WatchesViewTests
 
     private static IEnumerable<string> Watches(WatchesViewModel watches) => watches.Rows.Where(r => r.Key != WatchesViewModel.NewKey).Select(Row);
 
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-1100")]
     [Trait("Req", "UI-TW-1101")]
     [Trait("Req", "UI-TW-1102")]

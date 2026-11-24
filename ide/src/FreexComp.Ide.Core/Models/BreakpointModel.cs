@@ -22,13 +22,23 @@ public sealed class BreakpointModel
     {
         Path = path;
         Line = line;
+        StoredLine = line;
     }
 
     /// <summary>Absolute path of the source file.</summary>
     public string Path { get; }
 
-    /// <summary>The 1-based line (in an open document: where its anchor is now).</summary>
+    /// <summary>
+    /// The 1-based line of the gutter marker (in an open document: where its anchor is now). During a debug session this
+    /// is the line the debugger bound the breakpoint to (DBG-205); otherwise it equals <see cref="StoredLine"/>.
+    /// </summary>
     public int Line { get; internal set; }
+
+    /// <summary>
+    /// The 1-based line of the user's definition, which the project session stores: a debug session does not change it
+    /// (DBG-205), edits of an open document do.
+    /// </summary>
+    public int StoredLine { get; internal set; }
 
     public bool Enabled { get; internal set; } = true;
 
@@ -60,7 +70,7 @@ public sealed class BreakpointModel
 
     public bool IsConditional => Condition is { Length: > 0 } || HitCount is not null;
 
-    public BreakpointInfo ToInfo() => new(Path, Line, Enabled, Condition, HitCount, LogMessage);
+    public BreakpointInfo ToInfo() => new(Path, StoredLine, Enabled, Condition, HitCount, LogMessage);
 
     /// <summary>The debugger's view of this breakpoint with the session id.</summary>
     public BreakpointSpec ToSpec() => new()

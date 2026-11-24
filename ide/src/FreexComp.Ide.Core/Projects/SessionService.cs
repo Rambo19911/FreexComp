@@ -480,7 +480,7 @@ public sealed class SessionService : ISessionService
     private JsonNode WriteBreakpoint(Models.BreakpointModel breakpoint) => new JsonObject
     {
         ["path"] = ToSessionPath(breakpoint.Path),
-        ["line"] = breakpoint.Line,
+        ["line"] = breakpoint.StoredLine, // DBG-205: not the line a debug session moved the marker to
         ["enabled"] = breakpoint.Enabled,
         ["condition"] = breakpoint.Condition,
         ["hitCount"] = breakpoint.HitCount is { } hitCount

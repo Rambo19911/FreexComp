@@ -16,6 +16,13 @@ public sealed class TestDeadline
     /// <summary>The timeout of a test that declares none (IDE-TEST-006).</summary>
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// I-222: the timeout, in milliseconds, of a test that runs a debug session over the scripted adapter — a real process,
+    /// whose start and answers take as long as the machine's load makes them. A safety net against a hang, never a
+    /// budget: nothing in such a test depends on how long a step takes (docs/process/TESTING.md, the CPU-load rule).
+    /// </summary>
+    public const int DebugTestTimeout = 120_000;
+
     /// <summary>How long before the test timeout a wait gives up, so that its own message is the one reported.</summary>
     public static readonly TimeSpan Margin = TimeSpan.FromSeconds(2);
 

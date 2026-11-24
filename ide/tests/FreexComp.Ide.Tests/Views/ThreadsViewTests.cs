@@ -23,7 +23,7 @@ public sealed class ThreadsViewTests
 {
     private static string ThreadEvent(string reason, int id) => $$"""{ "event": "thread", "body": { "reason": "{{reason}}", "threadId": {{id}} } }""";
 
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-1200")]
     [Trait("Req", "UI-TW-1201")]
     [Trait("Req", "UI-TW-1202")]

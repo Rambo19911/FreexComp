@@ -25,7 +25,7 @@ namespace FreexComp.Ide.Tests.Editor;
 [Trait("Category", "Integration")]
 public sealed class DebugTooltipTests
 {
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-ED-130")]
     public async Task HoverEvaluatesIdentifier()
     {

@@ -26,7 +26,7 @@ public sealed partial class EventLogViewTests
 
     private static string Row(DebugGridRow row) => $"{row.Cells[1].Text}: {row.Cells[2].Text}";
 
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-1300")]
     [Trait("Req", "UI-TW-1301")]
     [Trait("Req", "UI-TW-1302")]

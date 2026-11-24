@@ -13,7 +13,7 @@ namespace FreexComp.Ide.Core.Tests.Debugging;
 public sealed class DebugLogTests
 {
     /// <summary>UI-TW-1300 / UI-TW-1303: at most 10 000 rows, the oldest are dropped; the keys keep counting from the last clear.</summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-1300")]
     [Trait("Req", "UI-TW-1303")]
     public Task KeepsTheNewestTenThousandRows() => TestUiThread.RunAsync(KeepsTheNewestTenThousandRowsOnUiThread);

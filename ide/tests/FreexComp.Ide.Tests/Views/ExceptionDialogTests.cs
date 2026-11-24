@@ -22,7 +22,7 @@ namespace FreexComp.Ide.Tests.Views;
 [Trait("Category", "Integration")]
 public sealed class ExceptionDialogTests
 {
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-DLG-230")]
     [Trait("Req", "UI-DLG-231")]
     [Trait("Req", "UI-DLG-026")]

@@ -494,22 +494,42 @@ public sealed partial class DebugService : IDebugService
         return _run.IsRunning ? _run.StartCommandAsync(withDebugger: false) : StartAsync();
     }
 
-    /// <summary>An execution-control request; a session that cannot take it now (it is ending) is not an error to report.</summary>
+    /// <summary>
+    /// An execution-control request; a session that cannot take it now (it is ending) is not an error to report.
+    /// DBG-224: one request at a time — while one is not yet answered (a key that repeats), and after it was answered for
+    /// the stop it resumed (the session runs already, the IDE state follows with the session's next event), further
+    /// requests are ignored: the commands are meant to be disabled then.
+    /// </summary>
     private async Task ControlAsync(Func<IDebugSession, Task> request)
     {
-        if (_active is not { } active)
+        if (_active is not { } active || active.Controlling)
             return;
-        await WhenViewsSettledAsync(); // the views' requests of this stop are answered first
-        if (_active != active)
+        var stop = _stop;
+        if (stop is not null && ReferenceEquals(stop, active.ResumedStop))
             return;
+        active.Controlling = true;
         try
         {
+            await WhenViewsSettledAsync(); // the views' requests of this stop are answered first
+            if (_active != active)
+                return;
             await request(active.Session);
+            active.ResumedStop = stop;
+        }
+        catch (DebuggerException e) when (e.Code == DebugErrorCode.InvalidState)
+        {
+            // The session changed state between the command's check and the request (it stopped, or ended, meanwhile):
+            // the IDE state follows with the event that is on its way; nothing for the user to act on.
+            _log.Info(Category, "An execution-control request came too late: " + e.Message);
         }
         catch (Exception e) when (e is DebuggerException or ObjectDisposedException)
         {
             _log.Warning(Category, e.Message);
             _status.ShowMessage(e.Message, StatusDuration);
+        }
+        finally
+        {
+            active.Controlling = false;
         }
     }
 
@@ -815,6 +835,12 @@ public sealed partial class DebugService : IDebugService
 
         /// <summary>The Event Log has the row of the program's start.</summary>
         public bool StartLogged { get; set; }
+
+        /// <summary>An execution-control request is under way (DBG-224).</summary>
+        public bool Controlling { get; set; }
+
+        /// <summary>The stop the last answered execution-control request resumed from; requests for it are over.</summary>
+        public StopInfo? ResumedStop { get; set; }
 
         /// <summary>The text after the last line break, per category.</summary>
         public Dictionary<OutputCategory, StringBuilder> Partial { get; } = [];

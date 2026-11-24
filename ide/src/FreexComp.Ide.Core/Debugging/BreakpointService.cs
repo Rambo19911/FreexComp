@@ -51,15 +51,16 @@ public interface IBreakpointService
     /// <c>BreakpointChanged</c> updates state, line and hits.
     /// </summary>
     /// <param name="runTo">
-    /// "Run to Cursor" without a session (DBG-232): a temporary breakpoint on that line joins the launch set, unless a
-    /// breakpoint is there already; it is not listed and goes with <see cref="ClearTemporary"/>.
+    /// "Run to Cursor" without a session (DBG-232): a temporary breakpoint on that line joins the launch set, unless an
+    /// enabled unconditional breakpoint is there already (a disabled or conditional one is bypassed, DBG-065); it is not
+    /// listed and goes with <see cref="ClearTemporary"/>.
     /// </param>
     IReadOnlyList<SourceBreakpoints> AttachSession(IDebugSession session, (string Path, int Line)? runTo = null);
 
     /// <summary>The program stopped: the temporary breakpoint of a "Run to Cursor" start, if any, is taken from the session.</summary>
     void ClearTemporary();
 
-    /// <summary>The session ended: ids, states and hits are cleared.</summary>
+    /// <summary>The session ended: ids, states and hits are cleared; a marker the session moved returns to its stored line (DBG-205).</summary>
     void DetachSession();
 
     /// <summary>Completes once every change made so far has been answered by the session.</summary>
@@ -82,6 +83,7 @@ public sealed class BreakpointService : IBreakpointService
     private readonly ILog _log;
     private readonly List<Entry> _entries = [];
     private readonly Dictionary<TextDocumentViewModel, Glyphs> _attached = [];
+    private readonly HashSet<string> _edited = new(StringComparer.OrdinalIgnoreCase);
     private IDebugSession? _session;
     private EventHandler<BreakpointChangedEventArgs>? _sessionHandler;
     private int _nextId = 1;
@@ -127,7 +129,7 @@ public sealed class BreakpointService : IBreakpointService
         get
         {
             foreach (var entry in _entries)
-                entry.Model.Line = CurrentLine(entry);
+                Refresh(entry);
             return [.. _entries.Select(e => e.Model)];
         }
     }
@@ -204,9 +206,11 @@ public sealed class BreakpointService : IBreakpointService
         DetachSession();
         _session = session;
         _nextId = 1;
+        _edited.Clear();
         foreach (var entry in _entries)
         {
-            entry.Model.Line = CurrentLine(entry);
+            Refresh(entry);
+            entry.SessionLine = entry.Model.Line;
             entry.Model.Id = _nextId++;
             entry.Model.State = entry.Model.Enabled ? BreakpointState.Pending : BreakpointState.Disabled; // DBG-409, until the session reports
         }
@@ -218,7 +222,9 @@ public sealed class BreakpointService : IBreakpointService
                 ApplyStatus(e.Status);
         });
         session.BreakpointChanged += _sessionHandler;
-        if (runTo is { } target && FindEntry(target.Path, target.Line) is null)
+        // DBG-065: an enabled unconditional breakpoint on the line stops there itself; a disabled or conditional one is
+        // bypassed by the temporary breakpoint, which comes after it in the file's set (the later one of a line wins).
+        if (runTo is { } target && FindEntry(target.Path, target.Line) is not { Model: { Enabled: true, IsConditional: false } })
             _temporary = (Path.GetFullPath(target.Path), new BreakpointSpec { Id = _nextId++, Line = target.Line });
         return [.. _entries.Select(e => e.Model.Path).Concat(_temporary is { } t ? [t.Path] : []).Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(path => new SourceBreakpoints(path, SpecsOf(path)))];
@@ -232,14 +238,17 @@ public sealed class BreakpointService : IBreakpointService
         Sync(temporary.Path);
     }
 
-    /// <summary>The complete set of one file as the session takes it: its breakpoints at their current lines, then the temporary one.</summary>
+    /// <summary>
+    /// The complete set of one file as the session takes it: its breakpoints at their session lines — the lines of the
+    /// program that runs, which edits made during the session do not change (DBG-208) — then the temporary one.
+    /// </summary>
     private List<BreakpointSpec> SpecsOf(string path)
     {
         var specs = new List<BreakpointSpec>();
         foreach (var entry in _entries.Where(e => SamePath(e.Model.Path, path)))
         {
-            entry.Model.Line = CurrentLine(entry);
-            specs.Add(entry.Model.ToSpec());
+            Refresh(entry);
+            specs.Add(entry.Model.ToSpec() with { Line = entry.SessionLine });
         }
 
         if (_temporary is { } temporary && SamePath(temporary.Path, path))
@@ -255,8 +264,28 @@ public sealed class BreakpointService : IBreakpointService
         _session = null;
         _sessionHandler = null;
         _temporary = null;
-        foreach (var entry in _entries)
+        _edited.Clear();
+        foreach (var entry in _entries.ToList())
+        {
             (entry.Model.Id, entry.Model.State, entry.Model.Hits, entry.Model.Message) = (0, null, 0, null);
+            if (entry.HomeLine is null)
+                continue;
+
+            // DBG-205: the marker was moved for the session only; it returns to the stored line (one breakpoint per line).
+            var stored = StoredLine(entry);
+            (entry.Home, entry.HomeLine) = (null, null);
+            if (_entries.Any(e => e != entry && SamePath(e.Model.Path, entry.Model.Path) && CurrentLine(e) == stored))
+            {
+                RemoveEntry(entry);
+                continue;
+            }
+
+            entry.Model.Line = stored;
+            if (entry.Document is { } document)
+                Anchor(entry, document);
+            Refresh(entry);
+        }
+
         RaiseChanged();
     }
 
@@ -363,6 +392,8 @@ public sealed class BreakpointService : IBreakpointService
             Anchor(entry, document);
         }
 
+        Refresh(entry);
+        entry.SessionLine = entry.Model.Line; // added during a session: the line the user chose
         return entry;
     }
 
@@ -371,6 +402,7 @@ public sealed class BreakpointService : IBreakpointService
         _entries.Remove(entry);
         entry.Document = null;
         entry.Anchor = null;
+        (entry.Home, entry.HomeLine) = (null, null);
     }
 
     private Entry? FindEntry(string path, int line) => _entries.FirstOrDefault(e => SamePath(e.Model.Path, path) && CurrentLine(e) == line);
@@ -399,11 +431,12 @@ public sealed class BreakpointService : IBreakpointService
         _sync = SendAsync(_sync, session, Path.GetFullPath(path), SpecsOf(path));
     }
 
+    /// <summary>One link of the request chain; it never faults, so a failure cannot stop the requests after it.</summary>
     private async Task SendAsync(Task previous, IDebugSession session, string path, IReadOnlyList<BreakpointSpec> specs)
     {
-        await previous;
         try
         {
+            await previous;
             var statuses = await session.SetBreakpointsAsync(path, specs);
             if (_session != session)
                 return;
@@ -414,21 +447,41 @@ public sealed class BreakpointService : IBreakpointService
         {
             _log.Info(Category, $"Breakpoints of {path} were not sent: {e.Message}"); // the session is ending
         }
+        catch (Exception e)
+        {
+            _log.Error(Category, $"Sending the breakpoints of {path} failed: {e.Message}", e);
+        }
     }
 
-    /// <summary>The debug-session interface §6.1: state → glyph, <c>ActualLine</c> → the breakpoint moves, hits.</summary>
+    /// <summary>
+    /// The debug-session interface §6.1: state → glyph, <c>ActualLine</c> → the marker moves for the session (DBG-205:
+    /// the stored line stays, <see cref="DetachSession"/> returns to it), hits. In a file edited during the session the
+    /// marker stays with the text: the debugger's lines are those of the program that runs (DBG-208).
+    /// </summary>
     private void ApplyStatus(BreakpointStatus status)
     {
         if (_entries.FirstOrDefault(e => e.Model.Id == status.Id) is not { } entry)
             return;
         var model = entry.Model;
+
+        // A "Run to Cursor" start displaces the breakpoint of its line (the session calls it a duplicate) until the first
+        // stop: that is not a state of the user's breakpoint; ClearTemporary sends the set again and gets the real one.
+        if (_temporary is { } temporary && model.Enabled && SamePath(temporary.Path, model.Path) && temporary.Spec.Line == entry.SessionLine)
+            return;
         (model.State, model.Hits, model.Message) = (status.State, status.HitCount, status.Message);
-        if (status.ActualLine >= 1 && status.ActualLine != CurrentLine(entry))
+        if (status.ActualLine >= 1 && status.ActualLine != entry.SessionLine)
         {
-            model.Line = entry.Document is { } open ? Math.Clamp(status.ActualLine, 1, open.Buffer.LineCount) : status.ActualLine;
-            if (entry.Document is { } document)
-                Anchor(entry, document);
-            _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_BreakpointMoved, model.Line), StatusDuration);
+            entry.SessionLine = status.ActualLine;
+            if (!_edited.Contains(model.Path))
+            {
+                if (entry.HomeLine is null)
+                    (entry.Home, entry.HomeLine) = (entry.Anchor, CurrentLine(entry));
+                model.Line = entry.Document is { } open ? Math.Clamp(status.ActualLine, 1, open.Buffer.LineCount) : status.ActualLine;
+                if (entry.Document is { } document)
+                    Anchor(entry, document);
+                Refresh(entry);
+                _status.ShowMessage(string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_BreakpointMoved, model.Line), StatusDuration);
+            }
         }
 
         RaiseChanged();
@@ -447,6 +500,9 @@ public sealed class BreakpointService : IBreakpointService
         {
             entry.Model.Line = Math.Min(entry.Model.Line, document.Buffer.LineCount); // IDE-ARCH-073
             Anchor(entry, document);
+            if (entry.HomeLine is { } home)
+                entry.Home = document.Buffer.CreateAnchor(document.Buffer.GetLine(Math.Clamp(home, 1, document.Buffer.LineCount)).Offset, movesWithInsertionBefore: true);
+            Refresh(entry);
         }
 
         glyphs.Raise();
@@ -458,9 +514,10 @@ public sealed class BreakpointService : IBreakpointService
             return;
         foreach (var entry in _entries.Where(e => e.Document == document))
         {
-            entry.Model.Line = CurrentLine(entry);
+            Refresh(entry);
             entry.Document = null;
             entry.Anchor = null;
+            entry.Home = null;
         }
 
         document.Buffer.Changed -= glyphs.OnBufferChanged;
@@ -477,18 +534,36 @@ public sealed class BreakpointService : IBreakpointService
         (entry.Start, entry.Length, entry.Delimiter) = (start, length, delimiter);
     }
 
+    /// <summary>The line of the gutter marker.</summary>
     private static int CurrentLine(Entry entry) =>
         entry.Document is { } document && entry.Anchor is { IsDeleted: false } anchor
             ? document.Buffer.GetPosition(anchor.Offset).Line
             : entry.Model.Line;
 
+    /// <summary>The line of the user's definition: the marker's, unless the session moved the marker (DBG-205).</summary>
+    private static int StoredLine(Entry entry) =>
+        entry.HomeLine is not { } home ? CurrentLine(entry)
+        : entry.Document is { } document && entry.Home is { IsDeleted: false } anchor ? document.Buffer.GetPosition(anchor.Offset).Line
+        : home;
+
+    /// <summary>Brings the model's lines (and the stored line kept for a closed document) up to date with the anchors.</summary>
+    private static void Refresh(Entry entry)
+    {
+        entry.Model.Line = CurrentLine(entry);
+        entry.Model.StoredLine = StoredLine(entry);
+        if (entry.HomeLine is not null)
+            entry.HomeLine = entry.Model.StoredLine;
+    }
+
     /// <summary>
     /// After an edit (as bookmarks, IDE-ED-113): a breakpoint whose whole line was removed goes; when lines were joined the
     /// upper line's breakpoint stays; the rest are re-anchored at their line's start. The session is not told: its lines
-    /// are those of the program that runs.
+    /// are those of the program that runs (DBG-208), and from now on it moves no marker of this file.
     /// </summary>
     private void OnEdited(TextDocumentViewModel document, TextChangedEventArgs change)
     {
+        if (_session is not null && document.FilePath is { } edited)
+            _edited.Add(Path.GetFullPath(edited));
         var mine = _entries.Where(e => e.Document == document).ToList();
         if (mine.Count == 0)
             return;
@@ -508,7 +583,7 @@ public sealed class BreakpointService : IBreakpointService
 
         foreach (var entry in _entries.Where(e => e.Document == document))
         {
-            entry.Model.Line = CurrentLine(entry);
+            Refresh(entry);
             var (start, length, delimiter) = document.Buffer.GetLine(entry.Model.Line);
             if (entry.Anchor!.Offset != start)
                 Anchor(entry, document);
@@ -528,6 +603,14 @@ public sealed class BreakpointService : IBreakpointService
         public TextDocumentViewModel? Document { get; set; }
 
         public ITextAnchor? Anchor { get; set; }
+
+        /// <summary>The line the session knows the breakpoint at: the line of the launch or of its addition, then <c>ActualLine</c>.</summary>
+        public int SessionLine { get; set; }
+
+        /// <summary>Not null while the session has moved the marker (DBG-205): the stored line; <see cref="Home"/> follows it in an open document.</summary>
+        public int? HomeLine { get; set; }
+
+        public ITextAnchor? Home { get; set; }
 
         /// <summary>The line's start, content length and break length as of the last edit (whole-line test).</summary>
         public int Start { get; set; }

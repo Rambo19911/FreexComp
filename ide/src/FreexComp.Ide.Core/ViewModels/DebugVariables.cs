@@ -298,22 +298,33 @@ public abstract class VariableTreeViewModel : DebugGridViewModel
     private void BeginModify(string rowKey, Node node)
     {
         var name = node.Info!.EvaluateName!;
-        Edit = new DebugGridEdit(rowKey, "Value", node.Info.Value, async text =>
+        Edit = new DebugGridEdit(rowKey, "Value", node.Info.Value, text =>
         {
-            try
-            {
-                var assignment = Debug.SetValueAsync(name, text.Trim());
-                _ = Debug.Track(assignment);
-                await assignment;
-            }
-            catch (DebuggerException e)
-            {
-                return string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_ModifyFailed, e.Message); // the input stays open
-            }
-
-            Edit = null;
-            return null;
+            // The whole commit is work of this view (I-221): execution control and the end of the session wait for it.
+            var commit = ModifyAsync(name, text);
+            _ = Debug.Track(commit);
+            return commit;
         }, () => Edit = null);
+    }
+
+    /// <summary>Assigns <paramref name="text"/> to <paramref name="name"/>: null and the editor closed, or the message that keeps it open. Never faults.</summary>
+    private async Task<string?> ModifyAsync(string name, string text)
+    {
+        try
+        {
+            await Debug.SetValueAsync(name, text.Trim());
+        }
+        catch (DebuggerException e)
+        {
+            return string.Format(CultureInfo.CurrentCulture, Strings.Msg_Debug_ModifyFailed, e.Message); // the input stays open
+        }
+        catch (Exception e) when (e is ObjectDisposedException or OperationCanceledException)
+        {
+            // The session is gone (it was disposed under the open editor): nothing is left to modify; the view follows it.
+        }
+
+        Edit = null;
+        return null;
     }
 
     protected void BuildRows()

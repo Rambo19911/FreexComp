@@ -372,7 +372,7 @@ public abstract class DebugToolWindowView : UserControl
             if (e.Key == Key.Enter)
             {
                 e.Handled = true;
-                _ = edit.CommitAsync(box.Text ?? "");
+                _ = edit.CommitAsync(box.Text ?? ""); // never faults; a view model registers what it starts with the debug service (I-221)
             }
             else if (e.Key == Key.Escape)
             {

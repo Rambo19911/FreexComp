@@ -16,7 +16,7 @@ namespace FreexComp.Ide.Tests.Editor;
 [Trait("Category", "Integration")]
 public sealed class ExecutionLineTests
 {
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-ED-020")]
     [Trait("Req", "UI-WIN-033")]
     [Trait("Req", "UI-WIN-041")]

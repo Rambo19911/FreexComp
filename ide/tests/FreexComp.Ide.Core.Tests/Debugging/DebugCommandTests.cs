@@ -50,7 +50,7 @@ public sealed class DebugCommandTests
     /// <c>StopInfo.ThreadId</c>; run.runToCursor → <c>RunToLineAsync</c>; run.start while paused → <c>ContinueAsync</c>;
     /// run.pause → <c>PauseAsync</c>; run.showExecutionPoint; Run to Cursor without a session starts with a temporary breakpoint.
     /// </summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-001")]
     public Task CommandsCallSessionMethods() => TestUiThread.RunAsync(CommandsCallSessionMethodsOnUiThread);
 
@@ -150,7 +150,7 @@ public sealed class DebugCommandTests
     }
 
     /// <summary>menus.md §7: the conditions of the Run commands in every debug state.</summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-CMD-012")]
     public Task AvailabilityPerDebugState() => TestUiThread.RunAsync(AvailabilityPerDebugStateOnUiThread);
 
@@ -201,5 +201,90 @@ public sealed class DebugCommandTests
 
         await bed.Debug.StopAsync();
         Assert.Equal("start stepOver stepInto runToCursor addWatch", Available());
+    }
+
+    /// <summary>
+    /// DBG-224 (I-222): a second execution-control request that arrives while the first is not yet acknowledged (F8 held
+    /// down) is ignored — one <c>next</c> reaches the adapter and nothing is reported.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "DBG-224")]
+    public Task SecondControlRequestInFlightIsIgnored() => TestUiThread.RunAsync(SecondControlRequestInFlightIsIgnoredOnUiThread);
+
+    private static async Task SecondControlRequestInFlightIsIgnoredOnUiThread()
+    {
+        using var bed = new DebugTestBed();
+        await bed.OpenHelloAsync();
+        var unit = bed.UnitPath;
+        var commands = bed.Services.Commands;
+        var status = new List<string?>();
+        bed.Services.Status.Changed += (_, _) => status.Add(bed.Services.Status.Message);
+        bed.Sessions.UseScenario($$"""
+            { "steps": [
+              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{Stopped("entry")}} ] }, {{At(unit, 7)}},
+              { "on": "next", "respond": {}, "thenEvents": [ {{Stopped("step")}} ] }, {{At(unit, 8)}},
+              {{DebugScenarios.Continue(DebugTestBed.Exit())}} ] }
+            """);
+        await StopAfterAsync(bed, "run.stepOver");
+        status.Clear();
+
+        var stopped = new TaskCompletionSource<StopInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        bed.Debug.Stopped += (_, stop) => stopped.TrySetResult(stop);
+        var first = commands.ExecuteAsync("run.stepOver");
+        var second = commands.ExecuteAsync("run.stepOver"); // the key repeats before the first request is answered
+        var third = commands.ExecuteAsync("run.stepInto");
+        await DebugTestBed.WaitAsync(Task.WhenAll(first, second, third), "the step commands");
+        await DebugTestBed.WaitAsync(stopped.Task, "the stop after the step");
+
+        var step = await stopped.Task;
+        Assert.Equal((StopReason.Step, 8), (step.Reason, step.Location!.Line));
+        Assert.Single(bed.Sessions.SentRequests("next"));
+        Assert.Empty(bed.Sessions.SentRequests("stepIn"));
+        Assert.DoesNotContain(bed.Log.Lines, l => l.StartsWith("WARN debug:", StringComparison.Ordinal));
+        Assert.NotEmpty(status);
+        Assert.All(status, message => Assert.Equal(step.Description, message)); // the stop, and no failure text before it
+
+        await commands.ExecuteAsync("run.start");
+        await bed.WaitForStateAsync(IdeState.Idle);
+        Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
+    }
+
+    /// <summary>
+    /// DBG-065 (I-222): Run to Cursor without a session on a line whose breakpoint has a condition stops there — the
+    /// temporary breakpoint of the launch set bypasses the condition; after the stop the user's breakpoint is the
+    /// session's again.
+    /// </summary>
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "DBG-232")]
+    public Task RunToCursorStopsOnLineWithConditionalBreakpoint() => TestUiThread.RunAsync(RunToCursorStopsOnLineWithConditionalBreakpointOnUiThread);
+
+    private static async Task RunToCursorStopsOnLineWithConditionalBreakpointOnUiThread()
+    {
+        using var bed = new DebugTestBed();
+        await bed.OpenHelloAsync();
+        var unit = bed.UnitPath;
+        var document = await bed.OpenDocumentAsync(unit);
+        var user = bed.Breakpoints.Set(new BreakpointInfo(unit, 8, Condition: "1 > 2"));
+        bed.Sessions.UseScenario($$"""
+            { "steps": [
+              { "on": "setBreakpoints", "respond": { "breakpoints": [ { "id": 50, "verified": true, "line": 8 } ] } },
+              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{Stopped("breakpoint", """, "hitBreakpointIds": [50]""")}} ] }, {{At(unit, 8)}},
+              { "on": "setBreakpoints", "respond": { "breakpoints": [ { "id": 51, "verified": true, "line": 8 } ] } } ] }
+            """);
+        bed.Services.Navigation.GoToLine(document, 8, null);
+
+        var stop = await StopAfterAsync(bed, "run.runToCursor");
+        Assert.Equal((StopReason.Breakpoint, 8), (stop.Reason, stop.Location!.Line));
+        await DebugTestBed.WaitAsync(bed.Breakpoints.WhenSyncedAsync(), "the temporary breakpoint removed");
+
+        // Each request carries one breakpoint of line 8: first the temporary one (the user's is displaced), then the user's.
+        Assert.Equal(["8", "8"], bed.Sessions.SentArguments("setBreakpoints").Select(Lines));
+        Assert.Same(user, Assert.Single(bed.Breakpoints.All));
+        Assert.Equal((BreakpointState.Verified, null, "1 > 2"), (user.State, user.Message, user.Condition));
+        Assert.Equal(FreexComp.Ide.Core.Editing.LineGlyphKind.BreakpointConditional, FreexComp.Ide.Core.Debugging.BreakpointService.GlyphOf(user).Kind);
+
+        await bed.Debug.StopAsync();
+        Assert.Equal(IdeState.Idle, bed.State);
+        Assert.Contains("SCENARIO-COMPLETE", bed.Sessions.AdapterStderr());
     }
 }

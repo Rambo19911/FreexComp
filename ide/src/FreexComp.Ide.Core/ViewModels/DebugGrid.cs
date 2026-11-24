@@ -96,6 +96,7 @@ public sealed class DebugGridEdit(string rowKey, string column, string text, Fun
     /// <summary>Escape.</summary>
     public void Cancel() => cancel();
 
+    /// <summary>The commit function reports a failure as its result; it does not fault (the view starts this and does not await it).</summary>
     private async Task RunAsync(string text) => Error = await commit(text);
 }
 

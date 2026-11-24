@@ -25,7 +25,7 @@ public sealed class BreakpointsViewTests
     private static string Row(DebugGridRow row) =>
         $"{(row.Cells[0].Checked == true ? "x" : "-")} {row.Cells[1].Glyph} | {row.Cells[2].Text} | {row.Cells[3].Text} | {row.Cells[4].Text} | {row.Cells[5].Text}";
 
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-800")]
     [Trait("Req", "UI-TW-801")]
     [Trait("Req", "UI-TW-802")]

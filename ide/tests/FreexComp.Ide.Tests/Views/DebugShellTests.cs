@@ -37,7 +37,7 @@ public sealed class DebugShellTests
     }
 
     /// <summary>UI-WIN-012 (b): a debug session activates the Debug profile for its lifetime; then rule (a) applies again.</summary>
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-WIN-012")]
     [Trait("Req", "UI-WIN-013")]
     public async Task DebugProfileActivatesOnSessionStart()
@@ -97,7 +97,7 @@ public sealed class DebugShellTests
     }
 
     /// <summary>UI-TW-013 with <c>Msg.Debug.NoSession</c> / <c>NotPaused</c> / <c>BreakpointsEmpty</c> / <c>WatchesEmpty</c> / <c>EventLogEmpty</c>.</summary>
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-013")]
     [Trait("Req", "UI-TW-006")]
     public async Task ToolWindowsShowEmptyStatesWithoutSession()
@@ -151,7 +151,7 @@ public sealed class DebugShellTests
     }
 
     /// <summary>menus.md §7 conditions and UI-TB-004 / UI-TB-005 / UI-TB-010 for the Debug toolbar, per IDE state.</summary>
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TB-004")]
     [Trait("Req", "UI-TB-005")]
     [Trait("Req", "UI-TB-010")]

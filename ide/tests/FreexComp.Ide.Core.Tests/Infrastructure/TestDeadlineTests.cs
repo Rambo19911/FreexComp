@@ -1,3 +1,4 @@
+using System.Reflection;
 using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Core.Tests.Infrastructure;
@@ -29,6 +30,31 @@ public sealed class TestDeadlineTests
         Assert.Equal(TimeSpan.Zero, deadline.Remaining);
         Assert.True(deadline.IsExpired);
         Assert.Equal(TestDeadline.DefaultTimeout, new TestDeadline(TimeSpan.Zero).Timeout); // no timeout declared
+    }
+
+    /// <summary>
+    /// I-222: a test that starts the scripted debug adapter (a real process on a shared, loaded machine: Phase 6,
+    /// Category Integration, asynchronous) declares the safety-net timeout <see cref="TestDeadline.DebugTestTimeout"/> —
+    /// its waits are bounded by that deadline and by nothing shorter.
+    /// </summary>
+    [Fact(Timeout = 30000)]
+    [Trait("Req", "IDE-TEST-013")]
+    public void DebugSessionTestsUseTheSafetyNetTimeout()
+    {
+        static bool Has(MethodInfo method, string name, string value) =>
+            method.GetCustomAttributes<TraitAttribute>(inherit: true).Concat(method.DeclaringType!.GetCustomAttributes<TraitAttribute>(inherit: true))
+                .Any(t => t.Name == name && t.Value == value);
+        var methods = typeof(TestDeadlineTests).Assembly.GetTypes()
+            .SelectMany(t => t.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            .Where(m => m.GetCustomAttributes<FactAttribute>(inherit: true).Any() && typeof(Task).IsAssignableFrom(m.ReturnType)
+                && Has(m, "Phase", "6") && Has(m, "Category", "Integration")).ToList();
+        Assert.True(methods.Count >= 10, $"only {methods.Count} debug session tests seen");
+        var other = methods
+            .Select(m => (m, m.GetCustomAttributes<FactAttribute>(inherit: true).Single().Timeout))
+            .Where(x => x.Timeout != TestDeadline.DebugTestTimeout)
+            .Select(x => $"{x.m.DeclaringType!.Name}.{x.m.Name}: {x.Timeout} ms").ToList();
+        Assert.Empty(other);
+        Assert.Equal(TimeSpan.FromSeconds(120), TimeSpan.FromMilliseconds(TestDeadline.DebugTestTimeout));
     }
 
     [Fact(Timeout = 30000)]

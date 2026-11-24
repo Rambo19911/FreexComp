@@ -21,7 +21,7 @@ public sealed class DebugServiceTests
     /// run.start under the debugger: build of the active configuration, <c>Msg.Debug.NoDebugInfo</c> when it has no debug
     /// information, the adapter of the LLVM tools folder, the project folder as user code; stop and restart.
     /// </summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-086")]
     [Trait("Req", "IDE-P3-010")]
     public Task StartStopWithFakeAdapter() => TestUiThread.RunAsync(StartStopWithFakeAdapterOnUiThread);
@@ -104,7 +104,7 @@ public sealed class DebugServiceTests
     }
 
     /// <summary>The debug-session interface §6.1, state rows: Starting / Running / Terminating → Debugging, Stopped → Paused, Terminated → Idle.</summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-001")]
     public Task StateMappingFollowsSession() => TestUiThread.RunAsync(StateMappingFollowsSessionOnUiThread);
 
@@ -157,7 +157,7 @@ public sealed class DebugServiceTests
     }
 
     /// <summary>The debug-session interface §6.1: Stdout / Stderr → <c>program</c>, Debugger / LogPoint → <c>debugger</c>; chunks become lines.</summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-070")]
     public Task OutputCategoriesGoToChannels() => TestUiThread.RunAsync(OutputCategoriesGoToChannelsOnUiThread);
 
@@ -194,7 +194,7 @@ public sealed class DebugServiceTests
     }
 
     /// <summary><c>Msg.Debug.StartFailed</c> for a missing adapter and a refused launch; Idle afterwards; Run Without Debugging.</summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-001")]
     public Task LaunchFailureShowsMessageAndReturnsToIdle() => TestUiThread.RunAsync(LaunchFailureShowsMessageAndReturnsToIdleOnUiThread);
 
@@ -240,7 +240,7 @@ public sealed class DebugServiceTests
     }
 
     /// <summary>IDE-P3-093 with a debug session: closing the project asks <c>Msg.Run.StopOnClose</c>; Cancel keeps both.</summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-093")]
     public Task ProjectCloseAsksToStopTheSession() => TestUiThread.RunAsync(ProjectCloseAsksToStopTheSessionOnUiThread);
 

@@ -40,7 +40,7 @@ public sealed class CallStackViewTests
         return $$"""{ "on": "stackTrace", "respond": { "totalFrames": {{Total}}, "stackFrames": [ {{string.Join(", ", Enumerable.Range(start, count).Select(Frame))}} ] } }""";
     }
 
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-900")]
     [Trait("Req", "UI-TW-901")]
     [Trait("Req", "UI-TW-902")]

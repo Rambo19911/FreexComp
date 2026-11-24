@@ -35,7 +35,7 @@ public sealed class BreakpointDialogTests
         Dispatcher.UIThread.RunJobs();
     }
 
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-DLG-190")]
     [Trait("Req", "UI-DLG-191")]
     public async Task ValidatesConditionAndPassCount()
@@ -167,7 +167,7 @@ public sealed class BreakpointDialogTests
     }
 
     /// <summary>dialogs.md §20, §21: the Watch dialog adds a watch; Evaluate/Modify evaluates in the paused session and shows errors.</summary>
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-DLG-200")]
     [Trait("Req", "UI-DLG-210")]
     public async Task WatchAndEvaluateDialogs()

@@ -1,5 +1,6 @@
 using System.Reflection;
 using FreexComp.Ide.Core.Tests.Infrastructure;
+using FreexComp.Ide.TestSupport;
 
 namespace FreexComp.Ide.Tests;
 
@@ -56,15 +57,38 @@ public sealed class TraitConventionTests
         Assert.Empty(naming);
     }
 
-    /// <summary>IDE-TEST-006: at most 30 s per test, 120 s for <c>Toolchain</c> tests (gate item N7).</summary>
+    /// <summary>
+    /// IDE-TEST-006: at most 30 s per test, 120 s for <c>Toolchain</c> tests (gate item N7) and for the tests that run a
+    /// debug session over the scripted adapter process (I-222).
+    /// </summary>
     [Fact]
     public void TimeoutsStayWithinTheLimits()
     {
         var over = TestMethods()
             .Select(m => (m, Timeout: m.Method.GetCustomAttributes<FactAttribute>(inherit: true).Single().Timeout))
-            .Where(x => x.Timeout > (x.m.Traits["Category"].Contains("Toolchain") ? 120000 : 30000))
+            .Where(x => x.Timeout > (x.m.Traits["Category"].Contains("Toolchain") ? 120000 : RunsDebugSession(x.m.Traits) ? TestDeadline.DebugTestTimeout : 30000))
             .Select(x => $"{x.m.Method.DeclaringType!.Name}.{x.m.Method.Name}: {x.Timeout} ms").ToList();
         Assert.Empty(over);
+    }
+
+    /// <summary>The Phase 6 tests with real processes: each starts the scripted debug adapter.</summary>
+    private static bool RunsDebugSession(ILookup<string, string> traits) => traits["Phase"].Contains("6") && traits["Category"].Contains("Integration");
+
+    /// <summary>
+    /// I-222: an asynchronous test that starts the scripted debug adapter (a real process on a shared, loaded machine) declares the
+    /// safety-net timeout <see cref="TestDeadline.DebugTestTimeout"/> — its waits are bounded by that deadline and by
+    /// nothing shorter. (The Core tests have the same guard: <c>TestDeadlineTests</c>.)
+    /// </summary>
+    [Fact]
+    public void DebugSessionTestsUseTheSafetyNetTimeout()
+    {
+        var methods = TestMethods().Where(m => RunsDebugSession(m.Traits) && typeof(Task).IsAssignableFrom(m.Method.ReturnType)).ToList();
+        Assert.True(methods.Count >= 20, $"only {methods.Count} debug session tests seen");
+        var other = methods
+            .Select(m => (m, m.Method.GetCustomAttributes<FactAttribute>(inherit: true).Single().Timeout))
+            .Where(x => x.Timeout != TestDeadline.DebugTestTimeout)
+            .Select(x => $"{x.m.Method.DeclaringType!.Name}.{x.m.Method.Name}: {x.Timeout} ms").ToList();
+        Assert.Empty(other);
     }
 
     [Fact]

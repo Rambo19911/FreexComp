@@ -31,7 +31,7 @@ public sealed class BreakpointSyncTests
     /// The launch carries every file's set with ids 1, 2, … in list order; while the session runs, adding, removing and
     /// disabling sends the complete set of that file; the ids end with the session.
     /// </summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-ARCH-077")]
     public Task SyncedToSession() => TestUiThread.RunAsync(SyncedToSessionOnUiThread);
 
@@ -103,7 +103,7 @@ public sealed class BreakpointSyncTests
     /// <c>BreakpointStatus</c> → glyph state, <c>ActualLine</c> (the breakpoint moves, <c>Msg.Debug.BreakpointMoved</c>)
     /// and <c>Hits</c>; an invalid breakpoint shows the unverified glyph with the debugger's message.
     /// </summary>
-    [Fact(Timeout = 30000)]
+    [Fact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-ED-021")]
     public Task StatusUpdatesGlyphLineAndHits() => TestUiThread.RunAsync(StatusUpdatesGlyphLineAndHitsOnUiThread);
 
@@ -173,10 +173,12 @@ public sealed class BreakpointSyncTests
         Assert.Equal(LineGlyphKind.BreakpointConditionalDisabled, Glyph(9));
         Assert.True(changes > 0); // listeners (the session file, the Breakpoints window) are told
 
-        // The session ends: states and hits are gone, the definitions (and the moved line) stay.
+        // The session ends: states and hits are gone, the definitions stay; the moved marker is back on its stored line
+        // (DBG-205: it moves for the duration of the session only).
         await bed.Debug.StopAsync();
         Assert.All(breakpoints.All, b => Assert.Equal((0, null, 0, null), (b.Id, b.State, b.Hits, b.Message)));
-        Assert.Equal([7, 6, 8, 9], breakpoints.All.Select(b => b.Line));
+        Assert.Equal([7, 3, 8, 9], breakpoints.All.Select(b => b.Line));
+        Assert.Equal((LineGlyphKind.Breakpoint, null), (Glyph(3), Glyph(6)));
         Assert.Equal(LineGlyphKind.BreakpointConditional, Glyph(8));
     }
 

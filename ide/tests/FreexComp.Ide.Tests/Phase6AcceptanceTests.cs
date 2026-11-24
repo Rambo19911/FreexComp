@@ -23,7 +23,7 @@ namespace FreexComp.Ide.Tests;
 [Trait("Category", "Integration")]
 public sealed class Phase6AcceptanceTests
 {
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "IDE-P3-001")]
     [Trait("Req", "UI-WIN-012")]
     public async Task BreakStepInspectContinue()

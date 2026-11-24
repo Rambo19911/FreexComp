@@ -33,7 +33,7 @@ public sealed class LocalsViewTests
 
     private static DebugGridRow RowOf(DebugGridViewModel grid, string key) => grid.Rows.Single(r => r.Key == key);
 
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-1000")]
     [Trait("Req", "UI-TW-1001")]
     [Trait("Req", "UI-TW-1002")]
@@ -190,7 +190,49 @@ public sealed class LocalsViewTests
         Assert.Contains("SCENARIO-COMPLETE", h.DebugSessions.AdapterStderr());
     }
 
-    [AvaloniaFact(Timeout = 30000)]
+    /// <summary>
+    /// I-222: Enter in the Value editor when the session is gone already (it ended under the open editor; the IDE applies
+    /// that with the session's next event) — the commit ends without a failure of its own, the editor closes and nothing
+    /// is left under way.
+    /// </summary>
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
+    [Trait("Req", "UI-TW-1004")]
+    public async Task ModifyAfterTheSessionWentAwayClosesTheEditor()
+    {
+        await using var h = await DebugScenario.StartDemoAsync();
+        var demo = DebugScenario.DemoPath(h);
+        var locals = h.Services.DebugShell!.Locals;
+        h.DebugSessions.UseScenario($$"""
+            { {{DebugDemo.Data()}}, "steps": [
+              { "on": "configurationDone", "respond": {}, "thenEvents": [ {{DebugScenarios.StoppedEvent("entry")}} ] },
+              {{DebugDemo.AtStop(demo)}} ] }
+            """);
+        h.Press("F11");
+        await DebugScenario.WaitForStopAsync(h, DebugDemo.StopLine);
+        h.Click("Tool.Locals.Row.Total.Name");
+        h.Press("F2");
+        Dispatcher.UIThread.RunJobs();
+        var edit = locals.Edit!;
+        var editor = h.Find<TextBox>("Tool.Locals.Row.Total.Editor");
+
+        // The session is being disposed; Enter comes in the same turn of the UI thread, before the IDE can apply the end
+        // of the session (its events are posted to this thread).
+        editor.Text = "99";
+        var gone = h.DebugSessions.Last.DisposeAsync();
+        Assert.Same(edit, locals.Edit);
+        h.Press("Enter");
+        var commit = edit.Commit;
+        await gone;
+        await h.WaitForAsync(() => commit.IsCompleted, "the commit ended");
+
+        Assert.True(commit.IsCompletedSuccessfully, commit.Exception?.ToString());
+        Assert.Null(locals.Edit);
+        Assert.Null(h.TryFind<TextBox>("Tool.Locals.Row.Total.Editor"));
+        Assert.Empty(h.DebugSessions.SentRequests("writeMemory"));
+        await DebugScenario.SettleAsync(h);
+    }
+
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-TW-1004")]
     [Trait("Req", "UI-TW-1005")]
     public async Task ModifyOnlyWhenCanModify()

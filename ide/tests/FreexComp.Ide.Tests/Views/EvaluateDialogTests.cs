@@ -24,7 +24,7 @@ public sealed class EvaluateDialogTests
         Dispatcher.UIThread.RunJobs();
     }
 
-    [AvaloniaFact(Timeout = 30000)]
+    [AvaloniaFact(Timeout = TestDeadline.DebugTestTimeout)]
     [Trait("Req", "UI-DLG-210")]
     public async Task EvaluatesAndModifies()
     {
