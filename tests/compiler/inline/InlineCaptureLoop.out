@@ -1,0 +1,44 @@
+0 10 20 1
+in scope 101 g1+
+in scope 201 g2+
+after 113 212
+create g1
+touch g1
+end of iteration 1
+create g2
+touch g2
+end of iteration 2
+destroy g2
+after loop
+touch g1
+destroy g1
+released, leaked: 0
+create g1
+destroy g1
+create g2
+touch g2
+destroy g2
+after break
+exit:
+create g1
+destroy g1
+create g2
+touch g2
+destroy g2
+raise:
+create g1
+destroy g1
+create g2
+touch g2
+destroy g2
+caught
+paths leaked: 0
+repeat 3 4 6 8
+0 10 20 1
+create g1
+main iteration 1
+create g2
+main iteration 2
+destroy g2
+main end
+destroy g1

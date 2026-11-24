@@ -11,6 +11,9 @@ internal sealed partial class ExpressionBinder
     /// <summary>The closure of a unit-level body (its owner has no routine symbol to carry it).</summary>
     private ClosureInfo? _unitClosure;
 
+    /// <summary>The innermost inline declaration whose scope is being bound (C-308: where an anonymous method is written).</summary>
+    public InlineScope? CurrentInline { get; set; }
+
     /// <summary>The bodies of the anonymous methods bound here, inner ones included (each after the method containing it).</summary>
     public List<BoundRoutineBody> AnonymousBodies { get; } = [];
 
@@ -57,12 +60,13 @@ internal sealed partial class ExpressionBinder
         var root = _types.TInterfacedObject as ClassTypeSymbol;
         var reported = _diagnostics.Count;
         var closure = OwnClosure(syntax);
-        var number = closure.Methods.Count + 1;
+        var number = closure.Sites.Count + 1;
         var location = DiagnosticBag.LocationOf(syntax.Keyword);
         var method = new MethodSymbol("Anon" + number, closure.Class, [location], declaration: null!, MethodKind.Ordinary, Visibility.Private)
         {
             IsAnonymous = true,
             AnonymousParent = _routine,
+            AnonymousFrame = closure,
             IsReferenced = true,
         };
         method.SelfParameter = new ParameterSymbol("Self", closure.Class, ParameterMode.Value, -1, method, []);
@@ -73,6 +77,7 @@ internal sealed partial class ExpressionBinder
         intf.Invoke.Parameters = method.Parameters;
         intf.Invoke.ReturnType = method.ReturnType;
         closure.Methods.Add((method, intf));
+        closure.Sites.Add((method, intf, CurrentInline));
 
         var scope = new Scope(ScopeKind.Routine, _scope, method);
         if (method.ResultVariable is { } result)

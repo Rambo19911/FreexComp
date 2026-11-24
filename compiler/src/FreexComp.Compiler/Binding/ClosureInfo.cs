@@ -50,13 +50,35 @@ internal sealed class ClosureInfo
     public bool IsComplete { get; private set; }
 
     /// <summary>
+    /// CMP-1183 (C-308): the block frame of a declaration scope with captured inline variables — class <c>$Block&lt;n&gt;</c>, made at
+    /// each execution of the scope's first captured declaration into the hidden locals <c>$block&lt;n&gt;</c>/<c>$block&lt;n&gt;Ref</c> of
+    /// <see cref="Owner"/>'s body; <see cref="Outer"/> is the frame the scope runs on (<see cref="Enclosing"/>).
+    /// </summary>
+    public bool IsBlock => _enclosing is not null;
+
+    /// <summary>
+    /// The frame <c>$outer</c> leads to: for a block frame the enclosing block frame or the closure of the body; for the closure of
+    /// an anonymous method the frame that method belongs to; null otherwise.
+    /// </summary>
+    public ClosureInfo? Enclosing => _enclosing ?? (Owner as MethodSymbol)?.AnonymousFrame;
+
+    /// <summary>The block frames of the body this closure belongs to, in creation order (on the body's closure only).</summary>
+    public List<ClosureInfo> Blocks { get; } = [];
+
+    /// <summary>The anonymous methods written directly in the body, each with the innermost inline declaration it lies in (null: none).</summary>
+    public List<(MethodSymbol Method, InterfaceTypeSymbol Interface, InlineScope? Scope)> Sites { get; } = [];
+
+    private ClosureInfo? _enclosing;
+    private bool _blocksResolved;
+
+    /// <summary>
     /// C-230: for the closure of a plain (nested) routine, the enclosing routines whose closures it keeps (plain and counted fields
     /// <c>$outer.&lt;name&gt;</c>/<c>$outerRef.&lt;name&gt;</c>, set in the prologue): its anonymous methods reach their variables through them.
     /// </summary>
-    public Dictionary<RoutineSymbol, (FieldSymbol Plain, FieldSymbol Counted)> Links { get; } = new(ReferenceEqualityComparer.Instance);
+    public Dictionary<ClosureInfo, (FieldSymbol Plain, FieldSymbol Counted)> Links { get; } = new(ReferenceEqualityComparer.Instance);
 
     private readonly List<Symbol> _captured = [];
-    private readonly List<RoutineSymbol> _linked = [];
+    private readonly List<ClosureInfo> _linked = [];
 
     /// <summary>Lays out the fields (<paramref name="captured"/> in order) and the interfaces once the owner's body is bound.</summary>
     public void Complete(BuiltInTypes types, IEnumerable<Symbol> captured)
@@ -69,7 +91,7 @@ internal sealed class ClosureInfo
     /// C-230: after every body of the unit is bound, a variable captured through a nested routine (<paramref name="captured"/>) and a
     /// link to an enclosing routine's closure (<paramref name="link"/>) are added and the class laid out again (nothing is lowered yet).
     /// </summary>
-    public bool Extend(Symbol? captured, RoutineSymbol? link)
+    public bool Extend(Symbol? captured, ClosureInfo? link)
     {
         var changed = false;
         if (captured is not null && !_captured.Contains(captured))
@@ -104,7 +126,12 @@ internal sealed class ClosureInfo
             return field;
         }
 
-        if (Owner is MethodSymbol { IsAnonymous: true, SelfParameter: { } self } && types.IInterface is not null)
+        if (_enclosing is not null)
+        {
+            Outer = Add("$outer", _enclosing.Class);
+            OuterRef = Add("$outerRef", types.IInterface!);
+        }
+        else if (Owner is MethodSymbol { IsAnonymous: true, SelfParameter: { } self } && types.IInterface is not null)
         {
             Outer = Add("$outer", self.Type);
             OuterRef = Add("$outerRef", types.IInterface!);
@@ -112,7 +139,8 @@ internal sealed class ClosureInfo
 
         foreach (var linked in _linked)
         {
-            Links[linked] = (Add("$outer." + linked.Name, linked.Closure!.Class), Add("$outerRef." + linked.Name, types.IInterface ?? types.Pointer));
+            var name = linked.IsBlock ? linked.Local.Name : linked.Owner!.Name;
+            Links[linked] = (Add("$outer." + name, linked.Class), Add("$outerRef." + name, types.IInterface ?? types.Pointer));
         }
 
         foreach (var symbol in _captured)
@@ -138,13 +166,15 @@ internal sealed class ClosureInfo
     }
 
     /// <summary>A new closure for <paramref name="owner"/> (null: a unit-level body), its class registered with <paramref name="unit"/>.</summary>
-    public static ClosureInfo Create(RoutineSymbol? owner, UnitSymbol unit, BuiltInTypes types, SyntaxNode syntax)
+    public static ClosureInfo Create(RoutineSymbol? owner, UnitSymbol unit, BuiltInTypes types, SyntaxNode syntax, ClosureInfo? blockOn = null)
     {
         var root = types.TInterfacedObject as ClassTypeSymbol;
         ClassTypeSymbol type;
+        int number;
         lock (unit.Closures)
         {
-            type = new ClassTypeSymbol(types.Target, (owner?.Name ?? "$body") + ".$closure" + (unit.Closures.Count + 1), unit, [])
+            number = unit.Closures.Count + 1;
+            type = new ClassTypeSymbol(types.Target, (owner?.Name ?? "$body") + (blockOn is null ? ".$closure" : ".$Block") + number, unit, [])
             {
                 IsForward = false,
                 Parent = root,
@@ -157,10 +187,92 @@ internal sealed class ClosureInfo
         }
 
         var symbol = (Symbol?)owner ?? unit;
+        var local = blockOn is null ? "$closure" : "$block" + number;
         return new ClosureInfo(owner, type,
-            new VariableSymbol("$closure", type, isGlobal: false, symbol, []),
-            new VariableSymbol("$closureRef", types.IInterface ?? types.Pointer, isGlobal: false, symbol, []), syntax);
+            new VariableSymbol(local, type, isGlobal: false, symbol, []),
+            new VariableSymbol(local + "Ref", types.IInterface ?? types.Pointer, isGlobal: false, symbol, []), syntax)
+        {
+            _enclosing = blockOn,
+        };
     }
+
+    /// <summary>
+    /// CMP-1183 (C-308): once every body is bound (<paramref name="captured"/>: what anonymous methods and the routines nested in
+    /// them use of enclosing bodies), each statement list of this closure's body that declares captured inline variables gets a
+    /// block frame holding them (they leave this closure), chained to the frame the list runs on; an anonymous method written
+    /// inside such a list becomes a method of the innermost block frame. Returns the closures to lay out again.
+    /// </summary>
+    private List<ClosureInfo> ResolveBlocks(UnitSymbol unit, BuiltInTypes types, HashSet<Symbol> captured)
+    {
+        var changed = new List<ClosureInfo>();
+        if (_blocksResolved)
+        {
+            return changed;
+        }
+
+        _blocksResolved = true;
+        ClosureInfo? FrameOfScope(InlineScope? scope)
+        {
+            if (scope is null || scope.IsResolved)
+            {
+                return scope?.Frame;
+            }
+
+            var outer = FrameOfScope(scope.Parent);
+            var frame = scope.ContinuesList ? scope.Parent!.ListFrame : null;
+            foreach (var local in scope.Locals.Where(captured.Contains))
+            {
+                if (frame is null)
+                {
+                    frame = Create(Owner, unit, types, Syntax, blockOn: outer ?? this);
+                    scope.Creates = frame;
+                    Blocks.Add(frame);
+                }
+
+                frame._captured.Add(local);
+                local.BlockFrame = frame;
+                _captured.Remove(local);
+            }
+
+            scope.ListFrame = frame;
+            scope.Frame = frame ?? outer;
+            scope.IsResolved = true;
+            return scope.Frame;
+        }
+
+        foreach (var (method, intf, scope) in Sites)
+        {
+            if (FrameOfScope(scope) is not { } frame)
+            {
+                continue;
+            }
+
+            Methods.Remove((method, intf));
+            frame.Methods.Add((method, intf));
+            method.ContainingSymbol = frame.Class;
+            method.SelfParameter = new ParameterSymbol("Self", frame.Class, ParameterMode.Value, -1, method, []);
+            method.AnonymousFrame = frame;
+            intf.BlockFrame = frame;
+            if (method.Closure is { } inner)
+            {
+                changed.Add(inner);                                             // its $outer is the block frame now
+            }
+        }
+
+        if (Blocks.Count > 0)
+        {
+            changed.Add(this);
+            changed.AddRange(Blocks);
+        }
+
+        return changed;
+    }
+
+    /// <summary>The frame <paramref name="symbol"/> lives in: its block frame, or the closure of its routine when captured; else null.</summary>
+    public static ClosureInfo? FrameOf(Symbol symbol) =>
+        symbol is VariableSymbol { BlockFrame: { } block } ? block
+        : symbol.ContainingSymbol is RoutineSymbol { Closure: { } closure } && closure.Fields.ContainsKey(symbol) ? closure
+        : null;
 
     /// <summary>
     /// C-230 (LANG-721, LANG-725): once every body of <paramref name="unit"/> (or of its generic instances) is bound, a variable reached
@@ -169,7 +281,9 @@ internal sealed class ClosureInfo
     /// nested routine whose closure is entered on the way keeps a link to the owner's closure. The nested routine then counts as
     /// referencing the variable, so the frames carry the owner's closure to its prologue.
     /// </summary>
-    public static ImmutableArray<BoundRoutineBody> ResolveMixedCaptures(IReadOnlyList<BoundRoutineBody> bodies, UnitSymbol unit, BuiltInTypes types)
+    /// <param name="unitClosures">The closures of the unit-level bodies bound with <paramref name="bodies"/> (their owner has no routine symbol).</param>
+    public static ImmutableArray<BoundRoutineBody> ResolveMixedCaptures(IReadOnlyList<BoundRoutineBody> bodies, UnitSymbol unit, BuiltInTypes types,
+        IEnumerable<ClosureInfo>? unitClosures = null)
     {
         var references = new Dictionary<RoutineSymbol, List<Symbol>>(ReferenceEqualityComparer.Instance);
         var changed = new List<ClosureInfo>();
@@ -181,44 +295,65 @@ internal sealed class ClosureInfo
             }
         }
 
+        if (types.TInterfacedObject is not null && types.IInterface is not null)
+        {
+            // CMP-1183 (C-308): first the block frames, so that the links below lead to the frame a variable really lives in
+            var captured = bodies.SelectMany(b => b.CapturedVariables).ToHashSet<Symbol>(ReferenceEqualityComparer.Instance);
+            var closures = bodies.Select(b => b.Routine.Closure).Concat(unitClosures ?? []).OfType<ClosureInfo>().Distinct().ToList();
+            foreach (var closure in closures)
+            {
+                closure.ResolveBlocks((UnitSymbol)closure.Class.ContainingSymbol!, types, captured).ForEach(Note);
+            }
+        }
+
         foreach (var body in bodies)
         {
             foreach (var symbol in body.CapturedVariables)
             {
-                if (symbol.ContainingSymbol is not RoutineSymbol owner || ReferenceEquals(owner, body.Routine))
+                // a captured inline variable lives in its block frame; any other local of a unit-level body in static storage
+                var block = (symbol as VariableSymbol)?.BlockFrame;
+                var owner = symbol.ContainingSymbol as RoutineSymbol;
+                if (owner is null ? block is null : ReferenceEquals(owner, body.Routine))
                 {
                     continue;
                 }
 
                 // the nearest anonymous method between the reader and the owner: below it frames, above it closures
-                RoutineSymbol? at = null;
+                MethodSymbol? nearest = null;
                 for (var routine = body.Routine; routine is not null && !ReferenceEquals(routine, owner); routine = LexicalParent(routine))
                 {
                     if (routine is MethodSymbol { IsAnonymous: true } anonymous)
                     {
-                        at = anonymous.AnonymousParent;
+                        nearest = anonymous;
                         break;
                     }
                 }
 
-                if (at is null || types.TInterfacedObject is null)
+                if (nearest is null || types.TInterfacedObject is null)
                 {
                     continue;
                 }
 
-                if (owner.Closure is null)
+                var at = nearest.AnonymousParent;
+                var target = block;
+                if (target is null)
                 {
-                    owner.Closure = Create(owner, unit, types, owner.Definition ?? (SyntaxNode)body.Body.Syntax);
-                    owner.Closure.Complete(types, []);
+                    if (owner!.Closure is null)
+                    {
+                        owner.Closure = Create(owner, unit, types, owner.Definition ?? (SyntaxNode)body.Body.Syntax);
+                        owner.Closure.Complete(types, []);
+                    }
+
+                    if (owner.Closure.Extend(symbol, link: null))
+                    {
+                        Note(owner.Closure);
+                    }
+
+                    target = owner.Closure;
                 }
 
-                if (owner.Closure.Extend(symbol, link: null))
-                {
-                    Note(owner.Closure);
-                }
-
-                // the walk of LoweringContext.ClosureOf: an anonymous method's closure leads to its parent's ($outer); a nested
-                // routine's closure needs a link to the owner's
+                // the walk of LoweringContext.FrameInstance: an anonymous method's closure leads to the frame it belongs to ($outer);
+                // a nested routine's closure needs a link to the target frame
                 while (at is not null && !ReferenceEquals(at, owner))
                 {
                     if (at is MethodSymbol { IsAnonymous: true } anonymous)
@@ -227,7 +362,7 @@ internal sealed class ClosureInfo
                         continue;
                     }
 
-                    if (at.Closure!.Extend(captured: null, owner))
+                    if (at.Closure!.Extend(captured: null, target))
                     {
                         Note(at.Closure);
                     }

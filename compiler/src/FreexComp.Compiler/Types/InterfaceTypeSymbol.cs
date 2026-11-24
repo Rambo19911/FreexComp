@@ -55,6 +55,12 @@ public sealed class InterfaceTypeSymbol : TypeSymbol
     /// </summary>
     public bool IsAnonymousMethod { get; internal set; }
 
+    /// <summary>
+    /// CMP-1183 (C-308): the block frame that implements the interface of an anonymous method written inside a declaration scope
+    /// with captured inline variables; null when the closure of the enclosing body does.
+    /// </summary>
+    internal Binding.ClosureInfo? BlockFrame { get; set; }
+
     /// <summary>The <c>Invoke</c> method of a method reference type (IMT slot 3, ABI-097).</summary>
     public MethodSymbol Invoke => Methods[0];
 

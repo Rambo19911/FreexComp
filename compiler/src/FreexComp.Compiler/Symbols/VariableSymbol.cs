@@ -49,10 +49,17 @@ public sealed class VariableSymbol : Symbol
     public bool IsThreadVar => ThreadVarOffset is not null;
 
     /// <summary>
-    /// A local of a unit-level body (program block, initialization, finalization) that an anonymous method uses: it keeps the
-    /// body's lifetime instead of its declaration scope's (inline-variables.md LANG-566 until block frames exist).
+    /// A local of a unit-level body (program block, initialization, finalization) that an anonymous method uses: unless it
+    /// moves to a block frame (<see cref="BlockFrame"/>) it keeps the body's lifetime instead of its declaration scope's — a
+    /// <c>for var</c> variable (LANG-721).
     /// </summary>
     internal bool IsCapturedBodyLocal { get; set; }
+
+    /// <summary>
+    /// The block frame a captured inline variable lives in (inline-variables.md LANG-566, CMP-1183; C-308): one instance per
+    /// execution of its declaration scope. Null for every other variable.
+    /// </summary>
+    internal Binding.ClosureInfo? BlockFrame { get; set; }
 
     /// <summary><c>var Name: Type</c> / <c>threadvar Name: Type</c> (CMP-731).</summary>
     public override string ToDisplayString() => $"{(IsThreadVar ? "threadvar" : "var")} {Name}: {Type.Name}";

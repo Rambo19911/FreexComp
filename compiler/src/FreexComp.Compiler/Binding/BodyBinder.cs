@@ -59,9 +59,24 @@ internal sealed partial class BodyBinder
             {
                 var (locals, initialization, scope) = BindInlineDeclaration(statement);
                 var next = i + 1;
-                var rest = InScope(scope, () => BindStatements(statements, next, atEnd));
+
+                // C-308: start > 0 only here, so the declaration then continues the list of the current one
+                var outerInline = _expressions.CurrentInline;
+                var inline = new InlineScope(outerInline, continuesList: start > 0, locals);
+                _expressions.CurrentInline = inline;
+                ImmutableArray<BoundStatement> rest;
+                try
+                {
+                    rest = InScope(scope, () => BindStatements(statements, next, atEnd));
+                }
+                finally
+                {
+                    _expressions.CurrentInline = outerInline;
+                }
+
                 bound.Add(new BoundLocalsStatement(statement, locals, new BoundBlock(statement, [.. initialization, .. rest]), LocalsScopeKind.List)
                 {
+                    Inline = inline,
                     DeclarationScope = scope,
                     ScopeRange = ListScopeRange(statement),
                 });

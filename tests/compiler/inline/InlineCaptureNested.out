@@ -1,0 +1,16 @@
+two scopes 2001 2102 2013 1004
+two scopes 2002 2103 2014 1005
+own 2 4 4
+own 2 4 4
+sum 66
+makers 1001 1011 2005
+nested routine 12 22 14
+one list 1 2 305 3
+one list 2 4 507 5
+one list after 407 609
+try
+finally 41 42 42
+constructor 202 203 203
+method 103 105 104
+program block 24 44 28
+leaked: 0

@@ -914,6 +914,9 @@ internal sealed class BoundLocalsStatement : BoundStatement
 
     public BoundStatement Body { get; }
 
+    /// <summary>C-308: the declaration of a statement list as the binder noted it (its block frame, CMP-1183); null for other locals.</summary>
+    public InlineScope? Inline { get; init; }
+
     /// <summary>The scope that declares the names of an inline declaration or a <c>for var</c> loop (LANG-560); null for hidden locals.</summary>
     public Scope? DeclarationScope { get; init; }
 

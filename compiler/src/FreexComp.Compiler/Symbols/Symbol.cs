@@ -31,7 +31,7 @@ public abstract class Symbol
     public string Name { get; }
 
     /// <summary>Unit, type or routine; null for built-ins.</summary>
-    public Symbol? ContainingSymbol { get; }
+    public Symbol? ContainingSymbol { get; internal set; }
 
     public UnitSymbol? ContainingUnit
     {

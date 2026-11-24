@@ -62,11 +62,12 @@ internal sealed record BindingResult(
     /// </summary>
     internal static Symbol FrameSymbol(RoutineSymbol reader, Symbol symbol)
     {
-        if (symbol.ContainingSymbol is not RoutineSymbol { Closure: { } closure } owner || !closure.Fields.ContainsKey(symbol))
+        if (ClosureInfo.FrameOf(symbol) is not { } closure)
         {
             return symbol;
         }
 
+        var owner = closure.Owner;                                              // null: a block frame of a unit-level body (C-308)
         for (var routine = ClosureInfo.LexicalParent(reader); routine is not null && !ReferenceEquals(routine, owner); routine = ClosureInfo.LexicalParent(routine))
         {
             if (routine is MethodSymbol { IsAnonymous: true, SelfParameter: { } self })
@@ -299,7 +300,7 @@ internal static class Binder
         }
 
         Drain();
-        var resolved = ClosureInfo.ResolveMixedCaptures(routines, declarations.Unit, types);   // C-230
+        var resolved = ClosureInfo.ResolveMixedCaptures(routines, declarations.Unit, types, bodies.Select(b => b.Closure!).Where(c => c is not null));   // C-230, C-308
         routines.Clear();
         routines.AddRange(resolved);
 

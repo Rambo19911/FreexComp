@@ -15,56 +15,60 @@ internal sealed partial class LoweringContext
     /// <summary>The closure field holding <paramref name="symbol"/>, reached from this body; null when it lives elsewhere.</summary>
     private LExpression? ClosureAccess(Symbol symbol)
     {
-        if (_rawClosureAccess || symbol.ContainingSymbol is not RoutineSymbol { Closure: { } closure } owner || !closure.Fields.TryGetValue(symbol, out var field))
+        if (_rawClosureAccess || ClosureInfo.FrameOf(symbol) is not { } frame)
         {
             return null;
         }
 
-        return FieldOf(ClosureOf(owner), field);
+        return FieldOf(FrameInstance(frame), frame.Fields[symbol]);
     }
 
     private LExpression FieldOf(LExpression instance, FieldSymbol field) =>
         new LDeref(new LPointerOffset(instance, Constant(field.Offset, Types.Int64), Types.Byte, Types.Pointer), field.Type);
 
     /// <summary>
-    /// The closure object of <paramref name="owner"/> seen from this body: its hidden local when this body (or a routine nested in
-    /// it without an anonymous method between) is the owner, else the <c>Self</c> of the nearest anonymous method and then the
-    /// <c>$outer</c> chain of the closures in between.
+    /// The instance of the frame <paramref name="target"/> (the closure of a body, or a block frame of it — CMP-1183, C-308) seen
+    /// from this body: its hidden local when this body (or a routine nested in it without an anonymous method between) owns it,
+    /// else the <c>Self</c> of the nearest anonymous method and then the <c>$outer</c> chain of the frames in between.
     /// </summary>
-    private LExpression ClosureOf(RoutineSymbol owner)
+    private LExpression FrameInstance(ClosureInfo target)
     {
         LExpression current;
-        RoutineSymbol? at;
+        ClosureInfo? at;
         for (var routine = Routine; ; routine = ClosureInfo.LexicalParent(routine))
         {
-            if (routine is null)
+            if (ReferenceEquals(routine, target.Owner))
             {
-                throw new InvalidOperationException($"'{owner.Name}' does not enclose '{Routine?.Name}'.");
+                return Reach(target.Local);
             }
 
-            if (ReferenceEquals(routine, owner))
+            if (routine is null)
             {
-                return Reach(owner.Closure!.Local);
+                throw new InvalidOperationException($"'{target.Class.Name}' does not enclose '{Routine?.Name}'.");
             }
 
             if (routine is MethodSymbol { IsAnonymous: true, SelfParameter: { } self } anonymous)
             {
                 current = Reach(self);
-                at = anonymous.AnonymousParent;
+                at = anonymous.AnonymousFrame;
                 break;
             }
         }
 
-        while (!ReferenceEquals(at, owner))
+        while (!ReferenceEquals(at, target))
         {
-            var closure = at?.Closure ?? throw new InvalidOperationException($"No closure chain to '{owner.Name}'.");
-            if (closure.Links.TryGetValue(owner, out var link))
+            if (at is null)
             {
-                return FieldOf(current, link.Plain);                            // C-230: a nested routine's closure links to the owner's
+                throw new InvalidOperationException($"No closure chain to '{target.Class.Name}'.");
             }
 
-            current = FieldOf(current, closure.Outer ?? throw new InvalidOperationException($"No closure chain to '{owner.Name}'."));
-            at = ((MethodSymbol)at).AnonymousParent;
+            if (at.Links.TryGetValue(target, out var link))
+            {
+                return FieldOf(current, link.Plain);                            // C-230: a nested routine's closure links to the target
+            }
+
+            current = FieldOf(current, at.Outer ?? throw new InvalidOperationException($"No closure chain to '{target.Class.Name}'."));
+            at = at.Enclosing;
         }
 
         return current;
@@ -99,6 +103,41 @@ internal sealed partial class LoweringContext
         _ => throw new InvalidOperationException($"Cannot reach '{symbol.Name}'."),
     };
 
+    /// <summary>The parameterless <c>Create</c> a frame class inherits, called on the class: a new zeroed instance.</summary>
+    private BoundCallExpression NewFrame(ClosureInfo frame)
+    {
+        var create = frame.Class.SelfAndAncestors().SelectMany(c => c.Methods)
+            .First(m => m is { MethodKind: MethodKind.Constructor, Parameters.IsEmpty: true } && IdentifierComparer.Instance.Equals(m.Name, "Create"));
+        return new BoundCallExpression(frame.Syntax, create, [], type: frame.Class)
+        {
+            Receiver = new BoundReceiver(new BoundClassReferenceExpression(frame.Syntax, frame.Class, frame.Class.Reference), IsVirtual: false, Flag: 1),
+        };
+    }
+
+    /// <summary>
+    /// CMP-1183 (C-308): the first captured declaration of a statement list makes the list's block frame, at each execution:
+    /// <c>$block := TBlock.Create</c>, <c>$blockRef := $block</c> (counted: the previous execution's instance survives only while
+    /// closures hold it), <c>$outer</c>/<c>$outerRef</c> := the frame the list runs on. The captured variables are its fields,
+    /// empty in a new instance (LANG-562, LANG-566).
+    /// </summary>
+    private ImmutableArray<LStatement> BlockPrologue(ClosureInfo frame)
+    {
+        var syntax = frame.Syntax;
+        var local = HandlerVariable(frame.Local);
+        var keep = HandlerVariable(frame.Keep);
+        var root = (InterfaceTypeSymbol)Types.IInterface!;
+        var enclosing = frame.Enclosing!;
+        return
+        [
+            new LAssign(local, Lower(NewFrame(frame))),
+            ManagedRewriter.Assign(this, keep, new BoundConversionExpression(syntax, new BoundVariableExpression(syntax, frame.Local), root,
+                ConversionKind.ImplicitReference, isExplicit: false, constantValue: null)),
+            new LAssign(FieldOf(local, frame.Outer!), FrameInstance(enclosing)),
+            ManagedRewriter.Assign(this, FieldOf(local, frame.OuterRef!),
+                ObjectToInterface(FrameInstance(enclosing), enclosing.Class.FindInterface(root)!.Offset, root)),
+        ];
+    }
+
     /// <summary>
     /// <c>$closure := TClosure.Create</c>, <c>$closureRef := $closure</c> (counted, released at exit); for the closure of an anonymous
     /// method <c>$outer</c>/<c>$outerRef</c> := its <c>Self</c>; then the captured parameters (and <c>Self</c>) are copied in.
@@ -108,12 +147,7 @@ internal sealed partial class LoweringContext
         var syntax = closure.Syntax;
         var local = Routine is null ? HandlerVariable(closure.Local) : new LLocalRef(DeclareLocal(closure.Local));
         var keep = Routine is null ? HandlerVariable(closure.Keep) : new LLocalRef(DeclareLocal(closure.Keep));
-        var create = closure.Class.SelfAndAncestors().SelectMany(c => c.Methods)
-            .First(m => m is { MethodKind: MethodKind.Constructor, Parameters.IsEmpty: true } && IdentifierComparer.Instance.Equals(m.Name, "Create"));
-        var construct = new BoundCallExpression(syntax, create, [], type: closure.Class)
-        {
-            Receiver = new BoundReceiver(new BoundClassReferenceExpression(syntax, closure.Class, closure.Class.Reference), IsVirtual: false, Flag: 1),
-        };
+        var construct = NewFrame(closure);
         var root = (InterfaceTypeSymbol)Types.IInterface!;
         BoundExpression AsInterface(BoundExpression instance) =>
             new BoundConversionExpression(syntax, instance, root, ConversionKind.ImplicitReference, isExplicit: false, constantValue: null);
@@ -131,11 +165,10 @@ internal sealed partial class LoweringContext
 
         foreach (var (target, (plain, counted)) in closure.Links)
         {
-            // C-230: the enclosing routine's closure, kept alive by this one
-            var outerClosure = target.Closure!;
-            statements.Add(new LAssign(FieldOf(local, plain), ClosureOf(target)));
+            // C-230: the enclosing routine's closure (C-308: or a block frame of it), kept alive by this one
+            statements.Add(new LAssign(FieldOf(local, plain), FrameInstance(target)));
             statements.Add(ManagedRewriter.Assign(this, FieldOf(local, counted),
-                ObjectToInterface(ClosureOf(target), outerClosure.Class.FindInterface(root)!.Offset, root)));
+                ObjectToInterface(FrameInstance(target), target.Class.FindInterface(root)!.Offset, root)));
         }
 
         _rawClosureAccess = true;

@@ -194,7 +194,9 @@ public sealed class AnonymousMethodBindingTests
         Assert.Equal(["Base"], outer.Closure!.Fields.Keys.Select(k => k.Name));
         Assert.Empty(outer.Closure.Class.Interfaces);
         Assert.Equal(["Step"], make.Routine.Closure!.Fields.Keys.Select(k => k.Name));
-        Assert.Same(outer, Assert.Single(make.Routine.Closure.Links.Keys));
+        var link = Assert.Single(make.Routine.Closure.Links.Keys);                        // C-308: keyed by the target frame
+        Assert.Same(outer, link.Owner);
+        Assert.Same(outer.Closure, link);
         Assert.Contains(make.CapturedVariables, s => s.Name == "Base");       // the frames carry Outer's closure to Make
     }
 

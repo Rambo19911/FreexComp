@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using FreexComp.Compiler.Binding;
 using FreexComp.Compiler.Symbols;
+using FreexComp.Compiler.Types;
 
 namespace FreexComp.Compiler.Lowering;
 
@@ -50,17 +51,42 @@ internal sealed partial class LoweringContext
     }
 
     /// <summary>
-    /// A managed variable its scope finalises. One captured by an anonymous method is not: it lives in the closure (a unit-level
-    /// body's in its global) for as long as the closure may use it (LANG-566).
+    /// A managed variable its scope finalises. One captured by an anonymous method is not: it lives in a frame for as long as a
+    /// closure may use it — an inline variable of a statement list in the list's block frame, which the scope releases instead
+    /// (LANG-566, CMP-1183; <see cref="ScopeFinalised"/>), a <c>for var</c> variable in the closure of the body (a unit-level
+    /// body's in its global).
     /// </summary>
     private static bool FinalisedAtScopeExit(VariableSymbol variable) =>
-        variable.Type.IsManaged && !variable.IsCapturedBodyLocal
-        && !(variable.ContainingSymbol is RoutineSymbol { Closure: { } closure } && closure.Fields.ContainsKey(variable));
+        variable.Type.IsManaged && !variable.IsCapturedBodyLocal && ClosureInfo.FrameOf(variable) is null;
 
-    private void DeclareScopeLocals(BoundLocalsStatement locals, bool finalised)
+    /// <summary>
+    /// What leaving the scope of <paramref name="locals"/> finalises, in declaration order: the counted reference to the block
+    /// frame the declaration creates (CMP-1183: a managed inline variable of the scope) and its managed variables outside frames.
+    /// </summary>
+    private static IEnumerable<VariableSymbol> ScopeFinalised(BoundLocalsStatement locals) =>
+        (locals.Inline?.Creates is { } frame ? [frame.Keep] : Enumerable.Empty<VariableSymbol>()).Concat(locals.Locals.Where(FinalisedAtScopeExit));
+
+    /// <summary>Declares the storage of the scope's variables; the statements that make its block frame, if it creates one (C-308).</summary>
+    private ImmutableArray<LStatement> DeclareScopeLocals(BoundLocalsStatement locals, bool finalised)
     {
+        ImmutableArray<LStatement> prologue = [];
+        if (locals.Inline?.Creates is { } frame)
+        {
+            if (finalised)
+            {
+                _scopeFinalised.Add(frame.Keep);
+            }
+
+            prologue = BlockPrologue(frame);
+        }
+
         foreach (var local in locals.Locals)
         {
+            if (local.BlockFrame is not null)
+            {
+                continue;                                               // a field of the block frame
+            }
+
             if (finalised && FinalisedAtScopeExit(local))
             {
                 _scopeFinalised.Add(local);
@@ -68,7 +94,13 @@ internal sealed partial class LoweringContext
 
             HandlerVariable(local);                                     // C-111: declared before the body uses them
         }
+
+        return prologue;
     }
+
+    /// <summary>The scope's body after the statements that make its block frame.</summary>
+    private LStatement ScopeBody(ImmutableArray<LStatement> prologue, BoundStatement body) =>
+        prologue.IsEmpty ? Lower(body) : new LBlock([.. prologue, Lower(body)]);
 
     /// <summary>The finally part of a region: the variables are cleared in reverse declaration order (LANG-563); empty storage stays empty.</summary>
     private LBlock ScopeCleanup(BoundLocalsStatement at, IEnumerable<VariableSymbol> variables) =>
@@ -83,28 +115,25 @@ internal sealed partial class LoweringContext
     {
         if (locals.ScopeKind == LocalsScopeKind.Hidden)
         {
-            DeclareScopeLocals(locals, finalised: false);
-            return Lower(locals.Body);
+            return ScopeBody(DeclareScopeLocals(locals, finalised: false), locals.Body);
         }
 
         if (ReferenceEquals(locals, _outermostTail))
         {
             _outermostTail = ListTail(locals.Body);
-            DeclareScopeLocals(locals, finalised: false);
-            return Lower(locals.Body);
+            return ScopeBody(DeclareScopeLocals(locals, finalised: false), locals.Body);
         }
 
-        if (_sharedRegion.Remove(locals) || !locals.Locals.Any(FinalisedAtScopeExit))
+        if (_sharedRegion.Remove(locals) || !ScopeFinalised(locals).Any())
         {
-            DeclareScopeLocals(locals, finalised: true);
-            return Lower(locals.Body);
+            return ScopeBody(DeclareScopeLocals(locals, finalised: true), locals.Body);
         }
 
         var chain = locals.ScopeKind == LocalsScopeKind.List ? ListChain(locals) : [locals];
         _sharedRegion.UnionWith(chain.Skip(1));
-        DeclareScopeLocals(locals, finalised: true);
-        var body = Lower(locals.Body);
-        return new LTryFinally(body, ScopeCleanup(locals, chain.SelectMany(l => l.Locals).Where(FinalisedAtScopeExit)));
+        var prologue = DeclareScopeLocals(locals, finalised: true);
+        var region = new LTryFinally(Lower(locals.Body), ScopeCleanup(locals, chain.SelectMany(ScopeFinalised)));
+        return prologue.IsEmpty ? region : new LBlock([.. prologue, region]);
     }
 
     /// <summary>
@@ -115,7 +144,7 @@ internal sealed partial class LoweringContext
     private LStatement? RepeatWithRegion(BoundRepeatStatement loop)
     {
         var chain = ListChain(ListTail(loop.Body));
-        var finalised = chain.SelectMany(l => l.Locals).Where(FinalisedAtScopeExit).ToImmutableArray();
+        var finalised = chain.SelectMany(ScopeFinalised).ToImmutableArray();
         if (finalised.IsEmpty)
         {
             return null;

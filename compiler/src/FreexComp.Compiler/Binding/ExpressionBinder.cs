@@ -66,6 +66,10 @@ internal sealed partial class ExpressionBinder
         if (_routine != null && symbol is VariableSymbol { IsGlobal: false, ContainingSymbol: not RoutineSymbol } bodyLocal)
         {
             bodyLocal.IsCapturedBodyLocal = true;               // a unit-level body's inline variable used by an anonymous method
+            if (!CapturedVariables.Contains(symbol))
+            {
+                CapturedVariables.Add(symbol);                  // C-308: it may move to a block frame (ClosureInfo.ResolveMixedCaptures)
+            }
         }
 
         if (_routine != null && symbol is (VariableSymbol { IsGlobal: false } or ParameterSymbol)
@@ -2073,7 +2077,7 @@ internal sealed partial class ExpressionBinder
     /// <summary>A scratch binder for probing (C-221) that sees the same <c>with</c> receivers (C-223).</summary>
     private ExpressionBinder ProbeBinder(DiagnosticBag diagnostics)
     {
-        var probe = new ExpressionBinder(_types, _scope, diagnostics, _routine);
+        var probe = new ExpressionBinder(_types, _scope, diagnostics, _routine) { CurrentInline = CurrentInline };
         probe._withs.AddRange(_withs);
         return probe;
     }

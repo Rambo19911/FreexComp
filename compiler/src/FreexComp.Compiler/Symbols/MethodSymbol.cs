@@ -57,6 +57,12 @@ public sealed class MethodSymbol : RoutineSymbol
     public RoutineSymbol? AnonymousParent { get; internal set; }
 
     /// <summary>
+    /// The frame whose class an anonymous method belongs to (its <c>Self</c>): the closure of <see cref="AnonymousParent"/>'s body
+    /// or, inside a declaration scope with captured inline variables, that scope's block frame (CMP-1183, C-308).
+    /// </summary>
+    internal Binding.ClosureInfo? AnonymousFrame { get; set; }
+
+    /// <summary>
     /// The number of <c>dispid N</c> (com-interfaces.md LANG-694): required on a member of a dispatch interface, information only
     /// on a method of an ordinary interface; null without it.
     /// </summary>

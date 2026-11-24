@@ -855,7 +855,7 @@ internal sealed partial class ExpressionBinder
     private ImmutableArray<TypeSymbol>? InferTypeArguments(GenericMethodSymbol generic, ArgumentListSyntax? argumentList)
     {
         var inferred = new TypeSymbol?[generic.ParameterNames.Length];
-        var scratch = new ExpressionBinder(_types, _scope, new DiagnosticBag(), _routine);
+        var scratch = new ExpressionBinder(_types, _scope, new DiagnosticBag(), _routine) { CurrentInline = CurrentInline };
         var index = 0;
         foreach (var parameter in generic.Declaration.Heading.ParameterList?.Parameters ?? default)
         {

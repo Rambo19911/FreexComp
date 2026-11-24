@@ -755,6 +755,9 @@ internal sealed partial class LoweringContext
             case BoundConversionExpression { IsExplicit: true, Type: PointerTypeSymbol, Operand.Type: { IsOrdinal: true, Size: < 8 } source } conversion:
                 // LANG-290: an ordinal is extended to 64 bits by its own signedness before it becomes a pointer
                 return Convert(Convert(Lower(conversion.Operand), source is IntegerTypeSymbol { IsSigned: true } ? Types.Int64 : Types.UInt64), conversion.Type);
+            case BoundConversionExpression { Type: InterfaceTypeSymbol { BlockFrame: { } frame } target, Operand.Type: ClassTypeSymbol }:
+                // CMP-1183 (C-308): an anonymous method inside a capturing scope is the interface of the scope's current block frame
+                return ObjectToInterface(FrameInstance(frame), frame.Class.FindInterface(target)!.Offset, target);
             case BoundConversionExpression { Type: InterfaceTypeSymbol target, Operand.Type: ClassTypeSymbol source } conversion:
                 return ObjectToInterface(Lower(conversion.Operand), source.FindInterface(target)!.Offset, target);
             case BoundConversionExpression conversion:
